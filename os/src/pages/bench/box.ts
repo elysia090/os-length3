@@ -8,15 +8,16 @@ import {kindOf} from '../../repos/text.ts';
 import {onChange, store, type Entry} from '../../repos/repos.ts';
 import {boxMode, modeHint, modeMenu, MODES, nextIssue, onBoxMode, pillWords, sendAs, sendInto, sendTitle, sendWord, setBoxMode, turn, type Mode} from './box-modes.ts';
 import type {Screen, ScreenState} from './screen.ts';
-import {sessionFor, sessionIfAny, terminalFor, type Session} from './terminal.ts';
+import {sessionFor, sessionIfAny, terminalFor} from './terminal.ts';
+import {PillLine} from './pill-line.ts';
 import {issueLook, lookFrom, todoLook} from '../look.ts';
 import {EditLine} from './edit-box.ts';
 import type {Writing} from '../forge/reader.ts';
 
 // The box at the foot of a work page's center (DESIGN.md § Forge, The box at the foot): one field, and at its left a
-// pill that says what it does: Run in the repo's Prompt (the pill the prompt line the shell waits at), Write an issue,
-// Add to TODO (box-modes.ts), Edit the file in front (edit-box.ts). Enter is a new line and Ctrl+Enter sends, as in
-// every box one writes in; Edit's lines are one line each, done with Enter.
+// pill that says what it does: Run in the repo's Prompt (the pill the prompt line the shell waits at, pill-line.ts),
+// Write an issue, Add to TODO (box-modes.ts), Edit the file in front (edit-box.ts). Enter is a new line and Ctrl+Enter
+// sends, as in every box one writes in; Edit's lines are one line each, done with Enter.
 //
 // What is written in it belongs to the repo and to what the box does: each keeps its own while the app runs, so going
 // to another page and back keeps it, and switching repos swaps it for that repo's (or an empty box). Running, ↑ on the
@@ -34,7 +35,14 @@ const CHOICES = 24;
 /** What was written in a box and not sent: by repo for Run, by what the box does and repo otherwise. */
 const drafts = new Map<string, string>();
 
-export interface BoxParts {
+/** A key pressed alone (no Ctrl, Alt, ⌘ or Shift with it), not in a conversion. */
+const plain = (e: KeyboardEvent) => !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && !e.isComposing;
+/** Ctrl+Enter (⌘+Enter), never the Enter that confirms a conversion: what sends. */
+const sends = (e: KeyboardEvent) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing;
+/** ↑ as -1 and ↓ as 1; any other key, 0. */
+const arrow = (e: KeyboardEvent): -1 | 0 | 1 => (e.key === 'ArrowUp' ? -1 : e.key === 'ArrowDown' ? 1 : 0);
+
+interface BoxParts {
   /** What carries the bench's classes (.unrun). */
   work: HTMLElement;
   /** The page's own content and the center holding it with the dock: read in, pointed at. */
@@ -51,6 +59,7 @@ export interface BoxParts {
   reveal(path: string, line?: number, write?: Writing): void;
 }
 
+/** The box at the foot of a bench's center: its field and pill, what is said under it, what it does with what is written. */
 export class Box {
   readonly prompt = h('textarea', {class: 'prompt-in', rows: '1', 'aria-label': t('Prompt box'), spellcheck: 'false', autocapitalize: 'off'}) as HTMLTextAreaElement;
   readonly note = h('p', {class: 'prompt-note muted small', role: 'status'});
@@ -81,13 +90,8 @@ export class Box {
   readonly #summonKey = h('kbd', {}, '`');
   readonly #keys: string;
   readonly #menu: ReturnType<typeof modeMenu>;
-  /** The Prompt followed (its prompt line, its lamp): the repo's own, a new one once it is started again. */
-  #followed: Session | null = null;
-  #unwatch: (() => void) | null = null;
-  /** The prompt line each repo's shell last waited at: the pill's at rest, while a line runs or before it starts. */
-  readonly #lastLine = new Map<string, string>();
-  #saying = 0;
-  #speaking = 0;
+  /** Run: the repo's Prompt followed, and the prompt line its shell waits at, in the pill. */
+  readonly #pillLine: PillLine;
   /** Edit: the file in front, what a line would do shown on it. */
   readonly #edit: EditLine;
 
@@ -108,6 +112,8 @@ export class Box {
     this.form = h('form', {class: 'prompt'}, this.chip, this.prompt, summon, this.runIt) as HTMLFormElement;
     this.line = [lamp, this.waits, this.prompt, this.runIt];
     this.dock = h('div', {class: 'dock'}, this.note, this.heard);
+    this.#pillLine = new PillLine({chip: this.chip, waits: this.waits, repo: () => this.#repo, up: () => this.#up,
+      followed: () => this.onFollow?.()});
     // Put away with Escape, the keyboard goes back to the box if it was there (the Prompt not brought up for it), else
     // nowhere.
     this.#edit = new EditLine({box: this.prompt, main: p.main, dock: this.dock, repo: () => this.#repo, reveal: p.reveal,
@@ -138,7 +144,7 @@ export class Box {
 
   /** As the screen goes up, starts down, or is the box's line again: what the line says, and how tall it is. */
   screenChanged(state: ScreenState) {
-    this.#said();
+    this.#pillLine.said();
     this.#fit();
     if (state === 'leaving' && this.#p.back) requestAnimationFrame(() => this.#rest(true));
   }
@@ -216,7 +222,7 @@ export class Box {
     const {term, termHead} = this.#p;
     const el = this.#repo ? terminalFor(this.#repo) : null;
     if (el ? el.parentElement !== term : term.childElementCount > 1) term.replaceChildren(termHead, ...(el ? [el] : []));
-    this.#following();
+    this.#pillLine.follow();
   }
 
   /** Whether the repo's Prompt has run anything yet, which is what gives it room. */
@@ -264,13 +270,7 @@ export class Box {
   /** The pill's words for the mode, the repo's next issue's number once it is read; the button's word and title. */
   #pillSays() {
     const mode = this.#mode, repo = this.#repo, words = this.#modeWords;
-    this.chip.dataset.mode = mode;
-    this.form.dataset.mode = mode;
-    this.#summonKey.textContent = mode === 'edit' ? 'G' : '`';
-    this.#summonKey.classList.toggle('tick', mode !== 'edit');
-    this.chip.setAttribute('aria-label', t('What the box does: {what}', {what: sendWord(mode)}));
-    this.runIt.textContent = sendWord(mode);
-    this.runIt.title = sendTitle(mode, this.#keys);
+    this.#keysSay(mode);
     const n = mode === 'issue' && repo ? nextIssue(repo) : null;
     if (n instanceof Promise) {
       void n.then(() => { if (this.#mode === 'issue') this.#pillSays(); });
@@ -282,48 +282,27 @@ export class Box {
     words.replaceChildren(...pillWords(mode, repo, typeof n === 'number' ? n : null, at));
     words.dataset.for = `${mode}\n${repo}`;
     if (mode === 'edit') this.prompt.placeholder = modeHint(mode, repo, at?.file ?? null);
-    // An issue written, the next number comes up into the pill as a counter's figure turns.
-    const b = words.querySelector('b');
-    if (mode === 'issue' && b && was && was !== '#' && b.textContent !== was && !still())
+    if (mode === 'issue') this.#numberTurns(was);
+  }
+
+  /** What the box does said where it is pressed: the pill's mode and name, the keys that bring it, Run's word and title. */
+  #keysSay(mode: Mode) {
+    this.chip.dataset.mode = mode;
+    this.form.dataset.mode = mode;
+    this.#summonKey.textContent = mode === 'edit' ? 'G' : '`';
+    this.#summonKey.classList.toggle('tick', mode !== 'edit');
+    this.chip.setAttribute('aria-label', t('What the box does: {what}', {what: sendWord(mode)}));
+    this.runIt.textContent = sendWord(mode);
+    this.runIt.title = sendTitle(mode, this.#keys);
+  }
+
+  /** An issue written, the next number comes up into the pill as a counter's figure turns (from `was`, the one it said). */
+  #numberTurns(was: string | null | undefined) {
+    const b = this.#modeWords.querySelector('b');
+    if (b && was && was !== '#' && b.textContent !== was && !still())
       b.animate([{translate: '0 11px', opacity: 0}, {translate: '0 0', opacity: 1}], {duration: paced(260), easing: LAND});
   }
 
-  /**
-   * The prompt line: up, the one the shell waits at now (none while a line runs); at rest, the last it waited at.
-   * Come back after a run, it comes once what the run printed has come in (terminal.ts), as a terminal's does.
-   */
-  #said() {
-    const repo = this.#repo, s = repo ? sessionIfAny(repo) : undefined;
-    // Started again: the new one is followed from now on.
-    if (this.#followed && (s ?? null) !== this.#followed) { this.#following(); return; }
-    const line = s?.promptLine.trimEnd() ?? '';
-    if (repo && line) this.#lastLine.set(repo, line);
-    this.chip.dataset.state = !s ? 'none' : s.ended ? 'ended' : s.running ? 'on' : 'starting';
-    const now = !repo ? '' : this.#up ? line : this.#lastLine.get(repo) ?? `${repo} $`;
-    cancelAnimationFrame(this.#saying);
-    clearTimeout(this.#speaking);
-    if (!(this.#up && now && !this.waits.textContent) || still()) { this.waits.textContent = now; return; }
-    // After the frame that draws what came, so the time its lines take to come in is known; then the prompt line and
-    // the caret after it come together, as the last line comes.
-    this.#saying = requestAnimationFrame(() => {
-      this.#speaking = window.setTimeout(() => {
-        this.waits.textContent = now;
-        fieldMoved();
-        this.waits.animate([{opacity: 0}, {opacity: 1}], {duration: 140, easing: 'ease-out'});
-      }, s?.settlesIn() ?? 0);
-    });
-  }
-
-  #following() {
-    const s = this.#repo ? sessionIfAny(this.#repo) ?? null : null;
-    if (s !== this.#followed) {
-      this.#followed = s;
-      this.#unwatch?.();
-      this.#unwatch = s ? s.watch(() => this.#said()) : null;
-      this.onFollow?.();
-    }
-    this.#said();
-  }
   /** Told when another Prompt is followed (the reference reads its runs again). */
   onFollow: (() => void) | null = null;
 
@@ -337,7 +316,7 @@ export class Box {
     if (this.#mode !== 'run') { void this.#write(this.#mode, repo); return; }
     const s = sessionIfAny(repo);
     // Ended: started again, and what was written waits in the box to be sent once it is up.
-    if (s?.ended) { s.restart(); this.#following(); this.#say(t('Still starting')); return; }
+    if (s?.ended) { s.restart(); this.#pillLine.follow(); this.#say(t('Still starting')); return; }
     if (!sessionFor(repo).send(this.prompt.value)) { this.#say(t('Still starting')); return; }
     this.#unsay();
     this.#say('');
@@ -395,82 +374,100 @@ export class Box {
    * own (`text`: what is written, the @ a space).
    */
   #tab(text = this.prompt.value): boolean {
-    const {prompt, note} = this, repo = this.#repo;
+    const {prompt} = this, repo = this.#repo;
     if (!repo || prompt.selectionStart !== prompt.selectionEnd) return false;
     const at = prompt.selectionStart, w = pathWord(text, at, repo);
     if (!w) return false;
-    const fill = (entries: Entry[]) => {
-      const c = complete(w.name, entries);
-      if (!c) return false;
-      if (c.insert) {
-        prompt.setRangeText(c.insert, at, at, 'end');
-        this.#keep();
-        this.#walk.reset();
-        this.#fit();
-        this.#look();
-        if (this.#mode === 'edit') this.#edit.show();
-      }
-      if (c.choices.length) {
-        this.#choices = true;
-        this.#say(c.choices.slice(0, CHOICES).join('  ') + (c.choices.length > CHOICES ? '  …' : ''));
-        note.classList.add('paths');
-      }
-      else this.#unsay();
-      return true;
-    };
     const got = this.#list(w.dir);
-    if (!(got instanceof Promise)) return fill(got);
+    if (!(got instanceof Promise)) return this.#fill(w.name, at, got);
     // Not read yet (rare: it is read while the path is written): completed once it is.
-    void got.then((entries) => { if (prompt.value.length >= at && prompt.selectionStart === at) fill(entries); });
+    void got.then((entries) => { if (prompt.value.length >= at && prompt.selectionStart === at) this.#fill(w.name, at, entries); });
+    return true;
+  }
+  /** `name` (the path's last word, before the caret at `at`) completed from its directory's `entries`; false with none. */
+  #fill(name: string, at: number, entries: Entry[]): boolean {
+    const c = complete(name, entries);
+    if (!c) return false;
+    if (c.insert) {
+      this.prompt.setRangeText(c.insert, at, at, 'end');
+      this.#keep();
+      this.#walk.reset();
+      this.#fit();
+      this.#look();
+      if (this.#mode === 'edit') this.#edit.show();
+    }
+    if (c.choices.length) {
+      this.#choices = true;
+      this.#say(c.choices.slice(0, CHOICES).join('  ') + (c.choices.length > CHOICES ? '  …' : ''));
+      this.note.classList.add('paths');
+    }
+    else this.#unsay();
     return true;
   }
 
-  /** A key in the box. */
+  /**
+   * A key in the box: Escape, then the keys that choose what the box does, then the keys of what it does now (Run's,
+   * Edit's; writing an issue or a TODO, Enter is a new line and Ctrl+Enter, ⌘+Enter, sends).
+   */
   #key(event: KeyboardEvent) {
-    const {prompt} = this, repo = this.#repo;
     if (event.key !== 'Tab') this.#unsay();
-    if (event.key === 'Escape') {
-      // Editing, Escape lets a line taken go as it was, or takes back what was written, then gives the keyboard back to
-      // the file at its caret.
-      if (this.#mode === 'edit' && !event.isComposing) {
-        event.preventDefault();
-        if (this.#edit.cancel()) return;
-        if (prompt.value) { this.#put(''); this.#edit.show(); return; }
-        if (this.#edit.toFile()) return;
-      }
-      this.#screen?.lower();
-      prompt.blur();
-      return;
-    }
-    // Alt+1 to 4 choose what the box does; Alt+↓ brings the four out of the pill.
-    if (event.altKey && !event.ctrlKey && !event.metaKey && !event.isComposing) {
-      const n = /^Digit([1-9])$/.exec(event.code)?.[1];
-      const m = n ? MODES[Number(n) - 1] : undefined;
-      if (m) { event.preventDefault(); this.choose(m); return; }
-      if (event.key === 'ArrowDown' && !this.#up && !prompt.disabled) { event.preventDefault(); this.#menu.open(); return; }
-    }
-    if (this.#mode === 'edit') { this.#editKey(event); return; }
-    const sends = event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing;
-    if (this.#mode !== 'run') { if (sends) { event.preventDefault(); this.#send(); } return; }
-    const plain = !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey && !event.isComposing;
-    if (event.key === 'Tab' && plain) { if (this.#tab()) event.preventDefault(); return; }
-    // ↑ on the first line and ↓ on the last walk earlier lines; elsewhere they move the caret.
-    if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && plain && prompt.selectionStart === prompt.selectionEnd) {
-      const runs = repo ? sessionIfAny(repo)?.runs.map((r) => r.line) ?? [] : [];
-      const line = this.#walk.arrow(event.key, prompt.value, prompt.selectionStart, runs);
-      if (line === null) return;
+    if (event.key === 'Escape') { this.#escape(event); return; }
+    if (this.#modeKey(event)) return;
+    if (this.#mode === 'edit') this.#editKey(event);
+    else if (this.#mode === 'run') this.#runKey(event);
+    else if (sends(event)) { event.preventDefault(); this.#send(); }
+  }
+
+  /** Escape: the Prompt put back and the box let go; editing, what is in the box goes first (and then the box). */
+  #escape(event: KeyboardEvent) {
+    // Editing, Escape lets a line taken go as it was, or takes back what was written, then gives the keyboard back to
+    // the file at its caret.
+    if (this.#mode === 'edit' && !event.isComposing) {
       event.preventDefault();
-      this.#put(line);
-      return;
+      if (this.#edit.cancel()) return;
+      if (this.prompt.value) { this.#put(''); this.#edit.show(); return; }
+      if (this.#edit.toFile()) return;
     }
+    this.#screen?.lower();
+    this.prompt.blur();
+  }
+
+  /** Alt+1 to 4 choose what the box does; Alt+↓ brings the four out of the pill. True when it was one of them. */
+  #modeKey(event: KeyboardEvent): boolean {
+    if (!event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return false;
+    const n = /^Digit([1-9])$/.exec(event.code)?.[1];
+    const m = n ? MODES[Number(n) - 1] : undefined;
+    if (m) { event.preventDefault(); this.choose(m); return true; }
+    if (event.key !== 'ArrowDown' || this.#up || this.prompt.disabled) return false;
+    event.preventDefault();
+    this.#menu.open();
+    return true;
+  }
+
+  /** A key in the box while it runs: Tab completes a path, ↑ and ↓ walk earlier lines, Ctrl-C interrupts, Ctrl+Enter runs. */
+  #runKey(event: KeyboardEvent) {
+    const {prompt} = this, repo = this.#repo, caret = prompt.selectionStart === prompt.selectionEnd;
+    if (event.key === 'Tab' && plain(event)) { if (this.#tab()) event.preventDefault(); return; }
+    // ↑ on the first line and ↓ on the last walk earlier lines; elsewhere they move the caret.
+    if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && plain(event) && caret) { this.#walkTo(event, event.key); return; }
     // Ctrl-C with nothing selected (so not a copy) interrupts what runs, as in a terminal.
-    if (event.key === 'c' && event.ctrlKey && !event.altKey && !event.metaKey && prompt.selectionStart === prompt.selectionEnd && repo) {
+    if (event.key === 'c' && event.ctrlKey && !event.altKey && !event.metaKey && caret && repo) {
       event.preventDefault();
       sessionFor(repo).interrupt();
       return;
     }
     // Enter is a new line; Ctrl+Enter (⌘+Enter) sends.
-    if (sends) { event.preventDefault(); this.#send(); }
+    if (sends(event)) { event.preventDefault(); this.#send(); }
+  }
+
+  /** ↑ or ↓ with the caret on the first or last line: the line run before (or after) it in the box. */
+  #walkTo(event: KeyboardEvent, key: 'ArrowUp' | 'ArrowDown') {
+    const {prompt} = this, repo = this.#repo;
+    const runs = repo ? sessionIfAny(repo)?.runs.map((r) => r.line) ?? [] : [];
+    const line = this.#walk.arrow(key, prompt.value, prompt.selectionStart, runs);
+    if (line === null) return;
+    event.preventDefault();
+    this.#put(line);
   }
 
   /**
@@ -479,36 +476,46 @@ export class Box {
    * back); Tab completes @path.
    */
   #editKey(event: KeyboardEvent) {
-    const {prompt} = this, edit = this.#edit;
+    const {prompt} = this, edit = this.#edit, by = arrow(event);
     // Never the Enter that confirms a Japanese conversion.
     if (event.isComposing || event.keyCode === 229) return;
-    const mod = event.ctrlKey || event.metaKey, empty = !prompt.value;
     if (event.key === 'Enter' && !event.altKey) { event.preventDefault(); edit.enter(event.shiftKey); return; }
+    // Asked whatever is held with the key: a line taken that is no longer as it was is let go then.
+    const taken = edit.taken;
+    if (!plain(event)) { this.#undoKey(event); return; }
     // A line taken: ↑ and ↓ (nothing written in it yet) take the one above or below; Tab is a tab in it, as in the file.
-    if (edit.taken && !mod && !event.altKey && !event.shiftKey) {
-      if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && edit.stepTaken(event.key === 'ArrowUp' ? -1 : 1)) event.preventDefault();
+    if (taken) {
+      if (by && edit.stepTaken(by)) event.preventDefault();
       if (event.key === 'Tab') { event.preventDefault(); document.execCommand('insertText', false, '\t'); }
       return;
     }
-    if (event.key === 'Tab' && !mod && !event.altKey && !event.shiftKey && prompt.value.startsWith('@')) {
+    if (event.key === 'Tab' && prompt.value.startsWith('@')) {
       if (this.#tab(` ${prompt.value.slice(1)}`)) event.preventDefault();
       return;
     }
-    if (!empty) return;
-    if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && !mod && !event.altKey && !event.shiftKey) {
-      event.preventDefault();
-      edit.step(event.key === 'ArrowUp' ? -1 : 1);
-      return;
-    }
+    if (by && !prompt.value) { event.preventDefault(); edit.step(by); }
+  }
+
+  /** Ctrl+Z (⌘+Z) in the empty box: what the box did taken back; with Shift, or Ctrl+Y, put back. */
+  #undoKey(event: KeyboardEvent) {
     const k = event.key.toLowerCase();
-    if (mod && !event.altKey && (k === 'z' || k === 'y')) { event.preventDefault(); edit.undo(k === 'y' || event.shiftKey); }
+    if (this.prompt.value || !(event.ctrlKey || event.metaKey) || event.altKey || (k !== 'z' && k !== 'y')) return;
+    event.preventDefault();
+    this.#edit.undo(k === 'y' || event.shiftKey);
   }
 
   #wire(summon: HTMLElement) {
-    const {prompt, form, chip, runIt, dock} = this, {term} = this.#p;
+    this.#wireField();
+    this.#wireForm(summon);
+    this.#wireTerm();
+  }
+
+  /** The field: brought to, left, written in, and its keys. */
+  #wireField() {
+    const {prompt} = this;
     prompt.addEventListener('focus', () => {
       if (this.#mode === 'run') this.#screen?.raise();
-      this.#following();
+      this.#pillLine.follow();
       if (this.#mode === 'edit' && !this.#edit.busy) { this.#pillSays(); this.#edit.show(); }
     });
     // Left while editing (not for the file a moment, to write in it), what it would do is put away.
@@ -524,6 +531,11 @@ export class Box {
       if (this.#mode === 'edit' && !this.#edit.busy) this.#edit.show();
     });
     prompt.addEventListener('keydown', (event) => this.#key(event));
+  }
+
+  /** The box's line: Run, the pill, and a press anywhere on it. */
+  #wireForm(summon: HTMLElement) {
+    const {prompt, form, chip, runIt} = this;
     // Run sends as Ctrl+Enter does; pressed with the pointer, the keyboard stays in the box.
     runIt.addEventListener('pointerdown', (event) => { if (document.activeElement === prompt) event.preventDefault(); });
     form.addEventListener('submit', (event) => { event.preventDefault(); this.#send(); prompt.focus(); });
@@ -537,6 +549,11 @@ export class Box {
       event.preventDefault();
       prompt.focus();
     });
+  }
+
+  /** The Prompt it brings up: left, switched on again, put back by its ×, pressed. */
+  #wireTerm() {
+    const {prompt, dock} = this, {term} = this.#p;
     // Leaving the box and the Prompt sends the Prompt home; losing the window's focus does not.
     dock.addEventListener('focusout', (event) => {
       const to = event.relatedTarget as Node | null;
