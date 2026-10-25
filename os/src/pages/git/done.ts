@@ -6,16 +6,45 @@ import {kindOf} from '../../repos/text.ts';
 import {answers, askFoot, SETTLE} from '../common.ts';
 import {counted, diffFiles} from '../forge/diff-view.ts';
 import {LAND, nudge, paced, still} from '../../ui/glide.ts';
-import {justClosed, justMerged, notCommitted, reopenIssue, type IssueEvents} from './issue.ts';
+import {justClosed, justMerged, notCommitted, reopenIssue, type IssueEvents, type RepoState} from './issue.ts';
+import type {Laid} from '../../repos/git-state.ts';
 import {kindWords} from '../todo-list.ts';
 import {errorText} from '../../app/errors.ts';
 
-// What Git shows under the issues: what main has not committed (with its
-// Commit, named by its line as l3 commit names it), then what is done with,
-// newest first: the issues merged, read only with their diffs, and those
-// closed without being done, each with Reopen.
+// What Git shows round the issues: over them, what main has not committed
+// (with its Commit, named by its line as l3 commit names it); under them,
+// what is done with, newest first: what was committed on main from here,
+// the issues merged, read only with their diffs, and those closed without
+// being done, each with Reopen.
 
 const button = (text: string, kind = '') => h('button', {type: 'button', class: `button ${kind}`.trim()}, text) as HTMLButtonElement;
+
+const heading = (id: string, text: string, n = 0) => h('h2', {id}, h('span', {}, text, ' ', h('small', {}, n ? `${n}` : '')));
+
+/** The sections round the issues: main's over them, and under them what is done with, each its own section. */
+export class Sections {
+  readonly main = h('section', {class: 'section main-part', 'aria-labelledby': 'main-title', hidden: ''});
+  // What was committed on main from here is done with: under the issues, with what was merged and closed.
+  private readonly committed = h('section', {class: 'section', 'aria-labelledby': 'committed-title', hidden: ''});
+  private readonly merged = h('section', {class: 'section', 'aria-labelledby': 'merged-title', hidden: ''});
+  private readonly closed = h('section', {class: 'section', 'aria-labelledby': 'closed-title', hidden: ''});
+  /** Those under the issues, in their order. */
+  readonly under = [this.committed, this.merged, this.closed];
+
+  /** Drawn again for what is `laid` out, of the repo `filter` (all, when ''). */
+  draw({dirty, merged, closed}: Laid, filter: string, states: ReadonlyMap<string, RepoState>, events: IssueEvents, again: () => void) {
+    // main: what it has not committed, each a card. What was committed on it from here is under the issues.
+    const cuts = committedIn(filter || null);
+    this.main.hidden = !dirty.length;
+    this.main.replaceChildren(heading('main-title', 'main'), ...dirty.map((r) => mainCard(r, states.get(r)!.uncommitted, events, again)));
+    this.committed.hidden = !cuts.length;
+    this.committed.replaceChildren(heading('committed-title', t('Committed')), committedList(cuts, !filter));
+    this.merged.hidden = !merged.length;
+    this.merged.replaceChildren(heading('merged-title', t('Merged'), merged.length), mergedList(merged, !filter));
+    this.closed.hidden = !closed.length;
+    this.closed.replaceChildren(heading('closed-title', t('Closed'), closed.length), closedList(closed, !filter, again));
+  }
+}
 
 /** The line a commit on main is being named by, per repo: kept as written until it is committed or put back with Not now. */
 const naming = new Map<string, string>();
@@ -25,7 +54,7 @@ const folded = new Set<string>();
 /** Committed on main from here, newest first, a few: each stays a line under main where its card was. */
 const committed: {repo: string; cut: git.Cut}[] = [];
 const KEPT = 3;
-export const committedIn = (filter: string | null) => committed.filter((c) => !filter || c.repo === filter);
+const committedIn = (filter: string | null) => committed.filter((c) => !filter || c.repo === filter);
 
 /**
  * Committed, the card goes: it slides off sideways as it fades, and the room it took closes after it, so what is under
@@ -60,7 +89,7 @@ function resize(card: HTMLElement, from: number) {
  * its line ("Fix：title", as `l3 commit REPO "Fix：title"` takes it), Not now
  * at the left and Commit at the right, under the pointer.
  */
-export function mainCard(repo: string, n: number, events: IssueEvents, after: () => void): HTMLElement {
+function mainCard(repo: string, n: number, events: IssueEvents, after: () => void): HTMLElement {
   const card = h('div', {class: 'main-card', role: 'group', 'aria-label': t('Not committed on main in {repo}', {repo})});
   const plain = () => {
     const from = card.isConnected ? card.getBoundingClientRect().height : 0;
@@ -127,7 +156,7 @@ const named = (n: number | null, kind: string | null, title: string) => h('span'
   n === null ? null : h('span', {class: 'issue-no'}, `#${n} `), kind ? h('span', {class: 'issue-kind'}, ...kindWords(kind)) : null, title);
 
 /** What was committed on main from here: its line, how much it changed, and when; the newest lit as it lands. */
-export function committedList(list: {repo: string; cut: git.Cut}[], all: boolean): HTMLElement {
+function committedList(list: {repo: string; cut: git.Cut}[], all: boolean): HTMLElement {
   const newest = committed[0]?.cut.id;
   return h('div', {class: 'done-list'}, ...list.map(({repo, cut}) => {
     const meta = t('Committed {when}', {when: ago(cut.time || Date.now())});
@@ -144,7 +173,7 @@ const opened = new Set<string>();
 
 
 /** The issues merged into main, newest first: who handed each in and when it was merged; opened, its diff. Only read. */
-export function mergedList(list: {repo: string; change: git.Change}[], all: boolean): HTMLElement {
+function mergedList(list: {repo: string; change: git.Change}[], all: boolean): HTMLElement {
   return h('div', {class: 'done-list'}, ...list.map(({repo, change: c}) => {
     const inside = h('div', {class: 'done-diff'}, h('p', {class: 'muted small'}, t('Reading…')));
     const meta = t('{who} · merged {when}', {who: c.submittedBy || '—', when: ago(c.updatedAt)});
@@ -167,7 +196,7 @@ export function mergedList(list: {repo: string; change: git.Change}[], all: bool
 }
 
 /** The issues closed without being done: when and by whom, and Reopen at the row's right end (while the repo shows main). */
-export function closedList(list: {issue: Issue; reopen: boolean}[], all: boolean, after: () => void): HTMLElement {
+function closedList(list: {issue: Issue; reopen: boolean}[], all: boolean, after: () => void): HTMLElement {
   return h('div', {class: 'done-list'}, ...list.map(({issue: i, reopen}) => {
     const {at, by} = closedBy(i.closed ?? '');
     const when = at === null ? '' : day(at);

@@ -16,7 +16,7 @@ import {errorText} from '../../app/errors.ts';
 const drafts = new Drafts();
 
 /** What the box at the foot needs of the layer it is in. */
-export interface DockWays {
+interface DockWays {
   signedIn: boolean;
   /** Brought out by a press: the box takes the focus. */
   pinned(): boolean;
@@ -49,40 +49,46 @@ export function dockFor(b: Shown | null, ways: DockWays): Node[] {
     ways.guestChanged();
   };
   if (guest) void servers.guestStill(b.id, guest.token).catch(noLonger);
-  if (b.member || guest) {
-    const field = h('textarea', {class: 'prompt-in', rows: '1', maxlength: String(servers.LIMIT), 'aria-label': t('Write in {board}', {board: b.name}),
-      placeholder: b.member ? t('To the people of {server}', {server: b.server}) : t('As {name}, a guest', {name: guest!.as})}) as HTMLTextAreaElement;
-    const key = `${b.member ? 'member' : 'guest'}:${b.id}`;
-    field.value = drafts.get(key);
-    ways.writing(() => document.activeElement === field || !!field.value.trim());
-    ways.holding(() => drafts.holds(key));
-    const fit = () => { field.style.height = 'auto'; field.style.height = `${field.scrollHeight}px`; };
-    let sending = false;
-    field.addEventListener('input', () => { drafts.set(key, field.value); fit(); });
-    if (field.value) queueMicrotask(fit);
-    field.addEventListener('keydown', async (event) => {
-      // As every box one writes in: Enter is a new line, Ctrl+Enter (⌘+Enter) sends.
-      if (event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || event.isComposing) return;
-      event.preventDefault();
-      if (sending) return;
-      // Nothing written: the box shakes its head, as every box does sent empty.
-      if (!field.value.trim()) { nudge(field.closest('.prompt')); return; }
-      sending = true;
-      note.replaceChildren();
-      try { await postNow(b.id, field.value, guest?.token); field.value = ''; drafts.sent(key); fit(); } catch (e) {
-        note.textContent = errorText(e);
-        if (guest) noLonger(e);
-      } finally { sending = false; }
-    });
-    if (ways.pinned() && b.member) queueMicrotask(() => { field.focus(); field.setSelectionRange(field.value.length, field.value.length); });
-    return [h('form', {class: 'prompt'}, field), note];
-  }
+  if (b.member || guest) return [writeIn(b, guest, note, ways, noLonger), note];
   const held = servers.heldInvite();
   if (b.guests && held?.board === b.id) return [guestIn(b, held.code, ways), note];
   const signIn = button(t('Sign in'), 'small-button');
   signIn.addEventListener('click', () => ways.signIn());
   const why = b.guests ? t('Guests write here when one of its people invites them.') : ways.signedIn ? t('Only its people write here.') : t('Sign in to write.');
   return [h('div', {class: 'prompt server-say'}, h('span', {class: 'muted'}, why), ways.signedIn ? null : signIn), note];
+}
+
+/**
+ * The box one of its people writes to them in, or a guest (`guest`) as a guest: what is half written kept with its
+ * board, what went wrong sending said in `note`; a guest no longer let in is told so (`noLonger`).
+ */
+function writeIn(b: Shown, guest: servers.GuestHere | null, note: HTMLElement, ways: DockWays, noLonger: (e: unknown) => void): HTMLElement {
+  const field = h('textarea', {class: 'prompt-in', rows: '1', maxlength: String(servers.LIMIT), 'aria-label': t('Write in {board}', {board: b.name}),
+    placeholder: b.member ? t('To the people of {server}', {server: b.server}) : t('As {name}, a guest', {name: guest!.as})}) as HTMLTextAreaElement;
+  const key = `${b.member ? 'member' : 'guest'}:${b.id}`;
+  field.value = drafts.get(key);
+  ways.writing(() => document.activeElement === field || !!field.value.trim());
+  ways.holding(() => drafts.holds(key));
+  const fit = () => { field.style.height = 'auto'; field.style.height = `${field.scrollHeight}px`; };
+  let sending = false;
+  field.addEventListener('input', () => { drafts.set(key, field.value); fit(); });
+  if (field.value) queueMicrotask(fit);
+  field.addEventListener('keydown', async (event) => {
+    // As every box one writes in: Enter is a new line, Ctrl+Enter (⌘+Enter) sends.
+    if (event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || event.isComposing) return;
+    event.preventDefault();
+    if (sending) return;
+    // Nothing written: the box shakes its head, as every box does sent empty.
+    if (!field.value.trim()) { nudge(field.closest('.prompt')); return; }
+    sending = true;
+    note.replaceChildren();
+    try { await postNow(b.id, field.value, guest?.token); field.value = ''; drafts.sent(key); fit(); } catch (e) {
+      note.textContent = errorText(e);
+      if (guest) noLonger(e);
+    } finally { sending = false; }
+  });
+  if (ways.pinned() && b.member) queueMicrotask(() => { field.focus(); field.setSelectionRange(field.value.length, field.value.length); });
+  return h('form', {class: 'prompt'}, field);
 }
 
 /**
