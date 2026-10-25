@@ -1,12 +1,13 @@
-import {expect, personName, test} from './fixtures.ts';
+import {expect, test} from './fixtures.ts';
 
 // Paying, as a person does it on the Remote with the plan (global-setup.ts: LENGTH3_PLAN=1, its Stripe the
 // stand-in in test mode): a tier chosen on the Plan, Stripe's Checkout with Stripe's test cards (4242 pays,
 // 0002 is declined, 3155 asks for 3-D Secure first), and the portal, where the tier is changed and the
-// subscription cancelled and kept; each time back on the Plan, which says once how it went.
+// subscription cancelled and kept; each time back on the Plan, which says once how it went. Each test's person
+// is signed in already (fixtures.ts, planSignedIn) and goes from Home to Remote, where the Plan is.
 
-test('a tier paid for with 4242 in Checkout is the plan shown as yours after, its use against what it keeps', async ({planApp: app}, info) => {
-  await app.signIn(personName(info));
+test('a tier paid for with 4242 in Checkout is the plan shown as yours after, its use against what it keeps', async ({planSignedIn: app}) => {
+  await app.rail.go('remote');
   await app.remote.part('Plan').click();
   await expect(app.remote.tier('Free plan')).toHaveAttribute('aria-current', 'true');
   // Subscribe asks what is bought first: the tier, what it costs, how it is billed and ends.
@@ -36,8 +37,8 @@ test('a tier paid for with 4242 in Checkout is the plan shown as yours after, it
   await expect(app.remote.tier('Pro plan')).toHaveAttribute('aria-current', 'true');
 });
 
-test('a card that is declined is said under it in Checkout and nothing is sent; Back says nothing was charged', async ({planApp: app}, info) => {
-  await app.signIn(personName(info));
+test('a card that is declined is said under it in Checkout and nothing is sent; Back says nothing was charged', async ({planSignedIn: app}) => {
+  await app.rail.go('remote');
   await app.remote.subscribe('Go');
   await app.stripe.pay('4000 0000 0000 0002');
   await expect(app.stripe.cardSays).toHaveText('Your card was declined.');
@@ -54,8 +55,8 @@ test('a card that is declined is said under it in Checkout and nothing is sent; 
   await expect(app.remote.tier('Free plan')).toHaveAttribute('aria-current', 'true');
 });
 
-test('3-D Secure with 3155: Fail goes back to Checkout and says so with nothing paid; Complete pays', async ({planApp: app}, info) => {
-  await app.signIn(personName(info));
+test('3-D Secure with 3155: Fail goes back to Checkout and says so with nothing paid; Complete pays', async ({planSignedIn: app}) => {
+  await app.rail.go('remote');
   await app.remote.subscribe('Max');
   await app.stripe.pay('4000 0025 0000 3155');
   await app.stripe.secure('Fail');
@@ -69,8 +70,8 @@ test('3-D Secure with 3155: Fail goes back to Checkout and says so with nothing 
   await expect(app.remote.tier('Max plan')).toHaveAttribute('aria-current', 'true');
 });
 
-test('a tier changed from the Plan is confirmed in Stripe\'s portal, and the Plan says the new one once back', async ({planApp: app}, info) => {
-  await app.signIn(personName(info));
+test('a tier changed from the Plan is confirmed in Stripe\'s portal, and the Plan says the new one once back', async ({planSignedIn: app}) => {
+  await app.rail.go('remote');
   await app.remote.subscribe('Go');
   await app.stripe.pay('4242 4242 4242 4242');
   await expect(app.remote.tier('Go plan')).toHaveAttribute('aria-current', 'true');
@@ -99,8 +100,8 @@ test('a tier changed from the Plan is confirmed in Stripe\'s portal, and the Pla
   await expect(app.remote.tier('Go plan')).toHaveAttribute('aria-current', 'true');
 });
 
-test('cancelled in the portal, it stays to the period\'s end and the Plan says until when; Renew plan keeps it', async ({planApp: app}, info) => {
-  await app.signIn(personName(info));
+test('cancelled in the portal, it stays to the period\'s end and the Plan says until when; Renew plan keeps it', async ({planSignedIn: app}) => {
+  await app.rail.go('remote');
   await app.remote.subscribe('Pro');
   await app.stripe.pay('4242 4242 4242 4242');
   await expect(app.remote.tier('Pro plan')).toHaveAttribute('aria-current', 'true');

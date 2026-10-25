@@ -6,20 +6,43 @@ import {expect, test} from './fixtures.ts';
 // (New file, New folder, Rename, Delete), and what they do is the repo's,
 // as Forge then shows it.
 
-test('a file opened from the tree is the one Forge works on, and the tree marks it', async ({signedIn: app}) => {
-  await app.newRepo.make('hello', {template: 'C'});
-  await app.rail.go('home');
+test.describe("on 'hello', made from C's files", () => {
+  // Made once for the worker and kept (fixtures.ts, helloC), as making it is new-repo.spec.ts's to see (and its
+  // files made from a row's menu, this file's own tests below); opened again here, and signed in.
+  test.use({storageState: async ({helloC}, use) => { await use(helloC); }});
 
-  await app.file.open('hello', 'src/main.c');
+  test('a file opened from the tree is the one Forge works on, and the tree marks it', async ({signedIn: app}) => {
+    await app.rail.go('home');
 
-  await expect(app.file.tree).toBeHidden();
-  await expect(app.rail.button('forge')).toHaveAttribute('aria-current', 'page');
-  await expect(app.forge.editor('src/main.c')).toBeFocused();
+    await app.file.open('hello', 'src/main.c');
 
-  await app.file.openTree();
-  await expect(app.file.name('main.c')).toHaveAttribute('aria-current', 'location');
-  await expect(app.file.name('README.md')).not.toHaveAttribute('aria-current', 'location');
-  await expect(app.file.name('hello')).toHaveAttribute('aria-current', 'page');
+    await expect(app.file.tree).toBeHidden();
+    await expect(app.rail.button('forge')).toHaveAttribute('aria-current', 'page');
+    await expect(app.forge.editor('src/main.c')).toBeFocused();
+
+    await app.file.openTree();
+    await expect(app.file.name('main.c')).toHaveAttribute('aria-current', 'location');
+    await expect(app.file.name('README.md')).not.toHaveAttribute('aria-current', 'location');
+    await expect(app.file.name('hello')).toHaveAttribute('aria-current', 'page');
+  });
+
+  test('a file renamed and a file deleted from their rows change the repo', async ({signedIn: app}) => {
+    await app.newRepo.openInForge();
+
+    await app.file.named('hello', 'README.md', 'Rename', 'READ-ME.md');
+    await expect(app.file.name('READ-ME.md')).toBeFocused();
+    await expect(app.file.name('README.md')).toHaveCount(0);
+
+    const menu = await app.file.deeds('hello', 'Makefile');
+    await menu.getByRole('menuitem', {name: 'Delete'}).click();
+    await expect(menu).toContainText('Makefile goes');
+    await app.answer(menu.getByRole('button', {name: 'Delete', exact: true}), menu);
+    await expect(app.file.name('Makefile')).toHaveCount(0);
+
+    await app.file.close();
+    await expect(app.forge.editor('READ-ME.md')).toBeVisible();
+    await expect(app.forge.editor('Makefile')).toHaveCount(0);
+  });
 });
 
 test('a new file made from a repo\'s row opens in Forge, ready to write', async ({signedIn: app}) => {
@@ -56,25 +79,6 @@ test('a name taken is said in the menu, and the name keeps the keyboard', async 
   const menu = app.page.getByRole('menu', {name: 'hello', exact: true});
   await expect(menu.getByRole('alert')).toHaveText('README.md is there already');
   await expect(menu.getByRole('textbox')).toBeFocused();
-});
-
-test('a file renamed and a file deleted from their rows change the repo', async ({signedIn: app}) => {
-  await app.newRepo.make('hello', {template: 'C'});
-  await app.newRepo.openInForge();
-
-  await app.file.named('hello', 'README.md', 'Rename', 'READ-ME.md');
-  await expect(app.file.name('READ-ME.md')).toBeFocused();
-  await expect(app.file.name('README.md')).toHaveCount(0);
-
-  const menu = await app.file.deeds('hello', 'Makefile');
-  await menu.getByRole('menuitem', {name: 'Delete'}).click();
-  await expect(menu).toContainText('Makefile goes');
-  await app.answer(menu.getByRole('button', {name: 'Delete', exact: true}), menu);
-  await expect(app.file.name('Makefile')).toHaveCount(0);
-
-  await app.file.close();
-  await expect(app.forge.editor('READ-ME.md')).toBeVisible();
-  await expect(app.forge.editor('Makefile')).toHaveCount(0);
 });
 
 test('a name being written stays, with the keyboard, however long the pointer is away; Create makes it', async ({signedIn: app}) => {

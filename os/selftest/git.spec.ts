@@ -241,6 +241,8 @@ test('an empty Issue view in Forge writes the first issue for its repo, and Not 
 test('an issue\'s neighbours show their numbers at the edges that show, and the edges go to them', async ({app}) => {
   await app.newRepo.make('notes');
   for (const title of ['Fix: One', 'Feat: Two', 'Docs: Three']) await app.git.write('notes', title);
+  // The last one written is the one on screen (pressed while the box still moved to it, Previous went from #2).
+  await expect(app.git.issue('#3 Docs：Three')).toBeVisible();
   await app.git.issues.getByRole('button', {name: 'Previous issue'}).click();
   await expect(app.git.issue('#2 Feat：Two')).toBeVisible();
   await expect(app.git.issue('#1')).toBeInViewport();

@@ -27,10 +27,11 @@ test('the page is cross-origin isolated, and what it loads from its own origin a
 
 test.describe('the Prompt with its threads apart', {tag: '@slow'}, () => {
   test.skip(!process.env.SELFTEST_SLOW, '@slow: SELFTEST_SLOW=1 runs it');
+  // On 'hello', made from C's files once for the worker and kept (fixtures.ts, helloC), opened again in Forge.
+  test.use({storageState: async ({helloC}, use) => { await use(helloC); }});
   test.beforeEach(async ({app}) => {
     expect(existsSync(PROMPT), 'this build carries no l3 (public/l3): npm run l3, or node scripts/prompt-files.mjs').toBe(true);
     test.setTimeout(300_000);
-    await app.newRepo.make('hello', {template: 'C'});
     await app.newRepo.openInForge();
     await app.forge.startPrompt('hello');
   });

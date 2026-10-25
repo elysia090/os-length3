@@ -497,6 +497,8 @@ export class Reference {
       let files: gitops.FileDiff[];
       try { files = await gitops.diff(repo); } catch (e) { into.replaceChildren(h('p', {class: 'error'}, e instanceof Error ? e.message : String(e))); return; }
       if (this.repo !== repo || this.reading?.seen.what !== 'diff' || this.reading.seen.path !== path) return;
+      // Nor one pressed while the diff was being read (a save elsewhere draws it again): its Put back would go.
+      if (foot.querySelector('.diff-foot.asking')) return;
       const f = files.find((x) => x.path === path);
       if (!f) { into.replaceChildren(h('p', {class: 'muted small'}, t('No changes'))); foot.replaceChildren(); return; }
       const [fold] = this.diffFiles([f]);

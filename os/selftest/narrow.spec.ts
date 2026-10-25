@@ -41,6 +41,7 @@ test('a window too short for the rail keeps + clear of the person\'s icon, and +
 });
 
 test('on a phone, a device row shows the device\'s name beside when it was used', async ({signedIn: app}) => {
+  await app.rail.go('remote');
   await app.page.setViewportSize({width: 390, height: 844});
   await app.remote.part('Devices').click();
   const name = app.main.getByRole('tabpanel', {name: /^Devices/}).locator('.row-name').first();

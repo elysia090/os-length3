@@ -86,18 +86,22 @@ test('the name written on Home is the account\'s, so what is started, committed 
   await expect(app.main.getByText('Signed in as Ada Byron')).toBeVisible();
 });
 
-test('Home has the search Forge has, where Forge has it: in the repo last worked in, a line found opened in Forge there', async ({app}) => {
-  await app.newRepo.make('hello', {template: 'C'});
-  await app.rail.go('home');
-  // Named, there being no band on Home to say which repo it searches.
-  const search = app.main.getByRole('searchbox', {name: 'Search hello'});
-  await expect(search).toBeVisible();
-  await app.page.keyboard.press('Control+k');
-  await expect(search).toBeFocused();
-  await search.fill('puts');
-  const results = app.main.getByRole('region', {name: 'Search results'});
-  await expect(results.getByText('1 file · 1 line')).toBeVisible();
-  await results.getByRole('button', {name: /puts\("hello"\);/}).click();
-  await expect(app.forge.editor('src/main.c')).toBeFocused();
-  await expect.poll(() => app.forge.selected('src/main.c')).toBe('    puts("hello");');
+test.describe("on 'hello', made from C's files and worked in last", () => {
+  // Made once for the worker and kept (fixtures.ts, helloC), as making it is new-repo.spec.ts's and file.spec.ts's to see.
+  test.use({storageState: async ({helloC}, use) => { await use(helloC); }});
+
+  test('Home has the search Forge has, where Forge has it: in the repo last worked in, a line found opened in Forge there', async ({app}) => {
+    await app.rail.go('home');
+    // Named, there being no band on Home to say which repo it searches.
+    const search = app.main.getByRole('searchbox', {name: 'Search hello'});
+    await expect(search).toBeVisible();
+    await app.page.keyboard.press('Control+k');
+    await expect(search).toBeFocused();
+    await search.fill('puts');
+    const results = app.main.getByRole('region', {name: 'Search results'});
+    await expect(results.getByText('1 file · 1 line')).toBeVisible();
+    await results.getByRole('button', {name: /puts\("hello"\);/}).click();
+    await expect(app.forge.editor('src/main.c')).toBeFocused();
+    await expect.poll(() => app.forge.selected('src/main.c')).toBe('    puts("hello");');
+  });
 });

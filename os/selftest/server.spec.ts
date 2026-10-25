@@ -70,6 +70,8 @@ test('what is half written in a board stays with it, through another board and t
   await expect(app.server.box('general')).toHaveValue('');
   await app.server.close();
   await app.server.openLayer();
+  // Its boards come from the Remote, at the one it was left at (pressed before, Next board has nothing to go to).
+  await expect(app.server.box('general')).toBeVisible();
   await app.server.layer.getByRole('button', {name: 'Next board'}).click();
 
   await expect(app.server.box('Packing')).toHaveValue('Bring the');

@@ -85,13 +85,15 @@ export class App {
 
   /**
    * Answer an ask with `yes`: a deed that comes under the pointer holds still a moment (so a double
-   * click cannot answer it), so it is pressed until the ask (`ask`) is gone.
+   * click cannot answer it), so it is pressed until the ask (`ask`) is gone. Pressed again soon: the
+   * moment is half a second (SETTLE, src/pages/common.ts), and a press it takes disables the deed
+   * until it is done, so a press while it is being done waits for it rather than doing it twice.
    */
   async answer(yes: Locator, ask: Locator) {
     await expect(async () => {
       if (await yes.isVisible()) await yes.click({timeout: 1000});
-      await expect(ask).toBeHidden({timeout: 1000});
-    }).toPass({timeout: 15_000});
+      await expect(ask).toBeHidden({timeout: 300});
+    }).toPass({intervals: [100], timeout: 15_000});
   }
 
   /**
@@ -512,7 +514,8 @@ class Git extends Part {
 
   /**
    * Enter in main's card commits its line, or says under it why not. Within a moment of the ask
-   * coming it is not taken (a double press is not an answer), so it is pressed until one happens.
+   * coming it is not taken (a double press is not an answer), so it is pressed until one happens:
+   * soon again, as `answer` presses (a commit under way has its Commit disabled, which Enter presses).
    */
   async commitLine(repo: string) {
     const card = this.mainCard(repo);
@@ -521,7 +524,7 @@ class Git extends Part {
     await expect(async () => {
       if (await field.isVisible()) await field.press('Enter', {timeout: 1000});
       expect(!(await card.isVisible()) || !!(await said.textContent({timeout: 1000}))?.trim()).toBe(true);
-    }).toPass();
+    }).toPass({intervals: [100]});
   }
 
   /** Start the issue on screen, make the change in Forge, then Commit and Push it: handed in for review. */

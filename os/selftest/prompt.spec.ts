@@ -13,8 +13,11 @@ import {OS} from './paths.ts';
 
 const PROMPT = join(OS, 'public', 'l3', 'l3.json');
 
+// Each test opens the app on 'hello', made from C's files and left open in Forge: made once for the worker and kept
+// (fixtures.ts, helloC), as making it is new-repo.spec.ts's and file.spec.ts's to see.
+test.use({storageState: async ({helloC}, use) => { await use(helloC); }});
+
 test.beforeEach(async ({app}) => {
-  await app.newRepo.make('hello', {template: 'C'});
   await app.newRepo.openInForge();
 });
 
@@ -173,6 +176,8 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
 });
 
 test('Enter is a new line in the prompt box, so confirming a conversion never runs it; Ctrl+Enter runs', async ({app}) => {
+  // Once the Prompt is up (before, Ctrl+Enter says it is still starting, and the line waits in the box).
+  await app.forge.startPrompt('hello');
   const box = app.forge.promptBox;
   await box.fill('echo one');
   await box.press('Enter');

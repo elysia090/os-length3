@@ -1,6 +1,8 @@
 import {expect, personName, test} from './fixtures.ts';
 
 // Sign in: the first thing a person meets on the Remote, and the way out again.
+// Each test here goes through the provider's pages from the card, as a person
+// does (`app.signIn`); other specs' `signedIn` is signed in over HTTP.
 
 test('signing in through a provider shows the Remote as yours, this device among its devices', async ({app}, info) => {
   await app.rail.go('remote');
@@ -43,7 +45,8 @@ test('a Remote that answers with a page or a 503 is said to be away, not to offe
   await expect(rail).toHaveAccessibleName('Remote');
 });
 
-test('signing out from the person menu brings back the way in', async ({signedIn: app}) => {
+test('signing out from the person menu brings back the way in', async ({app}, info) => {
+  await app.signIn(personName(info));
   await app.me.openMenu();
   await app.me.menu.getByRole('menuitem', {name: 'Sign out'}).click();
   await expect(app.main.getByRole('region', {name: 'Sign in'})).toBeVisible();
@@ -76,7 +79,8 @@ test('the first time a provider, a passkey offered right after it; the next time
   await expect(app.remote.part('Repos')).toBeVisible();
 });
 
-test('a passkey put off for later is offered under the repos instead', async ({signedIn: app}) => {
+test('a passkey put off for later is offered under the repos instead', async ({app}, info) => {
+  await app.signIn(personName(info));
   const next = app.main.getByRole('region', {name: 'Add a passkey'});
   await next.getByRole('button', {name: 'Later'}).click();
   await expect(next).toBeHidden();

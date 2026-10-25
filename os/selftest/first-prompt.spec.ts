@@ -14,6 +14,8 @@ const BUDGET = 4 * MB;
 
 test.describe('the first Prompt', {tag: '@slow'}, () => {
   test.skip(!process.env.SELFTEST_SLOW, '@slow: SELFTEST_SLOW=1 runs it');
+  // l3 runs in a Prompt after the first, from what the first was given ahead of time (fixtures.ts, l3Ahead).
+  test.use({l3Ahead: true});
 
   test('comes with a few megabytes, not the whole root, and sooner again once cached', async ({app}) => {
     test.setTimeout(300_000);

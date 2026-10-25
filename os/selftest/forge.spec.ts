@@ -4,8 +4,12 @@ import {expect, test} from './fixtures.ts';
 // follows every save and its lines can be marked as with a highlighter; the
 // search finds a line and opens the center there with the line selected.
 
+// Each test opens the app on 'hello', made from C's files and left open in Forge (fixtures.ts, helloC: made once for
+// the worker, as making it is new-repo.spec.ts's and file.spec.ts's to see), signed in: the repo goes to the Remote
+// then, as one made before signing in does.
+test.use({storageState: async ({helloC}, use) => { await use(helloC); }});
+
 test.beforeEach(async ({signedIn: app}) => {
-  await app.newRepo.make('hello', {template: 'C'});
   await app.newRepo.openInForge();
 });
 
