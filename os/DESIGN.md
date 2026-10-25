@@ -1306,10 +1306,13 @@ Ctrl+B as there; what is found opens in Forge, a line at that line,
 selected. While it is out the window steps back under the one shade. Its
 first line, the name and Edit profile, stands on that top line too. Under
 it the pane holds
-Lately: what waits since the person was last here, a row each: where they
-left off (the file last read in Forge and the line it was left at, quoted as
-written), the conversations with something not read (who, and what it is
-and its first line: Review：…), the boards with posts not seen. With
+Lately: what waits since the person was last here, a row each, what it is in
+a round badge at its head: where they left off (a page, the file last read in
+Forge and the line it was left at, quoted as written), the conversations with
+something not read (who wrote, their initial on one of three soft tints, the
+marker's, a step done's, a removal's, the same for the same name; what it is
+and its first line: Review：…; the row a bubble, its corner at the badge's side,
+as a message is), the boards with posts not seen (#). With
 nothing new it says so, quietly: the pane out is never a line with nothing
 beside it. The plugin area comes down over it when the rail's plug opens it.
 
@@ -1486,8 +1489,15 @@ to a bright line across its middle, the box takes the new one's height, and
 the new one opens out of the line. The prompt lines before are in
 the green, so what was run stands out from what it printed. A lamp at its head is
 lit while its shell runs; the terminal, put back, comes into the pane where it
-lives (there in the page's own colours), and the reference grows down into the
-room it leaves. The terminal's box
+lives, and the reference grows down into the room it leaves. In the pane it is
+read as a line of what was done in the repo, in the page's own colours, as a
+history is drawn: a dot for each thing done on a thin thread down what it
+printed. A line run is a ring on the thread, the prompt line it was written at
+in the pill the box wore for it (the screen's glass, its words in the green),
+and the line in ink, bold; what it printed is under it, quieter, the thread at
+its left. The prompt line the shell waits at is last, its dot lit in the green
+and glowing as the lamp is (off once it has ended). Up as the screen, it is the
+terminal again, its lines as a terminal's. The terminal's box
 is labelled Prompt, after what one does there (the shell is BusyBox sh, so
 it is not called Bash); leaving the prompt
 (or Escape, or the × at the right end of its head, beside the lamp, there
@@ -1513,8 +1523,10 @@ the lines under it its detail; sent, the box empties and where it went is said
 to be heard (Written as #4 in garden). What the box made
 comes into the right pane as the Prompt's own lines do, one stream of what
 was done in the repo in the order it was done: a line of its own in the
-Prompt's flow, before the prompt line the shell waits at, its head in bold
-as the pill says it (`#4 Fix：…`, `TODO …`). Sent, its first line goes on a
+Prompt's flow, before the prompt line the shell waits at, on a dot of its own
+(ink for an issue, the green of a step done for a TODO), its head in the pill
+the box wore for it (`#4` in ink, `TODO` on paper with its circle) and its
+words in the letters people write in, not the shell's (`#4 Fix：…`). Sent, its first line goes on a
 slip of paper out of the box, on to the right as a sheet slid off, then up
 and on into that line, coming down to its size; the slip gives up its paper
 as it lands on the line's words, and the line is lit a moment as a file

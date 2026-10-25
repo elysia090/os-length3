@@ -490,6 +490,17 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
 /* The line it was left at, as written there: mono, as in Forge, on a quiet rule. */
 .lately-quote { overflow: hidden; margin: 2px 0; padding-left: var(--s2); border-left: 2px solid var(--rule); font: var(--t-meta) var(--mono); text-overflow: ellipsis; white-space: nowrap; }
 .lately-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--ink); }
+/* What a row is, in a round badge at its head (pane.ts): who wrote, their initial on one of three soft tints (the same
+   for the same name: the marker's, a step done's, a removal's), a file, a board. The lines under it start where its
+   name does. Word from someone is a bubble, its corner at the badge's side, as a message is. */
+.lately-badge { flex: none; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--raised);
+  color: var(--ink); font: 700 12px/1 var(--sans); }
+.lately-badge > .icon { width: 14px; height: 14px; }
+.lately-badge[data-tint='0'] { background: var(--marker-soft); }
+.lately-badge[data-tint='1'] { background: var(--add-tint); }
+.lately-badge[data-tint='2'] { background: var(--del-tint); }
+.lately-row > :is(.lately-line, .lately-quote) { margin-left: calc(24px + var(--s2)); }
+.lately-row.said { border-radius: var(--r-place) var(--r-place) var(--r-place) var(--s1); }
 .lately-none { margin: 0; padding: 0 var(--s3); }
 @media (max-width: 760px) {
   .page > .home-layout, .home-layout.pane-closed { grid-template-columns: minmax(0, 1fr); }
@@ -578,7 +589,9 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
 .todo-kind { font-weight: 700; }
 /* The kind's colon is the issue's own (Fix：), a full-width one; beside a Latin word its empty halves are taken in,
    so it sits against the word as a colon does, a small space after it: "Fix: The title", not "Fix :   The title". */
-.kind-colon { margin: 0 -.38em; }
+/* The colon after a Kind, full-width as it is written: drawn close to its Kind, with a little room before the words
+   (its own room taken in more on the left than the right). Inline, so a name read out is the words as written. */
+.kind-colon { margin: 0 -.2em 0 -.38em; }
 .issue-kind { margin-right: .3em; }
 .todo-title { border: 0; background: transparent; min-height: var(--h-control); padding: 0; font-size: var(--t-body); font-weight: 600; }
 .todo-title::placeholder { color: var(--sub); font-weight: 400; }
@@ -1277,6 +1290,38 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
    run around it, its head (#3, TODO) in bold as the pill says it, pressed to go to it. */
 .term-said-go { display: inline; margin: 0; padding: 0; border: 0; border-radius: 2px; background: none; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand); }
 .term-said-go:hover, .term-said-go:focus-visible { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+/* The Prompt in the pane, read as a line of what was done in the repo (DESIGN.md § Forge, the right pane): a dot for
+   each thing done, a thread down what it printed, as a history is drawn. A line run: a ring on the thread, the prompt
+   line it was written at in the pill the box wore for it (the screen's glass, its words in the green), and the line
+   in ink; what it printed under it, quieter, the thread at its left. What the box made: a dot of its own (ink for an
+   issue, the green of a step done for a TODO), its head in the pill the box wore (#3 in ink, TODO on paper with its
+   circle), its words in the letters people write in. The prompt line the shell waits at: its dot lit in the green,
+   glowing, as the lamp is while the shell runs (off once it has ended). Up as the screen, it is the terminal again. */
+.term-home .term-out { padding-left: 18px; line-height: 1.75; }
+.term-home .term-out > :is(.term-lines, .fresh, .term-said) { display: block; position: relative; }
+.term-home .term-out > :is(.term-lines, .fresh) { color: var(--sub); }
+.term-home .term-out > .fresh:empty { display: none; }
+.term-home .term-out > .ps { position: relative; display: inline-block; margin-right: 6px; padding: 0 8px; border-radius: var(--r-round);
+  background: var(--screen); color: var(--screen-ps); font-size: 11.5px; line-height: 20px; vertical-align: 1px; }
+.term-home .term-out > .cmd { color: var(--ink); font-weight: 600; }
+.term-home .term-out > .ps::before, .term-home .term-out > .term-said::before {
+  content: ''; position: absolute; left: -18px; top: 5px; box-sizing: border-box; width: 10px; height: 10px; border-radius: 50%; }
+.term-home .term-out > .ps::before { border: 2px solid var(--ink); background: var(--ground); }
+.term-home .term-out > .ps.waits::before { border-color: var(--done); background: var(--done); box-shadow: 0 0 0 3px color-mix(in srgb, var(--done) 22%, transparent); }
+.term-home .term.ended .term-out > .ps.waits::before { border-color: var(--off); background: var(--off); box-shadow: none; }
+.term-home .term-out > :is(.term-lines, .fresh)::before { content: ''; position: absolute; left: -14px; top: -3px; bottom: -3px; width: 2px; border-radius: 1px; background: var(--rule); }
+.term-home .term-out > :is(.term-lines, .fresh):has(+ :is(.ps, .term-said)) { margin-bottom: 6px; }
+.term-home .term-out > :is(.term-lines, .fresh):has(+ :is(.ps, .term-said))::before { bottom: -7px; }
+.term-home .term-out > .term-said { margin: 2px 0 8px; }
+.term-home .term-out > .term-said::before { top: 7px; background: var(--ink); }
+.term-home .term-out > .term-said.said-todo::before { background: var(--done); }
+.term-home .term-said-go > b { display: inline-flex; align-items: center; gap: 3px; margin-right: 6px; padding: 0 8px; border-radius: var(--r-round);
+  background: var(--ink); color: var(--ground); font-size: 11.5px; line-height: 20px; vertical-align: 1px; }
+.term-home .said-todo .term-said-go > b { padding-left: 4px; background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge); }
+.term-home .said-todo .term-said-go > b > .icon { width: 13px; height: 13px; color: var(--done); }
+.term-home .said-words { font: 500 var(--t-meta)/1.5 var(--sans); color: var(--ink); }
+.term-home .term-said-go:hover, .term-home .term-said-go:focus-visible { text-decoration: none; }
+.term-home .term-said-go:is(:hover, :focus-visible) > .said-words { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
 @keyframes fresh { from { opacity: 0; } }
 /* What Tab could complete to, said under the box: paths, so monospace. */
 .prompt-note.paths { font-family: var(--mono); white-space: pre-wrap; }

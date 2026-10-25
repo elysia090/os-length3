@@ -7,6 +7,7 @@ import {filesNow, keepMore, keepReached, keepTranslation, keptNow, loadL3, promp
 import {every} from '../runs.ts';
 import {errorText} from '../errors.ts';
 import {LAND, paced, still} from '../glide.ts';
+import {mark as todoMark} from './todo-box.ts';
 
 // A shell per repo: in a browser, l3's root (its BusyBox sh, and every other
 // program of it) translated in a Worker; in the app, the same root on the
@@ -192,13 +193,24 @@ export class Session {
     this.output.scrollTo({top: this.output.scrollHeight});
     return row.querySelector('button')!;
   }
-  /** A line of the box's own, as it stands in the flow: its head (#3, TODO) and words, pressed to go to it. */
+  /**
+   * A line of the box's own, as it stands in the flow: its head as the box's pill said it (#3 in ink, TODO with its
+   * circle) and its words, which are a person's, not the shell's; pressed, it opens where it stands.
+   */
   private ownLine(line: string): HTMLElement {
     const words = line.slice(SAID.length, -1), cut = words.indexOf(' ');
-    const head = cut < 0 ? words : words.slice(0, cut);
-    const b = h('button', {type: 'button', class: 'term-said-go'}, h('b', {}, head), words.slice(head.length));
+    const head = cut < 0 ? words : words.slice(0, cut), todo = head === 'TODO';
+    // Its Kind's colon set as everywhere (todo-box.ts kindWords), the words as they were.
+    const said = words.slice(head.length), kind = /^(\s*[^\s：]+)：/.exec(said);
+    const b = h('button', {type: 'button', class: 'term-said-go'}, h('b', {}, ...(todo ? [todoMark(false)] : []), head),
+      h('span', {class: 'said-words'}, ...(kind ? [kind[1], h('span', {class: 'kind-colon'}, '：'), said.slice(kind[0].length)] : [said])));
     b.addEventListener('click', () => goes.get(line)?.(b));
-    return h('span', {class: 'term-said'}, SAID, b, '\n');
+    return h('span', {class: `term-said ${todo ? 'said-todo' : 'said-issue'}`}, SAID, b, '\n');
+  }
+  /** A line sent, after the prompt line it was written at: its words an element of their own, its line break after. */
+  private command(line: string): Node[] {
+    const ends = line.endsWith('\n');
+    return [h('span', {class: 'cmd'}, ends ? line.slice(0, -1) : line), ...(ends ? [document.createTextNode('\n')] : [])];
   }
 
   /**
@@ -248,8 +260,10 @@ export class Session {
     const moving = !matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (add !== null && add.length < 4000 && moving) {
       // The line just sent is the line written moved up a line, as a terminal's is: it does not come in again.
-      const echo = this.echo && add.startsWith(this.echo) ? this.echo : '';
-      if (echo) this.output.append(echo);
+      // Sent from elsewhere (a line pressed, Git), what goes on after the prompt line is the line run all the same.
+      const nl = add.indexOf('\n') + 1;
+      const echo = this.echo && add.startsWith(this.echo) ? this.echo : nl && this.prompts.has(this.drawnLast) ? add.slice(0, nl) : '';
+      if (echo) this.output.append(...this.command(echo));
       const lines = add.slice(echo.length).split(/(?<=\n)/).filter(Boolean);
       // Each a beat after the one above it, the first ONE_BY_ONE; the rest (a run printing hundreds a frame) all
       // together with the last of those, as one block, not hundreds of lines each coming in on its own.
@@ -307,7 +321,8 @@ export class Session {
     if (!fresh) {
       const nl = text.indexOf('\n');
       at = nl < 0 ? text.length : nl + 1;
-      if (at) out.push(document.createTextNode(text.slice(0, at)));
+      // After the prompt line it waited at, what goes on that line is what was run.
+      if (at) out.push(...(this.prompts.has(this.drawnLast) ? this.command(text.slice(0, at)) : [document.createTextNode(text.slice(0, at))]));
     }
     const end = text.lastIndexOf('\n') + 1;
     let block = '';
@@ -319,7 +334,7 @@ export class Session {
       at = nl;
       if (line.startsWith(SAID)) { close(); out.push(this.ownLine(line)); continue; }
       const ps = prompts.length ? prompts.find((p) => line.startsWith(p)) : undefined;
-      if (ps) { close(); out.push(h('span', {class: 'ps'}, ps), document.createTextNode(line.slice(ps.length))); continue; }
+      if (ps) { close(); out.push(h('span', {class: 'ps'}, ps), ...this.command(line.slice(ps.length))); continue; }
       block += line;
       if (block.length >= BLOCK) close();
     }

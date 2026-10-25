@@ -120,20 +120,21 @@ function lately(ctx: Context): HTMLElement {
       const text = left.at === null ? null : (await store.read(left.repo, left.path).catch(() => null))?.text ?? null;
       const end = text === null || left.at === null ? -1 : text.indexOf('\n', left.at);
       const quote = text === null ? '' : text.slice(0, end < 0 ? text.length : end).split('\n').reverse().find((l) => l.trim())?.trim() ?? '';
-      rows.push(latelyRow(left.path.slice(left.path.lastIndexOf('/') + 1), t('{repo} · where you left off', {repo: left.repo}), {quote,
+      rows.push(latelyRow(left.path.slice(left.path.lastIndexOf('/') + 1), t('{repo} · where you left off', {repo: left.repo}), {quote, badge: 'file',
         look: (row) => lookFrom(row, leftOffLook(left.repo, left.path, left.at, () => ctx.openRepo(left.repo, left.path, left.at === null ? 'end' : {at: left.at})))}));
     }
     if (connection()) {
       const [threads, all] = await Promise.all([inbox.threads().catch(() => []), servers.servers().catch(() => [])]);
       for (const th of waiting(threads, 3)) {
-        rows.push(latelyRow(th.name || inbox.shown(th.address), wordLine(th), {fresh: true,
+        const who = th.name || inbox.shown(th.address);
+        rows.push(latelyRow(who, wordLine(th), {fresh: true, badge: {who},
           look: (row) => lookFrom(row, threadLook(th.address, th.name, () => { openConversation(th.address); void ctx.go('inbox'); }))}));
       }
       for (const b of news().boards.slice(0, 3)) {
         const s = all.find((x) => x.id === b.server);
         const board = s?.boards.find((x) => x.id === b.id);
         if (!s || !board) continue;
-        rows.push(latelyRow(`#${board.name}`, t('{server} · new posts', {server: s.name}), {fresh: true, look: (row) => lookFrom(row, boardLook(board.id, board.name, () => {
+        rows.push(latelyRow(board.name, t('{server} · new posts', {server: s.name}), {fresh: true, badge: 'board', look: (row) => lookFrom(row, boardLook(board.id, board.name, () => {
           try { localStorage.setItem('length3.server.at', JSON.stringify({server: s.id, board: board.id})); } catch { /* a convenience */ }
           void ctx.go('server');
         }))}));

@@ -5,6 +5,7 @@ import * as inbox from '../inbox.ts';
 import {news, onNews} from '../news.ts';
 import {onPlugins, pluginsOpen, setPluginsOpen, slots} from '../plugins.ts';
 import {connection} from '../remote.ts';
+import {icon} from '../icons.ts';
 import {kindWords} from './todo-box.ts';
 import {lookFrom, threadLook} from './look.ts';
 
@@ -135,14 +136,24 @@ export function pluginArea(): HTMLElement {
   return area;
 }
 
+/** What a row is, in a round badge at its head: who wrote (their initial, on one of three soft tints, the same for the same name), a file, a board. */
+export type Badge = {who: string} | 'file' | 'board';
+function badge(b: Badge): HTMLElement {
+  if (b === 'file') return h('span', {class: 'lately-badge', 'aria-hidden': 'true'}, icon('file'));
+  if (b === 'board') return h('span', {class: 'lately-badge', 'aria-hidden': 'true'}, '#');
+  const tint = [...b.who].reduce((n, c) => n + c.codePointAt(0)!, 0) % 3;
+  return h('span', {class: 'lately-badge', 'data-tint': String(tint), 'aria-hidden': 'true'}, [...b.who.trim()][0]?.toUpperCase() ?? '?');
+}
+
 /**
- * A row of what waits, as Home's Lately and the bench's pane both show it: what it is (who wrote, the file, the
- * board), a dot while something of it is not read, a quoted line if it has one, and its line (what was said, where
- * it is). Pressed, it opens where it stands (look.ts), never at once another page.
+ * A row of what waits, as Home's Lately and the bench's pane both show it: what it is in a round badge (who wrote,
+ * the file, the board) and in words, a dot while something of it is not read, a quoted line if it has one, and its
+ * line (what was said, where it is). Word from someone is a bubble, as a message is. Pressed, it opens where it
+ * stands (look.ts), never at once another page.
  */
-export function latelyRow(what: string, line: Node[] | string, o: {fresh?: boolean; quote?: string; look(row: HTMLElement): void}): HTMLButtonElement {
-  const b = h('button', {type: 'button', class: 'lately-row', 'aria-expanded': 'false'},
-    h('span', {class: 'lately-what'}, h('span', {}, what), o.fresh ? h('span', {class: 'lately-dot', 'aria-hidden': 'true'}) : null),
+export function latelyRow(what: string, line: Node[] | string, o: {fresh?: boolean; quote?: string; badge: Badge; look(row: HTMLElement): void}): HTMLButtonElement {
+  const b = h('button', {type: 'button', class: `lately-row${typeof o.badge === 'object' ? ' said' : ''}`, 'aria-expanded': 'false'},
+    h('span', {class: 'lately-what'}, badge(o.badge), h('span', {}, what), o.fresh ? h('span', {class: 'lately-dot', 'aria-hidden': 'true'}) : null),
     o.quote ? h('span', {class: 'lately-quote'}, o.quote) : null,
     h('span', {class: 'muted small lately-line'}, ...(typeof line === 'string' ? [line] : line))) as HTMLButtonElement;
   b.addEventListener('click', () => o.look(b));
@@ -179,7 +190,7 @@ export function paneWord(open: (address: string) => void): HTMLElement {
     const rows = come.map((th) => {
       const who = th.name || inbox.shown(th.address);
       // The same row as Home's Lately, opening where it stands: its last lines and a reply; Inbox a deed further.
-      const b = latelyRow(who, wordLine(th), {fresh: true, look: (row) => lookFrom(row, threadLook(th.address, th.name, () => open(th.address)))});
+      const b = latelyRow(who, wordLine(th), {fresh: true, badge: {who}, look: (row) => lookFrom(row, threadLook(th.address, th.name, () => open(th.address)))});
       return {b, key: `${th.address} ${th.last.time}`};
     });
     list.replaceChildren(...rows.map((r) => r.b));
