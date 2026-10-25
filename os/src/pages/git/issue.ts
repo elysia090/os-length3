@@ -134,61 +134,76 @@ export function issueHead(issue: Issue, peek = false): HTMLElement {
 
 /** The box: the issue's words, where it stands, and the way into its work (or back out). */
 export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEvents, after: () => void): HTMLElement {
-  const at = issue.repo;
-  const path = issuePath(issue);
   const error = h('p', {class: 'error', role: 'alert'});
-  const line = s?.lines.find((l) => l.issue === path) ?? null;
   const here = hereOf(s, issue);
   const change = connection() ? changeFor(s, issue) : null;
-  const acts: Node[] = [];
-  let leave: HTMLButtonElement | null = null;
-  // Nothing is offered until where it stands is known.
-  const known = connection() && !s?.error;
-  if (known && !here && change?.state !== 'open') {
-    const go = button(line ? t('Continue here') : t('Start'), true);
-    go.addEventListener('click', doing(go, error, async () => {
-      if (line) await git.switchWork(at, line.line); else await git.startWork(at, issue.file);
-      events.moved(at);
-    }, after));
-    acts.push(go);
-  }
+  // Nothing is offered until where it stands is known; nor while it is worked on here, or its change is in.
+  const offered = connection() && !s?.error && !here && change?.state !== 'open';
+  const acts: Node[] = offered ? [startDeed(issue, s, error, events, after)] : [];
   // One that will not be done is closed, at the foot's left as what goes against the box: it goes
   // under Closed, where Reopen brings it back. Only while the repo shows main, whose issue/ it is in.
-  if (known && !here && change?.state !== 'open' && s?.work?.line === 'main') {
-    leave = button(t('Close'));
-    leave.title = t('Will not be done: it goes under Closed, where it can be reopened');
-    leave.addEventListener('click', doing(leave, error, async () => {
-      // It goes down as it is closed, toward Closed under the page, where its line lands lit; not closed, it is back.
-      const going = still() ? null : (leave!.closest('.issue-slot') ?? leave!.closest('.issue-box'))?.animate([{transform: 'none', opacity: 1}, {transform: 'translateY(28px) scale(.97)', opacity: 0}],
-        {duration: paced(240), easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards'});
-      try { await Promise.all([closeIssue(issue), going?.finished]); } catch (e) { going?.cancel(); throw e; }
-      closedNow = {repo: issue.repo, path: issuePath(issue), until: performance.now() + 3000};
-    }, after));
-  }
-  // At the box's foot, opposite its action: its repo and, quietly, who started it and when.
-  const say = !connection() ? t('History and work are kept on the Remote. Sign in to it to work on an issue and commit.') : s?.error ?? standing(s, issue);
+  const leave = offered && s?.work?.line === 'main' ? closeDeed(issue, error, after) : null;
   // Its title is changed where it is read: pressed, the head becomes the fields it was written in. Its summary is
   // written right under it, above Commit and Push.
   const words = h('button', {type: 'button', class: 'issue-words', title: t('Change its words')}, issueHead(issue));
   const work = here && s?.work ? steps(issue, s, events, after) : null;
-  // Started here just now: its steps unfold where Start was, the next thing to do coming in after the deed (and the
-  // box drawn again meanwhile, as it is once the repo is read again, carries the unfolding on from where it was).
-  if (work && justDone && (justDone.word === t('Start') || justDone.word === t('Continue here')) && performance.now() < justDone.until) {
-    justDone = null;
-    started = {path, at: performance.now()};
-  }
-  if (work && started?.path === path) arrive(work.element, -1, 'y', 10, 280, performance.now() - started.at);
+  if (work) unfolding(work.element, issuePath(issue));
   // The change's power switch, low at the box's right, where its foot's action is.
   if (work?.reset) acts.push(work.reset);
   const box = h('div', {class: 'issue-box'},
     words, summary(issue, after),
     ...(work ? [work.element] : change?.state === 'open' ? [received(change)] : []),
-    h('div', {class: 'issue-foot'}, leave, h('div', {class: 'issue-about'}, h('span', {class: 'issue-where'}, issue.repo), say ? h('span', {class: s?.error ? 'error small' : 'muted small'}, say) : null), ...acts), error);
+    foot(issue, s, leave, acts), error);
   const editor = () => issueEditor(issue, (saved) => { if (saved) after(); else box.replaceWith(issueBox(issue, s, events, after)); });
   words.addEventListener('click', () => words.replaceWith(editor()));
   // Its words half changed when the box was left: the box opens as the fields, as they were.
   if (beingChanged(issue)) words.replaceWith(editor());
   return box;
+}
+
+/** Start, or Continue here where it was started before: the issue's own copy of the repo is the one shown. */
+function startDeed(issue: Issue, s: RepoState | undefined, error: HTMLElement, events: IssueEvents, after: () => void): HTMLButtonElement {
+  const at = issue.repo;
+  const line = s?.lines.find((l) => l.issue === issuePath(issue)) ?? null;
+  const go = button(line ? t('Continue here') : t('Start'), true);
+  go.addEventListener('click', doing(go, error, async () => {
+    if (line) await git.switchWork(at, line.line); else await git.startWork(at, issue.file);
+    events.moved(at);
+  }, after));
+  return go;
+}
+
+/** Close: it will not be done, and goes under Closed. */
+function closeDeed(issue: Issue, error: HTMLElement, after: () => void): HTMLButtonElement {
+  const leave = button(t('Close'));
+  leave.title = t('Will not be done: it goes under Closed, where it can be reopened');
+  leave.addEventListener('click', doing(leave, error, async () => {
+    // It goes down as it is closed, toward Closed under the page, where its line lands lit; not closed, it is back.
+    const going = still() ? null : (leave.closest('.issue-slot') ?? leave.closest('.issue-box'))?.animate([{transform: 'none', opacity: 1}, {transform: 'translateY(28px) scale(.97)', opacity: 0}],
+      {duration: paced(240), easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards'});
+    try { await Promise.all([closeIssue(issue), going?.finished]); } catch (e) { going?.cancel(); throw e; }
+    closedNow = {repo: issue.repo, path: issuePath(issue), until: performance.now() + 3000};
+  }, after));
+  return leave;
+}
+
+/**
+ * Started here just now: its steps unfold where Start was, the next thing to do coming in after the deed (and the
+ * box drawn again meanwhile, as it is once the repo is read again, carries the unfolding on from where it was).
+ */
+function unfolding(steps: HTMLElement, path: string) {
+  if (justDone && (justDone.word === t('Start') || justDone.word === t('Continue here')) && performance.now() < justDone.until) {
+    justDone = null;
+    started = {path, at: performance.now()};
+  }
+  if (started?.path === path) arrive(steps, -1, 'y', 10, 280, performance.now() - started.at);
+}
+
+/** At the box's foot, opposite its action: its repo and, quietly, who started it and when; Close at its left. */
+function foot(issue: Issue, s: RepoState | undefined, leave: HTMLElement | null, acts: Node[]): HTMLElement {
+  const say = !connection() ? t('History and work are kept on the Remote. Sign in to it to work on an issue and commit.') : s?.error ?? standing(s, issue);
+  return h('div', {class: 'issue-foot'}, leave, h('div', {class: 'issue-about'}, h('span', {class: 'issue-where'}, issue.repo),
+    say ? h('span', {class: s?.error ? 'error small' : 'muted small'}, say) : null), ...acts);
 }
 
 /**
