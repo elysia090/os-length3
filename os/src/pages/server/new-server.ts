@@ -23,7 +23,7 @@ import {button, type Here, type Writer} from './parts.ts';
 let draft: [string, string] = ['', ''];
 
 /** What making a server needs of the view it is in. */
-export interface MakingWays {
+interface MakingWays {
   writer: Writer;
   /** The chip being named, put in the band where the server will stand. */
   naming(chip: HTMLElement): void;
@@ -45,42 +45,17 @@ const slug = (v: string) => v.toLowerCase().normalize('NFKD').replace(/[^a-z0-9.
  * in their places: its board's two slides and the box at the foot. Its name's field is returned to take the keyboard.
  */
 export function nameServer(here: Here, ways: MakingWays): {name: HTMLInputElement; slides: HTMLElement[]; dock: HTMLElement} {
-  const name = h('input', {class: 'server-name-in', maxlength: '64', placeholder: t('Trip'), 'aria-label': t('Name')}) as HTMLInputElement;
-  const handle = h('input', {class: 'server-handle-in mono', maxlength: '31', placeholder: 'trip', autocapitalize: 'off', spellcheck: 'false',
-    'aria-label': t('Name on this Remote'),
-    title: t('First come, as a person\'s: nobody else\'s while the server has it, renewed by its owner every five years.')}) as HTMLInputElement;
-  // Its address follows its name until it is written itself.
-  let own = false;
-  const fit = fitting(name, handle);
-  // Its name on this Remote follows its name unseen (Trip is trip): the chip says one name, not two. The quiet @
-  // after it shows the address to write it otherwise, and it shows itself when the one it would be is taken.
-  const at = h('button', {type: 'button', class: 'server-at', 'aria-label': t('Name on this Remote'), title: t('Name on this Remote')}, '@') as HTMLButtonElement;
-  const address = h('span', {class: 'server-address', hidden: ''}, h('span', {class: 'muted', 'aria-hidden': 'true'}, '@'), handle);
-  const reveal = () => { at.hidden = true; address.hidden = false; fit(); handle.focus(); handle.select(); };
-  at.addEventListener('click', reveal);
-  // Half written before, it is as it was left.
-  const [was, wasAt] = draft;
-  if (was || wasAt) {
-    name.value = was;
-    handle.value = wasAt || slug(was);
-    own = !!wasAt;
-    if (own) { at.hidden = true; address.hidden = false; }
-  }
+  const {name, handle, label, fit, reveal} = fields();
   const make = button(t('Make'), 'small-button primary');
   // What the Remote said no to, at the chip's end: the plan, a name taken, a name of one's own to claim first.
   const ask = h('span', {class: 'server-ask', role: 'alert'});
-  const chip = h('span', {class: 'server-making'}, h('label', {class: 'chip server-naming'}, name, at, address), make, ask);
+  const chip = h('span', {class: 'server-making'}, label, make, ask);
   // Its people, as the box at the foot will say them: by the name being written.
   const people = h('span', {}, name.value.trim() || t('Trip'));
-  const keep = () => { draft = name.value || own ? [name.value, own ? handle.value : ''] : ['', '']; };
   name.addEventListener('input', () => {
-    if (!own) handle.value = slug(name.value);
-    fit();
     chip.classList.toggle('named', !!name.value.trim());
     people.textContent = name.value.trim() || t('Trip');
-    keep();
   });
-  handle.addEventListener('input', () => { own = handle.value !== ''; fit(); keep(); });
   ways.naming(chip);
   fit();
   chip.classList.toggle('named', !!name.value.trim());
@@ -102,6 +77,38 @@ export function nameServer(here: Here, ways: MakingWays): {name: HTMLInputElemen
   make.addEventListener('click', () => void done());
   for (const f of [name, handle]) f.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); void done(); } });
   return {name, slides: ghostBoard(heldServers(ways)), dock: ghostDock(people)};
+}
+
+/**
+ * The chip's fields, as they were left (`draft`): its name, and its name on this Remote, which follows the name until
+ * it is written itself. `reveal` shows that address, to be written otherwise.
+ */
+function fields() {
+  const name = h('input', {class: 'server-name-in', maxlength: '64', placeholder: t('Trip'), 'aria-label': t('Name')}) as HTMLInputElement;
+  const handle = h('input', {class: 'server-handle-in mono', maxlength: '31', placeholder: 'trip', autocapitalize: 'off', spellcheck: 'false',
+    'aria-label': t('Name on this Remote'),
+    title: t('First come, as a person\'s: nobody else\'s while the server has it, renewed by its owner every five years.')}) as HTMLInputElement;
+  // Its address follows its name until it is written itself.
+  let own = false;
+  const fit = fitting(name, handle);
+  // Its name on this Remote follows its name unseen (Trip is trip): the chip says one name, not two. The quiet @
+  // after it shows the address to write it otherwise, and it shows itself when the one it would be is taken.
+  const at = h('button', {type: 'button', class: 'server-at', 'aria-label': t('Name on this Remote'), title: t('Name on this Remote')}, '@') as HTMLButtonElement;
+  const address = h('span', {class: 'server-address', hidden: ''}, h('span', {class: 'muted', 'aria-hidden': 'true'}, '@'), handle);
+  const reveal = () => { at.hidden = true; address.hidden = false; fit(); handle.focus(); handle.select(); };
+  at.addEventListener('click', reveal);
+  const keep = () => { draft = name.value || own ? [name.value, own ? handle.value : ''] : ['', '']; };
+  name.addEventListener('input', () => { if (!own) handle.value = slug(name.value); fit(); keep(); });
+  handle.addEventListener('input', () => { own = handle.value !== ''; fit(); keep(); });
+  // Half written before, it is as it was left.
+  const [was, wasAt] = draft;
+  if (was || wasAt) {
+    name.value = was;
+    handle.value = wasAt || slug(was);
+    own = !!wasAt;
+    if (own) { at.hidden = true; address.hidden = false; }
+  }
+  return {name, handle, label: h('label', {class: 'chip server-naming'}, name, at, address), fit, reveal};
 }
 
 /** Each field as wide as what is written in it (or its placeholder), as a chip is. */
