@@ -61,6 +61,7 @@ function startMessage(repo: string, l3: L3, copy: Awaited<ReturnType<typeof snap
   };
 }
 
+/** A repo's shell: started as it is made, what it printed on its element, the lines run in it, how it ended. */
 export class Session {
   readonly element: HTMLElement;
   private out = new Output();
@@ -402,10 +403,12 @@ export const allSessions = (): [string, Session][] => [...sessions];
 /** The repo's session if one is running, without starting one. */
 export const sessionIfAny = (repo: string): Session | undefined => sessions.get(repo);
 
+/** The repo's session, started if it has none. */
 export function sessionFor(repo: string): Session {
   let s = sessions.get(repo);
   if (!s) { s = new Session(repo); sessions.set(repo, s); }
   return s;
 }
 
+/** The repo's Prompt as it is shown, its session started if it has none. */
 export const terminalFor = (repo: string): HTMLElement => sessionFor(repo).element;

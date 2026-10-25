@@ -64,7 +64,7 @@ function glide(els: HTMLElement[], was: DOMRect[], o: KeyframeAnimationOptions, 
   });
 }
 
-export interface ScreenParts {
+interface ScreenParts {
   /** What carries the state's classes (the bench). */
   work: HTMLElement;
   screen: HTMLElement;
@@ -83,6 +83,7 @@ export interface ScreenParts {
   changed(state: ScreenState): void;
 }
 
+/** The Prompt up as a screen over the center and back into the box: its state, and the ways between them. */
 export class Screen {
   #state: ScreenState = 'rest';
   /** The box at rest (its pill, in the screen), and the line's parts where they stood: where it goes back to. */

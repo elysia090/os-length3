@@ -68,6 +68,7 @@ function caretAtRead(area: HTMLTextAreaElement) {
 /** The file Edit works on: its path, and the editor it is written in. */
 interface Front { path: string; area: HTMLTextAreaElement }
 
+/** What Edit is given by the box it is part of (box.ts). */
 export interface EditParts {
   box: HTMLTextAreaElement;
   /** The page's content, where the repo's files are read (Forge's boxes, `.col[data-repo]`). */

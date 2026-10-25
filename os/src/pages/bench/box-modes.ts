@@ -35,7 +35,7 @@ export function setBoxMode(m: Mode) {
 export function onBoxMode(f: (m: Mode) => void): () => void { heard.add(f); return () => heard.delete(f); }
 
 /** What each is called where it is chosen. */
-export const modeWord = (m: Mode): string =>
+const modeWord = (m: Mode): string =>
   (m === 'run' ? t('Run in the Prompt') : m === 'issue' ? t('Write an issue') : m === 'todo' ? t('Add to TODO') : t('Edit the file in front'));
 /** The word on the box's own button. */
 export const sendWord = (m: Mode): string => (m === 'run' ? t('Run') : m === 'issue' ? t('Create') : m === 'todo' ? t('Add') : t('Apply'));
@@ -77,7 +77,7 @@ export function pillWords(m: Mode, repo: string | null, number: number | null, a
  * What was sent: its head and words as its line in the Prompt's flow says them (#3 and its title; TODO and its
  * words), what it is to go back to it (the issue's file, or Home's TODO), and what is said of it to be heard.
  */
-export interface Sent { head: string; words: string; to: {issue: string} | {todo: string}; said: string }
+interface Sent { head: string; words: string; to: {issue: string} | {todo: string}; said: string }
 
 /** Write `text` from the box as `m` (an issue of `repo`, or a TODO about it); null when there is nothing to send. */
 export async function sendAs(m: 'issue' | 'todo', repo: string, text: string): Promise<Sent | null> {
