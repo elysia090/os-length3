@@ -1133,8 +1133,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
    terminal's, of the app's colours (its ink, its green): dark glass, the page behind it only a blur in its top where
    glass catches the light, its words lit. Its edge is a fine rim inside it, no shadow under it and no shade over the
    window: it is the box at the foot, lit, not a layer over the page. The raster, the falloff to its edges and the soft
-   light across its top are the screen's own (DESIGN.md); the rounded light on its face is lent to the things pressed
-   or chosen (at the end of this file). */
+   light across its top are the screen's own; nothing else in the app has them (DESIGN.md). */
 .work.bench:is(.prompting, .prompt-leaving) .screen {
   position: relative; border-radius: var(--r-card); color: var(--add-tint);
   text-shadow: 0 0 6px color-mix(in srgb, var(--done) 70%, transparent), 0 0 1px color-mix(in srgb, var(--add-tint) 80%, transparent);
@@ -2794,29 +2793,6 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .seen-text { margin: 0; padding: var(--s3) var(--s4); overflow: auto; white-space: pre; font: var(--t-meta)/1.55 var(--mono); }
 @media (max-width: 760px) { .seen-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); } .seen-files { max-height: 30vh; border-right: 0; border-bottom: 1px solid var(--rule); } }
 .home-servers { display: flex; flex-wrap: wrap; gap: var(--s2); }
-
-/* Rounded as the Prompt's glass is: a thing pressed or chosen has a face that swells toward the eye, lit at its top left
-   where the glass catches its light and falling off to its edges, a lip of shade at its foot. Its colours are its
-   own; only the light on it is the glass's. Ink things take it as the glass does (the screen's pills too); things on
-   the ground, a step fainter. Large sheets stay flat paper: on them it reads as gloss, not as a face. */
-:is(.rail-item[aria-current='page'], .button.primary, .chip[aria-current], .chip[aria-checked='true'], .chip[aria-pressed='true'],
-.pill[aria-current], .term-said-go > b, .tl-new, .part[aria-selected='true'], .power .knob, .prompt-chip:not([data-mode='todo'], [data-mode='edit'])) {
-  background-image: radial-gradient(75% 65% at 30% 0%, rgb(255 255 255 / .17), transparent 72%), radial-gradient(130% 150% at 50% 40%, transparent 55%, rgb(0 0 0 / .3) 100%);
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / .06), inset 0 -5px 8px -5px rgb(0 0 0 / .35);
-}
-.term-home .term-out > .ps {
-  background-image: radial-gradient(75% 65% at 30% 0%, rgb(255 255 255 / .17), transparent 72%), radial-gradient(130% 150% at 50% 40%, transparent 55%, rgb(0 0 0 / .3) 100%);
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / .06), inset 0 -5px 8px -5px rgb(0 0 0 / .35);
-}
-:is(.button:not(.primary), .chip:not([aria-current], [aria-checked='true'], [aria-pressed='true']), .pill:not([aria-current]), .band-add, .pane-toggle, .me,
-.lately-badge[data-tint]) {
-  background-image: radial-gradient(80% 70% at 30% 0%, rgb(255 255 255 / .8), transparent 72%), radial-gradient(130% 150% at 50% 40%, transparent 58%, rgb(0 0 0 / .07) 100%);
-  box-shadow: inset 0 -5px 8px -6px rgb(0 0 0 / .13);
-}
-/* The box's paper pills (TODO, Edit) keep their edge and take the fainter light. */
-.prompt-chip:is([data-mode='todo'], [data-mode='edit']) {
-  background-image: radial-gradient(80% 70% at 30% 0%, rgb(255 255 255 / .8), transparent 72%), radial-gradient(130% 150% at 50% 40%, transparent 58%, rgb(0 0 0 / .07) 100%);
-}
 
 /* Asked for less motion, nothing travels or fades: each thing is where it ends at once. */
 @media (prefers-reduced-motion: reduce) {
