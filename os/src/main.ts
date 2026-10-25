@@ -256,6 +256,7 @@ const named = () => {
 function render() {
   const page = $('page');
   page.classList.toggle('page-work', current === 'forge' || current === 'git');
+  page.classList.toggle('page-inbox', current === 'inbox');
   fileTree.mark(current === 'forge' ? openRepo : null);
   fileTree.markFile(current === 'forge' ? openRepo : null, current === 'forge' ? readingPath : null);
   const nodes = current === 'home' ? home(ctx)

@@ -1762,8 +1762,10 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
    the page's foot, where the rail's line ends; never under 440 px, a short window scrolling to the rest. */
 .page:has(> div > .inbox-page) { display: flex; flex-direction: column; height: var(--inner-h); padding-bottom: 0; }
 .page > div:has(> .inbox-page) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-/* Each as wide as a page's part is (a column of the page's flex would shrink to what it holds and stand centred). */
-.page:has(> div > .inbox-page) > * { width: 100%; }
+/* Each as wide as a page's part is (a column of the page's flex would shrink to what it holds and stand centred). By
+   the page's class, not by what it holds: a :has() before `> *` is asked again of the whole page at every change in it
+   (a line in a Prompt's output cost a 40 ms restyle of Forge), a class only when it changes. */
+.page.page-inbox > * { width: 100%; }
 .inbox-page { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: auto minmax(0, 1fr); column-gap: var(--s5);
   row-gap: var(--s3); margin-top: var(--s5); flex: 1; min-height: 440px; }
 .inbox-page > .stub-holder { grid-area: 1 / 1 / 2 / 2; margin: 0; }
