@@ -136,7 +136,7 @@ test("a repo's name in Runtime is the repo itself; its gear offers Forge or Free
   await app.answer(ask.getByRole('button', {name: 'Free', exact: true}), ask);
   // What it came to, over the box; and it is on the Remote now, to fetch.
   await expect(panel.getByRole('status').filter({hasText: 'Let go of'})).toBeVisible();
-  const remote = panel.getByRole('region', {name: /^On the Remote/});
+  const remote = panel.getByRole('region', {name: /^Only on the Remote/});
   await expect(remote.getByRole('button', {name: 'notes', exact: true})).toBeVisible();
   await remote.getByRole('button', {name: 'What to do with notes'}).click();
   const there = remote.getByRole('menu', {name: 'What to do with notes'});

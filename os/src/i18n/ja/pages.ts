@@ -227,7 +227,7 @@ export default {
   'Written over since: undo it in the file': 'その後に書き換えられています：ファイルで元に戻してください',
   'Click a line': '行をクリック',
   'rewrite it here': 'ここで書き直す',
-  'Line {n}: write it anew here, Enter puts it back': '{n}行目：ここで書き直して Enter で戻す',
+  'Line {n}: write it anew here, Escape leaves it as it is': '{n}行目：ここで書き直す（Escape でそのまま）',
   'Line {n}: Enter writes it, Escape leaves it as it was': '{n}行目：Enter で書き込み、Escape でそのまま',
   'Line {n} as it was': '{n}行目はそのまま',
 } as Record<string, string>;

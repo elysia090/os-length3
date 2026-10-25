@@ -56,8 +56,14 @@ interface Row {
 }
 
 /** A TODO list on screen: its box, and taking in the list as it now is elsewhere. */
-/** A kind as it is written (Fix：), its colon tucked against the word as a colon is beside a Latin word (styles.css). */
-export const kindWords = (kind: string): Node[] => [document.createTextNode(kind), h('span', {class: 'kind-colon'}, '：')];
+/**
+ * A kind's colon as it is written (the full-width "："), drawn as a colon is beside a Latin word, against it with a
+ * space's room after (styles.css): the written one is kept in the text (copied, heard), the one seen is the face's own,
+ * since where a full-width colon stands in its box is each font's (centred in one, at the left in another).
+ */
+export const kindColon = (): HTMLElement => h('span', {class: 'kind-colon'}, h('span', {class: 'kind-colon-said'}, '：'));
+/** A kind as it is written (Fix：), its colon tucked against the word (kindColon). */
+export const kindWords = (kind: string): Node[] => [document.createTextNode(kind), kindColon()];
 
 export interface TodoList {
   element: HTMLElement;

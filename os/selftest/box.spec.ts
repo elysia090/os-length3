@@ -159,7 +159,7 @@ test('Edit: a line of the file pressed comes into the box as it is, written anew
   await page.mouse.click(r.x + r.width - 8, r.y + 4.5 * lh);
   await expect(box).toBeFocused();
   await expect(box).toHaveValue('    return 0;');
-  await expect(note).toHaveText('Line 5: write it anew here, Enter puts it back');
+  await expect(note).toHaveText('Line 5: write it anew here, Escape leaves it as it is');
   // ↑, nothing written in it yet: the line above instead.
   await box.press('ArrowUp');
   await expect(box).toHaveValue('    puts("hello");');

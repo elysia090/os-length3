@@ -269,7 +269,7 @@ export class EditLine {
     if (k) {
       const line = lineOf(lineStarts(k.area.value), k.from);
       drawMarks(k.area, [{from: k.from, to: k.to, kind: 'lines', now: true}]);
-      this.#p.say(typed === k.text ? t('Line {n}: write it anew here, Enter puts it back', {n: line + 1})
+      this.#p.say(typed === k.text ? t('Line {n}: write it anew here, Escape leaves it as it is', {n: line + 1})
         : t('Line {n}: Enter writes it, Escape leaves it as it was', {n: line + 1}));
       return;
     }

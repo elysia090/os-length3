@@ -9,11 +9,24 @@ import {findInText, nameFirst, nameMatches, stillAt, type Hit} from '../search.t
 import {sessionIfAny, type Run} from './terminal.ts';
 import {answers} from './common.ts';
 import {connection} from '../remote.ts';
-import {kindWords} from './todo-box.ts';
+import {kindColon, kindWords} from './todo-box.ts';
 
+/** `text` with each place `query` is in it (any case) marked, as a line found is. */
+const markedIn = (text: string, query: string): Node[] => {
+  if (!query) return [document.createTextNode(text)];
+  const out: Node[] = [], low = text.toLowerCase(), q = query.toLowerCase();
+  let at = 0;
+  for (let k = low.indexOf(q); k >= 0; k = low.indexOf(q, k + q.length)) {
+    if (k > at) out.push(document.createTextNode(text.slice(at, k)));
+    out.push(h('mark', {}, text.slice(k, k + q.length)));
+    at = k + q.length;
+  }
+  if (at < text.length) out.push(document.createTextNode(text.slice(at)));
+  return out;
+};
 /** A line as written, a full-width colon after a Latin word ("Fix：") tucked against it as kindWords tucks it. */
 const tucked = (text: string): Node[] => text.split(/(?<=[A-Za-z0-9])(：)/).filter(Boolean)
-  .map((x) => x === '：' ? h('span', {class: 'kind-colon'}, x) : document.createTextNode(x));
+  .map((x) => x === '：' ? kindColon() : document.createTextNode(x));
 
 // The way to what the center refers to: the search box over the right pane,
 // reaching a quarter of the pane's width into the center so that what opens
@@ -461,9 +474,11 @@ export class Reference {
     this.unwatch = session ? session.watch(draw) : null;
   }
 
-  private issueButton(i: Issue): HTMLElement {
+  /** An issue as a row: its number, its kind and its title; found by a search (`query`), what was found in the title is marked as in a line. */
+  private issueButton(i: Issue, query = ''): HTMLElement {
     const b = h('button', {type: 'button', class: 'choice found-item'}, h('span', {class: 'found-what'},
-      issueName(i) ? h('span', {class: 'issue-no'}, `${issueName(i)} `) : null, i.kind ? h('span', {class: 'issue-kind'}, ...kindWords(i.kind)) : null, i.title));
+      issueName(i) ? h('span', {class: 'issue-no'}, `${issueName(i)} `) : null, i.kind ? h('span', {class: 'issue-kind'}, ...kindWords(i.kind)) : null,
+      ...markedIn(i.title, query)));
     b.addEventListener('click', () => this.readIssue(i));
     return b;
   }
@@ -578,6 +593,9 @@ export class Reference {
     const issueHits = !kind || kind === 'issue' ? issues.filter((i) => `${issueName(i)} ${i.kind ?? ''}：${i.title}\n${i.detail}`.toLowerCase().includes(q)).slice(0, OTHER_LIMIT) : [];
     const diffHits = kind === 'diff' ? changed.filter((c) => c.path.toLowerCase().includes(q) || fileName(c.path).toLowerCase().includes(q)).slice(0, OTHER_LIMIT) : [];
     const runs = !kind || kind === 'output' ? (sessionIfAny(repo)?.runs ?? []).slice().reverse().filter((r) => r.line.toLowerCase().includes(q) || r.output.toLowerCase().includes(q)).slice(0, OTHER_LIMIT) : [];
+    // An issue found is said once, as the issue (its number, kind and title), not again as its file's lines.
+    const asIssue = new Set(issueHits.map((i) => issuePath(i)));
+    for (let k = groups.length - 1; k >= 0; k--) if (asIssue.has(groups[k].path)) { total -= groups[k].hits.length; groups.splice(k, 1); }
     if (!groups.length && !issueHits.length && !diffHits.length && !runs.length) {
       this.body.replaceChildren(h('p', {class: 'muted small'}, t('Nothing found for “{query}”', {query})));
       return;
@@ -606,7 +624,11 @@ export class Reference {
         return b;
       })));
     }
-    if (issueHits.length) said.push(h('div', {class: 'hit-group'}, h('h3', {class: 'hit-kind'}, t('Issue')), ...issueHits.map((i) => this.issueButton(i))));
+    if (issueHits.length) said.push(h('div', {class: 'hit-group'}, h('h3', {class: 'hit-kind'}, t('Issue')), ...issueHits.map((i) => {
+      const b = this.issueButton(i, query);
+      b.style.setProperty('--i', String(Math.min(stroke++, 16)));
+      return b;
+    })));
     if (diffHits.length) said.push(h('div', {class: 'hit-group'}, h('h3', {class: 'hit-kind'}, t('diff')), ...diffHits.map((c) => {
       const b = h('button', {type: 'button', class: 'choice found-item'}, h('span', {class: 'found-what mono'}, fileName(c.path)),
         counted(c.added, c.removed));

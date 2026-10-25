@@ -612,12 +612,15 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
 .todo-box .todo-mark:hover { color: var(--ink); background: var(--ground); }
 /* The kind is a word, not a button: bold, no outline. */
 .todo-kind { font-weight: 700; }
-/* The kind's colon is the issue's own (Fix：), a full-width one; beside a Latin word its empty halves are taken in,
-   so it sits against the word as a colon does, a small space after it: "Fix: The title", not "Fix :   The title". */
-/* The colon after a Kind, full-width as it is written: drawn close to its Kind, with a little room before the words
-   (its own room taken in more on the left than the right). Inline, so a name read out is the words as written. */
-.kind-colon { margin: 0 -.2em 0 -.38em; }
-.issue-kind { margin-right: .12em; }
+/* The kind's colon is the issue's own (Fix：), a full-width one; seen, it is the face's own colon against the word
+   and a space's room after it: "Fix: The title", not "Fix :   The title", whatever font has the full-width one (each
+   puts it somewhere else in its box). The written one stays in the text, out of sight (todo-box.ts kindColon). */
+.kind-colon { margin-right: .25em; }
+.kind-colon::before { content: ':'; content: ':' / ''; }
+/* Inline, of no size: heard and copied as part of the words (a box of its own would be heard apart from them). */
+.kind-colon-said { font-size: 0; }
+/* In a TODO the title is a column of its own: the head's gap is the space. */
+.todo-kind > .kind-colon { margin-right: 0; }
 .todo-title { border: 0; background: transparent; min-height: var(--h-control); padding: 0; font-size: var(--t-body); font-weight: 600; }
 .todo-title::placeholder { color: var(--sub); font-weight: 400; }
 /* Read, the title is text: centred on the mark's line as the field is. */
@@ -767,7 +770,7 @@ button.row-item { cursor: var(--cursor-hand); width: 100%; }
 button.row-item:hover:not(:disabled) { background: var(--raised); }
 button.row-item:disabled { cursor: var(--cursor-arrow); color: var(--sub); }
 .row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.row-meta { flex: none; color: var(--sub); font: var(--t-meta) var(--mono); }
+.row-meta { flex: none; color: var(--sub); font-size: var(--t-meta); font-variant-numeric: tabular-nums; }
 /* A phone has no room for a row's name beside its facts: the name takes its own line, the facts the next, the deed
    still at the right end. Before, the facts (which never shrink) squeezed the name to nothing (a device unnamed). */
 @media (max-width: 560px) {
@@ -1133,7 +1136,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 /* Its lines one after another, the head's gap above them alone: rows with nothing in them (what it says while it
    starts, what a run is doing) take no room. */
 :is(.prompting, .prompt-leaving) .screen .term { row-gap: 0; }
-:is(.prompting, .prompt-leaving) .screen :is(.term > p, .term-activity) { padding-block: var(--s1); }
+:is(.prompting, .prompt-leaving) .screen .term > p { padding-block: var(--s1); }
 /* The prompt lines the shell waited at, in the green; the one it waits at now is the box's line's start (bench.ts). */
 :is(.prompting, .prompt-leaving) .screen .term-out > .ps { color: var(--screen-ps); }
 :is(.prompting, .prompt-leaving) .screen .term-out > .ps.waits { display: none; }
@@ -1237,6 +1240,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .box-mode-keys { display: inline-flex; gap: var(--s1); }
 .box-mode-keys > kbd { color: var(--sub); border-color: var(--rule); }
 .box-mode[aria-checked='true'] > .box-mode-word { font-weight: 600; }
+.box-mode[aria-checked='true'] > .box-mode-word::after { content: ''; display: inline-block; width: 14px; height: 14px; margin-left: var(--s2); vertical-align: -2px; background: var(--ink); mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat; }
 .screen .prompt-in { --cell: var(--ink); font: var(--t-meta)/1.6 var(--mono); }
 .screen .prompt-in::placeholder { color: transparent; text-shadow: none; }
 /* At rest the box's words, the pill's and what is written beside them, come down onto its middle by their capitals
@@ -1277,6 +1281,12 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .prompt-in:focus { outline: none; }
 .prompt-in:disabled { cursor: var(--cursor-arrow); }
 .prompt-note:empty { display: none; }
+/* Over the center, what the box says stands on a strip of ground of its own, as what was searched does under the
+   search: the file's edge under it never runs through its words. They start where the box's words start. */
+.dock > .prompt-note {
+  justify-self: start; width: fit-content; max-width: 100%; margin: 0; padding: 0 calc(var(--s4) + 1px);
+  border-radius: var(--r-round); background: var(--ground);
+}
 /* What can be written in Edit's empty box (edit-box.ts), each as it is written and what it does, in one quiet line. */
 /* One line, whatever the width (the box never moves for it): what does not fit goes to a second line, out of sight,
    whole, never cut in two. */
@@ -1384,6 +1394,8 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 @keyframes fresh { from { opacity: 0; } }
 /* What Tab could complete to, said under the box: paths, so monospace. */
 .prompt-note.paths { font-family: var(--mono); white-space: pre-wrap; }
+/* Several of them run to more than one line: a sheet's corner, not a pill's ends. */
+.dock > .prompt-note.paths { padding-block: var(--s1); border-radius: var(--r-field); }
 /* Server over any page: its own place in the bench's shape, to the window's foot so nothing of the page shows below it. */
 .server-layer { position: fixed; top: 0; bottom: 0; left: calc(var(--outer) + var(--rail)); right: 0; z-index: 4; padding: var(--outer-top) var(--outer) var(--outer-bottom) 0; background: var(--ground); animation: layer-in var(--move) cubic-bezier(.2, .9, .25, 1); }
 @keyframes layer-in { from { opacity: 0; transform: translateX(calc(-1 * var(--s4))); } }
@@ -1519,7 +1531,9 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .columns.split > .col:not(.active) .file > :is(.path, .sheet) { opacity: .5; transition: opacity calc(240ms * var(--pace)) ease-out; }
 .columns.split > .col:not(.active):hover .file > :is(.path, .sheet) { opacity: .75; }
 .col.nothing > .flow { opacity: 0 !important; }
-.columns.split > .col.active .file { border-color: var(--ink); }
+/* Of the box worked on, the sheet with the keyboard is in ink (.file:focus-within), as alone; a file beside, one sheet,
+   is in ink whole while it is the one worked on. Never two sheets in ink at once. */
+.columns.split > .col.active > .flow > .dir.only > .file { border-color: var(--ink); }
 .col .file { transition: border-color var(--motion); }
 .col.going { pointer-events: none; }
 /* The pane put away, the row has the room to read across: every box stands whole, side by side, as wide as the
@@ -1537,7 +1551,15 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .work.bench.pane-closed .columns.split > .col.before > .col-head > .col-close { margin-left: auto; }
 /* Out at the strip's edges (the pane out), a box shows its edge only, not its words cut off by the frame's line. */
 .columns.split > .col .sheet { transition: opacity calc(240ms * var(--pace)) ease-out; }
-.work.bench:not(.pane-closed) .columns.split > .col:is(.before, .after) .sheet { opacity: 0; }
+.work.bench:not(.pane-closed) .columns.split > .col:is(.before, .after) :is(.sheet, .file > .path > *) { opacity: 0; }
+/* And there it goes into the ground at the frame's line, not cut off square as if broken, as Git's issues and Server's
+   boards do (the fade stands at the frame; the row slides under it). */
+.work.bench:not(.pane-closed) .columns.split::before, .work.bench:not(.pane-closed) .columns.split::after {
+  content: ''; position: absolute; top: 0; bottom: 0; z-index: 1; width: var(--s5); pointer-events: none; opacity: 0; transition: opacity var(--motion);
+}
+.work.bench:not(.pane-closed) .columns.split::before { left: 0; background: linear-gradient(to left, transparent, var(--ground)); }
+.work.bench:not(.pane-closed) .columns.split::after { right: 0; background: linear-gradient(to right, transparent, var(--ground)); }
+.work.bench:not(.pane-closed) .columns.split:has(> .col.before)::before, .work.bench:not(.pane-closed) .columns.split:has(> .col.after)::after { opacity: 1; }
 /* A file beside is as tall as the row it stands in, down to a step over the prompt box: side by side, the boxes are
    one height, not one short and one running on. */
 .col > .flow > .dir.only { display: flex; flex-direction: column; min-height: calc(100% + 160px - var(--s5) - var(--prompt-h) - var(--s3)); }
@@ -1919,6 +1941,8 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .card.repo.away { border-style: dashed; }
 .pop-head { padding: var(--s2) var(--s3) 0; }
 .pop-item[aria-checked='true'] { font-weight: 600; }
+/* The one chosen in a menu is said by a tick in ink at its end, not by its weight alone (§1). */
+.pop-item:not(.box-mode)[aria-checked='true']::after { content: ''; flex: none; width: 14px; height: 14px; background: var(--ink); mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat; }
 .sign-in-row { flex-wrap: wrap; }
 .sign-in-lead { margin: 0 0 var(--s3); }
 .sign-in-step { font-weight: 600; }
@@ -1942,7 +1966,7 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .space-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .space-what .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .space-what .space-why { overflow: visible; white-space: normal; overflow-wrap: anywhere; }
-.space-size { flex: none; font: var(--t-meta) var(--mono); color: var(--sub); }
+.space-size { flex: none; font-size: var(--t-meta); font-variant-numeric: tabular-nums; color: var(--sub); }
 .gear-room { flex: none; width: var(--h-row); }
 /* A column's figure stands over its rows' sizes, clear of the room their gear takes: one column of numbers. */
 .space-col:has(.gear-room) > h3 b { margin-right: calc(var(--h-row) + var(--s3)); }

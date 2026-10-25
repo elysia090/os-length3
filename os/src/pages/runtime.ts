@@ -202,8 +202,9 @@ function device(ctx: Context, u: Space, last: Freed | null, again: (r: Freed | n
     });
     return thing(repoName(r.name), r.bytes, t('repo · comes here, then opens'), b, '', gearOf(r.name, t('It is only on the Remote: nothing of it is here to free'), true));
   });
-  const remoteCol = column('remote-col', t('On the Remote'), remoteOnly().reduce((n, r) => n + r.bytes, 0), coming,
-    connection() ? t('Everything on the Remote is here too.') : t('Sign in to the Remote to see what it holds.'));
+  // What is only there, not all it holds: its size is what would come here.
+  const remoteCol = column('remote-col', t('Only on the Remote'), remoteOnly().reduce((n, r) => n + r.bytes, 0), coming,
+    connection() ? t('All of it is here too') : t('Sign in to see what the Remote holds'));
   if (isNative) {
     void rootStatus().then((root) => {
       if (!root || root.current) return;
@@ -234,7 +235,8 @@ function device(ctx: Context, u: Space, last: Freed | null, again: (r: Freed | n
     h('div', {class: 'space-box'},
       column('here-col', isNative ? t('On this device') : t('In this browser'), u.allocated, here, t('No repos yet')),
       remoteCol,
-      column('free-col', t('Can be freed'), u.freeable, going, t('Nothing to free. A repo goes once the Remote has all of it.'),
+      // Nothing to free, the reason is each one's own (not on the Remote yet, a Prompt in it): said on its row.
+      column('free-col', t('Can be freed'), u.freeable, going, t('Nothing to free: what stays here says why'),
         freeable.length > 1 ? [h('span', {class: 'muted small grow'}, t('Repos stay on the Remote and come back when opened.')), all] : [])),
     error);
 }

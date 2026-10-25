@@ -7,7 +7,7 @@ import {filesNow, keepMore, keepReached, keepTranslation, keptNow, loadL3, promp
 import {every} from '../runs.ts';
 import {errorText} from '../errors.ts';
 import {LAND, paced, still} from '../glide.ts';
-import {mark as todoMark} from './todo-box.ts';
+import {kindColon, mark as todoMark} from './todo-box.ts';
 
 // A shell per repo: in a browser, l3's root (its BusyBox sh, and every other
 // program of it) translated in a Worker; in the app, the same root on the
@@ -203,7 +203,7 @@ export class Session {
     // Its Kind's colon set as everywhere (todo-box.ts kindWords), the words as they were.
     const said = words.slice(head.length), kind = /^(\s*[^\s：]+)：/.exec(said);
     const b = h('button', {type: 'button', class: 'term-said-go'}, h('b', {}, ...(todo ? [todoMark(false)] : []), head),
-      h('span', {class: 'said-words'}, ...(kind ? [kind[1], h('span', {class: 'kind-colon'}, '：'), said.slice(kind[0].length)] : [said])));
+      h('span', {class: 'said-words'}, ...(kind ? [kind[1], kindColon(), said.slice(kind[0].length)] : [said])));
     b.addEventListener('click', () => goes.get(line)?.(b));
     return h('span', {class: `term-said ${todo ? 'said-todo' : 'said-issue'}`}, SAID, b, '\n');
   }

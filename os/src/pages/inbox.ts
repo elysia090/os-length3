@@ -281,11 +281,15 @@ export function inboxPage(ctx: Context): Node[] {
     if (wanted) { const at = wanted; wanted = null; void show(at, rows, pane); }
   };
 
+  /** Who each conversation is with, by the name the list gives them: the conversation's head says it as its row does. */
+  const names = new Map<string, string>();
+  const named = (address: string) => names.get(address) || inbox.shown(address);
   const paintList = async (rows: HTMLElement, pane: HTMLElement) => {
     const asked = ++listed;
     let all: inbox.Thread[] = [], unread = '';
     try { all = await inbox.threads(); } catch (e) { unread = errorText(e); }
     if (asked !== listed) return;
+    for (const th of all) if (th.name) names.set(th.address, th.name);
     const row = (th: inbox.Thread) => {
       // The open one is being read: what came to it is not counted as waiting.
       const waiting = th.address === open ? 0 : th.unread;
@@ -341,7 +345,7 @@ export function inboxPage(ctx: Context): Node[] {
     shownThread = null;
     const th = await inbox.thread(address).catch((e) => { if (asked === opened) pane.replaceChildren(h('p', {class: 'error'}, errorText(e))); return null; });
     if (!th || asked !== opened) return;
-    // Heard as the conversation it is, named by the other.
+    // Heard as the conversation it is, by the other's address (one only theirs: two may share a name).
     pane.setAttribute('aria-label', t('Conversation with {who}', {who: inbox.shown(address)}));
     // Read is said again the next time the conversation opens; nothing waits on it. The rail's mark follows.
     const read = () => void inbox.markRead(address).then(() => look(), () => {});
@@ -455,7 +459,7 @@ export function inboxPage(ctx: Context): Node[] {
     sendB.addEventListener('click', () => void go());
     text.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) { e.preventDefault(); void go(); } });
     pane.replaceChildren(
-      h('header', {class: 'inbox-top'}, h('b', {}, inbox.shown(address)), lineWord, h('span', {class: 'grow'}), ...decide),
+      h('header', {class: 'inbox-top'}, h('b', {}, named(address)), lineWord, h('span', {class: 'grow'}), ...decide),
       messages,
       h('div', {class: 'inbox-write'},
         h('div', {class: 'row write-line'}, text, sendB),

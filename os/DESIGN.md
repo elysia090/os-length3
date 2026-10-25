@@ -56,7 +56,14 @@ Every value in `styles.css` comes from a token (§2).
   the thing between them; put away, the pane takes its line with it.
 - **Words over symbols.** What a thing is reads off the screen as it is
   written: a TODO kind shows as "Fix：", a link in `/bin` shows as the
-  command's name only, with no arrows.
+  command's name only, with no arrows. The kind's colon is seen as the
+  face's own colon against the word, a space's room after it ("Fix: The
+  title"), whatever font holds the full-width one (each sets it elsewhere in
+  its box); the written "：" stays in the text, heard and copied as written.
+  What is chosen in a menu has a tick in `ink` at its end, not its weight
+  alone. A fact beside a name (Used 4 min ago, This device, a size) is in
+  the body's face with even figures, not the code face: only what is
+  written in code is mono.
 - **Room outside.** Everything, the rail and its icons included, sits a
   little inward from the window's edges: about 3% of the width at the
   sides (24–64 px), against the instinct to run to the edges. There is
@@ -1291,7 +1298,9 @@ Each page below says only what is its own; the rest is Part I.
 
 A profile, between a Twitter and a GitHub profile, that reads the same for
 its owner and for anyone else; only the owner gets "edit". In order:
-identity (avatar, name, @handle, bio, counts of repos and servers) →
+identity (avatar, name, @handle, bio, counts of repos and servers; no name
+written yet, it is the one signed in with, as Remote and the Me menu say
+it: one person, one name, never "No name yet" beside "Signed in as Sora") →
 **TODO** → repos → servers (each one is in, a chip that opens Server on it).
 TODO is the person's single list; repos do not carry their own inbox or
 TODO files. An item is a first line named like an issue ("Fix：件名"),
@@ -1388,7 +1397,9 @@ it is let go (over a box's side third, beside it; over its middle, in its
 place: a dashed outline shows where before it is let go), and Ctrl+\
 opens the next on the band. Each is its own page with its own scroll; the
 one worked on (the prompt, the search and File follow it) is the last one
-pressed into, its files' boxes in `ink`, the others' in `rule`, its pill
+pressed into, the sheet in it with the keyboard in `ink` (a file beside, one
+sheet, in `ink` whole while it is worked on; never two sheets in `ink` at
+once), the others' in `rule`, its pill
 `ink`, theirs outlined in `ink`. Side by side the row is a strip that runs
 on past the center's edges: every box as wide as the one worked on, which
 stands in it whole (the first and the last at the page's margin, where one
@@ -1397,7 +1408,9 @@ at the row's ends), their words dimmed (the box itself still `paper` with
 its `rule` edge, as a neighbour issue's is, never a grey slab) and cut by
 the frame's line, the rail's at the
 left and the pane's at the right: there is more that way, not a narrow box
-beside; only their edge shows, not words cut off by the line. One to the
+beside; only their edge shows, not words cut off by the line (not a file's
+head either), and there it goes into the ground (a fade at the frame's
+line, as Git's issues and Server's boards have), not cut off square. One to the
 left says its name at its right end, the end that shows. With the pane put
 away the row is for reading across: every box stands whole, side by side,
 as wide as the others, at full strength, each name at its left; brought
@@ -1740,8 +1753,10 @@ the card becomes the Remote's).
   what it holds and a file with several hard links counts once; the host's
   free and total are marked 推定, because other programs change them too.
 - Under it, one tall box in three columns: what is **in this browser**
-  (on this device) at the left, what is **on the Remote** (fetched with a
-  press) in the middle, and what **can be freed** at the right. In each, **one list, largest first**, of everything this OS holds: each
+  (on this device) at the left, what is **only on the Remote** (fetched with a
+  press; all of it here too, it says so) in the middle, and what **can be
+  freed** at the right (nothing, it says the reason is on each row that
+  stays: not on the Remote yet, a Prompt in it). In each, **one list, largest first**, of everything this OS holds: each
   repo, each root of the distribution, each leftover, Home. A row is the
   thing, its size, and at its end what can be done:
   - **空ける**: it is not needed here. A repo whose copy is what the Remote

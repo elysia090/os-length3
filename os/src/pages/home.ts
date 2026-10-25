@@ -1,7 +1,7 @@
 import {h} from '../dom.ts';
 import {t, tn} from '../i18n.ts';
 import {LIMITS, initials, normalize, parse, type Profile} from '../profile.ts';
-import {connection, rename} from '../remote.ts';
+import {connection, myName, rename} from '../remote.ts';
 import {getState, setState, settingName, unreadable} from '../state.ts';
 import * as servers from '../servers.ts';
 import * as inbox from '../inbox.ts';
@@ -178,8 +178,11 @@ function counting(el: HTMLElement, n: number, one: string, many: string) {
 function identity(counts: HTMLElement): HTMLElement {
   const profile = currentProfile();
   const named = profile.name || profile.handle;
+  const name = named ? h('h1', {}, profile.name || `@${profile.handle}`) : h('h1', {class: 'unset'}, t('No name yet'));
+  // One person, one name: none written here yet, it is the one signed in with (the Remote's), as Remote says it.
+  if (!named) void myName().then((n) => { if (n) { name.classList.remove('unset'); name.textContent = n; } }, () => {});
   return h('div', {class: 'identity'},
-    named ? h('h1', {}, profile.name || `@${profile.handle}`) : h('h1', {class: 'unset'}, t('No name yet')),
+    name,
     profile.handle && profile.name ? h('p', {class: 'handle'}, `@${profile.handle}`) : null,
     profile.bio ? h('p', {class: 'bio'}, profile.bio) : null,
     counts,

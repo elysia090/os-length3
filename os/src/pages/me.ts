@@ -1,11 +1,18 @@
 import {h} from '../dom.ts';
 import {currentLang, LANGS, setLang, t} from '../i18n.ts';
 import {mark} from '../icons.ts';
-import {connection, signOut} from '../remote.ts';
+import {connection, myName, signOut} from '../remote.ts';
 import {onState, setState} from '../state.ts';
 import {initials, type Profile} from '../profile.ts';
 import {choosePart} from './common.ts';
 import type {Context} from './context.ts';
+
+/** The person's name as written on Home; none written there, the one signed in with (the Remote's), as Home says it. */
+function shownName(written: string): HTMLElement {
+  const b = h('b', {}, written || t('No name yet'));
+  if (!written) void myName().then((n) => { if (n) b.textContent = n; }, () => {});
+  return b;
+}
 
 /** The pages a setting opens. */
 type Page = 'home' | 'remote';
@@ -57,7 +64,7 @@ export class Me {
       const signedIn = connection() !== null;
       this.pop.replaceChildren(
         h('div', {class: 'me-who'}, this.face(), h('div', {class: 'me-name'},
-          h('b', {}, p.name || (p.handle ? `@${p.handle}` : t('No name yet'))),
+          shownName(p.name || (p.handle ? `@${p.handle}` : '')),
           p.name && p.handle ? h('span', {class: 'muted small'}, `@${p.handle}`) : null)),
         // Each a word or two: the group says what it is about. The profile is read on Home, from the rail.
         group(t('Profile'),
