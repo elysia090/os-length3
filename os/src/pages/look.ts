@@ -37,12 +37,12 @@ let out: {row: HTMLElement; close(back: boolean): void} | null = null;
 
 const button = (text: string, kind = '') => h('button', {type: 'button', class: `button small-button ${kind}`.trim()}, text) as HTMLButtonElement;
 
-/** Where the card stands: as wide as the pane the row is in, under the row, or over it when there is no room under. */
+/** Where the card stands: on the row's own edges (the pane's lines, as its rows are), under the row, or over it when
+ * there is no room under; a row narrower than a card can be read in has it as wide as that, on the row's middle. */
 function place(card: HTMLElement, row: HTMLElement) {
   const r = row.getBoundingClientRect();
-  const lane = (row.closest('.side, .home-side') ?? row).getBoundingClientRect();
-  const pad = 16, width = Math.min(Math.max(lane.width - 2 * pad, 260), innerWidth - 16);
-  const left = Math.max(8, Math.min(lane.left + pad, innerWidth - 8 - width));
+  const width = Math.min(Math.max(r.width, 260), innerWidth - 16);
+  const left = Math.max(8, Math.min(r.left + (r.width - width) / 2, innerWidth - 8 - width));
   const high = card.offsetHeight, under = innerHeight - r.bottom - 8, over = r.top - 8;
   const below = under >= high + 6 || under >= over;
   card.style.left = `${left}px`;
@@ -61,8 +61,9 @@ export function lookFrom(row: HTMLElement, look: Look) {
   const body = h('div', {class: 'look-body'});
   const shut = h('button', {type: 'button', class: 'look-shut', 'aria-label': t('Put away')}, mark('close')) as HTMLButtonElement;
   const open = button(look.open.word, 'primary');
+  const deeds = answers(null, open);
   const card = h('section', {class: 'pop look', role: 'dialog', 'aria-label': look.title},
-    h('div', {class: 'look-head'}, h('span', {class: 'look-title'}, look.title), shut), body, answers(null, open));
+    h('div', {class: 'look-head'}, h('span', {class: 'look-title'}, look.title), shut), body, deeds);
   let gone = false;
   const away = (e: Event) => {
     if (e instanceof KeyboardEvent) { if (e.key === 'Escape' && !e.defaultPrevented) { e.preventDefault(); close(true); } return; }
@@ -100,7 +101,20 @@ export function lookFrom(row: HTMLElement, look: Look) {
   card.addEventListener('keydown', away);
   row.addEventListener('keydown', away);
   void Promise.resolve(look.fill(body, () => close(true))).catch((e: unknown) => body.replaceChildren(h('p', {class: 'error small'}, errorText(e))))
-    .then(() => { if (!gone) (body.querySelector<HTMLElement>('textarea, input, .look-done') ?? open).focus({preventScroll: true}); });
+    .then(() => {
+      if (gone) return;
+      // Where one writes back, sending is the deed: its Send the filled one, and the way to the page a quiet one at the
+      // left of the same line, so the card ends in one row of deeds, not two.
+      const foot = body.querySelector<HTMLElement>('.look-write-foot');
+      if (foot) {
+        open.classList.remove('primary');
+        open.classList.add('look-to');
+        foot.lastElementChild?.classList.add('primary');
+        foot.prepend(open);
+        deeds.remove();
+      }
+      (body.querySelector<HTMLElement>('textarea, input, .look-done') ?? open).focus({preventScroll: true});
+    });
 }
 
 /** A field to write in, with its deed at its right: Ctrl+Enter or the deed sends it; it grows with what is written. */

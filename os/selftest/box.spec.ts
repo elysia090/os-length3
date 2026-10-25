@@ -101,6 +101,9 @@ test('Edit: a line in the box edits the file in front, shown on it first, done w
   const box = app.forge.promptBox, page = app.page, file = app.forge.editor('src/main.c');
   const pill = app.main.getByRole('button', {name: /^What the box does/}), note = app.main.locator('.prompt-note');
   const before = '#include <stdio.h>\n\nint main(void) {\n    puts("hello");\n    return 0;\n}\n';
+  // Nothing it does throws (a mark brought into view once asked for itself again, without end).
+  const thrown: string[] = [];
+  page.on('pageerror', (e) => thrown.push(e.message));
   await expect(file).toHaveValue(before);
   // Written in, the file is the one in front; Ctrl+G brings the box to it, saying what can be written there.
   await file.click();
@@ -139,6 +142,7 @@ test('Edit: a line in the box edits the file in front, shown on it first, done w
   await expect(page.locator('.edit-marks')).toHaveCount(0);
   // Written as typing is: saved.
   await expect(app.forge.fileState('src/main.c')).toBeHidden();
+  expect(thrown).toEqual([]);
   await page.reload();
   await expect(app.forge.editor('src/main.c')).toHaveValue(before.replace('puts', 'printf'));
 });

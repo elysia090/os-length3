@@ -420,6 +420,15 @@ a { color: var(--ink); }
   border: 1px solid var(--edge); background: transparent; cursor: var(--cursor-hand);
 }
 .button:disabled { opacity: .5; cursor: var(--cursor-arrow); }
+/* Words in a button, a chip or a pill stand on its middle by their capitals: a face keeps more room over its capitals
+   than under its baseline (or the other way), so a line set on a middle carries its words a pixel or two off it, high
+   in one face, low in another. Trimmed to its capitals and its baseline, the line is its capitals, whatever the face.
+   One with no height of its own keeps its line's height, the capitals on its middle. Where the trim is not had, the
+   line's middle, as before. The box's own line moves its words by the same measure, measured (optical.ts). */
+@supports (text-box: trim-both cap alphabetic) {
+  .button, .chip, .stub-code, .share-open > span, .box-mode-pill :is(.prompt-ps, .prompt-mode > :not(.icon)) { text-box: trim-both cap alphabetic; }
+  .pill-name.pill-name, .server-at.server-at { text-box: trim-both cap alphabetic; padding-block: calc((1lh - 1cap) / 2); }
+}
 .input, .edit input, .edit textarea {
   min-height: var(--h-control); padding: var(--s2) var(--s3); border: 1px solid var(--edge); border-radius: var(--r-field);
   background: var(--raised); color: var(--ink);
@@ -1190,9 +1199,9 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .prompt-chip[data-mode='issue'] .prompt-mode { gap: 0; }
 .prompt-chip[data-mode='issue'] .prompt-mode-repo { opacity: .66; }
 .prompt-chip[data-mode='todo'] .prompt-mode > .icon { width: 15px; height: 15px; color: var(--done); }
-/* Edit's pill on the marker's yellow, as what it shows on the file is (edit-box.ts): its pencil, the file in front and
-   the caret's line, a long name cut short. */
-.prompt-chip[data-mode='edit'] { padding-left: var(--s2); background: var(--marker-soft); color: var(--ink); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 22%, transparent); }
+/* Edit's pill on paper ringed in ink, a pen's line round it (edit-box.ts): its pencil, the file in front and the caret's
+   line, a long name cut short. The yellow is the file's, where the work is, never the pill's. */
+.prompt-chip[data-mode='edit'] { padding-left: var(--s2); background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--ink); }
 .prompt-chip[data-mode='edit'] .prompt-mode { gap: 0; }
 .prompt-chip[data-mode='edit'] .prompt-mode > .icon { width: 15px; height: 15px; margin-right: var(--s2); }
 .prompt-chip[data-mode='edit'] .prompt-mode > b { max-width: 20ch; overflow: hidden; text-overflow: ellipsis; }
@@ -1218,10 +1227,16 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .box-mode[aria-checked='true'] > .box-mode-word { font-weight: 600; }
 .screen .prompt-in { --cell: var(--ink); font: var(--t-meta)/1.6 var(--mono); }
 .screen .prompt-in::placeholder { color: transparent; text-shadow: none; }
-/* Not in use and empty, the line shows where the caret will be: an empty cell, as a terminal not in focus draws it. */
-.screen .prompt-in:placeholder-shown:not(:focus) { background:
-  linear-gradient(var(--cell), var(--cell)) 0 2px / 1ch 1px no-repeat, linear-gradient(var(--cell), var(--cell)) 0 calc(100% - 2px) / 1ch 1px no-repeat,
-  linear-gradient(var(--cell), var(--cell)) 0 2px / 1px calc(100% - 4px) no-repeat, linear-gradient(var(--cell), var(--cell)) calc(1ch - 1px) 2px / 1px calc(100% - 4px) no-repeat; }
+/* At rest the box's words, the pill's and what is written beside them, come down onto its middle by their capitals
+   (optical.ts, --box-drop), on one line together; up, the line is the screen's, and they glide there (screen.ts). */
+.screen > .prompt :is(.prompt-ps, .prompt-mode > :not(.icon), .prompt-in) { position: relative; top: var(--box-drop, 0px); }
+:is(.prompting, .prompt-leaving) .screen > .prompt :is(.prompt-ps, .prompt-mode > :not(.icon), .prompt-in) { top: 0; }
+/* Not in use and empty, the line shows where the caret will be: an empty cell, as a terminal not in focus draws it,
+   on the box's middle as the pill is (the words' drop taken back from it). */
+.screen .prompt-in:placeholder-shown:not(:focus) { --cell-top: calc(2px - var(--box-drop, 0px)); background:
+  linear-gradient(var(--cell), var(--cell)) 0 var(--cell-top) / 1ch 1px no-repeat, linear-gradient(var(--cell), var(--cell)) 0 calc(100% - 4px + var(--cell-top)) / 1ch 1px no-repeat,
+  linear-gradient(var(--cell), var(--cell)) 0 var(--cell-top) / 1px calc(100% - 4px) no-repeat, linear-gradient(var(--cell), var(--cell)) calc(1ch - 1px) var(--cell-top) / 1px calc(100% - 4px) no-repeat; }
+:is(.prompting, .prompt-leaving) .screen .prompt-in:placeholder-shown:not(:focus) { --cell-top: 2px; }
 .prompt-keys { flex: none; display: inline-flex; align-items: center; gap: var(--s1); transition: opacity 160ms ease-out 60ms; }
 .prompt-keys > kbd { color: var(--sub); border-color: var(--rule); }
 .prompt-keys > kbd:last-child { font: 600 13px/1 var(--mono); }
@@ -1242,7 +1257,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .prompt { display: flex; align-items: flex-end; gap: var(--s3); border: 1px solid var(--edge); border-radius: var(--r-place); background: var(--raised); padding: var(--s3) var(--s4); }
 /* Run at the box's bottom right, the word alone (its keys are in its title and name), a small button that does
    not make the box taller; inside the raised box its hover is a step back to the ground. */
-.prompt-run { flex: none; display: inline-flex; align-items: center; gap: var(--s2); margin-block: calc((var(--t-body) * 1.6 - var(--h-row)) / 2); }
+.prompt-run { flex: none; margin-block: calc((var(--t-body) * 1.6 - var(--h-row)) / 2); }
 .prompt-run:hover:not(:disabled) { background: var(--ground); }
 .prompt-run:disabled { opacity: .5; cursor: var(--cursor-arrow); }
 .prompt:focus-within { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
@@ -1266,8 +1281,8 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .term-shut:hover { opacity: 1; background: color-mix(in srgb, currentColor 12%, transparent); }
 :is(.prompting, .prompt-leaving) .screen .term-head > .term-shut { display: grid; }
 :is(.prompting, .prompt-leaving) .screen .term-head > .lamp { margin-left: auto; }
-/* A row's look (look.ts): a card out from the row, as wide as its pane, what can be done there in it, and the way
-   to its page its last deed. Its lines are said as Inbox says them; what one writes back is a field as Inbox's. */
+/* A row's look (look.ts): a card out from the row, on the row's edges, what can be done there in it, and the way
+   to its page its last deed (where one writes back, a quiet one at the left of Send's line). Its lines are said as Inbox says them; what one writes back is a field as Inbox's. */
 .look { position: fixed; z-index: 8; display: flex; flex-direction: column; gap: var(--s3); padding: var(--s3) var(--s4) var(--s4); overflow: auto;
   box-shadow: 0 8px 24px color-mix(in srgb, var(--ink) 10%, transparent); animation: menu-in calc(280ms * var(--pace)) var(--pop-in) both; }
 @media (prefers-reduced-motion: reduce) { .look { animation: none; } }
@@ -1289,6 +1304,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .look-field:focus { outline: none; border-color: var(--ink); }
 .look-write-foot { display: flex; align-items: center; justify-content: flex-end; gap: var(--s2); }
 .look-write-foot > .error { margin: 0 auto 0 0; }
+.look-write-foot > .look-to { margin-right: auto; }
 .look-quote { margin: 0; padding-left: var(--s2); border-left: 2px solid var(--rule); font: var(--t-meta) / 1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .look-line { margin: 0; overflow-wrap: anywhere; }
 .look-todo { display: flex; align-items: center; gap: var(--s2); }
@@ -1313,6 +1329,10 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .term-home .term-out > .fresh:empty { display: none; }
 .term-home .term-out > .ps { position: relative; display: inline-block; margin-right: 6px; padding: 0 8px; border-radius: var(--r-round);
   background: var(--screen); color: var(--screen-ps); font-size: 11.5px; line-height: 20px; }
+/* The prompt line ends in its space: the pill's room after it is less by a letter, so its words stand in its middle;
+   and its words are on the pill's middle by their capitals (as a button's, above). */
+.term-home .term-out > .ps { padding-right: calc(8px - 1ch); }
+@supports (text-box: trim-both cap alphabetic) { .term-home .term-out > .ps { text-box: trim-both cap alphabetic; padding-block: calc((20px - 1cap) / 2); } }
 .term-home .term-out > .cmd { color: var(--ink); font-weight: 600; }
 .term-home .term-out > .ps::before, .term-home .term-out > .term-said::before {
   content: ''; position: absolute; left: -18px; top: 5px; box-sizing: border-box; width: 10px; height: 10px; border-radius: 50%; }
@@ -2410,9 +2430,9 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .tl-post { position: relative; display: grid; grid-template-columns: 36px minmax(0, 1fr); column-gap: var(--s3); margin: var(--s2) calc(-1 * var(--s2)) 0; padding: var(--s1) var(--s2); border-radius: var(--r-field); }
 .tl-post.tl-runs { margin-top: 0; }
 .tl-post:hover, .tl-post:focus-within { background: var(--raised); }
-.tl-face { display: grid; place-items: center; width: 36px; height: 36px; margin-top: var(--s1); border: 1px solid var(--rule); border-radius: var(--r-round); font: 600 var(--t-meta) var(--sans); }
-/* A guest's face is dashed, beside the word guest: never taken for one of its people's. */
-.tl-guest > .tl-face { border-style: dashed; border-color: var(--edge); }
+.tl-face { display: grid; place-items: center; width: 36px; height: 36px; margin-top: var(--s1); border-radius: var(--r-round); font: 700 var(--t-body) var(--sans); }
+/* A guest's face is no tint of theirs, only a dashed ring, beside the word guest: never taken for one of its people's. */
+.tl-guest > .tl-face { border: 1px dashed var(--edge); background: transparent; }
 /* In a run, the face's place holds the time, shown on hover. */
 /* A post in a run: its time, on hover, no taller than the line beside it, so a run's lines keep one rhythm. */
 .tl-face.tl-at { height: 1lh; margin-top: 0; border: 0; border-radius: 0; place-items: center end; font-size: 11px; line-height: inherit; overflow: hidden; visibility: hidden; }

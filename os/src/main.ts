@@ -30,6 +30,7 @@ import {NEW_REPO, PURPOSES, RAIL, purpose, restorePurpose, stepPurpose, type Pur
 import {LAND, glide, morph, paced, paneOut, stage, still, where} from './glide.ts';
 import {letGo, touch} from './touch.ts';
 import {caret} from './caret.ts';
+import {optical} from './optical.ts';
 
 const PURPOSE_KEY = 'length3.os.purpose';
 const REPO_KEY = 'length3.os.repo';
@@ -94,6 +95,7 @@ document.body.append(fileTree.element);
 keepFocus();
 touch();
 caret();
+optical();
 // Server is laid over the page the same way: people one knows, their boards, each board's talk and TODO.
 const serverLayer = new ServerLayer(ctx);
 

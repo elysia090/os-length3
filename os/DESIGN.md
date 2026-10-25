@@ -342,6 +342,17 @@ Every page is made of these, and each looks and behaves the same wherever
 it is. A page's section in §8 names the pieces it uses, and says only
 what is its own.
 
+- **Words on a control's middle.** In a button, a chip, a pill or a key the
+  words stand on its middle by their capitals, not by their line: a face
+  keeps more room over its capitals than under its baseline (or the other
+  way, and each size rounds it its own way here), so words set by their line
+  sit a pixel or two off, high in one face and low in another. Where the
+  line can be trimmed to its capitals and baseline (`text-box`), it is; the
+  box's own line, whose words are partly a field's, comes down by the same
+  measure taken once in the face as it is here (optical.ts), the pill's
+  words and what is written beside them together. A pill's words that end
+  in a space (a prompt line) have the room after them less by that letter.
+
 - **The page head.** Icon, title (24/700) and one short role line in
   `sub`, on the top line. Home's head is the profile. An overlay (File,
   Server) has no page head: it is laid over the page whose head is there.
@@ -1316,7 +1327,8 @@ something not read (who wrote, their initial on one of three soft tints, the
 marker's, a step done's, a removal's, the same for the same name; what it is
 and its first line: Review：…; the row a bubble, its corner at the badge's side,
 as a message is), the boards with posts not seen (#). The same round initial
-heads a conversation in Inbox and a person in a server's People. With
+heads a conversation in Inbox, a person in a server's People and their posts
+on its board (larger there, a guest's no tint, only a dashed ring). With
 nothing new it says so, quietly: the pane out is never a line with nothing
 beside it. The plugin area comes down over it when the rail's plug opens it.
 
@@ -1324,15 +1336,17 @@ A row in a pane (Lately's here, the word at the foot of Forge's and Git's,
 a line the box wrote in the Prompt) is the same row wherever it is, and it
 is not a door to another page: pressed, it opens where it stands
 (`look.ts`). One reaction, then the work right there: the row is lit and a
-card comes out of it, under it (over it, near the foot), as wide as the
-pane, with what can be done there: a conversation's last lines and a
+card comes out of it, under it (over it, near the foot), on the row's own
+edges (the pane's lines), with what can be done there: a conversation's last lines and a
 reply sent from the card (Ctrl+Enter or Send; read as it opens, the row
 stays while its card is out and goes once it is put away); a board's last
 posts and a post; the lines one left off at, as they are now; an issue's
 summary, written there and kept as the card goes; a TODO's mark, done (or
 not) with a press, as Home's is. The way to its page is the card's last
 deed, at its right: Inbox, Server, Go on writing (Forge, that line a third
-of the way down and the caret where it was), Git at the issue, Home. One
+of the way down and the caret where it was), Git at the issue, Home; where
+the card writes back, sending is its deed (Send filled) and the way to the
+page a quiet one at the left of Send's line, so the card ends in one row. One
 card at a time; Escape, a press outside, its × or the row again put it
 away, as every pop out goes, and the keyboard goes back to the row.
 
@@ -1518,7 +1532,8 @@ the pill it gives (as wide as its words) and its keys, the words in one column: 
 `garden $`), Write an issue (the repo's next issue, `garden #4`, in ink as an
 issue's number), Add to TODO (TODO's circle, on paper as Home's TODO box),
 Edit the file in front (a pencil, the file and the caret's line,
-`main.c :4`, on the marker's yellow); Alt+1 to 4 in the box choose one at
+`main.c :4`, on paper ringed in ink: the yellow is the file's, where the
+work is, never the pill's); Alt+1 to 4 in the box choose one at
 once, Ctrl ` is the Prompt's again and Ctrl G Edit's (Go to line, as editors
 have it). Turning, the pill goes from the old words' width to the new, the old
 words going up out of it as the new come up into it, its colours crossing,

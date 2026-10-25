@@ -404,7 +404,7 @@ function settled(): Promise<void> {
  */
 function sharing(now: servers.RepoSeen, error: HTMLElement): HTMLElement {
   const open = h('button', {type: 'button', class: 'button small-button share-open', 'aria-haspopup': 'true', 'aria-expanded': 'false'},
-    t('Share'), mark('down')) as HTMLButtonElement;
+    h('span', {}, t('Share')), mark('down')) as HTMLButtonElement;
   const list = h('div', {class: 'pop share-pop', role: 'menu', 'aria-label': t('Share'), hidden: ''});
   let shared = new Set(now.servers.map((x) => x.id));
   const toggle = async (id: string) => {

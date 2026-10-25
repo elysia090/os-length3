@@ -5,6 +5,7 @@ import {shown} from '../inbox.ts';
 import * as servers from '../servers.ts';
 import {coalesced, every} from '../runs.ts';
 import {errorText} from '../errors.ts';
+import {personBadge} from './pane.ts';
 
 // A board's talk: read as a conversation is, oldest above and newest at the
 // foot, by the box one writes in. Its people write in it; so may a guest,
@@ -26,8 +27,12 @@ const KEEP = 8;
 const EVERY = 15_000;
 
 
-/** The letters of a face: the first two of the address's name. */
-const face = (p: servers.Post) => [...p.by.split('@')[0]].slice(0, 2).join('').toUpperCase();
+/** Whose a post is, as someone is everywhere (pane.ts): their initial on their tint, the same for the same name. */
+const face = (p: servers.Post) => {
+  const b = personBadge(shown(p.by));
+  b.classList.add('tl-face');
+  return b;
+};
 /** A time written whole, as toLocaleString writes one. */
 const WHOLE: Intl.DateTimeFormatOptions = {year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric'};
 const CLOCK: Intl.DateTimeFormatOptions = {hour: '2-digit', minute: '2-digit', hour12: false};
@@ -102,7 +107,7 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean, 
       ...(runs ? [] : [h('div', {class: 'tl-who'}, h('b', {}, name), h('span', {class: 'muted small'}, where), time)]),
       h('p', {class: 'tl-body'}, p.body), below);
     const art = h('article', {class: `tl-post${runs ? ' tl-runs' : ''}${p.guest ? ' tl-guest' : ''}`},
-      runs ? h('span', {class: 'tl-face tl-at'}, time) : h('span', {class: 'tl-face', 'aria-hidden': 'true'}, face(p)), main, acts);
+      runs ? h('span', {class: 'tl-face tl-at'}, time) : face(p), main, acts);
 
     if (p.mayTakeDown) {
       // Taking a post down (one's own, or any as the server's owner) asks once more, briefly.

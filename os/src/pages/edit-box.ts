@@ -83,11 +83,14 @@ function bring(el: HTMLElement, area: HTMLTextAreaElement, clear: number) {
   const r = el.getBoundingClientRect(), f = flow.getBoundingClientRect(), bottom = Math.min(f.bottom, clear) - 12;
   if (r.top < f.top + 12 || r.bottom > bottom)
     flow.scrollTo({top: flow.scrollTop + r.top - f.top - (bottom - f.top) / 3, behavior: still() ? 'auto' : 'smooth'});
-  // A word far along a long line: the editor scrolls along to it (its marks with it).
+  // A word far along a long line: the editor scrolls along to it (its marks with it). A line's mark (or a rule) is as
+  // wide as the file, starting left of its words, so it asks for none; told only when it did scroll, so the marks
+  // drawn again for it (show, on its scroll) do not ask again.
   const w = area.getBoundingClientRect();
-  if (r.right > w.right - 8 || r.left < w.left) {
+  if (!el.matches('.lines, .rule') && (r.right > w.right - 8 || r.left < w.left)) {
+    const was = area.scrollLeft;
     area.scrollLeft = Math.max(0, area.scrollLeft + r.left - w.left - w.width / 3);
-    area.dispatchEvent(new Event('scroll'));
+    if (area.scrollLeft !== was) area.dispatchEvent(new Event('scroll'));
   }
 }
 
