@@ -51,7 +51,7 @@ export class Writes {
   }
 
   /** `insert` written over `from`…`to` in `area` as typing is (so it saves), the caret at `caret`. */
-  write(area: HTMLTextAreaElement, from: number, to: number, insert: string, caret: number) {
+  #write(area: HTMLTextAreaElement, from: number, to: number, insert: string, caret: number) {
     this.with(area, () => {
       area.setSelectionRange(from, to);
       if (!document.execCommand('insertText', false, insert)) {
@@ -67,7 +67,7 @@ export class Writes {
     this.#done.push({area, from, removed: area.value.slice(from, to), inserted: insert, caret: was});
     if (this.#done.length > STEPS) this.#done.shift();
     this.#undone.length = 0;
-    this.write(area, from, to, insert, caret);
+    this.#write(area, from, to, insert, caret);
   }
 
   /**
@@ -84,7 +84,7 @@ export class Writes {
     const {area, from: at} = step, now = redo ? step.removed : step.inserted, back = redo ? step.inserted : step.removed;
     if (area.value.slice(at, at + now.length) !== now) { from.length = 0; return t('Written over since: undo it in the file'); }
     to.push(step);
-    this.write(area, at, at + now.length, back, redo ? at + back.length : step.caret);
+    this.#write(area, at, at + now.length, back, redo ? at + back.length : step.caret);
     return {area, lit: back ? [{from: at, to: at + back.length, kind: back.includes('\n') ? 'lines' : 'words'}] : []};
   }
 }

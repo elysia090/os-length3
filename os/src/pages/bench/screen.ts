@@ -21,16 +21,16 @@ interface Rest { l: number; b: number; w: number; h: number; box: number; round:
 /** A shape in the screen, as insets from its edges and a corner: [top, right, bottom, left, round]. */
 type Shape = [number, number, number, number, number];
 
-/**
- * The shapes the glass goes through: the pill, the box's line (the box at rest), the whole screen. For the Prompt above
- * the line (`above`), the line's shape holds none of it: what it printed comes only as the glass rises.
- */
 /** Moved from the pane to the screen or back, the output would read from its top (a move loses where it was scrolled):
  * it reads from its foot, where a terminal is read, what was printed last over the line it waits at. */
 function atFoot(term: HTMLElement) {
   for (const out of term.querySelectorAll<HTMLElement>('.term-out')) out.scrollTop = out.scrollHeight;
 }
 
+/**
+ * The shapes the glass goes through: the pill, the box's line (the box at rest), the whole screen. For the Prompt above
+ * the line (`above`), the line's shape holds none of it: what it printed comes only as the glass rises.
+ */
 function shapes(screen: HTMLElement, r: Rest, above: HTMLElement | null = null): {pill: Shape; line: Shape; whole: Shape} {
   const s = screen.getBoundingClientRect(), {width: W, height: H} = s;
   const top = above ? above.getBoundingClientRect().bottom - s.top : H - r.box;

@@ -100,6 +100,27 @@ export async function sendAs(m: 'issue' | 'todo', repo: string, text: string): P
 }
 
 /**
+ * `m`, the `i`th of the four, as a row of the menu out of the pill: the pill it gives (for `repo`, its next issue's
+ * number `n`, the file in front and its line `at`), its word and its keys; ticked when it is the one in use.
+ */
+function menuItem(m: Mode, i: number, repo: string | null, n: number | null, at: {file: string; line: number} | null): HTMLButtonElement {
+  const pill = h('span', {class: 'prompt-chip box-mode-pill', 'data-mode': m, 'aria-hidden': 'true'},
+    ...(m === 'run' ? [h('span', {class: 'lamp'}), h('span', {class: 'prompt-ps'}, repo ? `${repo} $` : '$')]
+      : [h('span', {class: 'prompt-mode'}, ...pillWords(m, repo, n, at))]));
+  return h('button', {type: 'button', class: 'pop-item box-mode', role: 'menuitemradio', 'aria-checked': String(m === now), 'data-mode': m},
+    pill, h('span', {class: 'box-mode-word'}, modeWord(m)),
+    h('span', {class: 'box-mode-keys', 'aria-hidden': 'true'}, h('kbd', {}, 'Alt'), h('kbd', {}, String(i + 1)))) as HTMLButtonElement;
+}
+
+/** Each pill as wide as its words, the words after them in one column: the room a narrower pill leaves is kept after it. */
+function column(items: HTMLElement[]) {
+  const pills = items.map((i) => i.querySelector<HTMLElement>('.box-mode-pill')!);
+  for (const p of pills) p.style.marginRight = '';
+  const widest = Math.max(...pills.map((p) => p.offsetWidth));
+  for (const p of pills) p.style.marginRight = `${widest - p.offsetWidth}px`;
+}
+
+/**
  * The four, out of the pill (`chip`) when it is pressed: each with the pill it gives, its word and its keys, the
  * one in use ticked. Chosen, `chosen` hears it; put away with Escape, `closed` does, with what had the keyboard.
  */
@@ -131,33 +152,21 @@ export function modeMenu(chip: HTMLElement, o: {repo: () => string | null; at():
     const repo = o.repo();
     const n = repo ? nextIssue(repo) : null;
     items = MODES.map((m, i) => {
-      const pill = h('span', {class: 'prompt-chip box-mode-pill', 'data-mode': m, 'aria-hidden': 'true'},
-        ...(m === 'run' ? [h('span', {class: 'lamp'}), h('span', {class: 'prompt-ps'}, repo ? `${repo} $` : '$')]
-          : [h('span', {class: 'prompt-mode'}, ...pillWords(m, repo, typeof n === 'number' ? n : null, m === 'edit' ? o.at() : null))]));
-      const item = h('button', {type: 'button', class: 'pop-item box-mode', role: 'menuitemradio', 'aria-checked': String(m === now), 'data-mode': m},
-        pill, h('span', {class: 'box-mode-word'}, modeWord(m)),
-        h('span', {class: 'box-mode-keys', 'aria-hidden': 'true'}, h('kbd', {}, 'Alt'), h('kbd', {}, String(i + 1)))) as HTMLButtonElement;
+      const item = menuItem(m, i, repo, typeof n === 'number' ? n : null, m === 'edit' ? o.at() : null);
       item.addEventListener('click', () => { show(false); o.chosen(m); });
       return item;
     });
     pop.replaceChildren(...items);
-    // Each pill as wide as its words, the words after them in one column: the room a narrower pill leaves is kept after it.
-    const column = () => {
-      const pills = items.map((i) => i.querySelector<HTMLElement>('.box-mode-pill')!);
-      for (const p of pills) p.style.marginRight = '';
-      const widest = Math.max(...pills.map((p) => p.offsetWidth));
-      for (const p of pills) p.style.marginRight = `${widest - p.offsetWidth}px`;
-    };
     // Out of the pill, its rows' pills standing over it.
     const r = chip.getBoundingClientRect();
     Object.assign(pop.style, {left: `${Math.max(8, r.left - 9)}px`, bottom: `${innerHeight - r.top + 8}px`});
     show(true);
-    column();
+    column(items);
     (items.find((x) => x.getAttribute('aria-checked') === 'true') ?? items[0]).focus();
     if (n instanceof Promise) void n.then((v) => {
       const b = items[1]?.querySelector('.prompt-mode b');
       if (b) b.textContent = `#${v}`;
-      column();
+      column(items);
     });
   };
   return {element: pop, open, shown: () => !pop.hidden, close: () => show(false)};
@@ -223,27 +232,38 @@ export function sendInto(field: HTMLTextAreaElement): (row: HTMLElement | null) 
     font: cs.font, letterSpacing: cs.letterSpacing, color: cs.color, transformOrigin: `${SLIP.x}px ${SLIP.y}px`});
   return (row) => {
     document.body.append(words);
-    const gone = () => words.remove();
-    if (!row || !seen(row)) {
-      words.animate([{translate: '0 0', opacity: 1, easing: 'cubic-bezier(.3, .7, .3, 1)'},
-        {translate: '76px 0', opacity: 1, offset: .4, easing: 'cubic-bezier(.55, 0, .85, .35)'}, {translate: '82px -38px', opacity: 0}],
-      {duration: paced(400)}).finished.then(gone, gone);
-      return;
-    }
-    // To where its words stand in the line (after its head, #3 or TODO), at the line's size.
-    const range = document.createRange();
-    range.selectNodeContents(row.lastChild ?? row);
-    const to = range.getBoundingClientRect(), size = parseFloat(getComputedStyle(row).fontSize) / (parseFloat(cs.fontSize) || 1);
-    const dx = to.left - from.x, dy = to.top - from.y;
-    const ms = paced(560);
-    const paper = 'var(--paper)', bare = 'color-mix(in srgb, var(--paper) 0%, transparent)';
-    const lift = '0 6px 18px color-mix(in srgb, var(--ink) 12%, transparent)', flat = '0 0 0 transparent';
-    words.animate([
-      {translate: '0 0', scale: '1', backgroundColor: bare, boxShadow: flat, easing: 'cubic-bezier(.3, .7, .3, 1)'},
-      {translate: '28px 0', scale: '1', backgroundColor: paper, boxShadow: lift, offset: .22, easing: 'cubic-bezier(.45, 0, .2, 1)'},
-      {translate: `${dx}px ${dy}px`, scale: `${size}`, backgroundColor: bare, boxShadow: flat, opacity: 1, offset: .9},
-      {translate: `${dx}px ${dy}px`, scale: `${size}`, backgroundColor: bare, boxShadow: flat, opacity: 0}],
-    {duration: ms}).finished.then(gone, gone);
-    row.animate([{opacity: 0}, {opacity: 0, offset: .86}, {opacity: 1}], {duration: ms}).finished.then(() => { if (row.isConnected) lit(row); }, () => {});
+    if (!row || !seen(row)) slideAway(words);
+    else slideInto(words, row, from, parseFloat(cs.fontSize) || 1);
   };
+}
+
+/** The slip `words` slid on to the right and rising out of sight, as a sheet slid off and taken. */
+function slideAway(words: HTMLElement) {
+  const gone = () => words.remove();
+  words.animate([{translate: '0 0', opacity: 1, easing: 'cubic-bezier(.3, .7, .3, 1)'},
+    {translate: '76px 0', opacity: 1, offset: .4, easing: 'cubic-bezier(.55, 0, .85, .35)'}, {translate: '82px -38px', opacity: 0}],
+  {duration: paced(400)}).finished.then(gone, gone);
+}
+
+/**
+ * The slip `words` (its words starting at `from`, `size` px) slid on to the right and on into `row`, coming down to
+ * its size; the line takes it as it arrives, and is lit a moment.
+ */
+function slideInto(words: HTMLElement, row: HTMLElement, from: {x: number; y: number}, size: number) {
+  const gone = () => words.remove();
+  // To where its words stand in the line (after its head, #3 or TODO), at the line's size.
+  const range = document.createRange();
+  range.selectNodeContents(row.lastChild ?? row);
+  const to = range.getBoundingClientRect(), scale = parseFloat(getComputedStyle(row).fontSize) / size;
+  const dx = to.left - from.x, dy = to.top - from.y;
+  const ms = paced(560);
+  const paper = 'var(--paper)', bare = 'color-mix(in srgb, var(--paper) 0%, transparent)';
+  const lift = '0 6px 18px color-mix(in srgb, var(--ink) 12%, transparent)', flat = '0 0 0 transparent';
+  words.animate([
+    {translate: '0 0', scale: '1', backgroundColor: bare, boxShadow: flat, easing: 'cubic-bezier(.3, .7, .3, 1)'},
+    {translate: '28px 0', scale: '1', backgroundColor: paper, boxShadow: lift, offset: .22, easing: 'cubic-bezier(.45, 0, .2, 1)'},
+    {translate: `${dx}px ${dy}px`, scale: `${scale}`, backgroundColor: bare, boxShadow: flat, opacity: 1, offset: .9},
+    {translate: `${dx}px ${dy}px`, scale: `${scale}`, backgroundColor: bare, boxShadow: flat, opacity: 0}],
+  {duration: ms}).finished.then(gone, gone);
+  row.animate([{opacity: 0}, {opacity: 0, offset: .86}, {opacity: 1}], {duration: ms}).finished.then(() => { if (row.isConnected) lit(row); }, () => {});
 }

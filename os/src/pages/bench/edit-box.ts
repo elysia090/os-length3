@@ -163,7 +163,7 @@ export class EditLine {
   }
 
   /** The file in front: the one last written in while it is shown in the repo's box, else the one read there. */
-  front(): Front | null {
+  #front(): Front | null {
     const repo = this.#p.repo();
     if (!repo) return null;
     const ok = (a: HTMLTextAreaElement | null) => !!a?.isConnected && !!a.offsetParent && a.closest<HTMLElement>('.col')?.dataset.repo === repo;
@@ -180,7 +180,7 @@ export class EditLine {
 
   /** The pill's words: the file in front and the caret's line in it. */
   where(): {file: string; line: number} | null {
-    const f = this.front();
+    const f = this.#front();
     if (!f) return null;
     // Counted, not split: it is asked at every key in the file.
     const text = f.area.value, caret = f.area.selectionStart;
@@ -191,7 +191,7 @@ export class EditLine {
 
   /** What the box holds, shown on the file and said; with it empty, the caret's line lit. */
   show(back = false) {
-    const f = this.front();
+    const f = this.#front();
     this.#mark(f);
     this.#p.main.classList.add('edit-pointing');
     if (!f) { this.#off(); this.#p.say(this.#p.repo() ? t('Open a file to edit it here') : ''); return; }
@@ -255,7 +255,7 @@ export class EditLine {
     }
     const typed = this.#p.box.value, e = parseEdit(typed);
     if (e.kind === 'file') { void this.#choose(e.path); return true; }
-    const f = this.front();
+    const f = this.#front();
     if (!f || e.kind === 'none') return false;
     const area = f.area, p = plan(e, area.value, area.selectionStart, back, typed, area.selectionEnd);
     if (p.go) {
@@ -279,7 +279,7 @@ export class EditLine {
 
   /** ↑ or ↓ in the empty box: the caret's line moved up or down by one. */
   step(by: 1 | -1) {
-    const f = this.front();
+    const f = this.#front();
     if (!f) return;
     const area = f.area, starts = lineStarts(area.value);
     const line = Math.min(starts.length - 1, Math.max(0, lineOf(starts, area.selectionStart) + by));
@@ -302,7 +302,7 @@ export class EditLine {
 
   /** Escape in the empty box: the keyboard back in the file, at its caret; false with no file in front. */
   toFile(): boolean {
-    const f = this.front();
+    const f = this.#front();
     if (!f) return false;
     this.hide();
     f.area.focus({preventScroll: true});

@@ -35,7 +35,7 @@ export class Activity {
   /** `run`, the last line sent, followed each second while it runs; none, or done, what was said goes. */
   follow(run: Run | undefined) {
     clearInterval(this.#ticker);
-    if (!this.#ways.live() || !run || run.ms !== null) { this.unfollow(); return; }
+    if (!this.#ways.live() || !run || run.ms !== null) { this.#unfollow(); return; }
     this.#leaving?.cancel();
     this.#leaving = null;
     // Made once for the run and only moved in or out: a button drawn anew each second would drop the keyboard on it.
@@ -45,7 +45,7 @@ export class Activity {
     const again = h('button', {class: 'button small-button', type: 'button'}, t('Stop and start again'));
     again.addEventListener('click', () => this.#ways.restart());
     const paint = () => {
-      if (run.ms !== null || !this.#ways.live()) { clearInterval(this.#ticker); this.unfollow(); return; }
+      if (run.ms !== null || !this.#ways.live()) { clearInterval(this.#ticker); this.#unfollow(); return; }
       const parts = this.#parts(run, said, cut, again);
       const shown = [...this.element.childNodes];
       if (parts.length !== shown.length || parts.some((x, i) => x !== shown[i])) this.element.replaceChildren(...parts);
@@ -64,7 +64,7 @@ export class Activity {
   }
 
   /** What the run was doing, once it is done: put aside to its right, not gone at once. */
-  unfollow() {
+  #unfollow() {
     if (this.#leaving) return;
     if (!this.element.firstChild || still()) { this.element.replaceChildren(); return; }
     const going = this.#leaving = this.element.animate([{opacity: 1}, {opacity: 0, translate: '12px 0'}], {duration: paced(170), easing: 'ease-in'});
@@ -74,7 +74,7 @@ export class Activity {
   /** The run cut: what it was doing goes as it is cut, not once the shell says it is back. */
   cut() {
     clearInterval(this.#ticker);
-    this.unfollow();
+    this.#unfollow();
   }
 
   /** The Prompt ended: nothing is said here any more, at once. */
