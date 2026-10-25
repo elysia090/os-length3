@@ -2652,9 +2652,10 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 }
 .todo-read { white-space: pre-wrap; }
 .board-talk { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s3) var(--s5); overscroll-behavior: contain; }
-/* Its talk goes on below what is shown: the box is open at its foot and the posts run past the edge (server-layer.ts). */
+/* Its talk goes on below what is shown: the box is open at its foot and the posts run past the edge (server-layer.ts).
+   Only its edge changes: its room at the foot (the padding under the last post, seen only at the end) stays, for
+   taking it away there changed how far it scrolls, which said "at the foot" again and again, the posts jumping by it. */
 .slide[aria-current='true'] .board-card.more-below { border-bottom-color: transparent; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
-.board-card.more-below > .board-talk { padding-bottom: 0; }
 .board-talk:focus-visible { outline-offset: -2px; }
 .board-body { display: grid; gap: var(--s3); align-content: start; padding: var(--s2) var(--s5) var(--s5); max-width: 560px; }
 .board-body .row { gap: var(--s2); }
