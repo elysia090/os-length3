@@ -2,17 +2,22 @@
 // in to the way a browser is, with DNS as a stand-in. Not part of
 // the service; only the tests import it.
 //
-// A database is made once per process, migrated, and each one after that
-// starts from a copy of it (a fresh Postgres and its migrations take ten
-// seconds and more; a copy, half a second). One lent by `service()` or
-// `freshDb()` is emptied when the test that took it ends, back to what its
-// migrations left (their rows, where each sequence stood, a session with
-// nothing set), and lent to the next test of the process: emptying takes a
-// few milliseconds, and it is most of what a test of the Remote cost.
-// `sharedService()` is one for a whole file, closed when the file is done,
-// its tests kept apart by each signing in as people of their own (`person()`).
+// A database is migrated once on this machine and kept as Postgres left it
+// shut down; each one after that starts from its files (a fresh Postgres and
+// its migrations take seconds; one from those files, under half a second),
+// and is asked as testing-pglite.ts asks it. One lent by `service()` or
+// `freshDb()` is the test's, and one lent by `fileService()`, `fileDb()` or
+// `sharedService()` the file's: when the test or the file is done it is
+// emptied, back to what its migrations left (their rows, where each sequence
+// stood, a session with nothing set), and lent to whatever asks next in the
+// process. Emptying takes a few milliseconds, a new one a hundred times that.
+// npm test runs the files a process a core, one after another in each
+// (testing-together.ts), so a process makes a database or a few and lends
+// them from file to file.
+// `sharedService()` is one Remote for a whole file, its tests kept apart by
+// each signing in as people of their own (`person()`).
 //
-// Two things the environment can change, for a whole process:
+// Two things the environment can change, read as a Remote is made:
 //   REMOTE_TEST_BUCKET=none          the Remote has no bucket (bucket.ts): files
 //                                    are not kept, and `upload` records a blob as
 //                                    kept already (its row), so the rest is tested
@@ -40,10 +45,14 @@ import {MIGRATIONS, reach} from './neon.ts';
 import type {Billing, PlanConfig} from './plan.ts';
 import * as schema from './schema.ts';
 import {sign, type StripeApi} from './stripe.ts';
+import {DataDirFS, packed, QuickPGlite, unpacked, type DataDir} from './testing-pglite.ts';
 import {open as openPool, scoped, served} from './worker.ts';
 
-/** Whether this process's Remotes keep files (contract.nobucket.test.ts says not). */
-export const WITHOUT_BUCKET = process.env.REMOTE_TEST_BUCKET === 'none';
+/**
+ * Whether a Remote made now keeps no files (contract.nobucket.test.ts says so while its file loads): read
+ * each time, as the files of a process come one after another, and only one of them says it.
+ */
+const withoutBucket = () => process.env.REMOTE_TEST_BUCKET === 'none';
 /** A real database for sharedService() (verify.ts); '' for PGlite. Never printed. */
 const AGAINST = process.env.REMOTE_TEST_DATABASE_URL ?? '';
 
@@ -55,77 +64,165 @@ export const enc = new TextEncoder();
 /** fetch as the process had it, before any Remote here was laid over it. */
 const realFetch = globalThis.fetch;
 
-let template: Promise<Blob> | null = null;
 /**
- * The migrated database every test's starts as: made once on this machine, and kept in its temporary directory
- * under what it was made from (the migrations and PGlite's version), so the test files after the first, each a
- * process of its own, load it in a fraction of the 3 s a new Postgres and its migrations take.
+ * A database's files made once on this machine by `make`, as Postgres left them shut down, and kept in its
+ * temporary directory as `name` (named by all it was made from), for the test processes after the first.
  */
-const migrated = () => (template ??= (async () => {
-  const pglite = (JSON.parse(readFileSync(new URL('../node_modules/@electric-sql/pglite/package.json', import.meta.url), 'utf8')) as {version: string}).version;
-  const hash = createHash('sha256').update(pglite);
-  for (const f of readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql')).sort()) hash.update(f).update(readFileSync(join(MIGRATIONS, f)));
-  const kept = join(tmpdir(), `length3-pglite-${hash.digest('hex').slice(0, 16)}.tar`);
-  if (existsSync(kept)) return new Blob([readFileSync(kept)]);
-  const pg = new PGlite();
-  await migrate(drizzle(pg, {schema}), {migrationsFolder: MIGRATIONS});
-  const dump = await pg.dumpDataDir('none');
-  await pg.close();
+async function keptAs(name: string, make: () => Promise<DataDir>): Promise<DataDir> {
+  const kept = join(tmpdir(), name);
+  if (existsSync(kept)) return unpacked(readFileSync(kept));
+  const made = await make();
   // Written aside, then named: a process reading it never meets half of it.
   const aside = `${kept}.${process.pid}`;
-  writeFileSync(aside, new Uint8Array(await dump.arrayBuffer()));
+  writeFileSync(aside, packed(made));
   renameSync(aside, kept);
-  return dump;
-})());
+  return made;
+}
+/** A database's files, as PGlite left them when the database it made over `from` (none: initdb's) was closed after `f`. */
+async function closedAfter(from: DataDir | undefined, f: (pg: PGlite) => Promise<unknown>): Promise<DataDir> {
+  const fs = new DataDirFS(from, {keep: true});
+  const pg = new PGlite({fs});
+  await pg.waitReady;
+  await f(pg);
+  await pg.close();
+  return fs.left!;
+}
+const PGLITE = (JSON.parse(readFileSync(new URL('../node_modules/@electric-sql/pglite/package.json', import.meta.url), 'utf8')) as {version: string}).version;
+/** A hash as a kept file is named by it. */
+const short = (h: ReturnType<typeof createHash>) => h.digest('hex').slice(0, 16);
 
-/** What a database is as its migrations leave it: the rows they put in, and where each sequence stands. */
-type Fresh = {truncate: string; rows: [string, unknown[]][]; sequences: [string, string, boolean][]};
+let initialized: Promise<DataDir> | null = null;
+/** A Postgres as initdb leaves it: three seconds each time PGlite runs initdb. */
+const initdb = () => (initialized ??= keptAs(`length3-pglite-${short(createHash('sha256').update(PGLITE))}-initdb.data`,
+  () => closedAfter(undefined, async () => {})));
+
+let template: Promise<DataDir> | null = null;
+/**
+ * The migrated database every test's starts as: made once on this machine, under what it was made from (the
+ * migrations and PGlite's version), so the test processes after the first start one in a fraction of the 3 s a
+ * new Postgres and its migrations take.
+ */
+const migrated = () => (template ??= (async () => {
+  const hash = createHash('sha256').update(PGLITE);
+  for (const f of readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql')).sort()) hash.update(f).update(readFileSync(join(MIGRATIONS, f)));
+  return keptAs(`length3-pglite-${short(hash)}.data`, async () => closedAfter(await initdb(), (pg) => migrate(drizzle(pg, {schema}), {migrationsFolder: MIGRATIONS})));
+})());
+/**
+ * How Postgres is started for a test: as PGlite starts it, with shared buffers of 16 MB, not 128 (a test's
+ * database is a few MB; Postgres clears every buffer as it starts, a fifth of the time it took to start).
+ */
+const START = [...PGlite.defaultStartParams, '-c', 'shared_buffers=16MB'];
+
+/**
+ * How a database is made as its migrations left it again, in what Postgres is told after DISCARD:
+ * `again`, every row deleted, the migrations' put back, each sequence where they left it, and then whether
+ * any of its tables or indexes has grown to `GROWN` pages; `anew`, the same by truncating every table.
+ */
+type Fresh = {again: string; anew: string};
 let fresh: Promise<Fresh> | null = null;
+/**
+ * How big a table or index of a database emptied by deleting may grow before it is truncated instead: under
+ * ten pages, where Postgres plans for one it has never vacuumed as it does for a new one (ten pages, at least).
+ */
+const GROWN = 8;
 /** Read off a database no test has used yet, once a process. */
 const freshOf = (pg: PGlite) => (fresh ??= (async () => {
   const tables = (await pg.query<{t: string}>(`select quote_ident(tablename) as t from pg_tables where schemaname = 'public'`)).rows.map((r) => r.t);
-  const rows: [string, unknown[]][] = [];
+  const literal = (s: string) => `'${s.replaceAll("'", "''")}'`;
+  const put: string[] = [];
   for (const t of tables) {
-    const [{j}] = (await pg.query<{j: unknown[] | null}>(`select json_agg(x) as j from ${t} x`)).rows;
-    if (j?.length) rows.push([t, j]);
+    const [{j}] = (await pg.query<{j: string | null}>(`select json_agg(x)::text as j from ${t} x`)).rows;
+    if (j) put.push(`insert into ${t} select * from json_populate_recordset(null::${t}, ${literal(j)});`);
   }
-  const sequences = (await pg.query<{s: string; v: string; c: boolean}>(`select quote_ident(sequencename) as s,
-    coalesce(last_value, start_value)::text as v, last_value is not null as c from pg_sequences where schemaname = 'public'`)).rows;
-  return {truncate: `truncate ${tables.join(', ')}`, rows, sequences: sequences.map((q) => [q.s, q.v, q.c] as [string, string, boolean])};
+  for (const {s, v, c} of (await pg.query<{s: string; v: string; c: boolean}>(`select quote_ident(sequencename) as s,
+    coalesce(last_value, start_value)::text as v, last_value is not null as c from pg_sequences where schemaname = 'public'`)).rows) {
+    put.push(`select setval(${literal(s)}, ${v}, ${c});`);
+  }
+  const back = `${put.join(' ')} set session_replication_role = origin; set timezone to 'UTC';`;
+  return {
+    again: `set session_replication_role = replica; ${tables.map((t) => `delete from ${t};`).join(' ')} ${back}
+      select exists (select from pg_class where relnamespace = 'public'::regnamespace and pg_relation_size(oid) >= ${GROWN} * 8192) as grown`,
+    anew: `set session_replication_role = replica; truncate ${tables.join(', ')}; ${back}`,
+  };
 })());
 
-/** A database as its migrations left it again: no row a test wrote, no sequence moved on, nothing set on its session. */
+/**
+ * A database as its migrations left it again: no row a test wrote, no sequence moved on, nothing set on its
+ * session. Its rows are deleted, in a few milliseconds where truncating every table took a hundred; and once
+ * deleted rows have grown a table or an index past a few pages, its tables are truncated, so that every test
+ * meets tables as small as a new database's, and Postgres plans for them as it would there.
+ */
 async function empty(pg: PGlite) {
   const f = await fresh!;
-  await pg.exec('discard all');
-  await pg.exec(`set session_replication_role = replica; ${f.truncate}`);
-  for (const [t, rows] of f.rows) await pg.query(`insert into ${t} select * from json_populate_recordset(null::${t}, $1)`, [JSON.stringify(rows)]);
-  for (const [q, v, c] of f.sequences) await pg.query('select setval($1, $2, $3)', [q, v, c]);
-  await pg.exec(`set session_replication_role = origin; set timezone to 'UTC'`);
+  // Refused inside a transaction, as `discard all` is.
+  if (pg.isInTransaction()) throw new Error('A transaction was left open');
+  const [{grown}] = (await pg.exec(`${DISCARD} ${f.again}`)).at(-1)!.rows as {grown: boolean}[];
+  if (grown) await pg.exec(f.anew);
+}
+/**
+ * `discard all`, step by step as Postgres documents it, but for letting go of the statements the database keeps
+ * parsed (testing-pglite.ts) and their plans: no test sees them, and the next test asks most of them again.
+ */
+const DISCARD = 'close all; set session authorization default; reset all; unlisten *; select pg_advisory_unlock_all(); discard temp; discard sequences;';
+
+/**
+ * Lent to the test running now, lent to the file (fileService, fileDb, sharedService), and emptied and waiting
+ * for whatever asks next. A test's go back when it ends; a file's when the file is done, which
+ * testing-together.ts says between the files it runs, or with the process.
+ */
+const lent: PGlite[] = [], forFile: PGlite[] = [], idle: PGlite[] = [];
+/** Emptied, and kept for the next; one that cannot be is closed. */
+async function giveBack(pg: PGlite) {
+  if (pg.closed) return;
+  try { await empty(pg); idle.push(pg); } catch { await pg.close().catch(() => {}); }
+}
+afterEach(async () => { for (const pg of lent.splice(0)) await giveBack(pg); });
+
+/** Whether testing-together.ts closes what the process holds itself, after its last file. */
+let held = false;
+/** Every Remote and database this process holds, closed: an open PGlite keeps its process up. */
+async function closeAll() {
+  const s = shared;
+  shared = null;
+  if (s) await (await s).close();
+  await Promise.all([...lent.splice(0), ...forFile.splice(0), ...idle.splice(0)].map((pg) => pg.close()));
+}
+// Loaded first at the root of a process's tests (by its file, or by testing-together.ts before the files it runs).
+after(async () => { if (!held) await closeAll(); });
+
+/**
+ * For testing-together.ts, which runs a process's files one after another: what a file took for itself goes
+ * back when it says the file is done, and the rest is closed when it says the last is. Not on node:test's
+ * root hooks, which run whenever its tests have all run, between two files too.
+ */
+export function fileByFile() {
+  held = true;
+  return {
+    fileDone: async () => {
+      const s = shared;
+      shared = null;
+      if (s) await (await s).close();
+      for (const pg of forFile.splice(0)) await giveBack(pg);
+    },
+    lastDone: async () => { held = false; await closeAll(); },
+  };
 }
 
-/** Lent to the test running now; emptied and kept for the next when it ends. */
-const lent: PGlite[] = [];
-const idle: PGlite[] = [];
-afterEach(async () => {
-  for (const pg of lent.splice(0)) {
-    if (pg.closed) continue;
-    try { await empty(pg); idle.push(pg); } catch { await pg.close().catch(() => {}); }
-  }
-});
-after(async () => { await Promise.all(idle.splice(0).map((pg) => pg.close())); });
-/** A database as its migrations leave it, for this test: one kept from a test before, or a new one. */
-async function lend(): Promise<PGlite> {
-  let pg = idle.pop();
-  if (!pg) { pg = await database(); await freshOf(pg); }
-  lent.push(pg);
+/** A database as its migrations leave it: one kept from before, or a new one. */
+async function take(): Promise<PGlite> {
+  const pg = idle.pop() ?? await database();
+  await freshOf(pg);
   return pg;
 }
+/** One for the test running now. */
+const lend = async () => { const pg = await take(); lent.push(pg); return pg; };
+/** One for the file, whenever in it it is asked for. */
+const lendForFile = async () => { const pg = await take(); forFile.push(pg); return pg; };
 
 /** A PGlite migrated as every test's is, for a test that runs a Remote its own way (worker.test.ts). */
 export async function database(): Promise<PGlite> {
   if (AGAINST) throw new Error('Only sharedService() runs against a real database');
-  const pg = new PGlite({loadDataDir: await migrated()});
+  const pg = new QuickPGlite({fs: new DataDirFS(await migrated()), startParams: START});
   await pg.waitReady;
   // In UTC, as Neon is. PGlite takes this machine's zone, and the template keeps the zone of the machine that made it:
   // made in Tokyo, now() as a moment without a zone was nine hours ahead of what Better Auth reads its columns as (UTC).
@@ -133,16 +230,21 @@ export async function database(): Promise<PGlite> {
   return pg;
 }
 
-/** A migrated database of its own, closed when the test ends. */
+/** A Postgres as initdb leaves it, nothing migrated, of its own (stages.test.ts migrates one step by step). */
+export async function initdbDatabase(): Promise<PGlite> {
+  const pg = new QuickPGlite({fs: new DataDirFS(await initdb()), startParams: START});
+  await pg.waitReady;
+  return pg;
+}
+
+/** A migrated database of its own, for as long as the test lasts. */
 export async function freshDb() {
   return drizzle(await lend(), {schema});
 }
 
-/** A migrated database for a whole file, closed when the file is done. */
+/** A migrated database for a whole file, for as long as the file lasts. */
 export async function fileDb() {
-  const pg = await database();
-  after(() => pg.close());
-  return drizzle(pg, {schema});
+  return drizzle(await lendForFile(), {schema});
 }
 
 export type Service = Awaited<ReturnType<typeof make>>;
@@ -154,33 +256,28 @@ export interface Options {
 
 /** A Remote of its own for one test: `records` is DNS, a name → its TXT records. */
 export async function service(records: Record<string, string[]> = {}, o: Options = {}): Promise<Service> {
-  return make(onPglite(await lend()), records, o);
+  return make(kept(await lend()), records, o);
 }
 
 let shared: Promise<Service> | null = null;
-/** One Remote for every test of a file that asks for it, closed when the file is done. */
+/** One Remote for every test of a file that asks for it, closed when the file is done; the next file has its own. */
 export function sharedService(): Promise<Service> {
-  if (!shared) {
-    shared = (AGAINST ? onReal(AGAINST) : database().then(onPglite)).then((store) => make(store, {}, {}));
-    after(async () => { await (await shared!).close(); });
-  }
-  return shared;
+  return shared ??= AGAINST ? onReal(AGAINST).then((store) => make(store, {}, {})) : lendForFile().then((pg) => make(kept(pg), {}, {}));
 }
 
-/** A Remote of its own for a whole file, made as `o` says, closed when the file is done. */
+/** A Remote of its own for a whole file, made as `o` says, for as long as the file lasts. */
 export async function fileService(records: Record<string, string[]> = {}, o: Options = {}): Promise<Service> {
-  const made = await make(onPglite(await database()), records, o);
-  after(() => made.close());
-  return made;
+  return make(kept(await lendForFile()), records, o);
 }
 
 type Database = ReturnType<typeof drizzle<typeof schema>>;
 /** Where a Remote of the tests keeps its rows: the database the tests read (`db`), the one the app is given, how a request is served. */
 interface Store { db: Database; app: Database; serve: (f: () => Promise<Response>) => Promise<Response>; close(): Promise<void> }
 
-const onPglite = (pg: PGlite): Store => {
+/** On a PGlite the pool lent: closing the Remote leaves it to the pool, which empties it and lends it again. */
+const kept = (pg: PGlite): Store => {
   const db = drizzle(pg, {schema});
-  return {db, app: db, serve: (f) => f(), close: () => pg.close()};
+  return {db, app: db, serve: (f) => f(), close: async () => {}};
 };
 
 /**
@@ -205,8 +302,8 @@ async function make(store: Store, records: Record<string, string[]>, o: Options)
   const db = store.db;
   const auth = createAuth({db: store.app, secret: SECRET, baseURL: BASE, appOrigin: APP, rateLimit: false, dev: true, only: o.enter && enterEmail(o.enter.as)});
   const bucket = memoryBucket();
-  /** What the app keeps files in: none when this process runs without a bucket. */
-  const files = WITHOUT_BUCKET ? null : bucket;
+  /** What the app keeps files in: none when this Remote is made without a bucket. */
+  const files = withoutBucket() ? null : bucket;
   // DNS as a map of name → TXT records.
   const dns = new Map(Object.entries(records));
   const app = createApp({db: store.app, auth, bucket: files, origins: [APP], appOrigin: APP, providers: ['dev'], domain: 'length3.test', baseURL: BASE,

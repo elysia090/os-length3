@@ -35,7 +35,10 @@ async function serve(body: Uint8Array, steps: Step[]) {
 }
 
 const body = new Uint8Array(200_000).map((_, i) => (i * 7) & 255);
-const fast = {stallMs: 200, backoff: () => 10};
+// Tries come at once; a stall is noticed only where a stall is what is tested (`stalls`): elsewhere a busy machine's
+// pause between two pieces would be taken for one, and tried again past what the test counts.
+const fast = {stallMs: 10_000, backoff: () => 10};
+const stalls = {...fast, stallMs: 200};
 
 test('a cut transfer continues from the byte it reached', async () => {
   const s = await serve(body, ['cut', 'cut']);
@@ -54,7 +57,7 @@ test('a cut transfer continues from the byte it reached', async () => {
 test('a stalled transfer is noticed and taken up again', async () => {
   const s = await serve(body, ['stall']);
   const retries: string[] = [];
-  const got = await download(s.url, {sha256: await digest(body)}, {bytes() {}, retry(_, why) { retries.push(why); }}, fast);
+  const got = await download(s.url, {sha256: await digest(body)}, {bytes() {}, retry(_, why) { retries.push(why); }}, stalls);
   s.close();
   assert.deepEqual(got, body);
   assert.deepEqual(retries, ['The connection stalled']);
