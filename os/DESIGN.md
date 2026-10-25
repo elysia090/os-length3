@@ -146,15 +146,9 @@ Every value in `styles.css` comes from a token (§2).
   - *What is about to come leans in.* The pointer on a box's edge in
     Forge's row, the row leans a step toward it before it is pressed;
     left, it settles back.
-  - *What is made goes where it is kept.* A file saved sends what it
-    changed (+2 −1, its lines, in the diff's colours on a small ink chip)
-    up off the line where it was written; it waits a beat, then goes in an
-    arc to the rail, a short trail of dots behind it, to Runtime while it is
-    kept on this device, to Remote once the Remote keeps it, landing as a dot;
-    the icon takes it in with a pop and a ring going out from it: the deed's
-    second beat, the eye led back to the rail. Saved again while one is on
-    its way, it carries that too, one chip at a time. A TODO sent from the
-    box at the foot carries its own words to Home.
+  - *What is saved stays where it was written.* A file saved says so
+    in its own head (Unsaved goes from it); nothing flies off it to the
+    rail, which the eye would have to follow away from the work.
   - *What is done is rewarded, once.* A TODO done: its mark pops past its
     size and settles. A TODO's kind, read off its line as it is typed
     (Fix:), takes its form with a small pop; a new TODO unfolds from the

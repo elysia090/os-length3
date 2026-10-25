@@ -274,18 +274,6 @@ button.row-item, .part):hover { transition-duration: calc(60ms * var(--pace)); }
 .os-caret.on.resting { animation: caret-blink 1.06s steps(1) infinite; }
 @keyframes caret-blink { 50% { opacity: 0; } }
 .caret-copy { position: absolute; left: -9999px; top: 0; visibility: hidden; overflow: hidden; }
-/* What was written on its way to where it is kept (glide.ts keep): what it changed, a chip in the diff's colours (its
-   lines added in green, removed in red, as a diff's bar), in an arc to the rail with a trail of dots, a dot as it lands,
-   a ring going out from the icon that takes it in. */
-.kept-path { position: fixed; z-index: 9; width: 0; height: 0; pointer-events: none; }
-.kept-lift { position: absolute; left: 0; top: 0; width: 0; height: 0; }
-.kept-chip { position: absolute; left: 0; top: 0; translate: -50% -50%; display: inline-flex; gap: 5px; padding: 1px 8px; border-radius: var(--r-round);
-  background: var(--ink); color: var(--ground); font: 600 12px/18px var(--mono); white-space: nowrap;
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--ink) 30%, transparent); }
-.kept-chip > b { font-weight: inherit; color: color-mix(in srgb, var(--done) 55%, var(--ground)); }
-.kept-chip > i { font-style: normal; color: color-mix(in srgb, var(--off) 45%, var(--ground)); }
-.kept-trail { position: absolute; left: -3.5px; top: -3.5px; width: 7px; height: 7px; border-radius: 50%; background: var(--ink); opacity: 0; }
-.kept-ring { position: fixed; z-index: 9; translate: -50% -50%; border: 1.5px solid var(--ink); border-radius: 50%; pointer-events: none; opacity: 0; }
 .arriving, .arriving:hover { background: transparent !important; color: var(--ink) !important; transition: none !important; }
 /* One the ink is going over (leaving, passing, landing on) while half of it or more lies under it: its words light
    on it, as the chosen one's are (glide.ts). */

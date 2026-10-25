@@ -5,11 +5,8 @@ import {lineCount, readingOrder} from '../reading.ts';
 import {store, type Change, type Entry} from '../repos.ts';
 import {answers} from './common.ts';
 import {mark} from '../icons.ts';
-import {keep as goesTo, keepOut, putAway} from '../glide.ts';
-import {connection} from '../remote.ts';
+import {keepOut, putAway} from '../glide.ts';
 import {diffFiles} from './diff-view.ts';
-import {counts, lineOps} from '../linediff.ts';
-import {caretRect} from '../caret.ts';
 import {shownPath} from '../issues.ts';
 
 // The center of Forge: one repo read top to bottom as an endless page. Each
@@ -441,13 +438,9 @@ export class Reader {
       });
       const write = async (text: string) => {
         try {
-          const was = held.saved;
           await store.write(this.repo, path, text);
           held.wrote(text);
           if (area.value === held.saved) saved(); else unsaved();
-          // Saved: what it changed goes from where it was written to where it is kept, this device's (Runtime) or the
-          // Remote's once signed in.
-          goesTo(head, connection() ? 'remote' : 'runtime', {...counts(lineOps(was, text)), at: document.activeElement === area ? caretRect(area) : null});
         } catch (e) {
           state.textContent = t('Could not save: {message}', {message: e instanceof Error ? e.message : String(e)});
         }
