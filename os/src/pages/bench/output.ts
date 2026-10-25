@@ -177,7 +177,10 @@ export class Output {
     return s.slice(cleared);
   }
 
-  /** NO_TTY may come in pieces; it goes once whole (before anything after it is drawn). True while what came may still become it. */
+  /**
+   * NO_TTY may come in pieces; it goes once whole (before anything after it is drawn). True while what came may still
+   * become it.
+   */
   #noTty(): boolean {
     if (this.#ttySaid) return false;
     if (this.#text.includes(NO_TTY)) {

@@ -112,7 +112,8 @@ export class Box {
     this.form = h('form', {class: 'prompt'}, this.chip, this.prompt, summon, this.runIt) as HTMLFormElement;
     this.line = [lamp, this.waits, this.prompt, this.runIt];
     this.dock = h('div', {class: 'dock'}, this.note, this.heard);
-    this.#pillLine = new PillLine({chip: this.chip, waits: this.waits, repo: () => this.#repo, up: () => this.#up, followed: () => this.onFollow?.()});
+    this.#pillLine = new PillLine({chip: this.chip, waits: this.waits, repo: () => this.#repo, up: () => this.#up,
+      followed: () => this.onFollow?.()});
     // Put away with Escape, the keyboard goes back to the box if it was there (the Prompt not brought up for it), else
     // nowhere.
     this.#edit = new EditLine({box: this.prompt, main: p.main, dock: this.dock, repo: () => this.#repo, reveal: p.reveal,
@@ -488,7 +489,10 @@ export class Box {
       if (event.key === 'Tab') { event.preventDefault(); document.execCommand('insertText', false, '\t'); }
       return;
     }
-    if (event.key === 'Tab' && prompt.value.startsWith('@')) { if (this.#tab(` ${prompt.value.slice(1)}`)) event.preventDefault(); return; }
+    if (event.key === 'Tab' && prompt.value.startsWith('@')) {
+      if (this.#tab(` ${prompt.value.slice(1)}`)) event.preventDefault();
+      return;
+    }
     if (by && !prompt.value) { event.preventDefault(); edit.step(by); }
   }
 

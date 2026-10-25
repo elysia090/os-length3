@@ -28,7 +28,8 @@ interface Bench {
 let benches = 0;
 
 /** A letter typed with no Ctrl, Alt or ⌘ (a space is a button's), or the start of a conversion. */
-const letter = (e: KeyboardEvent) => !e.ctrlKey && !e.metaKey && !e.altKey && (e.key.length === 1 && e.key !== ' ' || e.key === 'Process');
+const letter = (e: KeyboardEvent) =>
+  !e.ctrlKey && !e.metaKey && !e.altKey && (e.key.length === 1 && e.key !== ' ' || e.key === 'Process');
 
 /**
  * Typed with the keyboard on nothing to write in (the rail just pressed to come here, the box let go of with
@@ -72,7 +73,8 @@ function promptBox() {
   return {termHead, term, termHome};
 }
 
-/** The screen the box becomes while the Prompt is up (screen.ts), at the top of its dock, the Prompt `term` coming up into it from `home`. */
+/** The screen the box becomes while the Prompt is up (screen.ts), at the top of its dock: `term` comes up into it
+ * from `home`. */
 function screenOf(work: HTMLElement, box: Box, term: HTMLElement, home: HTMLElement): {screen: Screen; element: HTMLElement} {
   // The screen's glass, a layer of its own under its words (styles.css): what runs out of the pill and rises.
   const glass = h('span', {class: 'glass', 'aria-hidden': 'true'});

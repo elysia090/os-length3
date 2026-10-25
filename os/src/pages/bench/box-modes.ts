@@ -103,7 +103,8 @@ export async function sendAs(m: 'issue' | 'todo', repo: string, text: string): P
  * `m`, the `i`th of the four, as a row of the menu out of the pill: the pill it gives (for `repo`, its next issue's
  * number `n`, the file in front and its line `at`), its word and its keys; ticked when it is the one in use.
  */
-function menuItem(m: Mode, i: number, repo: string | null, n: number | null, at: {file: string; line: number} | null): HTMLButtonElement {
+function menuItem(m: Mode, i: number, repo: string | null, n: number | null,
+  at: {file: string; line: number} | null): HTMLButtonElement {
   const pill = h('span', {class: 'prompt-chip box-mode-pill', 'data-mode': m, 'aria-hidden': 'true'},
     ...(m === 'run' ? [h('span', {class: 'lamp'}), h('span', {class: 'prompt-ps'}, repo ? `${repo} $` : '$')]
       : [h('span', {class: 'prompt-mode'}, ...pillWords(m, repo, n, at))]));

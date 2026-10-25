@@ -67,8 +67,11 @@ export class WriteBack {
   }
 }
 
-/** What is saved elsewhere in `repo` (not by `by`, the shell) comes into the shell's copy through `put`; returns how to stop. */
-export function mirror(repo: string, by: string, put: (message: {type: 'put'; path: string; what: Uint8Array | 'dir' | null}) => void): () => void {
+/** A file or directory saved in the shell's copy (`what`: its bytes, 'dir', or null for gone). */
+interface Put { type: 'put'; path: string; what: Uint8Array | 'dir' | null }
+
+/** What is saved elsewhere in `repo` (not by `by`, the shell) comes into its copy through `put`; returns how to stop. */
+export function mirror(repo: string, by: string, put: (message: Put) => void): () => void {
   return onChange((c) => {
     if (c.repo !== repo || c.by === by || c.what === 'repo') return;
     const what = c.what === 'file' ? new TextEncoder().encode(c.text ?? '') : c.what === 'dir' ? 'dir' : null;

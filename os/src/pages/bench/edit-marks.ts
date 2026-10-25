@@ -24,8 +24,8 @@ function widthIn(area: HTMLTextAreaElement, words: string): number {
 interface Lines { text: string; starts: number[]; lh: number; tab: number; top: number; left: number }
 function linesOf(area: HTMLTextAreaElement): Lines {
   const cs = getComputedStyle(area), text = area.value;
-  return {text, starts: lineStarts(text), lh: parseFloat(cs.lineHeight) || 1.6 * parseFloat(cs.fontSize), tab: Number(cs.tabSize) || 4,
-    top: parseFloat(cs.paddingTop) || 0, left: parseFloat(cs.paddingLeft) || 0};
+  return {text, starts: lineStarts(text), lh: parseFloat(cs.lineHeight) || 1.6 * parseFloat(cs.fontSize),
+    tab: Number(cs.tabSize) || 4, top: parseFloat(cs.paddingTop) || 0, left: parseFloat(cs.paddingLeft) || 0};
 }
 
 /** The layer `layer` laid over `area`, made if there is none; with no marks to draw (`any` false) it goes, and is none. */

@@ -39,7 +39,7 @@ export class TakenLine {
     return k;
   }
 
-  /** Line `line` of `area` taken into the box, the caret at `column` in it; one taken and written anew is written back first. */
+  /** Line `line` of `area` taken into the box, the caret at `column`; one taken and written anew is written back first. */
   take(area: HTMLTextAreaElement, line: number, column: number) {
     const box = this.#p.box;
     if (this.still() && box.value !== this.#taken!.text) void this.putBack();
@@ -56,7 +56,10 @@ export class TakenLine {
     this.#p.moved();
   }
 
-  /** The line taken lit where it is, whatever is written (its new words, not a line that asks), and said; false with none. */
+  /**
+   * The line taken lit where it is, whatever is written (its new words, not a line that asks), and said; false with
+   * none taken.
+   */
   show(): boolean {
     const k = this.still();
     if (!k) return false;
