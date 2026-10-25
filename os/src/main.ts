@@ -212,8 +212,30 @@ function select(id: PurposeId, quiet = false): Promise<void> {
   return Promise.resolve();
 }
 
+/** How far down each page was read, as it was left (pages that scroll the window: Home, Runtime, Remote, Inbox). */
+const readTo = new Map<PurposeId, number>();
+
+/**
+ * Come back to, a page is where it was read to. Still coming in (its lists drawn once they are read), it is put there
+ * once it is that long, unless the hand scrolls first; one that went to a place asked for keeps that place.
+ */
+function readAgain(id: PurposeId) {
+  const at = readTo.get(id) ?? 0, doc = document.scrollingElement;
+  if (!at || !doc || doc.scrollTop) return;
+  doc.scrollTop = at;
+  if (doc.scrollTop >= at - 1) return;
+  const grows = new ResizeObserver(() => { if (current !== id) stop(); else { doc.scrollTop = at; if (doc.scrollTop >= at - 1) stop(); } });
+  const stop = () => { grows.disconnect(); clearTimeout(late); for (const e of ['wheel', 'touchmove', 'keydown', 'pointerdown']) removeEventListener(e, stop, true); };
+  const late = window.setTimeout(stop, 1500);
+  for (const e of ['wheel', 'touchmove', 'keydown', 'pointerdown']) addEventListener(e, stop, {capture: true, passive: true});
+  grows.observe($('page'));
+}
+
 function draw(id: PurposeId, quiet: boolean, panned: boolean) {
   const from = current;
+  // The page left keeps where it was read to; the one come to starts at its top, never where the last was read to.
+  const doc = document.scrollingElement;
+  if (opened && from !== id && doc) { readTo.set(from, doc.scrollTop); doc.scrollTop = 0; }
   // The first page the OS opens on: nothing drawn before it.
   const first = !opened;
   opened = true;
@@ -228,6 +250,7 @@ function draw(id: PurposeId, quiet: boolean, panned: boolean) {
   $('page').setAttribute('aria-labelledby', `purpose-${id}`);
   named();
   render();
+  if (from !== id) readAgain(id);
   plugState();
   if (id !== 'new-repo') save(PURPOSE_KEY, id);
   // The first page comes in as any page come to does, its parts a beat apart, rising from below as the OS opens.

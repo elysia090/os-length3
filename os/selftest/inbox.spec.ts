@@ -84,7 +84,8 @@ test('a message half written stays with its conversation', async ({signedIn: ada
   await ada.inbox.message.fill('Bring the');
   await ada.rail.go('home');
   await ada.rail.go('inbox');
-  await ada.inbox.conversation(bo.handle).click();
+  // Come back to, Inbox is at the conversation it was left at.
+  await expect(ada.inbox.thread(bo.handle)).toBeVisible();
   await expect(ada.inbox.message).toHaveValue('Bring the');
 });
 

@@ -216,10 +216,12 @@ const TO = '\0to';
 /** The conversation the page is next come to for (Home's Lately), opened as it is drawn. */
 let wanted: string | null = null;
 export function openNext(address: string) { wanted = address; }
+/** The conversation open as Inbox was left: open again, as it was, when Inbox is come back to. */
+let left: string | null = null;
 
 export function inboxPage(ctx: Context): Node[] {
   const holder = h('div', {});
-  let open: string | null = null;
+  let open: string | null = left;
   /** Nobody written to or from, as the list was last read (none read yet: as for a name just taken); and the field a name was just taken in. */
   let bare = true;
   let landing: DOMRect | null = null;
@@ -285,6 +287,8 @@ export function inboxPage(ctx: Context): Node[] {
     landing = null;
     await paintList(rows, pane);
     if (wanted) { const at = wanted; wanted = null; void show(at, rows, pane); }
+    else if (open && rows.querySelector(`.inbox-row[data-address="${CSS.escape(open)}"]`)) void show(open, rows, pane);
+    else if (open) { open = left = null; pane.parentElement?.classList.toggle('none', bare); }
   };
 
   /** Who each conversation is with, by the name the list gives them: the conversation's head says it as its row does. */
@@ -337,7 +341,7 @@ export function inboxPage(ctx: Context): Node[] {
     // Opened again before the last opening was drawn (a row pressed twice): only the latest is drawn,
     // so one conversation never gets two panes, nor two direct lines.
     const asked = ++opened;
-    open = address;
+    open = left = address;
     // The first conversation brings its sheet in, from the field that started it; another one, chosen while one is
     // open, comes into the sheet as it is (what was there fading out of it as the new comes in), never at once.
     const switching = !!pane.parentElement && !pane.parentElement.classList.contains('none') && pane.childElementCount > 0;
@@ -436,7 +440,7 @@ export function inboxPage(ctx: Context): Node[] {
       };
       const yes = button(t('Accept'), 'small-button primary'), no = button(t('Block'), 'small-button');
       yes.addEventListener('click', answer('accepted', () => { void show(address, rows, pane); void paintList(rows, pane); }));
-      no.addEventListener('click', answer('blocked', () => { open = null; shownThread = null; void paintList(rows, pane); }));
+      no.addEventListener('click', answer('blocked', () => { open = left = null; shownThread = null; void paintList(rows, pane); }));
       decide.push(yes, no);
     }
     // Writing is one line that grows as it is written. What it is reads off the text the way

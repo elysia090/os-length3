@@ -105,3 +105,15 @@ test.describe("on 'hello', made from C's files and worked in last", () => {
     await expect.poll(() => app.forge.selected('src/main.c')).toBe('    puts("hello");');
   });
 });
+
+test('Home come back to is where it was read to, and the page between starts at its top', async ({app}) => {
+  await app.page.setViewportSize({width: 1280, height: 420});
+  await app.rail.go('home');
+  const read = () => app.page.evaluate(() => Math.round(document.scrollingElement!.scrollTop));
+  await app.page.evaluate(() => { document.scrollingElement!.scrollTop = 200; });
+  await expect.poll(read).toBe(200);
+  await app.rail.go('runtime');
+  await expect.poll(read).toBe(0);
+  await app.rail.go('home');
+  await expect.poll(read).toBe(200);
+});

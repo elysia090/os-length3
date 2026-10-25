@@ -284,7 +284,9 @@ Every value in `styles.css` comes from a token (§2).
   error), not only after the page is loaded again.
 - **What one was doing stays where it belongs.** Going to another page
   and back, or to another repo and back, is going back to it: the same
-  repo, where it was read, what was searched, what was half written. What
+  repo, where it was read (a page that scrolls the window is where it was
+  read to; the page between starts at its top), the conversation that was
+  open, what was searched, what was half written. What
   is written belongs to what it was written for (the prompt box to its
   repo, an issue's words to the issue) and is swapped with it, never
   carried to another; it goes only when it is sent, saved, or put back
