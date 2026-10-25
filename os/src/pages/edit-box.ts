@@ -6,9 +6,12 @@ import {store} from '../repos.ts';
 import type {Writing} from './reader.ts';
 
 // The box at the center's foot as a line that edits the file in front (DESIGN.md § Forge, Edit): nothing to be in and
-// no keys to learn, a few short lines that say what they do, each shown on the file as it is written and done with
-// Enter, Ctrl+Z in the empty box taking it back (the file's own Undo has it too). The file in front is the one last
-// written in, else the one read; the pill says which, and the line the caret is on.
+// no keys to learn. The plainest is to point: while the box has the keyboard, a line of a file pressed comes into the
+// box as it is, the caret where it was pressed, to be written anew there; Enter writes it back, Escape leaves it as it
+// was, ↑ and ↓ (nothing changed yet) take the line above or below. Pointed at, a line is ringed to say so.
+// Besides, a few short lines that say what they do, each shown on the file as it is written and done with Enter,
+// Ctrl+Z in the empty box taking it back (the file's own Undo has it too). The file in front is the one last written
+// in (or pressed), else the one read; the pill says which, and the line the caret is on.
 //
 //   12               go to line 12 (:12 too)
 //   word             find it, lit where it is; Enter goes to the next (Shift+Enter, the one before). Small letters
@@ -87,12 +90,32 @@ function bring(el: HTMLElement, area: HTMLTextAreaElement, clear: number) {
   }
 }
 
-/** What can be written in the empty box, each with what it does: said under it, as Tab's choices are. */
+/** What can be done from the empty box, each with what it does: said under it, as Tab's choices are. Pointing first. */
 function legend(): Node[] {
-  const each: [string, string][] = [['12', t('to the line')], ['word', t('find')], ['a → b', t('b for every a')], ['+', t('a line under')],
-    ['=', t('the line anew')], ['-', t('take it away')], ['> <', t('indent')], ['@', t('another file')]];
+  const each: [string, string][] = [[t('Click a line'), t('rewrite it here')], ['12', t('to the line')], ['word', t('find')], ['a → b', t('b for every a')],
+    ['+', t('a line under')], ['-', t('take it away')], ['@', t('another file')]];
   return each.map(([k, w]) => h('span', {class: 'edit-key'}, h('code', {}, k), w));
 }
+
+/** The place in `area` the pointer is over, at (`x`, `y`): the nearest gap between two letters of its line (its end, beside the text). */
+function offsetAt(area: HTMLTextAreaElement, x: number, y: number): {line: number; at: number} {
+  const cs = getComputedStyle(area), r = area.getBoundingClientRect(), text = area.value, starts = lineStarts(text);
+  const lh = parseFloat(cs.lineHeight) || 1.6 * parseFloat(cs.fontSize), tab = Number(cs.tabSize) || 4;
+  const line = Math.min(starts.length - 1, Math.max(0, Math.floor((y - r.top - (parseFloat(cs.paddingTop) || 0)) / lh)));
+  const from = starts[line], to = line + 1 < starts.length ? starts[line + 1] - 1 : text.length;
+  if (x < r.left) return {line, at: to};
+  const want = x - r.left - (parseFloat(cs.paddingLeft) || 0) + area.scrollLeft;
+  let was = 0;
+  for (let i = from; i < to; i++) {
+    const w = widthIn(area, drawn(text.slice(from, i + 1), tab));
+    if (w >= want) return {line, at: want - was < w - want ? i : i + 1};
+    was = w;
+  }
+  return {line, at: to};
+}
+
+/** A line taken into the box to be written anew: where it is in `area`, and its words as they were. */
+interface Taken { area: HTMLTextAreaElement; from: number; to: number; text: string }
 
 /** An edit the box did: `inserted` written at `from` over `removed`, the caret at `caret` before it. */
 interface Step { area: HTMLTextAreaElement; from: number; removed: string; inserted: string; caret: number }
@@ -114,6 +137,8 @@ export interface EditParts {
   say(text: string | Node[]): void;
   /** The file in front, or the caret's line in it, changed: the pill says it again. */
   moved(): void;
+  /** Whether the box edits and has the keyboard: a line pressed then is taken into it. */
+  active(): boolean;
 }
 
 /** The box's Edit: the file it is set on, what a line would do shown on it as it is written, done with Enter. */
@@ -136,9 +161,38 @@ export class EditLine {
    */
   readonly #done: Step[] = [];
   readonly #undone: Step[] = [];
+  /** The line taken into the box, being written anew there. */
+  #taken: Taken | null = null;
+  /** The line pointed at, ringed: its editor and line. */
+  #ringed: {area: HTMLTextAreaElement; line: number} | null = null;
 
   constructor(p: EditParts) {
     this.#p = p;
+    // Pressed while the box has the keyboard, a line of the repo's files comes into it (not the keyboard into the
+    // file); its numbers pressed, the same, the caret at its end.
+    const areaOf = (el: EventTarget | null) => {
+      const sheet = el instanceof Element ? el.closest('section.file .sheet') : null;
+      const area = sheet?.querySelector<HTMLTextAreaElement>(':scope > textarea.code-edit');
+      return area && area.closest<HTMLElement>('.col')?.dataset.repo === p.repo() ? area : null;
+    };
+    p.main.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0 || !p.active()) return;
+      const area = areaOf(event.target);
+      if (!area) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const {line, at} = offsetAt(area, event.clientX, event.clientY);
+      this.#take(area, line, at - lineStarts(area.value)[line]);
+    }, true);
+    let pointing = 0;
+    p.main.addEventListener('pointermove', (event) => {
+      cancelAnimationFrame(pointing);
+      pointing = requestAnimationFrame(() => {
+        const area = p.active() ? areaOf(document.elementFromPoint(event.clientX, event.clientY)) : null;
+        this.#ring(area, area ? offsetAt(area, event.clientX, event.clientY).line : 0);
+      });
+    });
+    p.main.addEventListener('pointerleave', () => { cancelAnimationFrame(pointing); this.#ring(null, 0); });
     // The file written in is the one in front; its caret moving moves the line the pill says.
     p.main.addEventListener('focusin', (event) => {
       const el = event.target;
@@ -201,10 +255,20 @@ export class EditLine {
   show(back = false) {
     const f = this.front();
     this.#mark(f);
+    this.#p.main.classList.add('edit-pointing');
     if (!f) { this.#off(); this.#p.say(this.#p.repo() ? t('Open a file to edit it here') : ''); return; }
     const typed = this.#p.box.value, e = parseEdit(typed), area = f.area;
     if (this.#shownOn && this.#shownOn !== area) this.#off();
     this.#shownOn = area;
+    // A line taken into the box: it is lit where it is, whatever is written (its new words, not a line that asks).
+    const k = this.#still();
+    if (k) {
+      const line = lineOf(lineStarts(k.area.value), k.from);
+      drawMarks(k.area, [{from: k.from, to: k.to, kind: 'lines', now: true}]);
+      this.#p.say(typed === k.text ? t('Line {n}: write it anew here, Enter puts it back', {n: line + 1})
+        : t('Line {n}: Enter writes it, Escape leaves it as it was', {n: line + 1}));
+      return;
+    }
     if (e.kind === 'none' || e.kind === 'file') {
       const starts = lineStarts(area.value), line = lineOf(starts, area.selectionStart);
       // The caret's line, softly: where + = - > would act.
@@ -219,10 +283,88 @@ export class EditLine {
     this.#p.say(p.said);
   }
 
-  /** The marks put away (the box left, or doing something else). */
+  /** The marks put away (the box left, or doing something else); a line taken stays taken, to be shown on coming back. */
   hide() {
     this.#off();
     this.#mark(null);
+    this.#ring(null, 0);
+    this.#p.main.classList.remove('edit-pointing');
+  }
+
+  /** Whether a line is taken into the box. */
+  get taken(): boolean { return !!this.#still(); }
+
+  /** The line taken, while it is as it was where it was (else it is let go). */
+  #still(): Taken | null {
+    const k = this.#taken;
+    if (k && !(k.area.isConnected && k.area.value.slice(k.from, k.to) === k.text && (k.to === k.area.value.length || k.area.value[k.to] === '\n'))) {
+      this.#taken = null;
+      return null;
+    }
+    return k;
+  }
+
+  /** Line `line` of `area` taken into the box, the caret at `column` in it; one taken and written anew is written back first, as a sheet's cell is left. */
+  #take(area: HTMLTextAreaElement, line: number, column: number) {
+    if (this.#still() && this.#p.box.value !== this.#taken!.text) void this.#putBack();
+    const starts = lineStarts(area.value), at = Math.min(Math.max(0, line), starts.length - 1);
+    const from = starts[at], to = at + 1 < starts.length ? starts[at + 1] - 1 : area.value.length, text = area.value.slice(from, to);
+    this.#taken = {area, from, to, text};
+    this.#last = area;
+    this.#placed.add(area);
+    this.#written.add(area);
+    // The caret's line is the one taken: the pill says it.
+    area.setSelectionRange(from, from);
+    const box = this.#p.box, c = Math.min(Math.max(0, column), text.length);
+    box.value = text;
+    box.setSelectionRange(c, c);
+    box.dispatchEvent(new Event('input', {bubbles: true}));
+    this.#p.moved();
+  }
+
+  /** The line taken written back as the box has it (nothing, if it is as it was): what is to be said of it. */
+  #putBack(): string {
+    const k = this.#still(), words = this.#p.box.value;
+    this.#taken = null;
+    if (!k) return t('Written over since: undo it in the file');
+    const line = lineOf(lineStarts(k.area.value), k.from);
+    if (words === k.text) return t('Line {n} as it was', {n: line + 1});
+    this.#done.push({area: k.area, from: k.from, removed: k.text, inserted: words, caret: k.from});
+    if (this.#done.length > STEPS) this.#done.shift();
+    this.#undone.length = 0;
+    this.#write(k.area, k.from, k.to, words, k.from + words.length);
+    this.#flash(k.area, [{from: k.from, to: k.from + words.length, kind: 'lines'}]);
+    return t('Line {n} written', {n: line + 1});
+  }
+
+  /** Escape with a line taken: it is let go as it was, the box emptied; false with none taken. */
+  cancel(): boolean {
+    if (!this.#taken) return false;
+    this.#taken = null;
+    this.#keep('');
+    return true;
+  }
+
+  /** ↑ or ↓ with a line taken and nothing written in it yet: the one above or below taken instead; false otherwise. */
+  stepTaken(by: 1 | -1): boolean {
+    const k = this.#still();
+    if (!k || this.#p.box.value !== k.text) return false;
+    const line = lineOf(lineStarts(k.area.value), k.from) + by, box = this.#p.box;
+    if (line < 0 || line >= lineStarts(k.area.value).length) return true;
+    this.#take(k.area, line, box.selectionStart);
+    const lead = k.area.parentElement?.querySelector<HTMLElement>(':scope > .edit-marks > .now');
+    if (lead) bring(lead, k.area, this.#p.dock.getBoundingClientRect().top);
+    return true;
+  }
+
+  /** The line pointed at ringed (none: the ring goes), to say it can be pressed. */
+  #ring(area: HTMLTextAreaElement | null, line: number) {
+    const was = this.#ringed;
+    if (was && (was.area !== area || was.line !== line)) drawMarks(was.area, [], 'edit-ring');
+    this.#ringed = area ? {area, line} : null;
+    if (!area || (was?.area === area && was.line === line)) return;
+    const starts = lineStarts(area.value);
+    drawMarks(area, [{from: starts[line], to: starts[line], kind: 'lines'}], 'edit-ring');
   }
   #off() {
     if (this.#shownOn) drawMarks(this.#shownOn, []);
@@ -236,8 +378,15 @@ export class EditLine {
     section?.classList.add('edit-front');
   }
 
-  /** Enter: what the box holds done on the file; false when there was nothing to do. */
+  /** Enter: what the box holds done on the file (a line taken, written back); false when there was nothing to do. */
   enter(back = false): boolean {
+    if (this.#taken) {
+      const said = this.#putBack();
+      this.#keep('');
+      this.show();
+      this.#p.say(said);
+      return true;
+    }
     const typed = this.#p.box.value, e = parseEdit(typed);
     if (e.kind === 'file') { void this.#choose(e.path); return true; }
     const f = this.front();

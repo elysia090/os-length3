@@ -1526,9 +1526,17 @@ is half written is kept for the repo and for what the box does.
 
 Edit makes the box a line that edits the file in front without leaving the
 box, as a modal editor's command line does but with nothing to be in and no
-keys to learn: a few short lines that read as what they do. The file in front
-is the one last written in, else the one read (a third down the center); its
-box keeps the `ink` edge of a file written in while the box is on it.
+keys to learn. The plainest is to point: while the box has the keyboard, the
+hand over a file says a line can be taken and the line under it is ringed;
+pressed, the line comes into the box as it is, the caret where it was pressed,
+the line lit in the marker's yellow where it stands, and is written anew there:
+Enter puts it back (lit a moment in the green of what is added), Escape leaves
+it as it was, ↑ and ↓ (nothing written in it yet) take the line above or below,
+and another line pressed puts this one back first, as a sheet's cell is left.
+Besides, a few short lines that read as what they do. The file in front
+is the one last written in or pressed, else the one read (a third down the
+center); its box keeps the `ink` edge of a file written in while the box is on
+it.
 `12` goes to line 12; a word finds it (written in small letters, either
 case), every one lit in the marker's soft yellow and the one Enter goes to in
 the marker's, Enter going on to the next and Shift+Enter back (`/` before a
@@ -1550,8 +1558,9 @@ puts it back), written into the file the same way, so the file's own Undo has
 it too; the browser's own Undo is not used from the box, as it holds what was
 typed in the box in the same line.
 In the empty box the caret's line is lit softly (where + = - > would act),
-↑ and ↓ move it, and under the box one quiet line says what can be written,
-each as it is written and what it does. Escape takes back what was written,
+↑ and ↓ move it, and under the box one quiet line says what can be done,
+pointing first, each as it is written and what it does (what does not fit the
+line is left out whole, never cut). Escape takes back what was written,
 and in the empty box gives the keyboard back to the file at the caret.
 The box knows the repo's earlier lines, as a terminal does: ↑ with the
 caret on its first line goes back one line run in the repo's Prompt, ↓ on

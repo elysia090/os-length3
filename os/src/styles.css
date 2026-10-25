@@ -982,6 +982,10 @@ button.row-item:disabled { cursor: var(--cursor-arrow); color: var(--sub); }
 .edit-mark.rule::before { content: ''; position: absolute; left: -3px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: inherit; }
 .edit-mark.rule.gone { background: var(--del); box-shadow: none; }
 .edit-flash .edit-mark:not(.rule) { background: var(--add-tint); box-shadow: none; }
+/* While the box edits and has the keyboard, a line of a file is pressed to take it into the box: the hand says so,
+   and the line under it is ringed (the one taken is lit in the marker's yellow, as a line gone to is). */
+.edit-pointing section.file :is(.sheet, .code-edit) { cursor: var(--cursor-hand); }
+.edit-ring .edit-mark { background: transparent; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--ink) 30%, transparent); }
 .file.edit-front { border-color: var(--ink); }
 .file:focus-within > .path { color: var(--ink); }
 .sheet-note { padding: var(--s2) var(--s4) var(--s4); font-size: var(--t-meta); }
@@ -1228,7 +1232,9 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .prompt-in:disabled { cursor: var(--cursor-arrow); }
 .prompt-note:empty { display: none; }
 /* What can be written in Edit's empty box (edit-box.ts), each as it is written and what it does, in one quiet line. */
-.prompt-note:has(> .edit-key) { display: flex; flex-wrap: wrap; column-gap: var(--s4); row-gap: var(--s1); }
+/* One line, whatever the width (the box never moves for it): what does not fit goes to a second line, out of sight,
+   whole, never cut in two. */
+.prompt-note:has(> .edit-key) { display: flex; flex-wrap: wrap; column-gap: var(--s4); height: 1.6em; overflow: hidden; }
 .edit-key { display: inline-flex; align-items: baseline; gap: var(--s2); white-space: nowrap; }
 .edit-key > code { padding: 0 5px; border-radius: 4px; background: var(--raised); color: var(--ink); font: 600 12px/1.6 var(--mono); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rule) 60%, transparent); }
 /* What a run prints comes in at the foot a line after another (terminal.ts), not all at once. */

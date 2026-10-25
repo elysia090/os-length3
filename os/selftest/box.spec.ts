@@ -142,3 +142,36 @@ test('Edit: a line in the box edits the file in front, shown on it first, done w
   await page.reload();
   await expect(app.forge.editor('src/main.c')).toHaveValue(before.replace('puts', 'printf'));
 });
+
+test('Edit: a line of the file pressed comes into the box as it is, written anew there and put back with Enter', async ({app}) => {
+  const box = app.forge.promptBox, page = app.page, file = app.forge.editor('src/main.c');
+  const note = app.main.locator('.prompt-note');
+  const before = '#include <stdio.h>\n\nint main(void) {\n    puts("hello");\n    return 0;\n}\n';
+  await file.click();
+  await page.keyboard.press('Control+g');
+  await expect(note).toContainText('Click a line');
+  // Pressed while the box has the keyboard: the line comes into the box, which keeps the keyboard.
+  const r = (await file.boundingBox())!, lh = await file.evaluate((a) => parseFloat(getComputedStyle(a).lineHeight));
+  await page.mouse.click(r.x + r.width - 8, r.y + 4.5 * lh);
+  await expect(box).toBeFocused();
+  await expect(box).toHaveValue('    return 0;');
+  await expect(note).toHaveText('Line 5: write it anew here, Enter puts it back');
+  // ↑, nothing written in it yet: the line above instead.
+  await box.press('ArrowUp');
+  await expect(box).toHaveValue('    puts("hello");');
+  await box.fill('    puts("hello, world");');
+  await expect(file).toHaveValue(before);
+  await box.press('Enter');
+  await expect(file).toHaveValue(before.replace('"hello"', '"hello, world"'));
+  await expect(box).toHaveValue('');
+  await expect(note).toHaveText('Line 4 written');
+  // Escape lets a line taken go as it was.
+  await page.mouse.click(r.x + r.width - 8, r.y + 4.5 * lh);
+  await box.fill('gone');
+  await box.press('Escape');
+  await expect(box).toHaveValue('');
+  await expect(file).toHaveValue(before.replace('"hello"', '"hello, world"'));
+  // What the box wrote is taken back from the empty box, as any of its edits.
+  await box.press('Control+z');
+  await expect(file).toHaveValue(before);
+});

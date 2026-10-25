@@ -110,7 +110,8 @@ export class Box {
     // Put away with Escape, the keyboard goes back to the box if it was there (the Prompt not brought up for it), else
     // nowhere.
     this.#edit = new EditLine({box: this.prompt, main: p.main, dock: this.dock, repo: () => this.#repo, reveal: p.reveal,
-      say: (text) => { if (this.#mode === 'edit') this.#say(text); }, moved: () => { if (this.#mode === 'edit') this.#pillSays(); }});
+      say: (text) => { if (this.#mode === 'edit') this.#say(text); }, moved: () => { if (this.#mode === 'edit') this.#pillSays(); },
+      active: () => this.#mode === 'edit' && document.activeElement === this.prompt});
     this.#menu = modeMenu(this.chip, {repo: () => this.#repo, at: () => this.#edit.where(), chosen: (m) => { this.choose(m); this.prompt.focus(); },
       closed: (before) => { if (before === this.prompt) this.prompt.focus(); else (document.activeElement as HTMLElement | null)?.blur(); }});
     this.dock.append(this.#menu.element);
@@ -145,6 +146,7 @@ export class Box {
     this.#repo = name;
     this.attach();
     this.prompt.disabled = this.runIt.disabled = !name;
+    this.#edit.cancel();
     this.#edit.hide();
     this.prompt.placeholder = modeHint(this.#mode, name);
     this.prompt.value = name ? drafts.get(this.#draft()) ?? '' : '';
@@ -185,6 +187,8 @@ export class Box {
     if (m === this.#mode) { setBoxMode(m); return; }
     if (this.#up && m !== 'run') this.#screen?.lower();
     const change = () => {
+      // A line taken into the box for Edit is let go as it was, not kept as a draft.
+      if (this.#mode === 'edit') this.#edit.cancel();
       this.#keep();
       this.#mode = m;
       this.#pillSays();
@@ -407,9 +411,11 @@ export class Box {
     const {prompt} = this, repo = this.#repo;
     if (event.key !== 'Tab') this.#unsay();
     if (event.key === 'Escape') {
-      // Editing, Escape takes back what was written, then gives the keyboard back to the file at its caret.
+      // Editing, Escape lets a line taken go as it was, or takes back what was written, then gives the keyboard back to
+      // the file at its caret.
       if (this.#mode === 'edit' && !event.isComposing) {
         event.preventDefault();
+        if (this.#edit.cancel()) return;
         if (prompt.value) { this.#put(''); this.#edit.show(); return; }
         if (this.#edit.toFile()) return;
       }
@@ -459,6 +465,12 @@ export class Box {
     if (event.isComposing || event.keyCode === 229) return;
     const mod = event.ctrlKey || event.metaKey, empty = !prompt.value;
     if (event.key === 'Enter' && !event.altKey) { event.preventDefault(); edit.enter(event.shiftKey); return; }
+    // A line taken: ↑ and ↓ (nothing written in it yet) take the one above or below; Tab is a tab in it, as in the file.
+    if (edit.taken && !mod && !event.altKey && !event.shiftKey) {
+      if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && edit.stepTaken(event.key === 'ArrowUp' ? -1 : 1)) event.preventDefault();
+      if (event.key === 'Tab') { event.preventDefault(); document.execCommand('insertText', false, '\t'); }
+      return;
+    }
     if (event.key === 'Tab' && !mod && !event.altKey && !event.shiftKey && prompt.value.startsWith('@')) {
       if (this.#tab(` ${prompt.value.slice(1)}`)) event.preventDefault();
       return;
