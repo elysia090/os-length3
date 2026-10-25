@@ -934,6 +934,11 @@ button.row-item:disabled { cursor: var(--cursor-arrow); color: var(--sub); }
   border: 1px solid var(--rule); border-top-width: 0; border-radius: var(--r-place); background: var(--paper);
   transition: border-color var(--motion);
 }
+/* Off the screen, a file is neither styled nor laid out until it comes near (content-visibility), standing at the
+   size it last had once it has been seen (auto), at a file's least before: Forge brought back over a big repo lays
+   out what is on screen, not every file of it (360 files: 125–150 ms to 7). What it holds is painted only within
+   it then, but for its head's ground (.path's shadow, 2 corners above it and 1 beside), which reaches past it. */
+.file { content-visibility: auto; contain-intrinsic-size: auto var(--file-min); overflow-clip-margin: calc(2 * var(--r-place)); }
 .file > .path { margin: 0 -1px; background: var(--paper); border: 1px solid; border-color: inherit; border-bottom: 0; border-radius: var(--r-place) var(--r-place) 0 0; }
 /* The sheet with the keyboard: its edge in ink, nothing drawn round it. */
 .file:focus-within { border-color: var(--ink); }

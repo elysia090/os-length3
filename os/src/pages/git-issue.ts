@@ -42,6 +42,19 @@ function button(text: string, primary = false): HTMLButtonElement {
 
 /** A summary half written in an issue's box, by its path, kept while the page is drawn again under it. */
 const summaries = new Map<string, string>();
+/**
+ * The same, kept in this tab as it is written (sessionStorage, at once), so a reload or a crash before the field
+ * is left (its save) loses none of it; those come back as the page is drawn again, and are saved then.
+ */
+const HALF = 'length3.git.summaries';
+const kept = (): Record<string, string> => { try { return JSON.parse(sessionStorage.getItem(HALF) ?? '{}') as Record<string, string>; } catch { return {}; } };
+const keep = (key: string, value: string | null) => {
+  try {
+    const all = kept();
+    if (value === null) delete all[key]; else all[key] = value;
+    if (Object.keys(all).length) sessionStorage.setItem(HALF, JSON.stringify(all)); else sessionStorage.removeItem(HALF);
+  } catch { /* kept while the page is drawn, then */ }
+};
 
 /**
  * The issue's summary (what was written under its first line), above Commit and Push: written right there, the
@@ -51,14 +64,18 @@ const summaries = new Map<string, string>();
 function summary(issue: Issue, after: () => void): HTMLElement {
   const key = `${issue.repo}/${issuePath(issue)}`;
   const field = h('textarea', {class: 'issue-summary', rows: '4', 'aria-label': t('Summary'), placeholder: t('Summary'), spellcheck: 'false'}) as HTMLTextAreaElement;
-  field.value = summaries.get(key) ?? issue.detail;
+  // Back from a reload with what was written and not yet saved: it is as it was, and saved now, as leaving it would.
+  const back = summaries.has(key) ? undefined : kept()[key];
+  field.value = summaries.get(key) ?? back ?? issue.detail;
   const error = h('p', {class: 'error', role: 'alert'});
-  field.addEventListener('input', () => summaries.set(key, field.value));
-  field.addEventListener('blur', async () => {
-    if (field.value === issue.detail) { summaries.delete(key); return; }
-    try { await saveIssue(store, issue, issue.kind, issue.title, field.value); summaries.delete(key); after(); }
+  field.addEventListener('input', () => { summaries.set(key, field.value); keep(key, field.value); });
+  const save = async () => {
+    if (field.value === issue.detail) { summaries.delete(key); keep(key, null); return; }
+    try { await saveIssue(store, issue, issue.kind, issue.title, field.value); summaries.delete(key); keep(key, null); after(); }
     catch (e) { error.textContent = t('Could not write: {message}', {message: errorText(e)}); }
-  });
+  };
+  field.addEventListener('blur', () => void save());
+  if (back !== undefined) void save();
   return h('div', {class: 'issue-summary-wrap'}, field, error);
 }
 

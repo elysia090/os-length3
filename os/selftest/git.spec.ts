@@ -165,6 +165,26 @@ test('a new issue\'s repo is chosen in the one row above the box, Create at the 
   await expect(summary).toHaveValue('On a phone, at 320 px.');
 });
 
+test('a summary written and not left yet is kept through a reload, and saved then', async ({app}) => {
+  await app.newRepo.make('tide-tables');
+  await app.rail.go('git');
+  await app.git.write('tide-tables', 'Fix: The table wraps', 'On a phone.');
+  const summary = app.main.getByRole('textbox', {name: 'Summary'});
+  await expect(summary).toHaveValue('On a phone.');
+  // Still in the field (nothing has saved it) when the page goes.
+  await summary.fill('On a phone, at 320 px.');
+  await app.page.reload();
+  await app.settled();
+  await app.rail.go('git');
+  await expect(summary).toHaveValue('On a phone, at 320 px.');
+  // Saved as it came back: kept by the repo, not only by the tab.
+  await app.page.evaluate(() => sessionStorage.clear());
+  await app.page.reload();
+  await app.settled();
+  await app.rail.go('git');
+  await expect(summary).toHaveValue('On a phone, at 320 px.');
+});
+
 test('the detail of a new issue has the room the repos inside the box had', async ({app}) => {
   await app.newRepo.make('notes');
   await app.rail.go('git');
