@@ -1,5 +1,5 @@
 import {dateFormat, h} from '../dom.ts';
-import {arrive} from '../glide.ts';
+import {arrive, closeUp} from '../glide.ts';
 import {t} from '../i18n.ts';
 import {shown} from '../inbox.ts';
 import * as servers from '../servers.ts';
@@ -238,6 +238,10 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean, 
       }
       if (!got.length) return;
       const following = mine || atFoot();
+      // What was said before, standing on the talk's foot, goes up to make room on the same curve (as the Inbox's
+      // does), not a line higher in one frame; where the talk scrolls, the scroll brings the new in instead.
+      const before = [start, ...list.children] as HTMLElement[];
+      const anchor = before[before.length - 1], was = anchor.getBoundingClientRect().top;
       // Oldest page first, each at the foot: one's own coming up out of the box it was written in, what someone
       // else wrote in from their side, as a message does in the Inbox.
       for (const p of servers.onTop(got).reverse()) {
@@ -245,6 +249,8 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean, 
         if (mine) arrive(s.el, 1, 'y', 18, 300); else arrive(s.el, -1, 'x', 18, 300);
       }
       if (following) { toFoot(mine); read(); } else { unseen += got.length; tell(); }
+      const by = was - anchor.getBoundingClientRect().top;
+      if (by > .5) closeUp(before, by, 300);
     } catch { /* tried again on the next look */ }
   }, (a, b) => a || b);
   fresh.addEventListener('click', () => { unseen = 0; tell(); toFoot(true); });

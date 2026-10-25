@@ -1,6 +1,6 @@
 import {ago, h} from '../dom.ts';
 import {errorText} from '../errors.ts';
-import {arrive, keepOut, pop, putAway} from '../glide.ts';
+import {keepOut, pop, putAway, unfold} from '../glide.ts';
 import {t} from '../i18n.ts';
 import {mark} from '../icons.ts';
 import * as inbox from '../inbox.ts';
@@ -183,8 +183,9 @@ export function threadLook(address: string, name: string, open: () => void): Loo
         await inbox.send(address, text);
         const line = said(t('You'), Date.now(), text, true);
         lines.append(line);
-        // In from below, where it was written, as a message sent comes in Inbox.
-        arrive(line, 1, 'y', 8, 220);
+        // It opens its room in the look as it comes, the card growing on its curve (not a line taller in one frame,
+        // its edge jumping), from below, where it was written.
+        unfold(line, 260);
         line.scrollIntoView({block: 'nearest'});
       }));
       void inbox.markRead(address).then(() => lookForNews(), () => {});
@@ -205,7 +206,7 @@ export function boardLook(board: string, name: string, open: () => void): Look {
         const p = await servers.post(board, text);
         const line = said(t('You'), p.at, p.body, true);
         lines.append(line);
-        arrive(line, 1, 'y', 8, 220);
+        unfold(line, 260);
       }));
     },
   };
