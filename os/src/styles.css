@@ -248,15 +248,15 @@ button.row-item, .part):hover { transition-duration: calc(60ms * var(--pace)); }
 ::view-transition-new(page) { animation: pan-in calc(330ms * var(--pace)) var(--land) both; }
 @keyframes pan-out { to { transform: translateY(calc(var(--pan, 1) * -100%)); } }
 @keyframes pan-in { from { transform: translateY(calc(var(--pan, 1) * 100%)); } }
-/* Along the band the camera pans sideways the same way (glide.ts panAcross): the repos stand side by side in the
-   band's order, and only the center is taken, the repo left going off whole the other way as the one come to comes
-   in from its pill's side, the two as one strip (--slide). */
+/* Along the band (glide.ts panAcross): only the center is taken; the repo come to comes in whole from its pill's side,
+   over the one left, which steps back a little the other way and fades under it. Never a strip travelling a whole
+   width with two half pages and the ground between them, never two pages' words over each other. */
 .panning-across #page { view-transition-name: none; }
 /* It moves inside the center's frame, as the files scroll in it: cut at the center's edges, never over the lines. */
 ::view-transition-group(across) { animation: none; overflow: clip; }
-::view-transition-old(across) { animation: across-out var(--slide) var(--land) both; }
-::view-transition-new(across) { animation: across-in var(--slide) var(--land) both; }
-@keyframes across-out { to { transform: translateX(calc(var(--pan-x, 1) * -100%)); } }
+::view-transition-old(across) { animation: across-out calc(400ms * var(--pace)) var(--land) both; }
+::view-transition-new(across) { animation: across-in calc(400ms * var(--pace)) var(--land) both; }
+@keyframes across-out { to { transform: translateX(calc(var(--pan-x, 1) * -22%)); opacity: 0; } }
 @keyframes across-in { from { transform: translateX(calc(var(--pan-x, 1) * 100%)); } }
 /* The OS's caret (caret.ts), a 2 px stroke of ink gliding from where it was to where it is; the browser's own is
    hidden in the field it stands for. Solid while it moves, blinking once it rests. */
@@ -1523,21 +1523,22 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 /* A box only peeking at the side shows its edge, not its head's button (all that would show of it, alone at the
    edge): pressed, the row goes to it, and its buttons are there again. */
 .columns.split > .col:not(.active) .file-beside { visibility: hidden; }
-/* The row slides as one, and a box comes in from no width where it stands (pushing in from its side) and goes back
-   to none the same way, by the same move. */
-.col { transition: flex-basis var(--slide) var(--land), transform var(--slide) var(--land), translate calc(var(--slide) * .66) var(--land); }
+/* The row slides as one. A box opened comes in at its own width where it stands, fading in as the row brings it, and
+   one closed fades where it stands before the row closes over its place: never squeezed from or to no width, its
+   words crushed and two boxes over each other on the way. */
+.col { transition: flex-basis var(--slide) var(--land), transform var(--slide) var(--land), translate calc(var(--slide) * .66) var(--land),
+  opacity calc(260ms * var(--pace)) ease-out; }
 /* The pointer on a box's edge, the row leans toward it a step before it is pressed: what the press will bring in
    is already on its way, and leaving it, the row settles back. */
 .columns.split:has(> .col.after:hover) > .col { translate: calc(-1 * var(--s4)) 0; }
 .columns.split:has(> .col.before:hover) > .col { translate: var(--s4) 0; }
 .columns.split > .col:is(.before, .after):hover .file > :is(.path, .sheet) { opacity: .8; }
-.col.nothing { flex-basis: 0 !important; }
+.col.nothing { opacity: 0; }
 .col > .flow { transition: padding-top var(--move) var(--land), opacity calc(240ms * var(--pace)) ease-out; }
 /* Dimmed, a box along from the one worked on is still a box: its paper and its edge stand as a neighbour issue's or
    board's do, only its words quiet (a whole box at half strength is a grey slab, not a sheet). */
 .columns.split > .col:not(.active) .file > :is(.path, .sheet) { opacity: .5; transition: opacity calc(240ms * var(--pace)) ease-out; }
 .columns.split > .col:not(.active):hover .file > :is(.path, .sheet) { opacity: .75; }
-.col.nothing > .flow { opacity: 0 !important; }
 /* Of the box worked on, the sheet with the keyboard is in ink (.file:focus-within), as alone; a file beside, one sheet,
    is in ink whole while it is the one worked on. Never two sheets in ink at once. */
 .columns.split > .col.active > .flow > .dir.only > .file { border-color: var(--ink); }

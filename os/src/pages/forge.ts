@@ -408,11 +408,11 @@ function make(ctx: Context) {
     track(false);
   };
 
-  /** A box going from the row gives its room back, the row closing over it, by the move that slides the row. */
+  /** A box going from the row fades where it stands; then the row closes over its place, by the move that slides it. */
   const shrink = (col: HTMLElement) => new Promise<void>((done) => {
     if (still()) { done(); return; }
     col.classList.add('nothing');
-    after(450, done);
+    after(280, done);
   });
 
   /** `name` opened beside what is shown (at `at`, an index among the boxes), and worked on. */
@@ -427,7 +427,13 @@ function make(ctx: Context) {
     for (const gone of before.filter((n) => !shown.includes(n))) { const g = views.get(gone); if (g) g.top = g.flow.scrollTop; }
     // Come in, it opens from no width where it stands as the row slides to it, so it pushes in from its side.
     const opening = fresh && shown.length > 1 && !still();
-    if (opening) v.col.classList.add('nothing');
+    if (opening) {
+      v.col.classList.add('nothing');
+      // It stands in the row where the row is now, before the row moves to it: drawn first at the row's present place,
+      // it then goes with the others on their curve, not at once to where they are only on their way to.
+      layout();
+      void cols.offsetWidth;
+    }
     repo = null;
     activate(name);
     v.flow.scrollTop = v.top;
@@ -443,8 +449,20 @@ function make(ctx: Context) {
     const v = views.get(name);
     const c = closeBeside(shown, name, repo);
     const done = () => {
+      // The boxes that stay go on from where they are seen: the closed one's place gone from the row moves them in the
+      // layout at once, so each is held where it stood and goes from there to its place on the row's curve, rather
+      // than leaping by a box's width and sliding back.
+      const rest = c.shown.map((n) => views.get(n)?.col).filter((el): el is HTMLElement => !!el);
+      const was = new Map(rest.map((el) => [el, el.getBoundingClientRect().left]));
+      for (const el of rest) el.style.transitionProperty = 'flex-basis, opacity';
       shown = c.shown;
       if (c.active && c.active !== repo) { repo = null; activate(c.active); } else { layout(); paintBand(); }
+      void cols.offsetWidth;
+      for (const el of rest) {
+        const dx = was.get(el)! - el.getBoundingClientRect().left;
+        el.style.transitionProperty = '';
+        if (Math.abs(dx) > .5 && !still()) el.animate([{translate: `${dx}px 0`}, {translate: '0 0'}], {duration: paced(450), easing: LAND});
+      }
     };
     if (!v) { done(); return; }
     v.top = v.flow.scrollTop;

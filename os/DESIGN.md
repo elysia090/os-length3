@@ -101,9 +101,11 @@ Every value in `styles.css` comes from a token (§2).
     two seen in one place, their words over each other; it comes as one, not
     staged. Only the page is taken as a picture to move (cut at the window's
     edges); the rest of the window goes on being drawn as it is. Along the
-    band the same: the repos stand side by side in the band's order, and
-    another repo come to pans the row sideways the whole way, the next one to
-    the right coming from the right (`--slide`). Come to from another page (a
+    band: the repos stand side by side in the band's order, and another repo
+    come to comes in whole from its pill's side over the one left, which
+    steps back a little the other way and fades under it (400 ms): never a
+    strip travelling a whole width with two half pages and the ground
+    between them, never two pages' words over each other. Come to from another page (a
     repo made, opened from File or Home), Forge arrives with it in its box:
     the camera is already on its way to Forge, and does not pan sideways as
     well (the box beside passing through on the way).
@@ -1425,7 +1427,11 @@ heads of boxes side by side, one scrolled and one not, stand on one line,
 and the right pane's Prompt has its head's words on that line too. Pressing one, swiping
 sideways over the row (one box a swipe) or Alt+[ / Alt+] brings it in, and
 the whole row slides with it, the one left going out to its edge; a box
-opened beside opens from no width as the row slides to it. Another file of
+opened beside comes in at its own width where it stands, fading in as the
+row brings it (drawn first where the row is, so it goes with the others
+and never over them), and one closed fades where it stands before the row
+closes over its place, the boxes that stay going on from where they are
+seen: never a box squeezed from or to no width, its words crushed. Another file of
 the same repo opens beside too: each file's head has, at its right end, the
 window cut in two (quiet until the file is pointed at; Ctrl+click on the head
 does the same), and the file comes in as a box of its own, its repo said
