@@ -94,7 +94,7 @@ export function glide(from: DOMRect | null, to: HTMLElement | null, layer: HTMLE
   ], {duration: paced(ms), easing: LAND}).finished.then(done, done);
 }
 
-type Transitioning = Document & {startViewTransition?(update: () => void): {finished: Promise<void>}};
+type Transitioning = Document & {startViewTransition?(update: () => void): {ready: Promise<void>; finished: Promise<void>}};
 
 /**
  * A change of what `el` shows, as a camera pans along a row (the band's repos, left to right): what it showed goes
@@ -106,13 +106,42 @@ type Transitioning = Document & {startViewTransition?(update: () => void): {fini
 export function panAcross(el: HTMLElement, dir: number, update: () => void) {
   const begin = (document as Transitioning).startViewTransition;
   if (still() || !begin || !dir || !el.isConnected) { update(); return; }
-  const root = document.documentElement;
-  root.style.setProperty('--pan-x', String(dir));
+  const root = document.documentElement, ms = paced(400);
   el.style.setProperty('view-transition-name', 'across');
   root.classList.add('panning-across');
-  const done = () => { el.style.removeProperty('view-transition-name'); root.classList.remove('panning-across'); };
-  begin.call(document, update).finished.then(done, done);
+  // Only what it showed is taken as a picture. What it shows now comes in itself, so a press lands on it as it comes:
+  // a picture of it would take no press until it had landed. It stands off at its side from the first frame.
+  let mine: Animation | null = null;
+  const pass = begin.call(document, () => {
+    update();
+    if (across !== pass) return;
+    el.style.removeProperty('view-transition-name');
+    mine = el.animate([{transform: `translateX(${dir * 100}%)`}, {transform: 'none'}], {duration: ms, easing: LAND});
+    mine.pause();
+  });
+  across = pass;
+  // The picture lies over what comes, so it is cut where what comes has reached as it steps back: the two set off in
+  // one frame and keep step, never over each other.
+  void pass.ready.then(() => {
+    root.animate([
+      {transform: 'none', opacity: 1, clipPath: 'inset(0)'},
+      {transform: `translateX(${-dir * 22}%)`, opacity: 0, clipPath: dir > 0 ? 'inset(0 78% 0 0)' : 'inset(0 0 0 78%)'},
+    ], {duration: ms, easing: LAND, fill: 'forwards', pseudoElement: '::view-transition-old(across)'});
+    mine?.play();
+  }, () => {});
+  // Given way to a pan begun since (another pill pressed on the way), what it brought stands where it lands; the
+  // picture's name and the mark are the new pan's own.
+  const done = () => {
+    mine?.finish();
+    if (across !== pass) return;
+    across = null;
+    el.style.removeProperty('view-transition-name');
+    root.classList.remove('panning-across');
+  };
+  pass.finished.then(done, done);
 }
+/** The band's pan going now (panAcross). */
+let across: object | null = null;
 
 /**
  * `el` comes in from `dir` (-1, 0 or 1) along `axis`: `by` pixels and a fade. `into`: how far in it already is, for

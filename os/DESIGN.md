@@ -99,13 +99,18 @@ Every value in `styles.css` comes from a token (§2).
     still, a floor passed in a lift (330 ms, fast off the mark and landing).
     Nothing fades: there is never an empty frame between them and never the
     two seen in one place, their words over each other; it comes as one, not
-    staged. Only the page is taken as a picture to move (cut at the window's
-    edges); the rest of the window goes on being drawn as it is. Along the
+    staged. Only the page left is taken as a picture to move (cut at the
+    window's edges); the page come to comes itself, and the rest of the
+    window goes on being drawn as it is, so a press made while it pans (the
+    rail pressed again, the pane's button as the page comes up) lands on
+    what is under the hand, never lost on a picture still on its way. Along the
     band: the repos stand side by side in the band's order, and another repo
     come to comes in whole from its pill's side over the one left, which
     steps back a little the other way and fades under it (400 ms): never a
     strip travelling a whole width with two half pages and the ground
-    between them, never two pages' words over each other. Come to from another page (a
+    between them, never two pages' words over each other (the picture of
+    the one left is cut where the one coming has reached, which takes a
+    press as it comes). Come to from another page (a
     repo made, opened from File or Home), Forge arrives with it in its box:
     the camera is already on its way to Forge, and does not pan sideways as
     well (the box beside passing through on the way).
@@ -1335,7 +1340,8 @@ Forge or Git go into the box; a pill taken off the band hands it to the
 pill worked on next; the box's four put away with Escape give it back to
 the box. The arrow keys go along any list of things pressed (Lately's and
 Inbox's rows, the band's pills, the repo cards), to the nearest one that way
-on the screen, as they go along the rail; and what scrolls inside the page
+on the screen, as they go along the rail; → on File brings its tree out,
+and again goes into it; and what scrolls inside the page
 keeps its own turning: past its end, the page behind it does not go on.
 
 The profile is edited where it is read, not in a form put in its place:

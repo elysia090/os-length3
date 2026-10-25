@@ -243,32 +243,34 @@ button.row-item, .part):hover { transition-duration: calc(60ms * var(--pace)); }
 /* The words a morph carries: a copy of them as they were drawn, going with the box onto the words they become. */
 .morph-words { position: fixed; z-index: 10; margin: 0; white-space: nowrap; overflow: visible; transform-origin: 0 0; pointer-events: none; }
 /* Along the rail the camera pans with it (main.ts select): the pages stand one above another down the rail, as
-   floors do, and the camera goes down to the next (up it, the other way round; --pan is 1 or -1): the page left goes
+   floors do, and the camera goes down to the next (up it, the other way round): the page left goes
    up and out of the window whole as the next comes up into it from below, the two as one sheet, the rail and the
    window's edges standing still. Only the page moves, and only the page is taken as a picture to move: the rest of the window is not taken
    at all (two pictures of the whole window a pan, for nothing) and goes on being drawn as it is, its own moves (the
    rail's ink) going on. The page is named only while it pans: named, it is a layer of its own, and the search's
    shade would lie over the search with it. */
 :root { view-transition-name: none; }
+/* A press while it pans goes through the picture to the page coming under it. */
+::view-transition { pointer-events: none; }
 .panning #page { view-transition-name: page; }
+/* The page come to is not taken: it comes itself (main.ts select), so a press lands on it as it comes. It is cut at
+   the page's edges as it rises, as the picture is. */
+.panning.arriving #page { view-transition-name: none; overflow: clip; }
 ::view-transition-group(page) { animation: none; overflow: clip; }
 /* The camera goes the whole way, fast off the mark and slowing into the next floor (330 ms): nothing fades, the two
    are never seen in one place, one over the other, and the window is never empty. The page cut at the window's
-   edges as it goes, as a floor at a lift's door. */
-::view-transition-old(page) { animation: pan-out calc(330ms * var(--pace)) var(--land) both; }
-::view-transition-new(page) { animation: pan-in calc(330ms * var(--pace)) var(--land) both; }
-@keyframes pan-out { to { transform: translateY(calc(var(--pan, 1) * -100%)); } }
-@keyframes pan-in { from { transform: translateY(calc(var(--pan, 1) * 100%)); } }
+   edges as it goes, as a floor at a lift's door. The picture is set going (main.ts select) in the same frame as the
+   page itself comes, so the two never part. */
+::view-transition-old(page) { animation: none; }
 /* Along the band (glide.ts panAcross): only the center is taken; the repo come to comes in whole from its pill's side,
    over the one left, which steps back a little the other way and fades under it. Never a strip travelling a whole
    width with two half pages and the ground between them, never two pages' words over each other. */
 .panning-across #page { view-transition-name: none; }
 /* It moves inside the center's frame, as the files scroll in it: cut at the center's edges, never over the lines. */
 ::view-transition-group(across) { animation: none; overflow: clip; }
-::view-transition-old(across) { animation: across-out calc(400ms * var(--pace)) var(--land) both; }
-::view-transition-new(across) { animation: across-in calc(400ms * var(--pace)) var(--land) both; }
-@keyframes across-out { to { transform: translateX(calc(var(--pan-x, 1) * -22%)); opacity: 0; } }
-@keyframes across-in { from { transform: translateX(calc(var(--pan-x, 1) * 100%)); } }
+/* Only the repo left is a picture; the one come to comes in itself (glide.ts panAcross), the picture cut where it has
+   reached. */
+::view-transition-old(across) { animation: none; }
 /* The OS's caret (caret.ts), a 2 px stroke of ink gliding from where it was to where it is; the browser's own is
    hidden in the field it stands for. Solid while it moves, blinking once it rests. */
 .os-caret-field { caret-color: transparent; }

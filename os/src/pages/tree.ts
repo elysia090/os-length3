@@ -143,6 +143,13 @@ export class FileTree {
       this.outBefore = true;
       this.pinned = true;
     });
+    // → from File goes into the tree, out at its right (brought out first if it was not): ↓ and ↑ stay the rail's.
+    button.addEventListener('keydown', (event) => {
+      if (event.key !== 'ArrowRight' || event.altKey || event.ctrlKey || event.metaKey) return;
+      event.preventDefault();
+      if (!this.isOpen) { this.open(true); this.pinned = true; return; }
+      [...this.root.querySelectorAll<HTMLElement>('.tree-name')].find((b) => b.getClientRects().length > 0)?.focus();
+    });
   }
 
   enter() { this.over = true; this.later(true, this.isOpen ? 0 : OPEN_DELAY); }
