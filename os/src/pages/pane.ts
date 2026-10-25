@@ -136,12 +136,12 @@ export function pluginArea(): HTMLElement {
   return area;
 }
 
-/** What a row is, in a round badge at its head: who wrote (their initial, on one of three soft tints, the same for the same name), a file, a board. */
+/** What a row is, in a round badge at its head: who wrote (their initial, on one of four soft tints, the same for the same name), a file, a board. */
 export type Badge = {who: string} | 'file' | 'board';
 function badge(b: Badge): HTMLElement {
   if (b === 'file') return h('span', {class: 'lately-badge', 'aria-hidden': 'true'}, icon('file'));
   if (b === 'board') return h('span', {class: 'lately-badge', 'aria-hidden': 'true'}, '#');
-  const tint = [...b.who].reduce((n, c) => n + c.codePointAt(0)!, 0) % 3;
+  const tint = [...b.who].reduce((n, c) => n + c.codePointAt(0)!, 0) % 4;
   return h('span', {class: 'lately-badge', 'data-tint': String(tint), 'aria-hidden': 'true'}, [...b.who.trim()][0]?.toUpperCase() ?? '?');
 }
 

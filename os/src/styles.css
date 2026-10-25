@@ -18,19 +18,22 @@
   /* Three marks that say one thing each: a step done, a line marked in a diff, a repo off. Each a small family, cool
      enough to sit with the greys without tiring, strong enough to hold as an accent: the mark itself, the words in
      it (a step darker, to read small), and the ground of a line (a tint, not the mark thinned). */
-  --done: #1c8a67;
+  --done: #0f8c69;
   /* The Prompt up as a screen, its one place, made of these: its glass the ink a step deeper; its words the green's
      tint (add-tint) lit in the green (done), and the prompt lines the shell waited at the green itself, lifted for the dark. */
   --screen: color-mix(in srgb, var(--ink) 66%, #000);
   --screen-ps: color-mix(in srgb, var(--done) 45%, var(--add-tint));
-  --add: #0f6b50;
-  --add-tint: #d8eee6;
-  --marker: #f5eb7a;
-  --marker-soft: #f8f2b9;
+  --add: #157357;
+  --add-tint: #d8f2e6;
+  --marker: #ffe066;
+  --marker-soft: #fff2b8;
   /* Dark enough that `ground` words on it (a removal held, its button red) read at 4.5:1. */
-  --off: #a3304d;
-  --del: #992b46;
-  --del-tint: #f6dfe4;
+  --off: #a8324f;
+  --del: #b23452;
+  --del-tint: #fce0e7;
+  /* A fourth soft tint, a sky's, beside the three marks' (marker-soft, add-tint, del-tint): only for telling people
+     apart by their round initial, so it means nothing else. */
+  --sky-tint: #dbe9fb;
 
   --sans: system-ui, -apple-system, 'Segoe UI', 'Noto Sans JP', 'Hiragino Sans', sans-serif;
   --mono: ui-monospace, 'SF Mono', Consolas, 'Noto Sans Mono', monospace;
@@ -490,8 +493,8 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
 /* The line it was left at, as written there: mono, as in Forge, on a quiet rule. */
 .lately-quote { overflow: hidden; margin: 2px 0; padding-left: var(--s2); border-left: 2px solid var(--rule); font: var(--t-meta) var(--mono); text-overflow: ellipsis; white-space: nowrap; }
 .lately-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--ink); }
-/* What a row is, in a round badge at its head (pane.ts): who wrote, their initial on one of three soft tints (the same
-   for the same name: the marker's, a step done's, a removal's), a file, a board. The lines under it start where its
+/* What a row is, in a round badge at its head (pane.ts): who wrote, their initial on one of four soft tints (the same
+   for the same name: the marker's, a step done's, a removal's, the sky's), a file, a board. The lines under it start where its
    name does. Word from someone is a bubble, its corner at the badge's side, as a message is. */
 .lately-badge { flex: none; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--raised);
   color: var(--ink); font: 700 12px/1 var(--sans); }
@@ -499,6 +502,7 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
 .lately-badge[data-tint='0'] { background: var(--marker-soft); }
 .lately-badge[data-tint='1'] { background: var(--add-tint); }
 .lately-badge[data-tint='2'] { background: var(--del-tint); }
+.lately-badge[data-tint='3'] { background: var(--sky-tint); }
 .lately-row > :is(.lately-line, .lately-quote) { margin-left: calc(24px + var(--s2)); }
 .lately-row.said { border-radius: var(--r-place) var(--r-place) var(--r-place) var(--s1); }
 .lately-none { margin: 0; padding: 0 var(--s3); }
@@ -617,7 +621,7 @@ span.todo-title { min-height: 0; }
 /* Its detail goes quiet with it, still there to read. */
 .todo-item.done .todo-detail { color: var(--sub); }
 .todo-detail::placeholder { color: var(--sub); opacity: .7; }
-.todo-item.done .todo-mark { color: var(--ink); }
+.todo-item.done .todo-mark { color: var(--done); }
 .todo-hint { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s5); padding: var(--s2) var(--s4) var(--s3); color: var(--sub); font-size: var(--t-meta); }
 /* Said only while the box is written in, fading in where it always stands, so nothing moves. */
 .todo-box .todo-hint { opacity: 0; transition: opacity 200ms ease-out; }

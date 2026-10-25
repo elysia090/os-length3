@@ -308,17 +308,20 @@ Every page:
 | `edge` | `#6B6E6B` | outlines of fields and controls, which must be seen (3.7:1) |
 | `raised` | `#E4E4E0` | field fill, hover (the same small step above ground as before) |
 | `paper` | `#F8F8F5` | the sheet: what is worked on, and only that (a file's box, the TODO, the issue or board in hand, Inbox's box, what the search found); never a card that leads somewhere, a pane or a page (Runtime's box, which is read rather than worked in, stays on the ground) |
-| `done` | `#1C8A67` | done and on: a step of an issue's work done, a switch on (its knob), a box ticked (its circle), a line added (its bar, its squares); a clean emerald leaning to blue, so it sits with the greys and does not tire, light enough not to read heavy as a filled circle (white on it 4.3:1, it on the ground 3:1) |
-| `add` | `#0F6B50` | the words of an addition, a step darker than `done` to read small: +n, a line's + (5.3:1 on its tint) |
-| `add-tint` | `#D8EEE6` | the ground of a line added in a diff: a mint of its own, not `done` thinned |
-| `marker` | `#F5EB7A` | what is marked, as with a highlighter: a line marked in a diff (a review, Forge's diff), over its words only (not its indent or number, which turns ink), each wrapped line its own stroke with softened ends; the words the search found, in its lines; the head of a file just landed on, for a moment. A clean, light lemon, neither cream nor dense: `ink` on it 11.6:1 |
-| `marker-soft` | `#F8F2B9` | the pointer on a line it can mark: the stroke, paler; a line just landed on (merged, committed, closed), lit a moment on the ground, solid (a thinned marker on the grey goes olive) |
-| `off` | `#A3304D` | a repo turned off: its switch; a removal held, its button red (`ground` words on it 4.8:1); a line removed (its bar, its squares); a crimson leaning to blue, not a brick |
-| `del` | `#992B46` | the words of a removal: −n, a line's − (6.0:1 on its tint) |
-| `del-tint` | `#F6DFE4` | the ground of a line removed in a diff |
+| `done` | `#0F8C69` | done and on: a step of an issue's work done, a switch on (its knob), a box ticked (its circle, and a TODO done's tick), a line added (its bar, its squares), the Prompt's dot while its shell waits; a fresh emerald leaning to blue, so it sits with the greys and does not tire, light enough not to read heavy as a filled circle (white on it 4.2:1, it on the ground 3:1) |
+| `add` | `#157357` | the words of an addition, a step darker than `done` to read small: +n, a line's + (4.9:1 on its tint) |
+| `add-tint` | `#D8F2E6` | the ground of a line added in a diff: a mint of its own, not `done` thinned |
+| `marker` | `#FFE066` | what is marked, as with a highlighter: a line marked in a diff (a review, Forge's diff), over its words only (not its indent or number, which turns ink), each wrapped line its own stroke with softened ends; the words the search found, in its lines; the head of a file just landed on, for a moment. A warm, clear lemon, neither cream nor dense: `ink` on it 10.9:1 |
+| `marker-soft` | `#FFF2B8` | the pointer on a line it can mark: the stroke, paler; a line just landed on (merged, committed, closed), lit a moment on the ground, solid (a thinned marker on the grey goes olive) |
+| `off` | `#A8324F` | a repo turned off: its switch; a removal held, its button red (`ground` words on it 4.6:1); a line removed (its bar, its squares); a rosy crimson leaning to blue, not a brick |
+| `del` | `#B23452` | the words of a removal: −n, a line's − (4.8:1 on its tint) |
+| `del-tint` | `#FCE0E7` | the ground of a line removed in a diff |
+| `sky-tint` | `#DBE9FB` | a fourth soft tint, beside the three marks' (`marker-soft`, `add-tint`, `del-tint`), only to tell people apart by their round initial (Lately, the pane's word) |
 
-No other colours; the last three families (`done`, `marker`, `off`, each with
-the words and the ground drawn from it) each mean their one thing only. The one
+No other colours; the three families (`done`, `marker`, `off`, each with
+the words and the ground drawn from it) each mean their one thing only; the
+round initials of people borrow their soft grounds and the sky's, which mean
+nothing there but who. The one
 shade is `ink` at 14% over the window while the search is out. The Prompt up
 over the center is a screen made of these colours, not new ones: its glass
 `ink` a step deeper (`ink` 66% with black), lit words `add-tint` glowing in
