@@ -1,9 +1,9 @@
-import {h} from '../dom.ts';
-import {errorText} from '../errors.ts';
+import {h} from '../ui/dom.ts';
+import {errorText} from '../app/errors.ts';
 import {t} from '../i18n.ts';
-import {mark} from '../icons.ts';
+import {mark} from '../ui/icons.ts';
 import {askFoot, SETTLE} from './common.ts';
-import {keepOut, putAway} from '../glide.ts';
+import {keepOut, putAway} from '../ui/glide.ts';
 
 // A repo's gear, the same in every list of repos (Home's cards, Runtime's
 // three columns): near a repo (the pointer on it, or the keyboard in it) a

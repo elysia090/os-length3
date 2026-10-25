@@ -1,21 +1,21 @@
-import {ago, bytes, h} from '../dom.ts';
-import {isNative, rootFetch, rootStatus, rootUse, type Certainty, type Freed, type Space} from '../host.ts';
+import {ago, bytes, h} from '../ui/dom.ts';
+import {isNative, rootFetch, rootStatus, rootUse, type Certainty, type Freed, type Space} from '../app/host.ts';
 import {t, tn} from '../i18n.ts';
-import {bring, onSync, remoteOnly, repoState} from '../lifecycle.ts';
-import {connection, deviceWord, REMOTE_URL} from '../remote.ts';
-import {mark} from '../icons.ts';
+import {bring, onSync, remoteOnly, repoState} from '../remote/lifecycle.ts';
+import {connection, deviceWord, REMOTE_URL} from '../remote/connection.ts';
+import {mark} from '../ui/icons.ts';
 import desktopPins from '../../shared/desktop-releases.json' with {type: 'json'};
-import * as dotfiles from '../dotfiles.ts';
-import * as ssh from '../ssh.ts';
-import {free, readSpace} from '../space.ts';
-import {about} from '../userland.ts';
+import * as dotfiles from '../home/dotfiles.ts';
+import * as ssh from '../prompt/ssh.ts';
+import {free, readSpace} from '../app/space.ts';
+import {about} from '../prompt/userland.ts';
 import {askFoot, copying, pageHead, parts, SETTLE} from './common.ts';
 import type {Context} from './context.ts';
 import {openRepoPlace, syncWord} from './remote.ts';
 import {repoGear} from './repo-gear.ts';
-import {allSessions, type Session} from './terminal.ts';
-import {getState, setState} from '../state.ts';
-import {every} from '../runs.ts';
+import {allSessions, type Session} from './bench/terminal.ts';
+import {getState, setState} from '../home/state.ts';
+import {every} from '../app/runs.ts';
 
 // Runtime: this device, then what the OS holds on it, then what is running,
 // then the environment actually in effect (what runs, not what was asked for).

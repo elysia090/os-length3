@@ -88,7 +88,7 @@ pub fn save_todos(list: &[Todo]) -> Result<()> {
     set("todo", &serde_json::to_string(list).map_err(|e| e.to_string())?)
 }
 
-/// How long an item's first line and its detail may be, in UTF-16 units as the app counts them (src/todo.ts).
+/// How long an item's first line and its detail may be, in UTF-16 units as the app counts them (src/home/todo.ts).
 pub const TODO_LIMITS: [(&str, usize); 2] = [("title", 200), ("detail", 4000)];
 
 /// A new item from a first line written as "Kind：title" (or plain text);
@@ -105,7 +105,7 @@ pub fn todo_from(line: &str, detail: &str, now: u64) -> Option<Todo> {
     Some(Todo { id, kind, title: title.trim().into(), detail, done: false, repo: None, created: now })
 }
 
-/// `item` with its first line written again as `line` reads (src/todo.ts `edit`): the same item,
+/// `item` with its first line written again as `line` reads (src/home/todo.ts `edit`): the same item,
 /// its id, whether it is done and when it was made kept. Its detail is the lines after the first
 /// and `detail` when either is given; otherwise it stays. None when the first line is empty.
 pub fn todo_edited(item: &Todo, line: &str, detail: Option<&str>) -> Option<Todo> {
@@ -115,7 +115,7 @@ pub fn todo_edited(item: &Todo, line: &str, detail: Option<&str>) -> Option<Todo
     Some(Todo { kind: new.kind, title: new.title, detail, ..item.clone() })
 }
 
-/// Home's profile, as the app keeps it (src/profile.ts).
+/// Home's profile, as the app keeps it (src/home/profile.ts).
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
 pub struct Profile {
     #[serde(default)]
@@ -129,7 +129,7 @@ pub struct Profile {
 /// How long each field of a profile may be, in characters.
 pub const PROFILE_LIMITS: [(&str, usize); 3] = [("name", 50), ("handle", 32), ("bio", 160)];
 
-/// A handle: lowercase letters, digits, - and _ (src/profile.ts).
+/// A handle: lowercase letters, digits, - and _ (src/home/profile.ts).
 pub fn valid_handle(h: &str) -> bool {
     !h.is_empty() && h.len() <= 32 && h.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')
 }
@@ -162,7 +162,7 @@ pub fn set_profile(field: &str, value: &str) -> Result<Profile> {
     Ok(p)
 }
 
-/// Forge's band: the repos out on it, in order, only those in `here` (src/band.ts).
+/// Forge's band: the repos out on it, in order, only those in `here` (src/home/band.ts).
 /// Never chosen yet, it holds the first repo.
 pub fn band(here: &[String]) -> Result<Vec<String>> {
     let Some(text) = get("band")? else { return Ok(here.first().cloned().into_iter().collect()) };
@@ -208,7 +208,7 @@ pub fn set_network(repo: &str, on: bool) -> Result<bool> {
     Ok(true)
 }
 
-/// A dotfile's name as it may be written into /root: a dot, then letters, digits and . _ - (src/dotfiles.ts).
+/// A dotfile's name as it may be written into /root: a dot, then letters, digits and . _ - (src/home/dotfiles.ts).
 pub fn dotfile_name(name: &str) -> bool {
     name.len() > 1 && name.len() <= 64 && name.starts_with('.') && name != ".." && !name.contains("..")
         && name.bytes().skip(1).all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
@@ -243,7 +243,7 @@ pub fn set_dotfile(name: &str, text: Option<&str>) -> Result<bool> {
 
 // ---- kept on the Remote (service/app.ts `/v1/home/:key`) ----
 //
-// The same protocol and rules as the app's (src/draft.ts `syncHome`), and
+// The same protocol and rules as the app's (src/remote/sync.ts `syncHome`), and
 // the same record of what was agreed (the `sync` setting's `home`), so the
 // app and l3 on one device are one device to the Remote. Each setting is a
 // value and its version there; a change is sent from the version it was
@@ -251,7 +251,7 @@ pub fn set_dotfile(name: &str, text: Option<&str>) -> Result<bool> {
 // too: two TODO lists are joined against what both last agreed; any other setting is the
 // Remote's (it got there first).
 
-/// Home's settings that are the person's, kept on the Remote (src/draft.ts
+/// Home's settings that are the person's, kept on the Remote (src/remote/sync.ts
 /// `HOME_KEYS`). The band, the language and the network grant are this device's.
 pub const SYNCED: [&str; 3] = ["profile", "todo", "dotfiles"];
 
@@ -310,7 +310,7 @@ pub fn put_version(v: &serde_json::Value) -> Result<i64> {
     v["version"].as_i64().ok_or_else(|| crate::tr!("The Remote's answer is not a setting", "Remote の答えが設定の形ではありません"))
 }
 
-/// Whether two items' ids are the same as a JavaScript Set sees them (src/draft.ts):
+/// Whether two items' ids are the same as a JavaScript Set sees them (src/remote/sync.ts):
 /// absent ones are, as are equal strings, numbers, booleans and nulls; objects never are.
 fn same_id(a: Option<&serde_json::Value>, b: Option<&serde_json::Value>) -> bool {
     use serde_json::Value as V;
@@ -323,7 +323,7 @@ fn same_id(a: Option<&serde_json::Value>, b: Option<&serde_json::Value>) -> bool
 }
 
 /// Two TODO lists as one, against the one both last agreed (`base`), as
-/// src/draft.ts `joinTodo`: an item only one side changed or removed is as
+/// src/remote/sync.ts `joinTodo`: an item only one side changed or removed is as
 /// that side left it, one both changed is this device's, and every item
 /// either side added is kept, the Remote's new ones first. Nothing agreed
 /// (or not a list): every item from both, this device's where both have it.
@@ -417,7 +417,7 @@ pub fn agree_with(here: &mut impl HomeHere, there: &impl HomeThere, key: &str, w
 }
 
 /// Home's files here, and what was last agreed for each: the `sync`
-/// setting's `home`, as the app keeps it (src/draft.ts), beside its other records.
+/// setting's `home`, as the app keeps it (src/remote/sync.ts), beside its other records.
 pub struct Files;
 
 impl HomeHere for Files {
@@ -653,7 +653,7 @@ mod tests {
 
     #[test]
     fn todo_from_two_devices_is_joined_item_by_item() {
-        // As src/draft.test.ts: this device sent [a]; another made it [a, b]; this one made it [a, c].
+        // As src/remote/sync.test.ts: this device sent [a]; another made it [a, b]; this one made it [a, c].
         let r = Remote::default();
         let mut d = Device::default();
         d.values.insert("todo".into(), r#"[{"id":"a","title":"here"}]"#.into());

@@ -1,14 +1,14 @@
-import {bytes, h} from '../dom.ts';
+import {bytes, h} from '../ui/dom.ts';
 import {t} from '../i18n.ts';
-import {remoteOnly} from '../lifecycle.ts';
-import {store, templateFiles, validName, type Template} from '../repos.ts';
+import {remoteOnly} from '../remote/lifecycle.ts';
+import {store, templateFiles, validName, type Template} from '../repos/repos.ts';
 import {pageHead} from './common.ts';
 import {repoList} from './repo-list.ts';
 import type {Context} from './context.ts';
 import {triangle} from './tree.ts';
-import {ORIGIN_LABEL} from '../system.ts';
-import {errorText} from '../errors.ts';
-import {LAND, morph, nudge, paced, still, where} from '../glide.ts';
+import {ORIGIN_LABEL} from '../prompt/system.ts';
+import {errorText} from '../app/errors.ts';
+import {LAND, morph, nudge, paced, still, where} from '../ui/glide.ts';
 
 /**
  * +: the repo's name on the first line; under it, in a large box, what it

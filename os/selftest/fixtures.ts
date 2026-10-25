@@ -24,7 +24,7 @@
 //               as on coming back to it, rather than making it again each time
 //   l3Ahead     (an option, false) true: the translation of l3 made ahead of
 //               time, which a Prompt fetches and compiles for the Prompts after
-//               it 3 s after its prompt line is up (src/userland.ts warmL3), is
+//               it 3 s after its prompt line is up (src/prompt/userland.ts warmL3), is
 //               served. Otherwise the browser refuses it, as a line that broke,
 //               and the app goes without it: 20 MB unpacked, checked and
 //               compiled, half of what a test that opens Forge spends on its
@@ -71,7 +71,7 @@ export function addressOf(info: TestInfo, who = 'Ada'): string {
 
 /**
  * The files of what a Prompt is given ahead of time for the Prompts after it (each translation in the build's l3 but
- * BusyBox's, which a Prompt starts with: src/userland.ts FIRST), as the browser's blocked URLs say them; none in a
+ * BusyBox's, which a Prompt starts with: src/prompt/userland.ts FIRST), as the browser's blocked URLs say them; none in a
  * build without l3.
  */
 const AHEAD: string[] = (() => {

@@ -1,17 +1,17 @@
-import {ago, h} from '../dom.ts';
-import {errorText} from '../errors.ts';
-import {keepOut, pop, putAway, unfold} from '../glide.ts';
+import {ago, h} from '../ui/dom.ts';
+import {errorText} from '../app/errors.ts';
+import {keepOut, pop, putAway, unfold} from '../ui/glide.ts';
 import {t} from '../i18n.ts';
-import {mark} from '../icons.ts';
-import * as inbox from '../inbox.ts';
-import {issueName, readIssues, saveIssue, shownName, type Issue} from '../issues.ts';
-import {look as lookForNews} from '../news.ts';
-import {store} from '../repos.ts';
-import * as servers from '../servers.ts';
-import {getState, setState} from '../state.ts';
-import * as todo from '../todo.ts';
+import {mark} from '../ui/icons.ts';
+import * as inbox from '../remote/inbox.ts';
+import {issueName, readIssues, saveIssue, shownName, type Issue} from '../repos/issues.ts';
+import {look as lookForNews} from '../remote/news.ts';
+import {store} from '../repos/repos.ts';
+import * as servers from '../remote/servers.ts';
+import {getState, setState} from '../home/state.ts';
+import * as todo from '../home/todo.ts';
 import {answers} from './common.ts';
-import {kindWords, mark as todoMark} from './todo-box.ts';
+import {kindWords, mark as todoMark} from './todo-list.ts';
 
 // A row in a pane (word from someone, where one left off, a board's new posts, a line the box wrote in the Prompt's
 // flow) is not a door to another page: pressed, it opens where it stands (DESIGN.md § The right pane). One reaction:

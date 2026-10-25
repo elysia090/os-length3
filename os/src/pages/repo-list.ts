@@ -1,14 +1,14 @@
-import {ago, arrowKeys, bytes, h} from '../dom.ts';
+import {ago, arrowKeys, bytes, h} from '../ui/dom.ts';
 import {t} from '../i18n.ts';
-import {icon} from '../icons.ts';
-import {store} from '../repos.ts';
-import {bring, onSync, remoteOnly, repoState} from '../lifecycle.ts';
-import {free, readSpace} from '../space.ts';
+import {icon} from '../ui/icons.ts';
+import {store} from '../repos/repos.ts';
+import {bring, onSync, remoteOnly, repoState} from '../remote/lifecycle.ts';
+import {free, readSpace} from '../app/space.ts';
 import {openRepoPlace, syncWord} from './remote.ts';
 import {repoGear} from './repo-gear.ts';
-import {allSessions} from './terminal.ts';
+import {allSessions} from './bench/terminal.ts';
 import type {Context} from './context.ts';
-import {errorText} from '../errors.ts';
+import {errorText} from '../app/errors.ts';
 
 // The repos as large cards, about three across: on Home, and under the New
 // repo form so a repo just made is seen joining the others.

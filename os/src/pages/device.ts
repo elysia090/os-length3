@@ -1,9 +1,9 @@
-import {h} from '../dom.ts';
+import {h} from '../ui/dom.ts';
 import {t} from '../i18n.ts';
-import * as remote from '../remote.ts';
+import * as remote from '../remote/connection.ts';
 import {signInBox} from './remote.ts';
 import {answers} from './common.ts';
-import {errorText} from '../errors.ts';
+import {errorText} from '../app/errors.ts';
 
 // The page a device's code opens (?device&user_code=…): l3 or the app asks
 // to join this account. The person signs in here if not already (and comes

@@ -659,7 +659,7 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
 .todo-kind { font-weight: 700; }
 /* The kind's colon is the issue's own (Fix：), a full-width one; seen, it is the face's own colon against the word
    and a space's room after it: "Fix: The title", not "Fix :   The title", whatever font has the full-width one (each
-   puts it somewhere else in its box). The written one stays in the text, out of sight (todo-box.ts kindColon). */
+   puts it somewhere else in its box). The written one stays in the text, out of sight (todo-list.ts kindColon). */
 .kind-colon { margin-right: .25em; }
 .kind-colon::before { content: ':'; content: ':' / ''; }
 /* Inline, of no size: heard and copied as part of the words (a box of its own would be heard apart from them). */
@@ -680,7 +680,7 @@ span.todo-title { min-height: 0; }
 .todo-meta { color: var(--sub); font-size: var(--t-meta); font-variant-numeric: tabular-nums; }
 /* Done: only the first line is struck through and quiet, in `sub`, which still reads (an opacity would not). The line
    is drawn across its words as it is done, from the kind's start, and goes back the way it came if it is taken back
-   (todo-box.ts measures it to the words); read, not written, it is the words' own. */
+   (todo-list.ts measures it to the words); read, not written, it is the words' own. */
 .todo-item.done .todo-head :is(.todo-title, .todo-kind) { color: var(--sub); }
 .todo-item.done .todo-head:not(:has(.todo-strike)) :is(.todo-title, .todo-kind) { text-decoration: line-through; }
 .todo-head :is(.todo-title, .todo-kind) { transition: color calc(240ms * var(--pace)) ease-out; }
@@ -2283,7 +2283,7 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 /* Done: a circle with a check in it. */
 .done-mark { width: 22px; height: 22px; border-radius: 50%; background: var(--done); position: relative; flex: none; }
 .done-mark::after { content: ''; position: absolute; left: 7px; top: 4px; width: 6px; height: 10px; border: solid var(--ground); border-width: 0 2px 2px 0; transform: rotate(45deg); }
-/* Just done here (git-issue.ts), the mark lands: in from small, a touch past its size, settling; its tick drawn after. */
+/* Just done here (git/issue.ts), the mark lands: in from small, a touch past its size, settling; its tick drawn after. */
 .done-mark.fresh { animation: done-land calc(440ms * var(--pace)) cubic-bezier(.2, 1.5, .32, 1) both; }
 .done-mark.fresh::after { animation: tick-in calc(220ms * var(--pace)) calc(200ms * var(--pace)) ease-out both; }
 @keyframes done-land { from { scale: .3; opacity: 0; } }
@@ -2292,7 +2292,7 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 @keyframes line-land { from { translate: 0 -12px; opacity: 0; } }
 @keyframes line-lit { from, 30% { background: var(--marker-soft); } } /* solid, not the marker thinned: on the ground a thinned yellow goes olive */
 @media (prefers-reduced-motion: reduce) { .done-row.landing { animation: none; } }
-/* Committed on main just now: the card's sheet lands on its line (git-done.ts), which is lit as it does. */
+/* Committed on main just now: the card's sheet lands on its line (git/done.ts), which is lit as it does. */
 /* The line a commit just made opens where its card went, the issues under it coming down that far rather than at
    once, and is lit as it lands. */
 .done-row.just-cut { animation: line-open calc(260ms * var(--pace)) var(--land) both, line-lit 1600ms ease-out both; border-radius: var(--r-field); overflow: hidden; }
@@ -2693,7 +2693,7 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .server-gear svg { width: 18px; height: 18px; }
 .slides { --peek: 48px; --gap: var(--s3); --lead: 0; min-height: 0; }
 .slides.single { --peek: 0px; }
-/* Server's boards and the box at the foot share the center's peek and lead (server-layer.ts sets it there): the box is
+/* Server's boards and the box at the foot share the center's peek and lead (server/layer.ts sets it there): the box is
    as wide as the board on screen and stands under it, its edges the board's, sliding with it board to board. */
 .server-center { --peek: 48px; --lead: 0; }
 .server-center:has(> .slides.single) { --peek: 0px; }
@@ -2750,7 +2750,7 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 }
 .todo-read { white-space: pre-wrap; }
 .board-talk { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s3) var(--s5); overscroll-behavior: contain; }
-/* Its talk goes on below what is shown: the box is open at its foot and the posts run past the edge (server-layer.ts).
+/* Its talk goes on below what is shown: the box is open at its foot and the posts run past the edge (server/layer.ts).
    Only its edge changes: its room at the foot (the padding under the last post, seen only at the end) stays, for
    taking it away there changed how far it scrolls, which said "at the foot" again and again, the posts jumping by it. */
 .slide[aria-current='true'] .board-card.more-below { border-bottom-color: transparent; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
@@ -2782,7 +2782,7 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 /* A long name wraps rather than being cut short at the pane's edge (§4), and owner is never cut. */
 .people li > :not(.lately-badge) { min-width: 0; overflow-wrap: anywhere; }
 .people li > .muted { flex: none; }
-/* Someone else is a conversation with them (server-layer.ts): the row pressed, a raised fill under the pointer. */
+/* Someone else is a conversation with them (server/layer.ts): the row pressed, a raised fill under the pointer. */
 .person-go { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; width: calc(100% + 2 * var(--s2)); margin: 0 calc(-1 * var(--s2));
   padding: 2px var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand);
   transition: background-color calc(200ms * var(--pace)) ease-out; }

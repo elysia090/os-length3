@@ -1,19 +1,19 @@
-import {ago, arrowKeys, day, h} from '../dom.ts';
+import {ago, arrowKeys, day, h} from '../ui/dom.ts';
 import {t} from '../i18n.ts';
-import * as inbox from '../inbox.ts';
-import {connection} from '../remote.ts';
-import {look, onNews} from '../news.ts';
-import {Drafts} from '../drafts.ts';
-import {kindOf} from '../text.ts';
-import {mark} from '../icons.ts';
+import * as inbox from '../remote/inbox.ts';
+import {connection} from '../remote/connection.ts';
+import {look, onNews} from '../remote/news.ts';
+import {Drafts} from '../home/drafts.ts';
+import {kindOf} from '../repos/text.ts';
+import {mark} from '../ui/icons.ts';
 import {copying, deed, pageHead} from './common.ts';
 import {personBadge} from './pane.ts';
-import {every} from '../runs.ts';
+import {every} from '../app/runs.ts';
 import {goToPlan, planRefused, planSaid, signInBox, signInPlace, unreachedError, unreachedPlace} from './remote.ts';
-import {plan as readPlan} from '../plan.ts';
+import {plan as readPlan} from '../remote/plan.ts';
 import type {Context} from './context.ts';
-import {errorText} from '../errors.ts';
-import {arrive, closeUp, keepOut, LAND, nudge, paced, putAway, still, where} from '../glide.ts';
+import {errorText} from '../app/errors.ts';
+import {arrive, closeUp, keepOut, LAND, nudge, paced, putAway, still, where} from '../ui/glide.ts';
 
 // Inbox: what comes to you, typed, from people found by address. Not a mail
 // screen: each message says what it is (a message, a review request, a

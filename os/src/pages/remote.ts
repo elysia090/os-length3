@@ -1,19 +1,19 @@
-import {ago, bytes, day, h} from '../dom.ts';
-import {isNative, native} from '../host.ts';
-import {mark} from '../icons.ts';
+import {ago, bytes, day, h} from '../ui/dom.ts';
+import {isNative, native} from '../app/host.ts';
+import {mark} from '../ui/icons.ts';
 import {currentLang, t, tn} from '../i18n.ts';
-import {bring, flush, look, onSync, remoteAll, repoState, type RepoSync} from '../lifecycle.ts';
-import type {RemoteRepo} from '../draft.ts';
-import * as account from '../remote.ts';
+import {bring, flush, look, onSync, remoteAll, repoState, type RepoSync} from '../remote/lifecycle.ts';
+import type {RemoteRepo} from '../remote/sync.ts';
+import * as account from '../remote/connection.ts';
 import {changedWords, leftFor, openPlan, plan as readPlan, planRefusal, planView, priceWords, refusalWords,
   takeLeft, takeStripeReturn, TERMS, tierName,
-  type Back, type Left, type Meter, type PaidTier, type Plan, type PlanRefusal, type Price, type TierCard} from '../plan.ts';
-import {store} from '../repos.ts';
-import {freeOff} from '../space.ts';
-import * as servers from '../servers.ts';
+  type Back, type Left, type Meter, type PaidTier, type Plan, type PlanRefusal, type Price, type TierCard} from '../remote/plan.ts';
+import {store} from '../repos/repos.ts';
+import {freeOff} from '../app/space.ts';
+import * as servers from '../remote/servers.ts';
 import {answers, askFoot, pageHead, parts, SETTLE} from './common.ts';
 import type {Context} from './context.ts';
-import {keepOut, nudge, putAway} from '../glide.ts';
+import {keepOut, nudge, putAway} from '../ui/glide.ts';
 import {summaryOf} from './repo-list.ts';
 
 /**

@@ -10,7 +10,7 @@
 // - its own `after` hooks run as its suite ends, and what it borrowed for the file goes back (testing.ts);
 // - a file of the page's (src/) has the app's modules to itself, as in a process of its own: it is read as
 //   `?realm=<its path>`, and so is every module of src/ it reaches (they keep the page's state: its store,
-//   its sign-in, its core), the core a page runs (testing-core.ts) first. The service and the packages it
+//   its sign-in, its core), the core a page runs (testing/core.ts) first. The service and the packages it
 //   uses are the process's, as they hold nothing of a file's;
 // - a timer the page's modules set and left (a sync gathering keystrokes, a change told a moment later) runs
 //   before the next file, as it would have before a process of its own ended;
@@ -117,7 +117,7 @@ export async function together(units: string[], taken: string) {
         }
       });
       if (page) {
-        await import(`${SRC}testing-core.ts?realm=${encodeURIComponent(unit)}`);
+        await import(`${SRC}testing/core.ts?realm=${encodeURIComponent(unit)}`);
         await timersRun(run);
       } else {
         await run();

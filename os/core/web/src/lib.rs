@@ -1,4 +1,4 @@
-//! The core as a browser runs it (built for wasm32-wasip1; src/core.worker.ts runs it over its own files).
+//! The core as a browser runs it (built for wasm32-wasip1; src/core/worker.ts runs it over its own files).
 //! A page asks it what the app asks through Tauri: `{"name", "args"}` in, `{"ok"}` or `{"error"}` out
 //! (core/src/api.rs answer), as JSON in this module's memory.
 //!

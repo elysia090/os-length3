@@ -1072,7 +1072,7 @@ device.
 Files that cannot travel (a link, a file over 16 MB, a repo's own `.git`)
 are named and never sent; a repo holding them is never let go. Home's
 settings (profile, TODO, dotfiles) are kept there too, by the app and l3
-alike (src/draft.ts, core/src/home.rs: one protocol, one record of what was
+alike (src/remote/sync.ts, core/src/home.rs: one protocol, one record of what was
 agreed), each changed only from the version it was read at: unchanged
 here, the Remote's is taken; changed on both sides, two TODO lists are
 joined item by item, and any other setting is the Remote's. The band, the

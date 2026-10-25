@@ -80,7 +80,7 @@ alone is never answered so. A tag holds until the next six hours of UTC and
 never past its session's end, so what changed outside any request (SQL by
 hand, a session ended in the database) is read by then; a session ended
 through the Remote is a write, and moves the mark at once. The page asks
-afresh, without tags, when its window comes back (`src/looks.ts`). A beat
+afresh, without tags, when its window comes back (`src/remote/looks.ts`). A beat
 answered by the mark is heard there: `GET /v1/ssh` says the later of the
 database's moment and the mark's. One mark for the whole Remote: a write by
 anyone has each look read again once, while the database is awake for that

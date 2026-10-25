@@ -475,7 +475,7 @@ export const board = pgTable('board', {
   check('board_reach', sql`${t.reach} between 0 and 2`)]);
 
 /**
- * An item of a board's TODO, the same as one of Home's (src/todo.ts): a
+ * An item of a board's TODO, the same as one of Home's (src/home/todo.ts): a
  * kind and a title, its detail, done or not. Kept item by item, field by
  * field, so two people writing different items, or different fields of one,
  * never meet; the same field, the last write stays. `place` orders the list

@@ -388,7 +388,7 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
 }
 
 /// Where a line's diff is sent. A copy never in step with the Remote makes it
-/// anew, even under a name the Remote remembers as discarded (src/draft.ts);
+/// anew, even under a name the Remote remembers as discarded (src/remote/sync.ts);
 /// one that was in step cannot bring back what was discarded by sending itself.
 fn draft_path(repo: &str, line: &str, agreed: bool) -> String {
     let p = at(repo, line, "/draft");
@@ -399,7 +399,7 @@ fn draft_path(repo: &str, line: &str, agreed: bool) -> String {
 /// taken only as a Remote says it (line_there). Not there, it has nothing of the
 /// line, unless the copy was in step before (discarded there, or another
 /// account's): then nothing here is taken for removed, and why is said
-/// (src/draft.ts does the same).
+/// (src/remote/sync.ts does the same).
 fn there_of(url: &str, reply: Reply, agreed: i64) -> Result<Option<LineThere>> {
     match reply {
         Reply::Ok(v) => Ok(Some(line_there(url, &v)?)),
