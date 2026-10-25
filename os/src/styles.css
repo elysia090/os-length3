@@ -194,11 +194,12 @@ a { color: var(--ink); }
    quickly and going, slowly, so a pass across the rail leaves a short trail rather than blinking. Only the fill and
    the edge ease: words and icons turn at once, so ink landing on a place never hides its icon a moment. */
 .rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row,
-.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .tree-row {
+.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .tree-row, .hit, .hit-file, .found-item, .seen-file, .link, button.row-item {
   transition: background-color calc(200ms * var(--pace)) ease-out, border-color calc(200ms * var(--pace)) ease-out;
 }
 :is(.rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row,
-.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .tree-row):hover { transition-duration: calc(60ms * var(--pace)); }
+.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .tree-row, .hit, .hit-file, .found-item, .seen-file, .link,
+button.row-item):hover { transition-duration: calc(60ms * var(--pace)); }
 :is(.rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row,
 .inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .file-beside, .tree-row):active:not(:disabled) {
   background-color: color-mix(in srgb, var(--ink) 13%, var(--raised)); transition-duration: 40ms;

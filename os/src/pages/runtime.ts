@@ -176,7 +176,9 @@ function device(ctx: Context, u: Space, last: Freed | null, again: (r: Freed | n
   const here = u.items.map((i) => {
     const repo = i.id.startsWith('repo:');
     const repoNote = repo ? syncWord(repoState(i.what)) : '';
-    return thing(repo ? repoName(i.what) : i.what, i.allocated, [i.detail, repoNote].filter(Boolean).join(' · '), null,
+    // l3 is a command's name, written as code is (in the sans face its l reads as a capital I).
+    const name = repo ? repoName(i.what) : i.id === 'l3' ? h('code', {class: 'mono'}, i.what) : i.what;
+    return thing(name, i.allocated, [i.detail, repoNote].filter(Boolean).join(' · '), null,
       i.room === 'Keep' ? i.why : '', repo ? gearOf(i.what, i.room === 'Keep' ? i.why : null) : undefined);
   });
 
