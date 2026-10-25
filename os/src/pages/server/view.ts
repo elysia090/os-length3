@@ -35,7 +35,7 @@ function remember(at: {server?: string; board?: string}) {
 }
 
 /** What the view needs of the layer it is in. */
-export interface ViewWays {
+interface ViewWays {
   ctx: Context;
   /** Brought out by a press, to stay: what is written in takes the keyboard. */
   pinned(): boolean;

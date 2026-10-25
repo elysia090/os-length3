@@ -5,7 +5,7 @@ import {t} from '../../i18n.ts';
 // showing, an edge (or ← →) the way to them. What each box holds is the view's to say (board.ts draws them).
 
 /** What the row needs of the view it is in. */
-export interface RowWays {
+interface RowWays {
   /** What box `j` holds: in full when it is the one on screen (`now`), else only its name. */
   box(j: number, now: boolean): HTMLElement;
   /** Box `k` came on screen. */

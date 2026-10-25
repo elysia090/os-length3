@@ -9,7 +9,7 @@ import {errorText} from '../../app/errors.ts';
 // (pressing one shows it as it was last pushed; a repo shown is only seen there, never written).
 
 /** What the side needs of the view it is in. */
-export interface SideWays {
+interface SideWays {
   isMe(address: string): Promise<boolean>;
   /** A repo pressed: seen in the boards' place (repo.ts). */
   seeRepo(r: servers.ShownRepo): void;

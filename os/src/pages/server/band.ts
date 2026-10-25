@@ -13,7 +13,7 @@ import type {Here, Shown} from './parts.ts';
 // unpressable. What came in a server and was not seen yet is a dot on its chip.
 
 /** What the band's presses do. */
-export interface BandWays {
+interface BandWays {
   /** A server's chip: that server, at the board last seen in it. */
   show(id: string): void;
   /** A guest's chip: that board, alone. */

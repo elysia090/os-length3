@@ -54,7 +54,7 @@ export function markBoard(head: HTMLElement, signedIn: boolean) {
 }
 
 /** What the last box needs of the view: where something is written, and showing the board once made. */
-export interface NewBoardWays {
+interface NewBoardWays {
   writer: Writer;
   show(id: string, board: string): void;
 }
