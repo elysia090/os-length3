@@ -1067,7 +1067,7 @@ button.row-item:disabled { cursor: var(--cursor-arrow); color: var(--sub); }
 /* The text itself is the field: no box, the caret is the only sign. */
 .code.code-edit { display: block; width: 100%; border: 0; background: transparent; color: var(--ink); resize: none; overflow-y: hidden; }
 .code.code-edit:focus { outline: none; }
-/* What a line in the box's Edit would do, drawn under the file's words (edit-box.ts), in a layer laid over the editor
+/* What a line in the box's Edit would do, drawn under the file's words (edit-marks.ts), in a layer laid over the editor
    (which paints over it, its ground clear): what it finds in the marker's soft yellow, the one Enter goes to in the
    marker's; what it takes in the tint words taken have in a diff, underlined; a line to come as a rule where it comes,
    in the green of what is added. What was just done is lit a moment in that green, as a place landed on is. The file
