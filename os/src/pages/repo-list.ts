@@ -1,4 +1,4 @@
-import {ago, bytes, h} from '../dom.ts';
+import {ago, arrowKeys, bytes, h} from '../dom.ts';
 import {t} from '../i18n.ts';
 import {icon} from '../icons.ts';
 import {store} from '../repos.ts';
@@ -89,6 +89,7 @@ export interface RepoList {
 export function repoList(ctx: Context, options: {newCard: boolean; counted?: (n: number) => void}): RepoList {
   // The same cards wherever the list is (Home, New repo): one size, one title.
   const grid = h('div', {class: 'grid repo-grid'}, h('p', {class: 'muted'}, t('Reading…')));
+  arrowKeys(grid, '.card-open, .card.new');
   const refresh = async (light?: string | null) => {
     let repos;
     try { repos = await store.list(); } catch (e) {

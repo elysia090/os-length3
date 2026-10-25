@@ -1,7 +1,7 @@
 import {addToBand, closeBeside, moveTo, offBand, openBeside, parseBand, removeFromBand, showIn} from '../band.ts';
 import {currentLang, t} from '../i18n.ts';
 import {getState, setState} from '../state.ts';
-import {h} from '../dom.ts';
+import {arrowKeys, h} from '../dom.ts';
 import {mark} from '../icons.ts';
 import {bring, onSync, remoteOnly} from '../lifecycle.ts';
 import {onChange, store} from '../repos.ts';
@@ -201,6 +201,7 @@ function make(ctx: Context) {
   let band: string[] = [];
   let all: string[] = [];
   const pills = h('div', {class: 'pills'});
+  arrowKeys(pills, '.pill-name');
   const add = h('button', {type: 'button', class: 'band-add', 'aria-label': t('Bring every repo out to the band')}, mark('plus')) as HTMLButtonElement;
   // First on the band, what can be done to the file read now (or the repo itself): File's menu for it, out of the
   // tree at its row (New file, New folder, Rename, Delete, as each allows); ⊕ after the pills (issue #49).

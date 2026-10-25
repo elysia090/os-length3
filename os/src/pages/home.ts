@@ -1,4 +1,4 @@
-import {h} from '../dom.ts';
+import {arrowKeys, h} from '../dom.ts';
 import {t, tn} from '../i18n.ts';
 import {LIMITS, initials, normalize, parse, type Profile} from '../profile.ts';
 import {connection, myName, rename} from '../remote.ts';
@@ -110,6 +110,7 @@ function homePane(main: HTMLElement, ctx: Context): HTMLElement {
  */
 function lately(ctx: Context): HTMLElement {
   const list = h('div', {class: 'lately-list'});
+  arrowKeys(list, '.lately-row');
   const box = h('section', {class: 'lately', 'aria-labelledby': 'lately-title'}, h('h2', {id: 'lately-title'}, t('Lately')), list);
   let asked = 0;
   const paint = async () => {

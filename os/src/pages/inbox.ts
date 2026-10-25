@@ -1,4 +1,4 @@
-import {ago, day, h} from '../dom.ts';
+import {ago, arrowKeys, day, h} from '../dom.ts';
 import {t} from '../i18n.ts';
 import * as inbox from '../inbox.ts';
 import {connection} from '../remote.ts';
@@ -259,6 +259,7 @@ export function inboxPage(ctx: Context): Node[] {
     const start = button(t('Write'), 'small-button');
     const error = h('p', {class: 'error', role: 'alert'});
     const rows = h('div', {class: 'inbox-rows'});
+    arrowKeys(rows, '.inbox-row');
     const list = h('nav', {class: 'inbox-list', 'aria-label': t('Conversations')}, h('div', {class: 'row inbox-new'}, to, start), error, rows);
     const pane = h('section', {class: 'inbox-thread', 'aria-live': 'polite'});
     to.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) start.click(); });
