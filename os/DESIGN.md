@@ -446,8 +446,9 @@ what is its own.
 - **The box at the foot.** One field near the bottom of a work page,
   saying where what is written goes (notes で実行, 旅行 の人たちへ): Enter
   is a new line, Ctrl+Enter (⌘+Enter) sends, as in every box one writes in
-  (Inbox too). Forge and Git run in it; Server posts. Empty and not in use,
-  it steps back while the page is read (Forge, §8).
+  (Inbox too). Forge and Git run in it; Server posts. Forge's also edits the
+  file in front, a line at a time, each done with Enter (§8, Edit). Empty and
+  not in use, it steps back while the page is read (Forge, §8).
 - **The right pane.** Beside the center, past its one `rule`: on top what
   the center refers to (Forge's reference, Server's people and repos),
   headings 15/600 in `ink` as Prompt's, a list under each; with nothing to
@@ -1496,12 +1497,14 @@ again; stopping one is Runtime's. What is written in the box and not sent
 is the repo's: another repo shows its own, and coming back finds it.
 
 The box does more than run. Its pill says what it does and, pressed (or
-Alt+↓ in the box), brings out the three it can, out of the pill, each with
+Alt+↓ in the box), brings out the four it can, out of the pill, each with
 the pill it gives and its keys: Run in the Prompt (the shell's prompt line,
 `garden $`), Write an issue (the repo's next issue, `garden #4`, in ink as an
-issue's number), Add to TODO (TODO's circle, on paper as Home's TODO box);
-Alt+1, 2 and 3 in the box choose one at once, and Ctrl ` is the Prompt's
-again. Turning, the pill goes from the old words' width to the new, the old
+issue's number), Add to TODO (TODO's circle, on paper as Home's TODO box),
+Edit the file in front (a pencil, the file and the caret's line,
+`main.c :4`, on the marker's yellow); Alt+1 to 4 in the box choose one at
+once, Ctrl ` is the Prompt's again and Ctrl G Edit's (Go to line, as editors
+have it). Turning, the pill goes from the old words' width to the new, the old
 words going up out of it as the new come up into it, its colours crossing,
 with a small beat as it lands; the box's own button says the deed (Run,
 Create, Add) and the empty box where it goes. Only Run brings the screen up.
@@ -1520,6 +1523,36 @@ next as a counter's figure does. With the pane put away (or narrow), the
 slip slides on and rises out of sight, and the line is there when the pane
 comes back. Pressed, the line opens where it stands (§ Home, its card). What
 is half written is kept for the repo and for what the box does.
+
+Edit makes the box a line that edits the file in front without leaving the
+box, as a modal editor's command line does but with nothing to be in and no
+keys to learn: a few short lines that read as what they do. The file in front
+is the one last written in, else the one read (a third down the center); its
+box keeps the `ink` edge of a file written in while the box is on it.
+`12` goes to line 12; a word finds it (written in small letters, either
+case), every one lit in the marker's soft yellow and the one Enter goes to in
+the marker's, Enter going on to the next and Shift+Enter back (`/` before a
+word finds exactly what follows it); `old → new` (or `->`) writes new for
+every old; `+ words` adds a line under the caret's, as indented as it is,
+and the box keeps `+ ` for the next line; `= words` writes the caret's line
+anew, its indent kept; `-` (or `-3`) takes the caret's line (or three) away;
+`>` and `<` move it in and out by the file's own indent; `@path` chooses the
+file (Tab completes it, as in Run). Nothing is done before Enter: while a line
+is written, what it would do is drawn on the file under its words (what it
+finds lit; what it takes in the tint taken words have in a diff, underlined;
+a line to come as a green rule where it comes, a dot at its start) and said
+under the box (1 of 3, 2 to write as “printf”, A line under line 4), and the
+file scrolls to it if it is out of sight. Done, it is written into the file as
+typing is, so the file saves, what changed lit a moment in the green of what
+is added, as a place landed on is; the pill's line follows the caret. Ctrl+Z
+in the empty box takes back what the box did, one at a time (Ctrl+Shift+Z
+puts it back), written into the file the same way, so the file's own Undo has
+it too; the browser's own Undo is not used from the box, as it holds what was
+typed in the box in the same line.
+In the empty box the caret's line is lit softly (where + = - > would act),
+↑ and ↓ move it, and under the box one quiet line says what can be written,
+each as it is written and what it does. Escape takes back what was written,
+and in the empty box gives the keyboard back to the file at the caret.
 The box knows the repo's earlier lines, as a terminal does: ↑ with the
 caret on its first line goes back one line run in the repo's Prompt, ↓ on
 its last line forward again, down to what was being written (so a line of

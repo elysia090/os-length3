@@ -48,7 +48,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': sideId}, paneMark()) as HTMLButtonElement;
   const work = h('div', {class: parts.strip ? 'work bench' : 'work bench no-strip'});
 
-  const box = new Box({work, main: parts.main, center, term, termHead, back: !!parts.back, went: parts.went});
+  const box = new Box({work, main: parts.main, center, term, termHead, back: !!parts.back, went: parts.went, reveal: parts.reveal});
   // The screen's glass, a layer of its own under its words (styles.css): what runs out of the pill and rises.
   const glass = h('span', {class: 'glass', 'aria-hidden': 'true'});
   const slot = h('div', {class: 'term-slot'});
@@ -82,7 +82,8 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   requestAnimationFrame(() => { work.dataset.shown = '1'; });
 
   // The keys an editor's hands already know, wherever this bench is on screen: Ctrl+K or Ctrl+P (or Ctrl+Shift+F)
-  // to the search, Ctrl+` to the prompt box, Ctrl+B to put the right pane away or bring it back (⌘ on a Mac).
+  // to the search, Ctrl+` to the prompt box, Ctrl+G to the box editing the file in front (Go to line, as editors
+  // have it), Ctrl+B to put the right pane away or bring it back (⌘ on a Mac).
   document.addEventListener('keydown', (event) => {
     if (!(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing || !work.isConnected || work.closest('[hidden]')) return;
     if (document.getElementById('page')?.hasAttribute('inert')) return;
@@ -93,6 +94,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
       return;
     }
     if (event.key === '`' && box.summon()) { event.preventDefault(); return; }
+    if (k === 'g' && !event.shiftKey && box.edit()) { event.preventDefault(); return; }
     if (k === 'b' && !event.shiftKey) { event.preventDefault(); pane.set(!pane.shown); }
   });
 

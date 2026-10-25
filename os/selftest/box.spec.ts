@@ -1,7 +1,7 @@
 import {expect, test} from './fixtures.ts';
 
-// The box at the foot does more than run: its pill says what it does and, pressed, brings out the three it can
-// (box-modes.ts). None of it needs the Prompt running.
+// The box at the foot does more than run: its pill says what it does and, pressed, brings out the four it can
+// (box-modes.ts), Edit among them (edit-box.ts). None of it needs the Prompt running.
 
 // Each test opens the app on 'hello', made from C's files once for the worker and kept (fixtures.ts, helloC).
 test.use({storageState: async ({helloC}, use) => { await use(helloC); }});
@@ -95,4 +95,50 @@ test('the Prompt up over the center is put back by its ×, as by Escape', async 
   await expect(box).not.toBeFocused();
   // Down, there is no × to press.
   await expect(app.page.locator('.work.bench:not([hidden]) .term-shut')).toBeHidden();
+});
+
+test('Edit: a line in the box edits the file in front, shown on it first, done with Enter, Ctrl+Z taking it back', async ({app}) => {
+  const box = app.forge.promptBox, page = app.page, file = app.forge.editor('src/main.c');
+  const pill = app.main.getByRole('button', {name: /^What the box does/}), note = app.main.locator('.prompt-note');
+  const before = '#include <stdio.h>\n\nint main(void) {\n    puts("hello");\n    return 0;\n}\n';
+  await expect(file).toHaveValue(before);
+  // Written in, the file is the one in front; Ctrl+G brings the box to it, saying what can be written there.
+  await file.click();
+  await page.keyboard.press('Control+g');
+  await expect(box).toBeFocused();
+  await expect(pill).toHaveAccessibleName('What the box does: Apply');
+  await expect(note).toContainText('to the line');
+  await box.fill('4');
+  await box.press('Enter');
+  await expect(pill).toContainText('main.c:4');
+  await expect(box).toHaveValue('');
+  // What it would do is said (and drawn on the file) before Enter does it; nothing is written until then.
+  await box.fill('puts → printf');
+  await expect(note).toHaveText('1 to write as “printf”');
+  await expect(page.locator('.edit-marks .edit-mark.gone')).toHaveCount(1);
+  await expect(file).toHaveValue(before);
+  await box.press('Enter');
+  await expect(file).toHaveValue(before.replace('puts', 'printf'));
+  // A line under the caret's, as indented as it is; the box is ready for the next.
+  await box.fill('+ return 1;');
+  await box.press('Enter');
+  await expect(box).toHaveValue('+ ');
+  await expect(file).toHaveValue(before.replace('puts', 'printf').replace('    return 0;', '    return 1;\n    return 0;'));
+  await expect(pill).toContainText('main.c:5');
+  // What the box did, taken back from the empty box one at a time, and put back.
+  await box.fill('');
+  await box.press('Control+z');
+  await expect(file).toHaveValue(before.replace('puts', 'printf'));
+  await box.press('Control+Shift+z');
+  await expect(file).toHaveValue(/return 1;/);
+  await box.press('Control+z');
+  await expect(file).toHaveValue(before.replace('puts', 'printf'));
+  // Escape, in the empty box: the keyboard back in the file.
+  await box.press('Escape');
+  await expect(file).toBeFocused();
+  await expect(page.locator('.edit-marks')).toHaveCount(0);
+  // Written as typing is: saved.
+  await expect(app.forge.fileState('src/main.c')).toBeHidden();
+  await page.reload();
+  await expect(app.forge.editor('src/main.c')).toHaveValue(before.replace('puts', 'printf'));
 });

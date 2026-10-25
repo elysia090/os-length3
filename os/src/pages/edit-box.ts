@@ -1,0 +1,383 @@
+import {h} from '../dom.ts';
+import {paced, still} from '../glide.ts';
+import {lineOf, lineStarts, parseEdit, plan, type Mark} from '../edit.ts';
+import {t} from '../i18n.ts';
+import {store} from '../repos.ts';
+import type {Writing} from './reader.ts';
+
+// The box at the center's foot as a line that edits the file in front (DESIGN.md § Forge, Edit): nothing to be in and
+// no keys to learn, a few short lines that say what they do, each shown on the file as it is written and done with
+// Enter, Ctrl+Z in the empty box taking it back (the file's own Undo has it too). The file in front is the one last
+// written in, else the one read; the pill says which, and the line the caret is on.
+//
+//   12               go to line 12 (:12 too)
+//   word             find it, lit where it is; Enter goes to the next (Shift+Enter, the one before). Small letters
+//                    find either; /word finds exactly what follows the / (a word that starts as a line below does)
+//   old → new        write new for old, everywhere in the file (-> for →; nothing after it takes old away)
+//   + words          a line of words under the caret's, as indented as it is; the box is ready for the next line
+//   = words          the caret's line written anew, its indent kept
+//   -   -3           take away the caret's line, or that many from it
+//   >   <   >3       move the caret's line (or that many) in or out by one indent
+//   @path            the file to edit (Tab completes it, as in Run)
+//
+// With the box empty, ↑ and ↓ move the caret's line, and Escape gives the keyboard back to the file, at the caret.
+// What a line would do is shown on the file while it is written (what it takes or finds lit, a line to come as a
+// rule) and said under the box; nothing is done before Enter. It is written into the file as typing is (Reader's
+// editor: it saves, and its Undo takes it back), so nothing here keeps a file of its own.
+
+/** A line's words up to a place in it as they are drawn: each tab to the next stop of `tab`. */
+function drawn(line: string, tab: number): string {
+  let out = '';
+  for (const c of line) out += c === '\t' ? ' '.repeat(tab - (out.length % tab)) : c;
+  return out;
+}
+const measures = new WeakMap<HTMLTextAreaElement, CanvasRenderingContext2D>();
+/** How wide `words` are in the editor's face. */
+function widthIn(area: HTMLTextAreaElement, words: string): number {
+  let c = measures.get(area);
+  if (!c) { c = document.createElement('canvas').getContext('2d')!; c.font = getComputedStyle(area).font; measures.set(area, c); }
+  return c.measureText(words).width;
+}
+
+/**
+ * `marks` drawn on the editor `area`, under its words (its ground is clear), in a layer of its own laid over it
+ * (`layer` names it: what a line would do, or what was just done); none, the layer goes. Returns the lead mark's
+ * element (the first now-mark, else the first).
+ */
+export function drawMarks(area: HTMLTextAreaElement, marks: Mark[], layer = 'edit-marks'): HTMLElement | null {
+  const sheet = area.parentElement;
+  if (!sheet) return null;
+  let el = sheet.querySelector<HTMLElement>(`:scope > .${layer}`);
+  if (!marks.length) { el?.remove(); return null; }
+  if (!el) { el = h('div', {class: `edit-layer ${layer}`, 'aria-hidden': 'true'}); sheet.insertBefore(el, area); }
+  const cs = getComputedStyle(area), text = area.value, starts = lineStarts(text);
+  const lh = parseFloat(cs.lineHeight) || 1.6 * parseFloat(cs.fontSize), tab = Number(cs.tabSize) || 4;
+  const top0 = parseFloat(cs.paddingTop) || 0, left0 = (parseFloat(cs.paddingLeft) || 0) - area.scrollLeft;
+  Object.assign(el.style, {left: `${area.offsetLeft}px`, top: `${area.offsetTop}px`, width: `${area.offsetWidth}px`, height: `${area.offsetHeight}px`});
+  const x = (line: number, offset: number) => left0 + widthIn(area, drawn(text.slice(starts[line], offset), tab));
+  const els = marks.slice(0, 2000).map((m) => {
+    const line = lineOf(starts, m.from);
+    const span = h('span', {class: `edit-mark ${m.kind}${m.now ? ' now' : ''}${m.gone ? ' gone' : ''}`});
+    if (m.kind === 'rule') span.style.top = `${top0 + (line + (m.under ? 1 : 0)) * lh}px`;
+    else if (m.kind === 'lines') {
+      const last = lineOf(starts, Math.max(m.from, m.to));
+      Object.assign(span.style, {top: `${top0 + line * lh}px`, height: `${(last - line + 1) * lh}px`});
+    } else {
+      const a = x(line, m.from), b = x(line, m.to);
+      Object.assign(span.style, {top: `${top0 + line * lh}px`, height: `${lh}px`, left: `${a - 2}px`, width: `${Math.max(4, b - a + 4)}px`});
+    }
+    return span;
+  });
+  el.replaceChildren(...els);
+  return els[Math.max(0, marks.findIndex((m) => m.now))] ?? null;
+}
+
+/** `el` (a mark on the file) brought into view if it is out of it, a third down what is clear of the box (`clear`, its top). */
+function bring(el: HTMLElement, area: HTMLTextAreaElement, clear: number) {
+  const flow = area.closest<HTMLElement>('.flow');
+  if (!flow) return;
+  const r = el.getBoundingClientRect(), f = flow.getBoundingClientRect(), bottom = Math.min(f.bottom, clear) - 12;
+  if (r.top < f.top + 12 || r.bottom > bottom)
+    flow.scrollTo({top: flow.scrollTop + r.top - f.top - (bottom - f.top) / 3, behavior: still() ? 'auto' : 'smooth'});
+  // A word far along a long line: the editor scrolls along to it (its marks with it).
+  const w = area.getBoundingClientRect();
+  if (r.right > w.right - 8 || r.left < w.left) {
+    area.scrollLeft = Math.max(0, area.scrollLeft + r.left - w.left - w.width / 3);
+    area.dispatchEvent(new Event('scroll'));
+  }
+}
+
+/** What can be written in the empty box, each with what it does: said under it, as Tab's choices are. */
+function legend(): Node[] {
+  const each: [string, string][] = [['12', t('to the line')], ['word', t('find')], ['a → b', t('b for every a')], ['+', t('a line under')],
+    ['=', t('the line anew')], ['-', t('take it away')], ['> <', t('indent')], ['@', t('another file')]];
+  return each.map(([k, w]) => h('span', {class: 'edit-key'}, h('code', {}, k), w));
+}
+
+/** An edit the box did: `inserted` written at `from` over `removed`, the caret at `caret` before it. */
+interface Step { area: HTMLTextAreaElement; from: number; removed: string; inserted: string; caret: number }
+/** Steps kept to take back. */
+const STEPS = 100;
+
+/** The file Edit works on: its path, and the editor it is written in. */
+export interface Front { path: string; area: HTMLTextAreaElement }
+
+export interface EditParts {
+  box: HTMLTextAreaElement;
+  /** The page's content, where the repo's files are read (Forge's boxes, `.col[data-repo]`). */
+  main: HTMLElement;
+  /** The dock the box stands in, which what is shown on the file is kept clear of. */
+  dock: HTMLElement;
+  repo(): string | null;
+  reveal(path: string, line?: number, write?: Writing): void;
+  /** Said under the box: what Enter would do, or what it did, or (the box empty) what can be written there. */
+  say(text: string | Node[]): void;
+  /** The file in front, or the caret's line in it, changed: the pill says it again. */
+  moved(): void;
+}
+
+/** The box's Edit: the file it is set on, what a line would do shown on it as it is written, done with Enter. */
+export class EditLine {
+  readonly #p: EditParts;
+  /** The editor last written in (or chosen with @): the file in front while it is there. */
+  #last: HTMLTextAreaElement | null = null;
+  /** Editors whose caret was put by a person (or here): the others start at the line read, not at the file's top. */
+  readonly #placed = new WeakSet<HTMLTextAreaElement>();
+  /** Editors written in by a person: their caret is theirs. */
+  readonly #written = new WeakSet<HTMLTextAreaElement>();
+  /** The editor whose marks are out now. */
+  #shownOn: HTMLTextAreaElement | null = null;
+  /** The keyboard going to the file and back for an edit: the box losing it then is not leaving it. */
+  busy = false;
+  #pending = 0;
+  /**
+   * What the box did, to take back one at a time (Ctrl+Z in the empty box) and put back (Ctrl+Shift+Z): its own,
+   * not the browser's, which holds what was typed in the box too, in the same line.
+   */
+  readonly #done: Step[] = [];
+  readonly #undone: Step[] = [];
+
+  constructor(p: EditParts) {
+    this.#p = p;
+    // The file written in is the one in front; its caret moving moves the line the pill says.
+    p.main.addEventListener('focusin', (event) => {
+      const el = event.target;
+      if (!(el instanceof HTMLTextAreaElement) || !el.classList.contains('code-edit')) return;
+      this.#last = el;
+      this.#placed.add(el);
+      if (this.busy) return;
+      this.#written.add(el);
+      p.moved();
+    });
+    let moving = 0;
+    const moved = () => { cancelAnimationFrame(moving); moving = requestAnimationFrame(() => p.moved()); };
+    for (const e of ['keyup', 'pointerup', 'input']) {
+      p.main.addEventListener(e, (event) => { if ((event.target as Element).classList?.contains('code-edit') && !this.busy) moved(); }, true);
+    }
+    // A long line scrolled along in the editor: its marks go with it.
+    p.main.addEventListener('scroll', (event) => { if (event.target === this.#shownOn && !this.busy) this.show(); }, true);
+  }
+
+  /** The file in front: the one last written in while it is shown in the repo's box, else the one read there. */
+  front(): Front | null {
+    const repo = this.#p.repo();
+    if (!repo) return null;
+    const ok = (a: HTMLTextAreaElement | null) => !!a?.isConnected && !!a.offsetParent && a.closest<HTMLElement>('.col')?.dataset.repo === repo;
+    let area = ok(this.#last) ? this.#last : null;
+    if (!area) {
+      const sel = `.col[data-repo="${CSS.escape(repo)}"]`;
+      const flow = this.#p.main.querySelector<HTMLElement>(`${sel}.active .flow`) ?? this.#p.main.querySelector<HTMLElement>(`${sel}:not([hidden]) .flow`);
+      const top = (flow?.getBoundingClientRect().top ?? 0) + 8;
+      for (const a of flow?.querySelectorAll<HTMLTextAreaElement>('section.file textarea.code-edit') ?? []) {
+        if (a.offsetParent && a.getBoundingClientRect().bottom > top) { area = a; break; }
+      }
+    }
+    const path = area?.closest<HTMLElement>('section.file')?.dataset.path;
+    if (!area || !path) return null;
+    // Never written in: its caret starts at the line read (a third down the center), not at its top.
+    if (!this.#placed.has(area)) {
+      this.#placed.add(area);
+      const flow = area.closest<HTMLElement>('.flow'), lh = parseFloat(getComputedStyle(area).lineHeight) || 20;
+      const third = flow ? flow.getBoundingClientRect().top + flow.clientHeight / 3 : 0;
+      const starts = lineStarts(area.value);
+      const line = Math.min(starts.length - 1, Math.max(0, Math.floor((third - area.getBoundingClientRect().top) / lh)));
+      area.setSelectionRange(starts[line], starts[line]);
+    }
+    return {path, area};
+  }
+
+  /** The pill's words: the file in front and the caret's line in it. */
+  where(): {file: string; line: number} | null {
+    const f = this.front();
+    if (!f) return null;
+    // Counted, not split: it is asked at every key in the file.
+    const text = f.area.value, caret = f.area.selectionStart;
+    let line = 1;
+    for (let i = text.indexOf('\n'); i >= 0 && i < caret; i = text.indexOf('\n', i + 1)) line++;
+    return {file: f.path.slice(f.path.lastIndexOf('/') + 1), line};
+  }
+
+  /** What the box holds, shown on the file and said; with it empty, the caret's line lit. */
+  show(back = false) {
+    const f = this.front();
+    this.#mark(f);
+    if (!f) { this.#off(); this.#p.say(this.#p.repo() ? t('Open a file to edit it here') : ''); return; }
+    const typed = this.#p.box.value, e = parseEdit(typed), area = f.area;
+    if (this.#shownOn && this.#shownOn !== area) this.#off();
+    this.#shownOn = area;
+    if (e.kind === 'none' || e.kind === 'file') {
+      const starts = lineStarts(area.value), line = lineOf(starts, area.selectionStart);
+      // The caret's line, softly: where + = - > would act.
+      drawMarks(area, [{from: starts[line], to: starts[line], kind: 'lines'}]);
+      this.#p.say(e.kind === 'file' ? t('Enter: edit {path}', {path: e.path}) : typed.startsWith('@') ? t('A file of {repo}: Tab completes it', {repo: this.#p.repo()!})
+        : typed ? '' : legend());
+      return;
+    }
+    const p = plan(e, area.value, area.selectionStart, back, typed, area.selectionEnd);
+    const lead = drawMarks(area, p.marks);
+    if (lead) bring(lead, area, this.#p.dock.getBoundingClientRect().top);
+    this.#p.say(p.said);
+  }
+
+  /** The marks put away (the box left, or doing something else). */
+  hide() {
+    this.#off();
+    this.#mark(null);
+  }
+  #off() {
+    if (this.#shownOn) drawMarks(this.#shownOn, []);
+    this.#shownOn = null;
+  }
+
+  /** The file in front said so on the page while the box is on it: its edge as when it is written in. */
+  #mark(f: Front | null) {
+    const section = f?.area.closest('section.file') ?? null;
+    for (const s of this.#p.main.querySelectorAll('section.file.edit-front')) if (s !== section) s.classList.remove('edit-front');
+    section?.classList.add('edit-front');
+  }
+
+  /** Enter: what the box holds done on the file; false when there was nothing to do. */
+  enter(back = false): boolean {
+    const typed = this.#p.box.value, e = parseEdit(typed);
+    if (e.kind === 'file') { void this.#choose(e.path); return true; }
+    const f = this.front();
+    if (!f || e.kind === 'none') return false;
+    const area = f.area, p = plan(e, area.value, area.selectionStart, back, typed, area.selectionEnd);
+    if (p.go) {
+      const go = p.go;
+      this.#with(area, () => area.setSelectionRange(go.from, go.to));
+      this.#keep(go.keep);
+      if (e.kind === 'go') this.#flash(area, [{...p.marks[0], now: false}]);
+      // Shown again from where it went: a word found is where one is now, said as such.
+      this.show();
+      return true;
+    }
+    if (!p.done) { this.#p.say(p.said); return false; }
+    const d = p.done;
+    this.#done.push({area, from: d.from, removed: area.value.slice(d.from, d.to), inserted: d.insert, caret: area.selectionStart});
+    if (this.#done.length > STEPS) this.#done.shift();
+    this.#undone.length = 0;
+    this.#write(area, d.from, d.to, d.insert, d.caret);
+    this.#keep(d.again ?? '');
+    this.#flash(area, d.lit);
+    this.show();
+    this.#p.say(d.said);
+    return true;
+  }
+
+  /** ↑ or ↓ in the empty box: the caret's line moved up or down by one. */
+  step(by: 1 | -1) {
+    const f = this.front();
+    if (!f) return;
+    const area = f.area, starts = lineStarts(area.value);
+    const line = Math.min(starts.length - 1, Math.max(0, lineOf(starts, area.selectionStart) + by));
+    this.#with(area, () => area.setSelectionRange(starts[line], starts[line]));
+    this.show();
+    const lead = area.parentElement?.querySelector<HTMLElement>(':scope > .edit-marks > .now');
+    if (lead) bring(lead, area, this.#p.dock.getBoundingClientRect().top);
+  }
+
+  /**
+   * Ctrl+Z in the empty box: what it last did taken back (Ctrl+Shift+Z, Ctrl+Y: put back), written into the file as
+   * typing is, so the file's own Undo has it too. One whose words have been written over since is left as it is.
+   */
+  undo(redo = false) {
+    const from = redo ? this.#undone : this.#done, to = redo ? this.#done : this.#undone;
+    // One whose file has gone (its page read again) is passed over.
+    let step = from.pop();
+    while (step && !step.area.isConnected) step = from.pop();
+    if (!step) { this.#p.say(redo ? t('Nothing to do again') : t('Nothing to undo')); return; }
+    const {area, from: at} = step, now = redo ? step.removed : step.inserted, back = redo ? step.inserted : step.removed;
+    if (area.value.slice(at, at + now.length) !== now) { from.length = 0; this.#p.say(t('Written over since: undo it in the file')); return; }
+    to.push(step);
+    this.#last = area;
+    this.#write(area, at, at + now.length, back, redo ? at + back.length : step.caret);
+    this.#flash(area, back ? [{from: at, to: at + back.length, kind: back.includes('\n') ? 'lines' : 'words'}] : []);
+    this.show();
+    this.#p.say(redo ? t('Done again') : t('Undone'));
+  }
+
+  /** `insert` written over `from`…`to` in `area` as typing is (so it saves), the caret at `caret`. */
+  #write(area: HTMLTextAreaElement, from: number, to: number, insert: string, caret: number) {
+    this.#with(area, () => {
+      area.setSelectionRange(from, to);
+      if (!document.execCommand('insertText', false, insert)) {
+        area.setRangeText(insert, from, to, 'end');
+        area.dispatchEvent(new Event('input', {bubbles: true}));
+      }
+      area.setSelectionRange(caret, caret);
+    });
+  }
+
+  /** Escape in the empty box: the keyboard back in the file, at its caret; false with no file in front. */
+  toFile(): boolean {
+    const f = this.front();
+    if (!f) return false;
+    this.hide();
+    f.area.focus({preventScroll: true});
+    return true;
+  }
+
+  /** `path`, written after @: shown in the center, the file in front from then on. */
+  async #choose(path: string) {
+    const repo = this.#p.repo();
+    if (!repo) return;
+    const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+    const there = await store.tree(repo, dir).then((es) => es.some((e) => e.kind === 'file' && (dir ? `${dir}/${e.name}` : e.name) === path), () => false);
+    if (!there) { this.#p.say(t('No {path} in {repo}', {path, repo})); return; }
+    this.#p.reveal(path);
+    this.#keep('');
+    this.#p.say(t('Editing {path}', {path}));
+    // Read in as it is gone to: in front once its editor is there.
+    const mine = ++this.#pending;
+    let frames = 0;
+    const find = () => {
+      if (mine !== this.#pending) return;
+      const area = [...this.#p.main.querySelectorAll<HTMLTextAreaElement>(`.col[data-repo="${CSS.escape(repo)}"] section.file textarea.code-edit`)]
+        .find((a) => a.closest<HTMLElement>('section.file')?.dataset.path === path && a.offsetParent);
+      if (!area) { if (++frames < 120) requestAnimationFrame(find); return; }
+      this.#last = area;
+      // Chosen, never written in: its caret at its top (a value put in leaves it at the end).
+      this.#placed.add(area);
+      if (!this.#written.has(area)) area.setSelectionRange(0, 0);
+      this.#p.moved();
+      if (document.activeElement === this.#p.box) this.show();
+    };
+    requestAnimationFrame(find);
+  }
+
+  /** `f` done in `area` with the keyboard there a moment (as typing is, so its Undo has it), then back in the box. */
+  #with(area: HTMLTextAreaElement, f: () => void) {
+    this.busy = true;
+    try {
+      area.focus({preventScroll: true});
+      f();
+    } finally {
+      this.#p.box.focus({preventScroll: true});
+      this.busy = false;
+    }
+    this.#last = area;
+    this.#written.add(area);
+    this.#p.moved();
+  }
+
+  /** The box holding `text` after Enter (empty, or ready for the next of the same), the caret at its end. */
+  #keep(text: string) {
+    const box = this.#p.box;
+    if (box.value === text) return;
+    box.value = text;
+    box.setSelectionRange(text.length, text.length);
+    box.dispatchEvent(new Event('input', {bubbles: true}));
+  }
+
+  /** What was just done, lit a moment on the file, as a place landed on is. */
+  #flash(area: HTMLTextAreaElement, lit: Mark[]) {
+    if (!lit.length || still()) return;
+    area.parentElement?.querySelector(':scope > .edit-flash')?.remove();
+    drawMarks(area, lit, 'edit-flash');
+    const layer = area.parentElement?.querySelector<HTMLElement>(':scope > .edit-flash');
+    if (!layer) return;
+    const gone = () => layer.remove();
+    layer.animate([{opacity: 1}, {opacity: 1, offset: .35}, {opacity: 0}], {duration: paced(900), easing: 'ease-out'}).finished.then(gone, gone);
+  }
+}
