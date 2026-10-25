@@ -2,8 +2,9 @@ import {h} from '../../ui/dom.ts';
 import {t} from '../../i18n.ts';
 import {askFoot, SETTLE} from '../common.ts';
 import {errorText} from '../../app/errors.ts';
+import type {Server} from '../../remote/servers.ts';
 
-// The pieces Server's parts share (server-layer, -gear, -dock, -repo).
+// The pieces Server's parts share (its view, band, boards, gear, dock and the rest in this folder).
 
 /** A switch's knob moves this long before what it turns on is asked. */
 export const MOVE = 240;
@@ -12,6 +13,30 @@ export const button = (text: string, kind = '') => h('button', {type: 'button', 
 
 /** A board as the layer holds it: whose it is to write in. */
 export interface Shown { id: string; name: string; member: boolean; guests: boolean; server: string }
+
+/**
+ * What Server has chosen and holds while it is out: view.ts keeps it, and the parts it draws read it as it is when
+ * they need it (pressed, or answered), never a copy taken before.
+ */
+export interface Here {
+  readonly signedIn: boolean;
+  /** The servers one is in. */
+  list: Server[];
+  /** The boards in the row, in its order. */
+  shown: Shown[];
+  /** The server chosen, if one is. */
+  serverId: string | null;
+  /** A board shown alone, outside the servers one is in: one written in as a guest, or invited to. */
+  alone: string | null;
+  /** A server being named: its chip, in the band where it will stand once made (new-server.ts). */
+  naming: HTMLElement | null;
+}
+
+/** The server chosen, as the list has it. */
+export const current = (here: Here) => here.list.find((s) => s.id === here.serverId) ?? null;
+
+/** Where something is being written (a board's TODO, a name): the layer stays out while `busy` says so. */
+export type Writer = (at: Element, busy: () => boolean) => void;
 
 /**
  * Asked in the card, as Remote asks before a repo is turned off: the card

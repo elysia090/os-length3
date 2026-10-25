@@ -2693,7 +2693,7 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .server-gear svg { width: 18px; height: 18px; }
 .slides { --peek: 48px; --gap: var(--s3); --lead: 0; min-height: 0; }
 .slides.single { --peek: 0px; }
-/* Server's boards and the box at the foot share the center's peek and lead (server/layer.ts sets it there): the box is
+/* Server's boards and the box at the foot share the center's peek and lead (server/row.ts sets it there): the box is
    as wide as the board on screen and stands under it, its edges the board's, sliding with it board to board. */
 .server-center { --peek: 48px; --lead: 0; }
 .server-center:has(> .slides.single) { --peek: 0px; }
@@ -2750,7 +2750,7 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 }
 .todo-read { white-space: pre-wrap; }
 .board-talk { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s3) var(--s5); overscroll-behavior: contain; }
-/* Its talk goes on below what is shown: the box is open at its foot and the posts run past the edge (server/layer.ts).
+/* Its talk goes on below what is shown: the box is open at its foot and the posts run past the edge (server/board.ts).
    Only its edge changes: its room at the foot (the padding under the last post, seen only at the end) stays, for
    taking it away there changed how far it scrolls, which said "at the foot" again and again, the posts jumping by it. */
 .slide[aria-current='true'] .board-card.more-below { border-bottom-color: transparent; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
@@ -2782,7 +2782,7 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 /* A long name wraps rather than being cut short at the pane's edge (§4), and owner is never cut. */
 .people li > :not(.lately-badge) { min-width: 0; overflow-wrap: anywhere; }
 .people li > .muted { flex: none; }
-/* Someone else is a conversation with them (server/layer.ts): the row pressed, a raised fill under the pointer. */
+/* Someone else is a conversation with them (server/side.ts): the row pressed, a raised fill under the pointer. */
 .person-go { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; width: calc(100% + 2 * var(--s2)); margin: 0 calc(-1 * var(--s2));
   padding: 2px var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand);
   transition: background-color calc(200ms * var(--pace)) ease-out; }
