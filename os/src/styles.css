@@ -1747,14 +1747,16 @@ button.diff-no:hover { color: var(--ink); background: var(--raised); border-radi
 .diff-name { font-weight: 600; overflow-wrap: anywhere; }
 .diff-name.link { margin-inline: 0; padding-inline: var(--s1); }
 .diff-name.link:hover { background: var(--raised); }
-/* +n green, −n red, then five small squares shared out as the lines are. */
-.diff-count { display: inline-flex; align-items: center; gap: var(--s2); color: var(--sub); white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* +n green, −n red, then five small squares shared out as the lines are: on the figures' line, their middle on the
+   capitals' middle (they stand on the baseline, raised by half of what the capitals are taller), in the figures' own
+   colours, crisp (a small corner, a small gap), so the count and its squares read as one. */
+.diff-count { display: inline-flex; align-items: baseline; gap: var(--s2); color: var(--sub); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .diff-add { color: var(--add); font-weight: 600; }
 .diff-del { color: var(--del); font-weight: 600; }
-.diff-bar { display: inline-flex; gap: 2px; }
-.diff-bar > i { width: 7px; height: 7px; border-radius: 2px; background: var(--rule); }
-.diff-bar > i.add { background: var(--done); }
-.diff-bar > i.del { background: var(--off); }
+.diff-bar { display: inline-flex; align-self: baseline; align-items: flex-end; gap: 2px; translate: 0 -1px; translate: 0 calc((8px - 1cap) / 2); }
+.diff-bar > i { width: 8px; height: 8px; border-radius: 1.5px; background: var(--rule); }
+.diff-bar > i.add { background: var(--add); }
+.diff-bar > i.del { background: var(--del); }
 /* What was added on green, what went on red, what stays quiet, as any diff; yellow is the marker's alone (a line
    marked while reading). */
 .diff-line.add { background: var(--add-tint); border-left-color: var(--done); }

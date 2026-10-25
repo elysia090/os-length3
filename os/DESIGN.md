@@ -308,13 +308,13 @@ Every page:
 | `edge` | `#6B6E6B` | outlines of fields and controls, which must be seen (3.7:1) |
 | `raised` | `#E4E4E0` | field fill, hover (the same small step above ground as before) |
 | `paper` | `#F8F8F5` | the sheet: what is worked on, and only that (a file's box, the TODO, the issue or board in hand, Inbox's box, what the search found); never a card that leads somewhere, a pane or a page (Runtime's box, which is read rather than worked in, stays on the ground) |
-| `done` | `#0F8C69` | done and on: a step of an issue's work done, a switch on (its knob), a box ticked (its circle, and a TODO done's tick), a line added (its bar, its squares), the Prompt's dot while its shell waits; a fresh emerald leaning to blue, so it sits with the greys and does not tire, light enough not to read heavy as a filled circle (white on it 4.2:1, it on the ground 3:1) |
-| `add` | `#157357` | the words of an addition, a step darker than `done` to read small: +n, a line's + (4.9:1 on its tint) |
+| `done` | `#0F8C69` | done and on: a step of an issue's work done, a switch on (its knob), a box ticked (its circle, and a TODO done's tick), a line added (its bar), the Prompt's dot while its shell waits; a fresh emerald leaning to blue, so it sits with the greys and does not tire, light enough not to read heavy as a filled circle (white on it 4.2:1, it on the ground 3:1) |
+| `add` | `#157357` | the words of an addition, a step darker than `done` to read small: +n and its squares, a line's + (4.9:1 on its tint) |
 | `add-tint` | `#D8F2E6` | the ground of a line added in a diff: a mint of its own, not `done` thinned |
 | `marker` | `#FFE066` | what is marked, as with a highlighter: a line marked in a diff (a review, Forge's diff), over its words only (not its indent or number, which turns ink), each wrapped line its own stroke with softened ends; the words the search found, in its lines; the head of a file just landed on, for a moment. A warm, clear lemon, neither cream nor dense: `ink` on it 10.9:1 |
 | `marker-soft` | `#FFF2B8` | the pointer on a line it can mark: the stroke, paler; a line just landed on (merged, committed, closed), lit a moment on the ground, solid (a thinned marker on the grey goes olive) |
-| `off` | `#A8324F` | a repo turned off: its switch; a removal held, its button red (`ground` words on it 4.6:1); a line removed (its bar, its squares); a rosy crimson leaning to blue, not a brick |
-| `del` | `#B23452` | the words of a removal: −n, a line's − (4.8:1 on its tint) |
+| `off` | `#A8324F` | a repo turned off: its switch; a removal held, its button red (`ground` words on it 4.6:1); a line removed (its bar); a rosy crimson leaning to blue, not a brick |
+| `del` | `#B23452` | the words of a removal: −n and its squares, a line's − (4.8:1 on its tint) |
 | `del-tint` | `#FCE0E7` | the ground of a line removed in a diff |
 | `sky-tint` | `#DBE9FB` | a fourth soft tint, beside the three marks' (`marker-soft`, `add-tint`, `del-tint`), only to tell people apart by their round initial (Lately, the pane's word) |
 
@@ -600,7 +600,7 @@ fix is always a piece from §3, not a new rule.
 | Two places drawn alike when one is a name and the other a field (Inbox's stub and the field under it) | The name on the ground with a place's line; the field raised, its edge seen |
 | A square ring round a name left in a row after a deed (renamed, made) | The row is lit for the deed and has the keyboard without a ring; a key pressed there rings the row, round as the row is |
 | Two boxes at once: an outline flying to a box that is already drawn under it | One sheet: the box waits out of sight until the sheet lands, then shows as the sheet gives way |
-| A diff all one tint, its counts grey (+6 −2) | Each changed line its colour as a bar at its left on a light ground; +n green and −n red, then five small squares shared out as the lines are; a dashed break with "…" between the parts of a file |
+| A diff all one tint, its counts grey (+6 −2) | Each changed line its colour as a bar at its left on a light ground; +n green and −n red, then five small squares shared out as the lines are, in the figures' own colours, on their line and their capitals' middle; a dashed break with "…" between the parts of a file |
 | Text, not a field, sitting at the top of a row its mark is centred in (a read-only TODO) | Centred on the mark's line, as the field is |
 | A paid thing greyed out, hidden, or refused with the Remote's bare error; work dropped because the Remote would not keep it | Said in place with See the plan beside; the work stays on the device and waits |
 | A use against an allowance said by a colour (a red bar when over) | The meter: `ink` as far as the use goes, full and its figures 600 when over |
