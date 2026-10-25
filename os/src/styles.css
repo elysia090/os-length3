@@ -480,16 +480,6 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
 .home-layout.pane-closed .home-side { display: none; }
 /* Its first heading on the line Forge's Prompt and Server's People are on, a band below the top line's foot. */
 .home-side { min-height: 0; overflow: auto; padding-top: var(--band); }
-/* Opened, a row's card has the room to be read: the pane comes out over the center to a reading width, its edge
-   casting a soft shade there, the center staying where it is, quieter under it; put away, the pane goes back. At
-   rest Lately's rows say only what they are (its second lines heard, not seen): the card says the rest. */
-.home-layout > .home-pane { transition: margin-left calc(260ms * var(--pace)) var(--land), box-shadow calc(260ms * var(--pace)) ease-out; }
-.home-layout:has(.lately-row.looked) > .home-pane { z-index: 5; margin-left: calc(-1 * max(0px, min(560px, 44vw) - 100%));
-  box-shadow: -24px 0 32px -28px color-mix(in srgb, var(--ink) 50%, transparent); transition-duration: calc(320ms * var(--pace)); }
-.home-layout > .home-main { transition: opacity calc(260ms * var(--pace)) ease-out; }
-.home-layout:has(.lately-row.looked) > .home-main { opacity: .55; }
-.lately .lately-row:not(.looked) > :is(.lately-quote, .lately-line) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.lately .lately-row { padding-block: 6px; }
 /* Lately's rows reach a step past its words on each side (their fill under the pointer, their edge opened): the pane
    scrolls, and what scrolls clips, so its room is that much wider, its words where they were. */
 .home-side { margin-inline: calc(-1 * var(--s3)); padding-inline: var(--s3); }
@@ -519,11 +509,14 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
 .lately-row.looked[data-look='under'] { border-bottom-color: var(--rule); border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .lately-row.looked[data-look='over'] { border-top-color: var(--rule); border-top-left-radius: 0; border-top-right-radius: 0; }
 .lately-row.looked > :is(.lately-line, .lately-quote), .lately-row.looked .lately-dot { display: none; }
-.lately-what { display: flex; align-items: center; gap: var(--s2); min-width: 0; font-weight: 600; }
-.lately-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A row says all it holds, wrapped where words break (in Japanese, between phrases), never cut with …: its name goes
+   on under itself, its badge, its place and its slot stay on its first line. */
+.lately-what { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; font-weight: 600; line-height: 22px; }
+.lately-what > .lately-badge { align-self: flex-start; margin-top: -1px; }
+.lately-name { min-width: 0; overflow-wrap: break-word; }
 /* Where it is (its repo), quiet, at the right of its name; then the end's one slot. */
-.lately-place { flex: none; max-width: 40%; margin-left: auto; overflow: hidden; color: var(--sub); font: 400 var(--t-meta) var(--sans); text-overflow: ellipsis; white-space: nowrap; }
-.lately-end { flex: none; display: grid; place-items: center; width: 16px; height: 16px; margin-left: auto; }
+.lately-place { flex: none; max-width: 40%; margin-left: auto; color: var(--sub); font: 400 var(--t-meta) var(--sans); overflow-wrap: anywhere; text-align: right; }
+.lately-end { flex: none; align-self: flex-start; display: grid; place-items: center; width: 16px; height: 16px; margin: 3px 0 0 auto; }
 .lately-place + .lately-end { margin-left: 0; }
 .lately-end > .lately-dot { grid-area: 1 / 1; transition: opacity calc(120ms * var(--pace)) ease-out; }
 .lately-end::after { content: ''; grid-area: 1 / 1; width: 16px; height: 16px; background: var(--sub); opacity: 0; translate: 0 -2px;
@@ -534,9 +527,9 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
 .lately-row.looked .lately-end::after { opacity: 1; translate: 0 0;
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 7l10 10M17 7L7 17' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E"); }
 .lately-row.looked:hover .lately-end::after { background: var(--ink); }
-.lately-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lately-line { overflow-wrap: break-word; line-height: 1.5; }
 /* The line it was left at, as written there: mono, as in Forge, its second line. */
-.lately-quote { overflow: hidden; color: var(--sub); font: var(--t-meta) var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+.lately-quote { color: var(--sub); font: var(--t-meta)/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .lately-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--ink); }
 /* What a row is, at its head (pane.ts): who wrote, their initial on one of four soft tints (the same for the same name:
    the marker's, a step done's, a removal's, the sky's), round; a file or a board, its mark alone, quiet, as File's.
@@ -550,6 +543,8 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
 .lately-badge[data-tint='2'] { background: var(--del-tint); }
 .lately-badge[data-tint='3'] { background: var(--sky-tint); }
 .lately-row > :is(.lately-line, .lately-quote) { margin-left: calc(24px + var(--s2)); }
+/* Read whole as it is; only a word of pages (a message of thousands of letters) stops at six lines, its card has it all. */
+.lately-row > :is(.lately-line, .lately-quote) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; line-clamp: 6; overflow: hidden; }
 .lately-none { margin: 0; padding: 0 var(--s3); }
 @media (max-width: 760px) {
   .page > .home-layout, .home-layout.pane-closed { grid-template-columns: minmax(0, 1fr); }
@@ -1433,6 +1428,11 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .term-home .term-out > .ps { padding-right: calc(8px - 1ch); }
 @supports (text-box: trim-both cap alphabetic) { .term-home .term-out > .ps { text-box: trim-both cap alphabetic; padding-block: calc((20px - 1cap) / 2); } }
 .term-home .term-out > .cmd { color: var(--ink); font-weight: 600; }
+/* A line run that goes on past the pane's width goes on under itself, beside its prompt line's pill, as a row's words
+   go on beside its badge: never back under the pill. */
+.term-home .term-out > .ps:has(+ .cmd) { float: left; margin-top: 1px; }
+.term-home .term-out > .ps + .cmd { display: block; overflow: hidden; padding-top: 2px; }
+.term-home .term-out > .ps + .cmd + * { clear: left; }
 .term-home .term-out > .ps::before, .term-home .term-out > .term-said::before {
   content: ''; position: absolute; left: -18px; top: 5px; box-sizing: border-box; width: 10px; height: 10px; border-radius: 50%; }
 .term-home .term-out > .ps::before { border: 2px solid var(--ink); background: var(--ground); }
@@ -1571,13 +1571,6 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 /* The page then reaches the window's edge too (its words where they were), clipped there and never scrolled. */
 .page.page-work:has(> .work.bench.split-on.pane-closed) { overflow: clip; margin-right: calc(-1 * var(--outer)); padding-right: var(--outer); }
 .work.bench > .side { z-index: 1; background: var(--ground); }
-/* Its word opened (pane.ts), the pane comes out over the center to a reading width, as Home's does for Lately; the
-   center and the band stay where they are, quieter under it, the search and the switch where they stand. */
-.work.bench > .side { transition: margin-left calc(260ms * var(--pace)) var(--land), box-shadow calc(260ms * var(--pace)) ease-out; }
-.work.bench:has(.pane-word .lately-row.looked) > .side { z-index: 5; margin-left: calc(-1 * max(0px, min(560px, 44vw) - 100%)); grid-template-columns: minmax(0, 1fr);
-  box-shadow: -24px 0 32px -28px color-mix(in srgb, var(--ink) 50%, transparent); transition-duration: calc(320ms * var(--pace)); }
-.work.bench > :is(.center, .strip) { transition: opacity calc(260ms * var(--pace)) ease-out; }
-.work.bench:has(.pane-word .lately-row.looked) > :is(.center, .strip) { opacity: .55; }
 /* Word from someone come while one works (bench.ts paneWord): at the pane's foot, its last row's foot on the prompt
    box's, a sheet to act on (paper, a rule edge), who and the first line of what they said, the newest come in from
    the window's edge. Pressed, Inbox at that conversation. */

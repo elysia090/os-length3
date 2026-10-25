@@ -152,6 +152,10 @@ export class Session {
   send(text: string): boolean {
     if (!this.live || (!this.worker && !this.native)) return false;
     const lines = text.endsWith('\n') ? text : `${text}\n`;
+    // Up, but the shell has not yet said the prompt line it waits at (a cold start is some seconds): the line waits
+    // for it, then goes, drawn after that line as any run is (sent before it, it was drawn before the prompt line,
+    // and what it printed read as the line run).
+    if (!this.waited) { this.held += lines; return true; }
     this.echo = lines;
     this.print(lines);
     this.runs.push({line: lines.trimEnd(), output: '', started: Date.now(), ms: null});
@@ -212,8 +216,9 @@ export class Session {
   }
   /** A line sent, after the prompt line it was written at: its words an element of their own, its line break after. */
   private command(line: string): Node[] {
-    const ends = line.endsWith('\n');
-    return [h('span', {class: 'cmd'}, ends ? line.slice(0, -1) : line), ...(ends ? [document.createTextNode('\n')] : [])];
+    // Its end of line is its own: in the pane the line run is a block beside its prompt line's pill (it goes on under
+    // itself), and the end of a block is not one more line.
+    return [h('span', {class: 'cmd'}, line)];
   }
 
   /**
@@ -427,6 +432,20 @@ export class Session {
   private received(s: string) {
     if (this.status.textContent === t('Starting…')) this.status.textContent = '';
     this.print(s);
+    if (!this.waited) {
+      const go = () => {
+        if (this.waited) return;
+        this.waited = true;
+        const held = this.held;
+        this.held = '';
+        // Sent once what came has been drawn, so it is drawn after the prompt line, as it would have been typed there.
+        if (held) requestAnimationFrame(() => requestAnimationFrame(() => { if (this.live) this.send(held); }));
+      };
+      if (waitsAt(this.lastLine)) go();
+      // A prompt line of the person's own (their dotfiles' PS1) is not known for one: a moment after the shell first
+      // speaks, it is taken to wait, and what was held goes.
+      else this.waitedLate ??= setTimeout(go, 3000);
+    }
     // Its first prompt line: up. What the Prompts after it are given ahead of time (l3's translation) comes a moment later, quietly,
     // so it takes nothing from the first line run.
     if (this.l3 && waitsAt(this.lastLine)) { const l3 = this.l3; this.l3 = null; setTimeout(() => warmL3(l3), 3000); }
@@ -731,6 +750,10 @@ export class Session {
   private why = '';
   /** How it ended, at the foot of its output. */
   private endLine: HTMLElement | null = null;
+  /** Whether the shell has waited at a prompt line yet; what was sent before it did, held for it. */
+  private waited = false;
+  private held = '';
+  private waitedLate: ReturnType<typeof setTimeout> | undefined;
 
   private end(message: () => string, why = '') {
     this.ended = true;
