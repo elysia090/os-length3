@@ -52,13 +52,14 @@ export function nameServer(here: Here, ways: MakingWays): {name: HTMLInputElemen
   const chip = h('span', {class: 'server-making'}, label, make, ask);
   // Its people, as the box at the foot will say them: by the name being written.
   const people = h('span', {}, name.value.trim() || t('Trip'));
+  // Named, its chip is drawn whole (solid, in ink) rather than dashed as a place for one.
   name.addEventListener('input', () => {
-    chip.classList.toggle('named', !!name.value.trim());
+    label.classList.toggle('named', !!name.value.trim());
     people.textContent = name.value.trim() || t('Trip');
   });
   ways.naming(chip);
   fit();
-  chip.classList.toggle('named', !!name.value.trim());
+  label.classList.toggle('named', !!name.value.trim());
   ways.writer(name, () => document.activeElement === name || document.activeElement === handle || !!name.value.trim());
   const done = async () => {
     // Enter pressed again while it is made makes no second server.
