@@ -1282,6 +1282,9 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .prompt-run:hover:not(:disabled) { background: var(--ground); }
 .prompt-run:disabled { opacity: .5; cursor: var(--cursor-arrow); }
 .prompt:focus-within { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+/* The keyboard coming or going, its ink edge comes in quickly and goes a little slower, as a press's light does. */
+.prompt { transition: border-color calc(160ms * var(--pace)) ease-out, box-shadow calc(160ms * var(--pace)) ease-out; }
+.prompt:focus-within { transition-duration: calc(60ms * var(--pace)); }
 .prompt-in { flex: 1; min-width: 0; max-height: 30vh; border: 0; padding: 0; background: transparent; resize: none; font: var(--t-body)/1.6 var(--sans); }
 .prompt-in:focus { outline: none; }
 .prompt-in:disabled { cursor: var(--cursor-arrow); }

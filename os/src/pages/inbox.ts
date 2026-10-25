@@ -13,7 +13,7 @@ import {goToPlan, planRefused, planSaid, signInBox, signInPlace} from './remote.
 import {plan as readPlan} from '../plan.ts';
 import type {Context} from './context.ts';
 import {errorText} from '../errors.ts';
-import {arrive, keepOut, LAND, nudge, paced, putAway, still, where} from '../glide.ts';
+import {arrive, closeUp, keepOut, LAND, nudge, paced, putAway, still, where} from '../glide.ts';
 
 // Inbox: what comes to you, typed, from people found by address. Not a mail
 // screen: each message says what it is (a message, a review request, a
@@ -367,10 +367,14 @@ export function inboxPage(ctx: Context): Node[] {
         m.type !== 'message' ? h('span', {class: 'state-chip'}, KIND(m.type)) : null,
         go, h('p', {class: 'bubble-text'}, m.body),
         h('span', {class: 'muted small'}, `${ago(m.time)}${m.live ? ` · ${t('direct')}` : ''}`));
+      // What was said before goes up to make room for it on the same curve, not a line higher in one frame.
+      const before = drawn ? [...messages.children].slice(-12) as HTMLElement[] : [];
+      const was = before.at(-1)?.getBoundingClientRect().bottom;
       messages.append(b);
       messages.scrollTop = messages.scrollHeight;
       // Come since the conversation was drawn: one's own up from the box it was written in, theirs in from their side.
       if (drawn) { if (m.mine) arrive(b, 1, 'y', 18, 300); else arrive(b, -1, 'x', 18, 300); }
+      if (was !== undefined) { const by = was - before.at(-1)!.getBoundingClientRect().bottom; if (by > .5) closeUp(before, by, 300); }
     };
     // What the Remote gives is taken in once (its newest noted by its clock); what is added here,
     // sent or come over the direct line, is drawn once too, and not again when the Remote gives it.
