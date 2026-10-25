@@ -7,6 +7,7 @@ import {Drafts} from '../drafts.ts';
 import {kindOf} from '../text.ts';
 import {mark} from '../icons.ts';
 import {copying, deed, pageHead} from './common.ts';
+import {personBadge} from './pane.ts';
 import {every} from '../runs.ts';
 import {goToPlan, planRefused, planSaid, signInBox, signInPlace} from './remote.ts';
 import {plan as readPlan} from '../plan.ts';
@@ -289,7 +290,8 @@ export function inboxPage(ctx: Context): Node[] {
       // The open one is being read: what came to it is not counted as waiting.
       const waiting = th.address === open ? 0 : th.unread;
       const b = h('button', {type: 'button', class: 'inbox-row', 'data-state': th.state, 'data-address': th.address},
-        h('span', {class: 'inbox-who'}, h('b', {}, th.name || inbox.shown(th.address)), waiting ? h('span', {class: 'unread'}, `${waiting}`) : null),
+        h('span', {class: 'inbox-who'}, personBadge(th.name || inbox.shown(th.address)), h('b', {}, th.name || inbox.shown(th.address)),
+          waiting ? h('span', {class: 'unread'}, `${waiting}`) : null),
         h('span', {class: 'muted small'}, inbox.shown(th.address)),
         h('span', {class: 'muted small inbox-last'}, `${th.last.mine ? t('You: ') : ''}${th.last.type === 'message' ? '' : `${KIND(th.last.type)} · `}${th.last.body}`));
       if (th.address === open) b.setAttribute('aria-current', 'true');

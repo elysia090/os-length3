@@ -305,7 +305,7 @@ a { color: var(--ink); }
 .rail-me { display: grid; place-items: center; padding: var(--s3) 0 calc(var(--s5) + (var(--prompt-h) - 44px) / 2); }
 .me-wrap { position: relative; }
 .me {
-  display: grid; place-items: center; width: 44px; height: 44px; border-radius: var(--r-round); border: 1px solid var(--rule);
+  display: grid; place-items: center; width: 44px; height: 44px; border-radius: var(--r-round); border: 1px solid var(--edge);
   background: transparent; cursor: var(--cursor-hand); font: 600 var(--t-meta) var(--sans);
 }
 /* The person fills most of the circle; initials stay type-sized. */
@@ -355,7 +355,7 @@ a { color: var(--ink); }
 }
 /* + starts something rather than opening a place, so it has the action
    shape: round, outlined like every button, right under the places. */
-.rail-new { margin-top: var(--s6); width: var(--h-control); height: var(--h-control); border-radius: var(--r-round); border: 1px solid var(--edge); }
+.rail-new { margin-top: var(--s6); width: 44px; height: 44px; border-radius: var(--r-round); border: 1px solid var(--edge); } /* the person's circle's size */
 .rail-tag {
   position: absolute; left: calc(100% + var(--s3)); top: 50%; transform: translateY(-50%); z-index: 4;
   padding: 0 var(--s2); border-radius: var(--r-field); white-space: nowrap;
@@ -596,7 +596,7 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
 /* The colon after a Kind, full-width as it is written: drawn close to its Kind, with a little room before the words
    (its own room taken in more on the left than the right). Inline, so a name read out is the words as written. */
 .kind-colon { margin: 0 -.2em 0 -.38em; }
-.issue-kind { margin-right: .3em; }
+.issue-kind { margin-right: .12em; }
 .todo-title { border: 0; background: transparent; min-height: var(--h-control); padding: 0; font-size: var(--t-body); font-weight: 600; }
 .todo-title::placeholder { color: var(--sub); font-weight: 400; }
 /* Read, the title is text: centred on the mark's line as the field is. */
@@ -1225,6 +1225,8 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .prompt-keys { flex: none; display: inline-flex; align-items: center; gap: var(--s1); transition: opacity 160ms ease-out 60ms; }
 .prompt-keys > kbd { color: var(--sub); border-color: var(--rule); }
 .prompt-keys > kbd:last-child { font: 600 13px/1 var(--mono); }
+.prompt-keys > kbd.tick { padding-top: 6px; font-size: 15px; } /* a backtick is drawn at the top of its letter's room */
+.prompt:is([data-mode='issue'], [data-mode='todo']) .prompt-keys { visibility: hidden; } /* Ctrl+` brings the box running */
 @media (max-width: 760px) { .prompt-keys { display: none; } }
 /* The box at rest, its light, while the glass spreads over it (and back as it gathers into the pill): under the screen. */
 .work.bench > .center > .dock::before { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: var(--prompt-h); z-index: -1; pointer-events: none;
@@ -1253,6 +1255,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
    whole, never cut in two. */
 .prompt-note:has(> .edit-key) { display: flex; flex-wrap: wrap; column-gap: var(--s4); height: 1.6em; overflow: hidden; }
 .edit-key { display: inline-flex; align-items: baseline; gap: var(--s2); white-space: nowrap; }
+.edit-key:first-child > code { font-family: var(--sans); } /* pointing is a deed, not something written */
 .edit-key > code { padding: 0 5px; border-radius: 4px; background: var(--raised); color: var(--ink); font: 600 12px/1.6 var(--mono); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rule) 60%, transparent); }
 /* What a run prints comes in at the foot a line after another (terminal.ts), not all at once. */
 .term-out > .fresh { animation: fresh 240ms ease-out backwards; }
@@ -1295,34 +1298,38 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .term-said-go { display: inline; margin: 0; padding: 0; border: 0; border-radius: 2px; background: none; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand); }
 .term-said-go:hover, .term-said-go:focus-visible { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
 /* The Prompt in the pane, read as a line of what was done in the repo (DESIGN.md § Forge, the right pane): a dot for
-   each thing done, a thread down what it printed, as a history is drawn. A line run: a ring on the thread, the prompt
+   each thing done on one thread, from the first to the prompt line the shell waits at, as a history is drawn (the
+   thread a stripe of the output's own ground, scrolling with it; the output only as tall as what it holds, so the
+   thread ends at the last dot). A line run: a ring on the thread, the prompt
    line it was written at in the pill the box wore for it (the screen's glass, its words in the green), and the line
    in ink; what it printed under it, quieter, the thread at its left. What the box made: a dot of its own (ink for an
    issue, the green of a step done for a TODO), its head in the pill the box wore (#3 in ink, TODO on paper with its
    circle), its words in the letters people write in. The prompt line the shell waits at: its dot lit in the green,
    glowing, as the lamp is while the shell runs (off once it has ended). Up as the screen, it is the terminal again. */
-.term-home .term-out { padding-left: 18px; line-height: 1.75; }
+.term-home .term-out { align-self: start; max-height: 100%; padding-left: 18px; line-height: 1.75;
+  background: linear-gradient(var(--rule), var(--rule)) no-repeat 4px 11px / 2px calc(100% - 22px); background-attachment: local; }
 .term-home .term-out > :is(.term-lines, .fresh, .term-said) { display: block; position: relative; }
 .term-home .term-out > :is(.term-lines, .fresh) { color: var(--sub); }
 .term-home .term-out > .fresh:empty { display: none; }
 .term-home .term-out > .ps { position: relative; display: inline-block; margin-right: 6px; padding: 0 8px; border-radius: var(--r-round);
-  background: var(--screen); color: var(--screen-ps); font-size: 11.5px; line-height: 20px; vertical-align: 1px; }
+  background: var(--screen); color: var(--screen-ps); font-size: 11.5px; line-height: 20px; }
 .term-home .term-out > .cmd { color: var(--ink); font-weight: 600; }
 .term-home .term-out > .ps::before, .term-home .term-out > .term-said::before {
   content: ''; position: absolute; left: -18px; top: 5px; box-sizing: border-box; width: 10px; height: 10px; border-radius: 50%; }
 .term-home .term-out > .ps::before { border: 2px solid var(--ink); background: var(--ground); }
 .term-home .term-out > .ps.waits::before { border-color: var(--done); background: var(--done); box-shadow: 0 0 0 3px color-mix(in srgb, var(--done) 22%, transparent); }
 .term-home .term.ended .term-out > .ps.waits::before { border-color: var(--off); background: var(--off); box-shadow: none; }
-.term-home .term-out > :is(.term-lines, .fresh)::before { content: ''; position: absolute; left: -14px; top: -3px; bottom: -3px; width: 2px; border-radius: 1px; background: var(--rule); }
 .term-home .term-out > :is(.term-lines, .fresh):has(+ :is(.ps, .term-said)) { margin-bottom: 6px; }
-.term-home .term-out > :is(.term-lines, .fresh):has(+ :is(.ps, .term-said))::before { bottom: -7px; }
 .term-home .term-out > .term-said { margin: 2px 0 8px; }
-.term-home .term-out > .term-said::before { top: 7px; background: var(--ink); }
+.term-home .term-out > .term-said::before { top: 6px; background: var(--ink); }
 .term-home .term-out > .term-said.said-todo::before { background: var(--done); }
 .term-home .term-said-go > b { display: inline-flex; align-items: center; gap: 3px; margin-right: 6px; padding: 0 8px; border-radius: var(--r-round);
-  background: var(--ink); color: var(--ground); font-size: 11.5px; line-height: 20px; vertical-align: 1px; }
+  background: var(--ink); color: var(--ground); font-size: 11.5px; line-height: 20px; vertical-align: middle; } /* by its middle: TODO's circle has no line of letters to sit on */
 .term-home .said-todo .term-said-go > b { padding-left: 4px; background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge); }
-.term-home .said-todo .term-said-go > b > .icon { width: 13px; height: 13px; color: var(--done); }
+.term-home .said-todo .term-said-go > b > .icon { width: 13px; height: 13px; margin: 0; vertical-align: 0; }
+/* Up as the screen, a TODO's circle is the size of its letters, and the words are a person's there too. */
+.term-said-go > b > .icon { width: 12px; height: 12px; margin-right: 3px; vertical-align: -1px; color: var(--done); }
+.screen .said-words { font-family: var(--sans); }
 .term-home .said-words { font: 500 var(--t-meta)/1.5 var(--sans); color: var(--ink); }
 .term-home .term-said-go:hover, .term-home .term-said-go:focus-visible { text-decoration: none; }
 .term-home .term-said-go:is(:hover, :focus-visible) > .said-words { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
@@ -1668,7 +1675,7 @@ button.run-line { margin-inline-start: calc(-1 * var(--s1)); min-width: 0; }
 .run-out { margin: 0; color: var(--sub); font: var(--t-meta)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 /* A file's lines in a rounded body of their own; each changed line has its colour as a bar at its left and a light
    ground, so a run of them reads as one block and a lone one still shows. */
-.diff { display: grid; font: var(--t-meta)/1.65 var(--mono); border-radius: var(--r-field); overflow: hidden; }
+.diff { display: grid; font: var(--t-meta)/1.65 var(--mono); border-radius: calc(var(--r-field) / 2); overflow: hidden; }
 .diff-line { display: grid; grid-template-columns: 4ch 1ch minmax(0, 1fr); gap: var(--s2); padding: 0 var(--s2) 0 var(--s1); border-left: 2px solid transparent; }
 /* Git's diffs: the file's name and +n −n at the left, its lines beside them from the same row. */
 .diff-file.beside { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: var(--s4); align-items: start; }
@@ -1775,6 +1782,8 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .tree-row:has(> [aria-current='location'])::before { content: ''; position: absolute; left: 0; top: 25%; bottom: 25%; width: var(--line-work); background: var(--ink); }
 .tree-name[aria-current='location'] { font-weight: 600; }
 .tree-meta { flex: none; padding: 0 var(--s2); font-size: var(--t-meta); opacity: .8; }
+/* A row with nothing to do to it (/, System) keeps its words where the others' end, before their ⋯. */
+.tree-row:not(:has(> .tree-more)) > .tree-meta { margin-right: calc(var(--s5) + var(--s1)); }
 /* Only on the Remote: quiet, as a card of one is dashed. */
 .tree-away > .tree-row .tree-name { color: var(--sub); }
 /* What the system is made of (/bin, /dev, /etc, /proc and what is in them) steps back, so /root and the repos in it
@@ -1922,7 +1931,10 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .inbox-row { display: grid; gap: 2px; text-align: left; padding: var(--s2); border: 0; border-radius: var(--r-card); background: transparent; cursor: var(--cursor-hand); color: inherit; }
 .inbox-row:hover { background: var(--raised); }
 .inbox-row[aria-current='true'] { box-shadow: inset 0 0 0 var(--line-work) var(--edge); }
-.inbox-who { display: flex; justify-content: space-between; gap: var(--s2); }
+.inbox-who { display: flex; align-items: center; gap: var(--s2); }
+.inbox-who > b { margin-right: auto; }
+/* Under the round initial, the lines start where the name does. */
+.inbox-row > :not(.inbox-who) { margin-left: calc(24px + var(--s2)); }
 .inbox-last { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .unread { font: 600 var(--t-meta) var(--mono); padding: 0 var(--s2); border-radius: var(--r-round); border: 1px solid var(--edge); }
 .inbox-thread { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -2545,11 +2557,10 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .people, .side-repos { display: grid; gap: var(--s1); margin: 0; padding: 0; list-style: none; }
 /* Words of two sizes in a row share a baseline; the face sits centred by them. */
 .people li { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; }
-.people li > .face { align-self: center; }
+.people li > .lately-badge { align-self: center; }
 /* A long name wraps rather than being cut short at the pane's edge (§4), and owner is never cut. */
-.people li > :not(.face) { min-width: 0; overflow-wrap: anywhere; }
+.people li > :not(.lately-badge) { min-width: 0; overflow-wrap: anywhere; }
 .people li > .muted { flex: none; }
-.face { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--rule); border-radius: var(--r-round); font: 600 11px var(--sans); }
 .side-repo { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s2); width: 100%; padding: var(--s1) var(--s2); margin: 0 calc(-1 * var(--s2)); border: 0; border-radius: var(--r-field); background: transparent; color: inherit; text-align: left; font: inherit; cursor: var(--cursor-hand); }
 .side-repo:hover { background: var(--raised); }
 .side-repo > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

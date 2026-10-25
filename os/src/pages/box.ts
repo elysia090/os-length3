@@ -254,6 +254,7 @@ export class Box {
     this.chip.dataset.mode = mode;
     this.form.dataset.mode = mode;
     this.#summonKey.textContent = mode === 'edit' ? 'G' : '`';
+    this.#summonKey.classList.toggle('tick', mode !== 'edit');
     this.chip.setAttribute('aria-label', t('What the box does: {what}', {what: sendWord(mode)}));
     this.runIt.textContent = sendWord(mode);
     this.runIt.title = sendTitle(mode, this.#keys);

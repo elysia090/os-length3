@@ -8,7 +8,6 @@ import {errorText} from '../errors.ts';
 /** A switch's knob moves this long before what it turns on is asked. */
 export const MOVE = 240;
 
-export const initials = (address: string) => [...address.split('@')[0]].slice(0, 2).join('').toUpperCase();
 export const button = (text: string, kind = '') => h('button', {type: 'button', class: `button ${kind}`.trim()}, text) as HTMLButtonElement;
 
 /** A board as the layer holds it: whose it is to write in. */

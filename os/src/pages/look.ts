@@ -121,8 +121,9 @@ function writeBack(label: string, word: string, send: (text: string) => Promise<
 }
 
 /** One said: who (or You), when, and what. */
-const said = (who: string, when: number, body: string, mine = false) =>
-  h('div', {class: `look-said${mine ? ' mine' : ''}`}, h('span', {class: 'look-who'}, who, h('span', {class: 'muted small'}, ` · ${ago(when)}`)), h('p', {}, body));
+const said = (who: string, when: number, body: string | (string | Node)[], mine = false) =>
+  h('div', {class: `look-said${mine ? ' mine' : ''}`}, h('span', {class: 'look-who'}, who, h('span', {class: 'muted small'}, ` · ${ago(when)}`)),
+    h('p', {}, ...(typeof body === 'string' ? [body] : body)));
 
 /** A conversation: its last lines, read as it opens (its mark goes), and a reply sent from there. */
 export function threadLook(address: string, name: string, open: () => void): Look {
@@ -133,7 +134,7 @@ export function threadLook(address: string, name: string, open: () => void): Loo
       const lines = h('div', {class: 'look-lines'});
       const th = await inbox.thread(address);
       const each = (m: inbox.Message) => said(m.mine ? t('You') : name || inbox.shown(address), m.time,
-        m.type === 'message' ? m.body : `${m.type[0].toUpperCase()}${m.type.slice(1)}：${m.body}`, m.mine);
+        m.type === 'message' ? m.body : [...kindWords(`${m.type[0].toUpperCase()}${m.type.slice(1)}`), m.body], m.mine);
       lines.replaceChildren(...th.messages.slice(-4).map(each));
       body.replaceChildren(lines, writeBack(t('Reply'), t('Send'), async (text) => {
         await inbox.send(address, text);

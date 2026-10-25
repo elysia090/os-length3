@@ -141,14 +141,23 @@ export function modeMenu(chip: HTMLElement, o: {repo: () => string | null; at():
       return item;
     });
     pop.replaceChildren(...items);
+    // Each pill as wide as its words, the words after them in one column: the room a narrower pill leaves is kept after it.
+    const column = () => {
+      const pills = items.map((i) => i.querySelector<HTMLElement>('.box-mode-pill')!);
+      for (const p of pills) p.style.marginRight = '';
+      const widest = Math.max(...pills.map((p) => p.offsetWidth));
+      for (const p of pills) p.style.marginRight = `${widest - p.offsetWidth}px`;
+    };
     // Out of the pill, its rows' pills standing over it.
     const r = chip.getBoundingClientRect();
     Object.assign(pop.style, {left: `${Math.max(8, r.left - 9)}px`, bottom: `${innerHeight - r.top + 8}px`});
     show(true);
+    column();
     (items.find((x) => x.getAttribute('aria-checked') === 'true') ?? items[0]).focus();
     if (n instanceof Promise) void n.then((v) => {
       const b = items[1]?.querySelector('.prompt-mode b');
       if (b) b.textContent = `#${v}`;
+      column();
     });
   };
   return {element: pop, open, shown: () => !pop.hidden, close: () => show(false)};

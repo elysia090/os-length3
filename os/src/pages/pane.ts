@@ -141,8 +141,12 @@ export type Badge = {who: string} | 'file' | 'board';
 function badge(b: Badge): HTMLElement {
   if (b === 'file') return h('span', {class: 'lately-badge', 'aria-hidden': 'true'}, icon('file'));
   if (b === 'board') return h('span', {class: 'lately-badge', 'aria-hidden': 'true'}, '#');
-  const tint = [...b.who].reduce((n, c) => n + c.codePointAt(0)!, 0) % 4;
-  return h('span', {class: 'lately-badge', 'data-tint': String(tint), 'aria-hidden': 'true'}, [...b.who.trim()][0]?.toUpperCase() ?? '?');
+  return personBadge(b.who);
+}
+/** Someone, as a round initial on their soft tint (the same for the same name): Lately, the pane's word, Inbox, Server's people. */
+export function personBadge(who: string): HTMLElement {
+  const tint = [...who].reduce((n, c) => n + c.codePointAt(0)!, 0) % 4;
+  return h('span', {class: 'lately-badge', 'data-tint': String(tint), 'aria-hidden': 'true'}, [...who.trim()][0]?.toUpperCase() ?? '?');
 }
 
 /**

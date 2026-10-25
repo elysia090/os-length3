@@ -12,7 +12,8 @@ import {mark as todoMark} from './todo-box.ts';
 import {boardTodo} from './server-todo.ts';
 import {gear as gearSheet} from './server-gear.ts';
 import {seeRepo as repoSheet} from './server-repo.ts';
-import {button, initials, type Shown} from './server-parts.ts';
+import {button, type Shown} from './server-parts.ts';
+import {personBadge} from './pane.ts';
 import {deed} from './common.ts';
 import {goToPlan, planRefused, signInBox, signInPlace} from './remote.ts';
 import {boardNew, onNews, sawBoard, serverNew} from '../news.ts';
@@ -548,7 +549,7 @@ export class ServerLayer {
 
     // ---- the right: who is in it, then the repos they show in it ----
     const part = (title: string, ...body: (Node | null)[]) => h('section', {class: 'side-part'}, h('h3', {}, title), ...body);
-    const faceOf = (address: string) => h('span', {class: 'face', 'aria-hidden': 'true'}, initials(address));
+    const faceOf = (address: string) => personBadge(named(address));
     const repoName = (r: servers.ShownRepo) => [h('span', {}, r.name), h('span', {class: 'muted small'}, named(r.owner))];
     let sideToken = 0;
     const paintSide = () => {

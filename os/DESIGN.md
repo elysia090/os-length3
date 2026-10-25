@@ -1315,7 +1315,8 @@ Forge and the line it was left at, quoted as written), the conversations with
 something not read (who wrote, their initial on one of three soft tints, the
 marker's, a step done's, a removal's, the same for the same name; what it is
 and its first line: Review：…; the row a bubble, its corner at the badge's side,
-as a message is), the boards with posts not seen (#). With
+as a message is), the boards with posts not seen (#). The same round initial
+heads a conversation in Inbox and a person in a server's People. With
 nothing new it says so, quietly: the pane out is never a line with nothing
 beside it. The plugin area comes down over it when the rail's plug opens it.
 
@@ -1456,7 +1457,8 @@ terminal's: at its left a pill of the screen's glass, round as the band's pill
 for the repo is, with the shell's lamp (lit while it runs, dim before it starts,
 off once it has ended) and the prompt line it last waited at; the line in the
 terminal's letters with an empty cell where the caret will be; the keys that
-bring it up from anywhere (Ctrl `); Run. While the prompt is in use the box
+bring it up from anywhere (Ctrl `, only where they bring up what the box does:
+Run's, and Edit's Ctrl G); Run. While the prompt is in use the box
 becomes a screen and the terminal comes up in it over the center, the one thing
 in the app that is a thing of its own: a terminal's screen, dark glass in the
 app's ink with its words lit in the app's green (§3), the page behind it only a
@@ -1494,11 +1496,12 @@ the green, so what was run stands out from what it printed. A lamp at its head i
 lit while its shell runs; the terminal, put back, comes into the pane where it
 lives, and the reference grows down into the room it leaves. In the pane it is
 read as a line of what was done in the repo, in the page's own colours, as a
-history is drawn: a dot for each thing done on a thin thread down what it
-printed. A line run is a ring on the thread, the prompt line it was written at
+history is drawn: a dot for each thing done, all on one thin thread from the
+first to the prompt line the shell waits at (it scrolls with them, and ends at
+the last dot). A line run is a ring on the thread, the prompt line it was written at
 in the pill the box wore for it (the screen's glass, its words in the green),
-and the line in ink, bold; what it printed is under it, quieter, the thread at
-its left. The prompt line the shell waits at is last, its dot lit in the green
+and the line in ink, bold; what it printed is under it, quieter. The pills sit
+on their line's middle, beside the words they head. The prompt line the shell waits at is last, its dot lit in the green
 and glowing as the lamp is (off once it has ended). Up as the screen, it is the
 terminal again, its lines as a terminal's. The terminal's box
 is labelled Prompt, after what one does there (the shell is BusyBox sh, so
@@ -1511,7 +1514,7 @@ is the repo's: another repo shows its own, and coming back finds it.
 
 The box does more than run. Its pill says what it does and, pressed (or
 Alt+↓ in the box), brings out the four it can, out of the pill, each with
-the pill it gives and its keys: Run in the Prompt (the shell's prompt line,
+the pill it gives (as wide as its words) and its keys, the words in one column: Run in the Prompt (the shell's prompt line,
 `garden $`), Write an issue (the repo's next issue, `garden #4`, in ink as an
 issue's number), Add to TODO (TODO's circle, on paper as Home's TODO box),
 Edit the file in front (a pencil, the file and the caret's line,
