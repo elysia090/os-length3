@@ -497,6 +497,15 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
 }
 .lately-row:hover, .lately-row.looked { border-color: var(--edge); }
 .lately-row.looked { border-color: var(--ink); }
+/* Opened, the row is its card's head (look.ts, attached): the two one panel, square where they meet and a quiet rule
+   between them; what the row said in a line is in the card in full, so the row keeps only who or what it is, and at
+   its right the × that pressing it again is. */
+.lately-row.looked[data-look='under'] { border-bottom-color: var(--rule); border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.lately-row.looked[data-look='over'] { border-top-color: var(--rule); border-top-left-radius: 0; border-top-right-radius: 0; }
+.lately-row.looked > :is(.lately-line, .lately-quote), .lately-row.looked .lately-dot { display: none; }
+.lately-row.looked > .lately-what::after { content: ''; flex: none; width: 16px; height: 16px; margin-left: auto; background: var(--sub);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 7l10 10M17 7L7 17' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat; }
+.lately-row.looked:hover > .lately-what::after { background: var(--ink); }
 .lately-what { display: flex; align-items: center; gap: var(--s2); min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
 .lately-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The line it was left at, as written there: mono, as in Forge, on a quiet rule. */
@@ -1285,6 +1294,15 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
    to its page its last deed (where one writes back, a quiet one at the left of Send's line). Its lines are said as Inbox says them; what one writes back is a field as Inbox's. */
 .look { position: fixed; z-index: 8; display: flex; flex-direction: column; gap: var(--s3); padding: var(--s3) var(--s4) var(--s4); overflow: auto;
   box-shadow: 0 8px 24px color-mix(in srgb, var(--ink) 10%, transparent); animation: menu-in calc(280ms * var(--pace)) var(--pop-in) both; }
+/* Out of a row that is a box (Lately's), it is the row's lower part: on its edges, its ink, no room between, unfolding
+   out of it (over it, near the foot, upward); its title is the row's. */
+.look.attached { border-color: var(--ink); border-radius: var(--r-place); box-shadow: 0 16px 24px -20px color-mix(in srgb, var(--ink) 40%, transparent);
+  animation-name: look-unfold; animation-timing-function: var(--land); }
+.look.attached[data-at='under'] { border-top: 0; border-top-left-radius: 0; border-top-right-radius: 0; }
+.look.attached[data-at='over'] { border-bottom: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; animation-name: look-unfold-up; }
+.look.attached > .look-head { display: none; }
+@keyframes look-unfold { from { clip-path: inset(0 0 100% 0); } }
+@keyframes look-unfold-up { from { clip-path: inset(100% 0 0 0); } }
 @media (prefers-reduced-motion: reduce) { .look { animation: none; } }
 .look-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
 .look-title { font-weight: 600; overflow-wrap: anywhere; }
@@ -1299,8 +1317,9 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .look-said.mine > p { color: var(--sub); }
 .look-who { font-size: var(--t-meta); font-weight: 600; }
 .look-write { display: grid; gap: var(--s2); }
-.look-field { width: 100%; min-height: calc(2 * 1.5em + 2 * var(--s2)); padding: var(--s2) var(--s3); border: 1px solid var(--rule); border-radius: var(--r-card);
-  background: var(--ground); color: var(--ink); font: inherit; resize: vertical; }
+/* It grows with what is written (no corner to drag), on the card's paper, its edge the field's. */
+.look-field { width: 100%; min-height: calc(2 * 1.5em + 2 * var(--s2)); max-height: 40vh; padding: var(--s2) var(--s3); border: 1px solid var(--edge); border-radius: var(--r-card);
+  background: var(--paper); color: var(--ink); font: inherit; resize: none; field-sizing: content; }
 .look-field:focus { outline: none; border-color: var(--ink); }
 .look-write-foot { display: flex; align-items: center; justify-content: flex-end; gap: var(--s2); }
 .look-write-foot > .error { margin: 0 auto 0 0; }

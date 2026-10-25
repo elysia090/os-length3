@@ -37,18 +37,25 @@ let out: {row: HTMLElement; close(back: boolean): void} | null = null;
 
 const button = (text: string, kind = '') => h('button', {type: 'button', class: `button small-button ${kind}`.trim()}, text) as HTMLButtonElement;
 
-/** Where the card stands: on the row's own edges (the pane's lines, as its rows are), under the row, or over it when
- * there is no room under; a row narrower than a card can be read in has it as wide as that, on the row's middle. */
+/**
+ * Where the card stands: on the row's own edges (the pane's lines, as its rows are), under the row, or over it when
+ * there is no room under; a row narrower than a card can be read in has it as wide as that, on the row's middle. A
+ * row that is a box of its own (Lately's) has the card as its own lower part (`attached`): no room between them, the
+ * two one panel, the row its head; the row is told which side (data-look) so its corners there go square.
+ */
 function place(card: HTMLElement, row: HTMLElement) {
+  const attached = card.classList.contains('attached');
   const r = row.getBoundingClientRect();
-  const width = Math.min(Math.max(r.width, 260), innerWidth - 16);
-  const left = Math.max(8, Math.min(r.left + (r.width - width) / 2, innerWidth - 8 - width));
+  const width = attached ? r.width : Math.min(Math.max(r.width, 260), innerWidth - 16);
+  const left = attached ? r.left : Math.max(8, Math.min(r.left + (r.width - width) / 2, innerWidth - 8 - width));
+  const gap = attached ? 0 : 6;
   const high = card.offsetHeight, under = innerHeight - r.bottom - 8, over = r.top - 8;
-  const below = under >= high + 6 || under >= over;
+  const below = under >= high + gap || under >= over;
   card.style.left = `${left}px`;
   card.style.width = `${width}px`;
-  card.style.top = `${below ? r.bottom + 6 : Math.max(8, r.top - 6 - high)}px`;
-  card.style.maxHeight = `${Math.max(160, below ? under - 6 : over - 6)}px`;
+  card.style.top = `${below ? r.bottom + gap : Math.max(8, r.top - gap - high)}px`;
+  card.style.maxHeight = `${Math.max(160, below ? under - gap : over - gap)}px`;
+  card.dataset.at = row.dataset.look = below ? 'under' : 'over';
   // It comes out of the row: from above it when under it, from below when over it.
   card.style.setProperty('--from', below ? '0 -6px' : '0 6px');
   card.style.transformOrigin = below ? 'top center' : 'bottom center';
@@ -62,7 +69,8 @@ export function lookFrom(row: HTMLElement, look: Look) {
   const shut = h('button', {type: 'button', class: 'look-shut', 'aria-label': t('Put away')}, mark('close')) as HTMLButtonElement;
   const open = button(look.open.word, 'primary');
   const deeds = answers(null, open);
-  const card = h('section', {class: 'pop look', role: 'dialog', 'aria-label': look.title},
+  // A row that is a box (Lately's) is the card's head: its title is the row's, said once.
+  const card = h('section', {class: `pop look${row.matches('.lately-row') ? ' attached' : ''}`, role: 'dialog', 'aria-label': look.title},
     h('div', {class: 'look-head'}, h('span', {class: 'look-title'}, look.title), shut), body, deeds);
   let gone = false;
   const away = (e: Event) => {
@@ -76,12 +84,15 @@ export function lookFrom(row: HTMLElement, look: Look) {
     if (out?.row === row) out = null;
     look.closing?.();
     row.setAttribute('aria-expanded', 'false');
-    row.classList.remove('looked');
+    // A card that is the row's lower part folds back into it, and the row is whole again (its line back) once it has.
+    const attached = card.classList.contains('attached');
+    const whole = () => { if (out?.row !== row) { row.classList.remove('looked'); delete row.dataset.look; } };
+    if (!attached) whole();
     document.removeEventListener('pointerdown', away, true);
     card.removeEventListener('keydown', away);
     row.removeEventListener('keydown', away);
     sizes.disconnect();
-    putAway(card, () => card.remove());
+    putAway(card, () => { card.remove(); if (attached) whole(); }, {fold: attached && card.dataset.at === 'under'});
     // What the row stands in may be drawn again now (a conversation read is no longer word that waits).
     row.dispatchEvent(new Event('look-closed', {bubbles: true}));
     if (back && row.isConnected) row.focus({preventScroll: true});
@@ -136,7 +147,7 @@ function writeBack(label: string, word: string, send: (text: string) => Promise<
 
 /** One said: who (or You), when, and what. */
 const said = (who: string, when: number, body: string | (string | Node)[], mine = false) =>
-  h('div', {class: `look-said${mine ? ' mine' : ''}`}, h('span', {class: 'look-who'}, who, h('span', {class: 'muted small'}, ` · ${ago(when)}`)),
+  h('div', {class: `look-said${mine ? ' mine' : ''}`}, h('span', {class: 'look-who'}, who, h('span', {class: 'muted small'}, who ? ` · ${ago(when)}` : ago(when))),
     h('p', {}, ...(typeof body === 'string' ? [body] : body)));
 
 /** A conversation: its last lines, read as it opens (its mark goes), and a reply sent from there. */
@@ -147,7 +158,8 @@ export function threadLook(address: string, name: string, open: () => void): Loo
     async fill(body) {
       const lines = h('div', {class: 'look-lines'});
       const th = await inbox.thread(address);
-      const each = (m: inbox.Message) => said(m.mine ? t('You') : name || inbox.shown(address), m.time,
+      // Who the other is, the row above says: their lines carry only when; one's own, You.
+      const each = (m: inbox.Message) => said(m.mine ? t('You') : '', m.time,
         m.type === 'message' ? m.body : [...kindWords(`${m.type[0].toUpperCase()}${m.type.slice(1)}`), m.body], m.mine);
       lines.replaceChildren(...th.messages.slice(-4).map(each));
       body.replaceChildren(lines, writeBack(t('Reply'), t('Send'), async (text) => {

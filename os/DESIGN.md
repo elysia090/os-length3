@@ -1337,7 +1337,10 @@ a line the box wrote in the Prompt) is the same row wherever it is, and it
 is not a door to another page: pressed, it opens where it stands
 (`look.ts`). One reaction, then the work right there: the row is lit and a
 card comes out of it, under it (over it, near the foot), on the row's own
-edges (the pane's lines), with what can be done there: a conversation's last lines and a
+edges (the pane's lines); a row that is a box (Lately's) has the card as its
+own lower part, the two one panel with the row as its head (no second title;
+the row's one line folds away, its dot goes, a × at its right), unfolding out
+of it and folding back in, with what can be done there: a conversation's last lines and a
 reply sent from the card (Ctrl+Enter or Send; read as it opens, the row
 stays while its card is out and goes once it is put away); a board's last
 posts and a post; the lines one left off at, as they are now; an issue's
