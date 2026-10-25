@@ -1325,8 +1325,8 @@ a round badge at its head: where they left off (a page, the file last read in
 Forge and the line it was left at, quoted as written), the conversations with
 something not read (who wrote, their initial on one of three soft tints, the
 marker's, a step done's, a removal's, the same for the same name; what it is
-and its first line: Review：…; the row a bubble, its corner at the badge's side,
-as a message is), the boards with posts not seen (#). The same round initial
+and its first line: Review：…; the row the same rounded box as every row,
+who it is from said by the initial, never by a corner cut otherwise), the boards with posts not seen (#). The same round initial
 heads a conversation in Inbox, a person in a server's People and their posts
 on its board (larger there, a guest's no tint, only a dashed ring). With
 nothing new it says so, quietly: the pane out is never a line with nothing

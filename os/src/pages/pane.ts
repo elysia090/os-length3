@@ -152,11 +152,11 @@ export function personBadge(who: string): HTMLElement {
 /**
  * A row of what waits, as Home's Lately and the bench's pane both show it: what it is in a round badge (who wrote,
  * the file, the board) and in words, a dot while something of it is not read, a quoted line if it has one, and its
- * line (what was said, where it is). Word from someone is a bubble, as a message is. Pressed, it opens where it
- * stands (look.ts), never at once another page.
+ * line (what was said, where it is). Every row the same rounded box; who it is from, its initial says. Pressed, it
+ * opens where it stands (look.ts), never at once another page.
  */
 export function latelyRow(what: string, line: Node[] | string, o: {fresh?: boolean; quote?: string; badge: Badge; look(row: HTMLElement): void}): HTMLButtonElement {
-  const b = h('button', {type: 'button', class: `lately-row${typeof o.badge === 'object' ? ' said' : ''}`, 'aria-expanded': 'false'},
+  const b = h('button', {type: 'button', class: 'lately-row', 'aria-expanded': 'false'},
     h('span', {class: 'lately-what'}, badge(o.badge), h('span', {}, what), o.fresh ? h('span', {class: 'lately-dot', 'aria-hidden': 'true'}) : null),
     o.quote ? h('span', {class: 'lately-quote'}, o.quote) : null,
     h('span', {class: 'muted small lately-line'}, ...(typeof line === 'string' ? [line] : line))) as HTMLButtonElement;

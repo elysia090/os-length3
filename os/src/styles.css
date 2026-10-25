@@ -513,7 +513,8 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
 .lately-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--ink); }
 /* What a row is, in a round badge at its head (pane.ts): who wrote, their initial on one of four soft tints (the same
    for the same name: the marker's, a step done's, a removal's, the sky's), a file, a board. The lines under it start where its
-   name does. Word from someone is a bubble, its corner at the badge's side, as a message is. */
+   name does. Every row is the same rounded box, word from someone too: who it is from is its tinted initial, never a
+   corner cut differently (a lone square corner among round ones reads as broken). */
 .lately-badge { flex: none; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--raised);
   color: var(--ink); font: 700 12px/1 var(--sans); }
 .lately-badge > .icon { width: 14px; height: 14px; }
@@ -522,7 +523,6 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
 .lately-badge[data-tint='2'] { background: var(--del-tint); }
 .lately-badge[data-tint='3'] { background: var(--sky-tint); }
 .lately-row > :is(.lately-line, .lately-quote) { margin-left: calc(24px + var(--s2)); }
-.lately-row.said { border-radius: var(--r-place) var(--r-place) var(--r-place) var(--s1); }
 .lately-none { margin: 0; padding: 0 var(--s3); }
 @media (max-width: 760px) {
   .page > .home-layout, .home-layout.pane-closed { grid-template-columns: minmax(0, 1fr); }
