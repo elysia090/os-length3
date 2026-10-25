@@ -1550,7 +1550,9 @@ Ctrl+Enter sends). At rest the box is the box (raised, its edge), its line a
 terminal's: at its left a pill of the screen's glass, round as the band's pill
 for the repo is, with the shell's lamp (lit while it runs, dim before it starts,
 off once it has ended) and the prompt line it last waited at; the line in the
-terminal's letters with an empty cell where the caret will be; the keys that
+terminal's letters with an empty cell where the caret will be (with no repo
+to run in, no cell: it says so there, Open a repo to run in it, as the search
+box says No repo to search); the keys that
 bring it up from anywhere (Ctrl `, only where they bring up what the box does:
 Run's, and Edit's Ctrl G); Run. While the prompt is in use the box
 becomes a screen and the terminal comes up in it over the center, the one thing

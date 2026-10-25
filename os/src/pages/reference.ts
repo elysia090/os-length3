@@ -129,7 +129,7 @@ export class Reference {
   findNow() { this.query.focus(); this.query.select(); }
   /** Where no band says which repo it is (Home's), the box names it: "Search garden". */
   named(repo: string | null) {
-    const say = repo ? t('Search {repo}', {repo}) : t('Search this repo');
+    const say = repo ? t('Search {repo}', {repo}) : this.repo ? t('Search this repo') : t('No repo to search');
     this.query.placeholder = say;
     this.query.setAttribute('aria-label', say);
   }
@@ -299,6 +299,10 @@ export class Reference {
     this.repo = repo;
     this.files = null;
     this.query.disabled = !repo;
+    // With no repo it cannot be searched in, and says so where the words would be.
+    const say = repo ? t('Search this repo') : t('No repo to search');
+    this.query.placeholder = say;
+    this.query.setAttribute('aria-label', say);
     this.query.value = repo ? queries.get(repo) ?? '' : '';
     this.close();
     void this.draw();

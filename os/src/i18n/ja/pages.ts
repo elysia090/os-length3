@@ -91,6 +91,7 @@ export default {
   'Search {repo}': '{repo}を検索',
   'Line {n} of {path}': '{path}の{n}行目',
   'Open a repo to search it': 'repo を開くと検索できます',
+  'No repo to search': '検索する repo がありません',
   'Open a repo to run in it': 'repo を開くと実行できます',
   'Searching…': '検索中…',
   'Could not search: {message}': '検索できませんでした：{message}',
