@@ -5,7 +5,8 @@ import {plan as readPlan, planRefusal, planView, priceWords, refusalWords, TERMS
   type Meter, type PaidTier, type Plan, type PlanRefusal, type PlanView, type Price, type TierCard} from '../../remote/plan.ts';
 import {answers, choosePart} from '../common.ts';
 import type {Context} from '../context.ts';
-import {button, message, pressing} from './parts.ts';
+import {errorText} from '../../app/errors.ts';
+import {button, pressing} from './parts.ts';
 import {stripeTrip} from './stripe.ts';
 
 // Remote's Plan part: the tier this account is on, its use, the tiers to choose from; and the way to it from a
@@ -123,7 +124,7 @@ export function planSection(offered: (on: boolean) => void): {el: HTMLElement; p
   let confirming: PaidTier | null = null;
   const paint = async () => {
     let p: Plan;
-    try { p = await readPlan(); } catch (e) { error.textContent = message(e); return; }
+    try { p = await readPlan(); } catch (e) { error.textContent = errorText(e); return; }
     offered(p.plan !== 'none');
     if (p.plan === 'none') { el.replaceChildren(); return; }
     trip.heard(p);

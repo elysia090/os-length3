@@ -2,7 +2,8 @@ import {h} from '../../ui/dom.ts';
 import {isNative, native} from '../../app/host.ts';
 import {t} from '../../i18n.ts';
 import * as account from '../../remote/connection.ts';
-import {button, message, pressing} from './parts.ts';
+import {errorText} from '../../app/errors.ts';
+import {button, pressing} from './parts.ts';
 
 // Signing in: one card where what the Remote holds would be, and the ways in under its title. Remote's page
 // shows it signed out; Inbox, Server and the page a device's code opens show the same card in the same place.
@@ -73,7 +74,7 @@ function byCode(done: () => void, error: HTMLElement): Node[] {
 /** The code the browser is to approve (`s`), with Cancel (`stop`) and Open the browser again under it. */
 function codeShown(s: {code: string; url: string}, error: HTMLElement, stop: () => void): Node[] {
   const again = button(t('Open the browser again'), 'small-button'), cancel = button(t('Cancel'), 'small-button');
-  again.addEventListener('click', () => void native('remote_login_reopen').catch((e: unknown) => { error.textContent = message(e); }));
+  again.addEventListener('click', () => void native('remote_login_reopen').catch((e: unknown) => { error.textContent = errorText(e); }));
   cancel.addEventListener('click', stop);
   return [h('p', {class: 'sign-in-step'}, t('Approve this code in the browser')),
     h('p', {class: 'device-code mono', title: s.url}, s.code),

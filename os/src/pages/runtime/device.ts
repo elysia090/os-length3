@@ -8,7 +8,8 @@ import type {Context} from '../context.ts';
 import {openRepoPlace} from '../remote/repos.ts';
 import {syncWord} from '../remote/repo-card.ts';
 import {repoGear} from '../repo-gear.ts';
-import {button, message} from './parts.ts';
+import {errorText} from '../../app/errors.ts';
+import {button} from './parts.ts';
 
 // Runtime's This device (This browser, on the web): what the OS holds here.
 //
@@ -67,7 +68,7 @@ export function device(ctx: Context, u: Space, last: Freed | null, again: (r: Fr
     for (const b of held) b.disabled = true;
     void free(ids).then(again, (e) => {
       for (const b of held) b.disabled = false;
-      error.textContent = message(e);
+      error.textContent = errorText(e);
     });
   };
   const repo = repoParts(ctx, again);
@@ -153,14 +154,14 @@ function remoteColumn(repo: RepoParts, again: (r: Freed | null) => void, error: 
     const b = button(t('Fetch'));
     b.addEventListener('click', async () => {
       b.disabled = true;
-      try { await bring(r.name); again(null); } catch (e) { error.textContent = message(e); b.disabled = false; }
+      try { await bring(r.name); again(null); } catch (e) { error.textContent = errorText(e); b.disabled = false; }
     });
     return thing(repo.name(r.name), r.bytes, t('repo · comes here, then opens'), b, '', repo.gear(r.name, t('It is only on the Remote: nothing of it is here to free'), true));
   });
   // What is only there, not all it holds: its size is what would come here.
   const col = column('remote-col', t('Only on the Remote'), remoteOnly().reduce((n, r) => n + r.bytes, 0), coming,
     connection() ? t('All of it is here too') : t('Sign in to see what the Remote holds'));
-  if (isNative) void rootStatus().then((root) => { if (root && !root.current) rootRow(col, root, again); }, (e) => { error.textContent = message(e); });
+  if (isNative) void rootStatus().then((root) => { if (root && !root.current) rootRow(col, root, again); }, (e) => { error.textContent = errorText(e); });
   return col;
 }
 
@@ -172,7 +173,7 @@ function rootRow(col: HTMLElement, root: RootStatus, again: (r: Freed | null) =>
     b.disabled = true;
     void rootFetch((got, of, retry) => {
       note.textContent = retry ? t('{why}; continuing where it stopped', {why: retry}) : t('Fetching {got} / {of}', {got: bytes(got), of: bytes(of)});
-    }).then(() => again(null), (e) => { note.textContent = message(e); b.disabled = false; });
+    }).then(() => again(null), (e) => { note.textContent = errorText(e); b.disabled = false; });
   });
   const row = h('div', {class: 'space-row'},
     h('div', {class: 'space-what'}, h('span', {class: 'space-name'}, `${root.release.name} ${root.release.version}`), note),

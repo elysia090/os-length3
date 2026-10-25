@@ -2,7 +2,8 @@ import {bytes, h} from '../../ui/dom.ts';
 import {isNative, rootStatus, rootUse, type RootStatus} from '../../app/host.ts';
 import {t} from '../../i18n.ts';
 import {about} from '../../prompt/userland.ts';
-import {button, message} from './parts.ts';
+import {errorText} from '../../app/errors.ts';
+import {button} from './parts.ts';
 
 // Runtime's environments: the one a Prompt runs on, and the others it could.
 
@@ -20,10 +21,10 @@ export function environment(): HTMLElement {
   const card = h('div', {class: 'card small-card env-card'}, h('span', {class: 'muted small'}, t('Reading…')));
   const paint = async () => {
     let root: Awaited<ReturnType<typeof rootStatus>> = null;
-    try { root = await rootStatus(); } catch (e) { card.replaceChildren(h('p', {class: 'error'}, message(e))); return; }
+    try { root = await rootStatus(); } catch (e) { card.replaceChildren(h('p', {class: 'error'}, errorText(e))); return; }
     if (isNative && root) { card.replaceChildren(...inTheApp(root, paint)); return; }
     let a: Awaited<ReturnType<typeof about>>;
-    try { a = await about(); } catch (e) { card.replaceChildren(h('p', {class: 'error'}, message(e))); return; }
+    try { a = await about(); } catch (e) { card.replaceChildren(h('p', {class: 'error'}, errorText(e))); return; }
     card.replaceChildren(...onTheWeb(a));
   };
   void paint();
@@ -54,7 +55,7 @@ function use(id: string, note: HTMLElement, again: () => void): HTMLButtonElemen
     b.disabled = true;
     void rootUse(id, (got, of, retry) => {
       note.textContent = retry ?? t('Fetching {got} / {of}', {got: bytes(got), of: bytes(of)});
-    }).then(() => again(), (e) => { note.textContent = message(e); b.disabled = false; });
+    }).then(() => again(), (e) => { note.textContent = errorText(e); b.disabled = false; });
   });
   return b;
 }

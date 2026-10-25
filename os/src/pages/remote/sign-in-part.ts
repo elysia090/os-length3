@@ -1,7 +1,8 @@
 import {ago, h} from '../../ui/dom.ts';
 import {t} from '../../i18n.ts';
 import * as account from '../../remote/connection.ts';
-import {atSignIn, button, message, pressing} from './parts.ts';
+import {errorText} from '../../app/errors.ts';
+import {atSignIn, button, pressing} from './parts.ts';
 
 // Remote's Sign-in part: what keeps the account, the passkeys, the code a repo is turned off with, and the
 // providers it can sign in with.
@@ -45,7 +46,7 @@ function passkeySection(): HTMLElement {
   const error = h('p', {class: 'error', role: 'alert'});
   const note = h('p', {class: 'muted small', role: 'status'});
   const paint = async () => {
-    const list = await account.passkeys().catch((e) => { error.textContent = message(e); return []; });
+    const list = await account.passkeys().catch((e) => { error.textContent = errorText(e); return []; });
     // Made where passkeys are: here on the web, in the browser from the app. Removed from either.
     const add = button(account.deedsHere() ? t('Add a passkey') : t('Add in the browser'), 'small-button');
     add.addEventListener('click', () => void pressing(add, error, async () => {
@@ -71,7 +72,7 @@ function providerSection(): HTMLElement {
   const note = h('p', {class: 'muted small', role: 'status'});
   const paint = async () => {
     let mine: Awaited<ReturnType<typeof account.linked>>, offered: Awaited<ReturnType<typeof account.about>>;
-    try { [mine, offered] = await Promise.all([account.linked(), account.about()]); } catch (e) { error.textContent = message(e); return; }
+    try { [mine, offered] = await Promise.all([account.linked(), account.about()]); } catch (e) { error.textContent = errorText(e); return; }
     const have = new Set(mine.map((a) => a.providerId));
     const rows = mine.map((a) => {
       // The last provider is the way back in: it stays, with nothing to press.

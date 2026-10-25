@@ -6,7 +6,7 @@ import {readSpace} from '../../app/space.ts';
 import {pageHead, parts} from '../common.ts';
 import type {Context} from '../context.ts';
 import {allSessions} from '../bench/terminal.ts';
-import {message} from './parts.ts';
+import {errorText} from '../../app/errors.ts';
 import {device} from './device.ts';
 import {prompts} from './prompts.ts';
 import {environment} from './environment.ts';
@@ -39,7 +39,7 @@ export function runtime(ctx: Context): Node[] {
     if (holder.isConnected && holder.querySelector('.repo-gear-pop:not([hidden])')) { setTimeout(read, 1000); return; }
     holder.replaceChildren(device(ctx, u, last, (r) => { last = r; read(); }));
   },
-    (e) => holder.replaceChildren(h('section', {class: 'section'}, h('p', {class: 'error'}, t('Could not measure ({why})', {why: message(e)})))));
+    (e) => holder.replaceChildren(h('section', {class: 'section'}, h('p', {class: 'error'}, t('Could not measure ({why})', {why: errorText(e)})))));
   read();
   // What the Remote holds changes what can come here.
   const stop = onSync(() => { if (!holder.isConnected) { stop(); return; } read(); });

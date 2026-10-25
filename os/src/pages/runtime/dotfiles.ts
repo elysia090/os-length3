@@ -3,7 +3,8 @@ import {t, tn} from '../../i18n.ts';
 import * as dotfiles from '../../home/dotfiles.ts';
 import {askFoot, SETTLE} from '../common.ts';
 import {allSessions, type Session} from '../bench/terminal.ts';
-import {button, card, message} from './parts.ts';
+import {errorText} from '../../app/errors.ts';
+import {button, card} from './parts.ts';
 
 // Runtime's Dotfiles: what every Prompt starts with in /root, a card each, and one open to edit under them.
 
@@ -62,7 +63,7 @@ function editBox(name: string, text: string, fresh: boolean, saved: boolean, w: 
   const save = button(t('Save'), 'primary');
   save.addEventListener('click', async () => {
     const n = title.value.trim();
-    try { await dotfiles.save(n, body.value); } catch (e) { error.textContent = message(e); return; }
+    try { await dotfiles.save(n, body.value); } catch (e) { error.textContent = errorText(e); return; }
     w.paint(n, true);
   });
   const remove = button(t('Remove'));
@@ -91,7 +92,7 @@ function askRemove(name: string, box: HTMLElement, acts: HTMLElement, remove: HT
   yes.addEventListener('click', async () => {
     if (performance.now() - shown < SETTLE) return;
     yes.disabled = true;
-    try { await dotfiles.remove(name); w.paint(); } catch (e) { error.textContent = message(e); yes.disabled = false; }
+    try { await dotfiles.remove(name); w.paint(); } catch (e) { error.textContent = errorText(e); yes.disabled = false; }
   });
   acts.replaceWith(ask);
   yes.focus();

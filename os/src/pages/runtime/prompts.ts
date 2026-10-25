@@ -3,7 +3,8 @@ import type {Stopped} from '../../app/host.ts';
 import {t, tn} from '../../i18n.ts';
 import {allSessions, type Session} from '../bench/terminal.ts';
 import {getState, setState} from '../../home/state.ts';
-import {button, card, message} from './parts.ts';
+import {errorText} from '../../app/errors.ts';
+import {button, card} from './parts.ts';
 
 // Runtime's Prompts running, each a small card: where it runs, the memory it holds, and Stop. Shown only when one
 // runs (or one stopped here says what it gave back).
@@ -31,12 +32,12 @@ function networkSwitch(repo: string, s: Session, card: () => HTMLElement): HTMLE
   const error = h('p', {class: 'error small', role: 'alert'});
   sw.addEventListener('click', () => {
     const el = card();
-    if (on) { void grant(repo, false).then(() => s.stop(), (e) => { error.textContent = message(e); }); return; }
+    if (on) { void grant(repo, false).then(() => s.stop(), (e) => { error.textContent = errorText(e); }); return; }
     sw.setAttribute('aria-checked', 'true');
     const was = [...el.childNodes];
     const no = button(t('Not now'), 'small-button'), yes = button(t('Give it'), 'small-button primary');
     no.addEventListener('click', () => el.replaceChildren(...was, error));
-    yes.addEventListener('click', () => void grant(repo, true).then(() => s.stop(), (e) => { el.replaceChildren(...was, error); error.textContent = message(e); }));
+    yes.addEventListener('click', () => void grant(repo, true).then(() => s.stop(), (e) => { el.replaceChildren(...was, error); error.textContent = errorText(e); }));
     el.replaceChildren(h('span', {class: 'card-title'}, repo),
       h('p', {class: 'muted small'}, t('Its programs reach the network from its next start; it stops now.')),
       h('div', {class: 'card-foot'}, no, h('span', {class: 'grow'}), yes));

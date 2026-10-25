@@ -3,7 +3,8 @@ import {mark} from '../../ui/icons.ts';
 import {t} from '../../i18n.ts';
 import * as servers from '../../remote/servers.ts';
 import {keepOut, putAway} from '../../ui/glide.ts';
-import {message, pressing} from './parts.ts';
+import {errorText} from '../../app/errors.ts';
+import {pressing} from './parts.ts';
 
 // A repo card's Share: which servers it is shown in, chosen from a list over the card.
 
@@ -59,7 +60,7 @@ function seenIn(now: servers.RepoSeen, ids: string[]): Promise<servers.RepoSeen>
 async function fill(list: HTMLElement, error: HTMLElement, shown: (id: string) => boolean, toggle: (id: string) => Promise<boolean>) {
   let mine: servers.Server[];
   // Not read (away): said in the list, and read again the next time it opens.
-  try { mine = await servers.servers(); } catch (e) { list.replaceChildren(h('p', {class: 'error small pop-note'}, message(e))); return; }
+  try { mine = await servers.servers(); } catch (e) { list.replaceChildren(h('p', {class: 'error small pop-note'}, errorText(e))); return; }
   const rows = mine.map((s) => {
     const b = h('button', {type: 'button', class: 'pop-item', role: 'menuitemcheckbox', 'aria-checked': String(shown(s.id))}, s.name) as HTMLButtonElement;
     b.addEventListener('click', () => void pressing(b, error, async () => { b.setAttribute('aria-checked', String(await toggle(s.id))); }));

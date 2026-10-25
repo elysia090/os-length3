@@ -2,7 +2,8 @@ import {ago, h} from '../../ui/dom.ts';
 import {t} from '../../i18n.ts';
 import * as account from '../../remote/connection.ts';
 import {askFoot, SETTLE} from '../common.ts';
-import {button, message, pressing} from './parts.ts';
+import {errorText} from '../../app/errors.ts';
+import {button, pressing} from './parts.ts';
 
 // Remote's Devices part: the devices signed in to the account, and signing one out.
 
@@ -16,7 +17,7 @@ export function deviceSection(counted: (n: number) => void): HTMLElement {
   const section = h('div', {class: 'sub-part'});
   const error = h('p', {class: 'error', role: 'alert'});
   const paint = async () => {
-    const list = await account.devices().catch((e) => { error.textContent = message(e); return []; });
+    const list = await account.devices().catch((e) => { error.textContent = errorText(e); return []; });
     counted(list.length);
     section.replaceChildren(h('div', {class: 'rows'}, ...list.map((d) => deviceRow(d, paint))), error);
   };

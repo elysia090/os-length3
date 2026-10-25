@@ -6,7 +6,7 @@ import {store} from '../../repos/repos.ts';
 import * as servers from '../../remote/servers.ts';
 import {choosePart} from '../common.ts';
 import type {Context} from '../context.ts';
-import {message} from './parts.ts';
+import {errorText} from '../../app/errors.ts';
 import {repoCard, type CardWays} from './repo-card.ts';
 import {doneTo, type AskWays, type Deed} from './repo-off.ts';
 
@@ -52,7 +52,7 @@ export function repoSection(ctx: Context, counted: (n: number) => void, keyed: (
   // A card asking (or about to), or its Share list out, is not drawn over by a look that crossed the
   // press; what ends the ask draws them all (`ended`).
   const asking = () => !!grid.querySelector('.off-ask, [data-asking], .share-pop:not([hidden])');
-  const paint = (force = false) => draw(force).catch((e) => grid.replaceChildren(h('p', {class: 'error'}, message(e))));
+  const paint = (force = false) => draw(force).catch((e) => grid.replaceChildren(h('p', {class: 'error'}, errorText(e))));
   const ended = () => paint(true);
   // Asked of this page by the app (…/?account=off&repo=NAME): once it is done, said here, and that the app shows it.
   const over = (name: string, kind: Deed) => (asked?.repo === name && asked.ask === kind ? () => ended().then(() => {

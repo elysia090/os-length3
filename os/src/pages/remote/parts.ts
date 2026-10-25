@@ -1,10 +1,9 @@
 import {h} from '../../ui/dom.ts';
+import {errorText} from '../../app/errors.ts';
 import {t} from '../../i18n.ts';
 import * as account from '../../remote/connection.ts';
 
 // The pieces Remote's parts share (sign-in, repos, the Sign-in part, devices, plan).
-
-export const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export function button(text: string, kind = ''): HTMLButtonElement {
   return h('button', {class: `button ${kind}`.trim(), type: 'button'}, text) as HTMLButtonElement;
@@ -14,7 +13,7 @@ export function button(text: string, kind = ''): HTMLButtonElement {
 export async function pressing(b: HTMLButtonElement, error: HTMLElement, f: () => Promise<void>) {
   b.disabled = true;
   error.textContent = '';
-  try { await f(); } catch (e) { error.textContent = message(e); } finally { b.disabled = false; }
+  try { await f(); } catch (e) { error.textContent = errorText(e); } finally { b.disabled = false; }
 }
 
 /**

@@ -5,7 +5,8 @@ import {connection, deviceWord} from '../../remote/connection.ts';
 import * as ssh from '../../prompt/ssh.ts';
 import {copying} from '../common.ts';
 import {every} from '../../app/runs.ts';
-import {button, card, message} from './parts.ts';
+import {errorText} from '../../app/errors.ts';
+import {button, card} from './parts.ts';
 
 // Runtime's SSH: who listens for it on this account's devices, and this device's own, in the app.
 
@@ -58,7 +59,7 @@ function power(on: boolean, label: string, act: () => Promise<unknown> | void, s
   b.addEventListener('click', async () => {
     b.disabled = true;
     said.textContent = '';
-    try { const done = act(); if (done) { await done; again(); } else b.disabled = false; } catch (e) { said.textContent = message(e); b.disabled = false; }
+    try { const done = act(); if (done) { await done; again(); } else b.disabled = false; } catch (e) { said.textContent = errorText(e); b.disabled = false; }
   });
   return b;
 }
@@ -96,7 +97,7 @@ function askScope(el: HTMLElement, m: ssh.Here, said: HTMLElement, again: () => 
     const b = button(label, `small-button${scope === m.scope ? ' primary' : ''}`);
     b.addEventListener('click', () => {
       for (const x of el.querySelectorAll('button')) (x as HTMLButtonElement).disabled = true;
-      void ssh.setHere(true, scope).then(() => again(), (e) => { el.replaceChildren(...was); said.textContent = message(e); });
+      void ssh.setHere(true, scope).then(() => again(), (e) => { el.replaceChildren(...was); said.textContent = errorText(e); });
     });
     return b;
   };
@@ -120,7 +121,7 @@ function onCard(m: ssh.Here, keys: string, said: HTMLElement, again: () => void)
   // The other scope, at once (its sessions from elsewhere end when it narrows); off at the right.
   const other: ssh.Scope = m.scope === 'network' ? 'device' : 'network';
   const change = button(other === 'network' ? t('The same network too') : t('This device only'));
-  change.addEventListener('click', () => { change.disabled = true; void ssh.setHere(true, other).then(() => again(), (e) => { said.textContent = message(e); change.disabled = false; }); });
+  change.addEventListener('click', () => { change.disabled = true; void ssh.setHere(true, other).then(() => again(), (e) => { said.textContent = errorText(e); change.disabled = false; }); });
   el.append(h('div', {class: 'card-foot'}, change, h('span', {class: 'grow'}),
     power(true, t('Turn SSH off on {device}', {device: t('This device')}), () => ssh.setHere(false), said, again)));
   return el;
