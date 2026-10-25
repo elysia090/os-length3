@@ -235,7 +235,10 @@ export class Box {
   #say(text: string | Node[]) {
     keepOut(this.note);
     this.note.classList.remove('paths');
+    const was = this.note.textContent;
     if (typeof text === 'string') this.note.textContent = text; else this.note.replaceChildren(...text);
+    // Something else said in its place comes up out of a light fade, not swapped in one frame (from nothing it is at once).
+    if (was && was !== this.note.textContent && !still()) this.note.animate([{opacity: .35}, {opacity: 1}], {duration: paced(140), easing: 'ease-out'});
   }
   /** `text` in the box as if written there, the caret at its end. */
   #put(text: string) {

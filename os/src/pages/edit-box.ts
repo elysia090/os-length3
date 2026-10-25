@@ -1,5 +1,5 @@
 import {h} from '../dom.ts';
-import {paced, still} from '../glide.ts';
+import {LAND, paced, still} from '../glide.ts';
 import {lineOf, lineStarts, parseEdit, plan, type Mark} from '../edit.ts';
 import {t} from '../i18n.ts';
 import {store} from '../repos.ts';
@@ -72,7 +72,16 @@ export function drawMarks(area: HTMLTextAreaElement, marks: Mark[], layer = 'edi
     }
     return span;
   });
+  // One mark of a line going to another line (the ring under the hand, the line the caret is on, where + would put
+  // a line) goes there on a short curve, from where it was seen: not gone from one line and there on the next at once.
+  const before = el.childElementCount === 1 ? el.firstElementChild as HTMLElement : null;
+  const was = before?.getBoundingClientRect();
   el.replaceChildren(...els);
+  const now = els.length === 1 && marks[0].kind !== 'words' ? els[0] : null;
+  if (was && now && before!.className === now.className && !still()) {
+    const r = now.getBoundingClientRect(), dy = was.top - r.top;
+    if (Math.abs(dy) > .5 && Math.abs(was.height - r.height) < .5) now.animate([{translate: `0 ${dy}px`}, {translate: '0 0'}], {duration: paced(140), easing: LAND});
+  }
   return els[Math.max(0, marks.findIndex((m) => m.now))] ?? null;
 }
 
@@ -364,7 +373,8 @@ export class EditLine {
   /** The line pointed at ringed (none: the ring goes), to say it can be pressed. */
   #ring(area: HTMLTextAreaElement | null, line: number) {
     const was = this.#ringed;
-    if (was && (was.area !== area || was.line !== line)) drawMarks(was.area, [], 'edit-ring');
+    // Off the file, or onto another, the ring goes; along the same file it moves to the line now under the hand.
+    if (was && (was.area !== area || !area)) drawMarks(was.area, [], 'edit-ring');
     this.#ringed = area ? {area, line} : null;
     if (!area || (was?.area === area && was.line === line)) return;
     const starts = lineStarts(area.value);

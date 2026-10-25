@@ -1589,7 +1589,9 @@ is half written is kept for the repo and for what the box does.
 Edit makes the box a line that edits the file in front without leaving the
 box, as a modal editor's command line does but with nothing to be in and no
 keys to learn. The plainest is to point: while the box has the keyboard, the
-hand over a file says a line can be taken and the line under it is ringed;
+hand over a file says a line can be taken and the line under it is ringed
+(the ring going along from line to line with the hand, as a lit line goes to
+the next one, never gone from one and there on the next at once);
 pressed, the line comes into the box as it is, the caret where it was pressed,
 the line lit in the marker's yellow where it stands, and is written anew there:
 Enter puts it back (lit a moment in the green of what is added), Escape leaves
