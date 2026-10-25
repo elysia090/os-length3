@@ -71,6 +71,7 @@ export const keptForge = (): HTMLElement | null => (madeIn === currentLang() ? m
 /** The language Forge was made in: another chosen since, it is made again, so none of its words stay in the last one. */
 let madeIn: string | null = null;
 
+/** Forge's page: made once (again in another language), and come back to as it was left. */
 export function forge(ctx: Context): Node[] {
   if (madeIn !== currentLang()) { made?.drop(); made = null; madeIn = currentLang(); }
   made ??= new Forge(ctx);

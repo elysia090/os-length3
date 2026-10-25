@@ -63,7 +63,10 @@ export class Band {
     this.along();
   }
 
-  /** The repos here are `all` now: the band as kept (the first time) or as it was, of those still here, with `chosen`. */
+  /**
+   * The repos here are `all` now: the band as it was kept (the first time; never kept, `chosen` starts it) or as it
+   * stands, of those still here.
+   */
   known(all: string[], chosen: string | null) {
     this.all = all;
     this.names = parseBand(this.first ? getState('band') : JSON.stringify(this.names), all, chosen);
@@ -71,7 +74,7 @@ export class Band {
     this.readIssues();
   }
 
-  /** `name` on the band (where it was, if it was), and the band kept. */
+  /** `name` on the band (at its end, unless it is there already), and the band kept. */
   put(name: string) {
     this.names = addToBand(this.names, name);
     this.save();

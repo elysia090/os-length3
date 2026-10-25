@@ -17,6 +17,7 @@ const HIT_LIMIT = 200;
 /** Issues and runs said under the box for a search, at most. */
 const OTHER_LIMIT = 20;
 
+/** The repo's text files as read for a search: each one's path and text. */
 export type Files = {path: string; text: string}[];
 
 /**

@@ -13,6 +13,7 @@ import {diffFiles, fileName} from './diff-view.ts';
 // run in its Prompt (Output). Each as a row, in a pill's list and in what a search finds, and one of each read whole.
 
 export type Kind = 'issue' | 'diff' | 'output';
+/** The kinds as the switch shows them, in order, each with its word. */
 export const KINDS: {kind: Kind; label: () => string}[] = [
   {kind: 'issue', label: () => t('Issue')}, {kind: 'diff', label: () => t('diff')}, {kind: 'output', label: () => t('Output')},
 ];

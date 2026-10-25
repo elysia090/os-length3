@@ -70,6 +70,7 @@ export interface FileState {
   saved(): void;
 }
 
+/** What a file says beside its name in its head, made for one file. */
 export function fileState(): FileState {
   // Says something only when the file is not simply saved.
   const el = h('span', {class: 'file-state', role: 'status'});

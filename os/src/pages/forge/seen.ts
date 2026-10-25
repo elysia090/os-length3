@@ -11,6 +11,7 @@ const HISTORY = 10;
 /** One thing searched or read: a query, a file opened from what was found, an issue, a file's diff, a run. */
 export type Seen = {what: 'query'; text: string} | {what: 'file'; path: string} | {what: 'issue'; path: string; label: string}
   | {what: 'diff'; path: string} | {what: 'run'; started: number; line: string};
+/** What tells one thing searched or read from another: the same again is the same place in the line. */
 export const seenKey = (s: Seen) => (s.what === 'query' ? `q:${s.text}` : s.what === 'run' ? `r:${s.started}` : `${s.what}:${s.path}`);
 
 /** What a thing searched or read is called, and what it is. */

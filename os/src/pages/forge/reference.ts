@@ -44,6 +44,7 @@ type Reading = {seen: Seen; draw: () => Promise<void> | void};
 
 let made = 0;
 
+/** The search box and what opens under it, for a page that has one (Forge's and Git's bench, Home). */
 export class Reference {
   /** The search box and what is under it, for the top line over the right pane. */
   readonly search: HTMLElement;
