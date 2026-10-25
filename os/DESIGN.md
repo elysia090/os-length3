@@ -1422,7 +1422,10 @@ way, as if pushed by it. The prompt box stands under the box worked on, its
 edges a step (12 px) outside that box's, and goes where the box goes, at its
 pace; side by side, each box is as tall as the row, down to a step over the
 prompt box. A file's head is its box's lid: it carries the box's top edge
-and corners and stays where it stands as the file scrolls under it, so the
+and corners and stays where it stands as the file scrolls under it (a file
+gone to, from File or a search, comes to where its head stops, inside the
+page's top padding, never past it with its box's sides showing over the
+lid), so the
 heads of boxes side by side, one scrolled and one not, stand on one line,
 and the right pane's Prompt has its head's words on that line too. Pressing one, swiping
 sideways over the row (one box a swipe) or Alt+[ / Alt+] brings it in, and
@@ -2134,8 +2137,9 @@ place a page is switched, because its parts are unrelated; a part chosen
 comes in from its heading's side as the ink goes to it, as Runtime's and
 the gear's do, never swapped in one frame):
 
-- **Repos**: every repo the Remote holds, as cards the size of Home's: name,
-  size and when it last changed, where it stands. On: Forge at the bottom
+- **Repos**: every repo the Remote holds, as cards the size of Home's: name
+  (as Home's card sets it), what it is (its README's first line, once a copy
+  here is read), size and when it last changed, where it stands. On: Forge at the bottom
   left with Share beside it, the power switch at the bottom right; the switch's knob
   is green at the right, and turning it off asks, in the card, for the
   account's name, the repo's name and the five-letter code, then a passkey.

@@ -62,8 +62,8 @@ function repoCard(ctx: Context, name: string, size: number, modified: number, ag
     h('span', {class: 'muted card-sync'})], false, again);
 }
 
-/** A repo's README's first line that is neither a heading nor empty ('' when there is none). */
-async function summaryOf(name: string): Promise<string> {
+/** A repo's README's first line that is neither a heading nor empty ('' when there is none): Home's and Remote's cards. */
+export async function summaryOf(name: string): Promise<string> {
   const c = await store.read(name, 'README.md').catch(() => null);
   return c?.text?.split('\n').map((l) => l.trim()).find((l) => l && !l.startsWith('#')) ?? '';
 }

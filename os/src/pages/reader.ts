@@ -223,7 +223,8 @@ export class Reader {
     const height = parseFloat(getComputedStyle(area).lineHeight) || 20;
     const box = this.flow.getBoundingClientRect().top - this.flow.scrollTop;
     const top = area.getBoundingClientRect().top - box;
-    const head = target.getBoundingClientRect().top - box;
+    // The head where it stops, inside the page's top padding (styles.css scroll-padding-top), not over its edge.
+    const head = target.getBoundingClientRect().top - box - (parseFloat(getComputedStyle(this.flow).scrollPaddingTop) || 0);
     this.flow.scrollTop = Math.max(head, top + (line - 1) * height - this.flow.clientHeight / 3);
   }
 

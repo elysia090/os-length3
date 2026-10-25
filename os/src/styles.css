@@ -935,6 +935,10 @@ button.row-item:disabled { cursor: var(--cursor-arrow); color: var(--sub); }
 /* What is scrolled to (a control the keyboard goes to, a button come to) stops above the prompt box laid over the
    page's foot, never under it. */
 .work.bench .flow { scroll-padding-bottom: calc(var(--s5) + 80px); }
+/* A file gone to (from File, from a search) stands where its head stops, inside the page's top padding: brought to
+   the very edge instead, the box ran on a padding's height over its stuck head, its sides showing above the lid. */
+.work.bench .flow { scroll-padding-top: var(--s3); }
+.columns.split > .col > .flow { scroll-padding-top: var(--s1); }
 .flow:focus-visible { outline-offset: -2px; }
 /* Forge's files run on far enough past the last for it to come up to the top (a file just made, opened at the end):
    not the empty foot of the one before it filling the column over it. */
@@ -2233,7 +2237,12 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 /* The Remote's repos: Home's cards, with Forge at the bottom left and the
    power switch at the right. A switch slides: on, its knob green at the
    right; off, at the left on red, and the card quiet. */
-.repo-cards .card { cursor: var(--cursor-arrow); grid-template-rows: auto auto auto 1fr auto; }
+/* Its lines one under another (its summary there only once read), its deeds at its foot however many there are. */
+.repo-cards .card { cursor: var(--cursor-arrow); display: flex; flex-direction: column; }
+.repo-cards .card > .card-foot { align-self: stretch; margin-top: auto; }
+/* The size of Home's cards, its name as Home's says it: one repo reads the same on both pages. */
+.grid.repo-cards .card { min-height: 152px; }
+.grid.repo-cards .card-title { font-size: var(--t-body); }
 /* Remote's parts are 760 wide (the passkey's offer above them, the plan's): its cards two to a row in that width,
    so their edges are the offer's. */
 .grid.repo-cards { max-width: 760px; }

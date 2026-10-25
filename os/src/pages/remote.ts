@@ -14,6 +14,7 @@ import * as servers from '../servers.ts';
 import {answers, askFoot, pageHead, parts, SETTLE} from './common.ts';
 import type {Context} from './context.ts';
 import {keepOut, putAway} from '../glide.ts';
+import {summaryOf} from './repo-list.ts';
 
 /**
  * The repo to bring into view and light on Remote's Repos once they are drawn (openRepoPlace): kept a moment,
@@ -333,8 +334,11 @@ function repoSection(ctx: Context, counted: (n: number) => void, keyed: () => vo
     const discard = off ? h('button', {type: 'button', class: 'button small-button discard'}, t('Discard')) as HTMLButtonElement : null;
     if (discard) discard.disabled = gone;
     // A group named by its repo, so what is in it (its switch, Share, Forge) is heard as the repo's.
+    // What it is, as Home's card says it, once read (only a copy here can be read).
+    const what = h('span', {class: 'card-summary'});
+    if (here) void summaryOf(name).then((line) => { what.textContent = line; }, () => {});
     const el = h('div', {class: `card repo${off ? ' off' : ''}`, 'data-repo': name, role: 'group', 'aria-label': name},
-      h('span', {class: 'card-title'}, name),
+      h('span', {class: 'card-title'}, name), what,
       h('span', {class: 'muted'}, `${bytes(size)} · ${t('Changed {when}', {when: ago(changed)})}`),
       h('span', {class: 'muted card-sync'}, where),
       // What one does with the repo goes at the left: Forge (which leaves for another page) and Share beside
