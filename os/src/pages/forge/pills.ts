@@ -16,7 +16,7 @@ import type {Drag} from './drag.ts';
 // pills scroll after it). With no pill left the center says how to bring one out.
 
 /** What the band asks of the page it heads. */
-export interface BandWays {
+interface BandWays {
   /** A pill pressed: its repo is worked on in the box worked on. */
   show(name: string): void;
   /** Pressed with Ctrl (⌘): it opens beside (as a link opens in a new tab). */

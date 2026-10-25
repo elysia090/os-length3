@@ -100,7 +100,7 @@ export function numbering(gutter: HTMLElement): (text: string) => void {
 }
 
 /** A file's box, as the page draws it, that an editor is made in. */
-export interface FileBox {
+interface FileBox {
   repo: string;
   path: string;
   /** The file's head: what is asked when it was saved elsewhere comes under it. */

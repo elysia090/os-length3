@@ -284,7 +284,7 @@ class Forge {
     void store.list().then((repos) => this.choose(repos.map((r) => r.name)));
   }
 
-  /** The repos here are `all`: what stands in the row, and which is worked on. */
+  /** The repos here are `all`: the band and the row keep those still here, and one of them is worked on. */
   private choose(all: string[]) {
     const {row, band, ctx} = this;
     band.known(all, ctx.repo);
@@ -297,7 +297,17 @@ class Forge {
     const chosen = ctx.repo !== this.known;
     this.known = ctx.repo;
     // Opened for a repo (from File, Home or a new repo), or one chosen to work on elsewhere: it goes on the band.
-    if (ctx.repo && all.includes(ctx.repo) && (asked || chosen)) { this.show(ctx.repo, asked?.path ?? '', asked?.write ?? false, asked?.line ?? 0, false); return; }
+    if (ctx.repo && all.includes(ctx.repo) && (asked || chosen)) {
+      const at = asked ?? {path: '', write: false, line: 0};
+      this.show(ctx.repo, at.path, at.write, at.line, false);
+      return;
+    }
+    this.goOn(all);
+  }
+
+  /** Nothing asked for: the box worked on as it was, else the repo chosen, the first beside or the first on the band. */
+  private goOn(all: string[]) {
+    const {row, band, ctx} = this;
     if (row.repo && all.includes(repoOf(row.repo)) && row.shown.includes(row.repo)) { row.layout(); band.paint(); this.place.track(false); return; }
     row.repo = null;
     const open = ctx.repo && band.names.includes(ctx.repo) ? ctx.repo : row.shown[0] ?? band.names[0];

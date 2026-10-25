@@ -14,7 +14,7 @@ export const fileName = shownPath;
 /** Files open at first; past them, a file shows its name and counts until opened. */
 const OPEN = 3;
 
-export interface DiffOptions {
+interface DiffOptions {
   /**
    * Pressing a file's name opens it (not for a removed file); pressing a
    * line's number opens it at that line, selected, to write in. A removed
@@ -95,6 +95,82 @@ export function counted(add: number, del: number): HTMLElement {
     h('span', {class: 'diff-bar', 'aria-hidden': 'true'}, ...squares));
 }
 
+/** Where line `k` of `f` is in the file as it is now: its own number, or for a removed line the next line kept (else the last). */
+function nowAt(f: FileDiff, k: number): number | undefined {
+  const l = f.lines[k];
+  if (l.kind !== 'del') return l.at;
+  const after = f.lines.slice(k + 1).find((x) => x.kind === 'add' || x.kind === 'same');
+  if (after) return after.at;
+  const before = f.lines.slice(0, k).reverse().find((x) => x.kind === 'add' || x.kind === 'same');
+  return before?.at ? before.at + 1 : 1;
+}
+
+/** `f`'s line `l` (the `k`th) as a row: which line it is in the file, + or −, its words; none for the first part's head. */
+function diffRow(f: FileDiff, l: DiffLine, k: number, o: DiffOptions): HTMLElement | null {
+  // Between two parts of a file, a quiet "…".
+  if (l.kind === 'hunk') return k === 0 ? null : h('div', {class: 'diff-line hunk'}, h('span', {class: 'diff-no'}), h('span'), h('span', {}, '…'));
+  const at = o.reveal && f.status !== 'removed' ? nowAt(f, k) : undefined;
+  const no = at ? h('button', {type: 'button', class: 'diff-no go', tabindex: '-1', 'aria-label': t('Line {n} of {path}', {n: at, path: fileName(f.path)})}, l.at ? `${l.at}` : '')
+    : h('span', {class: 'diff-no'}, l.at ? `${l.at}` : '');
+  if (at) { const go = o.reveal!; no.addEventListener('click', () => go(f.path, at)); }
+  // The words in a span of their own, after the indent, so a mark is drawn over them as a highlighter is, line by line as they wrap.
+  const indent = /^[ \t]*/.exec(l.text)![0];
+  const words = l.text.slice(indent.length);
+  // + or − before the words (nothing for a line that stays), as any diff writes it.
+  const sign = h('span', {class: 'diff-sign', 'aria-hidden': 'true'}, l.kind === 'add' ? '+' : l.kind === 'del' ? '−' : '');
+  const row = h('div', {class: `diff-line ${l.kind}`}, no, sign, h('span', {class: 'diff-text'}, indent, h('span', {class: 'diff-words'}, words || ' ')));
+  o.line?.(row, `${f.path}:${k}`, l);
+  return row;
+}
+
+/** The head of `f`'s fold: its name (pressed, the file opens, unless it was removed) and what its change comes to. */
+function diffHead(f: FileDiff, o: DiffOptions): HTMLElement {
+  const add = f.lines.filter((l) => l.kind === 'add').length, del = f.lines.filter((l) => l.kind === 'del').length;
+  const name = h('span', {class: 'diff-name', title: f.path}, fileName(f.path));
+  if (o.reveal && f.status !== 'removed') {
+    const go = o.reveal;
+    name.classList.add('link');
+    name.addEventListener('click', (e) => { e.preventDefault(); go(f.path); });
+  }
+  return h('summary', {class: 'diff-head'}, name, f.binary ? h('span', {class: 'muted small'}, t('Binary')) : counted(add, del));
+}
+
+/**
+ * Under `f`'s lines, how many more there are: those `waiting` past the cut shown in `lines` when pressed, and what
+ * could not be read said.
+ */
+function moreLines(f: FileDiff, lines: HTMLElement, waiting: HTMLElement[]): HTMLElement | null {
+  const unread = () => h('p', {class: 'diff-more muted small'}, tn('{n} more line', '{n} more lines', f.more));
+  if (!waiting.length) return f.more ? unread() : null;
+  const more = h('button', {type: 'button', class: 'diff-more'}, tn('{n} more line', '{n} more lines', waiting.length + f.more)) as HTMLButtonElement;
+  more.addEventListener('click', () => {
+    lines.append(...waiting);
+    // What could not be read past 400 lines is still said; the rest are there now.
+    if (f.more) more.replaceWith(unread()); else more.remove();
+  });
+  return more;
+}
+
+/** `f`, the `i`th file of a diff: a fold, open if it is among the first few (or as it was left), or open beside its head. */
+function diffFile(f: FileDiff, i: number, o: DiffOptions): HTMLElement {
+  const head = diffHead(f, o);
+  // A binary file is put back only by going (one added since); its bytes are not written here.
+  const foot = o.putBack && (!f.binary || f.status === 'added') ? h('div', {class: 'diff-foot'}) : null;
+  if (foot) foot.append(putBackButton(f, foot, o.putBack!));
+  const body = f.binary ? [] : f.lines.map((l, k) => diffRow(f, l, k, o)).filter((row) => row !== null);
+  // Past `cut` lines, the rest wait under a quiet line that shows them when pressed.
+  const waiting = o.cut && body.length > o.cut + 4 ? body.splice(o.cut) : [];
+  const lines = h('div', {class: 'diff'}, ...body);
+  const more = moreLines(f, lines, waiting);
+  const after = [...(more ? [more] : []), ...(foot ? [foot] : [])];
+  if (o.beside) return h('div', {class: 'diff-file beside'}, h('div', {class: 'diff-head'}, ...head.childNodes), lines, ...after);
+  const fold = h('details', {class: 'diff-file'}, head, lines, ...after) as HTMLDetailsElement;
+  const key = o.kept ? `${o.kept}:${f.path}` : '';
+  fold.open = key && folded.has(key) ? folded.get(key)! : i < OPEN;
+  if (key) fold.addEventListener('toggle', () => folded.set(key, fold.open));
+  return fold;
+}
+
 /**
  * Files of a diff. Each is a fold: its name with what was added and
  * removed (+3 −1), and under it its lines, each with which line it is in
@@ -102,61 +178,5 @@ export function counted(add: number, del: number): HTMLElement {
  * wait closed, so a large change reads file by file.
  */
 export function diffFiles(files: FileDiff[], o: DiffOptions = {}): HTMLElement[] {
-  return files.map((f, i) => {
-    const add = f.lines.filter((l) => l.kind === 'add').length, del = f.lines.filter((l) => l.kind === 'del').length;
-    const name = h('span', {class: 'diff-name', title: f.path}, fileName(f.path));
-    if (o.reveal && f.status !== 'removed') {
-      const go = o.reveal;
-      name.classList.add('link');
-      name.addEventListener('click', (e) => { e.preventDefault(); go(f.path); });
-    }
-    const head = h('summary', {class: 'diff-head'}, name, f.binary ? h('span', {class: 'muted small'}, t('Binary')) : counted(add, del));
-    // A binary file is put back only by going (one added since); its bytes are not written here.
-    const foot = o.putBack && (!f.binary || f.status === 'added') ? h('div', {class: 'diff-foot'}) : null;
-    if (foot) foot.append(putBackButton(f, foot, o.putBack!));
-    // Where each line is in the file as it is now: its own number, or for a removed line the next line kept (else the last).
-    const now = (k: number): number | undefined => {
-      const l = f.lines[k];
-      if (l.kind !== 'del') return l.at;
-      const after = f.lines.slice(k + 1).find((x) => x.kind === 'add' || x.kind === 'same');
-      if (after) return after.at;
-      const before = f.lines.slice(0, k).reverse().find((x) => x.kind === 'add' || x.kind === 'same');
-      return before?.at ? before.at + 1 : 1;
-    };
-    const body = f.binary ? [] : f.lines.map((l, k) => {
-      // Between two parts of a file, a quiet "…".
-      if (l.kind === 'hunk') return k === 0 ? null : h('div', {class: 'diff-line hunk'}, h('span', {class: 'diff-no'}), h('span'), h('span', {}, '…'));
-      const at = o.reveal && f.status !== 'removed' ? now(k) : undefined;
-      const no = at ? h('button', {type: 'button', class: 'diff-no go', tabindex: '-1', 'aria-label': t('Line {n} of {path}', {n: at, path: fileName(f.path)})}, l.at ? `${l.at}` : '')
-        : h('span', {class: 'diff-no'}, l.at ? `${l.at}` : '');
-      if (at) { const go = o.reveal!; no.addEventListener('click', () => go(f.path, at)); }
-      // The words in a span of their own, after the indent, so a mark is drawn over them as a highlighter is, line by line as they wrap.
-      const indent = /^[ \t]*/.exec(l.text)![0];
-      const words = l.text.slice(indent.length);
-      // + or − before the words (nothing for a line that stays), as any diff writes it.
-      const sign = h('span', {class: 'diff-sign', 'aria-hidden': 'true'}, l.kind === 'add' ? '+' : l.kind === 'del' ? '−' : '');
-      const row = h('div', {class: `diff-line ${l.kind}`}, no, sign, h('span', {class: 'diff-text'}, indent, h('span', {class: 'diff-words'}, words || ' ')));
-      o.line?.(row, `${f.path}:${k}`, l);
-      return row;
-    }).filter(Boolean) as HTMLElement[];
-    // Past `cut` lines, the rest wait under a quiet line that shows them when pressed.
-    const waiting = o.cut && body.length > o.cut + 4 ? body.splice(o.cut) : [];
-    const lines = h('div', {class: 'diff'}, ...body);
-    const rest = waiting.length + f.more;
-    const more = waiting.length ? h('button', {type: 'button', class: 'diff-more'}, tn('{n} more line', '{n} more lines', rest)) as HTMLButtonElement
-      : f.more ? h('p', {class: 'diff-more muted small'}, tn('{n} more line', '{n} more lines', f.more)) : null;
-    if (more instanceof HTMLButtonElement) {
-      more.addEventListener('click', () => {
-        lines.append(...waiting);
-        // What could not be read past 400 lines is still said; the rest are there now.
-        if (f.more) more.replaceWith(h('p', {class: 'diff-more muted small'}, tn('{n} more line', '{n} more lines', f.more))); else more.remove();
-      });
-    }
-    if (o.beside) return h('div', {class: 'diff-file beside'}, h('div', {class: 'diff-head'}, ...head.childNodes), lines, ...(more ? [more] : []), ...(foot ? [foot] : []));
-    const fold = h('details', {class: 'diff-file'}, head, lines, ...(more ? [more] : []), ...(foot ? [foot] : [])) as HTMLDetailsElement;
-    const key = o.kept ? `${o.kept}:${f.path}` : '';
-    fold.open = key && folded.has(key) ? folded.get(key)! : i < OPEN;
-    if (key) fold.addEventListener('toggle', () => folded.set(key, fold.open));
-    return fold;
-  });
+  return files.map((f, i) => diffFile(f, i, o));
 }

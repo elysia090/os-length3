@@ -51,7 +51,7 @@ const tucked = (text: string): Node[] => text.split(/(?<=[A-Za-z0-9])(：)/).fil
 type Group = {path: string; hits: Hit[]};
 
 /** What was found: the files with the lines found in them, and the issues, changes and runs. */
-export interface Found { groups: Group[]; issues: Issue[]; diffs: FileChange[]; runs: Run[] }
+interface Found { groups: Group[]; issues: Issue[]; diffs: FileChange[]; runs: Run[] }
 
 /** The files whose name or lines have `query`, each with its lines, HIT_LIMIT lines at most in all. */
 function inFiles(files: Files, query: string): Group[] {
@@ -84,7 +84,7 @@ export function search(query: string, kind: Kind | null, files: Files, issues: I
 }
 
 /** What each thing found does when pressed. */
-export interface FoundWays {
+interface FoundWays {
   /** A file by its name: it is the one to work on, the caret in it. */
   file(path: string): void;
   /** A line found in a file. */

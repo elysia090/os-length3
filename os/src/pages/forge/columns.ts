@@ -15,7 +15,7 @@ import type {Drag} from './drag.ts';
  * One repo's page in the center: its box in the row (its head, and the page that scrolls), what reads it, where it
  * was scrolled to, and whether it must be read again.
  */
-export interface View { col: HTMLElement; flow: HTMLElement; reader: Reader; root: HTMLElement; top: number; stale: boolean }
+interface View { col: HTMLElement; flow: HTMLElement; reader: Reader; root: HTMLElement; top: number; stale: boolean }
 
 /** The repos side by side, as last left on this device (a convenience: the band is what is kept). */
 const BESIDE_KEY = 'length3.forge.beside';
@@ -38,7 +38,7 @@ export const shrink = (col: HTMLElement) => new Promise<void>((done) => {
 });
 
 /** What a box asks of the page it stands in. */
-export interface RowWays {
+interface RowWays {
   /** Pressed into (its head, or anything in it), the box is the one worked on. */
   activate(key: string): void;
   /** Its × closes it. */
