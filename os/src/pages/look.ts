@@ -1,6 +1,6 @@
 import {ago, h} from '../dom.ts';
 import {errorText} from '../errors.ts';
-import {keepOut, pop, putAway} from '../glide.ts';
+import {arrive, keepOut, pop, putAway} from '../glide.ts';
 import {t} from '../i18n.ts';
 import {mark} from '../icons.ts';
 import * as inbox from '../inbox.ts';
@@ -181,8 +181,11 @@ export function threadLook(address: string, name: string, open: () => void): Loo
       lines.replaceChildren(...th.messages.slice(-4).map(each));
       body.replaceChildren(lines, writeBack(t('Reply'), t('Send'), async (text) => {
         await inbox.send(address, text);
-        lines.append(said(t('You'), Date.now(), text, true));
-        lines.lastElementChild?.scrollIntoView({block: 'nearest'});
+        const line = said(t('You'), Date.now(), text, true);
+        lines.append(line);
+        // In from below, where it was written, as a message sent comes in Inbox.
+        arrive(line, 1, 'y', 8, 220);
+        line.scrollIntoView({block: 'nearest'});
       }));
       void inbox.markRead(address).then(() => lookForNews(), () => {});
     },
@@ -200,7 +203,9 @@ export function boardLook(board: string, name: string, open: () => void): Look {
       lines.replaceChildren(...[...read.posts].reverse().map((p) => said(p.mine ? t('You') : p.by, p.at, p.body, !!p.mine)));
       body.replaceChildren(lines, writeBack(t('Post'), t('Send'), async (text) => {
         const p = await servers.post(board, text);
-        lines.append(said(t('You'), p.at, p.body, true));
+        const line = said(t('You'), p.at, p.body, true);
+        lines.append(line);
+        arrive(line, 1, 'y', 8, 220);
       }));
     },
   };

@@ -2227,10 +2227,12 @@ written; their words start where the field's do); over the other two, from
 the stub's top to the page's foot, the conversation open, as a sheet. It
 stands on its foot: oldest above, the last thing said just over the field
 it is answered in, never a sheet's height of nothing between them.
-Before anyone has written there is no sheet, not a sheet of nothing: No
-messages yet stands under the field, and the first conversation brings its
-sheet in from that side; written to first, its row comes into the list at
-once. Writing is one line that grows as it is written: a message is named
+While no conversation is open there is no sheet, not a sheet of nothing
+(before anyone has written, No messages yet stands under the field): the
+one chosen brings its sheet in from that side, and another chosen while it
+is out comes into the sheet as it stands, faded in, not swapped at once;
+written to first, its row comes into the list at once. Sent, the keyboard
+stays in the field, for the next. Writing is one line that grows as it is written: a message is named
 the way an issue is ("Review：…", "Question：…"), and a `/root/…` path in it
 says what it is about, so there is nothing else to choose. Enter is a new
 line, Ctrl+Enter sends.

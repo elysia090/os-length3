@@ -28,7 +28,6 @@ export default {
   'You: ': 'あなた：',
   'Requests': 'リクエスト',
   'No messages yet': 'メッセージはまだありません',
-  'Choose a conversation, or write to a name or a code.': '会話を選ぶか、名前かコードに書いてください。',
   'Through the Remote': 'Remote 経由',
   'change {id}': 'Change {id}',
   'direct': '直接',

@@ -2459,6 +2459,7 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .tl-day { margin: var(--s5) 0 var(--s1); text-align: center; color: var(--sub); font: 600 var(--t-meta) var(--sans); }
 .tl-post { position: relative; display: grid; grid-template-columns: 36px minmax(0, 1fr); column-gap: var(--s3); margin: var(--s2) calc(-1 * var(--s2)) 0; padding: var(--s1) var(--s2); border-radius: var(--r-field); }
 .tl-post.tl-runs { margin-top: 0; }
+.tl-post { transition: background-color var(--motion); }
 .tl-post:hover, .tl-post:focus-within { background: var(--raised); }
 .tl-face { display: grid; place-items: center; width: 36px; height: 36px; margin-top: var(--s1); border-radius: var(--r-round); font: 700 var(--t-body) var(--sans); }
 /* A guest's face is no tint of theirs, only a dashed ring, beside the word guest: never taken for one of its people's. */
@@ -2471,8 +2472,12 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .tl-body { white-space: pre-wrap; overflow-wrap: anywhere; }
 .tl-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin-top: var(--s1); }
 .tl-foot:empty { display: none; }
-.tl-acts { position: absolute; top: calc(-1 * var(--s3)); right: var(--s2); z-index: 1; display: none; gap: var(--s1); }
-.tl-post:hover .tl-acts:not(:empty), .tl-post:focus-within .tl-acts:not(:empty) { display: flex; }
+/* A post's deeds come up over its corner as the pointer comes onto it (a short fade and rise, never there at once), and
+   go as it leaves; out of the way, they are not there to be pressed. */
+.tl-acts { position: absolute; top: calc(-1 * var(--s3)); right: var(--s2); z-index: 1; display: flex; gap: var(--s1);
+  opacity: 0; visibility: hidden; translate: 0 3px; transition: opacity 120ms ease-out, translate 160ms var(--land), visibility 0s 120ms; }
+.tl-acts:empty { display: none; }
+.tl-post:hover .tl-acts, .tl-post:focus-within .tl-acts { opacity: 1; visibility: visible; translate: 0 0; transition-delay: 0s; }
 .tl-act { background: var(--ground); }
 .tl-act[aria-pressed='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 .tl-foot-mark { height: 1px; }
@@ -2579,8 +2584,7 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .board-todo-head .muted { font-weight: 400; }
 .board-todo .todo-box { min-height: 0; margin-inline: calc(-1 * var(--s2)); border: 0; background: transparent; }
 .board-todo .todo-items { padding: 0; }
-.board-todo .todo-hint { display: none; }
-.board-todo .todo-box:focus-within .todo-hint { display: flex; padding-inline: var(--s2); }
+.board-todo .todo-hint { padding-inline: var(--s2); }
 .board-todo .error:empty { display: none; }
 @media (max-width: 760px) {
   .board-card:not(.board-new, .ghost-next) { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); }

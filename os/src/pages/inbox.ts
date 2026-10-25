@@ -311,10 +311,11 @@ export function inboxPage(ctx: Context): Node[] {
     if (had) rows.querySelector<HTMLElement>(`.inbox-row[data-address="${CSS.escape(had)}"]`)?.focus();
     // One quiet line in the open pane says what to do; none yet, it says so instead.
     if (!open && !unread) pane.removeAttribute('aria-label');
-    // Nobody written to or from yet, there is no sheet: not a sheet of nothing.
-    bare = !open && !unread && !all.length;
+    // No conversation open (none written yet, or none chosen), there is no sheet: not a sheet of nothing. The one
+    // chosen brings it in.
+    bare = !open && !unread;
     pane.parentElement?.classList.toggle('none', bare);
-    if (!open && !unread) pane.replaceChildren(...(all.length ? [h('p', {class: 'quiet'}, t('Choose a conversation, or write to a name or a code.'))] : []));
+    if (!open && !unread) pane.replaceChildren();
     // What came to the open conversation since it was drawn is put at its foot.
     const open_ = shownThread;
     const now = open_ && all.find((x) => x.address === open_.address);
@@ -327,7 +328,9 @@ export function inboxPage(ctx: Context): Node[] {
     // so one conversation never gets two panes, nor two direct lines.
     const asked = ++opened;
     open = address;
-    // The first conversation brings its sheet in, from the field that started it.
+    // The first conversation brings its sheet in, from the field that started it; another one, chosen while one is
+    // open, comes into the sheet as it is (what was there fading out of it as the new comes in), never at once.
+    const switching = !!pane.parentElement && !pane.parentElement.classList.contains('none') && pane.childElementCount > 0;
     if (pane.parentElement?.classList.contains('none')) {
       pane.parentElement.classList.remove('none');
       arrive(pane, -1, 'x', 24, 320);
@@ -446,6 +449,8 @@ export function inboxPage(ctx: Context): Node[] {
         void paintList(rows, pane);
       } catch (e) { error.textContent = errorText(e); }
       sendB.disabled = false;
+      // The keyboard stays where one writes, for the next (Send pressed and held while it sent, it would be nowhere).
+      if (text.isConnected) text.focus({preventScroll: true});
     };
     sendB.addEventListener('click', () => void go());
     text.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) { e.preventDefault(); void go(); } });
@@ -456,6 +461,7 @@ export function inboxPage(ctx: Context): Node[] {
         h('div', {class: 'row write-line'}, text, sendB),
         h('p', {class: 'muted small write-hint'}, t('Review: or Question: first to ask · a /root/… path says what it is about · Ctrl+Enter sends')), error));
     if (text.value) grow();
+    if (switching && !still()) for (const c of pane.children) c.animate([{opacity: 0}, {opacity: 1}], {duration: paced(180), easing: 'ease-out'});
     text.focus();
     text.setSelectionRange(text.value.length, text.value.length);
     if (th.mutual) startLive();
