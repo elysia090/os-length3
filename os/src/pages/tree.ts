@@ -4,6 +4,7 @@ import {t} from '../i18n.ts';
 import {mark} from '../icons.ts';
 import {bring, remoteOnly} from '../lifecycle.ts';
 import {plainPart, renamed, store} from '../repos.ts';
+import {shownName} from '../issues.ts';
 import {inRepo, list, ORIGIN_LABEL, type SystemEntry} from '../system.ts';
 import {answers, askFoot, SETTLE} from './common.ts';
 import {errorText} from '../errors.ts';
@@ -319,7 +320,9 @@ export class FileTree {
     const isRepo = at !== null && at.path === '';
     const row = h('div', {class: 'tree-row', style: `--depth:${depth}`});
     // Heard by its name alone, not by everything in its row (its triangle, its menu).
-    const item = h('li', {role: 'treeitem', class: isRepo ? 'tree-repo' : e.kind === 'dir' ? 'tree-dir' : 'tree-file', 'aria-label': e.name}, row);
+    // An issue's file is the issue (#3), as everywhere it is met.
+    const called = at && e.kind !== 'dir' ? shownName(at.path) : e.name;
+    const item = h('li', {role: 'treeitem', class: isRepo ? 'tree-repo' : e.kind === 'dir' ? 'tree-dir' : 'tree-file', 'aria-label': called}, row);
     // The system's own parts (the kernel's, the distribution's) are there to be found, quieter than the person's repos.
     if (e.origin && e.origin !== 'repos') item.classList.add('tree-sys');
     const meta = e.origin ? t(ORIGIN_LABEL[e.origin]) : e.kind === 'file' && e.size ? bytes(e.size) : '';
@@ -328,7 +331,7 @@ export class FileTree {
       // A link is shown by its name only: /bin/ls is a command, whatever it points to.
       row.append(h('span', {class: 'tree-spacer', 'aria-hidden': 'true'}));
       if (at) {
-        const name = h('button', {class: 'tree-name', type: 'button', 'data-in': at.repo, 'data-file': at.path, 'data-path': e.path}, e.name);
+        const name = h('button', {class: 'tree-name', type: 'button', 'data-in': at.repo, 'data-file': at.path, 'data-path': e.path}, called);
         if (at.repo === this.events.current() && at.path === this.events.currentFile()) name.setAttribute('aria-current', 'location');
         name.addEventListener('click', () => this.events.choose(at.repo, at.path, true));
         row.append(name);

@@ -5,6 +5,7 @@ import {h} from '../dom.ts';
 import {mark} from '../icons.ts';
 import {bring, onSync, remoteOnly} from '../lifecycle.ts';
 import {onChange, store} from '../repos.ts';
+import {shownName} from '../issues.ts';
 import {work as workOn} from '../history.ts';
 import type {Context} from './context.ts';
 import {bench} from './bench.ts';
@@ -373,7 +374,7 @@ function make(ctx: Context) {
     // A file beside says its repo quietly, then its name (its whole path when pointed at).
     const file = fileOf(name);
     const label = h('button', {type: 'button', class: 'col-name', title: file ?? name},
-      ...(file === null ? [name] : [h('span', {class: 'col-repo'}, repoOf(name)), file.split('/').at(-1)!]));
+      ...(file === null ? [name] : [h('span', {class: 'col-repo'}, repoOf(name)), shownName(file)]));
     label.addEventListener('click', () => activate(name));
     const close = h('button', {type: 'button', class: 'col-close', 'aria-label': t('Close {name} beside', {name})}, mark('close'));
     close.addEventListener('click', () => closeCol(name));

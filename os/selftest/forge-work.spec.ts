@@ -158,7 +158,7 @@ test('a file found by its name is opened to write in from the keyboard alone, an
 test('the right pane put away gives the center the width and takes the search with it; brought back, both are where they were', async ({app}) => {
   // issue/ is there from the start (the scaffold's).
   await app.file.named('hello', 'issue', 'New file', '001.md');
-  await app.forge.editFile('issue/001.md', 'Fix: the first\n');
+  await app.forge.editFile('#1', 'Fix: the first\n');
   await app.forge.show('Issue');
   await app.forge.reference.getByRole('button', {name: /#1 Fix：the first/}).click();
   await expect(app.forge.reference.getByRole('button', {name: 'Change its words'})).toBeVisible();

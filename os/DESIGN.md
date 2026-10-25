@@ -1937,7 +1937,11 @@ half written after reading its neighbours or another page.
   OS's business: one plain file in the repo's `issue/`, named by its number,
   so l3 and a Prompt see the same thing and nothing is kept twice; a file
   there with no number (written by hand, or two devices' issues that met
-  under one number) is given the next free one. Under the heading (its count, and
+  under one number) is given the next free one. Its file is never what a
+  person is shown: wherever a file is named (Forge's heads and the boxes
+  beside, File, Lately, the look, Git's diffs, the search, Edit's pill), the
+  file an issue is kept in is the issue, `#3`, and `@#3` in Edit's box goes to
+  it; only the Prompt, which is the repo as it is kept, says `issue/`. Under the heading (its count, and
   「Issue を書く」) the issues are large boxes side by side, oldest first:
   one in full, its neighbours' edges showing at the sides. The current box
   is a large place, an `ink` edge over `raised`. An edge is a clear button

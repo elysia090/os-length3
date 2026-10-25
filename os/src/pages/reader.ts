@@ -10,6 +10,7 @@ import {connection} from '../remote.ts';
 import {diffFiles} from './diff-view.ts';
 import {counts, lineOps} from '../linediff.ts';
 import {caretRect} from '../caret.ts';
+import {shownPath} from '../issues.ts';
 
 // The center of Forge: one repo read top to bottom as an endless page. Each
 // file is a plain text editor in its own box, loaded as it comes near; in
@@ -314,12 +315,13 @@ export class Reader {
       const dot = state.querySelector<HTMLElement>('.unsaved-dot');
       if (dot) putAway(dot, () => { if (dot.isConnected) state.textContent = ''; }); else state.textContent = '';
     };
-    // The heading is the file's place in "/": the repo part quiet, the rest plain.
-    const head = h('h2', {class: 'path'}, h('span', {}, h('span', {class: 'muted'}, `/root/${this.repo}/`), path), state);
+    // The heading is the file's place in "/": the repo part quiet, the rest plain; an issue's file is the issue (#3).
+    const shown = shownPath(path);
+    const head = h('h2', {class: 'path'}, h('span', {}, h('span', {class: 'muted'}, `/root/${this.repo}/`), shown), state);
     // Beside, in a box of its own: from its head's button, or Ctrl+click (⌘) on the head, as a link opens a tab.
     const beside = this.beside;
     if (beside && this.single === null) {
-      const open = h('button', {type: 'button', class: 'file-beside', 'aria-label': t('Open {path} beside', {path}), title: t('Open beside')}, mark('beside'));
+      const open = h('button', {type: 'button', class: 'file-beside', 'aria-label': t('Open {path} beside', {path: shown}), title: t('Open beside')}, mark('beside'));
       open.addEventListener('click', () => beside(path));
       head.append(open);
       head.addEventListener('click', (event) => { if ((event.ctrlKey || event.metaKey) && !(event.target as Element).closest('button')) beside(path); });
@@ -350,7 +352,7 @@ export class Reader {
         return;
       }
       const area = h('textarea', {class: 'code code-edit', rows: '1', wrap: 'off', spellcheck: 'false', autocapitalize: 'off',
-        'aria-label': t('Edit {path}', {path})}) as HTMLTextAreaElement;
+        'aria-label': t('Edit {path}', {path: shownPath(path)})}) as HTMLTextAreaElement;
       area.value = c.text;
       sheet.replaceChildren(gutter, area);
       this.editors.set(path, area);

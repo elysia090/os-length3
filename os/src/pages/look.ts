@@ -4,7 +4,7 @@ import {keepOut, pop, putAway} from '../glide.ts';
 import {t} from '../i18n.ts';
 import {mark} from '../icons.ts';
 import * as inbox from '../inbox.ts';
-import {issueName, readIssues, saveIssue, type Issue} from '../issues.ts';
+import {issueName, readIssues, saveIssue, shownName, type Issue} from '../issues.ts';
 import {look as lookForNews} from '../news.ts';
 import {store} from '../repos.ts';
 import * as servers from '../servers.ts';
@@ -165,7 +165,7 @@ export function boardLook(board: string, name: string, open: () => void): Look {
 /** Where one left off: the lines there, as they are now, and the way back into them. */
 export function leftOffLook(repo: string, path: string, at: number | null, open: () => void): Look {
   return {
-    title: path.slice(path.lastIndexOf('/') + 1),
+    title: shownName(path),
     open: {word: t('Go on writing'), go: open},
     async fill(body) {
       const text = (await store.read(repo, path)).text ?? '';

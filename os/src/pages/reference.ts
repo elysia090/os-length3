@@ -2,7 +2,7 @@ import {h} from '../dom.ts';
 import {glide, paced, still, where} from '../glide.ts';
 import {counted, diffFiles, fileName} from './diff-view.ts';
 import * as gitops from '../history.ts';
-import {issueName, issuePath, readIssues, type Issue} from '../issues.ts';
+import {issueName, issuePath, readIssues, shownPath, type Issue} from '../issues.ts';
 import {t, tn} from '../i18n.ts';
 import {inPieces, onChange, store, walkRepo, type Change} from '../repos.ts';
 import {findInText, nameFirst, nameMatches, stillAt, type Hit} from '../search.ts';
@@ -585,7 +585,7 @@ export class Reference {
     let stroke = 0;
     for (const g of nameFirst(groups, query)) {
       // A file chosen by its name is the one to work on: the caret goes in it.
-      const name = h('button', {type: 'button', class: 'choice hit-file'}, g.path);
+      const name = h('button', {type: 'button', class: 'choice hit-file'}, shownPath(g.path));
       name.addEventListener('click', () => { this.remember({what: 'query', text: query}); this.remember({what: 'file', path: g.path}); this.events.reveal(g.path, 0, true); });
       const c = changes.get(g.path);
       // Changed since the last commit: its diff is a press away, read under the box.

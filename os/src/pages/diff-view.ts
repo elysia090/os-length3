@@ -3,17 +3,13 @@ import type {DiffLine, FileDiff} from '../history.ts';
 import {t, tn} from '../i18n.ts';
 import {askFoot, SETTLE} from './common.ts';
 import {errorText} from '../errors.ts';
-import {numberOf} from '../issues.ts';
+import {shownPath} from '../issues.ts';
 
 /**
- * A file of a diff as it is called: an issue's file is the issue (issue/001.md is issue#1),
- * every other file its path. Only what is shown; what is done is done to the file itself.
+ * A file of a diff as it is called: an issue's file is the issue (issue/001.md is #1), every other file its path.
+ * Only what is shown; what is done is done to the file itself.
  */
-export function fileName(path: string): string {
-  const m = /^issue\/([^/]+)$/.exec(path);
-  const n = m ? numberOf(m[1]) : null;
-  return n === null ? path : `issue#${n}`;
-}
+export const fileName = shownPath;
 
 /** Files open at first; past them, a file shows its name and counts until opened. */
 const OPEN = 3;

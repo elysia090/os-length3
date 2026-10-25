@@ -36,6 +36,22 @@ export const issueName = (i: Pick<Issue, 'n'>): string => (i.n === null ? '' : `
 /** The path an issue is kept at. */
 export const issuePath = (i: Pick<Issue, 'file'>): string => `issue/${i.file}`;
 
+/** The issue a path in a repo keeps (issue/007.md: 7), or null for any other file. */
+export const issueAt = (path: string): number | null => {
+  const m = /^issue\/([^/]+)$/.exec(path);
+  return m ? numberOf(m[1]) : null;
+};
+/** A path as a person meets it: an issue's file is the issue (#7), every other file its path. */
+export const shownPath = (path: string): string => {
+  const n = issueAt(path);
+  return n === null ? path : `#${n}`;
+};
+/** A file's name as a person meets it: an issue's is the issue (#7), every other file's the last part of its path. */
+export const shownName = (path: string): string => {
+  const n = issueAt(path);
+  return n === null ? path.slice(path.lastIndexOf('/') + 1) : `#${n}`;
+};
+
 /**
  * A closed issue says so on its last line, after its detail: "Closed：2031-10-17 sora"
  * (the day it was closed, and who). Reopening takes the line away again.

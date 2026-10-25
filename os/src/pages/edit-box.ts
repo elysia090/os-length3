@@ -3,6 +3,7 @@ import {paced, still} from '../glide.ts';
 import {lineOf, lineStarts, parseEdit, plan, type Mark} from '../edit.ts';
 import {t} from '../i18n.ts';
 import {store} from '../repos.ts';
+import {numberOf, shownName} from '../issues.ts';
 import type {Writing} from './reader.ts';
 
 // The box at the center's foot as a line that edits the file in front (DESIGN.md § Forge, Edit): nothing to be in and
@@ -248,7 +249,7 @@ export class EditLine {
     const text = f.area.value, caret = f.area.selectionStart;
     let line = 1;
     for (let i = text.indexOf('\n'); i >= 0 && i < caret; i = text.indexOf('\n', i + 1)) line++;
-    return {file: f.path.slice(f.path.lastIndexOf('/') + 1), line};
+    return {file: shownName(f.path), line};
   }
 
   /** What the box holds, shown on the file and said; with it empty, the caret's line lit. */
@@ -467,16 +468,27 @@ export class EditLine {
     return true;
   }
 
-  /** `path`, written after @: shown in the center, the file in front from then on. */
+  /** `path`, written after @ (or an issue, #3): shown in the center, the file in front from then on. */
   async #choose(path: string) {
     const repo = this.#p.repo();
     if (!repo) return;
+    const asked = /^#(\d+)$/.exec(path);
+    if (asked) {
+      const file = (await store.tree(repo, 'issue').catch(() => [])).find((e) => e.kind === 'file' && numberOf(e.name) === Number(asked[1]));
+      if (!file) { this.#p.say(t('No {path} in {repo}', {path, repo})); return; }
+      return this.#open(repo, `issue/${file.name}`, path);
+    }
     const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
     const there = await store.tree(repo, dir).then((es) => es.some((e) => e.kind === 'file' && (dir ? `${dir}/${e.name}` : e.name) === path), () => false);
     if (!there) { this.#p.say(t('No {path} in {repo}', {path, repo})); return; }
+    this.#open(repo, path, path);
+  }
+
+  /** `path` of `repo` gone to in the center and, once its editor is there, the file in front; `shown` is what it is called. */
+  #open(repo: string, path: string, shown: string) {
     this.#p.reveal(path);
     this.#keep('');
-    this.#p.say(t('Editing {path}', {path}));
+    this.#p.say(t('Editing {path}', {path: shown}));
     // Read in as it is gone to: in front once its editor is there.
     const mine = ++this.#pending;
     let frames = 0;
