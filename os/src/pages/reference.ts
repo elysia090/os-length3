@@ -153,6 +153,8 @@ export class Reference {
   private unwatch: (() => void) | null = null;
   /** Stops following the store; null while it does not (off the screen). */
   private stop: (() => void) | null = null;
+  /** What had the keyboard before the search took it (from outside the search and what is under it). */
+  private before: HTMLElement | null = null;
 
   /** Begin a new issue in the repo shown, from the Issue pill with none open (the page says where it is written). */
   writeIssue: ((repo: string) => void) | null = null;
@@ -185,13 +187,23 @@ export class Reference {
       clearTimeout(this.findTimer);
       this.findTimer = window.setTimeout(() => void this.draw(), 150);
     });
+    this.query.addEventListener('focus', (event) => {
+      const from = event.relatedTarget as HTMLElement | null;
+      if (!from || !this.search.contains(from)) this.before = from;
+    });
     this.query.addEventListener('keydown', (event) => {
       if (event.isComposing) return;
       if (event.key === 'Escape') {
         if (this.reading) { event.preventDefault(); this.close(); void this.draw(); return; }
         if (this.query.value) { event.preventDefault(); this.query.value = ''; this.keep(); void this.draw(); return; }
-        // Nothing typed and nothing read: what is under the box goes, and the pane is straight again.
-        event.preventDefault(); this.query.blur(); return;
+        // Nothing typed and nothing read: what is under the box goes, and the pane is straight again. The keyboard goes
+        // back to what had it before the search took it, where it is still to be had; never left on nothing.
+        event.preventDefault();
+        const back = this.before;
+        this.before = null;
+        if (back?.isConnected && !back.closest('[hidden], [inert]') && back.getClientRects().length) back.focus({preventScroll: true});
+        else this.query.blur();
+        return;
       }
       // ↓ goes down into what is under the box; Enter takes the first of it (a file found by its name: the caret in it).
       if (event.key === 'ArrowDown') { const first = this.choices()[0]; if (first) { event.preventDefault(); first.focus(); } return; }

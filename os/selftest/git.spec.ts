@@ -70,6 +70,30 @@ test('a change on main is committed from main\'s card, named by its line', async
   await expect(app.forge.reference.getByText('README.md', {exact: true})).toBeHidden();
 });
 
+test('Escape puts away an issue being written and a commit\'s line, and they come back as they were', async ({signedIn: app}) => {
+  await app.newRepo.make('hello');
+  await app.rail.go('git');
+  await app.main.getByRole('button', {name: 'Write an issue'}).first().click();
+  await app.git.firstLine.fill('Fix: Say hello louder');
+  await app.page.keyboard.press('Escape');
+  await expect(app.git.firstLine).toBeHidden();
+  await expect(app.main.getByRole('button', {name: 'Write an issue'}).first()).toBeFocused();
+  await app.main.getByRole('button', {name: 'Write an issue'}).first().click();
+  await expect(app.git.firstLine).toHaveValue('Fix: Say hello louder');
+  await expect(app.git.firstLine).toBeFocused();
+  await app.main.getByRole('button', {name: 'Not now'}).click();
+
+  const card = app.git.mainCard('hello');
+  await card.getByRole('button', {name: 'Commit', exact: true}).click();
+  const line = card.getByRole('textbox', {name: 'The commit\'s line as Kind: title'});
+  await line.fill('Docs: Say where it runs');
+  await app.page.keyboard.press('Escape');
+  await expect(line).toBeHidden();
+  await expect(card.getByRole('button', {name: 'Commit', exact: true})).toBeFocused();
+  await card.getByRole('button', {name: 'Commit', exact: true}).click();
+  await expect(line).toHaveValue('Docs: Say where it runs');
+});
+
 test('an issue that will not be done is closed, listed under Closed, and Reopen brings it back', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
   await app.git.write('hello', 'Idea: Say it in French');

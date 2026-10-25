@@ -288,7 +288,10 @@ Every value in `styles.css` comes from a token (§2).
   is written belongs to what it was written for (the prompt box to its
   repo, an issue's words to the issue) and is swapped with it, never
   carried to another; it goes only when it is sent, saved, or put back
-  with Not now. The repo worked on is one on every page: chosen anywhere
+  with Not now. Escape puts away what is being written as Not now does
+  but keeps its words, folded: an issue's comes back as it was with
+  Write an issue, a commit's line with Commit, a server's or a board's
+  name being made when Server is out again. The repo worked on is one on every page: chosen anywhere
   (a pill, File, a Git chip, an issue gone to or started, one just
   written), it is the one the next page opens; only looking at a page
   chooses nothing. A thing made or chosen is landed on: a new issue is the
@@ -1329,7 +1332,9 @@ the TODO's paper pressed under its items gives the caret to the line at its
 foot, as a page written on does. In Forge a file's head, pressed (not to
 choose its words), is the file in File with what can be done to it (rename,
 move, delete), its name underlined under the pointer; pressed under the
-last file, on nothing, the caret goes to its end. Server's people are each a
+last file, on nothing, the caret goes to its end. A pill on the band is one
+thing to press: on its edge, round its name, it goes as on the name (its ×
+aside). Server's people are each a
 conversation: someone else pressed opens the Inbox to them, an arrow at the
 row's end under the pointer. Lately's rows, pressed twice, go straight
 there (what their card's own button does). Every pressable thing answers
@@ -1711,7 +1716,8 @@ away. The search box is the way to everything the center refers to: plain,
 case-insensitive, line by line in the repo's files (a file whose name holds
 the query first), and its open issues and its runs too; what is found
 opens under the box over the center while the box has the keyboard (↓ goes
-into it, Enter takes the first, Escape back to the box), and follows what is
+into it, Enter takes the first, Escape back to the box; with the box empty,
+Escape gives the keyboard back to what had it before), and follows what is
 saved. A file found by its name opens with the caret in it, a line with the
 line selected (where it is now, if it moved), a third of the way down, or
 with its file's head at the top when it is near it (never the empty foot of

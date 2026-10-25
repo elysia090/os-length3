@@ -21,14 +21,15 @@ import {keepOut, putAway, unfold} from '../glide.ts';
 //
 // What is half written stays until it is saved or put back with Not now:
 // going along the row to read another issue, or to another page, and back
-// finds it as it was, in the same box.
+// finds it as it was, in the same box. Escape puts it away as Not now does,
+// but keeps what was written, folded: Write an issue opens it as it was.
 
 export interface IssueForm {
   element: HTMLElement;
   /** Open the form for `repos`, `chosen` picked. */
   open(repos: readonly string[], chosen: string): void;
-  /** Open it again as it was left half written, if it was; true when it was. */
-  resume(repos: readonly string[]): boolean;
+  /** Open it again as it was left half written, if it was; true when it was. Folded away with Escape, only when `asked`. */
+  resume(repos: readonly string[], asked?: boolean): boolean;
   /** Write in `repo` from now on (chosen in the row above), what is written kept. */
   retarget(repo: string): void;
   /** Give the keyboard back to the line last written in (the repo chosen with the pointer took it), its caret where it was. */
@@ -40,7 +41,7 @@ export interface IssueForm {
  * asked for elsewhere and not opened yet (the first line then takes the
  * keyboard); `back` the repo whose Forge asked for it, gone back to on Not now.
  */
-let writing: {repo: string; first: string; detail: string; fresh?: boolean; back?: string} | null = null;
+let writing: {repo: string; first: string; detail: string; fresh?: boolean; back?: string; folded?: boolean} | null = null;
 /** An issue's words being changed, by repo/file. */
 const changing = new Map<string, {first: string; detail: string}>();
 const keyOf = (i: Issue) => `${i.repo}/${i.file}`;
@@ -80,9 +81,10 @@ export function issueForm(events: {done(made: {repo: string; file: string} | nul
   let retarget: (repo: string) => void = () => {};
   /** The field last written in: the first line until the body is. */
   let typing: HTMLElement | null = null;
-  const close = (made: {repo: string; file: string} | null) => {
+  const close = (made: {repo: string; file: string} | null, keep = false) => {
     const back = made ? null : writing?.back ?? null;
-    writing = null;
+    // Put away with Escape, what was written is kept, folded, for Write an issue to open again (in Git: not back).
+    writing = keep && writing && (writing.first.trim() || writing.detail.trim()) ? {repo: writing.repo, first: writing.first, detail: writing.detail, folded: true} : null;
     retarget = () => {};
     typing = null;
     const done = () => { element.hidden = true; element.replaceChildren(); events.done(made, back); };
@@ -91,7 +93,14 @@ export function issueForm(events: {done(made: {repo: string; file: string} | nul
     if (made) done(); else putAway(element, done, {fold: true, ms: 200});
   };
 
-  const open = (repos: readonly string[], chosen: string, was: NonNullable<typeof writing> | null = null) => {
+  element.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || event.isComposing || element.hidden) return;
+    event.preventDefault();
+    event.stopPropagation();
+    close(null, true);
+  });
+
+  const open = (repos: readonly string[], chosen: string, was: NonNullable<typeof writing> | null = null, asked = false) => {
     keepOut(element);
     let target = repos.includes(chosen) ? chosen : repos[0];
     const back = was?.back;
@@ -129,13 +138,15 @@ export function issueForm(events: {done(made: {repo: string; file: string} | nul
     element.hidden = false;
     // Opened by a press it unfolds, what stands under it making way (not pushed down at once); found open as it was
     // left (the page drawn again), it is simply there.
-    if (!shown && (!was || was.fresh)) unfold(element, 260);
-    // Opened anew (here, or asked for from Forge), the first line has the keyboard; opened again as it was left, nothing takes it.
+    if (!shown && (!was || was.fresh || asked)) unfold(element, 260);
+    // Opened anew (here, or asked for from Forge), the first line has the keyboard; opened again as it was left, nothing
+    // takes it, unless it was pressed for (folded away, Write an issue): then the line last written in, as it was.
     if (!was || was.fresh) f.first.focus();
+    else if (asked) (was.detail && !was.first.trim() ? f.body : f.first).focus();
   };
-  const resume = (repos: readonly string[]) => {
-    if (!writing) return false;
-    open(repos, writing.repo, writing);
+  const resume = (repos: readonly string[], asked = false) => {
+    if (!writing || (writing.folded && !asked)) return false;
+    open(repos, writing.repo, writing, asked);
     return true;
   };
   return {element, open, resume, retarget: (repo) => retarget(repo), writeOn: () => typing?.focus({preventScroll: true})};

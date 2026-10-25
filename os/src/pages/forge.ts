@@ -258,7 +258,8 @@ function make(ctx: Context) {
       const issue = onIssue.get(name);
       const open = h('button', {type: 'button', class: 'pill-name', title: issue ? t('On {issue}: what is written here is for it', {issue}) : t('Ctrl+click: open beside')},
         name, issue ? h('span', {class: 'pill-issue', 'aria-hidden': 'true'}, issue) : null);
-      open.addEventListener('click', (event) => { if (event.ctrlKey || event.metaKey) beside(name); else show(name); });
+      const go = (event: MouseEvent) => { if (event.ctrlKey || event.metaKey) beside(name); else show(name); };
+      open.addEventListener('click', go);
       const close = h('button', {type: 'button', class: 'pill-close', 'aria-label': t('Take {name} off the band', {name})}, mark('close'));
       // Taken off, the keyboard is not left on nothing: it goes to the pill now worked on (or the next), on the band.
       close.addEventListener('click', () => {
@@ -266,6 +267,8 @@ function make(ctx: Context) {
         (pills.querySelector<HTMLElement>('.pill[aria-current] .pill-name') ?? pills.querySelector<HTMLElement>('.pill-name'))?.focus({preventScroll: true});
       });
       const pill = h('span', {class: 'pill', 'data-repo': name, draggable: 'true'}, open, close);
+      // It is one thing to press: on its edge, round the name, it goes as on the name (the × aside).
+      pill.addEventListener('click', (event) => { if (event.target === pill) go(event); });
       // The middle button takes it off, as it closes a tab.
       pill.addEventListener('auxclick', (event) => { if (event.button === 1) { event.preventDefault(); takeOff(name); } });
       pill.addEventListener('dragstart', (event) => {

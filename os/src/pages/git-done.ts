@@ -19,6 +19,8 @@ const button = (text: string, kind = '') => h('button', {type: 'button', class: 
 
 /** The line a commit on main is being named by, per repo: kept as written until it is committed or put back with Not now. */
 const naming = new Map<string, string>();
+/** Repos whose line was put away with Escape: kept, the card back to Commit until it is pressed again. */
+const folded = new Set<string>();
 
 /** Committed on main from here, newest first, a few: each stays a line under main where its card was. */
 const committed: {repo: string; cut: git.Cut}[] = [];
@@ -77,13 +79,14 @@ export function mainCard(repo: string, n: number, events: IssueEvents, after: ()
     const foot = from ? askFoot(from, card) : answers;
     const was = card.isConnected ? card.getBoundingClientRect().height : 0;
     const line = h('input', {class: 'line-in', placeholder: t('Fix: what changed'), 'aria-label': t('The commit\'s line as Kind: title'), maxlength: '200', spellcheck: 'false'}) as HTMLInputElement;
+    folded.delete(repo);
     line.value = naming.get(repo) ?? '';
     naming.set(repo, line.value);
     line.addEventListener('input', () => naming.set(repo, line.value));
     const error = h('p', {class: 'error', role: 'alert'});
     const no = button(t('Not now'), 'small-button');
     const yes = button(t('Commit'), 'small-button primary');
-    no.addEventListener('click', () => { naming.delete(repo); plain().focus(); });
+    no.addEventListener('click', () => { naming.delete(repo); folded.delete(repo); plain().focus(); });
     const shown = performance.now();
     yes.addEventListener('click', async () => {
       if (performance.now() - shown < SETTLE) return;
@@ -102,12 +105,20 @@ export function mainCard(repo: string, n: number, events: IssueEvents, after: ()
     });
     // One line, nothing to break: Enter commits it, as Ctrl+Enter does.
     line.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); yes.click(); } });
+    // Escape puts it back as Not now does, but what was written waits for Commit to be pressed again.
+    line.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || e.isComposing) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (line.value.trim()) folded.add(repo); else naming.delete(repo);
+      plain().focus();
+    });
     card.replaceChildren(h('div', {class: 'off-ask'}, h('h3', {class: 'main-title'}, repo),
       h('p', {class: 'muted small'}, tn('{n} file to commit on main', '{n} files to commit on main', n)), line, error, foot(no, yes)));
     resize(card, was);
     line.focus({preventScroll: true});
   };
-  if (naming.has(repo)) ask(null); else plain();
+  if (naming.has(repo) && !folded.has(repo)) ask(null); else plain();
   return card;
 }
 

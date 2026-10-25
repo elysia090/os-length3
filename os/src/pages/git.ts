@@ -287,7 +287,7 @@ export function git(ctx: Context): Node[] {
     write.hidden = true;
     // The dashed card that stood for it becomes the issue being written.
     empty.hidden = true;
-    form.open(repos, filter || at || repos[0]);
+    if (!form.resume(repos, true)) form.open(repos, filter || at || repos[0]);
   });
 
   const load = () => void store.list().then((r) => {

@@ -99,3 +99,23 @@ test('a file saved on another device while written here is asked about, and Use 
   await expect(app.forge.editor('README.md')).toHaveValue('# hello\n\nWritten on the laptop.\n');
   await expect(app.forge.fileState('README.md')).toBeHidden();
 });
+
+test('Escape out of an empty search gives the keyboard back to what had it', async ({signedIn: app}) => {
+  await app.forge.promptBox.click();
+  await app.forge.search.click();
+  await app.forge.search.fill('hello');
+  await app.page.keyboard.press('Escape');
+  await expect(app.forge.search).toHaveValue('');
+  await app.page.keyboard.press('Escape');
+  await expect(app.forge.promptBox).toBeFocused();
+});
+
+test('a pill pressed on its edge, round its name, goes to its repo', async ({signedIn: app}) => {
+  await app.newRepo.make('world');
+  await app.forge.open('hello');
+  await app.forge.open('world');
+  const pill = app.forge.band.locator('.pill', {hasText: 'hello'});
+  const box = (await pill.boundingBox())!;
+  await app.page.mouse.click(box.x + 3, box.y + box.height / 2);
+  await expect(pill).toHaveAttribute('aria-current', 'page');
+});

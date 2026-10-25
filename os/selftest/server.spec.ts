@@ -77,6 +77,18 @@ test('what is half written in a board stays with it, through another board and t
   await expect(app.server.box('Packing')).toHaveValue('Bring the');
 });
 
+test('a board\'s name half written is there when Server is out again, put away with Escape', async ({signedIn: app}) => {
+  const field = app.server.layer.getByRole('textbox', {name: 'New board', exact: true});
+  const next = app.server.layer.getByRole('button', {name: 'Next board'});
+  for (let i = 0; i < 20 && !(await field.isVisible()); i++) await next.click();
+  await field.fill('Food');
+  await app.page.keyboard.press('Escape');
+  await expect(app.server.layer).toBeHidden();
+  await app.server.openLayer();
+  for (let i = 0; i < 20 && !(await field.isVisible()); i++) await next.click();
+  await expect(field).toHaveValue('Food');
+});
+
 test('someone added by name is asked in their Inbox, and is in the server once they accept', async ({signedIn: ada, another}) => {
   const bo = await addBo(ada, another);
 

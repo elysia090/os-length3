@@ -53,6 +53,12 @@ import {errorText} from '../errors.ts';
 const OPEN_DELAY = 600;
 const LINGER = 8000;
 const AT = 'length3.server.at';
+/**
+ * What is half written in a name being given, kept while the app runs as the box's words are: the server being made
+ * ('server', its name and its own address if written) and a board being made in a server ('board:' and its id). Put
+ * away with Escape or by going elsewhere, Server opens with it as it was; made, it is gone.
+ */
+const drafts = new Map<string, string>();
 
 function remembered(): {server?: string; board?: string} {
   try { return JSON.parse(localStorage.getItem(AT) ?? '{}') as {server?: string; board?: string}; } catch { return {}; }
@@ -292,6 +298,8 @@ export class ServerLayer {
     const newBoard = (now: boolean) => {
       if (!now) return h('div', {class: 'board-card board-new'}, h('div', {class: 'board-head'}, h('span', {class: 'muted'}, '+'), h('h2', {class: 'muted'}, t('New board'))));
       const name = h('input', {class: 'line-in', maxlength: '64', placeholder: t('What it is about'), 'aria-label': t('New board')}) as HTMLInputElement;
+      const kept = `board:${serverId}`;
+      name.value = drafts.get(kept) ?? '';
       const make = button(t('Make'), 'primary');
       const error = h('p', {class: 'error', role: 'alert'});
       writer(name, () => document.activeElement === name || !!name.value.trim());
@@ -307,12 +315,13 @@ export class ServerLayer {
         make.disabled = true;
         try {
           const b = await servers.makeBoard(serverId, name.value);
+          drafts.delete(kept);
           current()?.boards.push(b);
           show(serverId, b.id);
         } catch (e) { error.textContent = errorText(e); make.disabled = false; name.focus(); nudge(name); }
       };
       make.addEventListener('click', () => void done());
-      name.addEventListener('input', () => { error.textContent = ''; });
+      name.addEventListener('input', () => { error.textContent = ''; if (name.value) drafts.set(kept, name.value); else drafts.delete(kept); });
       name.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); void done(); } });
       return h('div', {class: 'board-card board-new'},
         h('div', {class: 'board-head'}, h('span', {class: 'muted'}, '+'), h('h2', {}, t('New board'))),
@@ -433,8 +442,17 @@ export class ServerLayer {
       const reveal = () => { at.hidden = true; address.hidden = false; fit(); handle.focus(); handle.select(); };
       at.addEventListener('click', reveal);
       const say = (v: string) => { for (const e of ghostNames) e.textContent = v.trim() || t('Trip'); };
-      name.addEventListener('input', () => { if (!own) handle.value = slug(name.value); fit(); naming?.classList.toggle('named', !!name.value.trim()); say(name.value); });
-      handle.addEventListener('input', () => { own = handle.value !== ''; fit(); });
+      const keep = () => { if (name.value || own) drafts.set('server', JSON.stringify([name.value, own ? handle.value : ''])); else drafts.delete('server'); };
+      name.addEventListener('input', () => { if (!own) handle.value = slug(name.value); fit(); naming?.classList.toggle('named', !!name.value.trim()); say(name.value); keep(); });
+      handle.addEventListener('input', () => { own = handle.value !== ''; fit(); keep(); });
+      // Half written before, it is as it was left.
+      const [was, wasAt] = JSON.parse(drafts.get('server') ?? '["", ""]') as [string, string];
+      if (was || wasAt) {
+        name.value = was;
+        handle.value = wasAt || slug(was);
+        own = !!wasAt;
+        if (own) { at.hidden = true; address.hidden = false; }
+      }
       fit();
       const make = button(t('Make'), 'small-button primary');
       // What the Remote said no to, at the chip's end: the plan, a name taken, a name of one's own to claim first.
@@ -442,6 +460,7 @@ export class ServerLayer {
       naming = h('span', {class: 'server-making'}, h('label', {class: 'chip server-naming'}, name, at, address), make, ask);
       paintTop();
       fit();
+      naming.classList.toggle('named', !!name.value.trim());
       writer(name, () => document.activeElement === name || document.activeElement === handle || !!name.value.trim());
       const done = async () => {
         // Enter pressed again while it is made makes no second server.
@@ -450,6 +469,7 @@ export class ServerLayer {
         ask.replaceChildren();
         try {
           const s = await servers.makeServer(name.value, handle.value);
+          drafts.delete('server');
           list.push(s);
           show(s.id);
           // Made: the faint shapes stand whole where they were, its chip taking it in with a pop.
