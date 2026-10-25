@@ -2388,6 +2388,16 @@ summary.done-head:hover { background: var(--raised); }
 .small-card > .card-foot { margin-top: auto; align-self: stretch; }
 .small-card > .off-ask { flex: 1; }
 .small-card .card-title { font-size: var(--t-body); }
+/* A person's card: their face before their name, as the side lists them; its line under starts under the name. */
+.person-title { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
+.small-card:has(.person-title) > .card-title + .muted { padding-left: calc(24px + var(--s2)); }
+/* Beside them, the card that adds someone has a face's place of its own, a dashed + in it: its word starts where their
+   names do. */
+.add-someone { position: relative; padding-left: calc(var(--s4) + 24px + var(--s2)); }
+.add-someone::before {
+  content: '+'; position: absolute; top: var(--s4); left: var(--s4); display: grid; place-items: center; width: 24px; height: 24px;
+  border: 1px dashed var(--edge); border-radius: 50%; font: 400 16px/1 var(--sans); color: var(--sub);
+}
 .small-card.mono-title .card-title { font-family: var(--mono); font-weight: 600; }
 .small-card.quiet { border-style: dashed; color: var(--sub); }
 .small-card.openable { cursor: var(--cursor-hand); }
@@ -2493,6 +2503,9 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .tl-start { padding: var(--s5) 0 var(--s2); text-align: center; min-height: 1lh; }
 /* No post yet: the line at the talk's foot, by the box one writes in, where the first post will come. */
 .timeline.tl-empty { display: flex; flex-direction: column; justify-content: flex-end; min-height: 100%; }
+/* A board's talk stands on its foot: a few posts stand at its foot, by the box they are written in, the latest just over
+   it, never at its top over a sheet of nothing; more than it holds, it scrolls as it did. */
+.board-talk > .timeline { display: flex; flex-direction: column; justify-content: flex-end; min-height: 100%; }
 .timeline.tl-empty > .tl-start { padding: var(--s2) 0; }
 .tl-pages { overflow-anchor: none; }
 .tl-day { margin: var(--s5) 0 var(--s1); text-align: center; color: var(--sub); font: 600 var(--t-meta) var(--sans); }
@@ -2505,7 +2518,10 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .tl-guest > .tl-face { border: 1px dashed var(--edge); background: transparent; }
 /* In a run, the face's place holds the time, shown on hover. */
 /* A post in a run: its time, on hover, no taller than the line beside it, so a run's lines keep one rhythm. */
-.tl-face.tl-at { height: 1lh; margin-top: 0; border: 0; border-radius: 0; place-items: center end; font-size: 11px; line-height: inherit; overflow: hidden; visibility: hidden; }
+/* The time as the post's head says it (quiet, not bold), whole: wider than the face's place in a wide face, it runs
+   on to the left into the post's own padding rather than being cut. */
+.tl-face.tl-at { height: 1lh; margin-top: 0; border: 0; border-radius: 0; place-items: center end; font-size: 11px; font-weight: 400; font-variant-numeric: tabular-nums;
+  line-height: inherit; color: var(--sub); white-space: nowrap; overflow: visible; visibility: hidden; }
 .tl-post:hover .tl-at, .tl-post:focus-within .tl-at { visibility: visible; }
 .tl-who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s2); }
 .tl-body { white-space: pre-wrap; overflow-wrap: anywhere; }

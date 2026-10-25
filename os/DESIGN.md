@@ -393,8 +393,9 @@ what is its own.
   never inside another box.
 - **The dashed card.** Room for something that is not here yet, and the
   way to make it: a card with a dashed `rule` edge and a quiet word in its
-  middle (New repo; Add someone you know, among the people's cards, starts
-  where their names start). Pressed, it becomes the card it
+  middle (New repo; Add someone you know, among the people's cards, each
+  with its person's face before their name, has a dashed + in a face's
+  place and starts where their names start). Pressed, it becomes the card it
   makes. A dashed box with a quiet line is also the empty state: nothing
   here yet, said once, in the place where it would be (the center), as
   wide as its words. A pane beside it with nothing to show says nothing:
@@ -2291,7 +2292,8 @@ you know, to talk with and get things done together. Inbox is one
 person to one person, about something that asks for an answer; a server is
 a group, and nobody in it is asked for anything. A repo belongs to a person,
 who may show it in a server: there it is only seen, as it was last pushed
-(§5, Names). A server's own repos are what comes next.
+(§5, Names); nothing pushed yet, its line says so and no sheet stands under
+it. A server's own repos are what comes next.
 
 A server is a name and its people. Someone already in it adds people from
 their own Inbox contacts, so a server is people who know each other; or by

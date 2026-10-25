@@ -5,6 +5,7 @@ import * as servers from '../servers.ts';
 import {copying, deed, parts} from './common.ts';
 import {askIn, boardName, button, foot, footLeft, line, MOVE, smallCard} from './server-parts.ts';
 import {errorText} from '../errors.ts';
+import {personBadge} from './pane.ts';
 
 // Behind the gear: what changes the server for everyone. In parts, as
 // Remote's page is (its people, the repos shown, its boards, the server
@@ -116,7 +117,9 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
       typed.focus();
     });
     grid('people', ...people.map((p) => {
-      const c = smallCard(named(p.address), line(p.owner ? t('owner') : p.address === mine ? t('you') : ''));
+      // Who it is as the side and the talk show them: their round initial on its tint, then their name.
+      const c = smallCard(h('span', {class: 'person-title'}, personBadge(named(p.address)), h('span', {}, named(p.address))),
+        line(p.owner ? t('owner') : p.address === mine ? t('you') : ''));
       if (s.owner && p.address !== mine) {
         const out = button(t('Remove'), 'small-button');
         out.addEventListener('click', () => askIn(c, out, named(p.address), t('{who} leaves {server}.', {who: named(p.address), server: s.name}),
