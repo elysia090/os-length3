@@ -5,7 +5,7 @@ import {store} from '../repos.ts';
 import {kindOf, named} from '../text.ts';
 import {answers} from './common.ts';
 import {errorText} from '../errors.ts';
-import {keepOut, putAway} from '../glide.ts';
+import {keepOut, putAway, unfold} from '../glide.ts';
 
 // Writing an issue: its first line named like a TODO item ("Fix：件名"),
 // the repo it goes in said quietly before it, then the detail. The repo is
@@ -86,8 +86,9 @@ export function issueForm(events: {done(made: {repo: string; file: string} | nul
     retarget = () => {};
     typing = null;
     const done = () => { element.hidden = true; element.replaceChildren(); events.done(made, back); };
-    // Put back with Not now, it goes as it came before the issues come back; made, it goes to its box (git.ts).
-    if (made) done(); else putAway(element, done);
+    // Put back with Not now, it folds away, the issues under it rising into its room as it does (never a jump once
+    // it has gone); made, it goes to its box (git.ts).
+    if (made) done(); else putAway(element, done, {fold: true, ms: 200});
   };
 
   const open = (repos: readonly string[], chosen: string, was: NonNullable<typeof writing> | null = null) => {
@@ -124,7 +125,11 @@ export function issueForm(events: {done(made: {repo: string; file: string} | nul
     });
     element.replaceChildren(h('div', {class: 'issue-first'}, where, f.first), f.body, error,
       h('div', {class: 'answers'}, make, h('span', {class: 'grow'}), cancel));
+    const shown = !element.hidden;
     element.hidden = false;
+    // Opened by a press it unfolds, what stands under it making way (not pushed down at once); found open as it was
+    // left (the page drawn again), it is simply there.
+    if (!shown && (!was || was.fresh)) unfold(element, 260);
     // Opened anew (here, or asked for from Forge), the first line has the keyboard; opened again as it was left, nothing takes it.
     if (!was || was.fresh) f.first.focus();
   };
