@@ -13,6 +13,16 @@ const CONTROLS = 'button, [href], input, textarea, select, [tabindex]';
 /** How long the same control is waited for before the nearest place takes the keyboard. */
 const WAIT = 600;
 
+/**
+ * A text field drawn again under the keyboard keeps where its caret was and what was selected, when its words are
+ * the same (a field taken away still holds both): what is typed next goes where it would have, not after the end.
+ */
+function carry(from: HTMLElement, to: HTMLElement) {
+  const text = (e: HTMLElement): e is HTMLInputElement | HTMLTextAreaElement => e instanceof HTMLTextAreaElement || e instanceof HTMLInputElement;
+  if (!text(from) || !text(to) || from.value !== to.value) return;
+  try { to.setSelectionRange(from.selectionStart, from.selectionEnd, from.selectionDirection ?? undefined); } catch { /* a field with no caret (a number, a date) */ }
+}
+
 const usable = (el: Element): el is HTMLElement =>
   el instanceof HTMLElement && el.isConnected && !(el as HTMLButtonElement).disabled && !el.closest('[hidden], [inert]')
   && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
@@ -50,7 +60,8 @@ export function keepFocus(doc: Document = document) {
     const home = around.find((a) => a.isConnected && !a.closest('[hidden]'));
     if (!home) { since = 0; return; }
     const same = [...home.querySelectorAll(CONTROLS)].find((c): c is HTMLElement => what(c) === was && usable(c));
-    if (same) { same.focus({preventScroll: true}); since = 0; return; }
+    // The one that went, taken before the focus moves (its focusin makes the new one `last`).
+    if (same) { const went = last; same.focus({preventScroll: true}); carry(went, same); since = 0; return; }
     if (performance.now() - since < WAIT) { timer = window.setTimeout(settle, WAIT); return; }
     // Not coming back: the nearest place around it that takes the keyboard, else the page (or the layer) itself.
     const place = around.find((a) => a.isConnected && a.hasAttribute('tabindex') && usable(a))

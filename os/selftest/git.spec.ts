@@ -169,6 +169,8 @@ test('a summary written and not left yet is kept through a reload, and saved the
   await app.newRepo.make('tide-tables');
   await app.rail.go('git');
   await app.git.write('tide-tables', 'Fix: The table wraps', 'On a phone.');
+  // Made: the issue's own box, not the form's field that had the same words a moment before.
+  await expect(app.git.issue('#1 Fix：The table wraps')).toBeVisible();
   const summary = app.main.getByRole('textbox', {name: 'Summary'});
   await expect(summary).toHaveValue('On a phone.');
   // Still in the field (nothing has saved it) when the page goes.
@@ -183,6 +185,26 @@ test('a summary written and not left yet is kept through a reload, and saved the
   await app.settled();
   await app.rail.go('git');
   await expect(summary).toHaveValue('On a phone, at 320 px.');
+});
+
+test('a field drawn again under the keyboard keeps its caret and what was selected in it', async ({app}) => {
+  await app.newRepo.make('tide-tables');
+  await app.rail.go('git');
+  await app.git.write('tide-tables', 'Fix: The table wraps', 'On a phone.');
+  await expect(app.git.issue('#1 Fix：The table wraps')).toBeVisible();
+  const summary = app.main.getByRole('textbox', {name: 'Summary'});
+  await summary.click();
+  await summary.press('Control+A');
+  // Drawn again under it, as a draw that comes late is: the same field, anew, where the old one stood.
+  await app.page.evaluate(() => {
+    const old = document.querySelector<HTMLTextAreaElement>('textarea.issue-summary')!;
+    const anew = old.cloneNode() as HTMLTextAreaElement;
+    anew.value = old.value;
+    old.replaceWith(anew);
+  });
+  await expect(summary).toBeFocused();
+  await app.page.keyboard.insertText('At 320 px.');
+  await expect(summary).toHaveValue('At 320 px.');
 });
 
 test('the detail of a new issue has the room the repos inside the box had', async ({app}) => {
