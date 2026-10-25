@@ -1,15 +1,16 @@
 import {bytes, h} from '../../ui/dom.ts';
+import type {Stopped} from '../../app/host.ts';
 import {t, tn} from '../../i18n.ts';
 import {allSessions, type Session} from '../bench/terminal.ts';
 import {getState, setState} from '../../home/state.ts';
 import {button, card, message} from './parts.ts';
 
-// Runtime's Prompts running: a small card each, with what it holds, Stop, and the root's network switch.
+// Runtime's Prompts running, each a small card: where it runs, the memory it holds, and Stop. Shown only when one
+// runs (or one stopped here says what it gave back).
 
 /** The repos whose Prompt was stopped from its card just now, until their card says so (and lights what it gave back). */
 const stoppedNow = new Set<string>();
 
-/** The Prompts running, each a small card: where it runs, the memory it holds, and Stop. Shown only when one runs. */
 // Which repos' Prompts may reach the network: this device's grant (core's home `network`, which l3 reads too).
 const granted = (): string[] => { try { return JSON.parse(getState('network') ?? '[]') as string[]; } catch { return []; } };
 async function grant(repo: string, on: boolean) {
@@ -53,12 +54,13 @@ export function prompts(shown_: (running: number, any: boolean) => void = () => 
   let had = '';
   // Each session is watched once, for as long as the page is shown.
   const watched = new Map<Session, () => void>();
+  const watch = (s: Session) => { if (!watched.has(s)) watched.set(s, s.watch(paint)); };
   let first = true;
   const paint = () => {
     if (!first && !section.isConnected) { for (const u of watched.values()) u(); watched.clear(); return; }
     first = false;
     // Every session is heard, so one still starting is shown once it runs.
-    for (const [, s] of allSessions()) if (!watched.has(s)) watched.set(s, s.watch(paint));
+    for (const [, s] of allSessions()) watch(s);
     // Running ones, and ones stopped here, with what stopping gave back.
     const shown = allSessions().filter(([, s]) => s.running || s.stopped);
     section.hidden = !shown.length;
@@ -66,32 +68,37 @@ export function prompts(shown_: (running: number, any: boolean) => void = () => 
     shown_(running, shown.length > 0);
     const now = shown.filter(([, s]) => s.running).map(([repo]) => repo).sort().join('\n');
     if (now !== had) { const before = had; had = now; if (before || now) changed(); }
-    section.replaceChildren(
-      h('div', {class: 'grid small-grid'}, ...shown.map(([repo, s]) => {
-        if (!watched.has(s)) watched.set(s, s.watch(paint));
-        if (!s.running && s.stopped) {
-          const st = s.stopped;
-          // Stopped just now from here: what it gave back is lit a moment, the reward for stopping it.
-          const now = !st.left && stoppedNow.delete(repo);
-          return card(repo, [st.left ? tn('{n} left', '{n} left', st.left)
-            : `${t('Stopped · gave back {size}', {size: bytes(st.before.memory)})}${st.ms !== null ? ` · ${st.ms} ms` : ''}`], null, now ? 'quiet just-stopped' : 'quiet');
-        }
-        const stop = button(t('Stop'), 'small-button');
-        stop.addEventListener('click', () => { stoppedNow.add(repo); s.stop(); });
-        // In a browser, what it keeps for programs it ran can go without stopping it.
-        const free = s.spare ? button(t('Free {size}', {size: bytes(s.spare)}), 'small-button') : null;
-        free?.addEventListener('click', () => s.free());
-        const lines: (string | Node)[] = [[s.on === 'root' ? `root · ${tn('{n} process', '{n} processes', s.processes)}` : 'l3', s.memory ? bytes(s.memory) : ''].filter(Boolean).join(' · ')];
-        if (s.freed !== null) lines.push(t('Gave back {size}', {size: bytes(s.freed)}));
-        // Only the root's Prompt can have a network: in a browser its programs have no sockets at all.
-        let el: HTMLElement | null = null;
-        if (s.on === 'root') lines.push(networkSwitch(repo, s, () => el!));
-        // 空ける sits at the left as it does on every card (Remote's off one too); Stop at the right.
-        el = card(repo, lines, null);
-        el.append(h('div', {class: 'card-foot'}, free, h('span', {class: 'grow'}), stop));
-        return el;
-      })));
+    section.replaceChildren(h('div', {class: 'grid small-grid'}, ...shown.map(([repo, s]) => {
+      watch(s);
+      return !s.running && s.stopped ? stoppedCard(repo, s.stopped) : runningCard(repo, s);
+    })));
   };
   paint();
   return section;
+}
+
+/** A Prompt stopped here: what stopping it gave back, and in how long, or how many of its processes are left. */
+function stoppedCard(repo: string, st: Stopped): HTMLElement {
+  // Stopped just now from here: what it gave back is lit a moment, the reward for stopping it.
+  const now = !st.left && stoppedNow.delete(repo);
+  return card(repo, [st.left ? tn('{n} left', '{n} left', st.left)
+    : `${t('Stopped · gave back {size}', {size: bytes(st.before.memory)})}${st.ms !== null ? ` · ${st.ms} ms` : ''}`], null, now ? 'quiet just-stopped' : 'quiet');
+}
+
+/** A Prompt running: where it runs and the memory it holds, what it gave back, the root's network; Free and Stop. */
+function runningCard(repo: string, s: Session): HTMLElement {
+  const stop = button(t('Stop'), 'small-button');
+  stop.addEventListener('click', () => { stoppedNow.add(repo); s.stop(); });
+  // In a browser, what it keeps for programs it ran can go without stopping it.
+  const free = s.spare ? button(t('Free {size}', {size: bytes(s.spare)}), 'small-button') : null;
+  free?.addEventListener('click', () => s.free());
+  const lines: (string | Node)[] = [[s.on === 'root' ? `root · ${tn('{n} process', '{n} processes', s.processes)}` : 'l3', s.memory ? bytes(s.memory) : ''].filter(Boolean).join(' · ')];
+  if (s.freed !== null) lines.push(t('Gave back {size}', {size: bytes(s.freed)}));
+  // Only the root's Prompt can have a network: in a browser its programs have no sockets at all.
+  let el: HTMLElement | null = null;
+  if (s.on === 'root') lines.push(networkSwitch(repo, s, () => el!));
+  // 空ける sits at the left as it does on every card (Remote's off one too); Stop at the right.
+  el = card(repo, lines, null);
+  el.append(h('div', {class: 'card-foot'}, free, h('span', {class: 'grow'}), stop));
+  return el;
 }

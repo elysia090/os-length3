@@ -28,7 +28,7 @@ export function checkoutBackPage(how: 'paid' | 'cancelled' | 'managed', tier: Pa
 }
 
 /** A trip to Stripe as Remote's Plan makes it and hears of it (stripeTrip). */
-export interface StripeTrip {
+interface StripeTrip {
   /** How the last trip to Stripe went, said above the plan until the plan says it itself. */
   told: HTMLElement;
   /** The plan read again (`p`): what it says of the trip, once the Remote has heard it. */

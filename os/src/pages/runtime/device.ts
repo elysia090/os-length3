@@ -1,5 +1,5 @@
 import {bytes, h} from '../../ui/dom.ts';
-import {isNative, rootFetch, rootStatus, type Certainty, type Freed, type Space} from '../../app/host.ts';
+import {isNative, rootFetch, rootStatus, type Certainty, type Freed, type RootStatus, type Space} from '../../app/host.ts';
 import {t, tn} from '../../i18n.ts';
 import {bring, remoteOnly, repoState} from '../../remote/lifecycle.ts';
 import {connection} from '../../remote/connection.ts';
@@ -63,7 +63,6 @@ const thing = (name: Node | string, size: number | null, note: string, act?: Nod
 export function device(ctx: Context, u: Space, last: Freed | null, again: (r: Freed | null) => void): HTMLElement {
   const total = u.host_total || 1;
   const error = h('p', {class: 'error', role: 'alert'});
-  const buttons: HTMLButtonElement[] = [];
   const go = (ids: string[], held: HTMLButtonElement[]) => {
     for (const b of held) b.disabled = true;
     void free(ids).then(again, (e) => {
@@ -71,76 +70,10 @@ export function device(ctx: Context, u: Space, last: Freed | null, again: (r: Fr
       error.textContent = message(e);
     });
   };
-
-  // A repo, in whichever column: its name is the repo itself (its own place), its gear Forge or Free, as on Home.
-  const repoName = (name: string) => {
-    const b = h('button', {type: 'button', class: 'link-name'}, name);
-    b.addEventListener('click', () => openRepoPlace(ctx, name));
-    return b;
-  };
-  let freed: Freed | null = null;
-  const gearOf = (name: string, why: string | null, bring_ = false) => repoGear(name, {
-    forge: async () => { if (bring_) await bring(name); ctx.openRepo(name); },
-    why: async () => why,
-    // Freed from its row: what it came to is said over the box, as Free all's is, and the columns read again.
-    free: async () => { const r = await free([`repo:${name}`]); if (r.kept.length && !r.removed.length) throw new Error(r.kept[0][1]); freed = r; },
-    freed: () => again(freed),
-  });
-
-  // On this device: everything, largest first, and why what stays stays.
-  const here = u.items.map((i) => {
-    const repo = i.id.startsWith('repo:');
-    const repoNote = repo ? syncWord(repoState(i.what)) : '';
-    // l3 is a command's name, written as code is (in the sans face its l reads as a capital I).
-    const name = repo ? repoName(i.what) : i.id === 'l3' ? h('code', {class: 'mono'}, i.what) : i.what;
-    return thing(name, i.allocated, [i.detail, repoNote].filter(Boolean).join(' · '), null,
-      i.room === 'Keep' ? i.why : '', repo ? gearOf(i.what, i.room === 'Keep' ? i.why : null) : undefined);
-  });
-
-  // Can be freed: Free; a repo's changes go to the Remote first, as they would anyway.
-  const freeable = u.items.filter((i) => i.room !== 'Keep');
-  const going = freeable.map((i) => {
-    const b = button(t('Free'));
-    b.title = i.why;
-    buttons.push(b);
-    b.addEventListener('click', () => go([i.id], [b]));
-    const repo = i.id.startsWith('repo:');
-    return thing(repo ? repoName(i.what) : i.what, i.allocated, '', b, i.why, repo ? gearOf(i.what, null) : undefined);
-  });
-  const all = h('button', {class: 'button', type: 'button'}, t('Free all')) as HTMLButtonElement;
-  all.addEventListener('click', () => go(freeable.map((i) => i.id), [all, ...buttons]));
-
-  // On the Remote: what can come here.
-  const coming: Node[] = remoteOnly().map((r) => {
-    const b = button(t('Fetch'));
-    b.addEventListener('click', async () => {
-      b.disabled = true;
-      try { await bring(r.name); again(null); } catch (e) { error.textContent = message(e); b.disabled = false; }
-    });
-    return thing(repoName(r.name), r.bytes, t('repo · comes here, then opens'), b, '', gearOf(r.name, t('It is only on the Remote: nothing of it is here to free'), true));
-  });
-  // What is only there, not all it holds: its size is what would come here.
-  const remoteCol = column('remote-col', t('Only on the Remote'), remoteOnly().reduce((n, r) => n + r.bytes, 0), coming,
-    connection() ? t('All of it is here too') : t('Sign in to see what the Remote holds'));
-  if (isNative) {
-    void rootStatus().then((root) => {
-      if (!root || root.current) return;
-      const b = button(t('Fetch'));
-      const note = h('span', {class: 'muted small'}, t('the root Prompts run on'));
-      b.addEventListener('click', () => {
-        b.disabled = true;
-        void rootFetch((got, of, retry) => {
-          note.textContent = retry ? t('{why}; continuing where it stopped', {why: retry}) : t('Fetching {got} / {of}', {got: bytes(got), of: bytes(of)});
-        }).then(() => again(null), (e) => { note.textContent = message(e); b.disabled = false; });
-      });
-      const row = h('div', {class: 'space-row'},
-        h('div', {class: 'space-what'}, h('span', {class: 'space-name'}, `${root.release.name} ${root.release.version}`), note),
-        h('span', {class: 'space-size'}, bytes(root.release.bytes)), b);
-      remoteCol.querySelector('.space-empty')?.remove();
-      remoteCol.querySelector('.space-list')!.prepend(row);
-    }, (e) => { error.textContent = message(e); });
-  }
-
+  const repo = repoParts(ctx, again);
+  const here = hereRows(u, repo);
+  const freeCol = freeColumn(u, repo, go);
+  const remoteCol = remoteColumn(repo, again, error);
   return h('section', {class: 'section device-part', 'aria-label': isNative ? t('This device') : t('This browser')},
     meter(total, u.host_free, u.allocated, t('{os} of {total} is this OS', {os: bytes(u.allocated), total: bytes(u.host_total)})),
     h('div', {class: 'legend'},
@@ -151,11 +84,101 @@ export function device(ctx: Context, u: Space, last: Freed | null, again: (r: Fr
     // What is here, what is on the Remote, then what can be freed.
     h('div', {class: 'space-box'},
       column('here-col', isNative ? t('On this device') : t('In this browser'), u.allocated, here, t('No repos yet')),
-      remoteCol,
-      // Nothing to free, the reason is each one's own (not on the Remote yet, a Prompt in it): said on its row.
-      column('free-col', t('Can be freed'), u.freeable, going, t('Nothing to free: what stays here says why'),
-        freeable.length > 1 ? [h('span', {class: 'muted small grow'}, t('Repos stay on the Remote and come back when opened.')), all] : [])),
+      remoteCol, freeCol),
     error);
+}
+
+/** A repo in whichever column: its name is the repo itself (its own place), its gear Forge or Free, as on Home. */
+interface RepoParts {
+  name(name: string): HTMLElement;
+  /** Its gear: `why` it cannot be freed (null: it can), and `bring`, when it is only on the Remote. */
+  gear(name: string, why: string | null, bring?: boolean): {gear: HTMLButtonElement; list: HTMLElement};
+}
+
+function repoParts(ctx: Context, again: (r: Freed | null) => void): RepoParts {
+  let freed: Freed | null = null;
+  return {
+    name: (name) => {
+      const b = h('button', {type: 'button', class: 'link-name'}, name);
+      b.addEventListener('click', () => openRepoPlace(ctx, name));
+      return b;
+    },
+    gear: (name, why, bring_ = false) => repoGear(name, {
+      forge: async () => { if (bring_) await bring(name); ctx.openRepo(name); },
+      why: async () => why,
+      // Freed from its row: what it came to is said over the box, as Free all's is, and the columns read again.
+      free: async () => { const r = await free([`repo:${name}`]); if (r.kept.length && !r.removed.length) throw new Error(r.kept[0][1]); freed = r; },
+      freed: () => again(freed),
+    }),
+  };
+}
+
+/** On this device: everything, largest first, and why what stays stays. */
+function hereRows(u: Space, repo: RepoParts): HTMLElement[] {
+  return u.items.map((i) => {
+    const isRepo = i.id.startsWith('repo:');
+    const repoNote = isRepo ? syncWord(repoState(i.what)) : '';
+    // l3 is a command's name, written as code is (in the sans face its l reads as a capital I).
+    const name = isRepo ? repo.name(i.what) : i.id === 'l3' ? h('code', {class: 'mono'}, i.what) : i.what;
+    return thing(name, i.allocated, [i.detail, repoNote].filter(Boolean).join(' · '), null,
+      i.room === 'Keep' ? i.why : '', isRepo ? repo.gear(i.what, i.room === 'Keep' ? i.why : null) : undefined);
+  });
+}
+
+/**
+ * Can be freed: Free; a repo's changes go to the Remote first, as they would anyway. Free all at its foot when there
+ * is more than one; `go` frees what it is given, holding the buttons given while it does.
+ */
+function freeColumn(u: Space, repo: RepoParts, go: (ids: string[], held: HTMLButtonElement[]) => void): HTMLElement {
+  const freeable = u.items.filter((i) => i.room !== 'Keep');
+  const buttons: HTMLButtonElement[] = [];
+  const going = freeable.map((i) => {
+    const b = button(t('Free'));
+    b.title = i.why;
+    buttons.push(b);
+    b.addEventListener('click', () => go([i.id], [b]));
+    const isRepo = i.id.startsWith('repo:');
+    return thing(isRepo ? repo.name(i.what) : i.what, i.allocated, '', b, i.why, isRepo ? repo.gear(i.what, null) : undefined);
+  });
+  const all = h('button', {class: 'button', type: 'button'}, t('Free all')) as HTMLButtonElement;
+  all.addEventListener('click', () => go(freeable.map((i) => i.id), [all, ...buttons]));
+  // Nothing to free, the reason is each one's own (not on the Remote yet, a Prompt in it): said on its row.
+  return column('free-col', t('Can be freed'), u.freeable, going, t('Nothing to free: what stays here says why'),
+    freeable.length > 1 ? [h('span', {class: 'muted small grow'}, t('Repos stay on the Remote and come back when opened.')), all] : []);
+}
+
+/** On the Remote: what can come here, each with Fetch; in the app, the release root too when it is not installed. */
+function remoteColumn(repo: RepoParts, again: (r: Freed | null) => void, error: HTMLElement): HTMLElement {
+  const coming: Node[] = remoteOnly().map((r) => {
+    const b = button(t('Fetch'));
+    b.addEventListener('click', async () => {
+      b.disabled = true;
+      try { await bring(r.name); again(null); } catch (e) { error.textContent = message(e); b.disabled = false; }
+    });
+    return thing(repo.name(r.name), r.bytes, t('repo · comes here, then opens'), b, '', repo.gear(r.name, t('It is only on the Remote: nothing of it is here to free'), true));
+  });
+  // What is only there, not all it holds: its size is what would come here.
+  const col = column('remote-col', t('Only on the Remote'), remoteOnly().reduce((n, r) => n + r.bytes, 0), coming,
+    connection() ? t('All of it is here too') : t('Sign in to see what the Remote holds'));
+  if (isNative) void rootStatus().then((root) => { if (root && !root.current) rootRow(col, root, again); }, (e) => { error.textContent = message(e); });
+  return col;
+}
+
+/** The release root, not installed: at the top of the column, with Fetch, its progress said in its row. */
+function rootRow(col: HTMLElement, root: RootStatus, again: (r: Freed | null) => void) {
+  const b = button(t('Fetch'));
+  const note = h('span', {class: 'muted small'}, t('the root Prompts run on'));
+  b.addEventListener('click', () => {
+    b.disabled = true;
+    void rootFetch((got, of, retry) => {
+      note.textContent = retry ? t('{why}; continuing where it stopped', {why: retry}) : t('Fetching {got} / {of}', {got: bytes(got), of: bytes(of)});
+    }).then(() => again(null), (e) => { note.textContent = message(e); b.disabled = false; });
+  });
+  const row = h('div', {class: 'space-row'},
+    h('div', {class: 'space-what'}, h('span', {class: 'space-name'}, `${root.release.name} ${root.release.version}`), note),
+    h('span', {class: 'space-size'}, bytes(root.release.bytes)), b);
+  col.querySelector('.space-empty')?.remove();
+  col.querySelector('.space-list')!.prepend(row);
 }
 
 /**

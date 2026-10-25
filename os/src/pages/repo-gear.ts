@@ -21,7 +21,7 @@ import {keepOut, putAway} from '../ui/glide.ts';
 // the list away, and nothing has changed. The repo's body (not the gear) is
 // the repo itself, its own place (repo-list.ts, runtime/device.ts).
 
-export interface GearWays {
+interface GearWays {
   /** Open it in Forge (brought here first when it is only on the Remote). */
   forge(): void | Promise<void>;
   /** Why it cannot be freed from this device now, or null when it can (read when the list opens). */
@@ -34,6 +34,8 @@ export interface GearWays {
 
 let open: (() => void) | null = null;
 
+const item = (label: string) => h('button', {type: 'button', class: 'pop-item', role: 'menuitem'}, label) as HTMLButtonElement;
+
 /**
  * The gear of `repo` and its list. A card holds both at its top right, the list over the card; a row (Runtime's,
  * in a column that scrolls) has the gear in the row and the list under it, in the row's own place.
@@ -42,7 +44,6 @@ export function repoGear(repo: string, w: GearWays): {gear: HTMLButtonElement; l
   const gear = h('button', {type: 'button', class: 'repo-gear-button', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
     'aria-label': t('What to do with {name}', {name: repo}), title: t('What to do with {name}', {name: repo})}, mark('gear')) as HTMLButtonElement;
   const list = h('div', {class: 'pop repo-gear-pop', role: 'menu', 'aria-label': t('What to do with {name}', {name: repo}), hidden: ''});
-  const item = (label: string) => h('button', {type: 'button', class: 'pop-item', role: 'menuitem'}, label) as HTMLButtonElement;
 
   const away = (e: Event) => {
     const mine = (n: Node | null) => !!n && (gear.contains(n) || list.contains(n));
@@ -73,30 +74,35 @@ export function repoGear(repo: string, w: GearWays): {gear: HTMLButtonElement; l
       // Why it stays is said under it; when it can go, nothing is said until it is pressed.
       if (no) why.textContent = no; else why.remove();
     }, (e) => { why.textContent = errorText(e); });
-    free.addEventListener('click', () => {
-      // Asked in its row, what it does first: the copy here goes, the Remote keeps it. Free under the pointer.
-      const foot = askFoot(free, list);
-      const no = h('button', {type: 'button', class: 'button small-button'}, t('Not now')) as HTMLButtonElement;
-      const yes = h('button', {type: 'button', class: 'button small-button primary'}, t('Free')) as HTMLButtonElement;
-      const error = h('p', {class: 'error small', role: 'alert'});
-      const ask = h('div', {class: 'pop-ask', role: 'group', 'aria-label': t('Free {repo} from this device', {repo})},
-        h('p', {class: 'muted small'}, t('{repo} leaves this device.', {repo})),
-        h('p', {class: 'muted small'}, t('It stays on the Remote and comes back when opened.')), error, foot(no, yes));
-      no.addEventListener('click', () => { ask.replaceWith(free); why.remove(); free.focus(); });
-      const shown = performance.now();
-      yes.addEventListener('click', async () => {
-        if (performance.now() - shown < SETTLE) return;
-        yes.disabled = no.disabled = true;
-        try { await w.free(); show(false); w.freed(); } catch (e) { error.textContent = errorText(e); yes.disabled = no.disabled = false; }
-      });
-      free.replaceWith(ask);
-      why.remove();
-      yes.focus();
-    });
+    free.addEventListener('click', () => askFree(repo, free, why, list, w, () => show(false)));
   };
 
   gear.addEventListener('click', (e) => { e.stopPropagation(); show(gear.getAttribute('aria-expanded') !== 'true'); });
   // Inside a card that is pressed as a whole, the gear and its list are the gear's own.
   list.addEventListener('click', (e) => e.stopPropagation());
   return {gear, list};
+}
+
+/**
+ * Free, asked in its row in the list, what it does first: the copy here goes, the Remote keeps it. Free under the
+ * pointer; Not now puts the row back. Freed, the list is put away (`close`) and the place hears it.
+ */
+function askFree(repo: string, free: HTMLButtonElement, why: HTMLElement, list: HTMLElement, w: GearWays, close: () => void) {
+  const foot = askFoot(free, list);
+  const no = h('button', {type: 'button', class: 'button small-button'}, t('Not now')) as HTMLButtonElement;
+  const yes = h('button', {type: 'button', class: 'button small-button primary'}, t('Free')) as HTMLButtonElement;
+  const error = h('p', {class: 'error small', role: 'alert'});
+  const ask = h('div', {class: 'pop-ask', role: 'group', 'aria-label': t('Free {repo} from this device', {repo})},
+    h('p', {class: 'muted small'}, t('{repo} leaves this device.', {repo})),
+    h('p', {class: 'muted small'}, t('It stays on the Remote and comes back when opened.')), error, foot(no, yes));
+  no.addEventListener('click', () => { ask.replaceWith(free); why.remove(); free.focus(); });
+  const shown = performance.now();
+  yes.addEventListener('click', async () => {
+    if (performance.now() - shown < SETTLE) return;
+    yes.disabled = no.disabled = true;
+    try { await w.free(); close(); w.freed(); } catch (e) { error.textContent = errorText(e); yes.disabled = no.disabled = false; }
+  });
+  free.replaceWith(ask);
+  why.remove();
+  yes.focus();
 }
