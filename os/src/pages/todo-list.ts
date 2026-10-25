@@ -357,6 +357,20 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
     row.title.focus();
     row.title.setSelectionRange(row.title.value.length, row.title.value.length);
   });
+  // An item begun and left empty (Enter, then away) is not one: it goes as the keyboard leaves it, the lines under it
+  // closing up, and only the empty line at the foot stays to write the next in.
+  list.addEventListener('focusout', () => setTimeout(() => {
+    const gone = items.find((x, i) => i < items.length - 1 && !todo.filled(x) && !rows.get(x.id)?.item.contains(document.activeElement));
+    const r = gone && rows.get(gone.id);
+    if (!gone || !r || o.readOnly) return;
+    const gap = r.item.getBoundingClientRect().height;
+    const below = items.slice(items.indexOf(gone) + 1).map((x) => x.id);
+    items = todo.remove(items, gone.id);
+    save();
+    render();
+    closeUp(below.map((id) => rows.get(id)?.item).filter((el): el is HTMLElement => !!el), gap);
+  }, 0));
+
   // What came from elsewhere waits while something here is being written.
   let waiting: todo.Todo[] | null = null;
   const writing = () => element.contains(document.activeElement);

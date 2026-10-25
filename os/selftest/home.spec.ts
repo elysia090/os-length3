@@ -37,6 +37,21 @@ test('a TODO is written as Kind: title, Enter for its detail, and done strikes i
   await expect(app.home.todo).toContainText('0 of 1 left');
 });
 
+test('a TODO item begun and left empty goes as the keyboard leaves it', async ({app}) => {
+  await app.rail.go('home');
+  const item = app.home.items.first();
+  await app.home.title(item).pressSequentially('Fix: one');
+  // Enter twice: the detail, then the next item, begun and left with nothing in it.
+  await app.home.title(item).press('Enter');
+  await app.home.detail(item).press('Enter');
+  await expect(app.home.title(app.home.items.nth(1))).toBeFocused();
+  await expect(app.home.items).toHaveCount(3);
+  await app.main.getByRole('heading', {level: 1}).click();
+  // Left, it goes: the one written and the empty line at the foot to write the next in.
+  await expect(app.home.items).toHaveCount(2);
+  await expect(app.home.title(app.home.items.nth(1))).toHaveValue('');
+});
+
 test("a TODO's detail starts on its first line's column, with a kind and without", async ({app}) => {
   await app.rail.go('home');
   const left = async (l: Locator) => (await l.boundingBox())!.x;
