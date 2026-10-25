@@ -1,19 +1,21 @@
 import {h} from '../../ui/dom.ts';
-import {arrive, glide, pop, where} from '../../ui/glide.ts';
+import {arrive, pop} from '../../ui/glide.ts';
 import * as gitops from '../../repos/history.ts';
 import {t} from '../../i18n.ts';
 import {number, readIssues, type Issue} from '../../repos/issues.ts';
 import {bring, remoteOnly} from '../../remote/lifecycle.ts';
 import {connection} from '../../remote/connection.ts';
 import {onChange, store} from '../../repos/repos.ts';
-import {bench} from '../bench/bench.ts';
+import {bench, type Bench} from '../bench/bench.ts';
 import {openNext as openConversation} from '../inbox.ts';
 import {icon} from '../../ui/icons.ts';
 import type {Context} from '../context.ts';
-import {closedList, committedIn, committedList, mainCard, mergedList} from './done.ts';
-import {backToMain, issueBox, issueHead, mergeRow, reviewBox, type RepoState} from './issue.ts';
-import {laidOut, type Laid} from '../../repos/git-state.ts';
-import {issueForm} from './issue-form.ts';
+import {Sections} from './done.ts';
+import {backToMain, issueBox, issueHead, mergeRow, reviewBox, type IssueEvents, type RepoState} from './issue.ts';
+import {IssueRow} from './issue-row.ts';
+import {paintChips} from './repo-chips.ts';
+import {laidOut} from '../../repos/git-state.ts';
+import {issueForm, type IssueForm} from './issue-form.ts';
 import {errorText} from '../../app/errors.ts';
 
 /**
@@ -34,6 +36,9 @@ import {errorText} from '../../app/errors.ts';
  * the one Forge opens. Coming to Git changes nothing by itself: it opens at
  * the issue last looked at in the repo worked on. The keyboard stays on the
  * same part of the box as one goes along the row.
+ *
+ * Its parts: the repo chips (repo-chips.ts), the row of issues (issue-row.ts),
+ * an issue's box (issue.ts), and the sections round them (done.ts).
  */
 
 const ALL = '';
@@ -43,6 +48,8 @@ let chosen: string | null = null;
 /** The issue last looked at in each repo. */
 const chosenIn = new Map<string, string>();
 
+const key = (i: Issue) => `${i.repo}/${i.file}`;
+
 /** Git opened at `file` (an issue) of `repo`, as from a line that says it was written: it is the one shown. */
 export function showIssue(repo: string, file: string) {
   chosen = `${repo}/${file}`;
@@ -51,290 +58,282 @@ export function showIssue(repo: string, file: string) {
 }
 
 export function git(ctx: Context): Node[] {
-  const chips = h('div', {class: 'chips', role: 'radiogroup', 'aria-label': 'repo'});
-  const write = h('button', {class: 'button', type: 'button'}, t('Write an issue')) as HTMLButtonElement;
-  const count = h('small', {});
-  const track = h('div', {class: 'issue-track'});
-  // The edges over the neighbours: clear, lifted on hover like any place.
-  const prev = h('button', {type: 'button', class: 'stage-hit prev', 'aria-label': t('Previous issue')}) as HTMLButtonElement;
-  const next = h('button', {type: 'button', class: 'stage-hit next', 'aria-label': t('Next issue')}) as HTMLButtonElement;
-  const stage = h('div', {class: 'issue-stage', tabindex: '0', 'aria-label': t('Issues'), 'aria-roledescription': 'carousel'}, track, prev, next);
-  const column = h('div', {class: 'issue-column'}, stage);
-  const empty = h('div', {});
-  // Written: its repo is the one looked at and worked on, and the new issue is the one shown, with the keyboard on it.
-  const form = issueForm({done: (made, back) => {
-    write.hidden = false;
-    empty.hidden = false;
-    // Asked for from Forge's reference and put back: back there, as it was.
-    if (!made && back) { ctx.openRepo(back); return; }
-    if (!made) { (write.isConnected ? write : empty.querySelector<HTMLElement>('button') ?? write).focus({preventScroll: true}); return; }
-    if (filter && filter !== made.repo) { filter = made.repo; paintChips(); }
-    chosen = `${made.repo}/${made.file}`;
-    chosenIn.set(made.repo, chosen);
-    look(made.repo, true);
-    land = true;
-    void paint();
-  }});
+  return [new GitPage(ctx).element];
+}
 
-  let repos: string[] = [];
-  let at: string | null = null;
-  let shown: Issue[] = [];
-  let states = new Map<string, RepoState>();
-  let k = 0;
+/**
+ * Where each of `repos` stands, into `fresh`: the work it shows (main again once that work's change was merged), the
+ * issues started, the changes to main, and what is not committed.
+ */
+function standings(repos: readonly string[], fresh: Map<string, RepoState>): Promise<unknown> {
+  return Promise.all(repos.map(async (r) => {
+    try {
+      let {work, lines, changes} = await gitops.standing(r);
+      // A work whose change was merged (here or on another device) is done: the repo shows main again.
+      if (work.line !== 'main' && changes.some((c) => c.line === work.line && c.state === 'merged')) {
+        await gitops.switchWork(r, 'main');
+        work = await gitops.work(r);
+      }
+      const uncommitted = (await gitops.changes(r)).files;
+      fresh.set(r, {work, lines, changes, uncommitted});
+    } catch (e) {
+      fresh.set(r, {work: null, lines: [], changes: [], uncommitted: 0, error: errorText(e)});
+    }
+  }));
+}
 
-  const key = (i: Issue) => `${i.repo}/${i.file}`;
-  const events = {
-    open: (repo: string, path: string) => ctx.openRepo(repo, path),
-    // The repo shows another copy: what File, Forge and the issues read is that copy now.
-    // Started, continued or back on main: that repo is the one worked on.
-    moved: (repo: string) => { ctx.remember(repo); if (repo === at) void paint(); },
-  };
-  const again = () => void paint();
+/**
+ * An issue without a number (written by hand, or two devices' met under one) takes the next free one; the store's
+ * change draws the page again. Not on main's behalf while a work is shown: that copy is the work's.
+ */
+function renumber(issues: readonly Issue[], states: ReadonlyMap<string, RepoState>): Promise<unknown[]> {
+  return Promise.all([...new Set(issues.filter((i) => i.n === null).map((i) => i.repo))].map((r) => {
+    const st = states.get(r);
+    if (!st || st.error || (st.work && st.work.line !== 'main')) return false;
+    const inUse = new Set([...st.lines.map((l) => l.issue), ...st.changes.map((c) => c.issue)]);
+    return number(store, r, issues.filter((i) => i.repo === r), inUse);
+  }));
+}
+
+/** The page while it is shown: its repos, where each stands, and what is drawn of them. */
+class GitPage {
+  readonly element: HTMLElement;
+  private readonly ctx: Context;
+  private readonly chips = h('div', {class: 'chips', role: 'radiogroup', 'aria-label': 'repo'});
+  private readonly write = h('button', {class: 'button', type: 'button'}, t('Write an issue')) as HTMLButtonElement;
+  private readonly count = h('small', {});
+  /** Where the issues would be when there are none: the dashed card that writes the first, or what is so. */
+  private readonly empty = h('div', {});
+  private readonly form: IssueForm;
+  private readonly row: IssueRow;
+  private readonly sections = new Sections();
+  private readonly workbench: Bench;
+  private repos: string[] = [];
+  /** The repo looked at: the reference and the Prompt point at it. */
+  private at: string | null = null;
+  private states = new Map<string, RepoState>();
+  private readonly events: IssueEvents;
+  private readonly again = () => void this.paint();
+  // One drawing at a time; asked again meanwhile, it draws once more after, from what is then true.
+  private drawing: Promise<void> | null = null;
+  private more = false;
+  private timer = 0;
+
+  constructor(ctx: Context) {
+    this.ctx = ctx;
+    this.form = issueForm({done: (made, back) => this.written(made, back)});
+    this.row = new IssueRow({
+      landed: (i, moved) => this.landed(i, moved),
+      slot: (x, now) => this.slot(x, now),
+      // main's cards stand in the same column as the issue in full, and go with it along the row.
+      slid: (lead, single) => { this.sections.main.style.setProperty('--lead', `${lead}`); this.sections.main.classList.toggle('single', single); },
+    });
+    this.events = {
+      open: (repo, path) => ctx.openRepo(repo, path),
+      // The repo shows another copy: what File, Forge and the issues read is that copy now.
+      // Started, continued or back on main: that repo is the one worked on.
+      moved: (repo) => { ctx.remember(repo); if (repo === this.at) void this.paint(); },
+    };
+    this.write.addEventListener('click', () => {
+      this.write.hidden = true;
+      // The dashed card that stood for it becomes the issue being written.
+      this.empty.hidden = true;
+      if (!this.form.resume(this.repos, true)) this.form.open(this.repos, filter || this.at || this.repos[0]);
+    });
+    this.load();
+    this.workbench = this.bench();
+    this.element = this.workbench.element;
+    this.watch();
+    this.element.prepend(h('h1', {class: 'sr-only'}, t('Git')));
+  }
+
+  /** The page on the work bench: main's over the issues, the sections under them, its repos on its band. */
+  private bench(): Bench {
+    const main = h('section', {class: 'flow git-flow', tabindex: '0', 'aria-label': 'Git'},
+      // What main has not committed comes first, over the issues: what is in hand before what is planned.
+      this.sections.main,
+      h('section', {class: 'section', 'aria-labelledby': 'issues-title'},
+        h('h2', {id: 'issues-title'}, h('span', {}, t('Issues'), ' ', this.count)),
+        this.form.element, this.empty, this.row.column),
+      ...this.sections.under);
+    // Its repos are its band, on the top line as Forge's pills are, so the page starts where the rail's places do.
+    return bench({strip: h('div', {class: 'git-band'}, this.chips), main, reveal: (path) => { if (this.at) this.ctx.openRepo(this.at, path); }, word: (a) => { openConversation(a); void this.ctx.go('inbox'); }, back: true,
+      went: (repo, to) => { if (to === 'todo') { void this.ctx.go('home'); return; } showIssue(repo, to.issue); this.row.land = true; void this.paint(); }});
+  }
 
   /** Point the reference and the Prompt at `repo`; `chosen` when the person chose it, which makes it the repo worked on. */
-  const look = (repo: string | null, chosen = false) => {
-    at = repo;
+  private look(repo: string | null, chosen = false) {
+    this.at = repo;
     if (!repo) return;
-    workbench.setRepo(repo);
-    if (chosen) ctx.remember(repo);
-  };
-  /** Put the keyboard on the new issue's words once it is drawn. */
-  let land = false;
+    this.workbench.setRepo(repo);
+    if (chosen) this.ctx.remember(repo);
+  }
 
-  const paintChips = () => {
-    // A chip pressed from the keyboard keeps it when the row is drawn again.
-    const had = [...chips.children].indexOf(document.activeElement as Element);
-    const inkWas = where(chips.querySelector('[aria-checked="true"]'));
-    chips.replaceChildren(...[ALL, ...repos].map((r) => {
-      const b = h('button', {type: 'button', class: 'chip', role: 'radio', 'aria-checked': String(filter === r)}, r || t('All'));
-      // Pressed with the pointer while an issue is being written, it only said where: the words take the keyboard back.
-      // Another chosen: the issues it shows come in after the ink has gone to it.
-      b.addEventListener('click', (e) => {
-        const other = filter !== r;
-        filter = r; paintChips(); if (r) { look(r, true); form.retarget(r); if (e.detail && !form.element.hidden) form.writeOn(); }
-        void paint().then(() => { if (other) arrive(stage.hidden ? empty : stage, 1, 'y', 10, 260); });
-      });
-      return b;
-    }));
-    // The ink goes from the chip it was on to the one chosen, as along the rail and the band.
-    glide(inkWas, chips.querySelector<HTMLElement>('[aria-checked="true"]'), chips, 'var(--r-round)');
-    if (had >= 0) (chips.children[had] as HTMLElement | undefined)?.focus({preventScroll: true});
-    // The chosen one is kept in view as the row slides.
-    const on = chips.querySelector<HTMLElement>('[aria-checked="true"]');
-    if (on && chips.scrollWidth > chips.clientWidth) {
-      if (on.offsetLeft < chips.scrollLeft) chips.scrollLeft = on.offsetLeft;
-      else if (on.offsetLeft + on.offsetWidth > chips.scrollLeft + chips.clientWidth) chips.scrollLeft = on.offsetLeft + on.offsetWidth - chips.clientWidth;
-    }
-  };
+  /** The repos here, read again: the chips, the repo looked at, an issue half written, and the issues. */
+  private load() {
+    void store.list().then((r) => {
+      this.repos = r.map((x) => x.name);
+      if (filter && !this.repos.includes(filter)) filter = ALL;
+      this.write.disabled = !this.repos.length;
+      this.look(filter || (this.ctx.repo && this.repos.includes(this.ctx.repo) ? this.ctx.repo : this.repos[0] ?? null));
+      this.paintChips();
+      // An issue half written when the page was left is still being written.
+      if (this.form.resume(this.repos)) this.write.hidden = true;
+      void this.paint();
+    });
+  }
 
-  /** Slide to the `n`th box: it gets the whole box, the others only their heads. */
-  const sized = new ResizeObserver(([e]) => track.style.setProperty('--card-h', `${(e.target as HTMLElement).offsetHeight}px`));
-  /** The part of the box that has the keyboard (its words, a button), so the box gone to or drawn again gives it back. */
-  // Told by its kind and its words: every button in a box is a .button, and the first of them is Close, so a box
-  // drawn again under the keyboard on Start must not hand it to Close (the next Enter would close the issue).
-  const part = (): {kind: string; words: string} | null => {
-    const a = document.activeElement;
-    if (!(a instanceof HTMLElement) || !track.contains(a)) return null;
-    const kind = a.className.split(' ')[0];
-    return kind ? {kind, words: a.textContent?.trim() ?? ''} : null;
-  };
-  const sameDeed = (slot: HTMLElement | undefined, had: {kind: string; words: string}) => {
-    const all = [...(slot?.querySelectorAll<HTMLElement>(`.${had.kind}`) ?? [])];
-    return all.find((e) => (e.textContent?.trim() ?? '') === had.words) ?? (all.length === 1 && had.kind !== 'button' ? all[0] : null);
-  };
-  const go = (n: number, moved = false, had = part()) => {
-    if (!shown.length) return;
-    k = Math.max(0, Math.min(shown.length - 1, n));
-    const i = shown[k];
+  // ---- the repo chips ----
+
+  private paintChips() {
+    paintChips(this.chips, [ALL, ...this.repos], filter, (r, e) => this.choose(r, e));
+  }
+
+  /** A chip pressed: its repo's issues shown, and it the repo looked at and written in. */
+  private choose(r: string, e: MouseEvent) {
+    // Pressed with the pointer while an issue is being written, it only said where: the words take the keyboard back.
+    // Another chosen: the issues it shows come in after the ink has gone to it.
+    const other = filter !== r;
+    filter = r;
+    this.paintChips();
+    if (r) { this.look(r, true); this.form.retarget(r); if (e.detail && !this.form.element.hidden) this.form.writeOn(); }
+    void this.paint().then(() => { if (other) arrive(this.row.stage.hidden ? this.empty : this.row.stage, 1, 'y', 10, 260); });
+  }
+
+  // ---- the row of issues ----
+
+  /** Issue `i` on screen: the one shown, its repo the one looked at (and worked on, when the person went to it). */
+  private landed(i: Issue, moved: boolean) {
     chosen = key(i);
     chosenIn.set(i.repo, chosen);
-    look(i.repo, moved);
-    track.style.setProperty('--at', `${k}`);
-    // The first box starts at the column's edge and the last ends at it; between, both neighbours show.
-    column.style.setProperty('--lead', `${k === 0 ? 0 : k === shown.length - 1 ? 2 : 1}`);
-    // main's cards stand in the same column as the issue in full, and go with it along the row.
-    mainPart.style.setProperty('--lead', `${k === 0 ? 0 : k === shown.length - 1 ? 2 : 1}`);
-    mainPart.classList.toggle('single', shown.length === 1);
-    [...track.children].forEach((slot, j) => {
-      const x = shown[j];
-      slot.setAttribute('aria-current', String(j === k));
-      // Each issue is a column: its card, and once pushed, its Review and Merge
-      // under it, so they slide with it. The neighbours show only their heads.
-      const st = states.get(x.repo);
-      // Under the current box, out of it: Back to main at its left (for the issue the repo shows), Write an issue at its right.
-      slot.replaceChildren(...(j === k
-        ? [h('div', {class: 'issue-card'}, issueBox(x, st, events, again)),
-          h('div', {class: 'issue-under'}, backToMain(x, st, events, again) ?? h('span'), write),
-          reviewBox(x, st, again), mergeRow(x, st, events, again)].filter((n): n is HTMLElement => !!n)
-        : [h('div', {class: 'issue-card'}, issueHead(x, true))]));
-    });
-    // The neighbours' cards are as tall as the current one, so the row reads as one line of boxes.
-    const card = track.children[k]?.querySelector<HTMLElement>('.issue-card');
-    sized.disconnect();
-    if (card) sized.observe(card);
-    const edge = document.activeElement === prev || document.activeElement === next;
-    prev.hidden = k === 0;
-    next.hidden = k === shown.length - 1;
-    const slot = track.children[k] as HTMLElement | undefined;
-    if (land) { land = false; slot?.querySelector<HTMLElement>('.issue-words')?.focus({preventScroll: true}); return; }
-    if (had) (sameDeed(slot, had) ?? stage).focus({preventScroll: true});
-    // An edge pressed that is gone now (the first or last box reached): the keyboard stays on the row.
-    else if (edge && (document.activeElement as HTMLElement | null)?.hidden) stage.focus({preventScroll: true});
-  };
-  prev.addEventListener('click', () => go(k - 1, true));
-  next.addEventListener('click', () => go(k + 1, true));
-  stage.addEventListener('keydown', (e) => {
-    if ((e.target as HTMLElement).closest('input, textarea')) return;
-    if (e.key === 'ArrowLeft') { e.preventDefault(); go(k - 1, true); }
-    if (e.key === 'ArrowRight') { e.preventDefault(); go(k + 1, true); }
-  });
+    this.look(i.repo, moved);
+  }
 
-  // One drawing at a time; asked again meanwhile, it draws once more after, from what is then true.
-  let drawing: Promise<void> | null = null;
-  let more = false;
-  const paint = (): Promise<void> => {
-    if (drawing) { more = true; return drawing; }
-    drawing = draw().finally(() => { drawing = null; if (more) { more = false; void paint(); } });
-    return drawing;
-  };
-  const draw = async () => {
-    const all = await Promise.all(repos.map((r) => readIssues(store, r)));
-    const issues = all.flatMap((x, j) => (!filter || repos[j] === filter ? x : []));
+  /**
+   * What issue `x`'s slot holds. Each issue is a column: its card, and once pushed, its Review and Merge under it,
+   * so they slide with it. The neighbours show only their heads.
+   */
+  private slot(x: Issue, now: boolean): HTMLElement[] {
+    if (!now) return [h('div', {class: 'issue-card'}, issueHead(x, true))];
+    const st = this.states.get(x.repo);
+    // Under the current box, out of it: Back to main at its left (for the issue the repo shows), Write an issue at its right.
+    return [h('div', {class: 'issue-card'}, issueBox(x, st, this.events, this.again)),
+      h('div', {class: 'issue-under'}, backToMain(x, st, this.events, this.again) ?? h('span'), this.write),
+      reviewBox(x, st, this.again), mergeRow(x, st, this.events, this.again)].filter((n): n is HTMLElement => !!n);
+  }
+
+  /** Written: its repo is the one looked at and worked on, and the new issue is the one shown, with the keyboard on it. */
+  private written(made: {repo: string; file: string} | null, back: string | null) {
+    this.write.hidden = false;
+    this.empty.hidden = false;
+    // Asked for from Forge's reference and put back: back there, as it was.
+    if (!made && back) { this.ctx.openRepo(back); return; }
+    if (!made) { (this.write.isConnected ? this.write : this.empty.querySelector<HTMLElement>('button') ?? this.write).focus({preventScroll: true}); return; }
+    if (filter && filter !== made.repo) { filter = made.repo; this.paintChips(); }
+    chosen = `${made.repo}/${made.file}`;
+    chosenIn.set(made.repo, chosen);
+    this.look(made.repo, true);
+    this.row.land = true;
+    void this.paint();
+  }
+
+  // ---- drawing ----
+
+  private paint(): Promise<void> {
+    if (this.drawing) { this.more = true; return this.drawing; }
+    this.drawing = this.draw().finally(() => { this.drawing = null; if (this.more) { this.more = false; void this.paint(); } });
+    return this.drawing;
+  }
+
+  private async draw() {
+    const all = await Promise.all(this.repos.map((r) => readIssues(store, r)));
+    const issues = all.flatMap((x, j) => (!filter || this.repos[j] === filter ? x : []));
     // Where each repo stands: the work it shows, the issues started, the changes to main.
     const fresh = new Map<string, RepoState>();
     // Every repo looked at, issues or not: what its main has not committed shows too.
-    if (connection()) await Promise.all(repos.filter((r) => !filter || r === filter).map(async (r) => {
-      try {
-        let {work, lines, changes} = await gitops.standing(r);
-        // A work whose change was merged (here or on another device) is done: the repo shows main again.
-        if (work.line !== 'main' && changes.some((c) => c.line === work.line && c.state === 'merged')) {
-          await gitops.switchWork(r, 'main');
-          work = await gitops.work(r);
-        }
-        const uncommitted = (await gitops.changes(r)).files;
-        fresh.set(r, {work, lines, changes, uncommitted});
-      } catch (e) {
-        fresh.set(r, {work: null, lines: [], changes: [], uncommitted: 0, error: errorText(e)});
-      }
-    }));
+    if (connection()) await standings(this.repos.filter((r) => !filter || r === filter), fresh);
     // Asked again while this read (an issue written meanwhile): what it read may be from before, so it is not drawn,
     // nor does it choose the issue shown; the drawing after it, from what is true then, does.
-    if (more) return;
-    states = fresh;
-    // An issue without a number (written by hand, or two devices' met under one) takes the next free one;
-    // the store's change draws the page again. Not on main's behalf while a work is shown: that copy is the work's.
-    const renumbered = await Promise.all([...new Set(issues.filter((i) => i.n === null).map((i) => i.repo))].map((r) => {
-      const st = states.get(r);
-      if (!st || st.error || (st.work && st.work.line !== 'main')) return false;
-      const inUse = new Set([...st.lines.map((l) => l.issue), ...st.changes.map((c) => c.issue)]);
-      return number(store, r, issues.filter((i) => i.repo === r), inUse);
-    }));
-    if (renumbered.some(Boolean)) return;
+    if (this.more) return;
+    this.states = fresh;
+    if ((await renumber(issues, this.states)).some(Boolean)) return;
     // Oldest first, so #1 is on the left; merged and closed ones are done with, and listed under the issues.
-    const laid = laidOut(repos.filter((r) => !filter || r === filter), issues, states);
-    shown = laid.open;
-    // A count that changes while it is seen (an issue written, or closed and gone down) gives a beat as it does.
-    const n = shown.length ? `${shown.length}` : '';
-    if (count.textContent !== n) { const seen = count.isConnected && count.textContent !== ''; count.textContent = n; if (seen && n) pop(count, .12, 300); }
-    drawDone(laid);
-    if (!shown.length) {
-      track.replaceChildren();
-      stage.hidden = true;
-      mainPart.classList.add('single');
-      // None to show: where the first would be, the dashed card that writes it (pressed, it becomes the issue
-      // being written), with what is so said quietly under its word. No repo: said once, as wide as its words.
-      if (!repos.length) { empty.replaceChildren(remoteOnly().length ? onlyThere() : h('div', {class: 'empty'}, t('No repos yet'))); return; }
-      const first = h('button', {type: 'button', class: 'card new issue-new'}, icon('new-repo'), h('span', {}, t('Write an issue')),
-        h('small', {class: 'muted'}, issues.length ? t('No open issues') : t('No issues yet'))) as HTMLButtonElement;
-      first.disabled = write.disabled;
-      first.addEventListener('click', () => write.click());
-      empty.replaceChildren(first);
-      return;
-    }
-    empty.replaceChildren();
-    stage.hidden = false;
-    column.classList.toggle('single', shown.length === 1);
-    const had = part();
-    track.replaceChildren(...shown.map(() => h('div', {class: 'issue-slot'})));
-    // The issue last looked at, in the repo worked on when that has one here.
-    const mine = ctx.repo && shown.some((i) => i.repo === ctx.repo) && !chosen?.startsWith(`${ctx.repo}/`) ? chosenIn.get(ctx.repo) : chosen;
-    let was = shown.findIndex((i) => key(i) === mine);
-    if (was < 0 && ctx.repo) was = shown.findIndex((i) => i.repo === ctx.repo);
-    go(was >= 0 ? was : 0, false, had);
-  };
+    const laid = laidOut(this.repos.filter((r) => !filter || r === filter), issues, this.states);
+    this.counted(laid.open.length);
+    this.sections.draw(laid, filter, this.states, this.events, this.again);
+    if (laid.open.length) this.drawSome(laid.open); else this.drawNone(issues);
+  }
 
-  // Over the issues, what main has not committed; under them, what is done with (committed, merged, closed), each its own section.
-  const heading = (id: string, text: string, n = 0) => h('h2', {id}, h('span', {}, text, ' ', h('small', {}, n ? `${n}` : '')));
-  const mainPart = h('section', {class: 'section main-part', 'aria-labelledby': 'main-title', hidden: ''});
-  // What was committed on main from here is done with: under the issues, with what was merged and closed.
-  const committedPart = h('section', {class: 'section', 'aria-labelledby': 'committed-title', hidden: ''});
-  const mergedPart = h('section', {class: 'section', 'aria-labelledby': 'merged-title', hidden: ''});
-  const closedPart = h('section', {class: 'section', 'aria-labelledby': 'closed-title', hidden: ''});
-  const drawDone = ({dirty, merged, closed}: Laid) => {
-    // main: what it has not committed, each a card. What was committed on it from here is under the issues.
-    const cuts = committedIn(filter || null);
-    mainPart.hidden = !dirty.length;
-    mainPart.replaceChildren(heading('main-title', 'main'), ...dirty.map((r) => mainCard(r, states.get(r)!.uncommitted, events, again)));
-    committedPart.hidden = !cuts.length;
-    committedPart.replaceChildren(heading('committed-title', t('Committed')), committedList(cuts, !filter));
-    mergedPart.hidden = !merged.length;
-    mergedPart.replaceChildren(heading('merged-title', t('Merged'), merged.length), mergedList(merged, !filter));
-    closedPart.hidden = !closed.length;
-    closedPart.replaceChildren(heading('closed-title', t('Closed'), closed.length), closedList(closed, !filter, again));
-  };
+  /** A count that changes while it is seen (an issue written, or closed and gone down) gives a beat as it does. */
+  private counted(n: number) {
+    const text = n ? `${n}` : '';
+    if (this.count.textContent === text) return;
+    const seen = this.count.isConnected && this.count.textContent !== '';
+    this.count.textContent = text;
+    if (seen && text) pop(this.count, .12, 300);
+  }
 
-  write.addEventListener('click', () => {
-    write.hidden = true;
-    // The dashed card that stood for it becomes the issue being written.
-    empty.hidden = true;
-    if (!form.resume(repos, true)) form.open(repos, filter || at || repos[0]);
-  });
+  /** The issues as the row's boxes, at the one last looked at, in the repo worked on when that has one here. */
+  private drawSome(open: Issue[]) {
+    this.empty.replaceChildren();
+    const repo = this.ctx.repo;
+    const mine = repo && open.some((i) => i.repo === repo) && !chosen?.startsWith(`${repo}/`) ? chosenIn.get(repo) : chosen;
+    let was = open.findIndex((i) => key(i) === mine);
+    if (was < 0 && repo) was = open.findIndex((i) => i.repo === repo);
+    this.row.fill(open, was >= 0 ? was : 0);
+  }
 
-  const load = () => void store.list().then((r) => {
-    repos = r.map((x) => x.name);
-    if (filter && !repos.includes(filter)) filter = ALL;
-    write.disabled = !repos.length;
-    look(filter || (ctx.repo && repos.includes(ctx.repo) ? ctx.repo : repos[0] ?? null));
-    paintChips();
-    // An issue half written when the page was left is still being written.
-    if (form.resume(repos)) write.hidden = true;
-    void paint();
-  });
+  /**
+   * None to show: where the first would be, the dashed card that writes it (pressed, it becomes the issue being
+   * written), with what is so said quietly under its word. No repo: said once, as wide as its words.
+   */
+  private drawNone(issues: Issue[]) {
+    this.row.none();
+    this.sections.main.classList.add('single');
+    if (!this.repos.length) { this.empty.replaceChildren(remoteOnly().length ? this.onlyThere() : h('div', {class: 'empty'}, t('No repos yet'))); return; }
+    const first = h('button', {type: 'button', class: 'card new issue-new'}, icon('new-repo'), h('span', {}, t('Write an issue')),
+      h('small', {class: 'muted'}, issues.length ? t('No open issues') : t('No issues yet'))) as HTMLButtonElement;
+    first.disabled = this.write.disabled;
+    first.addEventListener('click', () => this.write.click());
+    this.empty.replaceChildren(first);
+  }
+
   /** No repo here and some on the Remote: each fetched with a press, as Runtime's are, and its issues are here. */
-  const onlyThere = () => h('div', {class: 'empty fetch-list'}, h('p', {}, t('Only on the Remote')), ...remoteOnly().map((r) => {
-    const b = h('button', {type: 'button', class: 'button small-button'}, t('Fetch')) as HTMLButtonElement;
-    b.addEventListener('click', async () => {
-      b.disabled = true;
-      b.textContent = t('Bringing it…');
-      try { await bring(r.name); load(); } catch (e) { b.disabled = false; b.textContent = errorText(e); }
-    });
-    return h('div', {class: 'fetch-row'}, h('span', {}, r.name), b);
-  }));
-  load();
+  private onlyThere() {
+    return h('div', {class: 'empty fetch-list'}, h('p', {}, t('Only on the Remote')), ...remoteOnly().map((r) => {
+      const b = h('button', {type: 'button', class: 'button small-button'}, t('Fetch')) as HTMLButtonElement;
+      b.addEventListener('click', async () => {
+        b.disabled = true;
+        b.textContent = t('Bringing it…');
+        try { await bring(r.name); this.load(); } catch (e) { b.disabled = false; b.textContent = errorText(e); }
+      });
+      return h('div', {class: 'fetch-row'}, h('span', {}, r.name), b);
+    }));
+  }
 
-  const main = h('section', {class: 'flow git-flow', tabindex: '0', 'aria-label': 'Git'},
-    // What main has not committed comes first, over the issues: what is in hand before what is planned.
-    mainPart,
-    h('section', {class: 'section', 'aria-labelledby': 'issues-title'},
-      h('h2', {id: 'issues-title'}, h('span', {}, t('Issues'), ' ', count)),
-      form.element, empty, column),
-    committedPart, mergedPart, closedPart);
-  // Its repos are its band, on the top line as Forge's pills are, so the page starts where the rail's places do.
-  const workbench = bench({strip: h('div', {class: 'git-band'}, chips), main, reveal: (path) => { if (at) ctx.openRepo(at, path); }, word: (a) => { openConversation(a); void ctx.go('inbox'); }, back: true,
-    went: (repo, to) => { if (to === 'todo') { void ctx.go('home'); return; } showIssue(repo, to.issue); land = true; void paint(); }});
-  // Issues written anywhere (here, in the shell, with l3 in the Prompt) show
-  // up at once, and any change in the repo looked at is read again; not while
-  // something is being written in the box or under it, which would be lost.
-  let timer = 0;
-  const typing = () => { const a = document.activeElement; return !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA') && (stage.contains(a) || mainPart.contains(a)) && !!(a as HTMLInputElement).value; };
-  // Not while a committed card is still going off (git/done.ts): it is drawn again once it has gone.
-  const soon = () => { clearTimeout(timer); timer = window.setTimeout(() => { if (typing() || mainPart.querySelector('.leaving')) soon(); else void paint(); }, 250); };
-  const stop = onChange((c) => {
-    if (!workbench.element.isConnected) { stop(); return; }
-    if (c.what === 'repo' || c.path === 'issue' || c.path.startsWith('issue/') || c.repo === at) soon();
-  });
-  const back = () => { if (!workbench.element.isConnected) { removeEventListener('focus', back); return; } soon(); };
-  addEventListener('focus', back);
-  workbench.element.prepend(h('h1', {class: 'sr-only'}, t('Git')));
-  return [workbench.element];
+  // ---- drawn again as the repos change ----
+
+  /**
+   * Issues written anywhere (here, in the shell, with l3 in the Prompt) show up at once, and any change in the repo
+   * looked at is read again; not while something is being written in the box or under it, which would be lost.
+   */
+  private watch() {
+    const stop = onChange((c) => {
+      if (!this.element.isConnected) { stop(); return; }
+      if (c.what === 'repo' || c.path === 'issue' || c.path.startsWith('issue/') || c.repo === this.at) this.soon();
+    });
+    const back = () => { if (!this.element.isConnected) { removeEventListener('focus', back); return; } this.soon(); };
+    addEventListener('focus', back);
+  }
+
+  private typing() {
+    const a = document.activeElement;
+    return !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA') && (this.row.stage.contains(a) || this.sections.main.contains(a)) && !!(a as HTMLInputElement).value;
+  }
+
+  /** Drawn again in a moment. Not while a committed card is still going off (git/done.ts): it is drawn again once it has gone. */
+  private soon() {
+    clearTimeout(this.timer);
+    this.timer = window.setTimeout(() => { if (this.typing() || this.sections.main.querySelector('.leaving')) this.soon(); else void this.paint(); }, 250);
+  }
 }
