@@ -29,7 +29,7 @@ import {byCode, claim, codeOf, HOLD, kept, live, release} from './names.ts';
 import type {Plans} from './plan.ts';
 import {hmacHex, same} from './keys.ts';
 import {ago, body, lock, ms, refuse, rows, slowDown, UUID, type Db, type Vars} from './request.ts';
-import {address, contact, message, server, signal, throttle} from './schema.ts';
+import {address, contact, message, server, signal, throttle, user} from './schema.ts';
 
 export const INBOX = {
   body: 4000, perHour: 60, requestsPerPeer: 3, requestsInAll: 30, addresses: 5,
@@ -210,8 +210,12 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
   });
 
   v1.get('/inbox/me', async (c) => {
-    const list = await mine(c.get('userId'));
-    const code = await codeOf(db, {userId: c.get('userId')});
+    const me = c.get('userId');
+    // Its names and its code in one read (two before); an account with no code yet is given one (codeOf).
+    const got = await db.select({a: address, code: sql<string | null>`(select p.code from principal_code p where p.user_id = ${me})`}).from(user)
+      .leftJoin(address, and(eq(address.userId, user.id), isNull(address.releasedAt))).where(eq(user.id, me)).orderBy(address.createdAt) as {a: Address | null; code: string | null}[];
+    const list = got.flatMap((r) => (r.a ? [r.a] : []));
+    const code = got[0]?.code ?? await codeOf(db, {userId: me});
     return c.json({domain: d.domain, account: c.get('userId'), code, addresses: list.map((a) => ({address: a.address,
       ...(a.until ? {until: a.until.getTime(), ...(a.until.getTime() <= Date.now() ? {ended: true} : {})} : {}), ...(a.lapsedAt ? {lapsed: true} : {})}))});
   });

@@ -151,11 +151,11 @@ const changeCols = {id: change.id, line: change.line, kind: change.kind, title: 
   reviews: sql<Review[]>`coalesce((select jsonb_agg(jsonb_build_object('version', r.version, 'verdict', r.verdict, 'note', r.note, 'marks', r.marks,
     'by', r.by, 'time', ${ms(sql`r.time`)}) order by r.time desc, r.id) from review r where r.change_id = ${qualified(change.id)}), '[]'::jsonb)`.as('reviews')};
 type Line = {id: number; off: Date | null; name: string; line: string; base: string | null; head: string | null; pushed: string | null; version: number;
-  startedBy: string; startedAt: Date; updatedAt: Date; draft?: Tree; modes?: Modes};
+  startedBy: string; startedAt: Date; updatedAt: Date; draft?: Tree; modes?: Modes; kept?: {bytes: number; files: number}};
 type Change = {id: string; line: string; kind: string; title: string; version: number; base: string | null; head: string;
   state: string; note: string; submittedBy: string; reviews: Review[]; updatedAt: Date};
 
-const lineShown = ({id: _, off: __, draft, modes, ...r}: Line) => ({...r, issue: issueOf(r.line), ...(draft ? {draft, modes: modesFor(draft, modes ?? {})} : {}), startedAt: r.startedAt.getTime()});
+const lineShown = ({id: _, off: __, draft, modes, kept: ___, ...r}: Line) => ({...r, issue: issueOf(r.line), ...(draft ? {draft, modes: modesFor(draft, modes ?? {})} : {}), startedAt: r.startedAt.getTime()});
 const changeShown = (repoName: string, {repoId: _, off: __, ...r}: Change & {repoId?: number; off?: Date | null}) =>
   ({...r, repo: repoName, issue: issueOf(r.line), updatedAt: r.updatedAt.getTime()});
 const count = (n: unknown) => (typeof n === 'number' && Number.isInteger(n) && n >= 0 && n < 2 ** 31 ? n : 0);
@@ -185,9 +185,12 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
   /** `user`'s repo `name`: its number, and whether it is off. */
   const repoAt = async (q: Db, user: string, name: string) =>
     (await q.select({id: repo.id, off: repo.offAt}).from(repo).where(and(eq(repo.userId, user), eq(repo.name, name))))[0] as {id: number; off: Date | null} | undefined;
-  /** A line (with its draft only when asked for), its repo's number, and whether its repo is off: one read. */
+  /**
+   * A line (with its draft only when asked for, and what the draft takes: `kept`), its repo's number, and whether its
+   * repo is off: one read.
+   */
   const lineAt = async (q: Db, user: string, name: string, l: string, draft = false): Promise<Line | undefined> =>
-    (await q.select({...lineCols, ...(draft ? {draft: line.draft, modes: line.modes} : {})}).from(line).innerJoin(repo, eq(repo.id, line.repoId))
+    (await q.select({...lineCols, ...(draft ? {draft: line.draft, modes: line.modes, kept: {bytes: line.bytes, files: line.fileBytes}} : {})}).from(line).innerJoin(repo, eq(repo.id, line.repoId))
       .where(and(eq(repo.userId, user), eq(repo.name, name), eq(line.name, l))))[0];
   /** The row of line `l` of repo `id`. */
   const lineRow = (id: number, l: string) => and(eq(line.repoId, id), eq(line.name, l));
@@ -285,9 +288,10 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
       }
       await fits(tx, user, size - JSON.stringify(was).length);
       // What the draft takes (its tree and its files, each blob once) before and after: the plan refuses one
-      // that grew while the account keeps more than it allows, and the whole change is undone with it.
+      // that grew while the account keeps more than it allows, and the whole change is undone with it. Before is
+      // as the line was read, under the account's lock (a read of its own after was one more round trip a save).
       const kept = {bytes: line.bytes, files: line.fileBytes};
-      const [before] = row ? await tx.select(kept).from(line).where(lineRow(row.id, l)) as {bytes: number; files: number}[] : [{bytes: 0, files: 0}];
+      const before = row?.kept ?? {bytes: 0, files: 0};
       let after: {bytes: number; files: number}[];
       if (row) after = await tx.update(line).set({draft: tree, modes, version: current + 1, updatedAt: sql`now()`}).where(and(lineRow(row.id, l), eq(line.version, current))).returning(kept);
       else {
@@ -464,11 +468,13 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
   // ---- work on an issue: its own line, from main's last commit ----
 
   v1.get('/repos/:name/lines', async (c) => {
-    const list = await db.select(lineCols).from(line).innerJoin(repo, eq(repo.id, line.repoId))
-      .where(and(named(c.get('userId'), c.req.param('name')), ne(line.name, 'main'))).orderBy(line.startedAt) as Line[];
+    // The repo and its work in one read (two before, for a repo with none, as most are): no row is no repo, and a row
+    // with no line is a repo with no work open.
+    const list = await db.select(lineCols).from(repo).leftJoin(line, and(eq(line.repoId, repo.id), ne(line.name, 'main')))
+      .where(named(c.get('userId'), c.req.param('name'))).orderBy(line.startedAt) as (Omit<Line, 'line'> & {line: string | null})[];
     // A repo turned off says so, lines or none.
-    on(list.length ? list[0].off : (await repoAt(db, c.get('userId'), c.req.param('name')))?.off);
-    return c.json(list.map(lineShown));
+    on(list[0]?.off);
+    return c.json(list.filter((x): x is Line => x.line !== null).map(lineShown));
   });
 
   v1.post('/repos/:name/lines', async (c) => {
@@ -528,12 +534,13 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
 
   v1.get('/repos/:name/changes', async (c) => {
     const name = c.req.param('name');
-    const r = await repoAt(db, c.get('userId'), name);
-    if (!r) return c.json([]);
-    on(r.off);
-    // The newest 200: a repo's changes are kept, and each says its reviews.
-    const list = await db.select(changeCols).from(change).where(eq(change.repoId, r.id)).orderBy(desc(change.updatedAt)).limit(200) as Change[];
-    return c.json(list.map((x) => changeShown(name, x)));
+    // The newest 200: a repo's changes are kept, and each says its reviews. Read with the repo, in one read (two
+    // before; the app asks it each time Forge or Git is shown): no row is no repo, a row with no change a repo with none.
+    const list = await db.select({...changeCols, off: repo.offAt}).from(repo).leftJoin(change, eq(change.repoId, repo.id))
+      .where(named(c.get('userId'), name)).orderBy(desc(change.updatedAt)).limit(200) as ((Omit<Change, 'id'> & {id: string | null; off: Date | null}))[];
+    if (!list.length) return c.json([]);
+    on(list[0].off);
+    return c.json(list.filter((x): x is Change & {off: Date | null} => x.id !== null).map((x) => changeShown(name, x)));
   });
 
   // Submit change: what the line has pushed, measured against main's last commit. Again after

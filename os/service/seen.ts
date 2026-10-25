@@ -101,10 +101,18 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     return {ok: true};
   };
 
+  // Each repo that is on, the servers it is shown in (as `states` says them) and its face, in one read: three before,
+  // each its own round trip, and Remote and Home ask it each time they are shown.
   v1.get('/seen', async (c) => {
     const me = c.get('userId');
-    const list = await db.select({name: repo.name}).from(repo).where(and(eq(repo.userId, me), isNull(repo.offAt))).orderBy(repo.name) as {name: string}[];
-    return c.json(await states(db, me, list.map((r) => r.name)));
+    const list = await rows<{name: string; servers: {id: string; name: string; address: string}[]; face: string | null; face_name: string | null; as_server: string | null}>(db, sql`
+      select r.name, coalesce((select json_agg(json_build_object('id', s.id, 'name', s.name, 'address', ${serverAddress(sql`s.id`)}) order by k.shared_at)
+          from repo_share k join server s on s.id = k.server_id and s.gone_at is null where k.repo_id = r.id), '[]') as servers,
+        p.face, p.name as face_name, p.server_id as as_server
+      from repo r left join repo_public p on p.repo_id = r.id and p.released_at is null
+      where r.user_id = ${me} and r.off_at is null order by r.name`);
+    return c.json(list.map((r) => ({name: r.name, seen: (r.face ? 'everyone' : r.servers.length ? 'servers' : 'private') as Seen, servers: r.servers,
+      as: r.face ? `${r.face}:${r.face_name}` : null, asServer: r.face ? r.as_server : null})));
   });
 
   // Who sees it is said all at once. Everyone: as a server it is in (by
