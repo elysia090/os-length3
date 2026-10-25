@@ -2553,20 +2553,29 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .board-head .grow { flex: 1; }
 .board-head > .mono, .board-head > .small { flex-shrink: 4; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .board-head > .button { flex: none; }
-/* A board's TODO, pinned: Home's box, tall as Home's is, whatever its
-   items, since it scrolls in itself; the talk has the rest. Its hints show
-   while one writes in it. No rule under it: the box's own edge ends it, and the talk begins below. */
-.board-todo { flex: none; display: grid; gap: var(--s2); padding: 0 var(--s5) var(--s3); }
+/* A board on screen is one sheet, never a box in a box: its head across it over a quiet rule; its talk at the left, as
+   tall as the board, scrolling as a conversation does (the latest at its foot, what was said before above it); its
+   TODO beside it at the right, a column of its own past a rule, the same list as Home's but not boxed again (the board
+   is its box). It scrolls in itself when it is long; its hints show while one writes in it. Narrow, the TODO comes
+   over the talk, as short as a few of its lines, and the talk has the rest. */
+.board-card:not(.board-new, .ghost-next) { display: grid; grid-template-columns: minmax(0, 1fr) 320px; grid-template-rows: auto minmax(0, 1fr); }
+.board-card:not(.board-new) > .board-head { grid-column: 1 / -1; }
+.slide[aria-current='true'] .board-card:not(.board-new) > .board-head:has(~ .board-talk) { border-bottom: 1px solid var(--rule); }
+.board-card > .board-talk { grid-column: 1; grid-row: 2; }
+.board-todo { grid-column: 2; grid-row: 2; display: grid; align-content: start; gap: var(--s2); min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  padding: var(--s3) var(--s4) var(--s4); border-left: 1px solid var(--rule); }
 .board-todo-head { display: flex; align-items: baseline; gap: var(--s2); font-size: var(--t-meta); font-weight: 600; color: var(--sub); }
 .board-todo-head .muted { font-weight: 400; }
-.board-todo .todo-box { min-height: 0; height: clamp(220px, 40vh, 440px); overflow-y: auto; }
-/* Its edge a little outside the board's # and TODO, so the marks inside sit near their line. */
-.board-todo .todo-box { margin-inline: calc(-1 * var(--s2)); }
-/* Its first line a little down from the box's top, as Home's is. */
-.board-todo .todo-items { padding: var(--s3) var(--s2) 0; }
+.board-todo .todo-box { min-height: 0; margin-inline: calc(-1 * var(--s2)); border: 0; background: transparent; }
+.board-todo .todo-items { padding: 0; }
 .board-todo .todo-hint { display: none; }
-.board-todo .todo-box:focus-within .todo-hint { display: flex; }
+.board-todo .todo-box:focus-within .todo-hint { display: flex; padding-inline: var(--s2); }
 .board-todo .error:empty { display: none; }
+@media (max-width: 760px) {
+  .board-card:not(.board-new, .ghost-next) { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); }
+  .board-todo { grid-column: 1; grid-row: 2; max-height: 34vh; border-left: 0; border-bottom: 1px solid var(--rule); }
+  .board-card > .board-talk { grid-row: 3; }
+}
 .todo-read { white-space: pre-wrap; }
 .board-talk { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s3) var(--s5); overscroll-behavior: contain; }
 /* Its talk goes on below what is shown: the box is open at its foot and the posts run past the edge (server-layer.ts). */

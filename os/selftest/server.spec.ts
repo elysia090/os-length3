@@ -172,12 +172,13 @@ test('an empty board says so at its talk\'s foot, by the box one writes in; a bo
   await expect(about.locator('br')).toHaveCount(1);
   await expect(about).toHaveText('A board is one thing to talk about, with a TODO kept together:a trip, a release, a reading group.');
 
-  // A talk longer than its box: at its foot the box is closed; scrolled up, it is open at its foot.
+  // A talk longer than its board (the board's whole height is the talk's): at its foot the board is closed; scrolled
+  // up, it is open at its foot.
   await app.server.layer.getByRole('button', {name: 'Previous board'}).click();
-  for (let i = 1; i <= 12; i++) await app.server.post('general', `Post ${i}`);
+  for (let i = 1; i <= 30; i++) await app.server.post('general', `Post ${i}`);
   const card = app.server.layer.locator('.slide[aria-current="true"] .board-card');
   const bottom = () => card.evaluate((el) => getComputedStyle(el).borderBottomColor);
-  await expect(talk).toContainText('Post 12');
+  await expect(talk).toContainText('Post 30');
   await expect.poll(bottom).not.toBe('rgba(0, 0, 0, 0)');
   await talk.evaluate((el) => { el.scrollTop = 0; });
   await expect.poll(bottom).toBe('rgba(0, 0, 0, 0)');

@@ -2274,8 +2274,8 @@ trip, a release, a reading group), and each holds two things:
 
 - **the talk**: short posts, read as a conversation. Deciding what to do
   is talk too; there is no document to write together.
-- **its TODO**: the same list as Home's, in the same box, written the same
-  way (Kind：title, Enter for the detail, ○ when done), kept by its people
+- **its TODO**: the same list as Home's (not boxed again: the board is its
+  box), written the same way (Kind：title, Enter for the detail, ○ when done), kept by its people
   together. It goes to the Remote item by item and field by field, a moment
   after the writing stops, so two people writing different items, or one
   ticking what another is detailing, never undo each other; only the very
@@ -2341,8 +2341,13 @@ Server is an overlay (§3), on the bench's shape. Its pieces, from §3:
   chip's end when it says it, with the way on (See the plan, Go to Inbox).
   Being asked into a server, and writing, are free.
 - **Boxes side by side**: its boards, the last box making a new one. A
-  board holds **the TODO box** at its top and its talk under it, with
-  nothing switched to see one or the other. Outside the server an open
+  board on screen is one sheet, never a box in a box: its name across it
+  over a quiet rule, its talk at the left as tall as the board (the latest
+  at its foot, what was said before above, the board open at its foot while
+  there is more below, so the eye goes on down), and **its TODO** beside it
+  at the right, a column of its own past a rule, scrolling in itself when
+  long; nothing switched to see one or the other. Narrow, the TODO comes
+  over the talk, a few lines tall. Outside the server an open
   board's TODO is shown, not written, and not at all while empty.
 - **The box at the foot** writes in the board on screen (旅行 の人たちへ).
   What is half written in it is that board's (§1): going to another board,
