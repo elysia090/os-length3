@@ -90,7 +90,19 @@ class CoreStore implements RepoStore {
   remove(repo: string, path: string) { return core<void>('repo_remove', {repo, path}); }
   rename(repo: string, path: string, name: string) { return core<void>('repo_rename', {repo, path, name}); }
   put(repo: string, path: string, bytes: Uint8Array) { return core<number>('repo_put', {repo, path, bytes: base64(bytes)}); }
-  async bytes(repo: string, path: string) { return Uint8Array.from(atob(await core<string>('repo_bytes', {repo, path})), (c) => c.charCodeAt(0)); }
+  async bytes(repo: string, path: string) { return unbase64(await core<string>('repo_bytes', {repo, path})); }
+}
+
+/**
+ * Base64 as bytes: the engine's own where it has it, else each character's code laid into one array (not a
+ * function called for each, which took a Prompt's copy of a large file a second).
+ */
+export function unbase64(text: string): Uint8Array {
+  const native = Uint8Array as unknown as {fromBase64?: (s: string) => Uint8Array};
+  if (native.fromBase64) return native.fromBase64(text);
+  const s = atob(text), out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+  return out;
 }
 
 /** Bytes as base64, a piece at a time (a large file would overflow one call's arguments). */
@@ -222,6 +234,47 @@ onElsewhere((paths) => {
     if (inside.size) void store.changedPaths(repo, [...inside], ELSEWHERE); else store.changedOutside(repo, ELSEWHERE);
   }
 });
+
+/**
+ * Everything in a repo, folders and files, in the order a walk down it meets them (each folder's entries as the
+ * store lists them, a folder's own before what comes after it): listed a level at a time, every folder of a level
+ * asked at once, so a repo of many folders is as many trips to the core as it is deep.
+ */
+export async function walkRepo(repo: string): Promise<{path: string; entry: Entry}[]> {
+  const listed = new Map<string, Entry[]>();
+  for (let level = ['']; level.length;) {
+    const lists = await Promise.all(level.map((dir) => store.tree(repo, dir)));
+    level.forEach((dir, k) => listed.set(dir, lists[k]));
+    level = level.flatMap((dir, k) => lists[k].filter((e) => e.kind === 'dir').map((e) => (dir ? `${dir}/${e.name}` : e.name)));
+  }
+  const out: {path: string; entry: Entry}[] = [];
+  const walk = (dir: string) => {
+    for (const entry of listed.get(dir) ?? []) {
+      const path = dir ? `${dir}/${entry.name}` : entry.name;
+      out.push({path, entry});
+      if (entry.kind === 'dir') walk(path);
+    }
+  };
+  walk('');
+  return out;
+}
+
+/**
+ * `read` of each of `items`, in their order, in pieces of about `bytes` by `size` (one item at least), each piece
+ * read at once: what the core sends in one message stays a few megabytes. Stops between pieces once `enough` of
+ * what was read so far.
+ */
+export async function inPieces<T, R>(items: T[], size: (item: T) => number, read: (item: T) => Promise<R>, bytes = 4 << 20,
+  enough: (got: R[]) => boolean = () => false): Promise<R[]> {
+  const out: R[] = [];
+  for (let at = 0; at < items.length && !enough(out);) {
+    let end = at, n = 0;
+    while (end < items.length && (end === at || n + size(items[end]) <= bytes)) n += size(items[end++]);
+    out.push(...await Promise.all(items.slice(at, end).map(read)));
+    at = end;
+  }
+  return out;
+}
 
 /** Hear every change made through the store; returns the way to stop. */
 export function onChange(listen: (c: Change) => void): () => void {

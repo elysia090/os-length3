@@ -75,7 +75,10 @@ tracked in issue #20.
   first opens it, and the translator with BusyBox and l3 translated ahead of
   time. A first Prompt fetches about 0.8 MB (the index, the translator,
   BusyBox and its translation); what it fetched is kept by digest within
-  the browser's storage budget, so the next fetches only `l3.json`. Make it
+  the browser's storage budget, so the next fetches only `l3.json`. What a
+  Prompt translates as it runs (the code its shell reaches, gcc's cc1, git)
+  is kept the same way, by the file it was made from, so the next Prompt
+  reads it rather than translating it again. Make it
   with `npm run l3` (`scripts/l3.sh`: the translator from this tree and the
   root `core/src/root.rs` pins for `RELEASE`), and check it against that root
   with `npm run l3:parity -- ROOT public/l3`; `node scripts/l3-runnable.mjs

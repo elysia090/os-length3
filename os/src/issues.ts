@@ -99,14 +99,13 @@ const names = async (store: Pick<RepoStore, 'tree'>, repo: string): Promise<stri
   try { return (await store.tree(repo, 'issue')).filter((e) => e.kind === 'file').map((e) => e.name); } catch { return null; }
 };
 
-/** A repo's issues by number, the newest first (one still without a number is newer); [] when it has none. */
+/** A repo's issues by number, the newest first (one still without a number is newer); [] when it has none. All read at once. */
 export async function readIssues(store: Pick<RepoStore, 'tree' | 'read'>, repo: string): Promise<Issue[]> {
+  const files = await names(store, repo) ?? [];
+  // Gone between the listing and the reading (a Prompt, another device): it is no issue any more.
+  const read = await Promise.all(files.map((name) => store.read(repo, `issue/${name}`).catch(() => null)));
   const out: Issue[] = [];
-  for (const name of await names(store, repo) ?? []) {
-    // Gone between the listing and the reading (a Prompt, another device): it is no issue any more.
-    const c = await store.read(repo, `issue/${name}`).catch(() => null);
-    if (c?.text != null) out.push(parseIssue(repo, name, c.text));
-  }
+  files.forEach((name, k) => { const c = read[k]; if (c?.text != null) out.push(parseIssue(repo, name, c.text)); });
   return out.sort((a, b) => (b.n ?? Infinity) - (a.n ?? Infinity) || (a.file < b.file ? -1 : 1));
 }
 

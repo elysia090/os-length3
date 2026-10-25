@@ -19,10 +19,16 @@ const ALL_RIGHTS = (1n << 30n) - 1n;
 // Links followed in one lookup before it is a loop, as Linux counts.
 const MAX_HOPS = 40;
 
-/** A failure said by its preview1 number. */
-export class Errno extends Error {
-  code: number;
-  constructor(code: number) { super(`errno ${code}`); this.code = code; }
+/**
+ * A failure said by its preview1 number, thrown from deep in the files to the call that answers with it: a plain
+ * value, not an Error, as it is an answer and not a fault. An Error takes the stack each time it is made (through the
+ * core's wasm frames), which was two thirds of what the worker spent reading a repo's files for a search.
+ */
+export class Errno {
+  readonly code: number;
+  constructor(code: number) { this.code = code; }
+  get message() { return `errno ${this.code}`; }
+  toString() { return this.message; }
 }
 
 /** The module asked to end (proc_exit): its instance is done with. */

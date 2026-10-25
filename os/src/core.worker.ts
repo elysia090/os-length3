@@ -2,9 +2,17 @@
 // IndexedDB. Each tab runs a worker of its own; their calls take turns under one Web Lock, and a worker
 // that finds the files changed by another tab reads them again before it calls.
 //
-// Page → worker: {init: {env, tab}} first, then {id, name, args}, or {id, env} to change the environment.
-// Worker → page: {id, ok} or {id, error, status?, detail?} (core/src/api.rs answer), in the order asked. A
-// change kept is said on BroadcastChannel('length3-core') as {changed: true, from: tab, paths}: each file's path.
+// Page → worker: {init: {env, tab}} first, then {id, name, args}, or {id, env} to change the environment,
+// or {batch: [{id, name, args}…]}: what the page asked in one go, made one after another under one turn of the
+// lock (one look at what is kept), and answered in one message.
+// Worker → page: {id, ok} or {id, error, status?, detail?} (core/src/api.rs answer), in the order asked; for a
+// batch, {batch: [answer…]} in its order. A change kept is said on BroadcastChannel('length3-core') as
+// {changed: true, from: tab, paths}: each file's path.
+//
+// Started with {init: {…, reader: true}}, it is the tab's reader: the same core over the same files as they are kept,
+// answering only what reads them (READS), while the tab's own worker waits on the Remote (a sync sends and takes in
+// over the network, the worker held the whole time, and a file opened meanwhile waited for it: core-client.ts). It
+// looks at what is kept before each turn and reads it again when anything was written since; it never writes.
 
 import coreWasm from 'virtual:length3-core.wasm?url';
 import {Core, type Answer, type Send} from './core-abi.ts';
@@ -30,6 +38,8 @@ let core: Core | undefined;
 let seen = -1;
 // Another tab wrote since this one last read what is kept: the next call reads it again first.
 let behind = true;
+/** This worker is the tab's reader (only READS, never writing). */
+let reader = false;
 channel.onmessage = (e: MessageEvent<{from?: string}>) => { if (e.data?.from !== tab) behind = true; };
 
 /**
@@ -170,35 +180,88 @@ async function persist(db: IDBDatabase | null, answer: Answer): Promise<Answer> 
   return answer;
 }
 
+/** Under the lock: this tab's files as the last write (of any tab) left them. */
+async function current(): Promise<IDBDatabase | null> {
+  const db = await open();
+  behind = false;
+  if (db && (seen < 0 || await generation(db) !== seen)) {
+    const all = await readAll(db);
+    fs.restore(all.entries);
+    seen = all.generation;
+    // What the core held in its memory was of the files before.
+    core = undefined;
+  }
+  return db;
+}
+
 /** One call, with this tab's files as the last write (of any tab) left them, and what it changed kept. */
 async function call(name: string, args: unknown): Promise<Answer> {
   if (READS.has(name) && !behind && seen >= 0) {
     const answer = await run(name, args);
     return fs.dirty ? locked(async () => persist(await open(), answer)) : answer;
   }
+  return locked(async () => { const db = await current(); return persist(db, await run(name, args)); });
+}
+
+/**
+ * As the reader: the files as last kept (read again when anything was written since), then each call, which only
+ * reads; anything a read changed after all is not kept here, and what is kept is read again before the next turn.
+ */
+async function read(list: {name: string; args: unknown}[]): Promise<Answer[]> {
+  if (list.some((c) => !READS.has(c.name))) return list.map(() => ({error: 'the reader only reads'}));
+  const db = await open();
+  if (db && (seen < 0 || await generation(db) !== seen)) {
+    const all = await readAll(db);
+    fs.restore(all.entries);
+    seen = all.generation;
+    core = undefined;
+  }
+  const out: Answer[] = [];
+  for (const c of list) out.push(await run(c.name, c.args));
+  if (fs.dirty) { fs.flush(); seen = -1; }
+  return out;
+}
+
+/**
+ * Calls asked in one go, one after another, each as `call` makes it: those that only read with nothing new from
+ * another tab as they come; otherwise all under one turn of the lock, the files looked at once, each call's change
+ * kept before the next is made.
+ */
+async function calls(list: {name: string; args: unknown}[]): Promise<Answer[]> {
+  if (reader) return read(list);
+  const out: Answer[] = [];
+  if (list.every((c) => READS.has(c.name))) {
+    for (const c of list) out.push(await call(c.name, c.args));
+    return out;
+  }
   return locked(async () => {
-    const db = await open();
-    behind = false;
-    if (db && (seen < 0 || await generation(db) !== seen)) {
-      const all = await readAll(db);
-      fs.restore(all.entries);
-      seen = all.generation;
-      // What the core held in its memory was of the files before.
-      core = undefined;
-    }
-    return persist(db, await run(name, args));
+    const db = await current();
+    for (const c of list) out.push(await persist(db, await run(c.name, c.args)));
+    return out;
   });
 }
 
-interface Message { id?: number; init?: {env?: Record<string, string>; tab?: string}; env?: Record<string, string>; name?: string; args?: unknown }
+interface Call { id: number; name: string; args?: unknown }
+interface Message { id?: number; init?: {env?: Record<string, string>; tab?: string; reader?: boolean}; env?: Record<string, string>; name?: string; args?: unknown; batch?: Call[] }
 
 async function handle(m: Message) {
   if (m.init) {
     env = {...m.init.env};
     tab = m.init.tab ?? '';
+    reader = !!m.init.reader;
     core = undefined;
     // Compiled while the page is still drawing, so the first call finds it ready.
     compiled().catch(() => {});
+    return;
+  }
+  if (m.batch) {
+    const list = m.batch;
+    try {
+      const answers = await calls(list.map((c) => ({name: c.name ?? '', args: c.args})));
+      scope.postMessage({batch: list.map((c, k) => ({id: c.id, ...answers[k]}))});
+    } catch (e) {
+      scope.postMessage({batch: list.map((c) => ({id: c.id, error: said(e)}))});
+    }
     return;
   }
   const id = m.id;
@@ -210,7 +273,7 @@ async function handle(m: Message) {
       scope.postMessage({id, ok: null});
       return;
     }
-    const answer = await call(m.name ?? '', m.args);
+    const answer = reader ? (await read([{name: m.name ?? '', args: m.args}]))[0] : await call(m.name ?? '', m.args);
     scope.postMessage({id, ...answer});
   } catch (e) {
     scope.postMessage({id, error: said(e)});

@@ -1,6 +1,14 @@
 // The core in a browser: the same Rust the app runs (core/src/api.rs), built for the web and run in a
 // worker of this tab (core.worker.ts) over files this browser keeps. A page asks it what the app asks
-// through Tauri, by name with JSON; the answers come back in the order asked.
+// through Tauri, by name with JSON; the answers come back in the order asked. What is asked in one go
+// (one turn of the page: a list read with Promise.all) goes to the worker as one message and comes back
+// as one, so a hundred files read cost the page one trip to the worker and back, not a hundred, each
+// waiting its turn behind whatever the page is drawing.
+//
+// While the worker waits on the Remote (a sync, a push: the core asks it synchronously, and the worker does nothing
+// else meanwhile, a few hundred milliseconds to seconds), what only reads this device's files (a file opened, the
+// tree, a search) is asked of a second worker instead, the tab's reader (core.worker.ts), over the same files as
+// they are kept, so it does not wait for the Remote. What is written always goes to the one worker, in order.
 
 import {coreWorker} from './core-worker.ts';
 
@@ -28,23 +36,82 @@ export function deviceOf(ua: string): string {
 /** Tell the core where it runs before its first answer (and again when it changes). */
 export function setEnvironment(env: Record<string, string>) {
   environment = {...environment, ...env};
+  // After what was asked before it, as it was asked before it.
+  send();
   if (worker) worker.postMessage({id: next++, env: environment});
+  if (reader) reader.postMessage({id: next++, env: environment});
+}
+
+type Call = {id: number; name: string; args: Record<string, unknown>};
+/** What was asked in this turn of the page and not sent yet: of the worker, and of the reader. */
+let queued: Call[] = [];
+let toRead: Call[] = [];
+/** Send what is asked so far: alone as itself, more as one batch (core.worker.ts answers a batch in one message). */
+function send() {
+  const q = queued, r = toRead;
+  queued = [];
+  toRead = [];
+  if (q.length) started().postMessage(q.length === 1 ? q[0] : {batch: q});
+  if (r.length) {
+    for (const c of r) reading.set(c.id, c);
+    readerOf().postMessage(r.length === 1 ? r[0] : {batch: r});
+  }
+}
+const answered = (id: number, answer: Answer) => {
+  if (remote.delete(id)) away--;
+  writing.delete(id);
+  reading.delete(id);
+  const p = waiting.get(id);
+  if (!p) return;
+  waiting.delete(id);
+  p.resolve(answer);
+};
+
+/** What only reads this device's files (core.worker.ts READS, less what may ask the Remote): the reader may answer it. */
+const ANYWHERE = new Set(['repo_list', 'repo_tree', 'repo_read', 'repo_bytes', 'state_get', 'capacity']);
+/** What may wait on the Remote: while one is asked of the worker, what only reads goes to the reader. */
+const REMOTE = /^(sync_repo|repo_fetch|home_sync|remote_(?!status$)|history_(push|submit|reset|log|cut)$|change_|changes_list$|work_(lines|start|switch)$|plan_page$|app_page$)/;
+/** The calls asked of the worker that may wait on the Remote, and how many there are. */
+const remote = new Set<number>();
+let away = 0;
+/**
+ * The calls asked of the worker that write here (neither only reading nor asking the Remote): while one is not
+ * answered, a read goes to the worker after it, as it was asked after it, so it reads what was written.
+ */
+const writing = new Set<number>();
+/** The tab's reader, made when first wanted; null once it could not start (the worker answers everything then). */
+let reader: Worker | null | undefined;
+/** What the reader was asked and has not answered: asked of the worker instead, should the reader stop. */
+const reading = new Map<number, Call>();
+function readerOf(): Worker {
+  if (reader) return reader;
+  const r = coreWorker();
+  r.postMessage({init: {env: environment, tab, reader: true}});
+  r.onmessage = (e: MessageEvent<({id: number} & Answer) | {batch: ({id: number} & Answer)[]}>) => {
+    for (const {id, ...answer} of 'batch' in e.data ? e.data.batch : [e.data]) answered(id, answer as Answer);
+  };
+  r.onerror = () => {
+    reader = null;
+    const again = [...reading.values()];
+    reading.clear();
+    if (again.length) started().postMessage({batch: again});
+  };
+  return reader = r;
 }
 
 function started(): Worker {
   if (worker) return worker;
   const w = coreWorker();
   w.postMessage({init: {env: environment, tab}});
-  w.onmessage = (e: MessageEvent<{id: number} & Answer>) => {
-    const {id, ...answer} = e.data;
-    const p = waiting.get(id);
-    if (!p) return;
-    waiting.delete(id);
-    p.resolve(answer);
+  w.onmessage = (e: MessageEvent<({id: number} & Answer) | {batch: ({id: number} & Answer)[]}>) => {
+    for (const {id, ...answer} of 'batch' in e.data ? e.data.batch : [e.data]) answered(id, answer as Answer);
   };
   // A worker that cannot start (its file not served, a browser without module workers) fails every question.
   w.onerror = (e) => {
     const why = new Error(e.message || 'The core could not start');
+    remote.clear();
+    writing.clear();
+    away = 0;
     for (const p of waiting.values()) p.reject(why);
     waiting.clear();
   };
@@ -57,12 +124,18 @@ function started(): Worker {
   return worker = w;
 }
 
-/** Ask the core in this tab's worker. */
+/** Ask the core in this tab's worker: sent once this turn of the page is done asking, with what else it asked. */
 export const ask: Ask = (name, args) => new Promise<Answer>((resolve, reject) => {
-  const w = started();
+  started();
   const id = next++;
   waiting.set(id, {resolve, reject});
-  w.postMessage({id, name, args});
+  // Only read, while the worker may be waiting on the Remote: the reader answers it.
+  if (away > 0 && !writing.size && reader !== null && ANYWHERE.has(name)) toRead.push({id, name, args});
+  else {
+    if (REMOTE.test(name)) { remote.add(id); away++; } else if (!ANYWHERE.has(name)) writing.add(id);
+    queued.push({id, name, args});
+  }
+  if (queued.length + toRead.length === 1) queueMicrotask(send);
 });
 
 /** Hear another tab's core change what is kept: the paths it wrote or removed, as the core names them. */

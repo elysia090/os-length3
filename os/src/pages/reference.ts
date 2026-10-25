@@ -4,7 +4,7 @@ import {counted, diffFiles, fileName} from './diff-view.ts';
 import * as gitops from '../history.ts';
 import {issueName, issuePath, readIssues, type Issue} from '../issues.ts';
 import {t, tn} from '../i18n.ts';
-import {onChange, store, type Change} from '../repos.ts';
+import {inPieces, onChange, store, walkRepo, type Change} from '../repos.ts';
 import {findInText, nameFirst, nameMatches, stillAt, type Hit} from '../search.ts';
 import {sessionIfAny, type Run} from './terminal.ts';
 import {answers} from './common.ts';
@@ -74,22 +74,17 @@ export interface ReferenceEvents {
 
 type Files = {path: string; text: string}[];
 
-/** The repo's text files, read once per search session. */
+/**
+ * The repo's text files (the first FILE_LIMIT of them in the walk's order), read once per search session: listed a
+ * level at a time and read a few megabytes at once, so the first search costs a few trips to the core, not one a file.
+ */
 async function readAll(repo: string): Promise<Files> {
-  const out: Files = [];
-  const walk = async (dir: string) => {
-    for (const e of await store.tree(repo, dir)) {
-      if (out.length >= FILE_LIMIT) return;
-      const path = dir ? `${dir}/${e.name}` : e.name;
-      if (e.kind === 'dir') { await walk(path); continue; }
-      if (e.kind !== 'file') continue;
-      // Gone since the listing (a Prompt, another device): nothing of it to search.
-      const c = await store.read(repo, path).catch(() => null);
-      if (c?.text != null) out.push({path, text: c.text});
-    }
-  };
-  await walk('');
-  return out;
+  const files = (await walkRepo(repo)).filter((f) => f.entry.kind === 'file');
+  const texts = (got: (Files[number] | null)[]) => got.filter((f) => f !== null).length >= FILE_LIMIT;
+  // Gone since the listing (a Prompt, another device): nothing of it to search.
+  const read = await inPieces(files, (f) => f.entry.size, (f) => store.read(repo, f.path).then((c) => (c.text != null ? {path: f.path, text: c.text} : null), () => null),
+    undefined, texts);
+  return read.filter((f) => f !== null).slice(0, FILE_LIMIT);
 }
 
 /** The files read for a search, as a change saved since leaves them: the file's new text, or read again. */

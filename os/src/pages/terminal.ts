@@ -1,9 +1,9 @@
 import * as dotfiles from '../dotfiles.ts';
-import {onChange, store} from '../repos.ts';
+import {inPieces, onChange, store, walkRepo} from '../repos.ts';
 import {bytes, h} from '../dom.ts';
 import {isNative, promptOpen, rootFetch, rootStatus, type Held, type Stopped} from '../host.ts';
 import {currentLang, onLang, t, tn} from '../i18n.ts';
-import {filesNow, loadL3, promptWorker, warmL3, watchLoad, type L3, type Stage} from '../userland.ts';
+import {filesNow, keepMore, keepReached, keepTranslation, keptNow, loadL3, promptWorker, usedKept, warmL3, watchLoad, type L3, type Stage} from '../userland.ts';
 import {every} from '../runs.ts';
 import {errorText} from '../errors.ts';
 import {LAND, paced, still} from '../glide.ts';
@@ -28,16 +28,23 @@ const strip = (s: string) => s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\
 /** sh -i says this once because the console is not a terminal; it means nothing here. */
 const NO_TTY = "/bin/sh: can't access tty; job control turned off\n";
 /**
- * The prompt the shell prints, at the end of what it wrote: a run is over
- * when it comes back: `x $ `, `x/src $ ` (the root's shrc), or a path
- * (`/root/x $ `) outside the repo.
+ * The prompt line the shell waits at, if `line` (the last line of what it wrote) is one: `x $ `, `x/src $ ` (the root's
+ * shrc), or a path (`/root/x $ `) outside the repo; a run is over when it comes back. '' otherwise.
  */
-const PROMPT = /(?:^|\n)[^\n]*\S \$ $/;
+const waitsAt = (line: string): string => (/\S \$ $/.test(line) ? line : '');
 /** What a run prints comes in a line after another (styles.css .fresh): this far apart, each over this long. */
 const STAGGER = 30, FADE = 240;
-/** The prompt line it waits at, at the end of what it wrote. */
-const WAITS = /(?:^|\n)([^\n]*\S \$ )$/;
 const RUNS = 50;
+/** Output kept on the screen, in characters: past the most, the oldest lines go until the least is left. */
+const KEEP_MOST = 200_000, KEEP_LEAST = 150_000;
+/**
+ * Lines printed all at once are drawn in blocks of about this many characters, each a box of its own: what comes
+ * after one is laid out without laying out again the lines before it (one text of 1 MB took the page 16 to 30 ms
+ * a frame to add a few lines to and scroll; in blocks, a millisecond).
+ */
+const BLOCK = 8_000;
+/** Of what a run prints in one frame, the lines that come in one after another; the rest comes in with the last of them. */
+const ONE_BY_ONE = 24;
 
 /** One line sent from the prompt box and what came out until the prompt returned. */
 export interface Run { line: string; output: string; started: number; ms: number | null }
@@ -54,24 +61,25 @@ function loadWords(s: Stage): string {
   }
 }
 
-/** Copy a repo's files for the guest: [{path, bytes}] under /root/<repo>. */
+/**
+ * Copy a repo's files for the guest: [{path, bytes}] under /root/<repo>. The repo is listed a level at a time and
+ * its files (in the walk's order, up to the limits) read at once a few megabytes at a time: a repo of hundreds
+ * of files is a few trips to the core, not one a file.
+ */
 async function snapshot(repo: string) {
-  const files: {path: string; bytes: Uint8Array}[] = [];
   const dirs: string[] = [`/root/${repo}`];
+  const wanted: {path: string; size: number}[] = [];
   let total = 0, complete = true;
-  const walk = async (dir: string) => {
-    for (const e of await store.tree(repo, dir)) {
-      const path = dir ? `${dir}/${e.name}` : e.name;
-      if (e.kind === 'dir') { dirs.push(`/root/${repo}/${path}`); await walk(path); continue; }
-      if (e.kind !== 'file') continue;
-      if (files.length >= LIMIT_FILES || total + e.size > LIMIT_BYTES) { complete = false; continue; }
-      const bytes = await store.bytes(repo, path).catch(() => null);
-      if (!bytes) { complete = false; continue; }
-      total += bytes.length;
-      files.push({path: `/root/${repo}/${path}`, bytes});
-    }
-  };
-  await walk('');
+  for (const {path, entry: e} of await walkRepo(repo)) {
+    if (e.kind === 'dir') { dirs.push(`/root/${repo}/${path}`); continue; }
+    if (e.kind !== 'file') continue;
+    if (wanted.length >= LIMIT_FILES || total + e.size > LIMIT_BYTES) { complete = false; continue; }
+    total += e.size;
+    wanted.push({path, size: e.size});
+  }
+  const read = await inPieces(wanted, (f) => f.size, (f) => store.bytes(repo, f.path).catch(() => null));
+  const files: {path: string; bytes: Uint8Array}[] = [];
+  wanted.forEach((f, k) => { const bytes = read[k]; if (bytes) files.push({path: `/root/${repo}/${f.path}`, bytes}); else complete = false; });
   return {files, dirs, complete};
 }
 
@@ -118,7 +126,7 @@ export class Session {
   /** The prompt line the shell waits at (`garden $ `), or nothing while a line runs or it is not running. */
   get promptLine(): string {
     if (!this.live || this.runs.at(-1)?.ms === null) return '';
-    return WAITS.exec(this.text)?.[1] ?? '';
+    return waitsAt(this.lastLine);
   }
   /** The prompt line last told to the watchers. */
   private toldLine = '';
@@ -148,55 +156,140 @@ export class Session {
     return true;
   }
 
+  /**
+   * What the shell wrote goes on the screen at the next frame. Nothing here looks at all that came before (a run
+   * printing a megabyte comes a kilobyte at a time): what came since the last frame is kept apart (`fresh`), and the
+   * last line (where the prompt line comes) is followed as each piece comes.
+   */
   private print(s: string) {
     // Cleared: what was on the screen goes, as in a terminal; what comes after the clearing stays.
     let cleared = -1;
     for (const m of s.matchAll(CLEARS)) cleared = m.index + m[0].length;
-    if (cleared >= 0) { this.text = ''; s = s.slice(cleared); }
-    this.text += strip(s);
-    // It may come in pieces; it goes once whole.
-    if (!this.ttySaid && this.text.includes(NO_TTY)) { this.text = this.text.replace(NO_TTY, ''); this.ttySaid = true; }
+    if (cleared >= 0) { this.text = ''; this.fresh = ''; this.whole = true; this.lastLine = ''; s = s.slice(cleared); }
+    const plain = strip(s);
+    this.text += plain;
+    this.fresh += plain;
+    const nl = plain.lastIndexOf('\n');
+    this.lastLine = nl < 0 ? this.lastLine + plain : plain.slice(nl + 1);
+    // It may come in pieces; it goes once whole (before anything after it is drawn).
+    if (!this.ttySaid && this.text.includes(NO_TTY)) {
+      this.text = this.text.replace(NO_TTY, '');
+      this.ttySaid = true;
+      this.whole = true;
+      this.lastLine = this.text.slice(this.text.lastIndexOf('\n') + 1);
+    }
     // Until then, what may still become it is not drawn: never a frame of it on the screen.
     if (!this.ttySaid && this.text && NO_TTY.startsWith(this.text)) return;
-    // Keep the last 200k characters; older output scrolls away.
-    if (this.text.length > 200_000) this.text = this.text.slice(-150_000);
+    // Far more than is kept on the screen came before a frame could draw it: only the last of it is kept.
+    if (this.fresh.length > 4 * KEEP_MOST) { this.text = this.text.slice(-KEEP_LEAST); this.whole = true; }
     // Drawn once a frame, however many pieces came in it. Output comes a stdio buffer (about 1 KB) at a time,
     // and drawing up to 200k characters and scrolling to them for each piece measured about 22 ms a piece in
     // Chromium: 1 MB of output held the page for 22 s; drawn once for every 17 pieces, 1.3 s.
-    this.painting ||= requestAnimationFrame(() => {
-      this.painting = 0;
-      if (this.text === this.drawn) return;
-      // What came since the last frame goes at the foot, a line after another, so a run is seen coming rather than
-      // appearing; a lot at once (or the start cut away) is drawn whole.
-      // The prompt line it waited at stays a prompt line, seen once something follows it.
-      this.tail?.classList.remove('waits');
-      this.tail = null;
-      const add = this.drawn && this.text.startsWith(this.drawn) ? this.text.slice(this.drawn.length) : null;
-      if (add !== null && add.length < 4000 && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
-        // The line just sent is the line written moved up a line, as a terminal's is: it does not come in again.
-        const echo = this.echo && add.startsWith(this.echo) ? this.echo : '';
-        if (echo) this.output.append(echo);
-        const lines = add.slice(echo.length).split(/(?<=\n)/).filter(Boolean);
-        this.output.append(...lines.map((line, i) => {
-          const s = h('span', {class: 'fresh'}, line);
-          s.style.animationDelay = `${Math.min(i, 24) * STAGGER}ms`;
-          return s;
-        }));
-        // Its last line under way: what comes after (the prompt line) follows it in.
-        this.settles = lines.length ? performance.now() + Math.min(lines.length - 1, 24) * STAGGER + FADE / 2 : 0;
-      } else this.output.replaceChildren(...this.marked(this.text));
-      this.echo = '';
-      this.drawn = this.text;
-      this.markTail();
-      // Full, what comes in scrolls the rest up, smoothly, as a terminal's screen does (at once when much came at once).
-      const far = this.output.scrollHeight - this.output.clientHeight - this.output.scrollTop;
-      const smooth = add !== null && far < this.output.clientHeight && !matchMedia('(prefers-reduced-motion: reduce)').matches;
-      this.output.scrollTo({top: this.output.scrollHeight, behavior: smooth ? 'smooth' : 'auto'});
-    });
+    this.painting ||= requestAnimationFrame(() => this.draw());
+  }
+
+  /**
+   * What came since the last frame, at the foot: a few lines come in a line after another, so a run is seen
+   * coming rather than appearing; a lot at once is added whole, in blocks (BLOCK), never drawing again what was
+   * there; the start cut away (cleared) is drawn whole. Past KEEP_MOST the oldest lines go from the top.
+   */
+  private draw() {
+    this.painting = 0;
+    if (!this.fresh && !this.whole) return;
+    // The prompt line it waited at stays a prompt line, seen once something follows it.
+    this.tail?.classList.remove('waits');
+    this.tail = null;
+    const add = this.whole || !this.drawnLength ? null : this.fresh;
+    const moving = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (add !== null && add.length < 4000 && moving) {
+      // The line just sent is the line written moved up a line, as a terminal's is: it does not come in again.
+      const echo = this.echo && add.startsWith(this.echo) ? this.echo : '';
+      if (echo) this.output.append(echo);
+      const lines = add.slice(echo.length).split(/(?<=\n)/).filter(Boolean);
+      // Each a beat after the one above it, the first ONE_BY_ONE; the rest (a run printing hundreds a frame) all
+      // together with the last of those, as one block, not hundreds of lines each coming in on its own.
+      const one = lines.slice(0, ONE_BY_ONE), rest = lines.slice(ONE_BY_ONE).join('');
+      const end = rest.lastIndexOf('\n') + 1;
+      const fresh = [...one.map((line) => h('span', {class: 'fresh'}, line)),
+        ...(end ? [h('div', {class: 'fresh term-lines'}, rest.slice(0, end))] : []), ...(end < rest.length ? [h('span', {class: 'fresh'}, rest.slice(end))] : [])];
+      fresh.forEach((s, i) => { s.style.animationDelay = `${Math.min(i, ONE_BY_ONE) * STAGGER}ms`; });
+      this.output.append(...fresh);
+      // Its last line under way: what comes after (the prompt line) follows it in.
+      this.settles = lines.length ? performance.now() + Math.min(lines.length - 1, ONE_BY_ONE) * STAGGER + FADE / 2 : 0;
+    } else if (add !== null) this.output.append(...this.blocks(add, this.drawnLast === ''));
+    else this.output.replaceChildren(...this.blocks(this.text, true));
+    this.echo = '';
+    this.fresh = '';
+    this.whole = false;
+    this.drawnLength = this.text.length;
+    this.drawnLast = this.lastLine;
+    this.trim();
+    this.markTail();
+    // Full, what comes in scrolls the rest up, smoothly, as a terminal's screen does (at once when much came at once).
+    const far = this.output.scrollHeight - this.output.clientHeight - this.output.scrollTop;
+    const smooth = add !== null && far < this.output.clientHeight && moving;
+    this.output.scrollTo({top: this.output.scrollHeight, behavior: smooth ? 'smooth' : 'auto'});
+  }
+
+  /** Past KEEP_MOST, the oldest lines go from the top of the screen (whole lines, down to KEEP_LEAST), as from the text. */
+  private trim() {
+    if (this.drawnLength <= KEEP_MOST) return;
+    const nl = this.text.indexOf('\n', this.text.length - KEEP_LEAST);
+    let left = nl < 0 ? this.text.length - KEEP_LEAST : nl + 1;
+    let cut = 0;
+    while (left > 0 && this.output.firstChild) {
+      const node = this.output.firstChild;
+      const n = node.textContent?.length ?? 0;
+      if (n <= left || node.childNodes.length > 1) { node.remove(); left -= n; cut += n; continue; }
+      // Within a block (or a text): its first lines go, the rest of it stays where it is.
+      const text = (node.nodeType === Node.TEXT_NODE ? node : node.firstChild) as Text;
+      text.deleteData(0, left);
+      cut += left;
+      left = 0;
+    }
+    this.text = this.text.slice(cut);
+    this.drawnLength = this.text.length;
+  }
+
+  /**
+   * `text` as nodes to add at the screen's foot (`fresh`: it starts a line): the rest of the line it continues as it
+   * is, whole lines in blocks (a prompt line the shell waited at, at a line's start, in a span of its own between
+   * them, as `.ps`), and a line not ended yet (the prompt line it waits at, a line half printed) as it is, after.
+   */
+  private blocks(text: string, fresh: boolean): Node[] {
+    const out: Node[] = [];
+    let at = 0;
+    if (!fresh) {
+      const nl = text.indexOf('\n');
+      at = nl < 0 ? text.length : nl + 1;
+      if (at) out.push(document.createTextNode(text.slice(0, at)));
+    }
+    const end = text.lastIndexOf('\n') + 1;
+    let block = '';
+    const close = () => { if (block) out.push(h('div', {class: 'term-lines'}, block)); block = ''; };
+    const prompts = [...this.prompts];
+    while (at < end) {
+      const nl = text.indexOf('\n', at) + 1;
+      const line = text.slice(at, nl);
+      at = nl;
+      const ps = prompts.length ? prompts.find((p) => line.startsWith(p)) : undefined;
+      if (ps) { close(); out.push(h('span', {class: 'ps'}, ps), document.createTextNode(line.slice(ps.length))); continue; }
+      block += line;
+      if (block.length >= BLOCK) close();
+    }
+    close();
+    if (at < text.length) out.push(document.createTextNode(text.slice(at)));
+    return out;
   }
   private painting = 0;
-  /** What is on the screen of the output now, to add to it what came after. */
-  private drawn = '';
+  /** What came since the last frame drew the screen, to add at its foot; or the whole of it is drawn again (cleared). */
+  private fresh = '';
+  private whole = false;
+  /** How much of the text is on the screen, and its last line (a line not ended yet, or '' when it ends one). */
+  private drawnLength = 0;
+  private drawnLast = '';
+  /** The last line of all the shell wrote: where the prompt line it waits at is. */
+  private lastLine = '';
   /** The line just sent, until it is drawn. */
   private echo = '';
   /** When what was printed last has all come in (performance.now()). */
@@ -209,22 +302,8 @@ export class Session {
   private tail: HTMLElement | null = null;
   /** Every prompt line the shell has waited at, to tell them again in output drawn whole. */
   private prompts = new Set<string>();
-  /** `text` as nodes, a prompt line the shell waited at (at a line's start) in a span of its own. */
-  private marked(text: string): Node[] {
-    const out: Node[] = [];
-    let plain = '';
-    for (const line of text.split(/(?<=\n)/)) {
-      const ps = [...this.prompts].find((p) => line.startsWith(p));
-      if (!ps) { plain += line; continue; }
-      if (plain) out.push(document.createTextNode(plain));
-      out.push(h('span', {class: 'ps'}, ps));
-      plain = line.slice(ps.length);
-    }
-    if (plain) out.push(document.createTextNode(plain));
-    return out;
-  }
   private markTail() {
-    const waits = WAITS.exec(this.text)?.[1] ?? '';
+    const waits = waitsAt(this.lastLine);
     let left = waits.length;
     if (!left) return;
     this.prompts.add(waits);
@@ -252,14 +331,14 @@ export class Session {
     this.print(s);
     // Its first prompt line: up. What the Prompts after it are given ahead of time (l3's translation) comes a moment later, quietly,
     // so it takes nothing from the first line run.
-    if (this.l3 && PROMPT.test(this.text)) { const l3 = this.l3; this.l3 = null; setTimeout(() => warmL3(l3), 3000); }
+    if (this.l3 && waitsAt(this.lastLine)) { const l3 = this.l3; this.l3 = null; setTimeout(() => warmL3(l3), 3000); }
     const run = this.runs.at(-1);
     // Waiting at a prompt line it had not shown yet (its first, or after output of its own): watchers hear.
     if (!run || run.ms !== null) { if (this.promptLine !== this.toldLine) this.tell(); return; }
     run.output += strip(s);
-    const end = PROMPT.exec(run.output);
-    if (end) {
-      run.output = run.output.slice(0, end.index);
+    // (A run's output starts on a line of its own, after the line sent: its last line is the screen's.)
+    if (waitsAt(this.lastLine)) {
+      run.output = run.output.slice(0, Math.max(0, run.output.lastIndexOf('\n')));
       run.ms = Date.now() - run.started;
       this.follow();
       // On the root the shell wrote the repo itself: everyone reads it again.
@@ -272,6 +351,8 @@ export class Session {
   private readonly id = `shell:${Math.random().toString(36).slice(2)}`;
   /** l3, in a browser, until the shell's first prompt line. */
   private l3: L3 | null = null;
+  /** The l3 it runs, in a browser. */
+  private l3of: L3 | null = null;
   private activity: HTMLElement;
   /** When the worker last said anything. */
   private heard = 0;
@@ -345,13 +426,21 @@ export class Session {
       this.on = 'l3';
       // While l3 comes, the status says how far it is and what it is doing.
       const unwatch = watchLoad((s) => { this.status.textContent = loadWords(s); });
-      const [l3, copy] = await Promise.all([loadL3(), snapshot(this.repo)]).finally(unwatch);
+      // Its Worker is made now, while l3 and the repo's copy come, and starts the Workers its first threads run in:
+      // their scripts are loaded and run by the time it is given what to run, rather than after.
       const worker = promptWorker();
       this.worker = worker;
+      worker.postMessage({type: 'warm'});
       worker.onmessage = ({data}) => {
         this.heard = Date.now();
         if (data.type === 'output') this.received(new TextDecoder().decode(data.bytes));
         else if (data.type === 'changes') this.writeBack(data);
+        // Code its shell reached later, a program of the root it translated and the code that reached later, and what it
+        // read of what was kept: kept for the Prompts after it, and counted as used.
+        else if (data.type === 'more') keepMore(data.path, data.from, data.more);
+        else if (data.type === 'translated') { if (this.l3of) keepTranslation(this.l3of, data.origin, data.wasm, data.segments); }
+        else if (data.type === 'reached') { if (this.l3of) keepReached(this.l3of, data.origin, data.from, data.more); }
+        else if (data.type === 'used') usedKept(data.urls);
         // Where its threads run: each in a Worker of its own (the page is cross-origin isolated), or in turn in this one.
         else if (data.type === 'threads') this.element.dataset.threads = data.apart ? 'apart' : 'in-turn';
         else if (data.type === 'freed') {
@@ -365,7 +454,8 @@ export class Session {
           this.spare = data.held?.spare ?? 0;
           // Paused with a run still open: what runs reads what is typed, or sleeps for a while.
           const open = this.runs.at(-1)?.ms === null;
-          this.inputWait = open && data.for !== 'time';
+          // ('read': a program's kept translation is being read, and it goes on by itself once it is.)
+          this.inputWait = open && data.for === 'input';
           this.sleepsUntil = open && data.for === 'time' ? Date.now() + data.ms : 0;
           this.follow();
           this.tell();
@@ -373,6 +463,10 @@ export class Session {
         else if (data.type === 'exit') this.end(() => t('Exited ({code})', {code: data.status >> 8}));
         else if (data.type === 'error') this.end(() => t('Halted: {message}', {message: data.message.split('\n')[0]}));
       };
+      const [l3, copy, kept] = await Promise.all([loadL3(), snapshot(this.repo), loadL3().then(keptNow).catch(() => null)]).finally(unwatch);
+      // Stopped while it came: it stays stopped.
+      if (this.worker !== worker) return;
+      this.l3of = l3;
       const cwd = `/root/${this.repo}`;
       worker.postMessage({
         type: 'start', translator: l3.translator,
@@ -387,6 +481,8 @@ export class Session {
           'PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', 'ENV=/etc/length3/shrc'],
         cwd,
         mirror: cwd,
+        // The translations Prompts before it made of the root's programs, read when a program is first run.
+        kept,
       });
       // What is saved elsewhere comes into the shell's copy.
       this.unwatch = onChange((c) => {

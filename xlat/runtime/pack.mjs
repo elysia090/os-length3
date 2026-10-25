@@ -34,6 +34,9 @@ export function mountPack(vfs, index, range, decode, at = '/') {
       return f.raw ? stored.slice() : decode(stored, f.size);
     });
     file.size = f.size;
+    // Where its bytes are: the same bytes wherever this pack is (a pack is named by its digest), so what is made from
+    // them (a program's translation) can be kept by it while the file is unchanged (version 0).
+    file.origin = `${pack.replace(/\.pack$/, '')}_${f.at}_${f.len}`;
     dir.entries.set(name, file);
   }
 }

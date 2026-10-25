@@ -210,6 +210,9 @@ export function git(ctx: Context): Node[] {
         fresh.set(r, {work: null, lines: [], changes: [], uncommitted: 0, error: errorText(e)});
       }
     }));
+    // Asked again while this read (an issue written meanwhile): what it read may be from before, so it is not drawn,
+    // nor does it choose the issue shown; the drawing after it, from what is true then, does.
+    if (more) return;
     states = fresh;
     // An issue without a number (written by hand, or two devices' met under one) takes the next free one;
     // the store's change draws the page again. Not on main's behalf while a work is shown: that copy is the work's.
