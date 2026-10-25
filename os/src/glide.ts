@@ -244,12 +244,26 @@ const goingOut = new WeakMap<Element, {a: Animation; inert: boolean}>();
  * came (150 ms of the pace to 280): what is done with leaves the eye. Already going, it is not started again. On its
  * way it is inert: nothing in it is pressed or found (a menu going is no longer a menu).
  */
+/**
+ * A thing at its full room and at none, for folding it up or out: its height and everything else that holds room
+ * (its least height, the room inside and round it, its edges), so it goes all the way to nothing, and what stands
+ * under it is never left to jump the last of the way once it is hidden.
+ */
+function folded(el: HTMLElement): [Keyframe, Keyframe] {
+  const cs = getComputedStyle(el);
+  const room = ['paddingTop', 'paddingBottom', 'marginTop', 'marginBottom', 'borderTopWidth', 'borderBottomWidth'] as const;
+  const full: Keyframe = {height: `${el.getBoundingClientRect().height}px`, minHeight: '0px', opacity: 1, overflow: 'hidden'};
+  const none: Keyframe = {height: '0px', minHeight: '0px', opacity: 0, overflow: 'hidden'};
+  for (const k of room) { full[k] = cs[k]; none[k] = '0px'; }
+  return [full, none];
+}
+
 export function putAway(el: HTMLElement, gone: () => void, o: {fold?: boolean; ms?: number} = {}) {
   if (goingOut.has(el)) return;
   if (still() || el.hidden || !el.isConnected || !el.getClientRects().length) { gone(); return; }
   const from = getComputedStyle(el).getPropertyValue('--from').trim() || '0 4px';
   const frames: Keyframe[] = o.fold
-    ? [{height: `${el.getBoundingClientRect().height}px`, opacity: 1, overflow: 'hidden'}, {height: '0px', opacity: 0, overflow: 'hidden'}]
+    ? folded(el)
     : [{opacity: 1, translate: '0 0', scale: 1}, {opacity: 0, translate: from, scale: .96}];
   const a = el.animate(frames, {duration: paced(o.ms ?? 150), easing: o.fold ? 'cubic-bezier(.4, 0, .2, 1)' : 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards'});
   const going = {a, inert: el.inert};
@@ -267,9 +281,9 @@ export function putAway(el: HTMLElement, gone: () => void, o: {fold?: boolean; m
 /** Opened (a folder), it unfolds as a closed one folds: from nothing to its height, what stands under it making way. */
 export function unfold(el: HTMLElement, ms = 200) {
   if (still()) return;
-  const height = el.getBoundingClientRect().height;
-  if (!height) return;
-  el.animate([{height: '0px', opacity: 0, overflow: 'hidden'}, {height: `${height}px`, opacity: 1, overflow: 'hidden'}], {duration: paced(ms), easing: LAND});
+  if (!el.getBoundingClientRect().height) return;
+  const [full, none] = folded(el);
+  el.animate([none, full], {duration: paced(ms), easing: LAND});
 }
 
 /** Shown again while it was going out: it stays, as it was. */

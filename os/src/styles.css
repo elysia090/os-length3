@@ -426,7 +426,10 @@ a { color: var(--ink); }
    One with no height of its own keeps its line's height, the capitals on its middle. Where the trim is not had, the
    line's middle, as before. The box's own line moves its words by the same measure, measured (optical.ts). */
 @supports (text-box: trim-both cap alphabetic) {
-  .button, .chip, .stub-code, .share-open > span, .box-mode-pill :is(.prompt-ps, .prompt-mode > :not(.icon)) { text-box: trim-both cap alphabetic; }
+  .button, .chip, .stub-code, .share-open > span { text-box: trim-both cap alphabetic; }
+  /* The menu's pills keep their line's height round the capitals: a file's name cut short there (overflow) keeps
+     its descenders. */
+  .box-mode-pill :is(.prompt-ps, .prompt-mode > :not(.icon)) { text-box: trim-both cap alphabetic; padding-block: calc((1lh - 1cap) / 2); }
   .pill-name.pill-name, .server-at.server-at { text-box: trim-both cap alphabetic; padding-block: calc((1lh - 1cap) / 2); }
 }
 .input, .edit input, .edit textarea {
@@ -1300,7 +1303,11 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
   animation-name: look-unfold; animation-timing-function: var(--land); }
 .look.attached[data-at='under'] { border-top: 0; border-top-left-radius: 0; border-top-right-radius: 0; }
 .look.attached[data-at='over'] { border-bottom: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; animation-name: look-unfold-up; }
-.look.attached > .look-head { display: none; }
+/* Its title is the row's, so its head is not shown; its × is still there to be found (Put away), shown where it is
+   while it has the keyboard. */
+.look.attached > .look-head { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.look.attached > .look-head:focus-within { top: var(--s2); right: var(--s3); width: auto; height: auto; overflow: visible; clip-path: none; }
+.look.attached > .look-head > .look-title { display: none; }
 @keyframes look-unfold { from { clip-path: inset(0 0 100% 0); } }
 @keyframes look-unfold-up { from { clip-path: inset(100% 0 0 0); } }
 @media (prefers-reduced-motion: reduce) { .look { animation: none; } }
@@ -1320,6 +1327,8 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 /* It grows with what is written (no corner to drag), on the card's paper, its edge the field's. */
 .look-field { width: 100%; min-height: calc(2 * 1.5em + 2 * var(--s2)); max-height: 40vh; padding: var(--s2) var(--s3); border: 1px solid var(--edge); border-radius: var(--r-card);
   background: var(--paper); color: var(--ink); font: inherit; resize: none; field-sizing: content; }
+/* Where it cannot grow with what is written, it can be made taller by hand, as before. */
+@supports not (field-sizing: content) { .look-field { resize: vertical; } }
 .look-field:focus { outline: none; border-color: var(--ink); }
 .look-write-foot { display: flex; align-items: center; justify-content: flex-end; gap: var(--s2); }
 .look-write-foot > .error { margin: 0 auto 0 0; }

@@ -50,7 +50,9 @@ function place(card: HTMLElement, row: HTMLElement) {
   const left = attached ? r.left : Math.max(8, Math.min(r.left + (r.width - width) / 2, innerWidth - 8 - width));
   const gap = attached ? 0 : 6;
   const high = card.offsetHeight, under = innerHeight - r.bottom - 8, over = r.top - 8;
-  const below = under >= high + gap || under >= over;
+  // Its side is chosen once, as it comes out: growing (lines coming in, a reply written) it keeps it, scrolling in
+  // itself, rather than jumping to the row's other side.
+  const below = card.dataset.at ? card.dataset.at === 'under' : under >= high + gap || under >= over;
   card.style.left = `${left}px`;
   card.style.width = `${width}px`;
   card.style.top = `${below ? r.bottom + gap : Math.max(8, r.top - gap - high)}px`;
@@ -85,16 +87,23 @@ export function lookFrom(row: HTMLElement, look: Look) {
     look.closing?.();
     row.setAttribute('aria-expanded', 'false');
     // A card that is the row's lower part folds back into it, and the row is whole again (its line back) once it has.
+    // Then what the row stands in may be drawn again (a conversation read is no longer word that waits): only once
+    // the row is whole, and not if it was opened again meanwhile.
     const attached = card.classList.contains('attached');
-    const whole = () => { if (out?.row !== row) { row.classList.remove('looked'); delete row.dataset.look; } };
+    const whole = () => {
+      if (out?.row === row) return;
+      row.classList.remove('looked');
+      delete row.dataset.look;
+      row.dispatchEvent(new Event('look-closed', {bubbles: true}));
+    };
     if (!attached) whole();
     document.removeEventListener('pointerdown', away, true);
     card.removeEventListener('keydown', away);
     row.removeEventListener('keydown', away);
+    removeEventListener('scroll', follow, true);
+    removeEventListener('resize', follow);
     sizes.disconnect();
     putAway(card, () => { card.remove(); if (attached) whole(); }, {fold: attached && card.dataset.at === 'under'});
-    // What the row stands in may be drawn again now (a conversation read is no longer word that waits).
-    row.dispatchEvent(new Event('look-closed', {bubbles: true}));
     if (back && row.isConnected) row.focus({preventScroll: true});
   };
   out = {row, close};
@@ -105,9 +114,17 @@ export function lookFrom(row: HTMLElement, look: Look) {
   document.body.append(card);
   keepOut(card);
   place(card, row);
-  // What it holds comes in as it is read: it keeps to the row as it grows.
-  const sizes = new ResizeObserver(() => { if (!gone && row.isConnected) place(card, row); });
+  // What it holds comes in as it is read: it keeps to the row as it grows, and as the row moves (its pane scrolled, the
+  // window made another size) or changes; the row gone from under it, it goes too.
+  const follow = (e?: Event) => {
+    if (gone || (e?.type === 'scroll' && card.contains(e.target as Node))) return;
+    if (row.isConnected) place(card, row); else close(false);
+  };
+  const sizes = new ResizeObserver(() => follow());
   sizes.observe(card);
+  sizes.observe(row);
+  addEventListener('scroll', follow, {capture: true, passive: true});
+  addEventListener('resize', follow);
   document.addEventListener('pointerdown', away, true);
   card.addEventListener('keydown', away);
   row.addEventListener('keydown', away);
