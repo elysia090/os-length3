@@ -46,6 +46,14 @@ const BLOCK = 8_000;
 /** Of what a run prints in one frame, the lines that come in one after another; the rest comes in with the last of them. */
 const ONE_BY_ONE = 24;
 
+/**
+ * A line of the box's own in the Prompt's flow (an issue written, a TODO added from the box), marked at its start
+ * (an invisible separator) so a drawing of it all from the text knows it again; what each goes to when pressed, by
+ * its words.
+ */
+const SAID = '\u2063';
+const goes = new Map<string, (row: HTMLElement) => void>();
+
 /** One line sent from the prompt box and what came out until the prompt returned. */
 export interface Run { line: string; output: string; started: number; ms: number | null }
 
@@ -154,6 +162,43 @@ export class Session {
     const bytes = new TextEncoder().encode(lines);
     this.worker!.postMessage({type: 'input', bytes}, [bytes.buffer]);
     return true;
+  }
+
+  /**
+   * Something the box did that is not the shell's (an issue written, a TODO added: `head` and its words), in the
+   * Prompt's flow as it came: a line of its own before the prompt line the shell waits at (after a line being
+   * printed, under it), pressed to `go` to it (told the line pressed: a drawing of it all from the text draws it anew).
+   * Its line is returned, there now, for what lands on it.
+   */
+  note(head: string, words: string, go: (row: HTMLElement) => void): HTMLElement {
+    // What waits for the next frame is drawn first: the line goes after all that came before it.
+    if (this.painting) { cancelAnimationFrame(this.painting); this.draw(); }
+    const line = `${SAID}${head} ${words.replace(/\s+/g, ' ').trim()}\n`;
+    goes.set(line, go);
+    const row = this.ownLine(line);
+    const tail = this.tail?.isConnected && waitsAt(this.lastLine) ? this.tail : null;
+    if (tail) {
+      this.text = this.text.slice(0, this.text.length - this.lastLine.length) + line + this.lastLine;
+      this.output.insertBefore(row, tail);
+    } else {
+      const under = this.lastLine ? '\n' : '';
+      this.text += under + line;
+      this.output.append(under, row);
+      this.lastLine = '';
+      this.drawnLast = '';
+    }
+    this.drawnLength = this.text.length;
+    this.trim();
+    this.output.scrollTo({top: this.output.scrollHeight});
+    return row.querySelector('button')!;
+  }
+  /** A line of the box's own, as it stands in the flow: its head (#3, TODO) and words, pressed to go to it. */
+  private ownLine(line: string): HTMLElement {
+    const words = line.slice(SAID.length, -1), cut = words.indexOf(' ');
+    const head = cut < 0 ? words : words.slice(0, cut);
+    const b = h('button', {type: 'button', class: 'term-said-go'}, h('b', {}, head), words.slice(head.length));
+    b.addEventListener('click', () => goes.get(line)?.(b));
+    return h('span', {class: 'term-said'}, SAID, b, '\n');
   }
 
   /**
@@ -272,6 +317,7 @@ export class Session {
       const nl = text.indexOf('\n', at) + 1;
       const line = text.slice(at, nl);
       at = nl;
+      if (line.startsWith(SAID)) { close(); out.push(this.ownLine(line)); continue; }
       const ps = prompts.length ? prompts.find((p) => line.startsWith(p)) : undefined;
       if (ps) { close(); out.push(h('span', {class: 'ps'}, ps), document.createTextNode(line.slice(ps.length))); continue; }
       block += line;

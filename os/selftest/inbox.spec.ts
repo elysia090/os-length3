@@ -37,7 +37,7 @@ test('what one person writes to another arrives in their Inbox, and the rail say
   await expect(ada.inbox.thread(bo.handle).getByText('Yes, with the tent.', {exact: true})).toBeVisible();
 });
 
-test('word that comes while one works comes into the pane\'s foot, and pressed opens the conversation', async ({signedIn: ada, another}) => {
+test('word that comes while one works comes into the pane\'s foot, opens where it stands to be answered, and Inbox is a deed further', async ({signedIn: ada, another}) => {
   const bo = await another('Bo');
   await bo.inbox.claim();
   await ada.inbox.claim();
@@ -46,15 +46,33 @@ test('word that comes while one works comes into the pane\'s foot, and pressed o
 
   await bo.inbox.writeTo(ada.handle, 'Review: hello reads well; louder?');
   await ada.comeBack();
-  const word = ada.main.locator('.pane-word-row');
+  const word = ada.main.locator('.pane-word .lately-row');
   await expect(word).toContainText('Bo');
   await expect(word).toContainText('Review');
   await expect(word).toContainText('hello reads well; louder?');
+  // Pressed, it opens where it stands: what was said, and a reply written right there. The page stays Forge.
   await word.click();
-  await expect(ada.inbox.thread(bo.handle).getByText('hello reads well; louder?', {exact: true})).toBeVisible();
-  // Read, it is gone from the pane.
-  await ada.rail.go('forge');
-  await expect(ada.main.locator('.pane-word-row')).toHaveCount(0);
+  const card = ada.page.getByRole('dialog', {name: /^Bo/});
+  await expect(card).toContainText('hello reads well; louder?');
+  await expect(card.getByRole('textbox', {name: 'Reply'})).toBeFocused();
+  await ada.page.keyboard.type('Louder, yes.');
+  await ada.page.keyboard.press('Control+Enter');
+  await expect(card).toContainText('Louder, yes.');
+  // Read as it opened, the row stays while its card is out, and goes once it is put away.
+  await expect(word).toBeVisible();
+  await ada.page.keyboard.press('Escape');
+  await expect(card).toHaveCount(0);
+  await expect(word).toHaveCount(0);
+  await bo.comeBack();
+  await expect(bo.inbox.thread(ada.handle).getByText('Louder, yes.', {exact: true})).toBeVisible();
+
+  // Inbox is the card's last deed: the conversation there.
+  await bo.inbox.message.fill('Good.');
+  await bo.main.getByRole('button', {name: 'Send', exact: true}).click();
+  await ada.comeBack();
+  await ada.main.locator('.pane-word .lately-row').click();
+  await ada.page.getByRole('dialog', {name: /^Bo/}).getByRole('button', {name: 'Open in Inbox'}).click();
+  await expect(ada.inbox.thread(bo.handle).getByText('Good.', {exact: true})).toBeVisible();
 });
 
 test('a message half written stays with its conversation', async ({signedIn: ada, another}) => {

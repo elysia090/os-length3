@@ -1,13 +1,14 @@
-import {caretRect, fieldMoved} from '../caret.ts';
+import {fieldMoved} from '../caret.ts';
 import {h} from '../dom.ts';
 import {errorText} from '../errors.ts';
-import {keep as goesTo, keepOut, LAND, paced, putAway, still} from '../glide.ts';
+import {keepOut, LAND, paced, putAway, still} from '../glide.ts';
 import {t} from '../i18n.ts';
 import {complete, pathWord, Recall} from '../recall.ts';
 import {onChange, store, type Entry} from '../repos.ts';
-import {boxMode, modeHint, modeMenu, MODES, nextIssue, onBoxMode, pillWords, sendAs, sendOff, sendTitle, sendWord, setBoxMode, turn, type Mode} from './box-modes.ts';
+import {boxMode, modeHint, modeMenu, MODES, nextIssue, onBoxMode, pillWords, sendAs, sendInto, sendTitle, sendWord, setBoxMode, turn, type Mode} from './box-modes.ts';
 import type {Screen, ScreenState} from './screen.ts';
 import {sessionFor, sessionIfAny, terminalFor, type Session} from './terminal.ts';
+import {issueLook, lookFrom, todoLook} from './look.ts';
 
 // The box at the foot of a work page's center (DESIGN.md § Forge, The box at the foot): one field, and at its left a
 // pill that says what it does: Run in the repo's Prompt (the pill the prompt line the shell waits at), Write an issue,
@@ -40,6 +41,8 @@ export interface BoxParts {
   termHead: HTMLElement;
   /** Stepped back from the start, until it is asked for (Git). */
   back: boolean;
+  /** A line of the box's own in the Prompt's flow pressed: the issue it wrote (its file, in `repo`), or Home's TODO. */
+  went(repo: string, to: {issue: string} | 'todo'): void;
 }
 
 export class Box {
@@ -297,16 +300,22 @@ export class Box {
     this.#fit();
   }
 
-  /** An issue or a TODO written in the box: made, the box emptied, and what was written goes where it lives. */
+  /**
+   * An issue or a TODO written in the box: made, the box emptied, and what was written goes on into the right pane, a
+   * line of its own in the repo's Prompt, among what was run there as it came (pressed, it goes to the issue or TODO).
+   */
   async #write(as: Exclude<Mode, 'run'>, at: string) {
     const text = this.prompt.value;
-    const from = caretRect(this.prompt), off = as === 'issue' ? sendOff(this.prompt) : null;
+    const land = sendInto(this.prompt);
     try {
       const sent = await sendAs(as, at, text);
       if (!sent) { this.#say(t('Its first line is its title')); return; }
-      if (this.prompt.value === text) { off?.(); this.prompt.value = ''; drafts.delete(this.#draft()); this.#fit(); }
+      // Pressed, it opens where it stands (look.ts): the issue's summary, the TODO's mark; their page is a deed further.
+      const to = sent.to, went = () => this.#p.went(at, 'issue' in to ? {issue: to.issue} : 'todo');
+      const row = sessionFor(at).note(sent.head, sent.words,
+        (pressed) => lookFrom(pressed, 'issue' in to ? issueLook(at, to.issue, went) : todoLook(to.todo, went)));
+      if (this.prompt.value === text) { land(row); this.prompt.value = ''; drafts.delete(this.#draft()); this.#fit(); }
       this.heard.textContent = sent.said;
-      if (sent.to) goesTo(this.form, sent.to, {label: sent.label, at: from});
       this.#pillSays();
     } catch (e) { this.#say(errorText(e)); }
   }
@@ -427,6 +436,10 @@ export class Box {
     term.addEventListener('click', (event) => {
       if (this.#up && (event.target as Element).closest('.power')) requestAnimationFrame(() => prompt.focus());
     });
+    // Its ×, pressed, keeps the keyboard in the box until the Prompt is down, then lets it go, as Escape does.
+    const shut = this.#p.termHead.querySelector<HTMLElement>('.term-shut');
+    shut?.addEventListener('pointerdown', (event) => event.preventDefault());
+    shut?.addEventListener('click', () => { this.#screen?.lower(); prompt.blur(); });
     term.addEventListener('pointerdown', (event) => {
       if (this.#up || (event.target as HTMLElement).closest('button')) return;
       event.preventDefault();

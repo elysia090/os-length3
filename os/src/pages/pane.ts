@@ -6,6 +6,7 @@ import {news, onNews} from '../news.ts';
 import {onPlugins, pluginsOpen, setPluginsOpen, slots} from '../plugins.ts';
 import {connection} from '../remote.ts';
 import {kindWords} from './todo-box.ts';
+import {lookFrom, threadLook} from './look.ts';
 
 // The right pane beside the center (Forge's, Git's, Home's): what the center refers to, the plugin area at its top,
 // the Prompt under it, a conversation's word at its foot. Put away, the center takes the whole width, and everything
@@ -134,15 +135,36 @@ export function pluginArea(): HTMLElement {
   return area;
 }
 
-/** When this app was opened: what came before is Home's Lately's to say, not the pane's. */
-const opened = Date.now();
+/**
+ * A row of what waits, as Home's Lately and the bench's pane both show it: what it is (who wrote, the file, the
+ * board), a dot while something of it is not read, a quoted line if it has one, and its line (what was said, where
+ * it is). Pressed, it opens where it stands (look.ts), never at once another page.
+ */
+export function latelyRow(what: string, line: Node[] | string, o: {fresh?: boolean; quote?: string; look(row: HTMLElement): void}): HTMLButtonElement {
+  const b = h('button', {type: 'button', class: 'lately-row', 'aria-expanded': 'false'},
+    h('span', {class: 'lately-what'}, h('span', {}, what), o.fresh ? h('span', {class: 'lately-dot', 'aria-hidden': 'true'}) : null),
+    o.quote ? h('span', {class: 'lately-quote'}, o.quote) : null,
+    h('span', {class: 'muted small lately-line'}, ...(typeof line === 'string' ? [line] : line))) as HTMLButtonElement;
+  b.addEventListener('click', () => o.look(b));
+  return b;
+}
+
+/** A conversation's last word as a row says it: named as it was written (Review：…, Question：…), then its first line. */
+export const wordLine = (th: inbox.Thread): Node[] =>
+  [...(th.last.type === 'message' ? [] : kindWords(th.last.type[0].toUpperCase() + th.last.type.slice(1))), document.createTextNode(th.last.body.split('\n')[0])];
+
+/** Word that waits, as Home's Lately and the bench's pane both pick it: conversations not read whose last word is not one's own, newest first. */
+export const waiting = (threads: inbox.Thread[], most: number) =>
+  threads.filter((x) => x.unread > 0 && !x.last.mine).sort((a, b) => b.last.time - a.last.time).slice(0, most);
+
 /** The conversations whose last word has come into a pane already (the next pane shows it standing, not arriving). */
 const arrived = new Set<string>();
 
 /**
- * Word from someone, come while one works: at the pane's foot, level with the prompt box, a row for each
- * conversation whose last message came since the app was opened and is not read, who and the first line of what
- * they said, sliding in from the window's edge as it comes. Pressed, it opens in Inbox (`open`); read, it goes.
+ * Word from someone that waits, while one works: at the pane's foot, level with the prompt box, the same rows as Home's
+ * Lately (the two newest, there being less room), who and the first line of what they said, sliding in from the
+ * window's edge as it comes. Pressed, it opens where it stands, to be answered there; Inbox (`open`) is a deed
+ * further. Read, it goes.
  */
 export function paneWord(open: (address: string) => void): HTMLElement {
   const list = h('section', {class: 'pane-word', 'aria-label': t('New messages')});
@@ -150,14 +172,14 @@ export function paneWord(open: (address: string) => void): HTMLElement {
   const paint = async () => {
     const mine = ++asked;
     const come = connection() && news().inbox > 0
-      ? (await inbox.threads().catch(() => [])).filter((x) => x.unread > 0 && !x.last.mine && x.last.time >= opened).slice(0, 2) : [];
+      ? waiting(await inbox.threads().catch(() => []), 2) : [];
     if (mine !== asked) return;
+    // A row whose look is out stays while it is (read as it opened, it would go from under its card); it goes once put away.
+    if (list.querySelector('.looked')) return;
     const rows = come.map((th) => {
-      const b = h('button', {type: 'button', class: 'pane-word-row'},
-        h('span', {class: 'pane-word-who'}, h('span', {}, th.name || inbox.shown(th.address)), h('span', {class: 'lately-dot', 'aria-hidden': 'true'})),
-        // What it is, named as it was written (Review：…, Question：…), then its first line.
-        h('span', {class: 'pane-word-what'}, ...(th.last.type === 'message' ? [] : kindWords(th.last.type[0].toUpperCase() + th.last.type.slice(1))), th.last.body.split('\n')[0]));
-      b.addEventListener('click', () => open(th.address));
+      const who = th.name || inbox.shown(th.address);
+      // The same row as Home's Lately, opening where it stands: its last lines and a reply; Inbox a deed further.
+      const b = latelyRow(who, wordLine(th), {fresh: true, look: (row) => lookFrom(row, threadLook(th.address, th.name, () => open(th.address)))});
       return {b, key: `${th.address} ${th.last.time}`};
     });
     list.replaceChildren(...rows.map((r) => r.b));
@@ -165,6 +187,7 @@ export function paneWord(open: (address: string) => void): HTMLElement {
   };
   void paint();
   const off = onNews(() => { if (!list.isConnected && list.dataset.shown) { off(); return; } void paint(); });
+  list.addEventListener('look-closed', () => void paint());
   requestAnimationFrame(() => { list.dataset.shown = '1'; });
   return list;
 }

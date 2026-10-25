@@ -474,12 +474,17 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
 /* Its first heading on the line Forge's Prompt and Server's People are on, a band below the top line's foot. */
 .home-side { min-height: 0; overflow: auto; padding-top: var(--band); }
 .home-side > .plugins { padding: 0; }
-/* Lately, in Home's pane: what waits since the person was last here, a row each, the way there pressed. */
+/* Lately, in Home's pane: what waits since the person was last here, a row each, opening where it stands (look.ts).
+   The same row as the bench's pane has at its foot for word that comes while one works: one look for both. */
 .lately { display: grid; gap: var(--s2); }
 .lately h2 { font-size: var(--t-body); font-weight: 600; } /* as Forge's Prompt and Server's People */
-.lately-list { display: grid; gap: var(--s1); margin: 0 calc(-1 * var(--s3)); }
-.lately-row { display: grid; gap: 2px; min-width: 0; padding: var(--s2) var(--s3); border: 0; border-radius: var(--r-card); background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand); }
-.lately-row:hover { background: var(--raised); }
+.lately-list { display: grid; gap: var(--s2); }
+.lately-row {
+  display: grid; gap: 2px; min-width: 0; padding: var(--s2) var(--s4); border: 1px solid var(--rule); border-radius: var(--r-place);
+  background: var(--paper); color: var(--ink); font: inherit; text-align: left; cursor: var(--cursor-hand); transition: border-color var(--motion);
+}
+.lately-row:hover, .lately-row.looked { border-color: var(--edge); }
+.lately-row.looked { border-color: var(--ink); }
 .lately-what { display: flex; align-items: center; gap: var(--s2); min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
 .lately-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The line it was left at, as written there: mono, as in Forge, on a quiet rule. */
@@ -1149,6 +1154,9 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .prompt-ghost > .lamp { position: absolute; }
 /* An issue's words sent from the box, sliding off it to the right and rising out of sight (box-modes.ts sendOff). */
 .sent-off { position: fixed; z-index: 9; box-sizing: border-box; margin: 0; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; pointer-events: none; }
+/* What the box sent, on its way into the pane's Prompt (box-modes.ts sendInto): its first line on a slip of paper,
+   only as wide as its words, which takes its paper as it leaves the box and gives it up as it lands. */
+.sent-off.slip { width: max-content; padding: 2px 6px; border-radius: var(--r-field); white-space: nowrap; text-overflow: ellipsis; }
 /* The three, out of the pill: each with the pill it gives, its word, its keys. */
 .box-modes { position: fixed; z-index: 7; min-width: 280px; --from: 0 6px; transform-origin: left bottom; animation: menu-in calc(280ms * var(--pace)) var(--pop-in) both; }
 @media (prefers-reduced-motion: reduce) { .box-modes { animation: none; } }
@@ -1193,6 +1201,44 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .prompt-note:empty { display: none; }
 /* What a run prints comes in at the foot a line after another (terminal.ts), not all at once. */
 .term-out > .fresh { animation: fresh 240ms ease-out backwards; }
+/* Up, the Prompt's head has its × at its right end, the lamp before it: down, there is nothing to put back. */
+.term-shut { display: none; place-items: center; width: 24px; height: 24px; margin: -4px -6px -4px 0; padding: 0; border: 0; border-radius: var(--r-round);
+  background: transparent; color: inherit; opacity: .6; cursor: var(--cursor-hand); transition: opacity var(--motion), background-color var(--motion); }
+.term-shut .mark { width: var(--s4); height: var(--s4); }
+.term-shut:hover { opacity: 1; background: color-mix(in srgb, currentColor 12%, transparent); }
+:is(.prompting, .prompt-leaving) .screen .term-head > .term-shut { display: grid; }
+:is(.prompting, .prompt-leaving) .screen .term-head > .lamp { margin-left: auto; }
+/* A row's look (look.ts): a card out from the row, as wide as its pane, what can be done there in it, and the way
+   to its page its last deed. Its lines are said as Inbox says them; what one writes back is a field as Inbox's. */
+.look { position: fixed; z-index: 8; display: flex; flex-direction: column; gap: var(--s3); padding: var(--s3) var(--s4) var(--s4); overflow: auto;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ink) 10%, transparent); animation: menu-in calc(280ms * var(--pace)) var(--pop-in) both; }
+@media (prefers-reduced-motion: reduce) { .look { animation: none; } }
+.look-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
+.look-title { font-weight: 600; overflow-wrap: anywhere; }
+.look-shut { display: grid; place-items: center; flex: none; width: 24px; height: 24px; margin: -4px -8px -4px 0; padding: 0; border: 0;
+  border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: var(--cursor-hand); }
+.look-shut:hover { color: var(--ink); background: var(--raised); }
+.look-shut .mark { width: var(--s4); height: var(--s4); }
+.look-body { display: grid; gap: var(--s3); min-height: 0; }
+.look-lines { display: grid; gap: var(--s2); }
+.look-said { display: grid; gap: 2px; }
+.look-said > p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.look-said.mine > p { color: var(--sub); }
+.look-who { font-size: var(--t-meta); font-weight: 600; }
+.look-write { display: grid; gap: var(--s2); }
+.look-field { width: 100%; min-height: calc(2 * 1.5em + 2 * var(--s2)); padding: var(--s2) var(--s3); border: 1px solid var(--rule); border-radius: var(--r-card);
+  background: var(--ground); color: var(--ink); font: inherit; resize: vertical; }
+.look-field:focus { outline: none; border-color: var(--ink); }
+.look-write-foot { display: flex; align-items: center; justify-content: flex-end; gap: var(--s2); }
+.look-write-foot > .error { margin: 0 auto 0 0; }
+.look-quote { margin: 0; padding-left: var(--s2); border-left: 2px solid var(--rule); font: var(--t-meta) / 1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.look-line { margin: 0; overflow-wrap: anywhere; }
+.look-todo { display: flex; align-items: center; gap: var(--s2); }
+.look-todo.done > .look-line { color: var(--sub); text-decoration: line-through; }
+/* A line of the box's own in the Prompt's flow (an issue written, a TODO added from the box): as quiet as what was
+   run around it, its head (#3, TODO) in bold as the pill says it, pressed to go to it. */
+.term-said-go { display: inline; margin: 0; padding: 0; border: 0; border-radius: 2px; background: none; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand); }
+.term-said-go:hover, .term-said-go:focus-visible { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
 @keyframes fresh { from { opacity: 0; } }
 /* What Tab could complete to, said under the box: paths, so monospace. */
 .prompt-note.paths { font-family: var(--mono); white-space: pre-wrap; }
@@ -1296,13 +1342,6 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
    the window's edge. Pressed, Inbox at that conversation. */
 .pane-word { position: absolute; left: var(--s5); right: var(--s5); bottom: var(--s5); z-index: 2; display: grid; gap: var(--s2); }
 .pane-word:empty { display: none; }
-.pane-word-row {
-  display: grid; gap: 2px; padding: var(--s2) var(--s4); text-align: left; border: 1px solid var(--rule); border-radius: var(--r-place);
-  background: var(--paper); color: var(--ink); font: inherit; cursor: var(--cursor-hand);
-}
-.pane-word-row:hover { border-color: var(--edge); }
-.pane-word-who { display: flex; align-items: center; gap: var(--s2); font-weight: 600; }
-.pane-word-what { overflow: hidden; color: var(--sub); font-size: var(--t-meta); white-space: nowrap; text-overflow: ellipsis; }
 .columns.split > .col > .col-head {
   height: 28px; opacity: 1; visibility: visible; transition: height var(--move) var(--land), opacity var(--move) var(--land);
   padding: 0 var(--s3) 0 calc(var(--s3) + var(--s4) - var(--s1)); cursor: var(--cursor-grab);

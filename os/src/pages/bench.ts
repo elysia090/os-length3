@@ -1,6 +1,6 @@
 import {h} from '../dom.ts';
 import {t} from '../i18n.ts';
-import {paneMark} from '../icons.ts';
+import {mark, paneMark} from '../icons.ts';
 import {Box} from './box.ts';
 import {Pane, paneWord, pluginArea} from './pane.ts';
 import type {Writing} from './reader.ts';
@@ -30,12 +30,16 @@ let benches = 0;
 export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(path: string, line?: number, write?: Writing): void;
   /** A conversation's word in the pane pressed: open it in Inbox. */
   word?(address: string): void;
+  /** A line of the box's own in the Prompt pressed: the issue it wrote (its file, in `repo`), or Home's TODO. */
+  went(repo: string, to: {issue: string} | 'todo'): void;
   /** A page read and pressed rather than written in (Git): its box at the foot stands back until it is asked for
    * (Ctrl+`, the pointer resting at the foot), and back again once the Prompt is done with, never over a button. */
   back?: boolean}): Bench {
   // Named for what one does there: type at the prompt of the repo's sh. Up as a screen, a lamp at its head is lit
   // while its shell runs (styles.css).
-  const termHead = h('div', {class: 'term-head'}, h('h2', {}, 'Prompt'), h('span', {class: 'lamp', 'aria-hidden': 'true'}));
+  // Up, its × puts it back as Escape does (box.ts), the way down it came up.
+  const termHead = h('div', {class: 'term-head'}, h('h2', {}, 'Prompt'), h('span', {class: 'lamp', 'aria-hidden': 'true'}),
+    h('button', {type: 'button', class: 'term-shut', tabindex: '-1', 'aria-label': t('Put the Prompt back'), 'aria-keyshortcuts': 'Escape'}, mark('close')));
   const term = h('section', {class: 'term-box', 'aria-label': 'Prompt'}, termHead);
   const termHome = h('div', {class: 'term-home'}, term);
   const center = h('div', {class: 'center'}, parts.main);
@@ -44,7 +48,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': sideId}, paneMark()) as HTMLButtonElement;
   const work = h('div', {class: parts.strip ? 'work bench' : 'work bench no-strip'});
 
-  const box = new Box({work, main: parts.main, center, term, termHead, back: !!parts.back});
+  const box = new Box({work, main: parts.main, center, term, termHead, back: !!parts.back, went: parts.went});
   // The screen's glass, a layer of its own under its words (styles.css): what runs out of the pill and rises.
   const glass = h('span', {class: 'glass', 'aria-hidden': 'true'});
   const slot = h('div', {class: 'term-slot'});

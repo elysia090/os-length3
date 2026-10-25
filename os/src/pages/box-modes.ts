@@ -65,8 +65,11 @@ export function pillWords(m: Mode, repo: string | null, number: number | null): 
   return [];
 }
 
-/** Where what was sent went: its place on the rail if it goes there, the words it carries, what is said of it to be heard. */
-export interface Sent { to: string | null; label: Node[]; said: string }
+/**
+ * What was sent: its head and words as its line in the Prompt's flow says them (#3 and its title; TODO and its
+ * words), what it is to go back to it (the issue's file, or Home's TODO), and what is said of it to be heard.
+ */
+export interface Sent { head: string; words: string; to: {issue: string} | {todo: string}; said: string }
 
 /** Write `text` from the box as `m` (an issue of `repo`, or a TODO about it); null when there is nothing to send. */
 export async function sendAs(m: Exclude<Mode, 'run'>, repo: string, text: string): Promise<Sent | null> {
@@ -74,19 +77,18 @@ export async function sendAs(m: Exclude<Mode, 'run'>, repo: string, text: string
   const {kind, title} = kindOf(first);
   if (!title.trim()) return null;
   const detail = rest.join('\n').trim();
-  const words = (head: string) => [h('b', {}, head), document.createTextNode(` ${title.trim()}`)];
   if (m === 'issue') {
     const file = await writeIssue(store, repo, kind, title.trim(), detail);
     const n = numberOf(file);
     if (n !== null) nextOf.set(repo, n + 1);
     const issue = `#${n ?? ''}`;
-    return {to: null, label: words(issue), said: t('Written as {issue} in {name}', {issue, name: repo})};
+    return {head: issue, words: kind ? `${kind}：${title.trim()}` : title.trim(), to: {issue: file}, said: t('Written as {issue} in {name}', {issue, name: repo})};
   }
   let list = todo.add(todo.parse(getState('todo')), first, repo);
   const made = list.at(-1);
   if (made && detail) list = todo.edit(list, made.id, {detail: detail.slice(0, todo.DETAIL_LIMIT)});
   await setState('todo', JSON.stringify(todo.persisted(list)));
-  return {to: 'home', label: words('TODO'), said: t('Added to TODO')};
+  return {head: 'TODO', words: first.trim(), to: {todo: made?.id ?? ''}, said: t('Added to TODO')};
 }
 
 /**
@@ -174,22 +176,56 @@ export function turn(chip: HTMLElement, button: HTMLElement, change: () => void)
   button.animate([{opacity: 0, translate: '0 5px'}, {opacity: 1, translate: '0 0'}], {duration: ms, easing: 'cubic-bezier(.2, .9, .25, 1)'});
 }
 
+/** A line just come into the Prompt's flow, lit a moment as it lands (as a file landed on is: styles.css landed). */
+const lit = (row: HTMLElement) => row.animate([{backgroundColor: 'color-mix(in srgb, var(--marker) 70%, transparent)'},
+  {backgroundColor: 'color-mix(in srgb, var(--marker) 70%, transparent)', offset: .3}, {backgroundColor: 'transparent'}], {duration: paced(1200), easing: 'ease-out'});
+/** The slip's margin round its words (styles.css .slip's padding). */
+const SLIP = {x: 6, y: 2};
+/** Whether `row` is where it can be seen: on the screen, inside the Prompt's output where it scrolls. */
+const seen = (row: HTMLElement) => {
+  const r = row.getBoundingClientRect(), out = row.closest('.term-out')?.getBoundingClientRect();
+  return r.width > 0 && !row.closest('[hidden], [inert]') && !!out && r.top >= out.top - 1 && r.bottom <= out.bottom + 1
+    && r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight;
+};
+
 /**
- * What was written in `field`, sent where it does not go to the rail (an issue: it comes in among the repo's files):
- * its words slide on to the right, then rise out of sight, as a sheet slid off and taken. Taken as they stand now;
- * the returned call puts them over the box as it is emptied, and sends them.
+ * What was written in `field` (an issue, a TODO), taken as it stands now; the returned call, as the box is emptied,
+ * sends it to `row`, its line in the right pane's Prompt, there by then: its first line slides on to the right, as a
+ * sheet slid off, and on into that line, coming down to its size; the line takes it as it arrives, and is lit a
+ * moment. With the line not where it can be seen (the pane put away, a narrow window), the words slide on and rise
+ * out of sight, as a sheet slid off and taken; the line is there when the pane is brought back.
  */
-export function sendOff(field: HTMLTextAreaElement): () => void {
+export function sendInto(field: HTMLTextAreaElement): (row: HTMLElement | null) => void {
   if (still() || !field.value.trim()) return () => {};
   const r = field.getBoundingClientRect(), cs = getComputedStyle(field);
-  const words = h('div', {class: 'sent-off', 'aria-hidden': 'true'}, field.value);
-  Object.assign(words.style, {left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px`, font: cs.font,
-    letterSpacing: cs.letterSpacing, padding: cs.padding, color: cs.color});
-  words.scrollTop = field.scrollTop;
-  return () => {
+  // Where its words start in the box: the slip is laid so its words are where they were.
+  const from = {x: r.left + (parseFloat(cs.paddingLeft) || 0), y: r.top + (parseFloat(cs.paddingTop) || 0) - field.scrollTop};
+  const words = h('div', {class: 'sent-off slip', 'aria-hidden': 'true'}, field.value.split('\n')[0]);
+  Object.assign(words.style, {left: `${from.x - SLIP.x}px`, top: `${from.y - SLIP.y}px`, maxWidth: `${r.right - from.x}px`,
+    font: cs.font, letterSpacing: cs.letterSpacing, color: cs.color, transformOrigin: `${SLIP.x}px ${SLIP.y}px`});
+  return (row) => {
     document.body.append(words);
-    words.animate([{translate: '0 0', opacity: 1, easing: 'cubic-bezier(.3, .7, .3, 1)'},
-      {translate: '76px 0', opacity: 1, offset: .4, easing: 'cubic-bezier(.55, 0, .85, .35)'}, {translate: '82px -38px', opacity: 0}],
-    {duration: paced(400)}).finished.then(() => words.remove(), () => words.remove());
+    const gone = () => words.remove();
+    if (!row || !seen(row)) {
+      words.animate([{translate: '0 0', opacity: 1, easing: 'cubic-bezier(.3, .7, .3, 1)'},
+        {translate: '76px 0', opacity: 1, offset: .4, easing: 'cubic-bezier(.55, 0, .85, .35)'}, {translate: '82px -38px', opacity: 0}],
+      {duration: paced(400)}).finished.then(gone, gone);
+      return;
+    }
+    // To where its words stand in the line (after its head, #3 or TODO), at the line's size.
+    const range = document.createRange();
+    range.selectNodeContents(row.lastChild ?? row);
+    const to = range.getBoundingClientRect(), size = parseFloat(getComputedStyle(row).fontSize) / (parseFloat(cs.fontSize) || 1);
+    const dx = to.left - from.x, dy = to.top - from.y;
+    const ms = paced(560);
+    const paper = 'var(--paper)', bare = 'color-mix(in srgb, var(--paper) 0%, transparent)';
+    const lift = '0 6px 18px color-mix(in srgb, var(--ink) 12%, transparent)', flat = '0 0 0 transparent';
+    words.animate([
+      {translate: '0 0', scale: '1', backgroundColor: bare, boxShadow: flat, easing: 'cubic-bezier(.3, .7, .3, 1)'},
+      {translate: '28px 0', scale: '1', backgroundColor: paper, boxShadow: lift, offset: .22, easing: 'cubic-bezier(.45, 0, .2, 1)'},
+      {translate: `${dx}px ${dy}px`, scale: `${size}`, backgroundColor: bare, boxShadow: flat, opacity: 1, offset: .9},
+      {translate: `${dx}px ${dy}px`, scale: `${size}`, backgroundColor: bare, boxShadow: flat, opacity: 0}],
+    {duration: ms}).finished.then(gone, gone);
+    row.animate([{opacity: 0}, {opacity: 0, offset: .86}, {opacity: 1}], {duration: ms}).finished.then(() => { if (row.isConnected) lit(row); }, () => {});
   };
 }

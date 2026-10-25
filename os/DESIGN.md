@@ -1305,14 +1305,28 @@ Ctrl+B as there; what is found opens in Forge, a line at that line,
 selected. While it is out the window steps back under the one shade. Its
 first line, the name and Edit profile, stands on that top line too. Under
 it the pane holds
-Lately: what waits since the person was last here, a row each and the way
-there pressed: where they left off (the file last read in Forge and the
-line it was left at, quoted as written; pressed, Forge opens there, that
-line a third of the way down and the caret where it was, to go on
-writing), the conversations with something not read (who, and their last
-line; pressed, that conversation opens), the boards with posts not seen. With nothing new it says so,
-quietly: the pane out is never a line with nothing beside it. The plugin
-area comes down over it when the rail's plug opens it.
+Lately: what waits since the person was last here, a row each: where they
+left off (the file last read in Forge and the line it was left at, quoted as
+written), the conversations with something not read (who, and what it is
+and its first line: Review：…), the boards with posts not seen. With
+nothing new it says so, quietly: the pane out is never a line with nothing
+beside it. The plugin area comes down over it when the rail's plug opens it.
+
+A row in a pane (Lately's here, the word at the foot of Forge's and Git's,
+a line the box wrote in the Prompt) is the same row wherever it is, and it
+is not a door to another page: pressed, it opens where it stands
+(`look.ts`). One reaction, then the work right there: the row is lit and a
+card comes out of it, under it (over it, near the foot), as wide as the
+pane, with what can be done there: a conversation's last lines and a
+reply sent from the card (Ctrl+Enter or Send; read as it opens, the row
+stays while its card is out and goes once it is put away); a board's last
+posts and a post; the lines one left off at, as they are now; an issue's
+summary, written there and kept as the card goes; a TODO's mark, done (or
+not) with a press, as Home's is. The way to its page is the card's last
+deed, at its right: Inbox, Server, Go on writing (Forge, that line a third
+of the way down and the caret where it was), Git at the issue, Home. One
+card at a time; Escape, a press outside, its × or the row again put it
+away, as every pop out goes, and the keyboard goes back to the row.
 
 ### Forge
 
@@ -1475,7 +1489,8 @@ lives (there in the page's own colours), and the reference grows down into the
 room it leaves. The terminal's box
 is labelled Prompt, after what one does there (the shell is BusyBox sh, so
 it is not called Bash); leaving the prompt
-(or Escape) sends it back. The Prompt has no switch: writing
+(or Escape, or the × at the right end of its head, beside the lamp, there
+only while it is up) sends it back. The Prompt has no switch: writing
 to it starts it, and one that ended says so in its place, with Start
 again; stopping one is Runtime's. What is written in the box and not sent
 is the repo's: another repo shows its own, and coming back finds it.
@@ -1492,12 +1507,19 @@ with a small beat as it lands; the box's own button says the deed (Run,
 Create, Add) and the empty box where it goes. Only Run brings the screen up.
 An issue or a TODO is written as everywhere, its first line Kind: title and
 the lines under it its detail; sent, the box empties and where it went is said
-to be heard (Written as #4 in garden). An issue is a file of the repo, which
-comes in among the repo's own where it is worked on: its words slide on to the
-right and rise out of sight, and the pill's number turns to the next as a
-counter's figure does; a TODO, seen nowhere there, goes in an
-arc from where it was written to Home on the rail. What is half written is kept
-for the repo and for what the box does.
+to be heard (Written as #4 in garden). What the box made
+comes into the right pane as the Prompt's own lines do, one stream of what
+was done in the repo in the order it was done: a line of its own in the
+Prompt's flow, before the prompt line the shell waits at, its head in bold
+as the pill says it (`#4 Fix：…`, `TODO …`). Sent, its first line goes on a
+slip of paper out of the box, on to the right as a sheet slid off, then up
+and on into that line, coming down to its size; the slip gives up its paper
+as it lands on the line's words, and the line is lit a moment as a file
+landed on is. Issue and TODO go the same way; the pill's number turns to the
+next as a counter's figure does. With the pane put away (or narrow), the
+slip slides on and rises out of sight, and the line is there when the pane
+comes back. Pressed, the line opens where it stands (§ Home, its card). What
+is half written is kept for the repo and for what the box does.
 The box knows the repo's earlier lines, as a terminal does: ↑ with the
 caret on its first line goes back one line run in the repo's Prompt, ↓ on
 its last line forward again, down to what was being written (so a line of
@@ -2132,11 +2154,12 @@ says what it is about, so there is nothing else to choose. Enter is a new
 line, Ctrl+Enter sends.
 
 What comes while one works elsewhere is said where one is: in Forge and Git,
-a conversation whose last word came since the app was opened and is not read
-comes into the right pane's foot, its foot on the prompt box's line, as a
-sheet to act on (who, and what it is and its first line: Review：…), sliding
-in from the window's edge; pressed, Inbox opens at it, and read, it goes.
-What waited from before is Home's Lately's to say, and the rail's mark.
+the conversations not read whose last word is not one's own (the two newest,
+picked as Home's Lately picks them) come into the right pane's foot, its foot
+on the prompt box's line, as Lately's rows (who, and what it is and its first
+line: Review：…), sliding in from the window's edge as they come; pressed,
+one opens where it stands, to be answered there (§ Home), Inbox a deed
+further; read, it goes once its card is put away.
 
 What comes is looked for every little while (10 s) while the page is shown:
 the conversations' rows are drawn again under the field to write to someone

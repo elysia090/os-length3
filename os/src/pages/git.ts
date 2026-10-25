@@ -43,6 +43,13 @@ let chosen: string | null = null;
 /** The issue last looked at in each repo. */
 const chosenIn = new Map<string, string>();
 
+/** Git opened at `file` (an issue) of `repo`, as from a line that says it was written: it is the one shown. */
+export function showIssue(repo: string, file: string) {
+  chosen = `${repo}/${file}`;
+  chosenIn.set(repo, chosen);
+  if (filter !== ALL && filter !== repo) filter = repo;
+}
+
 export function git(ctx: Context): Node[] {
   const chips = h('div', {class: 'chips', role: 'radiogroup', 'aria-label': 'repo'});
   const write = h('button', {class: 'button', type: 'button'}, t('Write an issue')) as HTMLButtonElement;
@@ -313,7 +320,8 @@ export function git(ctx: Context): Node[] {
       form.element, empty, column),
     committedPart, mergedPart, closedPart);
   // Its repos are its band, on the top line as Forge's pills are, so the page starts where the rail's places do.
-  const workbench = bench({strip: h('div', {class: 'git-band'}, chips), main, reveal: (path) => { if (at) ctx.openRepo(at, path); }, word: (a) => { openConversation(a); void ctx.go('inbox'); }, back: true});
+  const workbench = bench({strip: h('div', {class: 'git-band'}, chips), main, reveal: (path) => { if (at) ctx.openRepo(at, path); }, word: (a) => { openConversation(a); void ctx.go('inbox'); }, back: true,
+    went: (repo, to) => { if (to === 'todo') { void ctx.go('home'); return; } showIssue(repo, to.issue); land = true; void paint(); }});
   // Issues written anywhere (here, in the shell, with l3 in the Prompt) show
   // up at once, and any change in the repo looked at is read again; not while
   // something is being written in the box or under it, which would be lost.

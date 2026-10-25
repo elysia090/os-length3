@@ -11,6 +11,7 @@ import {bench} from './bench.ts';
 import {openNext as openConversation} from './inbox.ts';
 import {Reader, type Writing} from './reader.ts';
 import {startIssue} from './issue-form.ts';
+import {showIssue} from './git.ts';
 import {after, glide, LAND, paced, panAcross, where} from '../glide.ts';
 
 /**
@@ -184,7 +185,8 @@ function make(ctx: Context) {
     }
     void view()?.reader.reveal(path, line, write).then(() => track());
   };
-  const work = bench({strip, main: cols, reveal: (path, line, write) => revealAt(path, line, write), word: (a) => { openConversation(a); void ctx.go('inbox'); }});
+  const work = bench({strip, main: cols, reveal: (path, line, write) => revealAt(path, line, write), word: (a) => { openConversation(a); void ctx.go('inbox'); },
+    went: (repo, to) => { if (to !== 'todo') showIssue(repo, to.issue); void ctx.go(to === 'todo' ? 'home' : 'git'); }});
   new ResizeObserver(room).observe(work.element);
   new MutationObserver(room).observe(work.element, {attributes: true, attributeFilter: ['class']});
   // The Issue view with none open begins one for this repo on Git; Not now there comes back here.

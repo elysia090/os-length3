@@ -12,7 +12,8 @@ import {todoBox} from './todo-box.ts';
 import {openNext as openConversation} from './inbox.ts';
 import {Reference} from './reference.ts';
 import type {Context} from './context.ts';
-import {onRightPane, pluginArea, rightPaneOpen, setRightPane} from './pane.ts';
+import {latelyRow, onRightPane, pluginArea, rightPaneOpen, setRightPane, waiting, wordLine} from './pane.ts';
+import {boardLook, leftOffLook, lookFrom, threadLook} from './look.ts';
 import {mark, paneMark} from '../icons.ts';
 import {onPlugins, pluginsOpen} from '../plugins.ts';
 import {errorText} from '../errors.ts';
@@ -109,14 +110,6 @@ function homePane(main: HTMLElement, ctx: Context): HTMLElement {
 function lately(ctx: Context): HTMLElement {
   const list = h('div', {class: 'lately-list'});
   const box = h('section', {class: 'lately', 'aria-labelledby': 'lately-title'}, h('h2', {id: 'lately-title'}, t('Lately')), list);
-  const row = (what: string, line: string, go: () => void, fresh = false, quote = '') => {
-    const b = h('button', {type: 'button', class: 'lately-row'},
-      h('span', {class: 'lately-what'}, h('span', {}, what), fresh ? h('span', {class: 'lately-dot', 'aria-hidden': 'true'}) : null),
-      quote ? h('span', {class: 'lately-quote'}, quote) : null,
-      h('span', {class: 'muted small lately-line'}, line));
-    b.addEventListener('click', go);
-    return b;
-  };
   let asked = 0;
   const paint = async () => {
     const mine = ++asked;
@@ -127,28 +120,31 @@ function lately(ctx: Context): HTMLElement {
       const text = left.at === null ? null : (await store.read(left.repo, left.path).catch(() => null))?.text ?? null;
       const end = text === null || left.at === null ? -1 : text.indexOf('\n', left.at);
       const quote = text === null ? '' : text.slice(0, end < 0 ? text.length : end).split('\n').reverse().find((l) => l.trim())?.trim() ?? '';
-      rows.push(row(left.path.slice(left.path.lastIndexOf('/') + 1), t('{repo} · where you left off', {repo: left.repo}),
-        () => ctx.openRepo(left.repo, left.path, left.at === null ? 'end' : {at: left.at}), false, quote));
+      rows.push(latelyRow(left.path.slice(left.path.lastIndexOf('/') + 1), t('{repo} · where you left off', {repo: left.repo}), {quote,
+        look: (row) => lookFrom(row, leftOffLook(left.repo, left.path, left.at, () => ctx.openRepo(left.repo, left.path, left.at === null ? 'end' : {at: left.at})))}));
     }
     if (connection()) {
       const [threads, all] = await Promise.all([inbox.threads().catch(() => []), servers.servers().catch(() => [])]);
-      for (const th of threads.filter((x) => x.unread > 0).slice(0, 3)) {
-        rows.push(row(th.name || inbox.shown(th.address), th.last.body, () => { openConversation(th.address); void ctx.go('inbox'); }, true));
+      for (const th of waiting(threads, 3)) {
+        rows.push(latelyRow(th.name || inbox.shown(th.address), wordLine(th), {fresh: true,
+          look: (row) => lookFrom(row, threadLook(th.address, th.name, () => { openConversation(th.address); void ctx.go('inbox'); }))}));
       }
       for (const b of news().boards.slice(0, 3)) {
         const s = all.find((x) => x.id === b.server);
         const board = s?.boards.find((x) => x.id === b.id);
         if (!s || !board) continue;
-        rows.push(row(`#${board.name}`, t('{server} · new posts', {server: s.name}), () => {
+        rows.push(latelyRow(`#${board.name}`, t('{server} · new posts', {server: s.name}), {fresh: true, look: (row) => lookFrom(row, boardLook(board.id, board.name, () => {
           try { localStorage.setItem('length3.server.at', JSON.stringify({server: s.id, board: board.id})); } catch { /* a convenience */ }
           void ctx.go('server');
-        }, true));
+        }))}));
       }
     }
-    if (mine !== asked) return;
+    // A row whose look is out stays while it is (a conversation read as it opened would go from under its card).
+    if (mine !== asked || list.querySelector('.looked')) return;
     list.replaceChildren(...(rows.length ? rows : [h('p', {class: 'muted small lately-none'}, t('Nothing new'))]));
   };
   void paint();
+  list.addEventListener('look-closed', () => void paint());
   const off = onNews(() => { if (!box.isConnected) { off(); return; } void paint(); });
   return box;
 }

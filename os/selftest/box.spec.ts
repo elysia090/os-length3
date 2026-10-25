@@ -43,3 +43,56 @@ test('the box\'s pill chooses what the box does: an issue written there is the r
   await expect(app.home.title(app.home.items.first())).toHaveValue('Water the basil at eleven');
   await expect(app.home.todo).toContainText('1 of 1 left');
 });
+
+test('what the box writes comes into the Prompt\'s flow as it came, and pressed opens where it stands', async ({app}) => {
+  const box = app.forge.promptBox;
+  const flow = app.page.locator('.work.bench:not([hidden]) .term-out');
+  await box.click();
+  await box.press('Alt+2');
+  await box.fill('Fix: The table wraps on a phone');
+  await box.press('Control+Enter');
+  await box.press('Alt+3');
+  await box.fill('Water the mint');
+  await box.press('Control+Enter');
+  await box.press('Escape');
+  // Each a line of its own, in the order written, before the prompt line the shell waits at.
+  const issue = flow.getByRole('button', {name: '#1 Fix：The table wraps on a phone'});
+  const todo = flow.getByRole('button', {name: 'TODO Water the mint'});
+  await expect(issue).toBeVisible();
+  await expect(todo).toBeVisible();
+  // Written before the shell was up or after, they stand before the line it waits at.
+  await expect.poll(() => flow.evaluate((el) => el.textContent!.replace(/\u2063/g, '').trimEnd().split('\n').slice(-3)), {timeout: 60_000}).toEqual(
+    ['#1 Fix：The table wraps on a phone', 'TODO Water the mint', 'hello $']);
+
+  // The TODO: its mark, done right there, and Home's list has it done; the page stays Forge.
+  await todo.click();
+  const card = app.page.getByRole('dialog', {name: 'TODO'});
+  await card.getByRole('button', {name: 'Mark as done'}).click();
+  await expect(card.getByRole('button', {name: 'Mark as not done'})).toBeVisible();
+  await app.page.keyboard.press('Escape');
+  await expect(card).toHaveCount(0);
+  await expect(todo).toBeFocused();
+
+  // The issue: its summary written right there, kept as the card goes; Git is the card's last deed, at the issue.
+  await issue.click();
+  const sheet = app.page.getByRole('dialog', {name: '#1'});
+  await sheet.getByRole('textbox', {name: 'Summary'}).fill('At 320 px, the last column goes under.');
+  await app.page.keyboard.press('Escape');
+  await issue.click();
+  await expect(app.page.getByRole('dialog', {name: '#1'}).getByRole('textbox', {name: 'Summary'})).toHaveValue('At 320 px, the last column goes under.');
+  await app.page.getByRole('dialog', {name: '#1'}).getByRole('button', {name: 'Open in Git'}).click();
+  await expect(app.git.issue('#1 Fix：The table wraps on a phone')).toBeVisible();
+  await app.rail.go('home');
+  await expect(app.home.todo).toContainText('0 of 1 left');
+});
+
+test('the Prompt up over the center is put back by its ×, as by Escape', async ({app}) => {
+  const box = app.forge.promptBox;
+  await box.click();
+  await expect(app.page.locator('.work.bench.prompting')).toHaveCount(1);
+  await app.page.locator('.work.bench:not([hidden]) .term-shut').click();
+  await expect(app.page.locator('.work.bench.prompting')).toHaveCount(0);
+  await expect(box).not.toBeFocused();
+  // Down, there is no × to press.
+  await expect(app.page.locator('.work.bench:not([hidden]) .term-shut')).toBeHidden();
+});
