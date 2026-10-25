@@ -373,12 +373,20 @@ export function inboxPage(ctx: Context): Node[] {
         go = h('button', {type: 'button', class: 'link'}, about);
         go.addEventListener('click', () => { if (place.issue) ctx.openRepo(place.repo, `issue/${place.issue}`); else { ctx.remember(place.repo); ctx.go('git'); } });
       } else if (m.target.repo) go = h('span', {class: 'muted small'}, about);
-      const b = h('div', {class: 'bubble', 'data-mine': String(m.mine)},
+      const b = h('div', {class: 'bubble', 'data-mine': String(m.mine), 'data-time': String(m.time)},
         m.type !== 'message' ? h('span', {class: 'state-chip'}, KIND(m.type)) : null,
         go, h('p', {class: 'bubble-text'}, m.body),
         h('span', {class: 'muted small'}, `${ago(m.time)}${m.live ? ` · ${t('direct')}` : ''}`));
-      // What was said before goes up to make room for it on the same curve, not a line higher in one frame.
       messages.querySelector('.inbox-empty')?.remove();
+      // It stands where it was said in time: one sent here and one of theirs crossing it on the way (the direct line
+      // brings theirs a moment after one's own is drawn) land in the order they were written, not the order they came.
+      const later = [...messages.querySelectorAll<HTMLElement>(':scope > .bubble')].find((x) => Number(x.dataset.time) > m.time);
+      if (later) {
+        messages.insertBefore(b, later);
+        if (drawn) arrive(b, m.mine ? 1 : -1, m.mine ? 'y' : 'x', 18, 300);
+        return;
+      }
+      // What was said before goes up to make room for it on the same curve, not a line higher in one frame.
       const before = drawn ? [...messages.children].slice(-12) as HTMLElement[] : [];
       const was = before.at(-1)?.getBoundingClientRect().bottom;
       messages.append(b);
