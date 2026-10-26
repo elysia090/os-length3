@@ -26,13 +26,15 @@ test('what one person writes to another arrives in their Inbox, and the rail say
   await expect(bo.rail.button('inbox')).toHaveAccessibleName('Inbox');
 
   // Accepted, the two know each other: Bo's answer goes back, and Ada has it.
+  // Answered at once, while the conversation is drawn again for the acceptance: what went is not left in the field.
   await thread.getByRole('button', {name: 'Accept'}).click();
+  await bo.inbox.message.fill('Yes, with the tent.');
+  await bo.inbox.message.press('Control+Enter');
   await expect(bo.main.getByRole('heading', {name: 'Requests'})).toBeHidden();
+  await expect(thread.getByText('Yes, with the tent.', {exact: true})).toBeVisible();
+  await expect(bo.inbox.message).toHaveValue('');
   // The page is the window's height: its conversation reaches the foot, and nothing of the page scrolls away.
   expect(await bo.page.evaluate(() => document.scrollingElement!.scrollHeight - innerHeight)).toBeLessThanOrEqual(0);
-  await bo.inbox.message.fill('Yes, with the tent.');
-  await bo.main.getByRole('button', {name: 'Send', exact: true}).click();
-  await expect(bo.inbox.message).toHaveValue('');
   await ada.comeBack();
   await expect(ada.inbox.thread(bo.handle).getByText('Yes, with the tent.', {exact: true})).toBeVisible();
 });

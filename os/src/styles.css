@@ -2115,8 +2115,23 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .inbox-messages > :first-child { margin-top: auto; }
 /* None said yet: the dashed box in the middle of where they will be, not at its foot. */
 .inbox-messages > .inbox-empty { margin: auto; align-self: center; }
-.bubble { display: grid; gap: var(--s1); max-width: 75%; padding: var(--s2) var(--s3); border: 1px solid var(--rule); border-radius: var(--r-place); justify-self: start; align-self: flex-start; } /* as wide as what it says, at its side; never the column's width */
+.bubble { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s3); row-gap: var(--s1); align-items: end; max-width: 75%;
+  padding: var(--s2) var(--s3); border: 1px solid var(--rule); border-radius: var(--r-place); justify-self: start; align-self: flex-start; } /* as wide as what it says, at its side; never the column's width */
 .bubble[data-mine='true'] { align-self: flex-end; background: var(--raised); }
+/* Its time a small figure at the foot of its last line, not a line of its own; said once for a run (messages from one
+   side a few minutes apart, inbox.ts runs), at its end, the run's bubbles close together, their joining corners tight. */
+.bubble > :not(.bubble-text, .bubble-time) { grid-column: 1 / -1; }
+.bubble-time { font-size: 11px; white-space: nowrap; }
+.bubble.run-on > .bubble-time { display: none; }
+.bubble.run-in { margin-top: calc(3px - var(--s3)); }
+.bubble[data-mine='true'].run-on { border-bottom-right-radius: 4px; }
+.bubble[data-mine='true'].run-in { border-top-right-radius: 4px; }
+.bubble[data-mine='false'].run-on { border-bottom-left-radius: 4px; }
+.bubble[data-mine='false'].run-in { border-top-left-radius: 4px; }
+/* Someone who wrote first: over the field, who, what Accept and Block do (and that writing back accepts), the two. */
+.inbox-ask { display: grid; gap: var(--s2); margin: 0 var(--s4) var(--s3); padding: var(--s3) var(--s4); border: 1px solid var(--edge); border-radius: var(--r-place); background: var(--raised); }
+.inbox-ask p { margin: 0; }
+.inbox-ask-acts { display: flex; justify-content: flex-end; gap: var(--s2); }
 .bubble .state-chip { justify-self: start; }
 .bubble-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .inbox-write { display: grid; gap: var(--s2); padding: var(--s3) var(--s4); border-top: 1px solid var(--rule); }

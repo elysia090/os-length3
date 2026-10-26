@@ -2306,11 +2306,17 @@ addresses, as MX does for mail. SSH is Runtime's, by device, not by name. The pa
 three columns Home's repos and New repo stand on: in the first the stub,
 under it the field to write to someone new, of the stub's width, height and
 shape (Write its end, as the gear is the stub's), and under that the
-conversations (requests apart, with Accept and Block once they have
-written; their words start where the field's do); over the other two, from
-the stub's top to the page's foot, the conversation open, as a sheet. It
-stands on its foot: oldest above, the last thing said just over the field
-it is answered in, never a sheet's height of nothing between them.
+conversations (requests apart; their words start where the field's do);
+over the other two, from the stub's top to the page's foot, the conversation
+open, as a sheet. It stands on its foot: oldest above, the last thing said
+just over the field it is answered in, never a sheet's height of nothing
+between them. A message's time is a small figure at the foot of its last
+line, not a line of its own; messages from one side a few minutes apart are
+one run, close together, their joining corners tight, the time said once at
+its end (not just now under every line). Someone who wrote first is answered
+over the field: who, that they wrote first, what Accept and Block do and
+that writing back accepts them too (as the Remote takes it), Block and
+Accept at its right; not two words in the head with nothing said of them.
 While no conversation is open there is no sheet, not a sheet of nothing
 (before anyone has written, No messages yet stands under the field): the
 one chosen brings its sheet in from that side, and another chosen while it
