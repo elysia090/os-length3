@@ -27,6 +27,12 @@ export interface Contents {
 
 export type Template = string;
 
+/**
+ * The most of a file Forge reads to edit and saves back (core/src/api.rs READ_LIMIT): one larger is read only in
+ * part, so a text over it written in Forge is not saved as it is (editor.ts says what can be done instead).
+ */
+export const EDIT_LIMIT = 256 * 1024;
+
 export interface RepoStore {
   list(): Promise<RepoSummary[]>;
   create(name: string, template: Template): Promise<RepoSummary>;

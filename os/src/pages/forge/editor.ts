@@ -1,8 +1,8 @@
 import {differs, Held} from '../../repos/conflict.ts';
-import {h} from '../../ui/dom.ts';
+import {bytes, h} from '../../ui/dom.ts';
 import {t} from '../../i18n.ts';
 import {lineCount} from '../../repos/reading.ts';
-import {store} from '../../repos/repos.ts';
+import {EDIT_LIMIT, store} from '../../repos/repos.ts';
 import {answers} from '../common.ts';
 import {keepOut, putAway} from '../../ui/glide.ts';
 import {diffFiles} from './diff-view.ts';
@@ -11,7 +11,9 @@ import {errorText} from '../../app/errors.ts';
 
 // A file in Forge's center is a plain text editor in its own box (reader.ts reads the page they make). Typing saves
 // on its own, on leaving the file, or with Ctrl+S. A text saved elsewhere while this one has unsaved edits is asked
-// in the file's box: take the other, or save yours over it, with what differs to be seen.
+// in the file's box: take the other, or save yours over it, with what differs to be seen. A text grown past what
+// Forge edits (EDIT_LIMIT) is not saved on its own: the box says so and offers to save it whole, which makes it a
+// file Forge reads only in part; made smaller again, it saves as before.
 
 /** Where a text and its selection were, before and after the last indent in an editor. */
 interface Spot { text: string; start: number; end: number; direction: 'forward' | 'backward' | 'none' }
@@ -132,6 +134,9 @@ export class Editor {
   private other = h('button', {type: 'button', class: 'button small-button'}, t('Use the other')) as HTMLButtonElement;
   private mine = h('button', {type: 'button', class: 'button small-button primary'}, t('Save yours over it')) as HTMLButtonElement;
   private difference = h('div', {class: 'file-ask-diff', hidden: ''});
+  // Grown past what Forge edits: said in the box, over the text, with the way to keep it whole.
+  private large = h('div', {class: 'file-ask', role: 'group', 'aria-label': t('Too large to save here')});
+  private whole = h('button', {type: 'button', class: 'button small-button primary'}, t('Save it whole')) as HTMLButtonElement;
 
   /** `text` in an editor, put on the `box`'s sheet. */
   constructor(text: string, box: FileBox) {
@@ -160,6 +165,7 @@ export class Editor {
       await this.write(text);
       area.focus();
     });
+    this.whole.addEventListener('click', () => void this.saveWhole());
     area.addEventListener('input', () => this.typed());
     area.addEventListener('blur', () => void this.save());
     // The tab closing (or put away) saves what is written, before the store keeps what it has (repos.ts).
@@ -261,7 +267,54 @@ export class Editor {
     clearTimeout(this.timer);
     if (!this.held.canSave) return;
     if (this.area.value === this.held.saved) { this.box.state.saved(); return; }
+    // Past what Forge edits, it is not written as it is (it would come back read in part): said, with the way on.
+    if (this.over()) { this.tooLarge(); return; }
+    this.fits();
     await this.write(this.area.value);
+  }
+
+  /** Whether what is written is more than Forge edits and saves. */
+  private over(): boolean {
+    return this.area.value.length > EDIT_LIMIT / 4 && new TextEncoder().encode(this.area.value).length > EDIT_LIMIT;
+  }
+
+  /**
+   * Grown past what Forge edits: the head says it is not saved, and the box how big it is and what can be done (made
+   * once; written on, only its size follows, so Save it whole never moves under the pointer).
+   */
+  private tooLarge() {
+    const {large} = this;
+    const size = t('It is {size}: Forge saves what it edits up to {limit}. Nothing is saved yet; what you wrote stays here.',
+      {size: bytes(new TextEncoder().encode(this.area.value).length), limit: bytes(EDIT_LIMIT)});
+    this.box.state.el.textContent = t('Not saved · over {limit}', {limit: bytes(EDIT_LIMIT)});
+    keepOut(large);
+    if (large.isConnected) { large.firstElementChild!.textContent = size; return; }
+    large.replaceChildren(h('p', {class: 'muted small'}, size),
+      h('p', {class: 'muted small'}, t('Make it smaller and it saves as before, or save it whole: Forge then shows its start to read, and the Prompt edits it whole.')),
+      answers(null, this.whole));
+    this.box.head.after(large);
+  }
+
+  /** Small enough again: what said it was too large goes, as an ask answered goes. */
+  private fits() {
+    if (!this.large.isConnected) return;
+    const {large} = this;
+    putAway(large, () => large.remove(), {fold: true});
+  }
+
+  /** Kept whole as written, past what Forge edits: the page reads it again, its start to read (reader.ts). */
+  private async saveWhole() {
+    const {state} = this.box;
+    this.whole.disabled = true;
+    try {
+      const text = this.area.value;
+      await store.put(this.box.repo, this.box.path, new TextEncoder().encode(text));
+      this.held.wrote(text);
+      this.fits();
+      state.saved();
+    } catch (e) {
+      state.el.textContent = t('Could not save: {message}', {message: errorText(e)});
+    } finally { this.whole.disabled = false; }
   }
 
   /** Written in: saved a moment after the typing stops, unless what to keep is still being asked. */
@@ -274,15 +327,21 @@ export class Editor {
       if (held.typed(area.value)) { this.settle(); this.box.state.el.textContent = ''; } else this.paintDiff();
       return;
     }
-    this.box.state.unsaved();
+    // Too large to save, it keeps saying so (not the dot) until it is small enough or saved whole.
+    if (!this.large.isConnected) this.box.state.unsaved();
     clearTimeout(this.timer);
     this.timer = window.setTimeout(() => void this.save(), 700);
   }
 
-  /** The tab closing or put away: what is written is saved (once the editor is gone, it no longer listens). */
-  private leaving = () => {
+  /**
+   * The tab closing or put away: what is written is saved (once the editor is gone, it no longer listens). What cannot
+   * be saved as it is (too large) is not lost without a word: the browser asks before the tab closes.
+   */
+  private leaving = (event: Event) => {
     if (!this.area.isConnected) { removeEventListener('beforeunload', this.leaving); document.removeEventListener('visibilitychange', this.leaving); return; }
-    if (this.area.value !== this.held.saved) void this.save();
+    if (this.area.value === this.held.saved) return;
+    if (event.type === 'beforeunload' && this.over()) { event.preventDefault(); return; }
+    void this.save();
   };
 
   /** Ctrl+S saves; Tab indents; Escape leaves the text. */

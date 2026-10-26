@@ -1594,7 +1594,15 @@ the answers so nothing moves under the pointer, the diff of what saving here
 would do to the other text (theirs struck, yours added, as Forge's diff
 reads). Nothing is saved on its own until it is answered; writing on until
 the two are the same ends it. A file read only in part (over 256 KB) or binary is never
-written back, and says so. Tab types a tab; with lines selected it moves
+written back, and says so. That is Forge's own measure, of a text edited in a
+page (the Remote keeps a file up to 16 MB): a text written past it is not
+saved on its own, and nothing of it is lost without a word. The head says
+so (未保存 · the measure it is over), and under it, over the text, as the ask
+of a text changed elsewhere is, how large it is and the way on: made smaller,
+it saves as before and the ask folds away; まるごと保存する keeps it as
+written, and from then it is a file read in part, its start to read, the
+Prompt editing it whole. While it waits, closing the tab asks first (the
+browser's own ask). Tab types a tab; with lines selected it moves
 each of them in by one, the selection kept, and one Undo takes it back. A
 press on a line's number selects that line. Escape leaves the text for the
 page. Undo reaches back across going to another repo or page and back: a
