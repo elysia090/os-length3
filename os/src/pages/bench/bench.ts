@@ -10,8 +10,8 @@ import {Screen} from './screen.ts';
 // The workbench Forge and Git share, put together from its parts: the page's own content in the large center (3/4)
 // with the box at its foot (box.ts), which becomes the Prompt's screen over the center while the Prompt is in use
 // (screen.ts); and the narrow right pane (1/4, pane.ts) with the plugin area at its top, what the center refers to
-// (reference.ts, under the search box that sits over the pane), the Prompt (the repo's sh) under it, and at its foot
-// a conversation's word. The center's top line holds the band (Forge's), the search box in its middle, and at its
+// (reference.ts, under the search box that sits over the pane, the three it shows said at rest beside the Prompt's
+// head), the Prompt (the repo's sh) under it, and at its foot a conversation's word. The center's top line holds the band (Forge's), the search box in its middle, and at its
 // right end the switch that puts the right pane away and brings it back. Until something is run in the repo's
 // Prompt it holds only its prompt line, so the reference takes the pane's room; from the first run on, the Prompt
 // has its 3 parts.
@@ -125,8 +125,10 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const {screen, element: screenEl} = screenOf(work, box, term, termHome);
   center.append(box.dock);
 
-  const reference = new Reference({reveal: parts.reveal, recall: (line) => box.recall(line)});
+  const reference = new Reference({reveal: parts.reveal, recall: (line) => box.recall(line)}, {keeps: true});
   box.onFollow = () => reference.runsAgain();
+  // At rest the pane says what else the search shows, beside the Prompt's head, on its line.
+  termHome.append(reference.heads);
   const bar = h('div', {class: 'bar'}, parts.strip ?? h('span', {class: 'bar-room'}), reference.search, toggle);
   work.append(bar, center, side);
   const pane = new Pane(work, side, toggle);

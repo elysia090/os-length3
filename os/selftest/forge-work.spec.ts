@@ -171,6 +171,26 @@ test('Enter in the search opens the first line found, selected; a file found by 
   await expect.poll(() => app.forge.selected('README.md')).toBe('Written in Forge.');
 });
 
+test('at rest the right pane says Issue, diff and Output beside the Prompt\'s head; a view opened there stays beside the file until put away', async ({app}) => {
+  await app.forge.editFile('README.md', '# hello\n\nWritten in Forge.\n');
+  const heads = app.main.getByRole('complementary', {name: 'Plugins and Prompt'}).getByRole('group', {name: 'What to look in'});
+  // diff says how many files are changed since the last commit.
+  await expect(heads.getByRole('button')).toHaveText(['Issue', /^diff\s*\d+$/, 'Output']);
+  await heads.getByRole('button', {name: /^diff/}).click();
+  await expect(app.forge.kind('diff')).toHaveAttribute('aria-pressed', 'true');
+  await expect(app.forge.results.getByRole('button', {name: /^README\.md/})).toBeVisible();
+  // Back in the file and written in, the list stays out beside it.
+  const editor = app.forge.editor('README.md');
+  await editor.click();
+  await app.page.keyboard.type('x');
+  await expect(app.forge.results).toBeVisible();
+  await expect(editor).toBeFocused();
+  // Its × under it puts it away, the keyboard staying in the file.
+  await app.forge.results.getByRole('button', {name: 'Put away'}).click();
+  await expect(app.forge.results).toBeHidden();
+  await expect(editor).toBeFocused();
+});
+
 test('the right pane put away gives the center the width and takes the search with it; brought back, both are where they were', async ({app}) => {
   // issue/ is there from the start (the scaffold's).
   await app.file.named('hello', 'issue', 'New file', '001.md');

@@ -247,9 +247,12 @@ Every value in `styles.css` comes from a token (§2).
   - *Where one lands is lit for a moment.* A file landed on (from the
     search, File, Git) has its head lit with the marker, fading in about a
     second; nothing stays lit.
-  - *Focus is the light.* While the search is out the whole window steps
-    back under one shade (`ink` at 14%) and only the search is lit; it
-    fades in and out, and a press anywhere else closes it.
+  - *Focus is the light.* While the search is out with the keyboard the
+    whole window steps back under one shade (`ink` at 14%) and only the
+    search is lit; it fades in and out, and a press anywhere else closes
+    what was found. What is read there, or a list held out from the right
+    pane, stays as the keyboard goes back to the file, and the shade lifts:
+    the file is written beside it at full strength.
   120 ms fades for everything else. Reduced motion turns all of it off:
   each thing is where it ends at once.
 - No shadows, blur, glow or gradients; the one shade is the search's (above). The one exception is a
@@ -361,7 +364,7 @@ No other colours; the three families (`done`, `marker`, `off`, each with
 the words and the ground drawn from it) each mean their one thing only; the
 round initials of people borrow their soft grounds and the sky's, which mean
 nothing there but who. The one
-shade is `ink` at 14% over the window while the search is out. The Prompt up
+shade is `ink` at 14% over the window while the search is out with the keyboard. The Prompt up
 over the center is a screen made of these colours, not new ones: its glass
 `ink` a step deeper (`ink` 66% with black), lit words `add-tint` glowing in
 `done`, the prompt lines `done` lifted toward `add-tint` for the dark, its
@@ -1792,8 +1795,15 @@ by side, one at a time (none yet). With none it stays plain, nothing put
 there to fill it (issue #45): opened, the pane's top is that empty area and
 the Prompt moves down under it, level with the foot of the rail's Inbox, as
 it does under plugins; the plug, which says it is out, is the way back.
-The right pane has no switch of its own: from the top line down, one under
-another, each under its 15/600 heading, Issue (the repo's open issues, as Git shows them: one merged or
+The right pane has no switch of its own. At rest it says, on the Prompt's
+head line at its right end and as quiet as that head, Issue, diff (with how
+many files are changed since the last commit, diff 2) and 実行結果, the three
+the search box switches between, so a pane that holds only a prompt line
+still shows what else is there: a head pressed opens its view under the
+search box, as its pill there does, and the view stays out beside the file as
+the keyboard goes back to it (the shade lifting), until it is put away:
+Escape in the box, the × at the end of the strip under the view, or its pill
+pressed again. The views: Issue (the repo's open issues, as Git shows them: one merged or
 closed is not among them; one line each as #3 Fix：件名, pressed to read one in full), diff (the changes not yet
 cut, file by file: added lines in ink with no fill, the lines kept quiet,
 removed lines quiet and struck, following every save; a file's name opens

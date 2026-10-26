@@ -197,14 +197,15 @@ a { color: var(--ink); }
    quickly and going, slowly, so a pass across the rail leaves a short trail rather than blinking. Only the fill and
    the edge ease: words and icons turn at once, so ink landing on a place never hides its icon a moment. */
 .rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row,
-.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .tree-row, .hit, .hit-file, .found-item, .seen-file, .link, button.row-item, .part, .dot-row {
+.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .tree-row, .hit, .hit-file, .found-item, .seen-file, .link, button.row-item, .part, .dot-row,
+.pane-head, .hit-diff, .found-shut {
   transition: background-color calc(200ms * var(--pace)) ease-out, border-color calc(200ms * var(--pace)) ease-out;
 }
 :is(.rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row,
 .inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .tree-row, .hit, .hit-file, .found-item, .seen-file, .link,
-button.row-item, .part, .dot-row):hover { transition-duration: calc(60ms * var(--pace)); }
+button.row-item, .part, .dot-row, .pane-head, .hit-diff, .found-shut):hover { transition-duration: calc(60ms * var(--pace)); }
 :is(.rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row,
-.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .file-beside, .tree-row, .dot-row):active:not(:disabled) {
+.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .file-beside, .tree-row, .dot-row, .pane-head, .hit-diff, .found-shut):active:not(:disabled) {
   background-color: color-mix(in srgb, var(--ink) 13%, var(--raised)); transition-duration: 40ms;
 }
 /* A primary button answers the pointer too: its ink a step toward the ground under it, as quickly as a fill comes
@@ -1149,9 +1150,12 @@ body::after {
   content: ''; position: fixed; inset: 0; z-index: 7; pointer-events: none;
   background: color-mix(in srgb, var(--ink) 14%, transparent); opacity: 0; transition: opacity calc(180ms * var(--pace)) ease-out;
 }
-body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading))::after { opacity: 1; }
-/* Over the shade only while it is out: at rest it is the page's, under whatever lies over the page (Server's layer). */
-.work.bench > .bar > .search-box:is(:focus-within, .reading, .moving) { z-index: 8; }
+body:has(.work.bench:not([hidden]) > .bar .search-box:focus-within)::after { opacity: 1; }
+/* Over the shade only while it is out: at rest it is the page's, under whatever lies over the page (Server's layer).
+   Out with the keyboard elsewhere (what is read there, or a list held out from its head in the pane), the shade lifts:
+   the file is written beside it at full strength. */
+.work.bench > .bar > .search-box:is(:focus-within, .reading, .kept, .moving) { z-index: 8; }
+.work.bench > .bar > .search-box.kept:not(.leaving) > .search-results { display: flex; }
 /* The right pane put away takes its search with it; its switch stays where it was, at the top line's right end,
    the way to bring both back, and says which it is: brought out, an ink fill, as anything chosen; put away, the
    outline alone. */
@@ -1793,6 +1797,11 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .found-step { display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: var(--ink); cursor: var(--cursor-hand); }
 .found-step:hover:not(:disabled) { background: var(--raised); }
 .found-step:disabled { opacity: .35; cursor: var(--cursor-arrow); }
+/* × at the strip's end, quiet: everything under the box put away, what stays out beside the file too. */
+.found-shut { display: grid; place-items: center; flex: none; width: var(--h-row); height: var(--h-row); margin-right: calc(-1 * var(--s2)); padding: 0; border: 0; border-radius: var(--r-round);
+  background: transparent; color: var(--sub); cursor: var(--cursor-hand); }
+.found-shut:hover { background: var(--raised); color: var(--ink); }
+.found-shut .mark { width: var(--s4); height: var(--s4); }
 .found-at { font: var(--t-meta) var(--mono); color: var(--sub); }
 .work.bench .search-results { max-height: var(--search-room, none); }
 .found-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s1); }
@@ -1827,6 +1836,17 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .plugins { padding: 0 var(--s5) var(--s3); }
 .plugins .empty { margin-top: 0; padding: var(--s4) var(--s5); }
 .plugins .slide { height: auto; }
+/* At rest, on the Prompt's head line at the pane's right end, what else the search shows: Issue, diff with how many
+   files are changed, Output; heads as quiet as the Prompt's, pressed to open that view under the search box, which
+   stays out beside the file until it is put away (reference.ts). */
+.term-home { position: relative; }
+.pane-heads { position: absolute; top: var(--s5); right: calc(var(--s5) - var(--s2)); display: flex; }
+.pane-head { padding: 0 var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: var(--sub);
+  font: 600 var(--t-meta)/calc(var(--t-body) * 1.6) var(--sans); letter-spacing: .02em; cursor: var(--cursor-hand); }
+.pane-head:hover, .pane-head[aria-pressed='true'] { color: var(--ink); }
+.pane-head:hover { background: var(--raised); }
+.pane-head-n { margin-left: var(--s1); font-weight: 400; font-variant-numeric: tabular-nums; }
+.pane-head-n:empty { display: none; }
 /* Narrow (after the wide rules above, which it changes): the search at the top line's right, the right pane
    folded away and, brought out with its switch, laid over the center under the top line. */
 @media (max-width: 760px) {
