@@ -155,6 +155,22 @@ test('a file found by its name is opened to write in from the keyboard alone, an
   await expect(app.forge.search).toHaveValue('main.c');
 });
 
+test('Enter in the search opens the first line found, selected; a file found by its lines is headed by how many, its diff apart and not a stop', async ({app}) => {
+  await app.forge.editFile('README.md', '# hello\n\nWritten in Forge.\n');
+  await app.forge.find('Written');
+  // The head: its name, how many of its lines were found, and at its other end its diff, pressed rather than gone along.
+  const head = app.forge.results.locator('.hit-head', {hasText: 'README.md'});
+  await expect(head).toContainText('1 line');
+  await expect(head.getByRole('button', {name: 'The diff of README.md'})).toContainText(/^diff\s*\+\d+/);
+  await app.forge.search.press('ArrowDown');
+  await expect(app.forge.hit(/Written in Forge/)).toBeFocused();
+  await app.page.keyboard.press('ArrowUp');
+  await expect(app.forge.search).toBeFocused();
+  await app.forge.search.press('Enter');
+  await expect(app.forge.editor('README.md')).toBeFocused();
+  await expect.poll(() => app.forge.selected('README.md')).toBe('Written in Forge.');
+});
+
 test('the right pane put away gives the center the width and takes the search with it; brought back, both are where they were', async ({app}) => {
   // issue/ is there from the start (the scaffold's).
   await app.file.named('hello', 'issue', 'New file', '001.md');

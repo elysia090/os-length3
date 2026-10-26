@@ -1792,9 +1792,19 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .diff-foot.asking { justify-content: flex-start; }
 .hit-head { display: flex; align-items: center; gap: var(--s2); }
 .hit-head > .hit-file { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
-/* A found file's changes (+3), right after its name in its words, not a pill of its own: pressed, its diff. */
-.hit-diff { flex: none; display: inline-flex; gap: var(--s2); padding: 0; border: 0; background: transparent; color: var(--sub); font: var(--t-meta) var(--mono); cursor: var(--cursor-hand); }
-.hit-diff:hover { color: var(--ink); text-decoration: underline; }
+/* How many of its lines were found, in words beside its name, quiet. */
+.hit-count { flex: none; color: var(--sub); font-size: var(--t-meta); white-space: nowrap; }
+/* A found file's changes at the head's other end, said as a diff is everywhere (diff +3 and its squares), away from
+   the count of what was found: pressed, its diff. */
+.hit-diff { flex: none; display: inline-flex; align-items: baseline; gap: var(--s2); margin-left: auto; min-height: var(--h-row); padding: 0 var(--s1); border: 0; border-radius: var(--r-field);
+  background: transparent; color: var(--sub); font-size: var(--t-meta); cursor: var(--cursor-hand); align-self: center; line-height: var(--h-row); }
+.hit-diff:hover { background: var(--raised); color: var(--ink); }
+/* What Enter takes from the box, while the box has the keyboard: lit as under the pointer, its key at its end. */
+.found-body .choice > .enter-cap { display: none; color: var(--sub); border-color: var(--rule); }
+.search-box:has(.search-in:focus) .found-body .choice.first { background: var(--raised); }
+.search-box:has(.search-in:focus) .found-body .choice.first > .enter-cap { display: inline-grid; }
+.hit.first { grid-template-columns: 4ch minmax(0, 1fr) auto; }
+.hit-file > .enter-cap { margin-left: var(--s2); }
 .hit-kind { margin: 0 var(--s1) var(--s1); font-size: var(--t-meta); font-weight: 600; color: var(--sub); }
 .hit-issue, .hit-run { font-family: var(--sans); font-weight: 400; overflow-wrap: anywhere; }
 .hit-run { font-family: var(--mono); }

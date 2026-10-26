@@ -148,7 +148,9 @@ export class Reference {
   private queryKey(event: KeyboardEvent) {
     if (event.isComposing) return;
     if (event.key === 'Escape') { this.escape(event); return; }
-    // ↓ goes down into what is under the box; Enter takes the first of it (a file found by its name: the caret in it).
+    // ↓ goes down into what is under the box; Enter takes the first of it: the first line found, or before it a file
+    // whose name holds what was typed (the caret in it). A file's name found by its lines alone, and its diff, are
+    // pressed, not gone along (found.ts).
     if (event.key === 'ArrowDown') { const first = this.choices()[0]; if (first) { event.preventDefault(); first.focus(); } return; }
     if (event.key === 'Enter') {
       event.preventDefault();
@@ -223,9 +225,12 @@ export class Reference {
       if (!this.search.isConnected) { stop(); this.stop = null; return; }
       if (c.repo !== this.repo) return;
       if (this.files) this.files = patched(this.files, c);
-      if (this.panel.contains(document.activeElement) && !this.reading) { this.dirty = true; return; }
+      // Not drawn away from under the keyboard: what has it is kept until the box has it again (asked again when
+      // the moment comes, the keyboard having gone down into it meanwhile).
+      const held = () => this.panel.contains(document.activeElement) && !this.reading;
+      if (held()) { this.dirty = true; return; }
       clearTimeout(this.timer);
-      this.timer = window.setTimeout(() => void (this.reading ? this.reading.draw() : this.draw()), 250);
+      this.timer = window.setTimeout(() => { if (held()) this.dirty = true; else void (this.reading ? this.reading.draw() : this.draw()); }, 250);
     });
     this.stop = stop;
   }

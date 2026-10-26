@@ -1766,7 +1766,14 @@ the query first), and its open issues and its runs too; what is found
 opens under the box over the center while the box has the keyboard (↓ goes
 into it, Enter takes the first, Escape back to the box; with the box empty,
 Escape gives the keyboard back to what had it before), and follows what is
-saved. A file found by its name opens with the caret in it, a line with the
+saved. The first is the first line found, or before it a file whose name
+holds the query: it is lit, its Enter on a key at its end, while the box has
+the keyboard. Each file found is headed by its name, how many of its lines
+were found beside it, quiet (3 lines), and, changed since the last commit,
+at the head's other end its diff as a diff is said everywhere (diff +5 and
+its squares), pressed to read it there; a name found by its lines alone and
+the diff are pressed, not gone along with ↓ (only a name that holds the
+query is). A file found by its name opens with the caret in it, a line with the
 line selected (where it is now, if it moved), a third of the way down, or
 with its file's head at the top when it is near it (never the empty foot of
 the file before over it); an issue, a changed file's
