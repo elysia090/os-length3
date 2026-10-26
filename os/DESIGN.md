@@ -2045,7 +2045,9 @@ screen reader hears). The chips are one row that slides sideways however
 many there are; choosing a repo also points the right pane and the Prompt at it, and
 makes it the repo worked on (§1): Forge opens there next. So does going to
 an issue (an edge, ← →) and starting or continuing one; coming to Git
-opens at the issue last looked at in the repo worked on. An issue written
+opens at the issue last looked at in the repo worked on, and with none
+looked at yet (the app just opened), at the issue that repo's work is on,
+so a reload finds the work where it was left. An issue written
 is the one shown, its repo's chip chosen if another was, with the keyboard
 on its words; one half written (new, or its words half changed) is still
 half written after reading its neighbours or another page.
@@ -2064,11 +2066,27 @@ half written after reading its neighbours or another page.
   one in full, its neighbours' edges showing at the sides. The current box
   is a large place, an `ink` edge over `raised`. An edge is a clear button
   over the neighbour, which lifts (`raised`) while hovered; pressing it, or
-  ← →, slides the track there (280 ms, the one movement). The first box
+  ← →, slides the track there (280 ms, the one movement). The box left keeps
+  what it holds as it slides away (never an empty sheet going by), fading
+  only as it reaches the edge, and becomes its number there. The first box
   starts at the column's edge and the last ends at it. A neighbour shows its
   number alone at the edge that shows (the one before at its right), never a
   title cut short. The column keeps the room a scrollbar takes, so an
   issue's edge stays put as its words are read and changed.
+- **Drawn again after a deed** (Start, Back to main, Commit, Push, Close…),
+  the row does not slide as if gone along: the box in full stays the one it
+  was, its edges easing to where they now are (its neighbours gone, it
+  widens to the column's); main's part over it folds away where it stood,
+  unfolds or goes to its new height, the box going with it; and the box
+  goes from the height it was to the one it is. Nothing jumps. Closed, the
+  box goes down out of the row and the row goes on to the box beside it (the
+  one after, else the one before) before the page is drawn again, never a
+  hole where it was; reopened, the row goes to it; written, the box written
+  in folds away and the row goes to the new issue at its end.
+- **A deed under way** (Start, Commit, Push, Merge, Close, Create, Commit on
+  main, Reopen): its button keeps its look and its word, never greyed as one
+  that cannot be pressed, and a short line runs under the word until it is
+  done; Approve's ○ turns, its arc in the green it lands as.
 - **A new issue** is written in a box over the issues: its first line, the
   repo it goes in said quietly before it (as a card says its repo), then a
   detail tall from the start, with the room a second row of repos would
@@ -2076,14 +2094,19 @@ half written after reading its neighbours or another page.
   box: a repo chosen there while writing is the one written in; All widens
   what is shown and leaves it as it was. This box ends with its deed first:
   Create at the left, Not now at the right, so which one is wanted reads
-  first (every other box keeps Not now at the left). An Issue view with
+  first (every other box keeps Not now at the left). Opened, the whole box
+  comes into sight as it unfolds, Create with it; Enter on the first line
+  goes on to the detail, and Ctrl+Enter (⌘ on a Mac) in either creates it, as
+  it sends a comment (and saves an issue's words being changed). An Issue view with
   none open in Forge's reference has Issue を書く under its line: Git opens
   with the box for that repo, its first line ready, and Not now goes back to
   Forge as it was.
 - **The box**: the issue's number and name ("#1 Fix：件名") and its detail,
   changed where they are read (pressed, they become the fields they were
-  written in, Save and Not now under them), one quiet line of its repo and
-  who started it and when, and Start (Continue here, if it was started)
+  written in, Save and Not now under them), as tall as its words (a line at
+  least), so no empty room stands between them and what comes under, one
+  quiet line of its repo, who started it and when ("hello · sora · started
+  2 min ago"), and Start (Continue here, if it was started)
   or, while it is worked on here, Back to main. Start gives the issue its own
   copy of the repo, which File, Forge and the Prompt show; the layout says
   this, no sentence explains it. A merged work is done: the repo shows main
@@ -2094,7 +2117,9 @@ half written after reading its neighbours or another page.
   below).
 - **Inside the card**, right under its title once it is worked on here:
   **Commit** and **Push**, one row each: where it stands at the left, the
-  button at the right; done, the button's place shows the same word with
+  button at the right, down the one edge Start was pressed on (as Merge is
+  under the Review), so the pointer goes down the box, never across it;
+  done, the button's place shows the same word with
   the done mark (a circle with a check, `done`), and the green says it is
   done. In Commit's row, what is not committed, its files folded as main's
   card has them, on the card itself. Pushing hands the work to

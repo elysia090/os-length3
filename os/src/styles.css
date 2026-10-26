@@ -2187,7 +2187,10 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 /* The box's foot: where it lives and who started it at the left, its action at the right. */
 .issue-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); margin-top: var(--s2); }
 .issue-foot > .issue-about { flex: 1; min-width: 0; }
-.issue-about { display: grid; gap: var(--s1); justify-items: start; min-width: 0; }
+/* Its repo, then who started it and when, on one line ("hello · Ada · started 2 min ago"), wrapping only where there
+   is no room: a quiet line, not a block that holds the foot two lines tall. */
+.issue-about { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s2); min-width: 0; }
+.issue-about > .issue-where + .muted::before { content: '·' / ''; margin-right: var(--s2); }
 .issue-about .issue-where { font-size: var(--t-meta); }
 .issue-big-head .issue-where { font-size: var(--t-meta); }
 
@@ -2195,16 +2198,28 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
    showing at both sides; the track slides to the one chosen. An edge is a
    clear button over the neighbour, which lifts (raised) while it is hovered,
    as a place does. The current box is a large place: an ink edge over raised. */
-.issue-column { --peek: 48px; --gap: var(--s3); --lead: 0; }
-.issue-column.single { --peek: 0px; }
+/* How much of a neighbour shows (--row-peek) and where along the row the box in full stands (--row-lead: 0 at the
+   first, 2 at the last, 1 between), the row's and main's over it alike: registered, so that drawn again (a deed done,
+   an issue come or gone: git/issue-row.ts settle) they ease to where they now are, the box widening as its
+   neighbours go, rather than the row sliding as if gone along or the box jumping. */
+@property --row-peek { syntax: '<length>'; inherits: true; initial-value: 0px; }
+@property --row-lead { syntax: '<number>'; inherits: true; initial-value: 0; }
+.issue-column, .main-part { --row-peek: 48px; --row-lead: 0; --peek: var(--row-peek); --lead: var(--row-lead); }
+.issue-column.single, .main-part.single { --row-peek: 0px; }
+.issue-column.settling, .main-part.settling { transition: --row-peek var(--move) var(--land), --row-lead var(--move) var(--land); }
+.issue-column.settling .issue-track, .main-part.settling > .main-card { transition: none; }
+.issue-column { --gap: var(--s3); }
 .issue-stage { position: relative; overflow-x: clip; }
 .issue-stage:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: var(--r-place); }
 .issue-track { --at: 0; display: flex; gap: var(--gap); transform: translateX(calc(var(--lead) * var(--peek) - var(--at) * (100% - 2 * var(--peek) + var(--gap)))); transition: transform var(--slide); }
 @media (prefers-reduced-motion: reduce) { .issue-track, .issue-slot { transition: none; } }
+/* The box gone from, while the row slides away from it: as it was (its room inside kept, its words going to the
+   neighbour's grey), until it is at the edge and becomes its head. */
+.issue-slot.leaving[aria-current='false'] .issue-card { padding-inline: var(--s5); }
 /* A slot is an issue's column: its card, then its Review and Merge. */
 .issue-slot { flex: 0 0 calc(100% - 2 * var(--peek)); min-width: 0; align-self: start; }
 /* Less room above than below, so the card's weight sits a little high. */
-.issue-card { padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s6); border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper); transition: background var(--motion), border-color var(--motion); }
+.issue-card { padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s6); border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper); transition: background var(--motion), border-color var(--motion), color var(--move); }
 .issue-slot[aria-current='false'] .issue-card { color: var(--sub); min-height: var(--card-h, auto); }
 .issue-slot[aria-current='true'] .issue-card { border-color: var(--ink); background: var(--paper); }
 /* A neighbour shows its number at the edge that shows: the one after at its left, the one before at its right. */
@@ -2433,8 +2448,7 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .code-in { width: 9em; flex: none; text-transform: uppercase; }
 .code-in::placeholder { text-transform: none; }
 
-/* Commit and Push inside the issue's box: the button at the left (its done
-   mark in its place once done), what it is about beside it. */
+/* A step's row: what it stands at at the left, its button at the right (its done mark in its place once done). */
 .steps { display: grid; grid-template-columns: minmax(0, 1fr) max-content; align-items: start; gap: var(--s3) var(--s3); margin-top: 0; padding: 0 0 var(--s4); }
 .step-act { display: flex; align-items: center; justify-content: flex-end; min-height: var(--h-control); }
 .step-act .button { min-width: 96px; justify-content: center; }
@@ -2443,17 +2457,18 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .step-about .stage-diff summary { line-height: 1.5; }
 .step-about p { margin: 0; }
 .steps > .error { grid-column: 1 / -1; }
-/* In the issue's box: Commit over Push at the left, one under the other, what each stands at beside it, and at
-   the right of Push's row the change's power switch (on while it is in; off takes it back). */
-.issue-steps { grid-template-columns: max-content minmax(0, 1fr); }
-.issue-steps > .step-act { justify-content: flex-start; }
-/* The issue's summary, above Commit: one with the box's ground (no edge, no fill) until pressed, a field then. */
-.issue-summary-wrap { display: grid; gap: var(--s1); margin: var(--s2) 0 var(--s4); }
+/* In the issue's box: Commit over Push, their buttons down the box's right edge, where Start was and Merge is under
+   the Review, what each stands at at the left (git/issue.ts steps). */
+/* The issue's summary, above Commit: one with the box's ground (no edge, no fill) until pressed, a field then; as
+   tall as its words (a line at least), so the box has no room standing empty between its words and its steps. */
+.issue-summary-wrap { display: grid; gap: var(--s1); margin: 0 0 var(--s3); }
 .issue-summary {
-  min-height: calc(4 * 1.6em + 2 * var(--s2)); padding: var(--s2) var(--s3); margin-left: calc(-1 * var(--s3));
+  min-height: calc(1.6em + 2 * var(--s2) + 2px); padding: var(--s2) var(--s3); margin-left: calc(-1 * var(--s3)); field-sizing: content;
   width: calc(100% + 2 * var(--s3)); border: 1px solid transparent; border-radius: var(--r-field); background: transparent;
   color: var(--ink); font: var(--t-body)/1.6 var(--sans); resize: none; cursor: var(--cursor-text);
 }
+/* Where a field cannot be as tall as its words, it keeps room for a few lines, as it did. */
+@supports not (field-sizing: content) { .issue-summary { min-height: calc(4 * 1.6em + 2 * var(--s2)); } }
 .issue-summary::placeholder { color: var(--sub); }
 .issue-summary:hover { border-color: var(--rule); }
 .issue-summary:focus { border-color: var(--edge); background: var(--raised); }
@@ -2463,9 +2478,7 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 /* main's card on Git, for what it has not committed: a card (rule edge), its repo, Commit at the right. */
 /* main's part stands in the issues' column: each card a sheet (paper, as an issue's box is, never melting into the
    ground) with the same edges as the issue in full under it, going with it as the row slides; the lines committed
-   from here under the cards, on those edges too. */
-.main-part { --peek: 48px; --lead: 0; }
-.main-part.single { --peek: 0px; }
+   from here under the cards, on those edges too (its --row-peek and --row-lead are the row's: see .issue-column). */
 .main-part > .main-card {
   width: calc(100% - 2 * var(--peek)); margin-left: calc(var(--lead) * var(--peek));
   transition: margin-left var(--slide), width var(--slide); /* as the track goes */
@@ -2632,6 +2645,22 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .approve-mark:disabled { cursor: var(--cursor-arrow); opacity: .6; }
 .approve-mark .ring { width: 22px; height: 22px; flex: none; border: 2px solid var(--edge); border-radius: 50%; }
 .approve-mark:hover .ring { border-color: var(--done); }
+/* A deed under way (git/held.ts busy): the button pressed keeps its look and its word, not greyed as one that cannot be
+   pressed, and a short line runs under the word, left to right, until it is done; Approve's ○ turns, its arc in the
+   green it lands as. Asked for less motion, the line stands still under the word. */
+.button[aria-busy='true']:disabled, .approve-mark[aria-busy='true']:disabled { opacity: 1; cursor: var(--cursor-progress); }
+.button[aria-busy='true'] { position: relative; overflow: hidden; }
+.button[aria-busy='true']::after {
+  content: ''; position: absolute; left: 0; bottom: 5px; width: 34%; height: 2px; border-radius: 2px; background: currentColor; opacity: .75;
+  translate: -110% 0; animation: busy-line calc(560ms * var(--pace)) cubic-bezier(.45, 0, .55, 1) infinite;
+}
+@keyframes busy-line { to { translate: 310% 0; } }
+.approve-mark[aria-busy='true'] .ring { border-color: var(--rule); border-top-color: var(--done); animation: busy-turn calc(380ms * var(--pace)) linear infinite; }
+@keyframes busy-turn { to { rotate: 1turn; } }
+@media (prefers-reduced-motion: reduce) {
+  .button[aria-busy='true']::after { animation: none; translate: 0 0; left: 33%; }
+  .approve-mark[aria-busy='true'] .ring { animation: none; }
+}
 .review-verdict .grow { flex: 1; }
 .review-in { min-height: 12em; resize: vertical; padding: var(--s3); font: var(--t-body)/1.6 var(--sans); }
 /* Merge under the Review: a step row of its own, no rule above it. */

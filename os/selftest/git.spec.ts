@@ -130,6 +130,66 @@ test('an issue that will not be done is closed, listed under Closed, and Reopen 
   await expect(app.git.step('Start')).toBeVisible();
 });
 
+test('closed, the row goes on to the issue beside it, never to its Close; reopened, back to it', async ({signedIn: app}) => {
+  await app.newRepo.make('hello');
+  for (const [n, title] of [[1, 'Fix: Say hello louder'], [2, 'Idea: Say it in French'], [3, 'Docs: Say where it runs']] as const) {
+    await app.git.write('hello', title);
+    await expect(app.git.issue(`#${n} ${title.replace(': ', '：')}`)).toBeVisible();
+  }
+  await app.git.issues.getByRole('button', {name: 'Previous issue'}).click();
+  await expect(app.git.issue('#2 Idea：Say it in French')).toBeVisible();
+
+  await app.git.step('Close').focus();
+  await app.page.keyboard.press('Enter');
+  // The one after it, not the first of the row.
+  await expect(app.git.issue('#3 Docs：Say where it runs')).toBeVisible();
+  // The keyboard is on the row, not on #3's Close: a second Enter closes nothing more.
+  await expect(app.git.step('Close')).not.toBeFocused();
+
+  await app.git.section('Closed').getByRole('button', {name: 'Reopen #2'}).click();
+  await expect(app.git.issue('#2 Idea：Say it in French')).toBeVisible();
+});
+
+test('a step under way keeps its word and its look, and says it is under way until it is done', async ({signedIn: app}) => {
+  await app.newRepo.make('hello');
+  await app.git.write('hello', 'Fix: Say hello louder');
+  const start = app.git.step('Start');
+  await start.click();
+  await expect(start).toHaveAttribute('aria-busy', 'true');
+  await expect(start).toBeDisabled();
+  await expect(start).toHaveCSS('opacity', '1');
+  await expect(app.git.step('Back to main')).toBeVisible();
+});
+
+test('a started issue\'s deeds go down the box\'s right edge, where Start was pressed', async ({signedIn: app}) => {
+  await app.newRepo.make('hello');
+  await app.git.write('hello', 'Fix: Say hello louder');
+  const start = (await app.git.step('Start').boundingBox())!;
+  await app.git.step('Start').click();
+  await expect(app.git.step('Back to main')).toBeVisible();
+  for (const deed of ['Commit', 'Push']) {
+    const b = (await app.git.step(deed).boundingBox())!;
+    expect(Math.abs(b.x + b.width - (start.x + start.width))).toBeLessThan(2);
+  }
+});
+
+test('a reload finds Git at the issue the repo\'s work is on', async ({signedIn: app}) => {
+  await app.newRepo.make('hello');
+  await app.git.write('hello', 'Fix: One');
+  await expect(app.git.issue('#1 Fix：One')).toBeVisible();
+  await app.git.write('hello', 'Fix: Two');
+  // Committed, both are in the work's copy too: the row has both while #2 is worked on.
+  await app.git.commitOnMain('hello', 'Docs: Two issues');
+  await expect(app.git.issue('#2 Fix：Two')).toBeVisible();
+  await app.git.step('Start').click();
+  await expect(app.git.step('Back to main')).toBeVisible();
+  await app.page.reload();
+  await app.settled();
+  await app.rail.go('git');
+  await expect(app.git.issue('#2 Fix：Two')).toBeVisible();
+  await expect(app.git.step('Back to main')).toBeVisible();
+});
+
 test('a reviewer asks for changes with a line marked, and the change waits for them', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
   await app.git.write('hello', 'Fix: Say hello louder');
@@ -247,6 +307,20 @@ test('a field drawn again under the keyboard keeps its caret and what was select
   await expect(summary).toBeFocused();
   await app.page.keyboard.insertText('At 320 px.');
   await expect(summary).toHaveValue('At 320 px.');
+});
+
+test('Enter goes from a new issue\'s first line to its detail, and Ctrl+Enter creates it', async ({app}) => {
+  await app.newRepo.make('notes');
+  await app.rail.go('git');
+  await app.main.getByRole('button', {name: 'Write an issue'}).click();
+  await app.git.firstLine.fill('Fix: Made from the keyboard');
+  await app.git.firstLine.press('Enter');
+  const detail = app.main.getByRole('textbox', {name: 'Summary'});
+  await expect(detail).toBeFocused();
+  await app.page.keyboard.type('Without the pointer.');
+  await app.page.keyboard.press('Control+Enter');
+  await expect(app.git.issue('#1 Fix：Made from the keyboard')).toBeVisible();
+  await expect(detail).toHaveValue('Without the pointer.');
 });
 
 test('the detail of a new issue has the room the repos inside the box had', async ({app}) => {

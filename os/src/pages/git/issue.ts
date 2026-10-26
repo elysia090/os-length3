@@ -11,6 +11,7 @@ import {named} from '../../repos/text.ts';
 import {diffFiles} from '../forge/diff-view.ts';
 import {beingChanged, issueEditor} from './issue-form.ts';
 import {errorText} from '../../app/errors.ts';
+import {busy} from './held.ts';
 
 // An issue on the Git page, as one large box (issue #17). Its branch and
 // worktree are never named: Start gives the issue its own copy of the repo,
@@ -28,6 +29,10 @@ export interface IssueEvents {
   open(repo: string, path: string): void;
   /** The repo now shows another copy (or main moved): the shell reads it again. */
   moved(repo: string): void;
+  /** `issue` is going from the row (closed): the row goes to the box beside it meanwhile, done once it is there. */
+  aside?(issue: Issue): Promise<void>;
+  /** `issue` is back in the row (reopened): drawn again, the row goes to it. */
+  back?(issue: Issue): void;
 }
 
 /** Where a repo stands, read once for every issue of it. */
@@ -81,11 +86,11 @@ function summary(issue: Issue, after: () => void): HTMLElement {
 
 const STATE = (s: git.Change['state']) => ({open: t('Undecided'), merged: t('Merged'), rejected: t('Rejected'), reset: t('Taken back')})[s];
 
-/** Run `f` with `b` held down, then `after`; a failure is said in `error`. */
+/** Run `f` with `b` held down (busy), then `after`; a failure is said in `error`, and `b` can be pressed again. */
 const doing = (b: HTMLButtonElement, error: HTMLElement, f: () => Promise<unknown>, after: () => void) => async () => {
-  b.disabled = true;
+  busy(b, true);
   error.textContent = '';
-  try { await f(); justDone = {word: b.textContent ?? '', until: performance.now() + 3000}; after(); } catch (e) { error.textContent = errorText(e); b.disabled = false; }
+  try { await f(); justDone = {word: b.textContent ?? '', until: performance.now() + 3000}; after(); } catch (e) { error.textContent = errorText(e); busy(b, false); }
 };
 /** The step just done here, for a moment: its done mark, drawn next, lands rather than being there (slot). */
 let justDone: {word: string; until: number} | null = null;
@@ -142,7 +147,7 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
   const acts: Node[] = offered ? [startDeed(issue, s, error, events, after)] : [];
   // One that will not be done is closed, at the foot's left as what goes against the box: it goes
   // under Closed, where Reopen brings it back. Only while the repo shows main, whose issue/ it is in.
-  const leave = offered && s?.work?.line === 'main' ? closeDeed(issue, error, after) : null;
+  const leave = offered && s?.work?.line === 'main' ? closeDeed(issue, error, events, after) : null;
   // Its title is changed where it is read: pressed, the head becomes the fields it was written in. Its summary is
   // written right under it, above Commit and Push.
   const words = h('button', {type: 'button', class: 'issue-words', title: t('Change its words')}, issueHead(issue));
@@ -173,8 +178,11 @@ function startDeed(issue: Issue, s: RepoState | undefined, error: HTMLElement, e
   return go;
 }
 
-/** Close: it will not be done, and goes under Closed. */
-function closeDeed(issue: Issue, error: HTMLElement, after: () => void): HTMLButtonElement {
+/**
+ * Close: it will not be done, and goes under Closed. Its box goes down out of the row, and the row goes on to the box
+ * beside it before the page is drawn again: never a hole where it was.
+ */
+function closeDeed(issue: Issue, error: HTMLElement, events: IssueEvents, after: () => void): HTMLButtonElement {
   const leave = button(t('Close'));
   leave.title = t('Will not be done: it goes under Closed, where it can be reopened');
   leave.addEventListener('click', doing(leave, error, async () => {
@@ -183,6 +191,7 @@ function closeDeed(issue: Issue, error: HTMLElement, after: () => void): HTMLBut
       {duration: paced(240), easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards'});
     try { await Promise.all([closeIssue(issue), going?.finished]); } catch (e) { going?.cancel(); throw e; }
     closedNow = {repo: issue.repo, path: issuePath(issue), until: performance.now() + 3000};
+    await events.aside?.(issue);
   }, after));
   return leave;
 }
@@ -250,10 +259,11 @@ const about = (...n: (Node | null)[]) => h('div', {class: 'step-about'}, ...n);
 const quiet = (text: string) => h('p', {class: 'muted small'}, text);
 
 /**
- * Commit and Push, inside the issue's box, one under the other at its left (green, the done mark, once done),
- * what each stands at beside it. Beside Commit, what is not committed: its diff opens there. Pushing hands the
- * work to main as its change, again as the next version; until it is decided, the change's power switch (low at
- * the box's right: `reset`) is on, and switched off takes it back.
+ * Commit and Push, inside the issue's box, one under the other at its right (green, the done mark, once done), what
+ * each stands at at its left: the work's deeds go down the one edge Start was pressed on, as Merge's does under the
+ * Review, so the pointer goes down the box rather than across it. Beside Commit, what is not committed: its diff opens
+ * there. Pushing hands the work to main as its change, again as the next version; until it is decided, the change's
+ * power switch (low at the box's right: `reset`) is on, and switched off takes it back.
  */
 function steps(issue: Issue, s: RepoState, events: IssueEvents, after: () => void): {element: HTMLElement; reset: HTMLElement | null} {
   const at = issue.repo;
@@ -290,15 +300,15 @@ function steps(issue: Issue, s: RepoState, events: IssueEvents, after: () => voi
     : w.unpushed ? quiet(tn('{n} commit to push', '{n} commits to push', w.unpushed)) : null;
 
   return {element: h('div', {class: 'steps issue-steps'},
-    slot(commit, committed, t('Commit')), h('div', {class: 'step-about step-changes'}, what),
-    slot(push, pushed, t('Push')), about(where), error), reset};
+    h('div', {class: 'step-about step-changes'}, what), slot(commit, committed, t('Commit')),
+    about(where), slot(push, pushed, t('Push')), error), reset};
 }
 
 /** Someone else's change, received: committed and pushed already, by whom and which version. */
 function received(change: git.Change): HTMLElement {
   return h('div', {class: 'steps issue-steps'},
-    slot(h('span'), true, t('Commit')), about(quiet(change.submittedBy || '—')),
-    slot(h('span'), true, t('Push')), about(quiet(t('Change · version {n} · {state}', {n: change.version, state: STATE(change.state)}))));
+    about(quiet(change.submittedBy || '—')), slot(h('span'), true, t('Commit')),
+    about(quiet(t('Change · version {n} · {state}', {n: change.version, state: STATE(change.state)}))), slot(h('span'), true, t('Push')));
 }
 
 /**
