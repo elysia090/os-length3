@@ -253,7 +253,13 @@ Every value in `styles.css` comes from a token (§2).
     mark fills from the right as it does, with a beat once it is out; put
     away, the fill drains back and it goes the way it came, gathering speed
     to the right (260 ms), its line going with it and gone as it gets to the
-    window's edge, never left standing there.
+    window's edge, never left standing there. What it holds is as wide on
+    the way as it is out, on Home as in Forge, never squeezed; its search on
+    the top line goes as a thing put away does (a few pixels toward the
+    pane's side, fading, quicker than the pane, never gone at the press) and
+    comes back first of its words, a badge with its line; the switch stays
+    where it stood. Brought back before it had gone, what it holds stays;
+    put away before what it holds had come in, that goes with it as it is.
   - *What opens comes out of what opened it.* What the search finds comes
     down out of its box; the terminal flies between the pane and the box.
   - *What is made goes where it lives.* A sheet goes from what it was

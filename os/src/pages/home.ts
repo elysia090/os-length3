@@ -18,7 +18,7 @@ import {latelyRow, onRightPane, pluginArea, rightPaneOpen, setRightPane, waiting
 import {mark, paneMark} from '../ui/icons.ts';
 import {onPlugins, pluginsOpen} from '../app/plugins.ts';
 import {errorText} from '../app/errors.ts';
-import {LAND, nudge, paced, paneOut, still} from '../ui/glide.ts';
+import {LAND, after, nudge, paced, paneIn, paneOut, still} from '../ui/glide.ts';
 
 let editing = false;
 
@@ -86,11 +86,39 @@ function homePane(main: HTMLElement, ctx: Context): HTMLElement {
   };
   document.addEventListener('keydown', keys);
   let was = rightPaneOpen();
+  // While it is put away or brought out, its side and search stay as wide as they are out (styles.css .pane-moving):
+  // the side goes with its edge and is cut at the window's, as Forge's does, and the search goes where it stands;
+  // neither is squeezed as the pane narrows or widens.
+  let moving: Animation | null = null;
+  const held = () => {
+    if (!rightPaneOpen() || layout.classList.contains('pane-moving') || !side.offsetWidth) return;
+    pane.style.setProperty('--side-held', `${side.offsetWidth}px`);
+    pane.style.setProperty('--search-held', `${reference.search.offsetWidth}px`);
+  };
+  new ResizeObserver(held).observe(side);
   const paint = () => {
-    layout.classList.toggle('pane-closed', !rightPaneOpen());
-    toggle.setAttribute('aria-expanded', String(rightPaneOpen()));
-    if (rightPaneOpen() && !was && layout.isConnected) paneOut(side, toggle);
-    was = rightPaneOpen();
+    const open = rightPaneOpen();
+    // Brought back before it had gone: what it holds is still there, and stays.
+    const there = layout.isConnected && getComputedStyle(side).visibility === 'visible';
+    if (open !== was && layout.isConnected && !still()) {
+      // Never out yet at this width: as wide as they will be out, measured before it sets off.
+      if (open && !pane.style.getPropertyValue('--side-held')) {
+        layout.style.transition = 'none';
+        layout.classList.remove('pane-closed');
+        held();
+        layout.classList.add('pane-closed');
+        void layout.offsetWidth;
+        layout.style.transition = '';
+      }
+      layout.classList.add('pane-moving');
+      moving?.cancel();
+      moving = after(460, () => { layout.classList.remove('pane-moving'); held(); });
+    }
+    layout.classList.toggle('pane-closed', !open);
+    toggle.setAttribute('aria-expanded', String(open));
+    if (open && !was && layout.isConnected) paneOut(side, toggle, reference.search, !there);
+    if (!open && was) paneIn(side);
+    was = open;
   };
   toggle.addEventListener('click', () => setRightPane(!rightPaneOpen()));
   const off = onRightPane(() => { if (!layout.isConnected) { off(); return; } paint(); });

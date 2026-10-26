@@ -1,5 +1,5 @@
 import {h} from '../ui/dom.ts';
-import {after, arrive, closeUp, paneOut} from '../ui/glide.ts';
+import {after, arrive, closeUp, paneIn, paneOut} from '../ui/glide.ts';
 import {t} from '../i18n.ts';
 import * as inbox from '../remote/inbox.ts';
 import {news, onNews} from '../remote/news.ts';
@@ -77,6 +77,8 @@ export class Pane {
 
   paint() {
     const work = this.#work, side = this.#side, toggle = this.#toggle;
+    // Brought back before it had gone (the switch pressed again on the way): what it holds is still there, and stays.
+    const there = !this.narrow && work.isConnected && getComputedStyle(side).visibility === 'visible';
     // Put away or brought back, what stands beside it moves on its curve while it moves (styles.css .pane-moving).
     if (work.classList.contains('pane-closed') === paneOpen) {
       work.classList.add('pane-moving');
@@ -87,7 +89,10 @@ export class Pane {
     work.classList.toggle('pane-out', this.#over);
     toggle.setAttribute('aria-expanded', String(this.shown));
     // Brought out (here, or on another page while this one is shown): what it holds comes in after its edge.
-    if (this.shown && !this.#wasShown && work.isConnected) paneOut(side, toggle);
+    // Wide, its search on the top line went with it, and comes back with its words; narrow, it stayed.
+    if (this.shown && !this.#wasShown && work.isConnected) paneOut(side, toggle, this.narrow ? null : work.querySelector<HTMLElement>(':scope > .bar > .search-box'), !there);
+    // Put away while what it holds was still coming in: that goes with it as it is.
+    if (!this.shown && this.#wasShown) paneIn(side);
     this.#wasShown = this.shown;
   }
 }

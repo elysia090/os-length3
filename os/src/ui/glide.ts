@@ -172,22 +172,58 @@ export function arrive(el: HTMLElement, dir: number, axis: 'x' | 'y', by = 12, m
 
 /**
  * The right pane brought out: as its edge lands, what it holds comes in after it, a part at a time from the side it
- * came from, and its switch's mark gives a small beat. Put away, it only goes (the wipe is the styles' own).
+ * came from (its search box on the top line first, when it was put away with the pane), and its switch's mark gives
+ * a small beat. Put away, it only goes (the wipe is the styles' own; paneIn). Brought back before it had gone (`words`
+ * false), what it holds is still there and stays (what was on its way in goes on in); only the search, if it had gone
+ * already, comes back.
  */
-export function paneOut(side: HTMLElement, toggle: HTMLElement) {
+export function paneOut(side: HTMLElement, toggle: HTMLElement, search?: HTMLElement | null, words = true) {
   if (still()) return;
+  const was = comingIn.get(side);
+  for (const a of was?.words ?? []) if (words) a.cancel(); else a.play();
+  was?.search?.cancel();
+  if (search && !words && parseFloat(getComputedStyle(search).opacity) > .5) search = null;
   // Its words, each where it stands (a head, a line), in reading order: not the boxes they are in, and not words
   // inside words already moving (they would come twice as far).
   const worded = (el: Element) => [...el.childNodes].some((n) => n.nodeType === Node.TEXT_NODE && n.textContent!.trim());
-  const parts: HTMLElement[] = [];
-  for (const el of side.querySelectorAll<HTMLElement>('*')) {
-    if (parts.length === 8) break;
-    if (worded(el) && el.getBoundingClientRect().height > 0 && !parts.some((p) => p.contains(el))) parts.push(el);
+  // An icon beside words (a row's badge) comes with them, not ahead of them on the edge.
+  const drawn = (el: Element) => el instanceof SVGSVGElement || el.matches('img, .lately-badge');
+  // A line at a time (eight, at most): what stands on one line (a badge and its name) comes together.
+  const parts: HTMLElement[] = search ? [search] : [], turns: number[] = search ? [0] : [];
+  let line = parts.length - 1, top = NaN;
+  for (const el of words ? side.querySelectorAll<HTMLElement>('*') : []) {
+    if (!(worded(el) || drawn(el)) || parts.some((p) => p.contains(el))) continue;
+    const r = el.getBoundingClientRect();
+    if (!r.height) continue;
+    if (!(Math.abs(r.top - top) < 8)) { line++; top = r.top; }
+    if (line > 7) break;
+    parts.push(el);
+    turns.push(line);
   }
-  parts.forEach((el, i) => el.animate([{opacity: 0, translate: '24px 0'}, {opacity: 1, translate: '0 0'}],
-    {duration: paced(340), delay: paced(140 + i * 50), easing: LAND, fill: 'backwards'}));
+  const moves = parts.map((el, i) => el.animate([{opacity: 0, translate: '24px 0'}, {opacity: 1, translate: '0 0'}],
+    {duration: paced(340), delay: paced(140 + turns[i] * 50), easing: LAND, fill: 'backwards'}));
+  const searchMove = search ? moves.shift()! : null;
+  comingIn.set(side, {words: words ? moves : was?.words ?? [], search: searchMove, searchBox: search ?? was?.searchBox ?? null});
   const m = toggle.querySelector('.mark');
   if (m) m.animate([{scale: 1}, {scale: 1.18, offset: .45}, {scale: 1}], {duration: paced(320), delay: paced(200), easing: 'ease-out'});
+}
+
+/** What paneOut set coming in, by the pane's side: its words' moves, and its search box and the move bringing it. */
+const comingIn = new WeakMap<HTMLElement, {words: Animation[]; search: Animation | null; searchBox: HTMLElement | null}>();
+
+/**
+ * The right pane put away while what it holds was still coming in: what had not come in goes out with it as it is,
+ * never coming on in as the pane goes; its search, still coming, goes from where it is, as a search put away goes.
+ */
+export function paneIn(side: HTMLElement) {
+  const was = comingIn.get(side);
+  if (!was || still()) return;
+  for (const a of was.words) if (a.playState === 'running') a.pause();
+  const box = was.searchBox;
+  if (!box || was.search?.playState !== 'running') return;
+  const cs = getComputedStyle(box), from: Keyframe = {opacity: cs.opacity, translate: cs.translate === 'none' ? '0 0' : cs.translate};
+  was.search.cancel();
+  was.search = box.animate([from, {opacity: 0, translate: '8px 0'}], {duration: paced(150), easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards'});
 }
 
 /**

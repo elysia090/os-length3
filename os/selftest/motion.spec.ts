@@ -168,6 +168,46 @@ test('the right pane brought out lands a touch past its edge and settles, its ma
   expect(await filled()).toBeCloseTo(1, 2);
 });
 
+test('Home\'s right pane put away and brought back: its switch stays under the hand, what it holds goes with its edge, its search never squeezed', async ({app}) => {
+  await app.newRepo.make('hello');
+  await app.rail.go('home');
+  await still(app);
+  const toggle = app.main.getByRole('button', {name: 'Right pane'});
+  const search = app.main.getByRole('searchbox', {name: /^Search/});
+  const at = (await toggle.boundingBox())!;
+  const wide = (await search.boundingBox())!.width;
+  // Frame by frame as it goes: the search box and Lately, how much of each is to be seen.
+  const going = (ms: number) => app.page.evaluate((ms) => new Promise<{search: number; lately: string; width: number}[]>((done) => {
+    const box = document.querySelector<HTMLElement>('.home-bar > .search-box')!, side = document.querySelector<HTMLElement>('.home-side')!;
+    const seen: {search: number; lately: string; width: number}[] = [], t0 = performance.now();
+    const tick = () => {
+      // Drawn at all (not taken out of the page), and then how much.
+      const drawn = (el: HTMLElement) => el.getClientRects().length > 0 && getComputedStyle(el).visibility === 'visible';
+      seen.push({search: drawn(box) ? +getComputedStyle(box).opacity : 0, lately: drawn(side) ? 'visible' : 'hidden', width: box.getBoundingClientRect().width});
+      if (performance.now() - t0 < ms) requestAnimationFrame(tick); else done(seen);
+    };
+    requestAnimationFrame(tick);
+  }), ms);
+  const away = going(300);
+  await toggle.click();
+  const put = await away;
+  // Not gone at the press: the search fades from where it was, and Lately is still there for the start of the move.
+  expect(put[0].search).toBeGreaterThan(.5);
+  expect(put.slice(0, 3).every((f) => f.lately === 'visible')).toBe(true);
+  await still(app);
+  await expect(search).toBeHidden();
+  // The switch where it stood, not a gap's width to the right of it.
+  expect(Math.abs((await toggle.boundingBox())!.x - at.x)).toBeLessThan(1);
+  const back = going(1500);
+  await toggle.click();
+  const came = await back;
+  await still(app);
+  await expect(search).toBeVisible();
+  // Never squeezed on the way: as wide as it is out, every frame it is to be seen at all.
+  for (const f of came.filter((f) => f.search > .05)) expect(f.width).toBeGreaterThan(wide - 1);
+  expect(Math.abs((await toggle.boundingBox())!.x - at.x)).toBeLessThan(1);
+});
+
 test('the caret is drawn by the OS: it follows what is written along the line, and Enter takes it to the next', async ({app}) => {
   await app.newRepo.make('hello');
   await app.newRepo.openInForge();

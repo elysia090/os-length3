@@ -493,9 +493,18 @@ button.row-item, .part, .dot-row, .pane-head, .hit-diff, .found-shut):hover { tr
 /* Forge's line, where Forge's is: the pane's edge, top line to foot; put away, no pane, no line. */
 .home-pane { border-left: var(--line-frame) solid var(--ink); background: var(--ground); transition: border-color var(--motion); }
 /* Its top line as Forge's: the search box over the pane, the switch at its right end; put away, the switch alone. */
-.home-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--s3); min-width: 0; }
+/* The room between the search and the switch is the search's own (not a gap of the line's), so with the pane put
+   away and the search's column at nothing the switch stays where it stood, not a gap's width to the right. */
+.home-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; min-width: 0; }
+.home-bar > .search-box { margin-right: var(--s3); }
 .home-bar > .pane-toggle { grid-column: 2; }
-.home-layout.pane-closed .home-bar > .search-box { display: none; }
+/* Put away, its search goes as Forge's does (a few pixels toward where the pane goes, fading, quicker than the pane),
+   and comes back with the pane's words (glide.ts paneOut). While the pane moves it stays as wide as it is out, where
+   it stands, cut at the pane's edge if the edge gets to it (home.ts). */
+.home-layout.pane-closed .home-bar > .search-box { visibility: hidden; opacity: 0; translate: var(--s2) 0; pointer-events: none;
+  transition: opacity calc(150ms * var(--pace)) cubic-bezier(.4, 0, 1, 1), translate calc(150ms * var(--pace)) cubic-bezier(.4, 0, 1, 1), visibility 0s calc(150ms * var(--pace)); }
+.home-layout:is(.pane-moving, .pane-closed) .home-bar > .search-box { width: var(--search-held, auto); justify-self: end; }
+.home-layout:is(.pane-moving, .pane-closed) .home-pane { overflow-x: clip; grid-template-columns: minmax(0, 1fr); }
 /* While the search is out the window steps back under the one shade, as Forge's does. The pane holds itself in
    place (sticky), so it is a layer of its own the search cannot rise out of: it rises over the shade itself, with a
    shade of its own over what it holds but the search (put back at once as the search goes, the window's fading). */
@@ -505,7 +514,10 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
 .home-pane:has(.search-box:is(:focus-within, .reading))::after { opacity: 1; transition: opacity calc(180ms * var(--pace)) ease-out; }
 .home-bar > .search-box { z-index: 1; }
 .home-layout.pane-closed .home-pane { padding-left: 0; border-left-color: transparent; transition: border-color var(--leave) cubic-bezier(.7, 0, 1, 1); }
-.home-layout.pane-closed .home-side { display: none; }
+/* Put away, what it holds goes with its edge to the right, as wide as it was, cut at the window's edge, and is out of
+   sight (and of the keyboard) once the pane is; brought out, it comes in with the edge the same way (as Forge's). */
+.home-layout:is(.pane-moving, .pane-closed) .home-side { width: var(--side-held, auto); }
+.home-layout.pane-closed .home-side { visibility: hidden; transition: visibility 0s var(--leave); }
 /* Its first heading on the line Forge's Prompt and Server's People are on, a band below the top line's foot. */
 .home-side { min-height: 0; overflow: auto; padding-top: var(--band); }
 /* Lately's rows reach a step past its words on each side (their fill under the pointer, their edge opened): the pane
@@ -1191,7 +1203,12 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:focus-within)::after { opa
 /* The right pane put away takes its search with it; its switch stays where it was, at the top line's right end,
    the way to bring both back, and says which it is: brought out, an ink fill, as anything chosen; put away, the
    outline alone. */
-@media (min-width: 761px) { .work.bench.pane-closed > .bar > .search-box { display: none; } } /* narrow, it is the way to the pane's parts */
+/* It goes as anything put away does, a few pixels toward where the pane goes, fading, quicker than the pane (never
+   gone at the press while the pane is still there), and comes back with the pane's words (glide.ts paneOut); brought
+   back before it had gone, it comes back from where it was. */
+:is(.work.bench > .bar, .home-bar) > .search-box { transition: opacity calc(150ms * var(--pace)) ease-out, translate calc(150ms * var(--pace)) var(--land); }
+@media (min-width: 761px) { .work.bench.pane-closed > .bar > .search-box { visibility: hidden; opacity: 0; translate: var(--s2) 0; pointer-events: none;
+  transition: opacity calc(150ms * var(--pace)) cubic-bezier(.4, 0, 1, 1), translate calc(150ms * var(--pace)) cubic-bezier(.4, 0, 1, 1), visibility 0s calc(150ms * var(--pace)); } } /* narrow, it is the way to the pane's parts */
 /* Out or put away, the switch is the same quiet circle; its mark's pane is filled while the pane is out, the fill
    sweeping in from the right as the pane does and draining back to it as it goes. */
 .pane-toggle .mark-fill { fill: currentColor; stroke: none; transform-box: fill-box; transform-origin: right center; transform: scaleX(0);
