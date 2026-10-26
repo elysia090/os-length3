@@ -320,25 +320,31 @@ export const unlink = (providerId: string) => json('/api/auth/unlink-account', {
 // ---- passkeys (web) ----
 
 const cancelled = (e: unknown) => (e as {name?: string}).name === 'NotAllowedError';
+/** This device's authenticator holds a passkey for this account already (the Remote listed it to be left out). */
+const madeAlready = (e: unknown) => (e as {name?: string}).name === 'InvalidStateError';
 
 /** Add a passkey for this device to the account it is signed in to. */
 export async function addPasskey(name = deviceName()): Promise<void> {
   const {startRegistration} = await webauthn();
   const options = await json<Record<string, unknown>>(`/api/auth/passkey/generate-register-options?name=${encodeURIComponent(name)}`);
   const response = await startRegistration({optionsJSON: options as never}).catch((e: unknown) => {
-    throw new RemoteError(0, cancelled(e) ? t('The passkey was not made.') : t('Could not make a passkey ({why}).', {why: String(e)}));
+    throw new RemoteError(0, cancelled(e) ? t('The passkey was not made.') : madeAlready(e) ? t('This device has a passkey for this account already.')
+      : t('Could not make a passkey ({why}).', {why: String(e)}));
   });
   await json('/api/auth/passkey/verify-registration', {method: 'POST', body: JSON.stringify({response, name})});
   cameIn('passkey');
 }
 
-/** Sign in with a passkey (any of the account's, on this device or synced to it). */
-export async function signIn(): Promise<void> {
+/**
+ * Sign in with a passkey (any of the account's, on this device or synced to it). As a deed's confirmation, `stopped`
+ * says what stays as it was when it is called off, not that signing in was.
+ */
+export async function signIn(stopped?: string): Promise<void> {
   tryingAgain();
   const {startAuthentication} = await webauthn();
   const options = await (await api('/api/auth/passkey/generate-authenticate-options', {}, null)).json();
   const response = await startAuthentication({optionsJSON: options}).catch((e: unknown) => {
-    throw new RemoteError(0, cancelled(e) ? t('Signing in was stopped.') : t('Could not sign in with a passkey ({why}).', {why: String(e)}));
+    throw new RemoteError(0, cancelled(e) ? stopped ?? t('Signing in was stopped.') : t('Could not sign in with a passkey ({why}).', {why: String(e)}));
   });
   const r = await api('/api/auth/passkey/verify-authentication', {method: 'POST', body: JSON.stringify({response})}, null);
   await keep(tokenOf(r));
@@ -380,7 +386,7 @@ export const offCode = () => json<{set: boolean; setAt: number | null}>('/v1/off
 
 /** Set the code (five letters or digits); a passkey confirms it is you. */
 export async function setOffCode(code: string): Promise<void> {
-  await signIn();
+  await signIn(t('The passkey was not used: the code is as it was.'));
   await json('/v1/off-code', {method: 'POST', body: JSON.stringify({code})});
 }
 
@@ -389,7 +395,7 @@ export async function setOffCode(code: string): Promise<void> {
  * moment ago (setting the code), which the Remote still takes; else one is asked for now.
  */
 export async function turnOff(repo: string, name: string, typed: string, code: string, proven = false): Promise<{offAt: number; until: number}> {
-  if (!proven) await signIn();
+  if (!proven) await signIn(t('The passkey was not used: the repo is as it was.'));
   const r = await api(`/v1/repos/${encodeURIComponent(repo)}/off`, {method: 'POST', body: JSON.stringify({name, repo: typed, code})});
   const body = await r.json() as {offAt?: number; until?: number; error?: string};
   if (!r.ok) throw new RemoteError(r.status, t(body.error ?? `Remote: ${r.status}`));
@@ -401,7 +407,7 @@ export const turnOn = (repo: string) => json(`/v1/repos/${encodeURIComponent(rep
 
 /** Discard a repo turned off: gone from the Remote now, with its history, for good. Asked for as turning it off is. */
 export async function discard(repo: string, name: string, typed: string, code: string, proven = false): Promise<void> {
-  if (!proven) await signIn();
+  if (!proven) await signIn(t('The passkey was not used: the repo is as it was.'));
   const r = await api(`/v1/repos/${encodeURIComponent(repo)}/discard`, {method: 'POST', body: JSON.stringify({name, repo: typed, code})});
   if (!r.ok) throw new RemoteError(r.status, t(((await r.json()) as {error?: string}).error ?? `Remote: ${r.status}`));
 }
