@@ -2125,6 +2125,12 @@ half written after reading its neighbours or another page.
   approved it, and Merge at the right, primary once the version is
   approved.
 
+Before Git has read where each repo stands (several of the core's answers
+for each, one after another: a second or more with a dozen repos), Reading…
+stands where the issues will be, not a heading over nothing; come back to,
+what it read last is drawn at once while it is read again, and drawn again
+only if something moved.
+
 Around the issues, each its own section, shown only when it has something:
 main over them (what is in hand comes before what is planned); under them
 what is done with, Committed (on main, from here), Merged and Closed.
@@ -2144,7 +2150,12 @@ what is done with, Committed (on main, from here), Merged and Closed.
   a long one shows its first 30 lines with "n more lines" under them,
   pressed to show the rest, so a large change reads file by file and
   never as a wall. What is opened or shut by hand stays so while the page
-  is drawn again. The issue's Commit row shows its files the same way. Commit
+  is drawn again. The issue's Commit row shows its files the same way. With
+  more than three repos waiting in All, each is a row instead (its name
+  at the left, how many files and Commit at the right), so the issues are
+  not a long way down; its name, with a small triangle, opens its files
+  under it in the row and shuts them again (read only then), and one repo
+  shown is its card as above. Commit
   asks in the card for the line the commit goes by ("Fix：title"), as
   `l3 commit REPO "Fix：title"` takes it, Not now at the left and Commit
   under the pointer; Enter commits the one line, and the card's height goes

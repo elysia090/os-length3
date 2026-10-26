@@ -95,6 +95,9 @@ function renumber(issues: readonly Issue[], states: ReadonlyMap<string, RepoStat
   }));
 }
 
+/** Where each repo stood when Git last read it: drawn at once when the page is come back to, then read again. */
+const stood = new Map<string, RepoState>();
+
 /** The page while it is shown: its repos, where each stands, and what is drawn of them. */
 class GitPage {
   readonly element: HTMLElement;
@@ -103,7 +106,7 @@ class GitPage {
   private readonly write = h('button', {class: 'button', type: 'button'}, t('Write an issue')) as HTMLButtonElement;
   private readonly count = h('small', {});
   /** Where the issues would be when there are none: the dashed card that writes the first, or what is so. */
-  private readonly empty = h('div', {});
+  private readonly empty = h('div', {}, h('p', {class: 'muted small'}, t('Reading…')));
   private readonly form: IssueForm;
   private readonly row: IssueRow;
   private readonly sections = new Sections();
@@ -248,17 +251,38 @@ class GitPage {
   private async draw() {
     const all = await Promise.all(this.repos.map((r) => readIssues(store, r)));
     const issues = all.flatMap((x, j) => (!filter || this.repos[j] === filter ? x : []));
+    const shown = this.repos.filter((r) => !filter || r === filter);
+    // Come back to: where each repo stood when last read is drawn at once, while it is read again (a repo's standing is
+    // several of the core's answers, one after another, a long wait with many repos), and drawn again only if it moved.
+    const early = connection() && !this.states.size && shown.length > 0 && shown.every((r) => stood.has(r));
+    if (early) {
+      this.states = new Map(shown.map((r) => [r, stood.get(r)!]));
+      this.lay(shown, issues);
+    }
     // Where each repo stands: the work it shows, the issues started, the changes to main.
     const fresh = new Map<string, RepoState>();
     // Every repo looked at, issues or not: what its main has not committed shows too.
-    if (connection()) await standings(this.repos.filter((r) => !filter || r === filter), fresh);
+    if (connection()) await standings(shown, fresh);
     // Asked again while this read (an issue written meanwhile): what it read may be from before, so it is not drawn,
     // nor does it choose the issue shown; the drawing after it, from what is true then, does.
     if (this.more) return;
+    for (const [r, st] of fresh) stood.set(r, st);
+    // Drawn early from what was read before, and read the same now: it stands as it is (not drawn twice over).
+    const same = early && this.laidFrom === JSON.stringify([shown, issues, [...fresh]]);
     this.states = fresh;
+    if (same) return;
     if ((await renumber(issues, this.states)).some(Boolean)) return;
+    this.lay(shown, issues);
+  }
+
+  /** What was laid out last, as read: the same read again is not drawn again. */
+  private laidFrom = '';
+
+  /** The issues of `shown` and the sections round them, drawn from `issues` and where each repo stands now. */
+  private lay(shown: string[], issues: Issue[]) {
+    this.laidFrom = JSON.stringify([shown, issues, [...this.states]]);
     // Oldest first, so #1 is on the left; merged and closed ones are done with, and listed under the issues.
-    const laid = laidOut(this.repos.filter((r) => !filter || r === filter), issues, this.states);
+    const laid = laidOut(shown, issues, this.states);
     this.counted(laid.open.length);
     this.sections.draw(laid, filter, this.states, this.events, this.again);
     if (laid.open.length) this.drawSome(laid.open); else this.drawNone(issues);

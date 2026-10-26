@@ -36,7 +36,9 @@ export class Sections {
     // main: what it has not committed, each a card. What was committed on it from here is under the issues.
     const cuts = committedIn(filter || null);
     this.main.hidden = !dirty.length;
-    this.main.replaceChildren(heading('main-title', 'main'), ...dirty.map((r) => mainCard(r, states.get(r)!.uncommitted, events, again)));
+    // Many waiting in All: a row each, so the issues are not a long way down; one repo shown, its card.
+    const brief = !filter && dirty.length > BRIEF;
+    this.main.replaceChildren(heading('main-title', 'main'), ...dirty.map((r) => mainCard(r, states.get(r)!.uncommitted, events, again, brief)));
     this.committed.hidden = !cuts.length;
     this.committed.replaceChildren(heading('committed-title', t('Committed')), committedList(cuts, !filter));
     this.merged.hidden = !merged.length;
@@ -45,6 +47,11 @@ export class Sections {
     this.closed.replaceChildren(heading('closed-title', t('Closed'), closed.length), closedList(closed, !filter, again));
   }
 }
+
+/** More repos than this waiting to be committed, in All: each a row (its name, how many, Commit), its files folded. */
+const BRIEF = 3;
+/** Repos whose row (in All, many waiting) was opened to its files: open again when drawn again. */
+const unfolded = new Set<string>();
 
 /** The line a commit on main is being named by, per repo: kept as written until it is committed or put back with Not now. */
 const naming = new Map<string, string>();
@@ -89,18 +96,28 @@ function resize(card: HTMLElement, from: number) {
  * its line ("Fix：title", as `l3 commit REPO "Fix：title"` takes it), Not now
  * at the left and Commit at the right, under the pointer.
  */
-function mainCard(repo: string, n: number, events: IssueEvents, after: () => void): HTMLElement {
-  const card = h('div', {class: 'main-card', role: 'group', 'aria-label': t('Not committed on main in {repo}', {repo})});
+function mainCard(repo: string, n: number, events: IssueEvents, after: () => void, brief = false): HTMLElement {
+  const card = h('div', {class: `main-card${brief ? ' brief' : ''}`, role: 'group', 'aria-label': t('Not committed on main in {repo}', {repo})});
   const plain = () => {
     const from = card.isConnected ? card.getBoundingClientRect().height : 0;
     const commit = button(t('Commit'), 'primary');
     commit.addEventListener('click', () => ask(commit));
     // Laid out as an issue's box is: its name at the top, the files under it on the card itself, and at its foot how
     // many wait at the left and Commit at the right, where an issue's next step is.
-    card.replaceChildren(h('h3', {class: 'main-title'}, repo),
-      notCommitted(repo, n, events),
-      h('div', {class: 'issue-foot main-foot'},
-        h('span', {class: 'muted small'}, tn('{n} file to commit on main', '{n} files to commit on main', n)), commit));
+    const foot = h('div', {class: 'issue-foot main-foot'},
+      h('span', {class: 'muted small'}, tn('{n} file to commit on main', '{n} files to commit on main', n)), commit);
+    if (!brief) card.replaceChildren(h('h3', {class: 'main-title'}, repo), notCommitted(repo, n, events), foot);
+    else {
+      // A row: its name opens its files under it (read only then), and closes them again.
+      const open = unfolded.has(repo);
+      const name = h('button', {type: 'button', class: 'main-open', 'aria-expanded': String(open)}, repo);
+      name.addEventListener('click', () => {
+        if (open) unfolded.delete(repo); else unfolded.add(repo);
+        plain();
+        card.querySelector<HTMLElement>('.main-open')?.focus();
+      });
+      card.replaceChildren(h('h3', {class: 'main-title'}, name), foot, ...(open ? [notCommitted(repo, n, events)] : []));
+    }
     resize(card, from);
     return commit;
   };

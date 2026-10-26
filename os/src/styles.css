@@ -2461,6 +2461,16 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .main-card { display: grid; gap: var(--s3); padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s5); border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper); }
 .main-title { margin: 0; font-size: var(--t-body); font-weight: 600; }
 .main-card + .main-card { margin-top: var(--s3); }
+/* Many waiting in All (done.ts BRIEF): a row each, its name at the left and how many with Commit at the right; its name
+   pressed, its files open under it, the row's own width. Asked for a commit's line, it is the card again. */
+.main-card.brief { grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: var(--s2) var(--s3) var(--s2) var(--s5); }
+.main-card.brief:has(> .off-ask) { grid-template-columns: minmax(0, 1fr); padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s5); }
+.main-card.brief > .main-foot { margin: 0; gap: var(--s4); }
+.main-card.brief > .changes { grid-column: 1 / -1; padding-bottom: var(--s3); }
+.main-card.brief + .main-card.brief { margin-top: var(--s2); }
+.main-open { display: inline-flex; align-items: center; gap: var(--s2); padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: var(--cursor-hand); }
+.main-open::before { content: ''; width: 0; height: 0; border-block: 4px solid transparent; border-left: 6px solid currentColor; transition: rotate var(--motion); }
+.main-open[aria-expanded='true']::before { rotate: 90deg; }
 /* main's card: the repo, how many files wait and Commit on one line; the files under it on the card itself, no box
    inside the box. */
 .changes { display: grid; gap: var(--s1); min-width: 0; }
