@@ -131,9 +131,31 @@ export function offsetAt(area: HTMLTextAreaElement, x: number, y: number): {line
   return {line, at: to};
 }
 
+/** Where in `area`'s lines `y` is: the line (clamped to the file's) and how far down it, 0 at its top to 1 at its foot. */
+function lineAtY(area: HTMLTextAreaElement, y: number): {line: number; down: number} {
+  const r = area.getBoundingClientRect(), {starts, lh, top} = linesOf(area), at = (y - r.top - top) / lh;
+  const line = Math.min(starts.length - 1, Math.max(0, Math.floor(at)));
+  return {line, down: at - line};
+}
+
+/** How far into the next line the pointer goes before the ring goes with it: a hand at rest on a border leaves it be. */
+const INTO = .25;
+
 /** The line pointed at, ringed, to say it can be pressed. */
 export class Ring {
   #at: {area: HTMLTextAreaElement; line: number} | null = null;
+
+  /**
+   * The ring on the line of `area` at `y` (no area: the ring goes). Onto the line beside the one ringed it goes only
+   * once the pointer is a little way into it, so a hand resting on the border of two lines, never quite still, does
+   * not send it back and forth between them.
+   */
+  over(area: HTMLTextAreaElement | null, y: number) {
+    if (!area) { this.on(null, 0); return; }
+    const {line, down} = lineAtY(area, y), was = this.#at;
+    if (was?.area === area && ((line === was.line + 1 && down < INTO) || (line === was.line - 1 && down > 1 - INTO))) return;
+    this.on(area, line);
+  }
 
   /** The ring on line `line` of `area` (none: the ring goes). */
   on(area: HTMLTextAreaElement | null, line: number) {

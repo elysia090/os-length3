@@ -112,7 +112,7 @@ export class EditLine {
       cancelAnimationFrame(pointing);
       pointing = requestAnimationFrame(() => {
         const area = p.active() ? areaOf(document.elementFromPoint(event.clientX, event.clientY), p.repo()) : null;
-        this.#ring.on(area, area ? offsetAt(area, event.clientX, event.clientY).line : 0);
+        this.#ring.over(area, event.clientY);
       });
     });
     p.main.addEventListener('pointerleave', () => { cancelAnimationFrame(pointing); this.#ring.on(null, 0); });
