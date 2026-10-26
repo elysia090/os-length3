@@ -194,6 +194,12 @@ export const homeUnsent = (k: draft.HomeKey): boolean => homeTimers.has(k) || (h
  */
 export const look: () => Promise<void> = coalesced(lookOnce);
 async function lookOnce(): Promise<void> {
+  // What moved on the Remote is asked while what is here is read (as the app opens, while the core starts): neither
+  // waits for the other, and the page waited for both, one after the other, before it was drawn from them.
+  const asked = connection();
+  const moving = asked ? draft.moved().catch(away) : null;
+  // Not waited for when nothing is decided from it (below): what it threw is thrown where it is waited for.
+  moving?.catch(() => {});
   // What is here could not be read: nothing is decided from nothing (no state is dropped), and it is said.
   const here = await draft.status().catch((e: unknown) => { console.error('look: the repos here could not be read', e); return null; });
   if (!here) return;
@@ -209,7 +215,8 @@ async function lookOnce(): Promise<void> {
   }
   for (const k of [...states.keys()]) if (!here.some((s) => s.name === k)) states.delete(k);
   if (c) {
-    const now = await draft.moved().catch(away);
+    // Asked again when the session changed meanwhile: what moved is the session's.
+    const now = moving && asked?.token === c.token ? await moving : await draft.moved().catch(away);
     if (now && now.repos !== reposSeen) {
       const list = await draft.remoteRepos().catch(away);
       if (list) { everyThere = list; reposSeen = now.repos; }
