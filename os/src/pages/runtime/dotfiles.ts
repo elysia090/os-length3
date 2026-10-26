@@ -4,53 +4,59 @@ import * as dotfiles from '../../home/dotfiles.ts';
 import {askFoot, SETTLE} from '../common.ts';
 import {allSessions, type Session} from '../bench/terminal.ts';
 import {errorText} from '../../app/errors.ts';
-import {button, card} from './parts.ts';
+import {button} from './parts.ts';
 
-// Runtime's Dotfiles: what every Prompt starts with in /root, a card each, and one open to edit under them.
+// Runtime's Dotfiles: what every Prompt starts with in /root, in one box, a row each, the one open lit with its text
+// under it there.
 
 const running = () => allSessions().filter(([, s]) => s.running);
 
-/** What a dotfile's box asks of the Dotfiles around it: the cards drawn again (`open` under them, `saved` just now), and a Prompt started again. */
+/** What a dotfile's box asks of the Dotfiles around it: the rows drawn again (`open`, `saved` just now), and a Prompt started again. */
 interface BoxWays { paint(open?: string | null, saved?: boolean): void; restarted(): void }
 
 /**
- * Dotfiles: a small card each (name, size), a dashed one to make another;
- * a card opens its text under them to edit. Every Prompt starts with them
- * in /root, and the Remote keeps them in step across devices. A Prompt
- * already running has what it started with (its shell has read them, and
- * its /root is its own), so a save says so under the box, with Start again;
- * Remove asks in the box first, since it goes from every device.
+ * Dotfiles: one box, a row each (name, size), and New dotfile at its foot;
+ * a row pressed opens its text under it, in the box, and pressed again (or
+ * Close) folds it. Every Prompt starts with them in /root, and the Remote
+ * keeps them in step across devices. A Prompt already running has what it
+ * started with (its shell has read them, and its /root is its own), so a
+ * save says so under the box, with Start again; Remove asks in the box
+ * first, since it goes from every device.
  */
 export function dotfilesSection(restarted: () => void, counted: (n: number) => void = () => {}): HTMLElement {
   const section = h('section', {class: 'section dotfiles-part', 'aria-label': t('Dotfiles')});
-  const editor = h('div', {});
   const w: BoxWays = {paint: (open, saved) => paint(open, saved), restarted};
-  const paint = (open: string | null = null, saved = false) => {
+  /** The rows drawn: `open`'s text under it (`saved` just now), or a new one's (`fresh`, the name it is offered with) under New dotfile. */
+  const paint = (open: string | null = null, saved = false, fresh: string | null = null) => {
     const all = dotfiles.read();
     const names = Object.keys(all).sort();
-    const cards = names.map((n) => fileCard(n, all[n], n === open, () => paint(n)));
-    const make = h('button', {type: 'button', class: 'card small-card new'}, '+', h('span', {}, t('New dotfile')));
-    make.addEventListener('click', () => {
-      const name = dotfiles.COMMON.find((c) => !(c in all)) ?? '.config';
-      editor.replaceChildren(editBox(name, '', true, false, w));
-      editor.querySelector<HTMLInputElement>('input')?.select();
-    });
+    const pressed = section.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.name : undefined;
+    const list = h('div', {class: 'dot-list'});
+    for (const n of names) {
+      list.append(fileRow(n, all[n], n === open, () => paint(n === open ? null : n)));
+      if (n === open) list.append(editBox(n, all[n], false, saved, w));
+    }
+    const make = h('button', {type: 'button', class: `dot-row new${fresh ? ' current' : ''}`, 'aria-expanded': String(!!fresh), 'data-name': ''},
+      '+', h('span', {}, t('New dotfile')));
+    make.addEventListener('click', () => paint(null, false, fresh ? null : dotfiles.COMMON.find((c) => !(c in all)) ?? '.config'));
+    list.append(make);
+    if (fresh) list.append(editBox(fresh, '', true, false, w));
     counted(names.length);
-    section.replaceChildren(h('div', {class: 'grid small-grid'}, ...cards, make), editor);
-    editor.replaceChildren(...(open && open in all ? [editBox(open, all[open], false, saved, w)] : []));
+    section.replaceChildren(list);
+    // The keyboard stays on the row it pressed; a new one's name is chosen, to be written over.
+    if (fresh) section.querySelector<HTMLInputElement>('.dot-name')?.select();
+    else if (pressed !== undefined) section.querySelector<HTMLElement>(`.dot-row[data-name="${CSS.escape(pressed)}"]`)?.focus();
   };
   paint();
   return section;
 }
 
-/** A dotfile's card: its name and size; pressed (or Enter), it opens under the cards (`open`). */
-function fileCard(name: string, text: string, current: boolean, open: () => void): HTMLElement {
-  const c = card(name, [bytes(new TextEncoder().encode(text).length)], null, `mono-title openable${current ? ' current' : ''}`);
-  c.tabIndex = 0;
-  c.setAttribute('role', 'button');
-  c.addEventListener('click', open);
-  c.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(); });
-  return c;
+/** A dotfile's row: its name and size; pressed, it opens (or folds, `current`). */
+function fileRow(name: string, text: string, current: boolean, press: () => void): HTMLElement {
+  const row = h('button', {type: 'button', class: `dot-row${current ? ' current' : ''}`, 'aria-expanded': String(current), 'data-name': name},
+    h('span', {class: 'dot-row-name'}, name), h('span', {class: 'muted small'}, bytes(new TextEncoder().encode(text).length)));
+  row.addEventListener('click', press);
+  return row;
 }
 
 /** The file's text in a box like Forge's, its name above (editable when new, `fresh`), Save and Remove; `saved`, just now. */

@@ -31,7 +31,7 @@ function meter(total: number, free: number, mine: number, label: string) {
   const pct = (v: number) => `${Math.min(100, (v / total) * 100).toFixed(2)}%`;
   const app = h('span', {class: 'app'}); app.style.width = pct(mine);
   const other = h('span'); other.style.width = pct(Math.max(0, total - free - mine));
-  return h('div', {class: 'meter', role: 'img', 'aria-label': label}, app, other);
+  return h('div', {class: 'meter space-meter', role: 'img', 'aria-label': label}, app, other);
 }
 
 const figure = (value: string, word: string, note = '') =>

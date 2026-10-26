@@ -197,14 +197,14 @@ a { color: var(--ink); }
    quickly and going, slowly, so a pass across the rail leaves a short trail rather than blinking. Only the fill and
    the edge ease: words and icons turn at once, so ink landing on a place never hides its icon a moment. */
 .rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row,
-.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .tree-row, .hit, .hit-file, .found-item, .seen-file, .link, button.row-item, .part {
+.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .tree-row, .hit, .hit-file, .found-item, .seen-file, .link, button.row-item, .part, .dot-row {
   transition: background-color calc(200ms * var(--pace)) ease-out, border-color calc(200ms * var(--pace)) ease-out;
 }
 :is(.rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row,
 .inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .tree-row, .hit, .hit-file, .found-item, .seen-file, .link,
-button.row-item, .part):hover { transition-duration: calc(60ms * var(--pace)); }
+button.row-item, .part, .dot-row):hover { transition-duration: calc(60ms * var(--pace)); }
 :is(.rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row,
-.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .file-beside, .tree-row):active:not(:disabled) {
+.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .file-beside, .tree-row, .dot-row):active:not(:disabled) {
   background-color: color-mix(in srgb, var(--ink) 13%, var(--raised)); transition-duration: 40ms;
 }
 /* A primary button answers the pointer too: its ink a step toward the ground under it, as quickly as a fill comes
@@ -913,11 +913,11 @@ button.row-item:disabled { cursor: var(--cursor-arrow); color: var(--sub); }
 .made { margin-right: var(--s2); font-weight: 600; }
 .chip:disabled, .line-in:disabled { opacity: .5; cursor: var(--cursor-arrow); }
 
-/* Storage */
-.meter { height: var(--s4); border: 1px solid var(--edge); border-radius: var(--r-field); overflow: hidden; display: flex; }
-.meter span { display: block; height: 100%; background: var(--rule); }
-/* This OS's part is the darker share of the bar; not an ink fill, which means current. */
-.meter span.app { background: var(--edge); }
+/* Storage: this OS's part the darker share of the bar (not an ink fill, which means current), never too thin to see;
+   everything else's the lighter. */
+.space-meter { display: flex; }
+.space-meter > span { flex: none; background: var(--edge); }
+.space-meter > span.app { min-width: 3px; background: var(--sub); }
 .legend { margin-top: var(--s3); display: flex; flex-wrap: wrap; gap: var(--s5); }
 .legend b { font-size: var(--t-card); font-weight: 600; display: block; }
 /* Runtime: each repo's share, what can be given back, Prompts running */
@@ -2043,8 +2043,8 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .handed .work-act { padding: 0 var(--s3) var(--s2); }
 .state-chip { flex: none; font-size: var(--t-meta); padding: 0 var(--s2); border: 1px solid var(--edge); border-radius: var(--r-round); }
 .handed[data-state='merged'] .state-chip, .handed[data-state='rejected'] .state-chip, .handed[data-state='reset'] .state-chip { color: var(--sub); border-color: var(--rule); }
-/* Runtime: one tall box in three columns: here, can be freed, on the Remote */
-.space-box { margin-top: var(--s5); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); min-height: 56vh;
+/* Runtime: one box in three columns, as tall as the longest: here, on the Remote, can be freed */
+.space-box { margin-top: var(--s5); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
   border: 1px solid var(--rule); border-radius: var(--r-place); overflow: hidden; }
 .space-col { display: flex; flex-direction: column; min-width: 0; padding: var(--s4); }
 .space-col + .space-col { border-left: 1px solid var(--rule); }
@@ -2054,8 +2054,7 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .space-row { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) 0; }
 .space-what { display: grid; min-width: 0; flex: 1; }
 .space-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.space-what .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.space-what .space-why { overflow: visible; white-space: normal; overflow-wrap: anywhere; }
+.space-what .small { overflow-wrap: anywhere; } /* what a row is, and why, read whole */
 .space-size { flex: none; font-size: var(--t-meta); font-variant-numeric: tabular-nums; color: var(--sub); }
 .gear-room { flex: none; width: var(--h-row); }
 /* A column's figure stands over its rows' sizes, clear of the room their gear takes: one column of numbers. */
@@ -2064,7 +2063,7 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .space-foot .grow { flex: 1; }
 .link-name { border: 0; padding: 0; background: transparent; font: inherit; font-weight: 600; color: inherit; text-align: left; cursor: var(--cursor-hand); }
 .link-name:hover { background: var(--raised); border-radius: var(--r-field); }
-@media (max-width: 900px) { .space-box { grid-template-columns: 1fr; min-height: 0; } .space-col + .space-col { border-left: 0; border-top: 1px solid var(--rule); } }
+@media (max-width: 900px) { .space-box { grid-template-columns: 1fr; } .space-col + .space-col { border-left: 0; border-top: 1px solid var(--rule); } }
 /* Inbox on the page's three columns (inbox.ts): the stub, the field to write to someone new and the conversations in
    the first, one width and the field the stub's height and shape; the conversation open as a sheet over the other
    two, from the stub's top to the page's foot. None yet, there is no sheet. */
@@ -2486,11 +2485,7 @@ summary.done-head:hover { background: var(--raised); }
   content: '+'; position: absolute; top: var(--s4); left: var(--s4); display: grid; place-items: center; width: 24px; height: 24px;
   border: 1px dashed var(--edge); border-radius: 50%; font: 400 16px/1 var(--sans); color: var(--sub);
 }
-.small-card.mono-title .card-title { font-family: var(--mono); font-weight: 600; }
 .small-card.quiet { border-style: dashed; color: var(--sub); }
-.small-card.openable { cursor: var(--cursor-hand); }
-.small-card.openable:hover { background: var(--raised); }
-.small-card.current { border-color: var(--ink); background: var(--raised); }
 .small-card.new { min-height: 128px; }
 /* The card that adds someone: their name or code beside its deed, as Inbox's way to write to someone new. */
 .add-card { gap: var(--s2); }
@@ -2509,7 +2504,17 @@ summary.done-head:hover { background: var(--raised); }
 a.button { display: inline-flex; align-items: center; justify-content: center; color: inherit; text-decoration: none; white-space: nowrap; }
 .download { gap: var(--s1); padding: 0 var(--s3) 0 var(--s2); font-size: var(--t-meta); }
 .download .mark { width: var(--s3); height: var(--s3); }
-.dot-editor { display: grid; gap: var(--s3); margin-top: var(--s4); padding: var(--s4); border: var(--line-work) solid var(--edge); border-radius: var(--r-place); max-width: 760px; }
+/* Runtime's Dotfiles (dotfiles.ts): one box, a row each, its name and size; the one open lit, its text under it in the
+   box, New dotfile at the foot. */
+.dot-list { display: grid; max-width: 760px; border: 1px solid var(--rule); border-radius: var(--r-place); overflow: hidden; }
+.dot-list > * + * { border-top: 1px solid var(--rule); }
+.dot-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s3); min-width: 0; min-height: var(--h-row);
+  padding: var(--s2) var(--s4); border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand); }
+.dot-row:hover, .dot-row.current { background: var(--raised); }
+.dot-row-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-weight: 600; }
+.dot-row.new { justify-content: flex-start; gap: var(--s2); color: var(--sub); }
+.dot-row.new:hover { color: var(--ink); }
+.dot-editor { display: grid; gap: var(--s3); padding: var(--s4); }
 .dot-head { align-items: center; gap: var(--s1); margin-top: 0; }
 /* Remove asked where the box's deeds were: what will happen, then the answers on the same line as they were. */
 .dot-ask { display: grid; gap: var(--s2); margin-top: var(--s3); }

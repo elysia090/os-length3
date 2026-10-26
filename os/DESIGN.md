@@ -1806,7 +1806,8 @@ the card becomes the Remote's).
   total. This OS is counted from allocated blocks, so a sparse file counts
   what it holds and a file with several hard links counts once; the host's
   free and total are marked 推定, because other programs change them too.
-- Under it, one tall box in three columns: what is **in this browser**
+- Under it, one box in three columns, as tall as the longest (not a tall
+  empty box when there is little): what is **in this browser**
   (on this device) at the left, what is **only on the Remote** (fetched with a
   press; all of it here too, it says so) in the middle, and what **can be
   freed** at the right (nothing, it says the reason is on each row that
@@ -1976,9 +1977,12 @@ the card becomes the Remote's).
   `.authorized_keys` dotfile (below), public keys only, so a key added on
   one device counts on every one. With none there, turning on says to add
   one first, and how. Shown only while signed in.
-- **Dotfiles**: a small card each (its name, its size), and a dashed one to
-  make another. A card opens its text under the cards, `/root/` and its name
-  above it, Remove at the left, Close and Save at the right. Every Prompt
+- **Dotfiles**: one box, a row each (its name in the mono face, its size at
+  the right), and New dotfile at its foot. A row pressed is lit and opens its
+  text under it, in the box (not under all of them, away from the row
+  pressed), `/root/` and its name above it, Remove at the left, Close and
+  Save at the right; pressed again, or Close, it folds. A long name is cut
+  at the row's end, never wrapped over three lines. Every Prompt
   starts with them in `/root` (the app's root and the browser's alike), and
   the Remote keeps them in step across devices, as it does Home's settings.
   A Prompt already running keeps what it started with: its shell has read

@@ -1,11 +1,11 @@
 import type {Locator} from '@playwright/test';
 import {expect, test} from './fixtures.ts';
 
-// Runtime: dotfiles are small cards (name, size); a dotfile saved is one,
-// opens with its text, and is still there when the app is opened again.
+// Runtime: dotfiles are rows of one box (name, size); a dotfile saved is one,
+// opens with its text under it, and is still there when the app is opened again.
 // Remove asks in the box first, since it goes from every device.
 
-test('a dotfile saved shows as a card, opens with its text, and stays', async ({app}) => {
+test('a dotfile saved shows as a row, opens with its text under it, folds, and stays', async ({app}) => {
   await app.runtime.makeDotfile('.profile', 'export EDITOR=vi\n');
 
   await expect(app.runtime.dotfile('.profile')).toContainText('17 B');
@@ -14,11 +14,18 @@ test('a dotfile saved shows as a card, opens with its text, and stays', async ({
   await app.runtime.open('Dotfiles');
   await app.runtime.dotfile('.profile').click();
   await expect(app.runtime.text('.profile')).toHaveValue('export EDITOR=vi\n');
+  await expect(app.runtime.dotfile('.profile')).toHaveAttribute('aria-expanded', 'true');
+  // Under its row, in the box; pressed again, it folds, the keyboard still on it.
+  expect(await app.runtime.dotfile('.profile').evaluate((row) => row.nextElementSibling?.classList.contains('dot-editor'))).toBe(true);
+  await app.runtime.dotfile('.profile').click();
+  await expect(app.runtime.text('.profile')).toHaveCount(0);
+  await expect(app.runtime.dotfile('.profile')).toBeFocused();
 });
 
 test('removing a dotfile asks in its box: Not now keeps it, Remove takes it', async ({app}) => {
   await app.runtime.makeDotfile('.profile', 'export EDITOR=vi\n');
-  await app.runtime.dotfile('.profile').click();
+  // Saved, it stays open under its row.
+  await expect(app.runtime.dotfile('.profile')).toHaveAttribute('aria-expanded', 'true');
 
   const ask = await app.runtime.askRemove('.profile');
   await expect(ask).toContainText('.profile goes from every device.');
