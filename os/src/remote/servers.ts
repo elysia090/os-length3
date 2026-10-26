@@ -8,7 +8,7 @@
 // (the same posts, less any taken down), so what a reader holds stays about
 // what is near the screen however far they scroll.
 
-import {api, connection, json, onWrite, reading, RemoteError, retryAfter, shared} from './connection.ts';
+import {api, askedOnce, connection, json, onWrite, reading, RemoteError, retryAfter} from './connection.ts';
 import {lookAt} from './looks.ts';
 import type {Todo} from '../home/todo.ts';
 import {t} from '../i18n.ts';
@@ -264,7 +264,7 @@ export interface ShownRepo { owner: string; ownerId?: string; name: string; at: 
 /** A repo as seen by someone not its owner: what it was last pushed to. `owner` only where whose it is may be told. */
 export interface SeenRepo { as: string; owner?: string; title: string | null; at: number | null; tree: Record<string, string | null> }
 
-export const seenAll = shared(() => call<RepoSeen[]>('/v1/seen'));
+export const seenAll = askedOnce(() => call<RepoSeen[]>('/v1/seen'));
 /** `as`: a server's id, or 'me' (by default the first server it is shown in, else me). */
 export const setSeen = (repo: string, seen: Seen, more: {servers?: string[]; as?: string} = {}) =>
   call<RepoSeen>(`/v1/repos/${encodeURIComponent(repo)}/seen`, send('PUT', {seen, ...more}));
