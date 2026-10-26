@@ -16,7 +16,8 @@ import {EditLine} from './edit-box.ts';
 // The box at the foot of a work page's center (DESIGN.md § Forge, The box at the foot): one field, and at its left a
 // pill that says what it does: Run in the repo's Prompt (the pill the prompt line the shell waits at, pill-line.ts),
 // Write an issue, Add to TODO (box-modes.ts), Edit the file in front (edit-box.ts). Enter is a new line and Ctrl+Enter
-// sends, as in every box one writes in; Edit's lines are one line each, done with Enter.
+// sends, as in every box one writes in; Edit's lines are one line each, done with Enter. Escape gives the keyboard
+// back to what had it before the box.
 //
 // What is written in it belongs to the repo and to what the box does: each keeps its own while the app runs, so going
 // to another page and back keeps it, and switching repos swaps it for that repo's (or an empty box). Running, ↑ on the
@@ -83,6 +84,8 @@ export class Box {
   readonly #modeWords = h('span', {class: 'prompt-mode', 'aria-hidden': 'true'});
   /** The key that brings the box up doing what it does now: ` for Run, G for Edit. */
   readonly #summonKey = h('kbd', {}, '`');
+  /** What had the keyboard before the box took it (from outside the box and what it brings out): Escape gives it back. */
+  #before: HTMLElement | null = null;
   readonly #keys: string;
   readonly #menu: ReturnType<typeof modeMenu>;
   /** Run: the repo's Prompt followed, and the prompt line its shell waits at, in the pill. */
@@ -422,17 +425,31 @@ export class Box {
       event.preventDefault();
       if (this.#edit.toFile()) return;
     }
-    this.#screen?.lower();
-    this.prompt.blur();
+    this.#letGo();
   }
 
-  /** Alt+1 to 4 choose what the box does; Alt+↓ brings the four out of the pill. True when it was one of them. */
+  /**
+   * The Prompt put back, and the keyboard given back to what had it before the box took it (the file, the page),
+   * where it is still to be had; never left on nothing when it came from somewhere.
+   */
+  #letGo() {
+    this.#screen?.lower();
+    const back = this.#before;
+    this.#before = null;
+    if (back?.isConnected && !back.closest('[hidden], [inert]') && back.getClientRects().length) back.focus({preventScroll: true});
+    else this.prompt.blur();
+  }
+
+  /**
+   * Alt+1 to 4 choose what the box does; Alt+↓ brings the four out of the pill, up as the screen too (out of the line's
+   * start, where the pill went). True when it was one of them.
+   */
   #modeKey(event: KeyboardEvent): boolean {
     if (!event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return false;
     const n = /^Digit([1-9])$/.exec(event.code)?.[1];
     const m = n ? MODES[Number(n) - 1] : undefined;
     if (m) { event.preventDefault(); this.choose(m); return true; }
-    if (event.key !== 'ArrowDown' || this.#up || this.prompt.disabled) return false;
+    if (event.key !== 'ArrowDown' || this.prompt.disabled) return false;
     event.preventDefault();
     this.#menu.open();
     return true;
@@ -480,7 +497,9 @@ export class Box {
   /** The field: brought to, left, written in, and its keys. */
   #wireField() {
     const {prompt} = this;
-    prompt.addEventListener('focus', () => {
+    prompt.addEventListener('focus', (event) => {
+      const from = event.relatedTarget as HTMLElement | null;
+      if (!from || !this.dock.contains(from)) this.#before = from;
       if (this.#mode === 'run') this.#screen?.raise();
       this.#pillLine.follow();
       if (this.#mode === 'edit') { this.#pillSays(); this.#edit.show(); }
@@ -530,10 +549,10 @@ export class Box {
     term.addEventListener('click', (event) => {
       if (this.#up && (event.target as Element).closest('.power')) requestAnimationFrame(() => prompt.focus());
     });
-    // Its ×, pressed, keeps the keyboard in the box until the Prompt is down, then lets it go, as Escape does.
+    // Its ×, pressed, keeps the keyboard in the box until the Prompt is down, then gives it back, as Escape does.
     const shut = this.#p.termHead.querySelector<HTMLElement>('.term-shut');
     shut?.addEventListener('pointerdown', (event) => event.preventDefault());
-    shut?.addEventListener('click', () => { this.#screen?.lower(); prompt.blur(); });
+    shut?.addEventListener('click', () => this.#letGo());
     term.addEventListener('pointerdown', (event) => {
       if (this.#up || (event.target as HTMLElement).closest('button')) return;
       event.preventDefault();

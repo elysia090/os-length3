@@ -1661,13 +1661,15 @@ terminal again, its lines as a terminal's. The terminal's box
 is labelled Prompt, after what one does there (the shell is BusyBox sh, so
 it is not called Bash); leaving the prompt
 (or Escape, or the × at the right end of its head, beside the lamp, there
-only while it is up) sends it back. The Prompt has no switch: writing
+only while it is up) sends it back; Escape and the × give the keyboard back
+to what had it before the box (the file, the page). The Prompt has no switch: writing
 to it starts it, and one that ended says so in its place, with Start
 again; stopping one is Runtime's. What is written in the box and not sent
 is the repo's: another repo shows its own, and coming back finds it.
 
 The box does more than run. Its pill says what it does and, pressed (or
-Alt+↓ in the box), brings out the four it can, out of the pill, each with
+Alt+↓ in the box, up as the screen too, out of the line's start where the
+pill went), brings out the four it can, out of the pill, each with
 the pill it gives (as wide as its words) and its keys, the words in one column: Run in the Prompt (the shell's prompt line,
 `garden $`), Write an issue (the repo's next issue, `garden #4`, in ink as an
 issue's number), Add to TODO (TODO's circle, on paper as Home's TODO box),
