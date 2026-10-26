@@ -10,8 +10,8 @@
 // - Finding a package's modules: node 22 reads a package's whole package.json again for every module of it that
 //   it resolves, to learn the package's "type"; drizzle-orm's is 180 KB, read for each of its 200 modules, half a
 //   second of loading the service. A relative import of a .js module in such a package is resolved here as node
-//   resolves it, the package's "type" read once; and a package asked for again from the same folder is where
-//   node found it the first time.
+//   resolves it, the package's "type" read once; and whatever is asked again from the same folder is where node
+//   found it the first time.
 //
 // Not a module of the tests: a plain .mjs, so that loading it needs nothing it makes faster.
 
@@ -67,30 +67,36 @@ function typeAt(dir) {
   return type;
 }
 
-/** A package (or a module of one) as node found it for a folder asking: any module of that folder finds the same. */
+/**
+ * What was asked, as node found it for the folder asking (a file's own address, for any folder): any module of that
+ * folder that asks the same finds the same. Half of what a run's processes resolve is asked again so: a package's
+ * modules importing their neighbours, a package's CommonJS modules each requiring the same few by their addresses,
+ * and npm test's realms (testing-together.ts), each importing the page's modules again.
+ */
 const found = new Map();
+
+/** Where `specifier` from `parent` is, as node would find it: a relative .js module of a package that says it is one. */
+function moduleOfPackage(specifier, parent, context) {
+  if (!(specifier.startsWith('./') || specifier.startsWith('../')) || !specifier.endsWith('.js') || !parent.includes('/node_modules/')
+    || parent.includes('?') || !context.conditions?.includes('import')) return null;
+  const path = fileURLToPath(new URL(specifier, parent));
+  // As node's own: a file that is there, by its real path, a module when its package says so. Anything
+  // else (missing, a folder, not "type": "module") is node's to resolve, and to refuse.
+  if (typeAt(dirname(path)) !== 'module' || !statSync(path, {throwIfNoEntry: false})?.isFile()) return null;
+  return {url: pathToFileURL(realpathSync.native(path)).href, format: 'module'};
+}
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
     const parent = context.parentURL;
-    if (/^[@\w]/.test(specifier) && !specifier.includes(':') && parent?.startsWith('file:')) {
-      const key = [specifier, new URL('.', parent).href, context.conditions?.join(), JSON.stringify(context.importAttributes ?? {})].join('\0');
-      const was = found.get(key);
-      if (was) return {...was, shortCircuit: true};
-      const r = nextResolve(specifier, context);
-      found.set(key, r);
-      return {...r};
-    }
-    if ((specifier.startsWith('./') || specifier.startsWith('../')) && specifier.endsWith('.js') && parent?.startsWith('file:')
-      && parent.includes('/node_modules/') && !parent.includes('?') && context.conditions?.includes('import')) {
-      const path = fileURLToPath(new URL(specifier, parent));
-      // As node's own: a file that is there, by its real path, a module when its package says so. Anything
-      // else (missing, a folder, not "type": "module") is node's to resolve, and to refuse.
-      if (typeAt(dirname(path)) === 'module' && statSync(path, {throwIfNoEntry: false})?.isFile()) {
-        return {url: pathToFileURL(realpathSync.native(path)).href, format: 'module', shortCircuit: true};
-      }
-    }
-    return nextResolve(specifier, context);
+    const own = specifier.startsWith('file:');
+    if (!own && (!parent?.startsWith('file:') || specifier.startsWith('node:'))) return nextResolve(specifier, context);
+    const key = [specifier, own ? '' : new URL('.', parent).href, context.conditions?.join(), JSON.stringify(context.importAttributes ?? {})].join('\0');
+    const was = found.get(key);
+    if (was) return {...was, shortCircuit: true};
+    const r = (!own && moduleOfPackage(specifier, parent, context)) || nextResolve(specifier, context);
+    found.set(key, r);
+    return {...r, shortCircuit: true};
   },
   load(url, context, nextLoad) {
     if (context.format === 'module-typescript' && url.startsWith('file:') && !url.includes('/node_modules/')) {
