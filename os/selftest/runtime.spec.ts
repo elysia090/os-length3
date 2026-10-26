@@ -43,6 +43,13 @@ test('removing a dotfile asks in its box: Not now keeps it, Remove takes it', as
   await expect(app.runtime.dotfile('.profile')).toHaveCount(0);
 });
 
+test('a new dotfile named as one there is is not saved over it, and says why', async ({app}) => {
+  await app.runtime.makeDotfile('.profile', 'export EDITOR=vi\n');
+  await app.runtime.makeDotfile('.profile', 'something else\n');
+  await expect(app.runtime.dotfiles.getByRole('alert')).toHaveText('There is a dotfile named .profile already');
+  await expect(app.runtime.dotfile('.profile')).toContainText('17 B');
+});
+
 test('a dotfile with a name that is not one is not saved, and says why', async ({app}) => {
   await app.runtime.makeDotfile('no-dot', 'x\n');
 

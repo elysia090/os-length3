@@ -38,7 +38,7 @@ export function dotfilesSection(restarted: () => void, counted: (n: number) => v
     }
     const make = h('button', {type: 'button', class: `dot-row new${fresh ? ' current' : ''}`, 'aria-expanded': String(!!fresh), 'data-name': ''},
       '+', h('span', {}, t('New dotfile')));
-    make.addEventListener('click', () => paint(null, false, fresh ? null : dotfiles.COMMON.find((c) => !(c in all)) ?? '.config'));
+    make.addEventListener('click', () => paint(null, false, fresh ? null : [...dotfiles.COMMON, '.config'].find((c) => !(c in all)) ?? ''));
     list.append(make);
     if (fresh) list.append(editBox(fresh, '', true, false, w));
     counted(names.length);
@@ -69,6 +69,8 @@ function editBox(name: string, text: string, fresh: boolean, saved: boolean, w: 
   const save = button(t('Save'), 'primary');
   save.addEventListener('click', async () => {
     const n = title.value.trim();
+    // A new one named as one there is would take its place unasked: the name is to change, as New repo's is.
+    if (fresh && n in dotfiles.read()) { error.textContent = t('There is a dotfile named {name} already', {name: n}); title.focus(); return; }
     try { await dotfiles.save(n, body.value); } catch (e) { error.textContent = errorText(e); return; }
     w.paint(n, true);
   });

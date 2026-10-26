@@ -101,6 +101,7 @@ export default {
   'New dotfile': '新しい dotfile',
   'Dotfiles': 'dotfile',
   'A dotfile is named with a dot first: .profile': 'dotfile の名前はドットで始めます（.profile など）',
+  'There is a dotfile named {name} already': '{name} という dotfile はもうあります',
   'Close': '閉じる',
   'Remove {name}': '{name}を外す',
   '{name} goes from every device.':'{name}はすべての端末から消えます。',
