@@ -2806,8 +2806,10 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 /* What is said in the boards' place (an invitation that opens nothing): a card as tall as what it says. */
 .board-card.board-said { height: auto; max-width: 600px; border-color: var(--ink); }
 .slide[aria-current='false']:not(.leaving) .board-card { color: var(--sub); }
-/* A neighbour shows its edge and its mark (# a board, + a new one), not a name cut short. */
+/* A neighbour shows its edge and its mark (# a board, + a new one), not a name cut short; one read ahead (row.ts)
+   looks the same until it is slid to, what it holds there unseen. */
 .slide[aria-current='false']:not(.leaving) .board-head h2 { visibility: hidden; }
+.slide.full[aria-current='false']:not(.leaving) .board-card > :not(.board-head) { visibility: hidden; }
 /* The one before shows its right edge: its mark (and its dot) is there, at that edge. */
 .slide:not(.leaving):has(+ .slide[aria-current='true']) .board-head { flex-direction: row-reverse; padding-right: var(--s3); }
 .slide[aria-current='true'] .board-card { border-color: var(--ink); background: var(--paper); }
@@ -2928,7 +2930,12 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .card-row { display: flex; align-items: center; gap: var(--s3); min-height: var(--h-control); }
 .card-row .grow { flex: 1; min-width: 0; }
 /* A board's guests and invitations out; an invitation's link, said once, copied by a press. */
-.guest-rows { display: grid; }
+.guest-rows { display: grid; gap: var(--s1); }
+/* A guest or an invitation: who or what, and under it, quietly, what more; its deed at the right, by the first line. */
+.guest-row { align-items: flex-start; }
+.guest-row > .grow { display: grid; padding-block: var(--s1); }
+.guest-row > .grow > * { overflow-wrap: anywhere; }
+.guest-row > .button { margin-top: 2px; }
 .guest-link { display: grid; gap: var(--s1); }
 .guest-link:empty { display: none; }
 .guest-link-text { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; justify-content: flex-start; }

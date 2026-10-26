@@ -15,11 +15,11 @@ import {boardBox, markBoard, newBoard} from './board.ts';
 import {dockFor} from './dock.ts';
 import {gear as gearSheet} from './gear.ts';
 import {nameServer} from './new-server.ts';
-import {current, type Here, type Shown} from './parts.ts';
+import {current, remember, remembered, type Here, type Shown} from './parts.ts';
 import {seeRepo as repoSheet} from './repo.ts';
 import {Row} from './row.ts';
 import {Side} from './side.ts';
-import {cameTo} from './talk.ts';
+import {cameTo, seenNow} from './talk.ts';
 
 // What is in Server while it is out (layer.ts brings it out and puts it away): the band of servers on the top line
 // (band.ts), under it the boards of the one chosen as a row of boxes (row.ts, board.ts), or a step away in their
@@ -27,14 +27,6 @@ import {cameTo} from './talk.ts';
 // (dock.ts), and at the right its people and repos (side.ts). This keeps what is chosen and on screen, and tells
 // each part when to draw.
 
-const AT = 'length3.server.at';
-
-function remembered(): {server?: string; board?: string} {
-  try { return JSON.parse(localStorage.getItem(AT) ?? '{}') as {server?: string; board?: string}; } catch { return {}; }
-}
-function remember(at: {server?: string; board?: string}) {
-  try { localStorage.setItem(AT, JSON.stringify(at)); } catch { /* a convenience */ }
-}
 
 /** What the view needs of the layer it is in. */
 interface ViewWays {
@@ -155,6 +147,12 @@ export class ServerView {
       if (held) {
         const b = await this.invited(held);
         if (b) this.showAlone(b);
+        return;
+      }
+      // Left at (or led to, from Home) a board written in as a guest: that board, alone, as its chip shows it.
+      const guest = !this.at.server && this.at.board ? servers.guestBoards().find((g) => g.id === this.at.board) : undefined;
+      if (guest && !this.here.list.some((s) => s.boards.some((b) => b.id === guest.id))) {
+        this.showAlone({id: guest.id, name: guest.here.name, member: false, guests: true, server: guest.here.server});
         return;
       }
       const first = this.here.list.find((s) => s.id === this.at.server) ?? this.here.list[0];
@@ -321,6 +319,8 @@ export class ServerView {
     if (b) remember({server: this.here.serverId ?? undefined, board: b.id});
     this.paintDock(b ?? null);
     if (!b && pressed) this.row.track.querySelector<HTMLInputElement>('.slide[aria-current="true"] .board-name-in')?.focus({preventScroll: true});
+    // Read ahead and now on screen, what its talk shows is seen.
+    seenNow();
   }
 
   /** The box at the foot: writing in the board on screen (dock.ts). */
@@ -390,6 +390,7 @@ export class ServerView {
       boardsChanged: () => { this.boardsChanged = true; },
       gone: (id) => this.gone(id),
       isMe: (address) => this.isMe(address),
+      known: () => this.side.known(s.id),
     });
   }
 

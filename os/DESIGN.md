@@ -1370,7 +1370,10 @@ its owner and for anyone else; only the owner gets "edit". In order:
 identity (avatar, name, @handle, bio, counts of repos and servers; no name
 written yet, it is the one signed in with, as Remote and the Me menu say
 it: one person, one name, never "No name yet" beside "Signed in as Sora") →
-**TODO** → repos → servers (each one is in, a chip that opens Server on it).
+**TODO** → repos → servers (each one is in, a chip that opens Server on it;
+after them each board this browser writes in as a guest, #board with its
+server and guest beside it, opening Server at that board alone, so a guest
+come back, signed in or not, is led back to it).
 TODO is the person's single list; repos do not carry their own inbox or
 TODO files. An item is a first line named like an issue ("Fix：件名"),
 then detail lines (starting on the first line's column, with a kind or
@@ -1441,7 +1444,10 @@ off (the file last read in Forge, its mark, its repo quiet at the right, and
 under it the line it was left at, as written), the conversations with
 something not read (who wrote, their initial on one of four soft tints, the
 marker's, a step done's, a removal's, the sky's, the same for the same name;
-what it is and its words: Review：…), the boards with posts not seen (#); at
+what it is and its words: Review：…), the boards with posts not seen (#),
+and the boards this browser writes in as a guest (#, Trip · where you write
+as a guest: a way back always there, signed in or not, its card reading the
+board and writing in it as that guest); at
 each row's end one slot, the unread dot, a chevron under the pointer (it
 opens down where it stands), the × once open. A row is read whole where it
 stands, wrapped where its words break (in Japanese between phrases, never in
@@ -2300,7 +2306,10 @@ the gear's do, never swapped in one frame):
   left edge, under the head 見せる先, a row per server one is in, the ones
   the repo is shown in bold; pressing one shows it there or takes it off
   at once, and the list stays for the next. A press outside, Escape or
-  Share again closes it. Going public is the server's, in its gear (seen
+  Share again closes it. In no server yet, the list says so and leads on:
+  Make a server…, which brings Server out where the first is made; or, on
+  the free plan, where making one is paid, that it is and See the plan.
+  Going public is the server's, in its gear (seen
   as the server's, so nothing ties it to you).
 - **Sign-in**: passkeys, the code to turn a repo off (five letters or
   digits, set with a passkey; only its digest is kept), then the providers
@@ -2421,7 +2430,9 @@ the card shakes. Server's layer says it the same way, where its boards
 would be. Writing is one line that grows as it is written: a message is named
 the way an issue is ("Review：…", "Question：…"), and a `/root/…` path in it
 says what it is about, so there is nothing else to choose. Enter is a new
-line, Ctrl+Enter sends.
+line, Ctrl+Enter sends. A message about a server (being asked into it, or
+added to it at once by someone one knows) shows the server's name over
+it, once one is in it, and pressed, Server comes out at it.
 
 What comes while one works elsewhere is said where one is: in Forge and Git,
 the conversations not read whose last word is not one's own (the two newest,
@@ -2453,10 +2464,13 @@ it. A server's own repos are what comes next.
 A server is a name and its people. Someone already in it adds people from
 their own Inbox contacts, so a server is people who know each other; or by
 a name or a code, in the card that adds: someone one knows both ways is in
-at once, anyone else is asked in the Inbox (a message about the server, a
+at once, and told so in their Inbox (I added you to Trip., a message about
+the server whose name there opens Server at it), anyone else is asked in
+the Inbox (a message about the server, a
 request until they accept) and is in the moment they accept the one who
 asked, so long as that one is still in it (within 30 days); the card says
-they were asked. Anyone
+they were asked. A message about a server shows its name as a way to it
+once the reader is in it. Anyone
 may leave, the owner may remove someone, and the last to leave takes it
 with them. Its boards are what its people talk about, each one thing (a
 trip, a release, a reading group), and each holds two things:
@@ -2558,7 +2572,10 @@ unseen, and nothing it read while unseen counts as seen. Its pieces, from §3:
   resting on the line does not make it flicker. The
   board slid away from goes as it was, its posts and TODO with it, and is
   only its edge once the row has stopped; the one slid to is drawn as the
-  row starts, what it reads coming up where it stands. A
+  row starts, what it reads coming up where it stands. A hand resting on an
+  edge (120 ms), or pressing along, has the box it goes to read ahead,
+  unseen (it looks as an edge does, and nothing in it counts as seen), so
+  it slides in with all it holds. A
   board on screen is one sheet, never a box in a box: its name across it
   over a quiet rule, its talk at the left as tall as the board (the latest
   at its foot, what was said before above, the board open at its foot while
@@ -2591,19 +2608,26 @@ unseen, and nothing it read while unseen counts as seen. Its pieces, from §3:
   was last pushed; its row in the pane stays lit while it is shown.
 - **Behind the gear**, in the boards' place: the page head (the server's
   name, its name on the Remote and code; Done at the sheet's bottom right),
-  then **parts** of **small
+  then **parts** (their counts as the pane last drew them, at once, so the
+  parts' names do not step sideways when the reading comes) of **small
   cards**: People (a dashed card to add someone one knows, pressed the card
   that adds: one's contacts not in it, each a button, then a field for a
-  name or a code and 入れる; its owner removes someone), Repos (each of one's own with **the pair of
+  name or a code and 入れる; its owner removes someone; looked at again
+  every little while, as the pane is, so someone who accepts comes in
+  there), Repos (each of one's own with **the pair of
   switches**, to its people and to everyone, seen by everyone as the
   server's; others' shown here, whose, its owner may take them off),
   Boards (to everyone and guests, its owner's, taking guests saying first
-  that anyone then reads it, where it is not open yet; Take home, anyone's;
+  that anyone then reads it, where it is not open yet; turning either off
+  at once, unless guests are in or invitations out: that ends them, an old
+  link letting nobody back, so it asks in the card first, saying how many
+  and that what they wrote stays (Not now / Turn off); Take home, anyone's;
   Remove, its owner's: the board is held 30 days, off the boards, its card
   quiet with its 外す red, and pressed again it is back at once; beside a
   board that takes guests, its Guests card: the guests in, each with who
   invited them and Remove, asked in the card; the invitations out, each with
-  whose and until when and Revoke, at once; and Invite a guest at its foot,
+  whose and until when and Revoke, at once (each a name over a quiet line of
+  what more, so a narrow card does not break a name mid-word); and Invite a guest at its foot,
   which shows the link once, copied by a press), This server (its name, code and term, Renew near its
   end; Leave; its owner's Delete). Leave and Delete say what they come to,
   as the Remote does it: who owns it next (the first of the others to have

@@ -98,6 +98,8 @@ test('someone added by name is asked in their Inbox, and is in the server once t
   // Who asked sees them come in where they are, not only when Server is next opened: who is in it is looked at again
   // every little while (15 s).
   await expect(ada.server.side).toContainText(bo.handle, {timeout: 30_000});
+  // And behind the gear, where it was asked, People counts them.
+  await expect(ada.server.layer.getByRole('tab', {name: /^People\s?2$/})).toBeVisible({timeout: 30_000});
   // Added already, the card says so rather than asking again.
   await ada.server.close();
   await ada.server.openLayer();
@@ -244,6 +246,64 @@ test('taking guests on a board not open says first that anyone then reads it', a
   await expect(boards).toContainText('Anyone reads #general, signed in or not.');
   await expect(boards).toContainText('Someone its people invite writes in #general, shown as a guest.');
 });
+
+/** Board general of `app`'s server takes guests (asked in its card, answered). */
+async function takeGuests(app: App, boards: Locator) {
+  await boards.getByRole('switch', {name: 'Guests can write'}).click();
+  // Asked once the switch has moved: answered then, not before it is there.
+  await expect(boards.getByRole('button', {name: 'Take guests', exact: true})).toBeVisible();
+  await app.answer(boards.getByRole('button', {name: 'Take guests', exact: true}), boards.getByText('Someone its people invite writes in #general, shown as a guest.'));
+  await expect(boards.getByRole('switch', {name: 'Guests can write'})).toBeChecked();
+}
+
+test('guests turned off with nobody let in goes at once; with an invitation out it asks first, saying what it ends', async ({signedIn: app}) => {
+  const boards = await gearAt(app, 'Boards');
+  const guests = boards.getByRole('switch', {name: 'Guests can write'});
+  await takeGuests(app, boards);
+  await guests.click();
+  await expect(guests).not.toBeChecked();
+  await expect(boards.getByRole('button', {name: 'Turn off', exact: true})).toHaveCount(0);
+
+  await takeGuests(app, boards);
+  await boards.getByRole('button', {name: 'Invite a guest', exact: true}).click();
+  await expect(boards.getByRole('button', {name: 'The invitation\'s link'})).toBeVisible();
+  const ends = boards.getByText('1 invitation out lets nobody in any more.');
+  // No longer open to everyone ends it too, and says so.
+  await boards.getByRole('switch', {name: 'Show to everyone'}).click();
+  await expect(boards).toContainText('Only its people read #general then.');
+  await expect(ends).toBeVisible();
+  await boards.getByRole('button', {name: 'Not now', exact: true}).click();
+  await expect(boards.getByRole('switch', {name: 'Show to everyone'})).toBeChecked();
+  await guests.click();
+  await expect(ends).toBeVisible();
+  await expect(boards).toContainText('Taking guests again, an old link lets nobody back.');
+  await app.answer(boards.getByRole('button', {name: 'Turn off', exact: true}), ends);
+  await expect(guests).not.toBeChecked();
+});
+
+test('someone one knows added at once is told in their Inbox, and the server\'s name there opens it', async ({signedIn: ada, another}) => {
+  const bo = await addBo(ada, another);
+  await ada.server.close();
+  await ada.server.openLayer();
+  await ada.server.layer.getByRole('button', {name: 'Make a server'}).click();
+  await ada.server.layer.getByRole('textbox', {name: 'Name', exact: true}).fill('Books');
+  await ada.server.layer.getByRole('button', {name: 'Name on this Remote', exact: true}).click();
+  await ada.server.layer.getByRole('textbox', {name: /^Name on this Remote/}).fill(`${ada.handle}-books`);
+  await ada.server.layer.getByRole('button', {name: 'Make', exact: true}).click();
+  await expect(ada.server.chip('Books')).toBeChecked();
+  // The two know each other: Bo is in at once.
+  await ada.server.addSomeone(bo.handle);
+  await expect(ada.server.layer.getByRole('tabpanel', {name: /^People/})).toContainText(bo.handle);
+
+  await bo.comeBack();
+  await bo.rail.go('inbox');
+  await bo.inbox.conversation(ada.handle).click();
+  const thread = bo.inbox.thread(ada.handle);
+  await expect(thread).toContainText('I added you to Books.');
+  await thread.getByRole('button', {name: 'Books', exact: true}).click();
+  await expect(bo.server.chip('Books')).toBeChecked();
+});
+
 
 test('This server says what leaving and removing it come to: its maker alone a day, with others whose it becomes', async ({signedIn: ada, another}) => {
   const part = await gearAt(ada, 'This server');

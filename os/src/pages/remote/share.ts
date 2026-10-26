@@ -5,6 +5,7 @@ import * as servers from '../../remote/servers.ts';
 import {keepOut, putAway} from '../../ui/glide.ts';
 import {errorText} from '../../app/errors.ts';
 import {pressing} from './parts.ts';
+import {plan as readPlan} from '../../remote/plan.ts';
 
 // A repo card's Share: which servers it is shown in, chosen from a list over the card.
 
@@ -15,7 +16,15 @@ import {pressing} from './parts.ts';
  * the list stays open for the next. It goes on a press outside, Escape or
  * Share again. Going public is the server's (its gear); it stays as it is here.
  */
-export function sharing(now: servers.RepoSeen, error: HTMLElement): HTMLElement {
+/** Where Share's list leads when there is no server to show a repo in: Server, to make one, or the plan. */
+export interface ShareWays {
+  /** Server brought out, where a first server is made. */
+  makeServer(): void;
+  /** Remote's Plan: making a server is paid there. */
+  toPlan(): void;
+}
+
+export function sharing(now: servers.RepoSeen, error: HTMLElement, ways: ShareWays): HTMLElement {
   const open = h('button', {type: 'button', class: 'button small-button share-open', 'aria-haspopup': 'true', 'aria-expanded': 'false'},
     h('span', {}, t('Share')), mark('down')) as HTMLButtonElement;
   const list = h('div', {class: 'pop share-pop', role: 'menu', 'aria-label': t('Share'), hidden: ''});
@@ -40,7 +49,7 @@ export function sharing(now: servers.RepoSeen, error: HTMLElement): HTMLElement 
   open.addEventListener('click', async (event) => {
     if (open.getAttribute('aria-expanded') === 'true') { show(false); return; }
     show(true);
-    await fill(list, error, (id) => shared.has(id), toggle);
+    await fill(list, error, (id) => shared.has(id), toggle, {makeServer: () => { show(false); ways.makeServer(); }, toPlan: () => { show(false); ways.toPlan(); }});
     // Opened from the keyboard, the keyboard goes in with it.
     if (event.detail === 0) list.querySelector<HTMLElement>('.pop-item')?.focus();
   });
@@ -57,7 +66,7 @@ function seenIn(now: servers.RepoSeen, ids: string[]): Promise<servers.RepoSeen>
 }
 
 /** The list: a row per server one is in, checked where it is shown (`shown`); pressed, `toggle` it there. */
-async function fill(list: HTMLElement, error: HTMLElement, shown: (id: string) => boolean, toggle: (id: string) => Promise<boolean>) {
+async function fill(list: HTMLElement, error: HTMLElement, shown: (id: string) => boolean, toggle: (id: string) => Promise<boolean>, ways: ShareWays) {
   let mine: servers.Server[];
   // Not read (away): said in the list, and read again the next time it opens.
   try { mine = await servers.servers(); } catch (e) { list.replaceChildren(h('p', {class: 'error small pop-note'}, errorText(e))); return; }
@@ -67,7 +76,19 @@ async function fill(list: HTMLElement, error: HTMLElement, shown: (id: string) =
     return b;
   });
   list.replaceChildren(h('div', {class: 'pop-group', role: 'group', 'aria-label': t('Shown in')},
-    h('div', {class: 'pop-head muted small'}, t('Shown in')), ...(rows.length ? rows : [h('p', {class: 'muted small pop-note'}, t('In no server yet'))])));
+    h('div', {class: 'pop-head muted small'}, t('Shown in')), ...(rows.length ? rows : await none(ways))));
+}
+
+/**
+ * In no server: a repo is shown to people in a server, so the list leads to one. Making one where the plan has it
+ * paid (the free plan), what it is and the way to the plan; otherwise, Server, where the first is made.
+ */
+async function none(ways: ShareWays): Promise<HTMLElement[]> {
+  const free = await readPlan().then((p) => p.plan === 'free', () => false);
+  const go = h('button', {type: 'button', class: 'pop-item', role: 'menuitem'}, free ? t('See the plan') : t('Make a server…')) as HTMLButtonElement;
+  go.addEventListener('click', () => (free ? ways.toPlan() : ways.makeServer()));
+  return [h('p', {class: 'muted small pop-note'}, t('In no server yet')),
+    ...(free ? [h('p', {class: 'muted small pop-note'}, t('Making a server is part of the paid plan.'))] : []), go];
 }
 
 /** ↓ and ↑ along the list's rows, round at its ends. */

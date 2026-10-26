@@ -15,6 +15,8 @@ import {unreachedError, unreachedPlace} from './remote/unreached.ts';
 import {plan as readPlan} from '../remote/plan.ts';
 import type {Context} from './context.ts';
 import {errorText} from '../app/errors.ts';
+import * as servers from '../remote/servers.ts';
+import {remember as serverAt} from './server/parts.ts';
 import {arrive, closeUp, keepOut, LAND, nudge, paced, putAway, still, where} from '../ui/glide.ts';
 
 // Inbox: what comes to you, typed, from people found by address. Not a mail
@@ -209,6 +211,22 @@ function runs(messages: HTMLElement) {
   });
 }
 
+/**
+ * A message about a server (asked into it, or added to it at once): its name, a way to it once the reader is in it
+ * (asked and not in yet, nothing to press). Pressed, Server comes out at it.
+ */
+function serverLink(id: string, ctx: Context): HTMLElement {
+  const go = h('button', {type: 'button', class: 'link', title: t('Open in Server'), hidden: ''});
+  void servers.servers().then((list) => {
+    const s = list.find((x) => x.id === id);
+    if (!s) return;
+    go.textContent = s.name;
+    go.hidden = false;
+    go.addEventListener('click', () => { serverAt({server: s.id}); ctx.go('server'); });
+  }, () => {});
+  return go;
+}
+
 /** What a written message is: its kind named first like an issue, and what a /root/… path in it is about. */
 export function written(text: string): {kind: inbox.Kind; body: string; target: inbox.Target} {
   const {kind, title} = kindOf(text);
@@ -388,6 +406,7 @@ export function inboxPage(ctx: Context): Node[] {
         go = h('button', {type: 'button', class: 'link'}, about);
         go.addEventListener('click', () => { if (place.issue) ctx.openRepo(place.repo, `issue/${place.issue}`); else { ctx.remember(place.repo); ctx.go('git'); } });
       } else if (m.target.repo) go = h('span', {class: 'muted small'}, about);
+      else if (typeof m.target.server === 'string') go = serverLink(m.target.server, ctx);
       const b = h('div', {class: 'bubble', 'data-mine': String(m.mine), 'data-time': String(m.time)},
         m.type !== 'message' ? h('span', {class: 'state-chip'}, KIND(m.type)) : null,
         go, h('p', {class: 'bubble-text'}, m.body),

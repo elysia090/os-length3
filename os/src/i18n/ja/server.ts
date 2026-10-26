@@ -23,6 +23,10 @@ export default {
   'a trip, a release, a reading group.': '旅行、リリース、読書会のように。',
   'Open boards': '公開されている板',
   'Make a server': 'サーバーを作る',
+  // Share with no server to show a repo in: the way to make one.
+  'Make a server…': 'サーバーを作る…',
+  // Home's Lately: a board one writes in as a guest, always a way back to it.
+  '{server} · where you write as a guest': '{server} · ゲストとして書いている板',
   'Trip': '旅行',
   'Book club': '読書会',
   'Family': '家族',
@@ -40,6 +44,15 @@ export default {
   'Take down': '取り下げる',
   'Take it down?': '取り下げますか？',
   // The box at the foot.
+  // Narrowing a board with guests or invitations, asked first.
+  'Only its people read #{board} then.': '#{board}を読めるのは、このサーバーの人だけになります。',
+  '{n} guest no longer writes in #{board}; what they wrote stays.': 'ゲスト{n}人は#{board}にもう書けません。書いたものは残ります。',
+  '{n} guests no longer write in #{board}; what they wrote stays.': 'ゲスト{n}人は#{board}にもう書けません。書いたものは残ります。',
+  '{n} invitation out lets nobody in any more.': '出ている招待{n}件では、もう誰も入れません。',
+  '{n} invitations out let nobody in any more.': '出ている招待{n}件では、もう誰も入れません。',
+  'Taking guests again, an old link lets nobody back.': 'ゲストをまた受け入れても、古いリンクでは誰も戻れません。',
+  // Someone one knows added at once, told so in their Inbox.
+  'I added you to {server}.': '{server}にあなたを入れました。',
   'Write in {board}': '{board}に書く',
   'Post ({keys})': '投稿する（{keys}）',
   'To the people of {server}': '{server}の人たちへ',
@@ -83,8 +96,7 @@ export default {
   'Guests of #{board}': '#{board}のゲスト',
   'Invite a guest': 'ゲストを招く',
   'invited by {who}': '{who}が招待',
-  'An invitation from {who}': '{who}からの招待',
-  'until {date}': '{date}まで',
+  'An invitation, until {date}': '招待、{date}まで',
   'Revoke': '取り消す',
   'No guests yet.': 'ゲストはまだいません。',
   "The invitation's link": '招待のリンク',
