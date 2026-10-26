@@ -176,51 +176,147 @@ document.addEventListener('pointerdown', (event) => {
   if (el) { pressedOn = el; pressedAt = performance.now(); }
 }, true);
 
-/** `quiet`: something else carries the eye (a repo growing into its box), so the page does not come from its side. */
-type Panning = Document & {startViewTransition?(update: () => void): {updateCallbackDone: Promise<void>; ready: Promise<void>; finished: Promise<void>}};
-/** The pan going now (select). */
-let panning: object | null = null;
+type Pass = {updateCallbackDone: Promise<void>; ready: Promise<void>; finished: Promise<void>; skipTransition(): void};
+type Panning = Document & {startViewTransition?(update: () => void): Pass};
+
+/**
+ * The pan going now (select): the page it left (`left`, taken as a picture as it stood at `was`, its floor's top at
+ * `top`, still short of its place by `off` if it was itself coming in), the page it brings (`to`, drawn once the
+ * picture is taken: `drawn`), which way and how far (`dir`, `by`, the page come to starting `from` there), and the
+ * moves of each, set going together once the picture is there (`ready`): `parts`, the page come to's, rising, each part
+ * with its cut; `old`, the picture's.
+ */
+type Pan = {pass: Pass; left: PurposeId; to: PurposeId; dir: number; by: number; from: number; was: DOMRect; top: number; off: number;
+  drawn: boolean; ready: boolean; parts: Animation[]; old: Animation[]};
+let panning: Pan | null = null;
+
+/** Which way along the rail `to` is from `from`: 1 down, -1 up, 0 the same place. */
+const way = (from: PurposeId, to: PurposeId) => { const order = RAIL.map((p) => p.id); return Math.sign(order.indexOf(to) - order.indexOf(from)); };
+
+/** `inset()` cutting a box at `r` to the window from `top` to `foot` and to the sides of `side` (a negative inset
+ * reaches past the box). A cut is a thing's own, in its own place, so it goes with it as it moves. */
+const cut = (r: DOMRect, top: number, foot: number, side = r) =>
+  `inset(${top - r.top}px ${r.right - side.right}px ${r.bottom - foot}px ${side.left - r.left}px)`;
+
+/** How far the page `p` brings still is from its place (null: none of it is on the screen). */
+function short(p: Pan): number | null {
+  const el = p.parts.map((a) => (a.effect as KeyframeEffect).target).find((t): t is HTMLElement => t instanceof HTMLElement && t.isConnected && !t.hidden);
+  return el ? new DOMMatrix(getComputedStyle(el).transform).f : null;
+}
+
+/** The page `p` brings, set below the page left going down the rail (above it going up), its parts held there until
+ * the picture sets off with them. */
+function rise(p: Pan) {
+  const page = $('page');
+  for (const a of p.parts) a.cancel();
+  const now = page.getBoundingClientRect(), top = Math.max(0, now.top);
+  // Going down, its top starts at the foot of the floor left; going up, its foot at that floor's top.
+  p.by = p.dir > 0 ? innerHeight + p.off - top : innerHeight - p.top;
+  p.from = p.dir * p.by;
+  const ms = paced(330);
+  p.parts = [...page.children].flatMap((part) => {
+    // Each part is cut where the window's edges will be on it, the cut its own, so it goes with the part (on the
+    // compositor, as the part does: a cut moved frame by frame would lag it under load, and bite into it).
+    const r = part.getBoundingClientRect(), edge = cut(r, top, innerHeight, now);
+    return [part.animate([{transform: `translateY(${p.from}px)`}, {transform: 'none'}], {duration: ms, easing: LAND}),
+      ...r.height ? [part.animate([{clipPath: edge}, {clipPath: edge}], {duration: ms})] : []];
+  });
+  if (!p.ready) for (const a of p.parts) a.pause();
+}
+
+/** The picture of the page left sets off with the page come to, the two as one sheet (set off again, turned, if
+ * another place was pressed before they had moved). */
+function setOff(p: Pan) {
+  const root = document.documentElement, old = '::view-transition-old(page)', ms = paced(330);
+  for (const a of p.old) a.cancel();
+  // The picture is cut at the window's edges as it was, the cut its own, going with it.
+  const edge = cut(p.was, p.top, innerHeight + p.off);
+  p.old = [root.animate([{transform: 'none'}, {transform: `translateY(${-p.dir * p.by}px)`}], {duration: ms, easing: LAND, fill: 'forwards', pseudoElement: old}),
+    root.animate([{clipPath: edge}, {clipPath: edge}], {duration: ms, fill: 'forwards', pseudoElement: old})];
+  for (const a of p.parts) a.play();
+}
 
 /**
  * Going along the rail, the camera pans with it (styles.css ::view-transition): the page left goes off the way the rail
  * was gone along as the page come to rises in after it, the rail and the window's edges staying where they are, a
  * floor passed in a lift. Where the browser cannot, or less motion is asked for, the page is drawn in place.
- * Settles once the page is drawn.
+ * Settles once the page is drawn. `quiet`: something else carries the eye (a repo growing into its box), so the page
+ * does not come from its side.
+ *
+ * Each floor is what the window shows of its page, from its top line (or the window's top, read down) to the window's
+ * foot, cut there; the one come to adjoins the one left (under its foot going down the rail, over its top going up),
+ * and both go by the same length, the one that brings it to its place. Pages are of their own heights (Home runs past
+ * the window, Git's stops short of its foot): a floor as long as its page would run the one over the other, or leave
+ * a band of nothing between them.
+ *
+ * Pressed again on the way (the rail, or its keys held down): before the pan has been seen to move, it goes to the
+ * place pressed now instead, from where it began, as if that had been pressed (and pressed back to where it began,
+ * it simply stays); once moving, the page it was bringing is taken as it stands, and the next pan sets off from there.
  */
 function select(id: PurposeId, quiet = false): Promise<void> {
-  const order = RAIL.map((p) => p.id);
-  const pan = Math.sign(order.indexOf(id) - order.indexOf(current));
+  const p = panning, root = document.documentElement, page = $('page');
   const begin = (document as Panning).startViewTransition;
-  if (begin && !quiet && pan && $('page').childElementCount && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    const root = document.documentElement, page = $('page');
-    // A pan still going (the rail pressed again on the way) gives way: its page is taken as it stands.
-    root.classList.remove('arriving');
-    root.classList.add('panning');
-    letGo(page);
-    // Only the page left is taken as a picture. The page come to is itself, coming up after it as one sheet with it,
-    // so a press on it lands on what is under the hand as it comes: a picture of it would take no press until it
-    // had landed. Its parts stand below the window from the first frame, and set off with the picture together.
-    let parts: Animation[] = [];
-    const pass = begin.call(document, () => {
-      draw(id, quiet, true);
-      if (panning !== pass) return;
-      root.classList.add('arriving');
-      const from = `translateY(${pan * page.getBoundingClientRect().height}px)`;
-      parts = [...page.children].map((part) => part.animate([{transform: from}, {transform: 'none'}], {duration: paced(330), easing: LAND}));
-      for (const a of parts) a.pause();
-    });
-    panning = pass;
-    void pass.ready.then(() => {
-      root.animate([{transform: 'none'}, {transform: `translateY(${-pan * 100}%)`}],
-        {duration: paced(330), easing: LAND, fill: 'forwards', pseudoElement: '::view-transition-old(page)'});
-      for (const a of parts) a.play();
-    }, () => {});
-    // Given way to a pan begun since, its page stands where it lands; the marks are the new pan's own.
-    const done = () => { for (const a of parts) a.finish(); if (panning !== pass) return; panning = null; root.classList.remove('panning', 'arriving'); };
-    pass.finished.then(done, done);
-    return pass.updateCallbackDone.catch(() => {});
+  const moving = !!begin && !quiet && !!page.childElementCount && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Something else carries the eye now (a repo growing into its box from what was pressed): the pan gives way at once.
+  if (p && !moving) { panning = null; for (const a of p.parts) a.cancel(); p.pass.skipTransition(); root.classList.remove('panning', 'arriving'); }
+  if (p && moving) {
+    if (id === p.to) return p.pass.updateCallbackDone.catch(() => {});
+    const off = p.ready ? short(p) : null;
+    if (off === null || Math.abs(off - p.from) < 2) return turn(p, id);
   }
-  draw(id, quiet, false);
+  const dir = way(current, id);
+  if (!moving || !dir) { draw(id, quiet, false); return Promise.resolve(); }
+  // A pan still going gives way: its page is taken as it stands, held where it is in the frame the picture is taken
+  // in (a page still moving as it is taken can keep the picture from being taken for seconds), and the next adjoins it.
+  if (p) requestAnimationFrame(() => { for (const a of p.parts) a.pause(); });
+  root.classList.remove('arriving');
+  root.classList.add('panning');
+  letGo(page);
+  const was = page.getBoundingClientRect();
+  // Only the page left is taken as a picture. The page come to is itself, coming up after it as one sheet with it,
+  // so a press on it lands on what is under the hand as it comes: a picture of it would take no press until it
+  // had landed. Its parts stand below the window from the first frame, and set off with the picture together.
+  const q: Pan = {pass: null!, left: current, to: id, dir, by: 0, from: 0, was, top: Math.max(0, was.top), off: 0, drawn: false, ready: false, parts: [], old: []};
+  q.pass = begin!.call(document, () => {
+    if (panning !== q) return;
+    if (p) {
+      // Where it stood as it was taken.
+      q.off = short(p) ?? 0;
+      q.top += q.off;
+      for (const a of p.parts) a.cancel();
+    }
+    draw(q.to, false, true);
+    q.drawn = true;
+    // Turned back to the page it left before that was drawn: it stays, as it was.
+    if (!q.dir) { q.pass.skipTransition(); return; }
+    root.classList.add('arriving');
+    rise(q);
+  });
+  panning = q;
+  void q.pass.ready.then(() => { q.ready = true; if (panning === q) setOff(q); }, () => {});
+  // Given way to a pan begun since, what it brought is taken as it stands; the marks are the new pan's own.
+  const done = () => {
+    for (const a of q.old) a.cancel();
+    if (panning !== q) return;
+    for (const a of q.parts) a.finish();
+    panning = null;
+    root.classList.remove('panning', 'arriving');
+  };
+  q.pass.finished.then(done, done);
+  return q.pass.updateCallbackDone.catch(() => {});
+}
+
+/** Another place pressed before the pan `p` was seen to move: it goes there instead, from the page it left. */
+function turn(p: Pan, id: PurposeId): Promise<void> {
+  p.to = id;
+  p.dir = way(p.left, id);
+  // Not drawn yet: it is drawn as the place pressed now, from its side.
+  if (!p.drawn) return p.pass.updateCallbackDone.catch(() => {});
+  draw(id, false, true);
+  // Back to the page it left: there it is, as it was.
+  if (!p.dir) { for (const a of p.parts) a.cancel(); p.pass.skipTransition(); return Promise.resolve(); }
+  rise(p);
+  if (p.ready) setOff(p);
   return Promise.resolve();
 }
 

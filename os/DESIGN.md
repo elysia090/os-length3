@@ -112,11 +112,20 @@ Every value in `styles.css` comes from a token (§2).
     still, a floor passed in a lift (330 ms, fast off the mark and landing).
     Nothing fades: there is never an empty frame between them and never the
     two seen in one place, their words over each other; it comes as one, not
-    staged. Only the page left is taken as a picture to move (cut at the
+    staged. A floor is what the window shows of its page, from its top line
+    to the window's foot, cut there, whatever the page's own height (Home
+    runs past the foot, Git's stops short of it): the one come to adjoins
+    the one left and both go the same length, never the one over the other,
+    never a band of nothing between. Only the page left is taken as a picture to move (cut at the
     window's edges); the page come to comes itself, and the rest of the
     window goes on being drawn as it is, so a press made while it pans (the
     rail pressed again, the pane's button as the page comes up) lands on
-    what is under the hand, never lost on a picture still on its way. Along the
+    what is under the hand, never lost on a picture still on its way. The
+    rail pressed again before the pan has moved (a double press, its keys
+    held) goes straight to the place pressed last, from where it began, and
+    pressed back to where it began it simply stays; once moving, the page
+    coming is taken as it stands and the next adjoins it there, never first
+    put in its place. Along the
     band: the repos stand side by side in the band's order, and another repo
     come to comes in whole from its pill's side over the one left, which
     steps back a little the other way and fades under it (400 ms): never a

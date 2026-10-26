@@ -31,6 +31,62 @@ test('going along the rail pans to the next page, which stands whole once it lan
   expect(await app.page.evaluate(() => getComputedStyle(document.getElementById('page')!).viewTransitionName)).toBe('none');
 });
 
+test('the two pages of a pan go as one sheet: the one come to adjoins the one left, whatever their heights', async ({app}) => {
+  await app.newRepo.make('hello');
+  await app.rail.go('home');
+  await still(app);
+  // Home runs past the window's foot, Git stops short of it. Frame by frame, the page left (its picture) and the page
+  // come to keep the same distance apart: neither runs over the other, and no band of nothing opens between them.
+  const apart = app.page.evaluate(() => new Promise<number[]>((done) => {
+    const seen: number[] = [], t0 = performance.now();
+    const tick = () => {
+      const old = getComputedStyle(document.documentElement, '::view-transition-old(page)').transform;
+      const part = document.querySelector('#page > :not([hidden])');
+      if (old !== 'none' && part) seen.push(new DOMMatrix(getComputedStyle(part).transform).f - new DOMMatrix(old).f);
+      if (performance.now() - t0 < 1500) requestAnimationFrame(tick); else done(seen);
+    };
+    requestAnimationFrame(tick);
+  }));
+  await app.rail.button('git').click();
+  const seen = await apart;
+  expect(seen.length).toBeGreaterThan(3);
+  expect(Math.max(...seen) - Math.min(...seen)).toBeLessThan(2);
+  // As far apart as the window is from the page's top line to its foot: the next floor starts where this one is cut.
+  const room = await app.page.evaluate(() => innerHeight - document.getElementById('page')!.getBoundingClientRect().top);
+  expect(Math.abs(seen[0] - room)).toBeLessThan(2);
+});
+
+test('pressed again before the pan has moved, the rail goes straight to the place pressed last; pressed back, it stays', async ({app}) => {
+  await app.newRepo.make('hello');
+  await app.rail.go('home');
+  await still(app);
+  // Which pages are drawn on the way, and how many inks the rail has at once.
+  const watch = () => app.page.evaluate(() => {
+    const w = window as unknown as {drawn: string[]; inks: number};
+    w.drawn = [];
+    w.inks = 0;
+    new MutationObserver(() => { const at = document.getElementById('page')!.getAttribute('aria-labelledby')!; if (w.drawn.at(-1) !== at) w.drawn.push(at); })
+      .observe(document.getElementById('page')!, {attributes: true, attributeFilter: ['aria-labelledby']});
+    const tick = () => { w.inks = Math.max(w.inks, document.querySelectorAll('#rail-tabs .glide-ink').length); requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
+  });
+  const seen = () => app.page.evaluate(() => { const w = window as unknown as {drawn: string[]; inks: number}; return {drawn: w.drawn, inks: w.inks}; });
+  // Git, then Remote in the same moment: Remote is the page come to, from Home, and Git is never drawn on the way.
+  await watch();
+  await app.page.evaluate(() => { document.getElementById('purpose-git')!.click(); document.getElementById('purpose-remote')!.click(); });
+  await expect(app.rail.button('remote')).toHaveAttribute('aria-current', 'page');
+  await still(app);
+  expect((await seen()).drawn).toEqual(['purpose-remote']);
+  expect((await seen()).inks).toBeLessThanOrEqual(1);
+  await expect(app.main.getByRole('heading', {name: 'Remote', level: 1})).toBeVisible();
+  // Home, then Remote again at once: back where it began, it stays; no page comes, none goes.
+  await watch();
+  await app.page.evaluate(() => { document.getElementById('purpose-home')!.click(); document.getElementById('purpose-remote')!.click(); });
+  await still(app);
+  await expect(app.rail.button('remote')).toHaveAttribute('aria-current', 'page');
+  expect((await seen()).drawn.filter((d) => d !== 'purpose-remote')).toEqual([]);
+});
+
 test('the rail pressed again as its ink goes: one ink, going on from where it is', async ({app}) => {
   await app.rail.go('home');
   await still(app);

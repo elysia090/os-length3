@@ -257,10 +257,11 @@ button.row-item, .part, .dot-row, .pane-head, .hit-diff, .found-shut):hover { tr
 /* A press while it pans goes through the picture to the page coming under it. */
 ::view-transition { pointer-events: none; }
 .panning #page { view-transition-name: page; }
-/* The page come to is not taken: it comes itself (main.ts select), so a press lands on it as it comes. It is cut at
-   the page's edges as it rises, as the picture is. */
-.panning.arriving #page { view-transition-name: none; overflow: clip; }
-::view-transition-group(page) { animation: none; overflow: clip; }
+/* The page come to is not taken: it comes itself (main.ts select), so a press lands on it as it comes. Each is cut
+   at the window's edges as they will be (or were), the cut going with it (main.ts select), not at its page's box:
+   the floor that comes adjoins the one left, never over it and never a band of nothing between. */
+.panning.arriving #page { view-transition-name: none; }
+::view-transition-group(page) { animation: none; }
 /* The camera goes the whole way, fast off the mark and slowing into the next floor (330 ms): nothing fades, the two
    are never seen in one place, one over the other, and the window is never empty. The page cut at the window's
    edges as it goes, as a floor at a lift's door. The picture is set going (main.ts select) in the same frame as the
