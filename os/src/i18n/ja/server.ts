@@ -24,6 +24,9 @@ export default {
   'Open boards': '公開されている板',
   'Make a server': 'サーバーを作る',
   'Trip': '旅行',
+  'Book club': '読書会',
+  'Family': '家族',
+  'Band': 'バンド',
   'Name on this Remote': 'この Remote での名前',
   'A server needs your name. Claim one in Inbox.': 'サーバーにはあなたの名前が要ります。Inbox で取ってください。',
   // The talk.

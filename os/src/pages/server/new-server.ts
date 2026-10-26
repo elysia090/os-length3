@@ -40,22 +40,35 @@ interface MakingWays {
 /** A name as a name on this Remote can be: Trip is trip. */
 const slug = (v: string) => v.toLowerCase().normalize('NFKD').replace(/[^a-z0-9._-]+/g, '-').replace(/^[-._]+|[-._]+$/g, '').slice(0, 31);
 
+/** What a server might be called, and its name on this Remote, as the field says it before anything is written. */
+const examples = (): [string, string][] => [[t('Trip'), 'trip'], [t('Book club'), 'book-club'], [t('Family'), 'family'], [t('Band'), 'band']];
+
+/**
+ * The example the chip being named says: one none of one's servers is called, so a second chip is not read as a second
+ * of one already there (Trip beside Trip).
+ */
+function example(here: Here): [string, string] {
+  const all = examples();
+  return all.find(([n]) => !here.list.some((s) => s.name.trim().toLowerCase() === n.toLowerCase())) ?? all[0];
+}
+
 /**
  * The server being made: its chip, put in the band (`naming`), and the faint server under it, for the view to stand
  * in their places: its board's two slides and the box at the foot. Its name's field is returned to take the keyboard.
  */
 export function nameServer(here: Here, ways: MakingWays): {name: HTMLInputElement; slides: HTMLElement[]; dock: HTMLElement} {
-  const {name, handle, label, fit, reveal} = fields();
+  const [say, sayAt] = example(here);
+  const {name, handle, label, fit, reveal} = fields(say, sayAt);
   const make = button(t('Make'), 'small-button primary');
   // What the Remote said no to, under the band: the plan, a name taken, a name of one's own to claim first.
   const ask = h('p', {class: 'server-ask', role: 'alert'});
   const chip = h('span', {class: 'server-making'}, label, make);
   // Its people, as the box at the foot will say them: by the name being written.
-  const people = h('span', {}, name.value.trim() || t('Trip'));
+  const people = h('span', {}, name.value.trim() || say);
   // Named, its chip is drawn whole (solid, in ink) rather than dashed as a place for one.
   name.addEventListener('input', () => {
     label.classList.toggle('named', !!name.value.trim());
-    people.textContent = name.value.trim() || t('Trip');
+    people.textContent = name.value.trim() || say;
   });
   ways.naming(chip, ask);
   fit();
@@ -82,11 +95,11 @@ export function nameServer(here: Here, ways: MakingWays): {name: HTMLInputElemen
 
 /**
  * The chip's fields, as they were left (`draft`): its name, and its name on this Remote, which follows the name until
- * it is written itself. `reveal` shows that address, to be written otherwise.
+ * it is written itself, saying `say` and `sayAt` while empty. `reveal` shows that address, to be written otherwise.
  */
-function fields() {
-  const name = h('input', {class: 'server-name-in', maxlength: '64', placeholder: t('Trip'), 'aria-label': t('Name')}) as HTMLInputElement;
-  const handle = h('input', {class: 'server-handle-in mono', maxlength: '31', placeholder: 'trip', autocapitalize: 'off', spellcheck: 'false',
+function fields(say: string, sayAt: string) {
+  const name = h('input', {class: 'server-name-in', maxlength: '64', placeholder: say, 'aria-label': t('Name')}) as HTMLInputElement;
+  const handle = h('input', {class: 'server-handle-in mono', maxlength: '31', placeholder: sayAt, autocapitalize: 'off', spellcheck: 'false',
     'aria-label': t('Name on this Remote'),
     title: t('First come, as a person\'s: nobody else\'s while the server has it, renewed by its owner every five years.')}) as HTMLInputElement;
   // Its address follows its name until it is written itself.

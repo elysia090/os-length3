@@ -2677,9 +2677,10 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .tl-body { white-space: pre-wrap; overflow-wrap: anywhere; }
 .tl-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin-top: var(--s1); }
 .tl-foot:empty { display: none; }
-/* A post's deeds come up over its corner as the pointer comes onto it (a short fade and rise, never there at once), and
-   go as it leaves; out of the way, they are not there to be pressed. */
-.tl-acts { position: absolute; top: calc(-1 * var(--s3)); right: var(--s2); z-index: 1; display: flex; gap: var(--s1);
+/* A post's deeds come up in its top right corner as the pointer comes onto it (a short fade and rise, never there at
+   once), and go as it leaves; out of the way, they are not there to be pressed. Inside the post, not over the one
+   above: a hand going up the talk lights the post under it, never the one below whose deed it is passing over. */
+.tl-acts { position: absolute; top: var(--s1); right: var(--s2); z-index: 1; display: flex; gap: var(--s1);
   opacity: 0; visibility: hidden; translate: 0 3px; transition: opacity 120ms ease-out, translate 160ms var(--land), visibility 0s 120ms; }
 .tl-acts:empty { display: none; }
 .tl-post:hover .tl-acts, .tl-post:focus-within .tl-acts { opacity: 1; visibility: visible; translate: 0 0; transition-delay: 0s; }

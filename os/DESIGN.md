@@ -2468,7 +2468,9 @@ unseen, and nothing it read while unseen counts as seen. Its pieces, from §3:
   unpressable, while none is chosen), in ink while one is behind it, as a
   chip chosen is, turning a tooth's step as it is pressed either way. A server is made where it will
   stand, not in a form: its chip is the field, in the band after the
-  others (dashed until it has a name), saying one name: its name on this
+  others (dashed until it has a name; empty, it says a name none of one's
+  servers has, Trip, else Book club, Family or Band, so it is not read as
+  a second of one already there), saying one name: its name on this
   Remote follows the name unseen (Trip is trip), and the quiet @ at the
   chip's end shows it to be written otherwise, the @ staying where it was
   as its first letter; a name someone else has shows it by itself. Make
@@ -2571,8 +2573,10 @@ rules: a run of one address's posts within five minutes shows the face
 (the address's first letters in a circle), the name, the domain (or guest)
 and the time once, then each text under it, and the day's name, quiet and
 centred, marks where a day starts. A post's writer, and the server's owner,
-may take it down: it comes out at its top right on hover, round, and asks
-once more in its own place for a moment. Nothing is counted.
+may take it down: it comes out at its top right on hover, round, inside
+the post (not over the one above, which a hand going up the talk would
+then pass over still lighting the one below), and asks once more in its
+own place for a moment. Nothing is counted.
 
 The talk has no end to reach and nothing to press. With no post yet, it
 says so at its foot, by the box one writes in, where the first will come.
