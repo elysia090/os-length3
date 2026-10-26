@@ -19,6 +19,15 @@ export function signInPlace(title: string, ...body: Node[]): HTMLElement {
 }
 
 /**
+ * Under the card's title, what signing in opens on this page (`what`), and that nothing else waits on it: what is here
+ * works without it. Signed out is not a page of nothing to do.
+ */
+export function signInLead(what: string): HTMLElement[] {
+  return [h('p', {class: 'muted small sign-in-what'}, what),
+    h('p', {class: 'muted small sign-in-what'}, isNative ? t('Everything else works without it: your repos stay on this device.') : t('Everything else works without it: your repos stay in this browser.'))];
+}
+
+/**
  * The ways in, under the card's title. On the web, the first time is a provider and nothing else (GitHub,
  * Google or Apple, as this Remote offers them: none is shown that cannot be used); a passkey is made after it.
  * Once this browser made or used a passkey, the passkey is the way in, the providers under it for a passkey

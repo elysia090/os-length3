@@ -10,7 +10,7 @@ import {copying, deed, pageHead} from './common.ts';
 import {personBadge} from './pane.ts';
 import {every} from '../app/runs.ts';
 import {goToPlan, planRefused, planSaid} from './remote/plan.ts';
-import {signInBox, signInPlace} from './remote/sign-in.ts';
+import {signInBox, signInLead, signInPlace} from './remote/sign-in.ts';
 import {unreachedError, unreachedPlace} from './remote/unreached.ts';
 import {plan as readPlan} from '../remote/plan.ts';
 import type {Context} from './context.ts';
@@ -250,7 +250,7 @@ export function inboxPage(ctx: Context): Node[] {
   const paint = async () => {
     if (!connection()) {
       // Signed out, the same card as Remote's, in the same place.
-      holder.replaceChildren(signInPlace(t('Sign in'), signInBox(() => void paint())));
+      holder.replaceChildren(signInPlace(t('Sign in'), ...signInLead(t('Signed in, you take a name, and people write to you by it: reviews, questions.')), signInBox(() => void paint())));
       return;
     }
     let me: inbox.Me;

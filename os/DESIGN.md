@@ -2025,6 +2025,12 @@ its share an estimate), and the same three answers apply.
 
 ### Git
 
+With no repo at all (a first run), Forge's center and Git's issues are one
+dashed card, Make your first repo, the whole card the deed (it is New repo,
+as Home's card is), saying under it what a repo is here (a folder of your
+own, kept as git keeps it, that Forge, Git and the Prompt work in) or, in
+Git, No repos yet: not a way to bring a repo out when there is none.
+
 What happens between a repo and the outside, in the mental model of the
 issues: an issue hides its branch and worktree, and the operations are
 Commit, Push, Change (with Reset), Review, Merge, and Close for one that
@@ -2188,8 +2194,13 @@ Remote the issues are shown and one line says that history is kept there.
 Signed out, the page is the header and, where its parts will be, one card,
 the first thing a person meets: an `ink` edge over `paper` as the current
 issue card is, at most 440 px wide, at the page's left. In it: Sign in, then
+two quiet lines, what signing in opens on this page (Remote: your repos kept
+in step across your devices, and shown to whom you choose; Inbox: a name
+people write to you by; Server: servers, boards and the repos shown in them)
+and that everything else works without it (your repos stay in this browser,
+or on this device in the app), so signed out is not a page of nothing; then
 the ways in one under another as wide as the card (the first provider
-filled), and no words around them: the buttons say it. Under it, what signing
+filled), and no words around the buttons: they say it. Under it, what signing
 in is for: this device's repos where the Remote's cards will stand, faint and
 dashed, each saying Only on this device; signed in, the same cards stand
 there whole. The Inbox, signed out, shows the same card in the same place. A

@@ -1,6 +1,6 @@
 import {t} from '../../i18n.ts';
 import {h} from '../../ui/dom.ts';
-import {mark} from '../../ui/icons.ts';
+import {icon, mark} from '../../ui/icons.ts';
 import {after, LAND, paced, still} from '../../ui/glide.ts';
 import {onChange} from '../../repos/repos.ts';
 import {shownName} from '../../repos/issues.ts';
@@ -47,6 +47,8 @@ interface RowWays {
   beside(key: string): void;
   /** A file's head pressed is the file's own place in File. */
   act(repo: string, path: string): void;
+  /** No repo here at all: the first made (New repo). */
+  make(): void;
 }
 
 /** The row of boxes in the center: which stand, in what order, and the one worked on. */
@@ -58,6 +60,10 @@ export class Row {
   repo: string | null = null;
   /** What the center says with no repo out. */
   private nothing: HTMLElement;
+  /** None open: what to do, as there are repos to bring out (`bring`) or none at all yet (`first`). */
+  private bring: (string | Node)[];
+  private first: HTMLElement;
+  private any = true;
   /** The page worked on, due to be read again (the store changed it), and due to be put back where it was. */
   private again = 0;
   private putBack = 0;
@@ -71,8 +77,13 @@ export class Row {
   constructor(element: HTMLElement, work: HTMLElement, drag: Drag, ways: RowWays) {
     this.element = element; this.work = work; this.drag = drag; this.ways = ways;
     // ⊕ in the words is the band's own mark (its circle and plus, on the words' line), not a glyph of the font set high.
-    this.nothing = h('div', {class: 'empty forge-none', hidden: ''},
-      ...t('Bring a repo out to the band with ⊕, or open one from File').split('⊕').flatMap((part, i) => (i ? [h('span', {class: 'inline-add', 'aria-label': '⊕'}, mark('plus')), part] : [part])));
+    this.bring = t('Bring a repo out to the band with ⊕, or open one from File').split('⊕').flatMap((part, i) => (i ? [h('span', {class: 'inline-add', 'aria-label': '⊕'}, mark('plus')), part] : [part]));
+    // No repo at all (a first run): not a way to bring one out that has nothing to bring, but the first made, said
+    // as what it is, the whole card the deed (as Home's New repo is).
+    this.first = h('button', {type: 'button', class: 'card new forge-first'}, icon('new-repo'), h('span', {}, t('Make your first repo')),
+      h('small', {class: 'muted'}, t('A folder of your own, kept as git keeps it: Forge, Git and the Prompt work in it.')));
+    this.first.addEventListener('click', () => ways.make());
+    this.nothing = h('div', {class: 'empty forge-none', hidden: ''}, ...this.bring);
     element.append(this.nothing);
     new ResizeObserver(() => this.room()).observe(work);
     new MutationObserver(() => this.room()).observe(work, {attributes: true, attributeFilter: ['class']});
@@ -89,6 +100,14 @@ export class Row {
     const el = event.target as HTMLElement;
     const c = el.closest<HTMLElement>('.col');
     if (c?.dataset.key && !el.closest('.col-close')) this.ways.activate(c.dataset.key);
+  }
+
+  /** Whether there is any repo here: none, the empty center offers to make the first. */
+  known(any: boolean) {
+    if (any === this.any) return;
+    this.any = any;
+    this.nothing.classList.toggle('first', !any);
+    this.nothing.replaceChildren(...(any ? this.bring : [this.first]));
   }
 
   /** Drawn as `shown` and `repo` say: which boxes stand, in what order, and which is worked on. */

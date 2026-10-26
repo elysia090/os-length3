@@ -4,7 +4,7 @@ import * as account from '../../remote/connection.ts';
 import {store} from '../../repos/repos.ts';
 import {pageHead, parts, type Parts} from '../common.ts';
 import type {Context} from '../context.ts';
-import {signInBox, signInPlace} from './sign-in.ts';
+import {signInBox, signInLead, signInPlace} from './sign-in.ts';
 import {repoSection} from './repos.ts';
 import {passkeyNext, passkeyOffer} from './passkey-offers.ts';
 import {signInBody} from './sign-in-part.ts';
@@ -60,7 +60,7 @@ export function remote(ctx: Context): Node[] {
     const now = c ? 'in' : '';
     if (now === shown) return;
     shown = now;
-    if (!c) holder.replaceChildren(signInPlace(t('Sign in'), signInBox(() => paint())), waiting());
+    if (!c) holder.replaceChildren(signInPlace(t('Sign in'), ...signInLead(t('Signed in, your repos are kept in step across your devices, and shown to whom you choose.')), signInBox(() => paint())), waiting());
     else signedIn(ctx, holder, () => { shown = null; paint(); });
   };
   paint();

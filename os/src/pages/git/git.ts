@@ -288,6 +288,14 @@ class GitPage {
     if (laid.open.length) this.drawSome(laid.open); else this.drawNone(issues);
   }
 
+  /** No repo at all (a first run): the first made, the whole card the deed, as Forge's and Home's New repo are. */
+  private firstRepo(): HTMLElement {
+    const b = h('button', {type: 'button', class: 'card new issue-new'}, icon('new-repo'), h('span', {}, t('Make your first repo')),
+      h('small', {class: 'muted'}, t('No repos yet'))) as HTMLButtonElement;
+    b.addEventListener('click', () => void this.ctx.go('new-repo'));
+    return b;
+  }
+
   /** A count that changes while it is seen (an issue written, or closed and gone down) gives a beat as it does. */
   private counted(n: number) {
     const text = n ? `${n}` : '';
@@ -314,7 +322,7 @@ class GitPage {
   private drawNone(issues: Issue[]) {
     this.row.none();
     this.sections.main.classList.add('single');
-    if (!this.repos.length) { this.empty.replaceChildren(remoteOnly().length ? this.onlyThere() : h('div', {class: 'empty'}, t('No repos yet'))); return; }
+    if (!this.repos.length) { this.empty.replaceChildren(remoteOnly().length ? this.onlyThere() : this.firstRepo()); return; }
     const first = h('button', {type: 'button', class: 'card new issue-new'}, icon('new-repo'), h('span', {}, t('Write an issue')),
       h('small', {class: 'muted'}, issues.length ? t('No open issues') : t('No issues yet'))) as HTMLButtonElement;
     first.disabled = this.write.disabled;

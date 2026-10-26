@@ -102,7 +102,7 @@ class Forge {
     this.element = this.work.element;
     const drag = new Drag(cols);
     this.row = new Row(cols, this.element, drag, {activate: (key) => this.activate(key), close: (key) => this.closeCol(key),
-      beside: (key) => this.beside(key), act: (repo, path) => ctx.actOn(repo, path)});
+      beside: (key) => this.beside(key), act: (repo, path) => ctx.actOn(repo, path), make: () => void ctx.go('new-repo')});
     // The Issue view with none open begins one for this repo on Git; Not now there comes back here.
     this.work.reference.writeIssue = (r) => { startIssue(r); ctx.go('git'); };
     this.band = new Band(strip, this.row, drag, {show: (name) => this.show(name), beside: (name) => this.beside(name),
@@ -289,6 +289,7 @@ class Forge {
   private choose(all: string[]) {
     const {row, band, ctx} = this;
     band.known(all, ctx.repo);
+    row.known(all.length > 0);
     for (const name of [...row.views.keys()]) if (!all.includes(repoOf(name))) row.forget(name);
     // What stood side by side, as far as it is still on the band.
     row.shown = row.shown.filter((n) => band.names.includes(repoOf(n)));

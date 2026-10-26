@@ -8,7 +8,7 @@ import {arrive, paced, pop} from '../../ui/glide.ts';
 import {errorText} from '../../app/errors.ts';
 import type {Context} from '../context.ts';
 import {goToPlan} from '../remote/plan.ts';
-import {signInBox, signInPlace} from '../remote/sign-in.ts';
+import {signInBox, signInLead, signInPlace} from '../remote/sign-in.ts';
 import {unreachedError, unreachedPlace} from '../remote/unreached.ts';
 import {Band} from './band.ts';
 import {boardBox, markBoard, newBoard} from './board.ts';
@@ -152,7 +152,7 @@ export class ServerView {
       // Nothing open to everyone: the sign-in card in the middle, as on every page that needs it; signed in,
       // Server is drawn again as the person's own.
       if (!this.here.shown.length) {
-        this.row.instead(signInPlace(t('Sign in'), signInBox(() => this.ways.again())));
+        this.row.instead(signInPlace(t('Sign in'), ...signInLead(t('Signed in, you make servers: boards for the people in them, and the repos you show them.')), signInBox(() => this.ways.again())));
         this.band.element.hidden = true;
         this.paintDock(null);
         return;

@@ -1553,6 +1553,10 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .columns { position: relative; display: flex; }
 /* No repo out: the dashed box where the first box would be, as wide as its words, at the page's margin. */
 .columns > .forge-none { align-self: flex-start; margin: var(--s3) var(--s5); }
+/* No repo at all: the dashed card that makes the first is the whole of it, not a card in a dashed box. */
+.columns > .forge-none.first { width: min(100% - 2 * var(--s5), 560px); padding: 0; border: 0; }
+.forge-first { width: 100%; min-height: 180px; gap: var(--s1); text-align: center; }
+.forge-first > small { max-width: 36ch; font-size: var(--t-meta); }
 /* Alone, a box is the row's whole width by its basis, not by growing from none: split, its basis goes from that width
    to its own (and back), so it never passes through no width at all (a frame with the center empty). */
 .col { flex: 1 1 100%; min-width: 0; display: flex; flex-direction: column; }
@@ -2027,6 +2031,8 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
   padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s5); border: 1px solid var(--ink); border-radius: var(--r-place); background: var(--paper);
 }
 .sign-in-card h1, .sign-in-card h2 { margin: 0; font-size: var(--t-card); font-weight: 700; }
+/* What signing in opens here, and that the rest does not wait on it: two quiet lines under the title. */
+.sign-in-what { margin: 0; }
 .sign-in-card .remote-join { max-width: none; }
 .sign-in-card .sign-in-row { display: grid; gap: var(--s2); }
 .sign-in-card .sign-in-row .button { width: 100%; }
