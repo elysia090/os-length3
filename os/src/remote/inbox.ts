@@ -7,7 +7,7 @@
 // the signalling, and offers no relay: without a direct path, messages
 // simply go through the Remote as text.
 
-import {api, json, reading, RemoteError} from './connection.ts';
+import {about, api, json, reading, RemoteError} from './connection.ts';
 import {lookAt} from './looks.ts';
 import {t} from '../i18n.ts';
 import {day} from '../ui/dom.ts';
@@ -78,7 +78,9 @@ let home = '';
 /** Learn it before anything is shown, signed in or not. */
 export async function learnHome() {
   if (home) return;
-  try { home = ((await (await api('/v1/about', {}, null)).json()) as {domain?: string}).domain ?? ''; } catch { /* shown in full meanwhile */ }
+  // Asked as the first look at the Remote asks it (about), with which it is one request; not answered, names are
+  // shown in full meanwhile.
+  home = (await about()).domain ?? '';
 }
 /** An address as it is shown: a name on this Remote alone (`ren`), any other in full (`ren@ren.dev`). */
 export const shown = (address: string) => (home && address.endsWith(`@${home}`) ? address.slice(0, -home.length - 1) : address);
