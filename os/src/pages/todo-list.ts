@@ -4,18 +4,19 @@ import {getState, setState} from '../home/state.ts';
 import * as todo from '../home/todo.ts';
 import {errorText} from '../app/errors.ts';
 import {arrive, closeUp, pop} from '../ui/glide.ts';
+import {KIND_WORD} from '../repos/text.ts';
 
 // The TODO box, Home's and each server board's: the same list, kept in
 // different places (Home's state; the Remote, for a board's people). Each
 // item is written like a short note: the first line names it the way issues
 // are named here ("Fix：再起動すると保存内容が消える"), Enter breaks to the
 // detail lines, and Enter on an empty detail line starts the next item.
-// Typing "Kind：" at the start of the first line turns it into the item's
-// kind. A done item's first line is struck through and faded; its detail
-// stays readable. The box keeps its own DOM, so typing never re-renders the
-// page.
+// Typing "Kind：" at the start of the first line (a Latin word or a Japanese
+// one, 買う：) turns it into the item's kind. A done item's first line is
+// struck through and faded; its detail stays readable. The box keeps its own
+// DOM, so typing never re-renders the page.
 
-const KIND_AT_START = /^\s*([A-Za-z][A-Za-z0-9-]{0,15})\s*[：:]\s*/;
+const KIND_AT_START = new RegExp(`^\\s*(${KIND_WORD})\\s*[：:]\\s*`);
 
 function load(): todo.Todo[] {
   try { return todo.parse(getState('todo')); } catch { return []; }
@@ -62,8 +63,12 @@ interface Row {
  * since where a full-width colon stands in its box is each font's (centred in one, at the left in another).
  */
 export const kindColon = (): HTMLElement => h('span', {class: 'kind-colon'}, h('span', {class: 'kind-colon-said'}, '：'));
-/** A kind as it is written (Fix：), its colon tucked against the word (kindColon). */
-export const kindWords = (kind: string): Node[] => [document.createTextNode(kind), kindColon()];
+/**
+ * A kind as it is written (Fix：), its colon tucked against a Latin word (kindColon); after a Japanese one (買う：) the
+ * full-width colon is what Japanese sets there, and is shown as it is written.
+ */
+export const kindWords = (kind: string): Node[] =>
+  /[A-Za-z0-9-]$/.test(kind) ? [document.createTextNode(kind), kindColon()] : [document.createTextNode(`${kind}：`)];
 
 export interface TodoList {
   element: HTMLElement;
@@ -209,7 +214,7 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
 
     button.addEventListener('click', () => { items = todo.toggle(items, td.id); save(); paint(current()); });
 
-    title.addEventListener('input', () => {
+    const typed = () => {
       const m = !current().kind && !KIND_AT_START.test(previous) && KIND_AT_START.exec(title.value);
       if (m) {
         title.value = title.value.slice(m[0].length);
@@ -226,7 +231,11 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
         set({title: title.value});
       }
       previous = title.value;
-    });
+    };
+    // A word being made in an input method is the method's until it is taken (買う：, then its Enter): the line is read
+    // then, never written over under it.
+    title.addEventListener('input', (e) => { if (!(e as InputEvent).isComposing) typed(); });
+    title.addEventListener('compositionend', typed);
     title.addEventListener('keydown', (e) => {
       // A word being made in an input method (Japanese) is the method's: its Enter takes the word, nothing here.
       if (e.isComposing || e.keyCode === 229) return;

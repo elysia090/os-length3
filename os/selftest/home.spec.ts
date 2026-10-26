@@ -52,6 +52,25 @@ test('a TODO item begun and left empty goes as the keyboard leaves it', async ({
   await expect(app.home.title(app.home.items.nth(1))).toHaveValue('');
 });
 
+test('a Japanese kind is taken as a Latin one is, once the input method has given its word', async ({app}) => {
+  await app.rail.go('home');
+  const item = app.home.items.first();
+  await app.home.title(item).click();
+  // As an input method writes: the word being made is the method's (no kind is taken under it), then given.
+  const cdp = await app.page.context().newCDPSession(app.page);
+  await cdp.send('Input.imeSetComposition', {text: 'かう：', selectionStart: 3, selectionEnd: 3});
+  await cdp.send('Input.imeSetComposition', {text: '買う：', selectionStart: 3, selectionEnd: 3});
+  await expect(item.locator('.todo-kind')).toBeHidden();
+  await cdp.send('Input.insertText', {text: '買う：'});
+  await expect(item).toContainText('買う：');
+  await expect(app.home.title(item)).toHaveValue('');
+  await app.page.keyboard.insertText('種');
+  await expect(app.home.title(item)).toHaveValue('種');
+  // Set as Japanese sets it: the full-width colon, as written.
+  await expect(item.locator('.todo-kind')).toHaveText('買う：');
+  await expect(item.locator('.todo-kind .kind-colon')).toHaveCount(0);
+});
+
 test("a TODO's detail starts on its first line's column, with a kind and without", async ({app}) => {
   await app.rail.go('home');
   const left = async (l: Locator) => (await l.boundingBox())!.x;
