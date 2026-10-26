@@ -1067,26 +1067,19 @@ button.row-item:disabled { cursor: var(--cursor-arrow); color: var(--sub); }
 /* The text itself is the field: no box, the caret is the only sign. */
 .code.code-edit { display: block; width: 100%; border: 0; background: transparent; color: var(--ink); resize: none; overflow-y: hidden; }
 .code.code-edit:focus { outline: none; }
-/* What a line in the box's Edit would do, drawn under the file's words (edit-marks.ts), in a layer laid over the editor
-   (which paints over it, its ground clear): what it finds in the marker's soft yellow, the one Enter goes to in the
-   marker's; what it takes in the tint words taken have in a diff, underlined; a line to come as a rule where it comes,
-   in the green of what is added. What was just done is lit a moment in that green, as a place landed on is. The file
-   it works on keeps the edge of a file written in. */
+/* What the box's Edit holds, drawn under the file's words (edit-marks.ts), in a layer laid over the editor (which
+   paints over it, its ground clear): the line held in the marker's yellow under its words, from its start; what the
+   box has chosen in it in the marker's full yellow; the box's caret where it is, in ink. The file it works on keeps the
+   edge of a file written in. */
 .sheet { position: relative; }
 .code.code-edit { position: relative; }
 .edit-layer { position: absolute; pointer-events: none; clip-path: inset(-4px 0 -4px calc(-1 * var(--s3))); }
 .edit-marks { animation: fresh calc(90ms * var(--pace)) ease-out; }
 .edit-mark { position: absolute; left: 0; right: 0; border-radius: 4px; }
 .edit-mark.lines { left: calc(-1 * var(--s2)); background: color-mix(in srgb, var(--marker-soft) 75%, transparent); }
-.edit-mark.lines.now { background: color-mix(in srgb, var(--marker) 60%, transparent); }
-.edit-mark.words { background: var(--marker-soft); }
-.edit-mark.words.now { background: var(--marker); box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 28%, transparent); }
-.edit-mark.gone { background: var(--del-tint); box-shadow: inset 0 -2px var(--del); }
-.edit-mark.lines.gone { box-shadow: inset 3px 0 var(--del); }
-.edit-mark.rule { left: calc(-1 * var(--s2)); height: 2px; margin-top: -1px; border-radius: 1px; background: var(--add); }
-.edit-mark.rule::before { content: ''; position: absolute; left: -3px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: inherit; }
-.edit-mark.rule.gone { background: var(--del); box-shadow: none; }
-.edit-flash .edit-mark:not(.rule) { background: var(--add-tint); box-shadow: none; }
+.edit-mark.held { left: calc(-1 * var(--s2)); right: auto; background: color-mix(in srgb, var(--marker) 60%, transparent); }
+.edit-mark.words { right: auto; background: var(--marker); box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 28%, transparent); }
+.edit-mark.caret { right: auto; width: 2px; border-radius: 1px; background: var(--ink); }
 /* While the box edits and has the keyboard, a line of a file is pressed to take it into the box: the hand says so,
    and the line under it is ringed (the one taken is lit in the marker's yellow, as a line gone to is). */
 .edit-pointing section.file :is(.sheet, .code-edit) { cursor: var(--cursor-hand); }
@@ -1359,13 +1352,6 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
   justify-self: start; width: fit-content; max-width: 100%; margin: 0; padding: 0 calc(var(--s4) + 1px);
   border-radius: var(--r-round); background: var(--ground);
 }
-/* What can be written in Edit's empty box (edit-box.ts), each as it is written and what it does, in one quiet line. */
-/* One line, whatever the width (the box never moves for it): what does not fit goes to a second line, out of sight,
-   whole, never cut in two. */
-.prompt-note:has(> .edit-key) { display: flex; flex-wrap: wrap; column-gap: var(--s4); height: 1.6em; overflow: hidden; }
-.edit-key { display: inline-flex; align-items: baseline; gap: var(--s2); white-space: nowrap; }
-.edit-key:first-child > code { font-family: var(--sans); } /* pointing is a deed, not something written */
-.edit-key > code { padding: 0 5px; border-radius: 4px; background: var(--raised); color: var(--ink); font: 600 12px/1.6 var(--mono); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rule) 60%, transparent); }
 /* What a run prints comes in at the foot a line after another (output.ts), not all at once. */
 .term-out > .fresh { animation: fresh 240ms ease-out backwards; }
 /* Up, the Prompt's head has its × at its right end, the lamp before it: down, there is nothing to put back. */

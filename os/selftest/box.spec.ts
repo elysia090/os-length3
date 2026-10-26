@@ -157,9 +157,10 @@ test('Edit: the box holds a line of the file, written there as in the file, and 
   await expect(app.forge.editor('src/main.c')).toHaveValue(two);
 });
 
-test('Edit: words marked on a line come into the box chosen, and what is typed writes over them', async ({app}) => {
+test('Edit: words marked on a line come into the box chosen in their line, and what is typed writes over them', async ({app}) => {
   const box = app.forge.promptBox, page = app.page, file = app.forge.editor('src/main.c');
   const before = '#include <stdio.h>\n\nint main(void) {\n    puts("hello");\n    return 0;\n}\n';
+  const marks = file.locator('xpath=..').locator('.edit-marks');
   await file.click();
   await page.keyboard.press('Control+g');
   await expect(box).toBeFocused();
@@ -170,11 +171,23 @@ test('Edit: words marked on a line come into the box chosen, and what is typed w
   await page.mouse.move(b.x, b.y, {steps: 6});
   await page.mouse.up();
   await expect(box).toBeFocused();
-  await expect(box).toHaveValue('hello');
-  expect(await box.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd])).toEqual([0, 5]);
+  await expect(box).toHaveValue('    puts("hello");');
+  expect(await box.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd])).toEqual([10, 15]);
+  // In the file: the line held, the words chosen in it.
+  await expect(marks.locator('.held')).toHaveCount(1);
+  await expect(marks.locator('.words')).toHaveCount(1);
   await page.keyboard.type('world');
   await expect(file).toHaveValue(before.replace('hello', 'world'));
-  // Enter: the box goes on to the whole line the words are on.
+  // Nothing chosen now: the box's caret is shown where it is in the file, and goes with it.
+  const caret = marks.locator('.caret');
+  await expect(caret).toHaveCount(1);
+  const x = async () => (await caret.boundingBox())!.x;
+  const was = await x();
+  await box.press('Home');
+  await expect.poll(x).toBeLessThan(was - 20);
+  // Enter breaks the line where the caret is, as on any line.
+  await box.press('End');
   await box.press('Enter');
-  await expect(box).toHaveValue('    puts("world");');
+  await expect(file).toHaveValue(before.replace('    puts("hello");', '    puts("world");\n    '));
+  await expect(box).toHaveValue('    ');
 });

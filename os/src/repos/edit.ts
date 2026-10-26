@@ -32,5 +32,8 @@ export function indentOf(text: string): string {
   return spaces > tabs ? ' '.repeat(Math.max(2, least)) : '\t';
 }
 
-/** A part of the file lit: words on one line, whole lines, or a rule over or under a line. */
-export interface Mark { from: number; to: number; kind: 'words' | 'lines' | 'rule'; under?: boolean; now?: boolean; gone?: boolean }
+/**
+ * A part of the file lit: whole lines (as wide as the file), the line held (under its words, from its start), words
+ * on one line, or the caret (at `from`).
+ */
+export interface Mark { from: number; to: number; kind: 'lines' | 'held' | 'words' | 'caret'; now?: boolean }

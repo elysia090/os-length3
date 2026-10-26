@@ -1643,15 +1643,19 @@ is half written is kept for the repo and for what the box does.
 Edit makes the box a line of the file in front, written there as the line is
 in the file: nothing to learn, no words that ask for things, no line first
 written and then applied. The box holds the line the file's caret is on, lit
-in the marker's yellow where it stands, and what is typed in the box is in the
-file as it is typed (saved as typing in the file is, a moment after the typing
-stops; the keyboard stays in the box). Pointing chooses what it holds: while
-the box has the keyboard, the hand over a file says a line can be taken and the
-line under it is ringed (the ring going along from line to line with the hand,
-never gone from one and there on the next at once); pressed, that line comes
-into the box, the caret where it was pressed; drawn across words on a line (as
-a marker is drawn), those words come in chosen, so what is typed writes over
-them. The keys are a text's own: Enter breaks the line where the caret is and
+in the marker's yellow where it stands (under its words, from its start: not
+across the file, so it reads as the words held), and what is typed in the box
+is in the file as it is typed (saved as typing in the file is, a moment after
+the typing stops; the keyboard stays in the box). Where the box's caret is, an
+ink caret stands in the file too, going with it; what the box has chosen is in
+the marker's full yellow there. Pointing chooses what it holds: while the box
+has the keyboard, the hand over a file says a line can be taken and the line
+under it is ringed (the ring going along from line to line with the hand,
+never gone from one and there on the next at once, nor going back and forth
+for a hand at rest on the border of two); pressed, that line comes into the
+box, the caret where it was pressed; drawn across words on a line (as a marker
+is drawn), the line comes in with those words chosen, so what is typed writes
+over them (one way of holding: Enter and the rest work as on any line). The keys are a text's own: Enter breaks the line where the caret is and
 the box goes on to the new line, which keeps the indent; Backspace at the start
 joins the line to the one above and Delete at the end the one below to it; ↑
 and ↓ go to the line above or below, at the same column, and ← at the start or

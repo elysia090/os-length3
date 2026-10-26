@@ -3,8 +3,8 @@ import {LAND, paced, still} from '../../ui/glide.ts';
 import {lineOf, lineStarts, type Mark} from '../../repos/edit.ts';
 
 // What the box's Edit shows on the file in front (edit-box.ts): marks drawn under the editor's words, in a layer of
-// their own laid over it, where its letters are; what was just done lit a moment; the line pointed at ringed; and a
-// mark out of view brought into it.
+// their own laid over it, where its letters are: the line held, what is chosen in it and the box's caret, as the box
+// has them; the line pointed at ringed; and a mark out of view brought into it.
 
 /** A line's words up to a place in it as they are drawn: each tab to the next stop of `tab`. */
 function drawn(line: string, tab: number): string {
@@ -38,19 +38,22 @@ function layerOf(area: HTMLTextAreaElement, layer: string, any: boolean): HTMLEl
   return el;
 }
 
-/** Mark `m` as it is drawn over `area` (its lines `l`): a rule between lines, whole lines, or words in a line. */
+/** Mark `m` as it is drawn over `area` (its lines `l`): whole lines, the line held, words in a line, or the caret. */
 function markOf(area: HTMLTextAreaElement, l: Lines, m: Mark): HTMLElement {
-  const line = lineOf(l.starts, m.from);
-  const span = h('span', {class: `edit-mark ${m.kind}${m.now ? ' now' : ''}${m.gone ? ' gone' : ''}`});
-  if (m.kind === 'rule') span.style.top = `${l.top + (line + (m.under ? 1 : 0)) * l.lh}px`;
-  else if (m.kind === 'lines') {
+  const line = lineOf(l.starts, m.from), top = l.top + line * l.lh;
+  const span = h('span', {class: `edit-mark ${m.kind}${m.now ? ' now' : ''}`});
+  if (m.kind === 'lines') {
     const last = lineOf(l.starts, Math.max(m.from, m.to));
-    Object.assign(span.style, {top: `${l.top + line * l.lh}px`, height: `${(last - line + 1) * l.lh}px`});
-  } else {
-    const x = (offset: number) => l.left - area.scrollLeft + widthIn(area, drawn(l.text.slice(l.starts[line], offset), l.tab));
-    const a = x(m.from), b = x(m.to);
-    Object.assign(span.style, {top: `${l.top + line * l.lh}px`, height: `${l.lh}px`, left: `${a - 2}px`, width: `${Math.max(4, b - a + 4)}px`});
+    Object.assign(span.style, {top: `${top}px`, height: `${(last - line + 1) * l.lh}px`});
+    return span;
   }
+  const x = (offset: number) => l.left - area.scrollLeft + widthIn(area, drawn(l.text.slice(l.starts[line], offset), l.tab));
+  const a = x(m.from), b = x(m.to);
+  // The line held starts where a line's mark does (left of its words, as wide as the file's from there) and ends a
+  // little past its last letter: an empty line is lit as far as a letter or two.
+  if (m.kind === 'held') Object.assign(span.style, {top: `${top}px`, height: `${l.lh}px`, width: `calc(var(--s2) + ${Math.max(b, l.left + 12) + 6}px)`});
+  else if (m.kind === 'caret') Object.assign(span.style, {top: `${top + 3}px`, height: `${l.lh - 6}px`, left: `${a - 1}px`});
+  else Object.assign(span.style, {top: `${top}px`, height: `${l.lh}px`, left: `${a - 2}px`, width: `${Math.max(4, b - a + 4)}px`});
   return span;
 }
 
@@ -65,31 +68,22 @@ export function drawMarks(area: HTMLTextAreaElement, marks: Mark[], layer = 'edi
   const l = linesOf(area);
   Object.assign(el.style, {left: `${area.offsetLeft}px`, top: `${area.offsetTop}px`, width: `${area.offsetWidth}px`, height: `${area.offsetHeight}px`});
   const els = marks.slice(0, 2000).map((m) => markOf(area, l, m));
-  // One mark of a line going to another line (the ring under the hand, the line held) goes there on a short curve, from where it was seen: not gone from one line and there on the next at once.
-  const before = el.childElementCount === 1 ? el.firstElementChild as HTMLElement : null;
+  const lead = els[Math.max(0, marks.findIndex((m) => m.now))] ?? null;
+  // The lead mark going to another line (the ring under the hand, the line held) goes there on a short curve, from
+  // where it was seen, what is with it along: not gone from one line and there on the next at once.
+  const before = el.querySelector<HTMLElement>(':scope > .now') ?? (el.childElementCount === 1 ? el.firstElementChild as HTMLElement : null);
   const was = before?.getBoundingClientRect();
   el.replaceChildren(...els);
-  const now = els.length === 1 && marks[0].kind !== 'words' ? els[0] : null;
-  if (was && now && before!.className === now.className && !still()) {
-    const r = now.getBoundingClientRect(), dy = was.top - r.top;
-    if (Math.abs(dy) > .5 && Math.abs(was.height - r.height) < .5) now.animate([{translate: `0 ${dy}px`}, {translate: '0 0'}], {duration: paced(140), easing: LAND});
+  if (was && lead && before!.className === lead.className && marks[0].kind !== 'words' && !still()) {
+    const r = lead.getBoundingClientRect(), dy = was.top - r.top;
+    if (Math.abs(dy) > .5 && Math.abs(was.height - r.height) < .5)
+      for (const e of els) e.animate([{translate: `0 ${dy}px`}, {translate: '0 0'}], {duration: paced(140), easing: LAND});
   }
-  return els[Math.max(0, marks.findIndex((m) => m.now))] ?? null;
+  return lead;
 }
 
 /** The mark of line `line` (of lines starting at `starts`), soft: the caret's line, or the line pointed at. */
 export const lineMark = (starts: number[], line: number): Mark[] => [{from: starts[line], to: starts[line], kind: 'lines'}];
-
-/** What was just done, lit a moment on the file, as a place landed on is. */
-export function flash(area: HTMLTextAreaElement, lit: Mark[]) {
-  if (!lit.length || still()) return;
-  area.parentElement?.querySelector(':scope > .edit-flash')?.remove();
-  drawMarks(area, lit, 'edit-flash');
-  const layer = area.parentElement?.querySelector<HTMLElement>(':scope > .edit-flash');
-  if (!layer) return;
-  const gone = () => layer.remove();
-  layer.animate([{opacity: 1}, {opacity: 1, offset: .35}, {opacity: 0}], {duration: paced(900), easing: 'ease-out'}).finished.then(gone, gone);
-}
 
 /** `el` (a mark on the file) brought into view if it is out of it, a third down what is clear of the box (`clear`, its top). */
 export function bring(el: HTMLElement, area: HTMLTextAreaElement, clear: number) {
@@ -98,20 +92,21 @@ export function bring(el: HTMLElement, area: HTMLTextAreaElement, clear: number)
   const r = el.getBoundingClientRect(), f = flow.getBoundingClientRect(), bottom = Math.min(f.bottom, clear) - 12;
   if (r.top < f.top + 12 || r.bottom > bottom)
     flow.scrollTo({top: flow.scrollTop + r.top - f.top - (bottom - f.top) / 3, behavior: still() ? 'auto' : 'smooth'});
-  // A word far along a long line: the editor scrolls along to it (its marks with it). A line's mark (or a rule) is as
-  // wide as the file, starting left of its words, so it asks for none; told only when it did scroll, so the marks
-  // drawn again for it (show, on its scroll) do not ask again.
+  // The caret or a word far along a long line: the editor scrolls along to it (its marks with it). A line's mark starts
+  // left of its words, so it asks for none; told only when it did scroll, so the marks drawn again for it (show, on its
+  // scroll) do not ask again.
   const w = area.getBoundingClientRect();
-  if (!el.matches('.lines, .rule') && (r.right > w.right - 8 || r.left < w.left)) {
+  if (!el.matches('.lines, .held') && (r.right > w.right - 8 || r.left < w.left)) {
     const was = area.scrollLeft;
     area.scrollLeft = Math.max(0, area.scrollLeft + r.left - w.left - w.width / 3);
     if (area.scrollLeft !== was) area.dispatchEvent(new Event('scroll'));
   }
 }
 
-/** The lead of what is shown on `area` now (the caret's line, a line taken) brought into view (`clear`: as for bring). */
+/** Where the box is in what is shown on `area` now (its caret, what it has chosen, the line held) brought into view (`clear`: as for bring). */
 export function bringLead(area: HTMLTextAreaElement, clear: number) {
-  const lead = area.parentElement?.querySelector<HTMLElement>(':scope > .edit-marks > .now');
+  const marks = area.parentElement?.querySelector<HTMLElement>(':scope > .edit-marks');
+  const lead = marks?.querySelector<HTMLElement>(':scope > .caret, :scope > .words') ?? marks?.querySelector<HTMLElement>(':scope > .now');
   if (lead) bring(lead, area, clear);
 }
 

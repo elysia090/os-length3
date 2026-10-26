@@ -8,7 +8,8 @@ import {Holding} from './edit-taken.ts';
 // The box at the center's foot as a line of the file in front (DESIGN.md § Forge, Edit), written as any line is:
 // nothing to learn, no words that ask for things. The box holds the line the file's caret is on; a line of the file
 // pressed while the box has the keyboard comes into it instead, the caret where it was pressed, and words marked on a
-// line (the pointer drawn across them) come in chosen, to be written over. What is typed is in the file as it is
+// line (the pointer drawn across them) come in with it, chosen in the box, to be written over. Where the box's caret
+// is, it is in the file too. What is typed is in the file as it is
 // typed, saved as typing in the file is; the keys are a text's own (edit-taken.ts): Enter breaks the line, Backspace
 // and Delete join lines, ↑ ↓ go along them, Ctrl+Z takes back what the box wrote. Escape gives the keyboard back to
 // the file, at the same place. The file in front is the one last written in (or pressed), else the one read; the pill
@@ -74,7 +75,7 @@ export class EditLine {
   #shownOn: HTMLTextAreaElement | null = null;
   /** What the box writes into the file, and what it wrote, to take back. */
   readonly #writes: Writes;
-  /** The line (or the words) the box holds. */
+  /** The line the box holds. */
   readonly #holding: Holding;
   /** The line pointed at, ringed. */
   readonly #ring = new Ring();
@@ -90,11 +91,24 @@ export class EditLine {
     });
     this.#pointing();
     this.#following();
+    this.#minding();
+  }
+
+  /** The box's caret moved, or what it has chosen (a key, the pointer, the keyboard come or gone): so in the file. */
+  #minding() {
+    const box = this.#p.box;
+    let minding = 0;
+    const again = () => {
+      cancelAnimationFrame(minding);
+      minding = requestAnimationFrame(() => { if (this.#shownOn) this.#holding.show(); });
+    };
+    for (const e of ['keydown', 'pointerdown', 'pointerup', 'select', 'selectionchange', 'focus', 'blur']) box.addEventListener(e, again);
+    box.addEventListener('pointermove', (event) => { if (event.buttons) again(); });
   }
 
   /**
    * Pressed while the box has the keyboard, a line of the repo's files comes into it (not the keyboard into the
-   * file), the caret where it was pressed; drawn across, the words marked on the line come in chosen. Pointed at
+   * file), the caret where it was pressed; drawn across, the line comes in with the words marked chosen. Pointed at
    * meanwhile, the line is ringed.
    */
   #pointing() {
@@ -118,7 +132,7 @@ export class EditLine {
     p.main.addEventListener('pointerleave', () => { cancelAnimationFrame(pointing); this.#ring.on(null, 0); });
   }
 
-  /** A press on `area`: let go where it was pressed, its line held; drawn across first, the words marked held. */
+  /** A press on `area`: let go where it was pressed, its line held; drawn across first, the words marked chosen in it. */
   #press(area: HTMLTextAreaElement, down: PointerEvent) {
     const start = offsetAt(area, down.clientX, down.clientY), starts = lineStarts(area.value);
     const lineFrom = starts[start.line], lineTo = lineEnd(area.value, starts, start.line);
@@ -126,16 +140,16 @@ export class EditLine {
     const move = (e: PointerEvent) => {
       if (!drawing && Math.hypot(e.clientX - down.clientX, e.clientY - down.clientY) < 4) return;
       drawing = true;
-      // Marked along its own line only: what comes into the box is words of one line.
+      // Marked along its own line only: what comes into the box is one line.
       end = Math.min(lineTo, Math.max(lineFrom, offsetAt(area, e.clientX, e.clientY).at));
-      drawMarks(area, [{from: Math.min(start.at, end), to: Math.max(start.at, end), kind: 'words', now: true}]);
+      drawMarks(area, [{from: lineFrom, to: lineTo, kind: 'held', now: true}, {from: Math.min(start.at, end), to: Math.max(start.at, end), kind: 'words'}]);
     };
     const up = () => {
       removeEventListener('pointermove', move, true);
       removeEventListener('pointerup', up, true);
       removeEventListener('pointercancel', up, true);
-      if (drawing && end !== start.at) this.#holding.words(area, Math.min(start.at, end), Math.max(start.at, end));
-      else this.#holding.line(area, start.line, start.at - lineFrom);
+      const at = drawing ? end : start.at;
+      this.#holding.line(area, start.line, Math.min(start.at, at) - lineFrom, Math.max(start.at, at) - lineFrom);
     };
     addEventListener('pointermove', move, true);
     addEventListener('pointerup', up, true);
@@ -191,7 +205,7 @@ export class EditLine {
 
   /**
    * The box come to (or Edit chosen): it holds what it held, if the file still has it, else the line the file's caret
-   * is on (words chosen in the file: those), lit where it is.
+   * is on (words chosen in the file on it: those chosen in the box), lit where it is.
    */
   show() {
     const f = this.#front();
@@ -202,8 +216,7 @@ export class EditLine {
     const held = this.#holding.still();
     if (held?.area === f.area) { this.#holding.show(); return; }
     const area = f.area, a = area.selectionStart, b = area.selectionEnd, starts = lineStarts(area.value), line = lineOf(starts, a);
-    if (b > a && b <= lineEnd(area.value, starts, line)) this.#holding.words(area, a, b);
-    else this.#holding.line(area, line, a - starts[line]);
+    this.#holding.line(area, line, a - starts[line], b <= lineEnd(area.value, starts, line) ? b - starts[line] : a - starts[line]);
   }
 
   /** Typed in the box: written into the file as it is typed (nothing held any more: held anew, from the file). */
