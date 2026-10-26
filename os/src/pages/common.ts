@@ -135,6 +135,13 @@ export function parts<K extends string>(page: string, list: readonly {id: K; lab
   const heard: ((k: K) => void)[] = [];
   // Heard by the name it is given (the page's, in the language spoken), never by the key it is kept under.
   const bar = h('div', {class: 'parts', role: 'tablist', ...(label ? {'aria-label': label} : {})});
+  // More parts past its right end than fit (a phone's width): the row says so with a fade there.
+  const more = () => bar.classList.toggle('more', bar.scrollLeft + bar.clientWidth < bar.scrollWidth - 2);
+  bar.addEventListener('scroll', more, {passive: true});
+  // A part's width changing (its count come in after it was chosen) moves those after it: the fade is judged again,
+  // and the one chosen kept in view.
+  const sized = new ResizeObserver(() => { more(); keep(); });
+  sized.observe(bar);
   for (const p of list) {
     const small = h('small', {});
     const tab = h('button', {type: 'button', class: 'part', role: 'tab', id: `part-${page}-${p.id}`, 'aria-controls': `panel-${page}-${p.id}`, 'aria-selected': 'false', tabindex: '-1'},
@@ -151,9 +158,15 @@ export function parts<K extends string>(page: string, list: readonly {id: K; lab
       tabs.get(to.id)!.tab.focus();
     });
     bar.append(tab);
+    sized.observe(tab);
     tabs.set(p.id, {tab, small, panel});
   }
   let now: K = list[0].id;
+  /** The part chosen kept in view on a narrow window, where the switch slides sideways. */
+  const keep = () => {
+    const tab = tabs.get(now)?.tab;
+    if (tab && bar.isConnected && bar.scrollWidth > bar.clientWidth) tab.scrollIntoView({block: 'nearest', inline: 'nearest'});
+  };
   const show = (k: K) => {
     // Chosen, the ink goes from the part it was on to this one, as along the rail and the band.
     const was = now !== k && bar.isConnected ? where(tabs.get(now)?.tab) : null;
@@ -165,8 +178,8 @@ export function parts<K extends string>(page: string, list: readonly {id: K; lab
       x.tab.setAttribute('aria-selected', String(on));
       x.tab.tabIndex = on ? 0 : -1;
       x.panel.hidden = !on;
-      // On a narrow window the switch slides sideways: the chosen one is kept in view.
-      if (on && bar.isConnected && bar.scrollWidth > bar.clientWidth) x.tab.scrollIntoView({block: 'nearest', inline: 'nearest'});
+      // Chosen as the page is made, it is brought into view once the page is on the screen.
+      if (on) { if (bar.isConnected) keep(); else requestAnimationFrame(keep); }
     }
     try { localStorage.setItem(key, k); } catch { /* convenience only */ }
     glide(was, tabs.get(k)!.tab, bar, 'var(--r-round)');

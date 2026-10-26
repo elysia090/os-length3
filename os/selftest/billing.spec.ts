@@ -24,7 +24,7 @@ test('a tier paid for with 4242 in Checkout is the plan shown as yours after, it
 
   await app.settled();
   await expect(app.remote.told).toHaveText('Payment went through: you are on Pro now.');
-  await expect(app.remote.plan.getByRole('heading', {name: 'Pro plan'})).toBeVisible();
+  await expect(app.remote.plan.getByText(/^Pro plan · /)).toBeVisible();
   await expect(app.remote.tier('Pro plan')).toHaveAttribute('aria-current', 'true');
   await expect(app.remote.tier('Free plan')).not.toHaveAttribute('aria-current', 'true');
   await expect(app.remote.plan.getByRole('meter', {name: 'Kept on the Remote'})).toBeVisible();
@@ -51,7 +51,7 @@ test('a card that is declined is said under it in Checkout and nothing is sent; 
   await app.page.getByRole('link', {name: 'Back to length3'}).click();
   await app.settled();
   await expect(app.remote.told).toHaveText('Payment was cancelled: nothing was charged, and the plan is as it was.');
-  await expect(app.remote.plan.getByRole('heading', {name: 'Free plan'})).toBeVisible();
+  await expect(app.remote.plan.getByText(/^Free plan · /)).toBeVisible();
   await expect(app.remote.tier('Free plan')).toHaveAttribute('aria-current', 'true');
 });
 

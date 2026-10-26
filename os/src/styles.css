@@ -1621,19 +1621,18 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 /* The row slides as one. A box opened comes in at its own width where it stands, fading in as the row brings it, and
    one closed fades where it stands before the row closes over its place: never squeezed from or to no width, its
    words crushed and two boxes over each other on the way. */
-.col { transition: flex-basis var(--slide) var(--land), transform var(--slide) var(--land), translate calc(var(--slide) * .66) var(--land),
+.col { transition: flex-basis var(--slide) var(--land), transform var(--slide) var(--land), translate calc(160ms * var(--pace)) cubic-bezier(.2, .7, .2, 1),
   opacity calc(260ms * var(--pace)) ease-out; }
-/* The pointer on a box's edge, the row leans toward it a step before it is pressed: what the press will bring in
-   is already on its way, and leaving it, the row settles back. */
-.columns.split:has(> .col.after:hover) > .col { translate: calc(-1 * var(--s4)) 0; }
-.columns.split:has(> .col.before:hover) > .col { translate: var(--s4) 0; }
-.columns.split > .col:is(.before, .after):hover .file > :is(.path, .sheet) { opacity: .8; }
+/* The pointer on a box's edge, the row leans toward it before it is pressed, as far as the pointer is into it (up
+   to a step), and that box's words come up as it does: what the press will bring in is already on its way, and
+   leaving it, the row settles back. The row's own (columns.ts lean, --lean and --lit), never the pointer's hover: on
+   the edge itself, a hand never quite still would lean and unlean the row with every tremor. */
+.columns.split > .col { translate: var(--lean, 0px) 0; }
 .col.nothing { opacity: 0; }
 .col > .flow { transition: padding-top var(--move) var(--land), opacity calc(240ms * var(--pace)) ease-out; }
 /* Dimmed, a box along from the one worked on is still a box: its paper and its edge stand as a neighbour issue's or
    board's do, only its words quiet (a whole box at half strength is a grey slab, not a sheet). */
-.columns.split > .col:not(.active) .file > :is(.path, .sheet) { opacity: .5; transition: opacity calc(240ms * var(--pace)) ease-out; }
-.columns.split > .col:not(.active):hover .file > :is(.path, .sheet) { opacity: .75; }
+.columns.split > .col:not(.active) .file > :is(.path, .sheet) { opacity: calc(.5 + .3 * var(--lit, 0)); transition: opacity calc(240ms * var(--pace)) ease-out; }
 /* Of the box worked on, the sheet with the keyboard is in ink (.file:focus-within), as alone; a file beside, one sheet,
    is in ink whole while it is the one worked on. Never two sheets in ink at once. */
 .columns.split > .col.active > .flow > .dir.only > .file { border-color: var(--ink); }
@@ -2230,6 +2229,9 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 /* A page in parts (common.ts parts()): the headings are the switch, the
    chosen one an ink fill like anything chosen; only its part is shown. */
 .part-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s3); margin-top: var(--s5); }
+/* Never wider than the page: on a phone the parts slide inside it (as wide as their words, they reached past the
+   window's edge, cut off there, and the one chosen could not be brought into view). */
+.part-bar > .parts { min-width: 0; max-width: 100%; }
 .parts { position: relative; isolation: isolate; display: flex; flex-wrap: wrap; gap: var(--s1); }
 /* While the ink goes to it, its edge is not yet the ink's (glide.ts): a part has none, a chip or a pill its own. */
 .part.arriving { border-color: transparent !important; }
@@ -2260,8 +2262,16 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
    adds, one deed. What is read keeps to 760 px; the tiers take the room for four small cards. */
 .plan-part { max-width: 1040px; }
 .plan-part > .sub-part:not(.plan-tiers), .plan-part > .plan-told, .plan-part > .error, .plan-part > .answers { max-width: 760px; }
-/* Free and each tier: small cards about four across, the account's own current (an ink edge over raised). */
-.tier-cards { grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); }
+/* Free and each tier at the part's top: four across the part (two, then one, as it narrows), the account's own
+   current (an ink edge over raised); the plan it is on said at the heading's right. */
+.tier-cards { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 900px) { .tier-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .tier-cards { grid-template-columns: minmax(0, 1fr); } }
+.tier-card.current { border-color: var(--ink); background: var(--raised); }
+.plan-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; column-gap: var(--s4); margin: 0 0 var(--s3); }
+.plan-head > h3 { margin: 0; }
+.plan-now-line { margin: 0; }
+.plan-now-line > b { color: var(--ink); font-weight: 600; }
 .tier-card { min-height: 168px; gap: var(--s1); }
 .tier-card > .card-title { margin-bottom: var(--s1); }
 .tier-price { font-size: var(--t-card); font-weight: 600; }
@@ -2880,9 +2890,10 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 @media (max-width: 760px) {
   /* Every page's parts (Remote's too, not only the gear's): room round them so a focus ring is not cut by the slide. */
   .parts { flex-wrap: nowrap; overflow-x: auto; padding: var(--s1); margin: calc(-1 * var(--s1)); }
-  /* More along than fits: the row fades at its end, so a part cut there reads as more to slide to, not clipped; the
-     room past the last part lets it come clear of the fade. */
-  .parts { padding-right: var(--s6); mask-image: linear-gradient(to right, #000 calc(100% - var(--s5)), transparent); }
+  /* More along than fits: the row fades at its end while there is more to slide to (common.ts parts, .more), so a
+     part cut there reads as more, not clipped; slid to its end, nothing fades. */
+  .parts.more { mask-image: linear-gradient(to right, #000 calc(100% - var(--s5)), transparent); }
+  .parts { scroll-padding-inline: var(--s5); }
   .parts .part { flex: none; }
   .sheet-title > p { display: none; }
 }

@@ -151,8 +151,12 @@ Every value in `styles.css` comes from a token (§2).
     as it is saved; a place's name on the rail slides back into its edge as
     the pointer leaves. Shown again on its way out, it stays where it is.
   - *What is about to come leans in.* The pointer on a box's edge in
-    Forge's row, the row leans a step toward it before it is pressed;
-    left, it settles back.
+    Forge's row, the row leans toward it before it is pressed, as far as
+    the pointer is into it (none for the first few px, then up to a step),
+    its words coming up with it; left, it settles back. It follows the hand
+    rather than switching at a line, measured from where the boxes stand
+    unleaned, and a hand at rest (a few px of tremor) does not move it: on
+    the edge itself nothing goes back and forth.
   - *What is saved stays where it was written.* A file saved says so
     in its own head (Unsaved goes from it); nothing flies off it to the
     rail, which the eye would have to follow away from the work.
@@ -327,8 +331,10 @@ Every page:
   a size smaller and closer and the window's gutter narrower, so a page
   has a fifth more of the width. A place's name comes out beside it only
   where a pointer rests (a finger's press would leave it over the page).
-  Parts that slide fade at their end, so one cut there reads as more to
-  slide to; Forge's band gives its repo pill the width before the search.
+  Parts slide inside the page's width (never past the window's edge), the
+  one chosen kept in view, and fade at their end while there is more to
+  slide to, so one cut there reads as more; slid to the end, nothing fades.
+  Forge's band gives its repo pill the width before the search.
 
 ## 2. Tokens
 
@@ -2264,14 +2270,16 @@ the gear's do, never swapped in one frame):
   nothing to press in its row: it signs out from the person's menu at the
   foot of the rail, which also forgets the session here.
 
-- **Plan**: the tier the account is on, Free plan or Pro plan in a figure's
-  size (20/600), and under it the one date that matters in `sub` (renews,
-  ends, how long a failed payment stays paid; free: what free keeps). Then
-  On the Remote, three **meters** (§3): repos on the Remote, what is kept
-  there and names here, each against what that tier keeps (repos as many as
-  fit: the figure alone), and, when over, one quiet line that what is there
-  stays and what is new waits on the device. Then Plans: free and the three
-  tiers side by side as small **cards** (§3), each with its price as Stripe
+- **Plan**: Plans first, at the part's top: free and the three tiers side by
+  side as small **cards** (§3), four across the part (two, then one, as it
+  narrows), and at the heading's right the tier the account is on with the
+  one date that matters in `sub` (renews, ends, how long a failed payment
+  stays paid; free: what free keeps). Under them On the Remote, three
+  **meters** (§3): repos on the Remote, what is kept there and names here,
+  each against what that tier keeps (repos as many as fit: the figure alone),
+  and, when over, one quiet line that what is there stays and what is new
+  waits on the device. (A Remote showing no tiers says the tier in a figure's
+  size instead, over the meters.) Each tier's card has its price as Stripe
   says it, what it keeps, and its one deed at the right of its foot; the
   account's own is current (an `ink` edge over `raised`) with nothing to
   press, and one that keeps less than is kept now says that what is there

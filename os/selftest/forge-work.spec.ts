@@ -523,3 +523,31 @@ test('the keys an editor knows: Ctrl+K and Ctrl+P go to the search, Ctrl+` to th
   await app.page.keyboard.press('Control+b');
   await expect(app.forge.paneSwitch).toHaveAttribute('aria-expanded', 'true');
 });
+
+test('the row leans toward a box beside as far as the pointer goes into it, and a hand at rest on its edge leaves it be', async ({app}) => {
+  await app.newRepo.make('notes');
+  await app.rail.go('forge');
+  const box = (n: string) => app.main.locator(`.col[data-repo="${n}"]`);
+  const more = app.forge.band.getByRole('button', {name: /^Bring every repo out/});
+  if (await more.isEnabled()) await more.click();
+  await app.forge.band.getByRole('button', {name: 'hello', exact: true}).click();
+  await app.forge.band.getByRole('button', {name: 'notes', exact: true}).click({modifiers: ['ControlOrMeta']});
+  await expect(box('notes')).toHaveClass(/\bactive\b/);
+  // hello worked on again (Alt+[ along the row), notes along at its right.
+  await box('notes').locator('.flow').focus();
+  await app.page.keyboard.press('Alt+BracketLeft');
+  await expect(box('hello')).toHaveClass(/\bactive\b/);
+  await expect(box('notes')).toHaveClass(/\bafter\b/);
+  const edge = (await box('hello').boundingBox())!, y = edge.y + 200, right = edge.x + edge.width;
+  const lean = () => box('hello').evaluate((el) => parseFloat(getComputedStyle(el).translate) || 0);
+  // Resting on the edge, never quite still: the row stays where it is.
+  for (let i = 0; i < 12; i++) await app.page.mouse.move(right + [0, 2, -1, 3, -2, 1][i % 6], y);
+  await expect.poll(lean).toBe(0);
+  // Into the box beside: the row leans toward it (left), a step at most.
+  await app.page.mouse.move(right + 60, y, {steps: 6});
+  await expect.poll(lean).toBeLessThan(-8);
+  expect(await lean()).toBeGreaterThanOrEqual(-16);
+  // Back inside the one worked on: it settles back.
+  await app.page.mouse.move(right - 80, y, {steps: 6});
+  await expect.poll(lean).toBe(0);
+});

@@ -30,6 +30,13 @@ export const narrow = () => matchMedia('(max-width: 760px)').matches;
 /** How many neighbours' edges show before the box worked on at `at` of `n`: none for the first, two for the last. */
 const lead = (at: number, n: number) => (at === 0 ? 0 : at === n - 1 ? 2 : 1);
 
+/**
+ * The row's lean toward a neighbour follows how far into it the pointer is: none for the first few px past the edge
+ * (a hand at rest on the edge, never quite still, leaves the row be), then a little more for each px further, up to
+ * a step (16 px). No line to cross, so nothing to flip back and forth on.
+ */
+const LEAN = {still: 4, rate: .45, most: 16, tremor: 6};
+
 /** A box going from the row fades where it stands; then the row closes over its place, by the move that slides it. */
 export const shrink = (col: HTMLElement) => new Promise<void>((done) => {
   if (still()) { done(); return; }
@@ -91,6 +98,40 @@ export class Row {
     // worked on staying as it was.
     element.addEventListener('pointerdown', (event) => this.pressed(event), true);
     element.addEventListener('focusin', (event) => this.pressed(event));
+    element.addEventListener('pointermove', (event) => this.lean(event));
+    element.addEventListener('pointerleave', () => this.leanTo(0, null, 0));
+  }
+
+  /**
+   * The pointer on a neighbour's edge: the row leans toward it before it is pressed, as far as the pointer is into it
+   * (LEAN), and the neighbour's words come up with it. Measured from where the box worked on stands unleaned: the
+   * lean moves the boxes, and measured from where they are it would undo itself under a still pointer.
+   */
+  private lean(event: PointerEvent) {
+    const active = this.shown.length > 1 && this.repo ? this.views.get(this.repo)?.col : null;
+    if (!active || narrow()) { this.leanTo(0, null, 0); return; }
+    const r = active.getBoundingClientRect(), by = parseFloat(getComputedStyle(active).translate) || 0;
+    const x = event.clientX, into = Math.max(x - (r.right - by), (r.left - by) - x);
+    const over = (event.target as Element).closest?.('.col') as HTMLElement | null;
+    const side = x > r.right - by ? 'after' : 'before';
+    if (into <= 0 || !over?.classList.contains(side)) { this.leanTo(0, null, 0); return; }
+    // A hand on the box, never quite still, does not move the row with it: only a move of a few px (LEAN.tremor) does.
+    if (this.leant.over === over && Math.abs(into - this.leant.into) < LEAN.tremor) return;
+    this.leant = {over, into};
+    const px = Math.min(LEAN.most, Math.max(0, (into - LEAN.still) * LEAN.rate));
+    this.leanTo(side === 'after' ? -px : px, over, px / LEAN.most);
+  }
+
+  /** Where the pointer was in the neighbour the row last leant for. */
+  private leant: {over: HTMLElement | null; into: number} = {over: null, into: 0};
+
+  /** The row leant by `px` (none: 0), the neighbour `lit` brought up by `by` (0 to 1). */
+  private leanTo(px: number, lit: HTMLElement | null, by: number) {
+    if (!lit) this.leant = {over: null, into: 0};
+    this.element.style.setProperty('--lean', `${px.toFixed(1)}px`);
+    for (const c of this.element.querySelectorAll<HTMLElement>(':scope > .col')) {
+      if (c === lit) c.style.setProperty('--lit', by.toFixed(2)); else c.style.removeProperty('--lit');
+    }
   }
 
   /** The page of the box worked on, if any. */
@@ -113,6 +154,8 @@ export class Row {
   /** Drawn as `shown` and `repo` say: which boxes stand, in what order, and which is worked on. */
   layout() {
     const {shown, element: cols} = this;
+    // Another box worked on: the edges the lean was measured from are not where they were.
+    this.leanTo(0, null, 0);
     this.nothing.hidden = shown.length > 0;
     cols.classList.toggle('split', shown.length > 1);
     cols.dataset.n = String(shown.length);
