@@ -71,15 +71,16 @@ function row(name: string | Node[], depth: number, dir: boolean, extra: Partial<
 }
 
 export function newRepo(ctx: Context): Node[] {
+  // No example in it: one there reads as a name already given (and the row it would draw, as the repo to be made).
   const name = h('input', {id: 'repo-name', class: 'line-in', maxlength: '64', autocapitalize: 'off', spellcheck: 'false',
-    placeholder: 'my-repo', 'aria-describedby': 'repo-name-rule'}) as HTMLInputElement;
+    'aria-describedby': 'repo-name-rule'}) as HTMLInputElement;
   name.value = draft.name;
   const scaffold = nest(templateFiles('{name}', SCAFFOLD));
   // The README's size as File gives a file's, of what it will say: it follows the name and what it is for.
   const readmeSize = h('span', {class: 'tree-meta'});
   /**
    * Why the name cannot be, as it is written: not a name (a letter no name has, or a dot first), or one taken here
-   * or on the Remote; '' when it can be (or nothing is written yet, the example standing for it).
+   * or on the Remote; '' when it can be, or nothing is written yet (said only once Create is pressed).
    */
   const why = (n: string): string => !n ? '' : !validName(n) ? t('Use letters, digits and . _ -, and do not start with .')
     : others.includes(n) || remoteOnly().some((r) => r.name === n) ? t('There is a repo named {name} already', {name: n}) : '';
@@ -87,10 +88,13 @@ export function newRepo(ctx: Context): Node[] {
   const marked = (n: string): Node[] => [...n].map((c, i) => (/[A-Za-z0-9_-]/.test(c) || (c === '.' && i > 0) ? document.createTextNode(c)
     // A space is seen as one, or it would be nothing between two letters.
     : h('mark', {class: 'bad-char'}, /\s/.test(c) ? '␣' : c)));
-  /** The new repo's own rows: it, filled as File fills the repo in hand, and its scaffold, folders first. */
+  /**
+   * The new repo's own rows: it, filled as File fills the repo in hand (nothing named yet, a quiet dashed place for its
+   * name), and its scaffold, folders first.
+   */
   const ours = (): HTMLElement[] => {
     const n = name.value.trim(), bad = !!why(n);
-    const rows = [row(n ? marked(n) : 'my-repo', 1, true, {kind: `tree-repo tree-new${bad ? ' tree-bad' : ''}`})];
+    const rows = [row(n ? marked(n) : t('name'), 1, true, {kind: `tree-repo tree-new${bad ? ' tree-bad' : ''}${n ? '' : ' tree-unnamed'}`})];
     const walk = (nodes: Item[], depth: number) => {
       for (const n of nodes) {
         rows.push(row(n.name, depth, n.dir, {kind: `${n.dir ? 'tree-dir' : 'tree-file'} tree-ours`, shut: n.dir && !n.children.length,
@@ -105,7 +109,7 @@ export function newRepo(ctx: Context): Node[] {
   let others: string[] = [];
   const preview = h('ul', {class: 'tree-children'});
   const showFiles = () => {
-    const mine = name.value.trim() || 'my-repo';
+    const mine = name.value.trim();
     const before = others.filter((o) => o.localeCompare(mine) < 0), after = others.filter((o) => o.localeCompare(mine) >= 0);
     // One of the same name is the one it would be taken for: marked where it stands.
     const other = (o: string) => { const r = row(o, 1, true, {kind: `tree-repo tree-other${o === mine && name.value.trim() ? ' tree-clash' : ''}`, shut: true}); r.dataset.key = `o ${o}`; return r; };
@@ -138,7 +142,7 @@ export function newRepo(ctx: Context): Node[] {
     const about = summary.value.trim();
     return about ? `# ${n}\n\n${about}\n` : templateFiles(n, SCAFFOLD).get('README.md') ?? '';
   };
-  const sized = () => { readmeSize.textContent = bytes(new TextEncoder().encode(readme(name.value.trim() || 'my-repo')).length); };
+  const sized = () => { readmeSize.textContent = bytes(new TextEncoder().encode(readme(name.value.trim())).length); };
   // The whole box is the field, as the TODO's is.
   summaryBox.addEventListener('pointerdown', (event) => { if (event.target === summaryBox) { event.preventDefault(); summary.focus(); } });
   summary.addEventListener('input', () => { keep(); sized(); });
@@ -193,7 +197,8 @@ export function newRepo(ctx: Context): Node[] {
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const n = name.value.trim();
-    if (!validName(n)) { error.textContent = t('Use letters, digits and . _ -, and do not start with .'); name.focus(); nudge(name); return; }
+    // Nothing written yet is not a name broken: what is wanted is said, under the field it goes in.
+    if (!validName(n)) { error.textContent = n ? t('Use letters, digits and . _ -, and do not start with .') : t('Write a name first'); name.focus(); nudge(name); return; }
     // A name taken is the name's to change, as a name not allowed is: the keyboard goes back to it, as written.
     // One the Remote keeps and this device does not hold yet is taken too: it is the same repo, not another of that name.
     if ((await store.list()).some((r) => r.name === n) || remoteOnly().some((r) => r.name === n)) { error.textContent = t('There is a repo named {name} already', {name: n}); name.focus(); nudge(name); return; }

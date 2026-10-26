@@ -895,6 +895,9 @@ button.row-item:disabled { cursor: var(--cursor-arrow); color: var(--sub); }
    edge dashed in the off colour; each letter a name cannot have underlined in it where it is; one of the same name,
    ringed where it stands. */
 .tree-still .tree-new.tree-bad > .tree-row { background: none; outline: 1px dashed var(--off); outline-offset: -1px; }
+/* Nothing named yet: a quiet dashed place where the name will stand, not a repo already drawn. */
+.tree-still .tree-new.tree-unnamed > .tree-row { background: none; outline: 1px dashed var(--rule); outline-offset: -1px; }
+.tree-still .tree-new.tree-unnamed > .tree-row :is(.tree-name.plain, .tree-toggle) { color: var(--sub); }
 .tree-still .tree-new.tree-bad > .tree-row .tree-name.plain { color: var(--ink); }
 .tree-name .bad-char { background: none; color: var(--off); text-decoration: underline 2px var(--off); text-underline-offset: 3px; }
 .tree-still .tree-clash > .tree-row { outline: 1px solid var(--off); outline-offset: -1px; }

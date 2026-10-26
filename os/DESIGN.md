@@ -2629,7 +2629,10 @@ there, shut and quiet, and among them, where its name puts it (moving as the
 name is written: past another's name, the rows go to their new places on
 their curve), the new one filled in ink as File fills the repo worked
 on, its folders shut, README.md's size at the row's end as File gives it, of
-what it will say (it follows the name and what it is for). A name that
+what it will say (it follows the name and what it is for). The field holds no
+example (one there reads as a name given, and its row as the repo to be
+made): with nothing written, the new row is a quiet dashed place saying name,
+and 作成 pressed says, under the field, to write a name first. A name that
 cannot be is said as it is written, not once 作成 is pressed: the reason
 under the field (its edge in the off colour), the new row not filled but
 dashed, each letter no name has underlined where it is in it (a space as

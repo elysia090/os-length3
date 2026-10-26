@@ -35,6 +35,7 @@ export default {
   'Letters, digits and . _ -, up to 64 characters': '英数字と . _ - 、64文字まで',
   'Name of {path}': '{path}の名前',
   'Use letters, digits and . _ -, and do not start with .': '名前は英数字と . _ - で、先頭は . 以外にしてください',
+  'Write a name first': '先に名前を書いてください',
   'Could not create: {message}': '作成できませんでした：{message}',
   'There is a repo named {name} already': '{name}という repo はもうあります',
   'Summary': '概要',
