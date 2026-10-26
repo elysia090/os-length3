@@ -260,6 +260,14 @@ test('an issue is worked on in its own copy; pushed, submitted, reviewed and mer
   assert.equal(merged.state, 'merged');
   await draft.sync('notes');
   assert.equal(await text('notes', 'fix.txt'), 'fixed\n');
+  // The merged work's copy here goes the next time where the repo stands is read. After that, on main with no copy,
+  // that asks the Remote nothing; and a change listed again asks for neither of its commits' trees.
+  assert.equal((await history.work('notes')).line, 'main');
+  asked.length = 0;
+  assert.equal((await history.work('notes')).line, 'main');
+  assert.deepEqual(asked, []);
+  assert.deepEqual((await history.changesOf('notes')).map((x) => [x.state, x.folders, x.files]), [['merged', [''], 1]]);
+  assert.deepEqual(asked, ['/v1/repos/notes/changes']);
 });
 
 test('a page asks the Remote only what moved, and reads again only that', async () => {
