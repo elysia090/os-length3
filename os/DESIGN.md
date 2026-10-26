@@ -1662,8 +1662,14 @@ is labelled Prompt, after what one does there (the shell is BusyBox sh, so
 it is not called Bash); leaving the prompt
 (or Escape, or the × at the right end of its head, beside the lamp, there
 only while it is up) sends it back. The Prompt has no switch: writing
-to it starts it, and one that ended says so in its place, with Start
-again; stopping one is Runtime's. What is written in the box and not sent
+to it starts it (its first letter in the box, so its shell comes up while
+the line is still being written; a line sent before it is up waits for its
+first prompt line), and one that ended says so in its place, with Start
+again; stopping one is Runtime's. A repo shown, read or written in Forge
+starts nothing: its Prompt, never written to, runs nothing and holds the
+repo nowhere (Runtime counts it with none running, and Free does not wait
+for it); only what it runs on, l3 in a browser, is read ahead as the repo is
+shown, so the first line is not kept waiting for it. What is written in the box and not sent
 is the repo's: another repo shows its own, and coming back finds it.
 
 The box does more than run. Its pill says what it does and, pressed (or

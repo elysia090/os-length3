@@ -176,8 +176,28 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
   });
 });
 
+test.describe('the Prompt, started by writing to it', {tag: '@slow'}, () => {
+  test.skip(!process.env.SELFTEST_SLOW, '@slow: SELFTEST_SLOW=1 runs it');
+
+  test('a repo shown starts no Prompt: none runs until the box is written in, and the line sent then waits for it', async ({app}) => {
+    test.setTimeout(300_000);
+    // Shown in Forge, read and gone from: nothing runs, and nothing holds the repo.
+    await app.runtime.open('This browser');
+    await expect(app.runtime.part('Prompts running')).toHaveCount(0);
+    await expect(app.main.getByRole('region', {name: /^In this browser/})).not.toContainText('A Prompt has it open');
+    await app.rail.go('forge');
+    await expect(app.main.locator('.prompt-chip')).toHaveAttribute('data-state', 'starting');
+    // Written to, it starts; the line sent before its first prompt line runs once it is there.
+    await app.forge.promptBox.fill('echo first');
+    await app.forge.promptBox.press('Control+Enter');
+    await expect(app.forge.promptBox).toHaveValue('');
+    await expect(app.forge.prompt).toContainText(/^first$/m, {timeout: 240_000});
+    await app.runtime.open('Prompts running');
+  });
+});
+
 test('Enter is a new line in the prompt box, so confirming a conversion never runs it; Ctrl+Enter runs', async ({app}) => {
-  // Once the Prompt is up (before, Ctrl+Enter says it is still starting, and the line waits in the box).
+  // Once the Prompt is up (before, a line sent waits for its first prompt line).
   await app.forge.startPrompt('hello');
   const box = app.forge.promptBox;
   await box.fill('echo one');
