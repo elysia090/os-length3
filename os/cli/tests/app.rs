@@ -75,7 +75,8 @@ fn the_help_leads_to_the_app() {
         // Listed with Runtime's commands, and said in a line of its own: how to open it and how to close it.
         let runtime = help.stdout.split("\nRuntime\n").nth(1).and_then(|r| r.split("\n\n").next()).unwrap_or_default();
         assert!(runtime.lines().any(|l| l.trim_start().starts_with("app ")), "{lang}: {}", help.stdout);
-        assert!(help.stdout.contains("`l3 app`") && help.stdout.contains("`l3 app close`"), "{lang}: {}", help.stdout);
+        let line = help.stdout.lines().find(|l| l.starts_with("App ") || l.starts_with("アプリ ")).unwrap_or_default();
+        assert!(line.contains("l3 app ") && line.contains("l3 app close"), "{lang}: {}", help.stdout);
         let forms = home.run(lang, &["help", "app"]);
         assert!(forms.stdout.lines().any(|l| l.trim_start().starts_with("l3 app ") || l.trim() == "l3 app"), "{lang}: {}", forms.stdout);
         assert!(forms.stdout.contains("l3 app close"), "{lang}: {}", forms.stdout);

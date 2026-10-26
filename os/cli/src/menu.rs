@@ -128,6 +128,31 @@ pub fn offered(group: Group, on: On, facts: &[Fact], env: Env) -> Vec<Offer> {
     v
 }
 
+/// The deeds offered on a thing where `facts` hold of it, on this device as it is now (signed in or not, a root
+/// or none, in a Prompt or not): what the menu would offer on it.
+pub fn offered_here(ctx: &Ctx, group: Group, on: On, facts: &[Fact]) -> Vec<Offer> {
+    let facts: Vec<Fact> = facts.iter().copied().chain(device(ctx)).collect();
+    offered(group, on, &facts, Env::of(ctx))
+}
+
+/// A deed pressed on `s`, as the line that does it: the words the thing and the deed give, as the menu would run
+/// it; a word it would ask for written as the help writes it ("text"); the flags it asks for left out, as each
+/// may be left empty. A line that runs as pasted, but for the words one is to write.
+pub fn deed_line(o: Offer, s: &Subject) -> String {
+    let mut given = false;
+    let words: Vec<Option<String>> = o.form.args.iter().enumerate().map(|(i, a)| {
+        if let Some((_, w)) = o.deed.gives.iter().find(|(k, _)| *k == i) { return Some(w.to_string()); }
+        if !given { if let Some(w) = fills(*a, s) { given = true; return Some(shell_word(&w)); } }
+        match a {
+            Arg::Text(n) | Arg::Number(n) => Some(spec::placeholder(n).to_string()),
+            Arg::Path { optional: false } => Some("REPO/PATH".into()),
+            Arg::Address | Arg::Dotfile => Some("NAME".into()),
+            _ => None,
+        }
+    }).collect();
+    format!("l3 {}", command_line(o.command, o.form, &words, &[]).join(" "))
+}
+
 /// The forms that make a purpose's page, in the table's order.
 pub fn page_forms(group: Group) -> Vec<(&'static Command, &'static Form)> {
     spec::COMMANDS.iter().filter(|c| c.group == group).flat_map(|c| c.forms.iter().filter(|f| f.page).map(move |f| (c, f))).collect()

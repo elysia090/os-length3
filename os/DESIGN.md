@@ -1008,7 +1008,12 @@ at a terminal is used the same way, and stays a command line:
   asks, its weight. Each page notes its things and their facts while it is
   made (the issue's from the same reading that writes its card's `next:`
   line), so the menu, the help, the completion and the card cannot drift;
-  the tests read every deed back through the parser as the form it is.
+  the tests read every deed back through the parser as the form it is. An
+  issue opened in full (`l3 issue notes#1`) ends with the same deeds as a
+  list under Next, each the button's word beside the line that does it
+  (`Approve  l3 review notes#1 approve`), what it is for first and what
+  leaves it last, each said once: its Review and Merge say where they stand,
+  not the commands again.
 - **Keys** as a list has them: ↑↓ (Tab) to choose a row, ←→ a deed, Enter to
   do it, 1–9 or a letter to jump (again for the next with that letter),
   Backspace to the rail, q or Esc to leave. The focus is a › and brackets,
@@ -1023,6 +1028,44 @@ at a terminal is used the same way, and stays a command line:
   session), nothing is offered or asked, and what l3 writes and how it exits
   are byte for byte what they were (`cli/tests/plain.rs` keeps the
   transcripts; `cli/tests/menu.rs` drives the menu through a real pty).
+
+### What l3 writes
+
+The same few rules for every answer, so a line is read the same way
+wherever it comes from:
+
+- **`l3 help` starts with the work.** First the lines that take an issue
+  from written to merged, in their order, as one would type them in a repo
+  called notes (`l3 issue new notes "Fix：title"`, `l3 git`, `l3 start
+  notes#1`, `l3 commit notes`, `l3 push notes`, `l3 review notes#1 approve`,
+  `l3 merge notes#1`); then every command by the rail; then the flags, the
+  exit codes (0–5) and how names are written, each a line under its word.
+  Every line fits 80 columns, Japanese counted two a character.
+- **A name and its facts in two columns.** A listing (`l3 repo`, `l3
+  remote`, `l3 file`, `l3 prompt ls`) writes each name, then its facts
+  starting in one column, as wide as the widest name up to 24 (a longer one
+  keeps two spaces after it alone); a folder with nothing to say is its name
+  alone. Never a tab: a terminal puts what follows a tab at its next stop,
+  out of line after a long name. A script reads `--json`.
+- **A step is ○ until it is ✓**, on a card as in the TODO: `○ Commit`, `✓
+  Push`. Started and nothing changed, Commit says where the work is done, as
+  the app's card does (edit in notes, with `l3 prompt notes` or `l3 file
+  write`; what changes shows here).
+- **What comes next runs as it is pasted.** A card's `next:` line is a
+  command with every word in it and no brackets (`next: l3 commit notes`);
+  a word only the person can write is the help's own (`l3 reply notes#1
+  "text"`). When all that is left is leaving the work, the line says so as
+  `back: l3 main notes`, never as what comes next. Starting an issue says
+  both the way on (edit, then `l3 commit notes`) and the way back.
+- **A log is two lines a commit**: its line, then id, when, the files and
+  their lines, its issue, whether a merge; which folders it touched is
+  `--json`'s.
+- **A mistake says what to write, and with what.** Its form with the word
+  that was missing in it, and what there is to put there (`Name a repo (l3
+  commit REPO [-m note]), or run it in one: notes, c1`); an issue is named as
+  it is called (`notes#2`, never its work's line name `002`); something
+  done already says where to see it (`notes#1 is merged already (l3 log
+  notes shows it)`); nothing to commit says of which repo, and why.
 
 ### The canonical copy is on the Remote
 
