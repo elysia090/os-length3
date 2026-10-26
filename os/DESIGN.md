@@ -1347,8 +1347,8 @@ Forge or Git go into the box; a pill taken off the band hands it to the
 pill worked on next; the box's four put away with Escape give it back to
 the box. The arrow keys go along any list of things pressed (Lately's and
 Inbox's rows, the band's pills, the repo cards), to the nearest one that way
-on the screen, as they go along the rail; → on File brings its tree out,
-and again goes into it; and what scrolls inside the page
+on the screen, as they go along the rail; → on File brings its tree out
+with the keyboard on its first row, as a menu's ↓ does; and what scrolls inside the page
 keeps its own turning: past its end, the page behind it does not go on.
 
 The profile is edited where it is read, not in a form put in its place:
