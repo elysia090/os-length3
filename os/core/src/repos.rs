@@ -441,34 +441,41 @@ impl Repos {
         if meta.is_dir() { fs::remove_dir_all(&path) } else { fs::remove_file(&path) }.map_err(|e| io_error(shown(repo, relative), &e))
     }
 
-    /// Give a file or folder of `repo` a new name in the folder it is in. The
-    /// name is one plain part, as a new file's; what is there already is never
-    /// replaced, and the repo itself and its .git are never renamed. A link is
-    /// renamed itself, never what it names.
-    pub fn rename(&self, repo: &str, relative: &str, name: &str) -> Result<()> {
-        if name.is_empty() || name.starts_with('.') || name.contains('/') || name.contains('\\') || is_git_name(name) {
-            return Err(tr!("{:?} cannot name a file", "{:?} はファイルの名前になりません", name));
+    /// Give a file or folder of `repo` a new name, or a new place in it: `to` is
+    /// its path from the repo's top (`notes/plan.md`), each part a plain name
+    /// as a new file's, and the folders on its way are made. What is there
+    /// already is never replaced, a folder never goes inside itself, and the
+    /// repo itself and its .git are never moved. A link is moved itself,
+    /// never what it names.
+    pub fn move_to(&self, repo: &str, relative: &str, to: &str) -> Result<()> {
+        let to = to.trim_matches('/');
+        if to.split('/').any(|p| p.is_empty() || p.starts_with('.') || p.contains('\\') || is_git_name(p)) {
+            return Err(tr!("{:?} cannot name a file", "{:?} はファイルの名前になりません", to));
         }
         let rel = Path::new(relative.trim_end_matches('/'));
-        let (Some(parent), Some(old)) = (rel.parent(), rel.file_name()) else {
+        let (Some(parent), Some(_)) = (rel.parent(), rel.file_name()) else {
             return Err(tr!("The repo itself is not renamed this way", "repo そのものはこの方法では名前を変えられません"));
         };
         if touches_git(rel) || rel.components().any(|c| !matches!(c, Component::Normal(_))) {
             return Err(tr!("{} leaves the repo", "{} は repo の外です", shown(repo, relative)));
         }
-        let dir = self.inside(repo, &parent.to_string_lossy())?;
-        let from = dir.join(old);
+        let from = self.inside(repo, &parent.to_string_lossy())?.join(rel.file_name().unwrap());
         fs::symlink_metadata(&from).map_err(|e| io_error(shown(repo, relative), &e))?;
-        if old == name { return Ok(()); }
-        let to = dir.join(name);
-        let at = shown(repo, &parent.join(name).to_string_lossy());
+        if Path::new(to) == rel { return Ok(()); }
+        if Path::new(to).starts_with(rel) {
+            return Err(tr!("{} cannot go inside itself", "{} はそれ自身の中には移せません", shown(repo, relative)));
+        }
+        let (dir, name) = to.rsplit_once('/').unwrap_or(("", to));
+        if !dir.is_empty() { self.mkdir(repo, dir)?; }
+        let target = self.inside(repo, dir)?.join(name);
+        let at = shown(repo, to);
         // A name that differs only in case is the same file on some disks: that one is renamed, not refused.
-        let same = fs::symlink_metadata(&to).is_ok() && from.canonicalize().ok() == to.canonicalize().ok()
+        let same = fs::symlink_metadata(&target).is_ok() && from.canonicalize().ok() == target.canonicalize().ok()
             && !fs::symlink_metadata(&from).is_ok_and(|m| m.file_type().is_symlink());
-        if fs::symlink_metadata(&to).is_ok() && !same {
+        if fs::symlink_metadata(&target).is_ok() && !same {
             return Err(tr!("{} is there already", "{} はもうあります", at));
         }
-        fs::rename(&from, &to).map_err(|e| io_error(&at, &e))
+        fs::rename(&from, &target).map_err(|e| io_error(&at, &e))
     }
 
     /// The repo's issues by number, the newest first (one still without a
@@ -680,25 +687,36 @@ mod tests {
     }
 
     #[test]
-    fn files_and_folders_are_renamed_in_their_place_and_never_over_another() {
+    fn files_and_folders_are_renamed_or_moved_within_the_repo_and_never_over_another() {
         let r = scratch("rename");
         r.create("a", "c").unwrap();
-        r.rename("a", "src/main.c", "hello.c").unwrap();
+        r.move_to("a", "src/main.c", "src/hello.c").unwrap();
         assert!(r.root.join("a/src/hello.c").is_file() && !r.root.join("a/src/main.c").exists());
         r.mkdir("a", "src/empty").unwrap();
-        r.rename("a", "src", "lib").unwrap();
+        r.move_to("a", "src", "lib").unwrap();
         assert!(r.root.join("a/lib/hello.c").is_file() && r.root.join("a/lib/empty").is_dir());
-        assert!(r.rename("a", "lib/hello.c", "empty").is_err());
-        assert!(r.rename("a", "lib", "docs").is_err());
-        for bad in ["", "x/y", ".hidden", ".git", "GIT~1", ".."] {
-            assert!(r.rename("a", "lib/hello.c", bad).is_err(), "{bad}");
+        assert!(r.move_to("a", "lib/hello.c", "lib/empty").is_err());
+        assert!(r.move_to("a", "lib", "docs").is_err());
+        for bad in ["", "/", "x//y", ".hidden", "x/.hidden", ".git", "x/.git/y", "GIT~1", "..", "../b", "x\\y"] {
+            assert!(r.move_to("a", "lib/hello.c", bad).is_err(), "{bad}");
         }
-        assert!(r.rename("a", "", "b").is_err());
-        assert!(r.rename("a", "missing", "b").is_err());
-        assert!(r.rename("a", "../a/lib", "b").is_err());
-        assert!(r.rename("a", ".git", "b").is_err());
-        r.rename("a", "lib/hello.c", "hello.c").unwrap();
+        assert!(r.move_to("a", "", "b").is_err());
+        assert!(r.move_to("a", "missing", "b").is_err());
+        assert!(r.move_to("a", "../a/lib", "b").is_err());
+        assert!(r.move_to("a", ".git", "b").is_err());
+        r.move_to("a", "lib/hello.c", "lib/hello.c").unwrap();
         assert!(r.root.join("a/lib/hello.c").is_file());
+        // Moved: to the top, into a folder there, into folders made on its way.
+        r.move_to("a", "lib/hello.c", "hello.c").unwrap();
+        assert!(r.root.join("a/hello.c").is_file() && !r.root.join("a/lib/hello.c").exists());
+        r.move_to("a", "hello.c", "lib/empty/hello.c").unwrap();
+        assert!(r.root.join("a/lib/empty/hello.c").is_file());
+        r.move_to("a", "lib/empty", "notes/old/empty").unwrap();
+        assert!(r.root.join("a/notes/old/empty/hello.c").is_file() && !r.root.join("a/lib/empty").exists());
+        // Never inside itself, and never through a file in the way.
+        assert!(r.move_to("a", "notes", "notes/inner/notes").is_err());
+        assert!(r.root.join("a/notes/old/empty/hello.c").is_file() && !r.root.join("a/notes/inner").exists());
+        assert!(r.move_to("a", "notes", "README.md/notes").is_err());
     }
 
     #[test]

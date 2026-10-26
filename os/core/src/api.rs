@@ -17,7 +17,7 @@ pub const DIFF_LIMIT: usize = 2000;
 
 /// The commands that write a repo's files or Home's state: a host runs them in the order the page sent them
 /// (the app on its window's thread), never side by side with each other.
-pub const WRITES: &[&str] = &["repo_create", "repo_write", "repo_put", "repo_add", "repo_mkdir", "repo_remove", "repo_rename", "state_set"];
+pub const WRITES: &[&str] = &["repo_create", "repo_write", "repo_put", "repo_add", "repo_mkdir", "repo_remove", "repo_move", "state_set"];
 
 /// Answer `name` with `args` (an object of the command's arguments, by name).
 pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
@@ -43,7 +43,7 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         "repo_add" => to(repos()?.add(&a.s("repo")?, &a.s("dir")?, &a.s("name")?, &a.s("text")?, READ_LIMIT)?),
         "repo_mkdir" => to(repos()?.mkdir(&a.s("repo")?, &a.s("path")?)?),
         "repo_remove" => to(repos()?.remove(&a.s("repo")?, &a.s("path")?)?),
-        "repo_rename" => to(repos()?.rename(&a.s("repo")?, &a.s("path")?, &a.s("name")?)?),
+        "repo_move" => to(repos()?.move_to(&a.s("repo")?, &a.s("path")?, &a.s("to")?)?),
         "state_get" => to(home::get(&a.s("key")?)?),
         "state_set" => to(home::set(&a.s("key")?, &a.s("json")?)?),
 

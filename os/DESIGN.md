@@ -2688,24 +2688,35 @@ puts the tree away whatever has the keyboard: what was being written keeps
 its caret, and only from inside the tree does the keyboard go back to File.
 Open folders are remembered while the app runs.
 
-Inside a repo a row is also where a file or folder is made, renamed and
-deleted. At its right end, shown on the row under the pointer or the
+Inside a repo a row is also where a file or folder is made, renamed,
+moved and deleted. At its right end, shown on the row under the pointer or the
 keyboard, a small round button (the down mark, more to choose from) brings
 out the row's menu; a right press on the row, or the menu key (Shift+F10)
 on its name, does the same. The menu is the person's menu (`.pop`): beside
 the tree at the row's height, out in the free space so nothing moves, its
 head the row's name, a row per deed. A folder, the repo's own row too, has
 New file and New folder; a file or folder has Rename and Delete (a repo is
-not renamed or deleted here). A deed pressed becomes the field or the ask in
-its own place: a name written and Enter makes it (a name is one plain part,
-with no "/" and not starting with "."; one already there is said under the
-field and the keyboard stays in it); Delete asks there, `{name}を消します`
+not renamed or deleted here: its gear is where that is, § Runtime, A repo in
+a list). A deed pressed becomes the field or the ask in its own place: a
+name written and Enter makes it (a new one's name is one plain part, with no
+"/" and not starting with "."; one already there is said under the field and
+the keyboard stays in it). Rename's field holds the row's path in the repo
+(`notes/plan.md`), its name chosen to be written over, so a name written
+renames it where it is and a path written moves it there, from the repo's
+top, the folders on its way made (each part plain; never into itself). A
+row taken by the pointer and carried onto a folder of its repo, or onto the
+repo's own row, moves into it: it stays where it was, faded, while it is
+carried; the folder under it is raised and ringed in ink, and one shut opens
+after a moment held there, to be gone into; let go anywhere else, nothing
+moves. Moved, it lands lit where it went, with the keyboard on it, its
+folders open down to it; what could not be done is said at the tree's
+foot. Delete asks there, `{name}を消します`
 or `{name}を中身ごと消します`, Not now and 消す at its foot as every ask is
 (`askFoot`, held still a moment, `SETTLE`). A new file is the one to work on:
 the tree goes and Forge opens on it with the caret in it. A new folder, a
-renamed row or what holds a deleted one is read again, open, with the
+renamed or moved row or what holds a deleted one is read again, open, with the
 keyboard on it. Escape puts the menu away first, back to its row; a second
-Escape puts the tree away. A rename reaches everything that keeps a copy as
+Escape puts the tree away. A rename or a move reaches everything that keeps a copy as
 the old path gone and the new one made (the Prompt's copy, Forge, and the
 Remote, which other devices then take in), on either host (the app renames
-on disk, `repo_rename`).
+or moves on disk, `repo_move`).

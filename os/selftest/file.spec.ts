@@ -122,6 +122,37 @@ test('New folder and Rename finish the same way, and Not now puts the row back a
   await expect(app.file.name('trips')).toBeFocused();
 });
 
+test('a file is moved by a path written as its new name, or by its row carried onto a folder', async ({app}) => {
+  await app.newRepo.make('trip');
+  await app.file.named('trip', '', 'New file', 'packing.md');
+  await app.forge.editFile('packing.md', '- tent\n');
+  const row = (path: string) => app.file.tree.locator(`.tree-name[data-path="/root/trip/${path}"]`);
+
+  // A path from the repo's top moves it there, the folders on its way made; it lands with the keyboard on it.
+  await app.file.named('trip', 'packing.md', 'Rename', 'notes/summer/packing.md');
+  await expect(row('notes/summer/packing.md')).toBeFocused();
+  await expect(row('packing.md')).toHaveCount(0);
+  // Renamed again, its field holds where it is, its name chosen to be written over.
+  const menu = await app.file.deeds('trip', 'notes/summer/packing.md');
+  await menu.getByRole('menuitem', {name: 'Rename'}).click();
+  const field = menu.getByRole('textbox', {name: 'New name'});
+  await expect(field).toHaveValue('notes/summer/packing.md');
+  expect(await field.evaluate((f: HTMLInputElement) => f.value.slice(f.selectionStart!, f.selectionEnd!))).toBe('packing');
+  await app.page.keyboard.press('Escape');
+
+  // Carried onto the repo's own row it goes to the top; onto a folder, into it.
+  await row('notes/summer/packing.md').dragTo(app.file.name('trip'));
+  await expect(row('packing.md')).toBeVisible();
+  await row('packing.md').dragTo(row('docs'));
+  await expect(row('docs/packing.md')).toBeVisible();
+  await expect(row('packing.md')).toHaveCount(0);
+  // Never into itself: a folder carried onto what is in it stays where it was.
+  await row('notes').dragTo(row('notes/summer'));
+  await expect(row('notes/summer')).toBeVisible();
+  await app.file.close();
+  await expect(app.forge.editor('docs/packing.md')).toHaveValue('- tent\n');
+});
+
 test('File pressed keeps out the tree its hover brought out, however late the press; pressed again it goes', async ({app}) => {
   const file = app.rail.button('file');
   await file.hover();

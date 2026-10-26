@@ -1991,6 +1991,12 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .tree-row:has(> [aria-current='page']) > .tree-more { border-color: currentColor; }
 /* Its menu, beside the tree at the row's height: out in the free space. */
 .tree-pop { position: fixed; z-index: 6; width: 260px; }
+/* A row carried by the pointer stays where it was, faded; the folder it would go into under it is raised and ringed in
+   ink, as the keyboard's row is. What a move could not do is said at the tree's foot. */
+.tree-row.carried { opacity: .4; }
+.tree-row.taking { background: var(--raised); outline: 1.5px solid var(--ink); outline-offset: -1.5px; }
+.tree-said:empty { display: none; }
+.tree-said { margin: var(--s1) var(--s2) 0; }
 
 /* Terminal output; input comes from the prompt box */
 .term { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; gap: var(--s2); margin-top: var(--s2); }

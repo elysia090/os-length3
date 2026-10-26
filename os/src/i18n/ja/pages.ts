@@ -70,6 +70,7 @@ export default {
   'Folder name': 'フォルダーの名前',
   'New name': '新しい名前',
   'A name has no “/” and does not start with “.”': '名前には「/」を入れず、「.」で始めません',
+  'Names joined by “/”, none starting with “.”': '名前を「/」でつなぎ、どれも「.」で始めません',
   '{name} is there already': '{name}はもうあります',
   '{name} goes': '{name}を消します',
   '{name} goes, with what is in it': '{name}を中身ごと消します',
