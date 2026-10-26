@@ -3,6 +3,7 @@ import {t, tn} from '../../i18n.ts';
 import {shown as named, shownAs} from '../../remote/inbox.ts';
 import * as servers from '../../remote/servers.ts';
 import {deed, parts, type Parts} from '../common.ts';
+import {every} from '../../app/runs.ts';
 import {askIn, boardName, button, foot, footLeft, line, MOVE, smallCard} from './parts.ts';
 import {guestsCard} from './guests.ts';
 import {errorText} from '../../app/errors.ts';
@@ -25,6 +26,8 @@ export interface GearWays {
   done(): void;
   /** Something changed: the gear and the side are drawn again. */
   again(): void;
+  /** How many people and repos the pane last drew for this server, if it has: the parts' counts at once. */
+  known(): {people: number; repos: number} | null;
   /** A board was removed or brought back: the boards are built again on the way back to them. */
   boardsChanged(): void;
   /** One left the server, or removed it: the next one, or making one. */
@@ -44,20 +47,49 @@ interface Read {
 
 export async function gear(s: servers.Server, w: GearWays): Promise<void> {
   const tabs = sheet(s, w);
+  // The counts as the pane last drew them, at once: the parts' names do not step sideways when the reading comes.
+  tabs.count('boards', s.boards.filter((b) => !b.gone).length);
+  const known = w.known();
+  if (known) { tabs.count('people', known.people); tabs.count('repos', known.repos); }
   const grid = (k: Part, ...cards: (Node | null)[]) => tabs.panel(k).replaceChildren(h('div', {class: 'grid small-grid'}, ...cards));
   try {
     const [people, repos, mineAll] = await Promise.all([servers.people(s.id), servers.shownIn(s.id), servers.seenAll()]);
     if (!w.still()) return;
     tabs.count('people', people.length);
     tabs.count('repos', repos.length);
-    tabs.count('boards', s.boards.filter((b) => !b.gone).length);
     const mine = (await Promise.all(people.map(async (p) => ((await w.isMe(p.address)) ? p.address : null)))).find(Boolean) ?? null;
     const r: Read = {s, w, people, repos, mineAll, mine};
     grid('people', ...people.map((p) => personCard(r, p)), addSomeone(r));
     grid('repos', ...repoCards(r));
     grid('boards', ...s.boards.flatMap((b) => boardCards(r, b)));
     grid('server', ...serverCards(r));
+    keepPeople(r, tabs);
   } catch (e) { tabs.panel(tabs.current()).replaceChildren(h('p', {class: 'error'}, errorText(e))); }
+}
+
+/** How often its people are looked at again behind the gear, as the pane does. */
+const EVERY = 15_000;
+
+/**
+ * While one is behind the gear, its people are looked at again every little while: someone asked in who accepts on
+ * their own device comes into People (and its count) then. Only the people's cards are drawn again (the card that
+ * adds, and what is written in it, stays), and not while one of them asks or has the keyboard.
+ */
+function keepPeople(r: Read, tabs: Parts<Part>) {
+  const panel = tabs.panel('people');
+  let drawn = JSON.stringify(r.people);
+  every(EVERY, async () => {
+    if (panel.querySelector('.person-card .off-ask, .person-card:focus-within')) return;
+    const now = await servers.people(r.s.id);
+    if (!r.w.still() || JSON.stringify(now) === drawn) return;
+    drawn = JSON.stringify(now);
+    r.people = now;
+    tabs.count('people', now.length);
+    const grid = panel.querySelector('.grid');
+    if (!grid) return;
+    for (const c of grid.querySelectorAll('.person-card')) c.remove();
+    grid.prepend(...now.map((p) => personCard(r, p)));
+  }, {alive: () => panel.isConnected && r.w.still(), paced: true});
 }
 
 /** The sheet in the boards' place: the server's name and code at its head, its parts, and Done at its foot. */
@@ -79,19 +111,37 @@ function sheet(s: servers.Server, w: GearWays): Parts<Part> {
   return tabs;
 }
 
-/** A setting in a card: its word and a switch. Widening asks in the card first; narrowing is at once. */
-function setting(w: GearWays, card: HTMLElement, label: string, on: boolean, ask: {what: string | string[]; verb: string}, change: (v: boolean) => Promise<unknown>) {
+/** What asking before a deed says: its lines, and the deed's word. */
+interface Ask { what: string | string[]; verb: string }
+
+/**
+ * A setting in a card: its word and a switch. Widening asks in the card first; narrowing is at once, unless it ends
+ * something that cannot be had back by turning it on again (`narrowing` says what, read as it is pressed: a board's
+ * guests and invitations), when it asks in the card too.
+ */
+function setting(w: GearWays, card: HTMLElement, label: string, on: boolean, ask: Ask, change: (v: boolean) => Promise<unknown>,
+  narrowing?: () => Promise<Ask | null>) {
   const sw = h('button', {type: 'button', class: 'power plain', role: 'switch', 'aria-checked': String(on), 'aria-label': label}, h('span', {class: 'knob'})) as HTMLButtonElement;
   // It moves on the press, green when on; widening then asks in the card (no puts it back), narrowing is at once.
   const to = (v: boolean) => sw.setAttribute('aria-checked', String(v));
   const said = h('span', {class: 'error small', role: 'alert'});
+  const title = () => card.querySelector('.card-title')?.textContent ?? '';
   sw.addEventListener('click', async () => {
     to(!on);
     if (!on) {
-      window.setTimeout(() => askIn(card, sw, card.querySelector('.card-title')?.textContent ?? '', ask.what, ask.verb, async () => { await change(true); w.again(); }, () => to(false)), MOVE);
+      window.setTimeout(() => askIn(card, sw, title(), ask.what, ask.verb, async () => { await change(true); w.again(); }, () => to(false)), MOVE);
       return;
     }
     sw.disabled = true;
+    // What narrowing ends, read now (not read: it narrows at once, as with nothing to end).
+    const moved = new Promise((done) => window.setTimeout(done, MOVE));
+    const ends = narrowing ? await narrowing().catch(() => null) : null;
+    if (ends) {
+      await moved;
+      sw.disabled = false;
+      askIn(card, sw, title(), ends.what, ends.verb, async () => { await change(false); w.again(); }, () => to(true));
+      return;
+    }
     // Not narrowed: the switch goes back on, and says why.
     try { await change(false); w.again(); } catch (e) { to(true); sw.disabled = false; said.textContent = errorText(e); }
   });
@@ -104,6 +154,7 @@ function personCard({s, w, mine}: Read, p: servers.Person): HTMLElement {
   // Who it is as the side and the talk show them: their round initial on its tint, then their name.
   const c = smallCard(h('span', {class: 'person-title'}, personBadge(named(p.address)), h('span', {}, named(p.address))),
     line(p.owner ? t('owner') : p.address === mine ? t('you') : ''));
+  c.classList.add('person-card');
   if (s.owner && p.address !== mine) {
     const out = button(t('Remove'), 'small-button');
     out.addEventListener('click', () => askIn(c, out, named(p.address), t('{who} leaves {server}.', {who: named(p.address), server: s.name}),
@@ -127,15 +178,18 @@ function addSomeone(r: Read): HTMLElement {
     const typed = h('input', {class: 'line-in', placeholder: t('A name or a code'), 'aria-label': t('Name or code of someone to add'),
       autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
     const said = h('p', {class: 'muted small', role: 'status'});
-    const go = addByName(r, typed, said, {
+    const ways: servers.AddWays = {
       lookup: (x) => inbox.lookup(x),
       add: (id, address) => servers.addPerson(id, address),
       ask: (address, body, server) => inbox.send(address, body, 'message', {server}),
-    });
+      // In at once, told so in their Inbox, the message about the server their way to it.
+      tell: (address, body, server) => inbox.send(address, body, 'message', {server}),
+    };
+    const go = addByName(r, typed, said, ways);
     const pick = h('div', {class: 'card small-card add-card'}, h('span', {class: 'card-title'}, t('Add someone you know')),
       ...(why ? [h('p', {class: 'error small'}, why)] : known.map((x) => {
         const b = button(named(x.address), 'small-button');
-        deed(b, async () => { await servers.addPerson(r.s.id, x.address); r.w.again(); });
+        deed(b, async () => { await servers.addPerson(r.s.id, x.address); await servers.told(ways, x.address, r.s); r.w.again(); });
         return b;
       })),
       h('div', {class: 'row add-by-name'}, typed, go), said);
@@ -215,17 +269,33 @@ function goneBoard({s, w}: Read, b: servers.BoardRef, until: number): HTMLElemen
     back ? h('div', {class: 'card-foot'}, back, h('span', {class: 'grow'})) : null);
 }
 
+/**
+ * Narrowing board `b` (no more guests, or no longer open, `first` said before): with guests in or invitations out, it
+ * ends them, and taking guests again lets none of them back by an old link, so it asks what it comes to (their posts
+ * stay). With none, nothing to ask.
+ */
+async function endsGuests(b: servers.BoardRef, first?: string): Promise<Ask | null> {
+  if (!b.guests) return null;
+  const {guests, invites} = await servers.guestsOf(b.id);
+  if (!guests.length && !invites.length) return null;
+  return {what: [...(first ? [first] : []),
+    ...(guests.length ? [tn('{n} guest no longer writes in #{board}; what they wrote stays.', '{n} guests no longer write in #{board}; what they wrote stays.', guests.length, {board: b.name})] : []),
+    ...(invites.length ? [tn('{n} invitation out lets nobody in any more.', '{n} invitations out let nobody in any more.', invites.length)] : []),
+    t('Taking guests again, an old link lets nobody back.')], verb: t('Turn off')};
+}
+
 function boardCard({s, w}: Read, b: servers.BoardRef): HTMLElement {
   const how = b.open ? (b.guests ? `${t('Seen by everyone')} · ${t('Guests can write')}` : t('Seen by everyone')) : t('Its people only');
   const c = smallCard(boardName(b.name), s.owner ? null : line(how));
   if (s.owner) {
     const set = (change: {open?: boolean; guests?: boolean}) => servers.setBoard(b.id, change).then((n) => { b.open = n.open; b.guests = n.guests; });
     c.append(
-      setting(w, c, t('Show to everyone'), b.open, {what: t('Anyone reads #{board}, signed in or not.', {board: b.name}), verb: t('Show')}, (v) => set({open: v})),
+      setting(w, c, t('Show to everyone'), b.open, {what: t('Anyone reads #{board}, signed in or not.', {board: b.name}), verb: t('Show')}, (v) => set({open: v}),
+        () => endsGuests(b, t('Only its people read #{board} then.', {board: b.name}))),
       // Guests read it as everyone does: taking them opens a board not open yet, and the ask says so first.
       setting(w, c, t('Guests can write'), b.guests, {what: [...(b.open ? [] : [t('Anyone reads #{board}, signed in or not.', {board: b.name})]),
         t('Someone its people invite writes in #{board}, shown as a guest.', {board: b.name}), t('Nobody is sent anything: you pass the invitation on yourself.')],
-      verb: t('Take guests')}, (v) => set({guests: v})));
+      verb: t('Take guests')}, (v) => set({guests: v}), () => endsGuests(b)));
   }
   const out = s.owner ? button(t('Remove'), 'small-button') : null;
   out?.addEventListener('click', () => askIn(c, out, boardName(b.name), [t('#{board} goes with its talk and TODO.', {board: b.name}), t('You can bring it back within 30 days.')], t('Remove'), async () => {

@@ -59,7 +59,7 @@ export function repoSection(ctx: Context, counted: (n: number) => void, keyed: (
     if (doneTo(name, kind)) { asked = null; said.textContent = t('Done. Go back to the app: it shows it there.'); }
   }) : ended);
   const ways: CardWays = {
-    forge: (name) => ctx.openRepo(name), toPlan, paint: () => paint(),
+    forge: (name) => ctx.openRepo(name), toPlan, paint: () => paint(), makeServer: () => ctx.go('server'),
     ends: (name, kind): AskWays => ({done: over(name, kind), ended, keyed}),
   };
   const draw = async (force: boolean) => {

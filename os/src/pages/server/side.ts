@@ -48,6 +48,7 @@ export class Side {
     let drawn = '';
     const draw = ([people, repos]: [servers.Person[], servers.ShownRepo[]]) => {
       drawn = JSON.stringify([people, repos]);
+      this.counted = {id, people: people.length, repos: repos.length};
       this.element.replaceChildren(
         part(t('People'), h('ul', {class: 'people'}, ...people.map((p) => this.person(p)))),
         // The repos shown, when there are any: nothing is said of none here.
@@ -62,6 +63,13 @@ export class Side {
       const got = await read();
       if (mine === this.token && JSON.stringify(got) !== drawn) draw(got);
     }, {alive: () => mine === this.token && this.element.isConnected, paced: true});
+  }
+
+  /** How many people and repos it drew last, and for which server. */
+  private counted: {id: string; people: number; repos: number} | null = null;
+  /** How many people and repos it drew for server `id`, if it did (the gear's counts, at once). */
+  known(id: string) {
+    return this.counted?.id === id ? {people: this.counted.people, repos: this.counted.repos} : null;
   }
 
   /** Emptied while a server is made, until its first person stands there (`ghost`). */

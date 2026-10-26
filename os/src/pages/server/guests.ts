@@ -46,9 +46,12 @@ export function guestsCard(b: servers.BoardRef, w: GearWays): HTMLElement {
   return c;
 }
 
-/** A line of the card: who or what, quietly what more, and its deed at the right. */
+/**
+ * A line of the card: who or what, quietly what more under it, and its deed at the right. Two lines, not one run on:
+ * in a small card a name and a date ran into each other and broke mid-name (An invitation from ada- / 77bfd60c).
+ */
 const row = (text: string, sub: string, act: HTMLButtonElement | null) =>
-  h('div', {class: 'card-row'}, h('span', {class: 'grow'}, text, sub ? h('span', {class: 'muted small'}, ` · ${sub}`) : null), act);
+  h('div', {class: 'card-row guest-row'}, h('span', {class: 'grow'}, h('span', {}, text), sub ? h('span', {class: 'muted small'}, sub) : null), act);
 
 /** A guest, and who invited them; Remove, asked in card `c`, where they may be removed. */
 function guestRow(c: HTMLElement, b: servers.BoardRef, g: servers.Guest, w: GearWays): HTMLElement {
@@ -65,5 +68,6 @@ function inviteRow(b: servers.BoardRef, x: servers.Invitation, said: HTMLElement
     revoke.disabled = true;
     try { await servers.revokeInvite(b.id, x.id); await fill(); } catch (e) { revoke.disabled = false; said.textContent = errorText(e); }
   });
-  return row(t('An invitation from {who}', {who: named(x.by)}), t('until {date}', {date: day(x.until)}), revoke);
+  // Whose first, as a guest's row has the guest first: a name over what it is, which a narrow card keeps whole.
+  return row(named(x.by), t('An invitation, until {date}', {date: day(x.until)}), revoke);
 }

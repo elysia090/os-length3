@@ -35,8 +35,10 @@ interface Here { bytes: number; modified: number }
 export interface CardWays {
   /** Open it in Forge. */
   forge(name: string): void;
-  /** Remote's Plan, for a repo the plan holds back. */
+  /** Remote's Plan, for a repo the plan holds back (and Share's way there, making a server being paid). */
   toPlan(): void;
+  /** Server brought out, to make a first server to show a repo in (Share with none). */
+  makeServer(): void;
   /** The cards drawn again, as they are now. */
   paint(): Promise<void>;
   /** How an ask of `kind` at `name`'s card ends. */
@@ -61,7 +63,7 @@ export function repoCard(name: string, here: Here | null, there: RemoteRepo | nu
   // Held back by the plan: said where it stands, and the way to the Plan beside it.
   const plan = !off && here && repoState(name)?.where === 'waits' ? button(t('See the plan'), 'small-button') : null;
   plan?.addEventListener('click', w.toPlan);
-  const share = who && !off ? sharing(who, error) : null;
+  const share = who && !off ? sharing(who, error, {makeServer: w.makeServer, toPlan: w.toPlan}) : null;
   // Off, beside 空ける: 廃棄, which takes it from the Remote now, for good, asked for as turning it off was.
   const discard = off ? h('button', {type: 'button', class: 'button small-button discard'}, t('Discard')) as HTMLButtonElement : null;
   if (discard) discard.disabled = gone;

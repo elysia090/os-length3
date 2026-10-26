@@ -6,6 +6,17 @@ import type {Server} from '../../remote/servers.ts';
 
 // The pieces Server's parts share (its view, band, boards, gear, dock and the rest in this folder).
 
+/** Where Server was last, or is to open next: a server and its board, or a board alone (one written in as a guest). */
+export interface At { server?: string; board?: string }
+const AT = 'length3.server.at';
+export function remembered(): At {
+  try { return JSON.parse(localStorage.getItem(AT) ?? '{}') as At; } catch { return {}; }
+}
+/** Server opens at `at` next (pages that lead to a server or a board say where, then bring Server out). */
+export function remember(at: At) {
+  try { localStorage.setItem(AT, JSON.stringify(at)); } catch { /* a convenience */ }
+}
+
 /** A switch's knob moves this long before what it turns on is asked. */
 export const MOVE = 240;
 

@@ -11,14 +11,16 @@ import {seenNow} from './talk.ts';
 // its boards is a conversation and a TODO they keep together.
 //
 // It has the bench's shape. The servers one is in run as chips on the top
-// line (+ makes one), and at its right end the server's gear. Under them its
-// boards are boxes side by side, as the issues are: the board on screen in
-// full, its neighbours' edges showing, an edge (or ← →) the way to them, and
-// the last box a new board. A board's TODO, the same list as Home's, is
-// pinned at the top of its box, written there by its people; its talk runs
-// under it, and the box at the foot writes in it. On the right, where a repo's reference would be:
-// who is in the server, then the repos they show in it (pressing one shows
-// it as it was last pushed; a repo shown is only seen there, never written).
+// line, one row that slides (+ makes one), and at its right end the server's
+// gear. Under them its boards are boxes side by side, as the issues are: the
+// board on screen in full, its neighbours' edges showing, an edge (or ← →)
+// the way to them, and the last box a new board, made where it will stand.
+// A board on screen is one sheet: its talk at the left, as tall as the board,
+// and its TODO (the same list as Home's, written there by its people) beside
+// it at the right; the box at the foot writes in its talk. On the right,
+// where a repo's reference would be: who is in the server, then the repos
+// they show in it (pressing one shows it as it was last pushed; a repo shown
+// is only seen there, never written).
 //
 // What changes the server for everyone, who is in it, how far a board is
 // open, what is shown and as whose, leaving it, is a step away, behind the

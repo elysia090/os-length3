@@ -11,6 +11,7 @@ import {shownName} from '../repos/issues.ts';
 import {repoList} from './repo-list.ts';
 import {todoBox} from './todo-list.ts';
 import {openNext as openConversation} from './inbox.ts';
+import {remember} from './server/parts.ts';
 import {Reference} from './forge/reference.ts';
 import type {Context} from './context.ts';
 import {latelyRow, onRightPane, pluginArea, rightPaneOpen, setRightPane, waiting, wordLine} from './pane.ts';
@@ -105,7 +106,8 @@ function homePane(main: HTMLElement, ctx: Context): HTMLElement {
 
 /**
  * What waits since the person was last here, in Home's pane, each leading there: where they left off (the file last
- * read in Forge, to go on writing in), the conversations with something not read, the boards with posts not seen.
+ * read in Forge, to go on writing in), the conversations with something not read, the boards with posts not seen,
+ * and the boards they write in as a guest.
  * With nothing new it says so, quietly: the pane out is never a line with nothing beside it.
  */
 function lately(ctx: Context): HTMLElement {
@@ -126,8 +128,9 @@ function lately(ctx: Context): HTMLElement {
       rows.push(latelyRow(shownName(left.path), t('{repo} · where you left off', {repo: left.repo}), {quote, place: left.repo, badge: 'file',
         look: (row) => lookFrom(row, leftOffLook(left.repo, left.path, left.at, goOn)), go: goOn}));
     }
+    const all = connection() ? await servers.servers().catch(() => []) : [];
     if (connection()) {
-      const [threads, all] = await Promise.all([inbox.threads().catch(() => []), servers.servers().catch(() => [])]);
+      const threads = await inbox.threads().catch(() => []);
       for (const th of waiting(threads, 3)) {
         const who = th.name || inbox.shown(th.address);
         const answer = () => { openConversation(th.address); void ctx.go('inbox'); };
@@ -139,11 +142,19 @@ function lately(ctx: Context): HTMLElement {
         const board = s?.boards.find((x) => x.id === b.id);
         if (!s || !board) continue;
         const there = () => {
-          try { localStorage.setItem('length3.server.at', JSON.stringify({server: s.id, board: board.id})); } catch { /* a convenience */ }
+          remember({server: s.id, board: board.id});
           void ctx.go('server');
         };
         rows.push(latelyRow(board.name, t('{server} · new posts', {server: s.name}), {fresh: true, badge: 'board', look: (row) => lookFrom(row, boardLook(board.id, board.name, there)), go: there}));
       }
+    }
+    // The boards this browser writes in as a guest (none of its servers'): where one writes, a way back always,
+    // signed in or not; its look reads the board and writes in it as the guest.
+    const ours = new Set(all.flatMap((s) => s.boards.map((x) => x.id)));
+    for (const {id, here} of servers.guestBoards().filter((g) => !ours.has(g.id)).slice(0, 3)) {
+      const there = () => { remember({board: id}); void ctx.go('server'); };
+      rows.push(latelyRow(here.name, t('{server} · where you write as a guest', {server: here.server}), {badge: 'board',
+        look: (row) => lookFrom(row, boardLook(id, here.name, there, here)), go: there}));
     }
     // A row whose look is out stays while it is (a conversation read as it opened would go from under its card).
     if (mine !== asked || list.querySelector('.looked')) return;
@@ -155,19 +166,36 @@ function lately(ctx: Context): HTMLElement {
   return box;
 }
 
-/** The servers the person is in (Server holds them), and how many in the counts. */
+/**
+ * The servers the person is in (Server holds them), and how many in the counts; after them, the boards this browser
+ * writes in as a guest, each a way back to it (a guest come back, signed in or not, has nothing else leading there).
+ */
 function ownServers(ctx: Context): HTMLElement {
-  const box = h('div', {class: 'home-servers'}, h('p', {class: 'muted'}, t('In no server yet')));
+  const box = h('div', {class: 'home-servers'});
+  const guesting = servers.guestBoards().map(({id, here}) => {
+    const said = t('#{board} of {server}, as a guest', {board: here.name, server: here.server});
+    const b = h('button', {type: 'button', class: 'chip guest-chip', title: said, 'aria-label': said},
+      `#${here.name}`, h('span', {class: 'muted small'}, `${here.server} · ${t('guest')}`));
+    b.addEventListener('click', () => { remember({board: id}); ctx.go('server'); });
+    return {id, b};
+  });
+  const fill = (list: servers.Server[]) => {
+    const ours = new Set(list.flatMap((s) => s.boards.map((x) => x.id)));
+    const each = list.map((s) => {
+      const b = h('button', {type: 'button', class: 'chip'}, s.name);
+      b.addEventListener('click', () => { remember({server: s.id}); ctx.go('server'); });
+      return b;
+    });
+    // A board of a server one is in is that server's chip's, not a guest's.
+    const guests = guesting.filter((g) => !ours.has(g.id)).map((g) => g.b);
+    box.replaceChildren(...(each.length || guests.length ? [...each, ...guests] : [h('p', {class: 'muted'}, t('In no server yet'))]));
+  };
+  fill([]);
   if (!connection()) return box;
   void servers.servers().then((list) => {
     const n = document.getElementById('server-count');
     if (n) counting(n, list.length, 'server', 'servers');
-    if (!list.length) return;
-    box.replaceChildren(...list.map((s) => {
-      const b = h('button', {type: 'button', class: 'chip'}, s.name);
-      b.addEventListener('click', () => { try { localStorage.setItem('length3.server.at', JSON.stringify({server: s.id})); } catch { /* a convenience */ } ctx.go('server'); });
-      return b;
-    }));
+    fill(list);
   }, (e) => box.replaceChildren(h('p', {class: 'error'}, errorText(e))));
   return box;
 }
