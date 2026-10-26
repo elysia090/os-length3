@@ -2298,7 +2298,7 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .done-row.just-cut { animation: line-open calc(260ms * var(--pace)) var(--land) both, line-lit 1600ms ease-out both; border-radius: var(--r-field); overflow: hidden; }
 @keyframes line-open { from { max-height: 0; opacity: 0; } to { max-height: 48px; opacity: 1; } }
 .done-head > .diff-count { font-size: var(--t-meta); }
-/* A Prompt stopped from its card: what it gave back is lit a moment (runtime.ts). */
+/* A Prompt stopped from its card: what it gave back is lit a moment (runtime/prompts.ts). */
 /* A row of the tree a deed made or renamed lands lit where it now is. */
 .tree-row.landing { animation: line-land calc(360ms * var(--pace)) var(--land) both, line-lit 1200ms ease-out; }
 @media (prefers-reduced-motion: reduce) { .tree-row.landing { animation: none; } }

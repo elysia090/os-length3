@@ -5,7 +5,7 @@ import * as servers from '../../remote/servers.ts';
 import {nudge} from '../../ui/glide.ts';
 import {mark as todoMark} from '../todo-list.ts';
 import {deed} from '../common.ts';
-import {planRefused} from '../remote.ts';
+import {planRefused} from '../remote/plan.ts';
 import {errorText} from '../../app/errors.ts';
 import {button, type Here, type Writer} from './parts.ts';
 
