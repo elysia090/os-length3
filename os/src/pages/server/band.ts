@@ -1,5 +1,6 @@
 import {h} from '../../ui/dom.ts';
 import {mark} from '../../ui/icons.ts';
+import {still} from '../../ui/glide.ts';
 import {t} from '../../i18n.ts';
 import {shown as named} from '../../remote/inbox.ts';
 import * as servers from '../../remote/servers.ts';
@@ -11,6 +12,11 @@ import type {Here, Shown} from './parts.ts';
 // the boards one writes in as a guest, each alone. The gear changes the one chosen: at the top line's right end,
 // where Forge's pane switch is, over the people and repos it changes; with none chosen it keeps its place,
 // unpressable. What came in a server and was not seen yet is a dot on its chip.
+//
+// However many servers, the chips are one row that slides sideways, as Git's repos are, never more rows pushing the
+// boards down (a phone's width took six); its ends fade where there is more along it, and the one chosen, or being
+// named, is slid into view. What the Remote says no to, naming one, is a line of its own under the band, where the
+// row cannot slide it out of sight.
 
 /** What the band's presses do. */
 interface BandWays {
@@ -42,8 +48,17 @@ export class Band {
     this.plus = h('button', {type: 'button', class: 'band-add', 'aria-label': t('Make a server'), title: t('Make a server'), hidden: ''}, mark('plus')) as HTMLButtonElement;
     this.plus.addEventListener('click', () => ways.make());
     this.gear.addEventListener('click', () => ways.gear());
-    this.element = h('div', {class: 'server-top'}, this.plus, this.chips);
+    this.element = h('div', {class: 'server-top'}, this.plus, this.chips, this.said);
+    this.chips.addEventListener('scroll', () => this.ends(), {passive: true});
+    // Narrowed (a window, a phone turned), the one chosen stays in view.
+    new ResizeObserver(() => this.inView()).observe(this.chips);
   }
+
+  /** Under the band: what the Remote said no to, naming a server. */
+  private readonly said = h('div', {class: 'server-said'});
+  private asked: HTMLElement | null = null;
+  /** What the Remote says no to about the server being named: said under the band while it is named. */
+  asking(ask: HTMLElement) { this.asked = ask; }
 
   /** Drawn again for what is chosen now. Signed out there are no servers of one's own: the band says what is shown. */
   paint() {
@@ -51,6 +66,7 @@ export class Band {
     this.gear.disabled = !serverId;
     this.gear.classList.toggle('unseen', !serverId);
     this.plus.hidden = !signedIn;
+    this.said.replaceChildren(...(this.here.naming && this.asked ? [this.asked] : []));
     if (!signedIn) { this.chips.replaceChildren(h('span', {class: 'muted'}, t('Open boards'))); return; }
     const each = this.here.list.map((s) => {
       const b = h('button', {type: 'button', class: 'chip', role: 'radio', 'aria-checked': String(s.id === serverId), title: `${named(s.address)} · ${s.code}`, 'data-server': s.id}, s.name);
@@ -59,6 +75,31 @@ export class Band {
       return b;
     });
     this.chips.replaceChildren(...each, ...(this.here.naming ? [this.here.naming] : []), ...this.guesting());
+    requestAnimationFrame(() => this.inView());
+  }
+
+  /** The band drawn before: from then on, the row slides to what comes into view rather than jumping. */
+  private drawn = false;
+
+  /** The chip being named, or else the one chosen, slid into view, clear of the fading ends; wider than the row, its start. */
+  private inView() {
+    const row = this.chips;
+    const on = this.here.naming?.isConnected ? this.here.naming : row.querySelector<HTMLElement>('[aria-checked="true"]');
+    const fade = parseFloat(getComputedStyle(row).getPropertyValue('--fade')) || 0;
+    if (on && row.scrollWidth > row.clientWidth) {
+      const left = on.offsetLeft - fade, right = on.offsetLeft + on.offsetWidth + fade, at = row.scrollLeft;
+      const to = left < at || right - left > row.clientWidth ? left : right > at + row.clientWidth ? right - row.clientWidth : at;
+      if (to !== at) row.scrollTo({left: to, behavior: this.drawn && !still() ? 'smooth' : 'auto'});
+    }
+    if (on) this.drawn = true;
+    this.ends();
+  }
+
+  /** The row's ends fade where there is more along it. */
+  private ends() {
+    const row = this.chips;
+    row.classList.toggle('more-before', row.scrollLeft > 1);
+    row.classList.toggle('more-after', row.scrollLeft + row.clientWidth < row.scrollWidth - 1);
   }
 
   /** The boards one writes in as a guest, after one's servers: each alone, said to be a guest's. */

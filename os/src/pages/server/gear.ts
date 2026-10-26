@@ -222,8 +222,10 @@ function boardCard({s, w}: Read, b: servers.BoardRef): HTMLElement {
     const set = (change: {open?: boolean; guests?: boolean}) => servers.setBoard(b.id, change).then((n) => { b.open = n.open; b.guests = n.guests; });
     c.append(
       setting(w, c, t('Show to everyone'), b.open, {what: t('Anyone reads #{board}, signed in or not.', {board: b.name}), verb: t('Show')}, (v) => set({open: v})),
-      setting(w, c, t('Guests can write'), b.guests, {what: [t('Someone its people invite writes in #{board}, shown as a guest.', {board: b.name}), t('Nobody is sent anything: you pass the invitation on yourself.')],
-        verb: t('Take guests')}, (v) => set({guests: v})));
+      // Guests read it as everyone does: taking them opens a board not open yet, and the ask says so first.
+      setting(w, c, t('Guests can write'), b.guests, {what: [...(b.open ? [] : [t('Anyone reads #{board}, signed in or not.', {board: b.name})]),
+        t('Someone its people invite writes in #{board}, shown as a guest.', {board: b.name}), t('Nobody is sent anything: you pass the invitation on yourself.')],
+      verb: t('Take guests')}, (v) => set({guests: v})));
   }
   const out = s.owner ? button(t('Remove'), 'small-button') : null;
   out?.addEventListener('click', () => askIn(c, out, boardName(b.name), [t('#{board} goes with its talk and TODO.', {board: b.name}), t('You can bring it back within 30 days.')], t('Remove'), async () => {

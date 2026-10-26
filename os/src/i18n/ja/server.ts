@@ -38,6 +38,7 @@ export default {
   'Take it down?': '取り下げますか？',
   // The box at the foot.
   'Write in {board}': '{board}に書く',
+  'Post ({keys})': '投稿する（{keys}）',
   'To the people of {server}': '{server}の人たちへ',
   'As {name}, a guest': 'ゲストの{name}として',
   'Only its people write here.': 'ここに書けるのはこのサーバーの人だけです。',
