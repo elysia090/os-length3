@@ -92,6 +92,8 @@ test('the name written on Home is the account\'s, so what is started, committed 
   await app.rail.go('home');
   await app.main.getByRole('button', {name: 'Edit profile'}).click();
   const name = app.page.locator('#profile-name');
+  // None written yet, the name shown is the one signed in with, and the field opens on it to be changed.
+  await expect(name).toHaveValue(app.person);
   await name.fill('Ada Byron');
   await name.press('Enter');
   await expect(app.main.getByRole('button', {name: 'Edit profile'})).toBeVisible();

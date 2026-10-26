@@ -318,6 +318,15 @@ function editForm(done: (saved: boolean) => void, faced: (p: {name: string; hand
   const bio = h('textarea', {id: 'profile-bio', class: 'bio-in', maxlength: String(LIMITS.bio), rows: '1',
     placeholder: t('A line about you'), 'aria-label': t('Bio')}) as HTMLTextAreaElement;
   name.value = profile.name; handle.value = profile.handle; bio.value = profile.bio;
+  // None written yet, the name shown is the one signed in with (identity): it is what is there to change, not an
+  // empty line beside it. Nothing typed is written over, and the face takes it up as it would what is typed.
+  if (!profile.name && !profile.handle) {
+    void myName().then((n) => {
+      if (!n || name.value || !name.isConnected) return;
+      name.value = n;
+      faced({name: n, handle: handle.value.replace(/^@/, ''), bio: ''});
+    }, () => {});
+  }
   // The line about the person is as tall as what is written in it.
   const fit = () => { bio.style.height = 'auto'; bio.style.height = `${bio.scrollHeight}px`; };
   bio.addEventListener('input', fit);

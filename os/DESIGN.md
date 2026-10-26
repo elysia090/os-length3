@@ -1440,7 +1440,9 @@ The profile is edited where it is read, not in a form put in its place:
 written in, the top is a sheet of its own as the TODO is when written in
 (`paper`, an `ink` edge, grown out around the face and the lines so nothing
 on it moves). The name becomes the line it is written on, where it stands
-and as large; @ and the handle, and the line about the person, come in under
+and as large, holding the name shown (none written yet, the one signed in
+with, to be changed, never an empty line beside it); @ and the handle, and
+the line about the person, come in under
 it a line after another, with room between them; each is written on, not
 boxed (a rule under it, ink under the one with the keyboard), and the
 counts, which are not written, step aside. The face follows what is written,
