@@ -40,10 +40,10 @@ pub struct Subject {
     pub facts: Vec<Fact>,
 }
 
-/// What a page showed: its things, what holds of the page as a whole, and the place it is (a folder,
-/// REPO/PATH) when it shows one, empty or not.
+/// What a page showed: its things, what holds of the page as a whole, the place it is (a folder,
+/// REPO/PATH) when it shows one, empty or not, and whether it listed its next deeds itself.
 #[derive(Default, Debug)]
-pub struct Seen { pub subjects: Vec<Subject>, pub facts: Vec<Fact>, pub place: Option<String> }
+pub struct Seen { pub subjects: Vec<Subject>, pub facts: Vec<Fact>, pub place: Option<String>, pub said: bool }
 
 thread_local! {
     static SEEN: RefCell<Option<Seen>> = const { RefCell::new(None) };
@@ -65,6 +65,11 @@ pub fn page_fact(f: Fact) {
 /// Note that the page is a place (a folder, as REPO/PATH): the menu is there now, though nothing be in it.
 pub fn shown_at(place: String) {
     SEEN.with(|seen| if let Some(seen) = seen.borrow_mut().as_mut() { seen.place = Some(place) });
+}
+
+/// Note that the page listed its next deeds itself (an issue's card in full): the row after it does not say them again.
+pub fn deeds_said() {
+    SEEN.with(|seen| if let Some(seen) = seen.borrow_mut().as_mut() { seen.said = true });
 }
 
 /// Run `f`, noting what it shows.
@@ -880,7 +885,7 @@ pub fn after(ctx: &Ctx, call: &args::Call, argv: &[String], seen: Seen, made: Op
     let c = call.command;
     if c.group == Group::Other || c.hidden || call.form.args.contains(&Arg::Argv) { return; }
     if seen.subjects.is_empty() && !call.form.page && call.form.deeds.is_empty() { return; }
-    let shown = !seen.subjects.is_empty();
+    let (shown, said) = (!seen.subjects.is_empty(), seen.said);
     let word = made.or_else(|| if shown { None } else { named(ctx, call) });
     let view = if shown { View { group: c.group, subjects: seen.subjects, facts: seen.facts, own: call.form.page, made_by: vec![argv.to_vec()], place: seen.place } }
         else { page(ctx, c.group, false) };
@@ -892,7 +897,8 @@ pub fn after(ctx: &Ctx, call: &args::Call, argv: &[String], seen: Seen, made: Op
     let words: Vec<String> = words.iter().enumerate().map(|(k, w)| if k + 1 < words.len() { format!("{w} ·") } else { w.clone() }).collect();
     let first = if lead.is_empty() { tr!("  Next  ", "  次  ") } else { tr!("  Next for {}  ", "  {} の次  ", lead) };
     let cols = term::size().0.saturating_sub(1);
-    let mut lines = lead_lines(&first, true, &words, cols);
+    // Listed by the page itself just above: only the way to choose one with the keys, not the same words again.
+    let mut lines = if said { Vec::new() } else { lead_lines(&first, true, &words, cols) };
     lines.push(style.dim(&tr!("  l3 next chooses one with the keys", "  l3 next でキーで選べます")));
     for l in lines { term::put(&format!("{l}\n")); }
     // Kept for `l3 next`; not kept, `l3 next` says there is nothing, and nothing is lost.

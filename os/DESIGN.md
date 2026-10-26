@@ -999,7 +999,9 @@ at a terminal is used the same way, and stays a command line:
   waited for a key took the first character of the next command, which l3
   cannot give back without replaying input). What a command just made comes
   first (the 13th TODO's Done, not the first twelve's), and what is left
-  out past twelve is said. `l3 next` opens them: the same row walked with
+  out past twelve is said. A page that listed its next deeds itself (an
+  issue's card in full) is not followed by the same words again: only the
+  quiet line that `l3 next` chooses one with the keys. `l3 next` opens them: the same row walked with
   ←→ and Enter, Enter alone or Esc going on, each deed done as its command
   and those after it offered again.
 - **One table drives both.** A deed is a form of `cli/src/spec.rs` with what

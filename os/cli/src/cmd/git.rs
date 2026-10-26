@@ -104,7 +104,8 @@ fn standing(ctx: &Ctx, s: &Stand, i: &Issue) -> String {
 /// Where an issue stands, as what can be done with it: what its card's
 /// next line is written from, and what the menu offers on it (spec.rs).
 fn facts(ctx: &Ctx, s: &Stand, i: &Issue) -> Vec<Fact> {
-    if s.merged(i) { return Vec::new(); }
+    // Merged, it is done with: read only (no Close offered that the command would then refuse).
+    if s.merged(i) { return vec![Fact::Merged]; }
     // Reopening is the file's own change: it needs no Remote.
     if i.closed.is_some() { return vec![Fact::Closed]; }
     if !ctx.connected() || !s.known { return Vec::new(); }
@@ -346,6 +347,7 @@ pub fn issue_show(ctx: &Ctx, call: &Call) -> Result<Reply> {
     }
     let list = deeds_here(ctx, &r, &s, &i);
     t.extend(deed_block(&list));
+    if !list.is_empty() { crate::menu::deeds_said(); }
     let deeds: Vec<Value> = list.iter().map(|(w, line)| json!({"label": w, "command": line})).collect();
     Ok(Reply::data(t.join("\n"), json!({"issue": issue_json(ctx, &s, &i), "uncommitted": uncommitted, "change": change, "deeds": deeds})))
 }
@@ -699,6 +701,21 @@ mod tests {
         assert_eq!(block[1], tr!("Next", "次"));
         let at: std::collections::HashSet<usize> = block[2..].iter().map(|l| crate::help::width(&l[..l.find("l3 ").unwrap()])).collect();
         assert_eq!(at.len(), 1, "{block:?}");
+    }
+
+    #[test]
+    fn a_merged_issue_is_offered_nothing_to_do_but_to_be_read() {
+        use crate::menu::{offered, Env};
+        use crate::spec::Group;
+        let ctx = Ctx::test(None, Vec::new()).online();
+        let i = parse("r", "001.md", "Fix：x\n");
+        let s = Stand { changes: vec![change("merged", true)], ..stand_with_nothing() };
+        let mut f = facts(&ctx, &s, &i);
+        f.push(Fact::SignedIn);
+        let offers = offered(Group::Git, On::Issue, &f, Env { prompt: false, connected: true });
+        let labels: Vec<&str> = offers.iter().map(|o| o.label()).collect();
+        assert!(!labels.contains(&"Close"), "{labels:?}");
+        assert!(next(&ctx, &s, &i).is_empty());
     }
 
     fn stand_with_nothing() -> Stand {

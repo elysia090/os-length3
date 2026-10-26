@@ -31,10 +31,15 @@ pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
     t.push(String::new());
     t.push(tr!("This device  {} free of {} (the host's figures) · this OS {}", "この端末  空き {} / {}（ホストの値） · この OS {}", bytes(s.host_free), bytes(s.host_total), bytes(s.allocated)));
     if s.freeable > 0 { crate::menu::page_fact(Fact::AnyFreeable); }
+    // Whether each can go now or stays, said as that (a bare "free" beside a name read as free space), the words
+    // after it in one column whichever it is.
+    let (go, stays) = (tr!("can go", "空ける"), tr!("stays", "残す"));
+    let w = crate::term::width(&go).max(crate::term::width(&stays));
     for i in &s.items {
-        let act = match i.room { usage::Room::Free | usage::Room::SyncFree => tr!("free", "空ける"), usage::Room::Keep => tr!("stays", "残す") };
+        let said = match i.room { usage::Room::Free | usage::Room::SyncFree => &go, usage::Room::Keep => &stays };
+        let act = format!("{said}{}", " ".repeat(w - crate::term::width(said)));
         crate::menu::see(|| crate::menu::Subject { on: On::Thing, word: i.id.strip_prefix("repo:").unwrap_or(&i.id).to_string(), repo: None,
-            label: i.what.clone(), detail: format!("{} · {act}", bytes(i.allocated)), facts: if i.room == usage::Room::Keep { Vec::new() } else { vec![Fact::Freeable] } });
+            label: i.what.clone(), detail: format!("{} · {said}", bytes(i.allocated)), facts: if i.room == usage::Room::Keep { Vec::new() } else { vec![Fact::Freeable] } });
         t.push(format!("  {:>9}  {}  {}  {}", bytes(i.allocated), act, i.what, i.detail));
         t.push(format!("             {}{}", i.why, if i.room == usage::Room::Keep { String::new() } else { tr!("  (l3 free {})", "（l3 free {}）", i.id.strip_prefix("repo:").unwrap_or(&i.id)) }));
     }
