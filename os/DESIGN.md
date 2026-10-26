@@ -100,7 +100,10 @@ Every value in `styles.css` comes from a token (§2).
     words, 220 ms, so the eye follows the choice. The words of each it goes
     over are light while half of it or more lies on the ink and in ink
     otherwise, the one it leaves and those it passes too: an icon never
-    goes ink on ink as the ink goes by.
+    goes ink on ink as the ink goes by. The one it lands on has no fill of
+    its own until it has landed (never a second box showing past the ink's
+    edge), and another pressed before it lands takes the ink on from where
+    it is: one ink, never two, never back to where it set off.
   - *The camera pans along the rail.* The pages stand one above another
     down the rail, as floors do: going to another place, the camera goes the
     whole way to it, the page left going up and out of the window whole as

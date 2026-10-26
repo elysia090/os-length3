@@ -31,6 +31,39 @@ test('going along the rail pans to the next page, which stands whole once it lan
   expect(await app.page.evaluate(() => getComputedStyle(document.getElementById('page')!).viewTransitionName)).toBe('none');
 });
 
+test('the rail pressed again as its ink goes: one ink, going on from where it is', async ({app}) => {
+  await app.rail.go('home');
+  await still(app);
+  // The ink, frame by frame: how many there are, and where the one there is stands.
+  const trip = app.page.evaluate(() => new Promise<{most: number; tops: number[]; landedFill: string[]}>((done) => {
+    const t0 = performance.now(), tops: number[] = [], landedFill: string[] = [];
+    let most = 0;
+    const tick = () => {
+      const inks = document.querySelectorAll<HTMLElement>('#rail-tabs .glide-ink');
+      most = Math.max(most, inks.length);
+      const remote = document.getElementById('purpose-remote')!;
+      if (inks.length) {
+        tops.push(inks[0].getBoundingClientRect().top);
+        // The place it lands on waits with no fill of its own while the ink comes (no second box under it).
+        if (remote.hasAttribute('aria-current')) landedFill.push(getComputedStyle(remote).backgroundColor);
+      }
+      if (performance.now() - t0 < 1600) requestAnimationFrame(tick); else done({most, tops, landedFill});
+    };
+    requestAnimationFrame(tick);
+  }));
+  await app.rail.button('git').click();
+  await app.page.waitForFunction(() => {
+    const ink = document.querySelector('#rail-tabs .glide-ink'), git = document.getElementById('purpose-git')!;
+    return ink && ink.getBoundingClientRect().top > git.getBoundingClientRect().top - 60;
+  });
+  await app.rail.button('remote').click();
+  const {most, tops, landedFill} = await trip;
+  expect(most).toBe(1);
+  // Down all the way, never back up toward where it began.
+  for (let i = 1; i < tops.length; i++) expect(tops[i]).toBeGreaterThanOrEqual(tops[i - 1] - 1);
+  expect(landedFill.every((c) => c === 'rgba(0, 0, 0, 0)')).toBe(true);
+});
+
 test('the right pane brought out lands a touch past its edge and settles, its mark filled; put away, it goes at once and quickly', async ({app}) => {
   await app.newRepo.make('hello');
   await app.newRepo.openInForge();

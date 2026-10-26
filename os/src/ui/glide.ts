@@ -49,6 +49,10 @@ export const where = (el: Element | null | undefined): DOMRect | null => el?.get
  * `.arriving`), so none is ever ink on ink, an icon gone as the slug goes by.
  */
 export function glide(from: DOMRect | null, to: HTMLElement | null, layer: HTMLElement, round: string, ms = 220) {
+  // One still on its way in this layer (another place pressed before it landed) gives way: the ink goes on from where
+  // it is now, never back from the place it was going to, nor as a second ink beside the first.
+  const going = gliding.get(layer);
+  if (going) { from = going.at() ?? from; going.end(); }
   if (!from || !to || still()) return;
   const at = to.getBoundingClientRect();
   if (!at.width || (Math.abs(from.left - at.left) < 1 && Math.abs(from.top - at.top) < 1)) return;
@@ -69,18 +73,23 @@ export function glide(from: DOMRect | null, to: HTMLElement | null, layer: HTMLE
     const w = Math.max(0, Math.min(s.right, r.right) - Math.max(s.left, r.left)), h = Math.max(0, Math.min(s.bottom, r.bottom) - Math.max(s.top, r.top));
     return r.width && r.height ? (w * h) / (r.width * r.height) : 0;
   };
+  // The one it lands on is as the others are while the slug comes: its own fill waits, so the slug never has a second
+  // box under it, the place's own ink showing past its edge before it has arrived.
   const follow = () => {
     if (over) return;
     for (const el of row) {
       const under = covered(el) >= .5;
-      if (el === to) to.classList.toggle('arriving', !under); else el.classList.toggle('under-ink', under);
+      if (el === to) to.classList.toggle('arriving', !under);
+      el.classList.toggle('under-ink', under);
     }
     requestAnimationFrame(follow);
   };
   follow();
   // Landed, it is inked at once in the slug's place: its own fill does not ease in after the slug has gone.
   const done = () => {
+    if (over) return;
     over = true;
+    if (gliding.get(layer) === mine) gliding.delete(layer);
     to.style.transition = 'none';
     slug.remove();
     to.classList.remove('arriving');
@@ -88,11 +97,17 @@ export function glide(from: DOMRect | null, to: HTMLElement | null, layer: HTMLE
     void to.offsetWidth;
     to.style.transition = '';
   };
-  slug.animate([
+  const a = slug.animate([
     {transform: `translate(${from.left - at.left}px, ${from.top - at.top}px)`, width: `${from.width}px`, height: `${from.height}px`},
     {transform: 'none', width: `${at.width}px`, height: `${at.height}px`},
-  ], {duration: paced(ms), easing: LAND}).finished.then(done, done);
+  ], {duration: paced(ms), easing: LAND});
+  // Where it is now, unless its row was drawn anew with it in it (it went with the row).
+  const mine = {at: () => (slug.isConnected ? slug.getBoundingClientRect() : null), end: () => { done(); a.cancel(); }};
+  gliding.set(layer, mine);
+  a.finished.then(done, done);
 }
+/** The glide on its way in each layer (the rail's places, a band's pills). */
+const gliding = new WeakMap<HTMLElement, {at(): DOMRect | null; end(): void}>();
 
 type Transitioning = Document & {startViewTransition?(update: () => void): {ready: Promise<void>; finished: Promise<void>}};
 
