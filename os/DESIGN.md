@@ -322,6 +322,13 @@ Every page:
   is tall and repo cards are large, about three across.
 - On a phone (560 px and less) keeps 16 px from the rail's line,
   and the window's own gutter is its right edge, so the two never stack.
+  The rail stays the rail there (File's tree and Server's layer come out
+  of it as anywhere; a bar along the foot was mocked and left), its places
+  a size smaller and closer and the window's gutter narrower, so a page
+  has a fifth more of the width. A place's name comes out beside it only
+  where a pointer rests (a finger's press would leave it over the page).
+  Parts that slide fade at their end, so one cut there reads as more to
+  slide to; Forge's band gives its repo pill the width before the search.
 
 ## 2. Tokens
 

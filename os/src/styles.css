@@ -291,6 +291,12 @@ button.row-item, .part, .dot-row):hover { transition-duration: calc(60ms * var(-
 /* One the ink is going over (leaving, passing, landing on) while half of it or more lies under it: its words light
    on it, as the chosen one's are (glide.ts). */
 .under-ink, .under-ink:hover { background: transparent !important; color: var(--ground) !important; transition: none !important; }
+/* A phone (560 px and less): the rail's places a size smaller and closer, and the window's gutter narrower, so a page
+   has a fifth more of the width; the rail stays the rail (File's tree and Server's layer come out of it as anywhere). */
+@media (max-width: 560px) {
+  :root { --outer: var(--s2); --h-place: 40px; --rail-line-gap: 10px; }
+  .rail-tabs { gap: 2px; }
+}
 /* A window too short for all of it (a browser's tab under its own bars, a laptop at 200% zoom): the rail stays
    where it is, in the window, as tall as the window, never going with the page (issue #44). Its places close up;
    the person's icon stays at its foot, and what still does not fit scrolls inside the rail, not the page. */
@@ -365,7 +371,9 @@ button.row-item, .part, .dot-row):hover { transition-duration: calc(60ms * var(-
   opacity: 0; translate: -6px 0; pointer-events: none; transition: opacity var(--motion), translate var(--move) var(--land);
 }
 /* Out from the place's edge as the pointer comes on it, and back into it as the pointer leaves: never gone at once. */
-.rail-item:hover .rail-tag, .rail-item:focus-visible .rail-tag { opacity: 1; translate: 0 0; }
+.rail-item:focus-visible .rail-tag { opacity: 1; translate: 0 0; }
+/* Only where a pointer rests: a finger's press leaves the place hovered, and its name would stay out over the page. */
+@media (hover: hover) { .rail-item:hover .rail-tag { opacity: 1; translate: 0 0; } }
 /* While File's tree is out, File is the one filled icon; the page's own
    icon steps back until the tree goes. */
 .rail-tabs:has(.rail-item[aria-expanded='true']) .rail-item[aria-current='page'] { background: transparent; color: var(--ink); }
@@ -1809,6 +1817,9 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
   /* No room on the top line here: Issue, diff and Output at the top of what opens. */
   .search-pills { position: relative; }
 }
+/* A phone: the repo's pill before the search's width (a pill cut to three letters says nothing; the search's field says
+   what it is in a word). */
+@media (max-width: 560px) { .work.bench > .bar { grid-template-columns: minmax(0, 1fr) minmax(88px, 32%) auto; } }
 /* One line to type in, the same everywhere: the search box, a repo's name. */
 .search-in, .line-in {
   width: 100%; min-height: var(--h-row); padding: 0 var(--s3); border: 1px solid var(--edge); border-radius: var(--r-field);
@@ -2844,6 +2855,9 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 @media (max-width: 760px) {
   /* Every page's parts (Remote's too, not only the gear's): room round them so a focus ring is not cut by the slide. */
   .parts { flex-wrap: nowrap; overflow-x: auto; padding: var(--s1); margin: calc(-1 * var(--s1)); }
+  /* More along than fits: the row fades at its end, so a part cut there reads as more to slide to, not clipped; the
+     room past the last part lets it come clear of the fade. */
+  .parts { padding-right: var(--s6); mask-image: linear-gradient(to right, #000 calc(100% - var(--s5)), transparent); }
   .parts .part { flex: none; }
   .sheet-title > p { display: none; }
 }
