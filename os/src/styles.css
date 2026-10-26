@@ -1125,7 +1125,7 @@ button.row-item:disabled { cursor: var(--cursor-arrow); color: var(--sub); }
 /* Its left edge a step left of the files' (s3 from the center's edge, theirs s5), so where the two
    would line up the box reads as its own surface, not the foot of the file behind it. Its right stays. */
 .work.bench .dock { left: var(--s3); }
-/* Forge's stands under the box worked on, a step outside its edges (forge.ts placeDock): one box, the center's width
+/* Forge's stands under the box worked on, a step outside its edges (columns.ts placeDock): one box, the center's width
    but s3; side by side, under the one in hand; moving with the row as it moves. Its left stays where it was as the
    pane goes or comes (issue #45): only its right end follows the center's. */
 .work.bench:not(.no-strip) .dock {
@@ -1573,7 +1573,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
    stands in it whole (the first and the last at the page's margin, under the band, where one alone stands); the
    ones along from it show only their edge, dimmed and cut by the frame's line (the rail's at the left, the pane's at
    the right): there is more that way. Pressed (or swiped to, or Alt+[ / ]), one comes in and the whole row slides
-   with it, the one left going out to its edge. forge.ts says which is worked on (--at; --lead 0 for the first,
+   with it, the one left going out to its edge. columns.ts says which is worked on (--at; --lead 0 for the first,
    1 between, 2 the last) and how wide the row is (--cols-w). */
 .columns.split {
   --peek: 64px; --pad: calc(var(--s5) - var(--s3));
@@ -1644,7 +1644,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
    on one with the others to hand, or reading them together. */
 .work.bench.pane-closed .columns.split > .col { flex-basis: calc((var(--cols-w, 100%) - 2 * var(--pad)) / var(--n, 2)); transform: translateX(var(--pad)); translate: none; }
 /* Put away or brought back, the row and its prompt box move on the pane's own curve, sent once to where they will
-   stand (forge.ts room): the last box's edge keeps a step inside the pane's edge all the way, as if pushed by it. */
+   stand (columns.ts room): the last box's edge keeps a step inside the pane's edge all the way, as if pushed by it. */
 .work.bench.pane-moving.pane-closed :is(.columns.split > .col, .dock) { transition-duration: calc(var(--slide) * .66); transition-timing-function: cubic-bezier(.4, 0, 1, 1); }
 .work.bench.pane-moving:not(.pane-closed) :is(.columns.split > .col, .dock) { transition-duration: var(--slide); transition-timing-function: cubic-bezier(.2, 1.4, .32, 1); }
 .work.bench.pane-closed .columns.split > .col:not(.active) .file > :is(.path, .sheet) { opacity: 1; }
