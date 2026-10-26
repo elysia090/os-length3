@@ -366,13 +366,16 @@ export function unfold(el: HTMLElement, ms = 200) {
   el.animate([none, full], {duration: paced(ms), easing: LAND});
 }
 
-/** Shown again while it was going out: it stays, as it was. */
+/** Shown again while it was going out: it stays, coming back from where it had got to the way it was going (a menu
+ * half faded fades back in, a folder half folded opens again from there), never at once to where it stood. */
 export function keepOut(el: HTMLElement) {
   const going = goingOut.get(el);
   if (!going) return;
   goingOut.delete(el);
   el.inert = going.inert;
-  going.a.cancel();
+  const a = going.a;
+  a.finished.then(() => a.cancel(), () => {});
+  a.reverse();
 }
 
 /** A thing just done is rewarded: it pops past its size and settles (a TODO's mark once done). */

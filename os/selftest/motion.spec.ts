@@ -208,6 +208,35 @@ test('Home\'s right pane put away and brought back: its switch stays under the h
   expect(Math.abs((await toggle.boundingBox())!.x - at.x)).toBeLessThan(1);
 });
 
+test('a menu put away and opened again on its way out comes back from where it had got to, not at once', async ({app}) => {
+  await app.newRepo.make('hello');
+  await app.rail.go('home');
+  await still(app);
+  const gear = app.main.getByRole('button', {name: 'What to do with hello'}).first();
+  const menu = app.main.getByRole('menu', {name: 'What to do with hello'});
+  await gear.click();
+  await expect(menu).toBeVisible();
+  await still(app);
+  // Put away, and pressed again a moment later, as it fades.
+  const back = await gear.evaluate((g) => new Promise<number[]>((done) => {
+    const list = document.getElementById(g.getAttribute('aria-controls') ?? '') ?? g.closest('.card')!.querySelector<HTMLElement>('.repo-gear-pop')!;
+    (g as HTMLElement).click();
+    setTimeout(() => {
+      (g as HTMLElement).click();
+      const seen: number[] = [];
+      const tick = () => { seen.push(+getComputedStyle(list).opacity); if (seen.length < 40 && seen.at(-1)! < 1) requestAnimationFrame(tick); else done(seen); };
+      requestAnimationFrame(tick);
+    }, 60);
+  }));
+  // Neither gone nor whole at once: it fades back from where it was.
+  expect(back[0]).toBeGreaterThan(.1);
+  expect(back[0]).toBeLessThan(.99);
+  await expect(menu).toBeVisible();
+  await still(app);
+  expect(await menu.evaluate((e) => +getComputedStyle(e).opacity)).toBe(1);
+  await expect(menu.getByRole('menuitem', {name: 'Open in Forge'})).toBeEnabled();
+});
+
 test('the caret is drawn by the OS: it follows what is written along the line, and Enter takes it to the next', async ({app}) => {
   await app.newRepo.make('hello');
   await app.newRepo.openInForge();

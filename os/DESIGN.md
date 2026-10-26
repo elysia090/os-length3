@@ -171,7 +171,10 @@ Every value in `styles.css` comes from a token (§2).
     fade away before what they stood over comes back; the paths Tab listed
     under the box go as the next key is pressed; a file's unsaved dot goes
     as it is saved; a place's name on the rail slides back into its edge as
-    the pointer leaves. Shown again on its way out, it stays where it is.
+    the pointer leaves. Shown again on its way out, it stays: it comes back
+    from where it had got to, the way it was going (a menu half faded fades
+    back in, a folder half folded opens again from there), never whole at
+    once.
   - *What is about to come leans in.* The pointer on a box's edge in
     Forge's row, the row leans toward it before it is pressed, as far as
     the pointer is into it (none for the first few px, then up to a step),
