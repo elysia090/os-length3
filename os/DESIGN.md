@@ -1612,7 +1612,12 @@ terminal's letters with an empty cell where the caret will be (with no repo
 to run in, no cell: it says so there, Open a repo to run in it, as the search
 box says No repo to search); the keys that
 bring it up from anywhere (Ctrl `, only where they bring up what the box does:
-Run's, and Edit's Ctrl G); Run. While the prompt is in use the box
+Run's, and Edit's Ctrl G), and while it is written in, in their place, the
+keys that send what is in it (Ctrl Enter, beside Run, Create or Add; none for
+Edit): Enter is a new line there as in every box, so the hand that presses
+Enter as in a terminal finds the keys that run it beside Run, and on a line of
+one, Enter pressed, they give one after the other as keys pressed together;
+Run. While the prompt is in use the box
 becomes a screen and the terminal comes up in it over the center, the one thing
 in the app that is a thing of its own: a terminal's screen, dark glass in the
 app's ink with its words lit in the app's green (§3), the page behind it only a

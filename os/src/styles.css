@@ -1251,6 +1251,10 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
    line all the way, so it never crosses the line's words). */
 .prompt-leaving:not(.line-lit) .screen .prompt-chip > .lamp { opacity: 1; transition-delay: calc(var(--prompt-down) * (1 - var(--prompt-down-line)) * .5); }
 .line-lit .screen .prompt-keys { opacity: 0; visibility: hidden; transition: opacity 120ms ease-out, visibility 0s 120ms; }
+/* The keys that send take the glass's light with Run, as outlines on it. */
+.screen .prompt-sends > kbd { transition: color 120ms ease-out, border-color 120ms ease-out, background-color 120ms ease-out; }
+.line-lit .screen .prompt-sends > kbd { color: color-mix(in srgb, var(--add-tint) 80%, transparent); border-color: color-mix(in srgb, var(--add-tint) 35%, transparent); background: transparent;
+  transition-delay: calc(var(--prompt-up) * var(--prompt-up-line) * .72); }
 
 /* At rest the box is the box (raised, its edge), its line a terminal's: at its left a pill of the screen's glass, round
    as the band's pill for the repo is, with the shell's lamp and the prompt line it waits at; the line in the screen's
@@ -1326,12 +1330,19 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
   linear-gradient(var(--cell), var(--cell)) 0 var(--cell-top) / 1ch 1px no-repeat, linear-gradient(var(--cell), var(--cell)) 0 calc(100% - 4px + var(--cell-top)) / 1ch 1px no-repeat,
   linear-gradient(var(--cell), var(--cell)) 0 var(--cell-top) / 1px calc(100% - 4px) no-repeat, linear-gradient(var(--cell), var(--cell)) calc(1ch - 1px) var(--cell-top) / 1px calc(100% - 4px) no-repeat; }
 :is(.prompting, .prompt-leaving) .screen .prompt-in:placeholder-shown:not(:focus, :disabled) { --cell-top: 2px; }
-.prompt-keys { flex: none; display: inline-flex; align-items: center; gap: var(--s1); transition: opacity 160ms ease-out 60ms; }
-.prompt-keys > kbd { color: var(--sub); border-color: var(--rule); }
+/* The keys that bring the box, and the keys that send from it, one over the other in one place. */
+.prompt-caps { flex: none; display: grid; justify-items: end; align-items: center; }
+.prompt-caps > * { grid-area: 1 / 1; }
+.prompt-keys, .prompt-sends { display: inline-flex; align-items: center; gap: var(--s1); transition: opacity 160ms ease-out 60ms; }
+.prompt-keys > kbd, .prompt-sends > kbd { color: var(--sub); border-color: var(--rule); }
 .prompt-keys > kbd:last-child { font: 600 13px/1 var(--mono); }
 .prompt-keys > kbd.tick { padding-top: 6px; font-size: 15px; } /* a backtick is drawn at the top of its letter's room */
 .prompt:is([data-mode='issue'], [data-mode='todo']) .prompt-keys { visibility: hidden; } /* Ctrl+` brings the box running */
-@media (max-width: 760px) { .prompt-keys { display: none; } }
+/* Written in, the keys that send what is in it stand in their place, beside Run (Create, Add): Enter alone is a new
+   line. Edit sends nothing (what is typed is in the file already): its Ctrl G stays. */
+.prompt-sends, .prompt:not([data-mode='edit']):focus-within .prompt-keys, .prompt[data-mode='edit'] .prompt-sends { visibility: hidden; }
+.prompt:not([data-mode='edit']):focus-within .prompt-sends { visibility: visible; }
+@media (max-width: 760px) { .prompt-caps { display: none; } }
 /* The box at rest, its light, while the glass spreads over it (and back as it gathers into the pill): under the screen. */
 .work.bench > .center > .dock::before { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: var(--prompt-h); z-index: -1; pointer-events: none;
   box-sizing: border-box; border: 1px solid var(--edge); border-radius: var(--r-place); background: var(--raised); opacity: 0; }

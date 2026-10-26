@@ -16,8 +16,8 @@ import {EditLine} from './edit-box.ts';
 // The box at the foot of a work page's center (DESIGN.md § Forge, The box at the foot): one field, and at its left a
 // pill that says what it does: Run in the repo's Prompt (the pill the prompt line the shell waits at, pill-line.ts),
 // Write an issue, Add to TODO (box-modes.ts), Edit the file in front (edit-box.ts). Enter is a new line and Ctrl+Enter
-// sends, as in every box one writes in; Edit's lines are one line each, done with Enter. Escape gives the keyboard
-// back to what had it before the box.
+// sends, as in every box one writes in, the keys said on caps beside the box's button while it is written in; Edit's
+// lines are one line each, done with Enter. Escape gives the keyboard back to what had it before the box.
 //
 // What is written in it belongs to the repo and to what the box does: each keeps its own while the app runs, so going
 // to another page and back keeps it, and switching repos swaps it for that repo's (or an empty box). Running, ↑ on the
@@ -84,6 +84,8 @@ export class Box {
   readonly #modeWords = h('span', {class: 'prompt-mode', 'aria-hidden': 'true'});
   /** The key that brings the box up doing what it does now: ` for Run, G for Edit. */
   readonly #summonKey = h('kbd', {}, '`');
+  /** The keys that send what is in the box, said beside its button while it is written in. */
+  readonly #sends: HTMLElement;
   /** What had the keyboard before the box took it (from outside the box and what it brings out): Escape gives it back. */
   #before: HTMLElement | null = null;
   readonly #keys: string;
@@ -105,9 +107,13 @@ export class Box {
     const lamp = h('span', {class: 'lamp'});
     this.chip = h('button', {type: 'button', class: 'prompt-chip', tabindex: '-1', 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'data-mode': 'run'},
       lamp, this.waits, this.#modeWords) as HTMLButtonElement;
-    // The keys that bring it up from anywhere, said at rest as keys are (Run says Ctrl+Enter in its title).
-    const summon = h('span', {class: 'prompt-keys', 'aria-hidden': 'true'}, h('kbd', {}, mac ? '⌘' : 'Ctrl'), this.#summonKey);
-    this.form = h('form', {class: 'prompt'}, this.chip, this.prompt, summon, this.runIt) as HTMLFormElement;
+    // The keys that bring it up from anywhere, said at rest as keys are; while it is written in, in their place the
+    // keys that send (Run says them in its title too): Enter is a new line here, as in every box one writes in. One
+    // over the other in one place, so nothing on the line moves as the keyboard comes and goes.
+    this.#sends = h('span', {class: 'prompt-sends'}, h('kbd', {}, mac ? '⌘' : 'Ctrl'), h('kbd', {}, 'Enter'));
+    const caps = h('span', {class: 'prompt-caps', 'aria-hidden': 'true'},
+      h('span', {class: 'prompt-keys'}, h('kbd', {}, mac ? '⌘' : 'Ctrl'), this.#summonKey), this.#sends);
+    this.form = h('form', {class: 'prompt'}, this.chip, this.prompt, caps, this.runIt) as HTMLFormElement;
     this.line = [lamp, this.waits, this.prompt, this.runIt];
     this.dock = h('div', {class: 'dock'}, this.note, this.heard);
     this.#pillLine = new PillLine({chip: this.chip, waits: this.waits, repo: () => this.#repo, up: () => this.#up,
@@ -122,7 +128,7 @@ export class Box {
       // choose what the box does next); only from somewhere else of its own does it go nowhere in particular.
       closed: (before) => { if (!before || before === this.prompt || before === this.chip || before === document.body) this.prompt.focus(); else (document.activeElement as HTMLElement | null)?.blur(); }});
     this.dock.append(this.#menu.element);
-    this.#wire(summon);
+    this.#wire(caps);
     this.#stepsBack();
     // Chosen in another page's box, this one does it too (turned there, not here: it is not on screen).
     onBoxMode((m) => this.choose(m, false));
@@ -467,8 +473,12 @@ export class Box {
       sessionFor(repo).interrupt();
       return;
     }
-    // Enter is a new line; Ctrl+Enter (⌘+Enter) sends.
-    if (sends(event)) { event.preventDefault(); this.#send(); }
+    // Enter is a new line; Ctrl+Enter (⌘+Enter) sends. Enter on a line of one, as a terminal's hand presses it, the
+    // keys that run it give beside Run, one after the other, as keys pressed together.
+    if (sends(event)) { event.preventDefault(); this.#send(); return; }
+    if (event.key === 'Enter' && plain(event) && !prompt.value.includes('\n') && prompt.value.trim() && !still())
+      [...this.#sends.children].forEach((k, i) => k.animate([{translate: '0 0'}, {translate: '0 2px', offset: .35}, {translate: '0 0'}],
+        {duration: paced(260), delay: paced(i * 90), easing: 'ease-out'}));
   }
 
   /** ↑ or ↓ with the caret on the first or last line: the line run before (or after) it in the box. */
@@ -488,9 +498,9 @@ export class Box {
     this.#edit.key(event);
   }
 
-  #wire(summon: HTMLElement) {
+  #wire(caps: HTMLElement) {
     this.#wireField();
-    this.#wireForm(summon);
+    this.#wireForm(caps);
     this.#wireTerm();
   }
 
@@ -520,7 +530,7 @@ export class Box {
   }
 
   /** The box's line: Run, the pill, and a press anywhere on it. */
-  #wireForm(summon: HTMLElement) {
+  #wireForm(caps: HTMLElement) {
     const {prompt, form, chip, runIt} = this;
     // Run sends as Ctrl+Enter does; pressed with the pointer, the keyboard stays in the box.
     runIt.addEventListener('pointerdown', (event) => { if (document.activeElement === prompt) event.preventDefault(); });
@@ -531,7 +541,7 @@ export class Box {
     form.addEventListener('pointerdown', (event) => {
       const on = event.target as Node;
       if (chip.contains(on) && !this.#up) return;
-      if ((on !== form && !chip.contains(on) && on !== summon) || prompt.disabled) return;
+      if ((on !== form && !chip.contains(on) && !caps.contains(on)) || prompt.disabled) return;
       event.preventDefault();
       prompt.focus();
     });

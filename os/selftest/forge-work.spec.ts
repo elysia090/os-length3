@@ -289,11 +289,18 @@ test('the plug says the area is out only where it is, and Escape on it puts the 
   await expect(plug).toHaveAttribute('aria-expanded', 'false');
 });
 
-test('the prompt box has a Run button, its keys in its title rather than beside the word, and the box reaches a little left of the files', async ({app}) => {
+test('the prompt box has a Run button, its keys in its title and, while the box is written in, on caps beside it; the box reaches a little left of the files', async ({app}) => {
   const run = app.main.getByRole('button', {name: /^Run/});
   await expect(run).toHaveAttribute('aria-keyshortcuts', /Enter/);
   await expect(run).toHaveText('Run');
   await expect(run).toHaveAttribute('title', /Enter/);
+  // At rest the caps say what brings the box (Ctrl `); written in, what sends from it (Enter alone is a new line).
+  const sends = app.main.locator('form.prompt .prompt-sends');
+  await expect(sends).toBeHidden();
+  await app.forge.promptBox.focus();
+  await expect(sends).toHaveText(/^(Ctrl|⌘)\s*Enter$/);
+  await expect(app.main.locator('form.prompt .prompt-keys')).toBeHidden();
+  await app.page.keyboard.press('Escape');
   await app.page.setViewportSize({width: 808, height: 800});
   const box = (await app.main.locator('.prompt').boundingBox())!;
   const file = (await app.main.locator('section.file').first().boundingBox())!;
