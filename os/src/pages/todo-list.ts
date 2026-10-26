@@ -4,7 +4,9 @@ import {getState, setState} from '../home/state.ts';
 import * as todo from '../home/todo.ts';
 import {errorText} from '../app/errors.ts';
 import {arrive, closeUp, pop} from '../ui/glide.ts';
-import {KIND_WORD} from '../repos/text.ts';
+import {mark as glyph} from '../ui/icons.ts';
+import {KIND_WORD, named} from '../repos/text.ts';
+import {SETTLE} from './common.ts';
 
 // The TODO box, Home's and each server board's: the same list, kept in
 // different places (Home's state; the Remote, for a board's people). Each
@@ -13,8 +15,9 @@ import {KIND_WORD} from '../repos/text.ts';
 // detail lines, and Enter on an empty detail line starts the next item.
 // Typing "Kind：" at the start of the first line (a Latin word or a Japanese
 // one, 買う：) turns it into the item's kind. A done item's first line is
-// struck through and faded; its detail stays readable. The box keeps its own
-// DOM, so typing never re-renders the page.
+// struck through and faded; its detail stays readable. An item goes by its ×
+// (or Delete or Backspace on its empty line), the done ones together by Clear
+// done. The box keeps its own DOM, so typing never re-renders the page.
 
 const KIND_AT_START = new RegExp(`^\\s*(${KIND_WORD})\\s*[：:]\\s*`);
 
@@ -54,6 +57,8 @@ interface Row {
   button: HTMLButtonElement;
   meta: HTMLElement;
   strike: HTMLElement;
+  /** Its ×, which takes it out of the list. */
+  away: HTMLButtonElement;
 }
 
 /** A TODO list on screen: its box, and taking in the list as it now is elsewhere. */
@@ -72,6 +77,8 @@ export const kindWords = (kind: string): Node[] =>
 
 export interface TodoList {
   element: HTMLElement;
+  /** Clear done, for the box's head beside what is left: there while an item is done, and never when shown, not written. */
+  clear: HTMLButtonElement;
   /** Take in `list` as kept elsewhere: at once, or as soon as nothing in the box is being written. */
   update(list: todo.Todo[]): void;
 }
@@ -108,8 +115,11 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
       (e: unknown) => o.failed?.(t('Could not save: {message}', {message: errorText(e)})));
     count(kept);
   };
+  const clear = h('button', {class: 'todo-clear', type: 'button', hidden: ''}, t('Clear done')) as HTMLButtonElement;
   const count = (kept: readonly todo.Todo[]) => {
-    o.counted?.(kept.filter((td) => !td.done).length, kept.length);
+    const open = kept.filter((td) => !td.done).length;
+    o.counted?.(open, kept.length);
+    clear.hidden = !!o.readOnly || open === kept.length;
   };
 
   const caret = (field: HTMLInputElement | HTMLTextAreaElement, at: 'start' | 'end') => {
@@ -160,6 +170,11 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
     else if (back) pop(r.button, .06, 260);
     r.button.setAttribute('aria-pressed', String(td.done));
     r.button.setAttribute('aria-label', td.done ? t('Mark as not done') : t('Mark as done'));
+    // A line with nothing in it yet is room for an item, not one: its mark is dashed, neither pressed nor stopped at
+    // on the way along, and there is nothing to take out. Written in, it is an item, its mark whole and its × there.
+    r.button.disabled = !todo.filled(td);
+    r.away.hidden = !todo.filled(td);
+    r.away.setAttribute('aria-label', t('Remove {item}', {item: named(td.kind, td.title) || t('this item')}));
     // Its day comes in at the line's end as the line becomes an item (filled), stamped there, not simply there.
     const day = todo.filled(td) ? date(td.created) : '';
     const dated = !r.meta.textContent && !!day && r.item.isConnected;
@@ -175,6 +190,22 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
     caret(rows.get(r.id)!.title, 'end');
     // It unfolds from the line it was started from.
     arrive(rows.get(r.id)!.item, -1, 'y', 10, 220);
+  };
+
+  /** When an item last went by its ×: the next one's × closes up under the pointer, and a double press takes one. */
+  let dropped = -Infinity;
+  /** `id` taken out of the list, the lines under it closing up over where it was; its neighbours, as drawn now. */
+  const drop = (id: string): {before?: Row; after?: Row} => {
+    const at = items.findIndex((x) => x.id === id);
+    const before = items[at - 1]?.id ?? '', after = items[at + 1]?.id ?? '';
+    const gap = rows.get(id)?.item.getBoundingClientRect().height ?? 0;
+    const below = items.slice(at + 1).map((x) => x.id);
+    items = todo.remove(items, id);
+    save();
+    render();
+    // The lines under it close up over where it was, rather than being there at once.
+    closeUp(below.map((x) => rows.get(x)?.item).filter((el): el is HTMLElement => !!el), gap);
+    return {before: rows.get(before), after: rows.get(after)};
   };
 
   const build = (td: todo.Todo): HTMLElement => {
@@ -194,12 +225,27 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
       placeholder: t('Detail'), spellcheck: 'false'}) as HTMLTextAreaElement;
     const meta = h('span', {class: 'todo-meta'});
     const strikeEl = h('span', {class: 'todo-strike', 'aria-hidden': 'true'});
+    const away = h('button', {class: 'todo-away', type: 'button'}, glyph('close')) as HTMLButtonElement;
     title.value = td.title;
     detail.value = td.detail;
-    const head = h('div', {class: 'todo-head'}, button, kind, title, meta, strikeEl);
+    const head = h('div', {class: 'todo-head'}, button, kind, title, meta, away, strikeEl);
     const item = h('div', {class: 'todo-item', role: 'listitem'}, head, detail);
-    const row: Row = {item, title, detail, kind, button, meta, strike: strikeEl};
+    const row: Row = {item, title, detail, kind, button, meta, strike: strikeEl, away};
     rows.set(td.id, row);
+    // Pressed on its line beside the words (or on the dashed mark of a line not yet an item), the caret goes to it.
+    head.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || e.target !== head) return;
+      e.preventDefault();
+      caret(title, 'end');
+    });
+    // Its × takes it out; the keyboard goes on to what came up into its place (its ×, or the line to write in).
+    away.addEventListener('click', () => {
+      if (performance.now() - dropped < SETTLE) return;
+      dropped = performance.now();
+      const {before, after} = drop(td.id);
+      const r = after ?? before;
+      if (r) (r.away.hidden ? r.title : r.away).focus({preventScroll: true});
+    });
 
     const current = () => items.find((x) => x.id === td.id)!;
     const set = (change: {kind?: string | null; title?: string; detail?: string}) => {
@@ -259,18 +305,15 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
           title.setSelectionRange(it.kind.length + 1, it.kind.length + 1);
         } else if (!title.value && !it.detail && items.length > 1) {
           e.preventDefault();
-          const before = neighbour(td.id, -1);
-          const after = neighbour(td.id, 1);
-          const gap = row.item.getBoundingClientRect().height;
-          const below = items.slice(items.findIndex((x) => x.id === td.id) + 1).map((x) => x.id);
-          items = todo.remove(items, td.id);
-          save();
-          render();
-          // The lines under it close up over where it was, rather than being there at once.
-          closeUp(below.map((id) => rows.get(id)?.item).filter((el): el is HTMLElement => !!el), gap);
-          const r = rows.get(before ?? after ?? '');
+          const {before, after} = drop(td.id);
+          const r = before ?? after;
           if (r) caret(r.detail.hidden ? r.title : r.detail, 'end');
         }
+      } else if (e.key === 'Delete' && !title.value && !it.detail && items.length > 1) {
+        // Delete on its empty line takes it out too (a kind with it), the caret going on to the line come up in its place.
+        e.preventDefault();
+        const {before, after} = drop(td.id);
+        if (after) caret(after.title, 'start'); else if (before) caret(before.detail.hidden ? before.title : before.detail, 'end');
       } else if (e.key === 'ArrowDown') {
         e.preventDefault();
         if (!detail.hidden) caret(detail, 'start');
@@ -329,7 +372,8 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
     if (o.readOnly) return;
     for (const r of rows.values()) r.title.placeholder = '';
     const last = items.at(-1);
-    if (last) rows.get(last.id)!.title.placeholder = items.length === 1 ? o.first ?? t('Fix: The title wraps on a phone') : t('Next TODO');
+    // Short enough for a phone's line, and plainly a slot for words: the form (a kind, then what to do), not an item.
+    if (last) rows.get(last.id)!.title.placeholder = items.length === 1 ? o.first ?? t('Fix: what to do') : t('Next TODO');
   };
 
   // Heights can only be measured once the fields are in the page.
@@ -370,15 +414,21 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
   // closing up, and only the empty line at the foot stays to write the next in.
   list.addEventListener('focusout', () => setTimeout(() => {
     const gone = items.find((x, i) => i < items.length - 1 && !todo.filled(x) && !rows.get(x.id)?.item.contains(document.activeElement));
-    const r = gone && rows.get(gone.id);
-    if (!gone || !r || o.readOnly) return;
-    const gap = r.item.getBoundingClientRect().height;
-    const below = items.slice(items.indexOf(gone) + 1).map((x) => x.id);
-    items = todo.remove(items, gone.id);
+    if (!gone || !rows.has(gone.id) || o.readOnly) return;
+    drop(gone.id);
+  }, 0));
+  // Clear done: the done items go together, those under each closing up over where it was; the keyboard, which had
+  // it, goes to the line at the foot, where the next is written.
+  clear.addEventListener('click', () => {
+    const was = new Map([...rows].map(([id, r]) => [id, r.item.getBoundingClientRect().top]));
+    const had = document.activeElement === clear;
+    items = items.filter((x) => !x.done);
     save();
     render();
-    closeUp(below.map((id) => rows.get(id)?.item).filter((el): el is HTMLElement => !!el), gap);
-  }, 0));
+    for (const [id, r] of rows) closeUp([r.item], (was.get(id) ?? 0) - r.item.getBoundingClientRect().top);
+    const foot = rows.get(items.at(-1)?.id ?? '');
+    if (had && foot) caret(foot.title, 'end');
+  });
 
   // What came from elsewhere waits while something here is being written.
   let waiting: todo.Todo[] | null = null;
@@ -388,6 +438,7 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
   }, 0));
   return {
     element,
+    clear,
     update(next) {
       if (writing()) { waiting = next; return; }
       items = [...next];
@@ -403,6 +454,7 @@ export function todoBox(): HTMLElement {
   const remaining = h('small', {});
   const box = todoList(load(), (kept) => setState('todo', JSON.stringify(kept)),
     {counted: (open, all) => sayLeft(remaining, open, all), failed: (why) => { status.textContent = why; }});
+  // Named TODO alone: what is left and Clear done stand on its line, at its right.
   return h('section', {class: 'section', 'aria-labelledby': 'todo-title'},
-    h('h2', {id: 'todo-title'}, 'TODO', remaining), box.element, status);
+    h('h2', {}, h('span', {id: 'todo-title'}, 'TODO'), h('span', {class: 'todo-left'}, remaining, box.clear)), box.element, status);
 }

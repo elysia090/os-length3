@@ -52,6 +52,83 @@ test('a TODO item begun and left empty goes as the keyboard leaves it', async ({
   await expect(app.home.title(app.home.items.nth(1))).toHaveValue('');
 });
 
+test('a TODO item goes by its ×, or Delete on its empty line, and Clear done takes the done ones', async ({app}) => {
+  await app.rail.go('home');
+  await app.home.title(app.home.items.first()).click();
+  for (const line of ['Buy: seeds', 'Call: the plumber', 'Fix: the gate', 'Paint: the fence', 'Oil: the hinge']) {
+    await app.page.keyboard.type(line);
+    await app.page.keyboard.press('Enter');
+    await app.page.keyboard.press('Enter');
+  }
+  // Left, the next begun and not written goes: the five, and the line at the foot.
+  await app.main.getByRole('heading', {level: 1}).click();
+  await expect(app.home.items).toHaveCount(6);
+  // Its × is there for the item under the pointer, not the line still to be written.
+  const second = app.home.items.nth(1);
+  const away = second.getByRole('button', {name: 'Remove Call：the plumber'});
+  await second.hover();
+  await expect(away).toHaveCSS('opacity', '1');
+  await expect(app.home.items.last().getByRole('button', {name: /^Remove/})).toBeHidden();
+  await away.click();
+  await expect(app.home.items).toHaveCount(5);
+  await expect(app.home.title(app.home.items.nth(1))).toHaveValue('the gate');
+  // The keyboard goes on to the × of the one that came up into its place, under the pointer: a double press takes one.
+  const next = app.home.items.nth(1).getByRole('button', {name: 'Remove Fix：the gate'});
+  await expect(next).toBeFocused();
+  await app.page.waitForTimeout(600);
+  await next.dblclick();
+  await expect(app.home.items).toHaveCount(4);
+  await expect(app.home.title(app.home.items.nth(1))).toHaveValue('the fence');
+
+  // Delete on a line emptied of its words (its kind with it) takes it out, the caret going on to the next.
+  const emptied = app.home.items.nth(1);
+  await app.home.title(emptied).fill('');
+  await app.home.title(emptied).press('Delete');
+  await expect(app.home.items).toHaveCount(3);
+  await expect(app.home.title(app.home.items.nth(1))).toHaveValue('the hinge');
+  await expect(app.home.title(app.home.items.nth(1))).toBeFocused();
+
+  // Clear done is there while something is done, and takes the done ones together.
+  const clear = app.home.todo.getByRole('button', {name: 'Clear done'});
+  await expect(clear).toBeHidden();
+  await app.home.mark(app.home.items.first()).click();
+  await clear.click();
+  await expect(app.home.items).toHaveCount(2);
+  await expect(app.home.title(app.home.items.first())).toHaveValue('the hinge');
+  await expect(clear).toBeHidden();
+  await expect(app.home.todo).toContainText('1 of 1 left');
+  // Kept so: Home drawn again reads it as it was left.
+  await app.rail.go('runtime');
+  await app.rail.go('home');
+  await expect(app.home.items).toHaveCount(2);
+});
+
+test('the empty line at the foot of the TODO is room for an item: its mark dashed, and no stop on the way', async ({app}) => {
+  await app.rail.go('home');
+  const item = app.home.items.first();
+  await expect(app.home.title(item)).toHaveAttribute('placeholder', 'Fix: what to do');
+  await expect(app.home.mark(item)).toBeDisabled();
+  // Whole on a phone's line, not cut off as a title would be.
+  await app.page.setViewportSize({width: 390, height: 844});
+  await expect.poll(() => app.home.title(item).evaluate((el: HTMLInputElement) => {
+    const pen = document.createElement('canvas').getContext('2d')!;
+    const cs = getComputedStyle(el, '::placeholder');
+    pen.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    return pen.measureText(el.placeholder).width <= el.clientWidth;
+  })).toBe(true);
+  await app.page.setViewportSize({width: 1400, height: 900});
+  // From Edit profile, Tab goes into the line to write in, not to a mark with nothing to mark.
+  await app.main.getByRole('button', {name: 'Edit profile'}).focus();
+  await app.page.keyboard.press('Tab');
+  await expect(app.home.title(item)).toBeFocused();
+  // Pressed, its dashed mark gives the caret to the line; written in, it is an item, its mark whole.
+  await app.main.getByRole('button', {name: 'Edit profile'}).focus();
+  await app.home.mark(item).click({force: true});
+  await expect(app.home.title(item)).toBeFocused();
+  await app.home.title(item).pressSequentially('Buy pegs');
+  await expect(app.home.mark(item)).toBeEnabled();
+});
+
 test('a Japanese kind is taken as a Latin one is, once the input method has given its word', async ({app}) => {
   await app.rail.go('home');
   const item = app.home.items.first();

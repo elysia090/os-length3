@@ -538,8 +538,19 @@ what is its own.
   right, one `rule` between them, in a single box: Inbox, a repo shown in
   Server.
 - **The TODO box.** Home's TODO and each Server board's, the same box:
-  items written as "Kind：title", Enter for the detail, ○ when done, the
-  date at the right whether a line has a kind or not. On Home it is tall;
+  items written as "Kind：title" (the kind a Latin word, Fix：, or a
+  Japanese one, 買う：), Enter for the detail, ○ when done, the
+  date at the right whether a line has a kind or not. An item goes by the
+  quiet × at its line's end, there on the item under the pointer or with the
+  keyboard in it (always, on a touch screen), the lines under it closing up
+  and the keyboard going on to the × that came up into its place (a double
+  press takes one); Delete or Backspace on its emptied line takes it too.
+  While anything is done, Clear done stands beside what is left at the box's
+  head and takes the done ones together. The empty line at the foot is room
+  for the next, not an item: its ○ dashed and faint, neither pressed nor a
+  stop for Tab (a press there gives the caret to the line), and the first
+  one's placeholder the form, short enough for a phone (Fix: what to do);
+  written in, its ○ is drawn whole as its day comes in. On Home it is tall;
   in a board, tall as it is on Home whatever its items (it scrolls in itself).
   Under the pointer its edge takes a step toward ink (the edge a field
   has), so it says it is there to write in before it is pressed.
@@ -1400,11 +1411,13 @@ after them each board this browser writes in as a guest, #board with its
 server and guest beside it, opening Server at that board alone, so a guest
 come back, signed in or not, is led back to it).
 TODO is the person's single list; repos do not carry their own inbox or
-TODO files. An item is a first line named like an issue ("Fix：件名"),
-then detail lines (starting on the first line's column, with a kind or
-without); Enter on an empty line starts the next item. An input method's Enter
-(the one that takes a Japanese word) is the method's, never a new line or the
-next item. Done strikes through and fades the first line, the line drawn
+TODO files. An item is a first line named like an issue ("Fix：件名",
+"買う：種"), then detail lines (starting on the first line's column, with a
+kind or without); Enter on an empty line starts the next item. An input
+method's Enter (the one that takes a Japanese word) is the method's, never a
+new line or the next item, and a kind is read off the line only once the
+method has given its word. An item goes by its × (§3, the TODO box), the done
+ones together by Clear done. Done strikes through and fades the first line, the line drawn
 across its words from the kind's start as the mark pops (taken back, it goes
 back the way it came), and its detail goes quiet with it, still there to read.
 A detail opened or put away moves the items under it down or up to make room,

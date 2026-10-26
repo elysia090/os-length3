@@ -65,6 +65,15 @@ test("a board's TODO keeps what its people write in it", async ({signedIn: app})
     await expect(kept.getByRole('textbox', {name: 'What to do'})).toHaveValue('tent pegs', {timeout: 2000});
   }).toPass();
   await expect(kept.getByRole('button', {name: 'Mark as not done'})).toHaveAttribute('aria-pressed', 'true');
+
+  // Clear done, as on Home: the done one goes, for its people too.
+  await app.server.todo.getByRole('button', {name: 'Clear done'}).click();
+  await expect(app.server.todo.getByRole('listitem')).toHaveCount(1);
+  await expect(async () => {
+    await app.server.close();
+    await app.server.open();
+    await expect(kept.getByRole('textbox', {name: 'What to do'})).toHaveValue('', {timeout: 2000});
+  }).toPass();
 });
 
 test('what is half written in a board stays with it, through another board and another page', async ({signedIn: app}) => {

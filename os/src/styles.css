@@ -653,7 +653,7 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
 .todo-box:focus-within { border-color: var(--ink); }
 .todo-items { padding: var(--s3) var(--s3) var(--s2); }
 .todo-item { padding-bottom: var(--s2); }
-.todo-head { display: grid; grid-template-columns: var(--h-control) auto minmax(0, 1fr) auto; align-items: center; column-gap: var(--s1); min-height: var(--h-control); padding-right: var(--s2); }
+.todo-head { display: grid; grid-template-columns: var(--h-control) auto minmax(0, 1fr) auto auto; align-items: center; column-gap: var(--s1); min-height: var(--h-control); padding-right: var(--s2); }
 /* Each in its own column, so a line without a kind keeps its date at the right like the rest. */
 .todo-head > * { grid-row: 1; }
 .todo-head > .todo-mark { grid-column: 1; }
@@ -662,9 +662,25 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
 /* Without a kind, the title starts where the kind would: no gap for an empty column. */
 .todo-head > .todo-kind[hidden] + .todo-title { grid-column: 2 / 4; }
 .todo-head > .todo-meta { grid-column: 4; }
+.todo-head > .todo-away { grid-column: 5; }
 .todo-mark { display: grid; place-items: center; width: var(--h-control); height: var(--h-control); border: 0; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: var(--cursor-hand); }
 /* Inside the raised box, hover is a step back to the ground. */
 .todo-box .todo-mark:hover { color: var(--ink); background: var(--ground); }
+/* A line with nothing in it yet is room for an item, not one: its mark dashed and faint, as room for what is not here
+   yet is, and not a thing to press (a press there goes to the line). */
+.todo-mark:disabled { opacity: .45; pointer-events: none; }
+.todo-mark:disabled path { stroke-dasharray: 2.2 2.4; }
+/* An item's ×, quiet at its line's end, there while the pointer is on the item or the keyboard in it (always, where
+   nothing hovers), as a box's × in Forge is. */
+.todo-away { display: grid; place-items: center; width: var(--s5); height: var(--s5); padding: 0; border: 0; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: var(--cursor-hand); opacity: 0; transition: opacity var(--motion); }
+.todo-away .mark { width: var(--s4); height: var(--s4); }
+.todo-item:hover .todo-away, .todo-item:focus-within .todo-away { opacity: 1; }
+@media (hover: none) { .todo-away { opacity: 1; } }
+.todo-box .todo-away:hover { color: var(--ink); background: var(--ground); }
+/* Clear done beside what is left, a word as quiet as the count it stands by. */
+.todo-left { display: inline-flex; align-items: baseline; gap: var(--s2); }
+.todo-clear { padding: 0 var(--s2); border: 0; border-radius: var(--r-round); background: transparent; color: var(--sub); font: inherit; font-size: var(--t-meta); font-weight: 600; cursor: var(--cursor-hand); }
+.todo-clear:hover { background: var(--raised); color: var(--ink); }
 /* The kind is a word, not a button: bold, no outline. */
 .todo-kind { font-weight: 700; }
 /* The kind's colon is the issue's own (Fix：), a full-width one; seen, it is the face's own colon against the word
@@ -2973,6 +2989,7 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .board-todo .todo-items { padding: 0; }
 .board-todo .todo-hint { padding-inline: var(--s2); }
 .board-todo .error:empty { display: none; }
+.board-todo > .todo-clear { justify-self: start; height: var(--h-row); }
 /* The TODO in front, the box at the foot is the talk's and goes, the board taking its room. */
 /* (Its TODO's panel told by its id, panel-board-…-todo: a :has() holds no other.) */
 .server-center:has(.slide[aria-current='true'] .board-card > .part-panel[id$='-todo']:not([hidden])) { padding-bottom: var(--s5); }

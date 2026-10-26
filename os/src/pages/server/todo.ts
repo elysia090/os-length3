@@ -26,7 +26,8 @@ export async function boardTodo(b: Shown, holder: HTMLElement, told: {left(open:
   const keeper = b.member ? servers.todoKeeper(b.id, list, {trouble: (why) => { status.textContent = t('Could not save: {message}', {message: why}); }}) : null;
   const box = todoList(list, keeper ? (kept) => keeper.save(kept) : async () => {},
     {readOnly: !b.member, first: t('Something to do together'), counted: (open) => told.left(open), failed: (why) => { status.textContent = why; }});
-  holder.replaceChildren(box.element, status);
+  // How many are left is said on its part; Clear done, while some are, under the list.
+  holder.replaceChildren(box.element, box.clear, status);
   // Read in after its board was drawn: it comes up where it stands, as the talk does.
   if (!still()) holder.animate([{opacity: 0}, {opacity: 1}], {duration: paced(200), easing: 'ease-out'});
   let seen = JSON.stringify(list);
