@@ -328,7 +328,7 @@ test('the current repo\'s pill shows which part has the keyboard, in ground over
   expect(at.y - scroller.y).toBeGreaterThanOrEqual(4);
 });
 
-test('the band\'s first button opens File at what is read now, with its menu out (issue #49)', async ({app}) => {
+test('the band\'s first button opens File at what is read now, with its menu out (issue #49), a new file made beside it', async ({app}) => {
   // What is read now: the Makefile, gone to from File (the page opens at its first file, the README).
   await app.file.open('hello', 'Makefile');
   await app.rail.go('forge');
@@ -343,9 +343,20 @@ test('the band\'s first button opens File at what is read now, with its menu out
   const menu = app.page.getByRole('menu', {name: 'Makefile', exact: true});
   await expect(menu).toBeVisible();
   await expect(app.file.tree.getByRole('button', {name: 'Makefile', exact: true})).toBeVisible();
-  await expect(menu.getByRole('menuitem').first()).toBeVisible();
+  await expect(menu.getByRole('menuitem')).toHaveText(['New file', 'New folder', 'Rename', 'Delete']);
   await app.page.keyboard.press('Escape');
   await expect(menu).toBeHidden();
+  await app.file.close();
+
+  // A new file from there is made in the folder of the file read now, and is the one to work on.
+  await app.file.open('hello', 'src/main.c');
+  await app.rail.go('forge');
+  await buttons.first().click();
+  const near = app.page.getByRole('menu', {name: 'main.c', exact: true});
+  await near.getByRole('menuitem', {name: 'New file'}).click();
+  await near.getByRole('textbox').fill('util.c');
+  await near.getByRole('textbox').press('Enter');
+  await expect(app.forge.editor('src/util.c')).toBeFocused();
 });
 
 test('pressed anywhere in the prompt box, beside its line too, the caret goes in (issue #45)', async ({app}) => {

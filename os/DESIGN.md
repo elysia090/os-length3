@@ -2696,8 +2696,10 @@ out the row's menu; a right press on the row, or the menu key (Shift+F10)
 on its name, does the same. The menu is the person's menu (`.pop`): beside
 the tree at the row's height, out in the free space so nothing moves, its
 head the row's name, a row per deed. A folder, the repo's own row too, has
-New file and New folder; a file or folder has Rename and Delete (a repo is
-not renamed or deleted here). A deed pressed becomes the field or the ask in
+New file and New folder, made in it; a file has them too, made beside it in
+its folder (so Forge's files button, which brings out the menu of the file
+read now, makes a new file there); a file or folder has Rename and Delete (a
+repo is not renamed or deleted here). A deed pressed becomes the field or the ask in
 its own place: a name written and Enter makes it (a name is one plain part,
 with no "/" and not starting with "."; one already there is said under the
 field and the keyboard stays in it); Delete asks there, `{name}を消します`
