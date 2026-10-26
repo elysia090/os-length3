@@ -51,6 +51,8 @@ export default {
   'allowed': '割当',
   'On this device': 'この端末にあるもの',
   'In this browser': 'このブラウザにあるもの',
+  'Other': 'その他',
+  'what the browser counts beside these, estimated': 'これらのほかにブラウザが数えている分（推定）',
   'Can be freed': '空けられるもの',
   'Nothing to free: what stays here says why': '空けられるものはありません：残るものはそれぞれ理由を示しています',
   'Repos stay on the Remote and come back when opened.': 'repo は Remote に残り、開けばまた来ます。',

@@ -86,6 +86,25 @@ test('Runtime is in parts as Remote is: the one chosen shows, the others blend i
   await expect(app.runtime.part('Environments')).toBeInViewport();
 });
 
+test("what is in this browser adds up to the total over it: what the browser counts besides is a row of its own", async ({app}) => {
+  // Nothing written yet: Home's settings are nothing, and the browser counts its keeping of the OS all the same.
+  await app.runtime.open('This browser');
+  const here = app.main.getByRole('region', {name: /^In this browser/});
+  await expect(here.getByText('Other', {exact: true})).toBeVisible();
+  const read = (s: string) => {
+    const [n, unit] = s.trim().split(' ');
+    const by = ({B: 1, KB: 1e3, MB: 1e6, GB: 1e9} as Record<string, number>)[unit];
+    // What it is to within the figure's last place.
+    return {n: Number(n) * by, within: (n.includes('.') ? .05 : .5) * by};
+  };
+  const total = read(await here.getByRole('heading').locator('b').innerText());
+  const rows = (await here.locator('.space-size').allInnerTexts()).map(read);
+  const sum = rows.reduce((a, r) => a + r.n, 0);
+  expect(Math.abs(sum - total.n)).toBeLessThanOrEqual(rows.reduce((a, r) => a + r.within, total.within));
+  // The total said over the box is the one beside the bar.
+  await expect(app.main.locator('.legend > span').first().locator('b')).toHaveText(await here.getByRole('heading').locator('b').innerText());
+});
+
 test('the environments are one card two wide, the desktop app at its right and SSH under both: Length³ and its version apart, one Download a size smaller', async ({signedIn: app}) => {
   // The Remote has the release's files, as a deploy puts them there. (Signed in, so SSH is there to be under them.)
   await app.page.route('**/v1/desktop/**', (r) => (r.request().method() === 'HEAD' ? r.fulfill({status: 200, body: ''}) : r.continue()));

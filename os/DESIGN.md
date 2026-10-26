@@ -2217,7 +2217,11 @@ or goes).
   never a button that cannot act.
 
 In a browser the same list is the browser's copy of the repos (このブラウザ,
-its share an estimate), and the same three answers apply.
+its share an estimate), and the same three answers apply. What the browser
+counts for this OS beyond what is listed (its own keeping of them) is a row of
+its own, Other (その他), last and marked estimated, so the rows always add up
+to the total over them and beside the bar: never 2.8 KB over a lone Home of
+0 B.
 
 ### Git
 

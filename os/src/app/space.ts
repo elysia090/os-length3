@@ -27,9 +27,14 @@ export async function readSpace(open: string[] = []): Promise<Space> {
     room: 'Keep', why: t('The Prompt runs on it, so it is kept')});
   items.sort((a, b) => b.allocated - a.allocated || a.what.localeCompare(b.what));
   const c = await readCapacity();
+  // The browser's figure for this OS holds more than what is listed (its own keeping of them): that more is a row of
+  // its own, last, so the rows add up to the total said over them; a figure under them is theirs.
+  const listed = items.reduce((n, i) => n + i.allocated, 0);
+  const counted = c?.app ?? listed;
+  if (counted > listed) items.push({id: 'other', what: t('Other'), detail: t('what the browser counts beside these, estimated'), allocated: counted - listed, room: 'Keep', why: ''});
   return {
     host_total: c?.total ?? 0, host_free: c?.free ?? 0, host: 'Estimated',
-    allocated: c?.app ?? items.reduce((n, i) => n + i.allocated, 0),
+    allocated: Math.max(counted, listed),
     freeable: items.filter((i) => i.room !== 'Keep').reduce((n, i) => n + i.allocated, 0), items,
   };
 }
