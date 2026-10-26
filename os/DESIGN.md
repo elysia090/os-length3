@@ -1786,7 +1786,10 @@ with its file's head at the top when it is near it (never the empty foot of
 the file before over it); an issue, a changed file's
 diff or a run is read in the right pane. Under the top line, the plugin
 area: nothing until the rail's plug opens it, then up to seven plugins side
-by side, one at a time (none yet; with none it says so in one quiet line).
+by side, one at a time (none yet). With none it stays plain, nothing put
+there to fill it (issue #45): opened, the pane's top is that empty area and
+the Prompt moves down under it, level with the foot of the rail's Inbox, as
+it does under plugins; the plug, which says it is out, is the way back.
 The right pane has no switch of its own: from the top line down, one under
 another, each under its 15/600 heading, Issue (the repo's open issues, as Git shows them: one merged or
 closed is not among them; one line each as #3 Fix：件名, pressed to read one in full), diff (the changes not yet
