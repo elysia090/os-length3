@@ -24,6 +24,9 @@ export default {
   'Open boards': '公開されている板',
   'Make a server': 'サーバーを作る',
   'Trip': '旅行',
+  'Book club': '読書会',
+  'Family': '家族',
+  'Band': 'バンド',
   'Name on this Remote': 'この Remote での名前',
   'A server needs your name. Claim one in Inbox.': 'サーバーにはあなたの名前が要ります。Inbox で取ってください。',
   // The talk.
@@ -38,6 +41,7 @@ export default {
   'Take it down?': '取り下げますか？',
   // The box at the foot.
   'Write in {board}': '{board}に書く',
+  'Post ({keys})': '投稿する（{keys}）',
   'To the people of {server}': '{server}の人たちへ',
   'As {name}, a guest': 'ゲストの{name}として',
   'Only its people write here.': 'ここに書けるのはこのサーバーの人だけです。',

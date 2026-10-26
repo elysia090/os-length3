@@ -3,6 +3,7 @@ import {onConnection} from '../../remote/connection.ts';
 import type {Context} from '../context.ts';
 import {paced} from '../../ui/glide.ts';
 import {ServerView} from './view.ts';
+import {seenNow} from './talk.ts';
 
 // Server is an operation, as File is: laid over whatever page is showing,
 // never a page of its own. It is the one thing whose subject is people, not
@@ -26,7 +27,9 @@ import {ServerView} from './view.ts';
 // Resting the pointer on its icon a deliberate moment (it covers the page, so
 // longer than File's small tree) brings it out, and it stays for LINGER after
 // the pointer leaves, unless the pointer goes on to another place on the rail;
-// a press brings it out to stay. A press outside
+// a press brings it out to stay. It comes out whole, not as a frame its parts
+// fill one by one: the rest makes it ready unseen first, and a press waits a
+// moment at most for what it opens on. A press outside
 // it, Escape, or a second press puts it away (Escape from behind the gear
 // goes back to the boards first). While something is being written it stays,
 // and a press outside does not put it away while the box at the foot holds
@@ -37,6 +40,10 @@ import {ServerView} from './view.ts';
 
 const OPEN_DELAY = 600;
 const LINGER = 8000;
+/** A rest this long on its icon makes it ready unseen (OPEN_DELAY brings it out): passing over it reads nothing. */
+const READY_AFTER = 200;
+/** The longest it waits, unseen, for what it opens on before it comes out all the same. */
+const WHOLE = 300;
 
 export class ServerLayer {
   readonly element: HTMLElement;
@@ -71,14 +78,18 @@ export class ServerLayer {
     });
   }
 
-  get isOpen() { return this.element.isConnected && !this.leaving; }
+  get isOpen() { return this.element.isConnected && !this.leaving && !this.coming; }
 
   /** The rail's Server button. */
   attach(button: HTMLElement) {
     this.trigger = button;
     button.setAttribute('aria-controls', 'server-layer');
     button.setAttribute('aria-expanded', 'false');
-    button.addEventListener('pointerenter', () => this.later(true, this.isOpen ? 0 : OPEN_DELAY));
+    button.addEventListener('pointerenter', () => {
+      // Resting there a moment, it is made ready unseen, so what comes out after the rest comes whole.
+      if (!this.element.isConnected) { clearTimeout(this.readying); this.readying = window.setTimeout(() => this.ready(), READY_AFTER); }
+      this.later(true, this.isOpen ? 0 : OPEN_DELAY);
+    });
     button.addEventListener('pointerleave', () => this.leave());
     button.addEventListener('click', () => {
       if (this.isOpen && this.pinned) { this.close(true); return; }
@@ -86,7 +97,53 @@ export class ServerLayer {
     });
   }
 
-  private leave() { if (!this.pinned) this.later(false, LINGER); }
+  private leave() {
+    clearTimeout(this.readying);
+    if (this.pinned) return;
+    // Made ready for a rest that did not last: let go, unseen.
+    if (this.coming) { this.close(); return; }
+    this.later(false, LINGER);
+  }
+
+  /** Made ready (or being), not out yet: built unseen, while the rest is made sure of or what it opens on is read. */
+  private coming = false;
+  private readying = 0;
+  /** Whether what it opens on is drawn (view.ts settled). */
+  private settled = (): boolean => true;
+
+  /** Built, unseen and not pressed, for coming out whole: what it opens on read while the pointer rests. */
+  private ready() {
+    if (this.element.isConnected) return;
+    this.coming = true;
+    this.element.classList.add('coming');
+    this.element.setAttribute('aria-hidden', 'true');
+    this.element.replaceChildren(this.build());
+    document.body.append(this.element);
+  }
+
+  /**
+   * Out, once what it opens on is drawn (the servers, the board on screen's talk and TODO, its people) or after
+   * WHOLE at the most: it comes out once, whole, not as a frame its parts then fill one by one.
+   */
+  private show() {
+    const asked = performance.now();
+    const out = () => {
+      if (!this.coming || !this.element.isConnected) return;
+      if (!this.settled() && performance.now() - asked < WHOLE) { requestAnimationFrame(out); return; }
+      this.coming = false;
+      this.element.classList.remove('coming');
+      this.element.removeAttribute('aria-hidden');
+      seenNow();
+      // Pressed out while it was made ready: the keyboard goes in, as it does when a press builds it.
+      if (this.pinned && !this.element.contains(document.activeElement)) this.keyboardIn();
+    };
+    out();
+  }
+
+  /** The keyboard into it: the name being made, or the box to write in. */
+  private keyboardIn() {
+    [...this.element.querySelectorAll<HTMLElement>('.server-name-in, .prompt-in')].find((el) => el.checkVisibility())?.focus();
+  }
 
   /** The pointer on another place on the rail: the layer a rest brought out, not pressed, nothing written, goes at once. */
   passedBy() { if (this.isOpen && !this.pinned && !this.writing()) this.close(true); }
@@ -101,6 +158,7 @@ export class ServerLayer {
     clearTimeout(this.timer);
     // Brought back while it was going: it is built again, at once.
     if (this.leaving) { this.leaving.cancel(); this.leaving = null; this.element.style.pointerEvents = ''; this.element.replaceChildren(); this.element.remove(); }
+    clearTimeout(this.readying);
     if (stay) this.pinned = true;
     // Brought out to stay, it covers the page: the keyboard goes from the rail into it, not to the page behind it.
     if (stay) document.getElementById('page')?.setAttribute('inert', '');
@@ -108,14 +166,12 @@ export class ServerLayer {
       // Out already because the pointer rested on Server, and now pressed: the keyboard goes in as it does when a
       // press brings it out (the name being made, or the box to write in), not left on the rail where Enter would
       // put it away again.
-      if (stay && !this.element.contains(document.activeElement)) {
-        [...this.element.querySelectorAll<HTMLElement>('.server-name-in, .prompt-in')].find((el) => el.checkVisibility())?.focus();
-      }
+      if (stay && !this.element.contains(document.activeElement)) this.keyboardIn();
       return;
     }
-    this.element.replaceChildren(this.build());
-    document.body.append(this.element);
+    this.ready();
     this.trigger?.setAttribute('aria-expanded', 'true');
+    this.show();
   }
 
   /** Its going, while it goes (put away by the person, it fades the way it came from). */
@@ -127,6 +183,9 @@ export class ServerLayer {
    */
   close(gently = false) {
     clearTimeout(this.timer);
+    clearTimeout(this.readying);
+    // Never out (made ready for a rest that did not last): nothing to see go.
+    if (this.coming) { gently = false; this.coming = false; this.element.classList.remove('coming'); this.element.removeAttribute('aria-hidden'); }
     this.pinned = false;
     document.getElementById('page')?.removeAttribute('inert');
     this.writing = () => false;
@@ -153,9 +212,10 @@ export class ServerLayer {
     });
     this.writing = () => view.writing();
     this.back = () => view.back();
+    this.settled = () => view.settled();
     return view.work;
   }
 
-  /** Out, it is built again: signed in or out, or the Remote answering again. */
-  private again() { if (this.isOpen) this.element.replaceChildren(this.build()); }
+  /** Out (or being made ready), it is built again: signed in or out, or the Remote answering again. */
+  private again() { if (this.element.isConnected && !this.leaving) this.element.replaceChildren(this.build()); }
 }

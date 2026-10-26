@@ -70,25 +70,35 @@ function writeIn(b: Shown, guest: servers.GuestHere | null, note: HTMLElement, w
   ways.writing(() => document.activeElement === field || !!field.value.trim());
   ways.holding(() => drafts.holds(key));
   const fit = () => { field.style.height = 'auto'; field.style.height = `${field.scrollHeight}px`; };
+  // Post at the box's bottom right, as Forge's box has Run and Inbox's Send: what sends is in sight, not only known.
+  // Its keys are in its title, as Run's are.
+  const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+  const post = h('button', {type: 'button', class: 'button small-button prompt-run', title: t('Post ({keys})', {keys: mac ? '⌘+Enter' : 'Ctrl+Enter'}),
+    'aria-keyshortcuts': mac ? 'Meta+Enter' : 'Control+Enter'}, t('Post')) as HTMLButtonElement;
   let sending = false;
-  field.addEventListener('input', () => { drafts.set(key, field.value); fit(); });
-  if (field.value) queueMicrotask(fit);
-  field.addEventListener('keydown', async (event) => {
-    // As every box one writes in: Enter is a new line, Ctrl+Enter (⌘+Enter) sends.
-    if (event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || event.isComposing) return;
-    event.preventDefault();
+  const send = async () => {
     if (sending) return;
     // Nothing written: the box shakes its head, as every box does sent empty.
-    if (!field.value.trim()) { nudge(field.closest('.prompt')); return; }
+    if (!field.value.trim()) { field.focus(); nudge(field.closest('.prompt')); return; }
     sending = true;
     note.replaceChildren();
     try { await postNow(b.id, field.value, guest?.token); field.value = ''; drafts.sent(key); fit(); } catch (e) {
       note.textContent = errorText(e);
       if (guest) noLonger(e);
     } finally { sending = false; }
+  };
+  field.addEventListener('input', () => { drafts.set(key, field.value); fit(); });
+  if (field.value) queueMicrotask(fit);
+  field.addEventListener('keydown', (event) => {
+    // As every box one writes in: Enter is a new line, Ctrl+Enter (⌘+Enter) sends.
+    if (event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || event.isComposing) return;
+    event.preventDefault();
+    void send();
   });
+  // Pressed, the keyboard stays where one writes, for the next.
+  post.addEventListener('click', () => { void send(); field.focus({preventScroll: true}); });
   if (ways.pinned() && b.member) queueMicrotask(() => { field.focus(); field.setSelectionRange(field.value.length, field.value.length); });
-  return h('form', {class: 'prompt'}, field);
+  return h('form', {class: 'prompt'}, field, post);
 }
 
 /**

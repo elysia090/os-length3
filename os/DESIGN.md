@@ -2506,13 +2506,24 @@ taking guests (or stops being open) ends every invitation and guest at
 once, so opening it again lets nobody back by an old link; someone who
 leaves the server takes the invitations they made with them.
 
-Server is an overlay (§3), on the bench's shape. Its pieces, from §3:
+Server is an overlay (§3), on the bench's shape. It comes out whole: a
+rest on its icon makes it ready unseen, reading what it opens on (the
+servers, the board on screen's talk and TODO, its people), so what comes
+out after the rest is all there; pressed out, it waits for that a moment
+at most (300 ms) before it comes. A rest that does not last lets it go
+unseen, and nothing it read while unseen counts as seen. Its pieces, from §3:
 
 - **The band**: + first at the top line's left end, to make a server, then
-  the servers one is in; the gear at the right end (kept in its place,
-  unpressable, while none is chosen). A server is made where it will
+  the servers one is in, one row however many there are, sliding sideways
+  as Git's repos do (never more rows pushing the boards down), its ends
+  fading where there is more along it and the one chosen, or being named,
+  slid into view; the gear at the right end (kept in its place,
+  unpressable, while none is chosen), in ink while one is behind it, as a
+  chip chosen is, turning a tooth's step as it is pressed either way. A server is made where it will
   stand, not in a form: its chip is the field, in the band after the
-  others (dashed until it has a name), saying one name: its name on this
+  others (dashed until it has a name; empty, it says a name none of one's
+  servers has, Trip, else Book club, Family or Band, so it is not read as
+  a second of one already there), saying one name: its name on this
   Remote follows the name unseen (Trip is trip), and the quiet @ at the
   chip's end shows it to be written otherwise, the @ staying where it was
   as its first letter; a name someone else has shows it by itself. Make
@@ -2526,27 +2537,50 @@ Server is an overlay (§3), on the bench's shape. Its pieces, from §3:
   screen and stands under it, sliding with it board to board. What the name
   on this Remote is (first come, five years) is said when the @ is
   pointed at; what the Remote says no to (the plan: making a server is
-  paid, §6; a name taken; one's own name to claim first) is said at the
-  chip's end when it says it, with the way on (See the plan, Go to Inbox).
+  paid, §6; a name taken; one's own name to claim first) is said on a line
+  of its own under the band, where the row cannot slide it out of sight,
+  when it says it, with the way on (See the plan, Go to Inbox). Escape
+  while one is named, come to from a server, goes back to that server
+  (what was written is kept), and only then puts Server away.
   Being asked into a server, and writing, are free.
-- **Boxes side by side**: its boards, the last box making a new one (a
+- **Boxes side by side**: its boards, the last box making a new one, as a
+  server is, where it will stand: the board it will be, dashed on the
+  ground, its name written in its head in a board name's letters with Make
+  beside it, what a board is said quietly at the top of where its talk will
+  be, its TODO's first line and No posts yet faint where they will stand;
+  come to by a press, its name takes the keyboard (by ← →, the keyboard
+  stays on the row to go on along it); made, the same shapes stand there
+  whole, and the edge of the next new one, dashed with its +, beside it (a
   name another board in the server has, whatever its case, is refused under
-  its field, there and on the Remote, made, renamed or brought back). A
+  its field, there and on the Remote, made, renamed or brought back). An
+  edge under the pointer lights the box it goes to as a thing under the
+  pointer is (raised, edged in ink), over a moment each way, so a hand
+  resting on the line does not make it flicker. The
+  board slid away from goes as it was, its posts and TODO with it, and is
+  only its edge once the row has stopped; the one slid to is drawn as the
+  row starts, what it reads coming up where it stands. A
   board on screen is one sheet, never a box in a box: its name across it
   over a quiet rule, its talk at the left as tall as the board (the latest
   at its foot, what was said before above, the board open at its foot while
   there is more below, so the eye goes on down), and **its TODO** beside it
   at the right, a column of its own past a rule, scrolling in itself when
   long; nothing switched to see one or the other. Narrow, the TODO comes
-  over the talk, a few lines tall. Outside the server an open
+  over the talk, as tall as its lines (the keys it is written with, a
+  desk's, keep no room there), and the talk and its faces are a step
+  tighter. Outside the server an open
   board's TODO is shown, not written, and not at all while empty.
-- **The box at the foot** writes in the board on screen (旅行 の人たちへ).
+- **The box at the foot** writes in the board on screen (旅行 の人たちへ),
+  Post at its bottom right as Forge's box has Run and Inbox's Send (its
+  keys, Ctrl+Enter, in its title; Enter is a new line), the keyboard
+  staying in the box once it is pressed.
   What is half written in it is that board's (§1): going to another board,
   or putting Server away, keeps it, and it is there when the board is on
   screen again; gone once sent. While it holds words, a press outside does
   not put Server away (Escape and a second press on its icon still do).
 - **The right pane**: who is in it (face, name, owner), then the repos
-  they show in it (name and whose), standing as Forge's pane does: its
+  they show in it (name and whose), looked at again every little while
+  (15 s) while it is out, so someone asked in who accepts on their own
+  device comes in there then, standing as Forge's pane does: its
   line at its edge from the top line to the foot, its first heading on the
   line Forge's Prompt is on, and at the top line's right end, where
   Forge's pane switch is, the gear (the same quiet circle), over the people
@@ -2554,7 +2588,7 @@ Server is an overlay (§3), on the bench's shape. Its pieces, from §3:
   A repo pressed takes the boards' place
   with the page head (its name, whose, Forge when one's own, Back) and one
   box in two panes: its files, the one chosen (its README first), as it
-  was last pushed.
+  was last pushed; its row in the pane stays lit while it is shown.
 - **Behind the gear**, in the boards' place: the page head (the server's
   name, its name on the Remote and code; Done at the sheet's bottom right),
   then **parts** of **small
@@ -2563,7 +2597,8 @@ Server is an overlay (§3), on the bench's shape. Its pieces, from §3:
   name or a code and 入れる; its owner removes someone), Repos (each of one's own with **the pair of
   switches**, to its people and to everyone, seen by everyone as the
   server's; others' shown here, whose, its owner may take them off),
-  Boards (to everyone and guests, its owner's; Take home, anyone's;
+  Boards (to everyone and guests, its owner's, taking guests saying first
+  that anyone then reads it, where it is not open yet; Take home, anyone's;
   Remove, its owner's: the board is held 30 days, off the boards, its card
   quiet with its 外す red, and pressed again it is back at once; beside a
   board that takes guests, its Guests card: the guests in, each with who
@@ -2591,8 +2626,10 @@ rules: a run of one address's posts within five minutes shows the face
 (the address's first letters in a circle), the name, the domain (or guest)
 and the time once, then each text under it, and the day's name, quiet and
 centred, marks where a day starts. A post's writer, and the server's owner,
-may take it down: it comes out at its top right on hover, round, and asks
-once more in its own place for a moment. Nothing is counted.
+may take it down: it comes out at its top right on hover, round, inside
+the post (not over the one above, which a hand going up the talk would
+then pass over still lighting the one below), and asks once more in its
+own place for a moment. Nothing is counted.
 
 The talk has no end to reach and nothing to press. With no post yet, it
 says so at its foot, by the box one writes in, where the first will come.
@@ -2600,7 +2637,10 @@ While it goes on below what is shown, the board's box is open at its foot
 (no line under it, the posts running past the edge), so there is plainly
 more to scroll to; at the foot it closes. It opens at the newest;
 scrolled near its top, the next older posts are read in above without
-moving what is on screen, and at the very top it says it is every post.
+moving what is on screen, and at the very top it says it is every post
+(not where every post is on the board at once: that is plain to see).
+Reading is said only when it takes a while (a quarter of a second), so a
+page read at once comes without a word flashing before it.
 What comes meanwhile is put at the foot: followed when the foot is in view
 (and always after one's own post), otherwise with a small ink pill (↓ 3 new
 posts), which goes down to them. The foot in view is what reading the board

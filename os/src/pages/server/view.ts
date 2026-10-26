@@ -86,7 +86,7 @@ export class ServerView {
       gear: () => { if (this.showing === 'settings') this.place('boards'); else this.settings(); },
     });
     const center = h('div', {class: 'center server-center'});
-    this.row = new Row(center, {box: (j, now) => this.box(j, now), landed: (k) => this.landed(k)});
+    this.row = new Row(center, {box: (j, now) => this.box(j, now), landed: (k, pressed) => this.landed(k, pressed)});
     this.side = new Side({isMe: (a) => this.isMe(a), seeRepo: (r) => this.seeRepo(r), write: (a) => this.write(a)});
     center.append(this.band.element, this.row.element, this.sheet, this.dock);
     this.work = h('div', {class: 'work no-strip'}, center, this.side.element, h('div', {class: 'server-bar'}, this.band.gear));
@@ -95,7 +95,20 @@ export class ServerView {
     this.myself = signedIn ? import('../../remote/inbox.ts').then((inbox) => inbox.me()).catch(() => null) : Promise.resolve(null);
     this.hear();
     const held = servers.heldInvite();
-    if (signedIn) void this.readServers(held); else void this.readOpen(held);
+    void (signedIn ? this.readServers(held) : this.readOpen(held)).finally(() => { this.listed = true; });
+  }
+
+  /** What is here is read: one's servers, or the boards open to everyone (or what is said instead). */
+  private listed = false;
+
+  /**
+   * What Server opens on is drawn (layer.ts waits for it, a moment at most, to come out whole): what is here read, the
+   * board on screen's talk and TODO read, and its people.
+   */
+  settled(): boolean {
+    if (!this.listed || !this.side.painted) return false;
+    const on = this.row.track.querySelector('.slide[aria-current="true"]');
+    return !on?.querySelector('.board-talk:not(.board-faint) > .timeline:not([data-read]), .board-todo:empty');
   }
 
   /** Something being written here (a post, a TODO, a name): the layer stays out while there is. */
@@ -104,12 +117,24 @@ export class ServerView {
     return false;
   }
 
-  /** Escape from behind the gear, or from a repo shown: back to the boards (true), or nothing to go back from. */
+  /**
+   * Escape from behind the gear, or from a repo shown: back to the boards (true); from a server being named, come to
+   * from one, back to that one, its box at the foot taking the keyboard as when its chip is pressed (what was written
+   * in the name is kept, as it is anyway); or nothing to go back from, and Server is put away.
+   */
   back(): boolean {
+    const from = this.before;
+    if (this.showing === 'boards' && this.here.naming?.isConnected && from && this.here.list.some((s) => s.id === from)) {
+      this.show(from);
+      return true;
+    }
     if (this.showing === 'boards') return false;
     this.leaveSheet();
     return true;
   }
+
+  /** The server on screen when + was pressed: Escape while one is named goes back to it. */
+  private before: string | null = null;
 
   private readonly writer = (at: Element | 'dock', busy: () => boolean) => {
     for (const k of this.writers.keys()) if (k !== 'dock' && !k.isConnected) this.writers.delete(k);
@@ -189,7 +214,7 @@ export class ServerView {
   private noInvite() {
     servers.dropInvite();
     this.here.shown = [];
-    this.row.say(h('div', {class: 'slide', 'aria-current': 'true'}, h('div', {class: 'board-card board-new'},
+    this.row.say(h('div', {class: 'slide', 'aria-current': 'true'}, h('div', {class: 'board-card board-said'},
       h('div', {class: 'board-body'}, h('p', {}, t('This invitation opens no board that takes guests. Ask whoever gave it to you for another.'))))));
     this.paintDock(null);
   }
@@ -226,6 +251,7 @@ export class ServerView {
 
   /** No server chosen: one is made, where it will stand. */
   private makeAnew() {
+    this.before = this.here.serverId ?? this.before;
     this.here.serverId = null;
     this.band.paint();
     this.makeServer();
@@ -238,7 +264,7 @@ export class ServerView {
     this.place('boards');
     const making = nameServer(this.here, {
       writer: this.writer,
-      naming: (chip) => { this.here.naming = chip; this.band.paint(); },
+      naming: (chip, ask) => { this.here.naming = chip; this.band.asking(ask); this.band.paint(); },
       made: (s) => this.made(s),
       broughtBack: async (id) => { this.here.list = await servers.servers(); this.show(id); },
       plan: () => { this.ways.close(); goToPlan(this.ways.ctx); },
@@ -276,14 +302,25 @@ export class ServerView {
   /** What box `j` of the row holds: a board, or after them the last box, a new board. */
   private box(j: number, now: boolean): HTMLElement {
     const b = this.here.shown[j];
-    return b ? boardBox(b, now, this.here.signedIn, this.writer) : newBoard(now, this.here, {writer: this.writer, show: (id, board) => this.show(id, board)});
+    return b ? boardBox(b, now, this.here.signedIn, this.writer) : newBoard(now, this.here, {writer: this.writer, made: (id, board) => this.boardMade(id, board)});
   }
 
-  /** Box `k` on screen: remembered, and the box at the foot writes in it. */
-  private landed(k: number) {
+  /** A board made in the last box: it stands where the box was, whole, as a server made does. */
+  private boardMade(id: string, board: string) {
+    this.show(id, board);
+    this.row.track.querySelector('.slide[aria-current="true"] .board-card')?.animate([{opacity: .35}, {opacity: 1}], {duration: paced(360), easing: 'ease-out'});
+  }
+
+  /**
+   * Box `k` on screen: remembered, and the box at the foot writes in it. The last box come to by a press (`pressed`),
+   * its name takes the keyboard, as a server's does: the board is made by writing it. Come to by ← →, the keyboard
+   * stays on the row, to go on along it.
+   */
+  private landed(k: number, pressed: boolean) {
     const b = this.here.shown[k];
     if (b) remember({server: this.here.serverId ?? undefined, board: b.id});
     this.paintDock(b ?? null);
+    if (!b && pressed) this.row.track.querySelector<HTMLInputElement>('.slide[aria-current="true"] .board-name-in')?.focus({preventScroll: true});
   }
 
   /** The box at the foot: writing in the board on screen (dock.ts). */
@@ -323,6 +360,7 @@ export class ServerView {
     this.dock.hidden = now !== 'boards';
     this.sheet.hidden = now === 'boards';
     if (now === 'boards') this.sheet.replaceChildren();
+    if (now !== 'repo') this.side.seen(null);
     this.band.gear.setAttribute('aria-expanded', String(now === 'settings'));
   }
 
@@ -358,6 +396,7 @@ export class ServerView {
   /** A repo shown: seen as it was last pushed, in the boards' place (repo.ts). */
   private seeRepo(r: servers.ShownRepo) {
     this.place('repo');
+    this.side.seen(r);
     void repoSheet(this.sheet, r, {back: () => this.toBoards(), forge: () => { this.ways.close(); this.ways.ctx.openRepo(r.name); }});
   }
 

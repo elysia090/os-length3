@@ -30,10 +30,13 @@ interface Read { posts: Post[]; more: boolean }
 /** The most a post says, as the Remote holds it to. */
 export const LIMIT = 2000;
 
-/** What the Remote said no to: its sentence, in the person's language. */
+/**
+ * What the Remote said no to: its sentence, in the person's language, and what it said with it (its own words among
+ * them), for the place that asked to tell one no from another (making a server: a name to claim first, a name taken).
+ */
 const failed = async (r: Response) => {
   const body = await r.json().catch(() => ({})) as {error?: string};
-  return new RemoteError(r.status, t(String(body.error ?? r.status)));
+  return new RemoteError(r.status, t(String(body.error ?? r.status)), body as Record<string, unknown>);
 };
 const call = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
   const r = await api(path, init);
