@@ -1,4 +1,5 @@
 import {expect, test} from './fixtures.ts';
+import type {Locator} from '@playwright/test';
 
 // The box at the foot does more than run: its pill says what it does and, pressed, brings out the four it can
 // (box-modes.ts), Edit among them (edit-box.ts). None of it needs the Prompt running.
@@ -97,46 +98,55 @@ test('the Prompt up over the center is put back by its ×, as by Escape', async 
   await expect(app.page.locator('.work.bench:not([hidden]) .term-shut')).toBeHidden();
 });
 
-test('Edit: a line in the box edits the file in front, shown on it first, done with Enter, Ctrl+Z taking it back', async ({app}) => {
+/** Where in `file` (the editor of a mono file) the gap before column `col` of line `line` (from 1) is, on the screen. */
+async function placeIn(file: Locator, line: number, col: number) {
+  const r = (await file.boundingBox())!;
+  const {lh, left, w} = await file.evaluate((a: HTMLTextAreaElement) => {
+    const cs = getComputedStyle(a), c = document.createElement('canvas').getContext('2d')!;
+    c.font = cs.font;
+    return {lh: parseFloat(cs.lineHeight), left: parseFloat(cs.paddingLeft), w: c.measureText('m').width};
+  });
+  return {x: r.x + left + col * w, y: r.y + (line - .5) * lh + parseFloat(String(await file.evaluate((a) => getComputedStyle(a).paddingTop)))};
+}
+
+test('Edit: the box holds a line of the file, written there as in the file, and a text\'s own keys go along it', async ({app}) => {
   const box = app.forge.promptBox, page = app.page, file = app.forge.editor('src/main.c');
-  const pill = app.main.getByRole('button', {name: /^What the box does/}), note = app.main.locator('.prompt-note');
+  const pill = app.main.getByRole('button', {name: /^What the box does/});
   const before = '#include <stdio.h>\n\nint main(void) {\n    puts("hello");\n    return 0;\n}\n';
-  // Nothing it does throws (a mark brought into view once asked for itself again, without end).
   const thrown: string[] = [];
   page.on('pageerror', (e) => thrown.push(e.message));
   await expect(file).toHaveValue(before);
-  // Written in, the file is the one in front; Ctrl+G brings the box to it, saying what can be written there.
+  // Written in, the file is the one in front; Ctrl+G brings the box to it, holding the caret's line.
   await file.click();
   await page.keyboard.press('Control+g');
   await expect(box).toBeFocused();
-  await expect(pill).toHaveAccessibleName('What the box does: Apply');
-  await expect(note).toContainText('to the line');
-  await box.fill('4');
-  await box.press('Enter');
-  await expect(pill).toContainText('main.c:4');
-  await expect(box).toHaveValue('');
-  // What it would do is said (and drawn on the file) before Enter does it; nothing is written until then.
-  await box.fill('puts → printf');
-  await expect(note).toHaveText('1 to write as “printf”');
-  await expect(page.locator('.edit-marks .edit-mark.gone')).toHaveCount(1);
-  await expect(file).toHaveValue(before);
-  await box.press('Enter');
-  await expect(file).toHaveValue(before.replace('puts', 'printf'));
-  // A line under the caret's, as indented as it is; the box is ready for the next.
-  await box.fill('+ return 1;');
-  await box.press('Enter');
-  await expect(box).toHaveValue('+ ');
-  await expect(file).toHaveValue(before.replace('puts', 'printf').replace('    return 0;', '    return 1;\n    return 0;'));
+  await expect(pill).toHaveAccessibleName('What the box does: Edit');
+  // A line pressed while the box has the keyboard comes into it, the caret where it was pressed.
+  const at = await placeIn(file, 5, 13);
+  await page.mouse.click(at.x, at.y);
+  await expect(box).toBeFocused();
+  await expect(box).toHaveValue('    return 0;');
   await expect(pill).toContainText('main.c:5');
-  // What the box did, taken back from the empty box one at a time, and put back.
-  await box.fill('');
+  // ↑: the line above. What is typed is in the file as it is typed.
+  await box.press('ArrowUp');
+  await expect(box).toHaveValue('    puts("hello");');
+  await box.press('End');
+  await box.pressSequentially(' // say it');
+  await expect(file).toHaveValue(before.replace('puts("hello");', 'puts("hello"); // say it'));
+  // Enter breaks the line: the box goes on to the new one, which keeps the indent.
+  await box.press('Enter');
+  await expect(box).toHaveValue('    ');
+  await box.pressSequentially('fflush(stdout);');
+  const two = before.replace('puts("hello");', 'puts("hello"); // say it\n    fflush(stdout);');
+  await expect(file).toHaveValue(two);
+  await expect(pill).toContainText('main.c:5');
+  // Backspace at the start joins the line to the one above; Ctrl+Z takes it back.
+  await box.press('Home');
+  await box.press('Backspace');
+  await expect(file).toHaveValue(two.replace('it\n    fflush', 'it    fflush'));
   await box.press('Control+z');
-  await expect(file).toHaveValue(before.replace('puts', 'printf'));
-  await box.press('Control+Shift+z');
-  await expect(file).toHaveValue(/return 1;/);
-  await box.press('Control+z');
-  await expect(file).toHaveValue(before.replace('puts', 'printf'));
-  // Escape, in the empty box: the keyboard back in the file.
+  await expect(file).toHaveValue(two);
+  // Escape: the keyboard back in the file.
   await box.press('Escape');
   await expect(file).toBeFocused();
   await expect(page.locator('.edit-marks')).toHaveCount(0);
@@ -144,38 +154,40 @@ test('Edit: a line in the box edits the file in front, shown on it first, done w
   await expect(app.forge.fileState('src/main.c')).toBeHidden();
   expect(thrown).toEqual([]);
   await page.reload();
-  await expect(app.forge.editor('src/main.c')).toHaveValue(before.replace('puts', 'printf'));
+  await expect(app.forge.editor('src/main.c')).toHaveValue(two);
 });
 
-test('Edit: a line of the file pressed comes into the box as it is, written anew there and put back with Enter', async ({app}) => {
+test('Edit: words marked on a line come into the box chosen in their line, and what is typed writes over them', async ({app}) => {
   const box = app.forge.promptBox, page = app.page, file = app.forge.editor('src/main.c');
-  const note = app.main.locator('.prompt-note');
   const before = '#include <stdio.h>\n\nint main(void) {\n    puts("hello");\n    return 0;\n}\n';
+  const marks = file.locator('xpath=..').locator('.edit-marks');
   await file.click();
   await page.keyboard.press('Control+g');
-  await expect(note).toContainText('Click a line');
-  // Pressed while the box has the keyboard: the line comes into the box, which keeps the keyboard.
-  const r = (await file.boundingBox())!, lh = await file.evaluate((a) => parseFloat(getComputedStyle(a).lineHeight));
-  await page.mouse.click(r.x + r.width - 8, r.y + 4.5 * lh);
   await expect(box).toBeFocused();
-  await expect(box).toHaveValue('    return 0;');
-  await expect(note).toHaveText('Line 5: write it anew here, Escape leaves it as it is');
-  // ↑, nothing written in it yet: the line above instead.
-  await box.press('ArrowUp');
+  // Drawn across "hello" on line 4.
+  const a = await placeIn(file, 4, 10), b = await placeIn(file, 4, 15);
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await page.mouse.move(b.x, b.y, {steps: 6});
+  await page.mouse.up();
+  await expect(box).toBeFocused();
   await expect(box).toHaveValue('    puts("hello");');
-  await box.fill('    puts("hello, world");');
-  await expect(file).toHaveValue(before);
+  expect(await box.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd])).toEqual([10, 15]);
+  // In the file: the line held, the words chosen in it.
+  await expect(marks.locator('.held')).toHaveCount(1);
+  await expect(marks.locator('.words')).toHaveCount(1);
+  await page.keyboard.type('world');
+  await expect(file).toHaveValue(before.replace('hello', 'world'));
+  // Nothing chosen now: the box's caret is shown where it is in the file, and goes with it.
+  const caret = marks.locator('.caret');
+  await expect(caret).toHaveCount(1);
+  const x = async () => (await caret.boundingBox())!.x;
+  const was = await x();
+  await box.press('Home');
+  await expect.poll(x).toBeLessThan(was - 20);
+  // Enter breaks the line where the caret is, as on any line.
+  await box.press('End');
   await box.press('Enter');
-  await expect(file).toHaveValue(before.replace('"hello"', '"hello, world"'));
-  await expect(box).toHaveValue('');
-  await expect(note).toHaveText('Line 4 written');
-  // Escape lets a line taken go as it was.
-  await page.mouse.click(r.x + r.width - 8, r.y + 4.5 * lh);
-  await box.fill('gone');
-  await box.press('Escape');
-  await expect(box).toHaveValue('');
-  await expect(file).toHaveValue(before.replace('"hello"', '"hello, world"'));
-  // What the box wrote is taken back from the empty box, as any of its edits.
-  await box.press('Control+z');
-  await expect(file).toHaveValue(before);
+  await expect(file).toHaveValue(before.replace('    puts("hello");', '    puts("world");\n    '));
+  await expect(box).toHaveValue('    ');
 });

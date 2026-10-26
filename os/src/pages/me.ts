@@ -1,9 +1,9 @@
-import {h} from '../dom.ts';
+import {h} from '../ui/dom.ts';
 import {currentLang, LANGS, setLang, t} from '../i18n.ts';
-import {mark} from '../icons.ts';
-import {connection, myName, signOut} from '../remote.ts';
-import {onState, setState} from '../state.ts';
-import {initials, type Profile} from '../profile.ts';
+import {mark} from '../ui/icons.ts';
+import {connection, myName, signOut} from '../remote/connection.ts';
+import {onState, setState} from '../home/state.ts';
+import {initials, type Profile} from '../home/profile.ts';
 import {choosePart} from './common.ts';
 import type {Context} from './context.ts';
 

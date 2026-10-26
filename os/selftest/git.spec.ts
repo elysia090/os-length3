@@ -70,6 +70,24 @@ test('a change on main is committed from main\'s card, named by its line', async
   await expect(app.forge.reference.getByText('README.md', {exact: true})).toBeHidden();
 });
 
+test('many repos waiting on main are a row each in All, a row\'s name opens its files, and one repo shown is its card', async ({signedIn: app}) => {
+  for (const name of ['a', 'b', 'c', 'd']) await app.newRepo.make(name);
+  await app.rail.go('git');
+  await app.git.repos.getByRole('radio', {name: 'All'}).click();
+  const row = app.git.mainCard('a'), open = row.getByRole('button', {name: 'a', exact: true});
+  // Four waiting: rows, their files folded until asked for.
+  await expect(open).toHaveAttribute('aria-expanded', 'false');
+  await expect(row.getByRole('region', {name: '1 file not committed'})).toHaveCount(0);
+  await expect(row.getByRole('button', {name: 'Commit'})).toBeVisible();
+  await open.click();
+  await expect(row.getByRole('region', {name: '1 file not committed'})).toBeVisible();
+  await expect(open).toBeFocused();
+  // One repo shown: its card, the files on it.
+  await app.git.repos.getByRole('radio', {name: 'b', exact: true}).click();
+  await expect(app.git.mainCard('b').getByRole('region', {name: '1 file not committed'})).toBeVisible();
+  await expect(app.git.mainCard('b').getByRole('button', {name: 'b', exact: true})).toHaveCount(0);
+});
+
 test('Escape puts away an issue being written and a commit\'s line, and they come back as they were', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
   await app.rail.go('git');

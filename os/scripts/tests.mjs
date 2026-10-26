@@ -1,5 +1,5 @@
 // npm test: every test file (src/**/*.test.ts, service/*.test.ts, scripts/*.test.mjs) under node:test, each
-// process with the core a page runs (src/testing-core.ts), reported as node --test reports.
+// process with the core a page runs (src/testing/core.ts), reported as node --test reports.
 //
 // node --test runs each file in a process of its own: a process paid for starting, loading what its file uses
 // and, for a file on a Remote, making a database (some 3 s of CPU before its first test), often more than its
@@ -12,7 +12,7 @@
 //
 // As node --test: NODE_OPTIONS=--test-shard=i/n runs every n-th file from the i-th (CI's four shards), and
 // --test-name-pattern, --test-skip-pattern, --test-only, --test-concurrency and --test-reporter are taken.
-// Files named run instead of every file (npm test -- service/plan.test.ts src/draft.test.ts).
+// Files named run instead of every file (npm test -- service/plan.test.ts src/remote/sync.test.ts).
 
 import {mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {availableParallelism, tmpdir} from 'node:os';
@@ -32,8 +32,8 @@ const ALONE = new Set([
   // driver is pointed at this file's bridge. Another file's Worker (service.test.ts's sweep) would meet both.
   'service/worker.test.ts',
   // Transfers over sockets, timed: seconds of waiting for stalls and retries, which would hold up the files after
-  // it in a shared process, and an interval of fetch.ts's own.
-  'src/fetch.test.ts',
+  // it in a shared process, and an interval of prompt/l3-files.ts's own.
+  'src/prompt/l3-files.test.ts',
   // Builds l3 with child processes, and waits for them.
   'scripts/l3.test.mjs',
 ]);
@@ -129,7 +129,7 @@ run({
   files: [...alone.map((f) => join(OS, f)), ...entries], concurrency: processes + alone.length, signal: stop.signal,
   // WebAssembly (PGlite's Postgres, the core) as V8 first compiles it, and no further: compiling a hot function
   // again, optimized, took more CPU on other threads than the faster code saved.
-  execArgv: ['--liftoff-only', '--import', pathToFileURL(join(OS, 'scripts/tests-load.mjs')).href, '--import', pathToFileURL(join(OS, 'src/testing-core.ts')).href],
+  execArgv: ['--liftoff-only', '--import', pathToFileURL(join(OS, 'scripts/tests-load.mjs')).href, '--import', pathToFileURL(join(OS, 'src/testing/core.ts')).href],
   testNamePatterns: values['test-name-pattern'], testSkipPatterns: values['test-skip-pattern'], only: values['test-only'],
 })
   .on('test:pass', timed)

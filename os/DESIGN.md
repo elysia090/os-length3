@@ -322,6 +322,13 @@ Every page:
   is tall and repo cards are large, about three across.
 - On a phone (560 px and less) keeps 16 px from the rail's line,
   and the window's own gutter is its right edge, so the two never stack.
+  The rail stays the rail there (File's tree and Server's layer come out
+  of it as anywhere; a bar along the foot was mocked and left), its places
+  a size smaller and closer and the window's gutter narrower, so a page
+  has a fifth more of the width. A place's name comes out beside it only
+  where a pointer rests (a finger's press would leave it over the page).
+  Parts that slide fade at their end, so one cut there reads as more to
+  slide to; Forge's band gives its repo pill the width before the search.
 
 ## 2. Tokens
 
@@ -488,7 +495,7 @@ what is its own.
   saying where what is written goes (notes で実行, 旅行 の人たちへ): Enter
   is a new line, Ctrl+Enter (⌘+Enter) sends, as in every box one writes in
   (Inbox too). Forge and Git run in it; Server posts. Forge's also edits the
-  file in front, a line at a time, each done with Enter (§8, Edit). Empty and
+  file in front, the box holding a line of it written as in the file (§8, Edit). Empty and
   not in use, it steps back while the page is read (Forge, §8).
 - **The right pane.** Beside the center, past its one `rule`: on top what
   the center refers to (Forge's reference, Server's people and repos),
@@ -1072,7 +1079,7 @@ device.
 Files that cannot travel (a link, a file over 16 MB, a repo's own `.git`)
 are named and never sent; a repo holding them is never let go. Home's
 settings (profile, TODO, dotfiles) are kept there too, by the app and l3
-alike (src/draft.ts, core/src/home.rs: one protocol, one record of what was
+alike (src/remote/sync.ts, core/src/home.rs: one protocol, one record of what was
 agreed), each changed only from the version it was read at: unchanged
 here, the Remote's is taken; changed on both sides, two TODO lists are
 joined item by item, and any other setting is the Remote's. The band, the
@@ -1347,8 +1354,8 @@ Forge or Git go into the box; a pill taken off the band hands it to the
 pill worked on next; the box's four put away with Escape give it back to
 the box. The arrow keys go along any list of things pressed (Lately's and
 Inbox's rows, the band's pills, the repo cards), to the nearest one that way
-on the screen, as they go along the rail; → on File brings its tree out,
-and again goes into it; and what scrolls inside the page
+on the screen, as they go along the rail; → on File brings its tree out
+with the keyboard on its first row, as a menu's ↓ does; and what scrolls inside the page
 keeps its own turning: past its end, the page behind it does not go on.
 
 The profile is edited where it is read, not in a form put in its place:
@@ -1616,11 +1623,10 @@ issue's number), Add to TODO (TODO's circle, on paper as Home's TODO box),
 Edit the file in front (a pencil, the file and the caret's line,
 `main.c :4`, on paper ringed in ink: the yellow is the file's, where the
 work is, never the pill's); Alt+1 to 4 in the box choose one at
-once, Ctrl ` is the Prompt's again and Ctrl G Edit's (Go to line, as editors
-have it). Turning, the pill goes from the old words' width to the new, the old
+once, Ctrl ` is the Prompt's again and Ctrl G Edit's. Turning, the pill goes from the old words' width to the new, the old
 words going up out of it as the new come up into it, its colours crossing,
 with a small beat as it lands; the box's own button says the deed (Run,
-Create, Add) and the empty box where it goes. Only Run brings the screen up.
+Create, Add; Edit has none) and the empty box where it goes. Only Run brings the screen up.
 An issue or a TODO is written as everywhere, its first line Kind: title and
 the lines under it its detail; sent, the box empties and where it went is said
 to be heard (Written as #4 in garden). What the box made
@@ -1641,46 +1647,33 @@ slip slides on and rises out of sight, and the line is there when the pane
 comes back. Pressed, the line opens where it stands (§ Home, its card). What
 is half written is kept for the repo and for what the box does.
 
-Edit makes the box a line that edits the file in front without leaving the
-box, as a modal editor's command line does but with nothing to be in and no
-keys to learn. The plainest is to point: while the box has the keyboard, the
-hand over a file says a line can be taken and the line under it is ringed
-(the ring going along from line to line with the hand, as a lit line goes to
-the next one, never gone from one and there on the next at once);
-pressed, the line comes into the box as it is, the caret where it was pressed,
-the line lit in the marker's yellow where it stands, and is written anew there:
-Enter puts it back (lit a moment in the green of what is added), Escape leaves
-it as it was, ↑ and ↓ (nothing written in it yet) take the line above or below,
-and another line pressed puts this one back first, as a sheet's cell is left.
-Besides, a few short lines that read as what they do. The file in front
-is the one last written in or pressed, else the one read (a third down the
-center); its box keeps the `ink` edge of a file written in while the box is on
-it.
-`12` goes to line 12; a word finds it (written in small letters, either
-case), every one lit in the marker's soft yellow and the one Enter goes to in
-the marker's, Enter going on to the next and Shift+Enter back (`/` before a
-word finds exactly what follows it); `old → new` (or `->`) writes new for
-every old; `+ words` adds a line under the caret's, as indented as it is,
-and the box keeps `+ ` for the next line; `= words` writes the caret's line
-anew, its indent kept; `-` (or `-3`) takes the caret's line (or three) away;
-`>` and `<` move it in and out by the file's own indent; `@path` chooses the
-file (Tab completes it, as in Run). Nothing is done before Enter: while a line
-is written, what it would do is drawn on the file under its words (what it
-finds lit; what it takes in the tint taken words have in a diff, underlined;
-a line to come as a green rule where it comes, a dot at its start) and said
-under the box (1 of 3, 2 to write as “printf”, A line under line 4), and the
-file scrolls to it if it is out of sight. Done, it is written into the file as
-typing is, so the file saves, what changed lit a moment in the green of what
-is added, as a place landed on is; the pill's line follows the caret. Ctrl+Z
-in the empty box takes back what the box did, one at a time (Ctrl+Shift+Z
-puts it back), written into the file the same way, so the file's own Undo has
-it too; the browser's own Undo is not used from the box, as it holds what was
-typed in the box in the same line.
-In the empty box the caret's line is lit softly (where + = - > would act),
-↑ and ↓ move it, and under the box one quiet line says what can be done,
-pointing first, each as it is written and what it does (what does not fit the
-line is left out whole, never cut). Escape takes back what was written,
-and in the empty box gives the keyboard back to the file at the caret.
+Edit makes the box a line of the file in front, written there as the line is
+in the file: nothing to learn, no words that ask for things, no line first
+written and then applied. The box holds the line the file's caret is on, lit
+in the marker's yellow where it stands (under its words, from its start: not
+across the file, so it reads as the words held), and what is typed in the box
+is in the file as it is typed (saved as typing in the file is, a moment after
+the typing stops; the keyboard stays in the box). Where the box's caret is, an
+ink caret stands in the file too, going with it; what the box has chosen is in
+the marker's full yellow there. Pointing chooses what it holds: while the box
+has the keyboard, the hand over a file says a line can be taken and the line
+under it is ringed (the ring going along from line to line with the hand,
+never gone from one and there on the next at once, nor going back and forth
+for a hand at rest on the border of two); pressed, that line comes into the
+box, the caret where it was pressed; drawn across words on a line (as a marker
+is drawn), the line comes in with those words chosen, so what is typed writes
+over them (one way of holding: Enter and the rest work as on any line). The keys are a text's own: Enter breaks the line where the caret is and
+the box goes on to the new line, which keeps the indent; Backspace at the start
+joins the line to the one above and Delete at the end the one below to it; ↑
+and ↓ go to the line above or below, at the same column, and ← at the start or
+→ at the end round onto them; Tab types the file's own indent and Shift+Tab
+takes the line out by one; Ctrl+Z takes back what the box wrote (all that was
+typed on one line is one step), Ctrl+Shift+Z puts it back. Escape gives the
+keyboard back to the file, at the same place. The file in front is the one last
+written in or pressed, else the one read (a third down the center); its box
+keeps the `ink` edge of a file written in while the box is on it, and the pill
+says the file and the line. Edit has no button: what is typed is in the file
+already. Holding an empty line, the box says so (An empty line: write it here).
 The box knows the repo's earlier lines, as a terminal does: ↑ with the
 caret on its first line goes back one line run in the repo's Prompt, ↓ on
 its last line forward again, down to what was being written (so a line of
@@ -1820,7 +1813,8 @@ the card becomes the Remote's).
   total. This OS is counted from allocated blocks, so a sparse file counts
   what it holds and a file with several hard links counts once; the host's
   free and total are marked 推定, because other programs change them too.
-- Under it, one tall box in three columns: what is **in this browser**
+- Under it, one box in three columns, as tall as the longest (not a tall
+  empty box when there is little): what is **in this browser**
   (on this device) at the left, what is **only on the Remote** (fetched with a
   press; all of it here too, it says so) in the middle, and what **can be
   freed** at the right (nothing, it says the reason is on each row that
@@ -1990,9 +1984,12 @@ the card becomes the Remote's).
   `.authorized_keys` dotfile (below), public keys only, so a key added on
   one device counts on every one. With none there, turning on says to add
   one first, and how. Shown only while signed in.
-- **Dotfiles**: a small card each (its name, its size), and a dashed one to
-  make another. A card opens its text under the cards, `/root/` and its name
-  above it, Remove at the left, Close and Save at the right. Every Prompt
+- **Dotfiles**: one box, a row each (its name in the mono face, its size at
+  the right), and New dotfile at its foot. A row pressed is lit and opens its
+  text under it, in the box (not under all of them, away from the row
+  pressed), `/root/` and its name above it, Remove at the left, Close and
+  Save at the right; pressed again, or Close, it folds. A long name is cut
+  at the row's end, never wrapped over three lines. Every Prompt
   starts with them in `/root` (the app's root and the browser's alike), and
   the Remote keeps them in step across devices, as it does Home's settings.
   A Prompt already running keeps what it started with: its shell has read
@@ -2028,6 +2025,12 @@ its share an estimate), and the same three answers apply.
 
 ### Git
 
+With no repo at all (a first run), Forge's center and Git's issues are one
+dashed card, Make your first repo, the whole card the deed (it is New repo,
+as Home's card is), saying under it what a repo is here (a folder of your
+own, kept as git keeps it, that Forge, Git and the Prompt work in) or, in
+Git, No repos yet: not a way to bring a repo out when there is none.
+
 What happens between a repo and the outside, in the mental model of the
 issues: an issue hides its branch and worktree, and the operations are
 Commit, Push, Change (with Reset), Review, Merge, and Close for one that
@@ -2056,8 +2059,7 @@ half written after reading its neighbours or another page.
   under one number) is given the next free one. Its file is never what a
   person is shown: wherever a file is named (Forge's heads and the boxes
   beside, File, Lately, the look, Git's diffs, the search, Edit's pill), the
-  file an issue is kept in is the issue, `#3`, and `@#3` in Edit's box goes to
-  it; only the Prompt, which is the repo as it is kept, says `issue/`. Under the heading (its count, and
+  file an issue is kept in is the issue, `#3`; only the Prompt, which is the repo as it is kept, says `issue/`. Under the heading (its count, and
   「Issue を書く」) the issues are large boxes side by side, oldest first:
   one in full, its neighbours' edges showing at the sides. The current box
   is a large place, an `ink` edge over `raised`. An edge is a clear button
@@ -2129,6 +2131,12 @@ half written after reading its neighbours or another page.
   approved it, and Merge at the right, primary once the version is
   approved.
 
+Before Git has read where each repo stands (several of the core's answers
+for each, one after another: a second or more with a dozen repos), Reading…
+stands where the issues will be, not a heading over nothing; come back to,
+what it read last is drawn at once while it is read again, and drawn again
+only if something moved.
+
 Around the issues, each its own section, shown only when it has something:
 main over them (what is in hand comes before what is planned); under them
 what is done with, Committed (on main, from here), Merged and Closed.
@@ -2148,7 +2156,12 @@ what is done with, Committed (on main, from here), Merged and Closed.
   a long one shows its first 30 lines with "n more lines" under them,
   pressed to show the rest, so a large change reads file by file and
   never as a wall. What is opened or shut by hand stays so while the page
-  is drawn again. The issue's Commit row shows its files the same way. Commit
+  is drawn again. The issue's Commit row shows its files the same way. With
+  more than three repos waiting in All, each is a row instead (its name
+  at the left, how many files and Commit at the right), so the issues are
+  not a long way down; its name, with a small triangle, opens its files
+  under it in the row and shuts them again (read only then), and one repo
+  shown is its card as above. Commit
   asks in the card for the line the commit goes by ("Fix：title"), as
   `l3 commit REPO "Fix：title"` takes it, Not now at the left and Commit
   under the pointer; Enter commits the one line, and the card's height goes
@@ -2181,8 +2194,13 @@ Remote the issues are shown and one line says that history is kept there.
 Signed out, the page is the header and, where its parts will be, one card,
 the first thing a person meets: an `ink` edge over `paper` as the current
 issue card is, at most 440 px wide, at the page's left. In it: Sign in, then
+two quiet lines, what signing in opens on this page (Remote: your repos kept
+in step across your devices, and shown to whom you choose; Inbox: a name
+people write to you by; Server: servers, boards and the repos shown in them)
+and that everything else works without it (your repos stay in this browser,
+or on this device in the app), so signed out is not a page of nothing; then
 the ways in one under another as wide as the card (the first provider
-filled), and no words around them: the buttons say it. Under it, what signing
+filled), and no words around the buttons: they say it. Under it, what signing
 in is for: this device's repos where the Remote's cards will stand, faint and
 dashed, each saying Only on this device; signed in, the same cards stand
 there whole. The Inbox, signed out, shows the same card in the same place. A
@@ -2279,7 +2297,13 @@ the gear's do, never swapped in one frame):
   Remote refused is said where it was pressed: under the tier's card, in
   the ask, under Manage. The window coming back reads the Remote again.
   Shown only when the Remote has a plan. A repo card the Remote holds back
-  says it waits, with See the plan.
+  says it waits, with See the plan: its edge dashed (in one place only, as
+  one only on the Remote is) and where it stands said in ink, on Home's
+  card too, not one quiet line among the others'; its switch stays, to say
+  it should not wait. New repo says it before Create is pressed, at its
+  left, when the plan's repos are all on the Remote already: this one is
+  made all the same and stays on this device until there is room, with
+  See the plan.
 
 Under the parts, while there is no passkey, Add a passkey: the button alone,
 below what the page is about rather than over it, shown once the repos are
@@ -2317,11 +2341,17 @@ addresses, as MX does for mail. SSH is Runtime's, by device, not by name. The pa
 three columns Home's repos and New repo stand on: in the first the stub,
 under it the field to write to someone new, of the stub's width, height and
 shape (Write its end, as the gear is the stub's), and under that the
-conversations (requests apart, with Accept and Block once they have
-written; their words start where the field's do); over the other two, from
-the stub's top to the page's foot, the conversation open, as a sheet. It
-stands on its foot: oldest above, the last thing said just over the field
-it is answered in, never a sheet's height of nothing between them.
+conversations (requests apart; their words start where the field's do);
+over the other two, from the stub's top to the page's foot, the conversation
+open, as a sheet. It stands on its foot: oldest above, the last thing said
+just over the field it is answered in, never a sheet's height of nothing
+between them. A message's time is a small figure at the foot of its last
+line, not a line of its own; messages from one side a few minutes apart are
+one run, close together, their joining corners tight, the time said once at
+its end (not just now under every line). Someone who wrote first is answered
+over the field: who, that they wrote first, what Accept and Block do and
+that writing back accepts them too (as the Remote takes it), Block and
+Accept at its right; not two words in the head with nothing said of them.
 While no conversation is open there is no sheet, not a sheet of nothing
 (before anyone has written, No messages yet stands under the field): the
 one chosen brings its sheet in from that side, and another chosen while it

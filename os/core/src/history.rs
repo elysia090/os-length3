@@ -1,7 +1,7 @@
 //! History in the issues' terms (issue #17). An issue is the unit of work;
 //! its branch and worktree are the OS's to keep (work.rs). The operations
 //! a person does are few, and are the same from the app, l3 and a browser
-//! (src/history.ts):
+//! (src/repos/history.ts):
 //!
 //!   Commit         what is not committed becomes history on the work's line,
 //!                  named after its issue ("Fix：件名")

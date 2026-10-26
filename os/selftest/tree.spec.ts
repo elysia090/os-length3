@@ -19,13 +19,15 @@ test('File\'s tree has the repos on top and the rest of / under System, shut unt
   await expect(app.file.name('etc')).toBeVisible();
 });
 
-test('→ on File brings the tree out, and again goes into it', async ({app}) => {
+test('→ on File brings the tree out with the keyboard on its first row', async ({app}) => {
   await app.newRepo.make('tide');
   const file = app.rail.button('file');
   await file.focus();
   await app.page.keyboard.press('ArrowRight');
   await expect(file).toHaveAttribute('aria-expanded', 'true');
-  await expect(file).toBeFocused();
+  await expect(app.file.tree.locator('.tree-name').first()).toBeFocused();
+  // Back on File with the tree out, → goes into it again.
+  await file.focus();
   await app.page.keyboard.press('ArrowRight');
   await expect(app.file.tree.locator('.tree-name').first()).toBeFocused();
 });

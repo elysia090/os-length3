@@ -328,7 +328,7 @@ to it first, and after every command each repo whose files differ from what
 was last agreed is sent (which differ is seen from the digests kept, so a
 repo in step costs no request). Home's settings kept on the Remote
 (profile, TODO, dotfiles) go the same way, by the app's protocol and rules
-(`core/src/home.rs`, as `src/draft.ts`): a command that reads one (`l3
+(`core/src/home.rs`, as `src/remote/sync.ts`): a command that reads one (`l3
 todo`, `l3 profile`, `l3 dotfile`, `l3 prompt`) takes it in first, and one
 that differs from what was last agreed is sent after any command; two TODO
 lists changed on two devices are joined item by item. What a person does to the Remote is only
@@ -401,7 +401,7 @@ the app.
   purpose whose subject is people, not a repo (`service/servers.ts`). A
   server is people who know each other (added from someone's Inbox
   contacts); its boards are each a conversation and a TODO they keep
-  together: Home's TODO box (`pages/todo-box.ts`), kept on the Remote item
+  together: Home's TODO box (`pages/todo-list.ts`), kept on the Remote item
   by item and field by field, so people writing at once do not undo each
   other. Boards are boxes slid like the issues, each with its TODO pinned
   at its top and its talk under it; the plain box at the foot writes in
@@ -569,16 +569,35 @@ browser by `core/web`), so every web build of the page needs Rust with
 says that command when the target is missing. The desktop app's build does
 not: its core is the app's own.
 
+### Where the page's code is
+
+`src/` holds the page, a folder to each kind of thing it does; a module's
+tests stand beside it (`x.test.ts`).
+
+| Folder | What is in it |
+| --- | --- |
+| `main.ts` | the shell: the rail, the page drawn for each place, the moves between them |
+| `pages/` | each place on the rail and its parts; Forge, Git, Server, Remote and Runtime have folders of their own, and `bench/` is the work bench Forge and Git stand on (the box, the Prompt's screen and terminal) |
+| `ui/` | what every page draws and moves with: elements (`dom.ts`), motion (`glide.ts`), the caret, focus, touch, icons |
+| `core/` | the Rust core as a page runs it: its worker, its ABI, WASI over the browser's files |
+| `prompt/` | the Prompt's machine in a browser: l3's files and guest threads (`userland.ts`), the box's recall, SSH, the tree of `/` |
+| `remote/` | talking to the Remote: the connection, each repo kept in step (`sync.ts`), servers, Inbox, the plan, what is new, and the timing of it all (`lifecycle.ts`) |
+| `repos/` | what a repo holds and how it is read: issues, history, diffs, search, Edit's grammar, first lines |
+| `home/` | Home's own: the profile, the TODO, dotfiles, the band, what is half written |
+| `app/` | the two hosts and what the app is made of around the pages: the policy, plugins, the rail's purposes, pacing, errors |
+| `testing/` | what tests stand on: the core in Node, a browser on a Remote in this process |
+| `i18n/` | the Japanese words (`i18n.ts` chooses) |
+
 ### One core, two hosts
 
 A repo, its history, the Remote's sync and Home's settings are the core's
 (`core/src/api.rs`): the app asks it through one Tauri command, and a page
 asks the very same code, built for `wasm32-wasip1`, in a worker of its own
-(`src/core.worker.ts`, `src/wasi.ts`) over files the browser keeps in
-IndexedDB. A page calls `core(name, args)` (`src/host.ts`) either way and
+(`src/core/worker.ts`, `src/core/wasi.ts`) over files the browser keeps in
+IndexedDB. A page calls `core(name, args)` (`src/app/host.ts`) either way and
 gets the same answers, the Remote's refusals included. Tabs of one browser
 take turns under one Web Lock and tell each other each file they wrote.
-Tests run it too: `src/core.node.ts` is the same module in a Node worker,
+Tests run it too: `src/testing/node-core.ts` is the same module in a Node worker,
 its requests answered by the test's own Remote.
 
 Each build carries only its own host's part, decided when it is built
@@ -586,8 +605,8 @@ Each build carries only its own host's part, decided when it is built
 web's alone (the browser's core and its worker, l3 for the browser and xlat,
 passkeys) each has a `.desktop.ts` beside it with the same exports, which the
 app's build takes instead, and leaves out `public/l3`; Tauri's API
-(`src/tauri.ts`) has a `.web.ts` the web's build takes. `isNative`
-(`src/host.ts`) is that same fact, so a branch for the other host is dropped
+(`src/app/tauri.ts`) has a `.web.ts` the web's build takes. `isNative`
+(`src/app/host.ts`) is that same fact, so a branch for the other host is dropped
 too. The app's page is about 0.4 MB, the web's 1.3 MB with its core.
 
 ```

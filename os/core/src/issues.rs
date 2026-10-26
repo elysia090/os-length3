@@ -1,5 +1,5 @@
 //! An issue is a number and its words: "#3 Fix：件名", then the detail
-//! (src/issues.ts). That is all a person meets; how it is kept is the OS's
+//! (src/repos/issues.ts). That is all a person meets; how it is kept is the OS's
 //! business. It is kept as one plain file in the repo's `issue/`, written
 //! the way TODO items are: the first line names it, the lines after are the
 //! detail. The file is named by the issue's number, which the OS gives: the
@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn issues_without_a_number_take_the_next_free_ones_unless_a_work_holds_them() {
-        // As the app's own test (src/issues.test.ts).
+        // As the app's own test (src/repos/issues.test.ts).
         let list = vec![parse("a", "001.md", "A"), parse("a", "002.md", "B"), parse("a", "002 (other device).md", "C"), parse("a", "notes.md", "D"), parse("a", "worked.md", "E")];
         let plan = numbering(&list, &["issue/worked.md".to_string()]);
         assert_eq!(plan, [("002 (other device).md".to_string(), "003.md".to_string()), ("notes.md".into(), "004.md".into())]);

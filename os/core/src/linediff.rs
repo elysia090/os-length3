@@ -2,7 +2,7 @@
 //! subsequence of lines, as git's diff would count them for files of the
 //! size a repo holds. Past a size where that is too slow, lines are counted
 //! as a multiset instead (still right for appends and removals; only a move
-//! reads as both). The same as src/linediff.ts, for the app and l3.
+//! reads as both). The same as src/repos/linediff.ts, for the app and l3.
 
 // No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
 #![forbid(unsafe_code)]

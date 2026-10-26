@@ -1,5 +1,5 @@
-import type {PurposeId} from '../purposes.ts';
-import type {Writing} from './reader.ts';
+import type {PurposeId} from '../app/purposes.ts';
+import type {Writing} from './forge/reader.ts';
 
 /** What a page may ask of the shell. */
 export interface Context {

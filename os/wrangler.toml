@@ -31,7 +31,7 @@ not_found_handling = "single-page-application"
 run_worker_first = ["/v1/*", "/api/*", "/.well-known/*"]
 
 [vars]
-# The URL handed on: the app and the Remote are both here. The same name is the page's (src/policy.ts
+# The URL handed on: the app and the Remote are both here. The same name is the page's (src/app/policy.ts
 # DEFAULT_REMOTE), the core's (core/src/remote/mod.rs DEFAULT_URL) and the desktop app's policy
 # (src-tauri/tauri.conf.json); service/config.test.ts holds them to these.
 BASE_URL = "https://os.length3.com"

@@ -3,13 +3,13 @@ import {existsSync, readFileSync, rmSync} from 'node:fs';
 import {dirname, resolve} from 'node:path';
 import {defineConfig, type Plugin} from 'vite';
 import {buildCoreWasm, coreWasmPath} from './scripts/core-wasm.ts';
-import {DEFAULT_REMOTE, headersOf, webPolicy} from './src/policy.ts';
+import {DEFAULT_REMOTE, headersOf, webPolicy} from './src/app/policy.ts';
 
 // Tauri serves the built files from ../dist and points its dev webview at this
 // fixed port, so the port must not drift to a free one. The Terminal's kernel
 // lives in ../xlat.
 
-// The web build's policy is src/policy.ts's: its own origin and the Remote. Tauri applies its own
+// The web build's policy is src/app/policy.ts's: its own origin and the Remote. Tauri applies its own
 // policy (with its ipc: channel) to the desktop build, so the meta tag is only for the web.
 // The Remote (service/) is the one other origin it may reach: where the
 // canonical copy lives. VITE_LENGTH3_REMOTE points a build at another one;
@@ -89,7 +89,7 @@ const coreWasm = (): Plugin => ({
  * runs its own core, the root installed on the machine and signs in through the browser; `X.web.ts` for the
  * app's (Tauri's API), which a browser never has.
  */
-const ONLY = {web: ['core-worker', 'userland', 'passkeys'], native: ['tauri']};
+const ONLY = {web: ['core/spawn', 'prompt/userland', 'remote/passkeys'], native: ['app/tauri']};
 const hostOnly = (): Plugin => {
   const other = HOST === 'native' ? ONLY.web : ONLY.native;
   const suffix = HOST === 'native' ? '.desktop.ts' : '.web.ts';
@@ -102,7 +102,7 @@ const hostOnly = (): Plugin => {
     // public/ is copied whole; l3 as a browser reads it (public/l3, made by npm run l3) is the web's alone.
     closeBundle() { if (HOST === 'native' && out) rmSync(resolve(out, 'l3'), {recursive: true, force: true}); },
     async resolveId(source, importer, options) {
-      if (!importer || !other.some((m) => source.endsWith(`/${m}.ts`))) return null;
+      if (!importer || !other.some((m) => source.endsWith(`/${m.split('/').pop()}.ts`))) return null;
       const r = await this.resolve(source, importer, {...options, skipSelf: true});
       if (!r || !named.test(r.id)) return r;
       const stand = r.id.replace(/\.ts$/, suffix);

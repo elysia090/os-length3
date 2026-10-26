@@ -3,7 +3,7 @@
 // whom they have accepted in the Inbox, and who has accepted them). Its boards
 // are what they talk about: each is a conversation, short posts read as a
 // chat is, and a TODO they keep together, the same list as Home's
-// (src/todo.ts), kept here item by item and field by field so that two
+// (src/home/todo.ts), kept here item by item and field by field so that two
 // people writing never undo each other but on the very same field. (A repo
 // belongs to a person, who may show it in a server, only to be seen there:
 // seen.ts.)
@@ -61,7 +61,7 @@ export const SERVER = {name: 64, body: 2000, perHour: 60, page: 30, maxPage: 100
   servers: 50, perDay: 10,
   /** How long a server its maker leaves with nobody else in it is held (not HOLD: no name is kept long by making and leaving). */
   alone: 86_400_000,
-  /** A board's TODO: as long as Home's items may be (src/todo.ts), and so many of them. */
+  /** A board's TODO: as long as Home's items may be (src/home/todo.ts), and so many of them. */
   todo: {title: 200, detail: 4000, items: 500},
   /**
    * Guests: an invitation lets in so many (one unless asked, at most 20) for so many days (7 unless

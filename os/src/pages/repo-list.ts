@@ -1,14 +1,15 @@
-import {ago, arrowKeys, bytes, h} from '../dom.ts';
+import {ago, arrowKeys, bytes, h} from '../ui/dom.ts';
 import {t} from '../i18n.ts';
-import {icon} from '../icons.ts';
-import {store} from '../repos.ts';
-import {bring, onSync, remoteOnly, repoState} from '../lifecycle.ts';
-import {free, readSpace} from '../space.ts';
-import {openRepoPlace, syncWord} from './remote.ts';
+import {icon} from '../ui/icons.ts';
+import {store} from '../repos/repos.ts';
+import {bring, onSync, remoteOnly, repoState} from '../remote/lifecycle.ts';
+import {free, readSpace} from '../app/space.ts';
+import {openRepoPlace} from './remote/repos.ts';
+import {syncWord} from './remote/repo-card.ts';
 import {repoGear} from './repo-gear.ts';
-import {allSessions} from './terminal.ts';
+import {allSessions} from './bench/terminal.ts';
 import type {Context} from './context.ts';
-import {errorText} from '../errors.ts';
+import {errorText} from '../app/errors.ts';
 
 // The repos as large cards, about three across: on Home, and under the New
 // repo form so a repo just made is seen joining the others.
@@ -116,7 +117,10 @@ export function repoList(ctx: Context, options: {newCard: boolean; counted?: (n:
   const marks = () => {
     for (const card of grid.querySelectorAll<HTMLElement>('.card.repo:not(.away)')) {
       const slot = card.querySelector('.card-sync');
-      if (slot) slot.textContent = syncWord(repoState(card.dataset.repo!));
+      const s = repoState(card.dataset.repo!);
+      if (slot) slot.textContent = syncWord(s);
+      // Held back by the plan: its edge dashed and its words in ink, not one of the others with a quiet line.
+      card.classList.toggle('held', s?.where === 'waits');
     }
   };
   let known = '';

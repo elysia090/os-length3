@@ -617,9 +617,9 @@ class Runtime extends Part {
     await expect(stop.first()).toBeVisible();
     while (await stop.count()) await stop.first().click();
   }
-  /** A dotfile's card (its name, then its size). */
+  /** A dotfile's row (its name, then its size). */
   dotfile(name: string) { return this.dotfiles.getByRole('button', {name: new RegExp(`^${escape(name)} `)}); }
-  /** The text of the dotfile open under the cards (its field is named by the file). */
+  /** The text of the dotfile open under its row (its field is named by the file). */
   text(name: string) { return this.dotfiles.getByRole('textbox', {name, exact: true}); }
 
   /** Remove, under the open dotfile's text: it asks in the box first, and that ask is returned. */

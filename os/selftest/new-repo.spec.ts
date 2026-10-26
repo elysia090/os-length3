@@ -5,6 +5,16 @@ import {expect, test} from './fixtures.ts';
 // it is gone into in Forge, the caret in its README. A name taken is said under the name, with
 // the keyboard back on it. What is written stays while other pages are seen.
 
+test('with no repo at all, Forge and Git offer to make the first, and that is New repo', async ({app}) => {
+  for (const place of ['forge', 'git'] as const) {
+    await app.rail.go(place);
+    const first = app.main.getByRole('button', {name: /^Make your first repo/});
+    await expect(first).toBeVisible();
+    await first.click();
+    await expect(app.rail.button('new-repo')).toHaveAttribute('aria-current', 'page');
+  }
+});
+
 test('a repo made from the scaffold has its README, its summary under the title, and no language of its own', async ({signedIn: app}) => {
   await app.newRepo.make('hello', {summary: 'Says hello.'});
   await expect(app.forge.editor('README.md')).toHaveValue('# hello\n\nSays hello.\n');

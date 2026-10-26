@@ -126,3 +126,12 @@ test('called off at the provider, the card says so, and the provider is there to
   await app.settled();
   await expect(card).not.toContainText('locked');
 });
+
+test('a device\'s code that cannot be used says what that means, and another is typed in its place', async ({signedIn: app}) => {
+  await app.page.goto('/?device&user_code=WRONG123');
+  await expect(app.page.getByRole('alert')).toHaveText('This code cannot be used.');
+  await expect(app.page.getByText('It has run out or was typed wrong')).toBeVisible();
+  await expect(app.page.getByText(/invalid_request|expired_token/)).toHaveCount(0);
+  await app.page.getByRole('button', {name: 'Type another code'}).click();
+  await expect(app.page.getByRole('textbox', {name: 'The device\'s code'})).toBeVisible();
+});

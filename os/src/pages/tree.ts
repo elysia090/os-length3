@@ -1,13 +1,13 @@
-import {bytes, h} from '../dom.ts';
-import {closeUp, keepOut, nudge, putAway, unfold} from '../glide.ts';
+import {bytes, h} from '../ui/dom.ts';
+import {closeUp, keepOut, nudge, putAway, unfold} from '../ui/glide.ts';
 import {t} from '../i18n.ts';
-import {mark} from '../icons.ts';
-import {bring, remoteOnly} from '../lifecycle.ts';
-import {plainPart, renamed, store} from '../repos.ts';
-import {shownName} from '../issues.ts';
-import {inRepo, list, ORIGIN_LABEL, type SystemEntry} from '../system.ts';
+import {mark} from '../ui/icons.ts';
+import {bring, remoteOnly} from '../remote/lifecycle.ts';
+import {plainPart, renamed, store} from '../repos/repos.ts';
+import {shownName} from '../repos/issues.ts';
+import {inRepo, list, ORIGIN_LABEL, type SystemEntry} from '../prompt/system.ts';
 import {answers, askFoot, SETTLE} from './common.ts';
-import {errorText} from '../errors.ts';
+import {errorText} from '../app/errors.ts';
 
 // File is an operation, not a page: the tree of "/", the whole system, as a
 // card laid over whatever page is showing, right beside the rail and only as
