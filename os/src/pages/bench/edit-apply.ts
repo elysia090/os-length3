@@ -1,81 +1,69 @@
 import {t} from '../../i18n.ts';
-import type {Mark} from '../../repos/edit.ts';
 
-// What the box's Edit does to the file in front (edit-box.ts) is written into it as typing is (Reader's editor: it
-// saves, and its Undo takes it back), the keyboard there a moment and then back in the box; and what the box did is
-// kept, to take back one at a time (Ctrl+Z in the empty box) and to put back.
+// What the box's Edit writes into the file in front (edit-box.ts) is written into it as typing in it would be: the
+// editor hears it as typed and saves it a moment after the typing stops. The keyboard stays in the box: were it taken
+// into the file and back at every key, the file would be left at every key, and a file left is saved at once (one
+// save on another's heels, each taken for the other's). What the box wrote is kept, to take back one at a time (Ctrl+Z
+// in the box) and to put back; all that is typed on one line while the box holds it is one thing to take back, as a
+// line written anew is.
 
-/** An edit the box did: `inserted` written at `from` over `removed`, the caret at `caret` before it. */
+/** A write the box did: `inserted` written at `from` over `removed`, the caret at `caret` before it. */
 interface Step { area: HTMLTextAreaElement; from: number; removed: string; inserted: string; caret: number }
 /** Steps kept to take back. */
 const STEPS = 100;
 
-/** The box holding `text` after Enter (empty, or ready for the next of the same), the caret at its end. */
-export function keep(box: HTMLTextAreaElement, text: string) {
-  if (box.value === text) return;
-  box.value = text;
-  box.setSelectionRange(text.length, text.length);
+/** The box holding `text`, `from`…`to` of it chosen (the caret at its end, by default); its height follows. */
+export function keep(box: HTMLTextAreaElement, text: string, from = text.length, to = from) {
+  if (box.value !== text) box.value = text;
+  box.setSelectionRange(from, to);
   box.dispatchEvent(new Event('input', {bubbles: true}));
 }
 
-/** What the box writes into the file, and what it did, to take back and put back. */
+/** What the box writes into the file, and what it wrote, to take back and put back. */
 export class Writes {
-  /** The keyboard going to the file and back for an edit: the box losing it then is not leaving it. */
-  busy = false;
   /**
-   * What the box did, to take back one at a time (Ctrl+Z in the empty box) and put back (Ctrl+Shift+Z): its own,
-   * not the browser's, which holds what was typed in the box too, in the same line.
+   * What the box wrote, to take back one at a time and put back: its own, not the browser's, which holds what was
+   * typed in the box too, line after line.
    */
   readonly #done: Step[] = [];
   readonly #undone: Step[] = [];
-  readonly #box: HTMLTextAreaElement;
   readonly #wrote: (area: HTMLTextAreaElement) => void;
 
-  /** Writes from `box`; `wrote` hears each editor written in, which is the one in front from then on. */
-  constructor(box: HTMLTextAreaElement, wrote: (area: HTMLTextAreaElement) => void) {
-    this.#box = box;
+  /** `wrote` hears each editor written in, which is the one in front from then on. */
+  constructor(wrote: (area: HTMLTextAreaElement) => void) {
     this.#wrote = wrote;
   }
 
-  /** `f` done in `area` with the keyboard there a moment (as typing is, so its Undo has it), then back in the box. */
-  with(area: HTMLTextAreaElement, f: () => void) {
-    this.busy = true;
-    try {
-      area.focus({preventScroll: true});
-      f();
-    } finally {
-      this.#box.focus({preventScroll: true});
-      this.busy = false;
-    }
+  /** `insert` written over `from`…`to` in `area` as typing it would be (heard as typed: it saves), the caret at `caret`. */
+  #write(area: HTMLTextAreaElement, from: number, to: number, insert: string, caret: number) {
+    area.setRangeText(insert, from, to, 'end');
+    area.setSelectionRange(caret, caret);
+    area.dispatchEvent(new InputEvent('input', {bubbles: true, inputType: 'insertText', data: insert}));
     this.#wrote(area);
   }
 
-  /** `insert` written over `from`…`to` in `area` as typing is (so it saves), the caret at `caret`. */
-  #write(area: HTMLTextAreaElement, from: number, to: number, insert: string, caret: number) {
-    this.with(area, () => {
-      area.setSelectionRange(from, to);
-      if (!document.execCommand('insertText', false, insert)) {
-        area.setRangeText(insert, from, to, 'end');
-        area.dispatchEvent(new Event('input', {bubbles: true}));
-      }
-      area.setSelectionRange(caret, caret);
-    });
-  }
-
-  /** As `write`, done by the box and kept to take back: its caret was at `was` before. */
-  apply(area: HTMLTextAreaElement, from: number, to: number, insert: string, caret: number, was: number) {
-    this.#done.push({area, from, removed: area.value.slice(from, to), inserted: insert, caret: was});
-    if (this.#done.length > STEPS) this.#done.shift();
+  /**
+   * As `#write`, kept to take back. Written over what the last one wrote (the same line, typed on), it is the same
+   * step, which takes the line back to what it was before any of it.
+   */
+  apply(area: HTMLTextAreaElement, from: number, to: number, insert: string, caret: number) {
+    const last = this.#done.at(-1);
+    if (last && last.area === area && last.from === from && from + last.inserted.length === to && !insert.includes('\n') && !last.inserted.includes('\n')) {
+      last.inserted = insert;
+    } else {
+      this.#done.push({area, from, removed: area.value.slice(from, to), inserted: insert, caret: area.selectionStart});
+      if (this.#done.length > STEPS) this.#done.shift();
+    }
     this.#undone.length = 0;
     this.#write(area, from, to, insert, caret);
   }
 
   /**
-   * What the box last did taken back (`redo`: put back), written into the file as typing is, so the file's own Undo
-   * has it too. One whose words have been written over since is left as it is. Returns what to light on the file, or
-   * why nothing was done.
+   * What the box last wrote taken back (`redo`: put back), written into the file as typing is, so the file's own Undo
+   * has it too. One whose words have been written over since is left as it is. Returns where the caret is now, or why
+   * nothing was done.
    */
-  undo(redo: boolean): {area: HTMLTextAreaElement; lit: Mark[]} | string {
+  undo(redo: boolean): {area: HTMLTextAreaElement; caret: number} | string {
     const from = redo ? this.#undone : this.#done, to = redo ? this.#done : this.#undone;
     // One whose file has gone (its page read again) is passed over.
     let step = from.pop();
@@ -84,7 +72,8 @@ export class Writes {
     const {area, from: at} = step, now = redo ? step.removed : step.inserted, back = redo ? step.inserted : step.removed;
     if (area.value.slice(at, at + now.length) !== now) { from.length = 0; return t('Written over since: undo it in the file'); }
     to.push(step);
-    this.#write(area, at, at + now.length, back, redo ? at + back.length : step.caret);
-    return {area, lit: back ? [{from: at, to: at + back.length, kind: back.includes('\n') ? 'lines' : 'words'}] : []};
+    const caret = redo ? at + back.length : step.caret;
+    this.#write(area, at, at + now.length, back, caret);
+    return {area, caret};
   }
 }

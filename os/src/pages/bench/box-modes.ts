@@ -38,14 +38,14 @@ export function onBoxMode(f: (m: Mode) => void): () => void { heard.add(f); retu
 const modeWord = (m: Mode): string =>
   (m === 'run' ? t('Run in the Prompt') : m === 'issue' ? t('Write an issue') : m === 'todo' ? t('Add to TODO') : t('Edit the file in front'));
 /** The word on the box's own button. */
-export const sendWord = (m: Mode): string => (m === 'run' ? t('Run') : m === 'issue' ? t('Create') : m === 'todo' ? t('Add') : t('Apply'));
-/** Its title, with the keys that do it from the box (Edit's is Enter alone: what it is written in is one line). */
+export const sendWord = (m: Mode): string => (m === 'run' ? t('Run') : m === 'issue' ? t('Create') : m === 'todo' ? t('Add') : t('Edit'));
+/** Its title, with the keys that do it from the box (Edit has none: what is typed is in the file as it is typed). */
 export const sendTitle = (m: Mode, keys: string): string =>
-  m === 'run' ? t('Run ({keys})', {keys}) : m === 'issue' ? t('Create ({keys})', {keys}) : m === 'todo' ? t('Add ({keys})', {keys}) : t('Apply (Enter)');
-/** What the empty box says goes there (for Edit, with the file in front, `file`, the lines it takes). */
+  m === 'run' ? t('Run ({keys})', {keys}) : m === 'issue' ? t('Create ({keys})', {keys}) : m === 'todo' ? t('Add ({keys})', {keys}) : t('Edit');
+/** What the empty box says goes there (for Edit, with the file in front, `file`: the line held is an empty one). */
 export const modeHint = (m: Mode, repo: string | null, file: string | null = null): string => (!repo ? t('Open a repo to run in it')
   : m === 'run' ? t('Run in {name}', {name: repo}) : m === 'issue' ? t('Write an issue in {name}', {name: repo}) : m === 'todo' ? t('Add a line to TODO')
-  : file ? t('{file}: a line number, a word, old → new, + a line', {file}) : t('Open a file to edit it here'));
+  : file ? t('An empty line: write it here') : t('Open a file to edit it here'));
 
 /** The number the repo's next issue takes, read as its issues change (null until read). */
 const nextOf = new Map<string, number | Promise<number>>();

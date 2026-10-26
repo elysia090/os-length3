@@ -56,7 +56,7 @@ function markOf(area: HTMLTextAreaElement, l: Lines, m: Mark): HTMLElement {
 
 /**
  * `marks` drawn on the editor `area`, under its words (its ground is clear), in a layer of its own laid over it
- * (`layer` names it: what a line would do, or what was just done); none, the layer goes. Returns the lead mark's
+ * (`layer` names it: what the box holds, the line pointed at, or what was just done); none, the layer goes. Returns the lead mark's
  * element (the first now-mark, else the first).
  */
 export function drawMarks(area: HTMLTextAreaElement, marks: Mark[], layer = 'edit-marks'): HTMLElement | null {
@@ -65,8 +65,7 @@ export function drawMarks(area: HTMLTextAreaElement, marks: Mark[], layer = 'edi
   const l = linesOf(area);
   Object.assign(el.style, {left: `${area.offsetLeft}px`, top: `${area.offsetTop}px`, width: `${area.offsetWidth}px`, height: `${area.offsetHeight}px`});
   const els = marks.slice(0, 2000).map((m) => markOf(area, l, m));
-  // One mark of a line going to another line (the ring under the hand, the line the caret is on, where + would put
-  // a line) goes there on a short curve, from where it was seen: not gone from one line and there on the next at once.
+  // One mark of a line going to another line (the ring under the hand, the line held) goes there on a short curve, from where it was seen: not gone from one line and there on the next at once.
   const before = el.childElementCount === 1 ? el.firstElementChild as HTMLElement : null;
   const was = before?.getBoundingClientRect();
   el.replaceChildren(...els);

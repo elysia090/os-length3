@@ -488,7 +488,7 @@ what is its own.
   saying where what is written goes (notes で実行, 旅行 の人たちへ): Enter
   is a new line, Ctrl+Enter (⌘+Enter) sends, as in every box one writes in
   (Inbox too). Forge and Git run in it; Server posts. Forge's also edits the
-  file in front, a line at a time, each done with Enter (§8, Edit). Empty and
+  file in front, the box holding a line of it written as in the file (§8, Edit). Empty and
   not in use, it steps back while the page is read (Forge, §8).
 - **The right pane.** Beside the center, past its one `rule`: on top what
   the center refers to (Forge's reference, Server's people and repos),
@@ -1616,11 +1616,10 @@ issue's number), Add to TODO (TODO's circle, on paper as Home's TODO box),
 Edit the file in front (a pencil, the file and the caret's line,
 `main.c :4`, on paper ringed in ink: the yellow is the file's, where the
 work is, never the pill's); Alt+1 to 4 in the box choose one at
-once, Ctrl ` is the Prompt's again and Ctrl G Edit's (Go to line, as editors
-have it). Turning, the pill goes from the old words' width to the new, the old
+once, Ctrl ` is the Prompt's again and Ctrl G Edit's. Turning, the pill goes from the old words' width to the new, the old
 words going up out of it as the new come up into it, its colours crossing,
 with a small beat as it lands; the box's own button says the deed (Run,
-Create, Add) and the empty box where it goes. Only Run brings the screen up.
+Create, Add; Edit has none) and the empty box where it goes. Only Run brings the screen up.
 An issue or a TODO is written as everywhere, its first line Kind: title and
 the lines under it its detail; sent, the box empties and where it went is said
 to be heard (Written as #4 in garden). What the box made
@@ -1641,46 +1640,29 @@ slip slides on and rises out of sight, and the line is there when the pane
 comes back. Pressed, the line opens where it stands (§ Home, its card). What
 is half written is kept for the repo and for what the box does.
 
-Edit makes the box a line that edits the file in front without leaving the
-box, as a modal editor's command line does but with nothing to be in and no
-keys to learn. The plainest is to point: while the box has the keyboard, the
-hand over a file says a line can be taken and the line under it is ringed
-(the ring going along from line to line with the hand, as a lit line goes to
-the next one, never gone from one and there on the next at once);
-pressed, the line comes into the box as it is, the caret where it was pressed,
-the line lit in the marker's yellow where it stands, and is written anew there:
-Enter puts it back (lit a moment in the green of what is added), Escape leaves
-it as it was, ↑ and ↓ (nothing written in it yet) take the line above or below,
-and another line pressed puts this one back first, as a sheet's cell is left.
-Besides, a few short lines that read as what they do. The file in front
-is the one last written in or pressed, else the one read (a third down the
-center); its box keeps the `ink` edge of a file written in while the box is on
-it.
-`12` goes to line 12; a word finds it (written in small letters, either
-case), every one lit in the marker's soft yellow and the one Enter goes to in
-the marker's, Enter going on to the next and Shift+Enter back (`/` before a
-word finds exactly what follows it); `old → new` (or `->`) writes new for
-every old; `+ words` adds a line under the caret's, as indented as it is,
-and the box keeps `+ ` for the next line; `= words` writes the caret's line
-anew, its indent kept; `-` (or `-3`) takes the caret's line (or three) away;
-`>` and `<` move it in and out by the file's own indent; `@path` chooses the
-file (Tab completes it, as in Run). Nothing is done before Enter: while a line
-is written, what it would do is drawn on the file under its words (what it
-finds lit; what it takes in the tint taken words have in a diff, underlined;
-a line to come as a green rule where it comes, a dot at its start) and said
-under the box (1 of 3, 2 to write as “printf”, A line under line 4), and the
-file scrolls to it if it is out of sight. Done, it is written into the file as
-typing is, so the file saves, what changed lit a moment in the green of what
-is added, as a place landed on is; the pill's line follows the caret. Ctrl+Z
-in the empty box takes back what the box did, one at a time (Ctrl+Shift+Z
-puts it back), written into the file the same way, so the file's own Undo has
-it too; the browser's own Undo is not used from the box, as it holds what was
-typed in the box in the same line.
-In the empty box the caret's line is lit softly (where + = - > would act),
-↑ and ↓ move it, and under the box one quiet line says what can be done,
-pointing first, each as it is written and what it does (what does not fit the
-line is left out whole, never cut). Escape takes back what was written,
-and in the empty box gives the keyboard back to the file at the caret.
+Edit makes the box a line of the file in front, written there as the line is
+in the file: nothing to learn, no words that ask for things, no line first
+written and then applied. The box holds the line the file's caret is on, lit
+in the marker's yellow where it stands, and what is typed in the box is in the
+file as it is typed (saved as typing in the file is, a moment after the typing
+stops; the keyboard stays in the box). Pointing chooses what it holds: while
+the box has the keyboard, the hand over a file says a line can be taken and the
+line under it is ringed (the ring going along from line to line with the hand,
+never gone from one and there on the next at once); pressed, that line comes
+into the box, the caret where it was pressed; drawn across words on a line (as
+a marker is drawn), those words come in chosen, so what is typed writes over
+them. The keys are a text's own: Enter breaks the line where the caret is and
+the box goes on to the new line, which keeps the indent; Backspace at the start
+joins the line to the one above and Delete at the end the one below to it; ↑
+and ↓ go to the line above or below, at the same column, and ← at the start or
+→ at the end round onto them; Tab types the file's own indent and Shift+Tab
+takes the line out by one; Ctrl+Z takes back what the box wrote (all that was
+typed on one line is one step), Ctrl+Shift+Z puts it back. Escape gives the
+keyboard back to the file, at the same place. The file in front is the one last
+written in or pressed, else the one read (a third down the center); its box
+keeps the `ink` edge of a file written in while the box is on it, and the pill
+says the file and the line. Edit has no button: what is typed is in the file
+already. Holding an empty line, the box says so (An empty line: write it here).
 The box knows the repo's earlier lines, as a terminal does: ↑ with the
 caret on its first line goes back one line run in the repo's Prompt, ↓ on
 its last line forward again, down to what was being written (so a line of
@@ -2056,8 +2038,7 @@ half written after reading its neighbours or another page.
   under one number) is given the next free one. Its file is never what a
   person is shown: wherever a file is named (Forge's heads and the boxes
   beside, File, Lately, the look, Git's diffs, the search, Edit's pill), the
-  file an issue is kept in is the issue, `#3`, and `@#3` in Edit's box goes to
-  it; only the Prompt, which is the repo as it is kept, says `issue/`. Under the heading (its count, and
+  file an issue is kept in is the issue, `#3`; only the Prompt, which is the repo as it is kept, says `issue/`. Under the heading (its count, and
   「Issue を書く」) the issues are large boxes side by side, oldest first:
   one in full, its neighbours' edges showing at the sides. The current box
   is a large place, an `ink` edge over `raised`. An edge is a clear button

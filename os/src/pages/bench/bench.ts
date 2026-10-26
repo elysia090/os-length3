@@ -46,8 +46,7 @@ function intoBox(box: Box) {
 
 /**
  * The keys an editor's hands already know, wherever this bench is on screen (Ctrl, or ⌘ on a Mac, held with them):
- * K or P (or Shift+F) to the search, ` to the prompt box, G to the box editing the file in front (Go to line, as
- * editors have it), B to put the right pane away or bring it back.
+ * K or P (or Shift+F) to the search, ` to the prompt box, G to the box editing the file in front, B to put the right pane away or bring it back.
  */
 function editorKey(event: KeyboardEvent, box: Box, pane: Pane, reference: Reference) {
   const k = event.key.toLowerCase();
@@ -122,7 +121,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': sideId}, paneMark()) as HTMLButtonElement;
   const work = h('div', {class: parts.strip ? 'work bench' : 'work bench no-strip'});
 
-  const box = new Box({work, main: parts.main, center, term, termHead, back: !!parts.back, went: parts.went, reveal: parts.reveal});
+  const box = new Box({work, main: parts.main, center, term, termHead, back: !!parts.back, went: parts.went});
   const {screen, element: screenEl} = screenOf(work, box, term, termHome);
   center.append(box.dock);
 
