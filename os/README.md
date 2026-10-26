@@ -619,6 +619,9 @@ npm run verify:remote          # the Remote on a real Postgres: DATABASE_URL (se
 npx tauri dev                  # window against the Vite dev server
 npx tauri build --debug --no-bundle
 sh scripts/desktop.sh          # the .deb and the AppImage as they ship, l3 beside the app
+node scripts/styles-prune.mjs  # take out of the stylesheet the rules no element can match (--dry: only say which)
+node scripts/styles-split.mjs  # the stylesheet in parts by what each styles (src/styles/), in the cascade's order
+node scripts/styles-check.mjs  # the stylesheet against HEAD's: the same rules in the same order, the same built CSS
 ```
 
 ### CI
