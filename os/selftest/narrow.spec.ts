@@ -32,6 +32,18 @@ test('a 320 px window never scrolls sideways, with the menus out or put away', a
   expect(tree.x + tree.width).toBeLessThanOrEqual(320);
 });
 
+test('a profile with a word longer than a phone is wide breaks in the word, never pushing Home sideways', async ({signedIn: app}) => {
+  await app.page.setViewportSize({width: 390, height: 844});
+  const long = 'Supercalifragilisticexpialidocious'.repeat(4);
+  await app.rail.go('home');
+  await app.main.getByRole('button', {name: 'Edit profile'}).click();
+  await app.main.getByRole('textbox', {name: 'Name', exact: true}).fill(`Bartholomew ${long}`);
+  await app.main.getByRole('textbox', {name: 'Bio', exact: true}).fill(`${long} and more`);
+  await app.main.getByRole('button', {name: 'Save'}).click();
+  await expect(app.main.getByRole('heading', {name: /^Bartholomew/})).toBeVisible();
+  expect(await sideways(app.page)).toBeLessThanOrEqual(0);
+});
+
 test('a window too short for the rail keeps + clear of the person\'s icon, and + is pressed', async ({app}) => {
   await app.page.setViewportSize({width: 720, height: 450});
   const plus = (await app.rail.button('new-repo').boundingBox())!;

@@ -598,6 +598,9 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
   border: 1px solid var(--rule);
   font-size: var(--t-identity); font-weight: 600;
 }
+/* A name, handle or bio with a word longer than the line breaks in the word, never pushing the page sideways. */
+.identity { min-width: 0; }
+.identity :is(h1, .handle, .bio) { overflow-wrap: anywhere; }
 .identity h1 { font-size: var(--t-identity); font-weight: 700; line-height: 1.25; }
 .identity .unset { color: var(--sub); font-weight: 400; }
 .handle { color: var(--sub); }
