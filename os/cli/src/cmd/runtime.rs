@@ -174,10 +174,11 @@ pub fn network_set(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let running = length3_core::prompt::running(&paths::data_dir()).iter().filter(|r| r.repo == repo).count();
     let stopped = if !on && running > 0 { super::forge::stop_prompts(&repo) } else { Vec::new() };
     let mut text = match (on, changed) {
-        (true, true) => tr!("{}'s Prompts reach the network from the next one", "{} の Prompt は次からネットワークに届きます", repo),
-        (true, false) => tr!("{}'s Prompts had the network already", "{} の Prompt はもうネットワークに届きます", repo),
-        (false, true) => tr!("{}'s Prompts no longer reach the network", "{} の Prompt はもうネットワークに届きません", repo),
-        (false, false) => tr!("{}'s Prompts had no network; nothing changed", "{} の Prompt はネットワークを持っていませんでした。何も変えていません", repo),
+        // "The Prompts of notes", not "notes's Prompts": a repo's name is a name, often a plural one.
+        (true, true) => tr!("The Prompts of {} reach the network from the next one", "{} の Prompt は次からネットワークに届きます", repo),
+        (true, false) => tr!("The Prompts of {} had the network already", "{} の Prompt はもうネットワークに届きます", repo),
+        (false, true) => tr!("The Prompts of {} no longer reach the network", "{} の Prompt はもうネットワークに届きません", repo),
+        (false, false) => tr!("The Prompts of {} had no network; nothing changed", "{} の Prompt はネットワークを持っていませんでした。何も変えていません", repo),
     };
     if on && running > 0 { text += &tr!("\n  the one running has none until it starts again (l3 prompt stop {})", "\n  動いているものは、開き直すまでネットワークなしです（l3 prompt stop {}）", repo); }
     if !stopped.is_empty() { text += &format!("\n  {}", super::forge::said_stopped(&repo, &stopped)); }

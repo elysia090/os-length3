@@ -27,7 +27,7 @@ pub fn todo_list(_: &Ctx, _: &Call) -> Result<Reply> {
 pub fn todo_add(_: &Ctx, call: &Call) -> Result<Reply> {
     let mut list = home::todos()?;
     let item = home::todo_from(call.word(0).unwrap_or_default(), call.note(), now_ms())
-        .ok_or_else(|| Error::Usage(tr!("The TODO's first line is empty", "TODO の1行目が空です")))?;
+        .ok_or_else(|| Error::Usage(tr!("The TODO's first line is empty: l3 todo add \"Fix：title\"", "TODO の1行目が空です：l3 todo add \"Fix：件名\"")))?;
     fits(&item)?;
     let name = text::named(item.kind.as_deref(), &item.title);
     list.push(item.clone());

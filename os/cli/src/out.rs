@@ -213,6 +213,16 @@ pub fn day(ms: u64) -> String {
     format!("{}-{m:02}-{dd:02}", yoe + era * 400 + i64::from(m <= 2))
 }
 
+/// Rows of a name and what is said of it, the words after each name starting in one column, as `l3 help`
+/// lines up its own: as wide as the widest name (CJK counted as two columns), but never past 24, a longer
+/// name keeping two spaces after it alone. A row with nothing to say is its name alone, with nothing after
+/// it (bug: NAME<TAB>, which a terminal put at the next tab stop, so a name of eight letters or more stood
+/// out of line with the rest).
+pub fn columns(rows: &[(String, String)]) -> Vec<String> {
+    let cols = rows.iter().filter(|(_, w)| !w.is_empty()).map(|(n, _)| crate::help::width(n)).filter(|w| *w <= 24).max().unwrap_or(0);
+    rows.iter().map(|(n, w)| if w.is_empty() { n.clone() } else { format!("{}  {w}", crate::help::pad(n, cols)) }).collect()
+}
+
 /// The first 12 characters of an id.
 pub fn short(id: &str) -> &str { &id[..12.min(id.len())] }
 
@@ -254,6 +264,17 @@ mod tests {
         assert_eq!(short("0123456789abcdef"), "0123456789ab");
         assert_eq!(added_removed(0, 0), "");
         assert_eq!(added_removed(3, 1), " +3 −1");
+    }
+
+    #[test]
+    fn a_listing_lines_up_what_follows_each_name() {
+        let rows = |r: &[(&str, &str)]| columns(&r.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect::<Vec<_>>());
+        // Past eight letters a name stayed in line too (bug: a tab, and the terminal's next stop).
+        assert_eq!(rows(&[("notes", "4 files"), ("os-length3", "812 files"), ("docs/", "")]), ["notes       4 files", "os-length3  812 files", "docs/"]);
+        // Japanese takes two columns a character; a name too long for a column keeps two spaces after it alone.
+        assert_eq!(rows(&[("メモ.md", "8 B"), ("a", "1 B")]), ["メモ.md  8 B", "a        1 B"]);
+        let long = "a-name-longer-than-any-column-should-be";
+        assert_eq!(rows(&[(long, "x"), ("b", "y")]), [format!("{long}  x"), "b  y".to_string()]);
     }
 
     #[test]

@@ -36,8 +36,8 @@ pub fn read(ctx: &Ctx, call: &Call) -> Result<Reply> {
             });
         }
         // Folders first, like File.
-        let t: Vec<String> = entries.iter().map(|e| match e.kind { "dir" => format!("{}/", e.name), "link" => format!("{}@", e.name), _ => format!("{}\t{}", e.name, bytes(e.size)) }).collect();
-        let text = if t.is_empty() { tr!("{} is empty", "{} は空です", at) } else { t.join("\n") };
+        let t: Vec<(String, String)> = entries.iter().map(|e| match e.kind { "dir" => (format!("{}/", e.name), String::new()), "link" => (format!("{}@", e.name), String::new()), _ => (e.name.clone(), bytes(e.size)) }).collect();
+        let text = if t.is_empty() { tr!("{} is empty", "{} は空です", at) } else { crate::out::columns(&t).join("\n") };
         return Ok(Reply::data(text, json!({"repo": repo, "path": rel, "entries": entries})));
     }
     let c = r.read(&repo, &rel, LIMIT)?;

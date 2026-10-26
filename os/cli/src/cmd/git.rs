@@ -11,7 +11,7 @@ use crate::spec::{Fact, On};
 use crate::target::{self, IssueRef};
 use length3_core::history::{self, state_word, Change, Work};
 use length3_core::issues::{number, Issue};
-use length3_core::{text, tr, work};
+use length3_core::{i18n::ja, text, tr, work};
 use serde_json::{json, Value};
 
 /// Where a repo stands, read once for all its issues. `known`: read from
@@ -125,7 +125,8 @@ fn facts(ctx: &Ctx, s: &Stand, i: &Issue) -> Vec<Fact> {
     f
 }
 
-/// What can be done next, the one to do first first: as the box's buttons.
+/// What can be done next, the one to do first first: as the box's buttons. Each is a line that runs as
+/// it is pasted (bug: `[-m note]` came with it, and the shell took the brackets).
 fn next(ctx: &Ctx, s: &Stand, i: &Issue) -> Vec<String> {
     if ctx.prompt { return vec![tr!("the app's Git page", "アプリの Git")]; }
     if s.merged(i) { return Vec::new(); }
@@ -136,15 +137,15 @@ fn next(ctx: &Ctx, s: &Stand, i: &Issue) -> Vec<String> {
     if !ctx.connected() { return vec!["l3 login".into()]; }
     let mut out = Vec::new();
     if has(Fact::CanStart) { out.push(format!("l3 start {m}")); }
-    if has(Fact::CanCommit) { out.push(format!("l3 commit {} [-m {}]", i.repo, crate::spec::placeholder("note"))); }
+    if has(Fact::CanCommit) { out.push(format!("l3 commit {}", i.repo)); }
     if has(Fact::CanPush) { out.push(format!("l3 push {}", i.repo)); }
     // An undecided change, in the app's order: its Review (approve, or a comment more), then
     // Merge once this version is approved; Reject and Reset (taking it back) last.
     if has(Fact::Undecided) {
-        let review = format!("l3 review {m} approve [-m {}]", crate::spec::placeholder("note"));
+        let review = format!("l3 review {m} approve");
         let merge = format!("l3 merge {m}");
         if has(Fact::Approved) { out.push(merge); out.push(review); } else { out.push(review); out.push(merge); }
-        out.push(format!("l3 reply {m} \"…\""));
+        out.push(format!("l3 reply {m} {}", crate::spec::placeholder("\"text\"")));
         out.push(format!("l3 reject {m}"));
         if has(Fact::WorkedHere) { out.push(format!("l3 reset {}", i.repo)); }
     }
@@ -152,14 +153,38 @@ fn next(ctx: &Ctx, s: &Stand, i: &Issue) -> Vec<String> {
     out
 }
 
+/// Whether all that is left to do on the issue here is to leave it: started, nothing changed or to push yet.
+/// Its card says so as the way back, not as what comes next (the menu weighs Back to main last too).
+fn only_leaving(ctx: &Ctx, s: &Stand, i: &Issue) -> bool {
+    let f = facts(ctx, s, i);
+    f.contains(&Fact::WorkedHere) && ![Fact::CanCommit, Fact::CanPush, Fact::Undecided].iter().any(|x| f.contains(x))
+}
+
+/// What can be done with the issue, each deed once: the menu's own (spec.rs), pressed on it here and now, the
+/// button's word beside the line that does it, what it is for first and what leaves it last. Open is left
+/// out: it is what is being read. `on_work`: the repo shows a work's copy, not main.
+fn deeds(ctx: &Ctx, s: &Stand, i: &Issue, on_work: bool) -> Vec<(&'static str, String)> {
+    let mut f = facts(ctx, s, i);
+    if on_work { f.push(Fact::OnWork); }
+    let thing = subject(ctx, s, i, f.clone());
+    crate::menu::offered_here(ctx, crate::spec::Group::Git, On::Issue, &f).into_iter()
+        .filter(|o| !(o.command.name == "issue" && o.form.verb.is_none()))
+        .map(|o| (o.label(), crate::menu::deed_line(o, &thing))).collect()
+}
+
+/// The issue as a thing a deed is pressed on: its card's head and foot, and its facts.
+fn subject(ctx: &Ctx, s: &Stand, i: &Issue, facts: Vec<Fact>) -> crate::menu::Subject {
+    let st = standing(ctx, s, i);
+    crate::menu::Subject { on: On::Issue, word: me(i), repo: Some(i.repo.clone()), label: heading(i),
+        detail: if st.is_empty() { i.repo.clone() } else { format!("{} · {st}", i.repo) }, facts }
+}
+
 /// The issue as a thing on the page, for the menu: its card's head and foot, and its facts.
 fn seen(ctx: &Ctx, r: &length3_core::repos::Repos, s: &Stand, i: &Issue) {
     crate::menu::see(|| {
         let mut f = facts(ctx, s, i);
         if r.line(&i.repo) != work::MAIN { f.push(Fact::OnWork); }
-        let st = standing(ctx, s, i);
-        crate::menu::Subject { on: On::Issue, word: me(i), repo: Some(i.repo.clone()), label: heading(i),
-            detail: if st.is_empty() { i.repo.clone() } else { format!("{} · {st}", i.repo) }, facts: f }
+        subject(ctx, s, i, f)
     });
 }
 
@@ -177,20 +202,27 @@ fn version(c: &Change) -> String {
 }
 
 /// The box as the app's card shows it: the title; once worked on here (or
-/// handed in), Commit and Push with a check once done and what each is about;
-/// at the foot, where it lives and who started it; then what comes next.
+/// handed in), Commit and Push, ✓ once done and ○ until then, and what each
+/// is about; at the foot, where it lives and who started it; then, on the Git
+/// page, what comes next (in full, the deeds follow the Review: issue_show).
 fn card(ctx: &Ctx, s: &Stand, i: &Issue, full: bool) -> Vec<String> {
     let mut t = vec![heading(i)];
     if full && !i.detail.is_empty() { for l in i.detail.lines() { t.push(format!("    {l}")); } }
-    let done = |yes: bool| if yes { "✓" } else { " " };
+    // ○ as the TODO and the Approve line mark what is not done yet (bug: a blank, and two loose words).
+    let done = |yes: bool| if yes { "✓" } else { "○" };
     let change = s.change(i);
     if !ctx.prompt && s.open(i) {
         if let (true, Some(w)) = (s.here(i), s.work.as_ref()) {
             let committed = s.uncommitted == 0 && w.commits > 0;
             let pushed = w.commits > 0 && w.unpushed == 0 && change.is_some_and(|c| c.state == "open");
-            let what = if s.uncommitted > 0 { tr!("{} not committed", "未 Commit：{}", files(s.uncommitted)) } else { String::new() };
+            // As the app's card: what is not committed; before the first commit, where the work is done.
+            let what = if s.uncommitted > 0 { tr!("{} not committed", "未 Commit {}", files(s.uncommitted)) }
+                else if w.commits == 0 { tr!("edit in {} (l3 prompt {0}, or l3 file write); what changes shows here", "{} で編集すると（l3 prompt {0} か l3 file write）、ここに出ます", i.repo) }
+                else { String::new() };
             t.push(format!("    {} Commit  {what}", done(committed)).trim_end().to_string());
-            let push = if pushed { change.map(version).unwrap_or_default() } else if w.unpushed > 0 { tr!("{} to push", "Push 待ち：{}", commits(w.unpushed)) } else { String::new() };
+            let push = if pushed { change.map(version).unwrap_or_default() }
+                else if w.unpushed > 0 { if ja() { format!("Push するコミット {}", w.unpushed) } else { format!("{} to push", commits(w.unpushed)) } }
+                else { String::new() };
             t.push(format!("    {} Push    {push}", done(pushed)).trim_end().to_string());
         } else if let Some(c) = change.filter(|c| c.state == "open") {
             t.push(format!("    ✓ Commit  {}", if c.submitted_by.is_empty() { "—" } else { &c.submitted_by }));
@@ -199,11 +231,20 @@ fn card(ctx: &Ctx, s: &Stand, i: &Issue, full: bool) -> Vec<String> {
     }
     let st = standing(ctx, s, i);
     t.push(format!("    {}{}", i.repo, if st.is_empty() { String::new() } else { format!(" · {st}") }));
-    let n = next(ctx, s, i);
-    if let Some((first, rest)) = n.split_first() {
-        t.push(tr!("    next: {}", "    次：{}", first));
-        if full && !rest.is_empty() { t.push(tr!("    also: {}", "    ほか：{}", rest.join(" · "))); }
+    if !full {
+        if let Some(first) = next(ctx, s, i).first() {
+            t.push(if only_leaving(ctx, s, i) { tr!("    back: {}", "    戻る：{}", first) } else { tr!("    next: {}", "    次：{}", first) });
+        }
     }
+    t
+}
+
+/// The deeds under a card opened in full: a heading, then each deed's word, aligned, and the line that does it.
+fn deed_block(list: &[(&str, String)]) -> Vec<String> {
+    if list.is_empty() { return Vec::new(); }
+    let cols = list.iter().map(|(w, _)| crate::help::width(w)).max().unwrap_or(0);
+    let mut t = vec![String::new(), tr!("Next", "次")];
+    for (w, line) in list { t.push(format!("    {}  {line}", crate::help::pad(w, cols))); }
     t
 }
 
@@ -274,18 +315,18 @@ pub fn issue_show(ctx: &Ctx, call: &Call) -> Result<Reply> {
     // What is not committed, while it is worked on here (beside Commit in the app).
     if s.here(&i) && s.uncommitted > 0 {
         t.push(String::new());
-        t.push(tr!("Not committed  {}  (l3 diff {} shows the lines)", "未 Commit：{}（行は l3 diff {}）", files(s.uncommitted), at.repo));
+        t.push(tr!("Not committed  {}", "未 Commit  {}", files(s.uncommitted)));
         for f in history::changes(&r, &at.repo)?.folders.iter().flat_map(|f| f.files.iter()) {
             t.push(format!("    {}  {}{}", word(f.status), f.path, counts(f.binary, f.added as usize, f.removed as usize)));
             uncommitted.push(json!({"path": f.path, "status": f.status, "added": f.added, "removed": f.removed, "binary": f.binary}));
         }
     }
-    // The Review, once there is a change: its diff, what was said, the approvals; then Merge.
+    // The Review, once there is a change: its diff, what was said, the approvals. What can be done with
+    // it is said once, in the deeds under it (bug: each command was said there, again here, and again under it).
     let change = s.change(&i).filter(|c| c.state != "reset");
     if let Some(c) = change {
-        let m = at.name();
         t.push(String::new());
-        t.push(tr!("Review  {}  (l3 diff {} shows the lines)", "Review：{}（行は l3 diff {}）", files(c.files), m));
+        t.push(tr!("Review  {}", "Review  {}", files(c.files)));
         for f in history::change_diff(&at.repo, &c.id, 100_000).unwrap_or_default() {
             let (add, del) = (f.lines.iter().filter(|l| l.kind == "add").count(), f.lines.iter().filter(|l| l.kind == "del").count());
             t.push(format!("    {}  {}{}", word(f.status), f.path, counts(f.binary, add, del)));
@@ -298,15 +339,27 @@ pub fn issue_show(ctx: &Ctx, call: &Call) -> Result<Reply> {
         }
         let by = approvers(c);
         if c.state == "open" {
-            t.push(if by.is_empty() { tr!("    ○ Approve  (l3 review {} approve)", "    ○ 承認（l3 review {} approve）", m) } else { tr!("    ✓ Approved by {}", "    ✓ 承認：{}", by.join(", ")) });
-            t.push(String::new());
-            t.push(if by.is_empty() { tr!("Merge  not approved yet (l3 merge {} takes it anyway) · Reject: l3 reject {}", "Merge：まだ承認されていません（l3 merge {} でも取り込めます） · Reject：l3 reject {}", m, m) }
-                else { tr!("Merge  l3 merge {} · Reject: l3 reject {}", "Merge：l3 merge {} · Reject：l3 reject {}", m, m) });
+            t.push(if by.is_empty() { tr!("    ○ Approve", "    ○ 承認") } else { tr!("    ✓ Approved by {}", "    ✓ 承認：{}", by.join(", ")) });
         } else if c.state == "rejected" && !c.note.is_empty() {
             t.push(tr!("    rejected: {}", "    Reject の理由：{}", c.note));
         }
     }
-    Ok(Reply::data(t.join("\n"), json!({"issue": issue_json(ctx, &s, &i), "uncommitted": uncommitted, "change": change})))
+    let list = deeds_here(ctx, &r, &s, &i);
+    t.extend(deed_block(&list));
+    let deeds: Vec<Value> = list.iter().map(|(w, line)| json!({"label": w, "command": line})).collect();
+    Ok(Reply::data(t.join("\n"), json!({"issue": issue_json(ctx, &s, &i), "uncommitted": uncommitted, "change": change, "deeds": deeds})))
+}
+
+/// The issue's deeds, and Sign in first while this device is on no Remote (where it stands is not known
+/// without one, and nothing but closing it can be done).
+fn deeds_here(ctx: &Ctx, r: &length3_core::repos::Repos, s: &Stand, i: &Issue) -> Vec<(&'static str, String)> {
+    if s.merged(i) { return Vec::new(); }
+    let mut list = deeds(ctx, s, i, r.line(&i.repo) != work::MAIN);
+    if !ctx.connected() && i.closed.is_none() {
+        let sign_in = crate::menu::offered_here(ctx, crate::spec::Group::Git, On::Page, &[]).into_iter().find(|o| o.command.name == "login");
+        if let Some(o) = sign_in { list.insert(0, (o.label(), "l3 login".to_string())); }
+    }
+    list
 }
 
 /// Words given for a line (an issue's, a commit's): the first line names it,
@@ -373,7 +426,10 @@ pub fn start(ctx: &Ctx, call: &Call) -> Result<Reply> {
         if let Some((_, new)) = number_loose(ctx, &r, &at.repo, &s).into_iter().find(|(old, _)| *old == at.file) { at.file = new; }
     }
     let l = work::start(&r, &at.repo, &at.path())?;
-    Ok(Reply::done(tr!("Working on {} — {} shows its copy now (back with: l3 main {})", "{} を始めました。{} はその写しを見せています（戻るには l3 main {}）", at.shown(), at.repo, at.repo), json!({"repo": at.repo, "n": length3_core::issues::number_of(&at.file), "title": at.title, "file": at.file, "line": l})))
+    // Then the way on, and the way back (bug: only the way back was said, and the card's next was leaving).
+    Ok(Reply::done(tr!("Working on {0} — {1} shows its copy now\n  edit in it (l3 prompt {1}, or l3 file write), then l3 commit {1} · back to main: l3 main {1}",
+        "{0} を始めました。{1} はその写しを見せています\n  中で編集して（l3 prompt {1} か l3 file write）、l3 commit {1} · main に戻るには l3 main {1}", at.shown(), at.repo),
+        json!({"repo": at.repo, "n": length3_core::issues::number_of(&at.file), "title": at.title, "file": at.file, "line": l})))
 }
 
 pub fn main(ctx: &Ctx, call: &Call) -> Result<Reply> {
@@ -405,7 +461,11 @@ pub fn commit(ctx: &Ctx, call: &Call) -> Result<Reply> {
     if on == work::MAIN && text::kind_of(&line).1.trim().is_empty() {
         return Err(Error::Usage(tr!("On main a commit needs its subject, Kind：subject: l3 commit [REPO] \"Fix：title\" (on an issue it is named after the issue, and words given are its note: l3 start REPO#N)", "main では Commit の件名（種別：件名）が要ります：l3 commit [REPO] \"Fix：件名\"（Issue の作業では Issue の名前で、書いた言葉はメモに：l3 start REPO#N）")));
     }
-    let c = history::cut(&r, &repo, None, &line, &note)?;
+    // Nothing changed: said of the repo it looked at (bug: "Nothing to commit", and no more).
+    let nothing = tr!("Nothing to commit", "まだ Commit していない変更がありません");
+    let c = history::cut(&r, &repo, None, &line, &note).map_err(|e| if e == nothing {
+        Error::Refused(tr!("Nothing to commit in {}: nothing changed since the last commit", "{} には Commit するものがありません。前の Commit から何も変わっていません", repo))
+    } else { Error::from(e) })?;
     let mut text = tr!("Committed {}  {} ({}{})", "Commit しました {}  {}（{}{}）", out::short(&c.id), history::line(&c), files(c.files), out::added_removed(c.added, c.removed));
     if folded { text += &tr!("\n  named after its issue; \"{}\" is its note", "\n  Issue の名前で Commit し、「{}」はメモにしました", title); }
     Ok(Reply::done(text, json!({"commit": c, "titleAsNote": folded})))
@@ -439,6 +499,18 @@ fn change_for(at: &IssueRef) -> Result<Change> {
         .ok_or_else(|| Error::NotFound(tr!("{} has no change yet (l3 push {} hands it in, from its work)", "{} にはまだ Change がありません（作業から l3 push {} で渡します）", at.name(), at.repo)))
 }
 
+/// The issue's change, still to be decided: one decided already is said as the issue it is, and what then
+/// (bug: "The change is merged already", of no change named).
+fn undecided(at: &IssueRef) -> Result<Change> {
+    let c = change_for(at)?;
+    match c.state.as_str() {
+        "open" => Ok(c),
+        "merged" => Err(Error::Refused(tr!("{} is merged already (l3 log {} shows it)", "{} はもう Merge 済みです（l3 log {} で見られます）", at.name(), at.repo))),
+        "rejected" => Err(Error::Refused(tr!("{}'s change was rejected; its next version is handed in from its work: l3 push {}", "{} の Change は Reject 済みです。次の版は作業から l3 push {} で渡します", at.name(), at.repo))),
+        _ => Err(Error::Refused(tr!("{}'s change was taken back; its next version is handed in from its work: l3 push {}", "{} の Change は取り下げ済みです。次の版は作業から l3 push {} で渡します", at.name(), at.repo))),
+    }
+}
+
 pub fn diff(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let files = if call.form.args.first() == Some(&crate::spec::Arg::Issue) {
         let at = target::issue(ctx, call, 0)?;
@@ -469,13 +541,13 @@ pub fn log(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let list = history::log(&ctx.repos()?, &repo, 50)?;
     let mut t = Vec::new();
     if list.is_empty() { t.push(tr!("No commits yet", "コミットはまだありません")); }
+    // Two lines a commit, as the app's list has it: its line, then the facts quieter under it. The folders it
+    // touched are in --json (bug: a third line, where the repo's own top read as a folder named after it).
     for c in &list {
         t.push(history::line(c));
         let issue = c.issue.as_deref().map(number).filter(|n| !n.is_empty()).map(|n| format!(" · {n}")).unwrap_or_default();
         let merged = if c.merged.is_some() { tr!(" · merge", " · Merge") } else { String::new() };
         t.push(format!("    {} · {} · {}{}{issue}{merged}", out::short(&c.id), ago(c.time), files(c.files), out::added_removed(c.added, c.removed)));
-        let places: Vec<String> = c.folders.iter().map(|f| if f.is_empty() { format!("{repo}/") } else { format!("{f}/") }).collect();
-        if !places.is_empty() { t.push(format!("    {}", places.join(" "))); }
     }
     Ok(Reply::data(t.join("\n"), json!(list)))
 }
@@ -501,14 +573,14 @@ pub fn reply(ctx: &Ctx, call: &Call) -> Result<Reply> {
 
 pub fn merge(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let at = target::issue(ctx, call, 0)?;
-    change_for(&at)?;
+    undecided(&at)?;
     let c = history::merge_and_finish(&ctx.repos()?, &at.repo, &at.line())?;
     Ok(Reply::done(tr!("Merged {} into main (version {})", "{} を main に Merge しました（第{}版）", named_change(&c), c.version), json!({"change": c})))
 }
 
 pub fn reject(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let at = target::issue(ctx, call, 0)?;
-    change_for(&at)?;
+    undecided(&at)?;
     let c = history::reject(&at.repo, &at.line(), call.note())?;
     let why = if call.note().trim().is_empty() { String::new() } else { tr!(": {}", "：{}", call.note().trim()) };
     Ok(Reply::done(tr!("Rejected {} (its issue stays open){}", "{} を Reject しました（Issue は開いたままです）{}", named_change(&c), why), json!({"change": c})))
@@ -590,6 +662,43 @@ mod tests {
                 assert_eq!(Some(first.command.name), said.first().and_then(|n| n.split(' ').nth(1)), "{what}");
             }
         }
+    }
+
+    #[test]
+    fn the_card_marks_each_step_says_where_to_edit_and_calls_leaving_leaving() {
+        let ctx = Ctx::test(None, Vec::new()).online();
+        let i = parse("r", "001.md", "Fix：x\n");
+        // Just started: ○ for each step (bug: a blank), where the work is done, and the way back said as such.
+        let just = card(&ctx, &working(0, 0, 0, None), &i, false);
+        assert!(just[1].starts_with("    ○ Commit  ") && just[1].contains("l3 prompt r"), "{just:?}");
+        assert_eq!(just[2], "    ○ Push");
+        assert_eq!(just.last(), Some(&tr!("    back: l3 main r", "    戻る：l3 main r")));
+        let changed = card(&ctx, &working(0, 0, 2, None), &i, false);
+        assert_eq!(changed[1], tr!("    ○ Commit  2 files not committed", "    ○ Commit  未 Commit 2ファイル"));
+        assert_eq!(changed.last(), Some(&tr!("    next: l3 commit r", "    次：l3 commit r")));
+        let committed = card(&ctx, &working(1, 1, 0, None), &i, false);
+        assert_eq!(committed[1..3], ["    ✓ Commit".to_string(), tr!("    ○ Push    1 commit to push", "    ○ Push    Push するコミット 1")]);
+        // What comes next runs as it is pasted (bug: `[-m note]` came along, brackets and all).
+        for s in [working(0, 0, 2, None), working(1, 0, 0, Some(change("open", false))), stand_with_nothing()] {
+            for n in next(&ctx, &s, &i) { assert!(!n.contains('[') && !n.contains('…'), "{n}"); }
+        }
+    }
+
+    #[test]
+    fn an_issue_in_full_says_each_deed_once_as_the_menu_offers_it() {
+        let ctx = Ctx::test(None, Vec::new()).online();
+        let i = parse("r", "001.md", "Fix：x\n");
+        let lines = |s: &Stand, on_work| deeds(&ctx, s, &i, on_work).into_iter().map(|(_, l)| l).collect::<Vec<_>>();
+        // Handed in from here: what it is for first, then the rest, what leaves it last; Open is what is being read.
+        assert_eq!(lines(&working(1, 0, 0, Some(change("open", false))), true),
+            ["l3 review r#1 approve", "l3 merge r#1", "l3 diff r#1", "l3 review r#1 changes", &format!("l3 reply r#1 {}", crate::spec::placeholder("\"text\"")), "l3 main r", "l3 reset r", "l3 reject r#1"]);
+        assert_eq!(lines(&working(0, 0, 2, None), true), ["l3 commit r", "l3 diff r", "l3 main r"]);
+        assert_eq!(lines(&stand_with_nothing(), false), ["l3 start r#1", "l3 issue close r#1"]);
+        // Its words are the menu's buttons, aligned in one column under a heading.
+        let block = deed_block(&deeds(&ctx, &stand_with_nothing(), &i, false));
+        assert_eq!(block[1], tr!("Next", "次"));
+        let at: std::collections::HashSet<usize> = block[2..].iter().map(|l| crate::help::width(&l[..l.find("l3 ").unwrap()])).collect();
+        assert_eq!(at.len(), 1, "{block:?}");
     }
 
     fn stand_with_nothing() -> Stand {
