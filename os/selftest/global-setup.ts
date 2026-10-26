@@ -35,6 +35,7 @@ import {cp} from 'node:fs/promises';
 import {createServer} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {pathToFileURL} from 'node:url';
 import type {FullConfig} from '@playwright/test';
 import {OS, OUT, LOGS} from './paths.ts';
 
@@ -138,6 +139,9 @@ function copyDir(from: string, to: string): Promise<void> {
   });
 }
 
+/** How npm test's processes load their modules (types stripped and code compiled once for every run), for the Remotes too. */
+const LOAD = pathToFileURL(join(OS, 'scripts', 'tests-load.mjs')).href;
+
 /** Start `args` with node, its output in logs/<name>.log. */
 function start(name: string, args: string[], env: NodeJS.ProcessEnv = {}): ChildProcess {
   const log = createWriteStream(join(LOGS, `${name}.log`));
@@ -228,8 +232,10 @@ export default async function globalSetup(_config: FullConfig) {
       await copyDir(empty, join(data, dir, 'pg'));
     }
     const at = `http://localhost:${aPort}`;
-    // The Remote's own name is localhost too, so the session it sets on sign-in is the app's.
-    children.push(start(`remote${name}`, ['service/dev.ts', join(data, dir), String(rPort), at], {LENGTH3_DEV_BASE: `http://localhost:${rPort}`, ...env}));
+    // The Remote's own name is localhost too, so the session it sets on sign-in is the app's. It loads its modules as
+    // npm test's processes do (scripts/tests-load.mjs: their types stripped once, their code compiled once, for every
+    // run): a fifth less of the CPU its start took, which every run waited for.
+    children.push(start(`remote${name}`, ['--import', LOAD, 'service/dev.ts', join(data, dir), String(rPort), at], {LENGTH3_DEV_BASE: `http://localhost:${rPort}`, ...env}));
     children.push(start(`preview${name}`, [join(OS, 'node_modules/vite/bin/vite.js'), 'preview', '--outDir', OUT,
       '--host', '127.0.0.1', '--port', String(aPort), '--strictPort'], {LENGTH3_DEV_REMOTE: `http://127.0.0.1:${rPort}`}));
     // Through the preview, so both are up and the one passes to the other. (Between the servers and

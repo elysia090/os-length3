@@ -1,5 +1,6 @@
-// For npm test (scripts/tests.mjs): how each test process loads its modules, loaded before any of them. A test
-// process loads the same modules each run, and most of a short one's time went on loading them again:
+// For npm test (scripts/tests.mjs): how each test process loads its modules, loaded before any of them; and the
+// selftest's Remotes (selftest/global-setup.ts), which load the service the same way each run. A test process
+// loads the same modules each run, and most of a short one's time went on loading them again:
 //
 // - TypeScript: each .ts module's types stripped once, and the result kept in the temporary directory under its
 //   address and its text; a process whose modules are all kept never loads the stripper (amaro, a compiler in
