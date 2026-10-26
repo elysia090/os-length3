@@ -1,5 +1,8 @@
 import {bytes, h} from '../ui/dom.ts';
-import {t} from '../i18n.ts';
+import {t, tn} from '../i18n.ts';
+import {connection} from '../remote/connection.ts';
+import {plan} from '../remote/plan.ts';
+import {goToPlan} from './remote/plan.ts';
 import {remoteOnly} from '../remote/lifecycle.ts';
 import {store, templateFiles, validName, type Template} from '../repos/repos.ts';
 import {pageHead} from './common.ts';
@@ -142,7 +145,19 @@ export function newRepo(ctx: Context): Node[] {
   // Said where it is to be put right: under the name.
   const error = h('p', {class: 'error', role: 'alert'});
   const submit = h('button', {class: 'button primary', type: 'submit'}, t('Create')) as HTMLButtonElement;
-  const actions = h('div', {class: 'answers'}, h('span', {class: 'grow'}), submit);
+  // The plan full (signed in, on a Remote that has one): said before Create, not found out after. It is made all the
+  // same, and stays on this device until there is room on the Remote.
+  const full = h('p', {class: 'muted small plan-full', role: 'note', hidden: ''});
+  const actions = h('div', {class: 'answers'}, full, h('span', {class: 'grow'}), submit);
+  if (connection()) void plan().then((p) => {
+    const of = p.allowance?.repos ?? null;
+    if (of === null || (p.usage?.repos ?? 0) < of) return;
+    const see = h('button', {type: 'button', class: 'link'}, t('See the plan'));
+    see.addEventListener('click', () => goToPlan(ctx));
+    full.replaceChildren(tn('The plan keeps {n} repo on the Remote, and it is there: this one stays on this device until there is room.',
+      'The plan keeps {n} repos on the Remote, and they are there: this one stays on this device until there is room.', of), ' ', see);
+    full.hidden = false;
+  }, () => {});
 
   /** Made, but what it is for could not be written: the page stays, says so, and where to go from here. */
   const made = (n: string) => {

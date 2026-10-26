@@ -2046,6 +2046,12 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .sign-in-card .button { text-wrap: balance; }
 .row-item[data-where='offline'] .row-meta { color: var(--ink); }
 .card.repo.away { border-style: dashed; }
+/* Held back by the plan (kept here, waiting for room on the Remote): in one place only, as one away is, and where it
+   stands said in ink, not one quiet line among the others'. */
+.card.repo.held { border-style: dashed; }
+.card.repo.held .card-sync { color: var(--ink); }
+/* New repo with the plan full: said at Create's left, before it is pressed. */
+.plan-full { margin: 0; max-width: 46ch; }
 .pop-head { padding: var(--s2) var(--s3) 0; }
 .pop-item[aria-checked='true'] { font-weight: 600; }
 /* The one chosen in a menu is said by a tick in ink at its end, not by its weight alone (§1). */

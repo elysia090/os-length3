@@ -117,7 +117,10 @@ export function repoList(ctx: Context, options: {newCard: boolean; counted?: (n:
   const marks = () => {
     for (const card of grid.querySelectorAll<HTMLElement>('.card.repo:not(.away)')) {
       const slot = card.querySelector('.card-sync');
-      if (slot) slot.textContent = syncWord(repoState(card.dataset.repo!));
+      const s = repoState(card.dataset.repo!);
+      if (slot) slot.textContent = syncWord(s);
+      // Held back by the plan: its edge dashed and its words in ink, not one of the others with a quiet line.
+      card.classList.toggle('held', s?.where === 'waits');
     }
   };
   let known = '';

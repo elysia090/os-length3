@@ -43,6 +43,8 @@ export default {
 
   // File (the tree of "/")
   'No repos yet': 'repo はまだありません',
+  'The plan keeps {n} repo on the Remote, and it is there: this one stays on this device until there is room.': 'プランで Remote に置ける repo は {n} つで、もう置かれています。この repo は空きができるまでこの端末に残ります。',
+  'The plan keeps {n} repos on the Remote, and they are there: this one stays on this device until there is room.': 'プランで Remote に置ける repo は {n} つで、もう置かれています。この repo は空きができるまでこの端末に残ります。',
   'Open {name}': '{name}を開く',
   'Close {name}': '{name}を閉じる',
   'System': 'システム',

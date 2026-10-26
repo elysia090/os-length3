@@ -2297,7 +2297,13 @@ the gear's do, never swapped in one frame):
   Remote refused is said where it was pressed: under the tier's card, in
   the ask, under Manage. The window coming back reads the Remote again.
   Shown only when the Remote has a plan. A repo card the Remote holds back
-  says it waits, with See the plan.
+  says it waits, with See the plan: its edge dashed (in one place only, as
+  one only on the Remote is) and where it stands said in ink, on Home's
+  card too, not one quiet line among the others'; its switch stays, to say
+  it should not wait. New repo says it before Create is pressed, at its
+  left, when the plan's repos are all on the Remote already: this one is
+  made all the same and stays on this device until there is room, with
+  See the plan.
 
 Under the parts, while there is no passkey, Add a passkey: the button alone,
 below what the page is about rather than over it, shown once the repos are

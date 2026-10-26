@@ -66,7 +66,7 @@ export function repoCard(name: string, here: Here | null, there: RemoteRepo | nu
   const discard = off ? h('button', {type: 'button', class: 'button small-button discard'}, t('Discard')) as HTMLButtonElement : null;
   if (discard) discard.disabled = gone;
   // A group named by its repo, so what is in it (its switch, Share, Forge) is heard as the repo's.
-  const el = h('div', {class: `card repo${off ? ' off' : ''}`, 'data-repo': name, role: 'group', 'aria-label': name},
+  const el = h('div', {class: `card repo${off ? ' off' : ''}${plan ? ' held' : ''}`, 'data-repo': name, role: 'group', 'aria-label': name},
     h('span', {class: 'card-title'}, name), summary(name, here), ...facts(name, here, there),
     // What one does with the repo goes at the left: Forge (which leaves for another page) and Share beside
     // it, its servers coming out to its right. The switch keeps the right end; turned off, it makes Forge
