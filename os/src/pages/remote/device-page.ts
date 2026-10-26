@@ -29,7 +29,13 @@ export function devicePage(given: string): HTMLElement {
     }
     let who: {clientId: string; status: string};
     try { who = await remote.deviceAsking(code); } catch (e) {
-      body.replaceChildren(h('p', {class: 'error'}, t('This code cannot be used ({why}).', {why: errorText(e)})));
+      // The device flow's own words (invalid_request, expired_token) are not for reading: said as what they mean, and
+      // the way on, another code.
+      const why = errorText(e);
+      const another = h('button', {class: 'button', type: 'button'}, t('Type another code'));
+      another.addEventListener('click', () => { code = ''; void ask(); });
+      body.replaceChildren(h('p', {class: 'error', role: 'alert'}, t('This code cannot be used.')),
+        h('p', {class: 'muted small'}, /^[a-z_]+$/.test(why) ? t('It has run out or was typed wrong: the device shows a new one when it is asked again.') : why), another);
       return;
     }
     body.replaceChildren(...letIn(code, who.clientId, error, finish));
