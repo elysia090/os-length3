@@ -977,7 +977,11 @@ button.row-item:disabled { cursor: var(--cursor-arrow); color: var(--sub); }
 .pill-name { border: 0; padding: 0; background: transparent; color: inherit; cursor: var(--cursor-hand); white-space: nowrap; }
 /* The issue the repo's copy is for, after its name, while it is not main. */
 .pill-issue { margin-left: .4em; font-family: var(--mono); opacity: .7; }
-.pill-close { display: grid; place-items: center; width: var(--h-row); height: calc(var(--h-row) - 2px); border: 0; padding: 0; background: transparent; color: inherit; cursor: var(--cursor-hand); border-radius: var(--r-round); }
+.pill-close { flex: none; display: grid; place-items: center; width: var(--h-row); height: calc(var(--h-row) - 2px); border: 0; padding: 0; background: transparent; color: inherit; cursor: var(--cursor-hand); border-radius: var(--r-round); }
+/* Alone on a band narrower than it (a phone), the pill gives way in its name, which ends in …, never at its × cut
+   by the band's edge; several scroll, as a band does. */
+.pills > .pill:only-child { flex-shrink: 1; min-width: 0; }
+.pills > .pill:only-child > .pill-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .pill-close .mark, .band-add .mark { width: var(--s4); height: var(--s4); }
 /* The ring is round the part of a pill that has the keyboard, inside the pill: its name, or its ×;
    on the current pill it is ground over the ink, so it does not sink into it. */
@@ -1845,8 +1849,11 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
   .search-pills { position: relative; }
 }
 /* A phone: the repo's pill before the search's width (a pill cut to three letters says nothing; the search's field says
-   what it is in a word). */
-@media (max-width: 560px) { .work.bench > .bar { grid-template-columns: minmax(0, 1fr) minmax(88px, 32%) auto; } }
+   what it is in a word), and the band's buttons a little closer, so a short name and its × stand whole. */
+@media (max-width: 560px) {
+  .work.bench > .bar { grid-template-columns: minmax(0, 1fr) minmax(80px, 28%) auto; }
+  .work.bench > .bar > .repo-strip { gap: var(--s1); }
+}
 /* One line to type in, the same everywhere: the search box, a repo's name. */
 .search-in, .line-in {
   width: 100%; min-height: var(--h-row); padding: 0 var(--s3); border: 1px solid var(--edge); border-radius: var(--r-field);

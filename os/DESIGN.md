@@ -1490,7 +1490,9 @@ end (File's menu for the file read now: New file, New folder, Rename,
 Delete), the pills follow it and scroll, and ⊕ comes right after the last
 pill. One press brings every repo not on the band out at once; this is not
 adding tabs one at a time.
-Each pill comes off the band with its × (the repo itself is untouched).
+Each pill comes off the band with its × (the repo itself is untouched);
+alone on a band too narrow for it (a phone), its name ends in … rather than
+its × being cut at the band's edge.
 A repo whose copy is an issue's (Start in Git) says so on its pill, after
 its name, quietly (garden #1): what is written in Forge is for that issue.
 A file opened beside from its head is the one worked on and has the
