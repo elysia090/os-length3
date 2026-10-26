@@ -33,9 +33,10 @@ const lead = (at: number, n: number) => (at === 0 ? 0 : at === n - 1 ? 2 : 1);
 /**
  * The row's lean toward a neighbour follows how far into it the pointer is: none for the first few px past the edge
  * (a hand at rest on the edge, never quite still, leaves the row be), then a little more for each px further, up to
- * a step (16 px). No line to cross, so nothing to flip back and forth on.
+ * a step (16 px). No line to cross, so nothing to flip back and forth on. What it follows trails the hand by a few
+ * px (play): a tremor back and forth within them moves nothing, and a hand going on is followed px by px.
  */
-const LEAN = {still: 4, rate: .45, most: 16, tremor: 6};
+const LEAN = {still: 1, rate: .45, most: 16, play: 3};
 
 /** A box going from the row fades where it stands; then the row closes over its place, by the move that slides it. */
 export const shrink = (col: HTMLElement) => new Promise<void>((done) => {
@@ -115,14 +116,15 @@ export class Row {
     const over = (event.target as Element).closest?.('.col') as HTMLElement | null;
     const side = x > r.right - by ? 'after' : 'before';
     if (into <= 0 || !over?.classList.contains(side)) { this.leanTo(0, null, 0); return; }
-    // A hand on the box, never quite still, does not move the row with it: only a move of a few px (LEAN.tremor) does.
-    if (this.leant.over === over && Math.abs(into - this.leant.into) < LEAN.tremor) return;
-    this.leant = {over, into};
-    const px = Math.min(LEAN.most, Math.max(0, (into - LEAN.still) * LEAN.rate));
+    const held = this.leant.over === over ? this.leant.into : 0;
+    const at = Math.min(Math.max(held, into - LEAN.play), into + LEAN.play);
+    if (this.leant.over === over && at === held) return;
+    this.leant = {over, into: at};
+    const px = Math.min(LEAN.most, Math.max(0, (at - LEAN.still) * LEAN.rate));
     this.leanTo(side === 'after' ? -px : px, over, px / LEAN.most);
   }
 
-  /** Where the pointer was in the neighbour the row last leant for. */
+  /** How far into the neighbour the row leans for: the hand's way in, trailed by LEAN.play. */
   private leant: {over: HTMLElement | null; into: number} = {over: null, into: 0};
 
   /** The row leant by `px` (none: 0), the neighbour `lit` brought up by `by` (0 to 1). */
