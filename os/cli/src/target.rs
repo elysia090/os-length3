@@ -40,9 +40,23 @@ pub fn repo_named(ctx: &Ctx, word: Option<&str>) -> Result<String> {
     if ctx.has_repo(&name) { Ok(name) } else { Err(missing(ctx, &name)) }
 }
 
-/// The repo in slot `i`.
+/// The repo in slot `i`. None named outside a repo, the mistake says the form with REPO in it and the repos
+/// there are to put there (bug: "Name a repo, or run this in one", and neither which form nor which repos).
 pub fn repo(ctx: &Ctx, call: &Call, i: usize) -> Result<String> {
-    repo_named(ctx, call.word(i))
+    repo_named(ctx, call.word(i)).map_err(|e| match e {
+        Error::Usage(_) if call.word(i).is_none() => {
+            let form = crate::spec::usage(call.command, call.form).replacen("[REPO]", "REPO", 1);
+            let here: Option<Vec<String>> = ctx.repos().and_then(|r| Ok(r.list()?)).ok().map(|l| l.into_iter().map(|s| s.name).collect());
+            let some = match here {
+                None => String::new(),
+                Some(h) if h.is_empty() => tr!(" (there is none yet: l3 repo new NAME)", "（まだありません：l3 repo new NAME）"),
+                Some(h) if h.len() <= 5 => tr!(": {}", "：{}", h.join(", ")),
+                Some(h) => tr!(": {}, … (l3 repo)", "：{}、…（l3 repo）", h[..5].join(", ")),
+            };
+            Error::Usage(tr!("Name a repo ({}), or run it in one{}", "repo を書くか（{}）、repo の中で実行してください{}", form, some))
+        }
+        e => e,
+    })
 }
 
 /// A path as l3 is given it, as (repo, path from its top): `/root/REPO/…`
@@ -273,6 +287,10 @@ mod tests {
         assert!(matches!(repo_named(&out, Some("a b")), Err(Error::Usage(_))));
         assert!(matches!(repo_named(&out, None), Err(Error::Usage(_))));
         assert_eq!(repo_named(&inside, None).unwrap(), "hello");
+        // None named outside a repo: the form with REPO in it (bug: "Name a repo, or run this in one").
+        let call = crate::args::parse(&["commit".to_string()], &out).unwrap();
+        let Err(Error::Usage(m)) = repo(&out, &call, 0) else { panic!() };
+        assert!(m.contains(&format!("l3 commit REPO [-m {}]", crate::spec::placeholder("note"))), "{m}");
         let i = IssueRef { repo: "hello".into(), file: "003.md".into(), title: "Fix：x".into() };
         assert_eq!((i.name(), i.shown(), i.line()), ("hello#3".into(), "hello#3 Fix：x".into(), "003".into()));
         assert!(numbered("#3") && numbered("hello#3") && numbered("3") && !numbered("restart loses") && !numbered("3rd"));

@@ -2,6 +2,7 @@ import {h} from '../../ui/dom.ts';
 import {errorText} from '../../app/errors.ts';
 import {t} from '../../i18n.ts';
 import {every} from '../../app/runs.ts';
+import {paced, still} from '../../ui/glide.ts';
 import * as servers from '../../remote/servers.ts';
 import type {Shown} from './parts.ts';
 import {sayLeft, todoList} from '../todo-list.ts';
@@ -29,6 +30,8 @@ export async function boardTodo(b: Shown, holder: HTMLElement, writing: (busy: (
     {readOnly: !b.member, first: t('Something to do together'), counted: (x) => sayLeft(left, x), failed: (why) => { status.textContent = why; }});
   writing(() => holder.contains(document.activeElement) || (keeper ? !keeper.idle() : false));
   holder.replaceChildren(h('div', {class: 'board-todo-head'}, h('span', {}, 'TODO'), left), box.element, status);
+  // Read in after its board was drawn: it comes up where it stands, as the talk does.
+  if (!still()) holder.animate([{opacity: 0}, {opacity: 1}], {duration: paced(200), easing: 'ease-out'});
   let seen = JSON.stringify(list);
   // Until the box is gone; one not answered is the next one's to bring.
   every(EVERY, async () => {

@@ -74,7 +74,7 @@ test('a repo made and written with l3 is on the Remote byte for byte, CRLF, name
 test('another device opens the repo from the Remote, and takes in each change made on the first when it reads', async () => {
   ok(laptop.l3(['repo', 'new', 'shared', '-t', 'empty']));
   ok(laptop.l3(['file', 'write', 'shared/a.txt'], 'one\n'));
-  assert.match(ok(desk.l3(['repo'])).out, /shared\tonly on the Remote/);
+  assert.match(ok(desk.l3(['repo'])).out, /^shared {2,}only on the Remote/m);
   ok(desk.l3(['repo', 'open', 'shared']), /^shared is here now/);
   assert.equal(ok(desk.l3(['file', 'shared/a.txt'])).out, 'one\n');
   ok(laptop.l3(['file', 'write', 'shared/a.txt'], 'two\n'));
@@ -82,7 +82,7 @@ test('another device opens the repo from the Remote, and takes in each change ma
   // And back: the desk's change reaches the laptop.
   ok(desk.l3(['file', 'write', 'shared/b.txt'], 'from the desk\n'));
   assert.equal(ok(laptop.l3(['file', 'shared/b.txt'])).out, 'from the desk\n');
-  assert.match(ok(laptop.l3(['remote'])).out, /\n {2}shared {2}in step/);
+  assert.match(ok(laptop.l3(['remote'])).out, /\n {2}shared {2,}in step/);
 });
 
 test('a script\'s execute bit goes to the Remote and comes back with it: opened on another device, after a change, and after Free and opening again', async () => {

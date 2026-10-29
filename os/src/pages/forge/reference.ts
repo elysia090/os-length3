@@ -24,6 +24,9 @@ import {drawLine, remember, seenButton, seenIn, seenKey, seenKind, seenLabel, ty
 // hand fills the box, the ones beside it hidden past its edges but for a
 // sliver, pressed (or ← →) to move to them. A file or a line opens in the
 // center. Each repo keeps its own search, switch and line while the app runs.
+// At rest the right pane says the three beside the Prompt's head (`heads`, diff with how many files are changed):
+// pressed there, or on the switch, a kind's list stays out while the keyboard goes back to the file, as something
+// read does, until it is put away (Escape, or pressed again).
 
 /** Per repo, while the app is open: what was typed, and the switch pressed. */
 const queries = new Map<string, string>();
@@ -56,6 +59,14 @@ export class Reference {
   /** Under the box: the switch, and under it the large box with what was searched and read in a line. */
   private under: HTMLElement;
   private pillButtons = new Map<Kind, HTMLButtonElement>();
+  /** Issue, diff and Output as the pane says them at rest, beside the Prompt's head: pressed, their list opens here. */
+  readonly heads: HTMLElement;
+  private headButtons = new Map<Kind, HTMLButtonElement>();
+  /** A kind's list opened from its pill or its head: it stays out while the keyboard is elsewhere, until put away. */
+  private held = false;
+  /** Whether a kind's list chosen is held out (a bench's, where a file is written beside it; not Home's). */
+  private keeps: boolean;
+  private countTimer = 0;
   private panel: HTMLElement;
   /** The inside of the card in hand, where what is found, listed or read is drawn. */
   private body: HTMLElement = h('div', {class: 'found-body'});
@@ -75,12 +86,15 @@ export class Reference {
   private stop: (() => void) | null = null;
   /** What had the keyboard before the search took it (from outside the search and what is under it). */
   private before: HTMLElement | null = null;
+  /** What is under the box going back up into it, while it goes. */
+  private leaving: Animation | null = null;
 
   /** Begin a new issue in the repo shown, from the Issue pill with none open (the page says where it is written). */
   writeIssue: ((repo: string) => void) | null = null;
 
-  constructor(events: ReferenceEvents) {
+  constructor(events: ReferenceEvents, o: {keeps?: boolean} = {}) {
     this.events = events;
+    this.keeps = !!o.keeps;
     const n = ++made;
     this.query = h('input', {type: 'search', class: 'search-in', placeholder: t('Search this repo'),
       'aria-label': t('Search this repo'), autocomplete: 'off', spellcheck: 'false', 'aria-controls': `found-${n}`}) as HTMLInputElement;
@@ -88,6 +102,12 @@ export class Reference {
       const b = h('button', {type: 'button', class: 'chip pill-kind', 'aria-pressed': 'false'}, label()) as HTMLButtonElement;
       b.addEventListener('click', () => this.press(kind));
       this.pillButtons.set(kind, b);
+      return b;
+    }));
+    this.heads = h('div', {class: 'pane-heads', role: 'group', 'aria-label': t('What to look in')}, ...KINDS.map(({kind, label}) => {
+      const b = h('button', {type: 'button', class: 'pane-head', 'aria-pressed': 'false'}, label(), kind === 'diff' ? h('span', {class: 'pane-head-n'}) : null) as HTMLButtonElement;
+      b.addEventListener('click', () => this.fromHead(kind));
+      this.headButtons.set(kind, b);
       return b;
     }));
     this.panel = h('div', {class: 'search-panel'});
@@ -148,7 +168,9 @@ export class Reference {
   private queryKey(event: KeyboardEvent) {
     if (event.isComposing) return;
     if (event.key === 'Escape') { this.escape(event); return; }
-    // ↓ goes down into what is under the box; Enter takes the first of it (a file found by its name: the caret in it).
+    // ↓ goes down into what is under the box; Enter takes the first of it: the first line found, or before it a file
+    // whose name holds what was typed (the caret in it). A file's name found by its lines alone, and its diff, are
+    // pressed, not gone along (found.ts).
     if (event.key === 'ArrowDown') { const first = this.choices()[0]; if (first) { event.preventDefault(); first.focus(); } return; }
     if (event.key === 'Enter') {
       event.preventDefault();
@@ -164,31 +186,51 @@ export class Reference {
   private escape(event: KeyboardEvent) {
     if (this.reading) { event.preventDefault(); this.close(); void this.draw(); return; }
     if (this.query.value) { event.preventDefault(); this.query.value = ''; this.keep(); void this.draw(); return; }
-    // Nothing typed and nothing read: what is under the box goes, and the pane is straight again. The keyboard goes
-    // back to what had it before the search took it, where it is still to be had; never left on nothing.
+    // Nothing typed and nothing read: what is under the box goes (a kind's list held out with it).
     event.preventDefault();
-    const back = this.before;
-    this.before = null;
-    if (back?.isConnected && !back.closest('[hidden], [inert]') && back.getClientRects().length) back.focus({preventScroll: true});
-    else this.query.blur();
+    this.putAway();
   }
 
   /**
-   * Let go (the keyboard gone elsewhere, Escape with nothing typed), what is under the box goes back up into it as it
-   * came down out of it, not at once (styles.css .leaving); come back to meanwhile, it stays.
+   * What is under the box put away (Escape with nothing typed or read, or its ×): what is read or held out goes, the
+   * pane is straight again, and the keyboard, if it was in the search, goes back to what had it before the search
+   * took it, where it is still to be had; never left on nothing.
+   */
+  private putAway() {
+    const out = this.search.matches('.reading, .kept') && !this.search.contains(document.activeElement);
+    this.held = false;
+    this.close();
+    this.paintPills();
+    if (out) this.goUp();
+    if (!this.search.contains(document.activeElement)) return;
+    const back = this.before;
+    this.before = null;
+    if (back?.isConnected && !back.closest('[hidden], [inert]') && back.getClientRects().length) back.focus({preventScroll: true});
+    else (document.activeElement as HTMLElement).blur();
+  }
+
+  /**
+   * Let go (the keyboard gone elsewhere, Escape with nothing typed, or put away by its × while the keyboard is
+   * elsewhere), what is under the box goes back up into it as it came down out of it, not at once (styles.css
+   * .leaving); come back to meanwhile, it stays.
    */
   private goesUp() {
-    let leaving: Animation | null = null;
     this.search.addEventListener('focusout', (event) => {
       const to = event.relatedTarget as Node | null;
       // (Asked as the keyboard leaves, when it is no longer within: the box itself is what must be on screen.)
-      if ((to && this.search.contains(to)) || this.search.matches('.reading, .moving') || still() || !this.search.getClientRects().length) return;
-      this.search.classList.add('leaving');
-      const a = leaving = this.under.animate([{opacity: 1, transform: 'none'}, {opacity: 0, transform: 'translateY(calc(-1 * var(--s2)))'}],
-        {duration: paced(150), easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards'});
-      a.finished.then(() => { if (leaving !== a) return; leaving = null; this.search.classList.remove('leaving'); a.cancel(); }, () => {});
+      if ((to && this.search.contains(to)) || this.search.matches('.reading, .moving, .kept')) return;
+      this.goUp();
     });
-    this.search.addEventListener('focusin', () => { leaving?.cancel(); leaving = null; this.search.classList.remove('leaving'); });
+    this.search.addEventListener('focusin', () => { this.leaving?.cancel(); this.leaving = null; this.search.classList.remove('leaving'); });
+  }
+
+  /** What is under the box going back up into it. */
+  private goUp() {
+    if (still() || !this.search.getClientRects().length) return;
+    this.search.classList.add('leaving');
+    const a = this.leaving = this.under.animate([{opacity: 1, transform: 'none'}, {opacity: 0, transform: 'translateY(calc(-1 * var(--s2)))'}],
+      {duration: paced(150), easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards'});
+    a.finished.then(() => { if (this.leaving !== a) return; this.leaving = null; this.search.classList.remove('leaving'); a.cancel(); }, () => {});
   }
 
   /** What can be chosen in the card in hand, in order. */
@@ -202,6 +244,8 @@ export class Reference {
     // From one kind to another the ink goes along the row to it, as along Git's.
     const was = this.pill && this.pill !== kind ? where(this.pillButtons.get(this.pill)) : null;
     pills.set(this.repo, this.pill === kind ? null : kind);
+    // Chosen, its list stays out while one writes beside it; let go, it is under the box only while the box is in use.
+    this.held = this.keeps && this.pill !== null;
     this.close();
     void this.draw();
     this.paintPills();
@@ -212,6 +256,31 @@ export class Reference {
 
   private paintPills() {
     for (const [kind, b] of this.pillButtons) b.setAttribute('aria-pressed', String(this.pill === kind));
+    for (const [kind, b] of this.headButtons) b.setAttribute('aria-pressed', String(this.held && this.pill === kind));
+    this.search.classList.toggle('kept', this.held && this.pill !== null);
+  }
+
+  /**
+   * A head in the pane pressed: its kind's list opens under the box, as from its pill, and stays out while the
+   * keyboard goes back to the file; pressed while it is out, it is put away.
+   */
+  private fromHead(kind: Kind) {
+    if (!this.repo) return;
+    if (this.pill !== kind) { this.press(kind); return; }
+    this.held = !this.held;
+    this.close();
+    void this.draw();
+    if (this.held) this.query.focus({preventScroll: true});
+  }
+
+  /** How many files are changed since the last commit, said beside diff in the pane (none: nothing). */
+  private countChanges() {
+    clearTimeout(this.countTimer);
+    const repo = this.repo;
+    this.countTimer = window.setTimeout(() => void (repo ? gitops.changes(repo).then((c) => c.files, () => 0) : Promise.resolve(0)).then((n) => {
+      const at = this.headButtons.get('diff')?.querySelector('.pane-head-n');
+      if (at && repo === this.repo) at.textContent = n ? String(n) : '';
+    }), 300);
   }
 
   /**
@@ -222,10 +291,14 @@ export class Reference {
     const stop = onChange((c) => {
       if (!this.search.isConnected) { stop(); this.stop = null; return; }
       if (c.repo !== this.repo) return;
+      this.countChanges();
       if (this.files) this.files = patched(this.files, c);
-      if (this.panel.contains(document.activeElement) && !this.reading) { this.dirty = true; return; }
+      // Not drawn away from under the keyboard: what has it is kept until the box has it again (asked again when
+      // the moment comes, the keyboard having gone down into it meanwhile).
+      const held = () => this.panel.contains(document.activeElement) && !this.reading;
+      if (held()) { this.dirty = true; return; }
       clearTimeout(this.timer);
-      this.timer = window.setTimeout(() => void (this.reading ? this.reading.draw() : this.draw()), 250);
+      this.timer = window.setTimeout(() => { if (held()) this.dirty = true; else void (this.reading ? this.reading.draw() : this.draw()); }, 250);
     });
     this.stop = stop;
   }
@@ -234,6 +307,7 @@ export class Reference {
   resume() {
     if (!this.stop) this.follow();
     this.files = null;
+    this.countChanges();
     void (this.reading ? this.reading.draw() : this.draw());
   }
 
@@ -245,8 +319,10 @@ export class Reference {
     // With no repo it cannot be searched in, and says so where the words would be.
     this.say(repo ? t('Search this repo') : t('No repo to search'));
     this.query.value = repo ? queries.get(repo) ?? '' : '';
+    this.held = false;
     this.close();
     void this.draw();
+    this.countChanges();
   }
 
   /** The repo's Prompt is another one now (started, or started again): Output follows that one. */
@@ -276,7 +352,7 @@ export class Reference {
     if (k < 0) k = slots.length - 1;
     this.body = h('div', {class: 'found-body'});
     this.foot = h('div', {class: 'found-foot'});
-    drawLine(this.search, this.panel, slots, k, [this.body, this.foot]);
+    drawLine(this.search, this.panel, slots, k, [this.body, this.foot], () => this.putAway());
   }
 
   /** Nothing is read under the box any more. */

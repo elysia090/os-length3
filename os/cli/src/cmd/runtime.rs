@@ -31,10 +31,15 @@ pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
     t.push(String::new());
     t.push(tr!("This device  {} free of {} (the host's figures) · this OS {}", "この端末  空き {} / {}（ホストの値） · この OS {}", bytes(s.host_free), bytes(s.host_total), bytes(s.allocated)));
     if s.freeable > 0 { crate::menu::page_fact(Fact::AnyFreeable); }
+    // Whether each can go now or stays, said as that (a bare "free" beside a name read as free space), the words
+    // after it in one column whichever it is.
+    let (go, stays) = (tr!("can go", "空ける"), tr!("stays", "残す"));
+    let w = crate::term::width(&go).max(crate::term::width(&stays));
     for i in &s.items {
-        let act = match i.room { usage::Room::Free | usage::Room::SyncFree => tr!("free", "空ける"), usage::Room::Keep => tr!("stays", "残す") };
+        let said = match i.room { usage::Room::Free | usage::Room::SyncFree => &go, usage::Room::Keep => &stays };
+        let act = format!("{said}{}", " ".repeat(w - crate::term::width(said)));
         crate::menu::see(|| crate::menu::Subject { on: On::Thing, word: i.id.strip_prefix("repo:").unwrap_or(&i.id).to_string(), repo: None,
-            label: i.what.clone(), detail: format!("{} · {act}", bytes(i.allocated)), facts: if i.room == usage::Room::Keep { Vec::new() } else { vec![Fact::Freeable] } });
+            label: i.what.clone(), detail: format!("{} · {said}", bytes(i.allocated)), facts: if i.room == usage::Room::Keep { Vec::new() } else { vec![Fact::Freeable] } });
         t.push(format!("  {:>9}  {}  {}  {}", bytes(i.allocated), act, i.what, i.detail));
         t.push(format!("             {}{}", i.why, if i.room == usage::Room::Keep { String::new() } else { tr!("  (l3 free {})", "（l3 free {}）", i.id.strip_prefix("repo:").unwrap_or(&i.id)) }));
     }
@@ -174,10 +179,11 @@ pub fn network_set(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let running = length3_core::prompt::running(&paths::data_dir()).iter().filter(|r| r.repo == repo).count();
     let stopped = if !on && running > 0 { super::forge::stop_prompts(&repo) } else { Vec::new() };
     let mut text = match (on, changed) {
-        (true, true) => tr!("{}'s Prompts reach the network from the next one", "{} の Prompt は次からネットワークに届きます", repo),
-        (true, false) => tr!("{}'s Prompts had the network already", "{} の Prompt はもうネットワークに届きます", repo),
-        (false, true) => tr!("{}'s Prompts no longer reach the network", "{} の Prompt はもうネットワークに届きません", repo),
-        (false, false) => tr!("{}'s Prompts had no network; nothing changed", "{} の Prompt はネットワークを持っていませんでした。何も変えていません", repo),
+        // "The Prompts of notes", not "notes's Prompts": a repo's name is a name, often a plural one.
+        (true, true) => tr!("The Prompts of {} reach the network from the next one", "{} の Prompt は次からネットワークに届きます", repo),
+        (true, false) => tr!("The Prompts of {} had the network already", "{} の Prompt はもうネットワークに届きます", repo),
+        (false, true) => tr!("The Prompts of {} no longer reach the network", "{} の Prompt はもうネットワークに届きません", repo),
+        (false, false) => tr!("The Prompts of {} had no network; nothing changed", "{} の Prompt はネットワークを持っていませんでした。何も変えていません", repo),
     };
     if on && running > 0 { text += &tr!("\n  the one running has none until it starts again (l3 prompt stop {})", "\n  動いているものは、開き直すまでネットワークなしです（l3 prompt stop {}）", repo); }
     if !stopped.is_empty() { text += &format!("\n  {}", super::forge::said_stopped(&repo, &stopped)); }

@@ -30,10 +30,13 @@ interface Read { posts: Post[]; more: boolean }
 /** The most a post says, as the Remote holds it to. */
 export const LIMIT = 2000;
 
-/** What the Remote said no to: its sentence, in the person's language. */
+/**
+ * What the Remote said no to: its sentence, in the person's language, and what it said with it (its own words among
+ * them), for the place that asked to tell one no from another (making a server: a name to claim first, a name taken).
+ */
 const failed = async (r: Response) => {
   const body = await r.json().catch(() => ({})) as {error?: string};
-  return new RemoteError(r.status, t(String(body.error ?? r.status)));
+  return new RemoteError(r.status, t(String(body.error ?? r.status)), body as Record<string, unknown>);
 };
 const call = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
   const r = await api(path, init);
@@ -99,6 +102,8 @@ export interface AddWays {
   lookup(typed: string): Promise<{address?: string; reachable: boolean; why?: string}>;
   add(server: string, address: string): Promise<unknown>;
   ask(address: string, body: string, server: string): Promise<{request: boolean}>;
+  /** In at once: they are told so in their Inbox, by a message about the server (a way to it there). */
+  tell(address: string, body: string, server: string): Promise<unknown>;
 }
 /** How adding someone came out: in now, already in, or asked in the Inbox and in once they accept. */
 export type Added = {address: string; is: 'in' | 'already' | 'asked'};
@@ -115,12 +120,18 @@ export async function addByName(s: Pick<Server, 'id' | 'name'>, typed: string, p
   const address = found.address;
   if (people.includes(address)) return {address, is: 'already'};
   const tryAdd = () => ways.add(s.id, address).then(() => true, (e: unknown) => { if (e instanceof RemoteError && e.status === 403) return false; throw e; });
-  if (await tryAdd()) return {address, is: 'in'};
+  // In at once, they are told, as someone asked is: nothing came to them otherwise. Not told (the Inbox away), they
+  // are in all the same.
+  if (await tryAdd()) { await told(ways, address, s); return {address, is: 'in'}; }
   const r = await ways.ask(address, t('I would like to add you to {server}. Accept me in your Inbox and you are in it.', {server: s.name}), s.id);
   // They had accepted one: writing to them accepted them back, so the two know each other now.
   if (!r.request && await tryAdd()) return {address, is: 'in'};
   return {address, is: 'asked'};
 }
+
+/** Someone added at once, told so in their Inbox; not told (the Inbox away), they are in all the same. */
+export const told = (ways: Pick<AddWays, 'tell'>, address: string, s: Pick<Server, 'id' | 'name'>) =>
+  ways.tell(address, t('I added you to {server}.', {server: s.name}), s.id).catch(() => {});
 
 // ---- boards ----
 export const makeBoard = (server: string, name: string) => call<BoardRef>(`/v1/servers/${server}/boards`, send('POST', {name}));

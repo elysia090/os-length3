@@ -28,10 +28,10 @@ import {errorText} from '../app/errors.ts';
 // Inside a repo each row has what can be done to it at its right end (shown
 // on the row under the pointer or the keyboard; also a right press, or the
 // menu key): a menu laid beside the tree, as the person's menu is. A folder
-// (the repo's own row too) takes a new file or folder; a file or folder
-// takes a new name or is deleted. A row pressed becomes the field or the ask
-// in its place; a new file is the one to work on, so the tree goes and the
-// caret is in it.
+// (the repo's own row too) takes a new file or folder, and a file one beside
+// it in its folder; a file or folder takes a new name or is deleted. A row
+// pressed becomes the field or the ask in its place; a new file is the one to
+// work on, so the tree goes and the caret is in it.
 
 /** How long the pointer rests on File before the tree comes out: passing over the rail does not bring it out. */
 const OPEN_DELAY = 300;
@@ -516,26 +516,27 @@ export class FileTree {
     const there = async (inside: string, child: string) => (await store.tree(at.repo, inside)).some((x) => x.name === child);
     const taken = (child: string) => new Error(t('{name} is there already', {name: child}));
     const rows: HTMLElement[] = [];
-    if (dir) {
-      rows.push(entry(t('New file'), (b) => field(b, t('File name'), '', t('Create'), async (n) => {
-        if (await there(at.path, n)) throw taken(n);
-        // The new file is the one to work on: the tree goes and the caret is in it. Out again, it shows the file
-        // (its folder open from now, not once the file is written: a row drawn meanwhile is drawn open).
-        expandedPaths.add(e.path);
-        await store.add(at.repo, at.path, n, '');
-        this.unpop();
-        this.events.choose(at.repo, joined(at.path, n), true);
-      })));
-      rows.push(entry(t('New folder'), (b) => field(b, t('Folder name'), '', t('Create'), async (n) => {
-        if (await there(at.path, n)) throw taken(n);
-        expandedPaths.add(e.path);
-        await store.mkdir(at.repo, joined(at.path, n));
-        this.unpop();
-        await this.again(item);
-        this.settle(this.nameAt(`${e.path}/${n}`));
-        this.landed(`${e.path}/${n}`);
-      })));
-    }
+    // A folder takes a new file or folder in it; a file, one beside it in its folder (the band's first button brings
+    // out the menu of the file read now, and a new file is wanted there as much as a new name).
+    const into = dir ? {path: at.path, abs: e.path, item} : {path: folder, abs: e.path.slice(0, e.path.lastIndexOf('/')), item: parent};
+    rows.push(entry(t('New file'), (b) => field(b, t('File name'), '', t('Create'), async (n) => {
+      if (await there(into.path, n)) throw taken(n);
+      // The new file is the one to work on: the tree goes and the caret is in it. Out again, it shows the file
+      // (its folder open from now, not once the file is written: a row drawn meanwhile is drawn open).
+      expandedPaths.add(into.abs);
+      await store.add(at.repo, into.path, n, '');
+      this.unpop();
+      this.events.choose(at.repo, joined(into.path, n), true);
+    })));
+    rows.push(entry(t('New folder'), (b) => field(b, t('Folder name'), '', t('Create'), async (n) => {
+      if (await there(into.path, n)) throw taken(n);
+      expandedPaths.add(into.abs);
+      await store.mkdir(at.repo, joined(into.path, n));
+      this.unpop();
+      await this.again(into.item);
+      this.settle(this.nameAt(`${into.abs}/${n}`));
+      this.landed(`${into.abs}/${n}`);
+    })));
     if (at.path !== '') {
       rows.push(entry(t('Rename'), (b) => field(b, t('New name'), e.name, t('Rename'), async (n) => {
         if (n !== e.name) {

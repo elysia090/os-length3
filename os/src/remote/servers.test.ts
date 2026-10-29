@@ -51,7 +51,7 @@ test('an invitation is read from the link\'s fragment only in its one shape', ()
 // Adding someone by a name or a code, against a Remote that is a few facts: who has which name,
 // whom the server's adding lets in (both accepted), and whether they had accepted one already.
 const trip = {id: 'tripaaaaaaaa', name: 'Trip'};
-function remote(o: {contacts?: boolean; acceptedMe?: boolean} = {}) {
+function remote(o: {contacts?: boolean; acceptedMe?: boolean; inboxAway?: boolean} = {}) {
   const names: Record<string, string> = {mio: 'mio@length3.test', '123456': 'mio@length3.test'};
   const did: string[] = [];
   let both = o.contacts ?? false;
@@ -71,16 +71,24 @@ function remote(o: {contacts?: boolean; acceptedMe?: boolean} = {}) {
       if (o.acceptedMe) both = true;
       return {request: !o.acceptedMe};
     },
+    async tell(address, body, server) {
+      did.push(`tell ${address} ${server}`);
+      assert.match(body, /Trip/);
+      if (o.inboxAway) throw new RemoteError(0, 'The Remote cannot be reached');
+    },
   };
   return {ways, did};
 }
 
-test('someone one knows both ways, by name or code, is in at once and asked nothing', async () => {
+test('someone one knows both ways, by name or code, is in at once, asked nothing and told so in their Inbox', async () => {
   for (const typed of ['mio', ' 123456 ']) {
     const r = remote({contacts: true});
     assert.deepEqual(await addByName(trip, typed, ['ren@length3.test'], r.ways), {address: 'mio@length3.test', is: 'in'});
-    assert.deepEqual(r.did, ['add tripaaaaaaaa mio@length3.test']);
+    assert.deepEqual(r.did, ['add tripaaaaaaaa mio@length3.test', 'tell mio@length3.test tripaaaaaaaa']);
   }
+  // Their Inbox not reached, they are in all the same.
+  const r = remote({contacts: true, inboxAway: true});
+  assert.deepEqual(await addByName(trip, 'mio', [], r.ways), {address: 'mio@length3.test', is: 'in'});
 });
 
 test('someone not known yet is asked in the Inbox about the server, and waits to accept', async () => {

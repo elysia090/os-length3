@@ -3,17 +3,17 @@ import {t} from '../../i18n.ts';
 import {RemoteError} from '../../remote/connection.ts';
 import * as servers from '../../remote/servers.ts';
 import {nudge} from '../../ui/glide.ts';
-import {mark as todoMark} from '../todo-list.ts';
 import {deed} from '../common.ts';
 import {planRefused} from '../remote/plan.ts';
 import {errorText} from '../../app/errors.ts';
-import {button, type Here, type Writer} from './parts.ts';
+import {button, fitting, type Here, type Writer} from './parts.ts';
+import {ghostBody} from './board.ts';
 
 // No server chosen (or none yet): it is named where it will stand. Its chip is the field, in the band after the
 // others, and under it the server it will be stands faint: its first board (#general, its TODO and its talk) and,
 // at the right, its first person, oneself. Made (Enter, or Make), the same shapes stand there whole. Its name on
 // this Remote follows the name, quiet, in the chip; what that name is, and what the plan allows, is said only when
-// the Remote says no.
+// the Remote says no, on a line of its own under the band (band.ts), where the chip's row cannot slide it away.
 
 /**
  * What is half written in the name of the server being made: its name, and its own address if written. Kept while the
@@ -25,8 +25,8 @@ let draft: [string, string] = ['', ''];
 /** What making a server needs of the view it is in. */
 interface MakingWays {
   writer: Writer;
-  /** The chip being named, put in the band where the server will stand. */
-  naming(chip: HTMLElement): void;
+  /** The chip being named, put in the band where the server will stand, and what the Remote says no to, under it. */
+  naming(chip: HTMLElement, ask: HTMLElement): void;
   /** Made: it is shown. */
   made(s: servers.Server): void;
   /** One removed or left before, brought back: the servers read again, and it shown. */
@@ -40,24 +40,37 @@ interface MakingWays {
 /** A name as a name on this Remote can be: Trip is trip. */
 const slug = (v: string) => v.toLowerCase().normalize('NFKD').replace(/[^a-z0-9._-]+/g, '-').replace(/^[-._]+|[-._]+$/g, '').slice(0, 31);
 
+/** What a server might be called, and its name on this Remote, as the field says it before anything is written. */
+const examples = (): [string, string][] => [[t('Trip'), 'trip'], [t('Book club'), 'book-club'], [t('Family'), 'family'], [t('Band'), 'band']];
+
+/**
+ * The example the chip being named says: one none of one's servers is called, so a second chip is not read as a second
+ * of one already there (Trip beside Trip).
+ */
+function example(here: Here): [string, string] {
+  const all = examples();
+  return all.find(([n]) => !here.list.some((s) => s.name.trim().toLowerCase() === n.toLowerCase())) ?? all[0];
+}
+
 /**
  * The server being made: its chip, put in the band (`naming`), and the faint server under it, for the view to stand
  * in their places: its board's two slides and the box at the foot. Its name's field is returned to take the keyboard.
  */
 export function nameServer(here: Here, ways: MakingWays): {name: HTMLInputElement; slides: HTMLElement[]; dock: HTMLElement} {
-  const {name, handle, label, fit, reveal} = fields();
+  const [say, sayAt] = example(here);
+  const {name, handle, label, fit, reveal} = fields(say, sayAt);
   const make = button(t('Make'), 'small-button primary');
-  // What the Remote said no to, at the chip's end: the plan, a name taken, a name of one's own to claim first.
-  const ask = h('span', {class: 'server-ask', role: 'alert'});
-  const chip = h('span', {class: 'server-making'}, label, make, ask);
+  // What the Remote said no to, under the band: the plan, a name taken, a name of one's own to claim first.
+  const ask = h('p', {class: 'server-ask', role: 'alert'});
+  const chip = h('span', {class: 'server-making'}, label, make);
   // Its people, as the box at the foot will say them: by the name being written.
-  const people = h('span', {}, name.value.trim() || t('Trip'));
+  const people = h('span', {}, name.value.trim() || say);
   // Named, its chip is drawn whole (solid, in ink) rather than dashed as a place for one.
   name.addEventListener('input', () => {
     label.classList.toggle('named', !!name.value.trim());
-    people.textContent = name.value.trim() || t('Trip');
+    people.textContent = name.value.trim() || say;
   });
-  ways.naming(chip);
+  ways.naming(chip, ask);
   fit();
   label.classList.toggle('named', !!name.value.trim());
   ways.writer(name, () => document.activeElement === name || document.activeElement === handle || !!name.value.trim());
@@ -82,11 +95,11 @@ export function nameServer(here: Here, ways: MakingWays): {name: HTMLInputElemen
 
 /**
  * The chip's fields, as they were left (`draft`): its name, and its name on this Remote, which follows the name until
- * it is written itself. `reveal` shows that address, to be written otherwise.
+ * it is written itself, saying `say` and `sayAt` while empty. `reveal` shows that address, to be written otherwise.
  */
-function fields() {
-  const name = h('input', {class: 'server-name-in', maxlength: '64', placeholder: t('Trip'), 'aria-label': t('Name')}) as HTMLInputElement;
-  const handle = h('input', {class: 'server-handle-in mono', maxlength: '31', placeholder: 'trip', autocapitalize: 'off', spellcheck: 'false',
+function fields(say: string, sayAt: string) {
+  const name = h('input', {class: 'server-name-in', maxlength: '64', placeholder: say, 'aria-label': t('Name')}) as HTMLInputElement;
+  const handle = h('input', {class: 'server-handle-in mono', maxlength: '31', placeholder: sayAt, autocapitalize: 'off', spellcheck: 'false',
     'aria-label': t('Name on this Remote'),
     title: t('First come, as a person\'s: nobody else\'s while the server has it, renewed by its owner every five years.')}) as HTMLInputElement;
   // Its address follows its name until it is written itself.
@@ -112,18 +125,7 @@ function fields() {
   return {name, handle, label: h('label', {class: 'chip server-naming'}, name, at, address), fit, reveal};
 }
 
-/** Each field as wide as what is written in it (or its placeholder), as a chip is. */
-function fitting(...fields: HTMLInputElement[]): () => void {
-  const pen = document.createElement('canvas').getContext('2d');
-  const wide = (f: HTMLInputElement) => {
-    if (!pen || !f.isConnected) return;
-    pen.font = getComputedStyle(f).font;
-    f.style.width = `${Math.ceil(pen.measureText(f.value || f.placeholder).width) + 2}px`;
-  };
-  return () => { for (const f of fields) wide(f); };
-}
-
-/** What the Remote said no to, said at the chip's end (`ask`): the plan, a name taken, a name of one's own to claim first. */
+/** What the Remote said no to, said under the band (`ask`): the plan, a name taken, a name of one's own to claim first. */
 function refused(e: unknown, ask: HTMLElement, here: Here, reveal: () => void, ways: MakingWays) {
   const plan = planRefused(e, () => ways.plan());
   if (plan) ask.replaceChildren(plan);
@@ -160,12 +162,7 @@ function heldServers(ways: MakingWays): HTMLElement {
  */
 function ghostBoard(back: HTMLElement): HTMLElement[] {
   return [h('div', {class: 'slide', 'aria-current': 'true'}, h('div', {class: 'board-card board-ghost', 'aria-hidden': 'true'},
-    h('div', {class: 'board-head'}, h('span', {class: 'muted board-mark'}, '#'), h('h2', {}, 'general')),
-    h('section', {class: 'board-todo'}, h('div', {class: 'board-todo-head'}, h('span', {}, 'TODO')),
-      h('div', {class: 'todo-box'}, h('div', {class: 'todo-items'}, h('div', {class: 'todo-item'}, h('div', {class: 'todo-head'},
-        h('span', {class: 'todo-mark'}, todoMark(false)), h('span', {class: 'todo-kind', hidden: ''}),
-        h('span', {class: 'todo-title'}, t('Something to do together'))))))),
-    h('div', {class: 'board-talk'}, h('div', {class: 'timeline tl-empty'}, h('div', {class: 'tl-start muted small'}, t('No posts yet'))))), back),
+    h('div', {class: 'board-head'}, h('span', {class: 'muted board-mark'}, '#'), h('h2', {}, 'general')), ...ghostBody()), back),
   // Beside it, the edge of the box that will make its next board, where it will be.
   h('div', {class: 'slide', 'aria-current': 'false'}, h('div', {class: 'board-card board-ghost ghost-next', 'aria-hidden': 'true'}, h('span', {class: 'board-head'}, '+')))];
 }

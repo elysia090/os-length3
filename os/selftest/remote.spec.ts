@@ -41,6 +41,26 @@ test('Share shows the repo in a server at a press, and takes it off at the next'
   await expect(again.getByRole('menuitemcheckbox', {name: 'Trip'})).toHaveAttribute('aria-checked', 'false');
 });
 
+test('Share in no server yet leads on to making one', async ({signedIn: app}) => {
+  await app.newRepo.make('hello');
+  await app.rail.go('remote');
+  await expect(app.remote.card('hello')).toContainText('In step');
+  const list = await app.remote.share('hello');
+  await expect(list).toContainText('In no server yet');
+  await list.getByRole('menuitem', {name: 'Make a server…'}).click();
+  await expect(app.server.layer.getByRole('textbox', {name: 'Name', exact: true})).toBeVisible();
+});
+
+test('Share in no server yet on the free plan says making one is paid, and leads to the plan', async ({planSignedIn: app}) => {
+  await app.newRepo.make('hello');
+  await app.rail.go('remote');
+  await expect(app.remote.card('hello')).toContainText('In step');
+  const list = await app.remote.share('hello');
+  await expect(list).toContainText('Making a server is part of the paid plan.');
+  await list.getByRole('menuitem', {name: 'See the plan'}).click();
+  await expect(app.remote.part('Plan')).toHaveAttribute('aria-selected', 'true');
+});
+
 test('turning a repo off asks in its card first, and Not now leaves it on', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
   await app.rail.go('remote');

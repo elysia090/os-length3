@@ -665,14 +665,24 @@ fn change_call(repo: &str, id: &str, verb: &str, body: serde_json::Value) -> Res
         Reply::Conflict(v) if v["conflicts"].is_array() => Err(crate::tr!("Both changed these files; resolve them in the work, push and change again: {}", "両方で変わったファイルがあります。作業の側で直して Push し、もう一度 Change してください：{}",
             v["conflicts"].as_array().unwrap().iter().filter_map(|p| p.as_str()).collect::<Vec<_>>().join(", "))),
         Reply::Conflict(v) if v["version"].is_number() => Err(crate::tr!("The change has a newer version ({}); look at it first", "Change に新しい版があります（第{}版）。先にそれを見てください", v["version"])),
-        Reply::Conflict(v) => Err(crate::tr!("The change is {} already", "この Change はもう{}です", state_word(v["state"].as_str().unwrap_or("?")))),
+        Reply::Conflict(v) => {
+            // A Latin word stands a space apart from the Japanese before it (bug: もうMerge 済み).
+            let state = state_word(v["state"].as_str().unwrap_or("?"));
+            let apart = if state.starts_with(|c: char| c.is_ascii_alphabetic()) { " " } else { "" };
+            Err(if crate::i18n::ja() { format!("この Change はもう{apart}{state}です") } else { format!("The change is {state} already") })
+        }
         Reply::NotFound(_) => Err(crate::tr!("No such change", "その Change はありません")),
     }
 }
 
 fn find(repo: &str, id: &str) -> Result<Change> {
     changes_of_repo(repo)?.into_iter().find(|c| c.id == id || c.id.starts_with(id) || c.line == id)
-        .ok_or_else(|| crate::tr!("No change has been handed in for {} yet", "{} の Change はまだ渡されていません", id))
+        .ok_or_else(|| {
+            // Named as a person calls it: the work on issue 002 is notes#2 (bug: "handed in for 002").
+            let n = crate::issues::number(&format!("{id}.md"));
+            let called = if n.is_empty() { id.to_string() } else { format!("{repo}{n}") };
+            crate::tr!("{} has no change yet: its work is pushed first", "{} にはまだ Change がありません。先に作業を Push します", called)
+        })
 }
 
 /// Review the change's current version.

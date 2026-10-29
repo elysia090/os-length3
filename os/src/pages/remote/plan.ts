@@ -94,9 +94,14 @@ const planUse = (v: PlanView) => h('section', {class: 'sub-part', 'aria-labelled
     h('span', {class: 'row-meta'}, m.of === null ? m.used : t('{used} of {of}', {used: m.used, of: m.of}))))),
   v.note ? h('p', {class: 'muted small plan-note'}, v.note) : null);
 
-/** Free and the tiers side by side, each with its deed (`press`); none when there is nothing to choose among. */
+/**
+ * Free and the tiers side by side at the part's top, each with its deed (`press`), the account's own marked; the plan
+ * it is on and its one date said at the heading's right. None when there is nothing to choose among.
+ */
 const planTiers = (v: PlanView, press: (tier: PaidTier, b: HTMLButtonElement, error: HTMLElement) => void) => (v.tiers.length
-  ? h('section', {class: 'sub-part plan-tiers', 'aria-labelledby': 'plan-tiers'}, h('h3', {id: 'plan-tiers'}, h('span', {}, t('Plans'))),
+  ? h('section', {class: 'sub-part plan-tiers', 'aria-labelledby': 'plan-tiers'},
+    h('div', {class: 'plan-head'}, h('h3', {id: 'plan-tiers'}, h('span', {}, t('Plans'))),
+      h('p', {class: 'muted small plan-now-line'}, h('b', {}, v.title), ` · ${v.line}`)),
     h('div', {class: 'grid small-grid tier-cards'}, ...v.tiers.map((c) => tierCard(c, press))))
   : null);
 
@@ -151,7 +156,9 @@ export function planSection(offered: (on: boolean) => void): {el: HTMLElement; p
     };
     const manage = v.action ? button(v.action.label, 'primary') : null;
     manage?.addEventListener('click', () => void pressing(manage, error, () => trip.go(p, 'portal')));
-    const draw = () => put(el, trip.told, planNow(v), planUse(v), planTiers(v, press), confirming ? pay(confirming) : null,
+    // The tiers first, what is asked of one under them; the plan in a figure's size only when there are none to show.
+    const tiers = planTiers(v, press);
+    const draw = () => put(el, trip.told, tiers ? null : planNow(v), tiers, confirming ? pay(confirming) : null, planUse(v),
       planAdds(p, v), manage ? answers(null, manage) : null, error);
     draw();
   };

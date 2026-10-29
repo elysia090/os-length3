@@ -1,5 +1,6 @@
 import {h} from '../../ui/dom.ts';
 import {t} from '../../i18n.ts';
+import {mark} from '../../ui/icons.ts';
 import {fileName} from './diff-view.ts';
 
 // What was searched and read under the search box lines up sideways, in the order it came: the one in hand fills
@@ -62,20 +63,27 @@ function step(to: Slot | undefined, by: -1 | 1): HTMLButtonElement {
   return b;
 }
 
-/** Under the box, ← and → side by side at its left, then what the one in hand is (not over what it holds). */
-function nav(slots: Slot[], k: number): HTMLElement {
+/**
+ * Under the box, ← and → side by side at its left, then what the one in hand is (not over what it holds), and at its
+ * end × (`shut`), which puts all of it away: what stays out beside the file is put away with the pointer there too.
+ */
+function nav(slots: Slot[], k: number, shut: () => void): HTMLElement {
   const here = slots[k];
+  const x = h('button', {type: 'button', class: 'found-shut', 'aria-label': t('Put away'), title: t('Put away')}, mark('close'));
+  // Pressed, the keyboard stays where it is (the file written beside it), as the Prompt's × keeps it.
+  x.addEventListener('pointerdown', (event) => event.preventDefault());
+  x.addEventListener('click', shut);
   return h('div', {class: 'found-nav'}, ...(slots.length > 1 ? [h('span', {class: 'found-steps'}, step(slots[k - 1], -1), step(slots[k + 1], 1))] : []),
     h('p', {class: 'found-here'}, h('span', {class: 'found-kind'}, here.kind), here.label ? h('span', {class: 'found-what'}, here.label) : null,
-      slots.length > 1 ? h('span', {class: 'found-at'}, `${k + 1} / ${slots.length}`) : null));
+      slots.length > 1 ? h('span', {class: 'found-at'}, `${k + 1} / ${slots.length}`) : null), x);
 }
 
 /**
  * The line drawn in the large box (`panel`, under the box `search`), with `slots[k]` in hand holding `card`: the card
  * in hand fills it; its neighbours show a sliver past its edges, pressed to move to them, as are ← and → under the
- * box. Drawn again under the keyboard, the keyboard stays on the line.
+ * box, and × there puts it all away (`shut`). Drawn again under the keyboard, the keyboard stays on the line.
  */
-export function drawLine(search: HTMLElement, panel: HTMLElement, slots: Slot[], k: number, card: HTMLElement[]) {
+export function drawLine(search: HTMLElement, panel: HTMLElement, slots: Slot[], k: number, card: HTMLElement[], shut: () => void) {
   const had = panel.contains(document.activeElement) ? (document.activeElement as HTMLElement).className : '';
   const stepped = had.includes('found-step') ? (had.includes('prev') ? 'prev' : 'next') : null;
   const track = h('div', {class: 'slide-track', style: `--at:${k}`}, ...slots.map((_, i) => h('div', {class: 'slide', 'aria-current': String(i === k)},
@@ -84,7 +92,7 @@ export function drawLine(search: HTMLElement, panel: HTMLElement, slots: Slot[],
   // Held out while the line is drawn again under the keyboard, so the keyboard can stay on it.
   const moved = had.includes('stage-hit') || had.includes('slide-stage') || !!stepped;
   if (moved) search.classList.add('moving');
-  panel.replaceChildren(h('div', {class: `slides${slots.length === 1 ? ' single' : ''}${k < slots.length - 1 ? ' more' : ''}`, style: `--lead:${slots.length === 1 || k === 0 ? 0 : k === slots.length - 1 ? 2 : 1}`}, stage), nav(slots, k));
+  panel.replaceChildren(h('div', {class: `slides${slots.length === 1 ? ' single' : ''}${k < slots.length - 1 ? ' more' : ''}`, style: `--lead:${slots.length === 1 || k === 0 ? 0 : k === slots.length - 1 ? 2 : 1}`}, stage), nav(slots, k, shut));
   // Moved along by a press at an edge: the keyboard stays on the line.
   if (moved) {
     // Stepped with ← or →: the keyboard stays on that step (or the line, at its end).

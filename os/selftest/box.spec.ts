@@ -98,6 +98,36 @@ test('the Prompt up over the center is put back by its ×, as by Escape', async 
   await expect(app.page.locator('.work.bench:not([hidden]) .term-shut')).toBeHidden();
 });
 
+test('Escape and the Prompt\'s × give the keyboard back to where it was; up, Alt+↓ brings the four out all the same', async ({app}) => {
+  const box = app.forge.promptBox, editor = app.forge.editor('README.md');
+  const up = app.page.locator('.work.bench.prompting');
+  await editor.focus();
+  await app.page.keyboard.press('Control+Backquote');
+  await expect(up).toHaveCount(1);
+  await app.page.keyboard.press('Escape');
+  await expect(up).toHaveCount(0);
+  await expect(editor).toBeFocused();
+  // From the page (the file let go with Escape), back to the page, by the × as by Escape.
+  await editor.press('Escape');
+  const page = app.newRepo.madeIn('hello');
+  await expect(page).toBeFocused();
+  await app.page.keyboard.press('Control+Backquote');
+  await expect(up).toHaveCount(1);
+  await app.page.locator('.work.bench:not([hidden]) .term-shut').click();
+  await expect(up).toHaveCount(0);
+  await expect(page).toBeFocused();
+  // Up as the screen, Alt+↓ brings the four out of the line's start; Escape puts them away, the keyboard in the box.
+  await box.focus();
+  await expect(up).toHaveCount(1);
+  await box.press('Alt+ArrowDown');
+  const menu = app.page.getByRole('menu', {name: 'What the box does'});
+  await expect(menu.getByRole('menuitemradio', {name: /Run in the Prompt/})).toBeFocused();
+  await app.page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  await expect(box).toBeFocused();
+  await expect(up).toHaveCount(1);
+});
+
 /** Where in `file` (the editor of a mono file) the gap before column `col` of line `line` (from 1) is, on the screen. */
 async function placeIn(file: Locator, line: number, col: number) {
   const r = (await file.boundingBox())!;

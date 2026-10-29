@@ -194,16 +194,17 @@ export function threadLook(address: string, name: string, open: () => void): Loo
 }
 
 /** A board with posts not seen: its last ones, and a post written from there. */
-export function boardLook(board: string, name: string, open: () => void): Look {
+export function boardLook(board: string, name: string, open: () => void, guest?: servers.GuestHere): Look {
   return {
     title: `#${name}`,
     open: {word: t('Open in Server'), go: open},
     async fill(body) {
       const lines = h('div', {class: 'look-lines'});
-      const read = await servers.older(board, true, null, 4);
+      // One of its people reads it as theirs; a guest as anyone does, and writes as the guest they are there.
+      const read = await servers.older(board, !guest, null, 4);
       lines.replaceChildren(...[...read.posts].reverse().map((p) => said(p.mine ? t('You') : p.by, p.at, p.body, !!p.mine)));
       body.replaceChildren(lines, writeBack(t('Post'), t('Send'), async (text) => {
-        const p = await servers.post(board, text);
+        const p = await (guest ? servers.guestPost(board, guest.token, text) : servers.post(board, text));
         const line = said(t('You'), p.at, p.body, true);
         lines.append(line);
         unfold(line, 260);

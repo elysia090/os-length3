@@ -1,5 +1,5 @@
 import {dateFormat, h} from '../../ui/dom.ts';
-import {arrive, closeUp} from '../../ui/glide.ts';
+import {arrive, closeUp, paced, still} from '../../ui/glide.ts';
 import {t} from '../../i18n.ts';
 import {shown} from '../../remote/inbox.ts';
 import * as servers from '../../remote/servers.ts';
@@ -25,6 +25,8 @@ const NEAR = '300% 0px';
 const KEEP = 8;
 /** How often what came is looked for, while the page is in view. */
 const EVERY = 15_000;
+/** Reading a page longer than this, the talk says it is reading. */
+const SAY_READING = 250;
 
 
 /** Whose a post is, as someone is everywhere (pane.ts): their initial on their tint, the same for the same name. */
@@ -46,7 +48,7 @@ function dayName(ms: number): string {
 }
 
 /** The talks on screen, by board, each with how to read what came now (`mine`: the reader just wrote, so go to it). */
-const onScreen = new Set<{board: string; read(mine: boolean): Promise<void>}>();
+const onScreen = new Set<{board: string; read(mine: boolean): Promise<void>; seen(): void}>();
 
 /** Write in a board (as one of its people, or as a guest with their token); every talk of it on screen reads it in at once. */
 export async function postNow(board: string, body: string, guest?: string): Promise<void> {
@@ -57,6 +59,11 @@ export async function postNow(board: string, body: string, guest?: string): Prom
 /** Something came to a board, as the rail heard it: every talk of it on screen reads it in now, not at its next look. */
 export function cameTo(board: string) {
   for (const x of onScreen) if (x.board === board) void x.read(false);
+}
+
+/** Server came out, or a board read ahead was slid to: what the talks on screen show is seen now (their foot in view). */
+export function seenNow() {
+  for (const x of onScreen) x.seen();
 }
 
 /** A page of the talk as it is held: its posts (null: let go), its box, and whether it is drawn, near the view, being read. */
@@ -151,7 +158,7 @@ class Talk {
     this.watch = new IntersectionObserver((entries) => this.nearOrFar(entries), {root: scroller, rootMargin: NEAR});
     this.more = new IntersectionObserver((e) => { if (e.some((x) => x.isIntersecting)) void this.older(); }, {root: scroller, rootMargin: '200% 0px 0px 0px'});
     this.fresh.addEventListener('click', () => { this.unseen = 0; this.tell(); this.toFoot(true); });
-    const here = {board, read: this.came};
+    const here = {board, read: this.came, seen: () => this.read()};
     onScreen.add(here);
     // Back at the foot: what came is seen.
     const seen = new IntersectionObserver((e) => {
@@ -173,6 +180,9 @@ class Talk {
 
   /** The foot in view: the newest post held is read. */
   private read() {
+    // Not while Server is made ready unseen (layer.ts), nor while its board is read ahead beside the one on screen
+    // (row.ts): seen once it is out, or slid to (seenNow).
+    if (this.root.closest('.coming, .slide[aria-current="false"]')) return;
     if (this.footIn && this.pages.length && document.visibilityState === 'visible') this.saw?.(this.pages[0].page.newest);
   }
 
@@ -273,15 +283,20 @@ class Talk {
     if (this.reading || this.done) return;
     this.reading = true;
     this.list.setAttribute('aria-busy', 'true');
-    this.start.textContent = t('Reading…');
+    this.start.classList.remove('tl-all');
+    // Said only when reading takes a while: a page read at once comes without a word flashing before it (a board just
+    // made said No posts yet as it was named, and says it again, not Reading… between).
+    const saying = window.setTimeout(() => { this.start.textContent = t('Reading…'); }, SAY_READING);
     try {
       const r = await servers.older(this.board, this.member, this.pages.at(-1)?.page.oldest ?? null);
       this.addOlder(r.posts, fresh);
       this.done = !r.more;
       this.start.textContent = this.done ? (this.pages.length ? t('That is every post') : t('No posts yet')) : '';
+      // Every post said to be there: only worth saying where there is more than the board shows (styles.css).
+      this.start.classList.toggle('tl-all', this.done && this.pages.length > 0);
       // Empty, the line sits at the talk's foot, where the first post will come; read or loading, at the top as ever.
       this.root.classList.toggle('tl-empty', this.done && !this.pages.length);
-    } catch (e) { this.start.textContent = errorText(e); this.root.classList.remove('tl-empty'); this.reading = false; return; } finally { this.list.setAttribute('aria-busy', 'false'); }
+    } catch (e) { this.start.textContent = errorText(e); this.start.classList.remove('tl-all'); this.root.classList.remove('tl-empty'); this.reading = false; return; } finally { clearTimeout(saying); this.list.setAttribute('aria-busy', 'false'); this.root.dataset.read = ''; }
     this.reading = false;
     // Something came while the first page was being read (one's own post, just sent): read again, so it shows.
     if (this.cameMeanwhile) { this.cameMeanwhile = false; if (!this.pages.length) { this.done = false; void this.older(); } else void this.came(true); return; }
@@ -297,6 +312,9 @@ class Talk {
     const s = this.add(page, 'older');
     this.toFoot(); this.read();
     if (fresh) arrive(s.el, fresh === 'mine' ? 1 : -1, fresh === 'mine' ? 'y' : 'x', 18, 300);
+    // The talk as it opens, read in after its board was drawn (the board slid to): it comes up where it stands, not
+    // all at once in one frame.
+    else if (!still()) s.el.animate([{opacity: 0}, {opacity: 1}], {duration: paced(200), easing: 'ease-out'});
   }
 
   private tell() {

@@ -197,14 +197,15 @@ a { color: var(--ink); }
    quickly and going, slowly, so a pass across the rail leaves a short trail rather than blinking. Only the fill and
    the edge ease: words and icons turn at once, so ink landing on a place never hides its icon a moment. */
 .rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row,
-.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .tree-row, .hit, .hit-file, .found-item, .seen-file, .link, button.row-item, .part, .dot-row {
+.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .tree-row, .hit, .hit-file, .found-item, .seen-file, .link, button.row-item, .part, .dot-row,
+.pane-head, .hit-diff, .found-shut {
   transition: background-color calc(200ms * var(--pace)) ease-out, border-color calc(200ms * var(--pace)) ease-out;
 }
 :is(.rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row,
 .inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .tree-row, .hit, .hit-file, .found-item, .seen-file, .link,
-button.row-item, .part, .dot-row):hover { transition-duration: calc(60ms * var(--pace)); }
+button.row-item, .part, .dot-row, .pane-head, .hit-diff, .found-shut):hover { transition-duration: calc(60ms * var(--pace)); }
 :is(.rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row,
-.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .file-beside, .tree-row, .dot-row):active:not(:disabled) {
+.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .file-beside, .tree-row, .dot-row, .pane-head, .hit-diff, .found-shut):active:not(:disabled) {
   background-color: color-mix(in srgb, var(--ink) 13%, var(--raised)); transition-duration: 40ms;
 }
 /* A primary button answers the pointer too: its ink a step toward the ground under it, as quickly as a fill comes
@@ -902,9 +903,9 @@ button.row-item:disabled { cursor: var(--cursor-arrow); color: var(--sub); }
 .new-repo #repo-name[aria-invalid] { border-color: var(--off); box-shadow: inset 0 0 0 1px var(--off); }
 /* Why something written cannot be, under where it is written: in ink, not a hint's quiet colour, an off dot before it
    (as the rail's dot says the Remote away). The box's note (box.ts #refuse) and the names written in fields. */
-:is(.new-repo .name-field, .inbox-list, .board-new .board-body) > .error:not(:empty), .prompt-note.refused:not(:empty) {
+:is(.new-repo .name-field, .inbox-list, .board-new > .board-head) > .error:not(:empty), .prompt-note.refused:not(:empty) {
   display: flex; align-items: baseline; gap: 6px; color: var(--ink); }
-:is(.new-repo .name-field, .inbox-list, .board-new .board-body) > .error::before, .prompt-note.refused::before {
+:is(.new-repo .name-field, .inbox-list, .board-new > .board-head) > .error::before, .prompt-note.refused::before {
   content: ''; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--off); translate: 0 -1px; }
 /* Only the new repo is the card's: what stands round it (/root, the repos already there) is where it will be, not
    something to touch here, so it does not light or answer the pointer. */
@@ -977,7 +978,11 @@ button.row-item:disabled { cursor: var(--cursor-arrow); color: var(--sub); }
 .pill-name { border: 0; padding: 0; background: transparent; color: inherit; cursor: var(--cursor-hand); white-space: nowrap; }
 /* The issue the repo's copy is for, after its name, while it is not main. */
 .pill-issue { margin-left: .4em; font-family: var(--mono); opacity: .7; }
-.pill-close { display: grid; place-items: center; width: var(--h-row); height: calc(var(--h-row) - 2px); border: 0; padding: 0; background: transparent; color: inherit; cursor: var(--cursor-hand); border-radius: var(--r-round); }
+.pill-close { flex: none; display: grid; place-items: center; width: var(--h-row); height: calc(var(--h-row) - 2px); border: 0; padding: 0; background: transparent; color: inherit; cursor: var(--cursor-hand); border-radius: var(--r-round); }
+/* Alone on a band narrower than it (a phone), the pill gives way in its name, which ends in …, never at its × cut
+   by the band's edge; several scroll, as a band does. */
+.pills > .pill:only-child { flex-shrink: 1; min-width: 0; }
+.pills > .pill:only-child > .pill-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .pill-close .mark, .band-add .mark { width: var(--s4); height: var(--s4); }
 /* The ring is round the part of a pill that has the keyboard, inside the pill: its name, or its ×;
    on the current pill it is ground over the ink, so it does not sink into it. */
@@ -1145,9 +1150,12 @@ body::after {
   content: ''; position: fixed; inset: 0; z-index: 7; pointer-events: none;
   background: color-mix(in srgb, var(--ink) 14%, transparent); opacity: 0; transition: opacity calc(180ms * var(--pace)) ease-out;
 }
-body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading))::after { opacity: 1; }
-/* Over the shade only while it is out: at rest it is the page's, under whatever lies over the page (Server's layer). */
-.work.bench > .bar > .search-box:is(:focus-within, .reading, .moving) { z-index: 8; }
+body:has(.work.bench:not([hidden]) > .bar .search-box:focus-within)::after { opacity: 1; }
+/* Over the shade only while it is out: at rest it is the page's, under whatever lies over the page (Server's layer).
+   Out with the keyboard elsewhere (what is read there, or a list held out from its head in the pane), the shade lifts:
+   the file is written beside it at full strength. */
+.work.bench > .bar > .search-box:is(:focus-within, .reading, .kept, .moving) { z-index: 8; }
+.work.bench > .bar > .search-box.kept:not(.leaving) > .search-results { display: flex; }
 /* The right pane put away takes its search with it; its switch stays where it was, at the top line's right end,
    the way to bring both back, and says which it is: brought out, an ink fill, as anything chosen; put away, the
    outline alone. */
@@ -1251,6 +1259,10 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
    line all the way, so it never crosses the line's words). */
 .prompt-leaving:not(.line-lit) .screen .prompt-chip > .lamp { opacity: 1; transition-delay: calc(var(--prompt-down) * (1 - var(--prompt-down-line)) * .5); }
 .line-lit .screen .prompt-keys { opacity: 0; visibility: hidden; transition: opacity 120ms ease-out, visibility 0s 120ms; }
+/* The keys that send take the glass's light with Run, as outlines on it. */
+.screen .prompt-sends > kbd { transition: color 120ms ease-out, border-color 120ms ease-out, background-color 120ms ease-out; }
+.line-lit .screen .prompt-sends > kbd { color: color-mix(in srgb, var(--add-tint) 80%, transparent); border-color: color-mix(in srgb, var(--add-tint) 35%, transparent); background: transparent;
+  transition-delay: calc(var(--prompt-up) * var(--prompt-up-line) * .72); }
 
 /* At rest the box is the box (raised, its edge), its line a terminal's: at its left a pill of the screen's glass, round
    as the band's pill for the repo is, with the shell's lamp and the prompt line it waits at; the line in the screen's
@@ -1326,12 +1338,19 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
   linear-gradient(var(--cell), var(--cell)) 0 var(--cell-top) / 1ch 1px no-repeat, linear-gradient(var(--cell), var(--cell)) 0 calc(100% - 4px + var(--cell-top)) / 1ch 1px no-repeat,
   linear-gradient(var(--cell), var(--cell)) 0 var(--cell-top) / 1px calc(100% - 4px) no-repeat, linear-gradient(var(--cell), var(--cell)) calc(1ch - 1px) var(--cell-top) / 1px calc(100% - 4px) no-repeat; }
 :is(.prompting, .prompt-leaving) .screen .prompt-in:placeholder-shown:not(:focus, :disabled) { --cell-top: 2px; }
-.prompt-keys { flex: none; display: inline-flex; align-items: center; gap: var(--s1); transition: opacity 160ms ease-out 60ms; }
-.prompt-keys > kbd { color: var(--sub); border-color: var(--rule); }
+/* The keys that bring the box, and the keys that send from it, one over the other in one place. */
+.prompt-caps { flex: none; display: grid; justify-items: end; align-items: center; }
+.prompt-caps > * { grid-area: 1 / 1; }
+.prompt-keys, .prompt-sends { display: inline-flex; align-items: center; gap: var(--s1); transition: opacity 160ms ease-out 60ms; }
+.prompt-keys > kbd, .prompt-sends > kbd { color: var(--sub); border-color: var(--rule); }
 .prompt-keys > kbd:last-child { font: 600 13px/1 var(--mono); }
 .prompt-keys > kbd.tick { padding-top: 6px; font-size: 15px; } /* a backtick is drawn at the top of its letter's room */
 .prompt:is([data-mode='issue'], [data-mode='todo']) .prompt-keys { visibility: hidden; } /* Ctrl+` brings the box running */
-@media (max-width: 760px) { .prompt-keys { display: none; } }
+/* Written in, the keys that send what is in it stand in their place, beside Run (Create, Add): Enter alone is a new
+   line. Edit sends nothing (what is typed is in the file already): its Ctrl G stays. */
+.prompt-sends, .prompt:not([data-mode='edit']):focus-within .prompt-keys, .prompt[data-mode='edit'] .prompt-sends { visibility: hidden; }
+.prompt:not([data-mode='edit']):focus-within .prompt-sends { visibility: visible; }
+@media (max-width: 760px) { .prompt-caps { display: none; } }
 /* The box at rest, its light, while the glass spreads over it (and back as it gathers into the pill): under the screen. */
 .work.bench > .center > .dock::before { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: var(--prompt-h); z-index: -1; pointer-events: none;
   box-sizing: border-box; border: 1px solid var(--edge); border-radius: var(--r-place); background: var(--raised); opacity: 0; }
@@ -1494,6 +1513,9 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .dock > .prompt-note.paths { padding-block: var(--s1); border-radius: var(--r-field); }
 /* Server over any page: its own place in the bench's shape, to the window's foot so nothing of the page shows below it. */
 .server-layer { position: fixed; top: 0; bottom: 0; left: calc(var(--outer) + var(--rail)); right: 0; z-index: 4; padding: var(--outer-top) var(--outer) var(--outer-bottom) 0; background: var(--ground); animation: layer-in var(--move) cubic-bezier(.2, .9, .25, 1); }
+/* Made ready unseen (server/layer.ts): while the pointer rests on its icon, or what it opens on is read a moment, it is
+   there to be drawn into but not seen or pressed; out, its coming in starts then, whole. */
+.server-layer.coming { opacity: 0; pointer-events: none; animation: none; }
 @keyframes layer-in { from { opacity: 0; transform: translateX(calc(-1 * var(--s4))); } }
 @media (prefers-reduced-motion: reduce) { .server-layer { animation: none; } }
 /* Narrow: the center and its box keep the width; the right pane folds away, and the switch at the top
@@ -1621,19 +1643,18 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 /* The row slides as one. A box opened comes in at its own width where it stands, fading in as the row brings it, and
    one closed fades where it stands before the row closes over its place: never squeezed from or to no width, its
    words crushed and two boxes over each other on the way. */
-.col { transition: flex-basis var(--slide) var(--land), transform var(--slide) var(--land), translate calc(var(--slide) * .66) var(--land),
+.col { transition: flex-basis var(--slide) var(--land), transform var(--slide) var(--land), translate calc(160ms * var(--pace)) cubic-bezier(.2, .7, .2, 1),
   opacity calc(260ms * var(--pace)) ease-out; }
-/* The pointer on a box's edge, the row leans toward it a step before it is pressed: what the press will bring in
-   is already on its way, and leaving it, the row settles back. */
-.columns.split:has(> .col.after:hover) > .col { translate: calc(-1 * var(--s4)) 0; }
-.columns.split:has(> .col.before:hover) > .col { translate: var(--s4) 0; }
-.columns.split > .col:is(.before, .after):hover .file > :is(.path, .sheet) { opacity: .8; }
+/* The pointer on a box's edge, the row leans toward it before it is pressed, as far as the pointer is into it (up
+   to a step), and that box's words come up as it does: what the press will bring in is already on its way, and
+   leaving it, the row settles back. The row's own (columns.ts lean, --lean and --lit), never the pointer's hover: on
+   the edge itself, a hand never quite still would lean and unlean the row with every tremor. */
+.columns.split > .col { translate: var(--lean, 0px) 0; }
 .col.nothing { opacity: 0; }
 .col > .flow { transition: padding-top var(--move) var(--land), opacity calc(240ms * var(--pace)) ease-out; }
 /* Dimmed, a box along from the one worked on is still a box: its paper and its edge stand as a neighbour issue's or
    board's do, only its words quiet (a whole box at half strength is a grey slab, not a sheet). */
-.columns.split > .col:not(.active) .file > :is(.path, .sheet) { opacity: .5; transition: opacity calc(240ms * var(--pace)) ease-out; }
-.columns.split > .col:not(.active):hover .file > :is(.path, .sheet) { opacity: .75; }
+.columns.split > .col:not(.active) .file > :is(.path, .sheet) { opacity: calc(.5 + .3 * var(--lit, 0)); transition: opacity calc(240ms * var(--pace)) ease-out; }
 /* Of the box worked on, the sheet with the keyboard is in ink (.file:focus-within), as alone; a file beside, one sheet,
    is in ink whole while it is the one worked on. Never two sheets in ink at once. */
 .columns.split > .col.active > .flow > .dir.only > .file { border-color: var(--ink); }
@@ -1779,6 +1800,11 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .found-step { display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: var(--ink); cursor: var(--cursor-hand); }
 .found-step:hover:not(:disabled) { background: var(--raised); }
 .found-step:disabled { opacity: .35; cursor: var(--cursor-arrow); }
+/* × at the strip's end, quiet: everything under the box put away, what stays out beside the file too. */
+.found-shut { display: grid; place-items: center; flex: none; width: var(--h-row); height: var(--h-row); margin-right: calc(-1 * var(--s2)); padding: 0; border: 0; border-radius: var(--r-round);
+  background: transparent; color: var(--sub); cursor: var(--cursor-hand); }
+.found-shut:hover { background: var(--raised); color: var(--ink); }
+.found-shut .mark { width: var(--s4); height: var(--s4); }
 .found-at { font: var(--t-meta) var(--mono); color: var(--sub); }
 .work.bench .search-results { max-height: var(--search-room, none); }
 .found-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s1); }
@@ -1793,9 +1819,19 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .diff-foot.asking { justify-content: flex-start; }
 .hit-head { display: flex; align-items: center; gap: var(--s2); }
 .hit-head > .hit-file { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
-/* A found file's changes (+3), right after its name in its words, not a pill of its own: pressed, its diff. */
-.hit-diff { flex: none; display: inline-flex; gap: var(--s2); padding: 0; border: 0; background: transparent; color: var(--sub); font: var(--t-meta) var(--mono); cursor: var(--cursor-hand); }
-.hit-diff:hover { color: var(--ink); text-decoration: underline; }
+/* How many of its lines were found, in words beside its name, quiet. */
+.hit-count { flex: none; color: var(--sub); font-size: var(--t-meta); white-space: nowrap; }
+/* A found file's changes at the head's other end, said as a diff is everywhere (diff +3 and its squares), away from
+   the count of what was found: pressed, its diff. */
+.hit-diff { flex: none; display: inline-flex; align-items: baseline; gap: var(--s2); margin-left: auto; min-height: var(--h-row); padding: 0 var(--s1); border: 0; border-radius: var(--r-field);
+  background: transparent; color: var(--sub); font-size: var(--t-meta); cursor: var(--cursor-hand); align-self: center; line-height: var(--h-row); }
+.hit-diff:hover { background: var(--raised); color: var(--ink); }
+/* What Enter takes from the box, while the box has the keyboard: lit as under the pointer, its key at its end. */
+.found-body .choice > .enter-cap { display: none; color: var(--sub); border-color: var(--rule); }
+.search-box:has(.search-in:focus) .found-body .choice.first { background: var(--raised); }
+.search-box:has(.search-in:focus) .found-body .choice.first > .enter-cap { display: inline-grid; }
+.hit.first { grid-template-columns: 4ch minmax(0, 1fr) auto; }
+.hit-file > .enter-cap { margin-left: var(--s2); }
 .hit-kind { margin: 0 var(--s1) var(--s1); font-size: var(--t-meta); font-weight: 600; color: var(--sub); }
 .hit-issue, .hit-run { font-family: var(--sans); font-weight: 400; overflow-wrap: anywhere; }
 .hit-run { font-family: var(--mono); }
@@ -1803,6 +1839,17 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .plugins { padding: 0 var(--s5) var(--s3); }
 .plugins .empty { margin-top: 0; padding: var(--s4) var(--s5); }
 .plugins .slide { height: auto; }
+/* At rest, on the Prompt's head line at the pane's right end, what else the search shows: Issue, diff with how many
+   files are changed, Output; heads as quiet as the Prompt's, pressed to open that view under the search box, which
+   stays out beside the file until it is put away (reference.ts). */
+.term-home { position: relative; }
+.pane-heads { position: absolute; top: var(--s5); right: calc(var(--s5) - var(--s2)); display: flex; }
+.pane-head { padding: 0 var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: var(--sub);
+  font: 600 var(--t-meta)/calc(var(--t-body) * 1.6) var(--sans); letter-spacing: .02em; cursor: var(--cursor-hand); }
+.pane-head:hover, .pane-head[aria-pressed='true'] { color: var(--ink); }
+.pane-head:hover { background: var(--raised); }
+.pane-head-n { margin-left: var(--s1); font-weight: 400; font-variant-numeric: tabular-nums; }
+.pane-head-n:empty { display: none; }
 /* Narrow (after the wide rules above, which it changes): the search at the top line's right, the right pane
    folded away and, brought out with its switch, laid over the center under the top line. */
 @media (max-width: 760px) {
@@ -1825,8 +1872,11 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
   .search-pills { position: relative; }
 }
 /* A phone: the repo's pill before the search's width (a pill cut to three letters says nothing; the search's field says
-   what it is in a word). */
-@media (max-width: 560px) { .work.bench > .bar { grid-template-columns: minmax(0, 1fr) minmax(88px, 32%) auto; } }
+   what it is in a word), and the band's buttons a little closer, so a short name and its × stand whole. */
+@media (max-width: 560px) {
+  .work.bench > .bar { grid-template-columns: minmax(0, 1fr) minmax(80px, 28%) auto; }
+  .work.bench > .bar > .repo-strip { gap: var(--s1); }
+}
 /* One line to type in, the same everywhere: the search box, a repo's name. */
 .search-in, .line-in {
   width: 100%; min-height: var(--h-row); padding: 0 var(--s3); border: 1px solid var(--edge); border-radius: var(--r-field);
@@ -2230,6 +2280,9 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 /* A page in parts (common.ts parts()): the headings are the switch, the
    chosen one an ink fill like anything chosen; only its part is shown. */
 .part-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s3); margin-top: var(--s5); }
+/* Never wider than the page: on a phone the parts slide inside it (as wide as their words, they reached past the
+   window's edge, cut off there, and the one chosen could not be brought into view). */
+.part-bar > .parts { min-width: 0; max-width: 100%; }
 .parts { position: relative; isolation: isolate; display: flex; flex-wrap: wrap; gap: var(--s1); }
 /* While the ink goes to it, its edge is not yet the ink's (glide.ts): a part has none, a chip or a pill its own. */
 .part.arriving { border-color: transparent !important; }
@@ -2260,8 +2313,16 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
    adds, one deed. What is read keeps to 760 px; the tiers take the room for four small cards. */
 .plan-part { max-width: 1040px; }
 .plan-part > .sub-part:not(.plan-tiers), .plan-part > .plan-told, .plan-part > .error, .plan-part > .answers { max-width: 760px; }
-/* Free and each tier: small cards about four across, the account's own current (an ink edge over raised). */
-.tier-cards { grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); }
+/* Free and each tier at the part's top: four across the part (two, then one, as it narrows), the account's own
+   current (an ink edge over raised); the plan it is on said at the heading's right. */
+.tier-cards { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 900px) { .tier-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .tier-cards { grid-template-columns: minmax(0, 1fr); } }
+.tier-card.current { border-color: var(--ink); background: var(--raised); }
+.plan-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; column-gap: var(--s4); margin: 0 0 var(--s3); }
+.plan-head > h3 { margin: 0; }
+.plan-now-line { margin: 0; }
+.plan-now-line > b { color: var(--ink); font-weight: 600; }
 .tier-card { min-height: 168px; gap: var(--s1); }
 .tier-card > .card-title { margin-bottom: var(--s1); }
 .tier-price { font-size: var(--t-card); font-weight: 600; }
@@ -2651,6 +2712,9 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
    it, never at its top over a sheet of nothing; more than it holds, it scrolls as it did. */
 .board-talk > .timeline { display: flex; flex-direction: column; justify-content: flex-end; min-height: 100%; }
 .timeline.tl-empty > .tl-start { padding: var(--s2) 0; }
+/* Every post read, and all of them on the board at once: plain to see, so not said (server/board.ts openAtFoot). Its
+   room is kept, so the posts do not move when the talk grows past the board and it is said again. */
+.board-card.fits .tl-start.tl-all { visibility: hidden; }
 .tl-pages { overflow-anchor: none; }
 .tl-day { margin: var(--s5) 0 var(--s1); text-align: center; color: var(--sub); font: 600 var(--t-meta) var(--sans); }
 .tl-post { position: relative; display: grid; grid-template-columns: 36px minmax(0, 1fr); column-gap: var(--s3); margin: var(--s2) calc(-1 * var(--s2)) 0; padding: var(--s1) var(--s2); border-radius: var(--r-field); }
@@ -2671,9 +2735,10 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .tl-body { white-space: pre-wrap; overflow-wrap: anywhere; }
 .tl-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin-top: var(--s1); }
 .tl-foot:empty { display: none; }
-/* A post's deeds come up over its corner as the pointer comes onto it (a short fade and rise, never there at once), and
-   go as it leaves; out of the way, they are not there to be pressed. */
-.tl-acts { position: absolute; top: calc(-1 * var(--s3)); right: var(--s2); z-index: 1; display: flex; gap: var(--s1);
+/* A post's deeds come up in its top right corner as the pointer comes onto it (a short fade and rise, never there at
+   once), and go as it leaves; out of the way, they are not there to be pressed. Inside the post, not over the one
+   above: a hand going up the talk lights the post under it, never the one below whose deed it is passing over. */
+.tl-acts { position: absolute; top: var(--s1); right: var(--s2); z-index: 1; display: flex; gap: var(--s1);
   opacity: 0; visibility: hidden; translate: 0 3px; transition: opacity 120ms ease-out, translate 160ms var(--land), visibility 0s 120ms; }
 .tl-acts:empty { display: none; }
 .tl-post:hover .tl-acts, .tl-post:focus-within .tl-acts { opacity: 1; visibility: visible; translate: 0 0; transition-delay: 0s; }
@@ -2691,21 +2756,33 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
    it and the repos they show. Behind the gear, and a repo shown, take the
    boards' place: a step away from them. */
 .server-center { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); padding: var(--band) var(--s5) 120px; }
-/* The band's row, and under it the board's top where Forge's first box's is (its top line's foot, a step down). */
-.server-top { display: flex; align-items: center; gap: var(--s2); margin-bottom: var(--s5); }
+/* The band's row, and under it the board's top where Forge's first box's is (its top line's foot, a step down). Under
+   the row, while one is named, what the Remote said no to (server/band.ts). */
+.server-top { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--s1) var(--s2); margin-bottom: var(--s5); }
 .server-layer > .work { position: relative; }
 .server-bar { position: absolute; top: var(--band); right: var(--s5); display: flex; }
-.server-chips { flex: 1; min-width: 0; }
+/* One row that slides sideways however many servers there are, as Git's repos are, a ring kept clear of its edge; an
+   end fades where there is more along it (--fade, which the row keeps a chip slid into view clear of). */
+.server-chips { --fade: var(--s5); position: relative; flex: 1; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+  margin: calc(-1 * var(--s1)); padding: var(--s1); }
+.server-chips::-webkit-scrollbar { display: none; }
+.server-chips > * { flex: none; }
+.server-chips.more-after { mask-image: linear-gradient(to right, #000 calc(100% - var(--fade)), transparent); }
+.server-chips.more-before { mask-image: linear-gradient(to left, #000 calc(100% - var(--fade)), transparent); }
+.server-chips.more-before.more-after { mask-image: linear-gradient(to right, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent); }
+.server-said { flex-basis: 100%; padding-left: calc(var(--h-row) + var(--s2)); }
+.server-said:empty { display: none; }
 /* A server being named: its chip is the field, where it will stand once made, dashed until it has a name, and says
-   one name; Make beside it, and what the Remote said no to after that. */
+   one name; Make beside it. Wider than the row (a phone's width, its address written), Make goes under it. */
 .server-making { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--s2); min-width: 0; }
+.server-chips > .server-making { max-width: 100%; }
 .chip.server-naming { display: inline-flex; align-items: center; gap: var(--s2); border-style: dashed; cursor: var(--cursor-text); }
 .chip.server-naming.named, .chip.server-naming:focus-within { border-style: solid; border-color: var(--ink); }
 .server-name-in, .server-handle-in { min-width: 0; padding: 0; border: 0; background: transparent; color: var(--ink); font: inherit; }
 .server-name-in { font-weight: 600; }
 .server-handle-in { color: var(--sub); font-family: var(--mono); }
 .server-name-in:focus, .server-handle-in:focus { outline: none; }
-.server-ask { color: var(--sub); font-size: var(--t-meta); }
+.server-ask { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s2); color: var(--sub); font-size: var(--t-meta); }
 .server-ask:empty { display: none; }
 /* The quiet @ at the chip's end: the address it follows unseen, to be written otherwise; shown, the @ stays where it
    was, as the address's first letter. */
@@ -2718,12 +2795,30 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
    it will write in, saying its people by the name as it is written; nothing in it to press. Made, it stands there whole. */
 .slide[aria-current='true'] .board-card.board-ghost { border-style: dashed; border-color: var(--rule); background: transparent; color: var(--sub); }
 .board-ghost .board-head h2 { color: var(--sub); }
-.slide .board-card.ghost-next { height: auto; border-style: dashed; border-color: var(--rule); background: transparent; color: var(--sub); }
-.board-ghost .todo-box { border-color: color-mix(in srgb, var(--rule) 55%, transparent); background: transparent; }
-.board-ghost .todo-mark { cursor: var(--cursor-arrow); }
-.board-ghost .todo-title { display: flex; align-items: center; color: var(--sub); font-weight: 400; }
-.board-ghost .board-talk { display: flex; flex-direction: column; overflow: hidden; }
-.board-ghost .timeline { flex: 1; }
+.slide .board-card.ghost-next { border-style: dashed; border-color: var(--rule); background: transparent; color: var(--sub); }
+/* What a board will hold, faint (server/board.ts ghostBody): a server's first board while it is named, a new board. */
+.board-faint { color: var(--sub); }
+.board-faint .todo-box { border-color: color-mix(in srgb, var(--rule) 55%, transparent); background: transparent; }
+.board-faint .todo-mark { cursor: var(--cursor-arrow); }
+.board-faint .todo-title { display: flex; align-items: center; color: var(--sub); font-weight: 400; }
+.board-talk.board-faint { display: flex; flex-direction: column; overflow: hidden; }
+.board-faint .timeline { flex: 1; }
+/* A new board, made where it will stand: the board it will be, dashed on the ground as a server's first board is
+   while it is named, its name written in its head in a board name's letters with Make beside it, what a board is said
+   at the top of where its talk will be; the edge beside the one on screen dashed, its mark +. Made, it stands whole. */
+.slide[aria-current] .board-card.board-new { border-style: dashed; border-color: var(--rule); background: transparent; }
+.slide[aria-current='true'] .board-card.board-new { border-color: var(--edge); }
+/* Its head: #, the name (narrowing before Make leaves the line), Make; refused, why under them. */
+.slide[aria-current='true'] .board-card.board-new > .board-head { display: grid; grid-template-columns: auto minmax(0, max-content) auto; justify-content: start;
+  align-items: center; column-gap: var(--s2); border-bottom: 1px dashed var(--rule); }
+.board-new > .board-head > .button { margin-left: var(--s1); }
+.board-naming { display: flex; min-width: 0; cursor: var(--cursor-text); }
+.board-name-in { min-width: 4ch; max-width: 100%; padding: 0; border: 0; background: transparent; color: var(--ink); font: 600 var(--t-card)/1.6 var(--sans); text-overflow: ellipsis; }
+.board-name-in:focus { outline: none; }
+.board-name-in::placeholder { color: var(--sub); font-weight: 400; }
+.board-new > .board-head > .error { grid-column: 1 / -1; padding-bottom: var(--s1); }
+.board-new > .board-head > .error:empty { display: none; }
+.board-new > .board-lead { grid-column: 1; grid-row: 2; align-self: start; padding: var(--s3) var(--s5); }
 .prompt.ghost-dock { border-style: dashed; border-color: var(--rule); background: transparent; color: var(--sub); font: var(--t-body)/1.6 var(--sans); }
 .side-ghost { opacity: .45; }
 /* A gear with nothing chosen keeps its place, so nothing beside it moves. */
@@ -2732,7 +2827,13 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .server-gear:hover, .server-gear[aria-expanded='true'] { border-color: var(--edge); color: var(--ink); }
 .server-bar > .server-gear { border-color: var(--edge); color: var(--ink); } /* at the corner, the switch's quiet circle */
 .server-bar > .server-gear:hover { background: var(--raised); }
-.server-gear svg { width: 18px; height: 18px; }
+/* Behind it, it is in ink, as a chip chosen is: what is in the boards' place is its. The ink comes at once (fading
+   it, the mark and its ground were one grey midway and the gear was gone for a frame); pressed either way it turns an
+   eighth, a tooth's step, so it comes to rest looking as it did. */
+.server-bar > .server-gear[aria-expanded='true'] { border-color: var(--ink); background: var(--ink); color: var(--ground); }
+.server-gear svg { width: 18px; height: 18px; transition: rotate var(--move) var(--land); }
+.server-gear[aria-expanded='true'] svg { rotate: 45deg; }
+@media (max-width: 760px) { .server-top { padding-right: calc(var(--s5) + var(--h-row)); } }
 .slides { --peek: 48px; --gap: var(--s3); --lead: 0; min-height: 0; }
 .slides.single { --peek: 0px; }
 /* Server's boards and the box at the foot share the center's peek and lead (server/row.ts sets it there): the box is
@@ -2750,17 +2851,21 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 @media (prefers-reduced-motion: reduce) { .slide-track { transition: none; } }
 .slide { flex: 0 0 calc(100% - 2 * var(--peek)); min-width: 0; height: 100%; }
 .board-card { display: flex; flex-direction: column; height: 100%; border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper); }
-/* Making a server: a card as tall as what is in it and as wide as its fields, not a board's whole height. */
-.board-card.board-new { height: auto; max-width: 600px; border-color: var(--ink); }
-.board-new > .board-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s1) var(--s3); }
-.slide[aria-current='false'] .board-card { color: var(--sub); }
-/* A neighbour shows its edge and its mark (# a board, + a new one), not a name cut short. */
-.slide[aria-current='false'] .board-head h2 { visibility: hidden; }
+/* What is said in the boards' place (an invitation that opens nothing): a card as tall as what it says. */
+.board-card.board-said { height: auto; max-width: 600px; border-color: var(--ink); }
+.slide[aria-current='false']:not(.leaving) .board-card { color: var(--sub); }
+/* A neighbour shows its edge and its mark (# a board, + a new one), not a name cut short; one read ahead (row.ts)
+   looks the same until it is slid to, what it holds there unseen. */
+.slide[aria-current='false']:not(.leaving) .board-head h2 { visibility: hidden; }
+.slide.full[aria-current='false']:not(.leaving) .board-card > :not(.board-head) { visibility: hidden; }
 /* The one before shows its right edge: its mark (and its dot) is there, at that edge. */
-.slide:has(+ .slide[aria-current='true']) .board-head { flex-direction: row-reverse; padding-right: var(--s3); }
+.slide:not(.leaving):has(+ .slide[aria-current='true']) .board-head { flex-direction: row-reverse; padding-right: var(--s3); }
 .slide[aria-current='true'] .board-card { border-color: var(--ink); background: var(--paper); }
+/* The pointer on an edge, the box it goes to is lit as a thing under the pointer is (raised, its edge in ink), coming
+   and going over a moment, so a hand resting on the line between the board and the edge does not make it flicker. */
+.slide .board-card { transition: border-color calc(160ms * var(--pace)) ease-out, color calc(160ms * var(--pace)) ease-out, background-color calc(160ms * var(--pace)) ease-out; }
 .slide-stage:has(.stage-hit.next:hover) .slide[aria-current='true'] + .slide .board-card,
-.slide-stage:has(.stage-hit.prev:hover) .slide:has(+ .slide[aria-current='true']) .board-card { border-color: var(--edge); color: var(--ink); }
+.slide-stage:has(.stage-hit.prev:hover) .slide:has(+ .slide[aria-current='true']) .board-card { border-color: var(--ink); background: var(--raised); color: var(--ink); }
 /* Its name as near its top as a file's head is to a file's (a step, s2), so it sits by the line the pane's head (People)
    is on rather than a step under it: its larger letters keep it 5 px below that line, where they still clear its edge. */
 .board-head { display: flex; align-items: baseline; gap: var(--s2); padding: var(--s2) var(--s5); }
@@ -2773,8 +2878,8 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
    TODO beside it at the right, a column of its own past a rule, the same list as Home's but not boxed again (the board
    is its box). It scrolls in itself when it is long; its hints show while one writes in it. Narrow, the TODO comes
    over the talk, as short as a few of its lines, and the talk has the rest. */
-.board-card:not(.board-new, .ghost-next) { display: grid; grid-template-columns: minmax(0, 1fr) 320px; grid-template-rows: auto minmax(0, 1fr); }
-.board-card:not(.board-new) > .board-head { grid-column: 1 / -1; }
+.board-card:not(.board-said, .ghost-next) { display: grid; grid-template-columns: minmax(0, 1fr) 320px; grid-template-rows: auto minmax(0, 1fr); }
+.board-card > .board-head { grid-column: 1 / -1; }
 .slide[aria-current='true'] .board-card:not(.board-new) > .board-head:has(~ .board-talk) { border-bottom: 1px solid var(--rule); }
 .board-card > .board-talk { grid-column: 1; grid-row: 2; }
 .board-todo { grid-column: 2; grid-row: 2; display: grid; align-content: start; gap: var(--s2); min-height: 0; overflow-y: auto; overscroll-behavior: contain;
@@ -2786,9 +2891,19 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .board-todo .todo-hint { padding-inline: var(--s2); }
 .board-todo .error:empty { display: none; }
 @media (max-width: 760px) {
-  .board-card:not(.board-new, .ghost-next) { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); }
+  .board-card:not(.board-said, .ghost-next) { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); }
   .board-todo { grid-column: 1; grid-row: 2; max-height: 34vh; border-left: 0; border-bottom: 1px solid var(--rule); }
-  .board-card > .board-talk { grid-row: 3; }
+  .board-card > .board-talk, .board-new > .board-lead { grid-row: 3; }
+  /* On a phone's width the board has room for little: the TODO keeps no room for the keys it is written with (shown
+     to a keyboard at a desk), so it is as tall as its lines; the talk and its faces a step tighter, so a post's
+     line is not a word or two. */
+  .board-todo .todo-hint { display: none; }
+  .board-head { padding-inline: var(--s4); }
+  .board-todo { padding-inline: var(--s3); }
+  .board-talk, .board-new > .board-lead { padding-inline: var(--s3); }
+  .tl-post { grid-template-columns: 28px minmax(0, 1fr); column-gap: var(--s2); }
+  .tl-face { width: 28px; height: 28px; font-size: var(--t-meta); }
+  .tl-face.tl-at { width: 28px; font-size: 10px; }
 }
 .todo-read { white-space: pre-wrap; }
 .board-talk { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s3) var(--s5); overscroll-behavior: contain; }
@@ -2798,8 +2913,6 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .slide[aria-current='true'] .board-card.more-below { border-bottom-color: transparent; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .board-talk:focus-visible { outline-offset: -2px; }
 .board-body { display: grid; gap: var(--s3); align-content: start; padding: var(--s2) var(--s5) var(--s5); max-width: 560px; }
-.board-body .row { gap: var(--s2); }
-.board-body .line-in { flex: 1; }
 .server-back { display: flex; flex-wrap: wrap; gap: var(--s2); }
 .server-back:empty { display: none; }
 .your-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); min-height: var(--h-row); padding: 0 var(--s3); }
@@ -2837,7 +2950,7 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
   transition: opacity calc(120ms * var(--pace)) ease-out, translate calc(160ms * var(--pace)) var(--land); }
 .person-go:hover::after, .person-go:focus-visible::after { opacity: 1; translate: 0 0; }
 .side-repo { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s2); width: 100%; padding: var(--s1) var(--s2); margin: 0 calc(-1 * var(--s2)); border: 0; border-radius: var(--r-field); background: transparent; color: inherit; text-align: left; font: inherit; cursor: var(--cursor-hand); }
-.side-repo:hover { background: var(--raised); }
+.side-repo:hover, .side-repo[aria-current='true'] { background: var(--raised); }
 .side-repo > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-repo > .small:not(.seen-mark) { grid-column: 1; }
 .side-repo .seen-mark { grid-column: 2; grid-row: 1; }
@@ -2865,7 +2978,12 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .card-row { display: flex; align-items: center; gap: var(--s3); min-height: var(--h-control); }
 .card-row .grow { flex: 1; min-width: 0; }
 /* A board's guests and invitations out; an invitation's link, said once, copied by a press. */
-.guest-rows { display: grid; }
+.guest-rows { display: grid; gap: var(--s1); }
+/* A guest or an invitation: who or what, and under it, quietly, what more; its deed at the right, by the first line. */
+.guest-row { align-items: flex-start; }
+.guest-row > .grow { display: grid; padding-block: var(--s1); }
+.guest-row > .grow > * { overflow-wrap: anywhere; }
+.guest-row > .button { margin-top: 2px; }
 .guest-link { display: grid; gap: var(--s1); }
 .guest-link:empty { display: none; }
 .guest-link-text { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; justify-content: flex-start; }
@@ -2880,9 +2998,10 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 @media (max-width: 760px) {
   /* Every page's parts (Remote's too, not only the gear's): room round them so a focus ring is not cut by the slide. */
   .parts { flex-wrap: nowrap; overflow-x: auto; padding: var(--s1); margin: calc(-1 * var(--s1)); }
-  /* More along than fits: the row fades at its end, so a part cut there reads as more to slide to, not clipped; the
-     room past the last part lets it come clear of the fade. */
-  .parts { padding-right: var(--s6); mask-image: linear-gradient(to right, #000 calc(100% - var(--s5)), transparent); }
+  /* More along than fits: the row fades at its end while there is more to slide to (common.ts parts, .more), so a
+     part cut there reads as more, not clipped; slid to its end, nothing fades. */
+  .parts.more { mask-image: linear-gradient(to right, #000 calc(100% - var(--s5)), transparent); }
+  .parts { scroll-padding-inline: var(--s5); }
   .parts .part { flex: none; }
   .sheet-title > p { display: none; }
 }

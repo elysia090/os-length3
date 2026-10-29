@@ -96,16 +96,23 @@ interface FoundWays {
   run(r: Run): void;
 }
 
-/** A file found: its name, its diff a press away if it changed since the last commit (`c`), and each line found in it. */
-function fileGroup(g: Group, c: FileChange | undefined, ways: FoundWays, beat: (b: HTMLElement) => void): HTMLElement {
+/**
+ * A file found: its name, how many of its lines were found, its diff a press away if it changed since the last commit
+ * (`c`), and each line found in it. Its name is a choice (↓ and Enter come to it) only when it holds the query
+ * (`named`); found by its lines alone, the name is their head, pressed to open the file, and ↓ and Enter go to them.
+ */
+function fileGroup(g: Group, named: boolean, c: FileChange | undefined, ways: FoundWays, beat: (b: HTMLElement) => void): HTMLElement {
   // A file chosen by its name is the one to work on: the caret goes in it.
-  const name = h('button', {type: 'button', class: 'choice hit-file'}, shownPath(g.path));
+  const name = h('button', {type: 'button', class: named ? 'choice hit-file' : 'hit-file', ...(named ? {} : {tabindex: '-1'})}, shownPath(g.path));
   name.addEventListener('click', () => ways.file(g.path));
-  // Changed since the last commit: its diff is a press away, read under the box.
-  const diff = c ? h('button', {type: 'button', class: 'choice hit-diff', 'aria-label': t('The diff of {path}', {path: fileName(g.path)})},
-    ...(c.added || c.removed ? [c.added ? h('span', {class: 'diff-add'}, `+${c.added}`) : null, c.removed ? h('span', {class: 'diff-del'}, `−${c.removed}`) : null] : [t('diff')])) : null;
+  // How many of its lines were found, in words beside its name: a count, never read as its diff's figures.
+  const count = g.hits.length ? h('span', {class: 'hit-count'}, tn('{n} line', '{n} lines', g.hits.length)) : null;
+  // Changed since the last commit: at the head's other end its diff, said as a diff is everywhere (diff, +n −n, the
+  // squares), read under the box when pressed; not a stop of its own on the way down to the lines.
+  const diff = c ? h('button', {type: 'button', class: 'hit-diff', tabindex: '-1', 'aria-label': t('The diff of {path}', {path: fileName(g.path)})},
+    h('span', {class: 'hit-diff-word'}, t('diff')), c.added || c.removed ? counted(c.added, c.removed) : null) : null;
   diff?.addEventListener('click', () => ways.diff(g.path));
-  return h('div', {class: 'hit-group'}, h('div', {class: 'hit-head'}, name, diff), ...g.hits.map((hit) => {
+  return h('div', {class: 'hit-group'}, h('div', {class: 'hit-head'}, name, count, diff), ...g.hits.map((hit) => {
     const b = h('button', {type: 'button', class: 'choice hit'},
       h('span', {class: 'hit-line'}, String(hit.line)),
       h('span', {class: 'hit-text'}, ...tucked(hit.text.slice(0, hit.from)), h('mark', {}, ...tucked(hit.text.slice(hit.from, hit.to))), ...tucked(hit.text.slice(hit.to))));
@@ -117,7 +124,8 @@ function fileGroup(g: Group, c: FileChange | undefined, ways: FoundWays, beat: (
 
 /**
  * What was found for `query`, drawn: how many files and lines, then each file with its lines, the issues, the
- * changes (of what `changed`) and the runs. Nothing, when nothing was found.
+ * changes (of what `changed`) and the runs. Nothing, when nothing was found. The first choice, which Enter takes from
+ * the box, says so while the box has the keyboard: lit, with its key at its end.
  */
 export function foundView(found: Found, query: string, changed: FileChange[], ways: FoundWays): HTMLElement[] {
   const {groups} = found;
@@ -129,7 +137,7 @@ export function foundView(found: Found, query: string, changed: FileChange[], wa
   let stroke = 0;
   // Through the style object, not an attribute: the desktop app's policy allows no style written inline.
   const beat = (b: HTMLElement) => b.style.setProperty('--i', String(Math.min(stroke++, 16)));
-  for (const g of nameFirst(groups, query)) said.push(fileGroup(g, changes.get(g.path), ways, beat));
+  for (const g of nameFirst(groups, query)) said.push(fileGroup(g, nameMatches(g.path, query), changes.get(g.path), ways, beat));
   if (found.issues.length) said.push(h('div', {class: 'hit-group'}, h('h3', {class: 'hit-kind'}, t('Issue')), ...found.issues.map((i) => {
     const b = issueButton(i, query, ways.issue);
     beat(b);
@@ -138,5 +146,8 @@ export function foundView(found: Found, query: string, changed: FileChange[], wa
   if (found.diffs.length) said.push(h('div', {class: 'hit-group'}, h('h3', {class: 'hit-kind'}, t('diff')),
     ...found.diffs.map((c) => diffButton(c.path, counted(c.added, c.removed), ways.diff))));
   if (found.runs.length) said.push(h('div', {class: 'hit-group'}, h('h3', {class: 'hit-kind'}, t('Output')), ...found.runs.map((r) => runButton(r, ways.run))));
+  const first = said.map((el) => el.querySelector<HTMLElement>('.choice')).find((b) => b);
+  first?.classList.add('first');
+  first?.append(h('kbd', {class: 'enter-cap', 'aria-hidden': 'true'}, 'Enter'));
   return said;
 }

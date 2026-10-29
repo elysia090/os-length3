@@ -74,7 +74,7 @@ pub enum Fact {
     // A repo on the Remote: turned off; only there.
     TurnedOff, OnlyThere,
     // An issue (git.rs `facts`).
-    CanStart, CanCommit, CanPush, Undecided, Approved, WorkedHere, OnWork, Closed,
+    CanStart, CanCommit, CanPush, Undecided, Approved, WorkedHere, OnWork, Closed, Merged,
     // A conversation: someone who wrote first, not accepted yet.
     Request,
     // Something on this device by size that can go; anything on the page that can.
@@ -349,7 +349,7 @@ pub static COMMANDS: &[Command] = &[
     c("issue", &[], Group::Git, ["one issue, a new one, or closing one", "Issue ひとつ、新しく、または閉じる"], &[
         offer(&[d(["Write an issue", "Issue を書く"], On::Page)],
             f(Some("new"), &[REPO_HERE, TITLE], &[Flag::Note("detail")], ["write a new one", "新しく書く"], LOCAL, Send, git::issue_new)),
-        offer(&[d(["Close", "閉じる"], On::Issue).unless(&[F::Undecided, F::OnWork, F::Closed]).away()],
+        offer(&[d(["Close", "閉じる"], On::Issue).unless(&[F::Undecided, F::OnWork, F::Closed, F::Merged]).away()],
             f(Some("close"), &[Arg::Issue], &[], ["one that will not be done", "やらないものを閉じる"], LOCAL, Send, git::issue_close)),
         offer(&[d(["Reopen", "もう一度開く"], On::Issue).when(&[F::Closed])],
             f(Some("reopen"), &[Arg::Issue], &[], ["a closed one, open again", "閉じたものをもう一度開く"], LOCAL, Send, git::issue_reopen)),

@@ -31,17 +31,17 @@ pub fn repo_list(ctx: &Ctx, _: &Call) -> Result<Reply> {
         let working = if line != work::MAIN { tr!(" · working on {}", " · {} の作業中", super::git::line_called(&line)) } else { String::new() };
         crate::menu::see(|| crate::menu::Subject { on: On::Repo, word: s.name.clone(), repo: Some(s.name.clone()), label: s.name.clone(),
             detail: format!("{} · {}{working}{said}", files(s.files as usize), bytes(s.bytes)), facts: Vec::new() });
-        t.push(format!("{}\t{} · {}{working}{said}", s.name, files(s.files as usize), bytes(s.bytes)));
+        t.push((s.name.clone(), format!("{} · {}{working}{said}", files(s.files as usize), bytes(s.bytes))));
         rows.push(json!({"name": s.name, "files": s.files, "bytes": s.bytes, "modified": s.modified, "line": line, "state": state,
             "changed": st.as_ref().map_or(0, |s| s.changed), "unsendable": st.as_ref().map(|s| s.unsynced.iter().map(|(p, _)| p.clone()).collect::<Vec<_>>()).unwrap_or_default()}));
     }
     for o in &only_there {
         crate::menu::see(|| crate::menu::Subject { on: On::RemoteRepo, word: o.name.clone(), repo: None, label: o.name.clone(),
             detail: tr!("only on the Remote · {}", "Remote にだけあります · {}", bytes(o.bytes)), facts: vec![Fact::OnlyThere] });
-        t.push(tr!("{}\tonly on the Remote · {} (l3 repo open {})", "{}\tRemote にだけあります · {}（l3 repo open {} で開けます）", o.name, bytes(o.bytes), o.name));
+        t.push((o.name.clone(), tr!("only on the Remote · {} (l3 repo open {})", "Remote にだけあります · {}（l3 repo open {} で開けます）", bytes(o.bytes), o.name)));
     }
-    if t.is_empty() { t.push(tr!("No repos yet (l3 repo new NAME makes one)", "repo はまだありません（l3 repo new NAME で作れます）")); }
-    Ok(Reply::data(t.join("\n"), json!({"here": rows, "remote": only_there})))
+    let text = if t.is_empty() { tr!("No repos yet (l3 repo new NAME makes one)", "repo はまだありません（l3 repo new NAME で作れます）") } else { crate::out::columns(&t).join("\n") };
+    Ok(Reply::data(text, json!({"here": rows, "remote": only_there})))
 }
 
 pub fn repo_new(ctx: &Ctx, call: &Call) -> Result<Reply> {
@@ -157,16 +157,16 @@ pub fn prompt_list(_: &Ctx, _: &Call) -> Result<Reply> {
     let mut rows = Vec::new();
     for r in &all {
         let held = prompt::held_by(r);
-        let mut line = format!("{}\t{}", r.repo, match held {
+        let mut line = match held {
             Some(h) => tr!("{} processes · {}", "プロセス {} · {}", h.processes, bytes(h.memory)),
             None => tr!("starting", "起動中"),
-        });
+        };
         if r.network { line += &tr!(" · with the network", " · ネットワークあり"); }
-        t.push(line);
+        t.push((r.repo.clone(), line));
         rows.push(json!({"repo": r.repo, "pid": r.pid, "network": r.network, "started": r.started, "held": held}));
     }
-    if t.is_empty() { t.push(tr!("No Prompt is running (l3 prompt REPO opens one)", "動いている Prompt はありません（l3 prompt REPO で開けます）")); }
-    Ok(Reply::data(t.join("\n"), json!(rows)))
+    let text = if t.is_empty() { tr!("No Prompt is running (l3 prompt REPO opens one)", "動いている Prompt はありません（l3 prompt REPO で開けます）") } else { crate::out::columns(&t).join("\n") };
+    Ok(Reply::data(text, json!(rows)))
 }
 
 /// `l3 prompt stop [REPO]`: each Prompt of the repo stops, as Stop in Runtime does.

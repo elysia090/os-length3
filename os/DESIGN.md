@@ -151,8 +151,12 @@ Every value in `styles.css` comes from a token (§2).
     as it is saved; a place's name on the rail slides back into its edge as
     the pointer leaves. Shown again on its way out, it stays where it is.
   - *What is about to come leans in.* The pointer on a box's edge in
-    Forge's row, the row leans a step toward it before it is pressed;
-    left, it settles back.
+    Forge's row, the row leans toward it before it is pressed, as far as
+    the pointer is into it (none for the first few px, then up to a step),
+    its words coming up with it; left, it settles back. It follows the hand
+    rather than switching at a line, measured from where the boxes stand
+    unleaned, and a hand at rest (a few px of tremor) does not move it: on
+    the edge itself nothing goes back and forth.
   - *What is saved stays where it was written.* A file saved says so
     in its own head (Unsaved goes from it); nothing flies off it to the
     rail, which the eye would have to follow away from the work.
@@ -243,9 +247,12 @@ Every value in `styles.css` comes from a token (§2).
   - *Where one lands is lit for a moment.* A file landed on (from the
     search, File, Git) has its head lit with the marker, fading in about a
     second; nothing stays lit.
-  - *Focus is the light.* While the search is out the whole window steps
-    back under one shade (`ink` at 14%) and only the search is lit; it
-    fades in and out, and a press anywhere else closes it.
+  - *Focus is the light.* While the search is out with the keyboard the
+    whole window steps back under one shade (`ink` at 14%) and only the
+    search is lit; it fades in and out, and a press anywhere else closes
+    what was found. What is read there, or a list held out from the right
+    pane, stays as the keyboard goes back to the file, and the shade lifts:
+    the file is written beside it at full strength.
   120 ms fades for everything else. Reduced motion turns all of it off:
   each thing is where it ends at once.
 - No shadows, blur, glow or gradients; the one shade is the search's (above). The one exception is a
@@ -327,8 +334,10 @@ Every page:
   a size smaller and closer and the window's gutter narrower, so a page
   has a fifth more of the width. A place's name comes out beside it only
   where a pointer rests (a finger's press would leave it over the page).
-  Parts that slide fade at their end, so one cut there reads as more to
-  slide to; Forge's band gives its repo pill the width before the search.
+  Parts slide inside the page's width (never past the window's edge), the
+  one chosen kept in view, and fade at their end while there is more to
+  slide to, so one cut there reads as more; slid to the end, nothing fades.
+  Forge's band gives its repo pill the width before the search.
 
 ## 2. Tokens
 
@@ -355,7 +364,7 @@ No other colours; the three families (`done`, `marker`, `off`, each with
 the words and the ground drawn from it) each mean their one thing only; the
 round initials of people borrow their soft grounds and the sky's, which mean
 nothing there but who. The one
-shade is `ink` at 14% over the window while the search is out. The Prompt up
+shade is `ink` at 14% over the window while the search is out with the keyboard. The Prompt up
 over the center is a screen made of these colours, not new ones: its glass
 `ink` a step deeper (`ink` 66% with black), lit words `add-tint` glowing in
 `done`, the prompt lines `done` lifted toward `add-tint` for the dark, its
@@ -993,7 +1002,9 @@ at a terminal is used the same way, and stays a command line:
   waited for a key took the first character of the next command, which l3
   cannot give back without replaying input). What a command just made comes
   first (the 13th TODO's Done, not the first twelve's), and what is left
-  out past twelve is said. `l3 next` opens them: the same row walked with
+  out past twelve is said. A page that listed its next deeds itself (an
+  issue's card in full) is not followed by the same words again: only the
+  quiet line that `l3 next` chooses one with the keys. `l3 next` opens them: the same row walked with
   ←→ and Enter, Enter alone or Esc going on, each deed done as its command
   and those after it offered again.
 - **One table drives both.** A deed is a form of `cli/src/spec.rs` with what
@@ -1002,7 +1013,12 @@ at a terminal is used the same way, and stays a command line:
   asks, its weight. Each page notes its things and their facts while it is
   made (the issue's from the same reading that writes its card's `next:`
   line), so the menu, the help, the completion and the card cannot drift;
-  the tests read every deed back through the parser as the form it is.
+  the tests read every deed back through the parser as the form it is. An
+  issue opened in full (`l3 issue notes#1`) ends with the same deeds as a
+  list under Next, each the button's word beside the line that does it
+  (`Approve  l3 review notes#1 approve`), what it is for first and what
+  leaves it last, each said once: its Review and Merge say where they stand,
+  not the commands again.
 - **Keys** as a list has them: ↑↓ (Tab) to choose a row, ←→ a deed, Enter to
   do it, 1–9 or a letter to jump (again for the next with that letter),
   Backspace to the rail, q or Esc to leave. The focus is a › and brackets,
@@ -1017,6 +1033,44 @@ at a terminal is used the same way, and stays a command line:
   session), nothing is offered or asked, and what l3 writes and how it exits
   are byte for byte what they were (`cli/tests/plain.rs` keeps the
   transcripts; `cli/tests/menu.rs` drives the menu through a real pty).
+
+### What l3 writes
+
+The same few rules for every answer, so a line is read the same way
+wherever it comes from:
+
+- **`l3 help` starts with the work.** First the lines that take an issue
+  from written to merged, in their order, as one would type them in a repo
+  called notes (`l3 issue new notes "Fix：title"`, `l3 git`, `l3 start
+  notes#1`, `l3 commit notes`, `l3 push notes`, `l3 review notes#1 approve`,
+  `l3 merge notes#1`); then every command by the rail; then the flags, the
+  exit codes (0–5) and how names are written, each a line under its word.
+  Every line fits 80 columns, Japanese counted two a character.
+- **A name and its facts in two columns.** A listing (`l3 repo`, `l3
+  remote`, `l3 file`, `l3 prompt ls`) writes each name, then its facts
+  starting in one column, as wide as the widest name up to 24 (a longer one
+  keeps two spaces after it alone); a folder with nothing to say is its name
+  alone. Never a tab: a terminal puts what follows a tab at its next stop,
+  out of line after a long name. A script reads `--json`.
+- **A step is ○ until it is ✓**, on a card as in the TODO: `○ Commit`, `✓
+  Push`. Started and nothing changed, Commit says where the work is done, as
+  the app's card does (edit in notes, with `l3 prompt notes` or `l3 file
+  write`; what changes shows here).
+- **What comes next runs as it is pasted.** A card's `next:` line is a
+  command with every word in it and no brackets (`next: l3 commit notes`);
+  a word only the person can write is the help's own (`l3 reply notes#1
+  "text"`). When all that is left is leaving the work, the line says so as
+  `back: l3 main notes`, never as what comes next. Starting an issue says
+  both the way on (edit, then `l3 commit notes`) and the way back.
+- **A log is two lines a commit**: its line, then id, when, the files and
+  their lines, its issue, whether a merge; which folders it touched is
+  `--json`'s.
+- **A mistake says what to write, and with what.** Its form with the word
+  that was missing in it, and what there is to put there (`Name a repo (l3
+  commit REPO [-m note]), or run it in one: notes, c1`); an issue is named as
+  it is called (`notes#2`, never its work's line name `002`); something
+  done already says where to see it (`notes#1 is merged already (l3 log
+  notes shows it)`); nothing to commit says of which repo, and why.
 
 ### The canonical copy is on the Remote
 
@@ -1319,7 +1373,10 @@ its owner and for anyone else; only the owner gets "edit". In order:
 identity (avatar, name, @handle, bio, counts of repos and servers; no name
 written yet, it is the one signed in with, as Remote and the Me menu say
 it: one person, one name, never "No name yet" beside "Signed in as Sora") →
-**TODO** → repos → servers (each one is in, a chip that opens Server on it).
+**TODO** → repos → servers (each one is in, a chip that opens Server on it;
+after them each board this browser writes in as a guest, #board with its
+server and guest beside it, opening Server at that board alone, so a guest
+come back, signed in or not, is led back to it).
 TODO is the person's single list; repos do not carry their own inbox or
 TODO files. An item is a first line named like an issue ("Fix：件名"),
 then detail lines (starting on the first line's column, with a kind or
@@ -1390,7 +1447,10 @@ off (the file last read in Forge, its mark, its repo quiet at the right, and
 under it the line it was left at, as written), the conversations with
 something not read (who wrote, their initial on one of four soft tints, the
 marker's, a step done's, a removal's, the sky's, the same for the same name;
-what it is and its words: Review：…), the boards with posts not seen (#); at
+what it is and its words: Review：…), the boards with posts not seen (#),
+and the boards this browser writes in as a guest (#, Trip · where you write
+as a guest: a way back always there, signed in or not, its card reading the
+board and writing in it as that guest); at
 each row's end one slot, the unread dot, a chevron under the pointer (it
 opens down where it stands), the × once open. A row is read whole where it
 stands, wrapped where its words break (in Japanese between phrases, never in
@@ -1439,7 +1499,9 @@ end (File's menu for the file read now: New file, New folder, Rename,
 Delete), the pills follow it and scroll, and ⊕ comes right after the last
 pill. One press brings every repo not on the band out at once; this is not
 adding tabs one at a time.
-Each pill comes off the band with its × (the repo itself is untouched).
+Each pill comes off the band with its × (the repo itself is untouched);
+alone on a band too narrow for it (a phone), its name ends in … rather than
+its × being cut at the band's edge.
 A repo whose copy is an issue's (Start in Git) says so on its pill, after
 its name, quietly (garden #1): what is written in Forge is for that issue.
 A file opened beside from its head is the one worked on and has the
@@ -1561,7 +1623,12 @@ terminal's letters with an empty cell where the caret will be (with no repo
 to run in, no cell: it says so there, Open a repo to run in it, as the search
 box says No repo to search); the keys that
 bring it up from anywhere (Ctrl `, only where they bring up what the box does:
-Run's, and Edit's Ctrl G); Run. While the prompt is in use the box
+Run's, and Edit's Ctrl G), and while it is written in, in their place, the
+keys that send what is in it (Ctrl Enter, beside Run, Create or Add; none for
+Edit): Enter is a new line there as in every box, so the hand that presses
+Enter as in a terminal finds the keys that run it beside Run, and on a line of
+one, Enter pressed, they give one after the other as keys pressed together;
+Run. While the prompt is in use the box
 becomes a screen and the terminal comes up in it over the center, the one thing
 in the app that is a thing of its own: a terminal's screen, dark glass in the
 app's ink with its words lit in the app's green (§3), the page behind it only a
@@ -1610,13 +1677,15 @@ terminal again, its lines as a terminal's. The terminal's box
 is labelled Prompt, after what one does there (the shell is BusyBox sh, so
 it is not called Bash); leaving the prompt
 (or Escape, or the × at the right end of its head, beside the lamp, there
-only while it is up) sends it back. The Prompt has no switch: writing
+only while it is up) sends it back; Escape and the × give the keyboard back
+to what had it before the box (the file, the page). The Prompt has no switch: writing
 to it starts it, and one that ended says so in its place, with Start
 again; stopping one is Runtime's. What is written in the box and not sent
 is the repo's: another repo shows its own, and coming back finds it.
 
 The box does more than run. Its pill says what it does and, pressed (or
-Alt+↓ in the box), brings out the four it can, out of the pill, each with
+Alt+↓ in the box, up as the screen too, out of the line's start where the
+pill went), brings out the four it can, out of the pill, each with
 the pill it gives (as wide as its words) and its keys, the words in one column: Run in the Prompt (the shell's prompt line,
 `garden $`), Write an issue (the repo's next issue, `garden #4`, in ink as an
 issue's number), Add to TODO (TODO's circle, on paper as Home's TODO box),
@@ -1715,15 +1784,32 @@ the query first), and its open issues and its runs too; what is found
 opens under the box over the center while the box has the keyboard (↓ goes
 into it, Enter takes the first, Escape back to the box; with the box empty,
 Escape gives the keyboard back to what had it before), and follows what is
-saved. A file found by its name opens with the caret in it, a line with the
+saved. The first is the first line found, or before it a file whose name
+holds the query: it is lit, its Enter on a key at its end, while the box has
+the keyboard. Each file found is headed by its name, how many of its lines
+were found beside it, quiet (3 lines), and, changed since the last commit,
+at the head's other end its diff as a diff is said everywhere (diff +5 and
+its squares), pressed to read it there; a name found by its lines alone and
+the diff are pressed, not gone along with ↓ (only a name that holds the
+query is). A file found by its name opens with the caret in it, a line with the
 line selected (where it is now, if it moved), a third of the way down, or
 with its file's head at the top when it is near it (never the empty foot of
 the file before over it); an issue, a changed file's
 diff or a run is read in the right pane. Under the top line, the plugin
 area: nothing until the rail's plug opens it, then up to seven plugins side
-by side, one at a time (none yet; with none it says so in one quiet line).
-The right pane has no switch of its own: from the top line down, one under
-another, each under its 15/600 heading, Issue (the repo's open issues, as Git shows them: one merged or
+by side, one at a time (none yet). With none it stays plain, nothing put
+there to fill it (issue #45): opened, the pane's top is that empty area and
+the Prompt moves down under it, level with the foot of the rail's Inbox, as
+it does under plugins; the plug, which says it is out, is the way back.
+The right pane has no switch of its own. At rest it says, on the Prompt's
+head line at its right end and as quiet as that head, Issue, diff (with how
+many files are changed since the last commit, diff 2) and 実行結果, the three
+the search box switches between, so a pane that holds only a prompt line
+still shows what else is there: a head pressed opens its view under the
+search box, as its pill there does, and the view stays out beside the file as
+the keyboard goes back to it (the shade lifting), until it is put away:
+Escape in the box, the × at the end of the strip under the view, or its pill
+pressed again. The views: Issue (the repo's open issues, as Git shows them: one merged or
 closed is not among them; one line each as #3 Fix：件名, pressed to read one in full), diff (the changes not yet
 cut, file by file: added lines in ink with no fill, the lines kept quiet,
 removed lines quiet and struck, following every save; a file's name opens
@@ -2249,7 +2335,10 @@ the gear's do, never swapped in one frame):
   left edge, under the head 見せる先, a row per server one is in, the ones
   the repo is shown in bold; pressing one shows it there or takes it off
   at once, and the list stays for the next. A press outside, Escape or
-  Share again closes it. Going public is the server's, in its gear (seen
+  Share again closes it. In no server yet, the list says so and leads on:
+  Make a server…, which brings Server out where the first is made; or, on
+  the free plan, where making one is paid, that it is and See the plan.
+  Going public is the server's, in its gear (seen
   as the server's, so nothing ties it to you).
 - **Sign-in**: passkeys, the code to turn a repo off (five letters or
   digits, set with a passkey; only its digest is kept), then the providers
@@ -2264,14 +2353,16 @@ the gear's do, never swapped in one frame):
   nothing to press in its row: it signs out from the person's menu at the
   foot of the rail, which also forgets the session here.
 
-- **Plan**: the tier the account is on, Free plan or Pro plan in a figure's
-  size (20/600), and under it the one date that matters in `sub` (renews,
-  ends, how long a failed payment stays paid; free: what free keeps). Then
-  On the Remote, three **meters** (§3): repos on the Remote, what is kept
-  there and names here, each against what that tier keeps (repos as many as
-  fit: the figure alone), and, when over, one quiet line that what is there
-  stays and what is new waits on the device. Then Plans: free and the three
-  tiers side by side as small **cards** (§3), each with its price as Stripe
+- **Plan**: Plans first, at the part's top: free and the three tiers side by
+  side as small **cards** (§3), four across the part (two, then one, as it
+  narrows), and at the heading's right the tier the account is on with the
+  one date that matters in `sub` (renews, ends, how long a failed payment
+  stays paid; free: what free keeps). Under them On the Remote, three
+  **meters** (§3): repos on the Remote, what is kept there and names here,
+  each against what that tier keeps (repos as many as fit: the figure alone),
+  and, when over, one quiet line that what is there stays and what is new
+  waits on the device. (A Remote showing no tiers says the tier in a figure's
+  size instead, over the meters.) Each tier's card has its price as Stripe
   says it, what it keeps, and its one deed at the right of its foot; the
   account's own is current (an `ink` edge over `raised`) with nothing to
   press, and one that keeps less than is kept now says that what is there
@@ -2368,7 +2459,9 @@ the card shakes. Server's layer says it the same way, where its boards
 would be. Writing is one line that grows as it is written: a message is named
 the way an issue is ("Review：…", "Question：…"), and a `/root/…` path in it
 says what it is about, so there is nothing else to choose. Enter is a new
-line, Ctrl+Enter sends.
+line, Ctrl+Enter sends. A message about a server (being asked into it, or
+added to it at once by someone one knows) shows the server's name over
+it, once one is in it, and pressed, Server comes out at it.
 
 What comes while one works elsewhere is said where one is: in Forge and Git,
 the conversations not read whose last word is not one's own (the two newest,
@@ -2400,10 +2493,13 @@ it. A server's own repos are what comes next.
 A server is a name and its people. Someone already in it adds people from
 their own Inbox contacts, so a server is people who know each other; or by
 a name or a code, in the card that adds: someone one knows both ways is in
-at once, anyone else is asked in the Inbox (a message about the server, a
+at once, and told so in their Inbox (I added you to Trip., a message about
+the server whose name there opens Server at it), anyone else is asked in
+the Inbox (a message about the server, a
 request until they accept) and is in the moment they accept the one who
 asked, so long as that one is still in it (within 30 days); the card says
-they were asked. Anyone
+they were asked. A message about a server shows its name as a way to it
+once the reader is in it. Anyone
 may leave, the owner may remove someone, and the last to leave takes it
 with them. Its boards are what its people talk about, each one thing (a
 trip, a release, a reading group), and each holds two things:
@@ -2453,13 +2549,24 @@ taking guests (or stops being open) ends every invitation and guest at
 once, so opening it again lets nobody back by an old link; someone who
 leaves the server takes the invitations they made with them.
 
-Server is an overlay (§3), on the bench's shape. Its pieces, from §3:
+Server is an overlay (§3), on the bench's shape. It comes out whole: a
+rest on its icon makes it ready unseen, reading what it opens on (the
+servers, the board on screen's talk and TODO, its people), so what comes
+out after the rest is all there; pressed out, it waits for that a moment
+at most (300 ms) before it comes. A rest that does not last lets it go
+unseen, and nothing it read while unseen counts as seen. Its pieces, from §3:
 
 - **The band**: + first at the top line's left end, to make a server, then
-  the servers one is in; the gear at the right end (kept in its place,
-  unpressable, while none is chosen). A server is made where it will
+  the servers one is in, one row however many there are, sliding sideways
+  as Git's repos do (never more rows pushing the boards down), its ends
+  fading where there is more along it and the one chosen, or being named,
+  slid into view; the gear at the right end (kept in its place,
+  unpressable, while none is chosen), in ink while one is behind it, as a
+  chip chosen is, turning a tooth's step as it is pressed either way. A server is made where it will
   stand, not in a form: its chip is the field, in the band after the
-  others (dashed until it has a name), saying one name: its name on this
+  others (dashed until it has a name; empty, it says a name none of one's
+  servers has, Trip, else Book club, Family or Band, so it is not read as
+  a second of one already there), saying one name: its name on this
   Remote follows the name unseen (Trip is trip), and the quiet @ at the
   chip's end shows it to be written otherwise, the @ staying where it was
   as its first letter; a name someone else has shows it by itself. Make
@@ -2473,27 +2580,53 @@ Server is an overlay (§3), on the bench's shape. Its pieces, from §3:
   screen and stands under it, sliding with it board to board. What the name
   on this Remote is (first come, five years) is said when the @ is
   pointed at; what the Remote says no to (the plan: making a server is
-  paid, §6; a name taken; one's own name to claim first) is said at the
-  chip's end when it says it, with the way on (See the plan, Go to Inbox).
+  paid, §6; a name taken; one's own name to claim first) is said on a line
+  of its own under the band, where the row cannot slide it out of sight,
+  when it says it, with the way on (See the plan, Go to Inbox). Escape
+  while one is named, come to from a server, goes back to that server
+  (what was written is kept), and only then puts Server away.
   Being asked into a server, and writing, are free.
-- **Boxes side by side**: its boards, the last box making a new one (a
+- **Boxes side by side**: its boards, the last box making a new one, as a
+  server is, where it will stand: the board it will be, dashed on the
+  ground, its name written in its head in a board name's letters with Make
+  beside it, what a board is said quietly at the top of where its talk will
+  be, its TODO's first line and No posts yet faint where they will stand;
+  come to by a press, its name takes the keyboard (by ← →, the keyboard
+  stays on the row to go on along it); made, the same shapes stand there
+  whole, and the edge of the next new one, dashed with its +, beside it (a
   name another board in the server has, whatever its case, is refused under
-  its field, there and on the Remote, made, renamed or brought back). A
+  its field, there and on the Remote, made, renamed or brought back). An
+  edge under the pointer lights the box it goes to as a thing under the
+  pointer is (raised, edged in ink), over a moment each way, so a hand
+  resting on the line does not make it flicker. The
+  board slid away from goes as it was, its posts and TODO with it, and is
+  only its edge once the row has stopped; the one slid to is drawn as the
+  row starts, what it reads coming up where it stands. A hand resting on an
+  edge (120 ms), or pressing along, has the box it goes to read ahead,
+  unseen (it looks as an edge does, and nothing in it counts as seen), so
+  it slides in with all it holds. A
   board on screen is one sheet, never a box in a box: its name across it
   over a quiet rule, its talk at the left as tall as the board (the latest
   at its foot, what was said before above, the board open at its foot while
   there is more below, so the eye goes on down), and **its TODO** beside it
   at the right, a column of its own past a rule, scrolling in itself when
   long; nothing switched to see one or the other. Narrow, the TODO comes
-  over the talk, a few lines tall. Outside the server an open
+  over the talk, as tall as its lines (the keys it is written with, a
+  desk's, keep no room there), and the talk and its faces are a step
+  tighter. Outside the server an open
   board's TODO is shown, not written, and not at all while empty.
-- **The box at the foot** writes in the board on screen (旅行 の人たちへ).
+- **The box at the foot** writes in the board on screen (旅行 の人たちへ),
+  Post at its bottom right as Forge's box has Run and Inbox's Send (its
+  keys, Ctrl+Enter, in its title; Enter is a new line), the keyboard
+  staying in the box once it is pressed.
   What is half written in it is that board's (§1): going to another board,
   or putting Server away, keeps it, and it is there when the board is on
   screen again; gone once sent. While it holds words, a press outside does
   not put Server away (Escape and a second press on its icon still do).
 - **The right pane**: who is in it (face, name, owner), then the repos
-  they show in it (name and whose), standing as Forge's pane does: its
+  they show in it (name and whose), looked at again every little while
+  (15 s) while it is out, so someone asked in who accepts on their own
+  device comes in there then, standing as Forge's pane does: its
   line at its edge from the top line to the foot, its first heading on the
   line Forge's Prompt is on, and at the top line's right end, where
   Forge's pane switch is, the gear (the same quiet circle), over the people
@@ -2501,21 +2634,29 @@ Server is an overlay (§3), on the bench's shape. Its pieces, from §3:
   A repo pressed takes the boards' place
   with the page head (its name, whose, Forge when one's own, Back) and one
   box in two panes: its files, the one chosen (its README first), as it
-  was last pushed.
+  was last pushed; its row in the pane stays lit while it is shown.
 - **Behind the gear**, in the boards' place: the page head (the server's
   name, its name on the Remote and code; Done at the sheet's bottom right),
-  then **parts** of **small
+  then **parts** (their counts as the pane last drew them, at once, so the
+  parts' names do not step sideways when the reading comes) of **small
   cards**: People (a dashed card to add someone one knows, pressed the card
   that adds: one's contacts not in it, each a button, then a field for a
-  name or a code and 入れる; its owner removes someone), Repos (each of one's own with **the pair of
+  name or a code and 入れる; its owner removes someone; looked at again
+  every little while, as the pane is, so someone who accepts comes in
+  there), Repos (each of one's own with **the pair of
   switches**, to its people and to everyone, seen by everyone as the
   server's; others' shown here, whose, its owner may take them off),
-  Boards (to everyone and guests, its owner's; Take home, anyone's;
+  Boards (to everyone and guests, its owner's, taking guests saying first
+  that anyone then reads it, where it is not open yet; turning either off
+  at once, unless guests are in or invitations out: that ends them, an old
+  link letting nobody back, so it asks in the card first, saying how many
+  and that what they wrote stays (Not now / Turn off); Take home, anyone's;
   Remove, its owner's: the board is held 30 days, off the boards, its card
   quiet with its 外す red, and pressed again it is back at once; beside a
   board that takes guests, its Guests card: the guests in, each with who
   invited them and Remove, asked in the card; the invitations out, each with
-  whose and until when and Revoke, at once; and Invite a guest at its foot,
+  whose and until when and Revoke, at once (each a name over a quiet line of
+  what more, so a narrow card does not break a name mid-word); and Invite a guest at its foot,
   which shows the link once, copied by a press), This server (its name, code and term, Renew near its
   end; Leave; its owner's Delete). Leave and Delete say what they come to,
   as the Remote does it: who owns it next (the first of the others to have
@@ -2538,8 +2679,10 @@ rules: a run of one address's posts within five minutes shows the face
 (the address's first letters in a circle), the name, the domain (or guest)
 and the time once, then each text under it, and the day's name, quiet and
 centred, marks where a day starts. A post's writer, and the server's owner,
-may take it down: it comes out at its top right on hover, round, and asks
-once more in its own place for a moment. Nothing is counted.
+may take it down: it comes out at its top right on hover, round, inside
+the post (not over the one above, which a hand going up the talk would
+then pass over still lighting the one below), and asks once more in its
+own place for a moment. Nothing is counted.
 
 The talk has no end to reach and nothing to press. With no post yet, it
 says so at its foot, by the box one writes in, where the first will come.
@@ -2547,7 +2690,10 @@ While it goes on below what is shown, the board's box is open at its foot
 (no line under it, the posts running past the edge), so there is plainly
 more to scroll to; at the foot it closes. It opens at the newest;
 scrolled near its top, the next older posts are read in above without
-moving what is on screen, and at the very top it says it is every post.
+moving what is on screen, and at the very top it says it is every post
+(not where every post is on the board at once: that is plain to see).
+Reading is said only when it takes a while (a quarter of a second), so a
+page read at once comes without a word flashing before it.
 What comes meanwhile is put at the foot: followed when the foot is in view
 (and always after one's own post), otherwise with a small ink pill (↓ 3 new
 posts), which goes down to them. The foot in view is what reading the board
@@ -2636,8 +2782,10 @@ out the row's menu; a right press on the row, or the menu key (Shift+F10)
 on its name, does the same. The menu is the person's menu (`.pop`): beside
 the tree at the row's height, out in the free space so nothing moves, its
 head the row's name, a row per deed. A folder, the repo's own row too, has
-New file and New folder; a file or folder has Rename and Delete (a repo is
-not renamed or deleted here). A deed pressed becomes the field or the ask in
+New file and New folder, made in it; a file has them too, made beside it in
+its folder (so Forge's files button, which brings out the menu of the file
+read now, makes a new file there); a file or folder has Rename and Delete (a
+repo is not renamed or deleted here). A deed pressed becomes the field or the ask in
 its own place: a name written and Enter makes it (a name is one plain part,
 with no "/" and not starting with "."; one already there is said under the
 field and the keyboard stays in it); Delete asks there, `{name}を消します`

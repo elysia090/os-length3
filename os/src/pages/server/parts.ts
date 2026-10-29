@@ -6,6 +6,17 @@ import type {Server} from '../../remote/servers.ts';
 
 // The pieces Server's parts share (its view, band, boards, gear, dock and the rest in this folder).
 
+/** Where Server was last, or is to open next: a server and its board, or a board alone (one written in as a guest). */
+export interface At { server?: string; board?: string }
+const AT = 'length3.server.at';
+export function remembered(): At {
+  try { return JSON.parse(localStorage.getItem(AT) ?? '{}') as At; } catch { return {}; }
+}
+/** Server opens at `at` next (pages that lead to a server or a board say where, then bring Server out). */
+export function remember(at: At) {
+  try { localStorage.setItem(AT, JSON.stringify(at)); } catch { /* a convenience */ }
+}
+
 /** A switch's knob moves this long before what it turns on is asked. */
 export const MOVE = 240;
 
@@ -74,3 +85,14 @@ export const line = (text: string) => (text ? h('span', {class: 'muted small'}, 
 export const foot = (...xs: (Node | null)[]) => h('div', {class: 'card-foot'}, h('span', {class: 'grow'}), ...xs);
 /** A card's foot with what goes against what the card is for (a person taken out of it): at the left. */
 export const footLeft = (...xs: (Node | null)[]) => h('div', {class: 'card-foot'}, ...xs, h('span', {class: 'grow'}));
+
+/** Each field as wide as what is written in it (or its placeholder), as a chip is. */
+export function fitting(...fields: HTMLInputElement[]): () => void {
+  const pen = document.createElement('canvas').getContext('2d');
+  const wide = (f: HTMLInputElement) => {
+    if (!pen || !f.isConnected) return;
+    pen.font = getComputedStyle(f).font;
+    f.style.width = `${Math.ceil(pen.measureText(f.value || f.placeholder).width) + 2}px`;
+  };
+  return () => { for (const f of fields) wide(f); };
+}
