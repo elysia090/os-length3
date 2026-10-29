@@ -3028,8 +3028,9 @@ person's first: /root on top with the repos open in it, and the rest of /
 (the kernel's, the distribution's, what is empty here), wanted now and then,
 put away under one quiet row at its foot, System (its first names beside it),
 shut until it is opened and kept open once it is. While it is out, File is the one filled icon in
-the rail; the page's own icon steps back until it goes. Nothing under it
-moves. The pointer resting on File a moment (300 ms) brings it out, never
+the rail; the page's own icon steps back until it goes, the ink going from
+the one to the other as it does between places (the servers a rest on Server brings out and the plug's
+area take it the same way). Nothing under it moves. The pointer resting on File a moment (300 ms) brings it out, never
 the pointer passing down the rail; brushed past on the icon alone, it goes
 half a second after the pointer does, and from the tree itself a little
 after (1.2 s), so a reach back finds it but the page is never left under a

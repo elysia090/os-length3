@@ -87,6 +87,38 @@ test('pressed again before the pan has moved, the rail goes straight to the plac
   expect((await seen()).drawn.filter((d) => d !== 'purpose-remote')).toEqual([]);
 });
 
+test('File\'s tree out and away: the rail\'s ink goes from the page\'s place to File and back, never an icon ink on ink', async ({app}) => {
+  await app.rail.go('home');
+  await still(app);
+  // Every place on the rail, frame by frame: none drawn in ink on a fill of ink, as an icon would be gone.
+  const watch = () => app.page.evaluate(() => new Promise<string[]>((done) => {
+    const t0 = performance.now(), bad: string[] = [];
+    let inks = 0;
+    const tick = () => {
+      for (const b of document.querySelectorAll<HTMLElement>('#rail-tabs > .rail-item')) {
+        const cs = getComputedStyle(b), bg = cs.backgroundColor, fg = cs.color;
+        // Ink on a fill dark enough to hide it (the fill a third of the way to ink, or more).
+        const dark = (c: string) => { const m = c.match(/[\d.]+/g)!.map(Number); return (m[3] ?? 1) > .35 && m[0] + m[1] + m[2] < 300; };
+        if (dark(bg) && dark(fg)) bad.push(`${b.id} ${bg} ${fg} @${Math.round(performance.now() - t0)}`);
+      }
+      inks = Math.max(inks, document.querySelectorAll('#rail-tabs .glide-ink').length);
+      if (performance.now() - t0 < 1200) requestAnimationFrame(tick); else done([...bad, `inks ${inks}`]);
+    };
+    requestAnimationFrame(tick);
+  }));
+  const out = watch();
+  await app.rail.button('file').click();
+  await expect(app.file.tree).toBeVisible();
+  expect(await out).toEqual(['inks 1']);
+  const back = watch();
+  await app.page.keyboard.press('Escape');
+  await expect(app.file.tree).toBeHidden();
+  expect(await back).toEqual(['inks 1']);
+  // Out, File is the one inked place; away, the page's own again.
+  await still(app);
+  expect(await app.rail.button('home').evaluate((b) => getComputedStyle(b).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
+});
+
 test('the rail pressed again as its ink goes: one ink, going on from where it is', async ({app}) => {
   await app.rail.go('home');
   await still(app);

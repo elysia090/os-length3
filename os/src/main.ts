@@ -349,7 +349,8 @@ function draw(id: PurposeId, quiet: boolean, panned: boolean) {
   opened = true;
   // Who is in, as the first page is drawn for them (onConnection draws it again only for another).
   if (first) wasIn = whoIsIn();
-  const inkWas = where(tabs.get(from)?.getAttribute('aria-current') ? tabs.get(from) : null);
+  // Where the ink is: the page's own place, or the one whose tree, servers or area is out over it.
+  const inkWas = where(inked(expanded()));
   current = id;
   serverSwitch.close();
   for (const [tabId, tab] of tabs) {
@@ -439,6 +440,28 @@ const me = new Me(ctx, currentProfile, {editProfile: () => startEditing(ctx)});
 $('rail-me').append(me.element);
 
 $('rail-tabs').append(...PURPOSES.map((p) => railButton(p.id)), railButton(NEW_REPO.id));
+/** The rail's places out over the page now (File's tree, Server's servers beside the rail, the plug's area). */
+const expanded = () => new Set<HTMLElement>([...tabs.values()].filter((b) => b.getAttribute('aria-expanded') === 'true'));
+/** The one place the rail's ink is on: the one out over the page, else the page's own; none while two are out (each
+ * is inked). */
+function inked(out: Set<HTMLElement>): HTMLElement | null {
+  if (out.size > 1) return null;
+  const [one] = out;
+  return one ?? [...tabs.values()].find((b) => b.getAttribute('aria-current')) ?? null;
+}
+// File's tree, Server's servers or the plug's area out or away: the ink goes from where it was to where it is, as it
+// does between pages, rather than one fading out as the other fills (the page's icon, its fill fading, would be ink
+// on ink a moment).
+new MutationObserver((records) => {
+  const now = expanded(), before = new Set(now), seen = new Set<Node>();
+  for (const r of records) {
+    if (seen.has(r.target)) continue;
+    seen.add(r.target);
+    if (r.oldValue === 'true') before.add(r.target as HTMLElement); else before.delete(r.target as HTMLElement);
+  }
+  const from = inked(before), to = inked(now);
+  if (from && to && from !== to) glide(from.getBoundingClientRect(), to, $('rail-tabs'), 'var(--r-place)');
+}).observe($('rail-tabs'), {subtree: true, attributes: true, attributeFilter: ['aria-expanded'], attributeOldValue: true});
 railOpening();
 // The rail's name, in the language the OS starts in (index.html has the English).
 document.querySelector('.rail')?.setAttribute('aria-label', t('Purposes'));
