@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {addToBand, BESIDE, closeBeside, moveTo, offBand, openBeside, parseBand, removeFromBand, showIn} from './band.ts';
+import {addToBand, BESIDE, closeBeside, moveTo, offBand, openBeside, parseBand, removeFromBand, renamedIn, showIn} from './band.ts';
 
 test('a band never stored starts with the open repo, a stored one keeps only real repos', () => {
   assert.deepEqual(parseBand(null, ['a', 'b'], 'b'), ['b']);
@@ -49,4 +49,10 @@ test('a repo dragged along the band or the row lands where it is let go', () => 
   assert.deepEqual(moveTo(['a', 'b', 'c'], 'b', 1), ['a', 'b', 'c']);
   assert.deepEqual(moveTo(['a', 'b', 'c'], 'b', 2), ['a', 'b', 'c']);
   assert.deepEqual(moveTo(['a', 'b'], 'x', 0), ['a', 'b']);
+});
+
+test('a repo renamed keeps its place on the band and beside, its files beside with it', () => {
+  assert.deepEqual(renamedIn(['a', 'trip', 'b'], 'trip', 'tour'), ['a', 'tour', 'b']);
+  assert.deepEqual(renamedIn(['trip', 'trip:docs/plan.md', 'trips'], 'trip', 'tour'), ['tour', 'tour:docs/plan.md', 'trips']);
+  assert.deepEqual(renamedIn(['a'], 'trip', 'tour'), ['a']);
 });

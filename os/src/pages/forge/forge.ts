@@ -2,7 +2,7 @@ import {closeBeside, moveTo, openBeside, removeFromBand, showIn} from '../../hom
 import {currentLang, t} from '../../i18n.ts';
 import {h} from '../../ui/dom.ts';
 import {onSync} from '../../remote/lifecycle.ts';
-import {store} from '../../repos/repos.ts';
+import {onRenamed, store} from '../../repos/repos.ts';
 import type {Context} from '../context.ts';
 import {bench, type Bench} from '../bench/bench.ts';
 import {openNext as openConversation} from '../inbox.ts';
@@ -10,8 +10,8 @@ import type {Writing} from './reader.ts';
 import {startIssue} from '../git/issue-form.ts';
 import {showIssue} from '../git/git.ts';
 import {panAcross, still} from '../../ui/glide.ts';
-import {fileOf, keyOf, narrow, repoOf, Row, shrink} from './columns.ts';
-import {Band} from './pills.ts';
+import {besideRenamed, fileOf, keyOf, narrow, repoOf, Row, shrink} from './columns.ts';
+import {Band, bandRenamed} from './pills.ts';
 import {Drag, dropInto} from './drag.ts';
 import {takeFiles} from './files-in.ts';
 import {keysAlong, swipeAlong} from './along.ts';
@@ -71,6 +71,14 @@ let made: Forge | null = null;
 export const keptForge = (): HTMLElement | null => (madeIn === currentLang() ? made?.element ?? null : null);
 /** The language Forge was made in: another chosen since, it is made again, so none of its words stay in the last one. */
 let madeIn: string | null = null;
+
+// A repo renamed (from its gear on Home or Runtime): its pill keeps its place on the band and its boxes theirs in the
+// row, under the new name; Forge not made yet in this visit, what it will read is kept so.
+onRenamed((from, to) => {
+  if (made) { made.renamed(from, to); return; }
+  bandRenamed(from, to);
+  besideRenamed(from, to);
+});
 
 /** Forge's page: made once (again in another language), and come back to as it was left. */
 export function forge(ctx: Context): Node[] {
@@ -148,6 +156,16 @@ class Forge {
 
   /** Made again (another language): it no longer follows the store or the Remote. */
   drop() { this.offChange(); this.offSync(); }
+
+  /**
+   * A repo renamed: on the band and in the row under its new name, where it stood. Worked on, it is again when Forge
+   * is come back to (the repo worked on follows the name, main.ts), its page read anew under it.
+   */
+  renamed(from: string, to: string) {
+    this.band.renamed(from, to);
+    this.row.renamed(from, to);
+    if (this.known === from) this.known = to;
+  }
 
   /**
    * `name`, shown, is the one worked on: the prompt, the search and File follow it, the row as it is. `anew`, it is

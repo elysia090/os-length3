@@ -1,4 +1,4 @@
-import {addToBand, moveTo, offBand, parseBand} from '../../home/band.ts';
+import {addToBand, moveTo, offBand, parseBand, renamedIn} from '../../home/band.ts';
 import {getState, setState} from '../../home/state.ts';
 import {t} from '../../i18n.ts';
 import {arrowKeys, h} from '../../ui/dom.ts';
@@ -6,6 +6,7 @@ import {mark} from '../../ui/icons.ts';
 import {glide, LAND, paced, still, where} from '../../ui/glide.ts';
 import {bring, remoteOnly} from '../../remote/lifecycle.ts';
 import {work as workOn} from '../../repos/history.ts';
+import {rekey} from '../../repos/repos.ts';
 import {repoOf, type Row} from './columns.ts';
 import type {Drag} from './drag.ts';
 
@@ -25,6 +26,14 @@ interface BandWays {
   takeOff(name: string): void;
   /** The first button (`at`): the deeds for the file read now (or the repo itself), out under it. */
   act(at: HTMLElement): void;
+}
+
+/** A repo renamed while no band is out to hold it: the band as kept says it under its new name. */
+export function bandRenamed(from: string, to: string) {
+  try {
+    const kept: unknown = JSON.parse(getState('band') ?? 'null');
+    if (Array.isArray(kept)) void setState('band', JSON.stringify(renamedIn(kept.filter((n): n is string => typeof n === 'string'), from, to))).catch(() => {});
+  } catch { /* the band is a convenience */ }
 }
 
 /** The band on Forge's top line, over the `row` it says the repos of. */
@@ -81,6 +90,16 @@ export class Band {
   }
 
   save() { void setState('band', JSON.stringify(this.names)).catch(() => { /* the band is a convenience */ }); }
+
+  /** A repo renamed: its pill stays where it was on the band, under its new name, and the band is kept so. */
+  renamed(from: string, to: string) {
+    rekey(this.onIssue, from, to);
+    // Not read from what is kept yet: what is kept is renamed, and read so.
+    if (this.first) { bandRenamed(from, to); return; }
+    this.names = renamedIn(this.names, from, to);
+    this.all = renamedIn(this.all, from, to);
+    this.save();
+  }
 
   /** Every repo: here, and only on the Remote (fetched when it comes out, as opening one from Home does). */
   private every() { return [...this.all, ...remoteOnly().map((r) => r.name).filter((n) => !this.all.includes(n))]; }

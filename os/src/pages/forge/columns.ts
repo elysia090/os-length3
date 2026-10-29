@@ -3,6 +3,7 @@ import {h} from '../../ui/dom.ts';
 import {icon, mark} from '../../ui/icons.ts';
 import {after, LAND, paced, still} from '../../ui/glide.ts';
 import {onChange} from '../../repos/repos.ts';
+import {renamedIn} from '../../home/band.ts';
 import {shownName} from '../../repos/issues.ts';
 import {Reader} from './reader.ts';
 import type {Drag} from './drag.ts';
@@ -21,6 +22,8 @@ interface View { col: HTMLElement; flow: HTMLElement; reader: Reader; root: HTML
 const BESIDE_KEY = 'length3.forge.beside';
 const readBeside = (): string[] => { try { const v: unknown = JSON.parse(localStorage.getItem(BESIDE_KEY) ?? '[]'); return Array.isArray(v) ? v.filter((n): n is string => typeof n === 'string') : []; } catch { return []; } };
 const saveBeside = (shown: string[]) => { try { localStorage.setItem(BESIDE_KEY, JSON.stringify(shown)); } catch { /* a convenience */ } };
+/** A repo renamed before Forge is made in this visit: what stood beside is kept under its new name. */
+export const besideRenamed = (from: string, to: string) => saveBeside(renamedIn(readBeside(), from, to));
 /** A box in the row is a repo's page (its name) or one file of it beside (name:path; a repo's name has no colon). */
 export const repoOf = (key: string) => key.split(':')[0];
 export const fileOf = (key: string) => (key.includes(':') ? key.slice(key.indexOf(':') + 1) : null);
@@ -276,6 +279,17 @@ export class Row {
   keep(name: string) {
     const v = this.views.get(name);
     if (v) v.top = v.flow.scrollTop;
+  }
+
+  /**
+   * A repo renamed: its boxes stand where they stood, under its new name (its pages, which read it by its old one,
+   * are made again when shown); worked on, none is until Forge is come back to and works on it again.
+   */
+  renamed(from: string, to: string) {
+    for (const k of [...this.views.keys()]) if (repoOf(k) === from) this.forget(k);
+    this.shown = renamedIn(this.shown, from, to);
+    if (this.repo && repoOf(this.repo) === from) this.repo = null;
+    saveBeside(this.shown);
   }
 
   /** `name`'s box gone from the row, and its page with it: shown again, it opens at its top. */

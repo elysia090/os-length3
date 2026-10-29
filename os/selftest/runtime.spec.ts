@@ -246,6 +246,47 @@ test('signed out, a repo is renamed and deleted from its gear, asked in place; F
   await expect(app.main.getByRole('button', {name: /^Make your first repo/})).toBeVisible();
 });
 
+test('a repo renamed from its gear keeps its place on the band, worked on, with what was half written for it, its search, where one left off and its chip in Git', async ({app}) => {
+  await app.newRepo.make('alpha');
+  await app.newRepo.make('beta');
+  await app.forge.open('alpha');
+  // Read in it (Lately's where one left off), half written for it in the box (an issue, not a line for the Prompt),
+  // and searched in it.
+  await app.forge.editor('README.md').click();
+  // (Taken as where one is a moment after the hand is still, as the page has it.)
+  await app.page.waitForTimeout(400);
+  await app.rail.go('home');
+  await expect(app.page.getByRole('complementary').first()).toContainText('alpha · where you left off');
+  await app.rail.go('forge');
+  await app.forge.promptBox.click();
+  await app.forge.promptBox.press('Alt+2');
+  await app.forge.promptBox.fill('Fix: the map is upside down');
+  await app.forge.search.fill('needle');
+  await app.rail.go('home');
+  const repos = app.main.getByRole('region', {name: 'Repos'});
+  await repos.getByRole('button', {name: 'What to do with alpha'}).click();
+  const menu = repos.getByRole('menu', {name: 'What to do with alpha'});
+  await menu.getByRole('menuitem', {name: 'Rename'}).click();
+  await menu.getByRole('textbox', {name: 'New name'}).fill('gamma');
+  await menu.getByRole('textbox', {name: 'New name'}).press('Enter');
+  await expect(repos.getByRole('group', {name: 'gamma', exact: true})).toBeVisible();
+  // Where one left off says it under its new name.
+  await expect(app.page.getByRole('complementary').first()).toContainText('gamma · where you left off');
+
+  await app.rail.go('forge');
+  const pills = app.forge.band.locator('.pill');
+  await expect(pills).toHaveCount(2);
+  await expect(pills.nth(0)).toHaveAttribute('data-repo', 'gamma');
+  await expect(pills.nth(0)).toHaveAttribute('aria-current', 'page');
+  await expect(pills.nth(1)).toHaveAttribute('data-repo', 'beta');
+  await expect(app.forge.editor('README.md')).toHaveValue(/^# alpha/);
+  await expect(app.forge.promptBox).toHaveValue('Fix: the map is upside down');
+  await expect(app.forge.search).toHaveValue('needle');
+  await app.rail.go('git');
+  await expect(app.git.repos.getByRole('radio', {name: 'gamma', exact: true})).toBeVisible();
+  await expect(app.git.repos.getByRole('radio', {name: 'alpha', exact: true})).toHaveCount(0);
+});
+
 test('signed in, a repo on the Remote is deleted from its gear as turning it off asks: it goes from here, and the Remote keeps it off', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
   await app.rail.go('home');

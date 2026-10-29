@@ -3,6 +3,7 @@ import type {Stopped} from '../../app/host.ts';
 import {t, tn} from '../../i18n.ts';
 import {allSessions, type Session} from '../bench/terminal.ts';
 import {getState, setState} from '../../home/state.ts';
+import {onRenamed} from '../../repos/repos.ts';
 import {errorText} from '../../app/errors.ts';
 import {button, card} from './parts.ts';
 
@@ -19,6 +20,8 @@ async function grant(repo: string, on: boolean) {
   if (on) all.add(repo); else all.delete(repo);
   await setState('network', JSON.stringify([...all].sort()));
 }
+// A repo renamed keeps its grant under its new name.
+onRenamed((from, to) => { if (granted().includes(from)) void grant(from, false).then(() => grant(to, true)).catch(() => {}); });
 
 /**
  * The network for a Prompt on the root, as a plain switch: a namespace cannot

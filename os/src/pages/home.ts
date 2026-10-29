@@ -6,7 +6,7 @@ import {getState, setState, settingName, unreadable} from '../home/state.ts';
 import * as servers from '../remote/servers.ts';
 import * as inbox from '../remote/inbox.ts';
 import {news, onNews} from '../remote/news.ts';
-import {store} from '../repos/repos.ts';
+import {onRenamed, store} from '../repos/repos.ts';
 import {shownName} from '../repos/issues.ts';
 import {repoList} from './repo-list.ts';
 import {todoBox} from './todo-list.ts';
@@ -155,6 +155,8 @@ function lately(ctx: Context): HTMLElement {
   void paint();
   list.addEventListener('look-closed', () => void paint());
   const off = onNews(() => { if (!box.isConnected) { off(); return; } void paint(); });
+  // A repo renamed: where one left off says it under its new name.
+  const offRenamed = onRenamed(() => { if (!box.isConnected) { offRenamed(); return; } void paint(); });
   return box;
 }
 

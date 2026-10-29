@@ -1946,7 +1946,12 @@ Rename gives it, a name that cannot be, or one here or on the Remote
 already, said under it): only a repo no Remote has, since the Remote knows an
 account's repos by their names and every device keeps each in step by it
 (one there says so under Rename, which stays greyed); its copy, its works'
-copies, its environment and caches go to the new name (`repo_rename`). Delete
+copies, its environment and caches go to the new name (`repo_rename`), and
+so does everything that holds it by name: its pill keeps its place on Forge's
+band (the one worked on is still the one worked on, its boxes where they
+stood beside), Git's chip chosen stays chosen, and what was half written in
+the box for it, its search, what was searched and read, where one left off
+(Lately) and its Prompts' network grant are its new name's. Delete
 of a repo no Remote has asks in its row as File's Delete does ({repo} goes
 from this device, with everything in it; nothing keeps it elsewhere, so it
 cannot be brought back), Not now and 消す at its foot; it goes from this

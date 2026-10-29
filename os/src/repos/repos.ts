@@ -206,9 +206,13 @@ class Observed implements RepoStore {
     this.tell({repo, path, what: 'removed', by});
     await this.made(repo, to, by);
   }
-  /** The repo renamed: told as the old one gone and the new one come, each as a repo that changed. */
+  /**
+   * The repo renamed: what holds it by its name hears it first (onRenamed: the band, where one left off, what was
+   * half written for it), then it is told as the old one gone and the new one come, each as a repo that changed.
+   */
   async renameRepo(repo: string, to: string, open: string[], by?: string) {
     await this.inner.renameRepo(repo, to, open);
+    this.changes.dispatchEvent(new CustomEvent<{from: string; to: string}>('renamed', {detail: {from: repo, to}}));
     this.tell({repo, path: '', what: 'repo', by});
     this.tell({repo: to, path: '', what: 'repo', by});
   }
@@ -301,6 +305,23 @@ export async function inPieces<T, R>(items: T[], size: (item: T) => number, read
     at = end;
   }
   return out;
+}
+
+/**
+ * Hear each repo renamed (`from`, `to`): what is held by a repo's name while the app runs, or kept by it here, follows
+ * it to the new name. Returns the way to stop.
+ */
+export function onRenamed(listen: (from: string, to: string) => void): () => void {
+  const f = (e: Event) => { const {from, to} = (e as CustomEvent<{from: string; to: string}>).detail; listen(from, to); };
+  store.changes.addEventListener('renamed', f);
+  return () => store.changes.removeEventListener('renamed', f);
+}
+
+/** `map`'s entry at `from`, if it has one, at `to` instead (a repo renamed). */
+export function rekey<V>(map: Map<string, V>, from: string, to: string) {
+  if (!map.has(from)) return;
+  map.set(to, map.get(from)!);
+  map.delete(from);
 }
 
 /** Hear every change made through the store; returns the way to stop. */

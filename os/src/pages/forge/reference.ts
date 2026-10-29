@@ -4,7 +4,7 @@ import {counted} from './diff-view.ts';
 import * as gitops from '../../repos/history.ts';
 import {issuePath, readIssues, type Issue} from '../../repos/issues.ts';
 import {t} from '../../i18n.ts';
-import {onChange, store} from '../../repos/repos.ts';
+import {onChange, onRenamed, rekey, store} from '../../repos/repos.ts';
 import {stillAt} from '../../repos/search.ts';
 import {sessionIfAny, type Run} from '../bench/terminal.ts';
 import {errorText} from '../../app/errors.ts';
@@ -28,9 +28,10 @@ import {drawLine, remember, seenButton, seenIn, seenKey, seenKind, seenLabel, ty
 // pressed there, or on the switch, a kind's list stays out while the keyboard goes back to the file, as something
 // read does, until it is put away (Escape, or pressed again).
 
-/** Per repo, while the app is open: what was typed, and the switch pressed. */
+/** Per repo, while the app is open: what was typed, and the switch pressed (a repo renamed keeps them). */
 const queries = new Map<string, string>();
 const pills = new Map<string, Kind | null>();
+onRenamed((from, to) => { rekey(queries, from, to); rekey(pills, from, to); });
 
 /** The box's card while nothing of the line is in hand: what is found, the switch's list, or what was searched and read. */
 type Live = {kind: string; label: string; alone?: boolean};

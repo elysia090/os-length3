@@ -5,7 +5,7 @@ import {keepOut, LAND, nudge, paced, putAway, still} from '../../ui/glide.ts';
 import {t} from '../../i18n.ts';
 import {complete, pathWord, Recall} from '../../prompt/recall.ts';
 import {kindOf} from '../../repos/text.ts';
-import {onChange, store, type Entry} from '../../repos/repos.ts';
+import {onChange, onRenamed, store, type Entry} from '../../repos/repos.ts';
 import {boxMode, modeHint, modeMenu, MODES, nextIssue, onBoxMode, pillWords, sendAs, sendInto, sendTitle, sendWord, setBoxMode, turn, type Mode} from './box-modes.ts';
 import type {Screen, ScreenState} from './screen.ts';
 import {sessionFor, sessionIfAny, terminalFor} from './terminal.ts';
@@ -33,6 +33,15 @@ const CHOICES = 24;
 
 /** What was written in a box and not sent: by repo for Run, by what the box does and repo otherwise. */
 const drafts = new Map<string, string>();
+// A repo renamed: what was half written for it is its new name's.
+onRenamed((from, to) => {
+  for (const [k, text] of [...drafts]) {
+    const mode = k.includes('\n') ? k.slice(0, k.indexOf('\n')) : null;
+    if ((mode === null ? k : k.slice(mode.length + 1)) !== from) continue;
+    drafts.delete(k);
+    drafts.set(mode === null ? to : `${mode}\n${to}`, text);
+  }
+});
 
 /** A key pressed alone (no Ctrl, Alt, ⌘ or Shift with it), not in a conversion. */
 const plain = (e: KeyboardEvent) => !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && !e.isComposing;

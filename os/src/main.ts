@@ -14,6 +14,7 @@ import {ServerSwitcher} from './pages/server/switcher.ts';
 import {serverPage} from './pages/server/page.ts';
 import {runtime} from './pages/runtime/runtime.ts';
 import {FileTree} from './pages/tree.ts';
+import {onRenamed} from './repos/repos.ts';
 import {begin} from './remote/lifecycle.ts';
 import {keepFocus} from './ui/focus.ts';
 import {onPlugins, pluginsOpen, setPluginsOpen} from './app/plugins.ts';
@@ -86,6 +87,13 @@ const ctx: Context = {
   },
   rerender: () => render(),
 };
+
+// A repo renamed: the repo worked on and where one left off follow it (each page's own holds follow it there).
+onRenamed((from, to) => {
+  if (openRepo === from) ctx.remember(to);
+  const was = ctx.leftOff;
+  if (was?.repo === from) save(FILE_KEY, JSON.stringify({...was, repo: to}));
+});
 
 // File lays the tree of "/" over the page; it never replaces the page. A
 // file chosen there is the one to work on: the tree goes and the caret is in it.

@@ -5,7 +5,7 @@ import {t} from '../../i18n.ts';
 import {issuePath, number, readIssues, type Issue} from '../../repos/issues.ts';
 import {bring, remoteOnly} from '../../remote/lifecycle.ts';
 import {connection} from '../../remote/connection.ts';
-import {onChange, store} from '../../repos/repos.ts';
+import {onChange, onRenamed, rekey, store} from '../../repos/repos.ts';
 import {bench, type Bench} from '../bench/bench.ts';
 import {openNext as openConversation} from '../inbox.ts';
 import {icon} from '../../ui/icons.ts';
@@ -49,6 +49,16 @@ let chosen: string | null = null;
 const chosenIn = new Map<string, string>();
 
 const key = (i: Issue) => `${i.repo}/${i.file}`;
+
+// A repo renamed: its chip stays chosen, and the issue shown in it with it; where it stood is read again.
+onRenamed((from, to) => {
+  const moved = (k: string) => (k.startsWith(`${from}/`) ? `${to}${k.slice(from.length)}` : k);
+  if (filter === from) filter = to;
+  if (chosen) chosen = moved(chosen);
+  rekey(chosenIn, from, to);
+  for (const [r, k] of chosenIn) chosenIn.set(r, moved(k));
+  stood.delete(from);
+});
 
 /** Git opened at `file` (an issue) of `repo`, as from a line that says it was written: it is the one shown. */
 export function showIssue(repo: string, file: string) {

@@ -69,6 +69,14 @@ export function closeBeside(shown: readonly string[], name: string, active: stri
   return {shown: next, active: active === name ? next[at] ?? next[at - 1] ?? null : active};
 }
 
+/**
+ * A repo renamed, in a band or in what is shown (its page `from` and each file of it beside, `from:path`): each where
+ * it stood, under the new name.
+ */
+export function renamedIn(list: readonly string[], from: string, to: string): string[] {
+  return list.map((k) => (k === from ? to : k.startsWith(`${from}:`) ? `${to}${k.slice(from.length)}` : k));
+}
+
 /** `name` moved to `to` (an index in the list as it is now, `name` included) in a band or in what is shown. */
 export function moveTo(list: readonly string[], name: string, to: number): string[] {
   const from = list.indexOf(name);

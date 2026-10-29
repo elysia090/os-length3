@@ -2,6 +2,7 @@ import {h} from '../../ui/dom.ts';
 import {t} from '../../i18n.ts';
 import {mark} from '../../ui/icons.ts';
 import {fileName} from './diff-view.ts';
+import {onRenamed, rekey} from '../../repos/repos.ts';
 
 // What was searched and read under the search box lines up sideways, in the order it came: the one in hand fills
 // the large box, the ones beside it hidden past its edges but for a sliver, pressed (or ← →) to move to them.
@@ -24,6 +25,7 @@ export const seenKind = (s: Seen) => (s.what === 'query' ? t('Searched') : s.wha
  * order (one come back to stays where it is), so its places hold.
  */
 const history = new Map<string, Seen[]>();
+onRenamed((from, to) => rekey(history, from, to));
 
 /** What was searched and read in `repo`, oldest first. */
 export const seenIn = (repo: string): Seen[] => history.get(repo) ?? [];

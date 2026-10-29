@@ -2,7 +2,7 @@ import {h} from '../../ui/dom.ts';
 import * as gitops from '../../repos/history.ts';
 import {issueName, issuePath, readIssues, type Issue} from '../../repos/issues.ts';
 import {t, tn} from '../../i18n.ts';
-import {store} from '../../repos/repos.ts';
+import {onRenamed, rekey, store} from '../../repos/repos.ts';
 import type {Run} from '../bench/terminal.ts';
 import {answers} from '../common.ts';
 import {connection} from '../../remote/connection.ts';
@@ -28,6 +28,7 @@ const RUN_LINES = 40;
  * is drawn again, and goes when the line does.
  */
 const marks = new Map<string, Set<string>>();
+onRenamed((from, to) => rekey(marks, from, to));
 
 /** `text` with each place `query` is in it (any case) marked, as a line found is. */
 const markedIn = (text: string, query: string): Node[] => {

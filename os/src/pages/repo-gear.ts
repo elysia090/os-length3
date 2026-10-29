@@ -174,8 +174,6 @@ export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): 
         if (stops) await stopPrompt(repo, true);
         await store.renameRepo(repo, to, promptHolds(repo) ? [repo] : []);
         forget(repo);
-        // Forge goes on with it under its new name.
-        if (ctx.repo === repo) ctx.remember(to);
         done();
       } catch (e) { input.disabled = yes.disabled = no.disabled = false; refuse(errorText(e)); }
     };
