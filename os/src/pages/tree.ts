@@ -1,5 +1,5 @@
 import {bytes, h} from '../ui/dom.ts';
-import {closeUp, keepOut, putAway, unfold} from '../ui/glide.ts';
+import {closeUp, keepOut, putAway, still, unfold} from '../ui/glide.ts';
 import {t} from '../i18n.ts';
 import {mark} from '../ui/icons.ts';
 import {bring, remoteOnly} from '../remote/lifecycle.ts';
@@ -106,6 +106,10 @@ export class FileTree {
     this.root = h('ul', {class: 'tree-children', role: 'tree', 'aria-label': '/'});
     // No "/" label of its own: the rows are what is in "/".
     this.element = h('nav', {class: 'tree', id: 'file-tree', 'aria-label': 'File（/）'}, this.root, this.said);
+    // Drawn out (styles.css .tree), it is cut by nothing: a row's menu stands beside it, out of its edge.
+    this.element.addEventListener('transitionend', (e) => {
+      if (e.target === this.element && e.propertyName === 'clip-path' && this.isOpen) this.element.classList.add('settled');
+    });
     this.element.addEventListener('pointerenter', () => { this.visited = true; this.enter(); });
     this.element.addEventListener('pointerleave', () => this.leave());
     // Escape closes it from anywhere while it is out, before what has the keyboard
@@ -194,6 +198,7 @@ export class FileTree {
       this.build(focus);
     }
     this.element.classList.add('open');
+    if (still()) this.element.classList.add('settled');
     this.trigger?.setAttribute('aria-expanded', 'true');
   }
 
@@ -203,6 +208,8 @@ export class FileTree {
     this.outBefore = false;
     this.pinned = false;
     this.visited = false;
+    // Its edge again first, to go back in from where it stands.
+    if (this.element.classList.contains('settled')) { this.element.classList.remove('settled'); void getComputedStyle(this.element).clipPath; }
     this.element.classList.remove('open');
     this.trigger?.setAttribute('aria-expanded', 'false');
   }
@@ -586,6 +593,8 @@ export class FileTree {
     const box = this.element.getBoundingClientRect(), r = row.getBoundingClientRect();
     pop.style.left = `${box.right + 8}px`;
     pop.style.top = `${r.top - 8}px`;
+    // Out of the tree's edge: the tree is drawn out whole at once if it was still coming.
+    this.element.classList.add('settled');
     this.element.append(pop);
     // A window too narrow for it beside the tree (a phone): just under the row, over the rows below.
     const wide = pop.getBoundingClientRect().right - (innerWidth - 16);

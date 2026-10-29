@@ -3030,7 +3030,10 @@ put away under one quiet row at its foot, System (its first names beside it),
 shut until it is opened and kept open once it is. While it is out, File is the one filled icon in
 the rail; the page's own icon steps back until it goes, the ink going from
 the one to the other as it does between places (the servers a rest on Server brings out and the plug's
-area take it the same way). Nothing under it moves. The pointer resting on File a moment (300 ms) brings it out, never
+area take it the same way). It comes out of the rail as a drawer does, a few
+pixels from the left, drawn out from its edge, whole the while: never faded
+over the page with the page's words through its own; it goes back the same
+way. Nothing under it moves. The pointer resting on File a moment (300 ms) brings it out, never
 the pointer passing down the rail; brushed past on the icon alone, it goes
 half a second after the pointer does, and from the tree itself a little
 after (1.2 s), so a reach back finds it but the page is never left under a

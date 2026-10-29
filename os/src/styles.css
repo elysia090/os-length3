@@ -926,7 +926,7 @@ button.row-item:disabled { cursor: var(--cursor-arrow); color: var(--sub); }
 }
 .field { display: grid; gap: var(--s2); }
 .field-label { font-size: var(--t-meta); color: var(--sub); }
-.tree.tree-still { position: static; z-index: auto; visibility: visible; opacity: 1; width: auto; max-height: none; transition: none; }
+.tree.tree-still { position: static; z-index: auto; visibility: visible; opacity: 1; clip-path: none; width: auto; max-height: none; transition: none; }
 .tree-still .tree-name.plain { color: var(--ink); }
 /* The repo to be made is the one in hand, filled as File fills the repo Forge works on; the repos already there are
    shut and quiet beside it. */
@@ -2003,12 +2003,16 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
   width: min(clamp(260px, 20vw, 340px), calc(100vw - 2 * var(--outer) - var(--rail) - var(--s2))); max-height: calc(100vh - var(--tree-top, var(--outer-top)) - var(--outer-bottom)); overflow: auto;
   /* Concentric with its rows: the card's corner is the row's corner plus the padding between them. */
   padding: var(--s2); background: var(--paper); border: 1px solid var(--rule); border-radius: var(--r-card);
-  /* It comes out of the rail it was opened from: a few pixels from the left and a fade; it goes back the same way.
+  /* It comes out of the rail it was opened from: a few pixels from the left, drawn out from its left edge as a drawer
+     is, whole the while (never faded over the page, the page's words through its own); it goes back the same way.
      (Moved by its left edge, not a transform, which would make it the frame its row menus are placed in.) */
-  visibility: hidden; opacity: 0;
-  transition: opacity calc(160ms * var(--pace)) ease-out, left calc(220ms * var(--pace)) var(--land), visibility 0s calc(220ms * var(--pace));
+  visibility: hidden; clip-path: inset(-2px 100% -2px -2px round var(--r-card));
+  transition: clip-path calc(220ms * var(--pace)) var(--land), left calc(220ms * var(--pace)) var(--land), visibility 0s calc(220ms * var(--pace));
 }
-.tree.open { left: calc(var(--outer) + var(--rail) + var(--s2)); visibility: visible; opacity: 1; transition: opacity calc(160ms * var(--pace)) ease-out, left calc(220ms * var(--pace)) var(--land), visibility 0s; }
+.tree.open { left: calc(var(--outer) + var(--rail) + var(--s2)); visibility: visible; clip-path: inset(-2px -2px -2px -2px round var(--r-card));
+  transition: clip-path calc(220ms * var(--pace)) var(--land), left calc(220ms * var(--pace)) var(--land), visibility 0s; }
+/* Out, it cuts nothing (tree.ts): a row's menu stands beside it. */
+.tree.open.settled { clip-path: none; }
 .tree ul { list-style: none; margin: 0; padding: 0; }
 .tree-row { display: flex; align-items: center; min-height: var(--h-row); padding-left: calc(var(--depth, 0) * var(--s4)); border-radius: var(--r-field); }
 .tree-name {
