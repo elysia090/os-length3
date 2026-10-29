@@ -6,10 +6,11 @@ import {kindOf} from '../../repos/text.ts';
 import {answers, askFoot, SETTLE} from '../common.ts';
 import {counted, diffFiles} from '../forge/diff-view.ts';
 import {LAND, nudge, paced, still} from '../../ui/glide.ts';
-import {justClosed, justMerged, notCommitted, reopenIssue, type IssueEvents, type RepoState} from './issue.ts';
+import {justClosed, justMerged, notCommitted, reopenIssue, resize, type IssueEvents, type RepoState} from './issue.ts';
 import type {Laid} from '../../repos/git-state.ts';
 import {kindWords} from '../todo-list.ts';
 import {errorText} from '../../app/errors.ts';
+import {busy} from './held.ts';
 
 // What Git shows round the issues: over them, what main has not committed
 // (with its Commit, named by its line as l3 commit names it); under them,
@@ -44,7 +45,7 @@ export class Sections {
     this.merged.hidden = !merged.length;
     this.merged.replaceChildren(heading('merged-title', t('Merged'), merged.length), mergedList(merged, !filter));
     this.closed.hidden = !closed.length;
-    this.closed.replaceChildren(heading('closed-title', t('Closed'), closed.length), closedList(closed, !filter, again));
+    this.closed.replaceChildren(heading('closed-title', t('Closed'), closed.length), closedList(closed, !filter, events, again));
   }
 }
 
@@ -80,16 +81,6 @@ async function slideOff(card: HTMLElement): Promise<void> {
   await Promise.all([off.finished, close.finished]).catch(() => {});
 }
 
-/** The card's height goes from what it was to what it now holds (a line asked for is shorter than the files it names). */
-function resize(card: HTMLElement, from: number) {
-  if (still() || !from || !card.isConnected) return;
-  const to = card.getBoundingClientRect().height;
-  if (Math.abs(to - from) < 2) return;
-  card.style.overflow = 'hidden';
-  const back = () => { card.style.overflow = ''; };
-  card.animate([{height: `${from}px`}, {height: `${to}px`}], {duration: paced(280), easing: LAND}).finished.then(back, back);
-}
-
 /**
  * main's card for a repo with something not committed: its files (▸ 2 files,
  * their diff over what is under it) and Commit. Commit asks in the card for
@@ -106,7 +97,7 @@ function mainCard(repo: string, n: number, events: IssueEvents, after: () => voi
     // many wait at the left and Commit at the right, where an issue's next step is.
     const foot = h('div', {class: 'issue-foot main-foot'},
       h('span', {class: 'muted small'}, tn('{n} file to commit on main', '{n} files to commit on main', n)), commit);
-    if (!brief) card.replaceChildren(h('h3', {class: 'main-title'}, repo), notCommitted(repo, n, events), foot);
+    if (!brief) card.replaceChildren(h('h3', {class: 'main-title'}, repo), notCommitted(repo, 'main', n, events), foot);
     else {
       // A row: its name opens its files under it (read only then), and closes them again.
       const open = unfolded.has(repo);
@@ -116,7 +107,7 @@ function mainCard(repo: string, n: number, events: IssueEvents, after: () => voi
         plain();
         card.querySelector<HTMLElement>('.main-open')?.focus();
       });
-      card.replaceChildren(h('h3', {class: 'main-title'}, name), foot, ...(open ? [notCommitted(repo, n, events)] : []));
+      card.replaceChildren(h('h3', {class: 'main-title'}, name), foot, ...(open ? [notCommitted(repo, 'main', n, events)] : []));
     }
     resize(card, from);
     return commit;
@@ -137,7 +128,7 @@ function mainCard(repo: string, n: number, events: IssueEvents, after: () => voi
     yes.addEventListener('click', async () => {
       if (performance.now() - shown < SETTLE) return;
       if (!kindOf(line.value).title.trim()) { error.textContent = t('A commit needs a title (for example Fix：title)'); line.focus(); nudge(line); return; }
-      yes.disabled = true;
+      busy(yes, true);
       error.textContent = '';
       try {
         const cut = await git.cut(repo, null, line.value, '');
@@ -147,7 +138,7 @@ function mainCard(repo: string, n: number, events: IssueEvents, after: () => voi
         // The card slides off sideways and its room closes; drawn again, its line under main lands lit.
         await slideOff(card);
         after();
-      } catch (e) { error.textContent = errorText(e); yes.disabled = false; }
+      } catch (e) { error.textContent = errorText(e); busy(yes, false); }
     });
     // One line, nothing to break: Enter commits it, as Ctrl+Enter does.
     line.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); yes.click(); } });
@@ -204,7 +195,7 @@ function mergedList(list: {repo: string; change: git.Change}[], all: boolean): H
       if (fold.open) opened.add(c.id); else opened.delete(c.id);
       if (!fold.open || read) return;
       read = true;
-      void git.changeDiff(repo, c).then((files) => inside.replaceChildren(...(files.length ? diffFiles(files, {beside: true}) : [h('p', {class: 'muted small'}, t('No changes'))])),
+      void git.changeDiff(repo, c).then((files) => inside.replaceChildren(...(files.length ? diffFiles(files, {kept: `merged\0${c.id}`}) : [h('p', {class: 'muted small'}, t('No changes'))])),
         (e) => inside.replaceChildren(h('p', {class: 'error'}, errorText(e))));
     });
     fold.open = opened.has(c.id);
@@ -212,8 +203,11 @@ function mergedList(list: {repo: string; change: git.Change}[], all: boolean): H
   }));
 }
 
-/** The issues closed without being done: when and by whom, and Reopen at the row's right end (while the repo shows main). */
-function closedList(list: {issue: Issue; reopen: boolean}[], all: boolean, after: () => void): HTMLElement {
+/**
+ * The issues closed without being done: when and by whom, and Reopen at the row's right end (while the repo shows
+ * main); reopened, the row goes to it (events.back).
+ */
+function closedList(list: {issue: Issue; reopen: boolean}[], all: boolean, events: IssueEvents, after: () => void): HTMLElement {
   return h('div', {class: 'done-list'}, ...list.map(({issue: i, reopen}) => {
     const {at, by} = closedBy(i.closed ?? '');
     const when = at === null ? '' : day(at);
@@ -224,8 +218,8 @@ function closedList(list: {issue: Issue; reopen: boolean}[], all: boolean, after
       act = button(t('Reopen'), 'small-button');
       act.setAttribute('aria-label', t('Reopen {issue}', {issue: i.n === null ? i.title : `#${i.n}`}));
       act.addEventListener('click', async () => {
-        act!.disabled = true;
-        try { await reopenIssue(i); after(); } catch (e) { error.textContent = errorText(e); act!.disabled = false; }
+        busy(act!, true);
+        try { await reopenIssue(i); events.back?.(i); after(); } catch (e) { error.textContent = errorText(e); busy(act!, false); }
       });
     }
     // Closed just now from its box: its line lands here, lit a moment, where the eye goes after it.

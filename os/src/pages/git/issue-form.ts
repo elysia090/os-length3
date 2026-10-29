@@ -5,7 +5,8 @@ import {store} from '../../repos/repos.ts';
 import {kindOf, named} from '../../repos/text.ts';
 import {answers} from '../common.ts';
 import {errorText} from '../../app/errors.ts';
-import {keepOut, putAway, unfold} from '../../ui/glide.ts';
+import {keepOut, putAway, still, unfold} from '../../ui/glide.ts';
+import {busy} from './held.ts';
 
 // Writing an issue: its first line named like a TODO item ("Fix：件名"),
 // the repo it goes in said quietly before it, then the detail. The repo is
@@ -54,43 +55,55 @@ export function startIssue(repo: string) {
 /** Whether `issue`'s words are being changed (its box then opens as the fields). */
 export const beingChanged = (issue: Issue) => changing.has(keyOf(issue));
 
-/** The two fields an issue is written in, and reading them back. */
-function fields(kind: string | null, title: string, detail: string) {
+/**
+ * The two fields an issue is written in, and reading them back. Enter on the first line goes on to the detail;
+ * Ctrl+Enter (⌘ on a Mac) in either does the box's deed (`submit`: Create, Save), as it sends a comment.
+ */
+function fields(kind: string | null, title: string, detail: string, submit: () => void) {
   const first = h('input', {class: 'line-in', placeholder: t('Fix: The title wraps on a phone'), 'aria-label': t('First line as Kind: title'),
     maxlength: '200', spellcheck: 'false', value: title ? named(kind, title) : ''}) as HTMLInputElement;
   const body = h('textarea', {class: 'line-in issue-text', rows: '4', 'aria-label': t('Summary'), placeholder: t('Summary')}) as HTMLTextAreaElement;
   body.value = detail;
-  first.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); body.focus(); } });
+  for (const field of [first, body] as HTMLElement[]) {
+    field.addEventListener('keydown', (event: KeyboardEvent) => {
+      if (event.key !== 'Enter' || event.isComposing) return;
+      if (event.ctrlKey || event.metaKey) { event.preventDefault(); submit(); } else if (field === first) { event.preventDefault(); body.focus(); }
+    });
+  }
   const read = () => ({...kindOf(first.value), detail: body.value});
   return {first, body, read};
 }
 
 /** Hold `b` down while `f` writes; a failure is said in `error` and nothing closes. */
 async function held(b: HTMLButtonElement, error: HTMLElement, f: () => Promise<unknown>): Promise<boolean> {
-  b.disabled = true;
+  busy(b, true);
   try { await f(); return true; } catch (e) {
     error.textContent = t('Could not write: {message}', {message: errorText(e)});
-    b.disabled = false;
+    busy(b, false);
     return false;
   }
 }
 
+/** An issue just made: its repo and its file. */
+export interface Made { repo: string; file: string }
+
 /** `done` hears what was made, or null and the repo whose Forge asked for it (to go back to) when put back. */
-export function issueForm(events: {done(made: {repo: string; file: string} | null, back: string | null): void}): IssueForm {
-  const element = h('div', {class: 'issue-form issue-new', hidden: ''});
+export function issueForm(events: {done(made: Made | null, back: string | null): void}): IssueForm {
+  // A group named as what it is for: its Summary is told from the Summary of the issue in full under it.
+  const element = h('div', {class: 'issue-form issue-new', role: 'group', 'aria-label': t('Write an issue'), hidden: ''});
   let retarget: (repo: string) => void = () => {};
   /** The field last written in: the first line until the body is. */
   let typing: HTMLElement | null = null;
-  const close = (made: {repo: string; file: string} | null, keep = false) => {
+  const close = (made: Made | null, keep = false) => {
     const back = made ? null : writing?.back ?? null;
     // Put away with Escape, what was written is kept, folded, for Write an issue to open again (in Git: not back).
     writing = keep && writing && (writing.first.trim() || writing.detail.trim()) ? {repo: writing.repo, first: writing.first, detail: writing.detail, folded: true} : null;
     retarget = () => {};
     typing = null;
     const done = () => { element.hidden = true; element.replaceChildren(); events.done(made, back); };
-    // Put back with Not now, it folds away, the issues under it rising into its room as it does (never a jump once
-    // it has gone); made, it goes to its box (git.ts).
-    if (made) done(); else putAway(element, done, {fold: true, ms: 200});
+    // It folds away, the issues under it rising into its room as it does (never a jump once it has gone): put back
+    // with Not now, or made, as the row goes on to the new issue's box at its end (git.ts written).
+    putAway(element, done, {fold: true, ms: 200});
   };
 
   element.addEventListener('keydown', (event) => {
@@ -106,7 +119,7 @@ export function issueForm(events: {done(made: {repo: string; file: string} | nul
     const back = was?.back;
     // Where it goes, before the first line, in the words a card says its repo in.
     const where = h('span', {class: 'issue-where issue-target', id: 'issue-target', title: target}, target);
-    const f = fields(null, '', '');
+    const f = fields(null, '', '', () => make.click());
     f.first.setAttribute('aria-describedby', 'issue-target');
     if (was) { f.first.value = was.first; f.body.value = was.detail; }
     const keep = () => { writing = {repo: target, first: f.first.value, detail: f.body.value, ...(back ? {back} : {})}; };
@@ -130,7 +143,11 @@ export function issueForm(events: {done(made: {repo: string; file: string} | nul
       const {kind, title, detail} = f.read();
       if (!title.trim()) { error.textContent = t('Write a title on the first line'); f.first.focus(); return; }
       let file = '';
+      // Being made, it is no longer half written: Git come to again meanwhile does not open it once more (made twice).
+      const was = writing;
+      writing = null;
       if (await held(make, error, async () => { file = await writeIssue(store, target, kind, title, detail); })) close({repo: target, file});
+      else writing = was;
     });
     element.replaceChildren(h('div', {class: 'issue-first'}, where, f.first), f.body, error,
       h('div', {class: 'answers'}, make, h('span', {class: 'grow'}), cancel));
@@ -138,11 +155,17 @@ export function issueForm(events: {done(made: {repo: string; file: string} | nul
     element.hidden = false;
     // Opened by a press it unfolds, what stands under it making way (not pushed down at once); found open as it was
     // left (the page drawn again), it is simply there.
-    if (!shown && (!was || was.fresh || asked)) unfold(element, 260);
+    // The whole box is brought into sight as it unfolds, Create with it (not only the line the keyboard is on, its
+    // deed under the window's edge).
+    const pressed = !shown && (!was || was.fresh || asked);
+    if (pressed) {
+      element.scrollIntoView({block: 'nearest', behavior: still() ? 'auto' : 'smooth'});
+      unfold(element, 260);
+    }
     // Opened anew (here, or asked for from Forge), the first line has the keyboard; opened again as it was left, nothing
     // takes it, unless it was pressed for (folded away, Write an issue): then the line last written in, as it was.
-    if (!was || was.fresh) f.first.focus();
-    else if (asked) (was.detail && !was.first.trim() ? f.body : f.first).focus();
+    if (!was || was.fresh) f.first.focus({preventScroll: pressed});
+    else if (asked) (was.detail && !was.first.trim() ? f.body : f.first).focus({preventScroll: pressed});
   };
   const resume = (repos: readonly string[], asked = false) => {
     if (!writing || (writing.folded && !asked)) return false;
@@ -160,7 +183,7 @@ export function issueForm(events: {done(made: {repo: string; file: string} | nul
 export function issueEditor(issue: Issue, done: (saved: boolean) => void): HTMLElement {
   const key = keyOf(issue);
   const was = changing.get(key);
-  const f = fields(issue.kind, issue.title, issue.detail);
+  const f = fields(issue.kind, issue.title, issue.detail, () => save.click());
   if (was) { f.first.value = was.first; f.body.value = was.detail; }
   const keep = () => changing.set(key, {first: f.first.value, detail: f.body.value});
   keep();

@@ -22,6 +22,11 @@ interface DiffOptions {
    * place. Only for the copy here, whose lines are the center's.
    */
   reveal?: (path: string, line?: number) => void;
+  /**
+   * What an issue's own file is about ("Fix：title", from its path), said after its number in its head: such a file
+   * waits shut until opened, a line saying which issue was written, changed or closed, not its words over again.
+   */
+  issue?: (path: string) => string | null;
   /** Called for each line drawn, with its key (`path:index`), to mark it or make it markable. */
   line?: (row: HTMLElement, key: string, l: DiffLine) => void;
   /** Put a file back as it was at the last commit (the copy here only); asked in its head first. */
@@ -132,7 +137,9 @@ function diffHead(f: FileDiff, o: DiffOptions): HTMLElement {
     name.classList.add('link');
     name.addEventListener('click', (e) => { e.preventDefault(); go(f.path); });
   }
-  return h('summary', {class: 'diff-head'}, name, f.binary ? h('span', {class: 'muted small'}, t('Binary')) : counted(add, del));
+  const about = o.issue?.(f.path) ?? null;
+  return h('summary', {class: 'diff-head'}, name, about ? h('span', {class: 'diff-about'}, about) : null,
+    f.binary ? h('span', {class: 'muted small'}, t('Binary')) : counted(add, del));
 }
 
 /**
@@ -166,8 +173,12 @@ function diffFile(f: FileDiff, i: number, o: DiffOptions): HTMLElement {
   if (o.beside) return h('div', {class: 'diff-file beside'}, h('div', {class: 'diff-head'}, ...head.childNodes), lines, ...after);
   const fold = h('details', {class: 'diff-file'}, head, lines, ...after) as HTMLDetailsElement;
   const key = o.kept ? `${o.kept}:${f.path}` : '';
-  fold.open = key && folded.has(key) ? folded.get(key)! : i < OPEN;
-  if (key) fold.addEventListener('toggle', () => folded.set(key, fold.open));
+  // An issue's own file, named by what it is about, waits shut: its words are read in its box, not here.
+  const first = i < OPEN && !o.issue?.(f.path);
+  fold.open = key && folded.has(key) ? folded.get(key)! : first;
+  // Only what the person opened or shut is kept (the toggle that setting it open here sends too is not theirs): drawn
+  // again as it now first stands, it is not held as it once happened to be drawn.
+  if (key) fold.addEventListener('toggle', () => { if (fold.open === first) folded.delete(key); else folded.set(key, fold.open); });
   return fold;
 }
 
