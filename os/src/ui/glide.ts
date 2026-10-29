@@ -84,7 +84,6 @@ export function glide(from: DOMRect | null, to: HTMLElement | null, layer: HTMLE
     }
     requestAnimationFrame(follow);
   };
-  follow();
   // Landed, it is inked at once in the slug's place: its own fill does not ease in after the slug has gone.
   const done = () => {
     if (over) return;
@@ -105,6 +104,9 @@ export function glide(from: DOMRect | null, to: HTMLElement | null, layer: HTMLE
   const mine = {at: () => (slug.isConnected ? slug.getBoundingClientRect() : null), end: () => { done(); a.cancel(); }};
   gliding.set(layer, mine);
   a.finished.then(done, done);
+  // Who is under it, from its first frame: read once it stands where it sets off (before, it stood on the place it
+  // goes to, and for a frame that one went light and the one left ink on ink).
+  follow();
 }
 /** The glide on its way in each layer (the rail's places, a band's pills). */
 const gliding = new WeakMap<HTMLElement, {at(): DOMRect | null; end(): void}>();
