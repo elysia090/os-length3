@@ -19,8 +19,8 @@ import {doneTo, type AskWays, type Deed} from './repo-off.ts';
 let lit: {name: string; until: number} | null = null;
 
 /**
- * A repo's own place, where what is done to the repo itself is (its switch, who sees it, Forge): its card on
- * Remote, shown and lit. A list's repo body leads here (Home, Runtime). Signed out there is no card on a Remote
+ * A repo's card on Remote, where what the Remote does with it is (its switch, who sees it), shown and lit: a list's
+ * gear leads here (Show on the Remote; its body opens the repo in Forge). Signed out there is no card on a Remote
  * yet: the repo opens in Forge, where all of it is.
  */
 export function openRepoPlace(ctx: Context, name: string) {

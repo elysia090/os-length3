@@ -4,7 +4,6 @@ import {icon} from '../ui/icons.ts';
 import {store} from '../repos/repos.ts';
 import {bring, onSync, remoteOnly, repoState} from '../remote/lifecycle.ts';
 import {free, readSpace} from '../app/space.ts';
-import {openRepoPlace} from './remote/repos.ts';
 import {syncWord} from './remote/repo-card.ts';
 import {repoGear} from './repo-gear.ts';
 import {allSessions} from './bench/terminal.ts';
@@ -18,39 +17,42 @@ import {errorText} from '../app/errors.ts';
 // then where it stands.
 const sizeAndWhen = (size: number, modified: number) => `${bytes(size)} · ${t('Changed {when}', {when: ago(modified)})}`;
 
-/** Why `name` stays on this device now (a Prompt has it, no Remote…), or null when it can be freed (space.ts). */
+/**
+ * Why `name` stays on this device now (no Remote, something running in its Prompt…), or null when it can be freed
+ * (space.ts). A Prompt waiting at its prompt line does not keep it: the gear stops it first, saying so.
+ */
 export async function whyKept(name: string): Promise<string | null> {
-  const u = await readSpace(allSessions().filter(([, s]) => s.running).map(([repo]) => repo));
+  const u = await readSpace(allSessions().filter(([, s]) => s.running && s.runs.at(-1)?.ms === null).map(([repo]) => repo));
   const it = u.items.find((i) => i.id === `repo:${name}`);
   return !it ? t('It is only on the Remote: nothing of it is here to free') : it.room === 'Keep' ? it.why : null;
 }
 
 /**
- * A repo's card: its body is the repo itself (its own place, openRepoPlace); its gear, at the top right, offers
- * Forge or Free from this device (repo-gear.ts). `again` draws the list once something changed.
+ * A repo's card: its body is the repo itself, opened in Forge where all of it is (only on the Remote, brought here
+ * first, its card saying so meanwhile); its gear, at the top right, offers what is done to the repo itself (its card on
+ * the Remote, Rename, Free from this device, Delete: repo-gear.ts). `again` draws the list once something changed.
  */
 function gearCard(ctx: Context, name: string, lines: Node[], away: boolean, again: () => Promise<void>): HTMLElement {
   const body = h('button', {type: 'button', class: 'card-open'}, h('span', {class: 'card-title'}, name), ...lines);
-  body.addEventListener('click', () => openRepoPlace(ctx, name));
   const sync = () => body.querySelector('.card-sync') as HTMLElement;
-  const {gear, list} = repoGear(name, {
-    // Only on the Remote, it is brought here first, and says so on its card meanwhile.
-    forge: async () => {
-      if (!away) { ctx.openRepo(name); return; }
-      card.setAttribute('aria-busy', 'true');
-      sync().textContent = t('Bringing it…');
-      try { await bring(name); ctx.openRepo(name); } catch (e) { sync().textContent = errorText(e); card.removeAttribute('aria-busy'); }
-    },
+  body.addEventListener('click', async () => {
+    if (!away) { ctx.openRepo(name); return; }
+    if (card.getAttribute('aria-busy') === 'true') return;
+    card.setAttribute('aria-busy', 'true');
+    sync().textContent = t('Bringing it…');
+    try { await bring(name); ctx.openRepo(name); } catch (e) { sync().textContent = errorText(e); card.removeAttribute('aria-busy'); }
+  });
+  const {gear, list} = repoGear(ctx, name, {
     why: () => whyKept(name),
     free: async () => {
       const r = await free([`repo:${name}`]);
       if (r.kept.length) throw new Error(r.kept[0][1]);
     },
-    // Gone from here: drawn again, its card now the Remote's (Only on the Remote).
+    // Gone from here, or renamed: drawn again (freed, its card now the Remote's: Only on the Remote).
     freed: () => void again(),
-  });
+  }, !away);
   const card = h('div', {class: `card repo gear-card${away ? ' away' : ''}`, 'data-repo': name, role: 'group', 'aria-label': name},
-    body, h('span', {class: 'repo-gear'}, gear, list));
+    body, h('span', {class: 'repo-gear'}, gear), list);
   return card;
 }
 
@@ -69,7 +71,7 @@ export async function summaryOf(name: string): Promise<string> {
   return c?.text?.split('\n').map((l) => l.trim()).find((l) => l && !l.startsWith('#')) ?? '';
 }
 
-/** A repo on the Remote and not here: Forge brings it. */
+/** A repo on the Remote and not here: pressed, it is brought here and opened. */
 function awayCard(ctx: Context, name: string, size: number, modified: number, again: () => Promise<void>): HTMLElement {
   return gearCard(ctx, name, [h('span', {class: 'muted'}, sizeAndWhen(size, modified)),
     h('span', {class: 'muted card-sync'}, t('Only on the Remote'))], true, again);

@@ -566,6 +566,88 @@ pub fn free(repos: &Repos, repo: &str) -> Result<u64> {
     free_with(&Client::open()?, repos, repo)
 }
 
+// ---- a repo renamed, or taken from this device whole ----
+
+/// What this device keeps with the Remote of `repo` by its name: its bases (main's and each line's), and the line
+/// it shows.
+fn records_of(repo: &str) -> Vec<PathBuf> {
+    let Ok(dir) = fs::read_dir(sync_dir()) else { return Vec::new() };
+    let (base, line, lines) = (format!("{repo}.json"), format!("{repo}.line"), format!("{repo}@"));
+    dir.flatten().map(|e| e.path()).filter(|p| {
+        let name = p.file_name().unwrap_or_default().to_string_lossy();
+        name == base || name == line || (name.starts_with(&lines) && name.ends_with(".json"))
+    }).collect()
+}
+
+/// Whether a Remote agreed `repo` with this device (a base is kept of it, or of the work on one of its issues): it
+/// is on the Remote then, which knows an account's repos by their names.
+pub fn agreed(repo: &str) -> bool {
+    records_of(repo).iter().any(|p| p.extension().is_some_and(|x| x == "json"))
+}
+
+/// What this device keeps of `repo` by its name besides its copy: its works' copies, its environment and caches.
+fn kept_by_name(repo: &str) -> [PathBuf; 3] {
+    let data = crate::paths::data_dir();
+    [data.join("work").join(repo), crate::owned::env_dir(&data, repo), crate::owned::cache_dir(&data, repo)]
+}
+
+/// Whether a Prompt has `repo` open: one its host runs (`open`), or one recorded running here (core/src/prompt.rs).
+fn prompted(repo: &str, open: &[String]) -> bool {
+    #[cfg(not(target_os = "wasi"))]
+    if crate::prompt::running(&crate::paths::data_dir()).iter().any(|r| r.repo == repo) { return true; }
+    open.iter().any(|o| o == repo)
+}
+
+/// `repo` named `to` on this device: its copy, and what this device keeps of it by its name (its works' copies, the
+/// line it shows, its environment and caches), go to the new name. Only a repo no Remote has agreed is renamed: one on
+/// the Remote is known there by its name, and every device keeps it in step by it. Never while a Prompt has it open,
+/// and never over a repo of that name, here or (signed in) on the Remote.
+pub fn rename_repo(repos: &Repos, repo: &str, to: &str, open: &[String]) -> Result<()> {
+    repos.dir(repo)?;
+    if !crate::repos::valid_name(to) {
+        return Err(crate::tr!("{:?} is not a repo name (letters, digits, . _ -)", "{:?} は repo の名前になりません（英数字と . _ -）", to));
+    }
+    if to == repo { return Ok(()); }
+    if prompted(repo, open) {
+        return Err(crate::tr!("A Prompt has {} open; stop it first", "{} は Prompt で開いています。先に止めてください", repo));
+    }
+    if agreed(repo) {
+        return Err(crate::tr!("{} is on the Remote, which knows it by its name: it keeps it", "{} は Remote にあり、Remote はこの名前で知っています。名前はそのままです", repo));
+    }
+    let there = || crate::tr!("There is a repo {} already", "repo {} はもうあります", to);
+    // Signed in, a name the Remote has is that repo's: this one renamed to it would be sent into it.
+    if connection().is_some() && remote_repos()?.iter().any(|r| r.name == to) { return Err(there()); }
+    let _held = lock(repo)?;
+    crate::atomic::rename_new(&repos.root().join(repo), &repos.root().join(to))
+        .map_err(|e| if e.kind() == std::io::ErrorKind::AlreadyExists { there() } else { crate::repos::io_error(repo, &e) })?;
+    // What goes with it by name follows it; what cannot (another left under the new name) stays without an owner,
+    // as what a repo freed from here leaves, for Runtime to free.
+    for (from, into) in kept_by_name(repo).iter().zip(kept_by_name(to)) {
+        if from.exists() && !into.exists() { let _ = fs::rename(from, into); }
+    }
+    let _ = fs::rename(sync_dir().join(format!("{repo}.line")), sync_dir().join(format!("{to}.line")));
+    Ok(())
+}
+
+/// `repo` taken from this device whole: its copy, what this device keeps of it by its name, and every record of it
+/// with the Remote. What the Remote holds is not touched: a repo there is turned off or discarded there, asked for
+/// as the Remote asks. Never while a Prompt has it open.
+pub fn delete_repo(repos: &Repos, repo: &str, open: &[String]) -> Result<()> {
+    let dir = repos.root().join(repo);
+    repos.dir(repo)?;
+    if prompted(repo, open) {
+        return Err(crate::tr!("A Prompt has {} open; stop it first", "{} は Prompt で開いています。先に止めてください", repo));
+    }
+    let _held = lock(repo)?;
+    // Moved aside in one step first, so nothing lists, opens or syncs it by its name while it goes.
+    let aside = dir.with_file_name(format!(".{repo}.deleting-{}", crate::pid()));
+    crate::atomic::rename_new(&dir, &aside).map_err(|e| crate::repos::io_error(repo, &e))?;
+    fs::remove_dir_all(&aside).map_err(|e| crate::repos::io_error(repo, &e))?;
+    for kept in kept_by_name(repo) { gone(fs::remove_dir_all(kept))?; }
+    for record in records_of(repo) { gone(fs::remove_file(record))?; }
+    Ok(())
+}
+
 /// Where a copy of `repo` is: main's in the repos, an issue's among the works.
 fn copy_dir(repos: &Repos, repo: &str, line: &str) -> PathBuf {
     if line == crate::work::MAIN { repos.root().join(repo) } else { crate::work::worktree(repo, line) }

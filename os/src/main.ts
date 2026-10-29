@@ -42,6 +42,9 @@ const tabs = new Map<PurposeId, HTMLButtonElement>();
 let current: PurposeId = 'home';
 /** Whether a page has been drawn yet: before the first, the page holds only what says the scripts did not run. */
 let opened = false;
+/** Who is in (the Remote and the account), as the page was last drawn for them. */
+const whoIsIn = () => { const c = connection(); return c ? `${c.url}\n${c.user ?? ''}` : null; };
+let wasIn: string | null = null;
 /** The plug's state in the rail, said again whenever the page or the plugin area changes. */
 let plugState = () => {};
 
@@ -239,6 +242,8 @@ function draw(id: PurposeId, quiet: boolean, panned: boolean) {
   // The first page the OS opens on: nothing drawn before it.
   const first = !opened;
   opened = true;
+  // Who is in, as the first page is drawn for them (onConnection draws it again only for another).
+  if (first) wasIn = whoIsIn();
   const inkWas = where(tabs.get(from)?.getAttribute('aria-current') ? tabs.get(from) : null);
   current = id;
   serverLayer.close();
@@ -361,8 +366,14 @@ onReach(() => {
 });
 // Signed in or out, here or from another device: the page is drawn again for who is here now (Remote's draws itself).
 // Not before the first page is: back from a provider, the session is taken up before Remote is chosen, and Home
-// would show a moment first.
-onConnection(() => { void look(); if (current === 'remote') me.paint(); else if (opened) render(); });
+// would show a moment first. A passkey that confirms a deed signs the same account in again: nothing is drawn again
+// for it, so the deed's ask (a repo's gear asking for the code) stays where it is.
+onConnection(() => {
+  void look();
+  const now = whoIsIn(), same = now !== null && now === wasIn && !!connection()?.user;
+  wasIn = now;
+  if (current === 'remote') me.paint(); else if (opened && !same) render();
+});
 // Changing the language redraws the page and the rail's names in place.
 onLang(() => {
   for (const id of tabs.keys()) mark(id);

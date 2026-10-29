@@ -1382,7 +1382,8 @@ back the way it came), and its detail goes quiet with it, still there to read.
 A detail opened or put away moves the items under it down or up to make room,
 never jumping them. The repos are large cards, three across at a
 laptop's width (two, then one, as it narrows); each is a repo in a list as
-Runtime says it: its body the repo itself, its gear Forge or Free.
+Runtime says it: its body the repo itself, opened in Forge, its gear what
+is done to the repo (its card on the Remote, Rename, Free, Delete).
 
 What a hand goes to without being told answers it, here and on every page:
 each count is the way to its section further down (a raised fill under the
@@ -1859,19 +1860,42 @@ each thing says what can be done with it.
 
 **A repo in a list** is the same in every list of repos (Home's cards, the
 three columns here, New repo's list): its body (a card's, a row's name) is the
-repo itself, its own place: its card on Remote, shown and lit (signed out,
-Forge, where all of it is). Near it (the pointer on it, the keyboard in it,
-always on a touch screen) a small round gear shows at its edge; pressed, a
-popover offers the two things done to a repo from a list, each chosen on its
-own: Open in Forge, and Free from this device (空ける: the same Free as below,
-its conditions unchanged). Free that cannot be done now is there, not
-pressable, with why under it; pressed, it asks in its row what it does ({repo}
-leaves this device; it stays on the Remote and comes back when opened), Free
-under the pointer, Not now beside it. Showing the gear or its list does
-nothing; Escape or a press outside puts it away. On a card the list opens over
-the card; in a column that scrolls, under the row, in its own place. Freed,
-the place says what it came to where it is (the row's result over the box;
-the card becomes the Remote's).
+repo itself, opened in Forge, where all of it is (one only on the Remote is
+brought here first, its card saying so meanwhile), signed in or out, as a
+repo in a profile opens the repo. Near it (the pointer on it, the keyboard in
+it, always on a touch screen) a small round gear shows at its edge; pressed,
+a popover offers what is done to the repo itself from a list, each chosen on
+its own: signed in, Show on the Remote (its card there, shown and lit: its
+switch, who sees it); Rename; Free from this device (空ける: the same Free as
+below, its conditions unchanged); Delete. A deed that cannot be done now is
+there, not pressable, with why under it: the reason that holds, said as it
+is (signed out, Free says there is no Remote to free it to, never that a
+Prompt has it when a Prompt is not why). A Prompt waiting at its prompt line
+holds nothing back: the deed's ask says it is stopped first, and it is; one
+running something holds all three, and says so. Pressed, each becomes its
+field or its ask in its row. Free asks what it does ({repo} leaves this
+device; it stays on the Remote and comes back when opened), Free under the
+pointer, Not now beside it. Rename is the name written in its row (Enter or
+Rename gives it, a name that cannot be, or one here or on the Remote
+already, said under it): only a repo no Remote has, since the Remote knows an
+account's repos by their names and every device keeps each in step by it
+(one there says so under Rename, which stays greyed); its copy, its works'
+copies, its environment and caches go to the new name (`repo_rename`). Delete
+of a repo no Remote has asks in its row as File's Delete does ({repo} goes
+from this device, with everything in it; nothing keeps it elsewhere, so it
+cannot be brought back), Not now and 消す at its foot; it goes from this
+device with everything kept of it there (`repo_delete`). Delete of one on the
+Remote asks in the list as turning it off asks on its card (the account's
+name, the repo's, the code, a passkey: it guards the repo's history against
+another hand), saying what it does: it goes from this device and from the
+Remote, which keeps it off 30 days, where turning it on brings it back; what
+is here not sent yet is sent first. Off on the Remote already, Delete is its
+廃棄, asked the same. Showing the gear or its list does nothing; Escape or a
+press outside puts it away. On a card the list comes down from the gear as
+wide as the card, over what is under it; in a column that scrolls, under the
+row, in its own place. Done, the place says what it came to where it is (the
+row's result over the box; the card becomes the Remote's, takes its new name,
+or goes).
 
 - **この端末**: one bar of the host's whole, with this OS's share darker
   (not an ink fill, which means current), and three figures: this OS, free,
@@ -1883,7 +1907,7 @@ the card becomes the Remote's).
   (on this device) at the left, what is **only on the Remote** (fetched with a
   press; all of it here too, it says so) in the middle, and what **can be
   freed** at the right (nothing, it says the reason is on each row that
-  stays: not on the Remote yet, a Prompt in it). In each, **one list, largest first**, of everything this OS holds: each
+  stays: not on the Remote yet, a Prompt running in it). In each, **one list, largest first**, of everything this OS holds: each
   repo, each root of the distribution, each leftover, Home. A row is the
   thing, its size, and at its end what can be done:
   - **空ける**: it is not needed here. A repo whose copy is what the Remote
@@ -1906,7 +1930,8 @@ the card becomes the Remote's).
     owner, and they say so.
   - Otherwise, quietly, why it stays: a Prompt has it open, it holds what
     cannot be sent (a link, a file over 16 MB, a `.git`), there is no Remote
-    yet, it is the root Prompts run on, it is Home's settings. Why (and what
+    yet, it is the root Prompts run on, it is Home's settings; of two, the
+    one a Prompt stopped would not lift (no Remote) is the one said. Why (and what
     freeing does) is a line of its own under the row's facts, read whole,
     never cut short; a Prompt stopped or started reads it again at once.
   Under the list, 空けられるもの with its total and 全部空ける. Freeing stays
@@ -2299,6 +2324,8 @@ the gear's do, never swapped in one frame):
   this device if the account has none, then confirms it is you) and goes
   straight on to the names; the passkey just used still counts, so turning
   off does not ask for another (the Remote takes one for five minutes).
+  Delete in a repo's gear, in any list, asks the same in the list, and
+  turns it off with its copy here gone (§ Runtime, A repo in a list).
   Off, the knob is at the left on `off` red and the card is quiet (dashed):
   the Remote keeps the repo 30 days, answering only that it is off, and
   pressing the switch again brings it back at once. Off, at the bottom left:

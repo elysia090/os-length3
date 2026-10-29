@@ -53,6 +53,13 @@ export interface RepoStore {
   move(repo: string, path: string, to: string): Promise<void>;
   /** Write `path` whole as these bytes, of any size or kind, its folders made (what a Prompt wrote back). */
   put(repo: string, path: string, bytes: Uint8Array): Promise<number>;
+  /**
+   * Name the repo itself `to` on this device, with what this device keeps of it by its name; only one no Remote has
+   * (core's remote::rename_repo). `open`: repos a Prompt has open in this page, which are never renamed.
+   */
+  renameRepo(repo: string, to: string, open: string[]): Promise<void>;
+  /** Take the repo from this device whole, with every record of it; what a Remote holds is not touched. `open` as above. */
+  deleteRepo(repo: string, open: string[]): Promise<void>;
   /** A file's bytes whole, whatever it holds (what a Prompt copies in). */
   bytes(repo: string, path: string): Promise<Uint8Array>;
 }
@@ -99,6 +106,8 @@ class CoreStore implements RepoStore {
   remove(repo: string, path: string) { return core<void>('repo_remove', {repo, path}); }
   move(repo: string, path: string, to: string) { return core<void>('repo_move', {repo, path, to}); }
   put(repo: string, path: string, bytes: Uint8Array) { return core<number>('repo_put', {repo, path, bytes: base64(bytes)}); }
+  renameRepo(repo: string, to: string, open: string[]) { return core<void>('repo_rename', {repo, to, open}); }
+  deleteRepo(repo: string, open: string[]) { return core<void>('repo_delete', {repo, open}); }
   async bytes(repo: string, path: string) { return unbase64(await core<string>('repo_bytes', {repo, path})); }
 }
 
@@ -196,6 +205,16 @@ class Observed implements RepoStore {
     if (to === path.replace(/\/+$/, '')) return;
     this.tell({repo, path, what: 'removed', by});
     await this.made(repo, to, by);
+  }
+  /** The repo renamed: told as the old one gone and the new one come, each as a repo that changed. */
+  async renameRepo(repo: string, to: string, open: string[], by?: string) {
+    await this.inner.renameRepo(repo, to, open);
+    this.tell({repo, path: '', what: 'repo', by});
+    this.tell({repo: to, path: '', what: 'repo', by});
+  }
+  async deleteRepo(repo: string, open: string[], by?: string) {
+    await this.inner.deleteRepo(repo, open);
+    this.tell({repo, path: '', what: 'repo', by});
   }
   /** Tell what is at `path` as made: a file with its text, or a folder and everything in it. */
   private async made(repo: string, path: string, by?: string) {

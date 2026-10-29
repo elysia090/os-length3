@@ -38,6 +38,8 @@ export interface RepoSync {
   elsewhere?: number;
   /** Why it is not in step, in the person's words (what the Remote or this browser said). */
   error?: string;
+  /** The Remote has agreed it with this device once: it is on the Remote, which knows it by its name. */
+  agreed?: boolean;
 }
 
 const states = new Map<string, RepoSync>();
@@ -89,7 +91,7 @@ function schedule(repo: string, ms = SOON) {
   if (!connection() || states.get(repo)?.where === 'off') return;
   clearTimeout(timers.get(repo));
   const s = states.get(repo);
-  states.set(repo, {where: 'sending', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? [], elsewhere: s?.elsewhere});
+  states.set(repo, {where: 'sending', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? [], elsewhere: s?.elsewhere, agreed: s?.agreed});
   tell();
   timers.set(repo, setTimeout(() => void run(repo), ms));
 }
@@ -99,19 +101,19 @@ async function run(repo: string) {
   try {
     const r = await draft.sync(repo);
     retry.delete(repo);
-    states.set(repo, {where: 'synced', changed: 0, both: r.both, unsynced: r.unsynced, elsewhere: states.get(repo)?.elsewhere});
+    states.set(repo, {where: 'synced', changed: 0, both: r.both, unsynced: r.unsynced, elsewhere: states.get(repo)?.elsewhere, agreed: true});
   } catch (e) {
     // Turned off on the Remote: nothing more is sent until it is on again.
     if ((e as {status?: number}).status === 410) {
       const s = states.get(repo);
-      states.set(repo, {where: 'off', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? []});
+      states.set(repo, {where: 'off', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? [], agreed: true});
       tell();
       return;
     }
     // The plan keeps no more on the Remote: kept here, and asked again now and then (paying, or making room, lets it go).
     if (e instanceof RemoteError && e.status === 402) {
       const s = states.get(repo);
-      states.set(repo, {where: 'waits', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? [], error: errorText(e)});
+      states.set(repo, {where: 'waits', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? [], error: errorText(e), agreed: s?.agreed});
       if (connection()) {
         const later = setTimeout(() => void run(repo), jitter(WAIT));
         // Long enough that nothing else should wait on it: a process with nothing else to do (a test) is not held open by it.
@@ -125,7 +127,7 @@ async function run(repo: string) {
     const n = (retry.get(repo) ?? 0) + 1;
     retry.set(repo, n);
     const s = states.get(repo);
-    states.set(repo, {where: 'offline', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? [], elsewhere: s?.elsewhere, error: errorText(e)});
+    states.set(repo, {where: 'offline', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? [], elsewhere: s?.elsewhere, error: errorText(e), agreed: s?.agreed});
     if (connection()) timers.set(repo, setTimeout(() => void run(repo), againIn(e, n)));
   }
   tell();
@@ -139,6 +141,15 @@ const track = (p: Promise<unknown>) => { agreeing.add(p); void p.then(() => { ag
 export async function settled(): Promise<void> {
   await flush();
   await Promise.allSettled([...agreeing]);
+}
+
+/** `repo` is gone from here (deleted, or renamed away): nothing of it waits to be sent, and nothing is said of it. */
+export function forget(repo: string) {
+  clearTimeout(timers.get(repo));
+  timers.delete(repo);
+  retry.delete(repo);
+  states.delete(repo);
+  tell();
 }
 
 /** Every change made now goes out at once (leaving the page, or before a step that needs it). */
@@ -204,7 +215,7 @@ async function lookOnce(): Promise<void> {
     const before = states.get(s.name);
     if (before?.where === 'off') continue;
     const where: Where = !c ? 'local' : s.fresh || s.changed ? (before?.where === 'offline' ? 'offline' : 'sending') : 'synced';
-    states.set(s.name, {where, changed: s.changed, both: before?.both ?? [], unsynced: s.unsynced, elsewhere: s.elsewhere, error: where === 'synced' ? undefined : before?.error});
+    states.set(s.name, {where, changed: s.changed, both: before?.both ?? [], unsynced: s.unsynced, elsewhere: s.elsewhere, error: where === 'synced' ? undefined : before?.error, agreed: !s.fresh});
     if (c && (s.fresh || s.changed) && before?.where !== 'offline') schedule(s.name, 0);
   }
   for (const k of [...states.keys()]) if (!here.some((s) => s.name === k)) states.delete(k);

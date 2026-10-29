@@ -331,13 +331,13 @@ export class Session {
   /**
    * Stop: the worker and every guest process in it end at once (terminate is
    * synchronous), so what they held is the browser engine's to free. Only
-   * then does it say so.
+   * then does it say so, and the promise is kept once it has.
    */
-  stop() {
-    if (!this.native) { this.end(() => t('Stopped')); return; }
+  stop(): Promise<void> {
+    if (!this.native) { this.end(() => t('Stopped')); return Promise.resolve(); }
     // On the root: stopped only once the host shows none of its processes left.
     const n = this.native;
-    void n.close().then((s) => {
+    return n.close().then((s) => {
       this.stopped = s;
       this.end(() => {
         const back = s.before.memory ? t('{size} given back', {size: bytes(s.before.memory)}) : '';
@@ -420,6 +420,20 @@ export const allSessions = (): [string, Session][] => [...sessions];
 
 /** The repo's session if one is running, without starting one. */
 export const sessionIfAny = (repo: string): Session | undefined => sessions.get(repo);
+
+/** How the repo's Prompt holds it: 'busy' while a line runs in it, 'idle' while it waits at its prompt line, null when none runs. */
+export function promptHolds(repo: string): 'busy' | 'idle' | null {
+  const s = sessions.get(repo);
+  if (!s?.running) return null;
+  return s.runs.at(-1)?.ms === null ? 'busy' : 'idle';
+}
+
+/** The repo's Prompt stopped, before its repo goes from here or takes another name; `gone`: let go of, too (its copy is of a repo no longer here). */
+export async function stopPrompt(repo: string, gone = false) {
+  const s = sessions.get(repo);
+  if (s?.running) await s.stop();
+  if (gone) sessions.delete(repo);
+}
 
 /** The repo's session, made if it has none (made, it is not started: writing to it starts it). */
 export function sessionFor(repo: string): Session {
