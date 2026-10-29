@@ -367,16 +367,21 @@ test('the prompt box has a Run button, its keys in its title and, while the box 
 });
 
 test('before anything is run, the Prompt over the center is only as tall as what it holds', async ({app}) => {
-  await app.forge.promptBox.focus();
   const box = app.main.locator('.term-slot .term-box');
-  // Its shell is ready (its prompt line is there), and what was said while it started has gone.
-  await expect(box).toContainText('$');
   // Measured with what it holds at that moment, so a box grown by something it shows is told apart from one
   // stretched empty (measuring first and reading after told the height of one moment and the words of another).
-  await expect(async () => {
+  const short = () => expect(async () => {
     const {height, holds} = await box.evaluate((el) => ({height: el.getBoundingClientRect().height, holds: (el as HTMLElement).innerText}));
     expect(height, holds).toBeLessThan(180);
   }).toPass({timeout: 15_000});
+  // Not written to yet, its shell has not started: the box is its head alone.
+  await app.forge.promptBox.focus();
+  await short();
+  // Its first letter starts it: once its prompt line is there (what was said while it started gone), still short.
+  await app.page.keyboard.type('l');
+  await expect(box).toContainText('$');
+  await app.page.keyboard.press('Backspace');
+  await short();
 });
 
 test('the current repo\'s pill shows which part has the keyboard, in ground over its ink, and the ring is not cut', async ({app}) => {
