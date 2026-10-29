@@ -211,7 +211,9 @@ test('Edit: words marked on a line come into the box chosen in their line, and w
   // Nothing chosen now: the box's caret is shown where it is in the file, and goes with it.
   const caret = marks.locator('.caret');
   await expect(caret).toHaveCount(1);
-  const x = async () => (await caret.boundingBox())!.x;
+  // Read in one step: the marks are drawn anew as the box's caret moves, so a mark looked up and then measured may be gone.
+  const x = () => marks.evaluate((m) => m.querySelector('.caret')?.getBoundingClientRect().x ?? NaN);
+  await expect.poll(x).not.toBeNaN();
   const was = await x();
   await box.press('Home');
   await expect.poll(x).toBeLessThan(was - 20);
