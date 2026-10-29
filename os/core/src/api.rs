@@ -79,6 +79,8 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         "repo_fetch" => to(remote::fetch(&repos()?, &a.s("repo")?)?),
         // One of Home's settings agreed with the Remote (home.rs agree_with).
         "home_sync" => to(remote::sync_home(&a.s("key")?)?),
+        // One of them taken off this device, only as the Remote has it (home.rs leave).
+        "home_leave" => to(remote::leave_home(&a.s("key")?)?),
         // The plan's page (Checkout, or the portal) as the Remote makes it for this account; the host opens it.
         "plan_page" => to(account::plan_page(if a.s("kind")? == "portal" { "portal" } else { "checkout" }, a.opt::<String>("tier")?.as_deref())?),
         // What only the browser can do (a passkey's), as a page of the Remote's own app; the host opens it.

@@ -164,6 +164,14 @@ class MeMenu extends Part {
     await expect(this.menu).toBeVisible();
   }
 
+  /** Sign out, asked in its row first (what stays in this browser): answered with Sign out, or Take them off first. */
+  async signOut(deed: 'Sign out' | 'Take them off' = 'Sign out') {
+    await this.openMenu();
+    await this.menu.getByRole('menuitem', {name: 'Sign out'}).click();
+    const ask = this.menu.getByRole('group', {name: 'Sign out'});
+    await this.app.answer(ask.getByRole('button', {name: deed, exact: true}), ask);
+  }
+
   /** Language, then the one chosen: the OS speaks it at once. `now` is the language in use, as it names itself. */
   async language(now: string, to: string) {
     await this.openMenu();

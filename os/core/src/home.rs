@@ -271,6 +271,8 @@ pub trait HomeHere {
     fn set_value(&mut self, key: &str, value: Option<&str>) -> Result<()>;
     fn agreed(&self, key: &str) -> Result<Option<Agreed>>;
     fn agree(&mut self, key: &str, a: Agreed) -> Result<()>;
+    /// Nothing agreed for `key` any more: the record of it (and the value it holds) goes.
+    fn forget(&mut self, key: &str) -> Result<()>;
 }
 
 /// The Remote's side of a setting.
@@ -351,6 +353,20 @@ pub fn waiting(here: &impl HomeHere, key: &str) -> bool {
         (Ok(Some(v)), Ok(b)) => b.is_none_or(|b| b.value != v),
         _ => false,
     }
+}
+
+/// Take `key` off this device when it is what was last agreed with the Remote, which keeps it: its value and the
+/// record of it go, so the next agreement takes the Remote's whole, as on a device new to it. One changed here
+/// since (not sent yet), or never agreed, is not on the Remote: it stays, and false says so. None here has gone.
+pub fn leave(here: &mut impl HomeHere, key: &str) -> Result<bool> {
+    if let Some(mine) = here.value(key)? {
+        if here.agreed(key)?.is_none_or(|b| b.value != mine) {
+            return Ok(false);
+        }
+        here.set_value(key, None)?;
+    }
+    here.forget(key)?;
+    Ok(true)
 }
 
 /// Agree `key` with the Remote. Unchanged here, the Remote's is taken.
@@ -446,6 +462,13 @@ impl HomeHere for Files {
         if !v["home"].is_object() { v["home"] = serde_json::json!({}); }
         v["home"][key] = serde_json::json!({"version": a.version, "value": a.value});
         if let Some(who) = a.who { v["home"][key]["who"] = who.into(); }
+        set("sync", &serde_json::to_string(&v).map_err(|e| e.to_string())?)
+    }
+
+    fn forget(&mut self, key: &str) -> Result<()> {
+        let Some(mut v) = get("sync")?.and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()) else { return Ok(()) };
+        let Some(home) = v["home"].as_object_mut().filter(|h| h.contains_key(key)) else { return Ok(()) };
+        home.remove(key);
         set("sync", &serde_json::to_string(&v).map_err(|e| e.to_string())?)
     }
 }
@@ -601,6 +624,7 @@ mod tests {
         }
         fn agreed(&self, key: &str) -> Result<Option<Agreed>> { Ok(self.agreed.get(key).cloned()) }
         fn agree(&mut self, key: &str, a: Agreed) -> Result<()> { self.agreed.insert(key.into(), a); Ok(()) }
+        fn forget(&mut self, key: &str) -> Result<()> { self.agreed.remove(key); Ok(()) }
     }
 
     #[test]
@@ -715,6 +739,30 @@ mod tests {
         d.agreed.insert("todo".into(), Agreed { version: 1, value: "[1]".into(), who: Some("a".into()) });
         agree_with(&mut d, &r, "todo", Some("b")).unwrap();
         assert!(!d.values.contains_key("todo"));
+    }
+
+    #[test]
+    fn a_setting_leaves_this_device_only_as_the_remote_has_it() {
+        let r = Remote::default();
+        let mut d = Device::default();
+        d.values.insert("todo".into(), r#"[{"id":"a"}]"#.into());
+        agree_with(&mut d, &r, "todo", Some("a")).unwrap();
+        // Changed here and not sent: it is not on the Remote, so it stays, and so does what was agreed.
+        d.values.insert("todo".into(), r#"[{"id":"a"},{"id":"b"}]"#.into());
+        assert!(!leave(&mut d, "todo").unwrap());
+        assert!(d.values.contains_key("todo") && d.agreed.contains_key("todo"));
+        // Sent, it goes, the record of it with it (the words of the list are in that too).
+        agree_with(&mut d, &r, "todo", Some("a")).unwrap();
+        assert!(leave(&mut d, "todo").unwrap());
+        assert!(!d.values.contains_key("todo") && !d.agreed.contains_key("todo"));
+        // Signed in again, the Remote's comes back whole, and nothing of this device's is sent over it.
+        let s = agree_with(&mut d, &r, "todo", Some("a")).unwrap();
+        assert_eq!((s.taken, s.sent), (true, false));
+        assert_eq!(d.values["todo"], r#"[{"id":"a"},{"id":"b"}]"#);
+        // Never agreed (written signed out): not on the Remote, it stays. None here has gone already.
+        d.values.insert("profile".into(), r#"{"name":"Ren"}"#.into());
+        assert!(!leave(&mut d, "profile").unwrap());
+        assert!(leave(&mut d, "dotfiles").unwrap());
     }
 
     #[test]

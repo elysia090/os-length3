@@ -1401,6 +1401,19 @@ or Cancel; Cancel comes back with the error a provider sends then.
   page icons: an icon there would only repeat the rail's, and two entries
   under one icon could not say how they differ. An entry opens the part it
   is about. It goes on leaving, a press outside or Escape.
+- Sign out asks in its row first (a row pressed to ask, §3 Popovers), since
+  what stays is not seen from the menu: the repos, the TODO and the profile
+  stay in this browser, to go on with signed out; on a computer others use,
+  take them off as you go, the Remote keeping them for the next sign-in. Take
+  them off at the left, Sign out at the right. Taking off stops the Prompts,
+  then every repo goes as 空ける takes it (sent first, and gone only once the
+  Remote has all of it) and the profile, TODO and dotfiles, sent first, go
+  once they are what the Remote has, the record of them with them; then it
+  signs out. Nothing the Remote lacks goes: what stays is said in the ask,
+  each with why, and that it is there to whoever uses this browser next, Not
+  now and Sign out under it. The menu stays out while it works, and says
+  there what the Remote refused (a repo that could not be sent first keeps
+  the device signed in).
 
 ## 8. Pages
 

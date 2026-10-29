@@ -2687,6 +2687,8 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 /* A row of the panel as the menu's rows are: its padding, the field or the ask in a row's place. */
 .stub-own, .row-ask, .pop-field, .pop-ask { display: grid; gap: var(--s2); padding: var(--s2) var(--s3); }
 .row-ask p, .pop-ask p, .pop-field p { margin: 0; }
+/* What an ask says, a line each, closer to each other than to its answers. */
+.pop-said { display: grid; gap: var(--s1); }
 /* A row asking keeps its own line on top, as a card asking keeps its title. */
 .row-ask > .row-item { padding: 0; }
 .stub-record { display: grid; gap: var(--s1); }

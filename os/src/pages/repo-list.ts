@@ -103,6 +103,8 @@ export function repoList(ctx: Context, options: {newCard: boolean; counted?: (n:
     const again = () => refresh();
     // A repo's gear list out is not drawn away under the pointer: the cards are drawn once it is put away.
     if (grid.isConnected && grid.querySelector('.repo-gear-pop:not([hidden])')) { setTimeout(() => void refresh(light), 1000); return; }
+    // What is drawn of the Remote is what a change is told from (signed out, its cards go at the next look).
+    known = remoteOnly().map((r) => r.name).join('\n');
     grid.replaceChildren(...repos.map((r) => repoCard(ctx, r.name, r.bytes, r.modified, again)),
       ...remoteOnly().map((r) => awayCard(ctx, r.name, r.bytes, Date.parse(r.updatedAt), again)),
       ...(options.newCard ? [newRepoCard(ctx)] : []));

@@ -47,10 +47,53 @@ test('a Remote that answers with a page or a 503 is said to be away, not to offe
 
 test('signing out from the person menu brings back the way in', async ({app}, info) => {
   await app.signIn(personName(info));
-  await app.me.openMenu();
-  await app.me.menu.getByRole('menuitem', {name: 'Sign out'}).click();
+  await app.me.signOut();
   await expect(app.main.getByRole('region', {name: 'Sign in'})).toBeVisible();
   await expect(app.main.getByRole('button', {name: 'Continue with Development'})).toBeVisible();
+});
+
+test('signing out says what stays in this browser, and Take them off takes off what the Remote has', async ({app}, info) => {
+  await app.signIn(personName(info));
+  await app.newRepo.make('garden');
+  await app.rail.go('home');
+  await app.home.title(app.home.items.first()).fill('Buy: seeds');
+  await app.me.openMenu();
+  await app.me.menu.getByRole('menuitem', {name: 'Sign out'}).click();
+  // Asked in its row: what stays here unless it is taken off, and that the Remote keeps it.
+  const ask = app.me.menu.getByRole('group', {name: 'Sign out'});
+  await expect(ask).toContainText('Your repos, TODO and profile stay in this browser.');
+  await expect(ask).toContainText('the Remote keeps them');
+  await app.answer(ask.getByRole('button', {name: 'Take them off', exact: true}), ask);
+  // Signed out, none of it is here: Home is as a newcomer finds it, nothing of the Remote's named on it either.
+  await expect(app.main.getByRole('heading', {name: 'No name yet', level: 1})).toBeVisible();
+  await expect(app.main.getByRole('region', {name: 'Repos'}).getByRole('group')).toHaveCount(0);
+  await expect(app.home.items).toHaveCount(1);
+  await expect(app.home.title(app.home.items.first())).toHaveValue('');
+  // Signed in again, the Remote gives it all back.
+  await app.signIn(personName(info));
+  await app.rail.go('home');
+  await expect(app.home.title(app.home.items.first())).toHaveValue('seeds');
+  await expect(app.main.getByRole('region', {name: 'Repos'}).getByRole('group', {name: /garden/})).toBeVisible();
+});
+
+test('Take them off takes nothing the Remote lacks: a repo the plan holds back stays here, and the ask says why', async ({planSignedIn: app}) => {
+  test.setTimeout(120_000);
+  // The free plan keeps three repos on the Remote: the fourth stays on this device and waits.
+  for (const name of ['a', 'b', 'c', 'd']) await app.newRepo.make(name);
+  await app.rail.go('home');
+  const repos = app.main.getByRole('region', {name: 'Repos'});
+  await expect(repos.getByRole('group', {name: 'd'})).toContainText('waits for room on the Remote');
+  await app.me.openMenu();
+  await app.me.menu.getByRole('menuitem', {name: 'Sign out'}).click();
+  const ask = app.me.menu.getByRole('group', {name: 'Sign out'});
+  await app.answer(ask.getByRole('button', {name: 'Take them off', exact: true}), ask.getByRole('button', {name: 'Take them off', exact: true}));
+  await expect(ask).toContainText('d stays: The free plan keeps no more repos on the Remote');
+  await expect(ask).toContainText('If you sign out, it stays here');
+  await expect(ask.getByRole('button', {name: 'Not now'})).toBeVisible();
+  // What the Remote has went; what it lacks is here as it was.
+  await app.page.keyboard.press('Escape');
+  for (const name of ['a', 'b', 'c']) await expect(repos.getByRole('group', {name})).toContainText('Only on the Remote');
+  await expect(repos.getByRole('group', {name: 'd'})).toContainText('waits for room on the Remote');
 });
 
 test('the first time a provider, a passkey offered right after it; the next time the passkey is the way in', async ({app}, info) => {
@@ -70,8 +113,7 @@ test('the first time a provider, a passkey offered right after it; the next time
   await next.getByRole('button', {name: 'Add a passkey'}).click();
   await expect(app.main.getByText('Passkey added', {exact: true})).toBeVisible();
   // Signed out, the passkey is the way in first, the provider under it for a passkey lost.
-  await app.me.openMenu();
-  await app.me.menu.getByRole('menuitem', {name: 'Sign out'}).click();
+  await app.me.signOut();
   await expect(card.getByRole('button').first()).toHaveText('Sign in with your passkey');
   await expect(card.getByRole('button', {name: 'Continue with Development'})).toBeVisible();
   await card.getByRole('button', {name: 'Sign in with your passkey'}).click();

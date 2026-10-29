@@ -477,6 +477,15 @@ pub fn sync_home(key: &str) -> Result<crate::home::HomeSynced> {
     crate::home::agree_with(&mut crate::home::Files, &client, key, who.as_deref())
 }
 
+/// One of Home's settings taken off this device, when it is what the Remote has (home.rs leave): whether it went.
+pub fn leave_home(key: &str) -> Result<bool> {
+    if !crate::home::SYNCED.contains(&key) {
+        return Err(crate::tr!("{} is this device's own; it is not kept on the Remote", "{} はこの端末のもので、Remote には置きません", key));
+    }
+    let _held = lock("~home")?;
+    crate::home::leave(&mut crate::home::Files, key)
+}
+
 /// Whether a setting here waits to be sent (it differs from what was last agreed); no request is made.
 pub fn home_waiting(key: &str) -> bool {
     crate::home::SYNCED.contains(&key) && crate::home::waiting(&crate::home::Files, key)

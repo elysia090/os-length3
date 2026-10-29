@@ -8,6 +8,8 @@
 
 import {core, isNative, readCapacity, type Freed, type Item, type Space} from './host.ts';
 import {flush, look} from '../remote/lifecycle.ts';
+import {HOME_KEYS, syncHome} from '../remote/sync.ts';
+import {reloadState, settingName} from '../home/state.ts';
 import {store} from '../repos/repos.ts';
 import {t, tn} from '../i18n.ts';
 import {keptL3} from '../prompt/userland.ts';
@@ -48,6 +50,25 @@ export async function freeOff(name: string): Promise<void> {
   if (r.kept.length) throw new Error(r.kept[0][1]);
   store.changedOutside(name, 'space');
   await look();
+}
+
+/**
+ * This device's copies taken off as one leaves a computer others use, before signing out: every repo here goes as
+ * 空ける takes it (sent first, and gone only once the Remote has all of it), and Home's settings that are the person's
+ * (the profile, the TODO, the dotfiles), sent first, go once they are what the Remote has (home.rs leave). Nothing the
+ * Remote lacks goes: what stays is returned, each by its name with why. The Prompts that have a repo open are the
+ * caller's to stop first (a browser's core does not know them).
+ */
+export async function takeOff(): Promise<[string, string][]> {
+  const repos = await store.list();
+  const freed = repos.length ? await free(repos.map((r) => `repo:${r.name}`)) : null;
+  const kept = (freed?.kept ?? []).map(([id, why]): [string, string] => [id.replace(/^repo:/, ''), why]);
+  for (const key of HOME_KEYS) {
+    await syncHome(key).catch(() => {});
+    if (!await core<boolean>('home_leave', {key})) kept.push([settingName(key), t('It is not on the Remote yet')]);
+  }
+  await reloadState([...HOME_KEYS, 'sync']);
+  return kept;
 }
 
 /** 空ける these; each repo is sent first and goes only once the Remote has all of it. */
