@@ -149,6 +149,10 @@ test('an issue that will not be done is closed, listed under Closed, and Reopen 
   await expect(issue).toBeHidden();
   const closed = app.git.section('Closed');
   await expect(closed).toContainText('#1 Idea：Say it in French');
+  // Its file, to be committed on main, reads as an issue reads everywhere (Idea: …, Closed: …), the written colons kept.
+  const words = app.main.locator('.diff-words');
+  await expect(words.filter({hasText: 'Idea：Say it in French'}).locator('.kind-colon')).toHaveCount(1);
+  await expect(words.filter({hasText: /^Closed：/}).locator('.kind-colon')).toHaveCount(1);
   await closed.getByRole('button', {name: 'Reopen #1'}).click();
 
   await expect(issue).toBeVisible();

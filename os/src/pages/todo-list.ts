@@ -74,6 +74,14 @@ export const kindColon = (): HTMLElement => h('span', {class: 'kind-colon'}, h('
  */
 export const kindWords = (kind: string): Node[] =>
   /[A-Za-z0-9-]$/.test(kind) ? [document.createTextNode(kind), kindColon()] : [document.createTextNode(`${kind}：`)];
+/**
+ * A line of a file as written, whose first word is a Latin kind (an issue's Fix：…, its Closed：…): its colon tucked
+ * as kindWords tucks it, in the code face as in any other; any other line, and any other full-width colon, as it is.
+ */
+export function kindLine(text: string): Node[] {
+  const m = /^(\s*[A-Za-z][A-Za-z0-9-]{0,15})：/.exec(text);
+  return m ? [document.createTextNode(m[1]), kindColon(), document.createTextNode(text.slice(m[0].length))] : [document.createTextNode(text)];
+}
 
 export interface TodoList {
   element: HTMLElement;

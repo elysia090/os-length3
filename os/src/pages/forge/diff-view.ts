@@ -4,6 +4,7 @@ import {t, tn} from '../../i18n.ts';
 import {askFoot, SETTLE} from '../common.ts';
 import {errorText} from '../../app/errors.ts';
 import {shownPath} from '../../repos/issues.ts';
+import {kindLine} from '../todo-list.ts';
 
 /**
  * A file of a diff as it is called: an issue's file is the issue (issue/001.md is #1), every other file its path.
@@ -118,12 +119,13 @@ function diffRow(f: FileDiff, l: DiffLine, k: number, o: DiffOptions): HTMLEleme
   const no = at ? h('button', {type: 'button', class: 'diff-no go', tabindex: '-1', 'aria-label': t('Line {n} of {path}', {n: at, path: fileName(f.path)})}, l.at ? `${l.at}` : '')
     : h('span', {class: 'diff-no'}, l.at ? `${l.at}` : '');
   if (at) { const go = o.reveal!; no.addEventListener('click', () => go(f.path, at)); }
-  // The words in a span of their own, after the indent, so a mark is drawn over them as a highlighter is, line by line as they wrap.
+  // The words in a span of their own, after the indent, so a mark is drawn over them as a highlighter is, line by line as they wrap;
+  // an issue's kind (Fix：, Closed：) reads Fix: there as everywhere, its written colon kept in the words.
   const indent = /^[ \t]*/.exec(l.text)![0];
   const words = l.text.slice(indent.length);
   // + or − before the words (nothing for a line that stays), as any diff writes it.
   const sign = h('span', {class: 'diff-sign', 'aria-hidden': 'true'}, l.kind === 'add' ? '+' : l.kind === 'del' ? '−' : '');
-  const row = h('div', {class: `diff-line ${l.kind}`}, no, sign, h('span', {class: 'diff-text'}, indent, h('span', {class: 'diff-words'}, words || ' ')));
+  const row = h('div', {class: `diff-line ${l.kind}`}, no, sign, h('span', {class: 'diff-text'}, indent, h('span', {class: 'diff-words'}, ...(words ? kindLine(words) : [' ']))));
   o.line?.(row, `${f.path}:${k}`, l);
   return row;
 }

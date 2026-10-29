@@ -61,7 +61,11 @@ Every value in `styles.css` comes from a token (§2).
   title"), whatever font holds the full-width one (each sets it elsewhere in
   its box); the written "：" stays in the text, heard and copied as written.
   After a Japanese kind (買う：種) the full-width colon is what Japanese sets
-  there, and is seen as written.
+  there, and is seen as written. A line of a diff that starts with a Latin
+  kind (an issue's file: Idea：…, Closed：…, on main's card in Git) reads the
+  same in the code face, Idea: …; any other full-width colon in a file is
+  seen as written, and Forge's editor, where the file is written character
+  by character, shows it as it is.
   What is chosen in a menu has a tick in `ink` at its end, not its weight
   alone. A fact beside a name (Used 4 min ago, This device, a size) is in
   the body's face with even figures, not the code face: only what is
