@@ -479,7 +479,8 @@ class Git extends Part {
     await this.repos.getByRole('radio', {name: repo, exact: true}).click();
     await expect(this.firstLine).toHaveAccessibleDescription(repo);
     await this.main.getByRole('textbox', {name: 'First line as Kind: title'}).fill(first);
-    if (detail) await this.main.getByRole('textbox', {name: 'Summary'}).fill(detail);
+    // The box written in's own Summary, not that of the issue in full under it.
+    if (detail) await this.main.getByRole('group', {name: 'Write an issue'}).getByRole('textbox', {name: 'Summary'}).fill(detail);
     await this.main.getByRole('button', {name: 'Create'}).click();
   }
 

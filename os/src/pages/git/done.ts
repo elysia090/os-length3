@@ -6,7 +6,7 @@ import {kindOf} from '../../repos/text.ts';
 import {answers, askFoot, SETTLE} from '../common.ts';
 import {counted, diffFiles} from '../forge/diff-view.ts';
 import {LAND, nudge, paced, still} from '../../ui/glide.ts';
-import {justClosed, justMerged, notCommitted, reopenIssue, type IssueEvents, type RepoState} from './issue.ts';
+import {justClosed, justMerged, notCommitted, reopenIssue, resize, type IssueEvents, type RepoState} from './issue.ts';
 import type {Laid} from '../../repos/git-state.ts';
 import {kindWords} from '../todo-list.ts';
 import {errorText} from '../../app/errors.ts';
@@ -82,19 +82,6 @@ async function slideOff(card: HTMLElement): Promise<void> {
 }
 
 /**
- * The card's height goes from what it was to what it now holds (a line asked for is shorter than the files it names;
- * an issue's box once its commit's files have gone): never a jump.
- */
-export function resize(card: HTMLElement, from: number) {
-  if (still() || !from || !card.isConnected) return;
-  const to = card.getBoundingClientRect().height;
-  if (Math.abs(to - from) < 2) return;
-  card.style.overflow = 'hidden';
-  const back = () => { card.style.overflow = ''; };
-  card.animate([{height: `${from}px`}, {height: `${to}px`}], {duration: paced(280), easing: LAND}).finished.then(back, back);
-}
-
-/**
  * main's card for a repo with something not committed: its files (▸ 2 files,
  * their diff over what is under it) and Commit. Commit asks in the card for
  * its line ("Fix：title", as `l3 commit REPO "Fix：title"` takes it), Not now
@@ -110,7 +97,7 @@ function mainCard(repo: string, n: number, events: IssueEvents, after: () => voi
     // many wait at the left and Commit at the right, where an issue's next step is.
     const foot = h('div', {class: 'issue-foot main-foot'},
       h('span', {class: 'muted small'}, tn('{n} file to commit on main', '{n} files to commit on main', n)), commit);
-    if (!brief) card.replaceChildren(h('h3', {class: 'main-title'}, repo), notCommitted(repo, n, events), foot);
+    if (!brief) card.replaceChildren(h('h3', {class: 'main-title'}, repo), notCommitted(repo, 'main', n, events), foot);
     else {
       // A row: its name opens its files under it (read only then), and closes them again.
       const open = unfolded.has(repo);
@@ -120,7 +107,7 @@ function mainCard(repo: string, n: number, events: IssueEvents, after: () => voi
         plain();
         card.querySelector<HTMLElement>('.main-open')?.focus();
       });
-      card.replaceChildren(h('h3', {class: 'main-title'}, name), foot, ...(open ? [notCommitted(repo, n, events)] : []));
+      card.replaceChildren(h('h3', {class: 'main-title'}, name), foot, ...(open ? [notCommitted(repo, 'main', n, events)] : []));
     }
     resize(card, from);
     return commit;
@@ -208,7 +195,7 @@ function mergedList(list: {repo: string; change: git.Change}[], all: boolean): H
       if (fold.open) opened.add(c.id); else opened.delete(c.id);
       if (!fold.open || read) return;
       read = true;
-      void git.changeDiff(repo, c).then((files) => inside.replaceChildren(...(files.length ? diffFiles(files, {beside: true}) : [h('p', {class: 'muted small'}, t('No changes'))])),
+      void git.changeDiff(repo, c).then((files) => inside.replaceChildren(...(files.length ? diffFiles(files, {kept: `merged\0${c.id}`}) : [h('p', {class: 'muted small'}, t('No changes'))])),
         (e) => inside.replaceChildren(h('p', {class: 'error'}, errorText(e))));
     });
     fold.open = opened.has(c.id);

@@ -46,6 +46,7 @@ export default {
   'Start': '始める',
   'Change': 'Change',
   'Switched off, the change is taken back': 'オフにすると Change を取り下げます',
+  'Handed in': '提出中',
   'Change · version {n} · {state}': 'Change · 第{n}版 · {state}',
   'version {n} (older)': '第{n}版（古い版）',
   'Previous issue': '前の Issue',

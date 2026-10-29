@@ -89,7 +89,8 @@ export interface Made { repo: string; file: string }
 
 /** `done` hears what was made, or null and the repo whose Forge asked for it (to go back to) when put back. */
 export function issueForm(events: {done(made: Made | null, back: string | null): void}): IssueForm {
-  const element = h('div', {class: 'issue-form issue-new', hidden: ''});
+  // A group named as what it is for: its Summary is told from the Summary of the issue in full under it.
+  const element = h('div', {class: 'issue-form issue-new', role: 'group', 'aria-label': t('Write an issue'), hidden: ''});
   let retarget: (repo: string) => void = () => {};
   /** The field last written in: the first line until the body is. */
   let typing: HTMLElement | null = null;

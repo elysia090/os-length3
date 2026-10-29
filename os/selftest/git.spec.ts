@@ -70,6 +70,32 @@ test('a change on main is committed from main\'s card, named by its line', async
   await expect(app.forge.reference.getByText('README.md', {exact: true})).toBeHidden();
 });
 
+test('in main\'s card an issue written is its line, shut, and the files of work are open', async ({signedIn: app}) => {
+  await app.newRepo.make('hello');
+  await app.git.write('hello', 'Fix: Say hello louder', 'People at the back cannot hear it.');
+  await expect(app.git.issue('#1 Fix：Say hello louder')).toBeVisible();
+  const card = app.git.mainCard('hello');
+  // Its fold says which issue, and waits shut: its words are read in its box, not here again.
+  const fold = card.getByRole('group').filter({hasText: 'Fix：Say hello louder'});
+  await expect(fold).toBeVisible();
+  await expect(fold).not.toHaveAttribute('open');
+  await expect(card.getByText('People at the back cannot hear it.')).toBeHidden();
+  await expect(card.getByText('# hello', {exact: true})).toBeVisible();
+  // Committed, a second one written stays main's while a work is gone into and left.
+  await app.git.commitOnMain('hello', 'Docs: The first');
+  await expect(card).toBeHidden();
+  await app.git.write('hello', 'Fix: Say it twice', 'Once is not enough.');
+  await expect(app.git.issue('#2 Fix：Say it twice')).toBeVisible();
+  const second = card.getByRole('group').filter({hasText: 'Fix：Say it twice'});
+  await expect(second).not.toHaveAttribute('open');
+  // Gone into a work and back, it is still shut (the work's own files never stood in for main's).
+  await app.git.step('Start').click();
+  await app.git.step('Back to main').click();
+  await expect(app.git.step('Continue here')).toBeVisible();
+  await expect(second).toBeVisible();
+  await expect(second).not.toHaveAttribute('open');
+});
+
 test('many repos waiting on main are a row each in All, a row\'s name opens its files, and one repo shown is its card', async ({signedIn: app}) => {
   for (const name of ['a', 'b', 'c', 'd']) await app.newRepo.make(name);
   await app.rail.go('git');
@@ -366,6 +392,30 @@ test('an issue\'s neighbours show their numbers at the edges that show, and the 
   await app.git.issues.getByRole('button', {name: 'Next issue'}).click();
   await expect(app.git.issue('#3 Docs：Three')).toBeVisible();
   await expect(app.git.issue('#2')).toBeInViewport();
+});
+
+test('on a phone the issue in full takes the row, nothing in it wider than it, and a swipe goes along', async ({signedIn: app}) => {
+  await app.page.setViewportSize({width: 390, height: 844});
+  await app.newRepo.make('notes');
+  for (const title of ['Fix: One', 'Feat: A second greeting for the evening', 'Docs: Three']) await app.git.write('notes', title);
+  await expect(app.git.issue('#3 Docs：Three')).toBeVisible();
+  await app.git.issues.getByRole('button', {name: 'Previous issue'}).click();
+  const head = app.git.issue('#2 Feat：A second greeting for the evening');
+  await expect(head).toBeVisible();
+  const card = await head.evaluate((e) => e.closest('.issue-card')!.getBoundingClientRect().toJSON() as DOMRect);
+  for (const deed of ['Close', 'Start']) {
+    const b = (await app.git.step(deed).boundingBox())!;
+    expect(b.x + b.width).toBeLessThanOrEqual(card.x + card.width);
+  }
+  // A finger swiped to the left goes to the next issue, as its edge does.
+  await app.git.issues.evaluate((section) => {
+    const stage = section.querySelector('[aria-roledescription="carousel"]')!;
+    const at = stage.getBoundingClientRect(), y = at.top + 60;
+    const go = (type: string, x: number) => stage.dispatchEvent(new PointerEvent(type, {pointerType: 'touch', pointerId: 7, clientX: x, clientY: y, bubbles: true}));
+    go('pointerdown', at.left + 220);
+    go('pointerup', at.left + 80);
+  });
+  await expect(app.git.issue('#3 Docs：Three')).toBeVisible();
 });
 
 test('Git\'s column keeps its width whether it scrolls or not', async ({app}) => {

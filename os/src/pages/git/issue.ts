@@ -1,6 +1,6 @@
 import {kindWords} from '../todo-list.ts';
 import {ago, h} from '../../ui/dom.ts';
-import {arrive, lift, type Lifted, morph, paced, still} from '../../ui/glide.ts';
+import {arrive, LAND, lift, type Lifted, morph, paced, still} from '../../ui/glide.ts';
 import * as git from '../../repos/history.ts';
 import {t, tn} from '../../i18n.ts';
 import {closeMark, issueName, issuePath, saveIssue, setClosed, type Issue} from '../../repos/issues.ts';
@@ -216,23 +216,53 @@ function foot(issue: Issue, s: RepoState | undefined, leave: HTMLElement | null,
 }
 
 /**
- * What is not committed in the copy `at`: its diff in a box of its own, there from the start (named for a screen
- * reader by how many files: "5 files not committed"); a file's name opens it in Forge.
+ * Each copy's diff not committed, as last read, by repo and the line it shows (main, or an issue's work): drawn again,
+ * it is there at once (as diffsRead keeps a change's). By the line too: just started, an issue's Commit row is not
+ * drawn from main's files (they flashed there, and the folds opened for them were kept open).
  */
-/** Each copy's diff not committed, as last read: drawn again, it is there at once (as diffsRead keeps a change's). */
 const uncommittedRead = new Map<string, git.FileDiff[]>();
 
-export function notCommitted(at: string, n: number, events: IssueEvents): HTMLElement {
+/** What each issue is about ("Fix：title"), by repo and its file's path, as Git last read them (knowIssues). */
+const aboutIssue = new Map<string, string>();
+/** The issues read (every repo's, open or done with): an issue's own file in a diff is then named by what it is about. */
+export function knowIssues(issues: readonly Issue[]) {
+  aboutIssue.clear();
+  for (const i of issues) aboutIssue.set(`${i.repo}\0${issuePath(i)}`, named(i.kind, i.title));
+}
+
+/**
+ * What is not committed in the copy `at` shows (on `line`): its diff, there from the start (named for a screen reader
+ * by how many files: "5 files not committed"); a file's name opens it in Forge.
+ */
+export function notCommitted(at: string, line: string, n: number, events: IssueEvents): HTMLElement {
   // Straight on what it is in (main's card, the issue's box), not a box of its own inside it: each file a fold, its
-  // name and what it comes to on its head, the first few open, a long one's lines past 30 waiting under "n more lines".
-  const files = (list: git.FileDiff[]) => diffFiles(list, {reveal: (p) => events.open(at, p), cut: 30, kept: at});
-  const was = uncommittedRead.get(at);
+  // name and what it comes to on its head, the first few open, a long one's lines past 30 waiting under "n more lines";
+  // an issue's own file (written, its words changed, closed) shut to its line, "#3 Fix：title".
+  const copy = `${at}\0${line}`;
+  const files = (list: git.FileDiff[]) => diffFiles(list, {reveal: (p) => events.open(at, p), cut: 30, kept: copy,
+    issue: (p) => aboutIssue.get(`${at}\0${p}`) ?? null});
+  const was = uncommittedRead.get(copy);
   const box = h('div', {class: 'changes', role: 'region', 'aria-label': tn('{n} file not committed', '{n} files not committed', n)}, ...(was ? files(was) : [quiet(t('Reading…'))]));
+  // Read for the first time, the files come in under "Reading…" and the box grows to hold them, never a jump.
+  const show = (...nodes: Node[]) => { const from = box.isConnected ? box.getBoundingClientRect().height : 0; box.replaceChildren(...nodes); resize(box, from); };
   void git.diff(at).then((list) => {
-    uncommittedRead.set(at, list);
-    if (!was || JSON.stringify(list) !== JSON.stringify(was)) box.replaceChildren(...files(list));
-  }, (e) => box.replaceChildren(h('p', {class: 'error'}, errorText(e))));
+    uncommittedRead.set(copy, list);
+    if (!was || JSON.stringify(list) !== JSON.stringify(was)) show(...files(list));
+  }, (e) => show(h('p', {class: 'error'}, errorText(e))));
   return box;
+}
+
+/**
+ * `el`'s height goes from what it was (`from`) to what it now holds (a line asked for is shorter than the files it
+ * names; an issue's box once its commit's files have gone; files read in under "Reading…"): never a jump.
+ */
+export function resize(el: HTMLElement, from: number) {
+  if (still() || !from || !el.isConnected) return;
+  const to = el.getBoundingClientRect().height;
+  if (Math.abs(to - from) < 2) return;
+  el.style.overflow = 'hidden';
+  const back = () => { el.style.overflow = ''; };
+  el.animate([{height: `${from}px`}, {height: `${to}px`}], {duration: paced(280), easing: LAND}).finished.then(back, back);
 }
 
 /**
@@ -273,7 +303,7 @@ function steps(issue: Issue, s: RepoState, events: IssueEvents, after: () => voi
   // Change
   const dirty = s.uncommitted;
   // Nothing to commit says nothing (Commit's done mark says it); before the first, where the work is done.
-  const what: Node | null = dirty ? notCommitted(at, dirty, events)
+  const what: Node | null = dirty ? notCommitted(at, w.line, dirty, events)
     : w.commits ? null : quiet(t('Edit in File, Forge or the Prompt; what changes shows here.'));
 
   // Commit
@@ -289,14 +319,18 @@ function steps(issue: Issue, s: RepoState, events: IssueEvents, after: () => voi
   const push = button(t('Push'), !dirty && !pushed && w.commits > 0);
   push.disabled = !w.commits || pushed;
   push.addEventListener('click', doing(push, error, async () => { await git.push(at); await git.submit(at); }, after));
-  // The change's power switch: on while it is in; switched off, it is taken back (Reset).
-  let reset: HTMLButtonElement | null = null;
+  // The change's power switch: on while it is in, said by its word beside it (Handed in); switched off, it is taken
+  // back (Reset). Pressed, it goes off at once, as a switch does under the hand, and back on if it could not.
+  let reset: HTMLElement | null = null;
   if (pushed && open) {
-    reset = h('button', {type: 'button', class: 'power', role: 'switch', 'aria-checked': 'true', 'aria-label': t('Reset'),
+    const power = h('button', {type: 'button', class: 'power', role: 'switch', 'aria-checked': 'true', 'aria-label': t('Handed in'),
       title: t('Switched off, the change is taken back')}, h('span', {class: 'knob'})) as HTMLButtonElement;
-    reset.addEventListener('click', doing(reset, error, () => git.reset(at), after));
+    const off = doing(power, error, () => git.reset(at).catch((e: unknown) => { power.setAttribute('aria-checked', 'true'); throw e; }), after);
+    power.addEventListener('click', () => { power.setAttribute('aria-checked', 'false'); void off(); });
+    reset = h('span', {class: 'power-line'}, h('span', {class: 'muted small', 'aria-hidden': 'true'}, t('Handed in')), power);
   }
-  const where = pushed ? quiet(t('Change · version {n} · {state}', {n: w.change!.version, state: STATE(w.change!.state)}))
+  // Taken back or rejected, Push's row still says so (the switch gone off has its answer), until it is pushed anew.
+  const where = pushed || (w.change && w.change.state !== 'open' && !w.unpushed) ? quiet(t('Change · version {n} · {state}', {n: w.change!.version, state: STATE(w.change!.state)}))
     : w.unpushed ? quiet(tn('{n} commit to push', '{n} commits to push', w.unpushed)) : null;
 
   return {element: h('div', {class: 'steps issue-steps'},
@@ -354,8 +388,10 @@ export function mergeRow(issue: Issue, s: RepoState | undefined, events: IssueEv
 }
 
 /** A diff whose lines can be marked, as with a highlighter: `marked` shows, `pending` collects what is pressed now. */
-function markedDiff(files: git.FileDiff[], marked: Set<string>, pending: Set<string> | null): HTMLElement[] {
-  return diffFiles(files, {beside: true, line: (row, key) => {
+function markedDiff(files: git.FileDiff[], marked: Set<string>, pending: Set<string> | null, kept: string): HTMLElement[] {
+  // Each file a fold as main's card and the Commit row have them, its lines from the box's own edge (not set off to
+  // the right of its name), what is opened or shut kept so as the Review is drawn again.
+  return diffFiles(files, {kept, line: (row, key) => {
     if (marked.has(key)) row.classList.add('marked');
     if (!pending) return;
     row.classList.add('markable');
@@ -396,10 +432,10 @@ export function reviewBox(issue: Issue, s: RepoState | undefined, after: () => v
   const pending = change.state === 'open' ? new Set<string>() : null;
   const read = `${at}\0${change.id}\0${change.version}`;
   const was = diffsRead.get(read);
-  const diff = h('div', {class: 'review-diff'}, ...(was ? markedDiff(was, marked, pending) : [h('p', {class: 'muted small'}, t('Reading…'))]));
+  const diff = h('div', {class: 'review-diff'}, ...(was ? markedDiff(was, marked, pending, read) : [h('p', {class: 'muted small'}, t('Reading…'))]));
   void git.changeDiff(at, change).then((files) => {
     diffsRead.set(read, files);
-    if (!was || JSON.stringify(files) !== JSON.stringify(was)) diff.replaceChildren(...markedDiff(files, marked, pending));
+    if (!was || JSON.stringify(files) !== JSON.stringify(was)) diff.replaceChildren(...markedDiff(files, marked, pending, read));
   }, (e) => diff.replaceChildren(h('p', {class: 'error'}, errorText(e))));
   // What was said, in order: a verdict with its note, or a comment alone.
   // What was said, in order, as a conversation: a verdict with its note, or a comment alone.

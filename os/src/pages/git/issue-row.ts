@@ -4,8 +4,8 @@ import {after, paced, still} from '../../ui/glide.ts';
 import type {Issue} from '../../repos/issues.ts';
 
 // Git's issues not merged yet, as large boxes side by side: one in full, its neighbours' edges showing at both
-// sides. An edge is the way to the box beside (hover lifts it; ← → do the same), and the track slides there. The
-// keyboard stays on the same part of the box as one goes along the row.
+// sides. An edge is the way to the box beside (hover lifts it; ← → and a finger's swipe do the same), and the track
+// slides there. The keyboard stays on the same part of the box as one goes along the row.
 
 /** What the row needs of the page it is in. */
 interface RowWays {
@@ -49,6 +49,17 @@ export class IssueRow {
     this.column = h('div', {class: 'issue-column'}, this.stage);
     this.prev.addEventListener('click', () => this.go(this.k - 1, true));
     this.next.addEventListener('click', () => this.go(this.k + 1, true));
+    // A finger swiped along the row (sideways more than down, and far enough) goes to the box beside, as its edge
+    // pressed does: on a phone the edges are a sliver, and a swipe is what a hand tries first.
+    let from: {x: number; y: number; id: number} | null = null;
+    this.stage.addEventListener('pointerdown', (e) => { from = e.pointerType === 'touch' ? {x: e.clientX, y: e.clientY, id: e.pointerId} : null; });
+    this.stage.addEventListener('pointercancel', () => { from = null; });
+    this.stage.addEventListener('pointerup', (e) => {
+      if (!from || e.pointerId !== from.id) return;
+      const dx = e.clientX - from.x, dy = e.clientY - from.y;
+      from = null;
+      if (Math.abs(dx) > 48 && Math.abs(dx) > 1.5 * Math.abs(dy)) this.go(this.k + (dx < 0 ? 1 : -1), true);
+    });
     this.stage.addEventListener('keydown', (e) => {
       if ((e.target as HTMLElement).closest('input, textarea')) return;
       if (e.key === 'ArrowLeft') { e.preventDefault(); this.go(this.k - 1, true); }
