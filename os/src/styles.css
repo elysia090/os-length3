@@ -3102,15 +3102,25 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 /* Add someone you know: its word where its neighbours' names start, at the card's own padding. */
 .small-card.new.add-someone { justify-content: flex-start; align-items: flex-start; text-align: left; }
 .grid > .empty { grid-column: 1 / -1; margin-top: 0; }
+/* The parts' › (common.ts parts): held at the row's end as it slides, over a fade into the ground; shown only while
+   there is more along (below). */
+.parts-on {
+  display: none; position: sticky; right: 0; z-index: 1; flex: none; place-items: center end;
+  width: calc(var(--s6) + var(--s2)); margin-left: calc(-1 * (var(--s6) + var(--s2))); padding: 0; border: 0;
+  background: linear-gradient(to right, transparent, var(--ground) 55%); color: var(--sub); cursor: var(--cursor-hand);
+}
+.parts-on .mark { box-sizing: content-box; width: var(--s4); height: var(--s4); padding: var(--s1); border: 1px solid var(--edge); border-radius: var(--r-round); background: var(--ground); }
+.parts-on:hover .mark { background: var(--raised); color: var(--ink); }
 /* Narrow: the parts slide rather than stack, and the server's name and code are left to its own part. */
 @media (max-width: 760px) {
   /* Every page's parts (Remote's too, not only the gear's): room round them so a focus ring is not cut by the slide. */
   .parts { flex-wrap: nowrap; overflow-x: auto; padding: var(--s1); margin: calc(-1 * var(--s1)); }
-  /* More along than fits: the row fades at its end while there is more to slide to (common.ts parts, .more), so a
-     part cut there reads as more, not clipped; slid to its end, nothing fades. */
-  .parts.more { mask-image: linear-gradient(to right, #000 calc(100% - var(--s5)), transparent); }
-  .parts { scroll-padding-inline: var(--s5); }
+  /* More along than fits: while there is more to slide to (.more), the › stands at the row's end, so a part cut there
+     reads as more, and an edge falling between two parts says so too; slid to its end, it goes. A part brought into
+     view stands clear of it. */
+  .parts { scroll-padding-inline: var(--s5) calc(var(--s6) + var(--s2)); }
   .parts .part { flex: none; }
+  .parts.more > .parts-on { display: grid; }
   .sheet-title > p { display: none; }
 }
 .seen-body { min-height: 0; margin-top: var(--s4); display: grid; grid-template-columns: minmax(10em, 1fr) minmax(0, 3fr); border: 1px solid var(--rule); border-radius: var(--r-place); overflow: hidden; }

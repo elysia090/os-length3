@@ -1,8 +1,8 @@
 import {h} from '../ui/dom.ts';
 import {errorText} from '../app/errors.ts';
 import {t} from '../i18n.ts';
-import {icon} from '../ui/icons.ts';
-import {arrive, glide, pop, where} from '../ui/glide.ts';
+import {icon, mark} from '../ui/icons.ts';
+import {arrive, glide, pop, still, where} from '../ui/glide.ts';
 import {purpose, RAIL, type PurposeId} from '../app/purposes.ts';
 
 export function pageHead(id: PurposeId): HTMLElement {
@@ -135,8 +135,16 @@ export function parts<K extends string>(page: string, list: readonly {id: K; lab
   const heard: ((k: K) => void)[] = [];
   // Heard by the name it is given (the page's, in the language spoken), never by the key it is kept under.
   const bar = h('div', {class: 'parts', role: 'tablist', ...(label ? {'aria-label': label} : {})});
-  // More parts past its right end than fit (a phone's width): the row says so with a fade there.
+  // More parts past its right end than fit (a phone's width): the row says so there, a › over a fade into the ground,
+  // whether a part is cut at the edge or the edge falls between two (a fade alone then fades nothing, and says
+  // nothing). Pressed, the row slides on to the part past it; the keyboard has the arrows, so it is the pointer's.
   const more = () => bar.classList.toggle('more', bar.scrollLeft + bar.clientWidth < bar.scrollWidth - 2);
+  const on = h('button', {type: 'button', class: 'parts-on', tabindex: '-1', 'aria-hidden': 'true'}, mark('on'));
+  on.addEventListener('click', () => {
+    const edge = on.getBoundingClientRect().left;
+    const past = [...tabs.values()].map((x) => x.tab).find((tab) => !tab.hidden && tab.getBoundingClientRect().right > edge + 1);
+    if (past) bar.scrollBy({left: past.getBoundingClientRect().right - edge, behavior: still() ? 'auto' : 'smooth'});
+  });
   bar.addEventListener('scroll', more, {passive: true});
   // A part's width changing (its count come in after it was chosen) moves those after it: the fade is judged again,
   // and the one chosen kept in view.
@@ -161,6 +169,7 @@ export function parts<K extends string>(page: string, list: readonly {id: K; lab
     sized.observe(tab);
     tabs.set(p.id, {tab, small, panel});
   }
+  bar.append(on);
   let now: K = list[0].id;
   /** The part chosen kept in view on a narrow window, where the switch slides sideways. */
   const keep = () => {

@@ -80,8 +80,17 @@ test('Runtime is in parts as Remote is: the one chosen shows, the others blend i
   await app.runtime.part('This browser').click();
   await app.runtime.part('Dotfiles').click();
   await expect(app.runtime.dotfiles.getByRole('textbox').nth(1)).toHaveValue('half written');
-  // On a phone the switch is reached sideways.
+  // On a phone the switch is reached sideways: a › at its end says there is more, and pressed, slides on to it.
   await app.page.setViewportSize({width: 390, height: 844});
+  await app.runtime.part('This browser').click();
+  const on = tabs.locator('.parts-on');
+  await expect(on).toBeVisible();
+  await expect(app.runtime.part('Dotfiles')).not.toBeInViewport({ratio: 1});
+  await expect(async () => {
+    if (await on.isVisible()) await on.click();
+    await expect(app.runtime.part('Dotfiles')).toBeInViewport({ratio: 1, timeout: 500});
+  }).toPass();
+  await expect(on).toBeHidden();
   await app.runtime.part('Environments').click();
   await expect(app.runtime.part('Environments')).toBeInViewport();
 });

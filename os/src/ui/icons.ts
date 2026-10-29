@@ -39,6 +39,8 @@ const MARKS = {
   beside: 'M4 5.5h16v13H4zM12 5.5v13M15 12h2.5M16.25 10.75v2.5',
   // More to choose from, below.
   down: 'M7 10l5 5 5-5',
+  // More along, to the right.
+  on: 'M10 7l5 5-5 5',
   // Down onto this computer: an arrow into a tray, the tray as wide as the arrow's room.
   download: 'M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14',
   // Someone not named yet: a head and shoulders.

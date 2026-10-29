@@ -421,8 +421,11 @@ what is its own.
 - **Parts.** A page whose parts are unrelated shows them as a switch of
   round headings, each with a bare count, the chosen one `ink`; only its
   part is shown, so a page never becomes one long scroll. On a narrow
-  window the switch slides sideways and keeps the chosen one in view.
-  Remote's page, Runtime's, Server's gear.
+  window the switch slides sideways and keeps the chosen one in view;
+  while there is more along than fits, a small round › stands at its end
+  over a fade into the ground (said whether a part is cut there or the
+  edge falls between two, where a fade alone shows nothing), and pressed,
+  slides on to the next. Remote's page, Runtime's, Server's gear.
 - **Cards.** A place you go to or a thing you act on: a rounded square
   with a `rule` edge, its title (20/600) on top, a line or two in `sub`,
   what can be done at its foot (the main deed at the right). Home and
