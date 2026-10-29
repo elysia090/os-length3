@@ -15,7 +15,7 @@ import {t} from '../i18n.ts';
 import {getState, loadState} from '../home/state.ts';
 import {setEnvironment} from '../core/client.ts';
 import {webauthn} from './passkeys.ts';
-import {jitter} from '../app/runs.ts';
+import {jitter, shared} from '../app/runs.ts';
 
 import {DEFAULT_REMOTE} from '../app/policy.ts';
 export {DEFAULT_REMOTE};
@@ -154,6 +154,16 @@ export async function json<T>(path: string, init: RequestInit = {}): Promise<T> 
   return reading<T>(await api(path, init));
 }
 
+/**
+ * `ask`, made once for all who ask while it is on its way under the same session (runs.ts shared), each given a copy
+ * of its answer: the parts of a page drawn at once (Remote's sign-in, its passkeys, the offer under its repos) each
+ * asked the same question, and each was a request. Asked once it is answered, it is asked afresh.
+ */
+export function askedOnce<T>(ask: () => Promise<T>): () => Promise<T> {
+  const asking = shared((_token: string) => ask());
+  return () => asking(connection()?.token ?? '').then((v) => structuredClone(v));
+}
+
 /** The Remote's JSON in `r`; words that do not read as it are not its answer (said so, never the parser's own error). */
 export async function reading<T>(r: Response): Promise<T> {
   try { return await r.json() as T; } catch {
@@ -191,17 +201,18 @@ export const PROVIDER_NAME: Record<Provider, string> = {github: 'GitHub', google
  * What this Remote offers to sign in with; `enter`, that it is entered by the link one was given and nothing else (a
  * Remote for research). `trouble`: it could not be asked (not reached, not in time, not taking requests, or what
  * answered was not its reply), in words, so a list that is empty for that is never taken for one it offers empty.
+ * `domain`: its own, a name on which is shown alone (inbox.ts).
  */
-export interface Ways { providers: Provider[]; passkey?: boolean; enter?: boolean; trouble?: string }
+export interface Ways { providers: Provider[]; passkey?: boolean; enter?: boolean; trouble?: string; domain?: string }
 /** How long the first look at the Remote waits before it says it did not answer. */
 const ABOUT_WAIT = 10_000;
-export async function about(): Promise<Ways> {
+export const about = askedOnce(async (): Promise<Ways> => {
   try {
     const w = await reading<Ways>(await api('/v1/about', {signal: AbortSignal.timeout(ABOUT_WAIT)}, null));
     if (!w || !Array.isArray(w.providers)) { reached(false); return {providers: [], trouble: t('The Remote\'s answer could not be read')}; }
     return w;
   } catch (e) { return {providers: [], trouble: e instanceof Error ? e.message : String(e)}; }
-}
+});
 
 /** In by a link (…/#enter=KEY): the one account of a Remote for research. Why not, said once on the sign-in card. */
 export async function enterWith(key: string): Promise<boolean> {
@@ -413,7 +424,7 @@ export async function discard(repo: string, name: string, typed: string, code: s
 }
 
 export interface Passkey { id: string; name?: string | null; createdAt: string; deviceType?: string; backedUp?: boolean }
-export const passkeys = () => json<Passkey[]>('/api/auth/passkey/list-user-passkeys');
+export const passkeys = askedOnce(() => json<Passkey[]>('/api/auth/passkey/list-user-passkeys'));
 export const removePasskey = (id: string) => json('/api/auth/passkey/delete-passkey', {method: 'POST', body: JSON.stringify({id})});
 
 // ---- devices: each a session ----

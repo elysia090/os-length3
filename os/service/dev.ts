@@ -41,9 +41,11 @@ const db = drizzle(new PGlite(join(dir, 'pg')), {schema});
 await migrate(db, {migrationsFolder: new URL('./migrations', import.meta.url).pathname});
 // The mark (mark.ts), in this process: looks answered without the database while nothing was written, as on Workers.
 const marks = memoryMarks();
-// What was held long enough goes: now, and each day while it runs (on Workers, a Cron Trigger); the mark moves after.
+// What was held long enough goes: a moment after it listens, and each day while it runs (on Workers, a Cron Trigger,
+// beside the requests); the mark moves after. Not before it listens, nor as it does: the sweep's statements, a
+// transaction each, hold PGlite half a second and more even when nothing goes, and the first request waited behind
+// them (in every start, each selftest's two Remotes' among them).
 const swept = () => sweep(db, bucket).then(async (gone) => { console.log(`sweep ${JSON.stringify(gone)}`); await marks.move(); }, (e: unknown) => console.error('sweep', e));
-await swept();
 setInterval(() => void swept(), 86_400_000).unref();
 const secretFile = join(dir, 'secret');
 if (!existsSync(secretFile)) writeFileSync(secretFile, crypto.randomUUID() + crypto.randomUUID(), {mode: 0o600});
@@ -80,4 +82,7 @@ createServer(async (req, res) => {
   r.headers.forEach((v, k) => { headers[k] = k === 'set-cookie' ? r.headers.getSetCookie() : v; });
   res.writeHead(r.status, headers);
   res.end(Buffer.from(await r.arrayBuffer()));
-}).listen(Number(port), '127.0.0.1', () => console.log(`remote on ${baseURL} for ${appOrigin} (${dir}${noBucket ? ', no bucket: files are not kept' : ''})`));
+}).listen(Number(port), '127.0.0.1', () => {
+  console.log(`remote on ${baseURL} for ${appOrigin} (${dir}${noBucket ? ', no bucket: files are not kept' : ''})`);
+  setTimeout(() => void swept(), 3000);
+});

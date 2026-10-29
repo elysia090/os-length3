@@ -44,6 +44,18 @@ test('each way of not being asked is said as itself, away meanwhile, and a good 
   }
 });
 
+test('asked twice at once, the Remote is asked once; asked again once it answered, it is asked again', async () => {
+  let asked = 0;
+  answering(async () => { asked++; return json({providers: ['github']})(); });
+  const [a, b] = await Promise.all([remote.about(), remote.about()]);
+  assert.deepEqual([a.providers, b.providers, asked], [['github'], ['github'], 1]);
+  // Each its own copy.
+  a.providers.pop();
+  assert.deepEqual(b.providers, ['github']);
+  await remote.about();
+  assert.equal(asked, 2);
+});
+
 test('what is read from the Remote says the same, not the parser\'s error', async () => {
   answering(async () => new Response('<!doctype html>', {status: 200, headers: {'Content-Type': 'text/html'}}));
   await assert.rejects(remote.json('/v1/open'), (e: unknown) => e instanceof remote.RemoteError && e.trouble === 'malformed' && !/JSON/.test(e.message));

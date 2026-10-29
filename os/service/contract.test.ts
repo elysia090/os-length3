@@ -189,7 +189,7 @@ test('a repo turned off is kept 30 days from when it went off, asking again does
   // Off, it answers only that, with until when it can come back, on every route of it and every line.
   const asks: [string, string, unknown?][] = [
     ['GET', '/v1/repos/resting'], ['GET', '/v1/repos/resting?line=001'], ['GET', '/v1/repos/resting/log'], ['GET', '/v1/repos/resting/lines'],
-    ['GET', `/v1/repos/resting/cuts/${o.cut}`],
+    ['GET', '/v1/repos/resting/changes'], ['GET', `/v1/repos/resting/cuts/${o.cut}`],
     ['PATCH', '/v1/repos/resting/draft', {version: 1, set: {}, remove: []}], ['PATCH', '/v1/repos/resting/draft?line=001', {version: 2, set: {}, remove: []}],
     ['POST', '/v1/repos/resting/cuts', {version: 1, parent: o.cut, title: 'x'}], ['POST', '/v1/repos/resting/lines', {issue: 'issue/001.md'}],
   ];

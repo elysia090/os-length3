@@ -117,7 +117,9 @@ test('against the Remote: a repo past the allowance stays here and waits; a serv
   assert.deepEqual(plan.planRefusal(refused), {rule: 'repos', buy: true, tier: 'free'});
   // The app goes on with it: kept here, waiting, and the copy whole.
   await lifecycle.look();
-  // The send the look began is done once the next send of the same repo has its turn (one at a time).
+  // The send the look began is done: at once if it has not begun yet (a look that asks the Remote nothing more after
+  // reading what is here ends before it does), or once the next send of the same repo has its turn (one at a time).
+  await lifecycle.settled();
   await b.draft.sync('two').catch(() => undefined);
   assert.equal(lifecycle.repoState('two')?.where, 'waits');
   assert.ok((await b.names('two')).length > 0);

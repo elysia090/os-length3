@@ -439,11 +439,19 @@ pub struct Work {
 }
 
 pub fn work(repos: &Repos, repo: &str) -> Result<Work> {
-    // A work merged (here or on another device) is done: back to main, and its copy goes.
-    let merged: Vec<String> = changes_of_repo(repo).unwrap_or_default().into_iter().filter(|c| c.state == "merged").map(|c| c.line).collect();
-    for (line, _) in crate::work::worktrees(repo) {
-        // A merged work's copy that cannot go now is tried again the next time the issues are read.
-        if merged.contains(&line) { let _ = crate::work::finish(repos, repo, &line); }
+    // A work merged (here or on another device) is done: back to main, and its copy goes. The changes are asked of
+    // the Remote only when there is a copy here: with none, there is nothing to let go of, and the work shown is main
+    // (most repos, most of the time), which Forge and Git asked about each time they drew the repo.
+    let copies = crate::work::worktrees(repo);
+    let mut listed = None;
+    if !copies.is_empty() {
+        let list = changes_of_repo(repo);
+        let merged: Vec<&str> = list.iter().flatten().filter(|c| c.state == "merged").map(|c| c.line.as_str()).collect();
+        for (line, _) in &copies {
+            // A merged work's copy that cannot go now is tried again the next time the issues are read.
+            if merged.contains(&line.as_str()) { let _ = crate::work::finish(repos, repo, line); }
+        }
+        listed = list.ok();
     }
     let on = repos.line(repo);
     if on == crate::work::MAIN {
@@ -453,7 +461,8 @@ pub fn work(repos: &Repos, repo: &str) -> Result<Work> {
     let log = log_of(repo, &on, 200)?;
     let mine: Vec<&Cut> = log.iter().take_while(|c| Some(&c.id) != l.base.as_ref()).collect();
     let unpushed = mine.iter().take_while(|c| Some(&c.id) != l.pushed.as_ref()).count();
-    let change = changes_of_repo(repo)?.into_iter().find(|c| c.line == on);
+    // The list read above, when it was: what was let go of meanwhile was merged, never the work shown.
+    let change = match listed { Some(list) => list, None => changes_of_repo(repo)? }.into_iter().find(|c| c.line == on);
     Ok(Work { line: on, issue: Some(l.issue), started_by: l.started_by, started_at: l.started_at, commits: mine.len(),
         unpushed: if l.pushed == l.base && !mine.is_empty() { mine.len() } else { unpushed }, change })
 }
@@ -531,11 +540,30 @@ pub fn changes_of_repo(repo: &str) -> Result<Vec<Change>> {
     Ok(list)
 }
 
+/// Where a change from one commit to another reaches, as `place` found it. A commit's id is made from all it is (the
+/// Remote's cutId: its tree among it), so what two commits come to never changes: a change listed again (each time
+/// Git is drawn, and Forge while a work is shown) asks the Remote for neither of its trees again.
+type Reach = (Vec<String>, usize);
+fn reaches() -> &'static Mutex<HashMap<(String, Option<String>, String), Reach>> {
+    static R: OnceLock<Mutex<HashMap<(String, Option<String>, String), Reach>>> = OnceLock::new();
+    R.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 /// Fill in where `c` reaches: the folders it touches and how many files (the Remote says only its commits).
 fn place(client: &Client, repo: &str, c: &mut Change) -> Result<()> {
-    let then = c.base.as_deref().map_or_else(|| Ok(Tree::new()), |b| tree_at(client, repo, b))?;
-    let now = tree_at(client, repo, &c.head)?;
-    (c.folders, c.files) = places(&then, &now);
+    let key = (repo.to_string(), c.base.clone(), c.head.clone());
+    let known = reaches().lock().map_err(|e| e.to_string())?.get(&key).cloned();
+    let reach = match known {
+        Some(r) => r,
+        None => {
+            let then = c.base.as_deref().map_or_else(|| Ok(Tree::new()), |b| tree_at(client, repo, b))?;
+            let now = tree_at(client, repo, &c.head)?;
+            let r = places(&then, &now);
+            reaches().lock().map_err(|e| e.to_string())?.insert(key, r.clone());
+            r
+        }
+    };
+    (c.folders, c.files) = reach;
     Ok(())
 }
 

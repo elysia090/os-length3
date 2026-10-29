@@ -365,10 +365,14 @@ export function planRoutes(d: PlanDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   v1.get('/plan', async (c) => {
     const me = c.get('userId');
     if (!p.on || !p.config) return c.json({plan: 'none'});
-    // One after another on the request's one connection: asked at once, each would open a connection of its own (worker.ts).
-    const row = await p.rowOf(db, me), use = await usage(db, me);
-    // Names as the rule counts them: those on this Remote's own domain (one on a domain of one's own is paid, not counted).
-    const names = await homeNames(db, me, p.domain);
+    // The account's row, what it keeps, and its names as the rule counts them (those on this Remote's own domain: one on
+    // a domain of one's own is paid, not counted), in one read: three before, one after another on the request's one
+    // connection (asked at once, each would have opened a connection of its own: worker.ts).
+    const [at] = await db.select({row: plan, repos: sql<number>`(select count(*)::int from repo where repo.user_id = ${me})`,
+      bytes: sql<number>`coalesce((select used from room where room.user_id = ${me}), 0)::float8`,
+      names: sql<number>`(select count(*)::int from address where address.user_id = ${me} and address.domain = ${p.domain} and ${kept} and address.address <> '')`})
+      .from(user).leftJoin(plan, eq(plan.userId, user.id)).where(eq(user.id, me)) as {row: Row | null; repos: number; bytes: number; names: number}[];
+    const row = at?.row ?? undefined, use = {repos: Number(at?.repos ?? 0), bytes: Number(at?.bytes ?? 0)}, names = at?.names ?? 0;
     const s = standing(row, p.config.grace);
     const allowance = s.tier ? p.paidAllowance(s.tier) : p.config.free;
     return c.json({plan: s.paid ? 'paid' : 'free', tier: s.tier ?? 'free', status: s.status, renews: s.renews, ends: s.ends, graceUntil: s.graceUntil,

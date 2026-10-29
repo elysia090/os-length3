@@ -12,6 +12,8 @@
 //      the free allowance, the tiers, and Stripe's stand-in, devbilling.ts),
 //      started at the same time, for the specs about paying (SELFTEST_PLAN_APP).
 //      Every other spec meets a Remote with no plan, where everything is open.
+// All four at once: the servers start while the app is built, as none of them
+// needs the build before a page is asked for, after the last of them is up.
 //
 // Both are reached by the name localhost (bound to 127.0.0.1): a passkey's
 // relying party is a domain, never an address, so Chromium's virtual
@@ -28,13 +30,14 @@
 // Postgres 16 of its own reached as remote_worker through the Neon driver
 // (and a second, its people free until they pay, for the specs about paying).
 
-import {spawn, spawnSync, type ChildProcess} from 'node:child_process';
+import {spawn, type ChildProcess} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {createWriteStream, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {cp} from 'node:fs/promises';
 import {createServer} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {pathToFileURL} from 'node:url';
 import type {FullConfig} from '@playwright/test';
 import {OS, OUT, LOGS} from './paths.ts';
 
@@ -70,14 +73,18 @@ const STAMP = join(OUT, '.built');
 const carries = () => JSON.stringify({prompt: existsSync(join(OS, 'public', 'l3', 'l3.json'))});
 
 /** Build unless selftest/.dist is newer than everything it is made from, and carries the same. */
-function build() {
+async function build() {
   const made = existsSync(STAMP) ? statSync(STAMP).mtimeMs : 0;
   const changed = Math.max(...SOURCES.map((s) => newest(join(OS, s))));
   if (made > changed && readFileSync(STAMP, 'utf8') === carries()) { console.log('selftest: the build in selftest/.dist is fresh'); return; }
   console.log('selftest: building the app for a Remote on its own origin');
-  const r = spawnSync(process.execPath, [join(OS, 'node_modules/vite/bin/vite.js'), 'build', '--outDir', OUT, '--logLevel', 'warn'],
-    {cwd: OS, stdio: 'inherit', env: {...process.env, VITE_LENGTH3_REMOTE: ''}});
-  if (r.status !== 0) throw new Error('selftest: the build failed');
+  const status = await new Promise<number | null>((resolve, reject) => {
+    const c = spawn(process.execPath, [join(OS, 'node_modules/vite/bin/vite.js'), 'build', '--outDir', OUT, '--logLevel', 'warn'],
+      {cwd: OS, stdio: 'inherit', env: {...process.env, VITE_LENGTH3_REMOTE: ''}});
+    c.once('error', reject);
+    c.once('close', resolve);
+  });
+  if (status !== 0) throw new Error('selftest: the build failed');
   writeFileSync(STAMP, carries());
 }
 
@@ -138,6 +145,9 @@ function copyDir(from: string, to: string): Promise<void> {
   });
 }
 
+/** How npm test's processes load their modules (types stripped and code compiled once for every run), for the Remotes too. */
+const LOAD = pathToFileURL(join(OS, 'scripts', 'tests-load.mjs')).href;
+
 /** Start `args` with node, its output in logs/<name>.log. */
 function start(name: string, args: string[], env: NodeJS.ProcessEnv = {}): ChildProcess {
   const log = createWriteStream(join(LOGS, `${name}.log`));
@@ -155,7 +165,7 @@ async function ready(url: string, children: ChildProcess[]) {
     if (dead) throw new Error(`selftest: a server exited (${dead.exitCode}) before answering; see selftest/.logs`);
     try { if ((await fetch(url)).ok) return; } catch { /* not yet */ }
     if (Date.now() > until) throw new Error(`selftest: ${url} did not answer within a minute; see selftest/.logs`);
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 50));
   }
 }
 
@@ -206,8 +216,16 @@ async function worker(): Promise<() => Promise<void>> {
 
 export default async function globalSetup(_config: FullConfig) {
   mkdirSync(LOGS, {recursive: true});
-  build();
-  if (process.env.SELFTEST_REMOTE_KIND === 'worker') return worker();
+  if (process.env.SELFTEST_REMOTE_KIND === 'worker') {
+    await build();
+    return worker();
+  }
+  // Built while the servers start (below): a build, when anything it is made from changed, took as long as they do,
+  // and they waited for it. A preview needs only its directory until a page is asked for.
+  mkdirSync(OUT, {recursive: true});
+  const built = build();
+  // Said where it is waited for, below, once the servers are stopped.
+  built.catch(() => {});
   const empty = process.env.CI ? null : await emptyDatabase();
   const data = mkdtempSync(join(tmpdir(), 'length3-selftest-'));
   const [remotePort, appPort, planRemotePort, planAppPort] = [await freePort(), await freePort(), await freePort(), await freePort()];
@@ -223,22 +241,25 @@ export default async function globalSetup(_config: FullConfig) {
   process.once('exit', kill);
   /** A Remote (its data in `dir` under the run's; off CI, its database a copy of the empty one) and the preview that passes to it, `name` naming their logs. */
   const pair = async (name: string, dir: string, rPort: number, aPort: number, env: NodeJS.ProcessEnv = {}) => {
+    // The preview first: it waits for nothing.
+    children.push(start(`preview${name}`, [join(OS, 'node_modules/vite/bin/vite.js'), 'preview', '--outDir', OUT,
+      '--host', '127.0.0.1', '--port', String(aPort), '--strictPort'], {LENGTH3_DEV_REMOTE: `http://127.0.0.1:${rPort}`}));
     if (empty) {
       mkdirSync(join(data, dir));
       await copyDir(empty, join(data, dir, 'pg'));
     }
     const at = `http://localhost:${aPort}`;
-    // The Remote's own name is localhost too, so the session it sets on sign-in is the app's.
-    children.push(start(`remote${name}`, ['service/dev.ts', join(data, dir), String(rPort), at], {LENGTH3_DEV_BASE: `http://localhost:${rPort}`, ...env}));
-    children.push(start(`preview${name}`, [join(OS, 'node_modules/vite/bin/vite.js'), 'preview', '--outDir', OUT,
-      '--host', '127.0.0.1', '--port', String(aPort), '--strictPort'], {LENGTH3_DEV_REMOTE: `http://127.0.0.1:${rPort}`}));
+    // The Remote's own name is localhost too, so the session it sets on sign-in is the app's. It loads its modules as
+    // npm test's processes do (scripts/tests-load.mjs: their types stripped once, their code compiled once, for every
+    // run): a fifth less of the CPU its start took, which every run waited for.
+    children.push(start(`remote${name}`, ['--import', LOAD, 'service/dev.ts', join(data, dir), String(rPort), at], {LENGTH3_DEV_BASE: `http://localhost:${rPort}`, ...env}));
     // Through the preview, so both are up and the one passes to the other. (Between the servers and
     // from here, the address itself: what localhost names first, ::1 or 127.0.0.1, is the system's.)
     return ready(`http://127.0.0.1:${aPort}/v1/about`, children);
   };
   try {
-    // The two at once: the Remote with the plan costs the run no time of its own.
-    await Promise.all([pair('', 'open', remotePort, appPort), pair('-plan', 'plan', planRemotePort, planAppPort, {LENGTH3_PLAN: '1'})]);
+    // The two at once, and the build: the Remote with the plan costs the run no time of its own.
+    await Promise.all([built, pair('', 'open', remotePort, appPort), pair('-plan', 'plan', planRemotePort, planAppPort, {LENGTH3_PLAN: '1'})]);
   } catch (e) {
     await teardown();
     throw e;
