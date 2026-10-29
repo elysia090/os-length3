@@ -313,7 +313,7 @@ test('someone one knows added at once is told in their Inbox by the Remote\'s no
   await bo.inbox.conversation(ada.handle).click();
   const thread = bo.inbox.thread(ada.handle);
   // The Remote's notice, a line across the conversation in no one's voice, and the way to the server.
-  const notice = thread.getByRole('button', {name: `${ada.handle} added you to Books.`, exact: true});
+  const notice = thread.getByRole('button', {name: `${ada.person} added you to Books.`, exact: true});
   await expect(notice).toBeVisible();
   await notice.click();
   await expect(bo.server.chip('Books')).toBeChecked();

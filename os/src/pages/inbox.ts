@@ -428,7 +428,7 @@ export function inboxPage(ctx: Context): Node[] {
       else if (typeof m.target.server === 'string') go = serverLink(m.target.server, ctx);
       // A notice the Remote left (added to a server at once) is no one's words: a quiet line across the conversation,
       // not a bubble on either side, and its way to the server.
-      const notice = inbox.noticeWords(m.target, m.mine, inbox.shown(address));
+      const notice = inbox.noticeWords(m.target, m.mine, named(address));
       const b = notice ? noticeLine(notice, m, ctx)
         : h('div', {class: 'bubble', 'data-mine': String(m.mine), 'data-time': String(m.time)},
           m.type !== 'message' ? h('span', {class: 'state-chip'}, KIND(m.type)) : null,
