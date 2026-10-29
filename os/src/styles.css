@@ -197,14 +197,15 @@ a { color: var(--ink); }
    quickly and going, slowly, so a pass across the rail leaves a short trail rather than blinking. Only the fill and
    the edge ease: words and icons turn at once, so ink landing on a place never hides its icon a moment. */
 .rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row,
-.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .tree-row, .hit, .hit-file, .found-item, .seen-file, .link, button.row-item, .part, .dot-row {
+.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .tree-row, .hit, .hit-file, .found-item, .seen-file, .link, button.row-item, .part, .dot-row,
+.pane-head, .hit-diff, .found-shut {
   transition: background-color calc(200ms * var(--pace)) ease-out, border-color calc(200ms * var(--pace)) ease-out;
 }
 :is(.rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row,
 .inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .tree-row, .hit, .hit-file, .found-item, .seen-file, .link,
-button.row-item, .part, .dot-row):hover { transition-duration: calc(60ms * var(--pace)); }
+button.row-item, .part, .dot-row, .pane-head, .hit-diff, .found-shut):hover { transition-duration: calc(60ms * var(--pace)); }
 :is(.rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row,
-.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .file-beside, .tree-row, .dot-row):active:not(:disabled) {
+.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .file-beside, .tree-row, .dot-row, .pane-head, .hit-diff, .found-shut):active:not(:disabled) {
   background-color: color-mix(in srgb, var(--ink) 13%, var(--raised)); transition-duration: 40ms;
 }
 /* A primary button answers the pointer too: its ink a step toward the ground under it, as quickly as a fill comes
@@ -977,7 +978,11 @@ button.row-item:disabled { cursor: var(--cursor-arrow); color: var(--sub); }
 .pill-name { border: 0; padding: 0; background: transparent; color: inherit; cursor: var(--cursor-hand); white-space: nowrap; }
 /* The issue the repo's copy is for, after its name, while it is not main. */
 .pill-issue { margin-left: .4em; font-family: var(--mono); opacity: .7; }
-.pill-close { display: grid; place-items: center; width: var(--h-row); height: calc(var(--h-row) - 2px); border: 0; padding: 0; background: transparent; color: inherit; cursor: var(--cursor-hand); border-radius: var(--r-round); }
+.pill-close { flex: none; display: grid; place-items: center; width: var(--h-row); height: calc(var(--h-row) - 2px); border: 0; padding: 0; background: transparent; color: inherit; cursor: var(--cursor-hand); border-radius: var(--r-round); }
+/* Alone on a band narrower than it (a phone), the pill gives way in its name, which ends in …, never at its × cut
+   by the band's edge; several scroll, as a band does. */
+.pills > .pill:only-child { flex-shrink: 1; min-width: 0; }
+.pills > .pill:only-child > .pill-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .pill-close .mark, .band-add .mark { width: var(--s4); height: var(--s4); }
 /* The ring is round the part of a pill that has the keyboard, inside the pill: its name, or its ×;
    on the current pill it is ground over the ink, so it does not sink into it. */
@@ -1145,9 +1150,12 @@ body::after {
   content: ''; position: fixed; inset: 0; z-index: 7; pointer-events: none;
   background: color-mix(in srgb, var(--ink) 14%, transparent); opacity: 0; transition: opacity calc(180ms * var(--pace)) ease-out;
 }
-body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading))::after { opacity: 1; }
-/* Over the shade only while it is out: at rest it is the page's, under whatever lies over the page (Server's layer). */
-.work.bench > .bar > .search-box:is(:focus-within, .reading, .moving) { z-index: 8; }
+body:has(.work.bench:not([hidden]) > .bar .search-box:focus-within)::after { opacity: 1; }
+/* Over the shade only while it is out: at rest it is the page's, under whatever lies over the page (Server's layer).
+   Out with the keyboard elsewhere (what is read there, or a list held out from its head in the pane), the shade lifts:
+   the file is written beside it at full strength. */
+.work.bench > .bar > .search-box:is(:focus-within, .reading, .kept, .moving) { z-index: 8; }
+.work.bench > .bar > .search-box.kept:not(.leaving) > .search-results { display: flex; }
 /* The right pane put away takes its search with it; its switch stays where it was, at the top line's right end,
    the way to bring both back, and says which it is: brought out, an ink fill, as anything chosen; put away, the
    outline alone. */
@@ -1251,6 +1259,10 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
    line all the way, so it never crosses the line's words). */
 .prompt-leaving:not(.line-lit) .screen .prompt-chip > .lamp { opacity: 1; transition-delay: calc(var(--prompt-down) * (1 - var(--prompt-down-line)) * .5); }
 .line-lit .screen .prompt-keys { opacity: 0; visibility: hidden; transition: opacity 120ms ease-out, visibility 0s 120ms; }
+/* The keys that send take the glass's light with Run, as outlines on it. */
+.screen .prompt-sends > kbd { transition: color 120ms ease-out, border-color 120ms ease-out, background-color 120ms ease-out; }
+.line-lit .screen .prompt-sends > kbd { color: color-mix(in srgb, var(--add-tint) 80%, transparent); border-color: color-mix(in srgb, var(--add-tint) 35%, transparent); background: transparent;
+  transition-delay: calc(var(--prompt-up) * var(--prompt-up-line) * .72); }
 
 /* At rest the box is the box (raised, its edge), its line a terminal's: at its left a pill of the screen's glass, round
    as the band's pill for the repo is, with the shell's lamp and the prompt line it waits at; the line in the screen's
@@ -1326,12 +1338,19 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
   linear-gradient(var(--cell), var(--cell)) 0 var(--cell-top) / 1ch 1px no-repeat, linear-gradient(var(--cell), var(--cell)) 0 calc(100% - 4px + var(--cell-top)) / 1ch 1px no-repeat,
   linear-gradient(var(--cell), var(--cell)) 0 var(--cell-top) / 1px calc(100% - 4px) no-repeat, linear-gradient(var(--cell), var(--cell)) calc(1ch - 1px) var(--cell-top) / 1px calc(100% - 4px) no-repeat; }
 :is(.prompting, .prompt-leaving) .screen .prompt-in:placeholder-shown:not(:focus, :disabled) { --cell-top: 2px; }
-.prompt-keys { flex: none; display: inline-flex; align-items: center; gap: var(--s1); transition: opacity 160ms ease-out 60ms; }
-.prompt-keys > kbd { color: var(--sub); border-color: var(--rule); }
+/* The keys that bring the box, and the keys that send from it, one over the other in one place. */
+.prompt-caps { flex: none; display: grid; justify-items: end; align-items: center; }
+.prompt-caps > * { grid-area: 1 / 1; }
+.prompt-keys, .prompt-sends { display: inline-flex; align-items: center; gap: var(--s1); transition: opacity 160ms ease-out 60ms; }
+.prompt-keys > kbd, .prompt-sends > kbd { color: var(--sub); border-color: var(--rule); }
 .prompt-keys > kbd:last-child { font: 600 13px/1 var(--mono); }
 .prompt-keys > kbd.tick { padding-top: 6px; font-size: 15px; } /* a backtick is drawn at the top of its letter's room */
 .prompt:is([data-mode='issue'], [data-mode='todo']) .prompt-keys { visibility: hidden; } /* Ctrl+` brings the box running */
-@media (max-width: 760px) { .prompt-keys { display: none; } }
+/* Written in, the keys that send what is in it stand in their place, beside Run (Create, Add): Enter alone is a new
+   line. Edit sends nothing (what is typed is in the file already): its Ctrl G stays. */
+.prompt-sends, .prompt:not([data-mode='edit']):focus-within .prompt-keys, .prompt[data-mode='edit'] .prompt-sends { visibility: hidden; }
+.prompt:not([data-mode='edit']):focus-within .prompt-sends { visibility: visible; }
+@media (max-width: 760px) { .prompt-caps { display: none; } }
 /* The box at rest, its light, while the glass spreads over it (and back as it gathers into the pill): under the screen. */
 .work.bench > .center > .dock::before { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: var(--prompt-h); z-index: -1; pointer-events: none;
   box-sizing: border-box; border: 1px solid var(--edge); border-radius: var(--r-place); background: var(--raised); opacity: 0; }
@@ -1781,6 +1800,11 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .found-step { display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: var(--ink); cursor: var(--cursor-hand); }
 .found-step:hover:not(:disabled) { background: var(--raised); }
 .found-step:disabled { opacity: .35; cursor: var(--cursor-arrow); }
+/* × at the strip's end, quiet: everything under the box put away, what stays out beside the file too. */
+.found-shut { display: grid; place-items: center; flex: none; width: var(--h-row); height: var(--h-row); margin-right: calc(-1 * var(--s2)); padding: 0; border: 0; border-radius: var(--r-round);
+  background: transparent; color: var(--sub); cursor: var(--cursor-hand); }
+.found-shut:hover { background: var(--raised); color: var(--ink); }
+.found-shut .mark { width: var(--s4); height: var(--s4); }
 .found-at { font: var(--t-meta) var(--mono); color: var(--sub); }
 .work.bench .search-results { max-height: var(--search-room, none); }
 .found-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s1); }
@@ -1795,9 +1819,19 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .diff-foot.asking { justify-content: flex-start; }
 .hit-head { display: flex; align-items: center; gap: var(--s2); }
 .hit-head > .hit-file { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
-/* A found file's changes (+3), right after its name in its words, not a pill of its own: pressed, its diff. */
-.hit-diff { flex: none; display: inline-flex; gap: var(--s2); padding: 0; border: 0; background: transparent; color: var(--sub); font: var(--t-meta) var(--mono); cursor: var(--cursor-hand); }
-.hit-diff:hover { color: var(--ink); text-decoration: underline; }
+/* How many of its lines were found, in words beside its name, quiet. */
+.hit-count { flex: none; color: var(--sub); font-size: var(--t-meta); white-space: nowrap; }
+/* A found file's changes at the head's other end, said as a diff is everywhere (diff +3 and its squares), away from
+   the count of what was found: pressed, its diff. */
+.hit-diff { flex: none; display: inline-flex; align-items: baseline; gap: var(--s2); margin-left: auto; min-height: var(--h-row); padding: 0 var(--s1); border: 0; border-radius: var(--r-field);
+  background: transparent; color: var(--sub); font-size: var(--t-meta); cursor: var(--cursor-hand); align-self: center; line-height: var(--h-row); }
+.hit-diff:hover { background: var(--raised); color: var(--ink); }
+/* What Enter takes from the box, while the box has the keyboard: lit as under the pointer, its key at its end. */
+.found-body .choice > .enter-cap { display: none; color: var(--sub); border-color: var(--rule); }
+.search-box:has(.search-in:focus) .found-body .choice.first { background: var(--raised); }
+.search-box:has(.search-in:focus) .found-body .choice.first > .enter-cap { display: inline-grid; }
+.hit.first { grid-template-columns: 4ch minmax(0, 1fr) auto; }
+.hit-file > .enter-cap { margin-left: var(--s2); }
 .hit-kind { margin: 0 var(--s1) var(--s1); font-size: var(--t-meta); font-weight: 600; color: var(--sub); }
 .hit-issue, .hit-run { font-family: var(--sans); font-weight: 400; overflow-wrap: anywhere; }
 .hit-run { font-family: var(--mono); }
@@ -1805,6 +1839,17 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .plugins { padding: 0 var(--s5) var(--s3); }
 .plugins .empty { margin-top: 0; padding: var(--s4) var(--s5); }
 .plugins .slide { height: auto; }
+/* At rest, on the Prompt's head line at the pane's right end, what else the search shows: Issue, diff with how many
+   files are changed, Output; heads as quiet as the Prompt's, pressed to open that view under the search box, which
+   stays out beside the file until it is put away (reference.ts). */
+.term-home { position: relative; }
+.pane-heads { position: absolute; top: var(--s5); right: calc(var(--s5) - var(--s2)); display: flex; }
+.pane-head { padding: 0 var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: var(--sub);
+  font: 600 var(--t-meta)/calc(var(--t-body) * 1.6) var(--sans); letter-spacing: .02em; cursor: var(--cursor-hand); }
+.pane-head:hover, .pane-head[aria-pressed='true'] { color: var(--ink); }
+.pane-head:hover { background: var(--raised); }
+.pane-head-n { margin-left: var(--s1); font-weight: 400; font-variant-numeric: tabular-nums; }
+.pane-head-n:empty { display: none; }
 /* Narrow (after the wide rules above, which it changes): the search at the top line's right, the right pane
    folded away and, brought out with its switch, laid over the center under the top line. */
 @media (max-width: 760px) {
@@ -1827,8 +1872,11 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
   .search-pills { position: relative; }
 }
 /* A phone: the repo's pill before the search's width (a pill cut to three letters says nothing; the search's field says
-   what it is in a word). */
-@media (max-width: 560px) { .work.bench > .bar { grid-template-columns: minmax(0, 1fr) minmax(88px, 32%) auto; } }
+   what it is in a word), and the band's buttons a little closer, so a short name and its × stand whole. */
+@media (max-width: 560px) {
+  .work.bench > .bar { grid-template-columns: minmax(0, 1fr) minmax(80px, 28%) auto; }
+  .work.bench > .bar > .repo-strip { gap: var(--s1); }
+}
 /* One line to type in, the same everywhere: the search box, a repo's name. */
 .search-in, .line-in {
   width: 100%; min-height: var(--h-row); padding: 0 var(--s3); border: 1px solid var(--edge); border-radius: var(--r-field);

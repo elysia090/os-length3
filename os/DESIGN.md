@@ -247,9 +247,12 @@ Every value in `styles.css` comes from a token (§2).
   - *Where one lands is lit for a moment.* A file landed on (from the
     search, File, Git) has its head lit with the marker, fading in about a
     second; nothing stays lit.
-  - *Focus is the light.* While the search is out the whole window steps
-    back under one shade (`ink` at 14%) and only the search is lit; it
-    fades in and out, and a press anywhere else closes it.
+  - *Focus is the light.* While the search is out with the keyboard the
+    whole window steps back under one shade (`ink` at 14%) and only the
+    search is lit; it fades in and out, and a press anywhere else closes
+    what was found. What is read there, or a list held out from the right
+    pane, stays as the keyboard goes back to the file, and the shade lifts:
+    the file is written beside it at full strength.
   120 ms fades for everything else. Reduced motion turns all of it off:
   each thing is where it ends at once.
 - No shadows, blur, glow or gradients; the one shade is the search's (above). The one exception is a
@@ -361,7 +364,7 @@ No other colours; the three families (`done`, `marker`, `off`, each with
 the words and the ground drawn from it) each mean their one thing only; the
 round initials of people borrow their soft grounds and the sky's, which mean
 nothing there but who. The one
-shade is `ink` at 14% over the window while the search is out. The Prompt up
+shade is `ink` at 14% over the window while the search is out with the keyboard. The Prompt up
 over the center is a screen made of these colours, not new ones: its glass
 `ink` a step deeper (`ink` 66% with black), lit words `add-tint` glowing in
 `done`, the prompt lines `done` lifted toward `add-tint` for the dark, its
@@ -1496,7 +1499,9 @@ end (File's menu for the file read now: New file, New folder, Rename,
 Delete), the pills follow it and scroll, and ⊕ comes right after the last
 pill. One press brings every repo not on the band out at once; this is not
 adding tabs one at a time.
-Each pill comes off the band with its × (the repo itself is untouched).
+Each pill comes off the band with its × (the repo itself is untouched);
+alone on a band too narrow for it (a phone), its name ends in … rather than
+its × being cut at the band's edge.
 A repo whose copy is an issue's (Start in Git) says so on its pill, after
 its name, quietly (garden #1): what is written in Forge is for that issue.
 A file opened beside from its head is the one worked on and has the
@@ -1618,7 +1623,12 @@ terminal's letters with an empty cell where the caret will be (with no repo
 to run in, no cell: it says so there, Open a repo to run in it, as the search
 box says No repo to search); the keys that
 bring it up from anywhere (Ctrl `, only where they bring up what the box does:
-Run's, and Edit's Ctrl G); Run. While the prompt is in use the box
+Run's, and Edit's Ctrl G), and while it is written in, in their place, the
+keys that send what is in it (Ctrl Enter, beside Run, Create or Add; none for
+Edit): Enter is a new line there as in every box, so the hand that presses
+Enter as in a terminal finds the keys that run it beside Run, and on a line of
+one, Enter pressed, they give one after the other as keys pressed together;
+Run. While the prompt is in use the box
 becomes a screen and the terminal comes up in it over the center, the one thing
 in the app that is a thing of its own: a terminal's screen, dark glass in the
 app's ink with its words lit in the app's green (§3), the page behind it only a
@@ -1667,13 +1677,15 @@ terminal again, its lines as a terminal's. The terminal's box
 is labelled Prompt, after what one does there (the shell is BusyBox sh, so
 it is not called Bash); leaving the prompt
 (or Escape, or the × at the right end of its head, beside the lamp, there
-only while it is up) sends it back. The Prompt has no switch: writing
+only while it is up) sends it back; Escape and the × give the keyboard back
+to what had it before the box (the file, the page). The Prompt has no switch: writing
 to it starts it, and one that ended says so in its place, with Start
 again; stopping one is Runtime's. What is written in the box and not sent
 is the repo's: another repo shows its own, and coming back finds it.
 
 The box does more than run. Its pill says what it does and, pressed (or
-Alt+↓ in the box), brings out the four it can, out of the pill, each with
+Alt+↓ in the box, up as the screen too, out of the line's start where the
+pill went), brings out the four it can, out of the pill, each with
 the pill it gives (as wide as its words) and its keys, the words in one column: Run in the Prompt (the shell's prompt line,
 `garden $`), Write an issue (the repo's next issue, `garden #4`, in ink as an
 issue's number), Add to TODO (TODO's circle, on paper as Home's TODO box),
@@ -1772,15 +1784,32 @@ the query first), and its open issues and its runs too; what is found
 opens under the box over the center while the box has the keyboard (↓ goes
 into it, Enter takes the first, Escape back to the box; with the box empty,
 Escape gives the keyboard back to what had it before), and follows what is
-saved. A file found by its name opens with the caret in it, a line with the
+saved. The first is the first line found, or before it a file whose name
+holds the query: it is lit, its Enter on a key at its end, while the box has
+the keyboard. Each file found is headed by its name, how many of its lines
+were found beside it, quiet (3 lines), and, changed since the last commit,
+at the head's other end its diff as a diff is said everywhere (diff +5 and
+its squares), pressed to read it there; a name found by its lines alone and
+the diff are pressed, not gone along with ↓ (only a name that holds the
+query is). A file found by its name opens with the caret in it, a line with the
 line selected (where it is now, if it moved), a third of the way down, or
 with its file's head at the top when it is near it (never the empty foot of
 the file before over it); an issue, a changed file's
 diff or a run is read in the right pane. Under the top line, the plugin
 area: nothing until the rail's plug opens it, then up to seven plugins side
-by side, one at a time (none yet; with none it says so in one quiet line).
-The right pane has no switch of its own: from the top line down, one under
-another, each under its 15/600 heading, Issue (the repo's open issues, as Git shows them: one merged or
+by side, one at a time (none yet). With none it stays plain, nothing put
+there to fill it (issue #45): opened, the pane's top is that empty area and
+the Prompt moves down under it, level with the foot of the rail's Inbox, as
+it does under plugins; the plug, which says it is out, is the way back.
+The right pane has no switch of its own. At rest it says, on the Prompt's
+head line at its right end and as quiet as that head, Issue, diff (with how
+many files are changed since the last commit, diff 2) and 実行結果, the three
+the search box switches between, so a pane that holds only a prompt line
+still shows what else is there: a head pressed opens its view under the
+search box, as its pill there does, and the view stays out beside the file as
+the keyboard goes back to it (the shade lifting), until it is put away:
+Escape in the box, the × at the end of the strip under the view, or its pill
+pressed again. The views: Issue (the repo's open issues, as Git shows them: one merged or
 closed is not among them; one line each as #3 Fix：件名, pressed to read one in full), diff (the changes not yet
 cut, file by file: added lines in ink with no fill, the lines kept quiet,
 removed lines quiet and struck, following every save; a file's name opens
@@ -2753,8 +2782,10 @@ out the row's menu; a right press on the row, or the menu key (Shift+F10)
 on its name, does the same. The menu is the person's menu (`.pop`): beside
 the tree at the row's height, out in the free space so nothing moves, its
 head the row's name, a row per deed. A folder, the repo's own row too, has
-New file and New folder; a file or folder has Rename and Delete (a repo is
-not renamed or deleted here). A deed pressed becomes the field or the ask in
+New file and New folder, made in it; a file has them too, made beside it in
+its folder (so Forge's files button, which brings out the menu of the file
+read now, makes a new file there); a file or folder has Rename and Delete (a
+repo is not renamed or deleted here). A deed pressed becomes the field or the ask in
 its own place: a name written and Enter makes it (a name is one plain part,
 with no "/" and not starting with "."; one already there is said under the
 field and the keyboard stays in it); Delete asks there, `{name}を消します`

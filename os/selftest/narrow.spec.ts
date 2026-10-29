@@ -32,6 +32,18 @@ test('a 320 px window never scrolls sideways, with the menus out or put away', a
   expect(tree.x + tree.width).toBeLessThanOrEqual(320);
 });
 
+test('on a phone, the pill alone on Forge\'s band stands whole to its ×, a long name giving way first', async ({app}) => {
+  await app.newRepo.make('trip-notes');
+  await app.newRepo.openInForge();
+  await app.page.setViewportSize({width: 390, height: 844});
+  const band = app.forge.band.locator('.pills');
+  const close = app.forge.band.getByRole('button', {name: 'Take trip-notes off the band'});
+  await expect(close).toBeVisible();
+  const [b, c] = [(await band.boundingBox())!, (await close.boundingBox())!];
+  expect(c.x + c.width).toBeLessThanOrEqual(b.x + b.width);
+  expect(c.width).toBeGreaterThan(28);
+});
+
 test('a profile with a word longer than a phone is wide breaks in the word, never pushing Home sideways', async ({signedIn: app}) => {
   await app.page.setViewportSize({width: 390, height: 844});
   const long = 'Supercalifragilisticexpialidocious'.repeat(4);
