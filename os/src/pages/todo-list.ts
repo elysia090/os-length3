@@ -190,14 +190,28 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
     if (dated) arrive(r.meta, 1, 'x', 6, 260);
   };
 
-  /** Start a new item after `id` and put the caret on its first line. */
-  const next = (id: string) => {
+  /** Where each line stands now, to have it go from there to where it stands once drawn again (the lines under a
+   * line made making way for it, never there at once). */
+  const standing = () => {
+    const was = new Map([...rows].map(([id, r]) => [id, r.item.getBoundingClientRect().top]));
+    return () => {
+      for (const [id, top] of was) {
+        const el = rows.get(id)?.item;
+        const by = el?.isConnected ? top - el.getBoundingClientRect().top : 0;
+        if (el && Math.abs(by) > .5) closeUp([el], by, 220);
+      }
+    };
+  };
+
+  /** Start a new item after `id` and put the caret on its first line. `stood`: where the lines stood before. */
+  const next = (id: string, stood = standing()) => {
     const r = todo.insertAfter(items, id);
     items = r.list;
     render();
     caret(rows.get(r.id)!.title, 'end');
-    // It unfolds from the line it was started from.
+    // It unfolds from the line it was started from; those under it make way.
     arrive(rows.get(r.id)!.item, -1, 'y', 10, 220);
+    stood();
   };
 
   /** When an item last went by its ×: the next one's × closes up under the pointer, and a double press takes one. */
@@ -340,10 +354,11 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
       if (e.key === 'Enter' && atEnd && (detail.value === '' || detail.value.endsWith('\n'))) {
         // Enter on an empty last line ends this item and starts the next.
         e.preventDefault();
+        const stood = standing();
         detail.value = detail.value.replace(/\n+$/, '');
         set({detail: detail.value});
         showDetail(row, detail.value !== '');
-        next(td.id);
+        next(td.id, stood);
       } else if (e.key === 'Backspace' && detail.selectionStart === 0 && detail.selectionEnd === 0 && !detail.value) {
         e.preventDefault();
         showDetail(row, false);

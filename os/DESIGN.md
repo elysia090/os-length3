@@ -188,7 +188,8 @@ Every value in `styles.css` comes from a token (§2).
   - *What is done is rewarded, once.* A TODO done: its mark pops past its
     size and settles. A TODO's kind, read off its line as it is typed
     (Fix:), takes its form with a small pop; a new TODO unfolds from the
-    line it was started from. What the search found is drawn on as it is typed,
+    line it was started from, the lines under it making way from where they
+    stood. What the search found is drawn on as it is typed,
     each line's highlighter stroke left to right, one line after the next;
     come in place of Searching…, its groups come down the page a beat apart
     as the strokes go, not the whole sheet in one frame. Under it, what was

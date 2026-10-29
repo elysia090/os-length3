@@ -240,6 +240,39 @@ test('Home\'s right pane put away and brought back: its switch stays under the h
   expect(Math.abs((await toggle.boundingBox())!.x - at.x)).toBeLessThan(1);
 });
 
+test('a TODO started between two: the lines under it make way from where they stood, not there at once', async ({app}) => {
+  await app.rail.go('home');
+  const items = app.home.items;
+  await app.home.title(items.first()).fill('Fix: one');
+  await app.home.title(items.first()).press('Enter');
+  await app.home.detail(items.first()).press('Enter');
+  await app.home.title(items.nth(1)).fill('Feat: two');
+  await app.home.title(items.first()).press('Enter');
+  await still(app);
+  const two = app.home.title(items.nth(1));
+  const stood = (await two.boundingBox())!.y;
+  // The frame after the list is drawn again with the new line in it: where "Feat: two" is seen.
+  const first = app.page.evaluate(() => new Promise<number>((done) => {
+    const list = document.querySelector('.todo-items')!;
+    const drawn = new MutationObserver(() => {
+      drawn.disconnect();
+      requestAnimationFrame(() => {
+        const field = [...list.querySelectorAll<HTMLInputElement>('input')].find((f) => f.value === 'two')!;
+        done(field.getBoundingClientRect().top);
+      });
+    });
+    drawn.observe(list, {childList: true});
+  }));
+  await app.home.detail(items.first()).press('Enter');
+  const seen = await first;
+  await expect(app.home.title(items.nth(1))).toBeFocused();
+  await still(app);
+  const now = (await app.home.title(items.nth(2)).boundingBox())!.y;
+  expect(now).toBeGreaterThan(stood + 4);
+  // Set off from where it stood (a frame's way at most), not drawn where it ends.
+  expect(Math.abs(seen - stood)).toBeLessThan((now - stood) / 2);
+});
+
 test('a menu put away and opened again on its way out comes back from where it had got to, not at once', async ({app}) => {
   await app.newRepo.make('hello');
   await app.rail.go('home');
