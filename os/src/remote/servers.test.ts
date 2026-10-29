@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {addByName, dayOf, farFrom, inviteIn, onTop, pageOf, RUN_MS, sameRun, todoKeeper, type AddWays, type BoardTodo, type Post, type TodoWays} from './servers.ts';
+import {addByName, dayOf, farFrom, guestBoards, inviteIn, onTop, pageOf, RUN_MS, sameRun, todoKeeper, type AddWays, type BoardTodo, type Post, type TodoWays} from './servers.ts';
 import {RemoteError} from './connection.ts';
 
 const post = (id: string): Post => ({id, by: 'ren@length3.test', body: id, at: 0});
@@ -51,7 +51,7 @@ test('an invitation is read from the link\'s fragment only in its one shape', ()
 // Adding someone by a name or a code, against a Remote that is a few facts: who has which name,
 // whom the server's adding lets in (both accepted), and whether they had accepted one already.
 const trip = {id: 'tripaaaaaaaa', name: 'Trip'};
-function remote(o: {contacts?: boolean; acceptedMe?: boolean; inboxAway?: boolean} = {}) {
+function remote(o: {contacts?: boolean; acceptedMe?: boolean} = {}) {
   const names: Record<string, string> = {mio: 'mio@length3.test', '123456': 'mio@length3.test'};
   const did: string[] = [];
   let both = o.contacts ?? false;
@@ -71,24 +71,16 @@ function remote(o: {contacts?: boolean; acceptedMe?: boolean; inboxAway?: boolea
       if (o.acceptedMe) both = true;
       return {request: !o.acceptedMe};
     },
-    async tell(address, body, server) {
-      did.push(`tell ${address} ${server}`);
-      assert.match(body, /Trip/);
-      if (o.inboxAway) throw new RemoteError(0, 'The Remote cannot be reached');
-    },
   };
   return {ways, did};
 }
 
-test('someone one knows both ways, by name or code, is in at once, asked nothing and told so in their Inbox', async () => {
+test('someone one knows both ways, by name or code, is in at once and asked nothing (the Remote tells them)', async () => {
   for (const typed of ['mio', ' 123456 ']) {
     const r = remote({contacts: true});
     assert.deepEqual(await addByName(trip, typed, ['ren@length3.test'], r.ways), {address: 'mio@length3.test', is: 'in'});
-    assert.deepEqual(r.did, ['add tripaaaaaaaa mio@length3.test', 'tell mio@length3.test tripaaaaaaaa']);
+    assert.deepEqual(r.did, ['add tripaaaaaaaa mio@length3.test']);
   }
-  // Their Inbox not reached, they are in all the same.
-  const r = remote({contacts: true, inboxAway: true});
-  assert.deepEqual(await addByName(trip, 'mio', [], r.ways), {address: 'mio@length3.test', is: 'in'});
 });
 
 test('someone not known yet is asked in the Inbox about the server, and waits to accept', async () => {
@@ -108,6 +100,21 @@ test('someone in it already is said so; a name no one has is the Remote\'s reaso
   assert.deepEqual(await addByName(trip, 'mio', ['mio@length3.test'], r.ways), {address: 'mio@length3.test', is: 'already'});
   await assert.rejects(addByName(trip, 'nobody', [], r.ways), /No one has that address/);
   assert.deepEqual(r.did, []);
+});
+
+test('the boards this browser writes in as a guest come the one written in last first', () => {
+  const shelf = new Map<string, string>();
+  const was = (globalThis as {localStorage?: unknown}).localStorage;
+  Object.assign(globalThis, {localStorage: {get length() { return shelf.size; }, key: (i: number) => [...shelf.keys()][i] ?? null,
+    getItem: (k: string) => shelf.get(k) ?? null, setItem: (k: string, v: string) => void shelf.set(k, v), removeItem: (k: string) => void shelf.delete(k)}});
+  try {
+    const at = (name: string, wrote?: number) => JSON.stringify({token: 't', as: 'Cy', name, server: 'Trip', ...(wrote ? {wrote} : {})});
+    shelf.set('length3.guest.aaa', at('packing', 1));
+    shelf.set('length3.other', 'not a guest\'s');
+    shelf.set('length3.guest.bbb', at('general', 3));
+    shelf.set('length3.guest.ccc', at('food'));
+    assert.deepEqual(guestBoards().map((g) => g.id), ['bbb', 'aaa', 'ccc']);
+  } finally { Object.assign(globalThis, {localStorage: was}); }
 });
 
 // ---- a board's TODO, as the keeper sends it ----

@@ -1,6 +1,6 @@
 import {h} from '../../ui/dom.ts';
 import {mark} from '../../ui/icons.ts';
-import {still} from '../../ui/glide.ts';
+import {glide, still, where} from '../../ui/glide.ts';
 import {t} from '../../i18n.ts';
 import {shown as named} from '../../remote/inbox.ts';
 import * as servers from '../../remote/servers.ts';
@@ -74,7 +74,10 @@ export class Band {
       b.addEventListener('click', () => this.ways.show(s.id));
       return b;
     });
+    // The ink goes from the chip it was on to the one chosen now, as along the rail and Forge's band.
+    const was = where(this.chips.querySelector('[aria-checked="true"]'));
     this.chips.replaceChildren(...each, ...(this.here.naming ? [this.here.naming] : []), ...this.guesting());
+    glide(was, this.chips.querySelector<HTMLElement>('[aria-checked="true"]'), this.chips, 'var(--r-round)');
     requestAnimationFrame(() => this.inView());
   }
 

@@ -2235,6 +2235,12 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .bubble[data-mine='true'].run-in { border-top-right-radius: 4px; }
 .bubble[data-mine='false'].run-on { border-bottom-left-radius: 4px; }
 .bubble[data-mine='false'].run-in { border-top-left-radius: 4px; }
+/* A notice the Remote left (added to a server at once, pages/inbox.ts noticeLine): no one's words, so no bubble on
+   either side, but a quiet line across the conversation, as a day's name is across a board's talk; the server in it a
+   way there once one is in it. */
+.bubble.inbox-notice { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: 0 var(--s2); align-self: center; max-width: 90%;
+  padding: var(--s1) var(--s2); border: 0; background: transparent; color: var(--sub); font-size: var(--t-meta); text-align: center; }
+.inbox-notice > .link { padding-block: 2px; font-size: inherit; color: var(--ink); }
 /* Someone who wrote first: over the field, who, what Accept and Block do (and that writing back accepts), the two. */
 .inbox-ask { display: grid; gap: var(--s2); margin: 0 var(--s4) var(--s3); padding: var(--s3) var(--s4); border: 1px solid var(--edge); border-radius: var(--r-place); background: var(--raised); }
 .inbox-ask p { margin: 0; }
@@ -2876,7 +2882,7 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .server-bar { position: absolute; top: var(--band); right: var(--s5); display: flex; }
 /* One row that slides sideways however many servers there are, as Git's repos are, a ring kept clear of its edge; an
    end fades where there is more along it (--fade, which the row keeps a chip slid into view clear of). */
-.server-chips { --fade: var(--s5); position: relative; flex: 1; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+.server-chips { --fade: var(--s5); position: relative; isolation: isolate; flex: 1; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
   margin: calc(-1 * var(--s1)); padding: var(--s1); }
 .server-chips::-webkit-scrollbar { display: none; }
 .server-chips > * { flex: none; }
@@ -2929,6 +2935,9 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .board-name-in { min-width: 4ch; max-width: 100%; padding: 0; border: 0; background: transparent; color: var(--ink); font: 600 var(--t-card)/1.6 var(--sans); text-overflow: ellipsis; }
 .board-name-in:focus { outline: none; }
 .board-name-in::placeholder { color: var(--sub); font-weight: 400; }
+/* A phone's width leaves the name a line too short for a board name's letters beside Make: it is written in the body's,
+   so what it asks for is read whole (What it is about, not What it is abc). */
+@media (max-width: 760px) { .board-name-in { font-size: var(--t-body); } }
 .board-new > .board-head > .error { grid-column: 1 / -1; padding-bottom: var(--s1); }
 .board-new > .board-head > .error:empty { display: none; }
 .board-new > .board-lead { grid-column: 1; grid-row: 2; align-self: start; padding: var(--s3) var(--s5); }
@@ -2958,6 +2967,9 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
   transition: left var(--slide), right var(--slide), opacity var(--motion); }
 @media (max-width: 760px) { .server-center { --peek: var(--s5); } .server-center > .dock { left: calc(var(--s2) + var(--lead) * var(--peek)); right: calc(var(--s2) + (2 - var(--lead)) * var(--peek)); } }
 @media (prefers-reduced-motion: reduce) { .server-center > .dock { transition: none; } }
+/* A phone's width: the box is narrow, so Post comes with the words (server/dock.ts), the empty box saying whom it
+   writes to whole (To the people of Books, not To the people of). */
+@media (max-width: 760px) { .server-center > .dock > .prompt:not(.has-words) > .prompt-run { display: none; } }
 .slide-stage { position: relative; height: 100%; overflow-x: clip; }
 .slide-stage:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: var(--r-place); }
 .slide-track { --at: 0; display: flex; gap: var(--gap); height: 100%; transform: translateX(calc(var(--lead) * var(--peek) - var(--at) * (100% - 2 * var(--peek) + var(--gap)))); transition: transform var(--slide); }

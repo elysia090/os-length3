@@ -200,6 +200,19 @@ test('a new board is named where it will stand: pressed to, its name has the key
   await expect(name).not.toBeFocused();
 });
 
+test("on a phone's width Post comes with the words, the empty box saying whom it writes to whole", async ({signedIn: app}) => {
+  await app.page.setViewportSize({width: 390, height: 844});
+  const field = app.server.box('general');
+  const post = app.server.layer.getByRole('button', {name: 'Post', exact: true});
+  await expect(field).toBeVisible();
+  await expect(post).toBeHidden();
+  await field.fill('Who brings the tent?');
+  await expect(post).toBeVisible();
+  await post.click();
+  await expect(app.server.talk('general')).toContainText('Who brings the tent?');
+  await expect(post).toBeHidden();
+});
+
 test('Post at the box sends what is written, the keyboard staying in the box', async ({signedIn: app}) => {
   const field = app.server.box('general');
   await field.fill('Who brings the tent?');
@@ -281,7 +294,7 @@ test('guests turned off with nobody let in goes at once; with an invitation out 
   await expect(guests).not.toBeChecked();
 });
 
-test('someone one knows added at once is told in their Inbox, and the server\'s name there opens it', async ({signedIn: ada, another}) => {
+test('someone one knows added at once is told in their Inbox by the Remote\'s notice, which opens the server', async ({signedIn: ada, another}) => {
   const bo = await addBo(ada, another);
   await ada.server.close();
   await ada.server.openLayer();
@@ -299,8 +312,10 @@ test('someone one knows added at once is told in their Inbox, and the server\'s 
   await bo.rail.go('inbox');
   await bo.inbox.conversation(ada.handle).click();
   const thread = bo.inbox.thread(ada.handle);
-  await expect(thread).toContainText('I added you to Books.');
-  await thread.getByRole('button', {name: 'Books', exact: true}).click();
+  // The Remote's notice, a line across the conversation in no one's voice, and the way to the server.
+  const notice = thread.getByRole('button', {name: `${ada.person} added you to Books.`, exact: true});
+  await expect(notice).toBeVisible();
+  await notice.click();
   await expect(bo.server.chip('Books')).toBeChecked();
 });
 

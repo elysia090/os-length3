@@ -75,6 +75,10 @@ function writeIn(b: Shown, guest: servers.GuestHere | null, note: HTMLElement, w
   const mac = /Mac|iPhone|iPad/.test(navigator.platform);
   const post = h('button', {type: 'button', class: 'button small-button prompt-run', title: t('Post ({keys})', {keys: mac ? '⌘+Enter' : 'Ctrl+Enter'}),
     'aria-keyshortcuts': mac ? 'Meta+Enter' : 'Control+Enter'}, t('Post')) as HTMLButtonElement;
+  // Holding words or not: on a phone's width, where the box is narrow, Post comes with the words and leaves its room
+  // to what the empty box says (styles.css).
+  const form = h('form', {class: 'prompt'});
+  const worded = () => form.classList.toggle('has-words', !!field.value.trim());
   let sending = false;
   const send = async () => {
     if (sending) return;
@@ -82,12 +86,12 @@ function writeIn(b: Shown, guest: servers.GuestHere | null, note: HTMLElement, w
     if (!field.value.trim()) { field.focus(); nudge(field.closest('.prompt')); return; }
     sending = true;
     note.replaceChildren();
-    try { await postNow(b.id, field.value, guest?.token); field.value = ''; drafts.sent(key); fit(); } catch (e) {
+    try { await postNow(b.id, field.value, guest?.token); field.value = ''; drafts.sent(key); fit(); worded(); } catch (e) {
       note.textContent = errorText(e);
       if (guest) noLonger(e);
     } finally { sending = false; }
   };
-  field.addEventListener('input', () => { drafts.set(key, field.value); fit(); });
+  field.addEventListener('input', () => { drafts.set(key, field.value); fit(); worded(); });
   if (field.value) queueMicrotask(fit);
   field.addEventListener('keydown', (event) => {
     // As every box one writes in: Enter is a new line, Ctrl+Enter (⌘+Enter) sends.
@@ -98,7 +102,9 @@ function writeIn(b: Shown, guest: servers.GuestHere | null, note: HTMLElement, w
   // Pressed, the keyboard stays where one writes, for the next.
   post.addEventListener('click', () => { void send(); field.focus({preventScroll: true}); });
   if (ways.pinned() && b.member) queueMicrotask(() => { field.focus(); field.setSelectionRange(field.value.length, field.value.length); });
-  return h('form', {class: 'prompt'}, field, post);
+  form.append(field, post);
+  worded();
+  return form;
 }
 
 /**

@@ -54,7 +54,7 @@ import {claim, codeOf, HOLD, liveAddress, serverAddress, shownAs, takeDown} from
 import type {Plans} from './plan.ts';
 import {hmacHex} from './keys.ts';
 import {addressOf, ago, body, lock, qualified, refuse, rows, slowDown, throttled, type Db, type Vars} from './request.ts';
-import {address, board, boardSeen, guest, invite, member, principalCode, REACH, repoPublic, server, serverLeft, talk, todoItem} from './schema.ts';
+import {address, board, boardSeen, guest, invite, member, message, principalCode, REACH, repoPublic, server, serverLeft, talk, todoItem} from './schema.ts';
 
 export const SERVER = {name: 64, body: 2000, perHour: 60, page: 30, maxPage: 100, boards: 100,
   /** Servers a person owns or has held for them, at most; servers they make in a day. */
@@ -304,7 +304,18 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       from address a where a.address = ${a} and a.released_at is null and a.lapsed_at is null and (a.until is null or a.until > now())`);
     if (!who?.user) return c.json({error: 'No one has that name'}, 404);
     if (who.both < 2) return c.json({error: 'Only your contacts can be added'}, 403);
-    await db.insert(member).values({serverId: id, userId: who.user}).onConflictDoNothing();
+    const came = await db.insert(member).values({serverId: id, userId: who.user}).onConflictDoNothing().returning({u: member.userId});
+    // In at once, they are told by the Remote, whichever way they were added: a notice in their Inbox, in the
+    // conversation with whoever added them, about the server (its name kept as it was, for the line to say it).
+    // It is no one's words: written here, never sent by a client (the Inbox keeps no `notice` from one).
+    if (came.length) {
+      const [s] = await db.select({name: server.name}).from(server).where(eq(server.id, id)) as {name: string}[];
+      const from = await liveAddress(db, me);
+      if (s && from) {
+        await db.insert(message).values({to: who.user, from: me, fromAddress: from, toAddress: a, type: 'message',
+          target: {server: id, notice: 'added', name: s.name}, body: `${from} added you to ${s.name}.`});
+      }
+    }
     return c.json(await people(db, id), 201);
   });
 

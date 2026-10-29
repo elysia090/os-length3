@@ -577,6 +577,18 @@ test('Servers: people who know each other, boards with talk and a TODO kept toge
   const added = await s.call('POST', `/v1/servers/${sid}/people`, {token: ren, body: {address: 'mio@length3.test'}});
   assert.deepEqual((added.json as unknown as {address: string}[]).map((p) => p.address), ['ren@length3.test', 'mio@length3.test']);
   assert.deepEqual(((await s.call('GET', '/v1/servers', {token: mio})).json as unknown as {name: string}[]).map((x) => x.name), ['Trip']);
+  // In at once, Mio is told by the Remote: a notice in the conversation with Ren, about the server, unread; once,
+  // not again when Ren adds Mio again; and no client can write one (a notice it sends is kept as a plain message).
+  type Said = {mine: boolean; target: Record<string, unknown>; body: string; read: boolean};
+  const told = () => s.call('GET', '/v1/inbox/threads/ren@length3.test', {token: mio}).then((r) => (r.json as unknown as {messages: Said[]}).messages);
+  assert.deepEqual((await told()).map((m) => [m.mine, m.target, m.body, m.read]),
+    [[false, {server: sid, notice: 'added', name: 'Trip'}, 'ren@length3.test added you to Trip.', false]]);
+  const threads = (await s.call('GET', '/v1/inbox/threads', {token: mio})).json as unknown as {unread: number; last: {target: Record<string, unknown>}}[];
+  assert.deepEqual([threads[0].unread, threads[0].last.target.notice], [1, 'added']);
+  await s.call('POST', `/v1/servers/${sid}/people`, {token: ren, body: {address: 'mio@length3.test'}});
+  assert.equal((await told()).length, 1);
+  await s.call('POST', '/v1/inbox/messages', {token: ren, body: {to: 'mio@length3.test', body: 'hi', target: {server: sid, notice: 'added', name: 'Trip'}}});
+  assert.deepEqual((await told()).at(-1)!.target, {server: sid});
 
   // Its TODO, kept together item by item: a new item takes its fields; a change sends only what changed.
   const item = (t: string, id: string, body: unknown) => s.call('PUT', `/v1/boards/${bid}/todos/${id}`, {token: t, body});

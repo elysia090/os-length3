@@ -172,8 +172,12 @@ export function latelyRow(what: string, line: Node[] | string, o: {fresh?: boole
 }
 
 /** A conversation's last word as a row says it: named as it was written (Review：…, Question：…), then its first line. */
-export const wordLine = (th: inbox.Thread): Node[] =>
-  [...(th.last.type === 'message' ? [] : kindWords(th.last.type[0].toUpperCase() + th.last.type.slice(1))), document.createTextNode(th.last.body.split('\n')[0])];
+export const wordLine = (th: inbox.Thread): Node[] => {
+  // A notice the Remote left is said as the reader says it, not by the words it was kept with.
+  const notice = inbox.noticeWords(th.last.target, th.last.mine, th.name || inbox.shown(th.address));
+  if (notice) return [document.createTextNode(notice)];
+  return [...(th.last.type === 'message' ? [] : kindWords(th.last.type[0].toUpperCase() + th.last.type.slice(1))), document.createTextNode(th.last.body.split('\n')[0])];
+};
 
 /** Word that waits, as Home's Lately and the bench's pane both pick it: conversations not read whose last word is not one's own, newest first. */
 export const waiting = (threads: inbox.Thread[], most: number) =>

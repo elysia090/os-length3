@@ -60,16 +60,23 @@ const send = (method: string, body?: unknown): RequestInit => ({method, ...(body
 let listed: {at: number; token: string; list: Promise<Server[]>} | null = null;
 onWrite(() => { listed = null; });
 const SHARED_FOR = 2000;
+/** The last list the Remote gave this session, however long ago: Server drawn from it at once as it reads it again. */
+let lastGiven: {token: string; list: Server[]} | null = null;
 export const servers = (): Promise<Server[]> => {
   const c = connection();
   if (!c) return Promise.resolve([]);
   if (!listed || listed.token !== c.token || Date.now() - listed.at > SHARED_FOR) {
     const list = call<Server[]>('/v1/servers');
     const kept = listed = {at: Date.now(), token: c.token, list};
-    list.catch(() => { if (listed === kept) listed = null; });
+    list.then((l) => { lastGiven = {token: kept.token, list: l}; }, () => { if (listed === kept) listed = null; });
   }
   // Each its own copy: what one caller does with its list is not another's.
   return listed.list.then((l) => structuredClone(l));
+};
+/** The last list the Remote gave for who is signed in now, if it has given one: as it was, to be read again. */
+export const lastServers = (): Server[] | null => {
+  const c = connection();
+  return c && lastGiven?.token === c.token ? structuredClone(lastGiven.list) : null;
 };
 export const makeServer = (name: string, address: string) => call<Server>('/v1/servers', send('POST', {name, address}));
 /** Servers this person removed or left last, still held for them, and until when. */
@@ -102,8 +109,6 @@ export interface AddWays {
   lookup(typed: string): Promise<{address?: string; reachable: boolean; why?: string}>;
   add(server: string, address: string): Promise<unknown>;
   ask(address: string, body: string, server: string): Promise<{request: boolean}>;
-  /** In at once: they are told so in their Inbox, by a message about the server (a way to it there). */
-  tell(address: string, body: string, server: string): Promise<unknown>;
 }
 /** How adding someone came out: in now, already in, or asked in the Inbox and in once they accept. */
 export type Added = {address: string; is: 'in' | 'already' | 'asked'};
@@ -120,18 +125,13 @@ export async function addByName(s: Pick<Server, 'id' | 'name'>, typed: string, p
   const address = found.address;
   if (people.includes(address)) return {address, is: 'already'};
   const tryAdd = () => ways.add(s.id, address).then(() => true, (e: unknown) => { if (e instanceof RemoteError && e.status === 403) return false; throw e; });
-  // In at once, they are told, as someone asked is: nothing came to them otherwise. Not told (the Inbox away), they
-  // are in all the same.
-  if (await tryAdd()) { await told(ways, address, s); return {address, is: 'in'}; }
+  // In at once, they are told by the Remote itself (a notice in their Inbox, service/servers.ts).
+  if (await tryAdd()) return {address, is: 'in'};
   const r = await ways.ask(address, t('I would like to add you to {server}. Accept me in your Inbox and you are in it.', {server: s.name}), s.id);
   // They had accepted one: writing to them accepted them back, so the two know each other now.
   if (!r.request && await tryAdd()) return {address, is: 'in'};
   return {address, is: 'asked'};
 }
-
-/** Someone added at once, told so in their Inbox; not told (the Inbox away), they are in all the same. */
-export const told = (ways: Pick<AddWays, 'tell'>, address: string, s: Pick<Server, 'id' | 'name'>) =>
-  ways.tell(address, t('I added you to {server}.', {server: s.name}), s.id).catch(() => {});
 
 // ---- boards ----
 export const makeBoard = (server: string, name: string) => call<BoardRef>(`/v1/servers/${server}/boards`, send('POST', {name}));
@@ -309,7 +309,8 @@ export async function archive(id: string, member: boolean, what: {todo?: boolean
 export interface Invitation { id: string; by: string; uses: number; until: number; mine: boolean; mayRevoke: boolean }
 export interface Guest { id: string; name: string; by: string; until: number; mayRemove: boolean }
 /** What this browser holds as a guest of a board: its token, the name it writes as, and the board's names. */
-export interface GuestHere { token: string; as: string; name: string; server: string }
+/** A board this browser writes in as a guest: its token, the name written as, the board's and its server's, and when it last wrote there. */
+export interface GuestHere { token: string; as: string; name: string; server: string; wrote?: number }
 
 const GUEST = 'length3.guest.';
 const INVITED = 'length3.invited';
@@ -317,7 +318,7 @@ const INVITED = 'length3.invited';
 export function guestOf(id: string): GuestHere | null {
   try { const v = localStorage.getItem(GUEST + id); return v ? JSON.parse(v) as GuestHere : null; } catch { return null; }
 }
-/** The boards this browser is a guest of, by id. */
+/** The boards this browser is a guest of, by id, the one it wrote in last first. */
 export function guestBoards(): {id: string; here: GuestHere}[] {
   const out: {id: string; here: GuestHere}[] = [];
   try {
@@ -327,7 +328,7 @@ export function guestBoards(): {id: string; here: GuestHere}[] {
       if (k && here?.token) out.push({id: k.slice(GUEST.length), here});
     }
   } catch { /* none kept */ }
-  return out;
+  return out.sort((a, b) => (b.here.wrote ?? 0) - (a.here.wrote ?? 0));
 }
 /** No longer a guest of that board here (removed, or the lease ran out). */
 export function forgetGuest(id: string) {
@@ -353,14 +354,21 @@ export const inviteIn = (hash: string): {board: string; code: string} | null => 
 /** In as a guest, by the invitation held: the token is kept here for that board, and the invitation is spent. */
 export async function guestJoin(board: {id: string; name: string; server: string}, code: string, as: string): Promise<GuestHere> {
   const g = await call<{token: string; as: string}>(`/v1/open/${board.id}/guest`, send('POST', {invite: code, name: as}));
-  const here = {token: g.token, as: g.as, name: board.name, server: board.server};
+  // Come in to write: as good as having written, for where it stands among the boards one writes in as a guest.
+  const here = {token: g.token, as: g.as, name: board.name, server: board.server, wrote: Date.now()};
   try { localStorage.setItem(GUEST + board.id, JSON.stringify(here)); } catch { /* asked again next time */ }
   dropInvite();
   return here;
 }
 /** Still a guest here? 403 says not (removed, or the lease ran out). */
 export const guestStill = (id: string, token: string) => call<{id: string; as: string}>(`/v1/open/${id}/guest`, {headers: {'X-Guest': token}});
-export const guestPost = (id: string, token: string, body: string) => call<Post>(`/v1/open/${id}/posts`, {...send('POST', {body}), headers: {'X-Guest': token}});
+/** Written in as a guest; when is kept with the token, so where one wrote last comes first (guestBoards). */
+export async function guestPost(id: string, token: string, body: string): Promise<Post> {
+  const p = await call<Post>(`/v1/open/${id}/posts`, {...send('POST', {body}), headers: {'X-Guest': token}});
+  const here = guestOf(id);
+  if (here?.token === token) { try { localStorage.setItem(GUEST + id, JSON.stringify({...here, wrote: Date.now()})); } catch { /* a convenience */ } }
+  return p;
+}
 /** An open board by its id (what an invitation's link names). */
 export const openBoard = (id: string) => call<Board>(`/v1/open/${id}`);
 

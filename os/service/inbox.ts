@@ -360,12 +360,12 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
   // Each the last message with each person and how many are unread, in one read.
   v1.get('/inbox/threads', async (c) => {
     const me = c.get('userId');
-    const list = await rows<{peer: string; type: string; body: string; mine: boolean; time: number; from_address: string; to_address: string;
+    const list = await rows<{peer: string; type: string; body: string; target: Record<string, unknown> | null; mine: boolean; time: number; from_address: string; to_address: string;
       unread: number; name: string | null; state: string | null; address: string | null}>(db, sql`
       select t.*, u.name, k.state,
         (select a.address from address a where a.user_id = t.peer and a.released_at is null order by a.created_at limit 1) as address
       from (
-        select distinct on (peer) peer, type, left(body, 140) as body, from_user = ${me} as mine, ${ms(sql`created_at`)} as time, from_address, to_address,
+        select distinct on (peer) peer, type, left(body, 140) as body, target, from_user = ${me} as mine, ${ms(sql`created_at`)} as time, from_address, to_address,
           (count(*) filter (where to_user = ${me} and read_at is null) over (partition by peer))::int as unread
         from (select m.*, case when m.from_user = ${me} then m.to_user else m.from_user end as peer from message m where m.to_user = ${me} or m.from_user = ${me}) x
         order by peer, created_at desc
@@ -376,7 +376,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
     return c.json(list.map((t) => ({
       address: t.address ?? (t.mine ? t.to_address : t.from_address), name: t.name ?? '',
       state: t.state === 'blocked' ? 'blocked' : t.state === 'accepted' ? 'contact' : 'request',
-      unread: t.unread, last: {type: t.type, body: t.body, mine: t.mine, time: t.time},
+      unread: t.unread, last: {type: t.type, body: t.body, target: t.target ?? {}, mine: t.mine, time: t.time},
     })));
   });
 
