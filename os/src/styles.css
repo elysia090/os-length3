@@ -1769,6 +1769,15 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:focus-within)::after { opa
 /* Let go, it goes back up into the box before it is gone (reference.ts), and nothing in it is pressed meanwhile. */
 .search-box.leaving > .search-results { animation: none; pointer-events: none; }
 .search-results { display: flex; flex-direction: column; gap: var(--s3); max-height: none; overflow: visible; }
+/* Out with the keyboard in the file (something read there, or a list held out), the view stands beside the file: in
+   the pane's own width, a step in from the pane's line, over the pane and never over the file, which keeps its whole
+   width. The keyboard coming back into it (a press on it, the search box) opens it out over the center again to be
+   read, the window stepping back, and its switch comes back with it. */
+@media (min-width: 761px) {
+  .work.bench > .bar > .search-box > .search-results { transition: width var(--move) var(--land); }
+  .work.bench > .bar > .search-box:is(.kept, .reading):not(:focus-within) > .search-results { width: calc(var(--pane-w) - var(--s5) + var(--s3) - var(--line-frame)); }
+  .work.bench > .bar > .search-box:is(.kept, .reading):not(:focus-within) .search-pills { visibility: hidden; }
+}
 /* Issue, diff and Output at the large box's left end, standing on it: their foot a hair (s1) over its top, up
    beside the search box rather than level with it, so the three and the box they switch read as one. */
 .search-pills { display: flex; gap: var(--s2); isolation: isolate; position: absolute; left: var(--s3); bottom: calc(100% - var(--s3) + var(--s1)); }
