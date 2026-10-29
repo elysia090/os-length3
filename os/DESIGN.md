@@ -1751,7 +1751,9 @@ there (420 ms, two fifths sinking), the box's light coming back under it, the
 words taking their ink again as the glass leaves them; the pill gives under the
 glass it catches (flattened and wider, back past round, settled) and its lamp
 lights with a glow, and the terminal comes into the pane from the center's
-side. Its lines are a
+side. Put back on its way up, or brought up on its way down, it turns where it
+is and goes back the way it came, the line's parts with it, from that frame on:
+never first up whole, or back in the pill, and then on. Its lines are a
 terminal's: the box's line is the line after the output, starting with the
 prompt line the shell waits at (`garden $`, the output's own last line then not
 shown), the words written in the terminal's letters and a cell for a caret, the

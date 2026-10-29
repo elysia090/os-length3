@@ -55,12 +55,12 @@ function timing(way: 'up' | 'down'): {duration: number; line: number; first: str
 }
 
 /** Each of `els` from where it stood (`was`, its box then) to where it stands now, or (`back`) from here to there. */
-function glide(els: HTMLElement[], was: DOMRect[], o: KeyframeAnimationOptions, back = false) {
-  els.forEach((e, i) => {
+function glide(els: HTMLElement[], was: DOMRect[], o: KeyframeAnimationOptions, back = false): Animation[] {
+  return els.flatMap((e, i) => {
     const r = e.getBoundingClientRect(), dx = was[i].left - r.left, dy = was[i].top - r.top;
-    if (Math.abs(dx) < .5 && Math.abs(dy) < .5) return;
+    if (Math.abs(dx) < .5 && Math.abs(dy) < .5) return [];
     const at = {transform: `translate(${dx}px, ${dy}px)`}, here = {transform: 'none'};
-    e.animate(back ? [here, at] : [at, here], {...o, fill: back ? 'both' : 'backwards'});
+    return [e.animate(back ? [here, at] : [at, here], {...o, fill: back ? 'both' : 'backwards'})];
   });
 }
 
@@ -91,6 +91,9 @@ export class Screen {
   #rested: DOMRect[] | null = null;
   /** The line's light going as the glass runs back from under it. */
   #unlit: Animation | null = null;
+  /** The way up or down under way (the glass's, the Prompt's above the line, the line's parts'), to be turned back on
+   * itself from where it is if the other way is asked for before it is over. */
+  #going: Animation[] = [];
 
   readonly #p: ScreenParts;
 
@@ -123,6 +126,17 @@ export class Screen {
   raise() {
     if (this.#state === 'up') return;
     const {chip, screen, form, line, work} = this.#p;
+    // Brought up again on its way down: it turns, going back up from where it is (never first up whole, or back
+    // in the pill, and then on).
+    if (this.#state === 'leaving' && this.#turn()) {
+      this.#state = 'up';
+      work.classList.add('prompting', 'line-lit');
+      work.classList.remove('prompt-leaving');
+      this.#unlit?.cancel();
+      this.#p.changed('up');
+      fieldMoved();
+      return;
+    }
     // Measured at rest, before it goes up: the pill it spreads out of and where the line's parts stand.
     const c = chip.getBoundingClientRect(), r = screen.getBoundingClientRect(), f = form.getBoundingClientRect();
     this.#rest = c.width ? {l: c.left - r.left, b: r.bottom - c.bottom, w: c.width, h: c.height, box: f.height,
@@ -136,7 +150,7 @@ export class Screen {
     this.#rise();
     if (this.#rested && !still()) {
       const up = timing('up');
-      glide(line, this.#rested, {duration: up.duration * up.line, easing: up.first});
+      this.#going.push(...glide(line, this.#rested, {duration: up.duration * up.line, easing: up.first}));
     }
     // The line goes, and the caret in it with it from the first frame.
     fieldMoved();
@@ -159,8 +173,32 @@ export class Screen {
       unlit.finished.then(() => { if (this.#state !== 'up') work.classList.remove('line-lit'); }, () => {});
     }
     this.#p.changed('leaving');
-    this.#sink();
+    // Put back on its way up: it turns, going back down from where it is, into the pill.
+    if (this.#turn()) {
+      const moves = this.#going;
+      moves[0].finished.then(() => this.#home(true, moves), () => this.#home(false, moves));
+    } else this.#sink();
     fieldMoved();
+  }
+
+  /** The way under way turned back on itself, from where it is; false if none is under way. Each holds where it
+   * ends (the pill, or the screen whole) until it is taken off there. */
+  #turn(): boolean {
+    const lead = this.#going[0];
+    if (still() || lead?.playState !== 'running') return false;
+    // All set off together (the line's parts a part of the way, or after a part): each turns where the glass is, so
+    // the parts go back as the glass passes under them again.
+    const at = lead.currentTime;
+    for (const a of this.#going) {
+      a.effect?.updateTiming({fill: 'both'});
+      a.currentTime = at;
+      // Turned in this frame (reverse() turns it a frame later, and for that frame it would go on the old way).
+      a.playbackRate = -a.playbackRate;
+      if (a.playState !== 'running') a.play();
+      // Turned up again, it is the screen's own once up (down, the pill's, taken off as the Prompt goes home).
+      a.finished.then(() => { if (this.#state === 'up') a.cancel(); }, () => {});
+    }
+    return true;
   }
 
   /** Taken off the screen with its page while up: at rest at once, the Prompt home. */
@@ -180,14 +218,18 @@ export class Screen {
   #rise() {
     const {term, slot, screen, glass} = this.#p, from = this.#rest;
     for (const a of [term, screen, glass, slot].flatMap((e) => e.getAnimations())) a.cancel();
+    this.#going = [];
     slot.append(term);
     atFoot(term);
     if (still() || !from) return;
     const UP = timing('up');
     for (const t of [glass, slot]) {
       const sh = shapes(screen, from, t === slot ? slot : null);
-      t.animate([{clipPath: clipOf(t, screen, sh.pill), easing: UP.first}, {clipPath: clipOf(t, screen, sh.line), offset: UP.line, easing: UP.then},
+      const a = t.animate([{clipPath: clipOf(t, screen, sh.pill), easing: UP.first}, {clipPath: clipOf(t, screen, sh.line), offset: UP.line, easing: UP.then},
         {clipPath: clipOf(t, screen, sh.whole)}], {duration: UP.duration});
+      // Up whole, it is the screen's own again (nothing to turn back).
+      a.finished.then(() => { this.#going = this.#going.filter((g) => g !== a); }, () => {});
+      this.#going.push(a);
     }
   }
 
@@ -196,31 +238,37 @@ export class Screen {
    * then the Prompt comes into the pane where it lives. Brought up again meanwhile, it stays up.
    */
   #sink() {
-    const {term, slot, home, screen, glass, line} = this.#p, to = this.#rest;
+    const {term, slot, screen, glass, line} = this.#p, to = this.#rest;
     const done: Animation[] = [];
-    const there = (landed: boolean) => {
-      if (this.#state !== 'leaving') return;
-      this.#state = 'rest';
-      this.#p.work.classList.remove('prompt-leaving', 'line-lit');
-      this.#p.changed('rest');
-      for (const a of term.getAnimations()) a.cancel();
-      home.append(term);
-      atFoot(term);
-      for (const a of [...done, ...line.flatMap((p) => p.getAnimations())]) a.cancel();
-      if (still()) return;
-      // Into the pane from the center's side, where it came from.
-      term.animate([{opacity: 0, transform: 'translateX(-12px)'}, {opacity: 1, transform: 'none'}], {duration: paced(220), easing: LAND});
-      if (landed) this.#caught();
-    };
-    if (still() || term.parentElement !== slot || !to) { there(false); return; }
+    this.#going = done;
+    if (still() || term.parentElement !== slot || !to) { this.#home(false, done); return; }
     const DOWN = timing('down');
     for (const t of [glass, slot]) {
       const sh = shapes(screen, to, t === slot ? slot : null);
       done.push(t.animate([{clipPath: clipOf(t, screen, sh.whole), easing: DOWN.first}, {clipPath: clipOf(t, screen, sh.line), offset: DOWN.line, easing: DOWN.then},
         {clipPath: clipOf(t, screen, sh.pill)}], {duration: DOWN.duration, fill: 'forwards'}));
     }
-    if (this.#rested) glide(line, this.#rested, {duration: DOWN.duration * (1 - DOWN.line), delay: DOWN.duration * DOWN.line, easing: DOWN.then}, true);
-    done[0].finished.then(() => there(true), () => there(false));
+    if (this.#rested) done.push(...glide(line, this.#rested, {duration: DOWN.duration * (1 - DOWN.line), delay: DOWN.duration * DOWN.line, easing: DOWN.then}, true));
+    done[0].finished.then(() => this.#home(true, done), () => this.#home(false, done));
+  }
+
+  /** Back in the pill (`landed`, or put there at once): the Prompt into the pane where it lives. Not if it was brought
+   * up again meanwhile. */
+  #home(landed: boolean, done: Animation[]) {
+    const {term, home, line} = this.#p;
+    if (this.#state !== 'leaving') return;
+    this.#state = 'rest';
+    this.#going = [];
+    this.#p.work.classList.remove('prompt-leaving', 'line-lit');
+    this.#p.changed('rest');
+    for (const a of term.getAnimations()) a.cancel();
+    home.append(term);
+    atFoot(term);
+    for (const a of [...done, ...line.flatMap((p) => p.getAnimations())]) a.cancel();
+    if (still()) return;
+    // Into the pane from the center's side, where it came from.
+    term.animate([{opacity: 0, transform: 'translateX(-12px)'}, {opacity: 1, transform: 'none'}], {duration: paced(220), easing: LAND});
+    if (landed) this.#caught();
   }
 
   /** The glass caught in the pill: the pill gives under it, flattened and wider, back past round and settled, as a

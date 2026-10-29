@@ -353,6 +353,67 @@ test('a page coming in never shows a part and then takes it away to bring it in'
   expect(await forge).toEqual([]);
 });
 
+test('the Prompt put back on its way up turns there, and brought up on its way down turns there: never first whole, or back in the pill', async ({app}) => {
+  await app.newRepo.make('hello');
+  await app.newRepo.openInForge();
+  await still(app);
+  // How much of the glass is seen (its height less its clip's top and foot): as last drawn before it is turned (the
+  // bench says it is up, or going down), then frame by frame for 900 ms. Set going before the key is pressed (a key can
+  // be taken before a script sent ahead of it has run), and read once it is over.
+  type Watched = Window & {turned?: Promise<number[]>};
+  const watch = async () => {
+    await app.page.evaluate(() => {
+      const work = document.querySelector<HTMLElement>('.work.bench:not([hidden])')!, glass = work.querySelector<HTMLElement>('.screen > .glass')!;
+      const now = () => {
+        const m = /inset\(([-\d.]+)px(?: ([-\d.]+)px)?(?: ([-\d.]+)px)?/.exec(getComputedStyle(glass).clipPath);
+        const h = glass.getBoundingClientRect().height;
+        return m ? h - parseFloat(m[1]) - parseFloat(m[3] ?? m[1]) : h;
+      };
+      const was = work.classList.contains('prompting');
+      (window as Watched).turned = new Promise<number[]>((done) => {
+        // As last drawn before it is turned (each frame until then), then each frame after.
+        const out: number[] = [now()];
+        let t0 = 0;
+        // Only while it is a screen at all: back in the pill, the glass is the box's again, and not seen.
+        const shown = () => work.classList.contains('prompting') || work.classList.contains('prompt-leaving');
+        const turned = new MutationObserver(() => {
+          if (work.classList.contains('prompting') === was) return;
+          turned.disconnect();
+          t0 = performance.now();
+        });
+        turned.observe(work, {attributes: true, attributeFilter: ['class']});
+        const tick = () => {
+          if (!t0) out[0] = now();
+          else if (shown()) out.push(now());
+          if (!t0 || performance.now() - t0 < 900) requestAnimationFrame(tick); else done(out);
+        };
+        requestAnimationFrame(tick);
+      });
+    });
+    return () => app.page.evaluate(() => (window as Watched).turned!);
+  };
+  await app.page.keyboard.press('Control+Backquote');
+  await app.page.waitForTimeout(120);
+  const down = await watch();
+  await app.page.keyboard.press('Escape');
+  const d = await down();
+  // From the Escape on, it only ever gets smaller (a frame's sampling aside).
+  for (let i = 1; i < d.length; i++) expect(d[i]).toBeLessThanOrEqual(d[0] + 2);
+  await still(app);
+  await app.page.keyboard.press('Control+Backquote');
+  await still(app);
+  await app.page.keyboard.press('Escape');
+  await app.page.waitForTimeout(140);
+  const up = await watch();
+  await app.page.keyboard.press('Control+Backquote');
+  const u = await up();
+  // From the press on, it only ever gets bigger.
+  for (let i = 1; i < u.length; i++) expect(u[i]).toBeGreaterThanOrEqual(u[0] - 2);
+  await still(app);
+  await app.page.keyboard.press('Escape');
+  await still(app);
+});
+
 test('the Prompt\'s screen comes up out of the box and goes back into it over its whole length, as built', async ({app}) => {
   await app.newRepo.make('hello');
   await app.newRepo.openInForge();
