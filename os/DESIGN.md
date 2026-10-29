@@ -252,7 +252,9 @@ Every value in `styles.css` comes from a token (§2).
     search is lit; it fades in and out, and a press anywhere else closes
     what was found. What is read there, or a list held out from the right
     pane, stays as the keyboard goes back to the file, and the shade lifts:
-    the file is written beside it at full strength.
+    it draws in to the pane's own width, over the pane and never over the
+    file, which is written beside it whole and at full strength; pressed, it
+    opens out over the center again to be read, under the shade.
   120 ms fades for everything else. Reduced motion turns all of it off:
   each thing is where it ends at once.
 - No shadows, blur, glow or gradients; the one shade is the search's (above). The one exception is a
@@ -1807,9 +1809,15 @@ many files are changed since the last commit, diff 2) and 実行結果, the thre
 the search box switches between, so a pane that holds only a prompt line
 still shows what else is there: a head pressed opens its view under the
 search box, as its pill there does, and the view stays out beside the file as
-the keyboard goes back to it (the shade lifting), until it is put away:
+the keyboard goes back to it, until it is put away. Beside the file it stands in
+the pane's own width, a step in from the pane's line, over the pane and never
+over the file, which keeps its whole width (one box or several side by side),
+the shade lifted; pressed, or the search box in use, it opens out over the
+center to be read and draws in again as the keyboard goes back to the file
+(its left edge sliding, `--move` on `--land`). It is put away by
 Escape in the box, the × at the end of the strip under the view, or its pill
-pressed again. The views: Issue (the repo's open issues, as Git shows them: one merged or
+pressed again; while it is drawn in, its switch (Issue, diff, Output) waits
+for it to open out. The views: Issue (the repo's open issues, as Git shows them: one merged or
 closed is not among them; one line each as #3 Fix：件名, pressed to read one in full), diff (the changes not yet
 cut, file by file: added lines in ink with no fill, the lines kept quiet,
 removed lines quiet and struck, following every save; a file's name opens

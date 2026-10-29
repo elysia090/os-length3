@@ -171,24 +171,63 @@ test('Enter in the search opens the first line found, selected; a file found by 
   await expect.poll(() => app.forge.selected('README.md')).toBe('Written in Forge.');
 });
 
+/**
+ * The view out under the search box (`results`) stands beside the file box of `path` in `page`, never over it: in the
+ * pane's width, a step in from the pane's line (`beside`); or, opened out to be read, over the center (`over`).
+ */
+async function stands(app: {main: import('@playwright/test').Locator; forge: {results: import('@playwright/test').Locator}}, page: import('@playwright/test').Locator, path: string, how: 'beside' | 'over') {
+  await expect(async () => {
+    const file = (await page.locator(`section.file[data-path="${path}"]`).first().boundingBox())!;
+    const view = (await app.forge.results.locator('.slide[aria-current="true"] > .found-card').boundingBox())!;
+    const pane = (await app.main.getByRole('complementary', {name: 'Plugins and Prompt'}).boundingBox())!;
+    if (how === 'beside') {
+      expect(file.x + file.width).toBeLessThanOrEqual(view.x);
+      expect(view.x).toBeGreaterThan(pane.x);
+    } else expect(view.x).toBeLessThan(file.x + file.width);
+  }).toPass({timeout: 5000});
+}
+
 test('at rest the right pane says Issue, diff and Output beside the Prompt\'s head; a view opened there stays beside the file until put away', async ({app}) => {
-  await app.forge.editFile('README.md', '# hello\n\nWritten in Forge.\n');
+  await app.forge.editFile('README.md', '# hello\n\nA line written in Forge, long enough to run on past the middle of its box.\n');
   const heads = app.main.getByRole('complementary', {name: 'Plugins and Prompt'}).getByRole('group', {name: 'What to look in'});
   // diff says how many files are changed since the last commit.
   await expect(heads.getByRole('button')).toHaveText(['Issue', /^diff\s*\d+$/, 'Output']);
   await heads.getByRole('button', {name: /^diff/}).click();
   await expect(app.forge.kind('diff')).toHaveAttribute('aria-pressed', 'true');
   await expect(app.forge.results.getByRole('button', {name: /^README\.md/})).toBeVisible();
-  // Back in the file and written in, the list stays out beside it.
-  const editor = app.forge.editor('README.md');
-  await editor.click();
+  // Back in the file and written in, the list stays out beside it: in the pane's width, never over the file.
+  const editor = app.forge.editor('README.md'), files = app.newRepo.madeIn('hello');
+  await editor.click({position: {x: 40, y: 20}});
   await app.page.keyboard.type('x');
   await expect(app.forge.results).toBeVisible();
   await expect(editor).toBeFocused();
+  await stands(app, files, 'README.md', 'beside');
+  // A file's diff read there does the same, at a narrower window too; pressed, it opens out over the center to be read.
+  await app.forge.search.click();
+  await app.forge.results.getByRole('button', {name: /^README\.md/}).click();
+  await editor.click({position: {x: 40, y: 20}});
+  await app.page.setViewportSize({width: 1024, height: 768});
+  await stands(app, files, 'README.md', 'beside');
+  await app.forge.results.locator('.slide[aria-current="true"] > .found-card').click({position: {x: 60, y: 160}});
+  await stands(app, files, 'README.md', 'over');
+  await editor.click({position: {x: 40, y: 20}});
+  await stands(app, files, 'README.md', 'beside');
   // Its × under it puts it away, the keyboard staying in the file.
   await app.forge.results.getByRole('button', {name: 'Put away'}).click();
   await expect(app.forge.results).toBeHidden();
   await expect(editor).toBeFocused();
+});
+
+test('side by side, a view kept out stands beside the box worked on, never over it', async ({app}) => {
+  await app.page.setViewportSize({width: 1280, height: 800});
+  await app.forge.editFile('README.md', '# hello\n\nA line written in Forge, long enough to run on past the middle of its box.\n');
+  await app.newRepo.make('notes');
+  await app.rail.go('forge');
+  await app.forge.band.getByRole('button', {name: 'hello', exact: true}).click({modifiers: ['Control']});
+  const files = app.newRepo.madeIn('hello');
+  await app.forge.openDiff('README.md');
+  await files.getByRole('textbox', {name: 'Edit README.md'}).click({position: {x: 40, y: 20}});
+  await stands(app, files, 'README.md', 'beside');
 });
 
 test('the right pane put away gives the center the width and takes the search with it; brought back, both are where they were', async ({app}) => {
