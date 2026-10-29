@@ -16,8 +16,10 @@ import {keptL3} from '../prompt/userland.ts';
 export async function readSpace(open: string[] = []): Promise<Space> {
   const s = await core<Space>('space');
   if (isNative) return s;
-  // In a browser the core holds the repos; the host is the origin's storage, as the browser estimates it.
-  const items: Item[] = s.items.map((i) => (open.includes(i.what) && i.id.startsWith('repo:') ? {...i, room: 'Keep', why: t('A Prompt has it open')} : i));
+  // In a browser the core holds the repos; the host is the origin's storage, as the browser estimates it. A repo the
+  // core would let go is kept while a Prompt here has it open; one it keeps already says its own reason (no Remote
+  // to free it to), not the Prompt.
+  const items: Item[] = s.items.map((i) => (open.includes(i.what) && i.id.startsWith('repo:') && i.room !== 'Keep' ? {...i, room: 'Keep', why: t('A Prompt has it open')} : i));
   // What l3 keeps of itself for the Prompt (its index, the translator, the hot programs): the l3 every Prompt runs on,
   // so it is kept, not freed (issue #46), here and in Free all alike; the app keeps its own the same (core/src/usage.rs).
   const l3 = await keptL3();

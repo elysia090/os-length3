@@ -3,7 +3,7 @@ import {closeUp, keepOut, nudge, putAway, unfold} from '../ui/glide.ts';
 import {t} from '../i18n.ts';
 import {mark} from '../ui/icons.ts';
 import {bring, remoteOnly} from '../remote/lifecycle.ts';
-import {plainPart, renamed, store} from '../repos/repos.ts';
+import {plainPart, plainPath, store} from '../repos/repos.ts';
 import {shownName} from '../repos/issues.ts';
 import {inRepo, list, ORIGIN_LABEL, type SystemEntry} from '../prompt/system.ts';
 import {answers, askFoot, SETTLE} from './common.ts';
@@ -29,9 +29,11 @@ import {errorText} from '../app/errors.ts';
 // on the row under the pointer or the keyboard; also a right press, or the
 // menu key): a menu laid beside the tree, as the person's menu is. A folder
 // (the repo's own row too) takes a new file or folder, and a file one beside
-// it in its folder; a file or folder takes a new name or is deleted. A row
-// pressed becomes the field or the ask in its place; a new file is the one to
-// work on, so the tree goes and the caret is in it.
+// it in its folder; a file or folder takes a new name (a path in the repo
+// moves it) or is deleted. A row pressed becomes the field or the ask in its
+// place; a new file is the one to work on, so the tree goes and the caret is
+// in it. A row taken by the pointer and let go on a folder of its repo (or on
+// the repo's own row) moves into it.
 
 /** How long the pointer rests on File before the tree comes out: passing over the rail does not bring it out. */
 const OPEN_DELAY = 300;
@@ -70,6 +72,10 @@ export function triangle(): SVGSVGElement {
 
 const note = (text: string, depth: number) => h('li', {class: 'tree-note muted', style: `--depth:${depth}`}, text);
 const joined = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
+/** The folder a path in a repo is in ('' at its top), and its own name. */
+const split = (path: string) => (path.includes('/') ? [path.slice(0, path.lastIndexOf('/')), path.slice(path.lastIndexOf('/') + 1)] : ['', path]);
+/** How long a shut folder under a row being carried waits before it opens, to be gone into. */
+const SPRING = 650;
 
 export class FileTree {
   readonly element: HTMLElement;
@@ -90,12 +96,19 @@ export class FileTree {
   private pinned = false;
   /** The pointer has been in the tree since it came out. */
   private visited = false;
+  /** A row being carried by the pointer, to be let go on a folder of its repo. */
+  private carried: {repo: string; path: string} | null = null;
+  /** What a move by the pointer could not do, said at the tree's foot until it comes out again. */
+  private said = h('p', {class: 'error small tree-said', role: 'alert'});
+  /** Folders being read now, and who waits until none is. */
+  private reading = 0;
+  private read: (() => void)[] = [];
 
   constructor(events: FileTreeEvents) {
     this.events = events;
     this.root = h('ul', {class: 'tree-children', role: 'tree', 'aria-label': '/'});
     // No "/" label of its own: the rows are what is in "/".
-    this.element = h('nav', {class: 'tree', id: 'file-tree', 'aria-label': 'File（/）'}, this.root);
+    this.element = h('nav', {class: 'tree', id: 'file-tree', 'aria-label': 'File（/）'}, this.root, this.said);
     this.element.addEventListener('pointerenter', () => { this.visited = true; this.enter(); });
     this.element.addEventListener('pointerleave', () => this.leave());
     // Escape closes it from anywhere while it is out, before what has the keyboard
@@ -160,9 +173,9 @@ export class FileTree {
     this.later(false, this.visited ? LINGER : LINGER_PASSED);
   }
 
-  /** Something in the tree that the pointer going away must not put away: a field or an ask in a row's menu, or the keyboard. */
+  /** Something in the tree that the pointer going away must not put away: a field or an ask in a row's menu, the keyboard, a row carried. */
   private holding(): boolean {
-    return !!this.pop?.element.querySelector('.pop-field, .pop-ask') || !!this.element.querySelector(':focus-visible');
+    return !!this.carried || !!this.pop?.element.querySelector('.pop-field, .pop-ask') || !!this.element.querySelector(':focus-visible');
   }
 
   /** The pointer on another place on the rail: the tree a rest brought out, not pressed nor held, goes at once. */
@@ -267,6 +280,7 @@ export class FileTree {
    * one quiet row at its foot, System, opened as a folder is and kept open once it is.
    */
   private build(focus: boolean) {
+    this.said.textContent = '';
     void list('/').then((top) => {
       this.root.replaceChildren();
       const rest = top.filter((e) => e.origin !== 'repos');
@@ -344,6 +358,7 @@ export class FileTree {
         row.append(name);
         if (meta) row.append(h('span', {class: 'tree-meta'}, meta));
         this.deeds(row, name, e, at, false);
+        this.carries(row, at);
       } else {
         row.append(h('span', {class: 'tree-name plain'}, e.name));
         if (meta) row.append(h('span', {class: 'tree-meta'}, meta));
@@ -364,22 +379,26 @@ export class FileTree {
     const children = h('ul', {class: 'tree-children', role: 'group'});
     row.append(toggle, name);
     if (meta) row.append(h('span', {class: 'tree-meta'}, meta));
-    if (at) this.deeds(row, name, e, at, true);
+    if (at) { this.deeds(row, name, e, at, true); this.carries(row, at); }
     item.append(children);
 
     const fill = async () => {
       // Read again (a row made, renamed or taken away in it), its rows stay until what it holds now is read: no blink of “…”.
       if (!children.querySelector(':scope > [role=treeitem]')) children.replaceChildren(note('…', depth + 1));
       let entries: SystemEntry[];
-      try { entries = await list(e.path); } catch (err) {
-        children.replaceChildren(note(errorText(err), depth + 1));
-        return;
-      }
-      children.replaceChildren();
-      for (const c of entries) this.add(c, children, depth + 1);
-      // A repo only on the Remote is a line too: choosing it fetches it, as opening it from Home does.
-      if (e.path === '/root') for (const r of remoteOnly()) if (!entries.some((c) => c.name === r.name)) children.append(this.away(r.name, depth + 1));
-      if (!children.childElementCount) children.append(note(e.path === '/root' ? t('No repos yet') : t('empty'), depth + 1));
+      this.reading++;
+      try {
+        try { entries = await list(e.path); } catch (err) {
+          children.replaceChildren(note(errorText(err), depth + 1));
+          return;
+        }
+        children.replaceChildren();
+        // (Each open folder among them starts being read now, before this one is counted read.)
+        for (const c of entries) this.add(c, children, depth + 1);
+        // A repo only on the Remote is a line too: choosing it fetches it, as opening it from Home does.
+        if (e.path === '/root') for (const r of remoteOnly()) if (!entries.some((c) => c.name === r.name)) children.append(this.away(r.name, depth + 1));
+        if (!children.childElementCount) children.append(note(e.path === '/root' ? t('No repos yet') : t('empty'), depth + 1));
+      } finally { if (!--this.reading) for (const done of this.read.splice(0)) done(); }
     };
     const show = (now: boolean) => {
       expanded = now;
@@ -393,6 +412,7 @@ export class FileTree {
       return now ? fill() : Promise.resolve();
     };
     this.folders.set(item, () => show(true));
+    if (at) this.takes(row, at, () => { if (!expanded) void show(true); });
     toggle.addEventListener('click', () => void show(!expanded));
     // Inside a repo the name also opens that place in Forge; elsewhere it
     // only opens and closes, like the triangle.
@@ -419,6 +439,74 @@ export class FileTree {
     name.addEventListener('keydown', (event) => {
       if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) { event.preventDefault(); open(true); }
     });
+  }
+
+  /** A row inside a repo (not the repo's own) can be taken by the pointer and carried to a folder of its repo. */
+  private carries(row: HTMLElement, at: {repo: string; path: string}) {
+    if (!at.path) return;
+    row.draggable = true;
+    row.addEventListener('dragstart', (event) => {
+      this.unpop();
+      this.said.textContent = '';
+      this.carried = at;
+      event.dataTransfer?.setData('text/plain', at.path);
+      if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+      row.classList.add('carried');
+    });
+    row.addEventListener('dragend', () => {
+      row.classList.remove('carried');
+      this.carried = null;
+      this.letGo();
+    });
+  }
+
+  /**
+   * A folder's row (the repo's own too) takes a row of its repo let go on it: the row moves into it. Held over it a
+   * moment while it is shut, it opens (`open`), to be gone into.
+   */
+  private takes(row: HTMLElement, at: {repo: string; path: string}, open: () => void) {
+    let spring = 0;
+    // Not into itself or what is in it, nor where it is already.
+    const fits = () => {
+      const c = this.carried;
+      return !!c && c.repo === at.repo && at.path !== c.path && !at.path.startsWith(`${c.path}/`) && split(c.path)[0] !== at.path;
+    };
+    const off = () => { clearTimeout(spring); spring = 0; row.classList.remove('taking'); };
+    row.addEventListener('dragover', (event) => {
+      if (!fits()) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+      row.classList.add('taking');
+      spring ||= window.setTimeout(open, SPRING);
+    });
+    row.addEventListener('dragleave', (event) => { if (!row.contains(event.relatedTarget as Node | null)) off(); });
+    row.addEventListener('drop', (event) => {
+      const c = this.carried;
+      off();
+      if (!c || !fits()) return;
+      event.preventDefault();
+      void this.moved(c.repo, c.path, joined(at.path, split(c.path)[1])).catch((err) => { this.said.textContent = errorText(err); });
+    });
+  }
+
+  /**
+   * `path` of `repo` moved to `to` (renamed, or carried to another folder): an open folder stays open where it went,
+   * the repo is read again with every folder down to it open, and it lands lit there with the keyboard on it.
+   */
+  private async moved(repo: string, path: string, to: string) {
+    const was = `/root/${repo}/${path}`, now = `/root/${repo}/${to}`;
+    if (to !== path) {
+      await store.move(repo, path, to);
+      for (const p of [...expandedPaths]) if (p === was || p.startsWith(`${was}/`)) { expandedPaths.delete(p); expandedPaths.add(now + p.slice(was.length)); }
+    }
+    const parts = to.split('/');
+    for (let i = 0; i < parts.length; i++) expandedPaths.add(`/root/${[repo, ...parts.slice(0, i)].join('/')}`);
+    this.unpop();
+    await this.again(this.nameAt(`/root/${repo}`)?.closest('li') ?? null);
+    // Its open folders are read each by itself: it is there once the last of them is.
+    if (this.reading) await new Promise<void>((done) => this.read.push(done));
+    this.settle(this.nameAt(now));
+    if (to !== path) this.landed(now);
   }
 
   /** Put the row's menu away, if one is out. */
@@ -472,7 +560,6 @@ export class FileTree {
     this.unpop();
     const item = row.closest('li') as HTMLElement;
     const parent = item.parentElement?.closest('li') as HTMLElement | null;
-    const folder = at.path.includes('/') ? at.path.slice(0, at.path.lastIndexOf('/')) : '';
     const pop = h('div', {class: 'pop tree-pop', role: 'menu', 'aria-label': e.name});
     const entry = (label: string, then: (b: HTMLButtonElement) => void) => {
       const b = h('button', {type: 'button', class: 'pop-item', role: 'menuitem'}, label) as HTMLButtonElement;
@@ -484,7 +571,7 @@ export class FileTree {
      * the deed or Enter makes it; Not now (or Escape) puts it back. A name it cannot be is said
      * under it and keeps the keyboard in it, to be put right there.
      */
-    const field = (b: HTMLElement, label: string, value: string, deed: string, go: (name: string) => Promise<void>) => {
+    const field = (b: HTMLElement, label: string, value: string, deed: string, go: (name: string) => Promise<void>, path = false) => {
       const input = h('input', {class: 'line-in mono', placeholder: label, 'aria-label': label, autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
       input.value = value;
       const error = h('p', {class: 'error small', role: 'alert'});
@@ -494,7 +581,12 @@ export class FileTree {
         const v = input.value.trim();
         if (!v || input.disabled) return;
         error.textContent = '';
-        if (!plainPart(v)) { error.textContent = t('A name has no “/” and does not start with “.”'); input.focus(); nudge(input); return; }
+        if (path ? !plainPath(v.replace(/^\/+|\/+$/g, '')) : !plainPart(v)) {
+          error.textContent = path ? t('Names joined by “/”, none starting with “.”') : t('A name has no “/” and does not start with “.”');
+          input.focus();
+          nudge(input);
+          return;
+        }
         input.disabled = yes.disabled = true;
         try { await go(v); } catch (err) { input.disabled = yes.disabled = false; error.textContent = errorText(err); input.focus(); nudge(input); }
       };
@@ -508,17 +600,17 @@ export class FileTree {
       no.addEventListener('click', () => { box.replaceWith(b); b.focus(); this.letGo(); });
       b.replaceWith(box);
       input.focus();
-      // A new name is written over the old one's stem, its ending kept.
-      const dot = value.lastIndexOf('.');
-      input.setSelectionRange(0, dot > 0 && !dir ? dot : value.length);
+      // A new name is written over the old one's stem, its ending and the folders it is in kept.
+      const from = value.lastIndexOf('/') + 1, dot = value.lastIndexOf('.');
+      input.setSelectionRange(from, dot > from && !dir ? dot : value.length);
     };
-    /** Whether `child` is in the folder `inside` already (asked of the store, not of what the tree last showed). */
-    const there = async (inside: string, child: string) => (await store.tree(at.repo, inside)).some((x) => x.name === child);
+    /** Whether `child` is in the folder `inside` already (asked of the store, not of what the tree last showed; no folder, no). */
+    const there = async (inside: string, child: string) => (await store.tree(at.repo, inside).catch(() => [])).some((x) => x.name === child);
     const taken = (child: string) => new Error(t('{name} is there already', {name: child}));
     const rows: HTMLElement[] = [];
     // A folder takes a new file or folder in it; a file, one beside it in its folder (the band's first button brings
     // out the menu of the file read now, and a new file is wanted there as much as a new name).
-    const into = dir ? {path: at.path, abs: e.path, item} : {path: folder, abs: e.path.slice(0, e.path.lastIndexOf('/')), item: parent};
+    const into = dir ? {path: at.path, abs: e.path, item} : {path: split(at.path)[0], abs: e.path.slice(0, e.path.lastIndexOf('/')), item: parent};
     rows.push(entry(t('New file'), (b) => field(b, t('File name'), '', t('Create'), async (n) => {
       if (await there(into.path, n)) throw taken(n);
       // The new file is the one to work on: the tree goes and the caret is in it. Out again, it shows the file
@@ -538,20 +630,13 @@ export class FileTree {
       this.landed(`${into.abs}/${n}`);
     })));
     if (at.path !== '') {
-      rows.push(entry(t('Rename'), (b) => field(b, t('New name'), e.name, t('Rename'), async (n) => {
-        if (n !== e.name) {
-          if (await there(folder, n)) throw taken(n);
-          await store.rename(at.repo, at.path, n);
-          // An open folder stays open under its new name.
-          for (const p of [...expandedPaths]) {
-            if (p === e.path || p.startsWith(`${e.path}/`)) { expandedPaths.delete(p); expandedPaths.add(renamed(e.path, n) + p.slice(e.path.length)); }
-          }
-        }
-        this.unpop();
-        await this.again(parent);
-        this.settle(this.nameAt(renamed(e.path, n)));
-        if (n !== e.name) this.landed(renamed(e.path, n));
-      })));
+      // Its path in the repo, its name to be written over: a path written moves it (notes/plan.md), its folders made.
+      rows.push(entry(t('Rename'), (b) => field(b, t('New name'), at.path, t('Rename'), async (written) => {
+        const to = written.replace(/^\/+|\/+$/g, '');
+        const [inside, name] = split(to);
+        if (to !== at.path && await there(inside, name)) throw taken(name);
+        await this.moved(at.repo, at.path, to);
+      }, true)));
       rows.push(entry(t('Delete'), (b) => {
         // Asked in its place: the deed on the side it was pressed, Not now on the other.
         const foot = askFoot(b, pop);

@@ -61,6 +61,25 @@ test('what is written before Create stays while another page is seen, and goes o
   await expect(app.newRepo.summary).toHaveValue('');
 });
 
+test('nothing named yet, the new row is a quiet place for the name, and Create asks for one first', async ({app}) => {
+  await app.rail.go('new-repo');
+  // The field holds no example to be taken for a name; the row it would be is dashed, saying what goes there.
+  await expect(app.newRepo.name).toHaveValue('');
+  await expect(app.newRepo.name).not.toHaveAttribute('placeholder');
+  const slot = app.main.locator('.tree-still .tree-new');
+  await expect(slot).toHaveClass(/tree-unnamed/);
+  await expect(slot.locator('.tree-name')).toHaveText('name');
+  await expect(app.newRepo.problem).toBeHidden();
+  await app.newRepo.create.click();
+  await expect(app.newRepo.problem).toHaveText('Write a name first');
+  await expect(app.newRepo.name).toBeFocused();
+  // Written, it is the repo to be made, filled as File fills it.
+  await app.newRepo.name.pressSequentially('tide');
+  await expect(app.newRepo.problem).toBeHidden();
+  await expect(slot).not.toHaveClass(/tree-unnamed/);
+  await expect(slot.locator('.tree-name')).toHaveText('tide');
+});
+
 test('a name already taken is said under the name, and the name keeps the keyboard', async ({signedIn: app}) => {
   await app.newRepo.make('notes');
   await app.rail.go('new-repo');

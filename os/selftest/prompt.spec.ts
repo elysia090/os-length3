@@ -121,17 +121,32 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(app.forge.prompt.getByText(/^Running /)).toHaveCount(0);
   });
 
-  test('stopped from Runtime, its repo no longer says a Prompt has it, without leaving the page', async ({app}) => {
+  test('stopped from Runtime, it goes from Prompts running without leaving the page; what holds its repo is said as it is', async ({app}) => {
     await app.forge.run('true');
     await app.runtime.open('This browser');
     const here = app.main.getByRole('region', {name: /^In this browser/});
-    await expect(here).toContainText('A Prompt has it open');
+    // Signed out, there is no Remote to free it to, Prompt or none: that is what is said, not the Prompt.
+    await expect(here).toContainText('Sign in to the Remote to free it');
+    await expect(here).not.toContainText('A Prompt has it open');
     await app.runtime.part('Prompts running').click();
     await app.main.getByRole('tabpanel', {name: /^Prompts running/}).getByRole('button', {name: 'Stop', exact: true}).click();
     await app.runtime.part('This browser').click();
-    await expect(here).not.toContainText('A Prompt has it open');
-    // What holds it now, said whole (signed out, there is no Remote to free it to).
     await expect(here).toContainText('Sign in to the Remote to free it');
+  });
+
+  test('a repo whose Prompt waits is renamed from its gear, its Prompt stopped first as the field says', async ({app}) => {
+    await app.forge.run('true');
+    await app.rail.go('home');
+    const card = app.main.getByRole('region', {name: 'Repos'}).getByRole('group', {name: 'hello', exact: true});
+    await card.getByRole('button', {name: 'What to do with hello'}).click();
+    const menu = card.getByRole('menu', {name: 'What to do with hello'});
+    await menu.getByRole('menuitem', {name: 'Rename'}).click();
+    await expect(menu).toContainText('Its Prompt is stopped first: nothing is running in it.');
+    await menu.getByRole('textbox', {name: 'New name'}).fill('hullo');
+    await menu.getByRole('textbox', {name: 'New name'}).press('Enter');
+    await expect(app.main.getByRole('region', {name: 'Repos'}).getByRole('group', {name: 'hullo', exact: true})).toBeVisible();
+    await app.runtime.open('This browser');
+    await expect(app.runtime.part('Prompts running')).toHaveCount(0);
   });
 
   test('what the Prompt showed is still there after Git and back, and after Home and back', async ({app}) => {
@@ -176,8 +191,28 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
   });
 });
 
+test.describe('the Prompt, started by writing to it', {tag: '@slow'}, () => {
+  test.skip(!process.env.SELFTEST_SLOW, '@slow: SELFTEST_SLOW=1 runs it');
+
+  test('a repo shown starts no Prompt: none runs until the box is written in, and the line sent then waits for it', async ({app}) => {
+    test.setTimeout(300_000);
+    // Shown in Forge, read and gone from: nothing runs, and nothing holds the repo.
+    await app.runtime.open('This browser');
+    await expect(app.runtime.part('Prompts running')).toHaveCount(0);
+    await expect(app.main.getByRole('region', {name: /^In this browser/})).not.toContainText('A Prompt has it open');
+    await app.rail.go('forge');
+    await expect(app.main.locator('.prompt-chip')).toHaveAttribute('data-state', 'starting');
+    // Written to, it starts; the line sent before its first prompt line runs once it is there.
+    await app.forge.promptBox.fill('echo first');
+    await app.forge.promptBox.press('Control+Enter');
+    await expect(app.forge.promptBox).toHaveValue('');
+    await expect(app.forge.prompt).toContainText(/^first$/m, {timeout: 240_000});
+    await app.runtime.open('Prompts running');
+  });
+});
+
 test('Enter is a new line in the prompt box, so confirming a conversion never runs it; Ctrl+Enter runs', async ({app}) => {
-  // Once the Prompt is up (before, Ctrl+Enter says it is still starting, and the line waits in the box).
+  // Once the Prompt is up (before, a line sent waits for its first prompt line).
   await app.forge.startPrompt('hello');
   const box = app.forge.promptBox;
   await box.fill('echo one');

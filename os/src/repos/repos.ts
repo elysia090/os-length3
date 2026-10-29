@@ -27,6 +27,12 @@ export interface Contents {
 
 export type Template = string;
 
+/**
+ * The most of a file Forge reads to edit and saves back (core/src/api.rs READ_LIMIT): one larger is read only in
+ * part, so a text over it written in Forge is not saved as it is (editor.ts says what can be done instead).
+ */
+export const EDIT_LIMIT = 256 * 1024;
+
 export interface RepoStore {
   list(): Promise<RepoSummary[]>;
   create(name: string, template: Template): Promise<RepoSummary>;
@@ -41,12 +47,19 @@ export interface RepoStore {
   /** Remove a file, or a directory with all it holds, inside the repo (never the repo or its .git). */
   remove(repo: string, path: string): Promise<void>;
   /**
-   * Give a file or folder a new name in the folder it is in (`name` one plain
-   * part, as a new file's); never replaces what is there.
+   * Give a file or folder a new name, or a new place in the repo: `to` is its path from the repo's top, each part
+   * plain as a new file's name, the folders on its way made; never replaces what is there.
    */
-  rename(repo: string, path: string, name: string): Promise<void>;
+  move(repo: string, path: string, to: string): Promise<void>;
   /** Write `path` whole as these bytes, of any size or kind, its folders made (what a Prompt wrote back). */
   put(repo: string, path: string, bytes: Uint8Array): Promise<number>;
+  /**
+   * Name the repo itself `to` on this device, with what this device keeps of it by its name; only one no Remote has
+   * (core's remote::rename_repo). `open`: repos a Prompt has open in this page, which are never renamed.
+   */
+  renameRepo(repo: string, to: string, open: string[]): Promise<void>;
+  /** Take the repo from this device whole, with every record of it; what a Remote holds is not touched. `open` as above. */
+  deleteRepo(repo: string, open: string[]): Promise<void>;
   /** A file's bytes whole, whatever it holds (what a Prompt copies in). */
   bytes(repo: string, path: string): Promise<Uint8Array>;
 }
@@ -74,6 +87,9 @@ export function plainPart(name: string): boolean {
 /** `path` with its last part named `name`. */
 export const renamed = (path: string, name: string) => (path.includes('/') ? `${path.slice(0, path.lastIndexOf('/'))}/${name}` : name);
 
+/** Whether `path` can be where a file or folder is moved to in a repo, as core's move_to has it: plain parts joined by "/". */
+export const plainPath = (path: string): boolean => !!path && path.split('/').every(plainPart);
+
 /** Same rule as the native side: a plain directory name. */
 export function validName(name: string): boolean {
   return /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$/.test(name);
@@ -88,8 +104,10 @@ class CoreStore implements RepoStore {
   add(repo: string, dir: string, name: string, text: string) { return core<number>('repo_add', {repo, dir, name, text}); }
   mkdir(repo: string, path: string) { return core<void>('repo_mkdir', {repo, path}); }
   remove(repo: string, path: string) { return core<void>('repo_remove', {repo, path}); }
-  rename(repo: string, path: string, name: string) { return core<void>('repo_rename', {repo, path, name}); }
+  move(repo: string, path: string, to: string) { return core<void>('repo_move', {repo, path, to}); }
   put(repo: string, path: string, bytes: Uint8Array) { return core<number>('repo_put', {repo, path, bytes: base64(bytes)}); }
+  renameRepo(repo: string, to: string, open: string[]) { return core<void>('repo_rename', {repo, to, open}); }
+  deleteRepo(repo: string, open: string[]) { return core<void>('repo_delete', {repo, open}); }
   async bytes(repo: string, path: string) { return unbase64(await core<string>('repo_bytes', {repo, path})); }
 }
 
@@ -125,7 +143,7 @@ export function templateFiles(name: string, template: Template): Map<string, str
   return files;
 }
 
-/** A change made through the store: a file's new text, a new directory, or a removal (a rename is told as the old path removed, then what is at the new one). */
+/** A change made through the store: a file's new text, a new directory, or a removal (a move is told as the old path removed, then what is at the new one). */
 export interface Change {
   repo: string;
   path: string;
@@ -178,16 +196,25 @@ class Observed implements RepoStore {
     this.tell({repo, path, what: 'removed', by});
   }
   /**
-   * A rename is the old path gone and the new one made: those who keep a copy
-   * (the shell's) take it as any removal and new files, and the Remote gets it
-   * as any other change.
+   * A rename or a move is the old path gone and the new one made: those who keep a copy (the shell's) take it as any
+   * removal and new files, and the Remote gets it as any other change.
    */
-  async rename(repo: string, path: string, name: string, by?: string) {
-    await this.inner.rename(repo, path, name);
-    const to = renamed(path.replace(/\/+$/, ''), name);
-    if (to === path) return;
+  async move(repo: string, path: string, to: string, by?: string) {
+    await this.inner.move(repo, path, to);
+    to = to.replace(/^\/+|\/+$/g, '');
+    if (to === path.replace(/\/+$/, '')) return;
     this.tell({repo, path, what: 'removed', by});
     await this.made(repo, to, by);
+  }
+  /** The repo renamed: told as the old one gone and the new one come, each as a repo that changed. */
+  async renameRepo(repo: string, to: string, open: string[], by?: string) {
+    await this.inner.renameRepo(repo, to, open);
+    this.tell({repo, path: '', what: 'repo', by});
+    this.tell({repo: to, path: '', what: 'repo', by});
+  }
+  async deleteRepo(repo: string, open: string[], by?: string) {
+    await this.inner.deleteRepo(repo, open);
+    this.tell({repo, path: '', what: 'repo', by});
   }
   /** Tell what is at `path` as made: a file with its text, or a folder and everything in it. */
   private async made(repo: string, path: string, by?: string) {

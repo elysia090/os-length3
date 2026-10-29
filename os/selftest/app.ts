@@ -313,9 +313,10 @@ class Forge extends Part {
   /** What is said under the prompt box (the choices Tab found, Still starting…). */
   promptSays(text: string | RegExp) { return this.main.getByRole('status').filter({hasText: text}); }
 
-  /** Start the open repo's Prompt by writing to it, and wait for its prompt line (`hello $ `). */
+  /** Start the open repo's Prompt by writing to it (a letter, taken back), and wait for its prompt line (`hello $ `). */
   async startPrompt(repo: string) {
-    await this.promptBox.focus();
+    await this.promptBox.press(' ');
+    await this.promptBox.press('Backspace');
     await expect(this.prompt).toContainText(new RegExp(`${escape(repo)} \\$|Could not start`), {timeout: 240_000});
     await expect(this.prompt).not.toContainText('Could not start');
   }

@@ -525,6 +525,8 @@ export class Box {
       if (this.note.classList.contains('refused')) { this.note.classList.remove('refused'); putAway(this.note, () => { this.note.textContent = ''; }); }
       this.#look();
       if (this.#mode === 'edit') this.#edit.typed();
+      // Written to, the Prompt starts: its shell comes up while the line is still being written.
+      if (this.#mode === 'run' && this.#repo && this.prompt.value) sessionFor(this.#repo).begin();
     });
     prompt.addEventListener('keydown', (event) => this.#key(event));
   }

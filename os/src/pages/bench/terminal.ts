@@ -61,7 +61,10 @@ function startMessage(repo: string, l3: L3, copy: Awaited<ReturnType<typeof snap
   };
 }
 
-/** A repo's shell: started as it is made, what it printed on its element, the lines run in it, how it ended. */
+/**
+ * A repo's shell: started once it is written to (shown, it holds nothing), what it printed on its element, the lines
+ * run in it, how it ended.
+ */
 export class Session {
   readonly element: HTMLElement;
   private out = new Output();
@@ -102,12 +105,23 @@ export class Session {
 
   constructor(repo: string) {
     this.repo = repo;
-    this.status = h('p', {class: 'muted small'}, t('Starting…'));
+    // Nothing to say until it is written to: that starts it.
+    this.status = h('p', {class: 'muted small'});
     // A Prompt that ended says so in the language chosen since, as the rest of the page does.
     onLang(() => this.sayEnded());
     this.activity = new Activity({live: () => this.live, interrupt: () => this.interrupt(), restart: () => this.restart()});
     this.element = h('div', {class: 'term'}, this.status, this.out.element, this.activity.element);
     this.copy = new WriteBack(repo, this.id, (said) => { this.status.textContent = said; });
+  }
+
+  /** Whether it was started: written to, or begun being written to (box.ts). Shown alone, it is not. */
+  private begun = false;
+
+  /** Started, once: what is written to it starts it, never its being shown. */
+  begin() {
+    if (this.begun) return;
+    this.begun = true;
+    this.status.textContent = t('Starting…');
     void this.start();
   }
 
@@ -126,14 +140,16 @@ export class Session {
   /** How long until what was printed last has all come in, in ms: what comes after it (the prompt line) waits that long. */
   settlesIn(): number { return this.out.settlesIn(); }
 
-  /** Type `text` into the shell, one line per line. False while it is not running. */
+  /** Type `text` into the shell, one line per line, starting it if it was not yet. False once it has ended. */
   send(text: string): boolean {
-    if (!this.live || (!this.worker && !this.native)) return false;
+    if (this.ended) return false;
+    this.begin();
     const lines = text.endsWith('\n') ? text : `${text}\n`;
-    // Up, but the shell has not yet said the prompt line it waits at (a cold start is some seconds): the line waits
-    // for it, then goes, drawn after that line as any run is (sent before it, it was drawn before the prompt line,
-    // and what it printed read as the line run).
+    // Coming up, or up but the shell has not yet said the prompt line it waits at (a cold start is some seconds): the
+    // line waits for it, then goes, drawn after that line as any run is (sent before it, it was drawn before the
+    // prompt line, and what it printed read as the line run).
     if (!this.first.waited) { this.first.hold(lines); return true; }
+    if (!this.live || (!this.worker && !this.native)) return false;
     this.out.sent(lines);
     this.runs.push({line: lines.trimEnd(), output: '', started: Date.now(), ms: null});
     if (this.runs.length > RUNS) this.runs.shift();
@@ -315,13 +331,13 @@ export class Session {
   /**
    * Stop: the worker and every guest process in it end at once (terminate is
    * synchronous), so what they held is the browser engine's to free. Only
-   * then does it say so.
+   * then does it say so, and the promise is kept once it has.
    */
-  stop() {
-    if (!this.native) { this.end(() => t('Stopped')); return; }
+  stop(): Promise<void> {
+    if (!this.native) { this.end(() => t('Stopped')); return Promise.resolve(); }
     // On the root: stopped only once the host shows none of its processes left.
     const n = this.native;
-    void n.close().then((s) => {
+    return n.close().then((s) => {
       this.stopped = s;
       this.end(() => {
         const back = s.before.memory ? t('{size} given back', {size: bytes(s.before.memory)}) : '';
@@ -354,8 +370,10 @@ export class Session {
     this.restarting = true;
     if (!this.ended) this.stop();
     sessions.delete(this.repo);
-    // Whoever showed this one hears that another has taken its place.
-    switchOver(this.element, terminalFor(this.repo), () => this.tell());
+    // Started again on purpose: the new one starts now. Whoever showed this one hears that another has taken its place.
+    const next = sessionFor(this.repo);
+    next.begin();
+    switchOver(this.element, next.element, () => this.tell());
   }
   /** Started again: its own ending is not shown going dark, the new one comes at once. */
   private restarting = false;
@@ -403,12 +421,32 @@ export const allSessions = (): [string, Session][] => [...sessions];
 /** The repo's session if one is running, without starting one. */
 export const sessionIfAny = (repo: string): Session | undefined => sessions.get(repo);
 
-/** The repo's session, started if it has none. */
+/** How the repo's Prompt holds it: 'busy' while a line runs in it, 'idle' while it waits at its prompt line, null when none runs. */
+export function promptHolds(repo: string): 'busy' | 'idle' | null {
+  const s = sessions.get(repo);
+  if (!s?.running) return null;
+  return s.runs.at(-1)?.ms === null ? 'busy' : 'idle';
+}
+
+/** The repo's Prompt stopped, before its repo goes from here or takes another name; `gone`: let go of, too (its copy is of a repo no longer here). */
+export async function stopPrompt(repo: string, gone = false) {
+  const s = sessions.get(repo);
+  if (s?.running) await s.stop();
+  if (gone) sessions.delete(repo);
+}
+
+/** The repo's session, made if it has none (made, it is not started: writing to it starts it). */
 export function sessionFor(repo: string): Session {
   let s = sessions.get(repo);
   if (!s) { s = new Session(repo); sessions.set(repo, s); }
   return s;
 }
 
-/** The repo's Prompt as it is shown, its session started if it has none. */
-export const terminalFor = (repo: string): HTMLElement => sessionFor(repo).element;
+/**
+ * The repo's Prompt as it is shown, its session made if it has none. Shown, it is not started; what it will run (l3,
+ * in a browser) is read ahead meanwhile, so the first line written does not wait for it, and holds no repo.
+ */
+export function terminalFor(repo: string): HTMLElement {
+  if (!isNative) void loadL3().catch(() => { /* said by the Prompt that starts, if it fails again there */ });
+  return sessionFor(repo).element;
+}

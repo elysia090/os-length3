@@ -1388,7 +1388,8 @@ back the way it came), and its detail goes quiet with it, still there to read.
 A detail opened or put away moves the items under it down or up to make room,
 never jumping them. The repos are large cards, three across at a
 laptop's width (two, then one, as it narrows); each is a repo in a list as
-Runtime says it: its body the repo itself, its gear Forge or Free.
+Runtime says it: its body the repo itself, opened in Forge, its gear what
+is done to the repo (its card on the Remote, Rename, Free, Delete).
 
 What a hand goes to without being told answers it, here and on every page:
 each count is the way to its section further down (a raised fill under the
@@ -1605,7 +1606,15 @@ the answers so nothing moves under the pointer, the diff of what saving here
 would do to the other text (theirs struck, yours added, as Forge's diff
 reads). Nothing is saved on its own until it is answered; writing on until
 the two are the same ends it. A file read only in part (over 256 KB) or binary is never
-written back, and says so. Tab types a tab; with lines selected it moves
+written back, and says so. That is Forge's own measure, of a text edited in a
+page (the Remote keeps a file up to 16 MB): a text written past it is not
+saved on its own, and nothing of it is lost without a word. The head says
+so (未保存 · the measure it is over), and under it, over the text, as the ask
+of a text changed elsewhere is, how large it is and the way on: made smaller,
+it saves as before and the ask folds away; まるごと保存する keeps it as
+written, and from then it is a file read in part, its start to read, the
+Prompt editing it whole. While it waits, closing the tab asks first (the
+browser's own ask). Tab types a tab; with lines selected it moves
 each of them in by one, the selection kept, and one Undo takes it back. A
 press on a line's number selects that line. Escape leaves the text for the
 page. Undo reaches back across going to another repo or page and back: a
@@ -1679,8 +1688,14 @@ it is not called Bash); leaving the prompt
 (or Escape, or the × at the right end of its head, beside the lamp, there
 only while it is up) sends it back; Escape and the × give the keyboard back
 to what had it before the box (the file, the page). The Prompt has no switch: writing
-to it starts it, and one that ended says so in its place, with Start
-again; stopping one is Runtime's. What is written in the box and not sent
+to it starts it (its first letter in the box, so its shell comes up while
+the line is still being written; a line sent before it is up waits for its
+first prompt line), and one that ended says so in its place, with Start
+again; stopping one is Runtime's. A repo shown, read or written in Forge
+starts nothing: its Prompt, never written to, runs nothing and holds the
+repo nowhere (Runtime counts it with none running, and Free does not wait
+for it); only what it runs on, l3 in a browser, is read ahead as the repo is
+shown, so the first line is not kept waiting for it. What is written in the box and not sent
 is the repo's: another repo shows its own, and coming back finds it.
 
 The box does more than run. Its pill says what it does and, pressed (or
@@ -1880,19 +1895,42 @@ each thing says what can be done with it.
 
 **A repo in a list** is the same in every list of repos (Home's cards, the
 three columns here, New repo's list): its body (a card's, a row's name) is the
-repo itself, its own place: its card on Remote, shown and lit (signed out,
-Forge, where all of it is). Near it (the pointer on it, the keyboard in it,
-always on a touch screen) a small round gear shows at its edge; pressed, a
-popover offers the two things done to a repo from a list, each chosen on its
-own: Open in Forge, and Free from this device (空ける: the same Free as below,
-its conditions unchanged). Free that cannot be done now is there, not
-pressable, with why under it; pressed, it asks in its row what it does ({repo}
-leaves this device; it stays on the Remote and comes back when opened), Free
-under the pointer, Not now beside it. Showing the gear or its list does
-nothing; Escape or a press outside puts it away. On a card the list opens over
-the card; in a column that scrolls, under the row, in its own place. Freed,
-the place says what it came to where it is (the row's result over the box;
-the card becomes the Remote's).
+repo itself, opened in Forge, where all of it is (one only on the Remote is
+brought here first, its card saying so meanwhile), signed in or out, as a
+repo in a profile opens the repo. Near it (the pointer on it, the keyboard in
+it, always on a touch screen) a small round gear shows at its edge; pressed,
+a popover offers what is done to the repo itself from a list, each chosen on
+its own: signed in, Show on the Remote (its card there, shown and lit: its
+switch, who sees it); Rename; Free from this device (空ける: the same Free as
+below, its conditions unchanged); Delete. A deed that cannot be done now is
+there, not pressable, with why under it: the reason that holds, said as it
+is (signed out, Free says there is no Remote to free it to, never that a
+Prompt has it when a Prompt is not why). A Prompt waiting at its prompt line
+holds nothing back: the deed's ask says it is stopped first, and it is; one
+running something holds all three, and says so. Pressed, each becomes its
+field or its ask in its row. Free asks what it does ({repo} leaves this
+device; it stays on the Remote and comes back when opened), Free under the
+pointer, Not now beside it. Rename is the name written in its row (Enter or
+Rename gives it, a name that cannot be, or one here or on the Remote
+already, said under it): only a repo no Remote has, since the Remote knows an
+account's repos by their names and every device keeps each in step by it
+(one there says so under Rename, which stays greyed); its copy, its works'
+copies, its environment and caches go to the new name (`repo_rename`). Delete
+of a repo no Remote has asks in its row as File's Delete does ({repo} goes
+from this device, with everything in it; nothing keeps it elsewhere, so it
+cannot be brought back), Not now and 消す at its foot; it goes from this
+device with everything kept of it there (`repo_delete`). Delete of one on the
+Remote asks in the list as turning it off asks on its card (the account's
+name, the repo's, the code, a passkey: it guards the repo's history against
+another hand), saying what it does: it goes from this device and from the
+Remote, which keeps it off 30 days, where turning it on brings it back; what
+is here not sent yet is sent first. Off on the Remote already, Delete is its
+廃棄, asked the same. Showing the gear or its list does nothing; Escape or a
+press outside puts it away. On a card the list comes down from the gear as
+wide as the card, over what is under it; in a column that scrolls, under the
+row, in its own place. Done, the place says what it came to where it is (the
+row's result over the box; the card becomes the Remote's, takes its new name,
+or goes).
 
 - **この端末**: one bar of the host's whole, with this OS's share darker
   (not an ink fill, which means current), and three figures: this OS, free,
@@ -1904,7 +1942,7 @@ the card becomes the Remote's).
   (on this device) at the left, what is **only on the Remote** (fetched with a
   press; all of it here too, it says so) in the middle, and what **can be
   freed** at the right (nothing, it says the reason is on each row that
-  stays: not on the Remote yet, a Prompt in it). In each, **one list, largest first**, of everything this OS holds: each
+  stays: not on the Remote yet, a Prompt running in it). In each, **one list, largest first**, of everything this OS holds: each
   repo, each root of the distribution, each leftover, Home. A row is the
   thing, its size, and at its end what can be done:
   - **空ける**: it is not needed here. A repo whose copy is what the Remote
@@ -1927,7 +1965,8 @@ the card becomes the Remote's).
     owner, and they say so.
   - Otherwise, quietly, why it stays: a Prompt has it open, it holds what
     cannot be sent (a link, a file over 16 MB, a `.git`), there is no Remote
-    yet, it is the root Prompts run on, it is Home's settings. Why (and what
+    yet, it is the root Prompts run on, it is Home's settings; of two, the
+    one a Prompt stopped would not lift (no Remote) is the one said. Why (and what
     freeing does) is a line of its own under the row's facts, read whole,
     never cut short; a Prompt stopped or started reads it again at once.
   Under the list, 空けられるもの with its total and 全部空ける. Freeing stays
@@ -2369,6 +2408,8 @@ the gear's do, never swapped in one frame):
   this device if the account has none, then confirms it is you) and goes
   straight on to the names; the passkey just used still counts, so turning
   off does not ask for another (the Remote takes one for five minutes).
+  Delete in a repo's gear, in any list, asks the same in the list, and
+  turns it off with its copy here gone (§ Runtime, A repo in a list).
   Off, the knob is at the left on `off` red and the card is quiet (dashed):
   the Remote keeps the repo 30 days, answering only that it is off, and
   pressing the switch again brings it back at once. Off, at the bottom left:
@@ -2765,7 +2806,10 @@ there, shut and quiet, and among them, where its name puts it (moving as the
 name is written: past another's name, the rows go to their new places on
 their curve), the new one filled in ink as File fills the repo worked
 on, its folders shut, README.md's size at the row's end as File gives it, of
-what it will say (it follows the name and what it is for). A name that
+what it will say (it follows the name and what it is for). The field holds no
+example (one there reads as a name given, and its row as the repo to be
+made): with nothing written, the new row is a quiet dashed place saying name,
+and 作成 pressed says, under the field, to write a name first. A name that
 cannot be is said as it is written, not once 作成 is pressed: the reason
 under the field (its edge in the off colour), the new row not filled but
 dashed, each letter no name has underlined where it is in it (a space as
@@ -2824,8 +2868,8 @@ puts the tree away whatever has the keyboard: what was being written keeps
 its caret, and only from inside the tree does the keyboard go back to File.
 Open folders are remembered while the app runs.
 
-Inside a repo a row is also where a file or folder is made, renamed and
-deleted. At its right end, shown on the row under the pointer or the
+Inside a repo a row is also where a file or folder is made, renamed,
+moved and deleted. At its right end, shown on the row under the pointer or the
 keyboard, a small round button (the down mark, more to choose from) brings
 out the row's menu; a right press on the row, or the menu key (Shift+F10)
 on its name, does the same. The menu is the person's menu (`.pop`): beside
@@ -2834,16 +2878,27 @@ head the row's name, a row per deed. A folder, the repo's own row too, has
 New file and New folder, made in it; a file has them too, made beside it in
 its folder (so Forge's files button, which brings out the menu of the file
 read now, makes a new file there); a file or folder has Rename and Delete (a
-repo is not renamed or deleted here). A deed pressed becomes the field or the ask in
-its own place: a name written and Enter makes it (a name is one plain part,
+repo is not renamed or deleted here: its gear is where that is, § Runtime, A
+repo in a list). A deed pressed becomes the field or the ask in its own
+place: a name written and Enter makes it (a new one's name is one plain part,
 with no "/" and not starting with "."; one already there is said under the
-field and the keyboard stays in it); Delete asks there, `{name}を消します`
+field and the keyboard stays in it). Rename's field holds the row's path in
+the repo (`notes/plan.md`), its name chosen to be written over, so a name
+written renames it where it is and a path written moves it there, from the
+repo's top, the folders on its way made (each part plain; never into
+itself). A row taken by the pointer and carried onto a folder of its repo,
+or onto the repo's own row, moves into it: it stays where it was, faded,
+while it is carried; the folder under it is raised and ringed in ink, and
+one shut opens after a moment held there, to be gone into; let go anywhere
+else, nothing moves. Moved, it lands lit where it went, with the keyboard on
+it, its folders open down to it; what could not be done is said at the
+tree's foot. Delete asks there, `{name}を消します`
 or `{name}を中身ごと消します`, Not now and 消す at its foot as every ask is
 (`askFoot`, held still a moment, `SETTLE`). A new file is the one to work on:
 the tree goes and Forge opens on it with the caret in it. A new folder, a
-renamed row or what holds a deleted one is read again, open, with the
+renamed or moved row or what holds a deleted one is read again, open, with the
 keyboard on it. Escape puts the menu away first, back to its row; a second
-Escape puts the tree away. A rename reaches everything that keeps a copy as
+Escape puts the tree away. A rename or a move reaches everything that keeps a copy as
 the old path gone and the new one made (the Prompt's copy, Forge, and the
 Remote, which other devices then take in), on either host (the app renames
-on disk, `repo_rename`).
+or moves on disk, `repo_move`).

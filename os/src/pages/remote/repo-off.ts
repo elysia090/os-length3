@@ -1,15 +1,20 @@
 import {h} from '../../ui/dom.ts';
 import {t} from '../../i18n.ts';
-import {look, remoteAll} from '../../remote/lifecycle.ts';
+import {flush, look, remoteAll} from '../../remote/lifecycle.ts';
 import * as account from '../../remote/connection.ts';
 import {freeOff} from '../../app/space.ts';
 import {askFoot, SETTLE} from '../common.ts';
+import {errorText} from '../../app/errors.ts';
 import {button, pressing} from './parts.ts';
 
-// Turning a repo off, or discarding it: asked in its card first, with a passkey, the names and the code.
+// Turning a repo off, or discarding it: asked in its card first, with a passkey, the names and the code. Deleting it
+// from a list's gear (repo-gear.ts) is asked the same, in the gear's list: it is turned off, and its copy here goes.
 
-/** What is done to a repo from its card once it is asked: turned off (kept 30 days), or discarded for good. */
-export type Deed = 'off' | 'discard';
+/**
+ * What is done to a repo from its card once it is asked: turned off (kept 30 days), or discarded for good; or, from a
+ * list's gear, deleted: turned off, and what is here of it gone (`after`).
+ */
+export type Deed = 'off' | 'discard' | 'delete';
 
 /** How an ask ends: drawn again where it was asked (`done`) or once the browser did it (`ended`), and a passkey made on the way (`keyed`). */
 export interface AskWays { done(): Promise<void>; ended(): Promise<void>; keyed(): void }
@@ -33,23 +38,34 @@ const discarding = (repo: string, here: boolean): Ask => ({
   act: async (who, typed, code, proven) => { if (here) await freeOff(repo); await account.discard(repo, who, typed, code, proven); },
 });
 
+/**
+ * Deleting, from a list's gear: what is not on the Remote yet is sent, then it is turned off (kept 30 days, so a hand
+ * that slipped can bring it back), then `after` takes what is here of it.
+ */
+const deleting = (repo: string, after: () => Promise<void>): Ask => ({
+  verb: t('Delete'),
+  what: [t('It goes from this device and from the Remote, which keeps it 30 days: turned on there, it comes back.')],
+  act: async (who, typed, code, proven) => { await flush(); await account.turnOff(repo, who, typed, code, proven); await after(); },
+});
+
 /** A passkey used this long ago still counts as just now: the Remote takes one for five minutes (service/app.ts `proven`). */
 const PROOF = 4 * 60 * 1000;
 
 /**
  * `kind` done to `repo`, pressed at `from` in its card `el` (`here`: with a copy on this device): asked first in the
- * card, on the web all of it, in the app as far as the browser, where the passkey is.
+ * card, on the web all of it, in the app as far as the browser, where the passkey is. Deleting, `after` takes what is
+ * here of it once the Remote has turned it off.
  */
-export function askFirst(el: HTMLElement, from: Element, repo: string, kind: Deed, here: boolean, w: AskWays) {
-  const ask = kind === 'off' ? turningOff(repo) : discarding(repo, here);
+export function askFirst(el: HTMLElement, from: Element, repo: string, kind: Deed, here: boolean, w: AskWays, after: () => Promise<void> = async () => {}) {
+  const ask = kind === 'off' ? turningOff(repo) : kind === 'discard' ? discarding(repo, here) : deleting(repo, after);
   if (account.deedsHere()) void confirm(el, from, repo, ask, w);
-  else inTheBrowser(el, from, repo, kind, ask, w.ended);
+  else inTheBrowser(el, from, repo, kind, ask, w.ended, after);
 }
 
-/** Whether `kind` is done to `repo` as the Remote was last read: off, or gone. */
+/** Whether `kind` is done to `repo` as the Remote was last read: off (deleted from a list is turned off there), or gone. */
 export const doneTo = (repo: string, kind: Deed): boolean => {
   const now = remoteAll().find((r) => r.name === repo);
-  return !!(kind === 'off' ? now?.offAt : !now);
+  return !!(kind === 'discard' ? !now : now?.offAt);
 };
 
 /** An ask under way in a card: the card, its repo, its foot (Not now, and the deed on the side `from` was), and its end. */
@@ -146,9 +162,9 @@ function setCode(c: InCard, none: boolean, keyed: () => void, next: () => void) 
  * In the app, what a passkey confirms is the browser's (the app's window has none): the card says what will happen
  * as it does on the web, and Continue in the browser opens the Remote's page there at this repo's card, which asks
  * the rest. Waiting, the card says so; when the window comes back, what the Remote holds is read again, and the
- * cards are drawn as they are now once the deed is done there.
+ * cards are drawn as they are now once the deed is done there (deleted from a list, `after` first: what is here goes).
  */
-function inTheBrowser(el: HTMLElement, from: Element, repo: string, kind: Deed, ask: Ask, done: () => Promise<void>) {
+function inTheBrowser(el: HTMLElement, from: Element, repo: string, kind: Deed, ask: Ask, done: () => Promise<void>, after: () => Promise<void>) {
   const cancel = button(t('Not now'), 'small-button');
   const c = inCard(el, from, repo, cancel, done);
   const error = h('p', {class: 'error', role: 'alert'});
@@ -159,12 +175,14 @@ function inTheBrowser(el: HTMLElement, from: Element, repo: string, kind: Deed, 
     await look().catch(() => {});
     if (!el.isConnected || !doneTo(repo, kind)) return;
     removeEventListener('focus', came);
+    if (kind === 'delete') await after().catch((e: unknown) => { error.textContent = errorText(e); });
     await done();
     backToSwitch(repo);
   };
   cancel.addEventListener('click', () => { removeEventListener('focus', came); void done().then(() => backToSwitch(repo)); });
   go.addEventListener('click', () => void pressing(go, error, async () => {
-    await account.askBrowser(kind, repo);
+    // Deleted from a list, it is turned off there; what is here goes once the window comes back to it done.
+    await account.askBrowser(kind === 'delete' ? 'off' : kind, repo);
     addEventListener('focus', came);
     lead.textContent = t('Open in your browser: confirm there, then come back. This card shows it.');
     go.textContent = t('Open the browser again');

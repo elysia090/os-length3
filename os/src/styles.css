@@ -753,7 +753,9 @@ kbd {
 .gear-card:is(:hover, :focus-within) .repo-gear-button, .space-row:is(:hover, :focus-within) .repo-gear-button, .repo-gear-button[aria-expanded='true'] { opacity: 1; }
 @media (hover: none) { .repo-gear-button { opacity: 1; } }
 .repo-gear-button:hover, .repo-gear-button[aria-expanded='true'] { background: var(--raised); color: var(--ink); border-color: var(--ink); }
-.gear-card .repo-gear-pop { position: absolute; top: calc(100% + var(--s1)); right: 0; z-index: 5; width: max-content; min-width: 240px; max-width: min(320px, calc(100vw - 2 * var(--outer) - var(--rail))); }
+/* On a card, the list comes down from its gear as wide as the card, over what is under it: never past the card's own
+   edges, so a card at the column's left does not reach under the rail with a field or an ask in its list. */
+.gear-card > .repo-gear-pop { position: absolute; top: calc(var(--s3) + var(--h-row) + var(--s1)); left: 0; right: 0; z-index: 5; }
 /* In a row of a column that scrolls, the list opens under the row, in its own place. */
 .space-row { flex-wrap: wrap; }
 .space-row > .repo-gear-pop { flex-basis: 100%; margin-top: var(--s1); }
@@ -904,6 +906,9 @@ button.row-item:disabled { cursor: var(--cursor-arrow); color: var(--sub); }
    edge dashed in the off colour; each letter a name cannot have underlined in it where it is; one of the same name,
    ringed where it stands. */
 .tree-still .tree-new.tree-bad > .tree-row { background: none; outline: 1px dashed var(--off); outline-offset: -1px; }
+/* Nothing named yet: a quiet dashed place where the name will stand, not a repo already drawn. */
+.tree-still .tree-new.tree-unnamed > .tree-row { background: none; outline: 1px dashed var(--rule); outline-offset: -1px; }
+.tree-still .tree-new.tree-unnamed > .tree-row :is(.tree-name.plain, .tree-toggle) { color: var(--sub); }
 .tree-still .tree-new.tree-bad > .tree-row .tree-name.plain { color: var(--ink); }
 .tree-name .bad-char { background: none; color: var(--off); text-decoration: underline 2px var(--off); text-underline-offset: 3px; }
 .tree-still .tree-clash > .tree-row { outline: 1px solid var(--off); outline-offset: -1px; }
@@ -2053,6 +2058,12 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .tree-row:has(> [aria-current='page']) > .tree-more { border-color: currentColor; }
 /* Its menu, beside the tree at the row's height: out in the free space. */
 .tree-pop { position: fixed; z-index: 6; width: 260px; }
+/* A row carried by the pointer stays where it was, faded; the folder it would go into under it is raised and ringed in
+   ink, as the keyboard's row is. What a move could not do is said at the tree's foot. */
+.tree-row.carried { opacity: .4; }
+.tree-row.taking { background: var(--raised); outline: 1.5px solid var(--ink); outline-offset: -1.5px; }
+.tree-said:empty { display: none; }
+.tree-said { margin: var(--s1) var(--s2) 0; }
 
 /* Terminal output; input comes from the prompt box */
 .term { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; gap: var(--s2); margin-top: var(--s2); }

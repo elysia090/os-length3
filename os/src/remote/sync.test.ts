@@ -58,8 +58,8 @@ test('a file or folder renamed here reaches the Remote as any change: gone at it
   const {onChange} = await import('../repos/repos.ts');
   const told: string[] = [];
   const stop = onChange((c) => told.push(`${c.what} ${c.path}${c.text !== undefined ? ` ${JSON.stringify(c.text)}` : ''}`));
-  await store.rename('notes', 'docs/plan.md', 'later.md');
-  await store.rename('notes', 'docs', 'notes');
+  await store.move('notes', 'docs/plan.md', 'docs/later.md');
+  await store.move('notes', 'docs', 'notes');
   stop();
   // Told as the old gone and the new made, so a copy kept elsewhere (the shell's) follows it.
   assert.deepEqual(told.slice(0, 2), ['removed docs/plan.md', 'file docs/later.md "plan\\n"']);
@@ -70,6 +70,14 @@ test('a file or folder renamed here reaches the Remote as any change: gone at it
   const now = await (await fetch(`${URL_}/v1/repos/notes`, {headers: {Authorization: `Bearer ${token}`}})).json() as {draft: Record<string, string>};
   assert.equal(now.draft['notes/later.md'], await sha256(enc.encode('plan\n')));
   assert.ok(!Object.keys(now.draft).some((p) => p.startsWith('docs/')));
+});
+
+test('a file moved into folders not there yet reaches the Remote at its new path, the folders made on its way', async () => {
+  await store.move('notes', 'notes/later.md', 'plans/2026/later.md');
+  await draft.sync('notes');
+  const now = await (await fetch(`${URL_}/v1/repos/notes`, {headers: {Authorization: `Bearer ${token}`}})).json() as {draft: Record<string, string>};
+  assert.equal(now.draft['plans/2026/later.md'], await sha256(enc.encode('plan\n')));
+  assert.ok(!('notes/later.md' in now.draft));
 });
 
 test('a repo only on the Remote comes here when opened, with nothing of a template', async () => {
@@ -296,3 +304,27 @@ test('a page asks the Remote only what moved, and reads again only that', async 
   lifecycle.end();
 });
 
+
+test('a repo on the Remote keeps its name; one only here is renamed, never to a name the Remote has, nor while a Prompt has it', async () => {
+  await assert.rejects(store.renameRepo('notes', 'jots', []), /on the Remote/);
+  await store.create('sketch', 'standard');
+  await store.write('sketch', 'README.md', '# sketch\nhere only\n');
+  await assert.rejects(store.renameRepo('sketch', 'notes', []), /already/);
+  await assert.rejects(store.renameRepo('sketch', 'drawing', ['sketch']), /Prompt/);
+  await store.renameRepo('sketch', 'drawing', []);
+  assert.deepEqual((await store.list()).map((r) => r.name).filter((n) => n === 'sketch' || n === 'drawing'), ['drawing']);
+  assert.equal(await text('drawing', 'README.md'), '# sketch\nhere only\n');
+  // Sent under its new name: the Remote has it as that.
+  await draft.sync('drawing');
+  assert.ok((await draft.remoteRepos()).some((r) => r.name === 'drawing'));
+});
+
+test('a repo deleted here goes whole, with what was agreed of it; what the Remote holds is not touched', async () => {
+  await store.deleteRepo('drawing', []);
+  assert.ok(!(await store.list()).some((r) => r.name === 'drawing'));
+  assert.ok(!(await draft.status()).some((s) => s.name === 'drawing'));
+  // Still on the Remote, and brought back from it as any repo only there is.
+  assert.ok((await draft.remoteRepos()).some((r) => r.name === 'drawing'));
+  await draft.fetchRepo('drawing');
+  assert.equal(await text('drawing', 'README.md'), '# sketch\nhere only\n');
+});

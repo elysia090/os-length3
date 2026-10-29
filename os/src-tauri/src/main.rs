@@ -30,10 +30,11 @@ mod shells {
 // window's own thread (Tauri 2), and the window draws nothing until it returns, so only writes run there,
 // which keeps two writes in the order the page sent them; the rest (walks of the disk, the network) run off it.
 
-/// A command of the core's, by name, with its arguments; `space` and `free` are told which repos a Prompt has open.
+/// A command of the core's, by name, with its arguments; what lets a repo go or renames it is told which repos a
+/// Prompt has open.
 #[tauri::command]
 async fn core(app: tauri::AppHandle, name: String, mut args: serde_json::Value) -> Result<serde_json::Value, String> {
-    if matches!(name.as_str(), "space" | "free") {
+    if matches!(name.as_str(), "space" | "free" | "repo_rename" | "repo_delete") {
         let open = tauri::Manager::state::<shells::Shells>(&app).open_repos();
         args["open"] = serde_json::json!(open);
     }

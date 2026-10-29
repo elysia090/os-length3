@@ -5,7 +5,6 @@ import {bring, remoteOnly, repoState} from '../../remote/lifecycle.ts';
 import {connection} from '../../remote/connection.ts';
 import {free} from '../../app/space.ts';
 import type {Context} from '../context.ts';
-import {openRepoPlace} from '../remote/repos.ts';
 import {syncWord} from '../remote/repo-card.ts';
 import {repoGear} from '../repo-gear.ts';
 import {errorText} from '../../app/errors.ts';
@@ -89,11 +88,11 @@ export function device(ctx: Context, u: Space, last: Freed | null, again: (r: Fr
     error);
 }
 
-/** A repo in whichever column: its name is the repo itself (its own place), its gear Forge or Free, as on Home. */
+/** A repo in whichever column: its name is the repo itself (opened in Forge), its gear what is done to it, as on Home. */
 interface RepoParts {
   name(name: string): HTMLElement;
-  /** Its gear: `why` it cannot be freed (null: it can), and `bring`, when it is only on the Remote. */
-  gear(name: string, why: string | null, bring?: boolean): {gear: HTMLButtonElement; list: HTMLElement};
+  /** Its gear: `why` it cannot be freed (null: it can), and `away`, when it is only on the Remote. */
+  gear(name: string, why: string | null, away?: boolean): {gear: HTMLButtonElement; list: HTMLElement};
 }
 
 function repoParts(ctx: Context, again: (r: Freed | null) => void): RepoParts {
@@ -101,16 +100,16 @@ function repoParts(ctx: Context, again: (r: Freed | null) => void): RepoParts {
   return {
     name: (name) => {
       const b = h('button', {type: 'button', class: 'link-name'}, name);
-      b.addEventListener('click', () => openRepoPlace(ctx, name));
+      // Only on the Remote, it is brought here first.
+      b.addEventListener('click', async () => { if (remoteOnly().some((r) => r.name === name)) await bring(name); ctx.openRepo(name); });
       return b;
     },
-    gear: (name, why, bring_ = false) => repoGear(name, {
-      forge: async () => { if (bring_) await bring(name); ctx.openRepo(name); },
+    gear: (name, why, away = false) => repoGear(ctx, name, {
       why: async () => why,
       // Freed from its row: what it came to is said over the box, as Free all's is, and the columns read again.
       free: async () => { const r = await free([`repo:${name}`]); if (r.kept.length && !r.removed.length) throw new Error(r.kept[0][1]); freed = r; },
       freed: () => again(freed),
-    }),
+    }, !away),
   };
 }
 

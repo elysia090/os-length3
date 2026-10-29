@@ -36,7 +36,8 @@ export const REMOTE_URL: string = (() => {
 // The core signs in to the same Remote as the page.
 setEnvironment({LENGTH3_REMOTE: REMOTE_URL});
 
-export interface Connection { url: string; token: string }
+/** The session this device is in on a Remote; `user`, the account it is (its id there), when the core was told at sign-in. */
+export interface Connection { url: string; token: string; user?: string }
 
 export const connection = (): Connection | null => {
   try {

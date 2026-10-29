@@ -61,9 +61,10 @@ test('what the box writes comes into the Prompt\'s flow as it came, and pressed 
   const todo = flow.getByRole('button', {name: 'TODO Water the mint'});
   await expect(issue).toBeVisible();
   await expect(todo).toBeVisible();
-  // Written before the shell was up or after, they stand before the line it waits at.
-  await expect.poll(() => flow.evaluate((el) => el.textContent!.replace(/\u2063/g, '').trimEnd().split('\n').slice(-3)), {timeout: 60_000}).toEqual(
-    ['#1 Fix：The table wraps on a phone', 'TODO Water the mint', 'hello $']);
+  // In the order written; and an issue or a TODO is not a line written to the shell, so neither started it.
+  await expect.poll(() => flow.evaluate((el) => el.textContent!.replace(/\u2063/g, '').trimEnd().split('\n').slice(-2)), {timeout: 60_000}).toEqual(
+    ['#1 Fix：The table wraps on a phone', 'TODO Water the mint']);
+  await expect(app.main.locator('.prompt-chip')).toHaveAttribute('data-state', 'starting');
 
   // The TODO: its mark, done right there, and Home's list has it done; the page stays Forge.
   await todo.click();
