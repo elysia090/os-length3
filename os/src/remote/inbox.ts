@@ -14,9 +14,13 @@ import {day} from '../ui/dom.ts';
 import {every} from '../app/runs.ts';
 
 export type Kind = 'message' | 'review' | 'question' | 'run';
-/** What a message is about; `server`: asking its reader into that server (service/inbox.ts). */
-export interface Target { repo?: string; issue?: string; change?: string; version?: number; server?: string }
-export interface Thread { address: string; name: string; state: 'contact' | 'request' | 'blocked'; unread: number; last: {type: Kind; body: string; mine: boolean; time: number} }
+/**
+ * What a message is about; `server`: asking its reader into that server (service/inbox.ts). A notice the Remote
+ * left (never a client's: it keeps no `notice` from one): `added`, its reader added to server `server` (called
+ * `name` then) by the one the conversation is with, at once, the two knowing each other (service/servers.ts).
+ */
+export interface Target { repo?: string; issue?: string; change?: string; version?: number; server?: string; notice?: string; name?: string }
+export interface Thread { address: string; name: string; state: 'contact' | 'request' | 'blocked'; unread: number; last: {type: Kind; body: string; target?: Target; mine: boolean; time: number} }
 export interface Message { id: string; mine: boolean; type: Kind; target: Target; body: string; time: number; read: boolean; live?: boolean }
 /**
  * `code`: six digits to be found by. An address on this Remote (`domain`) is
@@ -31,13 +35,23 @@ const enc = (a: string) => encodeURIComponent(a);
 const KINDS: readonly Kind[] = ['message', 'review', 'question', 'run'];
 /** As the Remote holds a message to (service/inbox.ts): its words, and what it may say it is about. */
 const BODY = 4000;
-const TARGET_KEYS = ['repo', 'issue', 'change', 'version', 'server'];
+const TARGET_KEYS = ['repo', 'issue', 'change', 'version', 'server', 'notice', 'name'];
 
 /** What a message may say it is about, as the Remote keeps it: those keys, each a short string or a number. */
 function targetOf(raw: unknown): Target {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {};
   return Object.fromEntries(Object.entries(raw).filter(([k, v]) => TARGET_KEYS.includes(k)
     && (typeof v === 'string' ? v.length <= 200 : typeof v === 'number' && Number.isFinite(v)))) as Target;
+}
+
+/**
+ * A notice the Remote left, said as its reader says it, or null for a message someone wrote: `mine`, the one who
+ * added (You added Bo to Books.); else the one added, `who` being who did it (Ada added you to Books.).
+ */
+export function noticeWords(target: Target | undefined, mine: boolean, who: string): string | null {
+  if (target?.notice !== 'added' || typeof target.server !== 'string') return null;
+  const server = typeof target.name === 'string' ? target.name : '';
+  return mine ? t('You added {who} to {server}.', {who, server}) : t('{who} added you to {server}.', {who, server});
 }
 
 /**

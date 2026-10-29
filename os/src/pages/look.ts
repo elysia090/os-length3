@@ -176,8 +176,9 @@ export function threadLook(address: string, name: string, open: () => void): Loo
       const lines = h('div', {class: 'look-lines'});
       const th = await inbox.thread(address);
       // Who the other is, the row above says: their lines carry only when; one's own, You.
-      const each = (m: inbox.Message) => said(m.mine ? t('You') : '', m.time,
-        m.type === 'message' ? m.body : [...kindWords(`${m.type[0].toUpperCase()}${m.type.slice(1)}`), m.body], m.mine);
+      const notice = (m: inbox.Message) => inbox.noticeWords(m.target, m.mine, name || inbox.shown(address));
+      const each = (m: inbox.Message) => (notice(m) ? said('', m.time, notice(m)!, false)
+        : said(m.mine ? t('You') : '', m.time, m.type === 'message' ? m.body : [...kindWords(`${m.type[0].toUpperCase()}${m.type.slice(1)}`), m.body], m.mine));
       lines.replaceChildren(...th.messages.slice(-4).map(each));
       body.replaceChildren(lines, writeBack(t('Reply'), t('Send'), async (text) => {
         await inbox.send(address, text);

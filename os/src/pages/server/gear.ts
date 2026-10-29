@@ -182,14 +182,13 @@ function addSomeone(r: Read): HTMLElement {
       lookup: (x) => inbox.lookup(x),
       add: (id, address) => servers.addPerson(id, address),
       ask: (address, body, server) => inbox.send(address, body, 'message', {server}),
-      // In at once, told so in their Inbox, the message about the server their way to it.
-      tell: (address, body, server) => inbox.send(address, body, 'message', {server}),
     };
     const go = addByName(r, typed, said, ways);
     const pick = h('div', {class: 'card small-card add-card'}, h('span', {class: 'card-title'}, t('Add someone you know')),
       ...(why ? [h('p', {class: 'error small'}, why)] : known.map((x) => {
         const b = button(named(x.address), 'small-button');
-        deed(b, async () => { await servers.addPerson(r.s.id, x.address); await servers.told(ways, x.address, r.s); r.w.again(); });
+        // In at once; the Remote tells them so in their Inbox.
+        deed(b, async () => { await servers.addPerson(r.s.id, x.address); r.w.again(); });
         return b;
       })),
       h('div', {class: 'row add-by-name'}, typed, go), said);

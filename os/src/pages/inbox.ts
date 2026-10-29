@@ -203,7 +203,7 @@ const RUN = 5 * 60_000;
 
 /** The bubbles of `messages` marked as runs: each followed by the next of a run (`run-on`), each following one (`run-in`). */
 function runs(messages: HTMLElement) {
-  const all = [...messages.querySelectorAll<HTMLElement>(':scope > .bubble')];
+  const all = [...messages.querySelectorAll<HTMLElement>(':scope > .bubble:not(.inbox-notice)')];
   const one = (a?: HTMLElement, b?: HTMLElement) => !!a && !!b && a.dataset.mine === b.dataset.mine && Math.abs(Number(a.dataset.time) - Number(b.dataset.time)) < RUN;
   all.forEach((b, i) => {
     b.classList.toggle('run-on', one(b, all[i + 1]));
@@ -225,6 +225,24 @@ function serverLink(id: string, ctx: Context): HTMLElement {
     go.addEventListener('click', () => { serverAt({server: s.id}); ctx.go('server'); });
   }, () => {});
   return go;
+}
+
+/**
+ * A notice the Remote left, as a line across the conversation (`words` said as its reader says it), standing in time
+ * as a bubble does; pressed, Server comes out at the server, once its reader is in it (not in it, it only says).
+ */
+function noticeLine(words: string, m: inbox.Message, ctx: Context): HTMLElement {
+  const line = h('div', {class: 'bubble inbox-notice', 'data-time': String(m.time)},
+    h('span', {class: 'inbox-notice-words'}, words), h('span', {class: 'muted small bubble-time'}, ago(m.time)));
+  const id = m.target.server;
+  if (typeof id !== 'string') return line;
+  void servers.servers().then((list) => {
+    if (!list.some((x) => x.id === id) || !line.isConnected) return;
+    const go = h('button', {type: 'button', class: 'link inbox-notice-words', title: t('Open in Server')}, words);
+    go.addEventListener('click', () => { serverAt({server: id}); ctx.go('server'); });
+    line.querySelector('.inbox-notice-words')?.replaceWith(go);
+  }, () => {});
+  return line;
 }
 
 /** What a written message is: its kind named first like an issue, and what a /root/… path in it is about. */
@@ -340,7 +358,8 @@ export function inboxPage(ctx: Context): Node[] {
         h('span', {class: 'inbox-who'}, personBadge(th.name || inbox.shown(th.address)), h('b', {}, th.name || inbox.shown(th.address)),
           waiting ? h('span', {class: 'unread'}, `${waiting}`) : null),
         h('span', {class: 'muted small'}, inbox.shown(th.address)),
-        h('span', {class: 'muted small inbox-last'}, `${th.last.mine ? t('You: ') : ''}${th.last.type === 'message' ? '' : `${KIND(th.last.type)} · `}${th.last.body}`));
+        h('span', {class: 'muted small inbox-last'}, inbox.noticeWords(th.last.target, th.last.mine, th.name || inbox.shown(th.address))
+          ?? `${th.last.mine ? t('You: ') : ''}${th.last.type === 'message' ? '' : `${KIND(th.last.type)} · `}${th.last.body}`));
       if (th.address === open) b.setAttribute('aria-current', 'true');
       b.addEventListener('click', () => void show(th.address, rows, pane));
       return b;
@@ -407,10 +426,14 @@ export function inboxPage(ctx: Context): Node[] {
         go.addEventListener('click', () => { if (place.issue) ctx.openRepo(place.repo, `issue/${place.issue}`); else { ctx.remember(place.repo); ctx.go('git'); } });
       } else if (m.target.repo) go = h('span', {class: 'muted small'}, about);
       else if (typeof m.target.server === 'string') go = serverLink(m.target.server, ctx);
-      const b = h('div', {class: 'bubble', 'data-mine': String(m.mine), 'data-time': String(m.time)},
-        m.type !== 'message' ? h('span', {class: 'state-chip'}, KIND(m.type)) : null,
-        go, h('p', {class: 'bubble-text'}, m.body),
-        h('span', {class: 'muted small bubble-time'}, `${ago(m.time)}${m.live ? ` · ${t('direct')}` : ''}`));
+      // A notice the Remote left (added to a server at once) is no one's words: a quiet line across the conversation,
+      // not a bubble on either side, and its way to the server.
+      const notice = inbox.noticeWords(m.target, m.mine, inbox.shown(address));
+      const b = notice ? noticeLine(notice, m, ctx)
+        : h('div', {class: 'bubble', 'data-mine': String(m.mine), 'data-time': String(m.time)},
+          m.type !== 'message' ? h('span', {class: 'state-chip'}, KIND(m.type)) : null,
+          go, h('p', {class: 'bubble-text'}, m.body),
+          h('span', {class: 'muted small bubble-time'}, `${ago(m.time)}${m.live ? ` · ${t('direct')}` : ''}`));
       messages.querySelector('.inbox-empty')?.remove();
       // It stands where it was said in time: one sent here and one of theirs crossing it on the way (the direct line
       // brings theirs a moment after one's own is drawn) land in the order they were written, not the order they came.
@@ -428,7 +451,7 @@ export function inboxPage(ctx: Context): Node[] {
       runs(messages);
       messages.scrollTop = messages.scrollHeight;
       // Come since the conversation was drawn: one's own up from the box it was written in, theirs in from their side.
-      if (drawn) { if (m.mine) arrive(b, 1, 'y', 18, 300); else arrive(b, -1, 'x', 18, 300); }
+      if (drawn) { if (notice) arrive(b, 1, 'y', 12, 300); else if (m.mine) arrive(b, 1, 'y', 18, 300); else arrive(b, -1, 'x', 18, 300); }
       if (was !== undefined) { const by = was - before.at(-1)!.getBoundingClientRect().bottom; if (by > .5) closeUp(before, by, 300); }
     };
     // What the Remote gives is taken in once (its newest noted by its clock); what is added here,

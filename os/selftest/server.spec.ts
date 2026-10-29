@@ -281,7 +281,7 @@ test('guests turned off with nobody let in goes at once; with an invitation out 
   await expect(guests).not.toBeChecked();
 });
 
-test('someone one knows added at once is told in their Inbox, and the server\'s name there opens it', async ({signedIn: ada, another}) => {
+test('someone one knows added at once is told in their Inbox by the Remote\'s notice, which opens the server', async ({signedIn: ada, another}) => {
   const bo = await addBo(ada, another);
   await ada.server.close();
   await ada.server.openLayer();
@@ -299,8 +299,10 @@ test('someone one knows added at once is told in their Inbox, and the server\'s 
   await bo.rail.go('inbox');
   await bo.inbox.conversation(ada.handle).click();
   const thread = bo.inbox.thread(ada.handle);
-  await expect(thread).toContainText('I added you to Books.');
-  await thread.getByRole('button', {name: 'Books', exact: true}).click();
+  // The Remote's notice, a line across the conversation in no one's voice, and the way to the server.
+  const notice = thread.getByRole('button', {name: `${ada.handle} added you to Books.`, exact: true});
+  await expect(notice).toBeVisible();
+  await notice.click();
   await expect(bo.server.chip('Books')).toBeChecked();
 });
 

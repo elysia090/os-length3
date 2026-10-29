@@ -1446,8 +1446,8 @@ something not read (who wrote, their initial on one of four soft tints, the
 marker's, a step done's, a removal's, the sky's, the same for the same name;
 what it is and its words: Review：…), the boards with posts not seen (#),
 and the boards this browser writes in as a guest (#, Trip · where you write
-as a guest: a way back always there, signed in or not, its card reading the
-board and writing in it as that guest); at
+as a guest: a way back always there, signed in or not, the one written in
+last first, its card reading the board and writing in it as that guest); at
 each row's end one slot, the unread dot, a chevron under the pointer (it
 opens down where it stands), the × once open. A row is read whole where it
 stands, wrapped where its words break (in Japanese between phrases, never in
@@ -2430,9 +2430,13 @@ the card shakes. Server's layer says it the same way, where its boards
 would be. Writing is one line that grows as it is written: a message is named
 the way an issue is ("Review：…", "Question：…"), and a `/root/…` path in it
 says what it is about, so there is nothing else to choose. Enter is a new
-line, Ctrl+Enter sends. A message about a server (being asked into it, or
-added to it at once by someone one knows) shows the server's name over
-it, once one is in it, and pressed, Server comes out at it.
+line, Ctrl+Enter sends. A message about a server (being asked into it)
+shows the server's name over it, once one is in it, and pressed, Server
+comes out at it. Added to one at once by someone one knows, the Remote
+leaves a notice in the conversation with them (Ada added you to Books; to
+Ada, You added Bo to Books): a quiet line across it, centred as a day's
+name is, never a bubble in anyone's voice (no client can send one), its
+words the reader's own language, the line itself the way to the server.
 
 What comes while one works elsewhere is said where one is: in Forge and Git,
 the conversations not read whose last word is not one's own (the two newest,
@@ -2464,8 +2468,10 @@ it. A server's own repos are what comes next.
 A server is a name and its people. Someone already in it adds people from
 their own Inbox contacts, so a server is people who know each other; or by
 a name or a code, in the card that adds: someone one knows both ways is in
-at once, and told so in their Inbox (I added you to Trip., a message about
-the server whose name there opens Server at it), anyone else is asked in
+at once, and told so by the Remote itself, however they were added: a
+notice in their Inbox, in the conversation with whoever added them (Ada
+added you to Trip), a quiet line across it in no one's voice that opens
+Server at it; anyone else is asked in
 the Inbox (a message about the server, a
 request until they accept) and is in the moment they accept the one who
 asked, so long as that one is still in it (within 30 days); the card says

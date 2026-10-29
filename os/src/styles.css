@@ -2156,6 +2156,12 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .bubble[data-mine='true'].run-in { border-top-right-radius: 4px; }
 .bubble[data-mine='false'].run-on { border-bottom-left-radius: 4px; }
 .bubble[data-mine='false'].run-in { border-top-left-radius: 4px; }
+/* A notice the Remote left (added to a server at once, pages/inbox.ts noticeLine): no one's words, so no bubble on
+   either side, but a quiet line across the conversation, as a day's name is across a board's talk; the server in it a
+   way there once one is in it. */
+.bubble.inbox-notice { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: 0 var(--s2); align-self: center; max-width: 90%;
+  padding: var(--s1) var(--s2); border: 0; background: transparent; color: var(--sub); font-size: var(--t-meta); text-align: center; }
+.inbox-notice > .link { padding-block: 2px; font-size: inherit; color: var(--ink); }
 /* Someone who wrote first: over the field, who, what Accept and Block do (and that writing back accepts), the two. */
 .inbox-ask { display: grid; gap: var(--s2); margin: 0 var(--s4) var(--s3); padding: var(--s3) var(--s4); border: 1px solid var(--edge); border-radius: var(--r-place); background: var(--raised); }
 .inbox-ask p { margin: 0; }

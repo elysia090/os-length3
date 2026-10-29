@@ -51,8 +51,9 @@ export default {
   '{n} invitation out lets nobody in any more.': '出ている招待{n}件では、もう誰も入れません。',
   '{n} invitations out let nobody in any more.': '出ている招待{n}件では、もう誰も入れません。',
   'Taking guests again, an old link lets nobody back.': 'ゲストをまた受け入れても、古いリンクでは誰も戻れません。',
-  // Someone one knows added at once, told so in their Inbox.
-  'I added you to {server}.': '{server}にあなたを入れました。',
+  // Someone one knows added at once: the Remote's notice in the Inbox, as each of the two reads it.
+  'You added {who} to {server}.': '{who}を{server}に入れました。',
+  '{who} added you to {server}.': '{who}があなたを{server}に入れました。',
   'Write in {board}': '{board}に書く',
   'Post ({keys})': '投稿する（{keys}）',
   'To the people of {server}': '{server}の人たちへ',
