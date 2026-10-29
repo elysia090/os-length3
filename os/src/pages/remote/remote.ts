@@ -112,7 +112,7 @@ function planPart(page: Parts<Part>, holder: HTMLElement) {
  * (a passkey or the code made from a repo's card meanwhile).
  */
 function signInPart(page: Parts<Part>): () => void {
-  const fill = () => void account.about().then(({enter}) => page.panel('sign-in').replaceChildren(...signInBody(enter)));
+  const fill = () => void account.about().then((ways) => page.panel('sign-in').replaceChildren(...signInBody(ways)));
   fill();
   let stale = false;
   page.onShow((k) => { if (k === 'sign-in' && stale) { stale = false; fill(); } });

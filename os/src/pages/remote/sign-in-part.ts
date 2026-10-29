@@ -9,11 +9,12 @@ import {atSignIn, button, pressing} from './parts.ts';
 
 /**
  * What the Sign-in part holds: the passkeys, the code and the providers; a Remote entered by its link (`enter`) has
- * no passkeys or providers to manage, only the code a repo is turned off with.
+ * no passkeys or providers to manage, only the code a repo is turned off with. `ways`: what the Remote said it offers,
+ * just asked (Remote's page asks before drawing the part), which the providers are drawn from.
  */
-export function signInBody(enter: boolean | undefined): Node[] {
-  return enter ? [h('p', {class: 'muted'}, t('You came in by the link you were given; each time lasts a day.')), codeSection()]
-    : [passkeySection(), codeSection(), providerSection()];
+export function signInBody(ways: account.Ways): Node[] {
+  return ways.enter ? [h('p', {class: 'muted'}, t('You came in by the link you were given; each time lasts a day.')), codeSection()]
+    : [passkeySection(), codeSection(), providerSection(ways)];
 }
 
 /** The code turning a repo off asks for: five letters or digits, set with a passkey. */
@@ -65,14 +66,15 @@ function passkeySection(): HTMLElement {
   return section;
 }
 
-/** The providers this account signs in with: each is also the way back in. */
-function providerSection(): HTMLElement {
+/** The providers this account signs in with: each is also the way back in; `ways`, those the Remote offers. */
+function providerSection(ways: account.Ways): HTMLElement {
   const section = h('section', {class: 'sub-part', 'aria-labelledby': 'remote-providers'});
   const error = h('p', {class: 'error', role: 'alert'});
   const note = h('p', {class: 'muted small', role: 'status'});
   const paint = async () => {
     let mine: Awaited<ReturnType<typeof account.linked>>, offered: Awaited<ReturnType<typeof account.about>>;
-    try { [mine, offered] = await Promise.all([account.linked(), account.about()]); } catch (e) { error.textContent = errorText(e); return; }
+    // What the Remote offers, as it said just before: asked again only when it could not say then.
+    try { [mine, offered] = await Promise.all([account.linked(), ways.trouble ? account.about() : ways]); } catch (e) { error.textContent = errorText(e); return; }
     const have = new Set(mine.map((a) => a.providerId));
     const rows = mine.map((a) => {
       // The last provider is the way back in: it stays, with nothing to press.
