@@ -2530,14 +2530,20 @@ Server is an overlay (§3), on the bench's shape. It comes out whole: a
 rest on its icon makes it ready unseen, reading what it opens on (the
 servers, the board on screen's talk and TODO, its people), so what comes
 out after the rest is all there; pressed out, it waits for that a moment
-at most (300 ms) before it comes. A rest that does not last lets it go
-unseen, and nothing it read while unseen counts as seen. Its pieces, from §3:
+at most (300 ms) before it comes, the servers drawn from the list this
+session was given last (Home names them as it opens), so only what the
+board holds is waited for, the list read again under it. A rest that does
+not last lets it go unseen, and nothing it read while unseen counts as
+seen. Its pieces, from §3:
 
 - **The band**: + first at the top line's left end, to make a server, then
   the servers one is in, one row however many there are, sliding sideways
   as Git's repos do (never more rows pushing the boards down), its ends
   fading where there is more along it and the one chosen, or being named,
-  slid into view; the gear at the right end (kept in its place,
+  slid into view; another chip pressed, the ink goes along the band to
+  it and the boards pan in from its side, as Git's repos do along its band
+  (what was there going off the other way), the pane's people coming in
+  over a moment with them; the gear at the right end (kept in its place,
   unpressable, while none is chosen), in ink while one is behind it, as a
   chip chosen is, turning a tooth's step as it is pressed either way. A server is made where it will
   stand, not in a form: its chip is the field, in the band after the
@@ -2566,7 +2572,8 @@ unseen, and nothing it read while unseen counts as seen. Its pieces, from §3:
 - **Boxes side by side**: its boards, the last box making a new one, as a
   server is, where it will stand: the board it will be, dashed on the
   ground, its name written in its head in a board name's letters with Make
-  beside it, what a board is said quietly at the top of where its talk will
+  beside it (on a phone's width in the body's, so what it asks for is read
+  whole), what a board is said quietly at the top of where its talk will
   be, its TODO's first line and No posts yet faint where they will stand;
   come to by a press, its name takes the keyboard (by ← →, the keyboard
   stays on the row to go on along it); made, the same shapes stand there
@@ -2595,7 +2602,9 @@ unseen, and nothing it read while unseen counts as seen. Its pieces, from §3:
 - **The box at the foot** writes in the board on screen (旅行 の人たちへ),
   Post at its bottom right as Forge's box has Run and Inbox's Send (its
   keys, Ctrl+Enter, in its title; Enter is a new line), the keyboard
-  staying in the box once it is pressed.
+  staying in the box once it is pressed; on a phone's width, where the box
+  is narrow, Post comes with the words, and the empty box says whom it
+  writes to whole.
   What is half written in it is that board's (§1): going to another board,
   or putting Server away, keeps it, and it is there when the board is on
   screen again; gone once sent. While it holds words, a press outside does
@@ -2615,7 +2624,9 @@ unseen, and nothing it read while unseen counts as seen. Its pieces, from §3:
 - **Behind the gear**, in the boards' place: the page head (the server's
   name, its name on the Remote and code; Done at the sheet's bottom right),
   then **parts** (their counts as the pane last drew them, at once, so the
-  parts' names do not step sideways when the reading comes) of **small
+  parts' names do not step sideways when the reading comes; its cards come
+  in one after another as they are read, as a page's do, and back to the
+  boards, the box at the foot comes in with them) of **small
   cards**: People (a dashed card to add someone one knows, pressed the card
   that adds: one's contacts not in it, each a button, then a field for a
   name or a code and 入れる; its owner removes someone; looked at again

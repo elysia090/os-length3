@@ -60,16 +60,23 @@ const send = (method: string, body?: unknown): RequestInit => ({method, ...(body
 let listed: {at: number; token: string; list: Promise<Server[]>} | null = null;
 onWrite(() => { listed = null; });
 const SHARED_FOR = 2000;
+/** The last list the Remote gave this session, however long ago: Server drawn from it at once as it reads it again. */
+let lastGiven: {token: string; list: Server[]} | null = null;
 export const servers = (): Promise<Server[]> => {
   const c = connection();
   if (!c) return Promise.resolve([]);
   if (!listed || listed.token !== c.token || Date.now() - listed.at > SHARED_FOR) {
     const list = call<Server[]>('/v1/servers');
     const kept = listed = {at: Date.now(), token: c.token, list};
-    list.catch(() => { if (listed === kept) listed = null; });
+    list.then((l) => { lastGiven = {token: kept.token, list: l}; }, () => { if (listed === kept) listed = null; });
   }
   // Each its own copy: what one caller does with its list is not another's.
   return listed.list.then((l) => structuredClone(l));
+};
+/** The last list the Remote gave for who is signed in now, if it has given one: as it was, to be read again. */
+export const lastServers = (): Server[] | null => {
+  const c = connection();
+  return c && lastGiven?.token === c.token ? structuredClone(lastGiven.list) : null;
 };
 export const makeServer = (name: string, address: string) => call<Server>('/v1/servers', send('POST', {name, address}));
 /** Servers this person removed or left last, still held for them, and until when. */

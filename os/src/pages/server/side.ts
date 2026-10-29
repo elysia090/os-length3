@@ -5,6 +5,7 @@ import * as servers from '../../remote/servers.ts';
 import {personBadge} from '../pane.ts';
 import {errorText} from '../../app/errors.ts';
 import {every} from '../../app/runs.ts';
+import {paced, still} from '../../ui/glide.ts';
 
 // Server's right pane, where a repo's reference would be: who is in the server, then the repos they show in it
 // (pressing one shows it as it was last pushed; a repo shown is only seen there, never written).
@@ -48,11 +49,15 @@ export class Side {
     let drawn = '';
     const draw = ([people, repos]: [servers.Person[], servers.ShownRepo[]]) => {
       drawn = JSON.stringify([people, repos]);
+      // Another server's people in place of those drawn: they come in over a moment, as its boards do, not swapped in
+      // one frame beside them; the same server's drawn again (someone came in), they simply stand.
+      const another = !!this.counted && this.counted.id !== id && this.element.childElementCount > 0;
       this.counted = {id, people: people.length, repos: repos.length};
       this.element.replaceChildren(
         part(t('People'), h('ul', {class: 'people'}, ...people.map((p) => this.person(p)))),
         // The repos shown, when there are any: nothing is said of none here.
         repos.length ? part(t('Repos'), h('ul', {class: 'side-repos'}, ...repos.map((r) => this.repo(r)))) : '');
+      if (another && !still()) this.element.animate([{opacity: 0}, {opacity: 1}], {duration: paced(220), easing: 'ease-out'});
     };
     void read().then((got) => { if (mine === this.token) draw(got); })
       .catch((e) => { if (mine === this.token) this.element.replaceChildren(h('p', {class: 'error'}, errorText(e))); })

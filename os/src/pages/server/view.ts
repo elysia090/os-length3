@@ -4,7 +4,7 @@ import {connection} from '../../remote/connection.ts';
 import type {Me} from '../../remote/inbox.ts';
 import * as servers from '../../remote/servers.ts';
 import {boardNew, onNews} from '../../remote/news.ts';
-import {arrive, paced, pop} from '../../ui/glide.ts';
+import {arrive, panAcross, paced, pop, stage} from '../../ui/glide.ts';
 import {errorText} from '../../app/errors.ts';
 import type {Context} from '../context.ts';
 import {goToPlan} from '../remote/plan.ts';
@@ -72,7 +72,7 @@ export class ServerView {
     const signedIn = connection() !== null;
     this.here = {signedIn, list: [], shown: [], serverId: null, alone: null, naming: null};
     this.band = new Band(this.here, {
-      show: (id) => this.show(id),
+      show: (id) => this.switchTo(id),
       showAlone: (b) => this.showAlone(b),
       make: () => this.makeAnew(),
       gear: () => { if (this.showing === 'settings') this.place('boards'); else this.settings(); },
@@ -141,23 +141,50 @@ export class ServerView {
 
   /** Signed in: one's servers, at the one last seen; opened by an invitation's link, its board. */
   private async readServers(held: {board: string} | null) {
+    // Given this session already (Home names them as it opens), the servers are drawn from that list at once, so only
+    // what the board on screen holds is read before Server comes out; the list is read again under it, and what
+    // changed meanwhile is taken in.
+    const known = held ? null : servers.lastServers();
+    if (known?.length) { this.here.list = known; this.band.paint(); this.opening(); this.listed = true; }
     try {
-      this.here.list = await servers.servers();
+      const fresh = await servers.servers();
+      if (known?.length) { this.tookFresh(fresh); return; }
+      this.here.list = fresh;
       this.band.paint();
       if (held) {
         const b = await this.invited(held);
         if (b) this.showAlone(b);
         return;
       }
-      // Left at (or led to, from Home) a board written in as a guest: that board, alone, as its chip shows it.
-      const guest = !this.at.server && this.at.board ? servers.guestBoards().find((g) => g.id === this.at.board) : undefined;
-      if (guest && !this.here.list.some((s) => s.boards.some((b) => b.id === guest.id))) {
-        this.showAlone({id: guest.id, name: guest.here.name, member: false, guests: true, server: guest.here.server});
-        return;
-      }
-      const first = this.here.list.find((s) => s.id === this.at.server) ?? this.here.list[0];
-      if (first) this.show(first.id); else this.makeServer();
-    } catch (e) { this.failed(e, t('Your servers are here again once it answers')); }
+      this.opening();
+    } catch (e) { if (!known?.length) this.failed(e, t('Your servers are here again once it answers')); }
+  }
+
+  /** What Server opens at, the servers read: the one last seen, a guest's board, or making the first. */
+  private opening() {
+    // Left at (or led to, from Home) a board written in as a guest: that board, alone, as its chip shows it.
+    const guest = !this.at.server && this.at.board ? servers.guestBoards().find((g) => g.id === this.at.board) : undefined;
+    if (guest && !this.here.list.some((s) => s.boards.some((b) => b.id === guest.id))) {
+      this.showAlone({id: guest.id, name: guest.here.name, member: false, guests: true, server: guest.here.server});
+      return;
+    }
+    const first = this.here.list.find((s) => s.id === this.at.server) ?? this.here.list[0];
+    if (first) this.show(first.id); else this.makeServer();
+  }
+
+  /**
+   * The list read again under one drawn from what was known: its names and dots taken in; the server on screen gone
+   * (left on another device), the next; its boards changed meanwhile, drawn again; otherwise nothing moves.
+   */
+  private tookFresh(fresh: servers.Server[]) {
+    const on = this.here.serverId;
+    const was = this.here.list.find((s) => s.id === on);
+    const now = fresh.find((s) => s.id === on);
+    const boards = (s: servers.Server | undefined) => JSON.stringify(s?.boards.map((b) => [b.id, b.name, !!b.gone]) ?? null);
+    this.here.list = fresh;
+    if (on && !now) { this.gone(on); return; }
+    this.band.paint();
+    if (now && this.showing === 'boards' && boards(was) !== boards(now)) this.show(now.id);
   }
 
   /** Signed out: the boards open to everyone, and an invitation's board among them, on screen. */
@@ -234,6 +261,17 @@ export class ServerView {
     // Its boards, and after them the last box, a new board.
     this.row.fill(this.here.shown.length + 1, i >= 0 ? i : 0);
     this.side.paint(this.here.serverId);
+  }
+
+  /**
+   * A server's chip pressed: its boards come in from the chip's side as the row pans along the band, as Git's repos
+   * do along its band (what was there going off the other way), not swapped in one frame. From behind the gear, a
+   * board alone or a server being named, it is simply shown.
+   */
+  private switchTo(id: string) {
+    const was = this.here.list.findIndex((s) => s.id === this.here.serverId), to = this.here.list.findIndex((s) => s.id === id);
+    if (this.showing !== 'boards' || was < 0 || to < 0 || was === to) { this.show(id); return; }
+    panAcross(this.row.element, Math.sign(to - was), () => this.show(id));
   }
 
   /** A board outside the servers one is in, shown alone: no server is chosen, so the gear and the side rest. */
@@ -353,8 +391,12 @@ export class ServerView {
   // ---- a step away from the boards: behind the gear, or a repo shown ----
 
   private place(now: Showing) {
-    // Going behind the gear (or to a repo shown), the sheet comes in from a step away; back, the boards come in.
-    if (now !== this.showing) arrive(now === 'boards' ? this.row.element : this.sheet, now === 'boards' ? -1 : 1, 'x', 16, 260);
+    // Going behind the gear (or to a repo shown), the sheet comes in from a step away; back, the boards come in, and
+    // the box at the foot with them (not there a moment before the board it writes in).
+    if (now !== this.showing) {
+      arrive(now === 'boards' ? this.row.element : this.sheet, now === 'boards' ? -1 : 1, 'x', 16, 260);
+      if (now === 'boards') arrive(this.dock, -1, 'x', 16, 260);
+    }
     this.showing = now;
     this.row.element.hidden = now !== 'boards';
     this.dock.hidden = now !== 'boards';
@@ -381,7 +423,11 @@ export class ServerView {
   private settings() {
     const s = current(this.here);
     if (!s) return;
+    const coming = this.showing !== 'settings';
     this.place('settings');
+    // Come to (not drawn again after a deed there): its cards come in one after another as they are read, as a page's
+    // do, not all at once a moment after its head.
+    if (coming) stage(this.sheet, 1);
     void gearSheet(s, {
       sheet: this.sheet,
       still: () => this.showing === 'settings' && current(this.here) === s,

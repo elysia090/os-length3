@@ -200,6 +200,19 @@ test('a new board is named where it will stand: pressed to, its name has the key
   await expect(name).not.toBeFocused();
 });
 
+test("on a phone's width Post comes with the words, the empty box saying whom it writes to whole", async ({signedIn: app}) => {
+  await app.page.setViewportSize({width: 390, height: 844});
+  const field = app.server.box('general');
+  const post = app.server.layer.getByRole('button', {name: 'Post', exact: true});
+  await expect(field).toBeVisible();
+  await expect(post).toBeHidden();
+  await field.fill('Who brings the tent?');
+  await expect(post).toBeVisible();
+  await post.click();
+  await expect(app.server.talk('general')).toContainText('Who brings the tent?');
+  await expect(post).toBeHidden();
+});
+
 test('Post at the box sends what is written, the keyboard staying in the box', async ({signedIn: app}) => {
   const field = app.server.box('general');
   await field.fill('Who brings the tent?');
