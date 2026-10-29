@@ -8,21 +8,34 @@ import {errorText} from '../../app/errors.ts';
 // The page a device's code opens (?device&user_code=…): l3 or the app asks
 // to join this account. The person signs in here if not already (and comes
 // back here from the provider), sees which device asks and its code, and
-// lets it in or not.
+// lets it in or not. Remote's Devices takes a code the same way (joining).
 
 const client = (id: string) => (id === 'l3' ? t('l3 (the command line)') : id === 'length3-app' ? t('the Length³ OS app') : id);
 
 /** The page for the code `given` (none: it is typed here first). */
 export function devicePage(given: string): HTMLElement {
-  let code = given.trim().toUpperCase();
   const body = h('div', {class: 'remote-join'});
   // The same place as signing in on the Remote page, for every step: the code, signing in, letting it in.
   const page = h('main', {class: 'device-page sign-in-place'},
     h('section', {class: 'sign-in-card', 'aria-labelledby': 'device-title'}, h('h1', {id: 'device-title'}, t('Connect a device')), body));
+  joining(body, given, (text) => body.replaceChildren(h('p', {}, text), h('p', {class: 'muted'}, t('You can close this tab.'))));
+  return page;
+}
+
+/** Where the steps are: the code to type, which device asks (to let in or not), or what came of it. */
+export type JoinStep = 'code' | 'asking' | 'done';
+
+/**
+ * A device's code taken in `body`, step by step, as the page its link opens does it and Remote's Devices: the code
+ * (typed, none `given`), signing in when no one is, which device asks and its code, then Connect or Refuse; `finish`
+ * says what came of it in `body`, and `stepped` hears each step as it is shown.
+ */
+export function joining(body: HTMLElement, given: string, finish: (text: string) => void, stepped: (s: JoinStep) => void = () => {}) {
+  let code = given.trim().toUpperCase();
   const error = h('p', {class: 'error', role: 'alert'});
-  const finish = (text: string) => body.replaceChildren(h('p', {}, text), h('p', {class: 'muted'}, t('You can close this tab.')));
+  const done = (text: string) => { finish(text); stepped('done'); };
   const ask = async () => {
-    if (!code) { body.replaceChildren(...typing((typed) => { code = typed; void ask(); })); return; }
+    if (!code) { body.replaceChildren(...typing((typed) => { code = typed; void ask(); })); stepped('code'); return; }
     if (!remote.connection() && !(await remote.claim())) {
       body.replaceChildren(signInBox(() => void ask(), remote.signedInURL()));
       return;
@@ -36,12 +49,13 @@ export function devicePage(given: string): HTMLElement {
       another.addEventListener('click', () => { code = ''; void ask(); });
       body.replaceChildren(h('p', {class: 'error', role: 'alert'}, t('This code cannot be used.')),
         h('p', {class: 'muted small'}, /^[a-z_]+$/.test(why) ? t('It has run out or was typed wrong: the device shows a new one when it is asked again.') : why), another);
+      stepped('code');
       return;
     }
-    body.replaceChildren(...letIn(code, who.clientId, error, finish));
+    body.replaceChildren(...letIn(code, who.clientId, error, done));
+    stepped('asking');
   };
   void ask();
-  return page;
 }
 
 /** No code given: the one the device shows, typed here, and Next (`next`, with the code). */

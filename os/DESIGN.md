@@ -2519,7 +2519,13 @@ the gear's do, never swapped in one frame):
   under the pointer. That device finds out at its next word with the
   Remote and is signed out there (§3, the Remote away). This device has
   nothing to press in its row: it signs out from the person's menu at the
-  foot of the rail, which also forgets the session here.
+  foot of the rail, which also forgets the session here. At the list's foot,
+  room for the next and the way to it: Connect a device, a row with a dashed
+  edge and its words in its middle (§3, the dashed card). Pressed, the row is
+  the steps a device's code takes on its own page (`?device`): the code the
+  device shows, typed, then which device asks with its code to check, Refuse
+  and Connect; Not now puts the row back until then, and Done after. Let in,
+  the device comes into the list once it has taken its session.
 
 - **Plan**: Plans first, at the part's top: free and the three tiers side by
   side as small **cards** (§3), four across the part (two, then one, as it

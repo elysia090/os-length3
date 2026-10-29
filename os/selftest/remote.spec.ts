@@ -157,6 +157,35 @@ test('a code that is wrong does not turn the repo off, and says so in the card',
   await expect(app.remote.power('hello')).toBeChecked();
 });
 
+test("a device's code is typed in Devices, and the device let in there as on the code's own page", async ({signedIn: app, playwright}) => {
+  // l3 asks the Remote to join, as `l3 remote login` does (a client of its own, no browser's cookies), and shows its code.
+  const l3 = await playwright.request.newContext({baseURL: process.env.SELFTEST_REMOTE});
+  const asked = await l3.post('/api/auth/device/code', {data: {client_id: 'l3'}});
+  expect(asked.ok(), await asked.text()).toBe(true);
+  const {device_code, user_code} = await asked.json() as {device_code: string; user_code: string};
+  await app.rail.go('remote');
+  await app.remote.part('Devices').click();
+  const devices = app.main.getByRole('tabpanel', {name: /^Devices/});
+  // At the list's foot, room for the next one, and the way to it.
+  await devices.getByRole('button', {name: 'Connect a device'}).click();
+  const ask = devices.getByRole('group', {name: 'Connect a device'});
+  const code = ask.getByRole('textbox', {name: 'The device\'s code'});
+  await expect(code).toBeFocused();
+  await code.fill(user_code);
+  await code.press('Enter');
+  await expect(ask).toContainText('l3 (the command line) asks to join this account.');
+  await expect(ask.getByRole('button', {name: 'Not now'})).toBeHidden();
+  await ask.getByRole('button', {name: 'Connect', exact: true}).click();
+  await expect(ask).toContainText('Connected. Go back to the device.');
+  // The device takes its session, and comes in among the devices, to be signed out from its row as any other.
+  const token = await l3.post('/api/auth/device/token', {data: {grant_type: 'urn:ietf:params:oauth:grant-type:device_code', device_code, client_id: 'l3'}});
+  expect(token.ok(), await token.text()).toBe(true);
+  await expect(devices.getByRole('button', {name: /^Sign out /})).toHaveCount(1, {timeout: 15_000});
+  await ask.getByRole('button', {name: 'Done'}).click();
+  await expect(devices.getByRole('button', {name: 'Connect a device'})).toBeFocused();
+  await l3.dispose();
+});
+
 test('another device of yours is signed out from Devices, and finds itself signed out', async ({signedIn: app, another}) => {
   // The same person in a second browser: another device of the same account.
   const laptop = await another('Ada');

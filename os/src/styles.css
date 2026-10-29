@@ -852,6 +852,11 @@ button.row-item:hover:not(:disabled) { background: var(--raised); }
 button.row-item:disabled { cursor: var(--cursor-arrow); color: var(--sub); }
 .row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-meta { flex: none; color: var(--sub); font-size: var(--t-meta); font-variant-numeric: tabular-nums; }
+/* Room for the next at a list's foot, and the way to it (Remote's Devices: Connect a device): a dashed edge and a
+   quiet word in its middle, as the dashed card is. Pressed, its steps take its place. */
+.row-item.row-new { justify-content: center; align-items: center; gap: var(--s2); margin-top: var(--s1); border: 1px dashed var(--rule); color: var(--sub); }
+.row-item.row-new:hover { color: var(--ink); }
+.row-new .mark { width: var(--s4); height: var(--s4); }
 /* A phone has no room for a row's name beside its facts: the name takes its own line, the facts the next, the deed
    still at the right end. Before, the facts (which never shrink) squeezed the name to nothing (a device unnamed). */
 @media (max-width: 560px) {
