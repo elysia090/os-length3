@@ -68,7 +68,7 @@ test('nothing named yet, the new row is a quiet place for the name, and Create a
   await expect(app.newRepo.name).not.toHaveAttribute('placeholder');
   const slot = app.main.locator('.tree-still .tree-new');
   await expect(slot).toHaveClass(/tree-unnamed/);
-  await expect(slot.locator('.tree-name')).toHaveText('name');
+  await expect(slot.locator('.tree-name')).toHaveText('Name');
   await expect(app.newRepo.problem).toBeHidden();
   await app.newRepo.create.click();
   await expect(app.newRepo.problem).toHaveText('Please enter a name first');

@@ -179,7 +179,7 @@ test("a repo's name in Runtime opens it in Forge; its gear offers its card on th
   await expect(ask).toContainText('notes will be removed from this device.Preserved on Remote; re-downloads when opened.');
   await app.answer(ask.getByRole('button', {name: 'Free space', exact: true}), ask);
   // What it came to, over the box; and it is on the Remote now, to fetch.
-  await expect(panel.getByRole('status').filter({hasText: 'Let go of'})).toBeVisible();
+  await expect(panel.getByRole('status').filter({hasText: 'Released'})).toBeVisible();
   const remote = panel.getByRole('region', {name: /^Remote only/});
   await expect(remote.getByRole('button', {name: 'notes', exact: true})).toBeVisible();
   await remote.getByRole('button', {name: 'Actions for notes'}).click();
@@ -331,5 +331,5 @@ test('signed in, a repo on the Remote is deleted from its gear as turning it off
   // On Remote it is off, there to be turned on again for 30 days.
   await app.rail.go('remote');
   await expect(app.remote.power('hello')).toHaveAttribute('aria-checked', 'false');
-  await expect(app.remote.card('hello')).toContainText('Off · back until');
+  await expect(app.remote.card('hello')).toContainText('Disabled · Recoverable until');
 });

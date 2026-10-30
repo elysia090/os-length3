@@ -143,9 +143,10 @@ class Part {
 /** The rail at the left: one place at a time; File opens its tree over the page, Server its servers beside the rail. */
 class Rail extends Part {
   button(place: Place): Locator {
-    // Its name says more while something is to be seen there ("Unread messages in Inbox").
-    // The rail is named in the language spoken; its places keep their names in both.
-    return this.page.getByRole('navigation', {name: /^(Purposes|目的)$/}).getByRole('button', {name: new RegExp(`^${PLACES[place]}( |$)`)});
+    // Its name says more while something is to be seen there ("Unread messages in Inbox", "New posts in server",
+    // "Cannot connect to Remote"): the place is a word of it. The rail is named in the language spoken; its places
+    // keep their names in both.
+    return this.page.getByRole('navigation', {name: /^(Purposes|目的)$/}).getByRole('button', {name: new RegExp(`(^|\\s)${PLACES[place]}(\\s|$)`, 'i')});
   }
 
   async go(place: Place) {
