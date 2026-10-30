@@ -23,8 +23,8 @@ interface BandWays {
   beside(name: string): void;
   /** Its × (or the middle button): off the band. */
   takeOff(name: string): void;
-  /** The first button: File's menu for the file read now, or the repo itself. */
-  act(): void;
+  /** The first button (`at`): the deeds for the file read now (or the repo itself), out under it. */
+  act(at: HTMLElement): void;
 }
 
 /** The band on Forge's top line, over the `row` it says the repos of. */
@@ -57,7 +57,7 @@ export class Band {
   constructor(strip: HTMLElement, row: Row, drag: Drag, ways: BandWays) {
     this.row = row; this.drag = drag; this.ways = ways;
     arrowKeys(this.pills, '.pill-name');
-    this.acts.addEventListener('click', () => ways.act());
+    this.acts.addEventListener('click', () => ways.act(this.acts));
     strip.append(this.acts, this.pills, this.add);
     this.add.addEventListener('click', () => void this.bringOut());
     this.along();

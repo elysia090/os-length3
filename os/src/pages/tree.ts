@@ -1,12 +1,12 @@
 import {bytes, h} from '../ui/dom.ts';
-import {closeUp, keepOut, nudge, putAway, unfold} from '../ui/glide.ts';
+import {closeUp, keepOut, putAway, unfold} from '../ui/glide.ts';
 import {t} from '../i18n.ts';
 import {mark} from '../ui/icons.ts';
 import {bring, remoteOnly} from '../remote/lifecycle.ts';
-import {plainPart, plainPath, store} from '../repos/repos.ts';
+import {store} from '../repos/repos.ts';
 import {shownName} from '../repos/issues.ts';
 import {inRepo, list, ORIGIN_LABEL, type SystemEntry} from '../prompt/system.ts';
-import {answers, askFoot, SETTLE} from './common.ts';
+import {fileDeeds, joined, split} from './file-deeds.ts';
 import {errorText} from '../app/errors.ts';
 
 // File is an operation, not a page: the tree of "/", the whole system, as a
@@ -71,9 +71,6 @@ export function triangle(): SVGSVGElement {
 }
 
 const note = (text: string, depth: number) => h('li', {class: 'tree-note muted', style: `--depth:${depth}`}, text);
-const joined = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
-/** The folder a path in a repo is in ('' at its top), and its own name. */
-const split = (path: string) => (path.includes('/') ? [path.slice(0, path.lastIndexOf('/')), path.slice(path.lastIndexOf('/') + 1)] : ['', path]);
 /** How long a shut folder under a row being carried waits before it opens, to be gone into. */
 const SPRING = 650;
 
@@ -560,124 +557,31 @@ export class FileTree {
     this.unpop();
     const item = row.closest('li') as HTMLElement;
     const parent = item.parentElement?.closest('li') as HTMLElement | null;
-    const pop = h('div', {class: 'pop tree-pop', role: 'menu', 'aria-label': e.name});
-    const entry = (label: string, then: (b: HTMLButtonElement) => void) => {
-      const b = h('button', {type: 'button', class: 'pop-item', role: 'menuitem'}, label) as HTMLButtonElement;
-      b.addEventListener('click', () => then(b));
-      return b;
-    };
-    /**
-     * A name written in the row's place, with Not now and the deed at its foot, as every ask has:
-     * the deed or Enter makes it; Not now (or Escape) puts it back. A name it cannot be is said
-     * under it and keeps the keyboard in it, to be put right there.
-     */
-    const field = (b: HTMLElement, label: string, value: string, deed: string, go: (name: string) => Promise<void>, path = false) => {
-      const input = h('input', {class: 'line-in mono', placeholder: label, 'aria-label': label, autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
-      input.value = value;
-      const error = h('p', {class: 'error small', role: 'alert'});
-      const no = h('button', {type: 'button', class: 'button small-button'}, t('Not now')) as HTMLButtonElement;
-      const yes = h('button', {type: 'button', class: 'button small-button primary'}, deed) as HTMLButtonElement;
-      const make = async () => {
-        const v = input.value.trim();
-        if (!v || input.disabled) return;
-        error.textContent = '';
-        if (path ? !plainPath(v.replace(/^\/+|\/+$/g, '')) : !plainPart(v)) {
-          error.textContent = path ? t('Names joined by “/”, none starting with “.”') : t('A name has no “/” and does not start with “.”');
-          input.focus();
-          nudge(input);
-          return;
-        }
-        input.disabled = yes.disabled = true;
-        try { await go(v); } catch (err) { input.disabled = yes.disabled = false; error.textContent = errorText(err); input.focus(); nudge(input); }
-      };
-      input.addEventListener('keydown', (event) => {
-        if (event.key !== 'Enter' || event.isComposing) return;
-        event.preventDefault();
-        void make();
-      });
-      yes.addEventListener('click', () => void make());
-      const box = h('div', {class: 'pop-field'}, input, error, answers(no, yes));
-      no.addEventListener('click', () => { box.replaceWith(b); b.focus(); this.letGo(); });
-      b.replaceWith(box);
-      input.focus();
-      // A new name is written over the old one's stem, its ending and the folders it is in kept.
-      const from = value.lastIndexOf('/') + 1, dot = value.lastIndexOf('.');
-      input.setSelectionRange(from, dot > from && !dir ? dot : value.length);
-    };
-    /** Whether `child` is in the folder `inside` already (asked of the store, not of what the tree last showed; no folder, no). */
-    const there = async (inside: string, child: string) => (await store.tree(at.repo, inside).catch(() => [])).some((x) => x.name === child);
-    const taken = (child: string) => new Error(t('{name} is there already', {name: child}));
-    const rows: HTMLElement[] = [];
-    // A folder takes a new file or folder in it; a file, one beside it in its folder (the band's first button brings
-    // out the menu of the file read now, and a new file is wanted there as much as a new name).
-    const into = dir ? {path: at.path, abs: e.path, item} : {path: split(at.path)[0], abs: e.path.slice(0, e.path.lastIndexOf('/')), item: parent};
-    rows.push(entry(t('New file'), (b) => field(b, t('File name'), '', t('Create'), async (n) => {
-      if (await there(into.path, n)) throw taken(n);
-      // The new file is the one to work on: the tree goes and the caret is in it. Out again, it shows the file
-      // (its folder open from now, not once the file is written: a row drawn meanwhile is drawn open).
-      expandedPaths.add(into.abs);
-      await store.add(at.repo, into.path, n, '');
-      this.unpop();
-      this.events.choose(at.repo, joined(into.path, n), true);
-    })));
-    rows.push(entry(t('New folder'), (b) => field(b, t('Folder name'), '', t('Create'), async (n) => {
-      if (await there(into.path, n)) throw taken(n);
-      expandedPaths.add(into.abs);
-      await store.mkdir(at.repo, joined(into.path, n));
-      this.unpop();
-      await this.again(into.item);
-      this.settle(this.nameAt(`${into.abs}/${n}`));
-      this.landed(`${into.abs}/${n}`);
-    })));
-    if (at.path !== '') {
-      // Its path in the repo, its name to be written over: a path written moves it (notes/plan.md), its folders made.
-      rows.push(entry(t('Rename'), (b) => field(b, t('New name'), at.path, t('Rename'), async (written) => {
-        const to = written.replace(/^\/+|\/+$/g, '');
-        const [inside, name] = split(to);
-        if (to !== at.path && await there(inside, name)) throw taken(name);
-        await this.moved(at.repo, at.path, to);
-      }, true)));
-      rows.push(entry(t('Delete'), (b) => {
-        // Asked in its place: the deed on the side it was pressed, Not now on the other.
-        const foot = askFoot(b, pop);
-        const no = h('button', {type: 'button', class: 'button small-button'}, t('Not now')) as HTMLButtonElement;
-        const yes = h('button', {type: 'button', class: 'button small-button primary'}, t('Delete')) as HTMLButtonElement;
-        const error = h('p', {class: 'error small', role: 'alert'});
-        const ask = h('div', {class: 'pop-ask'},
-          h('p', {class: 'muted small'}, dir ? t('{name} goes, with what is in it', {name: e.name}) : t('{name} goes', {name: e.name})),
-          error, foot(no, yes));
-        no.addEventListener('click', () => { ask.replaceWith(b); b.focus(); this.letGo(); });
-        const shown = performance.now();
-        yes.addEventListener('click', async () => {
-          if (performance.now() - shown < SETTLE) return;
-          yes.disabled = true;
-          try {
-            await store.remove(at.repo, at.path);
-            for (const p of [...expandedPaths]) if (p === e.path || p.startsWith(`${e.path}/`)) expandedPaths.delete(p);
-            // The rows under it come up into its place, from where they stood.
-            const gap = item.getBoundingClientRect().height;
-            const place = [...item.parentElement?.children ?? []].indexOf(item);
-            this.unpop();
-            await this.again(parent);
-            closeUp([...parent?.querySelector(':scope > .tree-children')?.children ?? []].slice(place), gap);
-            this.settle(parent?.querySelector<HTMLElement>(':scope > .tree-row > .tree-name'));
-          } catch (err) { yes.disabled = false; error.textContent = errorText(err); }
-        });
-        b.replaceWith(ask);
-        yes.focus();
-      }));
-    }
-    pop.append(h('div', {class: 'pop-head muted small'}, e.name), ...rows);
-    // ↑ ↓ go along its rows.
-    pop.addEventListener('keydown', (event) => {
-      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
-      const items = [...pop.querySelectorAll<HTMLElement>('.pop-item')];
-      const i = items.indexOf(document.activeElement as HTMLElement);
-      if (i < 0) return;
-      event.preventDefault();
-      event.stopPropagation();
-      items[(i + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus();
-    });
+    /** A folder of the repo as the tree knows it (its absolute path) and its row. */
+    const abs = (folder: string) => `/root/${at.repo}${folder ? `/${folder}` : ''}`;
+    const pop = fileDeeds({repo: at.repo, path: at.path, name: e.name, dir,
+      // Made in a folder: the folder open from now, not once it is written (a row drawn meanwhile is drawn open).
+      opening: (folder) => expandedPaths.add(abs(folder)),
+      made: async (made, file) => {
+        this.unpop();
+        // A new file is the one to work on: the tree goes and the caret is in it.
+        if (file) { this.events.choose(at.repo, made, true); return; }
+        await this.again(dir ? item : parent);
+        this.settle(this.nameAt(abs(made)));
+        this.landed(abs(made));
+      },
+      move: (to) => this.moved(at.repo, at.path, to),
+      removed: async () => {
+        for (const p of [...expandedPaths]) if (p === e.path || p.startsWith(`${e.path}/`)) expandedPaths.delete(p);
+        // The rows under it come up into its place, from where they stood.
+        const gap = item.getBoundingClientRect().height;
+        const place = [...item.parentElement?.children ?? []].indexOf(item);
+        this.unpop();
+        await this.again(parent);
+        closeUp([...parent?.querySelector(':scope > .tree-children')?.children ?? []].slice(place), gap);
+        this.settle(parent?.querySelector<HTMLElement>(':scope > .tree-row > .tree-name'));
+      },
+      back: () => this.letGo()});
     // Beside the tree, level with the row: out into the free space, so nothing moves under the pointer.
     const box = this.element.getBoundingClientRect(), r = row.getBoundingClientRect();
     pop.style.left = `${box.right + 8}px`;

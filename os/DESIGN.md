@@ -1496,8 +1496,12 @@ it back. Put away, the pane closes as a wipe, the center takes the whole
 width and the search goes with the pane; the switch stays where it was, the
 way back, and what the pane showed, what was chosen there and where it was
 read come back with it. The files button stands first, at the band's left
-end (File's menu for the file read now: New file, New folder, Rename,
-Delete), the pills follow it and scroll, and ⊕ comes right after the last
+end: pressed, the deeds for the file read now (New file and New folder
+beside it, Rename, which moves it given a path, Delete; the repo's own with
+none read) come out under it, in Forge, done there with the field or the
+ask in its place as File's are, never carrying one off to File; a new file
+is opened to write in, one renamed or moved is shown where it went. The
+pills follow it and scroll, and ⊕ comes right after the last
 pill. One press brings every repo not on the band out at once; this is not
 adding tabs one at a time.
 Each pill comes off the band with its × (the repo itself is untouched);
@@ -2920,8 +2924,8 @@ on its name, does the same. The menu is the person's menu (`.pop`): beside
 the tree at the row's height, out in the free space so nothing moves, its
 head the row's name, a row per deed. A folder, the repo's own row too, has
 New file and New folder, made in it; a file has them too, made beside it in
-its folder (so Forge's files button, which brings out the menu of the file
-read now, makes a new file there); a file or folder has Rename and Delete (a
+its folder (the same deeds Forge's files button brings out under itself for
+the file read now); a file or folder has Rename and Delete (a
 repo is not renamed or deleted here: its gear is where that is, § Runtime, A
 repo in a list). A deed pressed becomes the field or the ask in its own
 place: a name written and Enter makes it (a new one's name is one plain part,

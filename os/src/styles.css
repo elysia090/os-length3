@@ -333,6 +333,8 @@ button.row-item, .part, .dot-row, .pane-head, .hit-diff, .found-shut):hover { tr
 .share-pop { --from: 0 4px; transform-origin: bottom; }
 /* File's beside the tree, at the row's height: out of the tree, to its right. */
 .tree-pop { --from: -6px 0; transform-origin: left top; }
+/* The same deeds out of a button (Forge's files button), under it: down out of it. */
+.tree-pop.deeds-under { --from: 0 -4px; }
 @keyframes menu-in { from { opacity: 0; translate: var(--from); scale: .92; } }
 @media (prefers-reduced-motion: reduce) { .tree-pop, .repo-gear-pop, .stub-panel, .share-pop { animation: none; } }
 .me-pop {

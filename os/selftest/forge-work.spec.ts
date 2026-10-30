@@ -399,35 +399,48 @@ test('the current repo\'s pill shows which part has the keyboard, in ground over
   expect(at.y - scroller.y).toBeGreaterThanOrEqual(4);
 });
 
-test('the band\'s first button opens File at what is read now, with its menu out (issue #49), a new file made beside it', async ({app}) => {
+test('the band\'s first button brings out the deeds for what is read now, under it in Forge, and does them there', async ({app}) => {
   // What is read now: the Makefile, gone to from File (the page opens at its first file, the README).
   await app.file.open('hello', 'Makefile');
   await app.rail.go('forge');
   const band = app.forge.band;
   // The files button first, ⊕ after the repos.
   const buttons = band.getByRole('button');
-  await expect(buttons.first()).toHaveAccessibleName('Files: new, rename, delete');
+  const files = buttons.first();
+  await expect(files).toHaveAccessibleName('Files: new, rename, delete');
   await expect(buttons.last()).toHaveAccessibleName(/^Bring every repo out/);
-  await buttons.first().click();
-  await expect(app.file.tree).toBeVisible();
-  // The file read now, its row's menu out by it.
+  await files.click();
+  // Its menu, under it, here: File stays where it is.
   const menu = app.page.getByRole('menu', {name: 'Makefile', exact: true});
   await expect(menu).toBeVisible();
-  await expect(app.file.tree.getByRole('button', {name: 'Makefile', exact: true})).toBeVisible();
+  await expect(app.file.tree).toBeHidden();
   await expect(menu.getByRole('menuitem')).toHaveText(['New file', 'New folder', 'Rename', 'Delete']);
+  const under = (await files.boundingBox())!, at = (await menu.boundingBox())!;
+  expect(at.y).toBeGreaterThan(under.y + under.height - 1);
+  await expect(menu.getByRole('menuitem', {name: 'New file'})).toBeFocused();
   await app.page.keyboard.press('Escape');
   await expect(menu).toBeHidden();
-  await app.file.close();
+  await expect(files).toBeFocused();
 
   // A new file from there is made in the folder of the file read now, and is the one to work on.
   await app.file.open('hello', 'src/main.c');
   await app.rail.go('forge');
-  await buttons.first().click();
+  await files.click();
   const near = app.page.getByRole('menu', {name: 'main.c', exact: true});
   await near.getByRole('menuitem', {name: 'New file'}).click();
   await near.getByRole('textbox').fill('util.c');
   await near.getByRole('textbox').press('Enter');
   await expect(app.forge.editor('src/util.c')).toBeFocused();
+  await expect(near).toBeHidden();
+
+  // Renamed (a path moves it), it is shown where it went.
+  await files.click();
+  const util = app.page.getByRole('menu', {name: 'util.c', exact: true});
+  await util.getByRole('menuitem', {name: 'Rename'}).click();
+  await util.getByRole('textbox').fill('lib/util.c');
+  await util.getByRole('textbox').press('Enter');
+  await expect(app.forge.editor('lib/util.c')).toBeVisible();
+  await expect(app.file.tree).toBeHidden();
 });
 
 test('pressed anywhere in the prompt box, beside its line too, the caret goes in (issue #45)', async ({app}) => {

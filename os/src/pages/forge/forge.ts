@@ -16,6 +16,7 @@ import {Drag, dropInto} from './drag.ts';
 import {takeFiles} from './files-in.ts';
 import {keysAlong, swipeAlong} from './along.ts';
 import {Place} from './place.ts';
+import {deedsUnder, fileDeeds, split} from '../file-deeds.ts';
 
 /**
  * Forge, the place you work. The repos out to work on run as pills in a band
@@ -85,6 +86,30 @@ class Forge {
   private work: Bench;
   private row: Row;
   private band: Band;
+  /** The files button's deeds while they are out: the way to put them away. */
+  private deedsOut: (() => void) | null = null;
+
+  /**
+   * The deeds for the file read now (the repo's own, with none), out under the band's files button: done here, where
+   * one works, never carrying one off to File. Made, a new file is opened to write in; renamed or moved, the file is
+   * shown where it went.
+   */
+  private deeds(at: HTMLElement) {
+    if (!this.row.repo || this.deedsOut) return;
+    const repo = repoOf(this.row.repo), path = this.place.reading ?? '';
+    const done = () => this.deedsOut?.();
+    const pop = fileDeeds({repo, path, name: path ? split(path)[1] : repo, dir: !path,
+      made: (made, file) => { done(); if (file) this.ctx.openRepo(repo, made, true); },
+      move: async (to) => {
+        if (to !== path) await store.move(repo, path, to);
+        done();
+        this.ctx.openRepo(repo, to);
+      },
+      removed: () => done(),
+      back: () => {}});
+    this.deedsOut = deedsUnder(at, pop, () => { this.deedsOut = null; });
+  }
+
   private place: Place;
   /** The repo worked on as Forge last knew it: chosen anew elsewhere (Git, Home, File), Forge follows. */
   private known: string | null;
@@ -106,7 +131,7 @@ class Forge {
     // The Issue view with none open begins one for this repo on Git; Not now there comes back here.
     this.work.reference.writeIssue = (r) => { startIssue(r); ctx.go('git'); };
     this.band = new Band(strip, this.row, drag, {show: (name) => this.show(name), beside: (name) => this.beside(name),
-      takeOff: (name) => this.takeOff(name), act: () => { if (this.row.repo) ctx.actOn(repoOf(this.row.repo), this.place.reading ?? ''); }});
+      takeOff: (name) => this.takeOff(name), act: (at) => this.deeds(at)});
     dropInto(this.row, drag, (name, at, instead) => this.land(name, at, instead));
     takeFiles(cols, drag, (repo, path) => this.show(repo, path));
     swipeAlong(this.row, (key) => this.activate(key));
