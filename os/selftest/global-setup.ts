@@ -69,8 +69,13 @@ function newest(path: string): number {
 const SOURCES = ['src', 'shared', 'public', 'index.html', 'vite.config.ts', 'package-lock.json', 'core/src', 'core/web/src', 'scripts/core-wasm.ts'];
 const STAMP = join(OUT, '.built');
 
-/** What the build carries besides the sources: the browser's Prompt, when public/ has it. */
-const carries = () => JSON.stringify({prompt: existsSync(join(OS, 'public', 'l3', 'l3.json'))});
+/** The newest version whose desktop app this tree pins: the one the build offers (while a release is made, RELEASE
+ * names one not pinned yet, and the Runtime the selftest checks offers a desktop app all the same). */
+const release = () => Object.keys(JSON.parse(readFileSync(join(OS, 'shared', 'desktop-releases.json'), 'utf8')) as Record<string, unknown>)
+  .sort((a, b) => a.localeCompare(b, 'en', {numeric: true})).at(-1) ?? '';
+
+/** What the build carries besides the sources: the browser's Prompt, when public/ has it, and the release it offers. */
+const carries = () => JSON.stringify({prompt: existsSync(join(OS, 'public', 'l3', 'l3.json')), release: release()});
 
 /** Build unless selftest/.dist is newer than everything it is made from, and carries the same. */
 async function build() {
@@ -80,7 +85,7 @@ async function build() {
   console.log('selftest: building the app for a Remote on its own origin');
   const status = await new Promise<number | null>((resolve, reject) => {
     const c = spawn(process.execPath, [join(OS, 'node_modules/vite/bin/vite.js'), 'build', '--outDir', OUT, '--logLevel', 'warn'],
-      {cwd: OS, stdio: 'inherit', env: {...process.env, VITE_LENGTH3_REMOTE: ''}});
+      {cwd: OS, stdio: 'inherit', env: {...process.env, VITE_LENGTH3_REMOTE: '', VITE_LENGTH3_RELEASE: release()}});
     c.once('error', reject);
     c.once('close', resolve);
   });

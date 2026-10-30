@@ -1,7 +1,7 @@
 import {expect, test} from './fixtures.ts';
 
 // Git: an issue written, started (it gets its own copy of the repo), the
-// change made in Forge, then Commit, Push, Approve and Merge; merged, the
+// change made in Forge, then Commit (it hands itself in), Approve and Merge; merged, the
 // issue is done and listed under Merged. What main itself has not committed
 // is committed from main's card, named by its line. One that will not be
 // done is closed and can be reopened; a reviewer can ask for changes.
@@ -24,11 +24,9 @@ test('an issue goes from written to merged, and is listed under Merged', async (
   await app.rail.go('git');
   await expect(app.main.getByRole('region', {name: '1 file not committed'})).toContainText('HELLO.');
   await app.git.step('Commit').click();
-  // Committed: Commit is done (no button), and Push is the next step.
+  // Committed, it hands itself in: Commit and Push are done (no buttons), and the change waits for review.
   await expect(app.git.step('Commit')).toBeHidden();
-  await expect(app.git.step('Push')).toBeEnabled();
-
-  await app.git.step('Push').click();
+  await expect(app.git.step('Push')).toBeHidden();
   await expect(app.main.getByText('Change · version 1 · Undecided')).toBeVisible();
   await expect(app.git.review).toBeVisible();
   await expect(app.git.review.getByText('HELLO.')).toBeVisible();

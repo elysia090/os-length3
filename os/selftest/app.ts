@@ -540,7 +540,7 @@ class Git extends Part {
     }).toPass({intervals: [100]});
   }
 
-  /** Start the issue on screen, make the change in Forge, then Commit and Push it: handed in for review. */
+  /** Start the issue on screen, make the change in Forge, then Commit it: it hands itself in for review. */
   async handIn(edit: {path: string; text: string}) {
     await this.step('Start').click();
     await expect(this.step('Back to main')).toBeVisible();
@@ -549,8 +549,6 @@ class Git extends Part {
     await this.app.forge.editFile(edit.path, edit.text);
     await this.app.rail.go('git');
     await this.step('Commit').click();
-    await expect(this.step('Push')).toBeEnabled();
-    await this.step('Push').click();
     await expect(this.review).toBeVisible();
   }
 }
