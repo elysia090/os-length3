@@ -31,7 +31,7 @@ test('going along the rail pans to the next page, which stands whole once it lan
   expect(await app.page.evaluate(() => getComputedStyle(document.getElementById('page')!).viewTransitionName)).toBe('none');
 });
 
-test('the right pane brought out lands a touch past its edge and settles, its mark filled; put away, it goes', async ({app}) => {
+test('the right pane brought out lands a touch past its edge and settles, its mark filled; put away, it goes at once and quickly', async ({app}) => {
   await app.newRepo.make('hello');
   await app.newRepo.openInForge();
   const side = app.main.getByRole('complementary', {name: 'Plugins and Prompt'});
@@ -41,7 +41,22 @@ test('the right pane brought out lands a touch past its edge and settles, its ma
   const open = (await side.boundingBox())!.width;
   expect(await filled()).toBeCloseTo(1, 2);
 
+  // Put away, it moves from the press and is gone in a fraction of its coming (--leave): sampled frame by frame.
+  const going = app.page.evaluate(() => new Promise<{first: number; gone: number}>((done) => {
+    const el = document.querySelector('.work.bench:not([hidden]) > .side')!, w0 = el.getBoundingClientRect().width;
+    let first = -1, t0 = 0;
+    const tick = () => {
+      const w = el.getBoundingClientRect().width, at = performance.now() - t0;
+      if (first < 0 && w < w0 - 2) first = at;
+      if (w < 1 || at > 2000) done({first, gone: at}); else requestAnimationFrame(tick);
+    };
+    // Timed from the press itself, not from the test's asking for it.
+    addEventListener('click', () => { t0 = performance.now(); requestAnimationFrame(tick); }, {once: true, capture: true});
+  }));
   await app.forge.paneSwitch.click();
+  const {first, gone} = await going;
+  expect(first).toBeLessThan(60);
+  expect(gone).toBeLessThan(400);
   await expect(app.forge.paneSwitch).toHaveAttribute('aria-expanded', 'false');
   await still(app);
   await expect(side).toBeHidden();

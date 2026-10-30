@@ -55,6 +55,9 @@
      once (a press, the caret) is not paced, and the Prompt keeps its own (--prompt-up, --prompt-down). */
   --pace: 2;
   --motion: calc(90ms * var(--pace)); --move: calc(280ms * var(--pace)); --slide: calc(450ms * var(--pace));
+  /* A thing put away goes in a fraction of its coming (the pane, 260 ms): what is no longer wanted is not watched
+     going, and the hand that put it away is not kept waiting on it. */
+  --leave: calc(130ms * var(--pace));
   /* The Prompt's screen: how long it takes to come up out of the box's pill (running along the line for the first part
      of it, then rising) and to go back down into it (sinking to the line for the first part, then running back), and
      how each part moves. Along, it slows into the line's end; it rises fast off the line, landing a touch past; it
@@ -472,7 +475,7 @@ button.row-item, .part, .dot-row, .pane-head, .hit-diff, .found-shut):hover { tr
 /* It opens and closes as Forge's does: a wipe, landing a touch past and settling as it comes out. */
 .page > .home-layout { transition: grid-template-columns var(--move) var(--land); }
 .page > .home-layout:not(.pane-closed) { transition: grid-template-columns var(--slide) cubic-bezier(.2, 1.4, .32, 1); }
-.page > .home-layout.pane-closed { transition: grid-template-columns calc(var(--slide) * .66) cubic-bezier(.4, 0, 1, 1); }
+.page > .home-layout.pane-closed { transition: grid-template-columns var(--leave) cubic-bezier(.4, 0, 1, 1); }
 @media (prefers-reduced-motion: reduce) { .page > .home-layout, .page > .home-layout:not(.pane-closed), .page > .home-layout.pane-closed, .work.bench, .work.bench:not(.pane-closed) { transition: none; } }
 /* Its first line (the name, Edit profile) centred on the top line, as the pane's switch beside it is. */
 .home-main { min-width: 0; width: 100%; max-width: 1080px; margin: 0 auto; padding-top: calc(var(--band) - var(--top-line)); }
@@ -495,7 +498,7 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
 .home-pane::after { content: ''; position: absolute; inset: 0 0 0 calc(-1 * var(--line-frame)); pointer-events: none; background: color-mix(in srgb, var(--ink) 14%, transparent); opacity: 0; }
 .home-pane:has(.search-box:is(:focus-within, .reading))::after { opacity: 1; transition: opacity calc(180ms * var(--pace)) ease-out; }
 .home-bar > .search-box { z-index: 1; }
-.home-layout.pane-closed .home-pane { padding-left: 0; border-left-color: transparent; transition: border-color calc(var(--slide) * .66) cubic-bezier(.7, 0, 1, 1); }
+.home-layout.pane-closed .home-pane { padding-left: 0; border-left-color: transparent; transition: border-color var(--leave) cubic-bezier(.7, 0, 1, 1); }
 .home-layout.pane-closed .home-side { display: none; }
 /* Its first heading on the line Forge's Prompt and Server's People are on, a band below the top line's foot. */
 .home-side { min-height: 0; overflow: auto; padding-top: var(--band); }
@@ -1680,7 +1683,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:focus-within)::after { opa
 .work.bench.pane-closed .columns.split > .col { flex-basis: calc((var(--cols-w, 100%) - 2 * var(--pad)) / var(--n, 2)); transform: translateX(var(--pad)); translate: none; }
 /* Put away or brought back, the row and its prompt box move on the pane's own curve, sent once to where they will
    stand (columns.ts room): the last box's edge keeps a step inside the pane's edge all the way, as if pushed by it. */
-.work.bench.pane-moving.pane-closed :is(.columns.split > .col, .dock) { transition-duration: calc(var(--slide) * .66); transition-timing-function: cubic-bezier(.4, 0, 1, 1); }
+.work.bench.pane-moving.pane-closed :is(.columns.split > .col, .dock) { transition-duration: var(--leave); transition-timing-function: cubic-bezier(.4, 0, 1, 1); }
 .work.bench.pane-moving:not(.pane-closed) :is(.columns.split > .col, .dock) { transition-duration: var(--slide); transition-timing-function: cubic-bezier(.2, 1.4, .32, 1); }
 .work.bench.pane-closed .columns.split > .col:not(.active) .file > :is(.path, .sheet) { opacity: 1; }
 .work.bench.pane-closed .columns.split > .col:not(.active) .file-beside { visibility: visible; }
@@ -1719,9 +1722,9 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:focus-within)::after { opa
 /* Put away, the center takes the whole width; the pane is only out of sight. No pane, no line. It goes as a wipe:
    the pane's column closes to nothing, what it holds staying at its width and cut at the moving edge (not squeezed),
    and is out of sight (and of the keyboard) once closed; brought back, it opens the same way. */
-.work.bench.pane-closed { grid-template-columns: minmax(0, 1fr) 0px; transition: grid-template-columns calc(var(--slide) * .66) cubic-bezier(.4, 0, 1, 1); }
+.work.bench.pane-closed { grid-template-columns: minmax(0, 1fr) 0px; transition: grid-template-columns var(--leave) cubic-bezier(.4, 0, 1, 1); }
 .work.bench > .side { min-width: 0; grid-template-columns: max(280px, calc(var(--bench-w, 1200px) / 4)); }
-.work.bench.pane-closed > .side { overflow-x: clip; visibility: hidden; transition: visibility 0s calc(var(--slide) * .66); }
+.work.bench.pane-closed > .side { overflow-x: clip; visibility: hidden; transition: visibility 0s var(--leave); }
 @media (prefers-reduced-motion: reduce) {
   .work.bench.pane-closed, .work.bench > .side::before, .work.bench.pane-closed > .side::before,
   .home-pane, .home-layout.pane-closed .home-pane { transition: none; }
@@ -1748,7 +1751,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:focus-within)::after { opa
 }
 /* Put away, the line goes with the pane, gathering speed to the right (260 ms), and is gone as it gets there: never
    left standing at the window's edge. */
-.work.bench.pane-closed > .side::before { opacity: 0; transition: opacity calc(var(--slide) * .66) cubic-bezier(.7, 0, 1, 1); }
+.work.bench.pane-closed > .side::before { opacity: 0; transition: opacity var(--leave) cubic-bezier(.7, 0, 1, 1); }
 /* What was found, under the box and over the center, while the box (or what was found) has the keyboard. */
 .search-box { position: relative; min-width: 0; }
 /* What opens under the box: its ground runs a step (s3) past the large box on every side, so the lines behind it
