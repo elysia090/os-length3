@@ -202,7 +202,12 @@ Every value in `styles.css` comes from a token (§2).
     small past its size and settling, its tick drawn after it; a deed
     pressed and done gives a small pop where it was pressed, and so does a
     name or code copied; a message sent comes up out of the box it was
-    written in, one come in from the other's side. A commit on main: its
+    written in, one come in from the other's side. One joining a run gives
+    the one before it its time: that one narrows to its words from its
+    side, its corner tightening, never its edge leaping across; the note
+    that the last went as a request stays on its line while the next goes,
+    and the ask answered by writing back folds away, what was said over it
+    coming down into its room. A commit on main: its
     card slides off sideways as it fades, the room it took closing after it,
     and the line that says so lands lit under the issues, in Committed.
     A TODO line that becomes an item has its day stamped in at its end, and

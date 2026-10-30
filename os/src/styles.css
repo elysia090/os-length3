@@ -2204,7 +2204,8 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 /* None said yet: the dashed box in the middle of where they will be, not at its foot. */
 .inbox-messages > .inbox-empty { margin: auto; align-self: center; }
 .bubble { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s3); row-gap: var(--s1); align-items: end; max-width: 75%;
-  padding: var(--s2) var(--s3); border: 1px solid var(--rule); border-radius: var(--r-place); justify-self: start; align-self: flex-start; } /* as wide as what it says, at its side; never the column's width */
+  padding: var(--s2) var(--s3); border: 1px solid var(--rule); border-radius: var(--r-place); justify-self: start; align-self: flex-start;
+  transition: border-radius calc(160ms * var(--pace)) ease-out; } /* as wide as what it says, at its side; never the column's width */
 .bubble[data-mine='true'] { align-self: flex-end; background: var(--raised); }
 /* Its time a small figure at the foot of its last line, not a line of its own; said once for a run (messages from one
    side a few minutes apart, inbox.ts runs), at its end, the run's bubbles close together, their joining corners tight. */

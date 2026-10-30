@@ -201,14 +201,23 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
 /** How near in time two messages from one side are to be one run: said together, the time once, at its end. */
 const RUN = 5 * 60_000;
 
-/** The bubbles of `messages` marked as runs: each followed by the next of a run (`run-on`), each following one (`run-in`). */
-function runs(messages: HTMLElement) {
+/** The bubbles of `messages` marked as runs: each followed by the next of a run (`run-on`), each following one (`run-in`).
+ * `seen`: the conversation is drawn, and a change in them is seen to happen. */
+function runs(messages: HTMLElement, seen = false) {
   const all = [...messages.querySelectorAll<HTMLElement>(':scope > .bubble:not(.inbox-notice)')];
   const one = (a?: HTMLElement, b?: HTMLElement) => !!a && !!b && a.dataset.mine === b.dataset.mine && Math.abs(Number(a.dataset.time) - Number(b.dataset.time)) < RUN;
+  // One that a run now goes on from gives its time to the last, and is as wide as its words: it narrows to that from
+  // its side, not in one frame (its edge leaping across).
+  const moved = seen && !still(), wide = new Map(moved ? all.map((b) => [b, b.getBoundingClientRect().width]) : []);
   all.forEach((b, i) => {
     b.classList.toggle('run-on', one(b, all[i + 1]));
     b.classList.toggle('run-in', one(all[i - 1], b));
   });
+  if (!moved) return;
+  for (const b of all) {
+    const was = wide.get(b) ?? 0, now = b.getBoundingClientRect().width;
+    if (was && now && Math.abs(was - now) > .5) b.animate([{width: `${was}px`}, {width: `${now}px`}], {duration: paced(240), easing: LAND});
+  }
 }
 
 /**
@@ -440,7 +449,7 @@ export function inboxPage(ctx: Context): Node[] {
       const later = [...messages.querySelectorAll<HTMLElement>(':scope > .bubble')].find((x) => Number(x.dataset.time) > m.time);
       if (later) {
         messages.insertBefore(b, later);
-        runs(messages);
+        runs(messages, drawn);
         if (drawn) arrive(b, m.mine ? 1 : -1, m.mine ? 'y' : 'x', 18, 300);
         return;
       }
@@ -448,7 +457,7 @@ export function inboxPage(ctx: Context): Node[] {
       const before = drawn ? [...messages.children].slice(-12) as HTMLElement[] : [];
       const was = before.at(-1)?.getBoundingClientRect().bottom;
       messages.append(b);
-      runs(messages);
+      runs(messages, drawn);
       messages.scrollTop = messages.scrollHeight;
       // Come since the conversation was drawn: one's own up from the box it was written in, theirs in from their side.
       if (drawn) { if (notice) arrive(b, 1, 'y', 12, 300); else if (m.mine) arrive(b, 1, 'y', 18, 300); else arrive(b, -1, 'x', 18, 300); }
@@ -529,7 +538,10 @@ export function inboxPage(ctx: Context): Node[] {
       if (sendB.disabled) return;
       if (!text.value.trim()) { text.focus(); nudge(text); return; }
       sendB.disabled = true;
-      error.textContent = '';
+      // What went wrong last goes as this is sent; that the last went as a request stays while this one goes (taken
+      // away and said again, the line would go and come back, and what was said above it with it).
+      const asked = t('Sent as a request: they see it once they accept you.');
+      if (error.textContent !== asked) error.textContent = '';
       const words = text.value;
       try {
         const {kind, body, target} = written(words);
@@ -544,9 +556,11 @@ export function inboxPage(ctx: Context): Node[] {
         // the same words from the draft: they went, so it is emptied too, not left to be sent twice.
         const now = pane.querySelector<HTMLTextAreaElement>('textarea.bubble-in');
         if (now && now !== text && open === address && now.value === words) { now.value = ''; now.dispatchEvent(new Event('input')); }
-        if (r.request) error.textContent = t('Sent as a request: they see it once they accept you.');
-        // Written back, they are accepted (the Remote takes writing to someone as that): nothing left to answer.
-        ask?.remove();
+        error.textContent = r.request ? asked : '';
+        // Written back, they are accepted (the Remote takes writing to someone as that): nothing left to answer. It
+        // folds away, what was said over it coming down into its room, as an ask answered goes.
+        const asking = ask;
+        if (asking) putAway(asking, () => asking.remove(), {fold: true});
         // Its row says so now (the first to someone new comes into the list), not at the next look.
         void paintList(rows, pane);
       } catch (e) { error.textContent = errorText(e); }

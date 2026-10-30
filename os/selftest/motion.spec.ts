@@ -513,3 +513,34 @@ test('Edit profile opened and put away, what is under it goes one way only, with
   expect(Math.max(...shut)).toBeLessThan(shut[0] + 1);
   expect(Math.abs(shut.at(-1)! - opened[0])).toBeLessThan(1);
 });
+
+test('a message joining a run: the one before narrows to its words from its side, and the note over the field stays as it goes', async ({signedIn: ada, another}) => {
+  const bo = await another('Bo');
+  await bo.inbox.claim();
+  await ada.inbox.claim();
+  await ada.inbox.writeTo(bo.handle, 'Are you coming on Saturday?');
+  await expect(ada.main.getByText('Sent as a request: they see it once they accept you.')).toBeVisible();
+  await still(ada);
+  // Its width, and the note's height, each frame from the press until both have settled.
+  const watch = ada.page.evaluate(() => new Promise<{wide: number[]; tall: number[]}>((done) => {
+    const first = document.querySelector<HTMLElement>('.inbox-messages > .bubble')!;
+    const note = [...document.querySelectorAll<HTMLElement>('main [role=alert]')].find((e) => (e.textContent ?? '').startsWith('Sent as a request'))!;
+    const wide: number[] = [], tall: number[] = [], t0 = performance.now();
+    const tick = () => {
+      wide.push(first.getBoundingClientRect().width);
+      tall.push(note.isConnected ? note.getBoundingClientRect().height : 0);
+      if (performance.now() - t0 < 1500) requestAnimationFrame(tick); else done({wide, tall});
+    };
+    requestAnimationFrame(tick);
+  }));
+  await ada.inbox.message.fill('With the tent?');
+  await ada.inbox.message.press('Control+Enter');
+  const {wide, tall} = await watch;
+  const from = wide[0], to = wide.at(-1)!;
+  // It narrowed (its time went to the one after it)…
+  expect(to).toBeLessThan(from - 8);
+  // …over frames, not in one: some frame stood well between where it was and where it ended.
+  expect(wide.some((w) => w < from - 2 && w > to + 2)).toBe(true);
+  // The note never left its line on the way.
+  expect(Math.min(...tall)).toBeGreaterThan(0);
+});
