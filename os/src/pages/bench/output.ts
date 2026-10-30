@@ -5,7 +5,7 @@ import {waitsAt} from './prompt-line.ts';
 // What a Prompt shows of what its shell wrote (terminal.ts): plain lines at the foot of its screen, drawn once a
 // frame, a run's lines coming in one after another, the prompt lines it waited at told apart from what the lines run
 // printed, and in the pane only the tail of what each line printed. Lines of the box's own (an issue written, a TODO
-// added) stand among them as they came.
+// added, a question asked of the Agent, its answer under it) stand among them as they came.
 
 /** What clears a terminal's screen (clear, Ctrl+L): the output before it goes. */
 const CLEARS = /\x1b\[H\x1b\[[23]?J|\x1b\[[23]J|\x1bc/g;
@@ -36,6 +36,9 @@ const TAIL = 0;
  */
 const SAID = '⁣';
 const goes = new Map<string, (row: HTMLElement) => void>();
+/** The Agent's answer under a question of the box's own, by its line: not the shell's, so not in the text kept, but
+ * drawn under its question again wherever the flow is drawn whole. */
+const answers = new Map<string, HTMLElement>();
 
 /**
  * A line of the box's own, as it stands in the flow: its head as the box's pill said it (#3 in ink, TODO with its
@@ -43,14 +46,14 @@ const goes = new Map<string, (row: HTMLElement) => void>();
  */
 function ownLine(line: string): HTMLElement {
   const words = line.slice(SAID.length, -1), cut = words.indexOf(' ');
-  const head = cut < 0 ? words : words.slice(0, cut), todo = head === 'TODO';
+  const head = cut < 0 ? words : words.slice(0, cut), todo = head === 'TODO', agent = head === 'Agent';
   // Its Kind's colon set as everywhere (todo-list.ts kindWords), the words as they were.
   // A TODO's kind may be written with the narrow colon (Buy: …), an issue's is the wide one (Fix：…): either is its kind.
   const said = words.slice(head.length), kind = /^(\s*(?:[^\s：:]+(?=：)|[A-Za-z][A-Za-z0-9-]{0,15}(?=:(?!\/\/))))([：:])/.exec(said);
   const b = h('button', {type: 'button', class: 'term-said-go'}, h('b', {}, ...(todo ? [todoMark(false)] : []), head),
     h('span', {class: 'said-words'}, ...(kind ? [h('b', {class: 'said-kind'}, kind[1], kind[2] === '：' ? kindColon() : ':'), said.slice(kind[0].length)] : [said])));
   b.addEventListener('click', () => goes.get(line)?.(b));
-  return h('span', {class: `term-said ${todo ? 'said-todo' : 'said-issue'}`}, SAID, b, '\n');
+  return h('span', {class: `term-said ${todo ? 'said-todo' : agent ? 'said-agent' : 'said-issue'}`}, SAID, b, '\n');
 }
 
 /** A line sent, after the prompt line it was written at: its words an element of their own, its line break after. */
@@ -90,7 +93,8 @@ function tails(out: HTMLElement, all: boolean) {
       left = TAIL; top = null;
       continue;
     }
-    if (el?.classList.contains('cmd') || el?.classList.contains('term-end')) continue;
+    // A line run, the Prompt's end and the Agent's answer are never what a line printed.
+    if (el && ['cmd', 'term-end', 'term-answer'].some((c) => el.classList.contains(c))) continue;
     if (left <= 0) {
       top?.classList.add('cut');
       if (el) el.classList.add('above');
@@ -226,6 +230,20 @@ export class Output {
   }
 
   /**
+   * The Agent's answer to the question `row` stands for (a line of the box's own, note's), an element of its own under
+   * it, for its words to be put in as they come. Not the shell's: it is not in the text kept (trimmed with what is
+   * above it, gone with all else when the screen is cleared), and drawn again under its question if the flow is.
+   */
+  answer(row: HTMLElement): HTMLElement {
+    const said = row.closest<HTMLElement>('.term-said')!;
+    const el = h('div', {class: 'term-answer waiting'});
+    said.after(el);
+    // Its line as the text keeps it is the words it stands for, its end of line too.
+    answers.set(said.textContent ?? '', el);
+    return el;
+  }
+
+  /**
    * Put back into the box, the Prompt is read afresh from its line: what it printed so far is folded away (`.earlier`),
    * there to be opened again, so up next time the screen holds the prompt line it waits at and what comes after it.
    * The pane, which only tells, still lists the lines run. How many lines run (and lines of the box's own) are folded.
@@ -309,6 +327,8 @@ export class Output {
     let cut = 0;
     while (left > 0 && this.element.firstChild) {
       const node = this.element.firstChild;
+      // An answer is none of the text kept: it goes with what is above it, counting nothing.
+      if (node instanceof HTMLElement && node.classList.contains('term-answer')) { node.remove(); continue; }
       const n = node.textContent?.length ?? 0;
       if (n <= left || node.childNodes.length > 1) { node.remove(); left -= n; cut += n; continue; }
       // Within a block (or a text): its first lines go, the rest of it stays where it is.
@@ -343,7 +363,12 @@ export class Output {
       const nl = text.indexOf('\n', at) + 1;
       const line = text.slice(at, nl);
       at = nl;
-      if (line.startsWith(SAID)) { close(); out.push(ownLine(line)); continue; }
+      if (line.startsWith(SAID)) {
+        close();
+        const answer = answers.get(line);
+        out.push(ownLine(line), ...(answer ? [answer] : []));
+        continue;
+      }
       const ps = prompts.length ? prompts.find((p) => line.startsWith(p)) : undefined;
       if (ps) { close(); out.push(h('span', {class: 'ps'}, ps), ...command(line.slice(ps.length))); continue; }
       block += line;

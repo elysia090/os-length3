@@ -198,6 +198,12 @@ export class EditLine {
     return {path, area};
   }
 
+  /** The file in front as it stands (written in and not saved too) and the caret's line in it: what the Agent is shown. */
+  inFront(): {path: string; text: string; line: number} | null {
+    const f = this.#front(), at = this.where();
+    return f && at ? {path: f.path, text: f.area.value, line: at.line} : null;
+  }
+
   /** The pill's words: the file in front and the caret's line in it. */
   where(): {file: string; line: number} | null {
     const f = this.#front();

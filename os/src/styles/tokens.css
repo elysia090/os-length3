@@ -36,6 +36,8 @@
   /* A fourth soft tint, a sky's, beside the three marks' (marker-soft, add-tint, del-tint): only for telling people
      apart by their round initial, so it means nothing else. */
   --sky-tint: #dbe9fb;
+  /* The Agent's own line, round its pill: a blue, the one colour nothing else here is drawn in. */
+  --agent: #2f5f9e;
 
   --sans: system-ui, -apple-system, 'Segoe UI', 'Noto Sans JP', 'Hiragino Sans', sans-serif;
   --mono: ui-monospace, 'SF Mono', Consolas, 'Noto Sans Mono', monospace;

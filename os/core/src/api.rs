@@ -8,7 +8,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use crate::{account, agents, history, tasks, home, paths, remote, repos, system, usage, work};
+use crate::{account, agent_key, agents, history, tasks, home, paths, remote, repos, system, usage, work};
 
 /// Files the editor may save; anything read in part is never written back.
 pub const READ_LIMIT: u64 = 256 * 1024;
@@ -62,7 +62,26 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         "dotfile_set" => to(home::set_dotfile(&a.s("name")?, a.opt::<String>("text")?.as_deref())?),
         "dotfiles_take" => to(home::take_dotfiles(&a.list("names")?)?),
         "dotfiles_in_effect" => to(home::dotfiles_in_effect().into_iter().collect::<std::collections::BTreeMap<_, _>>()),
+        // The Agent's key (agent_key.rs), kept on this device only: whether there is one, as it may be shown; kept (with
+        // the model it opens) or taken away (`key` null); and, whole, for the page that asks the model with it.
+        "agent_key" => to(agent_key::kept().map(|k| json!({"shown": agent_key::shown(&k.key), "model": k.model}))),
+        "agent_key_set" => {
+            let key = a.opt::<String>("key")?;
+            let model = a.opt::<String>("model")?.unwrap_or_default();
+            to(agent_key::set(key.as_deref().map(|k| (k, model.as_str())))?)
+        }
+        // What a key given would be read as (its variable), before it is kept; refused when it is no key this OS knows.
+        "agent_key_kind" => to(agent_key::kind(a.s("key")?.trim()).map(|(_, var)| var)
+            .ok_or_else(|| crate::tr!("This is not an API key this OS knows", "この OS が知っている API キーではありません"))?),
+        "agent_key_use" => to(agent_key::kept().and_then(|k| agent_key::kind(&k.key).map(|(_, var)| json!({"key": k.key, "variable": var, "model": k.model})))),
 
+        // The box's Agent saying what it does, as an agent's hooks do (agents.rs from_box): asked, answered.
+        "agent_said" => {
+            let repo = a.s("repo")?;
+            repos::Repos::open()?.dir(&repo)?;
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
+            to(agents::append(&agents::from_box(&a.s("session")?, &repo, a.get("kind")?, &a.opt::<String>("text")?.unwrap_or_default(), now))?)
+        }
         // What agents do in the repos, as their hooks said it (agents.rs): null when nothing came since `cursor`.
         // And the work handed to the agent (tasks.rs), when it changed since `tasks` (the mark last read). Null when
         // neither moved: what a page asks every second reads a few bytes then.

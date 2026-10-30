@@ -1489,9 +1489,10 @@ What leaves this system is kept to what is said here:
 
 - **Network.** The Prompt's guests have no sockets: every socket call answers
   "not implemented", so a program in it can reach nothing. The page itself
-  may reach its own origin and the Remote, nothing else: the web build
-  carries that Content-Security-Policy, and the desktop's (Tauri's) says the
-  same. A page the Remote names to go to (a provider's, Checkout, the
+  may reach its own origin, the Remote and, for the box's Agent, the APIs of
+  the models' makers whose keys it knows (agent/makers.ts), nothing else: the
+  web build carries that Content-Security-Policy, and the desktop's (Tauri's)
+  says the same. The Agent's key goes only to its own maker, from the page. A page the Remote names to go to (a provider's, Checkout, the
   portal) is followed only when it is a web page: https, or http on this
   machine (connection.ts leaveFor); the desktop opens only Stripe's or the
   Remote's own (account.rs). The Remote answers only the app's origins. From the host (the app
@@ -2051,13 +2052,16 @@ is the repo's: another repo shows its own, and coming back finds it.
 
 The box does more than run. Its pill says what it does and, pressed (or
 Alt+↓ in the box, up as the screen too, out of the line's start where the
-pill went), brings out the four it can, out of the pill, each with
+pill went), brings out what it can, out of the pill, each with
 the pill it gives (as wide as its words) and its keys, the words in one column: Run in the Prompt (the shell's prompt line,
 `garden $`), Write an issue (the repo's next issue, `garden #4`, in ink as an
 issue's number), Add to TODO (TODO's circle, on paper as Home's TODO box),
 Edit the file in front (a pencil, the file and the caret's line,
 `main.c :4`, on paper ringed in ink: the yellow is the file's, where the
-work is, never the pill's); Alt+1 to 4 in the box choose one at
+work is, never the pill's), and, only while an API key is kept on this device
+(Runtime's Agent, below), Ask the Agent (`Agent@garden`, its words in ink on
+paper ringed in the Agent's blue, the one colour nothing else is drawn in, the
+repo after the name quiet); Alt+1 to 5 in the box choose one at
 once, Ctrl ` is the Prompt's again and Ctrl G Edit's. Turning, the pill goes from the old words' width to the new, the old
 words going up out of it as the new come up into it, its colours crossing,
 with a small beat as it lands; the box's own button says the deed (Run,
@@ -2081,6 +2085,22 @@ next as a counter's figure does. With the pane put away (or narrow), the
 slip slides on and rises out of sight, and the line is there when the pane
 comes back. Pressed, the line goes to it (the issue in Git, the TODO on Home). What
 is half written is kept for the repo and for what the box does.
+
+Asking the Agent is the box's too, never the Prompt's: written to, the box does
+not bring the screen up, and what is written is a person's words, in their
+letters (not the terminal's). Sent (Ctrl+Enter, Ask), the question goes into the
+right pane as an issue does, on a slip, a line of the flow with its head in the
+pill the box wore (`Agent`, ringed in the blue), the pane brought out for it;
+the answer comes in under it a few words at a time, in the letters people write
+in, its paragraphs a little apart, and its code, what would be run, on the
+Prompt's own glass in its green. Until its first words, a quiet ellipsis;
+refused (the key no longer taken, asked too often, nobody reached), why, in the
+red, where the answer would be. It is told the repo, its top, and the file in
+front as it stands (written in and not saved too) with the caret's line, so a
+question needs no saying where. Pressed, the question is back in the box to be
+asked again. The answer is not the shell's: it is kept with its question while
+the flow is drawn again, and goes with what is above it, or with all of it when
+the screen is cleared. The key taken away, the boxes asking run again.
 
 Edit makes the box a line of the file in front, written there as the line is
 in the file: nothing to learn, no words that ask for things, no line first
@@ -2257,7 +2277,7 @@ In **parts** (§3), as Remote's page is: この端末 (what it holds, what can g
 from it and come to it), what is running (offered while a Prompt runs, or one
 stopped here says what it gave back), the environments (SSH, the environment
 actually in effect, what runs, not what was asked for, and on the web the
-desktop app, side by side), and the dotfiles. A part not shown goes on: a
+desktop app, side by side), the dotfiles, and the Agent's key beside them. A part not shown goes on: a
 Prompt runs, what holds a repo is read again, a dotfile half written stays.
 There is no table of policies: what the device holds is shown as things, and
 each thing says what can be done with it.
@@ -2548,6 +2568,28 @@ or goes).
   so Save does not move. Remove asks in the box, where its deeds were (it
   goes from every device; Prompts running keep it until they start again),
   Remove under the pointer and Not now at the right.
+
+- **Agent**, beside the dotfiles and apart from them: the one API key the
+  box's Agent asks with, whoever made the model it opens. One box as the
+  dotfiles' is, its one row the field itself (API key, the key pasted in the
+  mono face, Use at its right; the box takes the ring while written in, never
+  a box in a box); given, the row shows it by its start and last four
+  (`sk-ant-…a9AA`), never more, the model it opens beside, and Remove. Under
+  the box, two short lines: kept on this device alone, in no dotfile and never
+  sent to the Remote; the box's Agent asks with it, and the Prompts started
+  here have it. No maker is named or chosen: what a key is for is read from
+  its form (the forms secret scanners such as gitleaks and TruffleHog go by:
+  Anthropic's, OpenAI's, OpenRouter's, xAI's, Groq's, DeepSeek's, Google's,
+  Perplexity's, Fireworks', Hugging Face's; an admin key, which opens no
+  model, and a key of no form of its own, refused), and the model is the
+  newest the key opens that answers, read from the maker's own list when the
+  key is given (Trying the key…), never written into the OS. It is a file of
+  this device (`agent-key`, 0600, beside the others the device keeps, in the
+  browser's own keeping on the web), whole only to the page that asks and to
+  each Prompt started here, in its environment under the name its maker's
+  tools read (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …). The page asks the
+  maker directly, so its policy lets it reach those makers' APIs and nothing
+  else besides the Remote.
 
 - **デスクトップアプリ**, on the web only (the app does not offer itself):
   after the environments, on one row (what this device runs on, and can be

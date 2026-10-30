@@ -197,4 +197,15 @@ export default {
   'Nothing to do again': 'やり直すものはありません',
   'Written over since: undo it in the file': 'その後に書き換えられています：ファイルで元に戻してください',
   'An empty line: write it here': '空の行：ここに書く',
+  // The box's Agent (box-modes.ts, bench/agent.ts): a question about the repo, its answer in the pane.
+  'Ask the Agent': 'Agent に聞く',
+  'Ask': '聞く',
+  'Ask ({keys})': '聞く（{keys}）',
+  'Ask about {name}': '{name}について聞く',
+  'No API key on this device: give one in Runtime': 'このデバイスに API キーがありません：Runtime で渡してください',
+  'Asked the Agent': 'Agent に聞きました',
+  'The Agent could not be reached': 'Agent に届きませんでした',
+  'The key was refused: give it again in Runtime': 'キーが断られました：Runtime で渡し直してください',
+  'Asked too often: try again in a moment': '聞きすぎました：少ししてからもう一度',
+  'The Agent said nothing': 'Agent は何も答えませんでした',
 } as Record<string, string>;

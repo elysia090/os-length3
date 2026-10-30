@@ -166,7 +166,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:focus-within)::after { opa
    repo's next issue in ink, its number as an issue's is said; TODO's circle on paper, as Home's TODO box is. Turning
    from one to another its colours cross as its words do. */
 .prompt-chip { margin: 0; border: 0; cursor: var(--cursor-hand); transition: background-color var(--motion), color var(--motion), box-shadow var(--motion); }
-.prompt-chip:is([data-mode='issue'], [data-mode='todo'], [data-mode='edit']) { gap: var(--s2); padding: 0 var(--s3); text-shadow: none; }
+.prompt-chip:is([data-mode='issue'], [data-mode='todo'], [data-mode='edit'], [data-mode='agent']) { gap: var(--s2); padding: 0 var(--s3); text-shadow: none; }
 .prompt-chip[data-mode='issue'] { background: var(--ink); color: var(--ground); box-shadow: none; }
 .prompt-chip[data-mode='todo'] { padding-left: var(--s2); background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge); }
 .prompt-chip:not([data-mode='run']) > :is(.lamp, .prompt-ps) { display: none; }
@@ -176,6 +176,12 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:focus-within)::after { opa
 .prompt-chip[data-mode='issue'] .prompt-mode { gap: 0; }
 .prompt-chip[data-mode='issue'] .prompt-mode-repo { opacity: .66; }
 .prompt-chip[data-mode='todo'] .prompt-mode > .icon { width: 15px; height: 15px; color: var(--done); }
+/* The Agent's pill, Agent@garden: on paper ringed in the Agent's blue, as Edit's is in ink, its words in ink, the repo
+   after its name quiet; what is written to it is a person's words, in their letters. */
+.prompt-chip[data-mode='agent'] { background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--agent); }
+.prompt-chip[data-mode='agent'] .prompt-mode { gap: 0; }
+.prompt-chip[data-mode='agent'] .prompt-mode-repo { color: var(--sub); }
+.prompt[data-mode='agent'] .prompt-in { font-family: var(--sans); }
 /* Edit's pill on paper ringed in ink, a pen's line round it (edit-box.ts): its pencil, the file in front and the caret's
    line, a long name cut short. The yellow is the file's, where the work is, never the pill's. */
 .prompt-chip[data-mode='edit'] { padding-left: var(--s2); background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--ink); }
@@ -224,7 +230,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:focus-within)::after { opa
 .prompt-keys > kbd, .prompt-sends > kbd { color: var(--sub); border-color: var(--rule); }
 .prompt-keys > kbd:last-child { font: 600 13px/1 var(--mono); }
 .prompt-keys > kbd.tick { padding-top: 6px; font-size: 15px; } /* a backtick is drawn at the top of its letter's room */
-.prompt:is([data-mode='issue'], [data-mode='todo']) .prompt-keys { visibility: hidden; } /* Ctrl+` brings the box running */
+.prompt:is([data-mode='issue'], [data-mode='todo'], [data-mode='agent']) .prompt-keys { visibility: hidden; } /* Ctrl+` brings the box running */
 /* Written in, the keys that send what is in it stand in their place, beside Run (Create, Add): Enter alone is a new
    line. Edit sends nothing (what is typed is in the file already): its Ctrl G stays. */
 .prompt-sends, .prompt:not([data-mode='edit']):focus-within .prompt-keys, .prompt[data-mode='edit'] .prompt-sends { visibility: hidden; }

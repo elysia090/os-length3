@@ -1,4 +1,5 @@
 import * as dotfiles from '../../home/dotfiles.ts';
+import {agentUse} from '../../home/agent-key.ts';
 import {store} from '../../repos/repos.ts';
 import {bytes, h} from '../../ui/dom.ts';
 import {isNative, promptOpen, rootFetch, rootStatus, type Holding, type Stopped} from '../../app/host.ts';
@@ -40,8 +41,11 @@ function loadWords(s: Stage): string {
   }
 }
 
-/** What a browser's Prompt's Worker is told to start with: l3, the repo's copy (`copy`), and what was kept of l3. */
-function startMessage(repo: string, l3: L3, copy: Awaited<ReturnType<typeof snapshot>>, kept: unknown) {
+/**
+ * What a browser's Prompt's Worker is told to start with: l3, the repo's copy (`copy`), what was kept of l3, and the
+ * Agent's key, if one is kept on this device, under its maker's variable (`key`), as the app's Prompts have it.
+ */
+function startMessage(repo: string, l3: L3, copy: Awaited<ReturnType<typeof snapshot>>, kept: unknown, key: string[]) {
   const cwd = `/root/${repo}`;
   return {
     type: 'start', translator: l3.translator,
@@ -53,7 +57,7 @@ function startMessage(repo: string, l3: L3, copy: Awaited<ReturnType<typeof snap
     argv: ['/bin/sh', '-i'],
     // l3 here sees repos where the shell does, under /root; its shell reads as the app's.
     env: ['HOME=/root', 'TERM=dumb', 'LENGTH3_REPOS=/root', 'L3_PROMPT=1', `LENGTH3_LANG=${currentLang()}`, `LENGTH3_REPO=${repo}`,
-      'PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', 'ENV=/etc/length3/shrc'],
+      'PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', 'ENV=/etc/length3/shrc', ...key],
     cwd,
     mirror: cwd,
     // The translations Prompts before it made of the root's programs, read when a program is first run.
@@ -174,6 +178,8 @@ export class Session {
    * Prompt's flow as it came, pressed to `go` to it (output.ts). Its line is returned, there now, for what lands on it.
    */
   note(head: string, words: string, go: (row: HTMLElement) => void): HTMLElement { return this.out.note(head, words, go); }
+  /** Under a question asked of the Agent (`row`, note's), where its answer comes in (output.ts). */
+  answer(row: HTMLElement): HTMLElement { return this.out.answer(row); }
 
   /** The line over what is folded away. */
   private earlier: HTMLButtonElement;
@@ -287,11 +293,11 @@ export class Session {
     this.worker = worker;
     worker.postMessage({type: 'warm'});
     worker.onmessage = ({data}) => this.fromWorker(data);
-    const [l3, copy, kept] = await Promise.all([loadL3(), snapshot(this.repo), loadL3().then(keptNow).catch(() => null)]).finally(unwatch);
+    const [l3, copy, kept, use] = await Promise.all([loadL3(), snapshot(this.repo), loadL3().then(keptNow).catch(() => null), agentUse()]).finally(unwatch);
     // Stopped while it came: it stays stopped.
     if (this.worker !== worker) return;
     this.l3of = l3;
-    worker.postMessage(startMessage(this.repo, l3, copy, kept));
+    worker.postMessage(startMessage(this.repo, l3, copy, kept, use ? [`${use.variable}=${use.key}`] : []));
     // What is saved elsewhere comes into the shell's copy.
     this.unwatch = mirror(this.repo, this.id, (m) => this.worker?.postMessage(m));
     // Running is the usual state and says nothing; only what is missing is said. Until the shell says its first

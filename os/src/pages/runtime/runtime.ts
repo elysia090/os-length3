@@ -13,6 +13,7 @@ import {environment} from './environment.ts';
 import {desktopApp} from './desktop-app.ts';
 import {sshSection} from './ssh.ts';
 import {dotfilesSection} from './dotfiles.ts';
+import {agentSection} from './agent-part.ts';
 
 // Runtime: this device, then what the OS holds on it, then what is running,
 // then the environment actually in effect (what runs, not what was asked for).
@@ -29,9 +30,9 @@ import {dotfilesSection} from './dotfiles.ts';
  * what is read is read again, a dotfile half written stays.
  */
 export function runtime(ctx: Context): Node[] {
-  const page = parts<'device' | 'prompts' | 'environments' | 'dotfiles'>('runtime', [
+  const page = parts<'device' | 'prompts' | 'environments' | 'dotfiles' | 'agent'>('runtime', [
     {id: 'device', label: isNative ? t('This device') : t('This browser')}, {id: 'prompts', label: t('Prompts running')},
-    {id: 'environments', label: t('Environments')}, {id: 'dotfiles', label: t('Dotfiles')}]);
+    {id: 'environments', label: t('Environments')}, {id: 'dotfiles', label: t('Dotfiles')}, {id: 'agent', label: t('Agent')}]);
   const holder = h('div', {}, h('section', {class: 'section'}, h('p', {class: 'muted'}, t('Measuring…'))));
   let last: Freed | null = null;
   const read = (): void => void readSpace(allSessions().filter(([, s]) => s.running).map(([repo]) => repo)).then((u) => {
@@ -58,6 +59,8 @@ export function runtime(ctx: Context): Node[] {
     h('section', {class: 'section', 'aria-labelledby': 'env-title'}, h('h2', {id: 'env-title'}, t('Environment in effect')), environment()),
     ...(isNative ? [] : [desktopApp()])), sshSection());
   page.panel('dotfiles').append(dotfilesSection(restarted, (n) => page.count('dotfiles', n)));
+  // The Agent's key apart from the dotfiles: a dotfile is the person's, on every device; the key is this device's alone.
+  page.panel('agent').append(agentSection());
   return [pageHead('runtime'), h('div', {class: 'part-bar'}, page.switch),
-    page.panel('device'), page.panel('prompts'), page.panel('environments'), page.panel('dotfiles')];
+    page.panel('device'), page.panel('prompts'), page.panel('environments'), page.panel('dotfiles'), page.panel('agent')];
 }

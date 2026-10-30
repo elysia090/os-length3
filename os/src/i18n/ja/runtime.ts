@@ -122,4 +122,11 @@ export default {
   'x86-64 Linux · .deb · {size}': 'x86-64 Linux · .deb · {size}',
   'x86-64 Linux · AppImage · {size}': 'x86-64 Linux · AppImage · {size}',
   'Download': 'ダウンロード',
+  // The Agent's key (agent-part.ts): this device's alone, beside the dotfiles.
+  'Agent': 'Agent',
+  'API key': 'API キー',
+  'Paste an API key': 'API キーを貼り付ける',
+  'Trying the key…': 'キーを試しています…',
+  'Kept on this device alone: in no dotfile, never sent to the Remote.': 'このデバイスだけに置かれます。dotfile には入らず、Remote にも送られません。',
+  'The box\'s Agent asks with it, and the Prompts started here have it.': 'ボックスの Agent がこれで聞き、ここで始める Prompt にも渡ります。',
 } as Record<string, string>;

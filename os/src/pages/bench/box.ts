@@ -6,15 +6,20 @@ import {t} from '../../i18n.ts';
 import {complete, pathWord, Recall} from '../../prompt/recall.ts';
 import {kindOf} from '../../repos/text.ts';
 import {onChange, onRenamed, store, type Entry} from '../../repos/repos.ts';
-import {boxMode, modeHint, modeMenu, MODES, nextIssue, onBoxMode, pillWords, sendAs, sendInto, sendTitle, sendWord, setBoxMode, turn, type Mode} from './box-modes.ts';
+import {boxMode, modeHint, modeMenu, modesNow, nextIssue, onBoxMode, pillWords, sendAs, sendInto, sendTitle, sendWord, setBoxMode, turn, type Mode} from './box-modes.ts';
 import type {Screen, ScreenState} from './screen.ts';
 import {sessionFor, sessionIfAny, terminalFor} from './terminal.ts';
 import {PillLine} from './pill-line.ts';
 import {EditLine} from './edit-box.ts';
+import {agentKey, agentUse} from '../../home/agent-key.ts';
+import {setRightPane} from '../pane.ts';
+import {answer, told} from './agent.ts';
 
 // The box at the foot of a work page's center (DESIGN.md § Forge, The box at the foot): one field, and at its left a
 // pill that says what it does: Run in the repo's Prompt (the pill the prompt line the shell waits at, pill-line.ts),
-// Write an issue, Add to TODO (box-modes.ts), Edit the file in front (edit-box.ts). Enter is a new line and Ctrl+Enter
+// Write an issue, Add to TODO (box-modes.ts), Edit the file in front (edit-box.ts), and with an API key kept on this
+// device, Ask the Agent (agent.ts), which never brings the Prompt up: its answer comes into the right pane, under the
+// question, among what was run. Enter is a new line and Ctrl+Enter
 // sends, as in every box one writes in, the keys said on caps beside the box's button while it is written in; Edit's
 // lines are one line each, done with Enter. Escape gives the keyboard back to what had it before the box.
 //
@@ -138,6 +143,8 @@ export class Box {
       // choose what the box does next); only from somewhere else of its own does it go nowhere in particular.
       closed: (before) => { if (!before || before === this.prompt || before === this.chip || before === document.body) this.prompt.focus(); else (document.activeElement as HTMLElement | null)?.blur(); }});
     this.dock.append(this.#menu.element);
+    // Whether a key is kept here, read once, before the pill is first pressed: the Agent is among what it brings only then.
+    void agentKey();
     this.#wire(caps);
     this.#stepsBack();
     this.#byItself();
@@ -365,11 +372,15 @@ export class Box {
 
   // ---- What is done in it.
 
-  /** What is in the box goes to the repo's Prompt (an ended one is started again first), or is made as an issue or a TODO. */
+  /**
+   * What is in the box goes to the repo's Prompt (an ended one is started again first), is made as an issue or a TODO,
+   * or is asked of the Agent.
+   */
   #send() {
     const repo = this.#repo;
     if (!repo) return;
     if (this.#mode === 'edit') return;
+    if (this.#mode === 'agent') { void this.#ask(repo); return; }
     if (this.#mode !== 'run') { void this.#write(this.#mode, repo); return; }
     const s = sessionIfAny(repo);
     // Ended: started again, and what was written waits in the box to be sent once it is up.
@@ -399,13 +410,41 @@ export class Box {
         this.#refuse(kind ? t('Write its title after {kind}：', {kind}) : t('Its first line is its title'));
         return;
       }
-      // Pressed, it goes to where it is: the issue in Git, the TODO on Home.
+      // Pressed, it goes to where it is: the issue in Git, the TODO on Home. Its line in this box's pane, never in
+      // another page's that had the repo's Prompt last.
+      this.attach();
       const to = sent.to;
       const row = sessionFor(at).note(sent.head, sent.words, () => this.#p.went(at, 'issue' in to ? {issue: to.issue} : 'todo'));
       if (this.prompt.value === text) { land(row); this.prompt.value = ''; drafts.delete(this.#draft()); this.#fit(); }
       this.heard.textContent = sent.said;
       this.#pillSays();
     } catch (e) { this.#say(errorText(e)); }
+  }
+
+  /**
+   * A question written in the box, asked of the Agent: it goes on into the right pane (brought out for it), a line of
+   * its own in the repo's flow, and the answer comes in under it as it is written; pressed, the question is back in
+   * the box to be asked again or put otherwise. The box is emptied for the next.
+   */
+  async #ask(at: string) {
+    const question = this.prompt.value.trim();
+    if (!question) return;
+    const use = await agentUse();
+    if (!use) { this.#refuse(t('No API key on this device: give one in Runtime')); return; }
+    if (this.prompt.value.trim() !== question) return;
+    const front = this.#edit.inFront();
+    const land = sendInto(this.prompt);
+    setRightPane(true);
+    // The repo's Prompt in this box's pane (another page's box may have it), where the question and its answer go.
+    this.attach();
+    const session = sessionFor(at);
+    const row = session.note('Agent', question, () => { this.choose('agent'); this.#put(question); this.prompt.focus(); });
+    land(row);
+    this.prompt.value = '';
+    drafts.delete(this.#draft());
+    this.#fit();
+    this.heard.textContent = t('Asked the Agent');
+    await answer(session.answer(row), at, use, await told(at, front), question);
   }
 
   /** The repo's directory `dir` as Tab reads it, read once and kept until the repo changes. */
@@ -502,7 +541,7 @@ export class Box {
   #modeKey(event: KeyboardEvent): boolean {
     if (!event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return false;
     const n = /^Digit([1-9])$/.exec(event.code)?.[1];
-    const m = n ? MODES[Number(n) - 1] : undefined;
+    const m = n ? modesNow()[Number(n) - 1] : undefined;
     if (m) { event.preventDefault(); this.choose(m); return true; }
     if (event.key !== 'ArrowDown' || this.prompt.disabled) return false;
     event.preventDefault();

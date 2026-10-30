@@ -60,7 +60,7 @@ test('a dotfile with a name that is not one is not saved, and says why', async (
 test('Runtime is in parts as Remote is: the one chosen shows, the others blend into the ground until pressed', async ({app}) => {
   await app.runtime.open('This browser');
   const tabs = app.main.getByRole('tablist', {name: 'Runtime'});
-  await expect(tabs.getByRole('tab')).toHaveText([/^This browser/, /^Environments/, /^Dotfiles/]);
+  await expect(tabs.getByRole('tab')).toHaveText([/^This browser/, /^Environments/, /^Dotfiles/, /^Agent/]);
   // No Prompt runs: its part is not offered.
   await expect(app.runtime.part('Prompts running')).toHaveCount(0);
   await expect(app.main.getByRole('tabpanel', {name: /^This browser/})).toBeVisible();
@@ -85,10 +85,10 @@ test('Runtime is in parts as Remote is: the one chosen shows, the others blend i
   await app.runtime.part('This browser').click();
   const on = tabs.locator('.parts-on');
   await expect(on).toBeVisible();
-  await expect(app.runtime.part('Dotfiles')).not.toBeInViewport({ratio: 1});
+  await expect(app.runtime.part('Agent')).not.toBeInViewport({ratio: 1});
   await expect(async () => {
     if (await on.isVisible()) await on.click();
-    await expect(app.runtime.part('Dotfiles')).toBeInViewport({ratio: 1, timeout: 500});
+    await expect(app.runtime.part('Agent')).toBeInViewport({ratio: 1, timeout: 500});
   }).toPass();
   await expect(on).toBeHidden();
   await app.runtime.part('Environments').click();

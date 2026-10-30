@@ -625,9 +625,9 @@ class Remote extends Part {
 /** Runtime: this device, the environments, the dotfiles. */
 class Runtime extends Part {
   /** One of its parts, by the heading that switches to it (a count may follow the word). */
-  part(name: 'This browser' | 'Prompts running' | 'Environments' | 'Dotfiles') { return this.main.getByRole('tab', {name: new RegExp(`^${name}`)}); }
+  part(name: 'This browser' | 'Prompts running' | 'Environments' | 'Dotfiles' | 'Agent') { return this.main.getByRole('tab', {name: new RegExp(`^${name}`)}); }
   /** Runtime, at part `name`. */
-  async open(name: 'This browser' | 'Prompts running' | 'Environments' | 'Dotfiles') {
+  async open(name: 'This browser' | 'Prompts running' | 'Environments' | 'Dotfiles' | 'Agent') {
     await this.app.rail.go('runtime');
     await this.part(name).click();
     await expect(this.part(name)).toHaveAttribute('aria-selected', 'true');

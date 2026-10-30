@@ -10,6 +10,7 @@
 //! Every other module says `#![forbid(unsafe_code)]`, so none is added there.
 
 pub mod account;
+pub mod agent_key;
 pub mod agents;
 pub mod api;
 pub mod atomic;

@@ -1,7 +1,7 @@
 import {expect, test} from './fixtures.ts';
 import type {Locator} from '@playwright/test';
 
-// The box at the foot does more than run: its pill says what it does and, pressed, brings out the four it can
+// The box at the foot does more than run: its pill says what it does and, pressed, brings out what it can
 // (box-modes.ts), Edit among them (edit-box.ts). None of it needs the Prompt running.
 
 // Each test opens the app on 'hello', made from C's files once for the worker and kept (fixtures.ts, helloC).
