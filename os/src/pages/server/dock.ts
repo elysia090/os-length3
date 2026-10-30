@@ -93,7 +93,9 @@ function writeIn(b: Shown, guest: servers.GuestHere | null, note: HTMLElement, n
   });
   // Pressed, the keyboard stays where one writes, for the next.
   post.addEventListener('click', () => { void send(); field.focus({preventScroll: true}); });
-  if (b.member) queueMicrotask(() => { field.focus(); field.setSelectionRange(field.value.length, field.value.length); });
+  // The keyboard there as the board is drawn, nothing scrolled for it: come to from another page, the page is still
+  // rising in from under the window (main.ts select), and the field reached for there pulled it up and away.
+  if (b.member) queueMicrotask(() => { field.focus({preventScroll: true}); field.setSelectionRange(field.value.length, field.value.length); });
   form.append(field, post);
   worded();
   return form;
@@ -128,6 +130,6 @@ function guestIn(b: Shown, code: string, ways: DockWays): HTMLElement {
   };
   join.addEventListener('click', () => void go());
   name.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); void go(); } });
-  queueMicrotask(() => name.focus());
+  queueMicrotask(() => name.focus({preventScroll: true}));
   return box;
 }

@@ -229,7 +229,7 @@ export function newRepo(ctx: Context): Node[] {
   void list.refresh();
   showFiles();
   sized();
-  queueMicrotask(() => name.focus());
+  queueMicrotask(() => name.focus({preventScroll: true}));
   return [pageHead('new-repo'), h('div', {class: 'new-repo-wrap'}, form),
     h('section', {class: 'section', 'aria-labelledby': 'new-repo-list'}, h('h2', {id: 'new-repo-list'}, t('Repos')), list.element)];
 }

@@ -285,8 +285,9 @@ export class ServerView {
       if (!this.here.naming?.isConnected || !me?.addresses[0]) return;
       this.side.ghost(me.addresses[0].address);
     });
-    // Drawn as the page is built: the keyboard goes to it once it is on the page.
-    queueMicrotask(() => making.name.focus());
+    // Drawn as the page is built: the keyboard goes to it once it is on the page, which is not scrolled for it (it may
+    // be rising in from under the window yet, main.ts select).
+    queueMicrotask(() => making.name.focus({preventScroll: true}));
   }
 
   /** Made: the faint shapes stand whole where they were, its chip taking it in with a pop. */

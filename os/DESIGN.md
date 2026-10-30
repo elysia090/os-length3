@@ -121,6 +121,10 @@ Every value in `styles.css` comes from a token (§2).
     window goes on being drawn as it is, so a press made while it pans (the
     rail pressed again, the pane's button as the page comes up) lands on
     what is under the hand, never lost on a picture still on its way. The
+    keyboard given to a page as it is drawn (Server's line to post in, New
+    repo's name) scrolls nothing to reach it: coming up from under the
+    window, a page scrolled for it was pulled up and away with the page
+    left, the window empty until it was put back. The
     rail pressed again before the pan has moved (a double press, its keys
     held) goes straight to the place pressed last, from where it began, and
     pressed back to where it began it simply stays; once moving, the page
