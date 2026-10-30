@@ -1439,7 +1439,13 @@ named after this device ("README (ren-laptop).md", "README (Chrome
 Linux).md"), so neither is lost and the name says whose it is on every
 device.
 Files that cannot travel (a link, a file over 16 MB, a repo's own `.git`)
-are named and never sent; a repo holding them is never let go. Home's
+are named and never sent; a repo holding them is never let go. Nor does a
+file that holds a secret (core/src/secrets.rs): a model maker's API key, a
+Stripe live key, a GitHub token, or this device's own sign-in. A Prompt has
+the Agent's key in its environment, so whatever runs there could write it
+into a file; read before it goes, as a push is read by GitHub's push
+protection, that file stays here unsent, said as `secret sk-ant-…a9AA`, and
+Commit says which until it is taken out. Home's
 settings (profile, TODO, dotfiles) are kept there too, by the app and l3
 alike (src/remote/sync.ts, core/src/home.rs: one protocol, one record of what was
 agreed), each changed only from the version it was read at: unchanged
@@ -1484,7 +1490,11 @@ own app, the way a sign-in's page is checked). Done there, the page says
 to go back; the app reads again what changed when its window comes back.
 Every device is a session, listed on the Remote page and ended
 from any other. Sessions are bearer tokens, kept on the device (in the app
-with its settings, 0600).
+with its settings, 0600), and taken only signed (`token.signature`, as the
+session cookie is) with the Remote's secret: the token the database keeps
+is no way in by itself, so a copy of the database opens no session. What a
+provider hands over at sign-in (its access and refresh tokens) is kept
+encrypted with the same secret; nothing reads it.
 
 What leaves this system is kept to what is said here:
 

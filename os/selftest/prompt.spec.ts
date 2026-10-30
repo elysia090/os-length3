@@ -116,7 +116,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
 
   test('a run that takes a while says how long it has run, until it is done', async ({app}) => {
     await app.forge.run('sleep 4; echo slept');
-    await expect(app.forge.prompt.getByText(/^Running [2-9]s/)).toBeVisible({timeout: 30_000});
+    await expect(app.forge.prompt.getByText(/^Running \([2-9]s\)/)).toBeVisible({timeout: 30_000});
     await expect(app.forge.prompt).toContainText(/^slept$/m, {timeout: 60_000});
     await expect(app.forge.prompt.getByText(/^Running /)).toHaveCount(0);
   });

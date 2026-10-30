@@ -83,7 +83,7 @@ test('what was written is undone after going to Runtime and back, and to another
   await app.page.clock.install();
   await app.newRepo.make('other');
   await app.rail.go('forge');
-  const more = app.forge.band.getByRole('button', {name: /^Bring every repo out/});
+  const more = app.forge.band.getByRole('button', {name: /^Add all repos to band/});
   if (await more.isEnabled()) await more.click();
   await expect(app.forge.band.getByRole('button', {name: 'other', exact: true})).toBeVisible();
   await app.forge.band.getByRole('button', {name: 'hello', exact: true}).click();
@@ -408,7 +408,7 @@ test('the band\'s first button brings out the deeds for what is read now, under 
   const buttons = band.getByRole('button');
   const files = buttons.first();
   await expect(files).toHaveAccessibleName('Files: New, Rename, Delete');
-  await expect(buttons.last()).toHaveAccessibleName(/^Bring every repo out/);
+  await expect(buttons.last()).toHaveAccessibleName(/^Add all repos to band/);
   await files.click();
   // Its menu, under it, here: File stays where it is.
   const menu = app.page.getByRole('menu', {name: 'Makefile', exact: true});
@@ -457,7 +457,7 @@ test('repos stand side by side: Ctrl+click or a pill dragged in opens one beside
   await app.newRepo.make('notes');
   await app.newRepo.make('site');
   await app.rail.go('forge');
-  const more = app.forge.band.getByRole('button', {name: /^Bring every repo out/});
+  const more = app.forge.band.getByRole('button', {name: /^Add all repos to band/});
   if (await more.isEnabled()) await more.click();
   const box = (n: string) => app.main.locator(`.col[data-repo="${n}"]`);
   const prompt = app.forge.promptBox;
@@ -599,7 +599,7 @@ test('the prompt box stepped back while reading comes back when the pointer rest
 test('a pill dragged along the band lands where it is let go', async ({app}) => {
   await app.newRepo.make('notes');
   await app.rail.go('forge');
-  const more = app.forge.band.getByRole('button', {name: /^Bring every repo out/});
+  const more = app.forge.band.getByRole('button', {name: /^Add all repos to band/});
   if (await more.isEnabled()) await more.click();
   const names = () => app.forge.band.locator('.pill').evaluateAll((ps) => ps.map((p) => (p as HTMLElement).dataset.repo));
   const before = await names();
@@ -645,7 +645,7 @@ test('the row leans toward a box beside as far as the pointer goes into it, and 
   await app.newRepo.make('notes');
   await app.rail.go('forge');
   const box = (n: string) => app.main.locator(`.col[data-repo="${n}"]`);
-  const more = app.forge.band.getByRole('button', {name: /^Bring every repo out/});
+  const more = app.forge.band.getByRole('button', {name: /^Add all repos to band/});
   if (await more.isEnabled()) await more.click();
   await app.forge.band.getByRole('button', {name: 'hello', exact: true}).click();
   await app.forge.band.getByRole('button', {name: 'notes', exact: true}).click({modifiers: ['ControlOrMeta']});

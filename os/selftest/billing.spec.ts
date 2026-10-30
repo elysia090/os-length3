@@ -123,6 +123,6 @@ test('cancelled in the portal, it stays to the period\'s end and the Plan says u
   await expect(app.stripe.subscription).toContainText('Your plan renews on');
   await app.page.getByRole('link', {name: 'Return to length3'}).click();
   await app.settled();
-  await expect(app.remote.told).toHaveText(/^Pro goes on: it renews /);
+  await expect(app.remote.told).toHaveText(/^Pro active: renews on /);
   await expect(app.remote.plan).toContainText(/Renews /);
 });

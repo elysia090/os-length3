@@ -752,13 +752,13 @@ class Server extends Part {
    */
   async addSomeone(who: string) {
     await this.view.getByRole('button', {name: 'Manage members, boards, and repos'}).click();
-    await this.view.getByRole('tab', {name: /^People/}).click();
+    await this.view.getByRole('tab', {name: /^Members/}).click();
     await this.view.getByRole('button', {name: 'Add contact'}).click();
     const typed = this.view.getByRole('textbox', {name: 'Enter username or invite code'});
     await expect(typed).toBeFocused();
     await typed.fill(who);
     await this.view.getByRole('button', {name: 'Add', exact: true}).click();
-    return this.view.getByRole('tabpanel', {name: /^People/}).getByRole('status');
+    return this.view.getByRole('tabpanel', {name: /^Members/}).getByRole('status');
   }
 
   /** Post `text` in `board` from the box at the foot (Ctrl+Enter sends). */

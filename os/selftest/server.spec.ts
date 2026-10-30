@@ -109,7 +109,7 @@ test('someone added by name is asked in their Inbox, and is in the server once t
   // every little while (15 s).
   await expect(ada.server.side).toContainText(bo.handle, {timeout: 30_000});
   // And behind the gear, where it was asked, People counts them.
-  await expect(ada.server.view.getByRole('tab', {name: /^People\s?2$/})).toBeVisible({timeout: 30_000});
+  await expect(ada.server.view.getByRole('tab', {name: /^Members\s?2$/})).toBeVisible({timeout: 30_000});
   // Added already, the card says so rather than asking again.
   await ada.server.close();
   await ada.server.open();
@@ -329,7 +329,7 @@ test('someone one knows added at once is told in their Inbox by the Remote\'s no
   await expect(ada.server.chip('Books')).toBeChecked();
   // The two know each other: Bo is in at once.
   await ada.server.addSomeone(bo.handle);
-  await expect(ada.server.view.getByRole('tabpanel', {name: /^People/})).toContainText(bo.handle);
+  await expect(ada.server.view.getByRole('tabpanel', {name: /^Members/})).toContainText(bo.handle);
 
   await bo.comeBack();
   await bo.rail.go('inbox');
@@ -374,7 +374,7 @@ test('an empty board says so at its talk\'s foot, by the box one writes in; a bo
 
   // New board's line breaks where its sentence does.
   await app.server.view.getByRole('button', {name: 'Next board'}).click();
-  const about = app.server.view.getByText(/^A board is one thing to talk about/);
+  const about = app.server.view.getByText(/^A board groups discussions/);
   await expect(about.locator('br')).toHaveCount(1);
   await expect(about).toHaveText('A board groups discussions and shared tasks around a topic:e.g. trips, releases, or study groups.');
 

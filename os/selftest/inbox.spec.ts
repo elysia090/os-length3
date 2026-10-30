@@ -80,7 +80,7 @@ test('a name no one has is said under the field, and nothing is opened', async (
   await ada.inbox.conversations.getByRole('textbox', {name: 'Send to username or code'}).fill('no-one-here');
   await ada.inbox.conversations.getByRole('button', {name: 'Compose', exact: true}).click();
 
-  await expect(ada.inbox.conversations.getByRole('alert')).toHaveText(/^Cannot reach no-one-here \(/);
+  await expect(ada.inbox.conversations.getByRole('alert')).toHaveText(/^Cannot deliver to no-one-here \(/);
   await expect(ada.inbox.message).toHaveCount(0);
 });
 

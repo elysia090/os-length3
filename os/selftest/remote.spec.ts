@@ -85,7 +85,7 @@ test('a repo is turned off from its card in one ask, kept off, and its switch br
   await app.remote.turnOff('hello');
 
   const card = app.remote.card('hello');
-  await expect(card).toContainText(/Off · back until /);
+  await expect(card).toContainText(/Disabled · Recoverable until /);
   await expect(app.remote.power('hello')).not.toBeChecked();
   await expect(app.remote.power('hello')).toHaveAccessibleName('Enable hello');
   // Off, Forge is what frees the copy here, and Discard is beside it.
