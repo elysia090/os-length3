@@ -20,7 +20,7 @@ test('choosing 日本語 shows the page in Japanese, and it stays chosen', async
 
 test('in Japanese, the Remote, File and Inbox say each thing with the one word the catalog gives it', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
-  await app.inbox.claim();
+  await app.inbox.named();
   await app.me.language('English', '日本語');
 
   await app.rail.go('remote');

@@ -2,7 +2,6 @@
 export default {
   'A name is 2–31 letters, digits, dots, dashes or underscores': '名前は英小文字・数字・. - _ の2〜31文字です',
   'The domain does not name this account yet': 'そのドメインはまだこのアカウントを名乗っていません',
-  'Claim a name first': '先に名前を取ってください',
   'They do not accept messages from you': '相手はあなたからのメッセージを受けていません',
   'Wait for them to answer before writing more': '相手の返事を待ってから書いてください',
   'They have too many requests waiting': '相手のもとにリクエストがたまっています',
@@ -50,7 +49,6 @@ export default {
   // Names: on this Remote, first come, theirs as long as they keep it; a code to be found by; a domain's beside.
   'Your names': 'あなたの名前',
   'Your code {code}': 'あなたのコード {code}',
-  'A name on this Remote: first come, and yours for as long as you keep it.': 'この Remote での名前です。早い者勝ちで、手放すまであなたのものです。',
   'Add a domain': 'ドメインを足す',
   'name@example.org': '名前@example.org',
   'Name on your domain': '自分のドメインでの名前',
@@ -60,5 +58,4 @@ export default {
   'its domain no longer names this Remote': 'そのドメインはもうこの Remote を指していません',
   'Inbox has messages not read': 'Inbox に未読のメッセージがあります',
   'Take a name': '名前を取る',
-  'Take it': '取る',
 } as Record<string, string>;

@@ -70,6 +70,16 @@ pub fn claim(address: &str) -> Result<String> {
     }
 }
 
+/// Your username changed to `name`: the one it was is held for you 30 days (yours to change back to).
+pub fn set_username(name: &str) -> Result<String> {
+    match Client::open()?.call("PUT", "/v1/inbox/username", Some(serde_json::json!({"name": name.trim().trim_start_matches('@')})))? {
+        Reply::Ok(v) => Ok(v["address"].as_str().unwrap_or_default().to_string()),
+        Reply::Conflict(v) if v["until"].is_number() => Err(crate::tr!("That name was let go, and is held for its owner a while", "その名前は手放されたばかりで、しばらく元の持ち主のために取り置かれています")),
+        Reply::Conflict(_) => Err(crate::tr!("That name is taken", "その名前は使われています")),
+        Reply::NotFound(_) => Err(crate::tr!("The Remote has no Inbox", "Remote に Inbox がありません")),
+    }
+}
+
 /// What a domain's DNS must say for this account to hold addresses on it, and whether it says so now.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Record { pub name: String, #[serde(rename = "type")] pub kind: String, pub value: String, pub found: bool }
@@ -97,7 +107,7 @@ pub fn send(to: &str, body: &str, kind: &str, repo: Option<&str>) -> Result<bool
     let v = Client::open()?.call("POST", "/v1/inbox/messages", Some(serde_json::json!({"to": to, "body": body, "type": kind, "target": target})))?;
     match v {
         Reply::Ok(v) => Ok(v["request"].as_bool().unwrap_or(false)),
-        Reply::Conflict(_) => Err(crate::tr!("Claim a name first (l3 name claim NAME)", "先に名前を取ってください（l3 name claim NAME）")),
+        Reply::Conflict(v) => Err(v["error"].as_str().unwrap_or("Not sent").to_string()),
         Reply::NotFound(_) => Err(crate::tr!("No one has that name", "その名前の人はいません")),
     }
 }

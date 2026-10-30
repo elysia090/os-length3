@@ -821,16 +821,23 @@ trusted for one thing only:
 2. **A passkey** is then the person's own key: from there on they sign in
    without the provider, and a turn-off or a new device asks for it. A
    device holds a lease on the person, never the person.
-3. **The Remote** keeps what is theirs and gives them a name, `ren`: first
-   come, and theirs as long as they keep it, as a username is anywhere:
-   nothing to renew, nothing that lapses (let go, it is held for them 30
-   days, then anyone's).
+3. **The Remote** keeps what is theirs and gives them a name, `ren`, their
+   **username**, at the first sign-in, as a username is given anywhere: made
+   of what the provider calls them (`Zoë Ada` is `zoe-ada`; a handle written
+   on Home first, where there is one), the next free one if it is taken
+   (`ren2`). Nobody is asked to claim a name before being anyone: making a
+   server, writing to someone or showing a repo never waits on one. It is
+   theirs as long as the account is: nothing to renew, nothing that lapses.
+   It is changed, never let go (Home's handle, `l3 name set`), at most twice
+   an hour; the one it was is held for them 30 days, so nobody is taken for
+   them meanwhile and they may change back, and what went public under it as
+   their own goes on under the new one. Home's handle is this name: one name
+   others find them by, kept on the Remote.
    It is a name on this Remote, not a domain anyone holds: it is kept as
    `ren@length3.com` only because that is where it is kept, and is shown
-   alone, everywhere, as Home shows one's handle: taken, it is written alone
-   too (no @ part after the field), and nothing after an @ is the person's to
-   think of; a name on a domain of one's own waits behind the gear of the name
-   once it is taken. With it comes a **code**, six digits (`204816`), to be found by
+   alone, everywhere, as Home shows one's handle: nothing after an @ is the
+   person's to think of; a name on a domain of one's own waits behind the
+   gear of the name. With it comes a **code**, six digits (`204816`), to be found by
    when a name is hard to say or spell: given once, never given again, so a
    code that reached someone goes on meaning them or no one. Most people stop
    here, and need nothing more.
@@ -889,7 +896,8 @@ nobody else can take it and be taken for its owner:
 | What | Owned by | Trusted for it | Let go |
 |---|---|---|---|
 | a domain | the person, or the server, it was proven for | its DNS (checked again on use) | its names stop answering when its record is gone; 30 days later they are let go |
-| a name on the Remote (`ren`, `trip`) | its account, or the server's owner | its Remote, as long as they keep it | let go: 30 days no one else can claim it; its owner may take it back |
+| a username (`ren`) | its account | its Remote, as long as the account is | changed, never let go: the one it was is held 30 days, and theirs to change back to |
+| another name on the Remote (`trip`, or a second of a person's) | its account, or the server's owner | its Remote, as long as they keep it | let go: 30 days no one else can claim it; its owner may take it back |
 | a name on a domain (`ren@ren.dev`) | its account, or the server | its domain's DNS | let go: 30 days held as above |
 | a code (`204816`) | its principal | its Remote | never given again |
 | a repo | a principal | its Remote, and the digests | turned off: 30 days, then gone |
@@ -1545,6 +1553,10 @@ into the room it makes; saved with new initials, once it has folded, the
 face turns round to show them. Opened from the person's menu, it is drawn
 open as Home comes in: the arrival is its beat. Enter on the name or the handle
 saves; Escape leaves it as it was. The rail's face is the new one at once.
+The handle is offered signed in only: it is the username (§5, Names), how
+others find them, so changed here it is changed on the Remote first, and
+what the Remote says no to (taken, held for its owner, changed twice this
+hour) is said at the handle, nothing saved; left empty, it stays as it was.
 
 Home's right pane (the same pane and switch as Forge's and Git's) has
 their top line: the search box where theirs is, beside the switch, in the
@@ -2680,15 +2692,11 @@ in it, shown alone (§5), and your code beside it (pressing either copies
 it, and it says Copied for a moment in the same place; there is no Copy
 button), its gear at the right end; a name, not a field, so it stands on
 the ground with a place's line (`rule`), each part lifting under the pointer,
-and the field under it is the one that reads as a field. Before there is one,
-the stub is the name to claim, in the sign-in card's place; Enter claims,
-and the field goes up into the stub it becomes, its name in it (no empty
-outline flown in its place), turning from a field into a name; as it lands
-its code and gear come in beside it and what the Inbox holds comes in under
-it. No sheet stands at the right until there is a conversation to show
-(not one drawn empty and taken away). The gear opens, over what is under it (Escape or a press
-outside closes it), a popover: your names with their terms (Renew near the
-end), then Add a domain; its first head starts at the box's own room, with no
+and the field under it is the one that reads as a field. There is always
+one: the username given at the first sign-in (§5), so the Inbox opens on it,
+never on a name to claim. No sheet stands at the right until there is a
+conversation to show (not one drawn empty and taken away). The gear opens, over what is under it (Escape or a press
+outside closes it), a popover: your names, then Add a domain; its first head starts at the box's own room, with no
 group's step before it. Letting a name go is not offered here (the Remote
 still lets a name go, `l3`'s way). Add a domain becomes, in its
 row, one field where the name is written whole, `name@domain` with the @
@@ -2861,9 +2869,10 @@ list read again under it. Its pieces, from §3:
   screen and stands under it, sliding with it board to board. What the name
   on this Remote is (first come, the server's as long as it keeps it) is said when the @ is
   pointed at; what the Remote says no to (the plan: making a server is
-  paid, §6; a name taken; one's own name to claim first) is said on a line
-  of its own under the band, where the row cannot slide it out of sight,
-  when it says it, with the way on (See the plan, Go to Inbox). Escape
+  paid, §6; a name taken) is said on a line of its own under the band,
+  where the row cannot slide it out of sight, when it says it, with the
+  way on (See the plan). One's own name is never asked for first: everyone
+  has their username from the first sign-in. Escape
   while one is named, come to from a server, goes back to that server
   (what was written is kept); the page stays.
   Being asked into a server, and writing, are free.

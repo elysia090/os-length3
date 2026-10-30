@@ -243,13 +243,25 @@ function counting(el: HTMLElement, n: number, one: string, many: string) {
 
 function identity(counts: HTMLElement): HTMLElement {
   const profile = currentProfile();
-  const named = profile.name || profile.handle;
-  const name = named ? h('h1', {}, profile.name || `@${profile.handle}`) : h('h1', {class: 'unset'}, t('No name yet'));
-  // One person, one name: none written here yet, it is the one signed in with (the Remote's), as Remote says it.
-  if (!named) void myName().then((n) => { if (n) { name.classList.remove('unset'); name.textContent = n; } }, () => {});
+  const name = h('h1', {}), handle = h('p', {class: 'handle'});
+  /** The name to be called by over the handle; the handle alone where there is no name. */
+  const paint = (called: string, user: string) => {
+    name.textContent = called || (user ? `@${user}` : t('No name yet'));
+    name.classList.toggle('unset', !called && !user);
+    handle.textContent = called && user ? `@${user}` : '';
+    handle.hidden = !handle.textContent;
+  };
+  paint(profile.name, profile.handle);
+  // Signed in, one person, one name: none written here yet, it is the one signed in with (the Remote's); and the
+  // handle is their username there, the one name others find them by, kept on the profile too as it changes.
+  void Promise.all([profile.name || myName().catch(() => ''), inbox.myUsername().catch(() => '')]).then(([called, user]) => {
+    if (!called && !user) return;
+    paint(called, user || profile.handle);
+    if (user && user !== profile.handle) void setState('profile', JSON.stringify({...profile, handle: user})).catch(() => {});
+  });
   return h('div', {class: 'identity'},
     name,
-    profile.handle && profile.name ? h('p', {class: 'handle'}, `@${profile.handle}`) : null,
+    handle,
     profile.bio ? h('p', {class: 'bio'}, profile.bio) : null,
     counts,
   );
@@ -336,6 +348,8 @@ function profileHeader(count: HTMLElement, owner: boolean): HTMLElement {
  * handle under it, the line about the person under that, each a line written on with room between them (an ink
  * line under the one with the keyboard); the counts, which are not written, step aside. Cancel and Save stand where
  * Edit profile stood. Enter on the name or the handle saves, Escape leaves it as it was. `faced` is told each change.
+ * The handle is offered signed in only: it is their username, how others find them, and changed here it is changed
+ * on the Remote first (taken, it says so at the handle, and nothing is saved).
  */
 function editForm(done: (saved: boolean) => void, faced: (p: {name: string; handle: string; bio: string}) => void): {element: HTMLElement; acts: HTMLElement} {
   const profile = currentProfile();
@@ -346,9 +360,12 @@ function editForm(done: (saved: boolean) => void, faced: (p: {name: string; hand
   const bio = h('textarea', {id: 'profile-bio', class: 'bio-in', maxlength: String(LIMITS.bio), rows: '1',
     placeholder: t('A line about you'), 'aria-label': t('Bio')}) as HTMLTextAreaElement;
   name.value = profile.name; handle.value = profile.handle; bio.value = profile.bio;
+  const signedIn = !!connection();
+  const was = signedIn ? inbox.myUsername().catch(() => profile.handle) : Promise.resolve(profile.handle);
+  void was.then((u) => { if (u && handle.value === profile.handle && handle.isConnected) handle.value = u; });
   // None written yet, the name shown is the one signed in with (identity): it is what is there to change, not an
   // empty line beside it. Nothing typed is written over, and the face takes it up as it would what is typed.
-  if (!profile.name && !profile.handle) {
+  if (!profile.name) {
     void myName().then((n) => {
       if (!n || name.value || !name.isConnected) return;
       name.value = n;
@@ -361,7 +378,7 @@ function editForm(done: (saved: boolean) => void, faced: (p: {name: string; hand
   requestAnimationFrame(fit);
   const error = h('p', {class: 'error', role: 'alert'});
   const form = h('form', {id: 'profile-form', class: 'edit identity'},
-    name, h('span', {class: 'handle-field'}, '@', handle), h('span', {class: 'bio-field'}, bio), error) as HTMLFormElement;
+    name, signedIn ? h('span', {class: 'handle-field'}, '@', handle) : null, h('span', {class: 'bio-field'}, bio), error) as HTMLFormElement;
   for (const f of [name, handle]) f.addEventListener('input', () => faced({name: name.value, handle: handle.value.replace(/^@/, ''), bio: ''}));
   const cancel = h('button', {class: 'button', type: 'button', 'data-cancel': ''}, t('Cancel'));
   const save = h('button', {class: 'button primary', type: 'submit', form: 'profile-form'}, t('Save'));
@@ -371,7 +388,14 @@ function editForm(done: (saved: boolean) => void, faced: (p: {name: string; hand
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const result = normalize({name: name.value, handle: handle.value, bio: bio.value});
-    if (result.error) { error.textContent = t('A handle is up to 32 lowercase letters, digits, - and _'); handle.focus(); nudge(handle); return; }
+    const atHandle = (said: string) => { error.textContent = said; handle.focus(); nudge(handle); };
+    if (result.error) { atHandle(t('A handle is 2–31 lowercase letters, digits, . - and _')); return; }
+    // Their username changed on the Remote first: taken, or changed too often, it is said at the handle. Left empty,
+    // it is as it was (a username is changed, never taken away).
+    if (signedIn && !result.profile.handle) result.profile.handle = await was;
+    if (signedIn && result.profile.handle && result.profile.handle !== await was) {
+      try { result.profile.handle = await inbox.changeUsername(result.profile.handle); } catch (e) { atHandle(errorText(e)); return; }
+    }
     try { await setState('profile', JSON.stringify(result.profile)); } catch (e) {
       error.textContent = t('Could not save: {message}', {message: errorText(e)});
       return;

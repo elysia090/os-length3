@@ -49,6 +49,10 @@ export default {
   // Inbox: addresses, messages, live chat.
   'That is not a domain': 'それはドメインではありません',
   'Too many names': '名前が多すぎます',
+  'Your name can change twice an hour': '名前を変えられるのは1時間に2回までです',
+  'Your username can be changed, not let go': 'ユーザー名は変えられますが、手放すことはできません',
+  'No name is free to give just now': 'いま渡せる名前がありません',
+  'That server has no name': 'そのサーバーには名前がありません',
   'That name is not yours': 'その名前はあなたのものではありません',
   'A message is at most 4000 characters': 'メッセージは4000文字までです',
   'That is you': 'それはあなたです',
@@ -151,5 +155,4 @@ export default {
   'No code is left to give just now': 'いまは渡せるコードが残っていません',
   'A file and a folder of the same name': '同じ名前のファイルとフォルダーがあります',
   'What was sent is not something the Remote keeps': '送られたものは Remote が保てるものではありません',
-  'That name\'s domain no longer names this account': 'その名前のドメインは、もうこのアカウントを指していません',
 } as Record<string, string>;

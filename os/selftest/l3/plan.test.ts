@@ -26,7 +26,7 @@ async function pay(page: string) {
 }
 
 test('l3 remote plan: free, the use against the allowance, the tiers, what paid adds; a repo past it waits here until paid', async () => {
-  ok(laptop.l3(['remote', 'plan']), new RegExp(['^Plan {2}free', ' {2}Repos on the Remote {2}0 of 1', ' {2}Kept on the Remote {2}\\d+ B of 100 MB', ' {2}Names on this Remote {2}0 of 1',
+  ok(laptop.l3(['remote', 'plan']), new RegExp(['^Plan {2}free', ' {2}Repos on the Remote {2}0 of 1', ' {2}Kept on the Remote {2}\\d+ B of 100 MB', ' {2}Names on this Remote {2}1 of 1',
     'Tiers', ' {2}Go {2}50 GB on the Remote · 7\\.00 USD a month', ' {2}Pro {2}256 GB on the Remote · 14\\.00 USD a month', ' {2}Max {2}512 GB on the Remote · 19\\.00 USD a month',
     'Paid adds', ' {2}Keep more than the free allowance on the Remote', '.*', '.*', 'l3 remote plan subscribe go\\|pro\\|max gives the page to subscribe on\\n$'].join('\\n')));
   ok(laptop.l3(['repo', 'new', 'one', '-t', 'empty']));

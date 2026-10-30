@@ -50,7 +50,7 @@
 
 import {and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, sql} from 'drizzle-orm';
 import type {Context, Hono} from 'hono';
-import {claim, codeOf, HOLD, liveAddress, serverAddress, shownAs, takeDown} from './names.ts';
+import {claim, codeOf, HOLD, liveAddress, NAME, nameFor, serverAddress, shownAs, takeDown} from './names.ts';
 import type {Plans} from './plan.ts';
 import {hmacHex} from './keys.ts';
 import {addressOf, ago, body, lock, qualified, refuse, rows, slowDown, throttled, type Db, type Vars} from './request.ts';
@@ -81,8 +81,6 @@ const INVITE = /^[0-9a-f]{32}$/;
  * text around or join it), so what one reads is what they chose.
  */
 const guestName = (n: string) => n.length > 0 && [...n].length <= SERVER.guest.name && !/[@\p{C}]/u.test(n);
-/** A principal's name before @, as an address's is (inbox.ts). */
-const NAME = /^[a-z0-9][a-z0-9._-]{1,30}$/;
 
 /** An id that sorts as its time: milliseconds in base 36 (nine places), then eight random places. */
 export function postId(now = Date.now()): string {
@@ -213,7 +211,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       await lock(tx, me);
       // Making one is the plan's to allow; being asked into one, and writing in it, never is.
       await d.plans?.makeServer(tx, me);
-      if (!await liveAddress(tx, me)) refuse(409, {error: 'Claim a name first'});
+      await nameFor(tx, me, d.domain);
       if (domain !== d.domain) {
         const [on] = await tx.select({a: address.address}).from(address).where(and(eq(address.userId, me), eq(address.domain, domain), isNull(address.releasedAt), isNull(address.lapsedAt)));
         if (!on) refuse(400, {error: 'Only on a domain you hold a name on'});
@@ -244,7 +242,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       await lock(tx, me);
       const [s] = await tx.select({name: server.name}).from(server).where(and(eq(server.id, id), eq(server.goneBy, me), sql`${server.goneAt} > ${ago(HOLD)}`));
       if (!s) refuse(404, {error: 'Nothing of yours to bring back'});
-      if (!await liveAddress(tx, me)) refuse(409, {error: 'Claim a name first'});
+      await nameFor(tx, me, d.domain);
       const [a] = await tx.select({address: address.address, name: address.name, domain: address.domain}).from(address).where(eq(address.serverId, id));
       if (a) await claim(tx, a.name, a.domain, {serverId: id});
       await tx.update(server).set({goneAt: null, goneBy: null}).where(eq(server.id, id));
@@ -444,10 +442,9 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       : await db.select().from(todoItem).where(where) as Item[];
     if (changed.length) return c.json(todoJson(changed[0]));
     if (typeof r?.title !== 'string' || typeof r.place !== 'number') return c.json({error: 'That item was taken off'}, 404);
-    if (!at.address) return c.json({error: 'Claim a name first'}, 409);
     // A moment as a client says it: whole milliseconds a bigint holds, else now (1e300 was a 500).
     const created = typeof r.created === 'number' && Number.isSafeInteger(r.created) && r.created >= 0 ? r.created : Date.now();
-    const by = at.address;
+    const by = at.address ?? await nameFor(db, c.get('userId'), d.domain);
     // Counted and made under the board's lock: many made at once are counted one by one.
     const [made] = await db.transaction(async (tx: Db) => {
       await lock(tx, `todo:${at.b.id}`);
@@ -512,8 +509,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
 
   v1.post('/boards/:id/posts', async (c) => {
     const at = await mine(c.req.param('id'), c.get('userId')) ?? notMine();
-    if (!at.address) return c.json({error: 'Claim a name first'}, 409);
-    return write(c, at.b, {userId: c.get('userId'), by: at.address});
+    return write(c, at.b, {userId: c.get('userId'), by: at.address ?? await nameFor(db, c.get('userId'), d.domain)});
   });
 
   v1.delete('/boards/:id/posts/:pid', async (c) => {

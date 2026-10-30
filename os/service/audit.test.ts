@@ -108,7 +108,7 @@ test('one with no name left is still removed, by the id the people list gives', 
   const made = await s.call('POST', '/v1/servers', {token: ren, body: {name: 'Trip'}});
   const sid = made.json.id as string, bid = (made.json.boards as {id: string}[])[0].id;
   await s.call('POST', `/v1/servers/${sid}/people`, {token: ren, body: {address: 'mio@length3.test'}});
-  assert.equal((await s.call('DELETE', '/v1/inbox/addresses/mio@length3.test', {token: mio})).status, 200);
+  // Let go long ago (as no username is now: an account from before usernames, whose name went with the sweep).
   await s.db.execute(sql`update address set released_at = now() - interval '31 days' where address = 'mio@length3.test'`);
   await sweep(s.db, s.files);
   const people = (await s.call('GET', `/v1/servers/${sid}/people`, {token: ren})).json as unknown as {address: string; id: string}[];
@@ -125,7 +125,7 @@ test('a TODO item\'s moment out of what a bigint holds is taken as now, not a 50
   assert.equal((await s.call('PUT', `/v1/boards/${bid}/todos/a1`, {token: ren, body: {title: 'x', place: 1, created: 1e300}})).status, 201);
 });
 
-test('a name on a domain whose DNS no longer names its holder writes nothing and makes no server', async () => {
+test('a name on a domain whose DNS no longer names its holder writes nothing and makes no server: their username does', async () => {
   const s = await service();
   const ren = await s.start('Ren'), mio = await s.start('Mio');
   await named(s, [ren, 'ren']);
@@ -134,8 +134,9 @@ test('a name on a domain whose DNS no longer names its holder writes nothing and
   assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'mio', domain: 'example.org'}})).status, 201);
   s.unpublish('_length3.example.org');
   assert.equal((await s.call('POST', '/v1/servers', {token: mio, body: {name: 'Club', address: 'club@example.org'}})).status, 400);
-  // Its only name's domain gone: nothing goes out from it.
-  assert.equal((await s.call('POST', '/v1/inbox/messages', {token: mio, body: {to: 'ren', from: 'mio@example.org', body: 'hi'}})).status, 409);
+  // Its only name's domain gone: nothing goes out from it; what is written goes as their username, given them now.
+  assert.equal((await s.call('POST', '/v1/inbox/messages', {token: mio, body: {to: 'ren', from: 'mio@example.org', body: 'hi'}})).status, 201);
+  assert.deepEqual(((await s.call('GET', '/v1/inbox/threads', {token: ren})).json as unknown as {address: string}[]).map((t) => t.address), ['mio@length3.test']);
 });
 
 test('Stripe: incomplete of the same second does not undo active; a failure delivered late does not spend the next one\'s grace', async () => {

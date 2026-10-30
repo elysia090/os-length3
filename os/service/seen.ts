@@ -22,7 +22,7 @@
 import {and, eq, inArray, isNull, not, sql} from 'drizzle-orm';
 import type {Context, Hono} from 'hono';
 import {blobKey, noFiles, type Bucket} from './bucket.ts';
-import {byCode, HOLD, live, liveAddress, serverAddress, shownAs, takeDown} from './names.ts';
+import {byCode, HOLD, live, nameFor, serverAddress, shownAs, takeDown} from './names.ts';
 import {addressOf, body, lock, qualified, refuse, rows, throttled, unchanged, type Db, type Vars} from './request.ts';
 import type {Edge} from './files.ts';
 import {address, blob, cut, line, member, repo, repoPublic, repoShare, server} from './schema.ts';
@@ -136,7 +136,7 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
         const now = (await states(tx, me, [name]))[0];
         const as = typeof b?.as === 'string' ? b.as : now.asServer ?? (ids ?? now.servers.map((s) => s.id))[0] ?? 'me';
         let face: string | null, serverId: string | null = null;
-        if (as === 'me') face = await liveAddress(tx, me);
+        if (as === 'me') face = await nameFor(tx, me, d.domain);
         else {
           const [s] = await inServers(tx, me, [as]);
           if (!s) refuse(403, {error: 'Only servers you are in'});
@@ -145,7 +145,7 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
           // Its face is that server's: it is shown there too.
           ids = [...new Set([...(ids ?? now.servers.map((x) => x.id)), s.id])];
         }
-        if (!face) refuse(409, {error: 'Claim a name first'});
+        if (!face) refuse(409, {error: 'That server has no name'});
         const got = await claim(tx, me, r, face, serverId);
         if (!got.ok) refuse(409, got.until ? {error: 'That name was let go, and is held for its owner a while', as: `${face}:${name}`, until: got.until}
           : {error: 'That name is taken', as: `${face}:${name}`});

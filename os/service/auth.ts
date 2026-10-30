@@ -32,6 +32,7 @@ import {bearer, deviceAuthorization, genericOAuth} from 'better-auth/plugins';
 import type {Hono, MiddlewareHandler} from 'hono';
 import {devOAuth} from './devoauth.ts';
 import {keyFor} from './keys.ts';
+import {nameFor} from './names.ts';
 import type {Vars} from './request.ts';
 import * as schema from './schema.ts';
 
@@ -65,6 +66,8 @@ export interface AuthConfig {
    * was made, never drawn out by use.
    */
   only?: string;
+  /** This Remote's own domain: an account made here is given its username on it (names.ts nameFor). */
+  domain?: string;
 }
 
 /** Which providers a Remote offers, in the order its sign-in shows them. */
@@ -144,6 +147,11 @@ export function createAuth(c: AuthConfig) {
     // A sign-in with a passkey is proof the person is at the device just now: turning a repo
     // off (and setting the code for it) asks for a session made that way minutes ago. Only the
     // latest is kept: one sign-in proves one session.
+    // A username from the first sign-in, as anywhere: made of what the provider calls them, the next free one if
+    // taken. Not given here (the Remote busy), it is given the first time one is needed.
+    ...(c.domain ? {databaseHooks: {user: {create: {after: async (u: {id: string}) => {
+      try { await nameFor(c.db, u.id, c.domain!); } catch { /* given when first needed */ }
+    }}}}} : {}),
     hooks: {
       after: createAuthMiddleware(async (ctx) => {
         if (ctx.path !== '/passkey/verify-authentication') return;

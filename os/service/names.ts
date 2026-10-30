@@ -16,9 +16,11 @@
 
 import {and, eq, isNull, sql, type SQL} from 'drizzle-orm';
 import {ago, refuse, type Db} from './request.ts';
-import {address, principalCode, repoPublic} from './schema.ts';
+import {address, home, principalCode, repoPublic, user} from './schema.ts';
 
 export const HOLD = 30 * 86_400_000;
+/** A principal's name before @ (schema.ts's `re.name`, as Postgres checks it). */
+export const NAME = /^[a-z0-9][a-z0-9._-]{1,30}$/;
 
 /** Names that answer: not let go, and (on a domain) still named by its DNS. */
 export const live = and(isNull(address.releasedAt), isNull(address.lapsedAt));
@@ -61,6 +63,48 @@ export async function claim(db: Db, name: string, domain: string, owner: Owner):
   if (done.length) return {ok: true};
   const [row] = await db.select({freed: sql<number | null>`floor(extract(epoch from ${address.releasedAt}) * 1000)::float8`}).from(address).where(eq(address.address, a)) as {freed: number | null}[];
   return row?.freed ? {ok: false, until: row.freed + HOLD} : {ok: false};
+}
+
+/**
+ * A username made of what a person is called (`Ada Lovelace`, `ada.l@example.com`, a handle written on Home): one
+ * that is a name already as it is (`kai.dev`, `@kai.dev`); else lowercase letters and digits, what is between them a
+ * dash, at most 31; '' where nothing is left (a name all in another script). Accents come off (`Zoë` is zoe), as a
+ * username anywhere is written.
+ */
+function usernameFrom(said: string): string {
+  const plain = said.trim().replace(/^@/, '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (NAME.test(plain)) return plain;
+  const name = plain.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 31).replace(/-+$/, '');
+  return name.length >= 2 ? name : '';
+}
+
+/** What a person is called, to make their username of, in order: the handle they wrote on Home, their name, their
+ *  email's first part. */
+async function hintsOf(db: Db, userId: string): Promise<string[]> {
+  const [u] = await db.select({name: user.name, email: user.email, profile: home.value}).from(user)
+    .leftJoin(home, and(eq(home.userId, user.id), eq(home.key, 'profile'))).where(eq(user.id, userId)) as {name: string; email: string; profile: string | null}[];
+  if (!u) return [];
+  let handle = '';
+  try { handle = String((JSON.parse(u.profile ?? '{}') as {handle?: unknown}).handle ?? ''); } catch { /* no handle written */ }
+  return [handle, u.name, u.email.split('@')[0]];
+}
+
+/**
+ * `userId`'s name on this Remote (`domain`), given now if they have none: the first of what they are called
+ * (hintsOf) that makes a username, as it is if free, else with the first number after it that is (`ada`, `ada2`…),
+ * else with digits. Asked wherever a person needs a name to be anyone (Inbox, a server, a post, a public repo), so
+ * nobody is ever asked to claim one first: they have one, and change it if they like. Two asking at once give the
+ * same name (each tries the same names in the same order, and a name one's own already is theirs to claim again).
+ */
+export async function nameFor(db: Db, userId: string, domain: string): Promise<string> {
+  const had = await db.select({a: address.address}).from(address)
+    .where(and(eq(address.userId, userId), eq(address.domain, domain), isNull(address.releasedAt))).orderBy(address.createdAt).limit(1) as {a: string}[];
+  if (had[0]) return had[0].a;
+  const base = (await hintsOf(db, userId)).map(usernameFrom).find(Boolean) ?? 'user';
+  const tries = [base, ...Array.from({length: 8}, (_, i) => `${base.slice(0, 29)}${i + 2}`),
+    ...Array.from({length: 8}, () => `${base.slice(0, 24)}-${crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000}`)];
+  for (const name of tries) if ((await claim(db, name, domain, {userId})).ok) return `${name}@${domain}`;
+  refuse(503, {error: 'No name is free to give just now'});
 }
 
 /**

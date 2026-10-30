@@ -6,8 +6,8 @@ import {expect, test} from './fixtures.ts';
 
 test('what one person writes to another arrives in their Inbox, and the rail says so', async ({signedIn: ada, another}) => {
   const bo = await another('Bo');
-  await bo.inbox.claim();
-  await ada.inbox.claim();
+  await bo.inbox.named();
+  await ada.inbox.named();
   await bo.rail.go('home');
 
   await ada.inbox.writeTo(bo.handle, 'Question: are you coming on Saturday?');
@@ -41,8 +41,8 @@ test('what one person writes to another arrives in their Inbox, and the rail say
 
 test('word that comes while one works comes into the pane\'s foot, and pressed opens its conversation in Inbox', async ({signedIn: ada, another}) => {
   const bo = await another('Bo');
-  await bo.inbox.claim();
-  await ada.inbox.claim();
+  await bo.inbox.named();
+  await ada.inbox.named();
   await ada.newRepo.make('hello');
   await ada.newRepo.openInForge();
 
@@ -63,8 +63,8 @@ test('word that comes while one works comes into the pane\'s foot, and pressed o
 
 test('a message half written stays with its conversation', async ({signedIn: ada, another}) => {
   const bo = await another('Bo');
-  await bo.inbox.claim();
-  await ada.inbox.claim();
+  await bo.inbox.named();
+  await ada.inbox.named();
   await ada.inbox.writeTo(bo.handle, 'Hello');
 
   await ada.inbox.message.fill('Bring the');
@@ -76,7 +76,7 @@ test('a message half written stays with its conversation', async ({signedIn: ada
 });
 
 test('a name no one has is said under the field, and nothing is opened', async ({signedIn: ada}) => {
-  await ada.inbox.claim();
+  await ada.inbox.named();
   await ada.inbox.conversations.getByRole('textbox', {name: 'Write to a name or a code'}).fill('no-one-here');
   await ada.inbox.conversations.getByRole('button', {name: 'Write', exact: true}).click();
 
@@ -85,7 +85,7 @@ test('a name no one has is said under the field, and nothing is opened', async (
 });
 
 test('your names open with their heading at the top, and no name is let go from here', async ({signedIn: ada}) => {
-  await ada.inbox.claim();
+  await ada.inbox.named();
   await ada.main.getByRole('button', {name: 'Your names', exact: true}).click();
   const names = ada.main.getByRole('group', {name: 'Your names', exact: true});
   await expect(names).toContainText(ada.handle);

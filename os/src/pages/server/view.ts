@@ -273,7 +273,6 @@ export class ServerView {
       made: (s) => this.made(s),
       broughtBack: async (id) => { this.here.list = await servers.servers(); this.show(id); },
       plan: () => goToPlan(this.ways.ctx),
-      inbox: () => this.ways.ctx.go('inbox'),
     });
     this.row.stand(...making.slides);
     this.dock.replaceChildren(making.dock);

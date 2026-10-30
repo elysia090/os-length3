@@ -491,8 +491,9 @@ pub static COMMANDS: &[Command] = &[
     c("name", &[], Group::Inbox, ["your names, as people find you (name@domain), and your code", "あなたの名前（人があなたを見つける name@domain）と、あなたのコード"], &[
         f(None, &[], &[], ["each name, one a line, nothing else", "名前を1行にひとつ、それだけ"], REMOTE, Send, people::name_only),
         f(Some("list"), &[], &[], ["each, and your code", "それぞれと、あなたのコード"], REMOTE, Send, people::names),
-        f(Some("claim"), &[Arg::Text("NAME[@DOMAIN]")], &[], ["a name here: first come, yours as long as you keep it; on your domain, beside it", "ここでの名前（早い者勝ち、手放すまであなたのもの）。自分のドメインなら並べて"], REMOTE, Send, people::name_claim),
-        f(Some("release"), &[Arg::Address], &[], ["let it go: held for you 30 days, claim it again to take it back", "手放す（30日はあなたのために取り置き、取り直せば戻る）"], REMOTE, Send, people::name_release),
+        f(Some("set"), &[Arg::Text("NAME")], &[], ["change your username (given at your first sign-in): the one before is held for you 30 days", "ユーザー名を変える（最初のサインインで付いた名前。前の名前は30日取り置き）"], REMOTE, Send, people::name_set),
+        f(Some("claim"), &[Arg::Text("NAME[@DOMAIN]")], &[], ["another name, here or on your domain, beside your username", "ユーザー名とは別の名前を、ここか自分のドメインで"], REMOTE, Send, people::name_claim),
+        f(Some("release"), &[Arg::Address], &[], ["let another name go: held for you 30 days, claim it again to take it back", "別の名前を手放す（30日はあなたのために取り置き、取り直せば戻る）"], REMOTE, Send, people::name_release),
         f(Some("domain"), &[Arg::Text("DOMAIN")], &[], ["the DNS record that proves it is yours", "あなたのものだと示す DNS レコード"], REMOTE, Send, people::name_domain),
     ]),
     c("help", &[], Group::Other, ["how to use l3", "l3 の使い方"], &[

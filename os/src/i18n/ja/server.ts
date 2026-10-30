@@ -32,7 +32,6 @@ export default {
   'Family': '家族',
   'Band': 'バンド',
   'Name on this Remote': 'この Remote での名前',
-  'A server needs your name. Claim one in Inbox.': 'サーバーにはあなたの名前が要ります。Inbox で取ってください。',
   // The talk.
   'Posts': '投稿',
   'Today': '今日',
@@ -145,7 +144,6 @@ export default {
   // What the Remote says.
   'Too many posts this hour': 'この1時間の投稿が多すぎます',
   'Only your contacts can be added': '入れられるのは連絡先の人だけです',
-  'Go to Inbox': 'Inbox へ',
   'Bring a repo out to the band with ⊕, or open one from File': '⊕ で repo を帯に出すか、File から開いてください',
   'Make your first repo': '最初の repo を作る',
   'A folder of your own, kept as git keeps it: Forge, Git and the Prompt work in it.': 'git のように記録される自分のフォルダです。Forge・Git・Prompt はその中で動きます。',

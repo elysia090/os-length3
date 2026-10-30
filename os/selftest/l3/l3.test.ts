@@ -223,12 +223,12 @@ test('an issue that will not be done is closed in its own file, on the Remote to
   assert.deepEqual(log.slice(0, 3).map(([, n]) => n), [1, 1, 1]);
 });
 
-test('l3 name answers with the name alone, l3 name list with its term; l3 address, off a terminal with SSH off, says so with 5', async () => {
+test('l3 name answers with the username alone, given at sign-in; l3 name set changes it; l3 name list with the code; l3 address, off a terminal with SSH off, says so with 5', async () => {
   const sora = await r.browser('Sora Selftest');
   const d = r.device();
   assert.equal((await d.login(sora)).code, 0);
-  refused(d.l3(['name']), 4, /No name yet \(l3 name claim NAME\)/);
-  ok(d.l3(['name', 'claim', 'soraself']), /^Yours: soraself@length3\.test\n$/);
+  assert.equal(ok(d.l3(['name'])).out, 'sora-selftest@length3.test\n');
+  ok(d.l3(['name', 'set', '@soraself']), /^Your username: soraself \(the one before is held for you 30 days\)\n$/);
   assert.equal(ok(d.l3(['name'])).out, 'soraself@length3.test\n');
   // In the list a name on the Remote's own domain is said without it.
   assert.match(ok(d.l3(['name', 'list'])).out, /^soraself\nYour code: \d{6} /);
@@ -238,8 +238,8 @@ test('l3 name answers with the name alone, l3 name list with its term; l3 addres
 
 test('Inbox: a request to someone who has not accepted, their answer, and a block that stops them', async () => {
   const mio = await r.browser('Mio Selftest');
-  ok(laptop.l3(['name', 'claim', 'renself']), /^Yours: renself@length3\.test\n$/);
-  assert.equal((await r.api(mio, 'POST', '/v1/inbox/addresses', {name: 'mioself'})).status, 201);
+  ok(laptop.l3(['name', 'set', 'renself']), /^Your username: renself /);
+  assert.equal((await r.api(mio, 'PUT', '/v1/inbox/username', {name: 'mioself'})).status, 200);
   ok(laptop.l3(['inbox', 'send', 'mioself', 'Review：見てください /root/shared/a.txt']), /^Sent to mioself@length3\.test as a request/);
   const threads = (await r.api(mio, 'GET', '/v1/inbox/threads')).json as {address: string; state: string; last: {type: string; body: string}}[];
   assert.deepEqual(threads.map((t) => [t.address, t.state, t.last.type]), [['renself@length3.test', 'request', 'review']]);

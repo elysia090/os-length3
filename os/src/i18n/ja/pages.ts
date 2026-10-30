@@ -11,7 +11,7 @@ export default {
   'Where you left off': '前回の続き',
   '{server} · new posts': '{server} · 新しい投稿',
   'Nothing new': '新しいことはありません',
-  'A handle is up to 32 lowercase letters, digits, - and _': 'ハンドルは英小文字・数字・- _ の32文字以内です',
+  'A handle is 2–31 lowercase letters, digits, . - and _': 'ハンドルは英小文字・数字・. - _ の2〜31文字です',
 
   // Home's TODO box
   '{open} of {all} left': '残り {open} / {all}',

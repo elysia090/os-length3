@@ -19,7 +19,7 @@ export const PLACES = {
 } as const;
 export type Place = keyof typeof PLACES;
 
-/** The name a person claims in Inbox for their display name ('Ada 1a2b3c4d' → 'ada-1a2b3c4d'). */
+/** The username a person is given at the first sign-in, made of their display name ('Ada 1a2b3c4d' → 'ada-1a2b3c4d'). */
 export const handleOf = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 31);
 
 /** `text` as a regular expression that matches it literally. */
@@ -105,7 +105,7 @@ export class App {
     await this.page.evaluate(() => window.dispatchEvent(new Event('focus')));
   }
 
-  /** Who is signed in here (as the development provider was told), and the Inbox name they claim. */
+  /** Who is signed in here (as the development provider was told), and the username they were given. */
   person = '';
   get handle() { return handleOf(this.person); }
 
@@ -664,12 +664,9 @@ class Inbox extends Part {
   /** The conversation open at the right, named by the other (their name on this Remote). */
   thread(who: string) { return this.main.getByRole('region', {name: `Conversation with ${who}`, exact: true}); }
 
-  /** Claim `name` on this Remote (the stub before there is one); claimed, the stub is the name. */
-  async claim(name = this.app.handle) {
+  /** Inbox, opened at its stub: their username, given at the first sign-in (nothing is claimed first). */
+  async named(name = this.app.handle) {
     await this.app.rail.go('inbox');
-    const field = this.main.getByRole('textbox', {name: 'Name', exact: true});
-    await field.fill(name);
-    await field.press('Enter');
     await expect(this.main.getByRole('button', {name, exact: true})).toBeVisible();
   }
 

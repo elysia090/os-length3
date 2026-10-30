@@ -56,7 +56,7 @@ const secret = readFileSync(secretFile, 'utf8');
 // LENGTH3_ENTER_AS and LENGTH3_ENTER_KEY make it a Remote for research, as on Workers (enter.ts): no
 // provider then, the link …/#enter=KEY the only way in.
 const enter = process.env.LENGTH3_ENTER_AS ? {as: process.env.LENGTH3_ENTER_AS, key: process.env.LENGTH3_ENTER_KEY ?? ''} : undefined;
-const auth = createAuth({db, secret, baseURL, appOrigin, origins: others, dev: !enter, only: enter && enterEmail(enter.as)});
+const auth = createAuth({db, secret, baseURL, appOrigin, origins: others, dev: !enter, only: enter && enterEmail(enter.as), domain: 'length3.test'});
 // LENGTH3_PLAN=1 gives it the plan the Remote on Workers has (LENGTH3_FREE_REPOS, LENGTH3_FREE_MB to say it
 // otherwise), bought from a stand-in for Stripe (devbilling.ts); without it, no plan: everything is open.
 const plan = process.env.LENGTH3_PLAN === '1' ? planConfig({FREE_REPOS: process.env.LENGTH3_FREE_REPOS, FREE_MB: process.env.LENGTH3_FREE_MB}) : undefined;

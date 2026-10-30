@@ -300,7 +300,7 @@ async function onReal(url: string): Promise<Store> {
 
 async function make(store: Store, records: Record<string, string[]>, o: Options) {
   const db = store.db;
-  const auth = createAuth({db: store.app, secret: SECRET, baseURL: BASE, appOrigin: APP, rateLimit: false, dev: true, only: o.enter && enterEmail(o.enter.as)});
+  const auth = createAuth({db: store.app, secret: SECRET, baseURL: BASE, appOrigin: APP, rateLimit: false, dev: true, only: o.enter && enterEmail(o.enter.as), domain: 'length3.test'});
   const bucket = memoryBucket();
   /** What the app keeps files in: none when this Remote is made without a bucket. */
   const files = withoutBucket() ? null : bucket;
@@ -372,7 +372,12 @@ export const upload = async (s: Service, t: string, bytes: Uint8Array) => {
   if (!s.files) await s.db.insert(schema.blob).values({userId: await idOf(s, t), sha256: sha, bytes: bytes.length}).onConflictDoNothing();
   return {sha, status};
 };
-export const named = async (s: Service, ...people: [string, string][]) => { for (const [t, n] of people) await s.call('POST', '/v1/inbox/addresses', {token: t, body: {name: n}}); };
+export const named = async (s: Service, ...people: [string, string][]) => {
+  for (const [t, n] of people) {
+    const r = await s.call('PUT', '/v1/inbox/username', {token: t, body: {name: n}});
+    if (r.status !== 200) throw new Error(`username ${n}: ${r.status} ${r.text}`);
+  }
+};
 export const accept = (s: Service, t: string, address: string, state = 'accepted') => s.call('POST', '/v1/inbox/contacts', {token: t, body: {address, state}});
 export const count = async (s: Service, query: ReturnType<typeof sql>) => ((await s.db.execute(query)).rows as {n: number}[])[0].n;
 

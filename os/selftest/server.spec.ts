@@ -10,15 +10,12 @@ import type {App} from './app.ts';
 // on the server's chip; what one half wrote stays with its board.
 
 test.beforeEach(async ({signedIn: app}) => {
-  // A server is made under one's own name, so the name comes first.
-  await app.inbox.claim();
   await app.server.make('Trip', `${app.handle}-trip`);
 });
 
 /** Bo, added to Trip by its maker: asked in Bo's Inbox, in once Bo accepts. */
 async function addBo(ada: App, another: (who: string) => Promise<App>): Promise<App> {
   const bo = await another('Bo');
-  await bo.inbox.claim();
   const said = await ada.server.addSomeone(bo.handle);
   await expect(said).toHaveText(`Asked ${bo.handle} in the Inbox. They come in once they accept you.`);
 
@@ -169,17 +166,12 @@ test('Make a server among the servers beside the rail goes to one being made; Es
   await expect(app.server.chip('Trip')).toBeChecked();
 });
 
-test('making a server before one has a name says so under the band, with the way to the Inbox', async ({another}) => {
+test('one just signed in makes a server at once: nothing is claimed first, their username was given at sign-in', async ({another}) => {
   const bo = await another('Bo');
-  await bo.server.open();
-  await bo.server.view.getByRole('textbox', {name: 'Name', exact: true}).fill('Books');
-  await bo.server.view.getByRole('button', {name: 'Make', exact: true}).click();
-  await expect(bo.server.view.getByRole('alert').filter({hasText: 'A server needs your name. Claim one in Inbox.'})).toBeVisible();
-  // Not taken for a name someone else has: its name on this Remote is not opened to be written otherwise.
-  await expect(bo.server.view.getByRole('textbox', {name: /^Name on this Remote/})).toBeHidden();
-  await bo.server.view.getByRole('button', {name: 'Go to Inbox', exact: true}).click();
-  await expect(bo.server.view).toBeHidden();
-  await expect(bo.rail.button('inbox')).toHaveAttribute('aria-current', 'page');
+  await bo.server.make('Books', `${bo.handle}-books`);
+  await expect(bo.server.chip('Books')).toBeChecked();
+  await expect(bo.server.view.getByRole('alert')).toHaveCount(0);
+  await bo.inbox.named();
 });
 
 test('Escape while a server is named goes back to the one it was named from; the page stays', async ({signedIn: app}) => {

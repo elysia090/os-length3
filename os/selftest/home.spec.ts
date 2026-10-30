@@ -199,6 +199,28 @@ test('the name written on Home is the account\'s, so what is started, committed 
   await expect(app.main.getByText('Signed in as Ada Byron')).toBeVisible();
 });
 
+test('the handle on Home is the username: the one given at sign-in, and changed there it is changed for everyone', async ({signedIn: app}) => {
+  await app.rail.go('home');
+  await expect(app.main.locator('.identity .handle')).toHaveText(`@${app.handle}`);
+  await app.main.getByRole('button', {name: 'Edit profile'}).click();
+  const handle = app.main.getByRole('textbox', {name: 'Handle'});
+  await expect(handle).toHaveValue(app.handle);
+  const next = `${app.handle.slice(0, 26)}-home`;
+  await handle.fill(`@${next}`);
+  await handle.press('Enter');
+  await expect(app.main.getByRole('button', {name: 'Edit profile'})).toBeVisible();
+  await expect(app.main.locator('.identity .handle')).toHaveText(`@${next}`);
+  // The Remote finds them by it now: Inbox's stub says it.
+  await app.inbox.named(next);
+  // One no username can be is said at the handle, and nothing is saved.
+  await app.rail.go('home');
+  await app.main.getByRole('button', {name: 'Edit profile'}).click();
+  await handle.fill('-no');
+  await handle.press('Enter');
+  await expect(app.main.getByRole('alert')).toHaveText('A handle is 2–31 lowercase letters, digits, . - and _');
+  await expect(handle).toBeFocused();
+});
+
 test.describe("on 'hello', made from C's files and worked in last", () => {
   // Made once for the worker and kept (fixtures.ts, helloC), as making it is new-repo.spec.ts's and file.spec.ts's to see.
   test.use({storageState: async ({helloC}, use) => { await use(helloC); }});

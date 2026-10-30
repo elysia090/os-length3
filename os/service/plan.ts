@@ -54,7 +54,7 @@
 //   POST /v1/plan/portal   {back, tier?} the customer portal, to manage or cancel; with a tier, at the step that changes to it: {url}
 //   POST /v1/stripe/webhook              Stripe's events, signed with the webhook secret; each taken once
 
-import {and, eq, sql} from 'drizzle-orm';
+import {and, eq, isNull, sql} from 'drizzle-orm';
 import type {Hono} from 'hono';
 import {kept} from './names.ts';
 import {body, refuse, rows, type Db, type Vars} from './request.ts';
@@ -145,10 +145,10 @@ export async function usage(q: Db, userId: string): Promise<{repos: number; byte
   return {repos: Number(u?.repos ?? 0), bytes: Number(u?.bytes ?? 0)};
 }
 
-/** Names the account keeps on the Remote's own domain (those let go and still held for it among them). */
-const homeNames = async (q: Db, userId: string, domain: string, but = '') =>
+/** Names the account keeps on the Remote's own domain (those let go and still held for it among them; or, `answering`, only those not let go). */
+const homeNames = async (q: Db, userId: string, domain: string, but = '', answering = false) =>
   ((await q.select({n: sql<number>`count(*)::int`}).from(address)
-    .where(and(eq(address.userId, userId), eq(address.domain, domain), kept, sql`${address.address} <> ${but}`))) as {n: number}[])[0]?.n ?? 0;
+    .where(and(eq(address.userId, userId), eq(address.domain, domain), answering ? isNull(address.releasedAt) : kept, sql`${address.address} <> ${but}`))) as {n: number}[])[0]?.n ?? 0;
 
 /** Whether `used` is still within `limit` (null: no limit). */
 const within = (used: number, limit: number | null) => limit === null || used < limit;
@@ -216,12 +216,14 @@ export function plans(d: {db: Db; config?: PlanConfig; billing?: Billing; domain
      * taken back, which is never new). On another domain, paid; on this Remote's, as many as the tier keeps.
      */
     async claimName(q: Db, userId: string, a: string, domain: string, theirs: boolean) {
-      if (!config || theirs) return;
+      if (!config) return;
       if (domain !== d.domain) {
-        if (!await paid(q, userId)) over({error: 'A name on your own domain is part of the paid plan'}, 'domain', 'free');
+        if (!theirs && !await paid(q, userId)) over({error: 'A name on your own domain is part of the paid plan'}, 'domain', 'free');
         return;
       }
-      const n = await homeNames(q, userId, domain, a);
+      // One's own taken back is no new name, so long as it makes no more answering than the plan keeps: a username
+      // changed holds the one before for them, and taken back beside the new one it would be two.
+      const n = await homeNames(q, userId, domain, a, theirs);
       if (within(n, config.free.names)) return;
       const {tier, allowance} = await allowanceOf(q, userId);
       if (!within(n, allowance.names)) {

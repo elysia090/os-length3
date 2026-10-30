@@ -7,7 +7,7 @@
 // the signalling, and offers no relay: without a direct path, messages
 // simply go through the Remote as text.
 
-import {about, api, json, reading, RemoteError} from './connection.ts';
+import {about, api, connection, json, reading, RemoteError} from './connection.ts';
 import {lookAt} from './looks.ts';
 import {t} from '../i18n.ts';
 import {day} from '../ui/dom.ts';
@@ -84,6 +84,29 @@ export function liveMessage(data: unknown): Message | null {
 }
 
 export const me = () => json<Me>('/v1/inbox/me').then((m) => { home = m.domain; return m; });
+/** Their username: their name on this Remote (given at the first sign-in), before any on a domain of their own. */
+export const username = (m: Me) => (m.addresses.find((a) => a.address.endsWith(`@${m.domain}`)) ?? m.addresses[0])?.address ?? '';
+
+/** Their username, shown as a name on this Remote is (`ren`); '' signed out. Asked once a sign-in, again once changed. */
+let mine: {token: string; name: Promise<string>} | null = null;
+export function myUsername(): Promise<string> {
+  const c = connection();
+  if (!c) return Promise.resolve('');
+  if (mine?.token !== c.token) {
+    const token = c.token;
+    const name = me().then((m) => shown(username(m)));
+    name.catch(() => { if (mine?.token === token) mine = null; });
+    mine = {token, name};
+  }
+  return mine.name;
+}
+
+/** Their username changed to `name`, as it is shown: the one it was is held for them a while (theirs to change back to). */
+export async function changeUsername(name: string): Promise<string> {
+  const r = await json<{address: string}>('/v1/inbox/username', {method: 'PUT', body: JSON.stringify({name})});
+  mine = null;
+  return shown(r.address);
+}
 
 /** This Remote's own domain, once known: a name on it is shown alone. */
 let home = '';

@@ -21,14 +21,17 @@ test('handles are normalized and validated', () => {
   assert.deepEqual(normalize({name: ' A ', handle: '@Ren_3', bio: ' x '}),
     {profile: {name: 'A', handle: 'ren_3', bio: 'x'}, error: null});
   assert.equal(normalize({name: '', handle: 'has space', bio: ''}).error, 'handle');
-  assert.ok(!validHandle(''));
-  assert.ok(!validHandle('a'.repeat(33)));
+  // As a username is: 2–31, from a letter or digit, dots too.
+  assert.ok(validHandle('ren.t'));
+  for (const bad of ['', 'a', '-ren', 'a'.repeat(32)]) assert.ok(!validHandle(bad), bad);
 });
 
 test('stored profiles are accepted only when well formed', () => {
-  assert.deepEqual(parse(JSON.stringify({name: 'A', handle: 'a', bio: ''})), {name: 'A', handle: 'a', bio: ''});
+  assert.deepEqual(parse(JSON.stringify({name: 'A', handle: 'ab', bio: ''})), {name: 'A', handle: 'ab', bio: ''});
   assert.deepEqual(parse('{"name":1}'), EMPTY);
   assert.deepEqual(parse('not json'), EMPTY);
   assert.deepEqual(parse(null), EMPTY);
-  assert.deepEqual(parse(JSON.stringify({name: 'A', handle: 'bad handle', bio: ''})), EMPTY);
+  // A handle no username could be is left out; the rest is theirs still.
+  assert.deepEqual(parse(JSON.stringify({name: 'A', handle: 'bad handle', bio: 'x'})), {name: 'A', handle: '', bio: 'x'});
+  assert.deepEqual(parse(JSON.stringify({name: 'A', handle: 'a', bio: ''})), {name: 'A', handle: '', bio: ''});
 });

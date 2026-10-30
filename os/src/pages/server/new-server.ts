@@ -32,8 +32,6 @@ interface MakingWays {
   broughtBack(id: string): Promise<void>;
   /** Asked for more than the plan allows: away to the plan. */
   plan(): void;
-  /** Asked for one's own name first: away to the Inbox, where it is claimed. */
-  inbox(): void;
 }
 
 /** A name as a name on this Remote can be: Trip is trip. */
@@ -123,22 +121,17 @@ function fields(say: string, sayAt: string) {
   return {name, handle, label: h('label', {class: 'chip server-naming'}, name, at, address), fit, reveal};
 }
 
-/** What the Remote said no to, said under the band (`ask`): the plan, a name taken, a name of one's own to claim first. */
+/** What the Remote said no to, said under the band (`ask`): the plan, or a name taken. */
 function refused(e: unknown, ask: HTMLElement, here: Here, reveal: () => void, ways: MakingWays) {
   const plan = planRefused(e, () => ways.plan());
   if (plan) ask.replaceChildren(plan);
   // Told apart by what the Remote said in its own words (service/servers.ts), not by the words shown here.
-  else if (e instanceof RemoteError && (e.status === 409 ? e.detail.error !== 'Claim a name first'
-    : e.status === 400 && /^(Its name|Only on a domain)/.test(String(e.detail.error)))) {
+  else if (e instanceof RemoteError && (e.status === 409 || e.status === 400 && /^(Its name|Only on a domain)/.test(String(e.detail.error)))) {
     // The name on this Remote is someone else's (or held for them), or one it cannot be (a name in other
     // letters follows to nothing): the address shows, to be written otherwise.
     reveal();
     ask.textContent = errorText(e);
     nudge(here.naming?.querySelector('.server-naming') ?? null);
-  } else if (e instanceof RemoteError && e.status === 409) {
-    const inbox = button(t('Go to Inbox'), 'small-button');
-    inbox.addEventListener('click', () => ways.inbox());
-    ask.replaceChildren(t('A server needs your name. Claim one in Inbox.'), ' ', inbox);
   } else ask.textContent = errorText(e);
 }
 

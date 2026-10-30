@@ -64,48 +64,22 @@ function took(stub: HTMLElement, from: DOMRect) {
 }
 
 /**
- * Your name as a stub: your name on this Remote, shown alone (it is a name,
- * not a domain anyone holds), and your code, six digits to be found by; a
- * press copies either. Before there is a name, the name to claim, alone, as
- * it will be shown (Enter claims): first come, yours for five years at a
- * time; nothing after an @ is the person's to think of. Once there is one, at
- * its right end the gear opens your names, each with its term and Renew near
- * its end, and a name of your choosing on a domain you own, shown beside it:
- * the TXT record to put in its DNS, looked for every few seconds while open,
- * and the name claimed as soon as the record is there.
+ * Your name as a stub: your username, shown alone (it is a name, not a domain
+ * anyone holds; given at the first sign-in, changed on Home's profile), and
+ * your code, six digits to be found by; a press copies either. At its right
+ * end the gear opens your names, and a name of your choosing on a domain you
+ * own, shown beside it: the TXT record to put in its DNS, looked for every few
+ * seconds while open, and the name claimed as soon as the record is there.
  */
 function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLElement {
-  const error = h('p', {class: 'error', role: 'alert'});
   const gear = h('button', {type: 'button', class: 'stub-gear', 'aria-label': t('Your names'), 'aria-expanded': 'false'}, mark('gear')) as HTMLButtonElement;
-  const note = h('p', {class: 'muted small'});
   const panel = h('div', {class: 'stub-panel pop', hidden: ''});
-  let stub: HTMLElement;
-  let take: HTMLButtonElement | null = null;
-  if (me.addresses.length) {
-    const a = inbox.shown(me.addresses[0].address);
-    const text = h('button', {type: 'button', class: 'stub-text'}, a);
-    copying(text, a);
-    const code = h('button', {type: 'button', class: 'stub-code mono', 'aria-label': t('Your code {code}', {code: me.code})}, me.code);
-    copying(code, me.code);
-    stub = h('div', {class: 'stub'}, text, code, gear);
-  } else {
-    const name = h('input', {class: 'stub-in', placeholder: t('name'), 'aria-label': t('Name'), autocapitalize: 'off', spellcheck: 'false', maxlength: '31'}) as HTMLInputElement;
-    // Taken with Enter or with Take it, asked once: pressed again while it is asked, nothing more is claimed.
-    const claim = async () => {
-      if (!name.value.trim() || name.readOnly) { name.focus(); return; }
-      error.textContent = '';
-      name.readOnly = true;
-      take!.disabled = true;
-      try { await inbox.claim(name.value); again(); } catch (err) { const plan = planRefused(err, toPlan); if (plan) error.replaceChildren(plan); else { error.textContent = errorText(err); nudge(stub); } } finally { name.readOnly = false; take!.disabled = false; }
-    };
-    name.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) void claim(); });
-    take = button(t('Take it'), 'primary');
-    take.addEventListener('click', () => void claim());
-    // The name alone, as it will be shown everywhere: what comes after an @ is not the person's to think of (a name on
-    // a domain of one's own is behind the gear once a name is taken).
-    stub = h('div', {class: 'stub'}, name);
-    note.textContent = t('A name on this Remote: first come, and yours for as long as you keep it.');
-  }
+  const a = inbox.shown(inbox.username(me));
+  const text = h('button', {type: 'button', class: 'stub-text'}, a);
+  copying(text, a);
+  const code = h('button', {type: 'button', class: 'stub-code mono', 'aria-label': t('Your code {code}', {code: me.code})}, me.code);
+  copying(code, me.code);
+  const stub = h('div', {class: 'stub'}, text, code, gear);
   // The gear's panel, as the person's menu: your names, then Add a domain.
   let looking: {stop(): void} | null = null;
   const item = (label: string, at: Node | null = null) => h('button', {type: 'button', class: 'pop-item'}, label, at) as HTMLButtonElement;
@@ -173,7 +147,7 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
   // Letting a name go is not offered here; the Remote's way to do it stays (l3 people release uses it).
   const fill = () => panel.replaceChildren(yours(), adding());
   // The panel lies over the Inbox under it; Escape or a press outside closes it.
-  const holder = h('div', {class: 'stub-holder'}, stub, note, error, take ? h('div', {class: 'card-foot'}, h('span', {class: 'grow'}), take) : null, panel);
+  const holder = h('div', {class: 'stub-holder'}, stub, panel);
   // Put away by Escape from inside it, the keyboard goes back to the gear rather than to the page.
   const away = (e: Event) => {
     if (!(e instanceof KeyboardEvent ? e.key === 'Escape' : !holder.contains(e.target as Node))) return;

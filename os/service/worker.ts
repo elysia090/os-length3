@@ -138,12 +138,13 @@ function make(env: Env) {
   // For research: the one account, entered by its link; no key, no way in at all.
   const enter = env.ENTER_AS ? {as: env.ENTER_AS, key: env.ENTER_KEY && env.ENTER_KEY.length >= 32 ? env.ENTER_KEY : ''} : undefined;
   const dev = env.DEV_SIGN_IN === '1' && loopback(env.BASE_URL) && !enter;
+  const domain = env.DOMAIN ?? 'length3.com';
   const auth = createAuth({db, secret: env.BETTER_AUTH_SECRET, baseURL: env.BASE_URL, appOrigin: env.APP_ORIGIN, origins, github, google, apple, dev,
-    only: enter && enterEmail(enter.as)});
+    only: enter && enterEmail(enter.as), domain});
   const bucket = env.BLOBS ? r2Bucket(env.BLOBS) : null;
   const marks = env.MARK ? objectMarks(env.MARK) : undefined;
   const app = createApp({db, auth, bucket, origins: [env.APP_ORIGIN, ...origins], appOrigin: env.APP_ORIGIN, providers: providers({github, google, apple, dev}),
-    domain: env.DOMAIN ?? 'length3.com', baseURL: env.BASE_URL, secret: env.BETTER_AUTH_SECRET, enter,
+    domain, baseURL: env.BASE_URL, secret: env.BETTER_AUTH_SECRET, enter,
     quota: env.QUOTA_MB ? Number(env.QUOTA_MB) * 1024 ** 2 : undefined,
     limits: limitsOf(env as unknown as Record<string, string | undefined>), edge: edge(), limiter: env.LIMITER, sessionKept: 10_000,
     // The plan holds here (but on a Remote for research, one person's alone); a tier is bought only when

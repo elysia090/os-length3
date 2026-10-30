@@ -127,11 +127,12 @@ pub struct Profile {
 }
 
 /// How long each field of a profile may be, in characters.
-pub const PROFILE_LIMITS: [(&str, usize); 3] = [("name", 50), ("handle", 32), ("bio", 160)];
+pub const PROFILE_LIMITS: [(&str, usize); 3] = [("name", 50), ("handle", 31), ("bio", 160)];
 
-/// A handle: lowercase letters, digits, - and _ (src/home/profile.ts).
+/// A handle is a username: 2–31 lowercase letters, digits, . - and _, from a letter or digit (src/home/profile.ts).
 pub fn valid_handle(h: &str) -> bool {
-    !h.is_empty() && h.len() <= 32 && h.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')
+    let word = |b: u8| b.is_ascii_lowercase() || b.is_ascii_digit();
+    (2..=31).contains(&h.len()) && h.bytes().next().is_some_and(word) && h.bytes().all(|b| word(b) || b"._-".contains(&b))
 }
 
 pub fn profile() -> Profile {
@@ -148,7 +149,7 @@ pub fn set_profile(field: &str, value: &str) -> Result<Profile> {
         "handle" => {
             let h = v.trim_start_matches('@').to_ascii_lowercase();
             if !h.is_empty() && !valid_handle(&h) {
-                return Err(crate::tr!("A handle is up to 32 lowercase letters, digits, - and _", "ハンドルは英小文字・数字・- _ の32文字までです"));
+                return Err(crate::tr!("A handle is 2–31 lowercase letters, digits, . - and _", "ハンドルは英小文字・数字・. - _ の2〜31文字です"));
             }
             p.handle = h;
         }

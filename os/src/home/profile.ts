@@ -1,5 +1,6 @@
-// The profile Home shows. Everyone sees the same page; only its owner gets
-// the edit control. Until accounts exist it lives on this device.
+// The profile Home shows: a name to be called by, the handle others find one
+// by (signed in, the username on the Remote: service/names.ts), and a line
+// about them. Kept on this device, and on the Remote when signed in.
 
 import {clipChars} from '../repos/text.ts';
 
@@ -12,11 +13,11 @@ export interface Profile {
 export const EMPTY: Profile = {name: '', handle: '', bio: ''};
 
 /** In characters, as l3 counts them (core/src/home.rs PROFILE_LIMITS). */
-export const LIMITS = {name: 50, handle: 32, bio: 160};
+export const LIMITS = {name: 50, handle: 31, bio: 160};
 
-/** Handles are lowercase letters, digits, `-` and `_`. */
+/** A handle is a username: 2–31 lowercase letters, digits, `.`, `-` and `_`, from a letter or digit (service/names.ts NAME). */
 export function validHandle(handle: string): boolean {
-  return /^[a-z0-9_-]{1,32}$/.test(handle);
+  return /^[a-z0-9][a-z0-9._-]{1,30}$/.test(handle);
 }
 
 /** Up to two letters for the avatar: initials of the name, else the handle. */
@@ -42,13 +43,14 @@ export function normalize(input: Profile): {profile: Profile; error: keyof Profi
   return {profile, error: null};
 }
 
-/** Read a stored profile, accepting only well-formed values. */
+/** Read a stored profile, accepting only well-formed values: a handle kept under an older rule (one letter, or
+ *  from a dash) is left out, never the name and the line about them with it. */
 export function parse(stored: string | null): Profile {
   try {
     const v = JSON.parse(stored ?? 'null');
     if (v && typeof v.name === 'string' && typeof v.handle === 'string' && typeof v.bio === 'string') {
       const {profile, error} = normalize(v);
-      if (!error) return profile;
+      return error ? {...profile, handle: ''} : profile;
     }
   } catch { /* fall through */ }
   return {...EMPTY};

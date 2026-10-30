@@ -16,7 +16,6 @@ test('a repo made here is a card on the Remote, in step, its switch on', async (
 });
 
 test('Share shows the repo in a server at a press, and takes it off at the next', async ({signedIn: app}) => {
-  await app.inbox.claim();
   await app.server.make('Trip', `${app.handle}-trip`);
   await app.server.close();
   await app.newRepo.make('hello');

@@ -572,10 +572,11 @@ test('an issue\'s own file is committed on main by itself, the rest of the draft
 test('Inbox: an address is claimed or published by its domain; messages are small, and strangers are held to a few', async () => {
   const s = await service({'_length3.example.org': ['some other record'], '_length3.elsewhere.example': ['v=length3; remote=remote.elsewhere.example; proof=x']});
   const ren = await s.start('Ren'), mio = await s.start('Mio');
-  // Nobody sends before having an address.
-  assert.equal((await s.call('POST', '/v1/inbox/messages', {token: ren, body: {to: 'mio@length3.test', body: 'hi'}})).status, 409);
-  assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'ren'}})).status, 201);
+  // Each has a username from the first sign-in, made of what they are called; nobody has another's.
+  const me = async (t: string) => ((await s.call('GET', '/v1/inbox/me', {token: t})).json as unknown as {addresses: {address: string}[]}).addresses.map((a) => a.address);
+  assert.deepEqual([await me(ren), await me(mio)], [['ren@length3.test'], ['mio@length3.test']]);
   assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'ren'}})).status, 409);
+  assert.equal((await s.call('PUT', '/v1/inbox/username', {token: mio, body: {name: 'ren'}})).status, 409);
   // A name on another domain needs that domain's DNS to say so, with a proof made for this account.
   const unpublished = await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'mio', domain: 'example.org'}});
   const record = unpublished.json.publish as unknown as {name: string; type: string; value: string};
@@ -623,9 +624,7 @@ test('Inbox: an address is claimed or published by its domain; messages are smal
 test('Servers: people who know each other, boards with talk and a TODO kept together', async () => {
   const s = await service();
   const ren = await s.start('Ren'), mio = await s.start('Mio'), kai = await s.start('Kai');
-  // A server is made by someone with an address, and comes with a first board.
-  assert.equal((await s.call('POST', '/v1/servers', {token: ren, body: {name: 'Trip'}})).status, 409);
-  for (const [t, n] of [[ren, 'ren'], [mio, 'mio'], [kai, 'kai']] as const) await s.call('POST', '/v1/inbox/addresses', {token: t, body: {name: n}});
+  // A server is made by anyone (each has a username from the first sign-in), and comes with a first board.
   const made = await s.call('POST', '/v1/servers', {token: ren, body: {name: 'Trip', board: 'plan'}});
   assert.equal(made.status, 201);
   const sid = made.json.id as string, bid = (made.json.boards as {id: string}[])[0].id;
@@ -829,26 +828,41 @@ test('Who sees a repo: its owner, the servers it is shown in, or everyone, under
 test('Names: people and servers share one namespace; a name let go is held for its owner; a domain that stops naming the Remote stops answering', async () => {
   const s = await service();
   const ren = await s.start('Ren'), mio = await s.start('Mio');
-  await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'ren'}});
-  await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'mio'}});
-  // A server's name and a person's are in one namespace.
+  // A server's name and a person's (Ren's username, ren) are in one namespace.
   const made = await s.call('POST', '/v1/servers', {token: ren, body: {name: 'Book club', address: 'books'}});
   assert.equal(made.json.address, 'books@length3.test');
   assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'books'}})).status, 409);
   assert.equal((await s.call('POST', '/v1/servers', {token: mio, body: {name: 'Ren', address: 'ren'}})).status, 409);
   assert.equal(((await s.call('GET', '/v1/inbox/lookup?address=books@length3.test', {token: mio})).json as unknown as {reachable: boolean}).reachable, false);
-  // Let go: it answers no more, nobody else may take it while it is held, and its owner may take it back.
-  assert.equal((await s.call('DELETE', '/v1/inbox/addresses/ren@length3.test', {token: mio})).status, 404);
-  assert.equal((await s.call('DELETE', '/v1/inbox/addresses/ren@length3.test', {token: ren})).status, 200);
-  assert.equal(((await s.call('GET', '/v1/inbox/lookup?address=ren@length3.test', {token: mio})).json as unknown as {reachable: boolean}).reachable, false);
-  const held = await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'ren'}});
+  // A name besides one's username, let go: it answers no more, nobody else may take it while it is held, and its
+  // owner may take it back.
+  const reachable = async (a: string) => ((await s.call('GET', `/v1/inbox/lookup?address=${a}`, {token: mio})).json as unknown as {reachable: boolean}).reachable;
+  assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'rn'}})).status, 201);
+  assert.equal((await s.call('DELETE', '/v1/inbox/addresses/rn@length3.test', {token: mio})).status, 404);
+  assert.equal((await s.call('DELETE', '/v1/inbox/addresses/rn@length3.test', {token: ren})).status, 200);
+  assert.equal(await reachable('rn@length3.test'), false);
+  const held = await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'rn'}});
   assert.deepEqual([held.status, held.json.error], [409, 'That name was let go, and is held for its owner a while']);
-  assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'ren'}})).status, 201);
+  assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'rn'}})).status, 201);
   // Held long enough, it is anyone's.
   const {eq} = await import('drizzle-orm');
-  await s.call('DELETE', '/v1/inbox/addresses/ren@length3.test', {token: ren});
-  await s.db.update(schema.address).set({releasedAt: new Date(Date.now() - 31 * 86_400_000)}).where(eq(schema.address.address, 'ren@length3.test'));
-  assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'ren'}})).status, 201);
+  await s.call('DELETE', '/v1/inbox/addresses/rn@length3.test', {token: ren});
+  await s.db.update(schema.address).set({releasedAt: new Date(Date.now() - 31 * 86_400_000)}).where(eq(schema.address.address, 'rn@length3.test'));
+  assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'rn'}})).status, 201);
+  // A username is changed, never let go; the one it was is held for its owner the same, theirs to change back to.
+  const lettingGo = await s.call('DELETE', '/v1/inbox/addresses/ren@length3.test', {token: ren});
+  assert.deepEqual([lettingGo.status, lettingGo.json.error], [409, 'Your username can be changed, not let go']);
+  assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'rx'}})).status, 201);
+  assert.deepEqual((await s.call('PUT', '/v1/inbox/username', {token: ren, body: {name: '@Ren-B'}})).json, {address: 'ren-b@length3.test'});
+  // Changed, it stays their first name here, before the one claimed beside it.
+  assert.deepEqual(((await s.call('GET', '/v1/inbox/me', {token: ren})).json.addresses as {address: string}[]).map((x) => x.address), ['ren-b@length3.test', 'rx@length3.test']);
+  assert.deepEqual([await reachable('ren@length3.test'), await reachable('ren-b@length3.test')], [false, true]);
+  assert.equal((await s.call('PUT', '/v1/inbox/username', {token: mio, body: {name: 'ren'}})).status, 409);
+  assert.equal((await s.call('PUT', '/v1/inbox/username', {token: ren, body: {name: 'ren'}})).status, 200);
+  assert.deepEqual([await reachable('ren@length3.test'), await reachable('ren-b@length3.test')], [true, false]);
+  // Twice an hour at most, so nobody holds a row of names by changing through them.
+  const third = await s.call('PUT', '/v1/inbox/username', {token: ren, body: {name: 'ren-c'}});
+  assert.deepEqual([third.status, third.json.error], [429, 'Your name can change twice an hour']);
   // A name on one's own domain answers while its DNS names this Remote for its owner.
   const rec = (await s.call('GET', '/v1/inbox/domains/ren.dev', {token: ren})).json as unknown as {name: string; value: string};
   s.publish(rec.name, rec.value);
@@ -860,14 +874,29 @@ test('Names: people and servers share one namespace; a name let go is held for i
   assert.ok(((await s.call('GET', '/v1/inbox/me', {token: ren})).json.addresses as {address: string; lapsed?: boolean}[]).find((a) => a.address === 'ren@ren.dev')?.lapsed);
 });
 
+test('A username from the first sign-in: what they are called, as a name is written, the next free one if taken', async () => {
+  const s = await service();
+  const of = async (t: string) => ((await s.call('GET', '/v1/inbox/me', {token: t})).json as unknown as {addresses: {address: string}[]}).addresses.map((a) => a.address);
+  const ren = await s.start('Ren'), another = await s.start('Ren!'), zoe = await s.start('Zoë Ada'), yamada = await s.start('山田');
+  assert.deepEqual([await of(ren), await of(another), await of(zoe), await of(yamada)],
+    [['ren@length3.test'], ['ren2@length3.test'], ['zoe-ada@length3.test'], ['user@length3.test']]);
+  // An account given none at sign-up (the Remote was busy) is given one the first time it needs one; a handle
+  // written on Home comes before what the provider calls them.
+  const kai = await s.start('Kai');
+  await s.db.execute(sql`delete from address where address = 'kai@length3.test'`);
+  await s.call('PUT', '/v1/home/profile', {token: kai, body: {value: JSON.stringify({name: 'Kai', handle: 'kai.dev', bio: ''}), version: 0}});
+  const made = await s.call('POST', '/v1/servers', {token: kai, body: {name: 'Trip'}});
+  assert.equal(made.status, 201, made.text);
+  assert.deepEqual(await of(kai), ['kai.dev@length3.test']);
+});
+
 test('Names on the Remote: first come, their owner\'s with no term to renew; let go, held a while; a code finds whoever has it', async () => {
   const s = await service();
   const ren = await s.start('Ren'), mio = await s.start('Mio');
-  const claimed = await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'ren'}});
-  assert.deepEqual([claimed.status, claimed.json], [201, {address: 'ren@length3.test'}]);
-  await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'mio'}});
+  // Each is given theirs at the first sign-in, made of what they are called.
   type Me = {code: string; addresses: {address: string}[]};
   const me = (await s.call('GET', '/v1/inbox/me', {token: ren})).json as unknown as Me;
+  assert.deepEqual(me.addresses.map((a) => a.address), ['ren@length3.test']);
   assert.match(me.code, /^\d{6}$/);
   // Found by its name alone, or by its code; a code is only ever one principal's.
   const look = async (q: string) => (await s.call('GET', `/v1/inbox/lookup?address=${q}`, {token: mio})).json as unknown as {reachable: boolean; address?: string};
@@ -877,12 +906,14 @@ test('Names on the Remote: first come, their owner\'s with no term to renew; let
   assert.notEqual(((await s.call('GET', '/v1/inbox/me', {token: mio})).json as unknown as Me).code, me.code);
   // A message reaches a code as it does a name.
   assert.equal((await s.call('POST', '/v1/inbox/messages', {token: mio, body: {to: me.code, body: 'hi'}})).status, 201);
-  // Let go, it answers no one, and is held for Ren a while: nobody else may claim it, Ren takes it back.
-  assert.equal((await s.call('DELETE', '/v1/inbox/addresses/ren@length3.test', {token: ren})).status, 200);
+  // Changed, the one it was answers no one, and is held for Ren a while: nobody else may claim it, Ren changes back.
+  // The code stays theirs, and finds them by the new.
+  assert.equal((await s.call('PUT', '/v1/inbox/username', {token: ren, body: {name: 'ren-x'}})).status, 200);
   assert.equal((await look('ren')).reachable, false);
+  assert.deepEqual(await look(me.code), {address: 'ren-x@length3.test', reachable: true});
   const held = await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'ren'}});
   assert.deepEqual([held.status, held.json.error], [409, 'That name was let go, and is held for its owner a while']);
-  assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'ren'}})).status, 201);
+  assert.equal((await s.call('PUT', '/v1/inbox/username', {token: ren, body: {name: 'ren'}})).status, 200);
   assert.equal((await look('ren')).reachable, true);
   // There is no term: nothing to renew, here or for a server.
   assert.equal((await s.call('POST', '/v1/inbox/addresses/ren@length3.test/renew', {token: ren})).status, 404);
@@ -1100,12 +1131,13 @@ test('Guests: shown as guests, held to so many posts an hour each and on a board
 test('Names: an account keeps five, those it let go among them; a few servers a day; a server its maker leaves with nobody else in it is held a day', async () => {
   const s = await service();
   const ren = await s.start('Ren'), mio = await s.start('Mio');
-  for (const n of ['r1', 'r2', 'r3', 'r4', 'r5']) assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: n}})).status, 201);
+  // Their username, given at sign-up, is the first of the five.
+  for (const n of ['r1', 'r2', 'r3', 'r4']) assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: n}})).status, 201);
   // Let go, a name is still held for Ren, and still counts: no sixth by letting go of one.
-  await s.call('DELETE', '/v1/inbox/addresses/r5@length3.test', {token: ren});
+  await s.call('DELETE', '/v1/inbox/addresses/r4@length3.test', {token: ren});
   const sixth = await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'r6'}});
   assert.deepEqual([sixth.status, sixth.json.error], [409, 'Too many names']);
-  assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'r5'}})).status, 201);
+  assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'r4'}})).status, 201);
   // Ten servers a day.
   await named(s, [mio, 'mio']);
   const ids: string[] = [];
@@ -1403,17 +1435,17 @@ test('A board item taken off is not brought back by a late change; closing a boa
   assert.equal((await s.call('POST', `/v1/open/${bid}/guest`, {body: {invite: '0'.repeat(32), name: 'Aki'}})).status, 404);
 });
 
-test('Letting an address go takes down what went public under it; a face its owner no longer has holds nothing for them', async () => {
+test('A username changed takes what went public under it along; the name it was holds nothing for whoever has it next', async () => {
   const s = await service();
   const ren = await s.start('Ren'), mio = await s.start('Mio');
-  await named(s, [ren, 'ren']);
   await s.call('PATCH', '/v1/repos/hello/draft', {token: ren, body: {version: 0, set: {a: null}, remove: []}});
   assert.equal((await s.call('PUT', '/v1/repos/hello/seen', {token: ren, body: {seen: 'everyone', as: 'me'}})).json.as, 'ren@length3.test:hello');
-  await s.call('DELETE', '/v1/inbox/addresses/ren@length3.test', {token: ren});
-  assert.equal(((await s.call('GET', '/v1/seen', {token: ren})).json as unknown as {seen: string}[])[0].seen, 'private');
+  await named(s, [ren, 'ren-b']);
+  const seen = ((await s.call('GET', '/v1/seen', {token: ren})).json as unknown as {seen: string; as: string}[])[0];
+  assert.deepEqual([seen.seen, seen.as], ['everyone', 'ren-b@length3.test:hello']);
   // Held long enough, the name is Mio's, and so is ren:hello when she makes hers public.
   await s.db.execute(sql`update address set released_at = now() - interval '31 days' where address = 'ren@length3.test'`);
-  assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'ren'}})).status, 201);
+  await named(s, [mio, 'ren']);
   await s.call('PATCH', '/v1/repos/hello/draft', {token: mio, body: {version: 0, set: {b: null}, remove: []}});
   const mine = await s.call('PUT', '/v1/repos/hello/seen', {token: mio, body: {seen: 'everyone', as: 'me'}});
   assert.deepEqual([mine.status, mine.json.as], [200, 'ren@length3.test:hello']);
