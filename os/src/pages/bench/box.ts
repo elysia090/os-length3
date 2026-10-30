@@ -10,7 +10,6 @@ import {boxMode, modeHint, modeMenu, MODES, nextIssue, onBoxMode, pillWords, sen
 import type {Screen, ScreenState} from './screen.ts';
 import {sessionFor, sessionIfAny, terminalFor} from './terminal.ts';
 import {PillLine} from './pill-line.ts';
-import {issueLook, lookFrom, todoLook} from '../look.ts';
 import {EditLine} from './edit-box.ts';
 
 // The box at the foot of a work page's center (DESIGN.md § Forge, The box at the foot): one field, and at its left a
@@ -351,10 +350,9 @@ export class Box {
         this.#refuse(kind ? t('Write its title after {kind}：', {kind}) : t('Its first line is its title'));
         return;
       }
-      // Pressed, it opens where it stands (look.ts): the issue's summary, the TODO's mark; their page is a deed further.
-      const to = sent.to, went = () => this.#p.went(at, 'issue' in to ? {issue: to.issue} : 'todo');
-      const row = sessionFor(at).note(sent.head, sent.words,
-        (pressed) => lookFrom(pressed, 'issue' in to ? issueLook(at, to.issue, went) : todoLook(to.todo, went)));
+      // Pressed, it goes to where it is: the issue in Git, the TODO on Home.
+      const to = sent.to;
+      const row = sessionFor(at).note(sent.head, sent.words, () => this.#p.went(at, 'issue' in to ? {issue: to.issue} : 'todo'));
       if (this.prompt.value === text) { land(row); this.prompt.value = ''; drafts.delete(this.#draft()); this.#fit(); }
       this.heard.textContent = sent.said;
       this.#pillSays();

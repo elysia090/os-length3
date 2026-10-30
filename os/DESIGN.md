@@ -1460,13 +1460,11 @@ marker's, a step done's, a removal's, the sky's, the same for the same name;
 what it is and its words: Review：…), the boards with posts not seen (#),
 and the boards this browser writes in as a guest (#, Trip · where you write
 as a guest: a way back always there, signed in or not, the one written in
-last first, its card reading the board and writing in it as that guest); at
-each row's end one slot, the unread dot, a chevron under the pointer (it
-opens down where it stands), the × once open. A row is read whole where it
-stands, wrapped where its words break (in Japanese between phrases, never in
-the middle of a word), never cut with …: its name goes on under itself, its
-badge, its place and its slot stay on its first line; only words of pages
-stop at six lines, its card holding the rest. The pane keeps its width. In
+last first, pressed to that board); at each row's end one slot, the unread
+dot, a chevron under the pointer (it goes there). A row is two lines at
+most: its name, going on under itself where it must (its badge, its place
+and its slot on its first line), and one line of what came, cut where it
+runs out of room. The pane keeps its width. In
 the Prompt's lines there, a line run that goes past the pane's width goes on
 under itself beside its prompt line's pill, never back under it; a line
 sent before the shell first waits at its prompt line waits for it. The same round initial
@@ -1477,24 +1475,14 @@ beside it. The plugin area comes down over it when the rail's plug opens it.
 
 A row in a pane (Lately's here, the word at the foot of Forge's and Git's,
 a line the box wrote in the Prompt) is the same row wherever it is, and it
-is not a door to another page: pressed, it opens where it stands
-(`look.ts`). One reaction, then the work right there: the row is lit and a
-card comes out of it, under it (over it, near the foot), on the row's own
-edges (the pane's lines); a row that is a box (Lately's) has the card as its
-own lower part, the two one panel with the row as its head (no second title;
-the row's one line folds away, its dot goes, a × at its right), unfolding out
-of it and folding back in, with what can be done there: a conversation's last lines and a
-reply sent from the card (Ctrl+Enter or Send; read as it opens, the row
-stays while its card is out and goes once it is put away); a board's last
-posts and a post; the lines one left off at, as they are now; an issue's
-summary, written there and kept as the card goes; a TODO's mark, done (or
-not) with a press, as Home's is. The way to its page is the card's last
-deed, at its right: Inbox, Server, Go on writing (Forge, that line a third
-of the way down and the caret where it was), Git at the issue, Home; where
-the card writes back, sending is its deed (Send filled) and the way to the
-page a quiet one at the left of Send's line, so the card ends in one row. One
-card at a time; Escape, a press outside, its × or the row again put it
-away, as every pop out goes, and the keyboard goes back to the row.
+tells, it does not hold: it says what came in two lines at most (its name,
+and one line of it cut where it runs out of room), and pressed it goes to
+where the thing is done: the conversation in Inbox, the board in Server,
+the line one left off at in Forge (that line a third of the way down, the
+caret where it was), the issue in Git, the TODO on Home. Nothing is
+answered, posted or written in the pane: a pane that tried to be each of
+those places, in a card the size of a row, was none of them well. Under the
+pointer, a chevron at the row's end says it goes there.
 
 ### Forge
 
@@ -1737,7 +1725,7 @@ as it lands on the line's words, and the line is lit a moment as a file
 landed on is. Issue and TODO go the same way; the pill's number turns to the
 next as a counter's figure does. With the pane put away (or narrow), the
 slip slides on and rises out of sight, and the line is there when the pane
-comes back. Pressed, the line opens where it stands (§ Home, its card). What
+comes back. Pressed, the line goes to it (the issue in Git, the TODO on Home). What
 is half written is kept for the repo and for what the box does.
 
 Edit makes the box a line of the file in front, written there as the line is
@@ -2599,8 +2587,7 @@ the conversations not read whose last word is not one's own (the two newest,
 picked as Home's Lately picks them) come into the right pane's foot, its foot
 on the prompt box's line, as Lately's rows (who, and what it is and its first
 line: Review：…), sliding in from the window's edge as they come; pressed,
-one opens where it stands, to be answered there (§ Home), Inbox a deed
-further; read, it goes once its card is put away.
+one opens the conversation in Inbox; read, it goes.
 
 What comes is looked for every little while (10 s) while the page is shown:
 the conversations' rows are drawn again under the field to write to someone

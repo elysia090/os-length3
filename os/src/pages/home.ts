@@ -15,7 +15,6 @@ import {remember} from './server/parts.ts';
 import {Reference} from './forge/reference.ts';
 import type {Context} from './context.ts';
 import {latelyRow, onRightPane, pluginArea, rightPaneOpen, setRightPane, waiting, wordLine} from './pane.ts';
-import {boardLook, leftOffLook, lookFrom, threadLook} from './look.ts';
 import {mark, paneMark} from '../ui/icons.ts';
 import {onPlugins, pluginsOpen} from '../app/plugins.ts';
 import {errorText} from '../app/errors.ts';
@@ -125,8 +124,7 @@ function lately(ctx: Context): HTMLElement {
       const end = text === null || left.at === null ? -1 : text.indexOf('\n', left.at);
       const quote = text === null ? '' : text.slice(0, end < 0 ? text.length : end).split('\n').reverse().find((l) => l.trim())?.trim() ?? '';
       const goOn = () => ctx.openRepo(left.repo, left.path, left.at === null ? 'end' : {at: left.at});
-      rows.push(latelyRow(shownName(left.path), t('{repo} · where you left off', {repo: left.repo}), {quote, place: left.repo, badge: 'file',
-        look: (row) => lookFrom(row, leftOffLook(left.repo, left.path, left.at, goOn)), go: goOn}));
+      rows.push(latelyRow(shownName(left.path), t('{repo} · where you left off', {repo: left.repo}), {quote, place: left.repo, badge: 'file', go: goOn}));
     }
     const all = connection() ? await servers.servers().catch(() => []) : [];
     if (connection()) {
@@ -134,8 +132,7 @@ function lately(ctx: Context): HTMLElement {
       for (const th of waiting(threads, 3)) {
         const who = th.name || inbox.shown(th.address);
         const answer = () => { openConversation(th.address); void ctx.go('inbox'); };
-        rows.push(latelyRow(who, wordLine(th), {fresh: true, badge: {who},
-          look: (row) => lookFrom(row, threadLook(th.address, th.name, answer)), go: answer}));
+        rows.push(latelyRow(who, wordLine(th), {fresh: true, badge: {who}, go: answer}));
       }
       for (const b of news().boards.slice(0, 3)) {
         const s = all.find((x) => x.id === b.server);
@@ -145,7 +142,7 @@ function lately(ctx: Context): HTMLElement {
           remember({server: s.id, board: board.id});
           void ctx.go('server');
         };
-        rows.push(latelyRow(board.name, t('{server} · new posts', {server: s.name}), {fresh: true, badge: 'board', look: (row) => lookFrom(row, boardLook(board.id, board.name, there)), go: there}));
+        rows.push(latelyRow(board.name, t('{server} · new posts', {server: s.name}), {fresh: true, badge: 'board', go: there}));
       }
     }
     // The boards this browser writes in as a guest (none of its servers'): where one writes, a way back always,
@@ -153,11 +150,9 @@ function lately(ctx: Context): HTMLElement {
     const ours = new Set(all.flatMap((s) => s.boards.map((x) => x.id)));
     for (const {id, here} of servers.guestBoards().filter((g) => !ours.has(g.id)).slice(0, 3)) {
       const there = () => { remember({board: id}); void ctx.go('server'); };
-      rows.push(latelyRow(here.name, t('{server} · where you write as a guest', {server: here.server}), {badge: 'board',
-        look: (row) => lookFrom(row, boardLook(id, here.name, there, here)), go: there}));
+      rows.push(latelyRow(here.name, t('{server} · where you write as a guest', {server: here.server}), {badge: 'board', go: there}));
     }
-    // A row whose look is out stays while it is (a conversation read as it opened would go from under its card).
-    if (mine !== asked || list.querySelector('.looked')) return;
+    if (mine !== asked) return;
     list.replaceChildren(...(rows.length ? rows : [h('p', {class: 'muted small lately-none'}, t('Nothing new'))]));
   };
   void paint();

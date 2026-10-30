@@ -7,7 +7,6 @@ import {onPlugins, pluginsOpen, setPluginsOpen, slots} from '../app/plugins.ts';
 import {connection} from '../remote/connection.ts';
 import {icon} from '../ui/icons.ts';
 import {kindWords} from './todo-list.ts';
-import {lookFrom, threadLook} from './look.ts';
 
 // The right pane beside the center (Forge's, Git's, Home's): what the center refers to, the plugin area at its top,
 // the Prompt under it, a conversation's word at its foot. Put away, the center takes the whole width, and everything
@@ -155,19 +154,17 @@ export function personBadge(who: string): HTMLElement {
  * line (what was said, where it is). Every row the same rounded box; who it is from, its initial says. Pressed, it
  * opens where it stands (look.ts), never at once another page.
  */
-export function latelyRow(what: string, line: Node[] | string, o: {fresh?: boolean; quote?: string; place?: string; badge: Badge; look(row: HTMLElement): void; go?(): void}): HTMLButtonElement {
+export function latelyRow(what: string, line: Node[] | string, o: {fresh?: boolean; quote?: string; place?: string; badge: Badge; go(): void}): HTMLButtonElement {
   // Its name, where it is (a repo) quiet at its right, and at its end one slot: the dot while something of it is not
-  // read; under the pointer, the chevron that says it opens down where it stands; opened, the × that puts it away.
-  // A quoted line is its second line, and says where it was left better than words would: the words are heard only.
-  const b = h('button', {type: 'button', class: 'lately-row', 'aria-expanded': 'false'},
+  // read. A quoted line is its second line, and says where it was left better than words would: the words are heard
+  // only. It tells, it does not hold: pressed, it goes to where the thing is done (a conversation, a board, the line).
+  const b = h('button', {type: 'button', class: 'lately-row'},
     h('span', {class: 'lately-what'}, badge(o.badge), h('span', {class: 'lately-name'}, what),
       o.place ? h('span', {class: 'lately-place'}, o.place) : null,
       h('span', {class: 'lately-end', 'aria-hidden': 'true'}, o.fresh ? h('span', {class: 'lately-dot'}) : null)),
     o.quote ? h('span', {class: 'lately-quote'}, o.quote) : null,
     h('span', {class: `muted small lately-line${o.quote ? ' sr-only' : ''}`}, ...(typeof line === 'string' ? [line] : line))) as HTMLButtonElement;
-  b.addEventListener('click', () => o.look(b));
-  // Pressed twice, as a file is opened: straight there (what its card's own button does), not its card twice.
-  if (o.go) { const go = o.go; b.addEventListener('dblclick', (event) => { event.preventDefault(); go(); }); }
+  b.addEventListener('click', () => o.go());
   return b;
 }
 
@@ -189,8 +186,7 @@ const arrived = new Set<string>();
 /**
  * Word from someone that waits, while one works: at the pane's foot, level with the prompt box, the same rows as Home's
  * Lately (the two newest, there being less room), who and the first line of what they said, sliding in from the
- * window's edge as it comes. Pressed, it opens where it stands, to be answered there; Inbox (`open`) is a deed
- * further. Read, it goes.
+ * window's edge as it comes. Pressed, the conversation in Inbox (`open`). Read, it goes.
  */
 export function paneWord(open: (address: string) => void): HTMLElement {
   const list = h('section', {class: 'pane-word', 'aria-label': t('New messages')});
@@ -200,12 +196,10 @@ export function paneWord(open: (address: string) => void): HTMLElement {
     const come = connection() && news().inbox > 0
       ? waiting(await inbox.threads().catch(() => []), 2) : [];
     if (mine !== asked) return;
-    // A row whose look is out stays while it is (read as it opened, it would go from under its card); it goes once put away.
-    if (list.querySelector('.looked')) return;
     const rows = come.map((th) => {
       const who = th.name || inbox.shown(th.address);
-      // The same row as Home's Lately, opening where it stands: its last lines and a reply; Inbox a deed further.
-      const b = latelyRow(who, wordLine(th), {fresh: true, badge: {who}, look: (row) => lookFrom(row, threadLook(th.address, th.name, () => open(th.address))), go: () => open(th.address)});
+      // The same row as Home's Lately: who and their first line; pressed, the conversation in Inbox.
+      const b = latelyRow(who, wordLine(th), {fresh: true, badge: {who}, go: () => open(th.address)});
       return {b, key: `${th.address} ${th.last.time}`};
     });
     list.replaceChildren(...rows.map((r) => r.b));

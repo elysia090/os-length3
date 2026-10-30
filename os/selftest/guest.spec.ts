@@ -23,16 +23,12 @@ test('a guest come back to the app is led back to their board from Home', async 
   await app.server.layer.getByRole('button', {name: 'Write as a guest', exact: true}).click();
   await app.server.post('general', 'Hello from a guest');
 
-  // Come back another day: Home leads to the board, from Lately (where it is read and written in as the guest) and
-  // from the servers, a chip after them.
+  // Come back another day: Home leads to the board, from Lately and from the servers, a chip after them.
   await app.page.reload();
   await app.settled();
   await app.rail.go('home');
   await expect(app.main.getByRole('button', {name: '#general of Trip, as a guest'})).toBeVisible();
   await app.main.getByRole('button', {name: /where you write as a guest/}).click();
-  const look = app.page.getByRole('dialog', {name: '#general'});
-  await expect(look).toContainText('Hello from a guest');
-  await look.getByRole('button', {name: 'Open in Server', exact: true}).click();
   await expect(app.server.box('general')).toHaveAttribute('placeholder', 'As Cy, a guest');
   await expect(app.server.talk('general')).toContainText('Hello from a guest');
 });
