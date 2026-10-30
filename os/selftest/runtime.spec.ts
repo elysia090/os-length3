@@ -320,18 +320,12 @@ test('signed in, a repo on the Remote is deleted from its gear as turning it off
   await card.getByRole('button', {name: 'What to do with hello'}).click();
   const menu = card.getByRole('menu', {name: 'What to do with hello'});
   await menu.getByRole('menuitem', {name: 'Delete'}).click();
-  // Asked in the list as the switch on its card asks: the code set first (a passkey made), then the names and the code.
+  // Asked in the list as the switch on its card asks: its name written out, then a passkey (made there, the first time).
   const ask = menu.getByRole('group', {name: 'hello', exact: true});
-  const fresh = ask.getByRole('textbox', {name: 'New code'});
-  await expect(fresh).toBeFocused();
-  await fresh.fill('k3y42');
-  await app.answer(ask.getByRole('button', {name: 'Set the code'}), fresh);
-  const name = ask.getByRole('textbox', {name: 'Your name'});
+  const name = ask.getByRole('textbox', {name: 'The repo\'s name'});
   await expect(name).toBeFocused();
   await expect(ask).toContainText('It goes from this device and from the Remote, which keeps it 30 days: turned on there, it comes back.');
-  await name.fill(app.person);
-  await ask.getByRole('textbox', {name: 'The repo\'s name'}).fill('hello');
-  await ask.getByRole('textbox', {name: 'Code', exact: true}).fill('k3y42');
+  await name.fill('hello');
   await app.answer(ask.getByRole('button', {name: 'Delete', exact: true}), ask);
   await expect(card).toHaveCount(0);
   // On the Remote it is off, there to be turned on again for 30 days.

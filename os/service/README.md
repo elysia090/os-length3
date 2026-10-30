@@ -99,7 +99,7 @@ main has made it Cloudflare refuses another branch's `versions upload`.
 | Who someone is | `auth.ts` (Better Auth), `devoauth.ts` | `/api/auth/*`: social sign-in, passkeys, `get-session`, `list-sessions`, `revoke-session`, `sign-out`, linked providers; the device flow `device/code`, `device/token` (core), `device`, `device/approve`, `device/deny` (page); `/dev-oauth/*` only where `dev` is offered | `user`, `session`, `account`, `verification`, `passkey`, `device_code`, `rate_limit`; `guard` (a passkey sign-in is proof of presence) | page, core |
 | A Remote for research | `enter.ts` | `POST /v1/enter` | `user`, `session`, `guard`, `throttle` | page |
 | File contents and releases | `files.ts`, `bucket.ts`, `releases.ts` (what is pinned), `mirror.ts` (the deploy puts it in the bucket) | `GET /v1/os/:sha`, `GET /v1/desktop/:file` (anyone, Range, streamed), `POST /v1/blobs/missing`, `PUT/GET /v1/blobs/:sha` | `blob` (and `room.used`, by trigger); bytes in the bucket: `u/USER/SHA`, `os/SHA`, `desktop/FILE` | page (the desktop app's download), core (`/v1/os` for a Prompt's root, falling back to the release) |
-| Repos kept | `repos.ts` | `GET /v1/moved`; `/v1/repos`, `/v1/repos/gone`, `/v1/repos/:name` (`?line=`), `draft`, `cuts`, `cuts/:id`, `log`, `lines`, `lines/:line/push`, `changes`, `changes/:id/reviews\|merge\|reject\|reset`, `off`, `on`, `discard`; `/v1/off-code` | `repo`, `line`, `cut`, `change`, `review`, `repo_gone`, `room` (stamp, used), `guard` (the code), `throttle` (wrong codes) | page, core (sync, history, work); off and discard only from the page (they ask a passkey) |
+| Repos kept | `repos.ts` | `GET /v1/moved`; `/v1/repos`, `/v1/repos/gone`, `/v1/repos/:name` (`?line=`), `draft`, `cuts`, `cuts/:id`, `log`, `lines`, `lines/:line/push`, `changes`, `changes/:id/reviews\|merge\|reject\|reset`, `off`, `on`, `discard` (a passkey just now and the repo's name) | `repo`, `line`, `cut`, `change`, `review`, `repo_gone`, `room` (stamp, used), `guard` (sign-ins just now) | page, core (sync, history, work); off and discard only from the page (they ask a passkey) |
 | The plan and billing | `plan.ts` (the rules and routes), `stripe.ts` (Stripe's REST and webhook signatures), `devbilling.ts` (a stand-in for Stripe in `dev.ts`: Checkout, 3-D Secure and the portal in test mode) | `GET /v1/plan` (the tier, its use, the tiers), `POST /v1/plan/checkout` (a tier), `POST /v1/plan/portal` (with a tier, at the step that changes to it); `POST /v1/stripe/webhook` (anyone; the webhook signed by Stripe, the tier read from the price); its rules are asked by the routes that make something new: a new repo and a draft that grows (`repos.ts` PATCH draft), making a server (`servers.ts`), claiming a name (`inbox.ts`), each 402 with the rule | `plan`, `billing_event`; reads `repo`, `room.used` (counted again from the rows by the sweep), `address` | page (Remote → Plan), core (`l3 remote plan`); 402 is said in place and the work stays on the device |
 | Home | `home.ts` | `GET/PUT /v1/home/:key` (profile, todo, dotfiles) | `home` | page, core |
 | Names and Inbox | `inbox.ts`, `names.ts` | `/v1/inbox/me` (gives the username if there is none yet), `username` (PUT: change it), `addresses` (claim another, let go), `domains/:domain`, `lookup`, `messages`, `threads`, `threads/:address(/read)`, `contacts`, `signals` (send), `signals/take` (POST: taking deletes); `GET /.well-known/length3` (anyone: other Remotes) | `address`, `principal_code`, `contact`, `message`, `signal`, `throttle` | page, core (l3 name, l3 inbox) |
@@ -209,8 +209,8 @@ L2, RFC 9700, RFC 8628 and WebAuthn, is tested in `security.test.ts`
   ceremonies 10 a minute; `device/token` 40; looking a user code up 5 in its
   10 minutes: `AUTH_LIMITS`), a research link's key (20 an hour), joining a
   board as a guest (30 an hour), resolving a code signed out (30 an hour).
-  Per account: codes looked up, messages, signals, posts, servers made, wrong
-  off-codes.
+  Per account: codes looked up, messages, signals, posts, servers made,
+  username changes.
 - **One person, one account**: a second provider joins an account only when
   it says it verified the same address, and the account's own was verified;
   no provider is taken at its word without that (Better Auth's
@@ -229,11 +229,11 @@ The Worker is given one secret, `BETTER_AUTH_SECRET` (made once by
 key derived from it with HKDF-SHA256 under its own label (`keys.ts`):
 `better-auth` (sign-in's cookies and state), `domain-proof` (an Inbox
 domain's TXT proof), `invite` (what is kept of an invitation and a guest's
-token) and `off-code` (what is kept of the code that turns a repo off, an
-HMAC, so a copy of the database does not give the codes up). Before
-`keys.ts` the secret itself keyed all of these and the off-code was a bare
-digest; the Remote had no accounts in production when this changed, so
-nothing was carried over.
+token) and `mark` (a look's tag). Before `keys.ts` the secret itself keyed
+all of these; the Remote had no accounts in production when this changed,
+so nothing was carried over. (There was an `off-code` key, for a code a repo
+was turned off with; turning off now asks for a passkey and the repo's name,
+and nothing of it is kept.)
 
 To rotate it (a leak, or someone who held it leaving), put a new one, 48
 random bytes as base64url, with `npx wrangler secret put BETTER_AUTH_SECRET`
@@ -244,8 +244,7 @@ which a new secret alone does not end. Then, at once and by design:
 every session ends (everyone signs in again; devices pair again), every
 custom domain's TXT record must be given anew (the Remote shows the new one
 under Inbox; until then the address lapses, and is let go after its hold),
-invitations out and guests' tokens stop opening their boards, and every
-account sets its off-code again. One purpose's key alone can be moved on by
+and invitations out and guests' tokens stop opening their boards. One purpose's key alone can be moved on by
 raising its version in `keys.ts`. The other secrets (`STRIPE_SECRET_KEY`,
 `STRIPE_WEBHOOK_SECRET`, the providers' client secrets, `ENTER_KEY`) are
 each rotated where they are made (Stripe's dashboard rolls a webhook secret

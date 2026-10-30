@@ -585,20 +585,13 @@ class Remote extends Part {
    * Turn `repo` off from its card, as its switch asks: with no code yet the code is set first
    * (a passkey made and confirmed with it), then the names and the code are asked once.
    */
-  async turnOff(repo: string, code: string) {
+  /** Turned off from its card: its name written out, then the passkey (made there and then, the first time). */
+  async turnOff(repo: string) {
     await this.power(repo).click();
     const ask = this.ask(repo);
-    const fresh = ask.getByRole('textbox', {name: 'New code'});
-    const name = ask.getByRole('textbox', {name: 'Your name'});
-    await expect(fresh.or(name)).toBeFocused();
-    if (await fresh.isVisible()) {
-      await fresh.fill(code);
-      await this.app.answer(ask.getByRole('button', {name: 'Set the code'}), fresh);
-    }
+    const name = ask.getByRole('textbox', {name: 'The repo\'s name'});
     await expect(name).toBeFocused();
-    await name.fill(this.app.person);
-    await ask.getByRole('textbox', {name: 'The repo\'s name'}).fill(repo);
-    await ask.getByRole('textbox', {name: 'Code', exact: true}).fill(code);
+    await name.fill(repo);
     await this.app.answer(ask.getByRole('button', {name: 'Turn off'}), ask);
   }
 

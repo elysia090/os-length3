@@ -37,16 +37,14 @@ test('this device is never ended from the list: it signs out from the menu', asy
   assert.equal(await remote.answers(laptop), true);
 });
 
-test('the name the off ask shows is the one the Remote checks', async () => {
+test('turning a repo off asks, after a passkey, for its name as it is written', async () => {
   const t = await remote.signIn('Sora Tamura');
   await here(t);
   await remote.repo(t, 'notes');
-  await remote.setCode(t, 'AB12C');
-  const me = await account.me();
-  assert.equal(me?.name, 'Sora Tamura');
-  // Just proven (the code was set a moment ago): no passkey is asked again, and a name not the account's is refused.
-  await assert.rejects(account.turnOff('notes', 'Sora', 'notes', 'AB12C', true), /The names do not match/);
-  const off = await account.turnOff('notes', me!.name, 'notes', 'AB12C', true);
+  // Just proven: no passkey is asked again, and a name not the repo's own is refused.
+  await remote.prove(t);
+  await assert.rejects(account.turnOff('notes', 'Notes', true), /The name does not match/);
+  const off = await account.turnOff('notes', 'notes', true);
   assert.ok(off.until > off.offAt);
 });
 

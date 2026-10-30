@@ -55,11 +55,5 @@ export async function inProcessRemote() {
     await fetch(`${REMOTE}/v1/repos/${name}/draft`, {method: 'PATCH', headers: bearer(token), body: JSON.stringify({version: 0, set: {}, remove: []})});
   };
 
-  /** The code a repo is turned off with, set for `token`'s account (proven first, as the Remote asks). */
-  const setCode = async (token: string, code: string) => {
-    await prove(token);
-    await fetch(`${REMOTE}/v1/off-code`, {method: 'POST', headers: bearer(token), body: JSON.stringify({code})});
-  };
-
-  return {db, signIn, answers, prove, repo, setCode};
+  return {db, signIn, answers, prove, repo};
 }

@@ -7,8 +7,9 @@ import {askFoot, SETTLE} from '../common.ts';
 import {errorText} from '../../app/errors.ts';
 import {button, pressing} from './parts.ts';
 
-// Turning a repo off, or discarding it: asked in its card first, with a passkey, the names and the code. Deleting it
-// from a list's gear (repo-gear.ts) is asked the same, in the gear's list: it is turned off, and its copy here goes.
+// Turning a repo off, or discarding it: asked in its card first, its name written out, then a passkey (as GitHub asks
+// for a repository's name before it is deleted). Deleting it from a list's gear (repo-gear.ts) is asked the same, in
+// the gear's list: it is turned off, and its copy here goes.
 
 /**
  * What is done to a repo from its card once it is asked: turned off (kept 30 days), or discarded for good; or, from a
@@ -19,23 +20,20 @@ export type Deed = 'off' | 'discard' | 'delete';
 /** How an ask ends: drawn again where it was asked (`done`) or once the browser did it (`ended`), and a passkey made on the way (`keyed`). */
 export interface AskWays { done(): Promise<void>; ended(): Promise<void>; keyed(): void }
 
-/**
- * What is asked for in the card before a repo is turned off or discarded: the deed's word, what will happen, and
- * the deed (`proven`: a passkey confirmed it was you a moment ago, setting the code, so it is not asked again).
- */
-interface Ask { verb: string; what: string[]; act(name: string, typed: string, code: string, proven: boolean): Promise<unknown> }
+/** What is asked for in the card before a repo is turned off or discarded: the deed's word, what will happen, and the deed (`typed`, its name as written). */
+interface Ask { verb: string; what: string[]; act(typed: string): Promise<unknown> }
 const turningOff = (repo: string): Ask => ({
   verb: t('Turn off'),
   what: [t('Kept on the Remote for 30 days; turning it on brings it back at once.')],
   // The copy here stays until it is freed from the card (where Forge was).
-  act: (who, typed, code, proven) => account.turnOff(repo, who, typed, code, proven),
+  act: (typed) => account.turnOff(repo, typed),
 });
 /** Discarding, which takes it from the Remote now, for good; `here`, with the copy on this device. */
 const discarding = (repo: string, here: boolean): Ask => ({
   verb: t('Discard'),
   what: [t('It goes from the Remote now, with its history, and cannot be brought back.'), ...(here ? [t('The copy here goes with it.')] : [])],
   // The copy here first: one holding what the Remote lacks is kept, and nothing is discarded.
-  act: async (who, typed, code, proven) => { if (here) await freeOff(repo); await account.discard(repo, who, typed, code, proven); },
+  act: async (typed) => { if (here) await freeOff(repo); await account.discard(repo, typed); },
 });
 
 /**
@@ -45,11 +43,8 @@ const discarding = (repo: string, here: boolean): Ask => ({
 const deleting = (repo: string, after: () => Promise<void>): Ask => ({
   verb: t('Delete'),
   what: [t('It goes from this device and from the Remote, which keeps it 30 days: turned on there, it comes back.')],
-  act: async (who, typed, code, proven) => { await flush(); await account.turnOff(repo, who, typed, code, proven); await after(); },
+  act: async (typed) => { await flush(); await account.turnOff(repo, typed); await after(); },
 });
-
-/** A passkey used this long ago still counts as just now: the Remote takes one for five minutes (service/app.ts `proven`). */
-const PROOF = 4 * 60 * 1000;
 
 /**
  * `kind` done to `repo`, pressed at `from` in its card `el` (`here`: with a copy on this device): asked first in the
@@ -102,60 +97,30 @@ function settled(b: HTMLButtonElement, error: HTMLElement, f: () => Promise<void
 }
 
 /**
- * In the card: the names and the code, then a passkey; then the deed, on the
- * side it was pressed (`from`: the switch at the right, 廃棄 at the left), so
- * each step on to it comes under the pointer, and Not now on the other. With
- * no code yet, the card sets it first (making a passkey if the account has
- * none, then confirming with it) and goes straight on to the names.
+ * In the card: the repo's name written out, then a passkey; then the deed, on the side it was pressed (`from`: the
+ * switch at the right, 廃棄 at the left), so each step on to it comes under the pointer, and Not now on the other. An
+ * account with no passkey yet makes one there and then (with it, nothing else is ever asked of them to turn off).
  */
 async function confirm(el: HTMLElement, from: Element, repo: string, ask: Ask, w: AskWays) {
   const cancel = button(t('Not now'), 'small-button');
   const c = inCard(el, from, repo, cancel, w.done);
   cancel.addEventListener('click', () => void w.done().then(() => backToSwitch(repo)));
-  // The name checked is the account's, as its provider gave it; no page shows it, so the ask says it.
-  const [code, me] = await Promise.all([account.offCode().catch(() => ({set: false})), account.me().catch(() => null)]);
-  if (code.set) { names(c, ask, me?.name, 0); return; }
-  // No code yet: it is set here, then the names are asked at once.
-  const keys = await account.passkeys().catch(() => null);
-  setCode(c, !!keys && !keys.length, w.keyed, () => names(c, ask, me?.name, Date.now()));
-}
-
-/** The names and the code (`me`, the account's name as the ask says it), then the deed; `provenAt`, a passkey's last use here. */
-function names(c: InCard, ask: Ask, me: string | undefined, provenAt: number) {
+  let none = ((await account.passkeys().catch(() => null)) ?? [{}]).length === 0;
   const error = h('p', {class: 'error', role: 'alert'});
-  const who = field(t('Your name'));
-  const which = field(t('The repo\'s name'));
-  const five = field(t('Code'), {maxlength: '5', class: 'line-in mono'});
+  const which = field(t('The repo\'s name'), {class: 'line-in mono'});
   const go = deedButton(ask.verb, c.from);
   settled(go, error, async () => {
-    await ask.act(who.value, which.value, five.value, Date.now() - provenAt < PROOF);
+    if (which.value !== repo) { which.focus(); throw new Error(t('Type {repo} as it is written.', {repo})); }
+    // Made once: pressed again after the passkey step was stopped, the passkey made is the one used.
+    if (none) { await account.addPasskey(); none = false; w.keyed(); }
+    await ask.act(which.value);
     await look();
     await c.done();
     backToSwitch(c.repo);
   });
-  show(c, ...lines(ask.what),
-    me ? h('p', {class: 'muted small'}, t('To confirm, type {name}, {repo} and your code.', {name: me, repo: c.repo})) : null,
-    who, which, five, error, c.foot(go));
-  who.focus();
-}
-
-/** The code set first, with a passkey (a new one when the account has `none`); then `next`, the names. */
-function setCode(c: InCard, none: boolean, keyed: () => void, next: () => void) {
-  const error = h('p', {class: 'error', role: 'alert'});
-  const five = field(t('New code'), {maxlength: '5', class: 'line-in mono'});
-  const go = button(t('Set the code'), 'small-button primary');
-  settled(go, error, async () => {
-    if (!/^[A-Za-z0-9]{5}$/.test(five.value)) throw new Error(t('Five letters or digits.'));
-    // Made once: pressed again after the confirming step was stopped, the passkey made is the one used.
-    if (none) { await account.addPasskey(); none = false; keyed(); }
-    await account.setOffCode(five.value);
-    keyed();
-    next();
-  });
-  show(c, h('p', {class: 'muted small'}, t('This asks for a five-letter code of your own.')),
-    h('p', {class: 'muted small'}, none ? t('Set it here, with a new passkey on this device.') : t('Set it here, with your passkey.')),
-    five, error, c.foot(go));
-  five.focus();
+  which.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) go.click(); });
+  show(c, ...lines(ask.what), h('p', {class: 'muted small'}, t('To confirm, type {repo}.', {repo})), which, error, c.foot(go));
+  which.focus();
 }
 
 /**

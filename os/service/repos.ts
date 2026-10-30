@@ -41,9 +41,8 @@ import {and, desc, eq, inArray, isNull, ne, sql} from 'drizzle-orm';
 import type {Context, Hono} from 'hono';
 import {passkeyJustNow} from './auth.ts';
 import type {Plans} from './plan.ts';
-import {hmacHex, same as sameText} from './keys.ts';
-import {ago, body, fits as fitsIn, fitting, HEX, LIMIT, lock, ms, qualified, refuse, rows, sha256, slowDown, usedBy, UUID, type Db, type Vars} from './request.ts';
-import {blob, change, cut, guard, line, repo, repoGone, review, throttle, type Modes, type Review, type Tree} from './schema.ts';
+import {ago, body, fits as fitsIn, fitting, HEX, LIMIT, lock, ms, qualified, refuse, rows, sha256, usedBy, UUID, type Db, type Vars} from './request.ts';
+import {blob, change, cut, guard, line, repo, repoGone, review, type Modes, type Review, type Tree} from './schema.ts';
 import {KEPT, purge, REMEMBERED} from './sweep.ts';
 
 const enc = new TextEncoder();
@@ -169,7 +168,7 @@ const count = (n: unknown) => (typeof n === 'number' && Number.isInteger(n) && n
 /** Who did it, as their name is now, as long as what keeps it takes (a provider's name may be longer). */
 const whoBy = (c: Context<Vars>) => c.get('name').slice(0, 200);
 
-export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-codes are kept under (keys.ts: off-code). */ offKey?: string}, v1: Hono<Vars>) {
+export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>) {
   const db = d.db;
   const fits = (q: Db, user: string, more: number) => fitsIn(q, user, more, d.quota);
   const fitsUsed = (used: number | undefined, more: number) => fitting(Number(used), more, d.quota);
@@ -418,39 +417,21 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
 
   // ---- turning a repo off: kept 30 days, back at once until then, or discarded now ----
 
-  // An HMAC under a key of the Remote's own, not a bare digest: 36^5 codes are tried in seconds against a
-  // digest read from a copy of the database (audit A10), never against a key that is not in it.
-  const digestOf = async (user: string, code: string) => (d.offKey ? hmacHex(d.offKey, `off-code\n${user}\n${code.toUpperCase()}`) : sha256(enc.encode(`${user}:${code.toUpperCase()}`)));
-  const CODE = /^[A-Za-z0-9]{5}$/;
-  /** Wrong codes an account may give an hour. */
-  const OFF_TRIES = 10;
   /**
-   * What turning a repo off asks, and discarding it: a passkey just now, the account's name, the
-   * repo's name and the five-letter code, sent as {name, repo, code}. Refused (403, 409) unless all are so.
+   * What turning a repo off asks, and discarding it: a passkey just now (this very session signed in with one), and
+   * the repo's name written out, sent as {repo}, as GitHub asks for a repository's name before it is deleted: the
+   * person is at the device, and means this repo. Refused (403) unless both are so. There is no code of the
+   * account's to set and keep in mind as well: a passkey is the person, and the name is what they mean.
    */
   const confirmed = async (c: Context<Vars>, name: string) => {
-    const user = c.get('userId');
-    const b = await body<{name?: unknown; repo?: unknown; code?: unknown}>(c);
-    const [g] = await db.select().from(guard).where(eq(guard.userId, user)) as (typeof guard.$inferSelect)[];
+    const b = await body<{repo?: unknown}>(c);
+    const [g] = await db.select().from(guard).where(eq(guard.userId, c.get('userId'))) as (typeof guard.$inferSelect)[];
     if (!passkeyJustNow(g, c.get('sessionId'))) refuse(403, {error: 'Confirm with a passkey.'});
-    if (!g.offDigest) refuse(409, {error: 'Set the five-letter code under Sign-in first.'});
-    const same = (a: unknown, b: string) => typeof a === 'string' && a.trim().toLowerCase() === b.trim().toLowerCase();
-    if (!same(b?.name, c.get('name')) || b?.repo !== name) refuse(403, {error: 'The names do not match.'});
-    const right = typeof b?.code === 'string' && CODE.test(b.code) && sameText(await digestOf(user, b.code), g.offDigest);
-    // Wrong codes are counted, and past so many an hour none is taken, the right one neither: the code is not found by trying.
-    const key = `off-code:${user}`;
-    const wrong = await db.transaction(async (tx: Db) => {
-      await lock(tx, key);
-      const [r] = await rows<{n: number}>(tx, sql`select count(*)::int as n from throttle where key = ${key} and at > ${ago(3600_000)}`);
-      if (!right && r.n < OFF_TRIES) await tx.insert(throttle).values({key});
-      return r.n;
-    });
-    if (wrong >= OFF_TRIES) slowDown(3600, {error: 'Too many wrong codes; try again in an hour'});
-    if (!right) refuse(403, {error: 'That is not the code.'});
+    if (b?.repo !== name) refuse(403, {error: 'The name does not match.'});
   };
   const named = (user: string, name: string) => and(eq(repo.userId, user), eq(repo.name, name));
 
-  // Off: asks for a passkey just now, the account's name, the repo's name and the five-letter code.
+  // Off: asks for a passkey just now and the repo's name.
   v1.post('/repos/:name/off', async (c) => {
     const user = c.get('userId'), name = c.req.param('name');
     await confirmed(c, name);
@@ -479,22 +460,6 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
   v1.post('/repos/:name/on', async (c) => {
     const done = await db.update(repo).set({offAt: null}).where(named(c.get('userId'), c.req.param('name'))).returning({id: repo.id});
     return done.length ? c.json({name: c.req.param('name'), on: true}) : c.json({error: 'That repo is not on the Remote'}, 404);
-  });
-
-  // The code: whether one is set, and setting it (a passkey just now, as for turning off).
-  v1.get('/off-code', async (c) => {
-    const [g] = await db.select({setAt: guard.offSetAt}).from(guard).where(and(eq(guard.userId, c.get('userId')), sql`${guard.offDigest} is not null`));
-    return c.json({set: !!g, setAt: g?.setAt?.getTime() ?? null});
-  });
-  v1.post('/off-code', async (c) => {
-    const user = c.get('userId');
-    const b = await body<{code?: unknown}>(c);
-    if (typeof b?.code !== 'string' || !CODE.test(b.code)) return c.json({error: 'Five letters or digits'}, 400);
-    const [g] = await db.select().from(guard).where(eq(guard.userId, user));
-    if (!passkeyJustNow(g, c.get('sessionId'))) return c.json({error: 'Confirm with a passkey.'}, 403);
-    const set = {offDigest: await digestOf(user, b.code), offSetAt: new Date()};
-    await db.insert(guard).values({userId: user, ...set}).onConflictDoUpdate({target: guard.userId, set});
-    return c.json({set: true});
   });
 
   // ---- work on an issue: its own line, from main's last commit ----

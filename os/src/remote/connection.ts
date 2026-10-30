@@ -423,24 +423,15 @@ export function takeAsk(): {ask: BrowserAsk; repo: string | null} | null {
   } catch { return null; }
 }
 
-// ---- turning a repo off: a passkey just now, the names, and the account's five-letter code ----
-
-/** Whether the account has set the code that turning a repo off asks for. */
-export const offCode = () => json<{set: boolean; setAt: number | null}>('/v1/off-code');
-
-/** Set the code (five letters or digits); a passkey confirms it is you. */
-export async function setOffCode(code: string): Promise<void> {
-  await signIn(t('The passkey was not used: the code is as it was.'));
-  await json('/v1/off-code', {method: 'POST', body: JSON.stringify({code})});
-}
+// ---- turning a repo off: a passkey just now, and the repo's name written out ----
 
 /**
- * Turn `repo` off: kept 30 days on the Remote, back at once until then. `proven`: a passkey confirmed it a
- * moment ago (setting the code), which the Remote still takes; else one is asked for now.
+ * Turn `repo` off, `typed` its name as the person wrote it: kept 30 days on the Remote, back at once until then. A
+ * passkey is asked for first (`proven`: one confirmed it a moment ago, which the Remote still takes).
  */
-export async function turnOff(repo: string, name: string, typed: string, code: string, proven = false): Promise<{offAt: number; until: number}> {
+export async function turnOff(repo: string, typed: string, proven = false): Promise<{offAt: number; until: number}> {
   if (!proven) await signIn(t('The passkey was not used: the repo is as it was.'));
-  const r = await api(`/v1/repos/${encodeURIComponent(repo)}/off`, {method: 'POST', body: JSON.stringify({name, repo: typed, code})});
+  const r = await api(`/v1/repos/${encodeURIComponent(repo)}/off`, {method: 'POST', body: JSON.stringify({repo: typed})});
   const body = await r.json() as {offAt?: number; until?: number; error?: string};
   if (!r.ok) throw new RemoteError(r.status, t(body.error ?? `Remote: ${r.status}`));
   return {offAt: body.offAt!, until: body.until!};
@@ -450,9 +441,9 @@ export async function turnOff(repo: string, name: string, typed: string, code: s
 export const turnOn = (repo: string) => json(`/v1/repos/${encodeURIComponent(repo)}/on`, {method: 'POST'});
 
 /** Discard a repo turned off: gone from the Remote now, with its history, for good. Asked for as turning it off is. */
-export async function discard(repo: string, name: string, typed: string, code: string, proven = false): Promise<void> {
+export async function discard(repo: string, typed: string, proven = false): Promise<void> {
   if (!proven) await signIn(t('The passkey was not used: the repo is as it was.'));
-  const r = await api(`/v1/repos/${encodeURIComponent(repo)}/discard`, {method: 'POST', body: JSON.stringify({name, repo: typed, code})});
+  const r = await api(`/v1/repos/${encodeURIComponent(repo)}/discard`, {method: 'POST', body: JSON.stringify({repo: typed})});
   if (!r.ok) throw new RemoteError(r.status, t(((await r.json()) as {error?: string}).error ?? `Remote: ${r.status}`));
 }
 

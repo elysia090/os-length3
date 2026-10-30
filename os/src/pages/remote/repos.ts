@@ -38,9 +38,8 @@ const cardOf = (grid: HTMLElement, name: string) => grid.querySelector<HTMLEleme
  * when it last changed; Forge at the bottom left, who sees it beside it, and
  * at the right a power switch. Who sees it is one of three: only you, the
  * servers it is shown in, or everyone (seen as a server's when it goes
- * public from one, so it is not tied to you; as yours when you choose). Turning a repo off asks for a passkey, the account's name, the
- * repo's name and the five-letter code (set there and then if it is not yet);
- * it is then kept 30 days, its switch at the right and red, and pressing it
+ * public from one, so it is not tied to you; as yours when you choose). Turning a repo off asks for its name
+ * written out and a passkey (one made there and then if the account has none); it is then kept 30 days, its switch at the right and red, and pressing it
  * again brings it back at once. `keyed` hears of a passkey made on the way.
  */
 export function repoSection(ctx: Context, counted: (n: number) => void, keyed: () => void, toPlan: () => void): HTMLElement {

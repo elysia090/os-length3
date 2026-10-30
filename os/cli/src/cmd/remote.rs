@@ -89,15 +89,13 @@ pub fn on(_: &Ctx, call: &Call) -> Result<Reply> {
 }
 
 pub fn sign_in(_: &Ctx, _: &Call) -> Result<Reply> {
-    let (keys, code, providers) = (account::passkeys()?, account::off_code()?, account::providers()?);
+    let (keys, providers) = (account::passkeys()?, account::providers()?);
     let mut t = vec![tr!("Passkeys", "パスキー")];
     if keys.is_empty() { t.push(tr!("  None. With one, you sign in from any device without a provider (added in the browser).", "  ありません。あればプロバイダーなしでどの端末からも入れます（ブラウザで追加）。")); }
     for k in &keys { t.push(format!("  {}  {}", k.name.as_deref().filter(|n| !n.is_empty()).unwrap_or("passkey"), k.created_at.get(..10).unwrap_or(&k.created_at))); }
-    t.push(tr!("Code to turn a repo off", "repo をオフにするコード"));
-    t.push(if code.set { tr!("  Set (another is set in the browser, with a passkey)", "  設定済み（変えるのはブラウザで、パスキーを使います）") } else { tr!("  Not set (set in the browser, with a passkey)", "  未設定（ブラウザで、パスキーを使って設定）") });
     t.push(tr!("Sign-in providers", "サインイン方法"));
     for p in &providers { t.push(format!("  {}  {}", p.provider, p.created_at.get(..10).unwrap_or(&p.created_at))); }
-    Ok(Reply::data(t.join("\n"), json!({"passkeys": keys, "offCode": code, "providers": providers})))
+    Ok(Reply::data(t.join("\n"), json!({"passkeys": keys, "providers": providers})))
 }
 
 pub fn devices(_: &Ctx, _: &Call) -> Result<Reply> {

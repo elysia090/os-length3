@@ -197,30 +197,19 @@ test('SSH: a device says it listens, and to whom, but never where; any of the ac
   assert.equal((await device('POST', '/v1/ssh/this/beat', laptop, {})).status, 401);
 });
 
-test('Turning off checks the account\'s name as the Remote says it, not one the person chose elsewhere', async () => {
-  const s = await service();
-  const t = await s.start('Sora Tamura');
-  await s.call('PATCH', '/v1/repos/notes/draft', {token: t, body: {version: 0, set: {}, remove: []}});
-  // The profile is the person's to write: it is not what is checked.
-  assert.equal((await s.call('PUT', '/v1/home/profile', {token: t, body: {value: JSON.stringify({name: 'Sora', handle: 'sora', bio: ''}), version: 0}})).status, 200);
-  await prove(s, t);
-  await s.call('POST', '/v1/off-code', {token: t, body: {code: 'AB12C'}});
-  const off = (name: string) => s.call('POST', '/v1/repos/notes/off', {token: t, body: {name, repo: 'notes', code: 'AB12C'}});
-  const refused = await off('Sora');
-  assert.deepEqual([refused.status, refused.json.error], [403, 'The names do not match.']);
-  // The name get-session gives (what the ask says to type), in any case and with spaces around it.
-  assert.equal((await whoIs(s, t)).user.name, 'Sora Tamura');
-  assert.equal((await off(' sora tamura ')).status, 200);
-});
-
-test('Setting the code and turning off are confirmed by one passkey, for five minutes and no longer', async () => {
+test('Turning off is confirmed by a passkey for five minutes and no longer, and the repo\'s name written out', async () => {
   const s = await service();
   const t = await s.start('Ren');
   for (const r of ['notes', 'trip']) await s.call('PATCH', `/v1/repos/${r}/draft`, {token: t, body: {version: 0, set: {}, remove: []}});
-  const off = (repo: string) => s.call('POST', `/v1/repos/${repo}/off`, {token: t, body: {name: 'Ren', repo, code: 'AB12C'}});
-  // The off ask sets the code with a passkey, then turns off without asking for another (src/pages/remote/repo-off.ts PROOF, four minutes).
+  const off = (repo: string, typed = repo) => s.call('POST', `/v1/repos/${repo}/off`, {token: t, body: {repo: typed}});
+  // Without a passkey just now, nothing; with one, the name must be the repo's own, as it is written.
+  const none = await off('notes');
+  assert.deepEqual([none.status, none.json.error], [403, 'Confirm with a passkey.']);
   await prove(s, t, 4 * 60 * 1000);
-  assert.equal((await s.call('POST', '/v1/off-code', {token: t, body: {code: 'AB12C'}})).status, 200);
+  for (const typed of ['Notes', ' notes', 'trip']) {
+    const wrong = await off('notes', typed);
+    assert.deepEqual([wrong.status, wrong.json.error], [403, 'The name does not match.'], typed);
+  }
   assert.equal((await off('notes')).status, 200);
   // Past five minutes the passkey is asked again.
   await prove(s, t, 5 * 60 * 1000 + 1000);
@@ -229,7 +218,9 @@ test('Setting the code and turning off are confirmed by one passkey, for five mi
   // A proof is one session's: another device of the same account is not confirmed by it.
   await prove(s, t);
   const other = await s.start('Ren');
-  assert.equal((await s.call('POST', '/v1/repos/trip/off', {token: other, body: {name: 'Ren', repo: 'trip', code: 'AB12C'}})).status, 403);
+  assert.equal((await s.call('POST', '/v1/repos/trip/off', {token: other, body: {repo: 'trip'}})).status, 403);
+  // There is no code to set any more.
+  assert.equal((await s.call('POST', '/v1/off-code', {token: t, body: {code: 'AB12C'}})).status, 404);
 });
 
 test('a draft changes only from the version it was read at; a cut records it', async () => {
@@ -270,19 +261,14 @@ test('a draft changes only from the version it was read at; a cut records it', a
   assert.deepEqual((repos.json as unknown as {name: string; head: string; version: number; bytes: number}[]).map((r) => [r.name, r.head, r.version, r.bytes]), [['notes', id, 2, 13]]);
   const log = await s.call('GET', '/v1/repos/notes/log', {token: t});
   assert.deepEqual((log.json as unknown as {id: string; title: string; tree: object}[]).map((c) => [c.id, c.title]), [[id, '最初']]);
-  // Turning a repo off asks for a passkey just now, the names and the code; it then answers only that it is off.
+  // Turning a repo off asks for a passkey just now and the repo's name; it then answers only that it is off.
   const off = (body: unknown) => s.call('POST', '/v1/repos/notes/off', {token: t, body});
-  assert.equal((await off({name: 'Ren', repo: 'notes', code: 'AB12C'})).status, 403); // no passkey yet
+  assert.equal((await off({repo: 'notes'})).status, 403); // no passkey yet
   const session = ((await s.call('GET', '/api/auth/get-session', {token: t})).json as unknown as {session: {id: string}; user: {id: string}});
   await s.db.insert(schema.guard).values({userId: session.user.id, proofSession: session.session.id, proofAt: new Date()})
     .onConflictDoUpdate({target: schema.guard.userId, set: {proofSession: session.session.id, proofAt: new Date()}});
-  assert.equal((await off({name: 'Ren', repo: 'notes', code: 'AB12C'})).status, 409); // no code set
-  assert.equal((await s.call('POST', '/v1/off-code', {token: t, body: {code: 'AB-1'}})).status, 400);
-  assert.equal((await s.call('POST', '/v1/off-code', {token: t, body: {code: 'ab12c'}})).status, 200);
-  assert.deepEqual((await s.call('GET', '/v1/off-code', {token: t})).json.set, true);
-  assert.equal((await off({name: 'Ren', repo: 'notes', code: 'ZZZZZ'})).status, 403);
-  assert.equal((await off({name: 'Mio', repo: 'notes', code: 'AB12C'})).status, 403);
-  assert.equal((await off({name: 'ren', repo: 'notes', code: 'AB12C'})).status, 200);
+  assert.equal((await off({repo: 'other'})).status, 403);
+  assert.equal((await off({repo: 'notes'})).status, 200);
   assert.equal((await s.call('GET', `/v1/repos/notes/cuts/${id}`, {token: t})).status, 410);
   assert.equal((await s.call('PATCH', '/v1/repos/notes/draft', {token: t, body: {version: 2, set: {}, remove: []}})).status, 410);
   const listed = (await s.call('GET', '/v1/repos', {token: t})).json as unknown as {name: string; offAt: number; until: number}[];
@@ -953,7 +939,7 @@ test('Names on the Remote: first come, their owner\'s with no term to renew; let
 // ---- What the review of this service found, each kept fixed by a test ----
 
 
-test('Guessing: codes that find people are looked up so many an hour, and the code to turn a repo off is tried so many times', async () => {
+test('Guessing: codes that find people are looked up so many an hour', async () => {
   const s = await service();
   const ren = await s.start('Ren'), mio = await s.start('Mio');
   await named(s, [ren, 'ren'], [mio, 'mio']);
@@ -968,20 +954,6 @@ test('Guessing: codes that find people are looked up so many an hour, and the co
   assert.equal((await s.call('POST', '/v1/inbox/contacts', {token: mio, body: {address: code}})).status, 429);
   assert.equal((await lookup('ren')).json.address, 'ren@length3.test');
   assert.equal((await s.call('GET', `/v1/inbox/lookup?address=${code}`, {token: ren})).status, 200);
-  // The five-letter code: so many wrong in an hour, then none is taken, the right one neither.
-  await s.call('PATCH', '/v1/repos/r/draft', {token: ren, body: {version: 0, set: {}, remove: []}});
-  const session = ((await s.call('GET', '/api/auth/get-session', {token: ren})).json as unknown as {session: {id: string}; user: {id: string}});
-  await s.db.insert(schema.guard).values({userId: session.user.id, proofSession: session.session.id, proofAt: new Date()})
-    .onConflictDoUpdate({target: schema.guard.userId, set: {proofSession: session.session.id, proofAt: new Date()}});
-  assert.equal((await s.call('POST', '/v1/off-code', {token: ren, body: {code: 'AB12C'}})).status, 200);
-  const off = async (c: string) => (await s.call('POST', '/v1/repos/r/off', {token: ren, body: {name: 'Ren', repo: 'r', code: c}})).status;
-  const wrong = [];
-  for (let i = 0; i < 11; i++) wrong.push(await off(`ZZZ${String(i).padStart(2, '0')}`));
-  assert.deepEqual([wrong.filter((x) => x === 403).length, wrong.at(-1)], [10, 429]);
-  assert.equal(await off('AB12C'), 429);
-  // An hour on, it is taken again.
-  await s.db.execute(sql`update throttle set at = now() - interval '61 minutes' where key like 'off-code:%'`);
-  assert.equal(await off('AB12C'), 200);
 });
 
 test('Consent: nobody is put in a server by someone they have not accepted, or have blocked; being put in servers never stops anyone making one', async () => {
@@ -1373,24 +1345,20 @@ test('Discard: an off repo goes for good now, asked as off is; its name is remem
   const tables = ['repo', 'line', 'cut', 'change', 'repo_share', 'repo_public'];
   assert.deepEqual(await Promise.all(tables.map(of)), [1, 2, 2, 1, 1, 1]);
 
-  // Asked as off is: a passkey just now, the names and the code; and only of a repo that is off.
-  const discard = (body: unknown = {name: 'Ren', repo: 'r', code: 'AB12C'}, name = 'r') => s.call('POST', `/v1/repos/${name}/discard`, {token: t, body});
+  // Asked as off is: a passkey just now and the repo's name; and only of a repo that is off.
+  const discard = (body: unknown = {repo: 'r'}, name = 'r') => s.call('POST', `/v1/repos/${name}/discard`, {token: t, body});
   assert.deepEqual([(await discard()).status, (await discard()).json.error], [403, 'Confirm with a passkey.']);
   const session = ((await s.call('GET', '/api/auth/get-session', {token: t})).json as unknown as {session: {id: string}}).session.id;
   await s.db.insert(schema.guard).values({userId: me, proofSession: session, proofAt: new Date()})
     .onConflictDoUpdate({target: schema.guard.userId, set: {proofSession: session, proofAt: new Date()}});
-  assert.equal((await discard()).status, 409); // no code set
-  await s.call('POST', '/v1/off-code', {token: t, body: {code: 'AB12C'}});
-  assert.deepEqual([(await discard({name: 'Ren', repo: 'r', code: 'ZZZZZ'})).status, (await discard({name: 'Ren', repo: 'r', code: 'ZZZZZ'})).json.error], [403, 'That is not the code.']);
-  assert.equal((await discard({name: 'Ren', repo: 'keep', code: 'AB12C'})).status, 403);
-  assert.equal((await discard({name: 'Mio', repo: 'r', code: 'AB12C'})).status, 403);
+  assert.deepEqual([(await discard({repo: 'keep'})).status, (await discard({repo: 'keep'})).json.error], [403, 'The name does not match.']);
   const onStill = await discard();
   assert.deepEqual([onStill.status, onStill.json.error], [409, 'Turn it off first.']);
   assert.deepEqual(await Promise.all(tables.map(of)), [1, 2, 2, 1, 1, 1]);
-  assert.equal((await discard({name: 'Ren', repo: 'nope', code: 'AB12C'}, 'nope')).status, 404);
+  assert.equal((await discard({repo: 'nope'}, 'nope')).status, 404);
 
   // Off, then discarded: all of it goes in one step, and its name is remembered as gone.
-  assert.equal((await s.call('POST', '/v1/repos/r/off', {token: t, body: {name: 'Ren', repo: 'r', code: 'AB12C'}})).status, 200);
+  assert.equal((await s.call('POST', '/v1/repos/r/off', {token: t, body: {repo: 'r'}})).status, 200);
   const moved = async () => (await s.call('GET', '/v1/moved', {token: t})).json.repos as string;
   const before = await moved();
   const done = await discard();
@@ -1671,9 +1639,9 @@ test('For research: nobody signs up, the link enters the one account, and nothin
   // A session made by the link ends a day after it was made, and using it does not draw it out.
   await s.call('GET', '/v1/repos', {token: t});
   assert.ok(await count(s, sql`select count(*)::int as n from session where extract(epoch from expires_at - created_at) between 86000 and 86500`) >= 2);
-  // It works as any account does, and entering just now is proof enough to set the code a repo is turned off with.
+  // It works as any account does, and entering just now is proof enough to turn a repo off.
   assert.equal((await s.call('PATCH', '/v1/repos/r/draft', {token: t, body: {version: 0, set: {}, remove: []}})).status, 200);
-  assert.equal((await s.call('POST', '/v1/off-code', {token: t, body: {code: 'AB12C'}})).status, 200);
+  assert.equal((await s.call('POST', '/v1/repos/r/off', {token: t, body: {repo: 'r'}})).status, 200);
   // No passkey is added (one would let a link's holder back in after the key changed), and nothing goes to everyone.
   assert.equal((await s.call('POST', '/api/auth/passkey/generate-register-options', {token: t, body: {}})).status, 403);
   await s.call('POST', '/v1/inbox/addresses', {token: t, body: {name: 'banana'}});

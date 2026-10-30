@@ -25,7 +25,6 @@ export default {
   'A commit needs a title': 'Commit には件名が要ります',
   'paths: the paths of the draft to commit': 'paths：Commit する下書きのパス',
   'No such commit': 'その Commit はありません',
-  'Five letters or digits': '英数字5文字です',
   'Work begins from an issue': '作業は Issue から始めます',
   'This repo has too much work open': 'この repo には進行中の作業が多すぎます',
   'A change needs a title of at most 2000 characters': 'Change には2000文字までの件名が要ります',
@@ -108,7 +107,6 @@ export default {
   'No such repo to see': '見られる repo はありません',
   'No such file to see': '見られるファイルはありません',
   // Held off, and the Remote's own health.
-  'Too many wrong codes; try again in an hour': '間違ったコードが多すぎます。1時間後にもう一度どうぞ',
   'Too many codes looked up this hour': 'この1時間にコードを調べすぎました',
   'Too many codes looked up from here; try again later': 'ここからコードを調べすぎました。しばらくしてからどうぞ',
   'Too many tries from here; try again later': 'ここから試しすぎです。しばらくしてからどうぞ',

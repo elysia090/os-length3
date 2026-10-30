@@ -10,7 +10,7 @@
 //   auth.ts     /api/auth/*, /dev-oauth/*              who someone is: providers, passkeys, devices
 //   enter.ts    /v1/enter                              a Remote for research: in by its link
 //   files.ts    /v1/os, /v1/desktop, /v1/blobs…        the only bytes: releases and file contents
-//   repos.ts    /v1/moved, /v1/repos…, /v1/off-code    the canonical copy: drafts, history, off and on
+//   repos.ts    /v1/moved, /v1/repos…    the canonical copy: drafts, history, off and on
 //   plan.ts     /v1/plan…, /v1/stripe/webhook          what the account's plan allows, buying it (stripe.ts)
 //   home.ts     /v1/home/:key                          Home's settings
 //   inbox.ts    /v1/inbox…, /.well-known/length3       names and messages
@@ -147,7 +147,7 @@ export function createApp(d: Deps) {
   const v1 = new Hono<Vars>();
   v1.use('*', signedIn(d.auth, d.origins, d.sessionKept));
   files({db, bucket, raw: d.bucket, quota: d.quota, budget, edge: d.edge}, v1, app);
-  repos({db, quota: d.quota, plans: plan, offKey: key('off-code')}, v1);
+  repos({db, quota: d.quota, plans: plan}, v1);
   homeRoutes({db}, v1);
   const names = inbox({db, domain, baseURL: d.baseURL ?? '', secret: key('domain-proof'), txt: d.txt, recheck: d.recheck, plans: plan}, v1, app);
   servers({db, domain, appOrigin: d.appOrigin, secret: key('invite'), closed, plans: plan, proven: names.proven}, v1, app);

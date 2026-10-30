@@ -4,41 +4,16 @@ import * as account from '../../remote/connection.ts';
 import {errorText} from '../../app/errors.ts';
 import {atSignIn, button, pressing} from './parts.ts';
 
-// Remote's Sign-in part: what keeps the account, the passkeys, the code a repo is turned off with, and the
-// providers it can sign in with.
+// Remote's Sign-in part: what keeps the account: the passkeys, and the providers it can sign in with.
 
 /**
- * What the Sign-in part holds: the passkeys, the code and the providers; a Remote entered by its link (`enter`) has
- * no passkeys or providers to manage, only the code a repo is turned off with. `ways`: what the Remote said it offers,
- * just asked (Remote's page asks before drawing the part), which the providers are drawn from.
+ * What the Sign-in part holds: the passkeys and the providers; a Remote entered by its link (`enter`) has none to
+ * manage. `ways`: what the Remote said it offers, just asked (Remote's page asks before drawing the part), which the
+ * providers are drawn from.
  */
 export function signInBody(ways: account.Ways): Node[] {
-  return ways.enter ? [h('p', {class: 'muted'}, t('You came in by the link you were given; each time lasts a day.')), codeSection()]
-    : [passkeySection(), codeSection(), providerSection(ways)];
-}
-
-/** The code turning a repo off asks for: five letters or digits, set with a passkey. */
-function codeSection(): HTMLElement {
-  const section = h('section', {class: 'sub-part', 'aria-labelledby': 'remote-code'});
-  const error = h('p', {class: 'error', role: 'alert'});
-  const note = h('p', {class: 'muted small', role: 'status'});
-  const paint = async () => {
-    const now = await account.offCode().catch(() => ({set: false, setAt: null}));
-    // Set with a passkey: typed here on the web; in the app, in the browser, where the passkey is.
-    const five = account.deedsHere() ? h('input', {class: 'line-in mono code-in', maxlength: '5', placeholder: t('New code'), 'aria-label': t('Code'), autocomplete: 'off', spellcheck: 'false'}) as HTMLInputElement : null;
-    const set = button(five ? now.set ? t('Set another') : t('Set') : now.set ? t('Set another in the browser') : t('Set in the browser'), 'small-button');
-    set.addEventListener('click', () => void pressing(set, error, async () => {
-      if (!five) { await atSignIn(note, paint); return; }
-      if (!/^[A-Za-z0-9]{5}$/.test(five.value)) throw new Error(t('Five letters or digits.'));
-      await account.setOffCode(five.value);
-      await paint();
-    }));
-    section.replaceChildren(h('h3', {id: 'remote-code'}, h('span', {}, t('Code to turn a repo off'))),
-      h('div', {class: 'rows'}, h('div', {class: 'row-item usage-prompt'},
-        h('span', {class: 'row-name'}, now.set ? t('Set {when}', {when: ago(now.setAt ?? 0)}) : t('Not set')), five, set)), note, error);
-  };
-  void paint();
-  return section;
+  return ways.enter ? [h('p', {class: 'muted'}, t('You came in by the link you were given; each time lasts a day.'))]
+    : [passkeySection(), providerSection(ways)];
 }
 
 /** The passkeys this account has, each with when it was made and Remove; and Add a passkey. */

@@ -41,17 +41,12 @@ async function proven(t: string, ago = 0) {
   await s.db.insert(schema.guard).values({userId: user, proofSession: session, proofAt: at})
     .onConflictDoUpdate({target: schema.guard.userId, set: {proofSession: session, proofAt: at}});
 }
-/** The account's name, as turning a repo off asks for it. */
-const nameOf = async (t: string) => ((await s.call('GET', '/api/auth/get-session', {token: t})).json as unknown as {user: {name: string}}).user.name;
-
-/** Someone with a repo, proven just now, the code set: ready to turn it off. */
+/** Someone with a repo, proven just now: ready to turn it off, with what that asks. */
 async function owner(word: string, repo: string) {
   const t = await s.person(word);
   const r = await fullRepo(t, repo);
   await proven(t);
-  assert.equal((await s.call('POST', '/v1/off-code', {token: t, body: {code: 'AB12C'}})).status, 200);
-  const asked = {name: await nameOf(t), repo, code: 'AB12C'};
-  return {t, ...r, asked};
+  return {t, word, ...r, asked: {repo}};
 }
 
 /** Every refusal is JSON with words saying why. */
@@ -92,10 +87,9 @@ test('another account\'s repo answers as if it were not there, by every route a 
   for (const verb of ['reject', 'reset']) refused(await asB('POST', `/v1/repos/shared-name/changes/${r.change}/${verb}`, {}), 404, 'No such change');
   refused(await asB('PATCH', '/v1/repos/shared-name/draft?line=001', {version: 2, set: {}, remove: ['fix.c']}), 404, 'That work is not on the Remote');
   refused(await asB('POST', '/v1/repos/shared-name/on'), 404);
-  // B proven, with a code of its own, still cannot turn A's off or discard it.
+  // B proven just now still cannot turn A's off or discard it.
   await proven(b);
-  await s.call('POST', '/v1/off-code', {token: b, body: {code: 'AB12C'}});
-  const asked = {name: await nameOf(b), repo: 'shared-name', code: 'AB12C'};
+  const asked = {repo: 'shared-name'};
   refused(await asB('POST', '/v1/repos/shared-name/off', asked), 404);
   refused(await asB('POST', '/v1/repos/shared-name/discard', asked), 404);
   // A writing to the same name makes B a repo of B's own; A's is as it was.
@@ -155,23 +149,19 @@ test('a message goes out from the sender\'s own address, whatever address it say
 
 // ---- turning a repo off, on, and discarding it ----
 
-test('off asks for a passkey just now, from this very session, the names and the code; each refusal says which', async () => {
+test('off asks for a passkey just now, from this very session, and the repo\'s name as it is written; each refusal says which', async () => {
   const o = await owner('Careful', 'guarded');
   const off = (body: unknown, t = o.t) => s.call('POST', '/v1/repos/guarded/off', {token: t, body});
-  refused(await off({...o.asked, name: 'Someone else'}), 403, 'The names do not match.');
-  refused(await off({...o.asked, repo: 'other'}), 403, 'The names do not match.');
-  refused(await off({...o.asked, code: 'ZZZZZ'}), 403, 'That is not the code.');
-  refused(await off({...o.asked, code: 'AB12'}), 403, 'That is not the code.');
-  refused(await off(null), 403, 'The names do not match.');
+  for (const repo of ['other', 'Guarded', 'guarded ', '']) refused(await off({repo}), 403, 'The name does not match.');
+  refused(await off(null), 403, 'The name does not match.');
   // A passkey six minutes ago is not just now; one in another session of the same account is not this one.
   await proven(o.t, 6 * 60_000);
   refused(await off(o.asked), 403, 'Confirm with a passkey.');
-  const other = await s.start(o.asked.name);
+  const other = await s.start(o.word);
   await proven(other);
   refused(await off(o.asked), 403, 'Confirm with a passkey.');
-  // The code's letters are taken in either case, and the name as written.
   await proven(o.t);
-  const done = await off({...o.asked, name: ` ${o.asked.name.toUpperCase()} `, code: 'ab12c'});
+  const done = await off(o.asked);
   assert.equal(done.status, 200, done.text);
   assert.deepEqual(Object.keys(done.json).sort(), ['name', 'offAt', 'until']);
   assert.equal((done.json.until as number) - (done.json.offAt as number), 30 * DAY);

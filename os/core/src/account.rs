@@ -29,13 +29,6 @@ pub struct Provider {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct OffCode {
-    pub set: bool,
-    #[serde(rename = "setAt", default)]
-    pub set_at: Option<u64>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
 pub struct Device {
     /// The session's secret: kept to end it, never written out (it signs in as the person).
     #[serde(skip_serializing)]
@@ -54,7 +47,6 @@ fn get<T: for<'a> Deserialize<'a>>(path: &str) -> Result<T> {
 }
 
 pub fn passkeys() -> Result<Vec<Passkey>> { get("/api/auth/passkey/list-user-passkeys") }
-pub fn off_code() -> Result<OffCode> { get("/v1/off-code") }
 
 /// The providers this account signs in with (a password is not one).
 pub fn providers() -> Result<Vec<Provider>> {

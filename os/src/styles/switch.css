@@ -27,5 +27,3 @@
 .offer-holder { margin-top: var(--s5); }
 /* Under Sign-in the passkeys have their own Add: the offer steps back. */
 div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; }
-.code-in { width: 9em; flex: none; text-transform: uppercase; }
-.code-in::placeholder { text-transform: none; }

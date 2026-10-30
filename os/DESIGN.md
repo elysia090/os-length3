@@ -2605,15 +2605,13 @@ the gear's do, never swapped in one frame):
   here is read), size and when it last changed, where it stands. On: Forge at the bottom
   left with Share beside it, the power switch at the bottom right; the switch's knob
   is green at the right, and turning it off asks, in the card, for the
-  account's name, the repo's name and the five-letter code, then a passkey.
-  The name is the account's as its provider gave it (what `l3 remote`
-  shows), which no page shows otherwise, so the ask says it: To confirm,
-  type Sora, notes and your code (the profile's name is the person's to
-  change at will, so it is not what is checked). With no code yet, the
-  same card sets it first (New code, Set the code; a passkey is made for
-  this device if the account has none, then confirms it is you) and goes
-  straight on to the names; the passkey just used still counts, so turning
-  off does not ask for another (the Remote takes one for five minutes).
+  repo's name written out (To confirm, type notes; as GitHub asks before a
+  repository is deleted), then a passkey: the person is at the device, and
+  means this repo. Nothing of the account's is set first or kept in mind
+  (there was a five-letter code, and the account's name typed too: gone,
+  a passkey is the person). Written otherwise, the card says to type it as
+  it is written, before any passkey is asked; an account with no passkey
+  yet makes one there (on this device) and goes on with it.
   Delete in a repo's gear, in any list, asks the same in the list, and
   turns it off with its copy here gone (§ Runtime, A repo in a list). l3
   does what the gear does for a repo only this device has (`l3 repo mv
@@ -2639,9 +2637,8 @@ the gear's do, never swapped in one frame):
   the free plan, where making one is paid, that it is and See the plan.
   Going public is the server's, in its gear (seen
   as the server's, so nothing ties it to you).
-- **Sign-in**: passkeys, the code to turn a repo off (five letters or
-  digits, set with a passkey; only its digest is kept), then the providers
-  (the last way in stays, with nothing to press beside it).
+- **Sign-in**: passkeys, then the providers (the last way in stays, with
+  nothing to press beside it).
 - **Devices**: each session signed in now and when it was last used, this
   one marked. Every other row has Sign out at its right end, the same
   Remote call as `l3 remote devices rm N`; pressed, the row asks in its

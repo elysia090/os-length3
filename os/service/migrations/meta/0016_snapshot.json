@@ -1,5 +1,5 @@
 {
-  "id": "2bb139e7-6733-4076-b003-270763243d81",
+  "id": "7615c9a8-e8da-45ab-811a-88d06d14b702",
   "prevId": "f241e233-0b96-4679-8a8d-59f756d0ad55",
   "version": "7",
   "dialect": "postgresql",
@@ -37,6 +37,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "until": {
+          "name": "until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         },
         "released_at": {
           "name": "released_at",
@@ -1093,6 +1099,18 @@
         },
         "proof_at": {
           "name": "proof_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "signed_session": {
+          "name": "signed_session",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "signed_at": {
+          "name": "signed_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false

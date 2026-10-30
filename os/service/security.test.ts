@@ -138,7 +138,7 @@ test('Better Auth\'s own refusals for asking too often are said the same way, an
 });
 
 test('each purpose has a key of its own, derived from the one secret with HKDF; none is the secret (audit U1, A10; ASVS 6.4.1-6.4.2)', async () => {
-  const keys = (['better-auth', 'domain-proof', 'invite', 'off-code'] as const).map((p) => keyFor(SECRET, p));
+  const keys = (['better-auth', 'domain-proof', 'invite', 'mark'] as const).map((p) => keyFor(SECRET, p));
   assert.equal(new Set(keys).size, 4);
   for (const k of keys) { assert.match(k, /^[0-9a-f]{64}$/); assert.notEqual(k, SECRET); }
   assert.equal(keyFor(SECRET, 'invite'), keyFor(SECRET, 'invite'));
@@ -160,13 +160,6 @@ test('each purpose has a key of its own, derived from the one secret with HKDF; 
   // What is kept of an invitation is an HMAC under the invite key: not a digest of the secret and the code, nor under the secret itself.
   assert.equal(row.digest, await hmacHex(keyFor(SECRET, 'invite'), `invite\n${inv.json.invite as string}`));
   assert.notEqual(row.digest, await hmacHex(SECRET, `invite\n${inv.json.invite as string}`));
-  // The off-code likewise, under its own key.
-  const {user, session} = (await s.call('GET', '/api/auth/get-session', {token: ren})).json as unknown as {user: {id: string}; session: {id: string}};
-  await s.db.insert(schema.guard).values({userId: user.id, proofSession: session.id, proofAt: new Date()})
-    .onConflictDoUpdate({target: schema.guard.userId, set: {proofSession: session.id, proofAt: new Date()}});
-  assert.equal((await s.call('POST', '/v1/off-code', {token: ren, body: {code: 'ab12c'}})).status, 200);
-  const [g] = await s.db.select().from(schema.guard).where(eq(schema.guard.userId, user.id));
-  assert.equal(g.offDigest, await hmacHex(keyFor(SECRET, 'off-code'), `off-code\n${user.id}\nAB12C`));
 });
 
 test('over HTTPS every sign-in cookie is a __Host- one: Secure, HttpOnly, SameSite=Lax, Path=/, no Domain (ASVS 3.4.1-3.4.5)', async () => {

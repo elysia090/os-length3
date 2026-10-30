@@ -60,17 +60,17 @@ test('Share in no server yet on the free plan says making one is paid, and leads
   await expect(app.remote.part('Plan')).toHaveAttribute('aria-selected', 'true');
 });
 
-test('turning a repo off asks in its card first, and Not now leaves it on', async ({signedIn: app}) => {
+test('turning a repo off asks in its card first, for its name, and Not now leaves it on', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
   await app.rail.go('remote');
   await expect(app.remote.card('hello')).toContainText('In step');
 
   await app.remote.power('hello').click();
-  // With no code yet, the card asks for one right there (a passkey confirms it), then for the names.
+  // Its name written out, then a passkey: nothing of the account's to set or keep in mind first.
   const ask = app.remote.ask('hello');
-  await expect(ask).toContainText('This asks for a five-letter code of your own.');
-  await expect(ask.getByRole('textbox', {name: 'New code'})).toBeFocused();
-  await expect(ask.getByRole('button', {name: 'Set the code'})).toBeVisible();
+  await expect(ask).toContainText('To confirm, type hello.');
+  await expect(ask.getByRole('textbox', {name: 'The repo\'s name'})).toBeFocused();
+  await expect(ask.getByRole('textbox')).toHaveCount(1);
   await expect(app.remote.power('hello')).toBeHidden();
 
   await ask.getByRole('button', {name: 'Not now'}).click();
@@ -82,7 +82,7 @@ test('a repo is turned off from its card in one ask, kept off, and its switch br
   await app.rail.go('remote');
   await expect(app.remote.card('hello')).toContainText('In step');
 
-  await app.remote.turnOff('hello', 'k3y42');
+  await app.remote.turnOff('hello');
 
   const card = app.remote.card('hello');
   await expect(card).toContainText(/Off · back until /);
@@ -107,14 +107,9 @@ test('opened by the app at a repo, the browser asks at its card, and once it is 
   // Repos shown, and the card's own ask pressed for the person.
   await app.page.goto('/?account=off&repo=hello');
   const ask = app.remote.ask('hello');
-  await expect(ask).toContainText('This asks for a five-letter code of your own.');
+  await expect(ask.getByRole('textbox', {name: 'The repo\'s name'})).toBeFocused();
   expect(new URL(app.page.url()).search).toBe('');
-  const fresh = ask.getByRole('textbox', {name: 'New code'});
-  await fresh.fill('k3y42');
-  await app.answer(ask.getByRole('button', {name: 'Set the code'}), fresh);
-  await ask.getByRole('textbox', {name: 'Your name'}).fill(app.person);
   await ask.getByRole('textbox', {name: 'The repo\'s name'}).fill('hello');
-  await ask.getByRole('textbox', {name: 'Code', exact: true}).fill('k3y42');
   await app.answer(ask.getByRole('button', {name: 'Turn off'}), ask);
 
   await expect(app.remote.power('hello')).not.toBeChecked();
@@ -128,29 +123,21 @@ test('opened by the app at a repo this account does not have, the browser says s
   await expect(app.remote.power('hello')).toBeChecked();
 });
 
-test('a code that is wrong does not turn the repo off, and says so in the card', async ({signedIn: app}) => {
+test('a name not written as the repo\'s does not turn it off, and says so in the card, before any passkey', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
   await app.rail.go('remote');
   await expect(app.remote.card('hello')).toContainText('In step');
-  // The code is set once (on the way to turning something off), then asked for each time.
-  await app.remote.turnOff('hello', 'k3y42');
-  await app.remote.power('hello').click();
-  await expect(app.remote.power('hello')).toBeChecked();
 
   await app.remote.power('hello').click();
   const ask = app.remote.ask('hello');
-  // Set already: straight to the names, once.
-  await expect(ask.getByRole('textbox', {name: 'Your name'})).toBeFocused();
-  await expect(ask.getByRole('textbox', {name: 'New code'})).toHaveCount(0);
-  await ask.getByRole('textbox', {name: 'Your name'}).fill(app.person);
-  await ask.getByRole('textbox', {name: 'The repo\'s name'}).fill('hello');
-  await ask.getByRole('textbox', {name: 'Code', exact: true}).fill('wrong');
+  await ask.getByRole('textbox', {name: 'The repo\'s name'}).fill('Hello');
   const off = ask.getByRole('button', {name: 'Turn off'});
   await expect(async () => {
     await off.click({timeout: 1000});
     await expect(ask.getByRole('alert')).not.toBeEmpty({timeout: 1000});
   }).toPass({timeout: 15_000});
-  await expect(ask.getByRole('alert')).toHaveText('That is not the code.');
+  await expect(ask.getByRole('alert')).toHaveText('Type hello as it is written.');
+  await expect(ask.getByRole('textbox', {name: 'The repo\'s name'})).toBeFocused();
 
   await ask.getByRole('button', {name: 'Not now'}).click();
   await expect(app.remote.power('hello')).toBeChecked();
