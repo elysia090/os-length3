@@ -752,6 +752,17 @@ help: there is no disk image whose freed blocks the host cannot see, and no
 balloon or trim for a guest to forget. Runtime lists each owner's part by
 size, with what can be done and why.
 
+A repo's environment is one overlay of its upper layer over the root, and
+all the repo's Prompts on that root share it: the first to start mounts it,
+and each started while one runs (another terminal, an SSH session, `l3
+prompt REPO -- CMD`, `.setup`) joins that one's, the same mount cloned into
+its own tree, so what one installs the others see at once. It stays mounted
+until the last of them ends; one ending, being stopped, or stopped for a
+network change, leaves the others' as it was. Two overlays on one upper
+layer are never mounted (the second clears the first's scratch directory,
+and the first can then make no new directory over the root: #55), so a
+Prompt that cannot join the one running is not started, and says why.
+
 The root itself is laid out the same way, by what each place is: `/usr`
 is what the root is (programs, libraries, data; `/bin`, `/sbin` and `/lib`
 are links into it, the merged layout of Fedora, Debian and Arch), `/etc` its
@@ -1234,13 +1245,23 @@ What leaves this system is kept to what is said here:
   namespace makes the user root inside it only; its own mount, pid, ipc,
   uts and network namespaces (no network unless granted); the root
   read-only, the repo the only writable place of the person's, fresh
-  `/tmp`, `/run` and a minimal `/dev`; an environment set, not inherited (no
+  `/tmp`, `/run` and a minimal `/dev` with terminals of its own (a devpts
+  made for each Prompt, holding only the ptys opened in it, none of the
+  host's sessions); an environment set, not inherited (no
   host home, keys, agent or variables); and a seccomp filter
   (core/src/seccomp.rs) over all of it, so the kernel answers none of what a
   sandboxed program has no use for and escapes are found through: ptrace,
   mounting, new namespaces, modules, kexec, bpf, perf, keys, userfaultfd,
   io_uring, typing into the terminal it was started from (TIOCSTI) (strace and gdb do not run in a Prompt; a shell, compilers,
-  package managers and a granted network do). Pid 1 is a small init that reaps
+  package managers and a granted network do). A program that opens a
+  terminal of its own (posix_openpt, openpty, `/dev/ptmx`) gets one of the
+  Prompt's, which works as a terminal does (a session of its own, job
+  control, Ctrl-C, Ctrl-D): apt runs dpkg on one, so it says nothing of a log
+  it could not write; `script` and `tmux`, where the root has them, run a
+  shell on theirs. What is not there is the host's: no pty of another
+  session is in the Prompt, TIOCSTI is refused on these as on the terminal it
+  was started from, and vhangup is refused (a getty or login that hangs a
+  terminal up does not run). Pid 1 is a small init that reaps
   everything and ends what is left with the shell, and it dies with its
   supervisor. The root itself is installed only from a pinned release,
   checked by digest before it is read, unpacked refusing anything that

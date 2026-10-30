@@ -5,12 +5,14 @@
 //!   /               the installed root, with the repo's environment over
 //!                   it (owned.rs): what a package manager installs is the
 //!                   repo's, written to the host beside the root, which
-//!                   itself is never written
+//!                   itself is never written; one overlay for all the
+//!                   repo's Prompts on that root (Environment)
 //!   /var/cache, /var/tmp, /var/log, /root/.cache
 //!                   the repo's caches, on the host, freed whenever wanted
 //!   /root/<repo>    the repo itself (a bind of its directory), writable
 //!   /tmp, /run      empty, gone when the Prompt ends
-//!   /dev            null, zero, full, random, urandom, tty only
+//!   /dev            null, zero, full, random, urandom, tty, and terminals
+//!                   of its own (pts, ptmx: a devpts of this Prompt's)
 //!   /proc           this Prompt's processes only (its own pid namespace)
 //!   network         none (its own empty namespace) unless asked for
 //!   system calls    none of those a sandboxed program has no use for and
@@ -24,6 +26,8 @@
 
 use std::ffi::CString;
 use std::io;
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone)]
@@ -139,12 +143,18 @@ fn term() -> String {
     if plain && t != "dumb" && std::io::stdin().is_terminal() && std::io::stdout().is_terminal() { t } else { "dumb".into() }
 }
 
-/// Lay out the root under `top` and make it `/` (runs as pid 1, inside).
-fn build(s: &Sandbox) -> io::Result<()> {
+/// Lay out the root under `top` and make it `/` (runs as pid 1, inside), over `joined` (a running Prompt's
+/// environment) if given; whether the repo's environment is over the root.
+fn build(s: &Sandbox, joined: Option<OwnedFd>) -> io::Result<bool> {
     // Nothing done here is seen outside, and nothing outside comes in later.
     mount(None, Path::new("/"), None, libc::MS_REC | libc::MS_PRIVATE, None)?;
-    // The repo's environment over the root, where the kernel lets a user make an overlay; else the root alone.
-    let layered = s.data.as_ref().and_then(|data| environment_over(&s.root, data, &s.name).ok());
+    // The repo's environment over the root, where the kernel lets a user make an overlay; else the root alone
+    // (never under a Prompt that has it: one that joins it has it, or does not start).
+    let layered = match &s.data {
+        Some(data) if joined.is_some() => Some(environment_over(&s.root, data, &s.name, joined)?),
+        Some(data) => environment_over(&s.root, data, &s.name, None).ok(),
+        None => None,
+    };
     let top = layered.as_ref().unwrap_or(&s.root);
     if layered.is_none() { mount(Some(top), top, None, libc::MS_BIND | libc::MS_REC, None)?; }
     // Writable places first, while their mount points can still be made.
@@ -183,6 +193,14 @@ fn build(s: &Sandbox) -> io::Result<()> {
         std::fs::File::create(dev.join(node))?;
         bind(&host, &dev.join(node), false)?;
     }
+    // Terminals of its own: a devpts instance made here, which holds only the ptys opened in this Prompt (never the
+    // host's sessions), and /dev/ptmx, where they are opened (apt runs dpkg on one; script and tmux run a shell on
+    // theirs). The host keeps its own (kernel.pty.reserve). Where the kernel will not make one, there is none.
+    let pts = dev.join("pts");
+    std::fs::create_dir(&pts)?;
+    if mount(Some(Path::new("devpts")), &pts, Some("devpts"), libc::MS_NOSUID | libc::MS_NOEXEC, Some("newinstance,ptmxmode=0666,mode=0620")).is_ok() {
+        std::os::unix::fs::symlink("pts/ptmx", dev.join("ptmx"))?;
+    }
     for (link, to) in [("fd", "/proc/self/fd"), ("stdin", "/proc/self/fd/0"), ("stdout", "/proc/self/fd/1"), ("stderr", "/proc/self/fd/2")] {
         std::os::unix::fs::symlink(to, dev.join(link))?;
     }
@@ -197,7 +215,7 @@ fn build(s: &Sandbox) -> io::Result<()> {
     check(unsafe { libc::chdir(c(format!("/root/{}", s.name)).as_ptr()) }, "chdir repo")?;
     let name = b"length3";
     unsafe { libc::sethostname(name.as_ptr() as *const libc::c_char, name.len()) };
-    Ok(())
+    Ok(layered.is_some())
 }
 
 /// The host's /etc/resolv.conf, given to the root: over its own file, or
@@ -241,16 +259,125 @@ fn clean(p: &Path) -> PathBuf {
 /// The root with the repo's environment over it, mounted at `<env>/merged`:
 /// the root is the overlay's read-only lower layer, so writing to /usr
 /// writes to `<env>/upper` on the host, and the root stays as installed.
-/// Each root has its own environment (owned::env_over).
-fn environment_over(root: &Path, data: &Path, repo: &str) -> io::Result<PathBuf> {
+/// Each root has its own environment (owned::env_over), one overlay for all
+/// the repo's Prompts on it (Environment): `joined`, the one a running
+/// Prompt's root is, if given; else it is mounted here.
+fn environment_over(root: &Path, data: &Path, repo: &str, joined: Option<OwnedFd>) -> io::Result<PathBuf> {
     let env = crate::owned::env_over(data, repo, root);
     let (upper, work, merged) = (env.join("upper"), env.join("work"), env.join("merged"));
     for d in [&upper, &work, &merged] { std::fs::create_dir_all(d)?; }
+    if let Some(overlay) = joined {
+        // SAFETY: move_mount of the detached mount `overlay` holds, by its descriptor, onto a directory just made.
+        let r = unsafe { libc::syscall(libc::SYS_move_mount, overlay.as_raw_fd(), c"".as_ptr(), libc::AT_FDCWD, c(&merged).as_ptr(), libc::MOVE_MOUNT_F_EMPTY_PATH) };
+        check(r as libc::c_int, "move_mount")?;
+        // This Prompt's own mount of it: what is mounted on it here never reaches the other Prompt's tree, nor theirs this one's.
+        mount(None, &merged, None, libc::MS_PRIVATE, None)?;
+        return Ok(merged);
+    }
     // userxattr: in a user namespace the overlay keeps its marks in user.* xattrs; without it it cannot mark
     // a new directory as its own and refuses to rename any (dpkg renames each it unpacks).
     let options = format!("lowerdir={},upperdir={},workdir={},userxattr", root.display(), upper.display(), work.display());
     mount(Some(Path::new("overlay")), &merged, Some("overlay"), libc::MS_NOSUID | libc::MS_NODEV, Some(&options))?;
     Ok(merged)
+}
+
+/// The Prompts over one environment, so that it is one overlay for all of them. Two overlays on one upper and
+/// work do not both work: mounting the second clears `work/work`, the first's scratch, and makes it anew, so every
+/// copy-up the first makes after (a directory made where the root has one, a file of the root's first written)
+/// fails with ENOENT (#55). So the first Prompt mounts it, and each started while one runs joins it: that Prompt's
+/// root, cloned into its own tree, the same overlay (one upper, one work, one view of them), mounted as long as
+/// any of them runs. Ending, stopping or a network change of one leaves the others' as it was.
+///
+/// `<env>/prompts` holds a file for each one running, named by its pid 1 (pid on the host), whose namespaces hold
+/// its tree, and holding its mount namespace's inode; the directory itself is the lock a Prompt holds from looking
+/// for one to join until its own tree is laid out and recorded, so that no two ever mount it.
+struct Environment {
+    dir: PathBuf,
+    /// `dir`, open: the lock (flock) while held, and where this Prompt's file is written and removed once its tree
+    /// is laid out (by then the supervisor's `/` is the Prompt's, not the host's: pivot_root moved it).
+    prompts: std::fs::File,
+    mine: Option<CString>,
+}
+
+impl Environment {
+    /// Wait for the environment's lock, and hold it.
+    fn lock(env: &Path) -> io::Result<Environment> {
+        let dir = env.join("prompts");
+        std::fs::create_dir_all(&dir)?;
+        let prompts = std::fs::File::open(&dir)?;
+        // SAFETY: flock on a descriptor this function holds; let go of when it is closed (however the process ends).
+        while unsafe { libc::flock(prompts.as_raw_fd(), libc::LOCK_EX) } != 0 {
+            let e = io::Error::last_os_error();
+            if e.raw_os_error() != Some(libc::EINTR) { return Err(e); }
+        }
+        Ok(Environment { dir, prompts, mine: None })
+    }
+
+    /// The user and mount namespaces of a Prompt over this environment still running, held open (so they stay
+    /// while this one joins, even if it ends meanwhile), if there is one; the files of those that ended go.
+    fn running(&self) -> io::Result<Option<(OwnedFd, OwnedFd)>> {
+        for e in std::fs::read_dir(&self.dir)?.flatten() {
+            let Some(init) = e.file_name().to_str().and_then(|n| n.parse::<u32>().ok()) else { continue };
+            let Some(ns) = std::fs::read_to_string(e.path()).ok().and_then(|t| t.trim().parse::<u64>().ok()) else { continue };
+            // Its pid 1 is that Prompt's while its mount namespace is that one (a pid given to another since is in another).
+            let ns_of = || std::fs::metadata(format!("/proc/{init}/ns/mnt")).ok().map(|m| m.ino());
+            let open = |kind: &str| std::fs::File::open(format!("/proc/{init}/ns/{kind}"));
+            if ns_of() == Some(ns) {
+                if let (Ok(mnt), Ok(user)) = (open("mnt"), open("user")) {
+                    // The namespace held is that one, and the process was still it once both were open.
+                    if mnt.metadata()?.ino() == ns && ns_of() == Some(ns) { return Ok(Some((user.into(), mnt.into()))); }
+                }
+            }
+            // Ending: its pid 1 has let go of its namespaces and is ending the rest of its processes. It is gone (a
+            // zombie, or reaped) only once none is left that could still write through its overlay, and only then
+            // may another be mounted.
+            let ending = || ns_of().is_none() && crate::prompt::start_ticks(init).is_some() && !crate::prompt::zombie(init);
+            let until = std::time::Instant::now() + std::time::Duration::from_secs(3);
+            while ending() && std::time::Instant::now() < until { std::thread::sleep(std::time::Duration::from_millis(10)); }
+            if ending() { return Err(io::Error::other(crate::tr!("its Prompt (pid {}) is still ending", "その Prompt（pid {}）がまだ終わりきっていません", init))); }
+            let _ = std::fs::remove_file(e.path());
+        }
+        Ok(None)
+    }
+
+    /// This Prompt's tree is laid out, its pid 1 `init` in the mount namespace `ns`: recorded, if the environment is
+    /// its root, for the next to join; and the lock let go of.
+    fn hold(&mut self, init: libc::pid_t, ns: u64, layered: bool) -> io::Result<()> {
+        if layered {
+            let name = c(init.to_string());
+            // SAFETY: openat in the directory this holds, by a name just made; the descriptor is taken into a File.
+            let fd = unsafe { libc::openat(self.prompts.as_raw_fd(), name.as_ptr(), libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC | libc::O_CLOEXEC, 0o600) };
+            check(fd, "prompts")?;
+            self.mine = Some(name);
+            std::io::Write::write_all(&mut unsafe { std::fs::File::from_raw_fd(fd) }, ns.to_string().as_bytes())?;
+        }
+        // SAFETY: flock on the descriptor this holds.
+        check(unsafe { libc::flock(self.prompts.as_raw_fd(), libc::LOCK_UN) }, "flock")
+    }
+}
+
+impl Drop for Environment {
+    fn drop(&mut self) {
+        // SAFETY: unlinkat in the directory this holds, of the name it wrote there.
+        if let Some(name) = &self.mine { unsafe { libc::unlinkat(self.prompts.as_raw_fd(), name.as_ptr(), 0) }; }
+    }
+}
+
+/// A clone of the overlay that is the root of the mount namespace `mnt` (a running Prompt's), made there and
+/// brought back into this process's own: the same overlay, mounted, without what that Prompt mounted on it.
+fn clone_root(mnt: &OwnedFd) -> io::Result<OwnedFd> {
+    let here = std::env::current_dir().ok();
+    let own = std::fs::File::open("/proc/self/ns/mnt")?;
+    check(unsafe { libc::setns(mnt.as_raw_fd(), libc::CLONE_NEWNS) }, "setns")?;
+    // SAFETY: open_tree of `/` there, which is that Prompt's root; a new descriptor, or -1.
+    let fd = unsafe { libc::syscall(libc::SYS_open_tree, libc::AT_FDCWD, c"/".as_ptr(), libc::OPEN_TREE_CLONE | libc::OPEN_TREE_CLOEXEC) } as libc::c_int;
+    // SAFETY: a descriptor open_tree just made, owned from here on.
+    let cloned = check(fd, "open_tree").map(|()| unsafe { OwnedFd::from_raw_fd(fd) });
+    // Back in its own namespace, and where it was (setns leaves it at the namespace's /), so a relative data
+    // directory is found as before.
+    check(unsafe { libc::setns(own.as_raw_fd(), libc::CLONE_NEWNS) }, "setns")?;
+    if let Some(here) = here { std::env::set_current_dir(here)?; }
+    cloned
 }
 
 /// Where `name` is run from: itself when it names a path, else the first
@@ -340,25 +467,56 @@ pub fn run(s: &Sandbox) -> io::Result<i32> {
         return Err(io::Error::new(io::ErrorKind::NotFound, crate::tr!("There is no root (l3 root install)", "root がありません（l3 root install）")));
     }
     let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
-    let mut flags = libc::CLONE_NEWUSER | libc::CLONE_NEWNS | libc::CLONE_NEWPID | libc::CLONE_NEWIPC | libc::CLONE_NEWUTS;
+    let mut flags = libc::CLONE_NEWNS | libc::CLONE_NEWPID | libc::CLONE_NEWIPC | libc::CLONE_NEWUTS;
     if !s.network {
         flags |= libc::CLONE_NEWNET;
     }
-    check(unsafe { libc::unshare(flags) }, "unshare (user namespaces may be off on this host)")?;
-    write("/proc/self/setgroups", "deny")?;
-    write("/proc/self/uid_map", &format!("0 {uid} 1"))?;
-    write("/proc/self/gid_map", &format!("0 {gid} 1"))?;
+    // The repo's environment, held while this Prompt joins or mounts it and lays out its tree.
+    let mut env = s.data.as_ref().map(|data| Environment::lock(&crate::owned::env_over(data, &s.name, &s.root))).transpose()?;
+    // A Prompt of the repo running on this root already: this one joins its user namespace (the same user's, so it
+    // may) and its environment; one that cannot is not started, rather than mount another over it.
+    let joined = match env.as_ref().map(Environment::running).transpose().map_err(|e| not_joined(s, e))?.flatten() {
+        Some((user, mnt)) => {
+            let join = || {
+                check(unsafe { libc::setns(user.as_raw_fd(), libc::CLONE_NEWUSER) }, "setns")?;
+                check(unsafe { libc::unshare(flags) }, "unshare")?;
+                clone_root(&mnt)
+            };
+            Some(join().map_err(|e| not_joined(s, e))?)
+        }
+        None => {
+            check(unsafe { libc::unshare(libc::CLONE_NEWUSER | flags) }, "unshare (user namespaces may be off on this host)")?;
+            write("/proc/self/setgroups", "deny")?;
+            write("/proc/self/uid_map", &format!("0 {uid} 1"))?;
+            write("/proc/self/gid_map", &format!("0 {gid} 1"))?;
+            None
+        }
+    };
+    // The mount namespace pid 1 lays out its tree in (this one's), as a Prompt after it finds it.
+    let ns = std::fs::metadata("/proc/self/ns/mnt")?.ino();
+    // Pid 1 says once its tree is laid out whether the environment is its root (or, failing, ends unsaid).
+    let mut ready = [0; 2];
+    check(unsafe { libc::pipe2(ready.as_mut_ptr(), libc::O_CLOEXEC) }, "pipe")?;
     let front = Front::now();
     let child = unsafe { libc::fork() };
     if child < 0 {
         return Err(io::Error::last_os_error());
     }
     if child == 0 {
-        // Pid 1 inside: dies with its supervisor, and everything in it with it.
+        // Pid 1 inside: dies with its supervisor, and everything in it with it. The environment's lock is the
+        // supervisor's to let go of, not held on in here.
+        drop(env);
+        unsafe { libc::close(ready[0]) };
         unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0) };
-        if let Err(e) = build(s) {
-            eprintln!("{}", crate::tr!("l3: Could not prepare the Prompt: {}", "l3: Prompt を用意できませんでした：{}", e));
-            unsafe { libc::_exit(126) };
+        match build(s, joined) {
+            Ok(layered) => {
+                unsafe { libc::write(ready[1], [layered as u8].as_ptr() as *const libc::c_void, 1) };
+                unsafe { libc::close(ready[1]) };
+            }
+            Err(e) => {
+                eprintln!("{}", crate::tr!("l3: Could not prepare the Prompt: {}", "l3: Prompt を用意できませんでした：{}", e));
+                unsafe { libc::_exit(126) };
+            }
         }
         // The tree is laid out: from here on nothing in the Prompt asks the kernel what seccomp.rs refuses,
         // init and everything it starts. A kernel that cannot filter runs no Prompt (fails closed).
@@ -369,9 +527,21 @@ pub fn run(s: &Sandbox) -> io::Result<i32> {
         }
         init(s);
     }
+    drop(joined);
+    unsafe { libc::close(ready[1]) };
     // The supervisor: pass Ctrl-C to init, which hands it to the shell's group.
     SUPERVISED.store(child, std::sync::atomic::Ordering::SeqCst);
     unsafe { libc::signal(libc::SIGINT, forward as *const () as libc::sighandler_t) };
+    // Laid out: recorded over the environment if that is its root, and the next Prompt may join it. One that
+    // could not be recorded is ended (a Prompt after it would not know to join it).
+    let mut said = [0u8; 1];
+    let n = loop {
+        let n = unsafe { libc::read(ready[0], said.as_mut_ptr() as *mut libc::c_void, 1) };
+        if n >= 0 || io::Error::last_os_error().raw_os_error() != Some(libc::EINTR) { break n; }
+    };
+    unsafe { libc::close(ready[0]) };
+    let held = env.as_mut().map_or(Ok(()), |e| e.hold(child, ns, n == 1 && said[0] == 1));
+    if held.is_err() { unsafe { libc::kill(child, libc::SIGKILL) }; }
     let mut status = 0;
     let waited = loop {
         let r = unsafe { libc::waitpid(child, &mut status, 0) };
@@ -383,8 +553,18 @@ pub fn run(s: &Sandbox) -> io::Result<i32> {
         }
     };
     front.give_back();
+    // Ended: its file over the environment goes (dropped), and the environment is unmounted once no Prompt holds it.
+    drop(env);
     waited?;
+    held?;
     Ok(if libc::WIFEXITED(status) { libc::WEXITSTATUS(status) } else { 128 + libc::WTERMSIG(status) })
+}
+
+/// A Prompt of the repo is running over its environment, and this one could not join it: it is not started.
+fn not_joined(s: &Sandbox, e: io::Error) -> io::Error {
+    io::Error::new(e.kind(), crate::tr!(
+        "Another Prompt of {} is running over its environment, and this one could not join it ({}); it can start once that one has ended",
+        "{} の別の Prompt がその環境の上で動いていて、この Prompt はそこに加われませんでした（{}）。そちらが終われば開けます", s.name, e))
 }
 
 /// The terminal's group in front when a Prompt starts. The shell inside takes the terminal (init),
@@ -482,7 +662,9 @@ pub fn set_up(s: &Sandbox, apt: bool) -> io::Result<()> {
     let mut script = String::from("set -e\n");
     if !packages.is_empty() {
         if apt {
-            script += &format!("export DEBIAN_FRONTEND=noninteractive\napt-get update -q\napt-get install -y -q --no-install-recommends {}\n", packages.join(" "));
+            // apt runs dpkg on a pty it opens (the Prompt's own); where the Prompt has none, apt is told not to, rather
+            // than say it could not (E: … posix_openpt) of an install that went well.
+            script += &format!("export DEBIAN_FRONTEND=noninteractive\n[ -e /dev/ptmx ] || pty='-o Dpkg::Use-Pty=0'\napt-get update -q\napt-get install -y -q --no-install-recommends $pty {}\n", packages.join(" "));
         } else {
             eprintln!("{}", crate::tr!("l3: this root has no package archive yet: .packages is for Ubuntu and Debian", "l3: この root にはまだパッケージの置き場がありません。.packages は Ubuntu と Debian で使えます"));
         }
@@ -543,7 +725,9 @@ mod tests {
     #[cfg(target_arch = "x86_64")]
     fn prompt_on_this_host(script: &str, network: bool) -> Option<String> {
         if !Path::new("/usr/bin/cc").exists() || !Path::new("/usr/bin/python3").exists() { return None; }
-        let top = std::env::temp_dir().join(format!("l3-prompt-test-{}-{}", std::process::id(), network));
+        // A place of each call's own: the tests that call this run side by side.
+        static CALLS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let top = std::env::temp_dir().join(format!("l3-prompt-test-{}-{}", std::process::id(), CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst)));
         let (root, repo) = (top.join("root"), top.join("repo"));
         std::fs::create_dir_all(&root).ok()?;
         std::fs::create_dir_all(&repo).ok()?;
@@ -638,5 +822,130 @@ unshare -U true 2>/dev/null; echo "unshare-command $?" >> $out
         let Some(out) = prompt_on_this_host(&script, true) else { eprintln!("skipped: no user namespace, compiler or Python here"); return };
         assert_eq!(out.trim(), "net ok");
         assert_eq!(&heard.join().unwrap(), b"hi");
+    }
+
+    /// A Prompt's terminals are its own (#59): a devpts made for it, which shows only the ptys opened in it (none of
+    /// the host's sessions), and /dev/ptmx, where they are opened: apt runs dpkg on one, script and tmux run a shell
+    /// on theirs (each tried where this host has it).
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn a_prompt_opens_terminals_of_its_own_and_sees_none_of_the_hosts() {
+        let script = r#"
+out=/root/t/out
+echo "pts $(ls -A /dev/pts)" > $out
+echo "ptmx $(readlink /dev/ptmx)" >> $out
+python3 -c 'import os; m, s = os.openpty(); print("python", os.ttyname(s), os.isatty(s))' >> $out 2>&1
+if command -v script >/dev/null; then echo "script $(script -qc tty /dev/null | tr -d '\r')" >> $out; fi
+if command -v tmux >/dev/null; then
+    tmux -S /tmp/tmux new-session -d 'tty > /tmp/tty; exec sleep 60'
+    i=0; while [ ! -s /tmp/tty ] && [ $i -lt 200 ]; do sleep 0.05; i=$((i + 1)); done
+    echo "tmux $(cat /tmp/tty)" >> $out
+    tmux -S /tmp/tmux kill-server
+fi
+"#;
+        let Some(out) = prompt_on_this_host(script, false) else { eprintln!("skipped: no user namespace, compiler or Python here"); return };
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines[..3], ["pts ptmx", "ptmx pts/ptmx", "python /dev/pts/0 True"], "{out}");
+        for line in &lines[3..] {
+            assert!(line.starts_with("script /dev/pts/") || line.starts_with("tmux /dev/pts/"), "{out}");
+        }
+    }
+
+    /// This host's shell and `programs`, each with the libraries it loads at the same paths, copied into `root`: a
+    /// tree of the test's user, as an installed root is its user's, for an overlay to lie over. None where one is
+    /// not there, or not linked as glibc links (which lists them under LD_TRACE_LOADED_OBJECTS).
+    fn copied_root(root: &Path, programs: &[&str]) -> Option<()> {
+        let path = std::env::var("PATH").ok()?;
+        for name in std::iter::once(&"sh").chain(programs) {
+            let host = path.split(':').map(|d| Path::new(d).join(name)).find(|p| p.is_file())?;
+            std::fs::create_dir_all(root.join("bin")).ok()?;
+            std::fs::copy(&host, root.join("bin").join(name)).ok()?;
+            let listed = std::process::Command::new(&host).env("LD_TRACE_LOADED_OBJECTS", "1").stdin(std::process::Stdio::null()).output().ok()?;
+            let libs: Vec<String> = String::from_utf8_lossy(&listed.stdout).lines()
+                .filter_map(|l| l.rsplit("=>").next()?.split_whitespace().next().filter(|p| p.starts_with('/')).map(String::from)).collect();
+            if libs.is_empty() { return None; }
+            for lib in libs {
+                let at = root.join(lib.trim_start_matches('/'));
+                std::fs::create_dir_all(at.parent()?).ok()?;
+                std::fs::copy(&lib, &at).ok()?;
+            }
+        }
+        Some(())
+    }
+
+    /// Prompts of one repo on one root share its environment, whatever order they start and end in (#55): each
+    /// started while another runs joins its overlay, and goes on making directories where the root has them (a
+    /// copy-up), renaming and writing after another was stopped (its supervisor killed, as Stop does) or ended.
+    #[test]
+    fn prompts_of_one_repo_share_its_environment_whatever_order_they_start_and_end_in() {
+        let top = std::env::temp_dir().join(format!("l3-environment-test-{}", std::process::id()));
+        let (root, repo, data) = (top.join("root"), top.join("repo"), top.join("data"));
+        let _ = std::fs::remove_dir_all(&top);
+        for d in ["etc", "usr/share/doc", "usr/lib", "opt", "srv", "var/lib", "root", "tmp", "run", "dev", "proc"] {
+            std::fs::create_dir_all(root.join(d)).unwrap();
+        }
+        std::fs::create_dir_all(&repo).unwrap();
+        if copied_root(&root, &["cat", "mkdir", "mv", "sleep"]).is_none() { eprintln!("skipped: no shell or programs linked by glibc here"); return; }
+        // Each Prompt's supervisor a process of its own; what each step did, a line of the log.
+        let start = |script: &str| -> libc::pid_t {
+            let script = format!("cd /root/t\nstep() {{ name=$1; shift; \"$@\" 2>/dev/null; echo \"$name $?\" >> log; }}\n\
+                await() {{ while [ ! -e $1 ]; do sleep 0.02; done; }}\n{script}");
+            let s = Sandbox { root: root.clone(), repo: repo.clone(), name: "t".into(), argv: vec!["/bin/sh".into(), "-c".into(), script],
+                network: false, dotfiles: Vec::new(), data: Some(data.clone()) };
+            // SAFETY: the child is single-threaded after fork, runs the Prompt and leaves with _exit.
+            let pid = unsafe { libc::fork() };
+            if pid == 0 { unsafe { libc::_exit(run(&s).unwrap_or(200)) } }
+            pid
+        };
+        let log = || std::fs::read_to_string(repo.join("log")).unwrap_or_default();
+        let marked = |name: &str| {
+            let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
+            while !repo.join(name).exists() {
+                assert!(std::time::Instant::now() < until, "{name} was not marked; the log:\n{}", log());
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        };
+        let mark = |name: &str| std::fs::write(repo.join(name), "").unwrap();
+        let ended = |pid: libc::pid_t| {
+            let mut status = 0;
+            // SAFETY: waitpid on a child of this test.
+            unsafe { libc::waitpid(pid, &mut status, 0) };
+            if libc::WIFEXITED(status) { libc::WEXITSTATUS(status) } else { -1 }
+        };
+        let a = start("echo before > /etc/before || { echo no-overlay > ready-a; exit; }\n: > ready-a\n\
+            await go-a; step a-mkdir-while-b-runs mkdir /usr/share/doc/a; : > a-did\nwhile :; do sleep 1; done");
+        marked("ready-a");
+        if std::fs::read_to_string(repo.join("ready-a")).unwrap().contains("no-overlay") {
+            eprintln!("skipped: this kernel makes no overlay in a user namespace");
+            ended(a);
+            return;
+        }
+        let b = start("step b-reads-a test \"$(cat /etc/before)\" = before; step b-mkdir mkdir /usr/lib/b; : > ready-b\n\
+            await go-b; step b-mkdir-after-a-stopped mkdir /opt/b; step b-rename mv /opt/b /opt/b2; : > b-did\nawait go-b2");
+        marked("ready-b");
+        mark("go-a");
+        marked("a-did");
+        // A is stopped as Runtime stops a Prompt: its supervisor killed, and with it everything in it.
+        unsafe { libc::kill(a, libc::SIGKILL) };
+        ended(a);
+        mark("go-b");
+        marked("b-did");
+        let c = start("step c-mkdir-while-b-runs mkdir /srv/c; : > ready-c\nawait go-c; step c-mkdir-after-b-ended mkdir /var/lib/c\n\
+            echo c > /var/lib/c/f; echo \"c-write $?\" >> log");
+        marked("ready-c");
+        mark("go-b2");
+        assert_eq!(ended(b), 0, "{}", log());
+        mark("go-c");
+        assert_eq!(ended(c), 0, "{}", log());
+        // All have ended: a Prompt now mounts the environment anew, and has everything they made in it.
+        let d = start("for p in /etc/before /usr/share/doc/a /usr/lib/b /opt/b2 /srv/c /var/lib/c/f; do [ -e $p ]; echo \"d-sees-$p $?\" >> log; done\n\
+            step d-mkdir mkdir /usr/share/doc/d");
+        assert_eq!(ended(d), 0, "{}", log());
+        let log = log();
+        let wrong: Vec<&str> = log.lines().filter(|l| !l.ends_with(" 0")).collect();
+        assert!(wrong.is_empty() && log.lines().count() == 15, "{log}");
+        let prompts = crate::owned::env_over(&data, "t", &root).join("prompts");
+        assert_eq!(std::fs::read_dir(prompts).unwrap().count(), 0, "every Prompt over it has ended");
+        let _ = std::fs::remove_dir_all(&top);
     }
 }
