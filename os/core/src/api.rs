@@ -8,7 +8,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use crate::{account, agents, history, home, paths, remote, repos, system, usage, work};
+use crate::{account, agents, history, tasks, home, paths, remote, repos, system, usage, work};
 
 /// Files the editor may save; anything read in part is never written back.
 pub const READ_LIMIT: u64 = 256 * 1024;
@@ -64,8 +64,24 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         "dotfiles_in_effect" => to(home::dotfiles_in_effect().into_iter().collect::<std::collections::BTreeMap<_, _>>()),
 
         // What agents do in the repos, as their hooks said it (agents.rs): null when nothing came since `cursor`.
-        "agents" => to(agents::now_since(&a.opt::<agents::Cursor>("cursor")?.unwrap_or_default(),
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64))),
+        // And the work handed to the agent (tasks.rs), when it changed since `tasks` (the mark last read). Null when
+        // neither moved: what a page asks every second reads a few bytes then.
+        "agents" => {
+            let journal = agents::now_since(&a.opt::<agents::Cursor>("cursor")?.unwrap_or_default(),
+                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64));
+            let mark = tasks::mark();
+            let book = (a.opt::<[u64; 3]>("tasks")? != Some(mark)).then(|| json!({"mark": mark, "agent": tasks::agent(),
+                "list": tasks::all().into_iter().filter(|k| !k.state.over()).collect::<Vec<_>>()}));
+            if journal.is_none() && book.is_none() { Ok(Value::Null) } else { Ok(json!({"journal": journal, "tasks": book})) }
+        }
+        // The person's deed on a task: hand it over, put it away, answer it; or a question asked.
+        "task" => match a.s("deed")?.as_str() {
+            "take" => to(tasks::take(a.get("id")?)?),
+            "drop" => to(tasks::drop_task(a.get("id")?)?),
+            "reply" => to(tasks::reply(a.get("id")?, &a.s("words")?)?),
+            "ask" => to(tasks::ask(&a.s("repo")?, &a.s("words")?)?),
+            d => Err(crate::tr!("There is no deed {}", "{} という操作はありません", d)),
+        },
 
         // The capacity and what this OS holds: `open`, the repos a Prompt has open (the host's to know).
         "capacity" => to(system::capacity(&paths::data_dir())?),

@@ -1012,39 +1012,73 @@ names and `/etc/os-release` are its own.
 
 ### Agents at work
 
-An agent (Claude Code, Grok Build, DeepSeek Harness running Claude Code's
-hooks, Codex) works in the person's repos as the person does, from a
-shell: in a repo's copy or an issue's (`<data>/work/REPO/LINE`). The OS
-runs none of it and asks it nothing; it listens to what the agent's own
-harness says through its hooks, so whatever program does the work, Git
-shows it going.
+An agent (Claude Code; Grok Build, DeepSeek Harness, Codex as they are set
+up) works for the person in their repos. Three rules say when it moves, and
+the person meets none of the machinery that keeps them:
 
-- **One command, every harness.** Each hook calls `l3 agent hook HARNESS`
-  with the event's JSON on standard input (`hook_event_name`, `session_id`,
-  `cwd`, `tool_name`, `tool_input`, `prompt`, `message`; the names Claude
-  Code gives them, which the others take after). It says nothing and always
-  ends well: an agent is never held up or stopped by being watched, and
-  what it is given never reaches the agent's context.
-- **Set up by l3.** `l3 agent on claude` adds the hooks to Claude Code's
-  settings beside the person's own; `l3 agent on grok` writes Grok Build's
-  `~/.grok/hooks/l3.json`; `off` takes only ours out; `hooks` shows them to
-  set by hand. Each calls this l3 by where it is, needing no PATH.
-- **The journal.** Each report is one line appended to `<data>/agents.jsonl`
-  (0600, this device's alone, never sent): when, which harness and session,
-  the repo and line (`work::here` of its cwd: an agent elsewhere is not
-  kept), and a kind (start, prompt, tool, tool-done, waits, stop, end) with
-  a few words, one line of at most 160 characters and no control
-  characters. Past 512 KiB it keeps its latest half.
-- **Who works where.** Read from the journal, a session works (it said
-  something other than waiting), waits for the person (a permission, a
-  question, its turn over), or ended (it said so, or nothing for an hour).
-  `l3 agent` lists them; the app asks the core (`agents`, with the cursor it
-  read to) every second while a page that shows them is on screen, and the
-  core answers nothing from a file's size and first line while nothing
-  came.
-- **An issue on its way.** open (nothing done yet), pending (work begun
-  here or elsewhere, its change handed in, or an agent at it), solved
-  (merged), or closed (`repos/git-state.ts` stageOf).
+- **It reads by itself; it writes only when handed.** A change handed in is
+  read, and an issue's tests are run, without asking. Solving an issue, or
+  making failing tests pass, is offered in the right pane and starts once
+  the person hands it over.
+- **It moves at the edges of the person's own work, never on a clock.**
+  What it does is worth most where the person has just finished something,
+  and their attention is free:
+
+  | the edge (a deed done here) | what it sets off |
+  |---|---|
+  | an issue written | offered: take it, on its own copy |
+  | a commit on an issue's work | its tests run in its Prompt (no agent) |
+  | the tests fail | offered: make them pass |
+  | a change handed in | read, top down, the hardest part first |
+  | its question answered | it goes on, in the same session |
+  | back on main | what was handed over and waited for it begins |
+  | merged, or closed | what was for the issue is done with |
+
+  A card comes into the pane only while the person is not typing.
+- **The most complex first.** Units go goal (an issue), responsibility (a
+  folder of the change: one part of the system), test, file, question.
+  Waiting tasks run in that order, the heaviest first within one; a review
+  reads a change in it, each part and file weighed by the lines changed and
+  how tangled the file is now (its branches), and ends with what it found
+  in the same order, then what only the person can answer.
+
+A task goes offered → waiting → working → ready, or asking (its reply sends
+it on), done (looked at, or its issue merged), dropped (later), stopped (it
+could not run: why, and the one fix, such as `l3 network on REPO`). Those
+are the core's words (`core/src/tasks.rs`, `<data>/tasks/tasks.json`, never
+sent). The person sees an offer to hand over, the work going on in its
+issue's box, a question with a field to answer it, something to look at,
+or what could not go on: no stage, queue, session or hook.
+
+**Where it runs.** One task at a time per repo (`l3 agent run`, set off by
+the deed), in the repo's Prompt: without privileges, with the repo's own
+network grant, on the issue's copy for what writes (the repo shows it, as
+the work the person would have started; while the repo shows another
+issue's work, it waits until main), on the change's copy for a review. The
+agent is the person's own command line (`l3 agent on claude`; a `.agent`
+dotfile says another), told what to do by `$L3_TASK` and ending with lines
+l3 reads back (`FINDING`, `QUESTION`, `DONE`). What it prints is said on
+its issue as it goes and kept whole in a log. Only deeds done on this
+device set anything off: nothing the Remote says runs anything here.
+
+**What agents say themselves.** An agent the person runs on their own
+(in a terminal, in their editor) says what it does through its harness's
+hooks: `l3 agent on` adds them beside the person's own (Claude Code's
+settings; Grok Build's `~/.grok/hooks/l3.json`), and each calls
+`l3 agent hook HARNESS` with the event's JSON on standard input. It says
+nothing and always ends well, so an agent is never held up by being
+watched. Each report is one line of `<data>/agents.jsonl` (0600, never
+sent): which harness and session, the repo and line its cwd is in, a kind
+(start, prompt, tool, tool-done, waits, stop, end) and one line of words
+without control characters. Past 512 KiB it keeps its latest half.
+
+**In the app.** The core is asked (`agents`, with what was last read) every
+second while a page that shows agents is on screen; it answers nothing
+from two files' sizes while nothing moved. An issue's box says the agent at
+it and what it does now; its dot breathes while it works, beats at each
+tool, holds still in yellow while it waits; a neighbour's head carries the
+dot too. The cards come into the pane (Forge's and Git's, Home's above
+Lately).
 
 ## 6. One OS, two ways in
 

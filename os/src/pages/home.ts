@@ -1,3 +1,5 @@
+import {agentCards} from './agent-cards.ts';
+import {showIssue} from './git/git.ts';
 import {arrowKeys, h} from '../ui/dom.ts';
 import {t, tn} from '../i18n.ts';
 import {LIMITS, initials, normalize, parse, type Profile} from '../home/profile.ts';
@@ -56,7 +58,7 @@ export function home(ctx: Context): Node[] {
  * as there). It stays where it is while Home scrolls under the rail; put away, Home takes the width.
  */
 function homePane(main: HTMLElement, ctx: Context): HTMLElement {
-  const side = h('aside', {class: 'home-side', id: 'home-side', 'aria-label': t('Lately')}, pluginArea(), lately(ctx));
+  const side = h('aside', {class: 'home-side', id: 'home-side', 'aria-label': t('Lately')}, pluginArea(), agentCards((repo, issue) => { showIssue(repo, issue.replace(/^issue\//, '')); void ctx.go('git'); }), lately(ctx));
   const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': 'home-side'}, paneMark()) as HTMLButtonElement;
   // The search Forge and Git have, where theirs is: in the repo last worked in (named in it, there being no band to
   // say which), what is found opened in Forge, at its line.

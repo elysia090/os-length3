@@ -1,3 +1,4 @@
+import {agentCards} from '../agent-cards.ts';
 import {h} from '../../ui/dom.ts';
 import {t} from '../../i18n.ts';
 import {mark, paneMark} from '../../ui/icons.ts';
@@ -118,7 +119,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const {termHead, term, termHome} = promptBox();
   const center = h('div', {class: 'center'}, parts.main);
   const sideId = `side-${++benches}`;
-  const side = h('aside', {class: 'side', id: sideId, 'aria-label': t('Plugins and Prompt')}, pluginArea(), termHome, ...(parts.word ? [paneWord(parts.word)] : []));
+  const side = h('aside', {class: 'side', id: sideId, 'aria-label': t('Plugins and Prompt')}, pluginArea(), termHome, agentCards((repo, issue) => parts.went(repo, {issue: issue.replace(/^issue\//, '')})), ...(parts.word ? [paneWord(parts.word)] : []));
   const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': sideId}, paneMark()) as HTMLButtonElement;
   const work = h('div', {class: parts.strip ? 'work bench' : 'work bench no-strip'});
 

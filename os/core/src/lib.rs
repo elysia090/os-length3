@@ -40,6 +40,7 @@ pub mod servers;
 #[cfg(unix)]
 pub mod ssh;
 pub mod system;
+pub mod tasks;
 pub mod templates;
 pub mod usage;
 pub mod work;

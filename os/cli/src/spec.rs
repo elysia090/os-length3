@@ -409,13 +409,20 @@ pub static COMMANDS: &[Command] = &[
             f(None, &[Arg::Issue], &[Flag::Note("why")], ["its issue stays open", "Issue は開いたまま"], REMOTE, Send, git::reject)),
     ]),
     c("agent", &[], Group::Git, ["what agents (Claude Code, Grok…) do in your repos, live", "エージェント（Claude Code、Grok…）の作業を、その場で"], &[
-        f(None, &[], &[], ["each at work now: where, on which issue, doing what", "いま作業中のもの：どこで、どの Issue に、何を"], DEVICE, Keep, agent::list),
+        f(None, &[], &[], ["what it asks, has ready, can take, and is at", "質問、見てほしいもの、引き受けられるもの、作業中のもの"], DEVICE, Keep, agent::list),
+        f(Some("take"), &[Arg::Number("N")], &[], ["hand it over (or try again what could not run)", "任せる（動けなかったものはもう一度）"], DEVICE, Keep, agent::take),
+        f(Some("drop"), &[Arg::Number("N")], &[], ["not now, or looked at", "いまはいい、または見た"], DEVICE, Keep, agent::put_away),
+        f(Some("reply"), &[Arg::Number("N"), SAID], &[], ["answer what it asked; it goes on", "質問に答える（続きにかかる）"], DEVICE, Keep, agent::reply),
+        f(Some("ask"), &[REPO_HERE, SAID], &[], ["a question about the repo, answered reading only", "repo について聞く（読むだけで答える）"], DEVICE, Keep, agent::ask),
         hidden(Some("ls"), &[], DEVICE, Keep, agent::list),
-        f(Some("on"), &[Arg::Choice(&["claude", "grok"])], &[], ["set one up to say what it does, from its next session", "次のセッションから作業を知らせるよう設定する"], DEVICE, Keep, agent::on),
+        f(Some("on"), &[Arg::Choice(&["claude", "grok"])], &[], ["hand it work from now, and have it say what it does", "これから仕事を任せ、作業を知らせるようにする"], DEVICE, Keep, agent::on),
         f(Some("off"), &[Arg::Choice(&["claude", "grok"])], &[], ["take that out again", "その設定を外す"], DEVICE, Keep, agent::off),
         f(Some("hooks"), &[Arg::Choice(&["claude", "grok"])], &[], ["the hooks l3 agent on writes, to set them by hand", "l3 agent on が書くフック（手で設定するなら）"], DEVICE, Keep, agent::hooks),
         f(Some("hook"), &[Arg::Text("HARNESS")], &[], ["what a harness's hooks call: its event's JSON on standard input; says nothing, never fails", "ハーネスのフックが呼ぶもの（イベントの JSON を標準入力に）。何も言わず、失敗しない"], LOCAL, Keep, agent::hook),
         f(Some("hook"), &[Arg::Text("HARNESS"), Arg::Text("EVENT")], &[], ["for one whose JSON does not name its event", "JSON がイベント名を持たないハーネス用"], LOCAL, Keep, agent::hook),
+        // What a deed sets off (core tasks.rs): a repo's runner, and one run inside its Prompt.
+        hidden(Some("run"), &[], DEVICE, Keep, agent::run),
+        hidden(Some("inside"), &[Arg::Number("N")], DEVICE, Keep, agent::inside),
     ]),
     c("runtime", &[], Group::Runtime, ["the root, and this device by size", "root と、この端末の容量"], &[
         page(f(None, &[], &[], ["what is here, and what can go", "あるものと、空けられるもの"], DEVICE, Send, runtime::page)),

@@ -168,7 +168,7 @@ pub fn bytes(n: u64) -> String {
 }
 
 /// `n` things: English says one and many apart; Japanese puts the counter right after the number (3件).
-fn count(n: usize, one: &str, many: &str, ja: &str) -> String {
+pub fn count(n: usize, one: &str, many: &str, ja: &str) -> String {
     if length3_core::i18n::ja() { ja.replace("{}", &n.to_string()) } else if n == 1 { format!("1 {one}") } else { format!("{n} {many}") }
 }
 

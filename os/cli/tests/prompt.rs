@@ -179,3 +179,78 @@ fn a_prompt_keeps_its_root_when_another_is_made_current() {
     assert!(!home.path(&format!("system/{old}")).exists() && home.path(&format!("system/{l3s}/installed.json")).is_file());
     assert!(home.run("en", &["free", &format!("root:{l3s}")]).stderr.contains("The root Prompts run on"));
 }
+
+/// The tasks in this home's book, by id: their state and last words.
+fn tasks_of(home: &Home) -> Vec<serde_json::Value> {
+    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(home.path("tasks/tasks.json")).unwrap_or("{}".into())).unwrap();
+    v["tasks"].as_array().cloned().unwrap_or_default()
+}
+
+/// Wait until task `id` is `state` (30 s at most); its JSON.
+fn until(home: &Home, id: u64, state: &str) -> serde_json::Value {
+    let end = Instant::now() + Duration::from_secs(30);
+    loop {
+        let k = tasks_of(home).into_iter().find(|k| k["id"] == id).unwrap_or_default();
+        if k["state"] == state || Instant::now() > end { return k; }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// An agent (here one that only prints what Claude Code's stream does) is asked about a repo: it runs in the repo's
+/// Prompt by itself, told the question; what it asks back waits for the person, whose reply sends it on in the same
+/// session; what it ends with is there to look at, and what it did is said as it goes.
+#[test]
+fn a_question_runs_in_the_prompt_asks_back_and_goes_on_with_the_reply() {
+    let home = Home::new("tasks-ask");
+    assert!(home.root(), "this host lends no sh for a root");
+    home.repo("notes", &[("README.md", "notes\n")]);
+    let agent = r#"printf '%s' "$L3_TASK" > told.txt
+echo '{"type":"system","subtype":"init","session_id":"s-1"}'
+echo '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"README.md"}}]}}'
+if [ -n "$L3_RESUME" ]; then echo "$L3_RESUME" > resumed.txt; R='DONE it is the loop'; else R='Looked.\nQUESTION Keep the old name?'; fi
+printf '{"type":"result","result":"%s"}\n' "$R""#;
+    home.dotfiles(&[(".agent", "sh /root/.fakeagent\n"), (".fakeagent", agent)]);
+    assert_eq!(home.run("en", &["agent", "on", "claude"]).code, 0);
+    assert_eq!(home.run("en", &["network", "on", "notes"]).code, 0);
+    let asked = home.run("en", &["agent", "ask", "notes", "Why is it slow?"]);
+    assert!(asked.stdout.starts_with("Asked"), "{asked:?}");
+    let k = until(&home, 1, "asking");
+    let Ok(told) = std::fs::read_to_string(home.path("repos/notes/told.txt")) else {
+        // Only a host that lends no user namespace is passed over; anything else is a failure.
+        assert!(k["said"].as_str().is_some_and(|s| s.contains("namespace") || s.contains("could not start")), "{k}");
+        eprintln!("skipped: the Prompt did not start here ({k})");
+        return;
+    };
+    assert!(told.starts_with("Why is it slow?"), "{told}");
+    assert_eq!((k["questions"][0].as_str(), k["session"].as_str()), (Some("Keep the old name?"), Some("s-1")), "{k}");
+    assert!(home.run("en", &["agent"]).stdout.contains("Asks you\n    1  notes  Keep the old name? (l3 agent reply 1 \"…\")"));
+    assert_eq!(home.run("en", &["agent", "reply", "1", "Yes, keep it"]).code, 0);
+    let k = until(&home, 1, "ready");
+    assert_eq!(k["said"], "it is the loop", "{k}");
+    assert_eq!(std::fs::read_to_string(home.path("repos/notes/told.txt")).unwrap(), "Yes, keep it");
+    assert_eq!(std::fs::read_to_string(home.path("repos/notes/resumed.txt")).unwrap(), "s-1\n");
+    let journal = std::fs::read_to_string(home.path("agents.jsonl")).unwrap();
+    assert!(journal.contains(r#""session":"task-1","repo":"notes","line":"main","kind":"tool","text":"Read: README.md""#), "{journal}");
+    // Looked at: put away.
+    assert_eq!(home.run("en", &["agent", "drop", "1"]).code, 0);
+    assert_eq!(until(&home, 1, "done")["state"], "done");
+}
+
+/// An issue written is offered to the agent (written, never taken by itself); handed over without the Remote to
+/// start its work on, it says it could not run and the one fix.
+#[test]
+fn an_issue_written_is_offered_and_handed_over_it_says_what_it_needs() {
+    let home = Home::new("tasks-offer");
+    home.repo("notes", &[("README.md", "notes\n")]);
+    // No agent: nothing is offered.
+    assert!(home.run("en", &["issue", "new", "notes", "Fix：before"]).stdout.starts_with("Wrote notes#1"));
+    assert!(tasks_of(&home).is_empty());
+    assert_eq!(home.run("en", &["agent", "on", "claude"]).code, 0);
+    assert!(home.run("en", &["issue", "new", "notes", "Fix：the draft is lost"]).stdout.starts_with("Wrote notes#2"));
+    let k = until(&home, 1, "offered");
+    assert_eq!((k["deed"].as_str(), k["unit"].as_str(), k["words"].as_str(), k["issue"].as_str()), (Some("take"), Some("goal"), Some("the draft is lost"), Some("issue/002.md")), "{k}");
+    assert!(home.run("en", &["agent"]).stdout.contains("Claude Code can take it: the draft is lost (l3 agent take 1)"));
+    assert_eq!(home.run("en", &["agent", "take", "1"]).code, 0);
+    let k = until(&home, 1, "stopped");
+    assert_eq!((k["state"].as_str(), k["fix"].as_str()), (Some("stopped"), Some("l3 login")), "{k}");
+}

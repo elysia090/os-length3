@@ -353,6 +353,8 @@ pub fn cut(repos: &Repos, repo: &str, issue: Option<&str>, line: &str, note: &st
                 let id = v["id"].as_str().unwrap_or_default().to_string();
                 // Not kept here: the next sync takes the Remote's head again, which is this commit.
                 let _ = remote::set_head(&key, &id);
+                // A commit on an issue's work: its tests run by themselves (tasks.rs).
+                if let Ok(dir) = repos.dir(repo) { crate::tasks::committed(repo, &on, &dir); }
                 return Ok(Cut {
                     id, issue: (!issue.is_empty()).then_some(issue), kind, title: title.trim().into(), note: note.trim().into(),
                     time: v["time"].as_u64().unwrap_or(0), folders: c.folders.iter().map(|f| f.folder.clone()).collect(),
@@ -443,9 +445,15 @@ pub fn issue_words(file: &str, text: Option<&str>, deed: &str) -> String {
 /// "reopen"). Signed out, it waits (settle_issues commits it once there is a Remote); as main last committed it,
 /// there is nothing to commit. Whether a commit was made.
 pub fn commit_issue(repos: &Repos, repo: &str, file: &str, deed: &str) -> Result<bool> {
-    if Client::open().is_err() { return Ok(false); }
     let path = format!("issue/{}", file.trim_start_matches("issue/"));
     let text = repos.on_main().read(repo, &path, 256 * 1024).ok().and_then(|c| c.text);
+    // Written here, it is offered to the agent; closed, what was for it is done with (tasks.rs). Signed in or not.
+    match deed {
+        "new" => crate::tasks::issue_written(repo, &path, &text.as_deref().map(|t| crate::issues::parse(repo, file, t).title).unwrap_or_default()),
+        "close" => crate::tasks::issue_over(repo, &path),
+        _ => {}
+    }
+    if Client::open().is_err() { return Ok(false); }
     Ok(cut_paths(repos, repo, &[path.clone()], &issue_words(&path, text.as_deref(), deed))?.is_some())
 }
 
@@ -781,7 +789,12 @@ pub fn submit(repos: &Repos, repo: &str, note: &str) -> Result<Change> {
     let v = client.call("POST", &format!("/v1/repos/{repo}/changes"), Some(serde_json::json!({
         "line": on, "kind": kind.unwrap_or_default(), "title": title.trim(), "note": note.trim()})))?;
     match v {
-        Reply::Ok(v) => placed(repo, v),
+        Reply::Ok(v) => {
+            let c = placed(repo, v)?;
+            // Handed in here: the agent reads it by itself (tasks.rs).
+            crate::tasks::handed_in(repo, &c.line, &c.issue, &c.title);
+            Ok(c)
+        }
         Reply::Conflict(v) if v["error"] == "Push first: the change is what was pushed" => Err(crate::tr!("Push first: the change is what was pushed", "先に Push してください。Change は Push したものです")),
         Reply::Conflict(v) if v["error"] == "This change is merged already" => Err(crate::tr!("Its change is merged already", "この作業の Change はもう Merge 済みです")),
         Reply::Conflict(_) => Err(crate::tr!("Nothing committed since the work began", "作業を始めてから何も Commit していません")),
@@ -874,7 +887,10 @@ pub fn review(repo: &str, id: &str, verdict: &str, note: &str, marks: &[String])
 /// Merge: main takes the change's current version.
 pub fn merge(repo: &str, id: &str) -> Result<Change> {
     let c = find(repo, id)?;
-    placed(repo, change_call(repo, &c.id, "merge", serde_json::json!({"version": c.version}))?)
+    let merged = placed(repo, change_call(repo, &c.id, "merge", serde_json::json!({"version": c.version}))?)?;
+    // What was offered or waiting for its issue is done with (tasks.rs).
+    crate::tasks::issue_over(repo, &merged.issue);
+    Ok(merged)
 }
 
 /// Reject: main does not take it (the receiver's decision; the issue stays open).

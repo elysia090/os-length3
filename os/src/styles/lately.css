@@ -62,3 +62,15 @@
   .page > .home-layout, .home-layout.pane-closed { grid-template-columns: minmax(0, 1fr); }
   .home-pane { display: none; }
 }
+
+/* What the agent brings (agent-cards.ts): a Lately row with its deeds under it, sliding in at the pane as word does.
+   An offer and a question are the ones that wait on the person: their row is ringed in the work's green. */
+.agent-cards { display: grid; gap: var(--s2); }
+.agent-cards:empty { display: none; }
+.agent-card { cursor: default; }
+.agent-card.offered, .agent-card.asking { box-shadow: 0 0 0 1px var(--done) inset; }
+.agent-quote { display: grid; gap: var(--s1); }
+.agent-finding { font-size: var(--t-meta); }
+.agent-fix { font-family: var(--mono); font-size: var(--t-meta); color: var(--sub); }
+.agent-acts { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; margin-top: var(--s1); }
+.agent-reply { flex: 1 1 12em; min-width: 0; }

@@ -120,7 +120,7 @@ fn an_agent_says_what_it_does_through_its_hooks_and_l3_agent_shows_it() {
     hook(r#"{"hook_event_name":"PreToolUse","session_id":"s3","cwd":"/"}"#);
     hook("not json");
     let said = home.run("en", &["agent"]);
-    assert_eq!(said.stdout, "claude  notes #1  waits for you · fix the draft · just now\nclaude  notes     working · Bash: npm test · just now\n", "{}", said.stderr);
+    assert_eq!(said.stdout, "At work\n  claude  notes #1  waits for you · fix the draft · just now\n  claude  notes     working · Bash: npm test · just now\n", "{}", said.stderr);
     let v: serde_json::Value = serde_json::from_str(&home.run("en", &["agent", "--json"]).stdout).unwrap();
     assert_eq!(v["sessions"].as_array().unwrap().len(), 2);
 
@@ -129,7 +129,7 @@ fn an_agent_says_what_it_does_through_its_hooks_and_l3_agent_shows_it() {
     let theirs = r#"{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"say done"}]}]},"model":"x"}"#;
     std::fs::write(&settings, theirs).unwrap();
     let on = home.run("en", &["agent", "on", "claude"]);
-    assert!(on.stdout.starts_with("Claude Code says what it does from its next session"), "{}{}", on.stdout, on.stderr);
+    assert!(on.stdout.starts_with("Claude Code is offered each issue you write"), "{}{}", on.stdout, on.stderr);
     let set: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
     assert_eq!(set["hooks"]["Stop"].as_array().unwrap().len(), 2);
     assert!(set["hooks"]["PreToolUse"][0]["hooks"][0]["command"].as_str().unwrap().ends_with(" agent hook claude"));

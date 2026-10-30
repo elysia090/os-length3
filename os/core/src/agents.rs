@@ -77,12 +77,51 @@ pub fn kind_of(event: &str) -> Option<Kind> {
     })
 }
 
-/// Words as one line a page shows: no control characters (nothing a terminal or a page would act on), at most
-/// WORDS characters.
-fn line_of(s: &str) -> String {
-    let one: String = s.lines().find(|l| !l.trim().is_empty()).unwrap_or("").chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
+/// Words as one line a page shows: a terminal's colours and moves taken out (ESC [ … a letter), no control
+/// characters (nothing a terminal or a page would act on), at most WORDS characters.
+pub fn line_of(s: &str) -> String {
+    let first = s.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
+    let (mut one, mut chars) = (String::new(), first.chars().peekable());
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' && chars.peek() == Some(&'[') {
+            chars.next();
+            while chars.next().is_some_and(|c| !('@'..='~').contains(&c)) {}
+            continue;
+        }
+        one.push(if c.is_control() { ' ' } else { c });
+    }
     let one = one.trim();
     if one.chars().count() <= WORDS { one.to_string() } else { format!("{}…", one.chars().take(WORDS - 1).collect::<String>()) }
+}
+
+/// A tool and what it is used on, as a report says it ("Bash: npm test").
+pub fn tool_text(tool: &str, input: Option<&serde_json::Value>) -> String {
+    let on = input.map(|i| {
+        let f = |k: &str| i.get(k).and_then(|x| x.as_str()).unwrap_or("");
+        [f("command"), f("file_path"), f("path"), f("pattern"), f("url"), f("description")].into_iter().find(|x| !x.is_empty()).unwrap_or("").to_string()
+    }).unwrap_or_default();
+    let tool = if tool.is_empty() { "tool" } else { tool };
+    line_of(&if on.is_empty() { tool.to_string() } else { format!("{tool}: {on}") })
+}
+
+/// What a line a program printed says of its work, as a page shows it: a tool it used, its words, or its result, when
+/// the line is an agent's stream of JSON (Claude Code's `--output-format stream-json`, which others take after); the
+/// line itself otherwise. None for a line that says nothing (empty, or JSON that is none of those).
+pub fn said_in_output(line: &str) -> Option<String> {
+    let t = line.trim();
+    if t.is_empty() { return None; }
+    if !t.starts_with('{') { return Some(line_of(t)); }
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(t) else { return Some(line_of(t)) };
+    let s = |v: &serde_json::Value, k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+    match s(&v, "type").as_str() {
+        "assistant" => {
+            let content = v.pointer("/message/content").and_then(|c| c.as_array()).cloned().unwrap_or_default();
+            let tool = content.iter().rev().find(|c| s(c, "type") == "tool_use").map(|c| tool_text(&s(c, "name"), c.get("input")));
+            tool.or_else(|| content.iter().find(|c| s(c, "type") == "text").map(|c| line_of(&s(c, "text")))).filter(|x| !x.is_empty())
+        }
+        "result" => Some(line_of(&s(&v, "result"))).filter(|x| !x.is_empty()),
+        _ => None,
+    }
 }
 
 /// What a report says it carries: the tool and what it is used on (a command, a file), or the prompt's first line.
@@ -90,15 +129,7 @@ fn line_of(s: &str) -> String {
 fn text_of(kind: Kind, v: &serde_json::Value) -> String {
     let s = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("");
     match kind {
-        Kind::Tool | Kind::ToolDone => {
-            let input = v.get("tool_input").or_else(|| v.get("input"));
-            let on = input.map(|i| {
-                let f = |k: &str| i.get(k).and_then(|x| x.as_str()).unwrap_or("");
-                [f("command"), f("file_path"), f("path"), f("pattern"), f("url"), f("description")].into_iter().find(|x| !x.is_empty()).unwrap_or("").to_string()
-            }).unwrap_or_default();
-            let tool = [s("tool_name"), s("tool")].into_iter().find(|x| !x.is_empty()).unwrap_or("tool");
-            line_of(&if on.is_empty() { tool.to_string() } else { format!("{tool}: {on}") })
-        }
+        Kind::Tool | Kind::ToolDone => tool_text([s("tool_name"), s("tool")].into_iter().find(|x| !x.is_empty()).unwrap_or(""), v.get("tool_input").or_else(|| v.get("input"))),
         Kind::Prompt => line_of(s("prompt")),
         Kind::Waits => line_of(s("message")),
         _ => String::new(),
@@ -293,5 +324,17 @@ mod tests {
         let again = now_in(&path, &next.cursor, 4).unwrap();
         assert_eq!((again.events.len(), again.sessions[0].state.as_str()), (1, "ended"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn what_a_program_prints_is_said_as_its_work_and_an_agents_stream_as_its_tools() {
+        assert_eq!(said_in_output("  \u{1b}[1;32mcompiling\u{1b}[0m a.c\u{7}").as_deref(), Some("compiling a.c"));
+        assert_eq!(said_in_output(""), None);
+        let tool = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Let me run it"},{"type":"tool_use","name":"Bash","input":{"command":"npm test"}}]}}"#;
+        assert_eq!(said_in_output(tool).as_deref(), Some("Bash: npm test"));
+        let words = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Done.\nAll green"}]}}"#;
+        assert_eq!(said_in_output(words).as_deref(), Some("Done."));
+        assert_eq!(said_in_output(r#"{"type":"result","result":"Fixed #3"}"#).as_deref(), Some("Fixed #3"));
+        assert_eq!(said_in_output(r#"{"type":"system","subtype":"init"}"#), None);
     }
 }

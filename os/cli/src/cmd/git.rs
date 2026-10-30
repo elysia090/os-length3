@@ -383,7 +383,8 @@ pub fn issue_new(ctx: &Ctx, call: &Call) -> Result<Reply> {
     // On main, whatever work the repo shows, and committed there by itself at once (signed out, once signed in).
     let r = ctx.repos()?;
     let file = r.on_main().add_issue(&repo, kind.as_deref(), &title, &detail)?;
-    let committed = ctx.connected() && history::commit_issue(&r, &repo, &file, "new").unwrap_or(false);
+    // Committed signed in; offered to the agent either way (core tasks.rs). Never from a Prompt: the app's to do.
+    let committed = !ctx.prompt && history::commit_issue(&r, &repo, &file, "new").unwrap_or(false);
     Ok(Reply::done(tr!("Wrote {}{} {}", "{}{} {} を書きました", repo, number(&file), text::named(kind.as_deref(), title.trim())),
         json!({"repo": repo, "file": file, "number": number(&file), "kind": kind, "title": title.trim(), "committed": committed})))
 }
@@ -417,7 +418,7 @@ fn set_closed(ctx: &Ctx, call: &Call, close: bool) -> Result<Reply> {
         length3_core::issues::close_text(&text, format!("{} {who}", out::day(out::now_ms())).trim())
     } else { length3_core::issues::reopen_text(&text) };
     main.write(&at.repo, &at.path(), &new, 256 * 1024)?;
-    if ctx.connected() { let _ = history::commit_issue(&r, &at.repo, &at.file, if close { "close" } else { "reopen" }); }
+    if !ctx.prompt { let _ = history::commit_issue(&r, &at.repo, &at.file, if close { "close" } else { "reopen" }); }
     Ok(Reply::done(if close { tr!("Closed {0}; it will not be done (back with: l3 issue reopen {0})", "{0} を閉じました。やらないものです（戻すには l3 issue reopen {0}）", at.name()) }
         else { tr!("Reopened {}", "{} をもう一度開きました", at.name()) }, data(true)))
 }
