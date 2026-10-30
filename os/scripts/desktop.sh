@@ -25,7 +25,7 @@ install -m 0755 target/x86_64-unknown-linux-musl/prompt/l3 "src-tauri/binaries/l
 # What is said over src-tauri/tauri.conf.json: this version, l3 beside the app, and the webview's policy for the
 # Remote the page is built for (VITE_LENGTH3_REMOTE, as vite.config.ts reads it), from src/app/policy.ts.
 config=$(VERSION="$version" node --input-type=module -e '
-import {DEFAULT_REMOTE, desktopPolicy} from "./src/policy.ts";
+import {DEFAULT_REMOTE, desktopPolicy} from "./src/app/policy.ts";
 const remote = process.env.VITE_LENGTH3_REMOTE ?? DEFAULT_REMOTE;
 console.log(JSON.stringify({version: process.env.VERSION, build: {beforeBuildCommand: "npx vite build"},
   bundle: {externalBin: ["binaries/l3"]}, app: {security: {csp: desktopPolicy(remote ? new URL(remote).origin : "")}}}));')
