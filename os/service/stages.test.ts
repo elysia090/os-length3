@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import {rmSync} from 'node:fs';
 import {test} from 'node:test';
-import {PGlite} from '@electric-sql/pglite';
 import {drizzle} from 'drizzle-orm/pglite';
 import {migrate} from 'drizzle-orm/pglite/migrator';
 import {beforeWorker, firstOf, journalOf} from './stages.ts';
+import {initdbDatabase} from './testing.ts';
 
 const MIGRATIONS = new URL('./migrations', import.meta.url).pathname;
 
@@ -15,8 +15,9 @@ test('a deploy runs a contract step only after the new Worker answers, and only 
   // A database with nothing applied, or with every step before the contract one: the contract waits.
   assert.equal(beforeWorker(j, 0), contract);
   assert.equal(beforeWorker(j, j.entries[contract - 1].when), contract);
-  // Once it was applied, nothing waits for it again.
-  assert.equal(beforeWorker(j, j.entries[contract].when), j.entries.length);
+  // Once it was applied, nothing waits for it again: what runs before the Worker is everything up to the next one.
+  const next = j.entries.findIndex((e, i) => i > contract && /^\d{4}_contract_/.test(e.tag));
+  assert.equal(beforeWorker(j, j.entries[contract].when), next < 0 ? j.entries.length : next);
   const made = {entries: [{idx: 0, when: 1, tag: '0000_a'}, {idx: 1, when: 2, tag: '0001_contract_b'}, {idx: 2, when: 3, tag: '0002_c'}, {idx: 3, when: 4, tag: '0003_contract_d'}]};
   assert.equal(beforeWorker(made, 0), 1);
   assert.equal(beforeWorker(made, 2), 3);
@@ -27,7 +28,7 @@ test('SSH: the Worker before keeps working through the expand step; no address i
   const j = journalOf(MIGRATIONS);
   const expand = j.entries.findIndex((e) => e.tag.endsWith('_ssh_scope_and_no_address'));
   assert.ok(expand > 0);
-  const pg = new PGlite();
+  const pg = await initdbDatabase();
   const db = drizzle(pg);
   const upTo = async (n: number) => { const dir = firstOf(MIGRATIONS, n); try { await migrate(db, {migrationsFolder: dir}); } finally { rmSync(dir, {recursive: true}); } };
   await upTo(expand);

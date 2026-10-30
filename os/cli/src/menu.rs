@@ -40,10 +40,10 @@ pub struct Subject {
     pub facts: Vec<Fact>,
 }
 
-/// What a page showed: its things, what holds of the page as a whole, and the place it is (a folder,
-/// REPO/PATH) when it shows one, empty or not.
+/// What a page showed: its things, what holds of the page as a whole, the place it is (a folder,
+/// REPO/PATH) when it shows one, empty or not, and whether it listed its next deeds itself.
 #[derive(Default, Debug)]
-pub struct Seen { pub subjects: Vec<Subject>, pub facts: Vec<Fact>, pub place: Option<String> }
+pub struct Seen { pub subjects: Vec<Subject>, pub facts: Vec<Fact>, pub place: Option<String>, pub said: bool }
 
 thread_local! {
     static SEEN: RefCell<Option<Seen>> = const { RefCell::new(None) };
@@ -67,6 +67,11 @@ pub fn shown_at(place: String) {
     SEEN.with(|seen| if let Some(seen) = seen.borrow_mut().as_mut() { seen.place = Some(place) });
 }
 
+/// Note that the page listed its next deeds itself (an issue's card in full): the row after it does not say them again.
+pub fn deeds_said() {
+    SEEN.with(|seen| if let Some(seen) = seen.borrow_mut().as_mut() { seen.said = true });
+}
+
 /// Run `f`, noting what it shows.
 pub fn noting<T>(f: impl FnOnce() -> T) -> (T, Seen) {
     let outer = SEEN.with(|s| s.replace(Some(Seen::default())));
@@ -75,7 +80,9 @@ pub fn noting<T>(f: impl FnOnce() -> T) -> (T, Seen) {
     (t, seen)
 }
 
-/// Whether the menu is running (a Prompt opened from it gives the terminal back to it when it ends).
+/// Whether the menu is running (a Prompt opened from it gives the terminal back to it when it ends; a Prompt runs on
+/// Linux).
+#[cfg(target_os = "linux")]
 pub fn active() -> bool { ACTIVE.with(|a| a.get()) }
 
 // ---- What is offered ----
@@ -126,6 +133,31 @@ pub fn offered(group: Group, on: On, facts: &[Fact], env: Env) -> Vec<Offer> {
     let mut v: Vec<Offer> = deeds_of(group).into_iter().filter(|o| o.deed.on == on && holds(o.deed, facts) && may_run(o.form, env)).collect();
     v.sort_by_key(|o| o.deed.weight);
     v
+}
+
+/// The deeds offered on a thing where `facts` hold of it, on this device as it is now (signed in or not, a root
+/// or none, in a Prompt or not): what the menu would offer on it.
+pub fn offered_here(ctx: &Ctx, group: Group, on: On, facts: &[Fact]) -> Vec<Offer> {
+    let facts: Vec<Fact> = facts.iter().copied().chain(device(ctx)).collect();
+    offered(group, on, &facts, Env::of(ctx))
+}
+
+/// A deed pressed on `s`, as the line that does it: the words the thing and the deed give, as the menu would run
+/// it; a word it would ask for written as the help writes it ("text"); the flags it asks for left out, as each
+/// may be left empty. A line that runs as pasted, but for the words one is to write.
+pub fn deed_line(o: Offer, s: &Subject) -> String {
+    let mut given = false;
+    let words: Vec<Option<String>> = o.form.args.iter().enumerate().map(|(i, a)| {
+        if let Some((_, w)) = o.deed.gives.iter().find(|(k, _)| *k == i) { return Some(w.to_string()); }
+        if !given { if let Some(w) = fills(*a, s) { given = true; return Some(shell_word(&w)); } }
+        match a {
+            Arg::Text(n) | Arg::Number(n) => Some(spec::placeholder(n).to_string()),
+            Arg::Path { optional: false } => Some("REPO/PATH".into()),
+            Arg::Address | Arg::Dotfile => Some("NAME".into()),
+            _ => None,
+        }
+    }).collect();
+    format!("l3 {}", command_line(o.command, o.form, &words, &[]).join(" "))
 }
 
 /// The forms that make a purpose's page, in the table's order.
@@ -649,7 +681,7 @@ fn states(ctx: &Ctx) -> Vec<String> {
     let todos = if ctx.prompt { Vec::new() } else { home::todos().unwrap_or_default() };
     let open_issues: usize = names.iter().map(|n| {
         let merged = length3_core::history::merged_seen(n);
-        r.as_ref().and_then(|r| r.issues(n).ok()).unwrap_or_default().iter().filter(|i| i.closed.is_none() && !merged.contains(&format!("issue/{}", i.file))).count()
+        r.as_ref().and_then(|r| r.on_main().issues(n).ok()).unwrap_or_default().iter().filter(|i| i.closed.is_none() && !merged.contains(&format!("issue/{}", i.file))).count()
     }).sum();
     let band = home::band(&names).map(|b| b.len()).unwrap_or(0);
     let running = length3_core::prompt::running(&paths::data_dir()).len();
@@ -855,7 +887,7 @@ pub fn after(ctx: &Ctx, call: &args::Call, argv: &[String], seen: Seen, made: Op
     let c = call.command;
     if c.group == Group::Other || c.hidden || call.form.args.contains(&Arg::Argv) { return; }
     if seen.subjects.is_empty() && !call.form.page && call.form.deeds.is_empty() { return; }
-    let shown = !seen.subjects.is_empty();
+    let (shown, said) = (!seen.subjects.is_empty(), seen.said);
     let word = made.or_else(|| if shown { None } else { named(ctx, call) });
     let view = if shown { View { group: c.group, subjects: seen.subjects, facts: seen.facts, own: call.form.page, made_by: vec![argv.to_vec()], place: seen.place } }
         else { page(ctx, c.group, false) };
@@ -867,7 +899,8 @@ pub fn after(ctx: &Ctx, call: &args::Call, argv: &[String], seen: Seen, made: Op
     let words: Vec<String> = words.iter().enumerate().map(|(k, w)| if k + 1 < words.len() { format!("{w} ·") } else { w.clone() }).collect();
     let first = if lead.is_empty() { tr!("  Next  ", "  次  ") } else { tr!("  Next for {}  ", "  {} の次  ", lead) };
     let cols = term::size().0.saturating_sub(1);
-    let mut lines = lead_lines(&first, true, &words, cols);
+    // Listed by the page itself just above: only the way to choose one with the keys, not the same words again.
+    let mut lines = if said { Vec::new() } else { lead_lines(&first, true, &words, cols) };
     lines.push(style.dim(&tr!("  l3 next chooses one with the keys", "  l3 next でキーで選べます")));
     for l in lines { term::put(&format!("{l}\n")); }
     // Kept for `l3 next`; not kept, `l3 next` says there is nothing, and nothing is lost.

@@ -23,7 +23,7 @@
 
 import {sql, type SQL} from 'drizzle-orm';
 import {blobKey, type Bucket} from './bucket.ts';
-import {HOLD, TERM_YEARS} from './names.ts';
+import {HOLD} from './names.ts';
 import {KEEP_EVENTS} from './plan.ts';
 import {recount} from './budget.ts';
 import {ago, lock, rows, type Db} from './request.ts';
@@ -81,21 +81,17 @@ export async function sweep(db: Db, bucket: Bucket | null): Promise<Record<strin
   // A name on a domain whose DNS has not named this Remote for HOLD is let go then, and held HOLD more.
   await run('lapsed', sql`update address set released_at = lapsed_at + make_interval(secs => ${HOLD / 1000})
     where released_at is null and lapsed_at < ${ago(HOLD)}`);
-  // A name held by someone still here (a session that has not run out: used within its 60 days) is renewed while a
-  // year of its term is left, as they would renew it themselves: before, every name stopped answering after five
-  // years unless renewed by hand, and was anyone's 30 days later.
-  await run('renewed', sql`update address set until = until + make_interval(years => ${TERM_YEARS})
-    where released_at is null and lapsed_at is null and until is not null and until < now() + interval '1 year'
-      and exists (select 1 from session s where s.expires_at > now() at time zone 'utc'
-        and (s.user_id = address.user_id or s.user_id = (select v.made_by from server v where v.id = address.server_id and v.gone_at is null)))`);
-  await run('address', sql`delete from address where coalesce(released_at, until) < ${ago(HOLD)}`);
+  // A name let go, held for its owner long enough, is anyone's. (A name on this Remote has no term: it is its owner's
+  // as long as they are, as a username is anywhere.)
+  await run('address', sql`delete from address where released_at < ${ago(HOLD)}`);
   await run('repo_public', sql`delete from repo_public p where p.released_at < ${ago(HOLD)}
     or (p.server_id is null and not exists (select 1 from address a where a.address = p.face and a.user_id = p.user_id))`);
 
   await run('message', sql`delete from message where read_at is not null and created_at < ${ago(90 * DAY)}`);
   await run('signal', sql`delete from signal where created_at < ${ago(2 * 60_000)}`);
   await run('proof', sql`update guard set proof_session = null, proof_at = null where proof_at < ${ago(5 * 60_000)}`);
-  await run('guard', sql`delete from guard where off_digest is null and proof_at is null`);
+  await run('signed', sql`update guard set signed_session = null, signed_at = null where signed_at < ${ago(5 * 60_000)}`);
+  await run('guard', sql`delete from guard where proof_at is null and signed_at is null`);
   await run('guest', sql`delete from board_guest where token_until < now()`);
   await run('invite', sql`delete from board_invite where uses = 0 or until < now()`);
   await run('throttle', sql`delete from throttle where at < ${ago(DAY)}`);

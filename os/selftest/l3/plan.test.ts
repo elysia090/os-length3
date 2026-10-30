@@ -26,7 +26,7 @@ async function pay(page: string) {
 }
 
 test('l3 remote plan: free, the use against the allowance, the tiers, what paid adds; a repo past it waits here until paid', async () => {
-  ok(laptop.l3(['remote', 'plan']), new RegExp(['^Plan {2}free', ' {2}Repos on the Remote {2}0 of 1', ' {2}Kept on the Remote {2}\\d+ B of 100 MB', ' {2}Names on this Remote {2}0 of 1',
+  ok(laptop.l3(['remote', 'plan']), new RegExp(['^Plan {2}free', ' {2}Repos on the Remote {2}0 of 1', ' {2}Kept on the Remote {2}\\d+ B of 100 MB', ' {2}Names on this Remote {2}1 of 1',
     'Tiers', ' {2}Go {2}50 GB on the Remote · 7\\.00 USD a month', ' {2}Pro {2}256 GB on the Remote · 14\\.00 USD a month', ' {2}Max {2}512 GB on the Remote · 19\\.00 USD a month',
     'Paid adds', ' {2}Keep more than the free allowance on the Remote', '.*', '.*', 'l3 remote plan subscribe go\\|pro\\|max gives the page to subscribe on\\n$'].join('\\n')));
   ok(laptop.l3(['repo', 'new', 'one', '-t', 'empty']));
@@ -40,7 +40,7 @@ test('l3 remote plan: free, the use against the allowance, the tiers, what paid 
   assert.match(page, new RegExp(`^${r.url}/dev-billing/checkout/cs_dev\\w+$`));
   assert.match(await pay(page), /[?&]plan=paid&tier=pro$/);
   ok(laptop.l3(['remote', 'plan']), /^Plan {2}Pro · renews \d{4}-\d\d-\d\d\n {2}Repos on the Remote {2}1\n {2}Kept on the Remote {2}\d+ B of 256 GB\n/);
-  ok(laptop.l3(['remote']), /two {2}in step/);
+  ok(laptop.l3(['remote']), /two {2,}in step/);
   assert.match(ok(laptop.l3(['remote', 'plan', 'manage'])).out, /^Open this page in a browser to manage or cancel the plan:\n {2}http:\/\/127\.0\.0\.1:\d+\/dev-billing\/portal\/bps_dev\w+\n$/);
   // Another tier is the portal at the step that changes to it; a tier that is none is said before the Remote is asked.
   assert.match(ok(laptop.l3(['remote', 'plan', 'switch', 'max'])).out, /^Open this page in a browser to change the tier:\n {2}http:\/\/127\.0\.0\.1:\d+\/dev-billing\/portal\/bps_dev\w+\/change\/max\n$/);

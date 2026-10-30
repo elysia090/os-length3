@@ -1,0 +1,63 @@
+/* Home: its column and its pane beside it, as Forge's, opening and closing; its repos and servers. */
+
+/* Home: the page in its column, and beside it the right pane Forge and Git have (bench.ts), its switch at its top,
+   kept in view while Home scrolls under it; put away, the switch alone stays, and Home takes the width. */
+/* Its pane's line and its switch stand exactly where Forge's do, so going from Home to Forge (or back) nothing of the
+   pane moves: the page keeps Forge's margin at the right (s5), and the pane is Forge's W (a quarter of the page,
+   never under 280 px), less that margin, worked out from the page's own margins. */
+@media (min-width: 761px) { .page:has(> .home-layout) { padding-right: var(--s5); } }
+/* The room under Home's foot is the column's, not the page's: the pane is held in view only within the page's
+   content, so the page's own foot would push it up off the top line as Home is scrolled to its end. */
+.page:has(> .home-layout) { padding-bottom: 0; }
+.home-layout > .home-main { padding-bottom: var(--s6); }
+.page > .home-layout {
+  max-width: none; display: grid; column-gap: var(--s5); align-items: start;
+  grid-template-columns: minmax(0, 1fr) calc(max(280px, (100% + clamp(var(--s5), 5vw, 72px) + var(--s5)) / 4) - var(--s5));
+}
+.home-layout.pane-closed { grid-template-columns: minmax(0, 1fr) calc(var(--h-row) + var(--line-frame)); } /* the switch and the line it no longer draws: the switch stays where it stood */
+/* It opens and closes as Forge's does: a wipe, landing a touch past and settling as it comes out. */
+.page > .home-layout { transition: grid-template-columns var(--move) var(--land); }
+.page > .home-layout:not(.pane-closed) { transition: grid-template-columns var(--slide) cubic-bezier(.2, 1.4, .32, 1); }
+.page > .home-layout.pane-closed { transition: grid-template-columns var(--leave) cubic-bezier(.4, 0, 1, 1); }
+@media (prefers-reduced-motion: reduce) { .page > .home-layout, .page > .home-layout:not(.pane-closed), .page > .home-layout.pane-closed, .work.bench, .work.bench:not(.pane-closed) { transition: none; } }
+/* Its first line (the name, Edit profile) centred on the top line, as the pane's switch beside it is. */
+.home-main { min-width: 0; width: 100%; max-width: 1080px; margin: 0 auto; padding-top: calc(var(--band) - var(--top-line)); }
+.home-pane {
+  position: sticky; top: var(--outer-top); height: var(--inner-h); min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: var(--s3);
+  /* Forge's pane, where Forge's is: from the page's top to its foot, out to its right edge (over the page's margin). */
+  margin: calc(-1 * var(--top-line)) calc(-1 * var(--s5)) 0 0; padding: var(--band) var(--s5) var(--s4) calc(var(--s5) - var(--line-frame));
+}
+/* Forge's line, where Forge's is: the pane's edge, top line to foot; put away, no pane, no line. */
+.home-pane { border-left: var(--line-frame) solid var(--ink); background: var(--ground); transition: border-color var(--motion); }
+/* Its top line as Forge's: the search box over the pane, the switch at its right end; put away, the switch alone. */
+/* The room between the search and the switch is the search's own (not a gap of the line's), so with the pane put
+   away and the search's column at nothing the switch stays where it stood, not a gap's width to the right. */
+.home-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; min-width: 0; }
+.home-bar > .search-box { margin-right: var(--s3); }
+.home-bar > .pane-toggle { grid-column: 2; }
+/* Put away, its search goes as Forge's does (a few pixels toward where the pane goes, fading, quicker than the pane),
+   and comes back with the pane's words (glide.ts paneOut). While the pane moves it stays as wide as it is out, where
+   it stands, cut at the pane's edge if the edge gets to it (home.ts). */
+.home-layout.pane-closed .home-bar > .search-box { visibility: hidden; opacity: 0; translate: var(--s2) 0; pointer-events: none;
+  transition: opacity calc(150ms * var(--pace)) cubic-bezier(.4, 0, 1, 1), translate calc(150ms * var(--pace)) cubic-bezier(.4, 0, 1, 1), visibility 0s calc(150ms * var(--pace)); }
+.home-layout:is(.pane-moving, .pane-closed) .home-bar > .search-box { width: var(--search-held, auto); justify-self: end; }
+.home-layout:is(.pane-moving, .pane-closed) .home-pane { overflow-x: clip; grid-template-columns: minmax(0, 1fr); }
+/* While the search is out the window steps back under the one shade, as Forge's does. The pane holds itself in
+   place (sticky), so it is a layer of its own the search cannot rise out of: it rises over the shade itself, with a
+   shade of its own over what it holds but the search (put back at once as the search goes, the window's fading). */
+body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1; }
+.home-pane:has(.search-box:is(:focus-within, .reading, .moving)) { z-index: 8; }
+.home-pane::after { content: ''; position: absolute; inset: 0 0 0 calc(-1 * var(--line-frame)); pointer-events: none; background: color-mix(in srgb, var(--ink) 14%, transparent); opacity: 0; }
+.home-pane:has(.search-box:is(:focus-within, .reading))::after { opacity: 1; transition: opacity calc(180ms * var(--pace)) ease-out; }
+.home-bar > .search-box { z-index: 1; }
+.home-layout.pane-closed .home-pane { padding-left: 0; border-left-color: transparent; transition: border-color var(--leave) cubic-bezier(.7, 0, 1, 1); }
+/* Put away, what it holds goes with its edge to the right, as wide as it was, cut at the window's edge, and is out of
+   sight (and of the keyboard) once the pane is; brought out, it comes in with the edge the same way (as Forge's). */
+.home-layout:is(.pane-moving, .pane-closed) .home-side { width: var(--side-held, auto); }
+.home-layout.pane-closed .home-side { visibility: hidden; transition: visibility 0s var(--leave); }
+/* Its first heading on the line Forge's Prompt and Server's People are on, a band below the top line's foot. */
+.home-side { min-height: 0; overflow: auto; padding-top: var(--band); }
+/* Lately's rows reach a step past its words on each side (their fill under the pointer, their edge opened): the pane
+   scrolls, and what scrolls clips, so its room is that much wider, its words where they were. */
+.home-side { margin-inline: calc(-1 * var(--s3)); padding-inline: var(--s3); }
+.home-side > .plugins { padding: 0; }

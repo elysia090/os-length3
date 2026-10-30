@@ -3,7 +3,7 @@
 // whom they have accepted in the Inbox, and who has accepted them). Its boards
 // are what they talk about: each is a conversation, short posts read as a
 // chat is, and a TODO they keep together, the same list as Home's
-// (src/todo.ts), kept here item by item and field by field so that two
+// (src/home/todo.ts), kept here item by item and field by field so that two
 // people writing never undo each other but on the very same field. (A repo
 // belongs to a person, who may show it in a server, only to be seen there:
 // seen.ts.)
@@ -50,18 +50,18 @@
 
 import {and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, sql} from 'drizzle-orm';
 import type {Context, Hono} from 'hono';
-import {claim, codeOf, HOLD, liveAddress, serverAddress, shownAs, takeDown} from './names.ts';
+import {claim, codeOf, HOLD, liveAddress, NAME, nameFor, serverAddress, shownAs, takeDown} from './names.ts';
 import type {Plans} from './plan.ts';
 import {hmacHex} from './keys.ts';
-import {addressOf, ago, body, lock, qualified, refuse, rows, slowDown, throttled, type Db, type Vars} from './request.ts';
-import {address, board, boardSeen, guest, invite, member, principalCode, REACH, repoPublic, server, serverLeft, talk, todoItem} from './schema.ts';
+import {addressOf, ago, body, insertWhere, lock, ms, qualified, refuse, rows, slowDown, throttled, type Db, type Vars} from './request.ts';
+import {address, board, boardSeen, guest, invite, member, message, principalCode, REACH, repoPublic, server, serverLeft, talk, todoItem} from './schema.ts';
 
 export const SERVER = {name: 64, body: 2000, perHour: 60, page: 30, maxPage: 100, boards: 100,
   /** Servers a person owns or has held for them, at most; servers they make in a day. */
   servers: 50, perDay: 10,
   /** How long a server its maker leaves with nobody else in it is held (not HOLD: no name is kept long by making and leaving). */
   alone: 86_400_000,
-  /** A board's TODO: as long as Home's items may be (src/todo.ts), and so many of them. */
+  /** A board's TODO: as long as Home's items may be (src/home/todo.ts), and so many of them. */
   todo: {title: 200, detail: 4000, items: 500},
   /**
    * Guests: an invitation lets in so many (one unless asked, at most 20) for so many days (7 unless
@@ -81,8 +81,6 @@ const INVITE = /^[0-9a-f]{32}$/;
  * text around or join it), so what one reads is what they chose.
  */
 const guestName = (n: string) => n.length > 0 && [...n].length <= SERVER.guest.name && !/[@\p{C}]/u.test(n);
-/** A principal's name before @, as an address's is (inbox.ts). */
-const NAME = /^[a-z0-9][a-z0-9._-]{1,30}$/;
 
 /** An id that sorts as its time: milliseconds in base 36 (nine places), then eight random places. */
 export function postId(now = Date.now()): string {
@@ -98,7 +96,7 @@ async function digest(s: string): Promise<string> {
   return hex(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s))));
 }
 
-export interface ServerDeps {
+interface ServerDeps {
   db: Db;
   /** This Remote's own domain: a server's name is claimed on it, or on a domain one of its people holds. */
   domain: string;
@@ -179,16 +177,16 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
         .where(and(eq(server.goneBy, me), sql`${server.goneAt} > ${ago(HOLD)}`)) as {id: string; name: string; address: string; at: Date}[];
       return c.json(list.map((x) => ({id: x.id, name: x.name, address: x.address, until: x.at.getTime() + HOLD})));
     }
-    const list = await db.select({id: server.id, name: server.name, address: sql<string>`coalesce(${address.address}, '')`, owner: member.owner, until: address.until, code: principalCode.code, madeBy: server.madeBy})
+    const list = await db.select({id: server.id, name: server.name, address: sql<string>`coalesce(${address.address}, '')`, owner: member.owner, code: principalCode.code, madeBy: server.madeBy})
       .from(member).innerJoin(server, and(eq(server.id, member.serverId), isNull(server.goneAt)))
       .leftJoin(address, eq(address.serverId, server.id)).leftJoin(principalCode, eq(principalCode.serverId, server.id))
-      .where(eq(member.userId, me)).orderBy(member.addedAt) as {id: string; name: string; address: string; owner: boolean; until: Date | null; code: string | null; madeBy: string | null}[];
+      .where(eq(member.userId, me)).orderBy(member.addedAt) as {id: string; name: string; address: string; owner: boolean; code: string | null; madeBy: string | null}[];
     if (!list.length) return c.json([]);
     // A board removed is listed with when it goes for good (`gone`), so its owner may bring it back.
     const boards = await db.select({id: board.id, serverId: board.serverId, name: board.name, reach: board.reach, goneAt: board.goneAt}).from(board)
       .where(and(inArray(board.serverId, list.map((r) => r.id)), sql`(${board.goneAt} is null or ${board.goneAt} > ${ago(HOLD)})`)).orderBy(board.createdAt) as Board[];
     // `made`: whether the asker made it, so what leaving or removing it comes to is said before (its maker alone: a day).
-    return c.json(list.map((r) => ({id: r.id, name: r.name, address: r.address, owner: r.owner, made: r.madeBy === me, code: r.code ?? '', until: r.until?.getTime() ?? null,
+    return c.json(list.map((r) => ({id: r.id, name: r.name, address: r.address, owner: r.owner, made: r.madeBy === me, code: r.code ?? '',
       boards: boards.filter((b) => b.serverId === r.id).map((b) => ({id: b.id, name: b.name, open: b.reach >= REACH.open, guests: b.reach === REACH.guests,
         ...(b.goneAt ? {gone: b.goneAt.getTime() + HOLD} : {})}))})));
   });
@@ -213,7 +211,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       await lock(tx, me);
       // Making one is the plan's to allow; being asked into one, and writing in it, never is.
       await d.plans?.makeServer(tx, me);
-      if (!await liveAddress(tx, me)) refuse(409, {error: 'Claim a name first'});
+      await nameFor(tx, me, d.domain);
       if (domain !== d.domain) {
         const [on] = await tx.select({a: address.address}).from(address).where(and(eq(address.userId, me), eq(address.domain, domain), isNull(address.releasedAt), isNull(address.lapsedAt)));
         if (!on) refuse(400, {error: 'Only on a domain you hold a name on'});
@@ -227,26 +225,14 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       if (count.today >= SERVER.perDay) slowDown(86_400, {error: 'Too many servers made today'});
       const id = key(), bid = key();
       await tx.insert(server).values({id, name: n, madeBy: me});
-      const got = await claim(tx, handle, domain, {serverId: id}, domain === d.domain);
+      const got = await claim(tx, handle, domain, {serverId: id});
       if (!got.ok) refuse(409, got.until ? {error: 'That name was let go, and is held for its owner a while', until: got.until} : {error: 'That name is taken'});
       await tx.insert(member).values({serverId: id, userId: me, owner: true});
       await tx.insert(board).values({id: bid, serverId: id, name: first});
-      return {id, name: n, address: `${handle}@${domain}`, owner: true, made: true, code: await codeOf(tx, {serverId: id}), until: got.until,
+      return {id, name: n, address: `${handle}@${domain}`, owner: true, made: true, code: await codeOf(tx, {serverId: id}),
         boards: [{id: bid, name: first, open: false, guests: false}]};
     });
     return c.json(made, 201);
-  });
-
-  // Its name renewed for another term, by its owner (and taken back, if its term ran out a little while ago).
-  v1.post('/servers/:id/renew', async (c) => {
-    const id = c.req.param('id');
-    const m = await membership(db, id, c.get('userId'));
-    if (!m) return c.json({error: 'No such server of yours'}, 404);
-    if (!m.owner) return c.json({error: 'Only its owner renews its name'}, 403);
-    const [a] = await db.select({address: address.address, name: address.name, domain: address.domain}).from(address).where(eq(address.serverId, id));
-    if (!a || a.domain !== d.domain) return c.json({error: 'It has no name on this Remote to renew'}, 409);
-    const got = await claim(db, a.name, a.domain, {serverId: id}, true);
-    return got.ok ? c.json({address: a.address, until: got.until}) : c.json({error: 'That name is taken'}, 409);
   });
 
   // Back within the hold, by whoever removed it or left it last: its name too, held for it.
@@ -256,9 +242,9 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       await lock(tx, me);
       const [s] = await tx.select({name: server.name}).from(server).where(and(eq(server.id, id), eq(server.goneBy, me), sql`${server.goneAt} > ${ago(HOLD)}`));
       if (!s) refuse(404, {error: 'Nothing of yours to bring back'});
-      if (!await liveAddress(tx, me)) refuse(409, {error: 'Claim a name first'});
+      await nameFor(tx, me, d.domain);
       const [a] = await tx.select({address: address.address, name: address.name, domain: address.domain}).from(address).where(eq(address.serverId, id));
-      if (a) await claim(tx, a.name, a.domain, {serverId: id}, a.domain === d.domain);
+      if (a) await claim(tx, a.name, a.domain, {serverId: id});
       await tx.update(server).set({goneAt: null, goneBy: null}).where(eq(server.id, id));
       await tx.insert(member).values({serverId: id, userId: me, owner: true}).onConflictDoUpdate({target: [member.serverId, member.userId], set: {owner: true}});
       return {id, name: s.name, address: a?.address ?? ''};
@@ -282,7 +268,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const until = await db.transaction(async (tx: Db) => {
       if (!(await membership(tx, id, me))?.owner) refuse(403, {error: 'Only its owner removes a server'});
       await gone(tx, id, me);
-      return (await tx.select({at: server.goneAt}).from(server).where(eq(server.id, id)))[0].at.getTime() + HOLD;
+      return (await tx.select({at: ms(sql`${server.goneAt}`)}).from(server).where(eq(server.id, id)))[0].at + HOLD;
     });
     return c.json({until});
   });
@@ -301,10 +287,21 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const a = name((await body<{address?: unknown}>(c))?.address).toLowerCase();
     const [who] = await rows<{user: string | null; both: number}>(db, sql`select a.user_id as user,
       (select count(*)::int from contact k where k.state = 'accepted' and ((k.user_id = ${me} and k.peer = a.user_id) or (k.user_id = a.user_id and k.peer = ${me}))) as both
-      from address a where a.address = ${a} and a.released_at is null and a.lapsed_at is null and (a.until is null or a.until > now())`);
+      from address a where a.address = ${a} and a.released_at is null and a.lapsed_at is null`);
     if (!who?.user) return c.json({error: 'No one has that name'}, 404);
     if (who.both < 2) return c.json({error: 'Only your contacts can be added'}, 403);
-    await db.insert(member).values({serverId: id, userId: who.user}).onConflictDoNothing();
+    const came = await db.insert(member).values({serverId: id, userId: who.user}).onConflictDoNothing().returning({u: member.userId});
+    // In at once, they are told by the Remote, whichever way they were added: a notice in their Inbox, in the
+    // conversation with whoever added them, about the server (its name kept as it was, for the line to say it).
+    // It is no one's words: written here, never sent by a client (the Inbox keeps no `notice` from one).
+    if (came.length) {
+      const [s] = await db.select({name: server.name}).from(server).where(eq(server.id, id)) as {name: string}[];
+      const from = await liveAddress(db, me);
+      if (s && from) {
+        await db.insert(message).values({to: who.user, from: me, fromAddress: from, toAddress: a, type: 'message',
+          target: {server: id, notice: 'added', name: s.name}, body: `${from} added you to ${s.name}.`});
+      }
+    }
     return c.json(await people(db, id), 201);
   });
 
@@ -337,6 +334,12 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   });
 
   // ---- boards ----
+  // Two boards of one name in a server are one too many to tell apart: a name is taken while its board is there, whatever its case.
+  const named = async (tx: Db, serverId: string, n: string, self = '') => {
+    const [took] = await tx.select({id: board.id}).from(board)
+      .where(and(eq(board.serverId, serverId), isNull(board.goneAt), sql`lower(${board.name}) = lower(${n})`, sql`${board.id} <> ${self}`)).limit(1);
+    if (took) refuse(409, {error: 'There is a board by that name already'});
+  };
   v1.post('/servers/:id/boards', async (c) => {
     const id = c.req.param('id');
     if (!await membership(db, id, c.get('userId'))) return c.json({error: 'No such server of yours'}, 404);
@@ -348,6 +351,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       await lock(tx, `boards:${id}`);
       const [{n: count}] = await tx.select({n: sql<number>`count(*)::int`}).from(board).where(eq(board.serverId, id));
       if (count >= SERVER.boards) refuse(429, {error: 'Too many boards'});
+      await named(tx, id, n);
       await tx.insert(board).values({id: bid, serverId: id, name: n});
     });
     return c.json({id: bid, name: n, open: false, guests: false}, 201);
@@ -376,6 +380,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       set.reach = reach;
     }
     await db.transaction(async (tx: Db) => {
+      if (set.name !== undefined) { await lock(tx, `boards:${at.b.serverId}`); await named(tx, at.b.serverId, set.name, at.b.id); }
       if (Object.keys(set).length) await tx.update(board).set(set).where(eq(board.id, at.b.id));
       // No longer taking guests ends its invitations and its guests: taking them again lets nobody back by an old link.
       if (set.reach !== undefined && set.reach < REACH.guests) {
@@ -390,8 +395,8 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const at = await mine(c.req.param('id'), c.get('userId')) ?? notMine();
     if (!at.owner) return c.json({error: 'Only its server\'s owner removes a board'}, 403);
     // Held 30 days: its talk and TODO with it, back at once until then.
-    const [{goneAt}] = await db.update(board).set({goneAt: sql`now()`}).where(eq(board.id, at.b.id)).returning({goneAt: board.goneAt});
-    return c.json({until: goneAt.getTime() + HOLD});
+    const [{goneAt}] = await db.update(board).set({goneAt: sql`now()`}).where(eq(board.id, at.b.id)).returning({goneAt: ms(sql`${board.goneAt}`)});
+    return c.json({until: goneAt + HOLD});
   });
 
   v1.post('/boards/:id/back', async (c) => {
@@ -399,7 +404,12 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     if (!at?.b.goneAt || at.owner === null) return notMine();
     if (!at.owner) return c.json({error: 'Only its server\'s owner brings a board back'}, 403);
     if (Date.now() - at.b.goneAt.getTime() > HOLD) return c.json({error: 'It is held no longer'}, 410);
-    await db.update(board).set({goneAt: null}).where(eq(board.id, at.b.id));
+    // One of its name made meanwhile has the name now: it comes back only once that one is named otherwise.
+    await db.transaction(async (tx: Db) => {
+      await lock(tx, `boards:${at.b.serverId}`);
+      await named(tx, at.b.serverId, at.b.name, at.b.id);
+      await tx.update(board).set({goneAt: null}).where(eq(board.id, at.b.id));
+    });
     return c.json(boardJson({...at, b: {...at.b, goneAt: null}}));
   });
 
@@ -432,10 +442,9 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       : await db.select().from(todoItem).where(where) as Item[];
     if (changed.length) return c.json(todoJson(changed[0]));
     if (typeof r?.title !== 'string' || typeof r.place !== 'number') return c.json({error: 'That item was taken off'}, 404);
-    if (!at.address) return c.json({error: 'Claim a name first'}, 409);
     // A moment as a client says it: whole milliseconds a bigint holds, else now (1e300 was a 500).
     const created = typeof r.created === 'number' && Number.isSafeInteger(r.created) && r.created >= 0 ? r.created : Date.now();
-    const by = at.address;
+    const by = at.address ?? await nameFor(db, c.get('userId'), d.domain);
     // Counted and made under the board's lock: many made at once are counted one by one.
     const [made] = await db.transaction(async (tx: Db) => {
       await lock(tx, `todo:${at.b.id}`);
@@ -491,17 +500,15 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
           .where(and(eq(talk.boardId, b.id), isNull(talk.userId), gte(talk.id, idAt(Date.now() - 3600_000))));
         if (all >= guestsOf) slowDown(3600, {error: 'Guests have written as much as they may here this hour'});
       }
-      const [{n}] = await tx.select({n: sql<number>`count(*)::int`}).from(talk).where(and(whose, gte(talk.id, idAt(Date.now() - 3600_000))));
-      if (n >= perHour) slowDown(3600, {error: 'Too many posts this hour'});
-      await tx.insert(talk).values(row);
+      const counted = sql`(select count(*) from ${talk} where ${and(whose, gte(talk.id, idAt(Date.now() - 3600_000)))}) < ${perHour}`;
+      if (!await insertWhere(tx, talk, row, counted)) slowDown(3600, {error: 'Too many posts this hour'});
     });
     return c.json(shape(who.userId ?? null, false)(row), 201);
   };
 
   v1.post('/boards/:id/posts', async (c) => {
     const at = await mine(c.req.param('id'), c.get('userId')) ?? notMine();
-    if (!at.address) return c.json({error: 'Claim a name first'}, 409);
-    return write(c, at.b, {userId: c.get('userId'), by: at.address});
+    return write(c, at.b, {userId: c.get('userId'), by: at.address ?? await nameFor(db, c.get('userId'), d.domain)});
   });
 
   v1.delete('/boards/:id/posts/:pid', async (c) => {

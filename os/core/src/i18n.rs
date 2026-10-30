@@ -5,17 +5,30 @@
 // No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
 #![forbid(unsafe_code)]
 
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU8, Ordering};
 
-/// Whether this process speaks Japanese (read once).
+/// The language as last read: 0 not read yet, 1 English, 2 Japanese.
+static SPOKEN: AtomicU8 = AtomicU8::new(0);
+
+/// Whether this process speaks Japanese: read once, and again after Home's `lang` is set (the app's core lives as
+/// long as its tab, and the person may change the language in it; l3 reads it once per command).
 pub fn ja() -> bool {
-    static JA: OnceLock<bool> = OnceLock::new();
-    *JA.get_or_init(|| {
-        if let Some(v) = std::env::var("LENGTH3_LANG").ok().filter(|v| !v.is_empty()) {
-            return v.starts_with("ja");
-        }
-        crate::home::get("lang").ok().flatten().and_then(|t| serde_json::from_str::<String>(&t).ok()).is_some_and(|l| l == "ja")
-    })
+    match SPOKEN.load(Ordering::Relaxed) {
+        1 => return false,
+        2 => return true,
+        _ => {}
+    }
+    let ja = match std::env::var("LENGTH3_LANG").ok().filter(|v| !v.is_empty()) {
+        Some(v) => v.starts_with("ja"),
+        None => crate::home::get("lang").ok().flatten().and_then(|t| serde_json::from_str::<String>(&t).ok()).is_some_and(|l| l == "ja"),
+    };
+    SPOKEN.store(if ja { 2 } else { 1 }, Ordering::Relaxed);
+    ja
+}
+
+/// Home's `lang` was just written: the words chosen next are in the language it says now.
+pub(crate) fn changed() {
+    SPOKEN.store(0, Ordering::Relaxed);
 }
 
 /// The languages the OS speaks.

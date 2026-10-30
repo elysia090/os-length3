@@ -31,17 +31,17 @@ pub fn repo_list(ctx: &Ctx, _: &Call) -> Result<Reply> {
         let working = if line != work::MAIN { tr!(" · working on {}", " · {} の作業中", super::git::line_called(&line)) } else { String::new() };
         crate::menu::see(|| crate::menu::Subject { on: On::Repo, word: s.name.clone(), repo: Some(s.name.clone()), label: s.name.clone(),
             detail: format!("{} · {}{working}{said}", files(s.files as usize), bytes(s.bytes)), facts: Vec::new() });
-        t.push(format!("{}\t{} · {}{working}{said}", s.name, files(s.files as usize), bytes(s.bytes)));
+        t.push((s.name.clone(), format!("{} · {}{working}{said}", files(s.files as usize), bytes(s.bytes))));
         rows.push(json!({"name": s.name, "files": s.files, "bytes": s.bytes, "modified": s.modified, "line": line, "state": state,
             "changed": st.as_ref().map_or(0, |s| s.changed), "unsendable": st.as_ref().map(|s| s.unsynced.iter().map(|(p, _)| p.clone()).collect::<Vec<_>>()).unwrap_or_default()}));
     }
     for o in &only_there {
         crate::menu::see(|| crate::menu::Subject { on: On::RemoteRepo, word: o.name.clone(), repo: None, label: o.name.clone(),
             detail: tr!("only on the Remote · {}", "Remote にだけあります · {}", bytes(o.bytes)), facts: vec![Fact::OnlyThere] });
-        t.push(tr!("{}\tonly on the Remote · {} (l3 repo open {})", "{}\tRemote にだけあります · {}（l3 repo open {} で開けます）", o.name, bytes(o.bytes), o.name));
+        t.push((o.name.clone(), tr!("only on the Remote · {} (l3 repo open {})", "Remote にだけあります · {}（l3 repo open {} で開けます）", bytes(o.bytes), o.name)));
     }
-    if t.is_empty() { t.push(tr!("No repos yet (l3 repo new NAME makes one)", "repo はまだありません（l3 repo new NAME で作れます）")); }
-    Ok(Reply::data(t.join("\n"), json!({"here": rows, "remote": only_there})))
+    let text = if t.is_empty() { tr!("No repos yet (l3 repo new NAME makes one)", "repo はまだありません（l3 repo new NAME で作れます）") } else { crate::out::columns(&t).join("\n") };
+    Ok(Reply::data(text, json!({"here": rows, "remote": only_there})))
 }
 
 pub fn repo_new(ctx: &Ctx, call: &Call) -> Result<Reply> {
@@ -57,6 +57,29 @@ pub fn repo_new(ctx: &Ctx, call: &Call) -> Result<Reply> {
     }
     let s = ctx.repos()?.create(name, template)?;
     Ok(Reply::done(tr!("Made {} ({} · {})", "{} を作りました（{} · {}）", s.name, template, files(s.files as usize)), json!({"repo": s, "template": template})))
+}
+
+/// A repo renamed, as its gear in the app renames it: only one no Remote has agreed (the Remote knows a repo by its
+/// name), never while a Prompt has it open; what this device keeps of it by name goes with it.
+pub fn repo_mv(ctx: &Ctx, call: &Call) -> Result<Reply> {
+    let repo = target::repo(ctx, call, 0)?;
+    let to = call.word(1).unwrap_or_default();
+    remote::rename_repo(&ctx.repos()?, &repo, to, &[])?;
+    Ok(Reply::done(tr!("Renamed {} to {}", "{} の名前を {} に変えました", repo, to), json!({"repo": to, "was": repo})))
+}
+
+/// A repo taken from this device whole, as its gear in the app deletes one no Remote has. One the Remote has is
+/// guarded there (turning it off asks for the account's name, the repo's, a code and a passkey): it is not deleted
+/// from here, and l3 says where it is.
+pub fn repo_rm(ctx: &Ctx, call: &Call) -> Result<Reply> {
+    let repo = target::repo(ctx, call, 0)?;
+    if remote::agreed(&repo) {
+        return Err(Error::Refused(tr!(
+            "{} is on the Remote: turn it off there first (in the app, its gear's Delete), which asks for your passkey",
+            "{} は Remote にあります。先にそちらで止めてください（アプリでは歯車の「削除」。パスキーを求められます）", repo)));
+    }
+    remote::delete_repo(&ctx.repos()?, &repo, &[])?;
+    Ok(Reply::done(tr!("Deleted {} from this device", "{} をこの端末から消しました", repo), json!({"repo": repo})))
 }
 
 pub fn repo_open(ctx: &Ctx, call: &Call) -> Result<Reply> {
@@ -105,31 +128,43 @@ pub fn band_set(ctx: &Ctx, call: &Call) -> Result<Reply> {
     Ok(Reply::done(text, json!({"repo": repo, "on": on, "changed": changed, "band": home::band(&here_names(ctx)?)?})))
 }
 
+/// Room a Prompt wants beside what it holds already (what .packages and .setup install, what it writes).
+#[cfg(target_os = "linux")]
+pub(crate) const PROMPT_ROOM: u64 = 256 << 20;
+
 /// `l3 prompt [REPO] [-- CMD…]`: the repo inside the root, without privileges.
 #[cfg(target_os = "linux")]
 pub fn prompt(ctx: &Ctx, call: &Call) -> Result<Reply> {
-    use length3_core::{launch, paths, root};
+    use length3_core::{launch, paths, prompt};
     use std::io::IsTerminal;
     let repo = target::repo(ctx, call, 0)?;
-    let (root, about) = root::current(&paths::data_dir()).ok_or_else(|| Error::NotFound(tr!("No root yet (l3 root fetch)", "root がありません（l3 root fetch）")))?;
+    let data = paths::data_dir();
     let dir = ctx.repos()?.dir(&repo)?;
+    let (root, about) = super::runtime::root_now(&data)?;
     // Another distribution's own shell where there is a terminal to draw it on; sh otherwise.
     let bash = about.distro.is_some() && root.join("bin/bash").exists() && std::io::stdin().is_terminal();
     let cmd = call.words(1);
     let argv: Vec<String> = if cmd.is_empty() { vec![if bash { "/bin/bash" } else { "/bin/sh" }.into(), "-i".into()] } else { cmd };
-    let s = launch::Sandbox { root, repo: dir, name: repo.clone(), argv, network: call.flags.network || length3_core::home::network(&repo), dotfiles: launch::dotfiles(), data: Some(paths::data_dir()) };
-    // What .packages and .setup ask for, first (once, while they and the root stay as they are).
-    launch::set_up(&s, about.distro.is_some()).map_err(|e| Error::Io(e.to_string()))?;
-    // Recorded while it runs, so `l3 prompt ls` (and Runtime) see it and `l3 prompt stop` can end it.
-    let data = paths::data_dir();
+    let s = launch::Sandbox { root, repo: dir, name: repo.clone(), argv, network: call.flags.network || length3_core::home::network(&repo), dotfiles: launch::dotfiles_in_effect(), data: Some(data.clone()), env: Vec::new() };
+    // Recorded from the start, by the process that runs it, so `l3 prompt ls` (and Runtime) see it, `l3 prompt stop`
+    // can end it, and nothing it holds is freed (usage.rs): first being prepared, as what .packages and .setup ask for
+    // is set up (once, while they and the root stay as they are), then running.
+    let prepared = || -> std::io::Result<prompt::Recorded> {
+        let mut recorded = prompt::record(&data, &repo, s.network, &s.root)?;
+        // Recorded, what it holds stays; room is made round it if the device is short (usage.rs make_room).
+        length3_core::usage::make_room(&data, &paths::repos_dir(), PROMPT_ROOM);
+        launch::set_up(&s, about.distro.is_some())?;
+        recorded.ready()?;
+        Ok(recorded)
+    };
     let code = if crate::menu::active() {
         // Said before the shell takes the keys: in it, Ctrl-C is the program's (as at any shell), and leaving it comes back here.
         crate::out::note(&tr!("exit (or Ctrl-D) comes back to the menu; Ctrl-C goes to what runs in the Prompt", "exit（か Ctrl-D）でメニューに戻ります。Ctrl-C は Prompt の中で動くものに届きます"));
         // From the menu, in a child: the menu keeps its own namespaces (a second Prompt could not be made
         // in them) and may have a thread still asking the Remote (a process with two cannot make them).
-        launch::run_apart_with(&s, || length3_core::prompt::record(&data, &repo, s.network))
+        launch::run_apart_with(&s, prepared)
     } else {
-        let recorded = length3_core::prompt::record(&data, &repo, s.network).map_err(|e| Error::Io(e.to_string()))?;
+        let recorded = prepared().map_err(|e| Error::Io(e.to_string()))?;
         let code = launch::run(&s);
         drop(recorded);
         code
@@ -157,24 +192,45 @@ pub fn prompt_list(_: &Ctx, _: &Call) -> Result<Reply> {
     let mut rows = Vec::new();
     for r in &all {
         let held = prompt::held_by(r);
-        let mut line = format!("{}\t{}", r.repo, match held {
-            Some(h) => tr!("{} processes · {}", "プロセス {} · {}", h.processes, bytes(h.memory)),
-            None => tr!("starting", "起動中"),
-        });
+        let mut line = match (held, r.preparing) {
+            (Some(h), false) => tr!("{} processes · {}", "プロセス {} · {}", h.processes, bytes(h.memory)),
+            (None, false) => tr!("starting", "起動中"),
+            // Being prepared, what it holds is what prepares it.
+            (Some(h), true) => tr!("preparing (.packages, .setup) · {} processes · {}", "用意中（.packages、.setup） · プロセス {} · {}", h.processes, bytes(h.memory)),
+            (None, true) => tr!("preparing (.packages, .setup)", "用意中（.packages、.setup）"),
+        };
         if r.network { line += &tr!(" · with the network", " · ネットワークあり"); }
-        t.push(line);
-        rows.push(json!({"repo": r.repo, "pid": r.pid, "network": r.network, "started": r.started, "held": held}));
+        t.push((r.repo.clone(), line));
+        rows.push(json!({"repo": r.repo, "pid": r.pid, "network": r.network, "started": r.started, "held": held, "preparing": r.preparing, "root": r.root}));
     }
-    if t.is_empty() { t.push(tr!("No Prompt is running (l3 prompt REPO opens one)", "動いている Prompt はありません（l3 prompt REPO で開けます）")); }
-    Ok(Reply::data(t.join("\n"), json!(rows)))
+    let text = if t.is_empty() { tr!("No Prompt is running (l3 prompt REPO opens one)", "動いている Prompt はありません（l3 prompt REPO で開けます）") } else { crate::out::columns(&t).join("\n") };
+    Ok(Reply::data(text, json!(rows)))
 }
 
 /// `l3 prompt stop [REPO]`: each Prompt of the repo stops, as Stop in Runtime does.
 pub fn prompt_stop(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let repo = target::repo(ctx, call, 0)?;
     let stopped = stop_prompts(&repo);
-    if stopped.is_empty() { return Err(Error::NotFound(tr!("No Prompt of {} is running", "{} の Prompt は動いていません", repo))); }
+    if stopped.is_empty() { return Err(Error::NotFound(tr!("No Prompt of {} is running (l3 prompt ls lists those that are)", "{} の Prompt は動いていません（動いているものは l3 prompt ls）", repo))); }
     Ok(Reply::done(said_stopped(&repo, &stopped), json!({"repo": repo, "stopped": stopped})))
+}
+
+/// `l3 prompt pause|resume [REPO]`: its Prompts paused (all they hold stays, they use no CPU) or going on again.
+#[cfg(target_os = "linux")]
+pub fn prompt_pause(ctx: &Ctx, call: &Call) -> Result<Reply> {
+    use length3_core::{paths, prompt};
+    let paused = call.word(0) == Some("pause");
+    let repo = target::repo(ctx, call, 1)?;
+    let told: usize = prompt::running(&paths::data_dir()).iter().filter(|r| r.repo == repo).filter_map(prompt::ns_of_running).map(|ns| prompt::pause(ns, paused)).sum();
+    if told == 0 { return Err(Error::NotFound(tr!("No Prompt of {} is running (l3 prompt ls lists those that are)", "{} の Prompt は動いていません（動いているものは l3 prompt ls）", repo))); }
+    let text = if paused { tr!("Paused {}'s Prompt: what it holds stays, it uses no CPU (l3 prompt resume {0})", "{} の Prompt を一時停止しました。持っているものはそのまま、CPU は使いません（l3 prompt resume {0}）", repo) }
+        else { tr!("{}'s Prompt goes on", "{} の Prompt を再開しました", repo) };
+    Ok(Reply::done(text, json!({"repo": repo, "paused": paused, "processes": told})))
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn prompt_pause(_: &Ctx, _: &Call) -> Result<Reply> {
+    Err(Error::Refused(tr!("l3 prompt is Linux only for now", "l3 prompt はいま Linux だけです")))
 }
 
 /// Stop every Prompt of `repo` running here; what each held and how it ended.

@@ -1,0 +1,60 @@
+/* The OS's moves: the ink going to the thing chosen, a thing opened becoming its box, the camera panning along the
+   rail and the band, the caret gliding to where words are written, a thing just done landing in its place. */
+/* The ink of the thing chosen, on its way from the one it was on (glide.ts): under the words and icons; the one
+   it is going to waits un-inked, its words in ink, until it lands. */
+.glide-ink { position: absolute; z-index: -1; background: var(--ink); pointer-events: none; }
+/* A repo opened from its card or its row, on its way to its box in Forge (glide.ts morph). */
+/* The sheet a thing opened becomes on its way to its box: the box's own paper and line, so it reads as that box. */
+.morph-box { position: fixed; z-index: 9; pointer-events: none; border: var(--line-work) solid var(--ink); border-radius: var(--r-place); background: var(--paper); }
+/* The words a morph carries: a copy of them as they were drawn, going with the box onto the words they become. */
+.morph-words { position: fixed; z-index: 10; margin: 0; white-space: nowrap; overflow: visible; transform-origin: 0 0; pointer-events: none; }
+/* Along the rail the camera pans with it (main.ts select): the pages stand one above another down the rail, as
+   floors do, and the camera goes down to the next (up it, the other way round): the page left goes
+   up and out of the window whole as the next comes up into it from below, the two as one sheet, the rail and the
+   window's edges standing still. Only the page moves, and only the page is taken as a picture to move: the rest of the window is not taken
+   at all (two pictures of the whole window a pan, for nothing) and goes on being drawn as it is, its own moves (the
+   rail's ink) going on. The page is named only while it pans: named, it is a layer of its own, and the search's
+   shade would lie over the search with it. */
+:root { view-transition-name: none; }
+/* A press while it pans goes through the picture to the page coming under it. */
+::view-transition { pointer-events: none; }
+.panning #page { view-transition-name: page; }
+/* The page come to is not taken: it comes itself (main.ts select), so a press lands on it as it comes. Each is cut
+   at the window's edges as they will be (or were), the cut going with it (main.ts select), not at its page's box:
+   the floor that comes adjoins the one left, never over it and never a band of nothing between. */
+.panning.arriving #page { view-transition-name: none; }
+::view-transition-group(page) { animation: none; }
+/* The camera goes the whole way, fast off the mark and slowing into the next floor (330 ms): nothing fades, the two
+   are never seen in one place, one over the other, and the window is never empty. The page cut at the window's
+   edges as it goes, as a floor at a lift's door. The picture is set going (main.ts select) in the same frame as the
+   page itself comes, so the two never part. */
+::view-transition-old(page) { animation: none; }
+/* Along the band (glide.ts panAcross): only the center is taken; the repo come to comes in whole from its pill's side,
+   over the one left, which steps back a little the other way and fades under it. Never a strip travelling a whole
+   width with two half pages and the ground between them, never two pages' words over each other. */
+.panning-across #page { view-transition-name: none; }
+/* It moves inside the center's frame, as the files scroll in it: cut at the center's edges, never over the lines. */
+::view-transition-group(across) { animation: none; overflow: clip; }
+/* Only the repo left is a picture; the one come to comes in itself (glide.ts panAcross), the picture cut where it has
+   reached. */
+::view-transition-old(across) { animation: none; }
+/* The OS's caret (caret.ts), a 2 px stroke of ink gliding from where it was to where it is; the browser's own is
+   hidden in the field it stands for. Solid while it moves, blinking once it rests. */
+.os-caret-field { caret-color: transparent; }
+.os-caret {
+  position: fixed; left: 0; top: 0; z-index: 9; width: 2px; border-radius: 1px; background: var(--ink); pointer-events: none; opacity: 0;
+  transition: transform 70ms cubic-bezier(.2, .9, .25, 1), height 70ms;
+}
+.os-caret.on { opacity: 1; }
+.os-caret.jump { transition: none; }
+/* A terminal's line's (the Prompt up as a screen): a cell lit as its words are; the letter under it in the glass's
+   dark, as a terminal draws it. */
+.os-caret.block { border-radius: 1px; background: var(--add-tint); color: var(--screen); text-align: center; white-space: pre; overflow: hidden;
+  box-shadow: 0 0 7px color-mix(in srgb, var(--done) 90%, transparent); }
+.os-caret.on.resting { animation: caret-blink 1.06s steps(1) infinite; }
+@keyframes caret-blink { 50% { opacity: 0; } }
+.caret-copy { position: absolute; left: -9999px; top: 0; visibility: hidden; overflow: hidden; }
+.arriving, .arriving:hover { background: transparent !important; color: var(--ink) !important; transition: none !important; }
+/* One the ink is going over (leaving, passing, landing on) while half of it or more lies under it: its words light
+   on it, as the chosen one's are (glide.ts). */
+.under-ink, .under-ink:hover { background: transparent !important; color: var(--ground) !important; transition: none !important; }

@@ -1,0 +1,24 @@
+/* What a Prompt runs and prints: its lines, its head, how it ended, a line as it was run. */
+
+/* Terminal output; input comes from the prompt box */
+.term { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; gap: var(--s2); margin-top: var(--s2); }
+/* Each part keeps its row when another is empty and hidden. */
+.term > p { grid-row: 1; }
+.term-out { grid-row: 2; }
+/* What the running line is doing, under its output; empty while it is quick. */
+.term-activity { grid-row: 3; display: flex; align-items: center; gap: var(--s2); min-height: 0; }
+.term-activity:empty { display: none; }
+/* Ended: how, and Start again beside it, the last thing under its output (terminal.ts sayEnded), in the words of the
+   page; what happened wraps in its own room, the power switch on its line, so the line is no taller. */
+.term-end { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); font: var(--t-meta)/20px var(--sans); white-space: normal; }
+.term-end > span:first-child { min-width: 0; overflow-wrap: anywhere; color: var(--sub); }
+.screen .term-end > span:first-child { color: color-mix(in srgb, var(--add-tint) 62%, transparent); }
+/* Ended, its output stays to be read, dimmed as a screen switched off (it flares and dims to this as it ends); how it
+   ended, and its switch, are not. */
+.term.ended > .term-out > :not(.term-end) { opacity: .72; }
+.small-button { min-height: var(--h-row); padding: 0 var(--s3); font-size: var(--t-meta); }
+.term-out { position: relative; margin: 0; overflow: auto; min-height: 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}

@@ -14,7 +14,8 @@ use std::path::PathBuf;
 
 /// The state the OS keeps for Home. Anything else is refused.
 /// `network`: the repos whose Prompts may reach the network, on this device only (it is never sent).
-pub const KEYS: [&str; 8] = ["profile", "todo", "band", "remote", "sync", "lang", "dotfiles", "network"];
+/// `trusted`: the dotfiles this device runs, as they were taken here (never sent; see dotfiles_in_effect).
+pub const KEYS: [&str; 9] = ["profile", "todo", "band", "remote", "sync", "lang", "dotfiles", "network", "trusted"];
 
 fn file(key: &str) -> Result<PathBuf> {
     if !KEYS.contains(&key) {
@@ -52,7 +53,9 @@ pub fn set(key: &str, json: &str) -> Result<()> {
     // Home's state (profile, TODO, the Remote's session) is the person's alone: the directory is private and
     // the file owner-only.
     crate::boundary::private_dir(path.parent().unwrap()).map_err(|e| e.to_string())?;
-    crate::atomic::replace(&path, json.as_bytes(), crate::atomic::How::PRIVATE).map_err(|e| crate::tr!("{}: {}", "{}：{}", path.display(), e))
+    crate::atomic::replace(&path, json.as_bytes(), crate::atomic::How::PRIVATE).map_err(|e| crate::tr!("{}: {}", "{}：{}", path.display(), e))?;
+    if key == "lang" { crate::i18n::changed(); }
+    Ok(())
 }
 
 /// One TODO item, the same shape the app stores.
@@ -86,7 +89,7 @@ pub fn save_todos(list: &[Todo]) -> Result<()> {
     set("todo", &serde_json::to_string(list).map_err(|e| e.to_string())?)
 }
 
-/// How long an item's first line and its detail may be, in UTF-16 units as the app counts them (src/todo.ts).
+/// How long an item's first line and its detail may be, in UTF-16 units as the app counts them (src/home/todo.ts).
 pub const TODO_LIMITS: [(&str, usize); 2] = [("title", 200), ("detail", 4000)];
 
 /// A new item from a first line written as "Kind：title" (or plain text);
@@ -103,7 +106,7 @@ pub fn todo_from(line: &str, detail: &str, now: u64) -> Option<Todo> {
     Some(Todo { id, kind, title: title.trim().into(), detail, done: false, repo: None, created: now })
 }
 
-/// `item` with its first line written again as `line` reads (src/todo.ts `edit`): the same item,
+/// `item` with its first line written again as `line` reads (src/home/todo.ts `edit`): the same item,
 /// its id, whether it is done and when it was made kept. Its detail is the lines after the first
 /// and `detail` when either is given; otherwise it stays. None when the first line is empty.
 pub fn todo_edited(item: &Todo, line: &str, detail: Option<&str>) -> Option<Todo> {
@@ -113,7 +116,7 @@ pub fn todo_edited(item: &Todo, line: &str, detail: Option<&str>) -> Option<Todo
     Some(Todo { kind: new.kind, title: new.title, detail, ..item.clone() })
 }
 
-/// Home's profile, as the app keeps it (src/profile.ts).
+/// Home's profile, as the app keeps it (src/home/profile.ts).
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
 pub struct Profile {
     #[serde(default)]
@@ -125,11 +128,12 @@ pub struct Profile {
 }
 
 /// How long each field of a profile may be, in characters.
-pub const PROFILE_LIMITS: [(&str, usize); 3] = [("name", 50), ("handle", 32), ("bio", 160)];
+pub const PROFILE_LIMITS: [(&str, usize); 3] = [("name", 50), ("handle", 31), ("bio", 160)];
 
-/// A handle: lowercase letters, digits, - and _ (src/profile.ts).
+/// A handle is a username: 2–31 lowercase letters, digits, . - and _, from a letter or digit (src/home/profile.ts).
 pub fn valid_handle(h: &str) -> bool {
-    !h.is_empty() && h.len() <= 32 && h.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')
+    let word = |b: u8| b.is_ascii_lowercase() || b.is_ascii_digit();
+    (2..=31).contains(&h.len()) && h.bytes().next().is_some_and(word) && h.bytes().all(|b| word(b) || b"._-".contains(&b))
 }
 
 pub fn profile() -> Profile {
@@ -146,7 +150,7 @@ pub fn set_profile(field: &str, value: &str) -> Result<Profile> {
         "handle" => {
             let h = v.trim_start_matches('@').to_ascii_lowercase();
             if !h.is_empty() && !valid_handle(&h) {
-                return Err(crate::tr!("A handle is up to 32 lowercase letters, digits, - and _", "ハンドルは英小文字・数字・- _ の32文字までです"));
+                return Err(crate::tr!("A handle is 2–31 lowercase letters, digits, . - and _", "ハンドルは英小文字・数字・. - _ の2〜31文字です"));
             }
             p.handle = h;
         }
@@ -160,7 +164,7 @@ pub fn set_profile(field: &str, value: &str) -> Result<Profile> {
     Ok(p)
 }
 
-/// Forge's band: the repos out on it, in order, only those in `here` (src/band.ts).
+/// Forge's band: the repos out on it, in order, only those in `here` (src/home/band.ts).
 /// Never chosen yet, it holds the first repo.
 pub fn band(here: &[String]) -> Result<Vec<String>> {
     let Some(text) = get("band")? else { return Ok(here.first().cloned().into_iter().collect()) };
@@ -194,7 +198,7 @@ pub fn networked() -> Vec<String> {
 }
 
 /// Give `repo`'s Prompts the network here (`on`), or take it; kept sorted, as Runtime keeps it
-/// (src/pages/runtime.ts). Whether it changed.
+/// (src/pages/runtime/prompts.ts). Whether it changed.
 pub fn set_network(repo: &str, on: bool) -> Result<bool> {
     // A file that could not be read is not written over.
     let mut all: Vec<String> = get("network")?.and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
@@ -206,7 +210,7 @@ pub fn set_network(repo: &str, on: bool) -> Result<bool> {
     Ok(true)
 }
 
-/// A dotfile's name as it may be written into /root: a dot, then letters, digits and . _ - (src/dotfiles.ts).
+/// A dotfile's name as it may be written into /root: a dot, then letters, digits and . _ - (src/home/dotfiles.ts).
 pub fn dotfile_name(name: &str) -> bool {
     name.len() > 1 && name.len() <= 64 && name.starts_with('.') && name != ".." && !name.contains("..")
         && name.bytes().skip(1).all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
@@ -215,19 +219,85 @@ pub fn dotfile_name(name: &str) -> bool {
 /// The names the app offers for a new dotfile.
 pub const COMMON_DOTFILES: [&str; 8] = [".profile", ".shrc", ".gitconfig", ".nanorc", ".inputrc", ".editorconfig", ".packages", ".setup"];
 
-/// The dotfiles Home keeps (`dotfiles`: a JSON object of name → text), those with a name that may be written.
-pub fn dotfiles() -> Vec<(String, String)> {
-    let Ok(Some(text)) = get("dotfiles") else { return Vec::new() };
-    let Ok(map) = serde_json::from_str::<std::collections::BTreeMap<String, String>>(&text) else { return Vec::new() };
-    map.into_iter().filter(|(n, _)| dotfile_name(n)).collect()
+type Dotfiles = std::collections::BTreeMap<String, String>;
+
+/// A map of dotfiles kept under `key`, those with a name that may be written; None when there is none.
+fn dotfile_map(key: &str) -> Result<Option<Dotfiles>> {
+    let Some(text) = get(key)? else { return Ok(None) };
+    let map: Dotfiles = serde_json::from_str(&text).unwrap_or_default();
+    Ok(Some(map.into_iter().filter(|(n, _)| dotfile_name(n)).collect()))
 }
 
-/// Replace (or make) a dotfile, or remove it (`None`). Whether it was there before.
+/// The dotfiles Home keeps (`dotfiles`: a JSON object of name → text), as the Remote has them: what is listed and
+/// edited. What runs on this device is dotfiles_in_effect.
+pub fn dotfiles() -> Vec<(String, String)> {
+    dotfile_map("dotfiles").ok().flatten().unwrap_or_default().into_iter().collect()
+}
+
+// ---- what of the dotfiles this device runs ----
+//
+// The dotfiles are kept on the Remote and taken in on every device, and what they hold runs: `.setup` with the
+// network as a Prompt is prepared, `.profile` and the like in every shell, `.gitconfig` in git, and the keys in
+// `.authorized_keys` are let in over SSH. So what came from elsewhere (another of the person's devices, or anyone
+// able to write to the Remote as them: a Remote broken into, a device's session taken) runs nowhere until the person
+// at this device has taken it here; what is written here is taken here at once. `trusted` (this device's, never
+// sent) holds each dotfile as it was taken here, and a Prompt, a shell and the SSH listener read those, never the
+// Remote's. One taken away elsewhere goes here too: going runs nothing.
+
+/// Before anything of the dotfiles is read for running or the Remote's are taken in: what this device ran until
+/// now (from a version with no `trusted`) is what it trusts; a device new to them trusts none.
+pub fn keep_trust() -> Result<()> {
+    if get("trusted")?.is_none() {
+        let ran = dotfile_map("dotfiles")?.unwrap_or_default();
+        set("trusted", &serde_json::to_string(&ran).map_err(|e| e.to_string())?)?;
+    }
+    Ok(())
+}
+
+/// The dotfiles this device runs: each as it was taken here, of those still kept. Nothing, when they cannot be read.
+pub fn dotfiles_in_effect() -> Vec<(String, String)> {
+    let read = || -> Result<Vec<(String, String)>> {
+        keep_trust()?;
+        let kept = dotfile_map("dotfiles")?.unwrap_or_default();
+        Ok(dotfile_map("trusted")?.unwrap_or_default().into_iter().filter(|(n, _)| kept.contains_key(n)).collect())
+    };
+    read().unwrap_or_default()
+}
+
+/// The dotfiles changed or added elsewhere and not taken here: kept, and nothing of them runs here yet.
+pub fn dotfiles_waiting() -> Vec<String> {
+    let read = || -> Result<Vec<String>> {
+        keep_trust()?;
+        let trusted = dotfile_map("trusted")?.unwrap_or_default();
+        Ok(dotfile_map("dotfiles")?.unwrap_or_default().into_iter().filter(|(n, t)| trusted.get(n) != Some(t)).map(|(n, _)| n).collect())
+    };
+    read().unwrap_or_default()
+}
+
+/// Take `names` (every one waiting, when none is named) as they are kept now: from here on they run on this
+/// device. The names taken.
+pub fn take_dotfiles(names: &[String]) -> Result<Vec<String>> {
+    keep_trust()?;
+    let kept = dotfile_map("dotfiles")?.unwrap_or_default();
+    let mut trusted = dotfile_map("trusted")?.unwrap_or_default();
+    let waiting: Vec<String> = kept.iter().filter(|(n, t)| trusted.get(*n) != Some(*t)).map(|(n, _)| n.clone()).collect();
+    if let Some(n) = names.iter().find(|n| !kept.contains_key(*n)) {
+        return Err(crate::tr!("There is no dotfile {}", "dotfile {} はありません", n));
+    }
+    let taking: Vec<String> = if names.is_empty() { waiting } else { names.iter().filter(|n| waiting.contains(n)).cloned().collect() };
+    for n in &taking { trusted.insert(n.clone(), kept[n].clone()); }
+    trusted.retain(|n, _| kept.contains_key(n));
+    set("trusted", &serde_json::to_string(&trusted).map_err(|e| e.to_string())?)?;
+    Ok(taking)
+}
+
+/// Replace (or make) a dotfile, or remove it (`None`): written here, it runs here at once. Whether it was there before.
 pub fn set_dotfile(name: &str, text: Option<&str>) -> Result<bool> {
     if !dotfile_name(name) {
         return Err(crate::tr!("A dotfile is named with a dot first: .profile", "dotfile の名前は . で始めます：.profile"));
     }
-    let mut all: std::collections::BTreeMap<String, String> = get("dotfiles")?.and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+    keep_trust()?;
+    let mut all: Dotfiles = get("dotfiles")?.and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
     let was = match text {
         Some(t) => all.insert(name.to_string(), t.to_string()).is_some(),
         None => all.remove(name).is_some(),
@@ -236,12 +306,18 @@ pub fn set_dotfile(name: &str, text: Option<&str>) -> Result<bool> {
         return Err(crate::tr!("There is no dotfile {}", "dotfile {} はありません", name));
     }
     set("dotfiles", &serde_json::to_string(&all).map_err(|e| e.to_string())?)?;
+    let mut trusted = dotfile_map("trusted")?.unwrap_or_default();
+    match text {
+        Some(t) => { trusted.insert(name.to_string(), t.to_string()); }
+        None => { trusted.remove(name); }
+    }
+    set("trusted", &serde_json::to_string(&trusted).map_err(|e| e.to_string())?)?;
     Ok(was)
 }
 
 // ---- kept on the Remote (service/app.ts `/v1/home/:key`) ----
 //
-// The same protocol and rules as the app's (src/draft.ts `syncHome`), and
+// The same protocol and rules as the app's (src/remote/sync.ts `syncHome`), and
 // the same record of what was agreed (the `sync` setting's `home`), so the
 // app and l3 on one device are one device to the Remote. Each setting is a
 // value and its version there; a change is sent from the version it was
@@ -249,7 +325,7 @@ pub fn set_dotfile(name: &str, text: Option<&str>) -> Result<bool> {
 // too: two TODO lists are joined against what both last agreed; any other setting is the
 // Remote's (it got there first).
 
-/// Home's settings that are the person's, kept on the Remote (src/draft.ts
+/// Home's settings that are the person's, kept on the Remote (src/remote/sync.ts
 /// `HOME_KEYS`). The band, the language and the network grant are this device's.
 pub const SYNCED: [&str; 3] = ["profile", "todo", "dotfiles"];
 
@@ -269,6 +345,8 @@ pub trait HomeHere {
     fn set_value(&mut self, key: &str, value: Option<&str>) -> Result<()>;
     fn agreed(&self, key: &str) -> Result<Option<Agreed>>;
     fn agree(&mut self, key: &str, a: Agreed) -> Result<()>;
+    /// Nothing agreed for `key` any more: the record of it (and the value it holds) goes.
+    fn forget(&mut self, key: &str) -> Result<()>;
 }
 
 /// The Remote's side of a setting.
@@ -308,7 +386,7 @@ pub fn put_version(v: &serde_json::Value) -> Result<i64> {
     v["version"].as_i64().ok_or_else(|| crate::tr!("The Remote's answer is not a setting", "Remote の答えが設定の形ではありません"))
 }
 
-/// Whether two items' ids are the same as a JavaScript Set sees them (src/draft.ts):
+/// Whether two items' ids are the same as a JavaScript Set sees them (src/remote/sync.ts):
 /// absent ones are, as are equal strings, numbers, booleans and nulls; objects never are.
 fn same_id(a: Option<&serde_json::Value>, b: Option<&serde_json::Value>) -> bool {
     use serde_json::Value as V;
@@ -321,7 +399,7 @@ fn same_id(a: Option<&serde_json::Value>, b: Option<&serde_json::Value>) -> bool
 }
 
 /// Two TODO lists as one, against the one both last agreed (`base`), as
-/// src/draft.ts `joinTodo`: an item only one side changed or removed is as
+/// src/remote/sync.ts `joinTodo`: an item only one side changed or removed is as
 /// that side left it, one both changed is this device's, and every item
 /// either side added is kept, the Remote's new ones first. Nothing agreed
 /// (or not a list): every item from both, this device's where both have it.
@@ -349,6 +427,20 @@ pub fn waiting(here: &impl HomeHere, key: &str) -> bool {
         (Ok(Some(v)), Ok(b)) => b.is_none_or(|b| b.value != v),
         _ => false,
     }
+}
+
+/// Take `key` off this device when it is what was last agreed with the Remote, which keeps it: its value and the
+/// record of it go, so the next agreement takes the Remote's whole, as on a device new to it. One changed here
+/// since (not sent yet), or never agreed, is not on the Remote: it stays, and false says so. None here has gone.
+pub fn leave(here: &mut impl HomeHere, key: &str) -> Result<bool> {
+    if let Some(mine) = here.value(key)? {
+        if here.agreed(key)?.is_none_or(|b| b.value != mine) {
+            return Ok(false);
+        }
+        here.set_value(key, None)?;
+    }
+    here.forget(key)?;
+    Ok(true)
 }
 
 /// Agree `key` with the Remote. Unchanged here, the Remote's is taken.
@@ -415,7 +507,7 @@ pub fn agree_with(here: &mut impl HomeHere, there: &impl HomeThere, key: &str, w
 }
 
 /// Home's files here, and what was last agreed for each: the `sync`
-/// setting's `home`, as the app keeps it (src/draft.ts), beside its other records.
+/// setting's `home`, as the app keeps it (src/remote/sync.ts), beside its other records.
 pub struct Files;
 
 impl HomeHere for Files {
@@ -444,6 +536,13 @@ impl HomeHere for Files {
         if !v["home"].is_object() { v["home"] = serde_json::json!({}); }
         v["home"][key] = serde_json::json!({"version": a.version, "value": a.value});
         if let Some(who) = a.who { v["home"][key]["who"] = who.into(); }
+        set("sync", &serde_json::to_string(&v).map_err(|e| e.to_string())?)
+    }
+
+    fn forget(&mut self, key: &str) -> Result<()> {
+        let Some(mut v) = get("sync")?.and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()) else { return Ok(()) };
+        let Some(home) = v["home"].as_object_mut().filter(|h| h.contains_key(key)) else { return Ok(()) };
+        home.remove(key);
         set("sync", &serde_json::to_string(&v).map_err(|e| e.to_string())?)
     }
 }
@@ -599,6 +698,7 @@ mod tests {
         }
         fn agreed(&self, key: &str) -> Result<Option<Agreed>> { Ok(self.agreed.get(key).cloned()) }
         fn agree(&mut self, key: &str, a: Agreed) -> Result<()> { self.agreed.insert(key.into(), a); Ok(()) }
+        fn forget(&mut self, key: &str) -> Result<()> { self.agreed.remove(key); Ok(()) }
     }
 
     #[test]
@@ -651,7 +751,7 @@ mod tests {
 
     #[test]
     fn todo_from_two_devices_is_joined_item_by_item() {
-        // As src/draft.test.ts: this device sent [a]; another made it [a, b]; this one made it [a, c].
+        // As src/remote/sync.test.ts: this device sent [a]; another made it [a, b]; this one made it [a, c].
         let r = Remote::default();
         let mut d = Device::default();
         d.values.insert("todo".into(), r#"[{"id":"a","title":"here"}]"#.into());
@@ -713,6 +813,30 @@ mod tests {
         d.agreed.insert("todo".into(), Agreed { version: 1, value: "[1]".into(), who: Some("a".into()) });
         agree_with(&mut d, &r, "todo", Some("b")).unwrap();
         assert!(!d.values.contains_key("todo"));
+    }
+
+    #[test]
+    fn a_setting_leaves_this_device_only_as_the_remote_has_it() {
+        let r = Remote::default();
+        let mut d = Device::default();
+        d.values.insert("todo".into(), r#"[{"id":"a"}]"#.into());
+        agree_with(&mut d, &r, "todo", Some("a")).unwrap();
+        // Changed here and not sent: it is not on the Remote, so it stays, and so does what was agreed.
+        d.values.insert("todo".into(), r#"[{"id":"a"},{"id":"b"}]"#.into());
+        assert!(!leave(&mut d, "todo").unwrap());
+        assert!(d.values.contains_key("todo") && d.agreed.contains_key("todo"));
+        // Sent, it goes, the record of it with it (the words of the list are in that too).
+        agree_with(&mut d, &r, "todo", Some("a")).unwrap();
+        assert!(leave(&mut d, "todo").unwrap());
+        assert!(!d.values.contains_key("todo") && !d.agreed.contains_key("todo"));
+        // Signed in again, the Remote's comes back whole, and nothing of this device's is sent over it.
+        let s = agree_with(&mut d, &r, "todo", Some("a")).unwrap();
+        assert_eq!((s.taken, s.sent), (true, false));
+        assert_eq!(d.values["todo"], r#"[{"id":"a"},{"id":"b"}]"#);
+        // Never agreed (written signed out): not on the Remote, it stays. None here has gone already.
+        d.values.insert("profile".into(), r#"{"name":"Ren"}"#.into());
+        assert!(!leave(&mut d, "profile").unwrap());
+        assert!(leave(&mut d, "dotfiles").unwrap());
     }
 
     #[test]

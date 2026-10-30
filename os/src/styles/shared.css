@@ -1,0 +1,54 @@
+/* Rules about many parts at once: the three states every pressable thing has and its touch, a pane's heads, what
+   scrolls in its own turn. */
+
+/* The three states, the same everywhere: hover is a raised fill, the
+   current or chosen thing is an ink fill, focus is a 2px ink ring. */
+.rail-item:hover, .button:hover, .chip:hover, .pill:hover, .band-add:hover:not(:disabled), .me:hover, .pop-item:hover:not(:disabled), .tree-row:hover, .todo-mark:hover,
+.card.repo:hover, .card.new:hover { background: var(--raised); }
+.rail-item[aria-current='page'], .button.primary,
+.chip[aria-current], .chip[aria-checked='true'], .chip[aria-pressed='true'], .pill[aria-current], .tree-row:has(> [aria-current='page']),
+.rail-item[aria-expanded='true'], .me[aria-expanded='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+/* The touch, in light: the give under the finger (touch.ts) is a few pixels, too little to be seen alone, so the
+   surface also takes the finger's shadow the moment it is pressed: an outlined thing a step toward ink, an inked one
+   a step toward the ground. Let go, the light eases back as the spring settles. The pointer coming on fills in
+   quickly and going, slowly, so a pass across the rail leaves a short trail rather than blinking. Only the fill and
+   the edge ease: words and icons turn at once, so ink landing on a place never hides its icon a moment. */
+.rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row,
+.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .tree-row, .hit, .hit-file, .found-item, .seen-file, .link, button.row-item, .part, .dot-row,
+.pane-head, .hit-diff, .found-shut {
+  transition: background-color calc(200ms * var(--pace)) ease-out, border-color calc(200ms * var(--pace)) ease-out;
+}
+:is(.rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row,
+.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .tree-row, .hit, .hit-file, .found-item, .seen-file, .link,
+button.row-item, .part, .dot-row, .pane-head, .hit-diff, .found-shut):hover { transition-duration: calc(60ms * var(--pace)); }
+:is(.rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row,
+.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .file-beside, .tree-row, .dot-row, .pane-head, .hit-diff, .found-shut):active:not(:disabled) {
+  background-color: color-mix(in srgb, var(--ink) 13%, var(--raised)); transition-duration: 40ms;
+}
+/* A primary button answers the pointer too: its ink a step toward the ground under it, as quickly as a fill comes
+   (pressed, a step further). Before, only the outlined ones did, and the one deed that matters most said nothing. */
+.button.primary:hover:not(:disabled) { background-color: color-mix(in srgb, var(--ink) 88%, var(--ground)); border-color: color-mix(in srgb, var(--ink) 88%, var(--ground)); }
+/* The box's pill (what the box does) brings out the four when pressed: under the pointer its glass catches a little
+   more light, so it is seen to be pressable. Up as the screen it is the line's start, and says nothing. */
+.work:not(.prompting, .prompt-leaving) .prompt-chip { transition: box-shadow calc(160ms * var(--pace)) ease-out, filter calc(160ms * var(--pace)) ease-out; }
+.work:not(.prompting, .prompt-leaving) .prompt-chip:hover { box-shadow: inset 0 0 0 1px rgb(255 255 255 / .28); filter: brightness(1.18); }
+.work:not(.prompting, .prompt-leaving) .prompt-chip:is([data-mode='todo'], [data-mode='edit']):hover { filter: none; background: var(--raised); }
+:is(.rail-item[aria-current='page'], .button.primary, .chip[aria-current], .chip[aria-checked='true'], .chip[aria-pressed='true'],
+.pill[aria-current], .rail-item[aria-expanded='true'], .me[aria-expanded='true']):active:not(:disabled) {
+  background-color: color-mix(in srgb, var(--ink) 80%, var(--ground)); border-color: color-mix(in srgb, var(--ink) 80%, var(--ground));
+}
+
+/* ---- 1. Rail ---- */
+/* The icons keep a little more room on the side of the line than on the
+   window's side, so they do not crowd it. */
+.rail { border-right: var(--line-frame) solid var(--ink); padding-right: calc(var(--rail-line-gap) - var(--s3)); height: var(--inner-h); position: sticky; top: var(--outer-top); z-index: 6; display: flex; flex-direction: column; }
+/* The OS opening (main.ts railOpening; index.html opens with it, so the line is never drawn whole and then again):
+   the frame's line drawn down the rail's edge from the top, fast off the mark and slowing to the foot, before the
+   line is the rail's own edge again. Without the script it is drawn all the same, and stays. */
+@media (prefers-reduced-motion: no-preference) {
+  .opening .rail { border-right-color: transparent; }
+  .opening .rail::after { content: ''; position: absolute; top: 0; bottom: 0; right: calc(-1 * var(--line-frame)); width: var(--line-frame); background: var(--ink);
+    transform-origin: top; animation: frame-drawn calc(620ms * var(--pace)) var(--land) both; }
+}
+@keyframes frame-drawn { from { scale: 1 0; } }
+.rail-tabs { position: relative; isolation: isolate; display: flex; flex-direction: column; align-items: center; gap: var(--s1); flex: 1; min-height: 0; padding: var(--rail-top) 0 var(--s3); }

@@ -1,11 +1,21 @@
-import {h} from '../dom.ts';
+import {h} from '../ui/dom.ts';
 import {currentLang, LANGS, setLang, t} from '../i18n.ts';
-import {mark} from '../icons.ts';
-import {connection, signOut} from '../remote.ts';
-import {setState} from '../state.ts';
-import {initials, type Profile} from '../profile.ts';
-import {choosePart} from './common.ts';
+import {mark} from '../ui/icons.ts';
+import {connection, myName, signOut} from '../remote/connection.ts';
+import {onState, setState} from '../home/state.ts';
+import {initials, type Profile} from '../home/profile.ts';
+import {answers, choosePart, SETTLE} from './common.ts';
+import {errorText} from '../app/errors.ts';
+import {takeOff} from '../app/space.ts';
+import {allSessions} from './bench/terminal.ts';
 import type {Context} from './context.ts';
+
+/** The person's name as written on Home; none written there, the one signed in with (the Remote's), as Home says it. */
+function shownName(written: string): HTMLElement {
+  const b = h('b', {}, written || t('No name yet'));
+  if (!written) void myName().then((n) => { if (n) b.textContent = n; }, () => {});
+  return b;
+}
 
 /** The pages a setting opens. */
 type Page = 'home' | 'remote';
@@ -57,13 +67,13 @@ export class Me {
       const signedIn = connection() !== null;
       this.pop.replaceChildren(
         h('div', {class: 'me-who'}, this.face(), h('div', {class: 'me-name'},
-          h('b', {}, p.name || (p.handle ? `@${p.handle}` : t('No name yet'))),
+          shownName(p.name || (p.handle ? `@${p.handle}` : '')),
           p.name && p.handle ? h('span', {class: 'muted small'}, `@${p.handle}`) : null)),
         // Each a word or two: the group says what it is about. The profile is read on Home, from the rail.
         group(t('Profile'),
           item(t('Edit profile'), () => actions.editProfile())),
         group(t('Account'), ...(signedIn
-          ? [item(t('Sign-in'), to('remote', 'sign-in')), item(t('Devices'), to('remote', 'devices')), item(t('Sign out'), () => void signOut())]
+          ? [item(t('Sign-in'), to('remote', 'sign-in')), item(t('Devices'), to('remote', 'devices')), this.signingOut()]
           : [item(t('Sign in'), to('remote'))])),
         // The language is Home's setting, so l3 speaks the same one.
         group(t('Language'), ...(this.choosing
@@ -84,6 +94,8 @@ export class Me {
     };
     this.element = h('div', {class: 'me-wrap'}, this.button, this.pop);
     this.paint();
+    // The profile saved (on Home, or from another device): the face on the rail is the new one at once.
+    onState((key) => { if (key === 'profile') this.paint(); });
     this.element.addEventListener('pointerenter', () => this.later(true, OPEN_DELAY));
     this.element.addEventListener('pointerleave', () => this.later(false, CLOSE_DELAY));
     this.button.addEventListener('click', (event) => {
@@ -101,17 +113,66 @@ export class Me {
       items[(at + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus();
     });
     document.addEventListener('pointerdown', (event) => {
-      if (!this.element.contains(event.target as Node)) this.close();
+      if (!this.element.contains(event.target as Node) && !this.busy) this.close();
     });
     // Tab out of it puts it away, as a press outside does (a row redrawn in place has no next focus, and keeps it out).
     this.element.addEventListener('focusout', (event) => {
       const to = event.relatedTarget as Node | null;
-      if (to && !this.element.contains(to)) this.close();
+      if (to && !this.element.contains(to) && !this.busy) this.close();
     });
     this.fill = fill;
   }
 
   private fill: () => void;
+
+  /** Signing out is under way (what is here being taken off): the menu stays out until it has said how it went. */
+  private busy = false;
+
+  /**
+   * Sign out, asked in its row first, since what stays is not seen from here: the repos, the TODO and the profile stay
+   * in this browser, to go on with signed out; on a computer others use, Take them off goes first (space.ts takeOff:
+   * only what the Remote has goes). What stays all the same is said, each with why, and Sign out still signs out.
+   */
+  private signingOut(): HTMLElement {
+    const out = h('button', {type: 'button', class: 'pop-item', role: 'menuitem'}, t('Sign out')) as HTMLButtonElement;
+    out.addEventListener('click', () => {
+      const error = h('p', {class: 'error small', role: 'alert'});
+      const off = h('button', {type: 'button', class: 'button small-button'}, t('Take them off')) as HTMLButtonElement;
+      const yes = h('button', {type: 'button', class: 'button small-button primary'}, t('Sign out')) as HTMLButtonElement;
+      const no = h('button', {type: 'button', class: 'button small-button'}, t('Not now')) as HTMLButtonElement;
+      no.addEventListener('click', () => { this.close(); this.button.focus(); });
+      const said = h('div', {class: 'pop-said'}, h('p', {class: 'muted small'}, t('Your repos, TODO and profile stay in this browser.')),
+        h('p', {class: 'muted small'}, t('On a computer others use, take them off as you go: the Remote keeps them, and they come back when you sign in.')));
+      const ask = h('div', {class: 'pop-ask', role: 'group', 'aria-label': t('Sign out')}, said, error, answers(off, yes));
+      const shown = performance.now();
+      // A deed under the pointer holds still a moment (a double press is one), and one at a time.
+      const run = async (f: () => Promise<boolean>) => {
+        if (performance.now() - shown < SETTLE || this.busy) return;
+        this.busy = true;
+        off.disabled = yes.disabled = true;
+        error.textContent = '';
+        let gone = false;
+        try { gone = await f(); } catch (e) { error.textContent = errorText(e); } finally { this.busy = false; off.disabled = yes.disabled = false; }
+        if (gone) { this.close(); this.button.focus(); } else if (!ask.contains(document.activeElement)) yes.focus();
+      };
+      yes.addEventListener('click', () => void run(async () => { await signOut(); return true; }));
+      off.addEventListener('click', () => void run(async () => {
+        off.textContent = t('Taking them off…');
+        // A Prompt holds its repo open: stopped first, as one leaving stops what they started.
+        for (const [, s] of allSessions()) if (s.running) s.stop();
+        const kept = await takeOff().finally(() => { off.textContent = t('Take them off'); });
+        if (!kept.length) { await signOut(); return true; }
+        // What could not go stays, said with why: signed out, it would be there to whoever uses this browser next.
+        said.replaceChildren(...kept.map(([what, why]) => h('p', {class: 'small'}, t('{what} stays: {why}', {what, why}))),
+          h('p', {class: 'muted small'}, t('If you sign out, it stays here for whoever uses this browser next.')));
+        off.replaceWith(no);
+        return false;
+      }));
+      out.replaceWith(ask);
+      yes.focus();
+    });
+    return out;
+  }
 
   get isOpen() { return this.element.classList.contains('open'); }
 
@@ -130,7 +191,9 @@ export class Me {
 
   private later(open: boolean, after: number) {
     clearTimeout(this.timer);
-    this.timer = window.setTimeout(() => { if (open) { this.fill(); this.open(false); } else this.close(); }, after);
+    // Out already, it is left as it is: drawn again under the pointer, the row being pressed would be another by the
+    // time the press ends (the language chosen from its list never taking).
+    this.timer = window.setTimeout(() => { if (open) { if (!this.isOpen) this.fill(); this.open(false); } else if (!this.busy) this.close(); }, after);
   }
 
   private open(focus: boolean) {

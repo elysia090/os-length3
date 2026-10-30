@@ -31,6 +31,17 @@ const macrotask = () => new Promise((go) => (typeof setImmediate === 'function' 
 export const canRunApart = () => typeof SharedArrayBuffer === 'function' && typeof Atomics.waitAsync === 'function'
   && (isNode || globalThis.crossOriginIsolated === true);
 
+/** Workers started before any kernel here (warmThreads), for its first threads. */
+const warmed = [];
+
+/**
+ * Start `n` Workers for threads now, before the kernel is made (its program and translator still on their way):
+ * a Worker takes a while to load and run its script, and the first threads would otherwise wait for theirs.
+ */
+export function warmThreads(n = 2) {
+  while (warmed.length < n) warmed.push(newWorker());
+}
+
 function newWorker() {
   if (NodeWorker) {
     // (Not new URL(…, import.meta.url) as such: a bundler would take this for a file of the page's to carry.)
@@ -55,8 +66,9 @@ export class RemoteKernel extends Kernel {
     this.onIdle = options.onIdle ?? null; // (r) => void: every thread waits ({waiting, until?}) or it all ended ({status})
     this.serving = null;
     this.closing = false;
-    // Started now, while the first program is translated.
-    for (let k = 0; k < this.spareCount; k++) this.spares.push(this.spawnWorker());
+    // Started now, while the first program is translated (those warmed already first).
+    for (const w of warmed.splice(0)) this.spares.push(this.adoptWorker(w));
+    while (this.spares.length < this.spareCount) this.spares.push(this.spawnWorker());
   }
 
   newTask(proc) { return new RemoteTask(proc, this.nextPid++); }
@@ -75,8 +87,10 @@ export class RemoteKernel extends Kernel {
     return w;
   }
 
-  spawnWorker() {
-    const w = newWorker();
+  spawnWorker() { return this.adoptWorker(newWorker()); }
+
+  /** A Worker for threads, heard by this kernel. */
+  adoptWorker(w) {
     w.on((m) => {
       if (m?.type === 'error') {
         const t = [...this.tasks.values()].find((x) => x.worker === w);

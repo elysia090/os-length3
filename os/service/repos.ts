@@ -13,8 +13,9 @@
 //                                      mode where it has an execute bit; without modes, a set path keeps its own)
 //                                      -> {version} | 409 {version} | 409 {missing}
 //                                      | 410 {gone} for a name that went, unless ?anew=1 makes it again
-//   POST   /v1/repos/:name/cuts       {version, parent, kind, title, issue, note, added, removed}:
-//                                      the draft at that version becomes a cut
+//   POST   /v1/repos/:name/cuts       {version, parent, kind, title, issue, note, added, removed, paths?}:
+//                                      the draft at that version becomes a cut (with paths, only those of it);
+//                                      on main, it is pushed too (what a server's people see)
 //   GET    /v1/repos/:name/cuts/:id
 //   GET    /v1/repos/:name/log        from the line's head along first parents, each commit with what it changed
 //                                      (files, folders); ?summary=1 leaves each one's tree out
@@ -24,6 +25,8 @@
 //   GET    /v1/repos/:name/lines      the work on its issues; POST {issue} starts one
 //   POST   /v1/repos/:name/lines/:line/push {head}
 //   GET    /v1/repos/:name/changes    POST {line, kind, title, note}: Submit change
+//   GET    /v1/standing?repo=a&repo=b each repo asked: {name, lines, changes} as the two routes above answer them,
+//                                      or {name, status: 410, error, offAt, until} for one turned off
 //   POST   /v1/repos/:name/changes/:id/reviews | merge | reject | reset
 //
 // Every write that is checked against what the account already has (its
@@ -36,10 +39,10 @@
 
 import {and, desc, eq, inArray, isNull, ne, sql} from 'drizzle-orm';
 import type {Context, Hono} from 'hono';
+import {passkeyJustNow} from './auth.ts';
 import type {Plans} from './plan.ts';
-import {hmacHex, same as sameText} from './keys.ts';
-import {ago, body, fits as fitsIn, HEX, LIMIT, lock, ms, qualified, refuse, rows, sha256, slowDown, UUID, type Db, type Vars} from './request.ts';
-import {blob, change, cut, guard, line, repo, repoGone, review, throttle, type Modes, type Review, type Tree} from './schema.ts';
+import {ago, body, fits as fitsIn, fitting, HEX, LIMIT, lock, ms, qualified, refuse, rows, sha256, usedBy, UUID, type Db, type Vars} from './request.ts';
+import {blob, change, cut, guard, line, repo, repoGone, review, type Modes, type Review, type Tree} from './schema.ts';
 import {KEPT, purge, REMEMBERED} from './sweep.ts';
 
 const enc = new TextEncoder();
@@ -112,10 +115,10 @@ export function applyDiff(draft: Tree, set: Tree, remove: string[]): Tree {
 }
 
 /** A file's mode as a client may send one: permission bits only, with an execute bit (a plain file has none kept). */
-export const validMode = (m: unknown): m is number => typeof m === 'number' && Number.isInteger(m) && m >= 0 && m <= 0o777 && (m & 0o111) !== 0;
+const validMode = (m: unknown): m is number => typeof m === 'number' && Number.isInteger(m) && m >= 0 && m <= 0o777 && (m & 0o111) !== 0;
 
 /** The modes kept beside `tree`: only its files' (a folder, or a path it does not name, keeps none). */
-export function modesFor(tree: Tree, modes: Modes): Modes {
+function modesFor(tree: Tree, modes: Modes): Modes {
   const out: Modes = {};
   for (const [p, m] of Object.entries(modes)) if (typeof tree[p] === 'string' && validMode(m)) out[p] = m;
   return out;
@@ -126,7 +129,7 @@ export function modesFor(tree: Tree, modes: Modes): Modes {
  * takes its mode from them, none there being a plain file's. One that sends none (an older client) cannot
  * say, so a path it sets keeps the mode it had (an execute bit is never dropped by not being known of).
  */
-export function applyModes(was: Modes, tree: Tree, set: Tree, sent: Modes | undefined): Modes {
+function applyModes(was: Modes, tree: Tree, set: Tree, sent: Modes | undefined): Modes {
   const out: Modes = {...was};
   if (sent) for (const p of Object.keys(set)) { if (p in sent) out[p] = sent[p]; else delete out[p]; }
   return modesFor(tree, out);
@@ -151,11 +154,13 @@ const changeCols = {id: change.id, line: change.line, kind: change.kind, title: 
   reviews: sql<Review[]>`coalesce((select jsonb_agg(jsonb_build_object('version', r.version, 'verdict', r.verdict, 'note', r.note, 'marks', r.marks,
     'by', r.by, 'time', ${ms(sql`r.time`)}) order by r.time desc, r.id) from review r where r.change_id = ${qualified(change.id)}), '[]'::jsonb)`.as('reviews')};
 type Line = {id: number; off: Date | null; name: string; line: string; base: string | null; head: string | null; pushed: string | null; version: number;
-  startedBy: string; startedAt: Date; updatedAt: Date; draft?: Tree; modes?: Modes};
+  startedBy: string; startedAt: Date; updatedAt: Date; draft?: Tree; modes?: Modes; kept?: {bytes: number; files: number};
+  /** Read with its draft: the account's room (request.ts usedBy), and which of the blobs asked about it holds. */
+  used?: number; have?: string[]};
 type Change = {id: string; line: string; kind: string; title: string; version: number; base: string | null; head: string;
   state: string; note: string; submittedBy: string; reviews: Review[]; updatedAt: Date};
 
-const lineShown = ({id: _, off: __, draft, modes, ...r}: Line) => ({...r, issue: issueOf(r.line), ...(draft ? {draft, modes: modesFor(draft, modes ?? {})} : {}), startedAt: r.startedAt.getTime()});
+const lineShown = ({id: _, off: __, draft, modes, kept: ___, used: ____, have: _____, ...r}: Line) => ({...r, issue: issueOf(r.line), ...(draft ? {draft, modes: modesFor(draft, modes ?? {})} : {}), startedAt: r.startedAt.getTime()});
 const changeShown = (repoName: string, {repoId: _, off: __, ...r}: Change & {repoId?: number; off?: Date | null}) =>
   ({...r, repo: repoName, issue: issueOf(r.line), updatedAt: r.updatedAt.getTime()});
 const count = (n: unknown) => (typeof n === 'number' && Number.isInteger(n) && n >= 0 && n < 2 ** 31 ? n : 0);
@@ -163,9 +168,10 @@ const count = (n: unknown) => (typeof n === 'number' && Number.isInteger(n) && n
 /** Who did it, as their name is now, as long as what keeps it takes (a provider's name may be longer). */
 const whoBy = (c: Context<Vars>) => c.get('name').slice(0, 200);
 
-export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-codes are kept under (keys.ts: off-code). */ offKey?: string}, v1: Hono<Vars>) {
+export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>) {
   const db = d.db;
   const fits = (q: Db, user: string, more: number) => fitsIn(q, user, more, d.quota);
+  const fitsUsed = (used: number | undefined, more: number) => fitting(Number(used), more, d.quota);
 
   // ---- what moved: the one request a page asks every few seconds ----
 
@@ -185,14 +191,23 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
   /** `user`'s repo `name`: its number, and whether it is off. */
   const repoAt = async (q: Db, user: string, name: string) =>
     (await q.select({id: repo.id, off: repo.offAt}).from(repo).where(and(eq(repo.userId, user), eq(repo.name, name))))[0] as {id: number; off: Date | null} | undefined;
-  /** A line (with its draft only when asked for), its repo's number, and whether its repo is off: one read. */
-  const lineAt = async (q: Db, user: string, name: string, l: string, draft = false): Promise<Line | undefined> =>
-    (await q.select({...lineCols, ...(draft ? {draft: line.draft, modes: line.modes} : {})}).from(line).innerJoin(repo, eq(repo.id, line.repoId))
+  /**
+   * A line (with its draft only when asked for, and what the draft takes: `kept`), its repo's number, and whether its
+   * repo is off: one read.
+   */
+  // Read to be written (`draft`), with what the write then asks of the account in the same round trip: its room, and
+  // which of the blobs `shas` it holds (a save is a lock, this, and the write: the room and the blobs were a trip each).
+  const lineAt = async (q: Db, user: string, name: string, l: string, draft = false, shas: string[] = []): Promise<Line | undefined> =>
+    (await q.select({...lineCols, ...(draft ? {draft: line.draft, modes: line.modes, kept: {bytes: line.bytes, files: line.fileBytes}, used: usedBy(user),
+      have: shas.length ? sql<string[]>`(select coalesce(array_agg(${blob.sha256}), '{}') from ${blob} where ${and(eq(blob.userId, user), inArray(blob.sha256, shas))})`
+        : sql<string[]>`'{}'::text[]`} : {})}).from(line).innerJoin(repo, eq(repo.id, line.repoId))
       .where(and(eq(repo.userId, user), eq(repo.name, name), eq(line.name, l))))[0];
   /** The row of line `l` of repo `id`. */
   const lineRow = (id: number, l: string) => and(eq(line.repoId, id), eq(line.name, l));
   /** A repo that is off answers nothing but being off, and until when it can come back. */
-  const on = (off: Date | null | undefined) => { if (off) refuse(410, {error: 'This repo is turned off', offAt: off.getTime(), until: off.getTime() + KEPT}); };
+  /** What a repo turned off answers in place of anything else (410). */
+  const offWords = (off: Date) => ({error: 'This repo is turned off', offAt: off.getTime(), until: off.getTime() + KEPT});
+  const on = (off: Date | null | undefined) => { if (off) refuse(410, offWords(off)); };
   /** The names that went for good and are still remembered, each with when (sweep.ts purge). */
   const remembered = (user: string) => and(eq(repoGone.userId, user), sql`${repoGone.at} > ${ago(REMEMBERED)}`);
   /** When `name` went for good, if it did lately. */
@@ -254,7 +269,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
     const shas = [...new Set(Object.values(set).filter((v): v is string => typeof v === 'string'))];
     const version = await db.transaction(async (tx: Db) => {
       await lock(tx, user);
-      const row = await lineAt(tx, user, name, l, true);
+      const row = await lineAt(tx, user, name, l, true, shas);
       on(row?.off);
       if (!row) {
         const gone = await goneAt(tx, user, name);
@@ -264,7 +279,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
         if (name === 'gone') refuse(400, {error: 'A repo cannot be called gone'});
       }
       if (shas.length) {
-        const have = new Set((await tx.select({sha: blob.sha256}).from(blob).where(and(eq(blob.userId, user), inArray(blob.sha256, shas)))).map((r: {sha: string}) => r.sha));
+        const have = new Set(row ? row.have : (await tx.select({sha: blob.sha256}).from(blob).where(and(eq(blob.userId, user), inArray(blob.sha256, shas)))).map((r: {sha: string}) => r.sha));
         const missing = shas.filter((s) => !have.has(s));
         if (missing.length) refuse(409, {missing});
       }
@@ -283,11 +298,12 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
         if (n >= LIMIT.repos) refuse(429, {error: 'Too many repos'});
         await d.plans.newRepo(tx, user);
       }
-      await fits(tx, user, size - JSON.stringify(was).length);
+      if (row) fitsUsed(row.used, size - JSON.stringify(was).length); else await fits(tx, user, size - JSON.stringify(was).length);
       // What the draft takes (its tree and its files, each blob once) before and after: the plan refuses one
-      // that grew while the account keeps more than it allows, and the whole change is undone with it.
+      // that grew while the account keeps more than it allows, and the whole change is undone with it. Before is
+      // as the line was read, under the account's lock (a read of its own after was one more round trip a save).
       const kept = {bytes: line.bytes, files: line.fileBytes};
-      const [before] = row ? await tx.select(kept).from(line).where(lineRow(row.id, l)) as {bytes: number; files: number}[] : [{bytes: 0, files: 0}];
+      const before = row?.kept ?? {bytes: 0, files: 0};
       let after: {bytes: number; files: number}[];
       if (row) after = await tx.update(line).set({draft: tree, modes, version: current + 1, updatedAt: sql`now()`}).where(and(lineRow(row.id, l), eq(line.version, current))).returning(kept);
       else {
@@ -308,32 +324,54 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
    */
   const commit = async (tx: Db, user: string, row: Line,
     w: {merged: string | null; tree: Tree; modes: Modes; kind: string; title: string; issue: string; note: string; added: number; removed: number}, draft?: {tree: Tree; modes: Modes}) => {
-    await fits(tx, user, JSON.stringify(w.tree).length);
+    if (row.used !== undefined) fitsUsed(row.used, JSON.stringify(w.tree).length); else await fits(tx, user, JSON.stringify(w.tree).length);
     const time = Date.now();
     const modes = modesFor(w.tree, w.modes);
     const id = await cutId({repo: `${row.name}${row.line === 'main' ? '' : `@${row.line}`}`, parent: row.head, tree: w.tree, modes, kind: w.kind, title: w.title, issue: w.issue, note: w.note, time});
     await tx.insert(cut).values({repoId: row.id, id, userId: user, parent: row.head, merged: w.merged, tree: w.tree, modes, kind: w.kind, title: w.title,
       issue: w.issue, note: w.note, added: w.added, removed: w.removed, time: new Date(time)}).onConflictDoNothing();
-    const moved = await tx.update(line).set({head: id, updatedAt: sql`now()`, ...(draft ? {draft: draft.tree, modes: modesFor(draft.tree, draft.modes), version: row.version + 1} : {})})
+    // main is what the servers a repo is shown in see (seen.ts reads what it pushed): a commit on main, or a change
+    // merged into it, is pushed with it, so they see main's last commit, never an older one or nothing.
+    const pushed = row.line === 'main' ? {pushed: id} : {};
+    const moved = await tx.update(line).set({head: id, ...pushed, updatedAt: sql`now()`, ...(draft ? {draft: draft.tree, modes: modesFor(draft.tree, draft.modes), version: row.version + 1} : {})})
       .where(and(lineRow(row.id, row.line), eq(line.version, row.version), row.head === null ? isNull(line.head) : eq(line.head, row.head))).returning({head: line.head});
     if (!moved.length) refuse(409, {head: row.head, version: row.version});
     return {id, time};
   };
 
-  // Commit: a line's draft at `version` becomes the next commit after `parent`.
+  // Commit: a line's draft at `version` becomes the next commit after `parent`. With `paths`, only those paths of
+  // the draft (each as the draft has it, or gone where it has it no more) go in, everything else as `parent` has it,
+  // and the draft stays as it was: an issue's own file is committed by itself as it is written, never riding in the
+  // commit of whatever else the draft holds.
   v1.post('/repos/:name/cuts', async (c) => {
     const user = c.get('userId'), name = c.req.param('name'), l = lineOf(c);
-    const b = await body<{version?: unknown; parent?: unknown; kind?: unknown; title?: unknown; issue?: unknown; note?: unknown; added?: unknown; removed?: unknown}>(c);
+    const b = await body<{version?: unknown; parent?: unknown; kind?: unknown; title?: unknown; issue?: unknown; note?: unknown; added?: unknown; removed?: unknown; paths?: unknown}>(c);
     if (!b || typeof b.version !== 'number' || !(b.parent === null || (typeof b.parent === 'string' && HEX.test(b.parent)))) return c.json({error: 'a cut'}, 400);
     const words = {kind: b.kind ?? '', title: b.title, issue: b.issue ?? '', note: b.note ?? ''};
     for (const v of Object.values(words)) if (typeof v !== 'string' || v.length > LIMIT.words) return c.json({error: 'Words of at most 2000 characters'}, 400);
     if (!(words.title as string).trim()) return c.json({error: 'A commit needs a title'}, 400);
+    const only = b.paths;
+    if (only !== undefined && (!Array.isArray(only) || !only.length || only.length > LIMIT.diff || !only.every((p) => typeof p === 'string' && validPath(p)))) {
+      return c.json({error: 'paths: the paths of the draft to commit'}, 400);
+    }
     const made = await db.transaction(async (tx: Db) => {
       await lock(tx, user);
       const row = await lineAt(tx, user, name, l, true);
       on(row?.off);
       if (!row || row.version !== b.version || row.head !== b.parent) refuse(409, {head: row?.head ?? null, version: row?.version ?? 0});
-      return commit(tx, user, row, {merged: null, tree: row.draft!, modes: row.modes ?? {}, ...(words as {kind: string; title: string; issue: string; note: string}),
+      let tree = row.draft!, modes = row.modes ?? {};
+      if (only) {
+        const head = await treesOf(tx, row.id, [row.head]);
+        tree = {...head(row.head)};
+        modes = {...head.modes(row.head)};
+        for (const p of only as string[]) {
+          if (p in row.draft!) tree[p] = row.draft![p]; else delete tree[p];
+          if (p in (row.modes ?? {})) modes[p] = row.modes![p]; else delete modes[p];
+        }
+        const clash = clashes(tree);
+        if (clash.length) refuse(400, {error: 'A file and a folder of the same name', path: clash[0]});
+      }
+      return commit(tx, user, row, {merged: null, tree, modes, ...(words as {kind: string; title: string; issue: string; note: string}),
         added: count(b.added), removed: count(b.removed)});
     });
     return c.json(made, 201);
@@ -379,49 +417,28 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
 
   // ---- turning a repo off: kept 30 days, back at once until then, or discarded now ----
 
-  // An HMAC under a key of the Remote's own, not a bare digest: 36^5 codes are tried in seconds against a
-  // digest read from a copy of the database (audit A10), never against a key that is not in it.
-  const digestOf = async (user: string, code: string) => (d.offKey ? hmacHex(d.offKey, `off-code\n${user}\n${code.toUpperCase()}`) : sha256(enc.encode(`${user}:${code.toUpperCase()}`)));
-  const CODE = /^[A-Za-z0-9]{5}$/;
-  /** Wrong codes an account may give an hour. */
-  const OFF_TRIES = 10;
-  /** Proof the person is here: this request's session is the account's latest passkey sign-in, within five minutes. */
-  const proven = (g: typeof guard.$inferSelect | undefined, sessionId: string) =>
-    !!g?.proofAt && g.proofSession === sessionId && Date.now() - g.proofAt.getTime() < 5 * 60 * 1000;
   /**
-   * What turning a repo off asks, and discarding it: a passkey just now, the account's name, the
-   * repo's name and the five-letter code, sent as {name, repo, code}. Refused (403, 409) unless all are so.
+   * What turning a repo off asks, and discarding it: a passkey just now (this very session signed in with one), and
+   * the repo's name written out, sent as {repo}, as GitHub asks for a repository's name before it is deleted: the
+   * person is at the device, and means this repo. Refused (403) unless both are so. There is no code of the
+   * account's to set and keep in mind as well: a passkey is the person, and the name is what they mean.
    */
   const confirmed = async (c: Context<Vars>, name: string) => {
-    const user = c.get('userId');
-    const b = await body<{name?: unknown; repo?: unknown; code?: unknown}>(c);
-    const [g] = await db.select().from(guard).where(eq(guard.userId, user)) as (typeof guard.$inferSelect)[];
-    if (!proven(g, c.get('sessionId'))) refuse(403, {error: 'Confirm with a passkey.'});
-    if (!g.offDigest) refuse(409, {error: 'Set the five-letter code under Sign-in first.'});
-    const same = (a: unknown, b: string) => typeof a === 'string' && a.trim().toLowerCase() === b.trim().toLowerCase();
-    if (!same(b?.name, c.get('name')) || b?.repo !== name) refuse(403, {error: 'The names do not match.'});
-    const right = typeof b?.code === 'string' && CODE.test(b.code) && sameText(await digestOf(user, b.code), g.offDigest);
-    // Wrong codes are counted, and past so many an hour none is taken, the right one neither: the code is not found by trying.
-    const key = `off-code:${user}`;
-    const wrong = await db.transaction(async (tx: Db) => {
-      await lock(tx, key);
-      const [r] = await rows<{n: number}>(tx, sql`select count(*)::int as n from throttle where key = ${key} and at > ${ago(3600_000)}`);
-      if (!right && r.n < OFF_TRIES) await tx.insert(throttle).values({key});
-      return r.n;
-    });
-    if (wrong >= OFF_TRIES) slowDown(3600, {error: 'Too many wrong codes; try again in an hour'});
-    if (!right) refuse(403, {error: 'That is not the code.'});
+    const b = await body<{repo?: unknown}>(c);
+    const [g] = await db.select().from(guard).where(eq(guard.userId, c.get('userId'))) as (typeof guard.$inferSelect)[];
+    if (!passkeyJustNow(g, c.get('sessionId'))) refuse(403, {error: 'Confirm with a passkey.'});
+    if (b?.repo !== name) refuse(403, {error: 'The name does not match.'});
   };
   const named = (user: string, name: string) => and(eq(repo.userId, user), eq(repo.name, name));
 
-  // Off: asks for a passkey just now, the account's name, the repo's name and the five-letter code.
+  // Off: asks for a passkey just now and the repo's name.
   v1.post('/repos/:name/off', async (c) => {
     const user = c.get('userId'), name = c.req.param('name');
     await confirmed(c, name);
     // Off once: asking again does not restart its 30 days.
-    const [done] = await db.update(repo).set({offAt: sql`coalesce(${repo.offAt}, now())`}).where(named(user, name)).returning({offAt: repo.offAt});
+    const [done] = await db.update(repo).set({offAt: sql`coalesce(${repo.offAt}, now())`}).where(named(user, name)).returning({offAt: ms(sql`${repo.offAt}`)});
     if (!done) return c.json({error: 'That repo is not on the Remote'}, 404);
-    return c.json({name, offAt: done.offAt.getTime(), until: done.offAt.getTime() + KEPT});
+    return c.json({name, offAt: done.offAt, until: done.offAt + KEPT});
   });
 
   // Discard: a repo turned off goes for good now, as the sweep lets one go after its 30 days
@@ -445,30 +462,16 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
     return done.length ? c.json({name: c.req.param('name'), on: true}) : c.json({error: 'That repo is not on the Remote'}, 404);
   });
 
-  // The code: whether one is set, and setting it (a passkey just now, as for turning off).
-  v1.get('/off-code', async (c) => {
-    const [g] = await db.select({setAt: guard.offSetAt}).from(guard).where(and(eq(guard.userId, c.get('userId')), sql`${guard.offDigest} is not null`));
-    return c.json({set: !!g, setAt: g?.setAt?.getTime() ?? null});
-  });
-  v1.post('/off-code', async (c) => {
-    const user = c.get('userId');
-    const b = await body<{code?: unknown}>(c);
-    if (typeof b?.code !== 'string' || !CODE.test(b.code)) return c.json({error: 'Five letters or digits'}, 400);
-    const [g] = await db.select().from(guard).where(eq(guard.userId, user));
-    if (!proven(g, c.get('sessionId'))) return c.json({error: 'Confirm with a passkey.'}, 403);
-    const set = {offDigest: await digestOf(user, b.code), offSetAt: new Date()};
-    await db.insert(guard).values({userId: user, ...set}).onConflictDoUpdate({target: guard.userId, set});
-    return c.json({set: true});
-  });
-
   // ---- work on an issue: its own line, from main's last commit ----
 
   v1.get('/repos/:name/lines', async (c) => {
-    const list = await db.select(lineCols).from(line).innerJoin(repo, eq(repo.id, line.repoId))
-      .where(and(named(c.get('userId'), c.req.param('name')), ne(line.name, 'main'))).orderBy(line.startedAt) as Line[];
+    // The repo and its work in one read (two before, for a repo with none, as most are): no row is no repo, and a row
+    // with no line is a repo with no work open.
+    const list = await db.select(lineCols).from(repo).leftJoin(line, and(eq(line.repoId, repo.id), ne(line.name, 'main')))
+      .where(named(c.get('userId'), c.req.param('name'))).orderBy(line.startedAt) as (Omit<Line, 'line'> & {line: string | null})[];
     // A repo turned off says so, lines or none.
-    on(list.length ? list[0].off : (await repoAt(db, c.get('userId'), c.req.param('name')))?.off);
-    return c.json(list.map(lineShown));
+    on(list[0]?.off);
+    return c.json(list.filter((x): x is Line => x.line !== null).map(lineShown));
   });
 
   v1.post('/repos/:name/lines', async (c) => {
@@ -528,12 +531,35 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
 
   v1.get('/repos/:name/changes', async (c) => {
     const name = c.req.param('name');
-    const r = await repoAt(db, c.get('userId'), name);
-    if (!r) return c.json([]);
-    on(r.off);
-    // The newest 200: a repo's changes are kept, and each says its reviews.
-    const list = await db.select(changeCols).from(change).where(eq(change.repoId, r.id)).orderBy(desc(change.updatedAt)).limit(200) as Change[];
-    return c.json(list.map((x) => changeShown(name, x)));
+    // The newest 200: a repo's changes are kept, and each says its reviews. Read with the repo, in one read (two
+    // before; the app asks it each time Forge or Git is shown): no row is no repo, a row with no change a repo with none.
+    const list = await db.select({...changeCols, off: repo.offAt}).from(repo).leftJoin(change, eq(change.repoId, repo.id))
+      .where(named(c.get('userId'), name)).orderBy(desc(change.updatedAt)).limit(200) as ((Omit<Change, 'id'> & {id: string | null; off: Date | null}))[];
+    if (!list.length) return c.json([]);
+    on(list[0].off);
+    return c.json(list.filter((x): x is Change & {off: Date | null} => x.id !== null).map((x) => changeShown(name, x)));
+  });
+
+  // Where each repo asked stands, for Git's page: its lines and changes as the two routes above answer them (the newest
+  // 200 changes of each), every repo's in two reads. Git asked those two of each repo, one after the other, each a round
+  // trip of its own. A repo turned off is said as they say it; one not on the Remote has neither, as they answer.
+  v1.get('/standing', async (c) => {
+    const user = c.get('userId');
+    const names = [...new Set(c.req.queries('repo') ?? [])].slice(0, LIMIT.repos);
+    if (!names.length) return c.json([]);
+    const asked = and(eq(repo.userId, user), inArray(repo.name, names));
+    const lines = await db.select(lineCols).from(repo).leftJoin(line, and(eq(line.repoId, repo.id), ne(line.name, 'main')))
+      .where(asked).orderBy(line.startedAt) as (Omit<Line, 'line'> & {line: string | null})[];
+    const newest = db.select({...changeCols, repo: sql<string>`${repo.name}`.as('repo'),
+      n: sql<number>`row_number() over (partition by ${change.repoId} order by ${change.updatedAt} desc)`.as('n')})
+      .from(repo).innerJoin(change, eq(change.repoId, repo.id)).where(asked).as('newest');
+    const changes = await db.select().from(newest).where(sql`${newest.n} <= 200`).orderBy(desc(newest.updatedAt)) as (Change & {repo: string; n: number})[];
+    return c.json(names.map((name) => {
+      const its = lines.filter((x) => x.name === name);
+      if (its[0]?.off) return {name, status: 410, ...offWords(its[0].off)};
+      return {name, lines: its.filter((x): x is Line => x.line !== null).map(lineShown),
+        changes: changes.filter((x) => x.repo === name).map(({repo: _, n: __, ...x}) => changeShown(name, x))};
+    }));
   });
 
   // Submit change: what the line has pushed, measured against main's last commit. Again after

@@ -126,17 +126,6 @@ test('bytes in R2 that no row names, put more than a day ago, are found by the s
   assert.equal(await count(s, sql`select count(*)::int as n from sweep_mark where name = 'r2' and at = ''`), 1);
 });
 
-test('a name held by someone still here is renewed before its term ends; one whose holder is gone is not', async () => {
-  const s = await service();
-  const [a, b] = [await s.start('Ren'), await s.start('Mio')];
-  await named(s, [a, 'ren'], [b, 'mio']);
-  await s.db.execute(sql`update address set until = now() + interval '30 days'`);
-  await s.db.execute(sql`delete from session where user_id = ${await idOf(s, b)}`);
-  await sweep(s.db, s.bucket);
-  const left = (await s.db.execute(sql`select name, until > now() + interval '4 years' as renewed from address order by name`)).rows;
-  assert.deepEqual(left, [{name: 'mio', renewed: false}, {name: 'ren', renewed: true}]);
-});
-
 test('how much room the database\'s rows let go of is asked of it, and is nothing where it cannot say', async () => {
   const s = await service();
   assert.equal(await count(s, sql`select room_free()::int as n`), 0);

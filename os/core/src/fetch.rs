@@ -1,5 +1,5 @@
 //! Fetching a release from the Remote, the way the web loader does
-//! (src/fetch.ts): what came is kept in a `.part` file, a cut or stalled
+//! (src/prompt/l3-files.ts): what came is kept in a `.part` file, a cut or stalled
 //! transfer is taken up again from the byte it reached, and the result is
 //! accepted only when it is the file the pin names. Nothing else is read
 //! from the network by l3.
@@ -48,18 +48,19 @@ pub fn fetch(url: &str, sha256: &str, size: u64, dest: &Path, mut progress: impl
         if have < size {
             let mut req = agent.get(url);
             if have > 0 {
-                req = req.set("Range", &format!("bytes={have}-"));
+                req = req.header("Range", &format!("bytes={have}-"));
             }
             let r = match req.call() {
-                Ok(r) => r,
-                Err(ureq::Error::Status(code, _)) if code == 404 || code == 403 || code == 401 => return Err(format!("{url}: {code}")),
+                Ok(r) if r.status().is_success() => r,
+                Ok(r) if [401, 403, 404].contains(&r.status().as_u16()) => return Err(format!("{url}: {}", r.status().as_u16())),
+                Ok(r) => { why = format!("{url}: {}", r.status().as_u16()); continue; }
                 Err(e) => { why = e.to_string(); continue; }
             };
             // A server that cannot continue sends it all again: start the file over.
-            let resumed = r.status() == 206 && r.header("Content-Range").is_some_and(|c| c.starts_with(&format!("bytes {have}-")));
+            let resumed = r.status() == 206 && r.headers().get("Content-Range").and_then(|c| c.to_str().ok()).is_some_and(|c| c.starts_with(&format!("bytes {have}-")));
             let mut file = fs::OpenOptions::new().create(true).write(true).truncate(!resumed).open(&part).map_err(|e| e.to_string())?;
             let mut got = if resumed { file.seek(io::SeekFrom::End(0)).map_err(|e| e.to_string())? } else { 0 };
-            let mut body = r.into_reader().take(size - got);
+            let mut body = r.into_body().into_reader().take(size - got);
             let mut buf = vec![0u8; 256 * 1024];
             let broken = loop {
                 match body.read(&mut buf) {

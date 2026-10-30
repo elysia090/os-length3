@@ -30,10 +30,11 @@ mod shells {
 // window's own thread (Tauri 2), and the window draws nothing until it returns, so only writes run there,
 // which keeps two writes in the order the page sent them; the rest (walks of the disk, the network) run off it.
 
-/// A command of the core's, by name, with its arguments; `space` and `free` are told which repos a Prompt has open.
+/// A command of the core's, by name, with its arguments; what lets a repo go or renames it is told which repos a
+/// Prompt has open.
 #[tauri::command]
 async fn core(app: tauri::AppHandle, name: String, mut args: serde_json::Value) -> Result<serde_json::Value, String> {
-    if matches!(name.as_str(), "space" | "free") {
+    if matches!(name.as_str(), "space" | "free" | "repo_rename" | "repo_delete") {
         let open = tauri::Manager::state::<shells::Shells>(&app).open_repos();
         args["open"] = serde_json::json!(open);
     }
@@ -87,6 +88,17 @@ fn window_forward(app: tauri::AppHandle) {
 #[tauri::command]
 async fn plan_open(app: tauri::AppHandle, kind: String, tier: Option<String>) -> Result<(), String> {
     let url = tauri::async_runtime::spawn_blocking(move || api::call("plan_page", &serde_json::json!({"kind": kind, "tier": tier})))
+        .await.map_err(|e| e.to_string())??;
+    use tauri_plugin_opener::OpenerExt;
+    app.opener().open_url(url.as_str().unwrap_or_default(), None::<&str>).map_err(|e| e.to_string())
+}
+
+/// What only the browser can do, where the passkeys are (`ask`: Remote's Sign-in, or `repo` turned off or
+/// discarded), opened there on the Remote's own app (account::app_page); the window hears how it went when it
+/// comes back.
+#[tauri::command]
+async fn app_open(app: tauri::AppHandle, ask: String, repo: Option<String>) -> Result<(), String> {
+    let url = tauri::async_runtime::spawn_blocking(move || api::call("app_page", &serde_json::json!({"ask": ask, "repo": repo})))
         .await.map_err(|e| e.to_string())??;
     use tauri_plugin_opener::OpenerExt;
     app.opener().open_url(url.as_str().unwrap_or_default(), None::<&str>).map_err(|e| e.to_string())
@@ -185,7 +197,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            core, remote_login_start, remote_login_reopen, window_forward, plan_open,
+            core, remote_login_start, remote_login_reopen, window_forward, plan_open, app_open,
             shells::prompt_open, shells::prompt_input, shells::prompt_interrupt, shells::prompt_held, shells::prompt_close,
             shells::root_status, shells::root_list, shells::root_fetch, shells::root_use, ssh_here, ssh_set
         ])

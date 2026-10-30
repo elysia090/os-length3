@@ -123,7 +123,10 @@ pub fn switch(repos: &Repos, repo: &str, line: &str) -> Result<()> {
     if !valid(line) { return Err(crate::tr!("{} is not a line of work", "{} は作業の名前になりません", line)); }
     // Away, switching is this device's alone: what the shown copy has not sent stays in it and goes later.
     if remote::connection().is_some() { let _ = remote::sync(repos, repo); }
-    show(repos, repo, line)
+    show(repos, repo, line)?;
+    // Back on main: work handed over that waited for it begins (tasks.rs).
+    if line == MAIN { crate::tasks::back_on_main(repo); }
+    Ok(())
 }
 
 fn show(repos: &Repos, repo: &str, line: &str) -> Result<()> {
@@ -156,6 +159,7 @@ pub fn finish(repos: &Repos, repo: &str, line: &str) -> Result<u64> {
     if current(repo) == line {
         if remote::connection().is_some() { remote::sync(repos, repo)?; }
         set_current(repo, MAIN)?;
+        crate::tasks::back_on_main(repo);
     }
     let size = crate::usage::allocated(&at);
     fs::remove_dir_all(&at).map_err(|e| e.to_string())?;

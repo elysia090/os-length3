@@ -1,0 +1,35 @@
+/* The bench Forge and Git stand in: the top line, the center, the right pane and its switch, the plugin area. More of
+   it earlier in the cascade, bench.css. */
+/* Put away, the center takes the whole width; the pane is only out of sight. No pane, no line. It goes as a wipe:
+   the pane's column closes to nothing, what it holds staying at its width and cut at the moving edge (not squeezed),
+   and is out of sight (and of the keyboard) once closed; brought back, it opens the same way. */
+.work.bench.pane-closed { grid-template-columns: minmax(0, 1fr) 0px; transition: grid-template-columns var(--leave) cubic-bezier(.4, 0, 1, 1); }
+.work.bench > .side { min-width: 0; grid-template-columns: max(280px, calc(var(--bench-w, 1200px) / 4)); }
+.work.bench.pane-closed > .side { overflow-x: clip; visibility: hidden; transition: visibility 0s var(--leave); }
+@media (prefers-reduced-motion: reduce) {
+  .work.bench.pane-closed, .work.bench > .side::before, .work.bench.pane-closed > .side::before,
+  .home-pane, .home-layout.pane-closed .home-pane { transition: none; }
+}
+/* The one line, between the center and the pane: from the top line to the prompt box's foot, not edge to edge. */
+/* The pane's top is the plugin area's; opened, the Prompt starts level with the foot of the rail's Inbox (bench.ts
+   measures it into --prompt-at), pushed down only by a plugin area opened taller than that. */
+.work.bench > .side, .work.bench:is(.unrun, .prompting) > .side { position: relative; grid-row: 2; grid-template-rows: minmax(var(--prompt-at, 40%), auto) minmax(0, 1fr); }
+.work.bench > .side > .term-home { grid-row: 2; margin-top: calc(-1 * var(--s5)); } /* its words, not its padding, on that line */
+/* The plugin area shut, nothing is over the Prompt: it holds the pane from its top, its head level with the file box's
+   top, so the pane reads at once as open and what it is (an empty top would read as nothing, or as put away). */
+.work.bench > .side:has(> .plugins[hidden]) { grid-template-rows: 0 minmax(0, 1fr); }
+/* Its head's words stand on the file heads' line: their baseline, the one of a box s3 under the center's top (the
+   Prompt's words larger, so it sits a step higher); side by side, under the boxes' own heads, as far down as they
+   go, at the pace they go. --head-nudge: what the system's faces put off that line, measured (bench.ts levelled). */
+.work.bench > .side:has(> .plugins[hidden]) > .term-home { margin-top: calc(-1 * var(--s1) + var(--head-nudge, 0px)); transition: margin-top var(--move) var(--land); }
+.work.bench.split-on > .side:has(> .plugins[hidden]) > .term-home { margin-top: calc(28px - var(--s3) + var(--head-nudge, 0px)); }
+/* The pane stands on the ground, as the rail does, and is cut from the work by the line the rail is: the same
+   weight, in ink, from the top line to the foot, so the center reads at once as the thing framed between the two.
+   It goes with the pane (put away, no pane, no line). */
+.work.bench > .side::before {
+  content: ''; position: absolute; left: 0; bottom: 0; top: calc(-1 * (var(--band) + var(--h-row) + var(--s3)));
+  border-left: var(--line-frame) solid var(--ink); pointer-events: none; transition: opacity var(--motion);
+}
+/* Put away, the line goes with the pane, gathering speed to the right (260 ms), and is gone as it gets there: never
+   left standing at the window's edge. */
+.work.bench.pane-closed > .side::before { opacity: 0; transition: opacity var(--leave) cubic-bezier(.7, 0, 1, 1); }

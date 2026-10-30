@@ -1,13 +1,44 @@
-import {h} from '../dom.ts';
-import {errorText} from '../errors.ts';
+import {h} from '../ui/dom.ts';
+import {errorText} from '../app/errors.ts';
 import {t} from '../i18n.ts';
-import {icon} from '../icons.ts';
-import {purpose, RAIL, type PurposeId} from '../purposes.ts';
+import {icon, mark, type MarkName} from '../ui/icons.ts';
+import {arrive, glide, pop, still, where} from '../ui/glide.ts';
+import {purpose, RAIL, type PurposeId} from '../app/purposes.ts';
 
 export function pageHead(id: PurposeId): HTMLElement {
   const p = purpose(id);
-  return h('div', {class: 'page-head'}, icon(id), h('h1', {}, t(p.label)), h('p', {}, t(p.role)));
+  const mark = icon(id);
+  inkAtEdge(mark);
+  return h('div', {class: 'page-head'}, mark, h('h1', {}, t(p.label)), h('p', {}, t(p.role)));
 }
+
+/**
+ * `svg` drawn a little left, by the room its drawing leaves inside its square at the left (each icon its own, two
+ * to four pixels), so that its ink, not its square, stands at the edge the page's words and boxes start at under it.
+ * What it moves it gives back on its right: the title stands where every page's does, not a pixel or two apart.
+ */
+function inkAtEdge(svg: SVGSVGElement) {
+  requestAnimationFrame(() => {
+    const vb = svg.viewBox.baseVal, w = svg.getBoundingClientRect().width;
+    const shape = svg.querySelector<SVGGraphicsElement>('path, circle, rect, line, polyline');
+    if (!svg.isConnected || !vb?.width || !w || !shape) return;
+    const inset = (svg.getBBox().x - vb.x - (parseFloat(getComputedStyle(shape).strokeWidth) || 0) / 2) * (w / vb.width);
+    if (inset > 0) svg.style.margin = `0 ${inset.toFixed(1)}px 0 ${-inset.toFixed(1)}px`;
+  });
+}
+
+/**
+ * A row of a menu of deeds (a repo's gear, a file's): its mark at its left, as a context menu has one; a deed that
+ * cannot be undone (`gone`) in `off` red, after a rule (`menuRule`). What cannot be done here is not offered at all:
+ * the menu says what can be, not why the rest cannot.
+ */
+export function menuItem(label: string, name: MarkName, gone = false): HTMLButtonElement {
+  const m = mark(name);
+  m.classList.add('pop-icon');
+  return h('button', {type: 'button', class: gone ? 'pop-item pop-gone' : 'pop-item', role: 'menuitem'}, m, h('span', {}, label)) as HTMLButtonElement;
+}
+/** The rule a menu's deeds that cannot be undone stand after. */
+export const menuRule = () => h('div', {class: 'pop-rule', role: 'separator'});
 
 /**
  * The answers under something being written or asked: what declines or
@@ -41,7 +72,8 @@ export function deed(b: HTMLButtonElement, f: () => Promise<unknown>) {
     if (b.disabled) return;
     b.disabled = true;
     b.textContent = word;
-    try { await f(); } catch (e) { b.textContent = errorText(e); } finally { b.disabled = false; }
+    // Done, it gives a small beat where it was pressed; failed, it says why there.
+    try { await f(); if (b.isConnected) pop(b, .06, 300); } catch (e) { b.textContent = errorText(e); } finally { b.disabled = false; }
   });
 }
 
@@ -51,6 +83,7 @@ export function copying(el: HTMLElement, text: string) {
     void navigator.clipboard?.writeText(text);
     el.dataset.copiedWord = t('Copied');
     el.dataset.copied = '';
+    pop(el, .04, 260);
     window.setTimeout(() => delete el.dataset.copied, 1200);
   });
   el.title = t('Press to copy');
@@ -115,6 +148,21 @@ export function parts<K extends string>(page: string, list: readonly {id: K; lab
   const heard: ((k: K) => void)[] = [];
   // Heard by the name it is given (the page's, in the language spoken), never by the key it is kept under.
   const bar = h('div', {class: 'parts', role: 'tablist', ...(label ? {'aria-label': label} : {})});
+  // More parts past its right end than fit (a phone's width): the row says so there, a › over a fade into the ground,
+  // whether a part is cut at the edge or the edge falls between two (a fade alone then fades nothing, and says
+  // nothing). Pressed, the row slides on to the part past it; the keyboard has the arrows, so it is the pointer's.
+  const more = () => bar.classList.toggle('more', bar.scrollLeft + bar.clientWidth < bar.scrollWidth - 2);
+  const on = h('button', {type: 'button', class: 'parts-on', tabindex: '-1', 'aria-hidden': 'true'}, mark('on'));
+  on.addEventListener('click', () => {
+    const edge = on.getBoundingClientRect().left;
+    const past = [...tabs.values()].map((x) => x.tab).find((tab) => !tab.hidden && tab.getBoundingClientRect().right > edge + 1);
+    if (past) bar.scrollBy({left: past.getBoundingClientRect().right - edge, behavior: still() ? 'auto' : 'smooth'});
+  });
+  bar.addEventListener('scroll', more, {passive: true});
+  // A part's width changing (its count come in after it was chosen) moves those after it: the fade is judged again,
+  // and the one chosen kept in view.
+  const sized = new ResizeObserver(() => { more(); keep(); });
+  sized.observe(bar);
   for (const p of list) {
     const small = h('small', {});
     const tab = h('button', {type: 'button', class: 'part', role: 'tab', id: `part-${page}-${p.id}`, 'aria-controls': `panel-${page}-${p.id}`, 'aria-selected': 'false', tabindex: '-1'},
@@ -131,20 +179,33 @@ export function parts<K extends string>(page: string, list: readonly {id: K; lab
       tabs.get(to.id)!.tab.focus();
     });
     bar.append(tab);
+    sized.observe(tab);
     tabs.set(p.id, {tab, small, panel});
   }
+  bar.append(on);
   let now: K = list[0].id;
+  /** The part chosen kept in view on a narrow window, where the switch slides sideways. */
+  const keep = () => {
+    const tab = tabs.get(now)?.tab;
+    if (tab && bar.isConnected && bar.scrollWidth > bar.clientWidth) tab.scrollIntoView({block: 'nearest', inline: 'nearest'});
+  };
   const show = (k: K) => {
+    // Chosen, the ink goes from the part it was on to this one, as along the rail and the band.
+    const was = now !== k && bar.isConnected ? where(tabs.get(now)?.tab) : null;
+    // And what it holds comes in from the side of the part chosen, as the ink goes to it: not swapped in one frame.
+    const by = was ? Math.sign(list.findIndex((p) => p.id === k) - list.findIndex((p) => p.id === now)) : 0;
     now = k;
     for (const [id, x] of tabs) {
       const on = id === k;
       x.tab.setAttribute('aria-selected', String(on));
       x.tab.tabIndex = on ? 0 : -1;
       x.panel.hidden = !on;
-      // On a narrow window the switch slides sideways: the chosen one is kept in view.
-      if (on && bar.isConnected && bar.scrollWidth > bar.clientWidth) x.tab.scrollIntoView({block: 'nearest', inline: 'nearest'});
+      // Chosen as the page is made, it is brought into view once the page is on the screen.
+      if (on) { if (bar.isConnected) keep(); else requestAnimationFrame(keep); }
     }
     try { localStorage.setItem(key, k); } catch { /* convenience only */ }
+    glide(was, tabs.get(k)!.tab, bar, 'var(--r-round)');
+    if (by) arrive(tabs.get(k)!.panel, by, 'x', 16, 260);
     for (const f of heard) f(k);
   };
   let kept: string | null = null;
@@ -155,7 +216,14 @@ export function parts<K extends string>(page: string, list: readonly {id: K; lab
     panel: (k) => tabs.get(k)!.panel,
     show,
     current: () => now,
-    count: (k, n) => { tabs.get(k)!.small.textContent = n ? `${n}` : ''; },
+    // A count that changes while it is seen (a Prompt stopped, an issue written) gives a small beat as it does.
+    count: (k, n) => {
+      const small = tabs.get(k)!.small, to = n ? `${n}` : '';
+      if (small.textContent === to) return;
+      const seen = small.textContent !== '' && small.isConnected;
+      small.textContent = to;
+      if (seen && to) pop(small, .12, 300);
+    },
     offer: (k, on) => {
       tabs.get(k)!.tab.hidden = !on;
       if (!on && now === k) show(list.find((p) => !tabs.get(p.id)!.tab.hidden)?.id ?? list[0].id);

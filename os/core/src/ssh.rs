@@ -97,9 +97,10 @@ pub fn parse_keys(text: &str) -> Keys {
     out
 }
 
-/// The keys in Home's `.authorized_keys` (as Home has it now; taking in the Remote's is the caller's).
+/// The keys in Home's `.authorized_keys` as this device took it (home.rs dotfiles_in_effect): a key the Remote's
+/// copy holds and the person at this device never took is let in nowhere.
 pub fn keys() -> Keys {
-    crate::home::dotfiles().into_iter().find(|(n, _)| n == KEYS).map(|(_, t)| parse_keys(&t)).unwrap_or_default()
+    crate::home::dotfiles_in_effect().into_iter().find(|(n, _)| n == KEYS).map(|(_, t)| parse_keys(&t)).unwrap_or_default()
 }
 
 /// The kind a key blob names first (a string: a 4-byte length, then its bytes).
@@ -348,6 +349,7 @@ pub fn admit(local: IpAddr, peer: IpAddr, interfaces: &[Iface], route_dev: impl 
 /// The interface the kernel routes `to` by, from `from` (one of this host's addresses): `ip route get TO from FROM`,
 /// asked over netlink, so policy routing (Tailscale's table 52, wg-quick's fwmark rules) counts. None when there is
 /// no route, or the kernel could not be asked.
+#[cfg(target_os = "linux")]
 pub fn route_dev(to: Ipv4Addr, from: Ipv4Addr) -> Option<String> {
     use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
     // nlmsghdr (16) + rtmsg (12) + RTA_DST (8) + RTA_SRC (8).
@@ -379,7 +381,12 @@ pub fn route_dev(to: Ipv4Addr, from: Ipv4Addr) -> Option<String> {
     oif(&buf[..n as usize]).and_then(if_name)
 }
 
+/// Elsewhere (macOS) the kernel is not asked so: a VPN's peer is let in only from inside the subnet it came in on.
+#[cfg(not(target_os = "linux"))]
+pub fn route_dev(_: Ipv4Addr, _: Ipv4Addr) -> Option<String> { None }
+
 /// The output interface (RTA_OIF) of a netlink answer that is a route (RTM_NEWROUTE); None for an error.
+#[cfg(target_os = "linux")]
 fn oif(msg: &[u8]) -> Option<u32> {
     let u16_at = |at: usize| msg.get(at..at + 2).map(|b| u16::from_ne_bytes([b[0], b[1]]));
     let len = u32::from_ne_bytes(msg.get(0..4)?.try_into().ok()?) as usize;
@@ -394,6 +401,7 @@ fn oif(msg: &[u8]) -> Option<u32> {
     None
 }
 
+#[cfg(target_os = "linux")]
 fn if_name(index: u32) -> Option<String> {
     let mut name = [0 as libc::c_char; libc::IF_NAMESIZE];
     if unsafe { libc::if_indextoname(index, name.as_mut_ptr()) }.is_null() { return None; }
@@ -669,10 +677,19 @@ pub enum Heard {
     Unreachable,
 }
 
+/// The tag the Remote's last answer to a beat carried (service/mark.ts), sent with the next: while nothing was
+/// written on the Remote since, it answers on without asking its database, which sleeps. Before, each beat was a
+/// session looked up and a row written: a device listening kept the database awake around the clock.
+static TAG: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
 /// Ask the Remote whether this device's SSH is still on (and say to whom it listens now).
 pub fn beat(scope: Scope) -> Heard {
     let Some(_) = crate::remote::connection() else { return Heard::SignedOut };
-    let asked = Client::open().and_then(|c| c.json("POST", "/v1/ssh/this/beat", Some(serde_json::json!({"scope": scope.word()}))));
+    let tag = TAG.lock().map(|t| t.clone()).unwrap_or_default();
+    let said = if tag.is_empty() { serde_json::json!({"scope": scope.word()}) } else { serde_json::json!({"scope": scope.word(), "tag": tag}) };
+    let asked = Client::open().and_then(|c| c.json("POST", "/v1/ssh/this/beat", Some(said)));
+    // Whatever it said, the next beat carries its tag, or none (a Remote without the mark gives none).
+    if let Ok(mut t) = TAG.lock() { *t = asked.as_ref().ok().and_then(|v| v["tag"].as_str()).unwrap_or_default().to_string(); }
     match asked {
         Ok(v) if v["on"] == serde_json::json!(true) => Heard::On,
         Ok(v) if v["on"] == serde_json::json!(false) => Heard::Off,
@@ -883,6 +900,7 @@ mod tests {
         assert!(on_link(v("10.0.0.1"), 0, v("1.2.3.4")));
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn the_kernel_is_asked_the_way_to_an_address() {
         // Loopback is always there, so this holds on any Linux; an address that is nowhere has no way to it from 127.0.0.1.

@@ -4,7 +4,7 @@ use super::Ctx;
 use crate::args::Call;
 use crate::out::{now_ms, Error, Reply, Result};
 use crate::spec::{Fact, On};
-use length3_core::{home, i18n, text, tr};
+use length3_core::{home, i18n, inbox, remote, text, tr};
 use serde_json::json;
 
 pub fn todo_list(_: &Ctx, _: &Call) -> Result<Reply> {
@@ -27,7 +27,7 @@ pub fn todo_list(_: &Ctx, _: &Call) -> Result<Reply> {
 pub fn todo_add(_: &Ctx, call: &Call) -> Result<Reply> {
     let mut list = home::todos()?;
     let item = home::todo_from(call.word(0).unwrap_or_default(), call.note(), now_ms())
-        .ok_or_else(|| Error::Usage(tr!("The TODO's first line is empty", "TODO の1行目が空です")))?;
+        .ok_or_else(|| Error::Usage(tr!("The TODO's first line is empty: l3 todo add \"Fix：title\"", "TODO の1行目が空です：l3 todo add \"Fix：件名\"")))?;
     fits(&item)?;
     let name = text::named(item.kind.as_deref(), &item.title);
     list.push(item.clone());
@@ -120,7 +120,13 @@ pub fn profile_show(_: &Ctx, _: &Call) -> Result<Reply> {
 
 pub fn profile_set(_: &Ctx, call: &Call) -> Result<Reply> {
     let field = call.word(0).unwrap_or_default();
-    let p = home::set_profile(field, call.word(1).unwrap_or_default()).map_err(Error::Refused)?;
+    let mut value = call.word(1).unwrap_or_default().to_string();
+    // Signed in, the handle is your username: changed on the Remote first (taken, nothing is saved), kept as it says.
+    if field == "handle" && remote::connection().is_some() && !value.trim().is_empty() {
+        let a = inbox::set_username(&value)?;
+        value = a.split('@').next().unwrap_or_default().to_string();
+    }
+    let p = home::set_profile(field, &value).map_err(Error::Refused)?;
     let what = match field { "name" => tr!("name", "名前"), "handle" => tr!("handle", "ハンドル"), _ => tr!("bio", "自己紹介") };
     Ok(Reply::done(tr!("Saved your {}", "{}を保存しました", what), json!(p)))
 }

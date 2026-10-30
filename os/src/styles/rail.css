@@ -1,0 +1,118 @@
+/* The rail: its places, their names and dots, and the person at its foot with their menu. */
+/* A phone (560 px and less): the rail's places a size smaller and closer, and the window's gutter narrower, so a page
+   has a fifth more of the width; the rail stays the rail (File's tree and Server's layer come out of it as anywhere). */
+@media (max-width: 560px) {
+  :root { --outer: var(--s2); --h-place: 40px; --rail-line-gap: 10px; }
+  .rail-tabs { gap: 2px; }
+}
+/* A window too short for all of it (a browser's tab under its own bars, a laptop at 200% zoom): the rail stays
+   where it is, in the window, as tall as the window, never going with the page (issue #44). Its places close up;
+   the person's icon stays at its foot, and what still does not fit scrolls inside the rail, not the page. */
+@media (max-height: 820px) {
+  .rail { --rail-top: var(--top-line); }
+  .rail-tabs { gap: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
+  .rail-tabs::-webkit-scrollbar { display: none; }
+  .rail-new { margin-top: var(--s3); }
+  .rail-me { padding: var(--s2) 0 var(--s3); }
+}
+
+/* The person's own icon at the foot of the rail, and what it brings out. Its middle is the prompt box's (the box
+   floats s5 over the foot, --prompt-h tall): one line along the foot of the window, rail to center. */
+.rail-me { display: grid; place-items: center; padding: var(--s3) 0 calc(var(--s5) + (var(--prompt-h) - 44px) / 2); }
+.me-wrap { position: relative; }
+.me {
+  display: grid; place-items: center; width: 44px; height: 44px; border-radius: var(--r-round); border: 1px solid var(--edge);
+  background: transparent; cursor: var(--cursor-hand); font: 600 var(--t-meta) var(--sans);
+}
+/* The person fills most of the circle; initials stay type-sized. */
+.me .icon { width: 30px; height: 30px; }
+/* A popover (the person's menu, Inbox's names): one box, a head over each group, a row per item. */
+.pop { display: grid; padding: var(--s2); background: var(--paper); border: 1px solid var(--rule); border-radius: var(--r-card); }
+/* A menu out of a row, a card or a gear comes out of it as it shows: grown from the corner it opens at, a few pixels
+   from that side, landing a touch past its size, as the person's menu rises from the face (not there at once, as if
+   it had always been). */
+.tree-pop, .repo-gear-pop, .stub-panel, .share-pop { animation: menu-in calc(280ms * var(--pace)) var(--pop-in) both; }
+.repo-gear-pop, .stub-panel { --from: 0 -4px; transform-origin: right top; }
+.stub-panel { transform-origin: top; }
+.share-pop { --from: 0 4px; transform-origin: bottom; }
+/* File's beside the tree, at the row's height: out of the tree, to its right. */
+.tree-pop { --from: -6px 0; transform-origin: left top; }
+/* The same deeds out of a button (Forge's files button), under it: down out of it. */
+.tree-pop.deeds-under { --from: 0 -4px; }
+@keyframes menu-in { from { opacity: 0; translate: var(--from); scale: .92; } }
+@media (prefers-reduced-motion: reduce) { .tree-pop, .repo-gear-pop, .stub-panel, .share-pop { animation: none; } }
+.me-pop {
+  position: absolute; left: calc(100% + var(--s3)); bottom: 0; z-index: 6;
+  /* As wide as it needs, but never past the window's own gutter (a 320 px phone has 194 px beside the rail). */
+  min-width: min(280px, calc(100vw - 2 * var(--outer) - var(--rail)));
+  max-width: calc(100vw - 2 * var(--outer) - var(--rail));
+  visibility: hidden; opacity: 0; translate: 0 6px; scale: .92; transform-origin: left bottom;
+  transition: opacity var(--motion), translate var(--move) var(--land), scale calc(280ms * var(--pace)) var(--pop-in), visibility 0s var(--motion);
+}
+/* Out, it rises the last few pixels up from the face it came from as it shows. */
+.me-wrap.open .me-pop { visibility: visible; opacity: 1; translate: 0 0; scale: 1; transition: opacity var(--motion), translate var(--move) var(--land), scale calc(280ms * var(--pace)) var(--pop-in), visibility 0s; }
+@media (prefers-reduced-motion: reduce) { .me-pop, .me-wrap.open .me-pop { translate: none; scale: none; } }
+.me-who { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s3) var(--s3); }
+/* The face again, the size of the button, beside the name. */
+.me-who > :first-child { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border: 1px solid var(--rule); border-radius: var(--r-round); font: 600 var(--t-meta) var(--sans); }
+.me-who > svg.icon { padding: 4px; box-sizing: border-box; }
+.me-name { display: grid; min-width: 0; }
+.pop-group { display: grid; margin-top: var(--s2); }
+/* The first group starts at the box's own padding: its head's room is enough, without a group's step before it. */
+.pop > .pop-group:first-child { margin-top: 0; }
+.pop-mark { width: 18px; height: 18px; flex: none; color: var(--sub); }
+.pop-item {
+  display: flex; justify-content: space-between; align-items: center; gap: var(--s3);
+  min-height: var(--h-row); padding: 0 var(--s3); border: 0; border-radius: var(--r-field); background: transparent; cursor: var(--cursor-hand); text-align: left;
+}
+.pop-item:disabled { cursor: var(--cursor-arrow); color: var(--sub); }
+/* A deed's mark at its left (common.ts menuItem): the row reads from it, as a context menu's does; the mark quiet
+   until the row is under the pointer or the keyboard. */
+.pop-item:has(> .pop-icon) { justify-content: flex-start; gap: var(--s2); }
+.pop-icon { width: 17px; height: 17px; flex: none; color: var(--sub); }
+.pop-item:is(:hover, :focus-visible):not(:disabled) > .pop-icon { color: var(--ink); }
+/* What is done for good: off red, its mark too, after a rule; the pointer on it tints it, never fills it. */
+.pop-item.pop-gone:not(:disabled), .pop-item.pop-gone:not(:disabled) > .pop-icon { color: var(--off); }
+.pop-item.pop-gone:hover:not(:disabled) { background: color-mix(in srgb, var(--off) 9%, transparent); }
+.pop-rule { height: 1px; margin: var(--s1) var(--s2); background: var(--rule); }
+.rail-item {
+  position: relative; display: grid; place-items: center;
+  width: var(--h-place); height: var(--h-place); border: 0; border-radius: var(--r-place);
+  background: transparent; color: var(--ink); cursor: var(--cursor-hand);
+}
+/* + starts something rather than opening a place, so it has the action
+   shape: round, outlined like every button, right under the places. */
+.rail-new { margin-top: var(--s6); width: 44px; height: 44px; border-radius: var(--r-round); border: 1px solid var(--edge); } /* the person's circle's size */
+.rail-tag {
+  position: absolute; left: calc(100% + var(--s3)); top: 50%; transform: translateY(-50%); z-index: 4;
+  padding: 0 var(--s2); border-radius: var(--r-field); white-space: nowrap;
+  background: var(--ink); color: var(--ground); font-size: var(--t-meta); line-height: 1.8;
+  opacity: 0; translate: -6px 0; pointer-events: none; transition: opacity var(--motion), translate var(--move) var(--land);
+}
+/* Out from the place's edge as the pointer comes on it, and back into it as the pointer leaves: never gone at once. */
+.rail-item:focus-visible .rail-tag { opacity: 1; translate: 0 0; }
+/* Only where a pointer rests: a finger's press leaves the place hovered, and its name would stay out over the page. */
+@media (hover: hover) { .rail-item:hover .rail-tag { opacity: 1; translate: 0 0; } }
+/* While File's tree is out, File is the one filled icon; the page's own
+   icon steps back until the tree goes. */
+.rail-tabs:has(.rail-item[aria-expanded='true']) .rail-item[aria-current='page'] { background: transparent; color: var(--ink); }
+.rail-tabs:has(.rail-item[aria-expanded='true']) .rail-item[aria-current='page']:hover { background: var(--raised); }
+/* While File's tree is out, the tree itself says what it is. */
+.rail-item[aria-expanded='true'] .rail-tag { opacity: 0; }
+/* The Remote not answering: a dot on its place, the one place it is said. */
+.rail-item.away::after, .rail-item.news::after {
+  content: ''; position: absolute; top: var(--s2); right: var(--s2);
+  width: 7px; height: 7px; border-radius: var(--r-round); background: var(--off);
+}
+/* Something came in, not seen yet (Inbox, Server; Server's chips and boards): the same dot in the
+   colour of what it is on, ink, or ground on what is current; no colour of its own. */
+.rail-item.news::after { background: currentColor; }
+.chip.news::after, .board-head.news > .board-mark::after {
+  content: ''; display: inline-block; width: 7px; height: 7px; margin-left: var(--s2); vertical-align: middle;
+  border-radius: var(--r-round); background: currentColor;
+}
+/* A board's # is quiet; its dot is the ink one all the same. */
+.board-head.news > .board-mark::after { background: var(--ink); }
+
+/* Said to a screen reader, not shown. */
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }

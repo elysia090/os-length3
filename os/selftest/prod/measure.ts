@@ -131,6 +131,13 @@ async function main() {
       [`log (50 of ${COMMITS} commits, ${FILES} files)`, 'GET', '/v1/repos/big/log?limit=50', () => undefined],
       ['log, as the clients ask it (summary)', 'GET', '/v1/repos/big/log?limit=50&summary=1', () => undefined],
       ['get-session', 'GET', '/api/auth/get-session', () => undefined],
+      // What the app asks as its places are shown: Forge's pane and Git (a repo's changes, its work), Remote's Plan,
+      // who sees each repo, Inbox's names.
+      ['changes (Forge, Git)', 'GET', '/v1/repos/big/changes', () => undefined],
+      ['lines (Git)', 'GET', '/v1/repos/big/lines', () => undefined],
+      ['plan (Remote)', 'GET', '/v1/plan', () => undefined],
+      ['seen (Remote, Home)', 'GET', '/v1/seen', () => undefined],
+      ['inbox me (Inbox)', 'GET', '/v1/inbox/me', () => undefined],
     ];
     const results: Figures[] = [];
     for (const [route, method, p, body, o] of routes) {

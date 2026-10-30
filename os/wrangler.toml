@@ -20,6 +20,12 @@ compatibility_flags = ["nodejs_compat"]
 workers_dev = false
 preview_urls = false
 
+# Each request asks the database a few times in turn (service/roundtrips.test.ts holds how many), each a round trip
+# to Neon: Cloudflare runs the Worker near what it asks most when that is faster than near the person (it measures
+# both, and leaves it at the edge when it is not). The app's own files are served from the edge either way.
+[placement]
+mode = "smart"
+
 [assets]
 # The build (npm run build:cloudflare; vite.config.ts builds into this directory, and Tauri takes the app's from
 # it), never this tree: served from os/ itself, the page asks for /src/main.ts, which no browser runs, and shows
@@ -31,7 +37,7 @@ not_found_handling = "single-page-application"
 run_worker_first = ["/v1/*", "/api/*", "/.well-known/*"]
 
 [vars]
-# The URL handed on: the app and the Remote are both here. The same name is the page's (src/policy.ts
+# The URL handed on: the app and the Remote are both here. The same name is the page's (src/app/policy.ts
 # DEFAULT_REMOTE), the core's (core/src/remote/mod.rs DEFAULT_URL) and the desktop app's policy
 # (src-tauri/tauri.conf.json); service/config.test.ts holds them to these.
 BASE_URL = "https://os.length3.com"

@@ -68,10 +68,13 @@ ${hidden(q, ['redirect_uri', 'state'])}<div class="foot"><button class="go">Cont
 <div class="foot"><form action="deny" method="get">${hidden(q, ['redirect_uri', 'state'])}<button type="submit">Cancel</button></form>
 <form action="approve" method="get">${hidden(q, ['redirect_uri', 'state'])}<input type="hidden" name="name" value="${esc(name)}"><button class="go" type="submit">Allow</button></form></div>`), 200, policy);
   });
+  // `email` and `verified=0` (tests only: no page here sends them) say what a real provider may say: an address
+  // the person typed there and was never asked to prove (Google's email_verified: false), which is not theirs.
   app.get('/approve', (c) => {
     const q = new URL(c.req.url).searchParams;
     const to = new URL(q.get('redirect_uri') ?? '/');
-    to.searchParams.set('code', b64(JSON.stringify({name: nameOf(q)})));
+    const said = {name: nameOf(q), ...(q.get('email') ? {email: q.get('email')!.slice(0, 200)} : {}), ...(q.get('verified') === '0' ? {verified: false} : {})};
+    to.searchParams.set('code', b64(JSON.stringify(said)));
     to.searchParams.set('state', q.get('state') ?? '');
     return c.redirect(to.toString());
   });
@@ -89,9 +92,9 @@ ${hidden(q, ['redirect_uri', 'state'])}<div class="foot"><button class="go">Cont
     return c.json({access_token: body.get('code') ?? '', token_type: 'Bearer', expires_in: 3600});
   });
   app.get('/userinfo', (c) => {
-    const {name} = JSON.parse(unb64((c.req.header('Authorization') ?? '').replace(/^Bearer\s+/i, ''))) as {name: string};
-    const {id, email} = who(name);
-    return c.json({sub: id, id, name, email, email_verified: true});
+    const said = JSON.parse(unb64((c.req.header('Authorization') ?? '').replace(/^Bearer\s+/i, ''))) as {name: string; email?: string; verified?: boolean};
+    const {id, email} = who(said.name);
+    return c.json({sub: id, id, name: said.name, email: said.email ?? email, email_verified: said.verified !== false});
   });
   return app;
 }

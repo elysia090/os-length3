@@ -10,16 +10,20 @@ name: Release
 # l3 for the browser: the same root as the browser reads it, os/scripts/l3.mjs
 # and web-release.sh) and the desktop app (the
 # same UI, its Prompt running that root on the machine: a .deb and an
-# AppImage), with their digests. Devices then trust the root once its digest is pinned in
-# os/core/src/root.rs. No Cloudflare credentials are kept here: the Remote's
-# deploy (os/service/deploy.ts) takes the pinned root and desktop files from
-# the release and puts them on the Remote, which serves them to anyone.
+# AppImage), with their digests. Then it proposes the pins to main as one
+# pull request (Pin vX.Y.Z: the root in os/core/src/root.rs, the desktop app
+# in os/shared/desktop-releases.json); merged, they are what the tree ships:
+# devices trust the root by its digest, the web takes that l3, and the
+# Remote's deploy (os/service/deploy.ts) takes the pinned files from the
+# release and puts them on the Remote, which serves them to anyone. No
+# Cloudflare credentials are kept here.
 #
 # Only main's commits are released (audit R1): a push to main, a tag on a
 # commit main has, or a run by hand from main; anything else stops at
 # Version. One version at a time (audit R2). The token can write the
-# repository's contents (the release) in this job alone; every action is
-# pinned to a full commit (the tag is beside it).
+# repository's contents (the release, the pins' branch) and open the pins'
+# pull request in this job alone; every action is pinned to a full commit
+# (the tag is beside it).
 on:
   push:
     tags: ['os-length3-linux-v*']
@@ -44,6 +48,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -96,3 +101,22 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/publish-release.mjs "$GITHUB_WORKSPACE/out"
+      # The pins the release wrote (release.sh: pin-root.mjs, pin-desktop.mjs), proposed to main as one change. A
+      # pull request opened with this token runs no workflow; the pins are checked where they are read (the web
+      # build, the deploy). Where the repository does not let Actions open pull requests, the branch is pushed and
+      # its link said.
+      - name: Pins, proposed to main
+        if: env.SKIP != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="release/pin-v$VERSION"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c "$branch"
+          git add os/core/src/root.rs os/shared/desktop-releases.json
+          git commit -m "Pin $TAG: its root (os/core/src/root.rs RELEASES) and its desktop app (os/shared/desktop-releases.json)"
+          git push "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" "$branch"
+          gh pr create --base main --head "$branch" --title "Pin $TAG" \
+            --body "What $TAG pinned as it was made (its notes say the same): merged, the tree ships it." \
+            || echo "::warning::$branch is pushed; open its pull request: https://github.com/$GITHUB_REPOSITORY/compare/main...$branch"

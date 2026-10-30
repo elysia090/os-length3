@@ -3,13 +3,14 @@ import {existsSync, readFileSync, rmSync} from 'node:fs';
 import {dirname, resolve} from 'node:path';
 import {defineConfig, type Plugin} from 'vite';
 import {buildCoreWasm, coreWasmPath} from './scripts/core-wasm.ts';
-import {DEFAULT_REMOTE, headersOf, webPolicy} from './src/policy.ts';
+import {DEFAULT_REMOTE, headersOf, webPolicy} from './src/app/policy.ts';
+import {shipped} from './service/releases.ts';
 
 // Tauri serves the built files from ../dist and points its dev webview at this
 // fixed port, so the port must not drift to a free one. The Terminal's kernel
 // lives in ../xlat.
 
-// The web build's policy is src/policy.ts's: its own origin and the Remote. Tauri applies its own
+// The web build's policy is src/app/policy.ts's: its own origin and the Remote. Tauri applies its own
 // policy (with its ipc: channel) to the desktop build, so the meta tag is only for the web.
 // The Remote (service/) is the one other origin it may reach: where the
 // canonical copy lives. VITE_LENGTH3_REMOTE points a build at another one;
@@ -24,9 +25,9 @@ const DEV_REMOTE = process.env.LENGTH3_DEV_REMOTE;
 const WRANGLER = readFileSync(new URL('./wrangler.toml', import.meta.url), 'utf8');
 const ASSETS = /^directory\s*=\s*"([^"]+)"/m.exec(WRANGLER)![1];
 const WORKER_FIRST = (JSON.parse(/^run_worker_first\s*=\s*(\[.*\])$/m.exec(WRANGLER)![1]) as string[]).map((p) => p.replace(/\/\*$/, ''));
-// The release this tree ships (RELEASE): the web's Runtime offers that version's desktop app
-// (shared/desktop-releases.json), as the deploy puts it on the Remote (service/mirror.ts).
-process.env.VITE_LENGTH3_RELEASE ??= readFileSync(new URL('./RELEASE', import.meta.url), 'utf8').trim();
+// The release this tree ships (service/releases.ts shipped, the newest pinned; not RELEASE, which names the one being
+// made): the web's Runtime offers that version's desktop app, as the deploy puts it on the Remote (service/mirror.ts).
+process.env.VITE_LENGTH3_RELEASE ??= shipped();
 const WEB_POLICY = webPolicy(REMOTE);
 
 // Which host a build is for, fixed when it is built: the desktop app's (Tauri's CLI sets TAURI_ENV_PLATFORM for the
@@ -89,7 +90,7 @@ const coreWasm = (): Plugin => ({
  * runs its own core, the root installed on the machine and signs in through the browser; `X.web.ts` for the
  * app's (Tauri's API), which a browser never has.
  */
-const ONLY = {web: ['core-worker', 'userland', 'passkeys'], native: ['tauri']};
+const ONLY = {web: ['core/spawn', 'prompt/userland', 'remote/passkeys'], native: ['app/tauri']};
 const hostOnly = (): Plugin => {
   const other = HOST === 'native' ? ONLY.web : ONLY.native;
   const suffix = HOST === 'native' ? '.desktop.ts' : '.web.ts';
@@ -102,7 +103,7 @@ const hostOnly = (): Plugin => {
     // public/ is copied whole; l3 as a browser reads it (public/l3, made by npm run l3) is the web's alone.
     closeBundle() { if (HOST === 'native' && out) rmSync(resolve(out, 'l3'), {recursive: true, force: true}); },
     async resolveId(source, importer, options) {
-      if (!importer || !other.some((m) => source.endsWith(`/${m}.ts`))) return null;
+      if (!importer || !other.some((m) => source.endsWith(`/${m.split('/').pop()}.ts`))) return null;
       const r = await this.resolve(source, importer, {...options, skipSelf: true});
       if (!r || !named.test(r.id)) return r;
       const stand = r.id.replace(/\.ts$/, suffix);

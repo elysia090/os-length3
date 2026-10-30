@@ -21,7 +21,7 @@
 use std::fs;
 use std::io::{self, Read};
 #[cfg(unix)]
-use std::os::unix::fs::{symlink, PermissionsExt};
+use std::os::unix::fs::symlink;
 
 /// Built for the web there is no root to fetch or install (a Prompt there runs the web's own), but the
 /// roots held are read, counted and let go by this same code.
@@ -103,31 +103,31 @@ pub struct Distro {
     pub bytes: u64,
 }
 
-/// The other roots l3 trusts: Ubuntu's base and Debian's official image root.
+/// The other roots l3 trusts: Ubuntu's base and Debian's official image root, each at a URL that names that one
+/// build (Debian's at the commit of its makers' branch that holds it: the branch itself moves with each build). The
+/// deploy puts each on the Remote by its digest (service/mirror.ts), where a device asks first.
 pub const DISTROS: &[Distro] = &[Distro {
     id: "ubuntu",
     name: "Ubuntu",
-    version: "24.04.5 LTS",
-    url: "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-amd64.tar.gz",
-    sha256: "e77b6f10c2590cef872b33ee9f635a0e3fd1f57fb074c0e52b5c7f56147a0c86",
-    bytes: 30_028_293,
+    version: "26.04.1 LTS",
+    url: "https://cdimage.ubuntu.com/ubuntu-base/releases/26.04/release/ubuntu-base-26.04.1-base-amd64.tar.gz",
+    sha256: "a496a960472ce474a59590b8987d3a1135d3cbef1991f3b1abe8cacfea8bf85a",
+    bytes: 34_931_253,
 }, Distro {
     id: "debian",
     name: "Debian",
-    version: "13",
-    url: "https://raw.githubusercontent.com/debuerreotype/docker-debian-artifacts/dist-amd64/trixie/oci/blobs/rootfs.tar.gz",
-    sha256: "4846f29007305297af653c57bf9b60ba8f676a38695c68d98460063442581671",
-    bytes: 49_393_200,
+    version: "13.7",
+    url: "https://raw.githubusercontent.com/debuerreotype/docker-debian-artifacts/69faaf492e77aff83e4c7fc401017c9d25ecde24/trixie/oci/blobs/rootfs.tar.gz",
+    sha256: "a1d156b0aab5fb07d822a7f4681f6d3ed1689073531c34f5668818c233633f11",
+    bytes: 49_407_895,
 }];
 
 pub fn distro(id: &str) -> Option<&'static Distro> {
     DISTROS.iter().find(|d| d.id == id)
 }
 
-/// Where the publisher's release channel keeps it. It answers anyone only
-/// while the repository is public; it is private, so a device without the
-/// publisher's credentials is answered 404 there, and the Remote is where a
-/// root comes from.
+/// Where the publisher's release channel keeps it, for anyone: the repository
+/// is public.
 pub fn github_url(r: &Release) -> String {
     format!("https://github.com/elysia090/os-length3/releases/download/{}/{}", r.tag, r.file)
 }
@@ -177,6 +177,8 @@ pub fn fetch_distro(data: &Path, remote: &str, d: &Distro, progress: impl FnMut(
     crate::boundary::private_dir(&system_dir(data)).map_err(|e| e.to_string())?;
     fs::create_dir_all(&bundles).map_err(|e| e.to_string())?;
     let archive = bundles.join(format!("{}.tar.gz", d.sha256));
+    // Its bundle and its tree: room made for them first, by itself (usage.rs make_room).
+    crate::usage::make_room(data, &crate::paths::repos_dir(), d.bytes.saturating_mul(3));
     let mut progress = progress;
     if let Err(first) = crate::fetch::fetch(&by_digest(remote, d.sha256), d.sha256, d.bytes, &archive, &mut progress) {
         crate::fetch::fetch(d.url, d.sha256, d.bytes, &archive, &mut progress).map_err(|e| format!("{first} / {e}"))?;
@@ -227,6 +229,12 @@ pub fn use_held(data: &Path, sha256: &str) -> Option<Installed> {
 }
 
 fn point_current(data: &Path, sha256: &str) -> Result<(), String> {
+    // Under the lock 空ける looks again under (usage::lock), and only at a root still whole: one freed since
+    // it was found here is not made current, and the one made current is not freed after.
+    let _still = crate::usage::lock(data).map_err(|e| e.to_string())?;
+    if !system_dir(data).join(sha256).join("installed.json").is_file() {
+        return Err(crate::tr!("That root was freed meanwhile; fetch it again", "その root はそのあいだに空けられました。もう一度取ってください"));
+    }
     // A new link renamed over the old one: never a moment without one.
     let link = system_dir(data).join(format!(".current.length3-{}-0", crate::pid()));
     let _ = fs::remove_file(&link);
@@ -243,6 +251,7 @@ pub fn fetch_and_install(data: &Path, remote: &str, progress: impl FnMut(crate::
     crate::boundary::private_dir(&system_dir(data)).map_err(|e| e.to_string())?;
     fs::create_dir_all(&bundles).map_err(|e| e.to_string())?;
     let bundle = bundles.join(format!("{}.tar.zst", r.sha256));
+    crate::usage::make_room(data, &crate::paths::repos_dir(), r.bytes.saturating_mul(3));
     // The Remote first, then the publisher's, then the release channel
     // (`sources`). Whichever gives it, the bytes are only kept if they are
     // the pinned digest.
@@ -406,8 +415,16 @@ fn through_no_link(top: &Path, rel: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Give `path` its mode, where the host keeps modes (unix); elsewhere it has the host's own.
+#[cfg(unix)]
+fn set_mode(path: &Path, mode: u32) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(mode))
+}
+#[cfg(not(unix))]
+fn set_mode(_: &Path, _: u32) -> io::Result<()> { Ok(()) }
+
 /// Unpack a tar stream into the empty directory `top`; returns (files, bytes).
-#[cfg_attr(not(unix), allow(unused_variables))] // modes and directory syncs are the host's
 pub fn unpack(stream: impl Read, top: &Path) -> io::Result<(u64, u64)> {
     let mut r = io::BufReader::with_capacity(1 << 20, stream);
     let (mut files, mut bytes) = (0u64, 0u64);
@@ -475,8 +492,7 @@ pub fn unpack(stream: impl Read, top: &Path) -> io::Result<(u64, u64)> {
                     Err(e) if e.kind() == io::ErrorKind::AlreadyExists && fs::symlink_metadata(&path)?.is_dir() => {}
                     other => other?,
                 }
-                #[cfg(unix)]
-                fs::set_permissions(&path, fs::Permissions::from_mode(mode | 0o700))?;
+                set_mode(&path, mode | 0o700)?;
             }
             Kind::File => {
                 // create_new: never over something already there (a link above all).
@@ -484,9 +500,9 @@ pub fn unpack(stream: impl Read, top: &Path) -> io::Result<(u64, u64)> {
                 io::copy(&mut (&mut r).take(size), &mut f)?;
                 let mut pad = vec![0u8; (padded - size) as usize];
                 r.read_exact(&mut pad)?;
+                drop(f);
                 // No set-id bits come from an archive.
-                #[cfg(unix)]
-                f.set_permissions(fs::Permissions::from_mode(mode & 0o777))?;
+                set_mode(&path, mode & 0o777)?;
                 files += 1;
                 bytes += size;
                 continue;

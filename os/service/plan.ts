@@ -54,7 +54,7 @@
 //   POST /v1/plan/portal   {back, tier?} the customer portal, to manage or cancel; with a tier, at the step that changes to it: {url}
 //   POST /v1/stripe/webhook              Stripe's events, signed with the webhook secret; each taken once
 
-import {and, eq, sql} from 'drizzle-orm';
+import {and, eq, isNull, sql} from 'drizzle-orm';
 import type {Hono} from 'hono';
 import {kept} from './names.ts';
 import {body, refuse, rows, type Db, type Vars} from './request.ts';
@@ -145,10 +145,10 @@ export async function usage(q: Db, userId: string): Promise<{repos: number; byte
   return {repos: Number(u?.repos ?? 0), bytes: Number(u?.bytes ?? 0)};
 }
 
-/** Names the account keeps on the Remote's own domain (those let go and still held for it among them). */
-const homeNames = async (q: Db, userId: string, domain: string, but = '') =>
+/** Names the account keeps on the Remote's own domain (those let go and still held for it among them; or, `answering`, only those not let go). */
+const homeNames = async (q: Db, userId: string, domain: string, but = '', answering = false) =>
   ((await q.select({n: sql<number>`count(*)::int`}).from(address)
-    .where(and(eq(address.userId, userId), eq(address.domain, domain), kept, sql`${address.address} <> ${but}`))) as {n: number}[])[0]?.n ?? 0;
+    .where(and(eq(address.userId, userId), eq(address.domain, domain), answering ? isNull(address.releasedAt) : kept, sql`${address.address} <> ${but}`))) as {n: number}[])[0]?.n ?? 0;
 
 /** Whether `used` is still within `limit` (null: no limit). */
 const within = (used: number, limit: number | null) => limit === null || used < limit;
@@ -216,12 +216,14 @@ export function plans(d: {db: Db; config?: PlanConfig; billing?: Billing; domain
      * taken back, which is never new). On another domain, paid; on this Remote's, as many as the tier keeps.
      */
     async claimName(q: Db, userId: string, a: string, domain: string, theirs: boolean) {
-      if (!config || theirs) return;
+      if (!config) return;
       if (domain !== d.domain) {
-        if (!await paid(q, userId)) over({error: 'A name on your own domain is part of the paid plan'}, 'domain', 'free');
+        if (!theirs && !await paid(q, userId)) over({error: 'A name on your own domain is part of the paid plan'}, 'domain', 'free');
         return;
       }
-      const n = await homeNames(q, userId, domain, a);
+      // One's own taken back is no new name, so long as it makes no more answering than the plan keeps: a username
+      // changed holds the one before for them, and taken back beside the new one it would be two.
+      const n = await homeNames(q, userId, domain, a, theirs);
       if (within(n, config.free.names)) return;
       const {tier, allowance} = await allowanceOf(q, userId);
       if (!within(n, allowance.names)) {
@@ -313,7 +315,7 @@ export async function apply(tx: Db, event: {type: string; created: number; data:
   }
 }
 
-export interface PlanDeps { db: Db; plans: Plans; origins: string[]; appOrigin?: string; now?: () => number }
+interface PlanDeps { db: Db; plans: Plans; origins: string[]; appOrigin?: string; now?: () => number }
 
 /**
  * `back` with how the trip to Stripe went, for the page it comes back to: ?plan=paid (and the tier) or
@@ -365,10 +367,14 @@ export function planRoutes(d: PlanDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   v1.get('/plan', async (c) => {
     const me = c.get('userId');
     if (!p.on || !p.config) return c.json({plan: 'none'});
-    // One after another on the request's one connection: asked at once, each would open a connection of its own (worker.ts).
-    const row = await p.rowOf(db, me), use = await usage(db, me);
-    // Names as the rule counts them: those on this Remote's own domain (one on a domain of one's own is paid, not counted).
-    const names = await homeNames(db, me, p.domain);
+    // The account's row, what it keeps, and its names as the rule counts them (those on this Remote's own domain: one on
+    // a domain of one's own is paid, not counted), in one read: three before, one after another on the request's one
+    // connection (asked at once, each would have opened a connection of its own: worker.ts).
+    const [at] = await db.select({row: plan, repos: sql<number>`(select count(*)::int from repo where repo.user_id = ${me})`,
+      bytes: sql<number>`coalesce((select used from room where room.user_id = ${me}), 0)::float8`,
+      names: sql<number>`(select count(*)::int from address where address.user_id = ${me} and address.domain = ${p.domain} and ${kept} and address.address <> '')`})
+      .from(user).leftJoin(plan, eq(plan.userId, user.id)).where(eq(user.id, me)) as {row: Row | null; repos: number; bytes: number; names: number}[];
+    const row = at?.row ?? undefined, use = {repos: Number(at?.repos ?? 0), bytes: Number(at?.bytes ?? 0)}, names = at?.names ?? 0;
     const s = standing(row, p.config.grace);
     const allowance = s.tier ? p.paidAllowance(s.tier) : p.config.free;
     return c.json({plan: s.paid ? 'paid' : 'free', tier: s.tier ?? 'free', status: s.status, renews: s.renews, ends: s.ends, graceUntil: s.graceUntil,

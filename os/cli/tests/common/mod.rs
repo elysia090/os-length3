@@ -31,8 +31,13 @@ impl Home {
         c.args(args).current_dir(&self.dir).env_clear()
             .env("PATH", std::env::var_os("PATH").unwrap_or_default())
             .env("HOME", &self.dir).env("LENGTH3_HOME", &self.dir).env("LENGTH3_LANG", lang)
+            // What a test made stays whatever room the host has left: no reserve kept on its behalf.
+            .env("LENGTH3_RESERVE", "0")
             // Nothing answers here: a test that reached for the Remote would say so, not wait.
-            .env("LENGTH3_REMOTE", "http://127.0.0.1:9");
+            .env("LENGTH3_REMOTE", "http://127.0.0.1:9")
+            // Nor beyond this host: the publisher's Remote and the release channel are public, and a test that
+            // reached them (a root fetched) would pass or fail by the network. Its own servers are on 127.0.0.1.
+            .env("HTTPS_PROXY", "http://127.0.0.1:9").env("NO_PROXY", "127.0.0.1,localhost");
         c
     }
 
@@ -71,8 +76,9 @@ impl Home {
         use std::os::fd::FromRawFd;
         use std::os::unix::process::CommandExt;
         let (mut m, mut s) = (0, 0);
-        let size = libc::winsize { ws_row: 30, ws_col: 100, ws_xpixel: 0, ws_ypixel: 0 };
-        assert_eq!(unsafe { libc::openpty(&mut m, &mut s, std::ptr::null_mut(), std::ptr::null(), &size) }, 0, "a pty");
+        let mut size = libc::winsize { ws_row: 30, ws_col: 100, ws_xpixel: 0, ws_ypixel: 0 };
+        // Its settings and size as each host's openpty takes them (const on Linux, mut on macOS).
+        assert_eq!(unsafe { libc::openpty(&mut m, &mut s, std::ptr::null_mut(), std::ptr::null_mut(), &raw mut size) }, 0, "a pty");
         let (master, slave) = unsafe { (std::fs::File::from_raw_fd(m), std::fs::File::from_raw_fd(s)) };
         let mut c = self.command(lang, args);
         c.env("TERM", "xterm-256color");
@@ -316,21 +322,48 @@ impl Home {
     /// A root for Prompts made of this host's own sh and the libraries it loads (as `ldd` names them), held
     /// and current as `l3 root install` leaves one. False where the host has no such sh to lend.
     pub fn root(&self) -> bool {
-        let sys = self.path("system/test");
+        if !self.root_of("test", "test", &[]) { return false; }
+        self.use_root("test");
+        true
+    }
+
+    /// A root held as `system/<digest>` and called `name`, not made current: this host's own sh and `programs`
+    /// (from its /usr/bin), each with the libraries it loads. False where the host has them not to lend.
+    pub fn root_of(&self, digest: &str, name: &str, programs: &[&str]) -> bool {
+        let sys = self.path(&format!("system/{digest}"));
         let root = sys.join("root");
         for d in ["bin", "root", "tmp", "run", "dev", "proc", "etc"] { std::fs::create_dir_all(root.join(d)).unwrap(); }
         let Ok(sh) = std::fs::canonicalize("/bin/sh") else { return false };
-        let Ok(ldd) = Command::new("ldd").arg(&sh).output() else { return false };
-        std::fs::copy(&sh, root.join("bin/sh")).unwrap();
-        for lib in String::from_utf8_lossy(&ldd.stdout).split_whitespace().filter(|w| w.starts_with('/')) {
-            let at = root.join(lib.trim_start_matches('/'));
-            std::fs::create_dir_all(at.parent().unwrap()).unwrap();
-            std::fs::copy(lib, &at).unwrap();
+        let mut lent = vec![(sh, "sh")];
+        for p in programs {
+            let at = Path::new("/usr/bin").join(p);
+            if !at.is_file() { return false; }
+            lent.push((at, p));
         }
-        std::fs::write(sys.join("installed.json"), r#"{"name":"test","version":"0","sha256":"test","files":1,"bytes":1}"#).unwrap();
-        let _ = std::fs::remove_file(self.path("system/current"));
-        std::os::unix::fs::symlink("test", self.path("system/current")).unwrap();
+        for (from, called) in lent {
+            let Ok(ldd) = Command::new("ldd").arg(&from).output() else { return false };
+            std::fs::copy(&from, root.join("bin").join(called)).unwrap();
+            for lib in String::from_utf8_lossy(&ldd.stdout).split_whitespace().filter(|w| w.starts_with('/')) {
+                let at = root.join(lib.trim_start_matches('/'));
+                std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+                std::fs::copy(lib, &at).unwrap();
+            }
+        }
+        std::fs::write(sys.join("installed.json"), format!(r#"{{"name":"{name}","version":"0","sha256":"{digest}","files":1,"bytes":1}}"#)).unwrap();
         true
+    }
+
+    /// The root held as `system/<digest>` made the one Prompts run on.
+    pub fn use_root(&self, digest: &str) {
+        let _ = std::fs::remove_file(self.path("system/current"));
+        std::os::unix::fs::symlink(digest, self.path("system/current")).unwrap();
+    }
+
+    /// Home's dotfiles, as `l3 dotfile write` leaves them.
+    pub fn dotfiles(&self, files: &[(&str, &str)]) {
+        let all: std::collections::BTreeMap<&str, &str> = files.iter().copied().collect();
+        std::fs::create_dir_all(self.path("home")).unwrap();
+        std::fs::write(self.path("home/dotfiles.json"), serde_json::to_string(&all).unwrap()).unwrap();
     }
 
     /// What was last agreed with the Remote for `name` (its base, as sync keeps it).

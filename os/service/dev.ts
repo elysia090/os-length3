@@ -16,6 +16,7 @@ import {createApp} from './app.ts';
 import {createAuth} from './auth.ts';
 import {devBilling} from './devbilling.ts';
 import {enterEmail} from './enter.ts';
+import {memoryMarks} from './mark.ts';
 import {planConfig} from './plan.ts';
 import type {Bucket} from './bucket.ts';
 import * as schema from './schema.ts';
@@ -38,9 +39,13 @@ const bucket: Bucket | null = noBucket ? null : {
 
 const db = drizzle(new PGlite(join(dir, 'pg')), {schema});
 await migrate(db, {migrationsFolder: new URL('./migrations', import.meta.url).pathname});
-// What was held long enough goes: now, and each day while it runs (on Workers, a Cron Trigger).
-const swept = () => sweep(db, bucket).then((gone) => console.log(`sweep ${JSON.stringify(gone)}`), (e: unknown) => console.error('sweep', e));
-await swept();
+// The mark (mark.ts), in this process: looks answered without the database while nothing was written, as on Workers.
+const marks = memoryMarks();
+// What was held long enough goes: a moment after it listens, and each day while it runs (on Workers, a Cron Trigger,
+// beside the requests); the mark moves after. Not before it listens, nor as it does: the sweep's statements, a
+// transaction each, hold PGlite half a second and more even when nothing goes, and the first request waited behind
+// them (in every start, each selftest's two Remotes' among them).
+const swept = () => sweep(db, bucket).then(async (gone) => { console.log(`sweep ${JSON.stringify(gone)}`); await marks.move(); }, (e: unknown) => console.error('sweep', e));
 setInterval(() => void swept(), 86_400_000).unref();
 const secretFile = join(dir, 'secret');
 if (!existsSync(secretFile)) writeFileSync(secretFile, crypto.randomUUID() + crypto.randomUUID(), {mode: 0o600});
@@ -51,7 +56,7 @@ const secret = readFileSync(secretFile, 'utf8');
 // LENGTH3_ENTER_AS and LENGTH3_ENTER_KEY make it a Remote for research, as on Workers (enter.ts): no
 // provider then, the link …/#enter=KEY the only way in.
 const enter = process.env.LENGTH3_ENTER_AS ? {as: process.env.LENGTH3_ENTER_AS, key: process.env.LENGTH3_ENTER_KEY ?? ''} : undefined;
-const auth = createAuth({db, secret, baseURL, appOrigin, origins: others, dev: !enter, only: enter && enterEmail(enter.as)});
+const auth = createAuth({db, secret, baseURL, appOrigin, origins: others, dev: !enter, only: enter && enterEmail(enter.as), domain: 'length3.test'});
 // LENGTH3_PLAN=1 gives it the plan the Remote on Workers has (LENGTH3_FREE_REPOS, LENGTH3_FREE_MB to say it
 // otherwise), bought from a stand-in for Stripe (devbilling.ts); without it, no plan: everything is open.
 const plan = process.env.LENGTH3_PLAN === '1' ? planConfig({FREE_REPOS: process.env.LENGTH3_FREE_REPOS, FREE_MB: process.env.LENGTH3_FREE_MB}) : undefined;
@@ -62,7 +67,7 @@ const stripe = plan && devBilling(baseURL, hook, [appOrigin, ...others],
   async (payload, signature) => app.fetch(new Request(`${baseURL}/v1/stripe/webhook`, {method: 'POST', body: payload, headers: {'Stripe-Signature': signature, 'Content-Type': 'application/json'}})),
   {load: () => (existsSync(stripeFile) ? readFileSync(stripeFile, 'utf8') : null), save: (text) => { writeFileSync(`${stripeFile}.tmp`, text, {mode: 0o600}); renameSync(`${stripeFile}.tmp`, stripeFile); }});
 const app = createApp({db, auth, bucket, origins: [appOrigin, ...others], appOrigin, providers: enter ? [] : ['dev'], domain: 'length3.test', baseURL, secret, enter,
-  plan, billing: stripe ? {stripe: stripe.api, webhookSecret: hook, prices: stripe.prices} : undefined});
+  plan, billing: stripe ? {stripe: stripe.api, webhookSecret: hook, prices: stripe.prices} : undefined, marks});
 const serve = (r: Request) => (stripe && new URL(r.url).pathname.startsWith('/dev-billing/')
   ? stripe.app.fetch(new Request(r.url.replace('/dev-billing/', '/'), r)) : app.fetch(r));
 
@@ -77,4 +82,7 @@ createServer(async (req, res) => {
   r.headers.forEach((v, k) => { headers[k] = k === 'set-cookie' ? r.headers.getSetCookie() : v; });
   res.writeHead(r.status, headers);
   res.end(Buffer.from(await r.arrayBuffer()));
-}).listen(Number(port), '127.0.0.1', () => console.log(`remote on ${baseURL} for ${appOrigin} (${dir}${noBucket ? ', no bucket: files are not kept' : ''})`));
+}).listen(Number(port), '127.0.0.1', () => {
+  console.log(`remote on ${baseURL} for ${appOrigin} (${dir}${noBucket ? ', no bucket: files are not kept' : ''})`);
+  setTimeout(() => void swept(), 3000);
+});

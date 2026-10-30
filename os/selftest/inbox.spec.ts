@@ -6,8 +6,8 @@ import {expect, test} from './fixtures.ts';
 
 test('what one person writes to another arrives in their Inbox, and the rail says so', async ({signedIn: ada, another}) => {
   const bo = await another('Bo');
-  await bo.inbox.claim();
-  await ada.inbox.claim();
+  await bo.inbox.named();
+  await ada.inbox.named();
   await bo.rail.go('home');
 
   await ada.inbox.writeTo(bo.handle, 'Question: are you coming on Saturday?');
@@ -26,30 +26,57 @@ test('what one person writes to another arrives in their Inbox, and the rail say
   await expect(bo.rail.button('inbox')).toHaveAccessibleName('Inbox');
 
   // Accepted, the two know each other: Bo's answer goes back, and Ada has it.
+  // Answered at once, while the conversation is drawn again for the acceptance: what went is not left in the field.
   await thread.getByRole('button', {name: 'Accept'}).click();
-  await expect(bo.main.getByRole('heading', {name: 'Requests'})).toBeHidden();
   await bo.inbox.message.fill('Yes, with the tent.');
-  await bo.main.getByRole('button', {name: 'Send', exact: true}).click();
+  await bo.inbox.message.press('Control+Enter');
+  await expect(bo.main.getByRole('heading', {name: 'Requests'})).toBeHidden();
+  await expect(thread.getByText('Yes, with the tent.', {exact: true})).toBeVisible();
   await expect(bo.inbox.message).toHaveValue('');
+  // The page is the window's height: its conversation reaches the foot, and nothing of the page scrolls away.
+  expect(await bo.page.evaluate(() => document.scrollingElement!.scrollHeight - innerHeight)).toBeLessThanOrEqual(0);
   await ada.comeBack();
   await expect(ada.inbox.thread(bo.handle).getByText('Yes, with the tent.', {exact: true})).toBeVisible();
 });
 
+test('word that comes while one works comes into the pane\'s foot, and pressed opens its conversation in Inbox', async ({signedIn: ada, another}) => {
+  const bo = await another('Bo');
+  await bo.inbox.named();
+  await ada.inbox.named();
+  await ada.newRepo.make('hello');
+  await ada.newRepo.openInForge();
+
+  await bo.inbox.writeTo(ada.handle, 'Review: hello reads well; louder?');
+  await ada.comeBack();
+  const word = ada.main.locator('.pane-word .lately-row');
+  await expect(word).toContainText('Bo');
+  await expect(word).toContainText('Review');
+  await expect(word).toContainText('hello reads well; louder?');
+  // It tells, it does not hold: pressed, the conversation in Inbox, where it is answered.
+  await word.click();
+  await expect(ada.inbox.thread(bo.handle).getByText('hello reads well; louder?', {exact: true})).toBeVisible();
+  await ada.inbox.message.fill('Louder, yes.');
+  await ada.main.getByRole('button', {name: 'Send', exact: true}).click();
+  await bo.comeBack();
+  await expect(bo.inbox.thread(ada.handle).getByText('Louder, yes.', {exact: true})).toBeVisible();
+});
+
 test('a message half written stays with its conversation', async ({signedIn: ada, another}) => {
   const bo = await another('Bo');
-  await bo.inbox.claim();
-  await ada.inbox.claim();
+  await bo.inbox.named();
+  await ada.inbox.named();
   await ada.inbox.writeTo(bo.handle, 'Hello');
 
   await ada.inbox.message.fill('Bring the');
   await ada.rail.go('home');
   await ada.rail.go('inbox');
-  await ada.inbox.conversation(bo.handle).click();
+  // Come back to, Inbox is at the conversation it was left at.
+  await expect(ada.inbox.thread(bo.handle)).toBeVisible();
   await expect(ada.inbox.message).toHaveValue('Bring the');
 });
 
 test('a name no one has is said under the field, and nothing is opened', async ({signedIn: ada}) => {
-  await ada.inbox.claim();
+  await ada.inbox.named();
   await ada.inbox.conversations.getByRole('textbox', {name: 'Write to a name or a code'}).fill('no-one-here');
   await ada.inbox.conversations.getByRole('button', {name: 'Write', exact: true}).click();
 
@@ -58,12 +85,12 @@ test('a name no one has is said under the field, and nothing is opened', async (
 });
 
 test('your names open with their heading at the top, and no name is let go from here', async ({signedIn: ada}) => {
-  await ada.inbox.claim();
+  await ada.inbox.named();
   await ada.main.getByRole('button', {name: 'Your names', exact: true}).click();
   const names = ada.main.getByRole('group', {name: 'Your names', exact: true});
   await expect(names).toContainText(ada.handle);
   await expect(ada.main.getByRole('button', {name: 'Add a domain'})).toBeVisible();
-  // Renewing and adding stay; letting a name go is not offered in Inbox.
+  // Adding one stays; letting a name go is not offered in Inbox.
   await expect(ada.main.getByRole('button', {name: /^Let .* go$/})).toHaveCount(0);
   // The heading sits on the box's own room (8) and its own (8), with no group's step before it.
   const box = (await names.locator('xpath=..').boundingBox())!;

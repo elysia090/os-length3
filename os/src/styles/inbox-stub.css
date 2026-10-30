@@ -1,0 +1,52 @@
+/* Inbox's address as a stub, its code, its gear and the names under it. */
+
+/* Inbox: your address as a stub, about as wide as an address is, its gear at
+   the right end. A place (rounded square), not a pill; pressing the address
+   copies it, and it says so for a moment. */
+.stub-holder { position: relative; display: grid; gap: var(--s2); justify-items: start; margin: var(--s5) 0 var(--s4); }
+.stub { display: flex; align-items: center; width: min(100%, 400px); min-height: var(--h-control); border: 1px solid var(--edge); border-radius: var(--r-field); background: var(--raised); }
+/* Taken, it is a name, not a field: on the ground with a place's line, so the field to write to someone, under it
+   and of its size, is the one that reads as a field (raised, its edge seen). Each part lifts under the pointer. */
+.stub:has(> .stub-text) { border-color: var(--rule); background: transparent; }
+.stub-text:hover, .stub-code:hover { background: var(--raised); }
+.stub-text, .stub-in { flex: 1; min-width: 0; height: calc(var(--h-control) - 2px); padding: 0 var(--s3); border: 0; border-radius: var(--r-field) 0 0 var(--r-field); background: transparent; color: var(--ink); font: 600 var(--t-body)/1 var(--sans); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stub-text { cursor: var(--cursor-copy); }
+/* The code beside the name: six digits to be found by, copied by a press. */
+.stub-code { flex: none; height: calc(var(--h-control) - 2px); padding: 0 var(--s3); border: 0; border-left: 1px solid var(--rule); background: transparent; color: var(--sub); font: var(--t-meta)/1 var(--mono); letter-spacing: .08em; cursor: var(--cursor-copy); }
+.stub-code:hover { color: var(--ink); }
+.stub-in:focus { outline: none; }
+.sign-in-card .stub { width: 100%; }
+.sign-in-card .stub-holder { display: grid; gap: var(--s2); justify-items: stretch; margin: 0; }
+.sign-in-card .stub-holder > .stub { min-width: 0; }
+.stub:has(.stub-in:focus-visible) { outline: 2px solid var(--ink); outline-offset: 2px; }
+.stub-gear { display: grid; place-items: center; flex: none; width: var(--h-control); height: calc(var(--h-control) - 2px); padding: 0; border: 0; border-left: 1px solid var(--rule); border-radius: 0 var(--r-field) var(--r-field) 0; background: transparent; color: var(--sub); cursor: var(--cursor-hand); }
+.stub-gear:hover, .stub-gear[aria-expanded='true'] { background: var(--raised); color: var(--ink); }
+.stub-gear svg { width: 20px; height: 20px; }
+.stub-panel { position: absolute; top: calc(100% + var(--s1)); left: 0; z-index: 4; width: min(100%, 400px); }
+/* A row of the panel as the menu's rows are: its padding, the field or the ask in a row's place. */
+.stub-own, .row-ask, .pop-field, .pop-ask { display: grid; gap: var(--s2); padding: var(--s2) var(--s3); }
+.row-ask p, .pop-ask p, .pop-field p { margin: 0; }
+/* What an ask says, a line each, closer to each other than to its answers. */
+.pop-said { display: grid; gap: var(--s1); }
+/* A row asking keeps its own line on top, as a card asking keeps its title. */
+.row-ask > .row-item { padding: 0; }
+.stub-record { display: grid; gap: var(--s1); }
+.stub-record p { margin: 0 0 var(--s1); }
+.record-row { display: grid; grid-template-columns: 4em minmax(0, 1fr); align-items: center; gap: var(--s2); }
+.record-value { min-height: var(--h-row); padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: var(--ink); font: var(--t-meta)/1.4 var(--mono); text-align: left; overflow-wrap: anywhere; cursor: var(--cursor-copy); }
+.record-value:hover { background: var(--raised); }
+.record-found { margin-top: var(--s2) !important; color: var(--sub); }
+/* Words are ink: `done` is the mark's green (3.6:1 on ground), too light for words. */
+.record-found.found { color: var(--ink); font-weight: 600; }
+/* Copied: the text gives way to the word for a moment, in the same place. */
+[data-copied] { position: relative; color: transparent !important; }
+[data-copied]::after { content: attr(data-copied-word); position: absolute; inset: 0; display: flex; align-items: center; padding: inherit; color: var(--ink); font-family: var(--sans); font-weight: 600; }
+/* What is not committed, beside Commit: its diff in a box of its own, scrolling in it when long, its top level
+   with Commit's (the step that sets words on the button's middle sets no box there). */
+.step-about:has(> .changes) { padding-top: 0; }
+/* A step's line with its quiet second action at the right end (Reset, Reject). */
+.step-line { display: flex; align-items: center; gap: var(--s3); margin-top: calc((1.5em - var(--h-control)) / 2); }
+.step-line > p { flex: 1; min-width: 0; }
+/* Inside a box on `raised`, an added line is drawn on `ground` with a rule at its left, so it still stands out. */
+.review-chat .step-done { font-size: var(--t-meta); }
+.review-chat .done-mark { transform: scale(.75); margin: -3px; }

@@ -1,0 +1,26 @@
+/* Runtime's desktop app and its download, and the dotfiles, a row each in one box. */
+/* The desktop app's card: Download (its icon and the word) at its bottom left, the other file beside it. */
+.app-card > .card-foot { flex-wrap: wrap; align-self: stretch; }
+a.button { display: inline-flex; align-items: center; justify-content: center; color: inherit; text-decoration: none; white-space: nowrap; }
+.download { gap: var(--s1); padding: 0 var(--s3) 0 var(--s2); font-size: var(--t-meta); }
+.download .mark { width: var(--s3); height: var(--s3); }
+/* Runtime's Dotfiles (dotfiles.ts): one box, a row each, its name and size; the one open lit, its text under it in the
+   box, New dotfile at the foot. */
+.dot-list { display: grid; max-width: 760px; border: 1px solid var(--rule); border-radius: var(--r-place); overflow: hidden; }
+.dot-list > * + * { border-top: 1px solid var(--rule); }
+.dot-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s3); min-width: 0; min-height: var(--h-row);
+  padding: var(--s2) var(--s4); border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand); }
+.dot-row:hover, .dot-row.current { background: var(--raised); }
+.dot-row-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-weight: 600; }
+.dot-row.new { justify-content: flex-start; gap: var(--s2); color: var(--sub); }
+.dot-row.new:hover { color: var(--ink); }
+.dot-editor { display: grid; gap: var(--s3); padding: var(--s4); }
+.dot-head { align-items: center; gap: var(--s1); margin-top: 0; }
+/* Remove asked where the box's deeds were: what will happen, then the answers on the same line as they were. */
+.dot-ask { display: grid; gap: var(--s2); margin-top: var(--s3); }
+.dot-ask p, .dot-note { margin: 0; }
+.dot-note { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); }
+.dot-name { max-width: 20em; }
+.dot-text { min-height: 16em; resize: vertical; padding: var(--s2) var(--s3); font: var(--t-meta)/1.6 var(--mono); }
+/* Remote's Sign-in and Devices: rows of a readable width, not the page's. */
+#panel-remote-sign-in, #panel-remote-devices { max-width: 720px; }

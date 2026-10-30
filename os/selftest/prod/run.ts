@@ -16,7 +16,7 @@ import {existsSync, mkdtempSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {API_POLICY} from '../../service/request.ts';
-import {webPolicy} from '../../src/policy.ts';
+import {webPolicy} from '../../src/app/policy.ts';
 import {cluster} from './postgres.ts';
 import {appBuild, bridgeProcess, OS, remote} from './stack.ts';
 

@@ -8,7 +8,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use crate::{account, history, home, paths, remote, repos, system, usage, work};
+use crate::{account, agents, history, tasks, home, paths, remote, repos, system, usage, work};
 
 /// Files the editor may save; anything read in part is never written back.
 pub const READ_LIMIT: u64 = 256 * 1024;
@@ -17,18 +17,21 @@ pub const DIFF_LIMIT: usize = 2000;
 
 /// The commands that write a repo's files or Home's state: a host runs them in the order the page sent them
 /// (the app on its window's thread), never side by side with each other.
-pub const WRITES: &[&str] = &["repo_create", "repo_write", "repo_put", "repo_add", "repo_mkdir", "repo_remove", "repo_rename", "state_set"];
+pub const WRITES: &[&str] = &["repo_create", "repo_write", "repo_put", "repo_add", "repo_mkdir", "repo_remove", "repo_move", "repo_rename",
+    "repo_delete", "state_set", "dotfile_set", "dotfiles_take"];
 
 /// Answer `name` with `args` (an object of the command's arguments, by name).
 pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
     let a = Args(args);
     let repos = || repos::Repos::open();
+    // The repo as it is seen now, or (`main`) main's copy whatever work it shows: where its issues are.
+    let seen = || -> crate::Result<repos::Repos> { let r = repos()?; Ok(if a.opt::<bool>("main")?.unwrap_or(false) { r.on_main() } else { r }) };
     match name {
         "repo_list" => to(repos()?.list()?),
         "repo_create" => to(repos()?.create(&a.s("name")?, &a.s("template")?)?),
-        "repo_tree" => to(repos()?.tree(&a.s("repo")?, &a.s("path")?)?),
-        "repo_read" => to(repos()?.read(&a.s("repo")?, &a.s("path")?, READ_LIMIT)?),
-        "repo_write" => to(repos()?.write(&a.s("repo")?, &a.s("path")?, &a.s("text")?, READ_LIMIT)?),
+        "repo_tree" => to(seen()?.tree(&a.s("repo")?, &a.s("path")?)?),
+        "repo_read" => to(seen()?.read(&a.s("repo")?, &a.s("path")?, READ_LIMIT)?),
+        "repo_write" => to(seen()?.write(&a.s("repo")?, &a.s("path")?, &a.s("text")?, READ_LIMIT)?),
         // A file's bytes for a browser's Prompt (as base64), of any kind, up to what one Prompt copies in all.
         "repo_bytes" => {
             use base64::Engine;
@@ -40,12 +43,45 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
             let bytes = base64::engine::general_purpose::STANDARD.decode(a.s("bytes")?).map_err(|e| format!("bytes: {e}"))?;
             to(repos()?.put(&a.s("repo")?, &a.s("path")?, bytes, u64::MAX, true)?.0)
         }
-        "repo_add" => to(repos()?.add(&a.s("repo")?, &a.s("dir")?, &a.s("name")?, &a.s("text")?, READ_LIMIT)?),
-        "repo_mkdir" => to(repos()?.mkdir(&a.s("repo")?, &a.s("path")?)?),
-        "repo_remove" => to(repos()?.remove(&a.s("repo")?, &a.s("path")?)?),
-        "repo_rename" => to(repos()?.rename(&a.s("repo")?, &a.s("path")?, &a.s("name")?)?),
+        "repo_add" => to(seen()?.add(&a.s("repo")?, &a.s("dir")?, &a.s("name")?, &a.s("text")?, READ_LIMIT)?),
+        "repo_mkdir" => to(seen()?.mkdir(&a.s("repo")?, &a.s("path")?)?),
+        "repo_remove" => to(seen()?.remove(&a.s("repo")?, &a.s("path")?)?),
+        "repo_move" => to(repos()?.move_to(&a.s("repo")?, &a.s("path")?, &a.s("to")?)?),
+        // A repo itself renamed, or taken from this device whole (`open`: the repos a Prompt has open, the host's to know).
+        "repo_rename" => to(remote::rename_repo(&repos()?, &a.s("repo")?, &a.s("to")?, &a.list("open")?)?),
+        "repo_delete" => to(remote::delete_repo(&repos()?, &a.s("repo")?, &a.list("open")?)?),
         "state_get" => to(home::get(&a.s("key")?)?),
-        "state_set" => to(home::set(&a.s("key")?, &a.s("json")?)?),
+        // What this device runs of the dotfiles is changed only by a dotfile written here or taken here (below), never set.
+        "state_set" => {
+            let key = a.s("key")?;
+            if key == "trusted" { return Err(crate::tr!("What runs here is changed by writing a dotfile or taking one", "ここで動くものは、dotfile を書くか取り込むかで変わります")); }
+            to(home::set(&key, &a.s("json")?)?)
+        }
+        // A dotfile written here (`text` null: removed) runs here at once; one changed elsewhere runs here once taken
+        // (`names`, or every one waiting). home.rs dotfiles_in_effect.
+        "dotfile_set" => to(home::set_dotfile(&a.s("name")?, a.opt::<String>("text")?.as_deref())?),
+        "dotfiles_take" => to(home::take_dotfiles(&a.list("names")?)?),
+        "dotfiles_in_effect" => to(home::dotfiles_in_effect().into_iter().collect::<std::collections::BTreeMap<_, _>>()),
+
+        // What agents do in the repos, as their hooks said it (agents.rs): null when nothing came since `cursor`.
+        // And the work handed to the agent (tasks.rs), when it changed since `tasks` (the mark last read). Null when
+        // neither moved: what a page asks every second reads a few bytes then.
+        "agents" => {
+            let journal = agents::now_since(&a.opt::<agents::Cursor>("cursor")?.unwrap_or_default(),
+                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64));
+            let mark = tasks::mark();
+            let book = (a.opt::<[u64; 3]>("tasks")? != Some(mark)).then(|| json!({"mark": mark, "agent": tasks::agent(),
+                "list": tasks::all().into_iter().filter(|k| !k.state.over()).collect::<Vec<_>>()}));
+            if journal.is_none() && book.is_none() { Ok(Value::Null) } else { Ok(json!({"journal": journal, "tasks": book})) }
+        }
+        // The person's deed on a task: hand it over, put it away, answer it; or a question asked.
+        "task" => match a.s("deed")?.as_str() {
+            "take" => to(tasks::take(a.get("id")?)?),
+            "drop" => to(tasks::drop_task(a.get("id")?)?),
+            "reply" => to(tasks::reply(a.get("id")?, &a.s("words")?)?),
+            "ask" => to(tasks::ask(&a.s("repo")?, &a.s("words")?)?),
+            d => Err(crate::tr!("There is no deed {}", "{} という操作はありません", d)),
+        },
 
         // The capacity and what this OS holds: `open`, the repos a Prompt has open (the host's to know).
         "capacity" => to(system::capacity(&paths::data_dir())?),
@@ -75,8 +111,12 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         "repo_fetch" => to(remote::fetch(&repos()?, &a.s("repo")?)?),
         // One of Home's settings agreed with the Remote (home.rs agree_with).
         "home_sync" => to(remote::sync_home(&a.s("key")?)?),
+        // One of them taken off this device, only as the Remote has it (home.rs leave).
+        "home_leave" => to(remote::leave_home(&a.s("key")?)?),
         // The plan's page (Checkout, or the portal) as the Remote makes it for this account; the host opens it.
         "plan_page" => to(account::plan_page(if a.s("kind")? == "portal" { "portal" } else { "checkout" }, a.opt::<String>("tier")?.as_deref())?),
+        // What only the browser can do (a passkey's), as a page of the Remote's own app; the host opens it.
+        "app_page" => to(account::app_page(&a.s("ask")?, a.opt::<String>("repo")?.as_deref())?),
 
         "history_changes" => to(history::changes(&repos()?, &a.s("repo")?)?),
         "history_diff" => to(history::diff(&repos()?, &a.s("repo")?, DIFF_LIMIT)?),
@@ -86,6 +126,10 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
             to(history::cut(&repos()?, &a.s("repo")?, issue.as_deref(), &a.s("line")?, &a.s("note")?)?)
         }
         "history_log" => to(history::log(&repos()?, &a.s("repo")?, 50)?),
+        // An issue's own file committed on main by itself, as it was just written ("new", "change", "close", "reopen");
+        // and those main holds not committed yet (written signed out, renumbered), each by itself.
+        "issue_commit" => to(history::commit_issue(&repos()?, &a.s("repo")?, &a.s("file")?, &a.s("deed")?)?),
+        "issues_settle" => to(history::settle_issues(&repos()?, &a.s("repo")?)?),
         "history_push" => to(history::push(&repos()?, &a.s("repo")?)?),
         "history_submit" => to(history::submit(&repos()?, &a.s("repo")?, &a.s("note")?)?),
         "history_reset" => to(history::reset(&repos()?, &a.s("repo")?)?),
@@ -94,6 +138,10 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         "work_state" => to(history::work(&repos()?, &a.s("repo")?)?),
         "work_lines" => to(work::lines(&a.s("repo")?)?),
         "changes_list" => to(history::changes_of_repo(&a.s("repo")?)?),
+        // Each repo's own answer, as `answer` gives one: {ok: {work, lines, changes}}, or {error} (with its status and
+        // detail when the Remote refused it).
+        "work_standings" => to(history::standings(&repos()?, &a.list("repos")?)?.into_iter()
+            .map(|r| r.map_or_else(|why| why, |s| json!({"ok": s}))).collect::<Vec<_>>()),
         "change_review" => to(history::review(&a.s("repo")?, &a.s("id")?, &a.s("verdict")?, &a.s("note")?, &a.list("marks")?)?),
         "change_merge" => to(history::merge(&a.s("repo")?, &a.s("id")?)?),
         "change_reject" => to(history::reject(&a.s("repo")?, &a.s("id")?, &a.s("note")?)?),

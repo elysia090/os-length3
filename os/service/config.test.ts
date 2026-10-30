@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
-import {DEFAULT_REMOTE, desktopPolicy} from '../src/policy.ts';
+import {DEFAULT_REMOTE, desktopPolicy} from '../src/app/policy.ts';
 
 // wrangler.toml is what production is; each other place that says the same (the page, the core, the desktop
 // app, the build, the deploy) is held to it here, so one changed alone fails rather than ships.
@@ -22,7 +22,7 @@ test('the Remote has one name: the Worker\'s, the page\'s, the core\'s and the d
   // Its former name still routes to the same Worker, and the page and the core both take it to the one name.
   const former = constant('FORMER_URL')!;
   assert.ok(routes.includes(new URL(former).host), former);
-  assert.match(read('src/remote.ts'), new RegExp(`FORMER_REMOTE = '${former.replace(/[.]/g, '\\.')}'`));
+  assert.match(read('src/remote/connection.ts'), new RegExp(`FORMER_REMOTE = '${former.replace(/[.]/g, '\\.')}'`));
 });
 
 test('the desktop app\'s webview is an origin the Remote lets in, and never plain http', () => {

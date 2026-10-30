@@ -67,7 +67,7 @@ export function enter(d: {db: Db; auth: Auth; enter: Enter}, app: Hono<Vars>) {
     const ctx = await d.auth.$context;
     const session = await ctx.internalAdapter.createSession(one.id, false, {userAgent: c.req.header('User-Agent') ?? '', ipAddress: c.req.header('CF-Connecting-IP') ?? ''});
     // Entering is proof the person is here just now, as a passkey sign-in is (app.ts proven).
-    const proof = {proofSession: session.id, proofAt: new Date()};
+    const at = new Date(), proof = {proofSession: session.id, proofAt: at, signedSession: session.id, signedAt: at};
     await d.db.insert(guard).values({userId: one.id, ...proof}).onConflictDoUpdate({target: guard.userId, set: proof});
     return c.json({token: session.token, name: one.name});
   });

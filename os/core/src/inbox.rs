@@ -12,13 +12,11 @@ type Result<T> = std::result::Result<T, String>;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Me { pub domain: String, pub account: String, #[serde(default)] pub code: String, pub addresses: Vec<Address> }
-/// An address: a name on this Remote is held `until` (ms), renewed by its owner (`ended`: its term ran
-/// out, and it is held for them a while); one on a domain answers while its DNS names this Remote (`lapsed` while not).
+/// An address: a name on this Remote is its owner's as long as they keep it; one on a domain answers while its DNS
+/// names this Remote (`lapsed` while not).
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Address {
     pub address: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")] pub until: Option<u64>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")] pub ended: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")] pub lapsed: bool,
 }
 
@@ -72,18 +70,22 @@ pub fn claim(address: &str) -> Result<String> {
     }
 }
 
+/// Your username changed to `name`: the one it was is held for you 30 days (yours to change back to).
+pub fn set_username(name: &str) -> Result<String> {
+    match Client::open()?.call("PUT", "/v1/inbox/username", Some(serde_json::json!({"name": name.trim().trim_start_matches('@')})))? {
+        Reply::Ok(v) => Ok(v["address"].as_str().unwrap_or_default().to_string()),
+        Reply::Conflict(v) if v["until"].is_number() => Err(crate::tr!("That name was let go, and is held for its owner a while", "その名前は手放されたばかりで、しばらく元の持ち主のために取り置かれています")),
+        Reply::Conflict(_) => Err(crate::tr!("That name is taken", "その名前は使われています")),
+        Reply::NotFound(_) => Err(crate::tr!("The Remote has no Inbox", "Remote に Inbox がありません")),
+    }
+}
+
 /// What a domain's DNS must say for this account to hold addresses on it, and whether it says so now.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Record { pub name: String, #[serde(rename = "type")] pub kind: String, pub value: String, pub found: bool }
 pub fn domain_record(domain: &str) -> Result<Record> { get(&format!("/v1/inbox/domains/{}", domain.trim().to_ascii_lowercase())) }
 
 /// Let `address` go: it answers no one from now, and is held for this account a while (claiming it again takes it back).
-/// Hold a name on this Remote for another term from now (taking it back, if its term ran out a little while ago); when it now ends.
-pub fn renew(address: &str) -> Result<u64> {
-    let v = Client::open()?.json("POST", &format!("/v1/inbox/addresses/{}/renew", address.to_ascii_lowercase()), Some(serde_json::json!({})))?;
-    Ok(v["until"].as_u64().unwrap_or(0))
-}
-
 pub fn release(address: &str) -> Result<u64> {
     let v = Client::open()?.json("DELETE", &format!("/v1/inbox/addresses/{}", address.to_ascii_lowercase()), None)?;
     Ok(v["until"].as_u64().unwrap_or(0))
@@ -105,7 +107,7 @@ pub fn send(to: &str, body: &str, kind: &str, repo: Option<&str>) -> Result<bool
     let v = Client::open()?.call("POST", "/v1/inbox/messages", Some(serde_json::json!({"to": to, "body": body, "type": kind, "target": target})))?;
     match v {
         Reply::Ok(v) => Ok(v["request"].as_bool().unwrap_or(false)),
-        Reply::Conflict(_) => Err(crate::tr!("Claim a name first (l3 name claim NAME)", "先に名前を取ってください（l3 name claim NAME）")),
+        Reply::Conflict(v) => Err(v["error"].as_str().unwrap_or("Not sent").to_string()),
         Reply::NotFound(_) => Err(crate::tr!("No one has that name", "その名前の人はいません")),
     }
 }

@@ -21,6 +21,7 @@ fn a_connection_kept_open_takes_one_session_after_another() {
     }
     let home = Home::new("ssh-sessions");
     home.repo("notes", &[("a.txt", "x\n")]);
+    assert!(home.root(), "this host lends no sh for a root");
     let key = home.path("id");
     assert!(Command::new("ssh-keygen").args(["-q", "-t", "ed25519", "-N", ""]).arg("-f").arg(&key).status().unwrap().success());
     let public = std::fs::read_to_string(home.path("id.pub")).unwrap();
@@ -50,16 +51,16 @@ fn a_connection_kept_open_takes_one_session_after_another() {
             .env("HOME", &home.dir).stdin(Stdio::null());
         c.output().unwrap()
     };
-    // Each session runs `l3 prompt` in notes; there is no root here, so each ends with l3's 4 (not there).
+    // Each session runs its command by `l3 prompt` in notes, on the test's root, and ends with the command's code.
     let mut codes = Vec::new();
-    for _ in 0..6 { codes.push(ssh(&["notes@127.0.0.1", "true"]).status.code()); }
+    for _ in 0..6 { codes.push(ssh(&["notes@127.0.0.1", "exit 3"]).status.code()); }
     let _ = ssh(&["-O", "exit", "notes@127.0.0.1"]);
     let _ = serve.kill();
     let _ = serve.wait();
     let log = std::fs::read_to_string(home.path("ssh/log")).unwrap_or_default();
-    assert_eq!(codes, vec![Some(4); 6], "{log}");
+    assert_eq!(codes, vec![Some(3); 6], "{log}");
     // More than CHANNELS (4), one after another, all on the one connection (bug: every session ever opened
     // counted, so the fifth was refused there, and the client signed in anew for each one after).
     assert_eq!(log.matches(" in as notes ").count(), 1, "{log}");
-    assert_eq!(log.matches("session notes: ended 4").count(), 6, "{log}");
+    assert_eq!(log.matches("session notes: ended 3").count(), 6, "{log}");
 }

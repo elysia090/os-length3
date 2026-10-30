@@ -31,21 +31,25 @@ pub fn send(method: &str, url: &str, headers: &[(&str, &str)], body: Option<&[u8
 
 #[cfg(not(target_os = "wasi"))]
 fn native(method: &str, url: &str, headers: &[(&str, &str)], body: Option<&[u8]>, read: Duration) -> Sent {
-    let mut req = agent(url, read).request(method, url);
-    for (k, v) in headers { req = req.set(k, v); }
-    let r = match body { Some(b) => req.send_bytes(b), None => req.call() };
-    match r {
-        Ok(r) | Err(ureq::Error::Status(_, r)) => Sent::Answer { status: r.status(), body: Box::new(r.into_reader()) },
-        Err(ureq::Error::Transport(t)) => Sent::Unreachable {
-            host: t.url().map(|u| u.host_str().unwrap_or_default().to_string() + &u.port().map(|p| format!(":{p}")).unwrap_or_default()).unwrap_or_default(),
-            why: match t.kind() {
-                ureq::ErrorKind::Dns => crate::tr!("its name is not found", "名前が見つかりません"),
-                ureq::ErrorKind::ConnectionFailed => crate::tr!("no connection", "接続できません"),
-                ureq::ErrorKind::TooManyRedirects => crate::tr!("too many redirects", "リダイレクトが多すぎます"),
-                ureq::ErrorKind::Io => crate::tr!("the connection broke or timed out", "接続が切れたか、時間切れです"),
-                ureq::ErrorKind::ProxyConnect | ureq::ErrorKind::ProxyUnauthorized | ureq::ErrorKind::InvalidProxyUrl => crate::tr!("the proxy refused", "プロキシが通しません"),
-                ureq::ErrorKind::InvalidUrl | ureq::ErrorKind::UnknownScheme => crate::tr!("not an address", "アドレスではありません"),
-                k => k.to_string(),
+    let agent = agent(url, read);
+    let mut req = ureq::http::Request::builder().method(method).uri(url);
+    for (k, v) in headers { req = req.header(*k, *v); }
+    let r = match body {
+        Some(b) => req.body(b).map(|q| agent.run(q)),
+        None => req.body(()).map(|q| agent.run(q)),
+    };
+    match r.map_err(ureq::Error::Http).and_then(|r| r) {
+        Ok(r) => Sent::Answer { status: r.status().as_u16(), body: Box::new(r.into_body().into_reader()) },
+        Err(e) => Sent::Unreachable {
+            host: authority(url).to_string(),
+            why: match e {
+                ureq::Error::HostNotFound => crate::tr!("its name is not found", "名前が見つかりません"),
+                ureq::Error::ConnectionFailed => crate::tr!("no connection", "接続できません"),
+                ureq::Error::TooManyRedirects | ureq::Error::RedirectFailed => crate::tr!("too many redirects", "リダイレクトが多すぎます"),
+                ureq::Error::Io(_) | ureq::Error::Timeout(_) | ureq::Error::BodyStalled => crate::tr!("the connection broke or timed out", "接続が切れたか、時間切れです"),
+                ureq::Error::ConnectProxyFailed(_) | ureq::Error::InvalidProxyUrl => crate::tr!("the proxy refused", "プロキシが通しません"),
+                ureq::Error::BadUri(_) | ureq::Error::Http(_) => crate::tr!("not an address", "アドレスではありません"),
+                e => e.to_string(),
             },
         },
     }
@@ -83,17 +87,14 @@ mod web {
     }
 }
 
-/// An agent for `url`, giving up when nothing is read for `read`.
+/// An agent for `url`, giving up when nothing is read for `read`. Any status is an answer, a refusal too.
 #[cfg(not(target_os = "wasi"))]
 pub fn agent(url: &str, read: Duration) -> ureq::Agent {
-    let mut b = ureq::AgentBuilder::new().timeout_connect(Duration::from_secs(15)).timeout_read(read).tls_config(tls());
-    if let Some(p) = proxy_for(url, &var) {
-        // A proxy that cannot be read is no proxy: the host's own tools would refuse it too.
-        if let Ok(p) = ureq::Proxy::new(p) {
-            b = b.proxy(p);
-        }
-    }
-    b.build()
+    // A proxy that cannot be read is no proxy: the host's own tools would refuse it too.
+    let proxy = proxy_for(url, &var).and_then(|p| ureq::Proxy::new(&p).ok());
+    ureq::Agent::new_with_config(ureq::Agent::config_builder()
+        .timeout_connect(Some(Duration::from_secs(15))).timeout_per_read(Some(read))
+        .http_status_as_error(false).proxy(proxy).tls_config(tls()).build())
 }
 
 #[cfg(not(target_os = "wasi"))]
@@ -101,12 +102,18 @@ fn var(k: &str) -> Option<String> {
     std::env::var(k).ok().filter(|v| !v.trim().is_empty())
 }
 
+/// The host of a URL, and its port if it says one: what a person reads as where it went.
+#[cfg(not(target_os = "wasi"))]
+fn authority(url: &str) -> &str {
+    let rest = url.split("://").nth(1).unwrap_or(url);
+    let auth = rest.split(['/', '?', '#']).next().unwrap_or("");
+    auth.rsplit('@').next().unwrap_or(auth)
+}
+
 /// The host of a URL, without its port or brackets.
 #[cfg(not(target_os = "wasi"))]
 fn host_of(url: &str) -> &str {
-    let rest = url.split("://").nth(1).unwrap_or(url);
-    let auth = rest.split(['/', '?', '#']).next().unwrap_or("");
-    let auth = auth.rsplit('@').next().unwrap_or(auth);
+    let auth = authority(url);
     if let Some(v6) = auth.strip_prefix('[') { return v6.split(']').next().unwrap_or(""); }
     auth.split(':').next().unwrap_or("")
 }
@@ -123,16 +130,18 @@ fn proxy_for(url: &str, var: &dyn Fn(&str) -> Option<String>) -> Option<String> 
     var("HTTPS_PROXY").or_else(|| var("https_proxy"))
 }
 
-/// The bundled roots and the host's, read once.
+/// The bundled roots and the host's, read once, with ring's cryptography (the one the core builds with).
 #[cfg(not(target_os = "wasi"))]
-fn tls() -> Arc<rustls::ClientConfig> {
-    static CONFIG: OnceLock<Arc<rustls::ClientConfig>> = OnceLock::new();
+fn tls() -> ureq::tls::TlsConfig {
+    static CONFIG: OnceLock<ureq::tls::TlsConfig> = OnceLock::new();
     CONFIG.get_or_init(|| {
-        let mut roots = rustls::RootCertStore { roots: webpki_roots::TLS_SERVER_ROOTS.to_vec() };
+        let bundled = webpki_root_certs::TLS_SERVER_ROOT_CERTS.iter().map(|c| ureq::tls::Certificate::from_der(c).to_owned());
         // A certificate of the host's that rustls cannot use is left out, as the host's other tools leave it.
-        let host = rustls_native_certs::load_native_certs();
-        roots.add_parsable_certificates(host.certs);
-        Arc::new(rustls::ClientConfig::builder().with_root_certificates(roots).with_no_client_auth())
+        let host = rustls_native_certs::load_native_certs().certs.into_iter().map(|c| ureq::tls::Certificate::from_der(&c).to_owned());
+        ureq::tls::TlsConfig::builder()
+            .root_certs(ureq::tls::RootCerts::Specific(Arc::new(bundled.chain(host).collect())))
+            .unversioned_rustls_crypto_provider(Arc::new(rustls::crypto::ring::default_provider()))
+            .build()
     }).clone()
 }
 
@@ -161,7 +170,15 @@ mod tests {
 
     #[test]
     fn the_bundled_roots_are_always_there() {
-        assert!(!tls().crypto_provider().cipher_suites.is_empty());
+        let ureq::tls::RootCerts::Specific(roots) = tls().root_certs().clone() else { panic!("not our roots") };
+        assert!(roots.len() >= webpki_root_certs::TLS_SERVER_ROOT_CERTS.len());
+    }
+
+    #[test]
+    fn where_a_request_went_is_its_host_and_the_port_it_says() {
+        assert_eq!(authority("https://user:pw@os.length3.com/v1?x"), "os.length3.com");
+        assert_eq!(authority("http://127.0.0.1:8787/v1"), "127.0.0.1:8787");
+        assert_eq!(authority("http://[::1]:8787"), "[::1]:8787");
     }
 }
 
@@ -173,6 +190,6 @@ mod live {
     fn reaches_out_through_the_hosts_proxy_and_trust() {
         let url = "https://cdimage.ubuntu.com/ubuntu-base/releases/";
         let r = super::agent(url, std::time::Duration::from_secs(30)).head(url).call();
-        assert!(r.is_ok(), "{r:?}");
+        assert!(r.as_ref().is_ok_and(|r| r.status().is_success()), "{r:?}");
     }
 }

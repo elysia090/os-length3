@@ -106,3 +106,22 @@ test('a name is a space apart from Japanese only when it is Latin', () => {
   setLang('en');
   assert.equal(t('To the people of {server}', {server: 'trip'}), 'To the people of trip');
 });
+
+test('no Japanese is kept for a text nothing says', () => {
+  // Every source that may say a text: the app's (t() and the words it hands to t()), the Remote's (its refusals) and
+  // the core's (what it says as the app's own words).
+  const read = (dir: string, ext: string, out: string[] = []): string[] => {
+    for (const name of readdirSync(dir)) {
+      const p = join(dir, name);
+      if (statSync(p).isDirectory()) { if (name !== 'i18n' && name !== 'target') read(p, ext, out); continue; }
+      if (p.endsWith(ext) && !p.endsWith(`.test${ext}`)) out.push(readFileSync(p, 'utf8'));
+    }
+    return out;
+  };
+  const here = new URL('.', import.meta.url).pathname;
+  const said = [...read(here, '.ts'), ...read(new URL('../service/', import.meta.url).pathname, '.ts'), ...read(new URL('../core/src/', import.meta.url).pathname, '.rs')].join('\n');
+  // As written in a source: an apostrophe escaped in a single-quoted literal, or not.
+  const ways = (en: string) => [en, en.replace(/\\'/g, "'"), en.replace(/'/g, "\\'")];
+  const unsaid = catalog().filter((e) => !ways(e.en).some((w) => said.includes(w))).map((e) => `${e.file}: ${e.en}`);
+  assert.deepEqual(unsaid, []);
+});

@@ -8,4 +8,5 @@
 /selftest/.logs/
 /selftest/.results/
 /selftest/.report/
+/selftest/.pg/
 /src-tauri/binaries/

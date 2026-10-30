@@ -49,6 +49,8 @@ function refused(r: {status: number; json: unknown; text: string}, rule: string,
   assert.deepEqual([j.rule, j.plan, j.tier, j.buy, typeof j.error], [rule, tier === 'free' ? 'free' : 'paid', tier, buy, 'string'], r.text);
 }
 const name = async (r: Service, t: string, n: string, domain?: string) => r.call('POST', '/v1/inbox/addresses', {token: t, body: {name: n, ...(domain ? {domain} : {})}});
+/** Their username (given at sign-up) changed to `n`. */
+const username = async (r: Service, t: string, n: string) => r.call('PUT', '/v1/inbox/username', {token: t, body: {name: n}});
 
 // ---- what an account has ----
 
@@ -119,8 +121,8 @@ test('free: a draft growing past the allowance is refused and undone; one that d
 test('free: making a server is refused; asked into a paid one, a free account is in and writes', async () => {
   const ren = await s.person('Ren'), mio = await s.person('Mio');
   const [rn, mn] = [`renp${process.pid}`, `miop${process.pid}`];
-  assert.equal((await name(s, ren, rn)).status, 201);
-  assert.equal((await name(s, mio, mn)).status, 201);
+  assert.equal((await username(s, ren, rn)).status, 200);
+  assert.equal((await username(s, mio, mn)).status, 200);
   refused(await s.call('POST', '/v1/servers', {token: mio, body: {name: 'Mine', address: `mine${process.pid}`}}), 'server');
   await subscribe(ren);
   const made = await s.call('POST', '/v1/servers', {token: ren, body: {name: 'Trip', address: `trip${process.pid}`}});
@@ -134,17 +136,19 @@ test('free: making a server is refused; asked into a paid one, a free account is
 
 // ---- rule 3: names ----
 
-test('free: one name on this Remote; a second, or one on a domain of one\'s own, is paid; renewing and taking one\'s own back are not new', async () => {
+test('free: one name on this Remote, the username given at sign-up; a second, or one on a domain of one\'s own, is paid; changing it is no new one', async () => {
   const t = await s.person('Kai');
   const [a, b] = [`kaia${process.pid}`, `kaib${process.pid}`];
-  assert.equal((await name(s, t, a)).status, 201);
+  assert.equal((await username(s, t, a)).status, 200);
   refused(await name(s, t, b), 'names');
   refused(await name(s, t, 'kai', 'kai.example'), 'domain');
-  assert.equal((await s.call('POST', `/v1/inbox/addresses/${a}@length3.test/renew`, {token: t})).status, 200);
-  assert.equal((await s.call('DELETE', `/v1/inbox/addresses/${a}@length3.test`, {token: t})).status, 200);
-  assert.equal((await name(s, t, a)).status, 201);
+  // Changed, the one before is held for them, not kept beside the new one.
+  assert.equal((await username(s, t, b)).status, 200);
+  refused(await name(s, t, a), 'names');
+  // A username is changed, never let go.
+  assert.equal((await s.call('DELETE', `/v1/inbox/addresses/${b}@length3.test`, {token: t})).status, 409);
   await subscribe(t);
-  assert.equal((await name(s, t, b)).status, 201);
+  assert.equal((await name(s, t, a)).status, 201);
   // Paid, the domain is asked of its DNS as before: not published, not claimed (and not for the plan's sake).
   assert.equal((await name(s, t, 'kai', 'kai.example')).status, 409);
 });
@@ -275,14 +279,15 @@ test('each tier keeps its own: Go past its bytes and names is refused as Go, and
   const over = await repo(s, t, 'd', 6000);
   refused(over, 'bytes', true, 'go');
   assert.deepEqual([over.json.limit, over.json.error], [20_000, 'Your plan keeps no more on the Remote']);
-  for (const n of ['one', 'two', 'three']) assert.equal((await name(s, t, `ema${n}${process.pid}`)).status, 201);
-  refused(await name(s, t, `emafour${process.pid}`), 'names', true, 'go');
+  // Their username is one of Go's three names.
+  for (const n of ['one', 'two']) assert.equal((await name(s, t, `ema${n}${process.pid}`)).status, 201);
+  refused(await name(s, t, `emathree${process.pid}`), 'names', true, 'go');
   // Changed to Pro in the portal: the subscription's item is to Pro's price now, and the allowance is Pro's at once.
   await sendEvent(s, stripeEvent('customer.subscription.updated', subscription(user, {}, 'pro')));
   p = await planOf(s, t);
   assert.deepEqual([p.tier, p.allowance], ['pro', PLAN.paid!.pro]);
   assert.equal((await repo(s, t, 'd', 6000)).status, 200);
-  assert.equal((await name(s, t, `emafour${process.pid}`)).status, 201);
+  assert.equal((await name(s, t, `emathree${process.pid}`)).status, 201);
   // Down to Go again: nothing is taken away; only what would grow is refused, as Go.
   await sendEvent(s, stripeEvent('customer.subscription.updated', subscription(user, {}, 'go')));
   p = await planOf(s, t);
@@ -355,9 +360,8 @@ test('a subscription that ends takes nothing away: what was made goes on, only w
   assert.equal((await s.call('POST', `/v1/boards/${board}/posts`, {token: t, body: {body: 'still here'}})).status, 201);
   assert.equal((await s.call('POST', `/v1/servers/${sid}/boards`, {token: t, body: {name: 'more'}})).status, 201);
   assert.equal((await s.call('PATCH', `/v1/servers/${sid}`, {token: t, body: {name: 'Club 2'}})).status, 200);
-  // Both names still answer; renewing is no new name.
+  // Both names still answer.
   assert.equal((await s.call('GET', `/v1/inbox/lookup?address=nao2${process.pid}`, {token: t})).json.reachable, true);
-  assert.equal((await s.call('POST', `/v1/inbox/addresses/${handle}@length3.test/renew`, {token: t})).status, 200);
   // Every repo is there, read and written, so long as no draft grows.
   for (const n of ['a', 'b', 'c']) assert.equal((await s.call('GET', `/v1/repos/${n}`, {token: t})).status, 200);
   assert.equal((await s.call('PATCH', '/v1/repos/c/draft', {token: t, body: {version: 1, set: {}, remove: ['data.bin']}})).status, 200);

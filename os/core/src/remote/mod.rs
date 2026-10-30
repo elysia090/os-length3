@@ -192,19 +192,18 @@ fn forget_base(repo: &str) -> Result<()> {
 }
 
 /// One sync of a repo at a time, across the app and l3 alike.
-struct Lock(#[allow(dead_code)] fs::File);
+struct Lock(fs::File);
+
+impl Drop for Lock {
+    /// Let go of as soon as it is done with (closing the file would too).
+    fn drop(&mut self) { let _ = self.0.unlock(); }
+}
 
 fn lock(repo: &str) -> Result<Lock> {
     crate::boundary::private_dir(&sync_dir()).map_err(|e| e.to_string())?;
     let f = fs::OpenOptions::new().create(true).truncate(false).write(true).open(sync_dir().join(format!("{repo}.lock"))).map_err(|e| e.to_string())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::io::AsRawFd;
-        // SAFETY: flock on a descriptor this function owns.
-        if unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX) } != 0 {
-            return Err(std::io::Error::last_os_error().to_string());
-        }
-    }
+    // The browser's core is one instance at a time, and has no locks to take.
+    match f.lock() { Err(e) if e.kind() != std::io::ErrorKind::Unsupported => return Err(e.to_string()), _ => {} }
     Ok(Lock(f))
 }
 
@@ -388,7 +387,7 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
 }
 
 /// Where a line's diff is sent. A copy never in step with the Remote makes it
-/// anew, even under a name the Remote remembers as discarded (src/draft.ts);
+/// anew, even under a name the Remote remembers as discarded (src/remote/sync.ts);
 /// one that was in step cannot bring back what was discarded by sending itself.
 fn draft_path(repo: &str, line: &str, agreed: bool) -> String {
     let p = at(repo, line, "/draft");
@@ -399,7 +398,7 @@ fn draft_path(repo: &str, line: &str, agreed: bool) -> String {
 /// taken only as a Remote says it (line_there). Not there, it has nothing of the
 /// line, unless the copy was in step before (discarded there, or another
 /// account's): then nothing here is taken for removed, and why is said
-/// (src/draft.ts does the same).
+/// (src/remote/sync.ts does the same).
 fn there_of(url: &str, reply: Reply, agreed: i64) -> Result<Option<LineThere>> {
     match reply {
         Reply::Ok(v) => Ok(Some(line_there(url, &v)?)),
@@ -474,7 +473,18 @@ pub fn sync_home(key: &str) -> Result<crate::home::HomeSynced> {
     let who = account_id();
     // Not a repo's name (no repo is called with a ~), so its own lock.
     let _held = lock("~home")?;
+    // What this device ran is kept as what it trusts before the Remote's dotfiles come in (home.rs keep_trust).
+    if key == "dotfiles" { crate::home::keep_trust()?; }
     crate::home::agree_with(&mut crate::home::Files, &client, key, who.as_deref())
+}
+
+/// One of Home's settings taken off this device, when it is what the Remote has (home.rs leave): whether it went.
+pub fn leave_home(key: &str) -> Result<bool> {
+    if !crate::home::SYNCED.contains(&key) {
+        return Err(crate::tr!("{} is this device's own; it is not kept on the Remote", "{} はこの端末のもので、Remote には置きません", key));
+    }
+    let _held = lock("~home")?;
+    crate::home::leave(&mut crate::home::Files, key)
 }
 
 /// Whether a setting here waits to be sent (it differs from what was last agreed); no request is made.
@@ -503,6 +513,8 @@ pub fn fetch(repos: &Repos, repo: &str) -> Result<Synced> {
         return Err(crate::tr!("{} is not a repo name", "{} は repo の名前になりません", repo));
     }
     let client = Client::open()?;
+    // Brought here: room made for it first if the device is short (usage.rs make_room).
+    crate::usage::make_room(&crate::paths::data_dir(), &crate::paths::repos_dir(), 0);
     let _held = lock(repo)?;
     if let Reply::NotFound(_) = client.call("GET", &format!("/v1/repos/{repo}"), None)? {
         return Err(failed(Failure::Status(404), crate::tr!("The Remote has no repo {}", "Remote に repo {} はありません", repo)));
@@ -566,6 +578,88 @@ pub fn free(repos: &Repos, repo: &str) -> Result<u64> {
     free_with(&Client::open()?, repos, repo)
 }
 
+// ---- a repo renamed, or taken from this device whole ----
+
+/// What this device keeps with the Remote of `repo` by its name: its bases (main's and each line's), and the line
+/// it shows.
+fn records_of(repo: &str) -> Vec<PathBuf> {
+    let Ok(dir) = fs::read_dir(sync_dir()) else { return Vec::new() };
+    let (base, line, lines) = (format!("{repo}.json"), format!("{repo}.line"), format!("{repo}@"));
+    dir.flatten().map(|e| e.path()).filter(|p| {
+        let name = p.file_name().unwrap_or_default().to_string_lossy();
+        name == base || name == line || (name.starts_with(&lines) && name.ends_with(".json"))
+    }).collect()
+}
+
+/// Whether a Remote agreed `repo` with this device (a base is kept of it, or of the work on one of its issues): it
+/// is on the Remote then, which knows an account's repos by their names.
+pub fn agreed(repo: &str) -> bool {
+    records_of(repo).iter().any(|p| p.extension().is_some_and(|x| x == "json"))
+}
+
+/// What this device keeps of `repo` by its name besides its copy: its works' copies, its environment and caches.
+fn kept_by_name(repo: &str) -> [PathBuf; 3] {
+    let data = crate::paths::data_dir();
+    [data.join("work").join(repo), crate::owned::env_dir(&data, repo), crate::owned::cache_dir(&data, repo)]
+}
+
+/// Whether a Prompt has `repo` open: one its host runs (`open`), or one recorded running here (core/src/prompt.rs).
+fn prompted(repo: &str, open: &[String]) -> bool {
+    #[cfg(not(target_os = "wasi"))]
+    if crate::prompt::running(&crate::paths::data_dir()).iter().any(|r| r.repo == repo) { return true; }
+    open.iter().any(|o| o == repo)
+}
+
+/// `repo` named `to` on this device: its copy, and what this device keeps of it by its name (its works' copies, the
+/// line it shows, its environment and caches), go to the new name. Only a repo no Remote has agreed is renamed: one on
+/// the Remote is known there by its name, and every device keeps it in step by it. Never while a Prompt has it open,
+/// and never over a repo of that name, here or (signed in) on the Remote.
+pub fn rename_repo(repos: &Repos, repo: &str, to: &str, open: &[String]) -> Result<()> {
+    repos.dir(repo)?;
+    if !crate::repos::valid_name(to) {
+        return Err(crate::tr!("{:?} is not a repo name (letters, digits, . _ -)", "{:?} は repo の名前になりません（英数字と . _ -）", to));
+    }
+    if to == repo { return Ok(()); }
+    if prompted(repo, open) {
+        return Err(crate::tr!("A Prompt has {} open; stop it first", "{} は Prompt で開いています。先に止めてください", repo));
+    }
+    if agreed(repo) {
+        return Err(crate::tr!("{} is on the Remote, which knows it by its name: it keeps it", "{} は Remote にあり、Remote はこの名前で知っています。名前はそのままです", repo));
+    }
+    let there = || crate::tr!("There is a repo {} already", "repo {} はもうあります", to);
+    // Signed in, a name the Remote has is that repo's: this one renamed to it would be sent into it.
+    if connection().is_some() && remote_repos()?.iter().any(|r| r.name == to) { return Err(there()); }
+    let _held = lock(repo)?;
+    crate::atomic::rename_new(&repos.root().join(repo), &repos.root().join(to))
+        .map_err(|e| if e.kind() == std::io::ErrorKind::AlreadyExists { there() } else { crate::repos::io_error(repo, &e) })?;
+    // What goes with it by name follows it; what cannot (another left under the new name) stays without an owner,
+    // as what a repo freed from here leaves, for Runtime to free.
+    for (from, into) in kept_by_name(repo).iter().zip(kept_by_name(to)) {
+        if from.exists() && !into.exists() { let _ = fs::rename(from, into); }
+    }
+    let _ = fs::rename(sync_dir().join(format!("{repo}.line")), sync_dir().join(format!("{to}.line")));
+    Ok(())
+}
+
+/// `repo` taken from this device whole: its copy, what this device keeps of it by its name, and every record of it
+/// with the Remote. What the Remote holds is not touched: a repo there is turned off or discarded there, asked for
+/// as the Remote asks. Never while a Prompt has it open.
+pub fn delete_repo(repos: &Repos, repo: &str, open: &[String]) -> Result<()> {
+    let dir = repos.root().join(repo);
+    repos.dir(repo)?;
+    if prompted(repo, open) {
+        return Err(crate::tr!("A Prompt has {} open; stop it first", "{} は Prompt で開いています。先に止めてください", repo));
+    }
+    let _held = lock(repo)?;
+    // Moved aside in one step first, so nothing lists, opens or syncs it by its name while it goes.
+    let aside = dir.with_file_name(format!(".{repo}.deleting-{}", crate::pid()));
+    crate::atomic::rename_new(&dir, &aside).map_err(|e| crate::repos::io_error(repo, &e))?;
+    fs::remove_dir_all(&aside).map_err(|e| crate::repos::io_error(repo, &e))?;
+    for kept in kept_by_name(repo) { gone(fs::remove_dir_all(kept))?; }
+    for record in records_of(repo) { gone(fs::remove_file(record))?; }
+    Ok(())
+}
+
 /// Where a copy of `repo` is: main's in the repos, an issue's among the works.
 fn copy_dir(repos: &Repos, repo: &str, line: &str) -> PathBuf {
     if line == crate::work::MAIN { repos.root().join(repo) } else { crate::work::worktree(repo, line) }
@@ -596,7 +690,7 @@ fn free_with(client: &Client, repos: &Repos, repo: &str) -> Result<u64> {
                 return Err(if changed == 1 {
                     crate::tr!("1 change here is not on the Remote; turn it on to send it first", "ここの変更 1件が Remote にありません。オンにして先に送ってください")
                 } else {
-                    crate::tr!("{} changes here are not on the Remote; turn it on to send them first", "ここの変更 {}件が Remote にありません。オンにして先に送ってください", changed)
+                    if changed == 1 { crate::tr!("1 change here is not on the Remote; turn it on to send it first", "ここの変更 1件が Remote にありません。オンにして先に送ってください") } else { crate::tr!("{} changes here are not on the Remote; turn it on to send them first", "ここの変更 {}件が Remote にありません。オンにして先に送ってください", changed) }
                 });
             }
             checked.push((key, line.clone(), dir, agreed, modes));
@@ -851,10 +945,23 @@ mod tests {
             assert!(!device_page_ok(remote, app, bad), "{bad}");
         }
         // What it names must be a bare origin over https; http only beside a Remote on http.
-        for bad_app in ["http://os.length3.com", "https://os.length3.com/x", "file://os.length3.com", "javascript:x", ""] {
+        // A browser reads a backslash as a slash and what is before an @ as no host: neither is an origin to name
+        // (account.rs app_page asks the same of the page it opens).
+        for bad in ["https://os.length3.com\\@evil.example/?account=off", "https://os.length3.com\\.evil.example/?device"] {
+            assert!(!device_page_ok(remote, app, bad), "{bad}");
+        }
+        for bad_app in ["http://os.length3.com", "https://os.length3.com/x", "file://os.length3.com", "javascript:x", "",
+            "https://evil.example\\@os.length3.com", "https://evil.example@os.length3.com"] {
             assert!(!device_page_ok(remote, Some(bad_app), &format!("{bad_app}/?device")), "{bad_app}");
         }
         assert!(device_page_ok("http://127.0.0.1:8790", Some("http://localhost:1420"), "http://localhost:1420/?device=&user_code=X"));
+        // The Remote a page is checked against is one by its own URL too: the device's connection is set by whoever
+        // signed in (remote_connect takes what the window says), and app_page builds its page on it, so a "Remote"
+        // that is a file, a script or nothing would vouch for a page under itself that the opener hands the desktop.
+        for (bad_remote, page) in [("file:///home/me/x", "file:///home/me/x/?account=off&repo=a"), ("javascript:alert(1)//", "javascript:alert(1)///?account=sign-in"),
+            ("", "/?account=sign-in"), ("https://evil.example\\@os.length3.com", "https://evil.example\\@os.length3.com/?account=off&repo=a")] {
+            assert!(!device_page_ok(bad_remote, None, page), "{bad_remote}");
+        }
     }
 
     #[test]

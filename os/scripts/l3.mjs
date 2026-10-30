@@ -30,7 +30,7 @@
 //   blobs/<sha256>.bin    the translator (xlat.wasm) and each translation made
 //                         ahead of time with its program's bytes, gzip'd: the hot programs (`--hot`, by
 //                         default BusyBox, which is sh and every coreutils
-//                         applet, and l3), translated by the same translator so
+//                         applet, and l3), translated whole by the same translator so
 //                         no Prompt spends its first seconds on them; every other
 //                         program is translated in the browser when it first runs
 //
@@ -176,14 +176,16 @@ function strip(b) {
 }
 const wasm = strip(readFileSync(translatorWasm));
 const translator = {name: 'xlat', version: crate(join(repo, 'xlat/Cargo.toml')), wasm: sha256(wasm), ...blob(wasm)};
-// Each hot program translated by the native build of the same translator (it gives the bytes the wasm one does).
+// Each hot program translated whole by the native build of the same translator (it gives the bytes the wasm one
+// does): what it reaches only through a pointer (BusyBox's applets and its shell's builtins) is there from its first
+// run, not translated as it runs.
 const work = mkdtempSync(join(tmpdir(), 'l3-'));
 const translations = [];
 try {
   for (const path of hot) {
     const elf = join(work, 'in'), made = join(work, 'out.wasm');
     writeFileSync(elf, hotBytes.get(path));
-    execFileSync(xlat, [elf, made], {stdio: ['ignore', 'ignore', 'inherit']});
+    execFileSync(xlat, ['--whole', elf, made], {stdio: ['ignore', 'ignore', 'inherit']});
     // The program's own bytes beside it (the same as in its pack), so a page has both without a zstd decoder of its own.
     translations.push({path, sha256: sha256(hotBytes.get(path)), elf: blob(hotBytes.get(path)), wasm: blob(readFileSync(made))});
     if (stage && path === '/usr/bin/busybox') { mkdirSync(stage, {recursive: true}); copyFileSync(elf, join(stage, 'busybox')); copyFileSync(made, join(stage, 'busybox.wasm')); }

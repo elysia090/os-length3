@@ -8,22 +8,24 @@ use crate::spec::{Fact, On};
 use length3_core::{account, remote, tr};
 use serde_json::{json, Value};
 
-/// What bringing a repo into step did, as a line (and its notes), and as data.
-fn synced(name: &str, r: &std::result::Result<remote::Synced, String>) -> (Vec<String>, Value) {
+/// What bringing a repo into step did, as a line (and its notes), its name in `cols` columns, and as data.
+fn synced(name: &str, cols: usize, r: &std::result::Result<remote::Synced, String>) -> (Vec<String>, Value) {
+    let shown = crate::help::pad(name, cols);
     match r {
         Ok(s) => {
+            // What was sent and taken in are files (and folders) by their paths: said as files (bug: "sent 5", of what).
             let what = match (s.sent, s.taken) {
                 (0, 0) => tr!("in step", "Remote と同じ"),
-                (n, 0) => tr!("sent {}", "{}件送りました", n),
-                (0, n) => tr!("took in {}", "{}件取り込みました", n),
-                (a, b) => tr!("sent {}, took in {}", "{}件送り、{}件取り込みました", a, b),
+                (n, 0) => tr!("sent {}", "{}を送りました", out::files(n)),
+                (0, n) => tr!("took in {}", "{}を取り込みました", out::files(n)),
+                (a, b) => tr!("sent {}, took in {}", "{}を送り、{}を取り込みました", out::files(a), out::files(b)),
             };
-            let mut t = vec![format!("  {name}  {what}")];
+            let mut t = vec![format!("  {shown}  {what}")];
             for p in &s.both { t.push(tr!("    changed on both: {} (the Remote's keeps the name; this device's is beside it, marked ({}))", "    両方で変わっていました：{}（その名前は Remote の版。この端末の版は（{}）を付けて横に）", p, remote::device_tag())); }
             for (p, why) in &s.unsynced { t.push(tr!("    cannot be sent: {} ({})", "    送れないもの：{}（{}）", p, why)); }
             (t, json!({"name": name, "sent": s.sent, "taken": s.taken, "both": s.both, "unsendable": s.unsynced.iter().map(|(p, _)| p).collect::<Vec<_>>()}))
         }
-        Err(e) => (vec![tr!("  {}  not sent: {}", "  {}  送れていません：{}", name, e)], json!({"name": name, "error": e})),
+        Err(e) => (vec![tr!("  {}  not sent: {}", "  {}  送れていません：{}", shown, e)], json!({"name": name, "error": e})),
     }
 }
 
@@ -43,6 +45,11 @@ pub fn page(ctx: &Ctx, _: &Call) -> Result<Reply> {
     let mut t = vec![format!("Remote  {}{}", host(&c.url), account.as_ref().ok().and_then(|a| a.as_ref()).map(|a| format!(" · {}", a.name)).unwrap_or_default())];
     if let Err(e) = &account { t.push(format!("  {e}")); }
     let mut rows = Vec::new();
+    // Each repo's name in one column, as wide as the widest (as out::columns lines them up), its state after it.
+    let cols = here.iter().map(|s| s.name.as_str())
+        .chain(there.iter().filter(|o| o.off_at.is_some() || !here.iter().any(|h| h.name == o.name)).map(|o| o.name.as_str()))
+        .map(crate::help::width).filter(|w| *w <= 24).max().unwrap_or(0);
+    let name = |n: &str| crate::help::pad(n, cols);
     for s in &here {
         let outcome = all.iter().find(|(n, _)| *n == s.name).map(|(_, r)| r);
         let (state, said) = match outcome {
@@ -52,7 +59,7 @@ pub fn page(ctx: &Ctx, _: &Call) -> Result<Reply> {
             _ => ("inStep", tr!("in step", "Remote と同じ")),
         };
         let stuck = if s.unsynced.is_empty() { String::new() } else { tr!(" · {} cannot be sent", " · 送れないもの{}件", s.unsynced.len()) };
-        t.push(format!("  {}  {said}{stuck}", s.name));
+        t.push(format!("  {}  {said}{stuck}", name(&s.name)));
         if let Some(Ok(sy)) = outcome {
             for p in &sy.both { t.push(tr!("    changed on both: {} (the Remote's keeps the name; this device's is beside it, marked ({}))", "    両方で変わっていました：{}（その名前は Remote の版。この端末の版は（{}）を付けて横に）", p, remote::device_tag())); }
         }
@@ -62,12 +69,12 @@ pub fn page(ctx: &Ctx, _: &Call) -> Result<Reply> {
     for o in there.iter().filter(|o| o.off_at.is_some()) {
         crate::menu::see(|| crate::menu::Subject { on: On::RemoteRepo, word: o.name.clone(), repo: None, label: o.name.clone(),
             detail: tr!("off · kept {} more", "オフ · あと{}残ります", out::left(o.until.unwrap_or(0))), facts: vec![Fact::TurnedOff] });
-        t.push(tr!("  {}  off · kept {} more (l3 remote on {})", "  {}  オフ · あと{}残ります（l3 remote on {}）", o.name, out::left(o.until.unwrap_or(0)), o.name));
+        t.push(tr!("  {}  off · kept {} more (l3 remote on {})", "  {}  オフ · あと{}残ります（l3 remote on {}）", name(&o.name), out::left(o.until.unwrap_or(0)), o.name));
     }
     for o in there.iter().filter(|o| o.off_at.is_none() && !here.iter().any(|h| h.name == o.name)) {
         crate::menu::see(|| crate::menu::Subject { on: On::RemoteRepo, word: o.name.clone(), repo: None, label: o.name.clone(),
             detail: tr!("only on the Remote · {}", "Remote にだけあります · {}", bytes(o.bytes)), facts: vec![Fact::OnlyThere] });
-        t.push(tr!("  {}  only on the Remote · {} (l3 repo open {})", "  {}  Remote にだけあります · {}（l3 repo open {}）", o.name, bytes(o.bytes), o.name));
+        t.push(tr!("  {}  only on the Remote · {} (l3 repo open {})", "  {}  Remote にだけあります · {}（l3 repo open {}）", name(&o.name), bytes(o.bytes), o.name));
     }
     Ok(Reply::data(t.join("\n"), json!({"url": c.url, "account": account.ok().flatten(), "here": rows, "remote": there})))
 }
@@ -75,22 +82,20 @@ pub fn page(ctx: &Ctx, _: &Call) -> Result<Reply> {
 pub fn on(_: &Ctx, call: &Call) -> Result<Reply> {
     let name = call.word(0).unwrap_or_default();
     let there = remote::remote_repos()?;
-    let o = there.iter().find(|o| o.name == name).ok_or_else(|| Error::NotFound(tr!("The Remote has no repo {}", "Remote に repo {} はありません", name)))?;
+    let o = there.iter().find(|o| o.name == name).ok_or_else(|| Error::NotFound(tr!("The Remote has no repo {} (l3 repo lists them)", "Remote に repo {} はありません（l3 repo で一覧）", name)))?;
     if o.off_at.is_none() { return Err(Error::Refused(tr!("{} is not turned off; there is nothing to bring back", "{} はオフになっていません。戻すものはありません", name))); }
     remote::turn_on(name)?;
     Ok(Reply::done(tr!("{} is on again", "{} を戻しました", name), json!({"repo": name, "on": true})))
 }
 
 pub fn sign_in(_: &Ctx, _: &Call) -> Result<Reply> {
-    let (keys, code, providers) = (account::passkeys()?, account::off_code()?, account::providers()?);
+    let (keys, providers) = (account::passkeys()?, account::providers()?);
     let mut t = vec![tr!("Passkeys", "パスキー")];
     if keys.is_empty() { t.push(tr!("  None. With one, you sign in from any device without a provider (added in the browser).", "  ありません。あればプロバイダーなしでどの端末からも入れます（ブラウザで追加）。")); }
     for k in &keys { t.push(format!("  {}  {}", k.name.as_deref().filter(|n| !n.is_empty()).unwrap_or("passkey"), k.created_at.get(..10).unwrap_or(&k.created_at))); }
-    t.push(tr!("Code to turn a repo off", "repo をオフにするコード"));
-    t.push(if code.set { tr!("  Set (another is set in the browser, with a passkey)", "  設定済み（変えるのはブラウザで、パスキーを使います）") } else { tr!("  Not set (set in the browser, with a passkey)", "  未設定（ブラウザで、パスキーを使って設定）") });
     t.push(tr!("Sign-in providers", "サインイン方法"));
     for p in &providers { t.push(format!("  {}  {}", p.provider, p.created_at.get(..10).unwrap_or(&p.created_at))); }
-    Ok(Reply::data(t.join("\n"), json!({"passkeys": keys, "offCode": code, "providers": providers})))
+    Ok(Reply::data(t.join("\n"), json!({"passkeys": keys, "providers": providers})))
 }
 
 pub fn devices(_: &Ctx, _: &Call) -> Result<Reply> {
@@ -145,8 +150,10 @@ pub fn login(ctx: &Ctx, call: &Call) -> Result<Reply> {
     done?;
     let mut t = vec![tr!("Signed in · {}", "サインインしました · {}", host(&url))];
     let mut rows = Vec::new();
-    for (name, r) in &remote::sync_all(&ctx.repos()?)? {
-        let (lines, row) = synced(name, r);
+    let all = remote::sync_all(&ctx.repos()?)?;
+    let cols = all.iter().map(|(n, _)| crate::help::width(n)).filter(|w| *w <= 24).max().unwrap_or(0);
+    for (name, r) in &all {
+        let (lines, row) = synced(name, cols, r);
         t.extend(lines);
         rows.push(row);
     }

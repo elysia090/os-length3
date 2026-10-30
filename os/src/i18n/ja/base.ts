@@ -34,7 +34,7 @@ export default {
   'empty': '空',
   'The distribution has not been fetched': '配布物を取得していません',
 
-  // fetch.ts: why a download is being taken up again
+  // prompt/l3-files.ts: why a download is being taken up again
   'Could not receive the rest': '続きを受け取れませんでした',
   'The size does not match': '大きさが合いません',
   'The contents do not match': '中身が合いません',
@@ -43,12 +43,9 @@ export default {
   'Could not load': '読み込めませんでした',
 
   // repos.ts
-  '{path}: a file is in the way': '{path}: 途中がファイルです',
-  '{path}: a folder is there': '{path}: フォルダーがあります',
 
   // repo templates (shared/templates.json labels)
   'Standard': '標準',
-  'Minimal': '最小',
 
   // Words several pages share
   'Commit': 'Commit',

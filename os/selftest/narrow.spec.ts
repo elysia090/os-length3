@@ -32,6 +32,30 @@ test('a 320 px window never scrolls sideways, with the menus out or put away', a
   expect(tree.x + tree.width).toBeLessThanOrEqual(320);
 });
 
+test('on a phone, the pill alone on Forge\'s band stands whole to its ×, a long name giving way first', async ({app}) => {
+  await app.newRepo.make('trip-notes');
+  await app.newRepo.openInForge();
+  await app.page.setViewportSize({width: 390, height: 844});
+  const band = app.forge.band.locator('.pills');
+  const close = app.forge.band.getByRole('button', {name: 'Take trip-notes off the band'});
+  await expect(close).toBeVisible();
+  const [b, c] = [(await band.boundingBox())!, (await close.boundingBox())!];
+  expect(c.x + c.width).toBeLessThanOrEqual(b.x + b.width);
+  expect(c.width).toBeGreaterThan(28);
+});
+
+test('a profile with a word longer than a phone is wide breaks in the word, never pushing Home sideways', async ({signedIn: app}) => {
+  await app.page.setViewportSize({width: 390, height: 844});
+  const long = 'Supercalifragilisticexpialidocious'.repeat(4);
+  await app.rail.go('home');
+  await app.main.getByRole('button', {name: 'Edit profile'}).click();
+  await app.main.getByRole('textbox', {name: 'Name', exact: true}).fill(`Bartholomew ${long}`);
+  await app.main.getByRole('textbox', {name: 'Bio', exact: true}).fill(`${long} and more`);
+  await app.main.getByRole('button', {name: 'Save'}).click();
+  await expect(app.main.getByRole('heading', {name: /^Bartholomew/})).toBeVisible();
+  expect(await sideways(app.page)).toBeLessThanOrEqual(0);
+});
+
 test('a window too short for the rail keeps + clear of the person\'s icon, and + is pressed', async ({app}) => {
   await app.page.setViewportSize({width: 720, height: 450});
   const plus = (await app.rail.button('new-repo').boundingBox())!;
@@ -41,6 +65,7 @@ test('a window too short for the rail keeps + clear of the person\'s icon, and +
 });
 
 test('on a phone, a device row shows the device\'s name beside when it was used', async ({signedIn: app}) => {
+  await app.rail.go('remote');
   await app.page.setViewportSize({width: 390, height: 844});
   await app.remote.part('Devices').click();
   const name = app.main.getByRole('tabpanel', {name: /^Devices/}).locator('.row-name').first();
@@ -49,9 +74,9 @@ test('on a phone, a device row shows the device\'s name beside when it was used'
 });
 
 test('signed out, Server has no right pane and so no line where it would start', async ({app}) => {
-  await app.server.openLayer();
+  await app.server.open();
   await expect(app.server.side).toBeHidden();
-  await expect(app.server.layer.locator('.center')).toHaveCSS('border-right-color', 'rgba(0, 0, 0, 0)');
+  await expect(app.server.view.locator('.center')).toHaveCSS('border-right-color', 'rgba(0, 0, 0, 0)');
 });
 
 test('a build without l3 says so in Runtime, never a parser\'s words', async ({app}) => {

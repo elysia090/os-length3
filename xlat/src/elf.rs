@@ -67,6 +67,10 @@ pub struct Elf {
     pub symbols: Vec<Symbol>,
     /// Absolute targets of relocations: every place the link stored an address.
     pub relocation_targets: Vec<u64>,
+    /// A static-pie's pointers as its startup finds them (the dynamic segment's RELA rows), where no section says
+    /// them: a post-link tool keeps no section headers but the symbol table. Read only to translate the whole
+    /// program ahead of time (discover::discover_whole).
+    pub dynamic_pointers: Vec<u64>,
     /// Loaded addresses holding a 32-bit PC-relative value: the entries of
     /// position-relative jump tables, among others.
     pub relative_slots: Vec<u64>,
@@ -110,6 +114,7 @@ impl Reader<'_> {
 pub const PIE_BASE: u64 = 0x40_0000;
 
 const PT_LOAD: u32 = 1;
+const PT_DYNAMIC: u32 = 2;
 const PT_INTERP: u32 = 3;
 const PT_TLS: u32 = 7;
 const SHT_SYMTAB: u32 = 2;
@@ -120,6 +125,19 @@ const SHN_ABS: u16 = 0xfff1;
 const R_X86_64_RELATIVE: u32 = 8;
 const R_X86_64_IRELATIVE: u32 = 37;
 const SHF_ALLOC: u64 = 2;
+
+/// A static-pie's own relocations (`size` bytes of RELA rows at `offset`): each RELATIVE one stores base + addend, a
+/// pointer into the image; an IRELATIVE one names an ifunc resolver.
+fn pointers_of(r: &Reader, offset: u64, size: u64, entsize: u64, base: u64, into: &mut Vec<u64>) -> Result<(), Error> {
+    for e in 0..size / entsize {
+        let rel = e.checked_mul(entsize).and_then(|o| offset.checked_add(o)).ok_or_else(|| Error("relocation table overflow".into()))?;
+        let kind = (r.u64(rel + 8)? & 0xffff_ffff) as u32;
+        if matches!(kind, R_X86_64_RELATIVE | R_X86_64_IRELATIVE) {
+            into.push((r.u64(rel + 16)? as i64 as u64).wrapping_add(base));
+        }
+    }
+    Ok(())
+}
 
 impl Elf {
     pub fn parse(file: &[u8]) -> Result<Elf, Error> {
@@ -154,6 +172,7 @@ impl Elf {
 
         let mut segments = Vec::new();
         let mut tls = None;
+        let mut dynamic_at = None;
         let row = |base: u64, i: u64, size: u64| i.checked_mul(size).and_then(|o| base.checked_add(o)).ok_or_else(|| Error("header table overflow".into()));
         for i in 0..phnum {
             let at = row(phoff, i, phentsize)?;
@@ -174,6 +193,7 @@ impl Elf {
                     writable: flags & 2 != 0,
                 }),
                 PT_TLS => tls = Some(Tls { vaddr: vaddr.wrapping_add(base), filesz, memsz, align: align.max(1) }),
+                PT_DYNAMIC => dynamic_at = Some((offset, filesz)),
                 _ => {}
             }
         }
@@ -181,6 +201,8 @@ impl Elf {
         let mut symbols = Vec::new();
         let mut relocation_targets = Vec::new();
         let mut relative_slots = Vec::new();
+        let mut relocations_read = false;
+        let mut dynamic_pointers = Vec::new();
         for i in 0..shnum {
             let at = row(shoff, i, shentsize)?;
             let kind = r.u32(at + 4)?;
@@ -209,18 +231,11 @@ impl Elf {
                     });
                 }
             }
-            // A static-pie's own relocations (.rela.dyn, loaded with it):
-            // each RELATIVE one stores base + addend, a pointer into the image;
-            // an IRELATIVE one names an ifunc resolver.
+            // A static-pie's own relocations (.rela.dyn, loaded with it).
             let dynamic = pie && kind == SHT_RELA && r.u64(at + 8)? & SHF_ALLOC != 0;
             if dynamic && entsize >= 24 {
-                for e in 0..size / entsize {
-                    let rel = row(offset, e, entsize)?;
-                    let kind = (r.u64(rel + 8)? & 0xffff_ffff) as u32;
-                    if matches!(kind, R_X86_64_RELATIVE | R_X86_64_IRELATIVE) {
-                        relocation_targets.push((r.u64(rel + 16)? as i64 as u64).wrapping_add(base));
-                    }
-                }
+                relocations_read = true;
+                pointers_of(&r, offset, size, entsize, base, &mut relocation_targets)?;
                 continue;
             }
             // Only relocations of loaded sections describe the image; debug
@@ -253,11 +268,37 @@ impl Elf {
                 }
             }
         }
+        // Without that section, the same relocations as its startup finds them: the dynamic segment's DT_RELA,
+        // DT_RELASZ and DT_RELAENT.
+        if let (true, false, Some((offset, filesz))) = (pie, relocations_read, dynamic_at) {
+            let (mut rela, mut size, mut entsize) = (None, 0, 24);
+            for e in 0..filesz / 16 {
+                let at = row(offset, e, 16)?;
+                let (tag, value) = (r.u64(at)?, r.u64(at + 8)?);
+                match tag {
+                    0 => break,
+                    7 => rela = Some(value),
+                    8 => size = value,
+                    9 => entsize = value,
+                    _ => {}
+                }
+            }
+            let held = |vaddr: u64| {
+                let at = vaddr.checked_add(base)?;
+                let s = segments.iter().find(|s| at >= s.vaddr && at.checked_add(size).is_some_and(|end| end <= s.vaddr + s.data.len() as u64))?;
+                Some(s.offset + (at - s.vaddr))
+            };
+            if let Some(at) = rela.and_then(held).filter(|_| entsize >= 24) {
+                pointers_of(&r, at, size, entsize, base, &mut dynamic_pointers)?;
+            }
+        }
+        dynamic_pointers.sort_unstable();
+        dynamic_pointers.dedup();
         relocation_targets.sort_unstable();
         relocation_targets.dedup();
         relative_slots.sort_unstable();
         relative_slots.dedup();
-        let mut elf = Elf { entry, segments, symbols, relocation_targets, relative_slots, tls, phoff, phnum };
+        let mut elf = Elf { entry, segments, symbols, relocation_targets, dynamic_pointers, relative_slots, tls, phoff, phnum };
         // Slots inside code are rip-relative operands, not data tables.
         let slots = std::mem::take(&mut elf.relative_slots);
         elf.relative_slots = slots.into_iter().filter(|&p| !elf.is_code(p) && elf.read_i32(p).is_some()).collect();

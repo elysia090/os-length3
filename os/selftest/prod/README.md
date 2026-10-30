@@ -32,7 +32,7 @@ its log.
 
 - **headers**: real answers of workerd and Workers Assets: `index.html`, the
   SPA fallback and a hashed asset carry `public/_headers` (the whole CSP,
-  exactly `src/policy.ts`'s with frame-ancestors; X-Frame-Options, HSTS with
+  exactly `src/app/policy.ts`'s with frame-ancestors; X-Frame-Options, HSTS with
   subdomains, CORP, Permissions-Policy, …; the hashed files immutable); `/v1`,
   `/api` and `/.well-known` carry the Remote's own (`no-store`, `nosniff`,
   the API's CSP, X-Frame-Options, HSTS, CORP, Referrer-Policy, CORS), and

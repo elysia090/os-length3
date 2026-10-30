@@ -14,6 +14,8 @@ const BUDGET = 4 * MB;
 
 test.describe('the first Prompt', {tag: '@slow'}, () => {
   test.skip(!process.env.SELFTEST_SLOW, '@slow: SELFTEST_SLOW=1 runs it');
+  // l3 runs in a Prompt after the first, from what the first was given ahead of time (fixtures.ts, l3Ahead).
+  test.use({l3Ahead: true});
 
   test('comes with a few megabytes, not the whole root, and sooner again once cached', async ({app}) => {
     test.setTimeout(300_000);
@@ -28,7 +30,7 @@ test.describe('the first Prompt', {tag: '@slow'}, () => {
       const s = await r.sizes().catch(() => null);
       if (s) got.push({url: new URL(r.url()).pathname, bytes: s.responseBodySize + s.responseHeadersSize});
     });
-    // From opening the repo (the Forge starts its Prompt's loading as it shows it) to the Prompt's first prompt line.
+    // From opening the repo (Forge reads l3 ahead as it shows it) to the Prompt's first prompt line, once written to.
     const first = async (open: () => Promise<unknown>, reloads: boolean) => {
       got.length = 0;
       counting = true;

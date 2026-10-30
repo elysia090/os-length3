@@ -28,12 +28,34 @@
 // With `root: {index, url}` in 'start', the whole root (packs and their
 // index, pack.mjs) fills in around the files given: each file of it is
 // fetched from the packs under `url` when a program first reads it.
+//
+// A file given with its translation (`module`) may come with `more`: the code
+// an earlier run of it reached later, as that run made it ([{module, bytes,
+// base}], in order; Image.adopt), so it is not translated again here. What
+// this run reaches later of such a program is said once the kernel pauses, as
+// {type: 'more', path, from, more: [{module, bytes, base}]}: the modules from
+// the `from`th on, for the page to keep and give the next Prompt.
+//
+// {type: 'warm'}, before 'start' (sent as soon as the Worker is made, while
+// what 'start' needs is still being fetched): the Workers the first threads
+// will run in are started now, so they are up when the shell starts.
+//
+// Every other program of the root is translated when it is first run; with
+// `kept: {cache, at: {[origin]: {main, more}}}` in 'start', a program whose
+// translation an earlier Prompt made is read from that Cache Storage instead
+// (by its file's origin, pack.mjs: the URLs of its translation and of the
+// code it reached later, keeper.mjs), and the exec waits only for that read.
+// What is translated here of a root file is said once the kernel pauses, for
+// the page to keep: {type: 'translated', origin, wasm, segments} once, then
+// {type: 'reached', origin, from, more} as code is reached later; and what
+// was read of what is kept, {type: 'used', urls}, for the page to count.
 
 import {Vfs} from './fs.mjs';
 import {Mirror} from './mirror.mjs';
 import {mountPack, syncRange} from './pack.mjs';
 import {Kernel} from './process.mjs';
-import {RemoteKernel, canRunApart} from './remote.mjs';
+import {RemoteKernel, canRunApart, warmThreads} from './remote.mjs';
+import {keeper} from './keeper.mjs';
 import {loadTranslator} from './translator.mjs';
 import {said} from './waiting.mjs';
 
@@ -42,6 +64,10 @@ let mirror = null;
 let apart = false;
 const pending = [];
 let ended = false;
+/** The programs given with their translation: the image of each, and how much of its code reached later is said. */
+const kept = [];
+/** Translations kept from earlier Prompts (keeper.mjs), when the page has any. */
+let keep = null;
 
 function read(n) {
   if (!pending.length) return ended ? new Uint8Array(0) : null;
@@ -57,7 +83,32 @@ const failed = (e) => self.postMessage({type: 'error', message: e instanceof Err
 function paused(r) {
   const c = mirror?.changes();
   if (c) self.postMessage({type: 'changes', ...c}, c.files.filter((f) => f.bytes).map((f) => f.bytes.buffer));
-  const m = said(r, kernel.held(), performance.now());
+  // Code reached later since it was last said, for the page to keep (each module's bytes copied: the image keeps its own).
+  for (const k of kept) {
+    const x = k.image.extras;
+    if (x.length <= k.told) continue;
+    const more = x.slice(k.told).map((e) => ({module: e.module, bytes: e.bytes.slice(), base: e.base}));
+    self.postMessage({type: 'more', path: k.path, from: k.told, more}, more.map((m) => m.bytes.buffer));
+    k.told = x.length;
+  }
+  // What was translated here of the root's programs, and the code they reached later since it was said.
+  for (const e of kernel.images.values()) {
+    const im = e.image;
+    if (!im.origin || e.kept) continue;
+    if (!im.mainTold && im.wasm) {
+      const wasm = im.wasm;
+      im.wasm = null;
+      im.mainTold = true;
+      const segments = im.segments ? im.segments.map((s) => ({offset: s.offset, bytes: s.bytes.slice()})) : null;
+      self.postMessage({type: 'translated', origin: im.origin, wasm, segments}, [wasm.buffer, ...(segments ?? []).map((s) => s.bytes.buffer)]);
+    }
+    if (im.mainTold && im.extras.length > im.told) {
+      const more = im.extras.slice(im.told).map((x) => ({module: x.module, bytes: x.bytes.slice(), base: x.base}));
+      self.postMessage({type: 'reached', origin: im.origin, from: im.told, more}, more.map((m) => m.bytes.buffer));
+      im.told = im.extras.length;
+    }
+  }
+  const m = said(r, kernel.held(), performance.now(), (keep?.reading() ?? 0) > 0);
   self.postMessage(m);
   return m;
 }
@@ -84,6 +135,7 @@ self.onmessage = async ({data}) => {
   if (data.type === 'interrupt') { pending.length = 0; if (kernel?.interrupt()) nudge(); return; }
   if (data.type === 'put') { mirror?.put(data.path, data.what); return; }
   if (data.type === 'free') { if (kernel) self.postMessage({type: 'freed', ...kernel.free(0)}); return; }
+  if (data.type === 'warm') { if (canRunApart()) warmThreads(); return; }
   if (data.type !== 'start') return;
   try {
     const translate = await loadTranslator(data.translator);
@@ -104,8 +156,16 @@ self.onmessage = async ({data}) => {
       ready: () => pending.length > 0 || ended,
       pending: () => pending.reduce((n, b) => n + b.length, 0),
     };
-    kernel = apart ? new RemoteKernel({vfs, translate, console, onIdle: (r) => paused(r)}) : new Kernel({vfs, translate, console});
-    for (const f of data.files) if (f.module) kernel.prebuilt(vfs.lookup(f.path, '/'), f.module, f.segments ?? null);
+    // Translations kept from earlier Prompts: read when their program is first run, the kernel looking again once they are.
+    keep = data.kept ? keeper(data.kept, () => nudge(), (urls) => self.postMessage({type: 'used', urls})) : null;
+    kernel = apart ? new RemoteKernel({vfs, translate, console, keeper: keep, onIdle: (r) => paused(r)}) : new Kernel({vfs, translate, console, keeper: keep});
+    for (const f of data.files) {
+      if (!f.module) continue;
+      const node = vfs.lookup(f.path, '/');
+      kernel.prebuilt(node, f.module, f.segments ?? null);
+      const image = kernel.images.get(node).image;
+      kept.push({path: f.path, image, told: f.more?.length ? image.adopt(f.more) : 0});
+    }
     if (data.mirror) mirror = new Mirror(vfs, data.mirror);
     kernel.start(data.argv[0], data.argv, data.env, data.cwd);
     self.postMessage({type: 'threads', apart});

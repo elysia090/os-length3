@@ -6,7 +6,7 @@
 
 import ja from './i18n/ja/index.ts';
 
-export type Lang = 'en' | 'ja';
+type Lang = 'en' | 'ja';
 export const LANGS: readonly {id: Lang; name: string}[] = [{id: 'en', name: 'English'}, {id: 'ja', name: '日本語'}];
 
 const MIRROR = 'length3.os.lang';

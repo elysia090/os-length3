@@ -1,0 +1,119 @@
+/* Forge's files: each a sheet with its head, read and written in as a plain text editor, and what the box's Edit
+   marks on it. */
+.flow { height: 100%; overflow-y: auto; padding: var(--s3) var(--s5) 160px; }
+/* What is scrolled to (a control the keyboard goes to, a button come to) stops above the prompt box laid over the
+   page's foot, never under it. */
+.work.bench .flow { scroll-padding-bottom: calc(var(--s5) + 80px); }
+/* A file gone to (from File, from a search) stands where its head stops, inside the page's top padding: brought to
+   the very edge instead, the box ran on a padding's height over its stuck head, its sides showing above the lid. */
+.work.bench .flow { scroll-padding-top: var(--s3); }
+.columns.split > .col > .flow { scroll-padding-top: var(--s1); }
+.flow:focus-visible { outline-offset: -2px; }
+/* Forge's files run on far enough past the last for it to come up to the top (a file just made, opened at the end):
+   not the empty foot of the one before it filling the column over it. */
+.col > .flow::after { content: ''; display: block; height: max(0px, calc(100% + var(--s3) - var(--file-min) - var(--s6))); }
+/* A file's head is its box's lid: it carries the box's top edge and corners, and stays where it stands as the file
+   scrolls, the text going under it, so a head never jumps to the window's top to stick (the first box's head does
+   not move at all), and the heads of boxes side by side, one scrolled and one not, stand on one line. What scrolls
+   up past it is hidden by the ground over it: its shadow, wider than its round corners and as tall as the page's
+   top padding twice over, so neither the gap over it nor the notches beside its corners show a line going under.
+   A sticky head stops inside the page's top padding, so 0 is where the first head stands. */
+.path {
+  position: sticky; top: 0; z-index: 1;
+  box-shadow: 0 calc(-1 * var(--r-place)) 0 var(--r-place) var(--ground);
+  display: flex; align-items: center; gap: var(--s2); justify-content: space-between;
+  margin: 0; padding: var(--s3) var(--s4) var(--s2);
+  background: var(--ground); border-radius: var(--r-place) var(--r-place) 0 0;
+  font: 600 var(--t-meta) var(--mono);
+}
+.path span { font-weight: 400; }
+/* Beside: at the head's right end, the window cut in two; pressed (or the head with Ctrl), the file opens in a box
+   of its own beside the repo's page, the row sliding to it. Quiet until the file is pointed at. */
+.path > .file-state { margin-left: auto; }
+.file-beside { display: grid; place-items: center; flex: none; width: 24px; height: 24px; margin: -5px -6px -5px 0; padding: 0; border: 0; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: var(--cursor-hand); opacity: .55; transition: opacity var(--motion); }
+.file-beside .mark { width: var(--s4); height: var(--s4); }
+.file:hover .file-beside, .file-beside:focus-visible { opacity: 1; }
+.file-beside:hover { background: var(--raised); color: var(--ink); }
+/* Each file is a box drawn a little heavier than other lines, since it is
+   the thing being worked on, and tall: a short file too reaches down to the
+   foot of the rail's last place (Inbox, the eighth: the rail's first place,
+   eight places and the seven gaps between them, less the band and the
+   flow's top), so the center's first box and the rail end on one line, and
+   the center is read by scrolling down, never packed to fit a screen. Never
+   so tall that, read from its top, its foot meets the prompt box: a clear
+   gap (s6) stays between them, so the box floats over the page rather than
+   hanging off a file. */
+.flow, .file {
+  --file-min: min(calc(var(--rail-top) + 8 * var(--h-place) + 7 * var(--s1) - var(--band) - var(--h-row) - 2 * var(--s3)),
+    calc(var(--inner-h) - var(--band) - var(--h-row) - 2 * var(--s3) - var(--s5) - var(--h-place) - var(--s6)));
+}
+.file {
+  display: flex; flex-direction: column; margin-bottom: var(--s6);
+  min-height: var(--file-min);
+  border: 1px solid var(--rule); border-top-width: 0; border-radius: var(--r-place); background: var(--paper);
+  transition: border-color var(--motion);
+}
+/* Off the screen, a file is neither styled nor laid out until it comes near (content-visibility), standing at the
+   size it last had once it has been seen (auto), at a file's least before: Forge brought back over a big repo lays
+   out what is on screen, not every file of it (360 files: 125–150 ms to 7). What it holds is painted only within
+   it then, but for its head's ground (.path's shadow, 2 corners above it and 1 beside), which reaches past it. */
+.file { content-visibility: auto; contain-intrinsic-size: auto var(--file-min); overflow-clip-margin: calc(2 * var(--r-place)); }
+.file > .path { margin: 0 -1px; background: var(--paper); border: 1px solid; border-color: inherit; border-bottom: 0; border-radius: var(--r-place) var(--r-place) 0 0; }
+/* The sheet with the keyboard: its edge in ink, nothing drawn round it. */
+.file:focus-within { border-color: var(--ink); }
+/* A file reads like a plain text editor: line numbers in a quiet gutter,
+   the text beside them, on the same lines. */
+.file-state { font-weight: 400; color: var(--sub); white-space: nowrap; }
+/* Not saved yet: a dot, not a word that flickers with each key; it shows only once the writing pauses (a save comes
+   0.7 s after), so steady typing is not watched over. */
+.unsaved-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--sub); vertical-align: middle; animation: unsaved-in calc(200ms * var(--pace)) ease-out calc(350ms * var(--pace)) both; }
+@keyframes unsaved-in { from { opacity: 0; scale: .4; } }
+@media (prefers-reduced-motion: reduce) { .unsaved-dot { animation: none; } }
+.sheet { flex: 1; display: grid; grid-template-columns: auto minmax(0, 1fr); align-content: start; column-gap: var(--s4); padding: var(--s2) var(--s4) var(--s4); cursor: var(--cursor-text); }
+.gutter, .code { margin: 0; padding: 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre; tab-size: 4; }
+.gutter { color: var(--sub); text-align: right; user-select: none; min-width: 2ch; font-variant-numeric: tabular-nums; }
+.code { overflow-x: auto; }
+/* The text itself is the field: no box, the caret is the only sign. */
+.code.code-edit { display: block; width: 100%; border: 0; background: transparent; color: var(--ink); resize: none; overflow-y: hidden; }
+.code.code-edit:focus { outline: none; }
+/* What the box's Edit holds, drawn under the file's words (edit-marks.ts), in a layer laid over the editor (which
+   paints over it, its ground clear): the line held in the marker's yellow under its words, from its start; what the
+   box has chosen in it in the marker's full yellow; the box's caret where it is, in ink. The file it works on keeps the
+   edge of a file written in. */
+.sheet { position: relative; }
+.code.code-edit { position: relative; }
+.edit-layer { position: absolute; pointer-events: none; clip-path: inset(-4px 0 -4px calc(-1 * var(--s3))); }
+.edit-marks { animation: fresh calc(90ms * var(--pace)) ease-out; }
+.edit-mark { position: absolute; left: 0; right: 0; border-radius: 4px; }
+.edit-mark.lines { left: calc(-1 * var(--s2)); background: color-mix(in srgb, var(--marker-soft) 75%, transparent); }
+.edit-mark.held { left: calc(-1 * var(--s2)); right: auto; background: color-mix(in srgb, var(--marker) 60%, transparent); }
+.edit-mark.words { right: auto; background: var(--marker); box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 28%, transparent); }
+.edit-mark.caret { right: auto; width: 2px; border-radius: 1px; background: var(--ink); }
+/* While the box edits and has the keyboard, a line of a file is pressed to take it into the box: the hand says so,
+   and the line under it is ringed (the one taken is lit in the marker's yellow, as a line gone to is). */
+.edit-pointing section.file :is(.sheet, .code-edit) { cursor: var(--cursor-hand); }
+.edit-ring .edit-mark { background: transparent; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--ink) 30%, transparent); }
+.file.edit-front { border-color: var(--ink); }
+.file:focus-within > .path { color: var(--ink); }
+/* Pressed, the head is the file in File (reader.ts act): its name underlined under the pointer, as a way there. */
+.path.acts { cursor: var(--cursor-hand); }
+.path.acts:hover .path-name { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+.sheet-note { padding: var(--s2) var(--s4) var(--s4); font-size: var(--t-meta); }
+/* Landed on from a search, File or Git: its head lit with the marker for a moment, then fading back, so the eye is
+   led to where it landed without anything staying lit. The line asked for is selected in the marker too. */
+.flow .revealed > .path { animation: landed 1200ms ease-out; }
+/* A file open beside, in a box of its own, is only its head in its repo's page: the page reads on past it, so side
+   by side the row never shows one text twice. Its head quiet, its window-cut mark in ink (it is out, beside):
+   pressed, the row goes to its box. */
+.file.elsewhere { min-height: 0; border-width: 0; }
+.file.elsewhere > :not(.path) { display: none; }
+.file.elsewhere > .path { margin: 0; padding-bottom: var(--s3); border-bottom: 1px solid; border-color: inherit; border-radius: var(--r-place); color: var(--sub); }
+.file.elsewhere .file-beside { opacity: 1; color: var(--ink); }
+@keyframes landed { from, 30% { background: color-mix(in srgb, var(--marker) 70%, var(--paper)); } }
+.flow .revealed .code-edit::selection { background: var(--marker); color: var(--ink); }
+/* Saved elsewhere while this one had unsaved edits: asked in the box, under
+   its head and over the text, which stays to be read and written on. */
+.file-ask { display: grid; gap: var(--s2); padding: var(--s2) var(--s4) var(--s3); }
+.file-ask p { margin: 0; }
+.file-ask-diff { max-height: 40vh; overflow-y: auto; }
+.file-ask-diff .diff-file { margin-bottom: 0; }

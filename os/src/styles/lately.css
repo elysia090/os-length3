@@ -1,0 +1,76 @@
+/* Lately's rows, in Home's pane and come in while one works: who wrote, what about, where. */
+/* Lately, in Home's pane: what waits since the person was last here, a row each, opening where it stands (look.ts).
+   The same row as the bench's pane has at its foot for word that comes while one works: one look for both. */
+.lately { display: grid; gap: var(--s2); }
+/* A pane's own heads (Lately; Forge's and Git's Prompt; Server's People and Repos) are quiet, small and in the quiet
+   colour: they say what is under them, and what is under them is what is read. */
+/* Their line is the line their own letters would have had: a head stays on the line the center's file heads are on. */
+.lately h2, .term-home .term-box h2, .side-part h3 { font: 600 var(--t-meta)/calc(var(--t-body) * 1.6) var(--sans); color: var(--sub); letter-spacing: .02em; }
+.lately-list { display: grid; gap: var(--s2); }
+.lately-row {
+  display: grid; gap: 2px; min-width: 0; padding: var(--s2) var(--s4); border: 1px solid var(--rule); border-radius: var(--r-place);
+  background: var(--paper); color: var(--ink); font: inherit; text-align: left; cursor: var(--cursor-hand); transition: border-color var(--motion);
+}
+.lately-row:hover { border-color: var(--edge); }
+/* Home's Lately refers, as the pane does: its rows stand on the ground, a raised fill under the pointer, with no box
+   of their own round each (boxes round every row, a dot, a rule and three faces of letters read as clutter); their
+   words start where Lately's do. Opened, the row is paper edged in ink, its card's head (look.ts, attached). The
+   pane's word (pane.ts) stays a box: it stands over the Prompt's lines. */
+.lately .lately-list { gap: 0; margin-inline: calc(-1 * var(--s3)); }
+.lately .lately-row { position: relative; border-color: transparent; background: transparent; padding: var(--s3); }
+/* A hairline between rows, from where their words start (not under their badges), as a list read down: rows that
+   wrap to many lines are each seen whole. Under the pointer the row's fill takes its place. */
+.lately .lately-row + .lately-row::before { content: ''; position: absolute; top: 0; left: calc(var(--s3) + 24px + var(--s2)); right: var(--s3); height: 1px; background: var(--rule); }
+.lately .lately-row:is(:hover)::before, .lately .lately-row:is(:hover) + .lately-row::before { opacity: 0; }
+.lately .lately-row:hover { border-color: transparent; background: var(--raised); }
+/* A row tells, in two lines at most: its name (going on under itself where it must; its badge, its place and its slot
+   on its first line) and one line of what came, cut where it runs out of room: the rest is where the row goes. */
+.lately-what { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; font-weight: 600; line-height: 22px; }
+.lately-what > .lately-badge { align-self: flex-start; margin-top: -1px; }
+.lately-name { min-width: 0; overflow-wrap: break-word; }
+/* Where it is (its repo), quiet, at the right of its name; then the end's one slot. */
+.lately-place { flex: none; max-width: 40%; margin-left: auto; color: var(--sub); font: 400 var(--t-meta) var(--sans); overflow-wrap: anywhere; text-align: right; }
+.lately-end { flex: none; align-self: flex-start; display: grid; place-items: center; width: 16px; height: 16px; margin: 3px 0 0 auto; }
+.lately-place + .lately-end { margin-left: 0; }
+.lately-end > .lately-dot { grid-area: 1 / 1; transition: opacity calc(120ms * var(--pace)) ease-out; }
+/* Under the pointer, the chevron that says it goes to where the thing is. */
+.lately-end::after { content: ''; grid-area: 1 / 1; width: 16px; height: 16px; background: var(--sub); opacity: 0; translate: -2px 0;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9.5 6l6 6-6 6' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  transition: opacity calc(120ms * var(--pace)) ease-out, translate calc(160ms * var(--pace)) var(--land); }
+.lately-row:is(:hover, :focus-visible) .lately-end::after { opacity: 1; translate: 0 0; background: var(--ink); }
+.lately-row:is(:hover, :focus-visible) .lately-dot { opacity: 0; }
+.lately-line { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; line-height: 1.5; }
+/* The line it was left at, as written there: mono, as in Forge, its second line. */
+.lately-quote { color: var(--sub); font: var(--t-meta)/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.lately-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--ink); }
+/* What a row is, at its head (pane.ts): who wrote, their initial on one of four soft tints (the same for the same name:
+   the marker's, a step done's, a removal's, the sky's), round; a file or a board, its mark alone, quiet, as File's.
+   The lines under it start where its name does. */
+.lately-badge { flex: none; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--raised);
+  color: var(--ink); font: 700 12px/1 var(--sans); }
+.lately-badge:not([data-tint]) { background: none; color: var(--sub); }
+.lately-badge > .icon { width: 14px; height: 14px; }
+.lately-badge[data-tint='0'] { background: var(--marker-soft); }
+.lately-badge[data-tint='1'] { background: var(--add-tint); }
+.lately-badge[data-tint='2'] { background: var(--del-tint); }
+.lately-badge[data-tint='3'] { background: var(--sky-tint); }
+.lately-row > :is(.lately-line, .lately-quote) { margin-left: calc(24px + var(--s2)); }
+/* Read whole as it is; only a word of pages (a message of thousands of letters) stops at six lines, its card has it all. */
+.lately-row > :is(.lately-line, .lately-quote) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; line-clamp: 6; overflow: hidden; }
+.lately-none { margin: 0; padding: 0 var(--s3); }
+@media (max-width: 760px) {
+  .page > .home-layout, .home-layout.pane-closed { grid-template-columns: minmax(0, 1fr); }
+  .home-pane { display: none; }
+}
+
+/* What the agent brings (agent-cards.ts): a Lately row with its deeds under it, sliding in at the pane as word does.
+   An offer and a question are the ones that wait on the person: their row is ringed in the work's green. */
+.agent-cards { display: grid; gap: var(--s2); }
+.agent-cards:empty { display: none; }
+.agent-card { cursor: default; }
+.agent-card.offered, .agent-card.asking { box-shadow: 0 0 0 1px var(--done) inset; }
+.agent-quote { display: grid; gap: var(--s1); }
+.agent-finding { font-size: var(--t-meta); }
+.agent-fix { font-family: var(--mono); font-size: var(--t-meta); color: var(--sub); }
+.agent-acts { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; margin-top: var(--s1); }
+.agent-reply { flex: 1 1 12em; min-width: 0; }

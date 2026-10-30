@@ -4,14 +4,17 @@
 //!
 //! Unsafe code is only where the OS is called through libc (the Prompt's
 //! namespaces and seccomp filter: launch.rs, seccomp.rs; SSH's pty: ssh.rs;
-//! a lock, a rename, a sync, a signal: remote, atomic, root, prompt, usage,
-//! system), each block a single call with its arguments made just before it.
+//! the host's name, a rename, a sync, a signal, a disk's room: remote,
+//! atomic, root, prompt, usage, system), each block a single call with its
+//! arguments made just before it. A lock is std's (File::lock), not a call.
 //! Every other module says `#![forbid(unsafe_code)]`, so none is added there.
 
 pub mod account;
+pub mod agents;
 pub mod api;
 pub mod atomic;
 pub mod boundary;
+pub mod compute;
 #[cfg(unix)]
 pub mod desktop;
 #[cfg(not(target_os = "wasi"))]
@@ -39,8 +42,11 @@ pub mod servers;
 #[cfg(unix)]
 pub mod ssh;
 pub mod system;
+pub mod tasks;
 pub mod templates;
 pub mod usage;
+#[cfg(target_os = "linux")]
+pub mod vm;
 pub mod work;
 pub mod text;
 

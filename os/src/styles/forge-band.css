@@ -1,0 +1,56 @@
+/* Forge's band: a pill for each repo out, the one worked on in ink, dragged, closed, and ⊕ to bring more out. */
+/* The band sits on the top line. */
+.repo-strip { grid-column: 1; display: flex; gap: var(--s2); align-items: center; padding: var(--band) var(--s5) var(--s3); overflow-x: auto; border-right: var(--line-frame) solid var(--ink); }
+/* The band: pills for the repos out, ⊕ to bring more out beside them. */
+.pills { display: flex; gap: var(--s2); align-items: center; }
+/* The pills take the band's width and scroll there; ⊕ keeps the band's right end, wherever they reach. */
+.repo-strip > .pills { flex: 0 1 auto; min-width: 0; overflow-x: auto; } /* ⊕ right after the last pill; many, they scroll */
+/* Room round the pills inside their scroller, so a focus ring is not cut by its edges (as .parts has). */
+.repo-strip > .pills { padding: var(--s1); margin: calc(-1 * var(--s1)); }
+.pills:empty { display: none; }
+/* The ink of the pill worked on goes from the pill it was on to the one it is on, under the words (glide.ts). */
+.repo-strip > .pills { position: relative; isolation: isolate; }
+.pill { transition: background var(--motion), color var(--motion), opacity var(--motion); cursor: var(--cursor-grab); }
+/* Held, the open hand closes on it, until the drag (the browser's own pointer then) or the hand letting go. */
+.pill:active { cursor: var(--cursor-grabbing); }
+/* Lifted to be dragged: where it was stays, faint, until it is let go. */
+.pill.lifted { opacity: .35; }
+/* Shown beside the one worked on: its outline in ink. */
+.pill.beside { border-color: var(--ink); border-width: var(--line-work); }
+.band-caret { position: absolute; top: var(--s1); bottom: var(--s1); width: 2px; border-radius: 1px; background: var(--ink); pointer-events: none; }
+.pill {
+  flex: none; display: flex; align-items: center; min-height: var(--h-row); padding-left: var(--s3);
+  border: 1px solid var(--edge); border-radius: var(--r-round); font-size: var(--t-meta);
+}
+.pill-name { border: 0; padding: 0; background: transparent; color: inherit; cursor: var(--cursor-hand); white-space: nowrap; }
+/* The issue the repo's copy is for, after its name, while it is not main. */
+.pill-issue { margin-left: .4em; font-family: var(--mono); opacity: .7; }
+.pill-close { flex: none; display: grid; place-items: center; width: var(--h-row); height: calc(var(--h-row) - 2px); border: 0; padding: 0; background: transparent; color: inherit; cursor: var(--cursor-hand); border-radius: var(--r-round); }
+/* Alone on a band narrower than it (a phone), the pill gives way in its name, which ends in …, never at its × cut
+   by the band's edge; several scroll, as a band does. */
+.pills > .pill:only-child { flex-shrink: 1; min-width: 0; }
+.pills > .pill:only-child > .pill-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pill-close .mark, .band-add .mark { width: var(--s4); height: var(--s4); }
+/* The ring is round the part of a pill that has the keyboard, inside the pill: its name, or its ×;
+   on the current pill it is ground over the ink, so it does not sink into it. */
+.pill-name { border-radius: var(--r-round); }
+.pill-name:focus-visible { outline-offset: var(--s1); }
+.pill-close:focus-visible { outline-offset: calc(-1 * var(--s1)); }
+.pill[aria-current] .pill-name:focus-visible, .pill[aria-current] .pill-close:focus-visible { outline-color: var(--ground); }
+.band-add { flex: none; display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; cursor: var(--cursor-hand); }
+/* Nothing left to bring out: ⊕ steps back. */
+.band-add:disabled { opacity: .5; cursor: var(--cursor-arrow); background: transparent; }
+/* The files mark is the band's first, square to the pills' rounded line; ⊕ follows the pills. */
+.band-acts .mark { width: 18px; height: 18px; }
+/* ⊕ in running words: the band's own mark at the words' height, sitting on their line. */
+.inline-add { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 1.4em; height: 1.4em; margin: 0 .2em; vertical-align: middle; border: 1px solid var(--edge); border-radius: var(--r-round); }
+.inline-add .mark { width: .9em; height: .9em; }
+/* A chip picks one of several, like the template choice: round, outlined. */
+.chip {
+  flex: none; min-height: var(--h-row); padding: 0 var(--s3); border: 1px solid var(--edge); border-radius: var(--r-round);
+  background: transparent; cursor: var(--cursor-hand); white-space: nowrap; font-size: var(--t-meta);
+}
+.chips { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.center { grid-column: 1; position: relative; min-height: 0; border-right: var(--line-frame) solid var(--ink); overflow: clip; }
+/* No pane, no line (Server signed out): the center keeps its width, so nothing on it moves. */
+.work.no-side > .center { border-right-color: transparent; }

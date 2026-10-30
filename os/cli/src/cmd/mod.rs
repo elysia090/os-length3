@@ -3,6 +3,7 @@
 //! the call, and answers with a Reply.
 
 pub mod address;
+pub mod agent;
 pub mod app;
 pub mod file;
 pub mod forge;
@@ -22,60 +23,58 @@ pub struct Ctx {
     pub here: Option<work::Here>,
     /// Inside the app's Prompt: only the open repo is here (under /root), written back and sent by the app.
     pub prompt: bool,
-    #[cfg(test)]
-    known: Vec<&'static str>,
-    /// Tests say whether the device is on a Remote; they never read the person's.
-    #[cfg(test)]
-    online: bool,
+    /// What it reads: this device (None), or words alone, never the device (a form read, a line completed, a card
+    /// drawn from facts given): then the repos it knows and whether it is on a Remote are these.
+    words: Option<Words>,
 }
+
+struct Words { known: Vec<&'static str>, online: bool }
 
 impl Ctx {
     pub fn new() -> Ctx {
         Ctx {
             here: std::env::current_dir().ok().and_then(|d| work::here(&d)),
             prompt: std::env::var_os("L3_PROMPT").is_some(),
-            #[cfg(test)]
-            known: Vec::new(),
-            #[cfg(test)]
-            online: false,
+            words: None,
         }
     }
 
+    /// Words alone, in `here`, knowing the repos `known`, on no Remote: what a test reads l3 with.
     #[cfg(test)]
     pub fn test(here: Option<&str>, known: Vec<&'static str>) -> Ctx {
-        Ctx { here: here.map(|r| work::Here { repo: r.into(), line: work::MAIN.into(), folder: String::new() }), prompt: false, known, online: false }
+        Ctx { here: here.map(|r| work::Here { repo: r.into(), line: work::MAIN.into(), folder: String::new() }), prompt: false,
+            words: Some(Words { known, online: false }) }
     }
 
-    /// For tests: the device on a Remote.
+    /// The same, on a Remote.
     #[cfg(test)]
-    pub fn online(self) -> Ctx { Ctx { online: true, ..self } }
+    pub fn online(self) -> Ctx { Ctx { words: self.words.map(|w| Words { online: true, ..w }), ..self } }
 
     pub fn repos(&self) -> Result<Repos> {
-        // Tests read words, never the person's repos.
-        if cfg!(test) { return Err(Error::Io("no repos in tests".into())); }
+        // Words alone read no repos.
+        if self.words.is_some() { return Err(Error::Io("no repos: words alone".into())); }
         Ok(Repos::open()?)
     }
 
     /// Whether the repo `name` is here.
     pub fn has_repo(&self, name: &str) -> bool {
-        #[cfg(test)]
-        { self.known.contains(&name) }
-        #[cfg(not(test))]
-        { length3_core::repos::valid_name(name) && Repos::open().is_ok_and(|r| r.dir(name).is_ok()) }
+        match &self.words {
+            Some(w) => w.known.contains(&name),
+            None => length3_core::repos::valid_name(name) && Repos::open().is_ok_and(|r| r.dir(name).is_ok()),
+        }
     }
 
     /// Whether `rel` is in the repo `repo` (as it shows now).
     pub fn exists(&self, repo: &str, rel: &str) -> bool {
-        if cfg!(test) { return false; }
-        Repos::open().and_then(|r| r.place(repo)).is_ok_and(|d| d.join(rel).symlink_metadata().is_ok())
+        self.words.is_none() && Repos::open().and_then(|r| r.place(repo)).is_ok_and(|d| d.join(rel).symlink_metadata().is_ok())
     }
 
     /// Whether this device is on a Remote (never from inside a Prompt).
     pub fn connected(&self) -> bool {
-        #[cfg(test)]
-        { self.online }
-        #[cfg(not(test))]
-        { !self.prompt && core_remote::connection().is_some() }
+        match &self.words {
+            Some(w) => w.online,
+            None => !self.prompt && core_remote::connection().is_some(),
+        }
     }
 }
 
@@ -120,7 +119,7 @@ pub fn overview(ctx: &Ctx, _: &Call) -> Result<Reply> {
     let list = r.list()?;
     let todos = if ctx.prompt { Vec::new() } else { core_home::todos()? };
     let open = todos.iter().filter(|t| !t.done).count();
-    let issues: usize = list.iter().map(|s| r.issues(&s.name).map_or(0, |v| v.len())).sum();
+    let issues: usize = list.iter().map(|s| r.on_main().issues(&s.name).map_or(0, |v| v.len())).sum();
     let c = if ctx.prompt { None } else { core_remote::connection() };
     let data = json!({"repos": list.len(), "issues": issues, "todo": {"open": open, "all": todos.len()},
         "home": paths::data_dir(), "remote": c.as_ref().map(|c| &c.url), "prompt": ctx.prompt});

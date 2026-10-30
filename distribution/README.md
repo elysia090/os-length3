@@ -6,18 +6,23 @@ kernels and their temporary build trees are not used.
 
 The current source roles are:
 
-- Linux 7.2.7, the stable release published by kernel.org on 2026-09-21.
+- Linux 7.3, kernel.org's latest stable release when it was pinned.
 - BusyBox 1.36.1, the latest release explicitly labelled stable by BusyBox.
   The newer 1.37.x and 1.38.x series are labelled unstable upstream.
-- musl 1.2.6, GNU make 4.4.1, GNU Binutils 2.46 and GCC 16.2.0, plus the pinned
+- musl 1.2.6, GNU make 4.4.1, GNU Binutils 2.46.1 and GCC 16.2.0, plus the pinned
   POSIX build, archive, HTTPS, Git and OpenSSH-client sources consumed by
   `toolchain/build.sh`;
 - apk-tools, dhcpcd, libmnl/libnftnl/nftables, chrony, e2fsprogs, shadow,
   libxcrypt, libcap, acl, attr, zstd, ncurses, nano and tzdata consumed by
   `packaging/build-system-tools.sh`.
 
-The util-linux 2.42.3 source needs the narrow, checked-in
-[`openat2` include patch](patches/util-linux-2.42.3-openat2.patch) to build
+Each is its newest release by the rule `sources-next.py` writes beside it;
+`.github/workflows/sources-next.yml` says every week which have a newer one
+(with the digests to pin it by) and checks that every other pin is still
+the file its maker serves.
+
+The util-linux 2.42.4 source needs the narrow, checked-in
+[`openat2` include patch](patches/util-linux-2.42.4-openat2.patch) to build
 its idmapped-mount hook against the locked Linux headers. Its digest is part
 of the core-tools component key; the Linux UAPI supplies the flag value.
 

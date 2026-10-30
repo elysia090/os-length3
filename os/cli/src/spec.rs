@@ -5,7 +5,7 @@
 //! rail: Home, Forge (and its Prompt), File, Git, Runtime, Remote; then the
 //! two whose subject is people, Server and Inbox; then l3's own words.
 
-use crate::cmd::{address, app, file, forge, git, home, people, remote, runtime, Ctx};
+use crate::cmd::{address, agent, app, file, forge, git, home, people, remote, runtime, Ctx};
 use crate::{args::Call, help, out::{Reply, Result}};
 
 /// Words in English and in Japanese.
@@ -74,7 +74,7 @@ pub enum Fact {
     // A repo on the Remote: turned off; only there.
     TurnedOff, OnlyThere,
     // An issue (git.rs `facts`).
-    CanStart, CanCommit, CanPush, Undecided, Approved, WorkedHere, OnWork, Closed,
+    CanStart, CanCommit, CanPush, Undecided, Approved, WorkedHere, OnWork, Closed, Merged,
     // A conversation: someone who wrote first, not accepted yet.
     Request,
     // Something on this device by size that can go; anything on the page that can.
@@ -320,6 +320,9 @@ pub static COMMANDS: &[Command] = &[
             f(Some("new"), &[Arg::Text("NAME")], &[Flag::Template], ["make one", "作る"], DEVICE, Send, forge::repo_new)),
         offer(&[d(["Open here", "この端末に開く"], On::RemoteRepo).when(&[F::OnlyThere]).also(&[Group::File, Group::Remote])],
             f(Some("open"), &[Arg::Text("NAME")], &[], ["bring one from the Remote", "Remote から持ってくる"], REMOTE, Keep, forge::repo_open)),
+        // Rename and Delete, as the repo's gear has them in the app.
+        f(Some("mv"), &[REPO, Arg::Text("NEW")], &[], ["rename one the Remote does not have yet", "Remote にまだない repo の名前を変える"], DEVICE, Send, forge::repo_mv),
+        f(Some("rm"), &[REPO], &[], ["delete one from this device, with all in it", "repo を中身ごとこの端末から消す"], DEVICE, Keep, forge::repo_rm),
     ]),
     c("band", &[], Group::Forge, ["the repos out on Forge's band", "Forge の帯に出ている repo"], &[
         page(f(None, &[], &[], ["the list", "一覧"], DEVICE, Send, forge::band_list)),
@@ -330,9 +333,10 @@ pub static COMMANDS: &[Command] = &[
     on_home(&["dotfiles"], c("prompt", &[], Group::Forge, ["a shell in the repo, inside the root", "root の中で repo のシェル"], &[
         offer(&[d(["Prompt", "Prompt"], On::Repo).unless(&[F::NoRoot])],
             f(None, &[REPO_HERE, Arg::Argv], &[Flag::Network], ["the repo inside the root, without privileges; --network gives it the network", "root の中で repo を開く（権限なし）。--network でネットワークを渡す"], DEVICE, TakeIn, forge::prompt)),
-        f(Some("ls"), &[], &[], ["the Prompts running on this device (the app's too)", "この端末で動いている Prompt（アプリのものも）"], DEVICE, Keep, forge::prompt_list),
+        f(Some("ls"), &[], &[], ["the Prompts running or being prepared on this device (the app's too)", "この端末で動いている・用意中の Prompt（アプリのものも）"], DEVICE, Keep, forge::prompt_list),
         offer(&[d(["Stop", "止める"], On::Repo).when(&[F::Running]).away()],
             f(Some("stop"), &[REPO_HERE], &[], ["stop the repo's Prompts: every process in them ends", "repo の Prompt を止める（中のプロセスはすべて終わる）"], DEVICE, Send, forge::prompt_stop)),
+        f(None, &[Arg::Choice(&["pause", "resume"]), REPO_HERE], &[], ["pause the repo's Prompts (all they hold stays, no CPU), or go on", "repo の Prompt を一時停止（持っているものはそのまま、CPU は使わない）、または再開"], DEVICE, Keep, forge::prompt_pause),
     ])),
     c("file", &[], Group::File, ["a folder's entries, a file's text", "フォルダーの中身、ファイルの本文"], &[
         f(Some("write"), &[PATH], &[Flag::Empty], ["replace or make a file with standard input", "標準入力でファイルを置き換える・作る"], LOCAL, Send, file::write),
@@ -349,7 +353,7 @@ pub static COMMANDS: &[Command] = &[
     c("issue", &[], Group::Git, ["one issue, a new one, or closing one", "Issue ひとつ、新しく、または閉じる"], &[
         offer(&[d(["Write an issue", "Issue を書く"], On::Page)],
             f(Some("new"), &[REPO_HERE, TITLE], &[Flag::Note("detail")], ["write a new one", "新しく書く"], LOCAL, Send, git::issue_new)),
-        offer(&[d(["Close", "閉じる"], On::Issue).unless(&[F::Undecided, F::OnWork, F::Closed]).away()],
+        offer(&[d(["Close", "閉じる"], On::Issue).unless(&[F::Undecided, F::OnWork, F::Closed, F::Merged]).away()],
             f(Some("close"), &[Arg::Issue], &[], ["one that will not be done", "やらないものを閉じる"], LOCAL, Send, git::issue_close)),
         offer(&[d(["Reopen", "もう一度開く"], On::Issue).when(&[F::Closed])],
             f(Some("reopen"), &[Arg::Issue], &[], ["a closed one, open again", "閉じたものをもう一度開く"], LOCAL, Send, git::issue_reopen)),
@@ -405,6 +409,22 @@ pub static COMMANDS: &[Command] = &[
         offer(&[d(["Reject", "Reject"], On::Issue).asks(&[Flag::Note("why")]).when(&[F::Undecided]).away()],
             f(None, &[Arg::Issue], &[Flag::Note("why")], ["its issue stays open", "Issue は開いたまま"], REMOTE, Send, git::reject)),
     ]),
+    c("agent", &[], Group::Git, ["what agents (Claude Code, Grok…) do in your repos, live", "エージェント（Claude Code、Grok…）の作業を、その場で"], &[
+        f(None, &[], &[], ["what it asks, has ready, can take, and is at", "質問、見てほしいもの、引き受けられるもの、作業中のもの"], DEVICE, Keep, agent::list),
+        f(Some("take"), &[Arg::Number("N")], &[], ["hand it over (or try again what could not run)", "任せる（動けなかったものはもう一度）"], DEVICE, Keep, agent::take),
+        f(Some("drop"), &[Arg::Number("N")], &[], ["not now, or looked at", "いまはいい、または見た"], DEVICE, Keep, agent::put_away),
+        f(Some("reply"), &[Arg::Number("N"), SAID], &[], ["answer what it asked; it goes on", "質問に答える（続きにかかる）"], DEVICE, Keep, agent::reply),
+        f(Some("ask"), &[REPO_HERE, SAID], &[], ["a question about the repo, answered reading only", "repo について聞く（読むだけで答える）"], DEVICE, Keep, agent::ask),
+        hidden(Some("ls"), &[], DEVICE, Keep, agent::list),
+        f(Some("on"), &[Arg::Choice(&["claude", "grok"])], &[], ["hand it work from now, and have it say what it does", "これから仕事を任せ、作業を知らせるようにする"], DEVICE, Keep, agent::on),
+        f(Some("off"), &[Arg::Choice(&["claude", "grok"])], &[], ["take that out again", "その設定を外す"], DEVICE, Keep, agent::off),
+        f(Some("hooks"), &[Arg::Choice(&["claude", "grok"])], &[], ["the hooks l3 agent on writes, to set them by hand", "l3 agent on が書くフック（手で設定するなら）"], DEVICE, Keep, agent::hooks),
+        f(Some("hook"), &[Arg::Text("HARNESS")], &[], ["what a harness's hooks call: its event's JSON on standard input; says nothing, never fails", "ハーネスのフックが呼ぶもの（イベントの JSON を標準入力に）。何も言わず、失敗しない"], LOCAL, Keep, agent::hook),
+        f(Some("hook"), &[Arg::Text("HARNESS"), Arg::Text("EVENT")], &[], ["for one whose JSON does not name its event", "JSON がイベント名を持たないハーネス用"], LOCAL, Keep, agent::hook),
+        // What a deed sets off (core tasks.rs): a repo's runner, and one run inside its Prompt.
+        hidden(Some("run"), &[], DEVICE, Keep, agent::run),
+        hidden(Some("inside"), &[Arg::Number("N")], DEVICE, Keep, agent::inside),
+    ]),
     c("runtime", &[], Group::Runtime, ["the root, and this device by size", "root と、この端末の容量"], &[
         page(f(None, &[], &[], ["what is here, and what can go", "あるものと、空けられるもの"], DEVICE, Send, runtime::page)),
     ]),
@@ -427,10 +447,16 @@ pub static COMMANDS: &[Command] = &[
         f(None, &[], &[], ["the repos given it", "渡している repo"], DEVICE, Send, runtime::network_list),
         f(None, &[Arg::Choice(&["on", "off"]), REPO], &[], ["give it (from the next Prompt), or take it (its Prompts stop)", "渡す（次の Prompt から）、取り上げる（その Prompt は止まる）"], DEVICE, Send, runtime::network_set),
     ]),
+    c("host", &[], Group::Runtime, ["this machine as a host of the OS's VMs (KVM, Firecracker)", "この機械を OS の VM のホストに（KVM、Firecracker）"], &[
+        f(None, &[], &[], ["what it has, and what it lacks with the fix for each", "あるものと、足りないもの（それぞれの直し方）"], DEVICE, Keep, runtime::host),
+        f(Some("fetch"), &[], &[], ["Firecracker, its jailer and the kernel, by their pinned digests", "Firecracker・jailer・カーネルを、固定したダイジェストで取得"], DEVICE, Keep, runtime::host_fetch),
+    ]),
     on_home(&["dotfiles"], c("dotfile", &["dotfiles"], Group::Runtime, ["what every Prompt starts with in /root", "どの Prompt も /root に置いて始まるもの"], &[
         f(Some("write"), &[Arg::Dotfile], &[Flag::Empty], ["replace (or make) it with standard input", "標準入力で置き換える（なければ作る）"], DEVICE, Send, runtime::dotfile_write),
         f(Some("rm"), &[Arg::Dotfile], &[], ["remove it", "消す"], DEVICE, Send, runtime::dotfile_rm),
-        f(None, &[], &[], ["the list", "一覧"], DEVICE, Send, runtime::dotfile_list),
+        f(Some("take"), &[], &[], ["run here too what changed on another device (until then it runs nowhere here)", "別の端末で変わったものを、ここでも動かす（それまでここでは動かない）"], DEVICE, Keep, runtime::dotfile_take),
+        f(Some("take"), &[Arg::Dotfile], &[], ["that one only", "それだけ"], DEVICE, Keep, runtime::dotfile_take),
+        f(None, &[], &[], ["the list (what changed on another device says so)", "一覧（別の端末で変わったものはそう書く）"], DEVICE, Send, runtime::dotfile_list),
         f(None, &[Arg::Dotfile], &[], ["one's text", "ひとつの本文"], DEVICE, Send, runtime::dotfile_show),
     ])),
     c("address", &[], Group::Runtime, ["where to reach this device over SSH, as `ip addr` gives an IP", "この端末に SSH で届く先（ip addr が IP を答えるように）"], &[
@@ -487,10 +513,11 @@ pub static COMMANDS: &[Command] = &[
     ]),
     c("name", &[], Group::Inbox, ["your names, as people find you (name@domain), and your code", "あなたの名前（人があなたを見つける name@domain）と、あなたのコード"], &[
         f(None, &[], &[], ["each name, one a line, nothing else", "名前を1行にひとつ、それだけ"], REMOTE, Send, people::name_only),
-        f(Some("list"), &[], &[], ["each with its term, and your code", "それぞれの期限と、あなたのコード"], REMOTE, Send, people::names),
-        f(Some("claim"), &[Arg::Text("NAME[@DOMAIN]")], &[], ["a name here: first come, for five years; on your domain, beside it", "ここでの名前（早い者勝ち、5年）。自分のドメインなら並べて"], REMOTE, Send, people::name_claim),
-        f(Some("renew"), &[Arg::Address], &[], ["five more years from now", "今から5年延ばす"], REMOTE, Send, people::name_renew),
-        f(Some("release"), &[Arg::Address], &[], ["let it go: held for you 30 days, claim it again to take it back", "手放す（30日はあなたのために取り置き、取り直せば戻る）"], REMOTE, Send, people::name_release),
+        f(Some("ls"), &[], &[], ["each, and your code", "それぞれと、あなたのコード"], REMOTE, Send, people::names),
+        hidden(Some("list"), &[], REMOTE, Send, people::names),
+        f(Some("set"), &[Arg::Text("NAME")], &[], ["change your username (given at your first sign-in): the one before is held for you 30 days", "ユーザー名を変える（最初のサインインで付いた名前。前の名前は30日取り置き）"], REMOTE, Send, people::name_set),
+        f(Some("claim"), &[Arg::Text("NAME[@DOMAIN]")], &[], ["another name, here or on your domain, beside your username", "ユーザー名とは別の名前を、ここか自分のドメインで"], REMOTE, Send, people::name_claim),
+        f(Some("release"), &[Arg::Address], &[], ["let another name go: held for you 30 days, claim it again to take it back", "別の名前を手放す（30日はあなたのために取り置き、取り直せば戻る）"], REMOTE, Send, people::name_release),
         f(Some("domain"), &[Arg::Text("DOMAIN")], &[], ["the DNS record that proves it is yours", "あなたのものだと示す DNS レコード"], REMOTE, Send, people::name_domain),
     ]),
     c("help", &[], Group::Other, ["how to use l3", "l3 の使い方"], &[
@@ -545,6 +572,38 @@ pub fn placeholder(w: &str) -> &str {
 }
 
 /// A form as it is written: `l3 issue new [REPO] "Fix：title" [-m detail]`.
+/// A form as a program reads it (`l3 help --json`): its verb, its words in order, each with its kind (the choices
+/// of one that is one of a few words), its flags (with the value each takes), what it needs to run (the Remote; this
+/// device; or nothing more, so it runs in a Prompt too) and how it keeps in step with the Remote. An agent reads the
+/// table once and writes any command from it, as `usage` writes it for a person.
+pub fn schema(f: &Form) -> serde_json::Value {
+    use serde_json::json;
+    let words: Vec<serde_json::Value> = f.args.iter().map(|a| match a {
+        Arg::Repo { optional } => json!({"kind": "repo", "optional": optional}),
+        Arg::Path { optional } => json!({"kind": "path", "optional": optional}),
+        Arg::Issue => json!({"kind": "issue"}),
+        Arg::Text(n) => json!({"kind": "text", "name": n.trim_matches('"')}),
+        Arg::Number(n) => json!({"kind": "number", "name": n}),
+        Arg::Choice(w) => json!({"kind": "choice", "choices": w}),
+        Arg::Address => json!({"kind": "address"}),
+        Arg::Dotfile => json!({"kind": "dotfile"}),
+        Arg::Many(n) => json!({"kind": "many", "name": n}),
+        Arg::Argv => json!({"kind": "argv", "optional": true}),
+    }).collect();
+    let flags: Vec<serde_json::Value> = f.flags.iter().map(|fl| match fl {
+        Flag::Note(w) => json!({"flag": "-m", "value": w}),
+        Flag::Template => json!({"flag": "-t", "value": "template", "choices": length3_core::templates::all().iter().map(|t| t.id.clone()).collect::<Vec<_>>()}),
+        Flag::Network => json!({"flag": "--network"}),
+        Flag::Todo => json!({"flag": "--todo"}),
+        Flag::Empty => json!({"flag": "--empty"}),
+        Flag::Out => json!({"flag": "-o", "value": "file"}),
+        Flag::Force => json!({"flag": "--force"}),
+    }).collect();
+    let needs = if f.needs.remote { "remote" } else if f.needs.in_prompt { "anywhere" } else { "device" };
+    let sync = match f.sync { Sync::None => "none", Sync::TakeIn => "take-in", Sync::Send => "send" };
+    json!({"verb": f.verb, "words": words, "flags": flags, "needs": needs, "sync": sync})
+}
+
 pub fn usage(c: &Command, f: &Form) -> String {
     // `l3` alone has no name to follow it.
     let mut s = if c.name.is_empty() { "l3".to_string() } else { format!("l3 {}", c.name) };

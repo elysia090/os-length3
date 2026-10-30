@@ -17,18 +17,20 @@ import {rows, type Db, type Vars} from './request.ts';
 export function news(d: {db: Db}, v1: Hono<Vars>) {
   v1.get('/news', async (c) => {
     const me = c.get('userId');
-    const [{inbox}] = await rows<{inbox: number}>(d.db, sql`select count(*)::int as inbox from message m where m.to_user = ${me} and m.read_at is null
-      and not exists (select 1 from contact k where k.user_id = ${me} and k.peer = m.from_user and k.state = 'blocked')`);
-    // Each board's newest post by another, found by its index (board_id, id) from the newest down.
-    const boards = await rows<{id: string; server: string; post: string}>(d.db, sql`select b.id, b.server_id as server, n.post
-      from server_member sm
-      join server s on s.id = sm.server_id and s.gone_at is null
-      join board b on b.server_id = sm.server_id and b.gone_at is null
-      left join board_seen r on r.board_id = b.id and r.user_id = ${me}
-      cross join lateral (select p.id as post from board_post p where p.board_id = b.id and (p.user_id is null or p.user_id <> ${me})
-        order by p.id desc limit 1) n
-      where sm.user_id = ${me} and n.post > coalesce(r.post, '')
-      order by b.created_at`);
-    return c.json({inbox, boards});
+    // One statement, one round trip: the count, and each board's newest post by another, found by its index
+    // (board_id, id) from the newest down. (Two before: the look a page takes every 20 s paid for both.)
+    const [r] = await rows<{inbox: number; boards: {id: string; server: string; post: string}[] | null}>(d.db, sql`select
+      (select count(*)::int from message m where m.to_user = ${me} and m.read_at is null
+        and not exists (select 1 from contact k where k.user_id = ${me} and k.peer = m.from_user and k.state = 'blocked')) as inbox,
+      (select json_agg(json_build_object('id', x.id, 'server', x.server, 'post', x.post) order by x.created_at) from (
+        select b.id, b.server_id as server, n.post, b.created_at
+        from server_member sm
+        join server s on s.id = sm.server_id and s.gone_at is null
+        join board b on b.server_id = sm.server_id and b.gone_at is null
+        left join board_seen r on r.board_id = b.id and r.user_id = ${me}
+        cross join lateral (select p.id as post from board_post p where p.board_id = b.id and (p.user_id is null or p.user_id <> ${me})
+          order by p.id desc limit 1) n
+        where sm.user_id = ${me} and n.post > coalesce(r.post, '')) x) as boards`);
+    return c.json({inbox: r.inbox, boards: r.boards ?? []});
   });
 }

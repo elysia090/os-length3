@@ -121,6 +121,29 @@ export class Image {
     this.slots += starts.length;
     return this.entries.has(address);
   }
+
+  /**
+   * Code another run of this program reached later: its modules as `more` made them there, from this same first
+   * module, in the order made ([{module, bytes, base}], `base` the table slot each began at). Taken in as if reached
+   * here, so none of it is translated again; it stops at the first that does not follow on from what is here (made
+   * from another start, or from code this run has reached already). How many were taken.
+   */
+  adopt(list) {
+    let n = 0;
+    for (const {module, bytes, base} of list) {
+      if (base !== this.slots) break;
+      const starts = u64s(module, 'xlat.starts');
+      if (!starts.length) break;
+      const entries = u64s(module, 'xlat.entries');
+      for (let k = 0; k < entries.length; k += 2) this.entries.set(entries[k], entries[k + 1]);
+      for (const a of starts) this.known.add(a);
+      this.extras.push({module, base: this.slots, count: starts.length, bytes});
+      this.size += bytes.length;
+      this.slots += starts.length;
+      n++;
+    }
+    return n;
+  }
 }
 
 export class Kernel {
@@ -128,9 +151,13 @@ export class Kernel {
    * vfs: the filesystem. translate(bytes) -> wasm bytes for an ELF.
    * console: {write(fd, bytes), read(n) -> Uint8Array | null (nothing yet), ready?(), interactive?}.
    */
-  constructor({vfs = new Vfs(), translate, console}) {
+  constructor({vfs = new Vfs(), translate, console, keeper = null}) {
     this.vfs = vfs;
     this.translate = translate;
+    // Translations kept from earlier runs, by a root file's origin (pack.mjs): {has(origin), take(origin)}. take gives
+    // {module, segments, size, more} once read, null when it cannot be had, or undefined while it is being read
+    // (the exec that wants it waits; the keeper wakes the kernel when it is read).
+    this.keeper = keeper;
     // Code reached later, when the translator can do it: translate.more(elf, seeds, known, base).
     this.translateMore = translate?.more ?? null;
     this.console = console;
@@ -162,10 +189,32 @@ export class Kernel {
     }
   }
 
-  /** The image for an executable file, translating it once per version. */
-  image(node) {
+  /** Whether `node` is a root file, unchanged, whose translation is kept (so it is not read to be translated). */
+  keptFor(node) { return node.version === 0 && !!node.origin && !!this.keeper?.has(node.origin); }
+
+  /**
+   * The image for an executable file, translating it once per version. `wait`: inside a call, which may wait for a
+   * translation kept from an earlier run to be read (Wait is thrown, and the call is made again once it is).
+   */
+  image(node, wait = false) {
     const cached = this.images.get(node);
     if (cached && cached.version === node.version) { cached.used = ++this.uses; return cached.image; }
+    if (wait && this.keptFor(node)) {
+      const got = this.keeper.take(node.origin);
+      if (got === undefined) throw new Wait();
+      if (got) {
+        // The file's bytes only if code it never reached before is reached now.
+        let view = null;
+        const image = new Image(got.module, () => (view ??= node.share()), got.size, got.segments);
+        image.origin = node.origin;
+        image.opened = () => view !== null;
+        image.told = image.adopt(got.more);
+        image.mainTold = true;
+        PROFILE.kept++;
+        this.images.set(node, {version: node.version, image, used: ++this.uses, kept: false});
+        return image;
+      }
+    }
     // A view of the file, not a copy: a later write to it changes a copy (File.share).
     const bytes = node.share();
     if (bytes[0] !== 0x7f || bytes[1] !== 0x45 || bytes[2] !== 0x4c || bytes[3] !== 0x46) throw new FsError(E.NOEXEC);
@@ -175,6 +224,8 @@ export class Kernel {
     // Code reached later is read from the very bytes this was translated from (and the translator keeps them parsed by identity).
     const image = new Image(new WebAssembly.Module(wasm), () => bytes, wasm.length, segments);
     PROFILE.compile += performance.now() - t; PROFILE.images++;
+    // A root file unchanged: its translation can be kept (the host hears of it once the kernel pauses: worker.mjs).
+    if (node.version === 0 && node.origin) { image.origin = node.origin; image.wasm = wasm; image.told = 0; image.mainTold = false; }
     this.images.set(node, {version: node.version, image, used: ++this.uses, kept: false});
     return image;
   }
@@ -243,7 +294,8 @@ export class Kernel {
     for (const [node, e] of spare) {
       if (over <= 0) break;
       this.images.delete(node);
-      this.translate?.close?.(e.image.source());
+      // (A kept translation whose file was never read has nothing open in the translator.)
+      if (e.image.opened?.() !== false) this.translate?.close?.(e.image.source());
       over -= e.image.size;
     }
     if (over > 0 && before.spareTranslator > 0 && this.translate?.renew?.()) over -= before.spareTranslator;
@@ -782,14 +834,15 @@ export class Process {
     let node = this.kernel.vfs.lookup(path, this.cwd);
     if (!node.isFile) throw new FsError(node.isDir ? E.ACCES : E.NOEXEC);
     if (!(node.mode & 0o111)) throw new FsError(E.ACCES);
-    const head = node.read(0, 128);
-    if (head[0] === 0x23 && head[1] === 0x21) {
+    // A program whose translation is kept is an ELF, and is not read to be run (a compiler's is tens of megabytes).
+    const head = this.kernel.keptFor(node) ? null : node.read(0, 128);
+    if (head && head[0] === 0x23 && head[1] === 0x21) {
       // #!interpreter [arg]
       const line = dec.decode(head).split('\n')[0].slice(2).trim();
       const [interpreter, ...rest] = line.split(/\s+/);
       return this.execve(interpreter, [interpreter, ...rest.slice(0, 1), path, ...argv.slice(1)], env);
     }
-    const image = this.kernel.image(node);
+    const image = this.kernel.image(node, !!this.call);
     const f = image.facts;
     // The point of no return: the other threads go (Linux's de_thread), and so does a memory shared with a vfork parent.
     const t = this.task;
@@ -1006,7 +1059,7 @@ export class Task {
 export const REG = [...Array.from({length: 16}, (_, n) => `r${n}`), 'fs', 'fl', 'rf'];
 
 /** Where the time went (run.mjs prints it with XLAT_TIMING=1): translating, compiling wasm, how much, and what a pack root fetched. */
-export const PROFILE = {images: 0, modules: 0, bytes: 0, translate: 0, compile: 0, fetches: 0, fetched: 0};
+export const PROFILE = {images: 0, modules: 0, bytes: 0, translate: 0, compile: 0, fetches: 0, fetched: 0, kept: 0};
 /** XLAT_SYSCALLS=1 lists every system call on stderr (node only). */
 export const TRACE_SYSCALLS = typeof process !== 'undefined' && !!process.env?.XLAT_SYSCALLS;
 /** XLAT_FAULTS=1 says what each fault that ends a process was (node only). */

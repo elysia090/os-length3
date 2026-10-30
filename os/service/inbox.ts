@@ -1,7 +1,8 @@
 // Inbox: messages between people, found by address (name@domain).
 //
 // Publication and discovery go through the domain: a name on this Remote's
-// own domain is claimed here; a name on any other domain needs its owner to
+// own domain is given at the first sign-in (the username, names.ts nameFor)
+// and changed here, or another claimed beside it; a name on any other domain needs its owner to
 // say so in the domain's DNS, as mail says where it goes with MX:
 //
 //   _length3.example.org  TXT  "v=length3; remote=os.length3.com; proof=<26 letters>"
@@ -13,7 +14,7 @@
 // is kept to check it, and it is checked again whenever it matters.
 //
 // What keeps this from being anyone's free relay:
-//   - every account is a provider's identity (auth.ts); to send you need an address
+//   - every account is a provider's identity (auth.ts), and writes as its username
 //   - text only, and small; no attachments: the Inbox carries words, not files
 //   - a sender sends at most so many an hour; someone who has not accepted
 //     you holds at most a few requests from you, and a few from strangers in all
@@ -22,26 +23,27 @@
 //     lived, and offers no TURN: what cannot connect directly stays a message
 //   - messages read expire (sweep.ts)
 
-import {and, eq, gt, isNull, or, sql} from 'drizzle-orm';
+import {and, eq, gt, inArray, isNull, or, sql} from 'drizzle-orm';
 import type {Hono} from 'hono';
 import {HTTPException} from 'hono/http-exception';
-import {byCode, claim, codeOf, HOLD, kept, live, release} from './names.ts';
+import {byCode, claim, codeOf, HOLD, kept, live, NAME, nameFor, release} from './names.ts';
 import type {Plans} from './plan.ts';
 import {hmacHex, same} from './keys.ts';
-import {ago, body, lock, ms, refuse, rows, slowDown, UUID, type Db, type Vars} from './request.ts';
-import {address, contact, message, server, signal, throttle} from './schema.ts';
+import {ago, body, insertWhere, lock, ms, refuse, rows, slowDown, UUID, type Db, type Vars} from './request.ts';
+import {address, contact, message, repoPublic, server, signal, throttle, user} from './schema.ts';
 
 export const INBOX = {
   body: 4000, perHour: 60, requestsPerPeer: 3, requestsInAll: 30, addresses: 5,
   signal: 16 * 1024, signalsPerMinute: 120, signalLife: 2 * 60_000, keepDays: 90,
   /** Codes an account looks up an hour: someone is found by theirs, everyone is not read off by trying them all. */
   codesPerHour: 30,
+  /** Username changes an hour. */
+  renamesPerHour: 2,
 } as const;
-const NAME = /^[a-z0-9][a-z0-9._-]{1,30}$/;
 const DOMAIN = /^(?=.{3,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 const TYPES = ['message', 'review', 'question', 'run'] as const;
 
-export interface InboxDeps {
+interface InboxDeps {
   db: Db;
   /** This Remote's own domain: names claimed here are name@domain. */
   domain: string;
@@ -82,7 +84,7 @@ export function parseAddress(a: string): {name: string; domain: string} | null {
 type Address = typeof address.$inferSelect;
 
 /** What servers.ts asks of names: whether an account's proof for a domain is in its DNS now (null: not readable now). */
-export interface Proofs { proven(owner: string, domain: string): Promise<boolean | null> }
+interface Proofs { proven(owner: string, domain: string): Promise<boolean | null> }
 
 export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
   const db = d.db;
@@ -178,7 +180,6 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
     const p = parseAddress(q.includes('@') ? q : `${q}@${d.domain}`);
     if (!p) return {why: 'That is not a name'};
     const [row] = await db.select().from(address).where(and(eq(address.address, `${p.name}@${p.domain}`), isNull(address.releasedAt))) as Address[];
-    if (row?.until && row.until.getTime() <= Date.now()) return {why: 'No one has that name'};
     if (row?.userId) {
       if (!await stillNamed(row)) return {why: 'Its domain no longer names this Remote'};
       return {userId: row.userId, address: row.address};
@@ -209,11 +210,54 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
       found: records.some((r) => r.remote === host && same(r.proof, proof))});
   });
 
+  /** `me`'s name, given now from what they are called if they have none: nobody is asked to claim one before being anyone. */
+  const named = (me: string) => nameFor(db, me, d.domain);
+
   v1.get('/inbox/me', async (c) => {
-    const list = await mine(c.get('userId'));
-    const code = await codeOf(db, {userId: c.get('userId')});
-    return c.json({domain: d.domain, account: c.get('userId'), code, addresses: list.map((a) => ({address: a.address,
-      ...(a.until ? {until: a.until.getTime(), ...(a.until.getTime() <= Date.now() ? {ended: true} : {})} : {}), ...(a.lapsedAt ? {lapsed: true} : {})}))});
+    const me = c.get('userId');
+    // Its names and its code in one read (two before); an account with no code yet is given one (codeOf), and one with
+    // no name on this Remote, its username (named).
+    const read = async () => await db.select({a: address, code: sql<string | null>`(select p.code from principal_code p where p.user_id = ${me})`}).from(user)
+      .leftJoin(address, and(eq(address.userId, user.id), isNull(address.releasedAt))).where(eq(user.id, me)).orderBy(address.createdAt) as {a: Address | null; code: string | null}[];
+    let got = await read();
+    if (!got.some((r) => r.a?.domain === d.domain)) { await named(me); got = await read(); }
+    const list = got.flatMap((r) => (r.a ? [r.a] : []));
+    const code = got[0]?.code ?? await codeOf(db, {userId: me});
+    return c.json({domain: d.domain, account: c.get('userId'), code, addresses: list.map((a) => ({address: a.address, ...(a.lapsedAt ? {lapsed: true} : {})}))});
+  });
+
+  // Their username changed: the new name taken, the one it replaces let go (held for them 30 days, so nobody is taken
+  // for them meanwhile, and they may change back), and what went public under the old one as their own face goes on
+  // under the new. Not a name more: it is counted as the one it replaces. Twice an hour at most (as Discord), so
+  // nobody holds a row of names by changing through them.
+  v1.put('/inbox/username', async (c) => {
+    const me = c.get('userId');
+    const b = await body<{name?: unknown}>(c);
+    const name = typeof b?.name === 'string' ? b.name.trim().replace(/^@/, '').toLowerCase() : '';
+    if (!NAME.test(name)) return c.json({error: 'A name is 2–31 letters, digits, dots, dashes or underscores'}, 400);
+    const a = `${name}@${d.domain}`;
+    const got = await db.transaction(async (tx: Db) => {
+      await lock(tx, me);
+      const was = await nameFor(tx, me, d.domain);
+      if (was === a) return {ok: true} as const;
+      const key = `username:${me}`;
+      const [{n, first}] = await rows<{n: number; first: number | null}>(tx, sql`select count(*)::int as n, ${ms(sql`min(at)`)} as first from throttle where key = ${key} and at > ${ago(3600_000)}`);
+      if (n >= INBOX.renamesPerHour) slowDown(((first ?? Date.now()) + 3600_000 - Date.now()) / 1000, {error: 'Your name can change twice an hour'});
+      const r = await claim(tx, name, d.domain, {userId: me});
+      if (!r.ok) return r;
+      // The username is their first name on this Remote: the new one stands where the one it replaces stood, before
+      // any other they have here (not after them, as a name made now would).
+      await tx.update(address).set({createdAt: sql`(select a.created_at from address a where a.address = ${was})`}).where(eq(address.address, a));
+      // Faces taken down under the new name long ago (or its own, when it was theirs before) give way to those moved.
+      const moved = await tx.select({name: repoPublic.name}).from(repoPublic).where(and(eq(repoPublic.face, was), isNull(repoPublic.serverId), isNull(repoPublic.releasedAt))) as {name: string}[];
+      if (moved.length) await tx.delete(repoPublic).where(and(eq(repoPublic.face, a), inArray(repoPublic.name, moved.map((m) => m.name))));
+      await tx.update(repoPublic).set({face: a}).where(and(eq(repoPublic.face, was), isNull(repoPublic.serverId), isNull(repoPublic.releasedAt)));
+      await release(tx, was);
+      await tx.insert(throttle).values({key});
+      return r;
+    });
+    if (got.ok) return c.json({address: a});
+    return c.json(got.until ? {error: 'That name was let go, and is held for its owner a while', until: got.until} : {error: 'That name is taken'}, 409);
   });
 
   // Claim an address. On this Remote's domain the name is free or not; on another,
@@ -246,19 +290,10 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
       await lock(tx, me);
       await counted(tx);
       // One namespace with servers' names; on this Remote, first come, for a term; a name let go is held for its old owner a while.
-      return claim(tx, name, domain, {userId: me}, domain === d.domain);
+      return claim(tx, name, domain, {userId: me});
     });
-    if (got.ok) return c.json({address: `${name}@${domain}`, until: got.until}, 201);
+    if (got.ok) return c.json({address: `${name}@${domain}`}, 201);
     return c.json(got.until ? {error: 'That name was let go, and is held for its owner a while', until: got.until} : {error: 'That name is taken'}, 409);
-  });
-
-  // Renew a name on this Remote: held for another term from now (and taken back, if its term ran out a little while ago).
-  v1.post('/inbox/addresses/:address/renew', async (c) => {
-    const a = c.req.param('address').toLowerCase();
-    const [row] = await db.select().from(address).where(and(eq(address.address, a), eq(address.userId, c.get('userId')), isNull(address.releasedAt))) as Address[];
-    if (!row || row.domain !== d.domain) return c.json({error: 'That name is not yours'}, 404);
-    const got = await claim(db, row.name, row.domain, {userId: c.get('userId')}, true);
-    return got.ok ? c.json({address: a, until: got.until}) : c.json({error: 'That name is taken'}, 409);
   });
 
   // Let an address go: it stops answering at once, and is held for this account a while (it may take it back).
@@ -266,6 +301,9 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
     const a = c.req.param('address').toLowerCase();
     const [row] = await db.select({a: address.address}).from(address).where(and(eq(address.address, a), eq(address.userId, c.get('userId')), isNull(address.releasedAt)));
     if (!row) return c.json({error: 'That name is not yours'}, 404);
+    // A username is changed, never let go: without one nobody could find them, and one would be given again at once.
+    const [{n}] = await db.select({n: sql<number>`count(*)::int`}).from(address).where(and(eq(address.userId, c.get('userId')), eq(address.domain, d.domain), isNull(address.releasedAt)));
+    if (a.endsWith(`@${d.domain}`) && n <= 1) return c.json({error: 'Your username can be changed, not let go'}, 409);
     await db.transaction((tx: Db) => release(tx, a));
     return c.json({address: a, until: Date.now() + HOLD});
   });
@@ -312,8 +350,11 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
     let from: Address | undefined;
     // The one it says first (if it is theirs), then their others: never another's, whatever it says.
     for (const a of [...own.filter((x) => x.address === b?.from), ...own.filter((x) => x.address !== b?.from)]) if (await stillNamed(a)) { from = a; break; }
-    if (!from && own.length) return c.json({error: 'That name\'s domain no longer names this account'}, 409);
-    if (!from) return c.json({error: 'Claim a name first'}, 409);
+    // None that answers (none yet, or only names on domains that no longer name them): their username writes it.
+    if (!from) {
+      const a = await named(me);
+      from = (await mine(me)).find((x) => x.address === a);
+    }
     const to = await resolve(me, typeof b?.to === 'string' ? b.to : '');
     if (!('userId' in to)) return c.json({error: to.why}, 404);
     if (to.userId === me) return c.json({error: 'That is you'}, 400);
@@ -331,18 +372,19 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
         // Sent already: nothing is counted or written again.
         if (had) return;
       }
-      const [n] = await rows<{sent: number; pair: number; waiting: number}>(tx, sql`select
-        (select count(*)::int from message where from_user = ${me} and created_at > ${hour}) as sent,
-        (select count(*)::int from message where from_user = ${me} and to_user = ${to.userId} and read_at is null) as pair,
-        (select count(*)::int from message m where m.to_user = ${to.userId} and m.read_at is null
-          and not exists (select 1 from contact k where k.user_id = ${to.userId} and k.peer = m.from_user and k.state = 'accepted')) as waiting`);
+      const sent = sql`(select count(*) from message where from_user = ${me} and created_at > ${hour})`;
+      const pair = sql`(select count(*) from message where from_user = ${me} and to_user = ${to.userId} and read_at is null)`;
+      const waiting = sql`(select count(*) from message m where m.to_user = ${to.userId} and m.read_at is null
+          and not exists (select 1 from contact k where k.user_id = ${to.userId} and k.peer = m.from_user and k.state = 'accepted'))`;
+      // Not accepted by them yet: a request, of which they hold only a few. Counted and written in one statement; only
+      // when it was not written are the counts read again, to say which.
+      const room = rel.theirs === 'accepted' ? sql`${sent} < ${INBOX.perHour}`
+        : sql`${sent} < ${INBOX.perHour} and ${pair} < ${INBOX.requestsPerPeer} and ${waiting} < ${INBOX.requestsInAll}`;
+      if (await insertWhere(tx, message, {id, to: to.userId, from: me, fromAddress: from!.address, toAddress: to.address, type, target, body: text}, room)) return;
+      const [n] = await rows<{sent: number; pair: number}>(tx, sql`select ${sent}::int as sent, ${pair}::int as pair`);
       if (n.sent >= INBOX.perHour) slowDown(3600, {error: 'Too many messages this hour'});
-      // Not accepted by them yet: a request, of which they hold only a few.
-      if (rel.theirs !== 'accepted') {
-        if (n.pair >= INBOX.requestsPerPeer) refuse(429, {error: 'Wait for them to answer before writing more'});
-        if (n.waiting >= INBOX.requestsInAll) refuse(429, {error: 'They have too many requests waiting'});
-      }
-      await tx.insert(message).values({id, to: to.userId, from: me, fromAddress: from!.address, toAddress: to.address, type, target, body: text});
+      if (n.pair >= INBOX.requestsPerPeer) refuse(429, {error: 'Wait for them to answer before writing more'});
+      refuse(429, {error: 'They have too many requests waiting'});
     });
     // Writing to someone is accepting them.
     if (rel.mine !== 'accepted') {
@@ -356,12 +398,12 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
   // Each the last message with each person and how many are unread, in one read.
   v1.get('/inbox/threads', async (c) => {
     const me = c.get('userId');
-    const list = await rows<{peer: string; type: string; body: string; mine: boolean; time: number; from_address: string; to_address: string;
+    const list = await rows<{peer: string; type: string; body: string; target: Record<string, unknown> | null; mine: boolean; time: number; from_address: string; to_address: string;
       unread: number; name: string | null; state: string | null; address: string | null}>(db, sql`
       select t.*, u.name, k.state,
         (select a.address from address a where a.user_id = t.peer and a.released_at is null order by a.created_at limit 1) as address
       from (
-        select distinct on (peer) peer, type, left(body, 140) as body, from_user = ${me} as mine, ${ms(sql`created_at`)} as time, from_address, to_address,
+        select distinct on (peer) peer, type, left(body, 140) as body, target, from_user = ${me} as mine, ${ms(sql`created_at`)} as time, from_address, to_address,
           (count(*) filter (where to_user = ${me} and read_at is null) over (partition by peer))::int as unread
         from (select m.*, case when m.from_user = ${me} then m.to_user else m.from_user end as peer from message m where m.to_user = ${me} or m.from_user = ${me}) x
         order by peer, created_at desc
@@ -372,7 +414,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
     return c.json(list.map((t) => ({
       address: t.address ?? (t.mine ? t.to_address : t.from_address), name: t.name ?? '',
       state: t.state === 'blocked' ? 'blocked' : t.state === 'accepted' ? 'contact' : 'request',
-      unread: t.unread, last: {type: t.type, body: t.body, mine: t.mine, time: t.time},
+      unread: t.unread, last: {type: t.type, body: t.body, target: t.target ?? {}, mine: t.mine, time: t.time},
     })));
   });
 

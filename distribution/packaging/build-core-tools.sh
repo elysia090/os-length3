@@ -83,8 +83,8 @@ extract_once "$util_tar" "$util_source"
 extract_once "$kmod_tar" "$kmod_pristine"
 extract_once "$iproute_tar" "$iproute_pristine"
 
-util_patch=$data/patches/util-linux-2.42.3-openat2.patch
-if [[ $UTIL_LINUX_VERSION != 2.42.3 ]]; then
+util_patch=$data/patches/util-linux-2.42.4-openat2.patch
+if [[ $UTIL_LINUX_VERSION != 2.42.4 ]]; then
   printf 'review the version-specific util-linux openat2 patch before upgrading\n' >&2
   exit 1
 fi

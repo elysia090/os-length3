@@ -1,0 +1,70 @@
+/* File: the tree of "/" beside the rail, its rows and what can be done to one. */
+
+/* File: the tree of "/" as a card beside the rail, as tall as what is in it,
+   its "/" level with the File icon; nothing under it moves. It opens under the pointer and stays a while after it
+   leaves (tree.ts). */
+.tree {
+  position: fixed; top: var(--tree-top, var(--outer-top)); left: calc(var(--outer) + var(--rail) + var(--s2) - var(--s3)); z-index: 5;
+  width: min(clamp(260px, 20vw, 340px), calc(100vw - 2 * var(--outer) - var(--rail) - var(--s2))); max-height: calc(100vh - var(--tree-top, var(--outer-top)) - var(--outer-bottom)); overflow: auto;
+  /* Concentric with its rows: the card's corner is the row's corner plus the padding between them. */
+  padding: var(--s2); background: var(--paper); border: 1px solid var(--rule); border-radius: var(--r-card);
+  /* It comes out of the rail it was opened from: a few pixels from the left, drawn out from its left edge as a drawer
+     is, whole the while (never faded over the page, the page's words through its own); it goes back the same way.
+     (Moved by its left edge, not a transform, which would make it the frame its row menus are placed in.) */
+  visibility: hidden; clip-path: inset(-2px 100% -2px -2px round var(--r-card));
+  transition: clip-path calc(220ms * var(--pace)) var(--land), left calc(220ms * var(--pace)) var(--land), visibility 0s calc(220ms * var(--pace));
+}
+.tree.open { left: calc(var(--outer) + var(--rail) + var(--s2)); visibility: visible; clip-path: inset(-2px -2px -2px -2px round var(--r-card));
+  transition: clip-path calc(220ms * var(--pace)) var(--land), left calc(220ms * var(--pace)) var(--land), visibility 0s; }
+/* Out, it cuts nothing (tree.ts): a row's menu stands beside it. */
+.tree.open.settled { clip-path: none; }
+.tree ul { list-style: none; margin: 0; padding: 0; }
+.tree-row { display: flex; align-items: center; min-height: var(--h-row); padding-left: calc(var(--depth, 0) * var(--s4)); border-radius: var(--r-field); }
+.tree-name {
+  flex: 1; min-width: 0; min-height: var(--h-row); padding: 0 var(--s1); text-align: left; border: 0; background: transparent; color: inherit; cursor: var(--cursor-hand);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tree-name.plain { display: flex; align-items: center; cursor: var(--cursor-arrow); color: var(--sub); }
+/* The keyboard on a row: the row is ringed, round as the row is, not the name in a square of its own. The row a deed
+   just made or renamed has the keyboard without the ring (it is lit for that), until a key is pressed there. */
+.tree-name:focus-visible { outline: none; }
+.tree-row:has(> .tree-name:focus-visible) { outline: 1.5px solid var(--ink); outline-offset: -1.5px; }
+.tree-row.settled:has(> .tree-name:focus-visible) { outline: none; }
+.tree-repo > .tree-row .tree-name { font-weight: 600; }
+/* The file Forge is reading: a short straight line at its row's left, kept apart from the pointer's raised row. */
+.tree-row { position: relative; }
+.tree-row:has(> [aria-current='location'])::before { content: ''; position: absolute; left: 0; top: 25%; bottom: 25%; width: var(--line-work); background: var(--ink); }
+.tree-name[aria-current='location'] { font-weight: 600; }
+.tree-meta { flex: none; padding: 0 var(--s2); font-size: var(--t-meta); opacity: .8; }
+/* A row with nothing to do to it (/, System) keeps its words where the others' end, before their ⋯. */
+.tree-row:not(:has(> .tree-more)) > .tree-meta { margin-right: calc(var(--s5) + var(--s1)); }
+/* Only on the Remote: quiet, as a card of one is dashed. */
+.tree-away > .tree-row .tree-name { color: var(--sub); }
+/* What the system is made of (/bin, /dev, /etc, /proc and what is in them) steps back, so /root and the repos in it
+   are what the eye finds first; under the pointer or the keyboard a row is in ink again. */
+.tree-sys .tree-row:not(:hover, :focus-within, :has(> [aria-current='page'])) :is(.tree-name, .tree-toggle) { color: var(--sub); }
+/* The rest of / under one quiet row at the tree's foot, a step apart from the repos above it. */
+.tree-system { margin-top: var(--s2); }
+.tree-system > .tree-row > .tree-meta { color: var(--sub); }
+.tree-toggle, .tree-spacer { flex: none; width: var(--s5); height: var(--h-row); }
+.tree-toggle { display: grid; place-items: center; border: 0; background: transparent; color: inherit; cursor: var(--cursor-hand); }
+.tree-toggle .icon { width: var(--s3); height: var(--s3); transition: transform var(--motion); }
+.tree-toggle[aria-expanded='false'] .icon { transform: rotate(-90deg); }
+.tree-note { padding: var(--s1) var(--s2) var(--s1) calc(var(--depth, 0) * var(--s4) + var(--s5) + var(--s1)); font-size: var(--t-meta); }
+/* What can be done to a row inside a repo, at its right end: round, as a
+   thing pressed is, shown on the row under the pointer or the keyboard, and
+   kept while its menu is out. It keeps its room either way, so nothing moves,
+   and is there to be heard while unseen. */
+.tree-more { flex: none; display: grid; place-items: center; width: var(--s5); height: var(--s5); margin-right: var(--s1); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: inherit; cursor: var(--cursor-hand); opacity: 0; }
+.tree-more .mark { width: var(--s4); height: var(--s4); }
+.tree-row:hover > .tree-more, .tree-row:focus-within > .tree-more, .tree-more[aria-expanded='true'] { opacity: 1; }
+.tree-more[aria-expanded='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+.tree-row:has(> [aria-current='page']) > .tree-more { border-color: currentColor; }
+/* Its menu, beside the tree at the row's height: out in the free space. */
+.tree-pop { position: fixed; z-index: 6; width: 260px; }
+/* A row carried by the pointer stays where it was, faded; the folder it would go into under it is raised and ringed in
+   ink, as the keyboard's row is. What a move could not do is said at the tree's foot. */
+.tree-row.carried { opacity: .4; }
+.tree-row.taking { background: var(--raised); outline: 1.5px solid var(--ink); outline-offset: -1.5px; }
+.tree-said:empty { display: none; }
+.tree-said { margin: var(--s1) var(--s2) 0; }

@@ -1,0 +1,98 @@
+/* An issue opened large: its words, its foot, and the issues beside it as boxes side by side. */
+
+/* An issue opened large: its words first, then what can be done, then its parts. */
+.issue-big-head { display: grid; gap: var(--s1); }
+.issue-big-head h2 { margin: 0; font-size: var(--t-card); font-weight: 600; }
+.issue-no { color: var(--sub); }
+.issue-box { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s3); } /* nothing in it wider than the box (a narrow box held wide by its foot) */
+.issue-box > .issue-body, .issue-words > .issue-body { margin: 0; max-width: 72ch; }
+/* An issue's words are where they are changed: pressed, they become their fields. */
+.issue-words { display: grid; gap: var(--s3); width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-text); border-radius: var(--r-field); }
+.issue-words:focus-visible { outline: 2px solid var(--ink); outline-offset: var(--s1); }
+.issue-form.issue-edit { margin: 0; padding: 0; border: 0; }
+.issue-box > .work-act { margin-top: var(--s2); flex-wrap: wrap; }
+/* The box's foot: where it lives and who started it at the left, its action at the right. */
+.issue-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); margin-top: var(--s2); }
+.issue-foot > .issue-about { flex: 1; min-width: 0; }
+/* Its repo, then who started it and when, on one line ("hello · Ada · started 2 min ago"), wrapping only where there
+   is no room: a quiet line, not a block that holds the foot two lines tall. */
+.issue-about { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s2); min-width: 0; }
+.issue-about > .issue-where + .muted::before { content: '·' / ''; margin-right: var(--s2); }
+.issue-about .issue-where { font-size: var(--t-meta); }
+.issue-big-head .issue-where { font-size: var(--t-meta); }
+
+/* Issues as large boxes side by side: one in full, its neighbours' edges
+   showing at both sides; the track slides to the one chosen. An edge is a
+   clear button over the neighbour, which lifts (raised) while it is hovered,
+   as a place does. The current box is a large place: an ink edge over raised. */
+/* How much of a neighbour shows (--row-peek) and where along the row the box in full stands (--row-lead: 0 at the
+   first, 2 at the last, 1 between), the row's and main's over it alike: registered, so that drawn again (a deed done,
+   an issue come or gone: git/issue-row.ts settle) they ease to where they now are, the box widening as its
+   neighbours go, rather than the row sliding as if gone along or the box jumping. */
+@property --row-peek { syntax: '<length>'; inherits: true; initial-value: 0px; }
+@property --row-lead { syntax: '<number>'; inherits: true; initial-value: 0; }
+.issue-column, .main-part { --row-peek: 48px; --row-lead: 0; --peek: var(--row-peek); --lead: var(--row-lead); }
+.issue-column.single, .main-part.single { --row-peek: 0px; }
+.issue-column.settling, .main-part.settling { transition: --row-peek var(--move) var(--land), --row-lead var(--move) var(--land); }
+.issue-column.settling .issue-track, .main-part.settling > .main-card { transition: none; }
+.issue-column { --gap: var(--s3); }
+.issue-stage { position: relative; overflow-x: clip; touch-action: pan-y; } /* a sideways swipe is the row's (git/issue-row.ts), a page's scroll is the browser's */
+.issue-stage:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: var(--r-place); }
+.issue-track { --at: 0; display: flex; gap: var(--gap); transform: translateX(calc(var(--lead) * var(--peek) - var(--at) * (100% - 2 * var(--peek) + var(--gap)))); transition: transform var(--slide); }
+@media (prefers-reduced-motion: reduce) { .issue-track, .issue-slot { transition: none; } }
+/* The box gone from, while the row slides away from it: as it was (its room inside kept, its words going to the
+   neighbour's grey), until it is at the edge and becomes its head. */
+.issue-slot.leaving[aria-current='false'] .issue-card { padding-inline: var(--s5); }
+/* A slot is an issue's column: its card, then its Review and Merge. */
+.issue-slot { flex: 0 0 calc(100% - 2 * var(--peek)); min-width: 0; align-self: start; }
+/* Less room above than below, so the card's weight sits a little high. */
+.issue-card { padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s6); border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper); transition: background var(--motion), border-color var(--motion), color var(--move); }
+.issue-slot[aria-current='false'] .issue-card { color: var(--sub); min-height: var(--card-h, auto); }
+.issue-slot[aria-current='true'] .issue-card { border-color: var(--ink); background: var(--paper); }
+/* A neighbour shows its number at the edge that shows: the one after at its left, the one before at its right. */
+.issue-slot[aria-current='false'] .issue-card { padding-inline: var(--s2); }
+.issue-big-head.peek h2 { white-space: nowrap; }
+/* Small, on the line the title's words stand on (its line is the title's: the number alone set small in it). */
+.issue-big-head.peek .issue-no { font-size: var(--t-body); }
+.issue-slot:has(+ .issue-slot[aria-current='true']) .issue-big-head.peek { text-align: right; }
+/* Hovered, the neighbour lifts (raised, its edge and number in ink, the number a step toward the box it would become)
+   and its edge shows which way it goes, a chevron there: where the pointer is is a way along, said before it is
+   pressed. */
+.issue-stage:has(.stage-hit.next:hover) .issue-slot[aria-current='true'] + .issue-slot .issue-card,
+.issue-stage:has(.stage-hit.prev:hover) .issue-slot:has(+ .issue-slot[aria-current='true']) .issue-card { border-color: var(--edge); color: var(--ink); background: var(--raised); }
+.issue-big-head.peek { transition: translate var(--move) var(--land); }
+.issue-stage:has(.stage-hit.next:hover) .issue-slot[aria-current='true'] + .issue-slot .issue-big-head.peek { translate: 4px 0; }
+.issue-stage:has(.stage-hit.prev:hover) .issue-slot:has(+ .issue-slot[aria-current='true']) .issue-big-head.peek { translate: -4px 0; }
+.issue-stage > .stage-hit::after {
+  content: ''; position: absolute; top: 50%; left: 50%; width: 9px; height: 9px; border: solid var(--ink); border-width: 0 2px 2px 0;
+  opacity: 0; transition: opacity var(--motion), translate var(--move) var(--land);
+}
+.issue-stage > .stage-hit.next::after { margin: -5px 0 0 -7px; rotate: -45deg; translate: -3px 0; }
+.issue-stage > .stage-hit.prev::after { margin: -5px 0 0 -2px; rotate: 135deg; translate: 3px 0; }
+.issue-stage > .stage-hit:is(:hover, :focus-visible)::after { opacity: 1; translate: 0 0; }
+.stage-hit { position: absolute; top: 0; bottom: 0; z-index: 1; width: var(--peek); padding: 0; border: 0; border-radius: var(--r-place); background: transparent; cursor: var(--cursor-hand); }
+.stage-hit.prev { left: 0; width: calc(var(--lead) * var(--peek)); }
+.stage-hit.next { right: 0; width: calc((2 - var(--lead)) * var(--peek)); }
+.stage-hit:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+/* A neighbour runs on past the column's edge: there it goes into the ground, not cut off square as if broken (Server's
+   boards, the search's finds, Git's issues alike). */
+.slide-stage::before, .slide-stage::after, .issue-stage::before, .issue-stage::after { content: ''; position: absolute; top: 0; bottom: 0; z-index: 1; width: min(var(--peek), var(--s5)); pointer-events: none; opacity: 0; transition: opacity var(--motion); }
+.slide-stage::before, .issue-stage::before { left: 0; background: linear-gradient(to left, transparent, var(--ground)); }
+.slide-stage::after, .issue-stage::after { right: 0; background: linear-gradient(to right, transparent, var(--ground)); }
+.slide-stage:has(.slide[aria-current='true'] + .slide)::after, .slide-stage:has(.slide + .slide[aria-current='true'])::before,
+.issue-stage:has(.issue-slot[aria-current='true'] + .issue-slot)::after, .issue-stage:has(.issue-slot + .issue-slot[aria-current='true'])::before { opacity: 1; }
+.space-col > h3 small { margin-left: var(--s2); font-weight: 400; color: var(--sub); font-size: var(--t-meta); }
+
+/* An agent at work on the issue (git/agent-line.ts): its dot breathes while it works, beats at each tool, and holds
+   still in the marker's yellow while it waits for the person. */
+.agent-line { display: grid; gap: var(--s1); font-size: var(--t-meta); }
+.agent-row { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; color: var(--sub); }
+.agent-who { color: var(--ink); font-weight: 600; flex: none; }
+.agent-doing { font-family: var(--mono); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-waits { flex: none; background: var(--marker-soft); color: var(--ink); border-radius: var(--r-round); padding: 0 var(--s2); }
+.agent-dot { flex: none; inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--done); align-self: center; }
+.agent-row.working .agent-dot, .agent-mark:not(.waits) { animation: agent-breath calc(900ms * var(--pace)) ease-in-out infinite alternate; }
+.agent-row.waits .agent-dot, .agent-mark.waits { background: var(--marker); box-shadow: 0 0 0 1px var(--edge) inset; }
+.agent-mark { display: inline-block; margin-inline-start: var(--s1); vertical-align: middle; }
+@keyframes agent-breath { from { opacity: .45; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .agent-row.working .agent-dot, .agent-mark { animation: none; } }

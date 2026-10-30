@@ -1,0 +1,32 @@
+/* A page in parts: the row of its parts, each part's panel and the parts within it. */
+/* A page in parts (common.ts parts()): the headings are the switch, the
+   chosen one an ink fill like anything chosen; only its part is shown. */
+.part-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s3); margin-top: var(--s5); }
+/* Never wider than the page: on a phone the parts slide inside it (as wide as their words, they reached past the
+   window's edge, cut off there, and the one chosen could not be brought into view). */
+.part-bar > .parts { min-width: 0; max-width: 100%; }
+.parts { position: relative; isolation: isolate; display: flex; flex-wrap: wrap; gap: var(--s1); }
+/* While the ink goes to it, its edge is not yet the ink's (glide.ts): a part has none, a chip or a pill its own. */
+.part.arriving { border-color: transparent !important; }
+.chip.arriving, .pill.arriving { border-color: var(--edge) !important; }
+/* Who this device is on the Remote, and whether the Remote answers: two things on one line, said apart. */
+.standing { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s4); margin: var(--s4) 0 0; }
+.standing-reach.away { color: var(--off); }
+/* Just back from a provider: a passkey for next time, in a card of its own above the parts. */
+.passkey-next { margin-bottom: var(--s5); padding: var(--s4); border: 1px solid var(--edge); border-radius: var(--r-card); background: var(--raised); max-width: 760px; }
+.passkey-next p { margin: 0 0 var(--s2); }
+.offer-holder.held { display: none; }
+.part {
+  height: var(--h-control); padding: 0 var(--s4); border: 1px solid transparent; border-radius: var(--r-round);
+  background: transparent; color: var(--sub); font: inherit; font-size: var(--t-body); font-weight: 600; cursor: var(--cursor-hand);
+}
+.part small { display: inline-block; margin-left: var(--s2); font-weight: 400; font-size: var(--t-meta); }
+.part small:empty { display: none; }
+.part:hover { background: var(--raised); color: var(--ink); }
+.part[aria-selected='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+.part[aria-selected='true'] small { color: inherit; opacity: .8; }
+.part-panel { margin-top: var(--s5); }
+
+.sub-part + .sub-part { margin-top: var(--s5); }
+.sub-part h3 { display: flex; justify-content: space-between; align-items: center; margin: 0 0 var(--s3); font-size: var(--t-body); font-weight: 600; }
+.sub-part h3 small { margin-left: var(--s2); font-weight: 400; color: var(--sub); font-size: var(--t-meta); }

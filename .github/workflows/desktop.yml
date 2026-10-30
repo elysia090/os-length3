@@ -51,7 +51,7 @@ jobs:
       - if: steps.kept.outputs.cache-hit != 'true'
         run: rustup target add wasm32-wasip1
       - if: steps.kept.outputs.cache-hit != 'true'
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: os -> target
           shared-key: core-wasm
@@ -94,7 +94,7 @@ jobs:
       - if: steps.kept.outputs.cache-hit != 'true'
         run: rustup target add wasm32-unknown-unknown
       - if: steps.kept.outputs.cache-hit != 'true'
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: xlat -> target
           shared-key: l3-web
@@ -178,7 +178,7 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup target add wasm32-wasip1
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: os -> target
           shared-key: lint
@@ -210,7 +210,7 @@ jobs:
         run: |
           # l3 prompt makes user namespaces, as on a person's machine; this image's AppArmor keeps them from users.
           if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; fi
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: os -> target
           shared-key: rust
@@ -226,10 +226,14 @@ jobs:
           npm run selftest:l3
 
   # The x86-64 → wasm translator against native, and l3 as the Prompt carries it (static, musl), translated
-  # as a browser's Prompt runs it.
+  # as a browser's Prompt runs it: the two side by side, each its own build kept.
   xlat:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [native, prompt]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -242,20 +246,23 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends musl-tools
           rustup target add x86_64-unknown-linux-musl wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: |
             xlat -> target
             os -> target
-          shared-key: xlat
+          shared-key: xlat-${{ matrix.part }}
           cache-on-failure: true
       - name: xlat against native (C and Rust std), and its unit tests
+        if: matrix.part == 'native'
         working-directory: xlat
         run: sh tests/run.sh
+      # The translator as the browser runs it (run.mjs takes the wasm build when it is current).
       - name: l3 for the Prompt (static, musl), translated as the Prompt runs it
-        if: ${{ !cancelled() }}
+        if: matrix.part == 'prompt'
         working-directory: os
         run: |
+          cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path ../xlat/Cargo.toml
           cargo build --locked --profile prompt -p l3 --no-default-features --target x86_64-unknown-linux-musl
           out=$(LENGTH3_REPOS=/root node ../xlat/runtime/run.mjs target/x86_64-unknown-linux-musl/prompt/l3 help all)
           echo "$out" | head -3

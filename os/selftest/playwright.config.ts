@@ -15,7 +15,8 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: CI,
   retries: CI ? 1 : 0,
-  workers: CI ? 2 : undefined,
+  // Three of four cores here: the browsers, the Remote and the runner share them, and a fourth worker only waits.
+  workers: CI ? 2 : '75%',
   // A journey is a few dozen steps against a real Remote; on a busy machine the steps are slow, never the waits.
   timeout: 60_000,
   expect: {timeout: 15_000},
@@ -23,7 +24,11 @@ export default defineConfig({
   reporter: [['list'], ...(CI ? [['github'] as const] : []), ['html', {open: 'never', outputFolder: '.report'}]],
   use: {
     ...BROWSER,
-    trace: 'retain-on-failure',
+    // A trace is recorded only for a test run again after it failed (CI retries once): recording one for every test
+    // (screenshots as it goes, the page as it was at each step) was more than a quarter of a run's time, thrown away
+    // for every test that passed. A failure the first time still leaves its screenshot and the page as it stood
+    // (error-context.md); `--trace on` records them all, for looking into one here.
+    trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
 });

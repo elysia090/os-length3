@@ -27,12 +27,14 @@ import {passkey} from '@better-auth/passkey';
 // The build of Better Auth without Kysely, its own database layer (700 KB of the Worker's 3.2 MB): Drizzle is this one's.
 import {betterAuth} from 'better-auth/minimal';
 import {APIError, createAuthMiddleware} from 'better-auth/api';
+import {eq} from 'drizzle-orm';
 import {drizzleAdapter} from 'better-auth/adapters/drizzle';
 import {bearer, deviceAuthorization, genericOAuth} from 'better-auth/plugins';
 import type {Hono, MiddlewareHandler} from 'hono';
 import {devOAuth} from './devoauth.ts';
 import {keyFor} from './keys.ts';
-import type {Vars} from './request.ts';
+import {nameFor} from './names.ts';
+import type {Db, Vars} from './request.ts';
 import * as schema from './schema.ts';
 
 /** The desktop app and l3, the only clients that may ask for a device code. */
@@ -40,10 +42,9 @@ const DEVICE_CLIENTS = ['length3-app', 'l3'] as const;
 
 export interface Provider { clientId: string; clientSecret: string }
 
-export interface AuthConfig {
+interface AuthConfig {
   // Drizzle database of any Postgres driver (Neon in production, PGlite in tests).
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  db: any;
+  db: Db;
   secret: string;
   /** Where this service is, e.g. https://os.length3.com. */
   baseURL: string;
@@ -65,6 +66,8 @@ export interface AuthConfig {
    * was made, never drawn out by use.
    */
   only?: string;
+  /** This Remote's own domain: an account made here is given its username on it (names.ts nameFor). */
+  domain?: string;
 }
 
 /** Which providers a Remote offers, in the order its sign-in shows them. */
@@ -95,6 +98,25 @@ export const AUTH_LIMITS: Record<string, {window: number; max: number} | false> 
   '/revoke-other-sessions': {window: 60, max: 10},
 };
 
+/** How long a sign-in stands for the person being at the device: five minutes. */
+const JUST_NOW = 5 * 60_000;
+type Guard = typeof schema.guard.$inferSelect | undefined;
+/** This very session signed in with a passkey within five minutes: the person is at the device just now. */
+export const passkeyJustNow = (g: Guard, sessionId: string) =>
+  !!g?.proofAt && g.proofSession === sessionId && Date.now() - g.proofAt.getTime() < JUST_NOW;
+/** This very session signed in, with a passkey or a provider, within five minutes. */
+const signedJustNow = (g: Guard, sessionId: string) => passkeyJustNow(g, sessionId)
+  || (!!g?.signedAt && g.signedSession === sessionId && Date.now() - g.signedAt.getTime() < JUST_NOW);
+
+/**
+ * What would let someone in for good (another device's session, a passkey or a provider of theirs) or shut the
+ * person out (a passkey or a provider taken away): asked of a session signed in just now (signedJustNow), so a
+ * session's token taken from a device, however long it lasts, does none of them, and whoever holds it is gone
+ * when it is ended. Refused with `confirm`: the app signs in with a passkey and asks again.
+ */
+const HELD = ['/device/approve', '/passkey/generate-register-options', '/passkey/verify-registration', '/passkey/delete-passkey',
+  '/link-social', '/unlink-account'];
+
 /** A passkey ceremony that did not verify the person (PIN, biometrics), refused: a passkey is the whole sign-in. */
 const verifiedPerson = (ok: boolean | undefined) => {
   if (!ok) throw new APIError('UNAUTHORIZED', {message: 'This passkey did not verify you (a PIN or biometrics); use one that does'});
@@ -120,8 +142,11 @@ export function createAuth(c: AuthConfig) {
       ...(c.google ? {google: {clientId: c.google.clientId, clientSecret: c.google.clientSecret, prompt: 'select_account' as const}} : {}),
       ...(c.apple ? {apple: {clientId: c.apple.clientId, clientSecret: c.apple.clientSecret}} : {}),
     },
-    // One person, one account: a second provider with the same verified address joins it.
-    account: {accountLinking: {enabled: true, trustedProviders: ['github', 'google', 'apple', 'dev']}},
+    // One person, one account: a second provider with the same verified address joins it. Verified by that provider,
+    // each time: no provider is "trusted" (Better Auth's trustedProviders joins one whose provider says the address is
+    // not proven, so whoever typed someone's address at a provider that does not check it was signed in as them),
+    // and the account joined must have had its own address proven (requireLocalEmailVerified, Better Auth's default).
+    account: {accountLinking: {enabled: true, trustedProviders: [], requireLocalEmailVerified: true}},
     session: c.only ? {expiresIn: 60 * 60 * 24, disableSessionRefresh: true} : {expiresIn: 60 * 60 * 24 * 60, updateAge: 60 * 60 * 24},
     // For research, no provider admits anyone: the one account is entered by its link alone.
     ...(c.only ? {user: {validateUserInfo: ({user}: {user: {email?: string | null}}) =>
@@ -141,12 +166,20 @@ export function createAuth(c: AuthConfig) {
     // A sign-in with a passkey is proof the person is at the device just now: turning a repo
     // off (and setting the code for it) asks for a session made that way minutes ago. Only the
     // latest is kept: one sign-in proves one session.
+    // A username from the first sign-in, as anywhere: made of what the provider calls them, the next free one if
+    // taken. Not given here (the Remote busy), it is given the first time one is needed.
+    ...(c.domain ? {databaseHooks: {user: {create: {after: async (u: {id: string}) => {
+      try { await nameFor(c.db, u.id, c.domain!); } catch { /* given when first needed */ }
+    }}}}} : {}),
+    // A provider's sign-in is a sign-in just now too (signedJustNow), never a passkey's.
     hooks: {
       after: createAuthMiddleware(async (ctx) => {
-        if (ctx.path !== '/passkey/verify-authentication') return;
+        const passkey = ctx.path === '/passkey/verify-authentication';
+        if (!passkey && !/^\/(oauth2\/)?callback\//.test(ctx.path)) return;
         const made = ctx.context.newSession;
         if (!made) return;
-        const proof = {proofSession: made.session.id, proofAt: new Date()};
+        const now = new Date();
+        const proof = {signedSession: made.session.id, signedAt: now, ...(passkey ? {proofSession: made.session.id, proofAt: now} : {})};
         await c.db.insert(schema.guard).values({userId: made.user.id, ...proof}).onConflictDoUpdate({target: schema.guard.userId, set: proof});
       }),
     },
@@ -185,7 +218,7 @@ export function createAuth(c: AuthConfig) {
 export type Auth = ReturnType<typeof createAuth>;
 
 /** Sign-in's own routes: Better Auth's, and the stand-in provider where it is offered. */
-export function signIn(d: {auth: Auth; providers: string[]; enter: boolean}, app: Hono<Vars>) {
+export function signIn(d: {auth: Auth; db: Db; providers: string[]; enter: boolean; /** The app's pages, which alone send the cookie (fromElsewhere). */ origins: string[]}, app: Hono<Vars>) {
   // For research no passkey is added: a passkey would let a link's holder back in after its key changed.
   if (d.enter) app.all('/api/auth/passkey/*', (c) => c.json({error: 'This Remote is entered by its link'}, 403));
   // Better Auth lists a person's sessions only for a session made within a day (its freshAge), but a
@@ -197,8 +230,8 @@ export function signIn(d: {auth: Auth; providers: string[]; enter: boolean}, app
   // asking is told its own, by which a client knows which is itself, and each other is named `id:<its id>`, which
   // revoke-session takes in place of a token, for the asking account's own sessions alone.
   app.get('/api/auth/list-sessions', async (c) => {
-    const s = await d.auth.api.getSession({headers: c.req.raw.headers});
-    if (!s) return c.json({message: 'Unauthorized', code: 'UNAUTHORIZED'}, 401);
+    const {s, refused} = await askedBy(d.auth, c.req.raw, d.origins);
+    if (!s) return refused;
     const ctx = await d.auth.$context;
     const now = Date.now();
     const list = (await ctx.internalAdapter.listSessions(s.user.id, {onlyActiveSessions: true})).filter((x) => new Date(x.expiresAt).getTime() > now);
@@ -208,14 +241,23 @@ export function signIn(d: {auth: Auth; providers: string[]; enter: boolean}, app
   app.post('/api/auth/revoke-session', async (c, next) => {
     const named = /^id:(.+)$/.exec(String((await c.req.raw.clone().json().catch(() => ({})) as {token?: unknown}).token ?? ''))?.[1];
     if (!named) return next();
-    const s = await d.auth.api.getSession({headers: c.req.raw.headers});
-    if (!s) return c.json({message: 'Unauthorized', code: 'UNAUTHORIZED'}, 401);
+    const {s, refused} = await askedBy(d.auth, c.req.raw, d.origins);
+    if (!s) return refused;
     const ctx = await d.auth.$context;
     const it = (await ctx.internalAdapter.listSessions(s.user.id)).find((x) => x.id === named);
     if (it) await ctx.internalAdapter.deleteSession(it.token);
     forgetSessions();
     return c.json({status: true});
   });
+  for (const path of HELD) {
+    app.on(['GET', 'POST'], `/api/auth${path}`, async (c, next) => {
+      const {s, refused} = await askedBy(d.auth, c.req.raw, d.origins);
+      if (!s) return refused;
+      const [g] = await d.db.select().from(schema.guard).where(eq(schema.guard.userId, s.user.id)) as Guard[];
+      if (!signedJustNow(g, s.session.id)) return c.json({error: 'Confirm it is you first', confirm: true}, 403);
+      return next();
+    });
+  }
   app.on(['GET', 'POST'], '/api/auth/*', async (c) => {
     const res = await d.auth.handler(c.req.raw);
     // A session ended here is not taken as still there from what signedIn keeps.
@@ -244,10 +286,35 @@ export function credentialOf(headers: Headers): {kind: 'bearer' | 'cookie'; key:
   return null;
 }
 
+/**
+ * Whether `req`, naming the session by `cred`, is one a page elsewhere could have made a browser send: the cookie
+ * alone (a bearer token is never sent by another site's page), on a write without one of the app's own Origins, or
+ * on a read the browser says another site's page started (a link, an image, a frame, a script: Fetch Metadata, W3C;
+ * ASVS 4.2.2, 13.2.3). The one rule for every route that takes the cookie: /v1 (signedIn) and the session routes
+ * the Remote answers itself beside Better Auth's (signIn), which Better Auth's own origin check never sees.
+ */
+function fromElsewhere(cred: {kind: 'bearer' | 'cookie'}, req: Request, origins: string[]): boolean {
+  if (cred.kind === 'bearer' || origins.includes(req.headers.get('Origin') ?? '')) return false;
+  if (req.method !== 'GET' && req.method !== 'HEAD') return true;
+  const site = req.headers.get('Sec-Fetch-Site');
+  return site === 'cross-site' || site === 'same-site';
+}
+
+/**
+ * The session a request to one of signIn's own routes is asked by, by its one credential (credentialOf: a made-up
+ * bearer beside a cookie is no one, not the cookie's), from the app's pages as fromElsewhere says; else the refusal.
+ */
+async function askedBy(auth: Auth, req: Request, origins: string[]) {
+  const cred = credentialOf(req.headers);
+  if (cred && fromElsewhere(cred, req, origins)) return {refused: Response.json({message: 'Not from the app', code: 'FORBIDDEN'}, {status: 403})};
+  const s = cred && await auth.api.getSession({headers: cred.headers});
+  return s ? {s} : {refused: Response.json({message: 'Unauthorized', code: 'UNAUTHORIZED'}, {status: 401})};
+}
+
 /** Sessions signedIn looked up, kept a few seconds by this isolate (the Worker's: 10 s). */
-const kept = new Map<string, {until: number; user: string; session: string; name: string}>();
+const kept = new Map<string, {until: number; user: string; session: string; name: string; ends: number}>();
 /** Let go of every session kept: one was ended (sign-out, revoke) and may be among them. */
-export const forgetSessions = () => kept.clear();
+const forgetSessions = () => kept.clear();
 
 /**
  * Who is asking, or 401: a bearer token (the app, l3, the web once it took its token), or the session
@@ -262,27 +329,22 @@ export const signedIn = (auth: Auth, origins: string[], keep = 0): MiddlewareHan
   const cred = credentialOf(c.req.raw.headers);
   // Nothing that could name a session: refused before the database is asked anything.
   if (!cred) return c.json({error: 'not signed in'}, 401);
-  const bearer = cred.kind === 'bearer';
-  const ours = origins.includes(c.req.header('Origin') ?? '');
-  if (!bearer && c.req.method !== 'GET' && c.req.method !== 'HEAD' && !ours) return c.json({error: 'not from the app'}, 403);
-  // A read with the cookie alone that the browser says another site's page started (a link, an
-  // image, a frame, a script) is refused too: no page elsewhere has the Remote read for it with
-  // someone's cookie, whatever a GET would do (Fetch Metadata, W3C; ASVS 4.2.2, 13.2.3).
-  const site = c.req.header('Sec-Fetch-Site');
-  if (!bearer && (site === 'cross-site' || site === 'same-site') && !ours) return c.json({error: 'not from the app'}, 403);
+  if (fromElsewhere(cred, c.req.raw, origins)) return c.json({error: 'not from the app'}, 403);
   const now = Date.now(), had = keep ? kept.get(cred.key) : undefined;
   if (had && had.until > now) {
-    c.set('userId', had.user); c.set('sessionId', had.session); c.set('name', had.name);
+    c.set('userId', had.user); c.set('sessionId', had.session); c.set('name', had.name); c.set('sessionEnds', had.ends);
     return next();
   }
   const s = await auth.api.getSession({headers: cred.headers});
   if (!s) { kept.delete(cred.key); return c.json({error: 'not signed in'}, 401); }
   if (keep) {
     if (kept.size >= 1000) for (const [k, v] of kept) if (v.until <= now || kept.size >= 1000) kept.delete(k);
-    kept.set(cred.key, {until: Math.min(now + keep, new Date(s.session.expiresAt).getTime()), user: s.user.id, session: s.session.id, name: s.user.name});
+    kept.set(cred.key, {until: Math.min(now + keep, new Date(s.session.expiresAt).getTime()), user: s.user.id, session: s.session.id, name: s.user.name,
+      ends: new Date(s.session.expiresAt).getTime()});
   }
   c.set('userId', s.user.id);
   c.set('sessionId', s.session.id);
   c.set('name', s.user.name);
+  c.set('sessionEnds', new Date(s.session.expiresAt).getTime());
   await next();
 };

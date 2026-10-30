@@ -4,6 +4,7 @@ export default {
   'Me': '自分',
   'No name yet': '名前はまだありません',
   'Edit profile': 'プロフィールを編集する',
+  'Saved here; the Remote still has the name it had ({message})': 'ここには保存しました。Remote の名前は前のままです（{message}）',
   'Language': '言語',
   'Account': 'アカウント',
   'just now': '1分以内',

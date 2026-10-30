@@ -166,29 +166,30 @@ pub fn inbox_decide(_: &Ctx, call: &Call) -> Result<Reply> {
     Ok(Reply::done(if accept { tr!("Accepted {}", "{} を受けました", who) } else { tr!("Blocked {}", "{} をブロックしました", who) }, json!({"address": who, "state": if accept { "accepted" } else { "blocked" }})))
 }
 
-/// `l3 name`: your names alone, one a line, for a script or a quick look.
+/// `l3 name`: your names alone, one a line (your username first), for a script or a quick look.
 pub fn name_only(_: &Ctx, _: &Call) -> Result<Reply> {
     let me = inbox::me()?;
-    if me.addresses.is_empty() {
-        return Err(Error::NotFound(tr!("No name yet (l3 name claim NAME)", "名前はまだありません（l3 name claim NAME）")));
-    }
     let all: Vec<&str> = me.addresses.iter().map(|x| x.address.as_str()).collect();
     Ok(Reply::data(all.join("\n"), json!(all)))
 }
 
-/// `l3 name list`: each with its term, and the code one is found by.
+/// `l3 name ls`: each, and the code one is found by.
 pub fn names(_: &Ctx, _: &Call) -> Result<Reply> {
     let me = inbox::me()?;
     let mut t = Vec::new();
-    if me.addresses.is_empty() { t.push(tr!("No name yet (l3 name claim NAME: first come, yours for five years at a time)", "名前はまだありません（l3 name claim NAME：早い者勝ち、5年ごとの更新であなたのもの）")); }
     for x in &me.addresses {
-        let state = if x.lapsed { tr!("  · its domain no longer names this Remote", "  · ドメインがこの Remote を指していません") }
-            else if x.ended { tr!("  · its term ended: l3 name renew {}", "  · 期限切れ：l3 name renew {}", me.shown(&x.address)) }
-            else if let Some(u) = x.until { tr!("  · until {}", "  · {} まで", day(u)) } else { String::new() };
+        let state = if x.lapsed { tr!("  · its domain no longer names this Remote", "  · ドメインがこの Remote を指していません") } else { String::new() };
         t.push(format!("{}{state}", me.shown(&x.address)));
     }
     if !me.code.is_empty() { t.push(tr!("Your code: {} (anyone can find you by it)", "あなたのコード：{}（これで見つけてもらえます）", me.code)); }
     Ok(Reply::data(t.join("\n"), json!(me)))
+}
+
+/// `l3 name set NAME`: your username changed; the one before is held for you 30 days.
+pub fn name_set(_: &Ctx, call: &Call) -> Result<Reply> {
+    let a = inbox::set_username(call.word(0).unwrap_or_default())?;
+    let me = inbox::me()?;
+    Ok(Reply::done(tr!("Your username: {} (the one before is held for you 30 days)", "ユーザー名：{}（前の名前は30日あなたのために取り置き）", me.shown(&a)), json!({"address": a})))
 }
 
 pub fn name_claim(_: &Ctx, call: &Call) -> Result<Reply> {
@@ -204,12 +205,6 @@ fn yours(word: &str) -> Result<(inbox::Me, String)> {
         return Err(Error::NotFound(tr!("{} is not one of your names (l3 name lists them)", "{} はあなたの名前ではありません（l3 name で一覧）", me.shown(&address))));
     }
     Ok((me, address))
-}
-
-pub fn name_renew(_: &Ctx, call: &Call) -> Result<Reply> {
-    let (me, address) = yours(call.word(0).unwrap_or_default())?;
-    let until = inbox::renew(&address)?;
-    Ok(Reply::done(tr!("{} is yours until {}", "{} は {} まであなたのものです", me.shown(&address), day(until)), json!({"address": address, "until": until})))
 }
 
 pub fn name_release(_: &Ctx, call: &Call) -> Result<Reply> {

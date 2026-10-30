@@ -53,13 +53,19 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 /// How often the Remote is asked whether SSH is still on: an off said elsewhere is taken within this. Each ask is a
 /// request to the Remote and a write in its database; every 5 s it was 17,280 a day for each device left on.
 const BEAT: Duration = Duration::from_secs(30);
+
+/// The beat: BEAT, or LENGTH3_SSH_BEAT_MS for a test that waits on what the Remote hears.
+fn beat_every() -> Duration {
+    static EVERY: std::sync::OnceLock<Duration> = std::sync::OnceLock::new();
+    *EVERY.get_or_init(|| std::env::var("LENGTH3_SSH_BEAT_MS").ok().and_then(|v| v.parse().ok()).map_or(BEAT, Duration::from_millis))
+}
 /// Out of reach, asked less often each time (60 s, 120 s, …), up to this.
 const BEAT_MOST: Duration = Duration::from_secs(300);
 
 /// When to ask next, after `missed` asks in a row the Remote did not answer; give or take a fifth, so devices
 /// that lost the Remote together do not all ask it again in the same second.
 fn next_beat(missed: u32) -> Duration {
-    let base = BEAT.saturating_mul(1 << missed.min(4)).min(BEAT_MOST);
+    let base = beat_every().saturating_mul(1 << missed.min(4)).min(BEAT_MOST);
     let n = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.subsec_nanos());
     base.mul_f64(0.8 + 0.4 * f64::from(n % 1000) / 1000.0)
 }
@@ -159,13 +165,14 @@ impl Conn {
 impl server::Handler for Conn {
     type Error = russh::Error;
 
-    async fn auth_publickey_offered(&mut self, user: &str, key: &PublicKey) -> Result<Auth, Self::Error> {
+    async fn auth_publickey_offered(&mut self, user: &str, offer: server::PublicKeyOffer<'_>) -> Result<Auth, Self::Error> {
         if self.shared.tries.lock().map(|mut t| t.held(self.peer, Instant::now())).unwrap_or(true) { return Ok(Auth::reject()); }
-        Ok(self.check(user, key).await)
+        Ok(self.check(user, offer.public_key).await)
     }
 
     // The signature was checked: the key is the client's.
-    async fn auth_publickey(&mut self, user: &str, key: &PublicKey) -> Result<Auth, Self::Error> {
+    async fn auth_publickey(&mut self, user: &str, verified: server::VerifiedPublicKey<'_>) -> Result<Auth, Self::Error> {
+        let key = verified.public_key;
         let a = self.check(user, key).await;
         if a == Auth::Accept {
             log(&format!("{} in as {user} with {}", self.peer, ssh::fingerprint(&key.to_bytes().unwrap_or_default())));
@@ -562,8 +569,13 @@ pub fn serve() -> Result<(), String> {
                     missed = if heard == ssh::Heard::Unreachable { missed + 1 } else { 0 };
                     beat.as_mut().reset(tokio::time::Instant::now() + next_beat(missed));
                 }
-                // Another scope was chosen (l3 address ssh on device|network): taken now, not at the next beat.
-                _ = usr1.recv() => follow(&mut sockets, &mut scope, &mut bound),
+                // Another scope was chosen (l3 address ssh on device|network): taken now, not at the next beat,
+                // and said to the Remote now too, so its pages show the scope chosen rather than the one before.
+                _ = usr1.recv() => {
+                    let was = scope;
+                    follow(&mut sockets, &mut scope, &mut bound);
+                    if scope != was { beat.as_mut().reset(tokio::time::Instant::now()); }
+                }
                 _ = term.recv() => return Ok(Why::Asked),
                 _ = int.recv() => return Ok(Why::Asked),
                 _ = hup.recv() => return Ok(Why::Asked),

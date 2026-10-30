@@ -110,7 +110,7 @@ fn slot(ctx: &Ctx, _c: &Command, a: Arg, cur: &str, verb: Option<&str>) -> Vec<S
             let r = match ctx.repos() { Ok(r) => r, Err(_) => return Vec::new() };
             let mut out = Vec::new();
             for name in repos() {
-                for i in r.issues(&name).unwrap_or_default().into_iter().filter(|i| i.n.is_some()) {
+                for i in r.on_main().issues(&name).unwrap_or_default().into_iter().filter(|i| i.n.is_some()) {
                     let n = length3_core::issues::number(&i.file);
                     if ctx.here.as_ref().is_some_and(|h| h.repo == name) { out.push(n.clone()); }
                     out.push(format!("{name}{n}"));
@@ -160,11 +160,11 @@ mod tests {
         assert!(candidates(&c, &w("com")).contains(&"commit".to_string()));
         assert!(candidates(&c, &w("com")).contains(&"completion".to_string()));
         assert!(!candidates(&c, &w("")).iter().any(|x| x == "complete" || x == "sync" || x.is_empty()));
-        assert_eq!(candidates(&c, &w("name ")), ["list", "claim", "renew", "release", "domain"]);
+        assert_eq!(candidates(&c, &w("name ")), ["ls", "set", "claim", "release", "domain"]);
         // The listener itself (serve) is l3's own word, never offered.
         assert_eq!(candidates(&c, &w("address ")), ["ssh"]);
         assert_eq!(candidates(&c, &w("address ssh ")), ["on", "off"]);
-        assert_eq!(candidates(&c, &w("dotfile ")), ["write", "rm"]);
+        assert_eq!(candidates(&c, &w("dotfile ")), ["write", "rm", "take"]);
         assert!(candidates(&c, &w("dotfile write .p")).contains(&".profile".to_string()));
         assert_eq!(candidates(&c, &w("review x#1 ")), ["approve", "changes"]);
         assert_eq!(candidates(&c, &w("todo add x -")), ["-m", "--json", "--help", "--"]);

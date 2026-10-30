@@ -4,7 +4,6 @@ import {isDeepStrictEqual} from 'node:util';
 import cases from '../shared/cases.json' with {type: 'json'};
 import {applyDiff, cutId, issueOf, LIMIT, merge3, roomFor, validLine, validName, validPath} from './app.ts';
 import {parseAddress, readRecord} from './inbox.ts';
-import {term} from './names.ts';
 import {postId} from './servers.ts';
 
 // The Remote's rules that need no database: which paths a repo may hold,
@@ -99,11 +98,6 @@ test('a domain\'s record is read for its remote and proof; another record is non
     ['v=spf1 include:_spf.example ~all', null], ['v=length3; proof=x', null], ['remote=r.example; proof=x', null], ['', null],
   ];
   assert.deepEqual(wrong(records, ([, want]) => want, ([r]) => readRecord(r)), []);
-});
-
-test('a name is held for five years from the moment it is taken; a leap day rolls on to March', () => {
-  assert.equal(term(Date.UTC(2026, 9, 17, 12)).toISOString(), '2031-10-17T12:00:00.000Z');
-  assert.equal(term(Date.UTC(2028, 1, 29)).toISOString(), '2033-03-01T00:00:00.000Z');
 });
 
 test('a post\'s id sorts as its time, and two at one moment differ', () => {

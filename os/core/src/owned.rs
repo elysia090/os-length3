@@ -26,8 +26,9 @@
 
 use std::path::{Path, PathBuf};
 
-/// The repo's environment: `upper` (what was written over the root) and
-/// `work` (the overlay's scratch, on the same filesystem).
+/// The repo's environment: `upper` (what was written over the root),
+/// `work` (the overlay's scratch, on the same filesystem), and `prompts`
+/// (the Prompts sharing that overlay now: launch.rs).
 pub fn env_dir(data: &Path, repo: &str) -> PathBuf {
     data.join("envs").join(repo)
 }

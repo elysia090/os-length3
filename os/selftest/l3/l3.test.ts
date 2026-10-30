@@ -71,10 +71,24 @@ test('a repo made and written with l3 is on the Remote byte for byte, CRLF, name
   assert.equal((await draftOf('files')).draft['ノート/メモ.md'], undefined);
 });
 
+test('l3 repo mv and rm do what the repo\'s gear does: one only this device has is renamed and deleted, one on the Remote is not', async () => {
+  const alone = r.device();
+  ok(alone.l3(['repo', 'new', 'draft', '-t', 'empty']));
+  ok(alone.l3(['repo', 'mv', 'draft', 'notes']), /^Renamed draft to notes\n$/);
+  assert.match(ok(alone.l3(['repo'])).out, /^notes /m);
+  ok(alone.l3(['repo', 'rm', 'notes']), /^Deleted notes from this device\n$/);
+  assert.doesNotMatch(ok(alone.l3(['repo'])).out, /notes/);
+  // On the Remote, which knows it by its name and guards it with a passkey: said where it is done, nothing done here.
+  ok(laptop.l3(['repo', 'new', 'kept', '-t', 'empty']));
+  refused(laptop.l3(['repo', 'mv', 'kept', 'other']), 1, /kept is on the Remote/);
+  refused(laptop.l3(['repo', 'rm', 'kept']), 1, /kept is on the Remote: turn it off there first/);
+  assert.match(ok(laptop.l3(['repo'])).out, /^kept /m);
+});
+
 test('another device opens the repo from the Remote, and takes in each change made on the first when it reads', async () => {
   ok(laptop.l3(['repo', 'new', 'shared', '-t', 'empty']));
   ok(laptop.l3(['file', 'write', 'shared/a.txt'], 'one\n'));
-  assert.match(ok(desk.l3(['repo'])).out, /shared\tonly on the Remote/);
+  assert.match(ok(desk.l3(['repo'])).out, /^shared {2,}only on the Remote/m);
   ok(desk.l3(['repo', 'open', 'shared']), /^shared is here now/);
   assert.equal(ok(desk.l3(['file', 'shared/a.txt'])).out, 'one\n');
   ok(laptop.l3(['file', 'write', 'shared/a.txt'], 'two\n'));
@@ -82,7 +96,7 @@ test('another device opens the repo from the Remote, and takes in each change ma
   // And back: the desk's change reaches the laptop.
   ok(desk.l3(['file', 'write', 'shared/b.txt'], 'from the desk\n'));
   assert.equal(ok(laptop.l3(['file', 'shared/b.txt'])).out, 'from the desk\n');
-  assert.match(ok(laptop.l3(['remote'])).out, /\n {2}shared {2}in step/);
+  assert.match(ok(laptop.l3(['remote'])).out, /\n {2}shared {2,}in step/);
 });
 
 test('a script\'s execute bit goes to the Remote and comes back with it: opened on another device, after a change, and after Free and opening again', async () => {
@@ -117,15 +131,22 @@ test('a script\'s execute bit goes to the Remote and comes back with it: opened 
   assert.equal(mode(desk, 'scripts/run.sh') & 0o111, 0);
 });
 
-test('an issue goes from written to merged with l3: start, commit, push, review, merge; the Remote holds each step', async () => {
+test('an issue goes from written to merged with l3: start, commit (handed in by itself), review, merge; the Remote holds each step', async () => {
   ok(laptop.l3(['repo', 'new', 'work']));
   ok(laptop.l3(['issue', 'new', 'work', 'Fix：落ちる', '-m', '再現手順']), /^Wrote work#1 Fix：落ちる\n$/);
+  // The issue is history on main at once, by itself, after what the repo was made with (its first commit, Start).
+  const first = ((await r.api(ren, 'GET', '/v1/repos/work/log?summary=1')).json as {title: string; files: number}[]).map((c) => [c.title, c.files]);
+  assert.deepEqual(first.map(([t]) => t), ['Issue #1: Fix：落ちる', 'Start']);
+  assert.equal(first[0][1], 1);
   assert.match(ok(laptop.l3(['git', 'work'])).out, /#1 Fix：落ちる\n {4}work · not started\n {4}next: l3 start work#1/);
-  ok(laptop.l3(['commit', 'work', 'Patch：はじめ']), /^Committed [0-9a-f]{12} {2}Patch：はじめ/);
+  // What the person writes on main is theirs to commit, by itself.
+  ok(laptop.l3(['file', 'write', 'work/notes.txt'], 'notes\n'));
+  ok(laptop.l3(['commit', 'work', 'Patch：はじめ']), /^Committed [0-9a-f]{12} {2}Patch：はじめ \(1 file/);
   ok(laptop.l3(['start', 'work#1']), /^Working on work#1 Fix：落ちる/);
   ok(laptop.l3(['file', 'write', 'work/fix.txt'], 'fixed\n'));
-  ok(laptop.l3(['commit', 'work']), /^Committed [0-9a-f]{12} {2}Fix：落ちる \(1 file \+1 −0\)/);
-  ok(laptop.l3(['push', 'work']), /handed Fix：落ちる to main as version 1/);
+  // On an issue's work a commit is handed in as it is made: there is nothing left to push.
+  ok(laptop.l3(['commit', 'work']), /^Committed [0-9a-f]{12} {2}Fix：落ちる \(1 file \+1 −0\)\n {2}handed to main as version 1\n$/);
+  ok(laptop.l3(['push', 'work']), /^Nothing new to push: version 1 of Fix：落ちる is with main already\n$/);
   const change = ((await r.api(ren, 'GET', '/v1/repos/work/changes')).json as {state: string; version: number; issue: string}[])[0];
   assert.deepEqual([change.state, change.version, change.issue], ['open', 1, 'issue/001.md']);
   // main does not have the fix until it is merged.
@@ -135,7 +156,7 @@ test('an issue goes from written to merged with l3: start, commit, push, review,
   assert.equal(((await r.api(ren, 'GET', '/v1/repos/work/changes')).json as {state: string}[])[0].state, 'merged');
   assert.equal((await draftOf('work')).draft['fix.txt'], sha('fixed\n'));
   const log = ok(laptop.l3(['log', 'work', '--json'])).json as {title: string; kind: string}[];
-  assert.deepEqual(log.map((c) => `${c.kind}：${c.title}`).slice(-1), ['Patch：はじめ']);
+  assert.deepEqual(log.map((c) => (c.kind ? `${c.kind}：${c.title}` : c.title)).slice(-3), ['Patch：はじめ', 'Issue #1: Fix：落ちる', 'Start']);
   refused(laptop.l3(['issue', 'work#9']), 4, /work has no issue #9/);
 });
 
@@ -196,27 +217,32 @@ test('an issue that will not be done is closed in its own file, on the Remote to
   ok(desk.l3(['issue', 'reopen', 'tasks#1']), /^Reopened tasks#1\n$/);
   assert.equal(await textOf('tasks', 'issue/001.md'), 'Fix：やらない\n\n理由\n');
   assert.deepEqual((ok(laptop.l3(['git', 'tasks', '--json'])).json as {closed: unknown[]}).closed, []);
+  // Each was history on main by itself as it happened: written, closed, reopened (from either device), after what
+  // the repo was made with.
+  const log = ((await r.api(ren, 'GET', '/v1/repos/tasks/log?summary=1')).json as {title: string; files: number}[]).map((c) => [c.title, c.files]);
+  assert.deepEqual(log.map(([t]) => t), ['Reopen #1: Fix：やらない', 'Close #1: Fix：やらない', 'Issue #1: Fix：やらない', 'Start']);
+  assert.deepEqual(log.slice(0, 3).map(([, n]) => n), [1, 1, 1]);
 });
 
-test('l3 name answers with the name alone, l3 name list with its term; l3 address, off a terminal with SSH off, says so with 5', async () => {
+test('l3 name answers with the username alone, given at sign-in; l3 name set changes it; l3 name ls with the code; l3 address, off a terminal with SSH off, says so with 5', async () => {
   const sora = await r.browser('Sora Selftest');
   const d = r.device();
   assert.equal((await d.login(sora)).code, 0);
-  refused(d.l3(['name']), 4, /No name yet \(l3 name claim NAME\)/);
-  ok(d.l3(['name', 'claim', 'soraself']), /^Yours: soraself@length3\.test\n$/);
+  assert.equal(ok(d.l3(['name'])).out, 'sora-selftest@length3.test\n');
+  ok(d.l3(['name', 'set', '@soraself']), /^Your username: soraself \(the one before is held for you 30 days\)\n$/);
   assert.equal(ok(d.l3(['name'])).out, 'soraself@length3.test\n');
   // In the list a name on the Remote's own domain is said without it.
-  assert.match(ok(d.l3(['name', 'list'])).out, /^soraself  · until \d{4}-\d{2}-\d{2}\nYour code: \d{6} /);
-  // A name of someone else's is not one of yours.
-  refused(d.l3(['name', 'renew', 'renself']), 4, /is not one of your names/);
+  assert.match(ok(d.l3(['name', 'ls'])).out, /^soraself\nYour code: \d{6} /);
+  // As every list is asked for (ls); list, as it was, still answers.
+  assert.match(ok(d.l3(['name', 'list'])).out, /^soraself\n/);
   // SSH is this device's (service/ssh.ts): off at first, and a script is told, never asked.
   refused(d.l3(['address']), 5, /SSH is off on this device/);
 });
 
 test('Inbox: a request to someone who has not accepted, their answer, and a block that stops them', async () => {
   const mio = await r.browser('Mio Selftest');
-  ok(laptop.l3(['name', 'claim', 'renself']), /^Yours: renself@length3\.test\n$/);
-  assert.equal((await r.api(mio, 'POST', '/v1/inbox/addresses', {name: 'mioself'})).status, 201);
+  ok(laptop.l3(['name', 'set', 'renself']), /^Your username: renself /);
+  assert.equal((await r.api(mio, 'PUT', '/v1/inbox/username', {name: 'mioself'})).status, 200);
   ok(laptop.l3(['inbox', 'send', 'mioself', 'Review：見てください /root/shared/a.txt']), /^Sent to mioself@length3\.test as a request/);
   const threads = (await r.api(mio, 'GET', '/v1/inbox/threads')).json as {address: string; state: string; last: {type: string; body: string}}[];
   assert.deepEqual(threads.map((t) => [t.address, t.state, t.last.type]), [['renself@length3.test', 'request', 'review']]);
@@ -245,5 +271,22 @@ test('what l3 cannot do has its exit code: how it is written (2), no Remote (3),
   refused(away.l3(['file', 'write', 'mine/../x'], 'x'), 1, /leaves the repo/);
   // With --json a refusal is data on standard output: its kind and its words.
   const j = away.l3(['file', 'nope/x', '--json']);
-  assert.deepEqual([j.code, j.json], [4, {error: {kind: 'notFound', message: 'There is no repo nope here'}}]);
+  assert.deepEqual([j.code, j.json], [4, {error: {kind: 'notFound', message: 'There is no repo nope here (l3 repo lists them)'}}]);
+});
+
+test('l3 help --json is the table an agent writes every command from: each form\'s words, flags and what it needs', async () => {
+  const away = r.device();
+  const all = ok(away.l3(['help', 'all', '--json'])).json as {name: string; forms: {usage: string; verb: string | null; words: {kind: string; choices?: string[]; optional?: boolean}[]; flags: {flag: string}[]; needs: string; sync: string}[]}[];
+  const forms = all.flatMap((c) => c.forms.map((f) => ({c: c.name, ...f})));
+  assert.ok(forms.length > 50);
+  for (const f of forms) {
+    assert.ok(['remote', 'device', 'anywhere'].includes(f.needs) && ['none', 'take-in', 'send'].includes(f.sync), f.usage);
+    assert.ok(f.words.every((w) => typeof w.kind === 'string'), f.usage);
+  }
+  const set = forms.find((f) => f.c === 'address' && f.verb === 'ssh' && f.words.length === 2)!;
+  assert.deepEqual(set.words, [{kind: 'choice', choices: ['on']}, {kind: 'choice', choices: ['device', 'network']}]);
+  const take = forms.find((f) => f.c === 'dotfile' && f.verb === 'take' && f.words.length === 1)!;
+  assert.deepEqual([take.words[0].kind, take.needs], ['dotfile', 'device']);
+  // Lists are ls, whatever they list.
+  assert.ok(!forms.some((f) => f.verb === 'list'), JSON.stringify(forms.filter((f) => f.verb === 'list').map((f) => f.usage)));
 });

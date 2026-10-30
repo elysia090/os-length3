@@ -19,7 +19,7 @@ export const PLACES = {
 } as const;
 export type Place = keyof typeof PLACES;
 
-/** The name a person claims in Inbox for their display name ('Ada 1a2b3c4d' → 'ada-1a2b3c4d'). */
+/** The username a person is given at the first sign-in, made of their display name ('Ada 1a2b3c4d' → 'ada-1a2b3c4d'). */
 export const handleOf = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 31);
 
 /** `text` as a regular expression that matches it literally. */
@@ -85,13 +85,15 @@ export class App {
 
   /**
    * Answer an ask with `yes`: a deed that comes under the pointer holds still a moment (so a double
-   * click cannot answer it), so it is pressed until the ask (`ask`) is gone.
+   * click cannot answer it), so it is pressed until the ask (`ask`) is gone. Pressed again soon: the
+   * moment is half a second (SETTLE, src/pages/common.ts), and a press it takes disables the deed
+   * until it is done, so a press while it is being done waits for it rather than doing it twice.
    */
   async answer(yes: Locator, ask: Locator) {
     await expect(async () => {
       if (await yes.isVisible()) await yes.click({timeout: 1000});
-      await expect(ask).toBeHidden({timeout: 1000});
-    }).toPass({timeout: 15_000});
+      await expect(ask).toBeHidden({timeout: 300});
+    }).toPass({intervals: [100], timeout: 15_000});
   }
 
   /**
@@ -103,7 +105,7 @@ export class App {
     await this.page.evaluate(() => window.dispatchEvent(new Event('focus')));
   }
 
-  /** Who is signed in here (as the development provider was told), and the Inbox name they claim. */
+  /** Who is signed in here (as the development provider was told), and the username they were given. */
   person = '';
   get handle() { return handleOf(this.person); }
 
@@ -138,7 +140,7 @@ class Part {
   protected get main() { return this.app.main; }
 }
 
-/** The rail at the left: one place at a time; File and Server open over the page. */
+/** The rail at the left: one place at a time; File opens its tree over the page, Server its servers beside the rail. */
 class Rail extends Part {
   button(place: Place): Locator {
     // Its name says more while something is to be seen there ("Inbox has messages not read").
@@ -148,7 +150,7 @@ class Rail extends Part {
 
   async go(place: Place) {
     await this.button(place).click();
-    if (place !== 'file' && place !== 'server' && place !== 'plugin') await expect(this.button(place)).toHaveAttribute('aria-current', 'page');
+    if (place !== 'file' && place !== 'plugin') await expect(this.button(place)).toHaveAttribute('aria-current', 'page');
   }
 }
 
@@ -160,6 +162,14 @@ class MeMenu extends Part {
   async openMenu() {
     await this.button.click();
     await expect(this.menu).toBeVisible();
+  }
+
+  /** Sign out, asked in its row first (what stays in this browser): answered with Sign out, or Take them off first. */
+  async signOut(deed: 'Sign out' | 'Take them off' = 'Sign out') {
+    await this.openMenu();
+    await this.menu.getByRole('menuitem', {name: 'Sign out'}).click();
+    const ask = this.menu.getByRole('group', {name: 'Sign out'});
+    await this.app.answer(ask.getByRole('button', {name: deed, exact: true}), ask);
   }
 
   /** Language, then the one chosen: the OS speaks it at once. `now` is the language in use, as it names itself. */
@@ -189,29 +199,27 @@ class NewRepo extends Part {
   /** What is said under the name when it cannot be used. */
   get problem() { return this.main.getByRole('alert'); }
   get made() { return this.main.getByRole('status'); }
-  /** The name a file of the scaffold will have (its field in the box, by the scaffold's path). */
-  fileName(path: string) { return this.main.getByRole('textbox', {name: `Name of ${path}`, exact: true}); }
+  /** Forge holding `name`'s page: where a repo made is gone into. */
+  madeIn(name: string) { return this.page.getByRole('region', {name: `The files of ${name}`, exact: true}); }
 
   /**
    * Fill the form and press Create (the outcome is the caller's to check). There is no template to
-   * choose: every repo starts from the one scaffold (a README, docs/ and issue/); `files` names its
-   * files in the box first, by the scaffold's path.
+   * choose: every repo starts from the one scaffold (a README, docs/ and issue/).
    */
-  async fill(name: string, o: {template?: 'C'; summary?: string; files?: Record<string, string>} = {}) {
+  async fill(name: string, o: {template?: 'C'; summary?: string} = {}) {
     await this.app.rail.go('new-repo');
     await this.name.fill(name);
-    for (const [path, as] of Object.entries(o.files ?? {})) await this.fileName(path).fill(as);
     if (o.summary) await this.summary.fill(o.summary);
     await this.create.click();
   }
 
   /**
-   * Make a repo and see it made. `template: 'C'`: then C's files are written into it from File, as
+   * Make a repo and see it made: Forge opens it. `template: 'C'`: then C's files are written into it from File, as
    * someone would (src/main.c and its Makefile, as `l3 repo new -t c` makes them), and Forge shows it.
    */
-  async make(name: string, o: {template?: 'C'; summary?: string; files?: Record<string, string>} = {}) {
+  async make(name: string, o: {template?: 'C'; summary?: string} = {}) {
     await this.fill(name, o);
-    await expect(this.made).toHaveText(`Made ${name}`);
+    await expect(this.madeIn(name)).toBeVisible();
     if (o.template !== 'C') return;
     const c = new Map(TEMPLATES.find((t) => t.id === 'c')!.files as [string, string][]);
     await this.app.file.named(name, '', 'New folder', 'src');
@@ -221,10 +229,8 @@ class NewRepo extends Part {
     await this.app.forge.editFile('Makefile', c.get('Makefile')!.replaceAll('{name}', name));
   }
 
-  /** Made: open it in Forge, as the page offers (made with C's files, Forge has it open already). */
+  /** Made: Forge has it open, its README there to write in. */
   async openInForge() {
-    const open = this.main.getByRole('button', {name: 'Open in Forge'});
-    if (await open.isVisible()) await open.click();
     await expect(this.app.forge.editor('README.md')).toBeVisible();
   }
 }
@@ -315,15 +321,19 @@ class Forge extends Part {
   /** What is said under the prompt box (the choices Tab found, Still starting…). */
   promptSays(text: string | RegExp) { return this.main.getByRole('status').filter({hasText: text}); }
 
-  /** Start the open repo's Prompt by writing to it, and wait for its prompt line (`hello $ `). */
+  /** Start the open repo's Prompt by writing to it (a letter, taken back), and wait for its prompt line (`hello $ `). */
   async startPrompt(repo: string) {
-    await this.promptBox.focus();
+    // Run, as chosen (the box takes up Edit by itself while a file has the keyboard).
+    await this.promptBox.press('Alt+1');
+    await this.promptBox.press(' ');
+    await this.promptBox.press('Backspace');
     await expect(this.prompt).toContainText(new RegExp(`${escape(repo)} \\$|Could not start`), {timeout: 240_000});
     await expect(this.prompt).not.toContainText('Could not start');
   }
 
   /** Write `line` in the prompt box and send it (Ctrl+Enter; Enter is a new line). */
   async run(line: string) {
+    await this.promptBox.press('Alt+1');
     await this.promptBox.fill(line);
     await this.promptBox.press('Control+Enter');
     await expect(this.promptBox).toHaveValue('');
@@ -385,8 +395,11 @@ class FileTree extends Part {
   name(text: string) { return this.tree.getByRole('button', {name: text, exact: true}); }
 
   async openTree() {
-    if (await this.tree.isVisible()) return;
-    await this.app.rail.button('file').click();
+    // Out is what File's button says, not whether the tree is still seen: put away a moment ago, it fades for a
+    // moment while no longer out.
+    const file = this.app.rail.button('file');
+    if (await file.getAttribute('aria-expanded') !== 'true') await file.click();
+    await expect(file).toHaveAttribute('aria-expanded', 'true');
     await expect(this.tree).toBeVisible();
   }
 
@@ -478,7 +491,8 @@ class Git extends Part {
     await this.repos.getByRole('radio', {name: repo, exact: true}).click();
     await expect(this.firstLine).toHaveAccessibleDescription(repo);
     await this.main.getByRole('textbox', {name: 'First line as Kind: title'}).fill(first);
-    if (detail) await this.main.getByRole('textbox', {name: 'Summary'}).fill(detail);
+    // The box written in's own Summary, not that of the issue in full under it.
+    if (detail) await this.main.getByRole('group', {name: 'Write an issue'}).getByRole('textbox', {name: 'Summary'}).fill(detail);
     await this.main.getByRole('button', {name: 'Create'}).click();
   }
 
@@ -494,9 +508,11 @@ class Git extends Part {
   get issues() { return this.main.getByRole('region', {name: /^Issues/}); }
 
   /** One of the sections under the issues, by its heading: main (what main has not committed), Merged, Closed. */
-  section(name: 'main' | 'Merged' | 'Closed') { return this.main.getByRole('region', {name: new RegExp(`^${name}( \\d+)?$`)}); }
+  section(name: 'main' | 'Committed' | 'Merged' | 'Closed') { return this.main.getByRole('region', {name: new RegExp(`^${name}( \\d+)?$`)}); }
   /** main's card for `repo`, while something there is not committed. */
   mainCard(repo: string) { return this.section('main').getByRole('group', {name: `Not committed on main in ${repo}`}); }
+  /** A commit made on main from here: its line, under the issues in Committed. */
+  committed(title: string) { return this.section('Committed').getByText(title); }
 
   /** Commit what main has not committed in `repo`, its line written as Kind: title (Enter commits it). */
   async commitOnMain(repo: string, line: string) {
@@ -511,7 +527,8 @@ class Git extends Part {
 
   /**
    * Enter in main's card commits its line, or says under it why not. Within a moment of the ask
-   * coming it is not taken (a double press is not an answer), so it is pressed until one happens.
+   * coming it is not taken (a double press is not an answer), so it is pressed until one happens:
+   * soon again, as `answer` presses (a commit under way has its Commit disabled, which Enter presses).
    */
   async commitLine(repo: string) {
     const card = this.mainCard(repo);
@@ -520,10 +537,10 @@ class Git extends Part {
     await expect(async () => {
       if (await field.isVisible()) await field.press('Enter', {timeout: 1000});
       expect(!(await card.isVisible()) || !!(await said.textContent({timeout: 1000}))?.trim()).toBe(true);
-    }).toPass();
+    }).toPass({intervals: [100]});
   }
 
-  /** Start the issue on screen, make the change in Forge, then Commit and Push it: handed in for review. */
+  /** Start the issue on screen, make the change in Forge, then Commit it: it hands itself in for review. */
   async handIn(edit: {path: string; text: string}) {
     await this.step('Start').click();
     await expect(this.step('Back to main')).toBeVisible();
@@ -532,8 +549,6 @@ class Git extends Part {
     await this.app.forge.editFile(edit.path, edit.text);
     await this.app.rail.go('git');
     await this.step('Commit').click();
-    await expect(this.step('Push')).toBeEnabled();
-    await this.step('Push').click();
     await expect(this.review).toBeVisible();
   }
 }
@@ -568,20 +583,13 @@ class Remote extends Part {
    * Turn `repo` off from its card, as its switch asks: with no code yet the code is set first
    * (a passkey made and confirmed with it), then the names and the code are asked once.
    */
-  async turnOff(repo: string, code: string) {
+  /** Turned off from its card: its name written out, then the passkey (made there and then, the first time). */
+  async turnOff(repo: string) {
     await this.power(repo).click();
     const ask = this.ask(repo);
-    const fresh = ask.getByRole('textbox', {name: 'New code'});
-    const name = ask.getByRole('textbox', {name: 'Your name'});
-    await expect(fresh.or(name)).toBeFocused();
-    if (await fresh.isVisible()) {
-      await fresh.fill(code);
-      await this.app.answer(ask.getByRole('button', {name: 'Set the code'}), fresh);
-    }
+    const name = ask.getByRole('textbox', {name: 'The repo\'s name'});
     await expect(name).toBeFocused();
-    await name.fill(this.app.person);
-    await ask.getByRole('textbox', {name: 'The repo\'s name'}).fill(repo);
-    await ask.getByRole('textbox', {name: 'Code', exact: true}).fill(code);
+    await name.fill(repo);
     await this.app.answer(ask.getByRole('button', {name: 'Turn off'}), ask);
   }
 
@@ -605,9 +613,17 @@ class Runtime extends Part {
     await expect(this.part(name)).toHaveAttribute('aria-selected', 'true');
   }
   get dotfiles() { return this.main.getByRole('tabpanel', {name: /^Dotfiles/}); }
-  /** A dotfile's card (its name, then its size). */
+  /** Stop every Prompt running (Runtime's Prompts running, each card's Stop): what one had open can then be freed. */
+  async stopPrompts() {
+    await this.open('Prompts running');
+    const panel = this.main.getByRole('tabpanel', {name: /^Prompts running/});
+    const stop = panel.getByRole('button', {name: 'Stop', exact: true});
+    await expect(stop.first()).toBeVisible();
+    while (await stop.count()) await stop.first().click();
+  }
+  /** A dotfile's row (its name, then its size). */
   dotfile(name: string) { return this.dotfiles.getByRole('button', {name: new RegExp(`^${escape(name)} `)}); }
-  /** The text of the dotfile open under the cards (its field is named by the file). */
+  /** The text of the dotfile open under its row (its field is named by the file). */
   text(name: string) { return this.dotfiles.getByRole('textbox', {name, exact: true}); }
 
   /** Remove, under the open dotfile's text: it asks in the box first, and that ask is returned. */
@@ -639,12 +655,9 @@ class Inbox extends Part {
   /** The conversation open at the right, named by the other (their name on this Remote). */
   thread(who: string) { return this.main.getByRole('region', {name: `Conversation with ${who}`, exact: true}); }
 
-  /** Claim `name` on this Remote (the stub before there is one); claimed, the stub is the name. */
-  async claim(name = this.app.handle) {
+  /** Inbox, opened at its stub: their username, given at the first sign-in (nothing is claimed first). */
+  async named(name = this.app.handle) {
     await this.app.rail.go('inbox');
-    const field = this.main.getByRole('textbox', {name: 'Name', exact: true});
-    await field.fill(name);
-    await field.press('Enter');
     await expect(this.main.getByRole('button', {name, exact: true})).toBeVisible();
   }
 
@@ -659,38 +672,39 @@ class Inbox extends Part {
   }
 }
 
-/** Server: laid over the page; servers on its top line, boards side by side. */
+/** Server: its page (a press on the rail; a rest lays the same over the page); servers on its top line, boards side by side. */
 class Server extends Part {
-  get layer() { return this.page.getByRole('dialog', {name: 'Server'}); }
+  /** Its page: the servers on its top line, the boards under them, the people at the right. */
+  get view() { return this.page.locator('#page[data-place="server"] > .work:not(.bench)'); }
   /** The right: who is in it, then the repos they show in it. */
-  get side() { return this.layer.getByRole('complementary', {name: 'Who is in it, and the repos they show'}); }
+  get side() { return this.view.getByRole('complementary', {name: 'Who is in it, and the repos they show'}); }
 
-  async openLayer() {
+  /** To its page, pressed on the rail. */
+  async open() {
     await this.app.rail.button('server').click();
-    await expect(this.layer).toBeVisible();
+    await expect(this.view).toBeVisible();
   }
 
-  /** Put it away with Escape: from behind the gear (or a repo shown) the first goes back to the boards. */
+  /** Away from it: its page left for Home. */
   async close() {
-    await expect(async () => {
-      await this.page.keyboard.press('Escape');
-      await expect(this.layer).toBeHidden({timeout: 1000});
-    }).toPass({timeout: 15_000});
+    await this.app.rail.go('home');
   }
 
   /** Make a server named `name`, `handle` its name on this Remote (one's own Inbox name is needed first). */
   async make(name: string, handle: string) {
-    await this.openLayer();
-    await this.layer.getByRole('textbox', {name: 'Name', exact: true}).fill(name);
-    await this.layer.getByRole('textbox', {name: /^Name on this Remote/}).fill(handle);
-    await this.layer.getByRole('button', {name: 'Make', exact: true}).click();
-    await expect(this.layer.getByRole('radiogroup', {name: 'Server'}).getByRole('radio', {name, exact: true})).toBeChecked();
+    await this.open();
+    await this.view.getByRole('textbox', {name: 'Name', exact: true}).fill(name);
+    // Its name on this Remote follows the name unseen; the quiet @ after it shows the field to write it otherwise.
+    await this.view.getByRole('button', {name: 'Name on this Remote', exact: true}).click();
+    await this.view.getByRole('textbox', {name: /^Name on this Remote/}).fill(handle);
+    await this.view.getByRole('button', {name: 'Make', exact: true}).click();
+    await expect(this.view.getByRole('radiogroup', {name: 'Server'}).getByRole('radio', {name, exact: true})).toBeChecked();
   }
 
   /** Make a board in the server on screen: its last box makes one (a server starts with #general). */
   async makeBoard(name: string) {
-    const field = this.layer.getByRole('textbox', {name: 'New board', exact: true});
-    const next = this.layer.getByRole('button', {name: 'Next board'});
+    const field = this.view.getByRole('textbox', {name: 'New board', exact: true});
+    const next = this.view.getByRole('button', {name: 'Next board'});
     await expect(next.or(field).first()).toBeVisible();
     // Along the boxes, one at a time, to the last.
     for (let i = 0; i < 20 && !(await field.isVisible()); i++) await next.click();
@@ -700,36 +714,36 @@ class Server extends Part {
   }
 
   /** A board's box, by its heading. */
-  board(name: string) { return this.layer.getByRole('heading', {name, exact: true, level: 2}); }
+  board(name: string) { return this.view.getByRole('heading', {name, exact: true, level: 2}); }
   /** Its talk, read as a conversation. */
-  talk(board: string) { return this.layer.getByRole('region', {name: board, exact: true}); }
-  /** Its TODO, pinned at the top of its box. */
-  get todo() { return this.layer.getByRole('region', {name: 'TODO', exact: true}); }
+  talk(board: string) { return this.view.getByRole('region', {name: board, exact: true}); }
+  /** Its TODO, the part beside its talk (in front once its part is pressed). */
+  get todo() { return this.view.getByRole('region', {name: 'TODO', exact: true}); }
 
   /** A server's chip on the top line (its name says so while a board in it has posts not seen). */
-  chip(name: string) { return this.layer.getByRole('radiogroup', {name: 'Server'}).getByRole('radio', {name: new RegExp(`^${escape(name)}(, |$)`)}); }
+  chip(name: string) { return this.view.getByRole('radiogroup', {name: 'Server'}).getByRole('radio', {name: new RegExp(`^${escape(name)}(, |$)`)}); }
 
   /** The box at the board's foot that writes in it. */
-  box(board: string) { return this.layer.getByRole('textbox', {name: `Write in ${board}`, exact: true}); }
+  box(board: string) { return this.view.getByRole('textbox', {name: `Write in ${board}`, exact: true}); }
 
   /**
    * Add someone to the server on screen by their name or code, from behind its gear (People,
    * Add someone you know). What the card then says is returned, to be checked by the caller.
    */
   async addSomeone(who: string) {
-    await this.layer.getByRole('button', {name: 'Its people, boards and repos'}).click();
-    await this.layer.getByRole('tab', {name: /^People/}).click();
-    await this.layer.getByRole('button', {name: 'Add someone you know'}).click();
-    const typed = this.layer.getByRole('textbox', {name: 'Name or code of someone to add'});
+    await this.view.getByRole('button', {name: 'Its people, boards and repos'}).click();
+    await this.view.getByRole('tab', {name: /^People/}).click();
+    await this.view.getByRole('button', {name: 'Add someone you know'}).click();
+    const typed = this.view.getByRole('textbox', {name: 'Name or code of someone to add'});
     await expect(typed).toBeFocused();
     await typed.fill(who);
-    await this.layer.getByRole('button', {name: 'Add', exact: true}).click();
-    return this.layer.getByRole('tabpanel', {name: /^People/}).getByRole('status');
+    await this.view.getByRole('button', {name: 'Add', exact: true}).click();
+    return this.view.getByRole('tabpanel', {name: /^People/}).getByRole('status');
   }
 
   /** Post `text` in `board` from the box at the foot (Ctrl+Enter sends). */
   async post(board: string, text: string) {
-    const box = this.layer.getByRole('textbox', {name: `Write in ${board}`, exact: true});
+    const box = this.view.getByRole('textbox', {name: `Write in ${board}`, exact: true});
     await box.fill(text);
     await box.press('Control+Enter');
     await expect(box).toHaveValue('');

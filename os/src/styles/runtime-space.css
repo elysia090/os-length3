@@ -1,0 +1,22 @@
+/* Runtime's three columns: what is here, what can be freed, what is on the Remote. */
+/* Runtime: one box in three columns, as tall as the longest: here, on the Remote, can be freed */
+.space-box { margin-top: var(--s5); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--rule); border-radius: var(--r-place); overflow: hidden; }
+.space-col { display: flex; flex-direction: column; min-width: 0; padding: var(--s4); }
+.space-col + .space-col { border-left: 1px solid var(--rule); }
+.space-col > h3 { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s3); margin: 0 0 var(--s3); font-size: var(--t-body); font-weight: 600; }
+.space-col > h3 b { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.space-list { display: grid; align-content: start; gap: var(--s1); flex: 1; overflow-y: auto; }
+.space-row { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) 0; }
+.space-what { display: grid; min-width: 0; flex: 1; }
+.space-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.space-what .small { overflow-wrap: anywhere; } /* what a row is, and why, read whole */
+.space-size { flex: none; font-size: var(--t-meta); font-variant-numeric: tabular-nums; color: var(--sub); }
+.gear-room { flex: none; width: var(--h-row); }
+/* A column's figure stands over its rows' sizes, clear of the room their gear takes: one column of numbers. */
+.space-col:has(.gear-room) > h3 b { margin-right: calc(var(--h-row) + var(--s3)); }
+.space-foot { display: flex; align-items: center; gap: var(--s3); padding-top: var(--s3); }
+.space-foot .grow { flex: 1; }
+.link-name { border: 0; padding: 0; background: transparent; font: inherit; font-weight: 600; color: inherit; text-align: left; cursor: var(--cursor-hand); }
+.link-name:hover { background: var(--raised); border-radius: var(--r-field); }
+@media (max-width: 900px) { .space-box { grid-template-columns: 1fr; } .space-col + .space-col { border-left: 0; border-top: 1px solid var(--rule); } }

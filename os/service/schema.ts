@@ -83,17 +83,17 @@ export const room = pgTable('room', {
 }, (t) => [check('room_used', sql`${t.used} >= 0`), index('room_unswept_idx').on(t.userId).where(sql`${t.unswept}`)]);
 
 /**
- * What turning a repo off asks of an account: the digest of the five letters
- * or digits it set, and its latest passkey sign-in (a session made by a
- * passkey just now is proof the person is at the device).
+ * An account's latest sign-ins: its latest passkey's (a session made by a passkey just now is proof the person is at
+ * the device: turning a repo off asks for it), and its latest of any kind (auth.ts HELD asks for one).
  */
 export const guard = pgTable('guard', {
   userId: text('user_id').primaryKey().references(() => user.id, {onDelete: 'cascade'}),
-  offDigest: text('off_digest'),
-  offSetAt: moment('off_set_at'),
   proofSession: text('proof_session'),
   proofAt: moment('proof_at'),
-}, () => [check('guard_digest', sql.raw(`off_digest is null or off_digest ~ ${re.sha}`))]);
+  /** Its latest sign-in of any kind, a passkey's or a provider's (auth.ts HELD): which session, and when. */
+  signedSession: text('signed_session'),
+  signedAt: moment('signed_at'),
+});
 
 /**
  * The account's plan (plan.ts): what Stripe last said of its subscription,
@@ -316,8 +316,6 @@ export const address = pgTable('address', {
   serverId: text('server_id').references(() => server.id, {onDelete: 'cascade'}),
   name: text('name').notNull(),
   domain: text('domain').notNull(),
-  /** A name on this Remote answers until then, unless renewed; null on a domain of one's own. */
-  until: moment('until'),
   releasedAt: moment('released_at'),
   lapsedAt: moment('lapsed_at'),
   createdAt: moment('created_at').defaultNow().notNull(),
@@ -475,7 +473,7 @@ export const board = pgTable('board', {
   check('board_reach', sql`${t.reach} between 0 and 2`)]);
 
 /**
- * An item of a board's TODO, the same as one of Home's (src/todo.ts): a
+ * An item of a board's TODO, the same as one of Home's (src/home/todo.ts): a
  * kind and a title, its detail, done or not. Kept item by item, field by
  * field, so two people writing different items, or different fields of one,
  * never meet; the same field, the last write stays. `place` orders the list

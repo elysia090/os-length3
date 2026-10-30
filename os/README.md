@@ -75,9 +75,12 @@ tracked in issue #20.
   first opens it, and the translator with BusyBox and l3 translated ahead of
   time. A first Prompt fetches about 0.8 MB (the index, the translator,
   BusyBox and its translation); what it fetched is kept by digest within
-  the browser's storage budget, so the next fetches only `l3.json`. Make it
+  the browser's storage budget, so the next fetches only `l3.json`. What a
+  Prompt translates as it runs (the code its shell reaches, gcc's cc1, git)
+  is kept the same way, by the file it was made from, so the next Prompt
+  reads it rather than translating it again. Make it
   with `npm run l3` (`scripts/l3.sh`: the translator from this tree and the
-  root `core/src/root.rs` pins for `RELEASE`), and check it against that root
+  newest root `core/src/root.rs` pins), and check it against that root
   with `npm run l3:parity -- ROOT public/l3`; `node scripts/l3-runnable.mjs
   public/l3 ROOT_DIR` says which programs of it run under xlat today.
 
@@ -325,7 +328,7 @@ to it first, and after every command each repo whose files differ from what
 was last agreed is sent (which differ is seen from the digests kept, so a
 repo in step costs no request). Home's settings kept on the Remote
 (profile, TODO, dotfiles) go the same way, by the app's protocol and rules
-(`core/src/home.rs`, as `src/draft.ts`): a command that reads one (`l3
+(`core/src/home.rs`, as `src/remote/sync.ts`): a command that reads one (`l3
 todo`, `l3 profile`, `l3 dotfile`, `l3 prompt`) takes it in first, and one
 that differs from what was last agreed is sent after any command; two TODO
 lists changed on two devices are joined item by item. What a person does to the Remote is only
@@ -398,7 +401,7 @@ the app.
   purpose whose subject is people, not a repo (`service/servers.ts`). A
   server is people who know each other (added from someone's Inbox
   contacts); its boards are each a conversation and a TODO they keep
-  together: Home's TODO box (`pages/todo-box.ts`), kept on the Remote item
+  together: Home's TODO box (`pages/todo-list.ts`), kept on the Remote item
   by item and field by field, so people writing at once do not undo each
   other. Boards are boxes slid like the issues, each with its TODO pinned
   at its top and its talk under it; the plain box at the foot writes in
@@ -435,7 +438,11 @@ before it, ships the Worker, and runs it once the new Worker answers
 and nothing else: a role the deploy makes new for each new `DATABASE_URL`
 (never one changed: Neon's owner is no superuser), dropping the ones before it
 once the new Worker answers. A failure making it says its step and SQLSTATE,
-never the statement (which holds the password). What each part of it does, its routes and tables, and which
+never the statement (which holds the password). What a page or a device asks
+every little while (what moved, what came, whether SSH is still on) is
+answered without the database while nothing was written, by the mark
+(`service/mark.ts`, a Durable Object, once `MARK` is bound in
+`wrangler.toml`), so Neon sleeps while nobody does anything. What each part of it does, its routes and tables, and which
 of them the app and l3 need: `service/README.md`.
 
 ```
@@ -503,19 +510,19 @@ to this repository, and its Settings → Build say, once:
 | | |
 |---|---|
 | Root directory | `os` |
-| Build command | `npm run build:cloudflare`: l3 for the browser from the release `RELEASE` names (`scripts/prompt-files.mjs`, taken only at the index `core/src/root.rs` pins for it), then the app |
-| Deploy command | `node service/deploy.ts`: the migrations on Neon's production branch (no branch is made for a deploy; a contract step waits until the new Worker answers), the bucket, then the Worker with the secrets it lacks (the first build prints the link in its log), then the release's files the Remote serves to anyone (`service/mirror.ts`): each root `core/src/root.rs` pins and the desktop app `shared/desktop-releases.json` pins for `RELEASE`, taken from the GitHub release where the bucket lacks them, checked against those pins, and put with wrangler |
-| Variables and secrets | `NEON_PROJECT_ID`; secrets `NEON_API_KEY` (a Neon API key for the project) and `GITHUB_TOKEN` (read-only, for this private repository's releases: the build's Prompt and the deploy's release files) |
-| Non-production branch deploy command | `npx wrangler versions upload`: another branch's build uploads a version and never deploys (`service/deploy.ts` refuses to run for a branch other than main). The version has no preview URL (`wrangler.toml`: `workers_dev = false`, `preview_urls = false`), since it would run against production's database and bucket: it is checked that it builds. Never `npx wrangler deploy`, which would replace production from any branch, without its migrations or its bucket |
-| Branch control | main deploys; other branches build previews. A build needs the token: without it, a branch's preview is built without the Prompt, and main's build stops (`scripts/prompt-files.mjs`) |
+| Build command | `npm run build:cloudflare`: l3 for the browser from the release of the newest l3 `core/src/root.rs` pins (`scripts/prompt-files.mjs`, taken only at the index pinned for it), then the app |
+| Deploy command | `node service/deploy.ts`: the migrations on Neon's production branch (no branch is made for a deploy; a contract step waits until the new Worker answers), the bucket, then the Worker with the secrets it lacks (the first build prints the link in its log), then the release's files the Remote serves to anyone (`service/mirror.ts`): each root `core/src/root.rs` pins and the newest desktop app `shared/desktop-releases.json` pins, taken from the GitHub release where the bucket lacks them, checked against those pins, and put with wrangler |
+| Variables and secrets | `NEON_PROJECT_ID`; secrets `NEON_API_KEY` (a Neon API key for the project) and `GITHUB_TOKEN` (optional, read-only: the deploy reads the release's files through GitHub's API, which limits a caller without one to 60 requests an hour; the build's Prompt is read from the public release without it) |
+| Non-production branch deploy command | `npx wrangler versions upload`: another branch's build uploads a version and never deploys (`service/deploy.ts` refuses to run for a branch other than main). The version has no preview URL (`wrangler.toml`: `workers_dev = false`, `preview_urls = false`), since it would run against production's database and bucket: it is checked that it builds. A version that brings a Durable Object class production has not made yet (`[[migrations]]`, as `mark` did) is refused by Cloudflare until main's deploy has made it. Never `npx wrangler deploy`, which would replace production from any branch, without its migrations or its bucket |
+| Branch control | main deploys; other branches build previews, each with the Prompt the tree ships (`scripts/prompt-files.mjs`, from the public release) |
 
 The Prompt the web serves is a released one: a newer one ships by releasing
 it (a new version in `RELEASE`, `.github/workflows/release.yml`; without
 Actions, `scripts/release.sh` and `scripts/publish-release.mjs` by hand, as
-[`releases/README.md`](../releases/README.md) says), then
-committing what was released, as its notes give them: l3's one entry in
-`core/src/root.rs` (the root, and the index the web reads it by; the release
-writes it) and the desktop app in `shared/desktop-releases.json`. A build
+[`releases/README.md`](../releases/README.md) says), then merging the pins
+the release proposes (Pin vX.Y.Z): l3's one entry in `core/src/root.rs`
+(the root, and the index the web reads it by) and the desktop app in
+`shared/desktop-releases.json`. A build
 takes only the l3 this tree pins, and a deploy puts on the Remote only the roots and
 desktop files this tree pins, so a release made under that tag by anyone
 else is not what production serves. The Remote serves them to anyone, the
@@ -562,16 +569,35 @@ browser by `core/web`), so every web build of the page needs Rust with
 says that command when the target is missing. The desktop app's build does
 not: its core is the app's own.
 
+### Where the page's code is
+
+`src/` holds the page, a folder to each kind of thing it does; a module's
+tests stand beside it (`x.test.ts`).
+
+| Folder | What is in it |
+| --- | --- |
+| `main.ts` | the shell: the rail, the page drawn for each place, the moves between them |
+| `pages/` | each place on the rail and its parts; Forge, Git, Server, Remote and Runtime have folders of their own, and `bench/` is the work bench Forge and Git stand on (the box, the Prompt's screen and terminal) |
+| `ui/` | what every page draws and moves with: elements (`dom.ts`), motion (`glide.ts`), the caret, focus, touch, icons |
+| `core/` | the Rust core as a page runs it: its worker, its ABI, WASI over the browser's files |
+| `prompt/` | the Prompt's machine in a browser: l3's files and guest threads (`userland.ts`), the box's recall, SSH, the tree of `/` |
+| `remote/` | talking to the Remote: the connection, each repo kept in step (`sync.ts`), servers, Inbox, the plan, what is new, and the timing of it all (`lifecycle.ts`) |
+| `repos/` | what a repo holds and how it is read: issues, history, diffs, search, Edit's grammar, first lines |
+| `home/` | Home's own: the profile, the TODO, dotfiles, the band, what is half written |
+| `app/` | the two hosts and what the app is made of around the pages: the policy, plugins, the rail's purposes, pacing, errors |
+| `testing/` | what tests stand on: the core in Node, a browser on a Remote in this process |
+| `i18n/` | the Japanese words (`i18n.ts` chooses) |
+
 ### One core, two hosts
 
 A repo, its history, the Remote's sync and Home's settings are the core's
 (`core/src/api.rs`): the app asks it through one Tauri command, and a page
 asks the very same code, built for `wasm32-wasip1`, in a worker of its own
-(`src/core.worker.ts`, `src/wasi.ts`) over files the browser keeps in
-IndexedDB. A page calls `core(name, args)` (`src/host.ts`) either way and
+(`src/core/worker.ts`, `src/core/wasi.ts`) over files the browser keeps in
+IndexedDB. A page calls `core(name, args)` (`src/app/host.ts`) either way and
 gets the same answers, the Remote's refusals included. Tabs of one browser
 take turns under one Web Lock and tell each other each file they wrote.
-Tests run it too: `src/core.node.ts` is the same module in a Node worker,
+Tests run it too: `src/testing/node-core.ts` is the same module in a Node worker,
 its requests answered by the test's own Remote.
 
 Each build carries only its own host's part, decided when it is built
@@ -579,8 +605,8 @@ Each build carries only its own host's part, decided when it is built
 web's alone (the browser's core and its worker, l3 for the browser and xlat,
 passkeys) each has a `.desktop.ts` beside it with the same exports, which the
 app's build takes instead, and leaves out `public/l3`; Tauri's API
-(`src/tauri.ts`) has a `.web.ts` the web's build takes. `isNative`
-(`src/host.ts`) is that same fact, so a branch for the other host is dropped
+(`src/app/tauri.ts`) has a `.web.ts` the web's build takes. `isNative`
+(`src/app/host.ts`) is that same fact, so a branch for the other host is dropped
 too. The app's page is about 0.4 MB, the web's 1.3 MB with its core.
 
 ```
@@ -593,6 +619,9 @@ npm run verify:remote          # the Remote on a real Postgres: DATABASE_URL (se
 npx tauri dev                  # window against the Vite dev server
 npx tauri build --debug --no-bundle
 sh scripts/desktop.sh          # the .deb and the AppImage as they ship, l3 beside the app
+node scripts/styles-prune.mjs  # take out of the stylesheet the rules no element can match (--dry: only say which)
+node scripts/styles-split.mjs  # the stylesheet in parts by what each styles (src/styles/), in the cascade's order
+node scripts/styles-check.mjs  # the stylesheet against HEAD's: the same rules in the same order, the same built CSS
 ```
 
 ### CI

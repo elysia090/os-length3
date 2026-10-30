@@ -1,0 +1,24 @@
+/* Git: its band of repos and its column, the issues listed, an issue written. */
+.work-act { margin-top: var(--s3); }
+.work-act .line-in { flex: 1; }
+.issue-one { display: grid; gap: var(--s2); }
+.issue-one h3 { margin: 0; font-size: var(--t-body); font-weight: 600; }
+.issue-body { white-space: pre-wrap; }
+.issue-form { display: grid; gap: var(--s3); margin-bottom: var(--s4); padding: var(--s4); border: 1px solid var(--ink); border-radius: var(--r-place); background: var(--paper); }
+.issue-form[hidden] { display: none; }
+.issue-text { min-height: 96px; padding: var(--s2) var(--s3); resize: none; font: var(--t-body)/1.6 var(--sans); }
+/* An issue is written as a TODO is: one sheet, nothing drawn inside it. Its first line is its title (Kind：title),
+   in the weight its card will show it in, where it goes said quietly before it; the lines under it are its detail,
+   straight on the sheet from the title's own left edge. The sheet's ink edge is the only sign of the keyboard. */
+.issue-first { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; }
+.issue-first > .line-in { flex: 1; min-width: 0; min-height: 0; padding: 0; border: 0; background: transparent; font: 600 var(--t-card)/1.4 var(--sans); }
+.issue-first > .line-in:focus, .issue-first > .line-in:focus-visible { outline: none; }
+.issue-first > .line-in::placeholder { font-weight: 400; }
+.issue-target { flex: 0 1 auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.issue-form .issue-text { padding: 0; border: 0; background: transparent; }
+.issue-form .issue-text:focus, .issue-form .issue-text:focus-visible { outline: none; }
+.issue-new .issue-text { min-height: calc(96px + 2 * var(--h-row) + var(--s2) + var(--s3)); }
+.empty p + p { margin-top: var(--s2); }
+/* What is only on the Remote, each with a press to fetch it, as Runtime's column. */
+.fetch-list { display: grid; gap: var(--s2); }
+.fetch-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s5); color: var(--ink); }
