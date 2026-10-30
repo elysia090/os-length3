@@ -1787,3 +1787,30 @@ test('a commit is kept as what it changed from its parent, whole every 16th, and
   assert.deepEqual(depths, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3]);
   for (const m of made.slice(1, 16)) assert.ok(by.get(m.id)!.bytes * 10 < by.get(m.id)!.size, JSON.stringify(by.get(m.id)));
 });
+
+test('a small save laid on the draft where it is comes out as the diff laid on a copy would, refusals and all', async () => {
+  const {applyDiff, clashes} = await import('./repos.ts');
+  const s = await service();
+  const t = await s.start('Ren');
+  const shas = [(await upload(s, t, enc.encode('1'))).sha, (await upload(s, t, enc.encode('2'))).sha];
+  const names = ['a', 'a/b', 'a/c', 'a/b/x', 'd', 'd/e', 'd/e/f', 'g', 'h/i'];
+  let draft: Record<string, string | null> = {a: shas[0], 'd/e': shas[1], g: shas[0]};
+  let version = (await s.call('PATCH', '/v1/repos/same/draft', {token: t, body: {version: 0, set: draft, remove: []}})).json.version as number;
+  let seed = 7;
+  const pick = <T>(xs: T[]) => { seed = (seed * 1103515245 + 12345) % 2147483648; return xs[seed % xs.length]; };
+  for (let i = 0; i < 150; i++) {
+    const set: Record<string, string> = {}, remove: string[] = [];
+    for (let n = 1 + (i % 3); n > 0; n--) {
+      const p = pick(names);
+      if (pick([0, 1, 2]) === 0) { if (!(p in set)) remove.push(p); } else if (!remove.includes(p)) set[p] = pick(shas);
+    }
+    const want = applyDiff(draft, set, remove);
+    const clash = clashes(want).filter((p) => !clashes(draft).includes(p));
+    const r = await s.call('PATCH', '/v1/repos/same/draft', {token: t, body: {version, set, remove}});
+    if (clash.length) { assert.equal(r.status, 400, `${i} ${JSON.stringify({set, remove})}`); continue; }
+    assert.equal(r.status, 200, `${i} ${JSON.stringify({set, remove, draft})} ${r.text}`);
+    version = r.json.version as number;
+    draft = want;
+    assert.deepEqual((await s.call('GET', '/v1/repos/same', {token: t})).json.draft, draft, `${i} ${JSON.stringify({set, remove})}`);
+  }
+});

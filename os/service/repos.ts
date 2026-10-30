@@ -144,6 +144,8 @@ export async function cutId(c: {repo: string; parent: string | null; tree: Tree;
 }
 
 /** A commit as clients read it. */
+/** The most paths a save may set and take away and still be laid on the draft where it is (repos.ts lineAt). */
+const FAST_SAVE = 16;
 /** A commit is kept whole every so many along a run of changes (0020): how many it takes to read one whole, at most. */
 const WHOLE_EVERY = 16;
 /** A commit's tree whole, however it is kept (0020 cut_tree). */
@@ -204,11 +206,28 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
    */
   // Read to be written (`draft`), with what the write then asks of the account in the same round trip: its room, and
   // which of the blobs `shas` it holds (a save is a lock, this, and the write: the room and the blobs were a trip each).
-  // A save (`files`: what it sets, as JSON, when it only sets files to new contents) asks whether each is a file the
-  // draft has already: then the draft is not read at all, only laid on where it is (a save as one types, its tree as it
-  // was: no file or folder comes or goes, so nothing about its shape is asked). Otherwise the draft comes in this read.
+  // A small save of files (`files`: {set, remove} as JSON) asks here whether it can be laid on the draft where it is,
+  // the draft never read: each path it takes away a file there with nothing under it; each it sets a file there, or a
+  // new one with no file above it (but one it takes away), nothing under it, and none of the others under it; and room
+  // for it in the tree's files and size. A save as one types, a file made, one taken away or moved, are all so. What
+  // else is asked of a save is of its shape alone (a path and a folder of one name), so this is all of it; otherwise the
+  // draft comes in this same read and the save goes as before.
   const lineAt = async (q: Db, user: string, name: string, l: string, draft = false, shas: string[] = [], files?: string): Promise<Line | undefined> => {
-    const fast = files ? sql<boolean>`coalesce((select bool_and(jsonb_typeof(${line.draft} -> k) = 'string') from jsonb_object_keys(${files}::jsonb) k), false)` : null;
+    const f = files ? sql`(${files}::jsonb)` : null;
+    // One pass over the draft's paths: how many there are, and whether any is under a path taken away or newly set.
+    const fast = f ? sql<boolean>`coalesce((with s(k) as (select jsonb_object_keys(${f} -> 'set')), r(k) as (select jsonb_array_elements_text(${f} -> 'remove')),
+        n(k) as (select s.k from s where jsonb_typeof(${line.draft} -> s.k) is distinct from 'string'),
+        under(p) as (select array(select replace(replace(replace(x.k, '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '/%' from (select k from r union all select k from n) x)),
+        scan as (select count(*) as paths, coalesce(bool_or(dk like any (under.p)), false) as below from jsonb_object_keys(${line.draft}) dk, under)
+      select (select coalesce(bool_and(jsonb_typeof(${line.draft} -> r.k) = 'string'), true) from r)
+        and not scan.below
+        and not exists (select 1 from n where exists (select 1 from s o where starts_with(o.k, n.k || '/'))
+          or exists (select 1 from generate_series(1, cardinality(string_to_array(n.k, '/')) - 1) i,
+              lateral (select array_to_string((string_to_array(n.k, '/'))[1:i], '/') as a) x
+            where (jsonb_typeof(${line.draft} -> x.a) = 'string' and x.a not in (select k from r)) or x.a in (select k from s)))
+        and scan.paths + (select count(*) from s) <= ${LIMIT.files}
+        and ${line.bytes} + 200 * (select count(*) from s) <= ${Math.floor(LIMIT.tree * 0.9)}
+      from scan), false)` : null;
     return (await q.select({...lineCols, ...(draft ? {draft: fast ? sql<Tree | null>`case when ${fast} then null else ${line.draft} end` : line.draft,
       ...(fast ? {fast} : {}), modes: line.modes, kept: {bytes: line.bytes, files: line.fileBytes}, used: usedBy(user),
       have: shas.length ? sql<string[]>`(select coalesce(array_agg(${blob.sha256}), '{}') from ${blob} where ${and(eq(blob.userId, user), inArray(blob.sha256, shas))})`
@@ -286,11 +305,12 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
     for (const [p, v] of Object.entries(set)) if (!validPath(p) || !(v === null || (typeof v === 'string' && HEX.test(v)))) return c.json({error: 'Invalid repository path', path: p}, 400);
     for (const p of remove) if (typeof p !== 'string' || !validPath(p)) return c.json({error: 'Invalid repository path', path: String(p)}, 400);
     const shas = [...new Set(Object.values(set).filter((v): v is string => typeof v === 'string'))];
-    // Only files given new contents, nothing removed: perhaps the save as one types, laid on the draft where it is.
-    const onlyFiles = !remove.length && shas.length > 0 && Object.values(set).every((v) => typeof v === 'string');
+    // A small save of files (no folder set, nothing both set and taken away): perhaps laid on the draft where it is.
+    const onlyFiles = Object.keys(set).length + remove.length > 0 && Object.keys(set).length + remove.length <= FAST_SAVE
+      && Object.values(set).every((v) => typeof v === 'string') && remove.every((p) => !(p as string in set));
     const version = await db.transaction(async (tx: Db) => {
       await lock(tx, user);
-      const row = await lineAt(tx, user, name, l, true, shas, onlyFiles ? JSON.stringify(set) : undefined);
+      const row = await lineAt(tx, user, name, l, true, shas, onlyFiles ? JSON.stringify({set, remove}) : undefined);
       on(row?.off);
       if (!row) {
         const gone = await goneAt(tx, user, name);
@@ -308,13 +328,17 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
       if (current !== b.version) refuse(409, {version: current});
       const kept = {bytes: line.bytes, files: line.fileBytes};
       if (row?.fast) {
-        // Each path a file it has, each given a digest as long as the one it had: the draft's shape, its files, its
-        // size and so the account's room stand as they were; only what its files take may grow (the plan asks).
+        // Laid on where it is: what it takes away goes (each a file, nothing under it), what it sets is written. A file
+        // taken away takes its mode with it. Its room is what the tree grew by, as the database counts it.
         const modes = applyModes(row.modes ?? {}, null, set as Tree, sent as Modes | undefined);
-        const after = await tx.update(line).set({draft: sql`${line.draft} || ${JSON.stringify(set)}::jsonb`, modes, version: current + 1, updatedAt: sql`now()`})
-          .where(and(lineRow(row.id, l), eq(line.version, current))).returning(kept);
+        for (const p of remove as string[]) delete modes[p];
+        const after = await tx.update(line).set({draft: sql`(${line.draft} - array(select jsonb_array_elements_text(${JSON.stringify(remove)}::jsonb))) || ${JSON.stringify(set)}::jsonb`,
+          modes, version: current + 1, updatedAt: sql`now()`}).where(and(lineRow(row.id, l), eq(line.version, current))).returning(kept);
         const before = row.kept ?? {bytes: 0, files: 0};
-        if (after[0]) await d.plans.grew(tx, user, Number(after[0].bytes) + Number(after[0].files) - Number(before.bytes) - Number(before.files));
+        if (after[0]) {
+          fitsUsed(row.used, Number(after[0].bytes) - Number(before.bytes));
+          await d.plans.grew(tx, user, Number(after[0].bytes) + Number(after[0].files) - Number(before.bytes) - Number(before.files));
+        }
         return current + 1;
       }
       const was = row?.draft ?? {};
