@@ -82,7 +82,7 @@ pub fn page(ctx: &Ctx, _: &Call) -> Result<Reply> {
 pub fn on(_: &Ctx, call: &Call) -> Result<Reply> {
     let name = call.word(0).unwrap_or_default();
     let there = remote::remote_repos()?;
-    let o = there.iter().find(|o| o.name == name).ok_or_else(|| Error::NotFound(tr!("The Remote has no repo {}", "Remote に repo {} はありません", name)))?;
+    let o = there.iter().find(|o| o.name == name).ok_or_else(|| Error::NotFound(tr!("The Remote has no repo {} (l3 repo lists them)", "Remote に repo {} はありません（l3 repo で一覧）", name)))?;
     if o.off_at.is_none() { return Err(Error::Refused(tr!("{} is not turned off; there is nothing to bring back", "{} はオフになっていません。戻すものはありません", name))); }
     remote::turn_on(name)?;
     Ok(Reply::done(tr!("{} is on again", "{} を戻しました", name), json!({"repo": name, "on": true})))

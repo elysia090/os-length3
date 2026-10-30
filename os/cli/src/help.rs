@@ -39,9 +39,15 @@ pub fn run(_: &Ctx, call: &Call) -> Result<Reply> {
     }
 }
 
+/// The commands as data: each form's usage and words as `l3 help` says them, and its schema (spec.rs) beside them.
 fn data(cs: Vec<&Command>) -> serde_json::Value {
     json!(cs.iter().map(|c| json!({"name": c.name, "aliases": c.aliases, "group": c.group.name(), "about": say(c.about),
-        "forms": c.forms.iter().filter(|f| !f.hidden).map(|f| json!({"usage": spec::usage(c, f), "about": say(f.about)})).collect::<Vec<_>>()})).collect::<Vec<_>>())
+        "forms": c.forms.iter().filter(|f| !f.hidden).map(|f| {
+            let mut v = spec::schema(f);
+            v["usage"] = json!(spec::usage(c, f));
+            v["about"] = json!(say(f.about));
+            v
+        }).collect::<Vec<_>>()})).collect::<Vec<_>>())
 }
 
 /// The work on an issue, from writing it to main taking it: the lines one runs, in their order, in a repo

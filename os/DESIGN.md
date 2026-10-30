@@ -1141,6 +1141,17 @@ wherever it comes from:
   `l3 merge notes#1`); then every command by the rail; then the flags, the
   exit codes (0–5) and how names are written, each a line under its word.
   Every line fits 80 columns, Japanese counted two a character.
+- **The table is data too, for an agent.** `l3 help all --json` is every
+  form as a program reads it: its verb, its words in order (each a kind:
+  repo, path, issue, text, number, choice with its choices, address,
+  dotfile, many, argv; optional or not), its flags (and the value each
+  takes), what it needs (the Remote, this device, or nothing more: it runs
+  in a Prompt too) and how it keeps in step; beside its usage and its words
+  as `l3 help` says them. One reading and any command can be written. The
+  verbs are the same everywhere (new, ls, mv, rm, set, take; a list is
+  `ls`, whatever it lists), and a refusal says the command that helps: a
+  name not found says where the names are listed (`(l3 repo lists them)`),
+  with `--json` as `{error: {kind, message}}` and the exit code.
 - **A name and its facts in two columns.** A listing (`l3 repo`, `l3
   remote`, `l3 file`, `l3 prompt ls`) writes each name, then its facts
   starting in one column, as wide as the widest name up to 24 (a longer one

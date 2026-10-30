@@ -211,7 +211,7 @@ pub fn dotfile_take(_: &Ctx, call: &Call) -> Result<Reply> {
 
 pub fn dotfile_show(_: &Ctx, call: &Call) -> Result<Reply> {
     let name = call.word(0).unwrap_or_default();
-    let (_, text) = home::dotfiles().into_iter().find(|(n, _)| n == name).ok_or_else(|| Error::NotFound(tr!("There is no dotfile {}", "dotfile {} はありません", name)))?;
+    let (_, text) = home::dotfiles().into_iter().find(|(n, _)| n == name).ok_or_else(|| Error::NotFound(tr!("There is no dotfile {} (l3 dotfile lists them)", "dotfile {} はありません（l3 dotfile で一覧）", name)))?;
     Ok(Reply::Raw { json: json!({"name": name, "text": text}), text })
 }
 
@@ -227,7 +227,7 @@ pub fn dotfile_write(_: &Ctx, call: &Call) -> Result<Reply> {
 
 pub fn dotfile_rm(_: &Ctx, call: &Call) -> Result<Reply> {
     let name = call.word(0).unwrap_or_default();
-    if !home::dotfiles().iter().any(|(n, _)| n == name) { return Err(Error::NotFound(tr!("There is no dotfile {}", "dotfile {} はありません", name))); }
+    if !home::dotfiles().iter().any(|(n, _)| n == name) { return Err(Error::NotFound(tr!("There is no dotfile {} (l3 dotfile lists them)", "dotfile {} はありません（l3 dotfile で一覧）", name))); }
     home::set_dotfile(name, None)?;
     Ok(Reply::done(tr!("Removed {}", "{} を消しました", name), json!({"name": name})))
 }

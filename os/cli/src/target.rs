@@ -27,7 +27,7 @@ fn missing(ctx: &Ctx, repo: &str) -> Error {
         return Error::Usage(tr!("{:?} is not a repo name (letters, digits, . _ -)", "{:?} は repo の名前になりません（英数字と . _ -）", repo));
     }
     let there = !ctx.prompt && remote::connection().is_some() && remote::remote_repos().is_ok_and(|l| l.iter().any(|r| r.name == repo));
-    Error::NotFound(if there { tr!("{} is only on the Remote (l3 repo open {} brings it here)", "{} は Remote にだけあります（l3 repo open {} でこの端末に）", repo, repo) } else { tr!("There is no repo {} here", "この端末に repo {} はありません", repo) })
+    Error::NotFound(if there { tr!("{} is only on the Remote (l3 repo open {} brings it here)", "{} は Remote にだけあります（l3 repo open {} でこの端末に）", repo, repo) } else { tr!("There is no repo {} here (l3 repo lists them)", "この端末に repo {} はありません（l3 repo で一覧）", repo) })
 }
 
 /// The repo a word names (or, none given, the one you are in), once it is here.
@@ -209,7 +209,7 @@ fn by_number(r: &repos::Repos, n: &str) -> Result<(String, String)> {
     }
     match found.len() {
         1 => Ok(found.remove(0)),
-        0 => Err(Error::NotFound(tr!("No repo here has an issue #{}", "#{} の Issue がある repo はありません", n.trim_start_matches('0')))),
+        0 => Err(Error::NotFound(tr!("No repo here has an issue #{} (l3 git lists them)", "#{} の Issue がある repo はありません（l3 git で一覧）", n.trim_start_matches('0')))),
         _ => Err(Error::Usage(tr!("#{} is in more than one repo: {}", "#{} は複数の repo にあります：{}", n.trim_start_matches('0'),
             found.iter().map(|(repo, _)| format!("{repo}#{}", n.trim_start_matches('0'))).collect::<Vec<_>>().join(", ")))),
     }

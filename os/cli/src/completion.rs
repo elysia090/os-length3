@@ -160,7 +160,7 @@ mod tests {
         assert!(candidates(&c, &w("com")).contains(&"commit".to_string()));
         assert!(candidates(&c, &w("com")).contains(&"completion".to_string()));
         assert!(!candidates(&c, &w("")).iter().any(|x| x == "complete" || x == "sync" || x.is_empty()));
-        assert_eq!(candidates(&c, &w("name ")), ["list", "set", "claim", "release", "domain"]);
+        assert_eq!(candidates(&c, &w("name ")), ["ls", "set", "claim", "release", "domain"]);
         // The listener itself (serve) is l3's own word, never offered.
         assert_eq!(candidates(&c, &w("address ")), ["ssh"]);
         assert_eq!(candidates(&c, &w("address ssh ")), ["on", "off"]);

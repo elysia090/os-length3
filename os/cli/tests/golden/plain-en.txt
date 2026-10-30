@@ -110,7 +110,7 @@ $ l3 file /root/vocab
 [exit 4]
 --- stdout
 --- stderr
-l3: There is no repo vocab here
+l3: There is no repo vocab here (l3 repo lists them)
 
 $ l3 file notes/README.md
 [exit 0]

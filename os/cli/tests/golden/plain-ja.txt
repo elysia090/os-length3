@@ -110,7 +110,7 @@ $ l3 file /root/vocab
 [exit 4]
 --- stdout
 --- stderr
-l3: この端末に repo vocab はありません
+l3: この端末に repo vocab はありません（l3 repo で一覧）
 
 $ l3 file notes/README.md
 [exit 0]

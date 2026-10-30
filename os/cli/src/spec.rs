@@ -492,7 +492,8 @@ pub static COMMANDS: &[Command] = &[
     ]),
     c("name", &[], Group::Inbox, ["your names, as people find you (name@domain), and your code", "あなたの名前（人があなたを見つける name@domain）と、あなたのコード"], &[
         f(None, &[], &[], ["each name, one a line, nothing else", "名前を1行にひとつ、それだけ"], REMOTE, Send, people::name_only),
-        f(Some("list"), &[], &[], ["each, and your code", "それぞれと、あなたのコード"], REMOTE, Send, people::names),
+        f(Some("ls"), &[], &[], ["each, and your code", "それぞれと、あなたのコード"], REMOTE, Send, people::names),
+        hidden(Some("list"), &[], REMOTE, Send, people::names),
         f(Some("set"), &[Arg::Text("NAME")], &[], ["change your username (given at your first sign-in): the one before is held for you 30 days", "ユーザー名を変える（最初のサインインで付いた名前。前の名前は30日取り置き）"], REMOTE, Send, people::name_set),
         f(Some("claim"), &[Arg::Text("NAME[@DOMAIN]")], &[], ["another name, here or on your domain, beside your username", "ユーザー名とは別の名前を、ここか自分のドメインで"], REMOTE, Send, people::name_claim),
         f(Some("release"), &[Arg::Address], &[], ["let another name go: held for you 30 days, claim it again to take it back", "別の名前を手放す（30日はあなたのために取り置き、取り直せば戻る）"], REMOTE, Send, people::name_release),
@@ -550,6 +551,38 @@ pub fn placeholder(w: &str) -> &str {
 }
 
 /// A form as it is written: `l3 issue new [REPO] "Fix：title" [-m detail]`.
+/// A form as a program reads it (`l3 help --json`): its verb, its words in order, each with its kind (the choices
+/// of one that is one of a few words), its flags (with the value each takes), what it needs to run (the Remote; this
+/// device; or nothing more, so it runs in a Prompt too) and how it keeps in step with the Remote. An agent reads the
+/// table once and writes any command from it, as `usage` writes it for a person.
+pub fn schema(f: &Form) -> serde_json::Value {
+    use serde_json::json;
+    let words: Vec<serde_json::Value> = f.args.iter().map(|a| match a {
+        Arg::Repo { optional } => json!({"kind": "repo", "optional": optional}),
+        Arg::Path { optional } => json!({"kind": "path", "optional": optional}),
+        Arg::Issue => json!({"kind": "issue"}),
+        Arg::Text(n) => json!({"kind": "text", "name": n.trim_matches('"')}),
+        Arg::Number(n) => json!({"kind": "number", "name": n}),
+        Arg::Choice(w) => json!({"kind": "choice", "choices": w}),
+        Arg::Address => json!({"kind": "address"}),
+        Arg::Dotfile => json!({"kind": "dotfile"}),
+        Arg::Many(n) => json!({"kind": "many", "name": n}),
+        Arg::Argv => json!({"kind": "argv", "optional": true}),
+    }).collect();
+    let flags: Vec<serde_json::Value> = f.flags.iter().map(|fl| match fl {
+        Flag::Note(w) => json!({"flag": "-m", "value": w}),
+        Flag::Template => json!({"flag": "-t", "value": "template", "choices": length3_core::templates::all().iter().map(|t| t.id.clone()).collect::<Vec<_>>()}),
+        Flag::Network => json!({"flag": "--network"}),
+        Flag::Todo => json!({"flag": "--todo"}),
+        Flag::Empty => json!({"flag": "--empty"}),
+        Flag::Out => json!({"flag": "-o", "value": "file"}),
+        Flag::Force => json!({"flag": "--force"}),
+    }).collect();
+    let needs = if f.needs.remote { "remote" } else if f.needs.in_prompt { "anywhere" } else { "device" };
+    let sync = match f.sync { Sync::None => "none", Sync::TakeIn => "take-in", Sync::Send => "send" };
+    json!({"verb": f.verb, "words": words, "flags": flags, "needs": needs, "sync": sync})
+}
+
 pub fn usage(c: &Command, f: &Form) -> String {
     // `l3` alone has no name to follow it.
     let mut s = if c.name.is_empty() { "l3".to_string() } else { format!("l3 {}", c.name) };

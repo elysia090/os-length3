@@ -205,7 +205,7 @@ pub fn prompt_list(_: &Ctx, _: &Call) -> Result<Reply> {
 pub fn prompt_stop(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let repo = target::repo(ctx, call, 0)?;
     let stopped = stop_prompts(&repo);
-    if stopped.is_empty() { return Err(Error::NotFound(tr!("No Prompt of {} is running", "{} の Prompt は動いていません", repo))); }
+    if stopped.is_empty() { return Err(Error::NotFound(tr!("No Prompt of {} is running (l3 prompt ls lists those that are)", "{} の Prompt は動いていません（動いているものは l3 prompt ls）", repo))); }
     Ok(Reply::done(said_stopped(&repo, &stopped), json!({"repo": repo, "stopped": stopped})))
 }
 

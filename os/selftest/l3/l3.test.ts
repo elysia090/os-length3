@@ -223,7 +223,7 @@ test('an issue that will not be done is closed in its own file, on the Remote to
   assert.deepEqual(log.slice(0, 3).map(([, n]) => n), [1, 1, 1]);
 });
 
-test('l3 name answers with the username alone, given at sign-in; l3 name set changes it; l3 name list with the code; l3 address, off a terminal with SSH off, says so with 5', async () => {
+test('l3 name answers with the username alone, given at sign-in; l3 name set changes it; l3 name ls with the code; l3 address, off a terminal with SSH off, says so with 5', async () => {
   const sora = await r.browser('Sora Selftest');
   const d = r.device();
   assert.equal((await d.login(sora)).code, 0);
@@ -231,7 +231,9 @@ test('l3 name answers with the username alone, given at sign-in; l3 name set cha
   ok(d.l3(['name', 'set', '@soraself']), /^Your username: soraself \(the one before is held for you 30 days\)\n$/);
   assert.equal(ok(d.l3(['name'])).out, 'soraself@length3.test\n');
   // In the list a name on the Remote's own domain is said without it.
-  assert.match(ok(d.l3(['name', 'list'])).out, /^soraself\nYour code: \d{6} /);
+  assert.match(ok(d.l3(['name', 'ls'])).out, /^soraself\nYour code: \d{6} /);
+  // As every list is asked for (ls); list, as it was, still answers.
+  assert.match(ok(d.l3(['name', 'list'])).out, /^soraself\n/);
   // SSH is this device's (service/ssh.ts): off at first, and a script is told, never asked.
   refused(d.l3(['address']), 5, /SSH is off on this device/);
 });
@@ -268,5 +270,22 @@ test('what l3 cannot do has its exit code: how it is written (2), no Remote (3),
   refused(away.l3(['file', 'write', 'mine/../x'], 'x'), 1, /leaves the repo/);
   // With --json a refusal is data on standard output: its kind and its words.
   const j = away.l3(['file', 'nope/x', '--json']);
-  assert.deepEqual([j.code, j.json], [4, {error: {kind: 'notFound', message: 'There is no repo nope here'}}]);
+  assert.deepEqual([j.code, j.json], [4, {error: {kind: 'notFound', message: 'There is no repo nope here (l3 repo lists them)'}}]);
+});
+
+test('l3 help --json is the table an agent writes every command from: each form\'s words, flags and what it needs', async () => {
+  const away = r.device();
+  const all = ok(away.l3(['help', 'all', '--json'])).json as {name: string; forms: {usage: string; verb: string | null; words: {kind: string; choices?: string[]; optional?: boolean}[]; flags: {flag: string}[]; needs: string; sync: string}[]}[];
+  const forms = all.flatMap((c) => c.forms.map((f) => ({c: c.name, ...f})));
+  assert.ok(forms.length > 50);
+  for (const f of forms) {
+    assert.ok(['remote', 'device', 'anywhere'].includes(f.needs) && ['none', 'take-in', 'send'].includes(f.sync), f.usage);
+    assert.ok(f.words.every((w) => typeof w.kind === 'string'), f.usage);
+  }
+  const set = forms.find((f) => f.c === 'address' && f.verb === 'ssh' && f.words.length === 2)!;
+  assert.deepEqual(set.words, [{kind: 'choice', choices: ['on']}, {kind: 'choice', choices: ['device', 'network']}]);
+  const take = forms.find((f) => f.c === 'dotfile' && f.verb === 'take' && f.words.length === 1)!;
+  assert.deepEqual([take.words[0].kind, take.needs], ['dotfile', 'device']);
+  // Lists are ls, whatever they list.
+  assert.ok(!forms.some((f) => f.verb === 'list'), JSON.stringify(forms.filter((f) => f.verb === 'list').map((f) => f.usage)));
 });

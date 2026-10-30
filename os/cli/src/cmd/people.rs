@@ -173,7 +173,7 @@ pub fn name_only(_: &Ctx, _: &Call) -> Result<Reply> {
     Ok(Reply::data(all.join("\n"), json!(all)))
 }
 
-/// `l3 name list`: each, and the code one is found by.
+/// `l3 name ls`: each, and the code one is found by.
 pub fn names(_: &Ctx, _: &Call) -> Result<Reply> {
     let me = inbox::me()?;
     let mut t = Vec::new();
