@@ -73,6 +73,10 @@ pub struct Cut {
     pub removed: u64,
     /// For a merge: the line's commit main took.
     pub merged: Option<String>,
+    /// On an issue's work: the version of its change it was handed in as, by itself (none when that did not go:
+    /// the next commit hands it in).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub handed: Option<i64>,
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
@@ -353,12 +357,14 @@ pub fn cut(repos: &Repos, repo: &str, issue: Option<&str>, line: &str, note: &st
                 let id = v["id"].as_str().unwrap_or_default().to_string();
                 // Not kept here: the next sync takes the Remote's head again, which is this commit.
                 let _ = remote::set_head(&key, &id);
-                // A commit on an issue's work: its tests run by themselves (tasks.rs).
+                // A commit on an issue's work is handed in as it is made: there is no step of its own to push it, and
+                // its change is always its last commit. Its tests run by themselves too (tasks.rs).
+                let handed = if on == crate::work::MAIN { None } else { push(repos, repo).and_then(|_| submit(repos, repo, "")).ok().map(|c| c.version) };
                 if let Ok(dir) = repos.dir(repo) { crate::tasks::committed(repo, &on, &dir); }
                 return Ok(Cut {
                     id, issue: (!issue.is_empty()).then_some(issue), kind, title: title.trim().into(), note: note.trim().into(),
                     time: v["time"].as_u64().unwrap_or(0), folders: c.folders.iter().map(|f| f.folder.clone()).collect(),
-                    files: c.files, added: c.added, removed: c.removed, merged: None,
+                    files: c.files, added: c.added, removed: c.removed, merged: None, handed,
                 });
             }
             // Another device moved the draft or committed first: in step again, and once more.
@@ -419,7 +425,7 @@ fn cut_paths(repos: &Repos, repo: &str, paths: &[String], title: &str) -> Result
                 let _ = remote::set_head(&key, &id);
                 return Ok(Some(Cut {
                     id, issue: None, kind: None, title: title.into(), note: String::new(), time: v["time"].as_u64().unwrap_or(0),
-                    folders: c.folders.iter().map(|f| f.folder.clone()).collect(), files: c.files, added: c.added, removed: c.removed, merged: None,
+                    folders: c.folders.iter().map(|f| f.folder.clone()).collect(), files: c.files, added: c.added, removed: c.removed, merged: None, handed: None,
                 }));
             }
             Reply::Conflict(v) => { let _ = remote::set_head_from(&key, &v); }
@@ -517,7 +523,7 @@ pub fn log_of(repo: &str, line: &str, n: usize) -> Result<Vec<Cut>> {
             id: s("id"), issue: Some(s("issue")).filter(|i| !i.is_empty()), kind: Some(s("kind")).filter(|k| !k.is_empty()),
             title: s("title"), note: s("note"), time: c["time"].as_u64().unwrap_or(0), folders, files,
             added: c["added"].as_u64().unwrap_or(0), removed: c["removed"].as_u64().unwrap_or(0),
-            merged: c["merged"].as_str().map(String::from),
+            merged: c["merged"].as_str().map(String::from), handed: None,
         }
     }).collect())
 }

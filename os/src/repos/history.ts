@@ -15,7 +15,9 @@ import type {DiffLine} from './linediff.ts';
 export interface FileChange { path: string; status: 'added' | 'modified' | 'removed'; added: number; removed: number; binary: boolean }
 export interface Folder { folder: string; files: FileChange[]; added: number; removed: number }
 export interface Changes { connected: boolean; folders: Folder[]; files: number; added: number; removed: number }
-export interface Cut { id: string; issue: string | null; kind: string | null; title: string; note: string; time: number; folders: string[]; files: number; added: number; removed: number; merged: string | null }
+export interface Cut { id: string; issue: string | null; kind: string | null; title: string; note: string; time: number; folders: string[]; files: number; added: number; removed: number; merged: string | null;
+  /** On an issue's work: the version of its change it was handed in as, by itself. */
+  handed?: number }
 export type {DiffLine} from './linediff.ts';
 export interface FileDiff { path: string; status: FileChange['status']; binary: boolean; lines: DiffLine[]; more: number }
 

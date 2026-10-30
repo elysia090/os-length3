@@ -514,6 +514,8 @@ pub fn fetch(repos: &Repos, repo: &str) -> Result<Synced> {
         return Err(crate::tr!("{} is not a repo name", "{} は repo の名前になりません", repo));
     }
     let client = Client::open()?;
+    // Brought here: room made for it first if the device is short (usage.rs make_room).
+    crate::usage::make_room(&crate::paths::data_dir(), &crate::paths::repos_dir(), 0);
     let _held = lock(repo)?;
     if let Reply::NotFound(_) = client.call("GET", &format!("/v1/repos/{repo}"), None)? {
         return Err(failed(Failure::Status(404), crate::tr!("The Remote has no repo {}", "Remote に repo {} はありません", repo)));

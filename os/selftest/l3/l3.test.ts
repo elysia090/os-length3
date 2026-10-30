@@ -131,7 +131,7 @@ test('a script\'s execute bit goes to the Remote and comes back with it: opened 
   assert.equal(mode(desk, 'scripts/run.sh') & 0o111, 0);
 });
 
-test('an issue goes from written to merged with l3: start, commit, push, review, merge; the Remote holds each step', async () => {
+test('an issue goes from written to merged with l3: start, commit (handed in by itself), review, merge; the Remote holds each step', async () => {
   ok(laptop.l3(['repo', 'new', 'work']));
   ok(laptop.l3(['issue', 'new', 'work', 'Fix：落ちる', '-m', '再現手順']), /^Wrote work#1 Fix：落ちる\n$/);
   // The issue is history on main at once, by itself, after what the repo was made with (its first commit, Start).
@@ -144,8 +144,9 @@ test('an issue goes from written to merged with l3: start, commit, push, review,
   ok(laptop.l3(['commit', 'work', 'Patch：はじめ']), /^Committed [0-9a-f]{12} {2}Patch：はじめ \(1 file/);
   ok(laptop.l3(['start', 'work#1']), /^Working on work#1 Fix：落ちる/);
   ok(laptop.l3(['file', 'write', 'work/fix.txt'], 'fixed\n'));
-  ok(laptop.l3(['commit', 'work']), /^Committed [0-9a-f]{12} {2}Fix：落ちる \(1 file \+1 −0\)/);
-  ok(laptop.l3(['push', 'work']), /handed Fix：落ちる to main as version 1/);
+  // On an issue's work a commit is handed in as it is made: there is nothing left to push.
+  ok(laptop.l3(['commit', 'work']), /^Committed [0-9a-f]{12} {2}Fix：落ちる \(1 file \+1 −0\)\n {2}handed to main as version 1\n$/);
+  ok(laptop.l3(['push', 'work']), /^Nothing new to push: version 1 of Fix：落ちる is with main already\n$/);
   const change = ((await r.api(ren, 'GET', '/v1/repos/work/changes')).json as {state: string; version: number; issue: string}[])[0];
   assert.deepEqual([change.state, change.version, change.issue], ['open', 1, 'issue/001.md']);
   // main does not have the fix until it is merged.

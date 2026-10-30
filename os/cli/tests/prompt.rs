@@ -45,12 +45,13 @@ fn a_repo_called_like_a_verb_is_reached_by_its_name() {
     // As a word it is the verb: `ssh ls@host` listed every Prompt on the device instead of opening ls's.
     let ran = home.run("en", &["prompt", "ls"]);
     assert!(ran.stdout.contains("No Prompt is running"), "{ran:?}");
-    // Named as the listener and the app name it now, it is the repo (there is no root here, so it says that).
+    // Named as the listener and the app name it now, it is the repo: its shell starts, and ends with no input.
+    if !home.root() { eprintln!("skipped: no sh to lend a root"); return; }
     for name in ["ls", "stop"] {
-        let out = home.command("en", &["prompt"]).env("LENGTH3_REPO", name).stdin(std::process::Stdio::null()).output().unwrap();
+        let out = home.command("en", &["prompt", "--", "/bin/sh", "-c", ": > here"]).env("LENGTH3_REPO", name).stdin(std::process::Stdio::null()).output().unwrap();
         let err = String::from_utf8_lossy(&out.stderr);
-        assert_eq!(out.status.code(), Some(4), "{name}: {err}");
-        assert!(err.contains("No root yet"), "{name}: {err}");
+        if out.status.code() != Some(0) && err.contains("namespace") { eprintln!("skipped: the Prompt did not start here ({err})"); return; }
+        assert!(out.status.success() && home.path(&format!("repos/{name}/here")).exists(), "{name}: {err}");
     }
 }
 

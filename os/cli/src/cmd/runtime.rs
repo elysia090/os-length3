@@ -99,7 +99,7 @@ pub fn roots(_: &Ctx, _: &Call) -> Result<Reply> {
 
 /// How far a fetch is, on standard error: every 4 MB and at the end, and each retry.
 /// On a terminal the count is redrawn in its line; elsewhere (a log) each is a line of its own.
-fn progress() -> impl FnMut(Progress) {
+pub(crate) fn progress() -> impl FnMut(Progress) {
     use std::io::IsTerminal;
     let tty = std::io::stderr().is_terminal();
     let (mut last, mut drawn) = (0u64, false);
@@ -121,8 +121,17 @@ fn progress() -> impl FnMut(Progress) {
     }
 }
 
-fn the_remote() -> String {
+pub(crate) fn the_remote() -> String {
     remote::connection().map_or_else(remote::default_url, |c| c.url)
+}
+
+/// The root Prompts run on, fetched now when there is none yet: a Prompt wanted is when it is wanted, never a step
+/// of its own. What it fetches is said on standard error as it goes.
+pub(crate) fn root_now(data: &std::path::Path) -> Result<(std::path::PathBuf, root::Installed)> {
+    if let Some(r) = root::current(data) { return Ok(r); }
+    crate::out::note(&tr!("Fetching the root Prompts run on (once)", "Prompt が動く root を取ってきます（最初の一度だけ）"));
+    root::fetch_and_install(data, &the_remote(), progress())?;
+    root::current(data).ok_or_else(|| Error::NotFound(tr!("No root yet (l3 root fetch)", "root がありません（l3 root fetch）")))
 }
 
 fn installed(r: &root::Installed) -> String {

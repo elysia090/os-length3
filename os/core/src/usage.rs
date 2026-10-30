@@ -643,6 +643,55 @@ pub fn free(data: &Path, repos_dir: &Path, ids: &[String], open: &[String]) -> F
     }
 }
 
+/// Room wanted on this device: `want` bytes more (a root, a repo brought here, a Prompt prepared) and a reserve
+/// besides (a twentieth of the disk, between 512 MB and 4 GB; `LENGTH3_RESERVE` says another, in bytes). While the host has that, nothing happens. Short of
+/// it, what is made again or kept elsewhere goes by itself until there is enough, in this order: this OS's own
+/// leftovers and old roots, the caches, what is derived in repos (made again by the tools that made it), the root
+/// before the current one, then copies of repos in step with the Remote and untouched for a week, the oldest first
+/// (opened, each comes back). Never what only this device has: work not sent, an environment (what its Prompts
+/// installed), what a Prompt holds now. What went, as `free` says it; None when nothing had to.
+pub fn make_room(data: &Path, repos_dir: &Path, want: u64) -> Option<Freed> {
+    let (total, free_now, certainty) = host(data);
+    if certainty == Certainty::Unknown || total == 0 { return None; }
+    let reserve = std::env::var("LENGTH3_RESERVE").ok().and_then(|v| v.parse().ok()).unwrap_or((total / 20).clamp(512 << 20, 4 << 30));
+    let need = (want + reserve).checked_sub(free_now).filter(|n| *n > 0)?;
+    let s = space(data, repos_dir, &[]);
+    let previous: Vec<String> = system(data).into_iter().filter(|(r, _)| r.held == Held::Previous).map(|(r, _)| format!("root:{}", r.sha256)).collect();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
+    let touched: std::collections::HashMap<String, u64> = crate::repos::Repos::new(repos_dir.to_path_buf()).and_then(|r| r.list())
+        .map(|l| l.into_iter().map(|x| (format!("repo:{}", x.name), x.modified)).collect()).unwrap_or_default();
+    let ids = room_order(&s.items, &previous, &touched, now, need);
+    if ids.is_empty() { return None; }
+    Some(free(data, repos_dir, &ids, &[]))
+}
+
+/// What `make_room` lets go, in its order, until `need` bytes: of `items`, those that can go now, ranked leftovers and
+/// old roots, caches, derived trees, the root before (`previous`), then repos untouched (`touched`, ms) for a week
+/// before `now`, the longest untouched first; the largest first within a rank.
+fn room_order(items: &[Item], previous: &[String], touched: &std::collections::HashMap<String, u64>, now: u64, need: u64) -> Vec<String> {
+    const WEEK: u64 = 7 * 24 * 60 * 60 * 1000;
+    let mut ranked: Vec<(u8, u64, &Item)> = items.iter().filter(|i| i.room == Room::Free).filter_map(|i| {
+        let rank = match i.id.split_once(':').map_or("", |(k, _)| k) {
+            "path" => 0,
+            "root" if previous.contains(&i.id) => 3,
+            "root" => 0,
+            "cache" => 1,
+            "derived" => 2,
+            "repo" => { let at = *touched.get(&i.id)?; if now.saturating_sub(at) < WEEK { return None; } return Some((4, at, i)); }
+            _ => return None,
+        };
+        Some((rank, u64::MAX - i.allocated, i))
+    }).collect();
+    ranked.sort_by_key(|(rank, order, _)| (*rank, *order));
+    let (mut ids, mut gets) = (Vec::new(), 0u64);
+    for (_, _, i) in ranked {
+        if gets >= need { break; }
+        ids.push(i.id.clone());
+        gets += i.allocated;
+    }
+    ids
+}
+
 /// Everything that can go, as ids for `free`.
 pub fn all_freeable(s: &Space) -> Vec<String> {
     s.items.iter().filter(|i| i.room != Room::Keep).map(|i| i.id.clone()).collect()
@@ -999,5 +1048,24 @@ mod id_tests {
         let id = format!("path:{}/../.x.length3-4194300-0", data.display());
         assert!(item(&data, &data.join("repos"), &id, &InUse::now(&data, &[])).is_none());
         let _ = std::fs::remove_dir_all(&top);
+    }
+}
+
+#[cfg(test)]
+mod room_tests {
+    use super::*;
+
+    #[test]
+    fn room_is_made_from_what_comes_back_first_and_never_from_what_only_this_device_has() {
+        let item = |id: &str, allocated: u64, room: Room| Item { id: id.into(), what: String::new(), detail: String::new(), allocated, room, why: String::new() };
+        let items = [item("repo:old", 500, Room::Free), item("repo:fresh", 900, Room::Free), item("repo:unsent", 900, Room::SyncFree),
+            item("env:old", 900, Room::Free), item("cache:a", 10, Room::Free), item("cache:b", 30, Room::Free), item("derived:a", 20, Room::Free),
+            item("root:prev", 300, Room::Free), item("root:older", 5, Room::Free), item("path:/x", 1, Room::Free), item("home", 1, Room::Keep)];
+        let day = 24 * 60 * 60 * 1000;
+        let touched = [("repo:old".to_string(), 0), ("repo:fresh".to_string(), 9 * day)].into_iter().collect();
+        let all = room_order(&items, &["root:prev".into()], &touched, 10 * day, u64::MAX);
+        assert_eq!(all, ["root:older", "path:/x", "cache:b", "cache:a", "derived:a", "root:prev", "repo:old"]);
+        // Only as much as is wanted.
+        assert_eq!(room_order(&items, &["root:prev".into()], &touched, 10 * day, 30), ["root:older", "path:/x", "cache:b"]);
     }
 }

@@ -128,15 +128,19 @@ pub fn band_set(ctx: &Ctx, call: &Call) -> Result<Reply> {
     Ok(Reply::done(text, json!({"repo": repo, "on": on, "changed": changed, "band": home::band(&here_names(ctx)?)?})))
 }
 
+/// Room a Prompt wants beside what it holds already (what .packages and .setup install, what it writes).
+#[cfg(target_os = "linux")]
+pub(crate) const PROMPT_ROOM: u64 = 256 << 20;
+
 /// `l3 prompt [REPO] [-- CMD…]`: the repo inside the root, without privileges.
 #[cfg(target_os = "linux")]
 pub fn prompt(ctx: &Ctx, call: &Call) -> Result<Reply> {
-    use length3_core::{launch, paths, prompt, root};
+    use length3_core::{launch, paths, prompt};
     use std::io::IsTerminal;
     let repo = target::repo(ctx, call, 0)?;
     let data = paths::data_dir();
-    let (root, about) = root::current(&data).ok_or_else(|| Error::NotFound(tr!("No root yet (l3 root fetch)", "root がありません（l3 root fetch）")))?;
     let dir = ctx.repos()?.dir(&repo)?;
+    let (root, about) = super::runtime::root_now(&data)?;
     // Another distribution's own shell where there is a terminal to draw it on; sh otherwise.
     let bash = about.distro.is_some() && root.join("bin/bash").exists() && std::io::stdin().is_terminal();
     let cmd = call.words(1);
@@ -147,6 +151,8 @@ pub fn prompt(ctx: &Ctx, call: &Call) -> Result<Reply> {
     // is set up (once, while they and the root stay as they are), then running.
     let prepared = || -> std::io::Result<prompt::Recorded> {
         let mut recorded = prompt::record(&data, &repo, s.network, &s.root)?;
+        // Recorded, what it holds stays; room is made round it if the device is short (usage.rs make_room).
+        length3_core::usage::make_room(&data, &paths::repos_dir(), PROMPT_ROOM);
         launch::set_up(&s, about.distro.is_some())?;
         recorded.ready()?;
         Ok(recorded)

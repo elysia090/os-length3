@@ -429,20 +429,21 @@ fn supervise(k: &tasks::Task, dir: &std::path::Path, command: &str, told: &str, 
 /// .profile; the repo's network grant and nothing more. Ends with the command's code.
 #[cfg(target_os = "linux")]
 pub fn inside(ctx: &Ctx, call: &Call) -> Result<Reply> {
-    use length3_core::{home, launch, prompt, root};
+    use length3_core::{home, launch, prompt};
     let repo = ctx.here.as_ref().map(|h| h.repo.clone()).ok_or_else(|| Error::Usage(tr!("Which repo? (LENGTH3_REPO)", "どの repo ですか（LENGTH3_REPO）")))?;
     task_id(call)?;
     let var = |k: &str| std::env::var(k).unwrap_or_default();
     let (dir, command) = (std::path::PathBuf::from(var("L3_RUN_DIR")), var("L3_RUN_COMMAND"));
     if command.is_empty() || !dir.is_dir() { return Err(Error::Usage(tr!("l3 agent inside is l3 agent run's", "l3 agent inside は l3 agent run が使うものです"))); }
     let data = paths::data_dir();
-    let (root, about) = root::current(&data).ok_or_else(|| Error::NotFound(tr!("No root yet (l3 root fetch)", "root がありません（l3 root fetch）")))?;
+    let (root, about) = super::runtime::root_now(&data)?;
     let env = ["L3_TASK", "L3_RESUME", "L3_ISSUE", "L3_TITLE"].iter().map(|k| format!("{k}={}", quoted(&var(k)))).collect::<Vec<_>>().join(" ");
     let script = format!("[ -f /root/.profile ] && . /root/.profile\nexport {env} L3_REPO={}\n{command}", quoted(&repo));
     let s = launch::Sandbox { root, repo: dir, name: repo.clone(), argv: vec!["/bin/sh".into(), "-c".into(), script],
         network: home::network(&repo), dotfiles: launch::dotfiles_in_effect(), data: Some(data.clone()) };
     // Recorded as any Prompt is: l3 prompt ls and Runtime see it, l3 prompt stop ends it.
     let mut recorded = prompt::record(&data, &repo, s.network, &s.root)?;
+    length3_core::usage::make_room(&data, &paths::repos_dir(), super::forge::PROMPT_ROOM);
     launch::set_up(&s, about.distro.is_some())?;
     recorded.ready()?;
     let code = launch::run(&s)?;

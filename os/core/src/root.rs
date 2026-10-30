@@ -177,6 +177,8 @@ pub fn fetch_distro(data: &Path, remote: &str, d: &Distro, progress: impl FnMut(
     crate::boundary::private_dir(&system_dir(data)).map_err(|e| e.to_string())?;
     fs::create_dir_all(&bundles).map_err(|e| e.to_string())?;
     let archive = bundles.join(format!("{}.tar.gz", d.sha256));
+    // Its bundle and its tree: room made for them first, by itself (usage.rs make_room).
+    crate::usage::make_room(data, &crate::paths::repos_dir(), d.bytes.saturating_mul(3));
     let mut progress = progress;
     if let Err(first) = crate::fetch::fetch(&by_digest(remote, d.sha256), d.sha256, d.bytes, &archive, &mut progress) {
         crate::fetch::fetch(d.url, d.sha256, d.bytes, &archive, &mut progress).map_err(|e| format!("{first} / {e}"))?;
@@ -249,6 +251,7 @@ pub fn fetch_and_install(data: &Path, remote: &str, progress: impl FnMut(crate::
     crate::boundary::private_dir(&system_dir(data)).map_err(|e| e.to_string())?;
     fs::create_dir_all(&bundles).map_err(|e| e.to_string())?;
     let bundle = bundles.join(format!("{}.tar.zst", r.sha256));
+    crate::usage::make_room(data, &crate::paths::repos_dir(), r.bytes.saturating_mul(3));
     // The Remote first, then the publisher's, then the release channel
     // (`sources`). Whichever gives it, the bytes are only kept if they are
     // the pinned digest.

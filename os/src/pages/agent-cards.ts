@@ -5,6 +5,7 @@ import {agentNow, harnessName, onAgents, onTask, tasksNow, type Task} from '../r
 import {issueName} from '../repos/issues.ts';
 import {personBadge} from './pane.ts';
 import {errorText} from '../app/errors.ts';
+import {grant} from './runtime/prompts.ts';
 
 // What the agent brings to the person, in the right pane, as word from someone comes there (pane.ts paneWord): what
 // it can take, what it asks, what it has to look at (the heaviest first), what it could not do and the one thing
@@ -71,8 +72,11 @@ function card(k: Task, open: (repo: string, issue: string) => void): HTMLElement
     acts.push(look(), away());
   } else if (k.state === 'stopped') {
     head = t('{agent} could not go on with {at}', {agent, at});
-    quote = [document.createTextNode(k.said ?? ''), ...(k.fix ? [h('code', {class: 'agent-fix'}, k.fix)] : [])];
-    acts.push(button(t('Try again'), true, () => onTask(k.id, 'take')), away());
+    // The network it needs is asked for here, once: given, it is the repo's from then on, and the work goes on.
+    const network = k.fix === `l3 network on ${k.repo}`;
+    quote = [document.createTextNode(k.said ?? ''), ...(k.fix && !network ? [h('code', {class: 'agent-fix'}, k.fix)] : [])];
+    acts.push(network ? button(t('Give {repo}\'s Prompt the network', {repo: k.repo}), true, async () => { await grant(k.repo, true); await onTask(k.id, 'take'); })
+      : button(t('Try again'), true, () => onTask(k.id, 'take')), away());
   }
   return h('div', {class: `agent-card lately-row ${k.state}`, 'data-task': String(k.id)},
     h('span', {class: 'lately-what'}, personBadge(agent), h('span', {class: 'lately-name'}, head), h('span', {class: 'lately-place'}, k.repo)),

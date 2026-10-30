@@ -477,6 +477,7 @@ pub fn commit(ctx: &Ctx, call: &Call) -> Result<Reply> {
     } else { Error::from(e) })?;
     let mut text = tr!("Committed {}  {} ({}{})", "Commit しました {}  {}（{}{}）", out::short(&c.id), history::line(&c), files(c.files), out::added_removed(c.added, c.removed));
     if folded { text += &tr!("\n  named after its issue; \"{}\" is its note", "\n  Issue の名前で Commit し、「{}」はメモにしました", title); }
+    if let Some(v) = c.handed { text += &tr!("\n  handed to main as version {}", "\n  main に渡しました（第{}版）", v); }
     Ok(Reply::done(text, json!({"commit": c, "titleAsNote": folded})))
 }
 

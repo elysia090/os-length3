@@ -2215,6 +2215,17 @@ or goes).
   given back only when its last link or holder goes, and other programs
   write meanwhile, so the second can be less); then anything kept, with the
   reason.
+- **Room made by itself.** Freeing is a deed for who wants it; nobody has
+  to. When room is wanted (a Prompt prepared, a root fetched, a repo
+  brought here) and the host has less free than that and a reserve (a
+  twentieth of the disk, between 512 MB and 4 GB; `LENGTH3_RESERVE` says
+  another), what comes back goes by itself until there is enough (usage.rs
+  make_room): this OS's leftovers and old roots, caches, what is derived in
+  repos, the root before the current one, then copies of repos in step with
+  the Remote untouched for a week, the oldest first. Never what only this
+  device has: work not sent, an environment, what a Prompt holds now. The
+  root itself is fetched the first time a Prompt wants it, in the app and
+  in `l3 prompt` alike: never a step of its own.
 - **What is checked is what goes.** A repo's copy is freed only as it was
   when the Remote was seen to hold it, up to the moment it goes: each copy,
   checked, is moved aside in one rename (beside it, `.<name>.freeing-<pid>`,
@@ -2549,8 +2560,10 @@ half written after reading its neighbours or another page.
   done, the button's place shows the same word with
   the done mark (a circle with a check, `done`), and the green says it is
   done. In Commit's row, what is not committed, its files folded as main's
-  card has them, on the card itself. Pushing hands the work to
-  main as its change, again as the next version; while it is undecided, a
+  card has them, on the card itself. A commit hands the work to main as its
+  change by itself, again as the next version (Push's row is done with it;
+  its button is there only when that could not go, and the next commit
+  hands it in anyway); while it is undecided, a
   switch at the foot's right, its word before it (Handed in), is on, and
   switched off (Reset) takes it back: it goes off at once under the hand,
   and back on if it could not; taken back (or rejected), Push's row says

@@ -238,7 +238,7 @@ test('a change that cannot get in, round after round, is said so and not taken f
   assert.equal(draft.homeMoved('todo', (await (await fetch(`${URL_}/v1/home/todo`, {headers: {Authorization: `Bearer ${token}`}})).json() as {version: number}).version), false);
 });
 
-test('an issue is worked on in its own copy; pushed, submitted, reviewed and merged into main', async () => {
+test('an issue is worked on in its own copy; each commit handed in, reviewed and merged into main', async () => {
   await store.add('notes', 'issue', '001.md', 'Fix：落ちる\n');
   await draft.sync('notes');
   await history.cut('notes', null, 'Patch：issue', '');
@@ -248,15 +248,12 @@ test('an issue is worked on in its own copy; pushed, submitted, reviewed and mer
   assert.equal(await text('notes', 'issue/001.md'), 'Fix：落ちる\n');
   await store.add('notes', '', 'fix.txt', 'fixed\n');
   const c = await history.cut('notes', null, '', 'first');
-  assert.deepEqual([c.kind, c.title, c.issue], ['Fix', '落ちる', 'issue/001.md']);
-  let w = await history.work('notes');
-  assert.deepEqual([w.line, w.commits, w.unpushed, w.change], ['001', 1, 1, null]);
-  await assert.rejects(history.submit('notes'), /Push first/);
-  await history.push('notes');
-  const ch = await history.submit('notes');
+  // Committed on an issue's work, it is handed in by itself: its change is always its last commit, no step of its own.
+  assert.deepEqual([c.kind, c.title, c.issue, c.handed], ['Fix', '落ちる', 'issue/001.md', 1]);
+  const w = await history.work('notes');
+  assert.deepEqual([w.line, w.commits, w.unpushed, w.change?.version], ['001', 1, 0, 1]);
+  const ch = (await history.changesOf('notes'))[0];
   assert.deepEqual([ch.version, ch.state, ch.folders, ch.files], [1, 'open', [''], 1]);
-  w = await history.work('notes');
-  assert.deepEqual([w.unpushed, w.change?.version], [0, 1]);
   const reviewed = await history.review('notes', ch, 'approve', 'good');
   assert.equal(reviewed.reviews[0].verdict, 'approve');
   const d = await history.changeDiff('notes', ch);
