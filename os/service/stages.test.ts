@@ -15,8 +15,9 @@ test('a deploy runs a contract step only after the new Worker answers, and only 
   // A database with nothing applied, or with every step before the contract one: the contract waits.
   assert.equal(beforeWorker(j, 0), contract);
   assert.equal(beforeWorker(j, j.entries[contract - 1].when), contract);
-  // Once it was applied, nothing waits for it again.
-  assert.equal(beforeWorker(j, j.entries[contract].when), j.entries.length);
+  // Once it was applied, nothing waits for it again: what runs before the Worker is everything up to the next one.
+  const next = j.entries.findIndex((e, i) => i > contract && /^\d{4}_contract_/.test(e.tag));
+  assert.equal(beforeWorker(j, j.entries[contract].when), next < 0 ? j.entries.length : next);
   const made = {entries: [{idx: 0, when: 1, tag: '0000_a'}, {idx: 1, when: 2, tag: '0001_contract_b'}, {idx: 2, when: 3, tag: '0002_c'}, {idx: 3, when: 4, tag: '0003_contract_d'}]};
   assert.equal(beforeWorker(made, 0), 1);
   assert.equal(beforeWorker(made, 2), 3);

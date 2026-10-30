@@ -178,7 +178,6 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
     const p = parseAddress(q.includes('@') ? q : `${q}@${d.domain}`);
     if (!p) return {why: 'That is not a name'};
     const [row] = await db.select().from(address).where(and(eq(address.address, `${p.name}@${p.domain}`), isNull(address.releasedAt))) as Address[];
-    if (row?.until && row.until.getTime() <= Date.now()) return {why: 'No one has that name'};
     if (row?.userId) {
       if (!await stillNamed(row)) return {why: 'Its domain no longer names this Remote'};
       return {userId: row.userId, address: row.address};
@@ -216,8 +215,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
       .leftJoin(address, and(eq(address.userId, user.id), isNull(address.releasedAt))).where(eq(user.id, me)).orderBy(address.createdAt) as {a: Address | null; code: string | null}[];
     const list = got.flatMap((r) => (r.a ? [r.a] : []));
     const code = got[0]?.code ?? await codeOf(db, {userId: me});
-    return c.json({domain: d.domain, account: c.get('userId'), code, addresses: list.map((a) => ({address: a.address,
-      ...(a.until ? {until: a.until.getTime(), ...(a.until.getTime() <= Date.now() ? {ended: true} : {})} : {}), ...(a.lapsedAt ? {lapsed: true} : {})}))});
+    return c.json({domain: d.domain, account: c.get('userId'), code, addresses: list.map((a) => ({address: a.address, ...(a.lapsedAt ? {lapsed: true} : {})}))});
   });
 
   // Claim an address. On this Remote's domain the name is free or not; on another,
@@ -250,19 +248,10 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
       await lock(tx, me);
       await counted(tx);
       // One namespace with servers' names; on this Remote, first come, for a term; a name let go is held for its old owner a while.
-      return claim(tx, name, domain, {userId: me}, domain === d.domain);
+      return claim(tx, name, domain, {userId: me});
     });
-    if (got.ok) return c.json({address: `${name}@${domain}`, until: got.until}, 201);
+    if (got.ok) return c.json({address: `${name}@${domain}`}, 201);
     return c.json(got.until ? {error: 'That name was let go, and is held for its owner a while', until: got.until} : {error: 'That name is taken'}, 409);
-  });
-
-  // Renew a name on this Remote: held for another term from now (and taken back, if its term ran out a little while ago).
-  v1.post('/inbox/addresses/:address/renew', async (c) => {
-    const a = c.req.param('address').toLowerCase();
-    const [row] = await db.select().from(address).where(and(eq(address.address, a), eq(address.userId, c.get('userId')), isNull(address.releasedAt))) as Address[];
-    if (!row || row.domain !== d.domain) return c.json({error: 'That name is not yours'}, 404);
-    const got = await claim(db, row.name, row.domain, {userId: c.get('userId')}, true);
-    return got.ok ? c.json({address: a, until: got.until}) : c.json({error: 'That name is taken'}, 409);
   });
 
   // Let an address go: it stops answering at once, and is held for this account a while (it may take it back).

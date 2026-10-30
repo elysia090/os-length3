@@ -12,13 +12,11 @@ type Result<T> = std::result::Result<T, String>;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Me { pub domain: String, pub account: String, #[serde(default)] pub code: String, pub addresses: Vec<Address> }
-/// An address: a name on this Remote is held `until` (ms), renewed by its owner (`ended`: its term ran
-/// out, and it is held for them a while); one on a domain answers while its DNS names this Remote (`lapsed` while not).
+/// An address: a name on this Remote is its owner's as long as they keep it; one on a domain answers while its DNS
+/// names this Remote (`lapsed` while not).
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Address {
     pub address: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")] pub until: Option<u64>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")] pub ended: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")] pub lapsed: bool,
 }
 
@@ -78,12 +76,6 @@ pub struct Record { pub name: String, #[serde(rename = "type")] pub kind: String
 pub fn domain_record(domain: &str) -> Result<Record> { get(&format!("/v1/inbox/domains/{}", domain.trim().to_ascii_lowercase())) }
 
 /// Let `address` go: it answers no one from now, and is held for this account a while (claiming it again takes it back).
-/// Hold a name on this Remote for another term from now (taking it back, if its term ran out a little while ago); when it now ends.
-pub fn renew(address: &str) -> Result<u64> {
-    let v = Client::open()?.json("POST", &format!("/v1/inbox/addresses/{}/renew", address.to_ascii_lowercase()), Some(serde_json::json!({})))?;
-    Ok(v["until"].as_u64().unwrap_or(0))
-}
-
 pub fn release(address: &str) -> Result<u64> {
     let v = Client::open()?.json("DELETE", &format!("/v1/inbox/addresses/{}", address.to_ascii_lowercase()), None)?;
     Ok(v["until"].as_u64().unwrap_or(0))

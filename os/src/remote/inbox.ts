@@ -23,12 +23,10 @@ export interface Target { repo?: string; issue?: string; change?: string; versio
 export interface Thread { address: string; name: string; state: 'contact' | 'request' | 'blocked'; unread: number; last: {type: Kind; body: string; target?: Target; mine: boolean; time: number} }
 export interface Message { id: string; mine: boolean; type: Kind; target: Target; body: string; time: number; read: boolean; live?: boolean }
 /**
- * `code`: six digits to be found by. An address on this Remote (`domain`) is
- * a name held `until`, renewed by its owner (`ended`: its term ran out; it is
- * held for them a while). `lapsed`: on a domain whose DNS no longer names
- * this Remote; it answers no one until it does again.
+ * `code`: six digits to be found by. An address on this Remote (`domain`) is its owner's as long as they keep it.
+ * `lapsed`: on a domain whose DNS no longer names this Remote; it answers no one until it does again.
  */
-export interface Me { domain: string; account: string; code: string; addresses: {address: string; until?: number; ended?: boolean; lapsed?: boolean}[] }
+export interface Me { domain: string; account: string; code: string; addresses: {address: string; lapsed?: boolean}[] }
 
 const enc = (a: string) => encodeURIComponent(a);
 
@@ -116,9 +114,6 @@ export async function claim(name: string, domain?: string): Promise<string> {
   const until = (body as {until?: number}).until;
   throw new RemoteError(r.status, until ? t('That name was let go; it is held for its owner until {date}', {date: day(until)}) : t(String(body.error ?? r.status)));
 }
-
-/** Hold a name on this Remote for another term from now (and take it back, if its term ran out a little while ago). */
-export const renew = (address: string) => json<{address: string; until: number}>(`/v1/inbox/addresses/${enc(address)}/renew`, {method: 'POST', body: '{}'});
 
 /** Let an address go: it answers no one from now, and is held for you a while (claim it again to take it back). */
 export const release = (address: string) => json<{address: string; until: number}>(`/v1/inbox/addresses/${enc(address)}`, {method: 'DELETE'});

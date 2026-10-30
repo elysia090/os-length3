@@ -822,8 +822,9 @@ trusted for one thing only:
    without the provider, and a turn-off or a new device asks for it. A
    device holds a lease on the person, never the person.
 3. **The Remote** keeps what is theirs and gives them a name, `ren`: first
-   come, theirs for five years at a time, renewed by them (a Renew near the
-   end of the term; not renewed, it is held for them 30 days, then anyone's).
+   come, and theirs as long as they keep it, as a username is anywhere:
+   nothing to renew, nothing that lapses (let go, it is held for them 30
+   days, then anyone's).
    It is a name on this Remote, not a domain anyone holds: it is kept as
    `ren@length3.com` only because that is where it is kept, and is shown
    alone, everywhere, as Home shows one's handle: taken, it is written alone
@@ -834,7 +835,7 @@ trusted for one thing only:
    code that reached someone goes on meaning them or no one. Most people stop
    here, and need nothing more.
 4. **A server** is a group of people on a Remote, with a name and a code of
-   its own in the same namespace (`trip`), on the same terms, renewed by its
+   its own in the same namespace (`trip`), on the same terms, kept by its
    owner.
 5. **A domain** is the last step, for a person or for a server: a name of
    one's choosing on it (`ren@ren.dev`), shown beside the name on the Remote,
@@ -888,7 +889,7 @@ nobody else can take it and be taken for its owner:
 | What | Owned by | Trusted for it | Let go |
 |---|---|---|---|
 | a domain | the person, or the server, it was proven for | its DNS (checked again on use) | its names stop answering when its record is gone; 30 days later they are let go |
-| a name on the Remote (`ren`, `trip`) | its account, or the server's owner | its Remote, for five years at a time | not renewed, or let go: 30 days no one else can claim it; its owner may take it back |
+| a name on the Remote (`ren`, `trip`) | its account, or the server's owner | its Remote, as long as they keep it | let go: 30 days no one else can claim it; its owner may take it back |
 | a name on a domain (`ren@ren.dev`) | its account, or the server | its domain's DNS | let go: 30 days held as above |
 | a code (`204816`) | its principal | its Remote | never given again |
 | a repo | a principal | its Remote, and the digests | turned off: 30 days, then gone |
@@ -931,7 +932,7 @@ by the same rules:
 name and a code on the Remote, trusted to it, and that is all they need: it
 is how they are written (`ren:hello`), found (`ren`, `204816`) and shown.
 Proving a domain later adds a name of their choosing beside it
-(`ren@ren.dev`); the name on the Remote stays theirs while they renew it.
+(`ren@ren.dev`); the name on the Remote stays theirs as before.
 
 ### l3: the one base
 
@@ -1365,7 +1366,7 @@ size, a removal, a commit) is always taken, however much is kept.
 **When a subscription ends, or goes down a tier**, nothing is taken away
 and nothing is made read-only: servers go on with their people, boards and
 talk; names on a domain go on answering while its DNS says so, and names on
-the Remote are renewed as before; every repo the Remote holds stays, read
+the Remote stay theirs; every repo the Remote holds stays, read
 and written. Only what would be new is refused: a server (ended), a name, a
 repo past the allowance, a draft growing while over it. This is the least
 surprising rule: what a person made while paying is theirs as it was;
@@ -2858,7 +2859,7 @@ list read again under it. Its pieces, from §3:
   Made (Enter or Make), the same shapes stand there whole and its chip
   takes it with a pop. The box at the foot is as wide as the board on
   screen and stands under it, sliding with it board to board. What the name
-  on this Remote is (first come, five years) is said when the @ is
+  on this Remote is (first come, the server's as long as it keeps it) is said when the @ is
   pointed at; what the Remote says no to (the plan: making a server is
   paid, §6; a name taken; one's own name to claim first) is said on a line
   of its own under the band, where the row cannot slide it out of sight,

@@ -4,38 +4,33 @@
 //
 // A name on this Remote is just a name, `ren` (kept as ren@ the Remote's
 // domain, which is where it is kept, not a domain anyone holds): first come,
-// and held for TERM at a time, renewed by its owner. A domain only lets its
+// and its owner's as long as the account (or the server) is, as a username
+// is anywhere: nothing to renew, nothing that lapses. A domain only lets its
 // owner put a name of their choosing beside it (`ren@ren.dev`), answering
-// only while that domain's DNS still names this Remote for them; it has no
-// term of its own.
+// only while that domain's DNS still names this Remote for them.
 //
-// A name let go, or not renewed, is held HOLD longer, in which only its old
-// owner may take it back, so nobody else can claim it and be taken for them;
-// then it is anyone's (and sweep.ts takes it away). Every principal also has
-// a code: six digits to be found by, given once and never given again.
+// A name let go is held HOLD longer, in which only its old owner may take it
+// back, so nobody else can claim it and be taken for them; then it is
+// anyone's (and sweep.ts takes it away). Every principal also has a code:
+// six digits to be found by, given once and never given again.
 
 import {and, eq, isNull, sql, type SQL} from 'drizzle-orm';
 import {ago, refuse, type Db} from './request.ts';
 import {address, principalCode, repoPublic} from './schema.ts';
 
 export const HOLD = 30 * 86_400_000;
-/** How long a name on this Remote is held before it is renewed. */
-export const TERM_YEARS = 5;
-export const term = (from = Date.now()) => { const d = new Date(from); d.setUTCFullYear(d.getUTCFullYear() + TERM_YEARS); return d; };
 
-/** Names that answer: not let go, not lapsed, not past their term. */
-export const live = and(isNull(address.releasedAt), isNull(address.lapsedAt), sql`(${address.until} is null or ${address.until} > now())`);
-/** When a name stopped answering for its owner (let go, or past its term); null while it is theirs. */
-export const freed = sql`coalesce(${address.releasedAt}, case when ${address.until} <= now() then ${address.until} end)`;
-/** Still someone's: answering, or held for its owner. */
-export const kept = sql`(${freed} is null or ${freed} > ${ago(HOLD)})`;
+/** Names that answer: not let go, and (on a domain) still named by its DNS. */
+export const live = and(isNull(address.releasedAt), isNull(address.lapsedAt));
+/** Still someone's: answering, or let go so lately it is held for its owner. */
+export const kept = sql`(${address.releasedAt} is null or ${address.releasedAt} > ${ago(HOLD)})`;
 
 /**
  * How a person is shown: their first address that answers, else their first
  * not let go (a lapsed one says who they were); null with none.
  */
 export const shownAs = (userId: SQL | string) => sql<string | null>`(select a.address from address a where a.user_id = ${userId} and a.released_at is null
-  order by (a.lapsed_at is null and (a.until is null or a.until > now())) desc, a.created_at limit 1)`;
+  order by (a.lapsed_at is null) desc, a.created_at limit 1)`;
 
 /** A person's first address that answers: what they write and make things as. */
 export const liveAddress = async (db: Db, userId: string): Promise<string | null> =>
@@ -47,26 +42,24 @@ export const serverAddress = (serverId: SQL) => sql<string>`coalesce((select a.a
 export type Owner = {userId: string} | {serverId: string};
 
 /**
- * Claim `name@domain` for `owner` (`home`: on this Remote, so for a term):
- * free, or theirs (renewed), or theirs to take back while it is held for
- * them, or not (taken, or held for someone else until `until`). One
- * statement, so two claiming at once cannot both have it.
+ * Claim `name@domain` for `owner`: free, or theirs already (or theirs to take
+ * back while it is held for them), or not (taken, or held for someone else
+ * until `until`). One statement, so two claiming at once cannot both have it.
  */
-export async function claim(db: Db, name: string, domain: string, owner: Owner, home: boolean): Promise<{ok: true; until: number | null} | {ok: false; until?: number}> {
+export async function claim(db: Db, name: string, domain: string, owner: Owner): Promise<{ok: true} | {ok: false; until?: number}> {
   const a = `${name}@${domain}`;
-  const until = home ? term() : null;
   const theirs = 'userId' in owner ? sql`${address.userId} = ${owner.userId}` : sql`${address.serverId} = ${owner.serverId}`;
   const done = await db.insert(address)
-    .values({address: a, name, domain, until, userId: 'userId' in owner ? owner.userId : null, serverId: 'serverId' in owner ? owner.serverId : null})
+    .values({address: a, name, domain, userId: 'userId' in owner ? owner.userId : null, serverId: 'serverId' in owner ? owner.serverId : null})
     .onConflictDoUpdate({
       target: address.address,
-      // Its owner's: renewed, or taken back. Held long enough: anyone's, from now.
-      set: {userId: sql`excluded.user_id`, serverId: sql`excluded.server_id`, until, releasedAt: null, lapsedAt: null,
+      // Its owner's: taken back. Held long enough: anyone's, from now.
+      set: {userId: sql`excluded.user_id`, serverId: sql`excluded.server_id`, releasedAt: null, lapsedAt: null,
         createdAt: sql`case when ${theirs} then ${address.createdAt} else now() end`},
       setWhere: sql`${theirs} or not ${kept}`,
     }).returning({a: address.address});
-  if (done.length) return {ok: true, until: until?.getTime() ?? null};
-  const [row] = await db.select({freed: sql<number | null>`floor(extract(epoch from ${freed}) * 1000)::float8`}).from(address).where(eq(address.address, a)) as {freed: number | null}[];
+  if (done.length) return {ok: true};
+  const [row] = await db.select({freed: sql<number | null>`floor(extract(epoch from ${address.releasedAt}) * 1000)::float8`}).from(address).where(eq(address.address, a)) as {freed: number | null}[];
   return row?.freed ? {ok: false, until: row.freed + HOLD} : {ok: false};
 }
 

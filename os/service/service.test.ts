@@ -860,16 +860,13 @@ test('Names: people and servers share one namespace; a name let go is held for i
   assert.ok(((await s.call('GET', '/v1/inbox/me', {token: ren})).json.addresses as {address: string; lapsed?: boolean}[]).find((a) => a.address === 'ren@ren.dev')?.lapsed);
 });
 
-test('Names on the Remote: first come, for five years at a time, renewed by their owner; a code finds whoever has it', async () => {
+test('Names on the Remote: first come, their owner\'s with no term to renew; let go, held a while; a code finds whoever has it', async () => {
   const s = await service();
-  const {eq} = await import('drizzle-orm');
   const ren = await s.start('Ren'), mio = await s.start('Mio');
   const claimed = await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'ren'}});
+  assert.deepEqual([claimed.status, claimed.json], [201, {address: 'ren@length3.test'}]);
   await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'mio'}});
-  // Five years from now; a domain of one's own has no term.
-  const years = ((claimed.json.until as number) - Date.now()) / (365.25 * 86_400_000);
-  assert.ok(years > 4.99 && years < 5.01, String(years));
-  type Me = {code: string; addresses: {address: string; until?: number; ended?: boolean}[]};
+  type Me = {code: string; addresses: {address: string}[]};
   const me = (await s.call('GET', '/v1/inbox/me', {token: ren})).json as unknown as Me;
   assert.match(me.code, /^\d{6}$/);
   // Found by its name alone, or by its code; a code is only ever one principal's.
@@ -880,27 +877,19 @@ test('Names on the Remote: first come, for five years at a time, renewed by thei
   assert.notEqual(((await s.call('GET', '/v1/inbox/me', {token: mio})).json as unknown as Me).code, me.code);
   // A message reaches a code as it does a name.
   assert.equal((await s.call('POST', '/v1/inbox/messages', {token: mio, body: {to: me.code, body: 'hi'}})).status, 201);
-  // Past its term it answers no one, and is held for Ren a while: nobody else may claim it, Ren renews it back.
-  await s.db.update(schema.address).set({until: new Date(Date.now() - 1000)}).where(eq(schema.address.address, 'ren@length3.test'));
+  // Let go, it answers no one, and is held for Ren a while: nobody else may claim it, Ren takes it back.
+  assert.equal((await s.call('DELETE', '/v1/inbox/addresses/ren@length3.test', {token: ren})).status, 200);
   assert.equal((await look('ren')).reachable, false);
-  assert.ok(((await s.call('GET', '/v1/inbox/me', {token: ren})).json as unknown as Me).addresses[0].ended);
   const held = await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'ren'}});
   assert.deepEqual([held.status, held.json.error], [409, 'That name was let go, and is held for its owner a while']);
-  assert.equal((await s.call('POST', '/v1/inbox/addresses/mio@length3.test/renew', {token: ren})).status, 404);
-  const renewed = await s.call('POST', '/v1/inbox/addresses/ren@length3.test/renew', {token: ren});
-  assert.equal(renewed.status, 200);
-  assert.ok((renewed.json.until as number) > Date.now() + 4.9 * 365 * 86_400_000);
+  assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'ren'}})).status, 201);
   assert.equal((await look('ren')).reachable, true);
-  // Not renewed, and held long enough: anyone's.
-  await s.db.update(schema.address).set({until: new Date(Date.now() - 31 * 86_400_000)}).where(eq(schema.address.address, 'ren@length3.test'));
-  assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'ren'}})).status, 201);
-  // A server's name the same: for a term, renewed by its owner; it has a code too.
+  // There is no term: nothing to renew, here or for a server.
+  assert.equal((await s.call('POST', '/v1/inbox/addresses/ren@length3.test/renew', {token: ren})).status, 404);
+  // A server's name the same; it has a code too.
   const made = await s.call('POST', '/v1/servers', {token: mio, body: {name: 'Trip', address: 'trip'}});
   assert.match(made.json.code as string, /^\d{6}$/);
-  assert.ok((made.json.until as number) > Date.now());
-  const sid = made.json.id as string;
-  assert.equal((await s.call('POST', `/v1/servers/${sid}/renew`, {token: ren})).status, 404);
-  assert.equal((await s.call('POST', `/v1/servers/${sid}/renew`, {token: mio})).status, 200);
+  assert.equal(made.json.until, undefined);
   assert.equal(((await s.call('GET', '/v1/servers', {token: mio})).json as unknown as {code: string}[])[0].code, made.json.code);
 });
 
@@ -1493,7 +1482,7 @@ test('The sweep: what was held long enough goes in one place, blobs no tree name
   assert.deepEqual(((await s.db.execute(sql`select body from message`)).rows as {body: string}[]).map((m) => m.body), ['old and unread']);
   // Held thirty days and more: a server (its name with it) and a board; a signal and a proof minutes old; what was asked a day ago.
   await s.db.execute(sql`insert into server (id, name, gone_at) values ('oldoldoldold', 'Old', now() - interval '31 days'), ('newnewnewnew', 'New', now() - interval '29 days')`);
-  await s.db.execute(sql`insert into address (address, server_id, name, domain, until, released_at) values ('old@length3.test', 'oldoldoldold', 'old', 'length3.test', now() + interval '1 year', now() - interval '1 day')`);
+  await s.db.execute(sql`insert into address (address, server_id, name, domain, released_at) values ('old@length3.test', 'oldoldoldold', 'old', 'length3.test', now() - interval '1 day')`);
   await s.db.execute(sql`insert into board (id, server_id, name, gone_at) values ('boldboldbold', 'newnewnewnew', 'x', now() - interval '31 days'), ('bnewbnewbnew', 'newnewnewnew', 'y', null)`);
   await s.db.execute(sql`insert into signal (to_user, from_user, session, kind, data, created_at) values (${me}, ${her}, 's', 'offer', '', now() - interval '3 minutes')`);
   await s.db.execute(sql`insert into guard (user_id, proof_session, proof_at) values (${her}, 'x', now() - interval '6 minutes')`);

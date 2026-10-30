@@ -316,8 +316,6 @@ export const address = pgTable('address', {
   serverId: text('server_id').references(() => server.id, {onDelete: 'cascade'}),
   name: text('name').notNull(),
   domain: text('domain').notNull(),
-  /** A name on this Remote answers until then, unless renewed; null on a domain of one's own. */
-  until: moment('until'),
   releasedAt: moment('released_at'),
   lapsedAt: moment('lapsed_at'),
   createdAt: moment('created_at').defaultNow().notNull(),

@@ -134,13 +134,12 @@ test('free: making a server is refused; asked into a paid one, a free account is
 
 // ---- rule 3: names ----
 
-test('free: one name on this Remote; a second, or one on a domain of one\'s own, is paid; renewing and taking one\'s own back are not new', async () => {
+test('free: one name on this Remote; a second, or one on a domain of one\'s own, is paid; taking one\'s own back is not new', async () => {
   const t = await s.person('Kai');
   const [a, b] = [`kaia${process.pid}`, `kaib${process.pid}`];
   assert.equal((await name(s, t, a)).status, 201);
   refused(await name(s, t, b), 'names');
   refused(await name(s, t, 'kai', 'kai.example'), 'domain');
-  assert.equal((await s.call('POST', `/v1/inbox/addresses/${a}@length3.test/renew`, {token: t})).status, 200);
   assert.equal((await s.call('DELETE', `/v1/inbox/addresses/${a}@length3.test`, {token: t})).status, 200);
   assert.equal((await name(s, t, a)).status, 201);
   await subscribe(t);
@@ -355,9 +354,8 @@ test('a subscription that ends takes nothing away: what was made goes on, only w
   assert.equal((await s.call('POST', `/v1/boards/${board}/posts`, {token: t, body: {body: 'still here'}})).status, 201);
   assert.equal((await s.call('POST', `/v1/servers/${sid}/boards`, {token: t, body: {name: 'more'}})).status, 201);
   assert.equal((await s.call('PATCH', `/v1/servers/${sid}`, {token: t, body: {name: 'Club 2'}})).status, 200);
-  // Both names still answer; renewing is no new name.
+  // Both names still answer.
   assert.equal((await s.call('GET', `/v1/inbox/lookup?address=nao2${process.pid}`, {token: t})).json.reachable, true);
-  assert.equal((await s.call('POST', `/v1/inbox/addresses/${handle}@length3.test/renew`, {token: t})).status, 200);
   // Every repo is there, read and written, so long as no draft grows.
   for (const n of ['a', 'b', 'c']) assert.equal((await s.call('GET', `/v1/repos/${n}`, {token: t})).status, 200);
   assert.equal((await s.call('PATCH', '/v1/repos/c/draft', {token: t, body: {version: 1, set: {}, remove: ['data.bin']}})).status, 200);

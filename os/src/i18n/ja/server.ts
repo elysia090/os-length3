@@ -150,9 +150,8 @@ export default {
   'Make your first repo': '最初の repo を作る',
   'A folder of your own, kept as git keeps it: Forge, Git and the Prompt work in it.': 'git のように記録される自分のフォルダです。Forge・Git・Prompt はその中で動きます。',
   // A server's name, in the namespace people's addresses are in.
-  'First come, as a person\'s: nobody else\'s while the server has it, renewed by its owner every five years.': '人の名前と同じく早い者勝ちで、サーバーが持つ間はほかの誰のものにもならず、5年ごとにオーナーが更新します。',
+  'First come, as a person\'s: nobody else\'s while the server has it.': '人の名前と同じく早い者勝ちで、サーバーが持つ間はほかの誰のものにもなりません。',
   'Its code': 'コード',
-  'Its term ended; held for it until {date}': '期限が切れました。{date}まではこのサーバーのために取り置かれます。',
   'Bring back {name}': '{name}を戻す',
   'Held until {date}': '{date}まで取り置き',
   'That name is taken': 'その名前は使われています',

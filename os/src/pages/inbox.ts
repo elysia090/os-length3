@@ -1,4 +1,4 @@
-import {ago, arrowKeys, day, h} from '../ui/dom.ts';
+import {ago, arrowKeys, h} from '../ui/dom.ts';
 import {t} from '../i18n.ts';
 import * as inbox from '../remote/inbox.ts';
 import {connection} from '../remote/connection.ts';
@@ -6,7 +6,7 @@ import {look, onNews} from '../remote/news.ts';
 import {Drafts} from '../home/drafts.ts';
 import {kindOf} from '../repos/text.ts';
 import {mark} from '../ui/icons.ts';
-import {copying, deed, pageHead} from './common.ts';
+import {copying, pageHead} from './common.ts';
 import {personBadge} from './pane.ts';
 import {every} from '../app/runs.ts';
 import {goToPlan, planRefused, planSaid} from './remote/plan.ts';
@@ -104,9 +104,9 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
     // The name alone, as it will be shown everywhere: what comes after an @ is not the person's to think of (a name on
     // a domain of one's own is behind the gear once a name is taken).
     stub = h('div', {class: 'stub'}, name);
-    note.textContent = t('A name on this Remote: first come, yours for five years at a time, renewed by you.');
+    note.textContent = t('A name on this Remote: first come, and yours for as long as you keep it.');
   }
-  // The gear's panel, as the person's menu: your names with their terms, then Add a domain, then letting one go.
+  // The gear's panel, as the person's menu: your names, then Add a domain.
   let looking: {stop(): void} | null = null;
   const item = (label: string, at: Node | null = null) => h('button', {type: 'button', class: 'pop-item'}, label, at) as HTMLButtonElement;
   /** Your own domain, written whole in one field (name@domain, the @ too); its record looked for while the panel is open. */
@@ -165,18 +165,11 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
     b.addEventListener('click', () => b.replaceWith(own()));
     return b;
   };
-  /** Your names, each with its state: its term (Renew near its end), or that its domain no longer names this Remote. */
-  const yours = (): HTMLElement => {
-    const YEAR = 365 * 86_400_000;
-    return h('div', {class: 'pop-group', role: 'group', 'aria-label': t('Your names')}, h('div', {class: 'pop-head muted small'}, t('Your names')), ...me.addresses.map((a) => {
-      const state = a.lapsed ? h('span', {class: 'small error'}, t('its domain no longer names this Remote'))
-        : a.ended ? h('span', {class: 'small error'}, t('Its term ended; held for you until {date}', {date: day(a.until! + 30 * 86_400_000)}))
-        : a.until ? h('span', {class: 'muted small'}, t('Until {date}', {date: day(a.until)})) : null;
-      const renew = a.until && (a.ended || a.until - Date.now() < YEAR) ? h('button', {type: 'button', class: 'button small-button primary'}, t('Renew')) as HTMLButtonElement : null;
-      if (renew) deed(renew, async () => { await inbox.renew(a.address); again(); });
-      return h('div', {class: 'your-row'}, h('span', {}, inbox.shown(a.address)), state, renew);
-    }));
-  };
+  /** Your names, each with what holds it back, if anything: its domain no longer naming this Remote. */
+  const yours = (): HTMLElement =>
+    h('div', {class: 'pop-group', role: 'group', 'aria-label': t('Your names')}, h('div', {class: 'pop-head muted small'}, t('Your names')), ...me.addresses.map((a) =>
+      h('div', {class: 'your-row'}, h('span', {}, inbox.shown(a.address)),
+        a.lapsed ? h('span', {class: 'small error'}, t('its domain no longer names this Remote')) : null)));
   // Letting a name go is not offered here; the Remote's way to do it stays (l3 people release uses it).
   const fill = () => panel.replaceChildren(yours(), adding());
   // The panel lies over the Inbox under it; Escape or a press outside closes it.

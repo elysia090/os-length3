@@ -99,7 +99,7 @@ function fields(say: string, sayAt: string) {
   const name = h('input', {class: 'server-name-in', maxlength: '64', placeholder: say, 'aria-label': t('Name')}) as HTMLInputElement;
   const handle = h('input', {class: 'server-handle-in mono', maxlength: '31', placeholder: sayAt, autocapitalize: 'off', spellcheck: 'false',
     'aria-label': t('Name on this Remote'),
-    title: t('First come, as a person\'s: nobody else\'s while the server has it, renewed by its owner every five years.')}) as HTMLInputElement;
+    title: t('First come, as a person\'s: nobody else\'s while the server has it.')}) as HTMLInputElement;
   // Its address follows its name until it is written itself.
   let own = false;
   const fit = fitting(name, handle);

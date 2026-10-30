@@ -231,9 +231,7 @@ test('l3 name answers with the name alone, l3 name list with its term; l3 addres
   ok(d.l3(['name', 'claim', 'soraself']), /^Yours: soraself@length3\.test\n$/);
   assert.equal(ok(d.l3(['name'])).out, 'soraself@length3.test\n');
   // In the list a name on the Remote's own domain is said without it.
-  assert.match(ok(d.l3(['name', 'list'])).out, /^soraself  · until \d{4}-\d{2}-\d{2}\nYour code: \d{6} /);
-  // A name of someone else's is not one of yours.
-  refused(d.l3(['name', 'renew', 'renself']), 4, /is not one of your names/);
+  assert.match(ok(d.l3(['name', 'list'])).out, /^soraself\nYour code: \d{6} /);
   // SSH is this device's (service/ssh.ts): off at first, and a script is told, never asked.
   refused(d.l3(['address']), 5, /SSH is off on this device/);
 });

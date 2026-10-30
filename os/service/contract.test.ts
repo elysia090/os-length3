@@ -131,13 +131,12 @@ test('another account\'s servers and boards answer as if they were not there', a
 });
 
 // SSH is per device now (service/ssh.ts and its tests); a name carries no SSH of its own.
-test('another account\'s addresses: not let go or renewed by anyone else', async () => {
+test('another account\'s addresses: not let go by anyone else', async () => {
   const a = await s.person('Addressed'), b = await s.person('Other');
   const handle = `a${process.pid}${Date.now().toString(36)}`.slice(0, 20);
   await named(s, [a, handle]);
   const address = `${handle}@length3.test`;
   refused(await s.call('DELETE', `/v1/inbox/addresses/${address}`, {token: b}), 404, 'That name is not yours');
-  refused(await s.call('POST', `/v1/inbox/addresses/${address}/renew`, {token: b, body: {}}), 404, 'That name is not yours');
   const me = (await s.call('GET', '/v1/inbox/me', {token: a})).json as unknown as {addresses: {address: string}[]};
   assert.deepEqual(me.addresses.map((x) => x.address), [address]);
 });

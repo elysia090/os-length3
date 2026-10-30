@@ -90,7 +90,7 @@ test('your names open with their heading at the top, and no name is let go from 
   const names = ada.main.getByRole('group', {name: 'Your names', exact: true});
   await expect(names).toContainText(ada.handle);
   await expect(ada.main.getByRole('button', {name: 'Add a domain'})).toBeVisible();
-  // Renewing and adding stay; letting a name go is not offered in Inbox.
+  // Adding one stays; letting a name go is not offered in Inbox.
   await expect(ada.main.getByRole('button', {name: /^Let .* go$/})).toHaveCount(0);
   // The heading sits on the box's own room (8) and its own (8), with no group's step before it.
   const box = (await names.locator('xpath=..').boundingBox())!;

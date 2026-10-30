@@ -47,16 +47,13 @@ export default {
   'Review: or Question: first to ask · a /root/… path says what it is about · Ctrl+Enter sends': '頭に Review： か Question： で依頼 · /root/… のパスで対象 · Ctrl+Enter で送信',
   // Names: letting one go, a domain that lapsed.
   'That name was let go; it is held for its owner until {date}': 'その名前は手放されています。{date}まで元の持ち主のために取り置かれています。',
-  // Names: on this Remote, first come, for five years at a time; a code to be found by; a domain's beside.
+  // Names: on this Remote, first come, theirs as long as they keep it; a code to be found by; a domain's beside.
   'Your names': 'あなたの名前',
   'Your code {code}': 'あなたのコード {code}',
-  'A name on this Remote: first come, yours for five years at a time, renewed by you.': 'この Remote での名前です。早い者勝ちで、5年ごとに更新すればあなたのものです。',
+  'A name on this Remote: first come, and yours for as long as you keep it.': 'この Remote での名前です。早い者勝ちで、手放すまであなたのものです。',
   'Add a domain': 'ドメインを足す',
   'name@example.org': '名前@example.org',
   'Name on your domain': '自分のドメインでの名前',
-  'Its term ended; held for you until {date}': '期限が切れました。{date}まではあなたのために取り置かれます。',
-  'Until {date}': '{date}まで',
-  'Renew': '更新する',
   'Let it go': '手放す',
   'Let {name} go': '{name}を手放す',
   '{name} is held for you 30 days; claiming it again takes it back.': '{name}は30日間あなたのために取り置かれます。もう一度取れば戻ります。',

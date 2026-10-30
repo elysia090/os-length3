@@ -320,18 +320,10 @@ function takeHome(s: servers.Server, b: servers.BoardRef): HTMLButtonElement {
   return take;
 }
 
-// ---- the server itself: its name's term (renewed by its owner near its end), leaving it, and, its owner, removing it ----
-
-const YEAR = 365 * 86_400_000;
+// ---- the server itself: its name, leaving it, and, its owner, removing it ----
 
 function serverCards({s, w, people, mine}: Read): (HTMLElement | null)[] {
-  const name = smallCard(named(s.address), line(`${t('Its code')} ${s.code}`),
-    s.until ? line(s.until <= Date.now() ? t('Its term ended; held for it until {date}', {date: day(s.until + 30 * 86_400_000)}) : t('Until {date}', {date: day(s.until)})) : null);
-  if (s.owner && s.until && s.until - Date.now() < YEAR) {
-    const renew = button(t('Renew'), 'small-button primary');
-    deed(renew, async () => { const r = await servers.renewServer(s.id); s.until = r.until; w.again(); });
-    name.append(foot(renew));
-  }
+  const name = smallCard(named(s.address), line(`${t('Its code')} ${s.code}`));
   // What leaving and removing come to, as the Remote does them: who is left in it, and who made it.
   const end = servers.ending(s, people, mine);
   const back = (ms: number) => tn('You can bring it back within {n} day.', 'You can bring it back within {n} days.', Math.round(ms / 86_400_000));

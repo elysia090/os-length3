@@ -18,7 +18,7 @@ import {errorText} from '../app/errors.ts';
 export interface BoardRef { id: string; name: string; open: boolean; guests: boolean; gone?: number }
 /** A server: what it is called, and its name as a principal (name@domain, in the namespace people's addresses are in). */
 /** `made`: the one asking made it (the Remote holds what its maker leaves alone a day, not HOLD). */
-export interface Server { id: string; name: string; address: string; owner: boolean; boards: BoardRef[]; code: string; until: number | null; made?: boolean }
+export interface Server { id: string; name: string; address: string; owner: boolean; boards: BoardRef[]; code: string; made?: boolean }
 /** `id` names one with no name left (released or let go), whom the owner still removes by it. */
 export interface Person { address: string; owner: boolean; id?: string }
 export interface Board { id: string; server: {id: string; name: string; address: string}; name: string; open: boolean; guests: boolean; people?: Person[] }
@@ -83,7 +83,6 @@ export const makeServer = (name: string, address: string) => call<Server>('/v1/s
 export const goneServers = () => call<{id: string; name: string; address: string; until: number}[]>('/v1/servers?gone=1');
 export const bringBack = (id: string) => call<{id: string; name: string; address: string}>(`/v1/servers/${id}/back`, send('POST'));
 /** Its name held for another term, by its owner. */
-export const renewServer = (id: string) => call<{address: string; until: number}>(`/v1/servers/${id}/renew`, send('POST'));
 /** Its owner's: held a while, to bring back. */
 export const removeServer = (id: string) => call<{until: number}>(`/v1/servers/${id}`, send('DELETE'));
 /** How long the Remote holds a server removed or left last (service/names.ts HOLD), and one its maker leaves alone in it (SERVER.alone). */

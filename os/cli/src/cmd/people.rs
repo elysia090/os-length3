@@ -176,15 +176,13 @@ pub fn name_only(_: &Ctx, _: &Call) -> Result<Reply> {
     Ok(Reply::data(all.join("\n"), json!(all)))
 }
 
-/// `l3 name list`: each with its term, and the code one is found by.
+/// `l3 name list`: each, and the code one is found by.
 pub fn names(_: &Ctx, _: &Call) -> Result<Reply> {
     let me = inbox::me()?;
     let mut t = Vec::new();
-    if me.addresses.is_empty() { t.push(tr!("No name yet (l3 name claim NAME: first come, yours for five years at a time)", "名前はまだありません（l3 name claim NAME：早い者勝ち、5年ごとの更新であなたのもの）")); }
+    if me.addresses.is_empty() { t.push(tr!("No name yet (l3 name claim NAME: first come, yours for as long as you keep it)", "名前はまだありません（l3 name claim NAME：早い者勝ち、手放すまであなたのもの）")); }
     for x in &me.addresses {
-        let state = if x.lapsed { tr!("  · its domain no longer names this Remote", "  · ドメインがこの Remote を指していません") }
-            else if x.ended { tr!("  · its term ended: l3 name renew {}", "  · 期限切れ：l3 name renew {}", me.shown(&x.address)) }
-            else if let Some(u) = x.until { tr!("  · until {}", "  · {} まで", day(u)) } else { String::new() };
+        let state = if x.lapsed { tr!("  · its domain no longer names this Remote", "  · ドメインがこの Remote を指していません") } else { String::new() };
         t.push(format!("{}{state}", me.shown(&x.address)));
     }
     if !me.code.is_empty() { t.push(tr!("Your code: {} (anyone can find you by it)", "あなたのコード：{}（これで見つけてもらえます）", me.code)); }
@@ -204,12 +202,6 @@ fn yours(word: &str) -> Result<(inbox::Me, String)> {
         return Err(Error::NotFound(tr!("{} is not one of your names (l3 name lists them)", "{} はあなたの名前ではありません（l3 name で一覧）", me.shown(&address))));
     }
     Ok((me, address))
-}
-
-pub fn name_renew(_: &Ctx, call: &Call) -> Result<Reply> {
-    let (me, address) = yours(call.word(0).unwrap_or_default())?;
-    let until = inbox::renew(&address)?;
-    Ok(Reply::done(tr!("{} is yours until {}", "{} は {} まであなたのものです", me.shown(&address), day(until)), json!({"address": address, "until": until})))
 }
 
 pub fn name_release(_: &Ctx, call: &Call) -> Result<Reply> {
