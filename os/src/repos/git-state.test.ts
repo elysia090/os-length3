@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {laidOut, type Standing} from './git-state.ts';
+import {laidOut, stageOf, type Standing} from './git-state.ts';
 import type {Change, Work} from './history.ts';
 import {parseIssue} from './issues.ts';
 
@@ -52,4 +52,16 @@ test('main is offered a commit only while the repo shows it, has something uncom
     ['d', standing({uncommitted: 1, error: 'away'})],
   ]);
   assert.deepEqual(laidOut(['a', 'b', 'c', 'd', 'e'], [], states).dirty, ['a']);
+});
+
+test('an issue is open until work on it begins (here, elsewhere, or by an agent), pending until merged, then solved', () => {
+  const s = standing({changes: [change('issue/001.md', 'merged', 1), change('issue/004.md', 'open', 2)]});
+  assert.equal(stageOf(s, [], r2, false), 'open');
+  assert.equal(stageOf(s, [{issue: 'issue/002.md'}], r2, false), 'pending');
+  assert.equal(stageOf(s, [], r2, true), 'pending');
+  assert.equal(stageOf(s, [], r4, false), 'pending');
+  assert.equal(stageOf(s, [], r1, true), 'solved');
+  assert.equal(stageOf(s, [], r3, false), 'closed');
+  // Not known (no Remote): what this device knows of it.
+  assert.equal(stageOf(undefined, [], r2, true), 'pending');
 });

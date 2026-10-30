@@ -5,7 +5,7 @@
 //! rail: Home, Forge (and its Prompt), File, Git, Runtime, Remote; then the
 //! two whose subject is people, Server and Inbox; then l3's own words.
 
-use crate::cmd::{address, app, file, forge, git, home, people, remote, runtime, Ctx};
+use crate::cmd::{address, agent, app, file, forge, git, home, people, remote, runtime, Ctx};
 use crate::{args::Call, help, out::{Reply, Result}};
 
 /// Words in English and in Japanese.
@@ -407,6 +407,15 @@ pub static COMMANDS: &[Command] = &[
     c("reject", &[], Group::Git, ["main does not take it", "取り込まない"], &[
         offer(&[d(["Reject", "Reject"], On::Issue).asks(&[Flag::Note("why")]).when(&[F::Undecided]).away()],
             f(None, &[Arg::Issue], &[Flag::Note("why")], ["its issue stays open", "Issue は開いたまま"], REMOTE, Send, git::reject)),
+    ]),
+    c("agent", &[], Group::Git, ["what agents (Claude Code, Grok…) do in your repos, live", "エージェント（Claude Code、Grok…）の作業を、その場で"], &[
+        f(None, &[], &[], ["each at work now: where, on which issue, doing what", "いま作業中のもの：どこで、どの Issue に、何を"], DEVICE, Keep, agent::list),
+        hidden(Some("ls"), &[], DEVICE, Keep, agent::list),
+        f(Some("on"), &[Arg::Choice(&["claude", "grok"])], &[], ["set one up to say what it does, from its next session", "次のセッションから作業を知らせるよう設定する"], DEVICE, Keep, agent::on),
+        f(Some("off"), &[Arg::Choice(&["claude", "grok"])], &[], ["take that out again", "その設定を外す"], DEVICE, Keep, agent::off),
+        f(Some("hooks"), &[Arg::Choice(&["claude", "grok"])], &[], ["the hooks l3 agent on writes, to set them by hand", "l3 agent on が書くフック（手で設定するなら）"], DEVICE, Keep, agent::hooks),
+        f(Some("hook"), &[Arg::Text("HARNESS")], &[], ["what a harness's hooks call: its event's JSON on standard input; says nothing, never fails", "ハーネスのフックが呼ぶもの（イベントの JSON を標準入力に）。何も言わず、失敗しない"], LOCAL, Keep, agent::hook),
+        f(Some("hook"), &[Arg::Text("HARNESS"), Arg::Text("EVENT")], &[], ["for one whose JSON does not name its event", "JSON がイベント名を持たないハーネス用"], LOCAL, Keep, agent::hook),
     ]),
     c("runtime", &[], Group::Runtime, ["the root, and this device by size", "root と、この端末の容量"], &[
         page(f(None, &[], &[], ["what is here, and what can go", "あるものと、空けられるもの"], DEVICE, Send, runtime::page)),

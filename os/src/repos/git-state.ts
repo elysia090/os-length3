@@ -40,3 +40,16 @@ export function laidOut(repos: readonly string[], issues: readonly Issue[], stat
       .map((issue) => ({issue, reopen: !!st(issue.repo)?.work})),
   };
 }
+
+/**
+ * Where an issue is on its way, as Git and an agent's work tell it: open (nothing done on it yet), pending (worked
+ * on: started here or elsewhere, its change handed in, or an agent at it now), solved (merged), or closed without
+ * being done. `started`: the issues work began on (each line's), as the Remote has them.
+ */
+export type Stage = 'open' | 'pending' | 'solved' | 'closed';
+export function stageOf(s: Standing | undefined, started: readonly {issue: string}[], i: Issue, agentAt: boolean): Stage {
+  if (isMerged(s, i)) return 'solved';
+  if (i.closed !== null) return 'closed';
+  const path = issuePath(i);
+  return agentAt || started.some((l) => l.issue === path) || changeFor(s, i)?.state === 'open' ? 'pending' : 'open';
+}

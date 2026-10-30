@@ -9,6 +9,7 @@ import {changeFor, type Standing} from '../../repos/git-state.ts';
 import {named} from '../../repos/text.ts';
 import {diffFiles} from '../forge/diff-view.ts';
 import {beingChanged, issueEditor} from './issue-form.ts';
+import {agentLine, agentMark} from './agent-line.ts';
 import {errorText} from '../../app/errors.ts';
 import {busy} from './held.ts';
 import {issueStore} from '../../repos/issue-store.ts';
@@ -132,7 +133,7 @@ function standing(s: RepoState | undefined, issue: Issue): string {
  */
 export function issueHead(issue: Issue, peek = false): HTMLElement {
   const no = issueName(issue);
-  if (peek) return h('div', {class: 'issue-big-head peek'}, h('h2', {}, h('span', {class: 'issue-no'}, no || '#')));
+  if (peek) return h('div', {class: 'issue-big-head peek'}, h('h2', {}, h('span', {class: 'issue-no'}, no || '#'), agentMark(issue)));
   return h('div', {class: 'issue-big-head'},
     h('h2', {}, no ? h('span', {class: 'issue-no'}, no) : null, no ? ' ' : null, issue.kind ? h('span', {class: 'issue-kind'}, ...kindWords(issue.kind)) : null, issue.title));
 }
@@ -156,7 +157,7 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
   // The change's power switch, low at the box's right, where its foot's action is.
   if (work?.reset) acts.push(work.reset);
   const box = h('div', {class: 'issue-box'},
-    words, summary(issue, after),
+    words, summary(issue, after), agentLine(issue),
     ...(work ? [work.element] : change?.state === 'open' ? [received(change)] : []),
     foot(issue, s, leave, acts), error);
   const editor = () => issueEditor(issue, (saved) => { if (saved) after(); else box.replaceWith(issueBox(issue, s, events, after)); });

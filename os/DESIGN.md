@@ -1010,6 +1010,42 @@ Debian, a root of one's own) all of that hands itself back: only the l3
 command comes in, from outside the guest's tree, and the guest's tools,
 names and `/etc/os-release` are its own.
 
+### Agents at work
+
+An agent (Claude Code, Grok Build, DeepSeek Harness running Claude Code's
+hooks, Codex) works in the person's repos as the person does, from a
+shell: in a repo's copy or an issue's (`<data>/work/REPO/LINE`). The OS
+runs none of it and asks it nothing; it listens to what the agent's own
+harness says through its hooks, so whatever program does the work, Git
+shows it going.
+
+- **One command, every harness.** Each hook calls `l3 agent hook HARNESS`
+  with the event's JSON on standard input (`hook_event_name`, `session_id`,
+  `cwd`, `tool_name`, `tool_input`, `prompt`, `message`; the names Claude
+  Code gives them, which the others take after). It says nothing and always
+  ends well: an agent is never held up or stopped by being watched, and
+  what it is given never reaches the agent's context.
+- **Set up by l3.** `l3 agent on claude` adds the hooks to Claude Code's
+  settings beside the person's own; `l3 agent on grok` writes Grok Build's
+  `~/.grok/hooks/l3.json`; `off` takes only ours out; `hooks` shows them to
+  set by hand. Each calls this l3 by where it is, needing no PATH.
+- **The journal.** Each report is one line appended to `<data>/agents.jsonl`
+  (0600, this device's alone, never sent): when, which harness and session,
+  the repo and line (`work::here` of its cwd: an agent elsewhere is not
+  kept), and a kind (start, prompt, tool, tool-done, waits, stop, end) with
+  a few words, one line of at most 160 characters and no control
+  characters. Past 512 KiB it keeps its latest half.
+- **Who works where.** Read from the journal, a session works (it said
+  something other than waiting), waits for the person (a permission, a
+  question, its turn over), or ended (it said so, or nothing for an hour).
+  `l3 agent` lists them; the app asks the core (`agents`, with the cursor it
+  read to) every second while a page that shows them is on screen, and the
+  core answers nothing from a file's size and first line while nothing
+  came.
+- **An issue on its way.** open (nothing done yet), pending (work begun
+  here or elsewhere, its change handed in, or an agent at it), solved
+  (merged), or closed (`repos/git-state.ts` stageOf).
+
 ## 6. One OS, two ways in
 
 The GUI and the command line are two ways into the same things. `l3`'s
@@ -2350,6 +2386,13 @@ to the total over them and beside the bar: never 2.8 KB over a lone Home of
 0 B.
 
 ### Git
+
+An agent at work on an issue (§5, Agents at work) is said in its box, under
+its summary: the harness, what it does now in the mono face, and, while it
+waits for the person, *waits for you* on the marker's yellow. Its dot
+breathes in green while it works, beats at each tool it takes up, and holds
+still in yellow while it waits; a neighbour's head carries the same dot, so
+the row shows where agents are before one goes to them.
 
 With no repo at all (a first run), Forge's center and Git's issues are one
 dashed card, Make your first repo, the whole card the deed (it is New repo,

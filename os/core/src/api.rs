@@ -8,7 +8,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use crate::{account, history, home, paths, remote, repos, system, usage, work};
+use crate::{account, agents, history, home, paths, remote, repos, system, usage, work};
 
 /// Files the editor may save; anything read in part is never written back.
 pub const READ_LIMIT: u64 = 256 * 1024;
@@ -62,6 +62,10 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         "dotfile_set" => to(home::set_dotfile(&a.s("name")?, a.opt::<String>("text")?.as_deref())?),
         "dotfiles_take" => to(home::take_dotfiles(&a.list("names")?)?),
         "dotfiles_in_effect" => to(home::dotfiles_in_effect().into_iter().collect::<std::collections::BTreeMap<_, _>>()),
+
+        // What agents do in the repos, as their hooks said it (agents.rs): null when nothing came since `cursor`.
+        "agents" => to(agents::now_since(&a.opt::<agents::Cursor>("cursor")?.unwrap_or_default(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64))),
 
         // The capacity and what this OS holds: `open`, the repos a Prompt has open (the host's to know).
         "capacity" => to(system::capacity(&paths::data_dir())?),

@@ -34,6 +34,7 @@ export default {
   'No issues yet': 'Issue はまだありません',
   'Issues': 'Issue',
   'Continue here': 'ここで続ける',
+  'waits for you': 'あなたを待っています',
   'Start': '始める',
   'Change': 'Change',
   'Switched off, the change is taken back': 'オフにすると Change を取り下げます',

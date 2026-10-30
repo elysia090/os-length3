@@ -82,3 +82,17 @@
 .slide-stage:has(.slide[aria-current='true'] + .slide)::after, .slide-stage:has(.slide + .slide[aria-current='true'])::before,
 .issue-stage:has(.issue-slot[aria-current='true'] + .issue-slot)::after, .issue-stage:has(.issue-slot + .issue-slot[aria-current='true'])::before { opacity: 1; }
 .space-col > h3 small { margin-left: var(--s2); font-weight: 400; color: var(--sub); font-size: var(--t-meta); }
+
+/* An agent at work on the issue (git/agent-line.ts): its dot breathes while it works, beats at each tool, and holds
+   still in the marker's yellow while it waits for the person. */
+.agent-line { display: grid; gap: var(--s1); font-size: var(--t-meta); }
+.agent-row { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; color: var(--sub); }
+.agent-who { color: var(--ink); font-weight: 600; flex: none; }
+.agent-doing { font-family: var(--mono); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-waits { flex: none; background: var(--marker-soft); color: var(--ink); border-radius: var(--r-round); padding: 0 var(--s2); }
+.agent-dot { flex: none; inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--done); align-self: center; }
+.agent-row.working .agent-dot, .agent-mark:not(.waits) { animation: agent-breath calc(900ms * var(--pace)) ease-in-out infinite alternate; }
+.agent-row.waits .agent-dot, .agent-mark.waits { background: var(--marker); box-shadow: 0 0 0 1px var(--edge) inset; }
+.agent-mark { display: inline-block; margin-inline-start: var(--s1); vertical-align: middle; }
+@keyframes agent-breath { from { opacity: .45; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .agent-row.working .agent-dot, .agent-mark { animation: none; } }
