@@ -162,7 +162,8 @@ test('each purpose has a key of its own, derived from the one secret with HKDF; 
   assert.notEqual(row.digest, await hmacHex(SECRET, `invite\n${inv.json.invite as string}`));
   // The off-code likewise, under its own key.
   const {user, session} = (await s.call('GET', '/api/auth/get-session', {token: ren})).json as unknown as {user: {id: string}; session: {id: string}};
-  await s.db.insert(schema.guard).values({userId: user.id, proofSession: session.id, proofAt: new Date()});
+  await s.db.insert(schema.guard).values({userId: user.id, proofSession: session.id, proofAt: new Date()})
+    .onConflictDoUpdate({target: schema.guard.userId, set: {proofSession: session.id, proofAt: new Date()}});
   assert.equal((await s.call('POST', '/v1/off-code', {token: ren, body: {code: 'ab12c'}})).status, 200);
   const [g] = await s.db.select().from(schema.guard).where(eq(schema.guard.userId, user.id));
   assert.equal(g.offDigest, await hmacHex(keyFor(SECRET, 'off-code'), `off-code\n${user.id}\nAB12C`));

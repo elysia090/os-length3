@@ -120,6 +120,13 @@
       "when": 1793338997715,
       "tag": "0016_contract_names_have_no_term",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1793341942290,
+      "tag": "0017_guard_signed",
+      "breakpoints": true
     }
   ]
 }

@@ -50,6 +50,7 @@ export default {
   'That is not a domain': 'それはドメインではありません',
   'Too many names': '名前が多すぎます',
   'Your name can change twice an hour': '名前を変えられるのは1時間に2回までです',
+  'Confirm it is you first': '先に本人だと確かめてください',
   'Your username can be changed, not let go': 'ユーザー名は変えられますが、手放すことはできません',
   'No name is free to give just now': 'いま渡せる名前がありません',
   'That server has no name': 'そのサーバーには名前がありません',

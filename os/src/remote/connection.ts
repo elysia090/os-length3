@@ -334,15 +334,31 @@ export function passkeyOfferDone() {
   try { sessionStorage.removeItem(JUST); } catch { /* offered again, then */ }
 }
 
+/**
+ * `f`, a deed that would let someone in for good or shut the person out (another device let in, a passkey or a
+ * provider added or taken away): the Remote asks for a sign-in just now (service/auth.ts HELD), so a session's token
+ * taken from a device does none of them. Asked, a passkey confirms it is them, and it is asked again; `stopped` says
+ * what stays as it was when that is called off.
+ */
+async function confirming<T>(f: () => Promise<T>, stopped: string): Promise<T> {
+  try { return await f(); } catch (e) {
+    if (!(e instanceof RemoteError && e.status === 403 && e.detail.confirm === true)) throw e;
+    await signIn(stopped);
+    return f();
+  }
+}
+
 /** Another provider for the same account (a second way back in). */
 export async function link(provider: Provider): Promise<void> {
-  const {url} = await json<{url: string}>('/api/auth/link-social', {method: 'POST', body: JSON.stringify({provider, callbackURL: location.href})});
+  const {url} = await confirming(() => json<{url: string}>('/api/auth/link-social', {method: 'POST', body: JSON.stringify({provider, callbackURL: location.href})}),
+    t('The passkey was not used: nothing was linked.'));
   leaveFor(url);
 }
 
 export interface Linked { id: string; providerId: string; accountId: string; createdAt: string }
 export const linked = async () => (await json<Linked[]>('/api/auth/list-accounts')).filter((a) => a.providerId !== 'credential');
-export const unlink = (providerId: string) => json('/api/auth/unlink-account', {method: 'POST', body: JSON.stringify({providerId})});
+export const unlink = (providerId: string) => confirming(() => json('/api/auth/unlink-account', {method: 'POST', body: JSON.stringify({providerId})}),
+  t('The passkey was not used: nothing was changed.'));
 
 // ---- passkeys (web) ----
 
@@ -353,7 +369,8 @@ const madeAlready = (e: unknown) => (e as {name?: string}).name === 'InvalidStat
 /** Add a passkey for this device to the account it is signed in to. */
 export async function addPasskey(name = deviceName()): Promise<void> {
   const {startRegistration} = await webauthn();
-  const options = await json<Record<string, unknown>>(`/api/auth/passkey/generate-register-options?name=${encodeURIComponent(name)}`);
+  const options = await confirming(() => json<Record<string, unknown>>(`/api/auth/passkey/generate-register-options?name=${encodeURIComponent(name)}`),
+    t('Signed in a while ago: sign in again (a passkey, or your provider) to make one.'));
   const response = await startRegistration({optionsJSON: options as never}).catch((e: unknown) => {
     throw new RemoteError(0, cancelled(e) ? t('The passkey was not made.') : madeAlready(e) ? t('This device has a passkey for this account already.')
       : t('Could not make a passkey ({why}).', {why: String(e)}));
@@ -441,7 +458,8 @@ export async function discard(repo: string, name: string, typed: string, code: s
 
 export interface Passkey { id: string; name?: string | null; createdAt: string; deviceType?: string; backedUp?: boolean }
 export const passkeys = askedOnce(() => json<Passkey[]>('/api/auth/passkey/list-user-passkeys'));
-export const removePasskey = (id: string) => json('/api/auth/passkey/delete-passkey', {method: 'POST', body: JSON.stringify({id})});
+export const removePasskey = (id: string) => confirming(() => json('/api/auth/passkey/delete-passkey', {method: 'POST', body: JSON.stringify({id})}),
+  t('The passkey was not used: nothing was changed.'));
 
 // ---- devices: each a session ----
 
@@ -468,7 +486,8 @@ export async function deviceAsking(userCode: string): Promise<{clientId: string;
   const r = await json<{client_id?: string; clientId?: string; status: string}>(`/api/auth/device?user_code=${encodeURIComponent(userCode)}`);
   return {clientId: r.client_id ?? r.clientId ?? '', status: r.status};
 }
-export const approveDevice = (userCode: string) => json('/api/auth/device/approve', {method: 'POST', body: JSON.stringify({userCode})});
+export const approveDevice = (userCode: string) => confirming(() => json('/api/auth/device/approve', {method: 'POST', body: JSON.stringify({userCode})}),
+  t('The passkey was not used: the device was not let in.'));
 export const denyDevice = (userCode: string) => json('/api/auth/device/deny', {method: 'POST', body: JSON.stringify({userCode})});
 
 /** What a session's user agent is, in a word. */

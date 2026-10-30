@@ -90,7 +90,8 @@ export async function sweep(db: Db, bucket: Bucket | null): Promise<Record<strin
   await run('message', sql`delete from message where read_at is not null and created_at < ${ago(90 * DAY)}`);
   await run('signal', sql`delete from signal where created_at < ${ago(2 * 60_000)}`);
   await run('proof', sql`update guard set proof_session = null, proof_at = null where proof_at < ${ago(5 * 60_000)}`);
-  await run('guard', sql`delete from guard where off_digest is null and proof_at is null`);
+  await run('signed', sql`update guard set signed_session = null, signed_at = null where signed_at < ${ago(5 * 60_000)}`);
+  await run('guard', sql`delete from guard where off_digest is null and proof_at is null and signed_at is null`);
   await run('guest', sql`delete from board_guest where token_until < now()`);
   await run('invite', sql`delete from board_invite where uses = 0 or until < now()`);
   await run('throttle', sql`delete from throttle where at < ${ago(DAY)}`);

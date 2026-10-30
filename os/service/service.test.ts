@@ -6,7 +6,7 @@ import {createAuth} from './auth.ts';
 import {memoryBucket} from './bucket.ts';
 import * as schema from './schema.ts';
 import {sweep} from './sweep.ts';
-import {accept, APP, BASE, count, enc, freshDb as fresh, idOf, named, SECRET, service, upload, type Service} from './testing.ts';
+import {accept, APP, BASE, count, enc, freshDb as fresh, idOf, named, SECRET, service, sessionOf, upload, type Service} from './testing.ts';
 import homeSync from '../shared/home-sync.json' with {type: 'json'};
 import desktopPins from '../shared/desktop-releases.json' with {type: 'json'};
 
@@ -74,6 +74,31 @@ test('a device asks for a code, a signed-in browser approves it, the device gets
   // Each is a session of its own, listed together, and ended one by one.
   const list = await s.call('GET', '/api/auth/list-sessions', {token: t});
   assert.equal((list.json as unknown[]).length, 2);
+});
+
+test('what would let someone in for good, or shut the person out, asks for a sign-in just now: a token taken from a device does none of it', async () => {
+  const s = await service();
+  const t = await s.start('Ren');
+  const held: [string, string, unknown?][] = [['GET', '/api/auth/passkey/generate-register-options'], ['POST', '/api/auth/device/approve', {userCode: 'ABCDEFGH'}],
+    ['POST', '/api/auth/link-social', {provider: 'dev', callbackURL: APP}], ['POST', '/api/auth/unlink-account', {providerId: 'dev'}],
+    ['POST', '/api/auth/passkey/delete-passkey', {id: 'none'}]];
+  const confirm = async (token: string) => { for (const [m, p, body] of held) { const r = await s.call(m, p, {token, body}); assert.deepEqual([r.status, r.json.confirm], [403, true], p); } };
+  // Signed in with the provider just now: a passkey may be made.
+  assert.equal((await s.call('GET', '/api/auth/passkey/generate-register-options', {token: t})).status, 200);
+  // Five minutes on, each is refused, saying to confirm it is them.
+  const me = await idOf(s, t);
+  await s.db.update(schema.guard).set({signedAt: new Date(Date.now() - 6 * 60_000)}).where(sql`user_id = ${me}`);
+  await confirm(t);
+  // A passkey's sign-in just now, by this very session, confirms it.
+  await s.db.update(schema.guard).set({proofSession: await sessionOf(s, t), proofAt: new Date()}).where(sql`user_id = ${me}`);
+  assert.equal((await s.call('GET', '/api/auth/passkey/generate-register-options', {token: t})).status, 200);
+  // A device's own session (the device flow's: never a sign-in) does none of it, however new.
+  const asked = (await s.call('POST', '/api/auth/device/code', {body: {client_id: 'l3'}})).json as unknown as {device_code: string; user_code: string};
+  await s.call('GET', `/api/auth/device?user_code=${encodeURIComponent(asked.user_code)}`, {token: t});
+  assert.equal((await s.call('POST', '/api/auth/device/approve', {token: t, body: {userCode: asked.user_code}})).status, 200);
+  const device = (await s.call('POST', '/api/auth/device/token', {body: {grant_type: 'urn:ietf:params:oauth:grant-type:device_code', device_code: asked.device_code, client_id: 'l3'}})).json.access_token as string;
+  assert.ok(device);
+  await confirm(device);
 });
 
 test('Devices: a session signed in days ago still lists the devices (Better Auth would ask for a fresh one)', async () => {
@@ -249,7 +274,8 @@ test('a draft changes only from the version it was read at; a cut records it', a
   const off = (body: unknown) => s.call('POST', '/v1/repos/notes/off', {token: t, body});
   assert.equal((await off({name: 'Ren', repo: 'notes', code: 'AB12C'})).status, 403); // no passkey yet
   const session = ((await s.call('GET', '/api/auth/get-session', {token: t})).json as unknown as {session: {id: string}; user: {id: string}});
-  await s.db.insert(schema.guard).values({userId: session.user.id, proofSession: session.session.id, proofAt: new Date()});
+  await s.db.insert(schema.guard).values({userId: session.user.id, proofSession: session.session.id, proofAt: new Date()})
+    .onConflictDoUpdate({target: schema.guard.userId, set: {proofSession: session.session.id, proofAt: new Date()}});
   assert.equal((await off({name: 'Ren', repo: 'notes', code: 'AB12C'})).status, 409); // no code set
   assert.equal((await s.call('POST', '/v1/off-code', {token: t, body: {code: 'AB-1'}})).status, 400);
   assert.equal((await s.call('POST', '/v1/off-code', {token: t, body: {code: 'ab12c'}})).status, 200);
@@ -945,7 +971,8 @@ test('Guessing: codes that find people are looked up so many an hour, and the co
   // The five-letter code: so many wrong in an hour, then none is taken, the right one neither.
   await s.call('PATCH', '/v1/repos/r/draft', {token: ren, body: {version: 0, set: {}, remove: []}});
   const session = ((await s.call('GET', '/api/auth/get-session', {token: ren})).json as unknown as {session: {id: string}; user: {id: string}});
-  await s.db.insert(schema.guard).values({userId: session.user.id, proofSession: session.session.id, proofAt: new Date()});
+  await s.db.insert(schema.guard).values({userId: session.user.id, proofSession: session.session.id, proofAt: new Date()})
+    .onConflictDoUpdate({target: schema.guard.userId, set: {proofSession: session.session.id, proofAt: new Date()}});
   assert.equal((await s.call('POST', '/v1/off-code', {token: ren, body: {code: 'AB12C'}})).status, 200);
   const off = async (c: string) => (await s.call('POST', '/v1/repos/r/off', {token: ren, body: {name: 'Ren', repo: 'r', code: c}})).status;
   const wrong = [];
@@ -1350,7 +1377,8 @@ test('Discard: an off repo goes for good now, asked as off is; its name is remem
   const discard = (body: unknown = {name: 'Ren', repo: 'r', code: 'AB12C'}, name = 'r') => s.call('POST', `/v1/repos/${name}/discard`, {token: t, body});
   assert.deepEqual([(await discard()).status, (await discard()).json.error], [403, 'Confirm with a passkey.']);
   const session = ((await s.call('GET', '/api/auth/get-session', {token: t})).json as unknown as {session: {id: string}}).session.id;
-  await s.db.insert(schema.guard).values({userId: me, proofSession: session, proofAt: new Date()});
+  await s.db.insert(schema.guard).values({userId: me, proofSession: session, proofAt: new Date()})
+    .onConflictDoUpdate({target: schema.guard.userId, set: {proofSession: session, proofAt: new Date()}});
   assert.equal((await discard()).status, 409); // no code set
   await s.call('POST', '/v1/off-code', {token: t, body: {code: 'AB12C'}});
   assert.deepEqual([(await discard({name: 'Ren', repo: 'r', code: 'ZZZZZ'})).status, (await discard({name: 'Ren', repo: 'r', code: 'ZZZZZ'})).json.error], [403, 'That is not the code.']);
@@ -1517,7 +1545,9 @@ test('The sweep: what was held long enough goes in one place, blobs no tree name
   await s.db.execute(sql`insert into address (address, server_id, name, domain, released_at) values ('old@length3.test', 'oldoldoldold', 'old', 'length3.test', now() - interval '1 day')`);
   await s.db.execute(sql`insert into board (id, server_id, name, gone_at) values ('boldboldbold', 'newnewnewnew', 'x', now() - interval '31 days'), ('bnewbnewbnew', 'newnewnewnew', 'y', null)`);
   await s.db.execute(sql`insert into signal (to_user, from_user, session, kind, data, created_at) values (${me}, ${her}, 's', 'offer', '', now() - interval '3 minutes')`);
-  await s.db.execute(sql`insert into guard (user_id, proof_session, proof_at) values (${her}, 'x', now() - interval '6 minutes')`);
+  // Her sign-ins (a passkey's, a provider's) six minutes ago: no longer just now, so nothing of hers is held.
+  await s.db.execute(sql`insert into guard (user_id, proof_session, proof_at, signed_session, signed_at) values (${her}, 'x', now() - interval '6 minutes', 'x', now() - interval '6 minutes')
+    on conflict (user_id) do update set proof_session = 'x', proof_at = now() - interval '6 minutes', signed_session = 'x', signed_at = now() - interval '6 minutes'`);
   await s.db.execute(sql`insert into throttle (key, at) values ('k', now() - interval '2 days')`);
   const later = await sweep(s.db, s.bucket);
   assert.deepEqual([later.server, later.board, later.signal, later.guard, later.throttle], [1, 1, 1, 1, 1]);

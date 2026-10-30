@@ -93,6 +93,9 @@ export const guard = pgTable('guard', {
   offSetAt: moment('off_set_at'),
   proofSession: text('proof_session'),
   proofAt: moment('proof_at'),
+  /** Its latest sign-in of any kind, a passkey's or a provider's (auth.ts HELD): which session, and when. */
+  signedSession: text('signed_session'),
+  signedAt: moment('signed_at'),
 }, () => [check('guard_digest', sql.raw(`off_digest is null or off_digest ~ ${re.sha}`))]);
 
 /**

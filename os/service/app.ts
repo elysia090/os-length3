@@ -140,7 +140,7 @@ export function createApp(d: Deps) {
     });
   }
 
-  signIn({auth: d.auth, providers: d.providers, enter: closed, origins: d.origins}, app);
+  signIn({auth: d.auth, db, providers: d.providers, enter: closed, origins: d.origins}, app);
   about({db, providers: d.providers, domain, appOrigin: d.appOrigin, enter: closed, baseURL: d.baseURL}, app);
   if (d.enter) enter({db, auth: d.auth, enter: d.enter}, app);
 

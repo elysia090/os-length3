@@ -39,6 +39,7 @@
 
 import {and, desc, eq, inArray, isNull, ne, sql} from 'drizzle-orm';
 import type {Context, Hono} from 'hono';
+import {passkeyJustNow} from './auth.ts';
 import type {Plans} from './plan.ts';
 import {hmacHex, same as sameText} from './keys.ts';
 import {ago, body, fits as fitsIn, HEX, LIMIT, lock, ms, qualified, refuse, rows, sha256, slowDown, UUID, type Db, type Vars} from './request.ts';
@@ -416,9 +417,6 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
   const CODE = /^[A-Za-z0-9]{5}$/;
   /** Wrong codes an account may give an hour. */
   const OFF_TRIES = 10;
-  /** Proof the person is here: this request's session is the account's latest passkey sign-in, within five minutes. */
-  const proven = (g: typeof guard.$inferSelect | undefined, sessionId: string) =>
-    !!g?.proofAt && g.proofSession === sessionId && Date.now() - g.proofAt.getTime() < 5 * 60 * 1000;
   /**
    * What turning a repo off asks, and discarding it: a passkey just now, the account's name, the
    * repo's name and the five-letter code, sent as {name, repo, code}. Refused (403, 409) unless all are so.
@@ -427,7 +425,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
     const user = c.get('userId');
     const b = await body<{name?: unknown; repo?: unknown; code?: unknown}>(c);
     const [g] = await db.select().from(guard).where(eq(guard.userId, user)) as (typeof guard.$inferSelect)[];
-    if (!proven(g, c.get('sessionId'))) refuse(403, {error: 'Confirm with a passkey.'});
+    if (!passkeyJustNow(g, c.get('sessionId'))) refuse(403, {error: 'Confirm with a passkey.'});
     if (!g.offDigest) refuse(409, {error: 'Set the five-letter code under Sign-in first.'});
     const same = (a: unknown, b: string) => typeof a === 'string' && a.trim().toLowerCase() === b.trim().toLowerCase();
     if (!same(b?.name, c.get('name')) || b?.repo !== name) refuse(403, {error: 'The names do not match.'});
@@ -486,7 +484,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
     const b = await body<{code?: unknown}>(c);
     if (typeof b?.code !== 'string' || !CODE.test(b.code)) return c.json({error: 'Five letters or digits'}, 400);
     const [g] = await db.select().from(guard).where(eq(guard.userId, user));
-    if (!proven(g, c.get('sessionId'))) return c.json({error: 'Confirm with a passkey.'}, 403);
+    if (!passkeyJustNow(g, c.get('sessionId'))) return c.json({error: 'Confirm with a passkey.'}, 403);
     const set = {offDigest: await digestOf(user, b.code), offSetAt: new Date()};
     await db.insert(guard).values({userId: user, ...set}).onConflictDoUpdate({target: guard.userId, set});
     return c.json({set: true});

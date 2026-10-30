@@ -819,8 +819,14 @@ trusted for one thing only:
 
 1. **GitHub, Google or Apple** say who a person is, the first time.
 2. **A passkey** is then the person's own key: from there on they sign in
-   without the provider, and a turn-off or a new device asks for it. A
-   device holds a lease on the person, never the person.
+   without the provider, and a turn-off asks for it. A device holds a lease
+   on the person, never the person: what would let someone in for good
+   (another device let in, a passkey or a provider added) or shut the
+   person out (one taken away) asks for a sign-in just now, by that very
+   session, a passkey's or the provider's within five minutes. A session's
+   token taken from a device, however long it lasts, does none of them, so
+   whoever holds it is gone once it is ended, with nothing of theirs left
+   behind on the account.
 3. **The Remote** keeps what is theirs and gives them a name, `ren`, their
    **username**, at the first sign-in, as a username is given anywhere: made
    of what the provider calls them (`Zoë Ada` is `zoe-ada`; a handle written

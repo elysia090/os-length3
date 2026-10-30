@@ -27,13 +27,14 @@ import {passkey} from '@better-auth/passkey';
 // The build of Better Auth without Kysely, its own database layer (700 KB of the Worker's 3.2 MB): Drizzle is this one's.
 import {betterAuth} from 'better-auth/minimal';
 import {APIError, createAuthMiddleware} from 'better-auth/api';
+import {eq} from 'drizzle-orm';
 import {drizzleAdapter} from 'better-auth/adapters/drizzle';
 import {bearer, deviceAuthorization, genericOAuth} from 'better-auth/plugins';
 import type {Hono, MiddlewareHandler} from 'hono';
 import {devOAuth} from './devoauth.ts';
 import {keyFor} from './keys.ts';
 import {nameFor} from './names.ts';
-import type {Vars} from './request.ts';
+import type {Db, Vars} from './request.ts';
 import * as schema from './schema.ts';
 
 /** The desktop app and l3, the only clients that may ask for a device code. */
@@ -98,6 +99,25 @@ export const AUTH_LIMITS: Record<string, {window: number; max: number} | false> 
   '/revoke-other-sessions': {window: 60, max: 10},
 };
 
+/** How long a sign-in stands for the person being at the device: five minutes. */
+const JUST_NOW = 5 * 60_000;
+type Guard = typeof schema.guard.$inferSelect | undefined;
+/** This very session signed in with a passkey within five minutes: the person is at the device just now. */
+export const passkeyJustNow = (g: Guard, sessionId: string) =>
+  !!g?.proofAt && g.proofSession === sessionId && Date.now() - g.proofAt.getTime() < JUST_NOW;
+/** This very session signed in, with a passkey or a provider, within five minutes. */
+export const signedJustNow = (g: Guard, sessionId: string) => passkeyJustNow(g, sessionId)
+  || (!!g?.signedAt && g.signedSession === sessionId && Date.now() - g.signedAt.getTime() < JUST_NOW);
+
+/**
+ * What would let someone in for good (another device's session, a passkey or a provider of theirs) or shut the
+ * person out (a passkey or a provider taken away): asked of a session signed in just now (signedJustNow), so a
+ * session's token taken from a device, however long it lasts, does none of them, and whoever holds it is gone
+ * when it is ended. Refused with `confirm`: the app signs in with a passkey and asks again.
+ */
+const HELD = ['/device/approve', '/passkey/generate-register-options', '/passkey/verify-registration', '/passkey/delete-passkey',
+  '/link-social', '/unlink-account'];
+
 /** A passkey ceremony that did not verify the person (PIN, biometrics), refused: a passkey is the whole sign-in. */
 const verifiedPerson = (ok: boolean | undefined) => {
   if (!ok) throw new APIError('UNAUTHORIZED', {message: 'This passkey did not verify you (a PIN or biometrics); use one that does'});
@@ -152,12 +172,15 @@ export function createAuth(c: AuthConfig) {
     ...(c.domain ? {databaseHooks: {user: {create: {after: async (u: {id: string}) => {
       try { await nameFor(c.db, u.id, c.domain!); } catch { /* given when first needed */ }
     }}}}} : {}),
+    // A provider's sign-in is a sign-in just now too (signedJustNow), never a passkey's.
     hooks: {
       after: createAuthMiddleware(async (ctx) => {
-        if (ctx.path !== '/passkey/verify-authentication') return;
+        const passkey = ctx.path === '/passkey/verify-authentication';
+        if (!passkey && !/^\/(oauth2\/)?callback\//.test(ctx.path)) return;
         const made = ctx.context.newSession;
         if (!made) return;
-        const proof = {proofSession: made.session.id, proofAt: new Date()};
+        const now = new Date();
+        const proof = {signedSession: made.session.id, signedAt: now, ...(passkey ? {proofSession: made.session.id, proofAt: now} : {})};
         await c.db.insert(schema.guard).values({userId: made.user.id, ...proof}).onConflictDoUpdate({target: schema.guard.userId, set: proof});
       }),
     },
@@ -196,7 +219,7 @@ export function createAuth(c: AuthConfig) {
 export type Auth = ReturnType<typeof createAuth>;
 
 /** Sign-in's own routes: Better Auth's, and the stand-in provider where it is offered. */
-export function signIn(d: {auth: Auth; providers: string[]; enter: boolean; /** The app's pages, which alone send the cookie (fromElsewhere). */ origins: string[]}, app: Hono<Vars>) {
+export function signIn(d: {auth: Auth; db: Db; providers: string[]; enter: boolean; /** The app's pages, which alone send the cookie (fromElsewhere). */ origins: string[]}, app: Hono<Vars>) {
   // For research no passkey is added: a passkey would let a link's holder back in after its key changed.
   if (d.enter) app.all('/api/auth/passkey/*', (c) => c.json({error: 'This Remote is entered by its link'}, 403));
   // Better Auth lists a person's sessions only for a session made within a day (its freshAge), but a
@@ -227,6 +250,15 @@ export function signIn(d: {auth: Auth; providers: string[]; enter: boolean; /** 
     forgetSessions();
     return c.json({status: true});
   });
+  for (const path of HELD) {
+    app.on(['GET', 'POST'], `/api/auth${path}`, async (c, next) => {
+      const {s, refused} = await askedBy(d.auth, c.req.raw, d.origins);
+      if (!s) return refused;
+      const [g] = await d.db.select().from(schema.guard).where(eq(schema.guard.userId, s.user.id)) as Guard[];
+      if (!signedJustNow(g, s.session.id)) return c.json({error: 'Confirm it is you first', confirm: true}, 403);
+      return next();
+    });
+  }
   app.on(['GET', 'POST'], '/api/auth/*', async (c) => {
     const res = await d.auth.handler(c.req.raw);
     // A session ended here is not taken as still there from what signedIn keeps.
