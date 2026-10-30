@@ -406,11 +406,12 @@ test('on a phone the issue in full takes the row, nothing in it wider than it, a
   await app.git.issues.getByRole('button', {name: 'Previous issue'}).click();
   const head = app.git.issue('#2 Feat：A second greeting for the evening');
   await expect(head).toBeVisible();
-  const card = await head.evaluate((e) => e.closest('.issue-card')!.getBoundingClientRect().toJSON() as DOMRect);
-  for (const deed of ['Close', 'Start']) {
-    const b = (await app.git.step(deed).boundingBox())!;
-    expect(b.x + b.width).toBeLessThanOrEqual(card.x + card.width);
-  }
+  // Its own deeds, measured with it at the same moment (the row may still be sliding to it, the one left giving its
+  // deeds up as this one is drawn with them).
+  await expect.poll(() => head.evaluate((e, deeds) => {
+    const card = e.closest('.issue-card')!, edge = card.getBoundingClientRect().right;
+    return deeds.every((d) => [...card.querySelectorAll('button')].some((b) => b.textContent === d && b.getBoundingClientRect().right <= edge + .5));
+  }, ['Close', 'Start'])).toBe(true);
   // A finger swiped to the left goes to the next issue, as its edge does.
   await app.git.issues.evaluate((section) => {
     const stage = section.querySelector('[aria-roledescription="carousel"]')!;
