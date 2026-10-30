@@ -2069,7 +2069,9 @@ written and then applied. It need not be chosen: while one works in a file of
 the center with the box empty and running, the box is that line's by itself,
 its pill saying the file and the caret's line (main.c:5) and its keys Ctrl G,
 so what the box does is what one is doing, and pressed into it holds that
-line; Run is a key away (Ctrl `, Alt+1, or its pill). Once neither the file
+line. With the keyboard still in the box (up as the Prompt with nothing
+written), a line of a file pressed is taken into it as Edit takes one, the
+Prompt going down: the keyboard stays where one writes; Run is a key away (Ctrl `, Alt+1, or its pill). Once neither the file
 nor the box has the keyboard, it is the mode one chose again; something
 written in it for Run keeps it Run. The box holds the line the file's caret is on, lit
 in the marker's yellow where it stands (under its words, from its start: not

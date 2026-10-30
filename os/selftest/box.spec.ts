@@ -233,3 +233,22 @@ test('working in a file with the box empty, the box is that line\'s by itself; R
   await expect(chip).toHaveAttribute('data-mode', 'run');
   await expect(box).toHaveValue('make');
 });
+
+test('the Prompt up with nothing written, a line of a file pressed comes into the box as Edit\'s, the Prompt going down', async ({app}) => {
+  const box = app.forge.promptBox, chip = app.main.locator('.prompt-chip'), file = app.forge.editor('README.md');
+  const up = app.page.locator('.work.bench.prompting');
+  await box.click();
+  await expect(up).toHaveCount(1);
+  await expect(chip).toHaveAttribute('data-mode', 'run');
+  const at = await placeIn(file, 1, 4);
+  await app.page.mouse.click(at.x, at.y);
+  await expect(box).toBeFocused();
+  await expect(up).toHaveCount(0);
+  await expect(chip).toHaveAttribute('data-mode', 'edit');
+  await expect(box).toHaveValue('# hello');
+  // Gone elsewhere, it is what one chose again.
+  await app.rail.go('git');
+  await app.rail.go('forge');
+  await expect(chip).toHaveAttribute('data-mode', 'run');
+  await expect(box).toHaveValue('');
+});

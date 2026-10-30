@@ -130,7 +130,9 @@ export class Box {
     // nowhere.
     this.#edit = new EditLine({box: this.prompt, main: p.main, dock: this.dock, repo: () => this.#repo,
       say: (text) => { if (this.#mode === 'edit') this.#say(text); }, moved: () => { if (this.#mode === 'edit') this.#pillSays(); },
-      active: () => this.#mode === 'edit' && document.activeElement === this.prompt});
+      active: () => this.#mode === 'edit' && document.activeElement === this.prompt,
+      idle: () => this.#mayEdit() && document.activeElement === this.prompt,
+      takeUp: () => { this.#auto = true; this.choose('edit', false, true); }});
     this.#menu = modeMenu(this.chip, {repo: () => this.#repo, at: () => this.#edit.where(), chosen: (m) => { this.choose(m); this.prompt.focus(); },
       // Put away without a choice, the keyboard is where one writes (it was in the box, or the pill was pressed to
       // choose what the box does next); only from somewhere else of its own does it go nowhere in particular.
@@ -236,17 +238,22 @@ export class Box {
   /** Edit taken up of itself while one works in a file: it goes back to the mode chosen once neither has the keyboard. */
   #auto = false;
 
+  /** Running, nothing written, in a repo: the box may be Edit of itself (up as the Prompt, it goes down for it). */
+  #mayEdit() {
+    return this.#mode === 'run' && !this.prompt.value && !!this.#repo && !this.prompt.disabled;
+  }
+
   /**
    * Working in a file of the center, with the box empty and running, the box is that line's of itself: Edit, its pill
    * saying the file and the line the caret is on, so what the box does is what one is doing (pressed into, it holds
-   * that line). Run is a key away (Ctrl+`, or its pill). Once neither the file nor the box has the keyboard, it is
-   * what one chose again.
+   * that line); with the keyboard still in it (the Prompt up and empty), a line pressed is taken into it as Edit takes
+   * one, the Prompt going down (edit-box.ts). Run is a key away (Ctrl+`, or its pill). Once neither the file nor the
+   * box has the keyboard, it is what one chose again.
    */
   #byItself() {
     const {main} = this.#p;
     main.addEventListener('focusin', (event) => {
-      if (!(event.target as Element).classList?.contains('code-edit')) return;
-      if (this.#mode !== 'run' || this.prompt.value || !this.#repo || this.prompt.disabled || this.#up) return;
+      if (!(event.target as Element).classList?.contains('code-edit') || !this.#mayEdit() || this.#up) return;
       this.#auto = true;
       this.choose('edit', false, true);
     });
