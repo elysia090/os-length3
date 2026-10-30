@@ -17,7 +17,6 @@ export default {
   'There is a board named {name} already': '{name}という板はもうあります',
   'What it is about': '何についての板か',
   'Make': '作る',
-  'A board is one thing to talk about, with a TODO kept together: a trip, a release, a reading group.': '板はひとつの話題です。話して、TODO をみんなで持ちます。旅行、リリース、読書会のように。',
   // The same, broken where the sentence is.
   'A board is one thing to talk about, with a TODO kept together:': '板はひとつの話題です。話して、TODO をみんなで持ちます。',
   'a trip, a release, a reading group.': '旅行、リリース、読書会のように。',
@@ -129,7 +128,6 @@ export default {
   '{server}, new posts': '{server}（新しい投稿）',
   'Seen by everyone': '全体に公開',
   'Guests can write': 'ゲストも書ける',
-  'It goes to whoever came next.': 'オーナーは次に入った人に移ります。',
   'Leave': '出る',
   'Delete': '消す',
   'Its people, boards and repos': '人・板・repo の設定',
@@ -163,5 +161,4 @@ export default {
   'Servers': 'サーバー',
   '{name}, new posts': '{name}、新しい投稿あり',
   'Signed in, you make servers: boards for the people in them.': 'サインインすると、サーバーを作れます。そこにいる人たちのボードです。',
-  'People you know, and the boards you keep together': '知り合いと、一緒に使う板',
 } as Record<string, string>;

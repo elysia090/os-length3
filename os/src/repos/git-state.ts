@@ -12,7 +12,7 @@ export interface Standing { work: Work | null; changes: Change[]; uncommitted: n
 /** The issue's change (the latest record of it). */
 export const changeFor = (s: Standing | undefined, i: Issue) => s?.changes.find((c) => c.issue === issuePath(i)) ?? null;
 /** Merged into main: done. */
-export const isMerged = (s: Standing | undefined, i: Issue) => changeFor(s, i)?.state === 'merged';
+const isMerged = (s: Standing | undefined, i: Issue) => changeFor(s, i)?.state === 'merged';
 /** Still to do: neither merged nor closed. */
 export const isOpen = (s: Standing | undefined, i: Issue) => !isMerged(s, i) && i.closed === null;
 

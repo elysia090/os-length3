@@ -4,7 +4,7 @@
 // where that is too slow, lines are counted as a multiset instead (still
 // right for appends and removals, only a move reads as both).
 
-export type Op = {kind: 'same' | 'add' | 'del'; text: string};
+type Op = {kind: 'same' | 'add' | 'del'; text: string};
 
 const split = (t: string) => (t === '' ? [] : t.replace(/\n$/, '').split('\n'));
 const CAP = 2_000_000;

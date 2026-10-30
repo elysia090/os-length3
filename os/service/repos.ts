@@ -115,10 +115,10 @@ export function applyDiff(draft: Tree, set: Tree, remove: string[]): Tree {
 }
 
 /** A file's mode as a client may send one: permission bits only, with an execute bit (a plain file has none kept). */
-export const validMode = (m: unknown): m is number => typeof m === 'number' && Number.isInteger(m) && m >= 0 && m <= 0o777 && (m & 0o111) !== 0;
+const validMode = (m: unknown): m is number => typeof m === 'number' && Number.isInteger(m) && m >= 0 && m <= 0o777 && (m & 0o111) !== 0;
 
 /** The modes kept beside `tree`: only its files' (a folder, or a path it does not name, keeps none). */
-export function modesFor(tree: Tree, modes: Modes): Modes {
+function modesFor(tree: Tree, modes: Modes): Modes {
   const out: Modes = {};
   for (const [p, m] of Object.entries(modes)) if (typeof tree[p] === 'string' && validMode(m)) out[p] = m;
   return out;
@@ -129,7 +129,7 @@ export function modesFor(tree: Tree, modes: Modes): Modes {
  * takes its mode from them, none there being a plain file's. One that sends none (an older client) cannot
  * say, so a path it sets keeps the mode it had (an execute bit is never dropped by not being known of).
  */
-export function applyModes(was: Modes, tree: Tree, set: Tree, sent: Modes | undefined): Modes {
+function applyModes(was: Modes, tree: Tree, set: Tree, sent: Modes | undefined): Modes {
   const out: Modes = {...was};
   if (sent) for (const p of Object.keys(set)) { if (p in sent) out[p] = sent[p]; else delete out[p]; }
   return modesFor(tree, out);

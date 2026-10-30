@@ -21,7 +21,7 @@ const sizeAndWhen = (size: number, modified: number) => `${bytes(size)} · ${t('
  * Why `name` stays on this device now (no Remote, something running in its Prompt…), or null when it can be freed
  * (space.ts). A Prompt waiting at its prompt line does not keep it: the gear stops it first, saying so.
  */
-export async function whyKept(name: string): Promise<string | null> {
+async function whyKept(name: string): Promise<string | null> {
   const u = await readSpace(allSessions().filter(([, s]) => s.running && s.runs.at(-1)?.ms === null).map(([repo]) => repo));
   const it = u.items.find((i) => i.id === `repo:${name}`);
   return !it ? t('It is only on the Remote: nothing of it is here to free') : it.room === 'Keep' ? it.why : null;
@@ -83,7 +83,7 @@ function newRepoCard(ctx: Context): HTMLElement {
   return card;
 }
 
-export interface RepoList {
+interface RepoList {
   element: HTMLElement;
   /** Read the repos again; `light` brings that card into view and lights it a moment. */
   refresh(light?: string | null): Promise<void>;

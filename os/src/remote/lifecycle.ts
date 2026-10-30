@@ -81,7 +81,7 @@ const LASTING = new Set([400, 413, 422, 507]);
  * When to try `e`'s send again, the n-th time: when the Remote said (Retry-After), a refusal that stays after
  * WAIT, anything else (offline, busy) sooner each time from 2 s to 5 minutes; give or take a fifth.
  */
-export const againIn = (e: unknown, n: number): number =>
+const againIn = (e: unknown, n: number): number =>
   jitter(Math.min(LONGEST, retryAfter(e) ?? (e instanceof RemoteError && LASTING.has(e.status) ? WAIT : Math.min(WAIT, 2000 * 2 ** n))));
 /** How soon a change is sent: soon enough to beat closing the tab, late enough to gather keystrokes. */
 const SOON = 400;

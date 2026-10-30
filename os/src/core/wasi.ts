@@ -24,7 +24,7 @@ const MAX_HOPS = 40;
  * value, not an Error, as it is an answer and not a fault. An Error takes the stack each time it is made (through the
  * core's wasm frames), which was two thirds of what the worker spent reading a repo's files for a search.
  */
-export class Errno {
+class Errno {
   readonly code: number;
   constructor(code: number) { this.code = code; }
   get message() { return `errno ${this.code}`; }
@@ -38,7 +38,7 @@ export class Exit extends Error {
 }
 
 interface Times { ino: number; nlink: number; atime: bigint; mtime: bigint; ctime: bigint }
-export interface Dir extends Times { kind: 'dir'; entries: Map<string, Node>; parent: Dir; name: string }
+interface Dir extends Times { kind: 'dir'; entries: Map<string, Node>; parent: Dir; name: string }
 export interface File extends Times { kind: 'file'; data: Uint8Array; size: number }
 export interface Link extends Times { kind: 'link'; target: string }
 export type Node = Dir | File | Link;
@@ -382,7 +382,7 @@ interface Open {
   listing?: [string, Node][];
 }
 
-export interface WasiOptions {
+interface WasiOptions {
   fs: MemoryFS;
   env?: Record<string, string>;
   args?: string[];

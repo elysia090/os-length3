@@ -141,7 +141,7 @@ export function pluginArea(): HTMLElement {
 }
 
 /** What a row is, in a round badge at its head: who wrote (their initial, on one of four soft tints, the same for the same name), a file, a board. */
-export type Badge = {who: string} | 'file' | 'board';
+type Badge = {who: string} | 'file' | 'board';
 function badge(b: Badge): HTMLElement {
   if (b === 'file') return h('span', {class: 'lately-badge', 'aria-hidden': 'true'}, icon('file'));
   if (b === 'board') return h('span', {class: 'lately-badge', 'aria-hidden': 'true'}, '#');

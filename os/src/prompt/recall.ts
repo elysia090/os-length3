@@ -61,7 +61,7 @@ export class Recall {
 }
 
 /** A path being written before the caret: where it starts, its directory in the repo, and the start of its name. */
-export interface PathWord { start: number; dir: string; name: string }
+interface PathWord { start: number; dir: string; name: string }
 
 /** What ends a word in sh, as far as completing a path goes. */
 const BREAK = /[\s;|&<>()'"`=]/;

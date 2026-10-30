@@ -96,7 +96,7 @@ async function digest(s: string): Promise<string> {
   return hex(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s))));
 }
 
-export interface ServerDeps {
+interface ServerDeps {
   db: Db;
   /** This Remote's own domain: a server's name is claimed on it, or on a domain one of its people holds. */
   domain: string;

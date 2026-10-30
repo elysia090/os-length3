@@ -387,7 +387,7 @@ export function pop(el: Element, by = .16, ms = 380) {
 }
 
 /** A figure counted up from nothing to what it says ("7.9 MB", "3"), its unit kept, landing as the camera does. */
-export function countUp(el: HTMLElement, ms = 560) {
+function countUp(el: HTMLElement, ms = 560) {
   const text = el.textContent ?? '';
   const m = /^(\d+(?:\.\d+)?)(.*)$/s.exec(text);
   if (still() || !m) return;

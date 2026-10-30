@@ -6,7 +6,7 @@ import {core} from '../app/host.ts';
 import {home, onElsewhere} from '../core/client.ts';
 import shared from '../../shared/templates.json' with {type: 'json'};
 
-export interface RepoSummary {
+interface RepoSummary {
   name: string;
   files: number;
   bytes: number;
@@ -115,7 +115,7 @@ class CoreStore implements RepoStore {
  * Base64 as bytes: the engine's own where it has it, else each character's code laid into one array (not a
  * function called for each, which took a Prompt's copy of a large file a second).
  */
-export function unbase64(text: string): Uint8Array {
+function unbase64(text: string): Uint8Array {
   const native = Uint8Array as unknown as {fromBase64?: (s: string) => Uint8Array};
   if (native.fromBase64) return native.fromBase64(text);
   const s = atob(text), out = new Uint8Array(s.length);

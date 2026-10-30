@@ -27,7 +27,7 @@ const heard = new Set<(paths: string[]) => void>();
 let environment: Record<string, string> = {LENGTH3_HOME: '/data', LENGTH3_DEVICE: deviceOf(globalThis.navigator?.userAgent ?? '')};
 
 /** This device in words a file's name can carry ("Chrome Linux"): what a file both sides changed is kept beside under. */
-export function deviceOf(ua: string): string {
+function deviceOf(ua: string): string {
   const os = /iPhone|iPad/.test(ua) ? 'iOS' : /Android/.test(ua) ? 'Android' : /Mac OS X/.test(ua) ? 'macOS' : /Windows/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : '';
   const browser = /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : '';
   return [browser, os].filter(Boolean).join(' ') || 'browser';

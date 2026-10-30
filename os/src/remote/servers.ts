@@ -24,7 +24,7 @@ export interface Person { address: string; owner: boolean; id?: string }
 export interface Board { id: string; server: {id: string; name: string; address: string}; name: string; open: boolean; guests: boolean; people?: Person[] }
 /** A post as the Remote gives it: `by` is all a reader is shown of who wrote it. */
 export interface Post { id: string; by: string; body: string; at: number; guest?: boolean; mine?: boolean; mayTakeDown?: boolean }
-export interface OpenBoard { id: string; name: string; server: string; guests: boolean }
+interface OpenBoard { id: string; name: string; server: string; guests: boolean }
 interface Read { posts: Post[]; more: boolean }
 
 /** The most a post says, as the Remote holds it to. */
@@ -157,7 +157,7 @@ export interface TodoWays {
 }
 const remoteTodos: TodoWays = {put: putTodo, drop: dropTodo};
 
-export interface KeeperOptions {
+interface KeeperOptions {
   ways?: TodoWays;
   /** Why what was written is not on the Remote yet; it is sent again by itself. */
   trouble?: (why: string) => void;
@@ -272,7 +272,7 @@ export interface RepoSeen { name: string; seen: Seen; servers: {id: string; name
 /** A repo shown in a server: whose, and the name everyone sees it as, if they do. */
 export interface ShownRepo { owner: string; ownerId?: string; name: string; at: number | null; mine: boolean; as: string | null; asServer: string | null }
 /** A repo as seen by someone not its owner: what it was last pushed to. `owner` only where whose it is may be told. */
-export interface SeenRepo { as: string; owner?: string; title: string | null; at: number | null; tree: Record<string, string | null> }
+interface SeenRepo { as: string; owner?: string; title: string | null; at: number | null; tree: Record<string, string | null> }
 
 export const seenAll = askedOnce(() => call<RepoSeen[]>('/v1/seen'));
 /** `as`: a server's id, or 'me' (by default the first server it is shown in, else me). */

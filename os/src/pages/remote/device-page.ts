@@ -23,7 +23,7 @@ export function devicePage(given: string): HTMLElement {
 }
 
 /** Where the steps are: the code to type, which device asks (to let in or not), or what came of it. */
-export type JoinStep = 'code' | 'asking' | 'done';
+type JoinStep = 'code' | 'asking' | 'done';
 
 /**
  * A device's code taken in `body`, step by step, as the page its link opens does it and Remote's Devices: the code

@@ -145,7 +145,7 @@ export const release = (address: string) => json<{address: string; until: number
 export const domainRecord = (domain: string) => json<{name: string; type: string; value: string; found: boolean}>(`/v1/inbox/domains/${enc(domain.trim().toLowerCase())}`);
 
 /** A domain must publish this before an address on it can be claimed. */
-export class Published extends Error {
+class Published extends Error {
   readonly doc: unknown;
   constructor(doc: unknown) { super(t('The domain does not name this account yet')); this.doc = doc; }
 }

@@ -6,7 +6,7 @@
 
 import {hunks, lineOps, type DiffLine} from './linediff.ts';
 
-export type Came = 'same' | 'take' | 'ask';
+type Came = 'same' | 'take' | 'ask';
 
 export class Held {
   /** What the store holds as far as this editor knows (what it last read or wrote). */

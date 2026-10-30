@@ -48,7 +48,7 @@ const LINGER = 1200;
 const expandedPaths = new Set<string>(['/root']);
 const SYSTEM = '/:system';
 
-export interface FileTreeEvents {
+interface FileTreeEvents {
   /** A repo or a path inside one was chosen; path '' is the repo itself. `file` when it is a file. */
   choose(repo: string, path: string, file: boolean): void;
   /** The repo Forge shows, marked in the tree. */

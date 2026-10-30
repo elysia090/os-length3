@@ -51,7 +51,7 @@ export const connection = (): Connection | null => {
  * in time), it is there but not taking requests (a gateway's 502, 503 or 504), or what answered is not its reply
  * (a page, as a host's fallback or a proxy gives, or words that do not read as its JSON).
  */
-export type Trouble = 'unreached' | 'unavailable' | 'malformed';
+type Trouble = 'unreached' | 'unavailable' | 'malformed';
 
 export class RemoteError extends Error {
   readonly status: number;
@@ -302,7 +302,7 @@ const SIGNING_WITH = 'length3.signing-with';
 let signInTrouble = '';
 export const signInTroubleNow = (): string => signInTrouble;
 /** A sign-in tried again: what the last one said is past. */
-export const tryingAgain = () => { signInTrouble = ''; };
+const tryingAgain = () => { signInTrouble = ''; };
 
 // ---- how this browser came in before: the first time a provider, after it a passkey ----
 

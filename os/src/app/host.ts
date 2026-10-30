@@ -6,7 +6,7 @@ import {ask, type Answer, type Ask} from '../core/client.ts';
 import {RemoteError} from '../remote/connection.ts';
 import {invoke, listen} from './tauri.ts';
 
-export interface Capacity {
+interface Capacity {
   /** Bytes the measured layer can hold in total. */
   total: number;
   /** Bytes still available to it. */
@@ -80,15 +80,9 @@ export async function persisted(): Promise<boolean | null> {
   try { return await navigator.storage?.persisted?.() ?? null; } catch { return null; }
 }
 
-/** Ask the browser to keep this site's data (once work exists to keep). */
-export async function askToKeep(): Promise<boolean | null> {
-  if (isNative) return true;
-  try { return await navigator.storage?.persist?.() ?? null; } catch { return null; }
-}
-
 // ---- the distribution's root on this machine (app only; core/src/root.rs, launch.rs) ----
 
-export interface Installed { name: string; version: string; sha256: string; files: number; bytes: number; distro?: string }
+interface Installed { name: string; version: string; sha256: string; files: number; bytes: number; distro?: string }
 export interface RootStatus {
   current: Installed | null;
   held: [Installed, boolean][];

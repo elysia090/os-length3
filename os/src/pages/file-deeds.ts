@@ -16,7 +16,7 @@ export const joined = (dir: string, name: string) => (dir ? `${dir}/${name}` : n
 /** A path in a repo as its folder and its name. */
 export const split = (path: string) => (path.includes('/') ? [path.slice(0, path.lastIndexOf('/')), path.slice(path.lastIndexOf('/') + 1)] : ['', path]);
 
-export interface Deeds {
+interface Deeds {
   repo: string;
   /** Its path in the repo ('' for the repo itself), the name it is shown by, and whether it is a folder. */
   path: string;

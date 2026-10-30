@@ -30,7 +30,7 @@ import {body, ms, type Db, type Vars} from './request.ts';
 import {session, ssh} from './schema.ts';
 
 /** To whom a device listens: from itself only, or from its network's PCs too. */
-export const SCOPES = ['device', 'network'] as const;
+const SCOPES = ['device', 'network'] as const;
 export type Scope = typeof SCOPES[number];
 
 /** The scope a device says, checked: absent is `device`; null when it is not one. */

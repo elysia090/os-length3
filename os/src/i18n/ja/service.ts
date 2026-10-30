@@ -69,8 +69,6 @@ export default {
   'Too many servers': 'サーバーが多すぎます',
   'Too many servers made today': '今日作ったサーバーが多すぎます',
   'No such server of yours': 'あなたのサーバーにはありません',
-  'Only its owner renews its name': '名前を更新できるのはオーナーだけです',
-  'It has no name on this Remote to renew': 'この Remote に更新する名前がありません',
   'Nothing of yours to bring back': '戻せるものはありません',
   'Only its owner renames a server': 'サーバーの名前を変えられるのはオーナーだけです',
   'Only its owner removes a server': 'サーバーを消せるのはオーナーだけです',

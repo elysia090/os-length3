@@ -34,7 +34,7 @@ export type Seen = 'private' | 'servers' | 'everyone';
 
 type Public = {face: string; name: string; repo: string; serverId: string | null};
 
-export interface SeenDeps {
+interface SeenDeps {
   db: Db;
   /** Where file contents are kept; none, and a file is not to be seen (bucket.ts). */
   bucket: Bucket | null;

@@ -43,12 +43,9 @@ export default {
   'Could not load': '読み込めませんでした',
 
   // repos.ts
-  '{path}: a file is in the way': '{path}: 途中がファイルです',
-  '{path}: a folder is there': '{path}: フォルダーがあります',
 
   // repo templates (shared/templates.json labels)
   'Standard': '標準',
-  'Minimal': '最小',
 
   // Words several pages share
   'Commit': 'Commit',

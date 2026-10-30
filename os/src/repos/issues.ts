@@ -49,7 +49,7 @@ export const issueName = (i: Pick<Issue, 'n'>): string => (i.n === null ? '' : `
 export const issuePath = (i: Pick<Issue, 'file'>): string => `issue/${i.file}`;
 
 /** The issue a path in a repo keeps (issue/007.md: 7), or null for any other file. */
-export const issueAt = (path: string): number | null => {
+const issueAt = (path: string): number | null => {
   const m = /^issue\/([^/]+)$/.exec(path);
   return m ? numberOf(m[1]) : null;
 };

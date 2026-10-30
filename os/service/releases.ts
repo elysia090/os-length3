@@ -20,22 +20,22 @@ export interface Pinned {
   type: string;
 }
 
-export const DESKTOP_KINDS = {
+const DESKTOP_KINDS = {
   deb: 'application/vnd.debian.binary-package',
   // freedesktop.org's shared-mime-info name for it (IANA has none).
   appimage: 'application/vnd.appimage',
 } as const;
-export type DesktopKind = keyof typeof DESKTOP_KINDS;
-export type DesktopPins = Record<string, Partial<Record<DesktopKind, {file: string; bytes: number; sha256: string}>>>;
+type DesktopKind = keyof typeof DESKTOP_KINDS;
+type DesktopPins = Record<string, Partial<Record<DesktopKind, {file: string; bytes: number; sha256: string}>>>;
 
 const HEX = /^[0-9a-f]{64}$/;
 const tagOf = (version: string) => `os-length3-linux-v${version}`;
 
 export const rootKey = (sha256: string) => `os/${sha256}`;
-export const desktopKey = (file: string) => `desktop/${file}`;
+const desktopKey = (file: string) => `desktop/${file}`;
 
 /** A root as core/src/root.rs pins it: its version, and l3's index for the browser made from it (`web`, its sha256; '' before l3 had one). */
-export interface PinnedRoot extends Pinned { version: string; web: string }
+interface PinnedRoot extends Pinned { version: string; web: string }
 
 /** The roots core/src/root.rs pins, newest first, as RELEASES lists them. */
 export function pinnedRoots(rootRs: string): PinnedRoot[] {

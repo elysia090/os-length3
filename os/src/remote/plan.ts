@@ -12,14 +12,14 @@ import {t, tn} from '../i18n.ts';
 import {api, json, leaveFor, RemoteError} from './connection.ts';
 
 /** The tiers one pays for, the least first, and free before them. */
-export const PAID_TIERS = ['go', 'pro', 'max'] as const;
+const PAID_TIERS = ['go', 'pro', 'max'] as const;
 export type PaidTier = typeof PAID_TIERS[number];
 export type Tier = 'free' | PaidTier;
 export const isPaidTier = (v: unknown): v is PaidTier => PAID_TIERS.includes(v as PaidTier);
 /** A tier's name in a sentence: its own (Go, Pro, Max), or the free plan in the language spoken. */
 export const tierName = (tier: Tier): string => (tier === 'free' ? t('Free plan') : {go: 'Go', pro: 'Pro', max: 'Max'}[tier]);
 /** A tier as its card and the Plan's head name it: Free plan, Go plan, Pro plan, Max plan. */
-export const planName = (tier: Tier): string => (tier === 'free' ? t('Free plan') : t('{tier} plan', {tier: tierName(tier)}));
+const planName = (tier: Tier): string => (tier === 'free' ? t('Free plan') : t('{tier} plan', {tier: tierName(tier)}));
 
 /** What an account may keep on the Remote; null, as many as fit. */
 export interface Allowance { repos: number | null; bytes: number; names: number | null }
@@ -143,7 +143,7 @@ export interface PlanView {
 }
 
 /** What paid adds, the same words wherever they are said. */
-export const PAID_ADDS = () => [t('Keep more than the free allowance on the Remote'), t('Make servers: boards and talk with people you know'),
+const PAID_ADDS = () => [t('Keep more than the free allowance on the Remote'), t('Make servers: boards and talk with people you know'),
   t('Names on your own domain (name@yourdomain), and more names here')];
 
 /** A size as a tier says it: 50 GB, 256 GB, 100 MB (no .0 on a whole one). */
@@ -242,7 +242,7 @@ export async function openPlan(kind: 'checkout' | 'portal', o: {tier?: PaidTier;
 }
 
 /** Why the Remote would not open Checkout or the portal, in the app's words: by the tier it names, else as it said it. */
-export function planError(status: number, body: {error?: string; tier?: unknown; manage?: boolean}): string {
+function planError(status: number, body: {error?: string; tier?: unknown; manage?: boolean}): string {
   if (isPaidTier(body.tier)) {
     const tier = tierName(body.tier);
     if (status === 409 && body.manage) return t('This account is on {tier} already; another tier is chosen under Manage the plan', {tier});

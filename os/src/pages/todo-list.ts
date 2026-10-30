@@ -83,7 +83,7 @@ export function kindLine(text: string): Node[] {
   return m ? [document.createTextNode(m[1]), kindColon(), document.createTextNode(text.slice(m[0].length))] : [document.createTextNode(text)];
 }
 
-export interface TodoList {
+interface TodoList {
   element: HTMLElement;
   /** Clear done, for the box's head beside what is left: there while an item is done, and never when shown, not written. */
   clear: HTMLButtonElement;
@@ -91,7 +91,7 @@ export interface TodoList {
   update(list: todo.Todo[]): void;
 }
 
-export interface TodoOptions {
+interface TodoOptions {
   /** Shown, not written: no field takes text, no mark is pressed. */
   readOnly?: boolean;
   /** How many are left of how many, each time it changes. */

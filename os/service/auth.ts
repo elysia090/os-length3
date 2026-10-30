@@ -42,7 +42,7 @@ const DEVICE_CLIENTS = ['length3-app', 'l3'] as const;
 
 export interface Provider { clientId: string; clientSecret: string }
 
-export interface AuthConfig {
+interface AuthConfig {
   // Drizzle database of any Postgres driver (Neon in production, PGlite in tests).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: any;
@@ -106,7 +106,7 @@ type Guard = typeof schema.guard.$inferSelect | undefined;
 export const passkeyJustNow = (g: Guard, sessionId: string) =>
   !!g?.proofAt && g.proofSession === sessionId && Date.now() - g.proofAt.getTime() < JUST_NOW;
 /** This very session signed in, with a passkey or a provider, within five minutes. */
-export const signedJustNow = (g: Guard, sessionId: string) => passkeyJustNow(g, sessionId)
+const signedJustNow = (g: Guard, sessionId: string) => passkeyJustNow(g, sessionId)
   || (!!g?.signedAt && g.signedSession === sessionId && Date.now() - g.signedAt.getTime() < JUST_NOW);
 
 /**
@@ -294,7 +294,7 @@ export function credentialOf(headers: Headers): {kind: 'bearer' | 'cookie'; key:
  * ASVS 4.2.2, 13.2.3). The one rule for every route that takes the cookie: /v1 (signedIn) and the session routes
  * the Remote answers itself beside Better Auth's (signIn), which Better Auth's own origin check never sees.
  */
-export function fromElsewhere(cred: {kind: 'bearer' | 'cookie'}, req: Request, origins: string[]): boolean {
+function fromElsewhere(cred: {kind: 'bearer' | 'cookie'}, req: Request, origins: string[]): boolean {
   if (cred.kind === 'bearer' || origins.includes(req.headers.get('Origin') ?? '')) return false;
   if (req.method !== 'GET' && req.method !== 'HEAD') return true;
   const site = req.headers.get('Sec-Fetch-Site');
@@ -315,7 +315,7 @@ async function askedBy(auth: Auth, req: Request, origins: string[]) {
 /** Sessions signedIn looked up, kept a few seconds by this isolate (the Worker's: 10 s). */
 const kept = new Map<string, {until: number; user: string; session: string; name: string; ends: number}>();
 /** Let go of every session kept: one was ended (sign-out, revoke) and may be among them. */
-export const forgetSessions = () => kept.clear();
+const forgetSessions = () => kept.clear();
 
 /**
  * Who is asking, or 401: a bearer token (the app, l3, the web once it took its token), or the session

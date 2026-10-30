@@ -24,7 +24,7 @@ export interface Store {
   put(p: Pinned, file: string): Promise<void>;
 }
 
-export interface Source {
+interface Source {
   /** The GitHub API (https://api.github.com), the repository (owner/name) and a token that can read its releases. */
   api: string;
   repo: string;

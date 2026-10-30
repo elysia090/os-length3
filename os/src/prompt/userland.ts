@@ -48,7 +48,7 @@ export interface About {
   index: {path: string; sha256: string; size: number};
   translator: {name: string; version: string};
 }
-export interface Translation { path: string; sha256: string; elf: Blob; wasm: Blob }
+interface Translation { path: string; sha256: string; elf: Blob; wasm: Blob }
 export interface Index {
   name: string; version: string; sha256: string; codec: string;
   packs: {name: string; owner: string; bytes: number}[];

@@ -315,7 +315,7 @@ export async function apply(tx: Db, event: {type: string; created: number; data:
   }
 }
 
-export interface PlanDeps { db: Db; plans: Plans; origins: string[]; appOrigin?: string; now?: () => number }
+interface PlanDeps { db: Db; plans: Plans; origins: string[]; appOrigin?: string; now?: () => number }
 
 /**
  * `back` with how the trip to Stripe went, for the page it comes back to: ?plan=paid (and the tier) or

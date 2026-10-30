@@ -36,7 +36,7 @@ export function paced(ms: number, at = Date.now()): number {
   return quiet < IDLE ? ms : Math.max(ms, quiet < AWAY ? 60_000 : AWAY);
 }
 
-export interface EveryOptions {
+interface EveryOptions {
   /** Still wanted (its element still on screen): once false, it ends. */
   alive?: () => boolean;
   /** While the page is hidden, this often instead (0, the default: not at all until it is shown again). */

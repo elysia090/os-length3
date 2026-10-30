@@ -17,7 +17,7 @@ import {plan as readPlan} from '../../remote/plan.ts';
  * Share again. Going public is the server's (its gear); it stays as it is here.
  */
 /** Where Share's list leads when there is no server to show a repo in: Server, to make one, or the plan. */
-export interface ShareWays {
+interface ShareWays {
   /** Server brought out, where a first server is made. */
   makeServer(): void;
   /** Remote's Plan: making a server is paid there. */

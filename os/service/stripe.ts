@@ -113,7 +113,7 @@ function same(a: string, b: string): boolean {
 }
 
 /** How far a signature's time may be from now: Stripe's own libraries take five minutes. */
-export const TOLERANCE = 300;
+const TOLERANCE = 300;
 
 /**
  * Whether `payload` (the body exactly as it came) was signed with `secret`:

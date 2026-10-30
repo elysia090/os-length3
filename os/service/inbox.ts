@@ -43,7 +43,7 @@ export const INBOX = {
 const DOMAIN = /^(?=.{3,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 const TYPES = ['message', 'review', 'question', 'run'] as const;
 
-export interface InboxDeps {
+interface InboxDeps {
   db: Db;
   /** This Remote's own domain: names claimed here are name@domain. */
   domain: string;
@@ -84,7 +84,7 @@ export function parseAddress(a: string): {name: string; domain: string} | null {
 type Address = typeof address.$inferSelect;
 
 /** What servers.ts asks of names: whether an account's proof for a domain is in its DNS now (null: not readable now). */
-export interface Proofs { proven(owner: string, domain: string): Promise<boolean | null> }
+interface Proofs { proven(owner: string, domain: string): Promise<boolean | null> }
 
 export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
   const db = d.db;

@@ -7,7 +7,7 @@
 
 import {t} from '../i18n.ts';
 
-export interface Expect { size?: number; sha256?: string }
+interface Expect { size?: number; sha256?: string }
 
 export interface Progress {
   /** Bytes received so far; may go back to 0 when a server cannot continue. */

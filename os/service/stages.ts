@@ -12,9 +12,9 @@ import {copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync} from 
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 
-export interface Journal { entries: {idx: number; when: number; tag: string}[] }
+interface Journal { entries: {idx: number; when: number; tag: string}[] }
 
-export const CONTRACT = /^\d{4}_contract_/;
+const CONTRACT = /^\d{4}_contract_/;
 
 /** How many of the journal's first entries run before the Worker, the newest applied being at `applied` (0: none). */
 export function beforeWorker(j: Journal, applied: number): number {

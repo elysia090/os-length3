@@ -2,7 +2,7 @@
 
 import {currentLang, t} from '../i18n.ts';
 
-export type Child = Node | string | null | undefined | false;
+type Child = Node | string | null | undefined | false;
 
 export function h(tag: string, props: Record<string, string> = {}, ...children: Child[]): HTMLElement {
   const el = document.createElement(tag);

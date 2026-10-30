@@ -83,7 +83,7 @@ export function drawMarks(area: HTMLTextAreaElement, marks: Mark[], layer = 'edi
 }
 
 /** The mark of line `line` (of lines starting at `starts`), soft: the caret's line, or the line pointed at. */
-export const lineMark = (starts: number[], line: number): Mark[] => [{from: starts[line], to: starts[line], kind: 'lines'}];
+const lineMark = (starts: number[], line: number): Mark[] => [{from: starts[line], to: starts[line], kind: 'lines'}];
 
 /** `el` (a mark on the file) brought into view if it is out of it, a third down what is clear of the box (`clear`, its top). */
 export function bring(el: HTMLElement, area: HTMLTextAreaElement, clear: number) {

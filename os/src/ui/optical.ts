@@ -5,7 +5,7 @@
 // by a length measured once in the face as it is here, the same for the pill's words and what is written beside them.
 
 /** How far down (px) the capitals of a line set in `font` stand from the line's middle; 0 where it cannot be said. */
-export function capDrop(font: string): number {
+function capDrop(font: string): number {
   const line = document.createElement('div'), base = document.createElement('span'), cap = document.createElement('span');
   line.style.cssText = `position: fixed; left: -999px; top: 0; visibility: hidden; white-space: pre; font: ${font}`;
   base.style.cssText = 'display: inline-block; width: 0; height: 0';

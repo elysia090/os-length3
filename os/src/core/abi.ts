@@ -4,7 +4,7 @@
 import type {WASI} from './wasi.ts';
 
 /** A request as the core sends it; headers are pairs, in its order. */
-export interface Head { method: string; url: string; headers: [string, string][]; timeout: number }
+interface Head { method: string; url: string; headers: [string, string][]; timeout: number }
 /** Status 0: not reached, and the body says why. */
 export interface Sent { status: number; body: Uint8Array }
 export type Send = (head: Head, body: Uint8Array) => Sent;
