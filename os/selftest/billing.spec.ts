@@ -13,7 +13,7 @@ test('a tier paid for with 4242 in Checkout is the plan shown as yours after, it
   // Subscribe asks what is bought first: the tier, what it costs, how it is billed and ends.
   await app.remote.tier('Pro plan').getByRole('button', {name: 'Subscribe'}).click();
   const ask = app.remote.asking('Pro');
-  await expect(ask).toContainText('$14.00 a month');
+  await expect(ask).toContainText('$14 a month');
   await expect(ask).toContainText('Renews automatically until you cancel');
   await ask.getByRole('button', {name: 'Continue to payment'}).click();
 
@@ -51,8 +51,9 @@ test('a card that is declined is said under it in Checkout and nothing is sent; 
   await app.page.getByRole('link', {name: 'Back to length3'}).click();
   await app.settled();
   await expect(app.remote.told).toHaveText('Payment was cancelled: nothing was charged, and the plan is as it was.');
-  await expect(app.remote.plan.getByText(/^Free plan · /)).toBeVisible();
+  // Free as it was: its own card current, nothing said again beside the plans.
   await expect(app.remote.tier('Free plan')).toHaveAttribute('aria-current', 'true');
+  await expect(app.remote.plan.getByText(/^Free plan · /)).toHaveCount(0);
 });
 
 test('3-D Secure with 3155: Fail goes back to Checkout and says so with nothing paid; Complete pays', async ({planSignedIn: app}) => {

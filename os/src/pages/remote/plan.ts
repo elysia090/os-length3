@@ -48,12 +48,16 @@ function meterTrack(m: Meter): HTMLElement {
 /**
  * One tier as a small card: its name, what it costs, what it keeps (and, when the account keeps more than it does,
  * that what is there stays), its one deed at the right of its foot (`press`), and its own line for what went
- * wrong there. The account's own is current: an ink edge over raised, and nothing to press.
+ * wrong there. The account's own is current (an ink edge over raised): paid for, its deed is Manage the plan
+ * (`manage`, the portal), said under it when refused; free, it has nothing to press.
  */
-function tierCard(c: TierCard, press: (tier: PaidTier, b: HTMLButtonElement, error: HTMLElement) => void): HTMLElement {
+function tierCard(c: TierCard, press: (tier: PaidTier, b: HTMLButtonElement, error: HTMLElement) => void,
+  manage: ((b: HTMLButtonElement, error: HTMLElement) => void) | null): HTMLElement {
   const error = h('p', {class: 'error small', role: 'alert'});
-  const b = c.deed && c.tier !== 'free' ? button(c.deed.label, 'small-button') : null;
-  if (b && c.tier !== 'free') { const tier = c.tier; b.addEventListener('click', () => press(tier, b, error)); }
+  const own = c.current && manage ? button(t('Manage the plan'), 'small-button') : null;
+  if (own && manage) own.addEventListener('click', () => manage(own, error));
+  const b = own ?? (c.deed && c.tier !== 'free' ? button(c.deed.label, 'small-button') : null);
+  if (b && !own && c.tier !== 'free') { const tier = c.tier; b.addEventListener('click', () => press(tier, b, error)); }
   return h('div', {class: `card small-card tier-card${c.current ? ' current' : ''}`, role: 'group', 'aria-label': c.name, 'data-tier': c.tier,
     ...(c.current ? {'aria-current': 'true'} : {})},
     h('span', {class: 'card-title'}, c.name),
@@ -86,7 +90,7 @@ function payingFor(tier: PaidTier, price: Price | undefined, o: {deed: string; l
 const planNow = (v: PlanView) => h('section', {class: 'sub-part plan-now', 'aria-labelledby': 'plan-title'},
   h('h2', {id: 'plan-title', class: 'plan-title'}, v.title), h('p', {class: 'muted'}, v.line));
 
-/** Its use of what the Remote keeps, against what its tier keeps: a meter each. */
+/** Its use of what the Remote keeps, against what its tier keeps: a meter each, as wide as the tiers above. */
 const planUse = (v: PlanView) => h('section', {class: 'sub-part', 'aria-labelledby': 'plan-use'}, h('h3', {id: 'plan-use'}, h('span', {}, t('On the Remote'))),
   h('div', {class: 'rows'}, ...v.meters.map((m) => h('div', {class: `row-item plan-meter${m.over ? ' over' : ''}`},
     h('span', {class: 'row-name'}, m.label),
@@ -95,20 +99,17 @@ const planUse = (v: PlanView) => h('section', {class: 'sub-part', 'aria-labelled
   v.note ? h('p', {class: 'muted small plan-note'}, v.note) : null);
 
 /**
- * Free and the tiers side by side at the part's top, each with its deed (`press`), the account's own marked; the plan
- * it is on and its one date said at the heading's right. None when there is nothing to choose among.
+ * Free and the tiers side by side at the part's top, each with its deed (`press`; the account's own, paid for,
+ * `manage`), the account's own marked; the plan it is on and its one date said at the heading's right (free as free
+ * is: nothing, its card says it). None when there is nothing to choose among.
  */
-const planTiers = (v: PlanView, press: (tier: PaidTier, b: HTMLButtonElement, error: HTMLElement) => void) => (v.tiers.length
+const planTiers = (v: PlanView, press: (tier: PaidTier, b: HTMLButtonElement, error: HTMLElement) => void,
+  manage: ((b: HTMLButtonElement, error: HTMLElement) => void) | null) => (v.tiers.length
   ? h('section', {class: 'sub-part plan-tiers', 'aria-labelledby': 'plan-tiers'},
     h('div', {class: 'plan-head'}, h('h3', {id: 'plan-tiers'}, h('span', {}, t('Plans'))),
-      h('p', {class: 'muted small plan-now-line'}, h('b', {}, v.title), ` · ${v.line}`)),
-    h('div', {class: 'grid small-grid tier-cards'}, ...v.tiers.map((c) => tierCard(c, press))))
+      v.aside ? h('p', {class: 'muted small plan-now-line'}, h('b', {}, v.title), ` · ${v.aside}`) : null),
+    h('div', {class: 'grid small-grid tier-cards'}, ...v.tiers.map((c) => tierCard(c, press, manage))))
   : null);
-
-/** What any paid tier adds (gives, once paid). */
-const planAdds = (p: Plan, v: PlanView) => h('section', {class: 'sub-part', 'aria-labelledby': 'plan-adds'},
-  h('h3', {id: 'plan-adds'}, h('span', {}, p.plan === 'paid' ? t('Paid gives') : t('Paid adds'))),
-  h('div', {class: 'rows plan-adds'}, ...v.adds.map((a) => h('div', {class: 'row-item'}, h('span', {class: 'row-name'}, a)))));
 
 /**
  * Plan: the tier this account is on in a figure's size (Free plan, Pro plan) and the one date that matters; its
@@ -154,12 +155,15 @@ export function planSection(offered: (on: boolean) => void): {el: HTMLElement; p
       if ((p.tier ?? 'free') === 'free') { confirming = tier; draw(); return; }
       void pressing(b, err, () => trip.go(p, 'portal', tier));
     };
-    const manage = v.action ? button(v.action.label, 'primary') : null;
-    manage?.addEventListener('click', () => void pressing(manage, error, () => trip.go(p, 'portal')));
-    // The tiers first, what is asked of one under them; the plan in a figure's size only when there are none to show.
-    const tiers = planTiers(v, press);
+    // Paid, the account's own card's deed: the portal (the card, the invoices, cancelling).
+    const manage = v.action ? (b: HTMLButtonElement, err: HTMLElement) => void pressing(b, err, () => trip.go(p, 'portal')) : null;
+    // The tiers first, what is asked of one under them; the plan in a figure's size only when there are none to show
+    // (Manage the plan then at the part's foot, where nothing else holds it).
+    const tiers = planTiers(v, press, manage);
+    const alone = !tiers && v.action ? button(v.action.label, 'primary') : null;
+    alone?.addEventListener('click', () => void pressing(alone, error, () => trip.go(p, 'portal')));
     const draw = () => put(el, trip.told, tiers ? null : planNow(v), tiers, confirming ? pay(confirming) : null, planUse(v),
-      planAdds(p, v), manage ? answers(null, manage) : null, error);
+      alone ? answers(null, alone) : null, error);
     draw();
   };
   return {el, paint};

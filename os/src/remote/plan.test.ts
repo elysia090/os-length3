@@ -11,6 +11,8 @@ import {browserOnRemote} from '../testing/remote.ts';
 // Stripe a stand-in), what a refused repo, server and name come to here.
 
 const stripe = fakeStripe();
+/** What each paid tier says it adds besides its room and names. */
+const ADDS = ['Make servers', 'Names on your own domain (name@yourdomain)'];
 const b = await browserOnRemote({plan: {free: {repos: 1, bytes: 3000, names: 1}, grace: GRACE}, billing: stripe.billing});
 const plan = await import('./plan.ts');
 const lifecycle = await import('./lifecycle.ts');
@@ -36,11 +38,12 @@ test('the Plan part, free: its use against the free allowance, and free and the 
     [['Repos on the Remote', '2', '3', 2 / 3, false], ['Kept on the Remote', '25.0 MB', '100 MB', 0.25, false], ['Names on this Remote', '1', '1', 1, false]]);
   assert.deepEqual(f.tiers.map((c) => [c.name, c.price, c.keeps, c.current, c.deed?.label ?? null]), [
     ['Free plan', 'No charge', ['100 MB on the Remote', '3 repos', '1 name here'], true, null],
-    ['Go plan', '$7.00 a month', ['50 GB on the Remote', 'Repos as many as fit', '5 names here'], false, 'Subscribe'],
-    ['Pro plan', '$14.00 a month', ['256 GB on the Remote', 'Repos as many as fit', '10 names here'], false, 'Subscribe'],
-    ['Max plan', '$19.00 a month', ['512 GB on the Remote', 'Repos as many as fit', '20 names here'], false, 'Subscribe']]);
+    ['Go plan', '$7 a month', ['50 GB on the Remote', 'Repos as many as fit', '5 names here', ...ADDS], false, 'Subscribe'],
+    ['Pro plan', '$14 a month', ['256 GB on the Remote', 'Repos as many as fit', '10 names here', ...ADDS], false, 'Subscribe'],
+    ['Max plan', '$19 a month', ['512 GB on the Remote', 'Repos as many as fit', '20 names here', ...ADDS], false, 'Subscribe']]);
   // Free, nothing is managed; each tier is subscribed to from its own card.
-  assert.deepEqual([f.action, f.note, f.adds.length], [null, null, 3]);
+  // Free as free is: its own card says what it keeps, so nothing is said again beside the tiers.
+  assert.deepEqual([f.action, f.note, f.aside], [null, null, null]);
   // Over: the meter is full, and it says what happens to what is new.
   const over = plan.planView({plan: 'free', tier: 'free', usage: {repos: 5, bytes: 120_000_000, names: 1}, allowance: free, free, tiers, buy: true}, now);
   assert.deepEqual(over.meters.map((m) => [m.share, m.over]), [[1, true], [1, true], [1, false]]);
@@ -57,7 +60,7 @@ test('the Plan part, free: its use against the free allowance, and free and the 
   setLang('ja');
   const ja = plan.planView({plan: 'free', tier: 'free', usage: {repos: 0, bytes: 0, names: 0}, allowance: free, free, tiers, buy: true}, now, 'ja');
   assert.deepEqual([ja.line, ja.tiers.map((c) => c.name), ja.tiers[2].keeps, ja.tiers[2].deed?.label],
-    ['Remote に repo 3個と 100 MB、名前1つまで', ['無料プラン', 'Go プラン', 'Pro プラン', 'Max プラン'], ['Remote に 256 GB', 'repo は入るだけ', 'この Remote の名前10個'], '登録する']);
+    ['Remote に repo 3個と 100 MB、名前1つまで', ['無料プラン', 'Go プラン', 'Pro プラン', 'Max プラン'], ['Remote に 256 GB', 'repo は入るだけ', 'この Remote の名前10個', 'サーバーを作れる', '自分のドメインの名前（name@yourdomain）'], '登録する']);
   setLang('en');
 });
 
@@ -153,8 +156,9 @@ test('Subscribe opens Checkout; once Stripe says it is paid, the Plan says so an
 
 test('the price is said before paying, in the currency\'s own places, every period as Stripe says it', () => {
   assert.equal(plan.priceWords({amount: 800, currency: 'jpy', interval: 'month', every: 1}), '¥800 a month');
-  assert.equal(plan.priceWords({amount: 500, currency: 'usd', interval: 'month', every: 3}), '$5.00 every 3 months');
-  assert.equal(plan.priceWords({amount: 6000, currency: 'eur', interval: 'year', every: 1}), '€60.00 a year');
+  assert.equal(plan.priceWords({amount: 500, currency: 'usd', interval: 'month', every: 3}), '$5 every 3 months');
+  assert.equal(plan.priceWords({amount: 450, currency: 'usd', interval: 'week', every: 1}), '$4.50 a week');
+  assert.equal(plan.priceWords({amount: 6000, currency: 'eur', interval: 'year', every: 1}), '€60 a year');
   // A currency no Intl knows still says its amount.
   assert.match(plan.priceWords({amount: 12, currency: 'zzz', interval: 'week', every: 1}), /12|ZZZ/);
   assert.equal(plan.TERMS('pro').length, 3);

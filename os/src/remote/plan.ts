@@ -48,14 +48,16 @@ export interface Plan {
 
 export interface Price { amount: number; currency: string; interval: 'day' | 'week' | 'month' | 'year'; every: number }
 
-/** A price in words: ¥800 a month, $5.00 every 3 months. */
+/** A price in words: ¥800 a month, $5 every 3 months, $4.50 a week (a whole amount has no .00 to read past). */
 export function priceWords(p: Price, lang = 'en'): string {
   const currency = p.currency.toUpperCase();
   let money: string;
   try {
     const f = new Intl.NumberFormat(lang, {style: 'currency', currency});
     // Stripe says the amount in the currency's smallest unit: as many places as the currency has.
-    money = f.format(p.amount / 10 ** (f.resolvedOptions().maximumFractionDigits ?? 2));
+    const amount = p.amount / 10 ** (f.resolvedOptions().maximumFractionDigits ?? 2);
+    money = Number.isInteger(amount) ? new Intl.NumberFormat(lang, {style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0}).format(amount)
+      : f.format(amount);
   } catch { money = `${p.amount} ${currency}`; }
   const one = {day: t('{price} a day', {price: money}), week: t('{price} a week', {price: money}), month: t('{price} a month', {price: money}),
     year: t('{price} a year', {price: money})}[p.interval];
@@ -132,19 +134,19 @@ export interface PlanView {
   title: string;
   /** The one date that matters, or what free is. */
   line: string;
+  /** Said at the heading's right beside the tiers: the line, unless the account's own card says it already (free, as
+   * free is); null then. */
+  aside: string | null;
   meters: Meter[];
   /** Free and each tier, side by side; none when there is nothing to choose among. */
   tiers: TierCard[];
-  /** What any paid tier adds, in plain words. */
-  adds: string[];
   /** Manage the plan (the portal), while one is paid for; null otherwise. */
   action: {kind: 'portal'; label: string} | null;
   note: string | null;
 }
 
-/** What paid adds, the same words wherever they are said. */
-const PAID_ADDS = () => [t('Keep more than the free allowance on the Remote'), t('Make servers: boards and talk with people you know'),
-  t('Names on your own domain (name@yourdomain), and more names here')];
+/** What every paid tier adds besides its room and names, said in each paid tier's own lines, the same words in each. */
+const PAID_ADDS = () => [t('Make servers'), t('Names on your own domain (name@yourdomain)')];
 
 /** A size as a tier says it: 50 GB, 256 GB, 100 MB (no .0 on a whole one). */
 const size = (n: number) => bytes(n).replace(/\.0 /, ' ');
@@ -171,7 +173,7 @@ function cardsOf(list: TierSaid[], o: {mine: Tier; buy: boolean; changing: boole
       : o.mine === 'free' ? {kind: 'checkout' as const, label: t('Subscribe')}
       : o.changing ? {kind: 'change' as const, label: rank(x.tier) > rank(o.mine) ? t('Upgrade') : t('Downgrade')} : null;
     return {tier: x.tier, name: planName(x.tier), price: x.price ? priceWords(x.price, o.lang) : x.tier === 'free' ? t('No charge') : t('Price shown at payment'),
-      keeps: keepsOf(x.allowance), current, over: !!o.use && !current && overOf(x.allowance, o.use), deed};
+      keeps: [...keepsOf(x.allowance), ...(x.tier === 'free' ? [] : PAID_ADDS())], current, over: !!o.use && !current && overOf(x.allowance, o.use), deed};
   });
 }
 
@@ -180,6 +182,7 @@ export function planView(p: Plan, now = Date.now(), lang = 'en'): PlanView {
   const paid = p.plan === 'paid', tier: Tier = p.tier ?? (paid ? 'go' : 'free');
   const use = p.usage ?? {repos: 0, bytes: 0, names: 0}, a = p.allowance ?? p.free ?? {repos: 0, bytes: 0, names: 0};
   const free = p.free ?? a;
+  const plain = !paid && !(p.status === 'canceled' && p.ends && p.ends <= now) && p.status !== 'past_due' && p.status !== 'unpaid';
   const line = paid
     ? p.graceUntil ? t('A payment did not go through · paid until {date}', {date: day(p.graceUntil)})
       : p.ends ? t('Ends {date}', {date: day(p.ends)})
@@ -198,7 +201,8 @@ export function planView(p: Plan, now = Date.now(), lang = 'en'): PlanView {
   const action = paid && p.buy && p.manage ? {kind: 'portal' as const, label: t('Manage the plan')} : null;
   const note = !p.buy && !paid ? t('Paid features cannot be bought on this Remote yet') : meters.some((m) => m.over)
     ? t('The Remote keeps what is there; what is new stays on your device until there is room') : null;
-  return {title: planName(paid ? tier : 'free'), line, meters, tiers: cards.length > 1 ? cards : [], adds: PAID_ADDS(), action, note};
+  const tiers = cards.length > 1 ? cards : [];
+  return {title: planName(paid ? tier : 'free'), line, aside: plain && tiers.length ? null : line, meters, tiers, action, note};
 }
 
 /** What the Remote refused for the plan's sake: which rule, the tier it is about, and whether paying is offered here. */
