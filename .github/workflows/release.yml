@@ -63,6 +63,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y musl-tools zstd zip libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf libgles2 bubblewrap xvfb imagemagick
           rustup target add x86_64-unknown-linux-musl wasm32-unknown-unknown wasm32-wasip1
+          # The AppImage's smoke test starts it in a bubblewrap sandbox, which needs a user namespace; this image's
+          # AppArmor keeps them from unprivileged processes unless told otherwise (as the rust job of desktop.yml).
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; fi
           # What is built is what the lockfiles say (npm ci in web-release.sh; cargo here and --locked in the scripts).
           cargo fetch --locked --manifest-path os/Cargo.toml
           cargo fetch --locked --manifest-path xlat/Cargo.toml
