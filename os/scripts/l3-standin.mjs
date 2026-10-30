@@ -44,7 +44,7 @@ export function makeL3(root, dir, work) {
   const wasm = join(work, 'xlat.wasm');
   writeFileSync(wasm, Buffer.from([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]));
   const xlat = join(work, 'xlat');
-  writeFileSync(xlat, `#!${process.execPath}\nrequire('fs').copyFileSync(${JSON.stringify(wasm)}, process.argv[3]);\n`);
+  writeFileSync(xlat, `#!${process.execPath}\nrequire('fs').copyFileSync(${JSON.stringify(wasm)}, process.argv.at(-1));\n`);
   chmodSync(xlat, 0o755);
   return spawnSync(process.execPath, [join(os, 'scripts/l3.mjs'), root, dir, '--translator', wasm, '--xlat', xlat, '--hot', '/usr/bin/busybox'], {encoding: 'utf8'});
 }

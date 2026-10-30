@@ -368,21 +368,41 @@ pub fn discover_within(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>, budget: 
     Program { entry: elf.entry, functions, entries }
 }
 
+/// The program's code from its entry, its function symbols and what its relocations point at: what a running program
+/// has translated first, the rest being reached later (`discover_within`).
 pub fn discover(elf: &Elf) -> Program {
+    walk_program(elf, &elf.relocation_targets, elf.symbols.is_empty())
+}
+
+/// The whole program, ahead of time: as `discover`, and where no function of its own is named (stripped, or only a
+/// post-link tool's absolute marks) every function its pointers name, the dynamic segment's included. Code reached
+/// only through a pointer is then translated with the rest, not when it is first run (a shell's builtins and
+/// applets); for a large program that is far more than one run reaches.
+pub fn discover_whole(elf: &Elf) -> Program {
+    let mut targets: Vec<u64> = elf.relocation_targets.iter().chain(&elf.dynamic_pointers).copied().collect();
+    targets.sort_unstable();
+    targets.dedup();
+    let named = elf.symbols.iter().any(|s| s.function && elf.is_code(s.value));
+    walk_program(elf, &targets, !named)
+}
+
+/// Walk from the entry, the symbols in code, and `targets` (sorted) as pointers, each one a start of its own when
+/// `pointed_start`.
+fn walk_program(elf: &Elf, targets: &[u64], pointed_start: bool) -> Program {
     let mut starts: BTreeSet<u64> = BTreeSet::from([elf.entry]);
     let mut sizes = BTreeMap::new();
     let mut names = BTreeMap::new();
     // Function symbols, and untyped ones (assembly entry points like _init,
     // _fini) that code also points at.
-    let pointed: BTreeSet<u64> = elf.relocation_targets.iter().copied().collect();
+    let pointed: BTreeSet<u64> = targets.iter().copied().collect();
     for s in elf.symbols.iter().filter(|s| elf.is_code(s.value) && (s.function || pointed.contains(&s.value))) {
         starts.insert(s.value);
         sizes.entry(s.value).or_insert(s.size);
         names.entry(s.value).or_insert_with(|| s.name.clone());
     }
-    let mut pointers: Vec<u64> = elf.relocation_targets.iter().copied().filter(|&a| elf.is_code(a)).collect();
+    let mut pointers: Vec<u64> = targets.iter().copied().filter(|&a| elf.is_code(a)).collect();
     let mut references = BTreeSet::new();
-    if elf.symbols.is_empty() {
+    if pointed_start {
         starts.extend(pointers.iter().copied());
     }
 

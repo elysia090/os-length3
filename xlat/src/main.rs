@@ -1,4 +1,6 @@
-//! `xlat INPUT.elf OUTPUT.wasm` — translate a static x86-64 Linux program.
+//! `xlat [--whole] INPUT.elf OUTPUT.wasm` — translate a static x86-64 Linux
+//! program: what it runs first, or with --whole all of it, ahead of time
+//! (discover::discover_whole).
 //! `xlat --more=SEEDS --known=KNOWN --base=N INPUT.elf OUTPUT.wasm` — code
 //! reached later from the addresses in SEEDS (one per line), past what
 //! KNOWN lists as translated, as a module filling table slots from N.
@@ -10,7 +12,7 @@ fn main() -> ExitCode {
     let trace = args.iter().any(|a| a == "--trace");
     let paths: Vec<&String> = args.iter().skip(1).filter(|a| !a.starts_with("--")).collect();
     let [input, output] = paths.as_slice() else {
-        eprintln!("usage: xlat [--trace] INPUT.elf OUTPUT.wasm");
+        eprintln!("usage: xlat [--trace] [--whole] INPUT.elf OUTPUT.wasm");
         return ExitCode::from(2);
     };
     let bytes = match std::fs::read(input) {
@@ -32,7 +34,7 @@ fn main() -> ExitCode {
         let program = xlat::discover::discover_within(&elf, &list(Some(seeds)), &known, xlat::discover::BUDGET);
         xlat::lower::translate_more(&program, base, xlat::lower::Options { trace })
     } else {
-        let program = xlat::discover::discover(&elf);
+        let program = if args.iter().any(|a| a == "--whole") { xlat::discover::discover_whole(&elf) } else { xlat::discover::discover(&elf) };
         xlat::lower::translate(&elf, &program, xlat::lower::Options { trace })
     };
     if let Err(e) = std::fs::write(output, &translation.wasm) {
