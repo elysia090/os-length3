@@ -507,6 +507,12 @@ with Web Crypto); tests and dev never reach it. To connect it:
 4. The customer portal turned on in Stripe (Settings → Billing → Customer
    portal), with cancelling allowed, and switching plans allowed among the
    three products (the Plan opens it at the step that changes the tier).
+5. Checkout and the portal branded as the OS is (the Dashboard's Settings →
+   Branding, and Checkout's appearance): the icon `src-tauri/icons/128x128.png`,
+   background `#f9f8f5` (its paper), button `#2c2a27` (its ink), rounded
+   corners, Inter. Chosen in mock rounds among what Stripe lets be set; the
+   stand-in draws the same (`service/devbilling.ts` LOOK), so what dev and the
+   selftests show is what a person paying sees.
 
 Each event is taken once by its id (kept 30 days in `billing_event`; one
 made longer ago is not taken) and in the order Stripe made it; a payment

@@ -526,13 +526,20 @@ ${t === s.tier ? '<p class="tag">Current plan</p>' : `<a class="btn" href="chang
 const COUNTRIES: [string, string][] = [['US', 'United States'], ['JP', 'Japan'], ['GB', 'United Kingdom'], ['CA', 'Canada'], ['AU', 'Australia'],
   ['DE', 'Germany'], ['FR', 'France'], ['NL', 'Netherlands'], ['SE', 'Sweden'], ['SG', 'Singapore'], ['KR', 'South Korea'], ['BR', 'Brazil'], ['IN', 'India']];
 
-// Stripe's look: its own sans, a white page in two columns, fields with a light edge and a blue ring, its blue button.
+/**
+ * Stripe's Checkout and portal as this Remote's Stripe is branded (README.md, Billing: the Dashboard's branding),
+ * so what is seen here is what a person paying sees: the OS's paper behind what is bought, its ink on the button and
+ * every ring and link, corners rounded, Inter. Chosen in mock rounds among what Stripe's branding lets be set.
+ */
+const LOOK = {background: '#f9f8f5', button: '#2c2a27', hover: '#45423e', font: 'Inter'};
+
+// Stripe's look, branded: a page in two columns (the paper behind what is bought), fields with a light edge, the ring and the button the brand's.
 const CSS = `*{box-sizing:border-box}
 html,body{margin:0;background:#fff}
-body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Ubuntu,sans-serif;color:#1a1a1a;-webkit-font-smoothing:antialiased}
+body{font:14px/1.45 ${LOOK.font},-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Ubuntu,sans-serif;color:#1a1a1a;-webkit-font-smoothing:antialiased}
 p{margin:0}
 .page{display:grid;grid-template-columns:1fr 1fr;min-height:100vh}
-.side{display:flex;justify-content:flex-end;padding:56px 64px 32px}
+.side{display:flex;justify-content:flex-end;padding:56px 64px 32px;background:${LOOK.background}}
 .main{display:flex;justify-content:flex-start;padding:56px 64px 32px;box-shadow:-16px 0 32px -18px rgba(0,0,0,.18)}
 .col{width:100%;max-width:400px}
 .head{display:flex;align-items:center;gap:12px;margin-bottom:36px}
@@ -557,7 +564,7 @@ legend,label{display:block;font-size:13px;font-weight:500;color:#30313d;margin:0
 .field{display:block;width:100%;height:44px;padding:10px 12px;border:1px solid #e0e0e0;border-radius:6px;background:#fff;font:inherit;font-size:16px;color:#30313d;
   box-shadow:0 1px 1px rgba(0,0,0,.03),0 3px 6px rgba(0,0,0,.02);outline:none;transition:box-shadow .15s,border-color .15s}
 .field::placeholder{color:#a3a3a8}
-.field:focus{position:relative;z-index:1;border-color:hsla(210,96%,45%,.5);box-shadow:0 1px 1px rgba(0,0,0,.03),0 3px 6px rgba(0,0,0,.02),0 0 0 3px hsla(210,96%,45%,.25)}
+.field:focus{position:relative;z-index:1;border-color:${LOOK.button}80;box-shadow:0 1px 1px rgba(0,0,0,.03),0 3px 6px rgba(0,0,0,.02),0 0 0 3px ${LOOK.button}33}
 .field.bad{border-color:#df1b41;color:#df1b41}
 select.field{appearance:auto}
 .group .field{border-radius:0;box-shadow:none}
@@ -574,10 +581,10 @@ select.field{appearance:auto}
 .brands[data-brand="visa"] .visa,.brands[data-brand="mastercard"] .mc,.brands[data-brand="amex"] .amex{opacity:1;color:#1a1a1a;border-color:#1a1a1a}
 .err{color:#df1b41;font-size:13px;margin-top:6px}
 .err:empty{display:none}
-.pay{display:flex;align-items:center;justify-content:center;width:100%;height:44px;margin-top:20px;border:0;border-radius:6px;background:#0074d4;color:#fff;
+.pay{display:flex;align-items:center;justify-content:center;width:100%;height:44px;margin-top:20px;border:0;border-radius:6px;background:${LOOK.button};color:#fff;
   font:inherit;font-size:16px;font-weight:600;cursor:pointer;text-decoration:none;box-shadow:inset 0 0 0 1px rgba(50,50,93,.1),0 2px 5px rgba(50,50,93,.1),0 1px 1px rgba(0,0,0,.07)}
-.pay:hover{background:#0066bd}
-.pay:focus-visible{outline:none;box-shadow:0 0 0 3px hsla(210,96%,45%,.35)}
+.pay:hover{background:${LOOK.hover}}
+.pay:focus-visible{outline:none;box-shadow:0 0 0 3px ${LOOK.button}59}
 .pay:disabled{cursor:default;opacity:.75}
 .pay.narrow{width:auto;padding:0 28px;margin:0}
 .pay.danger{background:#df1b41}
@@ -600,7 +607,7 @@ section:last-child{border-bottom:0}
 .btn{display:inline-flex;align-items:center;height:34px;padding:0 14px;border:1px solid #e0e0e0;border-radius:6px;background:#fff;color:#1a1a1a;font:inherit;font-weight:500;
   text-decoration:none;cursor:pointer;box-shadow:0 1px 1px rgba(0,0,0,.03)}
 .btn:hover{background:#f7f7f7}
-.btn:focus-visible,.link-back:focus-visible,.back:focus-visible,.plain:focus-visible{outline:2px solid #0074d4;outline-offset:2px}
+.btn:focus-visible,.link-back:focus-visible,.back:focus-visible,.plain:focus-visible{outline:2px solid ${LOOK.button};outline-offset:2px}
 .tag{display:inline-block;font-size:12px;font-weight:600;padding:1px 6px;border-radius:4px;background:#ebeef1;color:#414552}
 .tag.good{background:#d7f7c2;color:#05690d}.tag.bad{background:#ffe7f2;color:#b3093c}
 .banner{margin:0 0 20px;padding:10px 12px;border-radius:6px;background:#ebf5ff;color:#0055bc}
@@ -610,12 +617,12 @@ section:last-child{border-bottom:0}
 .controls{border:1px dashed #c4a000;border-radius:8px;padding:16px;background:#fffbea}
 .tiers{display:grid;gap:12px;margin-bottom:20px}
 .tier{border:1px solid #e0e0e0;border-radius:8px;padding:14px 16px;display:grid;gap:2px}
-.tier.now{border-color:#0074d4;box-shadow:0 0 0 1px #0074d4}
+.tier.now{border-color:${LOOK.button};box-shadow:0 0 0 1px ${LOOK.button}}
 .tier .keeps{margin:6px 0 10px}
 .tier .btn,.tier .tag{justify-self:start}
 .change{border:1px solid #e0e0e0;border-radius:8px;padding:16px;margin-bottom:8px}
 .arrow{font-size:20px;color:#6d6e78}
-.link-back{display:inline-block;margin-top:16px;color:#0074d4;text-decoration:none;font-weight:500}
+.link-back{display:inline-block;margin-top:16px;color:${LOOK.button};text-decoration:none;font-weight:500}
 .link{text-align:center}
 .plain{height:44px;padding:0 20px;border:1px solid #e0e0e0;border-radius:6px;background:#fff;font:inherit;font-size:15px;font-weight:600;cursor:pointer}
 .secure{display:grid;place-items:center;min-height:100vh;padding:24px;background:#f6f8fa}
