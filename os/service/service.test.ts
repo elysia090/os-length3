@@ -39,9 +39,16 @@ test('an account is a provider identity: the same person signs in to the same ac
   assert.equal((await who(a)).id, (await who(b)).id);
   assert.notEqual((await who(a)).id, (await who(other)).id);
   assert.equal((await who(a)).name, 'Ren');
-  // The session's own token (as get-session gives it) works as the bearer too.
-  const raw = ((await s.call('GET', '/api/auth/get-session', {token: a})).json as unknown as {session: {token: string}}).session.token;
-  assert.equal((await s.call('GET', '/v1/repos', {token: raw})).status, 200);
+  // The session's own token as the database keeps it (and get-session says it) is no bearer by itself: only signed,
+  // as get-session hands it over too. A copy of the database opens no session.
+  const asked = await s.call('GET', '/api/auth/get-session', {token: a});
+  const raw = (asked.json as unknown as {session: {token: string}}).session.token;
+  assert.equal((await s.call('GET', '/v1/repos', {token: raw})).status, 401);
+  const signed = asked.headers.get('set-auth-token')!;
+  assert.match(signed, new RegExp(`^${raw}\\.[A-Za-z0-9+/]+=*$`));
+  assert.equal((await s.call('GET', '/v1/repos', {token: signed})).status, 200);
+  // Signed by anything but the Remote's secret, it is no one.
+  assert.equal((await s.call('GET', '/v1/repos', {token: `${raw}.${btoa('x'.repeat(32))}`})).status, 401);
   // No way in without a provider: there are no blank accounts.
   assert.notEqual((await s.call('POST', '/api/auth/sign-in/anonymous', {body: {}})).status, 200);
   assert.deepEqual((await s.call('GET', '/v1/about')).json, {passkey: true, providers: ['dev'], domain: 'length3.test', app: APP});
