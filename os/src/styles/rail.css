@@ -12,6 +12,8 @@
   .rail { --rail-top: var(--top-line); }
   .rail-tabs { gap: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
   .rail-tabs::-webkit-scrollbar { display: none; }
+  /* A place's name out of that box, in the window beside the place (main.ts says where). */
+  .rail-tabs .rail-tag { position: fixed; left: calc(var(--tag-x, 0px) + var(--s3)); top: var(--tag-y, 0px); }
   .rail-new { margin-top: var(--s3); }
   .rail-me { padding: var(--s2) 0 var(--s3); }
 }
