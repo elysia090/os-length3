@@ -37,6 +37,7 @@ test('a deployment\'s limits are its variables, in MB where they are bytes; one 
   assert.deepEqual(limitsOf({}), LIMITS);
   const l = limitsOf({R2_STORED_MB: '10', R2_WRITES_MONTH: '5', R2_READS_MONTH: 'many', UPLOAD_MB_DAY: '0', PG_MB: '2'});
   assert.deepEqual(l, {...LIMITS, stored: 10 * MB, writes: 5, database: 2 * MB});
+  assert.equal(l.brim, 32 * MB);
 });
 
 test('R2\'s puts of the month: one past them is refused before R2 is asked, as no files, and nothing is kept or counted', async () => {
@@ -181,6 +182,18 @@ test('a database at all it may take takes nothing new; reads, deletes and signin
   assert.deepEqual([full.status, full.json.budget], [507, true]);
   assert.equal((await s.call('GET', '/v1/repos', {token: t})).status, 200);
   assert.equal((await s.call('POST', '/v1/blobs/missing', {token: t, body: []})).status, 200);
+});
+
+test('past its brim too, a full database takes no sign-in, no device\'s code and no payment\'s word; deletes go on', async () => {
+  const s = await service({}, {limits: limits({database: 1})});
+  const t = await s.start();
+  // Up to the brim, signing in was let through a full database (start() signed in): now past it.
+  const past = await service({}, {limits: limits({database: 1, brim: 1})});
+  const code = await past.call('POST', '/api/auth/device/code', {body: {client_id: 'l3'}});
+  assert.deepEqual([code.status, code.json.budget], [507, true]);
+  assert.equal((await past.call('POST', '/v1/stripe/webhook', {body: {}})).status, 507);
+  // Taking away is never refused: a repo discarded, a session ended.
+  assert.notEqual((await s.call('POST', '/v1/repos/none/discard', {token: t, body: {}})).status, 507);
 });
 
 test('asked too often, a session is refused at the edge (429) before the database is asked', async () => {

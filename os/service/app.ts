@@ -99,6 +99,9 @@ export interface Deps {
  * signal taken, SSH turned off, a device's beat saying it still listens) or must be heard (Stripe's word on a payment).
  */
 const ADDS_NOTHING = /^\/(api\/auth\/|dev-oauth\/|v1\/enter$|v1\/blobs\/(missing|read)$|v1\/repos\/[^/]+\/discard$|v1\/inbox\/signals\/take$|v1\/ssh\/[^/]+\/off$|v1\/ssh\/this\/beat$|v1\/stripe\/webhook$)/;
+/** Of those, what adds rows all the same (a session, a device's code, a sign-in's state, a payment's event): let through
+ *  a database that is full only up to its brim (budget.ts Limits.brim), past which nothing but deletes is taken. */
+const ADDS_ALL_THE_SAME = /^\/(api\/auth\/|dev-oauth\/|v1\/enter$|v1\/stripe\/webhook$)/;
 
 export function createApp(d: Deps) {
   const app = new Hono<Vars>();
@@ -132,8 +135,9 @@ export function createApp(d: Deps) {
   // The database at all it may take: what would add to it is refused until room comes back (the sweep, a delete).
   if (budget) {
     app.use('*', async (c, next) => {
-      const adds = !['GET', 'HEAD', 'OPTIONS', 'DELETE'].includes(c.req.method) && !ADDS_NOTHING.test(c.req.path);
-      if (adds && await budget.full(db)) {
+      const writes = !['GET', 'HEAD', 'OPTIONS', 'DELETE'].includes(c.req.method);
+      const adds = writes && !ADDS_NOTHING.test(c.req.path), anyway = writes && ADDS_ALL_THE_SAME.test(c.req.path);
+      if ((adds && await budget.full(db)) || (anyway && await budget.brim(db))) {
         return c.json({error: 'Remote not accepting updates right now; changes remain local', budget: true, retryAfter: FULL_WAIT}, 507, {'Retry-After': String(FULL_WAIT)});
       }
       await next();

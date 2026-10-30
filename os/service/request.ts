@@ -48,8 +48,23 @@ export function slowDown(seconds: number, answer: {error: string}): never {
   refuse(429, {...answer, retryAfter: s}, {'Retry-After': String(s)});
 }
 
-/** The address Cloudflare saw the request come from; '' where nothing in front of the Remote says (dev, tests). */
-export const addressOf = (c: Context) => c.req.header('CF-Connecting-IP') ?? '';
+/**
+ * Who a request comes from, as every limit by address counts it: the address Cloudflare saw it come from, or for one of
+ * IPv6 the /64 it is in. A subscriber is given a /64 at least, every address of it theirs to take, so a limit by each
+ * address was none at all (Better Auth counts its own so too). '' where nothing in front of the Remote says (dev, tests).
+ */
+export const addressOf = (c: Context) => clientOf(c.req.header('CF-Connecting-IP') ?? '');
+
+/** `ip` as limits count it: an IPv4 address as it is (one mapped into IPv6 too), an IPv6 address by its /64. */
+export function clientOf(ip: string): string {
+  if (!ip.includes(':')) return ip;
+  const v4 = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(ip);
+  if (v4) return v4[1];
+  const [head, tail] = ip.toLowerCase().split('%')[0].split('::');
+  const a = head ? head.split(':') : [], b = tail ? tail.split(':') : [];
+  const groups = tail === undefined ? a : [...a, ...Array<string>(Math.max(0, 8 - a.length - b.length)).fill('0'), ...b];
+  return `${groups.slice(0, 4).map((g) => g.padStart(4, '0')).join(':')}::/64`;
+}
 
 /**
  * One more of `key` in the window, or refused (slowDown) when `max` were there already; nothing is
