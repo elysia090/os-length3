@@ -146,10 +146,11 @@ function lately(ctx: Context): HTMLElement {
     const rows: HTMLElement[] = [];
     const left = ctx.leftOff;
     if (left && (await store.list().catch(() => [])).some((r) => r.name === left.repo)) {
-      // The line it was left at, as it is now: what was being written, to be taken up again.
+      // The line it was left at, as it is now: what was being written, to be taken up again; or the nearest above it
+      // with a word in it (a closing brace alone says nothing of where one was).
       const text = left.at === null ? null : (await store.read(left.repo, left.path).catch(() => null))?.text ?? null;
       const end = text === null || left.at === null ? -1 : text.indexOf('\n', left.at);
-      const quote = text === null ? '' : text.slice(0, end < 0 ? text.length : end).split('\n').reverse().find((l) => l.trim())?.trim() ?? '';
+      const quote = text === null ? '' : text.slice(0, end < 0 ? text.length : end).split('\n').reverse().find((l) => /[\p{L}\p{N}]/u.test(l))?.trim() ?? '';
       const goOn = () => ctx.openRepo(left.repo, left.path, left.at === null ? 'end' : {at: left.at});
       rows.push(latelyRow(shownName(left.path), t('{repo} · where you left off', {repo: left.repo}), {quote, place: left.repo, badge: 'file', go: goOn}));
     }

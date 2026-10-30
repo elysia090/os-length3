@@ -112,6 +112,11 @@
 .server-gear[aria-expanded='true'] svg { rotate: 45deg; }
 @media (max-width: 760px) { .server-top { padding-right: calc(var(--s5) + var(--h-row)); } }
 .slides { --peek: 48px; --gap: var(--s3); --lead: 0; min-height: 0; }
+/* Signed out, with nothing open to read: Server's head and the card signing in where a page has them (page.css):
+   the center's padding is a step narrower than a page's at the left and a step deeper at the top, given back here. */
+.server-signed-out { margin: calc(var(--top-line) - var(--band)) 0 0 calc(clamp(var(--s5), 5vw, 72px) - var(--s5)); }
+@media (max-width: 760px) { .server-signed-out { margin-left: calc(clamp(var(--s5), 5vw, 72px) - var(--s2)); } }
+@media (max-width: 560px) { .server-signed-out { margin-left: calc(var(--s4) - var(--s2)); margin-right: calc(-1 * var(--s2)); } }
 .slides.single { --peek: 0px; }
 /* Server's boards and the box at the foot share the center's peek and lead (server/row.ts sets it there): the box is
    as wide as the board on screen and stands under it, its edges the board's, sliding with it board to board. */

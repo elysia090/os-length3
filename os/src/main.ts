@@ -440,6 +440,17 @@ const me = new Me(ctx, currentProfile, {editProfile: () => startEditing(ctx)});
 $('rail-me').append(me.element);
 
 $('rail-tabs').append(...PURPOSES.map((p) => railButton(p.id)), railButton(NEW_REPO.id));
+// Where the window is short the places scroll in a box of their own (rail.css), whose edge would cut a place's name
+// off: there the name stands in the window, beside the place under the pointer or the keyboard, which says where.
+const tagAt = (e: Event) => {
+  const b = e.target instanceof Element ? e.target.closest<HTMLElement>('.rail-item') : null;
+  if (!b) return;
+  const r = b.getBoundingClientRect();
+  b.style.setProperty('--tag-x', `${r.right}px`);
+  b.style.setProperty('--tag-y', `${r.top + r.height / 2}px`);
+};
+$('rail-tabs').addEventListener('pointerover', tagAt);
+$('rail-tabs').addEventListener('focusin', tagAt);
 /** The rail's places out over the page now (File's tree, Server's servers beside the rail, the plug's area). */
 const expanded = () => new Set<HTMLElement>([...tabs.values()].filter((b) => b.getAttribute('aria-expanded') === 'true'));
 /** The one place the rail's ink is on: the one out over the page, else the page's own; none while two are out (each
