@@ -3,7 +3,7 @@ import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
 import {mirror, type Store} from './mirror.ts';
-import {desktopFile, pinnedDesktop, pinnedDistros, pinnedRoots, type Pinned} from './releases.ts';
+import {desktopFile, pinnedDesktop, pinnedDistros, pinnedRoots, shipped, type Pinned} from './releases.ts';
 
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 const pin = (file: string, bytes: Uint8Array, tag = 'os-length3-linux-v1.0.0'): Pinned =>
@@ -80,7 +80,7 @@ test('mirror: more bytes than pinned stop the download; a file the release lacks
   await assert.rejects(mirror([short], bucket.store, fakeGitHub({'a.deb': big}).source, quiet), /more than the 10 bytes pinned/);
   await assert.rejects(mirror([pin('gone.deb', a)], bucket.store, fakeGitHub({'a.deb': a}).source, quiet), /os-length3-linux-v1\.0\.0 has no gone\.deb/);
   const noToken = {...fakeGitHub({}, 'another').source, token: undefined};
-  await assert.rejects(mirror([pin('a.deb', a)], bucket.store, noToken, quiet), /the release os-length3-linux-v1\.0\.0: 404 \(a private repository needs GITHUB_TOKEN\)/);
+  await assert.rejects(mirror([pin('a.deb', a)], bucket.store, noToken, quiet), /the release os-length3-linux-v1\.0\.0: 404$/m);
   assert.deepEqual(bucket.puts, []);
 });
 
@@ -126,9 +126,11 @@ test('the pins: every root core/src/root.rs pins, newest first, and the desktop 
   const web = readFileSync(new URL('../src/pages/runtime/environment.ts', import.meta.url), 'utf8');
   for (const d of distros) assert.ok(web.includes(`'${d.tag.slice(d.tag.indexOf(' ') + 1)}'`), `environment.ts names ${d.tag}`);
 
-  // The newest desktop app this tree pins (while a release is made, RELEASE names one not pinned yet).
-  const pins = JSON.parse(readFileSync(new URL('../shared/desktop-releases.json', import.meta.url), 'utf8')) as Record<string, unknown>;
-  const version = Object.keys(pins).sort((a, b) => a.localeCompare(b, 'en', {numeric: true})).at(-1)!;
+  // The version this tree ships: the newest desktop app it pins, whose root is the newest it pins (one change pins
+  // both); RELEASE, the version being made, may name one not pinned yet.
+  const version = shipped();
+  assert.equal(roots[0].version, version);
+  assert.equal(shipped({'0.10.0': {}, '0.9.1': {}}), '0.10.0');
   const desktop = pinnedDesktop(version);
   assert.deepEqual(desktop.map((p) => [p.key, p.type, p.tag]), [
     [`desktop/os-length3-linux-${version}-desktop-amd64.deb`, 'application/vnd.debian.binary-package', `os-length3-linux-v${version}`],

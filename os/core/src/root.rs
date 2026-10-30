@@ -126,10 +126,8 @@ pub fn distro(id: &str) -> Option<&'static Distro> {
     DISTROS.iter().find(|d| d.id == id)
 }
 
-/// Where the publisher's release channel keeps it. It answers anyone only
-/// while the repository is public; it is private, so a device without the
-/// publisher's credentials is answered 404 there, and the Remote is where a
-/// root comes from.
+/// Where the publisher's release channel keeps it, for anyone: the repository
+/// is public.
 pub fn github_url(r: &Release) -> String {
     format!("https://github.com/elysia090/os-length3/releases/download/{}/{}", r.tag, r.file)
 }

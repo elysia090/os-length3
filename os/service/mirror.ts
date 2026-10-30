@@ -1,6 +1,6 @@
-// Puts a release's files on the Remote, since only the Remote can hand them to
-// anyone: the GitHub repository they are published in is private, and GitHub
-// holds no Cloudflare credentials. The deploy (deploy.ts) runs it after the
+// Puts a release's files on the Remote, which hands them to anyone by digest
+// beside the GitHub release they are published in (GitHub holds no Cloudflare
+// credentials). The deploy (deploy.ts) runs it after the
 // Worker answers, for what this tree pins (releases.ts): every root in
 // core/src/root.rs RELEASES and DISTROS (a distribution's root from its
 // makers' URL), and the desktop app of the version RELEASE names. One the Remote recorded as put at its pinned digest and size
@@ -50,7 +50,7 @@ async function asset(s: Source, p: Pinned): Promise<Response> {
   const must = async (r: Response, what: string) => {
     if (r.ok) return r;
     await r.body?.cancel();
-    throw new Error(`${what}: ${r.status}${r.status === 404 && !s.token ? ' (a private repository needs GITHUB_TOKEN)' : ''}`);
+    throw new Error(`${what}: ${r.status}${r.status === 403 && !s.token ? ' (the API limits anyone to 60 requests an hour: set GITHUB_TOKEN)' : ''}`);
   };
   const release = await (await must(await ask(`/releases/tags/${p.tag}`, 'application/vnd.github+json'), `the release ${p.tag}`)).json() as {assets: {id: number; name: string}[]};
   const a = release.assets.find((x) => x.name === p.file);

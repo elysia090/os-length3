@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict';
 import {execFile, execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {chmodSync, copyFileSync, cpSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync} from 'node:fs';
+import {chmodSync, copyFileSync, cpSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync} from 'node:fs';
 import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -101,34 +101,27 @@ test('one entry pins l3 for both: the root, and the index the browser reads it b
 });
 
 test('a Node-only build takes l3 from its release only at the pin, and refuses anything else', async () => {
-  // A tree as prompt-files.mjs reads it: RELEASE, the pins, and the scripts; and a release that has l3's tar.
+  // A tree as prompt-files.mjs reads it: the pins, newest 9.9.9, and the scripts; and a release that has l3's tar.
   const tree = join(work, 'tree');
   for (const d of ['core/src', 'scripts', 'service', 'shared', 'public']) mkdirSync(join(tree, d), {recursive: true});
-  writeFileSync(join(tree, 'RELEASE'), '9.9.9\n');
   copyFileSync(join(os, 'core/src/root.rs'), join(tree, 'core/src/root.rs'));
   for (const f of ['scripts/prompt-files.mjs', 'scripts/l3-tree.mjs', 'service/releases.ts', 'shared/desktop-releases.json']) copyFileSync(join(os, f), join(tree, f));
-  const refused = node([join(tree, 'scripts/prompt-files.mjs')]);
-  assert.notEqual(refused.status, 0);
-  assert.match(refused.stderr, /pins no l3 9\.9\.9/);
   assert.equal(node([join(os, 'scripts/pin-root.mjs'), rootFile, out, '--rs', join(tree, 'core/src/root.rs')]).status, 0);
 
   const tarOf = (dir) => execFileSync('tar', ['-C', dir, '--sort=name', '--mtime=@0', '--owner=0', '--group=0', '--numeric-owner', '--format=pax', '-cf', '-', '.'], {maxBuffer: 1 << 28});
   let tar = tarOf(out);
   let sums = null;
   const name = 'os-length3-linux-9.9.9-l3-web.tar';
+  // The release's download links, as GitHub serves a public release's files.
   const server = createServer((req, res) => {
-    if (req.url === '/repos/x/y/releases/tags/os-length3-linux-v9.9.9') {
-      res.setHeader('content-type', 'application/json');
-      return res.end(JSON.stringify({assets: [{id: 1, name: 'SHA256SUMS'}, {id: 2, name}]}));
-    }
-    if (req.url === '/repos/x/y/releases/assets/1') return res.end(`${sums ?? sha(tar)}  ${name}\n`);
-    if (req.url === '/repos/x/y/releases/assets/2') return res.end(tar);
+    if (req.url === '/os-length3-linux-v9.9.9/SHA256SUMS') return res.end(`${sums ?? sha(tar)}  ${name}\n`);
+    if (req.url === `/os-length3-linux-v9.9.9/${name}`) return res.end(tar);
     res.statusCode = 404; res.end();
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   // Run in a child the server here can answer (spawnSync would hold this process, and the server, still).
   const go = () => new Promise((resolve) => {
-    const env = {...process.env, GITHUB_API_URL: `http://127.0.0.1:${server.address().port}`, GITHUB_REPOSITORY: 'x/y'};
+    const env = {...process.env, LENGTH3_RELEASES: `http://127.0.0.1:${server.address().port}`};
     execFile(process.execPath, [join(tree, 'scripts/prompt-files.mjs')], {env}, (e, stdout, stderr) => resolve({status: e ? e.code ?? 1 : 0, stdout, stderr}));
   });
   try {
@@ -159,16 +152,4 @@ test('a Node-only build takes l3 from its release only at the pin, and refuses a
     assert.notEqual(r.status, 0);
     assert.match(r.stderr, /SHA256SUMS of os-length3-linux-v9\.9\.9 says/);
   } finally { server.close(); }
-
-  // On Workers Builds without the token: a branch's preview goes on without the Prompt; main's build stops and says where it goes.
-  rmSync(join(tree, 'public/l3'), {recursive: true, force: true});
-  const ci = (branch) => spawnSync(process.execPath, [join(tree, 'scripts/prompt-files.mjs')],
-    {encoding: 'utf8', env: {...process.env, GITHUB_TOKEN: '', WORKERS_CI: '1', WORKERS_CI_BRANCH: branch, GITHUB_API_URL: 'http://127.0.0.1:9'}});
-  const preview = ci('claude/some-change');
-  assert.equal(preview.status, 0, preview.stderr);
-  assert.match(preview.stderr, /not production\): the app is built without the Prompt/);
-  assert.equal(existsSync(join(tree, 'public/l3')), false);
-  const production = ci('main');
-  assert.notEqual(production.status, 0);
-  assert.match(production.stderr, /Settings → Build → Variables and secrets/);
 });

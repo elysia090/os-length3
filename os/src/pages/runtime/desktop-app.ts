@@ -6,7 +6,7 @@ import desktopPins from '../../../shared/desktop-releases.json' with {type: 'jso
 
 // Runtime's desktop app, offered on the web beside the environments: the app itself is it.
 
-/** The release this build ships (RELEASE, through vite.config.ts). */
+/** The release this build ships (the newest pinned, through vite.config.ts). */
 const RELEASE = (import.meta as {env?: Record<string, string>}).env?.VITE_LENGTH3_RELEASE ?? '';
 
 /**

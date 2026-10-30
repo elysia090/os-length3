@@ -67,6 +67,15 @@ export function pinnedDistros(rootRs: string): Pinned[] {
   return distros;
 }
 
+/**
+ * The version this tree ships: the newest whose desktop app it pins (its root is pinned in the same change,
+ * scripts/pin-root.mjs and pin-desktop.mjs). RELEASE names the version being made, which is shipped once the
+ * release has pinned it: the web, its build and the deploy take this one, never RELEASE.
+ */
+export function shipped(pins: DesktopPins = desktopPins as DesktopPins): string {
+  return Object.keys(pins).sort((a, b) => a.localeCompare(b, 'en', {numeric: true})).at(-1) ?? '';
+}
+
 /** The desktop app's files this tree pins for `version` (none when it pins none). */
 export function pinnedDesktop(version: string, pins: DesktopPins = desktopPins as DesktopPins): Pinned[] {
   return Object.entries(pins[version] ?? {}).map(([kind, p]) => {

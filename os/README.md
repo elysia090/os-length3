@@ -80,7 +80,7 @@ tracked in issue #20.
   is kept the same way, by the file it was made from, so the next Prompt
   reads it rather than translating it again. Make it
   with `npm run l3` (`scripts/l3.sh`: the translator from this tree and the
-  root `core/src/root.rs` pins for `RELEASE`), and check it against that root
+  newest root `core/src/root.rs` pins), and check it against that root
   with `npm run l3:parity -- ROOT public/l3`; `node scripts/l3-runnable.mjs
   public/l3 ROOT_DIR` says which programs of it run under xlat today.
 
@@ -510,19 +510,19 @@ to this repository, and its Settings → Build say, once:
 | | |
 |---|---|
 | Root directory | `os` |
-| Build command | `npm run build:cloudflare`: l3 for the browser from the release `RELEASE` names (`scripts/prompt-files.mjs`, taken only at the index `core/src/root.rs` pins for it), then the app |
-| Deploy command | `node service/deploy.ts`: the migrations on Neon's production branch (no branch is made for a deploy; a contract step waits until the new Worker answers), the bucket, then the Worker with the secrets it lacks (the first build prints the link in its log), then the release's files the Remote serves to anyone (`service/mirror.ts`): each root `core/src/root.rs` pins and the desktop app `shared/desktop-releases.json` pins for `RELEASE`, taken from the GitHub release where the bucket lacks them, checked against those pins, and put with wrangler |
-| Variables and secrets | `NEON_PROJECT_ID`; secrets `NEON_API_KEY` (a Neon API key for the project) and `GITHUB_TOKEN` (read-only, for this private repository's releases: the build's Prompt and the deploy's release files) |
+| Build command | `npm run build:cloudflare`: l3 for the browser from the release of the newest l3 `core/src/root.rs` pins (`scripts/prompt-files.mjs`, taken only at the index pinned for it), then the app |
+| Deploy command | `node service/deploy.ts`: the migrations on Neon's production branch (no branch is made for a deploy; a contract step waits until the new Worker answers), the bucket, then the Worker with the secrets it lacks (the first build prints the link in its log), then the release's files the Remote serves to anyone (`service/mirror.ts`): each root `core/src/root.rs` pins and the newest desktop app `shared/desktop-releases.json` pins, taken from the GitHub release where the bucket lacks them, checked against those pins, and put with wrangler |
+| Variables and secrets | `NEON_PROJECT_ID`; secrets `NEON_API_KEY` (a Neon API key for the project) and `GITHUB_TOKEN` (optional, read-only: the deploy reads the release's files through GitHub's API, which limits a caller without one to 60 requests an hour; the build's Prompt is read from the public release without it) |
 | Non-production branch deploy command | `npx wrangler versions upload`: another branch's build uploads a version and never deploys (`service/deploy.ts` refuses to run for a branch other than main). The version has no preview URL (`wrangler.toml`: `workers_dev = false`, `preview_urls = false`), since it would run against production's database and bucket: it is checked that it builds. A version that brings a Durable Object class production has not made yet (`[[migrations]]`, as `mark` did) is refused by Cloudflare until main's deploy has made it. Never `npx wrangler deploy`, which would replace production from any branch, without its migrations or its bucket |
-| Branch control | main deploys; other branches build previews. A build needs the token: without it, a branch's preview is built without the Prompt, and main's build stops (`scripts/prompt-files.mjs`) |
+| Branch control | main deploys; other branches build previews, each with the Prompt the tree ships (`scripts/prompt-files.mjs`, from the public release) |
 
 The Prompt the web serves is a released one: a newer one ships by releasing
 it (a new version in `RELEASE`, `.github/workflows/release.yml`; without
 Actions, `scripts/release.sh` and `scripts/publish-release.mjs` by hand, as
-[`releases/README.md`](../releases/README.md) says), then
-committing what was released, as its notes give them: l3's one entry in
-`core/src/root.rs` (the root, and the index the web reads it by; the release
-writes it) and the desktop app in `shared/desktop-releases.json`. A build
+[`releases/README.md`](../releases/README.md) says), then merging the pins
+the release proposes (Pin vX.Y.Z): l3's one entry in `core/src/root.rs`
+(the root, and the index the web reads it by) and the desktop app in
+`shared/desktop-releases.json`. A build
 takes only the l3 this tree pins, and a deploy puts on the Remote only the roots and
 desktop files this tree pins, so a release made under that tag by anyone
 else is not what production serves. The Remote serves them to anyone, the

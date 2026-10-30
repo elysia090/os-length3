@@ -2,7 +2,7 @@
 # Make l3 for the browser (public/l3) from a release root: the translator
 # built from this tree (as wasm, and natively to translate the hot programs
 # ahead of time), then scripts/l3.mjs. The root is the one
-# core/src/root.rs pins for the version RELEASE names, fetched by
+# core/src/root.rs pins newest, fetched by
 # scripts/root-file.mjs when it is not given.
 #
 #   sh scripts/l3.sh [ROOT.tar.zst [OUT]]

@@ -11,14 +11,15 @@
 #   SHA256SUMS, manifest                           the digests; what the root was made from
 #
 # and OUT/../notes.md, the release's notes. Before the web build and the app are made, the root is pinned
-# in core/src/root.rs (pin-root.mjs), so what ships trusts this release's root; that change stays in the
-# tree, to be committed with the desktop app's pin the notes give. The release itself is made by
-# publish-release.mjs (or .github/workflows/release.yml, which runs this script).
+# in core/src/root.rs (pin-root.mjs), so what ships trusts this release's root; once the app is made, it is
+# pinned in shared/desktop-releases.json (pin-desktop.mjs). Both changes stay in the tree, to be committed as
+# one: release.yml proposes them to main. The release itself is made by publish-release.mjs (or
+# .github/workflows/release.yml, which runs this script).
 #
 #   sh scripts/release.sh OUT
 #
-# The version is RELEASE ($VERSION overrides); the commit is HEAD ($GITHUB_SHA overrides). GITHUB_TOKEN
-# reads this private repository's 0.1.0 release (root-file.mjs). Needs Rust with the targets
+# The version is RELEASE ($VERSION overrides); the commit is HEAD ($GITHUB_SHA overrides). GITHUB_TOKEN, when
+# set, reads the 0.1.0 release through the API (root-file.mjs); the repository is public. Needs Rust with the targets
 # x86_64-unknown-linux-musl, wasm32-unknown-unknown and wasm32-wasip1, Node 22, musl-gcc, zstd, zip, and
 # the Tauri build's packages (libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev
 # patchelf).
@@ -62,6 +63,7 @@ deb=os-length3-linux-$version-desktop-amd64.deb
 appimage=os-length3-linux-$version-desktop-x86_64.AppImage
 cp target/release/bundle/deb/*_"$version"_*.deb "$out/$deb"
 cp target/release/bundle/appimage/*_"$version"_*.AppImage "$out/$appimage"
+node scripts/pin-desktop.mjs "$version" "$out/$deb" "$out/$appimage"
 
 cd "$out"
 sha256sum "$l3web" "$web" "$deb" "$appimage" >> SHA256SUMS
@@ -86,13 +88,13 @@ digest() { sha256sum "$1" | cut -d' ' -f1; }
   echo "mkdir opened && tar --zstd -xf $rootfile -C opened"
   echo '```'
   echo
-  echo "l3 $version is the root (the desktop app installs it) and \`$l3web\`, the same root as the browser reads it (the same paths, modes, links and bytes: checked when it was made). One entry of \`os/core/src/root.rs\` RELEASES pins both; the release pinned it, and serving this release is committing it:"
+  echo "l3 $version is the root (the desktop app installs it) and \`$l3web\`, the same root as the browser reads it (the same paths, modes, links and bytes: checked when it was made). One entry of \`os/core/src/root.rs\` RELEASES pins both; the release pinned it:"
   echo
   echo '```rust'
   awk '/^pub const RELEASES/{on=1; sub(/^pub const RELEASES: &\[Release\] = &\[/, "")} on{print} on && /^}/{exit}' "$here/core/src/root.rs"
   echo '```'
   echo
-  echo "and its desktop app in \`os/shared/desktop-releases.json\`, as below. Each deploy of the Remote then takes the pinned root and desktop files from this release, checks them against those pins and puts them on the Remote, which hands them to anyone (this repository is private); a web build takes l3 from \`$l3web\` only at the pinned index (\`os/scripts/prompt-files.mjs\`)."
+  echo "and its desktop app in \`os/shared/desktop-releases.json\`, as below. Both are proposed to main as one change (Pin $version); once it is in, each deploy of the Remote takes the pinned root and desktop files from this release, checks them against those pins and puts them on the Remote, which hands them to anyone beside this release; a web build takes l3 from \`$l3web\` only at the pinned index (\`os/scripts/prompt-files.mjs\`)."
   echo
   echo '```json'
   echo "\"$version\": {"
