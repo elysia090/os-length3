@@ -71,6 +71,20 @@ test('a repo made and written with l3 is on the Remote byte for byte, CRLF, name
   assert.equal((await draftOf('files')).draft['ノート/メモ.md'], undefined);
 });
 
+test('l3 repo mv and rm do what the repo\'s gear does: one only this device has is renamed and deleted, one on the Remote is not', async () => {
+  const alone = r.device();
+  ok(alone.l3(['repo', 'new', 'draft', '-t', 'empty']));
+  ok(alone.l3(['repo', 'mv', 'draft', 'notes']), /^Renamed draft to notes\n$/);
+  assert.match(ok(alone.l3(['repo'])).out, /^notes /m);
+  ok(alone.l3(['repo', 'rm', 'notes']), /^Deleted notes from this device\n$/);
+  assert.doesNotMatch(ok(alone.l3(['repo'])).out, /notes/);
+  // On the Remote, which knows it by its name and guards it with a passkey: said where it is done, nothing done here.
+  ok(laptop.l3(['repo', 'new', 'kept', '-t', 'empty']));
+  refused(laptop.l3(['repo', 'mv', 'kept', 'other']), 1, /kept is on the Remote/);
+  refused(laptop.l3(['repo', 'rm', 'kept']), 1, /kept is on the Remote: turn it off there first/);
+  assert.match(ok(laptop.l3(['repo'])).out, /^kept /m);
+});
+
 test('another device opens the repo from the Remote, and takes in each change made on the first when it reads', async () => {
   ok(laptop.l3(['repo', 'new', 'shared', '-t', 'empty']));
   ok(laptop.l3(['file', 'write', 'shared/a.txt'], 'one\n'));

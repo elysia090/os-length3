@@ -59,6 +59,29 @@ pub fn repo_new(ctx: &Ctx, call: &Call) -> Result<Reply> {
     Ok(Reply::done(tr!("Made {} ({} · {})", "{} を作りました（{} · {}）", s.name, template, files(s.files as usize)), json!({"repo": s, "template": template})))
 }
 
+/// A repo renamed, as its gear in the app renames it: only one no Remote has agreed (the Remote knows a repo by its
+/// name), never while a Prompt has it open; what this device keeps of it by name goes with it.
+pub fn repo_mv(ctx: &Ctx, call: &Call) -> Result<Reply> {
+    let repo = target::repo(ctx, call, 0)?;
+    let to = call.word(1).unwrap_or_default();
+    remote::rename_repo(&ctx.repos()?, &repo, to, &[])?;
+    Ok(Reply::done(tr!("Renamed {} to {}", "{} の名前を {} に変えました", repo, to), json!({"repo": to, "was": repo})))
+}
+
+/// A repo taken from this device whole, as its gear in the app deletes one no Remote has. One the Remote has is
+/// guarded there (turning it off asks for the account's name, the repo's, a code and a passkey): it is not deleted
+/// from here, and l3 says where it is.
+pub fn repo_rm(ctx: &Ctx, call: &Call) -> Result<Reply> {
+    let repo = target::repo(ctx, call, 0)?;
+    if remote::agreed(&repo) {
+        return Err(Error::Refused(tr!(
+            "{} is on the Remote: turn it off there first (in the app, its gear's Delete), which asks for your passkey",
+            "{} は Remote にあります。先にそちらで止めてください（アプリでは歯車の「削除」。パスキーを求められます）", repo)));
+    }
+    remote::delete_repo(&ctx.repos()?, &repo, &[])?;
+    Ok(Reply::done(tr!("Deleted {} from this device", "{} をこの端末から消しました", repo), json!({"repo": repo})))
+}
+
 pub fn repo_open(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let name = call.word(0).unwrap_or_default();
     let r = ctx.repos()?;

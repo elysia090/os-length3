@@ -2573,7 +2573,10 @@ the gear's do, never swapped in one frame):
   straight on to the names; the passkey just used still counts, so turning
   off does not ask for another (the Remote takes one for five minutes).
   Delete in a repo's gear, in any list, asks the same in the list, and
-  turns it off with its copy here gone (§ Runtime, A repo in a list).
+  turns it off with its copy here gone (§ Runtime, A repo in a list). l3
+  does what the gear does for a repo only this device has (`l3 repo mv
+  NAME NEW`, `l3 repo rm NAME`), and for one on the Remote says that the
+  Remote guards it and where it is turned off: the passkey is the app's.
   Off, the knob is at the left on `off` red and the card is quiet (dashed):
   the Remote keeps the repo 30 days, answering only that it is off, and
   pressing the switch again brings it back at once. Off, at the bottom left:

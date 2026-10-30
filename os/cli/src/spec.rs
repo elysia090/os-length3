@@ -320,6 +320,9 @@ pub static COMMANDS: &[Command] = &[
             f(Some("new"), &[Arg::Text("NAME")], &[Flag::Template], ["make one", "作る"], DEVICE, Send, forge::repo_new)),
         offer(&[d(["Open here", "この端末に開く"], On::RemoteRepo).when(&[F::OnlyThere]).also(&[Group::File, Group::Remote])],
             f(Some("open"), &[Arg::Text("NAME")], &[], ["bring one from the Remote", "Remote から持ってくる"], REMOTE, Keep, forge::repo_open)),
+        // Rename and Delete, as the repo's gear has them in the app.
+        f(Some("mv"), &[REPO, Arg::Text("NEW")], &[], ["rename one the Remote does not have yet", "Remote にまだない repo の名前を変える"], DEVICE, Send, forge::repo_mv),
+        f(Some("rm"), &[REPO], &[], ["delete one from this device, with all in it", "repo を中身ごとこの端末から消す"], DEVICE, Keep, forge::repo_rm),
     ]),
     c("band", &[], Group::Forge, ["the repos out on Forge's band", "Forge の帯に出ている repo"], &[
         page(f(None, &[], &[], ["the list", "一覧"], DEVICE, Send, forge::band_list)),
