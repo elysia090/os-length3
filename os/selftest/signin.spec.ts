@@ -62,7 +62,7 @@ test('signing out says what stays in this browser, and Remove from device takes 
   // Asked in its row: what stays here unless it is taken off, and that the Remote keeps it.
   const ask = app.me.menu.getByRole('group', {name: 'Sign out'});
   await expect(ask).toContainText('Repos, TODOs, and profile remain in this browser.');
-  await expect(ask).toContainText('the Remote keeps them');
+  await expect(ask).toContainText('Data is saved on Remote and restores upon sign-in.');
   await app.answer(ask.getByRole('button', {name: 'Remove from device', exact: true}), ask);
   // Signed out, none of it is here: Home is as a newcomer finds it, nothing of the Remote's named on it either.
   await expect(app.main.getByRole('heading', {name: 'No name set', level: 1})).toBeVisible();
@@ -87,7 +87,7 @@ test('Remove from device takes nothing the Remote lacks: a repo the plan holds b
   await app.me.menu.getByRole('menuitem', {name: 'Sign out'}).click();
   const ask = app.me.menu.getByRole('group', {name: 'Sign out'});
   await app.answer(ask.getByRole('button', {name: 'Remove from device', exact: true}), ask.getByRole('button', {name: 'Remove from device', exact: true}));
-  await expect(ask).toContainText('d retained: Free plan repo storage limit reached on Remote');
+  await expect(ask).toContainText('d retained: The free plan keeps no more repos on the Remote');
   await expect(ask).toContainText('If you sign out, local data remains accessible');
   await expect(ask.getByRole('button', {name: 'Cancel'})).toBeVisible();
   // What the Remote has went; what it lacks is here as it was.

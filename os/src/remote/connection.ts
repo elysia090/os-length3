@@ -269,9 +269,12 @@ export function signedInURL(): string {
 /** Back from a provider: the Remote set its session cookie; keep the session's token here. */
 export async function claim(): Promise<boolean> {
   try {
-    // The session's token as the Remote hands it over (signed: the only form it takes a bearer in), not as it says it.
-    const token = (await api('/api/auth/get-session', {}, null)).headers.get('set-auth-token');
-    if (!token) { signInTrouble = t('Provider authentication failed. Please try again.'); return false; }
+    // The session the provider's return made, and its token as the Remote hands it over (signed: the only form it
+    // takes a bearer in), not as the session says it.
+    const r = await api('/api/auth/get-session', {}, null);
+    const s = await r.json() as {session?: unknown} | null;
+    const token = r.headers.get('set-auth-token');
+    if (!s?.session || !token) { signInTrouble = t('Provider authentication failed. Please try again.'); return false; }
     await keep(token);
     return true;
   } catch (e) {
