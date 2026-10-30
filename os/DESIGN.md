@@ -1737,7 +1737,13 @@ is half written is kept for the repo and for what the box does.
 
 Edit makes the box a line of the file in front, written there as the line is
 in the file: nothing to learn, no words that ask for things, no line first
-written and then applied. The box holds the line the file's caret is on, lit
+written and then applied. It need not be chosen: while one works in a file of
+the center with the box empty and running, the box is that line's by itself,
+its pill saying the file and the caret's line (main.c:5) and its keys Ctrl G,
+so what the box does is what one is doing, and pressed into it holds that
+line; Run is a key away (Ctrl `, Alt+1, or its pill). Once neither the file
+nor the box has the keyboard, it is the mode one chose again; something
+written in it for Run keeps it Run. The box holds the line the file's caret is on, lit
 in the marker's yellow where it stands (under its words, from its start: not
 across the file, so it reads as the words held), and what is typed in the box
 is in the file as it is typed (saved as typing in the file is, a moment after

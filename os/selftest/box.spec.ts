@@ -210,3 +210,26 @@ test('Edit: words marked on a line come into the box chosen in their line, and w
   await expect(file).toHaveValue(before.replace('    puts("hello");', '    puts("world");\n    '));
   await expect(box).toHaveValue('    ');
 });
+
+test('working in a file with the box empty, the box is that line\'s by itself; Run comes back once neither has the keyboard', async ({app}) => {
+  const box = app.forge.promptBox, chip = app.main.locator('.prompt-chip'), file = app.forge.editor('src/main.c');
+  await expect(chip).toHaveAttribute('data-mode', 'run');
+  await file.click();
+  // The file has the keyboard: the box says the file and the line, Edit's.
+  await expect(chip).toHaveAttribute('data-mode', 'edit');
+  await expect(chip).toContainText('main.c');
+  // Pressed into, it holds that line.
+  await box.click();
+  await expect(box).not.toHaveValue('');
+  // Gone elsewhere, it is what one chose again (Run), and nothing of the line is left in it.
+  await app.rail.go('git');
+  await app.rail.go('forge');
+  await expect(chip).toHaveAttribute('data-mode', 'run');
+  await expect(box).toHaveValue('');
+  // Something written in the box for Run stays Run, the file pressed or not.
+  await box.press('Alt+1');
+  await box.fill('make');
+  await file.click();
+  await expect(chip).toHaveAttribute('data-mode', 'run');
+  await expect(box).toHaveValue('make');
+});

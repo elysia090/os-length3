@@ -315,6 +315,8 @@ class Forge extends Part {
 
   /** Start the open repo's Prompt by writing to it (a letter, taken back), and wait for its prompt line (`hello $ `). */
   async startPrompt(repo: string) {
+    // Run, as chosen (the box takes up Edit by itself while a file has the keyboard).
+    await this.promptBox.press('Alt+1');
     await this.promptBox.press(' ');
     await this.promptBox.press('Backspace');
     await expect(this.prompt).toContainText(new RegExp(`${escape(repo)} \\$|Could not start`), {timeout: 240_000});
@@ -323,6 +325,7 @@ class Forge extends Part {
 
   /** Write `line` in the prompt box and send it (Ctrl+Enter; Enter is a new line). */
   async run(line: string) {
+    await this.promptBox.press('Alt+1');
     await this.promptBox.fill(line);
     await this.promptBox.press('Control+Enter');
     await expect(this.promptBox).toHaveValue('');

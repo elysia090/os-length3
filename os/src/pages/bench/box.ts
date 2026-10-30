@@ -129,6 +129,7 @@ export class Box {
     this.dock.append(this.#menu.element);
     this.#wire(caps);
     this.#stepsBack();
+    this.#byItself();
     // Chosen in another page's box, this one does it too (turned there, not here: it is not on screen).
     onBoxMode((m) => this.choose(m, false));
     onChange((c) => {
@@ -195,10 +196,14 @@ export class Box {
     return true;
   }
 
-  /** The box made to do `m`: its pill turns to it, and what was half written for it comes back. */
-  choose(m: Mode, seen = true) {
+  /**
+   * The box made to do `m`: its pill turns to it, and what was half written for it comes back. `byItself`: taken up
+   * of itself (Edit while one works in a file), not chosen: the mode one chose stays the boxes' own.
+   */
+  choose(m: Mode, seen = true, byItself = false) {
+    if (!byItself) this.#auto = false;
     // Told to the other pages' boxes once this one has turned (it hears its own telling, and is there already).
-    if (m === this.#mode) { setBoxMode(m); return; }
+    if (m === this.#mode) { if (!byItself) setBoxMode(m); return; }
     if (this.#up && m !== 'run') this.#screen?.lower();
     const change = () => {
       // A line held for Edit is in the file already: let go, not kept as a draft.
@@ -216,7 +221,35 @@ export class Box {
       if (m === 'edit' && document.activeElement === this.prompt) this.#edit.show(); else this.#edit.hide();
     };
     if (seen && this.#p.work.isConnected && !this.#up) turn(this.chip, this.runIt, change); else change();
-    setBoxMode(m);
+    if (!byItself) setBoxMode(m);
+  }
+
+  /** Edit taken up of itself while one works in a file: it goes back to the mode chosen once neither has the keyboard. */
+  #auto = false;
+
+  /**
+   * Working in a file of the center, with the box empty and running, the box is that line's of itself: Edit, its pill
+   * saying the file and the line the caret is on, so what the box does is what one is doing (pressed into, it holds
+   * that line). Run is a key away (Ctrl+`, or its pill). Once neither the file nor the box has the keyboard, it is
+   * what one chose again.
+   */
+  #byItself() {
+    const {main} = this.#p;
+    main.addEventListener('focusin', (event) => {
+      if (!(event.target as Element).classList?.contains('code-edit')) return;
+      if (this.#mode !== 'run' || this.prompt.value || !this.#repo || this.prompt.disabled || this.#up) return;
+      this.#auto = true;
+      this.choose('edit', false, true);
+    });
+    const left = (event: FocusEvent) => {
+      if (!this.#auto) return;
+      const to = event.relatedTarget as Element | null;
+      if (to && (to === this.prompt || this.dock.contains(to) || (to.classList.contains('code-edit') && main.contains(to)))) return;
+      this.#auto = false;
+      this.choose(boxMode(), false, true);
+    };
+    main.addEventListener('focusout', left);
+    this.prompt.addEventListener('blur', left);
   }
 
   /**
