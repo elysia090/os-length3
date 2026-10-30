@@ -24,6 +24,8 @@
 //   GET    /v1/repos/:name/lines      the work on its issues; POST {issue} starts one
 //   POST   /v1/repos/:name/lines/:line/push {head}
 //   GET    /v1/repos/:name/changes    POST {line, kind, title, note}: Submit change
+//   GET    /v1/standing?repo=a&repo=b each repo asked: {name, lines, changes} as the two routes above answer them,
+//                                      or {name, status: 410, error, offAt, until} for one turned off
 //   POST   /v1/repos/:name/changes/:id/reviews | merge | reject | reset
 //
 // Every write that is checked against what the account already has (its
@@ -195,7 +197,9 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
   /** The row of line `l` of repo `id`. */
   const lineRow = (id: number, l: string) => and(eq(line.repoId, id), eq(line.name, l));
   /** A repo that is off answers nothing but being off, and until when it can come back. */
-  const on = (off: Date | null | undefined) => { if (off) refuse(410, {error: 'This repo is turned off', offAt: off.getTime(), until: off.getTime() + KEPT}); };
+  /** What a repo turned off answers in place of anything else (410). */
+  const offWords = (off: Date) => ({error: 'This repo is turned off', offAt: off.getTime(), until: off.getTime() + KEPT});
+  const on = (off: Date | null | undefined) => { if (off) refuse(410, offWords(off)); };
   /** The names that went for good and are still remembered, each with when (sweep.ts purge). */
   const remembered = (user: string) => and(eq(repoGone.userId, user), sql`${repoGone.at} > ${ago(REMEMBERED)}`);
   /** When `name` went for good, if it did lately. */
@@ -541,6 +545,28 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
     if (!list.length) return c.json([]);
     on(list[0].off);
     return c.json(list.filter((x): x is Change & {off: Date | null} => x.id !== null).map((x) => changeShown(name, x)));
+  });
+
+  // Where each repo asked stands, for Git's page: its lines and changes as the two routes above answer them (the newest
+  // 200 changes of each), every repo's in two reads. Git asked those two of each repo, one after the other, each a round
+  // trip of its own. A repo turned off is said as they say it; one not on the Remote has neither, as they answer.
+  v1.get('/standing', async (c) => {
+    const user = c.get('userId');
+    const names = [...new Set(c.req.queries('repo') ?? [])].slice(0, LIMIT.repos);
+    if (!names.length) return c.json([]);
+    const asked = and(eq(repo.userId, user), inArray(repo.name, names));
+    const lines = await db.select(lineCols).from(repo).leftJoin(line, and(eq(line.repoId, repo.id), ne(line.name, 'main')))
+      .where(asked).orderBy(line.startedAt) as (Omit<Line, 'line'> & {line: string | null})[];
+    const newest = db.select({...changeCols, repo: sql<string>`${repo.name}`.as('repo'),
+      n: sql<number>`row_number() over (partition by ${change.repoId} order by ${change.updatedAt} desc)`.as('n')})
+      .from(repo).innerJoin(change, eq(change.repoId, repo.id)).where(asked).as('newest');
+    const changes = await db.select().from(newest).where(sql`${newest.n} <= 200`).orderBy(desc(newest.updatedAt)) as (Change & {repo: string; n: number})[];
+    return c.json(names.map((name) => {
+      const its = lines.filter((x) => x.name === name);
+      if (its[0]?.off) return {name, status: 410, ...offWords(its[0].off)};
+      return {name, lines: its.filter((x): x is Line => x.line !== null).map(lineShown),
+        changes: changes.filter((x) => x.repo === name).map(({repo: _, n: __, ...x}) => changeShown(name, x))};
+    }));
   });
 
   // Submit change: what the line has pushed, measured against main's last commit. Again after

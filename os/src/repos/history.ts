@@ -6,7 +6,8 @@
 // commit, by folder. The core does each, the app's or the same in a browser.
 
 import {showLine, sync} from '../remote/sync.ts';
-import {core} from '../app/host.ts';
+import {core, failure} from '../app/host.ts';
+import type {Answer} from '../core/client.ts';
 import {restore} from './putback.ts';
 import {store} from './repos.ts';
 import type {DiffLine} from './linediff.ts';
@@ -60,10 +61,13 @@ export const lines = (repo: string): Promise<Line[]> => core<Line[]>('work_lines
 /** The changes handed to the repo's main, newest first. */
 export const changesOf = (repo: string): Promise<Change[]> => core<Change[]>('changes_list', {repo});
 
-/** Where a repo stands in one go: the work it shows, every issue's work, the changes. */
-export async function standing(repo: string): Promise<{work: Work; lines: Line[]; changes: Change[]}> {
-  const [shown, lineList, list] = await Promise.all([work(repo), lines(repo), changesOf(repo)]);
-  return {work: shown, lines: lineList, changes: list};
+/** Where a repo stands: the work it shows, every issue's work, the changes. */
+export interface Standing { work: Work; lines: Line[]; changes: Change[] }
+
+/** Where each of `repos` stands, all asked of the Remote at once: each its own, or why not (the error asking it alone gives). */
+export async function standings(repos: readonly string[]): Promise<(Standing | Error)[]> {
+  const each = await core<Answer[]>('work_standings', {repos});
+  return each.map((a) => ('ok' in a ? a.ok as Standing : failure(a)));
 }
 
 /** Push: the work's commits become its state on the Remote. */

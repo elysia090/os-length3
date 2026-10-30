@@ -100,6 +100,10 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         "work_state" => to(history::work(&repos()?, &a.s("repo")?)?),
         "work_lines" => to(work::lines(&a.s("repo")?)?),
         "changes_list" => to(history::changes_of_repo(&a.s("repo")?)?),
+        // Each repo's own answer, as `answer` gives one: {ok: {work, lines, changes}}, or {error} (with its status and
+        // detail when the Remote refused it).
+        "work_standings" => to(history::standings(&repos()?, &a.list("repos")?)?.into_iter()
+            .map(|r| r.map_or_else(|why| why, |s| json!({"ok": s}))).collect::<Vec<_>>()),
         "change_review" => to(history::review(&a.s("repo")?, &a.s("id")?, &a.s("verdict")?, &a.s("note")?, &a.list("marks")?)?),
         "change_merge" => to(history::merge(&a.s("repo")?, &a.s("id")?)?),
         "change_reject" => to(history::reject(&a.s("repo")?, &a.s("id")?, &a.s("note")?)?),

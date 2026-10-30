@@ -45,8 +45,13 @@ export const useCore = (a: Ask) => { asked = a; };
 export async function core<T>(name: string, args: Record<string, unknown> = {}): Promise<T> {
   const a = await asked(name, args);
   if ('ok' in a) return a.ok as T;
-  // The Remote's refusal is the same RemoteError the page's own requests give (a plan's rule, offline, …).
-  throw a.status === undefined ? new Error(a.error) : new RemoteError(a.status, a.error, a.detail ?? {});
+  throw failure(a);
+}
+
+/** Why the core said no, as the error a page catches: the Remote's refusal is the same RemoteError the page's own
+ *  requests give (a plan's rule, offline, …). */
+export function failure(a: Exclude<Answer, {ok: unknown}>): Error {
+  return a.status === undefined ? new Error(a.error) : new RemoteError(a.status, a.error, a.detail ?? {});
 }
 
 

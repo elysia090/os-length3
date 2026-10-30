@@ -75,10 +75,14 @@ export function git(ctx: Context): Node[] {
  * Where each of `repos` stands, into `fresh`: the work it shows (main again once that work's change was merged), the
  * issues started, the changes to main, and what is not committed.
  */
-function standings(repos: readonly string[], fresh: Map<string, RepoState>): Promise<unknown> {
-  return Promise.all(repos.map(async (r) => {
+async function standings(repos: readonly string[], fresh: Map<string, RepoState>): Promise<unknown> {
+  // Every repo's lines and changes in one ask of the Remote; what is not committed, each of its own.
+  const stand = await gitops.standings(repos).catch((e: unknown) => repos.map(() => e instanceof Error ? e : new Error(String(e))));
+  return Promise.all(repos.map(async (r, i) => {
     try {
-      let {work, lines, changes} = await gitops.standing(r);
+      const at = stand[i];
+      if (!at || at instanceof Error) throw at ?? new Error(r);
+      let {work, lines, changes} = at;
       // A work whose change was merged (here or on another device) is done: the repo shows main again.
       if (work.line !== 'main' && changes.some((c) => c.line === work.line && c.state === 'merged')) {
         await gitops.switchWork(r, 'main');

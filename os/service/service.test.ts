@@ -410,6 +410,26 @@ test('work on an issue is its own line; submitted, reviewed by version, merged i
   assert.equal(main.draft['notes.txt'], other);
   const log = (await s.call('GET', '/v1/repos/r/log', {token: t})).json as unknown as {id: string; merged: string | null}[];
   assert.deepEqual(log.map((c) => c.merged), [c2, null]);
+
+  // Where each repo stands, every repo asked in one request: what the two routes say of each (asked twice, once), a repo
+  // not on the Remote with neither, one turned off as they say it, and only the asker's own: another's of the same name
+  // is not theirs to read.
+  await s.call('PATCH', '/v1/repos/quiet/draft', {token: t, body: {version: 0, set: {'README.md': readme}, remove: []}});
+  const bo = await s.start('Bo');
+  await s.call('PUT', `/v1/blobs/${readme}`, {token: bo, bytes: enc.encode('# r\n')});
+  await s.call('PATCH', '/v1/repos/theirs/draft', {token: bo, body: {version: 0, set: {'README.md': readme}, remove: []}});
+  assert.equal((await s.call('GET', '/v1/repos/theirs/lines', {token: bo})).status, 200);
+  const one = async (name: string) => ({name, lines: (await s.call('GET', `/v1/repos/${name}/lines`, {token: t})).json,
+    changes: (await s.call('GET', `/v1/repos/${name}/changes`, {token: t})).json});
+  const standing = async (...names: string[]) => (await s.call('GET', `/v1/standing?${names.map((n) => `repo=${n}`).join('&')}`, {token: t})).json;
+  assert.deepEqual(await standing('r', 'quiet', 'none', 'r', 'theirs'),
+    [await one('r'), await one('quiet'), {name: 'none', lines: [], changes: []}, {name: 'theirs', lines: [], changes: []}]);
+  assert.equal(((await one('r')).changes as unknown[]).length, 1);
+  assert.deepEqual(await standing(), []);
+  await s.db.update(schema.repo).set({offAt: new Date()}).where(sql`${schema.repo.name} = 'quiet'`);
+  const off = await s.call('GET', '/v1/repos/quiet/lines', {token: t});
+  assert.equal(off.status, 410);
+  assert.deepEqual(await standing('quiet', 'r'), [{name: 'quiet', status: 410, ...off.json}, await one('r')]);
 });
 
 test('a file both sides changed stops the merge; reject is the receiver\'s, reset the submitter\'s', async () => {

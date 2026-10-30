@@ -80,6 +80,7 @@ test('another account\'s repo answers as if it were not there, by every route a 
   assert.deepEqual((await asB('GET', '/v1/repos/shared-name/log')).json, []);
   assert.deepEqual((await asB('GET', '/v1/repos/shared-name/lines')).json, []);
   assert.deepEqual((await asB('GET', '/v1/repos/shared-name/changes')).json, []);
+  assert.deepEqual((await asB('GET', '/v1/standing?repo=shared-name')).json, [{name: 'shared-name', lines: [], changes: []}]);
   assert.deepEqual((await asB('POST', '/v1/blobs/missing', [r.blob])).json, [r.blob]);
   // Writes reach nothing of A's.
   refused(await asB('POST', '/v1/repos/shared-name/cuts', {version: 1, parent: null, title: 'mine'}), 409);
@@ -198,6 +199,9 @@ test('a repo turned off is kept 30 days from when it went off, asking again does
     refused(r, 410, 'This repo is turned off');
     assert.deepEqual([r.json.offAt, r.json.until], [again.offAt, again.until], `${m} ${p}`);
   }
+  // Asked with other repos, where it stands says the same of it.
+  const [stood] = (await s.call('GET', '/v1/standing?repo=resting', {token: o.t})).json as unknown as {status: number; error: string; offAt: number; until: number}[];
+  assert.deepEqual([stood.status, stood.error, stood.offAt, stood.until], [410, 'This repo is turned off', again.offAt, again.until]);
 });
 
 test('the 30 days are kept to the day: the sweep leaves a repo off 29 days, and lets one off 31 days go as gone', async () => {

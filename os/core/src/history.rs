@@ -439,13 +439,18 @@ pub struct Work {
 }
 
 pub fn work(repos: &Repos, repo: &str) -> Result<Work> {
+    work_from(repos, repo, None)
+}
+
+/// `work`, from the repo's lines and changes as the Remote just answered them (`asked`), when they were asked already.
+fn work_from(repos: &Repos, repo: &str, asked: Option<(&[crate::work::Line], &[Change])>) -> Result<Work> {
     // A work merged (here or on another device) is done: back to main, and its copy goes. The changes are asked of
     // the Remote only when there is a copy here: with none, there is nothing to let go of, and the work shown is main
     // (most repos, most of the time), which Forge and Git asked about each time they drew the repo.
     let copies = crate::work::worktrees(repo);
-    let mut listed = None;
+    let mut listed = asked.map(|(_, changes)| changes.to_vec());
     if !copies.is_empty() {
-        let list = changes_of_repo(repo);
+        let list = match &listed { Some(l) => Ok(l.clone()), None => changes_of_repo(repo) };
         let merged: Vec<&str> = list.iter().flatten().filter(|c| c.state == "merged").map(|c| c.line.as_str()).collect();
         for (line, _) in &copies {
             // A merged work's copy that cannot go now is tried again the next time the issues are read.
@@ -457,7 +462,11 @@ pub fn work(repos: &Repos, repo: &str) -> Result<Work> {
     if on == crate::work::MAIN {
         return Ok(Work { line: on, issue: None, started_by: String::new(), started_at: 0, commits: 0, unpushed: 0, change: None });
     }
-    let l = crate::work::line(repo, &on)?.ok_or_else(|| crate::tr!("The Remote has no such work", "Remote にその作業がありません"))?;
+    // The work's line as the Remote answered it with the others, or asked of it.
+    let l = match asked.and_then(|(lines, _)| lines.iter().find(|x| x.line == on)) {
+        Some(l) => l.clone(),
+        None => crate::work::line(repo, &on)?.ok_or_else(|| crate::tr!("The Remote has no such work", "Remote にその作業がありません"))?,
+    };
     let log = log_of(repo, &on, 200)?;
     let mine: Vec<&Cut> = log.iter().take_while(|c| Some(&c.id) != l.base.as_ref()).collect();
     let unpushed = mine.iter().take_while(|c| Some(&c.id) != l.pushed.as_ref()).count();
@@ -534,10 +543,62 @@ pub struct Review {
 /// The changes handed to `repo`'s main, newest first, each with where it reaches.
 pub fn changes_of_repo(repo: &str) -> Result<Vec<Change>> {
     let client = Client::open()?;
-    let mut list: Vec<Change> = serde_json::from_value(client.json("GET", &format!("/v1/repos/{repo}/changes"), None)?).map_err(|e| e.to_string())?;
-    for c in &mut list { place(&client, repo, c)?; }
+    let list = client.json("GET", &format!("/v1/repos/{repo}/changes"), None)?;
+    listed(&client, repo, list)
+}
+
+/// The changes of `repo` as the Remote listed them, each placed (where it reaches), the merged ones remembered.
+fn listed(client: &Client, repo: &str, v: serde_json::Value) -> Result<Vec<Change>> {
+    let mut list: Vec<Change> = serde_json::from_value(v).map_err(|e| e.to_string())?;
+    for c in &mut list { place(client, repo, c)?; }
     remember_merged(repo, list.iter().filter(|c| c.state == "merged").map(|c| c.issue.clone()));
     Ok(list)
+}
+
+/// Where a repo stands, for Git's page: the work it shows, every issue's work on the Remote, the changes to its main.
+#[derive(Serialize, Debug)]
+pub struct Standing {
+    pub work: Work,
+    pub lines: Vec<crate::work::Line>,
+    pub changes: Vec<Change>,
+}
+
+/// Where each of `names` stands, each its own answer or why not (as `api::answer` says why: its words, and how the
+/// Remote refused it when it did). The Remote is asked for all their lines and changes at once (GET /v1/standing): Git
+/// asked the two of each repo one after another, each a round trip the core waited on. A Remote without the route is
+/// asked repo by repo, as before.
+pub fn standings(repos: &Repos, names: &[String]) -> Result<Vec<std::result::Result<Standing, serde_json::Value>>> {
+    if names.is_empty() { return Ok(Vec::new()); }
+    let client = Client::open()?;
+    let query: Vec<String> = names.iter().map(|n| format!("repo={}", query_part(n))).collect();
+    let each: Vec<serde_json::Value> = match client.call("GET", &format!("/v1/standing?{}", query.join("&")), None)? {
+        Reply::Ok(v) => serde_json::from_value(v).map_err(|e| e.to_string())?,
+        Reply::NotFound(_) => return Ok(names.iter().map(|r| {
+            let one = || Ok(Standing { work: work(repos, r)?, lines: crate::work::lines(r)?, changes: changes_of_repo(r)? });
+            one().map_err(|e: String| serde_json::json!({"error": e}))
+        }).collect()),
+        Reply::Conflict(v) => return Err(crate::remote::refused_in(409, &v)),
+    };
+    Ok(names.iter().map(|name| {
+        let v = each.iter().find(|x| x["name"].as_str() == Some(name.as_str()))
+            .ok_or_else(|| serde_json::json!({"error": crate::tr!("The Remote did not say where {} stands", "Remote が {} の状態を答えませんでした", name)}))?;
+        // Refused for this repo (turned off): as its own routes refuse it, with what the Remote said of it.
+        if let Some(status) = v["status"].as_u64() {
+            return Err(serde_json::json!({"error": crate::remote::refused_in(status as u16, v), "status": status, "detail": v}));
+        }
+        let one = || {
+            let lines: Vec<crate::work::Line> = serde_json::from_value(v["lines"].clone()).map_err(|e| e.to_string())?;
+            let changes = listed(&client, name, v["changes"].clone())?;
+            let work = work_from(repos, name, Some((&lines, &changes)))?;
+            Ok(Standing { work, lines, changes })
+        };
+        one().map_err(|e: String| serde_json::json!({"error": e}))
+    }).collect())
+}
+
+/// `s` as it goes in a query string: anything but letters, digits and -._~ as %XX.
+fn query_part(s: &str) -> String {
+    s.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-._~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect()
 }
 
 /// Where a change from one commit to another reaches, as `place` found it. A commit's id is made from all it is (the
