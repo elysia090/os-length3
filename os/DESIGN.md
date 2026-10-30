@@ -419,8 +419,11 @@ over the center is a screen made of these colours, not new ones: its glass
 lamp `done` while its shell runs and `off` once it has ended.
 
 Type: the system sans; monospace only for paths, code and the terminal.
-Sizes 28 (identity), 24 (page title), 20 (card title, figures), 15 (body),
-13 (meta).
+One face of its own: the person's name at Home's top, set in Inter Display
+Black (its Latin letters kept with the app, OFL; any others the system's at
+that weight), 44 (30 on a narrow window), tight (−3.5%): the one big thing,
+its handle a step under it. Sizes 28 (identity), 24 (page title), 20 (card
+title, figures), 15 (body), 13 (meta).
 
 Space: 4, 8, 12, 16, 24, 40. Radius: 8 fields, 12 places, round actions.
 Heights: 40 controls, 32 list rows, 48 rail places. Icons 24 with a 1.6
@@ -1653,6 +1656,11 @@ or Cancel; Cancel comes back with the error a provider sends then.
   is: it opens the plugin area at the top of the center). **+** (a new repo)
   comes right under them, a step apart, and is round because it starts
   something rather than opening a place (§1, shapes).
+- The place one is in is `paper` ringed in `ink` (1.5 px), its icon in
+  ink; not an ink fill: the rail beside every page stays light, and the
+  place is the one thing ringed there. What is out from the rail (File's
+  tree, the person's menu) is ringed so too, and the ink that travels from
+  one place to the next on the rail is that ring.
 - A name appears beside an icon on hover or keyboard focus. Choosing an
   icon replaces the whole page; nothing pushes in beside the rail. File is
   the operation: its tree is laid over the page instead; a rest on Server

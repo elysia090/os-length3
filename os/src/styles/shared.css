@@ -5,9 +5,12 @@
    current or chosen thing is an ink fill, focus is a 2px ink ring. */
 .rail-item:hover, .button:hover, .chip:hover, .pill:hover, .band-add:hover:not(:disabled), .me:hover, .pop-item:hover:not(:disabled), .tree-row:hover, .todo-mark:hover,
 .card.repo:hover, .card.new:hover { background: var(--raised); }
-.rail-item[aria-current='page'], .button.primary,
-.chip[aria-current], .chip[aria-checked='true'], .chip[aria-pressed='true'], .pill[aria-current], .tree-row:has(> [aria-current='page']),
-.rail-item[aria-expanded='true'], .me[aria-expanded='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+.button.primary,
+.chip[aria-current], .chip[aria-checked='true'], .chip[aria-pressed='true'], .pill[aria-current], .tree-row:has(> [aria-current='page']) { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+/* The rail's place, and what is out from the rail (File's tree, the person's menu): paper ringed in ink, its icon in
+   ink, not an ink fill: the rail beside every page stays light, and the place is still the one thing ringed there. */
+.rail-item[aria-current='page'], .rail-item[aria-expanded='true'] { background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--ink); }
+.me[aria-expanded='true'] { background: var(--paper); color: var(--ink); border-color: var(--ink); box-shadow: inset 0 0 0 .5px var(--ink); }
 /* The touch, in light: the give under the finger (touch.ts) is a few pixels, too little to be seen alone, so the
    surface also takes the finger's shadow the moment it is pressed: an outlined thing a step toward ink, an inked one
    a step toward the ground. Let go, the light eases back as the spring settles. The pointer coming on fills in
@@ -33,8 +36,7 @@ button.row-item, .part, .dot-row, .pane-head, .hit-diff, .found-shut):hover { tr
 .work:not(.prompting, .prompt-leaving) .prompt-chip { transition: box-shadow calc(160ms * var(--pace)) ease-out, filter calc(160ms * var(--pace)) ease-out; }
 .work:not(.prompting, .prompt-leaving) .prompt-chip:hover { box-shadow: inset 0 0 0 1px rgb(255 255 255 / .28); filter: brightness(1.18); }
 .work:not(.prompting, .prompt-leaving) .prompt-chip:is([data-mode='todo'], [data-mode='edit']):hover { filter: none; background: var(--raised); }
-:is(.rail-item[aria-current='page'], .button.primary, .chip[aria-current], .chip[aria-checked='true'], .chip[aria-pressed='true'],
-.pill[aria-current], .rail-item[aria-expanded='true'], .me[aria-expanded='true']):active:not(:disabled) {
+:is(.button.primary, .chip[aria-current], .chip[aria-checked='true'], .chip[aria-pressed='true'], .pill[aria-current]):active:not(:disabled) {
   background-color: color-mix(in srgb, var(--ink) 80%, var(--ground)); border-color: color-mix(in srgb, var(--ink) 80%, var(--ground));
 }
 

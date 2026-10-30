@@ -39,6 +39,8 @@
 
   --sans: system-ui, -apple-system, 'Segoe UI', 'Noto Sans JP', 'Hiragino Sans', sans-serif;
   --mono: ui-monospace, 'SF Mono', Consolas, 'Noto Sans Mono', monospace;
+  /* The person's name at Home's top: Inter Display Black, the one big thing (a step smaller on a narrow window). */
+  --t-name: clamp(30px, 5.2vw, 44px); --display: 'Inter Display', var(--sans);
   --t-identity: 28px; --t-title: 24px; --t-card: 20px; --t-body: 15px; --t-meta: 13px;
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 40px;
   /* Places are rounded squares, actions are round, fields are slightly rounded. */
