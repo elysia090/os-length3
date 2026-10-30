@@ -301,14 +301,15 @@ mod tests {
             }
             let key = b'x';
             let sti = |cmd: u64| ioctl(slave, cmd, &key as *const u8 as *const libc::c_void);
-            let (tiocsti, tioclinux) = (libc::TIOCSTI as u64, libc::TIOCLINUX as u64);
+            // As the filter reads them, 64 bits wide (libc's own type is a C long here, an int on musl).
+            let (tiocsti, tioclinux): (u64, u64) = (libc::TIOCSTI as _, libc::TIOCLINUX as _);
             let before = sti(tiocsti);
             install_with(MARK as u16).expect("the filter installs");
             let after = [sti(tiocsti), sti(0xdead_beef_0000_0000 | tiocsti), sti(tioclinux)];
             // Every other ioctl is the kernel's to answer: a terminal's size is still read.
             // SAFETY: a winsize for TIOCGWINSZ to fill.
             let mut size: libc::winsize = unsafe { std::mem::zeroed() };
-            let size = ioctl(slave, libc::TIOCGWINSZ as u64, &mut size as *mut libc::winsize as *const libc::c_void);
+            let size = ioctl(slave, libc::TIOCGWINSZ as _, &mut size as *mut libc::winsize as *const libc::c_void);
             vec![format!("{before} {} {} {} {size}", after[0], after[1], after[2])]
         });
         let v: Vec<i64> = got[0].split(' ').map(|n| n.parse().unwrap()).collect();

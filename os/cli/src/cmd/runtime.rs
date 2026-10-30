@@ -251,21 +251,6 @@ pub fn dotfile_rm(_: &Ctx, call: &Call) -> Result<Reply> {
     Ok(Reply::done(tr!("Removed {}", "{} を消しました", name), json!({"name": name})))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_word_that_is_nothing_frees_nothing_and_says_how_it_is_written() {
-        let c = Ctx::test(None, vec![]);
-        for argv in [vec!["free", ""], vec!["free", "hello", " "]] {
-            let argv: Vec<String> = argv.into_iter().map(String::from).collect();
-            let call = crate::args::parse(&argv, &c).unwrap();
-            assert!(matches!(free(&c, &call), Err(Error::Usage(_))), "{argv:?}");
-        }
-    }
-}
-
 /// `l3 host`: what this machine has for running this OS's VMs (core vm.rs), and for what it lacks, the one fix.
 #[cfg(target_os = "linux")]
 pub fn host(_: &Ctx, _: &Call) -> Result<Reply> {
@@ -298,4 +283,19 @@ pub fn host_fetch(_: &Ctx, _: &Call) -> Result<Reply> {
 #[cfg(not(target_os = "linux"))]
 pub fn host(_: &Ctx, _: &Call) -> Result<Reply> {
     Err(Error::Refused(tr!("VMs run on a Linux host with KVM", "VM は KVM のある Linux で動きます")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_word_that_is_nothing_frees_nothing_and_says_how_it_is_written() {
+        let c = Ctx::test(None, vec![]);
+        for argv in [vec!["free", ""], vec!["free", "hello", " "]] {
+            let argv: Vec<String> = argv.into_iter().map(String::from).collect();
+            let call = crate::args::parse(&argv, &c).unwrap();
+            assert!(matches!(free(&c, &call), Err(Error::Usage(_))), "{argv:?}");
+        }
+    }
 }

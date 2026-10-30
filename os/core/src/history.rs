@@ -460,7 +460,7 @@ pub fn commit_issue(repos: &Repos, repo: &str, file: &str, deed: &str) -> Result
         _ => {}
     }
     if Client::open().is_err() { return Ok(false); }
-    Ok(cut_paths(repos, repo, &[path.clone()], &issue_words(&path, text.as_deref(), deed))?.is_some())
+    Ok(cut_paths(repos, repo, std::slice::from_ref(&path), &issue_words(&path, text.as_deref(), deed))?.is_some())
 }
 
 /// Each issue file main's draft holds and its last commit does not (written while signed out, renumbered, or one
@@ -732,8 +732,10 @@ fn query_part(s: &str) -> String {
 /// Remote's cutId: its tree among it), so what two commits come to never changes: a change listed again (each time
 /// Git is drawn, and Forge while a work is shown) asks the Remote for neither of its trees again.
 type Reach = (Vec<String>, usize);
-fn reaches() -> &'static Mutex<HashMap<(String, Option<String>, String), Reach>> {
-    static R: OnceLock<Mutex<HashMap<(String, Option<String>, String), Reach>>> = OnceLock::new();
+/// What changes reach, by the repo, the line and the commit they come to.
+type Reaches = HashMap<(String, Option<String>, String), Reach>;
+fn reaches() -> &'static Mutex<Reaches> {
+    static R: OnceLock<Mutex<Reaches>> = OnceLock::new();
     R.get_or_init(|| Mutex::new(HashMap::new()))
 }
 

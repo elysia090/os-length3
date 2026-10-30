@@ -230,33 +230,6 @@ pub fn off(_: &Ctx, call: &Call) -> Result<Reply> {
     Ok(Reply::done(tr!("{} is handed nothing more, and no longer says what it does here", "{} にはもう何も任せず、作業も知らせません", harness_said(harness)), json!({"harness": harness, "path": path})))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn on_twice_is_on_once_and_off_leaves_the_persons_own_hooks_as_they_were() {
-        let theirs = json!({"model": "x", "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "guard.sh"}]}]}});
-        let once = with_ours(theirs.clone(), "claude");
-        assert_eq!(with_ours(once.clone(), "claude"), once);
-        let pre = once["hooks"]["PreToolUse"].as_array().unwrap();
-        assert_eq!(pre.len(), 2);
-        assert_eq!(pre[1]["matcher"], "*");
-        assert!(pre[1]["hooks"][0]["command"].as_str().unwrap().ends_with(" agent hook claude"));
-        assert_eq!(once["hooks"].as_object().unwrap().len(), EVENTS.len());
-        assert_eq!(without_ours(once), theirs);
-        assert_eq!(without_ours(with_ours(json!({}), "grok")), json!({}));
-        assert_eq!(config("grok")["hooks"]["PostToolUse"][0]["matcher"], ".*");
-    }
-
-    #[test]
-    fn a_path_is_one_word_to_the_shell_whatever_it_holds() {
-        assert_eq!(quoted("/usr/bin/l3"), "/usr/bin/l3");
-        assert_eq!(quoted("/home/a b/it's/l3"), "'/home/a b/it'\\''s/l3'");
-    }
-}
-
-
 // ---- the work handed to it (core tasks.rs) ----
 
 fn task_id(call: &Call) -> Result<u64> {
@@ -513,4 +486,30 @@ pub fn inside(ctx: &Ctx, call: &Call) -> Result<Reply> {
 #[cfg(not(target_os = "linux"))]
 pub fn inside(_: &Ctx, _: &Call) -> Result<Reply> {
     Err(Error::Refused(tr!("A Prompt runs on Linux only for now", "Prompt はいま Linux だけです")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn on_twice_is_on_once_and_off_leaves_the_persons_own_hooks_as_they_were() {
+        let theirs = json!({"model": "x", "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "guard.sh"}]}]}});
+        let once = with_ours(theirs.clone(), "claude");
+        assert_eq!(with_ours(once.clone(), "claude"), once);
+        let pre = once["hooks"]["PreToolUse"].as_array().unwrap();
+        assert_eq!(pre.len(), 2);
+        assert_eq!(pre[1]["matcher"], "*");
+        assert!(pre[1]["hooks"][0]["command"].as_str().unwrap().ends_with(" agent hook claude"));
+        assert_eq!(once["hooks"].as_object().unwrap().len(), EVENTS.len());
+        assert_eq!(without_ours(once), theirs);
+        assert_eq!(without_ours(with_ours(json!({}), "grok")), json!({}));
+        assert_eq!(config("grok")["hooks"]["PostToolUse"][0]["matcher"], ".*");
+    }
+
+    #[test]
+    fn a_path_is_one_word_to_the_shell_whatever_it_holds() {
+        assert_eq!(quoted("/usr/bin/l3"), "/usr/bin/l3");
+        assert_eq!(quoted("/home/a b/it's/l3"), "'/home/a b/it'\\''s/l3'");
+    }
 }
