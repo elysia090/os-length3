@@ -187,7 +187,18 @@ export const cut = pgTable('cut', {
   parent: text('parent'),
   /** For a merge: the commit of the line that was merged. */
   merged: text('merged'),
+  /**
+   * Its tree, kept as what it changed from its parent (`base`, its first parent: the paths set, and `gone` those taken
+   * away), or whole where it has no base: the first of a repo, every 16th along a run of changes (`depth` counts them),
+   * and one that changed more than half its files. Read whole by cut_tree() (0020); a commit took its whole tree
+   * before, every one, so a repo's commits took its size each in the database.
+   */
   tree: jsonb('tree').$type<Tree>().notNull(),
+  base: text('base'),
+  gone: jsonb('gone').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  depth: smallint('depth').notNull().default(0),
+  /** What its tree takes whole, as kept (pg_column_size): how much of it the log may send at once. */
+  size: integer('size'),
   /** Its files' modes beside the tree (Modes). */
   modes: jsonb('modes').$type<Modes>().notNull().default(sql`'{}'::jsonb`),
   bytes: bytesOf('tree'),
@@ -215,7 +226,8 @@ export const cut = pgTable('cut', {
   foreignKey({name: 'cut_repo', columns: [t.repoId, t.userId], foreignColumns: [repo.id, repo.userId]}).onDelete('cascade'),
   foreignKey({name: 'cut_parent', columns: [t.repoId, t.parent], foreignColumns: [t.repoId, t.id]}),
   foreignKey({name: 'cut_merged', columns: [t.repoId, t.merged], foreignColumns: [t.repoId, t.id]}),
-  check('cut_id', matches('id', re.sha)), check('cut_tree', sql`jsonb_typeof(${t.tree}) = 'object'`), check('cut_modes', sql`jsonb_typeof(${t.modes}) = 'object'`),
+  check('cut_id', matches('id', re.sha)), check('cut_tree', sql`jsonb_typeof(${t.tree}) = 'object'`), check('cut_gone', sql`jsonb_typeof(${t.gone}) = 'array'`),
+  check('cut_base', sql`${t.base} is null or ${t.base} = ${t.parent}`), check('cut_modes', sql`jsonb_typeof(${t.modes}) = 'object'`),
   check('cut_words', sql.raw('char_length(kind) <= 2000 and char_length(title) between 1 and 2000 and char_length(issue) <= 2000 and char_length(note) <= 2000')),
   check('cut_counts', sql`${t.added} >= 0 and ${t.removed} >= 0`)]);
 

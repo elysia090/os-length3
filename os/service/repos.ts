@@ -144,7 +144,11 @@ export async function cutId(c: {repo: string; parent: string | null; tree: Tree;
 }
 
 /** A commit as clients read it. */
-const cutCols = {id: cut.id, parent: cut.parent, merged: cut.merged, tree: cut.tree, modes: cut.modes, kind: cut.kind, title: cut.title, issue: cut.issue,
+/** A commit is kept whole every so many along a run of changes (0020): how many it takes to read one whole, at most. */
+const WHOLE_EVERY = 16;
+/** A commit's tree whole, however it is kept (0020 cut_tree). */
+const cutTree = sql<Tree>`cut_tree(${cut.repoId}, ${cut.id})`;
+const cutCols = {id: cut.id, parent: cut.parent, merged: cut.merged, tree: cutTree, modes: cut.modes, kind: cut.kind, title: cut.title, issue: cut.issue,
   note: cut.note, added: cut.added, removed: cut.removed, time: cut.time};
 /** A line as clients read it: `name` is its repo's, `line` its own; `id` (its repo's number) and `off` are the service's. */
 const lineCols = {id: repo.id, off: repo.offAt, name: repo.name, line: line.name, base: line.base, head: line.head, pushed: line.pushed,
@@ -225,7 +229,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
   /** The trees of the commits `ids` of repo `id`, and their modes; one not there is empty. */
   const treesOf = async (q: Db, id: number, ids: (string | null)[]) => {
     const wanted = [...new Set(ids.filter((x): x is string => !!x))];
-    const found = wanted.length ? await q.select({id: cut.id, tree: cut.tree, modes: cut.modes}).from(cut).where(and(eq(cut.repoId, id), inArray(cut.id, wanted))) : [];
+    const found = wanted.length ? await q.select({id: cut.id, tree: cutTree, modes: cut.modes}).from(cut).where(and(eq(cut.repoId, id), inArray(cut.id, wanted))) : [];
     const by = new Map<string, {tree: Tree; modes: Modes}>(found.map((r: {id: string; tree: Tree; modes: Modes}) => [r.id, r]));
     const tree = (c: string | null): Tree => (c && by.get(c)?.tree) || {};
     return Object.assign(tree, {modes: (c: string | null): Modes => (c && by.get(c)?.modes) || {}});
@@ -351,12 +355,27 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
    */
   const commit = async (tx: Db, user: string, row: Line,
     w: {merged: string | null; tree: Tree; modes: Modes; kind: string; title: string; issue: string; note: string; added: number; removed: number}, draft?: {tree: Tree; modes: Modes}) => {
-    if (row.used !== undefined) fitsUsed(row.used, JSON.stringify(w.tree).length); else await fits(tx, user, JSON.stringify(w.tree).length);
     const time = Date.now();
     const modes = modesFor(w.tree, w.modes);
     const id = await cutId({repo: `${row.name}${row.line === 'main' ? '' : `@${row.line}`}`, parent: row.head, tree: w.tree, modes, kind: w.kind, title: w.title, issue: w.issue, note: w.note, time});
-    await tx.insert(cut).values({repoId: row.id, id, userId: user, parent: row.head, merged: w.merged, tree: w.tree, modes, kind: w.kind, title: w.title,
-      issue: w.issue, note: w.note, added: w.added, removed: w.removed, time: new Date(time)}).onConflictDoNothing();
+    // Kept as what it changed from its parent (0020): the paths set and those gone, worked out where the parent is, or
+    // whole where it has none, is the 16th along a run of changes, or changed more than half its files. Then the room
+    // it takes is what is kept, not its tree whole.
+    const [made] = await rows<{bytes: number}>(tx, sql`with n as (select ${JSON.stringify(w.tree)}::jsonb as t),
+        p as (select k.depth, cut_tree(k.repo_id, k.id) as t from cut k where k.repo_id = ${row.id} and k.id = ${row.head}),
+        d as (select p.depth,
+            (select coalesce(jsonb_object_agg(e.key, e.value), '{}'::jsonb) from jsonb_each(n.t) e where (p.t -> e.key) is distinct from e.value) as "set",
+            (select coalesce(jsonb_agg(k), '[]'::jsonb) from jsonb_object_keys(p.t) k where not (n.t ? k)) as gone
+          from n, p),
+        w as (select n.t, d.set, d.gone, d.depth, d.depth is null or d.depth + 1 >= ${WHOLE_EVERY}
+            or 2 * (select count(*) from jsonb_object_keys(d.set)) + 2 * jsonb_array_length(d.gone) > (select count(*) from jsonb_object_keys(n.t)) as whole
+          from n left join d on true)
+      insert into cut (repo_id, id, user_id, parent, merged, tree, base, gone, depth, modes, kind, title, issue, note, added, removed, time)
+      select ${row.id}, ${id}, ${user}, ${row.head}, ${w.merged}, case when w.whole then w.t else w.set end, case when w.whole then null else ${row.head} end,
+        case when w.whole then '[]'::jsonb else w.gone end, case when w.whole then 0 else w.depth + 1 end, ${JSON.stringify(modes)}::jsonb,
+        ${w.kind}, ${w.title}, ${w.issue}, ${w.note}, ${w.added}, ${w.removed}, ${new Date(time).toISOString()}::timestamptz
+      from w on conflict do nothing returning bytes`);
+    if (made) { if (row.used !== undefined) fitsUsed(row.used, Number(made.bytes)); else await fits(tx, user, Number(made.bytes)); }
     // main is what the servers a repo is shown in see (seen.ts reads what it pushed): a commit on main, or a change
     // merged into it, is pushed with it, so they see main's last commit, never an older one or nothing.
     const pushed = row.line === 'main' ? {pushed: id} : {};
@@ -424,17 +443,17 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
   v1.get('/repos/:name/log', async (c) => {
     const limit = Math.min(LIMIT.log, Math.max(1, Math.floor(Number(c.req.query('limit') ?? 50)) || 50));
     const summary = c.req.query('summary') === '1';
-    const trees = summary ? sql`` : sql`c.tree, c.modes, `;
+    const trees = summary ? sql`` : sql`cut_tree(c.repo_id, c.id) as tree, c.modes, `;
     const row = await lineAt(db, c.get('userId'), c.req.param('name'), lineOf(c));
     on(row?.off);
     if (!row?.head) return c.json([]);
     // With trees, no more of them than TREES_AT_ONCE as kept (each may be 8 MB; 50 were past what a Worker holds,
     // and every request on it failed with it): fewer commits, and the last one's parent says where the rest go on.
-    const room = summary ? sql`` : sql`and w.held + pg_column_size(c.tree) < ${TREES_AT_ONCE}`;
+    const room = summary ? sql`` : sql`and w.held + coalesce(c.size, pg_column_size(c.tree)) < ${TREES_AT_ONCE}`;
     return c.json(await rows(db, sql`with recursive walk(id, n, held) as (
         select ${row.head}::text, 1, 0::bigint
         union all
-        select c.parent, w.n + 1, w.held + pg_column_size(c.tree) from walk w join cut c on c.repo_id = ${row.id} and c.id = w.id
+        select c.parent, w.n + 1, w.held + coalesce(c.size, pg_column_size(c.tree)) from walk w join cut c on c.repo_id = ${row.id} and c.id = w.id
         where c.parent is not null and w.n < ${limit} ${room}
       )
       select c.id, c.parent, c.merged, ${trees}c.kind, c.title, c.issue, c.note, c.added, c.removed, ${ms(sql`c.time`)} as time,

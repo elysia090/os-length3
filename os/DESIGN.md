@@ -1132,8 +1132,15 @@ by repo.
    on those paths are written anew; commits share every folder they did
    not change; a diff skips folders of the same name; the sweep marks
    from the live roots down. The root's name is also how a place
-   elsewhere fetches a copy. *To build next* (expand: trees beside the
-   JSON, both written; backfill; read from trees; contract the JSON).
+   elsewhere fetches a copy. *Solved in part:* a save that only gives
+   files new contents (the save as one types) is laid on the tree where
+   it is, never read into the Worker; a repo is answered with its tree
+   as the database writes it; a commit is kept as what it changed from
+   its parent, whole only every 16th along a run of changes (0020
+   cut_tree reads one whole), so commits take some sixteenth of what
+   they took. *To build next* (expand: trees beside the JSON, both
+   written; backfill; read from trees; contract the JSON): saves that
+   add, move or take away files still read the tree whole.
 2. **Compute runs only where the copy is.** *Solved:* the Spec above;
    runs here are built from it. A place elsewhere needs only what the
    Spec names: the root (already fetched by digest from the Remote, the

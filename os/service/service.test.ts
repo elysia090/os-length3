@@ -1753,3 +1753,37 @@ test('what a commit changed is counted by the database as the clients count it: 
   const log = (await s.call('GET', '/v1/repos/f/log?summary=1', {token: t})).json as unknown as {title: string; files: number; folders: string[]}[];
   assert.deepEqual(log.map((c) => [c.title, c.files, c.folders]), [['Next', 2, ['a', 'b']], ['Start', 3, ['', 'a', 'b']]]);
 });
+
+test('a commit is kept as what it changed from its parent, whole every 16th, and read whole however it is kept', async () => {
+  const s = await service();
+  const t = await s.start('Ren');
+  const a = (await upload(s, t, enc.encode('a'))).sha, b = (await upload(s, t, enc.encode('b'))).sha;
+  let tree: Record<string, string> = {};
+  for (let i = 0; i < 60; i++) tree[`dir${i % 6}/f${i}.txt`] = a;
+  let version = (await s.call('PATCH', '/v1/repos/delta/draft', {token: t, body: {version: 0, set: tree, remove: []}})).json.version as number;
+  let parent: string | null = null;
+  const made: {id: string; tree: Record<string, string>}[] = [];
+  for (let k = 0; k < 20; k++) {
+    // Each commit gives one file new contents and takes another away.
+    const set = {[`dir${k % 6}/f${k}.txt`]: b}, gone = `dir${(k + 30) % 6}/f${k + 30}.txt`;
+    version = (await s.call('PATCH', '/v1/repos/delta/draft', {token: t, body: {version, set, remove: [gone]}})).json.version as number;
+    tree = {...tree, ...set};
+    delete tree[gone];
+    const r = await s.call('POST', '/v1/repos/delta/cuts', {token: t, body: {version, parent, title: `Fix: ${k}`}});
+    assert.equal(r.status, 201, r.text);
+    parent = r.json.id as string;
+    made.push({id: parent, tree: {...tree}});
+  }
+  // Each read whole, as it was committed: by itself, and in the log with its trees.
+  for (const m of made) assert.deepEqual((await s.call('GET', `/v1/repos/delta/cuts/${m.id}`, {token: t})).json.tree, m.tree, m.id);
+  const log = (await s.call('GET', '/v1/repos/delta/log?limit=50', {token: t})).json as unknown as {id: string; tree: Record<string, string>; files: number}[];
+  for (const m of made) assert.deepEqual(log.find((c) => c.id === m.id)?.tree, m.tree);
+  // What each changed is still said without its tree: a file set and a file gone (the first, every file it has).
+  assert.deepEqual(log.map((c) => c.files), [...Array(19).fill(2), 59]);
+  // Kept: the first whole, then changes, whole again at the 16th; a change a small part of the tree it stands for.
+  const kept = (await s.db.execute(sql`select id, base, depth, bytes, size from cut where id = any(${`{${made.map((m) => m.id).join(',')}}`}::text[])`)).rows as {id: string; base: string | null; depth: number; bytes: number; size: number}[];
+  const by = new Map(kept.map((r) => [r.id, r]));
+  const depths = made.map((m) => by.get(m.id)!.depth);
+  assert.deepEqual(depths, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3]);
+  for (const m of made.slice(1, 16)) assert.ok(by.get(m.id)!.bytes * 10 < by.get(m.id)!.size, JSON.stringify(by.get(m.id)));
+});

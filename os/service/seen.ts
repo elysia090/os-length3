@@ -264,7 +264,7 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   app.get('/v1/seen/:face/:name', async (c) => {
     const at = await find(c, c.req.param('face'), c.req.param('name'));
     if (!at) return c.json({error: 'Repo inaccessible or not found'}, 404);
-    const [p] = await db.select({tree: cut.tree, title: cut.title, time: cut.time}).from(cut).where(pushedAt(at.row)) as {tree: Record<string, string | null>; title: string; time: Date}[];
+    const [p] = await db.select({tree: sql<Record<string, string | null>>`cut_tree(${cut.repoId}, ${cut.id})`, title: cut.title, time: cut.time}).from(cut).where(pushedAt(at.row)) as {tree: Record<string, string | null>; title: string; time: Date}[];
     return c.json({as: at.as, ...(at.owner ? {owner: at.owner} : {}), title: p?.title ?? null, at: p?.time.getTime() ?? null, tree: p?.tree ?? {}});
   });
 
@@ -275,7 +275,7 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const bucket = d.bucket;
     const path = c.req.query('path') ?? '';
     const at = path && path.length <= 1024 ? await find(c, c.req.param('face'), c.req.param('name')) : null;
-    const [f] = at ? await db.select({sha: sql<string | null>`${cut.tree} ->> ${path}`}).from(cut).where(pushedAt(at.row)) as {sha: string | null}[] : [];
+    const [f] = at ? await db.select({sha: sql<string | null>`cut_tree(${cut.repoId}, ${cut.id}) ->> ${path}`}).from(cut).where(pushedAt(at.row)) as {sha: string | null}[] : [];
     if (!at || !f?.sha) return c.json({error: 'File inaccessible or not found'}, 404);
     // What is at a path changes with a push: kept by the browser, and asked again each time by its digest, which
     // answers 304 without R2 when it is the same; HEAD is answered from the blob's row.
