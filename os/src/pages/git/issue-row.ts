@@ -78,7 +78,13 @@ export class IssueRow {
     this.shown = shown;
     this.stage.hidden = false;
     this.column.classList.toggle('single', shown.length === 1);
-    const had = this.part();
+    // The keyboard goes back to the same part of its box, if its box is still shown. Its box gone (closed, merged),
+    // it goes to the row, never to that part of another box: drawn again before the row went aside (a slow Remote),
+    // the box closed under Close handed it to the next box's Close, and a second Enter closed that one too.
+    const under = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('.issue-slot')?.dataset.issue;
+    const was = this.part();
+    const had = was && shown.some((i) => `${i.repo}/${i.file}` === under) ? was : null;
+    if (was && !had) this.stage.focus({preventScroll: true});
     this.track.replaceChildren(...shown.map((i) => h('div', {class: 'issue-slot', 'data-issue': `${i.repo}/${i.file}`})));
     this.was = -1;
     if (!slide) { this.go(at, false, had); return; }

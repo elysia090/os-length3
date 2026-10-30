@@ -27,6 +27,14 @@ const usable = (el: Element): el is HTMLElement =>
   el instanceof HTMLElement && el.isConnected && !(el as HTMLButtonElement).disabled && !el.closest('[hidden], [inert]')
   && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
 
+/** What a thing drawn among others of its kind is known by (an issue's box in the row, a column): the attribute and
+ * its value, kept on the thing itself. */
+const KEYS = ['data-issue', 'data-key'];
+const known = (el: Element): [string, string] | null => {
+  for (const k of KEYS) { const v = el.getAttribute(k); if (v !== null) return [k, v]; }
+  return null;
+};
+
 /** What a control is, as a person tells it from another: its kind, its name and its words. */
 const what = (el: Element) => `${el.tagName}|${el.getAttribute('role') ?? ''}|${el.getAttribute('aria-label') ?? ''}|${(el.textContent ?? '').trim()}`;
 
@@ -34,6 +42,8 @@ export function keepFocus(doc: Document = document) {
   let last: HTMLElement | null = null;
   let was = '';
   let around: HTMLElement[] = [];
+  /** The thing of its own the control was in (an issue's box), and what it is known by. */
+  let own: {el: HTMLElement; key: [string, string]} | null = null;
   let since = 0;
   let timer = 0;
 
@@ -44,6 +54,8 @@ export function keepFocus(doc: Document = document) {
     was = what(el);
     around = [];
     for (let p = el.parentElement; p && p !== doc.body; p = p.parentElement) around.push(p);
+    const at = around.find((p) => known(p));
+    own = at ? {el: at, key: known(at)!} : null;
     since = 0;
   }, true);
 
@@ -59,7 +71,12 @@ export function keepFocus(doc: Document = document) {
     if (usable(last)) { last.focus({preventScroll: true}); since = 0; return; }
     const home = around.find((a) => a.isConnected && !a.closest('[hidden]'));
     if (!home) { since = 0; return; }
-    const same = [...home.querySelectorAll(CONTROLS)].find((c): c is HTMLElement => what(c) === was && usable(c));
+    // In a thing of its own that was drawn again, the same control is looked for in that thing, never in the one
+    // beside it: an issue's box gone (closed), its Close is not the next box's Close, which a second Enter would close.
+    const again = own && !own.el.isConnected
+      ? [...home.querySelectorAll<HTMLElement>(`[${own.key[0]}]`)].find((e) => e.getAttribute(own!.key[0]) === own!.key[1]) ?? null
+      : home;
+    const same = again ? [...again.querySelectorAll(CONTROLS)].find((c): c is HTMLElement => what(c) === was && usable(c)) : undefined;
     // The one that went, taken before the focus moves (its focusin makes the new one `last`).
     if (same) { const went = last; same.focus({preventScroll: true}); carry(went, same); since = 0; return; }
     if (performance.now() - since < WAIT) { timer = window.setTimeout(settle, WAIT); return; }
