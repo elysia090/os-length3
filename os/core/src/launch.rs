@@ -45,6 +45,9 @@ pub struct Sandbox {
     /// The data directory, where the repo's environment and caches are kept
     /// (owned.rs); without one the root is read-only and nothing outlives the Prompt.
     pub data: Option<PathBuf>,
+    /// What it is told besides, in its environment (a task's words: compute.rs Spec): added to what every Prompt
+    /// runs with, never over it.
+    pub env: Vec<(String, String)>,
 }
 
 /// Home keeps the dotfiles (home.rs); a Prompt writes into /root those this device took (dotfiles_in_effect).
@@ -111,9 +114,10 @@ fn bind(src: &Path, dst: &Path, read_only: bool) -> io::Result<()> {
 /// Where a Prompt's programs are looked for.
 const PROMPT_PATH: &str = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
 
-/// What a Prompt runs with: set here, never taken from the host.
-fn environment(name: &str) -> Vec<CString> {
-    [
+/// What a Prompt runs with: set here, never taken from the host; then what it is told besides (`told`), each by
+/// a name of capitals, digits and _ that is none of these, its words without a NUL.
+fn environment(name: &str, told: &[(String, String)]) -> Vec<CString> {
+    let mut all: Vec<String> = [
         format!("PATH={PROMPT_PATH}"),
         "HOME=/root".into(),
         "USER=root".into(),
@@ -131,7 +135,13 @@ fn environment(name: &str) -> Vec<CString> {
         // An interactive sh reads this (the root's /etc/length3/shrc, if it has one).
         "ENV=/etc/length3/shrc".into(),
         format!("LENGTH3_REPO={name}"),
-    ].iter().map(c).collect()
+    ].into();
+    let fixed: Vec<String> = all.iter().filter_map(|e| e.split_once('=').map(|(k, _)| k.to_string())).collect();
+    for (k, v) in told {
+        if k.is_empty() || !k.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_') || fixed.contains(k) { continue; }
+        all.push(format!("{k}={}", v.replace('\0', "")));
+    }
+    all.iter().map(c).collect()
 }
 
 /// The terminal the Prompt is drawn on: a real one's name when l3 runs in one (so nano and
@@ -402,7 +412,7 @@ fn init(s: &Sandbox) -> ! {
     let program = c(find_program(&s.argv[0]));
     // Said if it cannot start, in the child, before it would only end with 127.
     let not_started = crate::tr!("l3: {} could not start: ", "l3: {} を起動できませんでした：", s.argv[0]);
-    let env = environment(&s.name);
+    let env = environment(&s.name, &s.env);
     let mut envp: Vec<*const libc::c_char> = env.iter().map(|a| a.as_ptr()).collect();
     envp.push(std::ptr::null());
     let shell = unsafe { libc::fork() };
@@ -633,6 +643,27 @@ fn package_name(p: &str) -> bool {
     !p.is_empty() && p.len() <= 128 && !p.starts_with('-') && p.bytes().all(|b| b.is_ascii_alphanumeric() || b"+-.:=~_/".contains(&b))
 }
 
+/// A root's sha256, by where it is held (`system/<sha256>/root`): the name it is fetched by anywhere.
+pub fn root_digest(root: &Path) -> String {
+    root.parent().and_then(|d| d.file_name()).map_or_else(|| root.display().to_string(), |n| n.to_string_lossy().into_owned())
+}
+
+/// What an environment is, by what set it up: the root (its sha256), `.packages` and `.setup`. The same key is the
+/// same environment wherever it is made (compute.rs Spec), and a change to any of them sets it up again.
+pub fn environment_key(root: &str, packages: &[&str], setup: &str) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(format!("{root}\n{}\n{setup}", packages.join(" "))).iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// The environment `dotfiles` ask of the root `root` (its sha256), as environment_key names it; empty when they ask
+/// for nothing (the plain root).
+pub fn environment_of(root: &str, dotfiles: &[(String, String)]) -> String {
+    let get = |n: &str| dotfiles.iter().find(|(k, _)| k == n).map_or("", |(_, v)| v.as_str());
+    let packages: Vec<&str> = get(".packages").lines().map(|l| l.split('#').next().unwrap_or("")).flat_map(str::split_whitespace).collect();
+    if packages.is_empty() && get(".setup").trim().is_empty() { return String::new(); }
+    environment_key(root, &packages, get(".setup"))
+}
+
 /// What the person's dotfiles ask of a root: `.packages` (names, any number
 /// a line, `#` to the end of a line left out), installed with the root's own
 /// package manager, then `.setup` run with sh. Language runtimes and tools
@@ -642,7 +673,6 @@ fn package_name(p: &str) -> bool {
 /// repo's and stays; and again only when the root or either file changes.
 /// `apt`: the root has apt (Ubuntu, Debian); l3's own has no archive yet.
 pub fn set_up(s: &Sandbox, apt: bool) -> io::Result<()> {
-    use sha2::{Digest, Sha256};
     let Some(data) = &s.data else { return Ok(()) };
     let get = |n: &str| s.dotfiles.iter().find(|(k, _)| k == n).map_or("", |(_, v)| v.as_str());
     let packages: Vec<&str> = get(".packages").lines().map(|l| l.split('#').next().unwrap_or("")).flat_map(str::split_whitespace).collect();
@@ -652,9 +682,7 @@ pub fn set_up(s: &Sandbox, apt: bool) -> io::Result<()> {
         eprintln!("{}", crate::tr!("l3: .packages: not a package name: {}", "l3: .packages：パッケージ名ではありません：{}", p));
         return Ok(());
     }
-    let mut h = Sha256::new();
-    h.update(format!("{}\n{}\n{}", s.root.display(), packages.join(" "), setup));
-    let key: String = h.finalize().iter().map(|b| format!("{b:02x}")).collect();
+    let key = environment_key(&root_digest(&s.root), &packages, setup);
     let stamp = crate::owned::env_over(data, &s.name, &s.root).join("set-up");
     if std::fs::read_to_string(&stamp).ok().as_deref() == Some(key.as_str()) { return Ok(()); }
     let mut script = String::from("set -e\n");
@@ -746,7 +774,7 @@ mod tests {
                     std::os::unix::fs::symlink(to, root.join(link))?;
                 }
                 for d in ["usr", "etc"] { bind(&Path::new("/").join(d), &root.join(d), false)?; }
-                run_apart(&Sandbox { root: root.clone(), repo: repo.clone(), name: "t".into(), argv: vec!["/bin/sh".into(), "-c".into(), script.into()],
+                run_apart(&Sandbox { root: root.clone(), repo: repo.clone(), name: "t".into(), argv: vec!["/bin/sh".into(), "-c".into(), script.into()], env: Vec::new(),
                     network, dotfiles: Vec::new(), data: None })
             })();
             unsafe { libc::_exit(code.unwrap_or(200)) };
@@ -888,7 +916,7 @@ fi
         let start = |script: &str| -> libc::pid_t {
             let script = format!("cd /root/t\nstep() {{ name=$1; shift; \"$@\" 2>/dev/null; echo \"$name $?\" >> log; }}\n\
                 await() {{ while [ ! -e $1 ]; do sleep 0.02; done; }}\n{script}");
-            let s = Sandbox { root: root.clone(), repo: repo.clone(), name: "t".into(), argv: vec!["/bin/sh".into(), "-c".into(), script],
+            let s = Sandbox { root: root.clone(), repo: repo.clone(), name: "t".into(), argv: vec!["/bin/sh".into(), "-c".into(), script], env: Vec::new(),
                 network: false, dotfiles: Vec::new(), data: Some(data.clone()) };
             // SAFETY: the child is single-threaded after fork, runs the Prompt and leaves with _exit.
             let pid = unsafe { libc::fork() };

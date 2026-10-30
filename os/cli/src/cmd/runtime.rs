@@ -27,6 +27,15 @@ pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
     });
     t.push(String::new());
     t.push(tr!("This device  {} free of {} (the host's figures) · this OS {}", "この端末  空き {} / {}（ホストの値） · この OS {}", bytes(s.host_free), bytes(s.host_total), bytes(s.allocated)));
+    // What runs used of time and space in the last day, by repo (core compute.rs ledger): the most CPU first.
+    let used = length3_core::compute::by_repo(&length3_core::compute::runs(), crate::out::now_ms().saturating_sub(24 * 60 * 60 * 1000));
+    if !used.is_empty() {
+        t.push(tr!("Compute, the last day", "計算資源（この1日）"));
+        let secs = |ms: u64| if ms < 60_000 { format!("{:.1} s", ms as f64 / 1000.0) } else { format!("{} min", ms / 60_000) };
+        t.extend(crate::out::columns(&used.iter().map(|(repo, n, u)| (format!("  {repo}"),
+            tr!("{} · CPU {} · {} · at most {}", "{} · CPU {} · {} · 最大 {}", crate::out::count(*n as usize, "run", "runs", "{}回"), secs(u.cpu_ms), secs(u.wall_ms), bytes(u.peak_memory))))
+            .collect::<Vec<_>>()));
+    }
     if s.freeable > 0 { crate::menu::page_fact(Fact::AnyFreeable); }
     // Whether each can go now or stays, said as that (a bare "free" beside a name read as free space), the words
     // after it in one column whichever it is.
@@ -42,7 +51,8 @@ pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
     }
     if s.freeable > 0 { t.push(tr!("Can be freed: {} (all of it: l3 free all)", "空けられるもの：{}（全部なら l3 free all）", bytes(s.freeable))); }
     let items: Vec<_> = s.items.iter().map(|i| json!({"id": i.id, "what": i.what, "allocated": i.allocated, "room": i.room})).collect();
-    Ok(Reply::data(t.join("\n"), json!({"root": current, "ssh": listening.map(|l| json!({"port": l.port, "scope": l.scope, "destinations": l.destinations(), "fingerprint": l.fingerprint})), "hostTotal": s.host_total, "hostFree": s.host_free, "host": s.host,
+    let compute: Vec<_> = used.iter().map(|(repo, n, u)| json!({"repo": repo, "runs": n, "usage": u})).collect();
+    Ok(Reply::data(t.join("\n"), json!({"compute": compute, "root": current, "ssh": listening.map(|l| json!({"port": l.port, "scope": l.scope, "destinations": l.destinations(), "fingerprint": l.fingerprint})), "hostTotal": s.host_total, "hostFree": s.host_free, "host": s.host,
         "allocated": s.allocated, "freeable": s.freeable, "items": items})))
 }
 

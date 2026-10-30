@@ -58,6 +58,29 @@ pub fn held(ns: u64) -> Held {
     Held { processes: pids.len() as u32, memory: pids.iter().map(|&p| holds(p)).sum() }
 }
 
+/// CPU the namespace has used, in ms: what each live process used (user and system), and what each one reaped
+/// used (its children's, which the kernel adds to it as it waits for them; pid 1 waits for every orphan). So every
+/// process that was ever in it is counted once, ended or not.
+pub fn cpu_ms(ns: u64) -> u64 {
+    // SAFETY: sysconf reads a constant of the system; no memory is passed.
+    let hz = unsafe { libc::sysconf(libc::_SC_CLK_TCK) }.max(1) as u64;
+    let ticks: u64 = members(ns).iter().filter_map(|p| {
+        let t = fs::read_to_string(format!("/proc/{p}/stat")).ok()?;
+        // After the command's name (in parentheses, which may hold anything): utime, stime, cutime, cstime are the
+        // 12th to 15th fields.
+        let f: Vec<u64> = t.rsplit_once(')')?.1.split_whitespace().skip(11).take(4).filter_map(|x| x.parse().ok()).collect();
+        (f.len() == 4).then(|| f.iter().sum::<u64>())
+    }).sum();
+    ticks * 1000 / hz
+}
+
+/// Pause (every process in the namespace stopped: all it holds stays, it uses no CPU) or go on. How many were told.
+pub fn pause(ns: u64, paused: bool) -> usize {
+    let sig = if paused { libc::SIGSTOP } else { libc::SIGCONT };
+    // SAFETY: kill sends a signal to a pid just read as one of the namespace's; no memory is passed.
+    members(ns).into_iter().filter(|&p| unsafe { libc::kill(p as libc::pid_t, sig) } == 0).count()
+}
+
 /// The first child of `supervisor` (the Prompt's pid 1), once it exists.
 pub fn init_of(supervisor: u32) -> Option<u32> {
     let t = fs::read_to_string(format!("/proc/{supervisor}/task/{supervisor}/children")).ok()?;
@@ -215,6 +238,11 @@ pub fn running(data: &Path) -> Vec<Running> {
     }
     out.sort_by_key(|r| (r.started, r.pid));
     out
+}
+
+/// The pid namespace of a running Prompt (its pid 1's).
+pub fn ns_of_running(r: &Running) -> Option<u64> {
+    ns_of(r.pid)
 }
 
 /// What a running Prompt's processes hold now (its pid 1 and all under it; while it is prepared, those

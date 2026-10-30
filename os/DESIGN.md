@@ -1080,6 +1080,79 @@ tool, holds still in yellow while it waits; a neighbour's head carries the
 dot too. The cards come into the pane (Forge's and Git's, Home's above
 Lately).
 
+### Compute, in time and in space
+
+What a person runs (a Prompt, a task handed to an agent, a repo's tests) is
+compute, and the OS treats it as one thing whatever runs it: a **Spec**
+says what a run is made of, never where (`core/src/compute.rs`): the root
+by its sha256, the environment by the key of what set it up (the root's
+sha256, `.packages`, `.setup`: `launch::environment_key`), the repo and
+its line, what runs and what it is told, whether it asks for the network,
+and its **Budget** (wall and CPU time, memory held at once, processes).
+This device builds the run from the Spec (`l3 agent inside`); a place
+elsewhere that fetches by digest is given the same Spec and builds the
+same run. What a run may use is checked where it runs, not where it was
+asked for: the network only as the repo was given it there.
+
+Time and space are counted as the kernel counts them, never assumed: CPU
+in ms of every process ever in the run's namespace (the live ones' own,
+and what each reaped; pid 1 reaps every orphan), wall time, and the most
+memory and processes it held, sampled every quarter second. Past its
+budget a run is stopped and says what it went past (an agent's task has
+10 to 60 minutes by what it does, half the device's memory, 4096
+processes). A Prompt paused (`l3 prompt pause`) keeps all it holds and
+uses no CPU until it goes on. Every run is in the ledger
+(`<data>/compute/runs.jsonl`, never sent): its Spec's digest, where it
+ran, what it used, what it went past; `l3 runtime` says the last day's,
+by repo.
+
+**What scales worst, in order, and how each is solved:**
+
+1. **A repo's tree on the Remote is whole, per save and per commit.** A
+   draft save reads the repo's whole tree (every path and its blob) and
+   writes it back; a commit keeps a whole copy; the daily sweep reads
+   every tree to find blobs no one names. So a save costs the repo's
+   size, storage grows as files × commits, and a repo stops at 20,000
+   files. *Solution:* Merkle trees, as git's: a tree per folder, named
+   by the sha256 of its entries and kept once; a draft or a commit is a
+   root's name; a save names the paths it changes, and only the folders
+   on those paths are written anew; commits share every folder they did
+   not change; a diff skips folders of the same name; the sweep marks
+   from the live roots down. The root's name is also how a place
+   elsewhere fetches a copy. *To build next* (expand: trees beside the
+   JSON, both written; backfill; read from trees; contract the JSON).
+2. **Compute runs only where the copy is.** *Solved:* the Spec above;
+   runs here are built from it. A place elsewhere needs only what the
+   Spec names: the root (already fetched by digest from the Remote, the
+   publisher or the release), the environment (3), the copy (1); it
+   streams what the run prints back as the journal's lines and returns
+   the ledger's Run.
+3. **An environment is one repo's, on one machine.** What `.packages`
+   and `.setup` installed is an overlay of that repo on that root: two
+   repos asking the same install it twice, and nothing moves. *Solved
+   in part:* an environment is named by its key (the same key, the same
+   environment, wherever it is made; set-up stamps by it). *To build:*
+   what set-up made frozen as a read-only layer named by its key,
+   shared by every repo giving the same key, the repo's own writes on a
+   scratch layer above; a layer is a tar stream by digest, so a place
+   elsewhere fetches it.
+4. **A run held what it took until it ended, with no bound.** *Solved:*
+   budgets, measured use, stopping past them, pause and resume, the
+   ledger. *To build:* idle Prompts paused by themselves (their pane out
+   of sight a while), hard limits by cgroup v2 where the host delegates
+   them (memory.max, cpu.weight), a paused run checkpointed (CRIU) to
+   move it.
+5. **Accounting walks the disk.** Runtime and room made under pressure
+   size what the OS holds by walking it. *Solved in part:* room is made
+   only once the host says it is short (one statfs), and roots are sized
+   once, as they are put in place. *To build:* sizes kept as things are
+   made and freed; a repo's walk read from its stamps.
+6. **A sync walks the copy.** Each sync looks at every file of the copy
+   shown (what was read before is not read again: its digest is kept by
+   length, time and inode). *To build:* the host's change notices
+   (fanotify, FSEvents) say which paths changed; a whole walk only at
+   start and now and then as a check.
+
 ## 6. One OS, two ways in
 
 The GUI and the command line are two ways into the same things. `l3`'s

@@ -161,25 +161,28 @@ pub fn append(e: &Event) -> Result<()> {
 }
 
 fn append_to(path: &std::path::Path, e: &Event) -> Result<()> {
-    let path = path.to_path_buf();
-    crate::boundary::private_dir(path.parent().unwrap()).map_err(|e| e.to_string())?;
-    if std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0) > JOURNAL {
-        // Its latest half, from the first whole line in it. (A report appended to the file being cut is lost:
-        // one line, once in a long while, of a log that only shows what agents do.)
-        let bytes = std::fs::read(&path).unwrap_or_default();
+    append_line(path, &serde_json::to_string(e).map_err(|e| e.to_string())?, JOURNAL)
+}
+
+/// Keep `line` at the end of the log at `path` (0600, its folder private), the log cut to its latest half once it
+/// passes `most` bytes: the journal's way, and the compute ledger's.
+pub(crate) fn append_line(path: &std::path::Path, line: &str, most: u64) -> Result<()> {
+    crate::boundary::private_dir(path.parent().unwrap_or(std::path::Path::new("."))).map_err(|e| e.to_string())?;
+    if std::fs::metadata(path).map(|m| m.len()).unwrap_or(0) > most {
+        // Its latest half, from the first whole line in it. (A line appended to the file being cut is lost: one
+        // line, once in a long while, of a log kept to show what happened.)
+        let bytes = std::fs::read(path).unwrap_or_default();
         let half = &bytes[bytes.len() / 2..];
         let from = half.iter().position(|b| *b == b'\n').map_or(half.len(), |i| i + 1);
-        crate::atomic::replace(&path, &half[from..], crate::atomic::How::PRIVATE).map_err(|e| e.to_string())?;
+        crate::atomic::replace(path, &half[from..], crate::atomic::How::PRIVATE).map_err(|e| e.to_string())?;
     }
-    let mut line = serde_json::to_string(e).map_err(|e| e.to_string())?;
-    line.push('\n');
-    // One write of one line, appended: reports from several harnesses at once are never interleaved.
+    // One write of one line, appended: lines from several processes at once are never interleaved.
     let mut open = std::fs::OpenOptions::new();
     open.create(true).append(true);
     #[cfg(unix)]
     std::os::unix::fs::OpenOptionsExt::mode(&mut open, 0o600);
-    let mut f = open.open(&path).map_err(|e| e.to_string())?;
-    f.write_all(line.as_bytes()).map_err(|e| e.to_string())
+    let mut f = open.open(path).map_err(|e| e.to_string())?;
+    f.write_all(format!("{line}\n").as_bytes()).map_err(|e| e.to_string())
 }
 
 /// Every report the journal holds, oldest first (a line that cannot be read is passed over).

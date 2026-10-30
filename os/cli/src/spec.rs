@@ -336,6 +336,7 @@ pub static COMMANDS: &[Command] = &[
         f(Some("ls"), &[], &[], ["the Prompts running or being prepared on this device (the app's too)", "この端末で動いている・用意中の Prompt（アプリのものも）"], DEVICE, Keep, forge::prompt_list),
         offer(&[d(["Stop", "止める"], On::Repo).when(&[F::Running]).away()],
             f(Some("stop"), &[REPO_HERE], &[], ["stop the repo's Prompts: every process in them ends", "repo の Prompt を止める（中のプロセスはすべて終わる）"], DEVICE, Send, forge::prompt_stop)),
+        f(None, &[Arg::Choice(&["pause", "resume"]), REPO_HERE], &[], ["pause the repo's Prompts (all they hold stays, no CPU), or go on", "repo の Prompt を一時停止（持っているものはそのまま、CPU は使わない）、または再開"], DEVICE, Keep, forge::prompt_pause),
     ])),
     c("file", &[], Group::File, ["a folder's entries, a file's text", "フォルダーの中身、ファイルの本文"], &[
         f(Some("write"), &[PATH], &[Flag::Empty], ["replace or make a file with standard input", "標準入力でファイルを置き換える・作る"], LOCAL, Send, file::write),

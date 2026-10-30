@@ -145,7 +145,7 @@ pub fn prompt(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let bash = about.distro.is_some() && root.join("bin/bash").exists() && std::io::stdin().is_terminal();
     let cmd = call.words(1);
     let argv: Vec<String> = if cmd.is_empty() { vec![if bash { "/bin/bash" } else { "/bin/sh" }.into(), "-i".into()] } else { cmd };
-    let s = launch::Sandbox { root, repo: dir, name: repo.clone(), argv, network: call.flags.network || length3_core::home::network(&repo), dotfiles: launch::dotfiles_in_effect(), data: Some(data.clone()) };
+    let s = launch::Sandbox { root, repo: dir, name: repo.clone(), argv, network: call.flags.network || length3_core::home::network(&repo), dotfiles: launch::dotfiles_in_effect(), data: Some(data.clone()), env: Vec::new() };
     // Recorded from the start, by the process that runs it, so `l3 prompt ls` (and Runtime) see it, `l3 prompt stop`
     // can end it, and nothing it holds is freed (usage.rs): first being prepared, as what .packages and .setup ask for
     // is set up (once, while they and the root stay as they are), then running.
@@ -213,6 +213,24 @@ pub fn prompt_stop(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let stopped = stop_prompts(&repo);
     if stopped.is_empty() { return Err(Error::NotFound(tr!("No Prompt of {} is running (l3 prompt ls lists those that are)", "{} の Prompt は動いていません（動いているものは l3 prompt ls）", repo))); }
     Ok(Reply::done(said_stopped(&repo, &stopped), json!({"repo": repo, "stopped": stopped})))
+}
+
+/// `l3 prompt pause|resume [REPO]`: its Prompts paused (all they hold stays, they use no CPU) or going on again.
+#[cfg(target_os = "linux")]
+pub fn prompt_pause(ctx: &Ctx, call: &Call) -> Result<Reply> {
+    use length3_core::{paths, prompt};
+    let paused = call.word(0) == Some("pause");
+    let repo = target::repo(ctx, call, 1)?;
+    let told: usize = prompt::running(&paths::data_dir()).iter().filter(|r| r.repo == repo).filter_map(prompt::ns_of_running).map(|ns| prompt::pause(ns, paused)).sum();
+    if told == 0 { return Err(Error::NotFound(tr!("No Prompt of {} is running (l3 prompt ls lists those that are)", "{} の Prompt は動いていません（動いているものは l3 prompt ls）", repo))); }
+    let text = if paused { tr!("Paused {}'s Prompt: what it holds stays, it uses no CPU (l3 prompt resume {0})", "{} の Prompt を一時停止しました。持っているものはそのまま、CPU は使いません（l3 prompt resume {0}）", repo) }
+        else { tr!("{}'s Prompt goes on", "{} の Prompt を再開しました", repo) };
+    Ok(Reply::done(text, json!({"repo": repo, "paused": paused, "processes": told})))
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn prompt_pause(_: &Ctx, _: &Call) -> Result<Reply> {
+    Err(Error::Refused(tr!("l3 prompt is Linux only for now", "l3 prompt はいま Linux だけです")))
 }
 
 /// Stop every Prompt of `repo` running here; what each held and how it ended.

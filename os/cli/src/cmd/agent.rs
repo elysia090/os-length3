@@ -8,7 +8,7 @@
 use super::Ctx;
 use crate::args::Call;
 use crate::out::{ago, Error, Reply, Result};
-use length3_core::{agents, atomic, paths, tasks, tr};
+use length3_core::{agents, atomic, compute, paths, tasks, tr};
 use serde_json::{json, Map, Value};
 use std::path::PathBuf;
 
@@ -375,18 +375,48 @@ fn run_one(ctx: &Ctx, k: &tasks::Task) -> tasks::Outcome {
             repo: repo.into(), line: line.into(), kind, text: agents::line_of(text) };
         if let Err(why) = agents::append(&e) { crate::out::note(&why); }
     };
+    // What the run is, by what it is made of (core compute.rs): the same Spec builds it here, and anywhere else.
+    let root = match super::runtime::root_now(&paths::data_dir()) {
+        Ok((_, about)) => about.sha256,
+        Err(e) => return stopped(e.message().to_string(), "l3 root fetch".into()),
+    };
+    let title = issue.as_ref().map(|i| i.title.clone()).unwrap_or_default();
+    let resume = if k.reply.is_empty() { String::new() } else { k.session.clone() };
+    let minutes = match k.deed { tasks::Deed::Ask => 10, tasks::Deed::Tests => 15, tasks::Deed::Review => 20, tasks::Deed::Fix => 30, tasks::Deed::Take => 60 };
+    let spec = compute::Spec {
+        environment: launch_environment(&root),
+        root, repo: repo.into(), line: line.into(),
+        argv: vec!["/bin/sh".into(), "-c".into(), format!("[ -f /root/.profile ] && . /root/.profile\n{command}")],
+        env: [("L3_TASK", told), ("L3_RESUME", resume), ("L3_ISSUE", number), ("L3_TITLE", title), ("L3_REPO", repo.to_string())]
+            .into_iter().map(|(k, v)| (k.to_string(), v)).collect(),
+        network: home::network(repo),
+        budget: compute::Budget::minutes(minutes),
+    };
     journal(agents::Kind::Start, &said_first);
-    let o = supervise(k, &dir, &command, &told, &number, issue.as_ref().map(|i| i.title.as_str()).unwrap_or(""), &journal);
+    let (o, usage, over) = supervise(k, &spec, &journal);
+    let what = match k.deed { tasks::Deed::Take => "take", tasks::Deed::Review => "review", tasks::Deed::Tests => "tests", tasks::Deed::Fix => "fix", tasks::Deed::Ask => "ask" };
+    let _ = compute::record(&compute::Run { spec: spec.digest(), place: "here".into(), repo: repo.into(), line: line.into(), what: what.into(),
+        at: crate::out::now_ms().saturating_sub(usage.wall_ms), usage, over, code: o.code });
     journal(agents::Kind::End, &if o.code == 0 { tr!("done", "完了") } else { tr!("ended ({})", "終了（{}）", o.code) });
+    if let Some(over) = over { return stopped(over.said(&spec.budget), String::new()); }
     if o.code == 127 {
         return if harness.is_some() { stopped(tr!("{} is not in {}'s Prompt", "{} が {} の Prompt にありません", name, repo), tr!("put it in .setup", ".setup に入れる")) } else { stopped(String::new(), String::new()) };
     }
     o
 }
 
-/// The run itself: `l3 agent inside N` (the Prompt), told where, what and how by its environment; what it prints read
-/// line by line into the journal (an agent's stream of JSON as its tools) and the log; its last words and session kept.
-fn supervise(k: &tasks::Task, dir: &std::path::Path, command: &str, told: &str, number: &str, title: &str, journal: &dyn Fn(agents::Kind, &str)) -> tasks::Outcome {
+/// The environment the person's dotfiles ask of the root `root` here (launch.rs environment_of; none off Linux).
+fn launch_environment(root: &str) -> String {
+    #[cfg(target_os = "linux")]
+    return length3_core::launch::environment_of(root, &length3_core::home::dotfiles_in_effect());
+    #[cfg(not(target_os = "linux"))]
+    return { let _ = root; String::new() };
+}
+
+/// The run itself: `l3 agent inside N` (the Prompt), given its Spec; watched as it goes (core compute.rs watch),
+/// stopped past its budget; what it prints read line by line into the journal (an agent's stream of JSON as its
+/// tools) and the log; its last words and session kept. What it used, and what of its budget it went past.
+fn supervise(k: &tasks::Task, spec: &compute::Spec, journal: &dyn Fn(agents::Kind, &str)) -> (tasks::Outcome, compute::Usage, Option<compute::Over>) {
     use std::io::{BufRead, Write};
     let mut o = tasks::Outcome { code: -1, ..Default::default() };
     let log_path = tasks::log_path(k);
@@ -395,12 +425,21 @@ fn supervise(k: &tasks::Task, dir: &std::path::Path, command: &str, told: &str, 
         let log = std::fs::OpenOptions::new().create(true).write(true).truncate(true).open(&log_path)?;
         let (reader, writer) = std::io::pipe()?;
         let child = std::process::Command::new(std::env::current_exe()?).args(["agent", "inside", &k.id.to_string()])
-            .env("LENGTH3_REPO", &k.repo).env("L3_RUN_DIR", dir).env("L3_RUN_COMMAND", command).env("L3_TASK", told)
-            .env("L3_RESUME", if k.reply.is_empty() { "" } else { &k.session }).env("L3_ISSUE", number).env("L3_TITLE", title)
+            .env("LENGTH3_REPO", &k.repo).env("L3_SPEC", serde_json::to_string(spec).unwrap_or_default())
             .current_dir(paths::data_dir()).stdin(std::process::Stdio::null()).stdout(writer.try_clone()?).stderr(writer).spawn()?;
         Ok((log, reader, child))
     })();
-    let Ok((mut log, reader, mut child)) = started else { return stopped(tr!("The Prompt could not start", "Prompt を始められませんでした"), String::new()) };
+    let Ok((mut log, reader, child)) = started else {
+        return (stopped(tr!("The Prompt could not start", "Prompt を始められませんでした"), String::new()), compute::Usage::default(), None);
+    };
+    // Watched from beside it while its output is read: past its budget, its supervisor goes, and the Prompt with it.
+    let pid = child.id();
+    let child = std::sync::Arc::new(std::sync::Mutex::new(child));
+    let ended = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let watcher = {
+        let (child, ended, budget) = (child.clone(), ended.clone(), spec.budget);
+        std::thread::spawn(move || watched(pid, &budget, &ended, move || { let _ = child.lock().map(|mut c| c.kill()); }))
+    };
     let (mut logged, mut said, mut last, mut waiting) = (0u64, 0usize, 0u64, None::<String>);
     let mut tail: std::collections::VecDeque<String> = std::collections::VecDeque::new();
     for l in std::io::BufReader::new(reader).split(b'\n').map_while(|l| l.ok()) {
@@ -419,32 +458,51 @@ fn supervise(k: &tasks::Task, dir: &std::path::Path, command: &str, told: &str, 
         if now - last >= SAY_EVERY && said < SAY_MOST { journal(agents::Kind::Tool, &words); said += 1; last = now; waiting = None; } else { waiting = Some(words); }
     }
     if let Some(words) = waiting { journal(agents::Kind::Tool, &words); }
-    o.code = child.wait().map(|s| s.code().unwrap_or(-1)).unwrap_or(-1);
+    o.code = child.lock().ok().and_then(|mut c| c.wait().ok()).map(|s| s.code().unwrap_or(-1)).unwrap_or(-1);
+    ended.store(true, std::sync::atomic::Ordering::SeqCst);
+    let (usage, over) = watcher.join().unwrap_or_default();
     if o.result.is_empty() { o.result = Vec::from(tail).join("\n"); }
-    o
+    (o, usage, over)
 }
 
-/// `l3 agent inside N` (by `l3 agent run`): the run's command in the repo's Prompt, on the copy it was given, with
-/// what it is for in its environment ($L3_TASK, $L3_RESUME, $L3_ISSUE, $L3_TITLE, $L3_REPO) after the person's
-/// .profile; the repo's network grant and nothing more. Ends with the command's code.
+/// The run `pid` supervises, watched until `ended` (core compute.rs watch); off Linux, only its wall time.
+fn watched(pid: u32, budget: &compute::Budget, ended: &std::sync::atomic::AtomicBool, stop: impl FnOnce()) -> (compute::Usage, Option<compute::Over>) {
+    let is_over = || ended.load(std::sync::atomic::Ordering::SeqCst);
+    #[cfg(target_os = "linux")]
+    return compute::watch(pid, budget, std::time::Duration::from_millis(250), is_over, stop);
+    #[cfg(not(target_os = "linux"))]
+    return { let _ = (pid, budget, stop); let t = std::time::Instant::now(); while !is_over() { std::thread::sleep(std::time::Duration::from_millis(250)); }
+        (compute::Usage { wall_ms: t.elapsed().as_millis() as u64, ..Default::default() }, None) };
+}
+
+/// `l3 agent inside N` (by `l3 agent run`): the run its Spec says (L3_SPEC, core compute.rs), built here: the root
+/// it names (held here by its sha256), the repo's copy of its line (main's, the issue's), what it is told in its
+/// environment, the network only if the repo has it here (a Spec asking for more is refused, whoever wrote it).
+/// Ends with its command's code.
 #[cfg(target_os = "linux")]
 pub fn inside(ctx: &Ctx, call: &Call) -> Result<Reply> {
-    use length3_core::{home, launch, prompt};
+    use length3_core::{home, launch, prompt, root, work};
     let repo = ctx.here.as_ref().map(|h| h.repo.clone()).ok_or_else(|| Error::Usage(tr!("Which repo? (LENGTH3_REPO)", "どの repo ですか（LENGTH3_REPO）")))?;
     task_id(call)?;
-    let var = |k: &str| std::env::var(k).unwrap_or_default();
-    let (dir, command) = (std::path::PathBuf::from(var("L3_RUN_DIR")), var("L3_RUN_COMMAND"));
-    if command.is_empty() || !dir.is_dir() { return Err(Error::Usage(tr!("l3 agent inside is l3 agent run's", "l3 agent inside は l3 agent run が使うものです"))); }
+    let spec: compute::Spec = serde_json::from_str(&std::env::var("L3_SPEC").unwrap_or_default())
+        .map_err(|_| Error::Usage(tr!("l3 agent inside is l3 agent run's", "l3 agent inside は l3 agent run が使うものです")))?;
+    if spec.repo != repo { return Err(Error::Refused(tr!("The run is for {}, not {}", "この実行は {} のもので、{} のものではありません", spec.repo, repo))); }
+    if spec.network && !home::network(&repo) {
+        return Err(Error::Refused(tr!("{} has no network here (l3 network on {0})", "{} にはここでネットワークがありません（l3 network on {0}）", repo)));
+    }
     let data = paths::data_dir();
-    let (root, about) = super::runtime::root_now(&data)?;
-    let env = ["L3_TASK", "L3_RESUME", "L3_ISSUE", "L3_TITLE"].iter().map(|k| format!("{k}={}", quoted(&var(k)))).collect::<Vec<_>>().join(" ");
-    let script = format!("[ -f /root/.profile ] && . /root/.profile\nexport {env} L3_REPO={}\n{command}", quoted(&repo));
-    let s = launch::Sandbox { root, repo: dir, name: repo.clone(), argv: vec!["/bin/sh".into(), "-c".into(), script],
-        network: home::network(&repo), dotfiles: launch::dotfiles_in_effect(), data: Some(data.clone()) };
+    let held = root::held(&data).into_iter().map(|(a, _)| a).find(|a| a.sha256 == spec.root)
+        .ok_or_else(|| Error::NotFound(tr!("The root it runs on is not here (l3 root fetch)", "実行する root がここにありません（l3 root fetch）")))?;
+    let root = root::system_dir(&data).join(&spec.root).join("root");
+    let repos = ctx.repos()?;
+    let copy = work::worktree(&repo, &spec.line);
+    let dir = if spec.line == work::MAIN { repos.on_main().dir(&repo)? } else if copy.is_dir() { copy } else { repos.dir(&repo)? };
+    let s = launch::Sandbox { root, repo: dir, name: repo.clone(), argv: spec.argv.clone(), network: spec.network,
+        dotfiles: launch::dotfiles_in_effect(), data: Some(data.clone()), env: spec.env.clone() };
     // Recorded as any Prompt is: l3 prompt ls and Runtime see it, l3 prompt stop ends it.
     let mut recorded = prompt::record(&data, &repo, s.network, &s.root)?;
     length3_core::usage::make_room(&data, &paths::repos_dir(), super::forge::PROMPT_ROOM);
-    launch::set_up(&s, about.distro.is_some())?;
+    launch::set_up(&s, held.distro.is_some())?;
     recorded.ready()?;
     let code = launch::run(&s)?;
     drop(recorded);

@@ -232,6 +232,11 @@ printf '{"type":"result","result":"%s"}\n' "$R""#;
     assert_eq!(std::fs::read_to_string(home.path("repos/notes/resumed.txt")).unwrap(), "s-1\n");
     let journal = std::fs::read_to_string(home.path("agents.jsonl")).unwrap();
     assert!(journal.contains(r#""session":"task-1","repo":"notes","line":"main","kind":"tool","text":"Read: README.md""#), "{journal}");
+    // Each run is in the compute ledger: what it was, where it ran, and what it used of time.
+    let runs: Vec<serde_json::Value> = std::fs::read_to_string(home.path("compute/runs.jsonl")).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    assert_eq!(runs.iter().map(|r| (r["what"].as_str().unwrap(), r["place"].as_str().unwrap(), r["repo"].as_str().unwrap(), r["code"].as_i64().unwrap())).collect::<Vec<_>>(),
+        [("ask", "here", "notes", 0), ("ask", "here", "notes", 0)]);
+    assert!(runs.iter().all(|r| r["usage"]["wall_ms"].as_u64().is_some() && r["spec"].as_str().unwrap().len() == 64), "{runs:?}");
     // Looked at: put away.
     assert_eq!(home.run("en", &["agent", "drop", "1"]).code, 0);
     assert_eq!(until(&home, 1, "done")["state"], "done");
@@ -254,4 +259,29 @@ fn an_issue_written_is_offered_and_handed_over_it_says_what_it_needs() {
     assert_eq!(home.run("en", &["agent", "take", "1"]).code, 0);
     let k = until(&home, 1, "stopped");
     assert_eq!((k["state"].as_str(), k["fix"].as_str()), (Some("stopped"), Some("l3 login")), "{k}");
+}
+
+/// A Prompt paused keeps what it holds and uses no CPU; going on, it uses it again (counted by the kernel, every
+/// process it ever had: core prompt.rs cpu_ms).
+#[test]
+fn a_prompt_paused_uses_no_cpu_until_it_goes_on() {
+    let home = Home::new("prompt-pause");
+    assert!(home.root(), "this host lends no sh for a root");
+    home.repo("busy", &[("README", "busy\n")]);
+    let mut l3 = start(&home, "busy", ": > up; while :; do :; done");
+    if !wrote(&home, "busy", "up", &mut l3) { return; }
+    let ns = length3_core::prompt::ns_of(l3.0.id()).expect("its namespace");
+    let cpu = || length3_core::prompt::cpu_ms(ns);
+    let spun = cpu();
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(cpu() > spun + 100, "running, it spins");
+    let paused = home.run("en", &["prompt", "pause", "busy"]);
+    assert!(paused.stdout.starts_with("Paused busy's Prompt"), "{paused:?}");
+    std::thread::sleep(Duration::from_millis(100));
+    let still = cpu();
+    std::thread::sleep(Duration::from_millis(400));
+    assert!(cpu() <= still + 20, "paused, it uses no CPU: {} then {}", still, cpu());
+    assert!(home.run("en", &["prompt", "resume", "busy"]).stdout.starts_with("busy's Prompt goes on"));
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(cpu() > still + 100, "going on, it spins again");
 }

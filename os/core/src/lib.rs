@@ -14,6 +14,7 @@ pub mod agents;
 pub mod api;
 pub mod atomic;
 pub mod boundary;
+pub mod compute;
 #[cfg(unix)]
 pub mod desktop;
 #[cfg(not(target_os = "wasi"))]
