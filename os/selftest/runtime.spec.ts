@@ -66,13 +66,13 @@ test('Runtime is in parts as Remote is: the one chosen shows, the others blend i
   await expect(app.main.getByRole('tabpanel', {name: /^This browser/})).toBeVisible();
   await expect(app.runtime.dotfiles).toBeHidden();
   // Chosen, ink; the others have no fill or edge of their own until the pointer is on them.
-  await expect(app.runtime.part('This browser')).toHaveCSS('background-color', 'rgb(41, 43, 42)');
+  await expect(app.runtime.part('This browser')).toHaveCSS('background-color', 'rgb(44, 42, 39)');
   for (const p of ['Environments', 'Dotfiles'] as const) {
     await expect(app.runtime.part(p)).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     await expect(app.runtime.part(p)).toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)');
   }
   await app.runtime.part('Dotfiles').hover();
-  await expect(app.runtime.part('Dotfiles')).toHaveCSS('background-color', 'rgb(228, 228, 224)');
+  await expect(app.runtime.part('Dotfiles')).toHaveCSS('background-color', 'rgb(230, 227, 222)');
   // A dotfile half written stays while another part is shown.
   await app.runtime.part('Dotfiles').click();
   await app.runtime.dotfiles.getByRole('button', {name: /New dotfile/}).click();

@@ -382,13 +382,13 @@ Every page:
 
 | Role | Value | Use |
 | --- | --- | --- |
-| `ground` | `#DADAD5` | every surface: a touch lighter than the first `#D2D2CD`, still grey, so long hours stay easy |
-| `ink` | `#292B2A` | text, icons, the current thing, primary action (10.2:1 on ground) |
-| `rule` | `#989B96` | dividers, outlines of places; decorative only (2.0:1, kept as before) |
-| `sub` | `#56595A` | secondary text (5.0:1) |
-| `edge` | `#6B6E6B` | outlines of fields and controls, which must be seen (3.7:1) |
-| `raised` | `#E4E4E0` | field fill, hover (the same small step above ground as before) |
-| `paper` | `#F8F8F5` | the sheet: what is worked on, and only that (a file's box, the TODO, the issue or board in hand, Inbox's box, what the search found); never a card that leads somewhere, a pane or a page (Runtime's box, which is read rather than worked in, stays on the ground) |
+| `ground` | `#DCD9D4` | every surface: a touch lighter than the first `#D2D2CD`, still grey, so long hours stay easy; a paper's grey, warm by a hair (OKLCH hue 80, chroma .0075), where it leaned green before. Chosen from its neighbourhood laid on Home, Forge and Git (lighter and darker by .015, cooler toward hue 230 and warmer toward 80, then the warm side at chroma .005 to .010): cooler read as a slate any app has, warmer at .010 as beige; this one is the same grey, no longer tinged. The family keeps its steps: every grey below took the same hue, words a little less of it |
+| `ink` | `#2C2A27` | text, icons, the current thing, primary action (10.2:1 on ground) |
+| `rule` | `#9C9995` | dividers, outlines of places; decorative only (2.0:1, kept as before) |
+| `sub` | `#5A5855` | secondary text (5.0:1) |
+| `edge` | `#6F6D68` | outlines of fields and controls, which must be seen (3.7:1) |
+| `raised` | `#E6E3DE` | field fill, hover (the same small step above ground as before) |
+| `paper` | `#F9F8F5` | the sheet: what is worked on, and only that (a file's box, the TODO, the issue or board in hand, Inbox's box, what the search found); never a card that leads somewhere, a pane or a page (Runtime's box, which is read rather than worked in, stays on the ground) |
 | `done` | `#0F8C69` | done and on: a step of an issue's work done, a switch on (its knob), a box ticked (its circle, and a TODO done's tick), a line added (its bar), the Prompt's dot while its shell waits; a fresh emerald leaning to blue, so it sits with the greys and does not tire, light enough not to read heavy as a filled circle (white on it 4.2:1, it on the ground 3:1) |
 | `add` | `#157357` | the words of an addition, a step darker than `done` to read small: +n and its squares, a line's + (4.9:1 on its tint) |
 | `add-tint` | `#D8F2E6` | the ground of a line added in a diff: a mint of its own, not `done` thinned |
