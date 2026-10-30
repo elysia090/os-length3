@@ -73,8 +73,9 @@ impl Home {
         use std::os::fd::FromRawFd;
         use std::os::unix::process::CommandExt;
         let (mut m, mut s) = (0, 0);
-        let size = libc::winsize { ws_row: 30, ws_col: 100, ws_xpixel: 0, ws_ypixel: 0 };
-        assert_eq!(unsafe { libc::openpty(&mut m, &mut s, std::ptr::null_mut(), std::ptr::null(), &size) }, 0, "a pty");
+        let mut size = libc::winsize { ws_row: 30, ws_col: 100, ws_xpixel: 0, ws_ypixel: 0 };
+        // Its settings and size as each host's openpty takes them (const on Linux, mut on macOS).
+        assert_eq!(unsafe { libc::openpty(&mut m, &mut s, std::ptr::null_mut(), std::ptr::null_mut(), &mut size) }, 0, "a pty");
         let (master, slave) = unsafe { (std::fs::File::from_raw_fd(m), std::fs::File::from_raw_fd(s)) };
         let mut c = self.command(lang, args);
         c.env("TERM", "xterm-256color");

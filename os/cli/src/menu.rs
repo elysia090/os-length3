@@ -80,7 +80,9 @@ pub fn noting<T>(f: impl FnOnce() -> T) -> (T, Seen) {
     (t, seen)
 }
 
-/// Whether the menu is running (a Prompt opened from it gives the terminal back to it when it ends).
+/// Whether the menu is running (a Prompt opened from it gives the terminal back to it when it ends; a Prompt runs on
+/// Linux).
+#[cfg(target_os = "linux")]
 pub fn active() -> bool { ACTIVE.with(|a| a.get()) }
 
 // ---- What is offered ----
