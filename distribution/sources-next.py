@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""The newest upstream release of every source sources.env pins, and its digests.
+"""The newest upstream release of every source the root is built from, and its digests; and every pin checked.
 
-    python3 distribution/sources-next.py distribution/sources.env [OUT]
+    python3 distribution/sources-next.py distribution/sources.env distribution/bootstrap/tzcode.env
 
-For each component it reads its makers' own listing (their download directory, release feed or tags), picks
-the newest release by the rule written beside it, downloads the archive over HTTPS and takes the digests
-sources.env pins it by (SHA-256, SHA-512 or both). It prints the table (what is pinned, what is newest) and
-writes OUT (default: sources.next.env), sources.env as it would be with every newer release in it. Nothing is
-changed in the tree: a person reads the table, then moves OUT over sources.env (the builders check every
-archive against it, as before).
+For each component a file pins it reads its makers' own listing (their download directory, release feed or tags),
+picks the newest release by the rule written beside it, downloads the archive over HTTPS and takes the digests it
+is pinned by (SHA-256, SHA-512 or both). A component with no newer release is downloaded from its pin and checked
+against it: a maker that moved a file, or a pin no longer reachable, is said. It prints the table and writes,
+beside each file in the current folder, NAME.next: the file as it would be with every newer release in it.
+Nothing in the tree is changed: a person reads the table and moves the files over (the builders check every
+archive against them, as before).
 
 Rules beyond "the newest release, not a candidate":
   BusyBox            only a release its makers call stable (1.37 and 1.38 have been called unstable).
@@ -16,6 +17,7 @@ Rules beyond "the newest release, not a candidate":
   gettext            those, and sources.env takes them from gcc.gnu.org's infrastructure directory.
   OpenSSL            the newest patch release of the long-term-support line pinned (3.5 is supported to 2030).
   Linux              kernel.org's latest stable.
+  tzcode             the release of tzdata (the build checks they are the same).
 Runs where every maker's site can be reached (GitHub Actions: .github/workflows/sources-next.yml).
 """
 import functools
@@ -125,6 +127,7 @@ NEWEST = {
     'NCURSES': lambda: newest('https://ftp.gnu.org/gnu/ncurses/', r'ncurses-(\d+\.\d+)\.tar\.gz'),
     'NANO': lambda: newest('https://ftp.gnu.org/gnu/nano/', r'nano-(\d+\.\d+)\.tar\.xz'),
     'TZDATA': lambda: newest('https://ftp.iana.org/tz/releases/', r'tzdata(\d{4}[a-z])\.tar\.gz'),
+    'TZCODE': lambda: newest('https://ftp.iana.org/tz/releases/', r'tzcode(\d{4}[a-z])\.tar\.gz'),
     'LIBXCRYPT': lambda: github('besser82/libxcrypt'),
 }
 
@@ -139,10 +142,13 @@ def moved_url(url, old, new):
     return url
 
 
-def main():
-    pinned_path = sys.argv[1]
-    out = sys.argv[2] if len(sys.argv) > 2 else 'sources.next.env'
-    lines = open(pinned_path).read().splitlines()
+def digests(data, pins, name):
+    return {a: hashlib.new(a.lower(), data).hexdigest() for a in ('SHA256', 'SHA512') if f'{name}_{a}' in pins}
+
+
+def one_file(path):
+    """The table's rows for the file at `path`, and the file as it would be."""
+    lines = open(path).read().splitlines()
     pins = dict(l.split('=', 1) for l in lines if '=' in l and not l.startswith('#'))
     names = [k[:-len('_URL')] for k in pins if k.endswith('_URL')]
 
@@ -152,41 +158,50 @@ def main():
         except Exception as e:  # said in the table; the pin stays as it is
             return name, None, f'{type(e).__name__}: {e}'
 
-    with ThreadPoolExecutor(12) as pool:
-        found = list(pool.map(look, names))
-
-    changed = {}
-    rows = []
-    for name, latest, why in found:
+    def take(found):
+        name, latest, why = found
         was = pins.get(f'{name}_VERSION') or pins.get(f'{name}_DATE')
-        if why or latest == was:
-            rows.append((name, was, latest or '?', why or ''))
-            continue
-        url = moved_url(pins[f'{name}_URL'], was, latest)
+        newer = latest and not why and latest != was
+        url = moved_url(pins[f'{name}_URL'], was, latest) if newer else pins[f'{name}_URL']
         try:
             data = get(url, binary=True)
         except Exception as e:
-            rows.append((name, was, latest, f'{url}: {e}'))
-            continue
+            return name, was, latest or '?', f'{url}: {e}', {}
+        got = digests(data, pins, name)
+        if not newer:
+            bad = [a for a, d in got.items() if pins[f'{name}_{a}'] != d]
+            note = f'PIN BROKEN: {url} is not its {", ".join(bad)}' if bad else 'pin checked'
+            return name, was, latest or '?', (why + '; ' if why else '') + note, {}
         field = f'{name}_VERSION' if f'{name}_VERSION' in pins else f'{name}_DATE'
-        changed[field] = latest
-        changed[f'{name}_URL'] = url
-        for algorithm in ('SHA256', 'SHA512'):
-            if f'{name}_{algorithm}' in pins:
-                changed[f'{name}_{algorithm}'] = hashlib.new(algorithm.lower(), data).hexdigest()
-        rows.append((name, was, latest, f'{len(data)} bytes'))
+        changed = {field: latest, f'{name}_URL': url, **{f'{name}_{a}': d for a, d in got.items()}}
+        return name, was, latest, f'{len(data)} bytes', changed
 
+    with ThreadPoolExecutor(12) as pool:
+        rows = list(pool.map(take, pool.map(look, names)))
+    changed = {k: v for *_, c in rows for k, v in c.items()}
+    out = path.rsplit('/', 1)[-1] + '.next'
     with open(out, 'w') as f:
         for l in lines:
             k = l.split('=', 1)[0]
             f.write(f'{k}={changed[k]}\n' if k in changed else l + '\n')
+    return [r[:4] for r in rows], out
 
+
+def main():
+    rows, outs = [], []
+    for path in sys.argv[1:]:
+        r, out = one_file(path)
+        rows += r
+        outs.append(out)
     width = max(len(r[0]) for r in rows)
     print(f'{"":{width}}  pinned        newest        ')
     for name, was, latest, note in rows:
         mark = '  ' if was == latest else '->'
         print(f'{name:{width}}  {was:12}  {mark} {latest:12}  {note}')
-    print(f'\n{sum(1 for r in rows if r[1] != r[2] and r[2] != "?")} newer; {out} holds them')
+    newer = sum(1 for r in rows if r[1] != r[2] and r[2] != '?')
+    broken = sum(1 for r in rows if 'PIN BROKEN' in r[3])
+    print(f'\n{newer} newer, {broken} pins broken; {", ".join(outs)} hold the newer ones')
+    sys.exit(1 if broken else 0)
 
 
 if __name__ == '__main__':
