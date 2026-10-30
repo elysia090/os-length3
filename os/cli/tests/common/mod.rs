@@ -34,7 +34,10 @@ impl Home {
             // What a test made stays whatever room the host has left: no reserve kept on its behalf.
             .env("LENGTH3_RESERVE", "0")
             // Nothing answers here: a test that reached for the Remote would say so, not wait.
-            .env("LENGTH3_REMOTE", "http://127.0.0.1:9");
+            .env("LENGTH3_REMOTE", "http://127.0.0.1:9")
+            // Nor beyond this host: the publisher's Remote and the release channel are public, and a test that
+            // reached them (a root fetched) would pass or fail by the network. Its own servers are on 127.0.0.1.
+            .env("HTTPS_PROXY", "http://127.0.0.1:9").env("NO_PROXY", "127.0.0.1,localhost");
         c
     }
 
