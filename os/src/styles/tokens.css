@@ -51,13 +51,14 @@
   --prompt-h: calc(2 * var(--s3) + var(--t-body) * 1.6 + 2px);
   --icon: 24px; --stroke: 1.6px;
   /* The pace of the OS's moves (a page panned, the pane, a menu, a box coming, a thing landing): each move's length is
-     its own times this, so they keep with one another. Sideways, the camera goes slower still (--slide: the band's
-     repos, the row of boxes, the issues, the boards, the pane), as a long pan does. A hover's light and a colour
-     change go at the same unhurried pace, a little quicker than a move (--motion); only what answers the hand at
-     once (a press, the caret) is not paced, and the Prompt keeps its own (--prompt-up, --prompt-down). */
-  --pace: 2;
+     its own times this, so they keep with one another; 1, the standard lengths (at 2 the moves were watched rather
+     than seen, and the hand waited on each). Sideways, the camera goes slower (--slide: the band's repos, the row of
+     boxes, the issues, the boards, the pane), as a long pan does. A hover's light and a colour change go at the same
+     pace, a little quicker than a move (--motion); only what answers the hand at once (a press, the caret) is not
+     paced, and the Prompt keeps its own (--prompt-up, --prompt-down). */
+  --pace: 1;
   --motion: calc(90ms * var(--pace)); --move: calc(280ms * var(--pace)); --slide: calc(450ms * var(--pace));
-  /* A thing put away goes in a fraction of its coming (the pane, 260 ms): what is no longer wanted is not watched
+  /* A thing put away goes in a fraction of its coming (the pane, 130 ms): what is no longer wanted is not watched
      going, and the hand that put it away is not kept waiting on it. */
   --leave: calc(130ms * var(--pace));
   /* The Prompt's screen: how long it takes to come up out of the box's pill (running along the line for the first part

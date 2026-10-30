@@ -81,17 +81,18 @@ Every value in `styles.css` comes from a token (§2).
   step (40 px) under the places, a little below the middle.
 - **Motion, with a reason.** Every move says where something went, never
   only that it changed, and every one lands the same way (fast off the
-  mark, the last pixels slow: `--land`). The moves are unhurried: each
-  length named in this document is the move's own, and the OS plays them
-  all at one pace, twice that (`--pace`), so the eye follows each the whole
-  way and they keep with one another. Sideways the camera goes slower still,
+  mark, the last pixels slow: `--land`). Each length named in this document
+  is the move's own, and the OS plays them all at one pace (`--pace`, 1:
+  the standard lengths; played at twice them, the moves were watched rather
+  than seen, and a hand waited on each), so they keep with one another.
+  Sideways the camera goes slower,
   as a long pan does (`--slide`, 450 ms of its own: the band's repos, the
   row of boxes, the issues, the boards, the pane). A hover's light and a
-  colour go at the same unhurried pace, a little quicker than a move; only
+  colour go at the same pace, a little quicker than a move; only
   what answers the hand at once (a press, the caret) is not paced, and the
   Prompt keeps its own lengths. What is put away goes in a fraction of its
-  coming (`--leave`, 130 ms of its own: the pane put away is gone in about a
-  quarter of a second), moving from the press: what is no longer wanted is
+  coming (`--leave`, 130 ms: the pane put away is gone in about an eighth
+  of a second), moving from the press: what is no longer wanted is
   not watched going, and the hand that put it away is not kept waiting on
   it. The moves are few and each means one thing wherever it
   is seen:
