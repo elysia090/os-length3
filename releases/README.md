@@ -6,6 +6,7 @@ size and SHA-256, and `SHA256SUMS` beside them holds the same digests.
 
 | Version | What it is |
 | --- | --- |
+| [0.6.0](https://github.com/elysia090/os-length3/releases/tag/os-length3-linux-v0.6.0) | agents at work in the repos (tasks offered, asked and handed in, hardest first, each run measured and bounded in time and space), commits that hand themselves in, room made by itself, a machine as a host of the OS's VMs (`l3 host`: KVM, Firecracker v1.17.0), Ubuntu 26.04.1 LTS and Debian 13.7 among the environments, and every dependency at its newest (ureq 3.5, russh 0.65 with its security fixes); the first release made in two merges by Actions |
 | [0.5.0](https://github.com/elysia090/os-length3/releases/tag/os-length3-linux-v0.5.0) | Length³ OS with one core for the app and the web (the web runs the core the app runs, built for `wasm32-wasip1`), the desktop app opened from `l3 app`, SSH into a repo's Prompt, Runtime's environments (l3, Ubuntu, Debian, Custom) |
 | [0.4.1](https://github.com/elysia090/os-length3/releases/tag/os-length3-linux-v0.4.1) | the root laid out for Prompts, the web build and the desktop app (.deb, AppImage) |
 | [0.4.0](https://github.com/elysia090/os-length3/releases/tag/os-length3-linux-v0.4.0) | the first release with the desktop app |
