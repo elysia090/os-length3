@@ -41,16 +41,19 @@ h1, h2, p { margin: 0; }
 a { color: var(--ink); }
 [hidden] { display: none !important; }
 /* Every box that scrolls, and the page, has the one bar, in the OS's colours and not the browser's: thin, its thumb a
-   thing one drags (edge), its track the ground under it. Still there and still dragged; forced colours draw the
-   system's own. WebKit (the desktop's on Linux), which knows no scrollbar-color, is given the same in its own parts. */
-:root { scrollbar-color: var(--edge) transparent; }
-* { scrollbar-width: thin; }
+   thing one drags (edge), its track the ground under it. It shows only while its own box is scrolled, and a moment
+   after (ui/scrollbars.ts): at rest nothing edges a box but its words (each box sets its own, so one inside a box
+   being scrolled stays at rest). Forced colours draw the system's own, always there. WebKit (the desktop's on Linux),
+   which knows no scrollbar-color, is given the same in its own parts. */
+* { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+.scrolling { scrollbar-color: var(--edge) transparent; }
 @supports not (scrollbar-color: auto) {
   ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
-  ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 8px; background: var(--edge) padding-box; }
+  ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 8px; background: transparent padding-box; }
+  .scrolling::-webkit-scrollbar-thumb { background: var(--edge) padding-box; }
 }
-@media (forced-colors: active) { :root { scrollbar-color: auto; } * { scrollbar-width: auto; } }
+@media (forced-colors: active) { * { scrollbar-width: auto; scrollbar-color: auto; } }
 :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 /* A place the keyboard was left on when what had it went (focus.ts): held, not framed, until a key is pressed there. */
 [tabindex].kept:focus-visible { outline: none; }

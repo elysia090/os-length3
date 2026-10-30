@@ -33,6 +33,7 @@ import {LAND, glide, morph, paced, paneOut, stage, still, where} from './ui/glid
 import {letGo, touch} from './ui/touch.ts';
 import {caret} from './ui/caret.ts';
 import {optical} from './ui/optical.ts';
+import {scrollbars} from './ui/scrollbars.ts';
 
 const PURPOSE_KEY = 'length3.os.purpose';
 const REPO_KEY = 'length3.os.repo';
@@ -107,6 +108,7 @@ keepFocus();
 touch();
 caret();
 optical();
+scrollbars();
 // Server glanced at: a rest on its icon brings one's servers out beside the rail, to jump to; a press goes to its page.
 const serverSwitch = new ServerSwitcher(ctx);
 

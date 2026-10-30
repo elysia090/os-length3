@@ -309,7 +309,11 @@ Every value in `styles.css` comes from a token (§2).
 - **One scrollbar.** Everything that scrolls, the page with it, has the
   same bar: thin, its thumb `edge` (a thing one drags), its track the
   ground under it, never the browser's own; forced colours draw the
-  system's.
+  system's. It shows only while its own box is scrolled and a moment after
+  (dragged, it is scrolling, so it stays under the hand): at rest no line
+  edges a box beside its words (two files side by side were each edged by
+  one, on Windows a dark bar with arrows). Its room stays, so nothing moves
+  as it comes and goes.
 - **The ink at the edge, not the box.** An icon is drawn inset in its
   square (two to four pixels, each its own), so a page head's icon stands
   that much left of its box, its ink on the edge the page's words and
