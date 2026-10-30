@@ -160,7 +160,7 @@ function heldServers(ways: MakingWays): HTMLElement {
  */
 function ghostBoard(back: HTMLElement): HTMLElement[] {
   return [h('div', {class: 'slide', 'aria-current': 'true'}, h('div', {class: 'board-card board-ghost', 'aria-hidden': 'true'},
-    h('div', {class: 'board-head'}, h('span', {class: 'muted board-mark'}, '#'), h('h2', {}, 'general')), ...ghostBody()), back),
+    h('div', {class: 'board-head'}, h('span', {class: 'muted board-mark'}, '#'), h('h2', {}, 'general')), ghostBody()), back),
   // Beside it, the edge of the box that will make its next board, where it will be.
   h('div', {class: 'slide', 'aria-current': 'false'}, h('div', {class: 'board-card board-ghost ghost-next', 'aria-hidden': 'true'}, h('span', {class: 'board-head'}, '+')))];
 }

@@ -4,13 +4,14 @@ import * as servers from '../../remote/servers.ts';
 import {boardNew, sawBoard} from '../../remote/news.ts';
 import {nudge} from '../../ui/glide.ts';
 import {errorText} from '../../app/errors.ts';
-import {timeline} from './talk.ts';
+import {seenNow, timeline} from './talk.ts';
+import {parts} from '../common.ts';
 import {boardTodo} from './todo.ts';
-import {mark as todoMark} from '../todo-list.ts';
 import {button, current, fitting, type Here, type Shown} from './parts.ts';
 
-// A board's box in Server's row: in full where it is on screen, its TODO (the same list as Home's) pinned at the top,
-// written there by its people, and its talk under it; beside it, only its name. The last box makes a new board.
+// A board's box in Server's row: in full where it is on screen, its two parts, its talk and its TODO (the same list as
+// Home's, written there by its people), one at a time, chosen on its head as Remote's parts are; beside it, only its
+// name. The last box makes a new board.
 
 /**
  * What is half written in a new board's name, by the server it is made in: kept while the app runs as the box's words
@@ -18,7 +19,7 @@ import {button, current, fitting, type Here, type Shown} from './parts.ts';
  */
 const drafts = new Map<string, string>();
 
-/** A board's box: in full where it is on screen (its TODO pinned at the top, its talk under it), only its name beside it. */
+/** A board's box: in full where it is on screen (its talk or its TODO, chosen on its head), only its name beside it. */
 export function boardBox(b: Shown, now: boolean, signedIn: boolean): HTMLElement {
   const head = h('div', {class: 'board-head', 'data-board': b.id}, h('span', {class: 'muted board-mark', 'aria-hidden': 'true'}, '#'), h('h2', {}, b.name),
     signedIn ? null : h('span', {class: 'muted small'}, b.server), h('span', {class: 'sr-only'}));
@@ -28,8 +29,17 @@ export function boardBox(b: Shown, now: boolean, signedIn: boolean): HTMLElement
   const talk = h('section', {class: 'board-talk', tabindex: '0', 'aria-label': b.name});
   // Its foot in view, what came is seen: the marks go, here and on the rail.
   talk.append(timeline(talk, b.id, b.member, b.member ? (post) => sawBoard(b.id, post) : undefined));
-  void boardTodo(b, todo);
-  const box = h('div', {class: 'board-card'}, head, todo, talk);
+  // Its talk and its TODO, side by side on its head after its name, one at a time below it; each board keeps the one
+  // it was left at. Its TODO says how many are left on it; none there to show (a guest's board, its list empty), only
+  // the talk, and nothing to choose.
+  const sides = parts<'talk' | 'todo'>(`board-${b.id}`, [{id: 'talk', label: t('Talk')}, {id: 'todo', label: 'TODO'}], b.name);
+  head.append(sides.switch);
+  sides.panel('talk').append(talk);
+  sides.panel('todo').append(todo);
+  // The talk come back to, what came while the TODO was in front is seen.
+  sides.onShow((k) => { if (k === 'talk') seenNow(); });
+  void boardTodo(b, todo, {left: (n) => sides.count('todo', n), none: () => { sides.offer('todo', false); sides.switch.hidden = true; }});
+  const box = h('div', {class: 'board-card'}, head, sides.panel('talk'), sides.panel('todo'));
   openAtFoot(box, talk);
   return box;
 }
@@ -105,22 +115,16 @@ export function newBoard(now: boolean, here: Here, ways: NewBoardWays): HTMLElem
   name.addEventListener('input', () => { error.textContent = ''; named(); if (name.value) drafts.set(kept, name.value); else drafts.delete(kept); });
   name.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); void done(); } });
   return h('div', {class: 'board-card board-new'},
-    h('div', {class: 'board-head'}, h('span', {class: 'muted board-mark', 'aria-hidden': 'true'}, '#'), field, make, error), ...ghostBody(),
+    h('div', {class: 'board-head'}, h('span', {class: 'muted board-mark', 'aria-hidden': 'true'}, '#'), field, make, error), ghostBody(),
     // At the top of where its talk will be (styles.css), broken where the sentence is: what a board is, then what one
     // may be about.
     h('p', {class: 'board-lead muted small'}, t('A board is one thing to talk about, with a TODO kept together:'), h('br'), t('a trip, a release, a reading group.')));
 }
 
 /**
- * What a board holds, faint, before it is made (a server's first board, or a server's next): its TODO's first line and
- * its talk's foot in their own words, each where it will stand; nothing in them to press or to be read out.
+ * What a board holds, faint, before it is made (a server's first board, or a server's next): its talk's foot in its
+ * own words, where it will stand, the part a board opens at; nothing in it to press or to be read out.
  */
-export function ghostBody(): [HTMLElement, HTMLElement] {
-  return [
-    h('section', {class: 'board-todo board-faint', 'aria-hidden': 'true'}, h('div', {class: 'board-todo-head'}, h('span', {}, 'TODO')),
-      h('div', {class: 'todo-box'}, h('div', {class: 'todo-items'}, h('div', {class: 'todo-item'}, h('div', {class: 'todo-head'},
-        h('span', {class: 'todo-mark'}, todoMark(false)), h('span', {class: 'todo-kind', hidden: ''}),
-        h('span', {class: 'todo-title'}, t('Something to do together'))))))),
-    h('div', {class: 'board-talk board-faint', 'aria-hidden': 'true'}, h('div', {class: 'timeline tl-empty'}, h('div', {class: 'tl-start muted small'}, t('No posts yet')))),
-  ];
+export function ghostBody(): HTMLElement {
+  return h('div', {class: 'board-talk board-faint', 'aria-hidden': 'true'}, h('div', {class: 'timeline tl-empty'}, h('div', {class: 'tl-start muted small'}, t('No posts yet'))));
 }

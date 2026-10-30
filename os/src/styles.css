@@ -2920,7 +2920,7 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .server-center:has(> .slides.single) { --peek: 0px; }
 .server-center > .slides { --peek: inherit; --lead: inherit; }
 .server-center > .dock { max-width: none; margin: 0; left: calc(var(--s5) + var(--lead) * var(--peek)); right: calc(var(--s5) + (2 - var(--lead)) * var(--peek));
-  transition: left var(--slide), right var(--slide), opacity var(--motion); }
+  transition: left var(--slide), right var(--slide), opacity var(--motion), visibility var(--motion); }
 @media (max-width: 760px) { .server-center { --peek: var(--s5); } .server-center > .dock { left: calc(var(--s2) + var(--lead) * var(--peek)); right: calc(var(--s2) + (2 - var(--lead)) * var(--peek)); } }
 @media (prefers-reduced-motion: reduce) { .server-center > .dock { transition: none; } }
 /* A phone's width: the box is narrow, so Post comes with the words (server/dock.ts), the empty box saying whom it
@@ -2954,27 +2954,37 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .board-head .grow { flex: 1; }
 .board-head > .mono, .board-head > .small { flex-shrink: 4; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .board-head > .button { flex: none; }
-/* A board on screen is one sheet, never a box in a box: its head across it over a quiet rule; its talk at the left, as
-   tall as the board, scrolling as a conversation does (the latest at its foot, what was said before above it); its
-   TODO beside it at the right, a column of its own past a rule, the same list as Home's but not boxed again (the board
-   is its box). It scrolls in itself when it is long; its hints show while one writes in it. Narrow, the TODO comes
-   over the talk, as short as a few of its lines, and the talk has the rest. */
-.board-card:not(.board-said, .ghost-next) { display: grid; grid-template-columns: minmax(0, 1fr) 320px; grid-template-rows: auto minmax(0, 1fr); }
-.board-card > .board-head { grid-column: 1 / -1; }
-.slide[aria-current='true'] .board-card:not(.board-new) > .board-head:has(~ .board-talk) { border-bottom: 1px solid var(--rule); }
-.board-card > .board-talk { grid-column: 1; grid-row: 2; }
-.board-todo { grid-column: 2; grid-row: 2; display: grid; align-content: start; gap: var(--s2); min-height: 0; overflow-y: auto; overscroll-behavior: contain;
-  padding: var(--s3) var(--s4) var(--s4); border-left: 1px solid var(--rule); }
-.board-todo-head { display: flex; align-items: baseline; gap: var(--s2); font-size: var(--t-meta); font-weight: 600; color: var(--sub); }
-.board-todo-head .muted { font-weight: 400; }
-.board-todo .todo-box { min-height: 0; margin-inline: calc(-1 * var(--s2)); border: 0; background: transparent; }
+/* A board on screen is one sheet, never a box in a box: its head across it over a quiet rule, its name and after it its
+   two parts, Talk and TODO, as Remote's are (chosen in ink, the ink going along to the other); under it the part
+   chosen, the whole sheet: its talk scrolling as a conversation does (the latest at its foot, what was said before
+   above it), or its TODO, the same list as Home's but not boxed again (the board is its box), as wide as its lines are
+   read, scrolling in itself when it is long, its keys shown while one writes in it. The part not chosen stays where it
+   is under it, unseen, so the talk is where it was read to when it comes back. */
+.board-card:not(.board-said, .ghost-next) { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+.board-card > .board-head { grid-column: 1; }
+.board-head > .parts { flex: none; flex-wrap: nowrap; margin-left: var(--s3); }
+.board-head .part { height: var(--h-row); padding-inline: var(--s3); }
+.slide[aria-current='true'] .board-card:not(.board-new) > .board-head:has(~ :is(.board-talk, .part-panel)) { border-bottom: 1px solid var(--rule); }
+.board-card > .board-talk, .board-card > .part-panel { grid-column: 1; grid-row: 2; min-height: 0; margin: 0; }
+.board-card > .part-panel { display: grid; grid-template-rows: minmax(0, 1fr); }
+.board-card > .part-panel[hidden] { visibility: hidden; }
+.board-todo { display: grid; align-content: start; gap: var(--s2); min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--s4) var(--s5); }
+.board-todo .todo-box { min-height: 0; max-width: 720px; margin-inline: calc(-1 * var(--s2)); border: 0; background: transparent; }
 .board-todo .todo-items { padding: 0; }
 .board-todo .todo-hint { padding-inline: var(--s2); }
 .board-todo .error:empty { display: none; }
+/* The TODO in front, the box at the foot is the talk's and goes, the board taking its room. */
+/* (Its TODO's panel told by its id, panel-board-…-todo: a :has() holds no other.) */
+.server-center:has(.slide[aria-current='true'] .board-card > .part-panel[id$='-todo']:not([hidden])) { padding-bottom: var(--s5); }
+.server-center:has(.slide[aria-current='true'] .board-card > .part-panel[id$='-todo']:not([hidden])) > .dock { opacity: 0; visibility: hidden; }
+.server-center { transition: padding-bottom var(--move) var(--land); }
+@media (prefers-reduced-motion: reduce) { .server-center { transition: none; } }
+@media (max-width: 560px) {
+  /* A phone's width: the parts on a line of their own under the name, which keeps the room to be read whole. */
+  .board-head { flex-wrap: wrap; row-gap: var(--s1); }
+  .board-head > .parts { flex-basis: 100%; margin-left: calc(-1 * var(--s1)); }
+}
 @media (max-width: 760px) {
-  .board-card:not(.board-said, .ghost-next) { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); }
-  .board-todo { grid-column: 1; grid-row: 2; max-height: 34vh; border-left: 0; border-bottom: 1px solid var(--rule); }
-  .board-card > .board-talk, .board-new > .board-lead { grid-row: 3; }
   /* On a phone's width the board has room for little: the TODO keeps no room for the keys it is written with (shown
      to a keyboard at a desk), so it is as tall as its lines; the talk and its faces a step tighter, so a post's
      line is not a word or two. */

@@ -721,7 +721,7 @@ class Server extends Part {
   board(name: string) { return this.view.getByRole('heading', {name, exact: true, level: 2}); }
   /** Its talk, read as a conversation. */
   talk(board: string) { return this.view.getByRole('region', {name: board, exact: true}); }
-  /** Its TODO, pinned at the top of its box. */
+  /** Its TODO, the part beside its talk (in front once its part is pressed). */
   get todo() { return this.view.getByRole('region', {name: 'TODO', exact: true}); }
 
   /** A server's chip on the top line (its name says so while a board in it has posts not seen). */

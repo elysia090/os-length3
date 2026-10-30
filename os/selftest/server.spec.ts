@@ -45,12 +45,17 @@ test('a board made in a server takes posts in its talk', async ({signedIn: app})
 test("a board's TODO keeps what its people write in it", async ({signedIn: app}) => {
   await app.server.makeBoard('Packing');
 
+  // Its TODO, the part beside its talk on its head: chosen, the box at the foot (the talk's) goes.
+  const part = app.server.view.getByRole('tab', {name: /^TODO/});
+  await part.click();
+  await expect(app.server.box('Packing')).toBeHidden();
   const first = app.server.todo.getByRole('listitem').first();
   await first.getByRole('textbox', {name: 'What to do'}).fill('Buy: tent pegs');
   await expect(first).toContainText('Buy：');
-  await expect(app.server.todo).toContainText('1 of 1 left');
+  // How many are left is said on its part.
+  await expect(part).toHaveAccessibleName(/^TODO\s?1$/);
   await first.getByRole('button', {name: 'Mark as done'}).click();
-  await expect(app.server.todo).toContainText('0 of 1 left');
+  await expect(part).toHaveAccessibleName('TODO');
 
   // Kept on the Remote a moment after the writing stops: opened again, it is read from there.
   const kept = app.server.todo.getByRole('listitem').first();

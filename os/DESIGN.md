@@ -2754,16 +2754,25 @@ list read again under it. Its pieces, from §3:
   unseen (it looks as an edge does, and nothing in it counts as seen), so
   it slides in with all it holds. A
   board on screen is one sheet, never a box in a box: its name across it
-  over a quiet rule, its talk at the left as tall as the board (the latest
-  at its foot, what was said before above, the board open at its foot while
-  there is more below, so the eye goes on down), and **its TODO** beside it
-  at the right, a column of its own past a rule, scrolling in itself when
-  long; nothing switched to see one or the other. Narrow, the TODO comes
-  over the talk, as tall as its lines (the keys it is written with, a
-  desk's, keep no room there), and the talk and its faces are a step
-  tighter. Outside the server an open
-  board's TODO is shown, not written, and not at all while empty.
-- **The box at the foot** writes in the board on screen (旅行 の人たちへ),
+  over a quiet rule, and after the name its two parts, **Talk** and
+  **TODO**, as Remote's and Runtime's parts are (the one chosen in ink, the
+  ink going along to the other, what it holds coming in from that side),
+  as a chat app's channel has its messages and its canvas side by side on
+  its head. Under them, the part chosen is the whole sheet: its talk (the
+  latest at its foot, what was said before above, the board open at its
+  foot while there is more below, so the eye goes on down), or its TODO, as
+  wide as its lines are read, scrolling in itself when long, how many are
+  left said on its part (TODO 3). The box at the foot is the talk's: the
+  TODO in front, it fades and the board takes its room. The part not
+  chosen stays where it is, unseen, so the talk is where it was read to
+  when it comes back (what came while the TODO was in front is seen then,
+  not before); each board keeps the part it was left at. On a phone's
+  width the parts stand on a line of their own under the name, which keeps
+  its room to be read whole; the keys the TODO is written with, a desk's,
+  keep no room there, and the talk and its faces are a step tighter.
+  Outside the server an open board's TODO is shown, not written, and not at
+  all while empty: only the talk then, and no parts to choose.
+- **The box at the foot** writes in the talk of the board on screen (旅行 の人たちへ),
   Post at its bottom right as Forge's box has Run and Inbox's Send (its
   keys, Ctrl+Enter, in its title; Enter is a new line), the keyboard
   staying in the box once it is pressed; on a phone's width, where the box

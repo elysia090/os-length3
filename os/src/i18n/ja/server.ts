@@ -126,6 +126,7 @@ export default {
   // Something came in, not seen yet: said on the rail's place, a server's chip and a board.
   'Server has new posts': 'Server に新しい投稿があります',
   'New posts': '新しい投稿',
+  'Talk': 'トーク',
   '{server}, new posts': '{server}（新しい投稿）',
   'Seen by everyone': '全体に公開',
   'Guests can write': 'ゲストも書ける',

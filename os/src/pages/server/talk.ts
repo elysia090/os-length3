@@ -180,8 +180,9 @@ class Talk {
 
   /** The foot in view: the newest post held is read. */
   private read() {
-    // Not while its board is read ahead beside the one on screen (row.ts): seen once slid to (seenNow).
-    if (this.root.closest('.slide[aria-current="false"]')) return;
+    // Not while its board is read ahead beside the one on screen (row.ts), nor while its TODO is in front of it: seen
+    // once slid to, or come back to (seenNow).
+    if (this.root.closest('.slide[aria-current="false"], .part-panel[hidden]')) return;
     if (this.footIn && this.pages.length && document.visibilityState === 'visible') this.saw?.(this.pages[0].page.newest);
   }
 

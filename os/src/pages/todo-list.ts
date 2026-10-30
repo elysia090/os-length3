@@ -74,8 +74,8 @@ export interface TodoList {
 export interface TodoOptions {
   /** Shown, not written: no field takes text, no mark is pressed. */
   readOnly?: boolean;
-  /** What is left, in words ('2 of 3 left'), each time it changes. */
-  counted?: (text: string) => void;
+  /** How many are left of how many, each time it changes. */
+  counted?: (open: number, all: number) => void;
   /** Why it could not be kept, or '' once it is. */
   failed?: (why: string) => void;
   /** The first item's placeholder, while the list is empty. */
@@ -83,7 +83,8 @@ export interface TodoOptions {
 }
 
 /** What is left said at the box's head ('2 of 3 left'): a change seen there gives a beat, as Git's count of issues does. */
-export function sayLeft(el: HTMLElement, text: string) {
+function sayLeft(el: HTMLElement, open: number, all: number) {
+  const text = all ? t('{open} of {all} left', {open, all}) : '';
   if (el.textContent === text) return;
   const seen = el.isConnected && el.textContent !== '';
   el.textContent = text;
@@ -103,8 +104,7 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
     count(kept);
   };
   const count = (kept: readonly todo.Todo[]) => {
-    const open = kept.filter((td) => !td.done).length;
-    o.counted?.(kept.length ? t('{open} of {all} left', {open, all: kept.length}) : '');
+    o.counted?.(kept.filter((td) => !td.done).length, kept.length);
   };
 
   const caret = (field: HTMLInputElement | HTMLTextAreaElement, at: 'start' | 'end') => {
@@ -393,7 +393,7 @@ export function todoBox(): HTMLElement {
   const status = h('p', {class: 'error', role: 'alert'});
   const remaining = h('small', {});
   const box = todoList(load(), (kept) => setState('todo', JSON.stringify(kept)),
-    {counted: (text) => sayLeft(remaining, text), failed: (why) => { status.textContent = why; }});
+    {counted: (open, all) => sayLeft(remaining, open, all), failed: (why) => { status.textContent = why; }});
   return h('section', {class: 'section', 'aria-labelledby': 'todo-title'},
     h('h2', {id: 'todo-title'}, 'TODO', remaining), box.element, status);
 }
