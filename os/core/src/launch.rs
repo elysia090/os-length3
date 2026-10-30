@@ -305,10 +305,9 @@ impl Environment {
         let dir = env.join("prompts");
         std::fs::create_dir_all(&dir)?;
         let prompts = std::fs::File::open(&dir)?;
-        // SAFETY: flock on a descriptor this function holds; let go of when it is closed (however the process ends).
-        while unsafe { libc::flock(prompts.as_raw_fd(), libc::LOCK_EX) } != 0 {
-            let e = io::Error::last_os_error();
-            if e.raw_os_error() != Some(libc::EINTR) { return Err(e); }
+        // Let go of when it is closed, however the process ends.
+        loop {
+            match prompts.lock() { Err(e) if e.kind() == io::ErrorKind::Interrupted => continue, r => break r?, }
         }
         Ok(Environment { dir, prompts, mine: None })
     }
@@ -351,8 +350,7 @@ impl Environment {
             self.mine = Some(name);
             std::io::Write::write_all(&mut unsafe { std::fs::File::from_raw_fd(fd) }, ns.to_string().as_bytes())?;
         }
-        // SAFETY: flock on the descriptor this holds.
-        check(unsafe { libc::flock(self.prompts.as_raw_fd(), libc::LOCK_UN) }, "flock")
+        self.prompts.unlock()
     }
 }
 

@@ -326,14 +326,8 @@ pub fn lock(data: &Path) -> std::io::Result<Lock> {
     let dir = data.join("prompts");
     crate::boundary::private_dir(&dir)?;
     let f = fs::OpenOptions::new().create(true).truncate(false).write(true).open(dir.join(".lock"))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::io::AsRawFd;
-        // SAFETY: flock on a descriptor this function owns.
-        if unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX) } != 0 {
-            return Err(std::io::Error::last_os_error());
-        }
-    }
+    // The browser's core is one instance at a time, and has no locks to take.
+    match f.lock() { Err(e) if e.kind() != std::io::ErrorKind::Unsupported => return Err(e), _ => {} }
     Ok(Lock(f))
 }
 

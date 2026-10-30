@@ -197,14 +197,8 @@ struct Lock(#[allow(dead_code)] fs::File);
 fn lock(repo: &str) -> Result<Lock> {
     crate::boundary::private_dir(&sync_dir()).map_err(|e| e.to_string())?;
     let f = fs::OpenOptions::new().create(true).truncate(false).write(true).open(sync_dir().join(format!("{repo}.lock"))).map_err(|e| e.to_string())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::io::AsRawFd;
-        // SAFETY: flock on a descriptor this function owns.
-        if unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX) } != 0 {
-            return Err(std::io::Error::last_os_error().to_string());
-        }
-    }
+    // The browser's core is one instance at a time, and has no locks to take.
+    match f.lock() { Err(e) if e.kind() != std::io::ErrorKind::Unsupported => return Err(e.to_string()), _ => {} }
     Ok(Lock(f))
 }
 
