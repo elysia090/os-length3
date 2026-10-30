@@ -6,6 +6,7 @@ import * as servers from '../../remote/servers.ts';
 import {boardNew, onNews} from '../../remote/news.ts';
 import {arrive, panAcross, paced, pop, stage} from '../../ui/glide.ts';
 import {errorText} from '../../app/errors.ts';
+import {pageHead} from '../common.ts';
 import type {Context} from '../context.ts';
 import {goToPlan} from '../remote/plan.ts';
 import {signInBox, signInLead, signInPlace} from '../remote/sign-in.ts';
@@ -169,10 +170,12 @@ export class ServerView {
         if (!b) return;
         this.here.shown = [b, ...this.here.shown.filter((x) => x.id !== b.id)];
       }
-      // Nothing open to everyone: the sign-in card in the middle, as on every page that needs it; signed in,
-      // Server is drawn again as the person's own.
+      // Nothing open to everyone: Server's head and the sign-in card under it, where every page that needs one has
+      // them (Remote's, Inbox's: going between them, the card does not move); signed in, Server is drawn again as the
+      // person's own.
       if (!this.here.shown.length) {
-        this.row.instead(signInPlace(t('Sign in'), ...signInLead(t('Signed in, you make servers: boards for the people in them, and the repos you show them.')), signInBox(() => this.ways.again())));
+        this.row.instead(h('div', {class: 'server-signed-out'}, pageHead('server'),
+          signInPlace(t('Sign in'), ...signInLead(t('Signed in, you make servers: boards for the people in them, and the repos you show them.')), signInBox(() => this.ways.again()))));
         this.band.element.hidden = true;
         this.paintDock(null);
         return;
