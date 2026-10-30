@@ -45,7 +45,7 @@ import {sql} from 'drizzle-orm';
 import {deployWorker} from './deploy-worker.ts';
 import {enterEmail} from './enter.ts';
 import {limitsOf, month, spent, take} from './budget.ts';
-import type {Db} from './request.ts';
+import {rows, type Db} from './request.ts';
 import {mirror, type Store} from './mirror.ts';
 import {defaultBranchUrl, migrateBeforeWorker, migrateRemote, owner as ownerOn, retireWorkers, workerRole} from './neon.ts';
 import {pinnedDesktop, pinnedRoots} from './releases.ts';
@@ -150,8 +150,7 @@ async function releaseFiles(bucket: string) {
   // (release_file, whose trigger counts its bytes), so a deploy that fails counts nothing.
   const limits = limitsOf(Object.fromEntries(['R2_STORED_MB', 'R2_WRITES_MONTH'].map((k) => [k, vars(k)])));
   const {pool, db} = await owner();
-  const recordOf = async (q: Db, key: string) => (await q.execute(sql`select sha256, bytes::float8 as bytes from release_file where key = ${key}`)).rows[0] as
-    {sha256: string; bytes: number} | undefined;
+  const recordOf = async (q: Db, key: string) => (await rows<{sha256: string; bytes: number}>(q, sql`select sha256, bytes::float8 as bytes from release_file where key = ${key}`)).at(0);
   const store: Store = {
     async has(p) {
       const r = await recordOf(db, p.key);

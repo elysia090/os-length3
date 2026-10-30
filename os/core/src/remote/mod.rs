@@ -192,7 +192,12 @@ fn forget_base(repo: &str) -> Result<()> {
 }
 
 /// One sync of a repo at a time, across the app and l3 alike.
-struct Lock(#[allow(dead_code)] fs::File);
+struct Lock(fs::File);
+
+impl Drop for Lock {
+    /// Let go of as soon as it is done with (closing the file would too).
+    fn drop(&mut self) { let _ = self.0.unlock(); }
+}
 
 fn lock(repo: &str) -> Result<Lock> {
     crate::boundary::private_dir(&sync_dir()).map_err(|e| e.to_string())?;

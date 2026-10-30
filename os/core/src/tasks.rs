@@ -166,10 +166,13 @@ pub fn mark() -> [u64; 3] {
         u64::from(dir().join("agent").is_file())]
 }
 
-/// A task for `deed` on `issue` (or `line`), as `state`: one not yet run for the same thing is that task, renewed (a
-/// newer edge stands for an older one); one running or asking is left to go on, and a new one waits after it.
-#[allow(clippy::too_many_arguments)]
-fn put(book: &mut Book, repo: &str, line: &str, issue: &str, deed: Deed, unit: Unit, words: &str, weight: u64, state: State) -> Task {
+/// What a task is for, as an edge or a deed asks for it.
+struct Ask<'a> { repo: &'a str, line: &'a str, issue: &'a str, deed: Deed, unit: Unit, words: &'a str, weight: u64 }
+
+/// A task for `a`, as `state`: one not yet run for the same thing is that task, renewed (a newer edge stands for an
+/// older one); one running or asking is left to go on, and a new one waits after it.
+fn put(book: &mut Book, a: Ask, state: State) -> Task {
+    let Ask { repo, line, issue, deed, unit, words, weight } = a;
     let t = now();
     let same = |k: &Task| k.repo == repo && k.line == line && k.issue == issue && k.deed == deed;
     if let Some(k) = book.tasks.iter_mut().find(|k| same(k) && matches!(k.state, State::Offered | State::Waiting | State::Stopped | State::Ready)) {
@@ -227,20 +230,20 @@ pub fn agent_command(harness: &str) -> Option<String> {
 /// An issue written here: offered to the agent, when one is set up.
 pub fn issue_written(repo: &str, issue: &str, title: &str) {
     let (Some(_), Some(line)) = (agent(), crate::work::line_for(issue)) else { return };
-    let _ = with(|b| put(b, repo, &line, issue, Deed::Take, Unit::Goal, title, 0, State::Offered));
+    let _ = with(|b| put(b, Ask { repo, line: &line, issue, deed: Deed::Take, unit: Unit::Goal, words: title, weight: 0 }, State::Offered));
 }
 
 /// A commit on an issue's work: its tests run by themselves, when the repo says how to run them.
 pub fn committed(repo: &str, line: &str, dir: &Path) {
     if line == crate::work::MAIN || tests_command(dir).is_none() { return; }
     let issue = format!("issue/{line}.md");
-    if with(|b| put(b, repo, line, &issue, Deed::Tests, Unit::Test, "", 0, State::Waiting)).is_ok() { kick(repo); }
+    if with(|b| put(b, Ask { repo, line, issue: &issue, deed: Deed::Tests, unit: Unit::Test, words: "", weight: 0 }, State::Waiting)).is_ok() { kick(repo); }
 }
 
 /// A change handed in here: read by the agent by itself, when one is set up.
 pub fn handed_in(repo: &str, line: &str, issue: &str, title: &str) {
     if agent().is_none() { return; }
-    if with(|b| put(b, repo, line, issue, Deed::Review, Unit::Goal, title, 0, State::Waiting)).is_ok() { kick(repo); }
+    if with(|b| put(b, Ask { repo, line, issue, deed: Deed::Review, unit: Unit::Goal, words: title, weight: 0 }, State::Waiting)).is_ok() { kick(repo); }
 }
 
 /// An issue merged (or closed): what was offered or waiting for it is done with.
@@ -293,7 +296,7 @@ pub fn reply(id: u64, words: &str) -> Result<Task> {
 pub fn ask(repo: &str, words: &str) -> Result<Task> {
     if agent().is_none() { return Err(crate::tr!("No agent to ask (l3 agent on claude)", "聞けるエージェントがいません（l3 agent on claude）")); }
     let line = crate::work::current(repo);
-    let k = with(|b| { let k = put(b, repo, &line, "", Deed::Ask, Unit::Question, words.trim(), 0, State::Waiting); k })?;
+    let k = with(|b| put(b, Ask { repo, line: &line, issue: "", deed: Deed::Ask, unit: Unit::Question, words: words.trim(), weight: 0 }, State::Waiting))?;
     kick(&k.repo);
     Ok(k)
 }
@@ -346,7 +349,7 @@ pub fn finished(id: u64, o: Outcome) -> Result<Option<Task>> {
             k.said = crate::tr!("The tests fail ({})", "テストが通りません（{}）", o.code);
             let (repo, line, issue, words) = (k.repo.clone(), k.line.clone(), k.issue.clone(), k.found.first().map(|f| f.text.clone()).unwrap_or_default());
             let done = k.clone();
-            if agent().is_some() { put(b, &repo, &line, &issue, Deed::Fix, Unit::Test, &words, 0, State::Offered); }
+            if agent().is_some() { put(b, Ask { repo: &repo, line: &line, issue: &issue, deed: Deed::Fix, unit: Unit::Test, words: &words, weight: 0 }, State::Offered); }
             return Some(done);
         }
         k.found = found;
@@ -508,11 +511,11 @@ mod tests {
     fn a_newer_edge_stands_for_an_older_one_not_yet_run_and_the_most_complex_waiting_runs_first() {
         let d = book_in("order");
         let ids = with_in(&d, |b| {
-            let file = put(b, "r", "001", "issue/001.md", Deed::Ask, Unit::Question, "why?", 0, State::Waiting);
-            let light = put(b, "r", "002", "issue/002.md", Deed::Review, Unit::Goal, "x", 3, State::Waiting);
-            let heavy = put(b, "r", "003", "issue/003.md", Deed::Review, Unit::Goal, "y", 9, State::Waiting);
+            let file = put(b, Ask { repo: "r", line: "001", issue: "issue/001.md", deed: Deed::Ask, unit: Unit::Question, words: "why?", weight: 0 }, State::Waiting);
+            let light = put(b, Ask { repo: "r", line: "002", issue: "issue/002.md", deed: Deed::Review, unit: Unit::Goal, words: "x", weight: 3 }, State::Waiting);
+            let heavy = put(b, Ask { repo: "r", line: "003", issue: "issue/003.md", deed: Deed::Review, unit: Unit::Goal, words: "y", weight: 9 }, State::Waiting);
             // Handed in again before it ran: the same task, renewed.
-            let again = put(b, "r", "003", "issue/003.md", Deed::Review, Unit::Goal, "y2", 10, State::Waiting);
+            let again = put(b, Ask { repo: "r", line: "003", issue: "issue/003.md", deed: Deed::Review, unit: Unit::Goal, words: "y2", weight: 10 }, State::Waiting);
             assert_eq!(again.id, heavy.id);
             [file.id, light.id, heavy.id]
         }).unwrap();

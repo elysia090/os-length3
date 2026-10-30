@@ -44,8 +44,7 @@ export interface Provider { clientId: string; clientSecret: string }
 
 interface AuthConfig {
   // Drizzle database of any Postgres driver (Neon in production, PGlite in tests).
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  db: any;
+  db: Db;
   secret: string;
   /** Where this service is, e.g. https://os.length3.com. */
   baseURL: string;

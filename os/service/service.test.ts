@@ -5,6 +5,7 @@ import {createApp, sha256} from './app.ts';
 import {createAuth} from './auth.ts';
 import {memoryBucket} from './bucket.ts';
 import * as schema from './schema.ts';
+import type {Db} from './request.ts';
 import {sweep} from './sweep.ts';
 import {accept, APP, BASE, count, enc, freshDb as fresh, idOf, named, SECRET, service, sessionOf, upload, type Service} from './testing.ts';
 import homeSync from '../shared/home-sync.json' with {type: 'json'};
@@ -317,7 +318,7 @@ test('Health: anyone may ask whether the Remote answers from its database, and i
   const s = await service();
   assert.deepEqual((await s.call('GET', '/v1/health')).json, {ok: true});
   // A database that does not answer: 503, its error kept in the log, not in the answer.
-  const down = {execute: async () => { throw new Error('connect ECONNREFUSED 10.0.0.1:5432 as remote_worker'); }};
+  const down = {execute: async () => { throw new Error('connect ECONNREFUSED 10.0.0.1:5432 as remote_worker'); }} as unknown as Db;
   const app = createApp({db: down, auth: createAuth({db: down, secret: 'test-secret-'.repeat(4), baseURL: BASE, appOrigin: APP}), bucket: memoryBucket(),
     origins: [APP], providers: [], domain: 'length3.test', baseURL: BASE});
   const error = console.error;

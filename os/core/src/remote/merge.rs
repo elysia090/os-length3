@@ -112,16 +112,14 @@ pub(super) fn write_file_as(path: &Path, bytes: &[u8], mode: Option<Option<u32>>
 
 /// The modes the Remote changed and this device did not, for files whose bytes are as agreed: taken, as
 /// a file changed there only is (bug: 0755 came back 0644 from the Remote, whose trees kept no modes).
-#[cfg_attr(not(unix), allow(unused_variables))] // modes and directory syncs are the host's
 pub(super) fn take_modes(dir: &Path, base: &Modes, here: &Modes, there: &Modes, tree: &Tree, p: &Plan) {
     let taken: BTreeSet<&String> = p.take.iter().map(|(path, _)| path).chain(p.both.iter().map(|(path, _)| path)).collect();
     let paths: BTreeSet<&String> = base.keys().chain(there.keys()).collect();
     for path in paths {
         let (b, l, r) = (base.get(path), here.get(path), there.get(path));
         if r == b || l != b || taken.contains(path) || !matches!(tree.get(path), Some(Some(_))) || crate::owned::within_derived(dir, path) { continue; }
-        let Ok(at) = place(dir, path) else { continue };
         #[cfg(unix)]
-        if fs::symlink_metadata(&at).is_ok_and(|m| m.is_file()) {
+        if let Some(at) = place(dir, path).ok().filter(|at| fs::symlink_metadata(at).is_ok_and(|m| m.is_file())) {
             use std::os::unix::fs::PermissionsExt;
             let now = fs::metadata(&at).map(|m| m.permissions().mode() & 0o777).unwrap_or(0o644);
             let to = r.copied().unwrap_or(now & !0o111);

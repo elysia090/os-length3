@@ -21,7 +21,7 @@
 use std::fs;
 use std::io::{self, Read};
 #[cfg(unix)]
-use std::os::unix::fs::{symlink, PermissionsExt};
+use std::os::unix::fs::symlink;
 
 /// Built for the web there is no root to fetch or install (a Prompt there runs the web's own), but the
 /// roots held are read, counted and let go by this same code.
@@ -415,8 +415,16 @@ fn through_no_link(top: &Path, rel: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Give `path` its mode, where the host keeps modes (unix); elsewhere it has the host's own.
+#[cfg(unix)]
+fn set_mode(path: &Path, mode: u32) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(mode))
+}
+#[cfg(not(unix))]
+fn set_mode(_: &Path, _: u32) -> io::Result<()> { Ok(()) }
+
 /// Unpack a tar stream into the empty directory `top`; returns (files, bytes).
-#[cfg_attr(not(unix), allow(unused_variables))] // modes and directory syncs are the host's
 pub fn unpack(stream: impl Read, top: &Path) -> io::Result<(u64, u64)> {
     let mut r = io::BufReader::with_capacity(1 << 20, stream);
     let (mut files, mut bytes) = (0u64, 0u64);
@@ -484,8 +492,7 @@ pub fn unpack(stream: impl Read, top: &Path) -> io::Result<(u64, u64)> {
                     Err(e) if e.kind() == io::ErrorKind::AlreadyExists && fs::symlink_metadata(&path)?.is_dir() => {}
                     other => other?,
                 }
-                #[cfg(unix)]
-                fs::set_permissions(&path, fs::Permissions::from_mode(mode | 0o700))?;
+                set_mode(&path, mode | 0o700)?;
             }
             Kind::File => {
                 // create_new: never over something already there (a link above all).
@@ -493,9 +500,9 @@ pub fn unpack(stream: impl Read, top: &Path) -> io::Result<(u64, u64)> {
                 io::copy(&mut (&mut r).take(size), &mut f)?;
                 let mut pad = vec![0u8; (padded - size) as usize];
                 r.read_exact(&mut pad)?;
+                drop(f);
                 // No set-id bits come from an archive.
-                #[cfg(unix)]
-                f.set_permissions(fs::Permissions::from_mode(mode & 0o777))?;
+                set_mode(&path, mode & 0o777)?;
                 files += 1;
                 bytes += size;
                 continue;

@@ -10,13 +10,13 @@ import type {Context, ErrorHandler, MiddlewareHandler} from 'hono';
 import {StoreFailed} from './bucket.ts';
 import {bodyLimit} from 'hono/body-limit';
 import {cors} from 'hono/cors';
+import type {PgDatabase, PgQueryResultHKT} from 'drizzle-orm/pg-core';
 import {HTTPException} from 'hono/http-exception';
 import type {ContentfulStatusCode} from 'hono/utils/http-status';
 import {room, throttle} from './schema.ts';
 
 /** A Drizzle database or transaction of any Postgres driver (Neon in production, PGlite in tests). */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type Db = any;
+export type Db = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 
 /** Who is asking: their account, this session, their name as it is now, and when this session ends (ms). */
 export type Vars = {Variables: {userId: string; sessionId: string; name: string; sessionEnds: number}};
@@ -117,7 +117,7 @@ export const ago = (span: number) => sql`(now() - make_interval(secs => ${span /
 export const qualified = (c: Column) => sql`${sql.identifier(getTableName(c.table))}.${sql.identifier(c.name)}`;
 
 /** The rows a raw query returned, whichever driver ran it. */
-export const rows = async <T>(q: Db, query: SQL): Promise<T[]> => (await q.execute(query)).rows as T[];
+export const rows = async <T>(q: Db, query: SQL): Promise<T[]> => ((await q.execute(query)) as {rows: T[]}).rows;
 
 // ---- limits ----
 

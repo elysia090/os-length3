@@ -30,8 +30,16 @@ impl How {
     pub const CACHE: How = How { mode: None, durable: false };
 }
 
+/// A file made with `mode`, where the host keeps modes (unix); elsewhere with the host's own.
+#[cfg(unix)]
+fn with_mode(options: &mut fs::OpenOptions, mode: Option<u32>) {
+    use std::os::unix::fs::OpenOptionsExt;
+    if let Some(mode) = mode { options.mode(mode); }
+}
+#[cfg(not(unix))]
+fn with_mode(_: &mut fs::OpenOptions, _: Option<u32>) {}
+
 /// The temporary `path` is written through: a name of this OS's own, free beside it.
-#[cfg_attr(not(unix), allow(unused_variables))] // modes and directory syncs are the host's
 fn beside(path: &Path, how: How) -> io::Result<(PathBuf, fs::File)> {
     static NEXT: AtomicU64 = AtomicU64::new(0);
     let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
@@ -41,11 +49,7 @@ fn beside(path: &Path, how: How) -> io::Result<(PathBuf, fs::File)> {
         let tmp = path.with_file_name(format!(".{name}.length3-{}-{n}", crate::pid()));
         let mut options = fs::OpenOptions::new();
         options.write(true).create_new(true);
-        #[cfg(unix)]
-        if let Some(mode) = how.mode {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(mode);
-        }
+        with_mode(&mut options, how.mode);
         match options.open(&tmp) {
             Ok(f) => return Ok((tmp, f)),
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => last = Some(e),
@@ -111,13 +115,14 @@ pub fn rename_new(from: &Path, to: &Path) -> io::Result<()> {
 
 /// Flush the directory `path` is in, so a rename into it is on the disk.
 /// Where a directory cannot be opened to flush (not unix), the rename stands as the system keeps it.
-#[cfg_attr(not(unix), allow(unused_variables))] // modes and directory syncs are the host's
+#[cfg(unix)]
 fn sync_dir(path: &Path) {
-    #[cfg(unix)]
     if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
         if let Ok(d) = fs::File::open(dir) { let _ = d.sync_all(); }
     }
 }
+#[cfg(not(unix))]
+fn sync_dir(_: &Path) {}
 
 #[cfg(test)]
 mod tests {

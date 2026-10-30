@@ -436,9 +436,9 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
     const user = c.get('userId'), name = c.req.param('name');
     await confirmed(c, name);
     // Off once: asking again does not restart its 30 days.
-    const [done] = await db.update(repo).set({offAt: sql`coalesce(${repo.offAt}, now())`}).where(named(user, name)).returning({offAt: repo.offAt});
+    const [done] = await db.update(repo).set({offAt: sql`coalesce(${repo.offAt}, now())`}).where(named(user, name)).returning({offAt: ms(sql`${repo.offAt}`)});
     if (!done) return c.json({error: 'That repo is not on the Remote'}, 404);
-    return c.json({name, offAt: done.offAt.getTime(), until: done.offAt.getTime() + KEPT});
+    return c.json({name, offAt: done.offAt, until: done.offAt + KEPT});
   });
 
   // Discard: a repo turned off goes for good now, as the sweep lets one go after its 30 days
