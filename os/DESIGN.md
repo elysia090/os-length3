@@ -727,7 +727,8 @@ fix is always a piece from §3, not a new rule.
 | A use against an allowance said by a colour (a red bar when over) | The meter: `ink` as far as the use goes, full and its figures 600 when over |
 | One Subscribe for one paid plan, and its price said only once one is sent to pay | Free and each tier side by side as cards, each its price and what it keeps, the account's own current |
 | Signed in from one page and landed on another (Inbox, then Remote's Repos) | Back on the page one began on |
-| How Stripe went said twice, or not at all (back from the portal with nothing said) | Once, in one line above the plan, against how the plan was when the page left for Stripe |
+| How Stripe went said twice, or not at all (back from the portal with nothing said) | Once, on paper above the plan, against how the plan was when the page left for Stripe |
+| What every paid tier adds, said once in a line of its own under the cards or in a box of rows | In each paid card's own lines, the same words in each |
 | A refusal said at the foot of the part, away from what was pressed | Where it was pressed: under the tier's card, in the ask, under Manage |
 
 # Part II. What the OS is under the pages
@@ -2947,16 +2948,21 @@ the gear's do, never swapped in one frame):
   side as small **cards** (§3), four across the part (two, then one, as it
   narrows), and at the heading's right the tier the account is on with the
   one date that matters in `sub` (renews, ends, how long a failed payment
-  stays paid; free: what free keeps). Under them On the Remote, three
+  stays paid; free as free is: nothing, its own card says what it keeps).
+  Everything on the part is as wide as the four cards: one right edge down
+  it. Under them On the Remote, three
   **meters** (§3): repos on the Remote, what is kept there and names here,
   each against what that tier keeps (repos as many as fit: the figure alone),
   and, when over, one quiet line that what is there stays and what is new
   waits on the device. (A Remote showing no tiers says the tier in a figure's
   size instead, over the meters.) Each tier's card has its price as Stripe
-  says it, what it keeps, and its one deed at the right of its foot; the
-  account's own is current (an `ink` edge over `raised`) with nothing to
-  press, and one that keeps less than is kept now says that what is there
-  stays. Free, each tier's deed is Subscribe, which never steps into payment
+  says it (a whole amount without its .00: $14 a month), what it keeps (a
+  paid one, besides its room and names, what every paid tier adds: Make
+  servers; Names on your own domain), and its one deed at the right of its
+  foot; the account's own is current (an `ink` edge over `raised`): free,
+  with nothing to press; paid, its deed is Manage the plan (the portal: the
+  card, the invoices, cancelling). One that keeps less than is kept now says
+  that what is there stays. Free, each tier's deed is Subscribe, which never steps into payment
   at once: what is bought opens under the cards, in plain words a line each
   (the tier and its price; Renews automatically until you cancel; Cancel any
   time from Manage the plan, the tier staying until the paid period ends;
@@ -2965,18 +2971,17 @@ the gear's do, never swapped in one frame):
   payment at the right (Stripe's Checkout). Paying, the other tiers' deed is
   Upgrade or Downgrade, which opens Stripe's portal at the step that changes
   the tier (Stripe says what it costs now, and asks); none while a payment
-  that failed is put right. Then what paid adds, in three plain lines (keep
-  more on the Remote; make servers; names on your own domain), and, paid,
-  Manage the plan at the bottom right (the portal: the card, the invoices,
-  cancelling); with nothing sold, a quiet line saying so. Back from Stripe,
-  how it went is said once, in one line above the plan: paid, and to what,
+  that failed is put right. With nothing sold, a quiet line saying so. Back
+  from Stripe, how it went is said once, above the plan, on paper (nearer
+  than the ground, so it is read first; gone through, the green circle with
+  its tick before the words, the one green for on and done): paid, and to what,
   once the Remote has heard it from Stripe (Payment went through: you are on
   Pro now); cancelled, nothing charged (a card declined in Checkout is said
   there, under the card, and Back comes to this); from the portal, what
   changed against the plan as it was when the page left for it (You are on
   Max now; Cancelled: Pro stays until Nov 22, 2026), or nothing. What the
   Remote refused is said where it was pressed: under the tier's card, in
-  the ask, under Manage. The window coming back reads the Remote again.
+  the ask, under Manage (in the account's own card). The window coming back reads the Remote again.
   Shown only when the Remote has a plan. A repo card the Remote holds back
   says it waits, with See the plan: its edge dashed (in one place only, as
   one only on the Remote is) and where it stands said in ink, on Home's
