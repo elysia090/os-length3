@@ -21,23 +21,37 @@ prepared ([notes](native/RELEASE-0.2.0.md)) and not published.
 
 ## Making one
 
-The version is [`os/RELEASE`](../os/RELEASE). Changing it on main runs
-`.github/workflows/release.yml`; a version already published is left as it
-is. Without Actions, the same is done by hand from a clean checkout of main
-with Rust (targets `x86_64-unknown-linux-musl`, `wasm32-unknown-unknown`,
+Two merges, and nothing by hand between them:
+
+1. A change that writes the new version into [`os/RELEASE`](../os/RELEASE)
+   is merged to main. `.github/workflows/release.yml` makes everything the
+   release holds (`os/scripts/release.sh`), publishes it at that commit,
+   and opens **Pin vX.Y.Z**: the release's root in `os/core/src/root.rs`
+   RELEASES and its desktop app in `os/shared/desktop-releases.json`.
+2. **Pin vX.Y.Z** is merged. The tree now ships it: the web build takes
+   that l3, devices trust that root, and the Remote's deploy puts the
+   release's files on the Remote.
+
+Until the pins are merged, the tree ships the newest version it pins (RELEASE
+names the one being made), so nothing in between is broken. A version
+already published is left as it is.
+
+Without Actions, the same is done from a clean checkout of main with Rust
+(targets `x86_64-unknown-linux-musl`, `wasm32-unknown-unknown`,
 `wasm32-wasip1`), Node 22, musl-tools and the Tauri build packages
-(`libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf`):
+(`libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf`),
+then the two pinned files committed as the pins' change:
 
 ```sh
 cd os
-GITHUB_TOKEN=… sh scripts/release.sh ../out           # everything the release holds, and notes.md
+sh scripts/release.sh ../out                          # everything the release holds, notes.md, and the pins in the tree
 GITHUB_TOKEN=… node scripts/publish-release.mjs ../out  # the release at this commit, with those files
 ```
 
-Then the pins the notes give are committed to main (`os/core/src/root.rs`
-RELEASES, which `release.sh` already wrote in the tree, and
-`os/shared/desktop-releases.json`), since the web build and the Remote's
-deploy take only what this tree pins.
+The sources the root is built from are pinned in
+[`distribution/sources.env`](../distribution/sources.env);
+`.github/workflows/sources-next.yml` says every week which have a newer
+release, with the digests to pin it by.
 
 ## The native base
 
