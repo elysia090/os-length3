@@ -252,6 +252,17 @@ class Forge extends Part {
   get paneSwitch() { return this.main.getByRole('button', {name: 'Right pane', exact: true}); }
   /** A file's text, which is where it is edited. */
   editor(path: string) { return this.main.getByRole('textbox', {name: `Edit ${path}`, exact: true}); }
+  /** A file's name in its head (its path in the repo), pressed to write it over. */
+  fileName(path: string) { return this.main.locator(`section.file[data-path="${path}"] > .path .path-name`).locator('visible=true'); }
+
+  /** A file renamed from its head: its name pressed, `written` (its path in the repo) written over it, Enter. */
+  async rename(path: string, written: string) {
+    await this.fileName(path).click();
+    const field = this.main.getByRole('textbox', {name: 'New name', exact: true});
+    await expect(field).toBeFocused();
+    await field.fill(written);
+    await field.press('Enter');
+  }
 
   /** Open `repo` in Forge (from its card on Home, as a person would). */
   async open(repo: string) {
@@ -460,10 +471,19 @@ class FileTree extends Part {
     return menu;
   }
 
-  /** In a row's menu: a deed that asks for a name (New file, New folder, Rename), the name written, Enter. */
+  /**
+   * In a row's menu: a deed that asks for a name (New folder, Rename), the name written, Enter. New file asks none: made
+   * at once in the row's folder (untitled.md) and opened in Forge, it is named there, in its head.
+   */
   async named(repo: string, path: string, deed: 'New file' | 'New folder' | 'Rename', name: string) {
     const menu = await this.deeds(repo, path);
     await menu.getByRole('menuitem', {name: deed}).click();
+    if (deed === 'New file') {
+      const made = path ? `${path}/untitled.md` : 'untitled.md';
+      await expect(this.app.forge.editor(made)).toBeFocused();
+      await this.app.forge.rename(made, path ? `${path}/${name}` : name);
+      return;
+    }
     const field = menu.getByRole('textbox');
     await field.fill(name);
     await field.press('Enter');

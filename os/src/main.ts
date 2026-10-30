@@ -75,7 +75,6 @@ const ctx: Context = {
     select('forge', !!from && morph(from, () => document.querySelector<HTMLElement>(`.col[data-repo="${CSS.escape(name)}"]:not([hidden]) .file`)));
   },
   remember(name) { openRepo = name; save(REPO_KEY, name); fileTree.mark(name); },
-  actOn(repo, path) { void fileTree.actOn(repo, path); },
   reading(path) { readingPath = path; if (current === 'forge') fileTree.markFile(openRepo, path); },
   leftAt(repo, path, at) { save(FILE_KEY, JSON.stringify({repo, path, at})); },
   get repo() { return openRepo; },

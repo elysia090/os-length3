@@ -95,9 +95,13 @@
 .edit-ring .edit-mark { background: transparent; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--ink) 30%, transparent); }
 .file.edit-front { border-color: var(--ink); }
 .file:focus-within > .path { color: var(--ink); }
-/* Pressed, the head is the file in File (reader.ts act): its name underlined under the pointer, as a way there. */
-.path.acts { cursor: var(--cursor-hand); }
-.path.acts:hover .path-name { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+/* Its name, pressed, is written over where it stands (reader.ts renameIn): under the pointer a faint box round it, as
+   a name to write in; written in, the box is ink and the name as wide as what is written (its size, in a mono font). */
+.path-name.renames { margin: -2px -4px; padding: 1px 3px; border: 1px solid transparent; border-radius: var(--r-field); cursor: var(--cursor-text); transition: border-color var(--motion); }
+.path-name.renames:hover { border-color: var(--edge); }
+.path-rename { min-width: 0; max-width: 100%; margin: -2px -4px; padding: 1px 3px; border: 1px solid var(--ink); border-radius: var(--r-field); outline: 0; background: var(--paper); color: var(--ink); font: inherit; }
+.path-rename:disabled { opacity: .6; }
+.path-error { margin-left: var(--s3); font-family: var(--sans); }
 .sheet-note { padding: var(--s2) var(--s4) var(--s4); font-size: var(--t-meta); }
 /* Landed on from a search, File or Git: its head lit with the marker for a moment, then fading back, so the eye is
    led to where it landed without anything staying lit. The line asked for is selected in the marker too. */

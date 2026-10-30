@@ -214,29 +214,6 @@ export class FileTree {
     this.trigger?.setAttribute('aria-expanded', 'false');
   }
 
-  /**
-   * The tree out at `path` in `repo` (its folders opened down to it; '' is the repo itself) with that row's menu
-   * open: what can be done to it, as its own ⌄ gives (issue #49). Nothing is done until a deed is chosen there.
-   */
-  async actOn(repo: string, path: string) {
-    const at = path ? `/root/${repo}/${path}` : `/root/${repo}`;
-    const parts = at.split('/').filter(Boolean);
-    for (let i = 1; i < parts.length; i++) expandedPaths.add(`/${parts.slice(0, i).join('/')}`);
-    this.close();
-    this.open(false);
-    // Drawn as its folders are read: waited for a moment, not for good.
-    for (let i = 0; i < 60; i++) {
-      const name = this.nameAt(at);
-      const more = name?.closest('.tree-row')?.querySelector<HTMLButtonElement>(':scope > .tree-more');
-      if (name && more) {
-        name.scrollIntoView({block: 'nearest'});
-        more.click();
-        return;
-      }
-      await new Promise((go) => setTimeout(go, 50));
-    }
-  }
-
   /** Mark the repo Forge shows. */
   mark(repo: string | null) {
     for (const b of this.root.querySelectorAll<HTMLElement>('.tree-name[data-repo]')) {

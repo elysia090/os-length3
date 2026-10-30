@@ -71,22 +71,41 @@ test('a new folder takes a file of its own, and Forge shows the file under it', 
   await expect(app.forge.reference.getByText('plans/trip.md', {exact: true})).toBeVisible();
 });
 
-test('a name taken is said in the menu, and the name keeps the keyboard', async ({signedIn: app}) => {
+test('New file asks nothing: made at once, untitled as nothing there is yet, and named in its own head', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
+  const menu = async () => (await app.file.deeds('hello')).getByRole('menuitem', {name: 'New file'}).click();
 
-  await app.file.named('hello', '', 'New file', 'README.md');
+  await menu();
+  await expect(app.forge.editor('untitled.md')).toBeFocused();
+  await menu();
+  await expect(app.forge.editor('untitled-2.md')).toBeFocused();
 
-  const menu = app.page.getByRole('menu', {name: 'hello', exact: true});
-  await expect(menu.getByRole('alert')).toHaveText('README.md is there already');
-  await expect(menu.getByRole('textbox')).toBeFocused();
+  // Its name pressed is written over where it stands, the stem chosen; Escape puts it back as it was.
+  await app.forge.fileName('untitled-2.md').click();
+  const field = app.main.getByRole('textbox', {name: 'New name', exact: true});
+  await expect(field).toBeFocused();
+  expect(await field.evaluate((el: HTMLInputElement) => el.value.slice(el.selectionStart!, el.selectionEnd!))).toBe('untitled-2');
+  await field.press('Escape');
+  await expect(field).toHaveCount(0);
+  await expect(app.forge.fileName('untitled-2.md')).toHaveText('untitled-2.md');
+
+  // A name taken is said beside it, and it keeps the keyboard to be put right there.
+  await app.forge.rename('untitled-2.md', 'README.md');
+  await expect(app.main.getByRole('alert').filter({hasText: 'README.md is there already'})).toBeVisible();
+  await expect(field).toBeFocused();
+  await field.fill('plan.md');
+  await field.press('Enter');
+  // Named, it is the one written in.
+  await expect(app.forge.editor('plan.md')).toBeFocused();
+  await expect(app.forge.editor('untitled-2.md')).toHaveCount(0);
 });
 
 test('a name being written stays, with the keyboard, however long the pointer is away; Create makes it', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
   await app.page.clock.install();
   const menu = await app.file.deeds('hello');
-  await menu.getByRole('menuitem', {name: 'New file'}).click();
-  const field = menu.getByRole('textbox', {name: 'File name'});
+  await menu.getByRole('menuitem', {name: 'New folder'}).click();
+  const field = menu.getByRole('textbox', {name: 'Folder name'});
   await field.pressSequentially('a-long-name-being-written');
   // The pointer goes far away for longer than the tree lingers.
   await app.page.mouse.move(1000, 700);
@@ -96,9 +115,9 @@ test('a name being written stays, with the keyboard, however long the pointer is
   await expect(field).toBeFocused();
   // Seen how to finish: Create (Enter does the same), with Not now beside it.
   await expect(menu.getByRole('button', {name: 'Not now'})).toBeVisible();
-  await field.fill('kept.txt');
+  await field.fill('kept');
   await menu.getByRole('button', {name: 'Create', exact: true}).click();
-  await expect(app.forge.editor('kept.txt')).toBeFocused();
+  await expect(app.file.name('kept')).toBeFocused();
   await app.page.clock.resume();
 });
 

@@ -1720,10 +1720,14 @@ each count is the way to its section further down (a raised fill under the
 pointer; pressed, the page goes there and its heading lights as it lands);
 the face, pressed, opens the profile to be written, as Edit profile does;
 the TODO's paper pressed under its items gives the caret to the line at its
-foot, as a page written on does. In Forge a file's head, pressed (not to
-choose its words), is the file in File with what can be done to it (rename,
-move, delete), its name underlined under the pointer; pressed under the
-last file, on nothing, the caret goes to its end. A pill on the band is one
+foot, as a page written on does. In Forge a file's name in its head,
+pressed (not to choose its words), is written over where it stands, a faint
+box round it under the pointer as a name to write in: its path in the repo,
+the stem chosen and the ending kept; Enter or leaving it renames it (a path
+written moves it, the folders on its way made), Escape puts it back, a name
+taken is said beside it with the keyboard kept there, and renamed, the
+keyboard goes on into the file (an issue's file is its number, not renamed
+there); pressed under the last file, on nothing, the caret goes to its end. A pill on the band is one
 thing to press: on its edge, round its name, it goes as on the name (its ×
 aside). Server's people are each a
 conversation: someone else pressed opens the Inbox to them, an arrow at the
@@ -1821,7 +1825,8 @@ end: pressed, the deeds for the file read now (New file and New folder
 beside it, Rename, which moves it given a path, Delete; the repo's own with
 none read) come out under it, in Forge, done there with the field or the
 ask in its place as File's are, never carrying one off to File; a new file
-is opened to write in, one renamed or moved is shown where it went. The
+is made at once and opened to write in, one renamed or moved is shown where
+it went. The
 pills follow it and scroll, and ⊕ comes right after the last
 pill. One press brings every repo not on the band out at once; this is not
 adding tabs one at a time.
@@ -3335,8 +3340,12 @@ New file and New folder, made in it; a file has them too, made beside it in
 its folder (the same deeds Forge's files button brings out under itself for
 the file read now); a file or folder has Rename and Delete (a
 repo is not renamed or deleted here: its gear is where that is, § Runtime, A
-repo in a list). A deed pressed becomes the field or the ask in its own
-place: a name written and Enter makes it (a new one's name is one plain part,
+repo in a list). New file asks nothing: it is made at once, named as
+nothing there is yet (untitled, with the ending of the file it is made
+beside, a note's .md beside none; untitled-2 and on when taken), and opened
+in Forge to write in, its name written over in its own head there. Any other
+deed pressed becomes the field or the ask in its own place: a name written
+and Enter makes it (a new one's name is one plain part,
 with no "/" and not starting with "."; one already there is said under the
 field and the keyboard stays in it). Rename's field holds the row's path in
 the repo (`notes/plan.md`), its name chosen to be written over, so a name

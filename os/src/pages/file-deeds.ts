@@ -16,6 +16,22 @@ export const joined = (dir: string, name: string) => (dir ? `${dir}/${name}` : n
 /** A path in a repo as its folder and its name. */
 export const split = (path: string) => (path.includes('/') ? [path.slice(0, path.lastIndexOf('/')), path.slice(path.lastIndexOf('/') + 1)] : ['', path]);
 
+/** Whether `child` is in the folder `inside` of `repo` already (asked of the store, not of what was last shown; no folder, no). */
+const there = async (repo: string, inside: string, child: string) => (await store.tree(repo, inside).catch(() => [])).some((x) => x.name === child);
+const taken = (child: string) => new Error(t('{name} is there already', {name: child}));
+
+/**
+ * `written` as the path `path` of `repo` goes to (a name, or a path that moves it: notes/plan.md), put plainly; thrown
+ * if it is no path or something is there already.
+ */
+export async function renaming(repo: string, path: string, written: string): Promise<string> {
+  const to = written.replace(/^\/+|\/+$/g, '');
+  if (!plainPath(to)) throw new Error(t('Names joined by “/”, none starting with “.”'));
+  const [inside, name] = split(to);
+  if (to !== path && await there(repo, inside, name)) throw taken(name);
+  return to;
+}
+
 interface Deeds {
   repo: string;
   /** Its path in the repo ('' for the repo itself), the name it is shown by, and whether it is a folder. */
@@ -81,32 +97,35 @@ export function fileDeeds(d: Deeds): HTMLElement {
     const from = value.lastIndexOf('/') + 1, dot = value.lastIndexOf('.');
     input.setSelectionRange(from, dot > from && !d.dir ? dot : value.length);
   };
-  /** Whether `child` is in the folder `inside` already (asked of the store, not of what was last shown; no folder, no). */
-  const there = async (inside: string, child: string) => (await store.tree(repo, inside).catch(() => [])).some((x) => x.name === child);
-  const taken = (child: string) => new Error(t('{name} is there already', {name: child}));
   // A folder takes a new file or folder in it; a file, one beside it in its folder.
   const into = d.dir ? path : split(path)[0];
   const rows: HTMLElement[] = [];
-  rows.push(entry(t('New file'), 'new-file', (b) => field(b, t('File name'), '', t('Create'), async (n) => {
-    if (await there(into, n)) throw taken(n);
-    d.opening?.(into);
-    await store.add(repo, into, n, '');
-    await d.made(joined(into, n), true);
-  })));
+  // A new file is made at once, named as nothing yet is there (untitled, with the ending of the file it is made beside;
+  // a note's, beside none), and opened to write in: its name is written over in its own head when it has one.
+  const error = h('p', {class: 'error small', role: 'alert'});
+  const make = async (b: HTMLButtonElement) => {
+    if (b.disabled) return;
+    b.disabled = true;
+    try {
+      const names = new Set((await store.tree(repo, into).catch(() => [])).map((x) => x.name));
+      const end = (!d.dir && /\.[^.]+$/.exec(d.name)?.[0]) || '.md';
+      let n = `untitled${end}`;
+      for (let i = 2; names.has(n); i++) n = `untitled-${i}${end}`;
+      d.opening?.(into);
+      await store.add(repo, into, n, '');
+      await d.made(joined(into, n), true);
+    } catch (err) { b.disabled = false; error.textContent = errorText(err); b.after(error); }
+  };
+  rows.push(entry(t('New file'), 'new-file', (b) => void make(b)));
   rows.push(entry(t('New folder'), 'new-folder', (b) => field(b, t('Folder name'), '', t('Create'), async (n) => {
-    if (await there(into, n)) throw taken(n);
+    if (await there(repo, into, n)) throw taken(n);
     d.opening?.(into);
     await store.mkdir(repo, joined(into, n));
     await d.made(joined(into, n), false);
   })));
   if (path !== '') {
     // Its path in the repo, its name to be written over: a path written moves it (notes/plan.md), its folders made.
-    rows.push(entry(t('Rename'), 'pen', (b) => field(b, t('New name'), path, t('Rename'), async (written) => {
-      const to = written.replace(/^\/+|\/+$/g, '');
-      const [inside, name] = split(to);
-      if (to !== path && await there(inside, name)) throw taken(name);
-      await d.move(to);
-    }, true)));
+    rows.push(entry(t('Rename'), 'pen', (b) => field(b, t('New name'), path, t('Rename'), async (written) => d.move(await renaming(repo, path, written)), true)));
     rows.push(menuRule(), entry(t('Delete'), 'trash', (b) => {
       // Asked in its place: the deed on the side it was pressed, Not now on the other.
       const foot = askFoot(b, pop);

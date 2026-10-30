@@ -56,8 +56,8 @@ interface RowWays {
   close(key: string): void;
   /** A file's head in a repo's page opens it beside, in a box of its own. */
   beside(key: string): void;
-  /** A file's head pressed is the file's own place in File. */
-  act(repo: string, path: string): void;
+  /** A file's name pressed in its head is written over there: `written` is where it goes. */
+  rename(repo: string, path: string, written: string): Promise<void>;
   /** No repo here at all: the first made (New repo). */
   make(): void;
 }
@@ -230,7 +230,7 @@ export class Row {
 
   /** What a box reads: the repo's whole page, or the one file it was opened beside for. */
   private page(name: string, flow: HTMLElement) {
-    const reader = new Reader(repoOf(name), flow, {beside: (path) => this.ways.beside(keyOf(repoOf(name), path)), act: (path) => this.ways.act(repoOf(name), path)});
+    const reader = new Reader(repoOf(name), flow, {beside: (path) => this.ways.beside(keyOf(repoOf(name), path)), rename: (path, written) => this.ways.rename(repoOf(name), path, written)});
     const file = fileOf(name);
     return {reader, root: file === null ? reader.directory('') : reader.only(file)};
   }

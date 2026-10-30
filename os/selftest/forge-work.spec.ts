@@ -422,16 +422,17 @@ test('the band\'s first button brings out the deeds for what is read now, under 
   await expect(menu).toBeHidden();
   await expect(files).toBeFocused();
 
-  // A new file from there is made in the folder of the file read now, and is the one to work on.
+  // A new file from there is made at once in the folder of the file read now, with its ending, and is the one to
+  // work on; its name is written in its head.
   await app.file.open('hello', 'src/main.c');
   await app.rail.go('forge');
   await files.click();
   const near = app.page.getByRole('menu', {name: 'main.c', exact: true});
   await near.getByRole('menuitem', {name: 'New file'}).click();
-  await near.getByRole('textbox').fill('util.c');
-  await near.getByRole('textbox').press('Enter');
-  await expect(app.forge.editor('src/util.c')).toBeFocused();
+  await expect(app.forge.editor('src/untitled.c')).toBeFocused();
   await expect(near).toBeHidden();
+  await app.forge.rename('src/untitled.c', 'src/util.c');
+  await expect(app.forge.editor('src/util.c')).toBeFocused();
 
   // Renamed (a path moves it), it is shown where it went.
   await files.click();

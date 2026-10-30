@@ -11,8 +11,6 @@ export interface Context {
   reading(path: string | null): void;
   /** Where in `path` of `repo` Forge is read or written (an offset), kept as where the person left off. */
   leftAt(repo: string, path: string, at: number): void;
-  /** File's tree out, with the menu of `path` in `repo` ('' for the repo itself): New file, New folder, Rename, Delete as it allows. */
-  actOn(repo: string, path: string): void;
   /** Record the repo Forge shows, without leaving or redrawing the page. */
   remember(name: string): void;
   /** The repo Forge shows, if any. */
