@@ -9,21 +9,15 @@ import {Drafts} from '../../home/drafts.ts';
 import {errorText} from '../../app/errors.ts';
 
 /**
- * A post half written stays with its board (DESIGN §1): going to another board, or putting the
- * layer away, keeps it, and it is there when the board is on screen again; gone once sent. A
+ * A post half written stays with its board (DESIGN §1): going to another board, or to another
+ * page, keeps it, and it is there when the board is on screen again; gone once sent. A
  * guest's is kept apart from one of its people's.
  */
 const drafts = new Drafts();
 
-/** What the box at the foot needs of the layer it is in. */
+/** What the box at the foot needs of the page it is on. */
 interface DockWays {
   signedIn: boolean;
-  /** Brought out by a press: the box takes the focus. */
-  pinned(): boolean;
-  /** Something being written here keeps the layer out. */
-  writing(busy: () => boolean): void;
-  /** Words in the box: a press outside does not put the layer away. */
-  holding(words: () => boolean): void;
   /** Away to the Remote page, to sign in. */
   signIn(): void;
   /** In as a guest, or no longer one: what lists the boards one writes in is drawn again. */
@@ -49,7 +43,7 @@ export function dockFor(b: Shown | null, ways: DockWays): Node[] {
     ways.guestChanged();
   };
   if (guest) void servers.guestStill(b.id, guest.token).catch(noLonger);
-  if (b.member || guest) return [writeIn(b, guest, note, ways, noLonger), note];
+  if (b.member || guest) return [writeIn(b, guest, note, noLonger), note];
   const held = servers.heldInvite();
   if (b.guests && held?.board === b.id) return [guestIn(b, held.code, ways), note];
   const signIn = button(t('Sign in'), 'small-button');
@@ -62,13 +56,11 @@ export function dockFor(b: Shown | null, ways: DockWays): Node[] {
  * The box one of its people writes to them in, or a guest (`guest`) as a guest: what is half written kept with its
  * board, what went wrong sending said in `note`; a guest no longer let in is told so (`noLonger`).
  */
-function writeIn(b: Shown, guest: servers.GuestHere | null, note: HTMLElement, ways: DockWays, noLonger: (e: unknown) => void): HTMLElement {
+function writeIn(b: Shown, guest: servers.GuestHere | null, note: HTMLElement, noLonger: (e: unknown) => void): HTMLElement {
   const field = h('textarea', {class: 'prompt-in', rows: '1', maxlength: String(servers.LIMIT), 'aria-label': t('Write in {board}', {board: b.name}),
     placeholder: b.member ? t('To the people of {server}', {server: b.server}) : t('As {name}, a guest', {name: guest!.as})}) as HTMLTextAreaElement;
   const key = `${b.member ? 'member' : 'guest'}:${b.id}`;
   field.value = drafts.get(key);
-  ways.writing(() => document.activeElement === field || !!field.value.trim());
-  ways.holding(() => drafts.holds(key));
   const fit = () => { field.style.height = 'auto'; field.style.height = `${field.scrollHeight}px`; };
   // Post at the box's bottom right, as Forge's box has Run and Inbox's Send: what sends is in sight, not only known.
   // Its keys are in its title, as Run's are.
@@ -101,7 +93,7 @@ function writeIn(b: Shown, guest: servers.GuestHere | null, note: HTMLElement, w
   });
   // Pressed, the keyboard stays where one writes, for the next.
   post.addEventListener('click', () => { void send(); field.focus({preventScroll: true}); });
-  if (ways.pinned() && b.member) queueMicrotask(() => { field.focus(); field.setSelectionRange(field.value.length, field.value.length); });
+  if (b.member) queueMicrotask(() => { field.focus(); field.setSelectionRange(field.value.length, field.value.length); });
   form.append(field, post);
   worded();
   return form;
@@ -116,7 +108,6 @@ function guestIn(b: Shown, code: string, ways: DockWays): HTMLElement {
   const name = h('input', {class: 'line-in', maxlength: '32', placeholder: t('Your name here'), 'aria-label': t('Your name here'), autocomplete: 'nickname'}) as HTMLInputElement;
   const join = button(t('Write as a guest'), 'small-button primary');
   const error = h('span', {class: 'error small', role: 'alert'});
-  ways.writing(() => document.activeElement === name || !!name.value.trim());
   const box = h('div', {class: 'prompt server-say'}, h('span', {class: 'muted'}, t('You are invited to write in #{board}.', {board: b.name})), name, join, error,
     h('span', {class: 'muted small'}, t('Your name is shown with "guest" beside it.')));
   const go = async () => {
@@ -137,6 +128,6 @@ function guestIn(b: Shown, code: string, ways: DockWays): HTMLElement {
   };
   join.addEventListener('click', () => void go());
   name.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); void go(); } });
-  if (ways.pinned()) queueMicrotask(() => name.focus());
+  queueMicrotask(() => name.focus());
   return box;
 }

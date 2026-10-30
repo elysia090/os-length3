@@ -6,7 +6,7 @@ import {nudge} from '../../ui/glide.ts';
 import {deed} from '../common.ts';
 import {planRefused} from '../remote/plan.ts';
 import {errorText} from '../../app/errors.ts';
-import {button, fitting, type Here, type Writer} from './parts.ts';
+import {button, fitting, type Here} from './parts.ts';
 import {ghostBody} from './board.ts';
 
 // No server chosen (or none yet): it is named where it will stand. Its chip is the field, in the band after the
@@ -24,7 +24,6 @@ let draft: [string, string] = ['', ''];
 
 /** What making a server needs of the view it is in. */
 interface MakingWays {
-  writer: Writer;
   /** The chip being named, put in the band where the server will stand, and what the Remote says no to, under it. */
   naming(chip: HTMLElement, ask: HTMLElement): void;
   /** Made: it is shown. */
@@ -73,7 +72,6 @@ export function nameServer(here: Here, ways: MakingWays): {name: HTMLInputElemen
   ways.naming(chip, ask);
   fit();
   label.classList.toggle('named', !!name.value.trim());
-  ways.writer(name, () => document.activeElement === name || document.activeElement === handle || !!name.value.trim());
   const done = async () => {
     // Enter pressed again while it is made makes no second server.
     if (!name.value.trim() || make.disabled) { name.focus(); return; }

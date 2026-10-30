@@ -7,9 +7,9 @@ test('a guest come back to the app is led back to their board from Home', async 
   const ada = await another('Ada');
   await ada.inbox.claim();
   await ada.server.make('Trip', `${ada.handle}-trip`);
-  await ada.server.layer.getByRole('button', {name: 'Its people, boards and repos'}).click();
-  await ada.server.layer.getByRole('tab', {name: /^Boards/}).click();
-  const boards = ada.server.layer.getByRole('tabpanel', {name: /^Boards/});
+  await ada.server.view.getByRole('button', {name: 'Its people, boards and repos'}).click();
+  await ada.server.view.getByRole('tab', {name: /^Boards/}).click();
+  const boards = ada.server.view.getByRole('tabpanel', {name: /^Boards/});
   await boards.getByRole('switch', {name: 'Guests can write'}).click();
   const take = boards.getByRole('button', {name: 'Take guests', exact: true});
   await expect(take).toBeVisible();
@@ -19,8 +19,8 @@ test('a guest come back to the app is led back to their board from Home', async 
 
   // Opened by the link, signed out: the name to write as, then a post as a guest.
   await app.page.goto(link!);
-  await app.server.layer.getByRole('textbox', {name: 'Your name here'}).fill('Cy');
-  await app.server.layer.getByRole('button', {name: 'Write as a guest', exact: true}).click();
+  await app.server.view.getByRole('textbox', {name: 'Your name here'}).fill('Cy');
+  await app.server.view.getByRole('button', {name: 'Write as a guest', exact: true}).click();
   await app.server.post('general', 'Hello from a guest');
 
   // Come back another day: Home leads to the board, from Lately and from the servers, a chip after them.

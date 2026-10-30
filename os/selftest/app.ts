@@ -140,7 +140,7 @@ class Part {
   protected get main() { return this.app.main; }
 }
 
-/** The rail at the left: one place at a time; File and Server open over the page. */
+/** The rail at the left: one place at a time; File opens its tree over the page, Server its servers beside the rail. */
 class Rail extends Part {
   button(place: Place): Locator {
     // Its name says more while something is to be seen there ("Inbox has messages not read").
@@ -150,7 +150,7 @@ class Rail extends Part {
 
   async go(place: Place) {
     await this.button(place).click();
-    if (place !== 'file' && place !== 'server' && place !== 'plugin') await expect(this.button(place)).toHaveAttribute('aria-current', 'page');
+    if (place !== 'file' && place !== 'plugin') await expect(this.button(place)).toHaveAttribute('aria-current', 'page');
   }
 }
 
@@ -676,40 +676,39 @@ class Inbox extends Part {
   }
 }
 
-/** Server: laid over the page; servers on its top line, boards side by side. */
+/** Server: its page (a press on the rail; a rest lays the same over the page); servers on its top line, boards side by side. */
 class Server extends Part {
-  get layer() { return this.page.getByRole('dialog', {name: 'Server'}); }
+  /** Its page: the servers on its top line, the boards under them, the people at the right. */
+  get view() { return this.page.locator('#page[data-place="server"] > .work:not(.bench)'); }
   /** The right: who is in it, then the repos they show in it. */
-  get side() { return this.layer.getByRole('complementary', {name: 'Who is in it, and the repos they show'}); }
+  get side() { return this.view.getByRole('complementary', {name: 'Who is in it, and the repos they show'}); }
 
-  async openLayer() {
+  /** To its page, pressed on the rail. */
+  async open() {
     await this.app.rail.button('server').click();
-    await expect(this.layer).toBeVisible();
+    await expect(this.view).toBeVisible();
   }
 
-  /** Put it away with Escape: from behind the gear (or a repo shown) the first goes back to the boards. */
+  /** Away from it: its page left for Home. */
   async close() {
-    await expect(async () => {
-      await this.page.keyboard.press('Escape');
-      await expect(this.layer).toBeHidden({timeout: 1000});
-    }).toPass({timeout: 15_000});
+    await this.app.rail.go('home');
   }
 
   /** Make a server named `name`, `handle` its name on this Remote (one's own Inbox name is needed first). */
   async make(name: string, handle: string) {
-    await this.openLayer();
-    await this.layer.getByRole('textbox', {name: 'Name', exact: true}).fill(name);
+    await this.open();
+    await this.view.getByRole('textbox', {name: 'Name', exact: true}).fill(name);
     // Its name on this Remote follows the name unseen; the quiet @ after it shows the field to write it otherwise.
-    await this.layer.getByRole('button', {name: 'Name on this Remote', exact: true}).click();
-    await this.layer.getByRole('textbox', {name: /^Name on this Remote/}).fill(handle);
-    await this.layer.getByRole('button', {name: 'Make', exact: true}).click();
-    await expect(this.layer.getByRole('radiogroup', {name: 'Server'}).getByRole('radio', {name, exact: true})).toBeChecked();
+    await this.view.getByRole('button', {name: 'Name on this Remote', exact: true}).click();
+    await this.view.getByRole('textbox', {name: /^Name on this Remote/}).fill(handle);
+    await this.view.getByRole('button', {name: 'Make', exact: true}).click();
+    await expect(this.view.getByRole('radiogroup', {name: 'Server'}).getByRole('radio', {name, exact: true})).toBeChecked();
   }
 
   /** Make a board in the server on screen: its last box makes one (a server starts with #general). */
   async makeBoard(name: string) {
-    const field = this.layer.getByRole('textbox', {name: 'New board', exact: true});
-    const next = this.layer.getByRole('button', {name: 'Next board'});
+    const field = this.view.getByRole('textbox', {name: 'New board', exact: true});
+    const next = this.view.getByRole('button', {name: 'Next board'});
     await expect(next.or(field).first()).toBeVisible();
     // Along the boxes, one at a time, to the last.
     for (let i = 0; i < 20 && !(await field.isVisible()); i++) await next.click();
@@ -719,36 +718,36 @@ class Server extends Part {
   }
 
   /** A board's box, by its heading. */
-  board(name: string) { return this.layer.getByRole('heading', {name, exact: true, level: 2}); }
+  board(name: string) { return this.view.getByRole('heading', {name, exact: true, level: 2}); }
   /** Its talk, read as a conversation. */
-  talk(board: string) { return this.layer.getByRole('region', {name: board, exact: true}); }
+  talk(board: string) { return this.view.getByRole('region', {name: board, exact: true}); }
   /** Its TODO, pinned at the top of its box. */
-  get todo() { return this.layer.getByRole('region', {name: 'TODO', exact: true}); }
+  get todo() { return this.view.getByRole('region', {name: 'TODO', exact: true}); }
 
   /** A server's chip on the top line (its name says so while a board in it has posts not seen). */
-  chip(name: string) { return this.layer.getByRole('radiogroup', {name: 'Server'}).getByRole('radio', {name: new RegExp(`^${escape(name)}(, |$)`)}); }
+  chip(name: string) { return this.view.getByRole('radiogroup', {name: 'Server'}).getByRole('radio', {name: new RegExp(`^${escape(name)}(, |$)`)}); }
 
   /** The box at the board's foot that writes in it. */
-  box(board: string) { return this.layer.getByRole('textbox', {name: `Write in ${board}`, exact: true}); }
+  box(board: string) { return this.view.getByRole('textbox', {name: `Write in ${board}`, exact: true}); }
 
   /**
    * Add someone to the server on screen by their name or code, from behind its gear (People,
    * Add someone you know). What the card then says is returned, to be checked by the caller.
    */
   async addSomeone(who: string) {
-    await this.layer.getByRole('button', {name: 'Its people, boards and repos'}).click();
-    await this.layer.getByRole('tab', {name: /^People/}).click();
-    await this.layer.getByRole('button', {name: 'Add someone you know'}).click();
-    const typed = this.layer.getByRole('textbox', {name: 'Name or code of someone to add'});
+    await this.view.getByRole('button', {name: 'Its people, boards and repos'}).click();
+    await this.view.getByRole('tab', {name: /^People/}).click();
+    await this.view.getByRole('button', {name: 'Add someone you know'}).click();
+    const typed = this.view.getByRole('textbox', {name: 'Name or code of someone to add'});
     await expect(typed).toBeFocused();
     await typed.fill(who);
-    await this.layer.getByRole('button', {name: 'Add', exact: true}).click();
-    return this.layer.getByRole('tabpanel', {name: /^People/}).getByRole('status');
+    await this.view.getByRole('button', {name: 'Add', exact: true}).click();
+    return this.view.getByRole('tabpanel', {name: /^People/}).getByRole('status');
   }
 
   /** Post `text` in `board` from the box at the foot (Ctrl+Enter sends). */
   async post(board: string, text: string) {
-    const box = this.layer.getByRole('textbox', {name: `Write in ${board}`, exact: true});
+    const box = this.view.getByRole('textbox', {name: `Write in ${board}`, exact: true});
     await box.fill(text);
     await box.press('Control+Enter');
     await expect(box).toHaveValue('');

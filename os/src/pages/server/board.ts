@@ -7,7 +7,7 @@ import {errorText} from '../../app/errors.ts';
 import {timeline} from './talk.ts';
 import {boardTodo} from './todo.ts';
 import {mark as todoMark} from '../todo-list.ts';
-import {button, current, fitting, type Here, type Shown, type Writer} from './parts.ts';
+import {button, current, fitting, type Here, type Shown} from './parts.ts';
 
 // A board's box in Server's row: in full where it is on screen, its TODO (the same list as Home's) pinned at the top,
 // written there by its people, and its talk under it; beside it, only its name. The last box makes a new board.
@@ -19,7 +19,7 @@ import {button, current, fitting, type Here, type Shown, type Writer} from './pa
 const drafts = new Map<string, string>();
 
 /** A board's box: in full where it is on screen (its TODO pinned at the top, its talk under it), only its name beside it. */
-export function boardBox(b: Shown, now: boolean, signedIn: boolean, writer: Writer): HTMLElement {
+export function boardBox(b: Shown, now: boolean, signedIn: boolean): HTMLElement {
   const head = h('div', {class: 'board-head', 'data-board': b.id}, h('span', {class: 'muted board-mark', 'aria-hidden': 'true'}, '#'), h('h2', {}, b.name),
     signedIn ? null : h('span', {class: 'muted small'}, b.server), h('span', {class: 'sr-only'}));
   markBoard(head, signedIn);
@@ -28,7 +28,7 @@ export function boardBox(b: Shown, now: boolean, signedIn: boolean, writer: Writ
   const talk = h('section', {class: 'board-talk', tabindex: '0', 'aria-label': b.name});
   // Its foot in view, what came is seen: the marks go, here and on the rail.
   talk.append(timeline(talk, b.id, b.member, b.member ? (post) => sawBoard(b.id, post) : undefined));
-  void boardTodo(b, todo, (busy) => writer(todo, busy));
+  void boardTodo(b, todo);
   const box = h('div', {class: 'board-card'}, head, todo, talk);
   openAtFoot(box, talk);
   return box;
@@ -58,9 +58,8 @@ export function markBoard(head: HTMLElement, signedIn: boolean) {
   if (said) said.textContent = on ? t('New posts') : '';
 }
 
-/** What the last box needs of the view: where something is written, and the board once made. */
+/** What the last box needs of the view: the board once made. */
 interface NewBoardWays {
-  writer: Writer;
   /** Made: the board stands where the box was. */
   made(id: string, board: string): void;
 }
@@ -85,7 +84,6 @@ export function newBoard(now: boolean, here: Here, ways: NewBoardWays): HTMLElem
   const fit = fitting(name);
   const named = () => { fit(); field.classList.toggle('named', !!name.value.trim()); };
   queueMicrotask(named);
-  ways.writer(name, () => document.activeElement === name || !!name.value.trim());
   const done = async () => {
     // Enter pressed again while it is made makes no second board.
     if (!here.serverId || make.disabled) return;

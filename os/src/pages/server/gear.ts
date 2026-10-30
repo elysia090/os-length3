@@ -16,7 +16,7 @@ import {personBadge} from '../pane.ts';
 
 type Part = 'people' | 'repos' | 'boards' | 'server';
 
-/** What the gear needs of the layer it is in. */
+/** What the gear needs of the page it is on. */
 export interface GearWays {
   /** The boards' place, where the gear's sheet goes. */
   sheet: HTMLElement;

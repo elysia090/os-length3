@@ -21,24 +21,18 @@ import {Row} from './row.ts';
 import {Side} from './side.ts';
 import {cameTo, seenNow} from './talk.ts';
 
-// What is in Server while it is out (layer.ts brings it out and puts it away): the band of servers on the top line
+// What is on the Server page (page.ts): the band of servers on the top line
 // (band.ts), under it the boards of the one chosen as a row of boxes (row.ts, board.ts), or a step away in their
 // place what is behind its gear (gear.ts) or a repo shown (repo.ts), the box at the foot for the board on screen
 // (dock.ts), and at the right its people and repos (side.ts). This keeps what is chosen and on screen, and tells
 // each part when to draw.
 
 
-/** What the view needs of the layer it is in. */
+/** What the view needs of the page it is on. */
 interface ViewWays {
   ctx: Context;
-  /** Brought out by a press, to stay: what is written in takes the keyboard. */
-  pinned(): boolean;
-  /** Put the layer away at once: a way out of it taken. */
-  close(): void;
   /** Built again, for who is here now (the Remote answered, or one signed in). */
   again(): void;
-  /** Words in the box at the foot: a press outside leaves the layer out. */
-  holding(words: () => boolean): void;
 }
 
 /** In the boards' place: the boards, or a step away from them, behind the gear or a repo shown. */
@@ -48,7 +42,7 @@ export class ServerView {
   readonly work: HTMLElement;
   private readonly ways: ViewWays;
   private readonly here: Here;
-  /** Where one was when Server was last out: its server and board. */
+  /** Where one was when Server was last on screen: its server and board (or led here to make one). */
   private readonly at = remembered();
   private readonly band: Band;
   private readonly row: Row;
@@ -59,11 +53,6 @@ export class ServerView {
   private showing: Showing = 'boards';
   /** A board went or came back behind the gear: the boards are built again on the way back to them. */
   private boardsChanged = false;
-  /**
-   * What is being written, by where it is written: a board's TODO, a name, the box at the foot. One no longer on
-   * screen (the board moved away from) is let go, so moving along the boards holds no old box or talk.
-   */
-  private readonly writers = new Map<Element | 'dock', () => boolean>();
   /** Who one is, to mark oneself among the people; not known (away), no one is marked, and nothing else changes. */
   private readonly myself: Promise<Me | null>;
 
@@ -87,32 +76,13 @@ export class ServerView {
     this.myself = signedIn ? import('../../remote/inbox.ts').then((inbox) => inbox.me()).catch(() => null) : Promise.resolve(null);
     this.hear();
     const held = servers.heldInvite();
-    void (signedIn ? this.readServers(held) : this.readOpen(held)).finally(() => { this.listed = true; });
-  }
-
-  /** What is here is read: one's servers, or the boards open to everyone (or what is said instead). */
-  private listed = false;
-
-  /**
-   * What Server opens on is drawn (layer.ts waits for it, a moment at most, to come out whole): what is here read, the
-   * board on screen's talk and TODO read, and its people.
-   */
-  settled(): boolean {
-    if (!this.listed || !this.side.painted) return false;
-    const on = this.row.track.querySelector('.slide[aria-current="true"]');
-    return !on?.querySelector('.board-talk:not(.board-faint) > .timeline:not([data-read]), .board-todo:empty');
-  }
-
-  /** Something being written here (a post, a TODO, a name): the layer stays out while there is. */
-  writing(): boolean {
-    for (const [k, f] of this.writers) if (k === 'dock' || k.isConnected) { if (f()) return true; }
-    return false;
+    void (signedIn ? this.readServers(held) : this.readOpen(held));
   }
 
   /**
    * Escape from behind the gear, or from a repo shown: back to the boards (true); from a server being named, come to
    * from one, back to that one, its box at the foot taking the keyboard as when its chip is pressed (what was written
-   * in the name is kept, as it is anyway); or nothing to go back from, and Server is put away.
+   * in the name is kept, as it is anyway); or nothing to go back from (false).
    */
   back(): boolean {
     const from = this.before;
@@ -128,11 +98,6 @@ export class ServerView {
   /** The server on screen when + was pressed: Escape while one is named goes back to it. */
   private before: string | null = null;
 
-  private readonly writer = (at: Element | 'dock', busy: () => boolean) => {
-    for (const k of this.writers.keys()) if (k !== 'dock' && !k.isConnected) this.writers.delete(k);
-    this.writers.set(at, busy);
-  };
-
   private async isMe(address: string) {
     return !!(await this.myself)?.addresses.some((a) => a.address === address);
   }
@@ -142,10 +107,10 @@ export class ServerView {
   /** Signed in: one's servers, at the one last seen; opened by an invitation's link, its board. */
   private async readServers(held: {board: string} | null) {
     // Given this session already (Home names them as it opens), the servers are drawn from that list at once, so only
-    // what the board on screen holds is read before Server comes out; the list is read again under it, and what
+    // what the board on screen holds is read as it comes; the list is read again under it, and what
     // changed meanwhile is taken in.
     const known = held ? null : servers.lastServers();
-    if (known?.length) { this.here.list = known; this.band.paint(); this.opening(); this.listed = true; }
+    if (known?.length) { this.here.list = known; this.band.paint(); this.opening(); }
     try {
       const fresh = await servers.servers();
       if (known?.length) { this.tookFresh(fresh); return; }
@@ -169,7 +134,12 @@ export class ServerView {
       return;
     }
     const first = this.here.list.find((s) => s.id === this.at.server) ?? this.here.list[0];
-    if (first) this.show(first.id); else this.makeServer();
+    if (this.at.making) {
+      // Led here to make one (the servers beside the rail): made, or not now, it is where one was.
+      this.before = first?.id ?? null;
+      remember({server: first?.id});
+      this.makeServer();
+    } else if (first) this.show(first.id); else this.makeServer();
   }
 
   /**
@@ -299,15 +269,13 @@ export class ServerView {
     this.here.alone = null;
     this.place('boards');
     const making = nameServer(this.here, {
-      writer: this.writer,
       naming: (chip, ask) => { this.here.naming = chip; this.band.asking(ask); this.band.paint(); },
       made: (s) => this.made(s),
       broughtBack: async (id) => { this.here.list = await servers.servers(); this.show(id); },
-      plan: () => { this.ways.close(); goToPlan(this.ways.ctx); },
-      inbox: () => { this.ways.close(); this.ways.ctx.go('inbox'); },
+      plan: () => goToPlan(this.ways.ctx),
+      inbox: () => this.ways.ctx.go('inbox'),
     });
     this.row.stand(...making.slides);
-    this.ways.holding(() => false);
     this.dock.replaceChildren(making.dock);
     // At the right, its first person: oneself, as its owner.
     this.side.clear();
@@ -315,7 +283,8 @@ export class ServerView {
       if (!this.here.naming?.isConnected || !me?.addresses[0]) return;
       this.side.ghost(me.addresses[0].address);
     });
-    if (this.ways.pinned()) making.name.focus();
+    // Drawn as the page is built: the keyboard goes to it once it is on the page.
+    queueMicrotask(() => making.name.focus());
   }
 
   /** Made: the faint shapes stand whole where they were, its chip taking it in with a pop. */
@@ -338,7 +307,7 @@ export class ServerView {
   /** What box `j` of the row holds: a board, or after them the last box, a new board. */
   private box(j: number, now: boolean): HTMLElement {
     const b = this.here.shown[j];
-    return b ? boardBox(b, now, this.here.signedIn, this.writer) : newBoard(now, this.here, {writer: this.writer, made: (id, board) => this.boardMade(id, board)});
+    return b ? boardBox(b, now, this.here.signedIn) : newBoard(now, this.here, {made: (id, board) => this.boardMade(id, board)});
   }
 
   /** A board made in the last box: it stands where the box was, whole, as a server made does. */
@@ -364,13 +333,9 @@ export class ServerView {
   /** The box at the foot: writing in the board on screen (dock.ts). */
   private paintDock(b: Shown | null) {
     // What the box held for another board is that board's: this one says for itself.
-    this.ways.holding(() => false);
     this.dock.replaceChildren(...dockFor(b, {
       signedIn: this.here.signedIn,
-      pinned: () => this.ways.pinned(),
-      writing: (busy) => this.writer('dock', busy),
-      holding: (words) => this.ways.holding(words),
-      signIn: () => { this.ways.close(); this.ways.ctx.go('remote'); },
+      signIn: () => this.ways.ctx.go('remote'),
       guestChanged: () => this.band.paint(),
     }));
   }
@@ -444,11 +409,11 @@ export class ServerView {
   private seeRepo(r: servers.ShownRepo) {
     this.place('repo');
     this.side.seen(r);
-    void repoSheet(this.sheet, r, {back: () => this.toBoards(), forge: () => { this.ways.close(); this.ways.ctx.openRepo(r.name); }});
+    void repoSheet(this.sheet, r, {back: () => this.toBoards(), forge: () => this.ways.ctx.openRepo(r.name)});
   }
 
   /** Someone else pressed: a conversation with them, in the Inbox. */
   private write(address: string) {
-    void import('../inbox.ts').then((m) => { m.openNext(address); this.ways.close(); this.ways.ctx.go('inbox'); });
+    void import('../inbox.ts').then((m) => { m.openNext(address); this.ways.ctx.go('inbox'); });
   }
 }

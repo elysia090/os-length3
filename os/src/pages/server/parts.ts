@@ -6,13 +6,16 @@ import type {Server} from '../../remote/servers.ts';
 
 // The pieces Server's parts share (its view, band, boards, gear, dock and the rest in this folder).
 
-/** Where Server was last, or is to open next: a server and its board, or a board alone (one written in as a guest). */
-export interface At { server?: string; board?: string }
+/**
+ * Where Server was last, or is to open next: a server and its board, a board alone (one written in as a guest), or
+ * a server being made, come to from `server` (Escape goes back to it).
+ */
+export interface At { server?: string; board?: string; making?: boolean }
 const AT = 'length3.server.at';
 export function remembered(): At {
   try { return JSON.parse(localStorage.getItem(AT) ?? '{}') as At; } catch { return {}; }
 }
-/** Server opens at `at` next (pages that lead to a server or a board say where, then bring Server out). */
+/** Server opens at `at` next (pages that lead to a server or a board say where, then go to Server). */
 export function remember(at: At) {
   try { localStorage.setItem(AT, JSON.stringify(at)); } catch { /* a convenience */ }
 }
@@ -22,11 +25,11 @@ export const MOVE = 240;
 
 export const button = (text: string, kind = '') => h('button', {type: 'button', class: `button ${kind}`.trim()}, text) as HTMLButtonElement;
 
-/** A board as the layer holds it: whose it is to write in. */
+/** A board as Server holds it: whose it is to write in. */
 export interface Shown { id: string; name: string; member: boolean; guests: boolean; server: string }
 
 /**
- * What Server has chosen and holds while it is out: view.ts keeps it, and the parts it draws read it as it is when
+ * What Server has chosen and holds while it is on screen: view.ts keeps it, and the parts it draws read it as it is when
  * they need it (pressed, or answered), never a copy taken before.
  */
 export interface Here {
@@ -46,8 +49,6 @@ export interface Here {
 /** The server chosen, as the list has it. */
 export const current = (here: Here) => here.list.find((s) => s.id === here.serverId) ?? null;
 
-/** Where something is being written (a board's TODO, a name): the layer stays out while `busy` says so. */
-export type Writer = (at: Element, busy: () => boolean) => void;
 
 /**
  * Asked in the card, as Remote asks before a repo is turned off: the card

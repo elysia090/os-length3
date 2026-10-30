@@ -63,15 +63,15 @@ export function purpose(id: PurposeId): Purpose {
 /**
  * A stored value is a convenience only; anything unknown falls back to Home.
  * Creating a repo is a step, not a place to reopen the app into, and File
- * and Server are operations over a page.
+ * and the plug are operations over a page.
  */
 export function restorePurpose(stored: string | null | undefined): PurposeId {
-  // File, Server and the plug open over a page and are never the page itself.
+  // File and the plug open over a page and are never the page itself.
   return PURPOSES.some((p) => p.id === stored && !OVER.includes(p.id)) ? stored as PurposeId : DEFAULT_PURPOSE;
 }
 
 /** The purposes laid over a page rather than shown as one. */
-const OVER: readonly PurposeId[] = ['file', 'server', 'plugin'];
+const OVER: readonly PurposeId[] = ['file', 'plugin'];
 
 /**
  * Vertical rail keys, wrapping at both ends like a tab list. Returns null for

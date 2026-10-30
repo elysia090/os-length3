@@ -31,7 +31,7 @@ test('Share shows the repo in a server at a press, and takes it off at the next'
   // The list stays for the next; the server's people now see it.
   await app.page.keyboard.press('Escape');
   await expect(list).toBeHidden();
-  await app.server.openLayer();
+  await app.server.open();
   await expect(app.server.side.getByRole('button', {name: /^hello/})).toBeVisible();
   await app.server.close();
 
@@ -48,7 +48,7 @@ test('Share in no server yet leads on to making one', async ({signedIn: app}) =>
   const list = await app.remote.share('hello');
   await expect(list).toContainText('In no server yet');
   await list.getByRole('menuitem', {name: 'Make a server…'}).click();
-  await expect(app.server.layer.getByRole('textbox', {name: 'Name', exact: true})).toBeVisible();
+  await expect(app.server.view.getByRole('textbox', {name: 'Name', exact: true})).toBeVisible();
 });
 
 test('Share in no server yet on the free plan says making one is paid, and leads to the plan', async ({planSignedIn: app}) => {

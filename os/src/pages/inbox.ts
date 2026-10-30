@@ -213,7 +213,7 @@ function runs(messages: HTMLElement) {
 
 /**
  * A message about a server (asked into it, or added to it at once): its name, a way to it once the reader is in it
- * (asked and not in yet, nothing to press). Pressed, Server comes out at it.
+ * (asked and not in yet, nothing to press). Pressed, Server's page opens at it.
  */
 function serverLink(id: string, ctx: Context): HTMLElement {
   const go = h('button', {type: 'button', class: 'link', title: t('Open in Server'), hidden: ''});
@@ -229,7 +229,7 @@ function serverLink(id: string, ctx: Context): HTMLElement {
 
 /**
  * A notice the Remote left, as a line across the conversation (`words` said as its reader says it), standing in time
- * as a bubble does; pressed, Server comes out at the server, once its reader is in it (not in it, it only says).
+ * as a bubble does; pressed, Server's page opens at the server, once its reader is in it (not in it, it only says).
  */
 function noticeLine(words: string, m: inbox.Message, ctx: Context): HTMLElement {
   const line = h('div', {class: 'bubble inbox-notice', 'data-time': String(m.time)},

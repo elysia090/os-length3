@@ -206,8 +206,8 @@ Every value in `styles.css` comes from a token (§2).
     a post, a message, a commit with no title, Fix： with no title after
     it): the box shakes, the keyboard stays, and why is said under it in
     ink with an off dot before it (never the quiet grey of a hint, never
-    silence), going as the box is written in again. Server's layer put away goes out to the left as it fades
-    (180 ms), and its sheet changed (the gear, Done) comes in; the
+    silence), going as the box is written in again. The servers a rest on Server brings out come in from the
+    rail's side as they fade in, and go back the same way; Server's sheet changed (the gear, Done) comes in; the
     person's menu rises into place; the plugin area comes down into the
     pane's head and, put away, the Prompt rises into its place.
   - *A move is never cut.* What is drawn again just as it was is left as
@@ -306,7 +306,7 @@ Every value in `styles.css` comes from a token (§2).
   with Not now. Escape puts away what is being written as Not now does
   but keeps its words, folded: an issue's comes back as it was with
   Write an issue, a commit's line with Commit, a server's or a board's
-  name being made when Server is out again. The repo worked on is one on every page: chosen anywhere
+  name being made when Server is come back to. The repo worked on is one on every page: chosen anywhere
   (a pill, File, a Git chip, an issue gone to or started, one just
   written), it is the one the next page opens; only looking at a page
   chooses nothing. A thing made or chosen is landed on: a new issue is the
@@ -335,7 +335,7 @@ Every page:
   is tall and repo cards are large, about three across.
 - On a phone (560 px and less) keeps 16 px from the rail's line,
   and the window's own gutter is its right edge, so the two never stack.
-  The rail stays the rail there (File's tree and Server's layer come out
+  The rail stays the rail there (File's tree and Server's servers come out
   of it as anywhere; a bar along the foot was mocked and left), its places
   a size smaller and closer and the window's gutter narrower, so a page
   has a fifth more of the width. A place's name comes out beside it only
@@ -405,8 +405,9 @@ what is its own.
   `sub`, on the top line, and one line at every width: the role is cut
   short where it runs out of room, and a phone has the name alone, so what
   stands under the head (a sign-in card, a page's parts) starts at the same
-  place on every page. Home's head is the profile. An overlay (File,
-  Server) has no page head: it is laid over the page whose head is there.
+  place on every page. Home's head is the profile. An overlay (File's
+  tree, Server's servers) has no page head: it is laid over the page whose
+  head is there; Server's page, as Forge's, has its band on the top line.
   A step within a page that stands in the page's place (Server's gear, a
   repo shown in Server) has the same head: its title, a line in `sub`, and
   its way back at the right (a repo shown: Back); behind Server's gear,
@@ -540,16 +541,25 @@ what is its own.
   in a board, tall as it is on Home whatever its items (it scrolls in itself).
   Under the pointer its edge takes a step toward ink (the edge a field
   has), so it says it is there to write in before it is pressed.
-- **Overlays.** File and Server are operations, not pages: laid over the
-  page that is showing, brought out by resting on the icon (File's small
-  tree after 300 ms, Server's layer, which covers the page, after a
-  deliberate 600 ms; it stays a while after the pointer leaves, but goes as
-  soon as the pointer rests on another place on the rail (200 ms; crossing
-  the icons on the way into the tree is not a rest), so reading the rail's
-  names never leaves one over the page) or by a press (it stays), put away by
-  Escape (whatever has the keyboard; the topmost one only), a press
-  outside, or a second press. A press outside leaves out one whose box
-  holds words (Server's, §8), so what is written is not put away under it.
+- **Overlays.** File is an operation, not a page: its small tree laid over
+  the page that is showing, brought out by resting on the icon (300 ms; it
+  stays a while after the pointer leaves, but goes as soon as the pointer
+  rests on another place on the rail (200 ms; crossing the icons on the way
+  into the tree is not a rest), so reading the rail's names never leaves
+  one over the page) or by a press (it stays), put away by Escape (whatever
+  has the keyboard; the topmost one only), a press outside, or a second
+  press. Server is a page, gone to by a press as Inbox is. A rest on its
+  icon (300 ms) brings out one's servers beside the rail, as a column of
+  servers is in a chat app: a card of rows, each a server's mark (the first
+  letters of its first two words, a rounded square), its name, and a dot
+  while something in it is not read, then Make a server; one pressed is
+  Server's page at it, Make a server its page with one being made (Escape
+  goes back to where one was). It is a way to a server, never the server
+  over the page: nothing in it is seen by being there, nothing is written
+  in it. It goes as File's tree does (a moment after the pointer leaves, a
+  little longer once it was gone into; at once on another place on the
+  rail; Escape; a press outside); → on the icon goes into it from the
+  keyboard, ↑ ↓ along it.
 - **The Remote away.** When this device's Remote does not answer (not
   reached, not in time, a gateway's 502, 503 or 504, or a page or words
   that are not its reply), it is said in one place: a small `off` dot on Remote's icon in the rail, whose
@@ -1346,8 +1356,9 @@ or Cancel; Cancel comes back with the error a provider sends then.
   comes right under them, a step apart, and is round because it starts
   something rather than opening a place (§1, shapes).
 - A name appears beside an icon on hover or keyboard focus. Choosing an
-  icon replaces the whole page; nothing pushes in beside the rail. File and
-  Server are the operations: each is laid over the page instead (below).
+  icon replaces the whole page; nothing pushes in beside the rail. File is
+  the operation: its tree is laid over the page instead; a rest on Server
+  brings out one's servers beside the rail, to go to one (below).
 - The rail is 78 px wide: the icons keep 18 px to its line and 12 px to the
   window's side, so they do not crowd the line.
 - Inbox and Server carry the dot of §3's Something came in; Remote the
@@ -2464,7 +2475,7 @@ the gear's do, never swapped in one frame):
   the repo is shown in bold; pressing one shows it there or takes it off
   at once, and the list stays for the next. A press outside, Escape or
   Share again closes it. In no server yet, the list says so and leads on:
-  Make a server…, which brings Server out where the first is made; or, on
+  Make a server…, which goes to Server where the first is made; or, on
   the free plan, where making one is paid, that it is and See the plan.
   Going public is the server's, in its gear (seen
   as the server's, so nothing ties it to you).
@@ -2583,13 +2594,13 @@ else in it is not one. Sent, the keyboard stays in the field, for the next.
 The Remote out of reach, the page is the sign-in card's place with the
 card saying so (what comes back once it answers, and Try again): drawn
 again on its own the moment it answers; Try again pressed and still away,
-the card shakes. Server's layer says it the same way, where its boards
+the card shakes. Server's page says it the same way, where its boards
 would be. Writing is one line that grows as it is written: a message is named
 the way an issue is ("Review：…", "Question：…"), and a `/root/…` path in it
 says what it is about, so there is nothing else to choose. Enter is a new
 line, Ctrl+Enter sends. A message about a server (being asked into it)
-shows the server's name over it, once one is in it, and pressed, Server
-comes out at it. Added to one at once by someone one knows, the Remote
+shows the server's name over it, once one is in it, and pressed, Server's
+page opens at it. Added to one at once by someone one knows, the Remote
 leaves a notice in the conversation with them (Ada added you to Books; to
 Ada, You added Bo to Books): a quiet line across it, centred as a day's
 name is, never a bubble in anyone's voice (no client can send one), its
@@ -2682,15 +2693,12 @@ taking guests (or stops being open) ends every invitation and guest at
 once, so opening it again lets nobody back by an old link; someone who
 leaves the server takes the invitations they made with them.
 
-Server is an overlay (§3), on the bench's shape. It comes out whole: a
-rest on its icon makes it ready unseen, reading what it opens on (the
-servers, the board on screen's talk and TODO, its people), so what comes
-out after the rest is all there; pressed out, it waits for that a moment
-at most (300 ms) before it comes, the servers drawn from the list this
-session was given last (Home names them as it opens), so only what the
-board holds is waited for, the list read again under it. A rest that does
-not last lets it go unseen, and nothing it read while unseen counts as
-seen. Its pieces, from §3:
+Server is a page (§3), on the bench's shape, gone to by a press on its
+icon, or by a server pressed among those a rest on it brings out (§3,
+Overlays). It opens at the server one was at last (or the one pressed),
+the servers drawn from the list this session was given last (Home names
+them as it opens), so only what the board holds is read as it comes, the
+list read again under it. Its pieces, from §3:
 
 - **The band**: + first at the top line's left end, to make a server, then
   the servers one is in, one row however many there are, sliding sideways
@@ -2723,7 +2731,7 @@ seen. Its pieces, from §3:
   of its own under the band, where the row cannot slide it out of sight,
   when it says it, with the way on (See the plan, Go to Inbox). Escape
   while one is named, come to from a server, goes back to that server
-  (what was written is kept), and only then puts Server away.
+  (what was written is kept); the page stays.
   Being asked into a server, and writing, are free.
 - **Boxes side by side**: its boards, the last box making a new one, as a
   server is, where it will stand: the board it will be, dashed on the
@@ -2762,12 +2770,11 @@ seen. Its pieces, from §3:
   is narrow, Post comes with the words, and the empty box says whom it
   writes to whole.
   What is half written in it is that board's (§1): going to another board,
-  or putting Server away, keeps it, and it is there when the board is on
-  screen again; gone once sent. While it holds words, a press outside does
-  not put Server away (Escape and a second press on its icon still do).
+  or to another page, keeps it, and it is there when the board is on
+  screen again; gone once sent.
 - **The right pane**: who is in it (face, name, owner), then the repos
   they show in it (name and whose), looked at again every little while
-  (15 s) while it is out, so someone asked in who accepts on their own
+  (15 s) while it is on screen, so someone asked in who accepts on their own
   device comes in there then, standing as Forge's pane does: its
   line at its edge from the top line to the foot, its first heading on the
   line Forge's Prompt is on, and at the top line's right end, where

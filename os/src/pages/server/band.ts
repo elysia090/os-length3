@@ -33,7 +33,7 @@ interface BandWays {
 export class Band {
   /** The top line: + and the chips. */
   readonly element: HTMLElement;
-  /** The gear, at the top line's right end (in the layer's bar, beside the side). */
+  /** The gear, at the top line's right end (in the page's bar, beside the side). */
   readonly gear: HTMLButtonElement;
   private readonly chips: HTMLElement;
   private readonly plus: HTMLButtonElement;
@@ -76,7 +76,10 @@ export class Band {
     });
     // The ink goes from the chip it was on to the one chosen now, as along the rail and Forge's band.
     const was = where(this.chips.querySelector('[aria-checked="true"]'));
+    // The chip being named is moved, not made again: the keyboard in it (the list read again as it is written) stays.
+    const typing = this.here.naming?.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
     this.chips.replaceChildren(...each, ...(this.here.naming ? [this.here.naming] : []), ...this.guesting());
+    typing?.focus({preventScroll: true});
     glide(was, this.chips.querySelector<HTMLElement>('[aria-checked="true"]'), this.chips, 'var(--r-round)');
     requestAnimationFrame(() => this.inView());
   }

@@ -1483,13 +1483,6 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:focus-within)::after { opa
 .prompt-note.paths { font-family: var(--mono); white-space: pre-wrap; }
 /* Several of them run to more than one line: a sheet's corner, not a pill's ends. */
 .dock > .prompt-note.paths { padding-block: var(--s1); border-radius: var(--r-field); }
-/* Server over any page: its own place in the bench's shape, to the window's foot so nothing of the page shows below it. */
-.server-layer { position: fixed; top: 0; bottom: 0; left: calc(var(--outer) + var(--rail)); right: 0; z-index: 4; padding: var(--outer-top) var(--outer) var(--outer-bottom) 0; background: var(--ground); animation: layer-in var(--move) cubic-bezier(.2, .9, .25, 1); }
-/* Made ready unseen (server/layer.ts): while the pointer rests on its icon, or what it opens on is read a moment, it is
-   there to be drawn into but not seen or pressed; out, its coming in starts then, whole. */
-.server-layer.coming { opacity: 0; pointer-events: none; animation: none; }
-@keyframes layer-in { from { opacity: 0; transform: translateX(calc(-1 * var(--s4))); } }
-@media (prefers-reduced-motion: reduce) { .server-layer { animation: none; } }
 /* Narrow: the center and its box keep the width; the right pane folds away, and the switch at the top
    line's right end lays it over the center (the Prompt still flies up above the box). The search box
    stays on the top line, at its right; its results open under it over the center. */
@@ -2818,7 +2811,30 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 /* The band's row, and under it the board's top where Forge's first box's is (its top line's foot, a step down). Under
    the row, while one is named, what the Remote said no to (server/band.ts). */
 .server-top { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--s1) var(--s2); margin-bottom: var(--s5); }
-.server-layer > .work { position: relative; }
+/* Server's page: the view the whole page's, its edges the bench's. */
+.page.page-work[data-place='server'] > .work { position: relative; height: 100%; }
+/* Server glanced at (switcher.ts): one's servers beside the rail, level with its icon, as File's tree comes out of
+   File: a row a server, its mark a rounded square of its initials (a server is told at a glance by it, as in a list
+   of servers), its name, a dot while something in it is not read; Make a server last. */
+.server-switch {
+  position: fixed; top: var(--switch-top, var(--outer-top)); left: calc(var(--outer) + var(--rail) + var(--s2) - var(--s3)); z-index: 5;
+  display: grid; gap: 2px; width: min(260px, calc(100vw - 2 * var(--outer) - var(--rail))); max-height: calc(100vh - var(--switch-top, 0px) - var(--outer-bottom)); overflow: auto;
+  padding: var(--s2); background: var(--paper); border: 1px solid var(--rule); border-radius: var(--r-card);
+  visibility: hidden; opacity: 0; translate: -6px 0;
+  transition: opacity calc(160ms * var(--pace)) ease-out, translate calc(220ms * var(--pace)) var(--land), visibility 0s calc(220ms * var(--pace));
+}
+.server-switch.out { visibility: visible; opacity: 1; translate: 0 0; transition: opacity calc(160ms * var(--pace)) ease-out, translate calc(220ms * var(--pace)) var(--land), visibility 0s; }
+@media (prefers-reduced-motion: reduce) { .server-switch { transition: none; } }
+.server-switch-row { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: var(--s3); min-height: 44px; padding: var(--s1) var(--s2);
+  border: 0; border-radius: var(--r-field); background: none; color: var(--ink); font: inherit; text-align: left; cursor: var(--cursor-hand); transition: background-color var(--motion); }
+.server-switch-row:is(:hover, :focus-visible) { background: var(--raised); transition-duration: calc(60ms * var(--pace)); }
+.server-switch-mark { display: grid; place-items: center; width: 32px; height: 32px; border-radius: var(--r-field); background: var(--ink); color: var(--ground); font-size: var(--t-meta); font-weight: 700; letter-spacing: .02em; transition: border-radius var(--motion); }
+.server-switch-row:is(:hover, :focus-visible) .server-switch-mark { border-radius: var(--r-place); }
+.server-switch-name { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 600; }
+.server-switch-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink); }
+.server-switch-make .server-switch-mark { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge); font-size: var(--t-body); font-weight: 400; }
+.server-switch-make .server-switch-name { font-weight: 400; color: var(--sub); }
+.server-switch-none { padding: var(--s2); }
 .server-bar { position: absolute; top: var(--band); right: var(--s5); display: flex; }
 /* One row that slides sideways however many servers there are, as Git's repos are, a ring kept clear of its edge; an
    end fades where there is more along it (--fade, which the row keeps a chip slid into view clear of). */

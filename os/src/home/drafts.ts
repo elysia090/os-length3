@@ -11,6 +11,4 @@ export class Drafts {
   set(key: string, text: string) { if (text) this.kept.set(key, text); else this.kept.delete(key); }
   /** Sent: it goes. */
   sent(key: string) { this.kept.delete(key); }
-  /** Whether there are words for `key` (not only spaces). */
-  holds(key: string): boolean { return this.get(key).trim() !== ''; }
 }

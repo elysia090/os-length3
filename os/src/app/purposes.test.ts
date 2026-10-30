@@ -29,7 +29,7 @@ test('a stored purpose is validated and falls back to Home', () => {
   assert.equal(restorePurpose('settings'), DEFAULT_PURPOSE);
   assert.equal(restorePurpose('new-repo'), DEFAULT_PURPOSE);
   assert.equal(restorePurpose('file'), DEFAULT_PURPOSE);
-  assert.equal(restorePurpose('server'), DEFAULT_PURPOSE);
+  assert.equal(restorePurpose('server'), 'server');
   assert.equal(restorePurpose('plugin'), DEFAULT_PURPOSE);
   assert.equal(restorePurpose(null), DEFAULT_PURPOSE);
   assert.equal(restorePurpose('__proto__'), DEFAULT_PURPOSE);

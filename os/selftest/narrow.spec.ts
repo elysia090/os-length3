@@ -74,9 +74,9 @@ test('on a phone, a device row shows the device\'s name beside when it was used'
 });
 
 test('signed out, Server has no right pane and so no line where it would start', async ({app}) => {
-  await app.server.openLayer();
+  await app.server.open();
   await expect(app.server.side).toBeHidden();
-  await expect(app.server.layer.locator('.center')).toHaveCSS('border-right-color', 'rgba(0, 0, 0, 0)');
+  await expect(app.server.view.locator('.center')).toHaveCSS('border-right-color', 'rgba(0, 0, 0, 0)');
 });
 
 test('a build without l3 says so in Runtime, never a parser\'s words', async ({app}) => {

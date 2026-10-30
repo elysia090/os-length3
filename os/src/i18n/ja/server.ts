@@ -163,5 +163,7 @@ export default {
   'That repo is not on the Remote': 'その repo は Remote にありません',
   // Who sees a repo (Remote): only you, servers, everyone.
   'Servers': 'サーバー',
+  '{name}, new posts': '{name}、新しい投稿あり',
+  'Signed in, you make servers: boards for the people in them.': 'サインインすると、サーバーを作れます。そこにいる人たちのボードです。',
   'People you know, and the boards you keep together': '知り合いと、一緒に使う板',
 } as Record<string, string>;

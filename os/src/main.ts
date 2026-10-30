@@ -10,7 +10,8 @@ import {Me} from './pages/me.ts';
 import {newRepo} from './pages/new-repo.ts';
 import {remote} from './pages/remote/remote.ts';
 import {inboxPage} from './pages/inbox.ts';
-import {ServerLayer} from './pages/server/layer.ts';
+import {ServerSwitcher} from './pages/server/switcher.ts';
+import {serverPage} from './pages/server/page.ts';
 import {runtime} from './pages/runtime/runtime.ts';
 import {FileTree} from './pages/tree.ts';
 import {begin} from './remote/lifecycle.ts';
@@ -61,7 +62,7 @@ let openRepo = load(REPO_KEY);
 let readingPath: string | null = null;
 const ctx: Context = {
   // Server, like File, is laid over the page rather than being one.
-  go: (id) => { if (id === 'server') { serverLayer.open(true); return Promise.resolve(); } return select(id); },
+  go: (id) => select(id),
   openRepo(name, path = '', write = false, grownFrom, line = 0) {
     if (current === 'forge' && showInForge(name, path, write, line)) return;
     ctx.remember(name);
@@ -99,8 +100,8 @@ keepFocus();
 touch();
 caret();
 optical();
-// Server is laid over the page the same way: people one knows, their boards, each board's talk and TODO.
-const serverLayer = new ServerLayer(ctx);
+// Server glanced at: a rest on its icon brings one's servers out beside the rail, to jump to; a press goes to its page.
+const serverSwitch = new ServerSwitcher(ctx);
 
 /** How long the pointer rests on another place on the rail before what a rest on File or Server brought out goes. */
 const PASSED = 200;
@@ -113,18 +114,18 @@ function railButton(id: PurposeId): HTMLButtonElement {
   button.className = id === 'new-repo' ? 'rail-item rail-new' : 'rail-item';
   button.setAttribute('aria-label', t(p.label));
   button.append(icon(id), h('span', {class: 'rail-tag', 'aria-hidden': 'true'}, t(p.label)));
-  // The pointer resting on another place on the rail: File's tree or Server's layer that a rest only brought out
-  // (not pressed, nothing written in it) goes, so reading the rail's names never leaves one over the page. Only a
+  // The pointer resting on another place on the rail: File's tree that a rest only brought out (not pressed), or the
+  // servers beside Server, go, so reading the rail's names never leaves one over the page. Only a
   // rest: the hand crossing the icons on its way from File into the tree must not put the tree away under it.
   button.addEventListener('pointerenter', () => {
     clearTimeout(passing);
-    passing = window.setTimeout(() => { if (id !== 'file') fileTree.passedBy(); if (id !== 'server') serverLayer.passedBy(); }, PASSED);
+    passing = window.setTimeout(() => { if (id !== 'file') fileTree.passedBy(); if (id !== 'server') serverSwitch.passedBy(); }, PASSED);
   });
   button.addEventListener('pointerleave', () => clearTimeout(passing));
   if (id === 'file') {
     fileTree.attach(button);
   } else if (id === 'server') {
-    serverLayer.attach(button);
+    serverSwitch.attach(button);
   } else if (id === 'plugin') {
     // The plug opens the plugin area at the top of the center, and closes it; elsewhere it opens it in Forge.
     // It says the area is out only where the area is (Forge's, Git's center): on another page it is kept for
@@ -151,7 +152,7 @@ function railButton(id: PurposeId): HTMLButtonElement {
     event.preventDefault();
     // Arrows move along the rail; passing File or Server only focuses it. The keyboard stays on the
     // rail, after whatever the page just drawn asks for (New repo's name), until Enter or Tab goes in.
-    if (next !== 'file' && next !== 'server' && next !== 'plugin') select(next);
+    if (next !== 'file' && next !== 'plugin') select(next);
     tabs.get(next)?.focus();
     queueMicrotask(() => tabs.get(next)?.focus());
   });
@@ -246,10 +247,10 @@ function draw(id: PurposeId, quiet: boolean, panned: boolean) {
   if (first) wasIn = whoIsIn();
   const inkWas = where(tabs.get(from)?.getAttribute('aria-current') ? tabs.get(from) : null);
   current = id;
-  serverLayer.close();
+  serverSwitch.close();
   for (const [tabId, tab] of tabs) {
     const selected = tabId === id;
-    if (tabId !== 'file' && tabId !== 'server' && tabId !== 'plugin') { if (selected) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current'); }
+    if (tabId !== 'file' && tabId !== 'plugin') { if (selected) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current'); }
     tab.tabIndex = selected ? 0 : -1;
   }
   $('page').setAttribute('aria-labelledby', `purpose-${id}`);
@@ -306,7 +307,8 @@ const named = () => {
 
 function render() {
   const page = $('page');
-  page.classList.toggle('page-work', current === 'forge' || current === 'git');
+  page.classList.toggle('page-work', current === 'forge' || current === 'git' || current === 'server');
+  page.dataset.place = current;
   page.classList.toggle('page-inbox', current === 'inbox');
   fileTree.mark(current === 'forge' ? openRepo : null);
   fileTree.markFile(current === 'forge' ? openRepo : null, current === 'forge' ? readingPath : null);
@@ -317,6 +319,7 @@ function render() {
     : current === 'git' ? git(ctx)
     : current === 'remote' ? remote(ctx)
     : current === 'inbox' ? inboxPage(ctx)
+    : current === 'server' ? serverPage(ctx, () => { if (current === 'server') render(); })
     : placeholder(current);
   // Forge, once made, stays in the document, hidden while another page shows: a text box taken out
   // of the document loses its Undo, so what was written there can still be taken back on return.
@@ -449,7 +452,7 @@ if (asking.has('device')) {
     // Which domain is this Remote's, so a name on it is shown alone (`ren`), not as a domain's.
     void learnHome();
     select(restorePurpose(load(PURPOSE_KEY)));
-    if (heldInvite()) serverLayer.open(true);
+    if (heldInvite()) void select('server');
     // Busy until what the Remote has is taken in and the page drawn from it (the first look).
     void begin().then(() => render()).finally(() => $('page').removeAttribute('aria-busy'));
     // What came in meanwhile, for the rail's marks: now, and every little while.
@@ -461,12 +464,12 @@ window.addEventListener('focus', () => {
   void loadState().then(() => { useLang(getState('lang')); if (!opened) return; if (current === 'home') render(); else me.paint(); });
 });
 // An invitation's link opened in a tab already showing the app (pasted into its address) changes only
-// the fragment: it is taken the same way, and Server comes out afresh at its board.
+// the fragment: it is taken the same way, and Server's page opens afresh at its board.
 window.addEventListener('hashchange', () => {
   const came = inviteIn(location.hash);
   if (!came) return;
   holdInvite(came.board, came.code);
   history.replaceState(null, '', location.pathname + location.search);
-  serverLayer.close();
-  serverLayer.open(true);
+  serverSwitch.close();
+  if (current === 'server') render(); else void select('server');
 });

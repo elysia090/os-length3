@@ -31,10 +31,10 @@ test('a Remote that answers with a page or a 503 is said to be away, not to offe
   await expect(card).not.toContainText('offers no way');
   await expect(rail).toHaveAccessibleName('The Remote cannot be reached');
   // Server, signed out, reads its open boards from the same Remote: said in words, never the parser's.
-  await app.server.openLayer();
-  await expect(app.server.layer).toContainText('What answered is not the Remote (200)');
-  await expect(app.server.layer).not.toContainText('JSON');
-  await app.server.close();
+  await app.server.open();
+  await expect(app.server.view).toContainText('What answered is not the Remote (200)');
+  await expect(app.server.view).not.toContainText('JSON');
+  await rail.click();
 
   answer = 'busy';
   await card.getByRole('button', {name: 'Try again'}).click();

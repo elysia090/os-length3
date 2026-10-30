@@ -35,16 +35,12 @@ export class Side {
     this.ways = ways;
   }
 
-  /** What was asked for last is drawn (or said not to be). */
-  painted = true;
-
   /** Who is in server `id`, then the repos they show in it. */
   paint(id: string | null) {
     const mine = ++this.token;
     // Outside a server (an open board, or none chosen), whose it is is not told: the side stays, empty, so the
     // center keeps its width and nothing on the band moves when a server is chosen or made.
-    if (!id) { this.element.replaceChildren(); this.painted = true; return; }
-    this.painted = false;
+    if (!id) { this.element.replaceChildren(); return; }
     const read = () => Promise.all([servers.people(id), servers.shownIn(id)]);
     let drawn = '';
     const draw = ([people, repos]: [servers.Person[], servers.ShownRepo[]]) => {
@@ -60,8 +56,7 @@ export class Side {
       if (another && !still()) this.element.animate([{opacity: 0}, {opacity: 1}], {duration: paced(220), easing: 'ease-out'});
     };
     void read().then((got) => { if (mine === this.token) draw(got); })
-      .catch((e) => { if (mine === this.token) this.element.replaceChildren(h('p', {class: 'error'}, errorText(e))); })
-      .finally(() => { if (mine === this.token) this.painted = true; });
+      .catch((e) => { if (mine === this.token) this.element.replaceChildren(h('p', {class: 'error'}, errorText(e))); });
     // While it is on screen, who is in it is looked at again every little while: someone asked in, who accepts on
     // their own device, comes in here then (and a repo shown or taken off with them), not when Server is next opened.
     every(EVERY, async () => {

@@ -180,9 +180,8 @@ class Talk {
 
   /** The foot in view: the newest post held is read. */
   private read() {
-    // Not while Server is made ready unseen (layer.ts), nor while its board is read ahead beside the one on screen
-    // (row.ts): seen once it is out, or slid to (seenNow).
-    if (this.root.closest('.coming, .slide[aria-current="false"]')) return;
+    // Not while its board is read ahead beside the one on screen (row.ts): seen once slid to (seenNow).
+    if (this.root.closest('.slide[aria-current="false"]')) return;
     if (this.footIn && this.pages.length && document.visibilityState === 'visible') this.saw?.(this.pages[0].page.newest);
   }
 

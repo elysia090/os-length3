@@ -21,12 +21,8 @@ test('a draft goes only when sent, or when everything written is taken out', () 
   assert.equal(d.get('b'), '');
 });
 
-test('a draft holds words only when there are more than spaces, though its spaces are kept as written', () => {
+test('a draft keeps its spaces as written', () => {
   const d = new Drafts();
   d.set('a', '  \n');
-  assert.equal(d.holds('a'), false);
   assert.equal(d.get('a'), '  \n');
-  d.set('a', ' x');
-  assert.equal(d.holds('a'), true);
-  assert.equal(d.holds('nothing'), false);
 });
