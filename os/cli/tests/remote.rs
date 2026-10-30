@@ -160,7 +160,7 @@ fn a_repo_made_here_under_a_name_the_remote_discarded_goes_there_as_new() {
     home.repo("notes", &[("a.txt", "mine\n"), ("b.txt", "changed here\n")]);
     home.agreed("notes", &format!(r#"{{"version":3,"tree":{{"a.txt":"{}","b.txt":"{}"}},"head":null}}"#, sha("mine\n"), sha("b\n")));
     let ran = home.run("en", &["file", "notes"]);
-    assert!(ran.stderr.contains("discarded on the Remote") && !ran.stderr.contains("l3 remote on"), "{ran:?}");
+    assert!(ran.stderr.contains("Repo deleted on Remote; local copy preserved") && !ran.stderr.contains("l3 remote on"), "{ran:?}");
     assert!(home.path("repos/notes/a.txt").exists() && home.path("repos/notes/b.txt").exists(), "the copy here is kept");
     assert!(!remote.said().iter().any(|s| s.contains("anew") || s.starts_with("PATCH")), "{:?}", remote.said());
 }

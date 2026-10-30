@@ -526,7 +526,7 @@ test('a message joining a run: the one before narrows to its words from its side
   // Its width, and the note's height, each frame from the press until both have settled.
   const watch = ada.page.evaluate(() => new Promise<{wide: number[]; tall: number[]}>((done) => {
     const first = document.querySelector<HTMLElement>('.inbox-messages > .bubble')!;
-    const note = [...document.querySelectorAll<HTMLElement>('main [role=alert]')].find((e) => (e.textContent ?? '').startsWith('Sent as a request'))!;
+    const note = [...document.querySelectorAll<HTMLElement>('main [role=alert]')].find((e) => (e.textContent ?? '').startsWith('Sent as request'))!;
     const wide: number[] = [], tall: number[] = [], t0 = performance.now();
     const tick = () => {
       wide.push(first.getBoundingClientRect().width);

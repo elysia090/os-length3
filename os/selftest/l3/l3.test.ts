@@ -73,7 +73,7 @@ test('a repo made and written with l3 is on the Remote byte for byte, CRLF, name
 
 test('a file holding a key stays on this device: the Remote never has it, l3 remote and Commit say so, and taken out it goes', async () => {
   ok(laptop.l3(['repo', 'new', 'keyed', '-t', 'empty']));
-  const key = `sk-ant-api03-${'x'.repeat(91)}k3yAA`;
+  const key = `sk-ant-api03-${'x'.repeat(91)}k9AA`;
   ok(laptop.l3(['file', 'write', 'keyed/.env'], `ANTHROPIC_API_KEY=${key}\n`));
   ok(laptop.l3(['file', 'write', 'keyed/notes.md'], 'plain\n'));
   // What holds none goes as ever; the key's file does not, nor is anything of it removed there.
@@ -84,7 +84,7 @@ test('a file holding a key stays on this device: the Remote never has it, l3 rem
   assert.match(ok(laptop.l3(['remote'])).out, /\n {2}keyed {2,}in step · 1 cannot be sent\n/);
   const row = (ok(laptop.l3(['remote', '--json'])).json.here as {name: string; unsendable: string[]}[]).find((x) => x.name === 'keyed');
   assert.deepEqual(row?.unsendable, ['.env']);
-  refused(laptop.l3(['commit', 'keyed', 'Patch：keys']), 1, /\(\.env: secret sk-ant-…k3yAA\)/);
+  refused(laptop.l3(['commit', 'keyed', 'Patch：keys']), 1, /\(\.env: secret sk-ant-…k9AA\)/);
   // Never the key whole, in anything said.
   assert.doesNotMatch(JSON.stringify(ok(laptop.l3(['remote', '--json'])).json), /x{20}/);
   ok(laptop.l3(['file', 'write', 'keyed/.env'], 'ANTHROPIC_API_KEY=\n'));
@@ -274,7 +274,7 @@ test('Inbox: a request to someone who has not accepted, their answer, and a bloc
   assert.match(said, /mioself · はい�\[2J/);
   ok(laptop.l3(['inbox', 'block', 'mioself']), /^Blocked mioself@length3\.test/);
   assert.equal((await r.api(mio, 'POST', '/v1/inbox/messages', {to: 'renself', body: 'again'})).status, 403);
-  refused(laptop.l3(['inbox', 'send', 'nobody-here', 'hi']), 1, /No one has that (address|name)/);
+  refused(laptop.l3(['inbox', 'send', 'nobody-here', 'hi']), 1, /No user found with that (address|name)/);
 });
 
 test('what l3 cannot do has its exit code: how it is written (2), no Remote (3), not there (4), refused (1)', async () => {
