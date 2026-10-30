@@ -150,7 +150,7 @@ pub(crate) fn refused_in(code: u16, v: &serde_json::Value) -> String {
 
 /// The most of one answer read as JSON. The largest a Remote gives is a log: 50 commits with a tree each
 /// (a tree is at most 8 MiB, service/app.ts LIMIT.tree); what goes past this is not an answer but a stream
-/// that would be held in memory until there is none left (ureq's into_json reads without end).
+/// that would be held in memory until there is none left.
 pub(super) const ANSWER_LIMIT: u64 = 256 << 20;
 /// The most of a refusal read: its words, a few fields.
 pub(super) const REFUSAL_LIMIT: u64 = 64 << 10;

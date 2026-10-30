@@ -20,22 +20,22 @@
     "web-release": "sh scripts/web-release.sh"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.10",
+    "@electric-sql/pglite": "^0.5.13",
     "@playwright/test": "1.64.1",
-    "@tauri-apps/cli": "2.12.3",
-    "@types/node": "^26.6.5",
+    "@tauri-apps/cli": "2.12.4",
+    "@types/node": "^26.6.6",
     "drizzle-kit": "^0.31.11",
     "typescript": "7.0.2",
-    "vite": "8.3.4",
-    "wrangler": "4.151.2"
+    "vite": "8.3.5",
+    "wrangler": "4.156.0"
   },
   "dependencies": {
-    "@better-auth/passkey": "^1.7.11",
+    "@better-auth/passkey": "^1.7.14",
     "@neondatabase/serverless": "^1.2.0",
     "@simplewebauthn/browser": "^14.0.0",
     "@tauri-apps/api": "^2.12.4",
-    "better-auth": "^1.7.10",
+    "better-auth": "^1.7.14",
     "drizzle-orm": "^0.45.4",
-    "hono": "^4.13.13"
+    "hono": "^4.13.14"
   }
 }

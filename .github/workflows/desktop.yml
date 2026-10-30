@@ -51,7 +51,7 @@ jobs:
       - if: steps.kept.outputs.cache-hit != 'true'
         run: rustup target add wasm32-wasip1
       - if: steps.kept.outputs.cache-hit != 'true'
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: os -> target
           shared-key: core-wasm
@@ -94,7 +94,7 @@ jobs:
       - if: steps.kept.outputs.cache-hit != 'true'
         run: rustup target add wasm32-unknown-unknown
       - if: steps.kept.outputs.cache-hit != 'true'
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: xlat -> target
           shared-key: l3-web
@@ -178,7 +178,7 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup target add wasm32-wasip1
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: os -> target
           shared-key: lint
@@ -210,7 +210,7 @@ jobs:
         run: |
           # l3 prompt makes user namespaces, as on a person's machine; this image's AppArmor keeps them from users.
           if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; fi
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: os -> target
           shared-key: rust
@@ -242,7 +242,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends musl-tools
           rustup target add x86_64-unknown-linux-musl wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: |
             xlat -> target

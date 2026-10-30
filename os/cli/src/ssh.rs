@@ -159,13 +159,14 @@ impl Conn {
 impl server::Handler for Conn {
     type Error = russh::Error;
 
-    async fn auth_publickey_offered(&mut self, user: &str, key: &PublicKey) -> Result<Auth, Self::Error> {
+    async fn auth_publickey_offered(&mut self, user: &str, offer: server::PublicKeyOffer<'_>) -> Result<Auth, Self::Error> {
         if self.shared.tries.lock().map(|mut t| t.held(self.peer, Instant::now())).unwrap_or(true) { return Ok(Auth::reject()); }
-        Ok(self.check(user, key).await)
+        Ok(self.check(user, offer.public_key).await)
     }
 
     // The signature was checked: the key is the client's.
-    async fn auth_publickey(&mut self, user: &str, key: &PublicKey) -> Result<Auth, Self::Error> {
+    async fn auth_publickey(&mut self, user: &str, verified: server::VerifiedPublicKey<'_>) -> Result<Auth, Self::Error> {
+        let key = verified.public_key;
         let a = self.check(user, key).await;
         if a == Auth::Accept {
             log(&format!("{} in as {user} with {}", self.peer, ssh::fingerprint(&key.to_bytes().unwrap_or_default())));
