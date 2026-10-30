@@ -18,11 +18,9 @@ import {latelyRow, onRightPane, pluginArea, rightPaneOpen, setRightPane, waiting
 import {mark, paneMark} from '../ui/icons.ts';
 import {onPlugins, pluginsOpen} from '../app/plugins.ts';
 import {errorText} from '../app/errors.ts';
-import {LAND, nudge, paced, paneOut, pop, still} from '../ui/glide.ts';
+import {LAND, nudge, paced, paneOut, still} from '../ui/glide.ts';
 
 let editing = false;
-/** The profile's form was opened from elsewhere (the person's menu): Home drawn next gives the opening its beat. */
-let opening = false;
 
 /** The profile as it stands (Home's state, see state.ts), for Home and the rail's own icon. */
 export const currentProfile = (): Profile => parse(getState('profile'));
@@ -30,7 +28,6 @@ export const currentProfile = (): Profile => parse(getState('profile'));
 /** Open Home with the profile form out. */
 export function startEditing(ctx: Context) {
   editing = true;
-  opening = true;
   void ctx.go('home').then(() => document.getElementById('profile-name')?.focus());
 }
 
@@ -232,16 +229,21 @@ function identity(counts: HTMLElement): HTMLElement {
  * The profile at Home's top: the face, the name, the counts, and Edit profile. It is edited where it is read: the
  * name becomes the line it is written on, where it stands and as large; the handle and the line about the person
  * come in under it; Edit profile gives way to Cancel and Save. The top grows and shrinks to what it holds rather
- * than jumping, the face gives a little wiggle as the form opens, and saved, it turns round to show its new
- * initials (or nods, when they are the same) while the name settles where it is shown.
+ * than jumping, one move at a time: what is under it goes with it, never up and then down; saved with new initials,
+ * once it has folded, the face turns round to show them.
  */
 function profileHeader(count: HTMLElement, owner: boolean): HTMLElement {
   const avatar = h('div', {class: 'avatar', 'aria-hidden': 'true'});
   const header = h('section', {class: 'profile'});
   const face = () => [initials(currentProfile()) || mark('person')];
   /** Drawn as it is now; from another state (`beat`), its height goes from what it was, and the face says so. */
+  /** The room it takes in the page: its box and the margins round it (written in, the sheet grows out past its place). */
+  const room = () => {
+    const cs = getComputedStyle(header);
+    return {height: header.getBoundingClientRect().height, margins: parseFloat(cs.marginTop) + parseFloat(cs.marginBottom)};
+  };
   const draw = (beat: 'open' | 'saved' | 'cancel' | null, faceWas: Node[] = []) => {
-    const from = header.getBoundingClientRect().height;
+    const was = room(), from = was.height + was.margins;
     avatar.replaceChildren(...face());
     // Each count is the way to what it counts, further down Home (as a profile's counts are): pressed, there it is.
     const counts = h('p', {class: 'counts'}, toSection(count, 'repos-title'), toSection(servers0(), 'servers-title'));
@@ -256,28 +258,35 @@ function profileHeader(count: HTMLElement, owner: boolean): HTMLElement {
     header.replaceChildren(avatar, form?.element ?? identity(counts), ...(form ? [form.acts] : edit ? [edit] : []));
     header.classList.toggle('editing', editing);
     if (!beat || still() || !header.isConnected) return;
-    const to = header.getBoundingClientRect().height;
-    if (Math.abs(to - from) > 1) {
+    // The room it takes goes from what it was to what it is in one move: the sheet's margins (it grows out past its
+    // place as it opens) come and go at once, so its height starts where that leaves the page as it was, and nothing
+    // under it moves but with it (it went up and then down, with the margins and the height each on their own).
+    const now = room(), to = now.height, start = from - now.margins;
+    let settled: Promise<unknown> = Promise.resolve();
+    if (Math.abs(to - start) > 1) {
       header.style.overflow = 'clip';
-      header.animate([{height: `${from}px`}, {height: `${to}px`}], {duration: paced(320), easing: LAND}).finished.then(() => { header.style.overflow = ''; }, () => { header.style.overflow = ''; });
+      const grow = header.animate([{height: `${start}px`}, {height: `${to}px`}], {duration: paced(320), easing: LAND});
+      settled = grow.finished.catch(() => {});
+      void settled.then(() => { header.style.overflow = ''; });
     }
+    // One move at a time: the sheet grows or folds, and only what that move is about comes with it.
     if (beat === 'open') {
-      avatar.animate([{rotate: '0deg'}, {rotate: '-10deg'}, {rotate: '7deg'}, {rotate: '-3deg'}, {rotate: '0deg'}], {duration: paced(480), easing: 'ease-in-out'});
-      // What was not there comes in under the name, a line after another.
+      // What was not there comes in under the name, a line after another, into the room the sheet makes.
       [...header.querySelectorAll<HTMLElement>('.handle-field, .bio-field, .edit-acts')].forEach((el, i) =>
         el.animate([{opacity: 0, translate: '0 -6px'}, {opacity: 1, translate: '0 0'}], {duration: paced(240), delay: paced(60 + i * 50), easing: LAND, fill: 'backwards'}));
     } else if (beat === 'saved') {
-      const name = header.querySelector<HTMLElement>('.identity h1');
-      if (name) pop(name, .04, 320);
       const now = [...avatar.childNodes];
       const same = faceWas.map((n) => n.textContent).join() === now.map((n) => n.textContent).join();
-      if (same) { pop(avatar, .06, 300); return; }
-      // It turns away showing the face it had, and comes round showing the new one.
+      if (same) return;
+      // New initials, once the sheet has folded: it turns away showing the face it had, and comes round showing them.
       avatar.replaceChildren(...faceWas);
-      avatar.animate([{transform: 'perspective(400px) rotateY(0deg)'}, {transform: 'perspective(400px) rotateY(90deg)'}], {duration: paced(150), easing: 'ease-in'}).finished.then(() => {
-        avatar.replaceChildren(...now);
-        avatar.animate([{transform: 'perspective(400px) rotateY(-90deg)'}, {transform: 'perspective(400px) rotateY(0deg)'}], {duration: paced(300), easing: 'cubic-bezier(.2, 1.4, .32, 1)'});
-      }, () => avatar.replaceChildren(...now));
+      void settled.then(() => {
+        if (!avatar.isConnected) return;
+        avatar.animate([{transform: 'perspective(400px) rotateY(0deg)'}, {transform: 'perspective(400px) rotateY(90deg)'}], {duration: paced(150), easing: 'ease-in'}).finished.then(() => {
+          avatar.replaceChildren(...now);
+          avatar.animate([{transform: 'perspective(400px) rotateY(-90deg)'}, {transform: 'perspective(400px) rotateY(0deg)'}], {duration: paced(300), easing: 'cubic-bezier(.2, 1.4, .32, 1)'});
+        }, () => avatar.replaceChildren(...now));
+      });
     }
   };
   const done = (saved: boolean) => {
@@ -286,9 +295,9 @@ function profileHeader(count: HTMLElement, owner: boolean): HTMLElement {
     draw(saved ? 'saved' : 'cancel', faceWas);
     header.querySelector<HTMLElement>(':scope > .button')?.focus({preventScroll: true});
   };
+  // Opened from the person's menu, it is drawn open: Home's arrival is the beat, and a wiggle of the face on top of
+  // the page panning in would be two moves at once.
   draw(null);
-  // Opened from the person's menu: it opens as Edit profile opens it, once Home is on the screen.
-  if (opening) { opening = false; requestAnimationFrame(() => { if (!header.isConnected || still()) return; avatar.animate([{rotate: '0deg'}, {rotate: '-10deg'}, {rotate: '7deg'}, {rotate: '-3deg'}, {rotate: '0deg'}], {duration: paced(480), easing: 'ease-in-out'}); }); }
   return header;
 }
 

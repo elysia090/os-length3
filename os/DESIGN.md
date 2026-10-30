@@ -1435,9 +1435,12 @@ boxed (a rule under it, ink under the one with the keyboard), and the
 counts, which are not written, step aside. The face follows what is written,
 its initials as the name (or the handle) goes in, so the change is seen as
 it is made. Edit profile gives way to Cancel and Save where it stood. The
-top grows and shrinks to what it holds (320 ms), never jumping what is under
-it; the face gives a little wiggle as the form opens, and saved, it nods
-while the name settles where it is shown. Enter on the name or the handle
+top grows and shrinks to what it holds (320 ms), one move at a time: the
+sheet's edge and what is under it go together, never up and then down (its
+margins and its height are one move), the lines that were not there coming
+into the room it makes; saved with new initials, once it has folded, the
+face turns round to show them. Opened from the person's menu, it is drawn
+open as Home comes in: the arrival is its beat. Enter on the name or the handle
 saves; Escape leaves it as it was. The rail's face is the new one at once.
 
 Home's right pane (the same pane and switch as Forge's and Git's) has

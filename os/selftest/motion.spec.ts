@@ -209,3 +209,23 @@ test('the Prompt\'s screen comes up out of the box and goes back into it over it
   expect(Math.max(0, ...await lengths())).toBeGreaterThanOrEqual(300);
   await still(app);
 });
+
+test('Edit profile opened and put away, what is under it goes one way only, with the sheet, never up and then down', async ({app}) => {
+  await app.rail.go('home');
+  await still(app);
+  // Where the TODO's heading stands, frame by frame from the press until the sheet has settled.
+  const track = (press: string) => app.page.evaluate((press) => new Promise<number[]>((done) => {
+    const todo = [...document.querySelectorAll('h2')].find((e) => e.textContent?.startsWith('TODO'))!;
+    const ys: number[] = [], t0 = performance.now();
+    const tick = () => { ys.push(todo.getBoundingClientRect().top); if (performance.now() - t0 < 1400) requestAnimationFrame(tick); else done(ys); };
+    [...document.querySelectorAll<HTMLButtonElement>('.profile button')].find((b) => b.textContent === press)!.click();
+    requestAnimationFrame(tick);
+  }), press);
+  const opened = await track('Edit profile');
+  expect(Math.min(...opened)).toBeGreaterThan(opened[0] - 1);
+  expect(opened.at(-1)!).toBeGreaterThan(opened[0] + 8);
+  await still(app);
+  const shut = await track('Cancel');
+  expect(Math.max(...shut)).toBeLessThan(shut[0] + 1);
+  expect(Math.abs(shut.at(-1)! - opened[0])).toBeLessThan(1);
+});
