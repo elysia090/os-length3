@@ -35,7 +35,7 @@ test.describe("on 'hello', made from C's files", () => {
 
     const menu = await app.file.deeds('hello', 'Makefile');
     await menu.getByRole('menuitem', {name: 'Delete'}).click();
-    await expect(menu).toContainText('Makefile goes');
+    await expect(menu).toContainText('Delete Makefile');
     await app.answer(menu.getByRole('button', {name: 'Delete', exact: true}), menu);
     await expect(app.file.name('Makefile')).toHaveCount(0);
 
@@ -91,7 +91,7 @@ test('New file asks nothing: made at once, untitled as nothing there is yet, and
 
   // A name taken is said beside it, and it keeps the keyboard to be put right there.
   await app.forge.rename('untitled-2.md', 'README.md');
-  await expect(app.main.getByRole('alert').filter({hasText: 'README.md is there already'})).toBeVisible();
+  await expect(app.main.getByRole('alert').filter({hasText: '"README.md" already exists'})).toBeVisible();
   await expect(field).toBeFocused();
   await field.fill('plan.md');
   await field.press('Enter');

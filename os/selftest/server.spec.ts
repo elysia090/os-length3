@@ -17,12 +17,12 @@ test.beforeEach(async ({signedIn: app}) => {
 async function addBo(ada: App, another: (who: string) => Promise<App>): Promise<App> {
   const bo = await another('Bo');
   const said = await ada.server.addSomeone(bo.handle);
-  await expect(said).toHaveText(`Asked ${bo.handle} in the Inbox. They come in once they accept you.`);
+  await expect(said).toHaveText(`Invitation sent to ${bo.handle}'s Inbox. They will join upon accepting.`);
 
   await bo.rail.go('inbox');
   await bo.inbox.conversation(ada.handle).click();
   const thread = bo.inbox.thread(ada.handle);
-  await expect(thread).toContainText('I would like to add you to Trip. Accept me in your Inbox and you are in it.');
+  await expect(thread).toContainText('You are invited to join Trip. Accept the invite in your Inbox to join.');
   await thread.getByRole('button', {name: 'Accept'}).click();
   await expect(thread.getByRole('button', {name: 'Accept'})).toBeHidden();
   return bo;
@@ -114,7 +114,7 @@ test('someone added by name is asked in their Inbox, and is in the server once t
   await ada.server.close();
   await ada.server.open();
   const again = await ada.server.addSomeone(bo.handle);
-  await expect(again).toHaveText(`${bo.handle} is in it already`);
+  await expect(again).toHaveText(`${bo.handle} is already a member`);
 });
 
 test('a post by someone else is marked on the rail and the chip until its board is seen', async ({signedIn: ada, another}) => {
@@ -144,7 +144,7 @@ test('a rest on Server brings out one\'s servers beside the rail, the one with n
   const servers = ada.page.getByRole('navigation', {name: 'Servers'});
   await ada.rail.button('server').hover();
   await expect(servers).toBeVisible();
-  const trip = servers.getByRole('button', {name: 'Trip, new posts'});
+  const trip = servers.getByRole('button', {name: 'Trip (new posts)'});
   await expect(trip).toBeVisible();
   await expect(ada.rail.button('server')).toHaveAccessibleName('New posts in server');
   await expect(ada.server.view).toBeHidden();
@@ -197,7 +197,7 @@ test("many servers are one row on a phone's width, the one chosen slid into view
     await app.server.view.getByRole('textbox', {name: 'Name', exact: true}).fill(n);
     await app.server.view.getByRole('button', {name: 'Username on this Remote', exact: true}).click();
     await app.server.view.getByRole('textbox', {name: /^Username on this Remote/}).fill(`${app.handle}-s${i}`);
-    await app.server.view.getByRole('button', {name: 'Make', exact: true}).click();
+    await app.server.view.getByRole('button', {name: 'Create', exact: true}).click();
     await expect(app.server.chip(n)).toBeChecked();
   }
   await app.page.setViewportSize({width: 390, height: 844});
@@ -212,7 +212,7 @@ test('a new board is named where it will stand: pressed to, its name has the key
   await expect(name).toBeFocused();
   await app.page.keyboard.type('General');
   await app.page.keyboard.press('Enter');
-  await expect(app.server.view.getByRole('alert').filter({hasText: 'There is a board named General already'})).toBeVisible();
+  await expect(app.server.view.getByRole('alert').filter({hasText: 'A board named "General" already exists'})).toBeVisible();
   await name.fill('Packing');
   await name.press('Enter');
   await expect(app.server.box('Packing')).toBeVisible();
@@ -254,7 +254,7 @@ async function gearAt(app: App, part: string) {
 const box = async (l: Locator) => (await l.boundingBox())!;
 
 test("behind the gear, Done is at the sheet's bottom right, under its parts, and goes back to the boards", async ({signedIn: app}) => {
-  const people = await gearAt(app, 'People');
+  const people = await gearAt(app, 'Members');
   const done = app.server.view.getByRole('button', {name: 'Done', exact: true});
   const [d, panel, sw] = [await box(done), await box(people), await box(app.server.view.getByRole('tablist'))];
   expect(d.y).toBeGreaterThan(panel.y + panel.height);
@@ -279,8 +279,8 @@ test("behind the gear, Done is at the sheet's bottom right, under its parts, and
 test('taking guests on a board not open says first that anyone then reads it', async ({signedIn: app}) => {
   const boards = await gearAt(app, 'Boards');
   await boards.getByRole('switch', {name: 'Guest posting enabled'}).click();
-  await expect(boards).toContainText('Anyone reads #general, signed in or not.');
-  await expect(boards).toContainText('Someone its people invite writes in #general, shown as a guest.');
+  await expect(boards).toContainText('Anyone can view #general without signing in.');
+  await expect(boards).toContainText('Invited users can post to #general as guests.');
 });
 
 /** Board general of `app`'s server takes guests (asked in its card, answered). */
@@ -288,7 +288,7 @@ async function takeGuests(app: App, boards: Locator) {
   await boards.getByRole('switch', {name: 'Guest posting enabled'}).click();
   // Asked once the switch has moved: answered then, not before it is there.
   await expect(boards.getByRole('button', {name: 'Allow guests', exact: true})).toBeVisible();
-  await app.answer(boards.getByRole('button', {name: 'Allow guests', exact: true}), boards.getByText('Someone its people invite writes in #general, shown as a guest.'));
+  await app.answer(boards.getByRole('button', {name: 'Allow guests', exact: true}), boards.getByText('Invited users can post to #general as guests.'));
   await expect(boards.getByRole('switch', {name: 'Guest posting enabled'})).toBeChecked();
 }
 
@@ -303,10 +303,10 @@ test('guests turned off with nobody let in goes at once; with an invitation out 
   await takeGuests(app, boards);
   await boards.getByRole('button', {name: 'Invite guest', exact: true}).click();
   await expect(boards.getByRole('button', {name: 'Invite link'})).toBeVisible();
-  const ends = boards.getByText('1 invitation out lets nobody in any more.');
+  const ends = boards.getByText('1 active invite link invalidated.');
   // No longer open to everyone ends it too, and says so.
   await boards.getByRole('switch', {name: 'Publicly visible'}).click();
-  await expect(boards).toContainText('Only its people read #general then.');
+  await expect(boards).toContainText('#general will be restricted to server members.');
   await expect(ends).toBeVisible();
   await boards.getByRole('button', {name: 'Cancel', exact: true}).click();
   await expect(boards.getByRole('switch', {name: 'Publicly visible'})).toBeChecked();
@@ -325,7 +325,7 @@ test('someone one knows added at once is told in their Inbox by the Remote\'s no
   await ada.server.view.getByRole('textbox', {name: 'Name', exact: true}).fill('Books');
   await ada.server.view.getByRole('button', {name: 'Username on this Remote', exact: true}).click();
   await ada.server.view.getByRole('textbox', {name: /^Username on this Remote/}).fill(`${ada.handle}-books`);
-  await ada.server.view.getByRole('button', {name: 'Make', exact: true}).click();
+  await ada.server.view.getByRole('button', {name: 'Create', exact: true}).click();
   await expect(ada.server.chip('Books')).toBeChecked();
   // The two know each other: Bo is in at once.
   await ada.server.addSomeone(bo.handle);
@@ -348,8 +348,8 @@ test('This server says what leaving and removing it come to: its maker alone a d
   const leave = part.locator('.small-card', {hasText: 'Leave this server'});
   const remove = part.locator('.small-card', {hasText: 'Delete this server'});
   await expect(leave).toContainText('No other members remain; leaving will delete the server.');
-  await expect(leave).toContainText('You can bring it back within 1 day.');
-  await expect(remove).toContainText('You can bring it back within 1 day.');
+  await expect(leave).toContainText('Can be restored within 1 day.');
+  await expect(remove).toContainText('Can be restored within 1 day.');
   await expect(part).not.toContainText('whoever came next');
   await ada.server.view.getByRole('button', {name: 'Done', exact: true}).click();
 
@@ -357,12 +357,12 @@ test('This server says what leaving and removing it come to: its maker alone a d
   await ada.server.close();
   await ada.server.open();
   await gearAt(ada, 'This server');
-  await expect(leave).toContainText(`${bo.handle} becomes its owner.`);
+  await expect(leave).toContainText(`Ownership transfers to ${bo.handle}.`);
   await expect(leave).not.toContainText('bring it back');
   await expect(remove).toContainText('Can be restored within 30 days.');
   // The ask says the same before the deed.
   await leave.getByRole('button', {name: 'Leave', exact: true}).click();
-  await expect(leave).toContainText(`You leave Trip.${bo.handle} becomes its owner.`);
+  await expect(leave).toContainText(`Leave Trip.Ownership transfers to ${bo.handle}.`);
 });
 
 test('an empty board says so at its talk\'s foot, by the box one writes in; a board with more below opens at its foot', async ({signedIn: app}) => {
@@ -376,7 +376,7 @@ test('an empty board says so at its talk\'s foot, by the box one writes in; a bo
   await app.server.view.getByRole('button', {name: 'Next board'}).click();
   const about = app.server.view.getByText(/^A board is one thing to talk about/);
   await expect(about.locator('br')).toHaveCount(1);
-  await expect(about).toHaveText('A board is one thing to talk about, with a TODO kept together:e.g. trips, releases, or study groups.');
+  await expect(about).toHaveText('A board groups discussions and shared tasks around a topic:e.g. trips, releases, or study groups.');
 
   // A talk longer than its board (the board's whole height is the talk's): at its foot the board is closed; scrolled
   // up, it is open at its foot.

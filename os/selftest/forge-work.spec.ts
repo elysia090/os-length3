@@ -130,7 +130,7 @@ test('what the search found follows what is saved, and a line found opens where 
   // The word changed: it is no longer found, and the search keeps what was typed.
   await app.forge.editFile('README.md', '# hello\n\nWrote it in Forge.\n');
   await app.forge.search.focus();
-  await expect(app.forge.results).toContainText('Nothing found for “Written”');
+  await expect(app.forge.results).toContainText('No results found for "Written"');
   await expect(app.forge.search).toHaveValue('Written');
 });
 
@@ -161,7 +161,7 @@ test('Enter in the search opens the first line found, selected; a file found by 
   // The head: its name, how many of its lines were found, and at its other end its diff, pressed rather than gone along.
   const head = app.forge.results.locator('.hit-head', {hasText: 'README.md'});
   await expect(head).toContainText('1 line');
-  await expect(head.getByRole('button', {name: 'The diff of README.md'})).toContainText(/^diff\s*\+\d+/);
+  await expect(head.getByRole('button', {name: 'Diff of README.md'})).toContainText(/^diff\s*\+\d+/);
   await app.forge.search.press('ArrowDown');
   await expect(app.forge.hit(/Written in Forge/)).toBeFocused();
   await app.page.keyboard.press('ArrowUp');
@@ -271,7 +271,7 @@ test('a narrow window reaches the issues, the diff and the output from the searc
   for (const part of ['Issue', 'diff', 'Output'] as const) await expect(app.forge.kind(part)).toBeVisible();
   await app.forge.openDiff('README.md');
   await expect(app.forge.diffLine('Written in Forge.')).toBeVisible();
-  await app.forge.reference.getByRole('button', {name: /Put back README/}).focus();
+  await app.forge.reference.getByRole('button', {name: /Revert README/}).focus();
   // Escape: from what is read back to the box, then everything under it away.
   await app.page.keyboard.press('Escape');
   await expect(app.forge.search).toBeFocused();
@@ -281,18 +281,18 @@ test('a narrow window reaches the issues, the diff and the output from the searc
   await app.forge.search.click();
   await app.forge.kind('diff').click();
   await app.forge.search.fill('README');
-  await app.forge.results.getByRole('button', {name: 'The diff of README.md'}).click();
+  await app.forge.results.getByRole('button', {name: 'Diff of README.md'}).click();
   await expect(app.forge.diffLine('Written in Forge.')).toBeVisible();
 });
 
 test('what is searched and read lines up sideways: the one in hand fills the box, its neighbours a sliver past its edges, pressed to move to them', async ({app}) => {
   await app.forge.editFile('README.md', '# hello\n\nWritten in Forge.\n');
   await app.forge.find('Written');
-  await app.forge.results.getByRole('button', {name: 'The diff of README.md'}).click();
+  await app.forge.results.getByRole('button', {name: 'Diff of README.md'}).click();
   await expect(app.forge.diffLine('Written in Forge.')).toBeVisible();
   // The search it came from is at its left, a sliver, and ← under the box: pressed, the search is in hand again, as typed.
   await expect(app.forge.results.locator('.found-here')).toHaveText(/^diff\s*README\.md\s*2 \/ 2$/);
-  await app.forge.results.getByRole('button', {name: 'Searched Written', exact: true}).click();
+  await app.forge.results.getByRole('button', {name: 'Search history Written', exact: true}).click();
   await expect(app.forge.hit(/Written in Forge/)).toBeVisible();
   await expect(app.forge.search).toHaveValue('Written');
   await app.forge.results.getByRole('button', {name: 'diff README.md', exact: true}).click();
@@ -303,7 +303,7 @@ test('what is searched and read lines up sideways: the one in hand fills the box
   // Pressed with nothing typed: what was searched and read, newest first.
   await app.forge.search.fill('');
   await app.forge.search.click();
-  await expect(app.forge.results.locator('.found-item')).toHaveText([/^diff\s*README\.md$/, /^Searched\s*Written$/]);
+  await expect(app.forge.results.locator('.found-item')).toHaveText([/^diff\s*README\.md$/, /^Search history\s*Written$/]);
 });
 
 test('the plug opens a plain plugin area at the top of the center, and closes it', async ({app}) => {
@@ -482,7 +482,7 @@ test('repos stand side by side: Ctrl+click or a pill dragged in opens one beside
   expect(xs[1]).toBeLessThan(xs[2]);
 
   // Its × closes a box; the one worked on stays the one worked on.
-  await box('notes').getByRole('button', {name: 'Close notes beside'}).click();
+  await box('notes').getByRole('button', {name: 'Close adjacent notes'}).click();
   await expect(box('notes')).toBeHidden();
   await expect(box('site')).toHaveClass(/\bactive\b/);
   await expect(app.forge.band.getByRole('button', {name: 'notes', exact: true})).toBeVisible();
@@ -504,7 +504,7 @@ test('repos stand side by side: Ctrl+click or a pill dragged in opens one beside
 
 test('a file opened beside from its head is the one worked on, and has the keyboard, not the page it came from', async ({app}) => {
   await app.rail.go('forge');
-  await app.main.getByRole('button', {name: 'Open README.md beside'}).first().click();
+  await app.main.getByRole('button', {name: 'Open README.md to the side'}).first().click();
   const box = app.main.locator('.col[data-key="hello:README.md"]');
   await expect(box).toHaveClass(/\bactive\b/);
   // Its head's button only peeks once the page it was on is along the row: the keyboard is not given back there,
@@ -517,7 +517,7 @@ test('a file beside is only its head in its page; with the pane away the two sta
   await app.rail.go('forge');
   const dock = async () => { const b = (await app.main.locator('.dock').boundingBox())!; return [Math.round(b.x), Math.round(b.width)]; };
   const before = await dock();
-  await app.main.getByRole('button', {name: 'Open README.md beside'}).first().click();
+  await app.main.getByRole('button', {name: 'Open README.md to the side'}).first().click();
   // The prompt box stays where it was, under the hand: a box opened beside does not move it.
   await expect(app.main.locator('.col:not([hidden])')).toHaveCount(2);
   await expect.poll(dock).toEqual(before);
@@ -563,7 +563,7 @@ test('a file beside is only its head in its page; with the pane away the two sta
 
 test('Home says where one left off: the line last written, not the top of a page that only came back into view', async ({app}) => {
   await app.rail.go('forge');
-  await app.main.getByRole('button', {name: 'Open README.md beside'}).first().click();
+  await app.main.getByRole('button', {name: 'Open README.md to the side'}).first().click();
   const own = app.main.locator('.col[data-key="hello:README.md"]').getByRole('textbox', {name: 'Edit README.md'});
   await own.click();
   await app.page.keyboard.press('Control+End');

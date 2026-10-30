@@ -14,7 +14,7 @@ test('a TODO is written as Kind: title, Enter for its detail, and done strikes i
   await app.home.title(item).pressSequentially('Fix: The tent leaks');
   await expect(item).toContainText('Fix：');
   await expect(app.home.title(item)).toHaveValue('The tent leaks');
-  await expect(app.home.todo).toContainText('1 of 1 left');
+  await expect(app.home.todo).toContainText('1 of 1 remaining');
 
   await app.home.title(item).press('Enter');
   await expect(app.home.detail(item)).toBeFocused();
@@ -34,7 +34,7 @@ test('a TODO is written as Kind: title, Enter for its detail, and done strikes i
   expect(Math.abs(line!.x - kind!.x)).toBeLessThan(1.5);
   expect(line!.x + line!.width).toBeGreaterThan(title!.x + 60);
   expect(line!.x + line!.width).toBeLessThan(title!.x + title!.width);
-  await expect(app.home.todo).toContainText('0 of 1 left');
+  await expect(app.home.todo).toContainText('0 of 1 remaining');
 });
 
 test('a TODO item begun and left empty goes as the keyboard leaves it', async ({app}) => {
@@ -65,7 +65,7 @@ test('a TODO item goes by its ×, or Delete on its empty line, and Clear complet
   await expect(app.home.items).toHaveCount(6);
   // Its × is there for the item under the pointer, not the line still to be written.
   const second = app.home.items.nth(1);
-  const away = second.getByRole('button', {name: 'Remove Call：the plumber'});
+  const away = second.getByRole('button', {name: 'Delete Call：the plumber'});
   await second.hover();
   await expect(away).toHaveCSS('opacity', '1');
   await expect(app.home.items.last().getByRole('button', {name: /^Remove/})).toBeHidden();
@@ -73,7 +73,7 @@ test('a TODO item goes by its ×, or Delete on its empty line, and Clear complet
   await expect(app.home.items).toHaveCount(5);
   await expect(app.home.title(app.home.items.nth(1))).toHaveValue('the gate');
   // The keyboard goes on to the × of the one that came up into its place, under the pointer: a double press takes one.
-  const next = app.home.items.nth(1).getByRole('button', {name: 'Remove Fix：the gate'});
+  const next = app.home.items.nth(1).getByRole('button', {name: 'Delete Fix：the gate'});
   await expect(next).toBeFocused();
   await app.page.waitForTimeout(600);
   await next.dblclick();
@@ -96,7 +96,7 @@ test('a TODO item goes by its ×, or Delete on its empty line, and Clear complet
   await expect(app.home.items).toHaveCount(2);
   await expect(app.home.title(app.home.items.first())).toHaveValue('the hinge');
   await expect(clear).toBeHidden();
-  await expect(app.home.todo).toContainText('1 of 1 left');
+  await expect(app.home.todo).toContainText('1 of 1 remaining');
   // Kept so: Home drawn again reads it as it was left.
   await app.rail.go('runtime');
   await app.rail.go('home');

@@ -12,7 +12,7 @@ test('a repo made here is a card on the Remote, in step, its switch on', async (
   await expect(card).toContainText('Synced');
   await expect(card.getByRole('button', {name: 'Forge', exact: true})).toBeEnabled();
   await expect(app.remote.power('hello')).toBeChecked();
-  await expect(app.remote.power('hello')).toHaveAccessibleName('Turn hello off');
+  await expect(app.remote.power('hello')).toHaveAccessibleName('Disable hello');
 });
 
 test('Share shows the repo in a server at a press, and takes it off at the next', async ({signedIn: app}) => {
@@ -68,7 +68,7 @@ test('turning a repo off asks in its card first, for its name, and Not now leave
   await app.remote.power('hello').click();
   // Its name written out, then a passkey: nothing of the account's to set or keep in mind first.
   const ask = app.remote.ask('hello');
-  await expect(ask).toContainText('To confirm, type hello.');
+  await expect(ask).toContainText('To confirm, enter "hello".');
   await expect(ask.getByRole('textbox', {name: 'Repo name'})).toBeFocused();
   await expect(ask.getByRole('textbox')).toHaveCount(1);
   await expect(app.remote.power('hello')).toBeHidden();
@@ -87,10 +87,10 @@ test('a repo is turned off from its card in one ask, kept off, and its switch br
   const card = app.remote.card('hello');
   await expect(card).toContainText(/Off · back until /);
   await expect(app.remote.power('hello')).not.toBeChecked();
-  await expect(app.remote.power('hello')).toHaveAccessibleName('Turn hello on');
+  await expect(app.remote.power('hello')).toHaveAccessibleName('Enable hello');
   // Off, Forge is what frees the copy here, and Discard is beside it.
-  await expect(card.getByRole('button', {name: 'Free'})).toBeVisible();
-  await expect(card.getByRole('button', {name: 'Discard'})).toBeVisible();
+  await expect(card.getByRole('button', {name: 'Free space'})).toBeVisible();
+  await expect(card.getByRole('button', {name: 'Delete permanently'})).toBeVisible();
 
   // On again at once, with no ask.
   await app.remote.power('hello').click();
@@ -119,7 +119,7 @@ test('opened by the app at a repo, the browser asks at its card, and once it is 
 test('opened by the app at a repo this account does not have, the browser says so and asks nothing', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
   await app.page.goto('/?account=off&repo=elsewhere');
-  await expect(app.main.getByRole('status').filter({hasText: 'elsewhere is not on here to turn off'})).toBeVisible();
+  await expect(app.main.getByRole('status').filter({hasText: 'Cannot disable elsewhere'})).toBeVisible();
   await expect(app.remote.power('hello')).toBeChecked();
 });
 
@@ -136,7 +136,7 @@ test('a name not written as the repo\'s does not turn it off, and says so in the
     await off.click({timeout: 1000});
     await expect(ask.getByRole('alert')).not.toBeEmpty({timeout: 1000});
   }).toPass({timeout: 15_000});
-  await expect(ask.getByRole('alert')).toHaveText('Type hello as it is written.');
+  await expect(ask.getByRole('alert')).toHaveText('Enter "hello" exactly as shown.');
   await expect(ask.getByRole('textbox', {name: 'Repo name'})).toBeFocused();
 
   await ask.getByRole('button', {name: 'Cancel'}).click();
@@ -159,7 +159,7 @@ test("a device's code is typed in Devices, and the device let in there as on the
   await expect(code).toBeFocused();
   await code.fill(user_code);
   await code.press('Enter');
-  await expect(ask).toContainText('l3 (CLI) asks to join this account.');
+  await expect(ask).toContainText('l3 (CLI) is requesting access.');
   await expect(ask.getByRole('button', {name: 'Cancel'})).toBeHidden();
   await ask.getByRole('button', {name: 'Connect', exact: true}).click();
   await expect(ask).toContainText('Connected. Return to your device.');

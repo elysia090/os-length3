@@ -200,7 +200,7 @@ class NewRepo extends Part {
   get problem() { return this.main.getByRole('alert'); }
   get made() { return this.main.getByRole('status'); }
   /** Forge holding `name`'s page: where a repo made is gone into. */
-  madeIn(name: string) { return this.page.getByRole('region', {name: `The files of ${name}`, exact: true}); }
+  madeIn(name: string) { return this.page.getByRole('region', {name: `Files in ${name}`, exact: true}); }
 
   /**
    * Fill the form and press Create (the outcome is the caller's to check). There is no template to
@@ -390,7 +390,7 @@ class Forge extends Part {
    */
   async putBack(path: string, says: string) {
     await this.openDiff(path);
-    await this.reference.getByRole('button', {name: `Put back ${path}`, exact: true}).click();
+    await this.reference.getByRole('button', {name: `Revert ${path}`, exact: true}).click();
     await expect(this.reference.getByText(says)).toBeVisible();
     await this.app.answer(this.reference.getByRole('button', {name: 'Revert', exact: true}), this.reference.getByRole('button', {name: 'Cancel'}));
   }
@@ -465,7 +465,7 @@ class FileTree extends Part {
   async deeds(repo: string, path = '') {
     const name = path ? path.split('/').at(-1)! : repo;
     const item = await this.item(repo, path);
-    await item.getByRole('button', {name: `Task description with ${name}`, exact: true}).first().click();
+    await item.getByRole('button', {name: `Actions for ${name}`, exact: true}).first().click();
     const menu = this.page.getByRole('menu', {name, exact: true});
     await expect(menu).toBeVisible();
     return menu;
@@ -649,7 +649,7 @@ class Runtime extends Part {
   /** Remove, under the open dotfile's text: it asks in the box first, and that ask is returned. */
   async askRemove(name: string) {
     await this.dotfiles.getByRole('button', {name: 'Remove', exact: true}).click();
-    const ask = this.dotfiles.getByRole('group', {name: `Remove ${name}`, exact: true});
+    const ask = this.dotfiles.getByRole('group', {name: `Delete ${name}`, exact: true});
     await expect(ask).toBeVisible();
     return ask;
   }
@@ -685,7 +685,7 @@ class Inbox extends Part {
   async writeTo(to: string, text: string) {
     await this.app.rail.go('inbox');
     await this.conversations.getByRole('textbox', {name: 'Send to username or code'}).fill(to);
-    await this.conversations.getByRole('button', {name: 'Write', exact: true}).click();
+    await this.conversations.getByRole('button', {name: 'Compose', exact: true}).click();
     await this.message.fill(text);
     await this.main.getByRole('button', {name: 'Send', exact: true}).click();
     await expect(this.message).toHaveValue('');
@@ -717,7 +717,7 @@ class Server extends Part {
     // Its name on this Remote follows the name unseen; the quiet @ after it shows the field to write it otherwise.
     await this.view.getByRole('button', {name: 'Username on this Remote', exact: true}).click();
     await this.view.getByRole('textbox', {name: /^Username on this Remote/}).fill(handle);
-    await this.view.getByRole('button', {name: 'Make', exact: true}).click();
+    await this.view.getByRole('button', {name: 'Create', exact: true}).click();
     await expect(this.view.getByRole('radiogroup', {name: 'Server'}).getByRole('radio', {name, exact: true})).toBeChecked();
   }
 
@@ -744,7 +744,7 @@ class Server extends Part {
   chip(name: string) { return this.view.getByRole('radiogroup', {name: 'Server'}).getByRole('radio', {name: new RegExp(`^${escape(name)}(, |$)`)}); }
 
   /** The box at the board's foot that writes in it. */
-  box(board: string) { return this.view.getByRole('textbox', {name: `Write in ${board}`, exact: true}); }
+  box(board: string) { return this.view.getByRole('textbox', {name: `Post in #${board}`, exact: true}); }
 
   /**
    * Add someone to the server on screen by their name or code, from behind its gear (People,
@@ -763,7 +763,7 @@ class Server extends Part {
 
   /** Post `text` in `board` from the box at the foot (Ctrl+Enter sends). */
   async post(board: string, text: string) {
-    const box = this.view.getByRole('textbox', {name: `Write in ${board}`, exact: true});
+    const box = this.view.getByRole('textbox', {name: `Post in #${board}`, exact: true});
     await box.fill(text);
     await box.press('Control+Enter');
     await expect(box).toHaveValue('');

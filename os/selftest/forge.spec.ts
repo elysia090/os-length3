@@ -132,9 +132,9 @@ test('a text grown past what Forge saves says so in its box, and is kept whole w
   await put(`${'x'.repeat(99)}\n`.repeat(3000));
   await editor.press('Control+s');
   // Not saved, and said so where it is, with how large it is and the way on; what was written stays.
-  await expect(app.forge.fileState('big.txt')).toHaveText('Not saved · over 262 KB');
+  await expect(app.forge.fileState('big.txt')).toHaveText('Unsaved · Exceeds 262 KB');
   const ask = app.main.getByRole('group', {name: 'File too large to save here'});
-  await expect(ask).toContainText('It is 300 KB: Forge saves what it edits up to 262 KB.');
+  await expect(ask).toContainText('Size is 300 KB. Forge can only save files up to 262 KB.');
   await expect(editor).toHaveValue(/^x{99}\n/);
   // Made smaller, it saves as before and the ask goes.
   await put('small again\n');
@@ -145,6 +145,6 @@ test('a text grown past what Forge saves says so in its box, and is kept whole w
   await put(`${'y'.repeat(99)}\n`.repeat(3000));
   await editor.press('Control+s');
   await ask.getByRole('button', {name: 'Save full file'}).click();
-  await expect(app.forge.fileState('big.txt')).toHaveText('Only the first 262 KB (of 300 KB) · read only');
+  await expect(app.forge.fileState('big.txt')).toHaveText('First 262 KB only (total 300 KB) · Read-only');
   await expect(app.forge.editor('big.txt')).toHaveCount(0);
 });

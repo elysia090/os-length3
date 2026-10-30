@@ -277,8 +277,8 @@ test('a menu put away and opened again on its way out comes back from where it h
   await app.newRepo.make('hello');
   await app.rail.go('home');
   await still(app);
-  const gear = app.main.getByRole('button', {name: 'Task description with hello'}).first();
-  const menu = app.main.getByRole('menu', {name: 'Task description with hello'});
+  const gear = app.main.getByRole('button', {name: 'Actions for hello'}).first();
+  const menu = app.main.getByRole('menu', {name: 'Actions for hello'});
   await gear.click();
   await expect(menu).toBeVisible();
   await still(app);

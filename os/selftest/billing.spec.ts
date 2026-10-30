@@ -11,9 +11,9 @@ test('a tier paid for with 4242 in Checkout is the plan shown as yours after, it
   await app.remote.part('Plan').click();
   await expect(app.remote.tier('Free plan')).toHaveAttribute('aria-current', 'true');
   // Subscribe asks what is bought first: the tier, what it costs, how it is billed and ends.
-  await app.remote.tier('Pro plan').getByRole('button', {name: 'Subscribe'}).click();
+  await app.remote.tier('Pro Plan').getByRole('button', {name: 'Subscribe'}).click();
   const ask = app.remote.asking('Pro');
-  await expect(ask).toContainText('$14 a month');
+  await expect(ask).toContainText('$14 / month');
   await expect(ask).toContainText('Renews automatically until cancelled');
   await ask.getByRole('button', {name: 'Proceed to payment'}).click();
 
@@ -24,8 +24,8 @@ test('a tier paid for with 4242 in Checkout is the plan shown as yours after, it
 
   await app.settled();
   await expect(app.remote.told).toHaveText('Payment successful: you are now on Pro.');
-  await expect(app.remote.plan.getByText(/^Pro plan · /)).toBeVisible();
-  await expect(app.remote.tier('Pro plan')).toHaveAttribute('aria-current', 'true');
+  await expect(app.remote.plan.getByText(/^Pro Plan · /)).toBeVisible();
+  await expect(app.remote.tier('Pro Plan')).toHaveAttribute('aria-current', 'true');
   await expect(app.remote.tier('Free plan')).not.toHaveAttribute('aria-current', 'true');
   await expect(app.remote.plan.getByRole('meter', {name: 'Remote storage used'})).toBeVisible();
   await expect(app.remote.plan).toContainText('of 256 GB');
@@ -34,7 +34,7 @@ test('a tier paid for with 4242 in Checkout is the plan shown as yours after, it
   await app.rail.go('home');
   await app.rail.go('remote');
   await app.remote.part('Plan').click();
-  await expect(app.remote.tier('Pro plan')).toHaveAttribute('aria-current', 'true');
+  await expect(app.remote.tier('Pro Plan')).toHaveAttribute('aria-current', 'true');
 });
 
 test('a card that is declined is said under it in Checkout and nothing is sent; Back says nothing was charged', async ({planSignedIn: app}) => {
@@ -68,23 +68,23 @@ test('3-D Secure with 3155: Fail goes back to Checkout and says so with nothing 
   await app.stripe.secure('Complete');
   await app.settled();
   await expect(app.remote.told).toHaveText('Payment successful: you are now on Max.');
-  await expect(app.remote.tier('Max plan')).toHaveAttribute('aria-current', 'true');
+  await expect(app.remote.tier('Max Plan')).toHaveAttribute('aria-current', 'true');
 });
 
 test('a tier changed from the Plan is confirmed in Stripe\'s portal, and the Plan says the new one once back', async ({planSignedIn: app}) => {
   await app.rail.go('remote');
   await app.remote.subscribe('Go');
   await app.stripe.pay('4242 4242 4242 4242');
-  await expect(app.remote.tier('Go plan')).toHaveAttribute('aria-current', 'true');
+  await expect(app.remote.tier('Go Plan')).toHaveAttribute('aria-current', 'true');
 
   // Up: the portal at the step that changes it, what it costs now, Confirm, and back.
-  await app.remote.tier('Pro plan').getByRole('button', {name: 'Upgrade'}).click();
+  await app.remote.tier('Pro Plan').getByRole('button', {name: 'Upgrade'}).click();
   await expect(app.page.getByRole('heading', {name: 'Confirm your updated plan'})).toBeVisible();
   await expect(app.page.getByText('Amount due today', {exact: true})).toBeVisible();
   await app.page.getByRole('button', {name: 'Confirm'}).click();
   await app.settled();
-  await expect(app.remote.told).toHaveText('You are on Pro now.');
-  await expect(app.remote.tier('Pro plan')).toHaveAttribute('aria-current', 'true');
+  await expect(app.remote.told).toHaveText('You are now on Pro.');
+  await expect(app.remote.tier('Pro Plan')).toHaveAttribute('aria-current', 'true');
 
   // Down again from the portal's own list, under Manage plan.
   await app.remote.plan.getByRole('button', {name: 'Manage plan'}).click();
@@ -97,15 +97,15 @@ test('a tier changed from the Plan is confirmed in Stripe\'s portal, and the Pla
   await expect(app.page.getByRole('table')).toContainText('Go → Pro');
   await app.page.getByRole('link', {name: 'Return to length3'}).click();
   await app.settled();
-  await expect(app.remote.told).toHaveText('You are on Go now.');
-  await expect(app.remote.tier('Go plan')).toHaveAttribute('aria-current', 'true');
+  await expect(app.remote.told).toHaveText('You are now on Go.');
+  await expect(app.remote.tier('Go Plan')).toHaveAttribute('aria-current', 'true');
 });
 
 test('cancelled in the portal, it stays to the period\'s end and the Plan says until when; Renew plan keeps it', async ({planSignedIn: app}) => {
   await app.rail.go('remote');
   await app.remote.subscribe('Pro');
   await app.stripe.pay('4242 4242 4242 4242');
-  await expect(app.remote.tier('Pro plan')).toHaveAttribute('aria-current', 'true');
+  await expect(app.remote.tier('Pro Plan')).toHaveAttribute('aria-current', 'true');
 
   await app.remote.plan.getByRole('button', {name: 'Manage plan'}).click();
   await app.page.getByRole('link', {name: 'Cancel subscription'}).click();
@@ -114,9 +114,9 @@ test('cancelled in the portal, it stays to the period\'s end and the Plan says u
   await app.page.getByRole('link', {name: 'Return to length3'}).click();
   await app.settled();
   await expect(app.remote.told).toHaveText(/^Subscription cancelled: Pro remains active until .+; no further charges\.$/);
-  await expect(app.remote.plan).toContainText(/Ends /);
+  await expect(app.remote.plan).toContainText(/Expires on /);
   // Still Pro until then.
-  await expect(app.remote.tier('Pro plan')).toHaveAttribute('aria-current', 'true');
+  await expect(app.remote.tier('Pro Plan')).toHaveAttribute('aria-current', 'true');
 
   await app.remote.plan.getByRole('button', {name: 'Manage plan'}).click();
   await app.page.getByRole('button', {name: 'Renew plan'}).click();

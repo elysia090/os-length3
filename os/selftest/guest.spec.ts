@@ -26,8 +26,8 @@ test('a guest come back to the app is led back to their board from Home', async 
   await app.page.reload();
   await app.settled();
   await app.rail.go('home');
-  await expect(app.main.getByRole('button', {name: '#general of Trip, as a guest'})).toBeVisible();
+  await expect(app.main.getByRole('button', {name: '#general (Trip) · Guest'})).toBeVisible();
   await app.main.getByRole('button', {name: /where you write as a guest/}).click();
-  await expect(app.server.box('general')).toHaveAttribute('placeholder', 'As Cy, a guest');
+  await expect(app.server.box('general')).toHaveAttribute('placeholder', 'As guest (Cy)');
   await expect(app.server.talk('general')).toContainText('Hello from a guest');
 });

@@ -138,8 +138,8 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await app.forge.run('true');
     await app.rail.go('home');
     const card = app.main.getByRole('region', {name: 'Repos'}).getByRole('group', {name: 'hello', exact: true});
-    await card.getByRole('button', {name: 'Task description with hello'}).click();
-    const menu = card.getByRole('menu', {name: 'Task description with hello'});
+    await card.getByRole('button', {name: 'Actions for hello'}).click();
+    const menu = card.getByRole('menu', {name: 'Actions for hello'});
     await menu.getByRole('menuitem', {name: 'Rename'}).click();
     await expect(menu).toContainText('Prompt is stopped; ready for maintenance.');
     await menu.getByRole('textbox', {name: 'New name'}).fill('hullo');
@@ -160,7 +160,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(said(pane)).toBeHidden();
     // Up again, it starts at its prompt line, what came before folded under one line that opens it.
     await app.forge.promptBox.focus();
-    const earlier = app.forge.prompt.getByRole('button', {name: 'Earlier (1)'});
+    const earlier = app.forge.prompt.getByRole('button', {name: 'History (1)'});
     await expect(earlier).toBeVisible();
     await expect(said(app.forge.prompt)).toBeHidden();
     await earlier.click();
@@ -209,7 +209,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await app.forge.run('true');
     await app.runtime.makeDotfile('.profile', 'export EDITOR=vi\n');
     const note = app.runtime.dotfiles.getByRole('status');
-    await expect(note).toContainText('The Prompt in hello gets it when it starts again');
+    await expect(note).toContainText('Prompt in hello applies updates on restart');
     await note.getByRole('button', {name: 'Restart'}).click();
     await expect(note).toBeHidden();
   });

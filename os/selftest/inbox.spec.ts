@@ -78,7 +78,7 @@ test('a message half written stays with its conversation', async ({signedIn: ada
 test('a name no one has is said under the field, and nothing is opened', async ({signedIn: ada}) => {
   await ada.inbox.named();
   await ada.inbox.conversations.getByRole('textbox', {name: 'Send to username or code'}).fill('no-one-here');
-  await ada.inbox.conversations.getByRole('button', {name: 'Write', exact: true}).click();
+  await ada.inbox.conversations.getByRole('button', {name: 'Compose', exact: true}).click();
 
   await expect(ada.inbox.conversations.getByRole('alert')).toHaveText(/^Cannot reach no-one-here \(/);
   await expect(ada.inbox.message).toHaveCount(0);

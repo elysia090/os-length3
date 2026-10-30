@@ -86,7 +86,7 @@ test('a name already taken is said under the name, and the name keeps the keyboa
   await expect(app.newRepo.name).toHaveValue('');
 
   await app.newRepo.fill('notes');
-  await expect(app.newRepo.problem).toHaveText('There is a repo named notes already');
+  await expect(app.newRepo.problem).toHaveText('A repo named "notes" already exists');
   await expect(app.newRepo.name).toBeFocused();
   await expect(app.newRepo.name).toHaveValue('notes');
   // Typing in it again clears what was said.

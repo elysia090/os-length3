@@ -27,7 +27,7 @@ test('the box\'s pill chooses what the box does: an issue written there is the r
   await box.fill('Feat: A trellis for the tomatoes\nSix feet, of bamboo.');
   await box.press('Control+Enter');
   await expect(box).toHaveValue('');
-  await expect(said).toHaveText('Written as #1 in hello');
+  await expect(said).toHaveText('Created as #1 in hello');
   await expect(pill).toHaveText('hello #2', {useInnerText: true});
   // Alt+3 from the box: TODO, at once.
   await box.press('Alt+3');
@@ -42,7 +42,7 @@ test('the box\'s pill chooses what the box does: an issue written there is the r
   await expect(app.git.issue('#1 Feat：A trellis for the tomatoes')).toBeVisible();
   await app.rail.go('home');
   await expect(app.home.title(app.home.items.first())).toHaveValue('Water the basil at eleven');
-  await expect(app.home.todo).toContainText('1 of 1 left');
+  await expect(app.home.todo).toContainText('1 of 1 remaining');
 });
 
 test('what the box writes comes into the Prompt\'s flow as it came, and pressed goes to where it is', async ({app}) => {
@@ -68,7 +68,7 @@ test('what the box writes comes into the Prompt\'s flow as it came, and pressed 
 
   // Pressed, each goes to where it is: the TODO on Home, the issue in Git.
   await todo.click();
-  await expect(app.home.todo).toContainText('1 of 1 left');
+  await expect(app.home.todo).toContainText('1 of 1 remaining');
   await app.rail.go('forge');
   await issue.click();
   await expect(app.git.issue('#1 Fix：The table wraps on a phone')).toBeVisible();

@@ -22,12 +22,12 @@ test('an issue goes from written to merged, and is listed under Merged', async (
   await app.forge.editFile('README.md', '# hello\n\nHELLO.\n');
 
   await app.rail.go('git');
-  await expect(app.main.getByRole('region', {name: '1 file not committed'})).toContainText('HELLO.');
+  await expect(app.main.getByRole('region', {name: '1 uncommitted file'})).toContainText('HELLO.');
   await app.git.step('Commit').click();
   // Committed, it hands itself in: Commit and Push are done (no buttons), and the change waits for review.
   await expect(app.git.step('Commit')).toBeHidden();
   await expect(app.git.step('Push')).toBeHidden();
-  await expect(app.main.getByText('Change · version 1 · Undecided')).toBeVisible();
+  await expect(app.main.getByText('Change · v1 · Pending')).toBeVisible();
   await expect(app.git.review).toBeVisible();
   await expect(app.git.review.getByText('HELLO.')).toBeVisible();
 
@@ -52,7 +52,7 @@ test('a change on main is committed from main\'s card, named by its line', async
 
   await app.rail.go('git');
   // A repo nobody has committed yet: the scaffold's README is not committed either.
-  await expect(app.git.mainCard('hello').getByRole('region', {name: '1 file not committed'})).toBeVisible();
+  await expect(app.git.mainCard('hello').getByRole('region', {name: '1 uncommitted file'})).toBeVisible();
   // A line without a title is not a commit: said under it, the keyboard kept there.
   await app.git.commitOnMain('hello', 'Docs:');
   await expect(app.git.mainCard('hello').getByRole('alert')).toHaveText('Commit requires a title (e.g. Fix: title)');
@@ -77,11 +77,11 @@ test('an issue is history on main by itself: main\'s card holds only one\'s own 
   await expect(app.git.issue('#1 Fix：Say hello louder')).toBeVisible();
   // main's card: the person's own change, and not the issue (committed on main by itself as it was written).
   const card = app.git.mainCard('hello');
-  await expect(card.getByRole('region', {name: '1 file not committed'})).toContainText('Mine.');
+  await expect(card.getByRole('region', {name: '1 uncommitted file'})).toContainText('Mine.');
   await expect(card.getByText('Fix：Say hello louder')).toHaveCount(0);
   await app.git.write('hello', 'Fix: Say it twice', 'Once is not enough.');
   await expect(app.git.issue('#2 Fix：Say it twice')).toBeVisible();
-  await expect(card.getByRole('region', {name: '1 file not committed'})).toBeVisible();
+  await expect(card.getByRole('region', {name: '1 uncommitted file'})).toBeVisible();
   // Worked on, #2 still has #1 beside it (it is main's, not left out of the work's copy), and #1 is closed from there.
   await app.git.step('Start').click();
   await expect(app.git.step('Back to main')).toBeVisible();
@@ -94,7 +94,7 @@ test('an issue is history on main by itself: main\'s card holds only one\'s own 
   // Back on main, its card still holds the person's own file alone.
   await app.git.step('Back to main').click();
   await expect(app.git.step('Resume here')).toBeVisible();
-  await expect(card.getByRole('region', {name: '1 file not committed'})).toContainText('Mine.');
+  await expect(card.getByRole('region', {name: '1 uncommitted file'})).toContainText('Mine.');
 });
 
 test('many repos waiting on main are a row each in All, a row\'s name opens its files, and one repo shown is its card', async ({signedIn: app}) => {
@@ -104,14 +104,14 @@ test('many repos waiting on main are a row each in All, a row\'s name opens its 
   const row = app.git.mainCard('a'), open = row.getByRole('button', {name: 'a', exact: true});
   // Four waiting: rows, their files folded until asked for.
   await expect(open).toHaveAttribute('aria-expanded', 'false');
-  await expect(row.getByRole('region', {name: '1 file not committed'})).toHaveCount(0);
+  await expect(row.getByRole('region', {name: '1 uncommitted file'})).toHaveCount(0);
   await expect(row.getByRole('button', {name: 'Commit'})).toBeVisible();
   await open.click();
-  await expect(row.getByRole('region', {name: '1 file not committed'})).toBeVisible();
+  await expect(row.getByRole('region', {name: '1 uncommitted file'})).toBeVisible();
   await expect(open).toBeFocused();
   // One repo shown: its card, the files on it.
   await app.git.repos.getByRole('radio', {name: 'b', exact: true}).click();
-  await expect(app.git.mainCard('b').getByRole('region', {name: '1 file not committed'})).toBeVisible();
+  await expect(app.git.mainCard('b').getByRole('region', {name: '1 uncommitted file'})).toBeVisible();
   await expect(app.git.mainCard('b').getByRole('button', {name: 'b', exact: true})).toHaveCount(0);
 });
 

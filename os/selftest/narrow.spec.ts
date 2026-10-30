@@ -37,7 +37,7 @@ test('on a phone, the pill alone on Forge\'s band stands whole to its ×, a long
   await app.newRepo.openInForge();
   await app.page.setViewportSize({width: 390, height: 844});
   const band = app.forge.band.locator('.pills');
-  const close = app.forge.band.getByRole('button', {name: 'Take trip-notes off the band'});
+  const close = app.forge.band.getByRole('button', {name: 'Remove trip-notes from band'});
   await expect(close).toBeVisible();
   const [b, c] = [(await band.boundingBox())!, (await close.boundingBox())!];
   expect(c.x + c.width).toBeLessThanOrEqual(b.x + b.width);

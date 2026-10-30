@@ -27,18 +27,18 @@ test('a Remote that answers with a page or a 503 is said to be away, not to offe
   const rail = app.page.getByRole('navigation', {name: 'Purposes'}).getByRole('button', {name: /^(Remote|Cannot connect to Remote)$/});
   await rail.click();
   const card = app.main.getByRole('region', {name: 'Sign in'});
-  await expect(card.getByRole('status')).toHaveText('What answered is not the Remote (200)');
+  await expect(card.getByRole('status')).toHaveText('Unexpected response from server (200)');
   await expect(card).not.toContainText('offers no way');
   await expect(rail).toHaveAccessibleName('Cannot connect to Remote');
   // Server, signed out, reads its open boards from the same Remote: said in words, never the parser's.
   await app.server.open();
-  await expect(app.server.view).toContainText('What answered is not the Remote (200)');
+  await expect(app.server.view).toContainText('Unexpected response from server (200)');
   await expect(app.server.view).not.toContainText('JSON');
   await rail.click();
 
   answer = 'busy';
   await card.getByRole('button', {name: 'Try again'}).click();
-  await expect(card.getByRole('status')).toHaveText('The Remote is not taking requests just now (503)');
+  await expect(card.getByRole('status')).toHaveText('Remote is currently unavailable (503)');
   answer = 'ok';
   await card.getByRole('button', {name: 'Try again'}).click();
   await expect(card.getByRole('button', {name: 'Continue with Development'})).toBeVisible();
@@ -82,18 +82,18 @@ test('Remove from device takes nothing the Remote lacks: a repo the plan holds b
   for (const name of ['a', 'b', 'c', 'd']) await app.newRepo.make(name);
   await app.rail.go('home');
   const repos = app.main.getByRole('region', {name: 'Repos'});
-  await expect(repos.getByRole('group', {name: 'd'})).toContainText('waits for room on the Remote');
+  await expect(repos.getByRole('group', {name: 'd'})).toContainText('Waiting for Remote storage');
   await app.me.openMenu();
   await app.me.menu.getByRole('menuitem', {name: 'Sign out'}).click();
   const ask = app.me.menu.getByRole('group', {name: 'Sign out'});
   await app.answer(ask.getByRole('button', {name: 'Remove from device', exact: true}), ask.getByRole('button', {name: 'Remove from device', exact: true}));
-  await expect(ask).toContainText('d stays: Free plan repo storage limit reached on Remote');
-  await expect(ask).toContainText('If you sign out, it stays here');
+  await expect(ask).toContainText('d retained: Free plan repo storage limit reached on Remote');
+  await expect(ask).toContainText('If you sign out, local data remains accessible');
   await expect(ask.getByRole('button', {name: 'Cancel'})).toBeVisible();
   // What the Remote has went; what it lacks is here as it was.
   await app.page.keyboard.press('Escape');
   for (const name of ['a', 'b', 'c']) await expect(repos.getByRole('group', {name})).toContainText('Remote only');
-  await expect(repos.getByRole('group', {name: 'd'})).toContainText('waits for room on the Remote');
+  await expect(repos.getByRole('group', {name: 'd'})).toContainText('Waiting for Remote storage');
 });
 
 test('the first time a provider, a passkey offered right after it; the next time the passkey is the way in', async ({app}, info) => {
@@ -139,7 +139,7 @@ test('Cancel at the provider\'s consent comes back to the card, which says so by
   await expect(app.page.getByRole('list', {name: 'What length3 asks for'})).toContainText('Know your name and email');
   await app.page.getByRole('button', {name: 'Cancel', exact: true}).click();
   await app.settled();
-  await expect(card.getByRole('alert')).toHaveText('Signing in with Development was cancelled; nothing was shared.');
+  await expect(card.getByRole('alert')).toHaveText('Sign-in with Development cancelled; no data shared.');
   await expect(card.getByRole('button', {name: 'Continue with Development'})).toBeVisible();
   // Tried again, and allowed: in, and what was said is past.
   await card.getByRole('button', {name: 'Continue with Development'}).click();
@@ -172,7 +172,7 @@ test('called off at the provider, the card says so, and the provider is there to
 test('a device\'s code that cannot be used says what that means, and another is typed in its place', async ({signedIn: app}) => {
   await app.page.goto('/?device&user_code=WRONG123');
   await expect(app.page.getByRole('alert')).toHaveText('Invalid code.');
-  await expect(app.page.getByText('It has run out or was typed wrong')).toBeVisible();
+  await expect(app.page.getByText('Code expired or mistyped')).toBeVisible();
   await expect(app.page.getByText(/invalid_request|expired_token/)).toHaveCount(0);
   await app.page.getByRole('button', {name: 'Enter another code'}).click();
   await expect(app.page.getByRole('textbox', {name: 'Device pairing code'})).toBeVisible();
