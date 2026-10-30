@@ -104,16 +104,18 @@ impl Api {
     }
 
     /// Its state and memory written to `at` (the VM paused first; a diff snapshot writes only the pages changed since
-    /// the last one).
+    /// the last one). Not synced to disk before it answers: a snapshot is loaded on the host that made it, from its
+    /// page cache, and one lost with the host is made again.
     pub fn snapshot(&self, at: &Snapshot, diff: bool) -> Result<(), Fault> {
-        self.put("/snapshot/create", serde_json::json!({"snapshot_type": if diff { "Diff" } else { "Full" }, "snapshot_path": at.snapshot_path, "mem_file_path": at.mem_file_path}))
+        self.put("/snapshot/create", serde_json::json!({"snapshot_type": if diff { "Diff" } else { "Full" }, "snapshot_path": at.snapshot_path,
+            "mem_file_path": at.mem_file_path, "sync_snapshot_files": false}))
     }
 
     /// A new VM made from a snapshot, its memory mapped from the file and read in only as the guest touches it, and
     /// running at once if `resume`.
     pub fn load(&self, at: &Snapshot, resume: bool) -> Result<(), Fault> {
         self.put("/snapshot/load", serde_json::json!({"snapshot_path": at.snapshot_path,
-            "mem_backend": {"backend_type": "File", "backend_path": at.mem_file_path}, "enable_diff_snapshots": true, "resume_vm": resume}))
+            "mem_backend": {"backend_type": "File", "backend_path": at.mem_file_path}, "track_dirty_pages": true, "resume_vm": resume}))
     }
 
     /// What the guest says of its memory through the balloon (bytes free, available…), as Firecracker answers it.
@@ -127,9 +129,12 @@ mod tests {
     use super::*;
     use std::os::unix::net::UnixListener;
 
+    /// Each request a fake was asked: its method, path and body.
+    type Seen = Vec<(String, String, String)>;
+
     /// A socket that answers as Firecracker does: each request kept (method, path, body), 204, or 400 with a fault
     /// for a body naming `bad`.
-    fn fake(dir: &Path) -> (PathBuf, std::thread::JoinHandle<Vec<(String, String, String)>>) {
+    fn fake(dir: &Path) -> (PathBuf, std::thread::JoinHandle<Seen>) {
         let path = dir.join("api.sock");
         let listener = UnixListener::bind(&path).unwrap();
         let handle = std::thread::spawn(move || {

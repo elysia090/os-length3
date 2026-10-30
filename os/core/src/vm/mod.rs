@@ -30,22 +30,23 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 
 /// What a host fetches to run VMs, pinned by digest as roots are (root.rs): Firecracker's release (its jailer with
-/// it), the digest its publisher gives beside it; and the kernel its CI boots VMs with (6.1, with vsock, virtio
-/// block, balloon and free page reporting, ext4 and overlayfs built in), pinned as it was fetched for this table.
+/// it), the digest its publisher gives beside it; and the kernel its CI boots VMs with (6.18, the guest kernel it
+/// supports since v1.17, with vsock, virtio block, balloon and free page reporting, ext4 and overlayfs built in),
+/// pinned as it was fetched for this table.
 pub struct Pin { pub arch: &'static str, pub url: &'static str, pub sha256: &'static str, pub bytes: u64 }
 
-pub const FIRECRACKER_VERSION: &str = "v1.14.0";
+pub const FIRECRACKER_VERSION: &str = "v1.17.0";
 pub const FIRECRACKER: [Pin; 2] = [
-    Pin { arch: "x86_64", url: "https://github.com/firecracker-microvm/firecracker/releases/download/v1.14.0/firecracker-v1.14.0-x86_64.tgz",
-        sha256: "b0c60364661f396b92e350cb9d03e2e0c2140c4c24b1e48830eb7f79eb73e153", bytes: 7_667_248 },
-    Pin { arch: "aarch64", url: "https://github.com/firecracker-microvm/firecracker/releases/download/v1.14.0/firecracker-v1.14.0-aarch64.tgz",
-        sha256: "aa942421588108dced1de57639c4f6ddd063c3063c2f0bba9cd01be1ca8ba3bf", bytes: 7_381_629 },
+    Pin { arch: "x86_64", url: "https://github.com/firecracker-microvm/firecracker/releases/download/v1.17.0/firecracker-v1.17.0-x86_64.tgz",
+        sha256: "06094a1108ae9e82aa4c23a775aa92758f53f1175d422270d9d6162cb9ade558", bytes: 7_464_385 },
+    Pin { arch: "aarch64", url: "https://github.com/firecracker-microvm/firecracker/releases/download/v1.17.0/firecracker-v1.17.0-aarch64.tgz",
+        sha256: "e351ebe4f7a16b5873bbd51005d2e6767103cff4d5ebc829df2d3f95a93e2256", bytes: 7_294_031 },
 ];
 pub const KERNEL: [Pin; 2] = [
-    Pin { arch: "x86_64", url: "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.14/x86_64/vmlinux-6.1.155",
-        sha256: "e41c7048bd2475e7e788153823fcb9166a7e0b78c4c443bd6446d015fa735f53", bytes: 44_278_288 },
-    Pin { arch: "aarch64", url: "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.14/aarch64/vmlinux-6.1.155",
-        sha256: "61baeae1ac6197be4fc5c71fa78df266acdc33c54570290d2f611c2b42c105be", bytes: 17_111_552 },
+    Pin { arch: "x86_64", url: "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/20261028-84df49062576-0/x86_64/vmlinux-6.18.56",
+        sha256: "a00c1f68304e83ae4e0b5afe88972ad23fda52ed1a40335611aa18faa95d1b10", bytes: 27_893_992 },
+    Pin { arch: "aarch64", url: "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/20261028-84df49062576-0/aarch64/vmlinux-6.18.56",
+        sha256: "ba2081f71b3405e7f7be606b849b5341d2272dcb79999cb67f8061e711d0883f", bytes: 19_532_288 },
 ];
 
 /// Where a host keeps Firecracker and its jailer.

@@ -1164,9 +1164,10 @@ from it, a small sparse disk of its own holding what it is given, no
 network unless the repo was given it, and one vsock to its host, over
 which the host gives it its run (a Spec, as above) and it says what it
 prints, the repo as the run left it, and its exit code (`vm/wire.rs`).
-Firecracker v1.14.0 (with its jailer) and its CI's kernel 6.1.155 are
-fetched by digest, as roots are: Firecracker's matching the digest its
-publisher gives beside it, the kernel's pinned as it was fetched.
+Firecracker v1.17.0 (with its jailer) and its CI's kernel 6.18.56 (the
+guest kernel it supports since v1.17) are fetched by digest, as roots
+are: Firecracker's matching the digest its publisher gives beside it,
+the kernel's pinned as it was fetched.
 
 What scales worst on a host, in order, and how each is met:
 
