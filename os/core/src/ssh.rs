@@ -97,9 +97,10 @@ pub fn parse_keys(text: &str) -> Keys {
     out
 }
 
-/// The keys in Home's `.authorized_keys` (as Home has it now; taking in the Remote's is the caller's).
+/// The keys in Home's `.authorized_keys` as this device took it (home.rs dotfiles_in_effect): a key the Remote's
+/// copy holds and the person at this device never took is let in nowhere.
 pub fn keys() -> Keys {
-    crate::home::dotfiles().into_iter().find(|(n, _)| n == KEYS).map(|(_, t)| parse_keys(&t)).unwrap_or_default()
+    crate::home::dotfiles_in_effect().into_iter().find(|(n, _)| n == KEYS).map(|(_, t)| parse_keys(&t)).unwrap_or_default()
 }
 
 /// The kind a key blob names first (a string: a 4-byte length, then its bytes).

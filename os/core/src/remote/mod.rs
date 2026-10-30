@@ -474,6 +474,8 @@ pub fn sync_home(key: &str) -> Result<crate::home::HomeSynced> {
     let who = account_id();
     // Not a repo's name (no repo is called with a ~), so its own lock.
     let _held = lock("~home")?;
+    // What this device ran is kept as what it trusts before the Remote's dotfiles come in (home.rs keep_trust).
+    if key == "dotfiles" { crate::home::keep_trust()?; }
     crate::home::agree_with(&mut crate::home::Files, &client, key, who.as_deref())
 }
 

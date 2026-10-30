@@ -433,7 +433,9 @@ pub static COMMANDS: &[Command] = &[
     on_home(&["dotfiles"], c("dotfile", &["dotfiles"], Group::Runtime, ["what every Prompt starts with in /root", "どの Prompt も /root に置いて始まるもの"], &[
         f(Some("write"), &[Arg::Dotfile], &[Flag::Empty], ["replace (or make) it with standard input", "標準入力で置き換える（なければ作る）"], DEVICE, Send, runtime::dotfile_write),
         f(Some("rm"), &[Arg::Dotfile], &[], ["remove it", "消す"], DEVICE, Send, runtime::dotfile_rm),
-        f(None, &[], &[], ["the list", "一覧"], DEVICE, Send, runtime::dotfile_list),
+        f(Some("take"), &[], &[], ["run here too what changed on another device (until then it runs nowhere here)", "別の端末で変わったものを、ここでも動かす（それまでここでは動かない）"], DEVICE, Keep, runtime::dotfile_take),
+        f(Some("take"), &[Arg::Dotfile], &[], ["that one only", "それだけ"], DEVICE, Keep, runtime::dotfile_take),
+        f(None, &[], &[], ["the list (what changed on another device says so)", "一覧（別の端末で変わったものはそう書く）"], DEVICE, Send, runtime::dotfile_list),
         f(None, &[Arg::Dotfile], &[], ["one's text", "ひとつの本文"], DEVICE, Send, runtime::dotfile_show),
     ])),
     c("address", &[], Group::Runtime, ["where to reach this device over SSH, as `ip addr` gives an IP", "この端末に SSH で届く先（ip addr が IP を答えるように）"], &[

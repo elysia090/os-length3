@@ -141,7 +141,7 @@ pub fn prompt(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let bash = about.distro.is_some() && root.join("bin/bash").exists() && std::io::stdin().is_terminal();
     let cmd = call.words(1);
     let argv: Vec<String> = if cmd.is_empty() { vec![if bash { "/bin/bash" } else { "/bin/sh" }.into(), "-i".into()] } else { cmd };
-    let s = launch::Sandbox { root, repo: dir, name: repo.clone(), argv, network: call.flags.network || length3_core::home::network(&repo), dotfiles: launch::dotfiles(), data: Some(data.clone()) };
+    let s = launch::Sandbox { root, repo: dir, name: repo.clone(), argv, network: call.flags.network || length3_core::home::network(&repo), dotfiles: launch::dotfiles_in_effect(), data: Some(data.clone()) };
     // Recorded from the start, by the process that runs it, so `l3 prompt ls` (and Runtime) see it, `l3 prompt stop`
     // can end it, and nothing it holds is freed (usage.rs): first being prepared, as what .packages and .setup ask for
     // is set up (once, while they and the root stay as they are), then running.

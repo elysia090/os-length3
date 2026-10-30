@@ -2273,7 +2273,8 @@ or goes).
   the data directory as a Prompt is, and asks the Remote every 30 s or so,
   stopping once it was turned off or the device signed out. Keys are the
   `.authorized_keys` dotfile (below), public keys only, so a key added on
-  one device counts on every one. With none there, turning on says to add
+  one device counts on every one once taken there (below: nothing that came
+  from elsewhere is let in until the person at the device takes it). With none there, turning on says to add
   one first, and how. Shown only while signed in.
 - **Dotfiles**: one box, a row each (its name in the mono face, its size at
   the right), and New dotfile at its foot. A row pressed is lit and opens its
@@ -2283,6 +2284,19 @@ or goes).
   at the row's end, never wrapped over three lines. Every Prompt
   starts with them in `/root` (the app's root and the browser's alike), and
   the Remote keeps them in step across devices, as it does Home's settings.
+  What they hold runs (`.setup` with the network, `.profile` in every shell,
+  `.gitconfig` in git, the keys of `.authorized_keys` let in over SSH), so
+  no dotfile runs on a device that the person at it did not write or take
+  there: one changed on another device, or written to the Remote by anyone
+  as them (a Remote broken into, a device's session taken), is kept and
+  listed but runs nowhere here until taken (its row says not run here yet;
+  a line over the box names them with Take them; `l3 dotfile take`). The
+  device keeps what it took (`trusted`, never sent, never set but by
+  writing or taking), and a Prompt, a shell and the SSH listener read only
+  that; one taken away elsewhere goes here too (going runs nothing). A
+  device from before keeps running what it ran; a device new to them runs
+  none until taken once. There is no way for anyone but the person at the
+  device to make it run something: no silent path from the Remote in.
   A Prompt already running keeps what it started with: its shell has read
   them, and its `/root` is its own (in the app a tmpfs in its namespace),
   so nothing is put into it behind its back. Saved while Prompts run, one

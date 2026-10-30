@@ -188,9 +188,25 @@ pub fn network_set(ctx: &Ctx, call: &Call) -> Result<Reply> {
 
 pub fn dotfile_list(_: &Ctx, _: &Call) -> Result<Reply> {
     let all = home::dotfiles();
-    let data = json!(all.iter().map(|(n, t)| json!({"name": n, "bytes": t.len()})).collect::<Vec<_>>());
+    let waiting = home::dotfiles_waiting();
+    let data = json!(all.iter().map(|(n, t)| json!({"name": n, "bytes": t.len(), "inEffect": !waiting.contains(n)})).collect::<Vec<_>>());
     if all.is_empty() { return Ok(Reply::data(tr!("No dotfiles yet (l3 dotfile write .profile < file)", "dotfile はまだありません（l3 dotfile write .profile < file）"), data)); }
-    Ok(Reply::data(all.iter().map(|(n, t)| format!("{n}  {}", bytes(t.len() as u64))).collect::<Vec<_>>().join("\n"), data))
+    let mut lines: Vec<String> = all.iter().map(|(n, t)| {
+        let state = if waiting.contains(n) { tr!("  · changed on another device, not run here yet", "  · 別の端末で変わり、ここではまだ動きません") } else { String::new() };
+        format!("{n}  {}{state}", bytes(t.len() as u64))
+    }).collect();
+    if !waiting.is_empty() { lines.push(tr!("l3 dotfile take runs them here too (l3 dotfile NAME shows one first)", "l3 dotfile take でここでも動きます（先に見るなら l3 dotfile NAME）")); }
+    Ok(Reply::data(lines.join("\n"), data))
+}
+
+/// `l3 dotfile take [NAME]`: what changed on another device (or on the Remote) runs here from now; until then it is
+/// kept and runs nowhere here (core/src/home.rs dotfiles_in_effect).
+pub fn dotfile_take(_: &Ctx, call: &Call) -> Result<Reply> {
+    let names: Vec<String> = call.word(0).map(|n| vec![n.to_string()]).unwrap_or_default();
+    let taken = home::take_dotfiles(&names).map_err(Error::NotFound)?;
+    let text = if taken.is_empty() { tr!("Nothing waits: every dotfile here runs as it is kept", "待っているものはありません。どの dotfile もこのまま動きます") }
+        else { tr!("Runs here from now: {}", "これからここで動きます：{}", taken.join(", ")) };
+    Ok(Reply::done(text, json!({"taken": taken})))
 }
 
 pub fn dotfile_show(_: &Ctx, call: &Call) -> Result<Reply> {

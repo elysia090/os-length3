@@ -4,6 +4,7 @@ import * as dotfiles from '../../home/dotfiles.ts';
 import {askFoot, SETTLE} from '../common.ts';
 import {allSessions, type Session} from '../bench/terminal.ts';
 import {errorText} from '../../app/errors.ts';
+import {onState} from '../../home/state.ts';
 import {button} from './parts.ts';
 
 // Runtime's Dotfiles: what every Prompt starts with in /root, in one box, a row each, the one open lit with its text
@@ -21,7 +22,9 @@ interface BoxWays { paint(open?: string | null, saved?: boolean): void; restarte
  * keeps them in step across devices. A Prompt already running has what it
  * started with (its shell has read them, and its /root is its own), so a
  * save says so under the box, with Start again; Remove asks in the box
- * first, since it goes from every device.
+ * first, since it goes from every device. One changed on another device runs
+ * nowhere here until it is taken here (home/dotfiles.ts): its row says so,
+ * and Take them over the box runs them here from then on.
  */
 export function dotfilesSection(restarted: () => void, counted: (n: number) => void = () => {}): HTMLElement {
   const section = h('section', {class: 'section dotfiles-part', 'aria-label': t('Dotfiles')});
@@ -30,10 +33,11 @@ export function dotfilesSection(restarted: () => void, counted: (n: number) => v
   const paint = (open: string | null = null, saved = false, fresh: string | null = null) => {
     const all = dotfiles.read();
     const names = Object.keys(all).sort();
+    const held = dotfiles.waiting();
     const pressed = section.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.name : undefined;
     const list = h('div', {class: 'dot-list'});
     for (const n of names) {
-      list.append(fileRow(n, all[n], n === open, () => paint(n === open ? null : n)));
+      list.append(fileRow(n, all[n], n === open, () => paint(n === open ? null : n), held.includes(n)));
       if (n === open) list.append(editBox(n, all[n], false, saved, w));
     }
     const make = h('button', {type: 'button', class: `dot-row new${fresh ? ' current' : ''}`, 'aria-expanded': String(!!fresh), 'data-name': ''},
@@ -42,19 +46,33 @@ export function dotfilesSection(restarted: () => void, counted: (n: number) => v
     list.append(make);
     if (fresh) list.append(editBox(fresh, '', true, false, w));
     counted(names.length);
-    section.replaceChildren(list);
+    section.replaceChildren(...(held.length ? [waitingNote(held, () => paint(open))] : []), list);
     // The keyboard stays on the row it pressed; a new one's name is chosen, to be written over.
     if (fresh) section.querySelector<HTMLInputElement>('.dot-name')?.select();
     else if (pressed !== undefined) section.querySelector<HTMLElement>(`.dot-row[data-name="${CSS.escape(pressed)}"]`)?.focus();
   };
   paint();
+  // Taken in from the Remote, or taken here (l3 too): drawn again, unless one is being written in.
+  onState((key) => { if ((key === 'dotfiles' || key === 'trusted') && section.isConnected && !section.querySelector('.dot-editor')) paint(); });
   return section;
 }
 
-/** A dotfile's row: its name and size; pressed, it opens (or folds, `current`). */
-function fileRow(name: string, text: string, current: boolean, press: () => void): HTMLElement {
+/** Changed on another device and not run here: which, and Take them. */
+function waitingNote(names: string[], taken: () => void): HTMLElement {
+  const take = button(t('Take them'));
+  const error = h('span', {class: 'error small'});
+  take.addEventListener('click', async () => {
+    take.disabled = true;
+    try { await dotfiles.take(names); taken(); } catch (e) { error.textContent = errorText(e); take.disabled = false; }
+  });
+  return h('p', {class: 'muted small dot-note', role: 'status'},
+    tn('{list} changed on another device; it runs here once taken.', '{list} changed on another device; they run here once taken.', names.length, {list: names.join(', ')}), ' ', take, error);
+}
+
+/** A dotfile's row: its name and size, and whether it waits to be taken here; pressed, it opens (or folds, `current`). */
+function fileRow(name: string, text: string, current: boolean, press: () => void, held = false): HTMLElement {
   const row = h('button', {type: 'button', class: `dot-row${current ? ' current' : ''}`, 'aria-expanded': String(current), 'data-name': name},
-    h('span', {class: 'dot-row-name'}, name), h('span', {class: 'muted small'}, bytes(new TextEncoder().encode(text).length)));
+    h('span', {class: 'dot-row-name'}, name), h('span', {class: 'muted small'}, held ? `${t('not run here yet')} · ` : '', bytes(new TextEncoder().encode(text).length)));
   row.addEventListener('click', press);
   return row;
 }

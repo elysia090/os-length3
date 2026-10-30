@@ -47,8 +47,8 @@ pub struct Sandbox {
     pub data: Option<PathBuf>,
 }
 
-/// Home keeps the dotfiles (home.rs); a Prompt writes them into /root.
-pub use crate::home::{dotfile_name, dotfiles};
+/// Home keeps the dotfiles (home.rs); a Prompt writes into /root those this device took (dotfiles_in_effect).
+pub use crate::home::{dotfile_name, dotfiles_in_effect};
 
 fn check(r: libc::c_int, what: &str) -> io::Result<()> {
     if r < 0 {

@@ -164,7 +164,7 @@ mod tests {
         // The listener itself (serve) is l3's own word, never offered.
         assert_eq!(candidates(&c, &w("address ")), ["ssh"]);
         assert_eq!(candidates(&c, &w("address ssh ")), ["on", "off"]);
-        assert_eq!(candidates(&c, &w("dotfile ")), ["write", "rm"]);
+        assert_eq!(candidates(&c, &w("dotfile ")), ["write", "rm", "take"]);
         assert!(candidates(&c, &w("dotfile write .p")).contains(&".profile".to_string()));
         assert_eq!(candidates(&c, &w("review x#1 ")), ["approve", "changes"]);
         assert_eq!(candidates(&c, &w("todo add x -")), ["-m", "--json", "--help", "--"]);

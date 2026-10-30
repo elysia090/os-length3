@@ -12,11 +12,13 @@ import {errorText} from '../app/errors.ts';
 // for each repo and setting, the version on the Remote this copy came from;
 // `lang` is the language the OS speaks here (i18n.ts), l3 included.
 // `network` is which repos' Prompts may reach the network here (the app only; never sent).
-export type Key = 'profile' | 'todo' | 'band' | 'remote' | 'sync' | 'lang' | 'dotfiles' | 'network';
-const KEYS: readonly Key[] = ['profile', 'todo', 'band', 'remote', 'sync', 'lang', 'dotfiles', 'network'];
+// `trusted` is the dotfiles this device runs, as taken here (never sent, never set: home/dotfiles.ts).
+export type Key = 'profile' | 'todo' | 'band' | 'remote' | 'sync' | 'lang' | 'dotfiles' | 'network' | 'trusted';
+const KEYS: readonly Key[] = ['profile', 'todo', 'band', 'remote', 'sync', 'lang', 'dotfiles', 'network', 'trusted'];
 /** Where a browser (and the app's webview) kept each before they were the core's files. */
 const STORAGE: Record<Key, string> = {profile: 'length3.os.profile', todo: 'length3.os.todo', band: 'length3.os.band',
-  remote: 'length3.os.remote', sync: 'length3.os.sync', lang: 'length3.os.lang.setting', dotfiles: 'length3.os.dotfiles', network: 'length3.os.network'};
+  remote: 'length3.os.remote', sync: 'length3.os.sync', lang: 'length3.os.lang.setting', dotfiles: 'length3.os.dotfiles', network: 'length3.os.network',
+  trusted: 'length3.os.trusted'};
 
 const cache = new Map<Key, string | null>();
 
@@ -33,7 +35,7 @@ const unread = new Map<Key, string>();
 export const unreadable = (): ReadonlyMap<Key, string> => unread;
 /** A setting as a person knows it. */
 export const settingName = (key: Key): string => ({profile: t('Profile'), todo: 'TODO', band: t('The band'), remote: t('Sign-in'),
-  sync: t('Where each repo stands'), lang: t('Language'), dotfiles: t('Dotfiles'), network: t('Network')})[key];
+  sync: t('Where each repo stands'), lang: t('Language'), dotfiles: t('Dotfiles'), network: t('Network'), trusted: t('Dotfiles run here')})[key];
 
 /** Read every key (or these) into memory; a value only the page's storage had is moved to its file once. */
 export async function loadState(keys: readonly Key[] = KEYS): Promise<void> {
@@ -44,11 +46,17 @@ export async function loadState(keys: readonly Key[] = KEYS): Promise<void> {
       continue;
     }
     unread.delete(key);
-    const old = local(key);
+    // What this device runs was never kept by a page, and is never taken from one.
+    const old = key === 'trusted' ? null : local(key);
     if (value === null && old !== null) {
       await core('state_set', {key, json: old});
       value = old;
       try { localStorage.removeItem(STORAGE[key]); } catch { /* moved; the leftover is never read again natively */ }
+    }
+    // None yet (a device from before it was kept): what this device ran until now is what it trusts, so the core
+    // is asked to keep that first (core/src/home.rs keep_trust), and it is read as it kept it.
+    if (key === 'trusted' && value === null) {
+      try { await core('dotfiles_in_effect', {}); value = await core<string | null>('state_get', {key}); } catch { /* none run, then */ }
     }
     cache.set(key, value);
   }

@@ -18,7 +18,7 @@ pub const DIFF_LIMIT: usize = 2000;
 /// The commands that write a repo's files or Home's state: a host runs them in the order the page sent them
 /// (the app on its window's thread), never side by side with each other.
 pub const WRITES: &[&str] = &["repo_create", "repo_write", "repo_put", "repo_add", "repo_mkdir", "repo_remove", "repo_move", "repo_rename",
-    "repo_delete", "state_set"];
+    "repo_delete", "state_set", "dotfile_set", "dotfiles_take"];
 
 /// Answer `name` with `args` (an object of the command's arguments, by name).
 pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
@@ -51,7 +51,17 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         "repo_rename" => to(remote::rename_repo(&repos()?, &a.s("repo")?, &a.s("to")?, &a.list("open")?)?),
         "repo_delete" => to(remote::delete_repo(&repos()?, &a.s("repo")?, &a.list("open")?)?),
         "state_get" => to(home::get(&a.s("key")?)?),
-        "state_set" => to(home::set(&a.s("key")?, &a.s("json")?)?),
+        // What this device runs of the dotfiles is changed only by a dotfile written here or taken here (below), never set.
+        "state_set" => {
+            let key = a.s("key")?;
+            if key == "trusted" { return Err(crate::tr!("What runs here is changed by writing a dotfile or taking one", "ここで動くものは、dotfile を書くか取り込むかで変わります")); }
+            to(home::set(&key, &a.s("json")?)?)
+        }
+        // A dotfile written here (`text` null: removed) runs here at once; one changed elsewhere runs here once taken
+        // (`names`, or every one waiting). home.rs dotfiles_in_effect.
+        "dotfile_set" => to(home::set_dotfile(&a.s("name")?, a.opt::<String>("text")?.as_deref())?),
+        "dotfiles_take" => to(home::take_dotfiles(&a.list("names")?)?),
+        "dotfiles_in_effect" => to(home::dotfiles_in_effect().into_iter().collect::<std::collections::BTreeMap<_, _>>()),
 
         // The capacity and what this OS holds: `open`, the repos a Prompt has open (the host's to know).
         "capacity" => to(system::capacity(&paths::data_dir())?),
