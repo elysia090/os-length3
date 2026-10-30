@@ -29,7 +29,7 @@ import {HTTPException} from 'hono/http-exception';
 import {byCode, claim, codeOf, HOLD, kept, live, NAME, nameFor, release} from './names.ts';
 import type {Plans} from './plan.ts';
 import {hmacHex, same} from './keys.ts';
-import {ago, body, lock, ms, refuse, rows, slowDown, UUID, type Db, type Vars} from './request.ts';
+import {ago, body, insertWhere, lock, ms, refuse, rows, slowDown, UUID, type Db, type Vars} from './request.ts';
 import {address, contact, message, repoPublic, server, signal, throttle, user} from './schema.ts';
 
 export const INBOX = {
@@ -372,18 +372,19 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
         // Sent already: nothing is counted or written again.
         if (had) return;
       }
-      const [n] = await rows<{sent: number; pair: number; waiting: number}>(tx, sql`select
-        (select count(*)::int from message where from_user = ${me} and created_at > ${hour}) as sent,
-        (select count(*)::int from message where from_user = ${me} and to_user = ${to.userId} and read_at is null) as pair,
-        (select count(*)::int from message m where m.to_user = ${to.userId} and m.read_at is null
-          and not exists (select 1 from contact k where k.user_id = ${to.userId} and k.peer = m.from_user and k.state = 'accepted')) as waiting`);
+      const sent = sql`(select count(*) from message where from_user = ${me} and created_at > ${hour})`;
+      const pair = sql`(select count(*) from message where from_user = ${me} and to_user = ${to.userId} and read_at is null)`;
+      const waiting = sql`(select count(*) from message m where m.to_user = ${to.userId} and m.read_at is null
+          and not exists (select 1 from contact k where k.user_id = ${to.userId} and k.peer = m.from_user and k.state = 'accepted'))`;
+      // Not accepted by them yet: a request, of which they hold only a few. Counted and written in one statement; only
+      // when it was not written are the counts read again, to say which.
+      const room = rel.theirs === 'accepted' ? sql`${sent} < ${INBOX.perHour}`
+        : sql`${sent} < ${INBOX.perHour} and ${pair} < ${INBOX.requestsPerPeer} and ${waiting} < ${INBOX.requestsInAll}`;
+      if (await insertWhere(tx, message, {id, to: to.userId, from: me, fromAddress: from!.address, toAddress: to.address, type, target, body: text}, room)) return;
+      const [n] = await rows<{sent: number; pair: number}>(tx, sql`select ${sent}::int as sent, ${pair}::int as pair`);
       if (n.sent >= INBOX.perHour) slowDown(3600, {error: 'Too many messages this hour'});
-      // Not accepted by them yet: a request, of which they hold only a few.
-      if (rel.theirs !== 'accepted') {
-        if (n.pair >= INBOX.requestsPerPeer) refuse(429, {error: 'Wait for them to answer before writing more'});
-        if (n.waiting >= INBOX.requestsInAll) refuse(429, {error: 'They have too many requests waiting'});
-      }
-      await tx.insert(message).values({id, to: to.userId, from: me, fromAddress: from!.address, toAddress: to.address, type, target, body: text});
+      if (n.pair >= INBOX.requestsPerPeer) refuse(429, {error: 'Wait for them to answer before writing more'});
+      refuse(429, {error: 'They have too many requests waiting'});
     });
     // Writing to someone is accepting them.
     if (rel.mine !== 'accepted') {

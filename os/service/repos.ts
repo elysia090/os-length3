@@ -42,7 +42,7 @@ import type {Context, Hono} from 'hono';
 import {passkeyJustNow} from './auth.ts';
 import type {Plans} from './plan.ts';
 import {hmacHex, same as sameText} from './keys.ts';
-import {ago, body, fits as fitsIn, HEX, LIMIT, lock, ms, qualified, refuse, rows, sha256, slowDown, UUID, type Db, type Vars} from './request.ts';
+import {ago, body, fits as fitsIn, fitting, HEX, LIMIT, lock, ms, qualified, refuse, rows, sha256, slowDown, usedBy, UUID, type Db, type Vars} from './request.ts';
 import {blob, change, cut, guard, line, repo, repoGone, review, throttle, type Modes, type Review, type Tree} from './schema.ts';
 import {KEPT, purge, REMEMBERED} from './sweep.ts';
 
@@ -155,11 +155,13 @@ const changeCols = {id: change.id, line: change.line, kind: change.kind, title: 
   reviews: sql<Review[]>`coalesce((select jsonb_agg(jsonb_build_object('version', r.version, 'verdict', r.verdict, 'note', r.note, 'marks', r.marks,
     'by', r.by, 'time', ${ms(sql`r.time`)}) order by r.time desc, r.id) from review r where r.change_id = ${qualified(change.id)}), '[]'::jsonb)`.as('reviews')};
 type Line = {id: number; off: Date | null; name: string; line: string; base: string | null; head: string | null; pushed: string | null; version: number;
-  startedBy: string; startedAt: Date; updatedAt: Date; draft?: Tree; modes?: Modes; kept?: {bytes: number; files: number}};
+  startedBy: string; startedAt: Date; updatedAt: Date; draft?: Tree; modes?: Modes; kept?: {bytes: number; files: number};
+  /** Read with its draft: the account's room (request.ts usedBy), and which of the blobs asked about it holds. */
+  used?: number; have?: string[]};
 type Change = {id: string; line: string; kind: string; title: string; version: number; base: string | null; head: string;
   state: string; note: string; submittedBy: string; reviews: Review[]; updatedAt: Date};
 
-const lineShown = ({id: _, off: __, draft, modes, kept: ___, ...r}: Line) => ({...r, issue: issueOf(r.line), ...(draft ? {draft, modes: modesFor(draft, modes ?? {})} : {}), startedAt: r.startedAt.getTime()});
+const lineShown = ({id: _, off: __, draft, modes, kept: ___, used: ____, have: _____, ...r}: Line) => ({...r, issue: issueOf(r.line), ...(draft ? {draft, modes: modesFor(draft, modes ?? {})} : {}), startedAt: r.startedAt.getTime()});
 const changeShown = (repoName: string, {repoId: _, off: __, ...r}: Change & {repoId?: number; off?: Date | null}) =>
   ({...r, repo: repoName, issue: issueOf(r.line), updatedAt: r.updatedAt.getTime()});
 const count = (n: unknown) => (typeof n === 'number' && Number.isInteger(n) && n >= 0 && n < 2 ** 31 ? n : 0);
@@ -170,6 +172,7 @@ const whoBy = (c: Context<Vars>) => c.get('name').slice(0, 200);
 export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-codes are kept under (keys.ts: off-code). */ offKey?: string}, v1: Hono<Vars>) {
   const db = d.db;
   const fits = (q: Db, user: string, more: number) => fitsIn(q, user, more, d.quota);
+  const fitsUsed = (used: number | undefined, more: number) => fitting(Number(used), more, d.quota);
 
   // ---- what moved: the one request a page asks every few seconds ----
 
@@ -193,8 +196,12 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
    * A line (with its draft only when asked for, and what the draft takes: `kept`), its repo's number, and whether its
    * repo is off: one read.
    */
-  const lineAt = async (q: Db, user: string, name: string, l: string, draft = false): Promise<Line | undefined> =>
-    (await q.select({...lineCols, ...(draft ? {draft: line.draft, modes: line.modes, kept: {bytes: line.bytes, files: line.fileBytes}} : {})}).from(line).innerJoin(repo, eq(repo.id, line.repoId))
+  // Read to be written (`draft`), with what the write then asks of the account in the same round trip: its room, and
+  // which of the blobs `shas` it holds (a save is a lock, this, and the write: the room and the blobs were a trip each).
+  const lineAt = async (q: Db, user: string, name: string, l: string, draft = false, shas: string[] = []): Promise<Line | undefined> =>
+    (await q.select({...lineCols, ...(draft ? {draft: line.draft, modes: line.modes, kept: {bytes: line.bytes, files: line.fileBytes}, used: usedBy(user),
+      have: shas.length ? sql<string[]>`(select coalesce(array_agg(${blob.sha256}), '{}') from ${blob} where ${and(eq(blob.userId, user), inArray(blob.sha256, shas))})`
+        : sql<string[]>`'{}'::text[]`} : {})}).from(line).innerJoin(repo, eq(repo.id, line.repoId))
       .where(and(eq(repo.userId, user), eq(repo.name, name), eq(line.name, l))))[0];
   /** The row of line `l` of repo `id`. */
   const lineRow = (id: number, l: string) => and(eq(line.repoId, id), eq(line.name, l));
@@ -263,7 +270,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
     const shas = [...new Set(Object.values(set).filter((v): v is string => typeof v === 'string'))];
     const version = await db.transaction(async (tx: Db) => {
       await lock(tx, user);
-      const row = await lineAt(tx, user, name, l, true);
+      const row = await lineAt(tx, user, name, l, true, shas);
       on(row?.off);
       if (!row) {
         const gone = await goneAt(tx, user, name);
@@ -273,7 +280,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
         if (name === 'gone') refuse(400, {error: 'A repo cannot be called gone'});
       }
       if (shas.length) {
-        const have = new Set((await tx.select({sha: blob.sha256}).from(blob).where(and(eq(blob.userId, user), inArray(blob.sha256, shas)))).map((r: {sha: string}) => r.sha));
+        const have = new Set(row ? row.have : (await tx.select({sha: blob.sha256}).from(blob).where(and(eq(blob.userId, user), inArray(blob.sha256, shas)))).map((r: {sha: string}) => r.sha));
         const missing = shas.filter((s) => !have.has(s));
         if (missing.length) refuse(409, {missing});
       }
@@ -292,7 +299,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
         if (n >= LIMIT.repos) refuse(429, {error: 'Too many repos'});
         await d.plans.newRepo(tx, user);
       }
-      await fits(tx, user, size - JSON.stringify(was).length);
+      if (row) fitsUsed(row.used, size - JSON.stringify(was).length); else await fits(tx, user, size - JSON.stringify(was).length);
       // What the draft takes (its tree and its files, each blob once) before and after: the plan refuses one
       // that grew while the account keeps more than it allows, and the whole change is undone with it. Before is
       // as the line was read, under the account's lock (a read of its own after was one more round trip a save).
@@ -318,7 +325,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
    */
   const commit = async (tx: Db, user: string, row: Line,
     w: {merged: string | null; tree: Tree; modes: Modes; kind: string; title: string; issue: string; note: string; added: number; removed: number}, draft?: {tree: Tree; modes: Modes}) => {
-    await fits(tx, user, JSON.stringify(w.tree).length);
+    if (row.used !== undefined) fitsUsed(row.used, JSON.stringify(w.tree).length); else await fits(tx, user, JSON.stringify(w.tree).length);
     const time = Date.now();
     const modes = modesFor(w.tree, w.modes);
     const id = await cutId({repo: `${row.name}${row.line === 'main' ? '' : `@${row.line}`}`, parent: row.head, tree: w.tree, modes, kind: w.kind, title: w.title, issue: w.issue, note: w.note, time});

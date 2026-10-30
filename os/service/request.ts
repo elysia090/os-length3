@@ -4,7 +4,8 @@
 // write it guards one step, and the room an account may fill. Who may ask at
 // all (a session) is auth.ts's signedIn.
 
-import {eq, getTableName, sql, type Column, type SQL} from 'drizzle-orm';
+import {eq, getTableColumns, getTableName, sql, type Column, type SQL} from 'drizzle-orm';
+import type {PgTable} from 'drizzle-orm/pg-core';
 import type {Context, ErrorHandler, MiddlewareHandler} from 'hono';
 import {StoreFailed} from './bucket.ts';
 import {bodyLimit} from 'hono/body-limit';
@@ -58,10 +59,24 @@ export const addressOf = (c: Context) => c.req.header('CF-Connecting-IP') ?? '';
 export async function throttled(q: Db, key: string, max: number, windowMs: number, answer: {error: string}) {
   await q.transaction(async (tx: Db) => {
     await lock(tx, key);
-    const [r] = await rows<{n: number; first: number | null}>(tx, sql`select count(*)::int as n, ${ms(sql`min(at)`)} as first from throttle where key = ${key} and at > ${ago(windowMs)}`);
-    if (r.n >= max) slowDown(((r.first ?? Date.now()) + windowMs - Date.now()) / 1000, answer);
-    await tx.insert(throttle).values({key});
+    if (await insertWhere(tx, throttle, {key}, sql`(select count(*) from throttle t where t.key = ${key} and t.at > ${ago(windowMs)}) < ${max}`)) return;
+    const [r] = await rows<{first: number | null}>(tx, sql`select ${ms(sql`min(at)`)} as first from throttle where key = ${key} and at > ${ago(windowMs)}`);
+    slowDown(((r?.first ?? Date.now()) + windowMs - Date.now()) / 1000, answer);
   });
+}
+
+/**
+ * Write `values` into `table` only `when` holds (most often: fewer like it than the most there may be), the check and
+ * the write one statement: a guarded write is its lock and this, not its lock, a count and the insert. Each statement
+ * of a transaction sees what was committed before it began, so under the lock the check counts every write before
+ * it. Whether it was written; why not is the caller's to read again, on that rarer path.
+ */
+export async function insertWhere(q: Db, table: PgTable, values: Record<string, unknown>, when: SQL): Promise<boolean> {
+  const cols = getTableColumns(table);
+  const keys = Object.keys(values).filter((k) => values[k] !== undefined);
+  const names = sql.join(keys.map((k) => sql.identifier(cols[k].name)), sql`, `);
+  const given = sql.join(keys.map((k) => sql`${values[k] === null ? null : cols[k].mapToDriverValue(values[k])}`), sql`, `);
+  return (await rows(q, sql`insert into ${table} (${names}) select ${given} where ${when} returning 1`)).length > 0;
 }
 
 /**
@@ -136,9 +151,14 @@ const QUOTA = 2 * 1024 ** 3;
 export async function fits(q: Db, user: string, more: number, quota = QUOTA) {
   if (more <= 0) return;
   const [r] = await q.select({used: room.used}).from(room).where(eq(room.userId, user)) as {used: number}[];
-  const used = r?.used ?? 0;
-  if (used + more > quota) refuse(507, {error: 'The Remote is full for this account', used, quota});
+  fitting(r?.used ?? 0, more, quota);
 }
+/** As fits, with the room `used` read already (with the row it was read with: one round trip fewer). */
+export function fitting(used: number, more: number, quota = QUOTA) {
+  if (more > 0 && used + more > quota) refuse(507, {error: 'The Remote is full for this account', used, quota});
+}
+/** The room an account's rows and files take, for a select that reads it with them (fitting). */
+export const usedBy = (user: string) => sql<number>`coalesce((select r.used from room r where r.user_id = ${user}), 0)::float8`;
 
 export async function sha256(bytes: Uint8Array): Promise<string> {
   const d = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as BufferSource));

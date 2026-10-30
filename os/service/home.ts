@@ -7,9 +7,9 @@
 //   GET  /v1/home/:key   {value, version} ({value: null, version: 0} when never set)
 //   PUT  /v1/home/:key   {value, version} -> {version} | 409 {value, version}
 
-import {and, eq, ne, sql} from 'drizzle-orm';
+import {and, eq, sql} from 'drizzle-orm';
 import type {Hono} from 'hono';
-import {body, LIMIT, lock, refuse, type Db, type Vars} from './request.ts';
+import {body, LIMIT, lock, rows, type Db, type Vars} from './request.ts';
 import {home} from './schema.ts';
 
 export function homeRoutes(d: {db: Db}, v1: Hono<Vars>) {
@@ -28,16 +28,20 @@ export function homeRoutes(d: {db: Db}, v1: Hono<Vars>) {
     if (!b || typeof b.value !== 'string' || typeof b.version !== 'number' || !Number.isInteger(b.version) || b.version < 0 || b.version >= 2 ** 31 - 1
       || b.value.length > LIMIT.home) return c.json({error: 'a value and its version'}, 400);
     const value = b.value, version = b.version;
-    const done = await db.transaction(async (tx: Db) => {
-      await lock(tx, user);
-      const where = and(eq(home.userId, user), eq(home.key, k));
-      if (version !== 0) return tx.update(home).set({value, version: version + 1}).where(and(where, eq(home.version, version))).returning({version: home.version});
-      const [{n}] = await tx.select({n: sql<number>`count(*)::int`}).from(home).where(and(eq(home.userId, user), ne(home.key, k)));
-      if (n >= LIMIT.homeKeys) refuse(429, {error: 'Too many settings'});
-      return tx.insert(home).values({userId: user, key: k, value, version: 1}).onConflictDoNothing().returning({version: home.version});
-    });
+    // Changed from the version it was read at: the row's own version says whether another came first, so it is one
+    // statement, no lock and no transaction (every save of the TODO and the profile; it was five round trips).
+    // Made anew: counted against the most an account keeps and made in one statement, under the account's lock.
+    const done: {version: number}[] = version !== 0
+      ? await db.update(home).set({value, version: version + 1}).where(and(eq(home.userId, user), eq(home.key, k), eq(home.version, version))).returning({version: home.version})
+      : await db.transaction(async (tx: Db) => {
+        await lock(tx, user);
+        return rows<{version: number}>(tx, sql`insert into home (user_id, key, value, version) select ${user}, ${k}, ${value}, 1
+          where (select count(*) from home h where h.user_id = ${user} and h.key <> ${k}) < ${LIMIT.homeKeys} on conflict do nothing returning version`);
+      });
     if (!done.length) {
       const [row] = await db.select({value: home.value, version: home.version}).from(home).where(and(eq(home.userId, user), eq(home.key, k)));
+      // None there, and none made: the account keeps the most settings it may.
+      if (!row && version === 0) return c.json({error: 'Too many settings'}, 429);
       return c.json(row ?? {value: null, version: 0}, 409);
     }
     return c.json({version: done[0].version});

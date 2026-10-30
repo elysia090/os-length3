@@ -53,7 +53,7 @@ import type {Context, Hono} from 'hono';
 import {claim, codeOf, HOLD, liveAddress, NAME, nameFor, serverAddress, shownAs, takeDown} from './names.ts';
 import type {Plans} from './plan.ts';
 import {hmacHex} from './keys.ts';
-import {addressOf, ago, body, lock, qualified, refuse, rows, slowDown, throttled, type Db, type Vars} from './request.ts';
+import {addressOf, ago, body, insertWhere, lock, qualified, refuse, rows, slowDown, throttled, type Db, type Vars} from './request.ts';
 import {address, board, boardSeen, guest, invite, member, message, principalCode, REACH, repoPublic, server, serverLeft, talk, todoItem} from './schema.ts';
 
 export const SERVER = {name: 64, body: 2000, perHour: 60, page: 30, maxPage: 100, boards: 100,
@@ -500,9 +500,8 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
           .where(and(eq(talk.boardId, b.id), isNull(talk.userId), gte(talk.id, idAt(Date.now() - 3600_000))));
         if (all >= guestsOf) slowDown(3600, {error: 'Guests have written as much as they may here this hour'});
       }
-      const [{n}] = await tx.select({n: sql<number>`count(*)::int`}).from(talk).where(and(whose, gte(talk.id, idAt(Date.now() - 3600_000))));
-      if (n >= perHour) slowDown(3600, {error: 'Too many posts this hour'});
-      await tx.insert(talk).values(row);
+      const counted = sql`(select count(*) from ${talk} where ${and(whose, gte(talk.id, idAt(Date.now() - 3600_000)))}) < ${perHour}`;
+      if (!await insertWhere(tx, talk, row, counted)) slowDown(3600, {error: 'Too many posts this hour'});
     });
     return c.json(shape(who.userId ?? null, false)(row), 201);
   };
