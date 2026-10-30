@@ -183,7 +183,8 @@ pub fn issue_parts(ctx: &Ctx, word: &str) -> Result<(String, String)> {
 /// words of its title, among the repo you are in (else every repo here).
 pub fn issue(ctx: &Ctx, call: &Call, i: usize) -> Result<IssueRef> {
     let w = call.word(i).unwrap_or_default();
-    let r = ctx.repos()?;
+    // Issues are main's, whatever work the repo shows.
+    let r = ctx.repos()?.on_main();
     let bare = !w.is_empty() && w.bytes().all(|b| b.is_ascii_digit());
     let (repo, file) = if bare && ctx.here.is_none() {
         by_number(&r, w)?

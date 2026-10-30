@@ -679,7 +679,7 @@ fn states(ctx: &Ctx) -> Vec<String> {
     let todos = if ctx.prompt { Vec::new() } else { home::todos().unwrap_or_default() };
     let open_issues: usize = names.iter().map(|n| {
         let merged = length3_core::history::merged_seen(n);
-        r.as_ref().and_then(|r| r.issues(n).ok()).unwrap_or_default().iter().filter(|i| i.closed.is_none() && !merged.contains(&format!("issue/{}", i.file))).count()
+        r.as_ref().and_then(|r| r.on_main().issues(n).ok()).unwrap_or_default().iter().filter(|i| i.closed.is_none() && !merged.contains(&format!("issue/{}", i.file))).count()
     }).sum();
     let band = home::band(&names).map(|b| b.len()).unwrap_or(0);
     let running = length3_core::prompt::running(&paths::data_dir()).len();

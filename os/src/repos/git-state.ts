@@ -24,7 +24,7 @@ export interface Laid {
   /** Repos whose main has something not committed, while they show main. */
   dirty: string[];
   merged: {repo: string; change: Change}[];
-  /** `reopen`: while its repo shows main, whose issue/ the file is in. */
+  /** `reopen`: where the Remote is known (an issue is main's, whatever work its repo shows). */
   closed: {issue: Issue; reopen: boolean}[];
 }
 
@@ -37,6 +37,6 @@ export function laidOut(repos: readonly string[], issues: readonly Issue[], stat
     merged: repos.flatMap((r) => (st(r)?.changes ?? []).filter((c) => c.state === 'merged').map((change) => ({repo: r, change})))
       .sort((a, b) => b.change.updatedAt - a.change.updatedAt),
     closed: issues.filter((i) => i.closed !== null && !isMerged(st(i.repo), i)).sort(newestFirst)
-      .map((issue) => ({issue, reopen: st(issue.repo)?.work?.line === 'main'})),
+      .map((issue) => ({issue, reopen: !!st(issue.repo)?.work})),
   };
 }

@@ -17,6 +17,7 @@ import {paintChips} from './repo-chips.ts';
 import {laidOut} from '../../repos/git-state.ts';
 import {issueForm, type IssueForm, type Made} from './issue-form.ts';
 import {errorText} from '../../app/errors.ts';
+import {issueStore} from '../../repos/issue-store.ts';
 
 /**
  * Git: what happens between a repo and the outside, in the issues' terms.
@@ -88,7 +89,12 @@ async function standings(repos: readonly string[], fresh: Map<string, RepoState>
         await gitops.switchWork(r, 'main');
         work = await gitops.work(r);
       }
-      const uncommitted = (await gitops.changes(r)).files;
+      let changed = await gitops.changes(r);
+      // An issue's own file is history by itself as it is written (repos/issue-store.ts): one still waiting (written
+      // signed out, renumbered, one whose commit did not go) is committed now, and never counted as the person's.
+      const issueFolder = (f: {folder: string}) => f.folder === 'issue' || f.folder.startsWith('issue/');
+      if (work.line === 'main' && changed.folders.some(issueFolder) && await issueStore.settle(r)) changed = await gitops.changes(r);
+      const uncommitted = changed.folders.filter((f) => !issueFolder(f)).reduce((n, f) => n + f.files.length, 0);
       fresh.set(r, {work, lines, changes, uncommitted});
     } catch (e) {
       fresh.set(r, {work: null, lines: [], changes: [], uncommitted: 0, error: errorText(e)});
@@ -103,9 +109,10 @@ async function standings(repos: readonly string[], fresh: Map<string, RepoState>
 function renumber(issues: readonly Issue[], states: ReadonlyMap<string, RepoState>): Promise<unknown[]> {
   return Promise.all([...new Set(issues.filter((i) => i.n === null).map((i) => i.repo))].map((r) => {
     const st = states.get(r);
-    if (!st || st.error || (st.work && st.work.line !== 'main')) return false;
+    // Issues are main's whatever work the repo shows (repos/issue-store.ts): renumbered there, and committed.
+    if (!st || st.error) return false;
     const inUse = new Set([...st.lines.map((l) => l.issue), ...st.changes.map((c) => c.issue)]);
-    return number(store, r, issues.filter((i) => i.repo === r), inUse);
+    return number(issueStore, r, issues.filter((i) => i.repo === r), inUse);
   }));
 }
 
@@ -281,7 +288,7 @@ class GitPage {
   }
 
   private async draw() {
-    const all = await Promise.all(this.repos.map((r) => readIssues(store, r)));
+    const all = await Promise.all(this.repos.map((r) => readIssues(issueStore, r)));
     // Every issue read names its own file wherever a diff shows it (main's card, an issue's Commit row).
     knowIssues(all.flat());
     const issues = all.flatMap((x, j) => (!filter || this.repos[j] === filter ? x : []));

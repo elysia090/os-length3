@@ -13,8 +13,9 @@
 //                                      mode where it has an execute bit; without modes, a set path keeps its own)
 //                                      -> {version} | 409 {version} | 409 {missing}
 //                                      | 410 {gone} for a name that went, unless ?anew=1 makes it again
-//   POST   /v1/repos/:name/cuts       {version, parent, kind, title, issue, note, added, removed}:
-//                                      the draft at that version becomes a cut
+//   POST   /v1/repos/:name/cuts       {version, parent, kind, title, issue, note, added, removed, paths?}:
+//                                      the draft at that version becomes a cut (with paths, only those of it);
+//                                      on main, it is pushed too (what a server's people see)
 //   GET    /v1/repos/:name/cuts/:id
 //   GET    /v1/repos/:name/log        from the line's head along first parents, each commit with what it changed
 //                                      (files, folders); ?summary=1 leaves each one's tree out
@@ -322,26 +323,48 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
     const id = await cutId({repo: `${row.name}${row.line === 'main' ? '' : `@${row.line}`}`, parent: row.head, tree: w.tree, modes, kind: w.kind, title: w.title, issue: w.issue, note: w.note, time});
     await tx.insert(cut).values({repoId: row.id, id, userId: user, parent: row.head, merged: w.merged, tree: w.tree, modes, kind: w.kind, title: w.title,
       issue: w.issue, note: w.note, added: w.added, removed: w.removed, time: new Date(time)}).onConflictDoNothing();
-    const moved = await tx.update(line).set({head: id, updatedAt: sql`now()`, ...(draft ? {draft: draft.tree, modes: modesFor(draft.tree, draft.modes), version: row.version + 1} : {})})
+    // main is what the servers a repo is shown in see (seen.ts reads what it pushed): a commit on main, or a change
+    // merged into it, is pushed with it, so they see main's last commit, never an older one or nothing.
+    const pushed = row.line === 'main' ? {pushed: id} : {};
+    const moved = await tx.update(line).set({head: id, ...pushed, updatedAt: sql`now()`, ...(draft ? {draft: draft.tree, modes: modesFor(draft.tree, draft.modes), version: row.version + 1} : {})})
       .where(and(lineRow(row.id, row.line), eq(line.version, row.version), row.head === null ? isNull(line.head) : eq(line.head, row.head))).returning({head: line.head});
     if (!moved.length) refuse(409, {head: row.head, version: row.version});
     return {id, time};
   };
 
-  // Commit: a line's draft at `version` becomes the next commit after `parent`.
+  // Commit: a line's draft at `version` becomes the next commit after `parent`. With `paths`, only those paths of
+  // the draft (each as the draft has it, or gone where it has it no more) go in, everything else as `parent` has it,
+  // and the draft stays as it was: an issue's own file is committed by itself as it is written, never riding in the
+  // commit of whatever else the draft holds.
   v1.post('/repos/:name/cuts', async (c) => {
     const user = c.get('userId'), name = c.req.param('name'), l = lineOf(c);
-    const b = await body<{version?: unknown; parent?: unknown; kind?: unknown; title?: unknown; issue?: unknown; note?: unknown; added?: unknown; removed?: unknown}>(c);
+    const b = await body<{version?: unknown; parent?: unknown; kind?: unknown; title?: unknown; issue?: unknown; note?: unknown; added?: unknown; removed?: unknown; paths?: unknown}>(c);
     if (!b || typeof b.version !== 'number' || !(b.parent === null || (typeof b.parent === 'string' && HEX.test(b.parent)))) return c.json({error: 'a cut'}, 400);
     const words = {kind: b.kind ?? '', title: b.title, issue: b.issue ?? '', note: b.note ?? ''};
     for (const v of Object.values(words)) if (typeof v !== 'string' || v.length > LIMIT.words) return c.json({error: 'Words of at most 2000 characters'}, 400);
     if (!(words.title as string).trim()) return c.json({error: 'A commit needs a title'}, 400);
+    const only = b.paths;
+    if (only !== undefined && (!Array.isArray(only) || !only.length || only.length > LIMIT.diff || !only.every((p) => typeof p === 'string' && validPath(p)))) {
+      return c.json({error: 'paths: the paths of the draft to commit'}, 400);
+    }
     const made = await db.transaction(async (tx: Db) => {
       await lock(tx, user);
       const row = await lineAt(tx, user, name, l, true);
       on(row?.off);
       if (!row || row.version !== b.version || row.head !== b.parent) refuse(409, {head: row?.head ?? null, version: row?.version ?? 0});
-      return commit(tx, user, row, {merged: null, tree: row.draft!, modes: row.modes ?? {}, ...(words as {kind: string; title: string; issue: string; note: string}),
+      let tree = row.draft!, modes = row.modes ?? {};
+      if (only) {
+        const head = await treesOf(tx, row.id, [row.head]);
+        tree = {...head(row.head)};
+        modes = {...head.modes(row.head)};
+        for (const p of only as string[]) {
+          if (p in row.draft!) tree[p] = row.draft![p]; else delete tree[p];
+          if (p in (row.modes ?? {})) modes[p] = row.modes![p]; else delete modes[p];
+        }
+        const clash = clashes(tree);
+        if (clash.length) refuse(400, {error: 'A file and a folder of the same name', path: clash[0]});
+      }
+      return commit(tx, user, row, {merged: null, tree, modes, ...(words as {kind: string; title: string; issue: string; note: string}),
         added: count(b.added), removed: count(b.removed)});
     });
     return c.json(made, 201);

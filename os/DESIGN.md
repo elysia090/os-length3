@@ -837,7 +837,10 @@ its owner's own when they chose that. Its owner's name never opens it to
 everyone: `ren@length3.com:hello` stays for Ren and the people of the
 servers it is in, or one could find whose a server's public repo is by
 trying names. Anyone but its owner only sees it, as it was last pushed,
-and writes nothing in it.
+and writes nothing in it. What is pushed of a repo is main's last commit:
+a commit on main, and a merge into it, push it too, so what its owner
+committed is what the others see, and what is only being written (main's
+draft, a work not merged) is not.
 
 Written the same in l3 and in the app, owner first, as scp is:
 
@@ -2300,7 +2303,19 @@ half written after reading its neighbours or another page.
   OS's business: one plain file in the repo's `issue/`, named by its number,
   so l3 and a Prompt see the same thing and nothing is kept twice; a file
   there with no number (written by hand, or two devices' issues that met
-  under one number) is given the next free one. Its file is never what a
+  under one number) is given the next free one. An issue is main's, whatever
+  work its repo shows (the issues are read from main's copy): written, its
+  words changed, closed or reopened, its file is committed on main by
+  itself as it happens, its own line saying what was done ("Issue #3:
+  Fix：件名", "Close #3: Fix：件名", "Reopen #3: …"), so main's history says
+  when each was written and closed, main's card holds only what a person
+  changed themselves, the issues beside one never go when a work starts,
+  and a work's change never carries an issue. In a repo with no commit yet,
+  what it holds is committed first (Start), so its history begins with the
+  repo and not with an issue. Written signed out (no Remote, so no history
+  yet), the file waits in main's copy and is committed the same way, each
+  by itself, the first time Git reads where the repo stands with the
+  Remote. Its file is never what a
   person is shown: wherever a file is named (Forge's heads and the boxes
   beside, File, Lately, the look, Git's diffs, the search, Edit's pill), the
   file an issue is kept in is the issue, `#3` (in a diff, followed by what
@@ -2386,13 +2401,14 @@ half written after reading its neighbours or another page.
   Continue here at the right. Back to main stands under the card at its
   left, out of it, as what leaves the work always is. No file name
   is shown anywhere an issue is. One not worked on here, with no undecided
-  change, while the repo shows main, has Close at the left instead: it will
+  change, has Close at the left instead (whatever work the repo shows, its
+  file is main's, so Close is offered from inside a work too): it will
   not be done. It goes at once (Reopen brings it back, so nothing is
   asked) and is listed under Closed. Being closed is the issue's own: its
   file says so on its last line, after the detail (`Closed：2031-10-17
   sora`, the day and who), so l3 (`l3 issue close REPO#N`, `l3 issue
-  reopen REPO#N`) and a Prompt see the same, and it reaches the Remote as
-  every change does, with nothing kept twice.
+  reopen REPO#N`) and a Prompt see the same, and it is committed on main by
+  itself (Close #3: …, Reopen #3: …), with nothing kept twice.
 - **A diff**, wherever it shows: each file a fold, its name (which opens it)
   and what was added and removed (+56 −2); each line with which line it is.
   The first three files are open, the rest wait closed, so a large change
@@ -2427,7 +2443,9 @@ main over them (what is in hand comes before what is planned); under them
 what is done with, Committed (on main, from here), Merged and Closed.
 
 - **main**: a card for each repo that shows main and has something not
-  committed there (an edit in Forge, an issue written, one closed), a
+  committed there (an edit in Forge, a file added in File: what a person
+  changed themselves; an issue written or closed is committed by itself and
+  never waits here), a
   sheet on `paper` as an issue's box is, never melting into the ground,
   standing in the issues' column with the same edges as the issue in full
   under it and going with it as the row slides, and laid out as an issue's
@@ -2438,9 +2456,9 @@ what is done with, Committed (on main, from here), Merged and Closed.
   files wait (2 files to commit on main) at the left and Commit at the
   right, where an issue's next step is. Each file folds at its head (a small triangle, its name, +n
   −n and the five squares), the first three open and the rest a line each;
-  an issue's own file (written, its words changed, closed) is its line
-  ("#1 Fix：件名 +3"), shut until opened, so issues written do not stand
-  over the issues as their words again;
+  an issue's own file, where one is shown (a work's Commit row, written by
+  hand there), is its line ("#1 Fix：件名 +3"), shut until opened, so an
+  issue does not stand over the issues as its words again;
   a long one shows its first 30 lines with "n more lines" under them,
   pressed to show the rest, so a large change reads file by file and
   never as a wall. What is opened or shut by hand stays so while the page
@@ -2473,7 +2491,8 @@ what is done with, Committed (on main, from here), Merged and Closed.
   go where done things are kept.
 - **Closed**: the issues closed without being done, a row each: "#2
   Feat：件名", who closed it and the day; Reopen at the row's right end
-  (while the repo shows main) puts it back among the issues at once.
+  (wherever the Remote is reached, whatever work the repo shows) puts it
+  back among the issues at once.
 
 Every change is already on the Remote (the draft, §6); Commit makes it
 history there, the same from the app, a browser and `l3 commit`. Without a

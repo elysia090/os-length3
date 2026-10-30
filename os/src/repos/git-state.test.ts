@@ -33,13 +33,13 @@ test('merged is newest first across repos; a rejected or open change is not merg
   assert.deepEqual(laid.open.map((i) => `${i.repo}#${i.n}`), ['r#2']);
 });
 
-test('closed ones are listed apart, reopened only while their repo shows main; one merged is merged, not closed', () => {
+test('closed ones are listed apart, reopened whatever work their repo shows (an issue is main\'s); one merged is merged, not closed', () => {
   const merged3 = new Map([['r', standing({changes: [change('issue/003.md', 'merged', 1)]})]]);
   assert.deepEqual(laidOut(['r'], [r3], merged3).closed, []);
   const onMain = laidOut(['r'], [r2, r3], new Map([['r', standing({})]]));
   assert.deepEqual(onMain.closed.map((c) => [c.issue.n, c.reopen]), [[3, true]]);
   const inWork = laidOut(['r'], [r2, r3], new Map([['r', standing({work: work('002')})]]));
-  assert.deepEqual(inWork.closed.map((c) => [c.issue.n, c.reopen]), [[3, false]]);
+  assert.deepEqual(inWork.closed.map((c) => [c.issue.n, c.reopen]), [[3, true]]);
   // Without the Remote nothing is known of where it stands: listed, but not reopened from here.
   assert.deepEqual(laidOut(['r'], [r3], new Map()).closed.map((c) => c.reopen), [false]);
 });

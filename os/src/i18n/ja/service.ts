@@ -23,6 +23,7 @@ export default {
   'Too many repos': 'repo が多すぎます',
   'Words of at most 2000 characters': '2000文字までにしてください',
   'A commit needs a title': 'Commit には件名が要ります',
+  'paths: the paths of the draft to commit': 'paths：Commit する下書きのパス',
   'No such commit': 'その Commit はありません',
   'Five letters or digits': '英数字5文字です',
   'Work begins from an issue': '作業は Issue から始めます',

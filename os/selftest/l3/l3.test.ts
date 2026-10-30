@@ -120,8 +120,14 @@ test('a script\'s execute bit goes to the Remote and comes back with it: opened 
 test('an issue goes from written to merged with l3: start, commit, push, review, merge; the Remote holds each step', async () => {
   ok(laptop.l3(['repo', 'new', 'work']));
   ok(laptop.l3(['issue', 'new', 'work', 'Fix：落ちる', '-m', '再現手順']), /^Wrote work#1 Fix：落ちる\n$/);
+  // The issue is history on main at once, by itself, after what the repo was made with (its first commit, Start).
+  const first = ((await r.api(ren, 'GET', '/v1/repos/work/log?summary=1')).json as {title: string; files: number}[]).map((c) => [c.title, c.files]);
+  assert.deepEqual(first.map(([t]) => t), ['Issue #1: Fix：落ちる', 'Start']);
+  assert.equal(first[0][1], 1);
   assert.match(ok(laptop.l3(['git', 'work'])).out, /#1 Fix：落ちる\n {4}work · not started\n {4}next: l3 start work#1/);
-  ok(laptop.l3(['commit', 'work', 'Patch：はじめ']), /^Committed [0-9a-f]{12} {2}Patch：はじめ/);
+  // What the person writes on main is theirs to commit, by itself.
+  ok(laptop.l3(['file', 'write', 'work/notes.txt'], 'notes\n'));
+  ok(laptop.l3(['commit', 'work', 'Patch：はじめ']), /^Committed [0-9a-f]{12} {2}Patch：はじめ \(1 file/);
   ok(laptop.l3(['start', 'work#1']), /^Working on work#1 Fix：落ちる/);
   ok(laptop.l3(['file', 'write', 'work/fix.txt'], 'fixed\n'));
   ok(laptop.l3(['commit', 'work']), /^Committed [0-9a-f]{12} {2}Fix：落ちる \(1 file \+1 −0\)/);
@@ -135,7 +141,7 @@ test('an issue goes from written to merged with l3: start, commit, push, review,
   assert.equal(((await r.api(ren, 'GET', '/v1/repos/work/changes')).json as {state: string}[])[0].state, 'merged');
   assert.equal((await draftOf('work')).draft['fix.txt'], sha('fixed\n'));
   const log = ok(laptop.l3(['log', 'work', '--json'])).json as {title: string; kind: string}[];
-  assert.deepEqual(log.map((c) => `${c.kind}：${c.title}`).slice(-1), ['Patch：はじめ']);
+  assert.deepEqual(log.map((c) => (c.kind ? `${c.kind}：${c.title}` : c.title)).slice(-3), ['Patch：はじめ', 'Issue #1: Fix：落ちる', 'Start']);
   refused(laptop.l3(['issue', 'work#9']), 4, /work has no issue #9/);
 });
 
@@ -196,6 +202,11 @@ test('an issue that will not be done is closed in its own file, on the Remote to
   ok(desk.l3(['issue', 'reopen', 'tasks#1']), /^Reopened tasks#1\n$/);
   assert.equal(await textOf('tasks', 'issue/001.md'), 'Fix：やらない\n\n理由\n');
   assert.deepEqual((ok(laptop.l3(['git', 'tasks', '--json'])).json as {closed: unknown[]}).closed, []);
+  // Each was history on main by itself as it happened: written, closed, reopened (from either device), after what
+  // the repo was made with.
+  const log = ((await r.api(ren, 'GET', '/v1/repos/tasks/log?summary=1')).json as {title: string; files: number}[]).map((c) => [c.title, c.files]);
+  assert.deepEqual(log.map(([t]) => t), ['Reopen #1: Fix：やらない', 'Close #1: Fix：やらない', 'Issue #1: Fix：やらない', 'Start']);
+  assert.deepEqual(log.slice(0, 3).map(([, n]) => n), [1, 1, 1]);
 });
 
 test('l3 name answers with the name alone, l3 name list with its term; l3 address, off a terminal with SSH off, says so with 5', async () => {

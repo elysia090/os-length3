@@ -10,6 +10,18 @@
 import type {RepoStore} from './repos.ts';
 import {kindOf, named} from './text.ts';
 
+/** What happened to an issue's file, for the words its own commit on main goes by (core history.rs issue_words). */
+export type IssueDeed = 'new' | 'change' | 'close' | 'reopen';
+/**
+ * A store an issue is kept in that also makes it history: each issue's file committed on main by itself as it is
+ * written (issue-store.ts), and those it holds not committed yet (written signed out, renumbered) each so. A store
+ * without these (a test's) only writes.
+ */
+export interface Commits {
+  commit?(repo: string, path: string, deed: IssueDeed): Promise<unknown>;
+  settle?(repo: string): Promise<unknown>;
+}
+
 export interface Issue {
   repo: string;
   /** Its number in the repo; null only until the OS has given it one. */
@@ -126,23 +138,27 @@ export async function readIssues(store: Pick<RepoStore, 'tree' | 'read'>, repo: 
 }
 
 /** Write a new issue: it takes the next number (issue/ is made for the first). */
-export async function writeIssue(store: Pick<RepoStore, 'tree' | 'mkdir' | 'add'>, repo: string, kind: string | null, title: string, detail: string): Promise<string> {
+export async function writeIssue(store: Pick<RepoStore, 'tree' | 'mkdir' | 'add'> & Commits, repo: string, kind: string | null, title: string, detail: string): Promise<string> {
   const there = await names(store, repo);
   if (there === null) await store.mkdir(repo, 'issue');
   const file = nextIssueName(there ?? []);
   await store.add(repo, 'issue', file, issueText(kind, title, detail));
+  await store.commit?.(repo, `issue/${file}`, 'new');
   return file;
 }
 
 /** Change an issue's words; its number stays, and so does its being closed. */
-export const saveIssue = (store: Pick<RepoStore, 'write'>, i: Issue, kind: string | null, title: string, detail: string) =>
-  store.write(i.repo, issuePath(i), i.closed === null ? issueText(kind, title, detail) : closeText(issueText(kind, title, detail), i.closed));
+export async function saveIssue(store: Pick<RepoStore, 'write'> & Commits, i: Issue, kind: string | null, title: string, detail: string): Promise<void> {
+  await store.write(i.repo, issuePath(i), i.closed === null ? issueText(kind, title, detail) : closeText(issueText(kind, title, detail), i.closed));
+  await store.commit?.(i.repo, issuePath(i), 'change');
+}
 
 /** Close an issue that will not be done (`mark`: closeMark), or open it again: only its last line changes. */
-export async function setClosed(store: Pick<RepoStore, 'read' | 'write'>, i: Issue, mark: string | null): Promise<void> {
+export async function setClosed(store: Pick<RepoStore, 'read' | 'write'> & Commits, i: Issue, mark: string | null): Promise<void> {
   const c = await store.read(i.repo, issuePath(i));
   if (c.text === null) throw new Error(issuePath(i));
   await store.write(i.repo, issuePath(i), mark === null ? reopenText(c.text) : closeText(c.text, mark));
+  await store.commit?.(i.repo, issuePath(i), mark === null ? 'reopen' : 'close');
 }
 
 /**
@@ -151,7 +167,7 @@ export async function setClosed(store: Pick<RepoStore, 'read' | 'write'>, i: Iss
  * Two devices doing this at once do the same thing, so they agree.
  * Returns whether anything was renumbered.
  */
-export async function number(store: Pick<RepoStore, 'tree' | 'read' | 'add' | 'remove'>, repo: string, issues: readonly Issue[], inUse: ReadonlySet<string>): Promise<boolean> {
+export async function number(store: Pick<RepoStore, 'tree' | 'read' | 'add' | 'remove'> & Commits, repo: string, issues: readonly Issue[], inUse: ReadonlySet<string>): Promise<boolean> {
   const loose = issues.filter((i) => i.n === null && !inUse.has(issuePath(i))).sort((a, b) => (a.file < b.file ? -1 : 1));
   if (!loose.length) return false;
   const taken = issues.map((i) => i.file);
@@ -163,5 +179,7 @@ export async function number(store: Pick<RepoStore, 'tree' | 'read' | 'add' | 'r
     await store.remove(repo, issuePath(i));
     taken.push(file);
   }
+  // Renamed, each is committed by itself (the old name going with it).
+  await store.settle?.(repo);
   return true;
 }

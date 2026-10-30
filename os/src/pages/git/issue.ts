@@ -5,13 +5,13 @@ import * as git from '../../repos/history.ts';
 import {t, tn} from '../../i18n.ts';
 import {closeMark, issueName, issuePath, saveIssue, setClosed, type Issue} from '../../repos/issues.ts';
 import {connection, myName} from '../../remote/connection.ts';
-import {store} from '../../repos/repos.ts';
 import {changeFor, type Standing} from '../../repos/git-state.ts';
 import {named} from '../../repos/text.ts';
 import {diffFiles} from '../forge/diff-view.ts';
 import {beingChanged, issueEditor} from './issue-form.ts';
 import {errorText} from '../../app/errors.ts';
 import {busy} from './held.ts';
+import {issueStore} from '../../repos/issue-store.ts';
 
 // An issue on the Git page, as one large box (issue #17). Its branch and
 // worktree are never named: Start gives the issue its own copy of the repo,
@@ -76,7 +76,7 @@ function summary(issue: Issue, after: () => void): HTMLElement {
   field.addEventListener('input', () => { summaries.set(key, field.value); keep(key, field.value); });
   const save = async () => {
     if (field.value === issue.detail) { summaries.delete(key); keep(key, null); return; }
-    try { await saveIssue(store, issue, issue.kind, issue.title, field.value); summaries.delete(key); keep(key, null); after(); }
+    try { await saveIssue(issueStore, issue, issue.kind, issue.title, field.value); summaries.delete(key); keep(key, null); after(); }
     catch (e) { error.textContent = t('Could not write: {message}', {message: errorText(e)}); }
   };
   field.addEventListener('blur', () => void save());
@@ -107,9 +107,9 @@ let started: {path: string; at: number} | null = null;
 
 /** Close an issue that will not be done: its file says so on its last line (the day, and who). */
 /** Closed, its file says by whom: the name the Remote knows the person by (none, not answered). */
-const closeIssue = async (issue: Issue) => setClosed(store, issue, closeMark(await myName().catch(() => '')));
+const closeIssue = async (issue: Issue) => setClosed(issueStore, issue, closeMark(await myName().catch(() => '')));
 /** Open a closed issue again. */
-export const reopenIssue = (issue: Issue) => setClosed(store, issue, null);
+export const reopenIssue = (issue: Issue) => setClosed(issueStore, issue, null);
 const hereOf = (s: RepoState | undefined, issue: Issue) => !!s?.work && s.work.line !== 'main' && s.work.issue === issuePath(issue);
 
 /** Where the issue stands, quietly, in a few words. */
@@ -146,8 +146,8 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
   const offered = connection() && !s?.error && !here && change?.state !== 'open';
   const acts: Node[] = offered ? [startDeed(issue, s, error, events, after)] : [];
   // One that will not be done is closed, at the foot's left as what goes against the box: it goes
-  // under Closed, where Reopen brings it back. Only while the repo shows main, whose issue/ it is in.
-  const leave = offered && s?.work?.line === 'main' ? closeDeed(issue, error, events, after) : null;
+  // under Closed, where Reopen brings it back. Whatever work the repo shows: an issue is main's.
+  const leave = offered ? closeDeed(issue, error, events, after) : null;
   // Its title is changed where it is read: pressed, the head becomes the fields it was written in. Its summary is
   // written right under it, above Commit and Push.
   const words = h('button', {type: 'button', class: 'issue-words', title: t('Change its words')}, issueHead(issue));
@@ -239,7 +239,10 @@ export function notCommitted(at: string, line: string, n: number, events: IssueE
   // name and what it comes to on its head, the first few open, a long one's lines past 30 waiting under "n more lines";
   // an issue's own file (written, its words changed, closed) shut to its line, "#3 Fix：title".
   const copy = `${at}\0${line}`;
-  const files = (list: git.FileDiff[]) => diffFiles(list, {reveal: (p) => events.open(at, p), cut: 30, kept: copy,
+  // On main, an issue's own file is not the person's to commit: it is committed by itself as it is written
+  // (repos/issue-store.ts), so one on its way there is not shown waiting here.
+  const theirs = (list: git.FileDiff[]) => (line === 'main' ? list.filter((f) => !f.path.startsWith('issue/')) : list);
+  const files = (list: git.FileDiff[]) => diffFiles(theirs(list), {reveal: (p) => events.open(at, p), cut: 30, kept: copy,
     issue: (p) => aboutIssue.get(`${at}\0${p}`) ?? null});
   const was = uncommittedRead.get(copy);
   const box = h('div', {class: 'changes', role: 'region', 'aria-label': tn('{n} file not committed', '{n} files not committed', n)}, ...(was ? files(was) : [quiet(t('Reading…'))]));

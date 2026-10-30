@@ -24,12 +24,14 @@ pub const WRITES: &[&str] = &["repo_create", "repo_write", "repo_put", "repo_add
 pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
     let a = Args(args);
     let repos = || repos::Repos::open();
+    // The repo as it is seen now, or (`main`) main's copy whatever work it shows: where its issues are.
+    let seen = || -> crate::Result<repos::Repos> { let r = repos()?; Ok(if a.opt::<bool>("main")?.unwrap_or(false) { r.on_main() } else { r }) };
     match name {
         "repo_list" => to(repos()?.list()?),
         "repo_create" => to(repos()?.create(&a.s("name")?, &a.s("template")?)?),
-        "repo_tree" => to(repos()?.tree(&a.s("repo")?, &a.s("path")?)?),
-        "repo_read" => to(repos()?.read(&a.s("repo")?, &a.s("path")?, READ_LIMIT)?),
-        "repo_write" => to(repos()?.write(&a.s("repo")?, &a.s("path")?, &a.s("text")?, READ_LIMIT)?),
+        "repo_tree" => to(seen()?.tree(&a.s("repo")?, &a.s("path")?)?),
+        "repo_read" => to(seen()?.read(&a.s("repo")?, &a.s("path")?, READ_LIMIT)?),
+        "repo_write" => to(seen()?.write(&a.s("repo")?, &a.s("path")?, &a.s("text")?, READ_LIMIT)?),
         // A file's bytes for a browser's Prompt (as base64), of any kind, up to what one Prompt copies in all.
         "repo_bytes" => {
             use base64::Engine;
@@ -41,9 +43,9 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
             let bytes = base64::engine::general_purpose::STANDARD.decode(a.s("bytes")?).map_err(|e| format!("bytes: {e}"))?;
             to(repos()?.put(&a.s("repo")?, &a.s("path")?, bytes, u64::MAX, true)?.0)
         }
-        "repo_add" => to(repos()?.add(&a.s("repo")?, &a.s("dir")?, &a.s("name")?, &a.s("text")?, READ_LIMIT)?),
-        "repo_mkdir" => to(repos()?.mkdir(&a.s("repo")?, &a.s("path")?)?),
-        "repo_remove" => to(repos()?.remove(&a.s("repo")?, &a.s("path")?)?),
+        "repo_add" => to(seen()?.add(&a.s("repo")?, &a.s("dir")?, &a.s("name")?, &a.s("text")?, READ_LIMIT)?),
+        "repo_mkdir" => to(seen()?.mkdir(&a.s("repo")?, &a.s("path")?)?),
+        "repo_remove" => to(seen()?.remove(&a.s("repo")?, &a.s("path")?)?),
         "repo_move" => to(repos()?.move_to(&a.s("repo")?, &a.s("path")?, &a.s("to")?)?),
         // A repo itself renamed, or taken from this device whole (`open`: the repos a Prompt has open, the host's to know).
         "repo_rename" => to(remote::rename_repo(&repos()?, &a.s("repo")?, &a.s("to")?, &a.list("open")?)?),
@@ -94,6 +96,10 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
             to(history::cut(&repos()?, &a.s("repo")?, issue.as_deref(), &a.s("line")?, &a.s("note")?)?)
         }
         "history_log" => to(history::log(&repos()?, &a.s("repo")?, 50)?),
+        // An issue's own file committed on main by itself, as it was just written ("new", "change", "close", "reopen");
+        // and those main holds not committed yet (written signed out, renumbered), each by itself.
+        "issue_commit" => to(history::commit_issue(&repos()?, &a.s("repo")?, &a.s("file")?, &a.s("deed")?)?),
+        "issues_settle" => to(history::settle_issues(&repos()?, &a.s("repo")?)?),
         "history_push" => to(history::push(&repos()?, &a.s("repo")?)?),
         "history_submit" => to(history::submit(&repos()?, &a.s("repo")?, &a.s("note")?)?),
         "history_reset" => to(history::reset(&repos()?, &a.s("repo")?)?),

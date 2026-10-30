@@ -527,6 +527,48 @@ test('main takes commits of its own; a review may ask for changes; what was merg
   assert.ok(list[0].updatedAt >= (submitted.json.updatedAt as number));
 });
 
+test('an issue\'s own file is committed on main by itself, the rest of the draft left as it was; main\'s commits and merges are pushed', async () => {
+  const s = await service();
+  const t = await s.start('Sora');
+  const sha = async (text: string) => {
+    const bytes = enc.encode(text);
+    const d = await sha256(bytes);
+    await s.call('PUT', `/v1/blobs/${d}`, {token: t, bytes});
+    return d;
+  };
+  const [readme, edited, issue, fix] = await Promise.all(['# r\n', '# r\nmore\n', 'Fix：x\n', 'fixed\n'].map(sha));
+  const main = async () => (await s.call('GET', '/v1/repos/r', {token: t})).json as unknown as {version: number; head: string; pushed: string | null; draft: Record<string, string>};
+  const tree = async (id: string) => (await s.call('GET', `/v1/repos/r/cuts/${id}`, {token: t})).json.tree;
+  await s.call('PATCH', '/v1/repos/r/draft', {token: t, body: {version: 0, set: {'README.md': readme}, remove: []}});
+  const start = (await s.call('POST', '/v1/repos/r/cuts', {token: t, body: {version: 1, parent: null, title: 'Start'}})).json.id as string;
+  // README changed and an issue written, in the one draft: the issue goes into history alone.
+  await s.call('PATCH', '/v1/repos/r/draft', {token: t, body: {version: 1, set: {'README.md': edited, 'issue/001.md': issue}, remove: []}});
+  const cut = (body: Record<string, unknown>) => s.call('POST', '/v1/repos/r/cuts', {token: t, body});
+  for (const paths of [[], ['../x'], 'issue/001.md', [7]]) assert.equal((await cut({version: 2, parent: start, title: 'x', paths})).status, 400, JSON.stringify(paths));
+  const written = await cut({version: 2, parent: start, title: 'Issue #1: Fix：x', paths: ['issue/001.md']});
+  assert.equal(written.status, 201);
+  const one = written.json.id as string;
+  assert.deepEqual(await tree(one), {'README.md': readme, 'issue/001.md': issue});
+  // The draft is as it was (README's change still waits for a commit of its own), and main is pushed to the new head.
+  const after = await main();
+  assert.deepEqual([after.version, after.head, after.pushed, after.draft['README.md']], [2, one, one, edited]);
+  // Gone from the draft, it goes from the commit too, and nothing else does.
+  await s.call('PATCH', '/v1/repos/r/draft', {token: t, body: {version: 2, set: {}, remove: ['issue/001.md']}});
+  const gone = (await cut({version: 3, parent: one, title: 'Issue #1 gone', paths: ['issue/001.md']})).json.id as string;
+  assert.deepEqual(await tree(gone), {'README.md': readme});
+  // A change merged into main is pushed with it: what its servers see is main's last commit.
+  await s.call('POST', '/v1/repos/r/lines', {token: t, body: {issue: 'issue/002.md'}});
+  await s.call('PATCH', '/v1/repos/r/draft?line=002', {token: t, body: {version: 1, set: {'f.txt': fix}, remove: []}});
+  const work = (await s.call('GET', '/v1/repos/r?line=002', {token: t})).json as unknown as {version: number; head: string};
+  const c1 = (await s.call('POST', '/v1/repos/r/cuts?line=002', {token: t, body: {version: work.version, parent: work.head, title: 'fix'}})).json.id as string;
+  await s.call('POST', '/v1/repos/r/lines/002/push', {token: t, body: {head: c1}});
+  const id = (await s.call('POST', '/v1/repos/r/changes', {token: t, body: {line: '002', kind: 'Fix', title: 'y'}})).json.id as string;
+  await s.call('POST', `/v1/repos/r/changes/${id}/reviews`, {token: t, body: {version: 1, verdict: 'approve'}});
+  const merged = (await s.call('POST', `/v1/repos/r/changes/${id}/merge`, {token: t, body: {version: 1}})).json.merged as string;
+  const end = await main();
+  assert.deepEqual([end.head, end.pushed], [merged, merged]);
+});
+
 test('Inbox: an address is claimed or published by its domain; messages are small, and strangers are held to a few', async () => {
   const s = await service({'_length3.example.org': ['some other record'], '_length3.elsewhere.example': ['v=length3; remote=remote.elsewhere.example; proof=x']});
   const ren = await s.start('Ren'), mio = await s.start('Mio');
@@ -703,7 +745,8 @@ test('Who sees a repo: its owner, the servers it is shown in, or everyone, under
   const s = await service();
   const ren = await s.start('Ren'), mio = await s.start('Mio'), kai = await s.start('Kai');
   for (const [t, n] of [[ren, 'ren'], [mio, 'mio'], [kai, 'kai']] as const) await s.call('POST', '/v1/inbox/addresses', {token: t, body: {name: n}});
-  // Ren's repo, committed twice, pushed once: what others see is what was pushed.
+  // Ren's repo, committed, then changed and not committed: what others see is main's last commit (a commit on main
+  // pushes it), never its draft.
   const put = async (t: string, text: string) => {
     const bytes = enc.encode(text);
     const sha = await sha256(bytes);
@@ -718,8 +761,9 @@ test('Who sees a repo: its owner, the servers it is shown in, or everyone, under
     return (await s.call('POST', '/v1/repos/hello/cuts', {token: t, body: {version: version + 1, parent: now.head ?? null, title}})).json.id as string;
   };
   const first = await commit(ren, {'README.md': readme}, 'start');
-  assert.equal((await s.call('POST', '/v1/repos/hello/lines/main/push', {token: ren, body: {head: first}})).status, 200);
-  await commit(ren, {'README.md': later}, 'not pushed');
+  const main = (await s.call('GET', '/v1/repos/hello', {token: ren})).json as unknown as {version: number; head: string; pushed: string};
+  assert.deepEqual([main.head, main.pushed], [first, first]);
+  await s.call('PATCH', '/v1/repos/hello/draft', {token: ren, body: {version: main.version, set: {'README.md': later}, remove: []}});
   const see = (as: string, t?: string) => s.call('GET', `/v1/seen/${as.replace(':', '/')}`, {token: t});
   const state = async () => ((await s.call('GET', '/v1/seen', {token: ren})).json as unknown as {seen: string; servers: {name: string}[]; as: string | null}[])[0];
   const seen = (body: unknown) => s.call('PUT', '/v1/repos/hello/seen', {token: ren, body});
@@ -738,7 +782,7 @@ test('Who sees a repo: its owner, the servers it is shown in, or everyone, under
   const shown = await see('ren@length3.test:hello', mio);
   assert.deepEqual([shown.status, shown.json.owner, shown.json.title, shown.json.tree], [200, 'ren@length3.test', 'start', {'README.md': readme}]);
   const file = (path: string) => s.call('GET', `/v1/seen/ren@length3.test/hello/file?path=${encodeURIComponent(path)}`, {token: mio});
-  // Only what is in the tree it was pushed to, by its path: not the commit after it, nor any other blob of Ren's.
+  // Only what is in the tree it was pushed to, by its path: not the draft after it, nor any other blob of Ren's.
   assert.equal((await file('README.md')).text, '# hello\n');
   assert.deepEqual(await Promise.all([later, secret, '../README.md', ''].map(async (p) => (await file(p)).status)), [404, 404, 404, 404]);
   assert.equal((await see('ren@length3.test:hello', kai)).status, 404);

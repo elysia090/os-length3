@@ -1,12 +1,12 @@
 import {h} from '../../ui/dom.ts';
 import {t} from '../../i18n.ts';
 import {saveIssue, writeIssue, type Issue} from '../../repos/issues.ts';
-import {store} from '../../repos/repos.ts';
 import {kindOf, named} from '../../repos/text.ts';
 import {answers} from '../common.ts';
 import {errorText} from '../../app/errors.ts';
 import {keepOut, putAway, still, unfold} from '../../ui/glide.ts';
 import {busy} from './held.ts';
+import {issueStore} from '../../repos/issue-store.ts';
 
 // Writing an issue: its first line named like a TODO item ("Fix：件名"),
 // the repo it goes in said quietly before it, then the detail. The repo is
@@ -146,7 +146,7 @@ export function issueForm(events: {done(made: Made | null, back: string | null):
       // Being made, it is no longer half written: Git come to again meanwhile does not open it once more (made twice).
       const was = writing;
       writing = null;
-      if (await held(make, error, async () => { file = await writeIssue(store, target, kind, title, detail); })) close({repo: target, file});
+      if (await held(make, error, async () => { file = await writeIssue(issueStore, target, kind, title, detail); })) close({repo: target, file});
       else writing = was;
     });
     element.replaceChildren(h('div', {class: 'issue-first'}, where, f.first), f.body, error,
@@ -196,7 +196,7 @@ export function issueEditor(issue: Issue, done: (saved: boolean) => void): HTMLE
   save.addEventListener('click', async () => {
     const {kind, title, detail} = f.read();
     if (!title.trim()) { error.textContent = t('Write a title on the first line'); f.first.focus(); return; }
-    if (await held(save, error, () => saveIssue(store, issue, kind, title, detail))) { changing.delete(key); done(true); }
+    if (await held(save, error, () => saveIssue(issueStore, issue, kind, title, detail))) { changing.delete(key); done(true); }
   });
   const el = h('div', {class: 'issue-form issue-edit'}, f.first, f.body, error, answers(cancel, save));
   if (!was) queueMicrotask(() => f.first.focus());

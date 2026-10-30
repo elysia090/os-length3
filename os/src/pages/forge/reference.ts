@@ -11,6 +11,7 @@ import {errorText} from '../../app/errors.ts';
 import {diffButton, issueButton, issueLabel, issueOne, KINDS, markedDiff, openIssues, runButton, runView, type Kind} from './kinds.ts';
 import {foundView, patched, readAll, search, type Files} from './found.ts';
 import {drawLine, remember, seenButton, seenIn, seenKey, seenKind, seenLabel, type Seen, type Slot} from './seen.ts';
+import {issueStore} from '../../repos/issue-store.ts';
 
 // The way to what the center refers to: the search box over the right pane,
 // reaching a quarter of the pane's width into the center so that what opens
@@ -410,7 +411,7 @@ export class Reference {
       return;
     }
     const issue = (await openIssues(repo).catch(() => [])).find((i) => issuePath(i) === s.path)
-      ?? (await readIssues(store, repo).catch(() => [])).find((i) => issuePath(i) === s.path);
+      ?? (await readIssues(issueStore, repo).catch(() => [])).find((i) => issuePath(i) === s.path);
     if (issue && this.repo === repo) this.readIssue(issue);
   }
 
@@ -426,7 +427,7 @@ export class Reference {
   }
 
   private async listIssues(repo: string) {
-    const [all, list] = await Promise.all([readIssues(store, repo).catch(() => []), openIssues(repo).catch(() => [])]);
+    const [all, list] = await Promise.all([readIssues(issueStore, repo).catch(() => []), openIssues(repo).catch(() => [])]);
     if (this.listGone(repo, 'issue')) return;
     if (!list.length) {
       const said = h('p', {class: 'muted small'}, all.length ? t('No open issues') : t('No issues yet'));

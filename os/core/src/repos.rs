@@ -99,6 +99,10 @@ impl Repos {
 
     pub fn root(&self) -> &Path { &self.root }
 
+    /// The same repos seen on main, whatever work each shows now: an issue is main's (its file is read, written and
+    /// committed there), so it is the same issue from the work on it as from anywhere else.
+    pub fn on_main(&self) -> Repos { Repos { root: self.root.clone(), lines: false } }
+
     pub fn new(root: PathBuf) -> Result<Repos> {
         // Inside the Prompt the repos are the guest's /root; on the host
         // they are the person's alone.

@@ -1,13 +1,14 @@
 import {h} from '../../ui/dom.ts';
 import {t} from '../../i18n.ts';
 import {keepOut, paced, putAway, still} from '../../ui/glide.ts';
-import {onChange, store} from '../../repos/repos.ts';
+import {onChange} from '../../repos/repos.ts';
 import {nextIssueName, numberOf, writeIssue} from '../../repos/issues.ts';
 import * as todo from '../../home/todo.ts';
 import {getState, setState} from '../../home/state.ts';
 import {kindOf} from '../../repos/text.ts';
 import {mark} from '../../ui/icons.ts';
 import {mark as todoMark} from '../todo-list.ts';
+import {issueStore} from '../../repos/issue-store.ts';
 
 // The box at the foot does one of a few things with what is written in it, and its pill, at its left, says which:
 // it runs it in the repo's Prompt (the pill the prompt line the shell waits at, `garden $`), writes it as the repo's
@@ -53,7 +54,7 @@ onChange((c) => { if (c.repo) nextOf.delete(c.repo); });
 export function nextIssue(repo: string): number | Promise<number> {
   let n = nextOf.get(repo);
   if (n === undefined) {
-    const p = store.tree(repo, 'issue').then((es) => es.filter((e) => e.kind === 'file').map((e) => e.name), () => [] as string[])
+    const p = issueStore.tree(repo, 'issue').then((es) => es.filter((e) => e.kind === 'file').map((e) => e.name), () => [] as string[])
       .then((names) => numberOf(nextIssueName(names)) ?? 1);
     nextOf.set(repo, p);
     void p.then((v) => { if (nextOf.get(repo) === p) nextOf.set(repo, v); });
@@ -86,7 +87,7 @@ export async function sendAs(m: 'issue' | 'todo', repo: string, text: string): P
   if (!title.trim()) return null;
   const detail = rest.join('\n').trim();
   if (m === 'issue') {
-    const file = await writeIssue(store, repo, kind, title.trim(), detail);
+    const file = await writeIssue(issueStore, repo, kind, title.trim(), detail);
     const n = numberOf(file);
     if (n !== null) nextOf.set(repo, n + 1);
     const issue = `#${n ?? ''}`;

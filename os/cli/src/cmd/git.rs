@@ -49,13 +49,16 @@ pub fn line_called(line: &str) -> String {
 }
 
 /// Give the repo's issues without a number one (issues::numbering), as the
-/// app does when it draws Git: only with the Remote known just now, and only
-/// while the repo shows main (a work's copy is the work's); one a work or a
-/// change refers to keeps its name. What was renamed, (old, new).
+/// app does when it draws Git: only with the Remote known just now, on main's
+/// copy, where issues are, whatever work the repo shows; one a work or a change
+/// refers to keeps its name. Renamed, they are committed on main by themselves,
+/// as every issue's file is. What was renamed, (old, new).
 fn number_loose(ctx: &Ctx, r: &length3_core::repos::Repos, repo: &str, s: &Stand) -> Vec<(String, String)> {
-    if ctx.prompt || !ctx.connected() || !s.known || r.line(repo) != work::MAIN { return Vec::new(); }
+    if ctx.prompt || !ctx.connected() || !s.known { return Vec::new(); }
     let in_use: Vec<String> = s.lines.iter().map(|l| l.issue.clone()).chain(s.changes.iter().map(|c| c.issue.clone())).collect();
-    r.number_issues(repo, &in_use).unwrap_or_default()
+    let done = r.on_main().number_issues(repo, &in_use).unwrap_or_default();
+    if !done.is_empty() { let _ = history::settle_issues(r, repo); }
+    done
 }
 
 impl Stand {
@@ -268,8 +271,9 @@ pub fn page(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let mut offline = false;
     for n in &names {
         let s = stand(ctx, &r, n);
-        let mut list = r.issues(n)?;
-        if list.iter().any(|i| i.n.is_none()) && !number_loose(ctx, &r, n, &s).is_empty() { list = r.issues(n)?; }
+        // Issues are main's, whatever work the repo shows.
+        let mut list = r.on_main().issues(n)?;
+        if list.iter().any(|i| i.n.is_none()) && !number_loose(ctx, &r, n, &s).is_empty() { list = r.on_main().issues(n)?; }
         length3_core::issues::sort_oldest_first(&mut list);
         offline |= ctx.connected() && !s.known;
         let done = list.iter().filter(|i| s.merged(i)).count();
@@ -295,7 +299,7 @@ pub fn page(ctx: &Ctx, call: &Call) -> Result<Reply> {
 }
 
 fn read_issue(ctx: &Ctx, at: &IssueRef) -> Result<Issue> {
-    let c = ctx.repos()?.read(&at.repo, &at.path(), 256 * 1024)?;
+    let c = ctx.repos()?.on_main().read(&at.repo, &at.path(), 256 * 1024)?;
     Ok(length3_core::issues::parse(&at.repo, &at.file, &c.text.ok_or_else(|| Error::Refused(tr!("{} is binary", "{} はバイナリです", at.name())))?))
 }
 
@@ -376,9 +380,12 @@ pub fn issue_new(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let (first, detail) = split_line(call.word(1).unwrap_or_default(), call.note());
     let (kind, title) = text::kind_of(first);
     if title.trim().is_empty() { return Err(Error::Usage(tr!("An issue needs a title: l3 issue new [REPO] \"Fix：title\"", "Issue には件名がいります：l3 issue new [REPO] \"Fix：件名\""))); }
-    let file = ctx.repos()?.add_issue(&repo, kind.as_deref(), &title, &detail)?;
+    // On main, whatever work the repo shows, and committed there by itself at once (signed out, once signed in).
+    let r = ctx.repos()?;
+    let file = r.on_main().add_issue(&repo, kind.as_deref(), &title, &detail)?;
+    let committed = ctx.connected() && history::commit_issue(&r, &repo, &file, "new").unwrap_or(false);
     Ok(Reply::done(tr!("Wrote {}{} {}", "{}{} {} を書きました", repo, number(&file), text::named(kind.as_deref(), title.trim())),
-        json!({"repo": repo, "file": file, "number": number(&file), "kind": kind, "title": title.trim()})))
+        json!({"repo": repo, "file": file, "number": number(&file), "kind": kind, "title": title.trim(), "committed": committed})))
 }
 
 /// `l3 issue close REPO#N`: one that will not be done. Its file says so on its
@@ -390,11 +397,9 @@ pub fn issue_reopen(ctx: &Ctx, call: &Call) -> Result<Reply> { set_closed(ctx, c
 fn set_closed(ctx: &Ctx, call: &Call, close: bool) -> Result<Reply> {
     let at = target::issue(ctx, call, 0)?;
     let r = ctx.repos()?;
-    // The issue is main's: a work's copy of issue/ is the work's.
-    if r.line(&at.repo) != work::MAIN {
-        return Err(Error::Refused(tr!("{0} shows the work on {1}; issues are closed on main (l3 main {0} first)", "{0} は {1} の作業を見せています。Issue は main で閉じます（先に l3 main {0}）", at.repo, line_called(&r.line(&at.repo)))));
-    }
-    let text = r.read(&at.repo, &at.path(), 256 * 1024)?.text.ok_or_else(|| Error::Refused(tr!("{} is binary", "{} はバイナリです", at.name())))?;
+    // The issue is main's, whatever work the repo shows: closed or reopened there, and committed there by itself.
+    let main = r.on_main();
+    let text = main.read(&at.repo, &at.path(), 256 * 1024)?.text.ok_or_else(|| Error::Refused(tr!("{} is binary", "{} はバイナリです", at.name())))?;
     let i = length3_core::issues::parse(&at.repo, &at.file, &text);
     let s = stand(ctx, &r, &at.repo);
     if s.merged(&i) { return Err(Error::Refused(tr!("{} is merged already", "{} はもう Merge 済みです", at.name()))); }
@@ -411,7 +416,8 @@ fn set_closed(ctx: &Ctx, call: &Call, close: bool) -> Result<Reply> {
         let who = if ctx.connected() { length3_core::remote::account().ok().flatten().map(|a| a.name).unwrap_or_default() } else { String::new() };
         length3_core::issues::close_text(&text, format!("{} {who}", out::day(out::now_ms())).trim())
     } else { length3_core::issues::reopen_text(&text) };
-    r.write(&at.repo, &at.path(), &new, 256 * 1024)?;
+    main.write(&at.repo, &at.path(), &new, 256 * 1024)?;
+    if ctx.connected() { let _ = history::commit_issue(&r, &at.repo, &at.file, if close { "close" } else { "reopen" }); }
     Ok(Reply::done(if close { tr!("Closed {0}; it will not be done (back with: l3 issue reopen {0})", "{0} を閉じました。やらないものです（戻すには l3 issue reopen {0}）", at.name()) }
         else { tr!("Reopened {}", "{} をもう一度開きました", at.name()) }, data(true)))
 }
