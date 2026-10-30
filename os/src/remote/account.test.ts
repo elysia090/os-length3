@@ -43,7 +43,7 @@ test('turning a repo off asks, after a passkey, for its name as it is written', 
   await remote.repo(t, 'notes');
   // Just proven: no passkey is asked again, and a name not the repo's own is refused.
   await remote.prove(t);
-  await assert.rejects(account.turnOff('notes', 'Notes', true), /The name does not match/);
+  await assert.rejects(account.turnOff('notes', 'Notes', true), /Name does not match/);
   const off = await account.turnOff('notes', 'notes', true);
   assert.ok(off.until > off.offAt);
 });

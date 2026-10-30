@@ -30,14 +30,14 @@ test('an unforeseen failure is JSON with words and an id; the database busy or a
       assert.equal(r.status, 503, path);
       assert.equal(r.headers.get('Retry-After'), '5');
       const b = await r.json() as {error: string; id: string};
-      assert.equal(b.error, 'The Remote is busy just now; try again');
+      assert.equal(b.error, 'Remote is busy; please retry shortly');
       assert.match(b.id, /^[0-9a-f]{12}$/);
     }
     for (const path of ['/unique', '/bug']) {
       const r = await app.request(path);
       assert.equal(r.status, 500, path);
       const b = await r.json() as {error: string; id: string};
-      assert.deepEqual([b.error, /^[0-9a-f]{12}$/.test(b.id), JSON.stringify(b).includes('undefined')], ['Something went wrong on the Remote', true, false]);
+      assert.deepEqual([b.error, /^[0-9a-f]{12}$/.test(b.id), JSON.stringify(b).includes('undefined')], ['Internal error on Remote', true, false]);
     }
     const r = await app.request('/refused');
     assert.deepEqual([r.status, await r.json()], [409, {error: 'No', version: 3}]);
@@ -52,7 +52,7 @@ test('the Remote\'s own routes answer so: a setting\'s version past what Postgre
   try {
     const r = await s.call('PUT', '/v1/home/todo', {token: t, body: {value: '[]', version: 2 ** 40}});
     assert.ok(r.status === 500 || r.status < 500, r.text);
-    if (r.status === 500) assert.equal(r.json.error, 'Something went wrong on the Remote');
+    if (r.status === 500) assert.equal(r.json.error, 'Internal error on Remote');
     assert.match(r.headers.get('Content-Type') ?? '', /json/);
   } finally { console.error = quiet; }
 });

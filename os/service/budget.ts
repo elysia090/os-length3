@@ -128,10 +128,10 @@ export class Budget {
   async ahead(q: Db, user: string, bytes: number) {
     const now = this.now();
     if (await spent(q, day(now), `up:${user}`) + bytes > this.limits.upload) {
-      slowDown(untilNext(now, 'day'), {error: 'This account has sent all it may today; the rest is sent tomorrow'});
+      slowDown(untilNext(now, 'day'), {error: 'Daily outbound quota reached; remaining will send tomorrow'});
     }
     if (await spent(q, 'all', 'r2:stored') + bytes > this.limits.stored) {
-      refuse(507, {error: 'The Remote holds all the files it may just now; your work stays on this device', files: false, budget: true, retryAfter: FULL_WAIT}, {'Retry-After': String(FULL_WAIT)});
+      refuse(507, {error: 'Remote storage full; changes remain on this device', files: false, budget: true, retryAfter: FULL_WAIT}, {'Retry-After': String(FULL_WAIT)});
     }
   }
 
@@ -139,7 +139,7 @@ export class Budget {
   async upload(q: Db, user: string, bytes: number) {
     const now = this.now();
     if (!await take(q, day(now), `up:${user}`, bytes, this.limits.upload)) {
-      slowDown(untilNext(now, 'day'), {error: 'This account has sent all it may today; the rest is sent tomorrow'});
+      slowDown(untilNext(now, 'day'), {error: 'Daily outbound quota reached; remaining will send tomorrow'});
     }
   }
 
@@ -150,7 +150,7 @@ export class Budget {
    */
   async held(q: Db) {
     if (await spent(q, 'all', 'r2:stored') > this.limits.stored) {
-      refuse(507, {error: 'The Remote holds all the files it may just now; your work stays on this device', files: false, budget: true, retryAfter: FULL_WAIT}, {'Retry-After': String(FULL_WAIT)});
+      refuse(507, {error: 'Remote storage full; changes remain on this device', files: false, budget: true, retryAfter: FULL_WAIT}, {'Retry-After': String(FULL_WAIT)});
     }
   }
 

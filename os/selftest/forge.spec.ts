@@ -52,7 +52,7 @@ test('a file put back from the diff is as it was at the last commit, and leaves 
   const was = await app.forge.editor('README.md').inputValue();
   await app.forge.editFile('README.md', '# hello\n\nNot wanted.\n');
 
-  await app.forge.putBack('README.md', 'What was changed here goes.');
+  await app.forge.putBack('README.md', 'Local modifications discarded.');
 
   await expect(app.forge.editor('README.md')).toHaveValue(was);
   // Pressed with nothing typed, the box shows what is changed now: not README.md.
@@ -67,17 +67,17 @@ test('a file added since the last commit goes when it is put back', async ({sign
   await app.file.named('hello', '', 'New file', 'scratch.txt');
   await app.forge.editFile('scratch.txt', 'for now\n');
 
-  await app.forge.putBack('scratch.txt', 'It was not in the last commit, so it goes');
+  await app.forge.putBack('scratch.txt', 'Not present in latest commit; removing');
 
   await expect(app.forge.editor('scratch.txt')).toHaveCount(0);
   await app.file.openTree();
   await expect(app.file.name('scratch.txt')).toHaveCount(0);
 });
 
-test('a file saved on another device while written here is asked about, and Use the other takes it', async ({signedIn: app, another}) => {
+test('a file saved on another device while written here is asked about, and Keep external takes it', async ({signedIn: app, another}) => {
   // The same person on a second device, with the repo brought there from the Remote.
   await app.rail.go('remote');
-  await expect(app.remote.card('hello')).toContainText('In step');
+  await expect(app.remote.card('hello')).toContainText('Synced');
   const laptop = await another('Ada');
   await app.forge.open('hello');
   await laptop.file.bring('hello');
@@ -87,14 +87,14 @@ test('a file saved on another device while written here is asked about, and Use 
 
   const ask = app.forge.changedElsewhere;
   await app.forge.lookUntil(ask);
-  await expect(app.forge.fileState('README.md')).toHaveText('Changed elsewhere');
+  await expect(app.forge.fileState('README.md')).toHaveText('Modified externally');
   // Nothing is decided for the person: theirs is still here until they choose.
   await expect(app.forge.editor('README.md')).toHaveValue('# hello\n\nWritten here.\n');
   await app.forge.writingDone();
-  await ask.getByRole('button', {name: 'See what differs'}).click();
+  await ask.getByRole('button', {name: 'View diff'}).click();
   await expect(ask.getByText('Written on the laptop.')).toBeVisible();
 
-  await ask.getByRole('button', {name: 'Use the other'}).click();
+  await ask.getByRole('button', {name: 'Keep external'}).click();
   await expect(ask).toBeHidden();
   await expect(app.forge.editor('README.md')).toHaveValue('# hello\n\nWritten on the laptop.\n');
   await expect(app.forge.fileState('README.md')).toBeHidden();
@@ -133,7 +133,7 @@ test('a text grown past what Forge saves says so in its box, and is kept whole w
   await editor.press('Control+s');
   // Not saved, and said so where it is, with how large it is and the way on; what was written stays.
   await expect(app.forge.fileState('big.txt')).toHaveText('Not saved · over 262 KB');
-  const ask = app.main.getByRole('group', {name: 'Too large to save here'});
+  const ask = app.main.getByRole('group', {name: 'File too large to save here'});
   await expect(ask).toContainText('It is 300 KB: Forge saves what it edits up to 262 KB.');
   await expect(editor).toHaveValue(/^x{99}\n/);
   // Made smaller, it saves as before and the ask goes.
@@ -144,7 +144,7 @@ test('a text grown past what Forge saves says so in its box, and is kept whole w
   // Grown again and saved whole: kept as written, and read in part from now on.
   await put(`${'y'.repeat(99)}\n`.repeat(3000));
   await editor.press('Control+s');
-  await ask.getByRole('button', {name: 'Save it whole'}).click();
+  await ask.getByRole('button', {name: 'Save full file'}).click();
   await expect(app.forge.fileState('big.txt')).toHaveText('Only the first 262 KB (of 300 KB) · read only');
   await expect(app.forge.editor('big.txt')).toHaveCount(0);
 });

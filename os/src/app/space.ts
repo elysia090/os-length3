@@ -21,19 +21,19 @@ export async function readSpace(open: string[] = []): Promise<Space> {
   // In a browser the core holds the repos; the host is the origin's storage, as the browser estimates it. A repo the
   // core would let go is kept while a Prompt here has it open; one it keeps already says its own reason (no Remote
   // to free it to), not the Prompt.
-  const items: Item[] = s.items.map((i) => (open.includes(i.what) && i.id.startsWith('repo:') && i.room !== 'Keep' ? {...i, room: 'Keep', why: t('A Prompt has it open')} : i));
+  const items: Item[] = s.items.map((i) => (open.includes(i.what) && i.id.startsWith('repo:') && i.room !== 'Keep' ? {...i, room: 'Keep', why: t('Locked by an active Prompt')} : i));
   // What l3 keeps of itself for the Prompt (its index, the translator, the hot programs): the l3 every Prompt runs on,
   // so it is kept, not freed (issue #46), here and in Free all alike; the app keeps its own the same (core/src/usage.rs).
   const l3 = await keptL3();
-  if (l3.files) items.push({id: 'l3', what: 'l3', detail: tn('{n} file kept for the Prompt', '{n} files kept for the Prompt', l3.files), allocated: l3.bytes,
-    room: 'Keep', why: t('The Prompt runs on it, so it is kept')});
+  if (l3.files) items.push({id: 'l3', what: 'l3', detail: tn('{n} file reserved for Prompt', '{n} files reserved for Prompt', l3.files), allocated: l3.bytes,
+    room: 'Keep', why: t('Required for Prompt execution; cannot be removed')});
   items.sort((a, b) => b.allocated - a.allocated || a.what.localeCompare(b.what));
   const c = await readCapacity();
   // The browser's figure for this OS holds more than what is listed (its own keeping of them): that more is a row of
   // its own, last, so the rows add up to the total said over them; a figure under them is theirs.
   const listed = items.reduce((n, i) => n + i.allocated, 0);
   const counted = c?.app ?? listed;
-  if (counted > listed) items.push({id: 'other', what: t('Other'), detail: t('what the browser counts beside these, estimated'), allocated: counted - listed, room: 'Keep', why: ''});
+  if (counted > listed) items.push({id: 'other', what: t('Other'), detail: t('Additional estimated browser storage usage'), allocated: counted - listed, room: 'Keep', why: ''});
   return {
     host_total: c?.total ?? 0, host_free: c?.free ?? 0, host: 'Estimated',
     allocated: Math.max(counted, listed),
@@ -65,7 +65,7 @@ export async function takeOff(): Promise<[string, string][]> {
   const kept = (freed?.kept ?? []).map(([id, why]): [string, string] => [id.replace(/^repo:/, ''), why]);
   for (const key of HOME_KEYS) {
     await syncHome(key).catch(() => {});
-    if (!await core<boolean>('home_leave', {key})) kept.push([settingName(key), t('It is not on the Remote yet')]);
+    if (!await core<boolean>('home_leave', {key})) kept.push([settingName(key), t('Not yet synced to Remote')]);
   }
   await reloadState([...HOME_KEYS, 'sync']);
   return kept;

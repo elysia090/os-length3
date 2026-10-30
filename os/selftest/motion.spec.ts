@@ -277,8 +277,8 @@ test('a menu put away and opened again on its way out comes back from where it h
   await app.newRepo.make('hello');
   await app.rail.go('home');
   await still(app);
-  const gear = app.main.getByRole('button', {name: 'What to do with hello'}).first();
-  const menu = app.main.getByRole('menu', {name: 'What to do with hello'});
+  const gear = app.main.getByRole('button', {name: 'Task description with hello'}).first();
+  const menu = app.main.getByRole('menu', {name: 'Task description with hello'});
   await gear.click();
   await expect(menu).toBeVisible();
   await still(app);
@@ -521,7 +521,7 @@ test('a message joining a run: the one before narrows to its words from its side
   await bo.inbox.named();
   await ada.inbox.named();
   await ada.inbox.writeTo(bo.handle, 'Are you coming on Saturday?');
-  await expect(ada.main.getByText('Sent as a request: they see it once they accept you.')).toBeVisible();
+  await expect(ada.main.getByText('Sent as request: recipient will see it once accepted.')).toBeVisible();
   await still(ada);
   // Its width, and the note's height, each frame from the press until both have settled.
   const watch = ada.page.evaluate(() => new Promise<{wide: number[]; tall: number[]}>((done) => {

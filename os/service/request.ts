@@ -155,7 +155,7 @@ export async function fits(q: Db, user: string, more: number, quota = QUOTA) {
 }
 /** As fits, with the room `used` read already (with the row it was read with: one round trip fewer). */
 export function fitting(used: number, more: number, quota = QUOTA) {
-  if (more > 0 && used + more > quota) refuse(507, {error: 'The Remote is full for this account', used, quota});
+  if (more > 0 && used + more > quota) refuse(507, {error: 'Remote storage full for this account', used, quota});
 }
 /** The room an account's rows and files take, for a select that reads it with them (fitting). */
 export const usedBy = (user: string) => sql<number>`coalesce((select r.used from room r where r.user_id = ${user}), 0)::float8`;
@@ -208,7 +208,7 @@ export const unkept: MiddlewareHandler = async (c, next) => {
  * none is read past what its route can take, counted as it comes, whatever it says its length is.
  */
 export const bounded: MiddlewareHandler = (c, next) =>
-  bodyLimit({maxSize: roomFor(c.req.method, c.req.path), onError: (c) => c.json({error: 'What was sent is too large'}, 413)})(c, next);
+  bodyLimit({maxSize: roomFor(c.req.method, c.req.path), onError: (c) => c.json({error: 'Payload too large'}, 413)})(c, next);
 
 // ---- what fails unforeseen ----
 
@@ -241,10 +241,10 @@ export const failed: ErrorHandler = (e, c) => {
   console.error('remote failed', id, c.req.method, c.req.path, code, e);
   if (BUSY.has(code) || code.startsWith('08') || e instanceof StoreFailed) {
     c.header('Retry-After', '5');
-    return c.json({error: 'The Remote is busy just now; try again', id, retryAfter: 5}, 503);
+    return c.json({error: 'Remote is busy; please retry shortly', id, retryAfter: 5}, 503);
   }
   // What was sent is no text, number or value the database keeps (a NUL, a lone surrogate, a number out of range, a
   // check refused): the request's, not the Remote's, wherever a route did not say so first.
-  if (INPUT.has(code)) return c.json({error: 'What was sent is not something the Remote keeps', id}, 400);
-  return c.json({error: 'Something went wrong on the Remote', id}, 500);
+  if (INPUT.has(code)) return c.json({error: 'Unsupported data format for Remote storage', id}, 400);
+  return c.json({error: 'Internal error on Remote', id}, 500);
 };

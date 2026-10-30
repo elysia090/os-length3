@@ -113,7 +113,7 @@ export async function api(path: string, init: RequestInit = {}, c: Connection | 
   try { r = await fetch(url + path, {...init, headers, signal, credentials: 'include'}); } catch (e) {
     if (ours) reached(false);
     const late = e instanceof DOMException && e.name === 'TimeoutError';
-    throw new RemoteError(0, late ? t('The Remote did not answer in time') : t('The Remote cannot be reached'), {}, 'unreached');
+    throw new RemoteError(0, late ? t('Remote timed out') : t('Cannot connect to Remote'), {}, 'unreached');
   }
   // Something answered; it is the Remote only if its answer is the Remote's. A page is a host's or a proxy's, and a
   // gateway's 502, 503 or 504 says the Remote is not taking requests: either way it is away (the rail says so, and it is
@@ -121,14 +121,14 @@ export async function api(path: string, init: RequestInit = {}, c: Connection | 
   const type = r.headers.get('content-type') ?? '';
   if (type.includes('text/html')) {
     if (ours) reached(false);
-    throw new RemoteError(r.status, t('What answered is not the Remote ({status})', {status: r.status}), {}, 'malformed');
+    throw new RemoteError(r.status, t('Unexpected response from server ({status})', {status: r.status}), {}, 'malformed');
   }
   if (r.status === 502 || r.status === 503 || r.status === 504) {
     const body = await r.clone().json().catch(() => ({})) as {files?: boolean};
     // A Remote with no place for files says so itself, and is the Remote answering (below).
     if (body.files !== false) {
       if (ours) reached(false);
-      throw new RemoteError(r.status, t('The Remote is not taking requests just now ({status})', {status: r.status}), {}, 'unavailable');
+      throw new RemoteError(r.status, t('Remote is currently unavailable ({status})', {status: r.status}), {}, 'unavailable');
     }
   }
   if (ours) reached(true);
@@ -138,12 +138,12 @@ export async function api(path: string, init: RequestInit = {}, c: Connection | 
   if (r.status === 401 && c) {
     // The session was ended (from another device, or it ran out): this device is signed out, and nothing here is lost.
     if (ours && c.token === connection()?.token) void ended();
-    throw new RemoteError(401, t('The Remote no longer knows this device. Sign in again.'));
+    throw new RemoteError(401, t('Device not recognized by Remote. Please sign in again.'));
   }
   if (r.status >= 400 && r.status !== 404 && r.status !== 409) {
     const body = await r.json().catch(() => ({})) as {message?: string; error?: string; files?: boolean};
     // A Remote with no place for files (service/bucket.ts): nothing is lost, the work waits here and is sent once it can be.
-    if (r.status === 503 && body.files === false) throw new RemoteError(503, t('The Remote cannot hold files just now; your work stays on this device'), body);
+    if (r.status === 503 && body.files === false) throw new RemoteError(503, t('Remote cannot accept files right now; changes stay on this device'), body);
     // The Remote says why in a short English sentence; it is shown in the person's language. What else it
     // says (the plan's rule, what is used) comes along for the place that asked.
     throw new RemoteError(r.status, t(body.message ?? body.error ?? `Remote: ${r.status}`), body as Record<string, unknown>);
@@ -169,7 +169,7 @@ export function askedOnce<T>(ask: () => Promise<T>): () => Promise<T> {
 export async function reading<T>(r: Response): Promise<T> {
   try { return await r.json() as T; } catch {
     reached(false);
-    throw new RemoteError(r.status, t('The Remote\'s answer could not be read'), {}, 'malformed');
+    throw new RemoteError(r.status, t('Cannot parse Remote response'), {}, 'malformed');
   }
 }
 
@@ -189,7 +189,7 @@ async function keep(token: string, url = REMOTE_URL) {
 /** The token a sign-in answered with (the bearer plugin's header). */
 function tokenOf(r: Response): string {
   const token = r.headers.get('set-auth-token');
-  if (!token) throw new RemoteError(r.status, t('Could not sign in'));
+  if (!token) throw new RemoteError(r.status, t('Sign-in failed'));
   return token;
 }
 
@@ -210,7 +210,7 @@ const ABOUT_WAIT = 10_000;
 export const about = askedOnce(async (): Promise<Ways> => {
   try {
     const w = await reading<Ways>(await api('/v1/about', {signal: AbortSignal.timeout(ABOUT_WAIT)}, null));
-    if (!w || !Array.isArray(w.providers)) { reached(false); return {providers: [], trouble: t('The Remote\'s answer could not be read')}; }
+    if (!w || !Array.isArray(w.providers)) { reached(false); return {providers: [], trouble: t('Cannot parse Remote response')}; }
     return w;
   } catch (e) { return {providers: [], trouble: e instanceof Error ? e.message : String(e)}; }
 });
@@ -219,7 +219,7 @@ export const about = askedOnce(async (): Promise<Ways> => {
 export async function enterWith(key: string): Promise<boolean> {
   try {
     const {token} = await (await api('/v1/enter', {method: 'POST', body: JSON.stringify({key})}, null)).json() as {token?: unknown};
-    if (typeof token !== 'string') { signInTrouble = t('This link does not open this Remote'); return false; }
+    if (typeof token !== 'string') { signInTrouble = t('Invite link invalid for this Remote'); return false; }
     await keep(token);
     return true;
   } catch (e) {
@@ -238,7 +238,7 @@ export function leaveFor(url: string) {
   const u = new URL(url, location.href);
   const here = u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '[::1]';
   if (u.protocol !== 'https:' && !(u.protocol === 'http:' && here)) {
-    throw new RemoteError(0, t('The Remote named a page that is not a web page'), {}, 'malformed');
+    throw new RemoteError(0, t('Remote returned an invalid URL'), {}, 'malformed');
   }
   location.assign(u.href);
 }
@@ -270,7 +270,7 @@ export function signedInURL(): string {
 export async function claim(): Promise<boolean> {
   try {
     const s = await (await api('/api/auth/get-session', {}, null)).json() as {session?: {token: string}} | null;
-    if (!s?.session?.token) { signInTrouble = t('The provider did not sign you in. Try again.'); return false; }
+    if (!s?.session?.token) { signInTrouble = t('Provider authentication failed. Please try again.'); return false; }
     await keep(s.session.token);
     return true;
   } catch (e) {
@@ -288,9 +288,9 @@ export function signInFailed(code: string | null) {
   try { tried = sessionStorage.getItem(SIGNING_WITH); sessionStorage.removeItem(SIGNING_WITH); } catch { /* by no name, then */ }
   const name = tried && tried in PROVIDER_NAME ? PROVIDER_NAME[tried as Provider] : null;
   // Cancelled at the provider (its Cancel, or a refusal there): nothing was shared, and the way in is there again.
-  signInTrouble = code === 'closed' ? t('This Remote takes no new accounts')
-    : code === 'access_denied' ? (name ? t('Signing in with {name} was cancelled; nothing was shared.', {name}) : t('Signing in was cancelled at the provider; nothing was shared.'))
-    : t('The provider did not sign you in. Try again.');
+  signInTrouble = code === 'closed' ? t('This Remote does not accept new accounts')
+    : code === 'access_denied' ? (name ? t('Sign-in with {name} cancelled; no data shared.', {name}) : t('Sign-in cancelled at provider; no data shared.'))
+    : t('Provider authentication failed. Please try again.');
 }
 /** The provider a sign-in went to, kept for this tab until it comes back. */
 const SIGNING_WITH = 'length3.signing-with';
@@ -351,14 +351,14 @@ async function confirming<T>(f: () => Promise<T>, stopped: string): Promise<T> {
 /** Another provider for the same account (a second way back in). */
 export async function link(provider: Provider): Promise<void> {
   const {url} = await confirming(() => json<{url: string}>('/api/auth/link-social', {method: 'POST', body: JSON.stringify({provider, callbackURL: location.href})}),
-    t('The passkey was not used: nothing was linked.'));
+    t('Passkey unused: no account linked.'));
   leaveFor(url);
 }
 
 export interface Linked { id: string; providerId: string; accountId: string; createdAt: string }
 export const linked = async () => (await json<Linked[]>('/api/auth/list-accounts')).filter((a) => a.providerId !== 'credential');
 export const unlink = (providerId: string) => confirming(() => json('/api/auth/unlink-account', {method: 'POST', body: JSON.stringify({providerId})}),
-  t('The passkey was not used: nothing was changed.'));
+  t('Passkey unused: no changes applied.'));
 
 // ---- passkeys (web) ----
 
@@ -370,10 +370,10 @@ const madeAlready = (e: unknown) => (e as {name?: string}).name === 'InvalidStat
 export async function addPasskey(name = deviceName()): Promise<void> {
   const {startRegistration} = await webauthn();
   const options = await confirming(() => json<Record<string, unknown>>(`/api/auth/passkey/generate-register-options?name=${encodeURIComponent(name)}`),
-    t('Signed in a while ago: sign in again (a passkey, or your provider) to make one.'));
+    t('Session expired. Please sign in again (via passkey or provider) to continue.'));
   const response = await startRegistration({optionsJSON: options as never}).catch((e: unknown) => {
-    throw new RemoteError(0, cancelled(e) ? t('The passkey was not made.') : madeAlready(e) ? t('This device has a passkey for this account already.')
-      : t('Could not make a passkey ({why}).', {why: String(e)}));
+    throw new RemoteError(0, cancelled(e) ? t('Passkey creation cancelled.') : madeAlready(e) ? t('This device already has a passkey for this account.')
+      : t('Failed to create passkey ({why}).', {why: String(e)}));
   });
   await json('/api/auth/passkey/verify-registration', {method: 'POST', body: JSON.stringify({response, name})});
   cameIn('passkey');
@@ -388,7 +388,7 @@ export async function signIn(stopped?: string): Promise<void> {
   const {startAuthentication} = await webauthn();
   const options = await (await api('/api/auth/passkey/generate-authenticate-options', {}, null)).json();
   const response = await startAuthentication({optionsJSON: options}).catch((e: unknown) => {
-    throw new RemoteError(0, cancelled(e) ? stopped ?? t('Signing in was stopped.') : t('Could not sign in with a passkey ({why}).', {why: String(e)}));
+    throw new RemoteError(0, cancelled(e) ? stopped ?? t('Sign-in cancelled.') : t('Failed to sign in with passkey ({why}).', {why: String(e)}));
   });
   const r = await api('/api/auth/passkey/verify-authentication', {method: 'POST', body: JSON.stringify({response})}, null);
   await keep(tokenOf(r));
@@ -430,7 +430,7 @@ export function takeAsk(): {ask: BrowserAsk; repo: string | null} | null {
  * passkey is asked for first (`proven`: one confirmed it a moment ago, which the Remote still takes).
  */
 export async function turnOff(repo: string, typed: string, proven = false): Promise<{offAt: number; until: number}> {
-  if (!proven) await signIn(t('The passkey was not used: the repo is as it was.'));
+  if (!proven) await signIn(t('Passkey unused: repo remained unchanged.'));
   const r = await api(`/v1/repos/${encodeURIComponent(repo)}/off`, {method: 'POST', body: JSON.stringify({repo: typed})});
   const body = await r.json() as {offAt?: number; until?: number; error?: string};
   if (!r.ok) throw new RemoteError(r.status, t(body.error ?? `Remote: ${r.status}`));
@@ -442,7 +442,7 @@ export const turnOn = (repo: string) => json(`/v1/repos/${encodeURIComponent(rep
 
 /** Discard a repo turned off: gone from the Remote now, with its history, for good. Asked for as turning it off is. */
 export async function discard(repo: string, typed: string, proven = false): Promise<void> {
-  if (!proven) await signIn(t('The passkey was not used: the repo is as it was.'));
+  if (!proven) await signIn(t('Passkey unused: repo remained unchanged.'));
   const r = await api(`/v1/repos/${encodeURIComponent(repo)}/discard`, {method: 'POST', body: JSON.stringify({repo: typed})});
   if (!r.ok) throw new RemoteError(r.status, t(((await r.json()) as {error?: string}).error ?? `Remote: ${r.status}`));
 }
@@ -450,7 +450,7 @@ export async function discard(repo: string, typed: string, proven = false): Prom
 export interface Passkey { id: string; name?: string | null; createdAt: string; deviceType?: string; backedUp?: boolean }
 export const passkeys = askedOnce(() => json<Passkey[]>('/api/auth/passkey/list-user-passkeys'));
 export const removePasskey = (id: string) => confirming(() => json('/api/auth/passkey/delete-passkey', {method: 'POST', body: JSON.stringify({id})}),
-  t('The passkey was not used: nothing was changed.'));
+  t('Passkey unused: no changes applied.'));
 
 // ---- devices: each a session ----
 
@@ -478,16 +478,16 @@ export async function deviceAsking(userCode: string): Promise<{clientId: string;
   return {clientId: r.client_id ?? r.clientId ?? '', status: r.status};
 }
 export const approveDevice = (userCode: string) => confirming(() => json('/api/auth/device/approve', {method: 'POST', body: JSON.stringify({userCode})}),
-  t('The passkey was not used: the device was not let in.'));
+  t('Passkey unused: device not authorized.'));
 export const denyDevice = (userCode: string) => json('/api/auth/device/deny', {method: 'POST', body: JSON.stringify({userCode})});
 
 /** What a session's user agent is, in a word. */
 export function deviceWord(ua: string | null | undefined): string {
   const u = ua ?? '';
-  if (/^l3\b|ureq/i.test(u)) return t('l3 / the app');
+  if (/^l3\b|ureq/i.test(u)) return t('l3 / App');
   const os = /iPhone|iPad/.test(u) ? 'iOS' : /Android/.test(u) ? 'Android' : /Mac OS X/.test(u) ? 'macOS' : /Windows/.test(u) ? 'Windows' : /Linux/.test(u) ? 'Linux' : '';
   const browser = /Edg\//.test(u) ? 'Edge' : /Chrome\//.test(u) ? 'Chrome' : /Firefox\//.test(u) ? 'Firefox' : /Safari\//.test(u) ? 'Safari' : '';
-  return [browser, os].filter(Boolean).join(' · ') || t('A device');
+  return [browser, os].filter(Boolean).join(' · ') || t('Device');
 }
 
 function deviceName(): string {
@@ -523,7 +523,7 @@ export async function signOut(): Promise<void> {
 
 async function ended() {
   // Said on the sign-in card that comes next: why it is there.
-  signInTrouble = t('The Remote no longer knows this device. Sign in again.');
+  signInTrouble = t('Device not recognized by Remote. Please sign in again.');
   // The Remote already let this session go: nothing can be sent with it, and nothing here is let go.
   await core('remote_forget').catch(() => {});
   await loadState(['remote']);

@@ -88,11 +88,11 @@ export class Row {
   constructor(element: HTMLElement, work: HTMLElement, drag: Drag, ways: RowWays) {
     this.element = element; this.work = work; this.drag = drag; this.ways = ways;
     // ⊕ in the words is the band's own mark (its circle and plus, on the words' line), not a glyph of the font set high.
-    this.bring = t('Bring a repo out to the band with ⊕, or open one from File').split('⊕').flatMap((part, i) => (i ? [h('span', {class: 'inline-add', 'aria-label': '⊕'}, mark('plus')), part] : [part]));
+    this.bring = t('Add repos to band via ⊕ or open from File').split('⊕').flatMap((part, i) => (i ? [h('span', {class: 'inline-add', 'aria-label': '⊕'}, mark('plus')), part] : [part]));
     // No repo at all (a first run): not a way to bring one out that has nothing to bring, but the first made, said
     // as what it is, the whole card the deed (as Home's New repo is).
-    this.first = h('button', {type: 'button', class: 'card new forge-first'}, icon('new-repo'), h('span', {}, t('Make your first repo')),
-      h('small', {class: 'muted'}, t('A folder of your own, kept as git keeps it: Forge, Git and the Prompt work in it.')));
+    this.first = h('button', {type: 'button', class: 'card new forge-first'}, icon('new-repo'), h('span', {}, t('Create your first repo')),
+      h('small', {class: 'muted'}, t('A personal Git repository: compatible with Forge, Git, and Prompt.')));
     this.first.addEventListener('click', () => ways.make());
     this.nothing = h('div', {class: 'empty forge-none', hidden: ''}, ...this.bring);
     element.append(this.nothing);
@@ -248,11 +248,11 @@ export class Row {
     const label = h('button', {type: 'button', class: 'col-name', title: file ?? name},
       ...(file === null ? [name] : [h('span', {class: 'col-repo'}, repoOf(name)), shownName(file)]));
     label.addEventListener('click', () => this.ways.activate(name));
-    const close = h('button', {type: 'button', class: 'col-close', 'aria-label': t('Close {name} beside', {name})}, mark('close'));
+    const close = h('button', {type: 'button', class: 'col-close', 'aria-label': t('Close adjacent {name}', {name})}, mark('close'));
     close.addEventListener('click', () => this.ways.close(name));
     const head = h('div', {class: 'col-head', draggable: 'true'}, label, close);
     this.drag.from(head, name);
-    const flow = h('section', {class: 'flow', tabindex: '0', 'aria-label': file === null ? t('The files of {name}', {name}) : `${repoOf(name)}/${file}`});
+    const flow = h('section', {class: 'flow', tabindex: '0', 'aria-label': file === null ? t('Files in {name}', {name}) : `${repoOf(name)}/${file}`});
     const col = h('div', {class: `col${file === null ? '' : ' col-file'}`, 'data-repo': repoOf(name), 'data-key': name, hidden: ''}, head, flow);
     return {col, flow};
   }

@@ -97,7 +97,7 @@ function post(p: servers.Post, runs: boolean, down: (art: HTMLElement) => Promis
   // A name on this Remote is shown alone; one on a domain with it. A guest by the name they chose, always
   // with "guest" beside it and their face dashed, so they are never taken for one of its people.
   const [name, domain] = shown(p.by).split('@');
-  const where = p.guest ? t('guest') : domain ? `@${domain}` : '';
+  const where = p.guest ? t('Guest') : domain ? `@${domain}` : '';
   const time = h('time', {class: 'muted small', datetime: when.toISOString(), title: dateFormat(WHOLE).format(when)}, clock(p.at));
   const below = h('div', {class: 'tl-foot muted small'});
   const acts = h('div', {class: 'tl-acts'});
@@ -112,10 +112,10 @@ function post(p: servers.Post, runs: boolean, down: (art: HTMLElement) => Promis
 
 /** Taking a post down asks once more, briefly: pressed, it asks; pressed again within three seconds, it is done. */
 function takeDown(act: () => Promise<void>): HTMLButtonElement {
-  const down = h('button', {type: 'button', class: 'button small-button tl-act'}, t('Take down')) as HTMLButtonElement;
+  const down = h('button', {type: 'button', class: 'button small-button tl-act'}, t('Delete post')) as HTMLButtonElement;
   let armed = 0;
   down.addEventListener('click', async () => {
-    if (!armed) { down.textContent = t('Take it down?'); armed = window.setTimeout(() => { armed = 0; down.textContent = t('Take down'); }, 3000); return; }
+    if (!armed) { down.textContent = t('Delete this post?'); armed = window.setTimeout(() => { armed = 0; down.textContent = t('Delete post'); }, 3000); return; }
     clearTimeout(armed);
     down.disabled = true;
     try { await act(); } catch (e) { down.disabled = false; down.textContent = errorText(e); }
@@ -286,12 +286,12 @@ class Talk {
     this.start.classList.remove('tl-all');
     // Said only when reading takes a while: a page read at once comes without a word flashing before it (a board just
     // made said No posts yet as it was named, and says it again, not Reading… between).
-    const saying = window.setTimeout(() => { this.start.textContent = t('Reading…'); }, SAY_READING);
+    const saying = window.setTimeout(() => { this.start.textContent = t('Loading…'); }, SAY_READING);
     try {
       const r = await servers.older(this.board, this.member, this.pages.at(-1)?.page.oldest ?? null);
       this.addOlder(r.posts, fresh);
       this.done = !r.more;
-      this.start.textContent = this.done ? (this.pages.length ? t('That is every post') : t('No posts yet')) : '';
+      this.start.textContent = this.done ? (this.pages.length ? t('No more posts') : t('No posts yet')) : '';
       // Every post said to be there: only worth saying where there is more than the board shows (styles.css).
       this.start.classList.toggle('tl-all', this.done && this.pages.length > 0);
       // Empty, the line sits at the talk's foot, where the first post will come; read or loading, at the top as ever.

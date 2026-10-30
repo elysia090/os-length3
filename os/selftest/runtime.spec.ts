@@ -29,7 +29,7 @@ test('removing a dotfile asks in its box: Not now keeps it, Remove takes it', as
 
   const ask = await app.runtime.askRemove('.profile');
   await expect(ask).toContainText('.profile goes from every device.');
-  await ask.getByRole('button', {name: 'Not now'}).click();
+  await ask.getByRole('button', {name: 'Cancel'}).click();
   await expect(ask).toBeHidden();
   await expect(app.runtime.text('.profile')).toHaveValue('export EDITOR=vi\n');
 
@@ -53,7 +53,7 @@ test('a new dotfile named as one there is is not saved over it, and says why', a
 test('a dotfile with a name that is not one is not saved, and says why', async ({app}) => {
   await app.runtime.makeDotfile('no-dot', 'x\n');
 
-  await expect(app.runtime.dotfiles.getByRole('alert')).toHaveText('A dotfile is named with a dot first: .profile');
+  await expect(app.runtime.dotfiles.getByRole('alert')).toHaveText('Dotfiles must begin with a dot (e.g. .profile)');
   await expect(app.runtime.dotfile('no-dot')).toHaveCount(0);
 });
 
@@ -62,7 +62,7 @@ test('Runtime is in parts as Remote is: the one chosen shows, the others blend i
   const tabs = app.main.getByRole('tablist', {name: 'Runtime'});
   await expect(tabs.getByRole('tab')).toHaveText([/^This browser/, /^Environments/, /^Dotfiles/, /^Agent/]);
   // No Prompt runs: its part is not offered.
-  await expect(app.runtime.part('Prompts running')).toHaveCount(0);
+  await expect(app.runtime.part('Running Prompts')).toHaveCount(0);
   await expect(app.main.getByRole('tabpanel', {name: /^This browser/})).toBeVisible();
   await expect(app.runtime.dotfiles).toBeHidden();
   // Chosen, ink; the others have no fill or edge of their own until the pointer is on them.
@@ -120,15 +120,15 @@ test('the environments are one card two wide, the desktop app at its right and S
   await app.runtime.open('Environments');
   const panel = app.main.getByRole('tabpanel', {name: /^Environments/});
   const others = panel.getByRole('list', {name: 'Other environments'});
-  await expect(others.getByRole('listitem')).toHaveText([/^Ubuntu 26\.04\.1 LTS.*In the app only/, /^Debian 13\.7.*In the app only/, /^Custom.*Not yet/]);
+  await expect(others.getByRole('listitem')).toHaveText([/^Ubuntu 26\.04\.1 LTS.*App only/, /^Debian 13\.7.*App only/, /^Custom.*Not yet/]);
   const env = others.locator('xpath=..');
-  const app_ = panel.getByRole('region', {name: 'Desktop app'});
+  const app_ = panel.getByRole('region', {name: 'Desktop App'});
   await expect(app_).toBeVisible();
   const [e, d] = [(await env.boundingBox())!, (await app_.locator('.card').boundingBox())!];
   // Side by side, the environments at the left, ending level.
   expect(d.x).toBeGreaterThan(e.x + e.width);
   expect(Math.abs(d.y - e.y)).toBeLessThan(2);
-  // As wide as two of Prompts running's cards side by side; SSH under the two, not beside them.
+  // As wide as two of Running Prompts's cards side by side; SSH under the two, not beside them.
   expect(e.width).toBeGreaterThanOrEqual(2 * 270);
   const ssh = (await panel.getByRole('heading', {name: 'SSH'}).boundingBox())!;
   expect(ssh.y).toBeGreaterThan(Math.max(e.y + e.height, d.y + d.height));
@@ -155,44 +155,44 @@ test("a repo's name in Runtime opens it in Forge; its gear offers its card on th
   await app.runtime.open('This browser');
   const panel = app.main.getByRole('tabpanel', {name: /^This browser/});
   const here = panel.getByRole('region', {name: /^In this browser/});
-  await expect(here).toContainText('In step');
+  await expect(here).toContainText('Synced');
   // Shown in Forge, written to by nobody: no Prompt holds it.
-  await expect(here).not.toContainText('A Prompt has it open');
-  const gear = here.getByRole('button', {name: 'What to do with notes'});
+  await expect(here).not.toContainText('Locked by an active Prompt');
+  const gear = here.getByRole('button', {name: 'Task description with notes'});
   // Near the repo, its gear shows; showing it does nothing.
   await expect(gear).toHaveCSS('opacity', '0');
   await here.getByRole('button', {name: 'notes', exact: true}).hover();
   await expect(gear).toHaveCSS('opacity', '1');
   await gear.click();
-  const menu = here.getByRole('menu', {name: 'What to do with notes'});
-  // On the Remote, it keeps the name the Remote knows it by: Rename is not offered, nor said why.
-  await expect(menu.getByRole('menuitem')).toHaveText(['Show on the Remote', 'Free from this device', 'Delete']);
+  const menu = here.getByRole('menu', {name: 'Task description with notes'});
+  // On Remote, it keeps the name the Remote knows it by: Rename is not offered, nor said why.
+  await expect(menu.getByRole('menuitem')).toHaveText(['View on Remote', 'Remove from device (free space)', 'Delete']);
   await expect(menu.locator('.pop-note')).toHaveCount(0);
   // Escape puts it away, and nothing changed.
   await app.page.keyboard.press('Escape');
   await expect(menu).toBeHidden();
   await expect(gear).toBeFocused();
   await gear.click();
-  await expect(menu.getByRole('menuitem', {name: 'Free from this device'})).toBeEnabled();
-  await menu.getByRole('menuitem', {name: 'Free from this device'}).click();
+  await expect(menu.getByRole('menuitem', {name: 'Remove from device (free space)'})).toBeEnabled();
+  await menu.getByRole('menuitem', {name: 'Remove from device (free space)'}).click();
   const ask = menu.getByRole('group', {name: 'Free notes from this device'});
-  await expect(ask).toContainText('notes leaves this device.It stays on the Remote and comes back when opened.');
+  await expect(ask).toContainText('notes leaves this device.Preserved on Remote; re-downloads when opened.');
   await app.answer(ask.getByRole('button', {name: 'Free', exact: true}), ask);
   // What it came to, over the box; and it is on the Remote now, to fetch.
   await expect(panel.getByRole('status').filter({hasText: 'Let go of'})).toBeVisible();
-  const remote = panel.getByRole('region', {name: /^Only on the Remote/});
+  const remote = panel.getByRole('region', {name: /^Remote only/});
   await expect(remote.getByRole('button', {name: 'notes', exact: true})).toBeVisible();
-  await remote.getByRole('button', {name: 'What to do with notes'}).click();
-  const there = remote.getByRole('menu', {name: 'What to do with notes'});
-  // Only on the Remote: nothing of it here to rename or free.
-  await expect(there.getByRole('menuitem')).toHaveText(['Show on the Remote', 'Delete']);
+  await remote.getByRole('button', {name: 'Task description with notes'}).click();
+  const there = remote.getByRole('menu', {name: 'Task description with notes'});
+  // Remote only: nothing of it here to rename or free.
+  await expect(there.getByRole('menuitem')).toHaveText(['View on Remote', 'Delete']);
   // Its card on the Remote, lit, with the keyboard on it.
-  await there.getByRole('menuitem', {name: 'Show on the Remote'}).click();
+  await there.getByRole('menuitem', {name: 'View on Remote'}).click();
   await expect(app.remote.part('Repos')).toHaveAttribute('aria-selected', 'true');
   await expect(app.remote.card('notes')).toBeFocused();
   // Its name is the repo itself: brought back here, and opened in Forge.
   await app.runtime.open('This browser');
-  await panel.getByRole('region', {name: /^Only on the Remote/}).getByRole('button', {name: 'notes', exact: true}).click();
+  await panel.getByRole('region', {name: /^Remote only/}).getByRole('button', {name: 'notes', exact: true}).click();
   await expect(app.rail.button('forge')).toHaveAttribute('aria-current', 'page');
   await expect(app.forge.editor('README.md')).toBeVisible();
 });
@@ -201,29 +201,29 @@ test("Home's repo card opens the repo in Forge, brought here first when it is on
   await app.newRepo.make('notes');
   await app.rail.go('home');
   const card = app.main.getByRole('region', {name: 'Repos'}).getByRole('group', {name: 'notes', exact: true});
-  await expect(card).toContainText('In step');
-  const gear = card.getByRole('button', {name: 'What to do with notes'});
-  const menu = card.getByRole('menu', {name: 'What to do with notes'});
+  await expect(card).toContainText('Synced');
+  const gear = card.getByRole('button', {name: 'Task description with notes'});
+  const menu = card.getByRole('menu', {name: 'Task description with notes'});
   await gear.click();
-  await expect(menu.getByRole('menuitem')).toHaveText(['Show on the Remote', 'Free from this device', 'Delete']);
-  await expect(menu.getByRole('menuitem', {name: 'Free from this device'})).toBeEnabled();
-  await menu.getByRole('menuitem', {name: 'Free from this device'}).click();
+  await expect(menu.getByRole('menuitem')).toHaveText(['View on Remote', 'Remove from device (free space)', 'Delete']);
+  await expect(menu.getByRole('menuitem', {name: 'Remove from device (free space)'})).toBeEnabled();
+  await menu.getByRole('menuitem', {name: 'Remove from device (free space)'}).click();
   const ask = menu.getByRole('group', {name: 'Free notes from this device'});
   // Not now changes nothing.
-  await ask.getByRole('button', {name: 'Not now'}).click();
+  await ask.getByRole('button', {name: 'Cancel'}).click();
   await expect(ask).toBeHidden();
-  await expect(card).toContainText('In step');
-  await menu.getByRole('menuitem', {name: 'Free from this device'}).click();
+  await expect(card).toContainText('Synced');
+  await menu.getByRole('menuitem', {name: 'Remove from device (free space)'}).click();
   await app.answer(ask.getByRole('button', {name: 'Free', exact: true}), ask);
-  // Freed, its card is the Remote's: Only on the Remote. Pressed, it is brought back and opened in Forge.
-  await expect(card).toContainText('Only on the Remote');
+  // Freed, its card is the Remote's: Remote only. Pressed, it is brought back and opened in Forge.
+  await expect(card).toContainText('Remote only');
   await card.getByRole('button', {name: /^notes/}).first().click();
   await expect(app.rail.button('forge')).toHaveAttribute('aria-current', 'page');
   await expect(app.forge.editor('README.md')).toBeVisible();
   // Its card on the Remote is the gear's to show.
   await app.rail.go('home');
   await gear.click();
-  await menu.getByRole('menuitem', {name: 'Show on the Remote'}).click();
+  await menu.getByRole('menuitem', {name: 'View on Remote'}).click();
   await expect(app.remote.card('notes')).toBeFocused();
 });
 
@@ -232,8 +232,8 @@ test('signed out, a repo is renamed and deleted from its gear, asked in place; F
   await app.rail.go('home');
   const repos = app.main.getByRole('region', {name: 'Repos'});
   const card = (name: string) => repos.getByRole('group', {name, exact: true});
-  const gear = (name: string) => card(name).getByRole('button', {name: `What to do with ${name}`});
-  const menu = (name: string) => card(name).getByRole('menu', {name: `What to do with ${name}`});
+  const gear = (name: string) => card(name).getByRole('button', {name: `Task description with ${name}`});
+  const menu = (name: string) => card(name).getByRole('menu', {name: `Task description with ${name}`});
   await gear('oops').click();
   // No Remote to show it on, or to keep it if it were freed: neither is offered, and nothing is said of them.
   await expect(menu('oops').getByRole('menuitem')).toHaveText(['Rename', 'Delete']);
@@ -246,7 +246,7 @@ test('signed out, a repo is renamed and deleted from its gear, asked in place; F
   await expect(field).toHaveValue('oops');
   await field.fill('trip notes');
   await field.press('Enter');
-  await expect(menu('oops').getByRole('alert')).toHaveText('Use letters, digits and . _ -, and do not start with .');
+  await expect(menu('oops').getByRole('alert')).toHaveText('Use letters, digits, and . _ - (cannot start with .)');
   await expect(field).toBeFocused();
   await field.fill('trip');
   await field.press('Enter');
@@ -261,14 +261,14 @@ test('signed out, a repo is renamed and deleted from its gear, asked in place; F
   await gear('trip').click();
   await menu('trip').getByRole('menuitem', {name: 'Delete'}).click();
   const ask = menu('trip').getByRole('group', {name: 'Delete trip'});
-  await expect(ask).toContainText('trip goes from this device, with everything in it.It is kept nowhere else, so it cannot be brought back.');
-  await ask.getByRole('button', {name: 'Not now'}).click();
+  await expect(ask).toContainText('trip goes from this device, with everything in it.No backup exists; cannot be recovered.');
+  await ask.getByRole('button', {name: 'Cancel'}).click();
   await expect(card('trip')).toBeVisible();
   await menu('trip').getByRole('menuitem', {name: 'Delete'}).click();
   await app.answer(ask.getByRole('button', {name: 'Delete', exact: true}), ask);
   await expect(card('trip')).toHaveCount(0);
   await app.rail.go('forge');
-  await expect(app.main.getByRole('button', {name: /^Make your first repo/})).toBeVisible();
+  await expect(app.main.getByRole('button', {name: /^Create your first repo/})).toBeVisible();
 });
 
 test('a repo renamed from its gear keeps its place on the band, worked on, with what was half written for it, its search, where one left off and its chip in Git', async ({app}) => {
@@ -289,8 +289,8 @@ test('a repo renamed from its gear keeps its place on the band, worked on, with 
   await app.forge.search.fill('needle');
   await app.rail.go('home');
   const repos = app.main.getByRole('region', {name: 'Repos'});
-  await repos.getByRole('button', {name: 'What to do with alpha'}).click();
-  const menu = repos.getByRole('menu', {name: 'What to do with alpha'});
+  await repos.getByRole('button', {name: 'Task description with alpha'}).click();
+  const menu = repos.getByRole('menu', {name: 'Task description with alpha'});
   await menu.getByRole('menuitem', {name: 'Rename'}).click();
   await menu.getByRole('textbox', {name: 'New name'}).fill('gamma');
   await menu.getByRole('textbox', {name: 'New name'}).press('Enter');
@@ -316,19 +316,19 @@ test('signed in, a repo on the Remote is deleted from its gear as turning it off
   await app.newRepo.make('hello');
   await app.rail.go('home');
   const card = app.main.getByRole('region', {name: 'Repos'}).getByRole('group', {name: 'hello', exact: true});
-  await expect(card).toContainText('In step');
-  await card.getByRole('button', {name: 'What to do with hello'}).click();
-  const menu = card.getByRole('menu', {name: 'What to do with hello'});
+  await expect(card).toContainText('Synced');
+  await card.getByRole('button', {name: 'Task description with hello'}).click();
+  const menu = card.getByRole('menu', {name: 'Task description with hello'});
   await menu.getByRole('menuitem', {name: 'Delete'}).click();
   // Asked in the list as the switch on its card asks: its name written out, then a passkey (made there, the first time).
   const ask = menu.getByRole('group', {name: 'hello', exact: true});
-  const name = ask.getByRole('textbox', {name: 'The repo\'s name'});
+  const name = ask.getByRole('textbox', {name: 'Repo name'});
   await expect(name).toBeFocused();
-  await expect(ask).toContainText('It goes from this device and from the Remote, which keeps it 30 days: turned on there, it comes back.');
+  await expect(ask).toContainText('Removes from device and Remote (held 30 days on Remote before final deletion).');
   await name.fill('hello');
   await app.answer(ask.getByRole('button', {name: 'Delete', exact: true}), ask);
   await expect(card).toHaveCount(0);
-  // On the Remote it is off, there to be turned on again for 30 days.
+  // On Remote it is off, there to be turned on again for 30 days.
   await app.rail.go('remote');
   await expect(app.remote.power('hello')).toHaveAttribute('aria-checked', 'false');
   await expect(app.remote.card('hello')).toContainText('Off · back until');

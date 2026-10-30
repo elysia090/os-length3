@@ -15,7 +15,7 @@ const SHOW_BYTES = 256 * 1024;
  */
 export async function seeRepo(sheet: HTMLElement, r: servers.ShownRepo, ways: {back(): void; forge(): void}) {
   const as = `${r.owner}:${r.name}`;
-  const back = button(t('Back to the boards'), 'small-button');
+  const back = button(t('Back to boards'), 'small-button');
   back.addEventListener('click', () => ways.back());
   const forge = r.mine ? button(t('Open in Forge'), 'small-button') : null;
   forge?.addEventListener('click', () => ways.forge());
@@ -25,11 +25,11 @@ export async function seeRepo(sheet: HTMLElement, r: servers.ShownRepo, ways: {b
   const body = h('div', {class: 'seen-body'}, files, text);
   sheet.replaceChildren(
     h('div', {class: 'sheet-head'}, h('div', {class: 'sheet-title'}, h('h2', {}, r.name), h('p', {}, named(r.owner))), h('span', {class: 'grow'}), forge, back),
-    h('div', {class: 'sheet-sub'}, sub, r.as ? h('p', {class: 'muted small'}, t('Everyone sees it as {name}', {name: shownAs(r.as)})) : null),
+    h('div', {class: 'sheet-sub'}, sub, r.as ? h('p', {class: 'muted small'}, t('Publicly visible as "{name}"', {name: shownAs(r.as)})) : null),
     body);
   try {
     const got = await servers.seeRepo(as);
-    sub.textContent = got.at ? t('Pushed {when}: {title}', {when: ago(got.at), title: got.title ?? ''}) : t('Nothing pushed yet');
+    sub.textContent = got.at ? t('Pushed {when}: {title}', {when: ago(got.at), title: got.title ?? ''}) : t('No commits pushed yet');
     const paths = Object.entries(got.tree).filter(([, sha]) => sha !== null).map(([p]) => p).sort((a, b) => a.localeCompare(b));
     // Nothing pushed, nothing to read: the line says so, and no sheet of nothing stands under it.
     body.hidden = !paths.length;
@@ -43,7 +43,7 @@ export async function seeRepo(sheet: HTMLElement, r: servers.ShownRepo, ways: {b
       let shown: string;
       try {
         const body = await servers.seeFile(as, path);
-        shown = body.includes('\0') ? t('Not text') : body.length > SHOW_BYTES ? `${body.slice(0, SHOW_BYTES)}\n…` : body;
+        shown = body.includes('\0') ? t('Binary / Non-text file') : body.length > SHOW_BYTES ? `${body.slice(0, SHOW_BYTES)}\n…` : body;
       } catch (e) { shown = errorText(e); }
       if (chosen !== path) return;
       text.textContent = shown;

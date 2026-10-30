@@ -206,7 +206,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
   const lineRow = (id: number, l: string) => and(eq(line.repoId, id), eq(line.name, l));
   /** A repo that is off answers nothing but being off, and until when it can come back. */
   /** What a repo turned off answers in place of anything else (410). */
-  const offWords = (off: Date) => ({error: 'This repo is turned off', offAt: off.getTime(), until: off.getTime() + KEPT});
+  const offWords = (off: Date) => ({error: 'This repo is disabled', offAt: off.getTime(), until: off.getTime() + KEPT});
   const on = (off: Date | null | undefined) => { if (off) refuse(410, offWords(off)); };
   /** The names that went for good and are still remembered, each with when (sweep.ts purge). */
   const remembered = (user: string) => and(eq(repoGone.userId, user), sql`${repoGone.at} > ${ago(REMEMBERED)}`);
@@ -243,7 +243,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
     const row = await lineAt(db, user, name, lineOf(c), true);
     if (!row) {
       const gone = await goneAt(db, user, name);
-      return c.json({error: 'That repo is not on the Remote', ...(gone ? {gone} : {})}, 404);
+      return c.json({error: 'Repo not found on Remote', ...(gone ? {gone} : {})}, 404);
     }
     on(row.off);
     return c.json(lineShown(row));
@@ -260,12 +260,12 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
     if (!b || typeof b.version !== 'number' || typeof b.set !== 'object' || b.set === null || Array.isArray(b.set) || !Array.isArray(b.remove)) return c.json({error: 'a diff'}, 400);
     const set = b.set as Record<string, unknown>, remove = b.remove as unknown[];
     // Each mode is of a file this diff sets, with an execute bit: anything else is not a mode a repo keeps.
-    if (b.modes !== undefined && (typeof b.modes !== 'object' || b.modes === null || Array.isArray(b.modes))) return c.json({error: 'modes: path -> mode'}, 400);
+    if (b.modes !== undefined && (typeof b.modes !== 'object' || b.modes === null || Array.isArray(b.modes))) return c.json({error: 'Format: path -> mode'}, 400);
     const sent = b.modes as Record<string, unknown> | undefined;
-    for (const [p, m] of Object.entries(sent ?? {})) if (typeof set[p] !== 'string' || !validMode(m)) return c.json({error: 'A mode no file here may have', path: p}, 400);
-    if (Object.keys(set).length + remove.length > LIMIT.diff) return c.json({error: 'Too many changes at once'}, 413);
-    for (const [p, v] of Object.entries(set)) if (!validPath(p) || !(v === null || (typeof v === 'string' && HEX.test(v)))) return c.json({error: 'A path no repo may have', path: p}, 400);
-    for (const p of remove) if (typeof p !== 'string' || !validPath(p)) return c.json({error: 'A path no repo may have', path: String(p)}, 400);
+    for (const [p, m] of Object.entries(sent ?? {})) if (typeof set[p] !== 'string' || !validMode(m)) return c.json({error: 'Unsupported file mode', path: p}, 400);
+    if (Object.keys(set).length + remove.length > LIMIT.diff) return c.json({error: 'Too many simultaneous changes'}, 413);
+    for (const [p, v] of Object.entries(set)) if (!validPath(p) || !(v === null || (typeof v === 'string' && HEX.test(v)))) return c.json({error: 'Invalid repository path', path: p}, 400);
+    for (const p of remove) if (typeof p !== 'string' || !validPath(p)) return c.json({error: 'Invalid repository path', path: String(p)}, 400);
     const shas = [...new Set(Object.values(set).filter((v): v is string => typeof v === 'string'))];
     const version = await db.transaction(async (tx: Db) => {
       await lock(tx, user);
@@ -273,10 +273,10 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
       on(row?.off);
       if (!row) {
         const gone = await goneAt(tx, user, name);
-        if (gone && !(anew && l === 'main')) refuse(410, {error: 'This repo was discarded on the Remote.', gone});
+        if (gone && !(anew && l === 'main')) refuse(410, {error: 'This repo was permanently deleted on Remote.', gone});
         // A line other than main is made by starting work on its issue, not by writing to it.
-        if (l !== 'main') refuse(404, {error: 'That work is not on the Remote'});
-        if (name === 'gone') refuse(400, {error: 'A repo cannot be called gone'});
+        if (l !== 'main') refuse(404, {error: 'Work not found on Remote'});
+        if (name === 'gone') refuse(400, {error: 'Repo name cannot be "gone"'});
       }
       if (shas.length) {
         const have = new Set(row ? row.have : (await tx.select({sha: blob.sha256}).from(blob).where(and(eq(blob.userId, user), inArray(blob.sha256, shas)))).map((r: {sha: string}) => r.sha));
@@ -289,13 +289,13 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
       const tree = applyDiff(was, set as Tree, remove as string[]);
       // A file and a folder of one name, made by this diff (one there before is not this diff's to refuse).
       const clashed = new Set(clashes(was)), clash = clashes(tree).filter((p) => !clashed.has(p));
-      if (clash.length) refuse(400, {error: 'A file and a folder of the same name', path: clash[0]});
+      if (clash.length) refuse(400, {error: 'Filename collision with existing folder', path: clash[0]});
       const modes = applyModes(row?.modes ?? {}, tree, set as Tree, sent as Modes | undefined);
       const size = JSON.stringify(tree).length;
-      if (Object.keys(tree).length > LIMIT.files || size > LIMIT.tree) refuse(413, {error: 'Too many files for one repo'});
+      if (Object.keys(tree).length > LIMIT.files || size > LIMIT.tree) refuse(413, {error: 'File limit reached for this repo'});
       if (!row) {
         const [{n}] = await tx.select({n: sql<number>`count(*)::int`}).from(repo).where(eq(repo.userId, user));
-        if (n >= LIMIT.repos) refuse(429, {error: 'Too many repos'});
+        if (n >= LIMIT.repos) refuse(429, {error: 'Repository limit reached'});
         await d.plans.newRepo(tx, user);
       }
       if (row) fitsUsed(row.used, size - JSON.stringify(was).length); else await fits(tx, user, size - JSON.stringify(was).length);
@@ -348,11 +348,11 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
     const b = await body<{version?: unknown; parent?: unknown; kind?: unknown; title?: unknown; issue?: unknown; note?: unknown; added?: unknown; removed?: unknown; paths?: unknown}>(c);
     if (!b || typeof b.version !== 'number' || !(b.parent === null || (typeof b.parent === 'string' && HEX.test(b.parent)))) return c.json({error: 'a cut'}, 400);
     const words = {kind: b.kind ?? '', title: b.title, issue: b.issue ?? '', note: b.note ?? ''};
-    for (const v of Object.values(words)) if (typeof v !== 'string' || v.length > LIMIT.words) return c.json({error: 'Words of at most 2000 characters'}, 400);
-    if (!(words.title as string).trim()) return c.json({error: 'A commit needs a title'}, 400);
+    for (const v of Object.values(words)) if (typeof v !== 'string' || v.length > LIMIT.words) return c.json({error: 'Maximum 2000 characters'}, 400);
+    if (!(words.title as string).trim()) return c.json({error: 'Commit title required'}, 400);
     const only = b.paths;
     if (only !== undefined && (!Array.isArray(only) || !only.length || only.length > LIMIT.diff || !only.every((p) => typeof p === 'string' && validPath(p)))) {
-      return c.json({error: 'paths: the paths of the draft to commit'}, 400);
+      return c.json({error: 'paths: Target paths for draft commit'}, 400);
     }
     const made = await db.transaction(async (tx: Db) => {
       await lock(tx, user);
@@ -369,7 +369,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
           if (p in (row.modes ?? {})) modes[p] = row.modes![p]; else delete modes[p];
         }
         const clash = clashes(tree);
-        if (clash.length) refuse(400, {error: 'A file and a folder of the same name', path: clash[0]});
+        if (clash.length) refuse(400, {error: 'Filename collision with existing folder', path: clash[0]});
       }
       return commit(tx, user, row, {merged: null, tree, modes, ...(words as {kind: string; title: string; issue: string; note: string}),
         added: count(b.added), removed: count(b.removed)});
@@ -379,10 +379,10 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
 
   v1.get('/repos/:name/cuts/:id', async (c) => {
     const id = c.req.param('id');
-    if (!HEX.test(id)) return c.json({error: 'No such commit'}, 404);
+    if (!HEX.test(id)) return c.json({error: 'Commit not found'}, 404);
     const [row] = await db.select({...cutCols, off: repo.offAt}).from(cut).innerJoin(repo, eq(repo.id, cut.repoId))
       .where(and(eq(repo.userId, c.get('userId')), eq(repo.name, c.req.param('name')), eq(cut.id, id)));
-    if (!row) return c.json({error: 'No such commit'}, 404);
+    if (!row) return c.json({error: 'Commit not found'}, 404);
     on(row.off);
     const {off: _, ...shown} = row;
     return c.json({...shown, time: row.time.getTime()});
@@ -426,8 +426,8 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
   const confirmed = async (c: Context<Vars>, name: string) => {
     const b = await body<{repo?: unknown}>(c);
     const [g] = await db.select().from(guard).where(eq(guard.userId, c.get('userId'))) as (typeof guard.$inferSelect)[];
-    if (!passkeyJustNow(g, c.get('sessionId'))) refuse(403, {error: 'Confirm with a passkey.'});
-    if (b?.repo !== name) refuse(403, {error: 'The name does not match.'});
+    if (!passkeyJustNow(g, c.get('sessionId'))) refuse(403, {error: 'Authenticate with passkey.'});
+    if (b?.repo !== name) refuse(403, {error: 'Name does not match.'});
   };
   const named = (user: string, name: string) => and(eq(repo.userId, user), eq(repo.name, name));
 
@@ -437,7 +437,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
     await confirmed(c, name);
     // Off once: asking again does not restart its 30 days.
     const [done] = await db.update(repo).set({offAt: sql`coalesce(${repo.offAt}, now())`}).where(named(user, name)).returning({offAt: ms(sql`${repo.offAt}`)});
-    if (!done) return c.json({error: 'That repo is not on the Remote'}, 404);
+    if (!done) return c.json({error: 'Repo not found on Remote'}, 404);
     return c.json({name, offAt: done.offAt, until: done.offAt + KEPT});
   });
 
@@ -450,8 +450,8 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
       await lock(tx, user);
       if ((await purge(tx, sql`r.user_id = ${user} and r.name = ${name}`)).repo) return;
       // Nothing went: it is on (perhaps turned on just now), or not there at all.
-      if (await repoAt(tx, user, name)) refuse(409, {error: 'Turn it off first.'});
-      refuse(404, {error: 'That repo is not on the Remote'});
+      if (await repoAt(tx, user, name)) refuse(409, {error: 'Disable it first.'});
+      refuse(404, {error: 'Repo not found on Remote'});
     });
     return c.json({name, discarded: true});
   });
@@ -459,7 +459,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
   // On: back at once, as it was.
   v1.post('/repos/:name/on', async (c) => {
     const done = await db.update(repo).set({offAt: null}).where(named(c.get('userId'), c.req.param('name'))).returning({id: repo.id});
-    return done.length ? c.json({name: c.req.param('name'), on: true}) : c.json({error: 'That repo is not on the Remote'}, 404);
+    return done.length ? c.json({name: c.req.param('name'), on: true}) : c.json({error: 'Repo not found on Remote'}, 404);
   });
 
   // ---- work on an issue: its own line, from main's last commit ----
@@ -479,16 +479,16 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
     const b = await body<{issue?: unknown}>(c);
     const issue = typeof b?.issue === 'string' ? b.issue : '';
     const stem = /^issue\/([A-Za-z0-9][A-Za-z0-9._-]{0,60})\.md$/.exec(issue)?.[1];
-    if (!stem || !validLine(stem)) return c.json({error: 'Work begins from an issue'}, 400);
+    if (!stem || !validLine(stem)) return c.json({error: 'Work must begin from an issue'}, 400);
     const {row, made} = await db.transaction(async (tx: Db) => {
       await lock(tx, user);
       const main = await lineAt(tx, user, name, 'main', true);
-      if (!main) refuse(404, {error: 'That repo is not on the Remote'});
+      if (!main) refuse(404, {error: 'Repo not found on Remote'});
       on(main.off);
       const existing = await lineAt(tx, user, name, stem);
       if (existing) return {row: existing, made: false};
       const [{n}] = await tx.select({n: sql<number>`count(*)::int`}).from(line).where(and(eq(line.repoId, main.id), ne(line.name, 'main')));
-      if (n >= LIMIT.lines) refuse(429, {error: 'This repo has too much work open'});
+      if (n >= LIMIT.lines) refuse(429, {error: 'Too many open tasks in this repo'});
       // Work starts from what main last committed, not from main's uncommitted draft. A repo
       // nobody has committed yet gets its first commit (what it was made with) here, so the
       // work shows only what it changes.
@@ -511,7 +511,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
     const user = c.get('userId'), name = c.req.param('name'), l = c.req.param('line');
     const b = await body<{head?: unknown}>(c);
     const row = await lineAt(db, user, name, l);
-    if (!row) return c.json({error: 'That work is not on the Remote'}, 404);
+    if (!row) return c.json({error: 'Work not found on Remote'}, 404);
     on(row.off);
     if (b?.head !== row.head) return c.json({head: row.head}, 409);
     const done = await db.update(line).set({pushed: row.head, updatedAt: sql`now()`})
@@ -572,14 +572,14 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
     const [out, status] = await db.transaction(async (tx: Db) => {
       await lock(tx, user);
       const row = l ? await lineAt(tx, user, name, l) : undefined;
-      if (!row) refuse(404, {error: 'That work is not on the Remote'});
+      if (!row) refuse(404, {error: 'Work not found on Remote'});
       on(row.off);
-      if (!row.pushed || row.pushed !== row.head) refuse(409, {error: 'Push first: the change is what was pushed', head: row.head, pushed: row.pushed});
-      if (row.pushed === row.base) refuse(409, {error: 'Nothing committed since the work began'});
-      if (!words.title || words.title.length > LIMIT.words || words.note.length > LIMIT.words || words.kind.length > LIMIT.words) refuse(400, {error: 'A change needs a title of at most 2000 characters'});
+      if (!row.pushed || row.pushed !== row.head) refuse(409, {error: 'Push required: Changes reflect pushed commits', head: row.head, pushed: row.pushed});
+      if (row.pushed === row.base) refuse(409, {error: 'No commits made yet'});
+      if (!words.title || words.title.length > LIMIT.words || words.note.length > LIMIT.words || words.kind.length > LIMIT.words) refuse(400, {error: 'Change requires a title (max 2000 characters)'});
       const [was] = await tx.select({id: change.id, state: change.state, head: change.head, version: change.version}).from(change)
         .where(and(eq(change.repoId, row.id), eq(change.line, l)));
-      if (was?.state === 'merged') refuse(409, {error: 'This change is merged already'});
+      if (was?.state === 'merged') refuse(409, {error: 'This Change is already merged'});
       const now = {...words, head: row.pushed, base: row.base, state: 'open', submittedBy: whoBy(c), updatedAt: new Date()};
       if (was) return [await changed(tx, was.id, {...now, version: was.head === row.pushed && was.state === 'open' ? was.version : was.version + 1}), 200] as const;
       return [(await tx.insert(change).values({repoId: row.id, userId: user, line: l, ...now}).returning(changeCols))[0], 201] as const;
@@ -594,11 +594,11 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
     const out = await db.transaction(async (tx: Db) => {
       await lock(tx, user);
       const row = await changeAt(tx, user, name, c.req.param('id'));
-      if (!row) refuse(404, {error: 'No such change'});
+      if (!row) refuse(404, {error: 'Change not found'});
       on(row.off);
       if (b?.version !== row.version) refuse(409, {version: row.version});
       if (!['approve', 'changes', 'comment'].includes(String(b?.verdict))) refuse(400, {error: 'verdict'});
-      if (row.reviews.length >= LIMIT.reviews) refuse(429, {error: 'Too many reviews on this change'});
+      if (row.reviews.length >= LIMIT.reviews) refuse(429, {error: 'Review limit reached for this Change'});
       // Lines marked in the diff, as "path:index" (the index of the line in that file's diff), as many as fit.
       const marks: string[] = [];
       let chars = 0;
@@ -622,12 +622,12 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
     const out = await db.transaction(async (tx: Db) => {
       await lock(tx, user);
       const row = await changeAt(tx, user, name, c.req.param('id'));
-      if (!row) refuse(404, {error: 'No such change'});
+      if (!row) refuse(404, {error: 'Change not found'});
       on(row.off);
-      if (row.state !== 'open') refuse(409, {error: 'The change is not open any more', state: row.state});
+      if (row.state !== 'open') refuse(409, {error: 'This Change is no longer open', state: row.state});
       if (b?.version !== row.version) refuse(409, {version: row.version});
       const main = await lineAt(tx, user, name, 'main', true);
-      if (!main) refuse(404, {error: 'That repo is not on the Remote'});
+      if (!main) refuse(404, {error: 'Repo not found on Remote'});
       const tree = await treesOf(tx, main.id, [row.base, main.head, row.head]);
       const merged = merge3(tree(row.base), tree(main.head), tree(row.head));
       if (merged.conflicts.length) refuse(409, {conflicts: merged.conflicts});
@@ -635,7 +635,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
       const draft = merge3(tree(main.head), main.draft!, merged.tree);
       if (draft.conflicts.length) refuse(409, {conflicts: draft.conflicts, draft: true});
       // What main holds after is held to what any of its saves is (a repo of more files than it may hold would refuse every save after).
-      for (const t of [merged.tree, draft.tree]) if (Object.keys(t).length > LIMIT.files || JSON.stringify(t).length > LIMIT.tree) refuse(413, {error: 'Too many files for one repo'});
+      for (const t of [merged.tree, draft.tree]) if (Object.keys(t).length > LIMIT.files || JSON.stringify(t).length > LIMIT.tree) refuse(413, {error: 'File limit reached for this repo'});
       // Modes are merged as the trees are; one both changed keeps main's (a mode is never what refuses a merge).
       const modes = modesFor(merged.tree, merge3(tree.modes(row.base), tree.modes(main.head), tree.modes(row.head)).tree);
       const draftModes = modesFor(draft.tree, merge3(tree.modes(main.head), main.modes ?? {}, modes).tree);
@@ -643,7 +643,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
         issue: issueOf(row.line), note: row.note, added: 0, removed: 0}, {tree: draft.tree, modes: draftModes});
       // Still open: a reject or reset that came between is not overwritten (and the merge is undone with this refusal).
       const done = await changed(tx, row.id, {state: 'merged', updatedAt: new Date()}, eq(change.state, 'open'));
-      if (!done) refuse(409, {error: 'The change is not open any more'});
+      if (!done) refuse(409, {error: 'This Change is no longer open'});
       return {merged: made.id, ...changeShown(name, done)};
     });
     return c.json(out);
@@ -654,12 +654,12 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
     v1.post(`/repos/:name/changes/:id/${verb}`, async (c) => {
       const user = c.get('userId'), name = c.req.param('name');
       const row = await changeAt(db, user, name, c.req.param('id'));
-      if (!row) return c.json({error: 'No such change'}, 404);
+      if (!row) return c.json({error: 'Change not found'}, 404);
       on(row.off);
       const b = await body<{note?: unknown}>(c);
       const note = typeof b?.note === 'string' && b.note ? {note: b.note.slice(0, LIMIT.words)} : {};
       const done = row.state === 'open' && await changed(db, row.id, {state, ...note, updatedAt: new Date()}, eq(change.state, 'open'));
-      return done ? c.json(changeShown(name, done)) : c.json({error: 'The change is not open any more', state: (await changeAt(db, user, name, row.id))?.state ?? row.state}, 409);
+      return done ? c.json(changeShown(name, done)) : c.json({error: 'This Change is no longer open', state: (await changeAt(db, user, name, row.id))?.state ?? row.state}, 409);
     });
   }
 }

@@ -50,9 +50,9 @@ interface DiffOptions {
 const folded = new Map<string, boolean>();
 
 /** What putting a file back does, a short line each. */
-const BACK = (f: FileDiff) => (f.status === 'added' ? [t('It was not in the last commit, so it goes')]
-  : f.status === 'removed' ? [t('It comes back as it was at the last commit')]
-  : [t('Back as it was at the last commit.'), t('What was changed here goes.')]);
+const BACK = (f: FileDiff) => (f.status === 'added' ? [t('Not present in latest commit; removing')]
+  : f.status === 'removed' ? [t('Restored to state at latest commit')]
+  : [t('Reverted to state at latest commit.'), t('Local modifications discarded.')]);
 
 /**
  * Put back, at the foot of a file's lines, its right end: out of the head, where
@@ -62,13 +62,13 @@ const BACK = (f: FileDiff) => (f.status === 'added' ? [t('It was not in the last
  * back as it was if the answer is no. The lines stay over it, so what goes is in view.
  */
 function putBackButton(f: FileDiff, head: HTMLElement, act: (f: FileDiff) => Promise<void>): HTMLElement {
-  const back = h('button', {type: 'button', class: 'button small-button put-back', 'aria-label': t('Put back {path}', {path: fileName(f.path)})}, t('Put back')) as HTMLButtonElement;
+  const back = h('button', {type: 'button', class: 'button small-button put-back', 'aria-label': t('Revert {path}', {path: fileName(f.path)})}, t('Revert')) as HTMLButtonElement;
   back.addEventListener('click', (e) => {
     e.preventDefault();
     const was = [...head.childNodes];
     const foot = askFoot(back, head);
-    const no = h('button', {type: 'button', class: 'button small-button'}, t('Not now')) as HTMLButtonElement;
-    const yes = h('button', {type: 'button', class: 'button small-button primary'}, t('Put back')) as HTMLButtonElement;
+    const no = h('button', {type: 'button', class: 'button small-button'}, t('Cancel')) as HTMLButtonElement;
+    const yes = h('button', {type: 'button', class: 'button small-button primary'}, t('Revert')) as HTMLButtonElement;
     const error = h('span', {class: 'error small', role: 'alert'});
     no.addEventListener('click', (e) => { e.preventDefault(); head.classList.remove('asking'); head.replaceChildren(...was); back.focus(); });
     const shown = performance.now();
@@ -116,7 +116,7 @@ function diffRow(f: FileDiff, l: DiffLine, k: number, o: DiffOptions): HTMLEleme
   // Between two parts of a file, a quiet "…".
   if (l.kind === 'hunk') return k === 0 ? null : h('div', {class: 'diff-line hunk'}, h('span', {class: 'diff-no'}), h('span'), h('span', {}, '…'));
   const at = o.reveal && f.status !== 'removed' ? nowAt(f, k) : undefined;
-  const no = at ? h('button', {type: 'button', class: 'diff-no go', tabindex: '-1', 'aria-label': t('Line {n} of {path}', {n: at, path: fileName(f.path)})}, l.at ? `${l.at}` : '')
+  const no = at ? h('button', {type: 'button', class: 'diff-no go', tabindex: '-1', 'aria-label': t('Line {n} in {path}', {n: at, path: fileName(f.path)})}, l.at ? `${l.at}` : '')
     : h('span', {class: 'diff-no'}, l.at ? `${l.at}` : '');
   if (at) { const go = o.reveal!; no.addEventListener('click', () => go(f.path, at)); }
   // The words in a span of their own, after the indent, so a mark is drawn over them as a highlighter is, line by line as they wrap;

@@ -65,7 +65,7 @@ pub fn claim(address: &str) -> Result<String> {
                 "{} の DNS にこのレコードを置いてから、もう一度取ってください（置けたかは l3 name domain {}）:\n  {}  {}  {}",
                 domain.unwrap_or(""), domain.unwrap_or(""), p["name"].as_str().unwrap_or(""), p["type"].as_str().unwrap_or("TXT"), p["value"].as_str().unwrap_or("")))
         }
-        Reply::Conflict(_) => Err(crate::tr!("That name is taken", "その名前は使われています")),
+        Reply::Conflict(_) => Err(crate::tr!("Username already taken", "その名前は既に使用されています")),
         Reply::NotFound(_) => Err(crate::tr!("The Remote has no Inbox", "Remote に Inbox がありません")),
     }
 }
@@ -74,8 +74,8 @@ pub fn claim(address: &str) -> Result<String> {
 pub fn set_username(name: &str) -> Result<String> {
     match Client::open()?.call("PUT", "/v1/inbox/username", Some(serde_json::json!({"name": name.trim().trim_start_matches('@')})))? {
         Reply::Ok(v) => Ok(v["address"].as_str().unwrap_or_default().to_string()),
-        Reply::Conflict(v) if v["until"].is_number() => Err(crate::tr!("That name was let go, and is held for its owner a while", "その名前は手放されたばかりで、しばらく元の持ち主のために取り置かれています")),
-        Reply::Conflict(_) => Err(crate::tr!("That name is taken", "その名前は使われています")),
+        Reply::Conflict(v) if v["until"].is_number() => Err(crate::tr!("Name recently released; temporarily reserved for prior owner.", "その名前は手放された直後のため、一時的に元の所有者用に保護されています")),
+        Reply::Conflict(_) => Err(crate::tr!("Username already taken", "その名前は既に使用されています")),
         Reply::NotFound(_) => Err(crate::tr!("The Remote has no Inbox", "Remote に Inbox がありません")),
     }
 }
@@ -108,7 +108,7 @@ pub fn send(to: &str, body: &str, kind: &str, repo: Option<&str>) -> Result<bool
     match v {
         Reply::Ok(v) => Ok(v["request"].as_bool().unwrap_or(false)),
         Reply::Conflict(v) => Err(v["error"].as_str().unwrap_or("Not sent").to_string()),
-        Reply::NotFound(_) => Err(crate::tr!("No one has that name", "その名前の人はいません")),
+        Reply::NotFound(_) => Err(crate::tr!("No user found with that name", "その名前のユーザーは見つかりません")),
     }
 }
 

@@ -258,7 +258,7 @@ export class Reader {
     const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
     void store.tree(this.repo, dir).then((entries) => {
       const e = entries.find((x) => x.kind !== 'dir' && join(dir, x.name) === path);
-      section.replaceChildren(e ? this.file(path, e) : h('div', {class: 'empty'}, t('{path} is not there any more', {path})));
+      section.replaceChildren(e ? this.file(path, e) : h('div', {class: 'empty'}, t('{path} no longer exists', {path})));
     }, (err: unknown) => section.replaceChildren(h('p', {class: 'muted'}, String(err))));
     return section;
   }
@@ -299,7 +299,7 @@ export class Reader {
     // Beside, in a box of its own: from its head's button, or Ctrl+click (⌘) on the head, as a link opens a tab.
     const beside = this.beside;
     if (beside && this.single === null) {
-      const open = h('button', {type: 'button', class: 'file-beside', 'aria-label': t('Open {path} beside', {path: shown}), title: t('Open beside')}, mark('beside'));
+      const open = h('button', {type: 'button', class: 'file-beside', 'aria-label': t('Open {path} to the side', {path: shown}), title: t('Open to the side')}, mark('beside'));
       open.addEventListener('click', () => beside(path));
       head.append(open);
       head.addEventListener('click', (event) => { if ((event.ctrlKey || event.metaKey) && !(event.target as Element).closest('button')) beside(path); });
@@ -330,7 +330,7 @@ export class Reader {
     if (c.truncated) {
       // Only part of it was read, so it is never written back.
       sheet.replaceChildren(gutter, h('pre', {class: 'code'}, c.text));
-      state.el.textContent = t('Only the first {part} (of {size}) · read only', {part: bytes(new TextEncoder().encode(c.text).length), size: bytes(c.size)});
+      state.el.textContent = t('First {part} only (total {size}) · Read-only', {part: bytes(new TextEncoder().encode(c.text).length), size: bytes(c.size)});
       return;
     }
     const editor = new Editor(c.text, {...box, repo: this.repo, path, flow: this.flow,

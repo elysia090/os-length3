@@ -47,7 +47,7 @@ const join = (dir: string, name: string) => (dir === '/' ? `/${name}` : `${dir}/
 let distribution: Promise<Map<string, SystemEntry[]>> | null = null;
 async function root(): Promise<Map<string, SystemEntry[]>> {
   const index = await l3Index();
-  if (!index) throw new Error(t('The distribution has not been fetched'));
+  if (!index) throw new Error(t('Distribution not fetched'));
   const under = new Map<string, SystemEntry[]>();
   const add = (e: SystemEntry) => {
     const dir = e.path.slice(0, e.path.lastIndexOf('/')) || '/';

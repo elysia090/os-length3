@@ -58,8 +58,8 @@ export function enter(d: {db: Db; auth: Auth; enter: Enter}, app: Hono<Vars>) {
       if (n.n < TRIES) await tx.insert(throttle).values({key: from});
       return n.n;
     });
-    if (tries >= TRIES) slowDown(3600, {error: 'Too many tries; try again in an hour'});
-    if (typeof b?.key !== 'string' || !d.enter.key || !await same(b.key, d.enter.key)) return c.json({error: 'This link does not open this Remote'}, 403);
+    if (tries >= TRIES) slowDown(3600, {error: 'Too many attempts; retry in an hour'});
+    if (typeof b?.key !== 'string' || !d.enter.key || !await same(b.key, d.enter.key)) return c.json({error: 'Invite link invalid for this Remote'}, 403);
     // The one account is made the first time it is entered: its row is ours to make (no provider
     // stands behind it), its sessions Better Auth's.
     await d.db.insert(user).values({id: id(), name: d.enter.as, email, emailVerified: true}).onConflictDoNothing({target: user.email});

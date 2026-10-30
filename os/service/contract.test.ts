@@ -66,9 +66,9 @@ test('another account\'s repo answers as if it were not there, by every route a 
   const r = await fullRepo(a, 'shared-name');
   const before = (await s.call('GET', '/v1/repos/shared-name', {token: a})).json;
   const asB = (method: string, path: string, body?: unknown) => s.call(method, path, {token: b, body});
-  refused(await asB('GET', '/v1/repos/shared-name'), 404, 'That repo is not on the Remote');
+  refused(await asB('GET', '/v1/repos/shared-name'), 404, 'Repo not found on Remote');
   refused(await asB('GET', '/v1/repos/shared-name?line=001'), 404);
-  refused(await asB('GET', `/v1/repos/shared-name/cuts/${r.cut}`), 404, 'No such commit');
+  refused(await asB('GET', `/v1/repos/shared-name/cuts/${r.cut}`), 404, 'Commit not found');
   // With no bucket, no file is anyone's to read: the same answer to everyone, before whose it is.
   refused(await asB('GET', `/v1/blobs/${r.blob}`), s.files ? 404 : 503);
   // Reads of lists answer nothing of A's.
@@ -82,10 +82,10 @@ test('another account\'s repo answers as if it were not there, by every route a 
   refused(await asB('POST', '/v1/repos/shared-name/lines', {issue: 'issue/001.md'}), 404);
   refused(await asB('POST', '/v1/repos/shared-name/lines/001/push', {head: r.work}), 404);
   refused(await asB('POST', '/v1/repos/shared-name/changes', {line: '001', title: 'x'}), 404);
-  refused(await asB('POST', `/v1/repos/shared-name/changes/${r.change}/reviews`, {version: 1, verdict: 'approve'}), 404, 'No such change');
-  refused(await asB('POST', `/v1/repos/shared-name/changes/${r.change}/merge`, {version: 1}), 404, 'No such change');
-  for (const verb of ['reject', 'reset']) refused(await asB('POST', `/v1/repos/shared-name/changes/${r.change}/${verb}`, {}), 404, 'No such change');
-  refused(await asB('PATCH', '/v1/repos/shared-name/draft?line=001', {version: 2, set: {}, remove: ['fix.c']}), 404, 'That work is not on the Remote');
+  refused(await asB('POST', `/v1/repos/shared-name/changes/${r.change}/reviews`, {version: 1, verdict: 'approve'}), 404, 'Change not found');
+  refused(await asB('POST', `/v1/repos/shared-name/changes/${r.change}/merge`, {version: 1}), 404, 'Change not found');
+  for (const verb of ['reject', 'reset']) refused(await asB('POST', `/v1/repos/shared-name/changes/${r.change}/${verb}`, {}), 404, 'Change not found');
+  refused(await asB('PATCH', '/v1/repos/shared-name/draft?line=001', {version: 2, set: {}, remove: ['fix.c']}), 404, 'Work not found on Remote');
   refused(await asB('POST', '/v1/repos/shared-name/on'), 404);
   // B proven just now still cannot turn A's off or discard it.
   await proven(b);
@@ -110,15 +110,15 @@ test('another account\'s servers and boards answer as if they were not there', a
   for (const [m, p, body] of [
     ['GET', `/v1/servers/${sid}/people`], ['PATCH', `/v1/servers/${sid}`, {name: 'Mine now'}], ['POST', `/v1/servers/${sid}/boards`, {name: 'x'}],
     ['POST', `/v1/servers/${sid}/people`, {address: 'x'}], ['GET', `/v1/servers/${sid}/repos`],
-  ] as [string, string, unknown?][]) refused(await asB(m, p, body), 404, /No such server/);
+  ] as [string, string, unknown?][]) refused(await asB(m, p, body), 404, /Server not found in your account/);
   // Removing it is its owner's: anyone else hears the same as of a server that is not there at all.
   const remove = await asB('DELETE', `/v1/servers/${sid}`), none = await asB('DELETE', '/v1/servers/nonenonenone');
-  refused(remove, 403, 'Only its owner removes a server');
+  refused(remove, 403, 'Only server owner can delete server');
   assert.deepEqual([remove.status, remove.json], [none.status, none.json]);
   for (const [m, p, body] of [
     ['GET', `/v1/boards/${bid}`], ['GET', `/v1/boards/${bid}/posts`], ['GET', `/v1/boards/${bid}/todos`], ['POST', `/v1/boards/${bid}/posts`, {body: 'hi'}],
     ['PUT', `/v1/boards/${bid}/todos/t1`, {title: 'x', place: 1}], ['PATCH', `/v1/boards/${bid}`, {open: true}], ['DELETE', `/v1/boards/${bid}`],
-  ] as [string, string, unknown?][]) refused(await asB(m, p, body), 404, /No such board/);
+  ] as [string, string, unknown?][]) refused(await asB(m, p, body), 404, /Board not found in your account/);
   // Nor is it open to anyone: a board is not shown to everyone until its owner says so.
   refused(await s.call('GET', `/v1/open/${bid}`), 404);
   assert.equal(((await s.call('GET', `/v1/servers/${sid}/people`, {token: a})).json as unknown[]).length, 1);
@@ -130,7 +130,7 @@ test('another account\'s addresses: not let go by anyone else', async () => {
   const handle = `a${process.pid}${Date.now().toString(36)}`.slice(0, 20);
   await named(s, [a, handle]);
   const address = `${handle}@length3.test`;
-  refused(await s.call('DELETE', `/v1/inbox/addresses/${address}`, {token: b}), 404, 'That name is not yours');
+  refused(await s.call('DELETE', `/v1/inbox/addresses/${address}`, {token: b}), 404, 'You do not own this name');
   const me = (await s.call('GET', '/v1/inbox/me', {token: a})).json as unknown as {addresses: {address: string}[]};
   assert.deepEqual(me.addresses.map((x) => x.address), [address]);
 });
@@ -144,7 +144,7 @@ test('a message goes out from the sender\'s own address, whatever address it say
   const threads = (await s.call('GET', '/v1/inbox/threads', {token: b})).json as unknown as {address: string}[];
   assert.deepEqual(threads.map((t) => t.address), [`${ha}@length3.test`]);
   assert.deepEqual((await s.call('GET', '/v1/inbox/threads', {token: c})).json, []);
-  refused(await s.call('POST', '/v1/inbox/messages', {token: a, body: {to: ha, body: 'to myself'}}), 400, 'That is you');
+  refused(await s.call('POST', '/v1/inbox/messages', {token: a, body: {to: ha, body: 'to myself'}}), 400, 'Cannot target own account');
 });
 
 // ---- turning a repo off, on, and discarding it ----
@@ -152,14 +152,14 @@ test('a message goes out from the sender\'s own address, whatever address it say
 test('off asks for a passkey just now, from this very session, and the repo\'s name as it is written; each refusal says which', async () => {
   const o = await owner('Careful', 'guarded');
   const off = (body: unknown, t = o.t) => s.call('POST', '/v1/repos/guarded/off', {token: t, body});
-  for (const repo of ['other', 'Guarded', 'guarded ', '']) refused(await off({repo}), 403, 'The name does not match.');
-  refused(await off(null), 403, 'The name does not match.');
+  for (const repo of ['other', 'Guarded', 'guarded ', '']) refused(await off({repo}), 403, 'Name does not match.');
+  refused(await off(null), 403, 'Name does not match.');
   // A passkey six minutes ago is not just now; one in another session of the same account is not this one.
   await proven(o.t, 6 * 60_000);
-  refused(await off(o.asked), 403, 'Confirm with a passkey.');
+  refused(await off(o.asked), 403, 'Authenticate with passkey.');
   const other = await s.start(o.word);
   await proven(other);
-  refused(await off(o.asked), 403, 'Confirm with a passkey.');
+  refused(await off(o.asked), 403, 'Authenticate with passkey.');
   await proven(o.t);
   const done = await off(o.asked);
   assert.equal(done.status, 200, done.text);
@@ -185,12 +185,12 @@ test('a repo turned off is kept 30 days from when it went off, asking again does
   ];
   for (const [m, p, body] of asks) {
     const r = await s.call(m, p, {token: o.t, body});
-    refused(r, 410, 'This repo is turned off');
+    refused(r, 410, 'This repo is disabled');
     assert.deepEqual([r.json.offAt, r.json.until], [again.offAt, again.until], `${m} ${p}`);
   }
   // Asked with other repos, where it stands says the same of it.
   const [stood] = (await s.call('GET', '/v1/standing?repo=resting', {token: o.t})).json as unknown as {status: number; error: string; offAt: number; until: number}[];
-  assert.deepEqual([stood.status, stood.error, stood.offAt, stood.until], [410, 'This repo is turned off', again.offAt, again.until]);
+  assert.deepEqual([stood.status, stood.error, stood.offAt, stood.until], [410, 'This repo is disabled', again.offAt, again.until]);
 });
 
 test('the 30 days are kept to the day: the sweep leaves a repo off 29 days, and lets one off 31 days go as gone', async () => {
@@ -202,7 +202,7 @@ test('the 30 days are kept to the day: the sweep leaves a repo off 29 days, and 
   await sweep(s.db, s.files);
   assert.deepEqual(((await s.call('GET', '/v1/repos', {token: t})).json as unknown as {name: string}[]).map((r) => r.name), ['day29']);
   assert.deepEqual(((await s.call('GET', '/v1/repos/gone', {token: t})).json as unknown as {name: string}[]).map((r) => r.name), ['day31']);
-  refused(await s.call('GET', '/v1/repos/day31', {token: t}), 404, 'That repo is not on the Remote');
+  refused(await s.call('GET', '/v1/repos/day31', {token: t}), 404, 'Repo not found on Remote');
   // Back on before its days run out, it is whole: its draft as it was.
   assert.equal((await s.call('POST', '/v1/repos/day29/on', {token: t})).status, 200);
   assert.deepEqual(((await s.call('GET', '/v1/repos/day29', {token: t})).json as unknown as {draft: object}).draft, {'a.txt': null});
@@ -220,13 +220,13 @@ test('on brings a repo back at once, with all it had; asked of one already on, i
   // Again: on already, nothing moves.
   assert.deepEqual((await s.call('POST', '/v1/repos/back/on', {token: o.t})).json, {name: 'back', on: true});
   assert.deepEqual((await s.call('GET', '/v1/repos/back', {token: o.t})).json, before);
-  refused(await s.call('POST', '/v1/repos/never/on', {token: o.t}), 404, 'That repo is not on the Remote');
+  refused(await s.call('POST', '/v1/repos/never/on', {token: o.t}), 404, 'Repo not found on Remote');
 });
 
 test('discard is refused while the repo is on, and takes nothing of another repo of the same account', async () => {
   const o = await owner('Discarder', 'goes');
   await fullRepo(o.t, 'stays');
-  refused(await s.call('POST', '/v1/repos/goes/discard', {token: o.t, body: o.asked}), 409, 'Turn it off first.');
+  refused(await s.call('POST', '/v1/repos/goes/discard', {token: o.t, body: o.asked}), 409, 'Disable it first.');
   assert.equal((await s.call('POST', '/v1/repos/goes/off', {token: o.t, body: o.asked})).status, 200);
   assert.equal((await s.call('POST', '/v1/repos/goes/discard', {token: o.t, body: o.asked})).status, 200);
   const me = await idOf(s, o.t);
@@ -247,16 +247,16 @@ test('a draft\'s diff: each malformed part is refused with words, and nothing is
   refused(await patch({version: '1', set: {}, remove: []}), 400, 'a diff');
   refused(await patch({version: 1, set: [], remove: []}), 400, 'a diff');
   refused(await patch({version: 1, set: {}, remove: 'a.txt'}), 400, 'a diff');
-  refused(await patch({version: 1, set: {'a.txt': 'not-a-digest'}, remove: []}), 400, 'A path no repo may have');
+  refused(await patch({version: 1, set: {'a.txt': 'not-a-digest'}, remove: []}), 400, 'Invalid repository path');
   for (const path of ['.git/config', '../x', '/abs', 'a//b', 'x/.GIT/hooks/pre-commit', 'git~1/config']) {
     const r = await patch({version: 1, set: {[path]: sha}, remove: []});
-    refused(r, 400, 'A path no repo may have');
+    refused(r, 400, 'Invalid repository path');
     assert.equal(r.json.path, path);
-    refused(await patch({version: 1, set: {}, remove: [path]}), 400, 'A path no repo may have');
+    refused(await patch({version: 1, set: {}, remove: [path]}), 400, 'Invalid repository path');
   }
-  refused(await patch({version: 1, set: {}, remove: [42]}), 400, 'A path no repo may have');
+  refused(await patch({version: 1, set: {}, remove: [42]}), 400, 'Invalid repository path');
   const tooMany = Object.fromEntries(Array.from({length: 5001}, (_, i) => [`f${i}`, null]));
-  refused(await patch({version: 1, set: tooMany, remove: []}), 413, 'Too many changes at once');
+  refused(await patch({version: 1, set: tooMany, remove: []}), 413, 'Too many simultaneous changes');
   for (const bad of ['.hidden', 'a b', 'x'.repeat(65)]) refused(await s.call('PATCH', `/v1/repos/${encodeURIComponent(bad)}/draft`, {token: t, body: {version: 0, set: {}, remove: []}}), 404);
   refused(await s.call('PATCH', '/v1/repos/shape/draft?line=-x', {token: t, body: {version: 1, set: {}, remove: []}}), 404);
   // A version that is not the draft's says which it is.
@@ -310,10 +310,10 @@ test('a commit: words of at most 2000 characters and a title; a parent that is n
   const t = await s.person('Committer');
   assert.equal((await s.call('PATCH', '/v1/repos/c/draft', {token: t, body: {version: 0, set: {'a.txt': null}, remove: []}})).status, 200);
   const cut = (body: object) => s.call('POST', '/v1/repos/c/cuts', {token: t, body: {version: 1, parent: null, title: 't', ...body}});
-  refused(await cut({title: '   '}), 400, 'A commit needs a title');
-  refused(await cut({title: 'x'.repeat(2001)}), 400, 'Words of at most 2000 characters');
-  refused(await cut({note: 'x'.repeat(2001)}), 400, 'Words of at most 2000 characters');
-  refused(await cut({kind: 7}), 400, 'Words of at most 2000 characters');
+  refused(await cut({title: '   '}), 400, 'Commit title required');
+  refused(await cut({title: 'x'.repeat(2001)}), 400, 'Maximum 2000 characters');
+  refused(await cut({note: 'x'.repeat(2001)}), 400, 'Maximum 2000 characters');
+  refused(await cut({kind: 7}), 400, 'Maximum 2000 characters');
   refused(await cut({parent: 'nope'}), 400, 'a cut');
   refused(await cut({version: 'one'}), 400, 'a cut');
   const wrongParent = await cut({parent: 'f'.repeat(64)});
@@ -363,7 +363,7 @@ test('with no bucket, each route that would move bytes says so, the same to ever
   const t = await s.person('Bucketless');
   const bytes = enc.encode('kept here\n');
   const sha = (await upload(s, t, bytes)).sha;
-  const noFiles = {error: 'The Remote cannot hold files just now', files: false};
+  const noFiles = {error: 'Remote cannot store files right now', files: false};
   const asks: [string, string, string | undefined][] = [['PUT', `/v1/blobs/${sha}`, t], ['GET', `/v1/blobs/${sha}`, t], ['GET', `/v1/os/${sha}`, undefined],
     ['HEAD', `/v1/os/${sha}`, undefined], ['GET', '/v1/desktop/length3.AppImage', undefined], ['GET', `/v1/seen/x@length3.test/notes/file?path=a`, undefined]];
   for (const [m, p, token] of asks) {

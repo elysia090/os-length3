@@ -12,7 +12,7 @@ import type {Context} from './context.ts';
 
 /** The person's name as written on Home; none written there, the one signed in with (the Remote's), as Home says it. */
 function shownName(written: string): HTMLElement {
-  const b = h('b', {}, written || t('No name yet'));
+  const b = h('b', {}, written || t('No name set'));
   if (!written) void myName().then((n) => { if (n) b.textContent = n; }, () => {});
   return b;
 }
@@ -137,12 +137,12 @@ export class Me {
     const out = h('button', {type: 'button', class: 'pop-item', role: 'menuitem'}, t('Sign out')) as HTMLButtonElement;
     out.addEventListener('click', () => {
       const error = h('p', {class: 'error small', role: 'alert'});
-      const off = h('button', {type: 'button', class: 'button small-button'}, t('Take them off')) as HTMLButtonElement;
+      const off = h('button', {type: 'button', class: 'button small-button'}, t('Remove from device')) as HTMLButtonElement;
       const yes = h('button', {type: 'button', class: 'button small-button primary'}, t('Sign out')) as HTMLButtonElement;
-      const no = h('button', {type: 'button', class: 'button small-button'}, t('Not now')) as HTMLButtonElement;
+      const no = h('button', {type: 'button', class: 'button small-button'}, t('Cancel')) as HTMLButtonElement;
       no.addEventListener('click', () => { this.close(); this.button.focus(); });
-      const said = h('div', {class: 'pop-said'}, h('p', {class: 'muted small'}, t('Your repos, TODO and profile stay in this browser.')),
-        h('p', {class: 'muted small'}, t('On a computer others use, take them off as you go: the Remote keeps them, and they come back when you sign in.')));
+      const said = h('div', {class: 'pop-said'}, h('p', {class: 'muted small'}, t('Repos, TODOs, and profile remain in this browser.')),
+        h('p', {class: 'muted small'}, t('On shared computers, clear local data on exit. Data is saved on Remote and restores upon sign-in.')));
       const ask = h('div', {class: 'pop-ask', role: 'group', 'aria-label': t('Sign out')}, said, error, answers(off, yes));
       const shown = performance.now();
       // A deed under the pointer holds still a moment (a double press is one), and one at a time.
@@ -157,14 +157,14 @@ export class Me {
       };
       yes.addEventListener('click', () => void run(async () => { await signOut(); return true; }));
       off.addEventListener('click', () => void run(async () => {
-        off.textContent = t('Taking them off…');
+        off.textContent = t('Removing from device…');
         // A Prompt holds its repo open: stopped first, as one leaving stops what they started.
         for (const [, s] of allSessions()) if (s.running) s.stop();
-        const kept = await takeOff().finally(() => { off.textContent = t('Take them off'); });
+        const kept = await takeOff().finally(() => { off.textContent = t('Remove from device'); });
         if (!kept.length) { await signOut(); return true; }
         // What could not go stays, said with why: signed out, it would be there to whoever uses this browser next.
-        said.replaceChildren(...kept.map(([what, why]) => h('p', {class: 'small'}, t('{what} stays: {why}', {what, why}))),
-          h('p', {class: 'muted small'}, t('If you sign out, it stays here for whoever uses this browser next.')));
+        said.replaceChildren(...kept.map(([what, why]) => h('p', {class: 'small'}, t('{what} retained: {why}', {what, why}))),
+          h('p', {class: 'muted small'}, t('If you sign out, local data remains accessible to subsequent browser users.')));
         off.replaceWith(no);
         return false;
       }));

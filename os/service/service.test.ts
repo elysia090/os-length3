@@ -178,7 +178,7 @@ test('SSH: a device says it listens, and to whom, but never where; any of the ac
   assert.equal((await device('POST', '/v1/ssh/this/beat', laptop, {})).json.on, true);
   // A page cannot turn SSH on, for itself or anyone: only the device, as itself.
   const fromPage = await s.call('PUT', '/v1/ssh/this', {token: web, body: {scope: 'device'}});
-  assert.deepEqual([fromPage.status, fromPage.json.error], [403, 'SSH is turned on at the device itself']);
+  assert.deepEqual([fromPage.status, fromPage.json.error], [403, 'SSH must be enabled on the physical device']);
   assert.equal((await s.call('POST', `/v1/ssh/${laptopId}/on`, {token: web})).status, 404);
   assert.equal((await listed(web)).length, 1);
   // The web turns it off; the device's next beat hears so, and a beat never turns it on again.
@@ -205,17 +205,17 @@ test('Turning off is confirmed by a passkey for five minutes and no longer, and 
   const off = (repo: string, typed = repo) => s.call('POST', `/v1/repos/${repo}/off`, {token: t, body: {repo: typed}});
   // Without a passkey just now, nothing; with one, the name must be the repo's own, as it is written.
   const none = await off('notes');
-  assert.deepEqual([none.status, none.json.error], [403, 'Confirm with a passkey.']);
+  assert.deepEqual([none.status, none.json.error], [403, 'Authenticate with passkey.']);
   await prove(s, t, 4 * 60 * 1000);
   for (const typed of ['Notes', ' notes', 'trip']) {
     const wrong = await off('notes', typed);
-    assert.deepEqual([wrong.status, wrong.json.error], [403, 'The name does not match.'], typed);
+    assert.deepEqual([wrong.status, wrong.json.error], [403, 'Name does not match.'], typed);
   }
   assert.equal((await off('notes')).status, 200);
   // Past five minutes the passkey is asked again.
   await prove(s, t, 5 * 60 * 1000 + 1000);
   const late = await off('trip');
-  assert.deepEqual([late.status, late.json.error], [403, 'Confirm with a passkey.']);
+  assert.deepEqual([late.status, late.json.error], [403, 'Authenticate with passkey.']);
   // A proof is one session's: another device of the same account is not confirmed by it.
   await prove(s, t);
   const other = await s.start('Ren');
@@ -424,7 +424,7 @@ test('work on an issue is its own line; submitted, reviewed by version, merged i
   const log = (await s.call('GET', '/v1/repos/r/log', {token: t})).json as unknown as {id: string; merged: string | null}[];
   assert.deepEqual(log.map((c) => c.merged), [c2, null]);
 
-  // Where each repo stands, every repo asked in one request: what the two routes say of each (asked twice, once), a repo
+  // Repo status, every repo asked in one request: what the two routes say of each (asked twice, once), a repo
   // not on the Remote with neither, one turned off as they say it, and only the asker's own: another's of the same name
   // is not theirs to read.
   await s.call('PATCH', '/v1/repos/quiet/draft', {token: t, body: {version: 0, set: {'README.md': readme}, remove: []}});
@@ -687,7 +687,7 @@ test('Servers: people who know each other, boards with talk and a TODO kept toge
   const other = (await s.call('POST', `/v1/servers/${sid}/boards`, {token: mio, body: {name: 'food'}})).json.id as string;
   // Two boards of one name are one too many to tell apart, whatever its case; made or renamed to.
   const twice = await s.call('POST', `/v1/servers/${sid}/boards`, {token: mio, body: {name: 'Food'}});
-  assert.deepEqual([twice.status, twice.json.error], [409, 'There is a board by that name already']);
+  assert.deepEqual([twice.status, twice.json.error], [409, 'A board with that name already exists']);
   assert.equal((await s.call('PATCH', `/v1/boards/${bid}`, {token: mio, body: {name: 'FOOD'}})).status, 409);
   await s.call('PUT', `/v1/boards/${other}/todos/f1`, {token: mio, body: {title: 'ramen', place: 1, created: 1}});
   assert.equal((await s.call('DELETE', `/v1/boards/${other}`, {token: mio})).status, 403);
@@ -814,12 +814,12 @@ test('Who sees a repo: its owner, the servers it is shown in, or everyone, under
   await commit(mio, {'README.md': mine}, 'mio');
   await s.call('POST', `/v1/servers/${sid}/repos`, {token: mio, body: {repo: 'hello'}});
   const clash = await s.call('PUT', '/v1/repos/hello/seen', {token: mio, body: {seen: 'everyone', as: sid}});
-  assert.deepEqual([clash.status, clash.json.error], [409, 'That name is taken']);
+  assert.deepEqual([clash.status, clash.json.error], [409, 'Username already taken']);
   // Taken down, it is held for Ren a while: nobody else's repo answers to it meanwhile.
   assert.equal((await seen({seen: 'servers', servers: [sid]})).json.seen, 'servers');
   assert.equal((await see('trip@length3.test:hello')).status, 404);
   const held = await s.call('PUT', '/v1/repos/hello/seen', {token: mio, body: {seen: 'everyone', as: sid}});
-  assert.deepEqual([held.status, held.json.error], [409, 'That name was let go, and is held for its owner a while']);
+  assert.deepEqual([held.status, held.json.error], [409, 'Name recently released; temporarily reserved for prior owner.']);
   assert.equal((await seen({seen: 'everyone', as: sid})).status, 200);
   // Made public by Ren as Ren: then Ren's name is its face, by choice.
   assert.equal((await seen({seen: 'everyone', as: 'me'})).json.as, 'ren@length3.test:hello');
@@ -855,7 +855,7 @@ test('Names: people and servers share one namespace; a name let go is held for i
   assert.equal((await s.call('DELETE', '/v1/inbox/addresses/rn@length3.test', {token: ren})).status, 200);
   assert.equal(await reachable('rn@length3.test'), false);
   const held = await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'rn'}});
-  assert.deepEqual([held.status, held.json.error], [409, 'That name was let go, and is held for its owner a while']);
+  assert.deepEqual([held.status, held.json.error], [409, 'Name recently released; temporarily reserved for prior owner.']);
   assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'rn'}})).status, 201);
   // Held long enough, it is anyone's.
   const {eq} = await import('drizzle-orm');
@@ -864,7 +864,7 @@ test('Names: people and servers share one namespace; a name let go is held for i
   assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'rn'}})).status, 201);
   // A username is changed, never let go; the one it was is held for its owner the same, theirs to change back to.
   const lettingGo = await s.call('DELETE', '/v1/inbox/addresses/ren@length3.test', {token: ren});
-  assert.deepEqual([lettingGo.status, lettingGo.json.error], [409, 'Your username can be changed, not let go']);
+  assert.deepEqual([lettingGo.status, lettingGo.json.error], [409, 'Usernames can be changed, but not relinquished']);
   assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'rx'}})).status, 201);
   assert.deepEqual((await s.call('PUT', '/v1/inbox/username', {token: ren, body: {name: '@Ren-B'}})).json, {address: 'ren-b@length3.test'});
   // Changed, it stays their first name here, before the one claimed beside it.
@@ -875,7 +875,7 @@ test('Names: people and servers share one namespace; a name let go is held for i
   assert.deepEqual([await reachable('ren@length3.test'), await reachable('ren-b@length3.test')], [true, false]);
   // Twice an hour at most, so nobody holds a row of names by changing through them.
   const third = await s.call('PUT', '/v1/inbox/username', {token: ren, body: {name: 'ren-c'}});
-  assert.deepEqual([third.status, third.json.error], [429, 'Your name can change twice an hour']);
+  assert.deepEqual([third.status, third.json.error], [429, 'Username can only be changed twice per hour']);
   // A name on one's own domain answers while its DNS names this Remote for its owner.
   const rec = (await s.call('GET', '/v1/inbox/domains/ren.dev', {token: ren})).json as unknown as {name: string; value: string};
   s.publish(rec.name, rec.value);
@@ -883,7 +883,7 @@ test('Names: people and servers share one namespace; a name let go is held for i
   assert.equal(((await s.call('GET', '/v1/inbox/lookup?address=ren@ren.dev', {token: mio})).json as unknown as {reachable: boolean}).reachable, true);
   s.unpublish(rec.name);
   const gone = (await s.call('GET', '/v1/inbox/lookup?address=ren@ren.dev', {token: mio})).json as unknown as {reachable: boolean; why: string};
-  assert.deepEqual([gone.reachable, gone.why], [false, 'Its domain no longer names this Remote']);
+  assert.deepEqual([gone.reachable, gone.why], [false, 'Domain no longer points to this Remote']);
   assert.ok(((await s.call('GET', '/v1/inbox/me', {token: ren})).json.addresses as {address: string; lapsed?: boolean}[]).find((a) => a.address === 'ren@ren.dev')?.lapsed);
 });
 
@@ -925,7 +925,7 @@ test('Names on the Remote: first come, their owner\'s with no term to renew; let
   assert.equal((await look('ren')).reachable, false);
   assert.deepEqual(await look(me.code), {address: 'ren-x@length3.test', reachable: true});
   const held = await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'ren'}});
-  assert.deepEqual([held.status, held.json.error], [409, 'That name was let go, and is held for its owner a while']);
+  assert.deepEqual([held.status, held.json.error], [409, 'Name recently released; temporarily reserved for prior owner.']);
   assert.equal((await s.call('PUT', '/v1/inbox/username', {token: ren, body: {name: 'ren'}})).status, 200);
   assert.equal((await look('ren')).reachable, true);
   // There is no term: nothing to renew, here or for a server.
@@ -967,7 +967,7 @@ test('Consent: nobody is put in a server by someone they have not accepted, or h
   await accept(s, kai, 'ren', 'blocked');
   await accept(s, ren, 'kai');
   const refused = await add('kai');
-  assert.deepEqual([refused.status, refused.json.error], [403, 'Only your contacts can be added']);
+  assert.deepEqual([refused.status, refused.json.error], [403, 'Only existing contacts can be invited']);
   // Nor someone who has not accepted Ren; when both sides have, they are in.
   await accept(s, ren, 'mio');
   assert.equal((await add('mio')).status, 403);
@@ -982,7 +982,7 @@ test('Consent: nobody is put in a server by someone they have not accepted, or h
   // Owning fifty (and one) is the end of it.
   await s.db.execute(sql`update server_member set owner = true where user_id = ${k}`);
   const full = await s.call('POST', '/v1/servers', {token: kai, body: {name: 'More', address: 'kaimore'}});
-  assert.deepEqual([full.status, full.json.error], [429, 'Too many servers']);
+  assert.deepEqual([full.status, full.json.error], [429, 'Server limit reached']);
 });
 
 /** A server of Ren's with Mio and Sora in it, its first board taking guests; Kai is signed in but not in it. */
@@ -1023,11 +1023,11 @@ test('Guests: an invitation one of its people hands out is the whole proof; it l
   assert.ok(kept.length === 1 && kept[0].digest !== one.json.invite && !kept[0].digest.includes(one.json.invite as string));
   assert.equal((await come(kept[0].digest, 'Aki')).status, 403);
   // Wrong, malformed, or for another board: the same refusal, and nothing is spent.
-  const refused = [403, 'This invitation does not open this board'];
+  const refused = [403, 'Invite link invalid for this board'];
   for (const code of ['0'.repeat(32), 'nonsense', 42, null]) assert.deepEqual([(await come(code, 'Aki')).status, (await come(code, 'Aki')).json.error], refused);
   assert.deepEqual([(await come(one.json.invite, 'Aki', other)).status], [403]);
   // A name is the guest's own, but never one of its people's (nor the server's), never an address, never hidden marks.
-  for (const name of ['ren', 'MIO', 'Trip']) assert.deepEqual([(await come(one.json.invite, name)).status, (await come(one.json.invite, name)).json.error], [409, 'That name is taken here'], name);
+  for (const name of ['ren', 'MIO', 'Trip']) assert.deepEqual([(await come(one.json.invite, name)).status, (await come(one.json.invite, name)).json.error], [409, 'Name already taken in this space'], name);
   for (const name of ['', '   ', 'aki@example.org', 'x'.repeat(33), '‮evil', 'a​b', 'tab\u0007']) assert.equal((await come(one.json.invite, name)).status, 400, JSON.stringify(name));
   // None of that spent its one use; then it lets one person in, once.
   const aki = await come(one.json.invite, '  Aki  ');
@@ -1070,7 +1070,7 @@ test('Guests: an invitation one of its people hands out is the whole proof; it l
   // A board has so many out at once.
   for (let i = 0; i < 20; i++) assert.equal((await invite(mio)).status, 201);
   const more = await invite(sora);
-  assert.deepEqual([more.status, more.json.error], [429, 'This board has as many invitations out as it takes; revoke one first']);
+  assert.deepEqual([more.status, more.json.error], [429, 'Invite limit reached; revoke an active invite first']);
   // Someone who leaves the server takes the invitations they made with them.
   assert.equal((await s.call('DELETE', `/v1/servers/${sid}/people/mio@length3.test`, {token: mio})).status, 204);
   assert.equal(await count(s, sql`select count(*)::int as n from board_invite where board_id = ${bid} and uses > 0`), 0);
@@ -1088,12 +1088,12 @@ test('Guests: shown as guests, held to so many posts an hour each and on a board
   assert.match((await s.call('GET', `/v1/open/${bid}/archive`)).text, /Aki \(guest\): hello from outside/);
   // A guest: twenty posts an hour.
   for (let i = 1; i < 20; i++) assert.equal((await say(aki, `post ${i}`)).status, 201);
-  assert.deepEqual([(await say(aki, 'one more')).status, (await say(aki, 'one more')).json.error], [429, 'Too many posts this hour']);
+  assert.deepEqual([(await say(aki, 'one more')).status, (await say(aki, 'one more')).json.error], [429, 'Hourly post limit reached']);
   // A board's guests together: a hundred an hour, whoever they are (guests gone still count); its people write on.
   const hour = Date.now() - 60_000;
   for (let i = 0; i < 80; i++) await s.db.insert(schema.talk).values({id: hour.toString(36).padStart(9, '0') + i.toString(36).padStart(8, '0'), boardId: bid, by: 'Gone', body: 'x'});
   const full = await say(bo, 'and me?');
-  assert.deepEqual([full.status, full.json.error], [429, 'Guests have written as much as they may here this hour']);
+  assert.deepEqual([full.status, full.json.error], [429, 'Hourly guest posting limit reached']);
   assert.equal((await s.call('POST', `/v1/boards/${bid}/posts`, {token: sora, body: {body: 'we still can'}})).status, 201);
   await s.db.execute(sql`delete from board_post where by = 'Gone'`);
   assert.equal((await say(bo, 'and me?')).status, 201);
@@ -1136,14 +1136,14 @@ test('Names: an account keeps five, those it let go among them; a few servers a 
   // Let go, a name is still held for Ren, and still counts: no sixth by letting go of one.
   await s.call('DELETE', '/v1/inbox/addresses/r4@length3.test', {token: ren});
   const sixth = await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'r6'}});
-  assert.deepEqual([sixth.status, sixth.json.error], [409, 'Too many names']);
+  assert.deepEqual([sixth.status, sixth.json.error], [409, 'Username limit reached']);
   assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'r4'}})).status, 201);
   // Ten servers a day.
   await named(s, [mio, 'mio']);
   const ids: string[] = [];
   for (let i = 0; i < 10; i++) ids.push((await s.call('POST', '/v1/servers', {token: mio, body: {name: `S${i}`, address: `mios${i}`}})).json.id as string);
   const eleventh = await s.call('POST', '/v1/servers', {token: mio, body: {name: 'S10', address: 'mios10'}});
-  assert.deepEqual([eleventh.status, eleventh.json.error], [429, 'Too many servers made today']);
+  assert.deepEqual([eleventh.status, eleventh.json.error], [429, 'Daily server creation limit reached']);
   // Made and left with nobody else in it: held a day, not thirty.
   assert.equal((await s.call('DELETE', `/v1/servers/${ids[0]}/people/mio@length3.test`, {token: mio})).status, 204);
   const held = ((await s.call('GET', '/v1/servers?gone=1', {token: mio})).json as unknown as {id: string; until: number}[]).find((x) => x.id === ids[0])!;
@@ -1161,16 +1161,16 @@ test('Storage: settings, repos, lines and reviews are capped, trees count toward
   const me = await idOf(s, t);
   // Eight settings at most.
   for (const k of ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) assert.equal((await s.call('PUT', `/v1/home/${k}`, {token: t, body: {value: 'x', version: 0}})).status, 200);
-  assert.deepEqual((await s.call('PUT', '/v1/home/i', {token: t, body: {value: 'x', version: 0}})).json.error, 'Too many settings');
+  assert.deepEqual((await s.call('PUT', '/v1/home/i', {token: t, body: {value: 'x', version: 0}})).json.error, 'Too many configuration settings');
   assert.equal((await s.call('PUT', '/v1/home/a', {token: t, body: {value: 'y', version: 1}})).status, 200);
   const one = await upload(s, t, enc.encode('x'));
   assert.equal((await s.call('PATCH', '/v1/repos/small/draft', {token: t, body: {version: 0, set: {'a.txt': one.sha}, remove: []}})).status, 200);
   // Two hundred repos, a hundred pieces of work on one, fifty reviews of a change.
   await s.db.execute(sql`insert into repo (user_id, name) select ${me}, 'r' || g from generate_series(1, 199) g`);
-  assert.deepEqual((await s.call('PATCH', '/v1/repos/more/draft', {token: t, body: {version: 0, set: {}, remove: []}})).json.error, 'Too many repos');
+  assert.deepEqual((await s.call('PATCH', '/v1/repos/more/draft', {token: t, body: {version: 0, set: {}, remove: []}})).json.error, 'Repository limit reached');
   const small = sql`(select id from repo where user_id = ${me} and name = 'small')`;
   await s.db.execute(sql`insert into line (repo_id, user_id, name) select ${small}, ${me}, 'l' || g from generate_series(1, 100) g`);
-  assert.deepEqual((await s.call('POST', '/v1/repos/small/lines', {token: t, body: {issue: 'issue/new.md'}})).json.error, 'This repo has too much work open');
+  assert.deepEqual((await s.call('POST', '/v1/repos/small/lines', {token: t, body: {issue: 'issue/new.md'}})).json.error, 'Too many open tasks in this repo');
   const [c1, c2] = ['00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002'], h = 'a'.repeat(64);
   await s.db.execute(sql`insert into cut (repo_id, id, user_id, tree, title) values (${small}, ${h}, ${me}, '{}', 'x')`);
   await s.db.execute(sql`insert into change (id, repo_id, user_id, line, title, head) values (${c1}, ${small}, ${me}, 'l1', 'x', ${h}), (${c2}, ${small}, ${me}, 'l2', 'x', ${h})`);
@@ -1180,11 +1180,11 @@ test('Storage: settings, repos, lines and reviews are capped, trees count toward
   const marks = (marked.json.reviews as {marks: string[]}[])[0].marks;
   assert.ok(marked.status === 201 && marks.length > 0 && marks.length <= 200 && marks.join('').length <= 32 * 1024, String(marks.length));
   await s.db.execute(sql`insert into review (change_id, user_id, version, verdict, by) select ${c2}, ${me}, 1, 'comment', '' from generate_series(1, 50)`);
-  assert.deepEqual((await review(c2, [])).json.error, 'Too many reviews on this change');
+  assert.deepEqual((await review(c2, [])).json.error, 'Review limit reached for this Change');
   // A tree of long paths to one small file counts as what it takes: refused when it would not fit.
   const set = Object.fromEntries(Array.from({length: 700}, (_, i) => [`${'d'.repeat(150)}/${i}.txt`, one.sha]));
   const big = await s.call('PATCH', '/v1/repos/small/draft', {token: t, body: {version: 1, set, remove: []}});
-  assert.deepEqual([big.status, big.json.error], [507, 'The Remote is full for this account']);
+  assert.deepEqual([big.status, big.json.error], [507, 'Remote storage full for this account']);
   // Eight uploads at once into the room that is left: those that fit, and no more.
   const sent = await Promise.all(Array.from({length: 8}, (_, i) => upload(s, t, new Uint8Array(30_000).fill(i + 1))));
   const took = sent.filter((r) => r.status === 201).length;
@@ -1348,13 +1348,13 @@ test('Discard: an off repo goes for good now, asked as off is; its name is remem
 
   // Asked as off is: a passkey just now and the repo's name; and only of a repo that is off.
   const discard = (body: unknown = {repo: 'r'}, name = 'r') => s.call('POST', `/v1/repos/${name}/discard`, {token: t, body});
-  assert.deepEqual([(await discard()).status, (await discard()).json.error], [403, 'Confirm with a passkey.']);
+  assert.deepEqual([(await discard()).status, (await discard()).json.error], [403, 'Authenticate with passkey.']);
   const session = ((await s.call('GET', '/api/auth/get-session', {token: t})).json as unknown as {session: {id: string}}).session.id;
   await s.db.insert(schema.guard).values({userId: me, proofSession: session, proofAt: new Date()})
     .onConflictDoUpdate({target: schema.guard.userId, set: {proofSession: session, proofAt: new Date()}});
-  assert.deepEqual([(await discard({repo: 'keep'})).status, (await discard({repo: 'keep'})).json.error], [403, 'The name does not match.']);
+  assert.deepEqual([(await discard({repo: 'keep'})).status, (await discard({repo: 'keep'})).json.error], [403, 'Name does not match.']);
   const onStill = await discard();
-  assert.deepEqual([onStill.status, onStill.json.error], [409, 'Turn it off first.']);
+  assert.deepEqual([onStill.status, onStill.json.error], [409, 'Disable it first.']);
   assert.deepEqual(await Promise.all(tables.map(of)), [1, 2, 2, 1, 1, 1]);
   assert.equal((await discard({repo: 'nope'}, 'nope')).status, 404);
 
@@ -1378,7 +1378,7 @@ test('Discard: an off repo goes for good now, asked as off is; its name is remem
   const read = await s.call('GET', '/v1/repos/r', {token: t});
   assert.deepEqual([read.status, read.json.gone], [404, gone[0].at]);
   const resent = await s.call('PATCH', '/v1/repos/r/draft', {token: t, body: {version: 0, set: {'README.md': readme}, remove: []}});
-  assert.deepEqual([resent.status, resent.json], [410, {error: 'This repo was discarded on the Remote.', gone: gone[0].at}]);
+  assert.deepEqual([resent.status, resent.json], [410, {error: 'This repo was permanently deleted on Remote.', gone: gone[0].at}]);
   assert.equal((await s.call('PATCH', '/v1/repos/r/draft', {token: t, body: {version: 2, set: {}, remove: []}})).status, 410);
   assert.equal((await s.call('PATCH', '/v1/repos/r/draft?line=001&anew=1', {token: t, body: {version: 1, set: {}, remove: []}})).status, 410);
   assert.deepEqual(((await s.call('GET', '/v1/repos', {token: t})).json as unknown as unknown[]).length, 1);
@@ -1391,7 +1391,7 @@ test('Discard: an off repo goes for good now, asked as off is; its name is remem
   assert.deepEqual(((await s.call('GET', '/v1/repos/r', {token: t})).json as unknown as {draft: object}).draft, {'README.md': readme});
   // `gone` is the Remote's own word: no repo is made under it.
   const word = await s.call('PATCH', '/v1/repos/gone/draft', {token: t, body: {version: 0, set: {}, remove: []}});
-  assert.deepEqual([word.status, word.json.error], [400, 'A repo cannot be called gone']);
+  assert.deepEqual([word.status, word.json.error], [400, 'Repo name cannot be "gone"']);
 });
 
 test('The sweep remembers a repo it let go as gone, for 90 days', async () => {
@@ -1422,7 +1422,7 @@ test('A board item taken off is not brought back by a late change; closing a boa
   assert.equal((await item({title: 'Ship it', place: 5, created: 1})).status, 201);
   assert.equal((await s.call('DELETE', `/v1/boards/${bid}/todos/a1`, {token: ren})).status, 204);
   const late = await item({done: true});
-  assert.deepEqual([late.status, late.json.error], [404, 'That item was taken off']);
+  assert.deepEqual([late.status, late.json.error], [404, 'Item already deleted']);
   assert.deepEqual((await s.call('GET', `/v1/boards/${bid}/todos`, {token: ren})).json, []);
   // A whole item (a title and a place) is a new one.
   assert.equal((await item({title: 'Ship it again', place: 1})).status, 201);

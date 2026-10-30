@@ -187,7 +187,7 @@ pub(super) fn walk(dir: &Path, prefix: &str, out: &mut Local) {
             walk(&e.path(), &rel, out);
         } else if meta.is_file() {
             if meta.len() > BLOB_LIMIT {
-                out.unsynced.push((rel, crate::tr!("a file over 16 MB", "16 MB を超えるファイル")));
+                out.unsynced.push((rel, crate::tr!("File exceeds 16 MB", "16 MB を超えるファイル")));
                 continue;
             }
             let sha = if out.fresh { fs::read(e.path()).ok().map(|b| sha256(&b)) } else { digest(&e.path(), &meta) };

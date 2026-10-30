@@ -559,7 +559,7 @@ export const loadL3 = (): Promise<L3> => (loading ??= (async () => {
   ]).catch(() => null) : null;
   const a = await download(`${BASE}l3.json`, {}, undefined, {attempts: 4}).then((b) => {
     // Not JSON is a build without l3 (the host answered with the page): said so, never the parser's words.
-    try { return JSON.parse(new TextDecoder().decode(b)) as About; } catch { throw new Fatal(t('There is no l3 (npm run l3)')); }
+    try { return JSON.parse(new TextDecoder().decode(b)) as About; } catch { throw new Fatal(t('l3 missing (run: npm run l3)')); }
   });
   const read = plan && plan.sha256 === a.sha256 && plan.index.sha256 === a.index.sha256 ? await ahead : null;
   const index0 = read ? read[0] as Uint8Array : await bytesOf(a.index.path, a.index);

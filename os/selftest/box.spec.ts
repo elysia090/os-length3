@@ -13,15 +13,15 @@ test.beforeEach(async ({app}) => {
 
 test('the box\'s pill chooses what the box does: an issue written there is the repo\'s next, a line for TODO is on Home', async ({app}) => {
   const box = app.forge.promptBox, said = app.main.locator('.box-said');
-  const pill = app.main.getByRole('button', {name: /^What the box does/});
-  await expect(pill).toHaveAccessibleName('What the box does: Run');
+  const pill = app.main.getByRole('button', {name: /^Input box action/});
+  await expect(pill).toHaveAccessibleName('Input box action: Run');
   // Pressed, it brings out the three; Issue chosen, the pill is the repo's next issue and the keyboard is in the box.
   await pill.click();
-  await app.main.getByRole('menuitemradio', {name: /Write an issue/}).click();
-  await expect(pill).toHaveAccessibleName('What the box does: Create');
+  await app.main.getByRole('menuitemradio', {name: /Create issue/}).click();
+  await expect(pill).toHaveAccessibleName('Input box action: Create');
   await expect(pill).toHaveText('hello #1', {useInnerText: true});
   await expect(box).toBeFocused();
-  await expect(box).toHaveAttribute('placeholder', 'Write an issue in hello');
+  await expect(box).toHaveAttribute('placeholder', 'Create issue in hello');
   // Written in for an issue, it stays the box: only Run brings the Prompt up over the center.
   await expect(app.page.locator('.work.bench.prompting')).toHaveCount(0);
   await box.fill('Feat: A trellis for the tomatoes\nSix feet, of bamboo.');
@@ -31,13 +31,13 @@ test('the box\'s pill chooses what the box does: an issue written there is the r
   await expect(pill).toHaveText('hello #2', {useInnerText: true});
   // Alt+3 from the box: TODO, at once.
   await box.press('Alt+3');
-  await expect(pill).toHaveAccessibleName('What the box does: Add');
+  await expect(pill).toHaveAccessibleName('Input box action: Add');
   await box.fill('Water the basil at eleven');
   await box.press('Control+Enter');
   await expect(said).toHaveText('Added to TODO');
   // Ctrl+` is the Prompt's, so the box runs again.
   await app.page.keyboard.press('Control+Backquote');
-  await expect(pill).toHaveAccessibleName('What the box does: Run');
+  await expect(pill).toHaveAccessibleName('Input box action: Run');
   await app.rail.go('git');
   await expect(app.git.issue('#1 Feat：A trellis for the tomatoes')).toBeVisible();
   await app.rail.go('home');
@@ -107,8 +107,8 @@ test('Escape and the Prompt\'s × give the keyboard back to where it was; up, Al
   await box.focus();
   await expect(up).toHaveCount(1);
   await box.press('Alt+ArrowDown');
-  const menu = app.page.getByRole('menu', {name: 'What the box does'});
-  await expect(menu.getByRole('menuitemradio', {name: /Run in the Prompt/})).toBeFocused();
+  const menu = app.page.getByRole('menu', {name: 'Input box action'});
+  await expect(menu.getByRole('menuitemradio', {name: /Run in Prompt/})).toBeFocused();
   await app.page.keyboard.press('Escape');
   await expect(menu).toBeHidden();
   await expect(box).toBeFocused();
@@ -128,7 +128,7 @@ async function placeIn(file: Locator, line: number, col: number) {
 
 test('Edit: the box holds a line of the file, written there as in the file, and a text\'s own keys go along it', async ({app}) => {
   const box = app.forge.promptBox, page = app.page, file = app.forge.editor('src/main.c');
-  const pill = app.main.getByRole('button', {name: /^What the box does/});
+  const pill = app.main.getByRole('button', {name: /^Input box action/});
   const before = '#include <stdio.h>\n\nint main(void) {\n    puts("hello");\n    return 0;\n}\n';
   const thrown: string[] = [];
   page.on('pageerror', (e) => thrown.push(e.message));
@@ -137,7 +137,7 @@ test('Edit: the box holds a line of the file, written there as in the file, and 
   await file.click();
   await page.keyboard.press('Control+g');
   await expect(box).toBeFocused();
-  await expect(pill).toHaveAccessibleName('What the box does: Edit');
+  await expect(pill).toHaveAccessibleName('Input box action: Edit');
   // A line pressed while the box has the keyboard comes into it, the caret where it was pressed.
   const at = await placeIn(file, 5, 13);
   await page.mouse.click(at.x, at.y);

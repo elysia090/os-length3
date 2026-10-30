@@ -123,7 +123,7 @@ export class ServerView {
         return;
       }
       this.opening();
-    } catch (e) { if (!known?.length) this.failed(e, t('Your servers are here again once it answers')); }
+    } catch (e) { if (!known?.length) this.failed(e, t('Servers will reappear once Remote responds')); }
   }
 
   /** What Server opens at, the servers read: the one last seen, a guest's board, or making the first. */
@@ -175,14 +175,14 @@ export class ServerView {
       // person's own.
       if (!this.here.shown.length) {
         this.row.instead(h('div', {class: 'server-signed-out'}, pageHead('server'),
-          signInPlace(t('Sign in'), ...signInLead(t('Signed in, you make servers: boards for the people in them, and the repos you show them.')), signInBox(() => this.ways.again()))));
+          signInPlace(t('Sign in'), ...signInLead(t('Signing in lets you create servers to share boards and repos with members.')), signInBox(() => this.ways.again()))));
         this.band.element.hidden = true;
         this.paintDock(null);
         return;
       }
       const i = this.here.shown.findIndex((b) => b.id === (held?.board ?? this.at.board));
       this.row.fill(this.here.shown.length, i >= 0 ? i : 0);
-    } catch (e) { this.failed(e, t('Boards open to everyone are here again once it answers')); }
+    } catch (e) { this.failed(e, t('Public boards will reappear once Remote responds')); }
   }
 
   /**
@@ -213,7 +213,7 @@ export class ServerView {
     servers.dropInvite();
     this.here.shown = [];
     this.row.say(h('div', {class: 'slide', 'aria-current': 'true'}, h('div', {class: 'board-card board-said'},
-      h('div', {class: 'board-body'}, h('p', {}, t('This invitation opens no board that takes guests. Ask whoever gave it to you for another.'))))));
+      h('div', {class: 'board-body'}, h('p', {}, t('Invalid invite link. Request a new invite from the server owner.'))))));
     this.paintDock(null);
   }
 

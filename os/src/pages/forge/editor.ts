@@ -129,14 +129,14 @@ export class Editor {
   // Saved elsewhere while this one has unsaved edits: asked in the box, over the text, which
   // stays to be read and written on. Nothing is saved on its own until it is answered. What
   // differs opens under the answers, so nothing moves under the pointer that asked for it.
-  private ask = h('div', {class: 'file-ask', role: 'group', 'aria-label': t('Changed elsewhere')});
-  private see = h('button', {type: 'button', class: 'button small-button', 'aria-expanded': 'false'}, t('See what differs')) as HTMLButtonElement;
-  private other = h('button', {type: 'button', class: 'button small-button'}, t('Use the other')) as HTMLButtonElement;
-  private mine = h('button', {type: 'button', class: 'button small-button primary'}, t('Save yours over it')) as HTMLButtonElement;
+  private ask = h('div', {class: 'file-ask', role: 'group', 'aria-label': t('Modified externally')});
+  private see = h('button', {type: 'button', class: 'button small-button', 'aria-expanded': 'false'}, t('View diff')) as HTMLButtonElement;
+  private other = h('button', {type: 'button', class: 'button small-button'}, t('Keep external')) as HTMLButtonElement;
+  private mine = h('button', {type: 'button', class: 'button small-button primary'}, t('Overwrite with local')) as HTMLButtonElement;
   private difference = h('div', {class: 'file-ask-diff', hidden: ''});
   // Grown past what Forge edits: said in the box, over the text, with the way to keep it whole.
-  private large = h('div', {class: 'file-ask', role: 'group', 'aria-label': t('Too large to save here')});
-  private whole = h('button', {type: 'button', class: 'button small-button primary'}, t('Save it whole')) as HTMLButtonElement;
+  private large = h('div', {class: 'file-ask', role: 'group', 'aria-label': t('File too large to save here')});
+  private whole = h('button', {type: 'button', class: 'button small-button primary'}, t('Save full file')) as HTMLButtonElement;
 
   /** `text` in an editor, put on the `box`'s sheet. */
   constructor(text: string, box: FileBox) {
@@ -212,7 +212,7 @@ export class Editor {
     const {difference, held} = this;
     if (difference.hidden || held.theirs === null) return;
     const d = differs(held.theirs, this.area.value);
-    difference.replaceChildren(...diffFiles([{path: t('Yours against the other'), status: 'modified', binary: false, lines: d.lines, more: d.more}]));
+    difference.replaceChildren(...diffFiles([{path: t('Compare local vs. external'), status: 'modified', binary: false, lines: d.lines, more: d.more}]));
   }
 
   /** Answered, the ask folds away over the text, not at once. */
@@ -226,12 +226,12 @@ export class Editor {
   private asking() {
     const {ask} = this;
     clearTimeout(this.timer);
-    this.box.state.el.textContent = t('Changed elsewhere');
+    this.box.state.el.textContent = t('Modified externally');
     keepOut(ask);
     if (!ask.isConnected) {
       ask.replaceChildren(
-        h('p', {class: 'muted small'}, t('It was saved elsewhere while you wrote here.')),
-        h('p', {class: 'muted small'}, t('Yours is kept here until you choose.')),
+        h('p', {class: 'muted small'}, t('File was saved externally while editing here.')),
+        h('p', {class: 'muted small'}, t('Your local changes are kept until you choose.')),
         answers(this.other, this.see, this.mine), this.difference);
       this.box.head.after(ask);
     }
@@ -248,7 +248,7 @@ export class Editor {
     if (came === 'ask') { this.asking(); return false; }
     if (came === 'take') this.show(text);
     this.settle();
-    if (came === 'same' || state.el.textContent === t('Changed elsewhere')) state.el.textContent = '';
+    if (came === 'same' || state.el.textContent === t('Modified externally')) state.el.textContent = '';
     return true;
   }
 
@@ -259,7 +259,7 @@ export class Editor {
       this.held.wrote(text);
       if (this.area.value === this.held.saved) state.saved(); else state.unsaved();
     } catch (e) {
-      state.el.textContent = t('Could not save: {message}', {message: errorText(e)});
+      state.el.textContent = t('Failed to save: {message}', {message: errorText(e)});
     }
   }
 
@@ -284,13 +284,13 @@ export class Editor {
    */
   private tooLarge() {
     const {large} = this;
-    const size = t('It is {size}: Forge saves what it edits up to {limit}. Nothing is saved yet; what you wrote stays here.',
+    const size = t('Size is {size}. Forge can only save files up to {limit}. Unsaved changes remain in editor.',
       {size: bytes(new TextEncoder().encode(this.area.value).length), limit: bytes(EDIT_LIMIT)});
-    this.box.state.el.textContent = t('Not saved · over {limit}', {limit: bytes(EDIT_LIMIT)});
+    this.box.state.el.textContent = t('Unsaved · Exceeds {limit}', {limit: bytes(EDIT_LIMIT)});
     keepOut(large);
     if (large.isConnected) { large.firstElementChild!.textContent = size; return; }
     large.replaceChildren(h('p', {class: 'muted small'}, size),
-      h('p', {class: 'muted small'}, t('Make it smaller and it saves as before, or save it whole: Forge then shows its start to read, and the Prompt edits it whole.')),
+      h('p', {class: 'muted small'}, t('Reduce size to save normally, or save full file: Forge will show preview only, and Prompt edits the full file.')),
       answers(null, this.whole));
     this.box.head.after(large);
   }
@@ -313,7 +313,7 @@ export class Editor {
       this.fits();
       state.saved();
     } catch (e) {
-      state.el.textContent = t('Could not save: {message}', {message: errorText(e)});
+      state.el.textContent = t('Failed to save: {message}', {message: errorText(e)});
     } finally { this.whole.disabled = false; }
   }
 

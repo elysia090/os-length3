@@ -52,7 +52,7 @@ test('a TODO item begun and left empty goes as the keyboard leaves it', async ({
   await expect(app.home.title(app.home.items.nth(1))).toHaveValue('');
 });
 
-test('a TODO item goes by its ×, or Delete on its empty line, and Clear done takes the done ones', async ({app}) => {
+test('a TODO item goes by its ×, or Delete on its empty line, and Clear completed takes the done ones', async ({app}) => {
   await app.rail.go('home');
   await app.home.title(app.home.items.first()).click();
   for (const line of ['Buy: seeds', 'Call: the plumber', 'Fix: the gate', 'Paint: the fence', 'Oil: the hinge']) {
@@ -88,8 +88,8 @@ test('a TODO item goes by its ×, or Delete on its empty line, and Clear done ta
   await expect(app.home.title(app.home.items.nth(1))).toHaveValue('the hinge');
   await expect(app.home.title(app.home.items.nth(1))).toBeFocused();
 
-  // Clear done is there while something is done, and takes the done ones together.
-  const clear = app.home.todo.getByRole('button', {name: 'Clear done'});
+  // Clear completed is there while something is done, and takes the done ones together.
+  const clear = app.home.todo.getByRole('button', {name: 'Clear completed'});
   await expect(clear).toBeHidden();
   await app.home.mark(app.home.items.first()).click();
   await clear.click();
@@ -106,7 +106,7 @@ test('a TODO item goes by its ×, or Delete on its empty line, and Clear done ta
 test('the empty line at the foot of the TODO is room for an item: its mark dashed, and no stop on the way', async ({app}) => {
   await app.rail.go('home');
   const item = app.home.items.first();
-  await expect(app.home.title(item)).toHaveAttribute('placeholder', 'Fix: what to do');
+  await expect(app.home.title(item)).toHaveAttribute('placeholder', 'Fix: Task description');
   await expect(app.home.mark(item)).toBeDisabled();
   // Whole on a phone's line, not cut off as a title would be.
   await app.page.setViewportSize({width: 390, height: 844});
@@ -121,7 +121,7 @@ test('the empty line at the foot of the TODO is room for an item: its mark dashe
   await app.main.getByRole('button', {name: 'Edit profile'}).focus();
   await app.page.keyboard.press('Tab');
   await expect(app.home.title(item)).toBeFocused();
-  // Pressed, its dashed mark gives the caret to the line; written in, it is an item, its mark whole.
+  // Pressed, its dashed mark gives the caret Go to line; written in, it is an item, its mark whole.
   await app.main.getByRole('button', {name: 'Edit profile'}).focus();
   await app.home.mark(item).click({force: true});
   await expect(app.home.title(item)).toBeFocused();
@@ -217,7 +217,7 @@ test('the handle on Home is the username: the one given at sign-in, and changed 
   await app.main.getByRole('button', {name: 'Edit profile'}).click();
   await handle.fill('-no');
   await handle.press('Enter');
-  await expect(app.main.getByRole('alert')).toHaveText('A handle is 2–31 lowercase letters, digits, . - and _');
+  await expect(app.main.getByRole('alert')).toHaveText('Handle must be 2–31 lowercase letters, digits, or . - _');
   await expect(handle).toBeFocused();
 });
 

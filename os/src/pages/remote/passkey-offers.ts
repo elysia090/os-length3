@@ -19,7 +19,7 @@ export function passkeyNext(done: () => void, later: () => void): HTMLElement {
   const error = h('p', {class: 'error', role: 'alert'});
   void account.passkeys().then((list) => {
     if (list.length) { account.passkeyOfferDone(); return; }
-    const no = button(t('Later')), add = button(t('Add a passkey'), 'primary');
+    const no = button(t('Later')), add = button(t('Add passkey'), 'primary');
     // Put off: gone from the top; the offer under the repos stays until there is a passkey.
     no.addEventListener('click', () => { account.passkeyOfferDone(); putAway(box, () => { box.hidden = true; }, {fold: true}); later(); });
     add.addEventListener('click', () => void pressing(add, error, async () => {
@@ -31,8 +31,8 @@ export function passkeyNext(done: () => void, later: () => void): HTMLElement {
       done();
     }));
     box.hidden = false;
-    box.replaceChildren(h('h3', {id: 'passkey-next'}, h('span', {}, t('Add a passkey'))),
-      h('p', {class: 'muted'}, t('Next time, sign in with it alone.')),
+    box.replaceChildren(h('h3', {id: 'passkey-next'}, h('span', {}, t('Add passkey'))),
+      h('p', {class: 'muted'}, t('You can now sign in using only this passkey.')),
       answers(no, add), error);
   }, () => {});
   return box;
@@ -45,7 +45,7 @@ export function passkeyOffer(added: () => void, after: Promise<void>): HTMLEleme
   void Promise.all([account.passkeys(), after]).then(([list]) => {
     if (list.length) return;
     // An offer beside the page's work, not the work: the page's ink stays on its repos.
-    const add = button(t('Add a passkey'), 'small-button');
+    const add = button(t('Add passkey'), 'small-button');
     const note = h('p', {class: 'muted small', role: 'status'});
     // In the app, made in the browser: gone once the account has one, when the window comes back.
     const seen = async () => { if ((await account.passkeys().catch(() => [])).length) { box.hidden = true; added(); } };

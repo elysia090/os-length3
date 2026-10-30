@@ -88,7 +88,7 @@ async function slideOff(card: HTMLElement): Promise<void> {
  * at the left and Commit at the right, under the pointer.
  */
 function mainCard(repo: string, n: number, events: IssueEvents, after: () => void, brief = false): HTMLElement {
-  const card = h('div', {class: `main-card${brief ? ' brief' : ''}`, role: 'group', 'aria-label': t('Not committed on main in {repo}', {repo})});
+  const card = h('div', {class: `main-card${brief ? ' brief' : ''}`, role: 'group', 'aria-label': t('Uncommitted changes on main in {repo}', {repo})});
   const plain = () => {
     const from = card.isConnected ? card.getBoundingClientRect().height : 0;
     const commit = button(t('Commit'), 'primary');
@@ -115,19 +115,19 @@ function mainCard(repo: string, n: number, events: IssueEvents, after: () => voi
   const ask = (from: Element | null) => {
     const foot = from ? askFoot(from, card) : answers;
     const was = card.isConnected ? card.getBoundingClientRect().height : 0;
-    const line = h('input', {class: 'line-in', placeholder: t('Fix: what changed'), 'aria-label': t('The commit\'s line as Kind: title'), maxlength: '200', spellcheck: 'false'}) as HTMLInputElement;
+    const line = h('input', {class: 'line-in', placeholder: t('Fix: Description of changes'), 'aria-label': t('Commit title format: Type: Title'), maxlength: '200', spellcheck: 'false'}) as HTMLInputElement;
     folded.delete(repo);
     line.value = naming.get(repo) ?? '';
     naming.set(repo, line.value);
     line.addEventListener('input', () => naming.set(repo, line.value));
     const error = h('p', {class: 'error', role: 'alert'});
-    const no = button(t('Not now'), 'small-button');
+    const no = button(t('Cancel'), 'small-button');
     const yes = button(t('Commit'), 'small-button primary');
     no.addEventListener('click', () => { naming.delete(repo); folded.delete(repo); plain().focus(); });
     const shown = performance.now();
     yes.addEventListener('click', async () => {
       if (performance.now() - shown < SETTLE) return;
-      if (!kindOf(line.value).title.trim()) { error.textContent = t('A commit needs a title (for example Fix：title)'); line.focus(); nudge(line); return; }
+      if (!kindOf(line.value).title.trim()) { error.textContent = t('Commit requires a title (e.g. Fix: title)'); line.focus(); nudge(line); return; }
       busy(yes, true);
       error.textContent = '';
       try {
@@ -183,7 +183,7 @@ const opened = new Set<string>();
 /** The issues merged into main, newest first: who handed each in and when it was merged; opened, its diff. Only read. */
 function mergedList(list: {repo: string; change: git.Change}[], all: boolean): HTMLElement {
   return h('div', {class: 'done-list'}, ...list.map(({repo, change: c}) => {
-    const inside = h('div', {class: 'done-diff'}, h('p', {class: 'muted small'}, t('Reading…')));
+    const inside = h('div', {class: 'done-diff'}, h('p', {class: 'muted small'}, t('Loading…')));
     const meta = t('{who} · merged {when}', {who: c.submittedBy || '—', when: ago(c.updatedAt)});
     const fresh = justMerged(c.id);
     const fold = h('details', {class: fresh ? 'done-row landing' : 'done-row', 'data-change': c.id},

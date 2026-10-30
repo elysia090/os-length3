@@ -14,8 +14,8 @@ export function agentSection(counted: (n: number) => void = () => {}): HTMLEleme
   const paint = (k: Shown | null) => {
     counted(k ? 1 : 0);
     section.replaceChildren(h('div', {class: 'agent-box'}, ...(k ? kept(k) : given())),
-      h('p', {class: 'muted small agent-note'}, h('span', {}, t('Kept on this device alone: in no dotfile, never sent to the Remote.')),
-        h('span', {}, t('The box\'s Agent asks with it, and the Prompts started here have it.'))));
+      h('p', {class: 'muted small agent-note'}, h('span', {}, t('Stored securely on this device only. Excluded from dotfiles and Remote sync.')),
+        h('span', {}, t('Used by UI Agent and inherited by local Prompts.'))));
   };
   void agentKey().then(paint);
   // Heard while this page's part is there; once it is gone (the page made again), no longer.
@@ -38,7 +38,7 @@ function kept(k: Shown): Node[] {
 /** No key yet: the line to give one in, Use beside it; while it is tried, the maker is asked which model it opens. */
 function given(): Node[] {
   const input = h('input', {class: 'line-in mono agent-in', type: 'password', autocomplete: 'off', spellcheck: 'false',
-    'aria-label': t('API key'), placeholder: t('Paste an API key')}) as HTMLInputElement;
+    'aria-label': t('API key'), placeholder: t('Paste API key')}) as HTMLInputElement;
   const use = button(t('Use'), 'primary');
   use.disabled = true;
   const said = h('p', {class: 'small agent-said', role: 'status'});
@@ -47,13 +47,13 @@ function given(): Node[] {
     if (use.disabled) return;
     use.disabled = input.disabled = true;
     said.classList.remove('error');
-    said.textContent = t('Trying the key…');
+    said.textContent = t('Validating API key…');
     try { await giveAgentKey(input.value); }
     catch (e) {
       use.disabled = input.disabled = false;
       said.classList.add('error');
       // The maker not reached at all (offline, or it takes no asking from a page) is said so, not as the browser's words.
-      said.textContent = e instanceof TypeError ? t('The Agent could not be reached') : errorText(e);
+      said.textContent = e instanceof TypeError ? t('Cannot connect to Agent') : errorText(e);
       input.focus();
     }
   };

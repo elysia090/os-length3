@@ -70,7 +70,7 @@ interface BoxParts {
 
 /** The box at the foot of a bench's center: its field and pill, what is said under it, what it does with what is written. */
 export class Box {
-  readonly prompt = h('textarea', {class: 'prompt-in', rows: '1', 'aria-label': t('Prompt box'), spellcheck: 'false', autocapitalize: 'off'}) as HTMLTextAreaElement;
+  readonly prompt = h('textarea', {class: 'prompt-in', rows: '1', 'aria-label': t('Prompt input'), spellcheck: 'false', autocapitalize: 'off'}) as HTMLTextAreaElement;
   readonly note = h('p', {class: 'prompt-note muted small', role: 'status'});
   /** Where an issue or a TODO sent went, said to be heard (seen going, so the box does not move as a line comes). */
   readonly heard = h('p', {class: 'sr-only box-said', role: 'status'});
@@ -353,7 +353,7 @@ export class Box {
     this.form.dataset.mode = mode;
     this.#summonKey.textContent = mode === 'edit' ? 'G' : '`';
     this.#summonKey.classList.toggle('tick', mode !== 'edit');
-    this.chip.setAttribute('aria-label', t('What the box does: {what}', {what: sendWord(mode)}));
+    this.chip.setAttribute('aria-label', t('Input box action: {what}', {what: sendWord(mode)}));
     this.runIt.textContent = sendWord(mode);
     this.runIt.title = sendTitle(mode, this.#keys);
     // Edit has nothing to send: what is typed is in the file already.
@@ -384,8 +384,8 @@ export class Box {
     if (this.#mode !== 'run') { void this.#write(this.#mode, repo); return; }
     const s = sessionIfAny(repo);
     // Ended: started again, and what was written waits in the box to be sent once it is up.
-    if (s?.ended) { s.restart(); this.#pillLine.follow(); this.#say(t('Still starting')); return; }
-    if (!sessionFor(repo).send(this.prompt.value)) { this.#say(t('Still starting')); return; }
+    if (s?.ended) { s.restart(); this.#pillLine.follow(); this.#say(t('Starting up…')); return; }
+    if (!sessionFor(repo).send(this.prompt.value)) { this.#say(t('Starting up…')); return; }
     this.#unsay();
     this.#say('');
     this.prompt.value = '';
@@ -407,7 +407,7 @@ export class Box {
       // Nothing to make it of: said in ink, and the box shakes its head, keeping the keyboard (Fix： alone has a kind, not a title).
       if (!sent) {
         const {kind} = kindOf(text.split('\n')[0] ?? '');
-        this.#refuse(kind ? t('Write its title after {kind}：', {kind}) : t('Its first line is its title'));
+        this.#refuse(kind ? t('Enter title after {kind}:', {kind}) : t('First line is the title'));
         return;
       }
       // Pressed, it goes to where it is: the issue in Git, the TODO on Home. Its line in this box's pane, never in
@@ -430,7 +430,7 @@ export class Box {
     const question = this.prompt.value.trim();
     if (!question) return;
     const use = await agentUse();
-    if (!use) { this.#refuse(t('No API key on this device: give one in Runtime')); return; }
+    if (!use) { this.#refuse(t('No API key configured on this device; set one in Runtime')); return; }
     if (this.prompt.value.trim() !== question) return;
     const front = this.#edit.inFront();
     const land = sendInto(this.prompt);
@@ -443,7 +443,7 @@ export class Box {
     this.prompt.value = '';
     drafts.delete(this.#draft());
     this.#fit();
-    this.heard.textContent = t('Asked the Agent');
+    this.heard.textContent = t('Prompt sent to Agent');
     await answer(session.answer(row), at, use, await told(at, front), question);
   }
 

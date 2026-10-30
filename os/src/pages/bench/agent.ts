@@ -50,9 +50,9 @@ export function answerNodes(text: string): Node[] {
 
 /** What went wrong, as a person would read it: the key refused, too many asks, nobody reached, or the maker's words. */
 export function whyNot(e: unknown): string {
-  if (!(e instanceof AgentError)) return t('The Agent could not be reached');
-  if (e.status === 401 || e.status === 403) return t('The key was refused: give it again in Runtime');
-  if (e.status === 429) return t('Asked too often: try again in a moment');
+  if (!(e instanceof AgentError)) return t('Cannot connect to Agent');
+  if (e.status === 401 || e.status === 403) return t('API key invalid; re-enter in Runtime');
+  if (e.status === 429) return t('Rate limit exceeded; try again shortly');
   return e.message;
 }
 
@@ -79,7 +79,7 @@ export async function answer(into: HTMLElement, repo: string, use: Use, system: 
       into.classList.remove('waiting');
       frame ||= requestAnimationFrame(draw);
     }
-    if (!text.trim()) throw new AgentError(0, t('The Agent said nothing'));
+    if (!text.trim()) throw new AgentError(0, t('Agent returned no response'));
     boxSaid(SESSION, repo, 'stop', text);
   } catch (e) {
     cancelAnimationFrame(frame);

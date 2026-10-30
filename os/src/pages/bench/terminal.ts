@@ -33,8 +33,8 @@ export interface Run { line: string; output: string; started: number; ms: number
 function loadWords(s: Stage): string {
   const of = (got: number, all: number) => (all ? `${bytes(got)} / ${bytes(all)}` : '');
   switch (s.at) {
-    case 'fetch': return `${t('Loading l3 {size}', {size: of(s.got, s.of)})}${s.quiet ? ` · ${t('waiting for a reply {n}s', {n: s.quiet})}` : ''}`;
-    case 'retry': return `${t('{why}. Continuing where it stopped (attempt {n})', {why: s.why, n: s.attempt})}${s.got ? ` ${of(s.got, s.of)}` : ''}`;
+    case 'fetch': return `${t('Loading l3 ({size})', {size: of(s.got, s.of)})}${s.quiet ? ` · ${t('Waiting for reply ({n}s)', {n: s.quiet})}` : ''}`;
+    case 'retry': return `${t('{why}. Resuming download (attempt {n})', {why: s.why, n: s.attempt})}${s.got ? ` ${of(s.got, s.of)}` : ''}`;
     case 'prepare': return t('Preparing…');
     case 'ready': return t('Starting…');
     case 'failed': return '';
@@ -191,7 +191,7 @@ export class Session {
   fold() {
     const n = this.out.fold();
     this.earlier.hidden = !n;
-    this.earlier.textContent = t('Earlier ({n})', {n});
+    this.earlier.textContent = t('History ({n})', {n});
   }
 
   /** What was folded away, opened again where it stood. */
@@ -247,7 +247,7 @@ export class Session {
     } catch (e) {
       // Said short at the Prompt's foot; why is the line's title, there when asked for, not a sentence beside the switch.
       const why = errorText(e);
-      this.end(() => t('Could not start'), why);
+      this.end(() => t('Failed to start'), why);
     }
   }
 
@@ -259,10 +259,10 @@ export class Session {
   private async startNative() {
     if (await this.startRoot()) return;
     await rootFetch((got, of, retry) => {
-      this.status.textContent = retry ? t('{why}; continuing where it stopped', {why: retry}) : t('Fetching {got} / {of}', {got: bytes(got), of: bytes(of)});
+      this.status.textContent = retry ? t('{why}; resuming from breakpoint', {why: retry}) : t('Fetching {got} / {of}', {got: bytes(got), of: bytes(of)});
     });
     if (await this.startRoot()) return;
-    throw new Error(t('There is no root on this device yet: Runtime installs it'));
+    throw new Error(t('No root environment on device; install via Runtime'));
   }
 
   /** The distribution's root, on this machine's kernel (l3 open). */
@@ -271,7 +271,7 @@ export class Session {
     if (!root?.current) return false;
     this.native = await promptOpen(this.repo, {
       output: (text) => { this.activity.heard = Date.now(); this.received(text); },
-      exit: (code) => { if (this.live) this.end(() => t('Exited ({code})', {code})); },
+      exit: (code) => { if (this.live) this.end(() => t('Exited with code {code}', {code})); },
     });
     this.on = 'root';
     this.live = true;
@@ -302,7 +302,7 @@ export class Session {
     this.unwatch = mirror(this.repo, this.id, (m) => this.worker?.postMessage(m));
     // Running is the usual state and says nothing; only what is missing is said. Until the shell says its first
     // line (a cold start is some seconds), it is still starting, and says so: not an empty Prompt.
-    this.status.textContent = copy.complete ? t('Starting…') : t('Large files and binaries are not included');
+    this.status.textContent = copy.complete ? t('Starting…') : t('Large files and binaries excluded');
     this.live = true;
     this.l3 = l3;
     this.tell();
@@ -329,7 +329,7 @@ export class Session {
         this.tell();
         break;
       case 'waiting': this.waiting(data); break;
-      case 'exit': this.end(() => t('Exited ({code})', {code: data.status >> 8})); break;
+      case 'exit': this.end(() => t('Exited with code {code}', {code: data.status >> 8})); break;
       case 'error': this.end(() => t('Halted: {message}', {message: data.message.split('\n')[0]})); break;
     }
   }
@@ -371,9 +371,9 @@ export class Session {
     return n.close().then((s) => {
       this.stopped = s;
       this.end(() => {
-        const back = s.before.memory ? t('{size} given back', {size: bytes(s.before.memory)}) : '';
-        return s.left ? tn('Stopping ({n} process left)', 'Stopping ({n} processes left)', s.left)
-          : back ? t('Stopped ({back} · {ms} ms)', {back, ms: String(s.ms)}) : t('Stopped');
+        const back = s.before.memory ? t('Freed {size}', {size: bytes(s.before.memory)}) : '';
+        return s.left ? tn('Stopping ({n} process remaining)', 'Stopping ({n} processes remaining)', s.left)
+          : back ? t('Stopped (freed {back} · {ms} ms)', {back, ms: String(s.ms)}) : t('Stopped');
       });
     }, () => this.end(() => t('Stopped')));
   }

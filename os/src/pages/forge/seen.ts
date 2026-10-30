@@ -18,7 +18,7 @@ export const seenKey = (s: Seen) => (s.what === 'query' ? `q:${s.text}` : s.what
 
 /** What a thing searched or read is called, and what it is. */
 export const seenLabel = (s: Seen) => (s.what === 'query' ? s.text : s.what === 'issue' ? s.label : s.what === 'run' ? s.line : fileName(s.path));
-export const seenKind = (s: Seen) => (s.what === 'query' ? t('Searched') : s.what === 'file' ? t('File') : s.what === 'issue' ? t('Issue') : s.what === 'diff' ? t('diff') : t('Output'));
+export const seenKind = (s: Seen) => (s.what === 'query' ? t('Search history') : s.what === 'file' ? t('File') : s.what === 'issue' ? t('Issue') : s.what === 'diff' ? t('diff') : t('Output'));
 
 /**
  * Per repo, while the app is open, what was searched and read, oldest first: the line it makes sideways keeps its
@@ -71,7 +71,7 @@ function step(to: Slot | undefined, by: -1 | 1): HTMLButtonElement {
  */
 function nav(slots: Slot[], k: number, shut: () => void): HTMLElement {
   const here = slots[k];
-  const x = h('button', {type: 'button', class: 'found-shut', 'aria-label': t('Put away'), title: t('Put away')}, mark('close'));
+  const x = h('button', {type: 'button', class: 'found-shut', 'aria-label': t('Close'), title: t('Close')}, mark('close'));
   // Pressed, the keyboard stays where it is (the file written beside it), as the Prompt's × keeps it.
   x.addEventListener('pointerdown', (event) => event.preventDefault());
   x.addEventListener('click', shut);
@@ -90,7 +90,7 @@ export function drawLine(search: HTMLElement, panel: HTMLElement, slots: Slot[],
   const stepped = had.includes('found-step') ? (had.includes('prev') ? 'prev' : 'next') : null;
   const track = h('div', {class: 'slide-track', style: `--at:${k}`}, ...slots.map((_, i) => h('div', {class: 'slide', 'aria-current': String(i === k)},
     h('div', {class: 'found-card'}, ...(i === k ? card : [])))));
-  const stage = h('div', {class: 'slide-stage', tabindex: '0', 'aria-label': t('Searched and read'), 'aria-roledescription': 'carousel'}, track, edge(slots[k - 1], -1), edge(slots[k + 1], 1));
+  const stage = h('div', {class: 'slide-stage', tabindex: '0', 'aria-label': t('Search and history'), 'aria-roledescription': 'carousel'}, track, edge(slots[k - 1], -1), edge(slots[k + 1], 1));
   // Held out while the line is drawn again under the keyboard, so the keyboard can stay on it.
   const moved = had.includes('stage-hit') || had.includes('slide-stage') || !!stepped;
   if (moved) search.classList.add('moving');

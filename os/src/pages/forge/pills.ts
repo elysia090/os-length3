@@ -43,11 +43,11 @@ export class Band {
   /** Every repo here. */
   all: string[] = [];
   private pills = h('div', {class: 'pills'});
-  private add = h('button', {type: 'button', class: 'band-add', 'aria-label': t('Bring every repo out to the band')}, mark('plus')) as HTMLButtonElement;
+  private add = h('button', {type: 'button', class: 'band-add', 'aria-label': t('Add all repos to band')}, mark('plus')) as HTMLButtonElement;
   // First on the band, what can be done to the file read now (or the repo itself): File's menu for it, out of the
   // tree at its row (New file, New folder, Rename, Delete, as each allows); ⊕ after the pills (issue #49).
-  private acts = h('button', {type: 'button', class: 'band-add band-acts', 'aria-label': t('Files: new, rename, delete'),
-    title: t('Files: new, rename, delete')}, mark('files')) as HTMLButtonElement;
+  private acts = h('button', {type: 'button', class: 'band-add band-acts', 'aria-label': t('Files: New, Rename, Delete'),
+    title: t('Files: New, Rename, Delete')}, mark('files')) as HTMLButtonElement;
   private caret = h('span', {class: 'band-caret', 'aria-hidden': 'true'});
   /**
    * The issue each repo on the band is worked on for (#n), while its copy is an issue's rather than main: Start in Git
@@ -160,11 +160,11 @@ export class Band {
   /** One repo's pill: pressed, it is worked on in the box worked on; with Ctrl (⌘), it opens beside. */
   private pill(name: string): HTMLElement {
     const issue = this.onIssue.get(name);
-    const open = h('button', {type: 'button', class: 'pill-name', title: issue ? t('On {issue}: what is written here is for it', {issue}) : t('Ctrl+click: open beside')},
+    const open = h('button', {type: 'button', class: 'pill-name', title: issue ? t('Working on {issue}: changes apply here', {issue}) : t('Ctrl+Click: Open to the side')},
       name, issue ? h('span', {class: 'pill-issue', 'aria-hidden': 'true'}, issue) : null);
     const go = (event: MouseEvent) => { if (event.ctrlKey || event.metaKey) this.ways.beside(name); else this.ways.show(name); };
     open.addEventListener('click', go);
-    const close = h('button', {type: 'button', class: 'pill-close', 'aria-label': t('Take {name} off the band', {name})}, mark('close'));
+    const close = h('button', {type: 'button', class: 'pill-close', 'aria-label': t('Remove {name} from band', {name})}, mark('close'));
     // Taken off, the keyboard is not left on nothing: it goes to the pill now worked on (or the next), on the band.
     close.addEventListener('click', () => {
       this.ways.takeOff(name);
@@ -202,7 +202,7 @@ export class Band {
   paintAdd() {
     const rest = offBand(this.names, this.every()).length;
     this.add.disabled = rest === 0;
-    this.add.title = rest ? t('Bring every repo out to the band ({n} more)', {n: rest}) : t('Every repo is on the band');
+    this.add.title = rest ? t('Add all repos to band ({n} remaining)', {n: rest}) : t('All repos are on the band');
   }
 
   /** Where along the band a pill let go at x lands: the index of the pill it goes before. */

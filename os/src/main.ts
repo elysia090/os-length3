@@ -481,9 +481,9 @@ document.querySelector('.rail')?.setAttribute('aria-label', t('Purposes'));
 // Something come in and not seen yet is said the same way on Inbox and Server: a dot in the colour
 // of the place (ink, or ground on ink when it is current), gone once it is seen.
 const railName = (id: PurposeId): string => {
-  if (id === 'remote' && remoteAway()) return t('The Remote cannot be reached');
-  if (id === 'inbox' && marks(news()).inbox) return t('Inbox has messages not read');
-  if (id === 'server' && marks(news()).server) return t('Server has new posts');
+  if (id === 'remote' && remoteAway()) return t('Cannot connect to Remote');
+  if (id === 'inbox' && marks(news()).inbox) return t('Unread messages in Inbox');
+  if (id === 'server' && marks(news()).server) return t('New posts in server');
   return t(purpose(id).label);
 };
 const mark = (id: PurposeId) => {

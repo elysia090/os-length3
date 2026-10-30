@@ -47,29 +47,29 @@ test("a board's TODO keeps what its people write in it", async ({signedIn: app})
   await part.click();
   await expect(app.server.box('Packing')).toBeHidden();
   const first = app.server.todo.getByRole('listitem').first();
-  await first.getByRole('textbox', {name: 'What to do'}).fill('Buy: tent pegs');
+  await first.getByRole('textbox', {name: 'Task description'}).fill('Buy: tent pegs');
   await expect(first).toContainText('Buy：');
   // How many are left is said on its part.
   await expect(part).toHaveAccessibleName(/^TODO\s?1$/);
   await first.getByRole('button', {name: 'Mark as done'}).click();
   await expect(part).toHaveAccessibleName('TODO');
 
-  // Kept on the Remote a moment after the writing stops: opened again, it is read from there.
+  // Remote storage used a moment after the writing stops: opened again, it is read from there.
   const kept = app.server.todo.getByRole('listitem').first();
   await expect(async () => {
     await app.server.close();
     await app.server.open();
-    await expect(kept.getByRole('textbox', {name: 'What to do'})).toHaveValue('tent pegs', {timeout: 2000});
+    await expect(kept.getByRole('textbox', {name: 'Task description'})).toHaveValue('tent pegs', {timeout: 2000});
   }).toPass();
   await expect(kept.getByRole('button', {name: 'Mark as not done'})).toHaveAttribute('aria-pressed', 'true');
 
-  // Clear done, as on Home: the done one goes, for its people too.
-  await app.server.todo.getByRole('button', {name: 'Clear done'}).click();
+  // Clear completed, as on Home: the done one goes, for its people too.
+  await app.server.todo.getByRole('button', {name: 'Clear completed'}).click();
   await expect(app.server.todo.getByRole('listitem')).toHaveCount(1);
   await expect(async () => {
     await app.server.close();
     await app.server.open();
-    await expect(kept.getByRole('textbox', {name: 'What to do'})).toHaveValue('', {timeout: 2000});
+    await expect(kept.getByRole('textbox', {name: 'Task description'})).toHaveValue('', {timeout: 2000});
   }).toPass();
 });
 
@@ -125,7 +125,7 @@ test('a post by someone else is marked on the rail and the chip until its board 
   await expect(bo.server.talk('general')).toContainText('I have the tent.');
 
   await ada.comeBack();
-  await expect(ada.rail.button('server')).toHaveAccessibleName('Server has new posts');
+  await expect(ada.rail.button('server')).toHaveAccessibleName('New posts in server');
   await ada.server.open();
   // Its talk's foot in view, what came is seen: the marks go.
   await expect(ada.server.talk('general')).toContainText('I have the tent.');
@@ -139,14 +139,14 @@ test('a rest on Server brings out one\'s servers beside the rail, the one with n
   await bo.server.open();
   await bo.server.post('general', 'I have the tent.');
   await ada.comeBack();
-  await expect(ada.rail.button('server')).toHaveAccessibleName('Server has new posts');
+  await expect(ada.rail.button('server')).toHaveAccessibleName('New posts in server');
   // Passing over the icon brings nothing out; a rest does, and seeing them sees nothing in them.
   const servers = ada.page.getByRole('navigation', {name: 'Servers'});
   await ada.rail.button('server').hover();
   await expect(servers).toBeVisible();
   const trip = servers.getByRole('button', {name: 'Trip, new posts'});
   await expect(trip).toBeVisible();
-  await expect(ada.rail.button('server')).toHaveAccessibleName('Server has new posts');
+  await expect(ada.rail.button('server')).toHaveAccessibleName('New posts in server');
   await expect(ada.server.view).toBeHidden();
   // One pressed: the Server page at it, the card put away.
   await trip.click();
@@ -156,10 +156,10 @@ test('a rest on Server brings out one\'s servers beside the rail, the one with n
   await expect(ada.server.talk('general')).toContainText('I have the tent.');
 });
 
-test('Make a server among the servers beside the rail goes to one being made; Escape goes back to where one was', async ({signedIn: app}) => {
+test('Create server among the servers beside the rail goes to one being made; Escape goes back to where one was', async ({signedIn: app}) => {
   await app.server.close();
   await app.rail.button('server').hover();
-  await app.page.getByRole('navigation', {name: 'Servers'}).getByRole('button', {name: 'Make a server'}).click();
+  await app.page.getByRole('navigation', {name: 'Servers'}).getByRole('button', {name: 'Create server'}).click();
   const name = app.server.view.getByRole('textbox', {name: 'Name', exact: true});
   await expect(name).toBeFocused();
   await app.page.keyboard.press('Escape');
@@ -175,7 +175,7 @@ test('one just signed in makes a server at once: nothing is claimed first, their
 });
 
 test('Escape while a server is named goes back to the one it was named from; the page stays', async ({signedIn: app}) => {
-  await app.server.view.getByRole('button', {name: 'Make a server'}).click();
+  await app.server.view.getByRole('button', {name: 'Create server'}).click();
   const name = app.server.view.getByRole('textbox', {name: 'Name', exact: true});
   await name.fill('Books');
   await app.page.keyboard.press('Escape');
@@ -186,17 +186,17 @@ test('Escape while a server is named goes back to the one it was named from; the
   // What was written in its name is kept for the next time.
   await app.server.close();
   await app.server.open();
-  await app.server.view.getByRole('button', {name: 'Make a server'}).click();
+  await app.server.view.getByRole('button', {name: 'Create server'}).click();
   await expect(name).toHaveValue('Books');
 });
 
 test("many servers are one row on a phone's width, the one chosen slid into view", async ({signedIn: app}) => {
   const band = app.server.view.getByRole('radiogroup', {name: 'Server'});
   for (const [i, n] of ['Books', 'Release 2.0', 'Reading group', 'Family'].entries()) {
-    await app.server.view.getByRole('button', {name: 'Make a server'}).click();
+    await app.server.view.getByRole('button', {name: 'Create server'}).click();
     await app.server.view.getByRole('textbox', {name: 'Name', exact: true}).fill(n);
-    await app.server.view.getByRole('button', {name: 'Name on this Remote', exact: true}).click();
-    await app.server.view.getByRole('textbox', {name: /^Name on this Remote/}).fill(`${app.handle}-s${i}`);
+    await app.server.view.getByRole('button', {name: 'Username on this Remote', exact: true}).click();
+    await app.server.view.getByRole('textbox', {name: /^Username on this Remote/}).fill(`${app.handle}-s${i}`);
     await app.server.view.getByRole('button', {name: 'Make', exact: true}).click();
     await expect(app.server.chip(n)).toBeChecked();
   }
@@ -247,7 +247,7 @@ test('Post at the box sends what is written, the keyboard staying in the box', a
 
 /** Behind the gear, at its part `part`. */
 async function gearAt(app: App, part: string) {
-  await app.server.view.getByRole('button', {name: 'Its people, boards and repos'}).click();
+  await app.server.view.getByRole('button', {name: 'Manage members, boards, and repos'}).click();
   await app.server.view.getByRole('tab', {name: new RegExp(`^${part}`)}).click();
   return app.server.view.getByRole('tabpanel', {name: new RegExp(`^${part}`)});
 }
@@ -260,7 +260,7 @@ test("behind the gear, Done is at the sheet's bottom right, under its parts, and
   expect(d.y).toBeGreaterThan(panel.y + panel.height);
   expect(d.x + d.width).toBeGreaterThan(sw.x + sw.width - 1);
   // Its word starts where the people's names start, not in the middle of its card.
-  const add = people.getByRole('button', {name: 'Add someone you know'});
+  const add = people.getByRole('button', {name: 'Add contact'});
   const name = people.getByText(app.handle, {exact: true}).first();
   const card = people.locator('.small-card').first();
   // Where the words themselves start in each card, from its own corner.
@@ -278,42 +278,42 @@ test("behind the gear, Done is at the sheet's bottom right, under its parts, and
 
 test('taking guests on a board not open says first that anyone then reads it', async ({signedIn: app}) => {
   const boards = await gearAt(app, 'Boards');
-  await boards.getByRole('switch', {name: 'Guests can write'}).click();
+  await boards.getByRole('switch', {name: 'Guest posting enabled'}).click();
   await expect(boards).toContainText('Anyone reads #general, signed in or not.');
   await expect(boards).toContainText('Someone its people invite writes in #general, shown as a guest.');
 });
 
 /** Board general of `app`'s server takes guests (asked in its card, answered). */
 async function takeGuests(app: App, boards: Locator) {
-  await boards.getByRole('switch', {name: 'Guests can write'}).click();
+  await boards.getByRole('switch', {name: 'Guest posting enabled'}).click();
   // Asked once the switch has moved: answered then, not before it is there.
-  await expect(boards.getByRole('button', {name: 'Take guests', exact: true})).toBeVisible();
-  await app.answer(boards.getByRole('button', {name: 'Take guests', exact: true}), boards.getByText('Someone its people invite writes in #general, shown as a guest.'));
-  await expect(boards.getByRole('switch', {name: 'Guests can write'})).toBeChecked();
+  await expect(boards.getByRole('button', {name: 'Allow guests', exact: true})).toBeVisible();
+  await app.answer(boards.getByRole('button', {name: 'Allow guests', exact: true}), boards.getByText('Someone its people invite writes in #general, shown as a guest.'));
+  await expect(boards.getByRole('switch', {name: 'Guest posting enabled'})).toBeChecked();
 }
 
 test('guests turned off with nobody let in goes at once; with an invitation out it asks first, saying what it ends', async ({signedIn: app}) => {
   const boards = await gearAt(app, 'Boards');
-  const guests = boards.getByRole('switch', {name: 'Guests can write'});
+  const guests = boards.getByRole('switch', {name: 'Guest posting enabled'});
   await takeGuests(app, boards);
   await guests.click();
   await expect(guests).not.toBeChecked();
-  await expect(boards.getByRole('button', {name: 'Turn off', exact: true})).toHaveCount(0);
+  await expect(boards.getByRole('button', {name: 'Disable', exact: true})).toHaveCount(0);
 
   await takeGuests(app, boards);
-  await boards.getByRole('button', {name: 'Invite a guest', exact: true}).click();
-  await expect(boards.getByRole('button', {name: 'The invitation\'s link'})).toBeVisible();
+  await boards.getByRole('button', {name: 'Invite guest', exact: true}).click();
+  await expect(boards.getByRole('button', {name: 'Invite link'})).toBeVisible();
   const ends = boards.getByText('1 invitation out lets nobody in any more.');
   // No longer open to everyone ends it too, and says so.
-  await boards.getByRole('switch', {name: 'Show to everyone'}).click();
+  await boards.getByRole('switch', {name: 'Publicly visible'}).click();
   await expect(boards).toContainText('Only its people read #general then.');
   await expect(ends).toBeVisible();
-  await boards.getByRole('button', {name: 'Not now', exact: true}).click();
-  await expect(boards.getByRole('switch', {name: 'Show to everyone'})).toBeChecked();
+  await boards.getByRole('button', {name: 'Cancel', exact: true}).click();
+  await expect(boards.getByRole('switch', {name: 'Publicly visible'})).toBeChecked();
   await guests.click();
   await expect(ends).toBeVisible();
-  await expect(boards).toContainText('Taking guests again, an old link lets nobody back.');
-  await app.answer(boards.getByRole('button', {name: 'Turn off', exact: true}), ends);
+  await expect(boards).toContainText('Re-enabling guests does not restore expired invite links.');
+  await app.answer(boards.getByRole('button', {name: 'Disable', exact: true}), ends);
   await expect(guests).not.toBeChecked();
 });
 
@@ -321,10 +321,10 @@ test('someone one knows added at once is told in their Inbox by the Remote\'s no
   const bo = await addBo(ada, another);
   await ada.server.close();
   await ada.server.open();
-  await ada.server.view.getByRole('button', {name: 'Make a server'}).click();
+  await ada.server.view.getByRole('button', {name: 'Create server'}).click();
   await ada.server.view.getByRole('textbox', {name: 'Name', exact: true}).fill('Books');
-  await ada.server.view.getByRole('button', {name: 'Name on this Remote', exact: true}).click();
-  await ada.server.view.getByRole('textbox', {name: /^Name on this Remote/}).fill(`${ada.handle}-books`);
+  await ada.server.view.getByRole('button', {name: 'Username on this Remote', exact: true}).click();
+  await ada.server.view.getByRole('textbox', {name: /^Username on this Remote/}).fill(`${ada.handle}-books`);
   await ada.server.view.getByRole('button', {name: 'Make', exact: true}).click();
   await expect(ada.server.chip('Books')).toBeChecked();
   // The two know each other: Bo is in at once.
@@ -346,8 +346,8 @@ test('someone one knows added at once is told in their Inbox by the Remote\'s no
 test('This server says what leaving and removing it come to: its maker alone a day, with others whose it becomes', async ({signedIn: ada, another}) => {
   const part = await gearAt(ada, 'This server');
   const leave = part.locator('.small-card', {hasText: 'Leave this server'});
-  const remove = part.locator('.small-card', {hasText: 'Remove this server'});
-  await expect(leave).toContainText('Nobody else is in it: it goes with you.');
+  const remove = part.locator('.small-card', {hasText: 'Delete this server'});
+  await expect(leave).toContainText('No other members remain; leaving will delete the server.');
   await expect(leave).toContainText('You can bring it back within 1 day.');
   await expect(remove).toContainText('You can bring it back within 1 day.');
   await expect(part).not.toContainText('whoever came next');
@@ -359,7 +359,7 @@ test('This server says what leaving and removing it come to: its maker alone a d
   await gearAt(ada, 'This server');
   await expect(leave).toContainText(`${bo.handle} becomes its owner.`);
   await expect(leave).not.toContainText('bring it back');
-  await expect(remove).toContainText('You can bring it back within 30 days.');
+  await expect(remove).toContainText('Can be restored within 30 days.');
   // The ask says the same before the deed.
   await leave.getByRole('button', {name: 'Leave', exact: true}).click();
   await expect(leave).toContainText(`You leave Trip.${bo.handle} becomes its owner.`);
@@ -376,13 +376,13 @@ test('an empty board says so at its talk\'s foot, by the box one writes in; a bo
   await app.server.view.getByRole('button', {name: 'Next board'}).click();
   const about = app.server.view.getByText(/^A board is one thing to talk about/);
   await expect(about.locator('br')).toHaveCount(1);
-  await expect(about).toHaveText('A board is one thing to talk about, with a TODO kept together:a trip, a release, a reading group.');
+  await expect(about).toHaveText('A board is one thing to talk about, with a TODO kept together:e.g. trips, releases, or study groups.');
 
   // A talk longer than its board (the board's whole height is the talk's): at its foot the board is closed; scrolled
   // up, it is open at its foot.
   await app.server.view.getByRole('button', {name: 'Previous board'}).click();
   // Every post on the board at once, it is not said to be every post: that is plain to see.
-  const every = talk.getByText('That is every post', {exact: true});
+  const every = talk.getByText('No more posts', {exact: true});
   for (let i = 1; i <= 2; i++) await app.server.post('general', `Post ${i}`);
   await expect(talk).toContainText('Post 2');
   await expect(every).toBeHidden();

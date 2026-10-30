@@ -32,18 +32,18 @@ onRenamed((from, to) => { if (granted().includes(from)) void grant(from, false).
 function networkSwitch(repo: string, s: Session, card: () => HTMLElement): HTMLElement {
   const on = granted().includes(repo);
   const sw = h('button', {type: 'button', class: 'power plain', role: 'switch', 'aria-checked': String(on),
-    'aria-label': on ? t('Take the network from {repo}\'s Prompt', {repo}) : t('Give {repo}\'s Prompt the network', {repo})}, h('span', {class: 'knob'})) as HTMLButtonElement;
+    'aria-label': on ? t('Disable network for {repo} Prompt', {repo}) : t('Enable network for {repo} Prompt', {repo})}, h('span', {class: 'knob'})) as HTMLButtonElement;
   const error = h('p', {class: 'error small', role: 'alert'});
   sw.addEventListener('click', () => {
     const el = card();
     if (on) { void grant(repo, false).then(() => s.stop(), (e) => { error.textContent = errorText(e); }); return; }
     sw.setAttribute('aria-checked', 'true');
     const was = [...el.childNodes];
-    const no = button(t('Not now'), 'small-button'), yes = button(t('Give it'), 'small-button primary');
+    const no = button(t('Cancel'), 'small-button'), yes = button(t('Grant access'), 'small-button primary');
     no.addEventListener('click', () => el.replaceChildren(...was, error));
     yes.addEventListener('click', () => void grant(repo, true).then(() => s.stop(), (e) => { el.replaceChildren(...was, error); error.textContent = errorText(e); }));
     el.replaceChildren(h('span', {class: 'card-title'}, repo),
-      h('p', {class: 'muted small'}, t('Its programs reach the network from its next start; it stops now.')),
+      h('p', {class: 'muted small'}, t('Network access applies on next launch; stopping instance now.')),
       h('div', {class: 'card-foot'}, no, h('span', {class: 'grow'}), yes));
   });
   return h('div', {class: 'net-row'}, h('span', {class: 'muted small'}, t('Network')), sw, error);
@@ -55,7 +55,7 @@ function networkSwitch(repo: string, s: Session, card: () => HTMLElement): HTMLE
  * started, or prepared), so what holds a repo is read again then, not at the next page.
  */
 export function prompts(shown_: (running: number, any: boolean) => void = () => {}, changed: () => void = () => {}): HTMLElement {
-  const section = h('section', {class: 'section prompts-part', 'aria-label': t('Prompts running'), hidden: ''});
+  const section = h('section', {class: 'section prompts-part', 'aria-label': t('Running Prompts'), hidden: ''});
   let had = '';
   // Each session is watched once, for as long as the page is shown.
   const watched = new Map<Session, () => void>();
@@ -87,8 +87,8 @@ export function prompts(shown_: (running: number, any: boolean) => void = () => 
 function stoppedCard(repo: string, st: Stopped): HTMLElement {
   // Stopped just now from here: what it gave back is lit a moment, the reward for stopping it.
   const now = !st.left && stoppedNow.delete(repo);
-  return card(repo, [st.left ? tn('{n} left', '{n} left', st.left)
-    : `${t('Stopped · gave back {size}', {size: bytes(st.before.memory)})}${st.ms !== null ? ` · ${st.ms} ms` : ''}`], null, now ? 'quiet just-stopped' : 'quiet');
+  return card(repo, [st.left ? tn('{n} remaining', '{n} remaining', st.left)
+    : `${t('Stopped · Freed {size}', {size: bytes(st.before.memory)})}${st.ms !== null ? ` · ${st.ms} ms` : ''}`], null, now ? 'quiet just-stopped' : 'quiet');
 }
 
 /** A Prompt running: where it runs and the memory it holds, what it gave back, the root's network; Free and Stop. */
@@ -100,9 +100,9 @@ function runningCard(repo: string, s: Session): HTMLElement {
   free?.addEventListener('click', () => s.free());
   // Being prepared (.packages, .setup), what it holds is what prepares it; Stop ends that too.
   const processes = tn('{n} process', '{n} processes', s.processes);
-  const on = s.on !== 'root' ? 'l3' : s.preparing ? `root · ${t('Being prepared (.packages, .setup)')} · ${processes}` : `root · ${processes}`;
+  const on = s.on !== 'root' ? 'l3' : s.preparing ? `root · ${t('Provisioning (.packages, .setup)')} · ${processes}` : `root · ${processes}`;
   const lines: (string | Node)[] = [[on, s.memory ? bytes(s.memory) : ''].filter(Boolean).join(' · ')];
-  if (s.freed !== null) lines.push(t('Gave back {size}', {size: bytes(s.freed)}));
+  if (s.freed !== null) lines.push(t('Freed {size}', {size: bytes(s.freed)}));
   // Only the root's Prompt can have a network: in a browser its programs have no sockets at all.
   let el: HTMLElement | null = null;
   if (s.on === 'root') lines.push(networkSwitch(repo, s, () => el!));

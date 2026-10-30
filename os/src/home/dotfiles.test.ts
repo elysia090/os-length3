@@ -18,8 +18,8 @@ test('saving keeps the others and is what the next Prompt starts with', async ()
 
 test('a name that is not a dotfile is refused and nothing is kept', async () => {
   const before = dotfiles.read();
-  await assert.rejects(dotfiles.save('profile', 'x'), /dot first/);
-  await assert.rejects(dotfiles.save('../.profile', 'x'), /dot first/);
+  await assert.rejects(dotfiles.save('profile', 'x'), /begin with a dot/);
+  await assert.rejects(dotfiles.save('../.profile', 'x'), /begin with a dot/);
   assert.deepEqual(dotfiles.read(), before);
 });
 

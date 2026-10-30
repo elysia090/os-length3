@@ -42,8 +42,8 @@ export function onBoxMode(f: (m: Mode) => void): () => void { heard.add(f); retu
 onAgentKey((k) => { if (!k && now === 'agent') setBoxMode('run'); });
 
 /** What each is called where it is chosen. */
-const modeWord = (m: Mode): string => (m === 'run' ? t('Run in the Prompt') : m === 'issue' ? t('Write an issue')
-  : m === 'todo' ? t('Add to TODO') : m === 'agent' ? t('Ask the Agent') : t('Edit the file in front'));
+const modeWord = (m: Mode): string => (m === 'run' ? t('Run in Prompt') : m === 'issue' ? t('Create issue')
+  : m === 'todo' ? t('Add to TODO') : m === 'agent' ? t('Ask Agent') : t('Edit active file'));
 /** The word on the box's own button. */
 export const sendWord = (m: Mode): string =>
   (m === 'run' ? t('Run') : m === 'issue' ? t('Create') : m === 'todo' ? t('Add') : m === 'agent' ? t('Ask') : t('Edit'));
@@ -51,10 +51,10 @@ export const sendWord = (m: Mode): string =>
 export const sendTitle = (m: Mode, keys: string): string => (m === 'run' ? t('Run ({keys})', {keys}) : m === 'issue' ? t('Create ({keys})', {keys})
   : m === 'todo' ? t('Add ({keys})', {keys}) : m === 'agent' ? t('Ask ({keys})', {keys}) : t('Edit'));
 /** What the empty box says goes there (for Edit, with the file in front, `file`: the line held is an empty one). */
-export const modeHint = (m: Mode, repo: string | null, file: string | null = null): string => (!repo ? t('Open a repo to run in it')
-  : m === 'run' ? t('Run in {name}', {name: repo}) : m === 'issue' ? t('Write an issue in {name}', {name: repo}) : m === 'todo' ? t('Add a line to TODO')
+export const modeHint = (m: Mode, repo: string | null, file: string | null = null): string => (!repo ? t('Open a repo to run commands')
+  : m === 'run' ? t('Run in {name}', {name: repo}) : m === 'issue' ? t('Create issue in {name}', {name: repo}) : m === 'todo' ? t('Add item to TODO')
   : m === 'agent' ? t('Ask about {name}', {name: repo})
-  : file ? t('An empty line: write it here') : t('Open a file to edit it here'));
+  : file ? t('Empty line: type here') : t('Open a file to edit here'));
 
 /** The number the repo's next issue takes, read as its issues change (null until read). */
 const nextOf = new Map<string, number | Promise<number>>();
@@ -100,7 +100,7 @@ export async function sendAs(m: 'issue' | 'todo', repo: string, text: string): P
     const n = numberOf(file);
     if (n !== null) nextOf.set(repo, n + 1);
     const issue = `#${n ?? ''}`;
-    return {head: issue, words: kind ? `${kind}：${title.trim()}` : title.trim(), to: {issue: file}, said: t('Written as {issue} in {name}', {issue, name: repo})};
+    return {head: issue, words: kind ? `${kind}：${title.trim()}` : title.trim(), to: {issue: file}, said: t('Created as {issue} in {name}', {issue, name: repo})};
   }
   let list = todo.add(todo.parse(getState('todo')), first, repo);
   const made = list.at(-1);
@@ -137,7 +137,7 @@ function column(items: HTMLElement[]) {
  */
 export function modeMenu(chip: HTMLElement, o: {repo: () => string | null; at(): {file: string; line: number} | null; chosen(m: Mode): void;
   closed(before: Element | null): void}) {
-  const pop = h('div', {class: 'pop box-modes', role: 'menu', 'aria-label': t('What the box does'), hidden: ''});
+  const pop = h('div', {class: 'pop box-modes', role: 'menu', 'aria-label': t('Input box action'), hidden: ''});
   let items: HTMLButtonElement[] = [];
   /** What had the keyboard before they came out: Escape gives it back (a press elsewhere, or Tab, takes it on). */
   let before: Element | null = null;

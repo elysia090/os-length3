@@ -55,7 +55,7 @@ test('a change on main is committed from main\'s card, named by its line', async
   await expect(app.git.mainCard('hello').getByRole('region', {name: '1 file not committed'})).toBeVisible();
   // A line without a title is not a commit: said under it, the keyboard kept there.
   await app.git.commitOnMain('hello', 'Docs:');
-  await expect(app.git.mainCard('hello').getByRole('alert')).toHaveText('A commit needs a title (for example Fix：title)');
+  await expect(app.git.mainCard('hello').getByRole('alert')).toHaveText('Commit requires a title (e.g. Fix: title)');
 
   await app.git.mainCard('hello').getByRole('textbox').fill('Docs: Say where it runs');
   await app.git.commitLine('hello');
@@ -93,7 +93,7 @@ test('an issue is history on main by itself: main\'s card holds only one\'s own 
   await expect(app.git.issue('#2 Fix：Say it twice')).toBeVisible();
   // Back on main, its card still holds the person's own file alone.
   await app.git.step('Back to main').click();
-  await expect(app.git.step('Continue here')).toBeVisible();
+  await expect(app.git.step('Resume here')).toBeVisible();
   await expect(card.getByRole('region', {name: '1 file not committed'})).toContainText('Mine.');
 });
 
@@ -118,19 +118,19 @@ test('many repos waiting on main are a row each in All, a row\'s name opens its 
 test('Escape puts away an issue being written and a commit\'s line, and they come back as they were', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
   await app.rail.go('git');
-  await app.main.getByRole('button', {name: 'Write an issue'}).first().click();
+  await app.main.getByRole('button', {name: 'Create issue'}).first().click();
   await app.git.firstLine.fill('Fix: Say hello louder');
   await app.page.keyboard.press('Escape');
   await expect(app.git.firstLine).toBeHidden();
-  await expect(app.main.getByRole('button', {name: 'Write an issue'}).first()).toBeFocused();
-  await app.main.getByRole('button', {name: 'Write an issue'}).first().click();
+  await expect(app.main.getByRole('button', {name: 'Create issue'}).first()).toBeFocused();
+  await app.main.getByRole('button', {name: 'Create issue'}).first().click();
   await expect(app.git.firstLine).toHaveValue('Fix: Say hello louder');
   await expect(app.git.firstLine).toBeFocused();
-  await app.main.getByRole('button', {name: 'Not now'}).click();
+  await app.main.getByRole('button', {name: 'Cancel'}).click();
 
   const card = app.git.mainCard('hello');
   await card.getByRole('button', {name: 'Commit', exact: true}).click();
-  const line = card.getByRole('textbox', {name: 'The commit\'s line as Kind: title'});
+  const line = card.getByRole('textbox', {name: 'Commit title format: Type: Title'});
   await line.fill('Docs: Say where it runs');
   await app.page.keyboard.press('Escape');
   await expect(line).toBeHidden();
@@ -233,16 +233,16 @@ test('a reviewer asks for changes with a line marked, and the change waits for t
   await app.git.handIn({path: 'README.md', text: '# hello\n\nhello.\n'});
 
   // Asking says what: with nothing written or marked, it is asked for.
-  await app.git.step('Ask for changes').click();
-  await expect(app.git.review.getByRole('alert')).toHaveText('Say what to change, or mark its lines');
+  await app.git.step('Request changes').click();
+  await expect(app.git.review.getByRole('alert')).toHaveText('Specify requested changes or select target lines');
 
   const line = app.git.review.getByRole('button', {name: 'hello.', exact: true});
   await line.click();
   await expect(line).toHaveAttribute('aria-pressed', 'true');
   await app.git.review.getByRole('textbox', {name: 'Comment'}).fill('Louder, in capitals.');
-  await app.git.step('Ask for changes').click();
+  await app.git.step('Request changes').click();
 
-  await expect(app.git.review.getByText('Asked for changes')).toBeVisible();
+  await expect(app.git.review.getByText('Changes requested')).toBeVisible();
   await expect(app.git.review.getByText('Louder, in capitals.')).toBeVisible();
   await expect(app.main.getByText('Not approved yet')).toBeVisible();
   await expect(app.git.step('Merge')).toBeDisabled();
@@ -266,7 +266,7 @@ test('a new issue\'s repo is chosen in the one row above the box, Create at the 
   for (const r of ['notes', 'tide-tables', 'website-redesign', 'data-pipeline', 'design-system', 'infra-terraform']) await app.newRepo.make(r);
   await app.rail.go('git');
   await app.git.repos.getByRole('radio', {name: 'All', exact: true}).click();
-  await app.main.getByRole('button', {name: 'Write an issue'}).click();
+  await app.main.getByRole('button', {name: 'Create issue'}).click();
   // One row, outside the box: every chip on one line, however many there are; none inside the box.
   const tops = await app.git.repos.getByRole('radio').evaluateAll((all) => all.map((c) => Math.round(c.getBoundingClientRect().top)));
   expect(new Set(tops).size).toBe(1);
@@ -282,10 +282,10 @@ test('a new issue\'s repo is chosen in the one row above the box, Create at the 
 
   // Create first, then Not now; Not now makes nothing.
   const create = await app.git.step('Create').boundingBox();
-  const notNow = await app.git.step('Not now').boundingBox();
+  const notNow = await app.git.step('Cancel').boundingBox();
   expect(create!.x).toBeLessThan(notNow!.x);
   await app.git.firstLine.fill('Fix: Not made');
-  await app.git.step('Not now').click();
+  await app.git.step('Cancel').click();
   await expect(app.git.issues).toContainText('No issues yet');
 
   await app.git.write('tide-tables', 'Fix: The table wraps', 'On a phone.');
@@ -348,7 +348,7 @@ test('a field drawn again under the keyboard keeps its caret and what was select
 test('Enter goes from a new issue\'s first line to its detail, and Ctrl+Enter creates it', async ({app}) => {
   await app.newRepo.make('notes');
   await app.rail.go('git');
-  await app.main.getByRole('button', {name: 'Write an issue'}).click();
+  await app.main.getByRole('button', {name: 'Create issue'}).click();
   await app.git.firstLine.fill('Fix: Made from the keyboard');
   await app.git.firstLine.press('Enter');
   const detail = app.main.getByRole('textbox', {name: 'Summary'});
@@ -362,7 +362,7 @@ test('Enter goes from a new issue\'s first line to its detail, and Ctrl+Enter cr
 test('the detail of a new issue has the room the repos inside the box had', async ({app}) => {
   await app.newRepo.make('notes');
   await app.rail.go('git');
-  await app.main.getByRole('button', {name: 'Write an issue'}).click();
+  await app.main.getByRole('button', {name: 'Create issue'}).click();
   // 96 px, and two rows of chips and the gap under them (32 + 8 + 32 + 12).
   expect((await app.main.getByRole('textbox', {name: 'Summary'}).boundingBox())!.height).toBeGreaterThanOrEqual(180);
 });
@@ -376,14 +376,14 @@ test('an empty Issue view in Forge writes the first issue for its repo, and Not 
   await app.newRepo.openInForge();
   await app.forge.show('Issue');
   await expect(app.forge.reference).toContainText('No issues yet');
-  await app.forge.reference.getByRole('button', {name: 'Write an issue'}).click();
+  await app.forge.reference.getByRole('button', {name: 'Create issue'}).click();
 
   await expect(app.rail.button('git')).toHaveAttribute('aria-current', 'page');
   await expect(app.git.firstLine).toBeFocused();
   await expect(app.git.firstLine).toHaveAccessibleDescription('tide');
   await expect(app.git.repos.getByRole('radio', {name: 'notes', exact: true})).toBeChecked();
 
-  await app.git.step('Not now').click();
+  await app.git.step('Cancel').click();
   await expect(app.rail.button('forge')).toHaveAttribute('aria-current', 'page');
   await expect(app.forge.editor('README.md')).toHaveValue('# tide\n');
   await app.forge.show('Issue');
@@ -442,7 +442,7 @@ test('Git is read and pressed: its box at the foot stands back until asked for, 
   const dock = app.main.locator('.dock:visible');
   await expect(dock).toHaveCSS('opacity', '0');
   await app.page.keyboard.press('Control+Backquote');
-  await expect(app.main.getByRole('textbox', {name: 'Prompt box', exact: true})).toBeFocused();
+  await expect(app.main.getByRole('textbox', {name: 'Prompt input', exact: true})).toBeFocused();
   await expect(dock).toHaveCSS('opacity', '1');
   await app.page.keyboard.press('Escape');
   await expect(dock).toHaveCSS('opacity', '0');

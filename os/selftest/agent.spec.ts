@@ -36,10 +36,10 @@ test('a key given in Runtime opens the box\'s Agent: asked, it answers in the pa
   await expect(app.main.locator('.agent-line')).toContainText('model-one');
 
   await app.rail.go('forge');
-  const box = app.forge.promptBox, pill = app.main.getByRole('button', {name: /^What the box does/});
+  const box = app.forge.promptBox, pill = app.main.getByRole('button', {name: /^Input box action/});
   await box.click();
   await box.press('Alt+5');
-  await expect(pill).toHaveAccessibleName('What the box does: Ask');
+  await expect(pill).toHaveAccessibleName('Input box action: Ask');
   await expect(pill.locator('.prompt-mode')).toHaveText('Agent@hello');
   await box.fill('How is it built?');
   await box.press('Control+Enter');
@@ -57,9 +57,9 @@ test('a key given in Runtime opens the box\'s Agent: asked, it answers in the pa
   await app.main.getByRole('button', {name: 'Remove', exact: true}).click();
   await expect(app.main.getByRole('textbox', {name: 'API key'})).toBeVisible();
   await app.rail.go('forge');
-  await expect(pill).toHaveAccessibleName('What the box does: Run');
+  await expect(pill).toHaveAccessibleName('Input box action: Run');
   await pill.click();
-  await expect(app.main.getByRole('menuitemradio', {name: /Ask the Agent/})).toHaveCount(0);
+  await expect(app.main.getByRole('menuitemradio', {name: /Ask Agent/})).toHaveCount(0);
   await expect(app.main.getByRole('menuitemradio')).toHaveCount(4);
 });
 

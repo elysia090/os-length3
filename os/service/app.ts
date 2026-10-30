@@ -119,7 +119,7 @@ export function createApp(d: Deps) {
       // By address alone: a token is not known good until the database is asked, and one made up each time
       // would be a count of its own each time.
       const {success} = await limiter.limit({key: addressOf(c) || 'here'});
-      if (!success) slowDown(60, {error: 'Asked too often; try again in a minute'});
+      if (!success) slowDown(60, {error: 'Request rate limit reached; retry in a minute'});
       await next();
     });
   }
@@ -134,7 +134,7 @@ export function createApp(d: Deps) {
     app.use('*', async (c, next) => {
       const adds = !['GET', 'HEAD', 'OPTIONS', 'DELETE'].includes(c.req.method) && !ADDS_NOTHING.test(c.req.path);
       if (adds && await budget.full(db)) {
-        return c.json({error: 'The Remote takes nothing new just now; your work stays on this device', budget: true, retryAfter: FULL_WAIT}, 507, {'Retry-After': String(FULL_WAIT)});
+        return c.json({error: 'Remote not accepting updates right now; changes remain local', budget: true, retryAfter: FULL_WAIT}, 507, {'Retry-After': String(FULL_WAIT)});
       }
       await next();
     });

@@ -189,7 +189,7 @@ async function stands(app: {main: import('@playwright/test').Locator; forge: {re
 
 test('at rest the right pane says Issue, diff and Output beside the Prompt\'s head; a view opened there stays beside the file until put away', async ({app}) => {
   await app.forge.editFile('README.md', '# hello\n\nA line written in Forge, long enough to run on past the middle of its box.\n');
-  const heads = app.main.getByRole('complementary', {name: 'Plugins and Prompt'}).getByRole('group', {name: 'What to look in'});
+  const heads = app.main.getByRole('complementary', {name: 'Plugins and Prompt'}).getByRole('group', {name: 'Search target'});
   // diff says how many files are changed since the last commit.
   await expect(heads.getByRole('button')).toHaveText(['Issue', /^diff\s*\d+$/, 'Output']);
   await heads.getByRole('button', {name: /^diff/}).click();
@@ -213,7 +213,7 @@ test('at rest the right pane says Issue, diff and Output beside the Prompt\'s he
   await editor.click({position: {x: 40, y: 20}});
   await stands(app, files, 'README.md', 'beside');
   // Its × under it puts it away, the keyboard staying in the file.
-  await app.forge.results.getByRole('button', {name: 'Put away'}).click();
+  await app.forge.results.getByRole('button', {name: 'Close'}).click();
   await expect(app.forge.results).toBeHidden();
   await expect(editor).toBeFocused();
 });
@@ -236,7 +236,7 @@ test('the right pane put away gives the center the width and takes the search wi
   await app.forge.editFile('#1', 'Fix: the first\n');
   await app.forge.show('Issue');
   await app.forge.reference.getByRole('button', {name: /#1 Fix：the first/}).click();
-  await expect(app.forge.reference.getByRole('button', {name: 'Change its words'})).toBeVisible();
+  await expect(app.forge.reference.getByRole('button', {name: 'Edit description'})).toBeVisible();
   const center = app.main.locator('.center');
   const wide = (await center.boundingBox())!.width;
   const box = (await app.forge.search.boundingBox())!;
@@ -255,7 +255,7 @@ test('the right pane put away gives the center the width and takes the search wi
   const still = (await app.forge.search.boundingBox())!;
   expect(Math.abs(still.x - box.x)).toBeLessThan(1);
   expect(Math.abs(still.width - box.width)).toBeLessThan(1);
-  await expect(app.forge.reference.getByRole('button', {name: 'Change its words'})).toBeVisible();
+  await expect(app.forge.reference.getByRole('button', {name: 'Edit description'})).toBeVisible();
   await app.forge.paneSwitch.click();
   await app.page.reload();
   await app.settled();
@@ -407,7 +407,7 @@ test('the band\'s first button brings out the deeds for what is read now, under 
   // The files button first, ⊕ after the repos.
   const buttons = band.getByRole('button');
   const files = buttons.first();
-  await expect(files).toHaveAccessibleName('Files: new, rename, delete');
+  await expect(files).toHaveAccessibleName('Files: New, Rename, Delete');
   await expect(buttons.last()).toHaveAccessibleName(/^Bring every repo out/);
   await files.click();
   // Its menu, under it, here: File stays where it is.

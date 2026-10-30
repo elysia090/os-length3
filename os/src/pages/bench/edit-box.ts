@@ -223,7 +223,7 @@ export class EditLine {
     const f = this.#front();
     this.#mark(f);
     this.#p.main.classList.add('edit-pointing');
-    if (!f) { this.#off(); this.#holding.letGo(); this.#p.say(this.#p.repo() ? t('Open a file to edit it here') : ''); return; }
+    if (!f) { this.#off(); this.#holding.letGo(); this.#p.say(this.#p.repo() ? t('Open a file to edit here') : ''); return; }
     this.#p.say('');
     const held = this.#holding.still();
     if (held?.area === f.area) { this.#holding.show(); return; }

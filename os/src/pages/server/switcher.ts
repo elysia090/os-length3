@@ -108,7 +108,7 @@ export class ServerSwitcher {
     if (key === this.drawnFor) return;
     this.drawnFor = key;
     const rows = list.map((s) => {
-      const row = h('button', {type: 'button', class: 'server-switch-row', 'aria-label': fresh.has(s.id) ? t('{name}, new posts', {name: s.name}) : s.name},
+      const row = h('button', {type: 'button', class: 'server-switch-row', 'aria-label': fresh.has(s.id) ? t('{name} (new posts)', {name: s.name}) : s.name},
         h('span', {class: 'server-switch-mark', 'aria-hidden': 'true'}, initialsOf(s.name)),
         h('span', {class: 'server-switch-name'}, s.name),
         fresh.has(s.id) ? h('span', {class: 'server-switch-dot', 'aria-hidden': 'true'}) : null);
@@ -116,11 +116,11 @@ export class ServerSwitcher {
       return row;
     });
     const make = h('button', {type: 'button', class: 'server-switch-row server-switch-make'},
-      h('span', {class: 'server-switch-mark', 'aria-hidden': 'true'}, '+'), h('span', {class: 'server-switch-name'}, t('Make a server')));
+      h('span', {class: 'server-switch-mark', 'aria-hidden': 'true'}, '+'), h('span', {class: 'server-switch-name'}, t('Create server')));
     make.addEventListener('click', () => this.go({making: true}));
     const out = !connection();
     this.element.replaceChildren(...(out
-      ? [h('p', {class: 'muted small server-switch-none'}, t('Signed in, you make servers: boards for the people in them.'))]
+      ? [h('p', {class: 'muted small server-switch-none'}, t('Sign in to create servers with discussion boards for your team.'))]
       : [...rows, make]));
   }
 

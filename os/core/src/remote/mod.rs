@@ -286,8 +286,7 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
         // neither sent to this account nor joined with its repo of the same name.
         if let (Some(was), Some(now)) = (agreed.as_ref().and_then(|b| b.who.as_deref()), who.as_deref()) {
             if was != now {
-                return Err(failed(Failure::Status(403), crate::tr!("This copy was kept in step by another account; sign in as it to keep it in step",
-                    "この写しは別のアカウントで同期していました。そのアカウントでサインインすると同期します")));
+                return Err(failed(Failure::Status(403), crate::tr!("This copy was synced by another account; sign in to resume sync", "このコピーは別のアカウントで同期されていました。同期を再開するには該当アカウントでサインインしてください")));
             }
         }
         let draft = draft_path(repo, &line, agreed.is_some());
@@ -383,7 +382,7 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
         }
     }
     // Still moving after every round: not in step, and said so, rather than taken for it.
-    Err(crate::tr!("The Remote kept moving; it is tried again", "Remote の側が動き続けています。あとでもう一度送ります"))
+    Err(crate::tr!("Remote modified concurrently; retrying", "Remote 側で変更が続いているため、後ほど再試行します"))
 }
 
 /// Where a line's diff is sent. A copy never in step with the Remote makes it
@@ -403,9 +402,9 @@ fn there_of(url: &str, reply: Reply, agreed: i64) -> Result<Option<LineThere>> {
     match reply {
         Reply::Ok(v) => Ok(Some(line_there(url, &v)?)),
         Reply::NotFound(v) if agreed > 0 => Err(failed(Failure::Status(404), if v["gone"].is_null() {
-            crate::tr!("The Remote does not have this repo; the copy here is kept", "Remote にこの repo がありません。ここの写しは残してあります")
+            crate::tr!("Repo not found on Remote; local copy preserved", "Remote 上にこの repo が見つかりません。ローカルのコピーは保持されています")
         } else {
-            crate::tr!("This repo was discarded on the Remote; the copy here is kept", "この repo は Remote で破棄されました。ここの写しは残してあります")
+            crate::tr!("Repo deleted on Remote; local copy preserved", "この repo は Remote 上で破棄されました。ローカルのコピーは保持されています")
         })),
         Reply::NotFound(_) => Ok(None),
         Reply::Conflict(_) => Err(odd(url)),
@@ -709,7 +708,7 @@ fn free_with(client: &Client, repos: &Repos, repo: &str) -> Result<u64> {
         let here = local_tree(&dir);
         let b = base(&key).ok_or_else(|| crate::tr!("Not on the Remote yet", "まだ Remote にありません"))?;
         if here.tree != b.tree || here.modes != b.modes {
-            return Err(crate::tr!("It changed while it was being sent; try again", "送っているあいだに変わりました。もう一度どうぞ"));
+            return Err(crate::tr!("Data modified during transfer; please retry", "送信中にデータが変更されました。もう一度お試しください。"));
         }
         checked.push((key, line.clone(), dir, b.tree, b.modes));
     }
@@ -787,11 +786,11 @@ mod tests {
     #[test]
     fn a_remote_that_holds_no_files_says_the_work_stays_here() {
         let said = |code: u16, body: &str| http::refused(code, body.as_bytes());
-        let no_files = said(503, r#"{"error":"The Remote cannot hold files just now","files":false}"#);
-        assert!(no_files == "The Remote cannot hold files just now; your work stays on this device"
+        let no_files = said(503, r#"{"error":"Remote cannot store files right now","files":false}"#);
+        assert!(no_files == "Remote cannot accept files right now; changes stay on this device"
             || no_files == "Remote はいまファイルを置けません。作業はこの端末に残ります", "{no_files}");
         // Any other 503 (its database out of reach) is said as the Remote says it.
-        assert!(said(503, r#"{"error":"The Remote does not reach its database"}"#).contains("The Remote does not reach its database"));
+        assert!(said(503, r#"{"error":"Remote cannot reach its database"}"#).contains("Remote cannot reach its database"));
     }
 
     fn t(pairs: &[(&str, Option<&str>)]) -> Tree {
@@ -864,8 +863,8 @@ mod tests {
         // Never in step: the Remote's empty, and all here is new.
         assert_eq!(there_of(url, Reply::NotFound(Default::default()), 0), Ok(None));
         // In step before: not taken for removed there, and said.
-        assert!(there_of(url, Reply::NotFound(serde_json::json!({"gone": 1})), 3).is_err_and(|e| e.contains("discarded") || e.contains("破棄")));
-        assert!(there_of(url, Reply::NotFound(Default::default()), 3).is_err_and(|e| e.contains("does not have this repo") || e.contains("この repo がありません")));
+        assert!(there_of(url, Reply::NotFound(serde_json::json!({"gone": 1})), 3).is_err_and(|e| e.contains("deleted") || e.contains("破棄")));
+        assert!(there_of(url, Reply::NotFound(Default::default()), 3).is_err_and(|e| e.contains("not found on Remote") || e.contains("見つかりません")));
         let line = serde_json::json!({"version": 3, "draft": {}, "head": null});
         assert_eq!(there_of(url, Reply::Ok(line), 3), Ok(Some(LineThere { version: 3, draft: Tree::new(), head: None, modes: None })));
     }

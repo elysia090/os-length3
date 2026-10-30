@@ -115,7 +115,7 @@ test('asking too often is 429 with Retry-After and retryAfter, wherever it is co
 
   // The helper every per-address count goes through: many at once are counted one by one.
   const db = await freshDb();
-  const tries = await Promise.allSettled(Array.from({length: 8}, () => throttled(db, 'test:burst', 5, 60_000, {error: 'Too many tries from here; try again later'})));
+  const tries = await Promise.allSettled(Array.from({length: 8}, () => throttled(db, 'test:burst', 5, 60_000, {error: 'Too many attempts from this client; retry later'})));
   assert.deepEqual([tries.filter((x) => x.status === 'fulfilled').length, tries.filter((x) => x.status === 'rejected').length], [5, 3]);
 });
 
@@ -131,7 +131,7 @@ test('Better Auth\'s own refusals for asking too often are said the same way, an
   assert.equal(r.status, 429);
   const wait = r.headers.get('Retry-After');
   assert.ok(wait && Number(wait) > 0 && Number(wait) <= 60, String(wait));
-  assert.deepEqual(await r.json(), {error: 'Too many requests; try again later', retryAfter: Number(wait)});
+  assert.deepEqual(await r.json(), {error: 'Rate limit exceeded; retry later', retryAfter: Number(wait)});
   for (const p of ['/passkey/verify-authentication', '/device/approve', '/device/token']) assert.ok((AUTH_LIMITS[p] as {max: number}).max <= 40, p);
   // What only reads (every page load asks who it is) is counted at the edge, not written to the database each time.
   assert.deepEqual([AUTH_LIMITS['/get-session'], AUTH_LIMITS['/list-accounts']], [false, false]);

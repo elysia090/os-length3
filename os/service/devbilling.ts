@@ -48,8 +48,8 @@ const longDay = (secs: number) => new Date(secs * 1000).toLocaleDateString('en-U
 const shortDay = (secs: number) => new Date(secs * 1000).toLocaleDateString('en-US', {year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC'});
 const gb = (bytes: number) => `${Math.round(bytes / 1e9)} GB`;
 /** What a tier keeps, as its product's description lists it. */
-const keeps = (t: Tier) => [`${gb(PAID[t].bytes)} on the Remote`, PAID[t].repos === null ? 'Repos as many as fit' : `${PAID[t].repos} repos`,
-  PAID[t].names === null ? 'Names here as many as you like' : `${PAID[t].names} names on this Remote`, 'Servers, and names on your own domain'];
+const keeps = (t: Tier) => [`${gb(PAID[t].bytes)} on the Remote`, PAID[t].repos === null ? 'Unlimited repos (within storage)' : `${PAID[t].repos} repos`,
+  PAID[t].names === null ? 'Unlimited usernames on this Remote' : `${PAID[t].names} names on this Remote`, 'Servers, and names on your own domain'];
 
 // ---- cards, as Stripe's test mode takes them ----
 

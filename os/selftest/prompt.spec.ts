@@ -121,32 +121,32 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(app.forge.prompt.getByText(/^Running /)).toHaveCount(0);
   });
 
-  test('stopped from Runtime, it goes from Prompts running without leaving the page; what holds its repo is said as it is', async ({app}) => {
+  test('stopped from Runtime, it goes from Running Prompts without leaving the page; what holds its repo is said as it is', async ({app}) => {
     await app.forge.run('true');
     await app.runtime.open('This browser');
     const here = app.main.getByRole('region', {name: /^In this browser/});
     // Signed out, there is no Remote to free it to, Prompt or none: that is what is said, not the Prompt.
-    await expect(here).toContainText('Sign in to the Remote to free it');
-    await expect(here).not.toContainText('A Prompt has it open');
-    await app.runtime.part('Prompts running').click();
-    await app.main.getByRole('tabpanel', {name: /^Prompts running/}).getByRole('button', {name: 'Stop', exact: true}).click();
+    await expect(here).toContainText('Sign in to Remote to delete');
+    await expect(here).not.toContainText('Locked by an active Prompt');
+    await app.runtime.part('Running Prompts').click();
+    await app.main.getByRole('tabpanel', {name: /^Running Prompts/}).getByRole('button', {name: 'Stop', exact: true}).click();
     await app.runtime.part('This browser').click();
-    await expect(here).toContainText('Sign in to the Remote to free it');
+    await expect(here).toContainText('Sign in to Remote to delete');
   });
 
   test('a repo whose Prompt waits is renamed from its gear, its Prompt stopped first as the field says', async ({app}) => {
     await app.forge.run('true');
     await app.rail.go('home');
     const card = app.main.getByRole('region', {name: 'Repos'}).getByRole('group', {name: 'hello', exact: true});
-    await card.getByRole('button', {name: 'What to do with hello'}).click();
-    const menu = card.getByRole('menu', {name: 'What to do with hello'});
+    await card.getByRole('button', {name: 'Task description with hello'}).click();
+    const menu = card.getByRole('menu', {name: 'Task description with hello'});
     await menu.getByRole('menuitem', {name: 'Rename'}).click();
-    await expect(menu).toContainText('Its Prompt is stopped first: nothing is running in it.');
+    await expect(menu).toContainText('Prompt is stopped; ready for maintenance.');
     await menu.getByRole('textbox', {name: 'New name'}).fill('hullo');
     await menu.getByRole('textbox', {name: 'New name'}).press('Enter');
     await expect(app.main.getByRole('region', {name: 'Repos'}).getByRole('group', {name: 'hullo', exact: true})).toBeVisible();
     await app.runtime.open('This browser');
-    await expect(app.runtime.part('Prompts running')).toHaveCount(0);
+    await expect(app.runtime.part('Running Prompts')).toHaveCount(0);
   });
 
   test('put back, the pane tells the line run; up again the Prompt starts at its line, what it printed folded under Earlier', async ({app}) => {
@@ -185,10 +185,10 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
   test('a Prompt stopped says so as the last thing under its output, with its power switch off beside the words', async ({app}) => {
     await app.forge.run('echo before-stop');
     await expect(app.forge.prompt).toContainText(/^before-stop$/m);
-    await app.runtime.open('Prompts running');
-    await app.main.getByRole('tabpanel', {name: /^Prompts running/}).getByRole('button', {name: 'Stop', exact: true}).click();
+    await app.runtime.open('Running Prompts');
+    await app.main.getByRole('tabpanel', {name: /^Running Prompts/}).getByRole('button', {name: 'Stop', exact: true}).click();
     await app.rail.go('forge');
-    const again = app.forge.prompt.getByRole('switch', {name: 'Start again'});
+    const again = app.forge.prompt.getByRole('switch', {name: 'Restart'});
     await expect(again).toBeVisible();
     await expect(again).toHaveAttribute('aria-checked', 'false');
     // No taller than the line it is on.
@@ -210,7 +210,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await app.runtime.makeDotfile('.profile', 'export EDITOR=vi\n');
     const note = app.runtime.dotfiles.getByRole('status');
     await expect(note).toContainText('The Prompt in hello gets it when it starts again');
-    await note.getByRole('button', {name: 'Start again'}).click();
+    await note.getByRole('button', {name: 'Restart'}).click();
     await expect(note).toBeHidden();
   });
 });
@@ -222,8 +222,8 @@ test.describe('the Prompt, started by writing to it', {tag: '@slow'}, () => {
     test.setTimeout(300_000);
     // Shown in Forge, read and gone from: nothing runs, and nothing holds the repo.
     await app.runtime.open('This browser');
-    await expect(app.runtime.part('Prompts running')).toHaveCount(0);
-    await expect(app.main.getByRole('region', {name: /^In this browser/})).not.toContainText('A Prompt has it open');
+    await expect(app.runtime.part('Running Prompts')).toHaveCount(0);
+    await expect(app.main.getByRole('region', {name: /^In this browser/})).not.toContainText('Locked by an active Prompt');
     await app.rail.go('forge');
     await expect(app.main.locator('.prompt-chip')).toHaveAttribute('data-state', 'starting');
     // Written to, it starts; the line sent before its first prompt line runs once it is there.
@@ -231,7 +231,7 @@ test.describe('the Prompt, started by writing to it', {tag: '@slow'}, () => {
     await app.forge.promptBox.press('Control+Enter');
     await expect(app.forge.promptBox).toHaveValue('');
     await expect(app.forge.prompt).toContainText(/^first$/m, {timeout: 240_000});
-    await app.runtime.open('Prompts running');
+    await app.runtime.open('Running Prompts');
   });
 });
 

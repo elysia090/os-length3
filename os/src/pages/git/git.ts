@@ -124,10 +124,10 @@ class GitPage {
   readonly element: HTMLElement;
   private readonly ctx: Context;
   private readonly chips = h('div', {class: 'chips', role: 'radiogroup', 'aria-label': 'repo'});
-  private readonly write = h('button', {class: 'button small-button issues-write', type: 'button'}, t('Write an issue')) as HTMLButtonElement;
+  private readonly write = h('button', {class: 'button small-button issues-write', type: 'button'}, t('Create issue')) as HTMLButtonElement;
   private readonly count = h('small', {});
   /** Where the issues would be when there are none: the dashed card that writes the first, or what is so. */
-  private readonly empty = h('div', {}, h('p', {class: 'muted small'}, t('Reading…')));
+  private readonly empty = h('div', {}, h('p', {class: 'muted small'}, t('Loading…')));
   private readonly form: IssueForm;
   private readonly row: IssueRow;
   private readonly sections = new Sections();
@@ -361,7 +361,7 @@ class GitPage {
 
   /** No repo at all (a first run): the first made, the whole card the deed, as Forge's and Home's New repo are. */
   private firstRepo(): HTMLElement {
-    const b = h('button', {type: 'button', class: 'card new issue-new'}, icon('new-repo'), h('span', {}, t('Make your first repo')),
+    const b = h('button', {type: 'button', class: 'card new issue-new'}, icon('new-repo'), h('span', {}, t('Create your first repo')),
       h('small', {class: 'muted'}, t('No repos yet'))) as HTMLButtonElement;
     b.addEventListener('click', () => void this.ctx.go('new-repo'));
     return b;
@@ -405,7 +405,7 @@ class GitPage {
     // The dashed card is the way to write the first: the heading's Write stands aside meanwhile (one way, not two).
     this.write.parentElement?.classList.add('none');
     if (!this.repos.length) { this.empty.replaceChildren(remoteOnly().length ? this.onlyThere() : this.firstRepo()); return; }
-    const first = h('button', {type: 'button', class: 'card new issue-new'}, icon('new-repo'), h('span', {}, t('Write an issue')),
+    const first = h('button', {type: 'button', class: 'card new issue-new'}, icon('new-repo'), h('span', {}, t('Create issue')),
       h('small', {class: 'muted'}, issues.length ? t('No open issues') : t('No issues yet'))) as HTMLButtonElement;
     first.disabled = this.write.disabled;
     first.addEventListener('click', () => this.write.click());
@@ -414,11 +414,11 @@ class GitPage {
 
   /** No repo here and some on the Remote: each fetched with a press, as Runtime's are, and its issues are here. */
   private onlyThere() {
-    return h('div', {class: 'empty fetch-list'}, h('p', {}, t('Only on the Remote')), ...remoteOnly().map((r) => {
+    return h('div', {class: 'empty fetch-list'}, h('p', {}, t('Remote only')), ...remoteOnly().map((r) => {
       const b = h('button', {type: 'button', class: 'button small-button'}, t('Fetch')) as HTMLButtonElement;
       b.addEventListener('click', async () => {
         b.disabled = true;
-        b.textContent = t('Bringing it…');
+        b.textContent = t('Fetching…');
         try { await bring(r.name); this.load(); } catch (e) { b.disabled = false; b.textContent = errorText(e); }
       });
       return h('div', {class: 'fetch-row'}, h('span', {}, r.name), b);

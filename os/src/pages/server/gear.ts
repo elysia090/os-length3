@@ -96,7 +96,7 @@ function keepPeople(r: Read, tabs: Parts<Part>) {
 function sheet(s: servers.Server, w: GearWays): Parts<Part> {
   const done = button(t('Done'), 'small-button');
   done.addEventListener('click', () => w.done());
-  const tabs = parts<Part>('server-gear', [{id: 'people', label: t('People')}, {id: 'repos', label: t('Repos')}, {id: 'boards', label: t('Boards')}, {id: 'server', label: t('This server')}]);
+  const tabs = parts<Part>('server-gear', [{id: 'people', label: t('Members')}, {id: 'repos', label: t('Repos')}, {id: 'boards', label: t('Boards')}, {id: 'server', label: t('This server')}]);
   const ids: Part[] = ['people', 'repos', 'boards', 'server'];
   // Done is the sheet's answer, so it is at its bottom right (DESIGN.md §3, Where a deed sits), under what scrolls:
   // found at the same place however long a part is, and on a phone too.
@@ -153,11 +153,11 @@ function setting(w: GearWays, card: HTMLElement, label: string, on: boolean, ask
 function personCard({s, w, mine}: Read, p: servers.Person): HTMLElement {
   // Who it is as the side and the talk show them: their round initial on its tint, then their name.
   const c = smallCard(h('span', {class: 'person-title'}, personBadge(named(p.address)), h('span', {}, named(p.address))),
-    line(p.owner ? t('owner') : p.address === mine ? t('you') : ''));
+    line(p.owner ? t('Owner') : p.address === mine ? t('You') : ''));
   c.classList.add('person-card');
   if (s.owner && p.address !== mine) {
     const out = button(t('Remove'), 'small-button');
-    out.addEventListener('click', () => askIn(c, out, named(p.address), t('{who} leaves {server}.', {who: named(p.address), server: s.name}),
+    out.addEventListener('click', () => askIn(c, out, named(p.address), t('Remove {who} from {server}.', {who: named(p.address), server: s.name}),
       t('Remove'), async () => { await servers.removePerson(s.id, p.address || p.id || ''); w.again(); }));
     c.append(footLeft(out));
   }
@@ -170,12 +170,12 @@ function personCard({s, w, mine}: Read, p: servers.Person): HTMLElement {
  */
 function addSomeone(r: Read): HTMLElement {
   // Its word starts where the people's names start, at the card's own padding (not in its middle).
-  const add = h('button', {type: 'button', class: 'card small-card new add-someone'}, t('Add someone you know')) as HTMLButtonElement;
+  const add = h('button', {type: 'button', class: 'card small-card new add-someone'}, t('Add contact')) as HTMLButtonElement;
   add.addEventListener('click', async () => {
     const inbox = await import('../../remote/inbox.ts');
     let known: {address: string}[] = [], why = '';
     try { known = (await inbox.threads()).filter((x) => x.state === 'contact' && !r.people.some((p) => p.address === x.address)); } catch (e) { why = errorText(e); }
-    const typed = h('input', {class: 'line-in', placeholder: t('A name or a code'), 'aria-label': t('Name or code of someone to add'),
+    const typed = h('input', {class: 'line-in', placeholder: t('Username or code'), 'aria-label': t('Enter username or invite code'),
       autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
     const said = h('p', {class: 'muted small', role: 'status'});
     const ways: servers.AddWays = {
@@ -184,7 +184,7 @@ function addSomeone(r: Read): HTMLElement {
       ask: (address, body, server) => inbox.send(address, body, 'message', {server}),
     };
     const go = addByName(r, typed, said, ways);
-    const pick = h('div', {class: 'card small-card add-card'}, h('span', {class: 'card-title'}, t('Add someone you know')),
+    const pick = h('div', {class: 'card small-card add-card'}, h('span', {class: 'card-title'}, t('Add contact')),
       ...(why ? [h('p', {class: 'error small'}, why)] : known.map((x) => {
         const b = button(named(x.address), 'small-button');
         // In at once; the Remote tells them so in their Inbox.
@@ -208,8 +208,8 @@ function addByName({s, w, people}: Read, typed: HTMLInputElement, said: HTMLElem
     try {
       const r = await servers.addByName(s, typed.value, people.map((p) => p.address), ways);
       if (r.is === 'in') { w.again(); return; }
-      said.textContent = r.is === 'already' ? t('{who} is in it already', {who: named(r.address)})
-        : t('Asked {who} in the Inbox. They come in once they accept you.', {who: named(r.address)});
+      said.textContent = r.is === 'already' ? t('{who} is already a member', {who: named(r.address)})
+        : t('Invitation sent to {who}\'s Inbox. They will join upon accepting.', {who: named(r.address)});
       typed.value = '';
     } catch (e) { said.className = 'error small'; said.textContent = errorText(e); typed.focus(); }
     go.disabled = false;
@@ -225,24 +225,24 @@ function addByName({s, w, people}: Read, typed: HTMLInputElement, said: HTMLElem
 function repoCards(r: Read): (HTMLElement | null)[] {
   const own = r.mineAll.map((x) => ownRepo(r, x));
   const others = r.repos.filter((x) => !x.mine).map((x) => othersRepo(r, x));
-  return [...own, ...others, own.length || others.length ? null : h('div', {class: 'empty'}, t('No repo on the Remote yet'))];
+  return [...own, ...others, own.length || others.length ? null : h('div', {class: 'empty'}, t('No repos on Remote yet'))];
 }
 
 function ownRepo({s, w, repos, mineAll, mine}: Read, x: servers.RepoSeen): HTMLElement {
   const shares = (name: string) => mineAll.find((y) => y.name === name)?.servers.map((y) => y.id) ?? [];
   const r = repos.find((y) => y.mine && y.name === x.name);
-  const c = smallCard(x.name, r?.as && r.asServer !== s.id ? line(t('Everyone sees it as {name}', {name: shownAs(r.as)})) : null);
-  c.append(setting(w, c, t('Show to its people'), !!r, {what: t('The people of {server} see it as last pushed.', {server: s.name}), verb: t('Show')},
+  const c = smallCard(x.name, r?.as && r.asServer !== s.id ? line(t('Publicly visible as "{name}"', {name: shownAs(r.as)})) : null);
+  c.append(setting(w, c, t('Visible to members'), !!r, {what: t('Server members see the repo as of latest push.', {server: s.name}), verb: t('Visibility')},
     (v) => (v ? servers.showIn(s.id, x.name) : servers.takeOff(s.id, mine!, x.name))));
   if (s.address) {
-    c.append(setting(w, c, t('Show to everyone'), r?.asServer === s.id, {what: [t('Anyone sees it as {name}.', {name: shownAs(`${s.address}:${x.name}`)}), t('Your name is not shown.')], verb: t('Show')},
+    c.append(setting(w, c, t('Publicly visible'), r?.asServer === s.id, {what: [t('Publicly accessible as "{name}".', {name: shownAs(`${s.address}:${x.name}`)}), t('Your username remains hidden.')], verb: t('Visibility')},
       (v) => (v ? servers.setSeen(x.name, 'everyone', {as: s.id}) : servers.setSeen(x.name, 'servers', {servers: [...new Set([...shares(x.name), s.id])]}))));
   }
   return c;
 }
 
 function othersRepo({s, w}: Read, r: servers.ShownRepo): HTMLElement {
-  const c = smallCard(r.name, line(named(r.owner)), r.as ? line(t('Everyone sees it as {name}', {name: shownAs(r.as)})) : null);
+  const c = smallCard(r.name, line(named(r.owner)), r.as ? line(t('Publicly visible as "{name}"', {name: shownAs(r.as)})) : null);
   if (s.owner) {
     const off = button(t('Remove'), 'small-button');
     deed(off, async () => { await servers.takeOff(s.id, r.owner || r.ownerId || '', r.name); w.again(); });
@@ -262,9 +262,9 @@ function boardCards(r: Read, b: servers.BoardRef): HTMLElement[] {
 
 /** Removed: quiet, held until then, its 外す red; pressed again, it is back at once. */
 function goneBoard({s, w}: Read, b: servers.BoardRef, until: number): HTMLElement {
-  const back = s.owner ? h('button', {type: 'button', class: 'button small-button off', 'aria-pressed': 'true', title: t('Bring it back')}, t('Remove')) as HTMLButtonElement : null;
+  const back = s.owner ? h('button', {type: 'button', class: 'button small-button off', 'aria-pressed': 'true', title: t('Restore')}, t('Remove')) as HTMLButtonElement : null;
   if (back) deed(back, async () => { await servers.bringBackBoard(b.id); delete b.gone; w.boardsChanged(); w.again(); });
-  return h('div', {class: 'card small-card off'}, h('span', {class: 'card-title'}, boardName(b.name)), line(t('Removed · back until {date}', {date: day(until)})),
+  return h('div', {class: 'card small-card off'}, h('span', {class: 'card-title'}, boardName(b.name)), line(t('Deleted · Recoverable until {date}', {date: day(until)})),
     back ? h('div', {class: 'card-foot'}, back, h('span', {class: 'grow'})) : null);
 }
 
@@ -278,26 +278,26 @@ async function endsGuests(b: servers.BoardRef, first?: string): Promise<Ask | nu
   const {guests, invites} = await servers.guestsOf(b.id);
   if (!guests.length && !invites.length) return null;
   return {what: [...(first ? [first] : []),
-    ...(guests.length ? [tn('{n} guest no longer writes in #{board}; what they wrote stays.', '{n} guests no longer write in #{board}; what they wrote stays.', guests.length, {board: b.name})] : []),
-    ...(invites.length ? [tn('{n} invitation out lets nobody in any more.', '{n} invitations out let nobody in any more.', invites.length)] : []),
-    t('Taking guests again, an old link lets nobody back.')], verb: t('Turn off')};
+    ...(guests.length ? [tn('{n} guest loses posting access to #{board}; existing posts remain.', '{n} guests lose posting access to #{board}; existing posts remain.', guests.length, {board: b.name})] : []),
+    ...(invites.length ? [tn('{n} active invite link invalidated.', '{n} active invite links invalidated.', invites.length)] : []),
+    t('Re-enabling guests does not restore expired invite links.')], verb: t('Disable')};
 }
 
 function boardCard({s, w}: Read, b: servers.BoardRef): HTMLElement {
-  const how = b.open ? (b.guests ? `${t('Seen by everyone')} · ${t('Guests can write')}` : t('Seen by everyone')) : t('Its people only');
+  const how = b.open ? (b.guests ? `${t('Seen by everyone')} · ${t('Guest posting enabled')}` : t('Seen by everyone')) : t('Members only');
   const c = smallCard(boardName(b.name), s.owner ? null : line(how));
   if (s.owner) {
     const set = (change: {open?: boolean; guests?: boolean}) => servers.setBoard(b.id, change).then((n) => { b.open = n.open; b.guests = n.guests; });
     c.append(
-      setting(w, c, t('Show to everyone'), b.open, {what: t('Anyone reads #{board}, signed in or not.', {board: b.name}), verb: t('Show')}, (v) => set({open: v}),
-        () => endsGuests(b, t('Only its people read #{board} then.', {board: b.name}))),
+      setting(w, c, t('Publicly visible'), b.open, {what: t('Anyone can view #{board} without signing in.', {board: b.name}), verb: t('Visibility')}, (v) => set({open: v}),
+        () => endsGuests(b, t('#{board} will be restricted to server members.', {board: b.name}))),
       // Guests read it as everyone does: taking them opens a board not open yet, and the ask says so first.
-      setting(w, c, t('Guests can write'), b.guests, {what: [...(b.open ? [] : [t('Anyone reads #{board}, signed in or not.', {board: b.name})]),
-        t('Someone its people invite writes in #{board}, shown as a guest.', {board: b.name}), t('Nobody is sent anything: you pass the invitation on yourself.')],
-      verb: t('Take guests')}, (v) => set({guests: v}), () => endsGuests(b)));
+      setting(w, c, t('Guest posting enabled'), b.guests, {what: [...(b.open ? [] : [t('Anyone can view #{board} without signing in.', {board: b.name})]),
+        t('Invited users can post to #{board} as guests.', {board: b.name}), t('No automatic notifications sent; share the invite link manually.')],
+      verb: t('Allow guests')}, (v) => set({guests: v}), () => endsGuests(b)));
   }
   const out = s.owner ? button(t('Remove'), 'small-button') : null;
-  out?.addEventListener('click', () => askIn(c, out, boardName(b.name), [t('#{board} goes with its talk and TODO.', {board: b.name}), t('You can bring it back within 30 days.')], t('Remove'), async () => {
+  out?.addEventListener('click', () => askIn(c, out, boardName(b.name), [t('Delete #{board} along with discussions and tasks.', {board: b.name}), t('Can be restored within 30 days.')], t('Remove'), async () => {
     const r = await servers.removeBoard(b.id);
     b.gone = r.until;
     w.boardsChanged();
@@ -309,8 +309,8 @@ function boardCard({s, w}: Read, b: servers.BoardRef): HTMLElement {
 
 /** Everything stays on the Remote: Take home takes a copy of the board as text. */
 function takeHome(s: servers.Server, b: servers.BoardRef): HTMLButtonElement {
-  const take = button(t('Take home'), 'small-button');
-  take.title = t('Everything stays on the Remote. Take a copy as text when you want one here.');
+  const take = button(t('Export local copy'), 'small-button');
+  take.title = t('Data is backed up on Remote. Export local text copies whenever needed.');
   deed(take, async () => {
     const text = await servers.archive(b.id, true);
     const a = h('a', {href: URL.createObjectURL(new Blob([text], {type: 'text/markdown'})), download: `${s.name}-${b.name}.md`.replace(/[^\w.-]+/g, '-')}) as HTMLAnchorElement;
@@ -323,15 +323,15 @@ function takeHome(s: servers.Server, b: servers.BoardRef): HTMLButtonElement {
 // ---- the server itself: its name, leaving it, and, its owner, removing it ----
 
 function serverCards({s, w, people, mine}: Read): (HTMLElement | null)[] {
-  const name = smallCard(named(s.address), line(`${t('Its code')} ${s.code}`));
+  const name = smallCard(named(s.address), line(`${t('Invite code')} ${s.code}`));
   // What leaving and removing come to, as the Remote does them: who is left in it, and who made it.
   const end = servers.ending(s, people, mine);
-  const back = (ms: number) => tn('You can bring it back within {n} day.', 'You can bring it back within {n} days.', Math.round(ms / 86_400_000));
-  const leaves = end.last ? [t('Nobody else is in it: it goes with you.'), back(end.leave)]
-    : end.heir ? [t('{who} becomes its owner.', {who: named(end.heir)})] : [];
-  const leaving = mine ? endCard(t('Leave this server'), leaves.map(line), t('Leave'), [t('You leave {server}.', {server: s.name}), ...leaves],
+  const back = (ms: number) => tn('Can be restored within {n} day.', 'Can be restored within {n} days.', Math.round(ms / 86_400_000));
+  const leaves = end.last ? [t('No other members remain; leaving will delete the server.'), back(end.leave)]
+    : end.heir ? [t('Ownership transfers to {who}.', {who: named(end.heir)})] : [];
+  const leaving = mine ? endCard(t('Leave this server'), leaves.map(line), t('Leave'), [t('Leave {server}.', {server: s.name}), ...leaves],
     async () => { await servers.removePerson(s.id, mine); w.gone(s.id); }) : null;
-  const removing = s.owner ? endCard(t('Remove this server'), [line(back(end.remove))], t('Delete'), [t('{server} goes, with its boards.', {server: s.name}), back(end.remove)],
+  const removing = s.owner ? endCard(t('Delete this server'), [line(back(end.remove))], t('Delete'), [t('Delete {server} and all associated boards.', {server: s.name}), back(end.remove)],
     async () => { await servers.removeServer(s.id); w.gone(s.id); }) : null;
   return [name, leaving, removing];
 }

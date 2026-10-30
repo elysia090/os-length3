@@ -74,13 +74,13 @@ async function release(c: Context<Vars>, bucket: Bucket, key: string, o: {type: 
     if (hit) return hit;
   }
   // Not in the cache: only what the deploy recorded is asked of R2.
-  if (!await known()) return c.json({error: 'No such release'}, 404);
+  if (!await known()) return c.json({error: 'Release not found'}, 404);
   const m = /^bytes=(\d+)-(\d*)$/.exec(c.req.header('Range') ?? '');
   const size = await bucket.size(key);
-  if (size === null) return c.json({error: 'No such release'}, 404);
+  if (size === null) return c.json({error: 'Release not found'}, 404);
   if (edge && c.req.method === 'GET' && size > 0) {
     const body = await bucket.read(key, 0, size - 1);
-    if (!body) return c.json({error: 'No such release'}, 404);
+    if (!body) return c.json({error: 'Release not found'}, 404);
     const kept = await edge.put(whole, new Response(body as BodyInit, {headers: {...fixed, 'Content-Length': String(size)}})).then(() => true, () => false);
     const hit = kept ? await fromEdge(c, edge, whole) : null;
     if (hit) return hit;
@@ -94,7 +94,7 @@ async function release(c: Context<Vars>, bucket: Bucket, key: string, o: {type: 
   if (m) headers['Content-Range'] = `bytes ${start}-${end}/${size}`;
   // HEAD asks only how much there is; an empty file has nothing to read.
   const body = c.req.method === 'HEAD' || !length ? null : await bucket.read(key, start, end);
-  if (length && c.req.method !== 'HEAD' && !body) return c.json({error: 'No such release'}, 404);
+  if (length && c.req.method !== 'HEAD' && !body) return c.json({error: 'Release not found'}, 404);
   return new Response(body as BodyInit | null, {status: m ? 206 : 200, headers});
 }
 
@@ -115,13 +115,13 @@ export function files(d: {db: Db; bucket: Bucket | null; quota?: number; budget?
   app.on(['GET', 'HEAD'], '/v1/os/:sha', async (c) => {
     if (!d.bucket) return noFiles(c);
     const sha = c.req.param('sha');
-    if (!HEX.test(sha)) return c.json({error: 'No such release'}, 404);
+    if (!HEX.test(sha)) return c.json({error: 'Release not found'}, 404);
     return release(c, d.bucket, rootKey(sha), {type: 'application/octet-stream', etag: sha}, d.edge, () => recorded(rootKey(sha)));
   });
   app.on(['GET', 'HEAD'], '/v1/desktop/:file', async (c) => {
     if (!d.bucket) return noFiles(c);
     const p = desktopFile(c.req.param('file'));
-    if (!p) return c.json({error: 'No such release'}, 404);
+    if (!p) return c.json({error: 'Release not found'}, 404);
     return release(c, d.bucket, p.key, {type: p.type, etag: p.sha256, name: p.file}, d.edge, () => recorded(p.key));
   });
 
@@ -144,7 +144,7 @@ export function files(d: {db: Db; bucket: Bucket | null; quota?: number; budget?
     const sha = c.req.param('sha'), user = c.get('userId');
     if (!HEX.test(sha)) return c.json({error: 'Not found'}, 404);
     const declared = Number(c.req.header('Content-Length') ?? NaN);
-    if (declared > LIMIT.blob) return c.json({error: 'A file is at most 16 MB'}, 413);
+    if (declared > LIMIT.blob) return c.json({error: 'File size cannot exceed 16 MB'}, 413);
     const named = async (q: Db) => (await q.select({sha: blob.sha256}).from(blob).where(and(eq(blob.userId, user), eq(blob.sha256, sha)))).length > 0;
     // Had already: nothing is read, nor put (it is named by its digest, and the row says it is here).
     if (await named(db)) return c.json({sha256: sha}, 201);
@@ -154,8 +154,8 @@ export function files(d: {db: Db; bucket: Bucket | null; quota?: number; budget?
       await d.budget?.ahead(db, user, declared);
     }
     const bytes = new Uint8Array(await c.req.arrayBuffer());
-    if (bytes.length > LIMIT.blob) return c.json({error: 'A file is at most 16 MB'}, 413);
-    if (await sha256(bytes) !== sha) return c.json({error: 'The bytes are not what their name says'}, 422);
+    if (bytes.length > LIMIT.blob) return c.json({error: 'File size cannot exceed 16 MB'}, 413);
+    if (await sha256(bytes) !== sha) return c.json({error: 'File content does not match extension'}, 422);
     // Nothing is put that the account may not keep at all (counted again under the lock); as it is, not as it said.
     if (bytes.length !== declared) {
       await fits(db, user, bytes.length, d.quota);
@@ -218,10 +218,10 @@ export function files(d: {db: Db; bucket: Bucket | null; quota?: number; budget?
     const [known] = await db.select({bytes: blob.bytes}).from(blob).where(and(eq(blob.userId, c.get('userId')), eq(blob.sha256, sha))) as {bytes: number}[];
     // Its name is its digest: this browser keeps it (it is the account's: no shared cache does).
     const headers = {'Content-Type': 'application/octet-stream', ETag: `"${sha}"`, 'Cache-Control': 'private, max-age=31536000, immutable'};
-    if (!known) return c.json({error: 'The Remote has no such file'}, 404);
+    if (!known) return c.json({error: 'File not found on Remote'}, 404);
     // HEAD is answered from the row: R2 is not asked.
     if (c.req.method === 'HEAD') return new Response(null, {headers: {...headers, 'Content-Length': String(known.bytes)}});
     const bytes = await d.bucket.get(blobKey(c.get('userId'), sha));
-    return bytes ? new Response(bytes as BodyInit, {headers}) : c.json({error: 'The Remote has no such file'}, 404);
+    return bytes ? new Response(bytes as BodyInit, {headers}) : c.json({error: 'File not found on Remote'}, 404);
   });
 }

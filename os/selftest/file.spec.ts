@@ -114,7 +114,7 @@ test('a name being written stays, with the keyboard, however long the pointer is
   await expect(field).toHaveValue('a-long-name-being-written');
   await expect(field).toBeFocused();
   // Seen how to finish: Create (Enter does the same), with Not now beside it.
-  await expect(menu.getByRole('button', {name: 'Not now'})).toBeVisible();
+  await expect(menu.getByRole('button', {name: 'Cancel'})).toBeVisible();
   await field.fill('kept');
   await menu.getByRole('button', {name: 'Create', exact: true}).click();
   await expect(app.file.name('kept')).toBeFocused();
@@ -126,7 +126,7 @@ test('New folder and Rename finish the same way, and Not now puts the row back a
   let menu = await app.file.deeds('hello');
   await menu.getByRole('menuitem', {name: 'New folder'}).click();
   await menu.getByRole('textbox', {name: 'Folder name'}).fill('plans');
-  await menu.getByRole('button', {name: 'Not now'}).click();
+  await menu.getByRole('button', {name: 'Cancel'}).click();
   await expect(menu.getByRole('menuitem', {name: 'New folder'})).toBeVisible();
   await expect(app.file.name('plans')).toHaveCount(0);
   await menu.getByRole('menuitem', {name: 'New folder'}).click();

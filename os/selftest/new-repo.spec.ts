@@ -8,7 +8,7 @@ import {expect, test} from './fixtures.ts';
 test('with no repo at all, Forge and Git offer to make the first, and that is New repo', async ({app}) => {
   for (const place of ['forge', 'git'] as const) {
     await app.rail.go(place);
-    const first = app.main.getByRole('button', {name: /^Make your first repo/});
+    const first = app.main.getByRole('button', {name: /^Create your first repo/});
     await expect(first).toBeVisible();
     await first.click();
     await expect(app.rail.button('new-repo')).toHaveAttribute('aria-current', 'page');
@@ -71,7 +71,7 @@ test('nothing named yet, the new row is a quiet place for the name, and Create a
   await expect(slot.locator('.tree-name')).toHaveText('name');
   await expect(app.newRepo.problem).toBeHidden();
   await app.newRepo.create.click();
-  await expect(app.newRepo.problem).toHaveText('Write a name first');
+  await expect(app.newRepo.problem).toHaveText('Please enter a name first');
   await expect(app.newRepo.name).toBeFocused();
   // Written, it is the repo to be made, filled as File fills it.
   await app.newRepo.name.pressSequentially('tide');

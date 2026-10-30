@@ -5,7 +5,7 @@
 import type * as web from './userland.ts';
 import {t} from '../i18n.ts';
 
-const webOnly = () => new Error(t('The app\'s Prompt runs on the root this device installs (Runtime), not through xlat'));
+const webOnly = () => new Error(t('App Prompt runs directly on locally installed root (Runtime), bypassing xlat.'));
 
 export const threadsApart: typeof web.threadsApart = () => false;
 export const FIRST: typeof web.FIRST = [];

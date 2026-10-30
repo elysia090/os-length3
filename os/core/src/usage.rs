@@ -382,7 +382,7 @@ impl InUse {
     /// Why a repo, or what is its, stays: a Prompt has it.
     fn repo(&self, name: &str) -> Option<String> {
         self.repos.iter().find(|(n, _)| n == name).map(|(_, preparing)| if *preparing { preparing_why() }
-            else { crate::tr!("A Prompt has it open", "Prompt で開いています") })
+            else { crate::tr!("Locked by an active Prompt", "Prompt で使用中") })
     }
 
     /// Why a root stays: a Prompt runs on it, whichever is current now.
@@ -406,11 +406,11 @@ fn repo_item(repos: &crate::repos::Repos, name: &str, connected: bool, in_use: &
     let (room, why) = if let Some(why) = in_use.repo(name) {
         (Room::Keep, why)
     } else if !connected {
-        (Room::Keep, crate::tr!("Sign in to the Remote to free it", "Remote にサインインすると空けられます"))
+        (Room::Keep, crate::tr!("Sign in to Remote to delete", "Remote にサインインすると解放できます"))
     } else if let Some((path, what)) = s.unsynced.first() {
         (Room::Keep, crate::tr!("Something cannot be sent to the Remote ({}: {})", "Remote に送れないものがあります（{}: {}）", path, what))
     } else if s.changed == 0 && !s.fresh {
-        (Room::Free, crate::tr!("The Remote has the same; opening it brings it back", "Remote と同じです。開けばまた来ます"))
+        (Room::Free, crate::tr!("Identical copy on Remote; opening restores it", "Remote に同じデータが存在します。開くことでいつでも復元できます。"))
     } else {
         (Room::SyncFree, if s.fresh { crate::tr!("Not on the Remote yet; sent, then freed", "まだ Remote にありません。送ってから空けます") } else { if s.changed == 1 { crate::tr!("1 change is sent, then it is freed", "1件の変更を送ってから空けます") } else { crate::tr!("{} changes are sent, then it is freed", "{}件の変更を送ってから空けます", s.changed) } })
     };

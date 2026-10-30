@@ -333,7 +333,7 @@ fn words(repos: &Repos, repo: &str, issue: Option<&str>, line: &str) -> Result<(
 pub fn cut(repos: &Repos, repo: &str, issue: Option<&str>, line: &str, note: &str) -> Result<Cut> {
     let (kind, title, issue) = words(repos, repo, issue, line)?;
     if title.trim().is_empty() {
-        return Err(crate::tr!("A commit needs a title (for example Fix：title)", "Commit するには件名がいります（たとえば Fix：件名）"));
+        return Err(crate::tr!("Commit requires a title (e.g. Fix: title)", "コミットにはタイトルが必要です（例：Fix: 件名）"));
     }
     let client = Client::open().map_err(|_| crate::tr!("Commits are kept on the Remote. Sign in to it first (l3 login)", "コミットは Remote に残ります。先に Remote にサインインしてください（l3 login）"))?;
     let (key, on) = remote::key(repos, repo);
@@ -373,7 +373,7 @@ pub fn cut(repos: &Repos, repo: &str, issue: Option<&str>, line: &str, note: &st
             Reply::NotFound(_) => return Err(crate::tr!("The Remote does not have this repo", "Remote にこの repo がありません")),
         }
     }
-    Err(crate::tr!("The Remote kept moving; could not commit", "Remote が動き続けていて Commit できませんでした"))
+    Err(crate::tr!("Remote changed concurrently; commit aborted", "Remote 側で更新が続いているためコミットできませんでした"))
 }
 
 // ---- an issue's own file, committed on main by itself ----
@@ -432,7 +432,7 @@ fn cut_paths(repos: &Repos, repo: &str, paths: &[String], title: &str) -> Result
             Reply::NotFound(_) => return Err(crate::tr!("The Remote does not have this repo", "Remote にこの repo がありません")),
         }
     }
-    Err(crate::tr!("The Remote kept moving; could not commit", "Remote が動き続けていて Commit できませんでした"))
+    Err(crate::tr!("Remote changed concurrently; commit aborted", "Remote 側で更新が続いているためコミットできませんでした"))
 }
 
 /// The words an issue's own commit goes by: "Issue #3: Fix：title" (written, or its words changed), "Close #3: …",
@@ -611,7 +611,7 @@ pub fn push(repos: &Repos, repo: &str) -> Result<String> {
     }
     // Nothing new is no push: an empty answer says so.
     let w = work(repos, repo)?;
-    if w.commits == 0 { return Err(crate::tr!("Nothing committed since the work began", "作業を始めてから何も Commit していません")); }
+    if w.commits == 0 { return Err(crate::tr!("No commits made yet", "作業開始以降コミットされた内容はありません")); }
     if w.unpushed == 0 { return Ok(String::new()); }
     let client = Client::open()?;
     let (key, _) = remote::key(repos, repo);
@@ -803,9 +803,9 @@ pub fn submit(repos: &Repos, repo: &str, note: &str) -> Result<Change> {
             crate::tasks::handed_in(repo, &c.line, &c.issue, &c.title);
             Ok(c)
         }
-        Reply::Conflict(v) if v["error"] == "Push first: the change is what was pushed" => Err(crate::tr!("Push first: the change is what was pushed", "先に Push してください。Change は Push したものです")),
-        Reply::Conflict(v) if v["error"] == "This change is merged already" => Err(crate::tr!("Its change is merged already", "この作業の Change はもう Merge 済みです")),
-        Reply::Conflict(_) => Err(crate::tr!("Nothing committed since the work began", "作業を始めてから何も Commit していません")),
+        Reply::Conflict(v) if v["error"] == "Push required: Changes reflect pushed commits" => Err(crate::tr!("Push required: Changes reflect pushed commits", "先にプッシュしてください。Change にはプッシュされた内容が含まれます。")),
+        Reply::Conflict(v) if v["error"] == "This Change is already merged" => Err(crate::tr!("Its change is merged already", "この作業の Change はもう Merge 済みです")),
+        Reply::Conflict(_) => Err(crate::tr!("No commits made yet", "作業開始以降コミットされた内容はありません")),
         Reply::NotFound(_) => Err(crate::tr!("The Remote has no such work", "Remote にその作業がありません")),
     }
 }
@@ -866,7 +866,7 @@ fn change_call(repo: &str, id: &str, verb: &str, body: serde_json::Value) -> Res
             let apart = if state.starts_with(|c: char| c.is_ascii_alphabetic()) { " " } else { "" };
             Err(if crate::i18n::ja() { format!("この Change はもう{apart}{state}です") } else { format!("The change is {state} already") })
         }
-        Reply::NotFound(_) => Err(crate::tr!("No such change", "その Change はありません")),
+        Reply::NotFound(_) => Err(crate::tr!("Change not found", "該当する Change はありません")),
     }
 }
 

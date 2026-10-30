@@ -18,7 +18,7 @@ export const split = (path: string) => (path.includes('/') ? [path.slice(0, path
 
 /** Whether `child` is in the folder `inside` of `repo` already (asked of the store, not of what was last shown; no folder, no). */
 const there = async (repo: string, inside: string, child: string) => (await store.tree(repo, inside).catch(() => [])).some((x) => x.name === child);
-const taken = (child: string) => new Error(t('{name} is there already', {name: child}));
+const taken = (child: string) => new Error(t('"{name}" already exists', {name: child}));
 
 /**
  * `written` as the path `path` of `repo` goes to (a name, or a path that moves it: notes/plan.md), put plainly; thrown
@@ -26,7 +26,7 @@ const taken = (child: string) => new Error(t('{name} is there already', {name: c
  */
 export async function renaming(repo: string, path: string, written: string): Promise<string> {
   const to = written.replace(/^\/+|\/+$/g, '');
-  if (!plainPath(to)) throw new Error(t('Names joined by “/”, none starting with “.”'));
+  if (!plainPath(to)) throw new Error(t('Paths joined by "/", segments cannot start with "."'));
   const [inside, name] = split(to);
   if (to !== path && await there(repo, inside, name)) throw taken(name);
   return to;
@@ -68,14 +68,14 @@ export function fileDeeds(d: Deeds): HTMLElement {
     const input = h('input', {class: 'line-in mono', placeholder: label, 'aria-label': label, autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
     input.value = value;
     const error = h('p', {class: 'error small', role: 'alert'});
-    const no = h('button', {type: 'button', class: 'button small-button'}, t('Not now')) as HTMLButtonElement;
+    const no = h('button', {type: 'button', class: 'button small-button'}, t('Cancel')) as HTMLButtonElement;
     const yes = h('button', {type: 'button', class: 'button small-button primary'}, deed) as HTMLButtonElement;
     const make = async () => {
       const v = input.value.trim();
       if (!v || input.disabled) return;
       error.textContent = '';
       if (asPath ? !plainPath(v.replace(/^\/+|\/+$/g, '')) : !plainPart(v)) {
-        error.textContent = asPath ? t('Names joined by “/”, none starting with “.”') : t('A name has no “/” and does not start with “.”');
+        error.textContent = asPath ? t('Paths joined by "/", segments cannot start with "."') : t('Name cannot contain "/" or start with "."');
         input.focus();
         nudge(input);
         return;
@@ -129,11 +129,11 @@ export function fileDeeds(d: Deeds): HTMLElement {
     rows.push(menuRule(), entry(t('Delete'), 'trash', (b) => {
       // Asked in its place: the deed on the side it was pressed, Not now on the other.
       const foot = askFoot(b, pop);
-      const no = h('button', {type: 'button', class: 'button small-button'}, t('Not now')) as HTMLButtonElement;
+      const no = h('button', {type: 'button', class: 'button small-button'}, t('Cancel')) as HTMLButtonElement;
       const yes = h('button', {type: 'button', class: 'button small-button primary'}, t('Delete')) as HTMLButtonElement;
       const error = h('p', {class: 'error small', role: 'alert'});
       const ask = h('div', {class: 'pop-ask'},
-        h('p', {class: 'muted small'}, d.dir ? t('{name} goes, with what is in it', {name: d.name}) : t('{name} goes', {name: d.name})),
+        h('p', {class: 'muted small'}, d.dir ? t('Delete {name} and its contents', {name: d.name}) : t('Delete {name}', {name: d.name})),
         error, foot(no, yes));
       no.addEventListener('click', () => { ask.replaceWith(b); b.focus(); d.back(); });
       const shown = performance.now();

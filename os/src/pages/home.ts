@@ -44,7 +44,7 @@ export function home(ctx: Context): Node[] {
   grid.classList.add('home-repos');
   const header = profileHeader(count, owner);
   // A setting that could not be read is said here, where the person looks first; it is not written over meanwhile.
-  const unread = [...unreadable()].map(([k, why]) => h('p', {class: 'error', role: 'alert'}, t('{what} could not be read ({why})', {what: settingName(k), why})));
+  const unread = [...unreadable()].map(([k, why]) => h('p', {class: 'error', role: 'alert'}, t('Could not read {what} ({why})', {what: settingName(k), why})));
   const main = h('div', {class: 'home-main'}, header, ...unread, todoBox(),
     h('section', {class: 'section', 'aria-labelledby': 'repos-title'}, h('h2', {id: 'repos-title'}, t('Repos')), grid),
     h('section', {class: 'section', 'aria-labelledby': 'servers-title'},
@@ -58,7 +58,7 @@ export function home(ctx: Context): Node[] {
  * as there). It stays where it is while Home scrolls under the rail; put away, Home takes the width.
  */
 function homePane(main: HTMLElement, ctx: Context): HTMLElement {
-  const side = h('aside', {class: 'home-side', id: 'home-side', 'aria-label': t('Lately')}, pluginArea(), agentCards((repo, issue) => { showIssue(repo, issue.replace(/^issue\//, '')); void ctx.go('git'); }), lately(ctx));
+  const side = h('aside', {class: 'home-side', id: 'home-side', 'aria-label': t('Recent activity')}, pluginArea(), agentCards((repo, issue) => { showIssue(repo, issue.replace(/^issue\//, '')); void ctx.go('git'); }), lately(ctx));
   const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': 'home-side'}, paneMark()) as HTMLButtonElement;
   // The search Forge and Git have, where theirs is: in the repo last worked in (named in it, there being no band to
   // say which), what is found opened in Forge, at its line.
@@ -139,7 +139,7 @@ function homePane(main: HTMLElement, ctx: Context): HTMLElement {
 function lately(ctx: Context): HTMLElement {
   const list = h('div', {class: 'lately-list'});
   arrowKeys(list, '.lately-row');
-  const box = h('section', {class: 'lately', 'aria-labelledby': 'lately-title'}, h('h2', {id: 'lately-title'}, t('Lately')), list);
+  const box = h('section', {class: 'lately', 'aria-labelledby': 'lately-title'}, h('h2', {id: 'lately-title'}, t('Recent activity')), list);
   let asked = 0;
   const paint = async () => {
     const mine = ++asked;
@@ -152,7 +152,7 @@ function lately(ctx: Context): HTMLElement {
       const end = text === null || left.at === null ? -1 : text.indexOf('\n', left.at);
       const quote = text === null ? '' : text.slice(0, end < 0 ? text.length : end).split('\n').reverse().find((l) => /[\p{L}\p{N}]/u.test(l))?.trim() ?? '';
       const goOn = () => ctx.openRepo(left.repo, left.path, left.at === null ? 'end' : {at: left.at});
-      rows.push(latelyRow(shownName(left.path), t('{repo} · where you left off', {repo: left.repo}), {quote, place: left.repo, badge: 'file', go: goOn}));
+      rows.push(latelyRow(shownName(left.path), t('{repo} · Continue where you left off', {repo: left.repo}), {quote, place: left.repo, badge: 'file', go: goOn}));
     }
     const all = connection() ? await servers.servers().catch(() => []) : [];
     if (connection()) {
@@ -170,7 +170,7 @@ function lately(ctx: Context): HTMLElement {
           remember({server: s.id, board: board.id});
           void ctx.go('server');
         };
-        rows.push(latelyRow(board.name, t('{server} · new posts', {server: s.name}), {fresh: true, badge: 'board', go: there}));
+        rows.push(latelyRow(board.name, t('{server} · New posts', {server: s.name}), {fresh: true, badge: 'board', go: there}));
       }
     }
     // The boards this browser writes in as a guest (none of its servers'): where one writes, a way back always,
@@ -178,7 +178,7 @@ function lately(ctx: Context): HTMLElement {
     const ours = new Set(all.flatMap((s) => s.boards.map((x) => x.id)));
     for (const {id, here} of servers.guestBoards().filter((g) => !ours.has(g.id)).slice(0, 3)) {
       const there = () => { remember({board: id}); void ctx.go('server'); };
-      rows.push(latelyRow(here.name, t('{server} · where you write as a guest', {server: here.server}), {badge: 'board', go: there}));
+      rows.push(latelyRow(here.name, t('{server} · Joined as guest', {server: here.server}), {badge: 'board', go: there}));
     }
     if (mine !== asked) return;
     list.replaceChildren(...(rows.length ? rows : [h('p', {class: 'muted small lately-none'}, t('Nothing new'))]));
@@ -198,9 +198,9 @@ function lately(ctx: Context): HTMLElement {
 function ownServers(ctx: Context): HTMLElement {
   const box = h('div', {class: 'home-servers'});
   const guesting = servers.guestBoards().map(({id, here}) => {
-    const said = t('#{board} of {server}, as a guest', {board: here.name, server: here.server});
+    const said = t('#{board} ({server}) · Guest', {board: here.name, server: here.server});
     const b = h('button', {type: 'button', class: 'chip guest-chip', title: said, 'aria-label': said},
-      `#${here.name}`, h('span', {class: 'muted small'}, `${here.server} · ${t('guest')}`));
+      `#${here.name}`, h('span', {class: 'muted small'}, `${here.server} · ${t('Guest')}`));
     b.addEventListener('click', () => { remember({board: id}); ctx.go('server'); });
     return {id, b};
   });
@@ -213,7 +213,7 @@ function ownServers(ctx: Context): HTMLElement {
     });
     // A board of a server one is in is that server's chip's, not a guest's.
     const guests = guesting.filter((g) => !ours.has(g.id)).map((g) => g.b);
-    box.replaceChildren(...(each.length || guests.length ? [...each, ...guests] : [h('p', {class: 'muted'}, t('In no server yet'))]));
+    box.replaceChildren(...(each.length || guests.length ? [...each, ...guests] : [h('p', {class: 'muted'}, t('Not a member of any server'))]));
   };
   fill([]);
   if (!connection()) return box;
@@ -249,7 +249,7 @@ function identity(counts: HTMLElement): HTMLElement {
   const name = h('h1', {}), handle = h('p', {class: 'handle'});
   /** The name to be called by over the handle; the handle alone where there is no name. */
   const paint = (called: string, user: string) => {
-    name.textContent = called || (user ? `@${user}` : t('No name yet'));
+    name.textContent = called || (user ? `@${user}` : t('No name set'));
     name.classList.toggle('unset', !called && !user);
     handle.textContent = called && user ? `@${user}` : '';
     handle.hidden = !handle.textContent;
@@ -361,7 +361,7 @@ function editForm(done: (saved: boolean) => void, faced: (p: {name: string; hand
   const handle = h('input', {id: 'profile-handle', class: 'handle-in', maxlength: String(LIMITS.handle), autocapitalize: 'off', spellcheck: 'false',
     placeholder: t('handle'), 'aria-label': t('Handle')}) as HTMLInputElement;
   const bio = h('textarea', {id: 'profile-bio', class: 'bio-in', maxlength: String(LIMITS.bio), rows: '1',
-    placeholder: t('A line about you'), 'aria-label': t('Bio')}) as HTMLTextAreaElement;
+    placeholder: t('Short bio'), 'aria-label': t('Bio')}) as HTMLTextAreaElement;
   name.value = profile.name; handle.value = profile.handle; bio.value = profile.bio;
   const signedIn = !!connection();
   const was = signedIn ? inbox.myUsername().catch(() => profile.handle) : Promise.resolve(profile.handle);
@@ -392,7 +392,7 @@ function editForm(done: (saved: boolean) => void, faced: (p: {name: string; hand
     event.preventDefault();
     const result = normalize({name: name.value, handle: handle.value, bio: bio.value});
     const atHandle = (said: string) => { error.textContent = said; handle.focus(); nudge(handle); };
-    if (result.error) { atHandle(t('A handle is 2–31 lowercase letters, digits, . - and _')); return; }
+    if (result.error) { atHandle(t('Handle must be 2–31 lowercase letters, digits, or . - _')); return; }
     // Their username changed on the Remote first: taken, or changed too often, it is said at the handle. Left empty,
     // it is as it was (a username is changed, never taken away).
     if (signedIn && !result.profile.handle) result.profile.handle = await was;
@@ -400,13 +400,13 @@ function editForm(done: (saved: boolean) => void, faced: (p: {name: string; hand
       try { result.profile.handle = await inbox.changeUsername(result.profile.handle); } catch (e) { atHandle(errorText(e)); return; }
     }
     try { await setState('profile', JSON.stringify(result.profile)); } catch (e) {
-      error.textContent = t('Could not save: {message}', {message: errorText(e)});
+      error.textContent = t('Failed to save: {message}', {message: errorText(e)});
       return;
     }
     // Signed in, the name is the account's too: what is started, committed and reviewed from here says it.
     if (result.profile.name) {
       try { await rename(result.profile.name); } catch (e) {
-        error.textContent = t('Saved here; the Remote still has the name it had ({message})', {message: errorText(e)});
+        error.textContent = t('Saved locally; Remote name unchanged ({message})', {message: errorText(e)});
         return;
       }
     }

@@ -305,7 +305,7 @@ export class FileTree {
     const item = h('li', {role: 'treeitem', class: 'tree-repo tree-away', 'aria-label': repo},
       h('div', {class: 'tree-row', style: `--depth:${depth}`}, h('span', {class: 'tree-spacer', 'aria-hidden': 'true'}), name, meta));
     name.addEventListener('click', async () => {
-      meta.textContent = t('Bringing it…');
+      meta.textContent = t('Fetching…');
       try {
         await bring(repo);
         // Here now: its row is a repo's, with what it holds.
@@ -412,7 +412,7 @@ export class FileTree {
    */
   private deeds(row: HTMLElement, name: HTMLElement, e: SystemEntry, at: {repo: string; path: string}, dir: boolean) {
     const more = h('button', {type: 'button', class: 'tree-more', tabindex: '-1', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
-      'aria-label': t('What to do with {name}', {name: e.name})}, mark('down'));
+      'aria-label': t('Actions for {name}', {name: e.name})}, mark('down'));
     row.append(more);
     const open = (focus: boolean) => { if (this.pop?.more === more) this.unpop(); else this.menu(row, name, more, e, at, dir, focus); };
     more.addEventListener('click', (event) => open(event.detail === 0));

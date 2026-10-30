@@ -15,7 +15,7 @@ import {errorText} from '../app/errors.ts';
 
 // A card says what Remote's says, in its order: size and when it changed,
 // then where it stands.
-const sizeAndWhen = (size: number, modified: number) => `${bytes(size)} · ${t('Changed {when}', {when: ago(modified)})}`;
+const sizeAndWhen = (size: number, modified: number) => `${bytes(size)} · ${t('Updated {when}', {when: ago(modified)})}`;
 
 /**
  * Why `name` stays on this device now (no Remote, something running in its Prompt…), or null when it can be freed
@@ -24,7 +24,7 @@ const sizeAndWhen = (size: number, modified: number) => `${bytes(size)} · ${t('
 async function whyKept(name: string): Promise<string | null> {
   const u = await readSpace(allSessions().filter(([, s]) => s.running && s.runs.at(-1)?.ms === null).map(([repo]) => repo));
   const it = u.items.find((i) => i.id === `repo:${name}`);
-  return !it ? t('It is only on the Remote: nothing of it is here to free') : it.room === 'Keep' ? it.why : null;
+  return !it ? t('Remote-only: no local storage to free') : it.room === 'Keep' ? it.why : null;
 }
 
 /**
@@ -39,7 +39,7 @@ function gearCard(ctx: Context, name: string, lines: Node[], away: boolean, agai
     if (!away) { ctx.openRepo(name); return; }
     if (card.getAttribute('aria-busy') === 'true') return;
     card.setAttribute('aria-busy', 'true');
-    sync().textContent = t('Bringing it…');
+    sync().textContent = t('Fetching…');
     try { await bring(name); ctx.openRepo(name); } catch (e) { sync().textContent = errorText(e); card.removeAttribute('aria-busy'); }
   });
   const {gear, list} = repoGear(ctx, name, {
@@ -74,7 +74,7 @@ export async function summaryOf(name: string): Promise<string> {
 /** A repo on the Remote and not here: pressed, it is brought here and opened. */
 function awayCard(ctx: Context, name: string, size: number, modified: number, again: () => Promise<void>): HTMLElement {
   return gearCard(ctx, name, [h('span', {class: 'muted'}, sizeAndWhen(size, modified)),
-    h('span', {class: 'muted card-sync'}, t('Only on the Remote'))], true, again);
+    h('span', {class: 'muted card-sync'}, t('Remote only'))], true, again);
 }
 
 function newRepoCard(ctx: Context): HTMLElement {
@@ -91,12 +91,12 @@ interface RepoList {
 
 export function repoList(ctx: Context, options: {newCard: boolean; counted?: (n: number) => void}): RepoList {
   // The same cards wherever the list is (Home, New repo): one size, one title.
-  const grid = h('div', {class: 'grid repo-grid'}, h('p', {class: 'muted'}, t('Reading…')));
+  const grid = h('div', {class: 'grid repo-grid'}, h('p', {class: 'muted'}, t('Loading…')));
   arrowKeys(grid, '.card-open, .card.new');
   const refresh = async (light?: string | null) => {
     let repos;
     try { repos = await store.list(); } catch (e) {
-      grid.replaceChildren(h('p', {class: 'muted'}, t('Could not read the repos: {why}', {why: errorText(e)})));
+      grid.replaceChildren(h('p', {class: 'muted'}, t('Failed to load repos: {why}', {why: errorText(e)})));
       return;
     }
     options.counted?.(repos.length + remoteOnly().length);

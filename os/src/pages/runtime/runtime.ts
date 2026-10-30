@@ -31,16 +31,16 @@ import {agentSection} from './agent-part.ts';
  */
 export function runtime(ctx: Context): Node[] {
   const page = parts<'device' | 'prompts' | 'environments' | 'dotfiles' | 'agent'>('runtime', [
-    {id: 'device', label: isNative ? t('This device') : t('This browser')}, {id: 'prompts', label: t('Prompts running')},
+    {id: 'device', label: isNative ? t('This device') : t('This browser')}, {id: 'prompts', label: t('Running Prompts')},
     {id: 'environments', label: t('Environments')}, {id: 'dotfiles', label: t('Dotfiles')}, {id: 'agent', label: t('Agent')}]);
-  const holder = h('div', {}, h('section', {class: 'section'}, h('p', {class: 'muted'}, t('Measuring…'))));
+  const holder = h('div', {}, h('section', {class: 'section'}, h('p', {class: 'muted'}, t('Calculating storage…'))));
   let last: Freed | null = null;
   const read = (): void => void readSpace(allSessions().filter(([, s]) => s.running).map(([repo]) => repo)).then((u) => {
     // A repo's gear list out is not drawn away under the pointer: read again once it is put away.
     if (holder.isConnected && holder.querySelector('.repo-gear-pop:not([hidden])')) { setTimeout(read, 1000); return; }
     holder.replaceChildren(device(ctx, u, last, (r) => { last = r; read(); }));
   },
-    (e) => holder.replaceChildren(h('section', {class: 'section'}, h('p', {class: 'error'}, t('Could not measure ({why})', {why: errorText(e)})))));
+    (e) => holder.replaceChildren(h('section', {class: 'section'}, h('p', {class: 'error'}, t('Storage calculation failed ({why})', {why: errorText(e)})))));
   read();
   // What the Remote holds changes what can come here.
   const stop = onSync(() => { if (!holder.isConnected) { stop(); return; } read(); });
@@ -56,7 +56,7 @@ export function runtime(ctx: Context): Node[] {
   // The environments and, on the web, the desktop app one to their right: how this device runs, or becomes the
   // app. SSH, how it is reached, under the two. (The desktop app is offered on the web; the app itself is it.)
   page.panel('environments').append(h('div', {class: 'section-row'},
-    h('section', {class: 'section', 'aria-labelledby': 'env-title'}, h('h2', {id: 'env-title'}, t('Environment in effect')), environment()),
+    h('section', {class: 'section', 'aria-labelledby': 'env-title'}, h('h2', {id: 'env-title'}, t('Active environment')), environment()),
     ...(isNative ? [] : [desktopApp()])), sshSection());
   page.panel('dotfiles').append(dotfilesSection(restarted, (n) => page.count('dotfiles', n)));
   // The Agent's key apart from the dotfiles: a dotfile is the person's, on every device; the key is this device's alone.

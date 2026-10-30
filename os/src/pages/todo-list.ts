@@ -104,7 +104,7 @@ interface TodoOptions {
 
 /** What is left said at the box's head ('2 of 3 left'): a change seen there gives a beat, as Git's count of issues does. */
 function sayLeft(el: HTMLElement, open: number, all: number) {
-  const text = all ? t('{open} of {all} left', {open, all}) : '';
+  const text = all ? t('{open} of {all} remaining', {open, all}) : '';
   if (el.textContent === text) return;
   const seen = el.isConnected && el.textContent !== '';
   el.textContent = text;
@@ -120,10 +120,10 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
   const save = () => {
     const kept = todo.persisted(items);
     keep(kept).then(() => o.failed?.(''),
-      (e: unknown) => o.failed?.(t('Could not save: {message}', {message: errorText(e)})));
+      (e: unknown) => o.failed?.(t('Failed to save: {message}', {message: errorText(e)})));
     count(kept);
   };
-  const clear = h('button', {class: 'todo-clear', type: 'button', hidden: ''}, t('Clear done')) as HTMLButtonElement;
+  const clear = h('button', {class: 'todo-clear', type: 'button', hidden: ''}, t('Clear completed')) as HTMLButtonElement;
   const count = (kept: readonly todo.Todo[]) => {
     const open = kept.filter((td) => !td.done).length;
     o.counted?.(open, kept.length);
@@ -182,7 +182,7 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
     // on the way along, and there is nothing to take out. Written in, it is an item, its mark whole and its × there.
     r.button.disabled = !todo.filled(td);
     r.away.hidden = !todo.filled(td);
-    r.away.setAttribute('aria-label', t('Remove {item}', {item: named(td.kind, td.title) || t('this item')}));
+    r.away.setAttribute('aria-label', t('Delete {item}', {item: named(td.kind, td.title) || t('this item')}));
     // Its day comes in at the line's end as the line becomes an item (filled), stamped there, not simply there.
     const day = todo.filled(td) ? date(td.created) : '';
     const dated = !r.meta.textContent && !!day && r.item.isConnected;
@@ -241,7 +241,7 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
     }
     const button = h('button', {class: 'todo-mark', type: 'button'}) as HTMLButtonElement;
     const kind = h('span', {class: 'todo-kind'});
-    const title = h('input', {class: 'todo-title', maxlength: String(todo.TEXT_LIMIT), 'aria-label': t('What to do'),
+    const title = h('input', {class: 'todo-title', maxlength: String(todo.TEXT_LIMIT), 'aria-label': t('Task description'),
       autocomplete: 'off', spellcheck: 'false'}) as HTMLInputElement;
     const detail = h('textarea', {class: 'todo-detail', rows: '1', maxlength: String(todo.DETAIL_LIMIT), 'aria-label': t('Detail'),
       placeholder: t('Detail'), spellcheck: 'false'}) as HTMLTextAreaElement;
@@ -396,7 +396,7 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
     for (const r of rows.values()) r.title.placeholder = '';
     const last = items.at(-1);
     // Short enough for a phone's line, and plainly a slot for words: the form (a kind, then what to do), not an item.
-    if (last) rows.get(last.id)!.title.placeholder = items.length === 1 ? o.first ?? t('Fix: what to do') : t('Next TODO');
+    if (last) rows.get(last.id)!.title.placeholder = items.length === 1 ? o.first ?? t('Fix: Task description') : t('Next TODO');
   };
 
   // Heights can only be measured once the fields are in the page.
@@ -420,7 +420,7 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
   const mod = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl';
   const keys = (caps: string[], word: string) => h('span', {class: 'key-hint'}, ...caps.map((c) => h('kbd', {}, c)), h('span', {}, word));
   const hint = o.readOnly ? null : h('p', {class: 'todo-hint', 'aria-hidden': 'true'},
-    keys(['Enter'], t('detail')), keys(['Enter'], t('on an empty line, the next')), keys([mod, 'Enter'], t('done')));
+    keys(['Enter'], t('Details')), keys(['Enter'], t('Empty line starts next item')), keys([mod, 'Enter'], t('Done')));
   const element = h('div', {class: 'todo-box'}, list, hint);
   // Pressed on its paper below the items, the line at its foot takes the caret, as a page written on does: the
   // empty sheet is where the next is written, not a thing to aim at.

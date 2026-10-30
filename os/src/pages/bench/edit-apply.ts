@@ -68,9 +68,9 @@ export class Writes {
     // One whose file has gone (its page read again) is passed over.
     let step = from.pop();
     while (step && !step.area.isConnected) step = from.pop();
-    if (!step) return redo ? t('Nothing to do again') : t('Nothing to undo');
+    if (!step) return redo ? t('Nothing to redo') : t('Nothing to undo');
     const {area, from: at} = step, now = redo ? step.removed : step.inserted, back = redo ? step.inserted : step.removed;
-    if (area.value.slice(at, at + now.length) !== now) { from.length = 0; return t('Written over since: undo it in the file'); }
+    if (area.value.slice(at, at + now.length) !== now) { from.length = 0; return t('Modified externally; undo inside file'); }
     to.push(step);
     const caret = redo ? at + back.length : step.caret;
     this.#write(area, at, at + now.length, back, caret);

@@ -39,7 +39,7 @@ export function dockFor(b: Shown | null, ways: DockWays): Node[] {
     servers.forgetGuest(b.id);
     const parent = note.parentElement;
     parent?.replaceChildren(...dockFor(b, ways));
-    parent?.querySelector('.prompt-note')?.replaceChildren(t('You no longer write here as a guest.'));
+    parent?.querySelector('.prompt-note')?.replaceChildren(t('Guest posting privileges have ended.'));
     ways.guestChanged();
   };
   if (guest) void servers.guestStill(b.id, guest.token).catch(noLonger);
@@ -48,7 +48,7 @@ export function dockFor(b: Shown | null, ways: DockWays): Node[] {
   if (b.guests && held?.board === b.id) return [guestIn(b, held.code, ways), note];
   const signIn = button(t('Sign in'), 'small-button');
   signIn.addEventListener('click', () => ways.signIn());
-  const why = b.guests ? t('Guests write here when one of its people invites them.') : ways.signedIn ? t('Only its people write here.') : t('Sign in to write.');
+  const why = b.guests ? t('Invited guests can post to this board.') : ways.signedIn ? t('Restricted to server members.') : t('Sign in to post.');
   return [h('div', {class: 'prompt server-say'}, h('span', {class: 'muted'}, why), ways.signedIn ? null : signIn), note];
 }
 
@@ -57,8 +57,8 @@ export function dockFor(b: Shown | null, ways: DockWays): Node[] {
  * board, what went wrong sending said in `note`; a guest no longer let in is told so (`noLonger`).
  */
 function writeIn(b: Shown, guest: servers.GuestHere | null, note: HTMLElement, noLonger: (e: unknown) => void): HTMLElement {
-  const field = h('textarea', {class: 'prompt-in', rows: '1', maxlength: String(servers.LIMIT), 'aria-label': t('Write in {board}', {board: b.name}),
-    placeholder: b.member ? t('To the people of {server}', {server: b.server}) : t('As {name}, a guest', {name: guest!.as})}) as HTMLTextAreaElement;
+  const field = h('textarea', {class: 'prompt-in', rows: '1', maxlength: String(servers.LIMIT), 'aria-label': t('Post in #{board}', {board: b.name}),
+    placeholder: b.member ? t('To members of {server}', {server: b.server}) : t('As guest ({name})', {name: guest!.as})}) as HTMLTextAreaElement;
   const key = `${b.member ? 'member' : 'guest'}:${b.id}`;
   field.value = drafts.get(key);
   const fit = () => { field.style.height = 'auto'; field.style.height = `${field.scrollHeight}px`; };
@@ -107,11 +107,11 @@ function writeIn(b: Shown, guest: servers.GuestHere | null, note: HTMLElement, n
  * else is asked: the invitation is the proof.
  */
 function guestIn(b: Shown, code: string, ways: DockWays): HTMLElement {
-  const name = h('input', {class: 'line-in', maxlength: '32', placeholder: t('Your name here'), 'aria-label': t('Your name here'), autocomplete: 'nickname'}) as HTMLInputElement;
-  const join = button(t('Write as a guest'), 'small-button primary');
+  const name = h('input', {class: 'line-in', maxlength: '32', placeholder: t('Display name'), 'aria-label': t('Display name'), autocomplete: 'nickname'}) as HTMLInputElement;
+  const join = button(t('Post as guest'), 'small-button primary');
   const error = h('span', {class: 'error small', role: 'alert'});
-  const box = h('div', {class: 'prompt server-say'}, h('span', {class: 'muted'}, t('You are invited to write in #{board}.', {board: b.name})), name, join, error,
-    h('span', {class: 'muted small'}, t('Your name is shown with "guest" beside it.')));
+  const box = h('div', {class: 'prompt server-say'}, h('span', {class: 'muted'}, t('You have been invited to post in #{board}.', {board: b.name})), name, join, error,
+    h('span', {class: 'muted small'}, t('Your name will appear with a "guest" badge.')));
   const go = async () => {
     if (!name.value.trim() || join.disabled) { name.focus(); return; }
     join.disabled = true;

@@ -24,7 +24,7 @@ export function signInPlace(title: string, ...body: Node[]): HTMLElement {
  */
 export function signInLead(what: string): HTMLElement[] {
   return [h('p', {class: 'muted small sign-in-what'}, what),
-    h('p', {class: 'muted small sign-in-what'}, isNative ? t('Everything else works without it: your repos stay on this device.') : t('Everything else works without it: your repos stay in this browser.'))];
+    h('p', {class: 'muted small sign-in-what'}, isNative ? t('All other features work offline; repos remain on this device.') : t('All other features work offline; repos remain in this browser.'))];
 }
 
 /**
@@ -48,8 +48,8 @@ export function signInBox(done: () => void, back?: string): HTMLElement {
 
 /** In the app: Sign in in the browser, then the code it is to approve there, until this device is in. */
 function byCode(done: () => void, error: HTMLElement): Node[] {
-  const go = button(t('Sign in in the browser'), 'primary');
-  const lead = h('p', {class: 'muted small sign-in-lead'}, t('Your browser opens to sign in.'));
+  const go = button(t('Sign in via browser'), 'primary');
+  const lead = h('p', {class: 'muted small sign-in-lead'}, t('Opening browser to complete sign-in.'));
   const waiting = h('div', {class: 'remote-join sign-in-waiting', hidden: '', role: 'status'});
   let waited = 0;
   /** The card as it was before the browser was asked: its lead and Sign in in the browser, no code. */
@@ -82,7 +82,7 @@ function byCode(done: () => void, error: HTMLElement): Node[] {
 
 /** The code the browser is to approve (`s`), with Cancel (`stop`) and Open the browser again under it. */
 function codeShown(s: {code: string; url: string}, error: HTMLElement, stop: () => void): Node[] {
-  const again = button(t('Open the browser again'), 'small-button'), cancel = button(t('Cancel'), 'small-button');
+  const again = button(t('Reopen browser'), 'small-button'), cancel = button(t('Cancel'), 'small-button');
   again.addEventListener('click', () => void native('remote_login_reopen').catch((e: unknown) => { error.textContent = errorText(e); }));
   cancel.addEventListener('click', stop);
   return [h('p', {class: 'sign-in-step'}, t('Approve this code in the browser')),
@@ -98,7 +98,7 @@ function byProvider(box: HTMLElement, done: () => void, back: string | undefined
   const returning = account.wayIn() === 'passkey' && account.passkeysHere();
   // The buttons say it: no words around them (the card is narrow, and each is one way in).
   const providers = h('div', {class: 'row sign-in-row'});
-  const passkey = button(t('Sign in with your passkey'), 'primary');
+  const passkey = button(t('Sign in with passkey'), 'primary');
   const ways = () => void account.about().then((w) => offered(w, providers, passkey, {returning, back, error, again: ways}));
   ways();
   const stop = account.onReach(() => { if (!box.isConnected) { stop(); return; } if (!account.remoteAway()) ways(); });
@@ -129,5 +129,5 @@ function offered(w: account.Ways, providers: HTMLElement, passkey: HTMLElement,
     providers.replaceChildren(h('span', {class: 'muted', role: 'status'}, w.trouble), again);
     return;
   }
-  providers.replaceChildren(h('span', {class: 'muted'}, w.enter ? t('This Remote is entered by the link you were given.') : t('This Remote offers no way to sign in yet.')));
+  providers.replaceChildren(h('span', {class: 'muted'}, w.enter ? t('Access this Remote using your assigned invite link.') : t('This Remote does not support sign-in yet.')));
 }

@@ -56,7 +56,7 @@ function example(here: Here): [string, string] {
 export function nameServer(here: Here, ways: MakingWays): {name: HTMLInputElement; slides: HTMLElement[]; dock: HTMLElement} {
   const [say, sayAt] = example(here);
   const {name, handle, label, fit, reveal} = fields(say, sayAt);
-  const make = button(t('Make'), 'small-button primary');
+  const make = button(t('Create'), 'small-button primary');
   // What the Remote said no to, under the band: the plan, a name taken, a name of one's own to claim first.
   const ask = h('p', {class: 'server-ask', role: 'alert'});
   const chip = h('span', {class: 'server-making'}, label, make);
@@ -96,14 +96,14 @@ export function nameServer(here: Here, ways: MakingWays): {name: HTMLInputElemen
 function fields(say: string, sayAt: string) {
   const name = h('input', {class: 'server-name-in', maxlength: '64', placeholder: say, 'aria-label': t('Name')}) as HTMLInputElement;
   const handle = h('input', {class: 'server-handle-in mono', maxlength: '31', placeholder: sayAt, autocapitalize: 'off', spellcheck: 'false',
-    'aria-label': t('Name on this Remote'),
-    title: t('First come, as a person\'s: nobody else\'s while the server has it.')}) as HTMLInputElement;
+    'aria-label': t('Username on this Remote'),
+    title: t('First-come, first-served: reserved exclusively while active on this server.')}) as HTMLInputElement;
   // Its address follows its name until it is written itself.
   let own = false;
   const fit = fitting(name, handle);
   // Its name on this Remote follows its name unseen (Trip is trip): the chip says one name, not two. The quiet @
   // after it shows the address to write it otherwise, and it shows itself when the one it would be is taken.
-  const at = h('button', {type: 'button', class: 'server-at', 'aria-label': t('Name on this Remote'), title: t('Name on this Remote')}, '@') as HTMLButtonElement;
+  const at = h('button', {type: 'button', class: 'server-at', 'aria-label': t('Username on this Remote'), title: t('Username on this Remote')}, '@') as HTMLButtonElement;
   const address = h('span', {class: 'server-address', hidden: ''}, h('span', {class: 'muted', 'aria-hidden': 'true'}, '@'), handle);
   const reveal = () => { at.hidden = true; address.hidden = false; fit(); handle.focus(); handle.select(); };
   at.addEventListener('click', reveal);
@@ -139,8 +139,8 @@ function refused(e: unknown, ask: HTMLElement, here: Here, reveal: () => void, w
 function heldServers(ways: MakingWays): HTMLElement {
   const back = h('div', {class: 'server-back'});
   void servers.goneServers().then((held) => back.replaceChildren(...held.map((g) => {
-    const b = button(t('Bring back {name}', {name: g.name}), 'small-button');
-    b.title = t('Held until {date}', {date: day(g.until)});
+    const b = button(t('Restore {name}', {name: g.name}), 'small-button');
+    b.title = t('Reserved until {date}', {date: day(g.until)});
     deed(b, async () => { await servers.bringBack(g.id); await ways.broughtBack(g.id); });
     return b;
   })), (e) => back.replaceChildren(h('p', {class: 'error small'}, errorText(e))));
@@ -161,6 +161,6 @@ function ghostBoard(back: HTMLElement): HTMLElement[] {
 /** Under it, the box that will write to its people, saying them by the name being written (`people`). */
 function ghostDock(people: HTMLElement): HTMLElement {
   // The box's own words, with the name being written where they put it (before it in Japanese, after in English).
-  const [before, after] = t('To the people of {server}', {server: '\u0000'}).split('\u0000');
+  const [before, after] = t('To members of {server}', {server: '\u0000'}).split('\u0000');
   return h('div', {class: 'prompt ghost-dock', 'aria-hidden': 'true'}, h('span', {}, before, people, after));
 }
