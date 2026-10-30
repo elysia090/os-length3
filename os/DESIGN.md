@@ -2021,21 +2021,27 @@ brought here first, its card saying so meanwhile), signed in or out, as a
 repo in a profile opens the repo. Near it (the pointer on it, the keyboard in
 it, always on a touch screen) a small round gear shows at its edge; pressed,
 a popover offers what is done to the repo itself from a list, each chosen on
-its own: signed in, Show on the Remote (its card there, shown and lit: its
-switch, who sees it); Rename; Free from this device (空ける: the same Free as
-below, its conditions unchanged); Delete. A deed that cannot be done now is
-there, not pressable, with why under it: the reason that holds, said as it
-is (signed out, Free says there is no Remote to free it to, never that a
-Prompt has it when a Prompt is not why). A Prompt waiting at its prompt line
-holds nothing back: the deed's ask says it is stopped first, and it is; one
-running something holds all three, and says so. Pressed, each becomes its
+its own, each with its mark at its left as a context menu's row has one:
+signed in, Show on the Remote (the cloud; its card there, shown and lit: its
+switch, who sees it); Rename (the pencil); Free from this device (空ける,
+the cloud with an arrow going up into it: the same Free as below, its
+conditions unchanged); then, after a rule, Delete (the bin), in `off` red,
+the pointer on it tinting it. Only what can be done is offered, and nothing
+is said of the rest, as a context menu does (Apple's, Discord's): one the
+Remote knows by its name has no Rename, one only on the Remote neither
+Rename nor Free, and signed out there is no Free (no Remote to keep it);
+Free is taken off the list, as it is read, when what this device holds
+keeps the repo here (the row it stands in says why). A Prompt waiting at
+its prompt line holds nothing back: the deed's ask says it is stopped
+first, and it is; one running something holds the rest greyed, and says
+so. Pressed, each becomes its
 field or its ask in its row. Free asks what it does ({repo} leaves this
 device; it stays on the Remote and comes back when opened), Free under the
 pointer, Not now beside it. Rename is the name written in its row (Enter or
 Rename gives it, a name that cannot be, or one here or on the Remote
 already, said under it): only a repo no Remote has, since the Remote knows an
-account's repos by their names and every device keeps each in step by it
-(one there says so under Rename, which stays greyed); its copy, its works'
+account's repos by their names and every device keeps each in step by it;
+its copy, its works'
 copies, its environment and caches go to the new name (`repo_rename`), and
 so does everything that holds it by name: its pill keeps its place on Forge's
 band (the one worked on is still the one worked on, its boxes where they
@@ -3072,7 +3078,9 @@ keyboard, a small round button (the down mark, more to choose from) brings
 out the row's menu; a right press on the row, or the menu key (Shift+F10)
 on its name, does the same. The menu is the person's menu (`.pop`): beside
 the tree at the row's height, out in the free space so nothing moves, its
-head the row's name, a row per deed. A folder, the repo's own row too, has
+head the row's name, a row per deed, each with its mark at its left as the
+repo's gear has them (a page with +, a folder with +, the pencil, and after
+a rule the bin, Delete in `off` red). A folder, the repo's own row too, has
 New file and New folder, made in it; a file has them too, made beside it in
 its folder (the same deeds Forge's files button brings out under itself for
 the file read now); a file or folder has Rename and Delete (a

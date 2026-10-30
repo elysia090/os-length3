@@ -2,7 +2,7 @@ import {h} from '../ui/dom.ts';
 import {errorText} from '../app/errors.ts';
 import {t} from '../i18n.ts';
 import {mark} from '../ui/icons.ts';
-import {answers, askFoot, SETTLE} from './common.ts';
+import {answers, askFoot, menuItem, menuRule, SETTLE} from './common.ts';
 import {keepOut, nudge, putAway} from '../ui/glide.ts';
 import {store, validName} from '../repos/repos.ts';
 import {forget, remoteAll, remoteOnly, repoState} from '../remote/lifecycle.ts';
@@ -47,7 +47,6 @@ interface GearWays {
 
 let open: (() => void) | null = null;
 
-const item = (label: string) => h('button', {type: 'button', class: 'pop-item', role: 'menuitem'}, label) as HTMLButtonElement;
 const note = (text: string) => h('p', {class: 'muted small pop-note'}, text);
 /** What a Prompt with nothing running in it comes to, said in the ask of a deed that lets its repo go. */
 const stopsFirst = () => h('p', {class: 'muted small'}, t('Its Prompt is stopped first: nothing is running in it.'));
@@ -89,45 +88,46 @@ export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): 
     // What a Prompt running here holds back: one with something running in it, everything; one waiting, nothing.
     const holds = promptHolds(repo);
     const busy = holds === 'busy' ? t('Something is running in its Prompt') : null;
+    // Only what can be done here is offered (a renamed repo the Remote knows by its name is not, nor freeing one with
+    // no Remote to keep it): the list says what can be, not why the rest cannot. What is done for good stands last,
+    // in red, after a rule.
     const rows: HTMLElement[] = [];
     if (signedIn) {
-      const place = item(t('Show on the Remote'));
+      const place = menuItem(t('Show on the Remote'), 'remote');
       place.addEventListener('click', () => { show(false); openRepoPlace(ctx, repo); });
       rows.push(place);
     }
-    const rename = item(t('Rename'));
-    const notRenamed = !here ? t('It is only on the Remote: nothing of it is here to rename')
-      : there ? t('The Remote knows it by this name, so it keeps it') : null;
-    rename.disabled = !!notRenamed || !!busy;
-    rename.addEventListener('click', () => renameIn(rename, holds === 'idle'));
-    rows.push(rename, ...(notRenamed ? [note(notRenamed)] : []));
-    const free = item(t('Free from this device'));
-    free.disabled = true;
-    const why = note(t('Reading…'));
-    why.setAttribute('role', 'status');
-    rows.push(free, why);
-    const del = item(t('Delete'));
+    if (here && !there) {
+      const rename = menuItem(t('Rename'), 'pen');
+      rename.disabled = !!busy;
+      rename.addEventListener('click', () => renameIn(rename, holds === 'idle'));
+      rows.push(rename);
+    }
+    // Freed only into a Remote that keeps it: offered while that is so, and taken back if what this device holds
+    // keeps it here (changes the Remote lacks, a Prompt with something running), as it is read.
+    const free = here && signedIn ? menuItem(t('Free from this device'), 'free') : null;
+    if (free) { free.disabled = true; rows.push(free); }
+    const del = menuItem(t('Delete'), 'trash', true);
     del.disabled = !!busy;
     del.addEventListener('click', () => (there ? askRemote(del, there.offAt ? 'discard' : 'delete', holds === 'idle') : askHere(del, holds === 'idle')));
-    rows.push(del, ...(busy ? [note(busy)] : []));
+    rows.push(menuRule(), del, ...(busy ? [note(busy)] : []));
     list.replaceChildren(...rows);
     rows[0].focus();
+    if (!free) return;
     void w.why().then((no) => {
       if (!list.contains(free)) return;
       // Its Prompt waiting is no reason to keep it: it is stopped first, and the ask says so.
       if (no === t('A Prompt has it open') && holds === 'idle') no = null;
-      free.disabled = !!no;
-      // Why it stays is said under it; when it can go, nothing is said until it is pressed.
-      if (no) why.textContent = no; else why.remove();
-    }, (e) => { why.textContent = errorText(e); });
-    free.addEventListener('click', () => askFree(free, why, holds === 'idle'));
+      if (no) { if (document.activeElement === free) del.focus(); free.remove(); } else free.disabled = false;
+    }, () => free.remove());
+    free.addEventListener('click', () => askFree(free, holds === 'idle'));
   };
 
   /**
    * Free, asked in its row in the list, what it does first: the copy here goes, the Remote keeps it. Free under the
    * pointer; Not now puts the row back. Freed, the list is put away and the place hears it.
    */
-  const askFree = (free: HTMLButtonElement, why: HTMLElement, stops: boolean) => {
+  const askFree = (free: HTMLButtonElement, stops: boolean) => {
     const foot = askFoot(free, list);
     const no = h('button', {type: 'button', class: 'button small-button'}, t('Not now')) as HTMLButtonElement;
     const yes = h('button', {type: 'button', class: 'button small-button primary'}, t('Free')) as HTMLButtonElement;
@@ -135,7 +135,7 @@ export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): 
     const ask = h('div', {class: 'pop-ask', role: 'group', 'aria-label': t('Free {repo} from this device', {repo})},
       h('p', {class: 'muted small'}, t('{repo} leaves this device.', {repo})),
       h('p', {class: 'muted small'}, t('It stays on the Remote and comes back when opened.')), stops ? stopsFirst() : null, error, foot(no, yes));
-    no.addEventListener('click', () => { ask.replaceWith(free); why.remove(); free.focus(); });
+    no.addEventListener('click', () => { ask.replaceWith(free); free.focus(); });
     const shown = performance.now();
     yes.addEventListener('click', async () => {
       if (performance.now() - shown < SETTLE) return;
@@ -147,7 +147,6 @@ export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): 
       } catch (e) { error.textContent = errorText(e); yes.disabled = no.disabled = false; }
     });
     free.replaceWith(ask);
-    why.remove();
     yes.focus();
   };
 

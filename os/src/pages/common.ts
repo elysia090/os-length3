@@ -1,7 +1,7 @@
 import {h} from '../ui/dom.ts';
 import {errorText} from '../app/errors.ts';
 import {t} from '../i18n.ts';
-import {icon, mark} from '../ui/icons.ts';
+import {icon, mark, type MarkName} from '../ui/icons.ts';
 import {arrive, glide, pop, still, where} from '../ui/glide.ts';
 import {purpose, RAIL, type PurposeId} from '../app/purposes.ts';
 
@@ -26,6 +26,19 @@ function inkAtEdge(svg: SVGSVGElement) {
     if (inset > 0) svg.style.margin = `0 ${inset.toFixed(1)}px 0 ${-inset.toFixed(1)}px`;
   });
 }
+
+/**
+ * A row of a menu of deeds (a repo's gear, a file's): its mark at its left, as a context menu has one; a deed that
+ * cannot be undone (`gone`) in `off` red, after a rule (`menuRule`). What cannot be done here is not offered at all:
+ * the menu says what can be, not why the rest cannot.
+ */
+export function menuItem(label: string, name: MarkName, gone = false): HTMLButtonElement {
+  const m = mark(name);
+  m.classList.add('pop-icon');
+  return h('button', {type: 'button', class: gone ? 'pop-item pop-gone' : 'pop-item', role: 'menuitem'}, m, h('span', {}, label)) as HTMLButtonElement;
+}
+/** The rule a menu's deeds that cannot be undone stand after. */
+export const menuRule = () => h('div', {class: 'pop-rule', role: 'separator'});
 
 /**
  * The answers under something being written or asked: what declines or

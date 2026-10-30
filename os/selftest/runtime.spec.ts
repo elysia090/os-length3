@@ -165,10 +165,9 @@ test("a repo's name in Runtime opens it in Forge; its gear offers its card on th
   await expect(gear).toHaveCSS('opacity', '1');
   await gear.click();
   const menu = here.getByRole('menu', {name: 'What to do with notes'});
-  await expect(menu.getByRole('menuitem')).toHaveText(['Show on the Remote', 'Rename', 'Free from this device', 'Delete']);
-  // On the Remote, it keeps the name the Remote knows it by.
-  await expect(menu.getByRole('menuitem', {name: 'Rename'})).toBeDisabled();
-  await expect(menu).toContainText('The Remote knows it by this name, so it keeps it');
+  // On the Remote, it keeps the name the Remote knows it by: Rename is not offered, nor said why.
+  await expect(menu.getByRole('menuitem')).toHaveText(['Show on the Remote', 'Free from this device', 'Delete']);
+  await expect(menu.locator('.pop-note')).toHaveCount(0);
   // Escape puts it away, and nothing changed.
   await app.page.keyboard.press('Escape');
   await expect(menu).toBeHidden();
@@ -185,8 +184,8 @@ test("a repo's name in Runtime opens it in Forge; its gear offers its card on th
   await expect(remote.getByRole('button', {name: 'notes', exact: true})).toBeVisible();
   await remote.getByRole('button', {name: 'What to do with notes'}).click();
   const there = remote.getByRole('menu', {name: 'What to do with notes'});
-  await expect(there.getByRole('menuitem', {name: 'Free from this device'})).toBeDisabled();
-  await expect(there).toContainText('It is only on the Remote: nothing of it is here to free');
+  // Only on the Remote: nothing of it here to rename or free.
+  await expect(there.getByRole('menuitem')).toHaveText(['Show on the Remote', 'Delete']);
   // Its card on the Remote, lit, with the keyboard on it.
   await there.getByRole('menuitem', {name: 'Show on the Remote'}).click();
   await expect(app.remote.part('Repos')).toHaveAttribute('aria-selected', 'true');
@@ -206,7 +205,7 @@ test("Home's repo card opens the repo in Forge, brought here first when it is on
   const gear = card.getByRole('button', {name: 'What to do with notes'});
   const menu = card.getByRole('menu', {name: 'What to do with notes'});
   await gear.click();
-  await expect(menu.getByRole('menuitem')).toHaveText(['Show on the Remote', 'Rename', 'Free from this device', 'Delete']);
+  await expect(menu.getByRole('menuitem')).toHaveText(['Show on the Remote', 'Free from this device', 'Delete']);
   await expect(menu.getByRole('menuitem', {name: 'Free from this device'})).toBeEnabled();
   await menu.getByRole('menuitem', {name: 'Free from this device'}).click();
   const ask = menu.getByRole('group', {name: 'Free notes from this device'});
@@ -228,7 +227,7 @@ test("Home's repo card opens the repo in Forge, brought here first when it is on
   await expect(app.remote.card('notes')).toBeFocused();
 });
 
-test('signed out, a repo is renamed and deleted from its gear, asked in place; Free says the reason that holds it', async ({app}) => {
+test('signed out, a repo is renamed and deleted from its gear, asked in place; Free, with no Remote to keep it, is not offered', async ({app}) => {
   await app.newRepo.make('oops');
   await app.rail.go('home');
   const repos = app.main.getByRole('region', {name: 'Repos'});
@@ -236,11 +235,9 @@ test('signed out, a repo is renamed and deleted from its gear, asked in place; F
   const gear = (name: string) => card(name).getByRole('button', {name: `What to do with ${name}`});
   const menu = (name: string) => card(name).getByRole('menu', {name: `What to do with ${name}`});
   await gear('oops').click();
-  // No Remote to show it on; what keeps it here is said as it is, not the Prompt nobody wrote to.
-  await expect(menu('oops').getByRole('menuitem')).toHaveText(['Rename', 'Free from this device', 'Delete']);
-  await expect(menu('oops').getByRole('menuitem', {name: 'Free from this device'})).toBeDisabled();
-  await expect(menu('oops')).toContainText('Sign in to the Remote to free it');
-  await expect(menu('oops')).not.toContainText('A Prompt has it open');
+  // No Remote to show it on, or to keep it if it were freed: neither is offered, and nothing is said of them.
+  await expect(menu('oops').getByRole('menuitem')).toHaveText(['Rename', 'Delete']);
+  await expect(menu('oops').locator('.pop-note')).toHaveCount(0);
 
   // Renamed in its row: a name it cannot be is said there, and Enter gives the one written.
   await menu('oops').getByRole('menuitem', {name: 'Rename'}).click();

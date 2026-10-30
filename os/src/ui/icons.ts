@@ -47,6 +47,15 @@ const MARKS = {
   person: 'M12 12a3.75 3.75 0 1 0 0-7.5 3.75 3.75 0 0 0 0 7.5zM5 19.5a7 7 0 0 1 14 0',
   // A page and what can be done to it: three dots on it, as File's ⌄ on a row.
   files: 'M6 3h8l4 4v14H6zM14 3v4h4M9 14h.01M12 14h.01M15 14h.01',
+  // The Remote's cloud, as the rail has it: a thing shown there.
+  remote: 'M7 18h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6 11.5 3.25 3.25 0 0 0 7 18z',
+  // The cloud with an arrow going up into it: the copy here goes, the Remote keeps it (Free).
+  free: 'M7 18h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6 11.5 3.25 3.25 0 0 0 7 18zM12 16v-5M9.75 13.25 12 11l2.25 2.25',
+  // A bin, its lid lifted: what goes for good.
+  trash: 'M5 7h14M10 7V4.5h4V7M7 7l.9 12.5h8.2L17 7M10.5 10.5v6M13.5 10.5v6',
+  // A page with + on it, and a folder with + on it: one made.
+  'new-file': 'M6 3h8l4 4v14H6zM14 3v4h4M12 11v6M9 14h6',
+  'new-folder': 'M3.5 6h6l2 2h9v11h-17zM12 11v5M9.5 13.5h5',
   // A pencil, its point down at the left: what the box does to the file in front (box-modes.ts Edit).
   pen: 'M4.5 19.5l1.2-4.2L15.8 5.2a2 2 0 0 1 2.8 0l.2.2a2 2 0 0 1 0 2.8L8.7 18.3zM14 7l3 3',
   // A cog: eight teeth round a ring, the hole in its middle.
@@ -67,7 +76,8 @@ export function paneMark(): SVGSVGElement {
 }
 
 /** A small mark drawn like the icons: + to add, × to take off, the gear for settings, a person not named yet, download. */
-export function mark(name: keyof typeof MARKS): SVGSVGElement {
+export type MarkName = keyof typeof MARKS;
+export function mark(name: MarkName): SVGSVGElement {
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');

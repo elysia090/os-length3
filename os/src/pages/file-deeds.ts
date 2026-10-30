@@ -2,7 +2,8 @@ import {h} from '../ui/dom.ts';
 import {nudge, putAway} from '../ui/glide.ts';
 import {t} from '../i18n.ts';
 import {plainPart, plainPath, store} from '../repos/repos.ts';
-import {answers, askFoot, SETTLE} from './common.ts';
+import {answers, askFoot, menuItem, menuRule, SETTLE} from './common.ts';
+import type {MarkName} from '../ui/icons.ts';
 import {errorText} from '../app/errors.ts';
 
 // What can be done to a file or a folder of a repo, as one menu (the person's menu, `.pop`), wherever it is brought
@@ -37,8 +38,8 @@ export interface Deeds {
 export function fileDeeds(d: Deeds): HTMLElement {
   const {repo, path} = d;
   const pop = h('div', {class: 'pop tree-pop', role: 'menu', 'aria-label': d.name});
-  const entry = (label: string, then: (b: HTMLButtonElement) => void) => {
-    const b = h('button', {type: 'button', class: 'pop-item', role: 'menuitem'}, label) as HTMLButtonElement;
+  const entry = (label: string, name: MarkName, then: (b: HTMLButtonElement) => void, gone = false) => {
+    const b = menuItem(label, name, gone);
     b.addEventListener('click', () => then(b));
     return b;
   };
@@ -86,13 +87,13 @@ export function fileDeeds(d: Deeds): HTMLElement {
   // A folder takes a new file or folder in it; a file, one beside it in its folder.
   const into = d.dir ? path : split(path)[0];
   const rows: HTMLElement[] = [];
-  rows.push(entry(t('New file'), (b) => field(b, t('File name'), '', t('Create'), async (n) => {
+  rows.push(entry(t('New file'), 'new-file', (b) => field(b, t('File name'), '', t('Create'), async (n) => {
     if (await there(into, n)) throw taken(n);
     d.opening?.(into);
     await store.add(repo, into, n, '');
     await d.made(joined(into, n), true);
   })));
-  rows.push(entry(t('New folder'), (b) => field(b, t('Folder name'), '', t('Create'), async (n) => {
+  rows.push(entry(t('New folder'), 'new-folder', (b) => field(b, t('Folder name'), '', t('Create'), async (n) => {
     if (await there(into, n)) throw taken(n);
     d.opening?.(into);
     await store.mkdir(repo, joined(into, n));
@@ -100,13 +101,13 @@ export function fileDeeds(d: Deeds): HTMLElement {
   })));
   if (path !== '') {
     // Its path in the repo, its name to be written over: a path written moves it (notes/plan.md), its folders made.
-    rows.push(entry(t('Rename'), (b) => field(b, t('New name'), path, t('Rename'), async (written) => {
+    rows.push(entry(t('Rename'), 'pen', (b) => field(b, t('New name'), path, t('Rename'), async (written) => {
       const to = written.replace(/^\/+|\/+$/g, '');
       const [inside, name] = split(to);
       if (to !== path && await there(inside, name)) throw taken(name);
       await d.move(to);
     }, true)));
-    rows.push(entry(t('Delete'), (b) => {
+    rows.push(menuRule(), entry(t('Delete'), 'trash', (b) => {
       // Asked in its place: the deed on the side it was pressed, Not now on the other.
       const foot = askFoot(b, pop);
       const no = h('button', {type: 'button', class: 'button small-button'}, t('Not now')) as HTMLButtonElement;
@@ -127,7 +128,7 @@ export function fileDeeds(d: Deeds): HTMLElement {
       });
       b.replaceWith(ask);
       yes.focus();
-    }));
+    }, true));
   }
   pop.append(h('div', {class: 'pop-head muted small'}, d.name), ...rows);
   // ↑ ↓ go along its rows.
