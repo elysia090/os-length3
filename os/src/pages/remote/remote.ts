@@ -1,7 +1,6 @@
-import {ago, bytes, h} from '../../ui/dom.ts';
+import {h} from '../../ui/dom.ts';
 import {t} from '../../i18n.ts';
 import * as account from '../../remote/connection.ts';
-import {store} from '../../repos/repos.ts';
 import {pageHead, parts, type Parts} from '../common.ts';
 import type {Context} from '../context.ts';
 import {signInBox, signInLead, signInPlace} from './sign-in.ts';
@@ -39,19 +38,6 @@ function standing(): HTMLElement {
   return line;
 }
 
-/**
- * Signed out, under the way in: what it is for. This device's repos stand where the Remote's will, faint, each
- * saying it is only here; signed in, the same cards stand there whole.
- */
-function waiting(): HTMLElement {
-  const grid = h('div', {class: 'grid repo-grid waiting'});
-  // In the Remote's own order (by name), so each card is found again where it stood once signed in.
-  void store.list().then((repos) => grid.replaceChildren(...[...repos].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)).map((r) => h('div', {class: 'card ghost'},
-    h('span', {class: 'card-title'}, r.name),
-    h('span', {class: 'muted'}, `${bytes(r.bytes)} · ${t('Changed {when}', {when: ago(r.modified)})}`),
-    h('span', {class: 'muted'}, t('Only on this device'))))), () => {});
-  return grid;
-}
 export function remote(ctx: Context): Node[] {
   const holder = h('div', {});
   let shown: string | null = null;
@@ -60,7 +46,7 @@ export function remote(ctx: Context): Node[] {
     const now = c ? 'in' : '';
     if (now === shown) return;
     shown = now;
-    if (!c) holder.replaceChildren(signInPlace(t('Sign in'), ...signInLead(t('Signed in, your repos are kept in step across your devices, and shown to whom you choose.')), signInBox(() => paint())), waiting());
+    if (!c) holder.replaceChildren(signInPlace(t('Sign in'), ...signInLead(t('Signed in, your repos are kept in step across your devices, and shown to whom you choose.')), signInBox(() => paint())));
     else signedIn(ctx, holder, () => { shown = null; paint(); });
   };
   paint();

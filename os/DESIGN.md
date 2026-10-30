@@ -635,7 +635,7 @@ fix is always a piece from §3, not a new rule.
 | A full stop on one lone line and none on the next (投稿はここまでです。 / repo はまだありません) | None on one statement; one on each when there are two |
 | A field with only a placeholder for its name, beside a form with labels | A label over the field, what it means under it, as New repo's |
 | Signed out, a sentence and a button on one page and a card on another | The sign-in card, where the page's parts will be, on every page that needs it |
-| A card alone in the middle of an empty page, what it opens then coming in somewhere else | The card where what it opens will stand, and under it, faint, what it is for (Remote: this device's repos, dashed, Only on this device) |
+| A card alone in the middle of an empty page, what it opens then coming in somewhere else | The card where what it opens will stand, under the page's head, at the same place on every page |
 | The Remote away as an error on two pages and as nothing (stale cards with live switches) on the rest; a dead session kept, each page failing on it | The rail's dot and Remote's one line; a dead session signs the device out |
 | Something new said by a count, a badge or a colour of its own, or not said at all until the page is opened | The dot of the place's own colour, on the rail and on the chip and board it is on, gone once seen |
 | A box drawn again every little while, taking what was being written and the keyboard with it (Inbox's field to write to someone, every 10 s) | Only what came is drawn: the rows under the field, the messages at the conversation's foot |
@@ -2407,10 +2407,10 @@ people write to you by; Server: servers, boards and the repos shown in them)
 and that everything else works without it (your repos stay in this browser,
 or on this device in the app), so signed out is not a page of nothing; then
 the ways in one under another as wide as the card (the first provider
-filled), and no words around the buttons: they say it. Under it, what signing
-in is for: this device's repos where the Remote's cards will stand, faint and
-dashed, each saying Only on this device; signed in, the same cards stand
-there whole. The Inbox, signed out, shows the same card in the same place. A
+filled), and no words around the buttons: they say it. Nothing stands under
+it: this device's repos are Home's to show, and a list of what is not on the
+Remote yet, under the way onto it, only made the page untidy. The Inbox,
+signed out, shows the same card in the same place. A
 device's code opens the card on a page of its own, in its middle, for each
 step: the code, signing in, letting the device in. Signed in through a
 provider, the person is back on the page they began on (Remote's, or

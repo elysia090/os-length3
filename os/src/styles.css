@@ -2110,12 +2110,6 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .sign-in-place { display: grid; justify-items: start; margin-top: var(--s5); }
 /* A device's own page has nothing else: there the card stands in the middle, its weight a little high. */
 .device-page.sign-in-place { justify-items: center; align-content: center; margin-top: 0; min-height: calc(100dvh - 2 * var(--top-line) - var(--s6) * 3); padding-bottom: 5vh; box-sizing: border-box; }
-/* What signing in keeps, under it: this device's repos where the Remote's will stand, faint and dashed, not yet
-   kept; nothing to press. */
-.repo-grid.waiting { margin-top: var(--s5); }
-.repo-grid.waiting:empty { display: none; }
-.card.ghost { border-style: dashed; border-color: var(--edge); color: var(--sub); cursor: var(--cursor-arrow); }
-.card.ghost .card-title { color: var(--sub); }
 .sign-in-card {
   width: min(440px, 100%); box-sizing: border-box; display: grid; gap: var(--s4);
   padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s5); border: 1px solid var(--ink); border-radius: var(--r-place); background: var(--paper);

@@ -136,8 +136,13 @@ test('a device\'s code that cannot be used says what that means, and another is 
   await expect(app.page.getByRole('textbox', {name: 'The device\'s code'})).toBeVisible();
 });
 
-test('signed out, the sign-in card stands at one place on Remote and Inbox, wide or narrow', async ({app}) => {
+test('signed out, the sign-in card stands at one place on Remote and Inbox, wide or narrow, and nothing under it', async ({app}) => {
+  await app.newRepo.make('draft');
   const card = app.main.getByRole('region', {name: 'Sign in'});
+  // This device's repos are Home's to show: the Remote, signed out, is its way in and nothing more.
+  await app.rail.go('remote');
+  await expect(card).toBeVisible();
+  await expect(app.main.getByText('draft').filter({visible: true})).toHaveCount(0);
   for (const [width, height] of [[1280, 800], [1024, 768], [390, 844]]) {
     await app.page.setViewportSize({width, height});
     const at: Record<string, {x: number; y: number; width: number}> = {};
