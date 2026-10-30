@@ -3,6 +3,7 @@ export default {
   'The Remote cannot be reached': 'Remote に届きません',
   // It could not be asked, each way said as itself (never "offers no way in"), with the way to ask again.
   'The Remote did not answer in time': 'Remote が時間内に答えませんでした',
+  'The Remote named a page that is not a web page': 'Remote が Web ページではない行き先を返しました',
   'The Remote is not taking requests just now ({status})': 'Remote はいま受け付けていません（{status}）',
   'What answered is not the Remote ({status})': '答えたのは Remote ではありません（{status}）',
   "The Remote's answer could not be read": 'Remote の答えを読めませんでした',

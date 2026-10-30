@@ -66,3 +66,15 @@ test('what is read from the Remote says the same, not the parser\'s error', asyn
   await assert.rejects(remote.json('/v1/blobs/missing'), /cannot hold files just now/);
   assert.equal(remote.remoteAway(), false);
 });
+
+test('a page the Remote names is left for only when it is a web page: https, or http on this machine', () => {
+  const went: string[] = [];
+  Object.assign(globalThis, {location: {href: 'https://os.length3.com/', assign: (u: string) => void went.push(u)}});
+  remote.leaveFor('https://github.com/login/oauth/authorize?x=1');
+  remote.leaveFor('http://localhost:8787/back');
+  assert.deepEqual(went, ['https://github.com/login/oauth/authorize?x=1', 'http://localhost:8787/back']);
+  for (const url of ['javascript:alert(1)', 'data:text/html,hi', 'file:///etc/passwd', 'http://evil.example/', 'length3://open']) {
+    assert.throws(() => remote.leaveFor(url), /The Remote named a page that is not a web page/, url);
+  }
+  assert.equal(went.length, 2);
+});

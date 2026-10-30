@@ -9,7 +9,7 @@
 import {bytes, day} from '../ui/dom.ts';
 import {isNative, native} from '../app/host.ts';
 import {t, tn} from '../i18n.ts';
-import {api, json, RemoteError} from './connection.ts';
+import {api, json, leaveFor, RemoteError} from './connection.ts';
 
 /** The tiers one pays for, the least first, and free before them. */
 export const PAID_TIERS = ['go', 'pro', 'max'] as const;
@@ -238,7 +238,7 @@ export async function openPlan(kind: 'checkout' | 'portal', o: {tier?: PaidTier;
   const r = await api(`/v1/plan/${kind}`, {method: 'POST', body: JSON.stringify({back: o.back ?? location.href, ...(o.tier ? {tier: o.tier} : {})})});
   const body = await r.json().catch(() => ({})) as {url?: string; error?: string; tier?: unknown; manage?: boolean; checkout?: boolean};
   if (!r.ok || !body.url) throw new RemoteError(r.status, planError(r.status, body), body as Record<string, unknown>);
-  location.assign(body.url);
+  leaveFor(body.url);
 }
 
 /** Why the Remote would not open Checkout or the portal, in the app's words: by the tier it names, else as it said it. */

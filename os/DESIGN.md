@@ -1264,7 +1264,10 @@ What leaves this system is kept to what is said here:
   "not implemented", so a program in it can reach nothing. The page itself
   may reach its own origin and the Remote, nothing else: the web build
   carries that Content-Security-Policy, and the desktop's (Tauri's) says the
-  same. The Remote answers only the app's origins. From the host (the app
+  same. A page the Remote names to go to (a provider's, Checkout, the
+  portal) is followed only when it is a web page: https, or http on this
+  machine (connection.ts leaveFor); the desktop opens only Stripe's or the
+  Remote's own (account.rs). The Remote answers only the app's origins. From the host (the app
   and l3: the Remote, a release, a distribution's root) it goes one way
   (core/src/net.rs), taking of the host only what the machine already
   decided: its proxy (HTTPS_PROXY, minus NO_PROXY, never for the machine

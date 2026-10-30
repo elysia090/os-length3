@@ -229,6 +229,21 @@ export async function enterWith(key: string): Promise<boolean> {
 }
 
 /**
+ * The page leaves for `url`, a page the Remote named (a provider's, Checkout, the portal): only a web page, https (or
+ * http on this machine, a Remote run here). A Remote that names anything else (a script, a file, an app's scheme) is
+ * not followed: the policy would refuse a script anyway; this refuses the rest, and says the Remote is not answering
+ * as the Remote does.
+ */
+export function leaveFor(url: string) {
+  const u = new URL(url, location.href);
+  const here = u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '[::1]';
+  if (u.protocol !== 'https:' && !(u.protocol === 'http:' && here)) {
+    throw new RemoteError(0, t('The Remote named a page that is not a web page'), {}, 'malformed');
+  }
+  location.assign(u.href);
+}
+
+/**
  * Sign in with a provider: the page goes there and comes back to `back` (then claim()), signed in or not: called
  * off or refused at the provider, it is back here too (not on a page of the Remote's), and the card says so.
  */
@@ -241,7 +256,7 @@ export async function signInWith(provider: Provider, back = signedInURL()): Prom
   failed.searchParams.set('sign-in-failed', '');
   const r = await api('/api/auth/sign-in/social', {method: 'POST', body: JSON.stringify({provider, callbackURL: back, errorCallbackURL: failed.toString()})}, null);
   const {url} = await r.json() as {url: string};
-  location.assign(url);
+  leaveFor(url);
 }
 
 /** Where a provider sends the page back: here, marked so the session is taken up. */
@@ -322,7 +337,7 @@ export function passkeyOfferDone() {
 /** Another provider for the same account (a second way back in). */
 export async function link(provider: Provider): Promise<void> {
   const {url} = await json<{url: string}>('/api/auth/link-social', {method: 'POST', body: JSON.stringify({provider, callbackURL: location.href})});
-  location.assign(url);
+  leaveFor(url);
 }
 
 export interface Linked { id: string; providerId: string; accountId: string; createdAt: string }
