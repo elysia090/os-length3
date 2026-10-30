@@ -226,10 +226,14 @@ jobs:
           npm run selftest:l3
 
   # The x86-64 → wasm translator against native, and l3 as the Prompt carries it (static, musl), translated
-  # as a browser's Prompt runs it.
+  # as a browser's Prompt runs it: the two side by side, each its own build kept.
   xlat:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [native, prompt]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -247,15 +251,18 @@ jobs:
           workspaces: |
             xlat -> target
             os -> target
-          shared-key: xlat
+          shared-key: xlat-${{ matrix.part }}
           cache-on-failure: true
       - name: xlat against native (C and Rust std), and its unit tests
+        if: matrix.part == 'native'
         working-directory: xlat
         run: sh tests/run.sh
+      # The translator as the browser runs it (run.mjs takes the wasm build when it is current).
       - name: l3 for the Prompt (static, musl), translated as the Prompt runs it
-        if: ${{ !cancelled() }}
+        if: matrix.part == 'prompt'
         working-directory: os
         run: |
+          cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path ../xlat/Cargo.toml
           cargo build --locked --profile prompt -p l3 --no-default-features --target x86_64-unknown-linux-musl
           out=$(LENGTH3_REPOS=/root node ../xlat/runtime/run.mjs target/x86_64-unknown-linux-musl/prompt/l3 help all)
           echo "$out" | head -3
