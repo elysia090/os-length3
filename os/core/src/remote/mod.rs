@@ -90,6 +90,12 @@ pub fn save_connection(c: &Connection) -> Result<()> {
     crate::home::set("remote", &serde_json::to_string(c).map_err(|e| e.to_string())?)
 }
 
+/// This device's own secrets a file must not carry (secrets.rs): its session on the Remote, whole and without its
+/// signature.
+fn own_secrets() -> Vec<String> {
+    connection().map(|c| c.token.split('.').next().map(String::from).into_iter().chain([c.token.clone()]).collect()).unwrap_or_default()
+}
+
 /// Forget the Remote here: its session and every base (the repos stay).
 pub fn forget_connection() -> Result<()> {
     crate::home::set("remote", "null")?;
@@ -324,6 +330,11 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
         let moded = |p: &String| kept && here.modes.get(p) != base.modes.get(p);
         let mut set: Vec<(&String, &Option<String>)> = here.tree.iter().filter(|(p, v)| base.tree.get(*p) != Some(*v) || moded(p)).collect();
         let mut remove: Vec<&String> = base.tree.keys().filter(|p| !here.tree.contains_key(*p)).collect();
+        // A file holding a secret is not sent (secrets.rs): it stays here as it is, named as what cannot be sent, and
+        // the Remote keeps the version it had (nothing of it is removed there).
+        let held = secrets_held(&here, &base.tree, &own_secrets());
+        set.retain(|(p, _)| !held.iter().any(|(h, _)| h == *p));
+        out.unsynced.extend(held);
         if set.is_empty() && remove.is_empty() {
             out.version = base.version;
             if let Some(was) = first.as_ref().filter(|_| out.taken > 0 || !out.both.is_empty()) {
@@ -546,10 +557,14 @@ pub fn status_of(repos: &Repos, name: &str) -> Result<Status> {
     let b = base(&key(repos, name).0);
     // A mode is a change only where the Remote keeps modes; where it said it keeps none, an execute bit cannot be sent.
     let moded = b.as_ref().is_none_or(|b| b.moded);
+    // What holds a secret is not a change to send: it stays here, said as unsent (as sync says it).
+    let held = secrets_held(&here, b.as_ref().map_or(&Tree::new(), |b| &b.tree), &own_secrets());
+    let unsent = |p: &String| held.iter().any(|(h, _)| h == p);
     let changed = match &b {
-        Some(b) => here.tree.iter().filter(|(p, v)| b.tree.get(*p) != Some(*v) || (moded && here.modes.get(*p) != b.modes.get(*p))).count() + b.tree.keys().filter(|p| !here.tree.contains_key(*p)).count(),
-        None => here.tree.len(),
+        Some(b) => here.tree.iter().filter(|(p, v)| !unsent(p) && (b.tree.get(*p) != Some(*v) || (moded && here.modes.get(*p) != b.modes.get(*p)))).count() + b.tree.keys().filter(|p| !here.tree.contains_key(*p)).count(),
+        None => here.tree.keys().filter(|p| !unsent(p)).count(),
     };
+    here.unsynced.extend(held);
     if !moded { for p in here.modes.keys() { here.unsynced.push((p.clone(), crate::tr!("its execute bit (this Remote keeps no modes yet)", "実行ビット（この Remote はまだモードを持ちません）"))); } }
     Ok(Status {
         name: name.into(), changed, fresh: b.is_none(), files: here.tree.values().filter(|v| v.is_some()).count(), unsynced: here.unsynced, bytes: here.bytes,

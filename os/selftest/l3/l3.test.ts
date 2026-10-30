@@ -71,6 +71,26 @@ test('a repo made and written with l3 is on the Remote byte for byte, CRLF, name
   assert.equal((await draftOf('files')).draft['ノート/メモ.md'], undefined);
 });
 
+test('a file holding a key stays on this device: the Remote never has it, l3 remote and Commit say so, and taken out it goes', async () => {
+  ok(laptop.l3(['repo', 'new', 'keyed', '-t', 'empty']));
+  const key = `sk-ant-api03-${'x'.repeat(91)}k3yAA`;
+  ok(laptop.l3(['file', 'write', 'keyed/.env'], `ANTHROPIC_API_KEY=${key}\n`));
+  ok(laptop.l3(['file', 'write', 'keyed/notes.md'], 'plain\n'));
+  // What holds none goes as ever; the key's file does not, nor is anything of it removed there.
+  const there = await draftOf('keyed');
+  assert.equal(there.draft['notes.md'], sha('plain\n'));
+  assert.equal(there.draft['.env'], undefined);
+  // In step otherwise: the key's file is not a change waiting to go, it is one that cannot.
+  assert.match(ok(laptop.l3(['remote'])).out, /\n {2}keyed {2,}in step · 1 cannot be sent\n/);
+  const row = (ok(laptop.l3(['remote', '--json'])).json.here as {name: string; unsendable: string[]}[]).find((x) => x.name === 'keyed');
+  assert.deepEqual(row?.unsendable, ['.env']);
+  refused(laptop.l3(['commit', 'keyed', 'Patch：keys']), 1, /\(\.env: secret sk-ant-…k3yAA\)/);
+  // Never the key whole, in anything said.
+  assert.doesNotMatch(JSON.stringify(ok(laptop.l3(['remote', '--json'])).json), /x{20}/);
+  ok(laptop.l3(['file', 'write', 'keyed/.env'], 'ANTHROPIC_API_KEY=\n'));
+  assert.equal((await draftOf('keyed')).draft['.env'], sha('ANTHROPIC_API_KEY=\n'));
+});
+
 test('l3 repo mv and rm do what the repo\'s gear does: one only this device has is renamed and deleted, one on the Remote is not', async () => {
   const alone = r.device();
   ok(alone.l3(['repo', 'new', 'draft', '-t', 'empty']));
