@@ -1,0 +1,31 @@
+/* Controls: buttons, chips, a line to type in, a key as it is drawn, the done mark, what is said when something
+   fails. */
+
+/* Controls */
+.button {
+  min-height: var(--h-control); padding: 0 var(--s4); border-radius: var(--r-round);
+  border: 1px solid var(--edge); background: transparent; cursor: var(--cursor-hand);
+}
+.button:disabled { opacity: .5; cursor: var(--cursor-arrow); }
+/* Words in a button, a chip or a pill stand on its middle by their capitals: a face keeps more room over its capitals
+   than under its baseline (or the other way), so a line set on a middle carries its words a pixel or two off it, high
+   in one face, low in another. Trimmed to its capitals and its baseline, the line is its capitals, whatever the face.
+   One with no height of its own keeps its line's height, the capitals on its middle. Where the trim is not had, the
+   line's middle, as before. The box's own line moves its words by the same measure, measured (optical.ts). */
+@supports (text-box: trim-both cap alphabetic) {
+  .button, .chip, .stub-code, .share-open > span { text-box: trim-both cap alphabetic; }
+  /* The menu's pills keep their line's height round the capitals: a file's name cut short there (overflow) keeps
+     its descenders. */
+  .box-mode-pill :is(.prompt-ps, .prompt-mode > :not(.icon)) { text-box: trim-both cap alphabetic; padding-block: calc((1lh - 1cap) / 2); }
+  .pill-name.pill-name, .server-at.server-at { text-box: trim-both cap alphabetic; padding-block: calc((1lh - 1cap) / 2); }
+}
+.input, .edit input, .edit textarea {
+  min-height: var(--h-control); padding: var(--s2) var(--s3); border: 1px solid var(--edge); border-radius: var(--r-field);
+  background: var(--raised); color: var(--ink);
+}
+.error { font-size: var(--t-meta); }
+.error:empty { display: none; }
+.row { display: flex; gap: var(--s2); }
+/* Declining at the left, going on at the right (common.ts answers). */
+.answers { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); }
+.answers > .grow { flex: 1; }

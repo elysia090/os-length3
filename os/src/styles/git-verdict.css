@@ -1,0 +1,62 @@
+/* The Review's verdict: Approve, its ring turning into the done mark, and Merge under it. */
+/* The review's procedure under what was said: a comment more in a field tall from the start, then the verdict. */
+.review-verdict { display: flex; align-items: center; gap: var(--s2); }
+/* Approve: a ○ and its word; pressed, the ○ turns into the done mark. */
+.approve-mark { display: inline-flex; align-items: center; gap: var(--s2); min-height: var(--h-control); padding: 0 var(--s3) 0 var(--s1); border: 0; border-radius: var(--r-round); background: transparent; color: var(--ink); font: 600 var(--t-body) var(--sans); cursor: var(--cursor-hand); }
+.approve-mark:hover { background: var(--raised); }
+.approve-mark:disabled { cursor: var(--cursor-arrow); opacity: .6; }
+.approve-mark .ring { width: 22px; height: 22px; flex: none; border: 2px solid var(--edge); border-radius: 50%; }
+.approve-mark:hover .ring { border-color: var(--done); }
+/* A deed under way (git/held.ts busy): the button pressed keeps its look and its word, not greyed as one that cannot be
+   pressed, and a short line runs under the word, left to right, until it is done; Approve's ○ turns, its arc in the
+   green it lands as. Asked for less motion, the line stands still under the word. */
+.button[aria-busy='true']:disabled, .approve-mark[aria-busy='true']:disabled { opacity: 1; cursor: var(--cursor-progress); }
+.button[aria-busy='true'] { position: relative; overflow: hidden; }
+.button[aria-busy='true']::after {
+  content: ''; position: absolute; left: 0; bottom: 5px; width: 34%; height: 2px; border-radius: 2px; background: currentColor; opacity: .75;
+  translate: -110% 0; animation: busy-line calc(560ms * var(--pace)) cubic-bezier(.45, 0, .55, 1) infinite;
+}
+@keyframes busy-line { to { translate: 310% 0; } }
+.approve-mark[aria-busy='true'] .ring { border-color: var(--rule); border-top-color: var(--done); animation: busy-turn calc(380ms * var(--pace)) linear infinite; }
+@keyframes busy-turn { to { rotate: 1turn; } }
+@media (prefers-reduced-motion: reduce) {
+  .button[aria-busy='true']::after { animation: none; translate: 0 0; left: 33%; }
+  .approve-mark[aria-busy='true'] .ring { animation: none; }
+}
+.review-verdict .grow { flex: 1; }
+/* A comment more is written on the Review's paper as the issue's words are on its card: an edge only (no grey
+   field over the sheet), room for three lines, as tall as its words beyond that; in hand, its edge is ink. */
+.review-in { min-height: calc(3 * 1.6em + 2 * var(--s3)); field-sizing: content; resize: none; padding: var(--s3); border-color: var(--rule); background: transparent; font: var(--t-body)/1.6 var(--sans); }
+.review-in:focus { border-color: var(--ink); background: transparent; }
+@supports not (field-sizing: content) { .review-in { min-height: 8em; resize: vertical; } }
+/* The change's switch, its word before it: on while it is handed in. Pressed, it goes off at once (git/issue.ts), not
+   greyed while the Remote takes it back. */
+.power-line { display: inline-flex; align-items: center; gap: var(--s2); flex: none; }
+.power[aria-busy='true']:disabled { opacity: 1; cursor: var(--cursor-progress); }
+/* Merge under the Review: a step row of its own, no rule above it. */
+.merge-row { border-top: 0; padding: var(--s4) 0 0; margin-top: 0; }
+/* The words on the buttons under a box (Back to main, Write an issue, Reject, Merge) stay one line: a round button
+   two lines tall is a pill broken. */
+.issue-under .button, .merge-row .button, .review-verdict .button { white-space: nowrap; }
+.step-changes:empty { display: none; }
+/* A phone: the box in full takes the row, its neighbours a sliver at its edges (their numbers would not fit beside
+   it; the sliver says there are more, and a swipe goes to them: git/issue-row.ts), less room inside the sheets, and
+   what is beside a step's button where it fits goes over it where it does not (a diff, a quiet line). */
+@media (max-width: 560px) {
+  .issue-column, .main-part { --row-peek: var(--s4); }
+  .issue-slot[aria-current='false'] .issue-big-head.peek { visibility: hidden; }
+  .issue-slot[aria-current='false'] .issue-card { padding-inline: 0; }
+  .issue-card, .review-box { padding: var(--s4) var(--s4) var(--s5); }
+  .issue-steps > .step-about { grid-column: 1; }
+  .issue-steps > .step-act { grid-column: 2; }
+  .issue-steps > .step-changes { grid-column: 1 / -1; }
+  .issue-foot, .issue-under, .review-verdict { flex-wrap: wrap; }
+  /* The switch under its line (whose words would go one to a line beside it), at the right; Approve over the two
+     answers in words, which keep together at the right. */
+  .issue-foot:has(> .power-line) > .issue-about { flex-basis: 100%; }
+  .issue-foot > .power-line { margin-left: auto; }
+  .review-verdict > .grow { flex-basis: 100%; height: 0; }
+  .review-verdict > .grow + .button { margin-left: auto; }
+  .merge-row > .step-about { grid-column: 1 / -1; }
+  .merge-row > .step-act { grid-column: 2; }
+}

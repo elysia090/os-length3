@@ -1,0 +1,63 @@
+/* The page and its elements as the OS has them everywhere: boxes, fields, the pointer, scrollbars, focus, words said
+   quietly or small. */
+
+* { box-sizing: border-box; }
+p { text-wrap: pretty; }
+html { height: 100%; }
+/* min-height, not height: a body only as tall as the window would end the rail's sticky run there. */
+body { min-height: 100%; box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: var(--outer-top) var(--outer) var(--outer-bottom);
+  display: grid;
+  grid-template-columns: var(--rail) minmax(0, 1fr);
+  background: var(--ground);
+  color: var(--ink);
+  font: var(--t-body)/1.6 var(--sans);
+}
+button, input, textarea { font: inherit; color: inherit; }
+/* The OS's pointer wherever one is, never the browser's: the arrow unless a place says otherwise (over words one only
+   reads too, as a desktop has it), the I-beam where one writes, the hand on a link. Of no weight, so a place's own
+   pointer below always wins. */
+html { cursor: var(--cursor-arrow); }
+:where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='button'], [type='submit'], [type='reset'], [type='file'], [type='color']), textarea, [contenteditable]:not([contenteditable='false'])) { cursor: var(--cursor-text); }
+:where(input:disabled, textarea:disabled) { cursor: var(--cursor-arrow); }
+:where(a[href]) { cursor: var(--cursor-hand); }
+/* What goes in a field is said in `sub`, as every quiet word is: the browser's own grey is too pale on `raised`. */
+::placeholder { color: var(--sub); opacity: 1; }
+/* Japanese breaks where a phrase does, not in the middle of a word, where the browser can tell. */
+:root:lang(ja) { word-break: auto-phrase; }
+/* A box to tick is a circle, the green one when ticked, as a switch on is: never the browser's blue. */
+/* A line too long for its field (a TODO's title on a phone, a placeholder) ends in … while it is not written in, not
+   cut through a letter; written in, it scrolls as a field does. */
+input:not([type='checkbox'], [type='radio'], [type='range']) { text-overflow: ellipsis; }
+input[type='checkbox'] { appearance: none; display: inline-grid; place-content: center; flex: none; width: 20px; height: 20px; margin: 0; border: 1.5px solid var(--edge); border-radius: 50%; background: transparent; cursor: var(--cursor-hand); transition: background var(--motion), border-color var(--motion); }
+input[type='checkbox']::after { content: ''; width: 9px; height: 5px; margin-top: -2px; border: 2px solid var(--ground); border-top: 0; border-right: 0; transform: rotate(-45deg); opacity: 0; }
+input[type='checkbox']:hover { border-color: var(--ink); }
+input[type='checkbox']:checked { background: var(--done); border-color: var(--done); }
+input[type='checkbox']:checked::after { opacity: 1; }
+input[type='checkbox']:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+h1, h2, p { margin: 0; }
+a { color: var(--ink); }
+[hidden] { display: none !important; }
+/* Every box that scrolls, and the page, has the one bar, in the OS's colours and not the browser's: thin, its thumb a
+   thing one drags (edge), its track the ground under it. Still there and still dragged; forced colours draw the
+   system's own. WebKit (the desktop's on Linux), which knows no scrollbar-color, is given the same in its own parts. */
+:root { scrollbar-color: var(--edge) transparent; }
+* { scrollbar-width: thin; }
+@supports not (scrollbar-color: auto) {
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+  ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 8px; background: var(--edge) padding-box; }
+}
+@media (forced-colors: active) { :root { scrollbar-color: auto; } * { scrollbar-width: auto; } }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+/* A place the keyboard was left on when what had it went (focus.ts): held, not framed, until a key is pressed there. */
+[tabindex].kept:focus-visible { outline: none; }
+::selection { background: var(--ink); color: var(--ground); }
+.muted { color: var(--sub); }
+.small { font-size: var(--t-meta); }
+.icon {
+  width: var(--icon); height: var(--icon); flex: none;
+  fill: none; stroke: currentColor; stroke-width: var(--stroke); stroke-linecap: round; stroke-linejoin: round;
+}

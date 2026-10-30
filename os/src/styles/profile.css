@@ -1,0 +1,69 @@
+/* Home's profile: the face, the name, the handle and the line about the person, the counts, and the profile written
+   in. */
+/* Home a size smaller than the pages of work it leads to: the avatar, the name, the TODO box and the cards. */
+.home-main .avatar { width: 88px; height: 88px; font-size: var(--t-card); }
+/* No name yet: the person's mark in the circle, as on the rail, rather than an empty ring. */
+.avatar > .mark { width: 50%; height: 50%; color: var(--sub); }
+.home-main .identity h1 { font-size: var(--t-title); }
+.home-main .todo-box { min-height: max(300px, 44vh); }
+.grid.repo-grid .card { min-height: 152px; }
+.grid.repo-grid .card-title { font-size: var(--t-body); }
+/* What the repo is, under its name: its own words, two lines at most. */
+.card-summary { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--ink); }
+.card-summary:empty { display: none; }
+.card-summary ~ .muted { font-size: var(--t-meta); }
+
+/* Home: profile */
+.profile { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--s5); align-items: start; }
+/* Its deed centred on the name's line, not hung from the line's top. */
+.profile > .button { margin-top: calc((var(--t-title) * 1.25 - var(--h-control)) / 2); }
+.avatar {
+  width: 112px; height: 112px; border-radius: var(--r-round);
+  display: grid; place-items: center;
+  border: 1px solid var(--rule);
+  font-size: var(--t-identity); font-weight: 600;
+}
+/* A name, handle or bio with a word longer than the line breaks in the word, never pushing the page sideways. */
+.identity { min-width: 0; }
+.identity :is(h1, .handle, .bio) { overflow-wrap: anywhere; }
+.identity h1 { font-size: var(--t-identity); font-weight: 700; line-height: 1.25; }
+.identity .unset { color: var(--sub); font-weight: 400; }
+.handle { color: var(--sub); }
+.bio { margin-top: var(--s3); max-width: 60ch; white-space: pre-wrap; }
+/* Figures as Runtime's are: the number large (20/600), the word under it quiet; read at a glance, not as a line. */
+.counts { margin-top: var(--s2); display: flex; flex-wrap: wrap; gap: 0 var(--s5); color: var(--sub); font-size: var(--t-meta); }
+.counts b { display: block; color: var(--ink); font-size: var(--t-card); font-weight: 600; line-height: 1.3; }
+/* Each count is the way to its section (home.ts toSection): under the pointer a raised fill round it, as a row's. */
+.count-go { margin: calc(-1 * var(--s1)) calc(-1 * var(--s2)); padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-field);
+  background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand); transition: background-color calc(200ms * var(--pace)) ease-out; }
+.count-go:hover { background: var(--raised); transition-duration: calc(60ms * var(--pace)); }
+/* Its section's heading lit as it is come to. */
+.section > h2.landed { animation: landed 1200ms ease-out; border-radius: var(--r-field); }
+/* The face is pressed to change it (Edit profile): its edge in ink under the pointer. */
+.avatar.pressable { cursor: var(--cursor-hand); transition: border-color calc(200ms * var(--pace)) ease-out; }
+.avatar.pressable:hover { border-color: var(--ink); transition-duration: calc(60ms * var(--pace)); }
+/* The profile written where it is read: each line as it reads (the name as large, the handle and the line about the
+   person as quiet), written on rather than boxed, a rule under each and ink under the one with the keyboard. */
+/* Written in, the profile is a sheet of its own, as the TODO is when written in: `paper` with an `ink` edge round the
+   face and the lines, grown out around them so nothing on it moves (at the right, within the column: its edge is
+   the TODO box's, clear of the pane's line). */
+.profile { border: 1px solid transparent; border-radius: var(--r-place); transition: background var(--motion), border-color var(--motion); }
+/* That edge, unseen, lies outside it: the face and Edit profile stand on the TODO box's edges, not a pixel in. */
+.profile:not(.editing) { margin-inline: -1px; }
+.profile.editing { margin: calc(-1 * var(--s4)) 0 calc(-1 * var(--s4)) calc(-1 * var(--s5) - 1px); padding: var(--s4) var(--s4) var(--s4) var(--s5); border-color: var(--ink); background: var(--paper); }
+.edit { display: grid; gap: var(--s3); max-width: 480px; min-width: 0; }
+.edit .name-in, .edit .handle-in, .edit .bio-in {
+  width: 100%; min-width: 0; min-height: 0; margin: 0; padding: 0; border: 0; border-bottom: 1px solid var(--rule); border-radius: 0;
+  background: transparent; color: var(--ink); font: inherit; transition: border-color var(--motion);
+}
+.edit .name-in { font-size: var(--t-identity); font-weight: 700; line-height: 1.25; }
+.home-main .edit .name-in { font-size: var(--t-title); }
+.edit .handle-field { display: flex; align-items: baseline; color: var(--sub); }
+.edit .handle-in { flex: 1; color: var(--sub); }
+.edit .bio-field { display: flex; }
+.edit .bio-in { max-width: 60ch; line-height: 1.6; resize: none; overflow: hidden; white-space: pre-wrap; }
+.edit :is(.name-in, .handle-in, .bio-in) { padding-bottom: 2px; }
+.edit :is(.name-in, .handle-in, .bio-in)::placeholder { color: var(--sub); font-weight: 400; opacity: .7; }
+.edit :is(.name-in, .handle-in, .bio-in):focus, .edit :is(.name-in, .handle-in, .bio-in):focus-visible { outline: none; border-bottom-color: var(--ink); }
+/* Cancel and Save where Edit profile stood, on the name's line. */
+.edit-acts { display: flex; gap: var(--s2); margin-top: calc((var(--t-title) * 1.25 - var(--h-control)) / 2); }

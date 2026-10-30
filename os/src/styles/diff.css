@@ -1,0 +1,79 @@
+/* A diff: a file's lines added and removed, its head, its counts. */
+/* A file's lines in a rounded body of their own; each changed line has its colour as a bar at its left and a light
+   ground, so a run of them reads as one block and a lone one still shows. */
+.diff { display: grid; font: var(--t-meta)/1.65 var(--mono); border-radius: calc(var(--r-field) / 2); overflow: hidden; }
+.diff-line { display: grid; grid-template-columns: 4ch 1ch minmax(0, 1fr); gap: var(--s2); padding: 0 var(--s2) 0 var(--s1); border-left: 2px solid transparent; }
+/* Git's diffs: the file's name and +n −n at the left, its lines beside them from the same row. */
+.diff-file.beside { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: var(--s4); align-items: start; }
+.diff-file.beside > .diff-head { grid-column: 1; min-height: 0; padding: 0 var(--s1); cursor: var(--cursor-arrow); }
+.diff-file.beside > .diff-head:hover { background: transparent; }
+.diff-file.beside > .diff { grid-column: 2; min-width: 0; }
+.diff-file.beside > :not(.diff-head):not(.diff) { grid-column: 1 / -1; }
+/* + or − before a line's words, in its colour; the words start right beside it. */
+.diff-sign { user-select: none; text-align: center; }
+.diff-line.add .diff-sign { color: var(--add); }
+.diff-line.del .diff-sign { color: var(--del); }
+.diff-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Which line it is, quiet at the left of each line. */
+.diff-no { align-self: start; color: var(--sub); text-align: right; font-variant-numeric: tabular-nums; user-select: none; }
+/* A line's number in the copy here opens the center at it. */
+button.diff-no { padding: 0; border: 0; background: transparent; font: inherit; cursor: var(--cursor-hand); }
+button.diff-no:hover { color: var(--ink); background: var(--raised); border-radius: var(--r-field); }
+/* A file of a diff: a fold, its name and what was added and removed. */
+.diff-file { margin-bottom: var(--s3); }
+.diff-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s1) var(--s3); min-height: var(--h-row); padding: var(--s1) var(--s1); border-radius: var(--r-field); cursor: var(--cursor-hand); font: var(--t-meta) var(--mono); }
+.diff-head:hover { background: var(--raised); }
+.review-box .diff-head:hover, .issue-box .changes .diff-head:hover { background: var(--ground); }
+/* Put back, at the head's right end; pressed, the head asks in its place (its lines stay under it). */
+.diff-head > .grow { flex: 1; }
+/* A short name, its counts and Put back keep one line; with no room, Put back takes the next line, never two. */
+.diff-head .button { align-self: center; margin-left: auto; white-space: nowrap; font-family: var(--sans); }
+.diff-head.asking { display: grid; gap: var(--s2); padding: var(--s2) var(--s1); cursor: var(--cursor-arrow); }
+.diff-head.asking:hover { background: transparent; }
+.diff-head.asking > .muted { font-family: var(--sans); }
+.diff-name { font-weight: 600; overflow-wrap: anywhere; }
+/* After an issue's number, what it is about ("Fix：title"), in the words an issue is written in, not the code's face:
+   the fold reads as which issue, not as a file (git/issue.ts knowIssues). */
+.diff-about { margin-left: calc(-1 * var(--s2)); font: 600 var(--t-meta) var(--sans); color: var(--ink); overflow-wrap: anywhere; }
+.diff-name.link { margin-inline: 0; padding-inline: var(--s1); }
+.diff-name.link:hover { background: var(--raised); }
+/* +n green, −n red, then five small squares shared out as the lines are: on the figures' line, their middle on the
+   capitals' middle (they stand on the baseline, raised by half of what the capitals are taller), in the figures' own
+   colours, crisp (a small corner, a small gap), so the count and its squares read as one. */
+.diff-count { display: inline-flex; align-items: baseline; gap: var(--s2); color: var(--sub); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.diff-add { color: var(--add); font-weight: 600; }
+.diff-del { color: var(--del); font-weight: 600; }
+.diff-bar { display: inline-flex; align-self: baseline; align-items: flex-end; gap: 2px; translate: 0 -1px; translate: 0 calc((8px - 1cap) / 2); }
+.diff-bar > i { width: 8px; height: 8px; border-radius: 1.5px; background: var(--rule); }
+.diff-bar > i.add { background: var(--add); }
+.diff-bar > i.del { background: var(--del); }
+/* What was added on green, what went on red, what stays quiet, as any diff; yellow is the marker's alone (a line
+   marked while reading). */
+.diff-line.add { background: var(--add-tint); border-left-color: var(--done); }
+.diff-line.del { background: var(--del-tint); border-left-color: var(--off); }
+.diff-line.del .diff-words { color: color-mix(in srgb, var(--ink) 75%, var(--del)); }
+.diff-line.same { color: var(--sub); }
+/* Between two parts of a file, a dashed break with a quiet "…". */
+.diff-line.hunk { color: var(--sub); margin-top: var(--s2); padding-top: var(--s1); border-top: 1px dashed var(--rule); }
+.diff-line.hunk:first-child { margin-top: 0; }
+.hit-line { color: var(--sub); text-align: right; font-variant-numeric: tabular-nums; }
+.hit-text { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+/* What the search found, in its lines: the marker's stroke over the words, as a highlighter (§2). */
+mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gradient(var(--marker), var(--marker)) no-repeat 0 0 / 100% 100%; color: var(--ink); }
+/* As what was found is drawn (each letter typed draws it again), each stroke is drawn on left to right, one line
+   after the next, as a highlighter goes down a page. */
+.search-results mark { animation: stroke calc(280ms * var(--pace)) var(--land) backwards; animation-delay: calc(var(--i, 0) * calc(45ms * var(--pace))); }
+@keyframes stroke { from { background-size: 0 100%; } }
+.mono { font-family: var(--mono); font-size: var(--t-meta); }
+.issue-list { list-style: none; margin: 0; padding: 0; }
+/* What leads somewhere from a list (an issue in the reference, what a message is about): a row, never an underlined word. */
+.link { border: 0; padding: var(--s1) var(--s2); margin-inline: calc(-1 * var(--s2)); border-radius: var(--r-field); background: transparent; cursor: var(--cursor-hand); text-align: left; }
+.link:hover { background: var(--raised); }
+.pane { padding: var(--s5); overflow: auto; min-height: 0; }
+.pane h2 { font-size: var(--t-body); font-weight: 600; }
+.pane .empty { margin-top: var(--s3); padding: var(--s5); }
+.term-home { min-height: 0; overflow: hidden; }
+.term-home .term-box { height: 100%; padding: var(--s5); cursor: var(--cursor-text); }
+.term-box { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
+.term-box h2 { font-size: var(--t-body); font-weight: 600; }
+.term-box .empty { margin-top: var(--s3); padding: var(--s5); }

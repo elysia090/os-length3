@@ -1,0 +1,29 @@
+/* Runtime's storage: this OS's share of the bar, its legend, what can be given back. */
+
+/* Storage: this OS's part the darker share of the bar (not an ink fill, which means current), never too thin to see;
+   everything else's the lighter. */
+.space-meter { display: flex; }
+.space-meter > span { flex: none; background: var(--edge); }
+.space-meter > span.app { min-width: 3px; background: var(--sub); }
+.legend { margin-top: var(--s3); display: flex; flex-wrap: wrap; gap: var(--s5); }
+.legend b { font-size: var(--t-card); font-weight: 600; display: block; }
+/* Runtime: each repo's share, what can be given back, Prompts running */
+.usage-prompt { align-items: center; }
+.usage-prompt .button { min-height: var(--h-row); padding-block: 0; }
+.reclaimed { display: grid; gap: var(--s1); margin-bottom: var(--s3); }
+.work-act .grow { flex: 1; }
+.legend + .reclaimed { margin-top: var(--s4); }
+.row-item[data-room='Keep'] .row-name { color: var(--sub); }
+.remote-join { display: grid; gap: var(--s3); max-width: 560px; }
+.remote-join .line-in { flex: 1; }
+
+/* Forge: a band of repo chips set low, the center (3/4) an endless page of
+   files with a prompt box at its foot, and a narrow side (1/4) that stays out
+   of the way. The only line is the one between the center and the side. */
+.page.page-work { padding: 0; height: var(--inner-h); overflow: hidden; }
+.page.page-work > .work { max-width: none; }
+.work.no-strip { grid-template-rows: minmax(0, 1fr); }
+.work {
+  height: var(--inner-h); display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(280px, 1fr); grid-template-rows: auto minmax(0, 1fr);
+}

@@ -1,0 +1,87 @@
+/* The steps of an issue (Start, Commit, Push), main's card of what is not committed, and what is done with. */
+
+/* A step's row: what it stands at at the left, its button at the right (its done mark in its place once done). */
+.steps { display: grid; grid-template-columns: minmax(0, 1fr) max-content; align-items: start; gap: var(--s3) var(--s3); margin-top: 0; padding: 0 0 var(--s4); }
+.step-act { display: flex; align-items: center; justify-content: flex-end; min-height: var(--h-control); }
+.step-act .button { min-width: 96px; justify-content: center; }
+.step-done { display: inline-flex; align-items: center; gap: var(--s2); font-weight: 600; white-space: nowrap; }
+.step-about { min-width: 0; min-height: var(--h-control); padding-top: calc((var(--h-control) - 1.5em) / 2); }
+.step-about p { margin: 0; }
+.steps > .error { grid-column: 1 / -1; }
+/* In the issue's box: Commit over Push, their buttons down the box's right edge, where Start was and Merge is under
+   the Review, what each stands at at the left (git/issue.ts steps). */
+/* The issue's summary, above Commit: one with the box's ground (no edge, no fill) until pressed, a field then; as
+   tall as its words (a line at least), so the box has no room standing empty between its words and its steps. */
+.issue-summary-wrap { display: grid; gap: var(--s1); margin: 0 0 var(--s3); }
+.issue-summary {
+  min-height: calc(1.6em + 2 * var(--s2) + 2px); padding: var(--s2) var(--s3); margin-left: calc(-1 * var(--s3)); field-sizing: content;
+  width: calc(100% + 2 * var(--s3)); border: 1px solid transparent; border-radius: var(--r-field); background: transparent;
+  color: var(--ink); font: var(--t-body)/1.6 var(--sans); resize: none; cursor: var(--cursor-text);
+}
+/* Where a field cannot be as tall as its words, it keeps room for a few lines, as it did. */
+@supports not (field-sizing: content) { .issue-summary { min-height: calc(4 * 1.6em + 2 * var(--s2)); } }
+.issue-summary::placeholder { color: var(--sub); }
+.issue-summary:hover { border-color: var(--rule); }
+.issue-summary:focus { border-color: var(--edge); background: var(--raised); }
+/* Under the current issue's box, out of it: Back to main at the left, Write an issue at the right. */
+.issue-under { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s3); margin-top: var(--s3); }
+.issue-leave { display: grid; gap: var(--s1); justify-items: start; }
+/* main's card on Git, for what it has not committed: a card (rule edge), its repo, Commit at the right. */
+/* main's part stands in the issues' column: each card a sheet (paper, as an issue's box is, never melting into the
+   ground) with the same edges as the issue in full under it, going with it as the row slides; the lines committed
+   from here under the cards, on those edges too (its --row-peek and --row-lead are the row's: see .issue-column). */
+.main-part > .main-card {
+  width: calc(100% - 2 * var(--peek)); margin-left: calc(var(--lead) * var(--peek));
+  transition: margin-left var(--slide), width var(--slide); /* as the track goes */
+}
+/* As an issue's box: the same padding, the files under its name, and its foot (how many wait at the left, Commit at
+   the right) where an issue's next step is. Its name is only which repo (main is said over it): a label at the size of
+   the file named under it, not a title as large as an issue's, which is a sentence. */
+.main-card { display: grid; gap: var(--s3); padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s5); border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper); }
+.main-title { margin: 0; font-size: var(--t-body); font-weight: 600; }
+.main-card + .main-card { margin-top: var(--s3); }
+/* Many waiting in All (done.ts BRIEF): a row each, its name at the left and how many with Commit at the right; its name
+   pressed, its files open under it, the row's own width. Asked for a commit's line, it is the card again. */
+.main-card.brief { grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: var(--s2) var(--s3) var(--s2) var(--s5); }
+.main-card.brief:has(> .off-ask) { grid-template-columns: minmax(0, 1fr); padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s5); }
+.main-card.brief > .main-foot { margin: 0; gap: var(--s4); }
+.main-card.brief > .changes { grid-column: 1 / -1; padding-bottom: var(--s3); }
+.main-card.brief + .main-card.brief { margin-top: var(--s2); }
+.main-open { display: inline-flex; align-items: center; gap: var(--s2); padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: var(--cursor-hand); }
+.main-open::before { content: ''; width: 0; height: 0; border-block: 4px solid transparent; border-left: 6px solid currentColor; transition: rotate var(--motion); }
+.main-open[aria-expanded='true']::before { rotate: 90deg; }
+/* main's card: the repo, how many files wait and Commit on one line; the files under it on the card itself, no box
+   inside the box. */
+.changes { display: grid; gap: var(--s1); min-width: 0; }
+.changes > .diff-file { margin: 0; }
+/* A file of a diff folds at its head, a small triangle before its name saying which way; turned down, it is open. */
+details.diff-file > summary.diff-head { list-style: none; }
+details.diff-file > summary.diff-head::-webkit-details-marker { display: none; }
+details.diff-file > summary.diff-head::before {
+  content: ''; flex: none; align-self: center; width: 0; height: 0; margin-right: calc(-1 * var(--s1));
+  border-left: 5px solid var(--sub); border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: rotate var(--motion);
+}
+details.diff-file[open] > summary.diff-head::before { rotate: 90deg; }
+/* What waits of a long file, under its lines where they stop, quiet until pressed. */
+.diff-more { justify-self: start; margin-top: var(--s1); padding: 0 var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: var(--sub); font: var(--t-meta) var(--mono); }
+button.diff-more { cursor: var(--cursor-hand); }
+button.diff-more:hover { color: var(--ink); background: var(--raised); }
+/* What is done with (merged, closed): rows, space between them; a merged one opens to its diff. */
+.done-list { display: grid; gap: var(--s1); margin-inline: calc(-1 * var(--s2)); } /* its words on its heading's edge, past each row's own s2 */
+.done-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s1) var(--s3); min-height: var(--h-row); padding: var(--s1) var(--s2); border-radius: var(--r-field); }
+summary.done-head { cursor: var(--cursor-hand); list-style: none; }
+summary.done-head:hover { background: var(--raised); }
+/* A merged one opens to its change: the small triangle every fold has says so before it is pressed, turned down open. */
+summary.done-head::-webkit-details-marker { display: none; }
+summary.done-head::before {
+  content: ''; flex: none; align-self: center; width: 0; height: 0; margin-right: calc(-1 * var(--s1));
+  border-left: 5px solid var(--sub); border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: rotate var(--motion);
+}
+details[open] > summary.done-head::before { rotate: 90deg; }
+.done-head > .grow { flex: 1; }
+.done-name { font-weight: 600; overflow-wrap: anywhere; }
+.done-head > .error { flex-basis: 100%; }
+.done-diff { max-height: 56vh; overflow: auto; padding: var(--s2) var(--s2) var(--s3) var(--s4); }
+
+/* An Inbox pane with nothing chosen: a quiet line in its middle, not a box in the box. */
+.inbox-thread > .quiet { margin: auto; padding: var(--s4); text-align: center; color: var(--sub); }

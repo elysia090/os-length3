@@ -1,0 +1,30 @@
+/* A page: its head, its sections, room for what is not here yet, a field and its label. */
+
+/* ---- 2. Pages ---- */
+.page { min-width: 0; padding: var(--top-line) clamp(var(--s5), 5vw, 72px) var(--s6); }
+.page:focus { outline: none; }
+/* index.html's word for a page whose scripts never run; boot.js marks the page scripted as it starts. */
+.boot-static { max-width: 34rem; margin: 15vh auto 0; }
+.boot-static h1 { font-size: 1.4rem; margin: 0 0 var(--s3); }
+.scripted .boot-static { display: none; }
+.page > * { max-width: 1200px; margin-left: auto; margin-right: auto; }
+/* One line at every width, so what stands under it (a sign-in card, a page's parts) starts at one place on every page:
+   the role is cut short where it runs out of room, and a phone, with no room for it, has the name alone. */
+.page-head { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; }
+.page-head .icon { align-self: center; flex: none; }
+.page-head h1 { font-size: var(--t-title); font-weight: 700; flex: none; }
+.page-head p { color: var(--sub); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 560px) { .page-head p { display: none; } }
+.section { margin-top: var(--s6); }
+/* Under a page's head the first thing is a step down, a section or not (24 px); sections are 40 apart. */
+.page-head + .section, .page-head + div > .section:first-child { margin-top: var(--s5); }
+.section > h2 {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: var(--t-body); font-weight: 600;
+  margin-bottom: var(--s3);
+}
+.section > h2 small { font-weight: 400; color: var(--sub); font-size: var(--t-meta); }
+/* Room for what is not here yet: a dashed box as wide as its words, never the width of the page around one line. */
+.empty { width: fit-content; max-width: 100%; margin-top: var(--s5); padding: var(--s6) var(--s5); border: 1px dashed var(--rule); border-radius: var(--r-place); color: var(--sub); }
+/* Under a section's heading the heading's own gap is the space: an empty box adds none, however deep. */
+.section .empty { margin-top: 0; }

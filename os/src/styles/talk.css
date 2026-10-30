@@ -1,0 +1,53 @@
+/* A board's talk: posts one under another, a run of them by one person, what came since. */
+
+/* Topic: one reading column; posts one under another, a rule between them.
+   The page folds what is far out of view to boxes of the same height, so the
+   browser's own scroll anchoring is off: the page holds the reader still itself. */
+/* Topic reads as a conversation: a column as wide as the box below it,
+   its name kept at the top, oldest above and newest by the box. A run of
+   one person's posts shows their face and name once; the day is named where
+   it starts; what can be done to a post comes out on hover, round. */
+.tl-start { padding: var(--s5) 0 var(--s2); text-align: center; min-height: 1lh; }
+/* No post yet: the line at the talk's foot, by the box one writes in, where the first post will come. */
+.timeline.tl-empty { display: flex; flex-direction: column; justify-content: flex-end; min-height: 100%; }
+/* A board's talk stands on its foot: a few posts stand at its foot, by the box they are written in, the latest just over
+   it, never at its top over a sheet of nothing; more than it holds, it scrolls as it did. */
+.board-talk > .timeline { display: flex; flex-direction: column; justify-content: flex-end; min-height: 100%; }
+.timeline.tl-empty > .tl-start { padding: var(--s2) 0; }
+/* Every post read, and all of them on the board at once: plain to see, so not said (server/board.ts openAtFoot). Its
+   room is kept, so the posts do not move when the talk grows past the board and it is said again. */
+.board-card.fits .tl-start.tl-all { visibility: hidden; }
+.tl-pages { overflow-anchor: none; }
+.tl-day { margin: var(--s5) 0 var(--s1); text-align: center; color: var(--sub); font: 600 var(--t-meta) var(--sans); }
+.tl-post { position: relative; display: grid; grid-template-columns: 36px minmax(0, 1fr); column-gap: var(--s3); margin: var(--s2) calc(-1 * var(--s2)) 0; padding: var(--s1) var(--s2); border-radius: var(--r-field); }
+.tl-post.tl-runs { margin-top: 0; }
+.tl-post { transition: background-color var(--motion); }
+.tl-post:hover, .tl-post:focus-within { background: var(--raised); }
+.tl-face { display: grid; place-items: center; width: 36px; height: 36px; margin-top: var(--s1); border-radius: var(--r-round); font: 700 var(--t-body) var(--sans); }
+/* A guest's face is no tint of theirs, only a dashed ring, beside the word guest: never taken for one of its people's. */
+.tl-guest > .tl-face { border: 1px dashed var(--edge); background: transparent; }
+/* In a run, the face's place holds the time, shown on hover. */
+/* A post in a run: its time, on hover, no taller than the line beside it, so a run's lines keep one rhythm. */
+/* The time as the post's head says it (quiet, not bold), whole: wider than the face's place in a wide face, it runs
+   on to the left into the post's own padding rather than being cut. */
+.tl-face.tl-at { height: 1lh; margin-top: 0; border: 0; border-radius: 0; place-items: center end; font-size: 11px; font-weight: 400; font-variant-numeric: tabular-nums;
+  line-height: inherit; color: var(--sub); white-space: nowrap; overflow: visible; visibility: hidden; }
+.tl-post:hover .tl-at, .tl-post:focus-within .tl-at { visibility: visible; }
+.tl-who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s2); }
+.tl-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.tl-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin-top: var(--s1); }
+.tl-foot:empty { display: none; }
+/* A post's deeds come up in its top right corner as the pointer comes onto it (a short fade and rise, never there at
+   once), and go as it leaves; out of the way, they are not there to be pressed. Inside the post, not over the one
+   above: a hand going up the talk lights the post under it, never the one below whose deed it is passing over. */
+.tl-acts { position: absolute; top: var(--s1); right: var(--s2); z-index: 1; display: flex; gap: var(--s1);
+  opacity: 0; visibility: hidden; translate: 0 3px; transition: opacity 120ms ease-out, translate 160ms var(--land), visibility 0s 120ms; }
+.tl-acts:empty { display: none; }
+.tl-post:hover .tl-acts, .tl-post:focus-within .tl-acts { opacity: 1; visibility: visible; translate: 0 0; transition-delay: 0s; }
+.tl-act { background: var(--ground); }
+.tl-act[aria-pressed='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+.tl-foot-mark { height: 1px; }
+/* The mark for what came floats just above the box (its holder has no height), so showing it moves nothing. */
+.tl-new-at { position: sticky; bottom: var(--s3); z-index: 3; height: 0; display: flex; justify-content: center; align-items: flex-end; }
+.tl-new { flex: none; min-height: var(--h-row); padding: 0 var(--s4); border: 0; border-radius: var(--r-round); background: var(--ink); color: var(--ground); font: 600 var(--t-meta) var(--sans); cursor: var(--cursor-hand); }
+.tl-new[hidden] { display: none; }

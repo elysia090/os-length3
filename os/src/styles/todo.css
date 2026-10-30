@@ -1,0 +1,90 @@
+/* The TODO box: one sheet to write in, each item a first line and the lines of its detail. */
+
+/* Home: TODO — one tall box to write in; items are a first line and detail lines */
+.todo-box {
+  border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper); transition: border-color var(--motion);
+  min-height: max(360px, 55vh); display: grid; grid-template-rows: 1fr auto;
+}
+/* A sheet: written in, its edge is ink, as a file's is; under the pointer, a step toward it (the edge a field has),
+   so the box says it is there to write in before it is pressed. */
+.todo-box:hover { border-color: var(--edge); }
+.todo-box:focus-within { border-color: var(--ink); }
+.todo-items { padding: var(--s3) var(--s3) var(--s2); }
+.todo-item { padding-bottom: var(--s2); }
+.todo-head { display: grid; grid-template-columns: var(--h-control) auto minmax(0, 1fr) auto auto; align-items: center; column-gap: var(--s1); min-height: var(--h-control); padding-right: var(--s2); }
+/* Each in its own column, so a line without a kind keeps its date at the right like the rest. */
+.todo-head > * { grid-row: 1; }
+.todo-head > .todo-mark { grid-column: 1; }
+.todo-head > .todo-kind { grid-column: 2; }
+.todo-head > .todo-title { grid-column: 3; }
+/* Without a kind, the title starts where the kind would: no gap for an empty column. */
+.todo-head > .todo-kind[hidden] + .todo-title { grid-column: 2 / 4; }
+.todo-head > .todo-meta { grid-column: 4; }
+.todo-head > .todo-away { grid-column: 5; }
+.todo-mark { display: grid; place-items: center; width: var(--h-control); height: var(--h-control); border: 0; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: var(--cursor-hand); }
+/* Inside the raised box, hover is a step back to the ground. */
+.todo-box .todo-mark:hover { color: var(--ink); background: var(--ground); }
+/* A line with nothing in it yet is room for an item, not one: its mark dashed and faint, as room for what is not here
+   yet is, and not a thing to press (a press there goes to the line). */
+.todo-mark:disabled { opacity: .45; pointer-events: none; }
+.todo-mark:disabled path { stroke-dasharray: 2.2 2.4; }
+/* An item's ×, quiet at its line's end, there while the pointer is on the item or the keyboard in it (always, where
+   nothing hovers), as a box's × in Forge is. */
+.todo-away { display: grid; place-items: center; width: var(--s5); height: var(--s5); padding: 0; border: 0; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: var(--cursor-hand); opacity: 0; transition: opacity var(--motion); }
+.todo-away .mark { width: var(--s4); height: var(--s4); }
+.todo-item:hover .todo-away, .todo-item:focus-within .todo-away { opacity: 1; }
+@media (hover: none) { .todo-away { opacity: 1; } }
+.todo-box .todo-away:hover { color: var(--ink); background: var(--ground); }
+/* Clear done beside what is left, a word as quiet as the count it stands by. */
+.todo-left { display: inline-flex; align-items: baseline; gap: var(--s2); }
+.todo-clear { padding: 0 var(--s2); border: 0; border-radius: var(--r-round); background: transparent; color: var(--sub); font: inherit; font-size: var(--t-meta); font-weight: 600; cursor: var(--cursor-hand); }
+.todo-clear:hover { background: var(--raised); color: var(--ink); }
+/* The kind is a word, not a button: bold, no outline. */
+.todo-kind { font-weight: 700; }
+/* The kind's colon is the issue's own (Fix：), a full-width one; seen, it is the face's own colon against the word
+   and a space's room after it: "Fix: The title", not "Fix :   The title", whatever font has the full-width one (each
+   puts it somewhere else in its box). The written one stays in the text, out of sight (todo-list.ts kindColon). */
+.kind-colon { margin-right: .25em; }
+.kind-colon::before { content: ':'; content: ':' / ''; }
+/* Inline, of no size: heard and copied as part of the words (a box of its own would be heard apart from them). */
+.kind-colon-said { font-size: 0; }
+/* In a TODO the title is a column of its own: the head's gap is the space. */
+.todo-kind > .kind-colon { margin-right: 0; }
+.todo-title { border: 0; background: transparent; min-height: var(--h-control); padding: 0; font-size: var(--t-body); font-weight: 600; }
+.todo-title::placeholder { color: var(--sub); font-weight: 400; }
+/* Read, the title is text: centred on the mark's line as the field is. */
+span.todo-title { min-height: 0; }
+/* The detail starts on the title's column: the mark's width and the head's own gap, with a kind or without. */
+.todo-detail {
+  display: block; width: calc(100% - var(--h-control) - var(--s1)); margin-left: calc(var(--h-control) + var(--s1));
+  padding: 0; border: 0; background: transparent;
+  resize: none; overflow: hidden; color: var(--ink); font: var(--t-body)/1.6 var(--sans);
+}
+.todo-title:focus, .todo-detail:focus { outline: none; }
+.todo-meta { color: var(--sub); font-size: var(--t-meta); font-variant-numeric: tabular-nums; }
+/* Done: only the first line is struck through and quiet, in `sub`, which still reads (an opacity would not). The line
+   is drawn across its words as it is done, from the kind's start, and goes back the way it came if it is taken back
+   (todo-list.ts measures it to the words); read, not written, it is the words' own. */
+.todo-item.done .todo-head :is(.todo-title, .todo-kind) { color: var(--sub); }
+.todo-item.done .todo-head:not(:has(.todo-strike)) :is(.todo-title, .todo-kind) { text-decoration: line-through; }
+.todo-head :is(.todo-title, .todo-kind) { transition: color calc(240ms * var(--pace)) ease-out; }
+.todo-head > .todo-strike { grid-column: 2 / 4; grid-row: 1; justify-self: start; align-self: center; height: 1px; margin-top: 2px; background: var(--sub);
+  pointer-events: none; scale: 0 1; transform-origin: left; transition: scale calc(300ms * var(--pace)) cubic-bezier(.6, 0, .25, 1); }
+.todo-item.done .todo-head > .todo-strike { scale: 1 1; }
+/* Its detail goes quiet with it, still there to read. */
+.todo-item.done .todo-detail { color: var(--sub); }
+.todo-detail::placeholder { color: var(--sub); opacity: .7; }
+.todo-item.done .todo-mark { color: var(--done); }
+.todo-hint { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s5); padding: var(--s2) var(--s4) var(--s3); color: var(--sub); font-size: var(--t-meta); }
+/* Said only while the box is written in, fading in where it always stands, so nothing moves. */
+.todo-box .todo-hint { opacity: 0; transition: opacity 200ms ease-out; }
+.todo-box:focus-within .todo-hint { opacity: 1; }
+/* A key, as the key itself: its name on a small cap, the cap's foot a little heavier, as a key stands on a board. */
+.key-hint { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
+.key-hint > kbd { flex: none; }
+kbd {
+  display: inline-grid; place-items: center; min-width: 22px; height: 20px; padding: 0 5px;
+  border: 1px solid var(--edge); border-bottom-width: 2px; border-radius: 5px; background: var(--paper);
+  color: var(--ink); font: 600 11px/1 var(--sans);
+}
+.key-hint > span { margin-left: 2px; }

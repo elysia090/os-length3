@@ -1,0 +1,135 @@
+/* Cards and rows: the grid of cards, a repo's card and its gear, a card of rows, a card that asks. */
+
+/* Cards: places, so rounded squares */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: var(--s5); }
+/* Home's repos, about three across at a laptop's width (a 1180 px window gives the grid about 900 px):
+   three need 3 × 280 + 2 × 24; then two, then one as it narrows. The cards keep their height. */
+/* Never more than three across: with the pane away the column widens and the three widen with it, out to the TODO's
+   edges, rather than a fourth place standing empty at the right. */
+.grid.home-repos { grid-template-columns: repeat(auto-fill, minmax(max(min(100%, 200px), (100% - 2 * var(--s5)) / 3), 1fr)); } /* three across beside the right pane at a laptop's width */
+.card {
+  min-height: 240px; padding: var(--s4); border: 1px solid var(--rule); border-radius: var(--r-place);
+  display: grid; align-content: start; gap: var(--s2); background: transparent; text-align: left; color: var(--ink);
+}
+.card.repo { cursor: var(--cursor-hand); }
+.card-title { font-size: var(--t-card); font-weight: 600; overflow-wrap: anywhere; }
+.card.new { border-style: dashed; place-content: center; justify-items: center; cursor: var(--cursor-hand); color: var(--sub); }
+.card.new:hover { color: var(--ink); }
+.note { grid-column: 1 / -1; }
+
+.card.repo.revealed { background: var(--raised); border-color: var(--ink); }
+
+/* A repo in a list (Home's and New repo's cards, Runtime's rows): its body is the repo itself; its gear, small
+   and round, shows near it (the pointer on it, the keyboard in it; always on a touch screen) and offers Forge or
+   Free from this device in a popover (repo-gear.ts). Showing it does nothing. */
+.card.repo.gear-card { position: relative; padding: 0; align-content: stretch; }
+.gear-card > .card-open { display: grid; align-content: start; gap: var(--s2); width: 100%; padding: var(--s4); border: 0; border-radius: inherit; background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand); }
+.gear-card > .card-open > .card-title { padding-right: calc(var(--h-row) + var(--s2)); }
+.gear-card > .repo-gear { position: absolute; top: var(--s3); right: var(--s3); }
+.gear-card[aria-busy='true'] > .card-open { cursor: var(--cursor-progress); }
+.repo-gear-button {
+  display: grid; place-items: center; flex: none; width: var(--h-row); height: var(--h-row); padding: 0;
+  border: 1px solid var(--edge); border-radius: var(--r-round); background: var(--ground); color: var(--sub); cursor: var(--cursor-hand);
+  opacity: 0; transition: opacity var(--motion);
+}
+.repo-gear-button .mark { width: 18px; height: 18px; }
+.gear-card:is(:hover, :focus-within) .repo-gear-button, .space-row:is(:hover, :focus-within) .repo-gear-button, .repo-gear-button[aria-expanded='true'] { opacity: 1; }
+@media (hover: none) { .repo-gear-button { opacity: 1; } }
+.repo-gear-button:hover, .repo-gear-button[aria-expanded='true'] { background: var(--raised); color: var(--ink); border-color: var(--ink); }
+/* On a card, the list comes down from its gear as wide as the card, over what is under it: never past the card's own
+   edges, so a card at the column's left does not reach under the rail with a field or an ask in its list. */
+.gear-card > .repo-gear-pop { position: absolute; top: calc(var(--s3) + var(--h-row) + var(--s1)); left: 0; right: 0; z-index: 5; }
+/* In a row of a column that scrolls, the list opens under the row, in its own place. */
+.space-row { flex-wrap: wrap; }
+.space-row > .repo-gear-pop { flex-basis: 100%; margin-top: var(--s1); }
+.repo-gear-pop .pop-item:disabled { color: var(--sub); }
+@media (prefers-reduced-motion: reduce) { .repo-gear-button { transition: none; } }
+
+/* Runtime's Environments (issue #20, screen ③): the environments a Prompt can run on, in one card as wide as two
+   of Prompts running's side by side: the one in effect at its top (its name, its version, what it is, its digest),
+   then Ubuntu, Debian and Custom one under another, quiet, what can be done (or why not) at the right. The card
+   stands where the desktop app stood, the desktop app one to its right; SSH under the two. A version is set apart
+   from its name in the mono face (the desktop app's too). Narrower than two cards it takes the width it has, and
+   wraps rather than cutting a word off. */
+.version { font: 400 var(--t-meta) var(--mono); color: var(--sub); }
+.env-card { gap: var(--s1); }
+.section-row .small-card.env-card { width: calc(2 * 270px + var(--s4)); }
+.env-sha { font: var(--t-meta) var(--mono); overflow-wrap: anywhere; }
+.env-rows { display: grid; margin-top: var(--s3); }
+.env-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--s3); min-height: var(--h-control); padding: var(--s1) 0; }
+.env-name { color: var(--sub); font-weight: 600; overflow-wrap: anywhere; }
+.env-note { grid-column: 1; overflow-wrap: anywhere; }
+.env-row > :last-child:not(.env-note):not(.env-name) { grid-column: 2; grid-row: 1 / span 2; }
+@media (max-width: 640px) {
+  /* A narrow Home: a smaller face, and Edit profile on a row of its own rather than over the name. */
+  .profile { grid-template-columns: auto minmax(0, 1fr); gap: var(--s4); }
+  .profile > .button { grid-column: 1 / -1; justify-self: start; white-space: nowrap; }
+  .avatar { width: 72px; height: 72px; font-size: var(--t-title); }
+}
+
+/* Git: issues read from each repo's issue/ */
+/* Git's repos are its band, on the top line where Forge's pills are: one row that slides sideways, never more rows,
+   a ring kept clear of its edge. */
+.git-band { display: flex; align-items: center; min-width: 0; }
+.git-band > .chips { position: relative; isolation: isolate; flex-wrap: nowrap; overflow-x: auto; margin: calc(-1 * var(--s1)); padding: var(--s1); }
+.git-band > .chips > .chip { flex: none; }
+.section > h2 > span small { margin-left: var(--s2); }
+/* Git's column keeps its width whether it scrolls or not (read, then its words changed): where scrollbars take room
+   (the desktop's), the room Forge's page has while it scrolls, as it nearly always does. */
+.git-flow { scrollbar-gutter: stable; }
+/* Its box at the foot stands back (bench.ts back), so its room under the last line is the page's foot, not the box's:
+   what fits is not left a few pixels scrollable (the heads stepping up as a merge closes the page up). The box up
+   (the Prompt), the room is its again. */
+.flow.git-flow { padding-bottom: var(--s6); }
+.work.bench.prompting .flow.git-flow { padding-bottom: 160px; }
+.issue-kind { font-weight: 700; }
+/* Where an issue is (its repo) is a name: the sans, as every name is. */
+.issue-where { font: var(--t-meta)/1.6 var(--sans); color: var(--sub); }
+/* Git stands in Forge's frame: its repos the band on the top line, and under it, from the rail's first place, the
+   page on the band's edges, the boxes as wide as Forge's and the prompt box a step outside them. The first part
+   shown starts at the page's top, wherever parts before it are hidden. */
+.git-flow > .section:first-child, .git-flow > .section[hidden]:first-child + .section { margin-top: 0; }
+/* Its heading then on the line Forge's file heads and the pane's head are on (Prompt, Lately): one line across. */
+.git-flow > .section:first-child > h2, .git-flow > .section[hidden]:first-child + .section > h2,
+.git-flow > .section:first-child > .issues-head, .git-flow > .section[hidden]:first-child + .section > .issues-head { padding-top: var(--s2); }
+/* The issues' heading line: the heading as every section's, Write an issue at its right on the same line, not
+   making it any taller; with none to show it stands aside (the dashed card is the way then). */
+.issues-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); margin-bottom: var(--s3); }
+.issues-head > h2 { margin: 0; font-size: var(--t-body); font-weight: 600; }
+.issues-head > h2 small { margin-left: var(--s2); font-weight: 400; color: var(--sub); font-size: var(--t-meta); }
+.issues-head > .issues-write { margin-block: calc((var(--t-body) * 1.5 - var(--h-row)) / 2); white-space: nowrap; }
+.issues-head.none > .issues-write { display: none; }
+/* No issue yet: the dashed box as wide as the others; gone while one is being written (the form is where it goes). */
+/* No issue to show: the dashed card where the first would be, as tall as an issue's card, its word and what is so. */
+.issue-new { width: 100%; min-height: 180px; gap: var(--s1); }
+.issue-new > small { font-size: var(--t-meta); }
+.issue-new:disabled { cursor: var(--cursor-arrow); opacity: .6; }
+.issue-new:not([hidden]) + div { display: none; }
+/* The prompt box as Forge's: its left end a step (s3) left of the boxes behind it, its right end theirs, so it
+   reads as its own surface, not the foot of the card under it. */
+@media (min-width: 761px) { .work.bench.no-strip .dock { max-width: calc(760px + var(--s3)); transform: translateX(calc(var(--s3) / -2)); } }
+/* A card of rows, like the File tree and the avatar's popover: its corner
+   concentric with its rows. A row is a place (hover raised); a head row is
+   only words. */
+.rows { display: grid; padding: var(--s2); border: 1px solid var(--rule); border-radius: var(--r-card); }
+.row-item {
+  display: flex; align-items: baseline; gap: var(--s3); min-height: var(--h-row); padding: var(--s1) var(--s3) var(--s1) calc(var(--s3) + var(--depth, 0) * var(--s4));
+  border: 0; border-radius: var(--r-field); background: transparent; color: var(--ink); text-align: left; font-size: var(--t-meta); line-height: calc(var(--h-row) - 2 * var(--s1));
+}
+button.row-item { cursor: var(--cursor-hand); width: 100%; }
+button.row-item:hover:not(:disabled) { background: var(--raised); }
+button.row-item:disabled { cursor: var(--cursor-arrow); color: var(--sub); }
+.row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-meta { flex: none; color: var(--sub); font-size: var(--t-meta); font-variant-numeric: tabular-nums; }
+/* Room for the next at a list's foot, and the way to it (Remote's Devices: Connect a device): a dashed edge and a
+   quiet word in its middle, as the dashed card is. Pressed, its steps take its place. */
+.row-item.row-new { justify-content: center; align-items: center; gap: var(--s2); margin-top: var(--s1); border: 1px dashed var(--rule); color: var(--sub); }
+.row-item.row-new:hover { color: var(--ink); }
+.row-new .mark { width: var(--s4); height: var(--s4); }
+/* A phone has no room for a row's name beside its facts: the name takes its own line, the facts the next, the deed
+   still at the right end. Before, the facts (which never shrink) squeezed the name to nothing (a device unnamed). */
+@media (max-width: 560px) {
+  .rows > .row-item { flex-wrap: wrap; }
+  .rows > .row-item > .row-name { flex-basis: 100%; }
+  .rows > .row-item > .button:last-child { margin-left: auto; }
+}

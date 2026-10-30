@@ -1,0 +1,42 @@
+/* The Remote's repos: Home's cards with what can be done to each at its foot, sharing one, turning one off. */
+
+/* The Remote's repos: Home's cards, with Forge at the bottom left and the
+   power switch at the right. A switch slides: on, its knob green at the
+   right; off, at the left on red, and the card quiet. */
+/* Its lines one under another (its summary there only once read), its deeds at its foot however many there are. */
+.repo-cards .card { cursor: var(--cursor-arrow); display: flex; flex-direction: column; }
+.repo-cards .card > .card-foot { align-self: stretch; margin-top: auto; }
+/* The size of Home's cards, its name as Home's says it: one repo reads the same on both pages. */
+.grid.repo-cards .card { min-height: 152px; }
+.grid.repo-cards .card-title { font-size: var(--t-body); }
+/* Remote's parts are 760 wide (the passkey's offer above them, the plan's): its cards two to a row in that width,
+   so their edges are the offer's. */
+.grid.repo-cards { max-width: 760px; }
+.repo-cards .card:hover { background: transparent; }
+.card-foot { display: flex; align-items: center; gap: var(--s2); align-self: end; }
+.card-foot .grow { flex: 1; }
+/* Share, and once pressed the servers beside it, each pressed in where the repo is shown. */
+/* Share opens as the language does: a list over the card, from the button's left edge upward, so nothing
+   in the card moves; the servers it is shown in are bold. */
+.share { position: relative; display: inline-flex; }
+.share-open { display: inline-flex; align-items: center; gap: var(--s1); }
+.share-open .mark { width: var(--s4); height: var(--s4); color: var(--sub); }
+.share-pop { position: absolute; left: 0; bottom: calc(100% + var(--s1)); z-index: 5; min-width: 220px; }
+.share-pop[hidden] { display: none; }
+/* A phone has no room to the button's right: the list opens from the card's own left edge, still over the card. */
+@media (max-width: 560px) {
+  .repo-cards .card-foot { position: relative; }
+  .repo-cards .share { position: static; }
+  .repo-cards .share-pop { min-width: min(220px, 100%); }
+  /* Forge, Share and the switch do not fit one row of a phone's card: the switch goes under, still at the right. */
+  .repo-cards .card-foot { flex-wrap: wrap; row-gap: var(--s2); }
+  .repo-cards .card-foot > .power { margin-left: auto; }
+}
+.pop-note { padding: var(--s1) var(--s3) var(--s2); }
+.share > .button[aria-expanded='true'] { background: var(--raised); border-color: var(--ink); }
+.card.off { border-style: dashed; }
+/* What was turned off, pressed again to bring it back: red, as a repo turned off is. */
+.button.off { background: var(--off); border-color: var(--off); color: var(--ground); }
+/* Hovered, a step toward ink rather than toward the ground, so its words keep their contrast. */
+.button.off:hover:not(:disabled) { background: color-mix(in srgb, var(--off) 85%, var(--ink)); filter: none; }
+.card.off .card-title, .card.off > .muted { color: var(--sub); }

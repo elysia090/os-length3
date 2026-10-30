@@ -1,0 +1,133 @@
+/* Forge's row of boxes, one per repo out: alone, or side by side with the one worked on, and where a repo dragged in
+   would stand. */
+/* Forge's center: a row of boxes, one per repo shown, tiled. One alone fills it as the page always has; side by
+   side, the pages close in on each other to a narrow gap (each its own scroll), and the one worked on is drawn in
+   ink, the others in the quiet line, as a tiling desk marks the window with the keyboard. */
+.columns { position: relative; display: flex; }
+/* No repo out: the dashed box where the first box would be, as wide as its words, at the page's margin. */
+.columns > .forge-none { align-self: flex-start; margin: var(--s3) var(--s5); }
+/* No repo at all: the dashed card that makes the first is the whole of it, not a card in a dashed box. */
+.columns > .forge-none.first { width: min(100% - 2 * var(--s5), 560px); padding: 0; border: 0; }
+.forge-first { width: 100%; min-height: 180px; gap: var(--s1); text-align: center; }
+.forge-first > small { max-width: 36ch; font-size: var(--t-meta); }
+/* Alone, a box is the row's whole width by its basis, not by growing from none: split, its basis goes from that width
+   to its own (and back), so it never passes through no width at all (a frame with the center empty). */
+.col { flex: 1 1 100%; min-width: 0; display: flex; flex-direction: column; }
+/* Each box's head (whose it is, and its ×) is there side by side only. It grows in as the row splits and the pages
+   ease down under it, rather than everything jumping a row. */
+.col-head {
+  display: flex; align-items: center; gap: var(--s1); flex: none; height: 0; opacity: 0; overflow: hidden; visibility: hidden;
+  transition: height var(--move) var(--land), opacity var(--move) var(--land), visibility 0s var(--move);
+}
+.columns.split > .col > .flow { padding-top: var(--s1); }
+/* Side by side, a strip that runs on past the center's edges. Every box is as wide as the one worked on, which
+   stands in it whole (the first and the last at the page's margin, under the band, where one alone stands); the
+   ones along from it show only their edge, dimmed and cut by the frame's line (the rail's at the left, the pane's at
+   the right): there is more that way. Pressed (or swiped to, or Alt+[ / ]), one comes in and the whole row slides
+   with it, the one left going out to its edge. columns.ts says which is worked on (--at; --lead 0 for the first,
+   1 between, 2 the last) and how wide the row is (--cols-w). */
+.columns.split {
+  --peek: 64px; --pad: calc(var(--s5) - var(--s3));
+  --colw: calc(var(--cols-w, 100%) - 2 * var(--peek) - 2 * var(--pad));
+}
+.columns.split > .col { flex: 0 0 var(--colw); transform: translateX(calc(var(--pad) + var(--lead, 0) * var(--peek) - var(--at, 0) * var(--colw))); }
+.columns.split > .col > .flow { padding-inline: var(--s3); }
+/* A box to the left of the one worked on shows its right edge: its name is said at that end, as a board's is. */
+.columns.split > .col.before > .col-head { flex-direction: row-reverse; padding: 0 calc(var(--s3) + var(--s4) - var(--s1)) 0 var(--s3); }
+.columns.split > .col.before > .col-head > .col-close { margin-left: 0; }
+/* The pane put away, the strip runs on to the window's edge: what is next goes off the screen, not under a line
+   that is not there. The pane, on the ground, covers it while it wipes shut. */
+.work.bench.split-on.pane-closed > .center { overflow: visible; clip-path: inset(0 calc(-1 * var(--outer)) 0 0); }
+/* The page then reaches the window's edge too (its words where they were), clipped there and never scrolled. */
+.page.page-work:has(> .work.bench.split-on.pane-closed) { overflow: clip; margin-right: calc(-1 * var(--outer)); padding-right: var(--outer); }
+.work.bench > .side { z-index: 1; background: var(--ground); }
+/* Word from someone come while one works (bench.ts paneWord): at the pane's foot, its last row's foot on the prompt
+   box's, a sheet to act on (paper, a rule edge), who and the first line of what they said, the newest come in from
+   the window's edge. Pressed, Inbox at that conversation. */
+.pane-word { position: absolute; left: var(--s5); right: var(--s5); bottom: var(--s5); z-index: 2; display: grid; gap: var(--s2); }
+/* What came, over the Prompt's lines: a card lifted a little off them, as something arrived. */
+.pane-word .lately-row { box-shadow: 0 6px 16px -10px color-mix(in srgb, var(--ink) 30%, transparent); }
+.pane-word:empty { display: none; }
+.columns.split > .col > .col-head {
+  height: 28px; opacity: 1; visibility: visible; transition: height var(--move) var(--land), opacity var(--move) var(--land);
+  padding: 0 var(--s3) 0 calc(var(--s3) + var(--s4) - var(--s1)); cursor: var(--cursor-grab);
+}
+.columns.split > .col > .col-head:active { cursor: var(--cursor-grabbing); }
+
+.col-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; padding: 0 var(--s1); border-radius: var(--r-field); background: transparent; color: var(--sub); font-size: var(--t-meta); cursor: var(--cursor-hand); }
+.col.active > .col-head > .col-name { color: var(--ink); font-weight: 600; }
+/* A file beside: its repo said quietly before its name. */
+.col-repo { margin-right: .4em; color: var(--sub); font-weight: 400; }
+.col-close { display: grid; place-items: center; width: 24px; height: 24px; margin-left: auto; padding: 0; border: 0; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: var(--cursor-hand); opacity: 0; transition: opacity var(--motion); }
+.col-close .mark { width: var(--s4); height: var(--s4); }
+.col-head:hover > .col-close, .col-close:focus-visible, .col.active > .col-head > .col-close { opacity: 1; }
+.col-close:hover { background: var(--raised); color: var(--ink); }
+/* Side by side, the box worked on is what says where the keyboard is: its page is not ringed as well. */
+.columns.split > .col > .flow:focus-visible { outline: none; }
+.columns.split > .col:not(.active) .file { border-color: var(--rule); }
+/* A box only peeking at the side shows its edge, not its head's button (all that would show of it, alone at the
+   edge): pressed, the row goes to it, and its buttons are there again. */
+.columns.split > .col:not(.active) .file-beside { visibility: hidden; }
+/* The row slides as one. A box opened comes in at its own width where it stands, fading in as the row brings it, and
+   one closed fades where it stands before the row closes over its place: never squeezed from or to no width, its
+   words crushed and two boxes over each other on the way. */
+.col { transition: flex-basis var(--slide) var(--land), transform var(--slide) var(--land), translate calc(160ms * var(--pace)) cubic-bezier(.2, .7, .2, 1),
+  opacity calc(260ms * var(--pace)) ease-out; }
+/* The pointer on a box's edge, the row leans toward it before it is pressed, as far as the pointer is into it (up
+   to a step), and that box's words come up as it does: what the press will bring in is already on its way, and
+   leaving it, the row settles back. The row's own (columns.ts lean, --lean and --lit), never the pointer's hover: on
+   the edge itself, a hand never quite still would lean and unlean the row with every tremor. */
+.columns.split > .col { translate: var(--lean, 0px) 0; }
+.col.nothing { opacity: 0; }
+.col > .flow { transition: padding-top var(--move) var(--land), opacity calc(240ms * var(--pace)) ease-out; }
+/* Dimmed, a box along from the one worked on is still a box: its paper and its edge stand as a neighbour issue's or
+   board's do, only its words quiet (a whole box at half strength is a grey slab, not a sheet). */
+.columns.split > .col:not(.active) .file > :is(.path, .sheet) { opacity: calc(.5 + .3 * var(--lit, 0)); transition: opacity calc(240ms * var(--pace)) ease-out; }
+/* Of the box worked on, the sheet with the keyboard is in ink (.file:focus-within), as alone; a file beside, one sheet,
+   is in ink whole while it is the one worked on. Never two sheets in ink at once. */
+.columns.split > .col.active > .flow > .dir.only > .file { border-color: var(--ink); }
+.col .file { transition: border-color var(--motion); }
+.col.going { pointer-events: none; }
+/* The pane put away, the row has the room to read across: every box stands whole, side by side, as wide as the
+   others, to compare; the one worked on still in ink, the others at full strength. Brought back, the one worked on
+   fills the row again and the others step to its edges. The pane's switch is the switch between the two: working
+   on one with the others to hand, or reading them together. */
+.work.bench.pane-closed .columns.split > .col { flex-basis: calc((var(--cols-w, 100%) - 2 * var(--pad)) / var(--n, 2)); transform: translateX(var(--pad)); translate: none; }
+/* Put away or brought back, the row and its prompt box move on the pane's own curve, sent once to where they will
+   stand (columns.ts room): the last box's edge keeps a step inside the pane's edge all the way, as if pushed by it. */
+.work.bench.pane-moving.pane-closed :is(.columns.split > .col, .dock) { transition-duration: var(--leave); transition-timing-function: cubic-bezier(.4, 0, 1, 1); }
+.work.bench.pane-moving:not(.pane-closed) :is(.columns.split > .col, .dock) { transition-duration: var(--slide); transition-timing-function: cubic-bezier(.2, 1.4, .32, 1); }
+.work.bench.pane-closed .columns.split > .col:not(.active) .file > :is(.path, .sheet) { opacity: 1; }
+.work.bench.pane-closed .columns.split > .col:not(.active) .file-beside { visibility: visible; }
+.work.bench.pane-closed .columns.split > .col.before > .col-head { flex-direction: row; padding: 0 var(--s3) 0 calc(var(--s3) + var(--s4) - var(--s1)); }
+.work.bench.pane-closed .columns.split > .col.before > .col-head > .col-close { margin-left: auto; }
+/* Out at the strip's edges (the pane out), a box shows its edge only, not its words cut off by the frame's line. */
+.columns.split > .col .sheet { transition: opacity calc(240ms * var(--pace)) ease-out; }
+.work.bench:not(.pane-closed) .columns.split > .col:is(.before, .after) :is(.sheet, .file > .path > *) { opacity: 0; }
+/* And there it goes into the ground at the frame's line, not cut off square as if broken, as Git's issues and Server's
+   boards do (the fade stands at the frame; the row slides under it). */
+.work.bench:not(.pane-closed) .columns.split::before, .work.bench:not(.pane-closed) .columns.split::after {
+  content: ''; position: absolute; top: 0; bottom: 0; z-index: 1; width: var(--s5); pointer-events: none; opacity: 0; transition: opacity var(--motion);
+}
+.work.bench:not(.pane-closed) .columns.split::before { left: 0; background: linear-gradient(to left, transparent, var(--ground)); }
+.work.bench:not(.pane-closed) .columns.split::after { right: 0; background: linear-gradient(to right, transparent, var(--ground)); }
+.work.bench:not(.pane-closed) .columns.split:has(> .col.before)::before, .work.bench:not(.pane-closed) .columns.split:has(> .col.after)::after { opacity: 1; }
+/* A file beside is as tall as the row it stands in, down to a step over the prompt box: side by side, the boxes are
+   one height, not one short and one running on. */
+.col > .flow > .dir.only { display: flex; flex-direction: column; min-height: calc(100% + 160px - var(--s5) - var(--prompt-h) - var(--s3)); }
+.col > .flow > .dir.only > .file { flex: 1 0 auto; margin-bottom: 0; }
+/* Where a repo dragged in would stand: the half (beside) or the whole (in its place) of a box, outlined in dashes,
+   gliding from place to place as the pointer moves, so where it lands is seen before it is let go. */
+.drop-hint {
+  position: absolute; top: var(--s2); bottom: var(--s5); z-index: 2; pointer-events: none;
+  display: grid; place-items: center; border: var(--line-work) dashed var(--ink); border-radius: var(--r-place);
+  background: color-mix(in srgb, var(--paper) 70%, transparent); color: var(--ink); font-size: var(--t-meta); font-weight: 600;
+  transition: left calc(160ms * var(--pace)) var(--land), width calc(160ms * var(--pace)) var(--land);
+  animation: hint-in calc(140ms * var(--pace)) ease-out;
+}
+@keyframes hint-in { from { opacity: 0; } }
+@media (max-width: 760px) {
+  .columns.split > .col:not(.active) { display: none; }
+  .columns.split > .col { flex: 1 1 0; transform: none; }
+  .columns.split > .col > .col-head { height: 0; visibility: hidden; }
+}
