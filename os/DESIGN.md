@@ -1153,6 +1153,51 @@ by repo.
    (fanotify, FSEvents) say which paths changed; a whole walk only at
    start and now and then as a check.
 
+### Virtual machines: the OS on servers
+
+The OS also runs on servers, ours or a person's own: any Linux with
+`/dev/kvm` is a host (`l3 host` says what it has and what it lacks, and
+the one fix for each; `l3 host fetch` brings what it lacks). Each run is a
+microVM of its own, made and driven through Firecracker (`core/src/vm`):
+a pinned kernel, the root as one read-only disk shared by every VM booted
+from it, a small sparse disk of its own holding what it is given, no
+network unless the repo was given it, and one vsock to its host, over
+which the host gives it its run (a Spec, as above) and it says what it
+prints, the repo as the run left it, and its exit code (`vm/wire.rs`).
+Firecracker v1.14.0 (with its jailer) and its CI's kernel 6.1.155 are
+fetched by digest, as roots are: Firecracker's matching the digest its
+publisher gives beside it, the kernel's pinned as it was fetched.
+
+What scales worst on a host, in order, and how each is met:
+
+1. **Memory**, which bounds how many VMs a host holds. The root is one
+   disk, in the host's page cache once for all; the balloon gives back
+   what a guest frees as it frees it (free page reporting); a VM nobody
+   uses is snapshotted and let go, and made again from its snapshot, its
+   memory read in only as the guest touches it.
+2. **Boot time**, which bounds how finely time is sold. A VM booted once
+   is snapshotted; a run starts as a VM loaded from it, from a pool kept
+   warm, never booting.
+3. **Disk**. Nothing is copied per VM but what it is given and what it
+   writes: the root by its digest, an environment by its key, a run's
+   own disk sparse.
+4. **Network**. None by default: the vsock alone. A repo given the
+   network goes out through its host, which sees and bounds what leaves.
+5. **Placement across hosts**: each host says what it has room for; the
+   Remote places by memory first.
+6. **The VMM's own boundary**: Firecracker under its jailer (its own
+   user, a chroot, seccomp, a cgroup).
+7. **Metering**: each VM's CPU and memory from its cgroup, into the
+   ledger, by the millisecond.
+
+*Built:* the Firecracker API (configure, start, pause, snapshot, load,
+balloon), the disks (made by mke2fs from a folder, without mounting
+anything), the host's wire to its guest, `l3 host` and `l3 host fetch`.
+*Next, on a host with KVM:* `l3 guest` (the VM's first process: its
+disks laid out, the run taken over the vsock, what it prints sent back),
+`l3 host run`, the warm pool from a snapshot, the balloon, and boot,
+restore and density measured rather than said.
+
 ## 6. One OS, two ways in
 
 The GUI and the command line are two ways into the same things. `l3`'s

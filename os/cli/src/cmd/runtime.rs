@@ -265,3 +265,37 @@ mod tests {
         }
     }
 }
+
+/// `l3 host`: what this machine has for running this OS's VMs (core vm.rs), and for what it lacks, the one fix.
+#[cfg(target_os = "linux")]
+pub fn host(_: &Ctx, _: &Call) -> Result<Reply> {
+    let h = length3_core::vm::host(&paths::data_dir());
+    let yes = |b: bool| if b { "✓" } else { "○" };
+    let mut t = vec![
+        format!("{} KVM", yes(h.kvm)),
+        format!("{} firecracker{}", yes(h.firecracker.is_some()), h.firecracker.as_deref().map(|v| format!("  {v}")).unwrap_or_default()),
+        format!("{} jailer{}", yes(h.jailer.is_some()), h.jailer.as_deref().map(|v| format!("  {v}")).unwrap_or_default()),
+        format!("{} kernel{}", yes(h.kernel.is_some()), h.kernel.as_deref().map(|k| format!("  {}", out::short(k))).unwrap_or_default()),
+        tr!("  {} CPUs · {} memory", "  CPU {} · メモリ {}", h.cpus, bytes(h.memory)),
+    ];
+    if h.lacks.is_empty() { t.push(tr!("This machine runs VMs", "この機械は VM を動かせます")); }
+    for (what, fix) in &h.lacks { t.push(if fix.is_empty() { what.clone() } else { format!("{what} ({fix})") }); }
+    Ok(Reply::data(t.join("\n"), json!(h)))
+}
+
+/// `l3 host fetch`: what this machine lacks to run VMs (Firecracker, its jailer, the kernel), fetched by digest.
+#[cfg(target_os = "linux")]
+pub fn host_fetch(ctx: &Ctx, call: &Call) -> Result<Reply> {
+    length3_core::vm::fetch(&paths::data_dir(), progress())?;
+    host(ctx, call)
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn host_fetch(_: &Ctx, _: &Call) -> Result<Reply> {
+    Err(Error::Refused(tr!("VMs run on a Linux host with KVM", "VM は KVM のある Linux で動きます")))
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn host(_: &Ctx, _: &Call) -> Result<Reply> {
+    Err(Error::Refused(tr!("VMs run on a Linux host with KVM", "VM は KVM のある Linux で動きます")))
+}

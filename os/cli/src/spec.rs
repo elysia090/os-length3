@@ -447,6 +447,10 @@ pub static COMMANDS: &[Command] = &[
         f(None, &[], &[], ["the repos given it", "渡している repo"], DEVICE, Send, runtime::network_list),
         f(None, &[Arg::Choice(&["on", "off"]), REPO], &[], ["give it (from the next Prompt), or take it (its Prompts stop)", "渡す（次の Prompt から）、取り上げる（その Prompt は止まる）"], DEVICE, Send, runtime::network_set),
     ]),
+    c("host", &[], Group::Runtime, ["this machine as a host of the OS's VMs (KVM, Firecracker)", "この機械を OS の VM のホストに（KVM、Firecracker）"], &[
+        f(None, &[], &[], ["what it has, and what it lacks with the fix for each", "あるものと、足りないもの（それぞれの直し方）"], DEVICE, Keep, runtime::host),
+        f(Some("fetch"), &[], &[], ["Firecracker, its jailer and the kernel, by their pinned digests", "Firecracker・jailer・カーネルを、固定したダイジェストで取得"], DEVICE, Keep, runtime::host_fetch),
+    ]),
     on_home(&["dotfiles"], c("dotfile", &["dotfiles"], Group::Runtime, ["what every Prompt starts with in /root", "どの Prompt も /root に置いて始まるもの"], &[
         f(Some("write"), &[Arg::Dotfile], &[Flag::Empty], ["replace (or make) it with standard input", "標準入力で置き換える（なければ作る）"], DEVICE, Send, runtime::dotfile_write),
         f(Some("rm"), &[Arg::Dotfile], &[], ["remove it", "消す"], DEVICE, Send, runtime::dotfile_rm),
