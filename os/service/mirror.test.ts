@@ -126,10 +126,13 @@ test('the pins: every root core/src/root.rs pins, newest first, and the desktop 
   const web = readFileSync(new URL('../src/pages/runtime/environment.ts', import.meta.url), 'utf8');
   for (const d of distros) assert.ok(web.includes(`'${d.tag.slice(d.tag.indexOf(' ') + 1)}'`), `environment.ts names ${d.tag}`);
 
-  // The version this tree ships: the newest desktop app it pins, whose root is the newest it pins (one change pins
-  // both); RELEASE, the version being made, may name one not pinned yet.
+  // The version this tree ships: the newest desktop app it pins, whose root is the newest it pins (the release's Pin
+  // pull request pins both); RELEASE, the version being made, may name one not pinned yet. While a release is made
+  // (release.sh) its root is pinned first and the app built and tested on it, its desktop app pinned after: the
+  // newest root is then the one being made.
   const version = shipped();
-  assert.equal(roots[0].version, version);
+  const making = readFileSync(new URL('../RELEASE', import.meta.url), 'utf8').trim();
+  assert.ok([version, making].includes(roots[0].version), `the newest root pinned is ${roots[0].version}: neither ${version} (shipped) nor ${making} (being made)`);
   assert.equal(shipped({'0.10.0': {}, '0.9.1': {}}), '0.10.0');
   const desktop = pinnedDesktop(version);
   assert.deepEqual(desktop.map((p) => [p.key, p.type, p.tag]), [
