@@ -18,20 +18,21 @@ Rules beyond "the newest release, not a candidate":
   Linux              kernel.org's latest stable.
 Runs where every maker's site can be reached (GitHub Actions: .github/workflows/sources-next.yml).
 """
+import functools
 import hashlib
 import json
 import re
+import subprocess
 import sys
-import urllib.request
 from concurrent.futures import ThreadPoolExecutor
-
-AGENT = 'os-length3-sources-next (+https://github.com/elysia090/os-length3)'
 
 
 def get(url, binary=False):
-    with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': AGENT}), timeout=120) as r:
-        data = r.read()
-    return data if binary else data.decode('utf-8', 'replace')
+    """What `url` holds, fetched with curl (a site that turns away scripts by their name answers curl)."""
+    r = subprocess.run(['curl', '-fsSL', '--retry', '3', '--retry-delay', '5', '--max-time', '600', url], capture_output=True)
+    if r.returncode:
+        raise RuntimeError(f'{url}: {r.stderr.decode(errors="replace").strip()}')
+    return r.stdout if binary else r.stdout.decode('utf-8', 'replace')
 
 
 def key(v):
@@ -59,10 +60,15 @@ def busybox():
     return max(stable, key=key)
 
 
-def gcc_prerequisite(name):
+@functools.lru_cache(maxsize=None)
+def gcc_prerequisites():
+    """The newest GCC's contrib/download_prerequisites, asked for once (its server limits how often it is asked)."""
     gcc = newest('https://gcc.gnu.org/ftp/gcc/releases/', r'gcc-(\d+\.\d+\.\d+)/')
-    text = get(f'https://gcc.gnu.org/git/?p=gcc.git;a=blob_plain;f=contrib/download_prerequisites;hb=refs/tags/releases/gcc-{gcc}')
-    return re.search(name + r"='" + name + r"-([0-9.]+)\.tar", text).group(1)
+    return get(f'https://gcc.gnu.org/git/?p=gcc.git;a=blob_plain;f=contrib/download_prerequisites;hb=refs/tags/releases/gcc-{gcc}')
+
+
+def gcc_prerequisite(name):
+    return re.search(name + r"='" + name + r"-([0-9.]+)\.tar", gcc_prerequisites()).group(1)
 
 
 def util_linux():
@@ -83,7 +89,7 @@ NEWEST = {
     'KMOD': lambda: newest('https://mirrors.edge.kernel.org/pub/linux/utils/kernel/kmod/', r'kmod-(\d+(?:\.\d+)?)\.tar\.xz'),
     'IPROUTE2': lambda: newest('https://mirrors.edge.kernel.org/pub/linux/utils/net/iproute2/', r'iproute2-(\d+\.\d+\.\d+)\.tar\.xz'),
     'MAKE': lambda: newest('https://ftp.gnu.org/gnu/make/', r'make-(\d+\.\d+(?:\.\d+)?)\.tar\.gz'),
-    'MUSL': lambda: newest('https://musl.libc.org/releases/', r'musl-(\d+\.\d+\.\d+)\.tar\.gz'),
+    'MUSL': lambda: newest('https://musl.libc.org/releases.html', r'musl-(\d+\.\d+\.\d+)\.tar\.gz'),
     'BINUTILS': lambda: newest('https://ftp.gnu.org/gnu/binutils/', r'binutils-with-gold-(\d+\.\d+(?:\.\d+)?)\.tar\.xz'),
     'GCC': lambda: newest('https://gcc.gnu.org/ftp/gcc/releases/', r'gcc-(\d+\.\d+\.\d+)/'),
     'GMP': lambda: gcc_prerequisite('gmp'),
@@ -102,7 +108,7 @@ NEWEST = {
     'FILE': lambda: newest('https://astron.com/pub/file/', r'file-(\d+\.\d+)\.tar\.gz'),
     'PKGCONF': lambda: newest('https://distfiles.ariadne.space/pkgconf/', r'pkgconf-(\d+\.\d+\.\d+)\.tar\.xz'),
     'OPENSSH': lambda: newest('https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/', r'openssh-(\d+\.\d+p\d+)\.tar\.gz'),
-    'CA_CERTIFICATES': lambda: newest('https://curl.se/ca/', r'cacert-(\d{4}-\d{2}-\d{2})\.pem'),
+    'CA_CERTIFICATES': lambda: newest('https://curl.se/docs/caextract.html', r'cacert-(\d{4}-\d{2}-\d{2})\.pem'),
     'APK_TOOLS': lambda: max(re.findall(r'"name":"v(\d+\.\d+\.\d+)"', get(
         'https://gitlab.alpinelinux.org/api/v4/projects/alpine%2Fapk-tools/repository/tags?per_page=100')), key=key),
     'DHCPCD': lambda: github('NetworkConfiguration/dhcpcd'),
