@@ -299,7 +299,7 @@ test('a menu put away and opened again on its way out comes back from where it h
   await expect(menu).toBeVisible();
   await still(app);
   expect(await menu.evaluate((e) => +getComputedStyle(e).opacity)).toBe(1);
-  await expect(menu.getByRole('menuitem', {name: 'Open in Forge'})).toBeEnabled();
+  await expect(menu.getByRole('menuitem', {name: 'Rename'})).toBeEnabled();
 });
 
 test('the caret is drawn by the OS: it follows what is written along the line, and Enter takes it to the next', async ({app}) => {
