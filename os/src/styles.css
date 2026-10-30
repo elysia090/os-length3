@@ -1525,6 +1525,14 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:focus-within)::after { opa
 .said-kind { font-weight: 700; }
 .term-home .term-said-go:hover, .term-home .term-said-go:focus-visible { text-decoration: none; }
 .term-home .term-said-go:is(:hover, :focus-visible) > .said-words { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+/* Up again after it was put back, the screen starts at its prompt line: what it printed before is folded away under one
+   quiet line at its top, pressed to open it where it stood (output.ts fold). The pane lists the lines run regardless. */
+.term-slot .term-out > .earlier { display: none; }
+.term-slot .term-out.unfolded > .earlier { display: revert; }
+.term-slot .term-out.unfolded > :is(.term-lines, .fresh, .term-said).earlier { display: block; }
+.term-earlier { justify-self: start; margin: 0 0 var(--s1); padding: 0; border: 0; background: none; color: var(--screen-ps); font: 12px/1.6 var(--mono); opacity: .7; cursor: var(--cursor-hand); }
+.term-earlier:is(:hover, :focus-visible) { opacity: 1; text-decoration: underline; text-underline-offset: 3px; }
+.term-home .term-earlier { display: none; }
 @keyframes fresh { from { opacity: 0; } }
 /* What Tab could complete to, said under the box: paths, so monospace. */
 .prompt-note.paths { font-family: var(--mono); white-space: pre-wrap; }

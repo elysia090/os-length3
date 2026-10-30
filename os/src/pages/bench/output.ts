@@ -25,8 +25,9 @@ const KEEP_MOST = 200_000, KEEP_LEAST = 150_000;
 const BLOCK = 8_000;
 /** Of what a run prints in one frame, the lines that come in one after another; the rest comes in with the last of them. */
 const ONE_BY_ONE = 24;
-/** In the pane, what a line printed is its last this many lines (styles.css .term-home .above, .cut). */
-const TAIL = 5;
+/** In the pane, what a line printed is its last this many lines (styles.css .term-home .above, .cut): none, the pane
+ * tells what was run and the screen holds what it printed. */
+const TAIL = 0;
 
 /**
  * A line of the box's own in the Prompt's flow (an issue written, a TODO added from the box), marked at its start
@@ -73,7 +74,8 @@ function oneByOne(lines: string[]): HTMLElement[] {
 }
 
 /**
- * The pane refers, it does not hold: of what each line run printed, its last TAIL lines are shown there. From the foot
+ * The pane refers, it does not hold: of what each line run printed, its last TAIL lines are shown there (none: the
+ * line run alone, a notification of it, pressed to see what it printed). From the foot
  * back, each piece of a run's output past them is marked above (not shown in the pane), the one they start in cut to
  * its last lines with a fade where more is above. Up as the screen, the marks mean nothing: all of it is there. Only
  * the runs just drawn are walked (the last two: one ended and the next started in the same frame); drawn whole, all.
@@ -221,6 +223,32 @@ export class Output {
     this.#trim();
     this.element.scrollTo({top: this.element.scrollHeight});
     return row.querySelector('button')!;
+  }
+
+  /**
+   * Put back into the box, the Prompt is read afresh from its line: what it printed so far is folded away (`.earlier`),
+   * there to be opened again, so up next time the screen holds the prompt line it waits at and what comes after it.
+   * The pane, which only tells, still lists the lines run. How many lines run (and lines of the box's own) are folded.
+   */
+  fold(): number {
+    for (let n = this.element.firstChild; n; n = n.nextSibling) {
+      if (n === this.#tail || n === this.#endLine) continue;
+      if (!(n instanceof HTMLElement)) {
+        if (!n.textContent) continue;
+        const held = h('span', {});
+        n.replaceWith(held);
+        held.append(n);
+        n = held;
+      }
+      (n as HTMLElement).classList.add('earlier');
+    }
+    this.element.classList.remove('unfolded');
+    return this.element.querySelectorAll(':scope > .earlier:is(.ps, .term-said)').length;
+  }
+
+  /** What was folded away, opened again where it stood. */
+  unfold() {
+    this.element.classList.add('unfolded');
   }
 
   /** How the Prompt ended, the last thing at the foot of its output (in its place, said again in another language). */

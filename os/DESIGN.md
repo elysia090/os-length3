@@ -1862,9 +1862,13 @@ files and binaries not copied in, what could not be written back). Once it
 has ended, how (Exited (0), Stopped) and Start again, its power switch off,
 are the last thing under its output, the end of its thread (in the pane a
 dot of its own, off), never a row of their own over the box's Run; the
-output dims, they do not. In the pane, what a line printed is its last five
-lines, faded where more is above, and a title the box made is its first
-three: the pane refers, up as the screen all of it is there. Moved between
+output dims, they do not. The pane tells, it does not hold: each line run is
+its line alone (what it printed is the screen's), and a title the box made is
+its first three lines; a line run pressed there brings the Prompt up with
+what it printed, at that line. Put back into the box, what the Prompt
+printed is folded away, so up again it starts at the prompt line it waits
+at, one quiet line over it (Earlier (2)) that opens what came before where
+it stood: a Prompt opened again is never yesterday's screen. Moved between
 the pane and the screen, it reads from its foot. Up
 over the center it is as tall as what it holds, up to 40% of the window, so
 before the first run it does not cover what one reads. The prompt box has

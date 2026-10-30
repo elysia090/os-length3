@@ -112,7 +112,10 @@ export class Session {
     // A Prompt that ended says so in the language chosen since, as the rest of the page does.
     onLang(() => this.sayEnded());
     this.activity = new Activity({live: () => this.live, interrupt: () => this.interrupt(), restart: () => this.restart()});
-    this.element = h('div', {class: 'term'}, this.status, this.out.element, this.activity.element);
+    // Folded away (put back into the box), what it printed before is one line at the screen's top, pressed to open.
+    this.earlier = h('button', {type: 'button', class: 'term-earlier', hidden: ''}) as HTMLButtonElement;
+    this.earlier.addEventListener('click', () => this.unfold());
+    this.element = h('div', {class: 'term'}, this.status, this.earlier, this.out.element, this.activity.element);
     this.copy = new WriteBack(repo, this.id, (said) => { this.status.textContent = said; });
   }
 
@@ -171,6 +174,25 @@ export class Session {
    * Prompt's flow as it came, pressed to `go` to it (output.ts). Its line is returned, there now, for what lands on it.
    */
   note(head: string, words: string, go: (row: HTMLElement) => void): HTMLElement { return this.out.note(head, words, go); }
+
+  /** The line over what is folded away. */
+  private earlier: HTMLButtonElement;
+
+  /**
+   * Put back into the box: up again, the screen starts at its prompt line, what it printed before folded away under
+   * one line that opens it (output.ts fold). The pane still lists the lines run.
+   */
+  fold() {
+    const n = this.out.fold();
+    this.earlier.hidden = !n;
+    this.earlier.textContent = t('Earlier ({n})', {n});
+  }
+
+  /** What was folded away, opened again where it stood. */
+  unfold() {
+    this.out.unfold();
+    this.earlier.hidden = true;
+  }
 
   /** Output goes on screen and into the run in progress, which ends at the next prompt. */
   private received(s: string) {

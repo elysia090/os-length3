@@ -149,6 +149,29 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(app.runtime.part('Prompts running')).toHaveCount(0);
   });
 
+  test('put back, the pane tells the line run; up again the Prompt starts at its line, what it printed folded under Earlier', async ({app}) => {
+    await app.forge.run('echo folded-away');
+    const said = (where: import('@playwright/test').Locator) => where.locator('.term-out').getByText('folded-away', {exact: true});
+    await expect(said(app.forge.prompt)).toBeVisible();
+    await app.page.keyboard.press('Escape');
+    // In the pane: that it ran, not what it printed.
+    const pane = app.main.locator('.term-home');
+    await expect(pane.getByText('echo folded-away')).toBeVisible();
+    await expect(said(pane)).toBeHidden();
+    // Up again, it starts at its prompt line, what came before folded under one line that opens it.
+    await app.forge.promptBox.focus();
+    const earlier = app.forge.prompt.getByRole('button', {name: 'Earlier (1)'});
+    await expect(earlier).toBeVisible();
+    await expect(said(app.forge.prompt)).toBeHidden();
+    await earlier.click();
+    await expect(said(app.forge.prompt)).toBeVisible();
+    // Put back and the line pressed in the pane: up with what it printed, there.
+    await app.forge.promptBox.focus();
+    await app.page.keyboard.press('Escape');
+    await pane.getByText('echo folded-away').click();
+    await expect(said(app.forge.prompt)).toBeVisible();
+  });
+
   test('what the Prompt showed is still there after Git and back, and after Home and back', async ({app}) => {
     await app.forge.run('echo kept-here');
     await expect(app.forge.prompt).toContainText(/^kept-here$/m);
@@ -170,7 +193,8 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(again).toHaveAttribute('aria-checked', 'false');
     // No taller than the line it is on.
     expect((await again.boundingBox())!.height).toBeLessThanOrEqual(32);
-    const out = (await app.forge.prompt.getByText('before-stop').last().boundingBox())!;
+    // Under the last line run (the pane tells the lines run, not what they printed).
+    const out = (await app.forge.prompt.getByText('echo before-stop').boundingBox())!;
     const at = (await again.boundingBox())!;
     const said = (await app.forge.prompt.getByText('Stopped').boundingBox())!;
     expect(at.y).toBeGreaterThan(out.y);

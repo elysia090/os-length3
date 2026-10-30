@@ -150,6 +150,8 @@ export class Box {
   screenChanged(state: ScreenState) {
     this.#pillLine.said();
     this.#fit();
+    // Back in the box, the Prompt is read afresh when it comes up again: what it printed is folded away.
+    if (state === 'rest' && this.#repo) sessionIfAny(this.#repo)?.fold();
     if (state === 'leaving' && this.#p.back) requestAnimationFrame(() => this.#rest(true));
   }
 

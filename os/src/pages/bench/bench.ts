@@ -6,6 +6,7 @@ import {Pane, paneWord, pluginArea} from '../pane.ts';
 import type {Writing} from '../forge/reader.ts';
 import {Reference} from '../forge/reference.ts';
 import {Screen} from './screen.ts';
+import {sessionIfAny} from './terminal.ts';
 
 // The workbench Forge and Git share, put together from its parts: the page's own content in the large center (3/4)
 // with the box at its foot (box.ts), which becomes the Prompt's screen over the center while the Prompt is in use
@@ -124,6 +125,18 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const box = new Box({work, main: parts.main, center, term, termHead, back: !!parts.back, went: parts.went});
   const {screen, element: screenEl} = screenOf(work, box, term, termHome);
   center.append(box.dock);
+  // A line run, pressed in the pane (which tells only that it ran): the Prompt comes up with what it printed, there.
+  // Taken as the press begins: pressed, the Prompt goes up out of the pane before the press is a click.
+  termHome.addEventListener('pointerdown', (event) => {
+    const line = (event.target as Element).closest<HTMLElement>('.term-out > :is(.cmd, .ps:not(.waits))');
+    const session = box.repo && line ? sessionIfAny(box.repo) : undefined;
+    if (!line || !session) return;
+    // The press is the box's: the keyboard goes into it, not to the page under the pointer.
+    event.preventDefault();
+    session.unfold();
+    box.summon();
+    requestAnimationFrame(() => line.scrollIntoView({block: 'start'}));
+  }, true);
 
   const reference = new Reference({reveal: parts.reveal, recall: (line) => box.recall(line)}, {keeps: true});
   box.onFollow = () => reference.runsAgain();

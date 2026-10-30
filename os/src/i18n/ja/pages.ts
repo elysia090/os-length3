@@ -92,6 +92,7 @@ export default {
   'That run is no longer here': 'その実行はもうここにありません',
   'What is searched and read here comes back here': 'ここで検索したもの、読んだものがここに出ます',
   'Still starting': '起動中です',
+  'Earlier ({n})': 'これまで（{n}）',
   'Run in {name}': '{name}で実行',
   'Issue': 'Issue',
   'diff': 'diff',
