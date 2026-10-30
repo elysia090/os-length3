@@ -53,6 +53,8 @@ const here = () => ok(d.l3(['address', '--json'])).json as Here;
 test('SSH: on from this device only, then the same network too, then back; the Remote hears the scope alone; a page turns it off', {skip: spawnSync('ssh-keygen', ['-?']).error ? 'no ssh-keygen' : false}, async () => {
   const port = await freePort();
   (d.env as Record<string, string>).LENGTH3_SSH_PORT = String(port);
+  // The Remote asked every half second, not every 30 s: an off said on a page is heard within the test's wait.
+  (d.env as Record<string, string>).LENGTH3_SSH_BEAT_MS = '500';
   ok(d.l3(['repo', 'new', 'notes', '-t', 'empty']));
   const key = join(d.home, 'key');
   assert.equal(spawnSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-C', 'kai@selftest', '-f', key]).status, 0);
@@ -86,7 +88,7 @@ test('SSH: on from this device only, then the same network too, then back; the R
     // Each named with its interface, as l3 address and the card say it.
     assert.deepEqual(h.interfaces.map((t) => `${t.interface} ${t.addr}`).sort(), v4.filter((i) => priv(i.addr)).map((i) => `${i.name} ${i.addr}`).sort());
     for (const a of others) assert.equal(await reach(a, port), priv(a) ? 'SSH-2.0-length3' : 'ECONNREFUSED', a);
-    // The Remote hears the new scope at the listener's next beat.
+    // The Remote hears the new scope as soon as it is chosen.
     for (let i = 0; i < 100 && ((await r.api(kai, 'GET', '/v1/ssh')).json as {scope: string}[])[0]?.scope !== 'network'; i++) await new Promise((w) => setTimeout(w, 100));
     assert.deepEqual(((await r.api(kai, 'GET', '/v1/ssh')).json as {scope: string}[]).map((s) => s.scope), ['network']);
     // Kept on this device: on, said again with no scope, stays as chosen; then back to this device only.
