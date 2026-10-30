@@ -129,10 +129,11 @@ function modesFor(tree: Tree, modes: Modes): Modes {
  * takes its mode from them, none there being a plain file's. One that sends none (an older client) cannot
  * say, so a path it sets keeps the mode it had (an execute bit is never dropped by not being known of).
  */
-function applyModes(was: Modes, tree: Tree, set: Tree, sent: Modes | undefined): Modes {
+function applyModes(was: Modes, tree: Tree | null, set: Tree, sent: Modes | undefined): Modes {
   const out: Modes = {...was};
   if (sent) for (const p of Object.keys(set)) { if (p in sent) out[p] = sent[p]; else delete out[p]; }
-  return modesFor(tree, out);
+  // No tree: every path set is a file the draft has, and what was kept is of its files already (the fast save).
+  return tree ? modesFor(tree, out) : out;
 }
 
 /** A cut's id: the digest of what it records, in one fixed order (its modes last, and only when it has some: the ids of commits without stay as they were). */
@@ -154,7 +155,9 @@ const changeCols = {id: change.id, line: change.line, kind: change.kind, title: 
   reviews: sql<Review[]>`coalesce((select jsonb_agg(jsonb_build_object('version', r.version, 'verdict', r.verdict, 'note', r.note, 'marks', r.marks,
     'by', r.by, 'time', ${ms(sql`r.time`)}) order by r.time desc, r.id) from review r where r.change_id = ${qualified(change.id)}), '[]'::jsonb)`.as('reviews')};
 type Line = {id: number; off: Date | null; name: string; line: string; base: string | null; head: string | null; pushed: string | null; version: number;
-  startedBy: string; startedAt: Date; updatedAt: Date; draft?: Tree; modes?: Modes; kept?: {bytes: number; files: number};
+  startedBy: string; startedAt: Date; updatedAt: Date; draft?: Tree | null; modes?: Modes; kept?: {bytes: number; files: number};
+  /** The save may be laid on the draft where it is (each path it sets a file the draft has; nothing removed): no draft is read. */
+  fast?: boolean;
   /** Read with its draft: the account's room (request.ts usedBy), and which of the blobs asked about it holds. */
   used?: number; have?: string[]};
 type Change = {id: string; line: string; kind: string; title: string; version: number; base: string | null; head: string;
@@ -197,11 +200,17 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
    */
   // Read to be written (`draft`), with what the write then asks of the account in the same round trip: its room, and
   // which of the blobs `shas` it holds (a save is a lock, this, and the write: the room and the blobs were a trip each).
-  const lineAt = async (q: Db, user: string, name: string, l: string, draft = false, shas: string[] = []): Promise<Line | undefined> =>
-    (await q.select({...lineCols, ...(draft ? {draft: line.draft, modes: line.modes, kept: {bytes: line.bytes, files: line.fileBytes}, used: usedBy(user),
+  // A save (`files`: what it sets, as JSON, when it only sets files to new contents) asks whether each is a file the
+  // draft has already: then the draft is not read at all, only laid on where it is (a save as one types, its tree as it
+  // was: no file or folder comes or goes, so nothing about its shape is asked). Otherwise the draft comes in this read.
+  const lineAt = async (q: Db, user: string, name: string, l: string, draft = false, shas: string[] = [], files?: string): Promise<Line | undefined> => {
+    const fast = files ? sql<boolean>`coalesce((select bool_and(jsonb_typeof(${line.draft} -> k) = 'string') from jsonb_object_keys(${files}::jsonb) k), false)` : null;
+    return (await q.select({...lineCols, ...(draft ? {draft: fast ? sql<Tree | null>`case when ${fast} then null else ${line.draft} end` : line.draft,
+      ...(fast ? {fast} : {}), modes: line.modes, kept: {bytes: line.bytes, files: line.fileBytes}, used: usedBy(user),
       have: shas.length ? sql<string[]>`(select coalesce(array_agg(${blob.sha256}), '{}') from ${blob} where ${and(eq(blob.userId, user), inArray(blob.sha256, shas))})`
         : sql<string[]>`'{}'::text[]`} : {})}).from(line).innerJoin(repo, eq(repo.id, line.repoId))
       .where(and(eq(repo.userId, user), eq(repo.name, name), eq(line.name, l))))[0];
+  };
   /** The row of line `l` of repo `id`. */
   const lineRow = (id: number, l: string) => and(eq(line.repoId, id), eq(line.name, l));
   /** A repo that is off answers nothing but being off, and until when it can come back. */
@@ -238,15 +247,21 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
     return c.json(list.map((r) => ({name: r.name, at: r.at.getTime()})));
   });
 
+  // The draft as the database writes it out, put into the answer as it comes: never read into objects and written out
+  // again here (for a repo of thousands of files that was most of a request's time), its modes those of its files.
   v1.get('/repos/:name', async (c) => {
     const user = c.get('userId'), name = c.req.param('name');
-    const row = await lineAt(db, user, name, lineOf(c), true);
+    const [row] = await db.select({...lineCols, text: sql<string>`${line.draft}::text`,
+      modes: sql<Modes>`(select coalesce(jsonb_object_agg(m.key, m.value), '{}'::jsonb) from jsonb_each(${line.modes}) m where jsonb_typeof(${line.draft} -> m.key) = 'string')`})
+      .from(line).innerJoin(repo, eq(repo.id, line.repoId)).where(and(eq(repo.userId, user), eq(repo.name, name), eq(line.name, lineOf(c)))) as (Line & {text: string})[];
     if (!row) {
       const gone = await goneAt(db, user, name);
       return c.json({error: 'Repo not found on Remote', ...(gone ? {gone} : {})}, 404);
     }
     on(row.off);
-    return c.json(lineShown(row));
+    const {text, modes, ...rest} = row;
+    const shown = JSON.stringify({...lineShown(rest), modes});
+    return c.body(`${shown.slice(0, -1)},"draft":${text}}`, 200, {'Content-Type': 'application/json'});
   });
 
   // A diff on a line's draft at `version`: the one mutable step besides a commit. The first makes
@@ -267,9 +282,11 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
     for (const [p, v] of Object.entries(set)) if (!validPath(p) || !(v === null || (typeof v === 'string' && HEX.test(v)))) return c.json({error: 'Invalid repository path', path: p}, 400);
     for (const p of remove) if (typeof p !== 'string' || !validPath(p)) return c.json({error: 'Invalid repository path', path: String(p)}, 400);
     const shas = [...new Set(Object.values(set).filter((v): v is string => typeof v === 'string'))];
+    // Only files given new contents, nothing removed: perhaps the save as one types, laid on the draft where it is.
+    const onlyFiles = !remove.length && shas.length > 0 && Object.values(set).every((v) => typeof v === 'string');
     const version = await db.transaction(async (tx: Db) => {
       await lock(tx, user);
-      const row = await lineAt(tx, user, name, l, true, shas);
+      const row = await lineAt(tx, user, name, l, true, shas, onlyFiles ? JSON.stringify(set) : undefined);
       on(row?.off);
       if (!row) {
         const gone = await goneAt(tx, user, name);
@@ -285,6 +302,17 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
       }
       const current = row?.version ?? 0;
       if (current !== b.version) refuse(409, {version: current});
+      const kept = {bytes: line.bytes, files: line.fileBytes};
+      if (row?.fast) {
+        // Each path a file it has, each given a digest as long as the one it had: the draft's shape, its files, its
+        // size and so the account's room stand as they were; only what its files take may grow (the plan asks).
+        const modes = applyModes(row.modes ?? {}, null, set as Tree, sent as Modes | undefined);
+        const after = await tx.update(line).set({draft: sql`${line.draft} || ${JSON.stringify(set)}::jsonb`, modes, version: current + 1, updatedAt: sql`now()`})
+          .where(and(lineRow(row.id, l), eq(line.version, current))).returning(kept);
+        const before = row.kept ?? {bytes: 0, files: 0};
+        if (after[0]) await d.plans.grew(tx, user, Number(after[0].bytes) + Number(after[0].files) - Number(before.bytes) - Number(before.files));
+        return current + 1;
+      }
       const was = row?.draft ?? {};
       const tree = applyDiff(was, set as Tree, remove as string[]);
       // A file and a folder of one name, made by this diff (one there before is not this diff's to refuse).
@@ -302,7 +330,6 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
       // What the draft takes (its tree and its files, each blob once) before and after: the plan refuses one
       // that grew while the account keeps more than it allows, and the whole change is undone with it. Before is
       // as the line was read, under the account's lock (a read of its own after was one more round trip a save).
-      const kept = {bytes: line.bytes, files: line.fileBytes};
       const before = row?.kept ?? {bytes: 0, files: 0};
       let after: {bytes: number; files: number}[];
       if (row) after = await tx.update(line).set({draft: tree, modes, version: current + 1, updatedAt: sql`now()`}).where(and(lineRow(row.id, l), eq(line.version, current))).returning(kept);
