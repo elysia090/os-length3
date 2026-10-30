@@ -79,6 +79,7 @@ export default {
   '{n} left': '{n}個残っています',
   '{n} process': '{n}プロセス',
   '{n} processes': '{n}プロセス',
+  'Being prepared (.packages, .setup)': '用意中（.packages、.setup）',
   'A Prompt has it open': 'Prompt で開いています',
   'Sign in to the Remote to free it': 'Remote にサインインすると空けられます',
   'This browser lets it go when the page closes': 'このブラウザでは閉じると消えます',

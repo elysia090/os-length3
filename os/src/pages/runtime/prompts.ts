@@ -47,8 +47,8 @@ function networkSwitch(repo: string, s: Session, card: () => HTMLElement): HTMLE
 
 /**
  * The Prompts running. `shown(n, any)` hears how many run and whether there is any to show (running, or stopped
- * here with what it gave back); `changed` hears when which repos have a Prompt running changes (one stopped, or
- * started), so what holds a repo is read again then, not at the next page.
+ * here with what it gave back); `changed` hears when which repos have a Prompt running changes (one stopped,
+ * started, or prepared), so what holds a repo is read again then, not at the next page.
  */
 export function prompts(shown_: (running: number, any: boolean) => void = () => {}, changed: () => void = () => {}): HTMLElement {
   const section = h('section', {class: 'section prompts-part', 'aria-label': t('Prompts running'), hidden: ''});
@@ -67,7 +67,8 @@ export function prompts(shown_: (running: number, any: boolean) => void = () => 
     section.hidden = !shown.length;
     const running = shown.filter(([, s]) => s.running).length;
     shown_(running, shown.length > 0);
-    const now = shown.filter(([, s]) => s.running).map(([repo]) => repo).sort().join('\n');
+    // One prepared is read again too: what it holds stays now because it runs, and says so.
+    const now = shown.filter(([, s]) => s.running).map(([repo, s]) => (s.preparing ? `${repo} preparing` : repo)).sort().join('\n');
     if (now !== had) { const before = had; had = now; if (before || now) changed(); }
     section.replaceChildren(h('div', {class: 'grid small-grid'}, ...shown.map(([repo, s]) => {
       watch(s);
@@ -93,7 +94,10 @@ function runningCard(repo: string, s: Session): HTMLElement {
   // In a browser, what it keeps for programs it ran can go without stopping it.
   const free = s.spare ? button(t('Free {size}', {size: bytes(s.spare)}), 'small-button') : null;
   free?.addEventListener('click', () => s.free());
-  const lines: (string | Node)[] = [[s.on === 'root' ? `root · ${tn('{n} process', '{n} processes', s.processes)}` : 'l3', s.memory ? bytes(s.memory) : ''].filter(Boolean).join(' · ')];
+  // Being prepared (.packages, .setup), what it holds is what prepares it; Stop ends that too.
+  const processes = tn('{n} process', '{n} processes', s.processes);
+  const on = s.on !== 'root' ? 'l3' : s.preparing ? `root · ${t('Being prepared (.packages, .setup)')} · ${processes}` : `root · ${processes}`;
+  const lines: (string | Node)[] = [[on, s.memory ? bytes(s.memory) : ''].filter(Boolean).join(' · ')];
   if (s.freed !== null) lines.push(t('Gave back {size}', {size: bytes(s.freed)}));
   // Only the root's Prompt can have a network: in a browser its programs have no sockets at all.
   let el: HTMLElement | null = null;

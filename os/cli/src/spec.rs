@@ -330,7 +330,7 @@ pub static COMMANDS: &[Command] = &[
     on_home(&["dotfiles"], c("prompt", &[], Group::Forge, ["a shell in the repo, inside the root", "root の中で repo のシェル"], &[
         offer(&[d(["Prompt", "Prompt"], On::Repo).unless(&[F::NoRoot])],
             f(None, &[REPO_HERE, Arg::Argv], &[Flag::Network], ["the repo inside the root, without privileges; --network gives it the network", "root の中で repo を開く（権限なし）。--network でネットワークを渡す"], DEVICE, TakeIn, forge::prompt)),
-        f(Some("ls"), &[], &[], ["the Prompts running on this device (the app's too)", "この端末で動いている Prompt（アプリのものも）"], DEVICE, Keep, forge::prompt_list),
+        f(Some("ls"), &[], &[], ["the Prompts running or being prepared on this device (the app's too)", "この端末で動いている・用意中の Prompt（アプリのものも）"], DEVICE, Keep, forge::prompt_list),
         offer(&[d(["Stop", "止める"], On::Repo).when(&[F::Running]).away()],
             f(Some("stop"), &[REPO_HERE], &[], ["stop the repo's Prompts: every process in them ends", "repo の Prompt を止める（中のプロセスはすべて終わる）"], DEVICE, Send, forge::prompt_stop)),
     ])),

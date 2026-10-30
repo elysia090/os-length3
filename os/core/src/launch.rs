@@ -443,6 +443,13 @@ pub fn run_apart_with<G>(s: &Sandbox, keep: impl FnOnce() -> io::Result<G>) -> i
     Ok(if libc::WIFEXITED(status) { libc::WEXITSTATUS(status) } else { 128 + libc::WTERMSIG(status) })
 }
 
+/// In a child: killed when `parent` ends, or ended now if it has already.
+fn ends_with(parent: u32) -> io::Result<()> {
+    unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0) };
+    if unsafe { libc::getppid() } as u32 != parent { unsafe { libc::_exit(128 + libc::SIGKILL) } }
+    Ok(())
+}
+
 /// A package's name as `.packages` may give it: what apt takes, and nothing a shell reads otherwise.
 fn package_name(p: &str) -> bool {
     !p.is_empty() && p.len() <= 128 && !p.starts_with('-') && p.bytes().all(|b| b.is_ascii_alphanumeric() || b"+-.:=~_/".contains(&b))
@@ -484,7 +491,10 @@ pub fn set_up(s: &Sandbox, apt: bool) -> io::Result<()> {
     let done = || -> io::Result<()> { if let Some(d) = stamp.parent() { std::fs::create_dir_all(d)?; } std::fs::write(&stamp, &key) };
     if script == "set -e\n" { return done(); }
     eprintln!("{}", crate::tr!("l3: setting up from .packages and .setup…", "l3: .packages と .setup から用意しています…"));
-    let code = run_apart(&Sandbox { argv: vec!["/bin/sh".into(), "-c".into(), script], network: true, ..s.clone() })?;
+    // It ends with the Prompt it prepares: stopped meanwhile (its supervisor killed, prompt::stop), nothing goes
+    // on writing into the repo's environment and caches, which its record no longer keeps.
+    let supervisor = std::process::id();
+    let code = run_apart_with(&Sandbox { argv: vec!["/bin/sh".into(), "-c".into(), script], network: true, ..s.clone() }, || ends_with(supervisor))?;
     if code == 0 { done() } else {
         eprintln!("{}", crate::tr!("l3: setting up stopped (exit {}); the Prompt starts with what is there", "l3: 用意が途中で止まりました（終了 {}）。今あるもので Prompt を始めます", code));
         Ok(())

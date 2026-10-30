@@ -733,7 +733,7 @@ On the host, the data directory is laid out by owner too:
 | `work/<repo>/<line>` | an issue's copy | until its change is merged |
 | `sync/` | what sync last agreed and read (bases, digests) | the repo's here |
 | `home/` | Home's settings: profile, TODO, band, language | this device's |
-| `prompts/<pid>.json` | each Prompt running, while it runs | its process's |
+| `prompts/<pid>.json` | each Prompt, its repo and root, from its preparing to its end | its process's |
 | `system/<digest>` | each root held, `current` the one in use | while a repo's Prompt runs on it |
 | `envs/<repo>`, `caches/<repo>` | the repo's environment and caches | as in the table above |
 
@@ -1954,8 +1954,9 @@ or goes).
   repo, each root of the distribution, each leftover, Home. A row is the
   thing, its size, and at its end what can be done:
   - **空ける**: it is not needed here. A repo whose copy is what the Remote
-    has (it comes back when opened), a root that is not the one in use (the
-    Remote has the release), a temporary this OS left half-written
+    has (it comes back when opened), a root that is neither the current one
+    nor one a Prompt runs on (the Remote has the release), a temporary this
+    OS left half-written
     (`.<file>.length3-<pid>-<n>`, a setting's `<key>.json.<pid>`, older than
     a minute, one link, never inside `.git`), an install that died half way,
     a release bundle or partial download not in use.
@@ -1971,10 +1972,12 @@ or goes).
     never weighed together with what can be made from them. A repo no
     longer on this device leaves its environment and caches without an
     owner, and they say so.
-  - Otherwise, quietly, why it stays: a Prompt has it open, it holds what
-    cannot be sent (a link, a file over 16 MB, a `.git`), there is no Remote
-    yet, it is the root Prompts run on, it is Home's settings; of two, the
-    one a Prompt stopped would not lift (no Remote) is the one said. Why (and what
+  - Otherwise, quietly, why it stays: a Prompt has it open, a Prompt being
+    prepared uses it, it holds what cannot be sent (a link, a file over 16 MB,
+    a `.git`), there is no Remote yet, it is the root Prompts run on, a
+    Prompt running uses it (a root no longer current, until that Prompt
+    ends), it is Home's settings; of two, the one a Prompt stopped would not
+    lift (no Remote) is the one said. Why (and what
     freeing does) is a line of its own under the row's facts, read whole,
     never cut short; a Prompt stopped or started reads it again at once.
   Under the list, 空けられるもの with its total and 全部空ける. Freeing stays
@@ -2001,7 +2004,8 @@ or goes).
   stop an ordinary write; this holds to the delete.
 - **動いている Prompt** is shown while one runs, a small card each (the
   size of Home's cards, smaller, so a few do not stretch across the page):
-  where it runs (root, with its process count, or l3), the memory its
+  where it runs (root, with its process count, and 用意中 while its
+  `.packages` and `.setup` run, or l3), the memory its
   processes hold (Pss, from the host's /proc), and 止める at its bottom right. On the root, stopping ends everything in the
   Prompt's pid namespace and is called done only once the host shows none
   left; the row then says what was given back and how long it took
@@ -2013,12 +2017,23 @@ or goes).
   stops it at once. The grant is this device's (never sent), and `l3
   prompt` reads the same one (`--network` gives it to one Prompt); `l3
   network on|off REPO` is the switch, taking it stopping the repo's Prompts
-  as here. Every Prompt on the root is an `l3 prompt` process that records
-  itself while it runs (core/src/prompt.rs), so `l3 prompt ls` lists the
-  app's and a terminal's alike, `l3 prompt stop REPO` stops them as 止める
-  does, and neither 空ける here nor `l3 free` lets a repo go while one has
-  it open. In a browser there is no switch: a Prompt's programs have no
+  as here. In a browser there is no switch: a Prompt's programs have no
   sockets at all.
+  Every Prompt on the root is an `l3 prompt` process that records
+  itself (core/src/prompt.rs) from the moment it starts being prepared
+  (`.packages`, `.setup`) until it ends, with its repo and the root it runs
+  on, so `l3 prompt ls` lists the app's and a terminal's alike (one being
+  prepared says 用意中, as its card here does), `l3 prompt stop REPO` stops
+  them as 止める does, prepared or running (what prepares it ends with it),
+  and neither 空ける here nor `l3 free` (one by one or all) lets go of what
+  one holds: its repo, the repo's environment, caches and what is derived
+  in it, and its root, whichever root is current now, so making another
+  current takes nothing from under a Prompt that runs. The core reads the
+  records itself, for the app, l3 and a direct call alike. Each thing is
+  looked at again just before it goes, under the one lock a Prompt records
+  itself under (only while its root is still whole) and the current root is
+  changed under (only to one still whole), so neither can come between the
+  look and the removal. A record whose process is gone holds nothing.
 - **有効な環境**: the environments a Prompt can run on, in one small card
   (a Prompt's card's size), beside the desktop app's (SSH, then it, then the
   desktop app, in one row; on the web SSH's one line is a card wide; where
@@ -2043,7 +2058,10 @@ or goes).
   (the place for a runtime's own installer: rustup, nvm, uv, mise…). Both
   run before a Prompt, with the network, over the repo's environment, so
   what they install is the repo's and stays; and again only when the root
-  or either file changes.
+  or either file changes. While they run the Prompt is one already: listed
+  as being prepared, what it holds kept, stopped by 止める. One that fails
+  or is cut short (Ctrl-C) leaves the Prompt to start with what is there,
+  and is tried again at the next start.
 - **SSH** into a repo's Prompt, per device, and the desktop app's alone
   (the web offers none): an ordinary OpenSSH client, with the repo as its
   user, lands in that repo's Prompt, the same shell `l3 prompt REPO` gives

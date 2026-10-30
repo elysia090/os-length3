@@ -1,7 +1,7 @@
 import * as dotfiles from '../../home/dotfiles.ts';
 import {store} from '../../repos/repos.ts';
 import {bytes, h} from '../../ui/dom.ts';
-import {isNative, promptOpen, rootFetch, rootStatus, type Held, type Stopped} from '../../app/host.ts';
+import {isNative, promptOpen, rootFetch, rootStatus, type Holding, type Stopped} from '../../app/host.ts';
 import {currentLang, onLang, t, tn} from '../../i18n.ts';
 import {filesNow, keepMore, keepReached, keepTranslation, keptNow, loadL3, promptWorker, usedKept, warmL3, watchLoad, type L3, type Stage} from '../../prompt/userland.ts';
 import {every} from '../../app/runs.ts';
@@ -84,6 +84,8 @@ export class Session {
   freed: number | null = null;
   /** Processes it runs, where that is known (on the root). */
   processes = 0;
+  /** On the root, still being prepared (.packages, .setup), as its record says: what it holds is what prepares it. */
+  preparing = false;
   /** What it runs on: the distribution's root on this machine, or l3 through xlat. */
   on: 'root' | 'l3' | null = null;
   /** How the last stop went, on the root: what it held, and how long until none was left. */
@@ -203,10 +205,11 @@ export class Session {
   /** On the root, what the Prompt's processes hold, read from the host. */
   private async measure() {
     // Measured every 3 s: one not answered keeps the last figures until the next.
-    const h: Held | null = await this.native?.held().catch(() => null) ?? null;
+    const h: Holding | null = await this.native?.held().catch(() => null) ?? null;
     if (!h) return;
     this.memory = h.memory;
     this.processes = h.processes;
+    this.preparing = h.preparing;
     this.tell();
   }
 
@@ -399,6 +402,7 @@ export class Session {
     this.live = false;
     this.memory = 0;
     this.processes = 0;
+    this.preparing = false;
     this.tell();
     this.sayEnded(true);
   }
