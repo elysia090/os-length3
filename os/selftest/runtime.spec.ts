@@ -120,7 +120,7 @@ test('the environments are one card two wide, the desktop app at its right and S
   await app.runtime.open('Environments');
   const panel = app.main.getByRole('tabpanel', {name: /^Environments/});
   const others = panel.getByRole('list', {name: 'Other environments'});
-  await expect(others.getByRole('listitem')).toHaveText([/^Ubuntu 24\.04\.5 LTS.*In the app only/, /^Debian 13.*In the app only/, /^Custom.*Not yet/]);
+  await expect(others.getByRole('listitem')).toHaveText([/^Ubuntu 26\.04\.1 LTS.*In the app only/, /^Debian 13\.7.*In the app only/, /^Custom.*Not yet/]);
   const env = others.locator('xpath=..');
   const app_ = panel.getByRole('region', {name: 'Desktop app'});
   await expect(app_).toBeVisible();

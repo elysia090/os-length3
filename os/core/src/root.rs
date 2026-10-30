@@ -103,21 +103,23 @@ pub struct Distro {
     pub bytes: u64,
 }
 
-/// The other roots l3 trusts: Ubuntu's base and Debian's official image root.
+/// The other roots l3 trusts: Ubuntu's base and Debian's official image root, each at a URL that names that one
+/// build (Debian's at the commit of its makers' branch that holds it: the branch itself moves with each build). The
+/// deploy puts each on the Remote by its digest (service/mirror.ts), where a device asks first.
 pub const DISTROS: &[Distro] = &[Distro {
     id: "ubuntu",
     name: "Ubuntu",
-    version: "24.04.5 LTS",
-    url: "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-amd64.tar.gz",
-    sha256: "e77b6f10c2590cef872b33ee9f635a0e3fd1f57fb074c0e52b5c7f56147a0c86",
-    bytes: 30_028_293,
+    version: "26.04.1 LTS",
+    url: "https://cdimage.ubuntu.com/ubuntu-base/releases/26.04/release/ubuntu-base-26.04.1-base-amd64.tar.gz",
+    sha256: "a496a960472ce474a59590b8987d3a1135d3cbef1991f3b1abe8cacfea8bf85a",
+    bytes: 34_931_253,
 }, Distro {
     id: "debian",
     name: "Debian",
-    version: "13",
-    url: "https://raw.githubusercontent.com/debuerreotype/docker-debian-artifacts/dist-amd64/trixie/oci/blobs/rootfs.tar.gz",
-    sha256: "4846f29007305297af653c57bf9b60ba8f676a38695c68d98460063442581671",
-    bytes: 49_393_200,
+    version: "13.7",
+    url: "https://raw.githubusercontent.com/debuerreotype/docker-debian-artifacts/69faaf492e77aff83e4c7fc401017c9d25ecde24/trixie/oci/blobs/rootfs.tar.gz",
+    sha256: "a1d156b0aab5fb07d822a7f4681f6d3ed1689073531c34f5668818c233633f11",
+    bytes: 49_407_895,
 }];
 
 pub fn distro(id: &str) -> Option<&'static Distro> {

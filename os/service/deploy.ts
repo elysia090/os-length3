@@ -48,7 +48,7 @@ import {limitsOf, month, spent, take} from './budget.ts';
 import {rows, type Db} from './request.ts';
 import {mirror, type Store} from './mirror.ts';
 import {defaultBranchUrl, migrateBeforeWorker, migrateRemote, owner as ownerOn, retireWorkers, workerRole} from './neon.ts';
-import {pinnedDesktop, pinnedRoots} from './releases.ts';
+import {pinnedDesktop, pinnedDistros, pinnedRoots} from './releases.ts';
 
 const config = new URL('../wrangler.toml', import.meta.url).pathname;
 const toml = readFileSync(config, 'utf8');
@@ -144,7 +144,8 @@ async function releaseFiles(bucket: string) {
   const version = readFileSync(new URL('../RELEASE', import.meta.url), 'utf8').trim();
   const desktop = pinnedDesktop(version);
   if (!desktop.length) console.log(`shared/desktop-releases.json pins no desktop app for ${version}: the web offers none until it is pinned (the release's notes say what to pin)`);
-  const pins = [...pinnedRoots(readFileSync(new URL('../core/src/root.rs', import.meta.url), 'utf8')), ...desktop];
+  const rootRs = readFileSync(new URL('../core/src/root.rs', import.meta.url), 'utf8');
+  const pins = [...pinnedRoots(rootRs), ...pinnedDistros(rootRs), ...desktop];
   // The same budget as the Worker's (wrangler.toml [vars]): asked before a file is fetched (a put of the month,
   // and the bytes R2 would hold with it in place of what it replaces); counted once it is put, with its record
   // (release_file, whose trigger counts its bytes), so a deploy that fails counts nothing.

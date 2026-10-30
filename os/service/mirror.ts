@@ -2,8 +2,8 @@
 // anyone: the GitHub repository they are published in is private, and GitHub
 // holds no Cloudflare credentials. The deploy (deploy.ts) runs it after the
 // Worker answers, for what this tree pins (releases.ts): every root in
-// core/src/root.rs RELEASES, and the desktop app of the version RELEASE
-// names. One the Remote recorded as put at its pinned digest and size
+// core/src/root.rs RELEASES and DISTROS (a distribution's root from its
+// makers' URL), and the desktop app of the version RELEASE names. One the Remote recorded as put at its pinned digest and size
 // (release_file, written only once the put is done) is kept as it is. Otherwise the file is taken from the GitHub release with the read-only
 // GITHUB_TOKEN, streamed to a file while its digest is taken, and put into
 // the bucket only when it is the digest and size this tree pins. Nothing is
@@ -32,9 +32,16 @@ interface Source {
   fetch?: typeof fetch;
 }
 
-/** One file of a GitHub release, as a response whose body is still to be read. */
+/** One file of a GitHub release (or, for a file its makers publish, theirs), as a response whose body is still to be read. */
 async function asset(s: Source, p: Pinned): Promise<Response> {
   const f = s.fetch ?? fetch;
+  if (p.url) {
+    // Public, and never given the token: it is not GitHub's API.
+    const r = await f(p.url, {headers: {'user-agent': 'length3-deploy'}, signal: AbortSignal.timeout(10 * 60_000)});
+    if (r.ok) return r;
+    await r.body?.cancel();
+    throw new Error(`${p.url}: ${r.status}`);
+  }
   // Never waited on for good (a download that stalls holds the deploy until the build is killed): ten minutes, its body included.
   const ask = (path: string, accept: string) => f(`${s.api}/repos/${s.repo}${path}`, {
     headers: {accept, 'x-github-api-version': '2022-11-28', 'user-agent': 'length3-deploy', ...(s.token ? {authorization: `Bearer ${s.token}`} : {})},

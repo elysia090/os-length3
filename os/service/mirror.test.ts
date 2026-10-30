@@ -3,7 +3,7 @@ import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
 import {mirror, type Store} from './mirror.ts';
-import {desktopFile, pinnedDesktop, pinnedRoots, type Pinned} from './releases.ts';
+import {desktopFile, pinnedDesktop, pinnedDistros, pinnedRoots, type Pinned} from './releases.ts';
 
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 const pin = (file: string, bytes: Uint8Array, tag = 'os-length3-linux-v1.0.0'): Pinned =>
@@ -84,6 +84,22 @@ test('mirror: more bytes than pinned stop the download; a file the release lacks
   assert.deepEqual(bucket.puts, []);
 });
 
+test('mirror: a file its makers publish is taken from their URL, without the token, and checked like the rest', async () => {
+  const root = new TextEncoder().encode('a distribution root');
+  const p: Pinned = {...pin('rootfs.tar.gz', root), key: `os/${sha(root)}`, tag: 'debian 13.7', url: 'https://makers.test/build/rootfs.tar.gz'};
+  const asked: string[] = [], tokens: (string | null)[] = [];
+  const f = (async (url: string | URL | Request, init?: RequestInit) => {
+    asked.push(String(url));
+    tokens.push(new Headers(init?.headers).get('authorization'));
+    return String(url) === p.url ? new Response(root as BodyInit) : new Response('Not Found', {status: 404});
+  }) as typeof fetch;
+  const bucket = fakeBucket();
+  assert.deepEqual(await mirror([p], bucket.store, {api: 'https://api.test', repo: 'me/os', token: 'read-only', fetch: f}, quiet), {kept: [], put: [p.key]});
+  assert.deepEqual([asked, tokens], [[p.url], [null]]);
+  // Moved on at its makers: not the pin, not put.
+  await assert.rejects(mirror([{...p, key: 'os/other', url: 'https://makers.test/gone'}], fakeBucket().store, {api: 'https://api.test', repo: 'me/os', fetch: f}, quiet), /gone: 404/);
+});
+
 test('the pins: every root core/src/root.rs pins, newest first, and the desktop app of a version, by its file', () => {
   const roots = pinnedRoots(readFileSync(new URL('../core/src/root.rs', import.meta.url), 'utf8'));
   assert.ok(roots.length >= 2);
@@ -95,6 +111,20 @@ test('the pins: every root core/src/root.rs pins, newest first, and the desktop 
   }
   // An entry not as pin-root.mjs writes it is refused, not skipped.
   assert.throws(() => pinnedRoots('pub const RELEASES: &[Release] = &[Release { name: "x" }];'), /not as pin-root\.mjs writes one/);
+
+  // Other distributions' roots: by digest too, each from the URL that names its one build.
+  const distros = pinnedDistros(readFileSync(new URL('../core/src/root.rs', import.meta.url), 'utf8'));
+  assert.deepEqual(distros.map((d) => d.tag.split(' ')[0]), ['ubuntu', 'debian']);
+  for (const d of distros) {
+    assert.deepEqual([d.key, d.path], [`os/${d.sha256}`, `/v1/os/${d.sha256}`]);
+    const url = d.url ?? '';
+    assert.ok(url.startsWith('https://') && url.endsWith(`/${d.file}`) && d.file.endsWith('.tar.gz') && d.bytes > 1e6, url);
+    assert.doesNotMatch(url, /\/dist-amd64\//, 'a branch moves; a pin names one build');
+  }
+  assert.throws(() => pinnedDistros('pub const DISTROS: &[Distro] = &[Distro { id: "x" }];'), /not as written there/);
+  // The web, which has no root of its own to ask, names the versions pinned here.
+  const web = readFileSync(new URL('../src/pages/runtime/environment.ts', import.meta.url), 'utf8');
+  for (const d of distros) assert.ok(web.includes(`'${d.tag.slice(d.tag.indexOf(' ') + 1)}'`), `environment.ts names ${d.tag}`);
 
   // The newest desktop app this tree pins (while a release is made, RELEASE names one not pinned yet).
   const pins = JSON.parse(readFileSync(new URL('../shared/desktop-releases.json', import.meta.url), 'utf8')) as Record<string, unknown>;

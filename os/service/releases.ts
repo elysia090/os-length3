@@ -1,11 +1,12 @@
 // What of a release the Remote serves to anyone, and the digests this tree
 // pins for it: the roots core/src/root.rs pins (RELEASES, each l3's one pin:
-// the root, and the index the browser reads it by), by digest under
-// os/<sha256>, and the desktop app shared/desktop-releases.json pins, by its
-// file's name under desktop/<file>. The release is made on GitHub, which has
-// no Cloudflare credentials; each deploy (deploy.ts, mirror.ts) takes these
-// from the GitHub release, checks them against these pins, and puts what the
-// bucket lacks into it. The service only reads them (app.ts).
+// the root, and the index the browser reads it by; and DISTROS, other
+// distributions' roots), by digest under os/<sha256>, and the desktop app
+// shared/desktop-releases.json pins, by its file's name under desktop/<file>.
+// The release is made on GitHub, which has no Cloudflare credentials; each
+// deploy (deploy.ts, mirror.ts) takes these from the GitHub release (a
+// distribution's root from its makers), checks them against these pins, and
+// puts what the bucket lacks into it. The service only reads them (app.ts).
 
 import desktopPins from '../shared/desktop-releases.json' with {type: 'json'};
 
@@ -18,6 +19,8 @@ export interface Pinned {
   sha256: string;
   bytes: number;
   type: string;
+  /** Where its makers publish it, for a file not in a GitHub release (another distribution's root). */
+  url?: string;
 }
 
 const DESKTOP_KINDS = {
@@ -48,6 +51,20 @@ export function pinnedRoots(rootRs: string): PinnedRoot[] {
   // Every entry is read, or none is: an entry the pattern missed would be a root left out unsaid.
   if (roots.length !== (rootRs.slice(at, end).match(/Release \{/g) ?? []).length) throw new Error('core/src/root.rs: a RELEASES entry is not as pin-root.mjs writes one');
   return roots;
+}
+
+/** The other distributions' roots core/src/root.rs pins (DISTROS), by digest as roots are, from their makers. */
+export function pinnedDistros(rootRs: string): Pinned[] {
+  const at = rootRs.indexOf('pub const DISTROS: &[Distro] = &[');
+  const end = rootRs.indexOf('];', at);
+  if (at < 0 || end < 0) throw new Error('core/src/root.rs has no DISTROS');
+  const list = rootRs.slice(at, end);
+  const distros = [...list.matchAll(
+    /Distro \{\s*id: "([a-z]+)",\s*name: "[^"]*",\s*version: "([^"]+)",\s*url: "(https:\/\/[^"]+)",\s*sha256: "([0-9a-f]{64})",\s*bytes: ([\d_]+),\s*\}/g)]
+    .map(([, id, version, url, sha256, bytes]) => ({key: rootKey(sha256), path: `/v1/os/${sha256}`, tag: `${id} ${version}`,
+      file: url.slice(url.lastIndexOf('/') + 1), sha256, bytes: Number(bytes.replace(/_/g, '')), type: 'application/octet-stream', url}));
+  if (distros.length !== (list.match(/Distro \{/g) ?? []).length) throw new Error('core/src/root.rs: a DISTROS entry is not as written there');
+  return distros;
 }
 
 /** The desktop app's files this tree pins for `version` (none when it pins none). */

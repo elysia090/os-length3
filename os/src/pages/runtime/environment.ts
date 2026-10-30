@@ -87,7 +87,7 @@ function onTheWeb(a: Awaited<ReturnType<typeof about>>): Node[] {
   // A build that carries no l3 says so in l3's own row: Ubuntu, Debian and Custom are under it all the same.
   return [...(a ? top('l3', a.version, t('{name} · through xlat', {name: a.root.name}), a.sha256)
     : top('l3', '', t('There is no l3 (npm run l3)'), '')),
-  others(other('Ubuntu', '24.04.5 LTS', t('In the app only'), null),
-    other('Debian', '13', t('In the app only'), null),
+  others(other('Ubuntu', '26.04.1 LTS', t('In the app only'), null),
+    other('Debian', '13.7', t('In the app only'), null),
     custom())];
 }
