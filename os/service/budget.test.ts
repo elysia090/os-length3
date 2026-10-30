@@ -69,6 +69,23 @@ test('the bytes R2 holds are counted with the rows that name them, and an upload
   assert.equal(await usage(s, 'r2:stored'), 0);
 });
 
+test('a blob\'s bytes are counted as its upload commits, not while it runs, and an upload is refused that its own bytes would take past the limit', async () => {
+  const s = await service({}, {limits: limits({stored: 10})});
+  const t = await s.start();
+  const user = ((await s.call('GET', '/api/auth/get-session', {token: t})).json as unknown as {user: {id: string}}).user.id;
+  // Within the transaction that names the blob, the count is as it was: its row is not held through the upload.
+  await s.db.transaction(async (tx) => {
+    await tx.execute(sql`insert into blob (user_id, sha256, bytes) values (${user}, ${'a'.repeat(64)}, 8)`);
+    assert.equal(Number(((await tx.execute(sql`select coalesce(sum(n), 0)::float8 as n from usage where kind = 'r2:stored'`)).rows as {n: number}[])[0].n), 0);
+  });
+  assert.equal(await usage(s, 'r2:stored'), 8);
+  // What the upload adds is asked of the limit with it: 8 held, 3 more would be 11.
+  const {Budget} = await import('./budget.ts');
+  const b = new Budget(limits({stored: 10}));
+  await assert.rejects(s.db.transaction(async (tx) => b.held(tx, 3)), (e: unknown) => (e as {status?: number}).status === 507 || /507/.test(String(e)));
+  await s.db.transaction(async (tx) => b.held(tx, 2));
+});
+
 test('what one account sends in a day: past it, refused until tomorrow (429); another account is not held back', async () => {
   const s = await service({}, {limits: limits({upload: 10})});
   const t = await s.start('Ren'), u = await s.start('Bo');

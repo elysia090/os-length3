@@ -144,12 +144,14 @@ export class Budget {
   }
 
   /**
-   * Refused (507, no files) when R2 would hold more than it may, asked once the row that names the bytes is in:
-   * its trigger has counted them (usage_stored, 0011) with the count's row locked, so uploads of other accounts
-   * at once are counted one after another and cannot pass the limit together. In `q`, the upload's transaction.
+   * Refused (507, no files) when R2 would hold more than it may with `bytes` more, asked once the row that names
+   * them is in. They are counted as the upload commits (usage_stored, deferred: 0019), so the count's row is held
+   * only while a commit is done, never through an upload's round trips: uploads of every account at once no longer
+   * go one after another, and the count can pass its limit by no more than what commits at that moment. In `q`,
+   * the upload's transaction.
    */
-  async held(q: Db) {
-    if (await spent(q, 'all', 'r2:stored') > this.limits.stored) {
+  async held(q: Db, bytes: number) {
+    if (await spent(q, 'all', 'r2:stored') + bytes > this.limits.stored) {
       refuse(507, {error: 'Remote storage full; changes remain on this device', files: false, budget: true, retryAfter: FULL_WAIT}, {'Retry-After': String(FULL_WAIT)});
     }
   }

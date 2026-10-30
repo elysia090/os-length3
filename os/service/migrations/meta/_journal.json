@@ -134,6 +134,13 @@
       "when": 1793343335113,
       "tag": "0018_contract_turning_off_asks_no_code",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793343336113,
+      "tag": "0019_blob_stored_at_commit",
+      "breakpoints": true
     }
   ]
 }

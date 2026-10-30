@@ -171,7 +171,7 @@ export function files(d: {db: Db; bucket: Bucket | null; quota?: number; budget?
         await fits(tx, user, bytes.length, d.quota);
         await d.budget?.upload(tx, user, bytes.length);
         await tx.insert(blob).values({userId: user, sha256: sha, bytes: bytes.length});
-        await d.budget?.held(tx);
+        await d.budget?.held(tx, bytes.length);
       });
     } catch (e) {
       // Refused after all (uploads at once): the bytes go, under the lock, unless a row names them by then.
