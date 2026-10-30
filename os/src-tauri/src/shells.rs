@@ -18,7 +18,6 @@ struct Shell {
     repo: String,
     child: Child,
     stdin: ChildStdin,
-    ns: Option<u64>,
 }
 
 #[derive(Default)]
@@ -28,11 +27,10 @@ pub struct Shells {
 }
 
 impl Shells {
-    /// Repos a Prompt has open now: they stay on the device while it runs.
+    /// Repos a Prompt of this window has open now: they stay on the device while it runs. The core reads every
+    /// other (each l3's, in a terminal too) from its record, with the root it runs on (core/src/usage.rs).
     pub fn open_repos(&self) -> Vec<String> {
         let mut all: Vec<String> = self.open.lock().unwrap().values().map(|s| s.repo.clone()).collect();
-        // And each l3 runs (in a terminal too): every Prompt records itself while it runs (core/src/prompt.rs).
-        all.extend(prompt::running(&paths::data_dir()).into_iter().map(|r| r.repo));
         all.sort();
         all.dedup();
         all
@@ -66,7 +64,7 @@ async fn apart<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send +
     tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())?
 }
 
-/// Open a Prompt; it waits up to a second for the Prompt's pid 1 to appear.
+/// Open a Prompt: its `l3 prompt`, which prepares it (.packages, .setup), then runs it.
 #[tauri::command]
 pub async fn prompt_open(app: AppHandle, repo: String) -> Result<u32, String> {
     apart(move || open(app, repo)).await
@@ -94,18 +92,8 @@ fn open(app: AppHandle, repo: String) -> Result<u32, String> {
         .spawn()
         .map_err(|e| length3_core::tr!("Could not start l3: {}", "l3 を起動できませんでした：{}", e))?;
     let stdin = child.stdin.take().ok_or("stdin")?;
-    let supervisor = child.id();
     let id = shells.next.fetch_add(1, Ordering::SeqCst) + 1;
-    // Its pid 1 appears a moment after; its namespace is the Prompt's.
-    let mut ns = None;
-    for _ in 0..100 {
-        if let Some(n) = prompt::init_of(supervisor).and_then(prompt::pid_ns) {
-            ns = Some(n);
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    shells.open.lock().unwrap().insert(id, Shell { repo, child, stdin, ns });
+    shells.open.lock().unwrap().insert(id, Shell { repo, child, stdin });
     std::thread::spawn(move || {
         let mut buf = [0u8; 16 * 1024];
         let mut pending = Vec::new();
@@ -146,12 +134,22 @@ pub fn prompt_interrupt(shells: State<'_, Shells>, id: u32) -> Result<(), String
     Ok(())
 }
 
-/// What the Prompt's processes hold now (every process on the host looked at in /proc).
+/// What a Prompt's processes hold now, and whether it is still being prepared (its record says so).
+#[derive(serde::Serialize)]
+pub struct Holding {
+    #[serde(flatten)]
+    held: prompt::Held,
+    preparing: bool,
+}
+
+/// What the Prompt's processes hold now (every process on the host looked at in /proc): its pid 1's
+/// namespace, looked for each time, since the Prompt that prepares it has one of its own before.
 #[tauri::command]
-pub async fn prompt_held(app: AppHandle, id: u32) -> Result<Option<prompt::Held>, String> {
+pub async fn prompt_held(app: AppHandle, id: u32) -> Result<Option<Holding>, String> {
     apart(move || {
-        let ns = tauri::Manager::state::<Shells>(&app).open.lock().unwrap().get(&id).and_then(|s| s.ns);
-        Ok(ns.map(prompt::held))
+        let Some(supervisor) = tauri::Manager::state::<Shells>(&app).open.lock().unwrap().get(&id).map(|s| s.child.id()) else { return Ok(None) };
+        let preparing = prompt::running(&paths::data_dir()).iter().any(|r| r.pid == supervisor && r.preparing);
+        Ok(prompt::ns_of(supervisor).map(|ns| Holding { held: prompt::held(ns), preparing }))
     }).await
 }
 
@@ -162,11 +160,13 @@ pub async fn prompt_close(app: AppHandle, id: u32) -> Result<prompt::Stopped, St
 }
 
 fn close(shells: &Shells, id: u32) -> Result<prompt::Stopped, String> {
-    let (supervisor, ns) = {
+    let supervisor = {
         let open = shells.open.lock().unwrap();
         let s = open.get(&id).ok_or_else(|| length3_core::tr!("This Prompt has ended", "この Prompt は終わっています"))?;
-        (s.child.id(), s.ns)
+        s.child.id()
     };
+    // Stopped while it is prepared too: what prepares it ends with its supervisor (launch::set_up).
+    let ns = prompt::ns_of(supervisor);
     let before = ns.map(prompt::held).unwrap_or(prompt::Held { processes: 0, memory: 0 });
     unsafe { libc::kill(supervisor as libc::pid_t, libc::SIGKILL) };
     Ok(match ns {

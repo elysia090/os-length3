@@ -227,6 +227,12 @@ pub fn use_held(data: &Path, sha256: &str) -> Option<Installed> {
 }
 
 fn point_current(data: &Path, sha256: &str) -> Result<(), String> {
+    // Under the lock 空ける looks again under (usage::lock), and only at a root still whole: one freed since
+    // it was found here is not made current, and the one made current is not freed after.
+    let _still = crate::usage::lock(data).map_err(|e| e.to_string())?;
+    if !system_dir(data).join(sha256).join("installed.json").is_file() {
+        return Err(crate::tr!("That root was freed meanwhile; fetch it again", "その root はそのあいだに空けられました。もう一度取ってください"));
+    }
     // A new link renamed over the old one: never a moment without one.
     let link = system_dir(data).join(format!(".current.length3-{}-0", crate::pid()));
     let _ = fs::remove_file(&link);

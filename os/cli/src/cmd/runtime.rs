@@ -10,13 +10,10 @@ use crate::target;
 use length3_core::{fetch::Progress, home, paths, remote, root, tr, usage};
 use serde_json::json;
 
-/// The repos a Prompt has open here (the app's or l3's): they stay while it runs, as in Runtime.
-fn in_prompts() -> Vec<String> {
-    length3_core::prompt::running(&paths::data_dir()).into_iter().map(|r| r.repo).collect()
-}
-
 pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
-    let s = usage::space(&paths::data_dir(), &paths::repos_dir(), &in_prompts());
+    // What a Prompt here holds (the app's or l3's, running or being prepared) stays while it does: the core reads
+    // their records itself (usage.rs), so there is nothing to tell it as open.
+    let s = usage::space(&paths::data_dir(), &paths::repos_dir(), &[]);
     let current = root::current(&paths::data_dir()).map(|(_, r)| r);
     let mut t = vec![match &current {
         Some(r) => tr!("root  {} {} (where Prompts run)", "root  {} {}（Prompt が動く環境）", r.name, r.version),
@@ -57,8 +54,7 @@ pub fn free(_: &Ctx, call: &Call) -> Result<Reply> {
     if words.iter().any(|w| w.trim().is_empty()) {
         return Err(Error::Usage(tr!("Name what to free: l3 free ID… (l3 runtime lists them), or l3 free all", "空けるものを書いてください：l3 free ID…（l3 runtime で一覧）、または l3 free all")));
     }
-    let open = in_prompts();
-    let space = usage::space(&data, &paths::repos_dir(), &open);
+    let space = usage::space(&data, &paths::repos_dir(), &[]);
     let ids: Vec<String> = if words == ["all"] {
         usage::all_freeable(&space)
     } else {
@@ -68,7 +64,7 @@ pub fn free(_: &Ctx, call: &Call) -> Result<Reply> {
         return Err(Error::NotFound(tr!("Nothing here is called {} (l3 runtime lists what there is)", "{} というものはここにありません（l3 runtime で一覧）", unknown.strip_prefix("repo:").unwrap_or(unknown))));
     }
     if ids.is_empty() { return Ok(Reply::done(tr!("Nothing can be freed", "空けられるものはありません"), json!({"freed": 0, "removed": [], "kept": []}))); }
-    let r = usage::free(&data, &paths::repos_dir(), &ids, &open);
+    let r = usage::free(&data, &paths::repos_dir(), &ids, &[]);
     let kept: Vec<_> = r.kept.iter().map(|(id, why)| json!({"id": id, "why": why})).collect();
     let data = json!({"freed": r.freed, "removed": r.removed, "kept": kept, "hostFreeBefore": r.host_free_before, "hostFreeAfter": r.host_free_after, "reflectedMs": r.reflected_ms});
     let reasons: Vec<String> = r.kept.iter().map(|(id, why)| tr!("  kept {}: {}", "  残したもの {}：{}", id.strip_prefix("repo:").unwrap_or(id), why)).collect();

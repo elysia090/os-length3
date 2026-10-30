@@ -93,6 +93,8 @@ export interface RootStatus {
 }
 /** What a Prompt's processes hold: how many, and their memory (Pss). */
 export interface Held { processes: number; memory: number }
+/** What a Prompt on the root holds now, and whether it is still being prepared (.packages, .setup). */
+export interface Holding extends Held { preparing: boolean }
 /** How a Prompt stopped: what it held, what was left, how long until none. */
 export interface Stopped { before: Held; left: number; ms: number | null }
 
@@ -117,7 +119,7 @@ const call = native;
 
 /** A Prompt on the root: what it prints, and how it ends. */
 export async function promptOpen(repo: string, on: {output(text: string): void; exit(code: number): void}): Promise<{
-  id: number; input(text: string): Promise<void>; interrupt(): Promise<void>; held(): Promise<Held | null>; close(): Promise<Stopped>; forget(): void;
+  id: number; input(text: string): Promise<void>; interrupt(): Promise<void>; held(): Promise<Holding | null>; close(): Promise<Stopped>; forget(): void;
 }> {
   type Event = {id: number; kind: string; text: string; code: number};
   let id = -1;
@@ -134,7 +136,7 @@ export async function promptOpen(repo: string, on: {output(text: string): void; 
     id,
     input: (text) => call('prompt_input', {id, text}),
     interrupt: () => call('prompt_interrupt', {id}),
-    held: () => call<Held | null>('prompt_held', {id}),
+    held: () => call<Holding | null>('prompt_held', {id}),
     close: () => call<Stopped>('prompt_close', {id}),
     forget: unlisten,
   };

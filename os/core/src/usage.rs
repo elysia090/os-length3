@@ -20,6 +20,14 @@
 //!
 //! A repo that is freed stays on the Remote and comes back when opened.
 //!
+//! What a Prompt holds stays while it runs, and from the moment it starts
+//! being prepared (`.packages`, `.setup`): its repo, the repo's environment,
+//! caches and what is derived in it, and the root it runs on, whichever is
+//! current now. Each Prompt here records what it holds (prompt.rs) under the
+//! same lock (`lock`) a thing is looked at again under just before it goes,
+//! and the current root is changed under, so none of these comes between the
+//! look and the removal.
+//!
 //! Every figure says how it is known. `allocated` is what the host's
 //! filesystem has set aside (st_blocks), which is what giving room back is
 //! about: a sparse or deleted file counts only what it really holds, and a
@@ -308,12 +316,96 @@ pub struct Freed {
     pub reflected_ms: Option<u64>,
 }
 
-fn repo_item(repos: &crate::repos::Repos, name: &str, connected: bool, open: &[String]) -> Option<Item> {
+/// One at a time, across the app and l3: a Prompt recording what it holds (prompt.rs), the root made
+/// current (root.rs), and a thing looked at again and let go (`free`). What a Prompt took, or the root
+/// made current, before the look is seen by it; after, it finds the thing there, or not at all, never going.
+pub struct Lock(#[allow(dead_code)] fs::File);
+
+pub fn lock(data: &Path) -> std::io::Result<Lock> {
+    // Beside the Prompts' records (prompt.rs), which it is about.
+    let dir = data.join("prompts");
+    crate::boundary::private_dir(&dir)?;
+    let f = fs::OpenOptions::new().create(true).truncate(false).write(true).open(dir.join(".lock"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::io::AsRawFd;
+        // SAFETY: flock on a descriptor this function owns.
+        if unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX) } != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+    }
+    Ok(Lock(f))
+}
+
+/// The Prompts recorded here, each its repo, its root, and whether it is still being prepared (prompt.rs).
+/// The core built for the web runs none.
+fn recorded(data: &Path) -> Vec<(String, Option<String>, bool)> {
+    #[cfg(not(target_os = "wasi"))]
+    return crate::prompt::running(data).into_iter().map(|r| (r.repo, r.root, r.preparing)).collect();
+    #[cfg(target_os = "wasi")]
+    { let _ = data; Vec::new() }
+}
+
+/// What the Prompts here hold now, so none of it goes under them: the repos they have open (and with each,
+/// its environment, caches and what is derived in it) and the roots they run on, each with whether every
+/// Prompt holding it is still being prepared.
+struct InUse {
+    repos: Vec<(String, bool)>,
+    roots: Vec<(String, bool)>,
+    /// A Prompt whose record does not say its root (an older l3's): any root may be the one, so all stay.
+    unsaid: bool,
+}
+
+impl InUse {
+    /// `open`: repos the host knows a Prompt of its own has open. Every Prompt on a root records itself, and
+    /// its record says more (being prepared, the root); a browser's has none, and is running.
+    fn now(data: &Path, open: &[String]) -> InUse {
+        fn add(all: &mut Vec<(String, bool)>, name: String, preparing: bool) {
+            match all.iter_mut().find(|(n, _)| *n == name) {
+                Some((_, p)) => *p &= preparing,
+                None => all.push((name, preparing)),
+            }
+        }
+        let mut u = InUse { repos: Vec::new(), roots: Vec::new(), unsaid: false };
+        for (repo, root, preparing) in recorded(data) {
+            add(&mut u.repos, repo, preparing);
+            match root {
+                Some(root) => add(&mut u.roots, root, preparing),
+                None => u.unsaid = true,
+            }
+        }
+        for repo in open {
+            if !u.repos.iter().any(|(n, _)| n == repo) { u.repos.push((repo.clone(), false)); }
+        }
+        u
+    }
+
+    /// Why a repo, or what is its, stays: a Prompt has it.
+    fn repo(&self, name: &str) -> Option<String> {
+        self.repos.iter().find(|(n, _)| n == name).map(|(_, preparing)| if *preparing { preparing_why() }
+            else { crate::tr!("A Prompt has it open", "Prompt で開いています") })
+    }
+
+    /// Why a root stays: a Prompt runs on it, whichever is current now.
+    fn root(&self, sha256: &str) -> Option<String> {
+        match self.roots.iter().find(|(n, _)| n == sha256) {
+            Some((_, true)) => Some(preparing_why()),
+            Some((_, false)) => Some(crate::tr!("A Prompt running uses it", "動いている Prompt が使っています")),
+            None => self.unsaid.then(|| crate::tr!("A Prompt running here does not say which root it uses", "動いている Prompt が、どの root を使うか記録していません")),
+        }
+    }
+}
+
+fn preparing_why() -> String {
+    crate::tr!("A Prompt being prepared uses it (.packages, .setup)", "用意中の Prompt が使っています（.packages、.setup）")
+}
+
+fn repo_item(repos: &crate::repos::Repos, name: &str, connected: bool, in_use: &InUse) -> Option<Item> {
     let dir = repos.dir(name).ok()?;
     let s = crate::remote::status_of(repos, name).ok()?;
     let files = s.unsynced.len() + s.files;
-    let (room, why) = if open.iter().any(|o| o == name) {
-        (Room::Keep, crate::tr!("A Prompt has it open", "Prompt で開いています"))
+    let (room, why) = if let Some(why) = in_use.repo(name) {
+        (Room::Keep, why)
     } else if !connected {
         (Room::Keep, crate::tr!("Sign in to the Remote to free it", "Remote にサインインすると空けられます"))
     } else if let Some((path, what)) = s.unsynced.first() {
@@ -338,12 +430,12 @@ fn repo_item(repos: &crate::repos::Repos, name: &str, connected: bool, open: &[S
 }
 
 /// A repo's environment ("env") or caches ("cache"), if it has them here.
-fn owned_item(data: &Path, repos_dir: &Path, kind: &str, repo: &str, open: &[String]) -> Option<Item> {
+fn owned_item(data: &Path, repos_dir: &Path, kind: &str, repo: &str, in_use: &InUse) -> Option<Item> {
     if !crate::repos::valid_name(repo) { return None; }
     let dir = if kind == "env" { crate::owned::env_dir(data, repo) } else { crate::owned::cache_dir(data, repo) };
     if !dir.is_dir() { return None; }
-    let (room, why) = if open.iter().any(|o| o == repo) {
-        (Room::Keep, crate::tr!("A Prompt has it open", "Prompt で開いています"))
+    let (room, why) = if let Some(why) = in_use.repo(repo) {
+        (Room::Keep, why)
     } else if !repos_dir.join(repo).is_dir() {
         (Room::Free, crate::tr!("Its repo is not on this device", "その repo はこの端末にありません"))
     } else if kind == "env" {
@@ -356,15 +448,15 @@ fn owned_item(data: &Path, repos_dir: &Path, kind: &str, repo: &str, open: &[Str
 }
 
 /// What is derived from a repo's own files, if it has any.
-fn derived_item(repos_dir: &Path, repo: &str, open: &[String]) -> Option<Item> {
+fn derived_item(repos_dir: &Path, repo: &str, in_use: &InUse) -> Option<Item> {
     if !crate::repos::valid_name(repo) { return None; }
     let found = crate::owned::derived_in(&repos_dir.join(repo));
     if found.is_empty() { return None; }
     let mut names: Vec<String> = found.iter().filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned())).collect();
     names.sort();
     names.dedup();
-    let (room, why) = if open.iter().any(|o| o == repo) {
-        (Room::Keep, crate::tr!("A Prompt has it open", "Prompt で開いています"))
+    let (room, why) = if let Some(why) = in_use.repo(repo) {
+        (Room::Keep, why)
     } else {
         (Room::Free, crate::tr!("Made again from its files by the tool that made it", "元のファイルから、作ったツールがまた作ります"))
     };
@@ -390,11 +482,14 @@ fn remove_owned(dir: &Path) -> Result<u64, String> {
     fs::remove_dir_all(dir).map(|_| size).map_err(|e| e.to_string())
 }
 
-fn root_item(row: SystemUsage) -> Item {
-    let (room, why) = match row.held {
-        Held::Current => (Room::Keep, crate::tr!("The root Prompts run on", "Prompt が動く root です")),
-        Held::Previous => (Room::Free, crate::tr!("The root before; going back fetches it again from the Remote", "ひとつ前の root。戻すときは Remote から取り直せます")),
-        Held::Older => (Room::Free, crate::tr!("An old root; the Remote has it", "古い root。Remote から取り直せます")),
+fn root_item(row: SystemUsage, in_use: &InUse) -> Item {
+    // The current one stays whether or not a Prompt runs now (the l3 every Prompt starts on); one a Prompt
+    // runs on stays while it does, current or not, so making another current takes nothing from under it.
+    let (room, why) = match (row.held, in_use.root(&row.sha256)) {
+        (Held::Current, _) => (Room::Keep, crate::tr!("The root Prompts run on", "Prompt が動く root です")),
+        (_, Some(why)) => (Room::Keep, why),
+        (Held::Previous, None) => (Room::Free, crate::tr!("The root before; going back fetches it again from the Remote", "ひとつ前の root。戻すときは Remote から取り直せます")),
+        (Held::Older, None) => (Room::Free, crate::tr!("An old root; the Remote has it", "古い root。Remote から取り直せます")),
     };
     Item { id: format!("root:{}", row.sha256), what: format!("{} {}", row.name, row.version), detail: "root".into(), allocated: row.allocated, room, why }
 }
@@ -427,20 +522,20 @@ fn leftover_at(data: &Path, path: &Path) -> Option<Leftover> {
 }
 
 /// One thing by its id, looked at now and alone.
-fn item(data: &Path, repos_dir: &Path, id: &str, open: &[String]) -> Option<Item> {
+fn item(data: &Path, repos_dir: &Path, id: &str, in_use: &InUse) -> Option<Item> {
     if let Some(name) = id.strip_prefix("repo:") {
         let repos = crate::repos::Repos::new(repos_dir.to_path_buf()).ok()?;
-        repo_item(&repos, name, crate::remote::connection().is_some(), open)
+        repo_item(&repos, name, crate::remote::connection().is_some(), in_use)
     } else if let Some(sha) = id.strip_prefix("root:") {
-        system(data).into_iter().find(|(r, _)| r.sha256 == sha).map(|(r, _)| root_item(r))
+        system(data).into_iter().find(|(r, _)| r.sha256 == sha).map(|(r, _)| root_item(r, in_use))
     } else if let Some(path) = id.strip_prefix("path:") {
         leftover_at(data, Path::new(path)).map(leftover_item)
     } else if let Some(repo) = id.strip_prefix("env:") {
-        owned_item(data, repos_dir, "env", repo, open)
+        owned_item(data, repos_dir, "env", repo, in_use)
     } else if let Some(repo) = id.strip_prefix("cache:") {
-        owned_item(data, repos_dir, "cache", repo, open)
+        owned_item(data, repos_dir, "cache", repo, in_use)
     } else if let Some(repo) = id.strip_prefix("derived:") {
-        derived_item(repos_dir, repo, open)
+        derived_item(repos_dir, repo, in_use)
     } else if id == "home" {
         Some(Item { id: "home".into(), what: "Home".into(), detail: String::new(), allocated: 0, room: Room::Keep, why: crate::tr!("This device's settings", "この端末の設定です") })
     } else {
@@ -449,22 +544,24 @@ fn item(data: &Path, repos_dir: &Path, id: &str, open: &[String]) -> Option<Item
 }
 
 /// Everything this OS holds under `data` (repos in `repos`), largest first.
-/// `open`: repos a Prompt has open now.
+/// `open`: repos a Prompt the host knows of has open now (a browser's own);
+/// every Prompt on a root, the app's and l3's, is read from its record here.
 pub fn space(data: &Path, repos_dir: &Path, open: &[String]) -> Space {
     let (host_total, host_free, host) = host(data);
     let mut items = Vec::new();
     let connected = crate::remote::connection().is_some();
+    let in_use = InUse::now(data, open);
     if let Ok(repos) = crate::repos::Repos::new(repos_dir.to_path_buf()) {
         for name in repos.names().unwrap_or_default() {
-            items.extend(repo_item(&repos, &name, connected, open));
-            items.extend(derived_item(repos_dir, &name, open));
+            items.extend(repo_item(&repos, &name, connected, &in_use));
+            items.extend(derived_item(repos_dir, &name, &in_use));
         }
     }
     for (row, _) in system(data) {
-        items.push(root_item(row));
+        items.push(root_item(row, &in_use));
     }
     for (kind, repo, _) in crate::owned::held(data) {
-        items.extend(owned_item(data, repos_dir, kind, &repo, open));
+        items.extend(owned_item(data, repos_dir, kind, &repo, &in_use));
     }
     let mut left = Vec::new();
     leftovers(data, data, &mut left);
@@ -484,12 +581,17 @@ pub fn space(data: &Path, repos_dir: &Path, open: &[String]) -> Space {
 }
 
 /// Free these ids, each looked at again (alone: nothing else is walked)
-/// just before it goes; then say what the host shows for it.
+/// just before it goes, under `lock`; then say what the host shows for it.
 pub fn free(data: &Path, repos_dir: &Path, ids: &[String], open: &[String]) -> Freed {
     let (_, before, certainty) = host(data);
     let (mut freed, mut removed, mut kept) = (0, Vec::new(), Vec::new());
     for id in ids {
-        let Some(item) = item(data, repos_dir, id, open) else {
+        // Held from the look to the removal: a Prompt starting, or a root made current, meanwhile waits.
+        let still = match lock(data) {
+            Ok(l) => l,
+            Err(e) => { kept.push((id.clone(), e.to_string())); continue; }
+        };
+        let Some(item) = item(data, repos_dir, id, &InUse::now(data, open)) else {
             kept.push((id.clone(), crate::tr!("It is gone already", "もうありません")));
             continue;
         };
@@ -498,6 +600,9 @@ pub fn free(data: &Path, repos_dir: &Path, ids: &[String], open: &[String]) -> F
             continue;
         }
         let gone: Result<u64, String> = if let Some(name) = id.strip_prefix("repo:") {
+            // Sending it first can take long, and no Prompt waits on that to start: a repo one opens meanwhile
+            // is kept by the free's own look at what holds the copy, just before it goes (remote::free).
+            drop(still);
             crate::repos::Repos::new(repos_dir.to_path_buf()).and_then(|r| crate::remote::free(&r, name))
         } else if let Some(sha) = id.strip_prefix("root:") {
             let dir = crate::root::system_dir(data).join(sha);
@@ -671,6 +776,104 @@ mod system_tests {
         assert!(!old.exists() && !before.exists() && crate::root::system_dir(&data).join("c".repeat(64)).exists());
         let _ = fs::remove_dir_all(&data);
     }
+
+    fn room_of(u: &Space, sha: char) -> (Room, String) {
+        let i = u.items.iter().find(|i| i.id == format!("root:{}", sha.to_string().repeat(64))).expect("the root is listed");
+        (i.room, i.why.clone())
+    }
+
+    #[test]
+    fn a_root_a_prompt_runs_on_stays_when_another_is_made_current_and_goes_once_it_ends() {
+        let data = std::env::temp_dir().join(format!("length3-system-held-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&data);
+        let repos = data.join("repos");
+        let l3 = root_dir(&data, 'a', "0.5.0");
+        std::os::unix::fs::symlink("a".repeat(64), crate::root::system_dir(&data).join("current")).unwrap();
+        // A web server's Prompt on l3's root (this process stands for it), then Ubuntu made current, as `l3 root use ubuntu` does.
+        let mut prompt = crate::prompt::record(&data, "os-web", true, &l3.join("root")).unwrap();
+        prompt.ready().unwrap();
+        root_dir(&data, 'b', "24.04.5");
+        assert!(crate::root::use_held(&data, &"b".repeat(64)).is_some());
+        let running = crate::tr!("A Prompt running uses it", "動いている Prompt が使っています");
+        let u = space(&data, &repos, &[]);
+        assert_eq!(room_of(&u, 'a'), (Room::Keep, running.clone()), "the root the Prompt runs on stays");
+        // The current one stays as ever, with no Prompt on it (#46).
+        assert_eq!(room_of(&u, 'b').0, Room::Keep);
+        assert!(!all_freeable(&u).iter().any(|id| id.starts_with("root:")));
+        // Asked for by name, it is looked at again and stays; so with the host's own `open` (the app's) told nothing.
+        let r = free(&data, &repos, &[format!("root:{}", "a".repeat(64))], &[]);
+        assert!(r.removed.is_empty() && r.kept == [(format!("root:{}", "a".repeat(64)), running)], "{:?}", r.kept);
+        assert!(l3.join("root/bin/busybox").is_file(), "its programs are still there to run");
+        // The Prompt ends: the root before is one that can go, as it always was.
+        drop(prompt);
+        let u = space(&data, &repos, &[]);
+        assert_eq!(room_of(&u, 'a').0, Room::Free);
+        assert_eq!(free(&data, &repos, &all_freeable(&u), &[]).removed, [format!("root:{}", "a".repeat(64))]);
+        assert!(!l3.exists() && crate::root::current(&data).is_some_and(|(_, r)| r.version == "24.04.5"));
+        let _ = fs::remove_dir_all(&data);
+    }
+
+    #[test]
+    fn a_record_older_l3_made_without_its_root_keeps_every_root() {
+        let data = std::env::temp_dir().join(format!("length3-system-unsaid-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&data);
+        root_dir(&data, 'a', "1");
+        root_dir(&data, 'b', "2");
+        std::os::unix::fs::symlink("b".repeat(64), crate::root::system_dir(&data).join("current")).unwrap();
+        // This process's own, as an l3 before roots were recorded wrote it.
+        let me = std::process::id();
+        fs::create_dir_all(data.join("prompts")).unwrap();
+        fs::write(data.join(format!("prompts/{me}.json")), format!(r#"{{"repo":"x","pid":{me},"network":false,"started":1,"startTicks":{}}}"#, crate::prompt::start_ticks(me).unwrap())).unwrap();
+        let u = space(&data, &data.join("repos"), &[]);
+        assert_eq!(room_of(&u, 'a').0, Room::Keep, "{:?}", room_of(&u, 'a'));
+        fs::remove_file(data.join(format!("prompts/{me}.json"))).unwrap();
+        assert_eq!(room_of(&space(&data, &data.join("repos"), &[]), 'a').0, Room::Free);
+        let _ = fs::remove_dir_all(&data);
+    }
+
+    /// 空ける looks again under the lock a Prompt records itself under: one that recorded the root while the
+    /// free waited keeps it, however the free decided before.
+    #[test]
+    fn a_prompt_recorded_while_a_free_waits_keeps_its_root() {
+        let data = std::env::temp_dir().join(format!("length3-system-race-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&data);
+        let old = root_dir(&data, 'a', "1");
+        root_dir(&data, 'b', "2");
+        std::os::unix::fs::symlink("b".repeat(64), crate::root::system_dir(&data).join("current")).unwrap();
+        let id = format!("root:{}", "a".repeat(64));
+        assert!(all_freeable(&space(&data, &data.join("repos"), &[])).contains(&id), "nothing holds it yet");
+        // A Prompt starting on it holds the lock (prompt::record), and the free waits for it.
+        let still = lock(&data).unwrap();
+        let freeing = { let (data, id) = (data.clone(), id.clone()); std::thread::spawn(move || free(&data, &data.join("repos"), &[id], &[])) };
+        std::thread::sleep(Duration::from_millis(200));
+        let me = std::process::id();
+        let r = crate::prompt::Running { repo: "x".into(), pid: me, network: false, root: Some("a".repeat(64)), preparing: true, started: 1, start_ticks: crate::prompt::start_ticks(me).unwrap() };
+        fs::write(data.join(format!("prompts/{me}.json")), serde_json::to_vec(&r).unwrap()).unwrap();
+        drop(still);
+        let r = freeing.join().unwrap();
+        assert!(r.removed.is_empty() && r.kept.iter().any(|(k, _)| *k == id), "{:?}", r.kept);
+        assert!(old.join("installed.json").is_file());
+        let _ = fs::remove_dir_all(&data);
+    }
+
+    /// The root made current under the same lock: one freed meanwhile is not made current.
+    #[test]
+    fn a_root_freed_as_it_is_made_current_is_not_made_current() {
+        let data = std::env::temp_dir().join(format!("length3-system-switch-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&data);
+        root_dir(&data, 'a', "1");
+        let other = root_dir(&data, 'b', "2");
+        std::os::unix::fs::symlink("a".repeat(64), crate::root::system_dir(&data).join("current")).unwrap();
+        let still = lock(&data).unwrap();
+        let switching = { let data = data.clone(); std::thread::spawn(move || crate::root::use_held(&data, &"b".repeat(64)).is_some()) };
+        std::thread::sleep(Duration::from_millis(200));
+        // Freed while it waited (as `free` removes a root, under the lock).
+        fs::remove_dir_all(&other).unwrap();
+        drop(still);
+        assert!(!switching.join().unwrap());
+        assert_eq!(crate::root::current(&data).map(|(_, r)| r.version), Some("1".into()));
+        let _ = fs::remove_dir_all(&data);
+    }
 }
 
 #[cfg(test)]
@@ -723,12 +926,59 @@ mod owned_tests {
         assert!(c.room == Room::Free && c.why == crate::tr!("Its repo is not on this device", "その repo はこの端末にありません"), "{c:?}");
         assert!(!s.items.iter().any(|i| i.id.starts_with("path:")), "nothing in an environment is a leftover");
         // Open in a Prompt, it stays.
-        assert_eq!(item(&data, &repos, "env:here", &["here".into()]).unwrap().room, Room::Keep);
+        assert_eq!(item(&data, &repos, "env:here", &InUse::now(&data, &["here".into()])).unwrap().room, Room::Keep);
 
         let f = free(&data, &repos, &["env:here".into(), "cache:gone".into(), "derived:here".into()], &[]);
         assert_eq!(f.removed.len(), 3, "{:?}", f.kept);
         assert!(!env.exists() && !gone.exists() && !repos.join("here/node_modules").exists() && !repos.join("here/out").exists());
         assert!(repos.join("here/package.json").is_file() && repos.join("here/vendor/node_modules/keep.js").is_file(), "the repo's own files stay");
+        let _ = fs::remove_dir_all(&data);
+    }
+
+    #[test]
+    fn what_a_prompt_being_prepared_holds_stays_and_says_so() {
+        let data = std::env::temp_dir().join(format!("length3-owned-prep-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&data);
+        let repos = data.join("repos");
+        fs::create_dir_all(repos.join("os-starting")).unwrap();
+        fs::write(repos.join("os-starting/package.json"), "{}").unwrap();
+        fs::create_dir_all(repos.join("os-starting/node_modules/x")).unwrap();
+        let root = crate::root::system_dir(&data).join("a".repeat(64));
+        fs::create_dir_all(root.join("root/bin")).unwrap();
+        fs::write(root.join("installed.json"), format!(r#"{{"name":"Ubuntu","version":"24.04.5 LTS","sha256":"{}","files":0,"bytes":0}}"#, "a".repeat(64))).unwrap();
+        std::os::unix::fs::symlink("a".repeat(64), crate::root::system_dir(&data).join("current")).unwrap();
+        // apt and .setup writing (this process stands for the l3 preparing it).
+        let mut prompt = crate::prompt::record(&data, "os-starting", false, &root.join("root")).unwrap();
+        let env = crate::owned::env_over(&data, "os-starting", &root.join("root"));
+        fs::create_dir_all(env.join("upper/usr/bin")).unwrap();
+        fs::write(env.join("upper/usr/bin/jq"), vec![b'x'; 10_000]).unwrap();
+        let cache = crate::owned::cache_dir(&data, "os-starting");
+        fs::create_dir_all(cache.join("var-cache/apt")).unwrap();
+        fs::write(cache.join("var-cache/apt/pkgcache.bin"), vec![b'y'; 10_000]).unwrap();
+        let ids = ["env:os-starting", "cache:os-starting", "derived:os-starting"].map(String::from);
+        let why = |s: &Space, id: &str| s.items.iter().find(|i| i.id == id).map(|i| (i.room, i.why.clone()));
+        let s = space(&data, &repos, &[]);
+        let preparing = crate::tr!("A Prompt being prepared uses it (.packages, .setup)", "用意中の Prompt が使っています（.packages、.setup）");
+        for id in ids.iter().chain([&"repo:os-starting".to_string()]) {
+            assert_eq!(why(&s, id), Some((Room::Keep, preparing.clone())), "{id}");
+        }
+        // The app tells its own Prompts as open: their records say more, and are what is said.
+        assert_eq!(why(&space(&data, &repos, &["os-starting".into()]), "env:os-starting"), Some((Room::Keep, preparing.clone())));
+        // Neither one by one nor all at once: each looked at again, it is still held.
+        let f = free(&data, &repos, &[all_freeable(&s), ids.to_vec()].concat(), &[]);
+        assert!(f.removed.is_empty(), "{:?}", f.removed);
+        assert!(env.join("upper/usr/bin/jq").is_file() && cache.join("var-cache/apt/pkgcache.bin").is_file());
+        // Prepared, it holds them as running.
+        prompt.ready().unwrap();
+        assert_eq!(why(&space(&data, &repos, &[]), "env:os-starting").map(|(r, _)| r), Some(Room::Keep));
+        // Its process lost while it was prepared (killed: its record left behind) holds nothing.
+        drop(prompt);
+        fs::create_dir_all(data.join("prompts")).unwrap();
+        fs::write(data.join("prompts/4194304.json"), format!(r#"{{"repo":"os-starting","pid":4194304,"network":false,"root":"{}","preparing":true,"started":1,"startTicks":1}}"#, "a".repeat(64))).unwrap();
+        let s = space(&data, &repos, &[]);
+        assert!(ids.iter().all(|id| why(&s, id).is_some_and(|(r, _)| r == Room::Free)), "{:?}", s.items);
+        assert_eq!(free(&data, &repos, &ids, &[]).removed.len(), 3);
+        assert!(!env.exists() && !cache.exists() && repos.join("os-starting/package.json").is_file());
         let _ = fs::remove_dir_all(&data);
     }
 }
@@ -747,7 +997,7 @@ mod id_tests {
         std::fs::write(&outside, b"keep").unwrap();
         std::fs::File::options().write(true).open(&outside).unwrap().set_modified(SystemTime::now() - Duration::from_secs(3 * 86_400)).unwrap();
         let id = format!("path:{}/../.x.length3-4194300-0", data.display());
-        assert!(item(&data, &data.join("repos"), &id, &[]).is_none());
+        assert!(item(&data, &data.join("repos"), &id, &InUse::now(&data, &[])).is_none());
         let _ = std::fs::remove_dir_all(&top);
     }
 }
