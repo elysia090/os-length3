@@ -515,7 +515,12 @@ test('a file opened beside from its head is the one worked on, and has the keybo
 
 test('a file beside is only its head in its page; with the pane away the two stand whole and as wide, heads on one line; out, the Prompt\'s head is on that line', async ({app}) => {
   await app.rail.go('forge');
+  const dock = async () => { const b = (await app.main.locator('.dock').boundingBox())!; return [Math.round(b.x), Math.round(b.width)]; };
+  const before = await dock();
   await app.main.getByRole('button', {name: 'Open README.md beside'}).first().click();
+  // The prompt box stays where it was, under the hand: a box opened beside does not move it.
+  await expect(app.main.locator('.col:not([hidden])')).toHaveCount(2);
+  await expect.poll(dock).toEqual(before);
   // The page read from its top, so each box's head is where it stands unscrolled.
   await app.main.locator('.col[data-key="hello"] > .flow').evaluate((f) => { f.scrollTop = 0; });
   const rows = () => app.page.evaluate(() => {
@@ -526,12 +531,12 @@ test('a file beside is only its head in its page; with the pane away the two sta
       return {l: Math.round(b.left), w: Math.round(b.width), head: Math.round(head.top)};
     });
     const center = document.querySelector('.center')!.getBoundingClientRect();
-    const dock = document.querySelector('.dock')!.getBoundingClientRect(), active = document.querySelector('.col.active section.file')!.getBoundingClientRect();
+    const dock = document.querySelector('.dock')!.getBoundingClientRect();
     /** Where a line of text in it stands: its baseline. */
     const baseline = (el: Element) => { const m = document.createElement('span'); m.style.display = 'inline-block'; el.append(m); const y = m.getBoundingClientRect().bottom; m.remove(); return Math.round(y); };
     return {
       cols, inside: cols.every((c) => c.l >= center.left - 1 && c.l + c.w <= center.right + 1),
-      dock: [Math.round(dock.left - active.left), Math.round(dock.right - active.right)],
+      dock: [Math.round(dock.left - center.left), Math.round(center.right - dock.right)],
       prompt: baseline(document.querySelector('.term-box h2')!), file: baseline(document.querySelector('.col.active section.file > .path > span')!),
     };
   });
@@ -541,7 +546,7 @@ test('a file beside is only its head in its page; with the pane away the two sta
   await expect(inPage.getByRole('textbox')).toBeHidden();
   await app.forge.paneSwitch.click();
   await expect.poll(async () => { const r = await rows(); return [r.cols.length, r.inside, Math.abs(r.cols[0].w - r.cols[1].w) <= 1, r.cols[0].head === r.cols[1].head, r.dock]; })
-    .toEqual([2, true, true, true, [-12, 12]]);
+    .toEqual([2, true, true, true, [12, 12]]);
   await app.forge.paneSwitch.click();
   await expect.poll(async () => { const r = await rows(); return r.prompt - r.file; }).toBe(0);
   // Written on in its box, then that box closed: the page unfolds it again, with what was written showing whole

@@ -10,13 +10,11 @@
 /* Its left edge a step left of the files' (s3 from the center's edge, theirs s5), so where the two
    would line up the box reads as its own surface, not the foot of the file behind it. Its right stays. */
 .work.bench .dock { left: var(--s3); }
-/* Forge's stands under the box worked on, a step outside its edges (columns.ts placeDock): one box, the center's width
-   but s3; side by side, under the one in hand; moving with the row as it moves. Its left stays where it was as the
-   pane goes or comes (issue #45): only its right end follows the center's. */
-.work.bench:not(.no-strip) .dock {
-  margin: 0; max-width: none; left: var(--dock-l, var(--s3)); right: var(--dock-r, var(--s3));
-  transition: opacity var(--motion), left var(--slide) var(--land), right var(--slide) var(--land);
-}
+/* Forge's stands across the center, s3 in from its edges, however many boxes stand in the row and whichever is worked
+   on: a file opened beside, or another box pressed, leaves it where it is (it went with the box worked on before, and
+   the box one was about to write in moved out from under the hand). Its left stays where it was as the pane goes or
+   comes (issue #45): only its right end follows the center's. */
+.work.bench:not(.no-strip) .dock { margin: 0; max-width: none; left: var(--s3); right: var(--s3); }
 /* While the search is out (what it found, or what is read from it), the whole window steps back under one shade,
    the rail, the band and the pane with the center, to its edges: still there to be seen, not read across; the
    search and what it found are the one thing lit. It fades in and out; a press on it goes to what is under it, so

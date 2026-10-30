@@ -1870,10 +1870,12 @@ back, the one worked on fills the row again and the others step to its
 edges. The pane's switch is the switch between the two, working on one with
 the others to hand or reading them together, and the row moves on the
 pane's own curve, the last box's edge a step inside the pane's the whole
-way, as if pushed by it. The prompt box stands under the box worked on, its
-edges a step (12 px) outside that box's, and goes where the box goes, at its
-pace; side by side, each box is as tall as the row, down to a step over the
-prompt box. A file's head is its box's lid: it carries the box's top edge
+way, as if pushed by it. The prompt box stands across the center, a step
+(12 px) in from its edges, however many boxes stand in the row and whichever
+is worked on: a file opened beside, or another box pressed, leaves it where
+it is, under the hand that was about to write in it (it went with the box
+worked on once, and moved away from the hand); side by side, each box is as
+tall as the row, down to a step over the prompt box. A file's head is its box's lid: it carries the box's top edge
 and corners and stays where it stands as the file scrolls under it (a file
 gone to, from File or a search, comes to where its head stops, inside the
 page's top padding, never past it with its box's sides showing over the

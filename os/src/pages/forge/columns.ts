@@ -198,23 +198,6 @@ export class Row {
   }
 
   /**
-   * The prompt box stands under the box worked on, its edges a step (s3) outside that box's: where the box will be
-   * once the row has moved (styles.css: one box s5 in from the center's edges; side by side with the pane out, the
-   * one worked on whole between its neighbours' edges, `--peek` and `--pad`; with the pane away, all of them whole
-   * and as wide), so it moves with the row rather than after it.
-   */
-  private placeDock(w: number) {
-    const bench = this.work;
-    const n = this.shown.length, at = this.at();
-    const S3 = 12, PEEK = 64;
-    let left = S3, width = w - 2 * S3;
-    if (n > 1 && bench.classList.contains('pane-closed')) { width = (w - 2 * S3) / n; left = S3 + at * width; }
-    else if (n > 1) { width = w - 2 * PEEK - 2 * S3; left = S3 + lead(at, n) * PEEK; }
-    bench.style.setProperty('--dock-l', `${left}px`);
-    bench.style.setProperty('--dock-r', `${w - left - width}px`);
-  }
-
-  /**
    * How wide the row is once the pane has done moving (the bench's width, less the pane's when it is out: styles.css
    * `.work.bench`, max(280px, 25%); narrow, the pane is laid over the center), not how wide it is this frame: the row
    * and the prompt box are sent there once, as the pane is put away or brought back, and move on its curve beside its
@@ -225,7 +208,6 @@ export class Row {
     if (!W) return;
     const w = narrow() || this.work.classList.contains('pane-closed') ? W : W - Math.max(280, W / 4);
     this.element.style.setProperty('--cols-w', `${w}px`);
-    this.placeDock(w);
   }
 
   /** What a box reads: the repo's whole page, or the one file it was opened beside for. */
