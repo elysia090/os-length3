@@ -410,10 +410,13 @@ button.row-item, .part, .dot-row, .pane-head, .hit-diff, .found-shut):hover { tr
 .boot-static h1 { font-size: 1.4rem; margin: 0 0 var(--s3); }
 .scripted .boot-static { display: none; }
 .page > * { max-width: 1200px; margin-left: auto; margin-right: auto; }
-.page-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s1) var(--s3); }
-.page-head .icon { align-self: center; }
-.page-head h1 { font-size: var(--t-title); font-weight: 700; }
-.page-head p { color: var(--sub); }
+/* One line at every width, so what stands under it (a sign-in card, a page's parts) starts at one place on every page:
+   the role is cut short where it runs out of room, and a phone, with no room for it, has the name alone. */
+.page-head { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; }
+.page-head .icon { align-self: center; flex: none; }
+.page-head h1 { font-size: var(--t-title); font-weight: 700; flex: none; }
+.page-head p { color: var(--sub); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 560px) { .page-head p { display: none; } }
 .section { margin-top: var(--s6); }
 /* Under a page's head the first thing is a step down, a section or not (24 px); sections are 40 apart. */
 .page-head + .section, .page-head + div > .section:first-child { margin-top: var(--s5); }

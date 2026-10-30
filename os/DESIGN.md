@@ -402,7 +402,10 @@ what is its own.
   in a space (a prompt line) have the room after them less by that letter.
 
 - **The page head.** Icon, title (24/700) and one short role line in
-  `sub`, on the top line. Home's head is the profile. An overlay (File,
+  `sub`, on the top line, and one line at every width: the role is cut
+  short where it runs out of room, and a phone has the name alone, so what
+  stands under the head (a sign-in card, a page's parts) starts at the same
+  place on every page. Home's head is the profile. An overlay (File,
   Server) has no page head: it is laid over the page whose head is there.
   A step within a page that stands in the page's place (Server's gear, a
   repo shown in Server) has the same head: its title, a line in `sub`, and

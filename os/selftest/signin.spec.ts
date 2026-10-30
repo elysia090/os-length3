@@ -135,3 +135,18 @@ test('a device\'s code that cannot be used says what that means, and another is 
   await app.page.getByRole('button', {name: 'Type another code'}).click();
   await expect(app.page.getByRole('textbox', {name: 'The device\'s code'})).toBeVisible();
 });
+
+test('signed out, the sign-in card stands at one place on Remote and Inbox, wide or narrow', async ({app}) => {
+  const card = app.main.getByRole('region', {name: 'Sign in'});
+  for (const [width, height] of [[1280, 800], [1024, 768], [390, 844]]) {
+    await app.page.setViewportSize({width, height});
+    const at: Record<string, {x: number; y: number; width: number}> = {};
+    for (const place of ['remote', 'inbox'] as const) {
+      await app.rail.go(place);
+      await expect(card).toBeVisible();
+      const box = (await card.boundingBox())!;
+      at[place] = {x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width)};
+    }
+    expect(at.inbox, `${width} wide`).toEqual(at.remote);
+  }
+});
