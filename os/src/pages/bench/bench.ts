@@ -107,6 +107,50 @@ function measured(work: HTMLElement, side: HTMLElement, screen: HTMLElement, box
   roomy.observe(work);
 }
 
+/**
+ * The pane's Prompt head on the file heads' line, as this computer sets the two faces. The styles put it there for
+ * one face (bench-2.css); the faces are the system's, and one whose letters stand higher or lower in their line moves
+ * the words a pixel or two off it. Once the head is at rest where the two are meant to be level (the pane out,
+ * nothing over the Prompt, a file's head at the top of the center), the difference is measured and taken up by
+ * --head-nudge: again when the faces load, and when the head has moved (the pane, a file opened beside).
+ */
+function levelled(work: HTMLElement, termHome: HTMLElement, main: HTMLElement) {
+  let nudge = 0;
+  let found = false;
+  /** Where a line of text in `el` stands: its baseline. */
+  const baseline = (el: Element) => {
+    const m = document.createElement('span');
+    m.style.cssText = 'display: inline-block; width: 0; height: 0';
+    el.append(m);
+    const y = m.getBoundingClientRect().bottom;
+    m.remove();
+    return y;
+  };
+  const level = () => {
+    const head = termHome.querySelector('.term-box h2');
+    const file = work.querySelector('.col.active section.file > .path > span');
+    if (!head || !file || !work.isConnected || work.classList.contains('pane-closed') || work.classList.contains('pane-moving')) return;
+    if (!work.querySelector(':scope > .side > .plugins[hidden]') || termHome.getAnimations().length) return;
+    const off = baseline(file) - baseline(head);
+    // A head scrolled away, or one not on the top line: nothing to level with.
+    if (Math.abs(off) > 6) return;
+    found = true;
+    if (Math.abs(off) < .25) return;
+    nudge += off;
+    work.style.setProperty('--head-nudge', `${nudge.toFixed(2)}px`);
+  };
+  termHome.addEventListener('transitionend', (e) => { if (e.target === termHome && e.propertyName === 'margin-top') level(); });
+  void document.fonts?.ready.then(level);
+  // Until a file's head has been there to level with, each change under the center is a chance (after it is drawn).
+  let soon = 0;
+  const first = new MutationObserver(() => {
+    if (found) { first.disconnect(); return; }
+    cancelAnimationFrame(soon);
+    soon = requestAnimationFrame(level);
+  });
+  first.observe(main, {childList: true, subtree: true});
+}
+
 /** A bench put together round `main`, a page's content (Forge's, Git's): its box, the Prompt, the right pane, the keys. */
 export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(path: string, line?: number, write?: Writing): void;
   /** A conversation's word in the pane pressed: open it in Inbox. */
@@ -147,6 +191,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   work.append(bar, center, side);
   const pane = new Pane(work, side, toggle);
   measured(work, side, screenEl, box, reference);
+  levelled(work, termHome, parts.main);
   requestAnimationFrame(() => { work.dataset.shown = '1'; });
 
   document.addEventListener('keydown', (event) => {

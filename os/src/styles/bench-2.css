@@ -20,9 +20,9 @@
 .work.bench > .side:has(> .plugins[hidden]) { grid-template-rows: 0 minmax(0, 1fr); }
 /* Its head's words stand on the file heads' line: their baseline, the one of a box s3 under the center's top (the
    Prompt's words larger, so it sits a step higher); side by side, under the boxes' own heads, as far down as they
-   go, at the pace they go. */
-.work.bench > .side:has(> .plugins[hidden]) > .term-home { margin-top: calc(-1 * var(--s1)); transition: margin-top var(--move) var(--land); }
-.work.bench.split-on > .side:has(> .plugins[hidden]) > .term-home { margin-top: calc(28px - var(--s3)); }
+   go, at the pace they go. --head-nudge: what the system's faces put off that line, measured (bench.ts levelled). */
+.work.bench > .side:has(> .plugins[hidden]) > .term-home { margin-top: calc(-1 * var(--s1) + var(--head-nudge, 0px)); transition: margin-top var(--move) var(--land); }
+.work.bench.split-on > .side:has(> .plugins[hidden]) > .term-home { margin-top: calc(28px - var(--s3) + var(--head-nudge, 0px)); }
 /* The pane stands on the ground, as the rail does, and is cut from the work by the line the rail is: the same
    weight, in ink, from the top line to the foot, so the center reads at once as the thing framed between the two.
    It goes with the pane (put away, no pane, no line). */
