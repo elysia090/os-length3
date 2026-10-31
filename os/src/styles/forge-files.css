@@ -57,9 +57,10 @@
    size it last had once it has been seen (auto), at a file's least before: Forge brought back over a big repo lays
    out what is on screen, not every file of it (360 files: 125–150 ms to 7). What it holds is painted only within
    it then, but for its head's ground (.path's shadow, 2 corners above it and 1 beside), which reaches past it: the
-   room past it is a clip's margin, which holds only for a box that clips (overflow: clip; it was 0 without, the
-   shadow cut at the box's inner edge, and its sides showed above a stuck head as the file scrolled). */
-.file { content-visibility: auto; contain-intrinsic-size: auto var(--file-min); overflow: clip; overflow-clip-margin: calc(2 * var(--r-place)); }
+   room past it is a clip's margin, which holds only for a box that clips (overflow: clip), and only as a plain length:
+   twice --r-place, written out (the browser takes no calc() there, and a margin it does not take is 0: the shadow was
+   cut at the box's inner edge, and its sides showed above a stuck head as the file scrolled). */
+.file { content-visibility: auto; contain-intrinsic-size: auto var(--file-min); overflow: clip; overflow-clip-margin: 24px; }
 .file > .path { margin: 0 -1px; background: var(--paper); border: 1px solid; border-color: inherit; border-bottom: 0; border-radius: var(--r-place) var(--r-place) 0 0; }
 /* The sheet with the keyboard: its edge in ink, nothing drawn round it. */
 .file:focus-within { border-color: var(--ink); }
