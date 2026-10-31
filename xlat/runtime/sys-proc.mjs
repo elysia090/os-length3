@@ -314,8 +314,8 @@ export const PROC_CALLS = {
   },
   97(resource, limit) { this.view.setBigInt64(N(limit), -1n, true); this.view.setBigInt64(N(limit) + 8, -1n, true); return 0; },
   98(who, usage) { this.bytes.fill(0, N(usage), N(usage) + 144); return 0; },
-  99(info) { // sysinfo: the memory a process may have, what the kernel's processes hold of it, how many there are
-    const at = N(info), v = this.view, total = 4n << 30n, used = BigInt(this.kernel.memoryBytes());
+  99(info) { // sysinfo: the machine's memory (machine.mjs), what the kernel's processes hold of it, how many there are
+    const at = N(info), v = this.view, total = BigInt(this.kernel.machine.memory), used = BigInt(this.kernel.memoryBytes());
     this.bytes.fill(0, at, at + 112);
     v.setBigInt64(at, BigInt(Math.floor(performance.now() / 1000)), true); // uptime
     v.setBigUint64(at + 32, total, true); // totalram

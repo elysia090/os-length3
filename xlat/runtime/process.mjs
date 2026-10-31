@@ -20,6 +20,7 @@
 //     kernel through Atomics: preempted by the host, as a Linux thread is.
 
 import {Fpu} from './fpu.mjs';
+import {machine} from './machine.mjs';
 import {mountProc} from './procfs.mjs';
 import {Description, FdTable} from './fd.mjs';
 import {E, FsError, Vfs, loadedFiles} from './fs.mjs';
@@ -177,8 +178,10 @@ export class Kernel {
    * vfs: the filesystem. translate(bytes) -> wasm bytes for an ELF.
    * console: {write(fd, bytes), read(n) -> Uint8Array | null (nothing yet), ready?(), interactive?}.
    */
-  constructor({vfs = new Vfs(), translate, console, keeper = null}) {
+  constructor({vfs = new Vfs(), translate, console, keeper = null, machine: host = machine()}) {
     this.vfs = vfs;
+    // The memory and storage the host says it has (machine.mjs): what meminfo, sysinfo and statfs tell programs.
+    this.machine = host;
     this.translate = translate;
     // Translations kept from earlier runs, by a root file's origin (pack.mjs): {has(origin), take(origin)}. take gives
     // {module, segments, size, more} once read, null when it cannot be had, or undefined while it is being read

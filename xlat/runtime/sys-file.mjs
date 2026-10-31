@@ -302,6 +302,28 @@ function writeData(p, d, data, offset = null) {
   fail(E.BADF);
 }
 
+/**
+ * struct statfs for the filesystem `at` is on, as large as the machine's storage is and as free (machine.mjs): /proc
+ * is proc's, /dev a tmpfs, and the rest the root as it is, read-only files under the ones written (an overlay).
+ */
+function writeStatfs(p, buf, at) {
+  const BLOCK = 4096, m = p.kernel.machine;
+  const s = m.storage() ?? {total: m.memory, free: Math.max(0, m.memory - p.kernel.memoryBytes())};
+  const type = /^\/proc(\/|$)/.test(at) ? 0x9fa0 : /^\/dev(\/|$)/.test(at) ? 0x01021994 : 0x794c7630;
+  const v = p.view, blocks = BigInt(Math.floor(s.total / BLOCK)), free = BigInt(Math.floor(s.free / BLOCK));
+  p.bytes.fill(0, buf, buf + 120);
+  v.setBigInt64(buf, BigInt(type), true); // f_type
+  v.setBigInt64(buf + 8, BigInt(BLOCK), true); // f_bsize
+  v.setBigUint64(buf + 16, blocks, true); // f_blocks
+  v.setBigUint64(buf + 24, free, true); // f_bfree
+  v.setBigUint64(buf + 32, free, true); // f_bavail
+  v.setBigUint64(buf + 40, blocks, true); // f_files: an inode a block at most
+  v.setBigUint64(buf + 48, free, true); // f_ffree
+  v.setBigInt64(buf + 64, 255n, true); // f_namelen
+  v.setBigInt64(buf + 72, BigInt(BLOCK), true); // f_frsize
+  return 0;
+}
+
 const writeFrom = (p, d, address, length, offset = null) => writeData(p, d, p.bytes.subarray(address, address + length), offset);
 function descriptor(p, fd) {
   const d = p.fds.get(N(fd));
@@ -821,8 +843,12 @@ export const FILE_CALLS = {
     const [a, m] = timespecs(this, ts);
     return setTimes(timed(this, dirfd, name, !(N(flags) & AT.SYMLINK_NOFOLLOW)), a, m);
   },
-  137(name, buf) { this.bytes.fill(0, N(buf), N(buf) + 120); return 0; },
-  138(fd, buf) { this.bytes.fill(0, N(buf), N(buf) + 120); return 0; },
+  137(name, buf) { // statfs: the filesystem the path is on (it must be there)
+    const at = path(this, name);
+    this.kernel.vfs.lookup(at, this.cwd);
+    return writeStatfs(this, N(buf), at.startsWith('/') ? at : `${this.cwd}/${at}`);
+  },
+  138(fd, buf) { return writeStatfs(this, N(buf), descriptor(this, fd).path ?? '/'); }, // fstatfs
   217(fd, buf, count) { return getdents(this, fd, buf, count); },
   257(dirfd, name, flags, mode) { return openAt(this, dirfd, name, flags, mode); },
   258(dirfd, name, mode) { return makeDir(this, dirfd, name, mode); },

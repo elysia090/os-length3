@@ -68,7 +68,7 @@ export function mountProc(kernel) {
   const cpus = Math.max(1, Math.min(64, globalThis.navigator?.hardwareConcurrency ?? 1));
   const ticks = (ms) => Math.floor(ms * HZ / 1000);
   const uptime = () => (performance.now() - booted) / 1000;
-  const total = 4 * 2 ** 30;
+  const total = kernel.machine.memory; // the machine's (machine.mjs)
   const caller = () => kernel.current?.proc ?? kernel.procs.get(1);
   const live = () => [...kernel.procs.values()];
 
