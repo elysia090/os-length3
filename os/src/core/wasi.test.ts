@@ -266,6 +266,44 @@ test('what changed is said by path, once; a snapshot restores everything', () =>
   assert.equal(decoder.decode(other.read('/data/w/y/z')), '4');
 });
 
+test('a file kept apart from its bytes is read in once, when they are first wanted; emptied, never', () => {
+  const kept = new Map([['/data/a', '1'], ['/data/b', '22'], ['/data/c', '333'], ['/data/d', '4444']].map(([p, t]) => [p, encoder.encode(t)]));
+  const t = {atime: 1n, mtime: 1n, ctime: 1n};
+  const h = host();
+  const asked: string[] = [];
+  h.fs.loader = (p) => { asked.push(p); return kept.get(p) ?? null; };
+  h.fs.restore([{path: '/data', kind: 'dir', ...t}, ...[...kept].map(([path, b]) => ({path, kind: 'file' as const, size: b.length, ...t}))]);
+  // Listed and stat-ed from what was kept of it, nothing read.
+  assert.deepEqual(h.fs.snapshot().length, 5);
+  asked.length = 0;
+  const fresh = new MemoryFS();
+  fresh.loader = h.fs.loader;
+  fresh.restore([{path: '/data', kind: 'dir', ...t}, ...[...kept].map(([path, b]) => ({path, kind: 'file' as const, size: b.length, ...t}))]);
+  assert.equal(decoder.decode(fresh.read('/data/b')), '22');
+  assert.equal(decoder.decode(fresh.read('/data/b')), '22');
+  assert.deepEqual(asked, ['/data/b']);
+  // Read in ahead (a repo's files before a call on it): the loader is not asked.
+  fresh.fill('/data/c', kept.get('/data/c')!);
+  assert.equal(decoder.decode(fresh.read('/data/c')), '333');
+  assert.deepEqual(asked, ['/data/b']);
+  // Emptied and written over, what it held is never read; moved, its bytes go with it, read from where they were kept.
+  const w = host(fresh);
+  const fd = w.fdOf(w.open('data/a', 8, {write: true}));
+  w.write(fd, 'new');
+  w.w.fd_close(fd);
+  w.rename('data/d', 'data/e');
+  const changes = fresh.flush();
+  assert.deepEqual(asked, ['/data/b', '/data/d']);
+  assert.equal(decoder.decode(changes.put.find((e) => e.path === '/data/a')!.data), 'new');
+  assert.equal(decoder.decode(changes.put.find((e) => e.path === '/data/e')!.data), '4444');
+  // Gone from where it was kept: an I/O error, not bytes made up.
+  const gone = new MemoryFS();
+  gone.loader = () => null;
+  gone.restore([{path: '/x', kind: 'file', size: 3, ...t}]);
+  assert.equal(gone.read('/x'), undefined);
+  assert.throws(() => gone.bytes(gone.root.entries.get('x') as never), (e: {code?: number}) => e.code === E.IO);
+});
+
 // ---- the core itself, as the browser runs it ----
 
 const wasm = (() => {

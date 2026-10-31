@@ -118,7 +118,7 @@ function started(): Worker {
   // Another tab's core wrote: what this tab shows is read again.
   if (typeof BroadcastChannel === 'function') {
     new BroadcastChannel('length3-core').onmessage = (e: MessageEvent<{from?: string; paths?: string[]}>) => {
-      if (e.data?.from !== tab) for (const fn of [...heard]) fn(e.data?.paths ?? []);
+      if (e.data?.from !== tab) { sharing.clear(); for (const fn of [...heard]) fn(e.data?.paths ?? []); }
     };
   }
   return worker = w;
@@ -131,8 +131,28 @@ function started(): Worker {
  */
 export function start(): void { started(); }
 
+/**
+ * What only reads and changes nothing a read sees: asked again while the same is on its way (Home and its pane each
+ * list the repos as they draw), it is answered by the one asked first, each asker given its own copy.
+ */
+const SHARED = new Set([...ANYWHERE, 'remote_status', 'agents', 'history_changes']);
+const sharing = new Map<string, Promise<Answer>>();
+
 /** Ask the core in this tab's worker: sent once this turn of the page is done asking, with what else it asked. */
-export const ask: Ask = (name, args) => new Promise<Answer>((resolve, reject) => {
+export const ask: Ask = (name, args) => {
+  // Anything else may change what a read sees: a read asked after it is its own, never one asked before it.
+  if (!SHARED.has(name)) { sharing.clear(); return asked(name, args); }
+  const key = `${name}\n${JSON.stringify(args)}`;
+  const was = sharing.get(key);
+  if (was) return was.then((a) => structuredClone(a));
+  const p = asked(name, args);
+  sharing.set(key, p);
+  const done = () => { if (sharing.get(key) === p) sharing.delete(key); };
+  p.then(done, done);
+  return p;
+};
+
+const asked: Ask = (name, args) => new Promise<Answer>((resolve, reject) => {
   started();
   const id = next++;
   waiting.set(id, {resolve, reject});

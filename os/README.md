@@ -613,7 +613,9 @@ A repo, its history, the Remote's sync and Home's settings are the core's
 (`core/src/api.rs`): the app asks it through one Tauri command, and a page
 asks the very same code, built for `wasm32-wasip1`, in a worker of its own
 (`src/core/worker.ts`, `src/core/wasi.ts`) over files the browser keeps in
-IndexedDB. A page calls `core(name, args)` (`src/app/host.ts`) either way and
+IndexedDB: what a listing needs of each file at once, its bytes when the core
+first wants them (`src/core/loader.ts`, read while the core waits, a repo
+read whole when a call goes over all of it). A page calls `core(name, args)` (`src/app/host.ts`) either way and
 gets the same answers, the Remote's refusals included. Tabs of one browser
 take turns under one Web Lock and tell each other each file they wrote.
 Tests run it too: `src/testing/node-core.ts` is the same module in a Node worker,

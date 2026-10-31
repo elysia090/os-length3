@@ -39,13 +39,17 @@ export class Exit extends Error {
 
 interface Times { ino: number; nlink: number; atime: bigint; mtime: bigint; ctime: bigint }
 interface Dir extends Times { kind: 'dir'; entries: Map<string, Node>; parent: Dir; name: string }
-export interface File extends Times { kind: 'file'; data: Uint8Array; size: number }
+/**
+ * A file: its bytes, or (`data` null) where they are kept, read in the first time they are wanted (MemoryFS.bytes),
+ * so what a page never opens is never read.
+ */
+export interface File extends Times { kind: 'file'; data: Uint8Array | null; size: number; kept?: string }
 export interface Link extends Times { kind: 'link'; target: string }
 export type Node = Dir | File | Link;
 
-/** One node as it is kept: by its path from `/`. */
+/** One node as it is kept: by its path from `/`; a file kept with its bytes, or only its `size` (its bytes kept apart). */
 export interface Entry {
-  path: string; kind: Node['kind']; data?: Uint8Array; target?: string;
+  path: string; kind: Node['kind']; data?: Uint8Array; size?: number; target?: string;
   atime: bigint; mtime: bigint; ctime: bigint;
 }
 
@@ -65,6 +69,10 @@ export class MemoryFS {
   private last = 0n;
   private changed = new Set<Node>();
   private gone = new Set<string>();
+  /** The files not read in yet, by where their bytes are kept. */
+  private unread = new Map<string, File>();
+  /** Reads the bytes kept at a path, there and then (core/worker.ts: from IndexedDB); null when none are. */
+  loader: ((kept: string) => Uint8Array | null) | null = null;
 
   constructor() {
     this.root = this.makeDir();
@@ -85,6 +93,34 @@ export class MemoryFS {
     return d;
   }
   private makeFile(): File { return {kind: 'file', data: new Uint8Array(0), size: 0, ...this.times()}; }
+
+  /** The bytes of `file`, read in from where they are kept the first time they are wanted. */
+  bytes(file: File): Uint8Array {
+    if (file.data) return file.data;
+    const got = file.kept !== undefined && this.loader ? this.loader(file.kept) : null;
+    // Gone from where it was kept (another tab let it go meanwhile): no bytes to give, and none made up.
+    if (!got) return fail(E.IO);
+    this.readIn(file, got);
+    return got;
+  }
+
+  /** `bytes` are the file kept at `kept`, read in ahead of its being wanted (a repo's files before a call on it). */
+  fill(kept: string, bytes: Uint8Array) {
+    const file = this.unread.get(kept);
+    if (file && !file.data) this.readIn(file, bytes);
+  }
+
+  /** Where files not read in yet are kept, under `prefix`. */
+  unreadUnder(prefix: string): string[] {
+    return [...this.unread.keys()].filter((k) => k.startsWith(prefix));
+  }
+
+  private readIn(file: File, bytes: Uint8Array) {
+    if (file.kept !== undefined) this.unread.delete(file.kept);
+    file.data = bytes;
+    file.size = bytes.length;
+    file.kept = undefined;
+  }
 
   /** The path of `dir` from `/`. */
   pathOf(dir: Dir): string {
@@ -258,21 +294,24 @@ export class MemoryFS {
   }
 
   private room(file: File, size: number) {
-    if (size <= file.data.length) return;
-    const data = new Uint8Array(Math.max(size, file.data.length * 2, 64));
-    data.set(file.data.subarray(0, file.size));
+    const was = this.bytes(file);
+    if (size <= was.length) return;
+    const data = new Uint8Array(Math.max(size, was.length * 2, 64));
+    data.set(was.subarray(0, file.size));
     file.data = data;
   }
 
   truncate(file: File, size: number) {
-    if (size < file.size) file.data.fill(0, size, file.size); else this.room(file, size);
+    // Emptied, what it held is never read in to be thrown away.
+    if (size === 0 && !file.data) { if (file.kept !== undefined) this.unread.delete(file.kept); file.data = new Uint8Array(0); file.kept = undefined; }
+    else if (size < file.size) this.bytes(file).fill(0, size, file.size); else this.room(file, size);
     file.size = size;
     this.touch(file);
   }
 
   writeAt(file: File, at: number, bytes: Uint8Array) {
     this.room(file, at + bytes.length);
-    file.data.set(bytes, at);
+    this.bytes(file).set(bytes, at);
     file.size = Math.max(file.size, at + bytes.length);
     this.touch(file);
   }
@@ -283,7 +322,7 @@ export class MemoryFS {
   read(path: string): Uint8Array | undefined {
     try {
       const n = this.resolve(this.root, path, true).node;
-      return n?.kind === 'file' ? n.data.slice(0, n.size) : undefined;
+      return n?.kind === 'file' ? this.bytes(n).slice(0, n.size) : undefined;
     } catch { return undefined; }
   }
 
@@ -316,7 +355,7 @@ export class MemoryFS {
 
   private entry(path: string, n: Node): Entry {
     const e: Entry = {path, kind: n.kind, atime: n.atime, mtime: n.mtime, ctime: n.ctime};
-    if (n.kind === 'file') e.data = n.data.slice(0, n.size);
+    if (n.kind === 'file') e.data = this.bytes(n).slice(0, n.size);
     if (n.kind === 'link') e.target = n.target;
     return e;
   }
@@ -333,6 +372,7 @@ export class MemoryFS {
     this.root = this.makeDir();
     this.changed.clear();
     this.gone.clear();
+    this.unread.clear();
     for (const e of [...entries].sort((x, y) => (x.path < y.path ? -1 : x.path > y.path ? 1 : 0))) {
       const parts = e.path.split('/').filter((p) => p);
       const name = parts.pop();
@@ -349,12 +389,18 @@ export class MemoryFS {
       const node: Node = e.kind === 'dir'
         ? (old?.kind === 'dir' ? Object.assign(old, {atime: e.atime, mtime: e.mtime, ctime: e.ctime}) : {kind: 'dir', entries: new Map(), parent: dir, name, ...t})
         : e.kind === 'file'
-          ? {kind: 'file', data: new Uint8Array(e.data ?? []), size: e.data?.length ?? 0, ...t}
+          ? (e.data ? {kind: 'file', data: new Uint8Array(e.data), size: e.data.length, ...t} : this.keptAt(e.path, e.size ?? 0, t))
           : {kind: 'link', target: e.target ?? '', ...t};
       dir.entries.set(name, node);
       if (e.mtime > this.last) this.last = e.mtime;
     }
     this.changed.clear();
+  }
+
+  private keptAt(path: string, size: number, t: Times): File {
+    const file: File = {kind: 'file', data: null, size, kept: path, ...t};
+    this.unread.set(path, file);
+    return file;
   }
 
   /** Whether anything changed since the last flush. */
@@ -660,7 +706,7 @@ export class WASI {
     let read = 0;
     for (const iov of this.iovs(iovs, n)) {
       const k = Math.max(0, Math.min(iov.length, node.size - at));
-      iov.set(node.data.subarray(at, at + k));
+      iov.set(this.fs.bytes(node).subarray(at, at + k));
       at += k;
       read += k;
       if (k < iov.length) break;
