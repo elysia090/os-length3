@@ -1,6 +1,6 @@
-/* The tokens every value comes from (DESIGN.md §3): colours, faces, sizes, spaces, corners, the pace of moves, the
+/* The tokens every value comes from (DESIGN.md §2): colours, faces, sizes, spaces, corners, the pace of moves, the
    pointers. */
-/* Tokens and components from DESIGN.md §3. Every value below comes from a
+/* Tokens and components from DESIGN.md §2 and §3. Every value below comes from a
    token; nothing is set by eye in one place only. Six colours, 1px lines,
    no shadows, blur, glow or gradients, but in the one place that is a thing of
    its own: the Prompt up as a screen, a terminal's (its glass and light below).

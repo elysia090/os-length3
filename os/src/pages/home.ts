@@ -93,9 +93,13 @@ function homePane(main: HTMLElement, ctx: Context): HTMLElement {
   // neither is squeezed as the pane narrows or widens.
   let moving: Animation | null = null;
   const held = () => {
-    if (!rightPaneOpen() || layout.classList.contains('pane-moving') || !side.offsetWidth) return;
-    pane.style.setProperty('--side-held', `${side.offsetWidth}px`);
-    pane.style.setProperty('--search-held', `${reference.search.offsetWidth}px`);
+    // Both read before either is written (a write between would have the page laid out again for the second read),
+    // and written only when changed: the side resized as the first page fills in is heard many times.
+    const w = side.offsetWidth, s = reference.search.offsetWidth;
+    if (!rightPaneOpen() || layout.classList.contains('pane-moving') || !w) return;
+    const sw = `${w}px`, ss = `${s}px`;
+    if (pane.style.getPropertyValue('--side-held') !== sw) pane.style.setProperty('--side-held', sw);
+    if (pane.style.getPropertyValue('--search-held') !== ss) pane.style.setProperty('--search-held', ss);
   };
   new ResizeObserver(held).observe(side);
   const paint = () => {
@@ -154,9 +158,11 @@ function lately(ctx: Context): HTMLElement {
       const goOn = () => ctx.openRepo(left.repo, left.path, left.at === null ? 'end' : {at: left.at});
       rows.push(latelyRow(shownName(left.path), t('{repo} · Continue where you left off', {repo: left.repo}), {quote, place: left.repo, badge: 'file', go: goOn}));
     }
-    const all = connection() ? await servers.servers().catch(() => []) : [];
+    // The servers and the conversations asked at once: neither waits on the other (one round to the Remote, not two).
+    const [all, threads] = connection()
+      ? await Promise.all([servers.servers().catch(() => []), inbox.threads().catch(() => [])])
+      : [[], []];
     if (connection()) {
-      const threads = await inbox.threads().catch(() => []);
       for (const th of waiting(threads, 3)) {
         const who = th.name || inbox.shown(th.address);
         const answer = () => { openConversation(th.address); void ctx.go('inbox'); };

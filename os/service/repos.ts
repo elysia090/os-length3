@@ -710,7 +710,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
 
   // As git log: from the line's head along first parents, so a work's history goes on into main's
   // from where it began. One walk in the database, each step one lookup of the repo's commits by their
-  // key. Each commit says what it changed from its parent (files, folders: 0007's cut_change); with
+  // key. Each commit says what it changed from its parent (files, folders: 0009's cut_change); with
   // ?summary=1 that is all, and no tree is read or sent (a client that compares trees itself asks without).
   /** The most of the log's trees one answer holds, as the database keeps them (compressed). */
   const TREES_AT_ONCE = 8 << 20;

@@ -17,17 +17,17 @@ function texts(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-test('every English text has its Japanese', () => {
+test('every English text has its Japanese', async () => {
   const all = [...new Set(texts(new URL('.', import.meta.url).pathname))];
-  assert.deepEqual(missing(all), []);
+  assert.deepEqual(await missing(all), []);
 });
 
-test('English by default; Japanese when chosen; placeholders filled in either', () => {
+test('English by default; Japanese when chosen; placeholders filled in either', async () => {
   assert.equal(t('{n} min ago', {n: 3}), '3 min ago');
-  setLang('ja');
+  await setLang('ja');
   assert.equal(t('{n} min ago', {n: 3}), '3分前');
   assert.equal(t('a text nobody translated'), 'a text nobody translated');
-  setLang('en');
+  await setLang('en');
   assert.equal(tn('{n} file', '{n} files', 1), '1 file');
 });
 
@@ -54,7 +54,7 @@ test('no Japanese is written outside the catalog', () => {
 const MACHINE = new Set(['not signed in', 'not from the app', 'a list of digests', 'at most 64 digests', 'a diff', 'a cut', 'verdict', 'a value and its version',
   'a signal', 'too many', 'an item', 'done', 'a place', 'a post', 'private, servers or everyone']);
 
-test('every error the Remote can answer with has its Japanese', () => {
+test('every error the Remote can answer with has its Japanese', async () => {
   const dir = new URL('../service/', import.meta.url).pathname;
   const said: string[] = [], unread: string[] = [];
   for (const name of readdirSync(dir)) {
@@ -68,7 +68,7 @@ test('every error the Remote can answer with has its Japanese', () => {
   }
   assert.ok(said.length > 50, String(said.length));
   assert.deepEqual(unread, []);
-  assert.deepEqual(missing([...new Set(said)].filter((s) => !MACHINE.has(s))), []);
+  assert.deepEqual(await missing([...new Set(said)].filter((s) => !MACHINE.has(s))), []);
 });
 
 // How Japanese is written beside Latin words and numbers (DESIGN.md §1).
@@ -96,14 +96,14 @@ test('each English text has one Japanese', () => {
   assert.deepEqual(twice, []);
 });
 
-test('a name is a space apart from Japanese only when it is Latin', () => {
-  setLang('ja');
+test('a name is a space apart from Japanese only when it is Latin', async () => {
+  await setLang('ja');
   assert.equal(t('To members of {server}', {server: '旅行'}), '旅行のメンバーへ');
   assert.equal(t('To members of {server}', {server: 'trip'}), 'trip のメンバーへ');
   assert.equal(t('To members of {server}', {server: 'trip42'}), 'trip42 のメンバーへ');
   assert.equal(t('To members of {server}', {server: '42'}), '42のメンバーへ');
   assert.equal(t('{n} new posts', {n: 3}), '新しい投稿：3件');
-  setLang('en');
+  await setLang('en');
   assert.equal(t('To members of {server}', {server: 'trip'}), 'To members of trip');
 });
 

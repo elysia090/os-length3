@@ -1,9 +1,10 @@
 import {h} from '../../ui/dom.ts';
 import {t} from '../../i18n.ts';
 import {connection} from '../../remote/connection.ts';
-import type {Me} from '../../remote/inbox.ts';
+import {me, type Me} from '../../remote/inbox.ts';
 import * as servers from '../../remote/servers.ts';
 import {boardNew, onNews} from '../../remote/news.ts';
+import {openNext} from '../inbox.ts';
 import {arrive, panAcross, paced, pop, stage} from '../../ui/glide.ts';
 import {errorText} from '../../app/errors.ts';
 import {pageHead} from '../common.ts';
@@ -74,7 +75,7 @@ export class ServerView {
     this.work = h('div', {class: 'work no-strip'}, center, this.side.element, h('div', {class: 'server-bar'}, this.band.gear));
     // Signed out, whose a board is is not told: there is no right pane, and so no line where it would start.
     if (!signedIn) { this.side.element.hidden = true; this.work.classList.add('no-side'); }
-    this.myself = signedIn ? import('../../remote/inbox.ts').then((inbox) => inbox.me()).catch(() => null) : Promise.resolve(null);
+    this.myself = signedIn ? me().catch(() => null) : Promise.resolve(null);
     this.hear();
     const held = servers.heldInvite();
     void (signedIn ? this.readServers(held) : this.readOpen(held));
@@ -417,6 +418,7 @@ export class ServerView {
 
   /** Someone else pressed: a conversation with them, in the Inbox. */
   private write(address: string) {
-    void import('../inbox.ts').then((m) => { m.openNext(address); this.ways.ctx.go('inbox'); });
+    openNext(address);
+    void this.ways.ctx.go('inbox');
   }
 }

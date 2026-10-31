@@ -1,6 +1,6 @@
 import {day, h} from '../../ui/dom.ts';
 import {t, tn} from '../../i18n.ts';
-import {shown as named, shownAs} from '../../remote/inbox.ts';
+import {lookup, send, shown as named, shownAs, threads} from '../../remote/inbox.ts';
 import * as servers from '../../remote/servers.ts';
 import {deed, parts, type Parts} from '../common.ts';
 import {every} from '../../app/runs.ts';
@@ -172,16 +172,15 @@ function addSomeone(r: Read): HTMLElement {
   // Its word starts where the people's names start, at the card's own padding (not in its middle).
   const add = h('button', {type: 'button', class: 'card small-card new add-someone'}, t('Add contact')) as HTMLButtonElement;
   add.addEventListener('click', async () => {
-    const inbox = await import('../../remote/inbox.ts');
     let known: {address: string}[] = [], why = '';
-    try { known = (await inbox.threads()).filter((x) => x.state === 'contact' && !r.people.some((p) => p.address === x.address)); } catch (e) { why = errorText(e); }
+    try { known = (await threads()).filter((x) => x.state === 'contact' && !r.people.some((p) => p.address === x.address)); } catch (e) { why = errorText(e); }
     const typed = h('input', {class: 'line-in', placeholder: t('Username or code'), 'aria-label': t('Enter username or invite code'),
       autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
     const said = h('p', {class: 'muted small', role: 'status'});
     const ways: servers.AddWays = {
-      lookup: (x) => inbox.lookup(x),
+      lookup: (x) => lookup(x),
       add: (id, address) => servers.addPerson(id, address),
-      ask: (address, body, server) => inbox.send(address, body, 'message', {server}),
+      ask: (address, body, server) => send(address, body, 'message', {server}),
     };
     const go = addByName(r, typed, said, ways);
     const pick = h('div', {class: 'card small-card add-card'}, h('span', {class: 'card-title'}, t('Add contact')),

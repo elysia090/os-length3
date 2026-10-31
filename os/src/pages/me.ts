@@ -77,7 +77,7 @@ export class Me {
           : [item(t('Sign in'), to('remote'))])),
         // The language is Home's setting, so l3 speaks the same one.
         group(t('Language'), ...(this.choosing
-          ? LANGS.map((l) => item(l.name, () => { this.choosing = false; setLang(l.id); void setState('lang', JSON.stringify(l.id)); }, l.id === currentLang()))
+          ? LANGS.map((l) => item(l.name, () => { this.choosing = false; void setLang(l.id); void setState('lang', JSON.stringify(l.id)); }, l.id === currentLang()))
           : [now()])));
     };
     /** The language in use; pressed, the list in its place, the menu staying out. */

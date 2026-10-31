@@ -538,10 +538,10 @@ const invitation = inviteIn(location.hash);
 if (invitation) holdInvite(invitation.board, invitation.code);
 if (entering || invitation) history.replaceState(null, '', location.pathname + location.search);
 if (asking.has('device')) {
-  void loadState().finally(() => { useLang(getState('lang')); document.body.replaceChildren(devicePage(asking.get('user_code') ?? '')); });
+  void loadState().finally(async () => { await useLang(getState('lang')); document.body.replaceChildren(devicePage(asking.get('user_code') ?? '')); });
 } else {
   void loadState().finally(async () => {
-    useLang(getState('lang'));
+    await useLang(getState('lang'));
     if (entering) await enterWith(decodeURIComponent(entering));
     // Back from a provider: take up the session it made, then go on where the person began (the page they signed
     // in from is the one kept; Remote's page offers a passkey next, and a tier chosen signed out goes on to Checkout).
@@ -600,7 +600,7 @@ if (asking.has('device')) {
 }
 window.addEventListener('focus', () => {
   // Not before the first page is drawn (the window comes back focused from a provider before it is chosen).
-  void loadState().then(() => { useLang(getState('lang')); if (!opened) return; if (current === 'home') render(); else me.paint(); });
+  void loadState().then(() => { void useLang(getState('lang')); if (!opened) return; if (current === 'home') render(); else me.paint(); });
 });
 // An invitation's link opened in a tab already showing the app (pasted into its address) changes only
 // the fragment: it is taken the same way, and Server's page opens afresh at its board.

@@ -516,15 +516,19 @@ export function stage(root: HTMLElement, dir: number) {
     }
   };
   run();
-  requestAnimationFrame(() => requestAnimationFrame(run));
-  // What is put in or shown while it arrives is heard as it is (before it is painted), for as long as the arrival
-  // lasts; figures counting up change only their words, and are not heard.
+  // What is put in or shown while it arrives is heard as it is, before it is painted, for as long as the arrival
+  // lasts: once a frame, however many times the page changed in it (each change read alone measured the whole page
+  // again, the first page's parts arriving in a dozen pieces), just before the frame is drawn. Figures counting up
+  // change only their words, and are not heard.
+  let soon = 0;
+  const again = () => { if (!soon) soon = requestAnimationFrame(() => { soon = 0; run(); }); };
+  requestAnimationFrame(() => requestAnimationFrame(again));
   const heard = new MutationObserver((ms) => {
-    if (ms.some((m) => m.type === 'attributes' || [...m.addedNodes].some((n) => n.nodeType === Node.ELEMENT_NODE))) run();
+    if (ms.some((m) => m.type === 'attributes' || [...m.addedNodes].some((n) => n.nodeType === Node.ELEMENT_NODE))) again();
   });
   heard.observe(root, {childList: true, subtree: true, attributes: true, attributeFilter: ['hidden', 'class']});
   // Ended by the next page come to: what it still had coming stands where it is, for the next to stage.
-  const end = () => { heard.disconnect(); for (const a of moving.values()) a.cancel(); moving.clear(); if (arriving === end) arriving = null; };
+  const end = () => { heard.disconnect(); cancelAnimationFrame(soon); for (const a of moving.values()) a.cancel(); moving.clear(); if (arriving === end) arriving = null; };
   arriving = end;
   // It lasts as long as its parts' turns do, on their clock.
   const over = () => { heard.disconnect(); if (arriving === end) arriving = null; };

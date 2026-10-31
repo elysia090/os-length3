@@ -216,7 +216,7 @@ export const cut = pgTable('cut', {
   time: moment('time').defaultNow().notNull(),
   /**
    * What it changed from its (first) parent: how many files, and their folders in path order. Set by
-   * the database as the commit is made (0007: cut_change), so the log names them without its trees.
+   * the database as the commit is made (0009: cut_change), so the log names them without its trees.
    */
   files: integer('files'),
   folders: text('folders').array(),

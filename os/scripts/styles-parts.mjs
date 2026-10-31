@@ -10,7 +10,7 @@
  * shorter. A class marked ^ is a place: a rule with it on any compound is the place's, whatever its subject is.
  */
 export const PARTS = [
-  {name: 'tokens', about: 'The tokens every value comes from (DESIGN.md §3): colours, faces, sizes, spaces, corners, the pace of moves, the pointers.', classes: []},
+  {name: 'tokens', about: 'The tokens every value comes from (DESIGN.md §2): colours, faces, sizes, spaces, corners, the pace of moves, the pointers.', classes: []},
   {name: 'base', about: 'The page and its elements as the OS has them everywhere: boxes, fields, the pointer, scrollbars, focus, words said quietly or small.',
     classes: ['muted', 'small', 'icon', 'sr-only', 'mono', 'kept', 'grow']},
   {name: 'shared', about: 'Rules about many parts at once: the three states every pressable thing has and its touch, a pane\'s heads, what scrolls in its own turn.', classes: []},

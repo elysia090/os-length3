@@ -6,7 +6,7 @@
 -- The expand step. The Worker before reads and writes draft until the new one answers: what it writes is laid on the
 -- rows here (line_draft_rows), and once the new Worker has changed a line, the Worker before can no more read or write
 -- that line's draft (it is null, and a write to it is refused as the database busy: its client tries again, and meets
--- the new Worker). The contract step (0023) drops draft and all this.
+-- the new Worker). The contract step (0024) drops draft and all this.
 CREATE TABLE "line_file" (
 	"repo_id" bigint NOT NULL,
 	"line" text NOT NULL,
