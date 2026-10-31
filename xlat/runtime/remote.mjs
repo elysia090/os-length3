@@ -299,7 +299,14 @@ export class RemoteTask extends Task {
     this.i32[CH.REPLY] = REPLY.SEND_REGS;
     Atomics.store(this.i32, CH.STATE, 2);
     rouse(this.i32, CH.STATE, CH.ASLEEP);
-    while (Atomics.load(this.i32, CH.STATE) !== 1) Atomics.wait(this.i32, CH.STATE, 2, 1);
+    // It answers as it asks (cpu.mjs ask): its channel's word set, the kernel's door rung. So it is watched for, then
+    // slept for on the door, never on its own word, which no one notifies (a millisecond's timeout each time, before).
+    const door = this.kernel.door;
+    for (;;) {
+      const seen = Atomics.load(door, 0);
+      if (watch(this.i32, CH.STATE, (state) => state === 1)) break;
+      sleep(door, 0, seen, 1);
+    }
     Atomics.store(this.i32, CH.STATE, 3);
   }
   reg(n) { if (n) this.regs(); return this.i64[CH.REGS + n]; }

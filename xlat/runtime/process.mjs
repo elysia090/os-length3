@@ -19,6 +19,7 @@
 //     memory shared (SharedArrayBuffer) and system calls made to this
 //     kernel through Atomics: preempted by the host, as a Linux thread is.
 
+import {zero} from './bulk.mjs';
 import {Fpu} from './fpu.mjs';
 import {machine} from './machine.mjs';
 import {mountProc} from './procfs.mjs';
@@ -337,7 +338,7 @@ export class Kernel {
     m.keeps = same(m);
     PROFILE.memoriesReused++;
     if (m.keeps) PROFILE.imagesKept++;
-    zeroExcept(new Uint8Array(m.buffer), 0, Math.min(m.dirty, pages * WASM_PAGE), m.keeps ? image.facts.readOnly ?? [] : []);
+    zeroExcept(m, 0, Math.min(m.dirty, pages * WASM_PAGE), m.keeps ? image.facts.readOnly ?? [] : []);
     this.reuseMemory(m);
     return m;
   }
@@ -883,8 +884,8 @@ function gaps(from, to, keep) {
   if (at < to) out.push([at, to]);
   return out;
 }
-/** Zero [from, to) of `bytes` but for the ranges `keep`. */
-function zeroExcept(bytes, from, to, keep) { for (const [a, b] of gaps(from, to, keep)) bytes.fill(0, a, b); }
+/** Zero [from, to) of `memory` but for the ranges `keep`. */
+function zeroExcept(memory, from, to, keep) { for (const [a, b] of gaps(from, to, keep)) zero(memory, a, b); }
 /** Whether data segment `s` ({offset, bytes}) lies within one of `ranges`. */
 const within = (s, ranges = []) => ranges.some(([a, b]) => s.offset >= a && s.offset + s.bytes.length <= b);
 
@@ -959,7 +960,7 @@ export class Process {
       const r = this.free[k];
       this.free.splice(k, 1);
       if (r.length > length) this.free.push({start: r.start + length, length: r.length - length});
-      this.bytes.fill(0, r.start, r.start + length);
+      zero(this.memory, r.start, r.start + length);
       return r.start;
     }
     const start = this.mapEnd;
@@ -978,7 +979,7 @@ export class Process {
       this.memory.grow(Math.min(65536 - have, Math.max(Math.ceil(need / WASM_PAGE), Math.min(have >> 3, 256))));
     }
     // A memory another process used: what it left past the mapped part goes as that part grows over it.
-    if (this.mapEnd < this.memory.dirty) this.bytes.fill(0, this.mapEnd, Math.min(end, this.memory.dirty));
+    if (this.mapEnd < this.memory.dirty) zero(this.memory, this.mapEnd, Math.min(end, this.memory.dirty));
     this.mapEnd = Math.max(this.mapEnd, end);
   }
 

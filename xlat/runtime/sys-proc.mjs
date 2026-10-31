@@ -3,6 +3,7 @@
 // thread and `this.call` the call ({nr, args, next, state}: state lasts
 // while the call waits and is made again).
 
+import {move, zero} from './bulk.mjs';
 import {E, File, FsError} from './fs.mjs';
 import {Exec, Exit, Wait} from './process.mjs';
 import {CLD, SIG, send, writeInfo} from './signal.mjs';
@@ -225,7 +226,7 @@ export const PROC_CALLS = {
     if (fixed) {
       this.unmapShared(start, length);
       if (start >= this.mapBase) this.cover(start + length);
-      this.bytes.fill(0, start, start + length);
+      zero(this.memory, start, start + length);
       if (start < this.mapBase) this.fixed.push({start, length});
     }
     if (d) {
@@ -251,7 +252,7 @@ export const PROC_CALLS = {
   24() { return 0; }, // sched_yield: the kernel gives another its turn first (process.mjs YIELDS)
   25(old, oldLength, newLength, flags) {
     const start = this.reserve(N(newLength));
-    this.bytes.copyWithin(start, N(old), N(old) + Math.min(N(oldLength), N(newLength)));
+    move(this.memory, start, N(old), Math.min(N(oldLength), N(newLength)));
     // A shared file mapping moves with what it maps, and grows into more of the file.
     const moved = this.maps.filter((m) => m.start === N(old));
     this.unmapShared(N(old), N(oldLength));
@@ -271,7 +272,7 @@ export const PROC_CALLS = {
     if (N(advice) !== 4 && N(advice) !== 8) return 0;
     const maps = this.sharedIn(a, N(len));
     for (const m of maps) m.node.settle(m.off, m.off + m.length, m);
-    this.bytes.fill(0, a, b);
+    zero(this.memory, a, b);
     for (const m of maps) {
       const from = Math.max(a, m.start), to = Math.min(b, m.start + m.length);
       this.bytes.set(m.node.read(m.off + from - m.start, m.off + to - m.start), from);
