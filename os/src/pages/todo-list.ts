@@ -1,6 +1,6 @@
 import {h, shortDay} from '../ui/dom.ts';
 import {t} from '../i18n.ts';
-import {getState, setState} from '../home/state.ts';
+import {getState, onState, setState} from '../home/state.ts';
 import * as todo from '../home/todo.ts';
 import {errorText} from '../app/errors.ts';
 import {arrive, closeUp, pop} from '../ui/glide.ts';
@@ -478,6 +478,14 @@ export function todoBox(): HTMLElement {
   const box = todoList(load(), (kept) => setState('todo', JSON.stringify(kept)),
     {counted: (open, all) => sayLeft(remaining, open, all), failed: (why) => { status.textContent = why; }});
   // Named TODO alone: what is left and Clear done stand on its line, at its right.
-  return h('section', {class: 'section', 'aria-labelledby': 'todo-title'},
+  const section = h('section', {class: 'section', 'aria-labelledby': 'todo-title'},
     h('h2', {}, h('span', {id: 'todo-title'}, 'TODO'), h('span', {class: 'todo-left'}, remaining, box.clear)), box.element, status);
+  // Kept elsewhere meanwhile (the Remote's, taken in as one signs in; l3; another tab): the list shows it (bug: Home
+  // drawn before the Remote's TODO came in showed none until it was drawn again).
+  const stop = onState((key, outside) => {
+    if (key !== 'todo' || !outside) return;
+    if (!section.isConnected) { stop(); return; }
+    box.update(load());
+  });
+  return section;
 }

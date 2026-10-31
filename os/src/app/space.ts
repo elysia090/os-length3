@@ -7,7 +7,7 @@
 // it is opened.
 
 import {core, isNative, readCapacity, type Freed, type Item, type Space} from './host.ts';
-import {flush, look} from '../remote/lifecycle.ts';
+import {flush, holdHome, look} from '../remote/lifecycle.ts';
 import {HOME_KEYS, syncHome} from '../remote/sync.ts';
 import {reloadState, settingName} from '../home/state.ts';
 import {store} from '../repos/repos.ts';
@@ -57,12 +57,14 @@ export async function freeOff(name: string): Promise<void> {
  * 空ける takes it (sent first, and gone only once the Remote has all of it), and Home's settings that are the person's
  * (the profile, the TODO, the dotfiles), sent first, go once they are what the Remote has (home.rs leave). Nothing the
  * Remote lacks goes: what stays is returned, each by its name with why. The Prompts that have a repo open are the
- * caller's to stop first (a browser's core does not know them).
+ * caller's to stop first (a browser's core does not know them). Home's settings are agreed no more from here on
+ * (lifecycle.ts holdHome): the caller lifts that (releaseHome) once it stays signed in, or signing out does.
  */
 export async function takeOff(): Promise<[string, string][]> {
   const repos = await store.names();
   const freed = repos.length ? await free(repos.map((r) => `repo:${r}`)) : null;
   const kept = (freed?.kept ?? []).map(([id, why]): [string, string] => [id.replace(/^repo:/, ''), why]);
+  await holdHome();
   for (const key of HOME_KEYS) {
     await syncHome(key).catch(() => {});
     if (!await core<boolean>('home_leave', {key})) kept.push([settingName(key), t('Not yet synced to Remote')]);

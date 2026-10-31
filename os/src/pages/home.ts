@@ -3,11 +3,12 @@ import {arrowKeys, h} from '../ui/dom.ts';
 import {t, tn} from '../i18n.ts';
 import {LIMITS, initials, normalize, parse, type Profile} from '../home/profile.ts';
 import {connection, myName, rename} from '../remote/connection.ts';
-import {getState, setState, settingName, unreadable} from '../home/state.ts';
+import {getState, onState, setState, settingName, unreadable} from '../home/state.ts';
 import * as servers from '../remote/servers.ts';
 import * as inbox from '../remote/inbox.ts';
 import {news, onNews} from '../remote/news.ts';
 import {onRenamed, store, type RepoSummary} from '../repos/repos.ts';
+import {homeIsHeld} from '../remote/lifecycle.ts';
 import {shownName} from '../repos/issues.ts';
 import {repoList} from './repo-list.ts';
 import {todoBox} from './todo-list.ts';
@@ -262,7 +263,11 @@ function identity(counts: HTMLElement): HTMLElement {
   void Promise.all([profile.name || myName().catch(() => ''), inbox.myUsername().catch(() => '')]).then(([called, user]) => {
     if (!called && !user) return;
     paint(called, user || profile.handle);
-    if (user && user !== profile.handle) void setState('profile', JSON.stringify({...profile, handle: user})).catch(() => {});
+    // Onto the profile as it is now, not as it was drawn (it may have come in from the Remote meanwhile, and was
+    // written over), signed in still, and not while it is being taken off this device (it came back then, after Remove
+    // from device).
+    const now = currentProfile();
+    if (user && user !== now.handle && connection() && !homeIsHeld()) void setState('profile', JSON.stringify({...now, handle: user})).catch(() => {});
   });
   return h('div', {class: 'identity'},
     name,
@@ -345,6 +350,13 @@ function profileHeader(count: HTMLElement, owner: boolean): HTMLElement {
   // Opened from the person's menu, it is drawn open: Home's arrival is the beat, and a wiggle of the face on top of
   // the page panning in would be two moves at once.
   draw(null);
+  // Kept elsewhere meanwhile (the Remote's, taken in as one signs in; l3; another tab): drawn as it is now, unless it
+  // is being written.
+  const stop = onState((key, outside) => {
+    if (key !== 'profile' || !outside) return;
+    if (!header.isConnected) { stop(); return; }
+    if (!editing) draw(null);
+  });
   return header;
 }
 

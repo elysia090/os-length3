@@ -7,6 +7,7 @@ import {initials, type Profile} from '../home/profile.ts';
 import {answers, choosePart, SETTLE} from './common.ts';
 import {errorText} from '../app/errors.ts';
 import {takeOff} from '../app/space.ts';
+import {releaseHome} from '../remote/lifecycle.ts';
 import {allSessions} from './bench/sessions.ts';
 import type {Context} from './context.ts';
 
@@ -160,13 +161,18 @@ export class Me {
         off.textContent = t('Removing from device…');
         // A Prompt holds its repo open: stopped first, as one leaving stops what they started.
         for (const [, s] of allSessions()) if (s.running) s.stop();
-        const kept = await takeOff().finally(() => { off.textContent = t('Remove from device'); });
-        if (!kept.length) { await signOut(); return true; }
-        // What could not go stays, said with why: signed out, it would be there to whoever uses this browser next.
-        said.replaceChildren(...kept.map(([what, why]) => h('p', {class: 'small'}, t('{what} retained: {why}', {what, why}))),
-          h('p', {class: 'muted small'}, t('If you sign out, local data remains accessible to subsequent browser users.')));
-        off.replaceWith(no);
-        return false;
+        try {
+          const kept = await takeOff().finally(() => { off.textContent = t('Remove from device'); });
+          if (!kept.length) { await signOut(); return true; }
+          // What could not go stays, said with why: signed out, it would be there to whoever uses this browser next.
+          said.replaceChildren(...kept.map(([what, why]) => h('p', {class: 'small'}, t('{what} retained: {why}', {what, why}))),
+            h('p', {class: 'muted small'}, t('If you sign out, local data remains accessible to subsequent browser users.')));
+          off.replaceWith(no);
+          return false;
+        } finally {
+          // Signed out, or staying signed in with what was kept: Home's settings are agreed again as they change.
+          releaseHome();
+        }
       }));
       out.replaceWith(ask);
       yes.focus();
