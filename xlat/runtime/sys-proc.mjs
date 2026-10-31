@@ -239,7 +239,13 @@ export const PROC_CALLS = {
     }
     return start;
   },
-  10() { return 0; },
+  // mprotect is not enforced. A program's read-only bytes made writable may change, so its memory is not given to the
+  // next run of it as holding them (Kernel.takeMemory).
+  10(addr, len, prot) {
+    const a = N(addr), b = a + N(len);
+    if (N(prot) & 2 && this.image?.facts.readOnly?.some(([x, y]) => a < y && x < b)) this.memory.imageOf = null;
+    return 0;
+  },
   11(addr, len) { this.unmapShared(N(addr), N(len)); this.release(N(addr), N(len)); return 0; },
   12() { return this.mapBase; }, // brk never grows; libc then uses mmap
   24() { return 0; }, // sched_yield: the kernel gives another its turn first (process.mjs YIELDS)

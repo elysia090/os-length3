@@ -17,7 +17,16 @@
 
 static sigjmp_buf out;
 static volatile int ticks;
-static void tick(int s) { (void)s; if (++ticks == 3) siglongjmp(out, 1); }
+// The third tick ends it: the timer stopped and its signal ignored first, so one that came while this ran (a loaded
+// machine's) is let go, not taken once the jump unblocks it.
+static void tick(int s) {
+  (void)s;
+  if (++ticks < 3) return;
+  struct itimerval off = {{0, 0}, {0, 0}};
+  setitimer(ITIMER_REAL, &off, 0);
+  signal(SIGALRM, SIG_IGN);
+  siglongjmp(out, 1);
+}
 
 static long deep(long n) { volatile char pad[48]; pad[0] = (char)n; return n ? deep(n - 1) + pad[0] % 5 : 0; }
 
@@ -28,8 +37,6 @@ int main(void) {
   setitimer(ITIMER_REAL, &t, 0);
   volatile uint64_t spin = 0;
   if (!sigsetjmp(out, 1)) for (;;) spin++;
-  struct itimerval off = {{0, 0}, {0, 0}};
-  setitimer(ITIMER_REAL, &off, 0);
   printf("ticks %d, spun %s\n", ticks, spin > 0 ? "yes" : "no");
 
   // 50000 frames: a host stack holds far fewer of its own.

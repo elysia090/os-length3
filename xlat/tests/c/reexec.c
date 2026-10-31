@@ -1,7 +1,9 @@
 // A program its first translation cannot see into (built stripped, without relocations: what it calls through
 // pointers is found only as it runs), run again and again: exec'd anew three times, forking a child each time. The
 // code it reaches later is gathered into one module once it runs again (Kernel.consolidate), and a process takes the
-// memory one before it let go of (Kernel.takeMemory): what it computes is the same throughout.
+// memory one before it let go of (Kernel.takeMemory): what it computes is the same throughout. The first run goes on
+// after a child of it has run it again (and so gathered it), calling functions it had not reached: those are still
+// translated for it, the first translation it runs on.
 // xlat: stripped
 #include <stdio.h>
 #include <stdlib.h>
@@ -80,7 +82,21 @@ static volatile int pick = 1; // the table is read through this, so no call is d
 int main(int argc, char **argv) {
   int round = argc > 1 ? atoi(argv[1]) : 0;
   unsigned long s = 0x9e3779b97f4a7c15ul + round;
-  for (int k = 0; k < 64; k++) s = table[(k * pick * 17) % 64](s);
+  if (argc > 1 && !strcmp(argv[1], "again")) {
+    for (int k = 0; k < 64; k++) s = table[k](s);
+    printf("again %lx\n", s);
+    return 0;
+  }
+  // The first run reaches 48 of them, has a child run it again, then reaches the other 16.
+  int first = round == 0 ? 48 : 64;
+  for (int k = 0; k < first; k++) s = table[(k * pick * 17) % 64](s);
+  if (round == 0) {
+    fflush(stdout);
+    pid_t again = fork();
+    if (again == 0) { execl("/proc/self/exe", argv[0], "again", (char *)0); _exit(1); }
+    waitpid(again, 0, 0);
+    for (int k = first; k < 64; k++) s = table[(k * pick * 17) % 64](s);
+  }
   static char heap_check[1 << 16];
   for (unsigned i = 0; i < sizeof heap_check; i++) if (heap_check[i]) { printf("dirty .bss\n"); return 1; }
   memset(heap_check, round + 1, sizeof heap_check);

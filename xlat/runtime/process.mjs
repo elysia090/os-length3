@@ -272,8 +272,6 @@ export class Kernel {
     PROFILE.translate += performance.now() - t; t = performance.now();
     const image = new Image(new WebAssembly.Module(wasm), () => bytes, wasm.length, segments);
     PROFILE.compile += performance.now() - t; PROFILE.images++; PROFILE.consolidated++;
-    // The translator's parsed copy of the ELF knew the old starts: code reached later starts from these.
-    this.translate.close?.(bytes);
     if (old.origin) { image.origin = old.origin; image.wasm = wasm; image.told = 0; image.mainTold = false; }
     image.file = cached;
     cached.image = image;
@@ -386,7 +384,7 @@ export class Kernel {
       if (over <= 0) break;
       this.images.delete(node);
       // (A kept translation whose file was never read has nothing open in the translator.)
-      if (e.image.opened?.() !== false) this.translate?.close?.(e.image.source());
+      if (e.image.opened?.() !== false) this.translate?.close?.(e.image.known);
       over -= e.image.size;
     }
     if (over > 0 && before.spareTranslator > 0 && this.translate?.renew?.()) over -= before.spareTranslator;
