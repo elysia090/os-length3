@@ -73,6 +73,13 @@ export class MemoryFS {
   private unread = new Map<string, File>();
   /** Reads the bytes kept at a path, there and then (core/worker.ts: from IndexedDB); null when none are. */
   loader: ((kept: string) => Uint8Array | null) | null = null;
+  /** How many times a name came into a folder or went from one: what `folder` was found in. */
+  private moved = 0;
+  /**
+   * The folder the last path's parts before its name led to, from where, while no name has come or gone since: a
+   * walk asks of each file of a folder by its whole path in turn (a lstat each), and the folder is found once.
+   */
+  private folder: {start: Dir; head: string; dir: Dir; moved: number} | null = null;
 
   constructor() {
     this.root = this.makeDir();
@@ -140,10 +147,17 @@ export class MemoryFS {
   /** `path` from `start` (from `/` when it begins with one); a link at the end is followed when `follow`. */
   resolve(start: Dir, path: string, follow: boolean, hops = {n: 0}): Found {
     if (path === '') fail(E.NOENT);
-    // One name in a folder (what a walk asks of each entry it lists): looked up at once.
-    if (!path.includes('/') && path !== '.' && path !== '..') {
+    // One name in a folder (what a walk asks of each entry it lists): looked up at once; or in the folder the last
+    // path led to.
+    const cut = path.lastIndexOf('/');
+    if (cut < 0 && path !== '.' && path !== '..') {
       const node = start.entries.get(path);
       if (node?.kind !== 'link' || !follow) return {dir: start, name: path, node, slash: false};
+    }
+    const f = this.folder, name = path.slice(cut + 1);
+    if (f && f.moved === this.moved && f.start === start && name && name !== '.' && name !== '..' && path.length - name.length - 1 === f.head.length && path.startsWith(f.head)) {
+      const node = f.dir.entries.get(name);
+      if (node?.kind !== 'link' || !follow) return {dir: f.dir, name, node, slash: false};
     }
     let dir = path.startsWith('/') ? this.root : start;
     const parts = path.split('/').filter((p) => p !== '');
@@ -162,6 +176,7 @@ export class MemoryFS {
       if (n.kind !== 'dir') return fail(E.NOTDIR);
       dir = n;
     }
+    if (cut > 0 && !slash) this.folder = {start, head: path.slice(0, cut), dir, moved: this.moved};
     const node = last === '.' ? dir : last === '..' ? dir.parent : dir.entries.get(last);
     if (node?.kind === 'link' && (follow || slash)) {
       if (++hops.n > MAX_HOPS) fail(E.LOOP);
@@ -178,6 +193,7 @@ export class MemoryFS {
   }
 
   private place(dir: Dir, name: string, node: Node) {
+    this.moved++;
     dir.entries.set(name, node);
     if (node.kind === 'dir') { node.parent = dir; node.name = name; }
     this.touch(dir);
@@ -186,6 +202,7 @@ export class MemoryFS {
 
   /** Take `name` out of `dir`; what was kept under it is gone at the next flush. */
   private takeOut(dir: Dir, name: string, node: Node) {
+    this.moved++;
     dir.entries.delete(name);
     this.touch(dir);
     const forget = (path: string, n: Node) => {
@@ -374,6 +391,7 @@ export class MemoryFS {
 
   /** Everything as `entries` say, and nothing else; nothing counts as changed after. */
   restore(entries: Entry[]) {
+    this.moved++;
     this.root = this.makeDir();
     this.changed.clear();
     this.gone.clear();
@@ -537,11 +555,13 @@ export class WASI {
 
   private stat(ptr: number, n: Node) {
     const v = this.view, at = ptr >>> 0;
+    // A number (never past 2^53) as a u64 in two words: no BigInt made for each.
+    const u64 = (to: number, x: number) => { v.setUint32(to, x >>> 0, true); v.setUint32(to + 4, Math.floor(x / 0x100000000), true); };
     this.bytes(at, 64).fill(0);
-    v.setBigUint64(at + 8, BigInt(n.ino), true);
+    u64(at + 8, n.ino);
     v.setUint8(at + 16, TYPE[n.kind]);
-    v.setBigUint64(at + 24, BigInt(n.nlink), true);
-    v.setBigUint64(at + 32, BigInt(n.kind === 'file' ? n.size : n.kind === 'link' ? encoder.encode(n.target).length : 4096), true);
+    u64(at + 24, n.nlink);
+    u64(at + 32, n.kind === 'file' ? n.size : n.kind === 'link' ? encoder.encode(n.target).length : 4096);
     v.setBigUint64(at + 40, n.atime, true);
     v.setBigUint64(at + 48, n.mtime, true);
     v.setBigUint64(at + 56, n.ctime, true);
