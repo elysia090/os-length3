@@ -56,6 +56,7 @@ function pointsAt(d) {
     case 'console': return '/dev/pts/0';
     case 'eventfd': return 'anon_inode:[eventfd]';
     case 'epoll': return 'anon_inode:[eventpoll]';
+    case 'socket': return `socket:[${d.sock.ino}]`;
     default: return `anon_inode:[${d.kind}]`;
   }
 }

@@ -274,6 +274,7 @@ const WORK = [
   ['gcc', "cd /tmp && printf 'int main(void){return 42;}\\n' > a.c && gcc a.c -o a && ./a; echo $?"],
   ['make', "cd /tmp && printf 'all:\\n\\t@echo made\\n' > Makefile && make"],
   ['ssh-keygen', "ssh-keygen -q -t ed25519 -N '' -f /tmp/k && wc -l < /tmp/k.pub"],
+  ['ssh-agent over a local socket', 'eval $(ssh-agent -s) >/dev/null && ssh-add -l; echo "list $?"; cd /tmp && ssh-keygen -q -t ed25519 -N "" -f k && ssh-add k 2>/dev/null; ssh-add -l | cut -d" " -f1,4; ssh-agent -k >/dev/null; echo done'],
   ['apk info', "apk info 2>/dev/null | wc -l"],
   ['l3 help', "l3 help | head -n 1"],
   ['nano --help', "nano --help | head -n 1"],

@@ -86,7 +86,7 @@ export class Pipe {
 /** One open file description, shared by dup'd and inherited descriptors. */
 export class Description {
   constructor(kind, {node = null, pipe = null, flags = 0, path = ''} = {}) {
-    this.kind = kind; // file | dir | pipe-r | pipe-w | console | device | eventfd | epoll
+    this.kind = kind; // file | dir | pipe-r | pipe-w | console | device | eventfd | epoll | socket (`sock`: sys-net.mjs)
     this.node = node;
     this.pipe = pipe;
     this.flags = flags;
@@ -104,6 +104,8 @@ export class Description {
     this.closed = true;
     if (this.kind === 'pipe-r' || this.kind === 'pipe-rw') { this.pipe.readers--; this.pipe.changes++; }
     if (this.kind === 'pipe-w' || this.kind === 'pipe-rw') { this.pipe.writers--; this.pipe.changes++; }
+    // A local socket's last descriptor gone: it is closed (sys-net.mjs).
+    if (this.kind === 'socket') this.sock.close();
   }
 }
 

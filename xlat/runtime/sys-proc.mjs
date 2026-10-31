@@ -397,11 +397,6 @@ export const PROC_CALLS = {
     crypto.getRandomValues(this.bytes.subarray(N(buf), N(buf) + n));
     return n;
   },
-  // The network boundary: a Prompt in a browser has no network and no sockets of
-  // any family (internet, netlink, local), so a program is told the family is not
-  // there, as a host without it says, not that the call does not exist.
-  41() { fail(E.AFNOSUPPORT); }, // socket
-  53() { fail(E.AFNOSUPPORT); }, // socketpair
   334() { fail(E.NOSYS); }, // rseq
   435() { fail(E.NOSYS); }, // clone3: libc falls back to clone
 };

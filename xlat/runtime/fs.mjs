@@ -3,7 +3,7 @@
 // (a host directory, an archive, browser storage) on first read.
 
 export const S_IFMT = 0o170000, S_IFDIR = 0o040000, S_IFREG = 0o100000, S_IFLNK = 0o120000, S_IFCHR = 0o020000,
-  S_IFIFO = 0o010000;
+  S_IFIFO = 0o010000, S_IFSOCK = 0o140000;
 
 let inodes = 1;
 
@@ -204,6 +204,11 @@ export class Link extends Node {
 /** A named pipe (mkfifo): what its opens share is one pipe, made afresh once every end of the last is closed. */
 export class Fifo extends Node {
   constructor(mode = 0o644) { super(S_IFIFO | mode); this.pipe = null; this.size = 0; }
+}
+
+/** A local socket's name (bind on a path): what connect finds there is the socket bound to it, while it is open. */
+export class SocketName extends Node {
+  constructor(mode = 0o755) { super(S_IFSOCK | mode); this.endpoint = null; this.size = 0; }
 }
 
 export class Device extends Node {

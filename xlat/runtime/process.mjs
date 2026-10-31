@@ -26,6 +26,7 @@ import {mountProc} from './procfs.mjs';
 import {Description, FdTable} from './fd.mjs';
 import {E, FsError, Vfs, loadedFiles} from './fs.mjs';
 import {FILE_CALLS} from './sys-file.mjs';
+import {NET_CALLS} from './sys-net.mjs';
 import {PROC_CALLS} from './sys-proc.mjs';
 import {lay, prepare} from './share.mjs';
 import {CLD, SA, SIG, SIGNAL_CALLS, Pending, SI, actionOf, bit, deliverable, send, take} from './signal.mjs';
@@ -35,7 +36,7 @@ const WASM_PAGE = 65536;
 const STACK_BYTES = 8 << 20;
 const GUARD = 1 << 16;
 
-const CALLS = {...FILE_CALLS, ...PROC_CALLS, ...SIGNAL_CALLS};
+const CALLS = {...FILE_CALLS, ...PROC_CALLS, ...NET_CALLS, ...SIGNAL_CALLS};
 const dec = new TextDecoder(), enc = new TextEncoder();
 
 /** How long a thread runs before another that can run gets a turn (checked at the calls in YIELDS). */

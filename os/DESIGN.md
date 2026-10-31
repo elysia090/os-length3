@@ -1522,8 +1522,13 @@ encrypted with the same secret; nothing reads it.
 
 What leaves this system is kept to what is said here:
 
-- **Network.** The Prompt's guests have no sockets: every socket call answers
-  "not implemented", so a program in it can reach nothing. The page itself
+- **Network.** The Prompt's guests have no network: a socket of any family but
+  the local one is refused as a host without that family refuses it
+  (EAFNOSUPPORT), so a program in it can reach nothing. Local sockets (AF_UNIX:
+  socketpair, a name on a path or in the abstract namespace, descriptors passed
+  between processes) are its own processes' channels, inside its kernel
+  (xlat/runtime/sys-net.mjs), as a machine with no network still has them;
+  xlat/tests/boundary.test.mjs holds the line. The page itself
   may reach its own origin, the Remote and, for the box's Agent, the APIs of
   the models' makers whose keys it knows (agent/makers.ts), nothing else: the
   web build carries that Content-Security-Policy, and the desktop's (Tauri's)

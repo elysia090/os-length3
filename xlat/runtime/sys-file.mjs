@@ -4,8 +4,9 @@
 // results, or Wait for a call to be made again once something changed.
 
 import {Description, PIPE_BUF, Pipe} from './fd.mjs';
+import * as net from './sys-net.mjs';
 import {procDescriptor} from './procfs.mjs';
-import {Dir, Device, E, Fifo, File, FsError, Link, S_IFIFO} from './fs.mjs';
+import {Dir, Device, E, Fifo, File, FsError, Link, S_IFCHR, S_IFDIR, S_IFIFO, S_IFLNK, S_IFSOCK} from './fs.mjs';
 import {Wait} from './process.mjs';
 import {SIG, SI, UNBLOCKABLE, actionOf, bit, deliverable, send} from './signal.mjs';
 
@@ -57,6 +58,8 @@ function writeStat(p, address, node) {
 }
 
 const UTIME_NOW = (1 << 30) - 1, UTIME_OMIT = (1 << 30) - 2;
+/** A directory entry's type (d_type) by its node's: DT_DIR, DT_LNK, DT_CHR, DT_FIFO, DT_SOCK; else DT_REG. */
+const DT = {[S_IFDIR]: 4, [S_IFLNK]: 10, [S_IFCHR]: 2, [S_IFIFO]: 1, [S_IFSOCK]: 12};
 
 /** The file a time-setting call names: by its path from `dirfd`, or the descriptor itself (a NULL or empty path). */
 function timed(p, dirfd, name, follow) {
@@ -104,6 +107,7 @@ function describe(d) {
   // Something to stat for a descriptor without a node.
   if (d.node) return d.node;
   if (d.kind === 'pipe-r' || d.kind === 'pipe-w' || d.kind === 'pipe-rw') return {mode: S_IFIFO | 0o600, ino: 0, nlink: 1, uid: 0, gid: 0, mtime: Date.now(), isFile: false, isDir: false, isLink: false};
+  if (d.kind === 'socket') return net.stat(d);
   return {mode: 0o020620, ino: 0, nlink: 1, uid: 0, gid: 0, rdev: 0x8800, mtime: Date.now(), isFile: false, isDir: false, isLink: false};
 }
 
@@ -245,6 +249,7 @@ function readTo(p, d, into, at, length, offset = null) {
       return data.length;
     }
     case 'dir': fail(E.ISDIR);
+    case 'socket': return net.read(p, d, into, at, length);
   }
   fail(E.BADF);
 }
@@ -291,6 +296,7 @@ function writeData(p, d, data, offset = null) {
       return 8;
     }
     case 'device': return d.node.writeDevice(data);
+    case 'socket': return net.write(p, d, data);
     case 'file': {
       if ((d.flags & 3) === 0) fail(E.BADF);
       const at = offset ?? (d.flags & O.APPEND ? d.node.size : d.offset);
@@ -434,7 +440,7 @@ function getdents(p, fd, buf, count) {
     v.setBigUint64(at, BigInt(node.ino), true);
     v.setBigInt64(at + 8, BigInt(d.offset + 1), true);
     v.setUint16(at + 16, reclen, true);
-    v.setUint8(at + 18, node.isDir ? 4 : node.isLink ? 10 : node instanceof Device ? 2 : 8);
+    v.setUint8(at + 18, DT[node.type] ?? 8);
     p.bytes.set(bytes, at + 19);
     p.bytes.fill(0, at + 19 + bytes.length, at + reclen);
     at += reclen;
@@ -487,6 +493,7 @@ function readiness(p, d) {
     case 'console': r = (p.kernel.console.ready?.() ? POLL.IN : 0) | POLL.OUT; break;
     case 'eventfd': r = (d.event.count ? POLL.IN : 0) | (d.event.count < 0xfffffffffffffffen ? POLL.OUT : 0); break;
     case 'epoll': r = epollReady(p, d, 1).length ? POLL.IN : 0; break;
+    case 'socket': r = net.ready(d); break;
     default: r = POLL.IN | POLL.OUT;
   }
   if (r & POLL.IN) r |= POLL.RDNORM;
@@ -495,7 +502,7 @@ function readiness(p, d) {
 }
 
 /** A counter that moves whenever `d`'s readiness may have (epoll's edge). */
-const changes = (p, d) => d.pipe?.changes ?? d.event?.changes ?? (d.kind === 'console' ? p.kernel.inputs ?? 0 : 0);
+const changes = (p, d) => (d.kind === 'socket' ? net.changes(d) : d.pipe?.changes ?? d.event?.changes ?? (d.kind === 'console' ? p.kernel.inputs ?? 0 : 0));
 
 /** The calling thread's mask is `set` while the call waits (ppoll, pselect6, epoll_pwait), as rt_sigsuspend does. */
 function swapMask(p, address) {
@@ -663,7 +670,7 @@ function ioctl(p, d, request, arg) {
   }
   if (r === 0x5451 || r === 0x5450) return 0; // FIOCLEX, FIONCLEX (the table's: done by fcntl too)
   if (r === 0x541b) { // FIONREAD
-    const n = d.kind === 'pipe-r' || d.kind === 'pipe-rw' ? d.pipe.size : d.kind === 'console' ? k.console.pending?.() ?? 0 : d.kind === 'file' ? Math.max(0, d.node.size - d.offset) : null;
+    const n = d.kind === 'pipe-r' || d.kind === 'pipe-rw' ? d.pipe.size : d.kind === 'socket' ? net.pending(d) : d.kind === 'console' ? k.console.pending?.() ?? 0 : d.kind === 'file' ? Math.max(0, d.node.size - d.offset) : null;
     if (n === null) fail(E.NOTTY);
     v.setInt32(arg, n, true);
     return 0;
@@ -759,7 +766,7 @@ export const FILE_CALLS = {
   271(fds, count, spec, mask) { return poll(this, fds, count, timespecMs(this, N(spec)) ?? -1, N(mask)); },
   8(fd, offset, whence) {
     const d = descriptor(this, fd);
-    if (d.kind === 'pipe-r' || d.kind === 'pipe-w' || d.kind === 'pipe-rw' || d.kind === 'console') fail(E.SPIPE);
+    if (d.kind === 'pipe-r' || d.kind === 'pipe-w' || d.kind === 'pipe-rw' || d.kind === 'socket' || d.kind === 'console') fail(E.SPIPE);
     if (d.kind === 'dir') { if (N(offset) === 0 && N(whence) === 0) { d.offset = 0; return 0; } fail(E.INVAL); }
     const start = [0, d.offset, d.node.size ?? 0][N(whence)];
     if (start === undefined || start + N(offset) < 0) fail(E.INVAL);

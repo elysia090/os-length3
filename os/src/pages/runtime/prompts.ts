@@ -104,7 +104,7 @@ function runningCard(repo: string, s: Session): HTMLElement {
   const on = s.on !== 'root' ? 'l3' : s.preparing ? `root · ${t('Provisioning (.packages, .setup)')} · ${processes}` : `root · ${processes}`;
   const lines: (string | Node)[] = [[on, s.memory ? bytes(s.memory) : ''].filter(Boolean).join(' · ')];
   if (s.freed !== null) lines.push(t('Freed {size}', {size: bytes(s.freed)}));
-  // Only the root's Prompt can have a network: in a browser its programs have no sockets at all.
+  // Only the root's Prompt can have a network: in a browser its programs have none (their sockets are local, between themselves).
   let el: HTMLElement | null = null;
   if (s.on === 'root') lines.push(networkSwitch(repo, s, () => el!));
   // 空ける sits at the left as it does on every card (Remote's off one too); Stop at the right.
