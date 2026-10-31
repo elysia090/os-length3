@@ -124,8 +124,20 @@ function open(): Promise<IDBDatabase | null> {
   return database;
 }
 
+/**
+ * Each read of what is kept is waited for to its transaction's end, not only its answer: the core may be called right
+ * after, in the same task, and wait for its loader; a transaction of this worker still open then would hold a write
+ * (another worker's) back, which the loader's read waits behind, and none of them ended (bug: the tab's reader, called
+ * as its read of the nodes answered, waited out PATIENCE as the tab's worker kept a change, and a file just written
+ * was taken as unreadable).
+ */
+async function whole<T>(tx: IDBTransaction, r: IDBRequest<T>): Promise<T> {
+  return (await Promise.all([asked(r), finished(tx)]))[0];
+}
+
 async function generation(db: IDBDatabase): Promise<number> {
-  return (await asked(db.transaction(META).objectStore(META).get(GENERATION)) as number | undefined) ?? 0;
+  const tx = db.transaction(META);
+  return (await whole(tx, tx.objectStore(META).get(GENERATION)) as number | undefined) ?? 0;
 }
 
 /** Every node as kept (a file's bytes left where they are, unless they cannot be read later), and the generation. */
@@ -135,6 +147,7 @@ async function readAll(db: IDBDatabase): Promise<{entries: Entry[]; generation: 
     asked(tx.objectStore(NODES).getAll() as IDBRequest<Entry[]>),
     asked(tx.objectStore(META).get(GENERATION) as IDBRequest<number | undefined>),
     lazily ? null : asked(tx.objectStore(DATA).getAll() as IDBRequest<{path: string; data: Uint8Array}[]>),
+    finished(tx),
   ]);
   if (bytes) {
     const by = new Map(bytes.map((b) => [b.path, b.data]));
@@ -142,6 +155,13 @@ async function readAll(db: IDBDatabase): Promise<{entries: Entry[]; generation: 
   }
   return {entries, generation: g ?? 0};
 }
+
+/**
+ * This worker's change being kept in IndexedDB. The core is not called meanwhile (run): one waiting for its loader
+ * would hold back the very events that end the write, while the loader's read of DATA waits for the write to end (as
+ * `whole` has it for reads).
+ */
+let keeping: Promise<void> = Promise.resolve();
 
 async function keep(db: IDBDatabase, changes: Changes, g: number) {
   const tx = db.transaction([NODES, DATA, META], 'readwrite');
@@ -152,7 +172,9 @@ async function keep(db: IDBDatabase, changes: Changes, g: number) {
     else { nodes.put(e); data.delete(e.path); }
   }
   tx.objectStore(META).put(g, GENERATION);
-  await finished(tx);
+  const done = finished(tx);
+  keeping = done.catch(() => {});
+  await done;
 }
 
 // ---- a file's bytes, read when the core first wants them (core/loader.ts) ----
@@ -234,7 +256,10 @@ function ask(question: {path: string} | {under: string}): Uint8Array | null {
   loader.postMessage({...question, seq});
   for (;;) {
     const left = until - performance.now();
-    if (left <= 0 || Atomics.wait(ctl!, 0, waiting, left) === 'timed-out') return null;
+    if (left <= 0 || Atomics.wait(ctl!, 0, waiting, left) === 'timed-out') {
+      console.warn('length3: what is kept did not come in time; taken as unreadable:', 'path' in question ? question.path : `${question.under}…`);
+      return null;
+    }
     const now = Atomics.load(ctl!, 0);
     // An answer to a question given up on before: not this one's. Waited past, unless this one's came meanwhile.
     if (now >>> 3 !== (seq & 0xfffffff)) { Atomics.compareExchange(ctl!, 0, now, waiting); continue; }
@@ -269,7 +294,8 @@ async function readInRepos(db: IDBDatabase | null, list: {name: string; args: un
   for (const repo of repos) {
     const under = `${root}/${repo}/`;
     if (!fs.unreadUnder(under).length) continue;
-    const got = await asked(db.transaction(DATA).objectStore(DATA).getAll(IDBKeyRange.bound(under, `${under}\uffff`)) as IDBRequest<{path: string; data: Uint8Array}[]>);
+    const tx = db.transaction(DATA);
+    const got = await whole(tx, tx.objectStore(DATA).getAll(IDBKeyRange.bound(under, `${under}\uffff`)) as IDBRequest<{path: string; data: Uint8Array}[]>);
     for (const g of got) fs.fill(g.path, g.data);
   }
 }
@@ -302,6 +328,7 @@ const said = (e: unknown) => (e instanceof Error ? e.message || e.name : String(
 
 /** The core's answer; a trap (a panic is one) ends the instance, the files it wrote being outside it. */
 async function run(name: string, args: unknown): Promise<Answer> {
+  await keeping;
   readSingly.clear();
   try {
     return (await instance()).call(name, args);
