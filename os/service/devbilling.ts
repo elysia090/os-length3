@@ -25,6 +25,7 @@
 // reaches Stripe. A card number is never kept or written anywhere: only its
 // brand and last four digits, as Stripe shows them.
 
+import {readFileSync} from 'node:fs';
 import {Hono} from 'hono';
 import {PAID, TIER_NAME, TIERS, isTier, type Tier} from './plan.ts';
 import {sign, STRIPE_VERSION, type Change, type Price, type StripeApi} from './stripe.ts';
@@ -242,14 +243,14 @@ export function devBilling(base: string, secret: string, origins: string[], deli
     return new Response(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title><style>${CSS}</style>${body}${script ? `<script nonce="${nonce}">${script}</script>` : ''}</html>`, {status, headers: {
       'Content-Type': 'text/html; charset=utf-8',
-      'Content-Security-Policy': `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; connect-src 'self'; form-action 'self' ${origins.join(' ')}; frame-ancestors 'none'; base-uri 'none'`,
+      'Content-Security-Policy': `default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; connect-src 'self'; form-action 'self' ${origins.join(' ')}; frame-ancestors 'none'; base-uri 'none'`,
       'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer'}});
   };
   /** The two columns, as Stripe's Checkout and portal have them: what it is about at the left, what is done at the right. */
   const page = (left: string, right: string, extra = '') => `<div class="page${extra}"><div class="side"><div class="col">${left}</div></div>
 <div class="main"><div class="col">${right}</div></div></div>`;
   const head = (to: string, label: string) => `<div class="head"><a class="back" href="${esc(to)}" aria-label="${esc(label)}"><span aria-hidden="true">&larr;</span>
-<span class="logo" aria-hidden="true">l3</span><span>length3</span></a><span class="badge">Test mode</span></div>`;
+<img class="logo" src="${ICON}" alt=""><span>length3</span></a><span class="badge">Test mode</span></div>`;
   const fine = '<p class="standin">A stand-in for Stripe on this machine, in test mode: nothing is charged, and nothing leaves it.</p>';
   const gone = (what: string) => html('Expired', page(head(origins[0], 'Back to length3'),
     `<h1 class="h">This ${what} has expired</h1><p class="muted">Go back to length3 and start again.</p><a class="pay link" href="${esc(origins[0])}">Back to length3</a>`), '', 404);
@@ -532,6 +533,8 @@ const COUNTRIES: [string, string][] = [['US', 'United States'], ['JP', 'Japan'],
  * every ring and link, corners rounded, Inter. Chosen in mock rounds among what Stripe's branding lets be set.
  */
 const LOOK = {background: '#f9f8f5', button: '#2c2a27', hover: '#45423e', font: 'Inter'};
+/** The business's icon, as Stripe shows the one uploaded to its branding beside the name: the app's own. */
+const ICON = `data:image/png;base64,${readFileSync(new URL('../src-tauri/icons/128x128.png', import.meta.url)).toString('base64')}`;
 
 // Stripe's look, branded: a page in two columns (the paper behind what is bought), fields with a light edge, the ring and the button the brand's.
 const CSS = `*{box-sizing:border-box}
@@ -545,7 +548,7 @@ p{margin:0}
 .head{display:flex;align-items:center;gap:12px;margin-bottom:36px}
 .back{display:inline-flex;align-items:center;gap:8px;color:#1a1a1a;text-decoration:none;font-weight:500;border-radius:6px;padding:2px 4px;margin-left:-4px}
 .back:hover{background:#f2f2f2}
-.logo{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#1a1a1a;color:#fff;font-size:11px;font-weight:700}
+.logo{display:block;width:28px;height:28px;border-radius:50%;object-fit:cover}
 .badge{display:inline-block;background:#ffde92;color:#bb5504;font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;padding:2px 6px;border-radius:4px}
 .what{color:#6d6e78;font-size:16px;font-weight:500;margin-bottom:4px}
 .price{display:flex;align-items:center;gap:8px;font-size:36px;font-weight:600;letter-spacing:-.02em;margin-bottom:32px}
