@@ -461,8 +461,6 @@ pub fn discover_within(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>, budget: 
     // Starts are looked up in `known` where they are, not copied: it holds every function a large program has reached.
     let mut starts: BTreeSet<u64> = seeds.iter().copied().filter(|a| elf.is_code(*a) && !known.contains(a)).collect();
     let mut done: BTreeMap<u64, Vec<Block>> = BTreeMap::new();
-    // The cases of each function's switches: reached only through their tables, so entries of the translation.
-    let mut cases_of: BTreeMap<u64, Vec<u64>> = BTreeMap::new();
     let after = |set: &BTreeSet<u64>, a: u64| set.range(a + 1..).next().copied().unwrap_or(u64::MAX);
     let before = |set: &BTreeSet<u64>, a: u64| set.range(..a).next_back().copied();
     loop {
@@ -472,17 +470,9 @@ pub fn discover_within(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>, budget: 
             let end = after(known, start).min(after(&starts, start));
             // The range ends at the next start of either set, so nothing inside it is a start: no lookup per
             // instruction. Nor are data references wanted (they find jump tables when the whole program is walked).
-            let (mut blocks, mut calls) = walk(elf, start, end, &[], &|_| false, None);
-            // With the cases its switches jump to (each case may hold another switch).
-            let mut cases: Vec<u64> = Vec::new();
-            for _ in 0..8 {
-                let more: Vec<u64> = switch_targets(elf, &blocks, start, end).into_iter().filter(|t| !cases.contains(t)).collect();
-                if more.is_empty() { break; }
-                cases.extend(more);
-                cases.sort_unstable();
-                (blocks, calls) = walk(elf, start, end, &cases, &|_| false, None);
-            }
-            cases_of.insert(start, cases);
+            // Nor the cases of its switches: a compiler's are hundreds, of which a run takes a few (each is reached
+            // later as it is taken).
+            let (blocks, calls) = walk(elf, start, end, &[], &|_| false, None);
             found.extend(calls.into_iter().filter(|t| elf.is_code(*t) && !known.contains(t) && !starts.contains(t)));
             done.insert(start, blocks);
         }
@@ -505,7 +495,6 @@ pub fn discover_within(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>, budget: 
             if let Some(b) = function.block_index(address) { entries.entry(address).or_insert((f, b as u32)); }
         };
         mark(start);
-        for &c in cases_of.get(&start).into_iter().flatten() { mark(c); }
         for (k, b) in function.blocks.iter().enumerate() {
             if let Exit::Call { ret, .. } | Exit::IndirectCall { ret } = b.exit { mark(ret); }
             // A loop's head: where a thread that has run long is taken back to the kernel, and goes on later.
@@ -523,7 +512,7 @@ pub fn discover_within(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>, budget: 
 /// The program's code from its entry, its function symbols and what its relocations point at: what a running program
 /// has translated first, the rest being reached later (`discover_within`).
 pub fn discover(elf: &Elf) -> Program {
-    walk_program(elf, &elf.relocation_targets, elf.symbols.is_empty(), &[], true)
+    walk_program(elf, &elf.relocation_targets, elf.symbols.is_empty(), &[], Follow::Calls)
 }
 
 /// Exactly the functions starting at `seeds` (with the entry and the named ones): what the program's runs have
@@ -532,7 +521,7 @@ pub fn discover(elf: &Elf) -> Program {
 /// table. A call to a function past these is not followed (it is reached later, as before): following them all
 /// would translate much of a large program no run has reached.
 pub fn discover_seeded(elf: &Elf, seeds: &[u64]) -> Program {
-    walk_program(elf, &elf.relocation_targets, false, seeds, false)
+    walk_program(elf, &elf.relocation_targets, false, seeds, Follow::Not)
 }
 
 /// The whole program, ahead of time: as `discover`, and where no function of its own is named (stripped, or only a
@@ -544,12 +533,25 @@ pub fn discover_whole(elf: &Elf) -> Program {
     targets.sort_unstable();
     targets.dedup();
     let named = elf.symbols.iter().any(|s| s.function && elf.is_code(s.value));
-    walk_program(elf, &targets, !named, &[], true)
+    walk_program(elf, &targets, !named, &[], Follow::Everything)
+}
+
+/// What a walk of the program goes on to from what it has walked.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Follow {
+    /// Only code a function jumps or runs into past its range (a translation of exactly what runs reached).
+    Not,
+    /// Every function a call reaches: what a running program translates first.
+    Calls,
+    /// And every function whose address code takes (a callback passed, rip-relative or, where code is not
+    /// position-independent, as a number): the whole program, ahead of time. Not for a first translation: a
+    /// compiler's (cc1, 60,000 functions, none named) would be all of it, where a run reaches a few thousand.
+    Everything,
 }
 
 /// Walk from the entry, the symbols in code, `seeds`, and `targets` (sorted) as pointers, each one a start of its own
-/// when `pointed_start`; and from every function a call reaches, when `follow`.
-fn walk_program(elf: &Elf, targets: &[u64], pointed_start: bool, seeds: &[u64], follow: bool) -> Program {
+/// when `pointed_start`; and on as `follow` says.
+fn walk_program(elf: &Elf, targets: &[u64], pointed_start: bool, seeds: &[u64], follow: Follow) -> Program {
     let mut starts: BTreeSet<u64> = BTreeSet::from([elf.entry]);
     starts.extend(seeds.iter().copied().filter(|&a| elf.is_code(a)));
     let mut sizes = BTreeMap::new();
@@ -585,12 +587,12 @@ fn walk_program(elf: &Elf, targets: &[u64], pointed_start: bool, seeds: &[u64], 
             if guess { switches.extend(switch_targets(elf, &blocks, start, range[&start])); }
             // Not following calls, code it goes on to all the same: what it jumps or runs into past its range is code
             // the runs reached as part of it before more starts cut it there.
-            let next: Vec<u64> = if follow { calls } else { continuations(&blocks) };
+            let next: Vec<u64> = if follow == Follow::Not { continuations(&blocks) } else { calls };
             found.extend(next.into_iter().filter(|t| elf.is_code(*t) && !starts.contains(t)));
             done.insert(start, blocks);
         }
-        // Code whose address code takes (rip-relative, as a callback is passed): a function, as a pointer to it is.
-        if follow { found.extend(references.iter().copied().filter(|&a| elf.is_code(a) && !starts.contains(&a))); }
+        // Code whose address code takes (as a callback is passed): a function, as a pointer to it is.
+        if follow == Follow::Everything { found.extend(references.iter().copied().filter(|&a| elf.is_code(a) && !starts.contains(&a))); }
         let mut tables = if guess { switches } else { relative_table_targets(elf, &references) };
         tables.sort_unstable();
         tables.dedup();
