@@ -9,6 +9,10 @@
 /* Just done here (git/issue.ts), the mark lands: in from small, a touch past its size, settling; its tick drawn after. */
 .done-mark.fresh { animation: done-land calc(440ms * var(--pace)) cubic-bezier(.2, 1.5, .32, 1) both; }
 .done-mark.fresh::after { animation: tick-in calc(220ms * var(--pace)) calc(200ms * var(--pace)) ease-out both; }
+/* Done by the same deed as the step before it (a commit hands itself in): it lands once that one has, in the order the
+   work goes. */
+.done-mark.fresh.then { animation-delay: calc(260ms * var(--pace)); }
+.done-mark.fresh.then::after { animation-delay: calc(460ms * var(--pace)); }
 @keyframes done-land { from { scale: .3; opacity: 0; } }
 /* An issue closed from its box lands as its line under Closed: in from above, lit with the marker a moment. */
 .done-row.landing { animation: line-land calc(360ms * var(--pace)) var(--land) both, line-lit 1200ms ease-out; border-radius: var(--r-field); }

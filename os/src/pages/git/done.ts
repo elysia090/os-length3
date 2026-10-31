@@ -5,8 +5,8 @@ import {closedBy, numberOf, type Issue} from '../../repos/issues.ts';
 import {kindOf} from '../../repos/text.ts';
 import {answers, askFoot, SETTLE} from '../common.ts';
 import {counted, diffFiles} from '../forge/diff-view.ts';
-import {LAND, nudge, paced, still} from '../../ui/glide.ts';
-import {justClosed, justMerged, notCommitted, reopenIssue, resize, type IssueEvents, type RepoState} from './issue.ts';
+import {clock, LAND, nudge, paced, putAway, still, unfold} from '../../ui/glide.ts';
+import {crossfade, justClosed, justMerged, notCommitted, reopenIssue, resize, type IssueEvents, type RepoState} from './issue.ts';
 import type {Laid} from '../../repos/git-state.ts';
 import {kindWords} from '../todo-list.ts';
 import {errorText} from '../../app/errors.ts';
@@ -32,8 +32,12 @@ export class Sections {
   /** Those under the issues, in their order. */
   readonly under = [this.committed, this.merged, this.closed];
 
-  /** Drawn again for what is `laid` out, of the repo `filter` (all, when ''). */
-  draw({dirty, merged, closed}: Laid, filter: string, states: ReadonlyMap<string, RepoState>, events: IssueEvents, again: () => void) {
+  /**
+   * Drawn again for what is `laid` out, of the repo `filter` (all, when ''). `moving`: drawn again while the page is
+   * seen (not its first drawing), so a section under the issues that comes unfolds, and one that goes folds away.
+   */
+  draw({dirty, merged, closed}: Laid, filter: string, states: ReadonlyMap<string, RepoState>, events: IssueEvents, again: () => void, moving = false) {
+    const was = this.under.map((s) => (s.hidden ? null : [...s.children]));
     // main: what it has not committed, each a card. What was committed on it from here is under the issues.
     const cuts = committedIn(filter || null);
     this.main.hidden = !dirty.length;
@@ -46,7 +50,44 @@ export class Sections {
     this.merged.replaceChildren(heading('merged-title', t('Merged'), merged.length), mergedList(merged, !filter));
     this.closed.hidden = !closed.length;
     this.closed.replaceChildren(heading('closed-title', t('Closed'), closed.length), closedList(closed, !filter, events, again));
+    if (!moving || still()) return;
+    this.under.forEach((s, i) => {
+      const kids = was[i];
+      if (!kids && !s.hidden) unfold(s, 280);
+      else if (kids && s.hidden) foldAway(s, kids);
+    });
   }
+}
+
+/**
+ * A part gone from the page in a drawing (it has nothing to show now): what it showed folds away where it stood, what
+ * is under it closing up as it does, rather than gone at once. `kids`: what it held, taken from it by the drawing.
+ */
+export function foldAway(part: HTMLElement, kids: Element[], style = part.getAttribute('style') ?? '') {
+  if (still() || !kids.length) return;
+  const ghost = h('section', {class: part.className, style, 'aria-hidden': 'true'}, ...kids);
+  ghost.inert = true;
+  part.before(ghost);
+  putAway(ghost, () => ghost.remove(), {fold: true, ms: 280});
+}
+
+/**
+ * When each line lit as it lands was first drawn, by what it is: drawn again meanwhile (the page read again a moment
+ * after), the line goes on from where it had got to, never landing a second time, nor losing its light at once.
+ */
+const landedAt = new Map<string, number>();
+/** The longest of a landing line's moves (its light, styles git-review.css line-lit). */
+const LIT = 1600;
+function landing(row: HTMLElement, key: string, fresh: boolean, kind = 'landing') {
+  const was = landedAt.get(key), now = clock();
+  if (was === undefined) {
+    if (!fresh) return;
+    landedAt.set(key, now);
+  }
+  const into = was === undefined ? 0 : now - was;
+  if (into >= LIT) return;
+  row.classList.add(kind);
+  if (into) row.style.animationDelay = `${-into}ms`;
 }
 
 /** More repos than this waiting to be committed, in All: each a row (its name, how many, Commit), its files folded. */
@@ -71,14 +112,33 @@ const committedIn = (filter: string | null) => committed.filter((c) => !filter |
 async function slideOff(card: HTMLElement): Promise<void> {
   if (still() || !card.isConnected) return;
   card.classList.add('leaving');
-  const cs = getComputedStyle(card);
   const off = card.animate([{transform: 'none', opacity: 1}, {transform: 'translateX(96px)', opacity: 0}], {duration: paced(340), easing: LAND, fill: 'forwards'});
-  const close = card.animate([
-    {height: `${card.offsetHeight}px`, paddingTop: cs.paddingTop, paddingBottom: cs.paddingBottom, marginTop: cs.marginTop, borderTopWidth: cs.borderTopWidth, borderBottomWidth: cs.borderBottomWidth},
-    {height: '0px', paddingTop: '0px', paddingBottom: '0px', marginTop: '0px', borderTopWidth: '0px', borderBottomWidth: '0px'},
+  // The last card waiting on main takes main's heading with it: the part closes up whole as the card goes, not leaving
+  // "main" over nothing until the page is read again.
+  const part = card.parentElement;
+  const whole = !!part && part.querySelectorAll(':scope > .main-card').length === 1;
+  const room = whole ? part! : card;
+  const cs = getComputedStyle(room);
+  const close = room.animate([
+    {height: `${room.offsetHeight}px`, paddingTop: cs.paddingTop, paddingBottom: cs.paddingBottom, marginTop: cs.marginTop, marginBottom: cs.marginBottom, borderTopWidth: cs.borderTopWidth, borderBottomWidth: cs.borderBottomWidth},
+    {height: '0px', paddingTop: '0px', paddingBottom: '0px', marginTop: '0px', marginBottom: '0px', borderTopWidth: '0px', borderBottomWidth: '0px'},
   ], {duration: paced(280), delay: paced(160), easing: LAND, fill: 'forwards'});
-  card.style.overflow = 'hidden';
+  room.style.overflow = 'hidden';
+  if (whole) part!.querySelector(':scope > h2')?.animate([{opacity: 1}, {opacity: 0}], {duration: paced(200), delay: paced(120), fill: 'forwards'});
   await Promise.all([off.finished, close.finished]).catch(() => {});
+  // Closed up, it stays so until the page is drawn again without it (which takes the closing off, git.ts lay).
+  if (whole) closing.add(part!);
+}
+
+/** main's part closed up with its last card (slideOff), until the page drawn again hides it. */
+const closing = new WeakSet<HTMLElement>();
+/** main's part drawn again: what closed it up is taken off (hidden now, or shown again with what waits). */
+export function opened(part: HTMLElement) {
+  if (!closing.has(part)) return;
+  closing.delete(part);
+  part.style.overflow = '';
+  for (const a of part.getAnimations()) a.cancel();
+  for (const a of part.querySelector(':scope > h2')?.getAnimations() ?? []) a.cancel();
 }
 
 /**
@@ -91,6 +151,7 @@ function mainCard(repo: string, n: number, events: IssueEvents, after: () => voi
   const card = h('div', {class: `main-card${brief ? ' brief' : ''}`, role: 'group', 'aria-label': t('Uncommitted changes on main in {repo}', {repo})});
   const plain = () => {
     const from = card.isConnected ? card.getBoundingClientRect().height : 0;
+    const old = card.isConnected ? card.cloneNode(true) as HTMLElement : null;
     const commit = button(t('Commit'), 'primary');
     commit.addEventListener('click', () => ask(commit));
     // Laid out as an issue's box is: its name at the top, the files under it on the card itself, and at its foot how
@@ -109,18 +170,21 @@ function mainCard(repo: string, n: number, events: IssueEvents, after: () => voi
       });
       card.replaceChildren(h('h3', {class: 'main-title'}, name), foot, ...(open ? [notCommitted(repo, 'main', n, events)] : []));
     }
+    if (old) crossfade(old, card, from);
     resize(card, from);
     return commit;
   };
   const ask = (from: Element | null) => {
     const foot = from ? askFoot(from, card) : answers;
     const was = card.isConnected ? card.getBoundingClientRect().height : 0;
+    const old = card.isConnected ? card.cloneNode(true) as HTMLElement : null;
     const line = h('input', {class: 'line-in', placeholder: t('Fix: Description of changes'), 'aria-label': t('Commit title format: Type: Title'), maxlength: '200', spellcheck: 'false'}) as HTMLInputElement;
     folded.delete(repo);
     line.value = naming.get(repo) ?? '';
     naming.set(repo, line.value);
-    line.addEventListener('input', () => naming.set(repo, line.value));
     const error = h('p', {class: 'error', role: 'alert'});
+    // What was said of the line (no title) is about the line as it was: written on, it is gone.
+    line.addEventListener('input', () => { naming.set(repo, line.value); if (error.textContent) error.textContent = ''; });
     const no = button(t('Cancel'), 'small-button');
     const yes = button(t('Commit'), 'small-button primary');
     no.addEventListener('click', () => { naming.delete(repo); folded.delete(repo); plain().focus(); });
@@ -152,6 +216,7 @@ function mainCard(repo: string, n: number, events: IssueEvents, after: () => voi
     });
     card.replaceChildren(h('div', {class: 'off-ask'}, h('h3', {class: 'main-title'}, repo),
       h('p', {class: 'muted small'}, tn('{n} file to commit on main', '{n} files to commit on main', n)), line, error, foot(no, yes)));
+    if (old) crossfade(old, card, was);
     resize(card, was);
     line.focus({preventScroll: true});
   };
@@ -171,36 +236,70 @@ function committedList(list: {repo: string; cut: git.Cut}[], all: boolean): HTML
     const row = h('div', {class: 'done-row done-head', 'data-cut': cut.id}, named(null, cut.kind, cut.title),
       cut.added || cut.removed ? counted(cut.added, cut.removed) : null, h('span', {class: 'grow'}),
       h('span', {class: 'muted small'}, all ? `${repo} · ${meta}` : meta));
-    if (cut.id === newest && Date.now() - (cut.time || 0) < 4000) row.classList.add('just-cut');
+    landing(row, `cut\0${cut.id}`, cut.id === newest && Date.now() - (cut.time || 0) < 4000, 'just-cut');
     return row;
   }));
 }
 
 /** The merged ones opened, by change: the page drawn again (anything saved in the repo does it) keeps them open. */
-const opened = new Set<string>();
+const unfurled = new Set<string>();
+/** A merged change's diff as read (it never changes): opened again, it is there at once. */
+const diffsRead = new Map<string, () => Node[]>();
 
 
 /** The issues merged into main, newest first: who handed each in and when it was merged; opened, its diff. Only read. */
 function mergedList(list: {repo: string; change: git.Change}[], all: boolean): HTMLElement {
   return h('div', {class: 'done-list'}, ...list.map(({repo, change: c}) => {
-    const inside = h('div', {class: 'done-diff'}, h('p', {class: 'muted small'}, t('Loading…')));
+    const inside = h('div', {class: 'done-diff'});
     const meta = t('{who} · merged {when}', {who: c.submittedBy || '—', when: ago(c.updatedAt)});
-    const fresh = justMerged(c.id);
-    const fold = h('details', {class: fresh ? 'done-row landing' : 'done-row', 'data-change': c.id},
-      h('summary', {class: 'done-head'}, named(numberOf(c.issue.replace(/^issue\//, '')), c.kind || null, c.title),
-        h('span', {class: 'muted small'}, all ? `${repo} · ${meta}` : meta)),
-      inside) as HTMLDetailsElement;
+    const head = h('summary', {class: 'done-head'}, named(numberOf(c.issue.replace(/^issue\//, '')), c.kind || null, c.title),
+      h('span', {class: 'muted small'}, all ? `${repo} · ${meta}` : meta));
+    const fold = h('details', {class: 'done-row', 'data-change': c.id}, head, inside) as HTMLDetailsElement;
+    landing(fold, `merged\0${c.id}`, justMerged(c.id));
+    // What it holds, grown into from the height it had (its head alone, or "Loading…"): never there at once.
+    const show = (...nodes: Node[]) => { const from = fold.getBoundingClientRect().height; inside.replaceChildren(...nodes); resize(fold, from); };
     let read = false;
     fold.addEventListener('toggle', () => {
-      if (fold.open) opened.add(c.id); else opened.delete(c.id);
+      if (fold.open) unfurled.add(c.id); else unfurled.delete(c.id);
       if (!fold.open || read) return;
       read = true;
-      void git.changeDiff(repo, c).then((files) => inside.replaceChildren(...(files.length ? diffFiles(files, {kept: `merged\0${c.id}`}) : [h('p', {class: 'muted small'}, t('No changes'))])),
-        (e) => inside.replaceChildren(h('p', {class: 'error'}, errorText(e))));
+      const was = diffsRead.get(c.id);
+      if (was) { inside.replaceChildren(...was()); return; }
+      // Read quickly (as it nearly always is), its diff comes straight in; only a slow read says it is on its way.
+      const slow = setTimeout(() => show(h('p', {class: 'muted small'}, t('Loading…'))), 300);
+      void git.changeDiff(repo, c).then((files) => {
+        const nodes = () => (files.length ? diffFiles(files, {kept: `merged\0${c.id}`}) : [h('p', {class: 'muted small'}, t('No changes'))]);
+        diffsRead.set(c.id, nodes);
+        clearTimeout(slow);
+        show(...nodes());
+      }, (e) => { clearTimeout(slow); show(h('p', {class: 'error'}, errorText(e))); });
     });
-    fold.open = opened.has(c.id);
+    // Pressed, it opens growing from its head, and shuts closing up to it (not the browser's at once).
+    head.addEventListener('click', (e) => {
+      if (still()) return;
+      const from = fold.getBoundingClientRect().height;
+      if (!fold.open) { requestAnimationFrame(() => { if (fold.open) resize(fold, from); }); return; }
+      e.preventDefault();
+      if (fold.classList.contains('shutting')) return;
+      fold.classList.add('shutting');
+      fold.style.overflow = 'hidden';
+      const to = head.getBoundingClientRect().height;
+      fold.animate([{height: `${from}px`}, {height: `${to}px`}], {duration: paced(220), easing: LAND}).finished.then(() => {
+        fold.open = false;
+        fold.style.overflow = '';
+        fold.classList.remove('shutting');
+      }, () => {});
+    });
+    fold.open = unfurled.has(c.id);
     return fold;
   }));
+}
+
+/** A day as a line under Closed says when (a close is marked by its day alone, not its hour): today, yesterday, or
+ * the day, never "3 h ago" for one closed a moment ago. */
+function onDay(at: number, now = new Date()): string {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return at >= today ? t('today') : at >= new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1).getTime() ? t('yesterday') : day(at);
 }
 
 /**
@@ -210,7 +309,7 @@ function mergedList(list: {repo: string; change: git.Change}[], all: boolean): H
 function closedList(list: {issue: Issue; reopen: boolean}[], all: boolean, events: IssueEvents, after: () => void): HTMLElement {
   return h('div', {class: 'done-list'}, ...list.map(({issue: i, reopen}) => {
     const {at, by} = closedBy(i.closed ?? '');
-    const when = at === null ? '' : day(at);
+    const when = at === null ? '' : onDay(at);
     const meta = by ? t('{who} · closed {day}', {who: by, day: when}) : t('Closed {day}', {day: when});
     const error = h('p', {class: 'error', role: 'alert'});
     let act: HTMLButtonElement | null = null;
@@ -223,6 +322,8 @@ function closedList(list: {issue: Issue; reopen: boolean}[], all: boolean, event
       });
     }
     // Closed just now from its box: its line lands here, lit a moment, where the eye goes after it.
-    return h('div', {class: justClosed(i) ? 'done-row done-head landing' : 'done-row done-head'}, named(i.n, i.kind, i.title), h('span', {class: 'muted small'}, all ? `${i.repo} · ${meta}` : meta), h('span', {class: 'grow'}), act, error);
+    const row = h('div', {class: 'done-row done-head'}, named(i.n, i.kind, i.title), h('span', {class: 'muted small'}, all ? `${i.repo} · ${meta}` : meta), h('span', {class: 'grow'}), act, error);
+    landing(row, `closed\0${i.repo}/${i.file}`, justClosed(i));
+    return row;
   }));
 }

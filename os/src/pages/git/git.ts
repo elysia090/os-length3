@@ -1,5 +1,5 @@
 import {h} from '../../ui/dom.ts';
-import {after, arrive, pop, putAway, still, unfold} from '../../ui/glide.ts';
+import {after, arrive, LAND, paced, pop, still, unfold} from '../../ui/glide.ts';
 import * as gitops from '../../repos/history.ts';
 import {t} from '../../i18n.ts';
 import {issuePath, number, readIssues, type Issue} from '../../repos/issues.ts';
@@ -10,8 +10,8 @@ import {bench, type Bench} from '../bench/bench.ts';
 import {openNext as openConversation} from '../inbox.ts';
 import {icon} from '../../ui/icons.ts';
 import type {Context} from '../context.ts';
-import {Sections} from './done.ts';
-import {backToMain, issueBox, issueHead, knowIssues, mergeRow, resize, reviewBox, type IssueEvents, type RepoState} from './issue.ts';
+import {foldAway, opened, Sections} from './done.ts';
+import {backToMain, crossfade, issueBox, issueHead, knowIssues, mergeRow, resize, reviewBox, type IssueEvents, type RepoState} from './issue.ts';
 import {IssueRow} from './issue-row.ts';
 import {paintChips} from './repo-chips.ts';
 import {laidOut} from '../../repos/git-state.ts';
@@ -118,6 +118,10 @@ function renumber(issues: readonly Issue[], states: ReadonlyMap<string, RepoStat
 
 /** Where each repo stood when Git last read it: drawn at once when the page is come back to, then read again. */
 const stood = new Map<string, RepoState>();
+/** The repos and each one's issues as Git last read them: with `stood`, the page come back to is drawn from its first
+ * frame as it was left (never "Loading…" a moment as it comes in), then read again. */
+let reposRead: string[] | null = null;
+const issuesRead = new Map<string, Issue[]>();
 
 /** The page while it is shown: its repos, where each stands, and what is drawn of them. */
 class GitPage {
@@ -146,6 +150,10 @@ class GitPage {
   private mainSettling: Animation | null = null;
   /** The issue the row goes to once it is drawn (one reopened), from the one in full before. */
   private slideTo: string | null = null;
+  /** An issue just made: the height of the box it was written in, which becomes its card as it is drawn (lay). */
+  private becoming: number | null = null;
+  /** Drawn once: what is drawn after that moves from what it was (goOn); the first drawing is simply there. */
+  private laid = false;
 
   constructor(ctx: Context) {
     this.ctx = ctx;
@@ -179,6 +187,7 @@ class GitPage {
     this.load();
     this.workbench = this.bench();
     this.element = this.workbench.element;
+    this.drawKnown();
     this.watch();
     this.element.prepend(h('h1', {class: 'sr-only'}, t('Git')));
   }
@@ -207,10 +216,33 @@ class GitPage {
     if (chosen) this.ctx.remember(repo);
   }
 
+  /**
+   * Come back to: drawn at once from what was read last time (the repos, their issues, where each stood), so the page
+   * comes in as it was left; read again after, it is drawn again only where something moved.
+   */
+  private drawKnown() {
+    const repos = reposRead;
+    if (!repos?.length || !connection()) return;
+    const shown = repos.filter((r) => !filter || r === filter);
+    if (!shown.every((r) => stood.has(r) && issuesRead.has(r))) return;
+    this.repos = repos;
+    this.write.disabled = false;
+    this.look(filter || (this.ctx.repo && repos.includes(this.ctx.repo) ? this.ctx.repo : repos[0] ?? null));
+    this.paintChips();
+    const issues = shown.flatMap((r) => issuesRead.get(r)!);
+    knowIssues(repos.flatMap((r) => issuesRead.get(r) ?? []));
+    this.states = new Map(shown.map((r) => [r, stood.get(r)!]));
+    this.lay(shown, issues);
+    this.known = true;
+  }
+  /** Drawn from what was read before (drawKnown): the first reading after is drawn only if it differs. */
+  private known = false;
+
   /** The repos here, read again: the chips, the repo looked at, an issue half written, and the issues. */
   private load() {
     void store.list().then((r) => {
       this.repos = r.map((x) => x.name);
+      reposRead = this.repos;
       if (filter && !this.repos.includes(filter)) filter = ALL;
       this.write.disabled = !this.repos.length;
       this.look(filter || (this.ctx.repo && this.repos.includes(this.ctx.repo) ? this.ctx.repo : this.repos[0] ?? null));
@@ -263,19 +295,27 @@ class GitPage {
       reviewBox(x, st, this.again), mergeRow(x, st, this.events, this.again)].filter((n): n is HTMLElement => !!n);
   }
 
-  /** Written: its repo is the one looked at and worked on, and the new issue is the one shown, with the keyboard on it. */
+  /**
+   * Written: its repo is the one looked at and worked on, and the new issue is the one shown, with the keyboard on it.
+   * The box it was written in stays as it was until the page is drawn with the issue in it, and then becomes its card
+   * where it stood (lay): one box the whole way, never the box folding away and a card coming after it.
+   */
   private written(made: Made | null, back: string | null) {
     this.write.hidden = false;
-    this.empty.hidden = false;
+    if (!made) this.empty.hidden = false;
     // Asked for from Forge's reference and put back: back there, as it was.
     if (!made && back) { this.ctx.openRepo(back); return; }
     if (!made) { (this.write.getClientRects().length ? this.write : this.empty.querySelector<HTMLElement>('button') ?? this.write).focus({preventScroll: true}); return; }
     if (filter && filter !== made.repo) { filter = made.repo; this.paintChips(); }
-    // Drawn, the row goes from the issue that was in full to the new one, at the row's end: where it went is seen.
     this.slideTo = `${made.repo}/${made.file}`;
     chosenIn.set(made.repo, this.slideTo);
     this.look(made.repo, true);
     this.row.land = true;
+    const height = this.form.element.getBoundingClientRect().height;
+    this.becoming = height || null;
+    if (!height) this.form.clear();
+    // Not drawn after all (the page read again failing): the box does not stay standing in the way.
+    else setTimeout(() => { if (this.becoming === height) { this.becoming = null; this.form.clear(); this.empty.hidden = false; } }, 6000);
     void this.paint();
   }
 
@@ -308,8 +348,10 @@ class GitPage {
     // nor does it choose the issue shown; the drawing after it, from what is true then, does.
     if (this.more) return;
     for (const [r, st] of fresh) stood.set(r, st);
+    for (const r of shown) issuesRead.set(r, all[this.repos.indexOf(r)] ?? []);
     // Drawn early from what was read before, and read the same now: it stands as it is (not drawn twice over).
-    const same = early && this.laidFrom === JSON.stringify([shown, issues, [...fresh]]);
+    const same = (early || this.known) && this.laidFrom === JSON.stringify([shown, issues, [...fresh]]);
+    this.known = false;
     this.states = fresh;
     if (same) return;
     if ((await renumber(issues, this.states)).some(Boolean)) return;
@@ -325,17 +367,39 @@ class GitPage {
     // Oldest first, so #1 is on the left; merged and closed ones are done with, and listed under the issues.
     const laid = laidOut(shown, issues, this.states);
     const before = this.stood();
+    // Moves go on from what was drawn; not the first drawing, nor while a box goes down into its line (git/issue.ts
+    // mergeRow): what that lands on stays where it was found.
+    const moving = this.laid && !still() && !document.querySelector('.morph-box');
+    this.laid = true;
+    // The box an issue was just written in: taken away as the issue's card is drawn where it stood (below).
+    const becoming = this.becoming;
+    this.becoming = null;
+    const writ = becoming ? this.form.element.cloneNode(true) as HTMLElement : null;
+    if (becoming) { this.form.clear(); this.empty.hidden = false; }
+    const row = !this.row.stage.hidden, none = !!this.empty.firstElementChild;
     this.counted(laid.open.length);
-    this.sections.draw(laid, filter, this.states, this.events, this.again);
-    if (laid.open.length) this.drawSome(laid.open); else this.drawNone(issues);
+    opened(this.sections.main);
+    this.sections.draw(laid, filter, this.states, this.events, this.again, moving);
+    if (laid.open.length) this.drawSome(laid.open, !!becoming); else this.drawNone(issues);
+    const card = this.row.current();
+    if (writ && card) { crossfade(writ, card.card, becoming!); resize(card.card, becoming!); }
+    if (!moving) return;
     this.goOn(before);
+    // The row come into sight (an issue reopened, one come from elsewhere): its box comes in, not there at once; the
+    // dashed card that writes the first, there again once the last has gone, the same.
+    if (!row && card && !writ) arrive(card.card, 1, 'y', 10, 260);
+    if (!none && this.empty.firstElementChild) this.empty.animate([{opacity: 0}, {opacity: 1}], {duration: paced(220), easing: 'ease-out'});
   }
 
   /** main's part and the issue in full as they stand, for the drawing after to go on from. */
   private stood() {
     const main = this.sections.main;
+    const cards = new Map([...main.querySelectorAll<HTMLElement>(':scope > .main-card')].map((c) => [c.getAttribute('aria-label') ?? '', {el: c, height: c.getBoundingClientRect().height}]));
+    const card = this.row.current();
+    // What stood under the issue in full, out of its box (Back to main, its Review, Merge), by kind.
+    const under = [...card?.card.parentElement?.children ?? []].filter((c) => c !== card?.card).map((c) => c.className);
     return {main: main.hidden ? 0 : main.getBoundingClientRect().height, kids: [...main.children], style: main.getAttribute('style') ?? '',
-      card: this.row.current()};
+      cards, card, under};
   }
 
   /**
@@ -345,18 +409,30 @@ class GitPage {
    * down into its line (git/issue.ts mergeRow): what that lands on stays where it was found.
    */
   private goOn(was: ReturnType<GitPage['stood']>) {
-    if (still() || document.querySelector('.morph-box')) return;
     const main = this.sections.main;
     const now = main.hidden ? 0 : main.getBoundingClientRect().height;
-    if (was.main && !now) {
-      const ghost = h('section', {class: main.className, style: was.style, 'aria-hidden': 'true'}, ...was.kids);
-      ghost.inert = true;
-      main.before(ghost);
-      putAway(ghost, () => ghost.remove(), {fold: true, ms: 280});
-    } else if (!was.main && now) unfold(main, 280);
-    else resize(main, was.main);
+    if (was.main && !now) foldAway(main, was.kids, was.style);
+    else if (!was.main && now) unfold(main, 280);
+    else {
+      resize(main, was.main);
+      // Each repo's card drawn again where it was: what changed in it fades over as it goes to its new height.
+      for (const c of main.querySelectorAll<HTMLElement>(':scope > .main-card')) {
+        const old = was.cards.get(c.getAttribute('aria-label') ?? '');
+        if (old) { crossfade(old.el, c, old.height); resize(c, old.height); }
+      }
+    }
+    // The issue in full drawn again (a step done): what changed in its box fades over, the box going to its new height.
     const card = this.row.current();
-    if (was.card && card?.key === was.card.key) resize(card.card, was.card.height);
+    if (!was.card || card?.key !== was.card.key) return;
+    crossfade(was.card.card, card.card, was.card.height);
+    resize(card.card, was.card.height);
+    // What comes under it with the step (its Review once handed in, Back to main once started) comes in after the box
+    // has begun to change, from a little lower, not there at once.
+    for (const c of card.card.parentElement?.children ?? []) {
+      // (Not the box's own, nor what it showed before still fading over it: crossfade.)
+      if (c.classList.contains('issue-card') || was.under.includes(c.className)) continue;
+      c.animate([{opacity: 0, translate: '0 8px'}, {opacity: 1, translate: '0 0'}], {duration: paced(260), delay: paced(100), easing: LAND, fill: 'backwards'});
+    }
   }
 
   /** No repo at all (a first run): the first made, the whole card the deed, as Forge's and Home's New repo are. */
@@ -380,12 +456,14 @@ class GitPage {
    * The issues as the row's boxes, at the one last looked at, in the repo worked on when that has one here; none looked
    * at yet (the app just opened), at the issue that repo's work is on, so a reload finds the work where it was left.
    */
-  private drawSome(open: Issue[]) {
+  private drawSome(open: Issue[], inPlace = false) {
     this.empty.replaceChildren();
     this.write.parentElement?.classList.remove('none');
     const to = this.slideTo === null ? -1 : open.findIndex((i) => key(i) === this.slideTo);
     this.slideTo = null;
-    if (to >= 0) { this.row.fill(open, to, open.findIndex((i) => key(i) === chosen)); return; }
+    // Gone to from the one in full (one reopened), the row slides there; one just written is there at once, where the
+    // box it was written in stood (`inPlace`).
+    if (to >= 0) { this.row.fill(open, to, inPlace ? -1 : open.findIndex((i) => key(i) === chosen)); return; }
     const repo = this.ctx.repo;
     const mine = repo && open.some((i) => i.repo === repo) && !chosen?.startsWith(`${repo}/`) ? chosenIn.get(repo) : chosen;
     let was = open.findIndex((i) => key(i) === mine);

@@ -1891,15 +1891,15 @@ test('a merge made folder by folder comes out as the trees merged path by path, 
     assert.equal(fix.status, 201, fix.text);
     assert.equal((await call('POST', `/v1/repos/${repo}/lines/001/push`, {head: fix.json.id})).status, 200);
     // main moves on too, now and then a commit of its own, and keeps a draft of its own.
-    let mainHead = base, mainTree = start;
+    let mainTree = start;
     if (i % 3 === 0) {
       main = await saves(repo, 'main', main.draft, main.version, 2);
       const c = await call('POST', `/v1/repos/${repo}/cuts`, {version: main.version, parent: base, title: 'Main'});
       assert.equal(c.status, 201, c.text);
-      mainHead = c.json.id as string; mainTree = main.draft;
+      mainTree = main.draft;
     }
     main = await saves(repo, 'main', main.draft, main.version, i % 4);
-    const change = (await call('POST', `/v1/repos/${repo}/changes`, {line: '001', title: 'Fix'})).json as {id: string; version: number};
+    const change = (await call('POST', `/v1/repos/${repo}/changes`, {line: '001', title: 'Fix'})).json as unknown as {id: string; version: number};
     const before = await wholes();
     const r = await call('POST', `/v1/repos/${repo}/changes/${change.id}/merge`, {version: change.version});
     // No tree made whole, nor main's draft.

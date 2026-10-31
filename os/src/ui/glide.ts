@@ -251,7 +251,7 @@ export function lift(el: Element | null | undefined): Lifted | null {
 }
 
 export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, round = '', patience = 40,
-  carry?: {lifted: Lifted; to(target: HTMLElement): Element | null}) {
+  carry?: {lifted: Lifted; to(target: HTMLElement): Element | null; rest?: HTMLElement}) {
   if (still() || !from.width) return false;
   ms = paced(ms);
   // The outline stands where the thing was at once, so the eye has it while the page it goes to is drawn (a repo read
@@ -264,37 +264,79 @@ export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, r
   const rect = (r: DOMRect) => ({left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px`});
   Object.assign(box.style, rect(from));
   document.body.append(box);
+  // What else the thing held (`rest`: a copy of it as it was, its words left out) is in the sheet as it sets off and
+  // fades as it goes, cut by the sheet's edges as they close in: never an empty sheet where the thing stood.
+  const rest = carry?.rest;
+  if (rest) {
+    const edge = parseFloat(getComputedStyle(box).borderTopWidth) || 0;
+    Object.assign(rest.style, {position: 'absolute', left: `${-edge}px`, top: `${-edge}px`, width: `${from.width}px`, margin: '0',
+      borderColor: 'transparent', background: 'transparent', pointerEvents: 'none'});
+    rest.inert = true;
+    rest.setAttribute('aria-hidden', 'true');
+    box.style.overflow = 'hidden';
+    box.append(rest);
+    rest.animate([{opacity: 1}, {opacity: 0}], {duration: paced(180), easing: 'ease-out', fill: 'forwards'});
+  }
   // Its words go with it, from where they were read to the words they become (the issue's title onto its line).
   const words = carry?.lifted.el;
   if (words) document.body.append(words);
   const done = () => { box.remove(); words?.remove(); };
+  /** Gone where it stands: no box came for it, or the camera went on to another page meanwhile (the sheet is over
+   * the window, not in the page: it would hang there as the pages go by under it). */
+  const fade = (ms2 = 160) => {
+    words?.animate([{opacity: 1}, {opacity: 0}], {duration: paced(ms2), fill: 'forwards'});
+    box.animate([{opacity: 1}, {opacity: 0}], {duration: paced(ms2), fill: 'forwards'}).finished.then(done, done);
+  };
+  const away = () => document.documentElement.classList.contains('panning');
   let tries = 0;
   const go = () => {
-    const to = find();
+    let to = find();
     const at = to?.getBoundingClientRect();
+    if (away()) { fade(100); return; }
     if (!to || !at?.width) {
-      if (++tries < patience) requestAnimationFrame(go);
-      else {
-        words?.animate([{opacity: 1}, {opacity: 0}], {duration: paced(160), fill: 'forwards'});
-        box.animate([{opacity: 1}, {opacity: 0}], {duration: paced(160), fill: 'forwards'}).finished.then(done, done);
-      }
+      if (++tries < patience) requestAnimationFrame(go); else fade();
       return;
     }
     to.style.visibility = 'hidden';
-    const shown = () => { to.style.visibility = ''; };
-    const goal = words && carry?.to(to)?.getBoundingClientRect();
-    if (words && goal?.height) {
-      const r0 = carry!.lifted.rect;
-      words.animate([{transform: 'none'}, {transform: `translate(${goal.left - r0.left}px, ${goal.top - r0.top}px) scale(${goal.height / r0.height})`}],
-        {duration: ms, easing: LAND, fill: 'forwards'});
-    }
-    box.animate([rect(from), rect(at)], {duration: ms, easing: LAND, fill: 'forwards'}).finished.then(() => {
+    // The page drawn again while the sheet is on its way (read again a moment after) puts a new box where it goes: that
+    // one waits out of sight as the first did, never shown under the sheet before it lands.
+    let flying = true;
+    const keep = () => {
+      if (!flying) return;
+      const now = find();
+      if (now && now !== to) { to!.style.visibility = ''; to = now; now.style.visibility = 'hidden'; }
+      requestAnimationFrame(keep);
+    };
+    requestAnimationFrame(keep);
+    const shown = () => { flying = false; to!.style.visibility = ''; };
+    // The sheet goes to where its box is in each frame, not where it was when it set off: the page closing up under it
+    // meanwhile (a part folding away, read again), it lands on its box, never a few pixels off and then jumping. The
+    // move's own timing (an animation that does nothing) says how far along it is, at the OS's pace.
+    const timer = box.animate([{opacity: 1}, {opacity: 1}], {duration: ms, easing: LAND, fill: 'forwards'});
+    let gone = false;
+    const r0 = carry?.lifted.rect;
+    const mix = (a: number, b: number, p: number) => a + (b - a) * p;
+    const step = () => {
+      // Its box gone from the page (another page come to) before it landed: it fades where it is, not to nowhere.
+      if (!to!.isConnected || away()) { if (timer.playState === 'running') { gone = true; timer.cancel(); shown(); fade(100); } return; }
+      const p = timer.effect?.getComputedTiming().progress ?? 1, now = to!.getBoundingClientRect();
+      Object.assign(box.style, {left: `${mix(from.left, now.left, p)}px`, top: `${mix(from.top, now.top, p)}px`,
+        width: `${mix(from.width, now.width, p)}px`, height: `${mix(from.height, now.height, p)}px`});
+      const goal = words && r0 ? carry!.to(to!)?.getBoundingClientRect() : null;
+      if (words && r0 && goal?.height) {
+        words.style.transform = `translate(${mix(0, goal.left - r0.left, p)}px, ${mix(0, goal.top - r0.top, p)}px) scale(${mix(1, goal.height / r0.height, p)})`;
+      }
+      if (timer.playState === 'running') requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+    timer.finished.then(() => {
+      step();
       // Landed: the box is there under it, and the sheet gives way to it.
       shown();
-      to.animate([{opacity: 0}, {opacity: 1}], {duration: paced(140), easing: 'ease-out'});
+      to!.animate([{opacity: 0}, {opacity: 1}], {duration: paced(140), easing: 'ease-out'});
       words?.animate([{opacity: 1}, {opacity: 0}], {duration: paced(140), easing: 'ease-out', fill: 'forwards'});
       box.animate([{opacity: 1}, {opacity: 0}], {duration: paced(140), easing: 'ease-out', fill: 'forwards'}).finished.then(done, done);
-    }, () => { shown(); done(); });
+    }, () => { shown(); if (!gone) done(); });
   };
   requestAnimationFrame(go);
   return true;

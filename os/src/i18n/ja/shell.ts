@@ -11,6 +11,7 @@ export default {
   '{n} min ago': '{n}分前',
   '{n} h ago': '{n}時間前',
   'yesterday': '昨日',
+  'today': '今日',
   'The band': 'バンド',
   'Repo status': '各 repo のステータス',
   'Could not read {what} ({why})': '{what}を読み込めませんでした（{why}）',

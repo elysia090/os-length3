@@ -35,6 +35,8 @@ export interface IssueForm {
   retarget(repo: string): void;
   /** Give the keyboard back to the line last written in (the repo chosen with the pointer took it), its caret where it was. */
   writeOn(): void;
+  /** Taken away at once: what it was written in has become the new issue's card (git.ts lay). */
+  clear(): void;
 }
 
 /**
@@ -100,6 +102,9 @@ export function issueForm(events: {done(made: Made | null, back: string | null):
     writing = keep && writing && (writing.first.trim() || writing.detail.trim()) ? {repo: writing.repo, first: writing.first, detail: writing.detail, folded: true} : null;
     retarget = () => {};
     typing = null;
+    // Made, it stays as it is (nothing in it pressed again) until the page is drawn with the issue in it, and becomes
+    // the issue's card there (clear).
+    if (made) { element.inert = true; events.done(made, back); return; }
     const done = () => { element.hidden = true; element.replaceChildren(); events.done(made, back); };
     // It folds away, the issues under it rising into its room as it does (never a jump once it has gone): put back
     // with Not now, or made, as the row goes on to the new issue's box at its end (git.ts written).
@@ -172,7 +177,8 @@ export function issueForm(events: {done(made: Made | null, back: string | null):
     open(repos, writing.repo, writing, asked);
     return true;
   };
-  return {element, open, resume, retarget: (repo) => retarget(repo), writeOn: () => typing?.focus({preventScroll: true})};
+  const clear = () => { element.hidden = true; element.inert = false; element.replaceChildren(); };
+  return {element, open, resume, retarget: (repo) => retarget(repo), writeOn: () => typing?.focus({preventScroll: true}), clear};
 }
 
 /**
