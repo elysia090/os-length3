@@ -119,7 +119,7 @@ test('the portal: the tier and the next payment; a change of tier, up then down,
   await post(`${await checkout(t, 'go')}/pay`, card('4242 4242 4242 4242'));
   const home = await portal(t);
   const first = await at(home);
-  for (const said of ['Current subscription', 'Go', '$7.00 per month', 'Your plan renews on', 'Visa •••• 4242', 'Invoice history', 'Paid', 'Test controls', 'Return to length3']) {
+  for (const said of ['Current subscription', 'Go', '$7.00<small>per<br>month</small>', 'Your plan renews on', 'Visa •••• 4242', 'Invoice history', 'Paid', 'Test controls', 'Return to length3']) {
     assert.ok(first.text.includes(said), said);
   }
   // Up from the portal's own list: what it costs now, then Confirm; the Remote has Max at once, and an invoice for the rest of the period.
