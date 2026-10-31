@@ -216,6 +216,13 @@ const writeTimeval = (p, at, ms) => { p.view.setBigInt64(at, BigInt(Math.floor(m
 /** CPUs a program is told it has: as many as the host gives this kernel's workers (one, where threads take turns here). */
 const cpus = () => Math.max(1, Math.min(64, globalThis.navigator?.hardwareConcurrency ?? 1));
 
+/** A host or domain name of at most 64 bytes, as sethostname takes it. */
+function names(p, address, length) {
+  const n = N(length);
+  if (n < 0 || n > 64) fail(E.INVAL);
+  return new TextDecoder().decode(p.bytes.subarray(N(address), N(address) + n));
+}
+
 export const PROC_CALLS = {
   9(addr, len, prot, flags, fd, off) {
     const length = N(len), fixed = N(flags) & 0x10, anonymous = N(flags) & 0x20, shared = (N(flags) & 3) !== 2;
@@ -302,7 +309,7 @@ export const PROC_CALLS = {
   60(code) { this.kernel.exitThread(this.task, exitStatus(N(code))); throw new Exit(exitStatus(N(code))); },
   61(pid, status, options, rusage) { return wait4(this, pid, status, options, rusage); },
   63(buf) {
-    const fields = ['Linux', 'length3', '6.1.0', '#1 xlat', 'x86_64', '(none)'];
+    const fields = ['Linux', this.kernel.hostname ?? 'length3', '6.1.0', '#1 xlat', 'x86_64', this.kernel.domainname ?? '(none)'];
     this.bytes.fill(0, N(buf), N(buf) + 390);
     fields.forEach((s, k) => this.bytes.set(enc.encode(s), N(buf) + k * 65));
     return 0;
@@ -397,6 +404,21 @@ export const PROC_CALLS = {
     crypto.getRandomValues(this.bytes.subarray(N(buf), N(buf) + n));
     return n;
   },
+  170(name, len) { this.kernel.hostname = names(this, name, len); return 0; }, // sethostname: the machine's (its own UTS)
+  171(name, len) { this.kernel.domainname = names(this, name, len); return 0; }, // setdomainname
+  135() { return 0; }, // personality: Linux's own (PER_LINUX); asked, or set, it stays that
+  309(cpu, node) { // getcpu: one machine of one node, as it is to its guests
+    if (N(cpu)) this.view.setUint32(N(cpu), 0, true);
+    if (N(node)) this.view.setUint32(N(node), 0, true);
+    return 0;
+  },
+  324(cmd) { if (N(cmd) === 0) return 0; fail(E.INVAL); }, // membarrier: asked, it offers none (a program then fences itself)
+  // What a container's root without its capabilities is refused: the machine's mounts, clock, log and modules are
+  // the host's, not a Prompt's.
+  165() { fail(E.PERM); }, 166() { fail(E.PERM); }, 155() { fail(E.PERM); }, 161() { fail(E.PERM); }, // mount, umount2, pivot_root, chroot
+  169() { fail(E.PERM); }, 227() { fail(E.PERM); }, 103() { fail(E.PERM); }, 308() { fail(E.PERM); }, // reboot, clock_settime, syslog, setns
+  167() { fail(E.PERM); }, 168() { fail(E.PERM); }, 175() { fail(E.PERM); }, 176() { fail(E.PERM); }, 313() { fail(E.PERM); }, // swapon, swapoff, modules
+  101() { fail(E.PERM); }, // ptrace: no process here can be traced
   334() { fail(E.NOSYS); }, // rseq
   435() { fail(E.NOSYS); }, // clone3: libc falls back to clone
 };

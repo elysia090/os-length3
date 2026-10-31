@@ -140,7 +140,7 @@ export function mountProc(kernel) {
   const sys = new Map([
     ['kernel', new Listing(() => new Map([
       ['ostype', new Made(() => 'Linux\n')], ['osrelease', new Made(() => '6.1.0\n')], ['version', new Made(() => '#1 xlat\n')],
-      ['hostname', new Made(() => 'length3\n')], ['pid_max', new Made(() => '4194304\n')], ['threads-max', new Made(() => '63432\n')],
+      ['hostname', new Made(() => `${kernel.hostname ?? 'length3'}\n`)], ['pid_max', new Made(() => '4194304\n')], ['threads-max', new Made(() => '63432\n')],
       ['random', new Listing(() => new Map([['uuid', new Made(() => crypto.randomUUID() + '\n')], ['boot_id', new Made(() => bootId + '\n')]]))],
     ]))],
     ['vm', new Listing(() => new Map([['overcommit_memory', new Made(() => '0\n')], ['max_map_count', new Made(() => '65530\n')]]))],

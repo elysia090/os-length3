@@ -807,6 +807,84 @@ export const FILE_CALLS = {
   },
 
   73() { return 0; }, 74() { return 0; }, 75() { return 0; },
+  // What is written is where it goes already (memory; a repo's files mirrored as they change): nothing to wait for.
+  162() { return 0; }, // sync
+  306(fd) { descriptor(this, fd); return 0; }, // syncfs
+  277(fd) { descriptor(this, fd); return 0; }, // sync_file_range
+  221(fd) { // fadvise64: advice, taken and not needed (every file is in memory once read)
+    const d = descriptor(this, fd);
+    if (d.kind !== 'file' && d.kind !== 'dir' && d.kind !== 'device') fail(E.SPIPE);
+    return 0;
+  },
+  // Extended attributes: the files here have none and take none, as on a filesystem mounted without them.
+  188(name) { this.kernel.vfs.lookup(path(this, name), this.cwd); fail(E.OPNOTSUPP); }, // setxattr
+  189(name) { this.kernel.vfs.lookup(path(this, name), this.cwd, false); fail(E.OPNOTSUPP); }, // lsetxattr
+  190(fd) { descriptor(this, fd); fail(E.OPNOTSUPP); }, // fsetxattr
+  191(name) { this.kernel.vfs.lookup(path(this, name), this.cwd); fail(E.OPNOTSUPP); }, // getxattr
+  192(name) { this.kernel.vfs.lookup(path(this, name), this.cwd, false); fail(E.OPNOTSUPP); }, // lgetxattr
+  193(fd) { descriptor(this, fd); fail(E.OPNOTSUPP); }, // fgetxattr
+  194(name) { this.kernel.vfs.lookup(path(this, name), this.cwd); fail(E.OPNOTSUPP); }, // listxattr
+  195(name) { this.kernel.vfs.lookup(path(this, name), this.cwd, false); fail(E.OPNOTSUPP); }, // llistxattr
+  196(fd) { descriptor(this, fd); fail(E.OPNOTSUPP); }, // flistxattr
+  197(name) { this.kernel.vfs.lookup(path(this, name), this.cwd); fail(E.OPNOTSUPP); }, // removexattr
+  198(name) { this.kernel.vfs.lookup(path(this, name), this.cwd, false); fail(E.OPNOTSUPP); }, // lremovexattr
+  199(fd) { descriptor(this, fd); fail(E.OPNOTSUPP); }, // fremovexattr
+  319(name, flags) { // memfd_create: a file in no directory, as shared anonymous memory is
+    const f = N(flags);
+    if (f & ~0x7) fail(E.INVAL); // MFD_CLOEXEC, MFD_ALLOW_SEALING, MFD_HUGETLB
+    const node = new File(new Uint8Array(0), 0o777);
+    const d = new Description('file', {node, flags: O.RDWR, path: `/memfd:${this.cstring(N(name))} (deleted)`});
+    const fd = this.fds.install(d, {cloexec: !!(f & 1)});
+    if (fd < 0) fail(E.MFILE);
+    return fd;
+  },
+  285(fd, mode, offset, len) { // fallocate: room made (a file's bytes are memory: zeros), or a range made zero
+    const d = descriptor(this, fd), m = N(mode), at = N(offset), n = N(len);
+    // As Linux asks: open for writing, then a file.
+    if ((d.flags & 3) === 0) fail(E.BADF);
+    if (d.kind !== 'file') fail(d.kind.startsWith('pipe') || d.kind === 'socket' ? E.SPIPE : E.NODEV);
+    if (at < 0 || n <= 0) fail(E.INVAL);
+    const KEEP_SIZE = 1, PUNCH_HOLE = 2, ZERO_RANGE = 0x10, node = d.node;
+    if (m & ~(KEEP_SIZE | PUNCH_HOLE | ZERO_RANGE)) fail(E.OPNOTSUPP);
+    if (m & (PUNCH_HOLE | ZERO_RANGE)) {
+      if ((m & PUNCH_HOLE) && !(m & KEEP_SIZE)) fail(E.INVAL);
+      const end = m & KEEP_SIZE ? Math.min(at + n, node.size) : at + n;
+      if (end > at) node.write(at, new Uint8Array(end - at));
+      return 0;
+    }
+    if (!(m & KEEP_SIZE) && at + n > node.size) node.truncate(at + n);
+    return 0;
+  },
+  40(out, from, offsetAt, count) { // sendfile: a file's bytes written to `out`, as a write of them is (it may wait)
+    const dout = descriptor(this, out), din = descriptor(this, from);
+    if (din.kind !== 'file' || (din.flags & 3) === O.WRONLY) fail(E.INVAL);
+    if ((dout.flags & 3) === 0 && dout.kind === 'file') fail(E.BADF);
+    const at = N(offsetAt) ? Number(this.view.getBigInt64(N(offsetAt), true)) : din.offset;
+    if (at < 0) fail(E.INVAL);
+    const data = din.node.read(at, at + Math.min(N(count), 1 << 20));
+    if (!data.length) return 0;
+    const n = writeData(this, dout, data);
+    if (N(offsetAt)) this.view.setBigInt64(N(offsetAt), BigInt(at + n), true); else din.offset = at + n;
+    return n;
+  },
+  326(inFd, inAt, outFd, outAt, len, flags) { // copy_file_range: between files, done here
+    if (N(flags)) fail(E.INVAL);
+    const din = descriptor(this, inFd), dout = descriptor(this, outFd);
+    if (din.kind !== 'file' || dout.kind !== 'file') fail(E.INVAL);
+    if ((din.flags & 3) === O.WRONLY || (dout.flags & 3) === 0 || (dout.flags & O.APPEND)) fail(E.BADF);
+    const from = N(inAt) ? Number(this.view.getBigInt64(N(inAt), true)) : din.offset;
+    const to = N(outAt) ? Number(this.view.getBigInt64(N(outAt), true)) : dout.offset;
+    if (from < 0 || to < 0) fail(E.INVAL);
+    const data = din.node.read(from, from + Math.min(N(len), 1 << 30));
+    if (din.node === dout.node && from < to + data.length && to < from + data.length) fail(E.INVAL);
+    if (data.length) dout.node.write(to, data.slice());
+    if (N(inAt)) this.view.setBigInt64(N(inAt), BigInt(from + data.length), true); else din.offset = from + data.length;
+    if (N(outAt)) this.view.setBigInt64(N(outAt), BigInt(to + data.length), true); else dout.offset = to + data.length;
+    return data.length;
+  },
+  // preadv2 and pwritev2: preadv and pwritev, an offset of -1 the descriptor's own (RWF_ flags change nothing here).
+  327(fd, vec, count, pos) { const at = N(pos); return readv(this, descriptor(this, fd), vec, count, at === -1 ? null : at); },
+  328(fd, vec, count, pos) { const at = N(pos); return writev(this, descriptor(this, fd), vec, count, at === -1 ? null : at); },
   76(name, length) { const node = this.kernel.vfs.lookup(path(this, name), this.cwd); if (!node.isFile) fail(E.INVAL); node.truncate(N(length)); return 0; },
   77(fd, length) { const d = descriptor(this, fd); if (d.kind !== 'file') fail(E.INVAL); d.node.truncate(N(length)); return 0; },
   79(buf, size) {
