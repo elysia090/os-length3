@@ -454,6 +454,56 @@ function access(p, dirfd, address) {
   return 0;
 }
 
+// ---- extended attributes ----
+//
+// Kept with each node while this kernel runs, as tmpfs keeps them: names in the namespaces Linux has (user.,
+// trusted., security., system.), values of up to 64 KiB, XATTR_CREATE and XATTR_REPLACE, a size of 0 asking how
+// large. A pipe or socket has none and takes none (ENODATA, EOPNOTSUPP); a link takes no user. attribute (EPERM).
+
+const XATTR = {CREATE: 1, REPLACE: 2, NAME_MOST: 255, VALUE_MOST: 65536};
+const xnode = (p, name, follow) => p.kernel.vfs.lookup(path(p, name), p.cwd, follow);
+/** What a descriptor with no node has (a pipe's, a socket's): no attributes, and room for none. */
+const NONE = {xattrs: null, isLink: false, takesNone: true};
+const xnodeOf = (p, fd) => descriptor(p, fd).node ?? NONE;
+function xname(p, at) {
+  const name = p.cstring(N(at));
+  if (!name || name.length > XATTR.NAME_MOST) fail(E.RANGE);
+  if (!/^(user|trusted|security|system)\./.test(name)) fail(E.OPNOTSUPP);
+  return name;
+}
+function setXattr(p, node, at, value, size, flags) {
+  const name = xname(p, at), n = N(size), f = N(flags);
+  if (n < 0 || n > XATTR.VALUE_MOST) fail(E.TOOBIG);
+  if (f & ~(XATTR.CREATE | XATTR.REPLACE)) fail(E.INVAL);
+  if (node.takesNone) fail(E.OPNOTSUPP);
+  if (node.isLink && name.startsWith('user.')) fail(E.PERM);
+  const all = (node.xattrs ??= new Map());
+  if ((f & XATTR.CREATE) && all.has(name)) fail(E.EXIST);
+  if ((f & XATTR.REPLACE) && !all.has(name)) fail(E.NODATA);
+  all.set(name, p.bytes.slice(N(value), N(value) + n));
+  return 0;
+}
+function getXattr(p, node, at, value, size) {
+  const v = node.xattrs?.get(xname(p, at));
+  if (!v) fail(E.NODATA);
+  if (N(size) === 0) return v.length;
+  if (N(size) < v.length) fail(E.RANGE);
+  p.bytes.set(v, N(value));
+  return v.length;
+}
+function listXattr(p, node, list, size) {
+  const names = enc.encode([...(node.xattrs?.keys() ?? [])].map((k) => `${k}\0`).join(''));
+  if (N(size) === 0) return names.length;
+  if (N(size) < names.length) fail(E.RANGE);
+  p.bytes.set(names, N(list));
+  return names.length;
+}
+function removeXattr(p, node, at) {
+  const name = xname(p, at);
+  if (!node.xattrs?.delete(name)) fail(E.NODATA);
+  return 0;
+}
+
 /** mknod: a named pipe or an empty regular file where nothing is; a device is not made here (EPERM). */
 function makeNode(p, dirfd, address, mode) {
   const r = p.kernel.vfs.resolve(path(p, address), base(p, dirfd), false);
@@ -816,19 +866,19 @@ export const FILE_CALLS = {
     if (d.kind !== 'file' && d.kind !== 'dir' && d.kind !== 'device') fail(E.SPIPE);
     return 0;
   },
-  // Extended attributes: the files here have none and take none, as on a filesystem mounted without them.
-  188(name) { this.kernel.vfs.lookup(path(this, name), this.cwd); fail(E.OPNOTSUPP); }, // setxattr
-  189(name) { this.kernel.vfs.lookup(path(this, name), this.cwd, false); fail(E.OPNOTSUPP); }, // lsetxattr
-  190(fd) { descriptor(this, fd); fail(E.OPNOTSUPP); }, // fsetxattr
-  191(name) { this.kernel.vfs.lookup(path(this, name), this.cwd); fail(E.OPNOTSUPP); }, // getxattr
-  192(name) { this.kernel.vfs.lookup(path(this, name), this.cwd, false); fail(E.OPNOTSUPP); }, // lgetxattr
-  193(fd) { descriptor(this, fd); fail(E.OPNOTSUPP); }, // fgetxattr
-  194(name) { this.kernel.vfs.lookup(path(this, name), this.cwd); fail(E.OPNOTSUPP); }, // listxattr
-  195(name) { this.kernel.vfs.lookup(path(this, name), this.cwd, false); fail(E.OPNOTSUPP); }, // llistxattr
-  196(fd) { descriptor(this, fd); fail(E.OPNOTSUPP); }, // flistxattr
-  197(name) { this.kernel.vfs.lookup(path(this, name), this.cwd); fail(E.OPNOTSUPP); }, // removexattr
-  198(name) { this.kernel.vfs.lookup(path(this, name), this.cwd, false); fail(E.OPNOTSUPP); }, // lremovexattr
-  199(fd) { descriptor(this, fd); fail(E.OPNOTSUPP); }, // fremovexattr
+  // Extended attributes (setfattr, setcap, setfacl): by path (following a link, or not: l*) or by descriptor.
+  188(name, at, value, size, flags) { return setXattr(this, xnode(this, name, true), at, value, size, flags); }, // setxattr
+  189(name, at, value, size, flags) { return setXattr(this, xnode(this, name, false), at, value, size, flags); }, // lsetxattr
+  190(fd, at, value, size, flags) { return setXattr(this, xnodeOf(this, fd), at, value, size, flags); }, // fsetxattr
+  191(name, at, value, size) { return getXattr(this, xnode(this, name, true), at, value, size); }, // getxattr
+  192(name, at, value, size) { return getXattr(this, xnode(this, name, false), at, value, size); }, // lgetxattr
+  193(fd, at, value, size) { return getXattr(this, xnodeOf(this, fd), at, value, size); }, // fgetxattr
+  194(name, list, size) { return listXattr(this, xnode(this, name, true), list, size); }, // listxattr
+  195(name, list, size) { return listXattr(this, xnode(this, name, false), list, size); }, // llistxattr
+  196(fd, list, size) { return listXattr(this, xnodeOf(this, fd), list, size); }, // flistxattr
+  197(name, at) { return removeXattr(this, xnode(this, name, true), at); }, // removexattr
+  198(name, at) { return removeXattr(this, xnode(this, name, false), at); }, // lremovexattr
+  199(fd, at) { return removeXattr(this, xnodeOf(this, fd), at); }, // fremovexattr
   319(name, flags) { // memfd_create: a file in no directory, as shared anonymous memory is
     const f = N(flags);
     if (f & ~0x7) fail(E.INVAL); // MFD_CLOEXEC, MFD_ALLOW_SEALING, MFD_HUGETLB
