@@ -24,7 +24,7 @@ body::after {
   content: ''; position: fixed; inset: 0; z-index: 7; pointer-events: none;
   background: color-mix(in srgb, var(--ink) 14%, transparent); opacity: 0; transition: opacity calc(180ms * var(--pace)) ease-out;
 }
-body:has(.work.bench:not([hidden]) > .bar .search-box:focus-within)::after { opacity: 1; }
+body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within)::after { opacity: 1; }
 /* Over the shade only while it is out: at rest it is the page's, under whatever lies over the page (Server's layer).
    Out with the keyboard elsewhere (what is read there, or a list held out from its head in the pane), the shade lifts:
    the file is written beside it at full strength. */
