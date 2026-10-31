@@ -68,7 +68,7 @@ const answered = (id: number, answer: Answer) => {
 };
 
 /** What only reads this device's files (core/worker.ts READS, less what may ask the Remote): the reader may answer it. */
-const ANYWHERE = new Set(['repo_list', 'repo_tree', 'repo_read', 'repo_bytes', 'state_get', 'capacity']);
+const ANYWHERE = new Set(['repo_list', 'repo_names', 'repo_tree', 'repo_read', 'repo_bytes', 'state_get', 'capacity']);
 /** What may wait on the Remote: while one is asked of the worker, what only reads goes to the reader. */
 const REMOTE = /^(sync_repo|repo_fetch|home_sync|remote_(?!status$)|history_(push|submit|reset|log|cut)$|change_|changes_list$|work_(lines|start|switch|standings)$|issue_commit$|issues_settle$|plan_page$|app_page$)/;
 /** The calls asked of the worker that may wait on the Remote, and how many there are. */
@@ -135,7 +135,7 @@ export function start(): void { started(); }
  * What only reads and changes nothing a read sees: asked again while the same is on its way (Home and its pane each
  * list the repos as they draw), it is answered by the one asked first, each asker given its own copy.
  */
-const SHARED = new Set([...ANYWHERE, 'remote_status', 'agents', 'history_changes']);
+const SHARED = new Set([...ANYWHERE, 'remote_status', 'agents', 'history_changes', 'history_changed']);
 const sharing = new Map<string, Promise<Answer>>();
 
 /** Ask the core in this tab's worker: sent once this turn of the page is done asking, with what else it asked. */

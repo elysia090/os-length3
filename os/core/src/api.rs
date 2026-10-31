@@ -28,6 +28,8 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
     let seen = || -> crate::Result<repos::Repos> { let r = repos()?; Ok(if a.opt::<bool>("main")?.unwrap_or(false) { r.on_main() } else { r }) };
     match name {
         "repo_list" => to(repos()?.list()?),
+        // Their names alone: nothing walked (what a page that only names them, or only checks one is there, asks).
+        "repo_names" => to(repos()?.names()?),
         "repo_create" => to(repos()?.create(&a.s("name")?, &a.s("template")?)?),
         "repo_tree" => to(seen()?.tree(&a.s("repo")?, &a.s("path")?)?),
         "repo_read" => to(seen()?.read(&a.s("repo")?, &a.s("path")?, READ_LIMIT)?),
@@ -138,6 +140,7 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         "app_page" => to(account::app_page(&a.s("ask")?, a.opt::<String>("repo")?.as_deref())?),
 
         "history_changes" => to(history::changes(&repos()?, &a.s("repo")?)?),
+        "history_changed" => to(history::changed(&repos()?, &a.s("repo")?)?),
         "history_diff" => to(history::diff(&repos()?, &a.s("repo")?, DIFF_LIMIT)?),
         "history_at_head" => to(history::at_head(&repos()?, &a.s("repo")?, &a.s("path")?)?),
         "history_cut" => {

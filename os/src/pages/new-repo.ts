@@ -127,7 +127,7 @@ export function newRepo(ctx: Context): Node[] {
       if (Math.abs(by) > .5) li.animate([{translate: `0 ${by}px`}, {translate: '0 0'}], {duration: paced(260), easing: LAND});
     }
   };
-  void store.list().then((list) => { others = list.map((r) => r.name).sort((a, b) => a.localeCompare(b)); showFiles(); judge(); }, () => {});
+  void store.names().then((names) => { others = names.sort((a, b) => a.localeCompare(b)); showFiles(); judge(); }, () => {});
   // What the card is goes to the ear: the eye sees it is File's tree.
   const caption = h('p', {class: 'sr-only'}, t('Preview in File'));
   const card = h('div', {class: 'tree tree-still', 'aria-label': t('Items to create')}, caption, preview);
@@ -201,7 +201,7 @@ export function newRepo(ctx: Context): Node[] {
     if (!validName(n)) { error.textContent = n ? t('Use letters, digits, and . _ - (cannot start with .)') : t('Please enter a name first'); name.focus(); nudge(name); return; }
     // A name taken is the name's to change, as a name not allowed is: the keyboard goes back to it, as written.
     // One the Remote keeps and this device does not hold yet is taken too: it is the same repo, not another of that name.
-    if ((await store.list()).some((r) => r.name === n) || remoteOnly().some((r) => r.name === n)) { error.textContent = t('A repo named "{name}" already exists', {name: n}); name.focus(); nudge(name); return; }
+    if ((await store.names()).includes(n) || remoteOnly().some((r) => r.name === n)) { error.textContent = t('A repo named "{name}" already exists', {name: n}); name.focus(); nudge(name); return; }
     submit.disabled = true;
     try {
       await store.create(n, SCAFFOLD);

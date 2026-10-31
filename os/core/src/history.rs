@@ -210,13 +210,23 @@ struct Pair { path: String, status: &'static str, before: Option<String>, after:
 /// Where the newer side's bytes are: the files here, or the Remote's blobs.
 enum After<'a> { Here(std::path::PathBuf), Remote(&'a Client) }
 
+/// The paths whose files differ from `then` to `now`, in order. Folders count through their files: one made or gone
+/// alone is no change.
+fn differing<'a>(then: &'a Tree, now: &'a Tree) -> impl Iterator<Item = &'a String> {
+    let paths: std::collections::BTreeSet<&String> = then.keys().chain(now.keys()).collect();
+    paths.into_iter().filter(|p| {
+        let (was, is) = (then.get(*p), now.get(*p));
+        was != is && !(matches!(was, Some(None) | None) && matches!(is, Some(None) | None))
+    })
+}
+
 fn pairs(client: Option<&Client>, after_from: After, then: &Tree, now: &Tree) -> Result<Vec<Pair>> {
     let mut out = Vec::new();
-    let paths: std::collections::BTreeSet<&String> = then.keys().chain(now.keys()).collect();
+    let paths: Vec<&String> = differing(then, now).collect();
     if let Some(c) = client {
         let remote_after = matches!(after_from, After::Remote(_));
         let mut need: Vec<&String> = Vec::new();
-        for p in paths.iter().filter(|p| then.get(**p) != now.get(**p)) {
+        for p in &paths {
             if let Some(Some(sha)) = then.get(*p) { need.push(sha); }
             if let (true, Some(Some(sha))) = (remote_after, now.get(*p)) { need.push(sha); }
         }
@@ -224,9 +234,6 @@ fn pairs(client: Option<&Client>, after_from: After, then: &Tree, now: &Tree) ->
     }
     for path in paths {
         let (was, is) = (then.get(path), now.get(path));
-        if was == is { continue; }
-        // Folders count through their files.
-        if matches!(was, Some(None) | None) && matches!(is, Some(None) | None) { continue; }
         let status = match (was, is) { (Some(Some(_)), Some(Some(_))) => "modified", (_, Some(Some(_))) => "added", _ => "removed" };
         let before = match (client, was) {
             (Some(c), Some(Some(sha))) => Some(blob(c, sha)?),
@@ -285,6 +292,12 @@ fn changes_of(client: Option<&Client>, after: After, then: &Tree, now: &Tree) ->
 pub fn changes(repos: &Repos, repo: &str) -> Result<Changes> {
     let (client, then, now) = draft_and_head(repos, repo)?;
     changes_of(client.as_ref(), After::Here(repos.dir(repo)?), &then, &now)
+}
+
+/// How many files are not committed yet: as many as `changes` lists, none of them read (what is said beside diff).
+pub fn changed(repos: &Repos, repo: &str) -> Result<usize> {
+    let (_, then, now) = draft_and_head(repos, repo)?;
+    Ok(differing(&then, &now).count())
 }
 
 /// The same, line by line, at most `limit` lines in all.

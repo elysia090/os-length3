@@ -599,7 +599,7 @@ pub fn status_of(repos: &Repos, name: &str) -> Result<Status> {
 }
 
 pub fn status(repos: &Repos) -> Result<Vec<Status>> {
-    repos.list()?.into_iter().map(|s| status_of(repos, &s.name)).collect()
+    repos.names()?.iter().map(|name| status_of(repos, name)).collect()
 }
 
 /// 空ける for a repo: once the Remote holds exactly what is here, and nothing here

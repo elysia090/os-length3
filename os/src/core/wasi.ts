@@ -140,6 +140,11 @@ export class MemoryFS {
   /** `path` from `start` (from `/` when it begins with one); a link at the end is followed when `follow`. */
   resolve(start: Dir, path: string, follow: boolean, hops = {n: 0}): Found {
     if (path === '') fail(E.NOENT);
+    // One name in a folder (what a walk asks of each entry it lists): looked up at once.
+    if (!path.includes('/') && path !== '.' && path !== '..') {
+      const node = start.entries.get(path);
+      if (node?.kind !== 'link' || !follow) return {dir: start, name: path, node, slash: false};
+    }
     let dir = path.startsWith('/') ? this.root : start;
     const parts = path.split('/').filter((p) => p !== '');
     const slash = path.endsWith('/') || parts.length === 0;
@@ -485,6 +490,7 @@ export class WASI {
   /** Use `instance`'s memory from now on. */
   bind(instance: WebAssembly.Instance) {
     this.memory = instance.exports.memory as WebAssembly.Memory;
+    this.seen = undefined;
   }
 
   /** What is still waiting for its end of line goes out. */
@@ -493,8 +499,16 @@ export class WASI {
     this.lines.clear();
   }
 
-  private get view() { return new DataView(this.memory!.buffer); }
-  private bytes(ptr: number, len: number) { return new Uint8Array(this.memory!.buffer, ptr >>> 0, len >>> 0); }
+  /**
+   * The module's memory as a DataView, made again only when the memory grew, not at each word: growing detaches the
+   * buffer before (its length 0 then).
+   */
+  private seen?: DataView<ArrayBuffer>;
+  private get view() {
+    if (!this.seen || this.seen.buffer.byteLength === 0) this.seen = new DataView(this.memory!.buffer);
+    return this.seen;
+  }
+  private bytes(ptr: number, len: number) { return new Uint8Array(this.view.buffer, ptr >>> 0, len >>> 0); }
   private str(ptr: number, len: number) { return decoder.decode(this.bytes(ptr, len)); }
   private u8(ptr: number, v: number) { this.view.setUint8(ptr >>> 0, v); }
   private u16(ptr: number, v: number) { this.view.setUint16(ptr >>> 0, v, true); }
@@ -522,14 +536,15 @@ export class WASI {
   }
 
   private stat(ptr: number, n: Node) {
-    for (let i = 0; i < 64; i += 8) this.u64(ptr + i, 0);
-    this.u64(ptr + 8, n.ino);
-    this.u8(ptr + 16, TYPE[n.kind]);
-    this.u64(ptr + 24, n.nlink);
-    this.u64(ptr + 32, n.kind === 'file' ? n.size : n.kind === 'link' ? encoder.encode(n.target).length : 4096);
-    this.u64(ptr + 40, n.atime);
-    this.u64(ptr + 48, n.mtime);
-    this.u64(ptr + 56, n.ctime);
+    const v = this.view, at = ptr >>> 0;
+    this.bytes(at, 64).fill(0);
+    v.setBigUint64(at + 8, BigInt(n.ino), true);
+    v.setUint8(at + 16, TYPE[n.kind]);
+    v.setBigUint64(at + 24, BigInt(n.nlink), true);
+    v.setBigUint64(at + 32, BigInt(n.kind === 'file' ? n.size : n.kind === 'link' ? encoder.encode(n.target).length : 4096), true);
+    v.setBigUint64(at + 40, n.atime, true);
+    v.setBigUint64(at + 48, n.mtime, true);
+    v.setBigUint64(at + 56, n.ctime, true);
   }
 
   private print(fd: number, bytes: Uint8Array) {
@@ -745,24 +760,34 @@ export class WASI {
     if (!dir) return E.BADF;
     if (dir.kind !== 'dir') return E.NOTDIR;
     if (cookie === 0 || !o.listing) o.listing = [['.', dir], ['..', dir.parent], ...dir.entries];
-    const out = new Uint8Array(len);
-    const head = new DataView(new ArrayBuffer(24));
+    // Each entry written where the module wants it; the last one that does not fit whole is cut, as preview1 has it
+    // (the module asks again with more room).
+    const v = this.view, mem = this.bytes(buf, len), base = buf >>> 0;
     let at = 0;
     for (let i = cookie; i < o.listing.length && at < len; i++) {
       const [name, node] = o.listing[i];
+      if (len - at >= 24) {
+        const wrote = encoder.encodeInto(name, mem.subarray(at + 24));
+        if (wrote.read === name.length) {
+          v.setBigUint64(base + at, BigInt(i + 1), true);
+          v.setBigUint64(base + at + 8, BigInt(node.ino), true);
+          v.setUint32(base + at + 16, wrote.written, true);
+          v.setUint32(base + at + 20, TYPE[node.kind], true);
+          at += 24 + wrote.written;
+          continue;
+        }
+      }
       const b = encoder.encode(name);
+      const whole = new Uint8Array(24 + b.length), head = new DataView(whole.buffer);
       head.setBigUint64(0, BigInt(i + 1), true);
       head.setBigUint64(8, BigInt(node.ino), true);
       head.setUint32(16, b.length, true);
       head.setUint32(20, TYPE[node.kind], true);
-      const whole = new Uint8Array(24 + b.length);
-      whole.set(new Uint8Array(head.buffer));
       whole.set(b, 24);
       const k = Math.min(whole.length, len - at);
-      out.set(whole.subarray(0, k), at);
+      mem.set(whole.subarray(0, k), at);
       at += k;
     }
-    this.bytes(buf, at).set(out.subarray(0, at));
     this.u32(used, at);
   }
 

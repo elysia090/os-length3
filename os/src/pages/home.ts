@@ -66,10 +66,13 @@ function homePane(main: HTMLElement, ctx: Context): HTMLElement {
   aim(repo);
   const pane = h('div', {class: 'home-pane'}, h('div', {class: 'home-bar'}, reference.search, toggle), side);
   // None worked in yet (or it is gone): the one changed last, so the box is never there to be pressed for nothing.
-  void store.list().then((all) => {
-    if (!pane.isConnected || (repo && all.some((r) => r.name === repo))) return;
-    aim(all.slice().sort((a, b) => b.modified - a.modified)[0]?.name ?? null);
-  }, () => {});
+  // Only then is every repo walked to say which that is; one still there is told by its name.
+  const there = (names: string[]) => !pane.isConnected || (!!repo && names.includes(repo));
+  void store.names().then(async (names) => {
+    if (there(names)) return;
+    const all = names.length ? await store.list() : [];
+    if (!there(all.map((r) => r.name))) aim(all.sort((a, b) => b.modified - a.modified)[0]?.name ?? null);
+  }).catch(() => {});
   const layout = h('div', {class: 'home-layout'}, main, pane);
   // What opens under the box is two of the pane wide, as under Forge's (styles.css .search-results).
   new ResizeObserver(() => pane.style.setProperty('--pane-w', `${pane.offsetWidth}px`)).observe(pane);
@@ -147,7 +150,7 @@ function lately(ctx: Context): HTMLElement {
     const mine = ++asked;
     const rows: HTMLElement[] = [];
     const left = ctx.leftOff;
-    if (left && (await store.list().catch(() => [])).some((r) => r.name === left.repo)) {
+    if (left && (await store.names().catch((): string[] => [])).includes(left.repo)) {
       // The line it was left at, as it is now: what was being written, to be taken up again; or the nearest above it
       // with a word in it (a closing brace alone says nothing of where one was).
       const text = left.at === null ? null : (await store.read(left.repo, left.path).catch(() => null))?.text ?? null;

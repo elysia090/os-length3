@@ -167,7 +167,7 @@ export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): 
       if (input.disabled) return;
       if (to === repo) { done(); return; }
       if (!validName(to)) { refuse(t('Use letters, digits, and . _ - (cannot start with .)')); return; }
-      if ((await store.list()).some((r) => r.name === to) || remoteOnly().some((r) => r.name === to)) { refuse(t('A repo named "{name}" already exists', {name: to})); return; }
+      if ((await store.names()).includes(to) || remoteOnly().some((r) => r.name === to)) { refuse(t('A repo named "{name}" already exists', {name: to})); return; }
       input.disabled = yes.disabled = no.disabled = true;
       try {
         if (stops) await stopPrompt(repo, true);

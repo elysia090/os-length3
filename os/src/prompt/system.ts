@@ -71,7 +71,7 @@ function origins(path: string, entries: SystemEntry[]): SystemEntry[] {
 
 export async function list(path: string): Promise<SystemEntry[]> {
   if (path === '/root') {
-    return (await store.list()).map((r) => ({name: r.name, kind: 'dir', path: `/root/${r.name}`}));
+    return (await store.names()).map((name) => ({name, kind: 'dir', path: `/root/${name}`}));
   }
   if (path === '/dev') return ['null', 'random', 'urandom', 'zero'].map((name) => ({name, kind: 'device', path: `/dev/${name}`}));
   const at = inRepo(path);

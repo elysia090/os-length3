@@ -280,7 +280,7 @@ export class Reference {
   private countChanges() {
     clearTimeout(this.countTimer);
     const repo = this.repo;
-    this.countTimer = window.setTimeout(() => void (repo ? gitops.changes(repo).then((c) => c.files, () => 0) : Promise.resolve(0)).then((n) => {
+    this.countTimer = window.setTimeout(() => void (repo ? gitops.changed(repo).catch(() => 0) : Promise.resolve(0)).then((n) => {
       const at = this.headButtons.get('diff')?.querySelector('.pane-head-n');
       if (at && repo === this.repo) at.textContent = n ? String(n) : '';
     }), 300);

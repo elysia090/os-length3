@@ -60,8 +60,8 @@ export async function freeOff(name: string): Promise<void> {
  * caller's to stop first (a browser's core does not know them).
  */
 export async function takeOff(): Promise<[string, string][]> {
-  const repos = await store.list();
-  const freed = repos.length ? await free(repos.map((r) => `repo:${r.name}`)) : null;
+  const repos = await store.names();
+  const freed = repos.length ? await free(repos.map((r) => `repo:${r}`)) : null;
   const kept = (freed?.kept ?? []).map(([id, why]): [string, string] => [id.replace(/^repo:/, ''), why]);
   for (const key of HOME_KEYS) {
     await syncHome(key).catch(() => {});

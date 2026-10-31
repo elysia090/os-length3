@@ -43,7 +43,7 @@ channel.onmessage = (e: MessageEvent<{from?: string}>) => { if (e.data?.from !==
  * they need no turn and no look at what is kept, so a page reading a repo is not a lock and a transaction a
  * file. One that wrote after all is kept as any other.
  */
-const READS = new Set(['repo_list', 'repo_tree', 'repo_read', 'repo_bytes', 'state_get', 'remote_status', 'capacity']);
+const READS = new Set(['repo_list', 'repo_names', 'repo_tree', 'repo_read', 'repo_bytes', 'state_get', 'remote_status', 'capacity']);
 
 // ---- the network: synchronously, as the core waits for its answer (a worker may) ----
 

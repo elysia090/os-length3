@@ -197,19 +197,21 @@ pub(super) fn walk(dir: &Path, prefix: &str, out: &mut Local) {
             out.unsynced.push((rel, crate::tr!("git history", "git の履歴")));
             continue;
         }
-        let Ok(meta) = e.path().symlink_metadata() else { continue };
+        // Its own, not what a link names (as lstat), asked of the folder listed rather than by the whole path again.
+        let Ok(meta) = e.metadata() else { continue };
+        let path = e.path();
         if meta.file_type().is_symlink() {
             out.unsynced.push((rel, crate::tr!("a link", "リンク")));
         } else if meta.is_dir() {
             // Made from the repo's own files (owned.rs): not the repo's to send, nor what keeps it here.
-            if crate::owned::derived(dir, &name, &e.path()) { continue; }
-            walk(&e.path(), &rel, out);
+            if crate::owned::derived(dir, &name, &path) { continue; }
+            walk(&path, &rel, out);
         } else if meta.is_file() {
             if meta.len() > BLOB_LIMIT {
                 out.unsynced.push((rel, crate::tr!("File exceeds 16 MB", "16 MB を超えるファイル")));
                 continue;
             }
-            let sha = if out.fresh { fs::read(e.path()).ok().map(|b| sha256(&b)) } else { digest(&e.path(), &meta) };
+            let sha = if out.fresh { fs::read(&path).ok().map(|b| sha256(&b)) } else { digest(&path, &meta) };
             let Some(sha) = sha else { out.unsynced.push((rel, crate::tr!("a file that cannot be read", "読めないファイル"))); continue };
             out.bytes += meta.len();
             #[cfg(unix)]
@@ -218,8 +220,8 @@ pub(super) fn walk(dir: &Path, prefix: &str, out: &mut Local) {
                 let mode = meta.permissions().mode() & 0o777;
                 if mode & 0o111 != 0 { out.modes.insert(rel.clone(), mode); }
             }
-            out.read.push(e.path());
-            out.files.insert(sha.clone(), e.path());
+            out.read.push(path.clone());
+            out.files.insert(sha.clone(), path);
             out.tree.insert(rel, Some(sha));
         } else {
             out.unsynced.push((rel, crate::tr!("a special file", "特殊なファイル")));
