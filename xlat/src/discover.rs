@@ -301,6 +301,16 @@ fn relative_table_targets(elf: &Elf, references: &BTreeSet<u64>) -> Vec<u64> {
 /// `known` addresses is translated already, so a walk stops there and a
 /// call to it goes through the dispatcher. Nothing of the file is read but
 /// the code execution reaches from the seeds.
+/// The blocks of `f` that block `k` goes back to (at or before itself): the heads of its loops.
+pub fn back_edges(f: &Function, k: usize, b: &Block) -> Vec<u64> {
+    let targets: &[u64] = match &b.exit {
+        Exit::Jump(a) | Exit::Fall(a) => std::slice::from_ref(a),
+        Exit::Branch { taken, .. } => std::slice::from_ref(taken),
+        _ => &[],
+    };
+    targets.iter().copied().filter(|&a| f.block_index(a).is_some_and(|j| j <= k)).collect()
+}
+
 pub fn discover_from(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>) -> Program {
     discover_within(elf, seeds, known, usize::MAX)
 }
@@ -356,8 +366,10 @@ pub fn discover_within(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>, budget: 
             if let Some(b) = function.block_index(address) { entries.entry(address).or_insert((f, b as u32)); }
         };
         mark(start);
-        for b in &function.blocks {
+        for (k, b) in function.blocks.iter().enumerate() {
             if let Exit::Call { ret, .. } | Exit::IndirectCall { ret } = b.exit { mark(ret); }
+            // A loop's head: where a thread that has run long is taken back to the kernel, and goes on later.
+            for a in back_edges(&function, k, b) { mark(a); }
             if b.code.last().is_some_and(resumes_after) {
                 mark(b.code.last().unwrap().ip());
                 mark(b.code.last().unwrap().next_ip());
@@ -450,10 +462,12 @@ fn walk_program(elf: &Elf, targets: &[u64], pointed_start: bool) -> Program {
             }
         };
         mark(start, &function);
-        for b in &function.blocks {
+        for (k, b) in function.blocks.iter().enumerate() {
             if let Exit::Call { ret, .. } | Exit::IndirectCall { ret } = b.exit {
                 mark(ret, &function);
             }
+            // A loop's head: where a thread that has run long is taken back to the kernel, and goes on later.
+            for a in back_edges(&function, k, b) { mark(a, &function); }
             if b.code.last().is_some_and(resumes_after) {
                 mark(b.code.last().unwrap().ip(), &function);
                 mark(b.code.last().unwrap().next_ip(), &function);

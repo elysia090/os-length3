@@ -14,7 +14,9 @@
 // A program that cannot run yet still ships: this says which, and why, for
 // the translator's work.
 //
-//   node scripts/l3-runnable.mjs WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N]
+//   node scripts/l3-runnable.mjs WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N] [--fresh]
+//
+// --fresh: this checkout's translator (../xlat's wasm build), every program translated as it runs, not what WEB carries.
 //
 // WEB is l3 for the browser (public/l3; a root of packs of before is read
 // too), ROOT_DIR the same root unpacked (for the native run). The translator
@@ -29,16 +31,17 @@ const ENV = ['HOME=/root', 'PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', 
 
 
 /** One program under xlat, in this process: prints {status, stdout, stderr, error?, ms} as JSON. */
-async function child({web, path, args, translator}) {
+async function child({web, path, args, translator, fresh}) {
   const {Vfs} = await import('../../xlat/runtime/fs.mjs');
   const {mountPack} = await import('../../xlat/runtime/pack.mjs');
   const {Kernel} = await import('../../xlat/runtime/process.mjs');
   const {loadTranslator} = await import('../../xlat/runtime/translator.mjs');
   const w = openWeb(web);
-  const translate = await loadTranslator(w.index.translator ? w.blob(w.index.translator) : readFileSync(translator));
+  // --fresh: this checkout's translator, translating everything as it runs (what the next l3 will be).
+  const translate = await loadTranslator(w.index.translator && !fresh ? w.blob(w.index.translator) : readFileSync(translator));
   const vfs = new Vfs();
   // As the page gives them: each program translated ahead of time, with its bytes.
-  const ready = (w.index.translations ?? []).map((t) => {
+  const ready = (fresh ? [] : w.index.translations ?? []).map((t) => {
     const f = w.index.files.find((x) => x.path === t.path);
     vfs.writeFile(t.path, new Uint8Array(w.blob(t.elf)), f.mode);
     return {path: t.path, module: new WebAssembly.Module(w.blob(t.wasm))};
@@ -123,6 +126,7 @@ async function main() {
   const flag = (name, d = null) => { const i = args.indexOf(name); if (i < 0) return d; const v = args[i + 1]; args.splice(i, 2); return v; };
   const outMd = flag('--out'), outJson = flag('--json'), jobs = Number(flag('--jobs', '4')), only = flag('--only'), seconds = Number(flag('--seconds', '30'));
   const workOnly = args.includes('--work-only') && args.splice(args.indexOf('--work-only'), 1);
+  const fresh = args.includes('--fresh') && !!args.splice(args.indexOf('--fresh'), 1);
   const [web, rootDir] = args;
   if (!web || !rootDir) { console.error('usage: l3-runnable.mjs WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N]'); process.exit(2); }
   const w = openWeb(web);
@@ -140,9 +144,9 @@ async function main() {
   if (only) list = list.filter((p) => new RegExp(only).test(p.path));
   if (workOnly) list = [];
   w.close();
-  const rows = await compare(list.map((p) => ({name: p.path, what: p.type, path: p.path, args: ['--version']})), {web, rootDir, translator, jobs, seconds});
+  const rows = await compare(list.map((p) => ({name: p.path, what: p.type, path: p.path, args: ['--version']})), {web, rootDir, translator, jobs, seconds, fresh});
   // Work a person does in a Prompt, each a line of sh, compared the same way: what --version cannot show (fork, pipes, signals, threads).
-  const work = only ? [] : await compare(WORK.map(([name, line]) => ({name, what: line, path: '/usr/bin/sh', args: ['-c', line]})), {web, rootDir, translator, jobs, seconds: seconds * 4});
+  const work = only ? [] : await compare(WORK.map(([name, line]) => ({name, what: line, path: '/usr/bin/sh', args: ['-c', line]})), {web, rootDir, translator, jobs, seconds: seconds * 4, fresh});
   const tally = (rs, v) => rs.filter((r) => r.verdict === v).length;
   const about = w.about ? `l3 ${w.about.version} (sha256 ${w.about.sha256})` : `${w.index.name} ${w.index.version} (a root of packs of before)`;
   const cell = (t) => String(t).replace(/\|/g, '\\|').replace(/`/g, "'").replace(/\n/g, ' ');
@@ -170,7 +174,14 @@ async function main() {
   if (outMd) writeFileSync(outMd, md);
   if (outJson) writeFileSync(outJson, JSON.stringify({programs: rows, work}, null, 2));
   console.log(`${rows.length} programs: ${tally(rows, 'runs')} run as native, ${tally(rows, 'not yet')} not yet`);
-  if (work.length) console.log(`${work.length} lines of work: ${tally(work, 'runs')} run as native, ${tally(work, 'not yet')} not yet`);
+  if (work.length) {
+    console.log(`${work.length} lines of work: ${tally(work, 'runs')} run as native, ${tally(work, 'not yet')} not yet`);
+    // How long each took, natively and in the browser's kernel (its own work: the program, not node starting).
+    const timed = work.filter((w) => w.verdict === 'runs' && w.ms && w.nativeMs);
+    for (const w of timed) console.log(`  ${String(w.nativeMs).padStart(6)} ms native  ${String(w.ms).padStart(6)} ms xlat  ${(w.ms / w.nativeMs).toFixed(2).padStart(6)}x  ${w.name}`);
+    const geo = Math.exp(timed.reduce((a, w) => a + Math.log(w.ms / w.nativeMs), 0) / Math.max(1, timed.length));
+    if (timed.length) console.log(`  geometric mean ${geo.toFixed(2)}x over ${timed.length}`);
+  }
 }
 
 /** Lines of sh a Prompt runs, each named: what --version does not reach. */
@@ -181,7 +192,7 @@ const WORK = [
   ['find and xargs', "mkdir -p /tmp/d/e && touch /tmp/d/e/x && find /tmp/d -type f | xargs ls"],
   ['a signal handler', "trap 'echo caught' USR1; kill -USR1 $$; echo after"],
   ['background job', "sleep 1 & wait; echo waited"],
-  ['a pipe over 64 MiB', "head -c 70000000 /dev/zero | wc -c"],
+  ['a pipe over 64 MiB', "dd if=/dev/zero bs=1000000 count=70 2>/dev/null | wc -c"],
   ['tar, gzip, xz, bzip2, zstd', "cd /tmp && echo x > f && tar -cf - f | gzip | gunzip | xz | unxz | bzip2 | bunzip2 | zstd -q | zstd -dq | tar -tf -"],
   ['sha256sum and openssl', "echo hi | sha256sum && echo hi | openssl dgst -sha256 -r"],
   ['curl file://', "echo hi > /tmp/c && curl -s file:///tmp/c"],
@@ -193,20 +204,93 @@ const WORK = [
   ['apk info', "apk info 2>/dev/null | wc -l"],
   ['l3 help', "l3 help | head -n 1"],
   ['nano --help', "nano --help | head -n 1"],
+  // Work as heavy as a person's: threads, many processes, a parallel build, a history, floating point, signals and
+  // timers, mmap, deep recursion, big pipelines, crypto, archives of many files.
+  ['threads, mutexes, condition variables, atomics', `cd /tmp && cat > th.c <<'C'
+#include <pthread.h>
+#include <stdio.h>
+#include <stdatomic.h>
+static pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER; static pthread_cond_t c = PTHREAD_COND_INITIALIZER;
+static long total; static atomic_long fast; static int ready;
+static void *work(void *a) { long n = (long)a, s = 0;
+  pthread_mutex_lock(&m); while (!ready) pthread_cond_wait(&c, &m); pthread_mutex_unlock(&m);
+  for (long i = 0; i < 200000; i++) { s += i % (n + 3); atomic_fetch_add(&fast, 1); }
+  pthread_mutex_lock(&m); total += s; pthread_mutex_unlock(&m); return 0; }
+int main(void) { pthread_t t[8]; for (long i = 0; i < 8; i++) pthread_create(&t[i], 0, work, (void *)i);
+  pthread_mutex_lock(&m); ready = 1; pthread_cond_broadcast(&c); pthread_mutex_unlock(&m);
+  for (int i = 0; i < 8; i++) pthread_join(t[i], 0); printf("%ld %ld\\n", total, (long)fast); return 0; }
+C
+gcc -O2 -pthread th.c -o th && ./th`],
+  ['200 processes one after another', "i=0; while [ $i -lt 200 ]; do /usr/bin/true; i=$((i+1)); done; echo $i"],
+  ['make -j4 over 8 files', `mkdir -p /tmp/mk && cd /tmp/mk && for k in 1 2 3 4 5 6 7 8; do printf 'int f%d(int x){int s=0;for(int i=0;i<x;i++)s+=i*%d%%7;return s;}\\n' $k $k > f$k.c; done
+printf '#include <stdio.h>\\n' > main.c; for k in 1 2 3 4 5 6 7 8; do printf 'int f%d(int);\\n' $k >> main.c; done
+printf 'int main(void){long s=0;' >> main.c; for k in 1 2 3 4 5 6 7 8; do printf 's+=f%d(100000);' $k >> main.c; done; printf 'printf("%%ld\\\\n",s);return 0;}\\n' >> main.c
+printf 'OBJ=main.o f1.o f2.o f3.o f4.o f5.o f6.o f7.o f8.o\\nall: p\\np: $(OBJ)\\n\\tcc -o p $(OBJ)\\n%%.o: %%.c\\n\\tcc -O2 -c $<\\n' > Makefile
+make -s -j4 && ./p`],
+  ['git: 60 commits, a branch, a merge', `cd /tmp && git init -q h && cd h && git config user.email a@b && git config user.name a
+i=0; while [ $i -lt 60 ]; do echo $i >> f; git add f; git commit -qm "c$i"; i=$((i+1)); done
+git checkout -qb side && echo side > g && git add g && git commit -qm side && git checkout -q - && echo main >> f && git commit -qam main
+git merge -q --no-edit side && git log --oneline | wc -l && git diff HEAD~3 --stat | tail -n 1`],
+  ['floating point through libm', `cd /tmp && printf '#include <stdio.h>\\n#include <math.h>\\nint main(void){double s=0;for(int i=1;i<200000;i++)s+=sin(i)*cos(i/3.0)+sqrt(i)/log(i+1.0);printf("%%.6f\\\\n",s);return 0;}\\n' > fp.c && gcc -O2 fp.c -o fp -lm && ./fp`],
+  ['SIGALRM, setitimer and setjmp', `cd /tmp && cat > al.c <<'C'
+#include <signal.h>
+#include <setjmp.h>
+#include <stdio.h>
+#include <sys/time.h>
+static sigjmp_buf j; static volatile int n;
+static void tick(int s) { (void)s; if (++n == 5) siglongjmp(j, 1); }
+int main(void) { signal(SIGALRM, tick); struct itimerval t = {{0, 2000}, {0, 2000}}; setitimer(ITIMER_REAL, &t, 0);
+  if (!sigsetjmp(j, 1)) for (;;) ; printf("ticks %d\\n", n); return 0; }
+C
+gcc -O2 al.c -o al && ./al`],
+  ['mmap a file, write through it, read it back', `cd /tmp && cat > mm.c <<'C'
+#include <fcntl.h>
+#include <stdio.h>
+#include <sys/mman.h>
+#include <unistd.h>
+int main(void) { int fd = open("mm.dat", O_RDWR | O_CREAT | O_TRUNC, 0644); ftruncate(fd, 1 << 20);
+  unsigned char *p = mmap(0, 1 << 20, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  for (int i = 0; i < 1 << 20; i++) p[i] = i * 7; msync(p, 1 << 20, MS_SYNC); munmap(p, 1 << 20);
+  unsigned char b[4096]; long s = 0; lseek(fd, 0, SEEK_SET); ssize_t r; while ((r = read(fd, b, sizeof b)) > 0) for (int i = 0; i < r; i++) s += b[i];
+  printf("%ld\\n", s); return 0; }
+C
+gcc -O2 mm.c -o mm && ./mm`],
+  ['recursion 100000 deep', `cd /tmp && printf '#include <stdio.h>\\nstatic long d(long n){volatile char pad[32];pad[0]=n;return n?d(n-1)+pad[0]%%3:0;}\\nint main(void){printf("%%ld\\\\n",d(100000));return 0;}\\n' > rc.c && gcc -O0 rc.c -o rc && ./rc`],
+  ['sort, uniq and awk over 200000 lines', "seq 1 200000 | awk '{print $1 % 997}' | sort -n | uniq -c | sort -rn | head -n 3 | awk '{s+=$1} END {print s}'"],
+  ['openssl AES, deterministic', "dd if=/dev/zero bs=1000 count=1000 2>/dev/null | openssl enc -aes-256-cbc -K 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f -iv 0f0e0d0c0b0a09080706050403020100 | sha256sum | cut -c1-16"],
+  ['tar and gzip of 400 files', "mkdir -p /tmp/tz && cd /tmp/tz && i=0; while [ $i -lt 400 ]; do echo $i > f$i; i=$((i+1)); done; tar -cf - . | gzip | gunzip | tar -tf - | wc -l"],
 ];
 
+/**
+ * Programs whose output describes the machine they run on (its memory, its processes): the browser's kernel and the
+ * sandbox here are different machines, so what they say is compared by its form, each line of the one as each line
+ * of the other is made: the same header, the same labels, every process line a process line.
+ */
+const SHAPES = {
+  '/usr/bin/free': (out) => out.split('\n').map((l) => l.trim().split(/\s+/)[0]),
+  '/usr/bin/ps': (out) => out.split('\n').filter(Boolean).map((l) => /^\s*PID\b/.test(l) ? l.trim() : /^\s*\d+ \S+\s+\d+ [RSDZTW]\s+\S/.test(l) ? 'a process' : l),
+};
+function sameShape(path, a, b) {
+  const shape = SHAPES[path];
+  if (!shape) return false;
+  const [x, y] = [shape(a), shape(b)];
+  // The same lines, in kind: each process's line a process line, however many processes each machine has.
+  const kinds = (v) => [...new Set(v)].sort().join('\n');
+  return path === '/usr/bin/ps' ? kinds(x) === kinds(y) : x.join('\n') === y.join('\n');
+}
+
 /** Each of `items` ({name, what, path, args}) under xlat and natively, `jobs` at a time: one row each. */
-async function compare(items, {web, rootDir, translator, jobs, seconds}) {
+async function compare(items, {web, rootDir, translator, jobs, seconds, fresh}) {
   const rows = [];
   let next = 0;
   const worker = async () => {
     while (next < items.length) {
       const p = items[next++];
-      const [native, xlat] = await Promise.all([
-        run('bwrap', [...sandbox(rootDir), p.path, ...p.args], {seconds, env: {}}),
-        run(process.execPath, [fileURLToPath(import.meta.url), '--child', JSON.stringify({web, path: p.path, args: p.args, translator})],
-          {seconds, env: {...process.env, XLAT_SYSCALLS: '1'}}),
-      ]);
+      // One after the other, so neither's time is the other's load.
+      const started = performance.now();
+      const native = {...await run('bwrap', [...sandbox(rootDir), p.path, ...p.args], {seconds, env: {}}), ms: Math.round(performance.now() - started)};
+      const xlat = await run(process.execPath, [fileURLToPath(import.meta.url), '--child', JSON.stringify({web, path: p.path, args: p.args, translator, fresh})],
+        {seconds, env: {...process.env, XLAT_SYSCALLS: '1'}});
       let x = null;
       try { x = JSON.parse(xlat.stdout); } catch { /* ended without saying: killed, or the kernel threw */ }
       // The system calls xlat has no answer for, by number, from its trace.
@@ -224,7 +308,7 @@ async function compare(items, {web, rootDir, translator, jobs, seconds}) {
         const xs = x.status & 0x7f ? `signal ${x.status & 0x7f}` : x.status >> 8;
         const said = x.stderr.split('\n').find((l) => l.startsWith('xlat:'));
         if (said) { verdict = 'not yet'; why = said.slice(0, 160); }
-        else if (xs === nativeStatus && x.stdout === native.stdout) verdict = 'runs';
+        else if (xs === nativeStatus && (x.stdout === native.stdout || sameShape(p.path, x.stdout, native.stdout))) verdict = 'runs';
         else {
           verdict = 'not yet';
           why = `ends, differs: exit ${xs} (native ${nativeStatus})${x.stdout === native.stdout ? '' : `, says ${JSON.stringify(x.stdout.slice(0, 60))} (native ${JSON.stringify(native.stdout.slice(0, 60))})`}`;
@@ -234,7 +318,7 @@ async function compare(items, {web, rootDir, translator, jobs, seconds}) {
       }
       const calls = [...new Set([...missing, ...enosys])].sort((a, b) => a - b);
       if (calls.length && verdict !== 'runs') why += `${why ? '; ' : ''}ENOSYS: ${calls.join(' ')}`;
-      rows.push({name: p.name, what: p.what, verdict, why, native: nativeStatus, ms: x?.ms ?? null, first: (x?.stdout || native.stdout).split('\n')[0].slice(0, 80)});
+      rows.push({name: p.name, what: p.what, verdict, why, native: nativeStatus, ms: x?.ms ?? null, nativeMs: native.ms, first: (x?.stdout || native.stdout).split('\n')[0].slice(0, 80)});
       process.stderr.write(`${verdict.padEnd(14)} ${p.name}${why ? `  (${why})` : ''}\n`);
     }
   };

@@ -13,9 +13,9 @@
 // `lock`-prefixed instructions to plain loads and stores, which are atomic
 // only while no other thread of the process runs.
 
-import {CH, OP, REPLY, REGS} from './channel.mjs';
+import {CH, OP, REPLY, REGS, rouse, sleep, watch} from './channel.mjs';
 import {Fpu} from './fpu.mjs';
-import {GuestTrap, div128, fault} from './process.mjs';
+import {INTERRUPT, Preempted, SHARES, SLICE_LOOPS, TRAP_YIELD, div128, fault, nextSlice, translatorsLimit, trapOrPreempt} from './process.mjs';
 
 const isNode = typeof process !== 'undefined' && !!process.versions?.node;
 const port = isNode ? (await import('node:worker_threads')).parentPort : self;
@@ -50,13 +50,14 @@ class Thread {
     this.attach();
     this.setRegs(m.regs);
     this.resumeAt = BigInt(m.resumeAt);
+    this.slice = SLICE_LOOPS;
   }
 
   imports() {
     return {env: {
       memory: this.memory,
       syscall: (nr, a, b, c, d, e, f, next) => this.syscall(nr, a, b, c, d, e, f, next),
-      trap: (address, code) => { throw new GuestTrap(address, code); },
+      trap: trapOrPreempt,
       div128,
       clock: () => BigInt(Math.round((performance.timeOrigin + performance.now()) * 1e6)),
       fpu: (op, size, address, a, b) => this.fpu.call(op, size, address, a, b),
@@ -72,19 +73,32 @@ class Thread {
     for (;;) {
       const held = Atomics.compareExchange(this.gil, 0, 0, me);
       if (held === 0 || held === me) return;
+      // The one holding it gives its turn up at its next loop's head (pause), as a time slice ends.
+      this.raise();
+      Atomics.add(this.gil, 1, 1);
       Atomics.wait(this.gil, 0, held);
+      Atomics.sub(this.gil, 1, 1);
     }
   }
+  /** The interrupt word of this process's memory (process.mjs INTERRUPT): its threads look in. */
+  raise() { Atomics.store(new Int32Array(this.memory.buffer), INTERRUPT >> 2, 1); }
   unlock() {
     Atomics.store(this.gil, 0, 0);
-    Atomics.notify(this.gil, 0, 1);
+    if (Atomics.load(this.gil, 1)) Atomics.notify(this.gil, 0, 1); // only when another thread waits for it
   }
 
   // ---- registers ----
 
-  regs() { return REGS.map((name) => this.instance.exports[name]?.value ?? 0n); }
+  /** Each register's global, looked up once. */
+  get globals() { return (this._globals ??= REGS.map((name) => this.instance.exports[name] ?? null)); }
+  regs() { return this.globals.map((g) => g?.value ?? 0n); }
+  /** The registers into the channel, from REGS on. */
+  putRegs() {
+    const {i64} = this, g = this.globals;
+    for (let n = 0; n < g.length; n++) i64[CH.REGS + n] = g[n] ? g[n].value : 0n;
+  }
   setRegs(regs) {
-    REGS.forEach((name, n) => { const g = this.instance.exports[name]; if (g && regs[n] !== undefined) g.value = BigInt.asIntN(64, BigInt(regs[n])); });
+    this.globals.forEach((g, n) => { if (g && regs[n] !== undefined) g.value = BigInt.asIntN(64, BigInt(regs[n])); });
   }
 
   // ---- the kernel ----
@@ -95,11 +109,13 @@ class Thread {
     i32[CH.OP] = op;
     Atomics.store(i32, CH.STATE, 1);
     Atomics.add(this.door, 0, 1);
-    Atomics.notify(this.door, 0);
-    for (;;) {
-      const state = Atomics.load(i32, CH.STATE);
-      if (state === 2) break;
-      Atomics.wait(i32, CH.STATE, state);
+    rouse(this.door, 0, 1);
+    if (!watch(i32, CH.STATE, (state) => state === 2)) {
+      for (;;) {
+        const state = Atomics.load(i32, CH.STATE);
+        if (state === 2) break;
+        sleep(i32, CH.STATE, state, CH.ASLEEP);
+      }
     }
     return i32[CH.REPLY];
   }
@@ -108,8 +124,7 @@ class Thread {
     const {i64} = this;
     i64[CH.NR] = nr; i64[CH.ARGS] = a; i64[CH.ARGS + 1] = b; i64[CH.ARGS + 2] = c;
     i64[CH.ARGS + 3] = d; i64[CH.ARGS + 4] = e; i64[CH.ARGS + 5] = f; i64[CH.NEXT] = next;
-    const regs = this.regs();
-    for (let n = 0; n < regs.length; n++) i64[CH.REGS + n] = regs[n];
+    this.putRegs();
     // A new thread or process starts from this one's x87 too.
     if (nr === 56n || nr === 57n || nr === 58n) this.put(JSON.stringify({top: this.fpu.top, cw: this.fpu.cw, sw: this.fpu.sw, st: this.fpu.st.map((x) => [x.kind, x.sign, x.e, String(x.m)])}));
     this.unlock();
@@ -174,20 +189,54 @@ class Thread {
     return at;
   }
 
+  /** Its turn ended at `address` in guest code: the kernel hears (a signal may wait), the others may run, it goes on. */
+  pause(address) {
+    const {i64} = this;
+    Atomics.store(new Int32Array(this.memory.buffer), INTERRUPT >> 2, 0);
+    i64[CH.NEXT] = address;
+    this.putRegs();
+    this.unlock();
+    const reply = this.ask(OP.YIELD);
+    if (reply === REPLY.AWAY) throw new Away();
+    this.lock();
+    this.catchUp();
+    if (reply === REPLY.REDIRECT) {
+      this.setRegs(Array.from({length: REGS.length}, (_, n) => i64[CH.REGS + n]));
+      this.resumeAt = i64[CH.RIP];
+    } else this.resumeAt = address;
+  }
+
   run() {
     for (;;) {
       try {
         this.catchUp();
-        this.instance.exports.run(this.resumeAt);
+        // A full time slice, and no frames yet (process.mjs Preempted).
+        const x = this.instance.exports;
+        if (x.budget) { x.budget.value = this.slice; x.depth.value = 0; }
+        this.ranAt = performance.now();
+        x.run(this.resumeAt);
         return;
       } catch (e) {
         if (e instanceof Again) continue;
         if (e instanceof Away) return;
+        if (e instanceof Preempted) {
+          // Calls deep enough: on afresh. Its time is up: the kernel hears only if it asked (the interrupt word),
+          // or the process shares memory with another (what it wrote there goes to the others then).
+          this.resumeAt = e.address;
+          if (e.code !== TRAP_YIELD) continue;
+          const words = new Int32Array(this.memory.buffer);
+          const spent = Atomics.load(words, INTERRUPT >> 2) === 0;
+          if (spent) this.slice = nextSlice(this.slice, performance.now() - this.ranAt);
+          if (!spent || Atomics.load(words, SHARES >> 2)) {
+            try { this.pause(e.address); } catch (away) { if (away instanceof Away) return; throw away; }
+          }
+          continue;
+        }
         const sig = fault(e);
         if (!sig) throw e;
         if (isNode && process.env.XLAT_FAULTS) console.error(`[${this.tid}] fault: ${e.stack}`);
         // A fault ends the process, as the kernel decides; what the translator cannot run yet is said.
-        this.put(e instanceof GuestTrap && (e.code === 1 || e.code === 2) ? `xlat: ${e.message}\n` : '');
+        this.put(translatorsLimit(e) ? `xlat: ${e.message}\n` : '');
         this.i64[CH.ARG0] = BigInt(sig);
         this.unlock();
         this.ask(OP.FAULT);

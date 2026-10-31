@@ -25,7 +25,7 @@ function walk(dir, prefix, out) {
     const rel = prefix ? `${prefix}/${name}` : name;
     if (isGitName(name)) continue;
     if (node instanceof Dir) { out.set(rel, {node, dir: true}); walk(node, rel, out); }
-    else if (node instanceof File) out.set(rel, {node, dir: false, version: node.version, size: node.size});
+    else if (node instanceof File) { if (node.maps) node.settle(); out.set(rel, {node, dir: false, version: node.version, size: node.size}); }
   }
   return out;
 }
@@ -51,7 +51,7 @@ export class Mirror {
       const before = this.seen.get(rel);
       if (e.dir) { if (!before?.dir) dirs.push(rel); continue; }
       if (before && !before.dir && before.node === e.node && before.version === e.version && before.size === e.size) continue;
-      files.push({path: rel, bytes: e.node.data.slice(0, e.node.size), existed: !!before && !before.dir});
+      files.push({path: rel, bytes: e.node.bytes(), existed: !!before && !before.dir});
     }
     for (const [rel, e] of this.seen) {
       if (now.has(rel) && now.get(rel).dir === e.dir) continue;

@@ -4,7 +4,8 @@
 // results, or Wait for a call to be made again once something changed.
 
 import {Description, PIPE_BUF, Pipe} from './fd.mjs';
-import {Dir, Device, E, File, FsError, Link, S_IFIFO} from './fs.mjs';
+import {procDescriptor} from './procfs.mjs';
+import {Dir, Device, E, Fifo, File, FsError, Link, S_IFIFO} from './fs.mjs';
 import {Wait} from './process.mjs';
 import {SIG, SI, UNBLOCKABLE, actionOf, bit, deliverable, send} from './signal.mjs';
 
@@ -47,20 +48,84 @@ function writeStat(p, address, node) {
   v.setBigInt64(at + 48, BigInt(size), true);
   v.setBigInt64(at + 56, 4096n, true);
   v.setBigInt64(at + 64, BigInt(Math.ceil(size / 512)), true);
-  const s = BigInt(Math.floor(node.mtime / 1000)), ns = BigInt((node.mtime % 1000) * 1e6);
-  for (const off of [72, 88, 104]) { v.setBigInt64(at + off, s, true); v.setBigInt64(at + off + 8, ns, true); }
+  // atime, mtime, ctime: as set (utimensat keeps nanoseconds), else the time of the last change.
+  for (const [off, ms, ns] of [[72, node.atime ?? node.mtime, node.atimeNs], [88, node.mtime, node.mtimeNs], [104, node.ctime ?? node.mtime, undefined]]) {
+    v.setBigInt64(at + off, BigInt(Math.floor(ms / 1000)), true);
+    v.setBigInt64(at + off + 8, BigInt(ns ?? Math.floor(ms % 1000) * 1e6), true);
+  }
   return 0;
+}
+
+const UTIME_NOW = (1 << 30) - 1, UTIME_OMIT = (1 << 30) - 2;
+
+/** The file a time-setting call names: by its path from `dirfd`, or the descriptor itself (a NULL or empty path). */
+function timed(p, dirfd, name, follow) {
+  if (!N(name) || !p.bytes[N(name)]) {
+    if (N(dirfd) === AT_FDCWD) return p.kernel.vfs.lookup(p.cwd, '/');
+    const d = descriptor(p, dirfd);
+    if (!d.node) fail(E.BADF);
+    return d.node;
+  }
+  return p.kernel.vfs.lookup(path(p, name), base(p, dirfd), follow);
+}
+
+/** Set a file's access and modification times, each [seconds, nanoseconds], 'now' or 'omit'; its ctime is now. */
+function setTimes(node, access, modify) {
+  const now = Date.now();
+  const at = (t) => t === 'now' ? [now, (now % 1000) * 1e6] : [t[0] * 1000 + Math.floor(t[1] / 1e6), t[1]];
+  if (access !== 'omit') { const [ms, ns] = at(access); node.atime = ms; node.atimeNs = ns; }
+  if (modify !== 'omit') { const [ms, ns] = at(modify); node.mtime = ms; node.mtimeNs = ns; }
+  node.ctime = now;
+  return 0;
+}
+
+/** Times from a struct timespec[2] (utimensat), with UTIME_NOW and UTIME_OMIT; none given is now for both. */
+function timespecs(p, address) {
+  if (!N(address)) return ['now', 'now'];
+  return [0, 16].map((off) => {
+    const s = Number(p.view.getBigInt64(N(address) + off, true)), ns = Number(p.view.getBigInt64(N(address) + off + 8, true));
+    if (ns === UTIME_NOW) return 'now';
+    if (ns === UTIME_OMIT) return 'omit';
+    if (ns < 0 || ns >= 1e9) fail(E.INVAL);
+    return [s, ns];
+  });
+}
+/** Times from a struct timeval[2] (utimes, futimesat): microseconds. */
+function timevals(p, address) {
+  if (!N(address)) return ['now', 'now'];
+  return [0, 16].map((off) => {
+    const s = Number(p.view.getBigInt64(N(address) + off, true)), us = Number(p.view.getBigInt64(N(address) + off + 8, true));
+    if (us < 0 || us >= 1e6) fail(E.INVAL);
+    return [s, us * 1000];
+  });
 }
 
 function describe(d) {
   // Something to stat for a descriptor without a node.
   if (d.node) return d.node;
-  if (d.kind === 'pipe-r' || d.kind === 'pipe-w') return {mode: S_IFIFO | 0o600, ino: 0, nlink: 1, uid: 0, gid: 0, mtime: Date.now(), isFile: false, isDir: false, isLink: false};
+  if (d.kind === 'pipe-r' || d.kind === 'pipe-w' || d.kind === 'pipe-rw') return {mode: S_IFIFO | 0o600, ino: 0, nlink: 1, uid: 0, gid: 0, mtime: Date.now(), isFile: false, isDir: false, isLink: false};
   return {mode: 0o020620, ino: 0, nlink: 1, uid: 0, gid: 0, rdev: 0x8800, mtime: Date.now(), isFile: false, isDir: false, isLink: false};
+}
+
+/** /dev/fd/N, /dev/stdin and the rest, and /proc/self/fd/N, as the /proc/PID/fd/N they are. */
+function descriptorPath(p, name) {
+  const std = {'/dev/stdin': 0, '/dev/stdout': 1, '/dev/stderr': 2}[name];
+  if (std !== undefined) return `/proc/${p.pid}/fd/${std}`;
+  const m = /^\/(?:dev\/fd|proc\/self\/fd)\/(\d+)$/.exec(name);
+  return m ? `/proc/${p.pid}/fd/${m[1]}` : name;
 }
 
 function openAt(p, dirfd, address, flags, mode) {
   const f = N(flags), name = path(p, address);
+  // A descriptor opened by its /proc name opens what it has open: the same pipe or terminal, a file afresh.
+  const named = name.startsWith('/') ? procDescriptor(p.kernel, descriptorPath(p, name)) : null;
+  if (named) {
+    const d = named.kind === 'file' || named.kind === 'dir' ? new Description(named.kind, {node: named.node, flags: f, path: named.path}) : named;
+    if (d !== named && named.node?.isFile && (f & 3) && (f & O.TRUNC)) named.node.truncate(0);
+    const fd = p.fds.install(d, {cloexec: !!(f & O.CLOEXEC)});
+    if (fd < 0) fail(E.MFILE);
+    return fd;
+  }
   const r = p.kernel.vfs.resolve(name, base(p, dirfd), !(f & O.NOFOLLOW));
   let node = r.node;
   if (!node) {
@@ -83,6 +148,35 @@ function openAt(p, dirfd, address, flags, mode) {
   const writing = (f & 3) !== 0;
   if (node.isDir && writing) fail(E.ISDIR);
   if (node.isFile && writing && (f & O.TRUNC)) node.truncate(0);
+  // A named pipe: read, write or both ends of the one pipe its opens share. As on Linux, a reader waits for a writer
+  // and a writer for a reader, each there from the moment its open began (so two waiting opens meet); O_RDWR and a
+  // non-blocking reader do not wait, and a non-blocking writer with no reader is ENXIO.
+  if (node instanceof Fifo) {
+    const me = p; // the process whose open waits (a retry may be made from elsewhere than its thread)
+    node.pending ??= new Map();
+    let d = node.pending.get(me);
+    if (!d) {
+      if (!node.pipe || (!node.pipe.readers && !node.pipe.writers)) node.pipe = Object.assign(new Pipe(), {readOpens: 0, writeOpens: 0});
+      const access = f & 3, kind = access === 0 ? 'pipe-r' : access === 1 ? 'pipe-w' : 'pipe-rw';
+      if (kind === 'pipe-w' && (f & O.NONBLOCK) && !node.pipe.readers) fail(E.NXIO);
+      // What each side waits for is an open of the other since it began (Linux's r_counter and w_counter): a writer
+      // that came, wrote and went while a reader waited still lets it go on, to what it wrote.
+      d = new Description(kind, {pipe: node.pipe, flags: f & (3 | O.NONBLOCK), path: name});
+      d.seen = {reads: node.pipe.readOpens, writes: node.pipe.writeOpens};
+      if (kind !== 'pipe-w') node.pipe.readOpens++;
+      if (kind !== 'pipe-r') node.pipe.writeOpens++;
+    }
+    const met = d.kind === 'pipe-rw' || (f & O.NONBLOCK) || (d.kind === 'pipe-r' ? d.pipe.writers || d.pipe.writeOpens !== d.seen.writes : d.pipe.readers || d.pipe.readOpens !== d.seen.reads);
+    if (!met) { node.pending.set(me, d); d.pipe.changes++; p.kernel.dirty = true; throw new Wait(); }
+    node.pending.delete(me);
+    d.pipe.changes++;
+    p.kernel.dirty = true;
+    const fd = p.fds.install(d, {cloexec: !!(f & O.CLOEXEC)});
+    if (fd < 0) fail(E.MFILE);
+    return fd;
+  }
+  // /proc's files are read as they are when opened.
+  if (node.snapshot) node = node.snapshot();
   const kind = node.isDir ? 'dir' : node instanceof Device ? 'device' : 'file';
   const full = p.kernel.vfs.realpath(name, base(p, dirfd));
   const d = new Description(kind, {node, flags: f, path: full});
@@ -117,7 +211,7 @@ function readTo(p, d, into, at, length, offset = null) {
       into.set(data, at);
       return data.length;
     }
-    case 'pipe-r': {
+    case 'pipe-r': case 'pipe-rw': {
       const pipe = d.pipe;
       if (pipe.size) return pipe.readInto(into, at, length);
       // Empty with no writer left: the end of the data.
@@ -167,7 +261,7 @@ function writeData(p, d, data, offset = null) {
   const length = data.length, nonblock = d.flags & O.NONBLOCK;
   switch (d.kind) {
     case 'console': p.kernel.console.write(d.path === 'stderr' ? 2 : 1, data.slice()); return length;
-    case 'pipe-w': {
+    case 'pipe-w': case 'pipe-rw': {
       const pipe = d.pipe, s = p.call.state;
       const done = s.done ?? 0;
       if (!pipe.readers) {
@@ -332,6 +426,18 @@ function access(p, dirfd, address) {
   return 0;
 }
 
+/** mknod: a named pipe or an empty regular file where nothing is; a device is not made here (EPERM). */
+function makeNode(p, dirfd, address, mode) {
+  const r = p.kernel.vfs.resolve(path(p, address), base(p, dirfd), false);
+  if (r.node) fail(E.EXIST);
+  if (!r.parent.isDir) fail(E.NOTDIR);
+  const m = N(mode), perm = m & ~p.umask & 0o7777, type = m & 0o170000;
+  if (type === S_IFIFO) r.parent.entries.set(r.name, new Fifo(perm));
+  else if (type === 0 || type === 0o100000) r.parent.entries.set(r.name, new File(new Uint8Array(0), perm));
+  else fail(E.PERM);
+  return 0;
+}
+
 function pipe(p, address, flags) {
   const pipe = new Pipe();
   const cloexec = !!(N(flags) & O.CLOEXEC), nonblock = N(flags) & O.NONBLOCK;
@@ -355,6 +461,7 @@ function readiness(p, d) {
   switch (d.kind) {
     case 'pipe-r': r = (d.pipe.size ? POLL.IN : 0) | (d.pipe.writers ? 0 : POLL.HUP); break;
     case 'pipe-w': r = d.pipe.readers ? (d.pipe.writable ? POLL.OUT : 0) : POLL.ERR; break;
+    case 'pipe-rw': r = (d.pipe.size ? POLL.IN : 0) | (d.pipe.writable ? POLL.OUT : 0); break;
     case 'console': r = (p.kernel.console.ready?.() ? POLL.IN : 0) | POLL.OUT; break;
     case 'eventfd': r = (d.event.count ? POLL.IN : 0) | (d.event.count < 0xfffffffffffffffen ? POLL.OUT : 0); break;
     case 'epoll': r = epollReady(p, d, 1).length ? POLL.IN : 0; break;
@@ -534,7 +641,7 @@ function ioctl(p, d, request, arg) {
   }
   if (r === 0x5451 || r === 0x5450) return 0; // FIOCLEX, FIONCLEX (the table's: done by fcntl too)
   if (r === 0x541b) { // FIONREAD
-    const n = d.kind === 'pipe-r' ? d.pipe.size : d.kind === 'console' ? k.console.pending?.() ?? 0 : d.kind === 'file' ? Math.max(0, d.node.size - d.offset) : null;
+    const n = d.kind === 'pipe-r' || d.kind === 'pipe-rw' ? d.pipe.size : d.kind === 'console' ? k.console.pending?.() ?? 0 : d.kind === 'file' ? Math.max(0, d.node.size - d.offset) : null;
     if (n === null) fail(E.NOTTY);
     v.setInt32(arg, n, true);
     return 0;
@@ -630,7 +737,7 @@ export const FILE_CALLS = {
   271(fds, count, spec, mask) { return poll(this, fds, count, timespecMs(this, N(spec)) ?? -1, N(mask)); },
   8(fd, offset, whence) {
     const d = descriptor(this, fd);
-    if (d.kind === 'pipe-r' || d.kind === 'pipe-w' || d.kind === 'console') fail(E.SPIPE);
+    if (d.kind === 'pipe-r' || d.kind === 'pipe-w' || d.kind === 'pipe-rw' || d.kind === 'console') fail(E.SPIPE);
     if (d.kind === 'dir') { if (N(offset) === 0 && N(whence) === 0) { d.offset = 0; return 0; } fail(E.INVAL); }
     const start = [0, d.offset, d.node.size ?? 0][N(whence)];
     if (start === undefined || start + N(offset) < 0) fail(E.INVAL);
@@ -698,7 +805,22 @@ export const FILE_CALLS = {
   91(fd, mode) { const n = descriptor(this, fd).node; if (n) n.mode = (n.mode & ~0o7777) | (N(mode) & 0o7777); return 0; },
   92() { return 0; }, 93() { return 0; }, 94() { return 0; },
   95(mask) { const old = this.umask; this.umask = N(mask) & 0o777; return old; },
-  132() { return 0; }, 235() { return 0; }, 280() { return 0; },
+  // utime, utimes, futimesat, utimensat: the times of a file that is there (ENOENT for one that is not, which
+  // is how touch knows to make it).
+  133(name, mode, dev) { return makeNode(this, BigInt(AT_FDCWD), name, mode); },
+  259(dirfd, name, mode, dev) { return makeNode(this, dirfd, name, mode); },
+  132(name, buf) {
+    const n = this.kernel.vfs.lookup(path(this, name), this.cwd);
+    if (!N(buf)) return setTimes(n, 'now', 'now');
+    const t = (off) => [Number(this.view.getBigInt64(N(buf) + off, true)), 0];
+    return setTimes(n, t(0), t(8));
+  },
+  235(name, tv) { const [a, m] = timevals(this, tv); return setTimes(this.kernel.vfs.lookup(path(this, name), this.cwd), a, m); },
+  261(dirfd, name, tv) { const [a, m] = timevals(this, tv); return setTimes(timed(this, dirfd, name, true), a, m); },
+  280(dirfd, name, ts, flags) {
+    const [a, m] = timespecs(this, ts);
+    return setTimes(timed(this, dirfd, name, !(N(flags) & AT.SYMLINK_NOFOLLOW)), a, m);
+  },
   137(name, buf) { this.bytes.fill(0, N(buf), N(buf) + 120); return 0; },
   138(fd, buf) { this.bytes.fill(0, N(buf), N(buf) + 120); return 0; },
   217(fd, buf, count) { return getdents(this, fd, buf, count); },

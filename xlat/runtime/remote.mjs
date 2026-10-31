@@ -13,9 +13,9 @@
 // Where they are missing, process.mjs's Kernel runs the same threads here,
 // one at a time.
 
-import {CH, OP, REPLY} from './channel.mjs';
-import {Exec, Exit, Kernel, REG, Redirect, TRACE_SYSCALLS, Task, trace} from './process.mjs';
-import {deliverable} from './signal.mjs';
+import {CH, OP, REPLY, rouse, sleep, watch} from './channel.mjs';
+import {Exec, Exit, INTERRUPT, Kernel, REG, Redirect, TRACE_SYSCALLS, Task, trace} from './process.mjs';
+import {deliverable, take} from './signal.mjs';
 
 const isNode = typeof process !== 'undefined' && !!process.versions?.node;
 const NodeWorker = isNode ? (await import('node:worker_threads')).Worker : null;
@@ -59,7 +59,7 @@ export class RemoteKernel extends Kernel {
   constructor(options) {
     super(options);
     this.shared = true;
-    this.door = new Int32Array(new SharedArrayBuffer(8)); // rung by every thread that asks
+    this.door = new Int32Array(new SharedArrayBuffer(8)); // rung by every thread that asks; [1]: the kernel sleeps (channel.mjs sleep)
     this.gils = new WeakMap(); // memory -> its threads' lock
     this.spares = []; // Workers started ahead, for the next thread
     this.spareCount = options.spares ?? 2;
@@ -74,6 +74,8 @@ export class RemoteKernel extends Kernel {
   newTask(proc) { return new RemoteTask(proc, this.nextPid++); }
   ready(t) { this.go(t); }
   go(t) { t.answer(); }
+  /** Raised as an interrupt is: the thread running guest code looks in at its next loop's head (cpu.mjs pause). */
+  lookIn(p) { if (p.memory) Atomics.store(new Int32Array(p.memory.buffer), INTERRUPT >> 2, 1); }
 
   /** A Worker whose thread ended in a call: free for the next thread (up to a few). */
   keep(w) {
@@ -105,7 +107,7 @@ export class RemoteKernel extends Kernel {
 
   gil(memory) {
     let g = this.gils.get(memory);
-    if (!g) this.gils.set(memory, (g = new SharedArrayBuffer(4)));
+    if (!g) this.gils.set(memory, (g = new SharedArrayBuffer(8))); // [0]: the thread holding it; [1]: how many wait
     return g;
   }
 
@@ -118,14 +120,16 @@ export class RemoteKernel extends Kernel {
 
   /** Answer every thread that asks. True when one did. */
   drain() {
-    let did = false;
-    for (const t of [...this.tasks.values()]) {
+    let asking = null;
+    // Those asking first (handling one can end or add others), then each.
+    for (const t of this.tasks.values()) if (!t.dead && Atomics.load(t.i32, CH.STATE) === 1) (asking ??= []).push(t);
+    if (!asking) return false;
+    for (const t of asking) {
       if (t.dead || Atomics.load(t.i32, CH.STATE) !== 1) continue;
       Atomics.store(t.i32, CH.STATE, 3);
-      did = true;
       this.handle(t);
     }
-    return did;
+    return true;
   }
 
   handle(t) {
@@ -148,6 +152,19 @@ export class RemoteKernel extends Kernel {
       t.i64[CH.ARG0] = BigInt(x.base);
       t.i64[CH.ARG1] = BigInt(x.count);
       return t.reply(REPLY.VALUE);
+    }
+    if (op === OP.YIELD) {
+      // Its time is up in guest code: a signal sent meanwhile is taken now (as at a call's end); else it goes on.
+      t.resumeAt = t.i64[CH.NEXT];
+      t.redirected = false;
+      t.regsChanged = false;
+      if (t.proc.maps.length) t.proc.syncShared();
+      if (deliverable(t)) take(this, t, t.context());
+      if (t.dead) return;
+      if (t.proc.stopped) { t.state = 'stopped'; return; }
+      // Another of its threads that runs guest code (at the lock, next) is wanted too.
+      if ([...t.proc.tasks].some((u) => u !== t && u.state === 'running' && deliverable(u))) this.lookIn(t.proc);
+      return t.answer();
     }
     if (op === OP.FAULT) {
       const said = t.text();
@@ -206,13 +223,17 @@ export class RemoteKernel extends Kernel {
         const until = this.deadline();
         const busy = this.busy();
         if (!busy) this.onIdle?.(until === undefined ? {waiting: true} : {waiting: true, until});
-        // A thread runs and will likely ask soon: wait for it right here, which wakes far sooner than the event loop.
+        // A thread runs and will likely ask soon: wait for it right here, which wakes far sooner than the event loop
+        // (and watching first, sooner than a wait).
         if (busy && BLOCKING) {
-          const r = Atomics.wait(this.door, 0, seen, Math.min(BLOCK_MS, until === undefined ? BLOCK_MS : Math.max(0, until - now)));
+          if (watch(this.door, 0, (v) => v !== seen)) continue;
+          const r = sleep(this.door, 0, seen, 1, Math.min(BLOCK_MS, until === undefined ? BLOCK_MS : Math.max(0, until - now)));
           if (r !== 'timed-out') continue;
         }
+        Atomics.store(this.door, 1, 1);
         const r = Atomics.waitAsync(this.door, 0, seen, until === undefined ? Infinity : Math.max(0, until - performance.now()));
         if (r.async) { await r.value; yielded = performance.now(); }
+        Atomics.store(this.door, 1, 0);
       }
       this.close();
       this.onIdle?.({status: this.status});
@@ -264,6 +285,8 @@ export class RemoteTask extends Task {
   }
 
   attach() {}
+  /** Its process stops: it does too, at its next loop's head if it runs guest code. */
+  stop() { this.kernel.lookIn(this.proc); }
   reg(n) { return this.i64[CH.REGS + n]; }
   setReg(n, v) { this.i64[CH.REGS + n] = BigInt.asIntN(64, BigInt(v)); if (n) this.regsChanged = true; }
 
@@ -273,7 +296,7 @@ export class RemoteTask extends Task {
   reply(kind) {
     this.i32[CH.REPLY] = kind;
     Atomics.store(this.i32, CH.STATE, 2);
-    Atomics.notify(this.i32, CH.STATE);
+    rouse(this.i32, CH.STATE, CH.ASLEEP);
   }
 
   /** It goes on: its Worker starts, or hears its call is done (its value, other registers, or a new image). */
