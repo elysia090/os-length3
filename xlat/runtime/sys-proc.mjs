@@ -224,6 +224,7 @@ export const PROC_CALLS = {
     const start = fixed ? N(addr) : this.reserve(length);
     if (fixed) {
       this.unmapShared(start, length);
+      if (start >= this.mapBase) this.cover(start + length);
       this.bytes.fill(0, start, start + length);
       if (start < this.mapBase) this.fixed.push({start, length});
     }
