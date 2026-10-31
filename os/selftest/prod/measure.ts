@@ -62,10 +62,13 @@ async function main() {
   const b = await bridgeProcess(DELAY);
   const cleanup: (() => Promise<void> | void)[] = [() => b.stop(), () => pg.destroy(), () => rmSync(dir, {recursive: true, force: true})];
   const report: Record<string, unknown> = {delay: DELAY, n: N, files: FILES, commits: COMMITS, at: new Date().toISOString()};
+  // What the Worker said of a failure (its log goes when it stops): what a 500 or 503 measured here was.
+  let failures = () => '';
   try {
     const assets = appBuild();
     const r = await remote(pg, {dir: join(dir, 'worker'), assets, bridge: b.port, paid: true});
     cleanup.unshift(() => r.stop());
+    failures = () => r.log().split('\n').filter((l) => /remote failed|Error|error:|code:/.test(l)).slice(-30).join('\n');
     say(`measure: the Worker on ${r.url}, Postgres ${pg.port} as remote_worker, bridge delay ${DELAY} ms each way`);
 
     if (!argv.includes('--no-load')) report.firstLoad = await firstLoad(r.url, assets);
@@ -181,6 +184,9 @@ async function main() {
     const s = await b.control('/stats', 'GET');
     report.sweep = {ms: Math.round(performance.now() - t), conns: s.opened, queries: s.queries, roundTrips: s.roundTrips};
     say(`sweep (1 room to recount)                  ${report.sweep && JSON.stringify(report.sweep)}`);
+  } catch (e) {
+    say(`the Worker's log of what failed:\n${failures()}`);
+    throw e;
   } finally {
     for (const c of cleanup) await c();
   }

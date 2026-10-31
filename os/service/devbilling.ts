@@ -250,7 +250,7 @@ export function devBilling(base: string, secret: string, origins: string[], deli
   const page = (left: string, right: string, extra = '') => `<div class="page${extra}"><div class="side"><div class="col">${left}</div></div>
 <div class="main"><div class="col">${right}</div></div></div>`;
   const head = (to: string, label: string) => `<div class="head"><a class="back" href="${esc(to)}" aria-label="${esc(label)}"><span aria-hidden="true">&larr;</span>
-<img class="logo" src="${ICON}" alt=""><span>length3</span></a><span class="badge">Test mode</span></div>`;
+${iconOf() ? `<img class="logo" src="${iconOf()}" alt="">` : ''}<span>length3</span></a><span class="badge">Test mode</span></div>`;
   const fine = '<p class="standin">A stand-in for Stripe on this machine, in test mode: nothing is charged, and nothing leaves it.</p>';
   const gone = (what: string) => html('Expired', page(head(origins[0], 'Back to length3'),
     `<h1 class="h">This ${what} has expired</h1><p class="muted">Go back to length3 and start again.</p><a class="pay link" href="${esc(origins[0])}">Back to length3</a>`), '', 404);
@@ -533,8 +533,18 @@ const COUNTRIES: [string, string][] = [['US', 'United States'], ['JP', 'Japan'],
  * every ring and link, corners rounded, Inter. Chosen in mock rounds among what Stripe's branding lets be set.
  */
 const LOOK = {background: '#f9f8f5', button: '#2c2a27', hover: '#45423e', font: 'Inter'};
-/** The business's icon, as Stripe shows the one uploaded to its branding beside the name: the app's own. */
-const ICON = `data:image/png;base64,${readFileSync(new URL('../src-tauri/icons/128x128.png', import.meta.url)).toString('base64')}`;
+/**
+ * The business's icon, as Stripe shows the one uploaded to its branding beside the name: the app's own, read the first
+ * time a page shows it. A Worker has no files to read it from (the production-like stack's, selftest/prod/worker.ts):
+ * there, the name alone.
+ */
+let icon: string | null | undefined;
+const iconOf = () => {
+  if (icon === undefined) {
+    try { icon = `data:image/png;base64,${readFileSync(new URL('../src-tauri/icons/128x128.png', import.meta.url)).toString('base64')}`; } catch { icon = null; }
+  }
+  return icon;
+};
 
 // Stripe's look, branded: a page in two columns (the paper behind what is bought), fields with a light edge, the ring and the button the brand's.
 const CSS = `*{box-sizing:border-box}
