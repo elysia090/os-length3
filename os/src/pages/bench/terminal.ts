@@ -4,7 +4,7 @@ import {store} from '../../repos/repos.ts';
 import {bytes, h} from '../../ui/dom.ts';
 import {isNative, promptOpen, rootFetch, rootStatus, type Holding, type Stopped} from '../../app/host.ts';
 import {currentLang, onLang, t, tn} from '../../i18n.ts';
-import {filesNow, keepMore, keepReached, keepTranslation, keptNow, loadL3, promptWorker, usedKept, warmL3, watchLoad, type L3, type Stage} from '../../prompt/userland.ts';
+import {filesNow, keepMore, keepReached, keepTranslation, keptNow, loadL3, promptWorker, readyPrompt, takeReady, usedKept, warmL3, watchLoad, type L3, type Stage} from '../../prompt/userland.ts';
 import {every} from '../../app/runs.ts';
 import {errorText} from '../../app/errors.ts';
 import {still} from '../../ui/glide.ts';
@@ -41,23 +41,30 @@ function loadWords(s: Stage): string {
   }
 }
 
+/** The Prompt's shell, as the app's Prompts run it. */
+const SHELL = ['/bin/sh', '-i'];
+/** Its environment: l3 here sees repos where the shell does, under /root; its shell reads as the app's. */
+const shellEnv = (repo: string) => ['HOME=/root', 'TERM=dumb', 'LENGTH3_REPOS=/root', 'L3_PROMPT=1', `LENGTH3_LANG=${currentLang()}`,
+  `LENGTH3_REPO=${repo}`, 'PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', 'ENV=/etc/length3/shrc'];
+/** A start rehearsed in a Worker readied ahead (readyPrompt): the same shell, in no repo yet, with no key. */
+const readyNext = (l3: L3) => readyPrompt(l3, {argv: SHELL, env: shellEnv(''), cwd: '/root'});
+
 /**
  * What a browser's Prompt's Worker is told to start with: l3, the repo's copy (`copy`), what was kept of l3, and the
- * Agent's key, if one is kept on this device, under its maker's variable (`key`), as the app's Prompts have it.
+ * Agent's key, if one is kept on this device, under its maker's variable (`key`), as the app's Prompts have it. A
+ * Worker readied ahead (readyPrompt) has the translator, the root and the files `given` already: only the rest goes.
  */
-function startMessage(repo: string, l3: L3, copy: Awaited<ReturnType<typeof snapshot>>, kept: unknown, key: string[]) {
+function startMessage(repo: string, l3: L3, copy: Awaited<ReturnType<typeof snapshot>>, kept: unknown, key: string[], given: Set<string> | null) {
   const cwd = `/root/${repo}`;
   return {
-    type: 'start', translator: l3.translator,
+    type: 'start',
     // l3's hot programs at their own paths (the same bytes as the root's), the person's dotfiles fresh in every Prompt, and the repo.
-    files: [...filesNow(l3), ...dotfiles.asFiles(), ...copy.files],
+    files: [...filesNow(l3).filter((f) => !given?.has(f.path)), ...dotfiles.asFiles(), ...copy.files],
     dirs: copy.dirs,
     // The whole root around them: the same programs, files and links as the app's Prompt, each file read when a program first opens it.
-    root: {index: l3.index, url: l3.url},
-    argv: ['/bin/sh', '-i'],
-    // l3 here sees repos where the shell does, under /root; its shell reads as the app's.
-    env: ['HOME=/root', 'TERM=dumb', 'LENGTH3_REPOS=/root', 'L3_PROMPT=1', `LENGTH3_LANG=${currentLang()}`, `LENGTH3_REPO=${repo}`,
-      'PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', 'ENV=/etc/length3/shrc', ...key],
+    ...(given ? {} : {translator: l3.translator, root: {index: l3.index, url: l3.url}}),
+    argv: SHELL,
+    env: [...shellEnv(repo), ...key],
     cwd,
     mirror: cwd,
     // The translations Prompts before it made of the root's programs, read when a program is first run.
@@ -124,12 +131,13 @@ export class Session {
   }
 
   /** Whether it was started: written to, or begun being written to (box.ts). Shown alone, it is not. */
-  private begun = false;
+  get begun() { return this.#begun; }
+  #begun = false;
 
   /** Started, once: what is written to it starts it, never its being shown. */
   begin() {
-    if (this.begun) return;
-    this.begun = true;
+    if (this.#begun) return;
+    this.#begun = true;
     this.status.textContent = t('Starting…');
     void this.start();
   }
@@ -287,17 +295,19 @@ export class Session {
     this.on = 'l3';
     // While l3 comes, the status says how far it is and what it is doing.
     const unwatch = watchLoad((s) => { this.status.textContent = loadWords(s); });
-    // Its Worker is made now, while l3 and the repo's copy come, and starts the Workers its first threads run in:
-    // their scripts are loaded and run by the time it is given what to run, rather than after.
-    const worker = promptWorker();
+    // Its Worker was readied while the Prompt was shown (readyPrompt), else it is made now, while l3 and the repo's copy
+    // come, and starts the Workers its first threads run in: their scripts are loaded and run by the time it is given
+    // what to run, rather than after.
+    const ready = takeReady();
+    const worker = ready?.worker ?? promptWorker();
     this.worker = worker;
-    worker.postMessage({type: 'warm'});
+    if (!ready) worker.postMessage({type: 'warm'});
     worker.onmessage = ({data}) => this.fromWorker(data);
     const [l3, copy, kept, use] = await Promise.all([loadL3(), snapshot(this.repo), loadL3().then(keptNow).catch(() => null), agentUse()]).finally(unwatch);
     // Stopped while it came: it stays stopped.
     if (this.worker !== worker) return;
     this.l3of = l3;
-    worker.postMessage(startMessage(this.repo, l3, copy, kept, use ? [`${use.variable}=${use.key}`] : []));
+    worker.postMessage(startMessage(this.repo, l3, copy, kept, use ? [`${use.variable}=${use.key}`] : [], ready?.given ?? null));
     // What is saved elsewhere comes into the shell's copy.
     this.unwatch = mirror(this.repo, this.id, (m) => this.worker?.postMessage(m));
     // Running is the usual state and says nothing; only what is missing is said. Until the shell says its first
@@ -456,9 +466,12 @@ export function sessionFor(repo: string): Session {
 
 /**
  * The repo's Prompt as it is shown, its session made if it has none. Shown, it is not started; what it will run (l3,
- * in a browser) is read ahead meanwhile, so the first line written does not wait for it, and holds no repo.
+ * in a browser) is read ahead meanwhile, and a Worker readied with it (readyPrompt), so the first line written waits
+ * for neither, and holds no repo.
  */
 export function terminalFor(repo: string): HTMLElement {
-  if (!isNative) void loadL3().catch(() => { /* said by the Prompt that starts, if it fails again there */ });
-  return sessionFor(repo).element;
+  const session = sessionFor(repo);
+  // (Not once it has begun: it made its own Worker, and another made beside it now only takes from its start.)
+  if (!isNative) void loadL3().then((l3) => { if (!session.begun) readyNext(l3); }, () => { /* said by the Prompt that starts, if it fails again there */ });
+  return session.element;
 }

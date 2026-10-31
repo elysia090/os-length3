@@ -622,3 +622,26 @@ export const filesNow = (l3: L3): L3['files'] => [...l3.files, ...later.values()
 
 /** The Prompt's Worker: xlat running l3's root (pages/bench/terminal.ts gives it l3 and the repo). */
 export const promptWorker = (): Worker => new Worker(new URL('../../../xlat/runtime/worker.mjs', import.meta.url), {type: 'module'});
+
+/**
+ * A Prompt's Worker readied ahead while a Prompt is only shown (worker.mjs 'ready'): its script loaded, the Workers
+ * its first threads run in started, the translator loaded and the root in place around the hot programs, none of it
+ * the repo's, and a start rehearsed there (`rehearse`: the shell as a Prompt starts it, run to its end with nothing
+ * to read), which compiles the code a start runs. The next Prompt started in this page takes it and sends only what
+ * is its own, so its start waits for none of that. One at a time; `given`, the paths of the files it was given.
+ */
+let spare: {worker: Worker; given: Set<string>} | null = null;
+export function readyPrompt(l3: L3, rehearse: {argv: string[]; env: string[]; cwd: string}) {
+  if (spare) return;
+  const worker = promptWorker();
+  const files = filesNow(l3);
+  worker.postMessage({type: 'warm'});
+  worker.postMessage({type: 'ready', translator: l3.translator, files, root: {index: l3.index, url: l3.url}, rehearse});
+  spare = {worker, given: new Set(files.map((f) => f.path))};
+}
+/** The Worker readied ahead, for the Prompt starting now (null when none is). */
+export function takeReady(): {worker: Worker; given: Set<string>} | null {
+  const s = spare;
+  spare = null;
+  return s;
+}

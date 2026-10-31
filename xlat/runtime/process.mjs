@@ -836,6 +836,12 @@ export class Kernel {
     return true;
   }
 
+  /** Everything ends now, as when init is killed (a PID namespace's end). */
+  halt() {
+    const init = [...this.procs.values()].find((p) => p.pid === 1 || p.pid === this.initPid);
+    if (init) this.exitProcess(init, SIG.KILL);
+  }
+
   /** Start and run to the end; for hosts whose input is all known up front (a sleep is waited out here). */
   spawn(path, argv, env, cwd = '/') {
     this.start(path, argv, env, cwd);

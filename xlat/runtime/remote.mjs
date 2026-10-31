@@ -66,6 +66,8 @@ export class RemoteKernel extends Kernel {
     this.onIdle = options.onIdle ?? null; // (r) => void: every thread waits ({waiting, until?}) or it all ended ({status})
     this.serving = null;
     this.closing = false;
+    // Once it ends, its Workers left over go on to the next kernel made here (a start rehearsed: their code is warm).
+    this.passOn = options.passOn ?? false;
     // Started now, while the first program is translated (those warmed already first).
     for (const w of warmed.splice(0)) this.spares.push(this.adoptWorker(w));
     while (this.spares.length < this.spareCount) this.spares.push(this.spawnWorker());
@@ -93,17 +95,21 @@ export class RemoteKernel extends Kernel {
 
   spawnWorker() { return this.adoptWorker(newWorker()); }
 
-  /** A Worker for threads, heard by this kernel. */
+  /** A Worker for threads, heard by this kernel (by the kernel it is passed on to, after: `w.kernel`). */
   adoptWorker(w) {
+    const heard = !!w.kernel;
+    w.kernel = this;
+    if (heard) return w;
     w.on((m) => {
+      const k = w.kernel;
       if (m?.type === 'error') {
-        const t = [...this.tasks.values()].find((x) => x.worker === w);
-        this.console.write(2, enc.encode(`xlat: ${m.message.split('\n')[0]}\n`));
-        if (t) this.exitProcess(t.proc, 11);
-        this.kick();
+        const t = [...k.tasks.values()].find((x) => x.worker === w);
+        k.console.write(2, enc.encode(`xlat: ${m.message.split('\n')[0]}\n`));
+        if (t) k.exitProcess(t.proc, 11);
+        k.kick();
       }
     });
-    w.onError((e) => { this.console.write(2, enc.encode(`xlat: ${e?.message ?? e}\n`)); });
+    w.onError((e) => { w.kernel.console.write(2, enc.encode(`xlat: ${e?.message ?? e}\n`)); });
     return w;
   }
 
@@ -244,11 +250,15 @@ export class RemoteKernel extends Kernel {
     return this.serving;
   }
 
-  /** End every Worker (threads and spares). */
+  /** Everything ends now; serving ends with it. */
+  halt() { super.halt(); this.kick(); }
+
+  /** End every Worker (threads, and spares unless they are passed on). */
   close() {
     this.closing = true;
     for (const t of this.tasks.values()) t.end();
-    for (const w of this.spares.splice(0)) w.end();
+    // (Those passed on wait in warmThreads' list, as Workers started ahead do.)
+    for (const w of this.spares.splice(0)) if (this.passOn) warmed.push(w); else w.end();
   }
 
   /** Run to the end (a sleep is waited out); its wait status. */

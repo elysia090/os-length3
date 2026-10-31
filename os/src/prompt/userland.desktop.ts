@@ -22,3 +22,5 @@ export const keepReached: typeof web.keepReached = () => {};
 export const usedKept: typeof web.usedKept = () => {};
 export const keptNow: typeof web.keptNow = async () => null;
 export const promptWorker: typeof web.promptWorker = () => { throw webOnly(); };
+export const readyPrompt: typeof web.readyPrompt = () => {};
+export const takeReady: typeof web.takeReady = () => null;
