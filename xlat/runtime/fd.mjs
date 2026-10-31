@@ -112,17 +112,18 @@ export class Description {
 export const MAX_FDS = 1024;
 
 export class FdTable {
-  constructor() {
+  constructor(limit = MAX_FDS) {
     this.slots = new Map(); // fd -> {description, cloexec}
+    this.limit = limit; // RLIMIT_NOFILE's soft limit: no descriptor at or past it
   }
   get(fd) { return this.slots.get(fd)?.description ?? null; }
   lowest(from = 0) {
     let fd = from;
     while (this.slots.has(fd)) fd++;
-    return fd < MAX_FDS ? fd : -1;
+    return fd < this.limit ? fd : -1;
   }
   install(description, {fd = this.lowest(), cloexec = false} = {}) {
-    if (fd < 0) return -1;
+    if (fd < 0 || fd >= this.limit) return -1;
     this.close(fd);
     this.slots.set(fd, {description: description.retain(), cloexec});
     return fd;
@@ -138,7 +139,7 @@ export class FdTable {
   cloexec(fd) { return this.slots.get(fd)?.cloexec ?? false; }
   /** A child's table: the same descriptions, each retained once more. */
   fork() {
-    const t = new FdTable();
+    const t = new FdTable(this.limit);
     for (const [fd, s] of this.slots) t.slots.set(fd, {description: s.description.retain(), cloexec: s.cloexec});
     return t;
   }

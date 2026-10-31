@@ -773,6 +773,7 @@ function ioctl(p, d, request, arg) {
 }
 function dup(p, oldfd, newfd, cloexec) {
   const d = descriptor(p, oldfd);
+  if (newfd < 0 || newfd >= p.fds.limit) fail(E.BADF);
   return p.fds.install(d, {fd: newfd, cloexec});
 }
 
@@ -837,6 +838,8 @@ export const FILE_CALLS = {
   72(fd, cmd, arg) {
     const d = descriptor(this, fd), c = N(cmd);
     if (c === 0 || c === 1030) { // F_DUPFD, F_DUPFD_CLOEXEC
+      // From past the descriptor limit: EINVAL; none free below it: EMFILE.
+      if (N(arg) < 0 || N(arg) >= this.fds.limit) fail(E.INVAL);
       const target = this.fds.lowest(N(arg));
       if (target < 0) fail(E.MFILE);
       return this.fds.install(d, {fd: target, cloexec: c === 1030});

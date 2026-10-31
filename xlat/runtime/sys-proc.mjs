@@ -4,6 +4,7 @@
 // while the call waits and is made again).
 
 import {move, zero} from './bulk.mjs';
+import {MAX_FDS} from './fd.mjs';
 import {E, File, FsError} from './fs.mjs';
 import {Exec, Exit, Wait} from './process.mjs';
 import {CLD, SIG, send, writeInfo} from './signal.mjs';
@@ -216,6 +217,26 @@ const writeTimeval = (p, at, ms) => { p.view.setBigInt64(at, BigInt(Math.floor(m
 /** CPUs a program is told it has: as many as the host gives this kernel's workers (one, where threads take turns here). */
 const cpus = () => Math.max(1, Math.min(64, globalThis.navigator?.hardwareConcurrency ?? 1));
 
+/**
+ * `target`'s limit of `resource`: the old one written to `old`, a new one taken from `next` (each a struct rlimit, or
+ * 0). A soft limit above its hard is EINVAL; more descriptors than a table holds, EPERM (as past nr_open). The
+ * descriptor limit holds: a table gives none at or past it.
+ */
+function rlimit(p, target, resource, next, old) {
+  const r = N(resource);
+  if (r < 0 || r >= target.limits.length) fail(E.INVAL);
+  const v = p.view;
+  if (N(old)) { v.setBigUint64(N(old), target.limits[r][0], true); v.setBigUint64(N(old) + 8, target.limits[r][1], true); }
+  if (N(next)) {
+    const soft = v.getBigUint64(N(next), true), hard = v.getBigUint64(N(next) + 8, true);
+    if (soft > hard) fail(E.INVAL);
+    if (r === 7 && hard > BigInt(MAX_FDS)) fail(E.PERM);
+    target.limits[r] = [soft, hard];
+    if (r === 7) target.fds.limit = Number(soft);
+  }
+  return 0;
+}
+
 /** A host or domain name of at most 64 bytes, as sethostname takes it. */
 function names(p, address, length) {
   const n = N(length);
@@ -320,7 +341,7 @@ export const PROC_CALLS = {
     this.view.setBigInt64(N(tv) + 8, (ns % 1000000000n) / 1000n, true);
     return 0;
   },
-  97(resource, limit) { this.view.setBigInt64(N(limit), -1n, true); this.view.setBigInt64(N(limit) + 8, -1n, true); return 0; },
+  97(resource, limit) { return rlimit(this, this, resource, 0n, limit); }, // getrlimit
   98(who, usage) { this.bytes.fill(0, N(usage), N(usage) + 144); return 0; },
   99(info) { // sysinfo: the machine's memory (machine.mjs), what the kernel's processes hold of it, how many there are
     const at = N(info), v = this.view, total = BigInt(this.kernel.machine.memory), used = BigInt(this.kernel.memoryBytes());
@@ -364,7 +385,7 @@ export const PROC_CALLS = {
     if (N(code) === 0x1003) { this.view.setBigUint64(N(addr), BigInt.asUintN(64, this.task.reg(16)), true); return 0; }
     fail(E.INVAL);
   },
-  160() { return 0; },
+  160(resource, limit) { return rlimit(this, this, resource, limit, 0n); }, // setrlimit
   186() { return this.task.tid; },
   201(t) { const s = wall() / 1000000000n; if (N(t)) this.view.setBigInt64(N(t), s, true); return s; },
   202(uaddr, op, val, timeout, uaddr2, val3) { return futex(this, uaddr, op, val, timeout, uaddr2, val3); },
@@ -395,9 +416,10 @@ export const PROC_CALLS = {
     this.view.setBigUint64(N(len), 24n, true);
     return 0;
   },
-  302(pid, resource, next, old) {
-    if (N(old)) { this.view.setBigInt64(N(old), -1n, true); this.view.setBigInt64(N(old) + 8, -1n, true); }
-    return 0;
+  302(pid, resource, next, old) { // prlimit64
+    const target = N(pid) === 0 || N(pid) === this.pid ? this : this.kernel.procs.get(N(pid));
+    if (!target || target.state !== 'live') fail(E.SRCH);
+    return rlimit(this, target, resource, next, old);
   },
   318(buf, len) {
     const n = Math.min(N(len), 65536);

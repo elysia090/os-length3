@@ -34,6 +34,10 @@ import {CLD, SA, SIG, SIGNAL_CALLS, Pending, SI, actionOf, bit, deliverable, sen
 const PAGE = 4096;
 const WASM_PAGE = 65536;
 const STACK_BYTES = 8 << 20;
+/** Resource limits a first process has ([soft, hard], RLIMIT_CPU on), as Linux gives them: unlimited is all ones. */
+const INF = 0xffffffffffffffffn;
+export const RLIMITS = [[INF, INF], [INF, INF], [INF, INF], [BigInt(STACK_BYTES), INF], [0n, INF], [INF, INF], [63432n, 63432n],
+  [1024n, 1024n], [8n << 20n, 8n << 20n], [INF, INF], [INF, INF], [63432n, 63432n], [819200n, 819200n], [0n, 0n], [0n, 0n], [INF, INF]];
 const GUARD = 1 << 16;
 
 const CALLS = {...FILE_CALLS, ...PROC_CALLS, ...NET_CALLS, ...SIGNAL_CALLS};
@@ -911,6 +915,7 @@ export class Process {
     this.fds = parent ? parent.fds.fork() : new FdTable();
     this.cwd = parent?.cwd ?? '/';
     this.umask = parent?.umask ?? 0o022;
+    this.limits = (parent?.limits ?? RLIMITS).map((l) => l.slice()); // getrlimit's, kept across exec
     this.children = new Set(); // Process
     this.tasks = new Set(); // its threads
     this.actions = new Map(parent?.actions ?? []); // signal -> {handler, flags, restorer, mask}
