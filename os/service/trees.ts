@@ -146,3 +146,40 @@ export async function edit(old: Map<string, Node>, edits: Edit[], now: Tree) {
   for (const [p, v] of Object.entries(now)) if (outer.some((t) => within(p, t)) || paths.includes(p)) is[p] = v;
   return {root: rootId, made, was, now: is, clashes: [...new Set(clashes)].sort(), edited: {subtrees: outer, paths}};
 }
+
+/** Three trees' nodes at one folder, by its path: where it began (`b`), ours (`o`), theirs (`t`); absent, empty. */
+export type Three = Map<string, {b?: Node; o?: Node; t?: Node}>;
+
+/**
+ * Three trees as one, folder by folder (repos.ts merge3, as nodes): what one side changed is taken where the other did
+ * not; a folder the same on two sides is not looked in. `three` holds the nodes of each folder all three have apart
+ * (and only those: the rest is decided by their names alone). Returns the root made (ours, theirs or a new one), the
+ * nodes made, and each path both changed differently (or made a file and a folder at once), which is left as ours.
+ */
+export async function merge(roots: {b: string | null; o: string | null; t: string | null}, three: Three) {
+  const made = new Map<string, Node>(), conflicts: string[] = [];
+  const pick = <V>(b: V, o: V, t: V, at: string) => (o === t ? o : o === b ? t : t === b ? o : (conflicts.push(at), o));
+  const folder = async (f: string): Promise<string | null> => {
+    const {b = {}, o = {}, t = {}} = three.get(f) ?? {};
+    const out: Node = {};
+    for (const k of new Set([...Object.keys(b), ...Object.keys(o), ...Object.keys(t)])) {
+      const p = f ? `${f}/${k}` : k;
+      const said = (e?: Entry) => (e?.f !== undefined ? `f${e.f}` : e?.n ? 'n' : '');
+      const file = pick(said(b[k]), said(o[k]), said(t[k]), p);
+      const [bt, ot, tt] = [b[k]?.t ?? null, o[k]?.t ?? null, t[k]?.t ?? null];
+      const sub = ot === tt ? ot : ot === bt ? tt : tt === bt ? ot : await folder(p);
+      const e: Entry = {};
+      if (file.startsWith('f')) e.f = file.slice(1); else if (file === 'n') e.n = 1;
+      if (sub) e.t = sub;
+      if (e.f !== undefined && e.t) conflicts.push(p);
+      if (e.f !== undefined || e.n || e.t) out[k] = e;
+    }
+    if (!Object.keys(out).length && f) return null;
+    const id = await nodeId(out);
+    made.set(id, out);
+    return id;
+  };
+  const {b, o, t} = roots;
+  const root = o === t ? o : o === b ? t : t === b ? o : await folder('');
+  return {root, made, conflicts: [...new Set(conflicts)].sort()};
+}

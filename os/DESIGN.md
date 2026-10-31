@@ -1143,17 +1143,21 @@ by repo.
    of ten. A device a few saves behind is told what each changed
    (line_change, `?since=`), not the draft whole. A commit's tree is
    nodes (0023 tree_node: a folder named by its entries' digest, kept
-   once in its repo) and the commit names its root: it is made of the
-   folders on the paths its line's saves touched since its head
-   (line_touched), the head's nodes read only along them, so a commit of
-   two files to a repo of 5,000 is 43 ms, not 107, and moves 59 KB
-   to and from the database, not 930; one path of a commit is its
-   folders from the root (cut_path), never the tree made whole; the
-   sweep reads each folder once. Commits made before roots are read as
-   they were kept. *To build next:* a line begun copies its head's rows
-   (a draft as its head's root and the rows it changed would not); a
-   device reads a commit's tree whole where it could be told what
-   changed between two (two roots compared skip every folder they share).
+   once in its repo) and the commit names its root; a line's draft is
+   laid on its head's root, its rows only what it changed from it (a path
+   set, or the root's at a path and under it cut away). So work begun on
+   an issue is its head's root and no rows (a repo of 5,000 files: 45 ms,
+   not 172); a commit of the draft is its rows laid on the root, made anew
+   only along them, the draft then laid on the commit with none (two
+   files of 5,000: 38 ms, not 107); a merge compares the three roots
+   folder by folder, looking only in those all three have apart, and
+   carries main's draft onto what it makes by its rows. One path of a
+   commit is its folders from the root (cut_path); two commits are
+   compared folder by folder (a device asks what changed, not both trees
+   whole); the sweep reads each folder once. Commits made before roots
+   are read as they were kept. *To build next:* a draft read whole (a
+   device's first sync) walks its root's folders, a little slower than
+   reading rows (47 ms against 39 at 5,000 files).
 2. **Compute runs only where the copy is.** *Solved:* the Spec above;
    runs here are built from it. A place elsewhere needs only what the
    Spec names: the root (already fetched by digest from the Remote, the

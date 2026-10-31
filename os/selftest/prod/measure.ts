@@ -122,7 +122,7 @@ async function main() {
     const ssh = await api(r.url, 'PUT', '/v1/ssh/this', {scope: 'device'}, {origin: false});
     if (ssh.status !== 200) throw new Error(`ssh: ${ssh.status} ${ssh.bytes}`);
     const missing50 = Array.from({length: 50}, (_, i) => sha(`content ${i} v0`));
-    let n = 0;
+    let n = 0, begun = 0;
     const routes: [string, string, string, () => unknown, {origin?: boolean}?][] = [
       ['moved (the poll)', 'GET', '/v1/moved', () => undefined],
       ['news poll', 'GET', '/v1/news', () => undefined],
@@ -134,6 +134,8 @@ async function main() {
       [`log (50 of ${COMMITS} commits, ${FILES} files)`, 'GET', '/v1/repos/big/log?limit=50', () => undefined],
       ['log, as the clients ask it (summary)', 'GET', '/v1/repos/big/log?limit=50&summary=1', () => undefined],
       ['get-session', 'GET', '/api/auth/get-session', () => undefined],
+      // Work begun on an issue of the big repo, a new one each time: its draft laid on main's head, nothing copied.
+      [`work begun (${FILES} files)`, 'POST', '/v1/repos/big/lines', () => ({issue: `issue/w${++begun}.md`})],
       // What the app asks as its places are shown: Forge's pane and Git (a repo's changes, its work), Remote's Plan,
       // who sees each repo, Inbox's names.
       ['changes (Forge, Git)', 'GET', '/v1/repos/big/changes', () => undefined],

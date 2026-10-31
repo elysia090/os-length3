@@ -1,5 +1,5 @@
 {
-  "id": "c99d1bf5-12f5-4651-b21c-eb158a88ef19",
+  "id": "61bfce1a-692c-4e67-89e6-88f19bf54659",
   "prevId": "deacaf13-a3f0-4710-8b97-9e78ed6f4345",
   "version": "7",
   "dialect": "postgresql",
@@ -868,6 +868,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "paths": {
+          "name": "paths",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "file_bytes": {
+          "name": "file_bytes",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
         "modes": {
           "name": "modes",
           "type": "jsonb",
@@ -1571,8 +1583,8 @@
           "notNull": true,
           "default": 0
         },
-        "touched_from": {
-          "name": "touched_from",
+        "base_root": {
+          "name": "base_root",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -1834,38 +1846,23 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "set": {
+          "name": "set",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "cut": {
+          "name": "cut",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
-      "indexes": {
-        "line_file_sha_idx": {
-          "name": "line_file_sha_idx",
-          "columns": [
-            {
-              "expression": "repo_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "line",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "sha",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"line_file\".\"sha\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "line_file_line": {
           "name": "line_file_line",
@@ -1903,64 +1900,12 @@
         "line_file_path": {
           "name": "line_file_path",
           "value": "char_length(\"line_file\".\"path\") between 1 and 1024"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.line_touched": {
-      "name": "line_touched",
-      "schema": "",
-      "columns": {
-        "repo_id": {
-          "name": "repo_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
         },
-        "line": {
-          "name": "line",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "path": {
-          "name": "path",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
+        "line_file_says": {
+          "name": "line_file_says",
+          "value": "\"line_file\".\"set\" or (\"line_file\".\"cut\" and \"line_file\".\"sha\" is null)"
         }
       },
-      "indexes": {},
-      "foreignKeys": {
-        "line_touched_line": {
-          "name": "line_touched_line",
-          "tableFrom": "line_touched",
-          "tableTo": "line",
-          "columnsFrom": [
-            "repo_id",
-            "line"
-          ],
-          "columnsTo": [
-            "repo_id",
-            "name"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "cascade"
-        }
-      },
-      "compositePrimaryKeys": {
-        "line_touched_repo_id_line_path_pk": {
-          "name": "line_touched_repo_id_line_path_pk",
-          "columns": [
-            "repo_id",
-            "line",
-            "path"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.server_member": {

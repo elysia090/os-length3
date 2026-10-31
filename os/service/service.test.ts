@@ -1849,6 +1849,78 @@ test('commits made along what changed come out as the trees they stand for, what
   }
 });
 
+test('a merge made folder by folder comes out as the trees merged path by path, refusals, main\'s draft and what it takes and all', async () => {
+  const {applyDiff, merge3} = await import('./repos.ts');
+  const s = await service();
+  const t = await s.start('Ren');
+  const shas = [(await upload(s, t, enc.encode('1'))).sha, (await upload(s, t, enc.encode('22'))).sha, (await upload(s, t, enc.encode('333'))).sha];
+  const names = ['a/x', 'a/y', 'a/b/z', 'c', 'd/e', 'd/f/g', 'h'];
+  let seed = 3;
+  const pick = <T>(xs: T[]) => { seed = (seed * 1103515245 + 12345) % 2147483648; return xs[seed % xs.length]; };
+  type T = Record<string, string | null>;
+  const call = (m: string, p: string, body?: unknown) => s.call(m, p, {token: t, body});
+  /** Some saves at random on a line, as the model lays them; the draft after. */
+  const saves = async (repo: string, l: string, draft: T, version: number, n: number) => {
+    for (let k = 0; k < n; k++) {
+      const set: T = {}, remove: string[] = [];
+      for (let m = 1 + (k % 2); m > 0; m--) { const p = pick(names); if (pick([0, 1, 2]) === 0) { if (!(p in set)) remove.push(p); } else if (!remove.includes(p)) set[p] = pick(shas); }
+      const r = await call('PATCH', `/v1/repos/${repo}/draft${l === 'main' ? '' : `?line=${l}`}`, {version, set, remove});
+      if (r.status === 200) { version = r.json.version as number; draft = applyDiff(draft, set, remove); }
+    }
+    return {draft, version};
+  };
+  const counts = async (repo: string) => (await s.db.execute(sql`select l.paths, l.bytes, l.file_bytes::int as files,
+      (select count(*)::int from jsonb_object_keys(draft_flat(l.repo_id, l.name, l.base_root))) as "paths'", octet_length(draft_flat(l.repo_id, l.name, l.base_root)::text) as "bytes'",
+      (select coalesce(sum(b.bytes), 0)::int from jsonb_each_text(draft_flat(l.repo_id, l.name, l.base_root)) e join blob b on b.user_id = l.user_id and b.sha256 = e.value) as "files'",
+      (select count(*)::int from line_file f where f.repo_id = l.repo_id and f.line = 'main') as rows
+    from line l join repo r on r.id = l.repo_id where r.name = ${repo} and l.name = 'main'`)).rows[0] as Record<string, number>;
+  await s.db.execute(sql`set track_functions = 'all'`);
+  const wholes = async () => {
+    await s.db.execute(sql`select pg_stat_force_next_flush()`);
+    return Number(((await s.db.execute(sql`select coalesce(sum(calls), 0)::int as n from pg_stat_user_functions where funcname in ('cut_tree', 'tree_flat', 'draft_flat')`)).rows as {n: number}[])[0].n);
+  };
+  let merged = 0, refused = 0;
+  for (let i = 0; i < 24; i++) {
+    const repo = `m${i}`, issue = 'issue/001.md';
+    const start: T = {[issue]: shas[0], 'a/x': shas[0], 'a/b/z': shas[1], c: shas[2], 'd/e': shas[0]};
+    let main = {draft: start, version: (await call('PATCH', `/v1/repos/${repo}/draft`, {version: 0, set: start, remove: []})).json.version as number};
+    const base = (await call('POST', `/v1/repos/${repo}/cuts`, {version: main.version, parent: null, title: 'Start'})).json.id as string;
+    assert.equal((await call('POST', `/v1/repos/${repo}/lines`, {issue})).status, 201);
+    let work = await saves(repo, '001', start, 1, 1 + (i % 3));
+    const fix = await call('POST', `/v1/repos/${repo}/cuts?line=001`, {version: work.version, parent: base, title: 'Fix'});
+    assert.equal(fix.status, 201, fix.text);
+    assert.equal((await call('POST', `/v1/repos/${repo}/lines/001/push`, {head: fix.json.id})).status, 200);
+    // main moves on too, now and then a commit of its own, and keeps a draft of its own.
+    let mainHead = base, mainTree = start;
+    if (i % 3 === 0) {
+      main = await saves(repo, 'main', main.draft, main.version, 2);
+      const c = await call('POST', `/v1/repos/${repo}/cuts`, {version: main.version, parent: base, title: 'Main'});
+      assert.equal(c.status, 201, c.text);
+      mainHead = c.json.id as string; mainTree = main.draft;
+    }
+    main = await saves(repo, 'main', main.draft, main.version, i % 4);
+    const change = (await call('POST', `/v1/repos/${repo}/changes`, {line: '001', title: 'Fix'})).json as {id: string; version: number};
+    const before = await wholes();
+    const r = await call('POST', `/v1/repos/${repo}/changes/${change.id}/merge`, {version: change.version});
+    // No tree made whole, nor main's draft.
+    assert.equal(await wholes(), before, `${i}`);
+    const want = merge3(start, mainTree, work.draft), draft = merge3(mainTree, main.draft, want.tree);
+    if (want.conflicts.length || draft.conflicts.length) {
+      refused++;
+      assert.deepEqual([r.status, r.json.conflicts, !!r.json.draft], [409, want.conflicts.length ? want.conflicts : draft.conflicts, !want.conflicts.length], `${i} ${r.text}`);
+      continue;
+    }
+    merged++;
+    assert.equal(r.status, 200, `${i} ${r.text}`);
+    assert.deepEqual((await call('GET', `/v1/repos/${repo}/cuts/${r.json.merged}`)).json.tree, want.tree, `${i}`);
+    assert.deepEqual((await call('GET', `/v1/repos/${repo}`)).json.draft, draft.tree, `${i}`);
+    const c = await counts(repo);
+    assert.deepEqual([c.paths, c.bytes, c.files], [c["paths'"], c["bytes'"], c["files'"]], `${i}`);
+    work = {draft: {}, version: 0};
+  }
+  assert.ok(merged >= 8 && refused >= 2, `${merged} merged, ${refused} refused`);
+});
+
 test('a commit on one made before roots is made whole once, and those after it along what changed', async () => {
   const s = await service();
   const t = await s.start('Ren');
@@ -1859,7 +1931,7 @@ test('a commit on one made before roots is made whole once, and those after it a
   // A commit as one was kept before roots: its tree whole, and the line's touched paths not known.
   const old = 'f'.repeat(64);
   await s.db.execute(sql`insert into cut (repo_id, id, user_id, parent, tree, title, time) select r.id, ${old}, ${me}, null, ${JSON.stringify(tree)}::jsonb, 'Before', now() from repo r where r.name = 'old'`);
-  await s.db.execute(sql`update line set head = ${old}, pushed = ${old}, touched_from = null where repo_id = (select id from repo where name = 'old')`);
+  await s.db.execute(sql`update line set head = ${old}, pushed = ${old}, base_root = null where repo_id = (select id from repo where name = 'old')`);
   version = (await s.call('PATCH', '/v1/repos/old/draft', {token: t, body: {version, set: {'a/x.txt': b}, remove: ['b']}})).json.version as number;
   const one = await s.call('POST', '/v1/repos/old/cuts', {token: t, body: {version, parent: old, title: 'After'}});
   assert.equal(one.status, 201, one.text);
@@ -1899,9 +1971,9 @@ test('a save laid on the draft\'s rows comes out as the diff laid on a copy woul
   const shas = [(await upload(s, t, enc.encode('1'))).sha, (await upload(s, t, enc.encode('22'))).sha];
   // What the line keeps of what its draft takes, as each save changed it, and the same counted again from its rows whole.
   const counts = async () => (await s.db.execute(sql`select l.paths, l.bytes, l.file_bytes::int as files,
-      (select count(*)::int from line_file f where f.repo_id = l.repo_id and f.line = l.name) as "paths'",
-      (select octet_length(coalesce(jsonb_object_agg(f.path, f.sha), '{}')::text) from line_file f where f.repo_id = l.repo_id and f.line = l.name) as "bytes'",
-      (select coalesce(sum(b.bytes), 0)::int from blob b where b.user_id = l.user_id and b.sha256 in (select f.sha from line_file f where f.repo_id = l.repo_id and f.line = l.name)) as "files'"
+      (select count(*)::int from jsonb_object_keys(draft_flat(l.repo_id, l.name, l.base_root))) as "paths'",
+      octet_length(draft_flat(l.repo_id, l.name, l.base_root)::text) as "bytes'",
+      (select coalesce(sum(b.bytes), 0)::int from jsonb_each_text(draft_flat(l.repo_id, l.name, l.base_root)) e join blob b on b.user_id = l.user_id and b.sha256 = e.value) as "files'"
     from line l join repo r on r.id = l.repo_id where r.name = 'same'`)).rows[0] as Record<string, number>;
   const names = ['a', 'a/b', 'a/c', 'a/b/x', 'd', 'd/e', 'd/e/f', 'g', 'h/i'];
   let draft: Record<string, string | null> = {a: shas[0], 'd/e': shas[1], g: shas[0]};
@@ -1947,10 +2019,13 @@ test('a save writes the rows it changes and no others, and a commit, a merge and
   // A file set to what it was writes nothing.
   version = (await s.call('PATCH', '/v1/repos/rows/draft', {token: t, body: {version, set: {'src/d1/f1.ts': b}, remove: []}})).json.version as number;
   assert.deepEqual(await written(), now);
-  // Work begun on an issue holds main's committed tree as its rows; merged, main's draft is laid down whole.
+  // Work begun on an issue is its head's root and no rows, however many files: its draft is the head's tree.
   const head = (await s.call('POST', '/v1/repos/rows/cuts', {token: t, body: {version, parent: null, title: 'Start'}})).json.id as string;
   assert.equal((await s.call('POST', '/v1/repos/rows/lines', {token: t, body: {issue: 'issue/001.md'}})).status, 201);
-  assert.equal((await written('001')).size, now.size);
+  assert.equal((await written('001')).size, 0);
+  assert.equal(Object.keys((await s.call('GET', '/v1/repos/rows?line=001', {token: t})).json.draft as object).length, now.size);
+  // ... and main's own, committed, the same: its draft laid on its commit, no rows left.
+  assert.equal((await written()).size, 0);
   const v1 = (await s.call('PATCH', '/v1/repos/rows/draft?line=001', {token: t, body: {version: 1, set: {'fix.c': b}, remove: ['src/d3']}})).json.version as number;
   const work = (await s.call('POST', '/v1/repos/rows/cuts?line=001', {token: t, body: {version: v1, parent: head, title: 'Fix'}})).json.id as string;
   assert.equal((await s.call('POST', '/v1/repos/rows/lines/001/push', {token: t, body: {head: work}})).status, 200);
@@ -1960,6 +2035,8 @@ test('a save writes the rows it changes and no others, and a commit, a merge and
   assert.equal(main.draft['fix.c'], b);
   assert.ok(!Object.keys(main.draft).some((p) => p.startsWith('src/d3/')));
   assert.equal(main.draft['new.txt'], a);
+  // Merged, main's draft is laid on the merge with no rows: what it had apart from its head it has now from the merge.
+  assert.equal((await written()).size, 0);
 });
 
 test('a device that holds the draft at a version is answered what each save after it changed; one too far behind, the draft whole', async () => {

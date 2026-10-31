@@ -198,8 +198,11 @@ export const cut = pgTable('cut', {
   base: text('base'),
   gone: jsonb('gone').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
   depth: smallint('depth').notNull().default(0),
-  /** What its tree takes whole, as kept (pg_column_size): how much of it the log may send at once. */
+  /** What its tree takes whole (as its JSON is long; made before roots, as kept): how much of it the log may send at once. */
   size: integer('size'),
+  /** With a root: how many paths its tree names, and what their files take (each file's blob, as a draft counts it). */
+  paths: integer('paths'),
+  fileBytes: bigint('file_bytes', {mode: 'number'}),
   /** Its files' modes beside the tree (Modes). */
   modes: jsonb('modes').$type<Modes>().notNull().default(sql`'{}'::jsonb`),
   bytes: bytesOf('tree'),
@@ -259,11 +262,14 @@ export const line = pgTable('line', {
   modes: jsonb('modes').$type<Modes>().notNull().default(sql`'{}'::jsonb`),
   /** How many paths its draft names (lineFile's rows). */
   paths: integer('paths').notNull().default(0),
-  /** The commit lineTouched names every path changed since (null: not known, so the next commit reads the draft whole). */
-  touchedFrom: text('touched_from'),
+  /**
+   * The root its draft is laid on (its head's, 0023): its rows (lineFile) are what the draft changed from it. None: its
+   * rows are its draft whole (a line made before roots, or one with no commit yet).
+   */
+  baseRoot: text('base_root'),
   /** What its draft takes, as its JSON is long (repos.ts treeBytes), kept as each save changes it: counted into the account's room. */
   bytes: integer('bytes').notNull().default(2),
-  /** What its draft's files take, each blob once, kept as each save changes it. */
+  /** What its draft's files take (each file's blob, a blob in two files twice: as a checkout takes them), kept as each save changes it. */
   fileBytes: bigint('file_bytes', {mode: 'number'}).notNull().default(0),
   version: integer('version').notNull().default(0),
   /** Who started it, as their name was then. */
@@ -279,30 +285,23 @@ export const line = pgTable('line', {
   check('line_version', sql`${t.version} >= 0`), check('line_started_by', within('started_by', 200))]);
 
 /**
- * A line's draft, a row a path: its file's blob, or null for a folder named beside what is in it. A save writes the rows
- * it changes and no others (repos.ts); a draft whole is its rows read in one. Paths are compared byte by byte (collated
- * "C", 0022), so all under a folder is one range of the key.
+ * A line's draft, as it changed from the root it is laid on (line.baseRoot), a row a path: `set`, the path is a file (its
+ * blob) or a folder named beside what is in it (null); `cut`, the root's at that path and under it are gone. A save
+ * writes the rows it changes and no others (repos.ts); a line begun has none. A draft whole is its root's tree with its
+ * rows laid on it (0023 draft_flat). Paths are compared byte by byte (collated "C", 0022), so all under a folder is one
+ * range of the key.
  */
 export const lineFile = pgTable('line_file', {
   repoId: bigint('repo_id', {mode: 'number'}).notNull(),
   line: text('line').notNull(),
   path: text('path').notNull(),
   sha: text('sha'),
+  set: boolean('set').notNull().default(true),
+  cut: boolean('cut').notNull().default(false),
 }, (t) => [primaryKey({columns: [t.repoId, t.line, t.path]}),
   foreignKey({name: 'line_file_line', columns: [t.repoId, t.line], foreignColumns: [line.repoId, line.name]}).onDelete('cascade').onUpdate('cascade'),
-  index('line_file_sha_idx').on(t.repoId, t.line, t.sha).where(sql`${t.sha} is not null`),
-  check('line_file_sha', sql`${t.sha} is null or ${t.sha} ~ '^[0-9a-f]{64}$'`), check('line_file_path', sql`char_length(${t.path}) between 1 and 1024`)]);
-
-/**
- * The paths a line's draft changed since the commit `line.touchedFrom` (each with all under it): what its next commit
- * is made of where that commit is its head, the rest of the tree being its head's.
- */
-export const lineTouched = pgTable('line_touched', {
-  repoId: bigint('repo_id', {mode: 'number'}).notNull(),
-  line: text('line').notNull(),
-  path: text('path').notNull(),
-}, (t) => [primaryKey({columns: [t.repoId, t.line, t.path]}),
-  foreignKey({name: 'line_touched_line', columns: [t.repoId, t.line], foreignColumns: [line.repoId, line.name]}).onDelete('cascade').onUpdate('cascade')]);
+  check('line_file_sha', sql`${t.sha} is null or ${t.sha} ~ '^[0-9a-f]{64}$'`), check('line_file_path', sql`char_length(${t.path}) between 1 and 1024`),
+  check('line_file_says', sql`${t.set} or (${t.cut} and ${t.sha} is null)`)]);
 
 /**
  * What each of a line's last saves changed (repos.ts: its paths set, and those taken away, each with what is under it),
