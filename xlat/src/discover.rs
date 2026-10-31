@@ -270,6 +270,21 @@ fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], is_start: &(dyn Fn(u64) 
     (blocks, calls)
 }
 
+/// Where a function's blocks jump or run on to outside it (its tail jumps, and branches out of it): not its calls.
+fn continuations(blocks: &[Block]) -> Vec<u64> {
+    let own: BTreeSet<u64> = blocks.iter().map(|b| b.start).collect();
+    let mut out = Vec::new();
+    for b in blocks {
+        match b.exit {
+            Exit::TailJump(t) => out.push(t),
+            Exit::Branch { taken, fall } => out.extend([taken, fall].into_iter().filter(|a| !own.contains(a))),
+            Exit::Fall(t) | Exit::Jump(t) if !own.contains(&t) => out.push(t),
+            _ => {}
+        }
+    }
+    out
+}
+
 /// Targets of position-relative jump tables. Each entry holds
 /// `target - base`, where the base is the table start that code addresses
 /// with a rip-relative `lea`. A slot belongs to the nearest base at or below
@@ -383,7 +398,16 @@ pub fn discover_within(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>, budget: 
 /// The program's code from its entry, its function symbols and what its relocations point at: what a running program
 /// has translated first, the rest being reached later (`discover_within`).
 pub fn discover(elf: &Elf) -> Program {
-    walk_program(elf, &elf.relocation_targets, elf.symbols.is_empty())
+    walk_program(elf, &elf.relocation_targets, elf.symbols.is_empty(), &[], true)
+}
+
+/// Exactly the functions starting at `seeds` (with the entry and the named ones): what the program's runs have
+/// translated so far, its first module's and those of the code they reached later, in one translation of its own,
+/// so each process of it starts with one module, not hundreds, and every jump among that code is found in its first
+/// table. A call to a function past these is not followed (it is reached later, as before): following them all
+/// would translate much of a large program no run has reached.
+pub fn discover_seeded(elf: &Elf, seeds: &[u64]) -> Program {
+    walk_program(elf, &elf.relocation_targets, false, seeds, false)
 }
 
 /// The whole program, ahead of time: as `discover`, and where no function of its own is named (stripped, or only a
@@ -395,13 +419,14 @@ pub fn discover_whole(elf: &Elf) -> Program {
     targets.sort_unstable();
     targets.dedup();
     let named = elf.symbols.iter().any(|s| s.function && elf.is_code(s.value));
-    walk_program(elf, &targets, !named)
+    walk_program(elf, &targets, !named, &[], true)
 }
 
-/// Walk from the entry, the symbols in code, and `targets` (sorted) as pointers, each one a start of its own when
-/// `pointed_start`.
-fn walk_program(elf: &Elf, targets: &[u64], pointed_start: bool) -> Program {
+/// Walk from the entry, the symbols in code, `seeds`, and `targets` (sorted) as pointers, each one a start of its own
+/// when `pointed_start`; and from every function a call reaches, when `follow`.
+fn walk_program(elf: &Elf, targets: &[u64], pointed_start: bool, seeds: &[u64], follow: bool) -> Program {
     let mut starts: BTreeSet<u64> = BTreeSet::from([elf.entry]);
+    starts.extend(seeds.iter().copied().filter(|&a| elf.is_code(a)));
     let mut sizes = BTreeMap::new();
     let mut names = BTreeMap::new();
     // Function symbols, and untyped ones (assembly entry points like _init,
@@ -429,7 +454,10 @@ fn walk_program(elf: &Elf, targets: &[u64], pointed_start: bool) -> Program {
             (start, end, &pointers[pointers.partition_point(|&a| a <= start)..pointers.partition_point(|&a| a < end)])
         }).collect();
         for (start, blocks, calls) in walk_all(elf, &jobs, &|a| starts.contains(&a), &mut references) {
-            found.extend(calls.into_iter().filter(|t| elf.is_code(*t) && !starts.contains(t)));
+            // Not following calls, code it goes on to all the same: what it jumps or runs into past its range is code
+            // the runs reached as part of it before more starts cut it there.
+            let next: Vec<u64> = if follow { calls } else { continuations(&blocks) };
+            found.extend(next.into_iter().filter(|t| elf.is_code(*t) && !starts.contains(t)));
             done.insert(start, blocks);
         }
         let mut tables = relative_table_targets(elf, &references);

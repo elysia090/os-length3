@@ -74,6 +74,8 @@ export class RemoteKernel extends Kernel {
   newTask(proc) { return new RemoteTask(proc, this.nextPid++); }
   ready(t) { this.go(t); }
   go(t) { t.answer(); }
+  /** A memory let go of is taken again: its threads' lock is a new one. */
+  reuseMemory(memory) { this.gils.delete(memory); }
   /** Raised as an interrupt is: the thread running guest code looks in at its next loop's head (cpu.mjs pause). */
   lookIn(p) { if (p.memory) Atomics.store(new Int32Array(p.memory.buffer), INTERRUPT >> 2, 1); }
 
@@ -328,7 +330,11 @@ export class RemoteTask extends Task {
     // next thread; one running guest code is ended where it is.
     const state = Atomics.load(this.i32, CH.STATE);
     if (w && (state === 1 || state === 3) && !this.kernel.closing) { this.reply(REPLY.AWAY); this.kernel.keep(w); }
-    else w?.end();
+    else {
+      w?.end();
+      // Ended while it ran guest code: it may write on a little, so its memory is never given to another process.
+      if (w && this.memory) this.memory.tainted = true;
+    }
     // Ended while it held its process's lock (killed while running): the lock goes with it.
     if (this.memory) {
       const gil = new Int32Array(this.kernel.gil(this.memory));

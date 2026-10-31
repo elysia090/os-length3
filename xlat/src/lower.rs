@@ -2840,9 +2840,12 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
 
     // Loader facts for the host, as a small JSON custom section.
     let tls = elf.tls.as_ref().map(|t| format!(",\"tls\":{{\"vaddr\":{},\"filesz\":{},\"memsz\":{},\"align\":{}}}", t.vaddr, t.filesz, t.memsz, t.align)).unwrap_or_default();
+    // The bytes no correct run can change (segments not writable): a memory that ran this program holds them still.
+    let read_only: Vec<String> = elf.segments.iter().filter(|s| !s.writable && !s.data.is_empty())
+        .map(|s| format!("[{},{}]", s.vaddr, s.vaddr + s.data.len() as u64)).collect();
     let facts = format!(
-        "{{\"entry\":{},\"imageStart\":{},\"imageEnd\":{},\"phdr\":{},\"phnum\":{},\"phent\":56{}}}",
-        elf.entry, image_start(elf), end, elf.phdr_address().unwrap_or(0), elf.phnum, tls
+        "{{\"entry\":{},\"imageStart\":{},\"imageEnd\":{},\"phdr\":{},\"phnum\":{},\"phent\":56,\"readOnly\":[{}]{}}}",
+        elf.entry, image_start(elf), end, elf.phdr_address().unwrap_or(0), elf.phnum, read_only.join(","), tls
     );
     module.section(&CustomSection { name: Cow::Borrowed("xlat.facts"), data: Cow::Owned(facts.into_bytes()) });
     module.section(&CustomSection { name: Cow::Borrowed("xlat.fpu"), data: Cow::Owned(X87_OPS.join(",").into_bytes()) });

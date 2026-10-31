@@ -24,6 +24,13 @@ export async function loadTranslator(source) {
     return output(x.xlat_translate(put(elf), elf.length));
   }
   const words = (list) => new Uint8Array(new BigUint64Array(list.map(BigInt)).buffer);
+  /** As translate, and from the function starts `seeds` too: the program with the code it reached later, as one module. */
+  translate.seeded = function seeded(elf, seeds) {
+    const s = put(words(seeds));
+    const status = x.xlat_translate_seeded(put(elf), elf.length, s, seeds.length);
+    x.xlat_free(s, seeds.length * 8);
+    return output(status);
+  };
   // Each ELF's handle, while the translator holds it parsed with the starts
   // translated so far (it keeps a few, and adds each module's starts itself).
   let handles = new WeakMap();

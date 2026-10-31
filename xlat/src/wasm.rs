@@ -58,6 +58,25 @@ pub unsafe extern "C" fn xlat_translate(ptr: *mut u8, len: usize) -> i32 {
     status
 }
 
+/// As `xlat_translate`, and from the function starts at `seeds` (`n_seeds` u64s, left to the host) too: a program
+/// with its code reached later, in one module (discover::discover_seeded).
+///
+/// # Safety
+/// As `xlat_translate`, and `seeds` must point to `n_seeds` u64s.
+#[no_mangle]
+pub unsafe extern "C" fn xlat_translate_seeded(ptr: *mut u8, len: usize, seeds: *const u8, n_seeds: usize) -> i32 {
+    let seeds = words(seeds, n_seeds);
+    let (status, out) = match crate::elf::Elf::parse_owned(Vec::from_raw_parts(ptr, len, len)) {
+        Ok(elf) => {
+            let program = crate::discover::discover_seeded(&elf, &seeds);
+            (0, crate::lower::translate(&elf, &program, crate::lower::Options::default()).wasm)
+        }
+        Err(e) => (1, e.to_string().into_bytes()),
+    };
+    OUTPUT.with(|o| *o.borrow_mut() = out);
+    status
+}
+
 /// Keep the ELF at `ptr` for `xlat_translate_more`, with the function
 /// starts already translated (`known`, u64s): a program reaches its code a
 /// function at a time, and each time the same file is read, so it is parsed

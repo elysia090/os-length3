@@ -59,6 +59,20 @@ function translate(bytes) {
   return readFileSync(wasm);
 }
 
+/** The program with the code it reached later (from the function starts `seeds`), as one module. */
+translate.seeded = inProcess ? inProcess.seeded : function seeded(bytes, seeds) {
+  const key = createHash('sha256').update(translatorId).update(traced.join()).update(digest(bytes)).update(`seeded|${seeds}`).digest('hex');
+  const wasm = join(cacheDir, key + '.wasm');
+  if (!existsSync(wasm)) {
+    mkdirSync(cacheDir, {recursive: true});
+    const elf = join(cacheDir, digest(bytes) + '.elf');
+    if (!existsSync(elf)) writeFileSync(elf, bytes);
+    writeFileSync(`${wasm}.seeds`, seeds.join('\n'));
+    execFileSync(translator, [...traced, `--seeds=${wasm}.seeds`, elf, wasm], {stdio: ['ignore', 'ignore', 'ignore']});
+  }
+  return readFileSync(wasm);
+};
+
 /** Code reached later, from `seeds` past the `known` starts, filling table slots from `base`. */
 // What the translator keeps, and giving it back (Kernel.free), when it runs here.
 if (inProcess) Object.assign(translate, {held: inProcess.held, spare: inProcess.spare, close: inProcess.close, renew: inProcess.renew});

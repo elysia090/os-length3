@@ -122,7 +122,8 @@ export class Image {
     this.facts = JSON.parse(section('xlat.facts'));
     this.fpuOps = section('xlat.fpu').split(',');
     this.known = new Set(u64s(module, 'xlat.starts'));
-    this.slots = this.known.size; // the first module's table
+    this.slots = this.known.size; // the first module's table, then with each module of code reached later
+    this.firstSlots = this.slots;
     this.extras = []; // {module, base, count, bytes}
     this.entries = new Map(); // address -> function slot << 32 | block, for code reached later
   }
@@ -203,6 +204,9 @@ export class Kernel {
     this.status = null; // init's wait status once it ended
     this.shared = false; // memories are SharedArrayBuffers (remote.mjs)
     this.timers = new Set(); // {at, fire}: alarms (performance.now() ms)
+    // Memories processes let go of (exec, exit), for the next to take: a new one costs its pages faulted in and the
+    // old one collected; a used one costs zeroing what is given out of it (Kernel.takeMemory).
+    this.spareMemories = [];
     // What a program reads of the machine and of its processes: /proc, made from this kernel as it is read.
     mountProc(this);
   }
@@ -216,7 +220,14 @@ export class Kernel {
    */
   image(node, wait = false) {
     const cached = this.images.get(node);
-    if (cached && cached.version === node.version) { cached.used = ++this.uses; return cached.image; }
+    if (cached && cached.version === node.version) {
+      cached.used = ++this.uses;
+      const im = cached.image;
+      // Once much of what it runs is in modules of later code (a quarter as many functions as its first module has),
+      // not each time a few more are reached.
+      if (im.extras.length >= CONSOLIDATE && (im.slots - im.firstSlots) * 4 >= im.firstSlots && this.translate?.seeded && im.source) this.consolidate(node, cached);
+      return cached.image;
+    }
     if (wait && this.keptFor(node)) {
       const got = this.keeper.take(node.origin);
       if (got === undefined) throw new Wait();
@@ -229,7 +240,7 @@ export class Kernel {
         image.told = image.adopt(got.more);
         image.mainTold = true;
         PROFILE.kept++;
-        this.images.set(node, {version: node.version, image, used: ++this.uses, kept: false});
+        this.remember(node, {version: node.version, image, used: ++this.uses, kept: false});
         return image;
       }
     }
@@ -244,8 +255,34 @@ export class Kernel {
     PROFILE.compile += performance.now() - t; PROFILE.images++;
     // A root file unchanged: its translation can be kept (the host hears of it once the kernel pauses: worker.mjs).
     if (node.version === 0 && node.origin) { image.origin = node.origin; image.wasm = wasm; image.told = 0; image.mainTold = false; }
-    this.images.set(node, {version: node.version, image, used: ++this.uses, kept: false});
+    this.remember(node, {version: node.version, image, used: ++this.uses, kept: false});
     return image;
+  }
+
+  /**
+   * A program run again that had reached much of its code later (CONSOLIDATE modules of it or more): translated
+   * once more, from every start it reached, as one module. Each process of it from here on is one instance, not one
+   * per module, and its jumps among that code are found in its own table, not asked of the host. What runs it
+   * now goes on with what it has. The new translation is kept as the program's (the page hears of it as of any).
+   */
+  consolidate(node, cached) {
+    const old = cached.image, bytes = old.source();
+    let t = performance.now();
+    const {wasm, segments} = this.prepare(this.translate.seeded(bytes, [...old.known]));
+    PROFILE.translate += performance.now() - t; t = performance.now();
+    const image = new Image(new WebAssembly.Module(wasm), () => bytes, wasm.length, segments);
+    PROFILE.compile += performance.now() - t; PROFILE.images++; PROFILE.consolidated++;
+    // The translator's parsed copy of the ELF knew the old starts: code reached later starts from these.
+    this.translate.close?.(bytes);
+    if (old.origin) { image.origin = old.origin; image.wasm = wasm; image.told = 0; image.mainTold = false; }
+    image.file = cached;
+    cached.image = image;
+  }
+
+  /** `entry` is the image of this version of `node`: its images (it, and one consolidated from it) say so (`file`). */
+  remember(node, entry) {
+    entry.image.file = entry;
+    this.images.set(node, entry);
   }
 
   /** A translation as it is run here: {wasm, segments} (share.mjs; shared memory when threads run apart). */
@@ -259,7 +296,7 @@ export class Kernel {
   prebuilt(node, module, segments = null) {
     let view = null;
     // Kept: nothing here could make it again.
-    this.images.set(node, {version: node.version, image: new Image(module, () => (view ??= node.share()), 0, segments), used: ++this.uses, kept: true});
+    this.remember(node, {version: node.version, image: new Image(module, () => (view ??= node.share()), 0, segments), used: ++this.uses, kept: true});
   }
 
   /** Every live process. */
@@ -269,6 +306,38 @@ export class Kernel {
   memoryBytes() {
     return [...new Set(this.live().map((p) => p.memory).filter(Boolean))].reduce((n, m) => n + m.buffer.byteLength, 0);
   }
+
+  /**
+   * A memory of at least `pages` wasm pages from those let go of, or null. Its first `pages` are zero when given;
+   * what lies past them may still hold what its last process left, up to `dirty` (bytes): Process.cover zeroes each
+   * part of that as it is mapped.
+   */
+  takeMemory(pages, image = null) {
+    // One that last ran `image` first: what of the program no correct run can change is in it already (as a page
+    // cache gives a program its file), and is neither zeroed nor laid again (`keeps`).
+    const same = (m) => !!image && !!m.imageOf && (m.imageOf === image || (!!image.file && m.imageOf.file === image.file));
+    let k = this.spareMemories.findLastIndex(same);
+    if (k < 0) k = this.spareMemories.length - 1;
+    if (k < 0) return null;
+    const [m] = this.spareMemories.splice(k, 1);
+    const have = m.buffer.byteLength / WASM_PAGE;
+    if (have < pages) m.grow(pages - have);
+    m.keeps = same(m);
+    PROFILE.memoriesReused++;
+    if (m.keeps) PROFILE.imagesKept++;
+    zeroExcept(new Uint8Array(m.buffer), 0, Math.min(m.dirty, pages * WASM_PAGE), m.keeps ? image.facts.readOnly ?? [] : []);
+    this.reuseMemory(m);
+    return m;
+  }
+  /** `memory` is no longer one process's: kept for another when nothing else can run on it (no other process, no thread left in guest code). */
+  letGo(memory) {
+    if (!memory || --memory.users > 0 || memory.tainted) return;
+    memory.dirty = memory.buffer.byteLength;
+    // A few, and none so large that keeping it would hold much of what the host has to spare.
+    if (this.spareMemories.length < SPARE_MEMORIES && memory.buffer.byteLength <= SPARE_MEMORY_BYTES) this.spareMemories.push(memory);
+  }
+  /** A memory let go of is taken again (the backend forgets what it kept for it: remote.mjs's lock). */
+  reuseMemory(memory) {}
 
   /**
    * What this kernel holds, by kind, and how much of it can go without
@@ -295,7 +364,9 @@ export class Kernel {
       if (!keep.has(f)) spareFiles += f._data.length;
     }
     const guest = this.memoryBytes(), translator = this.translate?.held?.() ?? 0, spareTranslator = this.translate?.spare?.() ?? translator;
-    return {guest, translations, translator, files, spare: spareTranslations + spareTranslator + spareFiles, total: guest + translations + translator + files, spareTranslator};
+    const spareGuest = this.spareMemories.reduce((n, m) => n + m.buffer.byteLength, 0);
+    return {guest: guest + spareGuest, translations, translator, files, spare: spareTranslations + spareTranslator + spareFiles + spareGuest,
+      total: guest + spareGuest + translations + translator + files, spareTranslator};
   }
 
   /**
@@ -308,6 +379,8 @@ export class Kernel {
     if (before.spare <= budget) return {before, after: before};
     const using = new Set(this.live().map((p) => p.image));
     let over = before.spare - budget;
+    // Memories let go of first: they hold the most, and cost only their faults to make again.
+    while (over > 0 && this.spareMemories.length) over -= this.spareMemories.pop().buffer.byteLength;
     const spare = [...this.images].filter(([, e]) => !e.kept && !using.has(e.image)).sort((a, b) => a[1].used - b[1].used);
     for (const [node, e] of spare) {
       if (over <= 0) break;
@@ -625,6 +698,8 @@ export class Kernel {
     for (const t of [...p.tasks]) this.endTask(t);
     p.tasks.clear();
     p.unmapShared();
+    this.letGo(p.memory);
+    p.memory = null;
     p.fds.closeAll();
     this.releaseVfork(p);
     this.dirty = true;
@@ -784,6 +859,23 @@ function robustExit(kernel, t) {
   if (pending) mark(pending);
 }
 
+/** The parts of [from, to) outside the ranges `keep` ([[start, end]], any order). */
+function gaps(from, to, keep) {
+  const out = [];
+  let at = from;
+  for (const [a, b] of [...keep].sort((x, y) => x[0] - y[0])) {
+    if (b <= at || a >= to) continue;
+    if (a > at) out.push([at, a]);
+    at = Math.max(at, b);
+  }
+  if (at < to) out.push([at, to]);
+  return out;
+}
+/** Zero [from, to) of `bytes` but for the ranges `keep`. */
+function zeroExcept(bytes, from, to, keep) { for (const [a, b] of gaps(from, to, keep)) bytes.fill(0, a, b); }
+/** Whether data segment `s` ({offset, bytes}) lies within one of `ranges`. */
+const within = (s, ranges = []) => ranges.some(([a, b]) => s.offset >= a && s.offset + s.bytes.length <= b);
+
 /** Each process mapping `node`: whether it shares memory with another, where its threads see it (SHARES). */
 function markShares(node) {
   for (const m of node.maps ?? []) m.proc.view.setInt32(SHARES, m.proc.maps.some((x) => x.node.maps?.size > 1) ? 1 : 0, true);
@@ -859,10 +951,23 @@ export class Process {
       return r.start;
     }
     const start = this.mapEnd;
-    const need = start + length - this.memory.buffer.byteLength;
-    if (need > 0) this.memory.grow(Math.ceil(need / WASM_PAGE));
-    this.mapEnd += length;
+    this.cover(start + length);
     return start;
+  }
+
+  /** Memory up to `end` is mapped (mapEnd moves past it): grown as it must be. */
+  cover(end) {
+    const need = end - this.memory.buffer.byteLength;
+    // Grown in steps of an eighth of what it has (up to 16 MiB): a grow costs a millisecond or more however small,
+    // and a program that maps a page at a time would pay it each time; past that, a larger memory than is mapped
+    // is more to copy for a fork and to zero for the next process that takes it.
+    if (need > 0) {
+      const have = this.memory.buffer.byteLength / WASM_PAGE;
+      this.memory.grow(Math.min(65536 - have, Math.max(Math.ceil(need / WASM_PAGE), Math.min(have >> 3, 256))));
+    }
+    // A memory another process used: what it left past the mapped part goes as that part grows over it.
+    if (this.mapEnd < this.memory.dirty) this.bytes.fill(0, this.mapEnd, Math.min(end, this.memory.dirty));
+    this.mapEnd = Math.max(this.mapEnd, end);
   }
 
   release(start, length) {
@@ -905,8 +1010,13 @@ export class Process {
   }
 
   /** A memory for this process of `pages` wasm pages (shared between threads where the backend runs them apart). */
-  newMemory(pages) {
-    return new WebAssembly.Memory({initial: pages, maximum: 65536, ...(this.kernel.shared ? {shared: true} : {})});
+  newMemory(pages, image = null) {
+    const m = this.kernel.takeMemory(pages, image) ?? new WebAssembly.Memory({initial: pages, maximum: 65536, ...(this.kernel.shared ? {shared: true} : {})});
+    m.users = 1;
+    m.dirty ??= 0;
+    m.keeps ??= false;
+    m.imageOf = image;
+    return m;
   }
 
   // ---- images ----
@@ -942,7 +1052,8 @@ export class Process {
     this.fixed = []; // MAP_FIXED mappings below mapBase
     this.unmapShared(); // a vfork child's list is its own: empty, though the memory it ran on was its parent's
     this.maps = [];
-    this.memory = this.newMemory(this.mapBase / WASM_PAGE);
+    this.kernel.letGo(this.memory); // its own, or still its vfork parent's
+    this.memory = this.newMemory(this.mapBase / WASM_PAGE, image);
     this.argv = argv;
     this.env = env;
     this.exe = this.kernel.vfs.realpath(path, this.cwd);
@@ -950,7 +1061,7 @@ export class Process {
     // Handled signals go back to their default; ignored ones stay ignored.
     for (const [sig, h] of this.actions) if (h.handler > 1n) this.actions.delete(sig);
     t.altstack = {sp: 0n, size: 0n, flags: 2};
-    if (image.segments) lay(this.bytes, image.segments);
+    if (image.segments) lay(this.bytes, this.memory.keeps ? image.segments.filter((x) => !within(x, image.facts.readOnly)) : image.segments);
     t.load(image, this.memory);
     t.setReg(4, BigInt(this.stack(argv, env)));
     t.resumeAt = BigInt(f.entry);
@@ -988,11 +1099,13 @@ export class Process {
     const from = this.bytes, to = child.bytes;
     const span = (a, b) => { if (b > a) to.set(from.subarray(a, b), a); };
     const f = this.image.facts;
-    span(f.imageStart ?? 0, Math.min(f.imageEnd, this.stackLow));
+    // What no correct run changes, a memory that ran the same program has already.
+    const image = (a, b) => { for (const [x, y] of gaps(a, b, child.memory.keeps ? f.readOnly ?? [] : [])) span(x, y); };
+    image(f.imageStart ?? 0, Math.min(f.imageEnd, this.stackLow));
     const sp = Number(BigInt.asUintN(64, this.task.reg(4)));
     const low = sp > this.stackLow && sp <= this.stackTop ? Math.max(this.stackLow, (sp - 128) & ~15) : this.stackLow;
     span(low, this.mapBase);
-    span(this.mapBase, from.length);
+    span(this.mapBase, Math.min(from.length, this.mapEnd)); // the memory past what is mapped is grown ahead, and zero
     for (const r of this.fixed) span(r.start, Math.min(r.start + r.length, this.mapBase));
   }
 
@@ -1015,9 +1128,9 @@ export class Process {
     for (const key of ['stackLow', 'stackTop', 'mapBase', 'mapEnd', 'argv']) child[key] = this[key];
     child.free = this.free.map((r) => ({...r}));
     child.fixed = this.fixed.map((r) => ({...r}));
-    if (vm) child.memory = this.memory;
+    if (vm) { child.memory = this.memory; this.memory.users++; }
     else {
-      child.memory = child.newMemory(this.memory.buffer.byteLength / WASM_PAGE);
+      child.memory = child.newMemory(this.memory.buffer.byteLength / WASM_PAGE, this.image);
       // Instantiating writes the image's first data; the parent's memory goes
       // over it afterwards, so the child sees what the parent changed.
     }
@@ -1154,7 +1267,11 @@ export class Task {
 export const REG = [...Array.from({length: 16}, (_, n) => `r${n}`), 'fs', 'fl', 'rf'];
 
 /** Where the time went (run.mjs prints it with XLAT_TIMING=1): translating, compiling wasm, how much, and what a pack root fetched. */
-export const PROFILE = {images: 0, modules: 0, bytes: 0, translate: 0, compile: 0, fetches: 0, fetched: 0, kept: 0};
+export const PROFILE = {images: 0, modules: 0, bytes: 0, translate: 0, compile: 0, fetches: 0, fetched: 0, kept: 0, consolidated: 0, memoriesReused: 0, imagesKept: 0};
+/** Modules of code reached later past which a program run again is translated again as one (Kernel.consolidate). */
+export const CONSOLIDATE = 16;
+/** Memories let go of that are kept for the next process, and the largest kept (Kernel.letGo). */
+const SPARE_MEMORIES = 4, SPARE_MEMORY_BYTES = 256 << 20;
 /** XLAT_SYSCALLS=1 lists every system call on stderr (node only). */
 export const TRACE_SYSCALLS = typeof process !== 'undefined' && !!process.env?.XLAT_SYSCALLS;
 /** XLAT_FAULTS=1 says what each fault that ends a process was (node only). */
