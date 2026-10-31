@@ -34,10 +34,13 @@ import {CLD, SA, SIG, SIGNAL_CALLS, Pending, SI, actionOf, bit, deliverable, sen
 const PAGE = 4096;
 const WASM_PAGE = 65536;
 const STACK_BYTES = 8 << 20;
-/** Resource limits a first process has ([soft, hard], RLIMIT_CPU on), as Linux gives them: unlimited is all ones. */
+/**
+ * Resource limits a first process has ([soft, hard], RLIMIT_CPU on), as Linux gives them (systemd's descriptors: 1024,
+ * raised to 524288 by whoever asks): unlimited is all ones.
+ */
 const INF = 0xffffffffffffffffn;
 export const RLIMITS = [[INF, INF], [INF, INF], [INF, INF], [BigInt(STACK_BYTES), INF], [0n, INF], [INF, INF], [63432n, 63432n],
-  [1024n, 1024n], [8n << 20n, 8n << 20n], [INF, INF], [INF, INF], [63432n, 63432n], [819200n, 819200n], [0n, 0n], [0n, 0n], [INF, INF]];
+  [1024n, 524288n], [8n << 20n, 8n << 20n], [INF, INF], [INF, INF], [63432n, 63432n], [819200n, 819200n], [0n, 0n], [0n, 0n], [INF, INF]];
 const GUARD = 1 << 16;
 
 const CALLS = {...FILE_CALLS, ...PROC_CALLS, ...NET_CALLS, ...SIGNAL_CALLS};

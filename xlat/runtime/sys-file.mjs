@@ -725,6 +725,8 @@ function ioctl(p, d, request, arg) {
     v.setInt32(arg, n, true);
     return 0;
   }
+  // A socket's (SIOCOUTQ, what an interface is): sys-net.mjs's.
+  if (d.kind === 'socket') return net.control(p, d, r, arg);
   // The rest are a terminal's, and only the console is one (when it says it is interactive).
   if (d.kind !== 'console' || !k.console.interactive) fail(E.NOTTY);
   k.tty.termios ??= {...TERMIOS, cc: new Uint8Array([3, 28, 127, 21, 4, 0, 1, 0, 17, 19, 26, 0, 18, 15, 23, 22, 0, 0, 0])};

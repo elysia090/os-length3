@@ -4,7 +4,6 @@
 // while the call waits and is made again).
 
 import {move, zero} from './bulk.mjs';
-import {MAX_FDS} from './fd.mjs';
 import {E, File, FsError} from './fs.mjs';
 import {Exec, Exit, Wait} from './process.mjs';
 import {CLD, SIG, send, writeInfo} from './signal.mjs';
@@ -24,7 +23,8 @@ function writeTime(p, address, ns) {
   p.view.setBigInt64(address + 8, ns % 1000000000n, true);
 }
 
-const wall = () => BigInt(Date.now()) * 1000000n;
+// The wall clock to well under a millisecond (as cpu.mjs's, which answers clock_gettime in a worker): ping's times.
+const wall = () => BigInt(Math.round((performance.timeOrigin + performance.now()) * 1e6));
 const monotonic = () => BigInt(Math.round(performance.now() * 1e6));
 /** A timespec in guest memory, in nanoseconds. */
 const readTime = (p, at) => p.view.getBigInt64(at, true) * 1000000000n + p.view.getBigInt64(at + 8, true);
@@ -219,8 +219,8 @@ const cpus = () => Math.max(1, Math.min(64, globalThis.navigator?.hardwareConcur
 
 /**
  * `target`'s limit of `resource`: the old one written to `old`, a new one taken from `next` (each a struct rlimit, or
- * 0). A soft limit above its hard is EINVAL; more descriptors than a table holds, EPERM (as past nr_open). The
- * descriptor limit holds: a table gives none at or past it.
+ * 0). A soft limit above its hard is EINVAL; a hard one raised, EPERM (the Prompt's root is root in its own user
+ * namespace, without CAP_SYS_RESOURCE where that counts). The descriptor limit holds: a table gives none at or past it.
  */
 function rlimit(p, target, resource, next, old) {
   const r = N(resource);
@@ -230,7 +230,7 @@ function rlimit(p, target, resource, next, old) {
   if (N(next)) {
     const soft = v.getBigUint64(N(next), true), hard = v.getBigUint64(N(next) + 8, true);
     if (soft > hard) fail(E.INVAL);
-    if (r === 7 && hard > BigInt(MAX_FDS)) fail(E.PERM);
+    if (hard > target.limits[r][1]) fail(E.PERM);
     target.limits[r] = [soft, hard];
     if (r === 7) target.fds.limit = Number(soft);
   }

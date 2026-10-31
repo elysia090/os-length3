@@ -109,10 +109,11 @@ export class Description {
   }
 }
 
-export const MAX_FDS = 1024;
+/** How many descriptors a process starts allowed (RLIMIT_NOFILE's soft limit; sys-proc.mjs's setrlimit moves it). */
+export const FDS = 1024;
 
 export class FdTable {
-  constructor(limit = MAX_FDS) {
+  constructor(limit = FDS) {
     this.slots = new Map(); // fd -> {description, cloexec}
     this.limit = limit; // RLIMIT_NOFILE's soft limit: no descriptor at or past it
   }

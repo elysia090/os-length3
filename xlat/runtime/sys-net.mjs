@@ -8,8 +8,13 @@
 //                        is given, EADDRINUSE, SO_REUSEPORT, IPV6_V6ONLY); any other address is no one's
 //                        (EADDRNOTAVAIL to bind) and not reachable (ENETUNREACH), as on a machine with only `lo`
 //
+//   ICMP (raw sockets)   echo over loopback, as ping sends it: each raw ICMP socket sees what comes in, and the
+//                        kernel answers an echo request
+//   netlink              what the kernel says of its network (net-view.mjs): lo, its addresses and routes
+//                        (NETLINK_ROUTE, as `ip` reads them), its sockets (NETLINK_SOCK_DIAG, as `ss` does)
+//
 // That is what a Prompt on the device has with its network off (its own namespace, `lo` alone), and what a browser
-// can give a page: no packet leaves it. Netlink, packet and raw sockets are not here (EAFNOSUPPORT, EPERM).
+// can give a page: no packet leaves it. Packet sockets and the other families are not here (EAFNOSUPPORT).
 //
 // A connected stream (local, or TCP) is two pipes (fd.mjs), one each way: each end reads its own and writes its
 // peer's. So what a pipe does, a stream does as Linux's: a full one makes the writer wait and an empty one the reader,
@@ -21,6 +26,7 @@
 
 import {Description, Pipe} from './fd.mjs';
 import {E, FsError, SocketName, S_IFSOCK} from './fs.mjs';
+import {answer, interfaceControl, traffic} from './net-view.mjs';
 import {Wait} from './process.mjs';
 import {SIG, SI, send} from './signal.mjs';
 
@@ -30,7 +36,8 @@ const fail = (errno) => { throw new FsError(errno); };
 const ERR = {PROTOTYPE: 91, NOPROTOOPT: 92, PROTONOSUPPORT: 93, SOCKTNOSUPPORT: 94, ADDRINUSE: 98, ADDRNOTAVAIL: 99,
   NOTSOCK: 88, DESTADDRREQ: 89, MSGSIZE: 90, NETUNREACH: 101, ISCONN: 106, NOTCONN: 107, CONNREFUSED: 111, INPROGRESS: 115};
 
-const AF = {UNSPEC: 0, UNIX: 1, INET: 2, INET6: 10};
+const AF = {UNSPEC: 0, UNIX: 1, INET: 2, INET6: 10, NETLINK: 16};
+const NETLINK = {ROUTE: 0, SOCK_DIAG: 4};
 const SOCK = {STREAM: 1, DGRAM: 2, RAW: 3, SEQPACKET: 5, NONBLOCK: 0x800, CLOEXEC: 0x80000};
 const IPPROTO = {IP: 0, ICMP: 1, TCP: 6, UDP: 17, IPV6: 41, ICMPV6: 58};
 const MSG = {PEEK: 2, CTRUNC: 8, TRUNC: 0x20, DONTWAIT: 0x40, WAITALL: 0x100, NOSIGNAL: 0x4000, CMSG_CLOEXEC: 0x40000000};
@@ -38,6 +45,10 @@ const SOL_SOCKET = 1, SCM = {RIGHTS: 1, CREDENTIALS: 2};
 const SO = {REUSEADDR: 2, TYPE: 3, ERROR: 4, SNDBUF: 7, RCVBUF: 8, REUSEPORT: 15, PASSCRED: 16, PEERCRED: 17,
   ACCEPTCONN: 30, PROTOCOL: 38, DOMAIN: 39};
 const TCP_NODELAY = 1, IPV6_V6ONLY = 26;
+const SOL = {IP: 0, IPV6: 41, ICMPV6: 58, RAW: 255, NETLINK: 270};
+const IP_TTL = 2, IP_RECVTTL = 12, IPV6_RECVHOPLIMIT = 51, IPV6_HOPLIMIT = 52, ICMP_FILTER = 1, ICMP6_FILTER = 1;
+/** The hops a packet on lo is said to have left (Linux's default TTL and hop limit). */
+const HOPS = 64;
 const O_NONBLOCK = 0x800;
 const POLL = {IN: 1, OUT: 4, ERR: 8, HUP: 0x10, RDHUP: 0x2000};
 
@@ -83,17 +94,18 @@ const ANY4 = v4(0, 0, 0, 0), ANY6 = new Uint8Array(16), LOOPBACK4 = v4(127, 0, 0
 
 /** One socket: its family and kind, its address, what comes to it, and the end it is connected to. */
 class Endpoint {
-  constructor(kernel, family, type, proc) {
+  constructor(kernel, family, type, proc, protocol = null) {
     this.kernel = kernel;
     this.family = family;
     this.type = type;
-    this.protocol = family === AF.UNIX ? 0 : type === SOCK.STREAM ? IPPROTO.TCP : IPPROTO.UDP;
+    // A raw or netlink socket's is the one asked for; the others', their family's and type's.
+    this.protocol = protocol ?? (family === AF.UNIX ? 0 : type === SOCK.STREAM ? IPPROTO.TCP : IPPROTO.UDP);
     this.state = 'unconnected'; // | 'listening' | 'connected'
     this.rx = type === SOCK.STREAM ? new Pipe(STREAM_ROOM) : new Messages();
     this.rx.readers = 1;
     this.peer = null;
     // Its address and its peer's: a local socket's name ({bytes}: sockaddr_un's path, or null when it has none);
-    // a loopback socket's {ip, port}.
+    // a loopback socket's {ip, port}; a netlink socket's {portid, groups}.
     this.local = null;
     this.remote = null;
     this.node = null; // the SocketName on the path it is bound to
@@ -101,9 +113,11 @@ class Endpoint {
     this.port = null; // the port it holds in the kernel's table ({table, port})
     this.backlog = []; // connections a listener has not accepted yet: their server ends
     this.backlogMost = 0;
+    this.backlogAsked = 0; // listen's, as ss says it
     this.shut = {rd: false, wr: false};
     this.creds = {pid: proc.pid, uid: 0, gid: 0};
-    this.options = {passcred: false, reuseaddr: false, reuseport: false, v6only: false, nodelay: false};
+    this.options = {passcred: false, reuseaddr: false, reuseport: false, v6only: false, nodelay: false, recvttl: false, recvhops: false};
+    this.filter = null; // a raw ICMP socket's types not wanted (ICMP_FILTER's mask, ICMP6_FILTER's bits)
     this.events = 0; // what else moves its readiness (a connection to accept, its peer closing)
     this.error = 0; // a connected UDP socket's pending error (its datagram refused), SO_ERROR's
     this.connecting = false; // a TCP connect that did not wait, not yet told its end
@@ -113,9 +127,14 @@ class Endpoint {
     this.rights = [];
     this.arrived = 0; // bytes of the stream written to it so far
     this.consumed = 0; // and read
+    // Every socket the kernel has, as its diagnostics list them (net-view.mjs).
+    (kernel.sockets ??= new Set()).add(this);
   }
   get stream() { return this.type === SOCK.STREAM; }
-  get inet() { return this.family !== AF.UNIX; }
+  get inet() { return this.family === AF.INET || this.family === AF.INET6; }
+  get netlink() { return this.family === AF.NETLINK; }
+  /** Whether it is connected to read or write (a stream's, a packet socket's); a datagram one is not. */
+  get connectionWanted() { return this.type === SOCK.STREAM || this.type === SOCK.SEQPACKET; }
   /** Moves whenever its readiness may have (epoll's edge). */
   get changes() { return this.rx.changes + this.events + (this.peer ? this.peer.rx.changes : 0); }
 
@@ -140,6 +159,8 @@ class Endpoint {
     // The path stays (as on Linux: unlinked by whoever made it), and connecting to it is refused.
     if (this.node?.endpoint === this) this.node.endpoint = null;
     if (this.port) this.port.table.get(this.port.port)?.delete(this);
+    if (this.netlink && this.local && this.kernel.netlinkPorts?.get(this.local.portid) === this) this.kernel.netlinkPorts.delete(this.local.portid);
+    this.kernel.sockets.delete(this);
   }
 }
 
@@ -176,9 +197,18 @@ function kindOf(family, raw, protocol) {
     if (protocol !== 0 && protocol !== AF.UNIX) fail(ERR.PROTONOSUPPORT);
     return type;
   }
+  if (family === AF.NETLINK) {
+    if (type !== SOCK.RAW && type !== SOCK.DGRAM) fail(ERR.SOCKTNOSUPPORT);
+    if (protocol !== NETLINK.ROUTE && protocol !== NETLINK.SOCK_DIAG) fail(ERR.PROTONOSUPPORT);
+    return type;
+  }
   if (family !== AF.INET && family !== AF.INET6) fail(E.AFNOSUPPORT);
-  // Raw sockets want a capability the Prompt's root has not; an ICMP datagram one, a group allowed to ping (none is).
-  if (type === SOCK.RAW) fail(E.PERM);
+  // Raw sockets are root's in its own network (ping's): ICMP's, and ICMPv6's; an ICMP datagram one wants a group
+  // allowed to ping (none is, as Linux's ping_group_range has it).
+  if (type === SOCK.RAW) {
+    if (protocol !== (family === AF.INET ? IPPROTO.ICMP : IPPROTO.ICMPV6)) fail(ERR.PROTONOSUPPORT);
+    return type;
+  }
   if (type === SOCK.DGRAM && (protocol === IPPROTO.ICMP || protocol === IPPROTO.ICMPV6)) fail(E.ACCES);
   if (type === SOCK.STREAM && protocol !== 0 && protocol !== IPPROTO.TCP) fail(ERR.PROTONOSUPPORT);
   if (type === SOCK.DGRAM && protocol !== 0 && protocol !== IPPROTO.UDP) fail(ERR.PROTONOSUPPORT);
@@ -197,6 +227,10 @@ function readAddress(p, s, address, length) {
   if (len < 2) fail(E.INVAL);
   const family = v.getUint16(at, true);
   if (family === AF.UNSPEC && s.inet) return {unspec: true};
+  if (s.netlink) {
+    if (family !== AF.NETLINK || len < 12) fail(E.INVAL);
+    return {portid: v.getUint32(at + 4, true), groups: v.getUint32(at + 8, true)};
+  }
   if (s.family === AF.UNIX) {
     if (family !== AF.UNIX || len > 110) fail(E.INVAL);
     const raw = p.bytes.slice(at + 2, at + len);
@@ -219,6 +253,13 @@ function readAddress(p, s, address, length) {
 
 /** sockaddr for an address of socket `s`'s family (a local name, or {ip, port}; null: unnamed). */
 function encode(s, a) {
+  if (s.netlink) {
+    const out = new Uint8Array(12), v = new DataView(out.buffer);
+    v.setUint16(0, AF.NETLINK, true);
+    v.setUint32(4, a?.portid ?? 0, true);
+    v.setUint32(8, a?.groups ?? 0, true);
+    return out;
+  }
   if (s.family === AF.UNIX) {
     const name = a?.bytes ?? null;
     const out = new Uint8Array(2 + (name ? name.length + (name[0] === 0 ? 0 : 1) : 0));
@@ -350,7 +391,7 @@ function peek(pipe, into, at, n) {
  */
 function receive(p, d, into, at, length, flags) {
   const s = d.sock, none = {n: 0, size: 0, from: null, rights: [], creds: null};
-  if (s.state === 'listening' || (s.type !== SOCK.DGRAM && s.state !== 'connected')) fail(ERR.NOTCONN);
+  if (s.state === 'listening' || (s.connectionWanted && s.state !== 'connected')) fail(ERR.NOTCONN);
   if (s.shut.rd) return none;
   const wait = () => { if (nonblocking(d, flags)) fail(E.AGAIN); throw new Wait(); };
   if (s.stream) {
@@ -409,6 +450,9 @@ function datagram(p, s, data, target) {
     if (s.remote) { s.error = ERR.CONNREFUSED; s.events++; }
     return data.length;
   }
+  const t = traffic(p.kernel);
+  t.bytes += data.length;
+  t.packets++;
   if (r.rx.fits(data.length) && !r.shut.rd) r.rx.push({bytes: data.slice(), from, rights: [], creds: s.creds});
   return data.length;
 }
@@ -420,10 +464,113 @@ function pendingError(s) {
   if (e) { s.events++; fail(e); }
 }
 
+// ---- ICMP over loopback ----
+
+/** The Internet checksum of `bytes` (and `sum` so far): ones' complement of the ones' complement sum of its words. */
+function checksum(bytes, sum = 0) {
+  for (let k = 0; k + 1 < bytes.length; k += 2) sum += (bytes[k] << 8) | bytes[k + 1];
+  if (bytes.length & 1) sum += bytes[bytes.length - 1] << 8;
+  while (sum > 0xffff) sum = (sum & 0xffff) + (sum >>> 16);
+  return ~sum & 0xffff;
+}
+/** ICMPv6's checksum of `icmp` from `src` to `dst`: over its pseudo-header too. */
+function checksum6(src, dst, icmp) {
+  const pseudo = new Uint8Array(40 + icmp.length);
+  pseudo.set(src, 0);
+  pseudo.set(dst, 16);
+  new DataView(pseudo.buffer).setUint32(32, icmp.length, false);
+  pseudo[39] = IPPROTO.ICMPV6;
+  pseudo.set(icmp, 40);
+  pseudo[42] = pseudo[43] = 0;
+  return checksum(pseudo);
+}
+let packetIds = 1;
+/** An IPv4 header for `icmp` from `src` to `dst` (both 16-byte, v4-mapped), as a raw socket reads it before. */
+function ipv4(src, dst, icmp, dontFragment) {
+  const h = new Uint8Array(20), v = new DataView(h.buffer);
+  h[0] = 0x45;
+  v.setUint16(2, 20 + icmp.length, false);
+  v.setUint16(4, packetIds++ & 0xffff, false);
+  if (dontFragment) h[6] = 0x40;
+  h[8] = HOPS;
+  h[9] = IPPROTO.ICMP;
+  h.set(src.subarray(12), 12);
+  h.set(dst.subarray(12), 16);
+  v.setUint16(10, checksum(h), false);
+  const out = new Uint8Array(20 + icmp.length);
+  out.set(h);
+  out.set(icmp, 20);
+  return out;
+}
+
+/** An ICMP message of `family` arriving on lo from `src` for `dst`: to each raw socket that takes it (as Linux's raw_v4_input). */
+function arrive(kernel, family, icmp, src, dst, request) {
+  const t = traffic(kernel);
+  t.packets++;
+  t.bytes += icmp.length + (family === AF.INET ? 20 : 40);
+  const wire = family === AF.INET ? ipv4(src, dst, icmp, request) : null;
+  for (const r of kernel.sockets) {
+    if (r.closed || r.type !== SOCK.RAW || r.family !== family || r.shut.rd) continue;
+    if (r.local && !isAny(r.local.ip) && !same(r.local.ip, dst)) continue;
+    if (r.remote && !same(r.remote.ip, src)) continue;
+    const type = icmp[0];
+    if (r.filter && (family === AF.INET ? type < 32 && r.filter & (1 << type) : r.filter[type >> 3] & (1 << (type & 7)))) continue;
+    const bytes = wire ?? icmp.slice();
+    if (r.rx.fits(bytes.length)) r.rx.push({bytes, from: {ip: src, port: 0}, rights: [], creds: null});
+  }
+}
+
+/** ICMP sent by raw socket `s` to `target`: it arrives on lo, and an echo request is answered (as icmp_echo). */
+function icmp(s, data, target) {
+  if (!target) fail(ERR.DESTADDRREQ);
+  const to = reachable(s, target), v4 = s.family === AF.INET;
+  const src = s.local && !isAny(s.local.ip) ? s.local.ip : v4 ? LOOPBACK4 : LOOPBACK6;
+  const message = data.slice();
+  // ICMPv6's checksum is the kernel's to make; ICMP's, the sender's.
+  if (!v4 && message.length >= 4) new DataView(message.buffer).setUint16(2, checksum6(src, to.ip, message), false);
+  arrive(s.kernel, s.family, message, src, to.ip, true);
+  const ECHO = v4 ? 8 : 128;
+  if (message.length >= 8 && message[0] === ECHO && message[1] === 0) {
+    const reply = message.slice();
+    reply[0] = v4 ? 0 : 129;
+    reply[2] = reply[3] = 0;
+    new DataView(reply.buffer).setUint16(2, v4 ? checksum(reply) : checksum6(to.ip, src, reply), false);
+    arrive(s.kernel, s.family, reply, to.ip, src, false);
+  }
+  return data.length;
+}
+
+// ---- netlink ----
+
+/** A netlink socket's port: the one asked for, or (0) its process's pid if free, else one of the kernel's own. */
+function bindNetlink(p, s, portid, groups) {
+  const ports = (p.kernel.netlinkPorts ??= new Map());
+  if (!portid) {
+    portid = p.pid;
+    for (let n = 0xfffff000; ports.has(portid); n--) portid = n >>> 0;
+  } else if (ports.has(portid)) fail(ERR.ADDRINUSE);
+  ports.set(portid, s);
+  s.local = {portid, groups};
+}
+
+/** A netlink request from `s`: the kernel's answers come back to it at once (nothing changes, so none is an event). */
+function netlinkSend(p, s, data, to) {
+  if (!s.local) bindNetlink(p, s, 0, 0);
+  const target = to ?? s.remote;
+  // To another socket rather than the kernel: none takes it here.
+  if (target?.portid) fail(ERR.CONNREFUSED);
+  for (const bytes of answer(p.kernel, s.protocol, s.local.portid, data)) {
+    if (s.rx.fits(bytes.length)) s.rx.push({bytes, from: {portid: 0, groups: 0}, rights: [], creds: null});
+  }
+  return data.length;
+}
+
 /** Send `data` from `d` (to `to`, an address, for a datagram socket not connected), with descriptors `rights`: how much went. */
 function transmit(p, d, data, flags, to = null, rights = []) {
   const s = d.sock, wait = () => { if (nonblocking(d, flags)) fail(E.AGAIN); throw new Wait(); };
-  if (rights.length && s.inet) fail(E.INVAL);
+  if (rights.length && !(s.family === AF.UNIX)) fail(E.INVAL);
+  if (s.netlink) return netlinkSend(p, s, data, to);
+  if (s.type === SOCK.RAW) { pendingError(s); return icmp(s, data, to ?? s.remote); }
   const own = () => rights.map((r) => r.retain());
   if (s.type === SOCK.DGRAM) {
     if (s.inet) {
@@ -461,6 +608,7 @@ function transmit(p, d, data, flags, to = null, rights = []) {
   if (!done && rights.length) peer.rights.push({at: peer.arrived, descs: own()});
   const wrote = done + peer.rx.write(data.subarray(done));
   peer.arrived += wrote - done;
+  if (s.inet && wrote > done) { const t = traffic(p.kernel); t.bytes += wrote - done; t.packets++; }
   if (wrote === data.length) return wrote;
   if (nonblocking(d, flags)) { if (wrote) return wrote; fail(E.AGAIN); }
   if (wrote > done) p.kernel.dirty = true;
@@ -487,7 +635,7 @@ export function ready(d) {
   let r = 0;
   const has = s.stream ? s.rx.size > 0 : s.rx.list.length > 0;
   if (has) r |= POLL.IN;
-  if (s.type === SOCK.DGRAM) {
+  if (!s.connectionWanted) {
     const target = s.peer;
     if (!target || target.closed || target.rx.writable) r |= POLL.OUT;
     return s.error ? r | POLL.ERR : r;
@@ -505,6 +653,14 @@ export const changes = (d) => d.sock.changes;
 
 /** fstat of a socket. */
 export const stat = (d) => ({mode: S_IFSOCK | 0o777, ino: d.sock.ino, nlink: 1, uid: 0, gid: 0, mtime: Date.now(), isFile: false, isDir: false, isLink: false});
+
+/** A socket's ioctl (FIONREAD aside, sys-file.mjs's): SIOCOUTQ, and what an interface is (net-view.mjs). */
+export function control(p, d, request, arg) {
+  if (request === 0x5411) { p.view.setInt32(arg, 0, true); return 0; } // SIOCOUTQ: lo has taken it all
+  const r = interfaceControl(p, request, arg);
+  if (r === true) return 0;
+  fail(r === false ? E.NOTTY : -r);
+}
 
 /** FIONREAD (SIOCINQ): a stream's bytes waiting, or the next datagram's size. */
 export const pending = (d) => (d.sock.stream ? d.sock.rx.size : d.sock.rx.list[0]?.bytes.length ?? 0);
@@ -573,11 +729,11 @@ function recvmsg(p, fd, msg, flags) {
   // Control data: the descriptors that came (each now one of this process's), and the sender's credentials if asked.
   const control = Number(v.getBigUint64(at + 32, true)), room = Number(v.getBigUint64(at + 40, true));
   let used = 0, outFlags = r.size > r.n && !d.sock.stream ? MSG.TRUNC : 0;
-  const put = (type, words, size) => {
+  const put = (type, words, size, level = SOL_SOCKET) => {
     const len = 16 + size, space = (len + 7) & ~7;
     if (!control || used + len > room) { outFlags |= MSG.CTRUNC; return false; }
     v.setBigUint64(control + used, BigInt(len), true);
-    v.setInt32(control + used + 8, SOL_SOCKET, true);
+    v.setInt32(control + used + 8, level, true);
     v.setInt32(control + used + 12, type, true);
     words(control + used + 16);
     used += Math.min(space, room - used);
@@ -591,6 +747,9 @@ function recvmsg(p, fd, msg, flags) {
   if (d.sock.options.passcred && r.creds) {
     put(SCM.CREDENTIALS, (w) => { v.setInt32(w, r.creds.pid, true); v.setUint32(w + 4, r.creds.uid, true); v.setUint32(w + 8, r.creds.gid, true); }, 12);
   }
+  // Over lo a packet has gone no hop: the TTL and hop limit it was sent with.
+  if (d.sock.inet && !d.sock.stream && d.sock.options.recvttl && d.sock.family === AF.INET) put(IP_TTL, (w) => v.setInt32(w, HOPS, true), 4, SOL.IP);
+  if (d.sock.inet && !d.sock.stream && d.sock.options.recvhops) put(IPV6_HOPLIMIT, (w) => v.setInt32(w, HOPS, true), 4, SOL.IPV6);
   v.setBigUint64(at + 40, BigInt(used), true);
   v.setInt32(at + 48, outFlags, true);
   return f & MSG.TRUNC && !d.sock.stream ? r.size : r.n;
@@ -636,11 +795,11 @@ export const NET_CALLS = {
   41(domain, type, protocol) { // socket
     const family = N(domain);
     const t = kindOf(family, N(type), N(protocol));
-    return install(this, new Endpoint(this.kernel, family, t, this), N(type));
+    return install(this, new Endpoint(this.kernel, family, t, this, t === SOCK.RAW || family === AF.NETLINK ? N(protocol) : null), N(type));
   },
   53(domain, type, protocol, sv) { // socketpair: the local family's alone
     const family = N(domain);
-    if (family === AF.INET || family === AF.INET6) { kindOf(family, N(type), N(protocol)); fail(E.OPNOTSUPP); }
+    if (family === AF.INET || family === AF.INET6 || family === AF.NETLINK) { kindOf(family, N(type), N(protocol)); fail(E.OPNOTSUPP); }
     if (family !== AF.UNIX) fail(E.AFNOSUPPORT);
     const t = kindOf(family, N(type), N(protocol));
     const a = new Endpoint(this.kernel, family, t, this), b = new Endpoint(this.kernel, family, t, this);
@@ -652,9 +811,22 @@ export const NET_CALLS = {
   },
   49(fd, address, length) { // bind
     const s = socketOf(this, fd).sock;
-    if (s.local && (s.inet || s.local.bytes)) fail(E.INVAL);
     const a = readAddress(this, s, address, length);
+    // A netlink socket bound again keeps its port and takes the groups it names (none of which says anything here).
+    if (s.netlink) {
+      if (!s.local) bindNetlink(this, s, a.portid, a.groups);
+      else if (a.portid && a.portid !== s.local.portid) fail(E.INVAL);
+      else s.local.groups = a.groups;
+      return 0;
+    }
+    if (s.local && (s.inet || s.local.bytes)) fail(E.INVAL);
     if (a.unspec) fail(E.AFNOSUPPORT);
+    // A raw socket's address is what it takes packets for; it holds no port.
+    if (s.type === SOCK.RAW) {
+      if (!isAny(a.ip) && !isLoopback(a.ip)) fail(ERR.ADDRNOTAVAIL);
+      s.local = {ip: a.ip, port: 0};
+      return 0;
+    }
     if (s.inet) { bindInet(s, a.ip, a.port); return 0; }
     if (a.abstract !== undefined) {
       const all = (this.kernel.abstractSockets ??= new Map());
@@ -675,24 +847,33 @@ export const NET_CALLS = {
   },
   50(fd, backlog) { // listen
     const s = socketOf(this, fd).sock;
-    if (s.type === SOCK.DGRAM) fail(E.OPNOTSUPP);
+    if (!s.connectionWanted) fail(E.OPNOTSUPP);
     if (s.state === 'connected') fail(E.INVAL);
     // A loopback socket not bound yet takes a port of its own; a local one must be named.
     if (!s.local) { if (!s.inet) fail(E.INVAL); bindInet(s, s.family === AF.INET ? ANY4 : ANY6, 0); }
     s.state = 'listening';
-    s.backlogMost = Math.max(1, Math.min(4096, N(backlog) + 1));
+    // As Linux: at most somaxconn (4096, or that for a negative one), and one more waits than it says.
+    const b = N(backlog);
+    s.backlogAsked = b < 0 || b > 4096 ? 4096 : b;
+    s.backlogMost = s.backlogAsked + 1;
     s.events++;
     return 0;
   },
   42(fd, address, length) { // connect
     const d = socketOf(this, fd), s = d.sock;
     const a = readAddress(this, s, address, length);
-    if (s.type !== SOCK.DGRAM) return connectStream(this, d, s, a);
+    if (s.netlink) {
+      if (!s.local) bindNetlink(this, s, 0, 0);
+      s.remote = {portid: a.portid, groups: a.groups};
+      return 0;
+    }
+    if (s.connectionWanted) return connectStream(this, d, s, a);
     if (s.inet) {
       // A datagram socket's peer: the one address it sends to and takes from (AF_UNSPEC: none again).
       if (a.unspec) { s.remote = null; s.state = 'unconnected'; s.events++; return 0; }
       const to = reachable(s, a);
-      if (!s.local) bindInet(s, to.ip, 0);
+      // Bound, if it was not, at its family's loopback address (a raw socket holds no port).
+      if (!s.local && s.type !== SOCK.RAW) bindInet(s, mapped(to.ip) ? LOOPBACK4 : LOOPBACK6, 0);
       s.remote = to;
       s.state = 'connected';
       s.events++;
@@ -759,7 +940,17 @@ export const NET_CALLS = {
       // The rest (buffer sizes, SO_KEEPALIVE, SO_LINGER, timeouts) are taken and change nothing here.
       return 0;
     }
+    // Netlink's own (NETLINK_EXT_ACK, NETLINK_GET_STRICT_CHK, a group joined): taken, none changes an answer here.
+    if (s.netlink) { if (l === SOL.NETLINK) return 0; fail(ERR.NOPROTOOPT); }
     if (!s.inet) fail(ERR.NOPROTOOPT);
+    if (s.type === SOCK.RAW) {
+      // The ICMP types a raw socket does not want: ICMP_FILTER's mask, ICMP6_FILTER's 256 bits.
+      if (l === SOL.RAW && n === ICMP_FILTER && s.family === AF.INET) { s.filter = N(length) >= 4 ? this.view.getUint32(N(value), true) : 0; return 0; }
+      if (l === SOL.ICMPV6 && n === ICMP6_FILTER && s.family === AF.INET6) { s.filter = this.bytes.slice(N(value), N(value) + Math.min(32, N(length))); return 0; }
+    }
+    // What comes with a datagram: its TTL (IP_RECVTTL), its hop limit (IPV6_RECVHOPLIMIT).
+    if (l === SOL.IP && n === IP_RECVTTL) { s.options.recvttl = on; return 0; }
+    if (l === SOL.IPV6 && n === IPV6_RECVHOPLIMIT && s.family === AF.INET6) { s.options.recvhops = on; return 0; }
     if (l === IPPROTO.TCP && s.stream) { if (n === TCP_NODELAY) s.options.nodelay = on; return 0; }
     if (l === IPPROTO.IPV6 && s.family === AF.INET6) {
       if (n === IPV6_V6ONLY) { if (s.local) fail(E.INVAL); s.options.v6only = on; }

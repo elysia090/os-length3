@@ -3,9 +3,10 @@
 // Each process is a directory by its pid (stat, status, cmdline, comm, environ, maps, cwd, exe, fd/, task/); /proc/self
 // is the process that asks. What is read is made when the file is opened (a snapshot, as Linux's seq files give it),
 // so a reader sees one consistent text however it reads it; stat says 0 bytes, as Linux does. The machine-wide files
-// (uptime, loadavg, stat, meminfo, cpuinfo, mounts, version, sys/...) say what this kernel is doing.
+// (uptime, loadavg, stat, meminfo, cpuinfo, mounts, version, sys/..., net/...) say what this kernel is doing.
 
 import {Dir, File, Link, S_IFREG} from './fs.mjs';
+import {procNet} from './net-view.mjs';
 
 const enc = new TextEncoder();
 const HZ = 100;
@@ -116,7 +117,8 @@ export function mountProc(kernel) {
       ['environ', new Made(() => (p.env ?? []).map((e) => e + '\0').join(''), 0o400)],
       ['maps', new Made(() => maps(p))],
       ['statm', new Made(() => { const pg = Math.ceil(memoryBytes(p) / PAGE); return `${pg} ${pg} 0 0 0 ${pg} 0\n`; })],
-      ['limits', new Made(() => 'Limit                     Soft Limit           Hard Limit           Units     \nMax open files            1024                 1048576              files     \n')],
+      ['limits', new Made(() => limits(p))],
+      ['net', null],
       ['mounts', new Made(() => mounts())],
       ['cwd', new Pointer(() => p.cwd)],
       ['exe', new Pointer(() => p.exe ?? '')],
@@ -126,6 +128,7 @@ export function mountProc(kernel) {
     ]);
     const dir = new Listing(() => {
       files.set('fd', fdDir(p));
+      files.set('net', net);
       files.set('task', new Listing(() => new Map([...(p.tasks ?? [])].map((t) => [String(t.tid), new Listing(() => new Map([
         ['stat', new Made(() => stat(p).replace(/^\d+/, String(t.tid)))], ['status', new Made(() => status(p))], ['comm', new Made(() => comm(p) + '\n')],
       ]))]))));
@@ -134,6 +137,22 @@ export function mountProc(kernel) {
     dirs.set(p.pid, {proc: p, dir});
     return dir;
   };
+
+  // Its resource limits as Linux's table says them (sys-proc.mjs keeps them; RLIMIT_CPU on, in its order).
+  const LIMITS = [['Max cpu time', 'seconds'], ['Max file size', 'bytes'], ['Max data size', 'bytes'], ['Max stack size', 'bytes'],
+    ['Max core file size', 'bytes'], ['Max resident set', 'bytes'], ['Max processes', 'processes'], ['Max open files', 'files'],
+    ['Max locked memory', 'bytes'], ['Max address space', 'bytes'], ['Max file locks', 'locks'], ['Max pending signals', 'signals'],
+    ['Max msgqueue size', 'bytes'], ['Max nice priority', ''], ['Max realtime priority', ''], ['Max realtime timeout', 'us']];
+  const limits = (p) => {
+    const say = (x) => (x === 0xffffffffffffffffn ? 'unlimited' : String(x));
+    return 'Limit                     Soft Limit           Hard Limit           Units     \n' + LIMITS.map(([name, unit], k) => {
+      const [soft, hard] = p.limits?.[k] ?? [0xffffffffffffffffn, 0xffffffffffffffffn];
+      return `${name.padEnd(26)}${say(soft).padEnd(21)}${say(hard).padEnd(21)}${unit ? unit.padEnd(10) : ''}\n`;
+    }).join('');
+  };
+  // /proc/net (and each process's: one network here), made from net-view.mjs.
+  const netFiles = procNet(kernel);
+  const net = new Listing(() => new Map(Object.entries(netFiles).map(([name, make]) => [name, new Made(make)])));
 
   const mounts = () => 'rootfs / rootfs rw 0 0\nproc /proc proc rw,nosuid,nodev,noexec,relatime 0 0\ntmpfs /tmp tmpfs rw,nosuid,nodev 0 0\ndevtmpfs /dev devtmpfs rw,nosuid 0 0\n';
   const used = () => live().reduce((n, p) => n + (p.state === 'live' ? memoryBytes(p) : 0), 0);
@@ -174,6 +193,7 @@ export function mountProc(kernel) {
     ['filesystems', new Made(() => 'nodev\tproc\nnodev\ttmpfs\nnodev\tdevtmpfs\n')],
     ['cmdline', new Made(() => 'console=ttyS0\n')],
     ['self', new Pointer(() => String(caller()?.pid ?? 1))],
+    ['net', new Link('self/net')],
     ['thread-self', new Pointer(() => { const t = kernel.current; return t ? `${t.proc.pid}/task/${t.tid}` : '1'; })],
     ['sys', new Listing(() => sys)],
   ]);

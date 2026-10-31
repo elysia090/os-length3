@@ -1526,13 +1526,16 @@ What leaves this system is kept to what is said here:
   its loopback, as the device's Prompt has in its own network namespace: a
   program in it can reach nothing but its own processes. Local sockets
   (AF_UNIX: socketpair, a name on a path or in the abstract namespace,
-  descriptors passed between processes) and TCP and UDP to this machine's own
-  addresses (127.0.0.0/8, ::1; a server and its client, as `openssl s_server`
-  and curl are) are channels inside its kernel (xlat/runtime/sys-net.mjs);
-  every other address is no one's to bind (EADDRNOTAVAIL) and unreachable
-  (ENETUNREACH), and every other family is refused as a host without it
-  refuses it (EAFNOSUPPORT). xlat/tests/boundary.test.mjs holds the line,
-  and xlat/tests/c/inet.c compares with native. The page itself
+  descriptors passed between processes) and TCP, UDP and ICMP to this
+  machine's own addresses (127.0.0.0/8, ::1; a server and its client, as
+  `openssl s_server` and curl are; ping) are channels inside its kernel
+  (xlat/runtime/sys-net.mjs), and what it is told of its network (netlink as
+  `ip` and `ss` read it, the interface ioctls, /proc/net) is that machine's:
+  lo alone (xlat/runtime/net-view.mjs). Every other address is no one's to
+  bind (EADDRNOTAVAIL) and unreachable (ENETUNREACH), and every other family
+  is refused as a host without it refuses it (EAFNOSUPPORT).
+  xlat/tests/boundary.test.mjs holds the line, and xlat/tests/c/inet.c and
+  icmp.c compare with native. The page itself
   may reach its own origin, the Remote and, for the box's Agent, the APIs of
   the models' makers whose keys it knows (agent/makers.ts), nothing else: the
   web build carries that Content-Security-Policy, and the desktop's (Tauri's)
