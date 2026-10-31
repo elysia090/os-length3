@@ -15,6 +15,13 @@ import {Editor, fileState, lineHeight, lineStart, numbering, type FileState} fro
 const join = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
 
 /**
+ * What comes near the visible part of each scrolling flow, one watcher for each flow: one for each section, hundreds in
+ * a repo of many files, were each asked again at every change of layout, and a keystroke (the editor growing) took
+ * most of its time in them.
+ */
+const near = new WeakMap<HTMLElement, {observer: IntersectionObserver; runs: WeakMap<Element, () => void>}>();
+
+/**
  * Run `load` once, when `el` comes near the visible part of `root` or when
  * asked. The scrolling flow must be the root: it clips what is outside it,
  * so measuring against the window would never see the margin ahead.
@@ -22,13 +29,18 @@ const join = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
 function lazy(el: HTMLElement, root: HTMLElement, load: () => Promise<void>): () => Promise<void> {
   let started: Promise<void> | null = null;
   const run = () => (started ??= load());
-  const observer = new IntersectionObserver((seen) => {
-    if (!seen.some((s) => s.isIntersecting)) return;
-    observer.disconnect();
-    void run();
-  }, {root, rootMargin: '1200px 0px'});
+  let watch = near.get(root);
+  if (!watch) {
+    const runs = new WeakMap<Element, () => void>();
+    const observer = new IntersectionObserver((seen) => {
+      for (const s of seen) if (s.isIntersecting) { observer.unobserve(s.target); runs.get(s.target)?.(); }
+    }, {root, rootMargin: '1200px 0px'});
+    near.set(root, watch = {observer, runs});
+  }
+  const {observer, runs} = watch;
+  runs.set(el, () => void run());
   observer.observe(el);
-  return () => { observer.disconnect(); return run(); };
+  return () => { observer.unobserve(el); return run(); };
 }
 
 /** `target` lit for the landing (styles.css .revealed), and off once its light has gone. */
@@ -243,7 +255,9 @@ export class Reader {
   }
 
   directory(path: string): HTMLElement {
-    const section = h('section', {class: 'dir', 'data-path': path || '/'}, path ? null : h('p', {class: 'muted'}, '…'));
+    // Not listed yet, a folder stands a window tall (styles: .dir.unlisted): with no height, every folder of a level
+    // was near at once, each listed, and a repo of many files was laid out and watched whole while one wrote.
+    const section = h('section', {class: path ? 'dir unlisted' : 'dir', 'data-path': path || '/'}, path ? null : h('p', {class: 'muted'}, '…'));
     if (!path) this.root = section;
     this.sections.set(path, section);
     this.loads.set(path, lazy(section, this.flow, () => this.fill(path, section)));
@@ -265,7 +279,7 @@ export class Reader {
 
   private async fill(path: string, section: HTMLElement) {
     let entries: Entry[];
-    try { entries = await store.tree(this.repo, path); } catch (e) { section.replaceChildren(h('p', {class: 'muted'}, String(e))); return; }
+    try { entries = await store.tree(this.repo, path); } catch (e) { section.replaceChildren(h('p', {class: 'muted'}, String(e))); return; } finally { section.classList.remove('unlisted'); }
     // An empty directory shows nothing; only an empty repo says so.
     if (!entries.length) { section.replaceChildren(path ? '' : h('div', {class: 'empty'}, t('No files yet'))); return; }
     section.replaceChildren(...readingOrder(entries).map((e) =>

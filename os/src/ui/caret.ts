@@ -22,8 +22,8 @@ function copyStyle(f: Field, copy: HTMLElement) {
   if (f instanceof HTMLInputElement) copy.style.whiteSpace = 'pre';
 }
 
-/** Where the caret of `f` is on the screen: the top left of its letter's height, and that height. */
-function caretAt(f: Field, copy: HTMLElement): {x: number; y: number; h: number} {
+/** Where the caret of `f` is on the screen: the top left of its letter's height, and that height; and where `f` is. */
+function caretAt(f: Field, copy: HTMLElement): {x: number; y: number; h: number; field: DOMRect} {
   const cs = getComputedStyle(f);
   const at = f.selectionEnd ?? 0;
   copy.textContent = f.value.slice(0, at);
@@ -36,7 +36,7 @@ function caretAt(f: Field, copy: HTMLElement): {x: number; y: number; h: number}
   const x = r.left + parseFloat(cs.borderLeftWidth) + mark.offsetLeft - f.scrollLeft;
   // A one-line field holds its line in the middle of its height.
   const y = f instanceof HTMLInputElement ? r.top + (r.height - h) / 2 : r.top + parseFloat(cs.borderTopWidth) + mark.offsetTop - f.scrollTop;
-  return {x, y, h};
+  return {x, y, h, field: r};
 }
 
 /** How wide a letter of `f` is (its font monospace: a terminal's cell), laid out in its copy. */
@@ -122,7 +122,9 @@ export function caret() {
     mark.style.height = `${Math.round(p.h)}px`;
     mark.classList.add('on');
     shown = true;
-    stood = f.getBoundingClientRect();
+    // Where the field was measured, before the mark was moved (the mark moves nothing else): asked again, after it was,
+    // it laid the page out again.
+    stood = p.field;
     held = {length: f.value.length, at: f.selectionEnd ?? 0};
     const n = ++watching;
     requestAnimationFrame(() => watch(n));

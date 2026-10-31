@@ -186,7 +186,8 @@ export class EditLine {
   #front(): Front | null {
     const repo = this.#p.repo();
     if (!repo) return null;
-    const ok = (a: HTMLTextAreaElement | null) => !!a?.isConnected && !!a.offsetParent && a.closest<HTMLElement>('.col')?.dataset.repo === repo;
+    // Shown, asked of its style: offsetParent laid the page out first, at every keystroke.
+    const ok = (a: HTMLTextAreaElement | null) => !!a?.isConnected && (a.checkVisibility?.() ?? !!a.offsetParent) && a.closest<HTMLElement>('.col')?.dataset.repo === repo;
     const area = ok(this.#last) ? this.#last : readIn(this.#p.main, repo);
     const path = area?.closest<HTMLElement>('section.file')?.dataset.path;
     if (!area || !path) return null;

@@ -126,6 +126,8 @@ export class Editor {
   /** Its text as saved, as written here, and as saved elsewhere (conflict.ts). */
   private held: Held;
   private timer = 0;
+  /** The text's length and lines as it was last fitted to (-1: not fitted). */
+  private fitted = {length: -1, lines: -1};
   // Saved elsewhere while this one has unsaved edits: asked in the box, over the text, which
   // stays to be read and written on. Nothing is saved on its own until it is answered. What
   // differs opens under the answers, so nothing moves under the pointer that asked for it.
@@ -176,11 +178,22 @@ export class Editor {
     area.addEventListener('input', (event) => this.undone(event as InputEvent));
   }
 
-  /** Fitted to its text; out of sight (folded, or its page hidden) it cannot be measured: fitted again when it shows. */
-  fit() {
+  /**
+   * Fitted to its text; out of sight (folded, or its page hidden) it cannot be measured: fitted again when it shows.
+   * `typing`, with its text only added to since, it grows if it must and is not measured from nothing: that laid the
+   * page out twice at every keystroke, and most change no height at all.
+   */
+  fit(typing = false) {
     const {area} = this;
-    if (!area.offsetParent) { this.box.seen(false); return; }
+    // Seen at all, asked of its style (offsetParent laid the page out first).
+    if (!(area.checkVisibility?.() ?? !!area.offsetParent)) { this.box.seen(false); this.fitted = {length: -1, lines: -1}; return; }
     this.box.seen(true);
+    const text = area.value, lines = lineCount(text), was = this.fitted;
+    this.fitted = {length: text.length, lines};
+    if (typing && was.length >= 0 && text.length >= was.length && lines >= was.lines) {
+      if (area.scrollHeight > area.clientHeight) area.style.height = `${area.scrollHeight}px`;
+      return;
+    }
     area.style.height = 'auto'; area.style.height = `${area.scrollHeight}px`;
   }
 
@@ -320,7 +333,7 @@ export class Editor {
   /** Written in: saved a moment after the typing stops, unless what to keep is still being asked. */
   private typed() {
     const {area, held} = this;
-    this.fit();
+    this.fit(true);
     this.box.number(area.value);
     if (held.asking) {
       // Written on until it is theirs: nothing is left to ask.

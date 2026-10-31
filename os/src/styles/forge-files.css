@@ -9,6 +9,9 @@
 .work.bench .flow { scroll-padding-top: var(--s3); }
 .columns.split > .col > .flow { scroll-padding-top: var(--s1); }
 .flow:focus-visible { outline-offset: -2px; }
+/* A folder not listed yet stands a window tall: what follows it is not near until it is listed and laid out (reader.ts
+   directory). */
+.flow .dir.unlisted { min-height: 100vh; }
 /* Forge's files run on far enough past the last for it to come up to the top (a file just made, opened at the end):
    not the empty foot of the one before it filling the column over it. */
 .col > .flow::after { content: ''; display: block; height: max(0px, calc(100% + var(--s3) - var(--file-min) - var(--s6))); }
