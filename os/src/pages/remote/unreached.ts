@@ -20,7 +20,7 @@ let tried = 0;
  */
 export function unreachedPlace(what: string, again: () => void): HTMLElement {
   const retry = button(t('Try again'), 'small-button primary');
-  const place = signInPlace(t('The Remote cannot be reached'), h('p', {class: 'muted'}, what), retry);
+  const place = signInPlace(t('Cannot connect to Remote'), h('p', {class: 'muted'}, what), retry);
   let done = false;
   const once = () => { if (done) return; done = true; stop(); again(); };
   const stop = account.onReach(() => { if (!place.isConnected) { stop(); return; } if (!account.remoteAway()) once(); });

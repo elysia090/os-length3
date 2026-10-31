@@ -15,7 +15,7 @@ import {forgetExcept} from '../prompt/l3-files.ts';
 import * as draft from './sync.ts';
 import {core, isNative} from '../app/host.ts';
 import {connection, mayAsk, onConnection, onReach, remoteAway, RemoteError, retryAfter} from './connection.ts';
-import {ELSEWHERE, onChange} from '../repos/repos.ts';
+import {ELSEWHERE, onChange, store} from '../repos/repos.ts';
 import {coalesced, every, jitter, shared} from '../app/runs.ts';
 import {onState} from '../home/state.ts';
 import {othersOpen, prune} from './tabs.ts';
@@ -174,23 +174,51 @@ const homeRuns = new Map<draft.HomeKey, () => Promise<void>>();
 /** Changes made here to each setting, and how many of them the last agreement took in: more made than taken, not on the Remote yet. */
 const homeMade = new Map<draft.HomeKey, number>(), homeTaken = new Map<draft.HomeKey, number>();
 
+/**
+ * Home's settings being taken off this device (Remove from device): none is agreed with the Remote again until the
+ * hold is lifted or the session changes, or an agreement a look starts would bring back what was just taken off (bug:
+ * one that ran as they were taken off put the profile and the TODO back, there for whoever used the browser next).
+ */
+let homeHeld = false;
+/** Each setting's agreement under way, to be waited for before what it agrees is taken off. */
+const homeRunning = new Map<draft.HomeKey, Promise<void>>();
+
 function agreeHome(k: draft.HomeKey): Promise<void> {
+  if (homeHeld) return Promise.resolve();
   let f = homeRuns.get(k);
   if (!f) {
     f = coalesced(async () => {
+      if (homeHeld) return;
       const made = homeMade.get(k) ?? 0;
       await draft.syncHome(k);
       homeTaken.set(k, Math.max(homeTaken.get(k) ?? 0, made));
     });
     homeRuns.set(k, f);
   }
-  return f();
+  const run = f();
+  homeRunning.set(k, run);
+  void run.catch(() => {}).finally(() => { if (homeRunning.get(k) === run) homeRunning.delete(k); });
+  return run;
 }
+
+/** Hold Home's settings' agreement (homeHeld): what waits to start goes, what runs is waited for. */
+export async function holdHome(): Promise<void> {
+  homeHeld = true;
+  for (const timer of homeTimers.values()) clearTimeout(timer);
+  homeTimers.clear();
+  await Promise.allSettled([...homeRunning.values()]);
+}
+
+/** Agreed with the Remote again, as before the hold. */
+export function releaseHome() { homeHeld = false; }
+
+/** Whether Home's settings are being taken off this device: nothing is to be written into them meanwhile. */
+export const homeIsHeld = (): boolean => homeHeld;
 
 /** A Home setting changed here (a keystroke in the TODO, a profile saved): agreed with the Remote after a pause. */
 export function homeChanged(k: draft.HomeKey) {
   homeMade.set(k, (homeMade.get(k) ?? 0) + 1);
-  if (!connection()) return;
+  if (!connection() || homeHeld) return;
   clearTimeout(homeTimers.get(k));
   homeTimers.set(k, setTimeout(() => { homeTimers.delete(k); track(agreeHome(k).catch(away)); }, SOON));
 }
@@ -208,9 +236,25 @@ async function lookOnce(): Promise<void> {
   // What moved on the Remote is asked while what is here is read (as the app opens, while the core starts): neither
   // waits for the other, and the page waited for both, one after the other, before it was drawn from them.
   const asked = connection();
-  const moving = asked ? draft.moved().catch(away) : null;
+  // Signed out, a repo here is only here, and nothing is decided from what it holds: its name is all that is read,
+  // not every file of every repo (the look signing in brings reads them, as the one after this when it came meanwhile).
+  if (!asked) {
+    const names = await store.names().catch((e: unknown) => { console.error('look: the repos here could not be read', e); return null; });
+    if (!names) return;
+    void prune();
+    for (const name of names) {
+      const before = states.get(name);
+      if (timers.has(name) || before?.where === 'off') continue;
+      states.set(name, {where: 'local', changed: 0, both: before?.both ?? [], unsynced: [], elsewhere: before?.elsewhere, agreed: before?.agreed ?? false});
+    }
+    for (const k of [...states.keys()]) if (!names.includes(k)) states.delete(k);
+    onlyThere = []; everyThere = []; reposSeen = null;
+    tell();
+    return;
+  }
+  const moving = draft.moved().catch(away);
   // Not waited for when nothing is decided from it (below): what it threw is thrown where it is waited for.
-  moving?.catch(() => {});
+  moving.catch(() => {});
   // What is here could not be read: nothing is decided from nothing (no state is dropped), and it is said.
   const here = await draft.status().catch((e: unknown) => { console.error('look: the repos here could not be read', e); return null; });
   if (!here) return;
@@ -227,7 +271,7 @@ async function lookOnce(): Promise<void> {
   for (const k of [...states.keys()]) if (!here.some((s) => s.name === k)) states.delete(k);
   if (c) {
     // Asked again when the session changed meanwhile: what moved is the session's.
-    const now = moving && asked?.token === c.token ? await moving : await draft.moved().catch(away);
+    const now = asked.token === c.token ? await moving : await draft.moved().catch(away);
     if (now && now.repos !== reposSeen) {
       const list = await draft.remoteRepos().catch(away);
       if (list) { everyThere = list; reposSeen = now.repos; }
@@ -293,7 +337,7 @@ export async function begin() {
   // The Remote answers again: what waited for it goes now, not at its next try (up to a minute away).
   onReach(() => { if (remoteAway() || !connection()) return; for (const [r, s] of states) if (s.where === 'offline' && timers.has(r)) schedule(r, 0); });
   // Another account, or none: nothing read for the last one holds.
-  onConnection(() => { reposSeen = null; void look(); });
+  onConnection(() => { reposSeen = null; homeHeld = false; void look(); });
   // The Remote's changes are seen within five seconds while the page is in view and someone is at it; nobody for a
   // while, a minute, then ten (runs.ts paced); back at it, at once. While the Remote is away, less often each time.
   polling = every(5000, async () => { if (connection() && mayAsk()) await look(); }, {paced: true});

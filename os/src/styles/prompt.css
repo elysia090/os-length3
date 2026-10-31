@@ -10,13 +10,11 @@
 /* Its left edge a step left of the files' (s3 from the center's edge, theirs s5), so where the two
    would line up the box reads as its own surface, not the foot of the file behind it. Its right stays. */
 .work.bench .dock { left: var(--s3); }
-/* Forge's stands under the box worked on, a step outside its edges (columns.ts placeDock): one box, the center's width
-   but s3; side by side, under the one in hand; moving with the row as it moves. Its left stays where it was as the
-   pane goes or comes (issue #45): only its right end follows the center's. */
-.work.bench:not(.no-strip) .dock {
-  margin: 0; max-width: none; left: var(--dock-l, var(--s3)); right: var(--dock-r, var(--s3));
-  transition: opacity var(--motion), left var(--slide) var(--land), right var(--slide) var(--land);
-}
+/* Forge's stands across the center, s3 in from its edges, however many boxes stand in the row and whichever is worked
+   on: a file opened beside, or another box pressed, leaves it where it is (it went with the box worked on before, and
+   the box one was about to write in moved out from under the hand). Its left stays where it was as the pane goes or
+   comes (issue #45): only its right end follows the center's. */
+.work.bench:not(.no-strip) .dock { margin: 0; max-width: none; left: var(--s3); right: var(--s3); }
 /* While the search is out (what it found, or what is read from it), the whole window steps back under one shade,
    the rail, the band and the pane with the center, to its edges: still there to be seen, not read across; the
    search and what it found are the one thing lit. It fades in and out; a press on it goes to what is under it, so
@@ -26,11 +24,11 @@ body::after {
   content: ''; position: fixed; inset: 0; z-index: 7; pointer-events: none;
   background: color-mix(in srgb, var(--ink) 14%, transparent); opacity: 0; transition: opacity calc(180ms * var(--pace)) ease-out;
 }
-body:has(.work.bench:not([hidden]) > .bar .search-box:focus-within)::after { opacity: 1; }
+body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within)::after { opacity: 1; }
 /* Over the shade only while it is out: at rest it is the page's, under whatever lies over the page (Server's layer).
    Out with the keyboard elsewhere (what is read there, or a list held out from its head in the pane), the shade lifts:
-   the file is written beside it at full strength. */
-.work.bench > .bar > .search-box:is(:focus-within, .reading, .kept, .moving) { z-index: 8; }
+   the file is written beside it at full strength. Going (.leaving), it stays over the shade until it has gone up. */
+.work.bench > .bar > .search-box:is(:focus-within, .reading, .kept, .moving, .leaving) { z-index: 8; }
 .work.bench > .bar > .search-box.kept:not(.leaving) > .search-results { display: flex; }
 /* The right pane put away takes its search with it; its switch stays where it was, at the top line's right end,
    the way to bring both back, and says which it is: brought out, an ink fill, as anything chosen; put away, the
@@ -168,7 +166,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:focus-within)::after { opa
    repo's next issue in ink, its number as an issue's is said; TODO's circle on paper, as Home's TODO box is. Turning
    from one to another its colours cross as its words do. */
 .prompt-chip { margin: 0; border: 0; cursor: var(--cursor-hand); transition: background-color var(--motion), color var(--motion), box-shadow var(--motion); }
-.prompt-chip:is([data-mode='issue'], [data-mode='todo'], [data-mode='edit']) { gap: var(--s2); padding: 0 var(--s3); text-shadow: none; }
+.prompt-chip:is([data-mode='issue'], [data-mode='todo'], [data-mode='edit'], [data-mode='agent']) { gap: var(--s2); padding: 0 var(--s3); text-shadow: none; }
 .prompt-chip[data-mode='issue'] { background: var(--ink); color: var(--ground); box-shadow: none; }
 .prompt-chip[data-mode='todo'] { padding-left: var(--s2); background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge); }
 .prompt-chip:not([data-mode='run']) > :is(.lamp, .prompt-ps) { display: none; }
@@ -178,6 +176,12 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:focus-within)::after { opa
 .prompt-chip[data-mode='issue'] .prompt-mode { gap: 0; }
 .prompt-chip[data-mode='issue'] .prompt-mode-repo { opacity: .66; }
 .prompt-chip[data-mode='todo'] .prompt-mode > .icon { width: 15px; height: 15px; color: var(--done); }
+/* The Agent's pill, Agent@garden: on paper ringed in the Agent's blue, as Edit's is in ink, its words in ink, the repo
+   after its name quiet; what is written to it is a person's words, in their letters. */
+.prompt-chip[data-mode='agent'] { background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--agent); }
+.prompt-chip[data-mode='agent'] .prompt-mode { gap: 0; }
+.prompt-chip[data-mode='agent'] .prompt-mode-repo { color: var(--sub); }
+.prompt[data-mode='agent'] .prompt-in { font-family: var(--sans); }
 /* Edit's pill on paper ringed in ink, a pen's line round it (edit-box.ts): its pencil, the file in front and the caret's
    line, a long name cut short. The yellow is the file's, where the work is, never the pill's. */
 .prompt-chip[data-mode='edit'] { padding-left: var(--s2); background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--ink); }
@@ -226,7 +230,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:focus-within)::after { opa
 .prompt-keys > kbd, .prompt-sends > kbd { color: var(--sub); border-color: var(--rule); }
 .prompt-keys > kbd:last-child { font: 600 13px/1 var(--mono); }
 .prompt-keys > kbd.tick { padding-top: 6px; font-size: 15px; } /* a backtick is drawn at the top of its letter's room */
-.prompt:is([data-mode='issue'], [data-mode='todo']) .prompt-keys { visibility: hidden; } /* Ctrl+` brings the box running */
+.prompt:is([data-mode='issue'], [data-mode='todo'], [data-mode='agent']) .prompt-keys { visibility: hidden; } /* Ctrl+` brings the box running */
 /* Written in, the keys that send what is in it stand in their place, beside Run (Create, Add): Enter alone is a new
    line. Edit sends nothing (what is typed is in the file already): its Ctrl G stays. */
 .prompt-sends, .prompt:not([data-mode='edit']):focus-within .prompt-keys, .prompt[data-mode='edit'] .prompt-sends { visibility: hidden; }

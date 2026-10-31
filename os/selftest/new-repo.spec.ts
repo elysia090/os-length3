@@ -8,7 +8,7 @@ import {expect, test} from './fixtures.ts';
 test('with no repo at all, Forge and Git offer to make the first, and that is New repo', async ({app}) => {
   for (const place of ['forge', 'git'] as const) {
     await app.rail.go(place);
-    const first = app.main.getByRole('button', {name: /^Make your first repo/});
+    const first = app.main.getByRole('button', {name: /^Create your first repo/});
     await expect(first).toBeVisible();
     await first.click();
     await expect(app.rail.button('new-repo')).toHaveAttribute('aria-current', 'page');
@@ -68,10 +68,10 @@ test('nothing named yet, the new row is a quiet place for the name, and Create a
   await expect(app.newRepo.name).not.toHaveAttribute('placeholder');
   const slot = app.main.locator('.tree-still .tree-new');
   await expect(slot).toHaveClass(/tree-unnamed/);
-  await expect(slot.locator('.tree-name')).toHaveText('name');
+  await expect(slot.locator('.tree-name')).toHaveText('Name');
   await expect(app.newRepo.problem).toBeHidden();
   await app.newRepo.create.click();
-  await expect(app.newRepo.problem).toHaveText('Write a name first');
+  await expect(app.newRepo.problem).toHaveText('Please enter a name first');
   await expect(app.newRepo.name).toBeFocused();
   // Written, it is the repo to be made, filled as File fills it.
   await app.newRepo.name.pressSequentially('tide');
@@ -86,7 +86,7 @@ test('a name already taken is said under the name, and the name keeps the keyboa
   await expect(app.newRepo.name).toHaveValue('');
 
   await app.newRepo.fill('notes');
-  await expect(app.newRepo.problem).toHaveText('There is a repo named notes already');
+  await expect(app.newRepo.problem).toHaveText('A repo named "notes" already exists');
   await expect(app.newRepo.name).toBeFocused();
   await expect(app.newRepo.name).toHaveValue('notes');
   // Typing in it again clears what was said.

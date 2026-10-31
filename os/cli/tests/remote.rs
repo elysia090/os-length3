@@ -17,7 +17,7 @@ fn an_answer_that_is_not_a_repo_leaves_the_copy_here_as_it_is() {
     // as a repo at version 0 with no files, and every file unchanged since the last agreement was removed here.
     for said in ["<html>Sign in to the Wi-Fi</html>", "{}", r#"{"version":"4","draft":{}}"#, r#"{"version":4,"draft":null,"head":null}"#] {
         let remote = FakeRemote::start(move |a| {
-            if a.method == "GET" && a.path == "/v1/repos/notes" { (200, said.to_string()) } else { (NOT_FOUND.0, NOT_FOUND.1.to_string()) }
+            if a.method == "GET" && a.route() == "/v1/repos/notes" { (200, said.to_string()) } else { (NOT_FOUND.0, NOT_FOUND.1.to_string()) }
         });
         let home = Home::new("odd-answer");
         home.signed_in(&remote.url);
@@ -41,7 +41,7 @@ fn approving(user: &'static str) -> FakeRemote {
     let notes = std::sync::Mutex::new(None::<String>);
     let remote = FakeRemote::start(move |a| {
         let page = format!("{}/?device=&user_code=ABCD", at.get().map_or("", String::as_str));
-        match (a.method.as_str(), a.path.as_str()) {
+        match (a.method.as_str(), a.route()) {
             ("POST", "/api/auth/device/code") => (200, format!(r#"{{"device_code":"d","user_code":"ABCD","verification_uri":"{page}","verification_uri_complete":"{page}","interval":1,"expires_in":60}}"#)),
             ("POST", "/api/auth/device/token") => (200, r#"{"access_token":"new"}"#.into()),
             ("GET", "/api/auth/get-session") if a.auth.as_deref() == Some("Bearer new") => (200, format!(r#"{{"user":{{"id":"{user}","name":"{user}"}}}}"#)),
@@ -126,7 +126,7 @@ fn what_a_remote_says_when_it_refuses_reaches_the_terminal_as_words_only() {
 fn discarded() -> FakeRemote {
     let held = std::sync::Mutex::new(None::<String>);
     FakeRemote::start(move |a| match (a.method.as_str(), a.path.as_str()) {
-        ("GET", "/v1/repos/notes") => match held.lock().unwrap().clone() {
+        ("GET", _) if a.route() == "/v1/repos/notes" => match held.lock().unwrap().clone() {
             Some(line) => (200, line),
             None => (404, r#"{"error":"That repo is not on the Remote","gone":1}"#.into()),
         },
@@ -160,7 +160,7 @@ fn a_repo_made_here_under_a_name_the_remote_discarded_goes_there_as_new() {
     home.repo("notes", &[("a.txt", "mine\n"), ("b.txt", "changed here\n")]);
     home.agreed("notes", &format!(r#"{{"version":3,"tree":{{"a.txt":"{}","b.txt":"{}"}},"head":null}}"#, sha("mine\n"), sha("b\n")));
     let ran = home.run("en", &["file", "notes"]);
-    assert!(ran.stderr.contains("discarded on the Remote") && !ran.stderr.contains("l3 remote on"), "{ran:?}");
+    assert!(ran.stderr.contains("Repo deleted on Remote; local copy preserved") && !ran.stderr.contains("l3 remote on"), "{ran:?}");
     assert!(home.path("repos/notes/a.txt").exists() && home.path("repos/notes/b.txt").exists(), "the copy here is kept");
     assert!(!remote.said().iter().any(|s| s.contains("anew") || s.starts_with("PATCH")), "{:?}", remote.said());
 }
@@ -204,7 +204,7 @@ fn holding_notes(home: &Home, at: usize, wrote: &Wrote) -> (FakeRemote, std::syn
     let asked = std::sync::atomic::AtomicUsize::new(0);
     let writer = std::sync::Arc::new(std::sync::Mutex::new(None));
     let (w, wrote, repo) = (writer.clone(), wrote.clone(), home.path("repos/notes"));
-    let remote = FakeRemote::start(move |a| match (a.method.as_str(), a.path.as_str()) {
+    let remote = FakeRemote::start(move |a| match (a.method.as_str(), a.route()) {
         ("GET", "/v1/repos") => (200, r#"[{"name":"notes","head":null,"version":1,"bytes":5,"updatedAt":"x"}]"#.into()),
         ("GET", "/v1/repos/notes") => {
             if asked.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1 == at {

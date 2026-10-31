@@ -62,10 +62,13 @@ async function main() {
   const b = await bridgeProcess(DELAY);
   const cleanup: (() => Promise<void> | void)[] = [() => b.stop(), () => pg.destroy(), () => rmSync(dir, {recursive: true, force: true})];
   const report: Record<string, unknown> = {delay: DELAY, n: N, files: FILES, commits: COMMITS, at: new Date().toISOString()};
+  // What the Worker said of a failure (its log goes when it stops): what a 500 or 503 measured here was.
+  let failures = () => '';
   try {
     const assets = appBuild();
     const r = await remote(pg, {dir: join(dir, 'worker'), assets, bridge: b.port, paid: true});
     cleanup.unshift(() => r.stop());
+    failures = () => r.log().split('\n').filter((l) => /remote failed|Error|error:|code:/.test(l)).slice(-30).join('\n');
     say(`measure: the Worker on ${r.url}, Postgres ${pg.port} as remote_worker, bridge delay ${DELAY} ms each way`);
 
     if (!argv.includes('--no-load')) report.firstLoad = await firstLoad(r.url, assets);
@@ -119,7 +122,7 @@ async function main() {
     const ssh = await api(r.url, 'PUT', '/v1/ssh/this', {scope: 'device'}, {origin: false});
     if (ssh.status !== 200) throw new Error(`ssh: ${ssh.status} ${ssh.bytes}`);
     const missing50 = Array.from({length: 50}, (_, i) => sha(`content ${i} v0`));
-    let n = 0;
+    let n = 0, begun = 0;
     const routes: [string, string, string, () => unknown, {origin?: boolean}?][] = [
       ['moved (the poll)', 'GET', '/v1/moved', () => undefined],
       ['news poll', 'GET', '/v1/news', () => undefined],
@@ -131,6 +134,8 @@ async function main() {
       [`log (50 of ${COMMITS} commits, ${FILES} files)`, 'GET', '/v1/repos/big/log?limit=50', () => undefined],
       ['log, as the clients ask it (summary)', 'GET', '/v1/repos/big/log?limit=50&summary=1', () => undefined],
       ['get-session', 'GET', '/api/auth/get-session', () => undefined],
+      // Work begun on an issue of the big repo, a new one each time: its draft laid on main's head, nothing copied.
+      [`work begun (${FILES} files)`, 'POST', '/v1/repos/big/lines', () => ({issue: `issue/w${++begun}.md`})],
       // What the app asks as its places are shown: Forge's pane and Git (a repo's changes, its work), Remote's Plan,
       // who sees each repo, Inbox's names.
       ['changes (Forge, Git)', 'GET', '/v1/repos/big/changes', () => undefined],
@@ -170,6 +175,35 @@ async function main() {
       results.push(f);
       say(`${route.padEnd(36)} ${String(f.status).padEnd(4)} wall ${f.wall} ms (p90 ${f.wallP90}) worker ${f.worker} cpu ${f.cpu} ms | conn ${f.conns} q ${f.queries} rt ${f.roundTrips} db→ ${f.fromDb} B →db ${f.toDb} B setup ${f.setup} ms | answer ${f.bytes} B (gz ${f.gzip})`);
     }
+    // A commit as the app makes one: two files saved (not counted), then the commit, on the big repo: what it costs
+    // with as many files as it has, its tree made where it changed.
+    {
+      const walls: number[] = [], workers: number[] = [], trips: number[] = [], cpus: number[] = [], fromDb: number[] = [], toDb: number[] = [];
+      const step = async (base: string, i: number, at: {v: number; h: string | null}) => {
+        const s = await api(base, 'PATCH', '/v1/repos/big/draft', {version: at.v, set: {[path(0)]: sha(`content 0 v${i % 2}`), [path(1)]: sha(`content 1 v${(i + 1) % 2}`)}, remove: []});
+        if (s.status !== 200) throw new Error(`commit's save: ${s.status} ${s.bytes}`);
+        at.v = s.json().version;
+        await b.control('/reset');
+        const res = await api(base, 'POST', '/v1/repos/big/cuts', {version: at.v, parent: at.h, title: `Measured ${i}`});
+        if (res.status !== 201) throw new Error(`commit: ${res.status} ${res.bytes}`);
+        at.h = res.json().id;
+        return res;
+      };
+      const there = (await api(r.url, 'GET', '/v1/repos/big')).json();
+      const at = {v: there.version as number, h: there.head as string | null};
+      for (let i = 0; i < N + 3; i++) {
+        const res = await step(r.url, i, at);
+        for (let k = 0; k < 50 && (await b.control('/stats', 'GET')).open; k++) await new Promise((x) => setTimeout(x, 10));
+        const st = await b.control('/stats', 'GET');
+        if (i < 3) continue;
+        walls.push(res.ms); workers.push(timing(res.headers.get('server-timing'), 'worker')); trips.push(st.roundTrips); fromDb.push(st.fromDb); toDb.push(st.toDb);
+      }
+      if (cpuBase) for (let i = 0; i < Math.max(8, Math.floor(N / 2)) + 2; i++) { const res = await step(cpuBase, N + 3 + i, at); if (i >= 2) cpus.push(timing(res.headers.get('server-timing'), 'cpu')); }
+      const f = {route: `commit (2 files of ${FILES})`, wall: +median(walls).toFixed(1), wallP90: +p90(walls).toFixed(1), worker: median(workers), cpu: +median(cpus).toFixed(2),
+        roundTrips: median(trips), fromDb: median(fromDb), toDb: median(toDb)};
+      results.push(f as unknown as Figures);
+      say(`${f.route.padEnd(36)} 201  wall ${f.wall} ms (p90 ${f.wallP90}) worker ${f.worker} cpu ${f.cpu} ms | rt ${f.roundTrips} db→ ${f.fromDb} B →db ${f.toDb} B`);
+    }
     report.routes = results;
 
     // The daily sweep, fired as the Cron Trigger is, on an account with something to sweep.
@@ -181,6 +215,9 @@ async function main() {
     const s = await b.control('/stats', 'GET');
     report.sweep = {ms: Math.round(performance.now() - t), conns: s.opened, queries: s.queries, roundTrips: s.roundTrips};
     say(`sweep (1 room to recount)                  ${report.sweep && JSON.stringify(report.sweep)}`);
+  } catch (e) {
+    say(`the Worker's log of what failed:\n${failures()}`);
+    throw e;
   } finally {
     for (const c of cleanup) await c();
   }

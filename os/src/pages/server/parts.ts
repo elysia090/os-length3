@@ -62,7 +62,7 @@ export function askIn(card: HTMLElement, from: Element, title: string | Node, wh
   // The card keeps its size while it asks, so the answers come where its own deeds were.
   card.style.minHeight = `${card.offsetHeight}px`;
   const error = h('p', {class: 'error small', role: 'alert'});
-  const no = button(t('Not now'), 'small-button'), yes = button(verb, 'small-button primary');
+  const no = button(t('Cancel'), 'small-button'), yes = button(verb, 'small-button primary');
   // The card comes back, and the keyboard with it to what asked (its switch), not dropped to the page.
   no.addEventListener('click', () => { card.style.minHeight = ''; card.replaceChildren(...was); no_?.(); if (from.isConnected) (from as HTMLElement).focus(); });
   const shown = performance.now();

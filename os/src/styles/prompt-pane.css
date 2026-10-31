@@ -47,6 +47,19 @@
   background: var(--ink); color: var(--ground); font-size: 11.5px; line-height: 20px; vertical-align: middle; } /* by its middle: TODO's circle has no line of letters to sit on */
 .term-home .said-todo .term-said-go > b { padding-left: 4px; background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge); }
 .term-home .said-todo .term-said-go > b > .icon { width: 13px; height: 13px; margin: 0; vertical-align: 0; }
+.term-home .said-agent .term-said-go > b { background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--agent); }
+/* The Agent's answer under its question: in the letters people write in, as it comes; its code, what would be run, on
+   the Prompt's own glass in its green. Waiting for its first words, a quiet ellipsis; refused, why, in the red. */
+.term-out > .term-answer { display: block; margin: -2px 0 10px; color: var(--ink); font: 400 var(--t-meta)/1.65 var(--sans); white-space: pre-wrap; overflow-wrap: anywhere; }
+.term-answer > .answer-p { margin: 0 0 6px; }
+.term-answer > :last-child { margin-bottom: 0; }
+.term-answer > .answer-code { display: block; margin: 6px 0; padding: 8px 10px; border-radius: var(--r-field); background: var(--screen); color: var(--add-tint);
+  font: 12px/1.5 var(--mono); white-space: pre; overflow-x: auto; }
+.term-answer.waiting::after { content: '…'; color: var(--sub); animation: answer-waits 1.2s ease-in-out infinite alternate; }
+@keyframes answer-waits { from { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .term-answer.waiting::after { animation: none; } }
+.answer-refused { display: block; color: var(--off); }
+.screen .term-out > .term-answer { color: inherit; }
 /* Up as the screen, a TODO's circle is the size of its letters, and the words are a person's there too. */
 .term-said-go > b > .icon { width: 12px; height: 12px; margin-right: 3px; vertical-align: -1px; color: var(--done); }
 .screen .said-words { font-family: var(--sans); }
@@ -72,7 +85,7 @@
    quiet line at its top, pressed to open it where it stood (output.ts fold). The pane lists the lines run regardless. */
 .term-slot .term-out > .earlier { display: none; }
 .term-slot .term-out.unfolded > .earlier { display: revert; }
-.term-slot .term-out.unfolded > :is(.term-lines, .fresh, .term-said).earlier { display: block; }
+.term-slot .term-out.unfolded > :is(.term-lines, .fresh, .term-said, .term-answer).earlier { display: block; }
 .term-earlier { justify-self: start; margin: 0 0 var(--s1); padding: 0; border: 0; background: none; color: var(--screen-ps); font: 12px/1.6 var(--mono); opacity: .7; cursor: var(--cursor-hand); }
 .term-earlier:is(:hover, :focus-visible) { opacity: 1; text-decoration: underline; text-underline-offset: 3px; }
 .term-home .term-earlier { display: none; }

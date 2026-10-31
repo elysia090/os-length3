@@ -7,7 +7,7 @@ import {Pane, paneWord, pluginArea} from '../pane.ts';
 import type {Writing} from '../forge/reader.ts';
 import {Reference} from '../forge/reference.ts';
 import {Screen} from './screen.ts';
-import {sessionIfAny} from './terminal.ts';
+import {sessionIfAny} from './sessions.ts';
 
 // The workbench Forge and Git share, put together from its parts: the page's own content in the large center (3/4)
 // with the box at its foot (box.ts), which becomes the Prompt's screen over the center while the Prompt is in use
@@ -68,7 +68,7 @@ function promptBox() {
   // while its shell runs (styles.css).
   // Up, its × puts it back as Escape does (box.ts), the way down it came up.
   const termHead = h('div', {class: 'term-head'}, h('h2', {}, 'Prompt'), h('span', {class: 'lamp', 'aria-hidden': 'true'}),
-    h('button', {type: 'button', class: 'term-shut', tabindex: '-1', 'aria-label': t('Put the Prompt back'), 'aria-keyshortcuts': 'Escape'}, mark('close')));
+    h('button', {type: 'button', class: 'term-shut', tabindex: '-1', 'aria-label': t('Close Prompt'), 'aria-keyshortcuts': 'Escape'}, mark('close')));
   const term = h('section', {class: 'term-box', 'aria-label': 'Prompt'}, termHead);
   const termHome = h('div', {class: 'term-home'}, term);
   return {termHead, term, termHome};

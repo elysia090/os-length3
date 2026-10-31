@@ -16,7 +16,7 @@
 
 import {eq, sql} from 'drizzle-orm';
 import type {Hono} from 'hono';
-import type {Auth} from './auth.ts';
+import {signedToken, type Auth} from './auth.ts';
 import {ago, body, lock, rows, slowDown, type Db, type Vars} from './request.ts';
 import {guard, throttle, user} from './schema.ts';
 
@@ -58,8 +58,8 @@ export function enter(d: {db: Db; auth: Auth; enter: Enter}, app: Hono<Vars>) {
       if (n.n < TRIES) await tx.insert(throttle).values({key: from});
       return n.n;
     });
-    if (tries >= TRIES) slowDown(3600, {error: 'Too many tries; try again in an hour'});
-    if (typeof b?.key !== 'string' || !d.enter.key || !await same(b.key, d.enter.key)) return c.json({error: 'This link does not open this Remote'}, 403);
+    if (tries >= TRIES) slowDown(3600, {error: 'Too many attempts; retry in an hour'});
+    if (typeof b?.key !== 'string' || !d.enter.key || !await same(b.key, d.enter.key)) return c.json({error: 'Invite link invalid for this Remote'}, 403);
     // The one account is made the first time it is entered: its row is ours to make (no provider
     // stands behind it), its sessions Better Auth's.
     await d.db.insert(user).values({id: id(), name: d.enter.as, email, emailVerified: true}).onConflictDoNothing({target: user.email});
@@ -69,6 +69,6 @@ export function enter(d: {db: Db; auth: Auth; enter: Enter}, app: Hono<Vars>) {
     // Entering is proof the person is here just now, as a passkey sign-in is (app.ts proven).
     const at = new Date(), proof = {proofSession: session.id, proofAt: at, signedSession: session.id, signedAt: at};
     await d.db.insert(guard).values({userId: one.id, ...proof}).onConflictDoUpdate({target: guard.userId, set: proof});
-    return c.json({token: session.token, name: one.name});
+    return c.json({token: await signedToken(d.auth, session.token), name: one.name});
   });
 }

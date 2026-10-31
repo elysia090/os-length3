@@ -39,9 +39,16 @@ test('an account is a provider identity: the same person signs in to the same ac
   assert.equal((await who(a)).id, (await who(b)).id);
   assert.notEqual((await who(a)).id, (await who(other)).id);
   assert.equal((await who(a)).name, 'Ren');
-  // The session's own token (as get-session gives it) works as the bearer too.
-  const raw = ((await s.call('GET', '/api/auth/get-session', {token: a})).json as unknown as {session: {token: string}}).session.token;
-  assert.equal((await s.call('GET', '/v1/repos', {token: raw})).status, 200);
+  // The session's own token as the database keeps it (and get-session says it) is no bearer by itself: only signed,
+  // as get-session hands it over too. A copy of the database opens no session.
+  const asked = await s.call('GET', '/api/auth/get-session', {token: a});
+  const raw = (asked.json as unknown as {session: {token: string}}).session.token;
+  assert.equal((await s.call('GET', '/v1/repos', {token: raw})).status, 401);
+  const signed = asked.headers.get('set-auth-token')!;
+  assert.match(signed, new RegExp(`^${raw}\\.[A-Za-z0-9+/]+=*$`));
+  assert.equal((await s.call('GET', '/v1/repos', {token: signed})).status, 200);
+  // Signed by anything but the Remote's secret, it is no one.
+  assert.equal((await s.call('GET', '/v1/repos', {token: `${raw}.${btoa('x'.repeat(32))}`})).status, 401);
   // No way in without a provider: there are no blank accounts.
   assert.notEqual((await s.call('POST', '/api/auth/sign-in/anonymous', {body: {}})).status, 200);
   assert.deepEqual((await s.call('GET', '/v1/about')).json, {passkey: true, providers: ['dev'], domain: 'length3.test', app: APP});
@@ -178,7 +185,7 @@ test('SSH: a device says it listens, and to whom, but never where; any of the ac
   assert.equal((await device('POST', '/v1/ssh/this/beat', laptop, {})).json.on, true);
   // A page cannot turn SSH on, for itself or anyone: only the device, as itself.
   const fromPage = await s.call('PUT', '/v1/ssh/this', {token: web, body: {scope: 'device'}});
-  assert.deepEqual([fromPage.status, fromPage.json.error], [403, 'SSH is turned on at the device itself']);
+  assert.deepEqual([fromPage.status, fromPage.json.error], [403, 'SSH must be enabled on the physical device']);
   assert.equal((await s.call('POST', `/v1/ssh/${laptopId}/on`, {token: web})).status, 404);
   assert.equal((await listed(web)).length, 1);
   // The web turns it off; the device's next beat hears so, and a beat never turns it on again.
@@ -205,17 +212,17 @@ test('Turning off is confirmed by a passkey for five minutes and no longer, and 
   const off = (repo: string, typed = repo) => s.call('POST', `/v1/repos/${repo}/off`, {token: t, body: {repo: typed}});
   // Without a passkey just now, nothing; with one, the name must be the repo's own, as it is written.
   const none = await off('notes');
-  assert.deepEqual([none.status, none.json.error], [403, 'Confirm with a passkey.']);
+  assert.deepEqual([none.status, none.json.error], [403, 'Authenticate with passkey.']);
   await prove(s, t, 4 * 60 * 1000);
   for (const typed of ['Notes', ' notes', 'trip']) {
     const wrong = await off('notes', typed);
-    assert.deepEqual([wrong.status, wrong.json.error], [403, 'The name does not match.'], typed);
+    assert.deepEqual([wrong.status, wrong.json.error], [403, 'Name does not match.'], typed);
   }
   assert.equal((await off('notes')).status, 200);
   // Past five minutes the passkey is asked again.
   await prove(s, t, 5 * 60 * 1000 + 1000);
   const late = await off('trip');
-  assert.deepEqual([late.status, late.json.error], [403, 'Confirm with a passkey.']);
+  assert.deepEqual([late.status, late.json.error], [403, 'Authenticate with passkey.']);
   // A proof is one session's: another device of the same account is not confirmed by it.
   await prove(s, t);
   const other = await s.start('Ren');
@@ -424,7 +431,7 @@ test('work on an issue is its own line; submitted, reviewed by version, merged i
   const log = (await s.call('GET', '/v1/repos/r/log', {token: t})).json as unknown as {id: string; merged: string | null}[];
   assert.deepEqual(log.map((c) => c.merged), [c2, null]);
 
-  // Where each repo stands, every repo asked in one request: what the two routes say of each (asked twice, once), a repo
+  // Repo status, every repo asked in one request: what the two routes say of each (asked twice, once), a repo
   // not on the Remote with neither, one turned off as they say it, and only the asker's own: another's of the same name
   // is not theirs to read.
   await s.call('PATCH', '/v1/repos/quiet/draft', {token: t, body: {version: 0, set: {'README.md': readme}, remove: []}});
@@ -687,7 +694,7 @@ test('Servers: people who know each other, boards with talk and a TODO kept toge
   const other = (await s.call('POST', `/v1/servers/${sid}/boards`, {token: mio, body: {name: 'food'}})).json.id as string;
   // Two boards of one name are one too many to tell apart, whatever its case; made or renamed to.
   const twice = await s.call('POST', `/v1/servers/${sid}/boards`, {token: mio, body: {name: 'Food'}});
-  assert.deepEqual([twice.status, twice.json.error], [409, 'There is a board by that name already']);
+  assert.deepEqual([twice.status, twice.json.error], [409, 'A board with that name already exists']);
   assert.equal((await s.call('PATCH', `/v1/boards/${bid}`, {token: mio, body: {name: 'FOOD'}})).status, 409);
   await s.call('PUT', `/v1/boards/${other}/todos/f1`, {token: mio, body: {title: 'ramen', place: 1, created: 1}});
   assert.equal((await s.call('DELETE', `/v1/boards/${other}`, {token: mio})).status, 403);
@@ -781,6 +788,10 @@ test('Who sees a repo: its owner, the servers it is shown in, or everyone, under
   const seen = (body: unknown) => s.call('PUT', '/v1/repos/hello/seen', {token: ren, body});
   // Private at first: only Ren sees it.
   assert.deepEqual([(await state()).seen, (await see('ren@length3.test:hello', ren)).status, (await see('ren@length3.test:hello', mio)).status], ['private', 200, 404]);
+  // Asked again by one who has it, it is 304, its tree not made; and only by one who may see it.
+  const tag = (await see('ren@length3.test:hello', ren)).headers.get('ETag')!;
+  const again = (t: string) => s.call('GET', '/v1/seen/ren@length3.test/hello', {token: t, headers: {'If-None-Match': tag}});
+  assert.deepEqual([(await again(ren)).status, (await again(mio)).status], [304, 404]);
   // Shown in a server: its people see it, and whose it is; nobody else does.
   await s.call('POST', '/v1/inbox/contacts', {token: ren, body: {address: 'mio@length3.test', state: 'accepted'}});
   await s.call('POST', '/v1/inbox/contacts', {token: mio, body: {address: 'ren@length3.test', state: 'accepted'}});
@@ -814,12 +825,12 @@ test('Who sees a repo: its owner, the servers it is shown in, or everyone, under
   await commit(mio, {'README.md': mine}, 'mio');
   await s.call('POST', `/v1/servers/${sid}/repos`, {token: mio, body: {repo: 'hello'}});
   const clash = await s.call('PUT', '/v1/repos/hello/seen', {token: mio, body: {seen: 'everyone', as: sid}});
-  assert.deepEqual([clash.status, clash.json.error], [409, 'That name is taken']);
+  assert.deepEqual([clash.status, clash.json.error], [409, 'Username already taken']);
   // Taken down, it is held for Ren a while: nobody else's repo answers to it meanwhile.
   assert.equal((await seen({seen: 'servers', servers: [sid]})).json.seen, 'servers');
   assert.equal((await see('trip@length3.test:hello')).status, 404);
   const held = await s.call('PUT', '/v1/repos/hello/seen', {token: mio, body: {seen: 'everyone', as: sid}});
-  assert.deepEqual([held.status, held.json.error], [409, 'That name was let go, and is held for its owner a while']);
+  assert.deepEqual([held.status, held.json.error], [409, 'Name recently released; temporarily reserved for prior owner.']);
   assert.equal((await seen({seen: 'everyone', as: sid})).status, 200);
   // Made public by Ren as Ren: then Ren's name is its face, by choice.
   assert.equal((await seen({seen: 'everyone', as: 'me'})).json.as, 'ren@length3.test:hello');
@@ -855,7 +866,7 @@ test('Names: people and servers share one namespace; a name let go is held for i
   assert.equal((await s.call('DELETE', '/v1/inbox/addresses/rn@length3.test', {token: ren})).status, 200);
   assert.equal(await reachable('rn@length3.test'), false);
   const held = await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'rn'}});
-  assert.deepEqual([held.status, held.json.error], [409, 'That name was let go, and is held for its owner a while']);
+  assert.deepEqual([held.status, held.json.error], [409, 'Name recently released; temporarily reserved for prior owner.']);
   assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'rn'}})).status, 201);
   // Held long enough, it is anyone's.
   const {eq} = await import('drizzle-orm');
@@ -864,7 +875,7 @@ test('Names: people and servers share one namespace; a name let go is held for i
   assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'rn'}})).status, 201);
   // A username is changed, never let go; the one it was is held for its owner the same, theirs to change back to.
   const lettingGo = await s.call('DELETE', '/v1/inbox/addresses/ren@length3.test', {token: ren});
-  assert.deepEqual([lettingGo.status, lettingGo.json.error], [409, 'Your username can be changed, not let go']);
+  assert.deepEqual([lettingGo.status, lettingGo.json.error], [409, 'Usernames can be changed, but not relinquished']);
   assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'rx'}})).status, 201);
   assert.deepEqual((await s.call('PUT', '/v1/inbox/username', {token: ren, body: {name: '@Ren-B'}})).json, {address: 'ren-b@length3.test'});
   // Changed, it stays their first name here, before the one claimed beside it.
@@ -875,7 +886,7 @@ test('Names: people and servers share one namespace; a name let go is held for i
   assert.deepEqual([await reachable('ren@length3.test'), await reachable('ren-b@length3.test')], [true, false]);
   // Twice an hour at most, so nobody holds a row of names by changing through them.
   const third = await s.call('PUT', '/v1/inbox/username', {token: ren, body: {name: 'ren-c'}});
-  assert.deepEqual([third.status, third.json.error], [429, 'Your name can change twice an hour']);
+  assert.deepEqual([third.status, third.json.error], [429, 'Username can only be changed twice per hour']);
   // A name on one's own domain answers while its DNS names this Remote for its owner.
   const rec = (await s.call('GET', '/v1/inbox/domains/ren.dev', {token: ren})).json as unknown as {name: string; value: string};
   s.publish(rec.name, rec.value);
@@ -883,7 +894,7 @@ test('Names: people and servers share one namespace; a name let go is held for i
   assert.equal(((await s.call('GET', '/v1/inbox/lookup?address=ren@ren.dev', {token: mio})).json as unknown as {reachable: boolean}).reachable, true);
   s.unpublish(rec.name);
   const gone = (await s.call('GET', '/v1/inbox/lookup?address=ren@ren.dev', {token: mio})).json as unknown as {reachable: boolean; why: string};
-  assert.deepEqual([gone.reachable, gone.why], [false, 'Its domain no longer names this Remote']);
+  assert.deepEqual([gone.reachable, gone.why], [false, 'Domain no longer points to this Remote']);
   assert.ok(((await s.call('GET', '/v1/inbox/me', {token: ren})).json.addresses as {address: string; lapsed?: boolean}[]).find((a) => a.address === 'ren@ren.dev')?.lapsed);
 });
 
@@ -925,7 +936,7 @@ test('Names on the Remote: first come, their owner\'s with no term to renew; let
   assert.equal((await look('ren')).reachable, false);
   assert.deepEqual(await look(me.code), {address: 'ren-x@length3.test', reachable: true});
   const held = await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'ren'}});
-  assert.deepEqual([held.status, held.json.error], [409, 'That name was let go, and is held for its owner a while']);
+  assert.deepEqual([held.status, held.json.error], [409, 'Name recently released; temporarily reserved for prior owner.']);
   assert.equal((await s.call('PUT', '/v1/inbox/username', {token: ren, body: {name: 'ren'}})).status, 200);
   assert.equal((await look('ren')).reachable, true);
   // There is no term: nothing to renew, here or for a server.
@@ -967,7 +978,7 @@ test('Consent: nobody is put in a server by someone they have not accepted, or h
   await accept(s, kai, 'ren', 'blocked');
   await accept(s, ren, 'kai');
   const refused = await add('kai');
-  assert.deepEqual([refused.status, refused.json.error], [403, 'Only your contacts can be added']);
+  assert.deepEqual([refused.status, refused.json.error], [403, 'Only existing contacts can be invited']);
   // Nor someone who has not accepted Ren; when both sides have, they are in.
   await accept(s, ren, 'mio');
   assert.equal((await add('mio')).status, 403);
@@ -982,7 +993,7 @@ test('Consent: nobody is put in a server by someone they have not accepted, or h
   // Owning fifty (and one) is the end of it.
   await s.db.execute(sql`update server_member set owner = true where user_id = ${k}`);
   const full = await s.call('POST', '/v1/servers', {token: kai, body: {name: 'More', address: 'kaimore'}});
-  assert.deepEqual([full.status, full.json.error], [429, 'Too many servers']);
+  assert.deepEqual([full.status, full.json.error], [429, 'Server limit reached']);
 });
 
 /** A server of Ren's with Mio and Sora in it, its first board taking guests; Kai is signed in but not in it. */
@@ -1023,11 +1034,11 @@ test('Guests: an invitation one of its people hands out is the whole proof; it l
   assert.ok(kept.length === 1 && kept[0].digest !== one.json.invite && !kept[0].digest.includes(one.json.invite as string));
   assert.equal((await come(kept[0].digest, 'Aki')).status, 403);
   // Wrong, malformed, or for another board: the same refusal, and nothing is spent.
-  const refused = [403, 'This invitation does not open this board'];
+  const refused = [403, 'Invite link invalid for this board'];
   for (const code of ['0'.repeat(32), 'nonsense', 42, null]) assert.deepEqual([(await come(code, 'Aki')).status, (await come(code, 'Aki')).json.error], refused);
   assert.deepEqual([(await come(one.json.invite, 'Aki', other)).status], [403]);
   // A name is the guest's own, but never one of its people's (nor the server's), never an address, never hidden marks.
-  for (const name of ['ren', 'MIO', 'Trip']) assert.deepEqual([(await come(one.json.invite, name)).status, (await come(one.json.invite, name)).json.error], [409, 'That name is taken here'], name);
+  for (const name of ['ren', 'MIO', 'Trip']) assert.deepEqual([(await come(one.json.invite, name)).status, (await come(one.json.invite, name)).json.error], [409, 'Name already taken in this space'], name);
   for (const name of ['', '   ', 'aki@example.org', 'x'.repeat(33), '‮evil', 'a​b', 'tab\u0007']) assert.equal((await come(one.json.invite, name)).status, 400, JSON.stringify(name));
   // None of that spent its one use; then it lets one person in, once.
   const aki = await come(one.json.invite, '  Aki  ');
@@ -1070,7 +1081,7 @@ test('Guests: an invitation one of its people hands out is the whole proof; it l
   // A board has so many out at once.
   for (let i = 0; i < 20; i++) assert.equal((await invite(mio)).status, 201);
   const more = await invite(sora);
-  assert.deepEqual([more.status, more.json.error], [429, 'This board has as many invitations out as it takes; revoke one first']);
+  assert.deepEqual([more.status, more.json.error], [429, 'Invite limit reached; revoke an active invite first']);
   // Someone who leaves the server takes the invitations they made with them.
   assert.equal((await s.call('DELETE', `/v1/servers/${sid}/people/mio@length3.test`, {token: mio})).status, 204);
   assert.equal(await count(s, sql`select count(*)::int as n from board_invite where board_id = ${bid} and uses > 0`), 0);
@@ -1088,12 +1099,12 @@ test('Guests: shown as guests, held to so many posts an hour each and on a board
   assert.match((await s.call('GET', `/v1/open/${bid}/archive`)).text, /Aki \(guest\): hello from outside/);
   // A guest: twenty posts an hour.
   for (let i = 1; i < 20; i++) assert.equal((await say(aki, `post ${i}`)).status, 201);
-  assert.deepEqual([(await say(aki, 'one more')).status, (await say(aki, 'one more')).json.error], [429, 'Too many posts this hour']);
+  assert.deepEqual([(await say(aki, 'one more')).status, (await say(aki, 'one more')).json.error], [429, 'Hourly post limit reached']);
   // A board's guests together: a hundred an hour, whoever they are (guests gone still count); its people write on.
   const hour = Date.now() - 60_000;
   for (let i = 0; i < 80; i++) await s.db.insert(schema.talk).values({id: hour.toString(36).padStart(9, '0') + i.toString(36).padStart(8, '0'), boardId: bid, by: 'Gone', body: 'x'});
   const full = await say(bo, 'and me?');
-  assert.deepEqual([full.status, full.json.error], [429, 'Guests have written as much as they may here this hour']);
+  assert.deepEqual([full.status, full.json.error], [429, 'Hourly guest posting limit reached']);
   assert.equal((await s.call('POST', `/v1/boards/${bid}/posts`, {token: sora, body: {body: 'we still can'}})).status, 201);
   await s.db.execute(sql`delete from board_post where by = 'Gone'`);
   assert.equal((await say(bo, 'and me?')).status, 201);
@@ -1136,14 +1147,14 @@ test('Names: an account keeps five, those it let go among them; a few servers a 
   // Let go, a name is still held for Ren, and still counts: no sixth by letting go of one.
   await s.call('DELETE', '/v1/inbox/addresses/r4@length3.test', {token: ren});
   const sixth = await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'r6'}});
-  assert.deepEqual([sixth.status, sixth.json.error], [409, 'Too many names']);
+  assert.deepEqual([sixth.status, sixth.json.error], [409, 'Username limit reached']);
   assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'r4'}})).status, 201);
   // Ten servers a day.
   await named(s, [mio, 'mio']);
   const ids: string[] = [];
   for (let i = 0; i < 10; i++) ids.push((await s.call('POST', '/v1/servers', {token: mio, body: {name: `S${i}`, address: `mios${i}`}})).json.id as string);
   const eleventh = await s.call('POST', '/v1/servers', {token: mio, body: {name: 'S10', address: 'mios10'}});
-  assert.deepEqual([eleventh.status, eleventh.json.error], [429, 'Too many servers made today']);
+  assert.deepEqual([eleventh.status, eleventh.json.error], [429, 'Daily server creation limit reached']);
   // Made and left with nobody else in it: held a day, not thirty.
   assert.equal((await s.call('DELETE', `/v1/servers/${ids[0]}/people/mio@length3.test`, {token: mio})).status, 204);
   const held = ((await s.call('GET', '/v1/servers?gone=1', {token: mio})).json as unknown as {id: string; until: number}[]).find((x) => x.id === ids[0])!;
@@ -1161,16 +1172,16 @@ test('Storage: settings, repos, lines and reviews are capped, trees count toward
   const me = await idOf(s, t);
   // Eight settings at most.
   for (const k of ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) assert.equal((await s.call('PUT', `/v1/home/${k}`, {token: t, body: {value: 'x', version: 0}})).status, 200);
-  assert.deepEqual((await s.call('PUT', '/v1/home/i', {token: t, body: {value: 'x', version: 0}})).json.error, 'Too many settings');
+  assert.deepEqual((await s.call('PUT', '/v1/home/i', {token: t, body: {value: 'x', version: 0}})).json.error, 'Too many configuration settings');
   assert.equal((await s.call('PUT', '/v1/home/a', {token: t, body: {value: 'y', version: 1}})).status, 200);
   const one = await upload(s, t, enc.encode('x'));
   assert.equal((await s.call('PATCH', '/v1/repos/small/draft', {token: t, body: {version: 0, set: {'a.txt': one.sha}, remove: []}})).status, 200);
   // Two hundred repos, a hundred pieces of work on one, fifty reviews of a change.
   await s.db.execute(sql`insert into repo (user_id, name) select ${me}, 'r' || g from generate_series(1, 199) g`);
-  assert.deepEqual((await s.call('PATCH', '/v1/repos/more/draft', {token: t, body: {version: 0, set: {}, remove: []}})).json.error, 'Too many repos');
+  assert.deepEqual((await s.call('PATCH', '/v1/repos/more/draft', {token: t, body: {version: 0, set: {}, remove: []}})).json.error, 'Repository limit reached');
   const small = sql`(select id from repo where user_id = ${me} and name = 'small')`;
   await s.db.execute(sql`insert into line (repo_id, user_id, name) select ${small}, ${me}, 'l' || g from generate_series(1, 100) g`);
-  assert.deepEqual((await s.call('POST', '/v1/repos/small/lines', {token: t, body: {issue: 'issue/new.md'}})).json.error, 'This repo has too much work open');
+  assert.deepEqual((await s.call('POST', '/v1/repos/small/lines', {token: t, body: {issue: 'issue/new.md'}})).json.error, 'Too many open tasks in this repo');
   const [c1, c2] = ['00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002'], h = 'a'.repeat(64);
   await s.db.execute(sql`insert into cut (repo_id, id, user_id, tree, title) values (${small}, ${h}, ${me}, '{}', 'x')`);
   await s.db.execute(sql`insert into change (id, repo_id, user_id, line, title, head) values (${c1}, ${small}, ${me}, 'l1', 'x', ${h}), (${c2}, ${small}, ${me}, 'l2', 'x', ${h})`);
@@ -1180,11 +1191,11 @@ test('Storage: settings, repos, lines and reviews are capped, trees count toward
   const marks = (marked.json.reviews as {marks: string[]}[])[0].marks;
   assert.ok(marked.status === 201 && marks.length > 0 && marks.length <= 200 && marks.join('').length <= 32 * 1024, String(marks.length));
   await s.db.execute(sql`insert into review (change_id, user_id, version, verdict, by) select ${c2}, ${me}, 1, 'comment', '' from generate_series(1, 50)`);
-  assert.deepEqual((await review(c2, [])).json.error, 'Too many reviews on this change');
+  assert.deepEqual((await review(c2, [])).json.error, 'Review limit reached for this Change');
   // A tree of long paths to one small file counts as what it takes: refused when it would not fit.
   const set = Object.fromEntries(Array.from({length: 700}, (_, i) => [`${'d'.repeat(150)}/${i}.txt`, one.sha]));
   const big = await s.call('PATCH', '/v1/repos/small/draft', {token: t, body: {version: 1, set, remove: []}});
-  assert.deepEqual([big.status, big.json.error], [507, 'The Remote is full for this account']);
+  assert.deepEqual([big.status, big.json.error], [507, 'Remote storage full for this account']);
   // Eight uploads at once into the room that is left: those that fit, and no more.
   const sent = await Promise.all(Array.from({length: 8}, (_, i) => upload(s, t, new Uint8Array(30_000).fill(i + 1))));
   const took = sent.filter((r) => r.status === 201).length;
@@ -1348,13 +1359,13 @@ test('Discard: an off repo goes for good now, asked as off is; its name is remem
 
   // Asked as off is: a passkey just now and the repo's name; and only of a repo that is off.
   const discard = (body: unknown = {repo: 'r'}, name = 'r') => s.call('POST', `/v1/repos/${name}/discard`, {token: t, body});
-  assert.deepEqual([(await discard()).status, (await discard()).json.error], [403, 'Confirm with a passkey.']);
+  assert.deepEqual([(await discard()).status, (await discard()).json.error], [403, 'Authenticate with passkey.']);
   const session = ((await s.call('GET', '/api/auth/get-session', {token: t})).json as unknown as {session: {id: string}}).session.id;
   await s.db.insert(schema.guard).values({userId: me, proofSession: session, proofAt: new Date()})
     .onConflictDoUpdate({target: schema.guard.userId, set: {proofSession: session, proofAt: new Date()}});
-  assert.deepEqual([(await discard({repo: 'keep'})).status, (await discard({repo: 'keep'})).json.error], [403, 'The name does not match.']);
+  assert.deepEqual([(await discard({repo: 'keep'})).status, (await discard({repo: 'keep'})).json.error], [403, 'Name does not match.']);
   const onStill = await discard();
-  assert.deepEqual([onStill.status, onStill.json.error], [409, 'Turn it off first.']);
+  assert.deepEqual([onStill.status, onStill.json.error], [409, 'Disable it first.']);
   assert.deepEqual(await Promise.all(tables.map(of)), [1, 2, 2, 1, 1, 1]);
   assert.equal((await discard({repo: 'nope'}, 'nope')).status, 404);
 
@@ -1378,7 +1389,7 @@ test('Discard: an off repo goes for good now, asked as off is; its name is remem
   const read = await s.call('GET', '/v1/repos/r', {token: t});
   assert.deepEqual([read.status, read.json.gone], [404, gone[0].at]);
   const resent = await s.call('PATCH', '/v1/repos/r/draft', {token: t, body: {version: 0, set: {'README.md': readme}, remove: []}});
-  assert.deepEqual([resent.status, resent.json], [410, {error: 'This repo was discarded on the Remote.', gone: gone[0].at}]);
+  assert.deepEqual([resent.status, resent.json], [410, {error: 'This repo was permanently deleted on Remote.', gone: gone[0].at}]);
   assert.equal((await s.call('PATCH', '/v1/repos/r/draft', {token: t, body: {version: 2, set: {}, remove: []}})).status, 410);
   assert.equal((await s.call('PATCH', '/v1/repos/r/draft?line=001&anew=1', {token: t, body: {version: 1, set: {}, remove: []}})).status, 410);
   assert.deepEqual(((await s.call('GET', '/v1/repos', {token: t})).json as unknown as unknown[]).length, 1);
@@ -1391,7 +1402,7 @@ test('Discard: an off repo goes for good now, asked as off is; its name is remem
   assert.deepEqual(((await s.call('GET', '/v1/repos/r', {token: t})).json as unknown as {draft: object}).draft, {'README.md': readme});
   // `gone` is the Remote's own word: no repo is made under it.
   const word = await s.call('PATCH', '/v1/repos/gone/draft', {token: t, body: {version: 0, set: {}, remove: []}});
-  assert.deepEqual([word.status, word.json.error], [400, 'A repo cannot be called gone']);
+  assert.deepEqual([word.status, word.json.error], [400, 'Repo name cannot be "gone"']);
 });
 
 test('The sweep remembers a repo it let go as gone, for 90 days', async () => {
@@ -1422,7 +1433,7 @@ test('A board item taken off is not brought back by a late change; closing a boa
   assert.equal((await item({title: 'Ship it', place: 5, created: 1})).status, 201);
   assert.equal((await s.call('DELETE', `/v1/boards/${bid}/todos/a1`, {token: ren})).status, 204);
   const late = await item({done: true});
-  assert.deepEqual([late.status, late.json.error], [404, 'That item was taken off']);
+  assert.deepEqual([late.status, late.json.error], [404, 'Item already deleted']);
   assert.deepEqual((await s.call('GET', `/v1/boards/${bid}/todos`, {token: ren})).json, []);
   // A whole item (a title and a place) is a new one.
   assert.equal((await item({title: 'Ship it again', place: 1})).status, 201);
@@ -1578,7 +1589,8 @@ test('The room is counted as things come and go, and agrees with counting it all
   const me = await idOf(s, t);
   const room = async () => (await s.db.execute(sql`select used, stamp from room where user_id = ${me}`)).rows[0] as {used: number; stamp: number};
   const recount = () => count(s, sql`select ((select coalesce(sum(bytes), 0) from blob where user_id = ${me}) + (select coalesce(sum(bytes), 0) from line where user_id = ${me})
-    + (select coalesce(sum(bytes), 0) from cut where user_id = ${me}) + (select coalesce(sum(bytes), 0) from review where user_id = ${me}))::int as n`);
+    + (select coalesce(sum(bytes), 0) from cut where user_id = ${me}) + (select coalesce(sum(bytes), 0) from tree_node where user_id = ${me})
+    + (select coalesce(sum(bytes), 0) from review where user_id = ${me}))::int as n`);
   const moved = async () => (await s.call('GET', '/v1/moved', {token: t})).json.repos as string;
   const a = (await upload(s, t, enc.encode('a'.repeat(500)))).sha, b = (await upload(s, t, enc.encode('b'))).sha, issue = (await upload(s, t, enc.encode('Fix：x\n'))).sha;
   const stamps = [await moved()];
@@ -1745,4 +1757,308 @@ test('what a commit changed is counted by the database as the clients count it: 
   await s.call('POST', '/v1/repos/f/cuts', {token: t, body: {version: 2, parent: id, title: 'Next'}});
   const log = (await s.call('GET', '/v1/repos/f/log?summary=1', {token: t})).json as unknown as {title: string; files: number; folders: string[]}[];
   assert.deepEqual(log.map((c) => [c.title, c.files, c.folders]), [['Next', 2, ['a', 'b']], ['Start', 3, ['', 'a', 'b']]]);
+});
+
+test('a commit is kept as its root, the folders it did not change shared with its parent, and read whole or a path at a time', async () => {
+  const s = await service();
+  const t = await s.start('Ren');
+  const a = (await upload(s, t, enc.encode('a'))).sha, b = (await upload(s, t, enc.encode('b'))).sha;
+  let tree: Record<string, string> = {};
+  for (let i = 0; i < 60; i++) tree[`dir${i % 6}/f${i}.txt`] = a;
+  let version = (await s.call('PATCH', '/v1/repos/delta/draft', {token: t, body: {version: 0, set: tree, remove: []}})).json.version as number;
+  let parent: string | null = null;
+  const made: {id: string; tree: Record<string, string>}[] = [];
+  // How often a commit makes a tree whole (cut_tree), and how many folders the repo keeps.
+  await s.db.execute(sql`set track_functions = 'pl'`);
+  const wholes = async () => {
+    await s.db.execute(sql`select pg_stat_force_next_flush()`);
+    return Number(((await s.db.execute(sql`select coalesce(sum(calls), 0)::int as n from pg_stat_user_functions where funcname = 'cut_tree'`)).rows as {n: number}[])[0].n);
+  };
+  const nodes = () => count(s, sql`select count(*)::int as n from tree_node n join repo r on r.id = n.repo_id where r.name = 'delta'`);
+  for (let k = 0; k < 20; k++) {
+    // Each commit gives one file new contents and takes another away.
+    const set = {[`dir${k % 6}/f${k}.txt`]: b}, gone = `dir${(k + 30) % 6}/f${k + 30}.txt`;
+    version = (await s.call('PATCH', '/v1/repos/delta/draft', {token: t, body: {version, set, remove: [gone]}})).json.version as number;
+    tree = {...tree, ...set};
+    delete tree[gone];
+    const [before, kept] = [await wholes(), await nodes()];
+    const r = await s.call('POST', '/v1/repos/delta/cuts', {token: t, body: {version, parent, title: `Fix: ${k}`}});
+    assert.equal(r.status, 201, r.text);
+    // Made of the folders on the two paths changed and the root, the parent's tree never made whole.
+    assert.equal(await wholes() - before, 0, `commit ${k}`);
+    if (k) assert.ok(await nodes() - kept <= 3, `commit ${k} kept ${await nodes() - kept} folders`);
+    parent = r.json.id as string;
+    made.push({id: parent, tree: {...tree}});
+  }
+  // Each read whole, as it was committed: by itself, and in the log with its trees.
+  for (const m of made) assert.deepEqual((await s.call('GET', `/v1/repos/delta/cuts/${m.id}`, {token: t})).json.tree, m.tree, m.id);
+  const log = (await s.call('GET', '/v1/repos/delta/log?limit=50', {token: t})).json as unknown as {id: string; tree: Record<string, string>; files: number; folders: string[]}[];
+  for (const m of made) assert.deepEqual(log.find((c) => c.id === m.id)?.tree, m.tree);
+  // What each changed is still said without its tree: a file set and a file gone (the first, every file it has).
+  assert.deepEqual(log.map((c) => c.files), [...Array(19).fill(2), 59]);
+  assert.deepEqual(log[0].folders, ['dir1']);
+  // One path of a commit, by its folders.
+  const path = async (id: string, p: string) => ((await s.db.execute(sql`select cut_path(c.repo_id, c.id, ${p}) as sha from cut c where c.id = ${id}`)).rows[0] as {sha: string | null}).sha;
+  assert.deepEqual([await path(made[0].id, 'dir0/f0.txt'), await path(made[19].id, 'dir0/f0.txt'), await path(made[19].id, 'dir0/f30.txt'), await path(made[19].id, 'dir0'), await path(made[19].id, 'nowhere/x')],
+    [b, b, null, null, null]);
+});
+
+test('commits made along what changed come out as the trees they stand for, whatever was saved between them', async () => {
+  const {applyDiff, clashes} = await import('./repos.ts');
+  const {changes} = await import('./trees.ts');
+  const s = await service();
+  const t = await s.start('Ren');
+  const shas = [(await upload(s, t, enc.encode('1'))).sha, (await upload(s, t, enc.encode('22'))).sha];
+  const names = ['a', 'a/b', 'a/c', 'a/b/x', 'a/b/y', 'd', 'd/e', 'd/e/f', 'g', 'h/i', 'h/j/k'];
+  let draft: Record<string, string | null> = {'a/c': shas[0], 'd/e/f': shas[1], g: shas[0]};
+  let version = (await s.call('PATCH', '/v1/repos/walk/draft', {token: t, body: {version: 0, set: draft, remove: []}})).json.version as number;
+  let head: string | null = null, headTree: Record<string, string | null> = {};
+  let seed = 11;
+  const pick = <T>(xs: T[]) => { seed = (seed * 1103515245 + 12345) % 2147483648; return xs[seed % xs.length]; };
+  const path = async (id: string, p: string) => ((await s.db.execute(sql`select cut_path(c.repo_id, c.id, ${p}) as sha from cut c where c.id = ${id}`)).rows[0] as {sha: string | null}).sha;
+  for (let i = 0; i < 60; i++) {
+    for (let k = 1 + (i % 2); k > 0; k--) {
+      const set: Record<string, string | null> = {}, remove: string[] = [];
+      for (let n = 1 + (i % 3); n > 0; n--) {
+        const p = pick(names);
+        if (pick([0, 1, 2]) === 0) { if (!(p in set)) remove.push(p); } else if (!remove.includes(p)) set[p] = pick([...shas, ...shas, null]);
+      }
+      const want = applyDiff(draft, set, remove);
+      const r = await s.call('PATCH', '/v1/repos/walk/draft', {token: t, body: {version, set, remove}});
+      if (r.status !== 200) continue;
+      version = r.json.version as number;
+      draft = want;
+    }
+    // The draft whole, or some of its paths by themselves (each as the draft has it, or gone).
+    const only = pick([0, 0, 1]) ? null : [...new Set([pick(names), pick(names)])];
+    const tree = only ? (() => { const x = {...headTree}; for (const p of only) { if (p in draft) x[p] = draft[p]; else delete x[p]; } return x; })() : draft;
+    const c = await s.call('POST', '/v1/repos/walk/cuts', {token: t, body: {version, parent: head, title: `c${i}`, ...(only ? {paths: only} : {})}});
+    if (only && clashes(tree).length) { assert.equal(c.status, 400, `${i} ${JSON.stringify({only, headTree, draft})}`); continue; }
+    assert.equal(c.status, 201, `${i} ${c.text}`);
+    const id = c.json.id as string;
+    assert.deepEqual((await s.call('GET', `/v1/repos/walk/cuts/${id}`, {token: t})).json.tree, tree, `${i} ${JSON.stringify({only, draft})}`);
+    const [logged] = (await s.call('GET', '/v1/repos/walk/log?limit=1&summary=1', {token: t})).json as unknown as {files: number; folders: string[]}[];
+    assert.deepEqual([logged.files, logged.folders], [changes(headTree, tree).files, changes(headTree, tree).folders], `${i}`);
+    for (const p of names) assert.equal(await path(id, p), typeof tree[p] === 'string' ? tree[p] : null, `${i} ${p}`);
+    // What changed since the head, compared where the commits are kept: the paths that differ, as each has them.
+    const differ = [...new Set([...Object.keys(headTree), ...Object.keys(tree)])].filter((p) => headTree[p] !== tree[p]);
+    const pick2 = (x: Record<string, string | null>) => Object.fromEntries(differ.filter((p) => p in x).map((p) => [p, x[p]]));
+    assert.deepEqual((await s.call('GET', `/v1/repos/walk/compare?from=${head ?? ''}&to=${id}`, {token: t})).json, {was: pick2(headTree), now: pick2(tree)}, `${i}`);
+    head = id;
+    headTree = tree;
+  }
+});
+
+test('a merge made folder by folder comes out as the trees merged path by path, refusals, main\'s draft and what it takes and all', async () => {
+  const {applyDiff, merge3} = await import('./repos.ts');
+  const s = await service();
+  const t = await s.start('Ren');
+  const shas = [(await upload(s, t, enc.encode('1'))).sha, (await upload(s, t, enc.encode('22'))).sha, (await upload(s, t, enc.encode('333'))).sha];
+  const names = ['a/x', 'a/y', 'a/b/z', 'c', 'd/e', 'd/f/g', 'h'];
+  let seed = 3;
+  const pick = <T>(xs: T[]) => { seed = (seed * 1103515245 + 12345) % 2147483648; return xs[seed % xs.length]; };
+  type T = Record<string, string | null>;
+  const call = (m: string, p: string, body?: unknown) => s.call(m, p, {token: t, body});
+  /** Some saves at random on a line, as the model lays them; the draft after. */
+  const saves = async (repo: string, l: string, draft: T, version: number, n: number) => {
+    for (let k = 0; k < n; k++) {
+      const set: T = {}, remove: string[] = [];
+      for (let m = 1 + (k % 2); m > 0; m--) { const p = pick(names); if (pick([0, 1, 2]) === 0) { if (!(p in set)) remove.push(p); } else if (!remove.includes(p)) set[p] = pick(shas); }
+      const r = await call('PATCH', `/v1/repos/${repo}/draft${l === 'main' ? '' : `?line=${l}`}`, {version, set, remove});
+      if (r.status === 200) { version = r.json.version as number; draft = applyDiff(draft, set, remove); }
+    }
+    return {draft, version};
+  };
+  const counts = async (repo: string) => (await s.db.execute(sql`select l.paths, l.bytes, l.file_bytes::int as files,
+      (select count(*)::int from jsonb_object_keys(draft_flat(l.repo_id, l.name, l.base_root))) as "paths'", octet_length(draft_flat(l.repo_id, l.name, l.base_root)::text) as "bytes'",
+      (select coalesce(sum(b.bytes), 0)::int from jsonb_each_text(draft_flat(l.repo_id, l.name, l.base_root)) e join blob b on b.user_id = l.user_id and b.sha256 = e.value) as "files'",
+      (select count(*)::int from line_file f where f.repo_id = l.repo_id and f.line = 'main') as rows
+    from line l join repo r on r.id = l.repo_id where r.name = ${repo} and l.name = 'main'`)).rows[0] as Record<string, number>;
+  await s.db.execute(sql`set track_functions = 'all'`);
+  const wholes = async () => {
+    await s.db.execute(sql`select pg_stat_force_next_flush()`);
+    return Number(((await s.db.execute(sql`select coalesce(sum(calls), 0)::int as n from pg_stat_user_functions where funcname in ('cut_tree', 'tree_flat', 'draft_flat')`)).rows as {n: number}[])[0].n);
+  };
+  let merged = 0, refused = 0;
+  for (let i = 0; i < 24; i++) {
+    const repo = `m${i}`, issue = 'issue/001.md';
+    const start: T = {[issue]: shas[0], 'a/x': shas[0], 'a/b/z': shas[1], c: shas[2], 'd/e': shas[0]};
+    let main = {draft: start, version: (await call('PATCH', `/v1/repos/${repo}/draft`, {version: 0, set: start, remove: []})).json.version as number};
+    const base = (await call('POST', `/v1/repos/${repo}/cuts`, {version: main.version, parent: null, title: 'Start'})).json.id as string;
+    assert.equal((await call('POST', `/v1/repos/${repo}/lines`, {issue})).status, 201);
+    let work = await saves(repo, '001', start, 1, 1 + (i % 3));
+    const fix = await call('POST', `/v1/repos/${repo}/cuts?line=001`, {version: work.version, parent: base, title: 'Fix'});
+    assert.equal(fix.status, 201, fix.text);
+    assert.equal((await call('POST', `/v1/repos/${repo}/lines/001/push`, {head: fix.json.id})).status, 200);
+    // main moves on too, now and then a commit of its own, and keeps a draft of its own.
+    let mainTree = start;
+    if (i % 3 === 0) {
+      main = await saves(repo, 'main', main.draft, main.version, 2);
+      const c = await call('POST', `/v1/repos/${repo}/cuts`, {version: main.version, parent: base, title: 'Main'});
+      assert.equal(c.status, 201, c.text);
+      mainTree = main.draft;
+    }
+    main = await saves(repo, 'main', main.draft, main.version, i % 4);
+    const change = (await call('POST', `/v1/repos/${repo}/changes`, {line: '001', title: 'Fix'})).json as unknown as {id: string; version: number};
+    const before = await wholes();
+    const r = await call('POST', `/v1/repos/${repo}/changes/${change.id}/merge`, {version: change.version});
+    // No tree made whole, nor main's draft.
+    assert.equal(await wholes(), before, `${i}`);
+    const want = merge3(start, mainTree, work.draft), draft = merge3(mainTree, main.draft, want.tree);
+    if (want.conflicts.length || draft.conflicts.length) {
+      refused++;
+      assert.deepEqual([r.status, r.json.conflicts, !!r.json.draft], [409, want.conflicts.length ? want.conflicts : draft.conflicts, !want.conflicts.length], `${i} ${r.text}`);
+      continue;
+    }
+    merged++;
+    assert.equal(r.status, 200, `${i} ${r.text}`);
+    assert.deepEqual((await call('GET', `/v1/repos/${repo}/cuts/${r.json.merged}`)).json.tree, want.tree, `${i}`);
+    assert.deepEqual((await call('GET', `/v1/repos/${repo}`)).json.draft, draft.tree, `${i}`);
+    const c = await counts(repo);
+    assert.deepEqual([c.paths, c.bytes, c.files], [c["paths'"], c["bytes'"], c["files'"]], `${i}`);
+    work = {draft: {}, version: 0};
+  }
+  assert.ok(merged >= 8 && refused >= 2, `${merged} merged, ${refused} refused`);
+});
+
+test('a commit on one made before roots is made whole once, and those after it along what changed', async () => {
+  const s = await service();
+  const t = await s.start('Ren');
+  const me = await idOf(s, t);
+  const a = (await upload(s, t, enc.encode('a'))).sha, b = (await upload(s, t, enc.encode('b'))).sha;
+  const tree: Record<string, string | null> = {'a/x.txt': a, 'a/y.txt': a, 'b/z.txt': a, empty: null};
+  let version = (await s.call('PATCH', '/v1/repos/old/draft', {token: t, body: {version: 0, set: tree, remove: []}})).json.version as number;
+  // A commit as one was kept before roots: its tree whole, and the line's touched paths not known.
+  const old = 'f'.repeat(64);
+  await s.db.execute(sql`insert into cut (repo_id, id, user_id, parent, tree, title, time) select r.id, ${old}, ${me}, null, ${JSON.stringify(tree)}::jsonb, 'Before', now() from repo r where r.name = 'old'`);
+  await s.db.execute(sql`update line set head = ${old}, pushed = ${old}, base_root = null where repo_id = (select id from repo where name = 'old')`);
+  version = (await s.call('PATCH', '/v1/repos/old/draft', {token: t, body: {version, set: {'a/x.txt': b}, remove: ['b']}})).json.version as number;
+  const one = await s.call('POST', '/v1/repos/old/cuts', {token: t, body: {version, parent: old, title: 'After'}});
+  assert.equal(one.status, 201, one.text);
+  const want = {'a/x.txt': b, 'a/y.txt': a, empty: null};
+  assert.deepEqual((await s.call('GET', `/v1/repos/old/cuts/${one.json.id}`, {token: t})).json.tree, want);
+  version = (await s.call('PATCH', '/v1/repos/old/draft', {token: t, body: {version, set: {'c/new.txt': a}, remove: []}})).json.version as number;
+  const two = await s.call('POST', '/v1/repos/old/cuts', {token: t, body: {version, parent: one.json.id, title: 'Then'}});
+  assert.deepEqual((await s.call('GET', `/v1/repos/old/cuts/${two.json.id}`, {token: t})).json.tree, {...want, 'c/new.txt': a});
+  const log = (await s.call('GET', '/v1/repos/old/log?summary=1', {token: t})).json as unknown as {files: number; folders: string[]}[];
+  assert.deepEqual(log.map((c) => [c.files, c.folders]), [[1, ['c']], [2, ['a', 'b']], [3, ['a', 'b']]]);
+  // Compared with one made before roots (its tree whole, in the database), and from nothing.
+  assert.deepEqual((await s.call('GET', `/v1/repos/old/compare?from=${old}&to=${one.json.id}`, {token: t})).json,
+    {was: {'a/x.txt': a, 'b/z.txt': a}, now: {'a/x.txt': b}});
+  assert.deepEqual((await s.call('GET', `/v1/repos/old/compare?to=${two.json.id}`, {token: t})).json, {was: {}, now: {...want, 'c/new.txt': a}});
+  assert.equal((await s.call('GET', `/v1/repos/old/compare?from=${'0'.repeat(64)}&to=${two.json.id}`, {token: t})).status, 404);
+  assert.equal((await s.call('GET', `/v1/repos/old/compare?to=${two.json.id}`, {token: await s.start('Bo')})).status, 404);
+  // An issue's file committed by itself: the rest as the head has it.
+  version = (await s.call('PATCH', '/v1/repos/old/draft', {token: t, body: {version, set: {'issue/001.md': a, 'a/y.txt': b}, remove: []}})).json.version as number;
+  const only = await s.call('POST', '/v1/repos/old/cuts', {token: t, body: {version, parent: two.json.id, title: 'Issue', paths: ['issue/001.md']}});
+  assert.deepEqual((await s.call('GET', `/v1/repos/old/cuts/${only.json.id}`, {token: t})).json.tree, {...want, 'c/new.txt': a, 'issue/001.md': a});
+  // ... and the next commit of the draft has the rest.
+  const next = await s.call('POST', '/v1/repos/old/cuts', {token: t, body: {version, parent: only.json.id, title: 'Rest'}});
+  assert.deepEqual((await s.call('GET', `/v1/repos/old/cuts/${next.json.id}`, {token: t})).json.tree, {...want, 'a/y.txt': b, 'c/new.txt': a, 'issue/001.md': a});
+  // A file made where the head has a file, committed by itself (the file it replaced left in), is refused; with it, taken.
+  version = (await s.call('PATCH', '/v1/repos/old/draft', {token: t, body: {version, set: {'a/x.txt/deeper': a}, remove: ['a/x.txt']}})).json.version as number;
+  const clash = await s.call('POST', '/v1/repos/old/cuts', {token: t, body: {version, parent: next.json.id, title: 'x', paths: ['a/x.txt/deeper']}});
+  assert.deepEqual([clash.status, clash.json.path], [400, 'a/x.txt'], clash.text);
+  const both = await s.call('POST', '/v1/repos/old/cuts', {token: t, body: {version, parent: next.json.id, title: 'x', paths: ['a/x.txt/deeper', 'a/x.txt']}});
+  assert.equal(both.status, 201, both.text);
+  assert.equal(((await s.call('GET', `/v1/repos/old/cuts/${both.json.id}`, {token: t})).json.tree as Record<string, string>)['a/x.txt/deeper'], a);
+});
+
+test('a save laid on the draft\'s rows comes out as the diff laid on a copy would, refusals and all, and what it takes as counted from the whole', async () => {
+  const {applyDiff, clashes} = await import('./repos.ts');
+  const s = await service();
+  const t = await s.start('Ren');
+  const shas = [(await upload(s, t, enc.encode('1'))).sha, (await upload(s, t, enc.encode('22'))).sha];
+  // What the line keeps of what its draft takes, as each save changed it, and the same counted again from its rows whole.
+  const counts = async () => (await s.db.execute(sql`select l.paths, l.bytes, l.file_bytes::int as files,
+      (select count(*)::int from jsonb_object_keys(draft_flat(l.repo_id, l.name, l.base_root))) as "paths'",
+      octet_length(draft_flat(l.repo_id, l.name, l.base_root)::text) as "bytes'",
+      (select coalesce(sum(b.bytes), 0)::int from jsonb_each_text(draft_flat(l.repo_id, l.name, l.base_root)) e join blob b on b.user_id = l.user_id and b.sha256 = e.value) as "files'"
+    from line l join repo r on r.id = l.repo_id where r.name = 'same'`)).rows[0] as Record<string, number>;
+  const names = ['a', 'a/b', 'a/c', 'a/b/x', 'd', 'd/e', 'd/e/f', 'g', 'h/i'];
+  let draft: Record<string, string | null> = {a: shas[0], 'd/e': shas[1], g: shas[0]};
+  let version = (await s.call('PATCH', '/v1/repos/same/draft', {token: t, body: {version: 0, set: draft, remove: []}})).json.version as number;
+  let seed = 7;
+  const pick = <T>(xs: T[]) => { seed = (seed * 1103515245 + 12345) % 2147483648; return xs[seed % xs.length]; };
+  for (let i = 0; i < 150; i++) {
+    const set: Record<string, string | null> = {}, remove: string[] = [];
+    // Files (two blobs, so one may be named twice), and now and then a folder named beside what is in it.
+    for (let n = 1 + (i % 3); n > 0; n--) {
+      const p = pick(names);
+      if (pick([0, 1, 2]) === 0) { if (!(p in set)) remove.push(p); } else if (!remove.includes(p)) set[p] = pick([...shas, ...shas, null]);
+    }
+    const want = applyDiff(draft, set, remove);
+    const clash = clashes(want).filter((p) => !clashes(draft).includes(p));
+    const r = await s.call('PATCH', '/v1/repos/same/draft', {token: t, body: {version, set, remove}});
+    if (clash.length) { assert.equal(r.status, 400, `${i} ${JSON.stringify({set, remove})}`); continue; }
+    assert.equal(r.status, 200, `${i} ${JSON.stringify({set, remove, draft})} ${r.text}`);
+    version = r.json.version as number;
+    draft = want;
+    assert.deepEqual((await s.call('GET', '/v1/repos/same', {token: t})).json.draft, draft, `${i} ${JSON.stringify({set, remove})}`);
+    const c = await counts();
+    assert.deepEqual([c.paths, c.bytes, c.files], [c["paths'"], c["bytes'"], c["files'"]], `${i} ${JSON.stringify({set, remove, draft})}`);
+  }
+});
+
+test('a save writes the rows it changes and no others, and a commit, a merge and work begun lay a draft down whole', async () => {
+  const s = await service();
+  const t = await s.start('Ren');
+  const a = (await upload(s, t, enc.encode('a'))).sha, b = (await upload(s, t, enc.encode('b'))).sha;
+  const tree: Record<string, string> = {'issue/001.md': a};
+  for (let i = 0; i < 200; i++) tree[`src/d${i % 7}/f${i}.ts`] = a;
+  let version = (await s.call('PATCH', '/v1/repos/rows/draft', {token: t, body: {version: 0, set: tree, remove: []}})).json.version as number;
+  // Each row by the transaction that last wrote it.
+  const written = async (l = 'main') => new Map(((await s.db.execute(sql`select f.path, f.xmin::text as x from line_file f join repo r on r.id = f.repo_id
+    where r.name = 'rows' and f.line = ${l}`)).rows as {path: string; x: string}[]).map((r) => [r.path, r.x]));
+  const was = await written();
+  version = (await s.call('PATCH', '/v1/repos/rows/draft', {token: t, body: {version, set: {'src/d1/f1.ts': b, 'new.txt': a}, remove: ['src/d2']}})).json.version as number;
+  const now = await written();
+  const changed = [...now].filter(([p, x]) => was.get(p) !== x).map(([p]) => p).sort();
+  assert.deepEqual(changed, ['new.txt', 'src/d1/f1.ts']);
+  assert.deepEqual([...was.keys()].filter((p) => !now.has(p)), Object.keys(tree).filter((p) => p.startsWith('src/d2/')));
+  // A file set to what it was writes nothing.
+  version = (await s.call('PATCH', '/v1/repos/rows/draft', {token: t, body: {version, set: {'src/d1/f1.ts': b}, remove: []}})).json.version as number;
+  assert.deepEqual(await written(), now);
+  // Work begun on an issue is its head's root and no rows, however many files: its draft is the head's tree.
+  const head = (await s.call('POST', '/v1/repos/rows/cuts', {token: t, body: {version, parent: null, title: 'Start'}})).json.id as string;
+  assert.equal((await s.call('POST', '/v1/repos/rows/lines', {token: t, body: {issue: 'issue/001.md'}})).status, 201);
+  assert.equal((await written('001')).size, 0);
+  assert.equal(Object.keys((await s.call('GET', '/v1/repos/rows?line=001', {token: t})).json.draft as object).length, now.size);
+  // ... and main's own, committed, the same: its draft laid on its commit, no rows left.
+  assert.equal((await written()).size, 0);
+  const v1 = (await s.call('PATCH', '/v1/repos/rows/draft?line=001', {token: t, body: {version: 1, set: {'fix.c': b}, remove: ['src/d3']}})).json.version as number;
+  const work = (await s.call('POST', '/v1/repos/rows/cuts?line=001', {token: t, body: {version: v1, parent: head, title: 'Fix'}})).json.id as string;
+  assert.equal((await s.call('POST', '/v1/repos/rows/lines/001/push', {token: t, body: {head: work}})).status, 200);
+  const change = (await s.call('POST', '/v1/repos/rows/changes', {token: t, body: {line: '001', title: 'Fix'}})).json as unknown as {id: string; version: number};
+  assert.equal((await s.call('POST', `/v1/repos/rows/changes/${change.id}/merge`, {token: t, body: {version: change.version}})).status, 200);
+  const main = (await s.call('GET', '/v1/repos/rows', {token: t})).json as unknown as {draft: Record<string, string>};
+  assert.equal(main.draft['fix.c'], b);
+  assert.ok(!Object.keys(main.draft).some((p) => p.startsWith('src/d3/')));
+  assert.equal(main.draft['new.txt'], a);
+  // Merged, main's draft is laid on the merge with no rows: what it had apart from its head it has now from the merge.
+  assert.equal((await written()).size, 0);
+});
+
+test('a device that holds the draft at a version is answered what each save after it changed; one too far behind, the draft whole', async () => {
+  const s = await service();
+  const t = await s.start('Ren');
+  const a = (await upload(s, t, enc.encode('a'))).sha, b = (await upload(s, t, enc.encode('b'))).sha;
+  const save = async (version: number, set: Record<string, string | null>, remove: string[] = []) =>
+    (await s.call('PATCH', '/v1/repos/since/draft', {token: t, body: {version, set, remove}})).json.version as number;
+  const read = async (since: number) => (await s.call('GET', `/v1/repos/since?since=${since}`, {token: t})).json as unknown as
+    {version: number; draft?: Record<string, string>; changes?: {set: Record<string, string>; remove: string[]}[]};
+  let v = await save(0, {'a.txt': a, 'dir/b.txt': b, 'dir/c.txt': b});
+  v = await save(v, {'a.txt': b});
+  v = await save(v, {'new.txt': a}, ['dir']);
+  // Nothing after it: nothing to say, and no draft.
+  assert.deepEqual(await read(v), {...await read(v), changes: []});
+  assert.equal((await read(v)).draft, undefined);
+  // From version 1: the two saves after it, in order, as each was sent.
+  assert.deepEqual((await read(1)).changes, [{set: {'a.txt': b}, remove: []}, {set: {'new.txt': a}, remove: ['dir']}]);
+  // Not asked so, or asked from before what is kept, or from a version past it: the draft whole.
+  assert.deepEqual((await s.call('GET', '/v1/repos/since', {token: t})).json.draft, {'a.txt': b, 'new.txt': a});
+  for (let i = 0; i < 70; i++) v = await save(v, {'a.txt': i % 2 ? a : b});
+  assert.ok((await read(1)).draft && !(await read(1)).changes);
+  assert.equal((await read(v - 64)).changes?.length, 64);
+  assert.ok((await read(v + 5)).draft);
 });

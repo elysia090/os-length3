@@ -113,6 +113,7 @@ export function send(kernel, proc, sig, info = {signo: sig, code: SI.KERNEL}, th
   const takers = thread ? [thread] : [...proc.tasks].filter((t) => !(t.mask & bit(sig)));
   const waiting = takers.find((t) => t.call);
   if (waiting) kernel.interruptCall(waiting);
+  else if (takers.length) kernel.lookIn(proc);
 }
 
 /** Whether `task` has a signal it does not block, pending for it or its process. */

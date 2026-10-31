@@ -56,8 +56,8 @@ interface RowWays {
   close(key: string): void;
   /** A file's head in a repo's page opens it beside, in a box of its own. */
   beside(key: string): void;
-  /** A file's head pressed is the file's own place in File. */
-  act(repo: string, path: string): void;
+  /** A file's name pressed in its head is written over there: `written` is where it goes. */
+  rename(repo: string, path: string, written: string): Promise<void>;
   /** No repo here at all: the first made (New repo). */
   make(): void;
 }
@@ -88,11 +88,11 @@ export class Row {
   constructor(element: HTMLElement, work: HTMLElement, drag: Drag, ways: RowWays) {
     this.element = element; this.work = work; this.drag = drag; this.ways = ways;
     // ⊕ in the words is the band's own mark (its circle and plus, on the words' line), not a glyph of the font set high.
-    this.bring = t('Bring a repo out to the band with ⊕, or open one from File').split('⊕').flatMap((part, i) => (i ? [h('span', {class: 'inline-add', 'aria-label': '⊕'}, mark('plus')), part] : [part]));
+    this.bring = t('Add repos to band via ⊕ or open from File').split('⊕').flatMap((part, i) => (i ? [h('span', {class: 'inline-add', 'aria-label': '⊕'}, mark('plus')), part] : [part]));
     // No repo at all (a first run): not a way to bring one out that has nothing to bring, but the first made, said
     // as what it is, the whole card the deed (as Home's New repo is).
-    this.first = h('button', {type: 'button', class: 'card new forge-first'}, icon('new-repo'), h('span', {}, t('Make your first repo')),
-      h('small', {class: 'muted'}, t('A folder of your own, kept as git keeps it: Forge, Git and the Prompt work in it.')));
+    this.first = h('button', {type: 'button', class: 'card new forge-first'}, icon('new-repo'), h('span', {}, t('Create your first repo')),
+      h('small', {class: 'muted'}, t('A personal Git repository: compatible with Forge, Git, and Prompt.')));
     this.first.addEventListener('click', () => ways.make());
     this.nothing = h('div', {class: 'empty forge-none', hidden: ''}, ...this.bring);
     element.append(this.nothing);
@@ -198,23 +198,6 @@ export class Row {
   }
 
   /**
-   * The prompt box stands under the box worked on, its edges a step (s3) outside that box's: where the box will be
-   * once the row has moved (styles.css: one box s5 in from the center's edges; side by side with the pane out, the
-   * one worked on whole between its neighbours' edges, `--peek` and `--pad`; with the pane away, all of them whole
-   * and as wide), so it moves with the row rather than after it.
-   */
-  private placeDock(w: number) {
-    const bench = this.work;
-    const n = this.shown.length, at = this.at();
-    const S3 = 12, PEEK = 64;
-    let left = S3, width = w - 2 * S3;
-    if (n > 1 && bench.classList.contains('pane-closed')) { width = (w - 2 * S3) / n; left = S3 + at * width; }
-    else if (n > 1) { width = w - 2 * PEEK - 2 * S3; left = S3 + lead(at, n) * PEEK; }
-    bench.style.setProperty('--dock-l', `${left}px`);
-    bench.style.setProperty('--dock-r', `${w - left - width}px`);
-  }
-
-  /**
    * How wide the row is once the pane has done moving (the bench's width, less the pane's when it is out: styles.css
    * `.work.bench`, max(280px, 25%); narrow, the pane is laid over the center), not how wide it is this frame: the row
    * and the prompt box are sent there once, as the pane is put away or brought back, and move on its curve beside its
@@ -225,12 +208,11 @@ export class Row {
     if (!W) return;
     const w = narrow() || this.work.classList.contains('pane-closed') ? W : W - Math.max(280, W / 4);
     this.element.style.setProperty('--cols-w', `${w}px`);
-    this.placeDock(w);
   }
 
   /** What a box reads: the repo's whole page, or the one file it was opened beside for. */
   private page(name: string, flow: HTMLElement) {
-    const reader = new Reader(repoOf(name), flow, {beside: (path) => this.ways.beside(keyOf(repoOf(name), path)), act: (path) => this.ways.act(repoOf(name), path)});
+    const reader = new Reader(repoOf(name), flow, {beside: (path) => this.ways.beside(keyOf(repoOf(name), path)), rename: (path, written) => this.ways.rename(repoOf(name), path, written)});
     const file = fileOf(name);
     return {reader, root: file === null ? reader.directory('') : reader.only(file)};
   }
@@ -266,11 +248,11 @@ export class Row {
     const label = h('button', {type: 'button', class: 'col-name', title: file ?? name},
       ...(file === null ? [name] : [h('span', {class: 'col-repo'}, repoOf(name)), shownName(file)]));
     label.addEventListener('click', () => this.ways.activate(name));
-    const close = h('button', {type: 'button', class: 'col-close', 'aria-label': t('Close {name} beside', {name})}, mark('close'));
+    const close = h('button', {type: 'button', class: 'col-close', 'aria-label': t('Close adjacent {name}', {name})}, mark('close'));
     close.addEventListener('click', () => this.ways.close(name));
     const head = h('div', {class: 'col-head', draggable: 'true'}, label, close);
     this.drag.from(head, name);
-    const flow = h('section', {class: 'flow', tabindex: '0', 'aria-label': file === null ? t('The files of {name}', {name}) : `${repoOf(name)}/${file}`});
+    const flow = h('section', {class: 'flow', tabindex: '0', 'aria-label': file === null ? t('Files in {name}', {name}) : `${repoOf(name)}/${file}`});
     const col = h('div', {class: `col${file === null ? '' : ' col-file'}`, 'data-repo': repoOf(name), 'data-key': name, hidden: ''}, head, flow);
     return {col, flow};
   }

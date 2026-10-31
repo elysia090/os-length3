@@ -22,6 +22,8 @@ export type {DiffLine} from './linediff.ts';
 export interface FileDiff { path: string; status: FileChange['status']; binary: boolean; lines: DiffLine[]; more: number }
 
 export const changes = (repo: string) => core<Changes>('history_changes', {repo});
+/** How many files `changes` would list, none of them read for their lines. */
+export const changed = (repo: string) => core<number>('history_changed', {repo});
 export const diff = (repo: string) => core<FileDiff[]>('history_diff', {repo});
 export const log = (repo: string) => core<Cut[]>('history_log', {repo});
 

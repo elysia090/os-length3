@@ -3,7 +3,8 @@ import {t} from '../../i18n.ts';
 import {readingOrder} from '../../repos/reading.ts';
 import {store, type Change, type Entry} from '../../repos/repos.ts';
 import {mark} from '../../ui/icons.ts';
-import {still} from '../../ui/glide.ts';
+import {nudge, still} from '../../ui/glide.ts';
+import {errorText} from '../../app/errors.ts';
 import {shownPath} from '../../repos/issues.ts';
 import {Editor, fileState, lineHeight, lineStart, numbering, type FileState} from './editor.ts';
 
@@ -14,6 +15,13 @@ import {Editor, fileState, lineHeight, lineStart, numbering, type FileState} fro
 const join = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
 
 /**
+ * What comes near the visible part of each scrolling flow, one watcher for each flow: one for each section, hundreds in
+ * a repo of many files, were each asked again at every change of layout, and a keystroke (the editor growing) took
+ * most of its time in them.
+ */
+const near = new WeakMap<HTMLElement, {observer: IntersectionObserver; runs: WeakMap<Element, () => void>}>();
+
+/**
  * Run `load` once, when `el` comes near the visible part of `root` or when
  * asked. The scrolling flow must be the root: it clips what is outside it,
  * so measuring against the window would never see the margin ahead.
@@ -21,13 +29,18 @@ const join = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
 function lazy(el: HTMLElement, root: HTMLElement, load: () => Promise<void>): () => Promise<void> {
   let started: Promise<void> | null = null;
   const run = () => (started ??= load());
-  const observer = new IntersectionObserver((seen) => {
-    if (!seen.some((s) => s.isIntersecting)) return;
-    observer.disconnect();
-    void run();
-  }, {root, rootMargin: '1200px 0px'});
+  let watch = near.get(root);
+  if (!watch) {
+    const runs = new WeakMap<Element, () => void>();
+    const observer = new IntersectionObserver((seen) => {
+      for (const s of seen) if (s.isIntersecting) { observer.unobserve(s.target); runs.get(s.target)?.(); }
+    }, {root, rootMargin: '1200px 0px'});
+    near.set(root, watch = {observer, runs});
+  }
+  const {observer, runs} = watch;
+  runs.set(el, () => void run());
   observer.observe(el);
-  return () => { observer.disconnect(); return run(); };
+  return () => { observer.unobserve(el); return run(); };
 }
 
 /** `target` lit for the landing (styles.css .revealed), and off once its light has gone. */
@@ -71,11 +84,11 @@ export class Reader {
   /** Editors whose text changed while they were out of sight, so not measured yet. */
   private stale = new Set<string>();
 
-  /** Each file's head, pressed, shows it in File with what can be done to it (rename, move, delete). */
-  private act: ((path: string) => void) | null;
+  /** Each file's name, pressed in its head, is written over there: what is written is the caller's to move it to. */
+  private rename: ((path: string, written: string) => Promise<void>) | null;
 
-  constructor(repo: string, flow: HTMLElement, opts: {beside?(path: string): void; act?(path: string): void} = {}) {
-    this.repo = repo; this.flow = flow; this.beside = opts.beside ?? null; this.act = opts.act ?? null;
+  constructor(repo: string, flow: HTMLElement, opts: {beside?(path: string): void; rename?(path: string, written: string): Promise<void>} = {}) {
+    this.repo = repo; this.flow = flow; this.beside = opts.beside ?? null; this.rename = opts.rename ?? null;
     // Pressed below the last file, on nothing: the caret to its end, as a page of text takes a press under its words.
     flow.addEventListener('pointerdown', (event) => {
       if (event.button !== 0 || event.target !== flow) return;
@@ -242,7 +255,9 @@ export class Reader {
   }
 
   directory(path: string): HTMLElement {
-    const section = h('section', {class: 'dir', 'data-path': path || '/'}, path ? null : h('p', {class: 'muted'}, '…'));
+    // Not listed yet, a folder stands a window tall (styles: .dir.unlisted): with no height, every folder of a level
+    // was near at once, each listed, and a repo of many files was laid out and watched whole while one wrote.
+    const section = h('section', {class: path ? 'dir unlisted' : 'dir', 'data-path': path || '/'}, path ? null : h('p', {class: 'muted'}, '…'));
     if (!path) this.root = section;
     this.sections.set(path, section);
     this.loads.set(path, lazy(section, this.flow, () => this.fill(path, section)));
@@ -257,14 +272,14 @@ export class Reader {
     const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
     void store.tree(this.repo, dir).then((entries) => {
       const e = entries.find((x) => x.kind !== 'dir' && join(dir, x.name) === path);
-      section.replaceChildren(e ? this.file(path, e) : h('div', {class: 'empty'}, t('{path} is not there any more', {path})));
+      section.replaceChildren(e ? this.file(path, e) : h('div', {class: 'empty'}, t('{path} no longer exists', {path})));
     }, (err: unknown) => section.replaceChildren(h('p', {class: 'muted'}, String(err))));
     return section;
   }
 
   private async fill(path: string, section: HTMLElement) {
     let entries: Entry[];
-    try { entries = await store.tree(this.repo, path); } catch (e) { section.replaceChildren(h('p', {class: 'muted'}, String(e))); return; }
+    try { entries = await store.tree(this.repo, path); } catch (e) { section.replaceChildren(h('p', {class: 'muted'}, String(e))); return; } finally { section.classList.remove('unlisted'); }
     // An empty directory shows nothing; only an empty repo says so.
     if (!entries.length) { section.replaceChildren(path ? '' : h('div', {class: 'empty'}, t('No files yet'))); return; }
     section.replaceChildren(...readingOrder(entries).map((e) =>
@@ -288,27 +303,29 @@ export class Reader {
 
   /**
    * A file's head: its place in "/", the repo part quiet, the rest plain (an issue's file is the issue, #3), and what
-   * the file says of itself (`state`). Pressed, it is the file in File; its button, or Ctrl+click, opens it beside.
+   * the file says of itself (`state`). Its name pressed is written over in place; its button, or Ctrl+click, opens it
+   * beside.
    */
   private head(path: string, state: FileState): HTMLElement {
     const shown = shownPath(path);
-    const head = h('h2', {class: 'path'}, h('span', {}, h('span', {class: 'muted'}, `/root/${this.repo}/`), h('span', {class: 'path-name'}, shown)), state.el);
+    const name = h('span', {class: 'path-name'}, shown);
+    const head = h('h2', {class: 'path'}, h('span', {}, h('span', {class: 'muted'}, `/root/${this.repo}/`), name), state.el);
     // Beside, in a box of its own: from its head's button, or Ctrl+click (⌘) on the head, as a link opens a tab.
     const beside = this.beside;
     if (beside && this.single === null) {
-      const open = h('button', {type: 'button', class: 'file-beside', 'aria-label': t('Open {path} beside', {path: shown}), title: t('Open beside')}, mark('beside'));
+      const open = h('button', {type: 'button', class: 'file-beside', 'aria-label': t('Open {path} to the side', {path: shown}), title: t('Open to the side')}, mark('beside'));
       open.addEventListener('click', () => beside(path));
       head.append(open);
       head.addEventListener('click', (event) => { if ((event.ctrlKey || event.metaKey) && !(event.target as Element).closest('button')) beside(path); });
     }
-    // Pressed (not to choose its words, nor on its buttons), the head is the file's own place in File.
-    const act = this.act;
-    if (act) {
-      head.classList.add('acts');
-      head.title = t('{path} in File', {path: shown});
-      head.addEventListener('click', (event) => {
-        if (event.ctrlKey || event.metaKey || event.shiftKey || (event.target as Element).closest('button') || !getSelection()?.isCollapsed) return;
-        act(path);
+    // Its name pressed (not to choose its words): written over where it stands. An issue's file is its number, no name.
+    const rename = this.rename;
+    if (rename && shown === path) {
+      name.classList.add('renames');
+      name.title = t('Rename');
+      name.addEventListener('click', (event) => {
+        if (event.ctrlKey || event.metaKey || event.shiftKey || !getSelection()?.isCollapsed) return;
+        renameIn(name, path, rename);
       });
     }
     return head;
@@ -327,7 +344,7 @@ export class Reader {
     if (c.truncated) {
       // Only part of it was read, so it is never written back.
       sheet.replaceChildren(gutter, h('pre', {class: 'code'}, c.text));
-      state.el.textContent = t('Only the first {part} (of {size}) · read only', {part: bytes(new TextEncoder().encode(c.text).length), size: bytes(c.size)});
+      state.el.textContent = t('First {part} only (total {size}) · Read-only', {part: bytes(new TextEncoder().encode(c.text).length), size: bytes(c.size)});
       return;
     }
     const editor = new Editor(c.text, {...box, repo: this.repo, path, flow: this.flow,
@@ -337,4 +354,51 @@ export class Reader {
     this.fitters.set(path, () => editor.fit());
     this.takers.set(path, (text) => editor.take(text));
   }
+}
+
+/**
+ * `name` (of the file at `path`) written over in its own place, the stem chosen and the ending kept: Enter or leaving it
+ * gives what was written to `rename`; Escape, nothing written, or the same name put it back. A name it cannot be is
+ * said beside it, the keyboard kept there (left for elsewhere, it is put back).
+ */
+function renameIn(name: HTMLElement, path: string, rename: (path: string, written: string) => Promise<void>) {
+  const input = h('input', {class: 'path-rename', 'aria-label': t('New name'), autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
+  const error = h('span', {class: 'error small path-error', role: 'alert'});
+  input.value = path;
+  const fit = () => { input.size = Math.max(4, input.value.length + 1); };
+  fit();
+  input.addEventListener('input', fit);
+  name.replaceWith(input, error);
+  input.focus();
+  const from = path.lastIndexOf('/') + 1, dot = path.lastIndexOf('.');
+  input.setSelectionRange(from, dot > from ? dot : path.length);
+  let over = false;
+  const back = () => {
+    if (over) return;
+    over = true;
+    error.remove();
+    input.replaceWith(name);
+  };
+  const go = async (leaving: boolean) => {
+    if (over || input.disabled) return;
+    const written = input.value.trim();
+    if (!written || written === path) { back(); return; }
+    input.disabled = true;
+    try {
+      await rename(path, written);
+      over = true;
+    } catch (err) {
+      input.disabled = false;
+      if (leaving) { back(); nudge(name); return; }
+      error.textContent = errorText(err);
+      input.focus();
+      nudge(input);
+    }
+  };
+  input.addEventListener('keydown', (event) => {
+    if (event.isComposing) return;
+    if (event.key === 'Enter') { event.preventDefault(); void go(false); }
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); back(); }
+  });
+  input.addEventListener('blur', () => void go(true));
 }

@@ -75,8 +75,8 @@ async function fill(list: HTMLElement, error: HTMLElement, shown: (id: string) =
     b.addEventListener('click', () => void pressing(b, error, async () => { b.setAttribute('aria-checked', String(await toggle(s.id))); }));
     return b;
   });
-  list.replaceChildren(h('div', {class: 'pop-group', role: 'group', 'aria-label': t('Shown in')},
-    h('div', {class: 'pop-head muted small'}, t('Shown in')), ...(rows.length ? rows : await none(ways))));
+  list.replaceChildren(h('div', {class: 'pop-group', role: 'group', 'aria-label': t('Published to')},
+    h('div', {class: 'pop-head muted small'}, t('Published to')), ...(rows.length ? rows : await none(ways))));
 }
 
 /**
@@ -85,10 +85,10 @@ async function fill(list: HTMLElement, error: HTMLElement, shown: (id: string) =
  */
 async function none(ways: ShareWays): Promise<HTMLElement[]> {
   const free = await readPlan().then((p) => p.plan === 'free', () => false);
-  const go = h('button', {type: 'button', class: 'pop-item', role: 'menuitem'}, free ? t('See the plan') : t('Make a server…')) as HTMLButtonElement;
+  const go = h('button', {type: 'button', class: 'pop-item', role: 'menuitem'}, free ? t('View plan') : t('Create server…')) as HTMLButtonElement;
   go.addEventListener('click', () => (free ? ways.toPlan() : ways.makeServer()));
-  return [h('p', {class: 'muted small pop-note'}, t('In no server yet')),
-    ...(free ? [h('p', {class: 'muted small pop-note'}, t('Making a server is part of the paid plan.'))] : []), go];
+  return [h('p', {class: 'muted small pop-note'}, t('Not a member of any server')),
+    ...(free ? [h('p', {class: 'muted small pop-note'}, t('Server creation requires a paid plan.'))] : []), go];
 }
 
 /** ↓ and ↑ along the list's rows, round at its ends. */

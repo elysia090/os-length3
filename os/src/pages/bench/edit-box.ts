@@ -62,6 +62,10 @@ export interface EditParts {
   moved(): void;
   /** Whether the box edits and has the keyboard: a line pressed then comes into it. */
   active(): boolean;
+  /** Whether the box, empty and with the keyboard, would edit of itself: a line pressed comes into it all the same. */
+  idle(): boolean;
+  /** The box made to edit of itself (a line is pressed while it is idle). */
+  takeUp(): void;
 }
 
 /** The box's Edit: a line of the file in front, held in the box and written there as in the file. */
@@ -107,16 +111,18 @@ export class EditLine {
   }
 
   /**
-   * Pressed while the box has the keyboard, a line of the repo's files comes into it (not the keyboard into the
-   * file), the caret where it was pressed; drawn across, the line comes in with the words marked chosen. Pointed at
-   * meanwhile, the line is ringed.
+   * Pressed while the box has the keyboard (editing, or empty and so about to), a line of the repo's files comes into
+   * it (not the keyboard into the file), the caret where it was pressed; drawn across, the line comes in with the
+   * words marked chosen. Pointed at meanwhile, the line is ringed.
    */
   #pointing() {
     const p = this.#p;
+    const takes = () => p.active() || p.idle();
     p.main.addEventListener('pointerdown', (event) => {
-      if (event.button !== 0 || !p.active()) return;
+      if (event.button !== 0 || !takes()) return;
       const area = areaOf(event.target, p.repo());
       if (!area) return;
+      if (!p.active()) p.takeUp();
       event.preventDefault();
       event.stopPropagation();
       this.#press(area, event);
@@ -125,7 +131,7 @@ export class EditLine {
     p.main.addEventListener('pointermove', (event) => {
       cancelAnimationFrame(pointing);
       pointing = requestAnimationFrame(() => {
-        const area = p.active() ? areaOf(document.elementFromPoint(event.clientX, event.clientY), p.repo()) : null;
+        const area = takes() ? areaOf(document.elementFromPoint(event.clientX, event.clientY), p.repo()) : null;
         this.#ring.over(area, event.clientY);
       });
     });
@@ -180,7 +186,8 @@ export class EditLine {
   #front(): Front | null {
     const repo = this.#p.repo();
     if (!repo) return null;
-    const ok = (a: HTMLTextAreaElement | null) => !!a?.isConnected && !!a.offsetParent && a.closest<HTMLElement>('.col')?.dataset.repo === repo;
+    // Shown, asked of its style: offsetParent laid the page out first, at every keystroke.
+    const ok = (a: HTMLTextAreaElement | null) => !!a?.isConnected && (a.checkVisibility?.() ?? !!a.offsetParent) && a.closest<HTMLElement>('.col')?.dataset.repo === repo;
     const area = ok(this.#last) ? this.#last : readIn(this.#p.main, repo);
     const path = area?.closest<HTMLElement>('section.file')?.dataset.path;
     if (!area || !path) return null;
@@ -190,6 +197,12 @@ export class EditLine {
       caretAtRead(area);
     }
     return {path, area};
+  }
+
+  /** The file in front as it stands (written in and not saved too) and the caret's line in it: what the Agent is shown. */
+  inFront(): {path: string; text: string; line: number} | null {
+    const f = this.#front(), at = this.where();
+    return f && at ? {path: f.path, text: f.area.value, line: at.line} : null;
   }
 
   /** The pill's words: the file in front and the caret's line in it. */
@@ -211,7 +224,7 @@ export class EditLine {
     const f = this.#front();
     this.#mark(f);
     this.#p.main.classList.add('edit-pointing');
-    if (!f) { this.#off(); this.#holding.letGo(); this.#p.say(this.#p.repo() ? t('Open a file to edit it here') : ''); return; }
+    if (!f) { this.#off(); this.#holding.letGo(); this.#p.say(this.#p.repo() ? t('Open a file to edit here') : ''); return; }
     this.#p.say('');
     const held = this.#holding.still();
     if (held?.area === f.area) { this.#holding.show(); return; }

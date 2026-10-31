@@ -31,15 +31,17 @@ export interface Limits {
   upload: number;
   /** Bytes the database may take; past them, what would add to it is refused. */
   database: number;
+  /** Bytes above `database` that signing in may still add (Budget.brim); past them, only deletes are taken. */
+  brim: number;
 }
 
-export const LIMITS: Limits = {stored: 8192 * MB, writes: 900_000, reads: 9_000_000, upload: 512 * MB, database: 450 * MB};
+export const LIMITS: Limits = {stored: 8192 * MB, writes: 900_000, reads: 9_000_000, upload: 512 * MB, database: 450 * MB, brim: 32 * MB};
 
 /** A deployment's limits, from its variables; one not given (or not a number above nothing) is LIMITS's. */
 export function limitsOf(env: Record<string, string | undefined>): Limits {
   const n = (v: string | undefined, d: number, unit = 1) => (v && Number(v) > 0 ? Number(v) * unit : d);
   return {stored: n(env.R2_STORED_MB, LIMITS.stored, MB), writes: n(env.R2_WRITES_MONTH, LIMITS.writes),
-    reads: n(env.R2_READS_MONTH, LIMITS.reads), upload: n(env.UPLOAD_MB_DAY, LIMITS.upload, MB), database: n(env.PG_MB, LIMITS.database, MB)};
+    reads: n(env.R2_READS_MONTH, LIMITS.reads), upload: n(env.UPLOAD_MB_DAY, LIMITS.upload, MB), database: n(env.PG_MB, LIMITS.database, MB), brim: LIMITS.brim};
 }
 
 export const month = (now: number) => new Date(now).toISOString().slice(0, 7);
@@ -87,7 +89,7 @@ export class Budget {
   private period = '';
   private reads = 0;
   private refill: Promise<void> | null = null;
-  private sized: {at: number; full: boolean} | null = null;
+  private sized: {at: number; full: boolean; brim: boolean} | null = null;
   readonly limits: Limits;
   private now: () => number;
   constructor(limits: Limits, now: () => number = Date.now) { this.limits = limits; this.now = now; }
@@ -128,10 +130,10 @@ export class Budget {
   async ahead(q: Db, user: string, bytes: number) {
     const now = this.now();
     if (await spent(q, day(now), `up:${user}`) + bytes > this.limits.upload) {
-      slowDown(untilNext(now, 'day'), {error: 'This account has sent all it may today; the rest is sent tomorrow'});
+      slowDown(untilNext(now, 'day'), {error: 'Daily outbound quota reached; remaining will send tomorrow'});
     }
     if (await spent(q, 'all', 'r2:stored') + bytes > this.limits.stored) {
-      refuse(507, {error: 'The Remote holds all the files it may just now; your work stays on this device', files: false, budget: true, retryAfter: FULL_WAIT}, {'Retry-After': String(FULL_WAIT)});
+      refuse(507, {error: 'Remote storage full; changes remain on this device', files: false, budget: true, retryAfter: FULL_WAIT}, {'Retry-After': String(FULL_WAIT)});
     }
   }
 
@@ -139,18 +141,20 @@ export class Budget {
   async upload(q: Db, user: string, bytes: number) {
     const now = this.now();
     if (!await take(q, day(now), `up:${user}`, bytes, this.limits.upload)) {
-      slowDown(untilNext(now, 'day'), {error: 'This account has sent all it may today; the rest is sent tomorrow'});
+      slowDown(untilNext(now, 'day'), {error: 'Daily outbound quota reached; remaining will send tomorrow'});
     }
   }
 
   /**
-   * Refused (507, no files) when R2 would hold more than it may, asked once the row that names the bytes is in:
-   * its trigger has counted them (usage_stored, 0011) with the count's row locked, so uploads of other accounts
-   * at once are counted one after another and cannot pass the limit together. In `q`, the upload's transaction.
+   * Refused (507, no files) when R2 would hold more than it may with `bytes` more, asked once the row that names
+   * them is in. They are counted as the upload commits (usage_stored, deferred: 0019), so the count's row is held
+   * only while a commit is done, never through an upload's round trips: uploads of every account at once no longer
+   * go one after another, and the count can pass its limit by no more than what commits at that moment. In `q`,
+   * the upload's transaction.
    */
-  async held(q: Db) {
-    if (await spent(q, 'all', 'r2:stored') > this.limits.stored) {
-      refuse(507, {error: 'The Remote holds all the files it may just now; your work stays on this device', files: false, budget: true, retryAfter: FULL_WAIT}, {'Retry-After': String(FULL_WAIT)});
+  async held(q: Db, bytes: number) {
+    if (await spent(q, 'all', 'r2:stored') + bytes > this.limits.stored) {
+      refuse(507, {error: 'Remote storage full; changes remain on this device', files: false, budget: true, retryAfter: FULL_WAIT}, {'Retry-After': String(FULL_WAIT)});
     }
   }
 
@@ -161,16 +165,30 @@ export class Budget {
    * a database that reached it took nothing new for good, the sweep's deletes and everyone's included.
    */
   async full(q: Db): Promise<boolean> {
+    return (await this.size(q)).full;
+  }
+
+  /**
+   * Whether the database is past even what signing in may add (`brim` above PG_MB): signing in, and Stripe's word on a
+   * payment, are let through a database that is full (a person must be able to come in to make room), but some of it
+   * makes rows for whoever asks (a device's code, a sign-in's state), so past PG_MB it is let through only so far,
+   * never on to Neon's own limit, where nothing at all could be written, deletes included.
+   */
+  async brim(q: Db): Promise<boolean> {
+    return (await this.size(q)).brim;
+  }
+
+  private async size(q: Db): Promise<{full: boolean; brim: boolean}> {
     const now = this.now();
-    if (this.sized && now - this.sized.at < 300_000) return this.sized.full;
+    if (this.sized && now - this.sized.at < 300_000) return this.sized;
     const [r] = await rows<{bytes: number}>(q, sql`select pg_database_size(current_database())::float8 as bytes`);
     let bytes = Number(r?.bytes ?? 0);
     if (bytes >= this.limits.database) {
       const [f] = await rows<{free: number}>(q, sql`select room_free()::float8 as free`).catch(() => [{free: 0}]);
       bytes -= Number(f?.free ?? 0);
     }
-    this.sized = {at: now, full: bytes >= this.limits.database};
-    return this.sized.full;
+    this.sized = {at: now, full: bytes >= this.limits.database, brim: bytes >= this.limits.database + this.limits.brim};
+    return this.sized;
   }
 }
 

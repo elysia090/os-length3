@@ -23,9 +23,9 @@ export async function boardTodo(b: Shown, holder: HTMLElement, told: {left(open:
   try { list = await servers.todos(b.id, b.member); } catch (e) { holder.replaceChildren(h('p', {class: 'error'}, errorText(e))); return; }
   if (!b.member && !list.length) { told.none(); return; }
   // Not sent (the Remote away): said under the list, and sent again by itself.
-  const keeper = b.member ? servers.todoKeeper(b.id, list, {trouble: (why) => { status.textContent = t('Could not save: {message}', {message: why}); }}) : null;
+  const keeper = b.member ? servers.todoKeeper(b.id, list, {trouble: (why) => { status.textContent = t('Failed to save: {message}', {message: why}); }}) : null;
   const box = todoList(list, keeper ? (kept) => keeper.save(kept) : async () => {},
-    {readOnly: !b.member, first: t('Something to do together'), counted: (open) => told.left(open), failed: (why) => { status.textContent = why; }});
+    {readOnly: !b.member, first: t('Shared TODO'), counted: (open) => told.left(open), failed: (why) => { status.textContent = why; }});
   // How many are left is said on its part; Clear done, while some are, under the list.
   holder.replaceChildren(box.element, box.clear, status);
   // Read in after its board was drawn: it comes up where it stands, as the talk does.

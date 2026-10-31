@@ -94,15 +94,16 @@ export class Description {
     this.offset = 0;
     this.refs = 0;
     this.closed = false;
-    if (kind === 'pipe-r') pipe.readers++;
-    if (kind === 'pipe-w') pipe.writers++;
+    // A FIFO opened for both reading and writing (pipe-rw) is a reader and a writer of its pipe at once.
+    if (kind === 'pipe-r' || kind === 'pipe-rw') pipe.readers++;
+    if (kind === 'pipe-w' || kind === 'pipe-rw') pipe.writers++;
   }
   retain() { this.refs++; return this; }
   release() {
     if (--this.refs > 0) return;
     this.closed = true;
-    if (this.kind === 'pipe-r') { this.pipe.readers--; this.pipe.changes++; }
-    if (this.kind === 'pipe-w') { this.pipe.writers--; this.pipe.changes++; }
+    if (this.kind === 'pipe-r' || this.kind === 'pipe-rw') { this.pipe.readers--; this.pipe.changes++; }
+    if (this.kind === 'pipe-w' || this.kind === 'pipe-rw') { this.pipe.writers--; this.pipe.changes++; }
   }
 }
 

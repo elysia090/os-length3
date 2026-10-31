@@ -82,8 +82,8 @@ export function newRepo(ctx: Context): Node[] {
    * Why the name cannot be, as it is written: not a name (a letter no name has, or a dot first), or one taken here
    * or on the Remote; '' when it can be, or nothing is written yet (said only once Create is pressed).
    */
-  const why = (n: string): string => !n ? '' : !validName(n) ? t('Use letters, digits and . _ -, and do not start with .')
-    : others.includes(n) || remoteOnly().some((r) => r.name === n) ? t('There is a repo named {name} already', {name: n}) : '';
+  const why = (n: string): string => !n ? '' : !validName(n) ? t('Use letters, digits, and . _ - (cannot start with .)')
+    : others.includes(n) || remoteOnly().some((r) => r.name === n) ? t('A repo named "{name}" already exists', {name: n}) : '';
   /** The name as it will stand in File, each letter a name cannot have marked where it is (a dot first, too). */
   const marked = (n: string): Node[] => [...n].map((c, i) => (/[A-Za-z0-9_-]/.test(c) || (c === '.' && i > 0) ? document.createTextNode(c)
     // A space is seen as one, or it would be nothing between two letters.
@@ -94,7 +94,7 @@ export function newRepo(ctx: Context): Node[] {
    */
   const ours = (): HTMLElement[] => {
     const n = name.value.trim(), bad = !!why(n);
-    const rows = [row(n ? marked(n) : t('name'), 1, true, {kind: `tree-repo tree-new${bad ? ' tree-bad' : ''}${n ? '' : ' tree-unnamed'}`})];
+    const rows = [row(n ? marked(n) : t('Name'), 1, true, {kind: `tree-repo tree-new${bad ? ' tree-bad' : ''}${n ? '' : ' tree-unnamed'}`})];
     const walk = (nodes: Item[], depth: number) => {
       for (const n of nodes) {
         rows.push(row(n.name, depth, n.dir, {kind: `${n.dir ? 'tree-dir' : 'tree-file'} tree-ours`, shut: n.dir && !n.children.length,
@@ -127,14 +127,14 @@ export function newRepo(ctx: Context): Node[] {
       if (Math.abs(by) > .5) li.animate([{translate: `0 ${by}px`}, {translate: '0 0'}], {duration: paced(260), easing: LAND});
     }
   };
-  void store.list().then((list) => { others = list.map((r) => r.name).sort((a, b) => a.localeCompare(b)); showFiles(); judge(); }, () => {});
+  void store.names().then((names) => { others = names.sort((a, b) => a.localeCompare(b)); showFiles(); judge(); }, () => {});
   // What the card is goes to the ear: the eye sees it is File's tree.
-  const caption = h('p', {class: 'sr-only'}, t('How it will look in File'));
-  const card = h('div', {class: 'tree tree-still', 'aria-label': t('What will be made')}, caption, preview);
+  const caption = h('p', {class: 'sr-only'}, t('Preview in File'));
+  const card = h('div', {class: 'tree tree-still', 'aria-label': t('Items to create')}, caption, preview);
   const keep = () => { draft = {name: name.value, summary: summary.value}; };
   // What it is for, in a raised box as Home's TODO is: the words written straight in it, the box the field.
   const summary = h('textarea', {id: 'repo-summary', class: 'todo-detail', maxlength: '2000',
-    placeholder: t('What this repo is for'), 'aria-labelledby': 'repo-summary-label'}) as HTMLTextAreaElement;
+    placeholder: t('Description / Purpose'), 'aria-labelledby': 'repo-summary-label'}) as HTMLTextAreaElement;
   summary.value = draft.summary;
   const summaryBox = h('div', {class: 'summary-box'}, summary);
   /** The README as Create writes it: under the title what it is for, or the scaffold's own README. */
@@ -156,10 +156,10 @@ export function newRepo(ctx: Context): Node[] {
   if (connection()) void plan().then((p) => {
     const of = p.allowance?.repos ?? null;
     if (of === null || (p.usage?.repos ?? 0) < of) return;
-    const see = h('button', {type: 'button', class: 'link'}, t('See the plan'));
+    const see = h('button', {type: 'button', class: 'link'}, t('View plan'));
     see.addEventListener('click', () => goToPlan(ctx));
-    full.replaceChildren(tn('The plan keeps {n} repo on the Remote, and it is there: this one stays on this device until there is room.',
-      'The plan keeps {n} repos on the Remote, and they are there: this one stays on this device until there is room.', of), ' ', see);
+    full.replaceChildren(tn('Your plan allows {n} repo on Remote. This repo stays local until space is freed.',
+      'Your plan allows {n} repos on Remote. This repo stays local until space is freed.', of), ' ', see);
     full.hidden = false;
   }, () => {});
 
@@ -168,12 +168,12 @@ export function newRepo(ctx: Context): Node[] {
     draft = fresh();
     name.disabled = true;
     summary.disabled = true;
-    caption.textContent = t('Made at /root/{name} in File', {name: n});
+    caption.textContent = t('Created at /root/{name} in File', {name: n});
     const open = h('button', {class: 'button primary', type: 'button'}, t('Open in Forge'));
     open.addEventListener('click', () => ctx.openRepo(n));
-    const again = h('button', {class: 'button', type: 'button'}, t('Make another'));
+    const again = h('button', {class: 'button', type: 'button'}, t('Create another'));
     again.addEventListener('click', () => { draft = fresh(); ctx.rerender(); });
-    actions.replaceChildren(h('p', {class: 'made', role: 'status'}, t('Made {name}', {name: n})), h('span', {class: 'grow'}), again, open);
+    actions.replaceChildren(h('p', {class: 'made', role: 'status'}, t('Created {name}', {name: n})), h('span', {class: 'grow'}), again, open);
     open.focus({preventScroll: true});
     // What was written becomes the repo's card: an outline goes from the summary down to where it joins the others.
     const from = where(summaryBox)!;
@@ -183,9 +183,9 @@ export function newRepo(ctx: Context): Node[] {
   const form = h('form', {class: 'new-repo'},
     h('div', {class: 'field name-field'}, h('label', {class: 'field-label', for: 'repo-name'}, t('Name')), name,
       // The rule for a name is heard with the field and seen only when it is broken (the error under it).
-      h('span', {id: 'repo-name-rule', class: 'sr-only'}, t('Letters, digits and . _ -, up to 64 characters')), error),
+      h('span', {id: 'repo-name-rule', class: 'sr-only'}, t('Letters, digits, and . _ - (up to 64 chars)')), error),
     h('div', {class: 'field summary-field'}, h('span', {class: 'field-label', id: 'repo-summary-label'}, t('Summary')), summaryBox),
-    h('div', {class: 'field scaffold-field'}, h('span', {class: 'field-label'}, t('What will be made')), card),
+    h('div', {class: 'field scaffold-field'}, h('span', {class: 'field-label'}, t('Items to create')), card),
     actions);
   // Said as it is written, not only once Create is pressed: why it cannot be, under the name, and where in it.
   const judge = () => {
@@ -198,15 +198,15 @@ export function newRepo(ctx: Context): Node[] {
     event.preventDefault();
     const n = name.value.trim();
     // Nothing written yet is not a name broken: what is wanted is said, under the field it goes in.
-    if (!validName(n)) { error.textContent = n ? t('Use letters, digits and . _ -, and do not start with .') : t('Write a name first'); name.focus(); nudge(name); return; }
+    if (!validName(n)) { error.textContent = n ? t('Use letters, digits, and . _ - (cannot start with .)') : t('Please enter a name first'); name.focus(); nudge(name); return; }
     // A name taken is the name's to change, as a name not allowed is: the keyboard goes back to it, as written.
     // One the Remote keeps and this device does not hold yet is taken too: it is the same repo, not another of that name.
-    if ((await store.list()).some((r) => r.name === n) || remoteOnly().some((r) => r.name === n)) { error.textContent = t('There is a repo named {name} already', {name: n}); name.focus(); nudge(name); return; }
+    if ((await store.names()).includes(n) || remoteOnly().some((r) => r.name === n)) { error.textContent = t('A repo named "{name}" already exists', {name: n}); name.focus(); nudge(name); return; }
     submit.disabled = true;
     try {
       await store.create(n, SCAFFOLD);
     } catch (e) {
-      error.textContent = t('Could not create: {message}', {message: errorText(e)});
+      error.textContent = t('Failed to create: {message}', {message: errorText(e)});
       submit.disabled = false;
       submit.focus();
       return;
@@ -215,7 +215,7 @@ export function newRepo(ctx: Context): Node[] {
     if (summary.value.trim()) {
       try { await store.write(n, 'README.md', readme(n)); } catch (e) {
         made(n);
-        error.textContent = t('{what} could not be written ({why})', {what: `${n}/README.md`, why: errorText(e)});
+        error.textContent = t('Failed to write {what} ({why})', {what: `${n}/README.md`, why: errorText(e)});
         return;
       }
     }
@@ -229,7 +229,7 @@ export function newRepo(ctx: Context): Node[] {
   void list.refresh();
   showFiles();
   sized();
-  queueMicrotask(() => name.focus());
+  queueMicrotask(() => name.focus({preventScroll: true}));
   return [pageHead('new-repo'), h('div', {class: 'new-repo-wrap'}, form),
     h('section', {class: 'section', 'aria-labelledby': 'new-repo-list'}, h('h2', {id: 'new-repo-list'}, t('Repos')), list.element)];
 }

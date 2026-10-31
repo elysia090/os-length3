@@ -6,7 +6,7 @@
 //! twice, so no block ever needs an owner.
 
 use crate::elf::Elf;
-use iced_x86::{Decoder, DecoderOptions, FlowControl, Instruction, Mnemonic, OpKind};
+use iced_x86::{Decoder, DecoderOptions, FlowControl, Instruction, Mnemonic, OpKind, Register};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::hash::{BuildHasherDefault, Hasher};
 
@@ -175,6 +175,14 @@ fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], is_start: &(dyn Fn(u64) 
             }
             if let Some(r) = references.as_deref_mut() {
                 if i.is_ip_rel_memory_operand() { r.insert(i.ip_rel_memory_address()); }
+                // Where code is not position-independent, an address in its code given as a number is one too.
+                if elf.fixed {
+                    for k in 0..i.op_count() {
+                        if matches!(i.op_kind(k), OpKind::Immediate32 | OpKind::Immediate32to64 | OpKind::Immediate64) && elf.is_code(i.immediate(k)) {
+                            r.insert(i.immediate(k));
+                        }
+                    }
+                }
             }
             let next = i.next_ip();
             match flow(&i) {
@@ -270,6 +278,21 @@ fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], is_start: &(dyn Fn(u64) 
     (blocks, calls)
 }
 
+/// Where a function's blocks jump or run on to outside it (its tail jumps, and branches out of it): not its calls.
+fn continuations(blocks: &[Block]) -> Vec<u64> {
+    let own: BTreeSet<u64> = blocks.iter().map(|b| b.start).collect();
+    let mut out = Vec::new();
+    for b in blocks {
+        match b.exit {
+            Exit::TailJump(t) => out.push(t),
+            Exit::Branch { taken, fall } => out.extend([taken, fall].into_iter().filter(|a| !own.contains(a))),
+            Exit::Fall(t) | Exit::Jump(t) if !own.contains(&t) => out.push(t),
+            _ => {}
+        }
+    }
+    out
+}
+
 /// Targets of position-relative jump tables. Each entry holds
 /// `target - base`, where the base is the table start that code addresses
 /// with a rip-relative `lea`. A slot belongs to the nearest base at or below
@@ -297,10 +320,124 @@ fn relative_table_targets(elf: &Elf, references: &BTreeSet<u64>) -> Vec<u64> {
     out
 }
 
+/// The most entries a table is read for when what bounds it is not found.
+const TABLE_ENTRIES: u64 = 4096;
+
+/// The cases of the switches in `blocks` (one function's, whose range is `start`..`end`) that jump through a table,
+/// found from the code that reads the table, for a program whose relocations do not say where its tables are
+/// (linked without --emit-relocs, as most are). As compilers make them, position-independent:
+///
+/// ```text
+/// cmp    I, N               the block before: ja past the table, or jbe to it
+/// ja     default
+/// lea    B, [rip + table]   (or once in the function, for every switch of a loop)
+/// movsxd T, dword [B + I*4]
+/// add    T, B
+/// jmp    T                  to table + entry
+/// ```
+///
+/// or absolute (`jmp [table + I*8]`, or a `mov T, [table + I*8]` before `jmp T`), each entry a case itself. N + 1
+/// entries; where the bound is not found, those that land in the function (a switch's cases are its own), at most
+/// TABLE_ENTRIES. One read past its table's end adds blocks that never run (a walk follows each instruction's
+/// length, so a block starting inside another instruction leaves the real ones as they are).
+fn switch_targets(elf: &Elf, blocks: &[Block], start: u64, end: u64) -> Vec<u64> {
+    let mut out = Vec::new();
+    for b in blocks.iter().filter(|b| b.exit == Exit::IndirectJump) {
+        let Some((table, index, relative)) = table_read(&b.code) else { continue };
+        let Some(table) = table.or_else(|| only_lea(blocks, index.1)) else { continue };
+        let index = index.0;
+        let bound = bound_of(blocks, b.start, index);
+        for k in 0..bound.unwrap_or(TABLE_ENTRIES) {
+            let target = if relative {
+                let Some(entry) = elf.read_i32(table + 4 * k) else { break };
+                table.wrapping_add(entry as i64 as u64)
+            } else {
+                let Some(entry) = elf.read_u64(table + 8 * k) else { break };
+                entry
+            };
+            let ok = elf.is_code(target) && (bound.is_some() || (target >= start && target < end));
+            if !ok { break; }
+            out.push(target);
+        }
+    }
+    out
+}
+
+/// The table a block ending in an indirect jump goes through, as switch_targets shows: its address (None: the one
+/// in the register given with the index, put there before this block), the register that indexes it (and the one
+/// that holds it), and whether its entries are relative to it.
+fn table_read(code: &[Instruction]) -> Option<(Option<u64>, (Register, Register), bool)> {
+    let (jmp, before) = code.split_last()?;
+    if jmp.mnemonic() != Mnemonic::Jmp { return None; }
+    let entry = |i: &Instruction, scale: u32| (i.memory_index() != Register::None && i.memory_index_scale() == scale).then(|| i.memory_index());
+    // jmp [table + I*8]
+    if jmp.op0_kind() == OpKind::Memory && jmp.memory_base() == Register::None {
+        return Some((Some(jmp.memory_displacement64()), (entry(jmp, 8)?, Register::None), false));
+    }
+    if jmp.op0_kind() != OpKind::Register { return None; }
+    let target = jmp.op0_register();
+    let last = |p: &dyn Fn(&Instruction) -> bool, within: &[Instruction]| within.iter().rposition(p);
+    // mov T, [table + I*8]; jmp T
+    if let Some(k) = last(&|i| i.mnemonic() == Mnemonic::Mov && i.op0_register() == target && i.op1_kind() == OpKind::Memory, before) {
+        let i = &before[k];
+        if i.memory_base() == Register::None { return Some((Some(i.memory_displacement64()), (entry(i, 8)?, Register::None), false)); }
+    }
+    // lea B, [rip + table]; movsxd T, dword [B + I*4]; add T, B; jmp T
+    let a = last(&|i| i.mnemonic() == Mnemonic::Add && i.op0_register() == target && i.op1_kind() == OpKind::Register, before)?;
+    let base = before[a].op1_register();
+    let m = last(&|i| i.mnemonic() == Mnemonic::Movsxd && i.op0_register() == target && i.op1_kind() == OpKind::Memory
+        && i.memory_base() == base && i.memory_displacement64() == 0, &before[..a])?;
+    let index = entry(&before[m], 4)?;
+    let l = last(&|i| i.op0_kind() == OpKind::Register && i.op0_register() == base, &before[..m]);
+    match l.map(|l| &before[l]) {
+        Some(i) if i.mnemonic() == Mnemonic::Lea && i.is_ip_rel_memory_operand() => Some((Some(i.ip_rel_memory_address()), (index, base), true)),
+        // Written otherwise here: not a table read as above.
+        Some(_) => None,
+        None => Some((None, (index, base), true)),
+    }
+}
+
+/// The constant `register` holds where a function puts it in one place only (`lea register, [rip + constant]`, as a
+/// loop over a switch does once, before the loop), and writes it nowhere else (its caller's value saved and put back
+/// around it, push and pop, is not the function's).
+fn only_lea(blocks: &[Block], register: Register) -> Option<u64> {
+    let writes_it = |i: &&Instruction| i.op0_kind() == OpKind::Register && i.op0_register().full_register() == register.full_register()
+        && !matches!(i.mnemonic(), Mnemonic::Push | Mnemonic::Pop | Mnemonic::Cmp | Mnemonic::Test);
+    let mut writes = blocks.iter().flat_map(|b| &b.code).filter(writes_it);
+    let i = writes.next()?;
+    (writes.next().is_none() && i.mnemonic() == Mnemonic::Lea && i.is_ip_rel_memory_operand() && i.op0_register() == register).then(|| i.ip_rel_memory_address())
+}
+
+/// How many entries the table read at block `at` has, from the bounds check before it: `cmp I, N` then `ja` past it
+/// or `jbe` to it, in a block of the function's that goes on to `at`.
+fn bound_of(blocks: &[Block], at: u64, index: Register) -> Option<u64> {
+    blocks.iter().find_map(|p| {
+        let Exit::Branch { taken, fall } = p.exit else { return None };
+        let [.., cmp, jcc] = p.code.as_slice() else { return None };
+        let to_table = (jcc.mnemonic() == Mnemonic::Ja && fall == at) || (jcc.mnemonic() == Mnemonic::Jbe && taken == at);
+        let same = cmp.op0_kind() == OpKind::Register && cmp.op0_register().full_register() == index.full_register();
+        let n = match cmp.op1_kind() {
+            OpKind::Immediate8 | OpKind::Immediate8to32 | OpKind::Immediate8to64 | OpKind::Immediate32 | OpKind::Immediate32to64 => Some(cmp.immediate(1)),
+            _ => None,
+        };
+        (to_table && cmp.mnemonic() == Mnemonic::Cmp && same).then_some(n?).filter(|&n| n < TABLE_ENTRIES).map(|n| n + 1)
+    })
+}
+
 /// Functions reached from `seeds`, for a program already running: code at
 /// `known` addresses is translated already, so a walk stops there and a
 /// call to it goes through the dispatcher. Nothing of the file is read but
 /// the code execution reaches from the seeds.
+/// The blocks of `f` that block `k` goes back to (at or before itself): the heads of its loops.
+pub fn back_edges(f: &Function, k: usize, b: &Block) -> Vec<u64> {
+    let targets: &[u64] = match &b.exit {
+        Exit::Jump(a) | Exit::Fall(a) => std::slice::from_ref(a),
+        Exit::Branch { taken, .. } => std::slice::from_ref(taken),
+        _ => &[],
+    };
+    targets.iter().copied().filter(|&a| f.block_index(a).is_some_and(|j| j <= k)).collect()
+}
+
 pub fn discover_from(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>) -> Program {
     discover_within(elf, seeds, known, usize::MAX)
 }
@@ -333,6 +470,8 @@ pub fn discover_within(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>, budget: 
             let end = after(known, start).min(after(&starts, start));
             // The range ends at the next start of either set, so nothing inside it is a start: no lookup per
             // instruction. Nor are data references wanted (they find jump tables when the whole program is walked).
+            // Nor the cases of its switches: a compiler's are hundreds, of which a run takes a few (each is reached
+            // later as it is taken).
             let (blocks, calls) = walk(elf, start, end, &[], &|_| false, None);
             found.extend(calls.into_iter().filter(|t| elf.is_code(*t) && !known.contains(t) && !starts.contains(t)));
             done.insert(start, blocks);
@@ -356,8 +495,10 @@ pub fn discover_within(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>, budget: 
             if let Some(b) = function.block_index(address) { entries.entry(address).or_insert((f, b as u32)); }
         };
         mark(start);
-        for b in &function.blocks {
+        for (k, b) in function.blocks.iter().enumerate() {
             if let Exit::Call { ret, .. } | Exit::IndirectCall { ret } = b.exit { mark(ret); }
+            // A loop's head: where a thread that has run long is taken back to the kernel, and goes on later.
+            for a in back_edges(&function, k, b) { mark(a); }
             if b.code.last().is_some_and(resumes_after) {
                 mark(b.code.last().unwrap().ip());
                 mark(b.code.last().unwrap().next_ip());
@@ -371,7 +512,16 @@ pub fn discover_within(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>, budget: 
 /// The program's code from its entry, its function symbols and what its relocations point at: what a running program
 /// has translated first, the rest being reached later (`discover_within`).
 pub fn discover(elf: &Elf) -> Program {
-    walk_program(elf, &elf.relocation_targets, elf.symbols.is_empty())
+    walk_program(elf, &elf.relocation_targets, elf.symbols.is_empty(), &[], Follow::Calls)
+}
+
+/// Exactly the functions starting at `seeds` (with the entry and the named ones): what the program's runs have
+/// translated so far, its first module's and those of the code they reached later, in one translation of its own,
+/// so each process of it starts with one module, not hundreds, and every jump among that code is found in its first
+/// table. A call to a function past these is not followed (it is reached later, as before): following them all
+/// would translate much of a large program no run has reached.
+pub fn discover_seeded(elf: &Elf, seeds: &[u64]) -> Program {
+    walk_program(elf, &elf.relocation_targets, false, seeds, Follow::Not)
 }
 
 /// The whole program, ahead of time: as `discover`, and where no function of its own is named (stripped, or only a
@@ -379,17 +529,31 @@ pub fn discover(elf: &Elf) -> Program {
 /// only through a pointer is then translated with the rest, not when it is first run (a shell's builtins and
 /// applets); for a large program that is far more than one run reaches.
 pub fn discover_whole(elf: &Elf) -> Program {
-    let mut targets: Vec<u64> = elf.relocation_targets.iter().chain(&elf.dynamic_pointers).copied().collect();
+    let mut targets: Vec<u64> = elf.relocation_targets.iter().chain(&elf.data_pointers).copied().collect();
     targets.sort_unstable();
     targets.dedup();
     let named = elf.symbols.iter().any(|s| s.function && elf.is_code(s.value));
-    walk_program(elf, &targets, !named)
+    walk_program(elf, &targets, !named, &[], Follow::Everything)
 }
 
-/// Walk from the entry, the symbols in code, and `targets` (sorted) as pointers, each one a start of its own when
-/// `pointed_start`.
-fn walk_program(elf: &Elf, targets: &[u64], pointed_start: bool) -> Program {
+/// What a walk of the program goes on to from what it has walked.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Follow {
+    /// Only code a function jumps or runs into past its range (a translation of exactly what runs reached).
+    Not,
+    /// Every function a call reaches: what a running program translates first.
+    Calls,
+    /// And every function whose address code takes (a callback passed, rip-relative or, where code is not
+    /// position-independent, as a number): the whole program, ahead of time. Not for a first translation: a
+    /// compiler's (cc1, 60,000 functions, none named) would be all of it, where a run reaches a few thousand.
+    Everything,
+}
+
+/// Walk from the entry, the symbols in code, `seeds`, and `targets` (sorted) as pointers, each one a start of its own
+/// when `pointed_start`; and on as `follow` says.
+fn walk_program(elf: &Elf, targets: &[u64], pointed_start: bool, seeds: &[u64], follow: Follow) -> Program {
     let mut starts: BTreeSet<u64> = BTreeSet::from([elf.entry]);
+    starts.extend(seeds.iter().copied().filter(|&a| elf.is_code(a)));
     let mut sizes = BTreeMap::new();
     let mut names = BTreeMap::new();
     // Function symbols, and untyped ones (assembly entry points like _init,
@@ -416,11 +580,22 @@ fn walk_program(elf: &Elf, targets: &[u64], pointed_start: bool) -> Program {
             let end = range[&start];
             (start, end, &pointers[pointers.partition_point(|&a| a <= start)..pointers.partition_point(|&a| a < end)])
         }).collect();
+        // Without relocations that say where its tables are, those its switches read (switch_targets).
+        let guess = elf.relative_slots.is_empty();
+        let mut switches = Vec::new();
         for (start, blocks, calls) in walk_all(elf, &jobs, &|a| starts.contains(&a), &mut references) {
-            found.extend(calls.into_iter().filter(|t| elf.is_code(*t) && !starts.contains(t)));
+            if guess { switches.extend(switch_targets(elf, &blocks, start, range[&start])); }
+            // Not following calls, code it goes on to all the same: what it jumps or runs into past its range is code
+            // the runs reached as part of it before more starts cut it there.
+            let next: Vec<u64> = if follow == Follow::Not { continuations(&blocks) } else { calls };
+            found.extend(next.into_iter().filter(|t| elf.is_code(*t) && !starts.contains(t)));
             done.insert(start, blocks);
         }
-        let mut tables = relative_table_targets(elf, &references);
+        // Code whose address code takes (as a callback is passed): a function, as a pointer to it is.
+        if follow == Follow::Everything { found.extend(references.iter().copied().filter(|&a| elf.is_code(a) && !starts.contains(&a))); }
+        let mut tables = if guess { switches } else { relative_table_targets(elf, &references) };
+        tables.sort_unstable();
+        tables.dedup();
         tables.retain(|t| pointers.binary_search(t).is_err());
         if found.is_empty() && tables.is_empty() {
             break;
@@ -450,10 +625,12 @@ fn walk_program(elf: &Elf, targets: &[u64], pointed_start: bool) -> Program {
             }
         };
         mark(start, &function);
-        for b in &function.blocks {
+        for (k, b) in function.blocks.iter().enumerate() {
             if let Exit::Call { ret, .. } | Exit::IndirectCall { ret } = b.exit {
                 mark(ret, &function);
             }
+            // A loop's head: where a thread that has run long is taken back to the kernel, and goes on later.
+            for a in back_edges(&function, k, b) { mark(a, &function); }
             if b.code.last().is_some_and(resumes_after) {
                 mark(b.code.last().unwrap().ip(), &function);
                 mark(b.code.last().unwrap().next_ip(), &function);

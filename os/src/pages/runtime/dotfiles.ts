@@ -2,7 +2,8 @@ import {bytes, h} from '../../ui/dom.ts';
 import {t, tn} from '../../i18n.ts';
 import * as dotfiles from '../../home/dotfiles.ts';
 import {askFoot, SETTLE} from '../common.ts';
-import {allSessions, type Session} from '../bench/terminal.ts';
+import type {Session} from '../bench/terminal.ts';
+import {allSessions} from '../bench/sessions.ts';
 import {errorText} from '../../app/errors.ts';
 import {onState} from '../../home/state.ts';
 import {button} from './parts.ts';
@@ -59,20 +60,20 @@ export function dotfilesSection(restarted: () => void, counted: (n: number) => v
 
 /** Changed on another device and not run here: which, and Take them. */
 function waitingNote(names: string[], taken: () => void): HTMLElement {
-  const take = button(t('Take them'));
+  const take = button(t('Sync changes'));
   const error = h('span', {class: 'error small'});
   take.addEventListener('click', async () => {
     take.disabled = true;
     try { await dotfiles.take(names); taken(); } catch (e) { error.textContent = errorText(e); take.disabled = false; }
   });
   return h('p', {class: 'muted small dot-note', role: 'status'},
-    tn('{list} changed on another device; it runs here once taken.', '{list} changed on another device; they run here once taken.', names.length, {list: names.join(', ')}), ' ', take, error);
+    tn('{list} was modified remotely; sync to apply locally.', '{list} were modified remotely; sync to apply locally.', names.length, {list: names.join(', ')}), ' ', take, error);
 }
 
 /** A dotfile's row: its name and size, and whether it waits to be taken here; pressed, it opens (or folds, `current`). */
 function fileRow(name: string, text: string, current: boolean, press: () => void, held = false): HTMLElement {
   const row = h('button', {type: 'button', class: `dot-row${current ? ' current' : ''}`, 'aria-expanded': String(current), 'data-name': name},
-    h('span', {class: 'dot-row-name'}, name), h('span', {class: 'muted small'}, held ? `${t('not run here yet')} · ` : '', bytes(new TextEncoder().encode(text).length)));
+    h('span', {class: 'dot-row-name'}, name), h('span', {class: 'muted small'}, held ? `${t('Not executed in this environment')} · ` : '', bytes(new TextEncoder().encode(text).length)));
   row.addEventListener('click', press);
   return row;
 }
@@ -88,7 +89,7 @@ function editBox(name: string, text: string, fresh: boolean, saved: boolean, w: 
   save.addEventListener('click', async () => {
     const n = title.value.trim();
     // A new one named as one there is would take its place unasked: the name is to change, as New repo's is.
-    if (fresh && n in dotfiles.read()) { error.textContent = t('There is a dotfile named {name} already', {name: n}); title.focus(); return; }
+    if (fresh && n in dotfiles.read()) { error.textContent = t('A dotfile named "{name}" already exists', {name: n}); title.focus(); return; }
     try { await dotfiles.save(n, body.value); } catch (e) { error.textContent = errorText(e); return; }
     w.paint(n, true);
   });
@@ -108,10 +109,10 @@ function editBox(name: string, text: string, fresh: boolean, saved: boolean, w: 
 /** Asked in the box, where its deeds were: it goes from every device. Remove stays under the pointer, Not now at the right. */
 function askRemove(name: string, box: HTMLElement, acts: HTMLElement, remove: HTMLButtonElement, error: HTMLElement, w: BoxWays) {
   const foot = askFoot(remove, box);
-  const no = button(t('Not now')), yes = button(t('Remove'), 'primary');
-  const ask = h('div', {class: 'dot-ask', role: 'group', 'aria-label': t('Remove {name}', {name})},
-    h('p', {class: 'muted small'}, t('{name} goes from every device.', {name})),
-    running().length ? h('p', {class: 'muted small'}, t('Prompts running keep it until they start again.')) : null,
+  const no = button(t('Cancel')), yes = button(t('Remove'), 'primary');
+  const ask = h('div', {class: 'dot-ask', role: 'group', 'aria-label': t('Delete {name}', {name})},
+    h('p', {class: 'muted small'}, t('"{name}" will be removed across all devices.', {name})),
+    running().length ? h('p', {class: 'muted small'}, t('Active Prompts retain current configuration until restarted.')) : null,
     foot(no, yes));
   no.addEventListener('click', () => { ask.replaceWith(acts); remove.focus(); });
   const shown = performance.now();
@@ -126,9 +127,9 @@ function askRemove(name: string, box: HTMLElement, acts: HTMLElement, remove: HT
 
 /** Saved while the Prompts `now` run: which get it when they start again, and Start again. */
 function startAgain(now: [string, Session][], w: BoxWays): HTMLElement {
-  const again = button(t('Start again'));
+  const again = button(t('Restart'));
   const note = h('p', {class: 'muted small dot-note', role: 'status'},
-    tn('The Prompt in {list} gets it when it starts again', 'The Prompts in {list} get it when they start again', now.length, {list: now.map(([repo]) => repo).join(', ')}), ' ', again);
+    tn('Prompt in {list} applies updates on restart', 'Prompts in {list} apply updates on restart', now.length, {list: now.map(([repo]) => repo).join(', ')}), ' ', again);
   again.addEventListener('click', () => { for (const [, s] of running()) s.restart(); note.remove(); w.restarted(); });
   return note;
 }

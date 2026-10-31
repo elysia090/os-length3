@@ -81,17 +81,18 @@ Every value in `styles.css` comes from a token (§2).
   step (40 px) under the places, a little below the middle.
 - **Motion, with a reason.** Every move says where something went, never
   only that it changed, and every one lands the same way (fast off the
-  mark, the last pixels slow: `--land`). The moves are unhurried: each
-  length named in this document is the move's own, and the OS plays them
-  all at one pace, twice that (`--pace`), so the eye follows each the whole
-  way and they keep with one another. Sideways the camera goes slower still,
+  mark, the last pixels slow: `--land`). Each length named in this document
+  is the move's own, and the OS plays them all at one pace (`--pace`, 1:
+  the standard lengths; played at twice them, the moves were watched rather
+  than seen, and a hand waited on each), so they keep with one another.
+  Sideways the camera goes slower,
   as a long pan does (`--slide`, 450 ms of its own: the band's repos, the
   row of boxes, the issues, the boards, the pane). A hover's light and a
-  colour go at the same unhurried pace, a little quicker than a move; only
+  colour go at the same pace, a little quicker than a move; only
   what answers the hand at once (a press, the caret) is not paced, and the
   Prompt keeps its own lengths. What is put away goes in a fraction of its
-  coming (`--leave`, 130 ms of its own: the pane put away is gone in about a
-  quarter of a second), moving from the press: what is no longer wanted is
+  coming (`--leave`, 130 ms: the pane put away is gone in about an eighth
+  of a second), moving from the press: what is no longer wanted is
   not watched going, and the hand that put it away is not kept waiting on
   it. The moves are few and each means one thing wherever it
   is seen:
@@ -121,6 +122,10 @@ Every value in `styles.css` comes from a token (§2).
     window goes on being drawn as it is, so a press made while it pans (the
     rail pressed again, the pane's button as the page comes up) lands on
     what is under the hand, never lost on a picture still on its way. The
+    keyboard given to a page as it is drawn (Server's line to post in, New
+    repo's name) scrolls nothing to reach it: coming up from under the
+    window, a page scrolled for it was pulled up and away with the page
+    left, the window empty until it was put back. The
     rail pressed again before the pan has moved (a double press, its keys
     held) goes straight to the place pressed last, from where it began, and
     pressed back to where it began it simply stays; once moving, the page
@@ -305,7 +310,11 @@ Every value in `styles.css` comes from a token (§2).
 - **One scrollbar.** Everything that scrolls, the page with it, has the
   same bar: thin, its thumb `edge` (a thing one drags), its track the
   ground under it, never the browser's own; forced colours draw the
-  system's.
+  system's. It shows only while its own box is scrolled and a moment after
+  (dragged, it is scrolling, so it stays under the hand): at rest no line
+  edges a box beside its words (two files side by side were each edged by
+  one, on Windows a dark bar with arrows). Its room stays, so nothing moves
+  as it comes and goes.
 - **The ink at the edge, not the box.** An icon is drawn inset in its
   square (two to four pixels, each its own), so a page head's icon stands
   that much left of its box, its ink on the edge the page's words and
@@ -410,8 +419,11 @@ over the center is a screen made of these colours, not new ones: its glass
 lamp `done` while its shell runs and `off` once it has ended.
 
 Type: the system sans; monospace only for paths, code and the terminal.
-Sizes 28 (identity), 24 (page title), 20 (card title, figures), 15 (body),
-13 (meta).
+One face of its own: the person's name at Home's top, set in Inter Display
+Black (its Latin letters kept with the app, OFL; any others the system's at
+that weight), 44 (30 on a narrow window), tight (−3.5%): the one big thing,
+its handle a step under it. Sizes 28 (identity), 24 (page title), 20 (card
+title, figures), 15 (body), 13 (meta).
 
 Space: 4, 8, 12, 16, 24, 40. Radius: 8 fields, 12 places, round actions.
 Heights: 40 controls, 32 list rows, 48 rail places. Icons 24 with a 1.6
@@ -715,7 +727,8 @@ fix is always a piece from §3, not a new rule.
 | A use against an allowance said by a colour (a red bar when over) | The meter: `ink` as far as the use goes, full and its figures 600 when over |
 | One Subscribe for one paid plan, and its price said only once one is sent to pay | Free and each tier side by side as cards, each its price and what it keeps, the account's own current |
 | Signed in from one page and landed on another (Inbox, then Remote's Repos) | Back on the page one began on |
-| How Stripe went said twice, or not at all (back from the portal with nothing said) | Once, in one line above the plan, against how the plan was when the page left for Stripe |
+| How Stripe went said twice, or not at all (back from the portal with nothing said) | Once, on paper above the plan, against how the plan was when the page left for Stripe |
+| What every paid tier adds, said once in a line of its own under the cards or in a box of rows | In each paid card's own lines, the same words in each |
 | A refusal said at the foot of the part, away from what was pressed | Where it was pressed: under the tier's card, in the ask, under Manage |
 
 # Part II. What the OS is under the pages
@@ -1119,8 +1132,32 @@ by repo.
    on those paths are written anew; commits share every folder they did
    not change; a diff skips folders of the same name; the sweep marks
    from the live roots down. The root's name is also how a place
-   elsewhere fetches a copy. *To build next* (expand: trees beside the
-   JSON, both written; backfill; read from trees; contract the JSON).
+   elsewhere fetches a copy. *Solved in part:* a draft is a row a path
+   (0022 line_file, keyed byte by byte, so all under a folder is one
+   range), and a save is asked about and written by the rows it touches
+   alone: whether it makes a file and a folder of one name, what the
+   draft would take (its paths, bytes and files' bytes, kept beside it as
+   each save changes them), then those rows written. A save of one file
+   to a repo of 20,000 was 90 ms of the database and 1.5 MB of its log
+   (what Neon keeps as history); it is some 4 ms and 8 KB, as for a repo
+   of ten. A device a few saves behind is told what each changed
+   (line_change, `?since=`), not the draft whole. A commit's tree is
+   nodes (0023 tree_node: a folder named by its entries' digest, kept
+   once in its repo) and the commit names its root; a line's draft is
+   laid on its head's root, its rows only what it changed from it (a path
+   set, or the root's at a path and under it cut away). So work begun on
+   an issue is its head's root and no rows (a repo of 5,000 files: 45 ms,
+   not 172); a commit of the draft is its rows laid on the root, made anew
+   only along them, the draft then laid on the commit with none (two
+   files of 5,000: 38 ms, not 107); a merge compares the three roots
+   folder by folder, looking only in those all three have apart, and
+   carries main's draft onto what it makes by its rows. One path of a
+   commit is its folders from the root (cut_path); two commits are
+   compared folder by folder (a device asks what changed, not both trees
+   whole); the sweep reads each folder once. Commits made before roots
+   are read as they were kept. *To build next:* a draft read whole (a
+   device's first sync) walks its root's folders, a little slower than
+   reading rows (47 ms against 39 at 5,000 files).
 2. **Compute runs only where the copy is.** *Solved:* the Spec above;
    runs here are built from it. A place elsewhere needs only what the
    Spec names: the root (already fetched by digest from the Remote, the
@@ -1426,7 +1463,13 @@ named after this device ("README (ren-laptop).md", "README (Chrome
 Linux).md"), so neither is lost and the name says whose it is on every
 device.
 Files that cannot travel (a link, a file over 16 MB, a repo's own `.git`)
-are named and never sent; a repo holding them is never let go. Home's
+are named and never sent; a repo holding them is never let go. Nor does a
+file that holds a secret (core/src/secrets.rs): a model maker's API key, a
+Stripe live key, a GitHub token, or this device's own sign-in. A Prompt has
+the Agent's key in its environment, so whatever runs there could write it
+into a file; read before it goes, as a push is read by GitHub's push
+protection, that file stays here unsent, said as `secret sk-ant-…a9AA`, and
+Commit says which until it is taken out. Home's
 settings (profile, TODO, dotfiles) are kept there too, by the app and l3
 alike (src/remote/sync.ts, core/src/home.rs: one protocol, one record of what was
 agreed), each changed only from the version it was read at: unchanged
@@ -1471,15 +1514,20 @@ own app, the way a sign-in's page is checked). Done there, the page says
 to go back; the app reads again what changed when its window comes back.
 Every device is a session, listed on the Remote page and ended
 from any other. Sessions are bearer tokens, kept on the device (in the app
-with its settings, 0600).
+with its settings, 0600), and taken only signed (`token.signature`, as the
+session cookie is) with the Remote's secret: the token the database keeps
+is no way in by itself, so a copy of the database opens no session. What a
+provider hands over at sign-in (its access and refresh tokens) is kept
+encrypted with the same secret; nothing reads it.
 
 What leaves this system is kept to what is said here:
 
 - **Network.** The Prompt's guests have no sockets: every socket call answers
   "not implemented", so a program in it can reach nothing. The page itself
-  may reach its own origin and the Remote, nothing else: the web build
-  carries that Content-Security-Policy, and the desktop's (Tauri's) says the
-  same. A page the Remote names to go to (a provider's, Checkout, the
+  may reach its own origin, the Remote and, for the box's Agent, the APIs of
+  the models' makers whose keys it knows (agent/makers.ts), nothing else: the
+  web build carries that Content-Security-Policy, and the desktop's (Tauri's)
+  says the same. The Agent's key goes only to its own maker, from the page. A page the Remote names to go to (a provider's, Checkout, the
   portal) is followed only when it is a web page: https, or http on this
   machine (connection.ts leaveFor); the desktop opens only Stripe's or the
   Remote's own (account.rs). The Remote answers only the app's origins. From the host (the app
@@ -1644,6 +1692,11 @@ or Cancel; Cancel comes back with the error a provider sends then.
   is: it opens the plugin area at the top of the center). **+** (a new repo)
   comes right under them, a step apart, and is round because it starts
   something rather than opening a place (§1, shapes).
+- The place one is in is `paper` ringed in `ink` (1.5 px), its icon in
+  ink; not an ink fill: the rail beside every page stays light, and the
+  place is the one thing ringed there. What is out from the rail (File's
+  tree, the person's menu) is ringed so too, and the ink that travels from
+  one place to the next on the rail is that ring.
 - A name appears beside an icon on hover or keyboard focus. Choosing an
   icon replaces the whole page; nothing pushes in beside the rail. File is
   the operation: its tree is laid over the page instead; a rest on Server
@@ -1720,10 +1773,14 @@ each count is the way to its section further down (a raised fill under the
 pointer; pressed, the page goes there and its heading lights as it lands);
 the face, pressed, opens the profile to be written, as Edit profile does;
 the TODO's paper pressed under its items gives the caret to the line at its
-foot, as a page written on does. In Forge a file's head, pressed (not to
-choose its words), is the file in File with what can be done to it (rename,
-move, delete), its name underlined under the pointer; pressed under the
-last file, on nothing, the caret goes to its end. A pill on the band is one
+foot, as a page written on does. In Forge a file's name in its head,
+pressed (not to choose its words), is written over where it stands, a faint
+box round it under the pointer as a name to write in: its path in the repo,
+the stem chosen and the ending kept; Enter or leaving it renames it (a path
+written moves it, the folders on its way made), Escape puts it back, a name
+taken is said beside it with the keyboard kept there, and renamed, the
+keyboard goes on into the file (an issue's file is its number, not renamed
+there); pressed under the last file, on nothing, the caret goes to its end. A pill on the band is one
 thing to press: on its edge, round its name, it goes as on the name (its ×
 aside). Server's people are each a
 conversation: someone else pressed opens the Inbox to them, an arrow at the
@@ -1821,7 +1878,8 @@ end: pressed, the deeds for the file read now (New file and New folder
 beside it, Rename, which moves it given a path, Delete; the repo's own with
 none read) come out under it, in Forge, done there with the field or the
 ask in its place as File's are, never carrying one off to File; a new file
-is opened to write in, one renamed or moved is shown where it went. The
+is made at once and opened to write in, one renamed or moved is shown where
+it went. The
 pills follow it and scroll, and ⊕ comes right after the last
 pill. One press brings every repo not on the band out at once; this is not
 adding tabs one at a time.
@@ -1861,10 +1919,12 @@ back, the one worked on fills the row again and the others step to its
 edges. The pane's switch is the switch between the two, working on one with
 the others to hand or reading them together, and the row moves on the
 pane's own curve, the last box's edge a step inside the pane's the whole
-way, as if pushed by it. The prompt box stands under the box worked on, its
-edges a step (12 px) outside that box's, and goes where the box goes, at its
-pace; side by side, each box is as tall as the row, down to a step over the
-prompt box. A file's head is its box's lid: it carries the box's top edge
+way, as if pushed by it. The prompt box stands across the center, a step
+(12 px) in from its edges, however many boxes stand in the row and whichever
+is worked on: a file opened beside, or another box pressed, leaves it where
+it is, under the hand that was about to write in it (it went with the box
+worked on once, and moved away from the hand); side by side, each box is as
+tall as the row, down to a step over the prompt box. A file's head is its box's lid: it carries the box's top edge
 and corners and stays where it stands as the file scrolls under it (a file
 gone to, from File or a search, comes to where its head stops, inside the
 page's top padding, never past it with its box's sides showing over the
@@ -2027,13 +2087,16 @@ is the repo's: another repo shows its own, and coming back finds it.
 
 The box does more than run. Its pill says what it does and, pressed (or
 Alt+↓ in the box, up as the screen too, out of the line's start where the
-pill went), brings out the four it can, out of the pill, each with
+pill went), brings out what it can, out of the pill, each with
 the pill it gives (as wide as its words) and its keys, the words in one column: Run in the Prompt (the shell's prompt line,
 `garden $`), Write an issue (the repo's next issue, `garden #4`, in ink as an
 issue's number), Add to TODO (TODO's circle, on paper as Home's TODO box),
 Edit the file in front (a pencil, the file and the caret's line,
 `main.c :4`, on paper ringed in ink: the yellow is the file's, where the
-work is, never the pill's); Alt+1 to 4 in the box choose one at
+work is, never the pill's), and, only while an API key is kept on this device
+(Runtime's Agent, below), Ask the Agent (`Agent@garden`, its words in ink on
+paper ringed in the Agent's blue, the one colour nothing else is drawn in, the
+repo after the name quiet); Alt+1 to 5 in the box choose one at
 once, Ctrl ` is the Prompt's again and Ctrl G Edit's. Turning, the pill goes from the old words' width to the new, the old
 words going up out of it as the new come up into it, its colours crossing,
 with a small beat as it lands; the box's own button says the deed (Run,
@@ -2058,13 +2121,31 @@ slip slides on and rises out of sight, and the line is there when the pane
 comes back. Pressed, the line goes to it (the issue in Git, the TODO on Home). What
 is half written is kept for the repo and for what the box does.
 
+Asking the Agent is the box's too, never the Prompt's: written to, the box does
+not bring the screen up, and what is written is a person's words, in their
+letters (not the terminal's). Sent (Ctrl+Enter, Ask), the question goes into the
+right pane as an issue does, on a slip, a line of the flow with its head in the
+pill the box wore (`Agent`, ringed in the blue), the pane brought out for it;
+the answer comes in under it a few words at a time, in the letters people write
+in, its paragraphs a little apart, and its code, what would be run, on the
+Prompt's own glass in its green. Until its first words, a quiet ellipsis;
+refused (the key no longer taken, asked too often, nobody reached), why, in the
+red, where the answer would be. It is told the repo, its top, and the file in
+front as it stands (written in and not saved too) with the caret's line, so a
+question needs no saying where. Pressed, the question is back in the box to be
+asked again. The answer is not the shell's: it is kept with its question while
+the flow is drawn again, and goes with what is above it, or with all of it when
+the screen is cleared. The key taken away, the boxes asking run again.
+
 Edit makes the box a line of the file in front, written there as the line is
 in the file: nothing to learn, no words that ask for things, no line first
 written and then applied. It need not be chosen: while one works in a file of
 the center with the box empty and running, the box is that line's by itself,
 its pill saying the file and the caret's line (main.c:5) and its keys Ctrl G,
 so what the box does is what one is doing, and pressed into it holds that
-line; Run is a key away (Ctrl `, Alt+1, or its pill). Once neither the file
+line. With the keyboard still in the box (up as the Prompt with nothing
+written), a line of a file pressed is taken into it as Edit takes one, the
+Prompt going down: the keyboard stays where one writes; Run is a key away (Ctrl `, Alt+1, or its pill). Once neither the file
 nor the box has the keyboard, it is the mode one chose again; something
 written in it for Run keeps it Run. The box holds the line the file's caret is on, lit
 in the marker's yellow where it stands (under its words, from its start: not
@@ -2231,7 +2312,7 @@ In **parts** (§3), as Remote's page is: この端末 (what it holds, what can g
 from it and come to it), what is running (offered while a Prompt runs, or one
 stopped here says what it gave back), the environments (SSH, the environment
 actually in effect, what runs, not what was asked for, and on the web the
-desktop app, side by side), and the dotfiles. A part not shown goes on: a
+desktop app, side by side), the dotfiles, and the Agent's key beside them. A part not shown goes on: a
 Prompt runs, what holds a repo is read again, a dotfile half written stays.
 There is no table of policies: what the device holds is shown as things, and
 each thing says what can be done with it.
@@ -2522,6 +2603,28 @@ or goes).
   so Save does not move. Remove asks in the box, where its deeds were (it
   goes from every device; Prompts running keep it until they start again),
   Remove under the pointer and Not now at the right.
+
+- **Agent**, beside the dotfiles and apart from them: the one API key the
+  box's Agent asks with, whoever made the model it opens. One box as the
+  dotfiles' is, its one row the field itself (API key, the key pasted in the
+  mono face, Use at its right; the box takes the ring while written in, never
+  a box in a box); given, the row shows it by its start and last four
+  (`sk-ant-…a9AA`), never more, the model it opens beside, and Remove. Under
+  the box, two short lines: kept on this device alone, in no dotfile and never
+  sent to the Remote; the box's Agent asks with it, and the Prompts started
+  here have it. No maker is named or chosen: what a key is for is read from
+  its form (the forms secret scanners such as gitleaks and TruffleHog go by:
+  Anthropic's, OpenAI's, OpenRouter's, xAI's, Groq's, DeepSeek's, Google's,
+  Perplexity's, Fireworks', Hugging Face's; an admin key, which opens no
+  model, and a key of no form of its own, refused), and the model is the
+  newest the key opens that answers, read from the maker's own list when the
+  key is given (Trying the key…), never written into the OS. It is a file of
+  this device (`agent-key`, 0600, beside the others the device keeps, in the
+  browser's own keeping on the web), whole only to the page that asks and to
+  each Prompt started here, in its environment under the name its maker's
+  tools read (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …). The page asks the
+  maker directly, so its policy lets it reach those makers' APIs and nothing
+  else besides the Remote.
 
 - **デスクトップアプリ**, on the web only (the app does not offer itself):
   after the environments, on one row (what this device runs on, and can be
@@ -2879,16 +2982,21 @@ the gear's do, never swapped in one frame):
   side as small **cards** (§3), four across the part (two, then one, as it
   narrows), and at the heading's right the tier the account is on with the
   one date that matters in `sub` (renews, ends, how long a failed payment
-  stays paid; free: what free keeps). Under them On the Remote, three
+  stays paid; free as free is: nothing, its own card says what it keeps).
+  Everything on the part is as wide as the four cards: one right edge down
+  it. Under them On the Remote, three
   **meters** (§3): repos on the Remote, what is kept there and names here,
   each against what that tier keeps (repos as many as fit: the figure alone),
   and, when over, one quiet line that what is there stays and what is new
   waits on the device. (A Remote showing no tiers says the tier in a figure's
   size instead, over the meters.) Each tier's card has its price as Stripe
-  says it, what it keeps, and its one deed at the right of its foot; the
-  account's own is current (an `ink` edge over `raised`) with nothing to
-  press, and one that keeps less than is kept now says that what is there
-  stays. Free, each tier's deed is Subscribe, which never steps into payment
+  says it (a whole amount without its .00: $14 a month), what it keeps (a
+  paid one, besides its room and names, what every paid tier adds: Make
+  servers; Names on your own domain), and its one deed at the right of its
+  foot; the account's own is current (an `ink` edge over `raised`): free,
+  with nothing to press; paid, its deed is Manage the plan (the portal: the
+  card, the invoices, cancelling). One that keeps less than is kept now says
+  that what is there stays. Free, each tier's deed is Subscribe, which never steps into payment
   at once: what is bought opens under the cards, in plain words a line each
   (the tier and its price; Renews automatically until you cancel; Cancel any
   time from Manage the plan, the tier staying until the paid period ends;
@@ -2897,18 +3005,17 @@ the gear's do, never swapped in one frame):
   payment at the right (Stripe's Checkout). Paying, the other tiers' deed is
   Upgrade or Downgrade, which opens Stripe's portal at the step that changes
   the tier (Stripe says what it costs now, and asks); none while a payment
-  that failed is put right. Then what paid adds, in three plain lines (keep
-  more on the Remote; make servers; names on your own domain), and, paid,
-  Manage the plan at the bottom right (the portal: the card, the invoices,
-  cancelling); with nothing sold, a quiet line saying so. Back from Stripe,
-  how it went is said once, in one line above the plan: paid, and to what,
+  that failed is put right. With nothing sold, a quiet line saying so. Back
+  from Stripe, how it went is said once, above the plan, on paper (nearer
+  than the ground, so it is read first; gone through, the green circle with
+  its tick before the words, the one green for on and done): paid, and to what,
   once the Remote has heard it from Stripe (Payment went through: you are on
   Pro now); cancelled, nothing charged (a card declined in Checkout is said
   there, under the card, and Back comes to this); from the portal, what
   changed against the plan as it was when the page left for it (You are on
   Max now; Cancelled: Pro stays until Nov 22, 2026), or nothing. What the
   Remote refused is said where it was pressed: under the tier's card, in
-  the ask, under Manage. The window coming back reads the Remote again.
+  the ask, under Manage (in the account's own card). The window coming back reads the Remote again.
   Shown only when the Remote has a plan. A repo card the Remote holds back
   says it waits, with See the plan: its edge dashed (in one place only, as
   one only on the Remote is) and where it stands said in ink, on Home's
@@ -3335,8 +3442,12 @@ New file and New folder, made in it; a file has them too, made beside it in
 its folder (the same deeds Forge's files button brings out under itself for
 the file read now); a file or folder has Rename and Delete (a
 repo is not renamed or deleted here: its gear is where that is, § Runtime, A
-repo in a list). A deed pressed becomes the field or the ask in its own
-place: a name written and Enter makes it (a new one's name is one plain part,
+repo in a list). New file asks nothing: it is made at once, named as
+nothing there is yet (untitled, with the ending of the file it is made
+beside, a note's .md beside none; untitled-2 and on when taken), and opened
+in Forge to write in, its name written over in its own head there. Any other
+deed pressed becomes the field or the ask in its own place: a name written
+and Enter makes it (a new one's name is one plain part,
 with no "/" and not starting with "."; one already there is said under the
 field and the keyboard stays in it). Rename's field holds the row's path in
 the repo (`notes/plan.md`), its name chosen to be written over, so a name

@@ -37,6 +37,7 @@ test('a deployment\'s limits are its variables, in MB where they are bytes; one 
   assert.deepEqual(limitsOf({}), LIMITS);
   const l = limitsOf({R2_STORED_MB: '10', R2_WRITES_MONTH: '5', R2_READS_MONTH: 'many', UPLOAD_MB_DAY: '0', PG_MB: '2'});
   assert.deepEqual(l, {...LIMITS, stored: 10 * MB, writes: 5, database: 2 * MB});
+  assert.equal(l.brim, 32 * MB);
 });
 
 test('R2\'s puts of the month: one past them is refused before R2 is asked, as no files, and nothing is kept or counted', async () => {
@@ -67,6 +68,23 @@ test('the bytes R2 holds are counted with the rows that name them, and an upload
   // A blob that goes takes its bytes out of the count (the sweep deletes its row).
   await s.db.execute(sql`delete from blob`);
   assert.equal(await usage(s, 'r2:stored'), 0);
+});
+
+test('a blob\'s bytes are counted as its upload commits, not while it runs, and an upload is refused that its own bytes would take past the limit', async () => {
+  const s = await service({}, {limits: limits({stored: 10})});
+  const t = await s.start();
+  const user = ((await s.call('GET', '/api/auth/get-session', {token: t})).json as unknown as {user: {id: string}}).user.id;
+  // Within the transaction that names the blob, the count is as it was: its row is not held through the upload.
+  await s.db.transaction(async (tx) => {
+    await tx.execute(sql`insert into blob (user_id, sha256, bytes) values (${user}, ${'a'.repeat(64)}, 8)`);
+    assert.equal(Number(((await tx.execute(sql`select coalesce(sum(n), 0)::float8 as n from usage where kind = 'r2:stored'`)).rows as {n: number}[])[0].n), 0);
+  });
+  assert.equal(await usage(s, 'r2:stored'), 8);
+  // What the upload adds is asked of the limit with it: 8 held, 3 more would be 11.
+  const {Budget} = await import('./budget.ts');
+  const b = new Budget(limits({stored: 10}));
+  await assert.rejects(s.db.transaction(async (tx) => b.held(tx, 3)), (e: unknown) => (e as {status?: number}).status === 507 || /507/.test(String(e)));
+  await s.db.transaction(async (tx) => b.held(tx, 2));
 });
 
 test('what one account sends in a day: past it, refused until tomorrow (429); another account is not held back', async () => {
@@ -164,6 +182,18 @@ test('a database at all it may take takes nothing new; reads, deletes and signin
   assert.deepEqual([full.status, full.json.budget], [507, true]);
   assert.equal((await s.call('GET', '/v1/repos', {token: t})).status, 200);
   assert.equal((await s.call('POST', '/v1/blobs/missing', {token: t, body: []})).status, 200);
+});
+
+test('past its brim too, a full database takes no sign-in, no device\'s code and no payment\'s word; deletes go on', async () => {
+  const s = await service({}, {limits: limits({database: 1})});
+  const t = await s.start();
+  // Up to the brim, signing in was let through a full database (start() signed in): now past it.
+  const past = await service({}, {limits: limits({database: 1, brim: 1})});
+  const code = await past.call('POST', '/api/auth/device/code', {body: {client_id: 'l3'}});
+  assert.deepEqual([code.status, code.json.budget], [507, true]);
+  assert.equal((await past.call('POST', '/v1/stripe/webhook', {body: {}})).status, 507);
+  // Taking away is never refused: a repo discarded, a session ended.
+  assert.notEqual((await s.call('POST', '/v1/repos/none/discard', {token: t, body: {}})).status, 507);
 });
 
 test('asked too often, a session is refused at the edge (429) before the database is asked', async () => {

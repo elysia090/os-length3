@@ -124,14 +124,14 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const to = b?.seen;
     if (to !== 'private' && to !== 'servers' && to !== 'everyone') return c.json({error: 'private, servers or everyone'}, 400);
     let ids = Array.isArray(b?.servers) ? [...new Set((b.servers as unknown[]).filter((x): x is string => typeof x === 'string'))] : null;
-    if (to === 'servers' && !ids?.length) return c.json({error: 'Choose a server'}, 400);
-    if (to === 'everyone' && d.closed) return c.json({error: 'Nothing is shown to everyone from this Remote'}, 403);
+    if (to === 'servers' && !ids?.length) return c.json({error: 'Select server'}, 400);
+    if (to === 'everyone' && d.closed) return c.json({error: 'Public sharing disabled on this Remote'}, 403);
     return c.json(await db.transaction(async (tx: Db) => {
       // One at a time for the account (a double click, two tabs): both took down, then both put in, and the second was a 500.
       await lock(tx, `seen:${me}`);
       const r = await isOn(tx, me, name);
-      if (!r) refuse(404, {error: 'That repo is not on the Remote'});
-      if (ids && (await inServers(tx, me, ids)).length !== ids.length) refuse(403, {error: 'Only servers you are in'});
+      if (!r) refuse(404, {error: 'Repo not found on Remote'});
+      if (ids && (await inServers(tx, me, ids)).length !== ids.length) refuse(403, {error: 'Servers you belong to only'});
       if (to === 'everyone') {
         const now = (await states(tx, me, [name]))[0];
         const as = typeof b?.as === 'string' ? b.as : now.asServer ?? (ids ?? now.servers.map((s) => s.id))[0] ?? 'me';
@@ -139,16 +139,16 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
         if (as === 'me') face = await nameFor(tx, me, d.domain);
         else {
           const [s] = await inServers(tx, me, [as]);
-          if (!s) refuse(403, {error: 'Only servers you are in'});
+          if (!s) refuse(403, {error: 'Servers you belong to only'});
           face = s.address || null;
           serverId = s.id;
           // Its face is that server's: it is shown there too.
           ids = [...new Set([...(ids ?? now.servers.map((x) => x.id)), s.id])];
         }
-        if (!face) refuse(409, {error: 'That server has no name'});
+        if (!face) refuse(409, {error: 'Server has no assigned name'});
         const got = await claim(tx, me, r, face, serverId);
-        if (!got.ok) refuse(409, got.until ? {error: 'That name was let go, and is held for its owner a while', as: `${face}:${name}`, until: got.until}
-          : {error: 'That name is taken', as: `${face}:${name}`});
+        if (!got.ok) refuse(409, got.until ? {error: 'Name recently released; temporarily reserved for prior owner.', as: `${face}:${name}`, until: got.until}
+          : {error: 'Username already taken', as: `${face}:${name}`});
       } else await takeDown(tx, eq(repoPublic.repoId, r.id));
       if (to === 'private' || ids) {
         await tx.delete(repoShare).where(eq(repoShare.repoId, r.id));
@@ -175,16 +175,16 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
 
   v1.get('/servers/:id/repos', async (c) => {
     const me = c.get('userId'), id = c.req.param('id');
-    if (!(await inServers(db, me, [id])).length) return c.json({error: 'No such server of yours'}, 404);
+    if (!(await inServers(db, me, [id])).length) return c.json({error: 'Server not found in your account'}, 404);
     return c.json(await shownIn(id, me));
   });
 
   v1.post('/servers/:id/repos', async (c) => {
     const me = c.get('userId'), id = c.req.param('id');
-    if (!(await inServers(db, me, [id])).length) return c.json({error: 'No such server of yours'}, 404);
+    if (!(await inServers(db, me, [id])).length) return c.json({error: 'Server not found in your account'}, 404);
     const name = (await body<{repo?: unknown}>(c))?.repo;
     const r = typeof name === 'string' ? await isOn(db, me, name) : undefined;
-    if (!r) return c.json({error: 'That repo is not on the Remote'}, 404);
+    if (!r) return c.json({error: 'Repo not found on Remote'}, 404);
     await db.insert(repoShare).values({repoId: r.id, serverId: id, userId: me}).onConflictDoNothing();
     return c.json(await shownIn(id, me), 201);
   });
@@ -198,9 +198,9 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
         : sql`(select a.user_id from address a where a.address = ${c.req.param('owner').toLowerCase()})`}
       left join repo r on r.user_id = t.user_id and r.name = ${c.req.param('name')}
       where m.server_id = ${id} and m.user_id = ${me}`);
-    if (!r) return c.json({error: 'No such server of yours'}, 404);
-    if (!r.them) return c.json({error: 'They are not in this server'}, 404);
-    if (r.them !== me && !r.owner) return c.json({error: 'Only its owner, or the server\'s, takes it off'}, 403);
+    if (!r) return c.json({error: 'Server not found in your account'}, 404);
+    if (!r.them) return c.json({error: 'User is not a member of this server'}, 404);
+    if (r.them !== me && !r.owner) return c.json({error: 'Only repo owner or server owner can unpublish'}, 403);
     if (r.repo !== null) {
       const repoId = r.repo;
       await db.transaction(async (tx: Db) => {
@@ -237,7 +237,7 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     // Inbox is by account (inbox.ts codeAsked), so codes are not read off for addresses by trying them
     // all (audit N1; ASVS 2.2.1, 11.1.4). The app itself asks by address, never by code.
     const from = addressOf(c);
-    if (from && /^\d{6}$/.test(written)) await throttled(db, `seen-code:${from}`, CODES_PER_HOUR, 3600_000, {error: 'Too many codes looked up from here; try again later'});
+    if (from && /^\d{6}$/.test(written)) await throttled(db, `seen-code:${from}`, CODES_PER_HOUR, 3600_000, {error: 'Too many lookups from this client; retry later'});
     const face = await faceOf(written);
     if (!face) return null;
     const [p] = await db.select(seenCols).from(repoPublic)
@@ -261,29 +261,36 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   };
   const pushedAt = (row: Found['row']) => and(eq(cut.repoId, row.repoId), eq(cut.id, row.pushed ?? ''));
 
+  // What it was pushed to never changes under its commit's name: one who has it (the tag: the commit, and whether the
+  // asker is its owner) is answered 304, the tree not made at all; who may see it is asked every time first.
   app.get('/v1/seen/:face/:name', async (c) => {
     const at = await find(c, c.req.param('face'), c.req.param('name'));
-    if (!at) return c.json({error: 'No such repo to see'}, 404);
-    const [p] = await db.select({tree: cut.tree, title: cut.title, time: cut.time}).from(cut).where(pushedAt(at.row)) as {tree: Record<string, string | null>; title: string; time: Date}[];
+    if (!at) return c.json({error: 'Repo inaccessible or not found'}, 404);
+    const tag = `"${at.row.pushed ?? 'none'}${at.owner ? `:${at.owner}` : ''}"`;
+    c.header('ETag', tag);
+    c.header('Cache-Control', 'private, no-cache');
+    if (unchanged(c, tag)) return c.body(null, 304);
+    const [p] = await db.select({tree: sql<Record<string, string | null>>`cut_tree(${cut.repoId}, ${cut.id})`, title: cut.title, time: cut.time}).from(cut).where(pushedAt(at.row)) as {tree: Record<string, string | null>; title: string; time: Date}[];
     return c.json({as: at.as, ...(at.owner ? {owner: at.owner} : {}), title: p?.title ?? null, at: p?.time.getTime() ?? null, tree: p?.tree ?? {}});
   });
 
-  // A file by its path in the tree it was pushed to: one lookup of that path, so nothing else of
-  // its owner's can be asked for, and reading a large repo file by file costs each file once.
+  // A file by its path in the tree it was pushed to: one lookup of that path (its folders from the root, 0023
+  // cut_path), so nothing else of its owner's can be asked for, and reading a large repo file by file costs each file
+  // once, never its tree whole.
   app.get('/v1/seen/:face/:name/file', async (c) => {
     if (!d.bucket) return noFiles(c);
     const bucket = d.bucket;
     const path = c.req.query('path') ?? '';
     const at = path && path.length <= 1024 ? await find(c, c.req.param('face'), c.req.param('name')) : null;
-    const [f] = at ? await db.select({sha: sql<string | null>`${cut.tree} ->> ${path}`}).from(cut).where(pushedAt(at.row)) as {sha: string | null}[] : [];
-    if (!at || !f?.sha) return c.json({error: 'No such file to see'}, 404);
+    const [f] = at ? await db.select({sha: sql<string | null>`cut_path(${cut.repoId}, ${cut.id}, ${path})`}).from(cut).where(pushedAt(at.row)) as {sha: string | null}[] : [];
+    if (!at || !f?.sha) return c.json({error: 'File inaccessible or not found'}, 404);
     // What is at a path changes with a push: kept by the browser, and asked again each time by its digest, which
     // answers 304 without R2 when it is the same; HEAD is answered from the blob's row.
     const headers = {'Content-Type': 'application/octet-stream', ETag: `"${f.sha}"`, 'Cache-Control': 'private, no-cache'};
     if (unchanged(c, `"${f.sha}"`)) return new Response(null, {status: 304, headers});
     if (c.req.method === 'HEAD') {
       const [b] = await db.select({bytes: blob.bytes}).from(blob).where(and(eq(blob.userId, at.row.userId), eq(blob.sha256, f.sha))) as {bytes: number}[];
-      return b ? new Response(null, {headers: {...headers, 'Content-Length': String(b.bytes)}}) : c.json({error: 'The Remote has no such file'}, 404);
+      return b ? new Response(null, {headers: {...headers, 'Content-Length': String(b.bytes)}}) : c.json({error: 'File not found on Remote'}, 404);
     }
     // Who may see it was asked above, every time; its bytes are the same for all who may, by owner and digest, so the
     // edge keeps them: a public repo read by many costs R2 (and the month's read budget all accounts share) once a place.
@@ -291,7 +298,7 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const hit = d.edge ? await d.edge.match(whole).catch(() => undefined) : undefined;
     if (hit?.ok) return new Response(hit.body, {headers});
     const bytes = await bucket.get(blobKey(at.row.userId, f.sha));
-    if (!bytes) return c.json({error: 'The Remote has no such file'}, 404);
+    if (!bytes) return c.json({error: 'File not found on Remote'}, 404);
     if (d.edge) await d.edge.put(whole, new Response(bytes.slice() as BodyInit, {headers: {'Cache-Control': 'public, max-age=31536000, immutable'}})).catch(() => {});
     return new Response(bytes as BodyInit, {headers});
   });

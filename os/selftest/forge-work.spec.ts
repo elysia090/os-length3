@@ -83,7 +83,7 @@ test('what was written is undone after going to Runtime and back, and to another
   await app.page.clock.install();
   await app.newRepo.make('other');
   await app.rail.go('forge');
-  const more = app.forge.band.getByRole('button', {name: /^Bring every repo out/});
+  const more = app.forge.band.getByRole('button', {name: /^Add all repos to band/});
   if (await more.isEnabled()) await more.click();
   await expect(app.forge.band.getByRole('button', {name: 'other', exact: true})).toBeVisible();
   await app.forge.band.getByRole('button', {name: 'hello', exact: true}).click();
@@ -130,7 +130,7 @@ test('what the search found follows what is saved, and a line found opens where 
   // The word changed: it is no longer found, and the search keeps what was typed.
   await app.forge.editFile('README.md', '# hello\n\nWrote it in Forge.\n');
   await app.forge.search.focus();
-  await expect(app.forge.results).toContainText('Nothing found for “Written”');
+  await expect(app.forge.results).toContainText('No results found for "Written"');
   await expect(app.forge.search).toHaveValue('Written');
 });
 
@@ -161,7 +161,7 @@ test('Enter in the search opens the first line found, selected; a file found by 
   // The head: its name, how many of its lines were found, and at its other end its diff, pressed rather than gone along.
   const head = app.forge.results.locator('.hit-head', {hasText: 'README.md'});
   await expect(head).toContainText('1 line');
-  await expect(head.getByRole('button', {name: 'The diff of README.md'})).toContainText(/^diff\s*\+\d+/);
+  await expect(head.getByRole('button', {name: 'Diff of README.md'})).toContainText(/^diff\s*\+\d+/);
   await app.forge.search.press('ArrowDown');
   await expect(app.forge.hit(/Written in Forge/)).toBeFocused();
   await app.page.keyboard.press('ArrowUp');
@@ -189,7 +189,7 @@ async function stands(app: {main: import('@playwright/test').Locator; forge: {re
 
 test('at rest the right pane says Issue, diff and Output beside the Prompt\'s head; a view opened there stays beside the file until put away', async ({app}) => {
   await app.forge.editFile('README.md', '# hello\n\nA line written in Forge, long enough to run on past the middle of its box.\n');
-  const heads = app.main.getByRole('complementary', {name: 'Plugins and Prompt'}).getByRole('group', {name: 'What to look in'});
+  const heads = app.main.getByRole('complementary', {name: 'Plugins and Prompt'}).getByRole('group', {name: 'Search target'});
   // diff says how many files are changed since the last commit.
   await expect(heads.getByRole('button')).toHaveText(['Issue', /^diff\s*\d+$/, 'Output']);
   await heads.getByRole('button', {name: /^diff/}).click();
@@ -213,7 +213,7 @@ test('at rest the right pane says Issue, diff and Output beside the Prompt\'s he
   await editor.click({position: {x: 40, y: 20}});
   await stands(app, files, 'README.md', 'beside');
   // Its × under it puts it away, the keyboard staying in the file.
-  await app.forge.results.getByRole('button', {name: 'Put away'}).click();
+  await app.forge.results.getByRole('button', {name: 'Close'}).click();
   await expect(app.forge.results).toBeHidden();
   await expect(editor).toBeFocused();
 });
@@ -236,7 +236,7 @@ test('the right pane put away gives the center the width and takes the search wi
   await app.forge.editFile('#1', 'Fix: the first\n');
   await app.forge.show('Issue');
   await app.forge.reference.getByRole('button', {name: /#1 Fix：the first/}).click();
-  await expect(app.forge.reference.getByRole('button', {name: 'Change its words'})).toBeVisible();
+  await expect(app.forge.reference.getByRole('button', {name: 'Edit description'})).toBeVisible();
   const center = app.main.locator('.center');
   const wide = (await center.boundingBox())!.width;
   const box = (await app.forge.search.boundingBox())!;
@@ -255,7 +255,7 @@ test('the right pane put away gives the center the width and takes the search wi
   const still = (await app.forge.search.boundingBox())!;
   expect(Math.abs(still.x - box.x)).toBeLessThan(1);
   expect(Math.abs(still.width - box.width)).toBeLessThan(1);
-  await expect(app.forge.reference.getByRole('button', {name: 'Change its words'})).toBeVisible();
+  await expect(app.forge.reference.getByRole('button', {name: 'Edit description'})).toBeVisible();
   await app.forge.paneSwitch.click();
   await app.page.reload();
   await app.settled();
@@ -271,7 +271,7 @@ test('a narrow window reaches the issues, the diff and the output from the searc
   for (const part of ['Issue', 'diff', 'Output'] as const) await expect(app.forge.kind(part)).toBeVisible();
   await app.forge.openDiff('README.md');
   await expect(app.forge.diffLine('Written in Forge.')).toBeVisible();
-  await app.forge.reference.getByRole('button', {name: /Put back README/}).focus();
+  await app.forge.reference.getByRole('button', {name: /Revert README/}).focus();
   // Escape: from what is read back to the box, then everything under it away.
   await app.page.keyboard.press('Escape');
   await expect(app.forge.search).toBeFocused();
@@ -281,18 +281,18 @@ test('a narrow window reaches the issues, the diff and the output from the searc
   await app.forge.search.click();
   await app.forge.kind('diff').click();
   await app.forge.search.fill('README');
-  await app.forge.results.getByRole('button', {name: 'The diff of README.md'}).click();
+  await app.forge.results.getByRole('button', {name: 'Diff of README.md'}).click();
   await expect(app.forge.diffLine('Written in Forge.')).toBeVisible();
 });
 
 test('what is searched and read lines up sideways: the one in hand fills the box, its neighbours a sliver past its edges, pressed to move to them', async ({app}) => {
   await app.forge.editFile('README.md', '# hello\n\nWritten in Forge.\n');
   await app.forge.find('Written');
-  await app.forge.results.getByRole('button', {name: 'The diff of README.md'}).click();
+  await app.forge.results.getByRole('button', {name: 'Diff of README.md'}).click();
   await expect(app.forge.diffLine('Written in Forge.')).toBeVisible();
   // The search it came from is at its left, a sliver, and ← under the box: pressed, the search is in hand again, as typed.
   await expect(app.forge.results.locator('.found-here')).toHaveText(/^diff\s*README\.md\s*2 \/ 2$/);
-  await app.forge.results.getByRole('button', {name: 'Searched Written', exact: true}).click();
+  await app.forge.results.getByRole('button', {name: 'Search history Written', exact: true}).click();
   await expect(app.forge.hit(/Written in Forge/)).toBeVisible();
   await expect(app.forge.search).toHaveValue('Written');
   await app.forge.results.getByRole('button', {name: 'diff README.md', exact: true}).click();
@@ -303,7 +303,7 @@ test('what is searched and read lines up sideways: the one in hand fills the box
   // Pressed with nothing typed: what was searched and read, newest first.
   await app.forge.search.fill('');
   await app.forge.search.click();
-  await expect(app.forge.results.locator('.found-item')).toHaveText([/^diff\s*README\.md$/, /^Searched\s*Written$/]);
+  await expect(app.forge.results.locator('.found-item')).toHaveText([/^diff\s*README\.md$/, /^Search history\s*Written$/]);
 });
 
 test('the plug opens a plain plugin area at the top of the center, and closes it', async ({app}) => {
@@ -407,8 +407,8 @@ test('the band\'s first button brings out the deeds for what is read now, under 
   // The files button first, ⊕ after the repos.
   const buttons = band.getByRole('button');
   const files = buttons.first();
-  await expect(files).toHaveAccessibleName('Files: new, rename, delete');
-  await expect(buttons.last()).toHaveAccessibleName(/^Bring every repo out/);
+  await expect(files).toHaveAccessibleName('Files: New, Rename, Delete');
+  await expect(buttons.last()).toHaveAccessibleName(/^Add all repos to band/);
   await files.click();
   // Its menu, under it, here: File stays where it is.
   const menu = app.page.getByRole('menu', {name: 'Makefile', exact: true});
@@ -422,16 +422,17 @@ test('the band\'s first button brings out the deeds for what is read now, under 
   await expect(menu).toBeHidden();
   await expect(files).toBeFocused();
 
-  // A new file from there is made in the folder of the file read now, and is the one to work on.
+  // A new file from there is made at once in the folder of the file read now, with its ending, and is the one to
+  // work on; its name is written in its head.
   await app.file.open('hello', 'src/main.c');
   await app.rail.go('forge');
   await files.click();
   const near = app.page.getByRole('menu', {name: 'main.c', exact: true});
   await near.getByRole('menuitem', {name: 'New file'}).click();
-  await near.getByRole('textbox').fill('util.c');
-  await near.getByRole('textbox').press('Enter');
-  await expect(app.forge.editor('src/util.c')).toBeFocused();
+  await expect(app.forge.editor('src/untitled.c')).toBeFocused();
   await expect(near).toBeHidden();
+  await app.forge.rename('src/untitled.c', 'src/util.c');
+  await expect(app.forge.editor('src/util.c')).toBeFocused();
 
   // Renamed (a path moves it), it is shown where it went.
   await files.click();
@@ -456,7 +457,7 @@ test('repos stand side by side: Ctrl+click or a pill dragged in opens one beside
   await app.newRepo.make('notes');
   await app.newRepo.make('site');
   await app.rail.go('forge');
-  const more = app.forge.band.getByRole('button', {name: /^Bring every repo out/});
+  const more = app.forge.band.getByRole('button', {name: /^Add all repos to band/});
   if (await more.isEnabled()) await more.click();
   const box = (n: string) => app.main.locator(`.col[data-repo="${n}"]`);
   const prompt = app.forge.promptBox;
@@ -481,7 +482,7 @@ test('repos stand side by side: Ctrl+click or a pill dragged in opens one beside
   expect(xs[1]).toBeLessThan(xs[2]);
 
   // Its × closes a box; the one worked on stays the one worked on.
-  await box('notes').getByRole('button', {name: 'Close notes beside'}).click();
+  await box('notes').getByRole('button', {name: 'Close adjacent notes'}).click();
   await expect(box('notes')).toBeHidden();
   await expect(box('site')).toHaveClass(/\bactive\b/);
   await expect(app.forge.band.getByRole('button', {name: 'notes', exact: true})).toBeVisible();
@@ -503,7 +504,7 @@ test('repos stand side by side: Ctrl+click or a pill dragged in opens one beside
 
 test('a file opened beside from its head is the one worked on, and has the keyboard, not the page it came from', async ({app}) => {
   await app.rail.go('forge');
-  await app.main.getByRole('button', {name: 'Open README.md beside'}).first().click();
+  await app.main.getByRole('button', {name: 'Open README.md to the side'}).first().click();
   const box = app.main.locator('.col[data-key="hello:README.md"]');
   await expect(box).toHaveClass(/\bactive\b/);
   // Its head's button only peeks once the page it was on is along the row: the keyboard is not given back there,
@@ -514,7 +515,12 @@ test('a file opened beside from its head is the one worked on, and has the keybo
 
 test('a file beside is only its head in its page; with the pane away the two stand whole and as wide, heads on one line; out, the Prompt\'s head is on that line', async ({app}) => {
   await app.rail.go('forge');
-  await app.main.getByRole('button', {name: 'Open README.md beside'}).first().click();
+  const dock = async () => { const b = (await app.main.locator('.dock').boundingBox())!; return [Math.round(b.x), Math.round(b.width)]; };
+  const before = await dock();
+  await app.main.getByRole('button', {name: 'Open README.md to the side'}).first().click();
+  // The prompt box stays where it was, under the hand: a box opened beside does not move it.
+  await expect(app.main.locator('.col:not([hidden])')).toHaveCount(2);
+  await expect.poll(dock).toEqual(before);
   // The page read from its top, so each box's head is where it stands unscrolled.
   await app.main.locator('.col[data-key="hello"] > .flow').evaluate((f) => { f.scrollTop = 0; });
   const rows = () => app.page.evaluate(() => {
@@ -525,12 +531,12 @@ test('a file beside is only its head in its page; with the pane away the two sta
       return {l: Math.round(b.left), w: Math.round(b.width), head: Math.round(head.top)};
     });
     const center = document.querySelector('.center')!.getBoundingClientRect();
-    const dock = document.querySelector('.dock')!.getBoundingClientRect(), active = document.querySelector('.col.active section.file')!.getBoundingClientRect();
+    const dock = document.querySelector('.dock')!.getBoundingClientRect();
     /** Where a line of text in it stands: its baseline. */
     const baseline = (el: Element) => { const m = document.createElement('span'); m.style.display = 'inline-block'; el.append(m); const y = m.getBoundingClientRect().bottom; m.remove(); return Math.round(y); };
     return {
       cols, inside: cols.every((c) => c.l >= center.left - 1 && c.l + c.w <= center.right + 1),
-      dock: [Math.round(dock.left - active.left), Math.round(dock.right - active.right)],
+      dock: [Math.round(dock.left - center.left), Math.round(center.right - dock.right)],
       prompt: baseline(document.querySelector('.term-box h2')!), file: baseline(document.querySelector('.col.active section.file > .path > span')!),
     };
   });
@@ -540,7 +546,7 @@ test('a file beside is only its head in its page; with the pane away the two sta
   await expect(inPage.getByRole('textbox')).toBeHidden();
   await app.forge.paneSwitch.click();
   await expect.poll(async () => { const r = await rows(); return [r.cols.length, r.inside, Math.abs(r.cols[0].w - r.cols[1].w) <= 1, r.cols[0].head === r.cols[1].head, r.dock]; })
-    .toEqual([2, true, true, true, [-12, 12]]);
+    .toEqual([2, true, true, true, [12, 12]]);
   await app.forge.paneSwitch.click();
   await expect.poll(async () => { const r = await rows(); return r.prompt - r.file; }).toBe(0);
   // Written on in its box, then that box closed: the page unfolds it again, with what was written showing whole
@@ -557,7 +563,7 @@ test('a file beside is only its head in its page; with the pane away the two sta
 
 test('Home says where one left off: the line last written, not the top of a page that only came back into view', async ({app}) => {
   await app.rail.go('forge');
-  await app.main.getByRole('button', {name: 'Open README.md beside'}).first().click();
+  await app.main.getByRole('button', {name: 'Open README.md to the side'}).first().click();
   const own = app.main.locator('.col[data-key="hello:README.md"]').getByRole('textbox', {name: 'Edit README.md'});
   await own.click();
   await app.page.keyboard.press('Control+End');
@@ -593,7 +599,7 @@ test('the prompt box stepped back while reading comes back when the pointer rest
 test('a pill dragged along the band lands where it is let go', async ({app}) => {
   await app.newRepo.make('notes');
   await app.rail.go('forge');
-  const more = app.forge.band.getByRole('button', {name: /^Bring every repo out/});
+  const more = app.forge.band.getByRole('button', {name: /^Add all repos to band/});
   if (await more.isEnabled()) await more.click();
   const names = () => app.forge.band.locator('.pill').evaluateAll((ps) => ps.map((p) => (p as HTMLElement).dataset.repo));
   const before = await names();
@@ -639,7 +645,7 @@ test('the row leans toward a box beside as far as the pointer goes into it, and 
   await app.newRepo.make('notes');
   await app.rail.go('forge');
   const box = (n: string) => app.main.locator(`.col[data-repo="${n}"]`);
-  const more = app.forge.band.getByRole('button', {name: /^Bring every repo out/});
+  const more = app.forge.band.getByRole('button', {name: /^Add all repos to band/});
   if (await more.isEnabled()) await more.click();
   await app.forge.band.getByRole('button', {name: 'hello', exact: true}).click();
   await app.forge.band.getByRole('button', {name: 'notes', exact: true}).click({modifiers: ['ControlOrMeta']});

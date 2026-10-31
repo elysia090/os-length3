@@ -3,7 +3,8 @@
 // thread and `this.call` the call ({nr, args, next, state}: state lasts
 // while the call waits and is made again).
 
-import {E, FsError} from './fs.mjs';
+import {move, zero} from './bulk.mjs';
+import {E, File, FsError} from './fs.mjs';
 import {Exec, Exit, Wait} from './process.mjs';
 import {CLD, SIG, send, writeInfo} from './signal.mjs';
 
@@ -140,9 +141,9 @@ function futex(p, uaddr, op, val, timeout, uaddr2, val3) {
         const bitset = cmd === 9 ? Number(BigInt.asIntN(32, val3)) : -1;
         if (!bitset) fail(E.INVAL);
         if (word(address) !== Number(BigInt.asIntN(32, val))) fail(E.AGAIN);
-        const w = s.waiter = {task: p.task, bitset, woken: false, address};
-        k.futexQueue(p.memory, address).add(w);
-        s.cancel = () => { k.futexes.get(p.memory)?.get(w.address)?.delete(w); };
+        const w = s.waiter = {task: p.task, bitset, woken: false, key: p.futexKey(address)};
+        k.futexQueue(w.key).add(w);
+        s.cancel = () => { k.futexes.get(w.key[0])?.get(w.key[1])?.delete(w); };
         if (N(timeout)) {
           const t = readTime(p, N(timeout));
           // WAIT: an interval; WAIT_BITSET: a time on its clock.
@@ -155,16 +156,16 @@ function futex(p, uaddr, op, val, timeout, uaddr2, val3) {
       if (s.deadline !== undefined && performance.now() >= s.deadline) { s.cancel(); fail(E.TIMEDOUT); }
       throw new Wait();
     }
-    case 1: return k.futexWake(p.memory, address, N(val), -1); // WAKE
+    case 1: return k.futexWake(p.futexKey(address), N(val), -1); // WAKE
     case 10: { // WAKE_BITSET
       const bitset = Number(BigInt.asIntN(32, val3));
       if (!bitset) fail(E.INVAL);
-      return k.futexWake(p.memory, address, N(val), bitset);
+      return k.futexWake(p.futexKey(address), N(val), bitset);
     }
     case 3: case 4: { // REQUEUE, CMP_REQUEUE
       if (cmd === 4 && word(address) !== Number(BigInt.asIntN(32, val3))) fail(E.AGAIN);
-      const woken = k.futexWake(p.memory, address, N(val), -1);
-      return woken + k.futexRequeue(p.memory, address, N(uaddr2), Number(BigInt.asUintN(32, timeout)));
+      const woken = k.futexWake(p.futexKey(address), N(val), -1);
+      return woken + k.futexRequeue(p.futexKey(address), p.futexKey(N(uaddr2)), Number(BigInt.asUintN(32, timeout)));
     }
     case 5: { // WAKE_OP
       const at2 = N(uaddr2), code = Number(BigInt.asUintN(32, val3));
@@ -175,9 +176,9 @@ function futex(p, uaddr, op, val, timeout, uaddr2, val3) {
       const next = [oparg, old + oparg, old | oparg, old & ~oparg, old ^ oparg][opcode];
       if (next === undefined) fail(E.NOSYS);
       p.view.setInt32(at2, next, true);
-      let woken = k.futexWake(p.memory, address, N(val), -1);
+      let woken = k.futexWake(p.futexKey(address), N(val), -1);
       const hit = [old === cmparg, old !== cmparg, old < cmparg, old <= cmparg, old > cmparg, old >= cmparg][cmp];
-      if (hit) woken += k.futexWake(p.memory, at2, Number(BigInt.asUintN(32, timeout)), -1);
+      if (hit) woken += k.futexWake(p.futexKey(at2), Number(BigInt.asUintN(32, timeout)), -1);
       return woken;
     }
     default: fail(E.NOSYS); // the priority-inheriting kinds
@@ -217,33 +218,65 @@ const cpus = () => Math.max(1, Math.min(64, globalThis.navigator?.hardwareConcur
 
 export const PROC_CALLS = {
   9(addr, len, prot, flags, fd, off) {
-    const length = N(len), fixed = N(flags) & 0x10, anonymous = N(flags) & 0x20;
+    const length = N(len), fixed = N(flags) & 0x10, anonymous = N(flags) & 0x20, shared = (N(flags) & 3) !== 2;
     if (length <= 0) fail(E.INVAL);
+    const d = anonymous ? null : this.fds.get(N(fd));
+    if (!anonymous && (!d || d.kind !== 'file')) fail(E.BADF);
     const start = fixed ? N(addr) : this.reserve(length);
     if (fixed) {
-      this.bytes.fill(0, start, start + length);
+      this.unmapShared(start, length);
+      if (start >= this.mapBase) this.cover(start + length);
+      zero(this.memory, start, start + length);
       if (start < this.mapBase) this.fixed.push({start, length});
     }
-    if (!anonymous) {
-      const d = this.fds.get(N(fd));
-      if (!d || d.kind !== 'file') fail(E.BADF);
+    if (d) {
       this.bytes.set(d.node.read(N(off), N(off) + length), start);
+      if (shared) this.mapShared(d.node, start, length, N(off));
+    } else if (shared) {
+      // Shared anonymous memory (what fork leaves shared): a file of its own, in no directory.
+      const node = new File();
+      node.truncate(length);
+      this.mapShared(node, start, length, 0);
     }
     return start;
   },
-  10() { return 0; },
-  11(addr, len) { this.release(N(addr), N(len)); return 0; },
+  // mprotect is not enforced. A program's read-only bytes made writable may change, so its memory is not given to the
+  // next run of it as holding them (Kernel.takeMemory).
+  10(addr, len, prot) {
+    const a = N(addr), b = a + N(len);
+    if (N(prot) & 2 && this.image?.facts.readOnly?.some(([x, y]) => a < y && x < b)) this.memory.imageOf = null;
+    return 0;
+  },
+  11(addr, len) { this.unmapShared(N(addr), N(len)); this.release(N(addr), N(len)); return 0; },
   12() { return this.mapBase; }, // brk never grows; libc then uses mmap
   24() { return 0; }, // sched_yield: the kernel gives another its turn first (process.mjs YIELDS)
   25(old, oldLength, newLength, flags) {
     const start = this.reserve(N(newLength));
-    this.bytes.copyWithin(start, N(old), N(old) + Math.min(N(oldLength), N(newLength)));
+    move(this.memory, start, N(old), Math.min(N(oldLength), N(newLength)));
+    // A shared file mapping moves with what it maps, and grows into more of the file.
+    const moved = this.maps.filter((m) => m.start === N(old));
+    this.unmapShared(N(old), N(oldLength));
+    for (const m of moved) {
+      if (N(newLength) > N(oldLength)) this.bytes.set(m.node.read(m.off + N(oldLength), m.off + N(newLength)), start + N(oldLength));
+      this.mapShared(m.node, start, N(newLength), m.off);
+    }
     this.release(N(old), N(oldLength));
     return start;
   },
-  26() { return 0; }, 27() { return 0; },
-  28(addr, len, advice) { // madvise: MADV_DONTNEED and MADV_FREE give back pages, which read as zero after (private anonymous memory)
-    if (N(advice) === 4 || N(advice) === 8) this.bytes.fill(0, N(addr), N(addr) + N(len));
+  26(addr, len) { for (const m of this.sharedIn(N(addr), N(len))) m.node.settle(m.off, m.off + m.length, m); return 0; }, // msync
+  27() { return 0; },
+  28(addr, len, advice) {
+    // madvise: MADV_DONTNEED and MADV_FREE give back pages. Private anonymous ones read as zero after; a shared file
+    // mapping's read as the file is (what was written through it is the file's already).
+    const a = N(addr), b = a + N(len);
+    if (N(advice) !== 4 && N(advice) !== 8) return 0;
+    const maps = this.sharedIn(a, N(len));
+    for (const m of maps) m.node.settle(m.off, m.off + m.length, m);
+    zero(this.memory, a, b);
+    for (const m of maps) {
+      const from = Math.max(a, m.start), to = Math.min(b, m.start + m.length);
+      this.bytes.set(m.node.read(m.off + from - m.start, m.off + to - m.start), from);
+    }
     return 0;
   },
   35(req, rem) { return sleepUntil(this, performance.now() + ms(readTime(this, N(req))), N(rem)); }, // nanosleep
@@ -282,8 +315,8 @@ export const PROC_CALLS = {
   },
   97(resource, limit) { this.view.setBigInt64(N(limit), -1n, true); this.view.setBigInt64(N(limit) + 8, -1n, true); return 0; },
   98(who, usage) { this.bytes.fill(0, N(usage), N(usage) + 144); return 0; },
-  99(info) { // sysinfo: the memory a process may have, what the kernel's processes hold of it, how many there are
-    const at = N(info), v = this.view, total = 4n << 30n, used = BigInt(this.kernel.memoryBytes());
+  99(info) { // sysinfo: the machine's memory (machine.mjs), what the kernel's processes hold of it, how many there are
+    const at = N(info), v = this.view, total = BigInt(this.kernel.machine.memory), used = BigInt(this.kernel.memoryBytes());
     this.bytes.fill(0, at, at + 112);
     v.setBigInt64(at, BigInt(Math.floor(performance.now() / 1000)), true); // uptime
     v.setBigUint64(at + 32, total, true); // totalram

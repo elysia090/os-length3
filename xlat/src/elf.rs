@@ -67,10 +67,14 @@ pub struct Elf {
     pub symbols: Vec<Symbol>,
     /// Absolute targets of relocations: every place the link stored an address.
     pub relocation_targets: Vec<u64>,
-    /// A static-pie's pointers as its startup finds them (the dynamic segment's RELA rows), where no section says
-    /// them: a post-link tool keeps no section headers but the symbol table. Read only to translate the whole
-    /// program ahead of time (discover::discover_whole).
-    pub dynamic_pointers: Vec<u64>,
+    /// Pointers to code stored in its data, where no relocation section says them: a static-pie's as its startup
+    /// finds them (the dynamic segment's RELA rows; a post-link tool keeps no section headers but the symbol table),
+    /// or, in a program neither position-independent nor keeping relocations, every aligned eight bytes of its data
+    /// that are an address in its code (its function tables, .init_array). Read only to translate the whole program
+    /// ahead of time (discover::discover_whole): one that is not a pointer adds code that never runs.
+    pub data_pointers: Vec<u64>,
+    /// Loaded where it says (ET_EXEC), its code's addresses numbers in it (a function passed as `mov $f, %edi`).
+    pub fixed: bool,
     /// Loaded addresses holding a 32-bit PC-relative value: the entries of
     /// position-relative jump tables, among others.
     pub relative_slots: Vec<u64>,
@@ -202,7 +206,7 @@ impl Elf {
         let mut relocation_targets = Vec::new();
         let mut relative_slots = Vec::new();
         let mut relocations_read = false;
-        let mut dynamic_pointers = Vec::new();
+        let mut data_pointers = Vec::new();
         for i in 0..shnum {
             let at = row(shoff, i, shentsize)?;
             let kind = r.u32(at + 4)?;
@@ -289,16 +293,24 @@ impl Elf {
                 Some(s.offset + (at - s.vaddr))
             };
             if let Some(at) = rela.and_then(held).filter(|_| entsize >= 24) {
-                pointers_of(&r, at, size, entsize, base, &mut dynamic_pointers)?;
+                pointers_of(&r, at, size, entsize, base, &mut data_pointers)?;
             }
         }
-        dynamic_pointers.sort_unstable();
-        dynamic_pointers.dedup();
+        let is_code = |a: u64| segments.iter().any(|s| s.executable && a >= s.vaddr && a < s.vaddr + s.data.len() as u64);
+        if !pie && relocation_targets.is_empty() && relative_slots.is_empty() {
+            for s in segments.iter().filter(|s| !s.executable) {
+                let skip = s.vaddr.next_multiple_of(8) - s.vaddr;
+                let words = s.data.get(skip as usize..).unwrap_or(&[]).chunks_exact(8);
+                data_pointers.extend(words.map(|w| u64::from_le_bytes(w.try_into().unwrap())).filter(|&a| is_code(a)));
+            }
+        }
+        data_pointers.sort_unstable();
+        data_pointers.dedup();
         relocation_targets.sort_unstable();
         relocation_targets.dedup();
         relative_slots.sort_unstable();
         relative_slots.dedup();
-        let mut elf = Elf { entry, segments, symbols, relocation_targets, dynamic_pointers, relative_slots, tls, phoff, phnum };
+        let mut elf = Elf { entry, segments, symbols, relocation_targets, data_pointers, fixed: !pie, relative_slots, tls, phoff, phnum };
         // Slots inside code are rip-relative operands, not data tables.
         let slots = std::mem::take(&mut elf.relative_slots);
         elf.relative_slots = slots.into_iter().filter(|&p| !elf.is_code(p) && elf.read_i32(p).is_some()).collect();
@@ -318,6 +330,13 @@ impl Elf {
         let s = self.segments.iter().find(|s| address >= s.vaddr && address + 4 <= s.vaddr + s.data.len() as u64)?;
         let at = (address - s.vaddr) as usize;
         Some(i32::from_le_bytes(s.data[at..at + 4].try_into().unwrap()))
+    }
+
+    /// The 64-bit value stored at a loaded address, if initialized there.
+    pub fn read_u64(&self, address: u64) -> Option<u64> {
+        let s = self.segments.iter().find(|s| address >= s.vaddr && address.checked_add(8).is_some_and(|end| end <= s.vaddr + s.data.len() as u64))?;
+        let at = (address - s.vaddr) as usize;
+        Some(u64::from_le_bytes(s.data[at..at + 8].try_into().unwrap()))
     }
 
     pub fn is_code(&self, address: u64) -> bool {

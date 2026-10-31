@@ -126,7 +126,7 @@ export async function addByName(s: Pick<Server, 'id' | 'name'>, typed: string, p
   const tryAdd = () => ways.add(s.id, address).then(() => true, (e: unknown) => { if (e instanceof RemoteError && e.status === 403) return false; throw e; });
   // In at once, they are told by the Remote itself (a notice in their Inbox, service/servers.ts).
   if (await tryAdd()) return {address, is: 'in'};
-  const r = await ways.ask(address, t('I would like to add you to {server}. Accept me in your Inbox and you are in it.', {server: s.name}), s.id);
+  const r = await ways.ask(address, t('You are invited to join {server}. Accept the invite in your Inbox to join.', {server: s.name}), s.id);
   // They had accepted one: writing to them accepted them back, so the two know each other now.
   if (!r.request && await tryAdd()) return {address, is: 'in'};
   return {address, is: 'asked'};

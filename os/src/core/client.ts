@@ -68,7 +68,7 @@ const answered = (id: number, answer: Answer) => {
 };
 
 /** What only reads this device's files (core/worker.ts READS, less what may ask the Remote): the reader may answer it. */
-const ANYWHERE = new Set(['repo_list', 'repo_tree', 'repo_read', 'repo_bytes', 'state_get', 'capacity']);
+const ANYWHERE = new Set(['repo_list', 'repo_names', 'repo_tree', 'repo_read', 'repo_bytes', 'state_get', 'capacity']);
 /** What may wait on the Remote: while one is asked of the worker, what only reads goes to the reader. */
 const REMOTE = /^(sync_repo|repo_fetch|home_sync|remote_(?!status$)|history_(push|submit|reset|log|cut)$|change_|changes_list$|work_(lines|start|switch|standings)$|issue_commit$|issues_settle$|plan_page$|app_page$)/;
 /** The calls asked of the worker that may wait on the Remote, and how many there are. */
@@ -118,14 +118,41 @@ function started(): Worker {
   // Another tab's core wrote: what this tab shows is read again.
   if (typeof BroadcastChannel === 'function') {
     new BroadcastChannel('length3-core').onmessage = (e: MessageEvent<{from?: string; paths?: string[]}>) => {
-      if (e.data?.from !== tab) for (const fn of [...heard]) fn(e.data?.paths ?? []);
+      if (e.data?.from !== tab) { sharing.clear(); for (const fn of [...heard]) fn(e.data?.paths ?? []); }
     };
   }
   return worker = w;
 }
 
+/**
+ * Start this tab's worker now, before anything is asked (start.ts, as the page's first script runs): it fetches and
+ * compiles the core's module while the app's own code arrives. What the page tells it of where it runs after
+ * (setEnvironment) reaches it before the first question, as every message does.
+ */
+export function start(): void { started(); }
+
+/**
+ * What only reads and changes nothing a read sees: asked again while the same is on its way (Home and its pane each
+ * list the repos as they draw), it is answered by the one asked first, each asker given its own copy.
+ */
+const SHARED = new Set([...ANYWHERE, 'remote_status', 'agents', 'history_changes', 'history_changed']);
+const sharing = new Map<string, Promise<Answer>>();
+
 /** Ask the core in this tab's worker: sent once this turn of the page is done asking, with what else it asked. */
-export const ask: Ask = (name, args) => new Promise<Answer>((resolve, reject) => {
+export const ask: Ask = (name, args) => {
+  // Anything else may change what a read sees: a read asked after it is its own, never one asked before it.
+  if (!SHARED.has(name)) { sharing.clear(); return asked(name, args); }
+  const key = `${name}\n${JSON.stringify(args)}`;
+  const was = sharing.get(key);
+  if (was) return was.then((a) => structuredClone(a));
+  const p = asked(name, args);
+  sharing.set(key, p);
+  const done = () => { if (sharing.get(key) === p) sharing.delete(key); };
+  p.then(done, done);
+  return p;
+};
+
+const asked: Ask = (name, args) => new Promise<Answer>((resolve, reject) => {
   started();
   const id = next++;
   waiting.set(id, {resolve, reject});

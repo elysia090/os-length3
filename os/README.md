@@ -507,6 +507,12 @@ with Web Crypto); tests and dev never reach it. To connect it:
 4. The customer portal turned on in Stripe (Settings → Billing → Customer
    portal), with cancelling allowed, and switching plans allowed among the
    three products (the Plan opens it at the step that changes the tier).
+5. Checkout and the portal branded as the OS is (the Dashboard's Settings →
+   Branding, and Checkout's appearance): the icon `src-tauri/icons/128x128.png`,
+   background `#f9f8f5` (its paper), button `#2c2a27` (its ink), rounded
+   corners, Inter. Chosen in mock rounds among what Stripe lets be set; the
+   stand-in draws the same (`service/devbilling.ts` LOOK), so what dev and the
+   selftests show is what a person paying sees.
 
 Each event is taken once by its id (kept 30 days in `billing_event`; one
 made longer ago is not taken) and in the order Stripe made it; a payment
@@ -576,9 +582,10 @@ Linux needs the WebKitGTK toolchain:
 and `libgles2` to bundle the AppImage (`scripts/desktop.sh` puts it inside).
 The web app runs the same core as the desktop app (`core/`, built for the
 browser by `core/web`), so every web build of the page needs Rust with
-`rustup target add wasm32-wasip1`; Vite builds it when `core/` changed, and
-says that command when the target is missing. The desktop app's build does
-not: its core is the app's own.
+`rustup target add wasm32-wasip1`; Vite builds it when `core/` changed (with
+Cargo's `web` profile: the release's, built small, as every browser fetches it
+before the page can draw), and says that command when the target is missing.
+The desktop app's build does not: its core is the app's own.
 
 ### Where the page's code is
 
@@ -587,6 +594,7 @@ tests stand beside it (`x.test.ts`).
 
 | Folder | What is in it |
 | --- | --- |
+| `start.ts` | the page's first script: starts the core's worker, then runs the shell once the page is read |
 | `main.ts` | the shell: the rail, the page drawn for each place, the moves between them |
 | `pages/` | each place on the rail and its parts; Forge, Git, Server, Remote and Runtime have folders of their own, and `bench/` is the work bench Forge and Git stand on (the box, the Prompt's screen and terminal) |
 | `ui/` | what every page draws and moves with: elements (`dom.ts`), motion (`glide.ts`), the caret, focus, touch, icons |
@@ -605,7 +613,9 @@ A repo, its history, the Remote's sync and Home's settings are the core's
 (`core/src/api.rs`): the app asks it through one Tauri command, and a page
 asks the very same code, built for `wasm32-wasip1`, in a worker of its own
 (`src/core/worker.ts`, `src/core/wasi.ts`) over files the browser keeps in
-IndexedDB. A page calls `core(name, args)` (`src/app/host.ts`) either way and
+IndexedDB: what a listing needs of each file at once, its bytes when the core
+first wants them (`src/core/loader.ts`, read while the core waits, a repo
+read whole when a call goes over all of it). A page calls `core(name, args)` (`src/app/host.ts`) either way and
 gets the same answers, the Remote's refusals included. Tabs of one browser
 take turns under one Web Lock and tell each other each file they wrote.
 Tests run it too: `src/testing/node-core.ts` is the same module in a Node worker,
@@ -726,4 +736,6 @@ person does, and it asserts what they then see. Writing one:
   held: `app.forge.writeOn(…)`, `lookUntil(…)`, `writingDone()`.
 
 Icons in `src-tauri/icons` are generated from `src-tauri/icon.svg` with
-`npx tauri icon src-tauri/icon.svg -o src-tauri/icons`.
+`npx tauri icon src-tauri/icon.svg -o src-tauri/icons` (its 32, 128, 256 and 512
+pixel PNGs, `.icns` and `.ico` are the ones kept); the web page's icon is that
+SVG itself (`index.html`).

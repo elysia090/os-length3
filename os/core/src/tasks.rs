@@ -210,7 +210,7 @@ pub fn set_agent(harness: Option<&str>) -> Result<()> {
 
 /// The agent as a person knows it.
 pub fn agent_name(harness: &str) -> String {
-    match harness { "claude" => "Claude Code".into(), "grok" => "Grok Build".into(), "dsh" => "DeepSeek Harness".into(), "codex" => "Codex".into(), h => h.into() }
+    match harness { "box" => "Agent".into(), "claude" => "Claude Code".into(), "grok" => "Grok Build".into(), "dsh" => "DeepSeek Harness".into(), "codex" => "Codex".into(), h => h.into() }
 }
 
 /// How the agent is run in a Prompt, told `$L3_TASK` (and `$L3_RESUME`, its session to go on in): the first line of

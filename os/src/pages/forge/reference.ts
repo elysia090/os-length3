@@ -6,7 +6,8 @@ import {issuePath, readIssues, type Issue} from '../../repos/issues.ts';
 import {t} from '../../i18n.ts';
 import {onChange, onRenamed, rekey, store} from '../../repos/repos.ts';
 import {stillAt} from '../../repos/search.ts';
-import {sessionIfAny, type Run} from '../bench/terminal.ts';
+import type {Run} from '../bench/terminal.ts';
+import {sessionIfAny} from '../bench/sessions.ts';
 import {errorText} from '../../app/errors.ts';
 import {diffButton, issueButton, issueLabel, issueOne, KINDS, markedDiff, openIssues, runButton, runView, type Kind} from './kinds.ts';
 import {foundView, patched, readAll, search, type Files} from './found.ts';
@@ -100,13 +101,13 @@ export class Reference {
     const n = ++made;
     this.query = h('input', {type: 'search', class: 'search-in', placeholder: t('Search this repo'),
       'aria-label': t('Search this repo'), autocomplete: 'off', spellcheck: 'false', 'aria-controls': `found-${n}`}) as HTMLInputElement;
-    const pillRow = h('div', {class: 'search-pills', role: 'group', 'aria-label': t('What to look in')}, ...KINDS.map(({kind, label}) => {
+    const pillRow = h('div', {class: 'search-pills', role: 'group', 'aria-label': t('Search target')}, ...KINDS.map(({kind, label}) => {
       const b = h('button', {type: 'button', class: 'chip pill-kind', 'aria-pressed': 'false'}, label()) as HTMLButtonElement;
       b.addEventListener('click', () => this.press(kind));
       this.pillButtons.set(kind, b);
       return b;
     }));
-    this.heads = h('div', {class: 'pane-heads', role: 'group', 'aria-label': t('What to look in')}, ...KINDS.map(({kind, label}) => {
+    this.heads = h('div', {class: 'pane-heads', role: 'group', 'aria-label': t('Search target')}, ...KINDS.map(({kind, label}) => {
       const b = h('button', {type: 'button', class: 'pane-head', 'aria-pressed': 'false'}, label(), kind === 'diff' ? h('span', {class: 'pane-head-n'}) : null) as HTMLButtonElement;
       b.addEventListener('click', () => this.fromHead(kind));
       this.headButtons.set(kind, b);
@@ -279,7 +280,7 @@ export class Reference {
   private countChanges() {
     clearTimeout(this.countTimer);
     const repo = this.repo;
-    this.countTimer = window.setTimeout(() => void (repo ? gitops.changes(repo).then((c) => c.files, () => 0) : Promise.resolve(0)).then((n) => {
+    this.countTimer = window.setTimeout(() => void (repo ? gitops.changed(repo).catch(() => 0) : Promise.resolve(0)).then((n) => {
       const at = this.headButtons.get('diff')?.querySelector('.pane-head-n');
       if (at && repo === this.repo) at.textContent = n ? String(n) : '';
     }), 300);
@@ -347,7 +348,7 @@ export class Reference {
   private frame(at: Seen | null, live: Live | null) {
     const line = live?.alone ? [] : seenIn(this.repo ?? '').filter((s) => s.what !== 'file');
     // What is typed is already in the line: that place is the one in hand, not another card at its end.
-    const typed = live && !live.alone && live.kind === t('Searched') ? line.findIndex((s) => s.what === 'query' && s.text === live.label) : -1;
+    const typed = live && !live.alone && live.kind === t('Search history') ? line.findIndex((s) => s.what === 'query' && s.text === live.label) : -1;
     const slots: Slot[] = line.map((s) => ({kind: seenKind(s), label: seenLabel(s), go: () => void this.again(s)}));
     let k = at ? line.findIndex((s) => seenKey(s) === seenKey(at)) : typed;
     if (k < 0 && live) { slots.push({kind: live.kind, label: live.label, go: () => { this.close(); void this.draw(); }}); k = slots.length - 1; }
@@ -387,14 +388,14 @@ export class Reference {
     if (this.reading) return;
     const query = this.query.value.trim();
     const repo = this.repo;
-    if (!repo) { this.panel.replaceChildren(h('p', {class: 'muted small'}, t('Open a repo to search it'))); return; }
-    if (query) { this.frame(null, {kind: t('Searched'), label: query}); return this.find(query); }
+    if (!repo) { this.panel.replaceChildren(h('p', {class: 'muted small'}, t('Open a repo to search'))); return; }
+    if (query) { this.frame(null, {kind: t('Search history'), label: query}); return this.find(query); }
     const kind = this.pill;
     if (kind) { this.frame(null, {kind: KINDS.find((k) => k.kind === kind)!.label(), label: ''}); return this.list(kind); }
     // Nothing typed, nothing pressed: what was searched and read here, newest first.
-    this.frame(null, {kind: t('Searched and read'), label: '', alone: true});
+    this.frame(null, {kind: t('Search and history'), label: '', alone: true});
     const seen = seenIn(repo).slice().reverse();
-    if (!seen.length) { this.body.replaceChildren(h('p', {class: 'muted small'}, t('What is searched and read here comes back here'))); return; }
+    if (!seen.length) { this.body.replaceChildren(h('p', {class: 'muted small'}, t('Searched and viewed items appear here'))); return; }
     this.body.replaceChildren(h('ul', {class: 'found-list'}, ...seen.map((s) => h('li', {}, seenButton(s, (x) => void this.again(x))))));
   }
 
@@ -407,7 +408,7 @@ export class Reference {
     if (s.what === 'run') {
       const r = (sessionIfAny(repo)?.runs ?? []).find((x) => x.started === s.started);
       if (r) this.readRun(r);
-      else { this.open(s, (into) => { into.replaceChildren(h('p', {class: 'muted small'}, t('That run is no longer here'))); }); }
+      else { this.open(s, (into) => { into.replaceChildren(h('p', {class: 'muted small'}, t('Run output no longer available'))); }); }
       return;
     }
     const issue = (await openIssues(repo).catch(() => [])).find((i) => issuePath(i) === s.path)
@@ -433,7 +434,7 @@ export class Reference {
       const said = h('p', {class: 'muted small'}, all.length ? t('No open issues') : t('No issues yet'));
       // The way to the first one is where its absence is said, for this repo, with nothing to choose again.
       const write = this.writeIssue;
-      const w = write ? h('button', {type: 'button', class: 'button small-button choice'}, t('Write an issue')) : null;
+      const w = write ? h('button', {type: 'button', class: 'button small-button choice'}, t('Create issue')) : null;
       w?.addEventListener('click', () => write!(repo));
       this.body.replaceChildren(said, ...(w ? [w] : []));
       return;
@@ -458,7 +459,7 @@ export class Reference {
     const draw = () => {
       if (this.listGone(repo, 'output')) return;
       const runs = session?.runs ?? [];
-      if (!runs.length) { this.body.replaceChildren(h('p', {class: 'muted small'}, t('Nothing run yet'))); return; }
+      if (!runs.length) { this.body.replaceChildren(h('p', {class: 'muted small'}, t('No runs yet'))); return; }
       this.body.replaceChildren(h('ul', {class: 'found-list'}, ...runs.slice().reverse().map((r) => h('li', {}, runButton(r, (x) => this.readRun(x))))));
     };
     draw();
@@ -517,7 +518,7 @@ export class Reference {
     try {
       [files, issues, changed] = await Promise.all([this.files, openIssues(repo).catch(() => []),
         gitops.changes(repo).then((c) => c.folders.flatMap((f) => f.files), () => [])]);
-    } catch (e) { this.body.replaceChildren(h('p', {class: 'muted small'}, t('Could not search: {message}', {message: String(e)}))); return; }
+    } catch (e) { this.body.replaceChildren(h('p', {class: 'muted small'}, t('Search failed: {message}', {message: String(e)}))); return; }
     if (run !== this.found || repo !== this.repo || this.reading) return;
     const said = foundView(search(query, kind, files, issues, changed, sessionIfAny(repo)?.runs ?? []), query, changed, {
       file: (path) => { this.remember({what: 'query', text: query}); this.remember({what: 'file', path}); this.events.reveal(path, 0, true); },
@@ -526,7 +527,7 @@ export class Reference {
       issue: (i) => this.readIssue(i),
       run: (r) => this.readRun(r),
     });
-    if (!said.length) { this.body.replaceChildren(h('p', {class: 'muted small'}, t('Nothing found for “{query}”', {query}))); return; }
+    if (!said.length) { this.body.replaceChildren(h('p', {class: 'muted small'}, t('No results found for "{query}"', {query}))); return; }
     const had = this.choices().indexOf(document.activeElement as HTMLElement);
     // Come in place of Searching… (not redrawn as one types on), what was found comes down the page, a group a beat
     // after the one above it, as its marks are stroked: not the whole sheet in one frame.

@@ -21,10 +21,10 @@ test('with no files on the Remote, l3 signs in, keeps Home there, and keeps a re
 
   const made = laptop.l3(['repo', 'new', 'kept', '-t', 'empty']);
   assert.equal(made.code, 0, made.err);
-  assert.match(made.err, /kept is not sent yet: The Remote cannot hold files just now; your work stays on this device; it goes after a later command/);
+  assert.match(made.err, /kept is not sent yet: Remote cannot accept files right now; changes stay on this device; it goes after a later command/);
   const wrote = laptop.l3(['file', 'write', 'kept/notes.md'], 'here\n');
   assert.equal(wrote.code, 0, wrote.err);
-  assert.match(wrote.err, /kept is not sent yet: The Remote cannot hold files just now/);
+  assert.match(wrote.err, /kept is not sent yet: Remote cannot accept files right now/);
   assert.equal(laptop.l3(['file', 'kept/notes.md']).out, 'here\n');
   // The Remote holds nothing of it, and the device has agreed nothing: it is all still to send.
   assert.equal((await r.api(ren, 'GET', '/v1/repos/kept')).status, 404);

@@ -55,7 +55,7 @@ export function repoSection(ctx: Context, counted: (n: number) => void, keyed: (
   const ended = () => paint(true);
   // Asked of this page by the app (…/?account=off&repo=NAME): once it is done, said here, and that the app shows it.
   const over = (name: string, kind: Deed) => (asked?.repo === name && asked.ask === kind ? () => ended().then(() => {
-    if (doneTo(name, kind)) { asked = null; said.textContent = t('Done. Go back to the app: it shows it there.'); }
+    if (doneTo(name, kind)) { asked = null; said.textContent = t('Done. Return to the app to view changes.'); }
   }) : ended);
   const ways: CardWays = {
     forge: (name) => ctx.openRepo(name), toPlan, paint: () => paint(), makeServer: () => ctx.go('server'),
@@ -84,8 +84,8 @@ export function repoSection(ctx: Context, counted: (n: number) => void, keyed: (
     const at = cardOf(grid, asked.repo!);
     const press = at?.querySelector<HTMLButtonElement>(asked.ask === 'off' ? '.power[aria-checked="true"]' : '.discard');
     if (press && !press.disabled) { at!.scrollIntoView({block: 'center'}); press.click(); return; }
-    said.textContent = asked.ask === 'off' ? t('{repo} is not on here to turn off: it is off already, or on another account.', {repo: asked.repo!})
-      : t('{repo} is not here to discard: it is gone already, on, or on another account.', {repo: asked.repo!});
+    said.textContent = asked.ask === 'off' ? t('Cannot disable {repo}: already disabled or belongs to another account.', {repo: asked.repo!})
+      : t('Cannot delete {repo}: already deleted, currently active, or on another account.', {repo: asked.repo!});
     asked = null;
   };
   void look().then(() => paint()).then(settled).then(pressAsked);

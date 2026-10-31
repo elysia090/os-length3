@@ -1,6 +1,8 @@
 //! `xlat [--whole] INPUT.elf OUTPUT.wasm` — translate a static x86-64 Linux
 //! program: what it runs first, or with --whole all of it, ahead of time
 //! (discover::discover_whole).
+//! `xlat --seeds=SEEDS INPUT.elf OUTPUT.wasm` — as the first, and from the function starts listed in SEEDS (one
+//! address a line) too: a program with the code its runs reached later, in one module.
 //! `xlat --more=SEEDS --known=KNOWN --base=N INPUT.elf OUTPUT.wasm` — code
 //! reached later from the addresses in SEEDS (one per line), past what
 //! KNOWN lists as translated, as a module filling table slots from N.
@@ -34,7 +36,13 @@ fn main() -> ExitCode {
         let program = xlat::discover::discover_within(&elf, &list(Some(seeds)), &known, xlat::discover::BUDGET);
         xlat::lower::translate_more(&program, base, xlat::lower::Options { trace })
     } else {
-        let program = if args.iter().any(|a| a == "--whole") { xlat::discover::discover_whole(&elf) } else { xlat::discover::discover(&elf) };
+        let program = if args.iter().any(|a| a == "--whole") {
+            xlat::discover::discover_whole(&elf)
+        } else if let Some(seeds) = flag("seeds") {
+            xlat::discover::discover_seeded(&elf, &list(Some(seeds)))
+        } else {
+            xlat::discover::discover(&elf)
+        };
         xlat::lower::translate(&elf, &program, xlat::lower::Options { trace })
     };
     if let Err(e) = std::fs::write(output, &translation.wasm) {

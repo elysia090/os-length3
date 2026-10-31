@@ -6,7 +6,7 @@ import {core} from '../app/host.ts';
 import {home, onElsewhere} from '../core/client.ts';
 import shared from '../../shared/templates.json' with {type: 'json'};
 
-interface RepoSummary {
+export interface RepoSummary {
   name: string;
   files: number;
   bytes: number;
@@ -34,7 +34,10 @@ export type Template = string;
 export const EDIT_LIMIT = 256 * 1024;
 
 export interface RepoStore {
+  /** Each repo with its size and when it last changed: every one walked to say so. */
   list(): Promise<RepoSummary[]>;
+  /** The repos' names, in order, and nothing walked: what only names them, or looks for one, asks. */
+  names(): Promise<string[]>;
   create(name: string, template: Template): Promise<RepoSummary>;
   tree(repo: string, path: string): Promise<Entry[]>;
   read(repo: string, path: string): Promise<Contents>;
@@ -97,6 +100,7 @@ export function validName(name: string): boolean {
 
 class CoreStore implements RepoStore {
   list() { return core<RepoSummary[]>('repo_list'); }
+  names() { return core<string[]>('repo_names'); }
   create(name: string, template: Template) { return core<RepoSummary>('repo_create', {name, template}); }
   tree(repo: string, path: string) { return core<Entry[]>('repo_tree', {repo, path}); }
   read(repo: string, path: string) { return core<Contents>('repo_read', {repo, path}); }
@@ -164,6 +168,7 @@ class Observed implements RepoStore {
   constructor(inner: RepoStore) { this.inner = inner; }
   private tell(c: Change) { this.changes.dispatchEvent(new CustomEvent<Change>('change', {detail: c})); }
   list() { return this.inner.list(); }
+  names() { return this.inner.names(); }
   tree(repo: string, path: string) { return this.inner.tree(repo, path); }
   read(repo: string, path: string) { return this.inner.read(repo, path); }
   bytes(repo: string, path: string) { return this.inner.bytes(repo, path); }

@@ -140,7 +140,7 @@ test('a copy in step is never taken apart by a Remote that does not have it: dis
   // Discarded on another device (turned off, then for good): nothing here is taken for removed, nor called in step.
   await db.execute(sql`update repo set off_at = now() where name = 'kept'`);
   await purge(db, sql`r.name = 'kept'`);
-  await assert.rejects(draft.sync('kept'), /discarded on the Remote/);
+  await assert.rejects(draft.sync('kept'), /Repo deleted on Remote/);
   assert.deepEqual(await files(), before);
   assert.equal(await text('kept', 'README.md'), '# kept\n');
   // Someone else signed in on this browser: not theirs to take apart either.
@@ -228,7 +228,7 @@ test('a change that cannot get in, round after round, is said so and not taken f
     return real(url, init);
   }) as typeof fetch;
   try {
-    await assert.rejects(draft.sync('busy'), /kept moving/);
+    await assert.rejects(draft.sync('busy'), /Remote modified concurrently/);
     await assert.rejects(draft.syncHome('todo'), /kept changing/);
   } finally { globalThis.fetch = real; }
   assert.equal((await draft.status()).find((x) => x.name === 'busy')?.changed, 1);

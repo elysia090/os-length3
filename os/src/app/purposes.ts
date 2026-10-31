@@ -24,30 +24,30 @@ export interface Purpose {
 
 export const PURPOSES: readonly Purpose[] = [
   {id: 'home', label: 'Home', role: 'Profile',
-    detail: 'A page that reads the same to you and to anyone else, with your repos and servers.', implemented: true},
-  {id: 'file', label: 'File', role: 'The tree of /',
-    detail: 'Opens the whole system\'s / over the current page. Choosing something inside a repo opens it there in Forge.', implemented: true},
-  {id: 'forge', label: 'Forge', role: 'Your workshop',
-    detail: 'Edit the files of the repos in the band as one continuous page, with Reference and Prompt on the right.', implemented: true},
+    detail: 'A public profile page showing your repos and servers.', implemented: true},
+  {id: 'file', label: 'File', role: 'Directory tree (/)',
+    detail: 'Opens the system root (/) over the current page. Selecting a repo file opens it in Forge.', implemented: true},
+  {id: 'forge', label: 'Forge', role: 'Workspace',
+    detail: 'Edit files from repos in the band in a continuous view, with Reference and Prompt on the right.', implemented: true},
   {id: 'git', label: 'Git', role: 'Issues and commits',
-    detail: 'Work Issue by Issue: commit, push, and hand it to main as a Change. Changes that come in are settled with Merge or Reject.', implemented: true},
-  {id: 'runtime', label: 'Runtime', role: 'This device and its environments',
-    detail: 'What this device holds, largest first. What can be freed is freed right there. The active environments too.', implemented: true},
-  {id: 'remote', label: 'Remote', role: 'Where your repos are kept',
-    detail: 'Where your repos are kept. What you change is sent at once, and committing makes it history. Devices and passkeys are here too.', implemented: true},
+    detail: 'Work by Issue: commit, push, and submit to main as a Change. Review incoming Changes to Merge or Reject.', implemented: true},
+  {id: 'runtime', label: 'Runtime', role: 'This device and environments',
+    detail: 'Storage usage by size. Free up space instantly. Manage active environments.', implemented: true},
+  {id: 'remote', label: 'Remote', role: 'Repo storage',
+    detail: 'Where your repos are kept. Changes sync instantly; commits record history. Manage devices and passkeys.', implemented: true},
   // Under the cloud: the people one knows, on the Remote, with what they show of their repos.
-  {id: 'server', label: 'Server', role: 'People you know',
-    detail: 'A group of people you know. Each board is a conversation and a TODO kept together.', implemented: true},
-  {id: 'inbox', label: 'Inbox', role: 'Messages to you',
-    detail: 'Review requests, changes, questions and more, each with what it is about and what to do.', implemented: true},
+  {id: 'server', label: 'Server', role: 'Contacts',
+    detail: 'A group workspace. Each board combines discussions and a shared TODO list.', implemented: true},
+  {id: 'inbox', label: 'Inbox', role: 'Notifications',
+    detail: 'Review requests, Changes, and questions, with context and action items.', implemented: true},
   // The plug: an area at the top of the center, opened over the work rather than a page of its own.
   {id: 'plugin', label: 'Plugin', role: 'Optional plugins',
-    detail: 'Opens the plugin area at the top of the center: plain until it is opened, up to seven plugins side by side.', implemented: true},
+    detail: 'Opens the top plugin bar. Hidden until toggled; holds up to seven plugins side by side.', implemented: true},
 ];
 
 /** The round + under the rail's places: create a repo, not a purpose view. */
-export const NEW_REPO: Purpose = {id: 'new-repo', label: 'New repo', role: 'Make a repo',
-  detail: 'Choose a standard repo template and make it as an independent repo.', implemented: true};
+export const NEW_REPO: Purpose = {id: 'new-repo', label: 'New repo', role: 'Create a repo',
+  detail: 'Choose a standard template to create a standalone repo.', implemented: true};
 
 /** Rail order, top to bottom, as keyboard navigation walks it. */
 export const RAIL: readonly Purpose[] = [...PURPOSES, NEW_REPO];

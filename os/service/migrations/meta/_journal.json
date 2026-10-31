@@ -134,6 +134,48 @@
       "when": 1793343335113,
       "tag": "0018_contract_turning_off_asks_no_code",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793343336113,
+      "tag": "0019_blob_stored_at_commit",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1793402467201,
+      "tag": "0020_commits_as_changes",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1793408700949,
+      "tag": "0021_line_changes",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1793410760806,
+      "tag": "0022_draft_as_rows",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1793414723944,
+      "tag": "0023_tree_nodes",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1793414772429,
+      "tag": "0024_contract_draft_as_rows",
+      "breakpoints": true
     }
   ]
 }

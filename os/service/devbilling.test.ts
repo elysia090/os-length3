@@ -31,8 +31,8 @@ const post = (url: string, body?: unknown) => at(url, body === undefined ? {meth
   : {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
 const card = (number: string, o: Record<string, string> = {}) => ({email: 'ada@example.com', number, exp: '12 / 34', cvc: '123', name: 'Ada', country: 'US', ...o});
 const planOf = async (t: string) => (await r.call('GET', '/v1/plan', {token: t})).json as Record<string, unknown>;
-async function checkout(t: string, tier: string) {
-  const made = await r.call('POST', '/v1/plan/checkout', {token: t, body: {back: `${APP}/`, tier}});
+async function checkout(t: string, tier: string, lang?: string) {
+  const made = await r.call('POST', '/v1/plan/checkout', {token: t, body: {back: `${APP}/`, tier, ...(lang ? {lang} : {})}});
   assert.equal(made.status, 200, made.text);
   return made.json.url as string;
 }
@@ -54,6 +54,26 @@ test('Checkout: the tier, its price and what it keeps; the card form in test mod
   assert.match(page.policy, /frame-ancestors 'none'/);
   // Back is the app's cancel page.
   assert.ok(page.text.includes(`href="${APP}/?plan=cancelled"`));
+});
+
+test('asked in the language the OS speaks, Checkout and the portal are in it, what is wrong with a card too; a Latin word set apart from kana', async () => {
+  const t = await r.person('Ren');
+  const page = await at(await checkout(t, 'pro', 'ja'));
+  for (const said of ['<html lang="ja">', 'Pro に申し込む', 'Remote に 256 GB', 'テストモード', 'カード情報', '申し込む', '本日のお支払い合計', '<option value="JP" selected>日本</option>']) {
+    assert.ok(page.text.includes(said), said);
+  }
+  const url = await checkout(t, 'pro', 'ja');
+  assert.equal(((await post(`${url}/pay`, card('4000000000000002'))).json?.wrong as {message: string}).message, 'カードが拒否されました。');
+  assert.ok(((await post(`${url}/pay`, card('4242424242424242'))).json?.next as string).startsWith(APP));
+  const made = await r.call('POST', '/v1/plan/portal', {token: t, body: {back: `${APP}/`, lang: 'ja'}});
+  const portalPage = await at(made.json.url as string);
+  for (const said of ['現在のプラン', 'プランをキャンセル', '請求履歴', '支払い済み']) assert.ok(portalPage.text.includes(said), said);
+  assert.match(portalPage.text, /プランは\d{4}年\d{1,2}月\d{1,2}日に更新されます。/);
+  // Not asked so (a client from before), or asked in English: Stripe's own words.
+  assert.ok((await at(await checkout(await r.person('Ida'), 'go'))).text.includes('Subscribe to Go'));
+  // A session gone says so in the browser's language when it is not known.
+  const gone = await at(`${BASE}/dev-billing/checkout/cs_none`, {headers: {'Accept-Language': 'ja,en;q=0.8'}});
+  assert.ok(gone.text.includes('この Checkout セッションは期限切れです'), gone.text);
 });
 
 test('Checkout: 0002 is declined under the card and nothing is sent; 4242 pays, and the Remote has the tier', async () => {
@@ -99,7 +119,7 @@ test('the portal: the tier and the next payment; a change of tier, up then down,
   await post(`${await checkout(t, 'go')}/pay`, card('4242 4242 4242 4242'));
   const home = await portal(t);
   const first = await at(home);
-  for (const said of ['Current subscription', 'Go', '$7.00 per month', 'Your plan renews on', 'Visa •••• 4242', 'Invoice history', 'Paid', 'Test controls', 'Return to length3']) {
+  for (const said of ['Current subscription', 'Go', '$7.00<small>per<br>month</small>', 'Your plan renews on', 'Visa •••• 4242', 'Invoice history', 'Paid', 'Test controls', 'Return to length3']) {
     assert.ok(first.text.includes(said), said);
   }
   // Up from the portal's own list: what it costs now, then Confirm; the Remote has Max at once, and an invoice for the rest of the period.

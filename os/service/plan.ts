@@ -59,7 +59,7 @@ import type {Hono} from 'hono';
 import {kept} from './names.ts';
 import {body, refuse, rows, type Db, type Vars} from './request.ts';
 import {address, billingEvent, plan, user} from './schema.ts';
-import {verify, type Price, type StripeApi} from './stripe.ts';
+import {verify, type Locale, type Price, type StripeApi} from './stripe.ts';
 
 const DAY = 86_400_000;
 /** A megabyte as the app shows one (dom.ts bytes): a million bytes. */
@@ -187,7 +187,7 @@ export function plans(d: {db: Db; config?: PlanConfig; billing?: Billing; domain
       if (within(repos, config.free.repos)) return;
       const {tier, allowance} = await allowanceOf(q, userId);
       if (!within(repos, allowance.repos)) {
-        over(tier === 'free' ? {error: 'The free plan keeps no more repos on the Remote'} : {error: 'Your plan keeps no more repos on the Remote'}, 'repos', tier,
+        over(tier === 'free' ? {error: 'Free plan repo storage limit reached on Remote'} : {error: 'Plan repo limit reached on Remote'}, 'repos', tier,
           {used: repos, limit: allowance.repos!});
       }
     },
@@ -203,13 +203,13 @@ export function plans(d: {db: Db; config?: PlanConfig; billing?: Billing; domain
       if (bytes <= config.free.bytes) return;
       const {tier, allowance} = await allowanceOf(q, userId);
       if (bytes > allowance.bytes) {
-        over(tier === 'free' ? {error: 'The free plan keeps no more on the Remote'} : {error: 'Your plan keeps no more on the Remote'}, 'bytes', tier,
+        over(tier === 'free' ? {error: 'Free plan storage quota reached on Remote'} : {error: 'Plan storage quota reached on Remote'}, 'bytes', tier,
           {used: bytes, limit: allowance.bytes});
       }
     },
     /** Rule 2: making a server. */
     async makeServer(q: Db, userId: string) {
-      if (config && !await paid(q, userId)) over({error: 'Making a server is part of the paid plan'}, 'server', 'free');
+      if (config && !await paid(q, userId)) over({error: 'Server creation requires a paid plan'}, 'server', 'free');
     },
     /**
      * Rule 3: claiming `name@domain` (`theirs`: it is already the account's, renewed or
@@ -218,7 +218,7 @@ export function plans(d: {db: Db; config?: PlanConfig; billing?: Billing; domain
     async claimName(q: Db, userId: string, a: string, domain: string, theirs: boolean) {
       if (!config) return;
       if (domain !== d.domain) {
-        if (!theirs && !await paid(q, userId)) over({error: 'A name on your own domain is part of the paid plan'}, 'domain', 'free');
+        if (!theirs && !await paid(q, userId)) over({error: 'Custom domain usernames require a paid plan'}, 'domain', 'free');
         return;
       }
       // One's own taken back is no new name, so long as it makes no more answering than the plan keeps: a username
@@ -227,7 +227,7 @@ export function plans(d: {db: Db; config?: PlanConfig; billing?: Billing; domain
       if (within(n, config.free.names)) return;
       const {tier, allowance} = await allowanceOf(q, userId);
       if (!within(n, allowance.names)) {
-        over(tier === 'free' ? {error: 'More names on this Remote are part of the paid plan'} : {error: 'Your plan keeps no more names on this Remote'}, 'names', tier,
+        over(tier === 'free' ? {error: 'Additional usernames require a paid plan'} : {error: 'Plan username limit reached on this Remote'}, 'names', tier,
           {used: n, limit: allowance.names!});
       }
     },
@@ -341,6 +341,9 @@ async function priceOf(b: Billing, id: string): Promise<Price | null> {
   return price;
 }
 
+/** The language a client asked Stripe's pages in (the one the OS speaks), when it named one the OS speaks; else Stripe's own choice. */
+const localeOf = (asked: unknown): {locale?: Locale} => (asked === 'ja' || asked === 'en' ? {locale: asked} : {});
+
 /** A tier as a client is told it: what it keeps, whether it is sold here, and what it costs when Stripe could say. */
 export interface TierSaid { tier: Tier | 'free'; allowance: Allowance; sold?: boolean; price?: Price }
 
@@ -382,50 +385,50 @@ export function planRoutes(d: PlanDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       buy: sold(p.billing).length > 0, manage: !!p.billing && !!row?.customer});
   });
 
-  const off = () => (p.on ? refuse(503, {error: 'Paid features cannot be bought on this Remote yet', buy: false}) : refuse(404, {error: 'This Remote has no plan'}));
+  const off = () => (p.on ? refuse(503, {error: 'Paid upgrades not available on this Remote', buy: false}) : refuse(404, {error: 'No billing plans on this Remote'}));
   /** The tier asked for, as sold here: none named is the least one sold (as a client from before there were tiers asks). */
   const tierAsked = (asked: unknown): Tier => {
     const selling = sold(p.billing);
     if (asked === undefined || asked === null || asked === '') return selling[0];
-    if (!isTier(asked)) return refuse(400, {error: 'No such tier: go, pro or max'});
-    if (!selling.includes(asked)) return refuse(400, {error: 'That tier is not sold on this Remote', tier: asked});
+    if (!isTier(asked)) return refuse(400, {error: 'Invalid tier: choose go, pro, or max'});
+    if (!selling.includes(asked)) return refuse(400, {error: 'Tier unavailable on this Remote', tier: asked});
     return asked;
   };
 
   v1.post('/plan/checkout', async (c) => {
     const me = c.get('userId');
     if (!p.on || !p.billing || !sold(p.billing).length) return off();
-    const asked = await body<{back?: unknown; tier?: unknown}>(c);
+    const asked = await body<{back?: unknown; tier?: unknown; lang?: unknown}>(c);
     const tier = tierAsked(asked?.tier);
     const now = await p.standingOf(db, me);
     // One subscription an account: another tier is a change of the one there is, in the portal, never a second beside it.
     if (now.paid) {
-      return c.json({error: 'This account is on a paid plan already; another tier is chosen under Manage the plan', tier: now.tier, manage: true}, 409);
+      return c.json({error: 'Already on a paid plan; change tier in Manage Plan', tier: now.tier, manage: true}, 409);
     }
     // One subscription an account: one being made (a Checkout in another tab) is finished, or runs out, first.
     const was = await p.rowOf(db, me);
     // A subscription whose payment failed is paid in the portal (its card changed), not by a second one beside it,
     // which Stripe would bill as well as the first it still tries.
     if (was?.status === 'past_due' || was?.status === 'unpaid') {
-      return c.json({error: 'The payment for this account\'s subscription failed; change how it is paid in Manage', manage: true}, 409);
+      return c.json({error: 'Subscription payment failed; update billing details in Manage', manage: true}, 409);
     }
     if (was?.status === 'incomplete' && was.eventAt && Date.now() - new Date(was.eventAt).getTime() < 86_400_000) {
-      return c.json({error: 'A subscription is being made for this account; finish it, or try again tomorrow'}, 409);
+      return c.json({error: 'Subscription checkout in progress; complete it or retry tomorrow'}, 409);
     }
     const back = backTo(asked?.back);
     let customer = was?.customer ?? null;
     if (!customer) {
       const [u] = await db.select({email: user.email, name: user.name}).from(user).where(eq(user.id, me)) as {email: string; name: string}[];
-      const made = await p.billing.stripe.customer({user: me, email: u.email, name: u.name}).catch(() => refuse(502, {error: 'Stripe did not answer; try again'}));
-      if (!CUSTOMER.test(made)) refuse(502, {error: 'Stripe did not answer; try again'});
+      const made = await p.billing.stripe.customer({user: me, email: u.email, name: u.name}).catch(() => refuse(502, {error: 'Stripe did not respond; please retry'}));
+      if (!CUSTOMER.test(made)) refuse(502, {error: 'Stripe did not respond; please retry'});
       // One customer an account: asked twice at once, the first kept is the one used (Stripe's idempotency makes them the same anyway).
       await db.insert(plan).values({userId: me, customer: made}).onConflictDoUpdate({target: plan.userId, set: {customer: made}, setWhere: sql`${plan.customer} is null`});
       customer = (await p.rowOf(db, me))!.customer!;
     }
     // Back to the page that asked, which is told how it went (the plan itself it reads from here, as Stripe tells it).
     const url = await p.billing.stripe.checkout({customer, user: me, tier, price: p.billing.prices[tier]!,
-      success: marked(back, 'paid', tier), cancel: marked(back, 'cancelled')})
-      .catch(() => refuse(502, {error: 'Stripe did not answer; try again'}));
+      success: marked(back, 'paid', tier), cancel: marked(back, 'cancelled'), ...localeOf(asked?.lang)})
+      .catch(() => refuse(502, {error: 'Stripe did not respond; please retry'}));
     return c.json({url});
   });
 
@@ -433,37 +436,37 @@ export function planRoutes(d: PlanDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const me = c.get('userId');
     if (!p.on || !p.billing) return off();
     const row = await p.rowOf(db, me);
-    if (!row?.customer) return c.json({error: 'Nothing to manage yet: this account has not subscribed'}, 409);
-    const asked = await body<{back?: unknown; tier?: unknown}>(c);
+    if (!row?.customer) return c.json({error: 'No active subscription found for this account'}, 409);
+    const asked = await body<{back?: unknown; tier?: unknown; lang?: unknown}>(c);
     const back = marked(backTo(asked?.back), 'managed');
     let change;
     // Another tier: the portal opens at the step that changes the subscription to its price, and asks there.
     if (asked?.tier !== undefined && asked.tier !== null) {
       const tier = tierAsked(asked.tier), now = standing(row, p.config!.grace);
-      if (!now.paid || !row.subscription) return c.json({error: 'This account has no subscription to change; subscribe to a tier first', checkout: true}, 409);
-      if (now.tier === tier) return c.json({error: 'This account is on that tier already', tier}, 409);
+      if (!now.paid || !row.subscription) return c.json({error: 'No active subscription to modify; subscribe first', checkout: true}, 409);
+      if (now.tier === tier) return c.json({error: 'Already subscribed to this tier', tier}, 409);
       if (row.status !== 'active' && row.status !== 'trialing') {
-        return c.json({error: 'The payment for this account\'s subscription failed; change how it is paid in Manage first', manage: true}, 409);
+        return c.json({error: 'Subscription payment failed; update payment method in Manage', manage: true}, 409);
       }
       change = {subscription: row.subscription, item: row.item ?? null, price: p.billing.prices[tier]!};
     }
-    const url = await p.billing.stripe.portal({customer: row.customer, back, ...(change ? {change} : {})}).catch(() => refuse(502, {error: 'Stripe did not answer; try again'}));
+    const url = await p.billing.stripe.portal({customer: row.customer, back, ...(change ? {change} : {}), ...localeOf(asked?.lang)}).catch(() => refuse(502, {error: 'Stripe did not respond; please retry'}));
     return c.json({url});
   });
 
   // Stripe's events: the body exactly as sent is what is signed. A bad signature changes nothing and says
   // so (Stripe shows it in its dashboard); an event taken before is answered as taken and changes nothing.
   app.post('/v1/stripe/webhook', async (c) => {
-    if (!p.billing) return c.json({error: 'This Remote takes no payments'}, 404);
+    if (!p.billing) return c.json({error: 'This Remote does not accept payments'}, 404);
     const billing = p.billing;
     const raw = await c.req.text();
     const now = d.now?.() ?? Date.now();
-    if (!await verify(raw, c.req.header('Stripe-Signature'), billing.webhookSecret, now)) return c.json({error: 'The signature does not match'}, 400);
+    if (!await verify(raw, c.req.header('Stripe-Signature'), billing.webhookSecret, now)) return c.json({error: 'Signature mismatch'}, 400);
     let event: {id?: unknown; type?: unknown; created?: unknown; data?: {object?: unknown}};
-    try { event = JSON.parse(raw); } catch { return c.json({error: 'Not an event'}, 400); }
+    try { event = JSON.parse(raw); } catch { return c.json({error: 'Invalid event payload'}, 400); }
     const id = str(event.id), type = str(event.type), created = typeof event.created === 'number' ? event.created : 0;
     const object = event.data?.object;
-    if (!EVENT.test(id) || !type || type.length > 100 || !created || !object || typeof object !== 'object') return c.json({error: 'Not an event'}, 400);
+    if (!EVENT.test(id) || !type || type.length > 100 || !created || !object || typeof object !== 'object') return c.json({error: 'Invalid event payload'}, 400);
     if (created * 1000 < now - KEEP_EVENTS) return c.json({received: true, taken: false});
     const tierOf = (price: string) => TIERS.find((t) => billing.prices[t] === price) ?? null;
     const taken = await db.transaction(async (tx: Db) => {

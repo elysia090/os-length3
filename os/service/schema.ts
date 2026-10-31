@@ -187,7 +187,22 @@ export const cut = pgTable('cut', {
   parent: text('parent'),
   /** For a merge: the commit of the line that was merged. */
   merged: text('merged'),
+  /**
+   * Its tree, named by its root (`root`, a treeNode: 0023), the folders it shares with its parent kept once. Made
+   * before: kept as what it changed from its parent (`base`, its first parent: the paths set, and `gone` those taken
+   * away), or whole where it has no base; `tree` is empty for one with a root. Read whole by cut_tree(), one path of
+   * it by cut_path().
+   */
   tree: jsonb('tree').$type<Tree>().notNull(),
+  root: text('root'),
+  base: text('base'),
+  gone: jsonb('gone').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  depth: smallint('depth').notNull().default(0),
+  /** What its tree takes whole (as its JSON is long; made before roots, as kept): how much of it the log may send at once. */
+  size: integer('size'),
+  /** With a root: how many paths its tree names, and what their files take (each file's blob, as a draft counts it). */
+  paths: integer('paths'),
+  fileBytes: bigint('file_bytes', {mode: 'number'}),
   /** Its files' modes beside the tree (Modes). */
   modes: jsonb('modes').$type<Modes>().notNull().default(sql`'{}'::jsonb`),
   bytes: bytesOf('tree'),
@@ -201,7 +216,7 @@ export const cut = pgTable('cut', {
   time: moment('time').defaultNow().notNull(),
   /**
    * What it changed from its (first) parent: how many files, and their folders in path order. Set by
-   * the database as the commit is made (0007: cut_change), so the log names them without its trees.
+   * the database as the commit is made (0009: cut_change), so the log names them without its trees.
    */
   files: integer('files'),
   folders: text('folders').array(),
@@ -215,9 +230,24 @@ export const cut = pgTable('cut', {
   foreignKey({name: 'cut_repo', columns: [t.repoId, t.userId], foreignColumns: [repo.id, repo.userId]}).onDelete('cascade'),
   foreignKey({name: 'cut_parent', columns: [t.repoId, t.parent], foreignColumns: [t.repoId, t.id]}),
   foreignKey({name: 'cut_merged', columns: [t.repoId, t.merged], foreignColumns: [t.repoId, t.id]}),
-  check('cut_id', matches('id', re.sha)), check('cut_tree', sql`jsonb_typeof(${t.tree}) = 'object'`), check('cut_modes', sql`jsonb_typeof(${t.modes}) = 'object'`),
+  check('cut_id', matches('id', re.sha)), check('cut_root', sql`${t.root} is null or ${t.root} ~ '^[0-9a-f]{64}$'`), check('cut_tree', sql`jsonb_typeof(${t.tree}) = 'object'`), check('cut_gone', sql`jsonb_typeof(${t.gone}) = 'array'`),
+  check('cut_base', sql`${t.base} is null or ${t.base} = ${t.parent}`), check('cut_modes', sql`jsonb_typeof(${t.modes}) = 'object'`),
   check('cut_words', sql.raw('char_length(kind) <= 2000 and char_length(title) between 1 and 2000 and char_length(issue) <= 2000 and char_length(note) <= 2000')),
   check('cut_counts', sql`${t.added} >= 0 and ${t.removed} >= 0`)]);
+
+/**
+ * A folder of a commit's tree, named by the digest of its entries (trees.ts nodeId), kept once in its repo however many
+ * commits hold it: each name a file (`f`, its blob), a folder (`t`, its node), or named as a folder itself (`n`).
+ */
+export const treeNode = pgTable('tree_node', {
+  repoId: bigint('repo_id', {mode: 'number'}).notNull(),
+  id: text('id').notNull(),
+  userId: text('user_id').notNull(),
+  entries: jsonb('entries').$type<Record<string, {f?: string; t?: string; n?: 1}>>().notNull(),
+  bytes: bytesOf('entries'),
+}, (t) => [primaryKey({columns: [t.repoId, t.id]}), index('tree_node_user_idx').on(t.userId),
+  foreignKey({name: 'tree_node_repo', columns: [t.repoId, t.userId], foreignColumns: [repo.id, repo.userId]}).onDelete('cascade'),
+  check('tree_node_id', matches('id', re.sha)), check('tree_node_entries', sql`jsonb_typeof(${t.entries}) = 'object'`)]);
 
 /** A line of work: main, or an issue's (its file's stem: '001' for issue/001.md). */
 export const line = pgTable('line', {
@@ -228,11 +258,18 @@ export const line = pgTable('line', {
   base: text('base'),
   head: text('head'),
   pushed: text('pushed'),
-  draft: jsonb('draft').$type<Tree>().notNull().default(sql`'{}'::jsonb`),
   /** Its draft's files' modes beside it (Modes). */
   modes: jsonb('modes').$type<Modes>().notNull().default(sql`'{}'::jsonb`),
-  bytes: bytesOf('draft'),
-  /** What its draft's files take, each blob once (kept by a trigger as the draft changes). */
+  /** How many paths its draft names (lineFile's rows). */
+  paths: integer('paths').notNull().default(0),
+  /**
+   * The root its draft is laid on (its head's, 0023): its rows (lineFile) are what the draft changed from it. None: its
+   * rows are its draft whole (a line made before roots, or one with no commit yet).
+   */
+  baseRoot: text('base_root'),
+  /** What its draft takes, as its JSON is long (repos.ts treeBytes), kept as each save changes it: counted into the account's room. */
+  bytes: integer('bytes').notNull().default(2),
+  /** What its draft's files take (each file's blob, a blob in two files twice: as a checkout takes them), kept as each save changes it. */
   fileBytes: bigint('file_bytes', {mode: 'number'}).notNull().default(0),
   version: integer('version').notNull().default(0),
   /** Who started it, as their name was then. */
@@ -244,8 +281,43 @@ export const line = pgTable('line', {
   foreignKey({name: 'line_base', columns: [t.repoId, t.base], foreignColumns: [cut.repoId, cut.id]}),
   foreignKey({name: 'line_head', columns: [t.repoId, t.head], foreignColumns: [cut.repoId, cut.id]}),
   foreignKey({name: 'line_pushed', columns: [t.repoId, t.pushed], foreignColumns: [cut.repoId, cut.id]}),
-  check('line_name', matches('name', re.line)), check('line_draft', sql`jsonb_typeof(${t.draft}) = 'object'`), check('line_modes', sql`jsonb_typeof(${t.modes}) = 'object'`),
+  check('line_name', matches('name', re.line)), check('line_modes', sql`jsonb_typeof(${t.modes}) = 'object'`),
   check('line_version', sql`${t.version} >= 0`), check('line_started_by', within('started_by', 200))]);
+
+/**
+ * A line's draft, as it changed from the root it is laid on (line.baseRoot), a row a path: `set`, the path is a file (its
+ * blob) or a folder named beside what is in it (null); `cut`, the root's at that path and under it are gone. A save
+ * writes the rows it changes and no others (repos.ts); a line begun has none. A draft whole is its root's tree with its
+ * rows laid on it (0023 draft_flat). Paths are compared byte by byte (collated "C", 0022), so all under a folder is one
+ * range of the key.
+ */
+export const lineFile = pgTable('line_file', {
+  repoId: bigint('repo_id', {mode: 'number'}).notNull(),
+  line: text('line').notNull(),
+  path: text('path').notNull(),
+  sha: text('sha'),
+  set: boolean('set').notNull().default(true),
+  cut: boolean('cut').notNull().default(false),
+}, (t) => [primaryKey({columns: [t.repoId, t.line, t.path]}),
+  foreignKey({name: 'line_file_line', columns: [t.repoId, t.line], foreignColumns: [line.repoId, line.name]}).onDelete('cascade').onUpdate('cascade'),
+  check('line_file_sha', sql`${t.sha} is null or ${t.sha} ~ '^[0-9a-f]{64}$'`), check('line_file_path', sql`char_length(${t.path}) between 1 and 1024`),
+  check('line_file_says', sql`${t.set} or (${t.cut} and ${t.sha} is null)`)]);
+
+/**
+ * What each of a line's last saves changed (repos.ts: its paths set, and those taken away, each with what is under it),
+ * by the version it made: a device that holds the draft at a version is answered what came after it, not the draft
+ * whole again (GET /v1/repos/:name?since=). The last LINE_CHANGES of each line are kept; one asking from before them,
+ * or past a draft laid down whole (a merge), is answered the draft whole.
+ */
+export const lineChange = pgTable('line_change', {
+  repoId: bigint('repo_id', {mode: 'number'}).notNull(),
+  line: text('line').notNull(),
+  version: integer('version').notNull(),
+  set: jsonb('set').$type<Record<string, string | null>>().notNull(),
+  gone: jsonb('gone').$type<string[]>().notNull(),
+}, (t) => [primaryKey({columns: [t.repoId, t.line, t.version]}),
+  foreignKey({name: 'line_change_line', columns: [t.repoId, t.line], foreignColumns: [line.repoId, line.name]}).onDelete('cascade').onUpdate('cascade'),
+  check('line_change_set', sql`jsonb_typeof(${t.set}) = 'object'`), check('line_change_gone', sql`jsonb_typeof(${t.gone}) = 'array'`)]);
 
 /**
  * A line handed to main: Submit change. Submitting again after more commits

@@ -14,7 +14,10 @@
 //
 // Clients hold a session token (the bearer plugin): the web app reads its
 // own once the provider sends it back, the app and l3 get theirs from the
-// device flow, so a session can be seen and ended from any of them.
+// device flow, so a session can be seen and ended from any of them. Each
+// holds it signed (`token.signature`, as the session cookie is), and only so
+// is it taken: the token the database keeps is no way in by itself, so a copy
+// of the database (a backup, a leaked connection string) opens no session.
 //
 //   /api/auth/*   Better Auth: sign-in (social, passkey), sessions and devices
 //                 (get-session, list-sessions, revoke-session, sign-out), linked
@@ -119,7 +122,7 @@ const HELD = ['/device/approve', '/passkey/generate-register-options', '/passkey
 
 /** A passkey ceremony that did not verify the person (PIN, biometrics), refused: a passkey is the whole sign-in. */
 const verifiedPerson = (ok: boolean | undefined) => {
-  if (!ok) throw new APIError('UNAUTHORIZED', {message: 'This passkey did not verify you (a PIN or biometrics); use one that does'});
+  if (!ok) throw new APIError('UNAUTHORIZED', {message: 'Passkey did not complete user verification (PIN/biometrics). Use a verified passkey.'});
 };
 
 export function createAuth(c: AuthConfig) {
@@ -146,11 +149,13 @@ export function createAuth(c: AuthConfig) {
     // each time: no provider is "trusted" (Better Auth's trustedProviders joins one whose provider says the address is
     // not proven, so whoever typed someone's address at a provider that does not check it was signed in as them),
     // and the account joined must have had its own address proven (requireLocalEmailVerified, Better Auth's default).
-    account: {accountLinking: {enabled: true, trustedProviders: [], requireLocalEmailVerified: true}},
+    // What a provider hands over at sign-in (its access, refresh and ID tokens) is kept encrypted with the Remote's
+    // secret: nothing here reads them, and a copy of the database is then no way into anyone's GitHub or Google.
+    account: {accountLinking: {enabled: true, trustedProviders: [], requireLocalEmailVerified: true}, encryptOAuthTokens: true},
     session: c.only ? {expiresIn: 60 * 60 * 24, disableSessionRefresh: true} : {expiresIn: 60 * 60 * 24 * 60, updateAge: 60 * 60 * 24},
     // For research, no provider admits anyone: the one account is entered by its link alone.
     ...(c.only ? {user: {validateUserInfo: ({user}: {user: {email?: string | null}}) =>
-      (user.email === c.only ? undefined : {error: 'closed', errorDescription: 'This Remote takes no new accounts'})}} : {}),
+      (user.email === c.only ? undefined : {error: 'closed', errorDescription: 'This Remote does not accept new accounts'})}} : {}),
     // Counted in the database: on Workers each isolate has a memory of its own (Better Auth's default store).
     rateLimit: {enabled: c.rateLimit ?? true, window: 60, max: 120, storage: 'database', customRules: AUTH_LIMITS},
     // Who is asking is the address Cloudflare saw, as everywhere on the Remote (enter.ts, servers.ts): Better
@@ -196,7 +201,7 @@ export function createAuth(c: AuthConfig) {
         registration: {afterVerification: ({verification}) => { verifiedPerson(verification.registrationInfo?.userVerified); return {}; }},
         authentication: {afterVerification: ({verification}) => verifiedPerson(verification.authenticationInfo.userVerified)},
       }),
-      bearer(),
+      bearer({requireSignature: true}),
       deviceAuthorization({
         verificationUri: `${c.appOrigin}/?device`,
         validateClient: (id: string) => (DEVICE_CLIENTS as readonly string[]).includes(id),
@@ -220,7 +225,7 @@ export type Auth = ReturnType<typeof createAuth>;
 /** Sign-in's own routes: Better Auth's, and the stand-in provider where it is offered. */
 export function signIn(d: {auth: Auth; db: Db; providers: string[]; enter: boolean; /** The app's pages, which alone send the cookie (fromElsewhere). */ origins: string[]}, app: Hono<Vars>) {
   // For research no passkey is added: a passkey would let a link's holder back in after its key changed.
-  if (d.enter) app.all('/api/auth/passkey/*', (c) => c.json({error: 'This Remote is entered by its link'}, 403));
+  if (d.enter) app.all('/api/auth/passkey/*', (c) => c.json({error: 'Access restricted to invite links'}, 403));
   // Better Auth lists a person's sessions only for a session made within a day (its freshAge), but a
   // session here lasts 60 days, and the list is no secret of anyone else's: it is the Devices part, and
   // a day after signing in it would stop answering. Each session is read as Better Auth reads it, for the
@@ -254,21 +259,49 @@ export function signIn(d: {auth: Auth; db: Db; providers: string[]; enter: boole
       const {s, refused} = await askedBy(d.auth, c.req.raw, d.origins);
       if (!s) return refused;
       const [g] = await d.db.select().from(schema.guard).where(eq(schema.guard.userId, s.user.id)) as Guard[];
-      if (!signedJustNow(g, s.session.id)) return c.json({error: 'Confirm it is you first', confirm: true}, 403);
+      if (!signedJustNow(g, s.session.id)) return c.json({error: 'Verify identity first', confirm: true}, 403);
       return next();
     });
   }
   app.on(['GET', 'POST'], '/api/auth/*', async (c) => {
-    const res = await d.auth.handler(c.req.raw);
+    let res = await d.auth.handler(c.req.raw);
     // A session ended here is not taken as still there from what signedIn keeps.
     if (res.ok && /\/(sign-out|revoke-session|revoke-sessions|revoke-other-sessions)$/.test(c.req.path)) forgetSessions();
+    // Where Better Auth hands a session's token over bare (the device flow's answer; the session a provider's return
+    // left in the cookie, which the page reads once), it is handed over signed: the only form a bearer is taken in.
+    if (res.ok && /\/(device\/token|get-session)$/.test(c.req.path)) res = await handedSigned(d.auth, res);
     // Asked too often: said as everywhere on the Remote (request.ts slowDown), Retry-After and retryAfter,
     // beside Better Auth's own X-Retry-After.
     const wait = res.status === 429 ? res.headers.get('X-Retry-After') : null;
     if (!wait) return res;
-    return c.json({error: 'Too many requests; try again later', retryAfter: Number(wait)}, 429, {'Retry-After': wait, 'X-Retry-After': wait});
+    return c.json({error: 'Rate limit exceeded; retry later', retryAfter: Number(wait)}, 429, {'Retry-After': wait, 'X-Retry-After': wait});
   });
   if (d.providers.includes('dev')) app.route('/dev-oauth', devOAuth());
+}
+
+/**
+ * A session's token as a client holds it: signed with the Remote's secret (`token.signature`, the form the session
+ * cookie has), so that the token alone, as the database keeps it, is taken by no one (bearer requireSignature).
+ */
+export async function signedToken(auth: Auth, token: string): Promise<string> {
+  const {secret} = await auth.$context;
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), {name: 'HMAC', hash: 'SHA-256'}, false, ['sign']);
+  const mac = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(token)));
+  return `${token}.${btoa(String.fromCharCode(...mac))}`;
+}
+
+/** `res` with the session's token it hands over signed: the device flow's access_token, and get-session's session as
+ *  set-auth-token (beside the session it says, as signing in says it). Any other answer is as it was. */
+async function handedSigned(auth: Auth, res: Response): Promise<Response> {
+  const body = await res.clone().json().catch(() => null) as {access_token?: unknown; session?: {token?: unknown}} | null;
+  const headers = new Headers(res.headers);
+  if (typeof body?.access_token === 'string' && body.access_token && !body.access_token.includes('.')) {
+    headers.delete('Content-Length');
+    return new Response(JSON.stringify({...body, access_token: await signedToken(auth, body.access_token)}), {status: res.status, headers});
+  }
+  if (typeof body?.session?.token !== 'string' || !body.session.token) return res;
+  headers.set('set-auth-token', await signedToken(auth, body.session.token));
+  return new Response(res.body, {status: res.status, headers});
 }
 
 /** The session cookie by its exact name (createAuth: `__Host-length3` over HTTPS, Better Auth's own name otherwise). */

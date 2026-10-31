@@ -61,7 +61,7 @@ function remote(o: {contacts?: boolean; acceptedMe?: boolean} = {}) {
       return address ? {address, reachable: true} : {reachable: false, why: 'No one has that address'};
     },
     async add(server, address) {
-      if (!both) throw new RemoteError(403, 'Only your contacts can be added');
+      if (!both) throw new RemoteError(403, 'Only existing contacts can be invited');
       did.push(`add ${server} ${address}`);
     },
     async ask(address, body, server) {
@@ -125,7 +125,7 @@ function boardRemote(start: BoardTodo[]) {
   const held = new Map(start.map((x) => [x.id, x]));
   const calls: string[] = [];
   const r = {held, calls, away: false, ways: {} as TodoWays};
-  const unreachable = () => new RemoteError(0, 'The Remote cannot be reached');
+  const unreachable = () => new RemoteError(0, 'Cannot connect to Remote');
   r.ways = {
     async put(_board, id, change) {
       calls.push(`put ${id}`);
@@ -154,7 +154,7 @@ test('a TODO change that could not be sent is sent again by itself, and the keep
   for (let i = 0; i < 4; i++) await tick();
   // Away: said, not settled, and not idle, so the board's next look leaves the box alone.
   assert.ok(said.length >= 1);
-  assert.equal(said[0], 'The Remote cannot be reached');
+  assert.equal(said[0], 'Cannot connect to Remote');
   assert.equal(settled, false);
   assert.equal(keeper.idle(), false);
   assert.equal(r.held.get('a')!.title, 'one');

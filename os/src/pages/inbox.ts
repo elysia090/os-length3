@@ -35,7 +35,7 @@ import {arrive, closeUp, keepOut, LAND, nudge, paced, putAway, still, where} fro
 //                  through the Remote), and the box to write in; none open
 //                  and none to open, nothing
 
-const KIND = (k: inbox.Kind) => ({message: t('Message'), review: t('Review request'), question: t('Question'), run: t('Run failed')})[k];
+const KIND = (k: inbox.Kind) => ({message: t('Message'), review: t('Review request'), question: t('Question'), run: t('Execution failed')})[k];
 
 function button(text: string, kind = ''): HTMLButtonElement {
   return h('button', {class: `button ${kind}`.trim(), type: 'button'}, text) as HTMLButtonElement;
@@ -72,12 +72,12 @@ function took(stub: HTMLElement, from: DOMRect) {
  * seconds while open, and the name claimed as soon as the record is there.
  */
 function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLElement {
-  const gear = h('button', {type: 'button', class: 'stub-gear', 'aria-label': t('Your names'), 'aria-expanded': 'false'}, mark('gear')) as HTMLButtonElement;
+  const gear = h('button', {type: 'button', class: 'stub-gear', 'aria-label': t('Your usernames'), 'aria-expanded': 'false'}, mark('gear')) as HTMLButtonElement;
   const panel = h('div', {class: 'stub-panel pop', hidden: ''});
   const a = inbox.shown(inbox.username(me));
   const text = h('button', {type: 'button', class: 'stub-text'}, a);
   copying(text, a);
-  const code = h('button', {type: 'button', class: 'stub-code mono', 'aria-label': t('Your code {code}', {code: me.code})}, me.code);
+  const code = h('button', {type: 'button', class: 'stub-code mono', 'aria-label': t('Your code: {code}', {code: me.code})}, me.code);
   copying(code, me.code);
   const stub = h('div', {class: 'stub'}, text, code, gear);
   // The gear's panel, as the person's menu: your names, then Add a domain.
@@ -85,7 +85,7 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
   const item = (label: string, at: Node | null = null) => h('button', {type: 'button', class: 'pop-item'}, label, at) as HTMLButtonElement;
   /** Your own domain, written whole in one field (name@domain, the @ too); its record looked for while the panel is open. */
   const own = (): HTMLElement => {
-    const field = h('input', {class: 'line-in', placeholder: t('name@example.org'), 'aria-label': t('Name on your domain'),
+    const field = h('input', {class: 'line-in', placeholder: t('name@example.org'), 'aria-label': t('Custom domain name'),
       autocapitalize: 'off', spellcheck: 'false', maxlength: '285'}) as HTMLInputElement;
     const record = h('div', {class: 'stub-record'});
     const parts = () => {
@@ -107,9 +107,9 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
         return h('div', {class: 'record-row'}, h('span', {class: 'muted small'}, label), v);
       };
       record.replaceChildren(
-        h('p', {class: 'muted small'}, t('Put this record in the domain\'s DNS')),
+        h('p', {class: 'muted small'}, t('Add this DNS record to your domain')),
         row(t('Name'), r.name), row(t('Type'), r.type), row(t('Value'), r.value),
-        h('p', {class: `small record-found${r.found ? ' found' : ''}`}, !r.found ? t('Not found yet') : name ? t('Found. Claiming {address}…', {address: `${name}@${domain}`}) : t('Found')));
+        h('p', {class: `small record-found${r.found ? ' found' : ''}`}, !r.found ? t('Not detected yet') : name ? t('Record detected. Claiming {address}…', {address: `${name}@${domain}`}) : t('Detected')));
       if (r.found && name) {
         looking?.stop();
         try { await inbox.claim(name, domain); again(); } catch (e) {
@@ -134,16 +134,16 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
   };
   /** Add a domain: pressed, the row is the field, where it was. */
   const adding = (): HTMLElement => {
-    const b = item(t('Add a domain'), mark('plus'));
+    const b = item(t('Add domain'), mark('plus'));
     b.querySelector('svg')?.classList.add('pop-mark');
     b.addEventListener('click', () => b.replaceWith(own()));
     return b;
   };
   /** Your names, each with what holds it back, if anything: its domain no longer naming this Remote. */
   const yours = (): HTMLElement =>
-    h('div', {class: 'pop-group', role: 'group', 'aria-label': t('Your names')}, h('div', {class: 'pop-head muted small'}, t('Your names')), ...me.addresses.map((a) =>
+    h('div', {class: 'pop-group', role: 'group', 'aria-label': t('Your usernames')}, h('div', {class: 'pop-head muted small'}, t('Your usernames')), ...me.addresses.map((a) =>
       h('div', {class: 'your-row'}, h('span', {}, inbox.shown(a.address)),
-        a.lapsed ? h('span', {class: 'small error'}, t('its domain no longer names this Remote')) : null)));
+        a.lapsed ? h('span', {class: 'small error'}, t('Domain no longer points to this Remote')) : null)));
   // Letting a name go is not offered here; the Remote's way to do it stays (l3 people release uses it).
   const fill = () => panel.replaceChildren(yours(), adding());
   // The panel lies over the Inbox under it; Escape or a press outside closes it.
@@ -262,18 +262,18 @@ export function inboxPage(ctx: Context): Node[] {
   const paint = async () => {
     if (!connection()) {
       // Signed out, the same card as Remote's, in the same place.
-      holder.replaceChildren(signInPlace(t('Sign in'), ...signInLead(t('Signed in, you take a name, and people write to you by it: reviews, questions.')), signInBox(() => void paint())));
+      holder.replaceChildren(signInPlace(t('Sign in'), ...signInLead(t('Signing in lets you claim a username to receive reviews and questions.')), signInBox(() => void paint())));
       return;
     }
     let me: inbox.Me;
     try { me = await inbox.me(); } catch (e) {
-      holder.replaceChildren(unreachedError(e) ? unreachedPlace(t('Your conversations are here again once it answers'), () => void paint()) : h('p', {class: 'error'}, errorText(e)));
+      holder.replaceChildren(unreachedError(e) ? unreachedPlace(t('Conversations will reappear once Remote responds'), () => void paint()) : h('p', {class: 'error'}, errorText(e)));
       return;
     }
     // No name yet: the one thing to do here, in the middle, as signing in was (the same card, in the same place).
     if (!me.addresses.length) {
       // Taken: the field it was written in goes up to where the name now lives, the row at the Inbox's top.
-      const place = signInPlace(t('Take a name'), addressStub(me, () => {
+      const place = signInPlace(t('Claim username'), addressStub(me, () => {
         landing = where(place.querySelector('.stub'));
         void paint();
       }, () => goToPlan(ctx)));
@@ -282,10 +282,10 @@ export function inboxPage(ctx: Context): Node[] {
     }
     mine = me.addresses[0].address;
     // The field to write to someone new is made once: what comes every little while changes only the rows under it.
-    const to = h('input', {class: 'line-in', placeholder: t('Write to a name or a code'), 'aria-label': t('Write to a name or a code'), autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
+    const to = h('input', {class: 'line-in', placeholder: t('Send to username or code'), 'aria-label': t('Send to username or code'), autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
     to.value = drafts.get(TO);
     to.addEventListener('input', () => { drafts.set(TO, to.value); error.textContent = ''; });
-    const start = button(t('Write'), 'small-button');
+    const start = button(t('Compose'), 'small-button');
     const error = h('p', {class: 'error', role: 'alert'});
     const rows = h('div', {class: 'inbox-rows'});
     arrowKeys(rows, '.inbox-row');
@@ -296,9 +296,9 @@ export function inboxPage(ctx: Context): Node[] {
       if (!to.value.trim()) { to.focus(); nudge(to); return; }
       error.textContent = '';
       const found: {address?: string; reachable: boolean; why?: string} = await inbox.lookup(to.value).catch((e) => ({reachable: false, why: errorText(e)}));
-      if (!found.reachable) { error.textContent = t('Cannot reach {address} ({why})', {address: to.value, why: t(found.why ?? '')}); nudge(to); return; }
+      if (!found.reachable) { error.textContent = t('Cannot deliver to {address} ({why})', {address: to.value, why: t(found.why ?? '')}); nudge(to); return; }
       // One's own name finds oneself: a conversation with no one else in it is not one.
-      if (me.addresses.some((a) => a.address === found.address)) { error.textContent = t('That is you: write to someone else'); to.focus(); nudge(to); return; }
+      if (me.addresses.some((a) => a.address === found.address)) { error.textContent = t('Cannot message yourself; choose another recipient'); to.focus(); nudge(to); return; }
       // Gone to: the field has done its work.
       to.value = '';
       drafts.sent(TO);
@@ -388,12 +388,12 @@ export function inboxPage(ctx: Context): Node[] {
     // Read is said again the next time the conversation opens; nothing waits on it. The rail's mark follows.
     const read = () => void inbox.markRead(address).then(() => look(), () => {});
     read();
-    const lineWord = h('span', {class: 'muted small'}, t('Through the Remote'));
+    const lineWord = h('span', {class: 'muted small'}, t('Via Remote'));
     const messages = h('div', {class: 'inbox-messages'});
     const on = new inbox.Conversation();
     /** A message as a bubble at the foot. */
     const bubble = (m: inbox.Message) => {
-      const about = [m.target.repo, m.target.issue, m.target.change ? t('change {id}', {id: String(m.target.change).slice(0, 8)}) : ''].filter(Boolean).join(' · ');
+      const about = [m.target.repo, m.target.issue, m.target.change ? t('Change {id}', {id: String(m.target.change).slice(0, 8)}) : ''].filter(Boolean).join(' · ');
       // A way there only where it names a place a repo here could be; a repo named otherwise is said, as words.
       const place = inbox.placeOf(m.target);
       let go: HTMLElement | null = null;
@@ -409,7 +409,7 @@ export function inboxPage(ctx: Context): Node[] {
         : h('div', {class: 'bubble', 'data-mine': String(m.mine), 'data-time': String(m.time)},
           m.type !== 'message' ? h('span', {class: 'state-chip'}, KIND(m.type)) : null,
           go, h('p', {class: 'bubble-text'}, m.body),
-          h('span', {class: 'muted small bubble-time'}, `${ago(m.time)}${m.live ? ` · ${t('direct')}` : ''}`));
+          h('span', {class: 'muted small bubble-time'}, `${ago(m.time)}${m.live ? ` · ${t('Direct')}` : ''}`));
       messages.querySelector('.inbox-empty')?.remove();
       // It stands where it was said in time: one sent here and one of theirs crossing it on the way (the direct line
       // brings theirs a moment after one's own is drawn) land in the order they were written, not the order they came.
@@ -448,7 +448,7 @@ export function inboxPage(ctx: Context): Node[] {
     // Accepted both ways: a direct line between the two devices, when both are here.
     const startLive = () => {
       live?.stop();
-      live = new inbox.Live(mine, address, add, (direct) => { lineWord.textContent = direct ? t('Direct') : t('Through the Remote'); });
+      live = new inbox.Live(mine, address, add, (direct) => { lineWord.textContent = direct ? t('Direct') : t('Via Remote'); });
       // Ends with the page, not at the page's next look.
       live.start(() => holder.isConnected);
     };
@@ -487,16 +487,16 @@ export function inboxPage(ctx: Context): Node[] {
       yes.addEventListener('click', answer('accepted', () => { void show(address, rows, pane); void paintList(rows, pane); }));
       no.addEventListener('click', answer('blocked', () => { open = left = null; shownThread = null; void paintList(rows, pane); }));
       decide.push(yes, no);
-      ask = h('div', {class: 'inbox-ask', role: 'group', 'aria-label': t('{who} wrote to you first', {who: named(address)})},
-        h('p', {}, h('b', {}, named(address)), ' ', t('wrote to you first.')),
-        h('p', {class: 'muted small'}, t('Accept, or write back, and you write to each other freely (directly, when both of you are here). Block, and nothing more comes from them.')),
+      ask = h('div', {class: 'inbox-ask', role: 'group', 'aria-label': t('{who} initiated a conversation', {who: named(address)})},
+        h('p', {}, h('b', {}, named(address)), ' ', t('sent you a first message.')),
+        h('p', {class: 'muted small'}, t('Accept or reply to enable direct messaging. Block to prevent all future messages from this user.')),
         h('div', {class: 'inbox-ask-acts'}, no, yes));
     }
     // Writing is one line that grows as it is written. What it is reads off the text the way
     // an issue is named ("Review：…", "Question：…"), and a /root/… path in it says what it
     // is about; nothing else to choose. Enter is a new line; Ctrl+Enter sends. What is half
     // written stays with this conversation, here when it is opened again.
-    const text = h('textarea', {class: 'line-in bubble-in', rows: '1', placeholder: t('Write to {address}…', {address: inbox.shown(address)}), 'aria-label': t('Message'), maxlength: '4000'}) as HTMLTextAreaElement;
+    const text = h('textarea', {class: 'line-in bubble-in', rows: '1', placeholder: t('Message {address}…', {address: inbox.shown(address)}), 'aria-label': t('Message'), maxlength: '4000'}) as HTMLTextAreaElement;
     text.value = drafts.get(address);
     const grow = () => { text.style.height = 'auto'; text.style.height = `${Math.min(text.scrollHeight + 2, 200)}px`; };
     text.addEventListener('input', () => { drafts.set(address, text.value); grow(); });
@@ -507,7 +507,7 @@ export function inboxPage(ctx: Context): Node[] {
       sendB.disabled = true;
       // What went wrong last goes as this is sent; that the last went as a request stays while this one goes (taken
       // away and said again, the line would go and come back, and what was said above it with it).
-      const asked = t('Sent as a request: they see it once they accept you.');
+      const asked = t('Sent as request: recipient will see it once accepted.');
       if (error.textContent !== asked) error.textContent = '';
       const words = text.value;
       try {
@@ -543,7 +543,7 @@ export function inboxPage(ctx: Context): Node[] {
       ...(ask ? [ask] : []),
       h('div', {class: 'inbox-write'},
         h('div', {class: 'row write-line'}, text, sendB),
-        h('p', {class: 'muted small write-hint'}, t('Review: or Question: first to ask · a /root/… path says what it is about · Ctrl+Enter sends')), error));
+        h('p', {class: 'muted small write-hint'}, t('Prefix with Review: or Question: · specify /root/… path · Ctrl+Enter to send')), error));
     if (text.value) grow();
     if (switching && !still()) for (const c of pane.children) c.animate([{opacity: 0}, {opacity: 1}], {duration: paced(180), easing: 'ease-out'});
     text.focus();

@@ -23,15 +23,15 @@ export interface AskWays { done(): Promise<void>; ended(): Promise<void>; keyed(
 /** What is asked for in the card before a repo is turned off or discarded: the deed's word, what will happen, and the deed (`typed`, its name as written). */
 interface Ask { verb: string; what: string[]; act(typed: string): Promise<unknown> }
 const turningOff = (repo: string): Ask => ({
-  verb: t('Turn off'),
-  what: [t('Kept on the Remote for 30 days; turning it on brings it back at once.')],
+  verb: t('Disable'),
+  what: [t('Retained on Remote for 30 days; re-enabling restores it immediately.')],
   // The copy here stays until it is freed from the card (where Forge was).
   act: (typed) => account.turnOff(repo, typed),
 });
 /** Discarding, which takes it from the Remote now, for good; `here`, with the copy on this device. */
 const discarding = (repo: string, here: boolean): Ask => ({
-  verb: t('Discard'),
-  what: [t('It goes from the Remote now, with its history, and cannot be brought back.'), ...(here ? [t('The copy here goes with it.')] : [])],
+  verb: t('Delete permanently'),
+  what: [t('Permanently deleted from Remote with full history. Cannot be undone.'), ...(here ? [t('Local copy will also be deleted.')] : [])],
   // The copy here first: one holding what the Remote lacks is kept, and nothing is discarded.
   act: async (typed) => { if (here) await freeOff(repo); await account.discard(repo, typed); },
 });
@@ -42,7 +42,7 @@ const discarding = (repo: string, here: boolean): Ask => ({
  */
 const deleting = (repo: string, after: () => Promise<void>): Ask => ({
   verb: t('Delete'),
-  what: [t('It goes from this device and from the Remote, which keeps it 30 days: turned on there, it comes back.')],
+  what: [t('Removes from device and Remote (held 30 days on Remote before final deletion).')],
   act: async (typed) => { await flush(); await account.turnOff(repo, typed); await after(); },
 });
 
@@ -102,15 +102,15 @@ function settled(b: HTMLButtonElement, error: HTMLElement, f: () => Promise<void
  * account with no passkey yet makes one there and then (with it, nothing else is ever asked of them to turn off).
  */
 async function confirm(el: HTMLElement, from: Element, repo: string, ask: Ask, w: AskWays) {
-  const cancel = button(t('Not now'), 'small-button');
+  const cancel = button(t('Cancel'), 'small-button');
   const c = inCard(el, from, repo, cancel, w.done);
   cancel.addEventListener('click', () => void w.done().then(() => backToSwitch(repo)));
   let none = ((await account.passkeys().catch(() => null)) ?? [{}]).length === 0;
   const error = h('p', {class: 'error', role: 'alert'});
-  const which = field(t('The repo\'s name'), {class: 'line-in mono'});
+  const which = field(t('Repo name'), {class: 'line-in mono'});
   const go = deedButton(ask.verb, c.from);
   settled(go, error, async () => {
-    if (which.value !== repo) { which.focus(); throw new Error(t('Type {repo} as it is written.', {repo})); }
+    if (which.value !== repo) { which.focus(); throw new Error(t('Enter "{repo}" exactly as shown.', {repo})); }
     // Made once: pressed again after the passkey step was stopped, the passkey made is the one used.
     if (none) { await account.addPasskey(); none = false; w.keyed(); }
     await ask.act(which.value);
@@ -119,7 +119,7 @@ async function confirm(el: HTMLElement, from: Element, repo: string, ask: Ask, w
     backToSwitch(c.repo);
   });
   which.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) go.click(); });
-  show(c, ...lines(ask.what), h('p', {class: 'muted small'}, t('To confirm, type {repo}.', {repo})), which, error, c.foot(go));
+  show(c, ...lines(ask.what), h('p', {class: 'muted small'}, t('To confirm, enter "{repo}".', {repo})), which, error, c.foot(go));
   which.focus();
 }
 
@@ -130,11 +130,11 @@ async function confirm(el: HTMLElement, from: Element, repo: string, ask: Ask, w
  * cards are drawn as they are now once the deed is done there (deleted from a list, `after` first: what is here goes).
  */
 function inTheBrowser(el: HTMLElement, from: Element, repo: string, kind: Deed, ask: Ask, done: () => Promise<void>, after: () => Promise<void>) {
-  const cancel = button(t('Not now'), 'small-button');
+  const cancel = button(t('Cancel'), 'small-button');
   const c = inCard(el, from, repo, cancel, done);
   const error = h('p', {class: 'error', role: 'alert'});
-  const lead = h('p', {class: 'muted small'}, t('It asks for your passkey, which is in your browser: this repo\'s card opens there.'));
-  const go = deedButton(t('Continue in the browser'), from);
+  const lead = h('p', {class: 'muted small'}, t('Requires passkey authentication via browser; opening repo settings card there.'));
+  const go = deedButton(t('Continue in browser'), from);
   const came = async () => {
     if (!el.isConnected) { removeEventListener('focus', came); return; }
     await look().catch(() => {});
@@ -149,8 +149,8 @@ function inTheBrowser(el: HTMLElement, from: Element, repo: string, kind: Deed, 
     // Deleted from a list, it is turned off there; what is here goes once the window comes back to it done.
     await account.askBrowser(kind === 'delete' ? 'off' : kind, repo);
     addEventListener('focus', came);
-    lead.textContent = t('Open in your browser: confirm there, then come back. This card shows it.');
-    go.textContent = t('Open the browser again');
+    lead.textContent = t('Opened in browser: confirm there and return. Status will update here.');
+    go.textContent = t('Reopen browser');
   }));
   show(c, ...lines(ask.what), lead, error, c.foot(go));
   go.focus();

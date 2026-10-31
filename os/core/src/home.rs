@@ -150,7 +150,7 @@ pub fn set_profile(field: &str, value: &str) -> Result<Profile> {
         "handle" => {
             let h = v.trim_start_matches('@').to_ascii_lowercase();
             if !h.is_empty() && !valid_handle(&h) {
-                return Err(crate::tr!("A handle is 2–31 lowercase letters, digits, . - and _", "ハンドルは英小文字・数字・. - _ の2〜31文字です"));
+                return Err(crate::tr!("Handle must be 2–31 lowercase letters, digits, or . - _", "ハンドル名は英小文字・数字・. - _ の2〜31文字で入力してください"));
             }
             p.handle = h;
         }
@@ -294,7 +294,7 @@ pub fn take_dotfiles(names: &[String]) -> Result<Vec<String>> {
 /// Replace (or make) a dotfile, or remove it (`None`): written here, it runs here at once. Whether it was there before.
 pub fn set_dotfile(name: &str, text: Option<&str>) -> Result<bool> {
     if !dotfile_name(name) {
-        return Err(crate::tr!("A dotfile is named with a dot first: .profile", "dotfile の名前は . で始めます：.profile"));
+        return Err(crate::tr!("Dotfiles must begin with a dot (e.g. .profile)", "dotfile の名前は「.」から始めてください（例：.profile）"));
     }
     keep_trust()?;
     let mut all: Dotfiles = get("dotfiles")?.and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();

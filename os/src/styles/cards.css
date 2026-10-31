@@ -79,19 +79,24 @@
 .git-flow { scrollbar-gutter: stable; }
 /* Its box at the foot stands back (bench.ts back), so its room under the last line is the page's foot, not the box's:
    what fits is not left a few pixels scrollable (the heads stepping up as a merge closes the page up). The box up
-   (the Prompt), the room is its again. */
-.flow.git-flow { padding-bottom: var(--s6); }
-.work.bench.prompting .flow.git-flow { padding-bottom: 160px; }
+   (the Prompt), the room is its again. So is the room kept clear under what is scrolled to: the caret in the
+   Review's comment, a box's height above the foot with no box there, stepped the page up as the first letter was
+   typed. */
+.flow.git-flow { padding-top: calc(var(--s3) + var(--s2)); padding-bottom: var(--s6); }
+.work.bench .flow.git-flow { scroll-padding-bottom: var(--s3); }
+.work.bench.prompting .flow.git-flow { padding-bottom: 160px; scroll-padding-bottom: calc(var(--s5) + 80px); }
 .issue-kind { font-weight: 700; }
 /* Where an issue is (its repo) is a name: the sans, as every name is. */
 .issue-where { font: var(--t-meta)/1.6 var(--sans); color: var(--sub); }
 /* Git stands in Forge's frame: its repos the band on the top line, and under it, from the rail's first place, the
    page on the band's edges, the boxes as wide as Forge's and the prompt box a step outside them. The first part
    shown starts at the page's top, wherever parts before it are hidden. */
-.git-flow > .section:first-child, .git-flow > .section[hidden]:first-child + .section { margin-top: 0; }
-/* Its heading then on the line Forge's file heads and the pane's head are on (Prompt, Lately): one line across. */
-.git-flow > .section:first-child > h2, .git-flow > .section[hidden]:first-child + .section > h2,
-.git-flow > .section:first-child > .issues-head, .git-flow > .section[hidden]:first-child + .section > .issues-head { padding-top: var(--s2); }
+/* Its first heading is on the line Forge's file heads and the pane's head are on (Prompt, Lately), one line across:
+   the page's own room at its top (above), whichever part is first. main's part, shown, ends with the room before the
+   issues (not the issues' room before it): the room goes with it as it folds away or unfolds, never left to jump the
+   last of the way once it has gone, nor at once as it comes. */
+.git-flow > .section:first-child, .git-flow > .main-part + .section { margin-top: 0; }
+.git-flow > .main-part { margin-bottom: var(--s6); }
 /* The issues' heading line: the heading as every section's, Write an issue at its right on the same line, not
    making it any taller; with none to show it stands aside (the dashed card is the way then). */
 .issues-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); margin-bottom: var(--s3); }

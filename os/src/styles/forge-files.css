@@ -9,6 +9,9 @@
 .work.bench .flow { scroll-padding-top: var(--s3); }
 .columns.split > .col > .flow { scroll-padding-top: var(--s1); }
 .flow:focus-visible { outline-offset: -2px; }
+/* A folder not listed yet stands a window tall: what follows it is not near until it is listed and laid out (reader.ts
+   directory). */
+.flow .dir.unlisted { min-height: 100vh; }
 /* Forge's files run on far enough past the last for it to come up to the top (a file just made, opened at the end):
    not the empty foot of the one before it filling the column over it. */
 .col > .flow::after { content: ''; display: block; height: max(0px, calc(100% + var(--s3) - var(--file-min) - var(--s6))); }
@@ -56,8 +59,11 @@
 /* Off the screen, a file is neither styled nor laid out until it comes near (content-visibility), standing at the
    size it last had once it has been seen (auto), at a file's least before: Forge brought back over a big repo lays
    out what is on screen, not every file of it (360 files: 125–150 ms to 7). What it holds is painted only within
-   it then, but for its head's ground (.path's shadow, 2 corners above it and 1 beside), which reaches past it. */
-.file { content-visibility: auto; contain-intrinsic-size: auto var(--file-min); overflow-clip-margin: calc(2 * var(--r-place)); }
+   it then, but for its head's ground (.path's shadow, 2 corners above it and 1 beside), which reaches past it: the
+   room past it is a clip's margin, which holds only for a box that clips (overflow: clip), and only as a plain length:
+   twice --r-place, written out (the browser takes no calc() there, and a margin it does not take is 0: the shadow was
+   cut at the box's inner edge, and its sides showed above a stuck head as the file scrolled). */
+.file { content-visibility: auto; contain-intrinsic-size: auto var(--file-min); overflow: clip; overflow-clip-margin: 24px; }
 .file > .path { margin: 0 -1px; background: var(--paper); border: 1px solid; border-color: inherit; border-bottom: 0; border-radius: var(--r-place) var(--r-place) 0 0; }
 /* The sheet with the keyboard: its edge in ink, nothing drawn round it. */
 .file:focus-within { border-color: var(--ink); }
@@ -95,9 +101,13 @@
 .edit-ring .edit-mark { background: transparent; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--ink) 30%, transparent); }
 .file.edit-front { border-color: var(--ink); }
 .file:focus-within > .path { color: var(--ink); }
-/* Pressed, the head is the file in File (reader.ts act): its name underlined under the pointer, as a way there. */
-.path.acts { cursor: var(--cursor-hand); }
-.path.acts:hover .path-name { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+/* Its name, pressed, is written over where it stands (reader.ts renameIn): under the pointer a faint box round it, as
+   a name to write in; written in, the box is ink and the name as wide as what is written (its size, in a mono font). */
+.path-name.renames { margin: -2px -4px; padding: 1px 3px; border: 1px solid transparent; border-radius: var(--r-field); cursor: var(--cursor-text); transition: border-color var(--motion); }
+.path-name.renames:hover { border-color: var(--edge); }
+.path-rename { min-width: 0; max-width: 100%; margin: -2px -4px; padding: 1px 3px; border: 1px solid var(--ink); border-radius: var(--r-field); outline: 0; background: var(--paper); color: var(--ink); font: inherit; }
+.path-rename:disabled { opacity: .6; }
+.path-error { margin-left: var(--s3); font-family: var(--sans); }
 .sheet-note { padding: var(--s2) var(--s4) var(--s4); font-size: var(--t-meta); }
 /* Landed on from a search, File or Git: its head lit with the marker for a moment, then fading back, so the eye is
    led to where it landed without anything staying lit. The line asked for is selected in the marker too. */

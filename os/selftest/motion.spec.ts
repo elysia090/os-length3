@@ -277,8 +277,8 @@ test('a menu put away and opened again on its way out comes back from where it h
   await app.newRepo.make('hello');
   await app.rail.go('home');
   await still(app);
-  const gear = app.main.getByRole('button', {name: 'What to do with hello'}).first();
-  const menu = app.main.getByRole('menu', {name: 'What to do with hello'});
+  const gear = app.main.getByRole('button', {name: 'Actions for hello'}).first();
+  const menu = app.main.getByRole('menu', {name: 'Actions for hello'});
   await gear.click();
   await expect(menu).toBeVisible();
   await still(app);
@@ -422,7 +422,7 @@ test('the Prompt put back on its way up turns there, and brought up on its way d
   await app.newRepo.make('hello');
   await app.newRepo.openInForge();
   await still(app);
-  // How much of the glass is seen (its height less its clip's top and foot): as last drawn before it is turned (the
+  // How much of the glass is seen (its height less its clip's top and foot): as it stands when it is turned (the
   // bench says it is up, or going down), then frame by frame for 900 ms. Set going before the key is pressed (a key can
   // be taken before a script sent ahead of it has run), and read once it is over.
   type Watched = Window & {turned?: Promise<number[]>};
@@ -436,7 +436,7 @@ test('the Prompt put back on its way up turns there, and brought up on its way d
       };
       const was = work.classList.contains('prompting');
       (window as Watched).turned = new Promise<number[]>((done) => {
-        // As last drawn before it is turned (each frame until then), then each frame after.
+        // Each frame until it is turned, then where it stands as it is, then each frame after.
         const out: number[] = [now()];
         let t0 = 0;
         // Only while it is a screen at all: back in the pill, the glass is the box's again, and not seen.
@@ -445,6 +445,9 @@ test('the Prompt put back on its way up turns there, and brought up on its way d
           if (work.classList.contains('prompting') === was) return;
           turned.disconnect();
           t0 = performance.now();
+          // Where it stands as it is turned, not as last drawn: a frame long under load, it had gone on that much further
+          // by the time the key was taken, and it turns from there, as it should.
+          out[0] = now();
         });
         turned.observe(work, {attributes: true, attributeFilter: ['class']});
         const tick = () => {
@@ -521,12 +524,12 @@ test('a message joining a run: the one before narrows to its words from its side
   await bo.inbox.named();
   await ada.inbox.named();
   await ada.inbox.writeTo(bo.handle, 'Are you coming on Saturday?');
-  await expect(ada.main.getByText('Sent as a request: they see it once they accept you.')).toBeVisible();
+  await expect(ada.main.getByText('Sent as request: recipient will see it once accepted.')).toBeVisible();
   await still(ada);
   // Its width, and the note's height, each frame from the press until both have settled.
   const watch = ada.page.evaluate(() => new Promise<{wide: number[]; tall: number[]}>((done) => {
     const first = document.querySelector<HTMLElement>('.inbox-messages > .bubble')!;
-    const note = [...document.querySelectorAll<HTMLElement>('main [role=alert]')].find((e) => (e.textContent ?? '').startsWith('Sent as a request'))!;
+    const note = [...document.querySelectorAll<HTMLElement>('main [role=alert]')].find((e) => (e.textContent ?? '').startsWith('Sent as request'))!;
     const wide: number[] = [], tall: number[] = [], t0 = performance.now();
     const tick = () => {
       wide.push(first.getBoundingClientRect().width);

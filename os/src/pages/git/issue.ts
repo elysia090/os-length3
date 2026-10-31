@@ -1,6 +1,6 @@
 import {kindWords} from '../todo-list.ts';
 import {ago, h} from '../../ui/dom.ts';
-import {arrive, LAND, lift, type Lifted, morph, paced, still} from '../../ui/glide.ts';
+import {arrive, LAND, lift, type Lifted, morph, paced, putAway, still} from '../../ui/glide.ts';
 import * as git from '../../repos/history.ts';
 import {t, tn} from '../../i18n.ts';
 import {closeMark, issueName, issuePath, saveIssue, setClosed, type Issue} from '../../repos/issues.ts';
@@ -78,14 +78,14 @@ function summary(issue: Issue, after: () => void): HTMLElement {
   const save = async () => {
     if (field.value === issue.detail) { summaries.delete(key); keep(key, null); return; }
     try { await saveIssue(issueStore, issue, issue.kind, issue.title, field.value); summaries.delete(key); keep(key, null); after(); }
-    catch (e) { error.textContent = t('Could not write: {message}', {message: errorText(e)}); }
+    catch (e) { error.textContent = t('Failed to create: {message}', {message: errorText(e)}); }
   };
   field.addEventListener('blur', () => void save());
   if (back !== undefined) void save();
   return h('div', {class: 'issue-summary-wrap'}, field, error);
 }
 
-const STATE = (s: git.Change['state']) => ({open: t('Undecided'), merged: t('Merged'), rejected: t('Rejected'), reset: t('Taken back')})[s];
+const STATE = (s: git.Change['state']) => ({open: t('Pending'), merged: t('Merged'), rejected: t('Rejected'), reset: t('Withdrawn')})[s];
 
 /** Run `f` with `b` held down (busy), then `after`; a failure is said in `error`, and `b` can be pressed again. */
 const doing = (b: HTMLButtonElement, error: HTMLElement, f: () => Promise<unknown>, after: () => void) => async () => {
@@ -95,13 +95,12 @@ const doing = (b: HTMLButtonElement, error: HTMLElement, f: () => Promise<unknow
 };
 /** The step just done here, for a moment: its done mark, drawn next, lands rather than being there (slot). */
 let justDone: {word: string; until: number} | null = null;
+/** What was just said in a change's Review here, for a moment: drawn next, it lands in the conversation (reviewBox). */
+let justSaid: {change: string; until: number} | null = null;
 /** The issue closed here just now, for a moment: its line under Closed lands rather than being there (git/done.ts). */
 let closedNow: {repo: string; path: string; until: number} | null = null;
-export const justClosed = (i: Issue): boolean => {
-  const yes = !!closedNow && closedNow.repo === i.repo && closedNow.path === issuePath(i) && performance.now() < closedNow.until;
-  if (yes) closedNow = null;
-  return yes;
-};
+export const justClosed = (i: Issue): boolean =>
+  !!closedNow && closedNow.repo === i.repo && closedNow.path === issuePath(i) && performance.now() < closedNow.until;
 /** The issue started here last, and when: its steps unfold, through a draw again or two (issueBox). */
 let started: {path: string; at: number} | null = null;
 
@@ -120,8 +119,9 @@ function standing(s: RepoState | undefined, issue: Issue): string {
   const w = s?.work;
   // Worked on here: who and when; the boxes under it say the rest.
   if (hereOf(s, issue) && w) return t('{who} · started {when}', {who: w.started_by || '—', when: ago(w.started_at)});
-  // An open change says where it stands in its Push row.
-  if (c) return c.state === 'open' ? '' : t('Change · version {n} · {state}', {n: c.version, state: STATE(c.state)});
+  // An open change says where it stands in its Push row; one decided, what came of it (never its version: a count the
+  // Remote keeps of hand-ins, not a thing the person holds in mind).
+  if (c) return c.state === 'open' ? '' : STATE(c.state);
   const line = s?.lines.find((l) => l.issue === path);
   if (line) return t('{who} · started {when}', {who: line.startedBy || '—', when: ago(line.startedAt)});
   return '';
@@ -151,7 +151,7 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
   const leave = offered ? closeDeed(issue, error, events, after) : null;
   // Its title is changed where it is read: pressed, the head becomes the fields it was written in. Its summary is
   // written right under it, above Commit and Push.
-  const words = h('button', {type: 'button', class: 'issue-words', title: t('Change its words')}, issueHead(issue));
+  const words = h('button', {type: 'button', class: 'issue-words', title: t('Edit description')}, issueHead(issue));
   const work = here && s?.work ? steps(issue, s, events, after) : null;
   if (work) unfolding(work.element, issuePath(issue));
   // The change's power switch, low at the box's right, where its foot's action is.
@@ -171,7 +171,7 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
 function startDeed(issue: Issue, s: RepoState | undefined, error: HTMLElement, events: IssueEvents, after: () => void): HTMLButtonElement {
   const at = issue.repo;
   const line = s?.lines.find((l) => l.issue === issuePath(issue)) ?? null;
-  const go = button(line ? t('Continue here') : t('Start'), true);
+  const go = button(line ? t('Resume here') : t('Start'), true);
   go.addEventListener('click', doing(go, error, async () => {
     if (line) await git.switchWork(at, line.line); else await git.startWork(at, issue.file);
     events.moved(at);
@@ -185,13 +185,15 @@ function startDeed(issue: Issue, s: RepoState | undefined, error: HTMLElement, e
  */
 function closeDeed(issue: Issue, error: HTMLElement, events: IssueEvents, after: () => void): HTMLButtonElement {
   const leave = button(t('Close'));
-  leave.title = t('Will not be done: it goes under Closed, where it can be reopened');
+  leave.title = t('Won\'t fix: moves to Closed (can be reopened later)');
   leave.addEventListener('click', doing(leave, error, async () => {
     // It goes down as it is closed, toward Closed under the page, where its line lands lit; not closed, it is back.
     const going = still() ? null : (leave.closest('.issue-slot') ?? leave.closest('.issue-box'))?.animate([{transform: 'none', opacity: 1}, {transform: 'translateY(28px) scale(.97)', opacity: 0}],
       {duration: paced(240), easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards'});
-    try { await Promise.all([closeIssue(issue), going?.finished]); } catch (e) { going?.cancel(); throw e; }
+    // Said before its file is written: the page is drawn again as the file changes (git.ts watch), and the line that
+    // drawing puts under Closed is the one that lands, not one there plain and then landing again.
     closedNow = {repo: issue.repo, path: issuePath(issue), until: performance.now() + 3000};
+    try { await Promise.all([closeIssue(issue), going?.finished]); } catch (e) { closedNow = null; going?.cancel(); throw e; }
     await events.aside?.(issue);
   }, after));
   return leave;
@@ -202,7 +204,7 @@ function closeDeed(issue: Issue, error: HTMLElement, events: IssueEvents, after:
  * box drawn again meanwhile, as it is once the repo is read again, carries the unfolding on from where it was).
  */
 function unfolding(steps: HTMLElement, path: string) {
-  if (justDone && (justDone.word === t('Start') || justDone.word === t('Continue here')) && performance.now() < justDone.until) {
+  if (justDone && (justDone.word === t('Start') || justDone.word === t('Resume here')) && performance.now() < justDone.until) {
     justDone = null;
     started = {path, at: performance.now()};
   }
@@ -211,7 +213,7 @@ function unfolding(steps: HTMLElement, path: string) {
 
 /** At the box's foot, opposite its action: its repo and, quietly, who started it and when; Close at its left. */
 function foot(issue: Issue, s: RepoState | undefined, leave: HTMLElement | null, acts: Node[]): HTMLElement {
-  const say = !connection() ? t('History and work are kept on the Remote. Sign in to it to work on an issue and commit.') : s?.error ?? standing(s, issue);
+  const say = !connection() ? t('History is stored on Remote. Sign in to work on issues and commit.') : s?.error ?? standing(s, issue);
   return h('div', {class: 'issue-foot'}, leave, h('div', {class: 'issue-about'}, h('span', {class: 'issue-where'}, issue.repo),
     say ? h('span', {class: s?.error ? 'error small' : 'muted small'}, say) : null), ...acts);
 }
@@ -246,8 +248,8 @@ export function notCommitted(at: string, line: string, n: number, events: IssueE
   const files = (list: git.FileDiff[]) => diffFiles(theirs(list), {reveal: (p) => events.open(at, p), cut: 30, kept: copy,
     issue: (p) => aboutIssue.get(`${at}\0${p}`) ?? null});
   const was = uncommittedRead.get(copy);
-  const box = h('div', {class: 'changes', role: 'region', 'aria-label': tn('{n} file not committed', '{n} files not committed', n)}, ...(was ? files(was) : [quiet(t('Reading…'))]));
-  // Read for the first time, the files come in under "Reading…" and the box grows to hold them, never a jump.
+  const box = h('div', {class: 'changes', role: 'region', 'aria-label': tn('{n} uncommitted file', '{n} uncommitted files', n)}, ...(was ? files(was) : [quiet(t('Loading…'))]));
+  // Read for the first time, the files come in under "Loading…" and the box grows to hold them, never a jump.
   const show = (...nodes: Node[]) => { const from = box.isConnected ? box.getBoundingClientRect().height : 0; box.replaceChildren(...nodes); resize(box, from); };
   void git.diff(at).then((list) => {
     uncommittedRead.set(copy, list);
@@ -258,16 +260,100 @@ export function notCommitted(at: string, line: string, n: number, events: IssueE
 
 /**
  * `el`'s height goes from what it was (`from`) to what it now holds (a line asked for is shorter than the files it
- * names; an issue's box once its commit's files have gone; files read in under "Reading…"): never a jump.
+ * names; an issue's box once its commit's files have gone; files read in under "Loading…"): never a jump.
  */
 export function resize(el: HTMLElement, from: number) {
   if (still() || !from || !el.isConnected) return;
-  const to = el.getBoundingClientRect().height;
+  const box = el.getBoundingClientRect(), to = box.height;
   if (Math.abs(to - from) < 2) return;
   el.style.overflow = 'hidden';
   const back = () => { el.style.overflow = ''; };
-  el.animate([{height: `${from}px`}, {height: `${to}px`}], {duration: paced(280), easing: LAND}).finished.then(back, back);
+  const ms = paced(280);
+  el.animate([{height: `${from}px`}, {height: `${to}px`}], {duration: ms, easing: LAND}).finished.then(back, back);
+  // Grown: what now stands below where its edge was comes in as the edge goes down over it, never cut through mid-line.
+  if (to > from) {
+    for (const c of el.children) {
+      if (c instanceof HTMLElement && c.getBoundingClientRect().top - box.top >= from - 4) {
+        c.animate([{opacity: 0}, {opacity: 0, offset: .3}, {opacity: 1}], {duration: ms, easing: 'ease-out'});
+      }
+    }
+  }
 }
+
+/** The parts a box is drawn in, to tell one drawing from the next: its children, under a lone wrapper (an issue's). */
+const partsOf = (el: Element): Element[] => {
+  let at = el;
+  while (at.children.length === 1 && at.firstElementChild!.children.length) at = at.firstElementChild!;
+  return [...at.children];
+};
+
+/**
+ * `now` drawn where `old` was (the same box drawn again: a step done, a line asked for): what changed in it fades from
+ * what it was to what it is as the box goes from `old`'s height (`from`) to its own; what is the same stays as it is,
+ * neither going nor coming. `old` is taken (it is out of the page by then, or a copy). Before `resize`, which would
+ * have `now` at `from` already.
+ */
+export function crossfade(old: HTMLElement, now: HTMLElement, from: number) {
+  const parent = now.parentElement;
+  if (still() || old === now || !parent || !now.isConnected) return;
+  // The parts the same in both, one for one: kept still (the old one hidden, the new one not faded).
+  const was = partsOf(old), is = partsOf(now);
+  const same = new Map<Element, Element>();
+  const taken = new Set<Element>();
+  for (const p of is) {
+    const q = was.find((x) => !taken.has(x) && x.outerHTML === p.outerHTML);
+    if (q) { same.set(p, q); taken.add(q); }
+  }
+  const coming = (q: Element) => q.getAnimations().find((a) => a.id === COMING && a.playState === 'running');
+  // `old` was itself still coming in over what was before it (the page read again twice over one step): what was
+  // before it goes on fading, now over this one, and what this one shows comes in from where `old`'s had got to;
+  // never `old`'s parts, all but unseen yet, taken for what is going (a moment of nothing in the box).
+  const prior = fading.get(old);
+  if (prior?.getAnimations().some((a) => a.playState === 'running')) {
+    const at = was.map(coming).find(Boolean)?.currentTime ?? 0;
+    over(prior, now, parent, from);
+    fading.set(now, prior);
+    for (const p of is) {
+      const q = same.get(p);
+      if (!q) comeIn(p).currentTime = at;
+      else { const a = coming(q); if (a) comeIn(p).currentTime = a.currentTime; }
+    }
+    return;
+  }
+  // A part still coming in from a drawing a moment before goes on coming in from where it had got to, neither
+  // starting over nor there at once.
+  for (const [p, q] of same) { const a = coming(q); if (a) comeIn(p).currentTime = a.currentTime; }
+  if (same.size === is.length && is.length === was.length) return;
+  for (const q of taken) (q as HTMLElement).style.visibility = 'hidden';
+  old.inert = true;
+  old.setAttribute('aria-hidden', 'true');
+  old.removeAttribute('id');
+  over(old, now, parent, from);
+  fading.set(now, old);
+  // What went is mostly gone before what comes is much there (words over words are never read as one smear), yet the
+  // two overlap, so the place is never empty a moment between them.
+  old.animate([{opacity: 1}, {opacity: 0}], {duration: paced(160), easing: 'linear', fill: 'forwards'}).finished.then(() => old.remove(), () => old.remove());
+  for (const p of is) if (!same.has(p)) comeIn(p);
+}
+/** What a box drawn again showed before, still fading over it (crossfade), by the box. */
+const fading = new WeakMap<Element, HTMLElement>();
+/** `ghost` laid over `now` in `parent`, from `from` tall to as tall as `now` is, cut there. */
+function over(ghost: HTMLElement, now: HTMLElement, parent: HTMLElement, from: number) {
+  const at = now.getBoundingClientRect(), on = parent.getBoundingClientRect();
+  if (getComputedStyle(parent).position === 'static') parent.style.position = 'relative';
+  Object.assign(ghost.style, {position: 'absolute', left: `${at.left - on.left - parent.clientLeft}px`, top: `${at.top - on.top - parent.clientTop}px`,
+    width: `${at.width}px`, height: `${from}px`, margin: '0', borderColor: 'transparent', background: 'transparent', overflow: 'hidden',
+    pointerEvents: 'none', zIndex: '1', animation: 'none'});
+  parent.append(ghost);
+  ghost.animate([{height: `${from}px`}, {height: `${at.height}px`}], {duration: paced(280), easing: LAND, fill: 'forwards'});
+}
+/** A part of a box drawn again coming in (crossfade), named so a drawing after it can go on from it. */
+const COMING = 'coming-in';
+const comeIn = (p: Element) => {
+  const a = p.animate([{opacity: 0}, {opacity: 1}], {duration: paced(220), delay: paced(40), easing: 'ease-out', fill: 'backwards'});
+  a.id = COMING;
+  return a;
+};
 
 /**
  * Back to main, for the issue the repo shows: out of the box, under it at its left (git.ts), as what leaves the
@@ -282,12 +368,19 @@ export function backToMain(issue: Issue, s: RepoState | undefined, events: Issue
   return h('div', {class: 'issue-leave'}, leave, error);
 }
 
-/** A step's place: its button, or once done the done mark and the same word (green says it is done). */
-const slot = (act: HTMLElement, done: boolean, word: string) => {
+/**
+ * A step's place: its button, or once done the done mark and the same word (green says it is done). `then`: done by
+ * the same deed as the step before it, whose mark lands just now (a commit hands itself in): this one lands after it,
+ * in the order the work goes, never done before the step it follows.
+ */
+const slot = (act: HTMLElement, done: boolean, word: string, then = false) => {
   const fresh = done && justDone?.word === word && performance.now() < justDone.until;
   if (fresh) justDone = null;
-  return h('div', {class: 'step-act'},
-    done ? h('span', {class: 'step-done'}, h('span', {class: fresh ? 'done-mark fresh' : 'done-mark', 'aria-hidden': 'true'}), word) : act);
+  const mark = h('span', {class: fresh ? 'done-mark fresh' : then ? 'done-mark fresh then' : 'done-mark', 'aria-hidden': 'true'});
+  // Landed, it is a mark like any other: a box drawn again keeps it still (crossfade sees the same part), where one
+  // still saying it was fresh was taken for a change, and its copy, fading out over the new box, landed all over again.
+  mark.addEventListener('animationend', (e) => { if (e.pseudoElement === '::after') mark.classList.remove('fresh', 'then'); });
+  return h('div', {class: 'step-act'}, done ? h('span', {class: 'step-done'}, mark, word) : act);
 };
 const about = (...n: (Node | null)[]) => h('div', {class: 'step-about'}, ...n);
 const quiet = (text: string) => h('p', {class: 'muted small'}, text);
@@ -308,7 +401,7 @@ function steps(issue: Issue, s: RepoState, events: IssueEvents, after: () => voi
   const dirty = s.uncommitted;
   // Nothing to commit says nothing (Commit's done mark says it); before the first, where the work is done.
   const what: Node | null = dirty ? notCommitted(at, w.line, dirty, events)
-    : w.commits ? null : quiet(t('Edit in File, Forge or the Prompt; what changes shows here.'));
+    : w.commits ? null : quiet(t('Edits in File, Forge, or Prompt appear here.'));
 
   // Commit
   const commit = button(t('Commit'), dirty > 0);
@@ -327,26 +420,28 @@ function steps(issue: Issue, s: RepoState, events: IssueEvents, after: () => voi
   // back (Reset). Pressed, it goes off at once, as a switch does under the hand, and back on if it could not.
   let reset: HTMLElement | null = null;
   if (pushed && open) {
-    const power = h('button', {type: 'button', class: 'power', role: 'switch', 'aria-checked': 'true', 'aria-label': t('Handed in'),
-      title: t('Switched off, the change is taken back')}, h('span', {class: 'knob'})) as HTMLButtonElement;
+    const power = h('button', {type: 'button', class: 'power', role: 'switch', 'aria-checked': 'true', 'aria-label': t('Submitted'),
+      title: t('Disabling withdraws this Change')}, h('span', {class: 'knob'})) as HTMLButtonElement;
     const off = doing(power, error, () => git.reset(at).catch((e: unknown) => { power.setAttribute('aria-checked', 'true'); throw e; }), after);
     power.addEventListener('click', () => { power.setAttribute('aria-checked', 'false'); void off(); });
-    reset = h('span', {class: 'power-line'}, h('span', {class: 'muted small', 'aria-hidden': 'true'}, t('Handed in')), power);
+    reset = h('span', {class: 'power-line'}, h('span', {class: 'muted small', 'aria-hidden': 'true'}, t('Submitted')), power);
   }
   // Taken back or rejected, Push's row still says so (the switch gone off has its answer), until it is pushed anew.
-  const where = pushed || (w.change && w.change.state !== 'open' && !w.unpushed) ? quiet(t('Change · version {n} · {state}', {n: w.change!.version, state: STATE(w.change!.state)}))
-    : w.unpushed ? quiet(tn('{n} commit to push', '{n} commits to push', w.unpushed)) : null;
+  // Handed in and waiting, it says nothing more: its done mark says it is in, and the Review under the box what is next.
+  const where = w.unpushed ? quiet(tn('{n} commit to push', '{n} commits to push', w.unpushed))
+    : w.change && w.change.state !== 'open' ? quiet(STATE(w.change.state)) : null;
 
+  const commitSlot = slot(commit, committed, t('Commit'));
   return {element: h('div', {class: 'steps issue-steps'},
-    h('div', {class: 'step-about step-changes'}, what), slot(commit, committed, t('Commit')),
-    about(where), slot(push, pushed, t('Push')), error), reset};
+    h('div', {class: 'step-about step-changes'}, what), commitSlot,
+    about(where), slot(push, pushed, t('Push'), !!commitSlot.querySelector('.done-mark.fresh')), error), reset};
 }
 
 /** Someone else's change, received: committed and pushed already, by whom and which version. */
 function received(change: git.Change): HTMLElement {
   return h('div', {class: 'steps issue-steps'},
     about(quiet(change.submittedBy || '—')), slot(h('span'), true, t('Commit')),
-    about(quiet(t('Change · version {n} · {state}', {n: change.version, state: STATE(change.state)}))), slot(h('span'), true, t('Push')));
+    about(null), slot(h('span'), true, t('Push')));
 }
 
 /**
@@ -371,22 +466,33 @@ export function mergeRow(issue: Issue, s: RepoState | undefined, events: IssueEv
   // Merged, the issue's box goes down into its line under Merged, which lands lit: the issue is done.
   let from: DOMRect | null = null;
   let words: Lifted | null = null;
+  let rest: HTMLElement | null = null;
   merge.addEventListener('click', doing(merge, error, async () => {
     await git.merge(at, change);
     mergedNow.set(change.id, Date.now());
-    const card = merge.closest('.issue-slot')?.querySelector('.issue-card');
+    const slotEl = merge.closest<HTMLElement>('.issue-slot');
+    const card = slotEl?.querySelector<HTMLElement>('.issue-card');
+    // What stood under the box (its Review, Merge, Back to main) is done with: it folds away first, the box staying
+    // where it is, so the box goes down into its line on its own (not a page that loses its foot at once under it).
+    const under = [...(slotEl?.querySelectorAll<HTMLElement>(':scope > :not(.issue-card)') ?? [])];
+    await Promise.all(under.map((el) => new Promise<void>((gone) => putAway(el, () => { el.remove(); gone(); }, {fold: true, ms: 220}))));
     from = card?.getBoundingClientRect() ?? null;
     words = lift(card?.querySelector('h2'));
+    // The rest of what the box held goes with the sheet, fading as it sets off, its title carried on by itself.
+    if (card) {
+      rest = card.cloneNode(true) as HTMLElement;
+      rest.querySelector<HTMLElement>('h2')?.style.setProperty('visibility', 'hidden');
+    }
     if (here) await git.switchWork(at, 'main');
     events.moved(at);
   }, () => {
     after();
     if (from) morph(from, () => document.querySelector<HTMLElement>(`.done-row[data-change="${CSS.escape(change.id)}"]`), 460, '', 150,
-      words ? {lifted: words, to: (row) => row.querySelector('.done-name')} : undefined);
+      words ? {lifted: words, to: (row) => row.querySelector('.done-name'), ...(rest ? {rest} : {})} : undefined);
   }));
   const by = approvals.length ? t('Approved by {who}', {who: [...new Set(approvals.map((r) => r.by))].join(', ')}) : t('Not approved yet');
   const reject = button(t('Reject'));
-  reject.title = t('Do not take it into main (its issue stays open)');
+  reject.title = t('Do not merge into main (issue remains open)');
   reject.addEventListener('click', doing(reject, error, () => git.reject(at, change), after));
   return h('div', {class: 'steps merge-row'}, about(h('div', {class: 'step-line'}, reject, quiet(by))), slot(merge, false, ''), error);
 }
@@ -420,7 +526,7 @@ function markedDiff(files: git.FileDiff[], marked: Set<string>, pending: Set<str
  */
 /**
  * Each change's diff as last read (by repo, change and version): the Review drawn again as the page is read again is
- * as tall as it was at once, not "Reading…" a moment, which closed the page up under the person reading it.
+ * as tall as it was at once, not "Loading…" a moment, which closed the page up under the person reading it.
  */
 const diffsRead = new Map<string, git.FileDiff[]>();
 
@@ -436,7 +542,7 @@ export function reviewBox(issue: Issue, s: RepoState | undefined, after: () => v
   const pending = change.state === 'open' ? new Set<string>() : null;
   const read = `${at}\0${change.id}\0${change.version}`;
   const was = diffsRead.get(read);
-  const diff = h('div', {class: 'review-diff'}, ...(was ? markedDiff(was, marked, pending, read) : [h('p', {class: 'muted small'}, t('Reading…'))]));
+  const diff = h('div', {class: 'review-diff'}, ...(was ? markedDiff(was, marked, pending, read) : [h('p', {class: 'muted small'}, t('Loading…'))]));
   void git.changeDiff(at, change).then((files) => {
     diffsRead.set(read, files);
     if (!was || JSON.stringify(files) !== JSON.stringify(was)) diff.replaceChildren(...markedDiff(files, marked, pending, read));
@@ -445,20 +551,25 @@ export function reviewBox(issue: Issue, s: RepoState | undefined, after: () => v
   // What was said, in order, as a conversation: a verdict with its note, or a comment alone.
   // An approval is the ○ turning green, not a box in the conversation (its note, if any, still shows).
   const told = change.reviews.filter((r) => r.verdict !== 'approve' || r.note);
-  const said = h('div', {class: 'review-chat'}, ...told.slice().reverse().map((r) => h('div', {class: 'bubble'},
-    h('span', {class: 'muted small'}, `${r.by} · ${ago(r.time)}${r.version !== change.version ? ` · ${t('version {n} (older)', {n: r.version})}` : ''}`),
-    r.verdict === 'changes' ? h('span', {class: 'step-done'}, t('Asked for changes')) : null,
+  // Said here just now: the newest comes down into the conversation from the field it was written in, not there at once.
+  const landing = justSaid?.change === change.id && performance.now() < justSaid.until;
+  if (landing) justSaid = null;
+  const said = h('div', {class: 'review-chat'}, ...told.slice().reverse().map((r, k) => h('div', {class: landing && k === 0 ? 'bubble fresh' : 'bubble'},
+    h('span', {class: 'muted small'}, `${r.by} · ${ago(r.time)}${r.version !== change.version ? ` · ${t('v{n} (older)', {n: r.version})}` : ''}`),
+    r.verdict === 'changes' ? h('span', {class: 'step-done'}, t('Changes requested')) : null,
     r.note ? h('p', {class: 'bubble-text'}, r.note) : null)));
+  said.firstElementChild?.addEventListener('animationend', (e) => (e.currentTarget as HTMLElement).classList.remove('fresh'), {once: true});
   const body: Node[] = [diff, ...(told.length ? [said] : [])];
   if (change.state === 'open') {
     // Under what was said, a comment more, written in a roomy field and sent
     // with the lines marked (Ctrl+Enter, or Comment); under it, Approve as a
     // ○. Merge and Reject follow under the box.
-    const text = h('textarea', {class: 'line-in review-in', rows: '7', placeholder: t('Comment…'), 'aria-label': t('Comment'), maxlength: '4000'}) as HTMLTextAreaElement;
+    const text = h('textarea', {class: 'line-in review-in', rows: '7', placeholder: t('Add a comment…'), 'aria-label': t('Comment'), maxlength: '4000'}) as HTMLTextAreaElement;
     // A comment, or asking for changes, says something: with nothing written or marked, the field is where to say it.
     const send = (verdict: git.Review['verdict'], b: HTMLButtonElement) => doing(b, error, async () => {
-      if (!text.value.trim() && !pending!.size) { text.focus(); throw new Error(verdict === 'changes' ? t('Say what to change, or mark its lines') : ''); }
+      if (!text.value.trim() && !pending!.size) { text.focus(); throw new Error(verdict === 'changes' ? t('Specify requested changes or select target lines') : ''); }
       await git.review(at, change, verdict, text.value, [...pending!]);
+      justSaid = {change: change.id, until: performance.now() + 3000};
     }, after);
     // Approve is a ○: pressed, it turns green (the done mark) and stays so.
     let approve: HTMLElement;
@@ -466,13 +577,16 @@ export function reviewBox(issue: Issue, s: RepoState | undefined, after: () => v
     else {
       const b = h('button', {type: 'button', class: 'approve-mark'}, h('span', {class: 'ring', 'aria-hidden': 'true'}), t('Approve')) as HTMLButtonElement;
       // What is written and marked goes with it; only a written note shows in the conversation.
-      b.addEventListener('click', doing(b, error, () => git.review(at, change, 'approve', text.value, [...pending!]), after));
+      b.addEventListener('click', doing(b, error, async () => {
+        await git.review(at, change, 'approve', text.value, [...pending!]);
+        if (text.value.trim()) justSaid = {change: change.id, until: performance.now() + 3000};
+      }, after));
       approve = b;
     }
     const comment = button(t('Comment'));
     comment.addEventListener('click', send('comment', comment));
     // Asking for changes: what is written and marked goes with it, and the conversation says it was asked.
-    const changes = button(t('Ask for changes'));
+    const changes = button(t('Request changes'));
     changes.addEventListener('click', send('changes', changes));
     text.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) { e.preventDefault(); comment.click(); } });
     body.push(text, h('div', {class: 'review-verdict'}, approve, h('span', {class: 'grow'}), changes, comment));

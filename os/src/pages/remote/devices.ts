@@ -37,11 +37,11 @@ export function deviceSection(counted: (n: number) => void): HTMLElement {
  */
 function connectRow(again: () => void): HTMLElement {
   const place = h('div', {class: 'connect-place'});
-  const open = h('button', {type: 'button', class: 'row-item row-new'}, mark('plus'), h('span', {}, t('Connect a device'))) as HTMLButtonElement;
+  const open = h('button', {type: 'button', class: 'row-item row-new'}, mark('plus'), h('span', {}, t('Connect device'))) as HTMLButtonElement;
   open.addEventListener('click', () => {
     const body = h('div', {class: 'remote-join'});
-    const no = button(t('Not now'), 'small-button');
-    const ask = h('div', {class: 'row-ask', role: 'group', 'aria-label': t('Connect a device')}, body, h('div', {class: 'card-foot'}, no));
+    const no = button(t('Cancel'), 'small-button');
+    const ask = h('div', {class: 'row-ask', role: 'group', 'aria-label': t('Connect device')}, body, h('div', {class: 'card-foot'}, no));
     no.addEventListener('click', () => { place.replaceChildren(open); open.focus(); });
     place.replaceChildren(ask);
     joining(body, '', (text) => body.replaceChildren(h('p', {}, text)), (step) => {
@@ -70,17 +70,17 @@ function deviceRow(d: account.Device, again: () => Promise<void>): HTMLElement {
 
 /** Which one it is: its word and when it was last used (two browsers of a kind read the same). */
 const head = (d: account.Device, name: string) => [h('span', {class: 'row-name'}, name), d.current ? h('span', {class: 'row-meta'}, t('This device')) : null,
-  h('span', {class: 'row-meta'}, t('Used {when}', {when: ago(Date.parse(d.updatedAt))}))];
+  h('span', {class: 'row-meta'}, t('Last used: {when}', {when: ago(Date.parse(d.updatedAt))}))];
 
 /** Signing `d` out, asked in its `row` first, pressed at `out`; signed out, the devices are read again (`again`). */
 function askOut(d: account.Device, name: string, row: HTMLElement, out: HTMLButtonElement, again: () => Promise<void>) {
   const foot = askFoot(out, row);
   const error = h('p', {class: 'error small', role: 'alert'});
-  const no = button(t('Not now'), 'small-button'), yes = button(t('Sign out'), 'small-button primary');
+  const no = button(t('Cancel'), 'small-button'), yes = button(t('Sign out'), 'small-button primary');
   const ask = h('div', {class: 'row-ask', role: 'group', 'aria-label': t('Sign out {name}', {name})},
     h('div', {class: 'row-item'}, ...head(d, name)),
-    h('p', {class: 'muted small'}, t('It is signed out at once.')),
-    h('p', {class: 'muted small'}, t('What is on it stays there; signing in again brings it back.')), error, foot(no, yes));
+    h('p', {class: 'muted small'}, t('Signed out immediately.')),
+    h('p', {class: 'muted small'}, t('Local data remains intact and will reconnect upon signing in again.')), error, foot(no, yes));
   no.addEventListener('click', () => { ask.replaceWith(row); out.focus(); });
   const shown = performance.now();
   yes.addEventListener('click', () => {

@@ -115,19 +115,44 @@ fn head_file(key: &str) -> std::path::PathBuf {
     crate::paths::data_dir().join("sync").join(format!("{key}.head.json"))
 }
 
-/// The tree of a commit (empty before the first), kept for the line `key` it was last asked for.
+/// The tree of a commit (empty before the first), kept for the line `key` it was last asked for. One kept for an
+/// earlier commit is brought to this one by what changed between them (the Remote compares them), not read again whole.
 fn head_tree(client: &Client, repo: &str, key: &str, head: Option<&str>) -> Result<Tree> {
     let Some(id) = head else { return Ok(Tree::new()) };
     let kept: Head = fs::read(head_file(key)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
     if kept.id.as_deref() == Some(id) {
         return Ok(kept.tree);
     }
-    let tree = tree_at(client, repo, id)?;
+    let tree = match kept.id.as_deref().map(|was| compare(client, repo, Some(was), id)) {
+        Some(Ok(Some((was, now)))) => {
+            let mut tree = kept.tree;
+            for p in was.keys() { tree.remove(p); }
+            tree.extend(now);
+            tree
+        }
+        _ => tree_at(client, repo, id)?,
+    };
     // Kept to spare the next read; not kept, the next read asks again.
     if let Ok(b) = serde_json::to_vec(&Head { id: Some(id.into()), tree: tree.clone() }) {
         let _ = crate::atomic::replace(&head_file(key), &b, crate::atomic::How::CACHE);
     }
     Ok(tree)
+}
+
+/// What changed between two commits (`from` none: from nothing), as each has it: only the paths that differ, the
+/// Remote comparing them where it keeps them. None from a Remote from before (it has no such route).
+fn compare(client: &Client, repo: &str, from: Option<&str>, to: &str) -> Result<Option<(Tree, Tree)>> {
+    match client.call("GET", &format!("/v1/repos/{repo}/compare?from={}&to={to}", from.unwrap_or_default()), None)? {
+        Reply::Ok(v) if v["was"].is_object() && v["now"].is_object() => Ok(Some((remote::tree_of(&v["was"]), remote::tree_of(&v["now"])))),
+        _ => Ok(None),
+    }
+}
+
+/// Two commits' trees as far as they differ (each path whose value differs, as each has it): compared by the Remote,
+/// or, from one from before, both read whole.
+fn differ(client: &Client, repo: &str, from: Option<&str>, to: &str) -> Result<(Tree, Tree)> {
+    if let Some(d) = compare(client, repo, from, to)? { return Ok(d); }
+    Ok((from.map_or_else(|| Ok(Tree::new()), |b| tree_at(client, repo, b))?, tree_at(client, repo, to)?))
 }
 
 fn tree_at(client: &Client, repo: &str, id: &str) -> Result<Tree> {
@@ -185,13 +210,23 @@ struct Pair { path: String, status: &'static str, before: Option<String>, after:
 /// Where the newer side's bytes are: the files here, or the Remote's blobs.
 enum After<'a> { Here(std::path::PathBuf), Remote(&'a Client) }
 
+/// The paths whose files differ from `then` to `now`, in order. Folders count through their files: one made or gone
+/// alone is no change.
+fn differing<'a>(then: &'a Tree, now: &'a Tree) -> impl Iterator<Item = &'a String> {
+    let paths: std::collections::BTreeSet<&String> = then.keys().chain(now.keys()).collect();
+    paths.into_iter().filter(|p| {
+        let (was, is) = (then.get(*p), now.get(*p));
+        was != is && !(matches!(was, Some(None) | None) && matches!(is, Some(None) | None))
+    })
+}
+
 fn pairs(client: Option<&Client>, after_from: After, then: &Tree, now: &Tree) -> Result<Vec<Pair>> {
     let mut out = Vec::new();
-    let paths: std::collections::BTreeSet<&String> = then.keys().chain(now.keys()).collect();
+    let paths: Vec<&String> = differing(then, now).collect();
     if let Some(c) = client {
         let remote_after = matches!(after_from, After::Remote(_));
         let mut need: Vec<&String> = Vec::new();
-        for p in paths.iter().filter(|p| then.get(**p) != now.get(**p)) {
+        for p in &paths {
             if let Some(Some(sha)) = then.get(*p) { need.push(sha); }
             if let (true, Some(Some(sha))) = (remote_after, now.get(*p)) { need.push(sha); }
         }
@@ -199,9 +234,6 @@ fn pairs(client: Option<&Client>, after_from: After, then: &Tree, now: &Tree) ->
     }
     for path in paths {
         let (was, is) = (then.get(path), now.get(path));
-        if was == is { continue; }
-        // Folders count through their files.
-        if matches!(was, Some(None) | None) && matches!(is, Some(None) | None) { continue; }
         let status = match (was, is) { (Some(Some(_)), Some(Some(_))) => "modified", (_, Some(Some(_))) => "added", _ => "removed" };
         let before = match (client, was) {
             (Some(c), Some(Some(sha))) => Some(blob(c, sha)?),
@@ -260,6 +292,12 @@ fn changes_of(client: Option<&Client>, after: After, then: &Tree, now: &Tree) ->
 pub fn changes(repos: &Repos, repo: &str) -> Result<Changes> {
     let (client, then, now) = draft_and_head(repos, repo)?;
     changes_of(client.as_ref(), After::Here(repos.dir(repo)?), &then, &now)
+}
+
+/// How many files are not committed yet: as many as `changes` lists, none of them read (what is said beside diff).
+pub fn changed(repos: &Repos, repo: &str) -> Result<usize> {
+    let (_, then, now) = draft_and_head(repos, repo)?;
+    Ok(differing(&then, &now).count())
 }
 
 /// The same, line by line, at most `limit` lines in all.
@@ -333,7 +371,7 @@ fn words(repos: &Repos, repo: &str, issue: Option<&str>, line: &str) -> Result<(
 pub fn cut(repos: &Repos, repo: &str, issue: Option<&str>, line: &str, note: &str) -> Result<Cut> {
     let (kind, title, issue) = words(repos, repo, issue, line)?;
     if title.trim().is_empty() {
-        return Err(crate::tr!("A commit needs a title (for example Fix：title)", "Commit するには件名がいります（たとえば Fix：件名）"));
+        return Err(crate::tr!("Commit requires a title (e.g. Fix: title)", "コミットにはタイトルが必要です（例：Fix: 件名）"));
     }
     let client = Client::open().map_err(|_| crate::tr!("Commits are kept on the Remote. Sign in to it first (l3 login)", "コミットは Remote に残ります。先に Remote にサインインしてください（l3 login）"))?;
     let (key, on) = remote::key(repos, repo);
@@ -373,7 +411,7 @@ pub fn cut(repos: &Repos, repo: &str, issue: Option<&str>, line: &str, note: &st
             Reply::NotFound(_) => return Err(crate::tr!("The Remote does not have this repo", "Remote にこの repo がありません")),
         }
     }
-    Err(crate::tr!("The Remote kept moving; could not commit", "Remote が動き続けていて Commit できませんでした"))
+    Err(crate::tr!("Remote changed concurrently; commit aborted", "Remote 側で更新が続いているためコミットできませんでした"))
 }
 
 // ---- an issue's own file, committed on main by itself ----
@@ -432,7 +470,7 @@ fn cut_paths(repos: &Repos, repo: &str, paths: &[String], title: &str) -> Result
             Reply::NotFound(_) => return Err(crate::tr!("The Remote does not have this repo", "Remote にこの repo がありません")),
         }
     }
-    Err(crate::tr!("The Remote kept moving; could not commit", "Remote が動き続けていて Commit できませんでした"))
+    Err(crate::tr!("Remote changed concurrently; commit aborted", "Remote 側で更新が続いているためコミットできませんでした"))
 }
 
 /// The words an issue's own commit goes by: "Issue #3: Fix：title" (written, or its words changed), "Close #3: …",
@@ -611,7 +649,7 @@ pub fn push(repos: &Repos, repo: &str) -> Result<String> {
     }
     // Nothing new is no push: an empty answer says so.
     let w = work(repos, repo)?;
-    if w.commits == 0 { return Err(crate::tr!("Nothing committed since the work began", "作業を始めてから何も Commit していません")); }
+    if w.commits == 0 { return Err(crate::tr!("No commits made yet", "作業開始以降コミットされた内容はありません")); }
     if w.unpushed == 0 { return Ok(String::new()); }
     let client = Client::open()?;
     let (key, _) = remote::key(repos, repo);
@@ -746,8 +784,7 @@ fn place(client: &Client, repo: &str, c: &mut Change) -> Result<()> {
     let reach = match known {
         Some(r) => r,
         None => {
-            let then = c.base.as_deref().map_or_else(|| Ok(Tree::new()), |b| tree_at(client, repo, b))?;
-            let now = tree_at(client, repo, &c.head)?;
+            let (then, now) = differ(client, repo, c.base.as_deref(), &c.head)?;
             let r = places(&then, &now);
             reaches().lock().map_err(|e| e.to_string())?.insert(key, r.clone());
             r
@@ -803,9 +840,9 @@ pub fn submit(repos: &Repos, repo: &str, note: &str) -> Result<Change> {
             crate::tasks::handed_in(repo, &c.line, &c.issue, &c.title);
             Ok(c)
         }
-        Reply::Conflict(v) if v["error"] == "Push first: the change is what was pushed" => Err(crate::tr!("Push first: the change is what was pushed", "先に Push してください。Change は Push したものです")),
-        Reply::Conflict(v) if v["error"] == "This change is merged already" => Err(crate::tr!("Its change is merged already", "この作業の Change はもう Merge 済みです")),
-        Reply::Conflict(_) => Err(crate::tr!("Nothing committed since the work began", "作業を始めてから何も Commit していません")),
+        Reply::Conflict(v) if v["error"] == "Push required: Changes reflect pushed commits" => Err(crate::tr!("Push required: Changes reflect pushed commits", "先にプッシュしてください。Change にはプッシュされた内容が含まれます。")),
+        Reply::Conflict(v) if v["error"] == "This Change is already merged" => Err(crate::tr!("Its change is merged already", "この作業の Change はもう Merge 済みです")),
+        Reply::Conflict(_) => Err(crate::tr!("No commits made yet", "作業開始以降コミットされた内容はありません")),
         Reply::NotFound(_) => Err(crate::tr!("The Remote has no such work", "Remote にその作業がありません")),
     }
 }
@@ -866,7 +903,7 @@ fn change_call(repo: &str, id: &str, verb: &str, body: serde_json::Value) -> Res
             let apart = if state.starts_with(|c: char| c.is_ascii_alphabetic()) { " " } else { "" };
             Err(if crate::i18n::ja() { format!("この Change はもう{apart}{state}です") } else { format!("The change is {state} already") })
         }
-        Reply::NotFound(_) => Err(crate::tr!("No such change", "その Change はありません")),
+        Reply::NotFound(_) => Err(crate::tr!("Change not found", "該当する Change はありません")),
     }
 }
 
@@ -921,7 +958,6 @@ pub fn reset(repos: &Repos, repo: &str) -> Result<Change> {
 pub fn change_diff(repo: &str, id: &str, limit: usize) -> Result<Vec<FileDiff>> {
     let c = find(repo, id)?;
     let client = Client::open()?;
-    let then = c.base.as_deref().map_or_else(|| Ok(Tree::new()), |b| tree_at(&client, repo, b))?;
-    let now = tree_at(&client, repo, &c.head)?;
+    let (then, now) = differ(&client, repo, c.base.as_deref(), &c.head)?;
     diff_of(pairs(Some(&client), After::Remote(&client), &then, &now)?, limit)
 }

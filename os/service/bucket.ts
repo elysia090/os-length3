@@ -30,7 +30,7 @@ export interface Bucket {
 export const blobKey = (user: string, sha: string) => `u/${user}/${sha}`;
 
 /** What a Remote with no bucket says to a request that would move bytes: one answer, everywhere. */
-export const NO_FILES = {error: 'The Remote cannot hold files just now', files: false} as const;
+export const NO_FILES = {error: 'Remote cannot store files right now', files: false} as const;
 export const noFiles = (c: Context) => c.json(NO_FILES, 503);
 
 export function memoryBucket(): Bucket & {keys(): string[]; at: Map<string, number>} {

@@ -45,7 +45,7 @@ jobs:
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: os/target/wasm32-wasip1/release/length3_core_web.wasm
+          path: os/target/wasm32-wasip1/web/length3_core_web.wasm
           key: ${{ steps.key.outputs.key }}
           lookup-only: true
       - if: steps.kept.outputs.cache-hit != 'true'
@@ -58,11 +58,11 @@ jobs:
           cache-on-failure: true
       - if: steps.kept.outputs.cache-hit != 'true'
         working-directory: os
-        run: cargo build --locked --release -p length3-core-web --target wasm32-wasip1
+        run: cargo build --locked --profile web -p length3-core-web --target wasm32-wasip1
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: os/target/wasm32-wasip1/release/length3_core_web.wasm
+          path: os/target/wasm32-wasip1/web/length3_core_web.wasm
           key: ${{ steps.key.outputs.key }}
 
   # l3 for the browser: made from the root this tree pins (core/src/root.rs, for RELEASE) with this tree's
@@ -155,11 +155,11 @@ jobs:
       - name: The core for the browser, as the core job made it
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: os/target/wasm32-wasip1/release/length3_core_web.wasm
+          path: os/target/wasm32-wasip1/web/length3_core_web.wasm
           key: ${{ needs.core.outputs.key }}
           fail-on-cache-miss: true
       # Newer than the sources the checkout just wrote, so nothing builds it again (scripts/core-wasm.ts goes by time).
-      - run: touch os/target/wasm32-wasip1/release/length3_core_web.wasm
+      - run: touch os/target/wasm32-wasip1/web/length3_core_web.wasm
       - name: Packages
         working-directory: os
         run: npm ci
@@ -341,11 +341,11 @@ jobs:
       - name: The core for the browser, as the core job made it
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: os/target/wasm32-wasip1/release/length3_core_web.wasm
+          path: os/target/wasm32-wasip1/web/length3_core_web.wasm
           key: ${{ needs.core.outputs.key }}
           fail-on-cache-miss: true
       # Newer than the sources the checkout just wrote, so nothing builds it again (scripts/core-wasm.ts goes by time).
-      - run: touch os/target/wasm32-wasip1/release/length3_core_web.wasm
+      - run: touch os/target/wasm32-wasip1/web/length3_core_web.wasm
       - name: l3 for the browser, as the l3-web job made it
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

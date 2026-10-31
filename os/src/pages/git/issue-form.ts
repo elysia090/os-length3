@@ -35,6 +35,8 @@ export interface IssueForm {
   retarget(repo: string): void;
   /** Give the keyboard back to the line last written in (the repo chosen with the pointer took it), its caret where it was. */
   writeOn(): void;
+  /** Taken away at once: what it was written in has become the new issue's card (git.ts lay). */
+  clear(): void;
 }
 
 /**
@@ -60,7 +62,7 @@ export const beingChanged = (issue: Issue) => changing.has(keyOf(issue));
  * Ctrl+Enter (⌘ on a Mac) in either does the box's deed (`submit`: Create, Save), as it sends a comment.
  */
 function fields(kind: string | null, title: string, detail: string, submit: () => void) {
-  const first = h('input', {class: 'line-in', placeholder: t('Fix: The title wraps on a phone'), 'aria-label': t('First line as Kind: title'),
+  const first = h('input', {class: 'line-in', placeholder: t('Fix: Title wraps on mobile'), 'aria-label': t('First line: Type: Title'),
     maxlength: '200', spellcheck: 'false', value: title ? named(kind, title) : ''}) as HTMLInputElement;
   const body = h('textarea', {class: 'line-in issue-text', rows: '4', 'aria-label': t('Summary'), placeholder: t('Summary')}) as HTMLTextAreaElement;
   body.value = detail;
@@ -78,7 +80,7 @@ function fields(kind: string | null, title: string, detail: string, submit: () =
 async function held(b: HTMLButtonElement, error: HTMLElement, f: () => Promise<unknown>): Promise<boolean> {
   busy(b, true);
   try { await f(); return true; } catch (e) {
-    error.textContent = t('Could not write: {message}', {message: errorText(e)});
+    error.textContent = t('Failed to create: {message}', {message: errorText(e)});
     busy(b, false);
     return false;
   }
@@ -90,7 +92,7 @@ export interface Made { repo: string; file: string }
 /** `done` hears what was made, or null and the repo whose Forge asked for it (to go back to) when put back. */
 export function issueForm(events: {done(made: Made | null, back: string | null): void}): IssueForm {
   // A group named as what it is for: its Summary is told from the Summary of the issue in full under it.
-  const element = h('div', {class: 'issue-form issue-new', role: 'group', 'aria-label': t('Write an issue'), hidden: ''});
+  const element = h('div', {class: 'issue-form issue-new', role: 'group', 'aria-label': t('Create issue'), hidden: ''});
   let retarget: (repo: string) => void = () => {};
   /** The field last written in: the first line until the body is. */
   let typing: HTMLElement | null = null;
@@ -100,6 +102,9 @@ export function issueForm(events: {done(made: Made | null, back: string | null):
     writing = keep && writing && (writing.first.trim() || writing.detail.trim()) ? {repo: writing.repo, first: writing.first, detail: writing.detail, folded: true} : null;
     retarget = () => {};
     typing = null;
+    // Made, it stays as it is (nothing in it pressed again) until the page is drawn with the issue in it, and becomes
+    // the issue's card there (clear).
+    if (made) { element.inert = true; events.done(made, back); return; }
     const done = () => { element.hidden = true; element.replaceChildren(); events.done(made, back); };
     // It folds away, the issues under it rising into its room as it does (never a jump once it has gone): put back
     // with Not now, or made, as the row goes on to the new issue's box at its end (git.ts written).
@@ -137,11 +142,11 @@ export function issueForm(events: {done(made: Made | null, back: string | null):
     for (const field of [f.first, f.body]) field.addEventListener('focus', () => { typing = field; });
     const error = h('p', {class: 'error', role: 'alert'});
     const make = h('button', {class: 'button primary', type: 'button'}, t('Create')) as HTMLButtonElement;
-    const cancel = h('button', {class: 'button', type: 'button'}, t('Not now'));
+    const cancel = h('button', {class: 'button', type: 'button'}, t('Cancel'));
     cancel.addEventListener('click', () => close(null));
     make.addEventListener('click', async () => {
       const {kind, title, detail} = f.read();
-      if (!title.trim()) { error.textContent = t('Write a title on the first line'); f.first.focus(); return; }
+      if (!title.trim()) { error.textContent = t('Enter a title on the first line'); f.first.focus(); return; }
       let file = '';
       // Being made, it is no longer half written: Git come to again meanwhile does not open it once more (made twice).
       const was = writing;
@@ -172,7 +177,8 @@ export function issueForm(events: {done(made: Made | null, back: string | null):
     open(repos, writing.repo, writing, asked);
     return true;
   };
-  return {element, open, resume, retarget: (repo) => retarget(repo), writeOn: () => typing?.focus({preventScroll: true})};
+  const clear = () => { element.hidden = true; element.inert = false; element.replaceChildren(); };
+  return {element, open, resume, retarget: (repo) => retarget(repo), writeOn: () => typing?.focus({preventScroll: true}), clear};
 }
 
 /**
@@ -191,11 +197,11 @@ export function issueEditor(issue: Issue, done: (saved: boolean) => void): HTMLE
   f.body.addEventListener('input', keep);
   const error = h('p', {class: 'error', role: 'alert'});
   const save = h('button', {class: 'button primary', type: 'button'}, t('Save')) as HTMLButtonElement;
-  const cancel = h('button', {class: 'button', type: 'button'}, t('Not now'));
+  const cancel = h('button', {class: 'button', type: 'button'}, t('Cancel'));
   cancel.addEventListener('click', () => { changing.delete(key); done(false); });
   save.addEventListener('click', async () => {
     const {kind, title, detail} = f.read();
-    if (!title.trim()) { error.textContent = t('Write a title on the first line'); f.first.focus(); return; }
+    if (!title.trim()) { error.textContent = t('Enter a title on the first line'); f.first.focus(); return; }
     if (await held(save, error, () => saveIssue(issueStore, issue, kind, title, detail))) { changing.delete(key); done(true); }
   });
   const el = h('div', {class: 'issue-form issue-edit'}, f.first, f.body, error, answers(cancel, save));
