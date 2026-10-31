@@ -87,7 +87,7 @@ vacuum analyze;
       union all select c.parent, w.n + 1 from walk w join cut c on c.repo_id = (select id from repo where user_id = 'u1' and name = 'repo1') and c.id = w.id where c.parent is not null and w.n < 50)
       select c.id, c.title from walk w join cut c on c.repo_id = (select id from repo where user_id = 'u1' and name = 'repo1') and c.id = w.id order by w.n`],
     ['sweep: room recount (heavy account)', `select (select coalesce(sum(bytes), 0) from blob where user_id = 'u1') + (select coalesce(sum(bytes), 0) from line where user_id = 'u1')
-      + (select coalesce(sum(bytes), 0) from cut where user_id = 'u1') + (select coalesce(sum(bytes), 0) from review where user_id = 'u1')`],
+      + (select coalesce(sum(bytes), 0) from cut where user_id = 'u1') + (select coalesce(sum(bytes), 0) from tree_node where user_id = 'u1') + (select coalesce(sum(bytes), 0) from review where user_id = 'u1')`],
     ['sweep: blobs no tree names (heavy account)', `with named as (select f.sha from line l join line_file f on f.repo_id = l.repo_id and f.line = l.name where l.user_id = 'u1' and f.sha is not null
       union select e.value from repo r join cut c on c.repo_id = r.id cross join jsonb_each_text(c.tree) e where r.user_id = 'u1')
       select count(*) from blob b where b.user_id = 'u1' and b.created_at < now() - interval '1 day' and not exists (select 1 from named where named.sha = b.sha256)`],

@@ -1141,13 +1141,19 @@ by repo.
    to a repo of 20,000 was 90 ms of the database and 1.5 MB of its log
    (what Neon keeps as history); it is some 4 ms and 8 KB, as for a repo
    of ten. A device a few saves behind is told what each changed
-   (line_change, `?since=`), not the draft whole. A repo is answered
-   with its tree as the database writes it; a commit is kept as what it
-   changed from its parent, whole only every 16th along a run of changes
-   (0020 cut_tree reads one whole), so commits take some sixteenth of
-   what they took. *To build next:* a commit names its tree by a root
-   (folders by their entries' digest), so it is not read whole to be
-   named; the sweep marks from the live roots down.
+   (line_change, `?since=`), not the draft whole. A commit's tree is
+   nodes (0023 tree_node: a folder named by its entries' digest, kept
+   once in its repo) and the commit names its root: it is made of the
+   folders on the paths its line's saves touched since its head
+   (line_touched), the head's nodes read only along them, so a commit of
+   two files to a repo of 5,000 is 43 ms, not 107, and moves 59 KB
+   to and from the database, not 930; one path of a commit is its
+   folders from the root (cut_path), never the tree made whole; the
+   sweep reads each folder once. Commits made before roots are read as
+   they were kept. *To build next:* a line begun copies its head's rows
+   (a draft as its head's root and the rows it changed would not); a
+   device reads a commit's tree whole where it could be told what
+   changed between two (two roots compared skip every folder they share).
 2. **Compute runs only where the copy is.** *Solved:* the Spec above;
    runs here are built from it. A place elsewhere needs only what the
    Spec names: the root (already fetched by digest from the Remote, the

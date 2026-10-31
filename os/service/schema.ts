@@ -188,12 +188,13 @@ export const cut = pgTable('cut', {
   /** For a merge: the commit of the line that was merged. */
   merged: text('merged'),
   /**
-   * Its tree, kept as what it changed from its parent (`base`, its first parent: the paths set, and `gone` those taken
-   * away), or whole where it has no base: the first of a repo, every 16th along a run of changes (`depth` counts them),
-   * and one that changed more than half its files. Read whole by cut_tree() (0020); a commit took its whole tree
-   * before, every one, so a repo's commits took its size each in the database.
+   * Its tree, named by its root (`root`, a treeNode: 0023), the folders it shares with its parent kept once. Made
+   * before: kept as what it changed from its parent (`base`, its first parent: the paths set, and `gone` those taken
+   * away), or whole where it has no base; `tree` is empty for one with a root. Read whole by cut_tree(), one path of
+   * it by cut_path().
    */
   tree: jsonb('tree').$type<Tree>().notNull(),
+  root: text('root'),
   base: text('base'),
   gone: jsonb('gone').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
   depth: smallint('depth').notNull().default(0),
@@ -226,10 +227,24 @@ export const cut = pgTable('cut', {
   foreignKey({name: 'cut_repo', columns: [t.repoId, t.userId], foreignColumns: [repo.id, repo.userId]}).onDelete('cascade'),
   foreignKey({name: 'cut_parent', columns: [t.repoId, t.parent], foreignColumns: [t.repoId, t.id]}),
   foreignKey({name: 'cut_merged', columns: [t.repoId, t.merged], foreignColumns: [t.repoId, t.id]}),
-  check('cut_id', matches('id', re.sha)), check('cut_tree', sql`jsonb_typeof(${t.tree}) = 'object'`), check('cut_gone', sql`jsonb_typeof(${t.gone}) = 'array'`),
+  check('cut_id', matches('id', re.sha)), check('cut_root', sql`${t.root} is null or ${t.root} ~ '^[0-9a-f]{64}$'`), check('cut_tree', sql`jsonb_typeof(${t.tree}) = 'object'`), check('cut_gone', sql`jsonb_typeof(${t.gone}) = 'array'`),
   check('cut_base', sql`${t.base} is null or ${t.base} = ${t.parent}`), check('cut_modes', sql`jsonb_typeof(${t.modes}) = 'object'`),
   check('cut_words', sql.raw('char_length(kind) <= 2000 and char_length(title) between 1 and 2000 and char_length(issue) <= 2000 and char_length(note) <= 2000')),
   check('cut_counts', sql`${t.added} >= 0 and ${t.removed} >= 0`)]);
+
+/**
+ * A folder of a commit's tree, named by the digest of its entries (trees.ts nodeId), kept once in its repo however many
+ * commits hold it: each name a file (`f`, its blob), a folder (`t`, its node), or named as a folder itself (`n`).
+ */
+export const treeNode = pgTable('tree_node', {
+  repoId: bigint('repo_id', {mode: 'number'}).notNull(),
+  id: text('id').notNull(),
+  userId: text('user_id').notNull(),
+  entries: jsonb('entries').$type<Record<string, {f?: string; t?: string; n?: 1}>>().notNull(),
+  bytes: bytesOf('entries'),
+}, (t) => [primaryKey({columns: [t.repoId, t.id]}), index('tree_node_user_idx').on(t.userId),
+  foreignKey({name: 'tree_node_repo', columns: [t.repoId, t.userId], foreignColumns: [repo.id, repo.userId]}).onDelete('cascade'),
+  check('tree_node_id', matches('id', re.sha)), check('tree_node_entries', sql`jsonb_typeof(${t.entries}) = 'object'`)]);
 
 /** A line of work: main, or an issue's (its file's stem: '001' for issue/001.md). */
 export const line = pgTable('line', {
@@ -244,6 +259,8 @@ export const line = pgTable('line', {
   modes: jsonb('modes').$type<Modes>().notNull().default(sql`'{}'::jsonb`),
   /** How many paths its draft names (lineFile's rows). */
   paths: integer('paths').notNull().default(0),
+  /** The commit lineTouched names every path changed since (null: not known, so the next commit reads the draft whole). */
+  touchedFrom: text('touched_from'),
   /** What its draft takes, as its JSON is long (repos.ts treeBytes), kept as each save changes it: counted into the account's room. */
   bytes: integer('bytes').notNull().default(2),
   /** What its draft's files take, each blob once, kept as each save changes it. */
@@ -275,6 +292,17 @@ export const lineFile = pgTable('line_file', {
   foreignKey({name: 'line_file_line', columns: [t.repoId, t.line], foreignColumns: [line.repoId, line.name]}).onDelete('cascade').onUpdate('cascade'),
   index('line_file_sha_idx').on(t.repoId, t.line, t.sha).where(sql`${t.sha} is not null`),
   check('line_file_sha', sql`${t.sha} is null or ${t.sha} ~ '^[0-9a-f]{64}$'`), check('line_file_path', sql`char_length(${t.path}) between 1 and 1024`)]);
+
+/**
+ * The paths a line's draft changed since the commit `line.touchedFrom` (each with all under it): what its next commit
+ * is made of where that commit is its head, the rest of the tree being its head's.
+ */
+export const lineTouched = pgTable('line_touched', {
+  repoId: bigint('repo_id', {mode: 'number'}).notNull(),
+  line: text('line').notNull(),
+  path: text('path').notNull(),
+}, (t) => [primaryKey({columns: [t.repoId, t.line, t.path]}),
+  foreignKey({name: 'line_touched_line', columns: [t.repoId, t.line], foreignColumns: [line.repoId, line.name]}).onDelete('cascade').onUpdate('cascade')]);
 
 /**
  * What each of a line's last saves changed (repos.ts: its paths set, and those taken away, each with what is under it),

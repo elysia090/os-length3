@@ -166,8 +166,15 @@
     {
       "idx": 23,
       "version": "7",
-      "when": 1793410820579,
-      "tag": "0023_contract_draft_as_rows",
+      "when": 1793413004145,
+      "tag": "0023_tree_nodes",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1793413042256,
+      "tag": "0024_contract_draft_as_rows",
       "breakpoints": true
     }
   ]

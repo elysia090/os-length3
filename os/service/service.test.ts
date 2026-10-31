@@ -1585,7 +1585,8 @@ test('The room is counted as things come and go, and agrees with counting it all
   const me = await idOf(s, t);
   const room = async () => (await s.db.execute(sql`select used, stamp from room where user_id = ${me}`)).rows[0] as {used: number; stamp: number};
   const recount = () => count(s, sql`select ((select coalesce(sum(bytes), 0) from blob where user_id = ${me}) + (select coalesce(sum(bytes), 0) from line where user_id = ${me})
-    + (select coalesce(sum(bytes), 0) from cut where user_id = ${me}) + (select coalesce(sum(bytes), 0) from review where user_id = ${me}))::int as n`);
+    + (select coalesce(sum(bytes), 0) from cut where user_id = ${me}) + (select coalesce(sum(bytes), 0) from tree_node where user_id = ${me})
+    + (select coalesce(sum(bytes), 0) from review where user_id = ${me}))::int as n`);
   const moved = async () => (await s.call('GET', '/v1/moved', {token: t})).json.repos as string;
   const a = (await upload(s, t, enc.encode('a'.repeat(500)))).sha, b = (await upload(s, t, enc.encode('b'))).sha, issue = (await upload(s, t, enc.encode('Fix：x\n'))).sha;
   const stamps = [await moved()];
@@ -1754,7 +1755,7 @@ test('what a commit changed is counted by the database as the clients count it: 
   assert.deepEqual(log.map((c) => [c.title, c.files, c.folders]), [['Next', 2, ['a', 'b']], ['Start', 3, ['', 'a', 'b']]]);
 });
 
-test('a commit is kept as what it changed from its parent, whole every 16th, and read whole however it is kept', async () => {
+test('a commit is kept as its root, the folders it did not change shared with its parent, and read whole or a path at a time', async () => {
   const s = await service();
   const t = await s.start('Ren');
   const a = (await upload(s, t, enc.encode('a'))).sha, b = (await upload(s, t, enc.encode('b'))).sha;
@@ -1763,37 +1764,118 @@ test('a commit is kept as what it changed from its parent, whole every 16th, and
   let version = (await s.call('PATCH', '/v1/repos/delta/draft', {token: t, body: {version: 0, set: tree, remove: []}})).json.version as number;
   let parent: string | null = null;
   const made: {id: string; tree: Record<string, string>}[] = [];
-  // How often a commit makes a tree whole (cut_tree): its parent's once, and the trigger's once; never once a path.
+  // How often a commit makes a tree whole (cut_tree), and how many folders the repo keeps.
   await s.db.execute(sql`set track_functions = 'pl'`);
   const wholes = async () => {
     await s.db.execute(sql`select pg_stat_force_next_flush()`);
     return Number(((await s.db.execute(sql`select coalesce(sum(calls), 0)::int as n from pg_stat_user_functions where funcname = 'cut_tree'`)).rows as {n: number}[])[0].n);
   };
+  const nodes = () => count(s, sql`select count(*)::int as n from tree_node n join repo r on r.id = n.repo_id where r.name = 'delta'`);
   for (let k = 0; k < 20; k++) {
     // Each commit gives one file new contents and takes another away.
     const set = {[`dir${k % 6}/f${k}.txt`]: b}, gone = `dir${(k + 30) % 6}/f${k + 30}.txt`;
     version = (await s.call('PATCH', '/v1/repos/delta/draft', {token: t, body: {version, set, remove: [gone]}})).json.version as number;
     tree = {...tree, ...set};
     delete tree[gone];
-    const before = await wholes();
+    const [before, kept] = [await wholes(), await nodes()];
     const r = await s.call('POST', '/v1/repos/delta/cuts', {token: t, body: {version, parent, title: `Fix: ${k}`}});
     assert.equal(r.status, 201, r.text);
-    assert.ok(await wholes() - before <= 2, `commit ${k} made a tree whole ${await wholes() - before} times`);
+    // Made of the folders on the two paths changed and the root, the parent's tree never made whole.
+    assert.equal(await wholes() - before, 0, `commit ${k}`);
+    if (k) assert.ok(await nodes() - kept <= 3, `commit ${k} kept ${await nodes() - kept} folders`);
     parent = r.json.id as string;
     made.push({id: parent, tree: {...tree}});
   }
   // Each read whole, as it was committed: by itself, and in the log with its trees.
   for (const m of made) assert.deepEqual((await s.call('GET', `/v1/repos/delta/cuts/${m.id}`, {token: t})).json.tree, m.tree, m.id);
-  const log = (await s.call('GET', '/v1/repos/delta/log?limit=50', {token: t})).json as unknown as {id: string; tree: Record<string, string>; files: number}[];
+  const log = (await s.call('GET', '/v1/repos/delta/log?limit=50', {token: t})).json as unknown as {id: string; tree: Record<string, string>; files: number; folders: string[]}[];
   for (const m of made) assert.deepEqual(log.find((c) => c.id === m.id)?.tree, m.tree);
   // What each changed is still said without its tree: a file set and a file gone (the first, every file it has).
   assert.deepEqual(log.map((c) => c.files), [...Array(19).fill(2), 59]);
-  // Kept: the first whole, then changes, whole again at the 16th; a change a small part of the tree it stands for.
-  const kept = (await s.db.execute(sql`select id, base, depth, bytes, size from cut where id = any(${`{${made.map((m) => m.id).join(',')}}`}::text[])`)).rows as {id: string; base: string | null; depth: number; bytes: number; size: number}[];
-  const by = new Map(kept.map((r) => [r.id, r]));
-  const depths = made.map((m) => by.get(m.id)!.depth);
-  assert.deepEqual(depths, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3]);
-  for (const m of made.slice(1, 16)) assert.ok(by.get(m.id)!.bytes * 10 < by.get(m.id)!.size, JSON.stringify(by.get(m.id)));
+  assert.deepEqual(log[0].folders, ['dir1']);
+  // One path of a commit, by its folders.
+  const path = async (id: string, p: string) => ((await s.db.execute(sql`select cut_path(c.repo_id, c.id, ${p}) as sha from cut c where c.id = ${id}`)).rows[0] as {sha: string | null}).sha;
+  assert.deepEqual([await path(made[0].id, 'dir0/f0.txt'), await path(made[19].id, 'dir0/f0.txt'), await path(made[19].id, 'dir0/f30.txt'), await path(made[19].id, 'dir0'), await path(made[19].id, 'nowhere/x')],
+    [b, b, null, null, null]);
+});
+
+test('commits made along what changed come out as the trees they stand for, whatever was saved between them', async () => {
+  const {applyDiff, clashes} = await import('./repos.ts');
+  const {changes} = await import('./trees.ts');
+  const s = await service();
+  const t = await s.start('Ren');
+  const shas = [(await upload(s, t, enc.encode('1'))).sha, (await upload(s, t, enc.encode('22'))).sha];
+  const names = ['a', 'a/b', 'a/c', 'a/b/x', 'a/b/y', 'd', 'd/e', 'd/e/f', 'g', 'h/i', 'h/j/k'];
+  let draft: Record<string, string | null> = {'a/c': shas[0], 'd/e/f': shas[1], g: shas[0]};
+  let version = (await s.call('PATCH', '/v1/repos/walk/draft', {token: t, body: {version: 0, set: draft, remove: []}})).json.version as number;
+  let head: string | null = null, headTree: Record<string, string | null> = {};
+  let seed = 11;
+  const pick = <T>(xs: T[]) => { seed = (seed * 1103515245 + 12345) % 2147483648; return xs[seed % xs.length]; };
+  const path = async (id: string, p: string) => ((await s.db.execute(sql`select cut_path(c.repo_id, c.id, ${p}) as sha from cut c where c.id = ${id}`)).rows[0] as {sha: string | null}).sha;
+  for (let i = 0; i < 60; i++) {
+    for (let k = 1 + (i % 2); k > 0; k--) {
+      const set: Record<string, string | null> = {}, remove: string[] = [];
+      for (let n = 1 + (i % 3); n > 0; n--) {
+        const p = pick(names);
+        if (pick([0, 1, 2]) === 0) { if (!(p in set)) remove.push(p); } else if (!remove.includes(p)) set[p] = pick([...shas, ...shas, null]);
+      }
+      const want = applyDiff(draft, set, remove);
+      const r = await s.call('PATCH', '/v1/repos/walk/draft', {token: t, body: {version, set, remove}});
+      if (r.status !== 200) continue;
+      version = r.json.version as number;
+      draft = want;
+    }
+    // The draft whole, or some of its paths by themselves (each as the draft has it, or gone).
+    const only = pick([0, 0, 1]) ? null : [...new Set([pick(names), pick(names)])];
+    const tree = only ? (() => { const x = {...headTree}; for (const p of only) { if (p in draft) x[p] = draft[p]; else delete x[p]; } return x; })() : draft;
+    const c = await s.call('POST', '/v1/repos/walk/cuts', {token: t, body: {version, parent: head, title: `c${i}`, ...(only ? {paths: only} : {})}});
+    if (only && clashes(tree).length) { assert.equal(c.status, 400, `${i} ${JSON.stringify({only, headTree, draft})}`); continue; }
+    assert.equal(c.status, 201, `${i} ${c.text}`);
+    const id = c.json.id as string;
+    assert.deepEqual((await s.call('GET', `/v1/repos/walk/cuts/${id}`, {token: t})).json.tree, tree, `${i} ${JSON.stringify({only, draft})}`);
+    const [logged] = (await s.call('GET', '/v1/repos/walk/log?limit=1&summary=1', {token: t})).json as unknown as {files: number; folders: string[]}[];
+    assert.deepEqual([logged.files, logged.folders], [changes(headTree, tree).files, changes(headTree, tree).folders], `${i}`);
+    for (const p of names) assert.equal(await path(id, p), typeof tree[p] === 'string' ? tree[p] : null, `${i} ${p}`);
+    head = id;
+    headTree = tree;
+  }
+});
+
+test('a commit on one made before roots is made whole once, and those after it along what changed', async () => {
+  const s = await service();
+  const t = await s.start('Ren');
+  const me = await idOf(s, t);
+  const a = (await upload(s, t, enc.encode('a'))).sha, b = (await upload(s, t, enc.encode('b'))).sha;
+  const tree: Record<string, string | null> = {'a/x.txt': a, 'a/y.txt': a, 'b/z.txt': a, empty: null};
+  let version = (await s.call('PATCH', '/v1/repos/old/draft', {token: t, body: {version: 0, set: tree, remove: []}})).json.version as number;
+  // A commit as one was kept before roots: its tree whole, and the line's touched paths not known.
+  const old = 'f'.repeat(64);
+  await s.db.execute(sql`insert into cut (repo_id, id, user_id, parent, tree, title, time) select r.id, ${old}, ${me}, null, ${JSON.stringify(tree)}::jsonb, 'Before', now() from repo r where r.name = 'old'`);
+  await s.db.execute(sql`update line set head = ${old}, pushed = ${old}, touched_from = null where repo_id = (select id from repo where name = 'old')`);
+  version = (await s.call('PATCH', '/v1/repos/old/draft', {token: t, body: {version, set: {'a/x.txt': b}, remove: ['b']}})).json.version as number;
+  const one = await s.call('POST', '/v1/repos/old/cuts', {token: t, body: {version, parent: old, title: 'After'}});
+  assert.equal(one.status, 201, one.text);
+  const want = {'a/x.txt': b, 'a/y.txt': a, empty: null};
+  assert.deepEqual((await s.call('GET', `/v1/repos/old/cuts/${one.json.id}`, {token: t})).json.tree, want);
+  version = (await s.call('PATCH', '/v1/repos/old/draft', {token: t, body: {version, set: {'c/new.txt': a}, remove: []}})).json.version as number;
+  const two = await s.call('POST', '/v1/repos/old/cuts', {token: t, body: {version, parent: one.json.id, title: 'Then'}});
+  assert.deepEqual((await s.call('GET', `/v1/repos/old/cuts/${two.json.id}`, {token: t})).json.tree, {...want, 'c/new.txt': a});
+  const log = (await s.call('GET', '/v1/repos/old/log?summary=1', {token: t})).json as unknown as {files: number; folders: string[]}[];
+  assert.deepEqual(log.map((c) => [c.files, c.folders]), [[1, ['c']], [2, ['a', 'b']], [3, ['a', 'b']]]);
+  // An issue's file committed by itself: the rest as the head has it.
+  version = (await s.call('PATCH', '/v1/repos/old/draft', {token: t, body: {version, set: {'issue/001.md': a, 'a/y.txt': b}, remove: []}})).json.version as number;
+  const only = await s.call('POST', '/v1/repos/old/cuts', {token: t, body: {version, parent: two.json.id, title: 'Issue', paths: ['issue/001.md']}});
+  assert.deepEqual((await s.call('GET', `/v1/repos/old/cuts/${only.json.id}`, {token: t})).json.tree, {...want, 'c/new.txt': a, 'issue/001.md': a});
+  // ... and the next commit of the draft has the rest.
+  const next = await s.call('POST', '/v1/repos/old/cuts', {token: t, body: {version, parent: only.json.id, title: 'Rest'}});
+  assert.deepEqual((await s.call('GET', `/v1/repos/old/cuts/${next.json.id}`, {token: t})).json.tree, {...want, 'a/y.txt': b, 'c/new.txt': a, 'issue/001.md': a});
+  // A file made where the head has a file, committed by itself (the file it replaced left in), is refused; with it, taken.
+  version = (await s.call('PATCH', '/v1/repos/old/draft', {token: t, body: {version, set: {'a/x.txt/deeper': a}, remove: ['a/x.txt']}})).json.version as number;
+  const clash = await s.call('POST', '/v1/repos/old/cuts', {token: t, body: {version, parent: next.json.id, title: 'x', paths: ['a/x.txt/deeper']}});
+  assert.deepEqual([clash.status, clash.json.path], [400, 'a/x.txt'], clash.text);
+  const both = await s.call('POST', '/v1/repos/old/cuts', {token: t, body: {version, parent: next.json.id, title: 'x', paths: ['a/x.txt/deeper', 'a/x.txt']}});
+  assert.equal(both.status, 201, both.text);
+  assert.equal(((await s.call('GET', `/v1/repos/old/cuts/${both.json.id}`, {token: t})).json.tree as Record<string, string>)['a/x.txt/deeper'], a);
 });
 
 test('a save laid on the draft\'s rows comes out as the diff laid on a copy would, refusals and all, and what it takes as counted from the whole', async () => {

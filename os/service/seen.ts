@@ -268,14 +268,15 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     return c.json({as: at.as, ...(at.owner ? {owner: at.owner} : {}), title: p?.title ?? null, at: p?.time.getTime() ?? null, tree: p?.tree ?? {}});
   });
 
-  // A file by its path in the tree it was pushed to: one lookup of that path, so nothing else of
-  // its owner's can be asked for, and reading a large repo file by file costs each file once.
+  // A file by its path in the tree it was pushed to: one lookup of that path (its folders from the root, 0023
+  // cut_path), so nothing else of its owner's can be asked for, and reading a large repo file by file costs each file
+  // once, never its tree whole.
   app.get('/v1/seen/:face/:name/file', async (c) => {
     if (!d.bucket) return noFiles(c);
     const bucket = d.bucket;
     const path = c.req.query('path') ?? '';
     const at = path && path.length <= 1024 ? await find(c, c.req.param('face'), c.req.param('name')) : null;
-    const [f] = at ? await db.select({sha: sql<string | null>`cut_tree(${cut.repoId}, ${cut.id}) ->> ${path}`}).from(cut).where(pushedAt(at.row)) as {sha: string | null}[] : [];
+    const [f] = at ? await db.select({sha: sql<string | null>`cut_path(${cut.repoId}, ${cut.id}, ${path})`}).from(cut).where(pushedAt(at.row)) as {sha: string | null}[] : [];
     if (!at || !f?.sha) return c.json({error: 'File inaccessible or not found'}, 404);
     // What is at a path changes with a push: kept by the browser, and asked again each time by its digest, which
     // answers 304 without R2 when it is the same; HEAD is answered from the blob's row.

@@ -143,7 +143,8 @@ export async function sweep(db: Db, bucket: Bucket | null): Promise<Record<strin
         await lock(tx, user);
         const went = !bucket ? [] : await rows<{sha256: string}>(tx, sql`with named as (
             select f.sha from line l join line_file f on f.repo_id = l.repo_id and f.line = l.name where l.user_id = ${user} and f.sha is not null
-            union select e.value from repo r join cut c on c.repo_id = r.id cross join jsonb_each_text(c.tree) e where r.user_id = ${user})
+            union select e.value from repo r join cut c on c.repo_id = r.id cross join jsonb_each_text(c.tree) e where r.user_id = ${user}
+            union select e.value ->> 'f' from tree_node n cross join jsonb_each(n.entries) e where n.user_id = ${user} and e.value ? 'f')
           delete from blob b where b.user_id = ${user} and b.created_at < ${ago(DAY)}
             and not exists (select 1 from named where named.sha = b.sha256)
           returning b.sha256`);
@@ -153,7 +154,8 @@ export async function sweep(db: Db, bucket: Bucket | null): Promise<Record<strin
         // a room that ever disagreed (a row written past them) is put right here, before the plan reads it.
         const fixed = await rows(tx, sql`update room set used = n.used from (select
             (select coalesce(sum(bytes), 0) from blob where user_id = ${user}) + (select coalesce(sum(bytes), 0) from line where user_id = ${user})
-            + (select coalesce(sum(bytes), 0) from cut where user_id = ${user}) + (select coalesce(sum(bytes), 0) from review where user_id = ${user}) as used) n
+            + (select coalesce(sum(bytes), 0) from cut where user_id = ${user}) + (select coalesce(sum(bytes), 0) from tree_node where user_id = ${user})
+            + (select coalesce(sum(bytes), 0) from review where user_id = ${user}) as used) n
           where room.user_id = ${user} and room.used <> n.used returning 1`);
         if (fixed.length) gone.recounted = (gone.recounted ?? 0) + 1;
         return went.map((b) => b.sha256);
