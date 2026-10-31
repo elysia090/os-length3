@@ -261,9 +261,15 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   };
   const pushedAt = (row: Found['row']) => and(eq(cut.repoId, row.repoId), eq(cut.id, row.pushed ?? ''));
 
+  // What it was pushed to never changes under its commit's name: one who has it (the tag: the commit, and whether the
+  // asker is its owner) is answered 304, the tree not made at all; who may see it is asked every time first.
   app.get('/v1/seen/:face/:name', async (c) => {
     const at = await find(c, c.req.param('face'), c.req.param('name'));
     if (!at) return c.json({error: 'Repo inaccessible or not found'}, 404);
+    const tag = `"${at.row.pushed ?? 'none'}${at.owner ? `:${at.owner}` : ''}"`;
+    c.header('ETag', tag);
+    c.header('Cache-Control', 'private, no-cache');
+    if (unchanged(c, tag)) return c.body(null, 304);
     const [p] = await db.select({tree: sql<Record<string, string | null>>`cut_tree(${cut.repoId}, ${cut.id})`, title: cut.title, time: cut.time}).from(cut).where(pushedAt(at.row)) as {tree: Record<string, string | null>; title: string; time: Date}[];
     return c.json({as: at.as, ...(at.owner ? {owner: at.owner} : {}), title: p?.title ?? null, at: p?.time.getTime() ?? null, tree: p?.tree ?? {}});
   });

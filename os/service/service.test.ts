@@ -788,6 +788,10 @@ test('Who sees a repo: its owner, the servers it is shown in, or everyone, under
   const seen = (body: unknown) => s.call('PUT', '/v1/repos/hello/seen', {token: ren, body});
   // Private at first: only Ren sees it.
   assert.deepEqual([(await state()).seen, (await see('ren@length3.test:hello', ren)).status, (await see('ren@length3.test:hello', mio)).status], ['private', 200, 404]);
+  // Asked again by one who has it, it is 304, its tree not made; and only by one who may see it.
+  const tag = (await see('ren@length3.test:hello', ren)).headers.get('ETag')!;
+  const again = (t: string) => s.call('GET', '/v1/seen/ren@length3.test/hello', {token: t, headers: {'If-None-Match': tag}});
+  assert.deepEqual([(await again(ren)).status, (await again(mio)).status], [304, 404]);
   // Shown in a server: its people see it, and whose it is; nobody else does.
   await s.call('POST', '/v1/inbox/contacts', {token: ren, body: {address: 'mio@length3.test', state: 'accepted'}});
   await s.call('POST', '/v1/inbox/contacts', {token: mio, body: {address: 'ren@length3.test', state: 'accepted'}});
