@@ -1763,14 +1763,22 @@ test('a commit is kept as what it changed from its parent, whole every 16th, and
   let version = (await s.call('PATCH', '/v1/repos/delta/draft', {token: t, body: {version: 0, set: tree, remove: []}})).json.version as number;
   let parent: string | null = null;
   const made: {id: string; tree: Record<string, string>}[] = [];
+  // How often a commit makes a tree whole (cut_tree): its parent's once, and the trigger's once; never once a path.
+  await s.db.execute(sql`set track_functions = 'pl'`);
+  const wholes = async () => {
+    await s.db.execute(sql`select pg_stat_force_next_flush()`);
+    return Number(((await s.db.execute(sql`select coalesce(sum(calls), 0)::int as n from pg_stat_user_functions where funcname = 'cut_tree'`)).rows as {n: number}[])[0].n);
+  };
   for (let k = 0; k < 20; k++) {
     // Each commit gives one file new contents and takes another away.
     const set = {[`dir${k % 6}/f${k}.txt`]: b}, gone = `dir${(k + 30) % 6}/f${k + 30}.txt`;
     version = (await s.call('PATCH', '/v1/repos/delta/draft', {token: t, body: {version, set, remove: [gone]}})).json.version as number;
     tree = {...tree, ...set};
     delete tree[gone];
+    const before = await wholes();
     const r = await s.call('POST', '/v1/repos/delta/cuts', {token: t, body: {version, parent, title: `Fix: ${k}`}});
     assert.equal(r.status, 201, r.text);
+    assert.ok(await wholes() - before <= 2, `commit ${k} made a tree whole ${await wholes() - before} times`);
     parent = r.json.id as string;
     made.push({id: parent, tree: {...tree}});
   }

@@ -406,10 +406,11 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
     const id = await cutId({repo: `${row.name}${row.line === 'main' ? '' : `@${row.line}`}`, parent: row.head, tree: w.tree, modes, kind: w.kind, title: w.title, issue: w.issue, note: w.note, time});
     // Kept as what it changed from its parent (0020): the paths set and those gone, worked out where the parent is, or
     // whole where it has none, is the 16th along a run of changes, or changed more than half its files. Then the room
-    // it takes is what is kept, not its tree whole.
-    const [made] = await rows<{bytes: number}>(tx, sql`with n as (select ${JSON.stringify(w.tree)}::jsonb as t),
-        p as (select k.depth, cut_tree(k.repo_id, k.id) as t from cut k where k.repo_id = ${row.id} and k.id = ${row.head}),
-        d as (select p.depth,
+    // it takes is what is kept, not its tree whole. Each tree is made once (materialized): written into where it is
+    // asked, the parent's was made again for each of the new tree's paths (5,000 files, 23 s, past the statement's 15).
+    const [made] = await rows<{bytes: number}>(tx, sql`with n as materialized (select ${JSON.stringify(w.tree)}::jsonb as t),
+        p as materialized (select k.depth, cut_tree(k.repo_id, k.id) as t from cut k where k.repo_id = ${row.id} and k.id = ${row.head}),
+        d as materialized (select p.depth,
             (select coalesce(jsonb_object_agg(e.key, e.value), '{}'::jsonb) from jsonb_each(n.t) e where (p.t -> e.key) is distinct from e.value) as "set",
             (select coalesce(jsonb_agg(k), '[]'::jsonb) from jsonb_object_keys(p.t) k where not (n.t ? k)) as gone
           from n, p),
