@@ -434,6 +434,11 @@ export function keepTranslation(l3: L3, origin: string, wasm: Uint8Array, segmen
     v.setUint32(at, wasm.length);
     body.set(wasm, at + 4);
     await keep(translatedURL(origin, tag, 'wasm'), await sealed(body));
+    // The code an earlier translation of it reached later went with that one (a program translated again as one
+    // module: xlat's Kernel.consolidate): a Prompt after would read it all, to take none of it.
+    const c = await open();
+    const more = translatedURL(origin, tag, 'more');
+    if (c && reached.get(origin)?.saved === 0 && await c.delete(more).catch(() => false)) gone(c, more);
   })().catch(() => {});
 }
 

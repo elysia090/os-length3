@@ -222,10 +222,7 @@ export class Kernel {
     const cached = this.images.get(node);
     if (cached && cached.version === node.version) {
       cached.used = ++this.uses;
-      const im = cached.image;
-      // Once much of what it runs is in modules of later code (a quarter as many functions as its first module has),
-      // not each time a few more are reached.
-      if (im.extras.length >= CONSOLIDATE && (im.slots - im.firstSlots) * 4 >= im.firstSlots && this.translate?.seeded && im.source) this.consolidate(node, cached);
+      this.consolidateIfDue(node, cached);
       return cached.image;
     }
     if (wait && this.keptFor(node)) {
@@ -240,8 +237,11 @@ export class Kernel {
         image.told = image.adopt(got.more);
         image.mainTold = true;
         PROFILE.kept++;
-        this.remember(node, {version: node.version, image, used: ++this.uses, kept: false});
-        return image;
+        const entry = {version: node.version, image, used: ++this.uses, kept: false};
+        this.remember(node, entry);
+        // Kept from an earlier run: it is run again, so the code that run reached later is gathered now.
+        this.consolidateIfDue(node, entry);
+        return entry.image;
       }
     }
     // A view of the file, not a copy: a later write to it changes a copy (File.share).
@@ -265,6 +265,12 @@ export class Kernel {
    * per module, and its jumps among that code are found in its own table, not asked of the host. What runs it
    * now goes on with what it has. The new translation is kept as the program's (the page hears of it as of any).
    */
+  /** Consolidate a program run again once much of what it runs is in modules of later code (a quarter as many functions as its first module has), not each time a few more are reached. */
+  consolidateIfDue(node, cached) {
+    const im = cached.image;
+    if (im.extras.length >= CONSOLIDATE && (im.slots - im.firstSlots) * 4 >= im.firstSlots && this.translate?.seeded && im.source) this.consolidate(node, cached);
+  }
+
   consolidate(node, cached) {
     const old = cached.image, bytes = old.source();
     let t = performance.now();

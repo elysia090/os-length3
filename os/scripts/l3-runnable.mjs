@@ -14,9 +14,11 @@
 // A program that cannot run yet still ships: this says which, and why, for
 // the translator's work.
 //
-//   node scripts/l3-runnable.mjs WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N] [--fresh]
+//   node scripts/l3-runnable.mjs WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N] [--fresh] [--warm]
 //
 // --fresh: this checkout's translator (../xlat's wasm build), every program translated as it runs, not what WEB carries.
+// --warm: each line run once before the run timed, what it translated kept between runs as a browser keeps it (Cache
+// Storage, keeper.mjs): the time of a Prompt that ran its programs before, not of the first one.
 //
 // WEB is l3 for the browser (public/l3; a root of packs of before is read
 // too), ROOT_DIR the same root unpacked (for the native run). The translator
@@ -30,12 +32,60 @@ const here = fileURLToPath(new URL('.', import.meta.url));
 const ENV = ['HOME=/root', 'PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', 'LANG=C.UTF-8', 'TERM=dumb'];
 
 
+/**
+ * Translations kept in `dir` as a browser keeps them (xlat/runtime/keeper.mjs: 'L3T1' and 'L3M1', each sealed with
+ * its SHA-256), for a kernel's keeper: {kept, save(kernel)}, save writing what the kernel translated since.
+ */
+async function keptIn(dir) {
+  const {mkdirSync, readdirSync, renameSync, rmSync} = await import('node:fs');
+  const {createHash} = await import('node:crypto');
+  mkdirSync(dir, {recursive: true});
+  const url = (name) => new URL(name, `file://${dir}/`).href;
+  // keeper.mjs reads through the Cache Storage API: here, the files.
+  globalThis.caches ??= {open: async () => ({match: async (u) => { try { return new Response(readFileSync(new URL(u))); } catch { return undefined; } }})};
+  const at = {};
+  for (const f of readdirSync(dir)) {
+    const m = /^(.+)\.wasm$/.exec(f);
+    if (m) at[m[1]] = {main: url(f), more: existsSync(`${dir}/${m[1]}.more`) ? url(`${m[1]}.more`) : null};
+  }
+  const sealed = (body) => Buffer.concat([body, createHash('sha256').update(body).digest()]);
+  // Written whole, then named: lines run side by side read what another keeps.
+  const put = (name, body) => { const tmp = `${dir}/.${name}.${process.pid}`; writeFileSync(tmp, sealed(body)); renameSync(tmp, `${dir}/${name}`); };
+  const save = (kernel) => {
+    for (const e of kernel.images.values()) {
+      const im = e.image;
+      if (!im.origin || e.kept) continue;
+      if (im.wasm) {
+        const segs = im.segments ?? [];
+        const head = Buffer.alloc(8);
+        head.writeUInt32BE(0x4c335431, 0); head.writeUInt32BE(im.segments ? segs.length : 0xffffffff, 4);
+        const parts = [head];
+        for (const x of segs) { const h = Buffer.alloc(8); h.writeUInt32BE(x.offset, 0); h.writeUInt32BE(x.bytes.length, 4); parts.push(h, Buffer.from(x.bytes)); }
+        const len = Buffer.alloc(4); len.writeUInt32BE(im.wasm.length, 0);
+        put(`${im.origin}.wasm`, Buffer.concat([...parts, len, Buffer.from(im.wasm)]));
+        // What was kept of code reached later went with the translation it was made from.
+        if (!im.extras.length) rmSync(`${dir}/${im.origin}.more`, {force: true});
+      }
+      if (im.extras.length > (im.wasm ? 0 : im.told ?? 0)) {
+        const head = Buffer.alloc(8);
+        head.writeUInt32BE(0x4c334d31, 0); head.writeUInt32BE(im.extras.length, 4);
+        const parts = [head];
+        for (const x of im.extras) { const h = Buffer.alloc(8); h.writeUInt32BE(x.base, 0); h.writeUInt32BE(x.bytes.length, 4); parts.push(h, Buffer.from(x.bytes)); }
+        put(`${im.origin}.more`, Buffer.concat(parts));
+      }
+    }
+  };
+  return {kept: {cache: 'l3', at}, save};
+}
+
 /** One program under xlat, in this process: prints {status, stdout, stderr, error?, ms} as JSON. */
-async function child({web, path, args, translator, fresh}) {
+async function child({web, path, args, translator, fresh, kept: keptDir}) {
   const {Vfs} = await import('../../xlat/runtime/fs.mjs');
   const {mountPack} = await import('../../xlat/runtime/pack.mjs');
   const {Kernel} = await import('../../xlat/runtime/process.mjs');
   const {loadTranslator} = await import('../../xlat/runtime/translator.mjs');
+  const {keeper} = await import('../../xlat/runtime/keeper.mjs');
+  const store = keptDir ? await keptIn(keptDir) : null;
   const w = openWeb(web);
   // --fresh: this checkout's translator, translating everything as it runs (what the next l3 will be).
   const translate = await loadTranslator(w.index.translator && !fresh ? w.blob(w.index.translator) : readFileSync(translator));
@@ -50,7 +100,7 @@ async function child({web, path, args, translator, fresh}) {
   vfs.mkdirp('/root');
   let stdout = '', stderr = '';
   const dec = new TextDecoder();
-  const kernel = new Kernel({vfs, translate, console: {
+  const kernel = new Kernel({vfs, translate, keeper: store ? keeper(store.kept, () => {}) : null, console: {
     interactive: false,
     // A program that writes on and on is cut at a megabyte: what it said first is what is compared.
     write: (fd, b) => {
@@ -63,9 +113,20 @@ async function child({web, path, args, translator, fresh}) {
   for (const r of ready) kernel.prebuilt(vfs.lookup(r.path, '/'), r.module);
   const t = performance.now();
   let status = null, error = null;
-  try { status = kernel.spawn(path, [path.split('/').pop(), ...args], ENV, '/root'); }
-  catch (e) { error = e instanceof Error ? e.message.split('\n')[0] : String(e); }
-  process.stdout.write(JSON.stringify({status, stdout, stderr, error, ms: Math.round(performance.now() - t)}));
+  try {
+    // As spawn runs it, and also waiting out a kept translation being read.
+    kernel.start(path, [path.split('/').pop(), ...args], ENV, '/root');
+    for (;;) {
+      const r = kernel.pump();
+      if (!r.waiting) { status = r.status; break; }
+      if (r.until !== undefined) await new Promise((go) => setTimeout(go, Math.max(0, r.until - performance.now())));
+      else if (kernel.keeper?.reading()) await new Promise((go) => setTimeout(go, 1));
+      else throw new Error('process waits for input that will never come');
+    }
+  } catch (e) { error = e instanceof Error ? e.message.split('\n')[0] : String(e); }
+  const ms = Math.round(performance.now() - t);
+  store?.save(kernel);
+  process.stdout.write(JSON.stringify({status, stdout, stderr, error, ms}));
 }
 
 /** The root as a Prompt on the device has it: its own /, /dev, /proc, /tmp and /root, no network, nothing of this machine's. */
@@ -127,6 +188,9 @@ async function main() {
   const outMd = flag('--out'), outJson = flag('--json'), jobs = Number(flag('--jobs', '4')), only = flag('--only'), seconds = Number(flag('--seconds', '30'));
   const workOnly = args.includes('--work-only') && args.splice(args.indexOf('--work-only'), 1);
   const fresh = args.includes('--fresh') && !!args.splice(args.indexOf('--fresh'), 1);
+  const warm = args.includes('--warm') && !!args.splice(args.indexOf('--warm'), 1);
+  const {mkdtempSync} = await import('node:fs');
+  const kept = warm ? mkdtempSync('/tmp/l3-kept-') : null;
   const [web, rootDir] = args;
   if (!web || !rootDir) { console.error('usage: l3-runnable.mjs WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N]'); process.exit(2); }
   const w = openWeb(web);
@@ -144,9 +208,9 @@ async function main() {
   if (only) list = list.filter((p) => new RegExp(only).test(p.path));
   if (workOnly) list = [];
   w.close();
-  const rows = await compare(list.map((p) => ({name: p.path, what: p.type, path: p.path, args: ['--version']})), {web, rootDir, translator, jobs, seconds, fresh});
+  const rows = await compare(list.map((p) => ({name: p.path, what: p.type, path: p.path, args: ['--version']})), {web, rootDir, translator, jobs, seconds, fresh, kept});
   // Work a person does in a Prompt, each a line of sh, compared the same way: what --version cannot show (fork, pipes, signals, threads).
-  const work = only ? [] : await compare(WORK.map(([name, line]) => ({name, what: line, path: '/usr/bin/sh', args: ['-c', line]})), {web, rootDir, translator, jobs, seconds: seconds * 4, fresh});
+  const work = only ? [] : await compare(WORK.map(([name, line]) => ({name, what: line, path: '/usr/bin/sh', args: ['-c', line]})), {web, rootDir, translator, jobs, seconds: seconds * 4, fresh, kept});
   const tally = (rs, v) => rs.filter((r) => r.verdict === v).length;
   const about = w.about ? `l3 ${w.about.version} (sha256 ${w.about.sha256})` : `${w.index.name} ${w.index.version} (a root of packs of before)`;
   const cell = (t) => String(t).replace(/\|/g, '\\|').replace(/`/g, "'").replace(/\n/g, ' ');
@@ -280,7 +344,7 @@ function sameShape(path, a, b) {
 }
 
 /** Each of `items` ({name, what, path, args}) under xlat and natively, `jobs` at a time: one row each. */
-async function compare(items, {web, rootDir, translator, jobs, seconds, fresh}) {
+async function compare(items, {web, rootDir, translator, jobs, seconds, fresh, kept}) {
   const rows = [];
   let next = 0;
   const worker = async () => {
@@ -289,13 +353,13 @@ async function compare(items, {web, rootDir, translator, jobs, seconds, fresh}) 
       // One after the other, so neither's time is the other's load.
       const started = performance.now();
       const native = {...await run('bwrap', [...sandbox(rootDir), p.path, ...p.args], {seconds, env: {}}), ms: Math.round(performance.now() - started)};
-      const xlat = await run(process.execPath, [fileURLToPath(import.meta.url), '--child', JSON.stringify({web, path: p.path, args: p.args, translator, fresh})],
-        {seconds, env: {...process.env, XLAT_SYSCALLS: '1'}});
+      const under = (env) => run(process.execPath, [fileURLToPath(import.meta.url), '--child', JSON.stringify({web, path: p.path, args: p.args, translator, fresh, kept})], {seconds, env: {...process.env, ...env}});
+      // Warm: run once first, keeping what it translates (a Prompt that ran it before).
+      if (kept) await under({});
+      // Timed as it runs; traced (every system call, which costs) only when it did not run, to say what it lacked.
+      const xlat = await under({});
       let x = null;
       try { x = JSON.parse(xlat.stdout); } catch { /* ended without saying: killed, or the kernel threw */ }
-      // The system calls xlat has no answer for, by number, from its trace.
-      const missing = [...new Set([...xlat.stderr.matchAll(/syscall (\d+) \(none\)/g)].map((m) => Number(m[1])))];
-      const enosys = [...new Set([...xlat.stderr.matchAll(/\] syscall (\d+)[^\n]*\n\[\d+\]   = -38\n/g)].map((m) => Number(m[1])))];
       const nativeStatus = native.timedOut ? 'no end' : native.signal ? `signal ${native.signal}` : native.code;
       let verdict, why = '';
       if (xlat.timedOut) {
@@ -316,8 +380,15 @@ async function compare(items, {web, rootDir, translator, jobs, seconds, fresh}) 
           if (err) why += `; stderr ${JSON.stringify(err.slice(0, 100))}`;
         }
       }
-      const calls = [...new Set([...missing, ...enosys])].sort((a, b) => a - b);
-      if (calls.length && verdict !== 'runs') why += `${why ? '; ' : ''}ENOSYS: ${calls.join(' ')}`;
+      if (verdict !== 'runs') {
+        // The system calls xlat has no answer for, by number, from a trace of a run again (a trace costs, so the run
+        // timed has none).
+        const trace = (await under({XLAT_SYSCALLS: '1'})).stderr;
+        const missing = [...trace.matchAll(/syscall (\d+) \(none\)/g)].map((m) => Number(m[1]));
+        const enosys = [...trace.matchAll(/\] syscall (\d+)[^\n]*\n\[\d+\]   = -38\n/g)].map((m) => Number(m[1]));
+        const calls = [...new Set([...missing, ...enosys])].sort((a, b) => a - b);
+        if (calls.length) why += `${why ? '; ' : ''}ENOSYS: ${calls.join(' ')}`;
+      }
       rows.push({name: p.name, what: p.what, verdict, why, native: nativeStatus, ms: x?.ms ?? null, nativeMs: native.ms, first: (x?.stdout || native.stdout).split('\n')[0].slice(0, 80)});
       process.stderr.write(`${verdict.padEnd(14)} ${p.name}${why ? `  (${why})` : ''}\n`);
     }
