@@ -289,8 +289,29 @@ export class RemoteTask extends Task {
   attach() {}
   /** Its process stops: it does too, at its next loop's head if it runs guest code. */
   stop() { this.kernel.lookIn(this.proc); }
-  reg(n) { return this.i64[CH.REGS + n]; }
-  setReg(n, v) { this.i64[CH.REGS + n] = BigInt.asIntN(64, BigInt(v)); if (n) this.regsChanged = true; }
+  /**
+   * Its registers in the channel: a thread sends them only with the calls that read them (channel.mjs READS_REGS).
+   * Needed in another (a signal taken as its call ends, one that cuts its call short), they are asked of it there and
+   * then: it waits in its call, watching for the answer.
+   */
+  regs() {
+    if (Atomics.load(this.i32, CH.HAVE_REGS) || !this.worker || Atomics.load(this.i32, CH.STATE) !== 3) return;
+    this.i32[CH.REPLY] = REPLY.SEND_REGS;
+    Atomics.store(this.i32, CH.STATE, 2);
+    rouse(this.i32, CH.STATE, CH.ASLEEP);
+    while (Atomics.load(this.i32, CH.STATE) !== 1) Atomics.wait(this.i32, CH.STATE, 2, 1);
+    Atomics.store(this.i32, CH.STATE, 3);
+  }
+  reg(n) { if (n) this.regs(); return this.i64[CH.REGS + n]; }
+  setReg(n, v) {
+    if (n) { this.regs(); this.regsChanged = true; }
+    this.i64[CH.REGS + n] = BigInt.asIntN(64, BigInt(v));
+  }
+  /** All of them replaced: none needs asking for. */
+  setContext(regs, rip) {
+    Atomics.store(this.i32, CH.HAVE_REGS, 1);
+    super.setContext(regs, rip);
+  }
 
   /** Text the thread left in the data area. */
   text() { return dec.decode(new Uint8Array(this.channel, CH.DATA, this.i32[CH.LENGTH])); }

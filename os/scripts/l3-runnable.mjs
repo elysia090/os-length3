@@ -52,6 +52,9 @@ async function keptIn(dir) {
   // Written whole, then named: lines run side by side read what another keeps.
   const put = (name, body) => { const tmp = `${dir}/.${name}.${process.pid}`; writeFileSync(tmp, sealed(body)); renameSync(tmp, `${dir}/${name}`); };
   const save = (kernel) => {
+    // What a run reached later is gathered before it is kept, as a browser does once its Prompt is idle: the next run
+    // reads one module, not one for each part reached.
+    for (const [node, e] of kernel.images) if (!e.kept && e.image.origin) kernel.consolidateIfDue(node, e, true);
     for (const e of kernel.images.values()) {
       const im = e.image;
       if (!im.origin || e.kept) continue;
@@ -83,6 +86,9 @@ async function child({web, path, args, translator, fresh, kept: keptDir}) {
   const {Vfs} = await import('../../xlat/runtime/fs.mjs');
   const {mountPack} = await import('../../xlat/runtime/pack.mjs');
   const {Kernel} = await import('../../xlat/runtime/process.mjs');
+  // As a cross-origin isolated page runs it: each thread in a Worker of its own (XLAT_INLINE=1: all in turn here).
+  const {RemoteKernel, canRunApart} = await import('../../xlat/runtime/remote.mjs');
+  const apart = canRunApart() && !process.env.XLAT_INLINE;
   const {loadTranslator} = await import('../../xlat/runtime/translator.mjs');
   const {keeper} = await import('../../xlat/runtime/keeper.mjs');
   const store = keptDir ? await keptIn(keptDir) : null;
@@ -94,13 +100,14 @@ async function child({web, path, args, translator, fresh, kept: keptDir}) {
   const ready = (fresh ? [] : w.index.translations ?? []).map((t) => {
     const f = w.index.files.find((x) => x.path === t.path);
     vfs.writeFile(t.path, new Uint8Array(w.blob(t.elf)), f.mode);
-    return {path: t.path, module: new WebAssembly.Module(w.blob(t.wasm))};
+    return {path: t.path, wasm: new Uint8Array(w.blob(t.wasm))};
   });
   mountPack(vfs, w.index, (pack, at, len) => { const b = Buffer.alloc(len); w.readRange(pack, at, len, b); return new Uint8Array(b); }, (b) => new Uint8Array(w.unzstd(b)));
   vfs.mkdirp('/root');
   let stdout = '', stderr = '';
   const dec = new TextDecoder();
-  const kernel = new Kernel({vfs, translate, keeper: store ? keeper(store.kept, () => {}) : null, console: {
+  let kernel = null;
+  kernel = new (apart ? RemoteKernel : Kernel)({vfs, translate, keeper: store ? keeper(store.kept, () => kernel?.kick?.()) : null, console: {
     interactive: false,
     // A program that writes on and on is cut at a megabyte: what it said first is what is compared.
     write: (fd, b) => {
@@ -110,13 +117,15 @@ async function child({web, path, args, translator, fresh, kept: keptDir}) {
     read: () => new Uint8Array(0),
     ready: () => true,
   }});
-  for (const r of ready) kernel.prebuilt(vfs.lookup(r.path, '/'), r.module);
+  // As the kernel runs them (its memory shared, where threads run apart).
+  for (const r of ready) { const {wasm, segments} = kernel.prepare(r.wasm); kernel.prebuilt(vfs.lookup(r.path, '/'), new WebAssembly.Module(wasm), segments); }
   const t = performance.now();
   let status = null, error = null;
   try {
+    if (apart) status = await kernel.spawn(path, [path.split('/').pop(), ...args], ENV, '/root');
     // As spawn runs it, and also waiting out a kept translation being read.
-    kernel.start(path, [path.split('/').pop(), ...args], ENV, '/root');
-    for (;;) {
+    else kernel.start(path, [path.split('/').pop(), ...args], ENV, '/root');
+    while (!apart) {
       const r = kernel.pump();
       if (!r.waiting) { status = r.status; break; }
       if (r.until !== undefined) await new Promise((go) => setTimeout(go, Math.max(0, r.until - performance.now())));

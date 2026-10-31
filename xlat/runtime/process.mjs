@@ -265,10 +265,15 @@ export class Kernel {
    * per module, and its jumps among that code are found in its own table, not asked of the host. What runs it
    * now goes on with what it has. The new translation is kept as the program's (the page hears of it as of any).
    */
-  /** Consolidate a program run again once much of what it runs is in modules of later code (a quarter as many functions as its first module has), not each time a few more are reached. */
-  consolidateIfDue(node, cached) {
+  /**
+   * Consolidate a program run again once much of what it runs is in modules of later code (a quarter as many functions
+   * as its first module has), not each time a few more are reached. `idle`: nothing waits on it (it is gathered to be
+   * kept), so once it has any such modules.
+   */
+  consolidateIfDue(node, cached, idle = false) {
     const im = cached.image;
-    if (im.extras.length >= CONSOLIDATE && (im.slots - im.firstSlots) * 4 >= im.firstSlots && this.translate?.seeded && im.source) this.consolidate(node, cached);
+    const due = idle ? im.extras.length > 0 : im.extras.length >= CONSOLIDATE && (im.slots - im.firstSlots) * 4 >= im.firstSlots;
+    if (due && this.translate?.seeded && im.source) this.consolidate(node, cached);
   }
 
   consolidate(node, cached) {
@@ -1067,6 +1072,8 @@ export class Process {
     t.altstack = {sp: 0n, size: 0n, flags: 2};
     if (image.segments) lay(this.bytes, this.memory.keeps ? image.segments.filter((x) => !within(x, image.facts.readOnly)) : image.segments);
     t.load(image, this.memory);
+    // A program starts with every register zero but its stack pointer (as Linux's start_thread leaves them).
+    t.setContext(REG.map(() => 0n), 0n);
     t.setReg(4, BigInt(this.stack(argv, env)));
     t.resumeAt = BigInt(f.entry);
     t.redirected = true;

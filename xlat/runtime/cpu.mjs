@@ -13,7 +13,7 @@
 // `lock`-prefixed instructions to plain loads and stores, which are atomic
 // only while no other thread of the process runs.
 
-import {CH, OP, REPLY, REGS, rouse, sleep, watch} from './channel.mjs';
+import {CH, OP, READS_REGS, REPLY, REGS, rouse, sleep, watch} from './channel.mjs';
 import {Fpu} from './fpu.mjs';
 import {INTERRUPT, Preempted, SHARES, SLICE_LOOPS, TRAP_YIELD, div128, fault, nextSlice, translatorsLimit, trapOrPreempt} from './process.mjs';
 
@@ -96,6 +96,7 @@ class Thread {
   putRegs() {
     const {i64} = this, g = this.globals;
     for (let n = 0; n < g.length; n++) i64[CH.REGS + n] = g[n] ? g[n].value : 0n;
+    this.i32[CH.HAVE_REGS] = 1;
   }
   setRegs(regs) {
     this.globals.forEach((g, n) => { if (g && regs[n] !== undefined) g.value = BigInt.asIntN(64, BigInt(regs[n])); });
@@ -103,28 +104,32 @@ class Thread {
 
   // ---- the kernel ----
 
-  /** Make request `op` and wait for the answer; returns the reply's kind. */
+  /** Make request `op` and wait for the answer; returns the reply's kind (the registers sent first if the kernel asks). */
   ask(op) {
     const {i32} = this;
-    i32[CH.OP] = op;
-    Atomics.store(i32, CH.STATE, 1);
-    Atomics.add(this.door, 0, 1);
-    rouse(this.door, 0, 1);
-    if (!watch(i32, CH.STATE, (state) => state === 2)) {
-      for (;;) {
-        const state = Atomics.load(i32, CH.STATE);
-        if (state === 2) break;
-        sleep(i32, CH.STATE, state, CH.ASLEEP);
+    for (;;) {
+      i32[CH.OP] = op;
+      Atomics.store(i32, CH.STATE, 1);
+      Atomics.add(this.door, 0, 1);
+      rouse(this.door, 0, 1);
+      if (!watch(i32, CH.STATE, (state) => state === 2)) {
+        for (;;) {
+          const state = Atomics.load(i32, CH.STATE);
+          if (state === 2) break;
+          sleep(i32, CH.STATE, state, CH.ASLEEP);
+        }
       }
+      if (i32[CH.REPLY] !== REPLY.SEND_REGS) return i32[CH.REPLY];
+      this.putRegs();
+      op = OP.REGS;
     }
-    return i32[CH.REPLY];
   }
 
   syscall(nr, a, b, c, d, e, f, next) {
     const {i64} = this;
     i64[CH.NR] = nr; i64[CH.ARGS] = a; i64[CH.ARGS + 1] = b; i64[CH.ARGS + 2] = c;
     i64[CH.ARGS + 3] = d; i64[CH.ARGS + 4] = e; i64[CH.ARGS + 5] = f; i64[CH.NEXT] = next;
-    this.putRegs();
+    if (READS_REGS.has(Number(nr))) this.putRegs(); else this.i32[CH.HAVE_REGS] = 0;
     // A new thread or process starts from this one's x87 too.
     if (nr === 56n || nr === 57n || nr === 58n) this.put(JSON.stringify({top: this.fpu.top, cw: this.fpu.cw, sw: this.fpu.sw, st: this.fpu.st.map((x) => [x.kind, x.sign, x.e, String(x.m)])}));
     this.unlock();
