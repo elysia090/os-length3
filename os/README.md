@@ -734,4 +734,6 @@ person does, and it asserts what they then see. Writing one:
   held: `app.forge.writeOn(…)`, `lookUntil(…)`, `writingDone()`.
 
 Icons in `src-tauri/icons` are generated from `src-tauri/icon.svg` with
-`npx tauri icon src-tauri/icon.svg -o src-tauri/icons`.
+`npx tauri icon src-tauri/icon.svg -o src-tauri/icons` (its 32, 128, 256 and 512
+pixel PNGs, `.icns` and `.ico` are the ones kept); the web page's icon is that
+SVG itself (`index.html`).
