@@ -1522,13 +1522,17 @@ encrypted with the same secret; nothing reads it.
 
 What leaves this system is kept to what is said here:
 
-- **Network.** The Prompt's guests have no network: a socket of any family but
-  the local one is refused as a host without that family refuses it
-  (EAFNOSUPPORT), so a program in it can reach nothing. Local sockets (AF_UNIX:
-  socketpair, a name on a path or in the abstract namespace, descriptors passed
-  between processes) are its own processes' channels, inside its kernel
-  (xlat/runtime/sys-net.mjs), as a machine with no network still has them;
-  xlat/tests/boundary.test.mjs holds the line. The page itself
+- **Network.** The Prompt's guests have the network of a machine with only
+  its loopback, as the device's Prompt has in its own network namespace: a
+  program in it can reach nothing but its own processes. Local sockets
+  (AF_UNIX: socketpair, a name on a path or in the abstract namespace,
+  descriptors passed between processes) and TCP and UDP to this machine's own
+  addresses (127.0.0.0/8, ::1; a server and its client, as `openssl s_server`
+  and curl are) are channels inside its kernel (xlat/runtime/sys-net.mjs);
+  every other address is no one's to bind (EADDRNOTAVAIL) and unreachable
+  (ENETUNREACH), and every other family is refused as a host without it
+  refuses it (EAFNOSUPPORT). xlat/tests/boundary.test.mjs holds the line,
+  and xlat/tests/c/inet.c compares with native. The page itself
   may reach its own origin, the Remote and, for the box's Agent, the APIs of
   the models' makers whose keys it knows (agent/makers.ts), nothing else: the
   web build carries that Content-Security-Policy, and the desktop's (Tauri's)

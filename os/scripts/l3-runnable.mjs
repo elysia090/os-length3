@@ -275,6 +275,8 @@ const WORK = [
   ['make', "cd /tmp && printf 'all:\\n\\t@echo made\\n' > Makefile && make"],
   ['ssh-keygen', "ssh-keygen -q -t ed25519 -N '' -f /tmp/k && wc -l < /tmp/k.pub"],
   ['ssh-agent over a local socket', 'eval $(ssh-agent -s) >/dev/null && ssh-add -l; echo "list $?"; cd /tmp && ssh-keygen -q -t ed25519 -N "" -f k && ssh-add k 2>/dev/null; ssh-add -l | cut -d" " -f1,4; ssh-agent -k >/dev/null; echo done'],
+  ['a TLS server and its client over loopback', "cd /tmp && openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -subj /CN=localhost -keyout k.pem -out c.pem -days 1 2>/dev/null && { openssl s_server -quiet -accept 4433 -cert c.pem -key k.pem -www >/dev/null 2>&1 & s=$!; for i in 1 2 3 4 5 6 7 8 9 10; do curl -sk https://localhost:4433/ > o && break; sleep 1; done; kill $s; grep -c Protocol o; }"],
+  ['nothing outside is reached', "curl -sS http://10.1.2.3/ 2>&1 | cut -d' ' -f1-7; curl -sS http://127.0.0.1:1/ 2>&1 | cut -d' ' -f1-7"],
   ['apk info', "apk info 2>/dev/null | wc -l"],
   ['l3 help', "l3 help | head -n 1"],
   ['nano --help', "nano --help | head -n 1"],
