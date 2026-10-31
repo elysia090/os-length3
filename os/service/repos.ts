@@ -37,7 +37,7 @@
 // A repo is found by its owner and name (repoAt, lineAt); everything after
 // that is by its number, which the rows under it carry.
 
-import {and, desc, eq, inArray, isNull, ne, sql} from 'drizzle-orm';
+import {and, desc, eq, inArray, isNull, ne, SQL, sql} from 'drizzle-orm';
 import type {Context, Hono} from 'hono';
 import {passkeyJustNow} from './auth.ts';
 import type {Plans} from './plan.ts';
@@ -310,11 +310,12 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
       d as (delete from line_change where repo_id = ${id} and line = ${l} and version <= ${version + 1 - LINE_CHANGES} and exists (select 1 from u))
       select 1 as ok from u`);
   /**
-   * Line `l` of repo `id` laid down whole as `tree` (a line made, a merge's draft): the rows it no longer names go, the
-   * others are written as it has them, and what it takes is counted from it. What it takes after.
+   * Line `l` of repo `id` laid down whole as `tree` (a line made, a merge's draft), or as what a statement makes it in
+   * the database (a commit's tree, never read into the Worker): the rows it no longer names go, the others are written
+   * as it has them, and what it takes is counted from it. What it takes after.
    */
-  const laid = async (tx: Db, id: number, l: string, tree: Tree) => (await rows<{bytes: number; files: number}>(tx, sql`with t(k, v) as materialized (
-        select e.key, e.value #>> '{}' from jsonb_each(${JSON.stringify(tree)}::jsonb) e),
+  const laid = async (tx: Db, id: number, l: string, tree: Tree | SQL) => (await rows<{bytes: number; files: number}>(tx, sql`with t(k, v) as materialized (
+        select e.key, e.value #>> '{}' from jsonb_each(${tree instanceof SQL ? tree : sql`${JSON.stringify(tree)}::jsonb`}) e),
       g as (delete from line_file f where f.repo_id = ${id} and f.line = ${l} and not exists (select 1 from t where t.k = f.path)),
       i as (insert into line_file (repo_id, line, path, sha) select ${id}, ${l}, t.k, t.v from t
         on conflict (repo_id, line, path) do update set sha = excluded.sha where line_file.sha is distinct from excluded.sha)
@@ -760,16 +761,15 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
         {draft: true})).id;
       // The issue itself comes along when main has it written but not committed: the work is about it (one row of the
       // draft read, not the draft).
-      const cuts = await treesOf(tx, main.id, [head]);
-      const from = {...cuts(head)};
-      const [written] = await rows<{sha: string | null}>(tx, sql`select sha from line_file where repo_id = ${main.id} and line = 'main' and path = ${issue}`);
-      const brought = !!written?.sha && !from[issue];
-      if (brought) from[issue] = written.sha;
-      await fits(tx, user, JSON.stringify(from).length);
-      // What it changed since its head: the issue, if it came along.
-      await tx.insert(line).values({repoId: main.id, userId: user, name: stem, base: head, head, pushed: head, modes: modesFor(from, cuts.modes(head)), version: 1,
-        startedBy: whoBy(c), touchedFrom: head});
-      await laid(tx, main.id, stem, from);
+      // Its draft is its head's tree, laid down as rows where the commit is kept (never read into the Worker), with the
+      // issue's file if main has it written but its head has not (what it changed since its head, then).
+      const [h] = await rows<{size: number | null; modes: Modes; written: string | null; had: string | null}>(tx, sql`select k.size, k.modes,
+          (select f.sha from line_file f where f.repo_id = ${main.id} and f.line = 'main' and f.path = ${issue}) as written, cut_path(k.repo_id, k.id, ${issue}) as had
+        from cut k where k.repo_id = ${main.id} and k.id = ${head}`);
+      const brought = !!h.written && !h.had;
+      await fits(tx, user, (h.size ?? 0) + (brought ? issue.length + 72 : 0));
+      await tx.insert(line).values({repoId: main.id, userId: user, name: stem, base: head, head, pushed: head, modes: h.modes, version: 1, startedBy: whoBy(c), touchedFrom: head});
+      await laid(tx, main.id, stem, sql`cut_tree(${main.id}, ${head})${brought ? sql` || jsonb_build_object(${issue}::text, ${h.written}::text)` : sql``}`);
       if (brought) await tx.execute(sql`insert into line_touched (repo_id, line, path) values (${main.id}, ${stem}, ${issue})`);
       return {row: (await lineAt(tx, user, name, stem))!, made: true};
     });
