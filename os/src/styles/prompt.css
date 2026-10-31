@@ -27,8 +27,8 @@ body::after {
 body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within)::after { opacity: 1; }
 /* Over the shade only while it is out: at rest it is the page's, under whatever lies over the page (Server's layer).
    Out with the keyboard elsewhere (what is read there, or a list held out from its head in the pane), the shade lifts:
-   the file is written beside it at full strength. */
-.work.bench > .bar > .search-box:is(:focus-within, .reading, .kept, .moving) { z-index: 8; }
+   the file is written beside it at full strength. Going (.leaving), it stays over the shade until it has gone up. */
+.work.bench > .bar > .search-box:is(:focus-within, .reading, .kept, .moving, .leaving) { z-index: 8; }
 .work.bench > .bar > .search-box.kept:not(.leaving) > .search-results { display: flex; }
 /* The right pane put away takes its search with it; its switch stays where it was, at the top line's right end,
    the way to bring both back, and says which it is: brought out, an ink fill, as anything chosen; put away, the

@@ -45,6 +45,10 @@
 /* On raised, an added line is drawn on ground, so it still stands out. */
 .review-chat { display: grid; gap: var(--s3); justify-items: start; padding: var(--s2) 0; }
 .review-chat .bubble { max-width: min(560px, 85%); background: var(--raised); } /* said on the review's paper as one's own is in the Inbox */
+/* Said just now: it comes down out of the field under it into the conversation (issue.ts reviewBox), the field left empty. */
+.review-chat .bubble.fresh { animation: said-land calc(320ms * var(--pace)) var(--land) both; }
+@keyframes said-land { from { opacity: 0; translate: 0 calc(var(--s4) + var(--s2)); scale: .97; } }
+@media (prefers-reduced-motion: reduce) { .review-chat .bubble.fresh { animation: none; } }
 .review-chat .state-chip { justify-self: start; }
 .review-diff { max-height: 56vh; overflow: auto; padding-right: var(--s2); }
 /* A mark is a highlighter's: drawn over the words only, each wrapped line its

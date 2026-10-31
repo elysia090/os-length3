@@ -9,12 +9,14 @@
 .approve-mark:hover .ring { border-color: var(--done); }
 /* A deed under way (git/held.ts busy): the button pressed keeps its look and its word, not greyed as one that cannot be
    pressed, and a short line runs under the word, left to right, until it is done; Approve's ○ turns, its arc in the
-   green it lands as. Asked for less motion, the line stands still under the word. */
+   green it lands as. The line's first run starts a third in, under the word already: begun from beyond the button's
+   edge, slow as it leaves, nothing showed the press was taken for a fifth of a second. Asked for less motion, the
+   line stands still under the word. */
 .button[aria-busy='true']:disabled, .approve-mark[aria-busy='true']:disabled { opacity: 1; cursor: var(--cursor-progress); }
 .button[aria-busy='true'] { position: relative; overflow: hidden; }
 .button[aria-busy='true']::after {
   content: ''; position: absolute; left: 0; bottom: 5px; width: 34%; height: 2px; border-radius: 2px; background: currentColor; opacity: .75;
-  translate: -110% 0; animation: busy-line calc(560ms * var(--pace)) cubic-bezier(.45, 0, .55, 1) infinite;
+  translate: -110% 0; animation: busy-line calc(560ms * var(--pace)) cubic-bezier(.45, 0, .55, 1) calc(-200ms * var(--pace)) infinite;
 }
 @keyframes busy-line { to { translate: 310% 0; } }
 .approve-mark[aria-busy='true'] .ring { border-color: var(--rule); border-top-color: var(--done); animation: busy-turn calc(380ms * var(--pace)) linear infinite; }

@@ -95,6 +95,8 @@ const doing = (b: HTMLButtonElement, error: HTMLElement, f: () => Promise<unknow
 };
 /** The step just done here, for a moment: its done mark, drawn next, lands rather than being there (slot). */
 let justDone: {word: string; until: number} | null = null;
+/** What was just said in a change's Review here, for a moment: drawn next, it lands in the conversation (reviewBox). */
+let justSaid: {change: string; until: number} | null = null;
 /** The issue closed here just now, for a moment: its line under Closed lands rather than being there (git/done.ts). */
 let closedNow: {repo: string; path: string; until: number} | null = null;
 export const justClosed = (i: Issue): boolean =>
@@ -374,9 +376,11 @@ export function backToMain(issue: Issue, s: RepoState | undefined, events: Issue
 const slot = (act: HTMLElement, done: boolean, word: string, then = false) => {
   const fresh = done && justDone?.word === word && performance.now() < justDone.until;
   if (fresh) justDone = null;
-  const mark = fresh ? 'done-mark fresh' : then ? 'done-mark fresh then' : 'done-mark';
-  return h('div', {class: 'step-act'},
-    done ? h('span', {class: 'step-done'}, h('span', {class: mark, 'aria-hidden': 'true'}), word) : act);
+  const mark = h('span', {class: fresh ? 'done-mark fresh' : then ? 'done-mark fresh then' : 'done-mark', 'aria-hidden': 'true'});
+  // Landed, it is a mark like any other: a box drawn again keeps it still (crossfade sees the same part), where one
+  // still saying it was fresh was taken for a change, and its copy, fading out over the new box, landed all over again.
+  mark.addEventListener('animationend', (e) => { if (e.pseudoElement === '::after') mark.classList.remove('fresh', 'then'); });
+  return h('div', {class: 'step-act'}, done ? h('span', {class: 'step-done'}, mark, word) : act);
 };
 const about = (...n: (Node | null)[]) => h('div', {class: 'step-about'}, ...n);
 const quiet = (text: string) => h('p', {class: 'muted small'}, text);
@@ -547,10 +551,14 @@ export function reviewBox(issue: Issue, s: RepoState | undefined, after: () => v
   // What was said, in order, as a conversation: a verdict with its note, or a comment alone.
   // An approval is the ○ turning green, not a box in the conversation (its note, if any, still shows).
   const told = change.reviews.filter((r) => r.verdict !== 'approve' || r.note);
-  const said = h('div', {class: 'review-chat'}, ...told.slice().reverse().map((r) => h('div', {class: 'bubble'},
+  // Said here just now: the newest comes down into the conversation from the field it was written in, not there at once.
+  const landing = justSaid?.change === change.id && performance.now() < justSaid.until;
+  if (landing) justSaid = null;
+  const said = h('div', {class: 'review-chat'}, ...told.slice().reverse().map((r, k) => h('div', {class: landing && k === 0 ? 'bubble fresh' : 'bubble'},
     h('span', {class: 'muted small'}, `${r.by} · ${ago(r.time)}${r.version !== change.version ? ` · ${t('v{n} (older)', {n: r.version})}` : ''}`),
     r.verdict === 'changes' ? h('span', {class: 'step-done'}, t('Changes requested')) : null,
     r.note ? h('p', {class: 'bubble-text'}, r.note) : null)));
+  said.firstElementChild?.addEventListener('animationend', (e) => (e.currentTarget as HTMLElement).classList.remove('fresh'), {once: true});
   const body: Node[] = [diff, ...(told.length ? [said] : [])];
   if (change.state === 'open') {
     // Under what was said, a comment more, written in a roomy field and sent
@@ -561,6 +569,7 @@ export function reviewBox(issue: Issue, s: RepoState | undefined, after: () => v
     const send = (verdict: git.Review['verdict'], b: HTMLButtonElement) => doing(b, error, async () => {
       if (!text.value.trim() && !pending!.size) { text.focus(); throw new Error(verdict === 'changes' ? t('Specify requested changes or select target lines') : ''); }
       await git.review(at, change, verdict, text.value, [...pending!]);
+      justSaid = {change: change.id, until: performance.now() + 3000};
     }, after);
     // Approve is a ○: pressed, it turns green (the done mark) and stays so.
     let approve: HTMLElement;
@@ -568,7 +577,10 @@ export function reviewBox(issue: Issue, s: RepoState | undefined, after: () => v
     else {
       const b = h('button', {type: 'button', class: 'approve-mark'}, h('span', {class: 'ring', 'aria-hidden': 'true'}), t('Approve')) as HTMLButtonElement;
       // What is written and marked goes with it; only a written note shows in the conversation.
-      b.addEventListener('click', doing(b, error, () => git.review(at, change, 'approve', text.value, [...pending!]), after));
+      b.addEventListener('click', doing(b, error, async () => {
+        await git.review(at, change, 'approve', text.value, [...pending!]);
+        if (text.value.trim()) justSaid = {change: change.id, until: performance.now() + 3000};
+      }, after));
       approve = b;
     }
     const comment = button(t('Comment'));

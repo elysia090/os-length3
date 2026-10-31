@@ -292,7 +292,13 @@ export class Box {
 
   // ---- What it says.
 
-  #fit() { this.prompt.style.height = 'auto'; this.prompt.style.height = `${this.prompt.scrollHeight}px`; }
+  /** Its page hidden as one page goes and another comes, the field has no height to measure: fitted then, it was left
+   * 0 px tall, out of sight and not to be pressed. It is fitted as soon as it is laid out again instead. */
+  readonly #shown = new ResizeObserver(() => { if (this.prompt.getClientRects().length) { this.#shown.disconnect(); this.#fit(); } });
+  #fit() {
+    if (!this.prompt.getClientRects().length) { this.#shown.observe(this.prompt); return; }
+    this.prompt.style.height = 'auto'; this.prompt.style.height = `${this.prompt.scrollHeight}px`;
+  }
   /** What is half written is kept for the repo and for what the box does: an issue's words are not a line to run. */
   #draft() { return this.#mode === 'run' ? this.#repo! : `${this.#mode}\n${this.#repo}`; }
   /** What is written kept for the repo and what the box does (not Edit's: its line is the file's own). */
@@ -597,8 +603,10 @@ export class Box {
   #wireField() {
     const {prompt} = this;
     prompt.addEventListener('focus', (event) => {
+      // Not a search: it is out while it has the keyboard, so given it back as the Prompt went down, the search left
+      // for the box came out again, its shade over the page, at an Escape meant to put things away.
       const from = event.relatedTarget as HTMLElement | null;
-      if (!from || !this.dock.contains(from)) this.#before = from;
+      if (!from || !this.dock.contains(from)) this.#before = from?.closest('.search-box') ? null : from;
       if (this.#mode === 'run') this.#screen?.raise();
       this.#pillLine.follow();
       if (this.#mode === 'edit') { this.#pillSays(); this.#edit.show(); }

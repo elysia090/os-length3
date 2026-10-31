@@ -211,9 +211,13 @@ test('a started issue\'s deeds go down the box\'s right edge, where Start was pr
   const start = (await app.git.step('Start').boundingBox())!;
   await app.git.step('Start').click();
   await expect(app.git.step('Back to main')).toBeVisible();
+  // Asked again until it holds: the box is drawn as Start is pressed and again as the repo's state comes, and a deed
+  // measured as the first drawing is taken away has no box.
   for (const deed of ['Commit', 'Push']) {
-    const b = (await app.git.step(deed).boundingBox())!;
-    expect(Math.abs(b.x + b.width - (start.x + start.width))).toBeLessThan(2);
+    await expect.poll(async () => {
+      const b = await app.git.step(deed).boundingBox();
+      return b ? Math.abs(b.x + b.width - (start.x + start.width)) : Infinity;
+    }).toBeLessThan(2);
   }
 });
 

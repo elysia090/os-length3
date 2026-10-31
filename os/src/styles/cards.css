@@ -79,9 +79,12 @@
 .git-flow { scrollbar-gutter: stable; }
 /* Its box at the foot stands back (bench.ts back), so its room under the last line is the page's foot, not the box's:
    what fits is not left a few pixels scrollable (the heads stepping up as a merge closes the page up). The box up
-   (the Prompt), the room is its again. */
+   (the Prompt), the room is its again. So is the room kept clear under what is scrolled to: the caret in the
+   Review's comment, a box's height above the foot with no box there, stepped the page up as the first letter was
+   typed. */
 .flow.git-flow { padding-top: calc(var(--s3) + var(--s2)); padding-bottom: var(--s6); }
-.work.bench.prompting .flow.git-flow { padding-bottom: 160px; }
+.work.bench .flow.git-flow { scroll-padding-bottom: var(--s3); }
+.work.bench.prompting .flow.git-flow { padding-bottom: 160px; scroll-padding-bottom: calc(var(--s5) + 80px); }
 .issue-kind { font-weight: 700; }
 /* Where an issue is (its repo) is a name: the sans, as every name is. */
 .issue-where { font: var(--t-meta)/1.6 var(--sans); color: var(--sub); }

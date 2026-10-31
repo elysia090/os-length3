@@ -44,14 +44,21 @@
 .home-layout:is(.pane-moving, .pane-closed) .home-pane { overflow-x: clip; grid-template-columns: minmax(0, 1fr); }
 /* While the search is out the window steps back under the one shade, as Forge's does. The pane holds itself in
    place (sticky), so it is a layer of its own the search cannot rise out of: it rises over the shade itself, with a
-   shade of its own over what it holds but the search (put back at once as the search goes, the window's fading). */
+   shade of its own over what it holds but the search. As the search goes (.leaving) it stays risen, its shade fading
+   with the window's, until what was out has gone back up: dropped at once, what was out sank under the window's shade
+   in one frame, white to grey, before it went. */
 /* Each step to the search named (>): a :has() with no step but its own is asked of everything under body at every
    change of style, a third of what styling the page at all took as the OS opened. */
 body:has(> .page > .home-layout > .home-pane > .home-bar > .search-box:is(:focus-within, .reading))::after { opacity: 1; }
-.home-pane:has(> .home-bar > .search-box:is(:focus-within, .reading, .moving)) { z-index: 8; }
-.home-pane::after { content: ''; position: absolute; inset: 0 0 0 calc(-1 * var(--line-frame)); pointer-events: none; background: color-mix(in srgb, var(--ink) 14%, transparent); opacity: 0; }
-.home-pane:has(> .home-bar > .search-box:is(:focus-within, .reading))::after { opacity: 1; transition: opacity calc(180ms * var(--pace)) ease-out; }
+.home-pane:has(> .home-bar > .search-box:is(:focus-within, .reading, .moving, .leaving)) { z-index: 8; }
+.home-pane::after { content: ''; position: absolute; inset: 0 0 0 calc(-1 * var(--line-frame)); pointer-events: none; background: color-mix(in srgb, var(--ink) 14%, transparent); opacity: 0;
+  transition: opacity calc(180ms * var(--pace)) ease-out; }
+.home-pane:has(> .home-bar > .search-box:is(:focus-within, .reading))::after { opacity: 1; }
 .home-bar > .search-box { z-index: 1; }
+/* The search's Issue, diff and Output stand on its large box's top, out over Home's first line, where Edit profile
+   stands at its right end: the page under the shade, it fades with the shade, so the three stand on nothing. */
+.home-main > .profile > .button { transition: opacity calc(180ms * var(--pace)) ease-out; }
+.home-layout:has(> .home-pane > .home-bar > .search-box:is(:focus-within, .reading)) > .home-main > .profile > .button { opacity: 0; }
 .home-layout.pane-closed .home-pane { padding-left: 0; border-left-color: transparent; transition: border-color var(--leave) cubic-bezier(.7, 0, 1, 1); }
 /* Put away, what it holds goes with its edge to the right, as wide as it was, cut at the window's edge, and is out of
    sight (and of the keyboard) once the pane is; brought out, it comes in with the edge the same way (as Forge's). */

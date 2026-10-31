@@ -86,8 +86,10 @@ test('Runtime is in parts as Remote is: the one chosen shows, the others blend i
   const on = tabs.locator('.parts-on');
   await expect(on).toBeVisible();
   await expect(app.runtime.part('Agent')).not.toBeInViewport({ratio: 1});
+  // A click brings what it presses into view first: under load that can slide the row to its end, the › going as
+  // it gets there, and a click left waiting for it never comes. Not come within a second, it is asked again.
   await expect(async () => {
-    if (await on.isVisible()) await on.click();
+    if (await on.isVisible()) await on.click({timeout: 1000});
     await expect(app.runtime.part('Agent')).toBeInViewport({ratio: 1, timeout: 500});
   }).toPass();
   await expect(on).toBeHidden();

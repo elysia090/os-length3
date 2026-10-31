@@ -1,5 +1,5 @@
 import {h} from '../../ui/dom.ts';
-import {after, arrive, LAND, paced, pop, still, unfold} from '../../ui/glide.ts';
+import {after, arrive, LAND, paced, pop, putAway, still, unfold} from '../../ui/glide.ts';
 import * as gitops from '../../repos/history.ts';
 import {t} from '../../i18n.ts';
 import {issuePath, number, readIssues, type Issue} from '../../repos/issues.ts';
@@ -396,10 +396,12 @@ class GitPage {
     const main = this.sections.main;
     const cards = new Map([...main.querySelectorAll<HTMLElement>(':scope > .main-card')].map((c) => [c.getAttribute('aria-label') ?? '', {el: c, height: c.getBoundingClientRect().height}]));
     const card = this.row.current();
-    // What stood under the issue in full, out of its box (Back to main, its Review, Merge), by kind.
-    const under = [...card?.card.parentElement?.children ?? []].filter((c) => c !== card?.card).map((c) => c.className);
+    // What stood under the issue in full, out of its box (Back to main, its Review, Merge), by kind, and how tall.
+    const below = [...card?.card.parentElement?.children ?? []].filter((c) => c !== card?.card);
+    const under = below.map((c) => c.className);
+    const tall = new Map(below.map((c) => [c.className, c.getBoundingClientRect().height]));
     return {main: main.hidden ? 0 : main.getBoundingClientRect().height, kids: [...main.children], style: main.getAttribute('style') ?? '',
-      cards, card, under};
+      cards, card, under, tall};
   }
 
   /**
@@ -414,9 +416,26 @@ class GitPage {
     if (was.main && !now) foldAway(main, was.kids, was.style);
     else if (!was.main && now) unfold(main, 280);
     else {
+      // A repo's card gone from main (another repo chosen, its changes committed) folds away where it stood, the cards
+      // under it closing up as it does; one come opens where it now stands. Gone at once, the rest jumped into its room
+      // and only the part's foot moved after.
+      const cards = () => [...main.querySelectorAll<HTMLElement>(':scope > .main-card')];
+      const here = new Set(cards().map((c) => c.getAttribute('aria-label') ?? ''));
+      const order = [...was.cards.keys()];
+      order.forEach((label, k) => {
+        if (here.has(label)) return;
+        const ghost = was.cards.get(label)!.el;
+        ghost.inert = true;
+        ghost.setAttribute('aria-hidden', 'true');
+        const after = order.slice(k + 1).find((l) => here.has(l));
+        const next = after ? cards().find((c) => c.getAttribute('aria-label') === after) : undefined;
+        if (next) next.before(ghost); else main.append(ghost);
+        putAway(ghost, () => ghost.remove(), {fold: true, ms: 280});
+      });
+      for (const c of cards()) if (!was.cards.has(c.getAttribute('aria-label') ?? '')) unfold(c, 280);
       resize(main, was.main);
       // Each repo's card drawn again where it was: what changed in it fades over as it goes to its new height.
-      for (const c of main.querySelectorAll<HTMLElement>(':scope > .main-card')) {
+      for (const c of cards()) {
         const old = was.cards.get(c.getAttribute('aria-label') ?? '');
         if (old) { crossfade(old.el, c, old.height); resize(c, old.height); }
       }
@@ -429,8 +448,10 @@ class GitPage {
     // What comes under it with the step (its Review once handed in, Back to main once started) comes in after the box
     // has begun to change, from a little lower, not there at once.
     for (const c of card.card.parentElement?.children ?? []) {
-      // (Not the box's own, nor what it showed before still fading over it: crossfade.)
-      if (c.classList.contains('issue-card') || was.under.includes(c.className)) continue;
+      // (Not the box's own, nor what it showed before still fading over it: crossfade.) One there before (the Review,
+      // what was said in it drawn again) goes from the height it had, not there at once at its new one.
+      if (c.classList.contains('issue-card')) continue;
+      if (was.under.includes(c.className)) { if (c instanceof HTMLElement) resize(c, was.tall.get(c.className) ?? 0); continue; }
       c.animate([{opacity: 0, translate: '0 8px'}, {opacity: 1, translate: '0 0'}], {duration: paced(260), delay: paced(100), easing: LAND, fill: 'backwards'});
     }
   }
