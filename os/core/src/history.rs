@@ -115,19 +115,44 @@ fn head_file(key: &str) -> std::path::PathBuf {
     crate::paths::data_dir().join("sync").join(format!("{key}.head.json"))
 }
 
-/// The tree of a commit (empty before the first), kept for the line `key` it was last asked for.
+/// The tree of a commit (empty before the first), kept for the line `key` it was last asked for. One kept for an
+/// earlier commit is brought to this one by what changed between them (the Remote compares them), not read again whole.
 fn head_tree(client: &Client, repo: &str, key: &str, head: Option<&str>) -> Result<Tree> {
     let Some(id) = head else { return Ok(Tree::new()) };
     let kept: Head = fs::read(head_file(key)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
     if kept.id.as_deref() == Some(id) {
         return Ok(kept.tree);
     }
-    let tree = tree_at(client, repo, id)?;
+    let tree = match kept.id.as_deref().map(|was| compare(client, repo, Some(was), id)) {
+        Some(Ok(Some((was, now)))) => {
+            let mut tree = kept.tree;
+            for p in was.keys() { tree.remove(p); }
+            tree.extend(now);
+            tree
+        }
+        _ => tree_at(client, repo, id)?,
+    };
     // Kept to spare the next read; not kept, the next read asks again.
     if let Ok(b) = serde_json::to_vec(&Head { id: Some(id.into()), tree: tree.clone() }) {
         let _ = crate::atomic::replace(&head_file(key), &b, crate::atomic::How::CACHE);
     }
     Ok(tree)
+}
+
+/// What changed between two commits (`from` none: from nothing), as each has it: only the paths that differ, the
+/// Remote comparing them where it keeps them. None from a Remote from before (it has no such route).
+fn compare(client: &Client, repo: &str, from: Option<&str>, to: &str) -> Result<Option<(Tree, Tree)>> {
+    match client.call("GET", &format!("/v1/repos/{repo}/compare?from={}&to={to}", from.unwrap_or_default()), None)? {
+        Reply::Ok(v) if v["was"].is_object() && v["now"].is_object() => Ok(Some((remote::tree_of(&v["was"]), remote::tree_of(&v["now"])))),
+        _ => Ok(None),
+    }
+}
+
+/// Two commits' trees as far as they differ (each path whose value differs, as each has it): compared by the Remote,
+/// or, from one from before, both read whole.
+fn differ(client: &Client, repo: &str, from: Option<&str>, to: &str) -> Result<(Tree, Tree)> {
+    if let Some(d) = compare(client, repo, from, to)? { return Ok(d); }
+    Ok((from.map_or_else(|| Ok(Tree::new()), |b| tree_at(client, repo, b))?, tree_at(client, repo, to)?))
 }
 
 fn tree_at(client: &Client, repo: &str, id: &str) -> Result<Tree> {
@@ -746,8 +771,7 @@ fn place(client: &Client, repo: &str, c: &mut Change) -> Result<()> {
     let reach = match known {
         Some(r) => r,
         None => {
-            let then = c.base.as_deref().map_or_else(|| Ok(Tree::new()), |b| tree_at(client, repo, b))?;
-            let now = tree_at(client, repo, &c.head)?;
+            let (then, now) = differ(client, repo, c.base.as_deref(), &c.head)?;
             let r = places(&then, &now);
             reaches().lock().map_err(|e| e.to_string())?.insert(key, r.clone());
             r
@@ -921,7 +945,6 @@ pub fn reset(repos: &Repos, repo: &str) -> Result<Change> {
 pub fn change_diff(repo: &str, id: &str, limit: usize) -> Result<Vec<FileDiff>> {
     let c = find(repo, id)?;
     let client = Client::open()?;
-    let then = c.base.as_deref().map_or_else(|| Ok(Tree::new()), |b| tree_at(&client, repo, b))?;
-    let now = tree_at(&client, repo, &c.head)?;
+    let (then, now) = differ(&client, repo, c.base.as_deref(), &c.head)?;
     diff_of(pairs(Some(&client), After::Remote(&client), &then, &now)?, limit)
 }

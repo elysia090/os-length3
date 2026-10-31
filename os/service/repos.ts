@@ -615,6 +615,43 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
     return c.json({...shown, time: row.time.getTime()});
   });
 
+  // What changed between two commits of a repo (`from` none: from nothing): each path whose value differs, as each has
+  // it ({was, now}, a path absent from one where that one has none). Two with roots are compared folder by folder, every
+  // folder they share skipped; one made before roots, by its tree whole, in the database (what is sent is what differs).
+  // A device reads this where it read both trees whole.
+  v1.get('/repos/:name/compare', async (c) => {
+    const from = c.req.query('from') ?? '', to = c.req.query('to') ?? '';
+    if ((from && !HEX.test(from)) || !HEX.test(to)) return c.json({error: 'Commit not found'}, 404);
+    const r = await repoAt(db, c.get('userId'), c.req.param('name'));
+    if (!r) return c.json({error: 'Commit not found'}, 404);
+    on(r.off);
+    const [k] = await rows<{ra: string | null; rb: string | null; fa: boolean; fb: boolean}>(db, sql`select a.root as ra, b.root as rb, a.id is not null as fa, b.id is not null as fb
+      from (select 1) one left join cut a on a.repo_id = ${r.id} and a.id = ${from || null} left join cut b on b.repo_id = ${r.id} and b.id = ${to}`);
+    if (!k.fb || (from && !k.fa)) return c.json({error: 'Commit not found'}, 404);
+    const entries = (x: ReturnType<typeof sql>) => sql`jsonb_each(coalesce((select n.entries from tree_node n where n.repo_id = ${r.id} and n.id = ${x}), '{}'::jsonb))`;
+    const differ = (!from || k.ra) && k.rb
+      ? await rows<{path: string; had: boolean; was: string | null; has: boolean; now: string | null}>(db, sql`with recursive d(prefix, x, y) as (
+            select ''::text, ${k.ra}::text, ${k.rb}::text
+            union all
+            select d.prefix || q.key || '/', q.xt, q.yt from d cross join lateral (
+              select coalesce(ex.key, ey.key) as key, ex.value ->> 't' as xt, ey.value ->> 't' as yt
+              from ${entries(sql`d.x`)} ex full join ${entries(sql`d.y`)} ey on ex.key = ey.key
+              where (ex.value ->> 't') is distinct from (ey.value ->> 't')) q
+            where d.x is distinct from d.y)
+          select d.prefix || q.key as path, coalesce(q.ev ? 'f' or q.ev ? 'n', false) as had, q.ev ->> 'f' as was,
+            coalesce(q.yv ? 'f' or q.yv ? 'n', false) as has, q.yv ->> 'f' as now
+          from d cross join lateral (select coalesce(ex.key, ey.key) as key, ex.value as ev, ey.value as yv
+            from ${entries(sql`d.x`)} ex full join ${entries(sql`d.y`)} ey on ex.key = ey.key) q
+          where d.x is distinct from d.y and ((q.ev -> 'f') is distinct from (q.yv -> 'f') or coalesce(q.ev ? 'n', false) <> coalesce(q.yv ? 'n', false))`)
+      : await rows<{path: string; had: boolean; was: string | null; has: boolean; now: string | null}>(db, sql`select coalesce(a.key, b.key) as path, a.key is not null as had,
+            a.value #>> '{}' as was, b.key is not null as has, b.value #>> '{}' as now
+          from jsonb_each(${from ? sql`cut_tree(${r.id}, ${from})` : sql`'{}'::jsonb`}) a full join jsonb_each(cut_tree(${r.id}, ${to})) b on a.key = b.key
+          where a.value is distinct from b.value`);
+    const was: Tree = {}, now: Tree = {};
+    for (const x of differ) { if (x.had) was[x.path] = x.was; if (x.has) now[x.path] = x.now; }
+    return c.json({was, now});
+  });
+
   // As git log: from the line's head along first parents, so a work's history goes on into main's
   // from where it began. One walk in the database, each step one lookup of the repo's commits by their
   // key. Each commit says what it changed from its parent (files, folders: 0007's cut_change); with

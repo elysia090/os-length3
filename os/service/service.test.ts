@@ -1836,6 +1836,10 @@ test('commits made along what changed come out as the trees they stand for, what
     const [logged] = (await s.call('GET', '/v1/repos/walk/log?limit=1&summary=1', {token: t})).json as unknown as {files: number; folders: string[]}[];
     assert.deepEqual([logged.files, logged.folders], [changes(headTree, tree).files, changes(headTree, tree).folders], `${i}`);
     for (const p of names) assert.equal(await path(id, p), typeof tree[p] === 'string' ? tree[p] : null, `${i} ${p}`);
+    // What changed since the head, compared where the commits are kept: the paths that differ, as each has them.
+    const differ = [...new Set([...Object.keys(headTree), ...Object.keys(tree)])].filter((p) => headTree[p] !== tree[p]);
+    const pick2 = (x: Record<string, string | null>) => Object.fromEntries(differ.filter((p) => p in x).map((p) => [p, x[p]]));
+    assert.deepEqual((await s.call('GET', `/v1/repos/walk/compare?from=${head ?? ''}&to=${id}`, {token: t})).json, {was: pick2(headTree), now: pick2(tree)}, `${i}`);
     head = id;
     headTree = tree;
   }
@@ -1862,6 +1866,12 @@ test('a commit on one made before roots is made whole once, and those after it a
   assert.deepEqual((await s.call('GET', `/v1/repos/old/cuts/${two.json.id}`, {token: t})).json.tree, {...want, 'c/new.txt': a});
   const log = (await s.call('GET', '/v1/repos/old/log?summary=1', {token: t})).json as unknown as {files: number; folders: string[]}[];
   assert.deepEqual(log.map((c) => [c.files, c.folders]), [[1, ['c']], [2, ['a', 'b']], [3, ['a', 'b']]]);
+  // Compared with one made before roots (its tree whole, in the database), and from nothing.
+  assert.deepEqual((await s.call('GET', `/v1/repos/old/compare?from=${old}&to=${one.json.id}`, {token: t})).json,
+    {was: {'a/x.txt': a, 'b/z.txt': a}, now: {'a/x.txt': b}});
+  assert.deepEqual((await s.call('GET', `/v1/repos/old/compare?to=${two.json.id}`, {token: t})).json, {was: {}, now: {...want, 'c/new.txt': a}});
+  assert.equal((await s.call('GET', `/v1/repos/old/compare?from=${'0'.repeat(64)}&to=${two.json.id}`, {token: t})).status, 404);
+  assert.equal((await s.call('GET', `/v1/repos/old/compare?to=${two.json.id}`, {token: await s.start('Bo')})).status, 404);
   // An issue's file committed by itself: the rest as the head has it.
   version = (await s.call('PATCH', '/v1/repos/old/draft', {token: t, body: {version, set: {'issue/001.md': a, 'a/y.txt': b}, remove: []}})).json.version as number;
   const only = await s.call('POST', '/v1/repos/old/cuts', {token: t, body: {version, parent: two.json.id, title: 'Issue', paths: ['issue/001.md']}});
