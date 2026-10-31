@@ -124,6 +124,13 @@ function started(): Worker {
   return worker = w;
 }
 
+/**
+ * Start this tab's worker now, before anything is asked (start.ts, as the page's first script runs): it fetches and
+ * compiles the core's module while the app's own code arrives. What the page tells it of where it runs after
+ * (setEnvironment) reaches it before the first question, as every message does.
+ */
+export function start(): void { started(); }
+
 /** Ask the core in this tab's worker: sent once this turn of the page is done asking, with what else it asked. */
 export const ask: Ask = (name, args) => new Promise<Answer>((resolve, reject) => {
   started();

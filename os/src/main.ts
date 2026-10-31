@@ -3,16 +3,9 @@ import {setWindowTitle} from './app/tauri.ts';
 import {icon} from './ui/icons.ts';
 import {placeholder} from './pages/common.ts';
 import type {Context} from './pages/context.ts';
-import {forge, keptForge, revealNext, showInForge} from './pages/forge/forge.ts';
-import {git} from './pages/git/git.ts';
 import {currentProfile, home, startEditing} from './pages/home.ts';
 import {Me} from './pages/me.ts';
-import {newRepo} from './pages/new-repo.ts';
-import {remote} from './pages/remote/remote.ts';
-import {inboxPage} from './pages/inbox.ts';
 import {ServerSwitcher} from './pages/server/switcher.ts';
-import {serverPage} from './pages/server/page.ts';
-import {runtime} from './pages/runtime/runtime.ts';
 import {FileTree} from './pages/tree.ts';
 import {onRenamed} from './repos/repos.ts';
 import {begin} from './remote/lifecycle.ts';
@@ -20,8 +13,6 @@ import {keepFocus} from './ui/focus.ts';
 import {onPlugins, pluginsOpen, setPluginsOpen} from './app/plugins.ts';
 import {learnHome} from './remote/inbox.ts';
 import {begin as lookForNews, look, marks, news, onNews} from './remote/news.ts';
-import {devicePage} from './pages/remote/device-page.ts';
-import {checkoutBackPage} from './pages/remote/stripe.ts';
 import {about, claim, connection, enterWith, holdAsk, justSignedIn, mayAsk, onConnection, onReach, remoteAway, signInFailed} from './remote/connection.ts';
 import {cameBackFromStripe, isPaidTier} from './remote/plan.ts';
 import {every} from './app/runs.ts';
@@ -59,6 +50,39 @@ function save(key: string, value: string) {
   try { localStorage.setItem(key, value); } catch { /* convenience only */ }
 }
 
+/** A place's page, drawn for the shell. */
+type Drawn = (ctx: Context) => Node[];
+/** Forge's module once brought: what the shell asks of Forge besides its page (what it keeps, what it shows next). */
+let forgeOf: typeof import('./pages/forge/forge.ts') | null = null;
+/**
+ * Each place's page but Home's, brought when it is first drawn (all of them once Home stands, in the time the page
+ * has to spare): the code of the places not shown is no part of what the page must fetch and run before it draws.
+ */
+const BRING: Partial<Record<PurposeId, () => Promise<Drawn>>> = {
+  'forge': () => import('./pages/forge/forge.ts').then((m) => { forgeOf = m; return m.forge; }),
+  'git': () => import('./pages/git/git.ts').then((m) => m.git),
+  'new-repo': () => import('./pages/new-repo.ts').then((m) => m.newRepo),
+  'runtime': () => import('./pages/runtime/runtime.ts').then((m) => m.runtime),
+  'remote': () => import('./pages/remote/remote.ts').then((m) => m.remote),
+  'inbox': () => import('./pages/inbox.ts').then((m) => m.inboxPage),
+  'server': () => import('./pages/server/page.ts').then((m) => (c: Context) => m.serverPage(c, () => { if (current === 'server') render(); })),
+};
+const pages: Partial<Record<PurposeId, Drawn>> = {home};
+const bringing = new Map<PurposeId, Promise<void>>();
+/** The place's page being brought, or null once it is here (or the place has none of its own). */
+function brought(id: PurposeId): Promise<void> | null {
+  const bring = BRING[id];
+  if (pages[id] || !bring) return null;
+  let p = bringing.get(id);
+  if (!p) {
+    p = bring().then((drawn) => { pages[id] = drawn; });
+    // Not brought (the line went): asked again the next time.
+    p.catch(() => bringing.delete(id));
+    bringing.set(id, p);
+  }
+  return p;
+}
+
 let openRepo = load(REPO_KEY);
 /** The file Forge's center is reading. */
 let readingPath: string | null = null;
@@ -66,9 +90,12 @@ const ctx: Context = {
   // Server, like File, is laid over the page rather than being one.
   go: (id) => select(id),
   openRepo(name, path = '', write = false, grownFrom, line = 0) {
-    if (current === 'forge' && showInForge(name, path, write, line)) return;
+    const bringing = brought('forge');
+    if (bringing) { void bringing.then(() => ctx.openRepo(name, path, write, grownFrom, line)); return; }
+    const f = forgeOf!;
+    if (current === 'forge' && f.showInForge(name, path, write, line)) return;
     ctx.remember(name);
-    revealNext(path, write, line);
+    f.revealNext(path, write, line);
     // Pressed on its card or its row (or made from a form, which says so), the repo grows from there into its box in Forge.
     const from = grownFrom?.isConnected ? grownFrom.getBoundingClientRect()
       : pressedOn?.isConnected && performance.now() - pressedAt < 1500 ? pressedOn.getBoundingClientRect() : null;
@@ -237,6 +264,9 @@ function setOff(p: Pan) {
   for (const a of p.parts) a.play();
 }
 
+/** The latest place asked for: a place whose page was still being brought gives way to one asked after it. */
+let asked = 0;
+
 /**
  * Going along the rail, the camera pans with it (styles.css ::view-transition): the page left goes off the way the rail
  * was gone along as the page come to rises in after it, the rail and the window's edges staying where they are, a
@@ -255,6 +285,8 @@ function setOff(p: Pan) {
  * it simply stays); once moving, the page it was bringing is taken as it stands, and the next pan sets off from there.
  */
 function select(id: PurposeId, quiet = false): Promise<void> {
+  const bringing = brought(id), mine = ++asked;
+  if (bringing) return bringing.then(() => { if (mine === asked) return select(id, quiet); });
   const p = panning, root = document.documentElement, page = $('page');
   const begin = (document as Panning).startViewTransition;
   const moving = !!begin && !quiet && !!page.childElementCount && !matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -411,25 +443,27 @@ const named = () => {
   void setWindowTitle(document.title).catch(() => {});
 };
 
+/** Asked to draw while its page is still being brought: drawn once it is here. */
+let toDraw = false;
+
 function render() {
+  const bringing = brought(current);
+  if (bringing) {
+    if (!toDraw) void bringing.then(() => { toDraw = false; render(); });
+    toDraw = true;
+    return;
+  }
   const page = $('page');
   page.classList.toggle('page-work', current === 'forge' || current === 'git' || current === 'server');
   page.dataset.place = current;
   page.classList.toggle('page-inbox', current === 'inbox');
   fileTree.mark(current === 'forge' ? openRepo : null);
   fileTree.markFile(current === 'forge' ? openRepo : null, current === 'forge' ? readingPath : null);
-  const nodes = current === 'home' ? home(ctx)
-    : current === 'forge' ? forge(ctx)
-    : current === 'new-repo' ? newRepo(ctx)
-    : current === 'runtime' ? runtime(ctx)
-    : current === 'git' ? git(ctx)
-    : current === 'remote' ? remote(ctx)
-    : current === 'inbox' ? inboxPage(ctx)
-    : current === 'server' ? serverPage(ctx, () => { if (current === 'server') render(); })
-    : placeholder(current);
+  const drawn = pages[current];
+  const nodes = drawn ? drawn(ctx) : placeholder(current);
   // Forge, once made, stays in the document, hidden while another page shows: a text box taken out
   // of the document loses its Undo, so what was written there can still be taken back on return.
-  const kept = keptForge();
+  const kept = forgeOf?.keptForge() ?? null;
   for (const n of [...page.childNodes]) if (n !== kept) n.remove();
   if (kept && kept.parentNode !== page) page.prepend(kept);
   page.append(...nodes.filter((n) => n !== kept));
@@ -538,7 +572,11 @@ const invitation = inviteIn(location.hash);
 if (invitation) holdInvite(invitation.board, invitation.code);
 if (entering || invitation) history.replaceState(null, '', location.pathname + location.search);
 if (asking.has('device')) {
-  void loadState().finally(async () => { await useLang(getState('lang')); document.body.replaceChildren(devicePage(asking.get('user_code') ?? '')); });
+  void loadState().finally(async () => {
+    await useLang(getState('lang'));
+    const {devicePage} = await import('./pages/remote/device-page.ts');
+    document.body.replaceChildren(devicePage(asking.get('user_code') ?? ''));
+  });
 } else {
   void loadState().finally(async () => {
     await useLang(getState('lang'));
@@ -570,6 +608,7 @@ if (asking.has('device')) {
       for (const k of ['plan', 'tier']) u.searchParams.delete(k);
       history.replaceState(null, '', u);
       if (!connection()) {
+        const {checkoutBackPage} = await import('./pages/remote/stripe.ts');
         await new Promise<void>((goOn) => document.body.replaceChildren(checkoutBackPage(how, isPaidTier(tier) ? tier : null, goOn)));
         location.reload();
         return;
@@ -593,7 +632,12 @@ if (asking.has('device')) {
     select(restorePurpose(load(PURPOSE_KEY)));
     if (heldInvite()) void select('server');
     // Busy until what the Remote has is taken in and the page drawn from it (the first look).
-    void begin().then(() => render()).finally(() => $('page').removeAttribute('aria-busy'));
+    void begin().then(() => brought(current)).then(() => render()).finally(() => {
+      $('page').removeAttribute('aria-busy');
+      // The other places' pages, brought while the person reads the first: a place pressed later is drawn at once.
+      const rest = () => { for (const id of Object.keys(BRING) as PurposeId[]) void brought(id)?.catch(() => {}); };
+      if ('requestIdleCallback' in window) requestIdleCallback(rest, {timeout: 3000}); else setTimeout(rest, 1000);
+    });
     // What came in meanwhile, for the rail's marks: now, and every little while.
     lookForNews();
   });

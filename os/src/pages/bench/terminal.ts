@@ -13,6 +13,7 @@ import {endLine, goDark, jolt, switchOver} from './ending.ts';
 import {Output, strip} from './output.ts';
 import {FirstPrompt, waitsAt} from './prompt-line.ts';
 import {mirror, snapshot, WriteBack} from './repo-copy.ts';
+import {sessions} from './sessions.ts';
 
 // A shell per repo: in a browser, l3's root (its BusyBox sh, and every other
 // program of it) translated in a Worker; in the app, the same root on the
@@ -23,7 +24,6 @@ import {mirror, snapshot, WriteBack} from './repo-copy.ts';
 // elsewhere (Forge, Git, l3 on the host… through the store) is put into the
 // shell's copy (repo-copy.ts).
 
-const sessions = new Map<string, Session>();
 const RUNS = 50;
 
 /** One line sent from the prompt box and what came out until the prompt returned. */
@@ -445,26 +445,6 @@ export class Session {
     if (!now || this.restarting || still()) return;
     goDark(power, this.out.element);
   }
-}
-
-/** Every session started in this window, running or stopped. */
-export const allSessions = (): [string, Session][] => [...sessions];
-
-/** The repo's session if one is running, without starting one. */
-export const sessionIfAny = (repo: string): Session | undefined => sessions.get(repo);
-
-/** How the repo's Prompt holds it: 'busy' while a line runs in it, 'idle' while it waits at its prompt line, null when none runs. */
-export function promptHolds(repo: string): 'busy' | 'idle' | null {
-  const s = sessions.get(repo);
-  if (!s?.running) return null;
-  return s.runs.at(-1)?.ms === null ? 'busy' : 'idle';
-}
-
-/** The repo's Prompt stopped, before its repo goes from here or takes another name; `gone`: let go of, too (its copy is of a repo no longer here). */
-export async function stopPrompt(repo: string, gone = false) {
-  const s = sessions.get(repo);
-  if (s?.running) await s.stop();
-  if (gone) sessions.delete(repo);
 }
 
 /** The repo's session, made if it has none (made, it is not started: writing to it starts it). */

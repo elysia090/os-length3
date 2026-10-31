@@ -12,7 +12,6 @@ import {HOME_KEYS, syncHome} from '../remote/sync.ts';
 import {reloadState, settingName} from '../home/state.ts';
 import {store} from '../repos/repos.ts';
 import {t, tn} from '../i18n.ts';
-import {keptL3} from '../prompt/userland.ts';
 
 /** `open`: repos a Prompt has open in this page (the app knows its own). */
 export async function readSpace(open: string[] = []): Promise<Space> {
@@ -24,7 +23,8 @@ export async function readSpace(open: string[] = []): Promise<Space> {
   const items: Item[] = s.items.map((i) => (open.includes(i.what) && i.id.startsWith('repo:') && i.room !== 'Keep' ? {...i, room: 'Keep', why: t('Locked by an active Prompt')} : i));
   // What l3 keeps of itself for the Prompt (its index, the translator, the hot programs): the l3 every Prompt runs on,
   // so it is kept, not freed (issue #46), here and in Free all alike; the app keeps its own the same (core/src/usage.rs).
-  const l3 = await keptL3();
+  // Read from l3's own module only when asked: the Prompt's machine is no part of a page that only lists what is kept.
+  const l3 = await (await import('../prompt/userland.ts')).keptL3();
   if (l3.files) items.push({id: 'l3', what: 'l3', detail: tn('{n} file reserved for Prompt', '{n} files reserved for Prompt', l3.files), allocated: l3.bytes,
     room: 'Keep', why: t('Required for Prompt execution; cannot be removed')});
   items.sort((a, b) => b.allocated - a.allocated || a.what.localeCompare(b.what));

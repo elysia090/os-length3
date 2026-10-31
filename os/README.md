@@ -582,9 +582,10 @@ Linux needs the WebKitGTK toolchain:
 and `libgles2` to bundle the AppImage (`scripts/desktop.sh` puts it inside).
 The web app runs the same core as the desktop app (`core/`, built for the
 browser by `core/web`), so every web build of the page needs Rust with
-`rustup target add wasm32-wasip1`; Vite builds it when `core/` changed, and
-says that command when the target is missing. The desktop app's build does
-not: its core is the app's own.
+`rustup target add wasm32-wasip1`; Vite builds it when `core/` changed (with
+Cargo's `web` profile: the release's, built small, as every browser fetches it
+before the page can draw), and says that command when the target is missing.
+The desktop app's build does not: its core is the app's own.
 
 ### Where the page's code is
 
@@ -593,6 +594,7 @@ tests stand beside it (`x.test.ts`).
 
 | Folder | What is in it |
 | --- | --- |
+| `start.ts` | the page's first script: starts the core's worker, then runs the shell once the page is read |
 | `main.ts` | the shell: the rail, the page drawn for each place, the moves between them |
 | `pages/` | each place on the rail and its parts; Forge, Git, Server, Remote and Runtime have folders of their own, and `bench/` is the work bench Forge and Git stand on (the box, the Prompt's screen and terminal) |
 | `ui/` | what every page draws and moves with: elements (`dom.ts`), motion (`glide.ts`), the caret, focus, touch, icons |

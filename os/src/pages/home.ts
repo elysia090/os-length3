@@ -1,5 +1,4 @@
 import {agentCards} from './agent-cards.ts';
-import {showIssue} from './git/git.ts';
 import {arrowKeys, h} from '../ui/dom.ts';
 import {t, tn} from '../i18n.ts';
 import {LIMITS, initials, normalize, parse, type Profile} from '../home/profile.ts';
@@ -12,7 +11,6 @@ import {onRenamed, store} from '../repos/repos.ts';
 import {shownName} from '../repos/issues.ts';
 import {repoList} from './repo-list.ts';
 import {todoBox} from './todo-list.ts';
-import {openNext as openConversation} from './inbox.ts';
 import {remember} from './server/parts.ts';
 import {Reference} from './forge/reference.ts';
 import type {Context} from './context.ts';
@@ -58,7 +56,7 @@ export function home(ctx: Context): Node[] {
  * as there). It stays where it is while Home scrolls under the rail; put away, Home takes the width.
  */
 function homePane(main: HTMLElement, ctx: Context): HTMLElement {
-  const side = h('aside', {class: 'home-side', id: 'home-side', 'aria-label': t('Recent activity')}, pluginArea(), agentCards((repo, issue) => { showIssue(repo, issue.replace(/^issue\//, '')); void ctx.go('git'); }), lately(ctx));
+  const side = h('aside', {class: 'home-side', id: 'home-side', 'aria-label': t('Recent activity')}, pluginArea(), agentCards((repo, issue) => { void import('./git/git.ts').then((g) => { g.showIssue(repo, issue.replace(/^issue\//, '')); void ctx.go('git'); }); }), lately(ctx));
   const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': 'home-side'}, paneMark()) as HTMLButtonElement;
   // The search Forge and Git have, where theirs is: in the repo last worked in (named in it, there being no band to
   // say which), what is found opened in Forge, at its line.
@@ -165,7 +163,7 @@ function lately(ctx: Context): HTMLElement {
     if (connection()) {
       for (const th of waiting(threads, 3)) {
         const who = th.name || inbox.shown(th.address);
-        const answer = () => { openConversation(th.address); void ctx.go('inbox'); };
+        const answer = () => { void import('./inbox.ts').then((i) => { i.openNext(th.address); void ctx.go('inbox'); }); };
         rows.push(latelyRow(who, wordLine(th), {fresh: true, badge: {who}, go: answer}));
       }
       for (const b of news().boards.slice(0, 3)) {

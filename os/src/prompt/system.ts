@@ -8,7 +8,6 @@
 import {isNative, native} from '../app/host.ts';
 import {t} from '../i18n.ts';
 import {store} from '../repos/repos.ts';
-import {l3Index} from './userland.ts';
 
 export type Origin = 'distribution' | 'kernel' | 'repos' | 'empty';
 
@@ -46,7 +45,8 @@ const join = (dir: string, name: string) => (dir === '/' ? `/${name}` : `${dir}/
 /** Every entry of l3's root under each directory, from its index (what l3 this build carries; none without one). */
 let distribution: Promise<Map<string, SystemEntry[]>> | null = null;
 async function root(): Promise<Map<string, SystemEntry[]>> {
-  const index = await l3Index();
+  // l3's own module, brought when its root is first listed: the tree of / is drawn without the Prompt's machine.
+  const index = await (await import('./userland.ts')).l3Index();
   if (!index) throw new Error(t('Distribution not fetched'));
   const under = new Map<string, SystemEntry[]>();
   const add = (e: SystemEntry) => {

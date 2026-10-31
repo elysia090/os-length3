@@ -7,7 +7,7 @@ import {keepOut, nudge, putAway} from '../ui/glide.ts';
 import {store, validName} from '../repos/repos.ts';
 import {forget, remoteAll, remoteOnly, repoState} from '../remote/lifecycle.ts';
 import {connection} from '../remote/connection.ts';
-import {promptHolds, stopPrompt} from './bench/terminal.ts';
+import {promptHolds, stopPrompt} from './bench/sessions.ts';
 import {openRepoPlace} from './remote/repos.ts';
 import {askFirst} from './remote/repo-off.ts';
 import type {Context} from './context.ts';

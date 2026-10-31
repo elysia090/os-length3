@@ -8,14 +8,16 @@ import {fileURLToPath} from 'node:url';
 
 const OS = fileURLToPath(new URL('..', import.meta.url));
 const TARGET = 'wasm32-wasip1';
-const BUILD = ['build', '--release', '-p', 'length3-core-web', '--target', TARGET];
+// Its own profile (Cargo.toml [profile.web]): the release's, built small.
+const PROFILE = 'web';
+const BUILD = ['build', '--profile', PROFILE, '-p', 'length3-core-web', '--target', TARGET];
 // templates.json is compiled in (core/src/templates.rs include_str!).
 const SOURCES = ['core/src', 'core/web/src', 'core/Cargo.toml', 'core/web/Cargo.toml', 'Cargo.toml', 'Cargo.lock', 'shared/templates.json'].map((p) => join(OS, p));
 
 /** Where cargo puts the module (CARGO_TARGET_DIR is honoured, as cargo honours it). */
 export function coreWasmPath(): string {
   const target = process.env.CARGO_TARGET_DIR ? resolve(OS, process.env.CARGO_TARGET_DIR) : join(OS, 'target');
-  return join(target, TARGET, 'release', 'length3_core_web.wasm');
+  return join(target, TARGET, PROFILE, 'length3_core_web.wasm');
 }
 
 function newest(path: string): number {

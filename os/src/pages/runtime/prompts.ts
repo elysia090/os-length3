@@ -1,7 +1,8 @@
 import {bytes, h} from '../../ui/dom.ts';
 import type {Stopped} from '../../app/host.ts';
 import {t, tn} from '../../i18n.ts';
-import {allSessions, type Session} from '../bench/terminal.ts';
+import type {Session} from '../bench/terminal.ts';
+import {allSessions} from '../bench/sessions.ts';
 import {getState, setState} from '../../home/state.ts';
 import {onRenamed} from '../../repos/repos.ts';
 import {errorText} from '../../app/errors.ts';

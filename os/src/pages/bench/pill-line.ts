@@ -1,6 +1,7 @@
 import {fieldMoved} from '../../ui/caret.ts';
 import {still} from '../../ui/glide.ts';
-import {sessionIfAny, type Session} from './terminal.ts';
+import type {Session} from './terminal.ts';
+import {sessionIfAny} from './sessions.ts';
 
 // The box's pill while it runs (box.ts): the prompt line the repo's shell waits at, and its lamp, lit while the shell
 // runs. The repo's Prompt is followed for them, and a new one from the moment it is started again.

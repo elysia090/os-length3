@@ -5,7 +5,7 @@ import {onSync} from '../../remote/lifecycle.ts';
 import {readSpace} from '../../app/space.ts';
 import {pageHead, parts} from '../common.ts';
 import type {Context} from '../context.ts';
-import {allSessions} from '../bench/terminal.ts';
+import {allSessions} from '../bench/sessions.ts';
 import {errorText} from '../../app/errors.ts';
 import {device} from './device.ts';
 import {prompts} from './prompts.ts';

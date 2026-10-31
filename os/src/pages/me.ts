@@ -7,7 +7,7 @@ import {initials, type Profile} from '../home/profile.ts';
 import {answers, choosePart, SETTLE} from './common.ts';
 import {errorText} from '../app/errors.ts';
 import {takeOff} from '../app/space.ts';
-import {allSessions} from './bench/terminal.ts';
+import {allSessions} from './bench/sessions.ts';
 import type {Context} from './context.ts';
 
 /** The person's name as written on Home; none written there, the one signed in with (the Remote's), as Home says it. */

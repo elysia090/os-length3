@@ -23,6 +23,8 @@
   }
   function say() {
     if (started()) return;
+    // The app's code still on its way (start.ts marks the page so until it has run, or failed): asked again later.
+    if (/(^|\s)loading(\s|$)/.test(document.documentElement.className)) { setTimeout(say, 1500); return; }
     var ja = /^ja\b/.test(navigator.language || '');
     var page = document.getElementById('page') || document.body;
     var box = document.createElement('section');

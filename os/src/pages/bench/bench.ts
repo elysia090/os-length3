@@ -7,7 +7,7 @@ import {Pane, paneWord, pluginArea} from '../pane.ts';
 import type {Writing} from '../forge/reader.ts';
 import {Reference} from '../forge/reference.ts';
 import {Screen} from './screen.ts';
-import {sessionIfAny} from './terminal.ts';
+import {sessionIfAny} from './sessions.ts';
 
 // The workbench Forge and Git share, put together from its parts: the page's own content in the large center (3/4)
 // with the box at its foot (box.ts), which becomes the Prompt's screen over the center while the Prompt is in use

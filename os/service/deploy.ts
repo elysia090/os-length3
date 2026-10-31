@@ -55,14 +55,14 @@ const toml = readFileSync(config, 'utf8');
 
 /**
  * What the Worker serves as the app is the build (dist, made by `npm run build:cloudflare`), never this tree: a page
- * served from the sources asks for /src/main.ts, which a browser will not run (a .ts file is served as video, MPEG
+ * served from the sources asks for /src/start.ts, which a browser will not run (a .ts file is served as video, MPEG
  * transport stream), and /boot.js is not there, so all it shows is the page's background. Refused before anything moves.
  */
 function built(dir: string): string | null {
   const page = `${dir}/index.html`;
   if (!existsSync(page)) return `${page} is not there: build the app first (npm run build:cloudflare)`;
   const html = readFileSync(page, 'utf8');
-  if (/src="\/src\/main\.ts"/.test(html) || !html.includes('name="length3-build"')) return `${page} is the sources' page, not a build's: build the app first (npm run build:cloudflare)`;
+  if (/src="\/src\/[^"]+\.ts"/.test(html) || !html.includes('name="length3-build"')) return `${page} is the sources' page, not a build's: build the app first (npm run build:cloudflare)`;
   if (!existsSync(`${dir}/boot.js`)) return `${dir}/boot.js is not there: the build is not whole`;
   return null;
 }

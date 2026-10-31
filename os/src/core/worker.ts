@@ -250,8 +250,9 @@ async function handle(m: Message) {
     tab = m.init.tab ?? '';
     reader = !!m.init.reader;
     core = undefined;
-    // Compiled while the page is still drawing, so the first call finds it ready.
+    // Compiled, and what this browser keeps opened, while the page is still drawing, so the first call finds both ready.
     compiled().catch(() => {});
+    if (!reader) void open();
     return;
   }
   if (m.batch) {

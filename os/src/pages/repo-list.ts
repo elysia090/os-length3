@@ -6,7 +6,7 @@ import {bring, onSync, remoteOnly, repoState} from '../remote/lifecycle.ts';
 import {free, readSpace} from '../app/space.ts';
 import {syncWord} from './remote/repo-card.ts';
 import {repoGear} from './repo-gear.ts';
-import {allSessions} from './bench/terminal.ts';
+import {allSessions} from './bench/sessions.ts';
 import type {Context} from './context.ts';
 import {errorText} from '../app/errors.ts';
 
