@@ -6,7 +6,7 @@ import {core} from '../app/host.ts';
 import {home, onElsewhere} from '../core/client.ts';
 import shared from '../../shared/templates.json' with {type: 'json'};
 
-interface RepoSummary {
+export interface RepoSummary {
   name: string;
   files: number;
   bytes: number;

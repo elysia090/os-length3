@@ -1,7 +1,7 @@
 import {ago, arrowKeys, bytes, h} from '../ui/dom.ts';
 import {t} from '../i18n.ts';
 import {icon} from '../ui/icons.ts';
-import {store} from '../repos/repos.ts';
+import {store, type RepoSummary} from '../repos/repos.ts';
 import {bring, onSync, remoteOnly, repoState} from '../remote/lifecycle.ts';
 import {free, readSpace} from '../app/space.ts';
 import {syncWord} from './remote/repo-card.ts';
@@ -85,24 +85,24 @@ function newRepoCard(ctx: Context): HTMLElement {
 
 interface RepoList {
   element: HTMLElement;
-  /** Read the repos again; `light` brings that card into view and lights it a moment. */
-  refresh(light?: string | null): Promise<void>;
+  /** Read the repos again; `light` brings that card into view and lights it a moment. Their list as read, the one changed last first (null: not read). */
+  refresh(light?: string | null): Promise<RepoSummary[] | null>;
 }
 
 export function repoList(ctx: Context, options: {newCard: boolean; counted?: (n: number) => void}): RepoList {
   // The same cards wherever the list is (Home, New repo): one size, one title.
   const grid = h('div', {class: 'grid repo-grid'}, h('p', {class: 'muted'}, t('Loading…')));
   arrowKeys(grid, '.card-open, .card.new');
-  const refresh = async (light?: string | null) => {
+  const refresh = async (light?: string | null): Promise<RepoSummary[] | null> => {
     let repos;
     try { repos = await store.list(); } catch (e) {
       grid.replaceChildren(h('p', {class: 'muted'}, t('Failed to load repos: {why}', {why: errorText(e)})));
-      return;
+      return null;
     }
     options.counted?.(repos.length + remoteOnly().length);
-    const again = () => refresh();
+    const again = async () => { await refresh(); };
     // A repo's gear list out is not drawn away under the pointer: the cards are drawn once it is put away.
-    if (grid.isConnected && grid.querySelector('.repo-gear-pop:not([hidden])')) { setTimeout(() => void refresh(light), 1000); return; }
+    if (grid.isConnected && grid.querySelector('.repo-gear-pop:not([hidden])')) { setTimeout(() => void refresh(light), 1000); return repos; }
     // What is drawn of the Remote is what a change is told from (signed out, its cards go at the next look).
     known = remoteOnly().map((r) => r.name).join('\n');
     grid.replaceChildren(...repos.map((r) => repoCard(ctx, r.name, r.bytes, r.modified, again)),
@@ -116,6 +116,7 @@ export function repoList(ctx: Context, options: {newCard: boolean; counted?: (n:
       shown.classList.add('revealed');
       setTimeout(() => shown.classList.remove('revealed'), 1600);
     }
+    return repos;
   };
   /** Where each repo stands, written on its card as it changes. */
   const marks = () => {

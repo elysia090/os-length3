@@ -631,8 +631,10 @@ if (asking.has('device')) {
     void learnHome();
     select(restorePurpose(load(PURPOSE_KEY)));
     if (heldInvite()) void select('server');
-    // Busy until what the Remote has is taken in and the page drawn from it (the first look).
-    void begin().then(() => brought(current)).then(() => render()).finally(() => {
+    // Busy until what the Remote has is taken in and the page drawn from it (the first look). Signed out, that look
+    // reads the repos' names alone, and what shows where a repo stands follows it (onSync): the page drawn as the OS
+    // opened is the page, not drawn whole a second time.
+    void begin().then(() => brought(current)).then(() => { if (connection()) render(); }).finally(() => {
       $('page').removeAttribute('aria-busy');
       // The other places' pages, brought while the person reads the first: a place pressed later is drawn at once.
       const rest = () => { for (const id of Object.keys(BRING) as PurposeId[]) void brought(id)?.catch(() => {}); };

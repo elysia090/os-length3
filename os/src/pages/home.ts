@@ -7,7 +7,7 @@ import {getState, setState, settingName, unreadable} from '../home/state.ts';
 import * as servers from '../remote/servers.ts';
 import * as inbox from '../remote/inbox.ts';
 import {news, onNews} from '../remote/news.ts';
-import {onRenamed, store} from '../repos/repos.ts';
+import {onRenamed, store, type RepoSummary} from '../repos/repos.ts';
 import {shownName} from '../repos/issues.ts';
 import {repoList} from './repo-list.ts';
 import {todoBox} from './todo-list.ts';
@@ -36,7 +36,7 @@ export function home(ctx: Context): Node[] {
   const owner = true;
   const count = h('span', {});
   const list = repoList(ctx, {newCard: true, counted: (n) => counting(count, n, 'repo', 'repos')});
-  void list.refresh();
+  const listed = list.refresh();
   const grid = list.element;
   // About three across at a laptop's width (styles.css): Home's own, so New repo's list and other grids stay as they are.
   grid.classList.add('home-repos');
@@ -47,7 +47,7 @@ export function home(ctx: Context): Node[] {
     h('section', {class: 'section', 'aria-labelledby': 'repos-title'}, h('h2', {id: 'repos-title'}, t('Repos')), grid),
     h('section', {class: 'section', 'aria-labelledby': 'servers-title'},
       h('h2', {id: 'servers-title'}, t('Servers')), ownServers(ctx)));
-  return [homePane(main, ctx)];
+  return [homePane(main, ctx, listed)];
 }
 
 /**
@@ -55,7 +55,7 @@ export function home(ctx: Context): Node[] {
  * at its top (one setting for all three): at its top the plugin area (plain until the rail's plug opens it, here
  * as there). It stays where it is while Home scrolls under the rail; put away, Home takes the width.
  */
-function homePane(main: HTMLElement, ctx: Context): HTMLElement {
+function homePane(main: HTMLElement, ctx: Context, listed: Promise<RepoSummary[] | null>): HTMLElement {
   const side = h('aside', {class: 'home-side', id: 'home-side', 'aria-label': t('Recent activity')}, pluginArea(), agentCards((repo, issue) => { void import('./git/git.ts').then((g) => { g.showIssue(repo, issue.replace(/^issue\//, '')); void ctx.go('git'); }); }), lately(ctx));
   const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': 'home-side'}, paneMark()) as HTMLButtonElement;
   // The search Forge and Git have, where theirs is: in the repo last worked in (named in it, there being no band to
@@ -65,14 +65,9 @@ function homePane(main: HTMLElement, ctx: Context): HTMLElement {
   const aim = (name: string | null) => { repo = name; reference.setRepo(name); reference.named(name); };
   aim(repo);
   const pane = h('div', {class: 'home-pane'}, h('div', {class: 'home-bar'}, reference.search, toggle), side);
-  // None worked in yet (or it is gone): the one changed last, so the box is never there to be pressed for nothing.
-  // Only then is every repo walked to say which that is; one still there is told by its name.
-  const there = (names: string[]) => !pane.isConnected || (!!repo && names.includes(repo));
-  void store.names().then(async (names) => {
-    if (there(names)) return;
-    const all = names.length ? await store.list() : [];
-    if (!there(all.map((r) => r.name))) aim(all.sort((a, b) => b.modified - a.modified)[0]?.name ?? null);
-  }).catch(() => {});
+  // None worked in yet (or it is gone): the one changed last (the first of the cards' list, read once for both), so the
+  // box is never there to be pressed for nothing.
+  void listed.then((all) => { if (all && pane.isConnected && !(repo && all.some((r) => r.name === repo))) aim(all[0]?.name ?? null); });
   const layout = h('div', {class: 'home-layout'}, main, pane);
   // What opens under the box is two of the pane wide, as under Forge's (styles.css .search-results).
   new ResizeObserver(() => pane.style.setProperty('--pane-w', `${pane.offsetWidth}px`)).observe(pane);
