@@ -117,8 +117,9 @@ function standing(s: RepoState | undefined, issue: Issue): string {
   const w = s?.work;
   // Worked on here: who and when; the boxes under it say the rest.
   if (hereOf(s, issue) && w) return t('{who} · started {when}', {who: w.started_by || '—', when: ago(w.started_at)});
-  // An open change says where it stands in its Push row.
-  if (c) return c.state === 'open' ? '' : t('Change · v{n} · {state}', {n: c.version, state: STATE(c.state)});
+  // An open change says where it stands in its Push row; one decided, what came of it (never its version: a count the
+  // Remote keeps of hand-ins, not a thing the person holds in mind).
+  if (c) return c.state === 'open' ? '' : STATE(c.state);
   const line = s?.lines.find((l) => l.issue === path);
   if (line) return t('{who} · started {when}', {who: line.startedBy || '—', when: ago(line.startedAt)});
   return '';
@@ -422,8 +423,9 @@ function steps(issue: Issue, s: RepoState, events: IssueEvents, after: () => voi
     reset = h('span', {class: 'power-line'}, h('span', {class: 'muted small', 'aria-hidden': 'true'}, t('Submitted')), power);
   }
   // Taken back or rejected, Push's row still says so (the switch gone off has its answer), until it is pushed anew.
-  const where = pushed || (w.change && w.change.state !== 'open' && !w.unpushed) ? quiet(t('Change · v{n} · {state}', {n: w.change!.version, state: STATE(w.change!.state)}))
-    : w.unpushed ? quiet(tn('{n} commit to push', '{n} commits to push', w.unpushed)) : null;
+  // Handed in and waiting, it says nothing more: its done mark says it is in, and the Review under the box what is next.
+  const where = w.unpushed ? quiet(tn('{n} commit to push', '{n} commits to push', w.unpushed))
+    : w.change && w.change.state !== 'open' ? quiet(STATE(w.change.state)) : null;
 
   const commitSlot = slot(commit, committed, t('Commit'));
   return {element: h('div', {class: 'steps issue-steps'},
@@ -435,7 +437,7 @@ function steps(issue: Issue, s: RepoState, events: IssueEvents, after: () => voi
 function received(change: git.Change): HTMLElement {
   return h('div', {class: 'steps issue-steps'},
     about(quiet(change.submittedBy || '—')), slot(h('span'), true, t('Commit')),
-    about(quiet(t('Change · v{n} · {state}', {n: change.version, state: STATE(change.state)}))), slot(h('span'), true, t('Push')));
+    about(null), slot(h('span'), true, t('Push')));
 }
 
 /**

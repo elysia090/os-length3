@@ -39,6 +39,10 @@
    two lines tall is a pill broken. */
 .issue-under .button, .merge-row .button, .review-verdict .button { white-space: nowrap; }
 .step-changes:empty { display: none; }
+/* Each step's words at the left and its button (or done mark) at the right, row by row, whether or not a diff stands
+   over them: with none (committed), what is said of Push stays on Push's row, never beside Commit's. */
+.issue-steps > .step-about { grid-column: 1; }
+.issue-steps > .step-act { grid-column: 2; }
 /* A phone: the box in full takes the row, its neighbours a sliver at its edges (their numbers would not fit beside
    it; the sliver says there are more, and a swipe goes to them: git/issue-row.ts), less room inside the sheets, and
    what is beside a step's button where it fits goes over it where it does not (a diff, a quiet line). */

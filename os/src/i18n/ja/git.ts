@@ -52,7 +52,6 @@ export default {
   'Change': 'Change',
   'Disabling withdraws this Change': 'オフにすると Change を取り下げます',
   'Submitted': '提出中',
-  'Change · v{n} · {state}': 'Change · 第{n}版 · {state}',
   'v{n} (older)': '第{n}版（旧バージョン）',
   'Previous issue': '前の Issue',
   'Next issue': '次の Issue',

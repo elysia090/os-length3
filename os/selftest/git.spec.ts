@@ -24,10 +24,16 @@ test('an issue goes from written to merged, and is listed under Merged', async (
   await app.rail.go('git');
   await expect(app.main.getByRole('region', {name: '1 uncommitted file'})).toContainText('HELLO.');
   await app.git.step('Commit').click();
-  // Committed, it hands itself in: Commit and Push are done (no buttons), and the change waits for review.
+  // Committed, it hands itself in: Commit and Push are done (no buttons), and the change waits for review, said by
+  // the Review under the box (not by a version beside the steps), each step's mark on its own row at the right.
   await expect(app.git.step('Commit')).toBeHidden();
   await expect(app.git.step('Push')).toBeHidden();
-  await expect(app.main.getByText('Change · v1 · Pending')).toBeVisible();
+  await expect(app.main.locator('.issue-steps')).not.toContainText('v1');
+  const marks = app.main.locator('.issue-steps .step-done');
+  await expect(marks).toHaveCount(2);
+  const [c, p] = [(await marks.nth(0).boundingBox())!, (await marks.nth(1).boundingBox())!];
+  expect(Math.abs(c.x + c.width - (p.x + p.width))).toBeLessThan(2);
+  expect(p.y).toBeGreaterThan(c.y + c.height / 2);
   await expect(app.git.review).toBeVisible();
   await expect(app.git.review.getByText('HELLO.')).toBeVisible();
 
