@@ -65,7 +65,9 @@ async function load(name, {main, more}) {
     at += 8 + len;
   }
   const wasm = m.slice(at + 4, at + 4 + v.getUint32(at));
-  const module = await WebAssembly.compile(wasm);
+  // Compiled here and now (the kernel runs in a Worker, and waits for it): a compile handed to the engine's own
+  // threads waits behind what they are busy with, a running program's code being optimized, often for far longer.
+  const module = new WebAssembly.Module(wasm);
   // Only the modules that follow on from this one (each from the table slot the one before it ended at): what was
   // kept of code reached later from an earlier translation of the program (before it was consolidated) is not.
   let slots = WebAssembly.Module.customSections(module, 'xlat.starts')[0]?.byteLength / 8 || 0;
@@ -75,7 +77,7 @@ async function load(name, {main, more}) {
     extras.push(e);
     slots += moreStarts(e.bytes);
   }
-  const modules = await Promise.all(extras.map((e) => WebAssembly.compile(e.bytes)));
+  const modules = extras.map((e) => new WebAssembly.Module(e.bytes));
   return {module, segments, size: wasm.length, more: extras.map((e, k) => ({module: modules[k], bytes: e.bytes, base: e.base}))};
 }
 
