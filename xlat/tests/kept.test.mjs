@@ -11,9 +11,15 @@ import {have} from './busybox.mjs';
 // translates nothing.
 
 const stage = new URL('../../os/target/userland/', import.meta.url);
-const SCRIPT = 'echo one; for x in a b c; do echo $x; done | cat; printf "%s-%d\\n" two 2; test -d / && echo three';
+// One shell, no program run again by exec: a program run again is translated again as one module once it has reached
+// enough later (Kernel.consolidate), and what it reaches after follows on from that one, not from its first.
+const SCRIPT = 'echo one; for x in a b c; do echo $x; done | while read l; do echo "$l"; done; printf "%s-%d\\n" two 2; test -d / && echo three';
 
-/** A kernel over BusyBox (prebuilt, as the Prompt's) and a second copy of it as a root file, /usr/bin/echo (`origin`, translated when run). */
+/**
+ * A kernel over BusyBox, prebuilt with its first translation as a program run as it runs has it (the Prompt's, made
+ * whole ahead of time, reaches nothing later), and a second copy of it as a root file, /usr/bin/echo (`origin`,
+ * translated when run).
+ */
 async function kernel({keeper = null} = {}) {
   const vfs = new Vfs();
   const elf = readFileSync(new URL('busybox', stage));
@@ -26,11 +32,12 @@ async function kernel({keeper = null} = {}) {
   file.origin = 'pack_0_1';
   vfs.mkdirp('/usr/bin').entries.set('echo', file);
   let out = '';
+  const translate = await loadTranslator(readFileSync(new URL('xlat.wasm', stage)));
   const k = new Kernel({
-    vfs, keeper, translate: await loadTranslator(readFileSync(new URL('xlat.wasm', stage))),
+    vfs, keeper, translate,
     console: {interactive: false, write: (_, b) => { out += new TextDecoder().decode(b); }, read: () => null, ready: () => false},
   });
-  k.prebuilt(vfs.lookup('/bin/busybox', '/'), new WebAssembly.Module(readFileSync(new URL('busybox.wasm', stage))));
+  k.prebuilt(vfs.lookup('/bin/busybox', '/'), new WebAssembly.Module(translate(new Uint8Array(elf))));
   return {k, vfs, reads, out: () => out};
 }
 

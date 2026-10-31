@@ -461,6 +461,8 @@ pub fn discover_within(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>, budget: 
     // Starts are looked up in `known` where they are, not copied: it holds every function a large program has reached.
     let mut starts: BTreeSet<u64> = seeds.iter().copied().filter(|a| elf.is_code(*a) && !known.contains(a)).collect();
     let mut done: BTreeMap<u64, Vec<Block>> = BTreeMap::new();
+    // The cases of each function's switches: reached only through their tables, so entries of the translation.
+    let mut cases_of: BTreeMap<u64, Vec<u64>> = BTreeMap::new();
     let after = |set: &BTreeSet<u64>, a: u64| set.range(a + 1..).next().copied().unwrap_or(u64::MAX);
     let before = |set: &BTreeSet<u64>, a: u64| set.range(..a).next_back().copied();
     loop {
@@ -470,7 +472,17 @@ pub fn discover_within(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>, budget: 
             let end = after(known, start).min(after(&starts, start));
             // The range ends at the next start of either set, so nothing inside it is a start: no lookup per
             // instruction. Nor are data references wanted (they find jump tables when the whole program is walked).
-            let (blocks, calls) = walk(elf, start, end, &[], &|_| false, None);
+            let (mut blocks, mut calls) = walk(elf, start, end, &[], &|_| false, None);
+            // With the cases its switches jump to (each case may hold another switch).
+            let mut cases: Vec<u64> = Vec::new();
+            for _ in 0..8 {
+                let more: Vec<u64> = switch_targets(elf, &blocks, start, end).into_iter().filter(|t| !cases.contains(t)).collect();
+                if more.is_empty() { break; }
+                cases.extend(more);
+                cases.sort_unstable();
+                (blocks, calls) = walk(elf, start, end, &cases, &|_| false, None);
+            }
+            cases_of.insert(start, cases);
             found.extend(calls.into_iter().filter(|t| elf.is_code(*t) && !known.contains(t) && !starts.contains(t)));
             done.insert(start, blocks);
         }
@@ -493,6 +505,7 @@ pub fn discover_within(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>, budget: 
             if let Some(b) = function.block_index(address) { entries.entry(address).or_insert((f, b as u32)); }
         };
         mark(start);
+        for &c in cases_of.get(&start).into_iter().flatten() { mark(c); }
         for (k, b) in function.blocks.iter().enumerate() {
             if let Exit::Call { ret, .. } | Exit::IndirectCall { ret } = b.exit { mark(ret); }
             // A loop's head: where a thread that has run long is taken back to the kernel, and goes on later.
