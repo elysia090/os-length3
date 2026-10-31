@@ -8,7 +8,7 @@
 
 import {bytes, day} from '../ui/dom.ts';
 import {isNative, native} from '../app/host.ts';
-import {t, tn} from '../i18n.ts';
+import {currentLang, t, tn} from '../i18n.ts';
 import {api, json, leaveFor, RemoteError} from './connection.ts';
 
 /** The tiers one pays for, the least first, and free before them. */
@@ -239,7 +239,8 @@ export function refusalWords(r: PlanRefusal): string {
  */
 export async function openPlan(kind: 'checkout' | 'portal', o: {tier?: PaidTier; back?: string} = {}): Promise<void> {
   if (isNative) { await native('plan_open', {kind, ...(o.tier ? {tier: o.tier} : {})}); return; }
-  const r = await api(`/v1/plan/${kind}`, {method: 'POST', body: JSON.stringify({back: o.back ?? location.href, ...(o.tier ? {tier: o.tier} : {})})});
+  // In the language the OS speaks: Stripe's pages are asked in it, not in the browser's.
+  const r = await api(`/v1/plan/${kind}`, {method: 'POST', body: JSON.stringify({back: o.back ?? location.href, lang: currentLang(), ...(o.tier ? {tier: o.tier} : {})})});
   const body = await r.json().catch(() => ({})) as {url?: string; error?: string; tier?: unknown; manage?: boolean; checkout?: boolean};
   if (!r.ok || !body.url) throw new RemoteError(r.status, planError(r.status, body), body as Record<string, unknown>);
   leaveFor(body.url);

@@ -28,7 +28,7 @@
 import {readFileSync} from 'node:fs';
 import {Hono} from 'hono';
 import {PAID, TIER_NAME, TIERS, isTier, type Tier} from './plan.ts';
-import {sign, STRIPE_VERSION, type Change, type Price, type StripeApi} from './stripe.ts';
+import {sign, STRIPE_VERSION, type Change, type Locale, type Price, type StripeApi} from './stripe.ts';
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const word = (s: string) => s.replace(/[^A-Za-z0-9]/g, '').slice(0, 40);
@@ -44,13 +44,83 @@ const tierOfPrice = (id: string): Tier | null => TIERS.find((t) => DEV_PRICES[t]
 
 /** Money as Stripe's pages say it: $14.00. */
 const money = (cents: number) => `${cents < 0 ? '-' : ''}$${(Math.abs(cents) / 100).toFixed(2)}`;
-/** A day as Stripe's pages say it: November 22, 2026. */
-const longDay = (secs: number) => new Date(secs * 1000).toLocaleDateString('en-US', {year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC'});
-const shortDay = (secs: number) => new Date(secs * 1000).toLocaleDateString('en-US', {year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC'});
+
+// ---- Stripe's words, in the language its pages were asked in (the OS's: plan.ts) ----
+
+/**
+ * Stripe's pages in Japanese, by the English (as the app's own words are: src/i18n.ts), {name} where a value goes.
+ * As Stripe says them where it is known how; a Latin word a space apart from kana and kanji (DESIGN.md §1).
+ */
+const JA: Record<string, string> = {
+  'Test mode': 'テストモード', 'Back to length3': 'length3 に戻る', 'Return to length3': 'length3 に戻る', 'Expired': '期限切れ',
+  'This {what} has expired': 'この{what}は期限切れです', 'Go back to length3 and start again.': 'length3 に戻って、もう一度始めてください。',
+  'Checkout session': 'Checkout セッション', 'portal session': 'ポータルセッション', 'authentication': '認証',
+  'A stand-in for Stripe on this machine, in test mode: nothing is charged, and nothing leaves it.': 'このマシン上の Stripe の代役（テストモード）です。請求は一切なく、何も外に出ません。',
+  'Subscribe to {tier}': '{tier} に申し込む', 'per month': '月額', 'Billed monthly': '毎月請求', 'Subtotal': '小計', 'Total due today': '本日のお支払い合計',
+  'Pay with card': 'カードで支払う', 'Email': 'メールアドレス', 'Card information': 'カード情報', 'Card number': 'カード番号', 'Expiration': '有効期限',
+  'Cardholder name': 'カード名義人', 'Full name on card': 'カードに記載の名前', 'Country or region': '国または地域', 'Subscribe': '申し込む',
+  'By confirming your subscription, you allow length3 to charge you for future payments in accordance with their terms. You can always cancel your subscription.':
+    'サブスクリプションを確定すると、length3 がその規約に従って今後のお支払いを請求することを許可したものとみなされます。サブスクリプションはいつでもキャンセルできます。',
+  'Test cards': 'テストカード', 'pays': '支払いが通る', 'is declined': '拒否される', 'asks for 3-D Secure': '3D セキュアを求める', 'Any expiry to come, any CVC': '有効期限は先の日付、CVC は任意',
+  '{gb} on the Remote': 'Remote に {gb}', 'Unlimited repos (within storage)': 'リポジトリ無制限（容量の範囲で）', '{n} repos': 'リポジトリ {n} 個',
+  'Unlimited usernames on this Remote': 'この Remote のユーザー名は無制限', '{n} names on this Remote': 'この Remote の名前 {n} 個',
+  'Servers, and names on your own domain': 'サーバー、自分のドメインの名前',
+  'Your card number is incomplete.': 'カード番号が不完全です。', 'Your card number is invalid.': 'カード番号が無効です。',
+  'Your card\'s expiration date is incomplete.': 'カードの有効期限が不完全です。', 'Your card\'s expiration date is invalid.': 'カードの有効期限が無効です。',
+  'Your card\'s expiration year is in the past.': 'カードの有効期限の年が過ぎています。', 'Your card\'s expiration date is in the past.': 'カードの有効期限が過ぎています。',
+  'Your card\'s security code is incomplete.': 'カードのセキュリティコードが不完全です。', 'Your card\'s security code is incorrect.': 'カードのセキュリティコードが正しくありません。',
+  'Your card was declined.': 'カードが拒否されました。', 'Your card has insufficient funds.': 'カードの残高が不足しています。', 'Your card has expired.': 'カードの有効期限が切れています。',
+  'Your card was declined. This is test mode: use one of Stripe\'s test cards, such as 4242 4242 4242 4242.': 'カードが拒否されました。テストモードです。4242 4242 4242 4242 などの Stripe のテストカードを使ってください。',
+  'Your email address is invalid.': 'メールアドレスが無効です。', 'Your email is incomplete.': 'メールアドレスが不完全です。', 'Your name is required.': '名前を入力してください。',
+  'This Checkout session has expired.': 'この Checkout セッションは期限切れです。', 'This session has expired.': 'このセッションは期限切れです。',
+  'Something went wrong. Try again.': '問題が発生しました。もう一度お試しください。', 'Processing': '処理中',
+  'We are unable to authenticate your payment method. Please choose a different payment method and try again.': 'お支払い方法を認証できませんでした。別のお支払い方法を選んで、もう一度お試しください。',
+  'length3 partners with Stripe for simplified billing.': 'length3 は Stripe と連携し、請求をシンプルにしています。',
+  'Your subscription has been updated.': 'サブスクリプションを更新しました。', 'Your subscription has been canceled. It stays until the end of the period.': 'サブスクリプションをキャンセルしました。期間の終わりまではご利用いただけます。',
+  'Your subscription has been renewed.': 'サブスクリプションを再開しました。', 'Your payment method has been updated.': 'お支払い方法を更新しました。',
+  'A payment failed (a test control).': '支払いが失敗しました（テスト操作）。', 'A payment went through (a test control).': '支払いが通りました（テスト操作）。',
+  'The subscription ended (a test control).': 'サブスクリプションが終了しました（テスト操作）。',
+  'You have no subscription.': 'サブスクリプションはありません。', 'Your subscription was canceled on {day}.': 'サブスクリプションは{day}にキャンセルされました。',
+  'Your last payment did not go through. Stripe tries again; update your payment method to pay now.': '前回のお支払いが完了しませんでした。Stripe が再度試みます。今すぐ支払うには、お支払い方法を更新してください。',
+  'Your subscription will be canceled on {day}.': 'サブスクリプションは{day}にキャンセルされます。', 'Your plan renews on {day}.': 'プランは{day}に更新されます。',
+  'Current subscription': '現在のプラン', 'Cancels {day}': '{day}にキャンセル', 'Past due': '支払い期限超過', '{price} per month': '月額 {price}',
+  'Update subscription': 'プランを変更', 'Renew plan': 'プランを再開', 'Cancel subscription': 'プランをキャンセル',
+  'Payment method': 'お支払い方法', 'Expires {exp}': '有効期限 {exp}', 'No payment method': 'お支払い方法がありません', 'Update payment method': 'お支払い方法を更新', 'Add payment method': 'お支払い方法を追加',
+  'Invoice history': '請求履歴', 'Date': '日付', 'Amount': '金額', 'Status': 'ステータス', 'For': '内容', 'Paid': '支払い済み', 'Open': '未払い', 'No invoices yet.': '請求書はまだありません。',
+  'Test controls': 'テスト操作', 'Not part of Stripe\'s portal: each sends the Remote the events Stripe would when it happens.': 'Stripe のポータルにはない操作です。どれも、実際に起きたとき Stripe が送るイベントを Remote に送ります。',
+  'A payment fails': '支払いが失敗する', 'A payment goes through': '支払いが通る', 'End it now': '今すぐ終了', 'There is no subscription to act on.': '操作できるサブスクリプションがありません。',
+  'Billing': '請求', 'Update your plan': 'プランを変更', 'Current plan': '現在のプラン', 'Select': '選択', 'Select {tier}': '{tier} を選択', 'Go back': '戻る',
+  'Confirm your updated plan': '変更後のプランを確認', 'Current': '現在', 'New': '変更後', 'Amount due today': '本日のお支払い額', 'Credited to your next invoice': '次回の請求に充当',
+  'Prorated for the rest of this period, charged to {card}.': 'この期間の残りを日割りで計算し、{card} に請求します。', 'your payment method': 'お支払い方法',
+  'What is left of this period on the plan you have now is credited to your next invoice.': '今のプランのこの期間の残りは、次回の請求に充当されます。',
+  'Then {price} per month from {day}.': '{day}からは月額 {price} です。', 'Confirm': '確定する',
+  'Cancel your plan': 'プランをキャンセル', 'Your subscription will be canceled, but is still available until the end of your billing period on {day}.':
+    'サブスクリプションはキャンセルされますが、請求期間が終わる{day}まではご利用いただけます。',
+  'If you change your mind, you can renew your subscription before then.': '気が変わったら、それまでにサブスクリプションを再開できます。', 'Cancel plan': 'プランをキャンセル',
+  'Update': '更新', 'Add': '追加', '{from} → {to} · the rest of this period': '{from} → {to} · この期間の残り',
+};
+
+/** Kana and kanji, which a Latin word is set a space apart from (src/i18n.ts, DESIGN.md §1). */
+const KANA_KANJI = /[぀-ヺー-ヿ㐀-鿿]/;
+/** Stripe's words in `locale`: the English with each {name} filled, or the Japanese for it, a Latin value set apart from kana and kanji. */
+type Say = (en: string, vars?: Record<string, string>) => string;
+const sayIn = (locale: Locale = 'en'): Say => (en, vars = {}) => {
+  if (locale !== 'ja') return en.replace(/\{(\w+)\}/g, (_, k: string) => vars[k] ?? '');
+  const ja = JA[en] ?? en;
+  return ja.replace(/\{(\w+)\}/g, (m: string, k: string, at: number) => {
+    const v = vars[k] ?? '', before = ja[at - 1], after = ja[at + m.length];
+    return `${before && KANA_KANJI.test(before) && /^[A-Za-z]/.test(v) ? ' ' : ''}${v}${after && KANA_KANJI.test(after) && /[A-Za-z]$/.test(v) ? ' ' : ''}`;
+  });
+};
+/** A day as Stripe's pages say it: November 22, 2026; 2026年11月22日. */
+const longDay = (secs: number, locale: Locale = 'en') => new Date(secs * 1000).toLocaleDateString(locale === 'ja' ? 'ja-JP' : 'en-US', {year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC'});
+const shortDay = (secs: number, locale: Locale = 'en') => new Date(secs * 1000).toLocaleDateString(locale === 'ja' ? 'ja-JP' : 'en-US',
+  locale === 'ja' ? {year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'UTC'} : {year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC'});
 const gb = (bytes: number) => `${Math.round(bytes / 1e9)} GB`;
 /** What a tier keeps, as its product's description lists it. */
-const keeps = (t: Tier) => [`${gb(PAID[t].bytes)} on the Remote`, PAID[t].repos === null ? 'Unlimited repos (within storage)' : `${PAID[t].repos} repos`,
-  PAID[t].names === null ? 'Unlimited usernames on this Remote' : `${PAID[t].names} names on this Remote`, 'Servers, and names on your own domain'];
+const keeps = (t: Tier, w: Say = sayIn()) => [w('{gb} on the Remote', {gb: gb(PAID[t].bytes)}),
+  PAID[t].repos === null ? w('Unlimited repos (within storage)') : w('{n} repos', {n: String(PAID[t].repos)}),
+  PAID[t].names === null ? w('Unlimited usernames on this Remote') : w('{n} names on this Remote', {n: String(PAID[t].names)}), w('Servers, and names on your own domain')];
 
 // ---- cards, as Stripe's test mode takes them ----
 
@@ -112,9 +182,9 @@ export function cardOutcome(number: string): {ok: true} | {secure: true} | {fiel
 interface Card { brand: string; last4: string; exp: string }
 interface Invoice { id: string; number: string; at: number; amount: number; status: 'paid' | 'open'; what: string }
 interface Sub { id: string; item: string; tier: Tier; status: 'active' | 'past_due' | 'canceled'; start: number; end: number; cancelAtEnd: boolean; endedAt: number | null; boughtAs: Tier }
-interface Customer { id: string; user: string; email: string; name: string; card: Card | null; sub: Sub | null; invoices: Invoice[] }
-interface CheckoutSession { id: string; customer: string; user: string; tier: Tier; success: string; cancel: string; done: boolean }
-interface PortalSession { id: string; customer: string; back: string; change: Tier | null }
+interface Customer { id: string; user: string; email: string; name: string; card: Card | null; sub: Sub | null; invoices: Invoice[]; locale?: Locale }
+interface CheckoutSession { id: string; customer: string; user: string; tier: Tier; success: string; cancel: string; done: boolean; locale?: Locale }
+interface PortalSession { id: string; customer: string; back: string; change: Tier | null; locale?: Locale }
 /** A card tried that asks for 3-D Secure: what it is for, and where to go back to. */
 interface Secure { id: string; card: Card; for: {checkout: string; email: string; name: string} | {portal: string} }
 interface State { customers: Record<string, Customer>; checkouts: Record<string, CheckoutSession>; portals: Record<string, PortalSession>; secure: Record<string, Secure>; n: number }
@@ -143,16 +213,18 @@ export function devBilling(base: string, secret: string, origins: string[], deli
       return cid;
     },
     // Paying goes back to `success`; Back, without paying, to `cancel`, as Stripe's Checkout does.
-    async checkout({customer, user, tier, price, success, cancel}) {
+    async checkout({customer, user, tier, price, success, cancel, locale}) {
       const t = tierOfPrice(price) ?? (isTier(tier) ? tier : null);
       if (!t) throw new Error('Stripe 400: no such price');
-      const s: CheckoutSession = {id: id('cs'), customer, user, tier: t, success, cancel, done: false};
+      const s: CheckoutSession = {id: id('cs'), customer, user, tier: t, success, cancel, done: false, ...(locale ? {locale} : {})};
       state.checkouts[s.id] = s;
       save();
       return `${base}/dev-billing/checkout/${s.id}`;
     },
-    async portal({customer, back: to, change}: {customer: string; back: string; change?: Change}) {
-      const s: PortalSession = {id: id('bps'), customer, back: to, change: change ? tierOfPrice(change.price) : null};
+    async portal({customer, back: to, change, locale}: {customer: string; back: string; change?: Change; locale?: Locale}) {
+      const s: PortalSession = {id: id('bps'), customer, back: to, change: change ? tierOfPrice(change.price) : null, ...(locale ? {locale} : {})};
+      const c = state.customers[customer];
+      if (c && locale) c.locale = locale;
       state.portals[s.id] = s;
       save();
       return `${base}/dev-billing/portal/${s.id}${s.change ? `/change/${s.change}` : ''}`;
@@ -192,13 +264,13 @@ export function devBilling(base: string, secret: string, origins: string[], deli
   /** Checkout paid: the subscription made, its first invoice paid, and back to the app. */
   async function subscribed(s: CheckoutSession, card: Card, email: string, name: string) {
     const c = state.customers[s.customer] ?? (state.customers[s.customer] = {id: s.customer, user: s.user, email, name, card: null, sub: null, invoices: []});
-    c.email = email; c.name = name || c.name; c.card = card;
+    c.email = email; c.name = name || c.name; c.card = card; c.locale = s.locale ?? c.locale;
     const start = nowSecs();
     const sub: Sub = {id: `sub_dev${s.customer.slice(7)}${(++state.n).toString(36)}`, item: id('si'), tier: s.tier, status: 'active', start, end: start + MONTH,
       cancelAtEnd: false, endedAt: null, boughtAs: s.tier};
     c.sub = sub;
     s.done = true;
-    const first = invoice(c, COST[s.tier], `${TIER_NAME[s.tier]} · ${shortDay(start)} – ${shortDay(sub.end)}`);
+    const first = invoice(c, COST[s.tier], `${TIER_NAME[s.tier]} · ${shortDay(start, c.locale)} – ${shortDay(sub.end, c.locale)}`);
     save();
     await send('checkout.session.completed', {id: s.id, object: 'checkout.session', mode: 'subscription', status: 'complete', payment_status: 'paid',
       customer: c.id, client_reference_id: s.user, subscription: sub.id, customer_details: {email, name}, metadata: {user: s.user, tier: s.tier}});
@@ -228,7 +300,7 @@ export function devBilling(base: string, secret: string, origins: string[], deli
     const left = Math.max(0, Math.min(1, (s.end - nowSecs()) / (s.end - s.start)));
     const owed = Math.round((COST[to] - COST[was]) * left);
     s.tier = to;
-    const paid = owed > 0 ? invoice(c, owed, `${TIER_NAME[was]} → ${TIER_NAME[to]} · the rest of this period`) : null;
+    const paid = owed > 0 ? invoice(c, owed, sayIn(c.locale)('{from} → {to} · the rest of this period', {from: TIER_NAME[was], to: TIER_NAME[to]})) : null;
     save();
     await send('customer.subscription.updated', subject(c, s), {items: {data: [{price: {id: DEV_PRICES[was]}}]}});
     if (paid) await send('invoice.paid', invoiceObject(c, paid, 'subscription_update'));
@@ -237,10 +309,13 @@ export function devBilling(base: string, secret: string, origins: string[], deli
   // ---- the pages ----
 
   const app = new Hono();
-  /** A page of Stripe's, with its own policy: its inline style, and its script by a nonce made for it. */
-  const html = (title: string, body: string, script = '', status = 200) => {
+  /**
+   * A page of Stripe's, in `locale`, with its own policy: its inline style, and its script by a nonce made for it. A
+   * page in Japanese sets the Japanese a little apart (Inter has no kana: the system's Japanese face beside it).
+   */
+  const html = (locale: Locale | undefined, title: string, body: string, script = '', status = 200) => {
     const nonce = crypto.randomUUID().replace(/-/g, '');
-    return new Response(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+    return new Response(`<!doctype html><html lang="${locale === 'ja' ? 'ja' : 'en'}"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title><style>${CSS}</style>${body}${script ? `<script nonce="${nonce}">${script}</script>` : ''}</html>`, {status, headers: {
       'Content-Type': 'text/html; charset=utf-8',
       'Content-Security-Policy': `default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; connect-src 'self'; form-action 'self' ${origins.join(' ')}; frame-ancestors 'none'; base-uri 'none'`,
@@ -249,47 +324,54 @@ export function devBilling(base: string, secret: string, origins: string[], deli
   /** The two columns, as Stripe's Checkout and portal have them: what it is about at the left, what is done at the right. */
   const page = (left: string, right: string, extra = '') => `<div class="page${extra}"><div class="side"><div class="col">${left}</div></div>
 <div class="main"><div class="col">${right}</div></div></div>`;
-  const head = (to: string, label: string) => `<div class="head"><a class="back" href="${esc(to)}" aria-label="${esc(label)}"><span aria-hidden="true">&larr;</span>
-${iconOf() ? `<img class="logo" src="${iconOf()}" alt="">` : ''}<span>length3</span></a><span class="badge">Test mode</span></div>`;
-  const fine = '<p class="standin">A stand-in for Stripe on this machine, in test mode: nothing is charged, and nothing leaves it.</p>';
-  const gone = (what: string) => html('Expired', page(head(origins[0], 'Back to length3'),
-    `<h1 class="h">This ${what} has expired</h1><p class="muted">Go back to length3 and start again.</p><a class="pay link" href="${esc(origins[0])}">Back to length3</a>`), '', 404);
+  const head = (w: Say, to: string, label: string) => `<div class="head"><a class="back" href="${esc(to)}" aria-label="${esc(w(label))}"><span aria-hidden="true">&larr;</span>
+${iconOf() ? `<img class="logo" src="${iconOf()}" alt="">` : ''}<span>length3</span></a><span class="badge">${esc(w('Test mode'))}</span></div>`;
+  const fine = (w: Say) => `<p class="standin">${esc(w('A stand-in for Stripe on this machine, in test mode: nothing is charged, and nothing leaves it.'))}</p>`;
+  /** A session not there (or done): in the language it was asked in when it is known, else the browser's. */
+  const gone = (what: string, locale?: Locale, asked?: string) => {
+    const l = locale ?? (/^ja\b/i.test(asked ?? '') ? 'ja' : 'en'), w = sayIn(l);
+    return html(l, w('Expired'), page(head(w, origins[0], 'Back to length3'),
+      `<h1 class="h">${esc(w('This {what} has expired', {what: w(what)}))}</h1><p class="muted">${esc(w('Go back to length3 and start again.'))}</p>
+<a class="pay link" href="${esc(origins[0])}">${esc(w('Back to length3'))}</a>`), '', 404);
+  };
+  const lang = (c: {req: {header(k: string): string | undefined}}) => c.req.header('Accept-Language');
 
   /** The card's fields, grouped as Stripe's form has them: the number over its expiry and CVC; then the cardholder's name and country. */
-  const cardFields = (email: string | null, error = '') => `
-${email === null ? '' : `<div class="row"><label for="email">Email</label><input class="field" id="email" name="email" type="email" autocomplete="off" spellcheck="false" value="${esc(email)}" placeholder="email@example.com">
+  const cardFields = (w: Say, locale: Locale | undefined, email: string | null, error = '') => `
+${email === null ? '' : `<div class="row"><label for="email">${esc(w('Email'))}</label><input class="field" id="email" name="email" type="email" autocomplete="off" spellcheck="false" value="${esc(email)}" placeholder="email@example.com">
 <p class="err" id="email-err" role="alert"></p></div>`}
-<fieldset class="row"><legend>Card information</legend><div class="group" id="card">
-<div class="num"><input class="field" id="number" name="number" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="1234 1234 1234 1234" aria-label="Card number" aria-describedby="card-err">
+<fieldset class="row"><legend>${esc(w('Card information'))}</legend><div class="group" id="card">
+<div class="num"><input class="field" id="number" name="number" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="1234 1234 1234 1234" aria-label="${esc(w('Card number'))}" aria-describedby="card-err">
 <span class="brands" id="brand" aria-hidden="true"><span class="b visa">VISA</span><span class="b mc">MC</span><span class="b amex">AMEX</span></span></div>
-<div class="pair"><input class="field" id="exp" name="exp" inputmode="numeric" autocomplete="off" placeholder="MM / YY" aria-label="Expiration" aria-describedby="card-err">
+<div class="pair"><input class="field" id="exp" name="exp" inputmode="numeric" autocomplete="off" placeholder="MM / YY" aria-label="${esc(w('Expiration'))}" aria-describedby="card-err">
 <input class="field" id="cvc" name="cvc" inputmode="numeric" autocomplete="off" placeholder="CVC" aria-label="CVC" aria-describedby="card-err"></div></div>
 <p class="err" id="card-err" role="alert">${esc(error)}</p></fieldset>
-<div class="row"><label for="name">Cardholder name</label><input class="field" id="name" name="name" autocomplete="off" spellcheck="false" placeholder="Full name on card">
+<div class="row"><label for="name">${esc(w('Cardholder name'))}</label><input class="field" id="name" name="name" autocomplete="off" spellcheck="false" placeholder="${esc(w('Full name on card'))}">
 <p class="err" id="name-err" role="alert"></p></div>
-<div class="row"><label for="country">Country or region</label><select class="field" id="country" name="country">${COUNTRIES.map(([code, label]) =>
-    `<option value="${code}"${code === 'US' ? ' selected' : ''}>${esc(label)}</option>`).join('')}</select></div>`;
-  const testCards = `<details class="tests"><summary>Test cards</summary><ul>
-<li><code>4242 4242 4242 4242</code> pays</li><li><code>4000 0000 0000 0002</code> is declined</li>
-<li><code>4000 0025 0000 3155</code> asks for 3-D Secure</li><li>Any expiry to come, any CVC</li></ul></details>`;
+<div class="row"><label for="country">${esc(w('Country or region'))}</label><select class="field" id="country" name="country">${COUNTRIES.map(([code, en, ja]) =>
+    `<option value="${code}"${code === (locale === 'ja' ? 'JP' : 'US') ? ' selected' : ''}>${esc(locale === 'ja' ? ja : en)}</option>`).join('')}</select></div>`;
+  const testCards = (w: Say) => `<details class="tests"><summary>${esc(w('Test cards'))}</summary><ul>
+<li><code>4242 4242 4242 4242</code> ${esc(w('pays'))}</li><li><code>4000 0000 0000 0002</code> ${esc(w('is declined'))}</li>
+<li><code>4000 0025 0000 3155</code> ${esc(w('asks for 3-D Secure'))}</li><li>${esc(w('Any expiry to come, any CVC'))}</li></ul></details>`;
+  const unauthenticated = 'We are unable to authenticate your payment method. Please choose a different payment method and try again.';
 
   app.get('/checkout/:id', (c) => {
     const s = state.checkouts[c.req.param('id')];
-    if (!s || s.done) return gone('Checkout session');
-    const cust = state.customers[s.customer];
-    const t = s.tier, error = c.req.query('declined') === '3ds' ? 'We are unable to authenticate your payment method. Please choose a different payment method and try again.' : '';
-    const left = `${head(back(s.cancel), 'Back to length3')}
-<p class="what">Subscribe to ${esc(TIER_NAME[t])}</p>
-<p class="price" id="total">${money(COST[t])}<small>per<br>month</small></p>
-<div class="items"><div class="item"><div><p class="item-name">${esc(TIER_NAME[t])}</p><p class="muted small">Billed monthly</p></div><p>${money(COST[t])}</p></div>
-<ul class="keeps">${keeps(t).map((k) => `<li>${esc(k)}</li>`).join('')}</ul>
-<div class="sum"><span>Subtotal</span><span>${money(COST[t])}</span></div>
-<div class="sum total"><span>Total due today</span><span>${money(COST[t])}</span></div></div>`;
-    const right = `<h1 class="h">Pay with card</h1><form id="pay-form" novalidate>${cardFields(cust?.email ?? '', error)}
-<button class="pay" id="pay" type="submit"><span class="label">Subscribe</span></button>
-<p class="fine">By confirming your subscription, you allow length3 to charge you for future payments in accordance with their terms. You can always cancel your subscription.</p>
-</form>${testCards}${fine}`;
-    return html(`length3 · Subscribe to ${TIER_NAME[t]}`, page(left, right), FORM_JS('pay', 'Subscribe'));
+    if (!s || s.done) return gone('Checkout session', s?.locale, lang(c));
+    const cust = state.customers[s.customer], w = sayIn(s.locale);
+    const t = s.tier, error = c.req.query('declined') === '3ds' ? w(unauthenticated) : '';
+    const left = `${head(w, back(s.cancel), 'Back to length3')}
+<p class="what">${esc(w('Subscribe to {tier}', {tier: TIER_NAME[t]}))}</p>
+<p class="price" id="total">${money(COST[t])}<small>${s.locale === 'ja' ? esc(w('per month')) : 'per<br>month'}</small></p>
+<div class="items"><div class="item"><div><p class="item-name">${esc(TIER_NAME[t])}</p><p class="muted small">${esc(w('Billed monthly'))}</p></div><p>${money(COST[t])}</p></div>
+<ul class="keeps">${keeps(t, w).map((k) => `<li>${esc(k)}</li>`).join('')}</ul>
+<div class="sum"><span>${esc(w('Subtotal'))}</span><span>${money(COST[t])}</span></div>
+<div class="sum total"><span>${esc(w('Total due today'))}</span><span>${money(COST[t])}</span></div></div>`;
+    const right = `<h1 class="h">${esc(w('Pay with card'))}</h1><form id="pay-form" novalidate>${cardFields(w, s.locale, cust?.email ?? '', error)}
+<button class="pay" id="pay" type="submit"><span class="label">${esc(w('Subscribe'))}</span></button>
+<p class="fine">${esc(w('By confirming your subscription, you allow length3 to charge you for future payments in accordance with their terms. You can always cancel your subscription.'))}</p>
+</form>${testCards(w)}${fine(w)}`;
+    return html(s.locale, `length3 · ${w('Subscribe to {tier}', {tier: TIER_NAME[t]})}`, page(left, right), FORM_JS('pay', w('Subscribe'), s.locale));
   });
 
   /** A card tried: its fields checked, then what it comes to (declined: said, and nothing sent; 3-D Secure: its page). */
@@ -301,15 +383,18 @@ ${email === null ? '' : `<div class="row"><label for="email">Email</label><input
     const card: Card = {brand: brandOf(number), last4: number.slice(-4), exp: g('exp').replace(/\s/g, '')};
     return {f: {email: g('email').trim(), name: g('name').trim()}, trouble, outcome: trouble ? null : cardOutcome(number), card};
   };
+  /** What is wrong with a card tried, said in the page's language. */
+  const wrong = (w: Say, field: string, message: string, status: 402 | 410) => ({body: {wrong: {field, message: w(message)}}, status});
 
   app.post('/checkout/:id/pay', async (c) => {
-    const s = state.checkouts[c.req.param('id')];
-    if (!s || s.done) return c.json({wrong: {field: 'number', message: 'This Checkout session has expired.'}}, 410);
+    const s = state.checkouts[c.req.param('id')], w = sayIn(s?.locale);
+    const no = (field: string, message: string, status: 402 | 410 = 402) => { const r = wrong(w, field, message, status); return c.json(r.body, r.status); };
+    if (!s || s.done) return no('number', 'This Checkout session has expired.', 410);
     const {f, trouble, outcome, card} = await tried(c);
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email)) return c.json({wrong: {field: 'email', message: f.email ? 'Your email address is invalid.' : 'Your email is incomplete.'}}, 402);
-    if (trouble) return c.json({wrong: trouble}, 402);
-    if (!f.name) return c.json({wrong: {field: 'name', message: 'Your name is required.'}}, 402);
-    if (outcome && 'message' in outcome) return c.json({wrong: outcome}, 402);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email)) return no('email', f.email ? 'Your email address is invalid.' : 'Your email is incomplete.');
+    if (trouble) return no(trouble.field, trouble.message);
+    if (!f.name) return no('name', 'Your name is required.');
+    if (outcome && 'message' in outcome) return no(outcome.field, outcome.message);
     if (outcome && 'secure' in outcome) {
       const a: Secure = {id: id('payatt'), card, for: {checkout: s.id, email: f.email, name: f.name}};
       state.secure[a.id] = a;
@@ -320,33 +405,35 @@ ${email === null ? '' : `<div class="row"><label for="email">Email</label><input
     return c.json({next: back(s.success)});
   });
 
-  // 3-D Secure, as Stripe's test page asks it: the bank's step, Complete or Fail.
+  // 3-D Secure, as Stripe's test page asks it: the bank's step, Complete or Fail. Stripe's test page is in English
+  // whatever the Checkout's language (a bank's own is in the bank's).
   app.get('/3ds/:id', (c) => {
     const a = state.secure[c.req.param('id')];
-    if (!a) return gone('authentication');
+    if (!a) return gone('authentication', undefined, lang(c));
     const amount = 'checkout' in a.for ? money(COST[state.checkouts[a.for.checkout]?.tier ?? 'go']) : '$0.00';
-    return html('3D Secure 2 Test Page', `<div class="secure"><div class="secure-box" role="dialog" aria-labelledby="secure-title">
+    const w = sayIn();
+    return html('en', '3D Secure 2 Test Page', `<div class="secure"><div class="secure-box" role="dialog" aria-labelledby="secure-title">
 <p class="badge">Test mode</p><h1 class="h" id="secure-title">3D Secure 2 Test Page</h1>
 <p class="muted">This is a test page for 3-D Secure authentication. In a live payment, your bank would ask you to confirm it is you.</p>
 <dl class="facts"><dt>Merchant</dt><dd>length3</dd><dt>Amount</dt><dd>${esc(amount)}</dd><dt>Card</dt><dd>${esc(BRAND[a.card.brand])} •••• ${esc(a.card.last4)}</dd></dl>
 <div class="secure-foot"><form method="post" action="${esc(a.id)}/fail"><button class="plain" type="submit">Fail</button></form>
-<form method="post" action="${esc(a.id)}/complete"><button class="pay narrow" type="submit">Complete</button></form></div></div>${fine}</div>`);
+<form method="post" action="${esc(a.id)}/complete"><button class="pay narrow" type="submit">Complete</button></form></div></div>${fine(w)}</div>`);
   });
   app.post('/3ds/:id/:how', async (c) => {
     const a = state.secure[c.req.param('id')], how = c.req.param('how');
-    if (!a || (how !== 'complete' && how !== 'fail')) return gone('authentication');
+    if (!a || (how !== 'complete' && how !== 'fail')) return gone('authentication', undefined, lang(c));
     delete state.secure[a.id];
     save();
     if ('checkout' in a.for) {
       const s = state.checkouts[a.for.checkout];
-      if (!s || s.done) return gone('Checkout session');
+      if (!s || s.done) return gone('Checkout session', s?.locale, lang(c));
       // Failed: back to Checkout, which says it under the card; nothing is sent.
       if (how === 'fail') return c.redirect(`${base}/dev-billing/checkout/${s.id}?declined=3ds`, 303);
       await subscribed(s, a.card, a.for.email, a.for.name);
       return c.redirect(back(s.success), 303);
     }
     const p = state.portals[a.for.portal];
-    if (!p) return gone('portal session');
+    if (!p) return gone('portal session', undefined, lang(c));
     if (how === 'fail') return c.redirect(`${base}/dev-billing/portal/${p.id}/card?declined=3ds`, 303);
     const cust = state.customers[p.customer];
     if (cust) await carded(cust, a.card);
@@ -355,80 +442,82 @@ ${email === null ? '' : `<div class="row"><label for="email">Email</label><input
 
   // ---- the customer portal ----
 
-  const portalOf = (pid: string) => { const p = state.portals[pid]; const cust = p && state.customers[p.customer]; return p && cust ? {p, cust} : null; };
-  const portalHead = (p: PortalSession) => `${head(back(p.back), 'Return to length3')}
-<p class="what">length3 partners with Stripe for simplified billing.</p>${fine}`;
+  const portalOf = (pid: string) => { const p = state.portals[pid]; const cust = p && state.customers[p.customer]; return p && cust ? {p, cust, w: sayIn(p.locale)} : null; };
+  const portalHead = (w: Say, p: PortalSession) => `${head(w, back(p.back), 'Return to length3')}
+<p class="what">${esc(w('length3 partners with Stripe for simplified billing.'))}</p>${fine(w)}`;
   const done: Record<string, string> = {change: 'Your subscription has been updated.', cancel: 'Your subscription has been canceled. It stays until the end of the period.',
     renew: 'Your subscription has been renewed.', card: 'Your payment method has been updated.', fail: 'A payment failed (a test control).',
     paid: 'A payment went through (a test control).', end: 'The subscription ended (a test control).'};
+  const cardSaid = (c: Card) => `${esc(BRAND[c.brand])} •••• ${esc(c.last4)}`;
+  const perMonth = (w: Say, cents: number) => esc(w('{price} per month', {price: money(cents)}));
 
   app.get('/portal/:id', (c) => {
     const at = portalOf(c.req.param('id'));
-    if (!at) return gone('portal session');
-    const {p, cust} = at, s = cust.sub, pid = esc(p.id);
+    if (!at) return gone('portal session', undefined, lang(c));
+    const {p, cust, w} = at, s = cust.sub, pid = esc(p.id), day = (secs: number) => longDay(secs, p.locale);
     const live = s && s.status !== 'canceled';
-    const line = !s ? 'You have no subscription.'
-      : s.status === 'canceled' ? `Your subscription was canceled on ${longDay(s.endedAt ?? s.end)}.`
-      : s.status === 'past_due' ? 'Your last payment did not go through. Stripe tries again; update your payment method to pay now.'
-      : s.cancelAtEnd ? `Your subscription will be canceled on ${longDay(s.end)}.`
-      : `Your plan renews on ${longDay(s.end)}.`;
+    const line = !s ? w('You have no subscription.')
+      : s.status === 'canceled' ? w('Your subscription was canceled on {day}.', {day: day(s.endedAt ?? s.end)})
+      : s.status === 'past_due' ? w('Your last payment did not go through. Stripe tries again; update your payment method to pay now.')
+      : s.cancelAtEnd ? w('Your subscription will be canceled on {day}.', {day: day(s.end)})
+      : w('Your plan renews on {day}.', {day: day(s.end)});
     const banner = done[c.req.query('done') ?? ''];
-    const right = `${banner ? `<p class="banner" role="status">${esc(banner)}</p>` : ''}
-<section aria-labelledby="sub-h"><h2 class="h2" id="sub-h">Current subscription</h2>
-${s ? `<div class="plan-row"><div><p class="item-name">${esc(TIER_NAME[s.tier])}${s.cancelAtEnd && live ? ' <span class="tag">Cancels ' + esc(shortDay(s.end)) + '</span>' : ''}${s.status === 'past_due' ? ' <span class="tag bad">Past due</span>' : ''}</p>
-<p class="price-line">${money(COST[s.tier])} per month</p></div></div>` : ''}
+    const right = `${banner ? `<p class="banner" role="status">${esc(w(banner))}</p>` : ''}
+<section aria-labelledby="sub-h"><h2 class="h2" id="sub-h">${esc(w('Current subscription'))}</h2>
+${s ? `<div class="plan-row"><div><p class="item-name">${esc(TIER_NAME[s.tier])}${s.cancelAtEnd && live ? ` <span class="tag">${esc(w('Cancels {day}', {day: p.locale === 'ja' ? day(s.end) : shortDay(s.end)}))}</span>` : ''}${s.status === 'past_due' ? ` <span class="tag bad">${esc(w('Past due'))}</span>` : ''}</p>
+<p class="price-line">${perMonth(w, COST[s.tier])}</p></div></div>` : ''}
 <p class="muted" id="sub-line">${esc(line)}</p>
-${live ? `<div class="acts"><a class="btn" href="${pid}/change">Update subscription</a>
-${s.cancelAtEnd ? `<form method="post" action="${pid}/renew"><button class="btn" type="submit">Renew plan</button></form>` : `<a class="btn" href="${pid}/cancel">Cancel subscription</a>`}</div>` : ''}</section>
-<section aria-labelledby="pm-h"><h2 class="h2" id="pm-h">Payment method</h2>
-<p>${cust.card ? `${esc(BRAND[cust.card.brand])} •••• ${esc(cust.card.last4)} <span class="muted">Expires ${esc(cust.card.exp)}</span>` : '<span class="muted">No payment method</span>'}</p>
-<div class="acts"><a class="btn" href="${pid}/card">${cust.card ? 'Update payment method' : 'Add payment method'}</a></div></section>
-<section aria-labelledby="inv-h"><h2 class="h2" id="inv-h">Invoice history</h2>
-${cust.invoices.length ? `<table class="invoices"><thead><tr><th>Date</th><th>Amount</th><th>Status</th><th>For</th></tr></thead><tbody>${cust.invoices.map((i) =>
-    `<tr><td>${esc(shortDay(i.at))}</td><td>${money(i.amount)}</td><td><span class="tag${i.status === 'open' ? ' bad' : ' good'}">${i.status === 'paid' ? 'Paid' : 'Open'}</span></td><td class="muted">${esc(i.what)}</td></tr>`).join('')}</tbody></table>`
-    : '<p class="muted">No invoices yet.</p>'}</section>
-<section class="controls" aria-labelledby="test-h"><h2 class="h2" id="test-h">Test controls</h2>
-<p class="muted small">Not part of Stripe's portal: each sends the Remote the events Stripe would when it happens.</p>
-<div class="acts">${live ? `<form method="post" action="${pid}/test/fail"><button class="btn" type="submit">A payment fails</button></form>
-<form method="post" action="${pid}/test/paid"><button class="btn" type="submit">A payment goes through</button></form>
-<form method="post" action="${pid}/test/end"><button class="btn" type="submit">End it now</button></form>` : '<p class="muted small">There is no subscription to act on.</p>'}</div></section>`;
-    return html('length3 · Billing', page(portalHead(p), right));
+${live ? `<div class="acts"><a class="btn" href="${pid}/change">${esc(w('Update subscription'))}</a>
+${s.cancelAtEnd ? `<form method="post" action="${pid}/renew"><button class="btn" type="submit">${esc(w('Renew plan'))}</button></form>` : `<a class="btn" href="${pid}/cancel">${esc(w('Cancel subscription'))}</a>`}</div>` : ''}</section>
+<section aria-labelledby="pm-h"><h2 class="h2" id="pm-h">${esc(w('Payment method'))}</h2>
+<p>${cust.card ? `${cardSaid(cust.card)} <span class="muted">${esc(w('Expires {exp}', {exp: cust.card.exp}))}</span>` : `<span class="muted">${esc(w('No payment method'))}</span>`}</p>
+<div class="acts"><a class="btn" href="${pid}/card">${esc(w(cust.card ? 'Update payment method' : 'Add payment method'))}</a></div></section>
+<section aria-labelledby="inv-h"><h2 class="h2" id="inv-h">${esc(w('Invoice history'))}</h2>
+${cust.invoices.length ? `<table class="invoices"><thead><tr><th>${esc(w('Date'))}</th><th>${esc(w('Amount'))}</th><th>${esc(w('Status'))}</th><th>${esc(w('For'))}</th></tr></thead><tbody>${cust.invoices.map((i) =>
+    `<tr><td>${esc(shortDay(i.at, p.locale))}</td><td>${money(i.amount)}</td><td><span class="tag${i.status === 'open' ? ' bad' : ' good'}">${esc(w(i.status === 'paid' ? 'Paid' : 'Open'))}</span></td><td class="muted">${esc(i.what)}</td></tr>`).join('')}</tbody></table>`
+    : `<p class="muted">${esc(w('No invoices yet.'))}</p>`}</section>
+<section class="controls" aria-labelledby="test-h"><h2 class="h2" id="test-h">${esc(w('Test controls'))}</h2>
+<p class="muted small">${esc(w('Not part of Stripe\'s portal: each sends the Remote the events Stripe would when it happens.'))}</p>
+<div class="acts">${live ? `<form method="post" action="${pid}/test/fail"><button class="btn" type="submit">${esc(w('A payment fails'))}</button></form>
+<form method="post" action="${pid}/test/paid"><button class="btn" type="submit">${esc(w('A payment goes through'))}</button></form>
+<form method="post" action="${pid}/test/end"><button class="btn" type="submit">${esc(w('End it now'))}</button></form>` : `<p class="muted small">${esc(w('There is no subscription to act on.'))}</p>`}</div></section>`;
+    return html(p.locale, `length3 · ${w('Billing')}`, page(portalHead(w, p), right));
   });
 
   // Changing tier: each tier, the one now marked; then what it costs now, and Confirm.
   app.get('/portal/:id/change', (c) => {
     const at = portalOf(c.req.param('id'));
-    if (!at?.cust.sub || at.cust.sub.status === 'canceled') return gone('portal session');
-    const {p, cust} = at, s = cust.sub!;
-    const right = `<h1 class="h">Update your plan</h1><div class="tiers">${TIERS.map((t) => `<div class="tier${t === s.tier ? ' now' : ''}">
-<p class="item-name">${esc(TIER_NAME[t])}</p><p class="price-line">${money(COST[t])} per month</p><ul class="keeps">${keeps(t).slice(0, 2).map((k) => `<li>${esc(k)}</li>`).join('')}</ul>
-${t === s.tier ? '<p class="tag">Current plan</p>' : `<a class="btn" href="change/${t}" aria-label="Select ${esc(TIER_NAME[t])}">Select</a>`}</div>`).join('')}</div>
-<p><a class="link-back" href="../${esc(p.id)}">Go back</a></p>`;
-    return html('length3 · Update your plan', page(portalHead(p), right));
+    if (!at?.cust.sub || at.cust.sub.status === 'canceled') return gone('portal session', at?.p.locale, lang(c));
+    const {p, cust, w} = at, s = cust.sub!;
+    const right = `<h1 class="h">${esc(w('Update your plan'))}</h1><div class="tiers">${TIERS.map((t) => `<div class="tier${t === s.tier ? ' now' : ''}">
+<p class="item-name">${esc(TIER_NAME[t])}</p><p class="price-line">${perMonth(w, COST[t])}</p><ul class="keeps">${keeps(t, w).slice(0, 2).map((k) => `<li>${esc(k)}</li>`).join('')}</ul>
+${t === s.tier ? `<p class="tag">${esc(w('Current plan'))}</p>` : `<a class="btn" href="change/${t}" aria-label="${esc(w('Select {tier}', {tier: TIER_NAME[t]}))}">${esc(w('Select'))}</a>`}</div>`).join('')}</div>
+<p><a class="link-back" href="../${esc(p.id)}">${esc(w('Go back'))}</a></p>`;
+    return html(p.locale, `length3 · ${w('Update your plan')}`, page(portalHead(w, p), right));
   });
   app.get('/portal/:id/change/:tier', (c) => {
     const at = portalOf(c.req.param('id')), to = c.req.param('tier');
-    if (!at?.cust.sub || at.cust.sub.status === 'canceled' || !isTier(to)) return gone('portal session');
-    const {p, cust} = at, s = cust.sub!;
+    if (!at?.cust.sub || at.cust.sub.status === 'canceled' || !isTier(to)) return gone('portal session', at?.p.locale, lang(c));
+    const {p, cust, w} = at, s = cust.sub!;
     if (to === s.tier) return c.redirect(`${base}/dev-billing/portal/${p.id}`, 303);
     const left = Math.max(0, Math.min(1, (s.end - nowSecs()) / (s.end - s.start)));
     const owed = Math.round((COST[to] - COST[s.tier]) * left);
     // Come from the app for this one change, Go back returns there; from the portal's own list, to it.
     const away = p.change === to ? back(p.back) : `${base}/dev-billing/portal/${p.id}/change`;
-    const right = `<h1 class="h">Confirm your updated plan</h1>
-<div class="change"><div class="plan-row"><div><p class="muted small">Current</p><p class="item-name">${esc(TIER_NAME[s.tier])}</p><p class="price-line">${money(COST[s.tier])} per month</p></div>
-<span class="arrow" aria-hidden="true">&rarr;</span><div><p class="muted small">New</p><p class="item-name">${esc(TIER_NAME[to])}</p><p class="price-line">${money(COST[to])} per month</p></div></div>
-<ul class="keeps">${keeps(to).map((k) => `<li>${esc(k)}</li>`).join('')}</ul>
-<div class="sum total"><span>${owed > 0 ? 'Amount due today' : 'Credited to your next invoice'}</span><span>${money(Math.abs(owed))}</span></div>
-<p class="muted small">${owed > 0 ? `Prorated for the rest of this period, charged to ${cust.card ? `${esc(BRAND[cust.card.brand])} •••• ${esc(cust.card.last4)}` : 'your payment method'}.`
-    : 'What is left of this period on the plan you have now is credited to your next invoice.'} Then ${money(COST[to])} per month from ${esc(longDay(s.end))}.</p></div>
-<form method="post" action="${esc(to)}"><button class="pay" type="submit">Confirm</button></form>
-<p><a class="link-back" href="${esc(away)}">Go back</a></p>`;
-    return html('length3 · Confirm your updated plan', page(portalHead(p), right));
+    const right = `<h1 class="h">${esc(w('Confirm your updated plan'))}</h1>
+<div class="change"><div class="plan-row"><div><p class="muted small">${esc(w('Current'))}</p><p class="item-name">${esc(TIER_NAME[s.tier])}</p><p class="price-line">${perMonth(w, COST[s.tier])}</p></div>
+<span class="arrow" aria-hidden="true">&rarr;</span><div><p class="muted small">${esc(w('New'))}</p><p class="item-name">${esc(TIER_NAME[to])}</p><p class="price-line">${perMonth(w, COST[to])}</p></div></div>
+<ul class="keeps">${keeps(to, w).map((k) => `<li>${esc(k)}</li>`).join('')}</ul>
+<div class="sum total"><span>${esc(w(owed > 0 ? 'Amount due today' : 'Credited to your next invoice'))}</span><span>${money(Math.abs(owed))}</span></div>
+<p class="muted small">${esc(owed > 0 ? w('Prorated for the rest of this period, charged to {card}.', {card: cust.card ? `${BRAND[cust.card.brand]} •••• ${cust.card.last4}` : w('your payment method')})
+    : w('What is left of this period on the plan you have now is credited to your next invoice.'))}${p.locale === 'ja' ? '' : ' '}${esc(w('Then {price} per month from {day}.', {price: money(COST[to]), day: longDay(s.end, p.locale)}))}</p></div>
+<form method="post" action="${esc(to)}"><button class="pay" type="submit">${esc(w('Confirm'))}</button></form>
+<p><a class="link-back" href="${esc(away)}">${esc(w('Go back'))}</a></p>`;
+    return html(p.locale, `length3 · ${w('Confirm your updated plan')}`, page(portalHead(w, p), right));
   });
   app.post('/portal/:id/change/:tier', async (c) => {
     const at = portalOf(c.req.param('id')), to = c.req.param('tier');
-    if (!at?.cust.sub || at.cust.sub.status === 'canceled' || !isTier(to)) return gone('portal session');
+    if (!at?.cust.sub || at.cust.sub.status === 'canceled' || !isTier(to)) return gone('portal session', at?.p.locale, lang(c));
     const {p, cust} = at;
     if (to !== cust.sub!.tier) await changed(cust, to);
     // The change the app asked for goes back to it once done, as the portal's own flow does; one chosen here stays here.
@@ -438,25 +527,26 @@ ${t === s.tier ? '<p class="tag">Current plan</p>' : `<a class="btn" href="chang
 
   app.get('/portal/:id/cancel', (c) => {
     const at = portalOf(c.req.param('id'));
-    if (!at?.cust.sub || at.cust.sub.status === 'canceled') return gone('portal session');
-    const {p, cust} = at, s = cust.sub!;
-    const right = `<h1 class="h">Cancel your plan</h1>
-<p>Your subscription will be canceled, but is still available until the end of your billing period on <strong>${esc(longDay(s.end))}</strong>.</p>
-<p class="muted">If you change your mind, you can renew your subscription before then.</p>
-<form method="post" action="cancel"><button class="pay danger" type="submit">Cancel plan</button></form>
-<p><a class="link-back" href="../${esc(p.id)}">Go back</a></p>`;
-    return html('length3 · Cancel your plan', page(portalHead(p), right));
+    if (!at?.cust.sub || at.cust.sub.status === 'canceled') return gone('portal session', at?.p.locale, lang(c));
+    const {p, cust, w} = at, s = cust.sub!;
+    const until = w('Your subscription will be canceled, but is still available until the end of your billing period on {day}.', {day: '\u0000'}).split('\u0000');
+    const right = `<h1 class="h">${esc(w('Cancel your plan'))}</h1>
+<p>${esc(until[0])}<strong>${esc(longDay(s.end, p.locale))}</strong>${esc(until[1] ?? '')}</p>
+<p class="muted">${esc(w('If you change your mind, you can renew your subscription before then.'))}</p>
+<form method="post" action="cancel"><button class="pay danger" type="submit">${esc(w('Cancel plan'))}</button></form>
+<p><a class="link-back" href="../${esc(p.id)}">${esc(w('Go back'))}</a></p>`;
+    return html(p.locale, `length3 · ${w('Cancel your plan')}`, page(portalHead(w, p), right));
   });
   app.post('/portal/:id/cancel', async (c) => {
     const at = portalOf(c.req.param('id'));
-    if (!at?.cust.sub || at.cust.sub.status === 'canceled') return gone('portal session');
+    if (!at?.cust.sub || at.cust.sub.status === 'canceled') return gone('portal session', at?.p.locale, lang(c));
     const s = at.cust.sub!;
     if (!s.cancelAtEnd) { s.cancelAtEnd = true; save(); await send('customer.subscription.updated', subject(at.cust, s), {cancel_at_period_end: false}); }
     return c.redirect(`${base}/dev-billing/portal/${at.p.id}?done=cancel`, 303);
   });
   app.post('/portal/:id/renew', async (c) => {
     const at = portalOf(c.req.param('id'));
-    if (!at?.cust.sub || at.cust.sub.status === 'canceled') return gone('portal session');
+    if (!at?.cust.sub || at.cust.sub.status === 'canceled') return gone('portal session', at?.p.locale, lang(c));
     const s = at.cust.sub!;
     if (s.cancelAtEnd) { s.cancelAtEnd = false; save(); await send('customer.subscription.updated', subject(at.cust, s), {cancel_at_period_end: true}); }
     return c.redirect(`${base}/dev-billing/portal/${at.p.id}?done=renew`, 303);
@@ -464,21 +554,23 @@ ${t === s.tier ? '<p class="tag">Current plan</p>' : `<a class="btn" href="chang
 
   app.get('/portal/:id/card', (c) => {
     const at = portalOf(c.req.param('id'));
-    if (!at) return gone('portal session');
-    const {p, cust} = at;
-    const error = c.req.query('declined') === '3ds' ? 'We are unable to authenticate your payment method. Please choose a different payment method and try again.' : '';
-    const right = `<h1 class="h">${cust.card ? 'Update payment method' : 'Add payment method'}</h1><form id="pay-form" novalidate>${cardFields(null, error)}
-<button class="pay" id="pay" type="submit"><span class="label">${cust.card ? 'Update' : 'Add'}</span></button></form>
-<p><a class="link-back" href="../${esc(p.id)}">Go back</a></p>${testCards}`;
-    return html('length3 · Payment method', page(portalHead(p), right), FORM_JS('here', cust.card ? 'Update' : 'Add'));
+    if (!at) return gone('portal session', undefined, lang(c));
+    const {p, cust, w} = at;
+    const error = c.req.query('declined') === '3ds' ? w(unauthenticated) : '';
+    const label = w(cust.card ? 'Update' : 'Add');
+    const right = `<h1 class="h">${esc(w(cust.card ? 'Update payment method' : 'Add payment method'))}</h1><form id="pay-form" novalidate>${cardFields(w, p.locale, null, error)}
+<button class="pay" id="pay" type="submit"><span class="label">${esc(label)}</span></button></form>
+<p><a class="link-back" href="../${esc(p.id)}">${esc(w('Go back'))}</a></p>${testCards(w)}`;
+    return html(p.locale, `length3 · ${w('Payment method')}`, page(portalHead(w, p), right), FORM_JS('here', label, p.locale));
   });
   app.post('/portal/:id/card', async (c) => {
-    const at = portalOf(c.req.param('id'));
-    if (!at) return c.json({wrong: {field: 'number', message: 'This session has expired.'}}, 410);
+    const at = portalOf(c.req.param('id')), w = at?.w ?? sayIn();
+    const no = (field: string, message: string, status: 402 | 410 = 402) => { const r = wrong(w, field, message, status); return c.json(r.body, r.status); };
+    if (!at) return no('number', 'This session has expired.', 410);
     const {trouble, outcome, card, f} = await tried(c);
-    if (trouble) return c.json({wrong: trouble}, 402);
-    if (!f.name) return c.json({wrong: {field: 'name', message: 'Your name is required.'}}, 402);
-    if (outcome && 'message' in outcome) return c.json({wrong: outcome}, 402);
+    if (trouble) return no(trouble.field, trouble.message);
+    if (!f.name) return no('name', 'Your name is required.');
+    if (outcome && 'message' in outcome) return no(outcome.field, outcome.message);
     if (outcome && 'secure' in outcome) {
       const a: Secure = {id: id('payatt'), card, for: {portal: at.p.id}};
       state.secure[a.id] = a;
@@ -492,11 +584,11 @@ ${t === s.tier ? '<p class="tag">Current plan</p>' : `<a class="btn" href="chang
   // Test controls: what happens to a subscription with time, now.
   app.post('/portal/:id/test/:what', async (c) => {
     const at = portalOf(c.req.param('id')), what = c.req.param('what');
-    if (!at?.cust.sub || at.cust.sub.status === 'canceled') return gone('portal session');
+    if (!at?.cust.sub || at.cust.sub.status === 'canceled') return gone('portal session', at?.p.locale, lang(c));
     const {p, cust} = at, s = cust.sub!;
     if (what === 'fail') {
       // The renewal's payment fails: an invoice left open, the subscription past due (Stripe retries meanwhile).
-      const open = cust.invoices.find((i) => i.status === 'open') ?? invoice(cust, COST[s.tier], `${TIER_NAME[s.tier]} · ${shortDay(s.end)} – ${shortDay(s.end + MONTH)}`, 'open');
+      const open = cust.invoices.find((i) => i.status === 'open') ?? invoice(cust, COST[s.tier], `${TIER_NAME[s.tier]} · ${shortDay(s.end, cust.locale)} – ${shortDay(s.end + MONTH, cust.locale)}`, 'open');
       s.status = 'past_due';
       save();
       await send('invoice.payment_failed', invoiceObject(cust, open, 'subscription_cycle'));
@@ -507,7 +599,7 @@ ${t === s.tier ? '<p class="tag">Current plan</p>' : `<a class="btn" href="chang
       const was = s.status;
       if (open) open.status = 'paid';
       else { s.start = s.end; s.end += MONTH; }
-      const paid = open ?? invoice(cust, COST[s.tier], `${TIER_NAME[s.tier]} · ${shortDay(s.start)} – ${shortDay(s.end)}`);
+      const paid = open ?? invoice(cust, COST[s.tier], `${TIER_NAME[s.tier]} · ${shortDay(s.start, cust.locale)} – ${shortDay(s.end, cust.locale)}`);
       s.status = 'active';
       save();
       await send('invoice.paid', invoiceObject(cust, paid, 'subscription_cycle'));
@@ -524,8 +616,10 @@ ${t === s.tier ? '<p class="tag">Current plan</p>' : `<a class="btn" href="chang
   return {api, app, prices: DEV_PRICES};
 }
 
-const COUNTRIES: [string, string][] = [['US', 'United States'], ['JP', 'Japan'], ['GB', 'United Kingdom'], ['CA', 'Canada'], ['AU', 'Australia'],
-  ['DE', 'Germany'], ['FR', 'France'], ['NL', 'Netherlands'], ['SE', 'Sweden'], ['SG', 'Singapore'], ['KR', 'South Korea'], ['BR', 'Brazil'], ['IN', 'India']];
+/** The countries the form offers, each as English and Japanese name it; the first is the one chosen to begin with. */
+const COUNTRIES: [string, string, string][] = [['US', 'United States', 'アメリカ合衆国'], ['JP', 'Japan', '日本'], ['GB', 'United Kingdom', 'イギリス'],
+  ['CA', 'Canada', 'カナダ'], ['AU', 'Australia', 'オーストラリア'], ['DE', 'Germany', 'ドイツ'], ['FR', 'France', 'フランス'], ['NL', 'Netherlands', 'オランダ'],
+  ['SE', 'Sweden', 'スウェーデン'], ['SG', 'Singapore', 'シンガポール'], ['KR', 'South Korea', '韓国'], ['BR', 'Brazil', 'ブラジル'], ['IN', 'India', 'インド']];
 
 /**
  * Stripe's Checkout and portal as this Remote's Stripe is branded (README.md, Billing: the Dashboard's branding),
@@ -549,7 +643,9 @@ const iconOf = () => {
 // Stripe's look, branded: a page in two columns (the paper behind what is bought), fields with a light edge, the ring and the button the brand's.
 const CSS = `*{box-sizing:border-box}
 html,body{margin:0;background:#fff}
-body{font:14px/1.45 ${LOOK.font},-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Ubuntu,sans-serif;color:#1a1a1a;-webkit-font-smoothing:antialiased}
+body{font:14px/1.45 ${LOOK.font},-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Ubuntu,"Hiragino Sans","Noto Sans JP","Yu Gothic UI",Meiryo,sans-serif;color:#1a1a1a;-webkit-font-smoothing:antialiased}
+html[lang=ja] body{line-height:1.6;word-break:auto-phrase}
+html[lang=ja] .price small{line-height:1.2}
 p{margin:0}
 .page{display:grid;grid-template-columns:1fr 1fr;min-height:100vh}
 .side{display:flex;justify-content:flex-end;padding:56px 64px 32px;background:${LOOK.background}}
@@ -621,12 +717,14 @@ section:last-child{border-bottom:0}
   text-decoration:none;cursor:pointer;box-shadow:0 1px 1px rgba(0,0,0,.03)}
 .btn:hover{background:#f7f7f7}
 .btn:focus-visible,.link-back:focus-visible,.back:focus-visible,.plain:focus-visible{outline:2px solid ${LOOK.button};outline-offset:2px}
-.tag{display:inline-block;font-size:12px;font-weight:600;padding:1px 6px;border-radius:4px;background:#ebeef1;color:#414552}
+.tag{display:inline-block;font-size:12px;font-weight:600;padding:1px 6px;border-radius:4px;background:#ebeef1;color:#414552;white-space:nowrap}
 .tag.good{background:#d7f7c2;color:#05690d}.tag.bad{background:#ffe7f2;color:#b3093c}
 .banner{margin:0 0 20px;padding:10px 12px;border-radius:6px;background:#ebf5ff;color:#0055bc}
 .invoices{width:100%;border-collapse:collapse}
 .invoices th{text-align:left;font-size:12px;font-weight:500;color:#6d6e78;padding:0 8px 6px 0}
 .invoices td{padding:8px 8px 8px 0;border-top:1px solid #f0f0f0;vertical-align:top}
+.invoices th,.invoices td:not(.muted){white-space:nowrap}
+.main p+p.muted{margin-top:8px}
 .controls{border:1px dashed #c4a000;border-radius:8px;padding:16px;background:#fffbea}
 .tiers{display:grid;gap:12px;margin-bottom:20px}
 .tier{border:1px solid #e0e0e0;border-radius:8px;padding:14px 16px;display:grid;gap:2px}
@@ -652,13 +750,20 @@ section:last-child{border-bottom:0}
   .price{margin-bottom:16px}
 }`;
 
+/** What the card form's script says, each in the page's language. */
+const FORM_WORDS = ['Your card number is incomplete.', 'Your card number is invalid.', 'Your card\'s expiration date is incomplete.', 'Your card\'s expiration date is invalid.',
+  'Your card\'s expiration year is in the past.', 'Your card\'s expiration date is in the past.', 'Your card\'s security code is incomplete.',
+  'Your email address is invalid.', 'Your email is incomplete.', 'Your name is required.', 'Something went wrong. Try again.', 'Processing'];
+
 /**
  * The card form's own script, the same in Checkout and the portal: the number in groups as it is typed (4-6-5 for
  * American Express), the expiry as MM / YY, each field checked as Stripe's are (Luhn, an expiry to come, a CVC),
  * what is wrong said under it, and the card tried by a POST to `at` (the page's own path, or that and /pay), whose
- * answer says what is wrong or where to go on. `label` is the button's word, back once the answer is said.
+ * answer says what is wrong or where to go on. `label` is the button's word, back once the answer is said; what it
+ * says is in `locale`.
  */
-const FORM_JS = (at: 'pay' | 'here', label: string) => `(() => {
+const FORM_JS = (at: 'pay' | 'here', label: string, locale?: Locale) => `(() => {
+const W = ${JSON.stringify(Object.fromEntries(FORM_WORDS.map((en) => [en, sayIn(locale)(en)])))};
 const $ = (id) => document.getElementById(id);
 const form = $('pay-form'), number = $('number'), exp = $('exp'), cvc = $('cvc'), email = $('email'), name = $('name'), pay = $('pay'), brand = $('brand');
 const cardErr = $('card-err'), group = [number, exp, cvc];
@@ -688,23 +793,23 @@ shaping(exp, (n) => { if (n.length === 1 && n > '1') n = '0' + n; n = n.slice(0,
 shaping(cvc, (n) => n.slice(0, amex() ? 4 : 3));
 const card = () => {
   const n = digits(number.value);
-  if (n.length < (amex() ? 15 : 16)) return [number, 'Your card number is incomplete.'];
-  if (!luhn(n)) return [number, 'Your card number is invalid.'];
+  if (n.length < (amex() ? 15 : 16)) return [number, W['Your card number is incomplete.']];
+  if (!luhn(n)) return [number, W['Your card number is invalid.']];
   const e = /^(\\d{2}) \\/ (\\d{2})$/.exec(exp.value), now = new Date();
-  if (!e) return [exp, "Your card's expiration date is incomplete."];
+  if (!e) return [exp, W["Your card's expiration date is incomplete."]];
   const m = +e[1], y = 2000 + +e[2];
-  if (m < 1 || m > 12) return [exp, "Your card's expiration date is invalid."];
-  if (y < now.getFullYear()) return [exp, "Your card's expiration year is in the past."];
-  if (y === now.getFullYear() && m < now.getMonth() + 1) return [exp, "Your card's expiration date is in the past."];
-  if (digits(cvc.value).length < (amex() ? 4 : 3)) return [cvc, "Your card's security code is incomplete."];
+  if (m < 1 || m > 12) return [exp, W["Your card's expiration date is invalid."]];
+  if (y < now.getFullYear()) return [exp, W["Your card's expiration year is in the past."]];
+  if (y === now.getFullYear() && m < now.getMonth() + 1) return [exp, W["Your card's expiration date is in the past."]];
+  if (digits(cvc.value).length < (amex() ? 4 : 3)) return [cvc, W["Your card's security code is incomplete."]];
   return null;
 };
 const wrong = () => {
   const out = [];
-  if (email && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email.value.trim())) out.push([email, email.value.trim() ? 'Your email address is invalid.' : 'Your email is incomplete.']);
+  if (email && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email.value.trim())) out.push([email, email.value.trim() ? W['Your email address is invalid.'] : W['Your email is incomplete.']]);
   const c = card();
   if (c) out.push(c);
-  if (!name.value.trim()) out.push([name, 'Your name is required.']);
+  if (!name.value.trim()) out.push([name, W['Your name is required.']]);
   return out;
 };
 // Left with something in it, a field of the card is checked as Stripe's are; a field left empty is said on paying.
@@ -714,7 +819,7 @@ if (cardErr.textContent) number.classList.add('bad');
 const busy = (on) => {
   pay.disabled = on;
   const s = document.createElement('span');
-  if (on) { s.className = 'spin'; s.setAttribute('role', 'status'); s.setAttribute('aria-label', 'Processing'); } else { s.className = 'label'; s.textContent = ${JSON.stringify(label)}; }
+  if (on) { s.className = 'spin'; s.setAttribute('role', 'status'); s.setAttribute('aria-label', W['Processing']); } else { s.className = 'label'; s.textContent = ${JSON.stringify(label)}; }
   pay.replaceChildren(s);
 };
 form.addEventListener('submit', async (event) => {
@@ -729,9 +834,9 @@ form.addEventListener('submit', async (event) => {
     const a = await r.json();
     if (a.next) { location.assign(a.next); return; }
     const field = ({email, number, exp, cvc, name})[a.wrong && a.wrong.field] || number;
-    say(field, (a.wrong && a.wrong.message) || 'Something went wrong. Try again.');
+    say(field, (a.wrong && a.wrong.message) || W['Something went wrong. Try again.']);
     field.focus();
-  } catch { say(number, 'Something went wrong. Try again.'); }
+  } catch { say(number, W['Something went wrong. Try again.']); }
   busy(false);
 });
 })();`;

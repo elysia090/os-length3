@@ -193,6 +193,11 @@ test('Checkout: a customer made once for the account, the session for the tier a
   // Back only to the app's own pages: another is the app's origin instead; told how Checkout went, and to what.
   assert.deepEqual([asked[1].success, asked[1].cancel, asked[2].success, asked[1].user],
     ['http://app.test/?part=plan&plan=paid&tier=pro', 'http://app.test/?part=plan&plan=cancelled', 'http://app.test/?plan=paid&tier=go', user]);
+  // In the language the OS speaks, when the client says one it speaks; else Stripe's own choice (the browser's).
+  for (const [lang, locale] of [['ja', 'ja'], ['en', 'en'], ['fr', undefined], [7, undefined]] as const) {
+    await s.call('POST', '/v1/plan/checkout', {token: t, body: {tier: 'pro', lang}});
+    assert.equal(stripe.asked.filter((x) => x.call === 'checkout').at(-1)!.locale, locale, String(lang));
+  }
   // A tier that is none, or not sold here, is refused before Stripe is asked.
   const n = stripe.asked.length;
   assert.deepEqual([(await s.call('POST', '/v1/plan/checkout', {token: t, body: {tier: 'gold'}})).status, stripe.asked.length], [400, n]);

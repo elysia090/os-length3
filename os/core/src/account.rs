@@ -154,7 +154,10 @@ pub fn plan_page(kind: &str, tier: Option<&str>) -> Result<String> {
     if kind != "checkout" && kind != "portal" { return Err(crate::tr!("No such page of the plan", "プランにそのページはありません")); }
     if let Some(t) = tier { if !TIERS.contains(&t) { return Err(crate::tr!("Invalid tier: choose go, pro, or max", "該当するプランはありません（go、pro、max のいずれかを指定してください）")); } }
     let c = Client::open()?;
-    let v = c.json("POST", &format!("/v1/plan/{kind}"), Some(tier.map_or(serde_json::json!({}), |t| serde_json::json!({"tier": t}))))?;
+    // In the language the OS speaks (Stripe's pages are asked in it, not in the browser's).
+    let mut asked = serde_json::json!({"lang": if crate::i18n::ja() { "ja" } else { "en" }});
+    if let Some(t) = tier { asked["tier"] = serde_json::json!(t); }
+    let v = c.json("POST", &format!("/v1/plan/{kind}"), Some(asked))?;
     let url = v["url"].as_str().unwrap_or_default().to_string();
     let remote = crate::remote::connection().map(|c| c.url).unwrap_or_default();
     if !plan_page_ok(&remote, &url) { return Err(crate::tr!("The Remote named a page that is not Stripe's or its own", "Remote が Stripe のものでも自分のものでもないページを示しました")); }

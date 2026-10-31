@@ -59,7 +59,7 @@ import type {Hono} from 'hono';
 import {kept} from './names.ts';
 import {body, refuse, rows, type Db, type Vars} from './request.ts';
 import {address, billingEvent, plan, user} from './schema.ts';
-import {verify, type Price, type StripeApi} from './stripe.ts';
+import {verify, type Locale, type Price, type StripeApi} from './stripe.ts';
 
 const DAY = 86_400_000;
 /** A megabyte as the app shows one (dom.ts bytes): a million bytes. */
@@ -341,6 +341,9 @@ async function priceOf(b: Billing, id: string): Promise<Price | null> {
   return price;
 }
 
+/** The language a client asked Stripe's pages in (the one the OS speaks), when it named one the OS speaks; else Stripe's own choice. */
+const localeOf = (asked: unknown): {locale?: Locale} => (asked === 'ja' || asked === 'en' ? {locale: asked} : {});
+
 /** A tier as a client is told it: what it keeps, whether it is sold here, and what it costs when Stripe could say. */
 export interface TierSaid { tier: Tier | 'free'; allowance: Allowance; sold?: boolean; price?: Price }
 
@@ -395,7 +398,7 @@ export function planRoutes(d: PlanDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   v1.post('/plan/checkout', async (c) => {
     const me = c.get('userId');
     if (!p.on || !p.billing || !sold(p.billing).length) return off();
-    const asked = await body<{back?: unknown; tier?: unknown}>(c);
+    const asked = await body<{back?: unknown; tier?: unknown; lang?: unknown}>(c);
     const tier = tierAsked(asked?.tier);
     const now = await p.standingOf(db, me);
     // One subscription an account: another tier is a change of the one there is, in the portal, never a second beside it.
@@ -424,7 +427,7 @@ export function planRoutes(d: PlanDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     }
     // Back to the page that asked, which is told how it went (the plan itself it reads from here, as Stripe tells it).
     const url = await p.billing.stripe.checkout({customer, user: me, tier, price: p.billing.prices[tier]!,
-      success: marked(back, 'paid', tier), cancel: marked(back, 'cancelled')})
+      success: marked(back, 'paid', tier), cancel: marked(back, 'cancelled'), ...localeOf(asked?.lang)})
       .catch(() => refuse(502, {error: 'Stripe did not respond; please retry'}));
     return c.json({url});
   });
@@ -434,7 +437,7 @@ export function planRoutes(d: PlanDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     if (!p.on || !p.billing) return off();
     const row = await p.rowOf(db, me);
     if (!row?.customer) return c.json({error: 'No active subscription found for this account'}, 409);
-    const asked = await body<{back?: unknown; tier?: unknown}>(c);
+    const asked = await body<{back?: unknown; tier?: unknown; lang?: unknown}>(c);
     const back = marked(backTo(asked?.back), 'managed');
     let change;
     // Another tier: the portal opens at the step that changes the subscription to its price, and asks there.
@@ -447,7 +450,7 @@ export function planRoutes(d: PlanDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       }
       change = {subscription: row.subscription, item: row.item ?? null, price: p.billing.prices[tier]!};
     }
-    const url = await p.billing.stripe.portal({customer: row.customer, back, ...(change ? {change} : {})}).catch(() => refuse(502, {error: 'Stripe did not respond; please retry'}));
+    const url = await p.billing.stripe.portal({customer: row.customer, back, ...(change ? {change} : {}), ...localeOf(asked?.lang)}).catch(() => refuse(502, {error: 'Stripe did not respond; please retry'}));
     return c.json({url});
   });
 
