@@ -240,11 +240,13 @@ export const line = pgTable('line', {
   base: text('base'),
   head: text('head'),
   pushed: text('pushed'),
-  draft: jsonb('draft').$type<Tree>().notNull().default(sql`'{}'::jsonb`),
   /** Its draft's files' modes beside it (Modes). */
   modes: jsonb('modes').$type<Modes>().notNull().default(sql`'{}'::jsonb`),
-  bytes: bytesOf('draft'),
-  /** What its draft's files take, each blob once (kept by a trigger as the draft changes). */
+  /** How many paths its draft names (lineFile's rows). */
+  paths: integer('paths').notNull().default(0),
+  /** What its draft takes, as its JSON is long (repos.ts treeBytes), kept as each save changes it: counted into the account's room. */
+  bytes: integer('bytes').notNull().default(2),
+  /** What its draft's files take, each blob once, kept as each save changes it. */
   fileBytes: bigint('file_bytes', {mode: 'number'}).notNull().default(0),
   version: integer('version').notNull().default(0),
   /** Who started it, as their name was then. */
@@ -256,8 +258,23 @@ export const line = pgTable('line', {
   foreignKey({name: 'line_base', columns: [t.repoId, t.base], foreignColumns: [cut.repoId, cut.id]}),
   foreignKey({name: 'line_head', columns: [t.repoId, t.head], foreignColumns: [cut.repoId, cut.id]}),
   foreignKey({name: 'line_pushed', columns: [t.repoId, t.pushed], foreignColumns: [cut.repoId, cut.id]}),
-  check('line_name', matches('name', re.line)), check('line_draft', sql`jsonb_typeof(${t.draft}) = 'object'`), check('line_modes', sql`jsonb_typeof(${t.modes}) = 'object'`),
+  check('line_name', matches('name', re.line)), check('line_modes', sql`jsonb_typeof(${t.modes}) = 'object'`),
   check('line_version', sql`${t.version} >= 0`), check('line_started_by', within('started_by', 200))]);
+
+/**
+ * A line's draft, a row a path: its file's blob, or null for a folder named beside what is in it. A save writes the rows
+ * it changes and no others (repos.ts); a draft whole is its rows read in one. Paths are compared byte by byte (collated
+ * "C", 0022), so all under a folder is one range of the key.
+ */
+export const lineFile = pgTable('line_file', {
+  repoId: bigint('repo_id', {mode: 'number'}).notNull(),
+  line: text('line').notNull(),
+  path: text('path').notNull(),
+  sha: text('sha'),
+}, (t) => [primaryKey({columns: [t.repoId, t.line, t.path]}),
+  foreignKey({name: 'line_file_line', columns: [t.repoId, t.line], foreignColumns: [line.repoId, line.name]}).onDelete('cascade').onUpdate('cascade'),
+  index('line_file_sha_idx').on(t.repoId, t.line, t.sha).where(sql`${t.sha} is not null`),
+  check('line_file_sha', sql`${t.sha} is null or ${t.sha} ~ '^[0-9a-f]{64}$'`), check('line_file_path', sql`char_length(${t.path}) between 1 and 1024`)]);
 
 /**
  * What each of a line's last saves changed (repos.ts: its paths set, and those taken away, each with what is under it),

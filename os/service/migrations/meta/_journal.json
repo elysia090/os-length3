@@ -155,6 +155,20 @@
       "when": 1793408700949,
       "tag": "0021_line_changes",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1793410760806,
+      "tag": "0022_draft_as_rows",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1793410820579,
+      "tag": "0023_contract_draft_as_rows",
+      "breakpoints": true
     }
   ]
 }

@@ -101,16 +101,24 @@ export function clashes(tree: Record<string, unknown>): string[] {
   return [...new Set(out)].sort();
 }
 
-/** A draft with a diff laid on it: `remove` takes a path and everything under it, then `set` is written. */
-export function applyDiff(draft: Tree, set: Tree, remove: string[]): Tree {
+/** The folders above each of `paths` (`a/b/c`: `a`, `a/b`), each once. */
+const above = (paths: string[]) => [...new Set(paths.flatMap((p) => p.split('/').slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join('/'))))];
+
+/** Whether a path goes with `remove`: it, or a folder it is in, is taken away (its own ancestors are looked up, not every path removed). */
+function removedBy(remove: string[]): (p: string) => boolean {
   const gone = new Set(remove);
-  // A path goes when it, or a folder it is in, was removed: its own ancestors are looked up, not every path removed.
-  const removed = (p: string) => {
+  return (p) => {
+    if (!gone.size) return false;
     for (let i = p.indexOf('/'); i >= 0; i = p.indexOf('/', i + 1)) if (gone.has(p.slice(0, i))) return true;
     return gone.has(p);
   };
+}
+
+/** A draft with a diff laid on it: `remove` takes a path and everything under it, then `set` is written. */
+export function applyDiff(draft: Tree, set: Tree, remove: string[]): Tree {
+  const removed = removedBy(remove);
   const tree: Tree = {};
-  for (const [p, v] of Object.entries(draft)) if (!gone.size || !removed(p)) tree[p] = v;
+  for (const [p, v] of Object.entries(draft)) if (!removed(p)) tree[p] = v;
   return Object.assign(tree, set);
 }
 
@@ -125,15 +133,21 @@ function modesFor(tree: Tree, modes: Modes): Modes {
 }
 
 /**
- * A draft's modes with a diff laid on it. A client that keeps modes sends them (`sent`): each path it sets
- * takes its mode from them, none there being a plain file's. One that sends none (an older client) cannot
- * say, so a path it sets keeps the mode it had (an execute bit is never dropped by not being known of).
+ * A draft's modes with a diff laid on it, the draft never read: what was kept is of its files, so a path the diff does
+ * not touch keeps its mode, one it takes away loses it, and one it sets is a file only when set to a blob. A client that
+ * keeps modes sends them (`sent`): each file it sets takes its mode from them, none there being a plain file's. One that
+ * sends none (an older client) cannot say, so a file it sets keeps the mode it had (an execute bit is never dropped by
+ * not being known of).
  */
-function applyModes(was: Modes, tree: Tree | null, set: Tree, sent: Modes | undefined): Modes {
-  const out: Modes = {...was};
-  if (sent) for (const p of Object.keys(set)) { if (p in sent) out[p] = sent[p]; else delete out[p]; }
-  // No tree: every path set is a file the draft has, and what was kept is of its files already (the fast save).
-  return tree ? modesFor(tree, out) : out;
+function modesAfter(was: Modes, set: Tree, remove: string[], sent: Modes | undefined): Modes {
+  const removed = removedBy(remove);
+  const out: Modes = {};
+  for (const [p, m] of Object.entries(was)) if (!(p in set) && !removed(p)) out[p] = m;
+  for (const [p, v] of Object.entries(set)) {
+    if (typeof v !== 'string') continue;
+    if (sent) { if (p in sent) out[p] = sent[p]; } else if (p in was) out[p] = was[p];
+  }
+  return out;
 }
 
 /** A cut's id: the digest of what it records, in one fixed order (its modes last, and only when it has some: the ids of commits without stay as they were). */
@@ -143,14 +157,18 @@ export async function cutId(c: {repo: string; parent: string | null; tree: Tree;
   return sha256(enc.encode(JSON.stringify([c.repo, c.parent, tree, c.kind, c.title, c.issue, c.note, c.time, ...(modes.length ? [modes] : [])])));
 }
 
-/** A commit as clients read it. */
 /** How many of a line's last saves are kept as what each changed (line_change), for devices a few saves behind. */
 const LINE_CHANGES = 64;
-/** The most paths a save may set and take away and still be laid on the draft where it is (repos.ts lineAt). */
-const FAST_SAVE = 16;
+/**
+ * What a path and its value take of a draft's JSON as Postgres writes it out (`"path": "sha", `): a line's bytes are the
+ * sum of its rows' (0022 counted the drafts kept before so), and a save adds and takes away its rows'.
+ */
+const entryBytes = (p: ReturnType<typeof sql>, v: ReturnType<typeof sql>) => sql`(octet_length(to_json(${p})::text) + coalesce(octet_length(to_json(${v})::text), 4) + 4)`;
+/** A line's draft as one value (0022: a row a path), each folder named beside what is in it a null. */
+const draftOf = (id: unknown, l: unknown) => sql<Tree>`(select coalesce(jsonb_object_agg(f.path, f.sha), '{}'::jsonb) from line_file f where f.repo_id = ${id} and f.line = ${l})`;
 /** A commit is kept whole every so many along a run of changes (0020): how many it takes to read one whole, at most. */
 const WHOLE_EVERY = 16;
-/** A commit's tree whole, however it is kept (0020 cut_tree). */
+/** A commit as clients read it: its tree whole, however it is kept (0020 cut_tree). */
 const cutTree = sql<Tree>`cut_tree(${cut.repoId}, ${cut.id})`;
 const cutCols = {id: cut.id, parent: cut.parent, merged: cut.merged, tree: cutTree, modes: cut.modes, kind: cut.kind, title: cut.title, issue: cut.issue,
   note: cut.note, added: cut.added, removed: cut.removed, time: cut.time};
@@ -162,16 +180,17 @@ const changeCols = {id: change.id, line: change.line, kind: change.kind, title: 
   head: change.head, state: change.state, note: change.note, submittedBy: change.submittedBy, updatedAt: change.updatedAt,
   reviews: sql<Review[]>`coalesce((select jsonb_agg(jsonb_build_object('version', r.version, 'verdict', r.verdict, 'note', r.note, 'marks', r.marks,
     'by', r.by, 'time', ${ms(sql`r.time`)}) order by r.time desc, r.id) from review r where r.change_id = ${qualified(change.id)}), '[]'::jsonb)`.as('reviews')};
+/** What a draft would be with a save laid on it, as its rows say (lineAt): a file and a folder of one name it makes, and what it would take. */
+type After = {clash: string | null; paths: number; bytes: number; files: number};
 type Line = {id: number; off: Date | null; name: string; line: string; base: string | null; head: string | null; pushed: string | null; version: number;
-  startedBy: string; startedAt: Date; updatedAt: Date; draft?: Tree | null; modes?: Modes; kept?: {bytes: number; files: number};
-  /** The save may be laid on the draft where it is (each path it sets a file the draft has; nothing removed): no draft is read. */
-  fast?: boolean;
-  /** Read with its draft: the account's room (request.ts usedBy), and which of the blobs asked about it holds. */
+  startedBy: string; startedAt: Date; updatedAt: Date; draft?: Tree; modes?: Modes; kept?: {bytes: number; files: number}; after?: After;
+  /** Read to be written: the account's room (request.ts usedBy), and which of the blobs asked about it holds. */
   used?: number; have?: string[]};
 type Change = {id: string; line: string; kind: string; title: string; version: number; base: string | null; head: string;
   state: string; note: string; submittedBy: string; reviews: Review[]; updatedAt: Date};
 
-const lineShown = ({id: _, off: __, draft, modes, kept: ___, used: ____, have: _____, ...r}: Line) => ({...r, issue: issueOf(r.line), ...(draft ? {draft, modes: modesFor(draft, modes ?? {})} : {}), startedAt: r.startedAt.getTime()});
+const lineShown = ({id: _, off: __, draft: ___, modes: ____, kept: _____, after: ______, used: _______, have: ________, ...r}: Line) =>
+  ({...r, issue: issueOf(r.line), startedAt: r.startedAt.getTime()});
 const changeShown = (repoName: string, {repoId: _, off: __, ...r}: Change & {repoId?: number; off?: Date | null}) =>
   ({...r, repo: repoName, issue: issueOf(r.line), updatedAt: r.updatedAt.getTime()});
 const count = (n: unknown) => (typeof n === 'number' && Number.isInteger(n) && n >= 0 && n < 2 ** 31 ? n : 0);
@@ -208,48 +227,85 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
    */
   // Read to be written (`draft`), with what the write then asks of the account in the same round trip: its room, and
   // which of the blobs `shas` it holds (a save is a lock, this, and the write: the room and the blobs were a trip each).
-  // A small save of files (`files`: {set, remove} as JSON) asks here whether it can be laid on the draft where it is,
-  // the draft never read: each path it takes away a file there with nothing under it; each it sets a file there, or a
-  // new one with no file above it (but one it takes away), nothing under it, and none of the others under it; and room
-  // for it in the tree's files and size. A save as one types, a file made, one taken away or moved, are all so. What
-  // else is asked of a save is of its shape alone (a path and a folder of one name), so this is all of it; otherwise the
-  // draft comes in this same read and the save goes as before.
-  const lineAt = async (q: Db, user: string, name: string, l: string, draft = false, shas: string[] = [], files?: string): Promise<Line | undefined> => {
-    const f = files ? sql`(${files}::jsonb)` : null;
-    // One pass over the draft's paths: how many there are, and whether any is under a path taken away or newly set.
-    const fast = f ? sql<boolean>`coalesce((with s(k) as (select jsonb_object_keys(${f} -> 'set')), r(k) as (select jsonb_array_elements_text(${f} -> 'remove')),
-        n(k) as (select s.k from s where jsonb_typeof(${line.draft} -> s.k) is distinct from 'string'),
-        under(p) as (select array(select replace(replace(replace(x.k, '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '/%' from (select k from r union all select k from n) x)),
-        scan as (select count(*) as paths, coalesce(bool_or(dk like any (under.p)), false) as below from jsonb_object_keys(${line.draft}) dk, under)
-      select (select coalesce(bool_and(jsonb_typeof(${line.draft} -> r.k) = 'string'), true) from r)
-        and not scan.below
-        and not exists (select 1 from n where exists (select 1 from s o where starts_with(o.k, n.k || '/'))
-          or exists (select 1 from generate_series(1, cardinality(string_to_array(n.k, '/')) - 1) i,
-              lateral (select array_to_string((string_to_array(n.k, '/'))[1:i], '/') as a) x
-            where (jsonb_typeof(${line.draft} -> x.a) = 'string' and x.a not in (select k from r)) or x.a in (select k from s)))
-        and scan.paths + (select count(*) from s) <= ${LIMIT.files}
-        and ${line.bytes} + 200 * (select count(*) from s) <= ${Math.floor(LIMIT.tree * 0.9)}
-      from scan), false)` : null;
-    return (await q.select({...lineCols, ...(draft ? {draft: fast ? sql<Tree | null>`case when ${fast} then null else ${line.draft} end` : line.draft,
-      ...(fast ? {fast} : {}), modes: line.modes, kept: {bytes: line.bytes, files: line.fileBytes}, used: usedBy(user),
-      have: shas.length ? sql<string[]>`(select coalesce(array_agg(${blob.sha256}), '{}') from ${blob} where ${and(eq(blob.userId, user), inArray(blob.sha256, shas))})`
-        : sql<string[]>`'{}'::text[]`} : {})}).from(line).innerJoin(repo, eq(repo.id, line.repoId))
+  // A save (`diff`: {set, remove} as JSON) is asked about here, of the rows it touches and no others: what it would make
+  // a file and a folder at once that was not one before (a path it sets with a file above it, or a file it sets with
+  // something under it), and how many paths, bytes and files' bytes the draft would take after it (`after`).
+  const lineAt = async (q: Db, user: string, name: string, l: string, o: {draft?: boolean; shas?: string[]; diff?: string} = {}): Promise<Line | undefined> => {
+    const shas = o.shas ?? [];
+    const here = sql`d.repo_id = ${line.repoId} and d.line = ${line.name}`;
+    // Each asked of the draft's rows a path at a time, by its key (one row at it, or the range under it): asked as a
+    // scalar (never EXISTS, which Postgres may answer by reading all the line's rows once into a table, and at 20,000
+    // rows that was most of a save's time).
+    /** Rows of the draft at `p`, and under it (a range of the key, paths being compared byte by byte). */
+    const at = (p: ReturnType<typeof sql>) => sql`${here} and d.path = ${p}`;
+    const under = (p: ReturnType<typeof sql>) => sql`${here} and d.path >= ${p} || '/' and d.path < ${p} || '0'`;
+    const fileBefore = (p: ReturnType<typeof sql>) => sql`coalesce((select d.sha is not null from line_file d where ${at(p)}), false)`;
+    const anyUnder = (p: ReturnType<typeof sql>, also = sql`true`) => sql`(select true from line_file d where ${under(p)} and ${also} limit 1) is not null`;
+    const clashBefore = (p: ReturnType<typeof sql>) => sql`(${fileBefore(p)} and ${anyUnder(p)})`;
+    const kept = (p: ReturnType<typeof sql>) => sql`not exists (select 1 from g where g.path = ${p})`;
+    const after = o.diff ? sql<After>`(with s(k, v) as materialized (select e.key, e.value #>> '{}' from jsonb_each((${o.diff}::jsonb) -> 'set') e),
+        r(k) as materialized (select distinct x from jsonb_array_elements_text((${o.diff}::jsonb) -> 'remove') x),
+        g as materialized (select distinct d.path, d.sha from r cross join lateral (select d.path, d.sha from line_file d where ${at(sql`r.k`)}
+            union all select d.path, d.sha from line_file d where ${under(sql`r.k`)}) d where not exists (select 1 from s where s.k = d.path)),
+        o as materialized (select d.path, d.sha from s cross join lateral (select d.path, d.sha from line_file d where ${at(sql`s.k`)} limit 1) d),
+        a(k) as materialized (select x from jsonb_array_elements_text((${o.diff}::jsonb) -> 'above') x),
+        clash(p) as (select s.k from s where s.v is not null and not ${clashBefore(sql`s.k`)}
+            and (exists (select 1 from s t where starts_with(t.k, s.k || '/')) or ${anyUnder(sql`s.k`, kept(sql`d.path`))})
+          union select a.k from a where not ${clashBefore(sql`a.k`)} and case when exists (select 1 from s where s.k = a.k)
+            then exists (select 1 from s where s.k = a.k and s.v is not null) else ${fileBefore(sql`a.k`)} and ${kept(sql`a.k`)} end),
+        x(sha) as materialized (select v from s where v is not null union select sha from o where sha is not null union select sha from g where sha is not null),
+        y as (select (select true from line_file d where ${here} and d.sha = x.sha limit 1) is not null as before,
+            exists (select 1 from s where s.v = x.sha) or (select count(*) from line_file d where ${here} and d.sha = x.sha)
+              > (select count(*) from o where o.sha = x.sha) + (select count(*) from g where g.sha = x.sha) as after,
+            coalesce((select b.bytes from blob b where b.user_id = ${user} and b.sha256 = x.sha), 0) as bytes from x),
+        n as (select ${line.paths} + (select count(*) from s where not exists (select 1 from o where o.path = s.k)) - (select count(*) from g) as paths,
+            coalesce((select sum(${entryBytes(sql`s.k`, sql`s.v`)}) from s), 0) - coalesce((select sum(${entryBytes(sql`o.path`, sql`o.sha`)}) from o), 0)
+              - coalesce((select sum(${entryBytes(sql`g.path`, sql`g.sha`)}) from g), 0) as bytes,
+            coalesce((select sum(case when y.after and not y.before then y.bytes when y.before and not y.after then -y.bytes else 0 end) from y), 0) as files)
+      select jsonb_build_object('clash', (select min(clash.p collate "C") from clash), 'paths', n.paths,
+        'bytes', case when n.paths = 0 then 2 else case when ${line.paths} = 0 then 0 else ${line.bytes} end + n.bytes end, 'files', ${line.fileBytes} + n.files) from n)` : null;
+    const written = o.draft || o.diff;
+    return (await q.select({...lineCols, ...(o.draft ? {draft: draftOf(line.repoId, line.name)} : {}), ...(after ? {after} : {}),
+      ...(written ? {modes: line.modes, kept: {bytes: line.bytes, files: line.fileBytes}, used: usedBy(user),
+        have: shas.length ? sql<string[]>`(select coalesce(array_agg(${blob.sha256}), '{}') from ${blob} where ${and(eq(blob.userId, user), inArray(blob.sha256, shas))})`
+          : sql<string[]>`'{}'::text[]`} : {})}).from(line).innerJoin(repo, eq(repo.id, line.repoId))
       .where(and(eq(repo.userId, user), eq(repo.name, name), eq(line.name, l))))[0];
   };
   /** The row of line `l` of repo `id`. */
   const lineRow = (id: number, l: string) => and(eq(line.repoId, id), eq(line.name, l));
   /**
-   * Line `l` of repo `id`, at `version`, saved as `draft` (with `modes`), and what the save changed (`set`, `remove`)
-   * kept beside it for the devices that hold the draft before it (line_change), the oldest past LINE_CHANGES let go:
-   * one statement. What the draft takes after, as kept; nothing when it was not at `version`.
+   * Line `l` of repo `id`, at `version`, with a save laid on its rows: what it takes away goes (each path, and all under
+   * it, but what it sets again), what it sets is written, and nothing else is touched. What it changed is kept beside it
+   * for the devices that hold the draft before it (line_change), the oldest past LINE_CHANGES let go; and what the draft
+   * takes after it, as lineAt said. One statement; nothing when the line was not at `version`.
    */
-  const saved = (tx: Db, id: number, l: string, version: number, draft: ReturnType<typeof sql>, modes: Modes, set: Tree, remove: string[]) =>
-    rows<{bytes: number; files: number}>(tx, sql`with u as (
-        update line set draft = ${draft}, modes = ${JSON.stringify(modes)}::jsonb, version = ${version + 1}, updated_at = now()
-        where repo_id = ${id} and name = ${l} and version = ${version} returning bytes, file_bytes),
+  const saved = (tx: Db, id: number, l: string, version: number, set: Tree, remove: string[], modes: Modes, after: After) =>
+    rows<{ok: number}>(tx, sql`with u as (
+        update line set modes = ${JSON.stringify(modes)}::jsonb, version = ${version + 1}, paths = ${after.paths}, bytes = ${after.bytes},
+          file_bytes = ${after.files}, updated_at = now()
+        where repo_id = ${id} and name = ${l} and version = ${version} returning 1),
+      s(k, v) as materialized (select e.key, e.value #>> '{}' from jsonb_each(${JSON.stringify(set)}::jsonb) e),
+      g as (delete from line_file f where f.repo_id = ${id} and f.line = ${l} and exists (select 1 from u) and not exists (select 1 from s where s.k = f.path)
+        and f.path in (select d.path from jsonb_array_elements_text(${JSON.stringify(remove)}::jsonb) r(k) cross join lateral (
+          select d.path from line_file d where d.repo_id = ${id} and d.line = ${l} and d.path = r.k
+          union all select d.path from line_file d where d.repo_id = ${id} and d.line = ${l} and d.path >= r.k || '/' and d.path < r.k || '0') d)),
+      i as (insert into line_file (repo_id, line, path, sha) select ${id}, ${l}, s.k, s.v from s where exists (select 1 from u)
+        on conflict (repo_id, line, path) do update set sha = excluded.sha where line_file.sha is distinct from excluded.sha),
       c as (insert into line_change (repo_id, line, version, "set", gone) select ${id}, ${l}, ${version + 1}, ${JSON.stringify(set)}::jsonb, ${JSON.stringify(remove)}::jsonb from u),
       d as (delete from line_change where repo_id = ${id} and line = ${l} and version <= ${version + 1 - LINE_CHANGES} and exists (select 1 from u))
-      select bytes, file_bytes as files from u`);
+      select 1 as ok from u`);
+  /**
+   * Line `l` of repo `id` laid down whole as `tree` (a line made, a merge's draft): the rows it no longer names go, the
+   * others are written as it has them, and what it takes is counted from it. What it takes after.
+   */
+  const laid = async (tx: Db, id: number, l: string, tree: Tree) => (await rows<{bytes: number; files: number}>(tx, sql`with t(k, v) as materialized (
+        select e.key, e.value #>> '{}' from jsonb_each(${JSON.stringify(tree)}::jsonb) e),
+      g as (delete from line_file f where f.repo_id = ${id} and f.line = ${l} and not exists (select 1 from t where t.k = f.path)),
+      i as (insert into line_file (repo_id, line, path, sha) select ${id}, ${l}, t.k, t.v from t
+        on conflict (repo_id, line, path) do update set sha = excluded.sha where line_file.sha is distinct from excluded.sha)
+    update line set paths = (select count(*) from t), bytes = coalesce((select sum(${entryBytes(sql`t.k`, sql`t.v`)}) from t), 2),
+      file_bytes = (select coalesce(sum(b.bytes), 0) from blob b where b.user_id = line.user_id and b.sha256 in (select t.v from t))
+    where repo_id = ${id} and name = ${l} returning bytes, file_bytes as files`))[0];
   /** A repo that is off answers nothing but being off, and until when it can come back. */
   /** What a repo turned off answers in place of anything else (410). */
   const offWords = (off: Date) => ({error: 'This repo is disabled', offAt: off.getTime(), until: off.getTime() + KEPT});
@@ -284,8 +340,9 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
     return c.json(list.map((r) => ({name: r.name, at: r.at.getTime()})));
   });
 
-  // The draft as the database writes it out, put into the answer as it comes: never read into objects and written out
-  // again here (for a repo of thousands of files that was most of a request's time), its modes those of its files.
+  // The draft as the database writes it out (its rows as one JSON object), put into the answer as it comes: never read
+  // into objects and written out again here (for a repo of thousands of files that was most of a request's time), its
+  // modes those of its files.
   // Asked ?since=V by a device that holds the draft at version V: what each save after it changed (changes: [{set,
   // remove}], in order), when every one is kept; else, and when not asked so, the draft whole.
   v1.get('/repos/:name', async (c) => {
@@ -294,9 +351,11 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
     const after = sql`from line_change k where k.repo_id = ${line.repoId} and k.line = ${line.name} and k.version > ${from} and k.version <= ${line.version}`;
     const kept = sql`(select count(*) ${after}) = ${line.version} - ${from}`;
     const [row] = await db.select({...lineCols,
-      text: from ? sql<string | null>`case when ${kept} then null else ${line.draft}::text end` : sql<string>`${line.draft}::text`,
+      text: sql<string | null>`case when ${from ? kept : sql`false`} then null else (select coalesce(json_object_agg(f.path, f.sha)::text, '{}') from line_file f
+        where f.repo_id = ${line.repoId} and f.line = ${line.name}) end`,
       changes: from ? sql<unknown[] | null>`case when ${kept} then (select coalesce(jsonb_agg(jsonb_build_object('set', k.set, 'remove', k.gone) order by k.version), '[]'::jsonb) ${after}) end` : sql<null>`null`,
-      modes: sql<Modes>`(select coalesce(jsonb_object_agg(m.key, m.value), '{}'::jsonb) from jsonb_each(${line.modes}) m where jsonb_typeof(${line.draft} -> m.key) = 'string')`})
+      modes: sql<Modes>`(select coalesce(jsonb_object_agg(m.key, m.value), '{}'::jsonb) from jsonb_each(${line.modes}) m
+        where exists (select 1 from line_file f where f.repo_id = ${line.repoId} and f.line = ${line.name} and f.path = m.key and f.sha is not null))`})
       .from(line).innerJoin(repo, eq(repo.id, line.repoId)).where(and(eq(repo.userId, user), eq(repo.name, name), eq(line.name, lineOf(c)))) as (Line & {text: string | null; changes: unknown[] | null})[];
     if (!row) {
       const gone = await goneAt(db, user, name);
@@ -327,12 +386,9 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
     for (const [p, v] of Object.entries(set)) if (!validPath(p) || !(v === null || (typeof v === 'string' && HEX.test(v)))) return c.json({error: 'Invalid repository path', path: p}, 400);
     for (const p of remove) if (typeof p !== 'string' || !validPath(p)) return c.json({error: 'Invalid repository path', path: String(p)}, 400);
     const shas = [...new Set(Object.values(set).filter((v): v is string => typeof v === 'string'))];
-    // A small save of files (no folder set, nothing both set and taken away): perhaps laid on the draft where it is.
-    const onlyFiles = Object.keys(set).length + remove.length > 0 && Object.keys(set).length + remove.length <= FAST_SAVE
-      && Object.values(set).every((v) => typeof v === 'string') && remove.every((p) => !(p as string in set));
     const version = await db.transaction(async (tx: Db) => {
       await lock(tx, user);
-      const row = await lineAt(tx, user, name, l, true, shas, onlyFiles ? JSON.stringify({set, remove}) : undefined);
+      const row = await lineAt(tx, user, name, l, {shas, diff: JSON.stringify({set, remove, above: above(Object.keys(set))})});
       on(row?.off);
       if (!row) {
         const gone = await goneAt(tx, user, name);
@@ -348,48 +404,35 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
       }
       const current = row?.version ?? 0;
       if (current !== b.version) refuse(409, {version: current});
-      const kept = {bytes: line.bytes, files: line.fileBytes};
-      if (row?.fast) {
-        // Laid on where it is: what it takes away goes (each a file, nothing under it), what it sets is written. A file
-        // taken away takes its mode with it. Its room is what the tree grew by, as the database counts it.
-        const modes = applyModes(row.modes ?? {}, null, set as Tree, sent as Modes | undefined);
-        for (const p of remove as string[]) delete modes[p];
-        const after = await saved(tx, row.id, l, current, sql`(draft - array(select jsonb_array_elements_text(${JSON.stringify(remove)}::jsonb))) || ${JSON.stringify(set)}::jsonb`,
-          modes, set as Tree, remove as string[]);
-        const before = row.kept ?? {bytes: 0, files: 0};
-        if (after[0]) {
-          fitsUsed(row.used, Number(after[0].bytes) - Number(before.bytes));
-          await d.plans.grew(tx, user, Number(after[0].bytes) + Number(after[0].files) - Number(before.bytes) - Number(before.files));
-        }
+      if (row) {
+        // Laid on the rows it touches, the draft never read whole: a file and a folder of one name it makes is refused
+        // (one there before is not this diff's to refuse), as is more than a repo may hold.
+        const after = row.after!, before = row.kept!;
+        if (after.clash !== null) refuse(400, {error: 'Filename collision with existing folder', path: after.clash});
+        if (after.paths > LIMIT.files || after.bytes > LIMIT.tree) refuse(413, {error: 'File limit reached for this repo'});
+        // What the draft takes (its tree and its files, each blob once) before and after: the plan refuses one that grew
+        // while the account keeps more than it allows, and the whole change is undone with it.
+        fitsUsed(row.used, after.bytes - before.bytes);
+        const done = await saved(tx, row.id, l, current, set as Tree, remove as string[], modesAfter(row.modes ?? {}, set as Tree, remove as string[], sent as Modes | undefined), after);
+        if (done.length) await d.plans.grew(tx, user, after.bytes + after.files - Number(before.bytes) - Number(before.files));
         return current + 1;
       }
-      const was = row?.draft ?? {};
-      const tree = applyDiff(was, set as Tree, remove as string[]);
-      // A file and a folder of one name, made by this diff (one there before is not this diff's to refuse).
-      const clashed = new Set(clashes(was)), clash = clashes(tree).filter((p) => !clashed.has(p));
+      // A repo made: its draft is what the diff sets.
+      const tree = applyDiff({}, set as Tree, remove as string[]);
+      const clash = clashes(tree);
       if (clash.length) refuse(400, {error: 'Filename collision with existing folder', path: clash[0]});
-      const modes = applyModes(row?.modes ?? {}, tree, set as Tree, sent as Modes | undefined);
       const size = JSON.stringify(tree).length;
       if (Object.keys(tree).length > LIMIT.files || size > LIMIT.tree) refuse(413, {error: 'File limit reached for this repo'});
-      if (!row) {
-        const [{n}] = await tx.select({n: sql<number>`count(*)::int`}).from(repo).where(eq(repo.userId, user));
-        if (n >= LIMIT.repos) refuse(429, {error: 'Repository limit reached'});
-        await d.plans.newRepo(tx, user);
-      }
-      if (row) fitsUsed(row.used, size - JSON.stringify(was).length); else await fits(tx, user, size - JSON.stringify(was).length);
-      // What the draft takes (its tree and its files, each blob once) before and after: the plan refuses one
-      // that grew while the account keeps more than it allows, and the whole change is undone with it. Before is
-      // as the line was read, under the account's lock (a read of its own after was one more round trip a save).
-      const before = row?.kept ?? {bytes: 0, files: 0};
-      let after: {bytes: number; files: number}[];
-      if (row) after = await saved(tx, row.id, l, current, sql`${JSON.stringify(tree)}::jsonb`, modes, set as Tree, remove as string[]);
-      else {
-        await tx.delete(repoGone).where(and(eq(repoGone.userId, user), eq(repoGone.name, name)));
-        const [made] = await tx.insert(repo).values({userId: user, name}).returning({id: repo.id}) as {id: number}[];
-        after = await tx.insert(line).values({repoId: made.id, userId: user, name: 'main', draft: tree, modes, version: 1, startedBy: whoBy(c)}).returning(kept);
-      }
-      if (after[0]) await d.plans.grew(tx, user, Number(after[0].bytes) + Number(after[0].files) - Number(before.bytes) - Number(before.files));
-      return current + 1;
+      const [{n}] = await tx.select({n: sql<number>`count(*)::int`}).from(repo).where(eq(repo.userId, user));
+      if (n >= LIMIT.repos) refuse(429, {error: 'Repository limit reached'});
+      await d.plans.newRepo(tx, user);
+      await fits(tx, user, size);
+      await tx.delete(repoGone).where(and(eq(repoGone.userId, user), eq(repoGone.name, name)));
+      const [made] = await tx.insert(repo).values({userId: user, name}).returning({id: repo.id}) as {id: number}[];
+      await tx.insert(line).values({repoId: made.id, userId: user, name: 'main', modes: modesAfter({}, tree, [], sent as Modes | undefined), version: 1, startedBy: whoBy(c)});
+      const after = await laid(tx, made.id, 'main', tree);
+      await d.plans.grew(tx, user, Number(after.bytes) + Number(after.files));
+      return 1;
     });
     return c.json({version});
   });
@@ -426,9 +469,10 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
     // main is what the servers a repo is shown in see (seen.ts reads what it pushed): a commit on main, or a change
     // merged into it, is pushed with it, so they see main's last commit, never an older one or nothing.
     const pushed = row.line === 'main' ? {pushed: id} : {};
-    const moved = await tx.update(line).set({head: id, ...pushed, updatedAt: sql`now()`, ...(draft ? {draft: draft.tree, modes: modesFor(draft.tree, draft.modes), version: row.version + 1} : {})})
+    const moved = await tx.update(line).set({head: id, ...pushed, updatedAt: sql`now()`, ...(draft ? {modes: modesFor(draft.tree, draft.modes), version: row.version + 1} : {})})
       .where(and(lineRow(row.id, row.line), eq(line.version, row.version), row.head === null ? isNull(line.head) : eq(line.head, row.head))).returning({head: line.head});
     if (!moved.length) refuse(409, {head: row.head, version: row.version});
+    if (draft) await laid(tx, row.id, row.line, draft.tree);
     return {id, time};
   };
 
@@ -449,7 +493,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
     }
     const made = await db.transaction(async (tx: Db) => {
       await lock(tx, user);
-      const row = await lineAt(tx, user, name, l, true);
+      const row = await lineAt(tx, user, name, l, {draft: true});
       on(row?.off);
       if (!row || row.version !== b.version || row.head !== b.parent) refuse(409, {head: row?.head ?? null, version: row?.version ?? 0});
       let tree = row.draft!, modes = row.modes ?? {};
@@ -575,7 +619,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
     if (!stem || !validLine(stem)) return c.json({error: 'Work must begin from an issue'}, 400);
     const {row, made} = await db.transaction(async (tx: Db) => {
       await lock(tx, user);
-      const main = await lineAt(tx, user, name, 'main', true);
+      const main = await lineAt(tx, user, name, 'main', {draft: true});
       if (!main) refuse(404, {error: 'Repo not found on Remote'});
       on(main.off);
       const existing = await lineAt(tx, user, name, stem);
@@ -593,7 +637,8 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
       const written = main.draft![issue];
       if (written && !from[issue]) from[issue] = written;
       await fits(tx, user, JSON.stringify(from).length);
-      await tx.insert(line).values({repoId: main.id, userId: user, name: stem, base: head, head, pushed: head, draft: from, modes: modesFor(from, fromModes), version: 1, startedBy: whoBy(c)});
+      await tx.insert(line).values({repoId: main.id, userId: user, name: stem, base: head, head, pushed: head, modes: modesFor(from, fromModes), version: 1, startedBy: whoBy(c)});
+      await laid(tx, main.id, stem, from);
       return {row: (await lineAt(tx, user, name, stem))!, made: true};
     });
     return c.json(lineShown(row), made ? 201 : 200);
@@ -719,7 +764,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
       on(row.off);
       if (row.state !== 'open') refuse(409, {error: 'This Change is no longer open', state: row.state});
       if (b?.version !== row.version) refuse(409, {version: row.version});
-      const main = await lineAt(tx, user, name, 'main', true);
+      const main = await lineAt(tx, user, name, 'main', {draft: true});
       if (!main) refuse(404, {error: 'Repo not found on Remote'});
       const tree = await treesOf(tx, main.id, [row.base, main.head, row.head]);
       const merged = merge3(tree(row.base), tree(main.head), tree(row.head));

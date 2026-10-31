@@ -142,7 +142,7 @@ export async function sweep(db: Db, bucket: Bucket | null): Promise<Record<strin
       const unnamed: string[] = await long(async (tx: Db) => {
         await lock(tx, user);
         const went = !bucket ? [] : await rows<{sha256: string}>(tx, sql`with named as (
-            select e.value as sha from line l cross join jsonb_each_text(l.draft) e where l.user_id = ${user}
+            select f.sha from line l join line_file f on f.repo_id = l.repo_id and f.line = l.name where l.user_id = ${user} and f.sha is not null
             union select e.value from repo r join cut c on c.repo_id = r.id cross join jsonb_each_text(c.tree) e where r.user_id = ${user})
           delete from blob b where b.user_id = ${user} and b.created_at < ${ago(DAY)}
             and not exists (select 1 from named where named.sha = b.sha256)

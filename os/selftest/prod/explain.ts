@@ -42,7 +42,8 @@ insert into room (user_id, used, unswept) select 'u' || i, 0, i % 50 = 0 from ge
 insert into session (id, expires_at, token, updated_at, user_id) select 's' || i, now() at time zone 'utc' + interval '30 days' - (i % 40) * interval '1 day', md5('t' || i), now(), 'u' || (1 + i % ${U}) from generate_series(1, ${2 * U}) i;
 -- Repos: four an account, fifty for the heavy one (u1).
 insert into repo (user_id, name) select 'u' || i, 'repo' || j from generate_series(1, ${U}) i, generate_series(1, case when i = 1 then 50 else 4 end) j;
-insert into line (repo_id, name, user_id, draft, version) select r.id, 'main', r.user_id, ${tree(20, "r.id::text")}, 3 from repo r;
+insert into line (repo_id, name, user_id, version, paths) select r.id, 'main', r.user_id, 3, 20 from repo r;
+insert into line_file (repo_id, line, path, sha) select r.id, 'main', 'src/f' || k || '.ts', ${sha("r.id::text || ':' || k")} from repo r, generate_series(1, 20) k;
 -- Commits: a chain in each repo, 400 a repo for the heavy one, 5 for everyone else; trees of 20 files.
 insert into cut (repo_id, id, user_id, parent, tree, title, time)
   select r.id, ${sha("r.id || '/' || n")}, r.user_id, case when n > 1 then ${sha("r.id || '/' || (n - 1)")} end, ${tree(20, "r.id || '/' || n")}, 'Change ' || n, now() - (500 - n) * interval '1 hour'
@@ -87,7 +88,7 @@ vacuum analyze;
       select c.id, c.title from walk w join cut c on c.repo_id = (select id from repo where user_id = 'u1' and name = 'repo1') and c.id = w.id order by w.n`],
     ['sweep: room recount (heavy account)', `select (select coalesce(sum(bytes), 0) from blob where user_id = 'u1') + (select coalesce(sum(bytes), 0) from line where user_id = 'u1')
       + (select coalesce(sum(bytes), 0) from cut where user_id = 'u1') + (select coalesce(sum(bytes), 0) from review where user_id = 'u1')`],
-    ['sweep: blobs no tree names (heavy account)', `with named as (select e.value as sha from line l cross join jsonb_each_text(l.draft) e where l.user_id = 'u1'
+    ['sweep: blobs no tree names (heavy account)', `with named as (select f.sha from line l join line_file f on f.repo_id = l.repo_id and f.line = l.name where l.user_id = 'u1' and f.sha is not null
       union select e.value from repo r join cut c on c.repo_id = r.id cross join jsonb_each_text(c.tree) e where r.user_id = 'u1')
       select count(*) from blob b where b.user_id = 'u1' and b.created_at < now() - interval '1 day' and not exists (select 1 from named where named.sha = b.sha256)`],
     ['sweep: throttle', `select count(*) from throttle where at < now() - interval '1 day'`],

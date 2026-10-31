@@ -1132,15 +1132,22 @@ by repo.
    on those paths are written anew; commits share every folder they did
    not change; a diff skips folders of the same name; the sweep marks
    from the live roots down. The root's name is also how a place
-   elsewhere fetches a copy. *Solved in part:* a save that only gives
-   files new contents (the save as one types) is laid on the tree where
-   it is, never read into the Worker; a repo is answered with its tree
-   as the database writes it; a commit is kept as what it changed from
-   its parent, whole only every 16th along a run of changes (0020
-   cut_tree reads one whole), so commits take some sixteenth of what
-   they took. *To build next* (expand: trees beside the JSON, both
-   written; backfill; read from trees; contract the JSON): saves that
-   add, move or take away files still read the tree whole.
+   elsewhere fetches a copy. *Solved in part:* a draft is a row a path
+   (0022 line_file, keyed byte by byte, so all under a folder is one
+   range), and a save is asked about and written by the rows it touches
+   alone: whether it makes a file and a folder of one name, what the
+   draft would take (its paths, bytes and files' bytes, kept beside it as
+   each save changes them), then those rows written. A save of one file
+   to a repo of 20,000 was 90 ms of the database and 1.5 MB of its log
+   (what Neon keeps as history); it is some 4 ms and 8 KB, as for a repo
+   of ten. A device a few saves behind is told what each changed
+   (line_change, `?since=`), not the draft whole. A repo is answered
+   with its tree as the database writes it; a commit is kept as what it
+   changed from its parent, whole only every 16th along a run of changes
+   (0020 cut_tree reads one whole), so commits take some sixteenth of
+   what they took. *To build next:* a commit names its tree by a root
+   (folders by their entries' digest), so it is not read whole to be
+   named; the sweep marks from the live roots down.
 2. **Compute runs only where the copy is.** *Solved:* the Spec above;
    runs here are built from it. A place elsewhere needs only what the
    Spec names: the root (already fetched by digest from the Remote, the

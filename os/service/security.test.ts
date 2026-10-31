@@ -200,12 +200,12 @@ test('the role the Worker connects as reads and writes rows, and can make, chang
   const pg = await database();
   try {
     // Made by the function deploy.ts makes it with (neon.ts workerRole): a login role in remote_app and
-    // nothing more, its statements, idle transactions and lock waits cut off.
+    // nothing more, its statements, idle transactions and lock waits cut off, and nothing compiled (JIT).
     const role = await workerRole(drizzle(pg, {schema}) as unknown as Parameters<typeof workerRole>[0], 'test1');
     const [r] = (await pg.query<{super: boolean; settings: string[]}>(`select r.rolsuper as super, s.setconfig as settings from pg_roles r
       left join pg_db_role_setting s on s.setrole = r.oid where r.rolname = $1`, [role])).rows;
     assert.equal(r.super, false);
-    assert.deepEqual([...r.settings].sort(), ['idle_in_transaction_session_timeout=15s', 'lock_timeout=5s', 'statement_timeout=15s']);
+    assert.deepEqual([...r.settings].sort(), ['idle_in_transaction_session_timeout=15s', 'jit=off', 'lock_timeout=5s', 'statement_timeout=15s']);
     const member = (await pg.query<{role: string}>(`select b.rolname as role from pg_auth_members m join pg_roles a on a.oid = m.member
       join pg_roles b on b.oid = m.roleid where a.rolname = $1`, [role])).rows.map((x) => x.role);
     assert.deepEqual(member, ['remote_app']);
