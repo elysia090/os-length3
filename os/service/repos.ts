@@ -144,6 +144,8 @@ export async function cutId(c: {repo: string; parent: string | null; tree: Tree;
 }
 
 /** A commit as clients read it. */
+/** How many of a line's last saves are kept as what each changed (line_change), for devices a few saves behind. */
+const LINE_CHANGES = 64;
 /** The most paths a save may set and take away and still be laid on the draft where it is (repos.ts lineAt). */
 const FAST_SAVE = 16;
 /** A commit is kept whole every so many along a run of changes (0020): how many it takes to read one whole, at most. */
@@ -236,6 +238,18 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
   };
   /** The row of line `l` of repo `id`. */
   const lineRow = (id: number, l: string) => and(eq(line.repoId, id), eq(line.name, l));
+  /**
+   * Line `l` of repo `id`, at `version`, saved as `draft` (with `modes`), and what the save changed (`set`, `remove`)
+   * kept beside it for the devices that hold the draft before it (line_change), the oldest past LINE_CHANGES let go:
+   * one statement. What the draft takes after, as kept; nothing when it was not at `version`.
+   */
+  const saved = (tx: Db, id: number, l: string, version: number, draft: ReturnType<typeof sql>, modes: Modes, set: Tree, remove: string[]) =>
+    rows<{bytes: number; files: number}>(tx, sql`with u as (
+        update line set draft = ${draft}, modes = ${JSON.stringify(modes)}::jsonb, version = ${version + 1}, updated_at = now()
+        where repo_id = ${id} and name = ${l} and version = ${version} returning bytes, file_bytes),
+      c as (insert into line_change (repo_id, line, version, "set", gone) select ${id}, ${l}, ${version + 1}, ${JSON.stringify(set)}::jsonb, ${JSON.stringify(remove)}::jsonb from u),
+      d as (delete from line_change where repo_id = ${id} and line = ${l} and version <= ${version + 1 - LINE_CHANGES} and exists (select 1 from u))
+      select bytes, file_bytes as files from u`);
   /** A repo that is off answers nothing but being off, and until when it can come back. */
   /** What a repo turned off answers in place of anything else (410). */
   const offWords = (off: Date) => ({error: 'This repo is disabled', offAt: off.getTime(), until: off.getTime() + KEPT});
@@ -272,17 +286,25 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
 
   // The draft as the database writes it out, put into the answer as it comes: never read into objects and written out
   // again here (for a repo of thousands of files that was most of a request's time), its modes those of its files.
+  // Asked ?since=V by a device that holds the draft at version V: what each save after it changed (changes: [{set,
+  // remove}], in order), when every one is kept; else, and when not asked so, the draft whole.
   v1.get('/repos/:name', async (c) => {
     const user = c.get('userId'), name = c.req.param('name');
-    const [row] = await db.select({...lineCols, text: sql<string>`${line.draft}::text`,
+    const since = Number(c.req.query('since')), from = Number.isInteger(since) && since > 0 ? since : null;
+    const after = sql`from line_change k where k.repo_id = ${line.repoId} and k.line = ${line.name} and k.version > ${from} and k.version <= ${line.version}`;
+    const kept = sql`(select count(*) ${after}) = ${line.version} - ${from}`;
+    const [row] = await db.select({...lineCols,
+      text: from ? sql<string | null>`case when ${kept} then null else ${line.draft}::text end` : sql<string>`${line.draft}::text`,
+      changes: from ? sql<unknown[] | null>`case when ${kept} then (select coalesce(jsonb_agg(jsonb_build_object('set', k.set, 'remove', k.gone) order by k.version), '[]'::jsonb) ${after}) end` : sql<null>`null`,
       modes: sql<Modes>`(select coalesce(jsonb_object_agg(m.key, m.value), '{}'::jsonb) from jsonb_each(${line.modes}) m where jsonb_typeof(${line.draft} -> m.key) = 'string')`})
-      .from(line).innerJoin(repo, eq(repo.id, line.repoId)).where(and(eq(repo.userId, user), eq(repo.name, name), eq(line.name, lineOf(c)))) as (Line & {text: string})[];
+      .from(line).innerJoin(repo, eq(repo.id, line.repoId)).where(and(eq(repo.userId, user), eq(repo.name, name), eq(line.name, lineOf(c)))) as (Line & {text: string | null; changes: unknown[] | null})[];
     if (!row) {
       const gone = await goneAt(db, user, name);
       return c.json({error: 'Repo not found on Remote', ...(gone ? {gone} : {})}, 404);
     }
     on(row.off);
-    const {text, modes, ...rest} = row;
+    const {text, changes, modes, ...rest} = row;
+    if (text === null) return c.json({...lineShown(rest), modes, changes});
     const shown = JSON.stringify({...lineShown(rest), modes});
     return c.body(`${shown.slice(0, -1)},"draft":${text}}`, 200, {'Content-Type': 'application/json'});
   });
@@ -332,8 +354,8 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
         // taken away takes its mode with it. Its room is what the tree grew by, as the database counts it.
         const modes = applyModes(row.modes ?? {}, null, set as Tree, sent as Modes | undefined);
         for (const p of remove as string[]) delete modes[p];
-        const after = await tx.update(line).set({draft: sql`(${line.draft} - array(select jsonb_array_elements_text(${JSON.stringify(remove)}::jsonb))) || ${JSON.stringify(set)}::jsonb`,
-          modes, version: current + 1, updatedAt: sql`now()`}).where(and(lineRow(row.id, l), eq(line.version, current))).returning(kept);
+        const after = await saved(tx, row.id, l, current, sql`(draft - array(select jsonb_array_elements_text(${JSON.stringify(remove)}::jsonb))) || ${JSON.stringify(set)}::jsonb`,
+          modes, set as Tree, remove as string[]);
         const before = row.kept ?? {bytes: 0, files: 0};
         if (after[0]) {
           fitsUsed(row.used, Number(after[0].bytes) - Number(before.bytes));
@@ -360,7 +382,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
       // as the line was read, under the account's lock (a read of its own after was one more round trip a save).
       const before = row?.kept ?? {bytes: 0, files: 0};
       let after: {bytes: number; files: number}[];
-      if (row) after = await tx.update(line).set({draft: tree, modes, version: current + 1, updatedAt: sql`now()`}).where(and(lineRow(row.id, l), eq(line.version, current))).returning(kept);
+      if (row) after = await saved(tx, row.id, l, current, sql`${JSON.stringify(tree)}::jsonb`, modes, set as Tree, remove as string[]);
       else {
         await tx.delete(repoGone).where(and(eq(repoGone.userId, user), eq(repoGone.name, name)));
         const [made] = await tx.insert(repo).values({userId: user, name}).returning({id: repo.id}) as {id: number}[];

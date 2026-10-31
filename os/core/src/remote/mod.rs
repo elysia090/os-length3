@@ -232,10 +232,16 @@ struct LineThere {
 /// What the Remote said of a line, when it said it as a Remote does: a version, a draft each of whose
 /// entries is a digest or a folder (null), and a head or none. Anything else is refused, never taken for
 /// a line with no files (bug: a network's sign-in page was read as version 0 with nothing in it, and
-/// every file here unchanged since the last agreement was removed).
-fn line_there(url: &str, v: &serde_json::Value) -> Result<LineThere> {
+/// every file here unchanged since the last agreement was removed). Asked from the version agreed
+/// (?since=), the Remote may say only what each save after it changed (`changes`): laid on `agreed`, the
+/// draft at that version, in turn, they are the draft.
+fn line_there(url: &str, v: &serde_json::Value, agreed: Option<&Tree>) -> Result<LineThere> {
     let version = v["version"].as_i64().filter(|n| *n >= 0);
-    let draft = v["draft"].as_object().filter(|d| d.values().all(|x| x.is_string() || x.is_null()));
+    let draft = match (&v["draft"], &v["changes"], agreed) {
+        (serde_json::Value::Object(d), _, _) if d.values().all(|x| x.is_string() || x.is_null()) => Some(tree_of(&v["draft"])),
+        (serde_json::Value::Null, serde_json::Value::Array(cs), Some(agreed)) => changed(agreed, cs),
+        _ => None,
+    };
     let head = match &v["head"] { serde_json::Value::Null => Some(None), serde_json::Value::String(h) => Some(Some(h.clone())), _ => None };
     // Modes, when it keeps them: each a file's permission bits.
     let modes = match &v["modes"] {
@@ -244,13 +250,31 @@ fn line_there(url: &str, v: &serde_json::Value) -> Result<LineThere> {
         _ => None,
     };
     match (version, draft, head, modes) {
-        (Some(version), Some(_), Some(head), Some(modes)) => {
-            let draft = tree_of(&v["draft"]);
+        (Some(version), Some(draft), Some(head), Some(modes)) => {
             let modes = modes.map(|m| modes_for(&draft, &m));
             Ok(LineThere { version, draft, head, modes })
         }
         _ => Err(odd(url)),
     }
+}
+
+/// `agreed` with each change laid on in turn, as the Remote laid each save on its draft (repos.ts applyDiff): each path
+/// taken away goes with everything under it, then each path set is written. None when one is not a change the Remote
+/// says.
+fn changed(agreed: &Tree, changes: &[serde_json::Value]) -> Option<Tree> {
+    let mut tree = agreed.clone();
+    for c in changes {
+        let set = c["set"].as_object().filter(|s| s.values().all(|x| x.is_string() || x.is_null()))?;
+        for p in c["remove"].as_array()? {
+            let p = p.as_str()?;
+            tree.remove(p);
+            let under = format!("{p}/");
+            let gone: Vec<String> = tree.range(under.clone()..).take_while(|(k, _)| k.starts_with(&under)).map(|(k, _)| k.clone()).collect();
+            for k in gone { tree.remove(&k); }
+        }
+        for (p, x) in set { tree.insert(p.clone(), x.as_str().map(String::from)); }
+    }
+    Some(tree)
 }
 
 // ---- syncing ----
@@ -300,8 +324,10 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
         let here = local_tree(&dir);
         first.get_or_insert_with(|| here.tree.clone());
         out.unsynced = here.unsynced.clone();
-        // Before sending, see whether the Remote moved.
-        let there = there_of(&client.url, client.call("GET", &path, None)?, base.version)?;
+        // Before sending, see whether the Remote moved: asked from the version agreed, it says only what changed since
+        // (nothing, when nothing did), not the draft whole each time.
+        let looked = if base.version > 0 { format!("{path}{}since={}", if path.contains('?') { '&' } else { '?' }, base.version) } else { path.clone() };
+        let there = there_of(&client.url, client.call("GET", &looked, None)?, base.version, Some(&base.tree))?;
         let remote_version = there.as_ref().map_or(0, |l| l.version);
         // Whether the Remote keeps modes: one that has the line says; one that has not, is taken to (what is sent says them).
         let kept = there.as_ref().is_none_or(|l| l.modes.is_some());
@@ -409,9 +435,9 @@ fn draft_path(repo: &str, line: &str, agreed: bool) -> String {
 /// line, unless the copy was in step before (discarded there, or another
 /// account's): then nothing here is taken for removed, and why is said
 /// (src/remote/sync.ts does the same).
-fn there_of(url: &str, reply: Reply, agreed: i64) -> Result<Option<LineThere>> {
+fn there_of(url: &str, reply: Reply, agreed: i64, tree: Option<&Tree>) -> Result<Option<LineThere>> {
     match reply {
-        Reply::Ok(v) => Ok(Some(line_there(url, &v)?)),
+        Reply::Ok(v) => Ok(Some(line_there(url, &v, tree)?)),
         Reply::NotFound(v) if agreed > 0 => Err(failed(Failure::Status(404), if v["gone"].is_null() {
             crate::tr!("Repo not found on Remote; local copy preserved", "Remote 上にこの repo が見つかりません。ローカルのコピーは保持されています")
         } else {
@@ -752,7 +778,7 @@ fn free_with(client: &Client, repos: &Repos, repo: &str) -> Result<u64> {
             return Err(refused(crate::tr!("It changed while it was being freed; it is kept here and sent next", "空けているあいだに変わりました。ここに残し、次に送ります")));
         }
         if !off {
-            let there = match client.json("GET", &at(repo, line, ""), None).and_then(|v| line_there(&client.url, &v)) {
+            let there = match client.json("GET", &at(repo, line, ""), None).and_then(|v| line_there(&client.url, &v, None)) {
                 Ok(t) => t,
                 Err(e) => return Err(refused(e)),
             };
@@ -827,19 +853,19 @@ mod tests {
     fn only_a_line_as_the_remote_answers_it_is_taken() {
         let url = "https://os.length3.com";
         let ok = serde_json::json!({"version": 3, "draft": {"a.txt": "ab", "dir": null}, "head": "c1", "updatedAt": 1});
-        assert_eq!(line_there(url, &ok).unwrap(), LineThere { version: 3, draft: t(&[("a.txt", Some("ab")), ("dir", None)]), head: Some("c1".into()), modes: None });
+        assert_eq!(line_there(url, &ok, None).unwrap(), LineThere { version: 3, draft: t(&[("a.txt", Some("ab")), ("dir", None)]), head: Some("c1".into()), modes: None });
         // A Remote that keeps modes says them; only its files' are taken, and only as permission bits.
         let moded = serde_json::json!({"version": 3, "draft": {"run.sh": "ab", "dir": null}, "head": null, "modes": {"run.sh": 493, "dir": 493, "gone": 493}});
-        assert_eq!(line_there(url, &moded).unwrap().modes, Some(Modes::from([("run.sh".to_string(), 0o755)])));
+        assert_eq!(line_there(url, &moded, None).unwrap().modes, Some(Modes::from([("run.sh".to_string(), 0o755)])));
         for odd in [serde_json::json!({"version": 3, "draft": {}, "head": null, "modes": []}), serde_json::json!({"version": 3, "draft": {}, "head": null, "modes": {"a": "755"}}),
             serde_json::json!({"version": 3, "draft": {}, "head": null, "modes": {"a": 0o4755}})] {
-            assert!(line_there(url, &odd).is_err(), "{odd}");
+            assert!(line_there(url, &odd, None).is_err(), "{odd}");
         }
-        assert_eq!(line_there(url, &serde_json::json!({"version": 0, "draft": {}, "head": null})).unwrap().head, None);
+        assert_eq!(line_there(url, &serde_json::json!({"version": 0, "draft": {}, "head": null}), None).unwrap().head, None);
         for odd in [serde_json::Value::Null, serde_json::json!({}), serde_json::json!({"version": "3", "draft": {}, "head": null}),
             serde_json::json!({"version": 3, "draft": null, "head": null}), serde_json::json!({"version": 3, "draft": {"a": 1}, "head": null}),
             serde_json::json!({"version": -1, "draft": {}, "head": null}), serde_json::json!({"version": 3, "draft": {}, "head": 7})] {
-            assert!(line_there(url, &odd).is_err(), "{odd}");
+            assert!(line_there(url, &odd, None).is_err(), "{odd}");
         }
     }
 
@@ -876,12 +902,30 @@ mod tests {
     fn a_copy_in_step_is_not_taken_apart_by_a_remote_without_it() {
         let url = "https://os.length3.com";
         // Never in step: the Remote's empty, and all here is new.
-        assert_eq!(there_of(url, Reply::NotFound(Default::default()), 0), Ok(None));
+        assert_eq!(there_of(url, Reply::NotFound(Default::default()), 0, None), Ok(None));
         // In step before: not taken for removed there, and said.
-        assert!(there_of(url, Reply::NotFound(serde_json::json!({"gone": 1})), 3).is_err_and(|e| e.contains("deleted") || e.contains("破棄")));
-        assert!(there_of(url, Reply::NotFound(Default::default()), 3).is_err_and(|e| e.contains("not found on Remote") || e.contains("見つかりません")));
+        assert!(there_of(url, Reply::NotFound(serde_json::json!({"gone": 1})), 3, None).is_err_and(|e| e.contains("deleted") || e.contains("破棄")));
+        assert!(there_of(url, Reply::NotFound(Default::default()), 3, None).is_err_and(|e| e.contains("not found on Remote") || e.contains("見つかりません")));
         let line = serde_json::json!({"version": 3, "draft": {}, "head": null});
-        assert_eq!(there_of(url, Reply::Ok(line), 3), Ok(Some(LineThere { version: 3, draft: Tree::new(), head: None, modes: None })));
+        assert_eq!(there_of(url, Reply::Ok(line), 3, None), Ok(Some(LineThere { version: 3, draft: Tree::new(), head: None, modes: None })));
+    }
+
+    #[test]
+    fn what_changed_since_the_version_agreed_is_laid_on_what_was_agreed_in_turn() {
+        let url = "https://os.length3.com";
+        let agreed = t(&[("a.txt", Some("1")), ("dir/b.txt", Some("2")), ("dir/c/d.txt", Some("3")), ("dirt.txt", Some("4"))]);
+        let said = serde_json::json!({"version": 5, "head": null, "modes": {"new.sh": 493, "gone.sh": 493}, "changes": [
+            {"set": {"a.txt": "9"}, "remove": []},
+            {"set": {"new.sh": "7", "empty": null}, "remove": ["dir"]},
+        ]});
+        let line = line_there(url, &said, Some(&agreed)).unwrap();
+        // A folder taken away goes with all under it, and nothing beside it of a name that begins the same.
+        assert_eq!(line.draft, t(&[("a.txt", Some("9")), ("dirt.txt", Some("4")), ("empty", None), ("new.sh", Some("7"))]));
+        assert_eq!(line.modes, Some(Modes::from([("new.sh".to_string(), 0o755)])));
+        // Nothing since: what was agreed. Without it to lay them on, or a change not of the Remote's form: refused.
+        assert_eq!(line_there(url, &serde_json::json!({"version": 3, "head": null, "changes": []}), Some(&agreed)).unwrap().draft, agreed);
+        assert!(line_there(url, &said, None).is_err());
+        assert!(line_there(url, &serde_json::json!({"version": 5, "head": null, "changes": [{"set": {"a": 1}, "remove": []}]}), Some(&agreed)).is_err());
     }
 
     #[test]

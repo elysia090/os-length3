@@ -260,6 +260,22 @@ export const line = pgTable('line', {
   check('line_version', sql`${t.version} >= 0`), check('line_started_by', within('started_by', 200))]);
 
 /**
+ * What each of a line's last saves changed (repos.ts: its paths set, and those taken away, each with what is under it),
+ * by the version it made: a device that holds the draft at a version is answered what came after it, not the draft
+ * whole again (GET /v1/repos/:name?since=). The last LINE_CHANGES of each line are kept; one asking from before them,
+ * or past a draft laid down whole (a merge), is answered the draft whole.
+ */
+export const lineChange = pgTable('line_change', {
+  repoId: bigint('repo_id', {mode: 'number'}).notNull(),
+  line: text('line').notNull(),
+  version: integer('version').notNull(),
+  set: jsonb('set').$type<Record<string, string | null>>().notNull(),
+  gone: jsonb('gone').$type<string[]>().notNull(),
+}, (t) => [primaryKey({columns: [t.repoId, t.line, t.version]}),
+  foreignKey({name: 'line_change_line', columns: [t.repoId, t.line], foreignColumns: [line.repoId, line.name]}).onDelete('cascade').onUpdate('cascade'),
+  check('line_change_set', sql`jsonb_typeof(${t.set}) = 'object'`), check('line_change_gone', sql`jsonb_typeof(${t.gone}) = 'array'`)]);
+
+/**
  * A line handed to main: Submit change. Submitting again after more commits
  * makes a new version of the same change; a review is of one version. The
  * receiver merges or rejects it; the one who submitted it may reset it

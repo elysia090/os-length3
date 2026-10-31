@@ -1814,3 +1814,27 @@ test('a small save laid on the draft where it is comes out as the diff laid on a
     assert.deepEqual((await s.call('GET', '/v1/repos/same', {token: t})).json.draft, draft, `${i} ${JSON.stringify({set, remove})}`);
   }
 });
+
+test('a device that holds the draft at a version is answered what each save after it changed; one too far behind, the draft whole', async () => {
+  const s = await service();
+  const t = await s.start('Ren');
+  const a = (await upload(s, t, enc.encode('a'))).sha, b = (await upload(s, t, enc.encode('b'))).sha;
+  const save = async (version: number, set: Record<string, string | null>, remove: string[] = []) =>
+    (await s.call('PATCH', '/v1/repos/since/draft', {token: t, body: {version, set, remove}})).json.version as number;
+  const read = async (since: number) => (await s.call('GET', `/v1/repos/since?since=${since}`, {token: t})).json as unknown as
+    {version: number; draft?: Record<string, string>; changes?: {set: Record<string, string>; remove: string[]}[]};
+  let v = await save(0, {'a.txt': a, 'dir/b.txt': b, 'dir/c.txt': b});
+  v = await save(v, {'a.txt': b});
+  v = await save(v, {'new.txt': a}, ['dir']);
+  // Nothing after it: nothing to say, and no draft.
+  assert.deepEqual(await read(v), {...await read(v), changes: []});
+  assert.equal((await read(v)).draft, undefined);
+  // From version 1: the two saves after it, in order, as each was sent.
+  assert.deepEqual((await read(1)).changes, [{set: {'a.txt': b}, remove: []}, {set: {'new.txt': a}, remove: ['dir']}]);
+  // Not asked so, or asked from before what is kept, or from a version past it: the draft whole.
+  assert.deepEqual((await s.call('GET', '/v1/repos/since', {token: t})).json.draft, {'a.txt': b, 'new.txt': a});
+  for (let i = 0; i < 70; i++) v = await save(v, {'a.txt': i % 2 ? a : b});
+  assert.ok((await read(1)).draft && !(await read(1)).changes);
+  assert.equal((await read(v - 64)).changes?.length, 64);
+  assert.ok((await read(v + 5)).draft);
+});
