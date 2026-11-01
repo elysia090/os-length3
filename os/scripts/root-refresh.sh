@@ -95,7 +95,8 @@ gitflags="CC=$cc prefix=/usr NO_GETTEXT=YesPlease NO_TCLTK=YesPlease NO_PERL=Yes
 # OpenSSH's client programs, its settings at /etc/ssh.
 (cd "$work/openssh" && CC="$cc" CFLAGS="$hard -fPIE" CPPFLAGS="-I$dep/usr/include" LDFLAGS="$pie -L$dep/usr/lib" \
   LIBS='-pthread' ./configure --prefix=/usr --sysconfdir=/etc/ssh --with-ssl-dir="$dep/usr" --with-zlib="$dep/usr" \
-    --without-pam --without-kerberos5 --without-libedit --without-ldns --without-selinux --without-zstd >/dev/null &&
+    --without-pam --without-kerberos5 --without-libedit --without-ldns --without-selinux --without-zstd \
+    --without-pie >/dev/null &&
   make -s -j"$jobs" ssh scp sftp ssh-add ssh-agent ssh-keygen ssh-keyscan)
 mkdir -p "$work/out/openssh-client/usr/bin"
 for p in ssh scp sftp ssh-add ssh-agent ssh-keygen ssh-keyscan; do
@@ -110,13 +111,15 @@ find "$work/out" -type f \( -perm -u+x -o -name '*.a' \) | while read -r f; do
   strip --strip-debug "$f"
 done
 
-# Each program made stands alone: a static PIE (ELF type DYN) that names no interpreter.
-find "$work/out" -type f -perm -u+x | while read -r f; do
+# Each program made stands alone: a static PIE (ELF type DYN) that names no interpreter. Every one that is not is
+# said, with what it is, before the refresh stops.
+bad=$(find "$work/out" -type f -perm -u+x | sort | while read -r f; do
   [ "$(head -c 4 "$f" | od -An -c | tr -d ' ')" = "177ELF" ] || continue
-  if readelf -l "$f" | grep -q 'Requesting program interpreter' || ! readelf -h "$f" | grep -q 'Type:.*DYN'; then
-    echo "root-refresh: $f is not a static PIE" >&2; exit 1
-  fi
-done
+  type=$(readelf -h "$f" | sed -n 's/^ *Type: *\([A-Z]*\).*/\1/p')
+  interp=$(readelf -l "$f" | sed -n 's/.*Requesting program interpreter: \(.*\)]/\1/p')
+  [ "$type" = DYN ] && [ -z "$interp" ] || echo "${f#"$work/out/"} ($type${interp:+, interpreter $interp})"
+done)
+[ -z "$bad" ] || { echo "root-refresh: not static PIEs:" >&2; echo "$bad" >&2; exit 1; }
 
 # Each in place of the base's: what the base's package had goes, what was made comes in (the database says which).
 for p in openssl curl git openssh-client; do
