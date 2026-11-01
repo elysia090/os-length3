@@ -1,6 +1,7 @@
 // What a process is given is zero, whatever ran before it in the same memory: a process writes deep in its stack
 // (frames made with sub rsp, frames of pushes and calls alone, a signal handler's frame down there), in its bss and in
-// a large mapping, and ends; the next one finds its stack below what it used, its bss and a new mapping all zero.
+// a large mapping, and ends; the next one finds its stack below what it used, its bss and a new mapping all zero. So
+// does a process that, having written so, execs its own program (which the kernel starts again on the same memory).
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
@@ -56,9 +57,14 @@ int main(int argc, char **argv) {
   setvbuf(stdout, 0, _IONBF, 0);
   if (argc > 1 && !strcmp(argv[1], "dirty")) { dirty(); return 0; }
   if (argc > 1 && !strcmp(argv[1], "check")) { check(); return 0; }
+  if (argc > 1 && !strcmp(argv[1], "dirty-then-check")) { dirty(); execl("/proc/self/exe", argv[0], "check", (char *)0); return 1; }
   for (int round = 0; round < 3; round++) { run("/proc/self/exe", "dirty"); run("/proc/self/exe", "check"); }
   // A forked child dirties its copy; the next one forked is given zeros below its parent's stack too.
+  // Written, then the same program again in that process.
   pid_t k = fork();
+  if (k == 0) { execl("/proc/self/exe", argv[0], "dirty-then-check", (char *)0); _exit(127); }
+  waitpid(k, 0, 0);
+  k = fork();
   if (k == 0) { dirty(); _exit(0); }
   waitpid(k, 0, 0);
   k = fork();

@@ -42,6 +42,7 @@ class Thread {
     this.clock = clocks(m.origin); // the kernel's (clock.mjs), read here as a vDSO does
     this.module = m.module;
     this.modules = m.extras; // [{module, base, count}] known here
+    this.fpuOps = m.fpuOps;
     this.fpu = new Fpu(() => new Uint8Array(this.memory.buffer), m.fpuOps);
     if (m.fpu) Object.assign(this.fpu, {top: m.fpu.top, cw: m.fpu.cw, sw: m.fpu.sw, st: m.fpu.st.map(([kind, sign, e, mm]) => ({kind, sign, e, m: BigInt(mm)}))});
     this.lock();
@@ -144,7 +145,12 @@ class Thread {
     this.lock();
     this.catchUp();
     if (reply === REPLY.REGS) this.setRegs(Array.from({length: REGS.length}, (_, n) => i64[CH.REGS + n]));
-    if (reply === REPLY.REDIRECT) {
+    // Its program starts again on this memory (an exec of the same image): this instance runs it, afresh.
+    if (reply === REPLY.RENEW) {
+      this.fpu = new Fpu(() => new Uint8Array(this.memory.buffer), this.fpuOps);
+      if (this.low) this.low.value = -1n;
+    }
+    if (reply === REPLY.REDIRECT || reply === REPLY.RENEW) {
       this.setRegs(Array.from({length: REGS.length}, (_, n) => i64[CH.REGS + n]));
       this.resumeAt = i64[CH.RIP];
       throw new Again();

@@ -295,6 +295,11 @@ export class RemoteTask extends Task {
     this.keep = from && !image.segments && from.memory === memory ? [image.facts.imageStart ?? 0, image.facts.imageEnd] : null;
     if (this.worker) this.execd = true;
   }
+  /** Its image starts again on its memory (Process.execve): its Worker keeps its instance, told to start afresh (REPLY.RENEW). */
+  renew() {
+    this.fpuState = null;
+    if (this.worker) this.renewed = true;
+  }
 
   attach() {}
   /** How deep its stack has gone, as its Worker last said (lower.rs G_LOW); null if not known. */
@@ -347,6 +352,7 @@ export class RemoteTask extends Task {
     this.state = 'running';
     if (!this.worker) { this.worker = this.kernel.worker(); this.post(); return; }
     if (this.execd) { this.execd = false; this.reply(REPLY.AWAY); this.post(); return; }
+    if (this.renewed) { this.renewed = false; this.i64[CH.RIP] = this.resumeAt; this.reply(REPLY.RENEW); return; }
     if (this.redirected) { this.i64[CH.RIP] = this.resumeAt; this.reply(REPLY.REDIRECT); return; }
     const changed = this.regsChanged;
     this.regsChanged = false;

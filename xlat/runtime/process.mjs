@@ -355,12 +355,21 @@ export class Kernel {
     m.keeps = same(m);
     PROFILE.memoriesReused++;
     if (m.keeps) PROFILE.imagesKept++;
-    // What a process wrote and nothing zeroed since, up to what is given out; the rest goes as it is mapped (cover).
-    const end = pages * WASM_PAGE, keep = m.keeps ? image.facts.readOnly ?? [] : [];
-    for (const [a, b] of clip(m.written, 0, end)) { zeroExcept(m, a, b, keep); PROFILE.zeroed += b - a; }
-    m.written = cut(m.written, 0, end);
+    clean(m, pages, m.keeps ? image.facts.readOnly ?? [] : []);
     this.reuseMemory(m);
     return m;
+  }
+  /**
+   * `memory` goes on under its process into a new run of the image it ran (an exec of the same program): zeroed as
+   * it would be let go of and taken back, and not let go of, so what is instantiated over it stays (Task.renew).
+   */
+  renew(memory, written, pages, image) {
+    memory.written = merge([...memory.written ?? [], ...written]);
+    memory.keeps = true;
+    memory.imageOf = image;
+    memory.deepest = undefined;
+    clean(memory, pages, image.facts.readOnly ?? []);
+    PROFILE.renewed++;
   }
   /**
    * `memory` is no longer one process's: kept for another when nothing else can run on it (no other process, no
@@ -930,6 +939,12 @@ function merge(ranges) {
 /** The parts of (merged) `ranges` within [from, to), and those outside it. */
 const clip = (ranges, from, to) => (ranges ?? []).map(([a, b]) => [Math.max(a, from), Math.min(b, to)]).filter(([a, b]) => b > a);
 const cut = (ranges, from, to) => (ranges ?? []).flatMap(([a, b]) => [[a, Math.min(b, from)], [Math.max(a, to), b]]).filter(([a, b]) => b > a);
+/** What a process wrote in `m` and nothing zeroed since, up to `pages`, zeroed but for `keep`; the rest goes as it is mapped (cover). */
+function clean(m, pages, keep) {
+  const end = pages * WASM_PAGE;
+  for (const [a, b] of clip(m.written, 0, end)) { zeroExcept(m, a, b, keep); PROFILE.zeroed += b - a; }
+  m.written = cut(m.written, 0, end);
+}
 /** Zero [from, to) of `memory` but for the ranges `keep`. */
 function zeroExcept(memory, from, to, keep) { for (const [a, b] of gaps(from, to, keep)) zero(memory, a, b); }
 /** Whether data segment `s` ({offset, bytes}) lies within one of `ranges`. */
@@ -1112,6 +1127,10 @@ export class Process {
     // The point of no return: the other threads go (Linux's de_thread), and so does a memory shared with a vfork parent.
     const t = this.task, written = this.memory ? this.written() : null;
     for (const other of [...this.tasks]) if (other !== t) { this.kernel.endTask(other); this.tasks.delete(other); }
+    // The program it runs, on a memory of its own (not a vfork parent's), its data laid here: it starts again where it
+    // is, its memory zeroed as if taken anew and its translation's instance kept (a shell's commands are mostly its own
+    // binary: BusyBox's applets).
+    const again = image === this.image && image.segments && this.memory?.users === 1 && !this.memory.tainted && this.tasks.size === 1;
     this.image = image;
     this.stackLow = Math.ceil((f.imageEnd + GUARD) / PAGE) * PAGE;
     this.stackTop = this.stackLow + STACK_BYTES;
@@ -1121,8 +1140,11 @@ export class Process {
     this.fixed = []; // MAP_FIXED mappings below mapBase
     this.unmapShared(); // a vfork child's list is its own: empty, though the memory it ran on was its parent's
     this.maps = [];
-    this.kernel.letGo(this.memory, written); // its own, or still its vfork parent's
-    this.memory = this.newMemory(this.mapBase / WASM_PAGE, image);
+    if (again) this.kernel.renew(this.memory, written, this.mapBase / WASM_PAGE, image);
+    else {
+      this.kernel.letGo(this.memory, written); // its own, or still its vfork parent's
+      this.memory = this.newMemory(this.mapBase / WASM_PAGE, image);
+    }
     this.argv = argv;
     this.env = env;
     this.comm = null;
@@ -1133,7 +1155,7 @@ export class Process {
     for (const [sig, h] of this.actions) if (h.handler > 1n) this.actions.delete(sig);
     t.altstack = {sp: 0n, size: 0n, flags: 2};
     if (image.segments) lay(this.bytes, this.memory.keeps ? image.segments.filter((x) => !within(x, image.facts.readOnly)) : image.segments);
-    t.load(image, this.memory);
+    if (again) t.renew(); else t.load(image, this.memory);
     // A program starts with every register zero but its stack pointer (as Linux's start_thread leaves them).
     t.setContext(REG.map(() => 0n), 0n);
     const sp = this.stack(argv, env);
@@ -1310,6 +1332,13 @@ export class Task {
 
   get bytes() { return new Uint8Array(this.memory.buffer); }
 
+  /** Its image starts again on its memory (Process.execve): the instance stays; its x87 and its stack's depth start afresh. */
+  renew() {
+    this.fpu = new Fpu(() => this.bytes, this.image.fpuOps);
+    const low = this.instance?.exports.low;
+    if (low) low.value = -1n;
+  }
+
   imports() {
     return {env: {
       memory: this.memory,
@@ -1370,7 +1399,7 @@ export class Task {
 export const REG = [...Array.from({length: 16}, (_, n) => `r${n}`), 'fs', 'fl', 'rf'];
 
 /** Where the time went (run.mjs prints it with XLAT_TIMING=1): translating, compiling wasm, how much, and what a pack root fetched. */
-export const PROFILE = {images: 0, modules: 0, bytes: 0, translate: 0, compile: 0, fetches: 0, fetched: 0, kept: 0, consolidated: 0, memoriesReused: 0, imagesKept: 0, zeroed: 0};
+export const PROFILE = {images: 0, modules: 0, bytes: 0, translate: 0, compile: 0, fetches: 0, fetched: 0, kept: 0, consolidated: 0, memoriesReused: 0, imagesKept: 0, zeroed: 0, renewed: 0};
 /** Modules of code reached later past which a program run again is translated again as one (Kernel.consolidate). */
 export const CONSOLIDATE = 16;
 /** Memories let go of that are kept for the next process, and the largest kept (Kernel.letGo). */
