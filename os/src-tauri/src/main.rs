@@ -3,7 +3,10 @@
 // them is what `l3` does on the command line, through the same core.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use length3_core::{api, paths};
+use length3_core::api;
+// The data directory, for what only a Unix has here: one app at a time (desktop.rs), and SSH's card.
+#[cfg(unix)]
+use length3_core::paths;
 
 #[cfg(target_os = "linux")]
 mod shells;

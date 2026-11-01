@@ -19,12 +19,8 @@ pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
         Some(r) => tr!("root  {} {} (where Prompts run)", "root  {} {}（Prompt が動く環境）", r.name, r.version),
         None => tr!("root  none yet (l3 root fetch)", "root  まだありません（l3 root fetch）"),
     }];
-    // SSH into the Prompts: the listener, when it runs (l3 address lists where; l3 address ssh off stops it).
-    let listening = length3_core::ssh::listening(&paths::data_dir());
-    t.push(match &listening {
-        Some(l) => tr!("SSH  on · {} · port {} (l3 address; l3 address ssh off stops it)", "SSH  オン · {} · ポート {}（l3 address。止めるなら l3 address ssh off）", l.scope.said(), l.port),
-        None => tr!("SSH  off (l3 address ssh on)", "SSH  オフ（l3 address ssh on）"),
-    });
+    let (ssh_said, ssh) = ssh_here();
+    t.push(ssh_said);
     t.push(String::new());
     t.push(tr!("This device  {} free of {} (the host's figures) · this OS {}", "この端末  空き {} / {}（ホストの値） · この OS {}", bytes(s.host_free), bytes(s.host_total), bytes(s.allocated)));
     // What runs used of time and space in the last day, by repo (core compute.rs ledger): the most CPU first.
@@ -52,7 +48,7 @@ pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
     if s.freeable > 0 { t.push(tr!("Can be freed: {} (all of it: l3 free all)", "空けられるもの：{}（全部なら l3 free all）", bytes(s.freeable))); }
     let items: Vec<_> = s.items.iter().map(|i| json!({"id": i.id, "what": i.what, "allocated": i.allocated, "room": i.room})).collect();
     let compute: Vec<_> = used.iter().map(|(repo, n, u)| json!({"repo": repo, "runs": n, "usage": u})).collect();
-    Ok(Reply::data(t.join("\n"), json!({"compute": compute, "root": current, "ssh": listening.map(|l| json!({"port": l.port, "scope": l.scope, "destinations": l.destinations(), "fingerprint": l.fingerprint})), "hostTotal": s.host_total, "hostFree": s.host_free, "host": s.host,
+    Ok(Reply::data(t.join("\n"), json!({"compute": compute, "root": current, "ssh": ssh, "hostTotal": s.host_total, "hostFree": s.host_free, "host": s.host,
         "allocated": s.allocated, "freeable": s.freeable, "items": items})))
 }
 
@@ -266,6 +262,20 @@ pub fn dotfile_rm(_: &Ctx, call: &Call) -> Result<Reply> {
 }
 
 /// `l3 host`: what this machine has for running this OS's VMs (core vm.rs), and for what it lacks, the one fix.
+/// SSH into the Prompts, said and as data: the listener, when it runs (l3 address lists where; l3 address ssh off stops it).
+#[cfg(unix)]
+fn ssh_here() -> (String, serde_json::Value) {
+    match length3_core::ssh::listening(&paths::data_dir()) {
+        Some(l) => (tr!("SSH  on · {} · port {} (l3 address; l3 address ssh off stops it)", "SSH  オン · {} · ポート {}（l3 address。止めるなら l3 address ssh off）", l.scope.said(), l.port),
+            json!({"port": l.port, "scope": l.scope, "destinations": l.destinations(), "fingerprint": l.fingerprint})),
+        None => (tr!("SSH  off (l3 address ssh on)", "SSH  オフ（l3 address ssh on）"), serde_json::Value::Null),
+    }
+}
+#[cfg(not(unix))]
+fn ssh_here() -> (String, serde_json::Value) {
+    (tr!("SSH  not here (Linux only for now)", "SSH  ここにはありません（いまは Linux だけ）"), serde_json::Value::Null)
+}
+
 #[cfg(target_os = "linux")]
 pub fn host(_: &Ctx, _: &Call) -> Result<Reply> {
     let h = length3_core::vm::host(&paths::data_dir());

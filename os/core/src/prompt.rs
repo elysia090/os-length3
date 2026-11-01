@@ -62,8 +62,7 @@ pub fn held(ns: u64) -> Held {
 /// used (its children's, which the kernel adds to it as it waits for them; pid 1 waits for every orphan). So every
 /// process that was ever in it is counted once, ended or not.
 pub fn cpu_ms(ns: u64) -> u64 {
-    // SAFETY: sysconf reads a constant of the system; no memory is passed.
-    let hz = unsafe { libc::sysconf(libc::_SC_CLK_TCK) }.max(1) as u64;
+    let hz = clock_ticks();
     let ticks: u64 = members(ns).iter().filter_map(|p| {
         let t = fs::read_to_string(format!("/proc/{p}/stat")).ok()?;
         // After the command's name (in parentheses, which may hold anything): utime, stime, cutime, cstime are the
@@ -76,10 +75,33 @@ pub fn cpu_ms(ns: u64) -> u64 {
 
 /// Pause (every process in the namespace stopped: all it holds stays, it uses no CPU) or go on. How many were told.
 pub fn pause(ns: u64, paused: bool) -> usize {
-    let sig = if paused { libc::SIGSTOP } else { libc::SIGCONT };
-    // SAFETY: kill sends a signal to a pid just read as one of the namespace's; no memory is passed.
-    members(ns).into_iter().filter(|&p| unsafe { libc::kill(p as libc::pid_t, sig) } == 0).count()
+    let sig = if paused { Signal::Stop } else { Signal::Cont };
+    members(ns).into_iter().filter(|&p| signal(p, sig)).count()
 }
+
+/// A signal for a process of a Prompt's.
+#[derive(Clone, Copy)]
+pub enum Signal { Stop, Cont, Kill }
+
+/// `sig` sent to `pid`: whether it was. Where Prompts never run on the root (Windows: they run translated, as in a
+/// browser), there is no process of one to send it to.
+#[cfg(unix)]
+pub fn signal(pid: u32, sig: Signal) -> bool {
+    let s = match sig { Signal::Stop => libc::SIGSTOP, Signal::Cont => libc::SIGCONT, Signal::Kill => libc::SIGKILL };
+    // SAFETY: kill sends a signal to a pid; no memory is passed.
+    unsafe { libc::kill(pid as libc::pid_t, s) == 0 }
+}
+#[cfg(not(unix))]
+pub fn signal(_pid: u32, _sig: Signal) -> bool { false }
+
+/// Clock ticks a second, as /proc/<pid>/stat counts CPU in them.
+#[cfg(unix)]
+fn clock_ticks() -> u64 {
+    // SAFETY: sysconf reads a constant of the system; no memory is passed.
+    (unsafe { libc::sysconf(libc::_SC_CLK_TCK) }).max(1) as u64
+}
+#[cfg(not(unix))]
+fn clock_ticks() -> u64 { 100 }
 
 /// The first child of `supervisor` (the Prompt's pid 1), once it exists.
 pub fn init_of(supervisor: u32) -> Option<u32> {
@@ -259,7 +281,7 @@ pub fn stop(data: &Path, r: &Running) -> Stopped {
     let before = ns.map(held).unwrap_or(Held { processes: 0, memory: 0 });
     // Only the process it was: a pid given to another since is left alone.
     if start_ticks(r.pid) == Some(r.start_ticks) {
-        unsafe { libc::kill(r.pid as libc::pid_t, libc::SIGKILL) };
+        signal(r.pid, Signal::Kill);
     }
     let _ = fs::remove_file(records(data).join(format!("{}.json", r.pid)));
     match ns {
@@ -402,7 +424,7 @@ mod tests {
             let r = Running { repo: "here".into(), pid: sup.id(), network: false, root: None, preparing: true, started: 0, start_ticks: start_ticks(sup.id()).unwrap() };
             assert_eq!(held_by(&r).map(|h| h.processes), Some(1));
             // Its pid 1 ended, the child between ends with it, then the shell.
-            for p in members(ns) { unsafe { libc::kill(p as libc::pid_t, libc::SIGKILL) }; }
+            for p in members(ns) { signal(p, Signal::Kill); }
         } else {
             eprintln!("skipped: no user namespace here");
             let _ = sup.kill();
