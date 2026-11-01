@@ -49,6 +49,14 @@ libc="$work/libc"
 (cd "$work/musl" && ./configure --prefix="$libc" --disable-shared >/dev/null && make -s -j"$jobs" && make -s install)
 for d in linux asm-generic; do cp -R "/usr/include/$d" "$libc/include/"; done
 cp -R /usr/include/x86_64-linux-gnu/asm "$libc/include/asm"
+# musl's wrapper knows no -static-pie: it names the dynamic linker and starts from Scrt1.o whatever is asked, which
+# makes a PIE that needs /lib/ld-musl (and the root's libc.so) to run, and that the browser's translator refuses.
+# Asked for -static-pie, its link starts from rcrt1.o (which relocates the program itself) and names no interpreter,
+# as GCC's own specs do.
+specs="$libc/lib/musl-gcc.specs"
+sed -i -e 's|%{!shared: \([^ ]*\)/Scrt1.o}|%{static-pie:\1/rcrt1.o;!shared:\1/Scrt1.o}|' \
+  -e 's|^-dynamic-linker \([^ ]*\) -nostdlib|%{!static-pie:-dynamic-linker \1} -nostdlib %{static-pie:-static -pie --no-dynamic-linker -z text}|' "$specs"
+grep -q 'static-pie:.*rcrt1.o' "$specs" && grep -q 'no-dynamic-linker' "$specs" || { echo "root-refresh: musl's specs were not as expected" >&2; exit 1; }
 cc="$libc/bin/musl-gcc"
 hard='-O2 -fstack-protector-strong -fstack-clash-protection -fcf-protection'
 pie='-static-pie -Wl,-z,relro,-z,now,-z,noexecstack'
@@ -100,6 +108,14 @@ rm -f "$work/out/openssl/usr/bin/c_rehash"
 find "$work/out" -type f \( -perm -u+x -o -name '*.a' \) | while read -r f; do
   [ "$(head -c 4 "$f" | od -An -c | tr -d ' ')" = "177ELF" ] || [ "${f%.a}" != "$f" ] || continue
   strip --strip-debug "$f"
+done
+
+# Each program made stands alone: a static PIE (ELF type DYN) that names no interpreter.
+find "$work/out" -type f -perm -u+x | while read -r f; do
+  [ "$(head -c 4 "$f" | od -An -c | tr -d ' ')" = "177ELF" ] || continue
+  if readelf -l "$f" | grep -q 'Requesting program interpreter' || ! readelf -h "$f" | grep -q 'Type:.*DYN'; then
+    echo "root-refresh: $f is not a static PIE" >&2; exit 1
+  fi
 done
 
 # Each in place of the base's: what the base's package had goes, what was made comes in (the database says which).
