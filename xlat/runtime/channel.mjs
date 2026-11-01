@@ -13,6 +13,7 @@ export const CH = {
   LENGTH: 3, // bytes in the data area
   ASLEEP: 120, // the thread waits for its answer in Atomics.wait (else it watches: no notify needed)
   HAVE_REGS: 121, // the registers are in REGS (a call that reads them, or the kernel asked: REPLY.SEND_REGS)
+  LEFT: 122, // its Worker ran its thread and left it (cpu.mjs): the channel may be given to another (remote.mjs)
   // BigInt64 indices
   NR: 2, ARGS: 3, NEXT: 9, VALUE: 10, RIP: 11, ARG0: 12, ARG1: 13, REGS: 16,
   LOW: 40, // how deep the thread's stack has gone (lower.rs G_LOW), as of its last request; 0: not known
@@ -38,6 +39,12 @@ export const REPLY = {VALUE: 1, REDIRECT: 2, AWAY: 3, REGS: 4, SEND_REGS: 5, REN
 export const READS_REGS = new Set([15, 56, 57, 58, 131, 158, 435]);
 
 export const REGS = REG;
+
+/**
+ * The threads a Worker keeps after they end (cpu.mjs kept, mirrored in remote.mjs): their instances, each on its
+ * memory, for a fork's child of that program on that memory to go on with (an instance costs most of a fork).
+ */
+export const KEEP_THREADS = 2;
 
 /**
  * Watch word `index` of `words` for up to `ms` (spinning, as a lock does before it sleeps): true once `ready` says

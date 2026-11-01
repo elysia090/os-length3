@@ -378,11 +378,15 @@ export class Kernel {
    * image, stack and mappings: Process.written); what lies outside them is still zero, and is not zeroed again.
    */
   letGo(memory, written = null) {
-    if (!memory || --memory.users > 0 || memory.tainted) return;
+    if (!memory || --memory.users > 0) return;
+    if (memory.tainted) { this.forget(memory); return; }
     memory.written = merge([...memory.written ?? [], ...written ?? [[0, memory.buffer.byteLength]]]);
     // A few, and none so large that keeping it would hold much of what the host has to spare.
     if (this.spareMemories.length < SPARE_MEMORIES && memory.buffer.byteLength <= SPARE_MEMORY_BYTES) this.spareMemories.push(memory);
+    else this.forget(memory);
   }
+  /** `memory` is let go of for good (not kept for another process): nothing more to do here (remote.mjs forgets it in its Workers). */
+  forget(memory) {}
   /** A memory let go of is taken again (the backend forgets what it kept for it: remote.mjs's lock). */
   reuseMemory(memory) {}
 
@@ -427,7 +431,11 @@ export class Kernel {
     const using = new Set(this.live().map((p) => p.image));
     let over = before.spare - budget;
     // Memories let go of first: they hold the most, and cost only their faults to make again.
-    while (over > 0 && this.spareMemories.length) over -= this.spareMemories.pop().buffer.byteLength;
+    while (over > 0 && this.spareMemories.length) {
+      const m = this.spareMemories.pop();
+      over -= m.buffer.byteLength;
+      this.forget(m);
+    }
     const spare = [...this.images].filter(([, e]) => !e.kept && !using.has(e.image)).sort((a, b) => a[1].used - b[1].used);
     for (const [node, e] of spare) {
       if (over <= 0) break;
