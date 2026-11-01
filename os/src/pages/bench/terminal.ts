@@ -167,11 +167,12 @@ export class Session {
   settlesIn(): number { return this.out.settlesIn(); }
 
   /**
-   * `line` run as if typed, and what it printed and how it ended once its prompt line is back (the Agent's runs: the
-   * person sees them run here). Its status is null where the shell does not say it, or the Prompt ended first.
+   * `line` run here as a line typed is (the Agent's: it runs, and is seen, as the person's would), and what it printed
+   * and how it ended once its prompt line is back: its status as the root's shrc says it (OSC 133 D), null where the
+   * root does not, or the Prompt ended first.
    */
   run(line: string): Promise<{output: string; status: number | null}> {
-    const since = Date.now(), typed = line.trimEnd();
+    const since = Date.now(), typed = line.trim();
     if (!this.send(typed)) return Promise.resolve({output: '', status: null});
     return new Promise((resolve) => {
       const look = () => {
@@ -229,7 +230,8 @@ export class Session {
   /** Output goes on screen and into the run in progress, which ends at the next prompt. */
   private received(s: string) {
     // How the line run ended, where the shell says it: kept on its run, and none of what it says shown.
-    for (const m of s.matchAll(RAN)) { const r = this.runs.at(-1); if (r && r.ms === null) r.status = m[1] === undefined ? null : Number(m[1]); }
+    // (The first it says for a run: the line's own, before the prompt line says the last command's again.)
+    for (const m of s.matchAll(RAN)) { const r = this.runs.at(-1); if (r && r.ms === null && r.status === undefined) r.status = m[1] === undefined ? null : Number(m[1]); }
     s = s.replace(OSC, '');
     if (!s) return;
     if (this.status.textContent === t('Starting…')) this.status.textContent = '';
