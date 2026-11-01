@@ -33,6 +33,7 @@ let kept = [];
 class Thread {
   constructor(m) {
     this.memory = m.memory;
+    this.module = m.module;
     this.memoryId = m.memoryId; // (what remote.mjs numbers them: the objects posted are new each time)
     this.imageId = m.imageId;
     this.fpuOps = m.fpuOps;
@@ -301,6 +302,12 @@ listen(({data: m}) => {
   }
   if (m.type !== 'run') return;
   try {
+    // What the kernel left out, this Worker has (remote.mjs post): the memory, the image's module and its first modules.
+    const like = kept.find((t) => t.imageId === m.imageId);
+    m.memory ??= kept.find((t) => t.memoryId === m.memoryId).memory;
+    m.module ??= like.module;
+    m.fpuOps ??= like.fpuOps;
+    m.extras = [...(like?.modules.slice(0, m.extrasFrom) ?? []), ...m.extras];
     const same = (t) => t.memoryId === m.memoryId && t.imageId === m.imageId;
     const was = m.again ? kept.find(same) : null;
     if (was) { task = was; task.again(m); } else task = new Thread(m);

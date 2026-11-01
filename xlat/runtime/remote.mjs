@@ -415,14 +415,18 @@ export class RemoteTask extends Task {
 
   post() {
     const image = this.image, k = this.kernel, w = this.worker;
-    // What its Worker keeps after this run, as it keeps it (cpu.mjs kept): this instance first, the few before it.
     const memoryId = idOf(this.memory), imageId = idOf(image);
-    w.kept = [{memoryId, imageId}, ...(w.kept ?? []).filter((x) => x.memoryId !== memoryId || x.imageId !== imageId)].slice(0, KEEP_INSTANCES);
+    // What its Worker has already is not sent again (cloning a memory or a module costs tens of microseconds): a
+    // memory one of its kept threads ran on, and an image's module and the modules made for it as of then.
+    const known = w.kept?.some((x) => x.memoryId === memoryId), like = w.kept?.find((x) => x.imageId === imageId);
+    const from = like?.extras ?? 0;
+    // What its Worker keeps after this run, as it keeps it (cpu.mjs kept): this instance first, the few before it.
+    w.kept = [{memoryId, imageId, extras: image.extras.length}, ...(w.kept ?? []).filter((x) => x.memoryId !== memoryId || x.imageId !== imageId)].slice(0, KEEP_INSTANCES);
     w.post({
-      type: 'run', again: this.again, tid: this.tid, module: image.module, memoryId, imageId,
-      extras: image.extras.map(({module, base, count: n}) => ({module, base, count: n})),
-      memory: this.memory, channel: this.channel, door: k.door.buffer, gil: k.gil(this.memory), count: count(image).buffer,
-      regs: REG.map((_, n) => this.reg(n)), resumeAt: this.resumeAt, fpuOps: image.fpuOps, fpu: this.fpuState, keep: this.keep,
+      type: 'run', again: this.again, tid: this.tid, memoryId, imageId, module: like ? undefined : image.module,
+      extrasFrom: from, extras: image.extras.slice(from).map(({module, base, count: n}) => ({module, base, count: n})),
+      memory: known ? undefined : this.memory, channel: this.channel, door: k.door.buffer, gil: k.gil(this.memory), count: count(image).buffer,
+      regs: REG.map((_, n) => this.reg(n)), resumeAt: this.resumeAt, fpuOps: like ? undefined : image.fpuOps, fpu: this.fpuState, keep: this.keep,
       origin: performance.timeOrigin, // the kernel's clocks begin here (clock.mjs)
     });
     this.again = false;
