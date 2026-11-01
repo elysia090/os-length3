@@ -368,14 +368,20 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_real_repository_read_offline() {
-        // This repository, if the tests run in its checkout: commits come back, newest first, with files.
+        // This repository, if the tests run in its checkout (CI's is one commit deep, its one commit every file, a
+        // bulk one): commits come back, at least one, newest first, only of files asked about, the same twice
+        // (the second from what was kept).
         let here = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         if !here.join(".git").exists() { return; }
+        let kept = crate::testing::dir("plan-real");
         let idx: HashMap<&str, usize> = [("os/core/src/lib.rs", 0)].into_iter().collect();
-        let h = from_git(&here, &idx).expect("a git repository");
+        let h = from_git_keeping(&here, &idx, &kept).expect("a git repository");
         assert!(h.read > 0);
-        assert!(h.commits.iter().any(|c| c.files == [0]));
-        assert!(from_git(Path::new("/nonexistent/plan"), &idx).is_none());
+        assert!(h.commits.iter().all(|c| c.files.iter().all(|&f| f == 0)));
+        assert!(h.commits.windows(2).all(|w| !w[0].id.is_empty() && w[0].id != w[1].id));
+        assert_eq!(from_git_keeping(&here, &idx, &kept), Some(h));
+        assert!(from_git_keeping(Path::new("/nonexistent/plan"), &idx, &kept).is_none());
     }
 }
