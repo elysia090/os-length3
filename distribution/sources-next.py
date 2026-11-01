@@ -92,7 +92,8 @@ NEWEST = {
     'IPROUTE2': lambda: newest('https://mirrors.edge.kernel.org/pub/linux/utils/net/iproute2/', r'iproute2-(\d+\.\d+\.\d+)\.tar\.xz'),
     'MAKE': lambda: newest('https://ftp.gnu.org/gnu/make/', r'make-(\d+\.\d+(?:\.\d+)?)\.tar\.gz'),
     'MUSL': lambda: newest('https://musl.libc.org/releases.html', r'musl-(\d+\.\d+\.\d+)\.tar\.gz'),
-    'BINUTILS': lambda: newest('https://ftp.gnu.org/gnu/binutils/', r'binutils-with-gold-(\d+\.\d+(?:\.\d+)?)\.tar\.xz'),
+    # binutils itself; gold, which every build here leaves out, was a separate archive (binutils-with-gold) until 2.47.
+    'BINUTILS': lambda: newest('https://ftp.gnu.org/gnu/binutils/', r'binutils-(\d+\.\d+(?:\.\d+)?)\.tar\.xz'),
     'GCC': lambda: newest('https://gcc.gnu.org/ftp/gcc/releases/', r'gcc-(\d+\.\d+\.\d+)/'),
     'GMP': lambda: gcc_prerequisite('gmp'),
     'MPFR': lambda: gcc_prerequisite('mpfr'),
