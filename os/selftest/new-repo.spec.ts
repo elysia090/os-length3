@@ -24,23 +24,45 @@ test('a repo made from the scaffold has its README, its summary under the title,
   await expect(app.forge.editor('Makefile')).toHaveCount(0);
 });
 
-test('what will be made is shown as File will show it: /root, the repos there, and the new one among them by its name', async ({app}) => {
+test('what will be made is the new repo alone, as File will show it, its files made, renamed and left out there first', async ({app}) => {
   await app.newRepo.make('tide', {summary: 'Tide tables.'});
   await expect(app.forge.editor('README.md')).toHaveValue('# tide\n\nTide tables.\n');
   await app.rail.go('new-repo');
-  // There is nothing to choose, and nothing to name in the box: its files are named in File.
+  // There is nothing to choose, and nothing to name in the box.
   await expect(app.main.getByRole('radiogroup')).toHaveCount(0);
-  await expect(app.main.locator('.tree-still input')).toHaveCount(0);
   const card = app.main.locator('.tree-still');
   await app.newRepo.name.fill('harbour');
-  // The new one stands where its name puts it among those there (harbour before tide), its scaffold under it.
-  await expect(card.locator('.tree-name')).toHaveText(['root', 'harbour', 'docs', 'README.md', 'tide']);
-  await app.newRepo.name.fill('wharf');
-  await expect(card.locator('.tree-name')).toHaveText(['root', 'tide', 'wharf', 'docs', 'README.md']);
-  // Only the new one is the card's: /root and tide, there already, do not answer the pointer; wharf's rows do.
-  const row = (name: string) => card.locator('.tree-row', {has: app.page.locator('.tree-name', {hasText: new RegExp(`^${name}$`)})});
-  for (const there of ['root', 'tide']) await expect(row(there)).toHaveCSS('pointer-events', 'none');
-  for (const ours of ['wharf', 'docs']) await expect(row(ours)).toHaveCSS('pointer-events', 'auto');
+  // The repo to be made and what will be in it, nothing else of the device's (no /root, no tide).
+  await expect(card.locator('.tree-row')).toHaveText([/^harbour/, /^docs/, /^README\.md/]);
+  // New file: a row named as nothing is yet, its name a field to write over (its ending kept); New folder, a path.
+  await card.getByRole('button', {name: 'New file'}).click();
+  const field = card.getByRole('textbox', {name: 'New name'});
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue('untitled.md');
+  await app.page.keyboard.type('tides');
+  await field.press('Enter');
+  await card.getByRole('button', {name: 'New folder'}).click();
+  await app.page.keyboard.type('charts/2031');
+  await card.getByRole('textbox', {name: 'New name'}).press('Enter');
+  // Renamed where it stands; the issues' place is the OS's, said under the card, the name kept to be put right.
+  await card.getByRole('button', {name: 'docs', exact: true}).click();
+  await card.getByRole('textbox', {name: 'New name'}).fill('issue');
+  await card.getByRole('textbox', {name: 'New name'}).press('Enter');
+  await expect(card.getByRole('alert')).toHaveText('"issue" is where the repo\'s issues are kept');
+  await card.getByRole('textbox', {name: 'New name'}).fill('notes');
+  await card.getByRole('textbox', {name: 'New name'}).press('Enter');
+  await expect(card.locator('p.error')).toHaveText('');
+  // Left out: it goes from the card, and will not be made.
+  await card.locator('li[data-path="notes"] > .tree-row').hover();
+  await card.getByRole('button', {name: 'Leave out notes'}).click();
+  await expect(card.locator('li[data-path="notes"]')).toHaveCount(0);
+  await expect(card.locator('.tree-row')).toHaveText([/^harbour/, /^charts/, /^2031/, /^README\.md/, /^tides\.md/]);
+  // Made as laid out: the README what it is for, the new file empty, the folders there, docs not.
+  await app.newRepo.summary.fill('Moorings.');
+  await app.newRepo.create.click();
+  await expect(app.forge.editor('README.md')).toHaveValue('# harbour\n\nMoorings.\n');
+  for (const path of ['tides.md', 'charts/2031']) await app.file.item('harbour', path);
+  await expect((await app.file.item('harbour', '', {open: true})).getByRole('treeitem', {name: 'docs', exact: true})).toHaveCount(0);
 });
 
 test('what is written before Create stays while another page is seen, and goes once made', async ({app}) => {
