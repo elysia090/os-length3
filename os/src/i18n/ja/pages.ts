@@ -98,7 +98,6 @@ export default {
   'Run output no longer available': 'その実行結果はもう残っていません',
   'Searched and viewed items appear here': '検索・閲覧した項目がここに表示されます',
   'Starting up…': '起動中…',
-  'History ({n})': '履歴（{n}）',
   'Run in {name}': '{name}で実行',
   'Issue': 'Issue',
   'diff': 'diff',

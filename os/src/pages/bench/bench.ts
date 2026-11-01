@@ -8,6 +8,7 @@ import type {Writing} from '../forge/reader.ts';
 import {Reference} from '../forge/reference.ts';
 import {Screen} from './screen.ts';
 import {sessionIfAny} from './sessions.ts';
+import type {Run} from './terminal.ts';
 
 // The workbench Forge and Git share, put together from its parts: the page's own content in the large center (3/4)
 // with the box at its foot (box.ts), which becomes the Prompt's screen over the center while the Prompt is in use
@@ -60,6 +61,20 @@ function editorKey(event: KeyboardEvent, box: Box, pane: Pane, reference: Refere
   if (event.key === '`' && box.summon()) { event.preventDefault(); return; }
   if (k === 'g' && !event.shiftKey && box.edit()) { event.preventDefault(); return; }
   if (k === 'b' && !event.shiftKey) { event.preventDefault(); pane.set(!pane.shown); }
+}
+
+/**
+ * The run a line pressed in the pane stands for (its prompt line's pill, or its words): of the runs of those words,
+ * the one as many from the last as there are lines of the same words run after it, the screen and the runs both
+ * keeping the last ones in the order they ran. None when the runs kept no longer go back that far.
+ */
+function runPressed(line: HTMLElement, runs: readonly Run[]): Run | undefined {
+  const cmd = line.classList.contains('cmd') ? line : line.nextElementSibling?.classList.contains('cmd') ? line.nextElementSibling : null;
+  if (!cmd) return undefined;
+  const words = (cmd.textContent ?? '').trimEnd();
+  let after = 0;
+  for (let n = cmd.nextElementSibling; n; n = n.nextElementSibling) if (n.classList.contains('cmd') && (n.textContent ?? '').trimEnd() === words) after++;
+  return runs.filter((r) => r.line === words).at(-1 - after);
 }
 
 /** The Prompt's own box, its head and where it lives in the pane (where the repo's terminal stands, up or at rest). */
@@ -170,20 +185,18 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const box = new Box({work, main: parts.main, center, term, termHead, back: !!parts.back, went: parts.went});
   const {screen, element: screenEl} = screenOf(work, box, term, termHome);
   center.append(box.dock);
-  // A line run, pressed in the pane (which tells only that it ran): the Prompt comes up with what it printed, there.
-  // Taken as the press begins: pressed, the Prompt goes up out of the pane before the press is a click.
+  const reference = new Reference({reveal: parts.reveal, recall: (line) => box.recall(line)}, {keeps: true});
+  // A line run, pressed in the pane (which tells that it ran): read there, under the search box, with all it printed,
+  // as from Output; the Prompt, up again, starts at its line. Taken as the press begins, before the pane's box takes
+  // it as a press to bring the Prompt up.
   termHome.addEventListener('pointerdown', (event) => {
     const line = (event.target as Element).closest<HTMLElement>('.term-out > :is(.cmd, .ps:not(.waits))');
-    const session = box.repo && line ? sessionIfAny(box.repo) : undefined;
-    if (!line || !session) return;
-    // The press is the box's: the keyboard goes into it, not to the page under the pointer.
+    const run = box.repo && line ? runPressed(line, sessionIfAny(box.repo)?.runs ?? []) : undefined;
+    if (!run) return;
     event.preventDefault();
-    session.unfold();
-    box.summon();
-    requestAnimationFrame(() => line.scrollIntoView({block: 'start'}));
+    event.stopPropagation();
+    reference.showRun(run);
   }, true);
-
-  const reference = new Reference({reveal: parts.reveal, recall: (line) => box.recall(line)}, {keeps: true});
   box.onFollow = () => reference.runsAgain();
   // At rest the pane says what else the search shows, beside the Prompt's head, on its line.
   termHome.append(reference.heads);

@@ -123,10 +123,7 @@ export class Session {
     // A Prompt that ended says so in the language chosen since, as the rest of the page does.
     onLang(() => this.sayEnded());
     this.activity = new Activity({live: () => this.live, interrupt: () => this.interrupt(), restart: () => this.restart()});
-    // Folded away (put back into the box), what it printed before is one line at the screen's top, pressed to open.
-    this.earlier = h('button', {type: 'button', class: 'term-earlier', hidden: ''}) as HTMLButtonElement;
-    this.earlier.addEventListener('click', () => this.unfold());
-    this.element = h('div', {class: 'term'}, this.status, this.earlier, this.out.element, this.activity.element);
+    this.element = h('div', {class: 'term'}, this.status, this.out.element, this.activity.element);
     this.copy = new WriteBack(repo, this.id, (said) => { this.status.textContent = said; });
   }
 
@@ -189,24 +186,11 @@ export class Session {
   /** Under a question asked of the Agent (`row`, note's), where its answer comes in (output.ts). */
   answer(row: HTMLElement): HTMLElement { return this.out.answer(row); }
 
-  /** The line over what is folded away. */
-  private earlier: HTMLButtonElement;
-
   /**
-   * Put back into the box: up again, the screen starts at its prompt line, what it printed before folded away under
-   * one line that opens it (output.ts fold). The pane still lists the lines run.
+   * Put back into the box: up again, the screen starts at its prompt line (output.ts fold). What came before is the
+   * pane's: it lists the lines run, and a line pressed there is read there with all it printed.
    */
-  fold() {
-    const n = this.out.fold();
-    this.earlier.hidden = !n;
-    this.earlier.textContent = t('History ({n})', {n});
-  }
-
-  /** What was folded away, opened again where it stood. */
-  unfold() {
-    this.out.unfold();
-    this.earlier.hidden = true;
-  }
+  fold() { this.out.fold(); }
 
   /** Output goes on screen and into the run in progress, which ends at the next prompt. */
   private received(s: string) {

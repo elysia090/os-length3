@@ -161,7 +161,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(app.runtime.part('Running Prompts')).toHaveCount(0);
   });
 
-  test('put back, the pane tells the line run; up again the Prompt starts at its line, what it printed folded under Earlier', async ({app}) => {
+  test('put back, the pane tells the line run; up again the Prompt starts at its line, and the line pressed in the pane is read there', async ({app}) => {
     await app.forge.run('echo folded-away');
     const said = (where: import('@playwright/test').Locator) => where.locator('.term-out').getByText('folded-away', {exact: true});
     await expect(said(app.forge.prompt)).toBeVisible();
@@ -170,18 +170,16 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     const pane = app.main.locator('.term-home');
     await expect(pane.getByText('echo folded-away')).toBeVisible();
     await expect(said(pane)).toBeHidden();
-    // Up again, it starts at its prompt line, what came before folded under one line that opens it.
+    // Up again, it starts at its prompt line: what came before is the pane's, nothing of it kept in the Prompt.
     await app.forge.promptBox.focus();
-    const earlier = app.forge.prompt.getByRole('button', {name: 'History (1)'});
-    await expect(earlier).toBeVisible();
     await expect(said(app.forge.prompt)).toBeHidden();
-    await earlier.click();
-    await expect(said(app.forge.prompt)).toBeVisible();
-    // Put back and the line pressed in the pane: up with what it printed, there.
-    await app.forge.promptBox.focus();
+    await expect(app.forge.prompt.getByRole('button', {name: /History/})).toHaveCount(0);
     await app.page.keyboard.press('Escape');
+    // The line pressed in the pane: read there, under the search box, with all it printed; the Prompt stays down.
     await pane.getByText('echo folded-away').click();
-    await expect(said(app.forge.prompt)).toBeVisible();
+    const read = app.main.locator('.found-body');
+    await expect(read.getByText('folded-away', {exact: true})).toBeVisible();
+    await expect(said(app.forge.prompt)).toBeHidden();
   });
 
   test('what the Prompt showed is still there after Git and back, and after Home and back', async ({app}) => {

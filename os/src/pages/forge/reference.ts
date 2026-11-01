@@ -496,6 +496,13 @@ export class Reference {
     });
   }
 
+  /** A run pressed in the pane's Prompt: read under the box with all it printed, as from Output, the keyboard there. */
+  showRun(r: Run) {
+    if (!this.repo) return;
+    this.readRun(r);
+    this.query.focus({preventScroll: true});
+  }
+
   /** One run: its line (pressed, back in the prompt box), how long it took, all it said. */
   private readRun(r: Run) {
     const repo = this.repo!;

@@ -245,10 +245,10 @@ export class Output {
 
   /**
    * Put back into the box, the Prompt is read afresh from its line: what it printed so far is folded away (`.earlier`),
-   * there to be opened again, so up next time the screen holds the prompt line it waits at and what comes after it.
-   * The pane, which only tells, still lists the lines run. How many lines run (and lines of the box's own) are folded.
+   * so up next time the screen holds the prompt line it waits at and what comes after it. The pane, the same lines
+   * seen there, still lists every line run; pressed, one is read there with all it printed (forge/reference.ts).
    */
-  fold(): number {
+  fold() {
     for (let n = this.element.firstChild; n; n = n.nextSibling) {
       if (n === this.#tail || n === this.#endLine) continue;
       if (!(n instanceof HTMLElement)) {
@@ -260,13 +260,6 @@ export class Output {
       }
       (n as HTMLElement).classList.add('earlier');
     }
-    this.element.classList.remove('unfolded');
-    return this.element.querySelectorAll(':scope > .earlier:is(.ps, .term-said)').length;
-  }
-
-  /** What was folded away, opened again where it stood. */
-  unfold() {
-    this.element.classList.add('unfolded');
   }
 
   /** How the Prompt ended, the last thing at the foot of its output (in its place, said again in another language). */
