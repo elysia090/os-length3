@@ -101,8 +101,9 @@ test('mirror: a file its makers publish is taken from their URL, without the tok
 });
 
 test('the pins: every root core/src/root.rs pins, newest first, and the desktop app of a version, by its file', () => {
+  // One at least: main pins the newest release alone (scripts/pin-root.mjs), which a release makes as it is made.
   const roots = pinnedRoots(readFileSync(new URL('../core/src/root.rs', import.meta.url), 'utf8'));
-  assert.ok(roots.length >= 2);
+  assert.ok(roots.length >= 1);
   for (const r of roots) {
     assert.match(r.sha256, /^[0-9a-f]{64}$/);
     assert.deepEqual([r.key, r.path], [`os/${r.sha256}`, `/v1/os/${r.sha256}`]);
