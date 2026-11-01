@@ -68,8 +68,8 @@ export default {
   'Edit description': '文面を修正',
   // main's commit, what is done with (merged, closed), and putting a file back
   'Uncommitted changes on main in {repo}': '{repo}の main ブランチにある未コミットの変更',
-  '{n} file to commit on main': '{n}ファイルを main にコミット',
-  '{n} files to commit on main': '{n}ファイルを main にコミット',
+  '{n} file to commit': '{n}ファイルをコミット',
+  '{n} files to commit': '{n}ファイルをコミット',
   'Fix: Description of changes': 'Fix: 変更点',
   'Commit title format: Type: Title': 'コミットメッセージ形式（種別：タイトル）',
   '{who} · merged {when}': '{who} · {when}にマージ',

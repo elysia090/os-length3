@@ -155,9 +155,9 @@ function mainCard(repo: string, n: number, events: IssueEvents, after: () => voi
     const commit = button(t('Commit'), 'primary');
     commit.addEventListener('click', () => ask(commit));
     // Laid out as an issue's box is: its name at the top, the files under it on the card itself, and at its foot how
-    // many wait at the left and Commit at the right, where an issue's next step is.
+    // many wait at the left (on main, which is said over the cards) and Commit at the right, where an issue's next step is.
     const foot = h('div', {class: 'issue-foot main-foot'},
-      h('span', {class: 'muted small'}, tn('{n} file to commit on main', '{n} files to commit on main', n)), commit);
+      h('span', {class: 'muted small'}, tn('{n} file to commit', '{n} files to commit', n)), commit);
     if (!brief) card.replaceChildren(h('h3', {class: 'main-title'}, repo), notCommitted(repo, 'main', n, events), foot);
     else {
       // A row: its name opens its files under it (read only then), and closes them again.
@@ -215,7 +215,7 @@ function mainCard(repo: string, n: number, events: IssueEvents, after: () => voi
       plain().focus();
     });
     card.replaceChildren(h('div', {class: 'off-ask'}, h('h3', {class: 'main-title'}, repo),
-      h('p', {class: 'muted small'}, tn('{n} file to commit on main', '{n} files to commit on main', n)), line, error, foot(no, yes)));
+      h('p', {class: 'muted small'}, tn('{n} file to commit', '{n} files to commit', n)), line, error, foot(no, yes)));
     if (old) crossfade(old, card, was);
     resize(card, was);
     line.focus({preventScroll: true});
