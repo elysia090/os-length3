@@ -26,6 +26,9 @@ mkdir -p "$src"
 work=$(mktemp -d "${TMPDIR:-/tmp}/length3-toolchain.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 jobs=$(nproc)
+# Alpine 3.24's GCC writes C23 by default, where `char *getenv ();` (make's gnulib, GMP's configure) declares a
+# function of no arguments: these sources are C17, and are built as such.
+c17='-O2 -std=gnu17'
 record="$out/record"
 : > "$record"
 
@@ -54,12 +57,12 @@ get mpc "$MPC_URL" "$MPC_SHA512" "$MPC_VERSION" sha512
 for d in gmp mpfr mpc; do mv "$work/$d" "$work/gcc/$d"; done
 
 # make
-(cd "$work/make" && CFLAGS='-O2' LDFLAGS='-static' ./configure --prefix=/usr --disable-nls >/dev/null &&
+(cd "$work/make" && CFLAGS="$c17" LDFLAGS='-static' ./configure --prefix=/usr --disable-nls >/dev/null &&
   make -s -j"$jobs" && make -s DESTDIR="$out/make" install)
 
 # binutils: as the base's (its programs all-static: libtool reads -static as "prefer static libraries").
 mkdir -p "$work/binutils-o"
-(cd "$work/binutils-o" && CFLAGS='-O2 -static' CXXFLAGS='-O2 -static' LDFLAGS='-static' MAKEINFO=true \
+(cd "$work/binutils-o" && CFLAGS="$c17 -static" CXXFLAGS='-O2 -static' LDFLAGS='-static' MAKEINFO=true \
   "$work/binutils/configure" --prefix=/usr --build="$target" --host="$target" --target="$target" \
     --disable-gold --disable-gdb --disable-gdbserver --disable-gprofng --disable-libdecnumber --disable-nls \
     --disable-readline --disable-shared --disable-sim --disable-werror --enable-static --without-babeltrace \
@@ -73,7 +76,7 @@ make -s -C "$work/binutils-o" MAKEINFO=true LDFLAGS='-static' DESTDIR="$out/binu
 
 # GCC: C, as the base's, its libgcc built by the GCC just made.
 mkdir -p "$work/gcc-o"
-(cd "$work/gcc-o" && CFLAGS='-O2' CXXFLAGS='-O2' LDFLAGS='-static' \
+(cd "$work/gcc-o" && CFLAGS="$c17" CXXFLAGS='-O2' LDFLAGS='-static' \
   "$work/gcc/configure" --prefix=/usr --build="$target" --host="$target" --target="$target" \
     --enable-languages=c --disable-lto --disable-bootstrap --disable-multilib --disable-nls --disable-shared \
     --enable-static --disable-libatomic --disable-libgomp --disable-libquadmath --disable-libsanitizer \
