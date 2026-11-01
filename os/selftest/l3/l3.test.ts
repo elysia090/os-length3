@@ -164,9 +164,9 @@ test('an issue goes from written to merged with l3: start, commit (handed in by 
   ok(laptop.l3(['commit', 'work', 'Patch：はじめ']), /^Committed [0-9a-f]{12} {2}Patch：はじめ \(1 file/);
   ok(laptop.l3(['start', 'work#1']), /^Working on work#1 Fix：落ちる/);
   ok(laptop.l3(['file', 'write', 'work/fix.txt'], 'fixed\n'));
-  // On an issue's work a commit is handed in as it is made: there is nothing left to push.
+  // On an issue's work a commit is handed in as it is made: there is nothing left to submit.
   ok(laptop.l3(['commit', 'work']), /^Committed [0-9a-f]{12} {2}Fix：落ちる \(1 file \+1 −0\)\n {2}handed to main as version 1\n$/);
-  ok(laptop.l3(['push', 'work']), /^Nothing new to push: version 1 of Fix：落ちる is with main already\n$/);
+  ok(laptop.l3(['submit', 'work']), /^Nothing new to submit: version 1 of Fix：落ちる is with main already\n$/);
   const change = ((await r.api(ren, 'GET', '/v1/repos/work/changes')).json as {state: string; version: number; issue: string}[])[0];
   assert.deepEqual([change.state, change.version, change.issue], ['open', 1, 'issue/001.md']);
   // main does not have the fix until it is merged.
