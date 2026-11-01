@@ -250,8 +250,37 @@ export function lift(el: Element | null | undefined): Lifted | null {
   return {el: copy, rect};
 }
 
-export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, round = '', patience = 40,
-  carry?: {lifted: Lifted; to(target: HTMLElement): Element | null; rest?: HTMLElement}) {
+/** The first line of what is written in `field`, lifted where it is drawn in it (as `lift` lifts a thing's words). */
+export function liftLine(field: HTMLTextAreaElement): Lifted | null {
+  const line = field.value.split('\n')[0]?.trim();
+  const r = field.getBoundingClientRect();
+  if (!line || !r.width) return null;
+  const cs = getComputedStyle(field), at = textAt(field, 0);
+  const el = document.createElement('div');
+  el.className = 'morph-words';
+  el.setAttribute('aria-hidden', 'true');
+  el.textContent = line;
+  Object.assign(el.style, {left: `${at.left}px`, top: `${at.top}px`, height: `${at.height}px`,
+    font: cs.font, color: cs.color, letterSpacing: cs.letterSpacing});
+  // After the font, whose shorthand sets it too: one line as tall as the field's.
+  el.style.lineHeight = `${at.height}px`;
+  return {el, rect: at};
+}
+
+/** Where line `i` (from 0) of what is written in `area` is drawn, as tall as a line, from where its words start. */
+export function textAt(area: HTMLTextAreaElement, i: number): DOMRect {
+  const r = area.getBoundingClientRect(), cs = getComputedStyle(area);
+  const lh = parseFloat(cs.lineHeight) || (parseFloat(cs.fontSize) || 14) * 1.5;
+  const left = r.left + (parseFloat(cs.borderLeftWidth) || 0) + (parseFloat(cs.paddingLeft) || 0) - area.scrollLeft;
+  const top = r.top + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.paddingTop) || 0) + i * lh - area.scrollTop;
+  return new DOMRect(left, top, Math.max(0, r.right - left), lh);
+}
+
+/** A thing's words carried by a morph (`lifted`) onto what they become in the box it lands on (`to`: an element, or
+ * where its words are drawn); `rest`, what else the thing held. */
+export type Carry = {lifted: Lifted; to(target: HTMLElement): Element | DOMRect | null; rest?: HTMLElement};
+
+export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, round = '', patience = 40, carry?: Carry) {
   if (still() || !from.width) return false;
   ms = paced(ms);
   // The outline stands where the thing was at once, so the eye has it while the page it goes to is drawn (a repo read
@@ -322,7 +351,8 @@ export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, r
       const p = timer.effect?.getComputedTiming().progress ?? 1, now = to!.getBoundingClientRect();
       Object.assign(box.style, {left: `${mix(from.left, now.left, p)}px`, top: `${mix(from.top, now.top, p)}px`,
         width: `${mix(from.width, now.width, p)}px`, height: `${mix(from.height, now.height, p)}px`});
-      const goal = words && r0 ? carry!.to(to!)?.getBoundingClientRect() : null;
+      const onto = words && r0 ? carry!.to(to!) : null;
+      const goal = onto instanceof Element ? onto.getBoundingClientRect() : onto;
       if (words && r0 && goal?.height) {
         words.style.transform = `translate(${mix(0, goal.left - r0.left, p)}px, ${mix(0, goal.top - r0.top, p)}px) scale(${mix(1, goal.height / r0.height, p)})`;
       }

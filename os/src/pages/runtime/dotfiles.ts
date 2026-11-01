@@ -6,6 +6,7 @@ import type {Session} from '../bench/terminal.ts';
 import {allSessions} from '../bench/sessions.ts';
 import {errorText} from '../../app/errors.ts';
 import {onState} from '../../home/state.ts';
+import {unfold} from '../../ui/glide.ts';
 import {button} from './parts.ts';
 
 // Runtime's Dotfiles: what every Prompt starts with in /root, in one box, a row each, the one open lit with its text
@@ -30,6 +31,8 @@ interface BoxWays { paint(open?: string | null, saved?: boolean): void; restarte
 export function dotfilesSection(restarted: () => void, counted: (n: number) => void = () => {}): HTMLElement {
   const section = h('section', {class: 'section dotfiles-part', 'aria-label': t('Dotfiles')});
   const w: BoxWays = {paint: (open, saved) => paint(open, saved), restarted};
+  /** Whose text was open under its row when last drawn ('+' and its name, a new one's): one opened now unfolds. */
+  let shown: string | null = null;
   /** The rows drawn: `open`'s text under it (`saved` just now), or a new one's (`fresh`, the name it is offered with) under New dotfile. */
   const paint = (open: string | null = null, saved = false, fresh: string | null = null) => {
     const all = dotfiles.read();
@@ -48,6 +51,11 @@ export function dotfilesSection(restarted: () => void, counted: (n: number) => v
     if (fresh) list.append(editBox(fresh, '', true, false, w));
     counted(names.length);
     section.replaceChildren(...(held.length ? [waitingNote(held, () => paint(open))] : []), list);
+    // Opened (pressed, or New dotfile), its text unfolds under its row rather than standing there in one frame.
+    const now = fresh !== null ? `+${fresh}` : open;
+    const editor = section.querySelector<HTMLElement>('.dot-editor');
+    if (editor && now !== shown) unfold(editor, 280);
+    shown = now;
     // The keyboard stays on the row it pressed; a new one's name is chosen, to be written over.
     if (fresh) section.querySelector<HTMLInputElement>('.dot-name')?.select();
     else if (pressed !== undefined) section.querySelector<HTMLElement>(`.dot-row[data-name="${CSS.escape(pressed)}"]`)?.focus();

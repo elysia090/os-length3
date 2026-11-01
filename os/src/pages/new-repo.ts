@@ -11,7 +11,7 @@ import type {Context} from './context.ts';
 import {triangle} from './tree.ts';
 import {ORIGIN_LABEL} from '../prompt/system.ts';
 import {errorText} from '../app/errors.ts';
-import {LAND, morph, nudge, paced, still, where} from '../ui/glide.ts';
+import {LAND, liftLine, morph, nudge, paced, still, textAt, where} from '../ui/glide.ts';
 
 /**
  * +: the repo's name on the first line; under it, in a large box, what it
@@ -220,9 +220,14 @@ export function newRepo(ctx: Context): Node[] {
       }
     }
     // Made, it is gone into at once: what was written becomes its README, the summary's sheet growing into that box
-    // in Forge, the caret in it.
+    // in Forge, the caret in it, and its words going with it onto their line there (under the title and a line left
+    // empty: readme), never a sheet gone empty on its way and the words come back after.
     draft = fresh();
-    ctx.openRepo(n, 'README.md', 'end', summaryBox);
+    const words = summary.value.trim() ? liftLine(summary) : null;
+    ctx.openRepo(n, 'README.md', 'end', summaryBox, 0, words ? {lifted: words, to: (box) => {
+      const area = box.querySelector<HTMLTextAreaElement>('textarea.code-edit');
+      return area ? textAt(area, 2) : null;
+    }} : undefined);
   });
   // The repos already there, right under the form; a new one joins them.
   const list = repoList(ctx, {newCard: false});

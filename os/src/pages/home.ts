@@ -294,8 +294,29 @@ function profileHeader(count: HTMLElement, owner: boolean): HTMLElement {
     const cs = getComputedStyle(header);
     return {height: header.getBoundingClientRect().height, margins: parseFloat(cs.marginTop) + parseFloat(cs.marginBottom)};
   };
+  /**
+   * Folding, what was there only to be written in (each line's rule, the line about the person, Cancel and Save)
+   * stays a moment where it stood, fading as the sheet folds over it, the name and the handle drawn again under their
+   * rules; and where the handle stood in its field, for the handle read to come up from there. Never all of it gone in
+   * the frame Enter was pressed.
+   */
+  const leave = (): {ghosts: HTMLElement[]; handleAt: number | null} => {
+    const at = header.getBoundingClientRect(), cs = getComputedStyle(header);
+    const x0 = at.left + (parseFloat(cs.borderLeftWidth) || 0), y0 = at.top + (parseFloat(cs.borderTopWidth) || 0);
+    const ghosts = [...header.querySelectorAll<HTMLElement>(':scope > .edit, :scope > .edit-acts')].map((el) => {
+      const r = el.getBoundingClientRect(), copy = el.cloneNode(true) as HTMLElement;
+      for (const e of [copy, ...copy.querySelectorAll('[id]')]) e.removeAttribute('id');
+      copy.inert = true;
+      copy.setAttribute('aria-hidden', 'true');
+      for (const e of copy.querySelectorAll<HTMLElement>('.name-in, .handle-field, .handle-in')) e.style.color = 'transparent';
+      Object.assign(copy.style, {position: 'absolute', left: `${r.left - x0}px`, top: `${r.top - y0}px`, width: `${r.width}px`, margin: '0', pointerEvents: 'none'});
+      return copy;
+    });
+    return {ghosts, handleAt: header.querySelector('.handle-in')?.getBoundingClientRect().top ?? null};
+  };
   const draw = (beat: 'open' | 'saved' | 'cancel' | null, faceWas: Node[] = []) => {
     const was = room(), from = was.height + was.margins;
+    const left = (beat === 'saved' || beat === 'cancel') && !still() && header.isConnected ? leave() : null;
     avatar.replaceChildren(...face());
     // Each count is the way to what it counts, further down Home (as a profile's counts are): pressed, there it is.
     const counts = h('p', {class: 'counts'}, toSection(count, 'repos-title'), toSection(servers0(), 'servers-title'));
@@ -308,7 +329,11 @@ function profileHeader(count: HTMLElement, owner: boolean): HTMLElement {
     avatar.classList.toggle('pressable', !!edit);
     avatar.onclick = edit ? open : null;
     header.replaceChildren(avatar, form?.element ?? identity(counts), ...(form ? [form.acts] : edit ? [edit] : []));
-    header.classList.toggle('editing', editing);
+    // Folding, it stays a sheet while it folds, and its ground and edge go after (styles: their transition): gone in
+    // the frame Enter was pressed, the whole sheet was one cut. Its margins take back what its padding gave, so
+    // nothing moves as it stops being one.
+    const folding = (beat === 'saved' || beat === 'cancel') && !still() && header.isConnected;
+    header.classList.toggle('editing', editing || folding);
     if (!beat || still() || !header.isConnected) return;
     // The room it takes goes from what it was to what it is in one move: the sheet's margins (it grows out past its
     // place as it opens) come and go at once, so its height starts where that leaves the page as it was, and nothing
@@ -320,6 +345,19 @@ function profileHeader(count: HTMLElement, owner: boolean): HTMLElement {
       const grow = header.animate([{height: `${start}px`}, {height: `${to}px`}], {duration: paced(320), easing: LAND});
       settled = grow.finished.catch(() => {});
       void settled.then(() => { header.style.overflow = ''; });
+    }
+    if (folding) {
+      void settled.then(() => { if (!editing) header.classList.remove('editing'); });
+      for (const g of left?.ghosts ?? []) {
+        header.append(g);
+        g.animate([{opacity: 1}, {opacity: 0}], {duration: paced(160), easing: 'ease-out', fill: 'forwards'}).finished.then(() => g.remove(), () => g.remove());
+      }
+      const handle = header.querySelector<HTMLElement>('.identity > .handle:not([hidden])');
+      const dy = left?.handleAt != null && handle ? left.handleAt - handle.getBoundingClientRect().top : 0;
+      if (handle && Math.abs(dy) > .5) handle.animate([{translate: `0 ${dy}px`}, {translate: '0 0'}], {duration: paced(320), easing: LAND});
+      // What stepped aside while it was written comes back as it folds: the counts, then Edit profile.
+      [...header.querySelectorAll<HTMLElement>('.counts, :scope > .button')].forEach((el, i) =>
+        el.animate([{opacity: 0}, {opacity: 1}], {duration: paced(240), delay: paced(120 + i * 60), easing: LAND, fill: 'backwards'}));
     }
     // One move at a time: the sheet grows or folds, and only what that move is about comes with it.
     if (beat === 'open') {

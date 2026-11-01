@@ -3,6 +3,7 @@ import {t} from '../../i18n.ts';
 import {store} from '../../repos/repos.ts';
 import {ask, AgentError, type Use} from '../../agent/ask.ts';
 import {boxSaid} from '../../repos/agents.ts';
+import {LAND, paced, still} from '../../ui/glide.ts';
 
 // The box's Agent (box-modes.ts): a question about the repo, asked of the model the key kept on this device opens
 // (agent/ask.ts), told what the person is looking at: the repo's top, and the file in front with the caret's line,
@@ -65,16 +66,32 @@ export async function answer(into: HTMLElement, repo: string, use: Use, system: 
   if (!started.has(repo)) { started.add(repo); boxSaid(SESSION, repo, 'start'); }
   boxSaid(SESSION, repo, 'prompt', question);
   const out = into.closest<HTMLElement>('.term-out');
-  let text = '', frame = 0;
+  let text = '', frame = 0, over = false;
+  // The question first: its words go on from the box into their line (box-modes sendInto), and nothing is drawn under
+  // that line before they are there, never an answer come before what it answers (a quick one, a quick refusal). Its
+  // ellipsis waits for them too.
+  const flying = into.previousElementSibling?.getAnimations({subtree: true}).map((a) => a.finished) ?? [];
+  let landed: Promise<unknown> | null = flying.length ? Promise.allSettled(flying) : null;
+  if (landed) {
+    into.classList.remove('waiting');
+    void landed.then(() => { if (!text && !over) into.classList.add('waiting'); });
+  }
+  const arrived = async () => { if (landed) { await landed; landed = null; } };
+  let drawn = false;
   const draw = () => {
     frame = 0;
     // Read at the foot, it follows the answer down; scrolled up to read, it stays.
     const atFoot = !out || out.scrollHeight - out.clientHeight - out.scrollTop < 24;
     into.replaceChildren(...answerNodes(text));
+    // Its first words come in under the question, as a line written does, not all at once in a frame (a quick one is
+    // all there by then); what follows is added to them.
+    if (!drawn && !still()) into.animate([{opacity: 0, translate: '0 4px'}, {opacity: 1, translate: '0 0'}], {duration: paced(220), easing: LAND});
+    drawn = true;
     if (out && atFoot) out.scrollTop = out.scrollHeight;
   };
   try {
     for await (const words of ask(use, system, question)) {
+      await arrived();
       text += words;
       into.classList.remove('waiting');
       frame ||= requestAnimationFrame(draw);
@@ -82,11 +99,13 @@ export async function answer(into: HTMLElement, repo: string, use: Use, system: 
     if (!text.trim()) throw new AgentError(0, t('Agent returned no response'));
     boxSaid(SESSION, repo, 'stop', text);
   } catch (e) {
+    await arrived();
     cancelAnimationFrame(frame);
     if (text) draw();
     into.append(h('span', {class: 'answer-refused'}, whyNot(e)));
     boxSaid(SESSION, repo, 'stop', whyNot(e));
   } finally {
+    over = true;
     into.classList.remove('waiting');
   }
 }

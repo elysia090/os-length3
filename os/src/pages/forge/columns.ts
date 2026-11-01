@@ -1,7 +1,7 @@
 import {t} from '../../i18n.ts';
 import {h} from '../../ui/dom.ts';
 import {icon, mark} from '../../ui/icons.ts';
-import {after, LAND, paced, still} from '../../ui/glide.ts';
+import {after, LAND, paced, still, unfold} from '../../ui/glide.ts';
 import {onChange} from '../../repos/repos.ts';
 import {renamedIn} from '../../home/band.ts';
 import {shownName} from '../../repos/issues.ts';
@@ -356,9 +356,13 @@ export class Row {
     // The file being written keeps the keyboard and its caret through the page read again.
     const writing = document.activeElement instanceof HTMLTextAreaElement && was.root.contains(document.activeElement) ? document.activeElement : null;
     const at = writing?.closest<HTMLElement>('section.file')?.dataset.path;
+    // What the page did not have opens where it comes (a file just made: an issue written from the box), rather than
+    // standing there in the frame the page is put in.
+    const had = new Set([...was.root.querySelectorAll<HTMLElement>('section.file, section.dir')].map((el) => el.dataset.path));
     this.views.set(repo, fresh);
     was.root.replaceWith(fresh.root);
     this.layout();
+    for (const el of fresh.root.querySelectorAll<HTMLElement>('section.file, section.dir')) if (!had.has(el.dataset.path)) unfold(el, 280);
     if (keep) this.putBack = requestAnimationFrame(() => { fresh.flow.scrollTop = top; });
     if (writing && at) void fresh.reader.refocus(at, writing.selectionStart, writing.selectionEnd);
   }

@@ -89,9 +89,9 @@ let readingPath: string | null = null;
 const ctx: Context = {
   // Server, like File, is laid over the page rather than being one.
   go: (id) => select(id),
-  openRepo(name, path = '', write = false, grownFrom, line = 0) {
+  openRepo(name, path = '', write = false, grownFrom, line = 0, carried) {
     const bringing = brought('forge');
-    if (bringing) { void bringing.then(() => ctx.openRepo(name, path, write, grownFrom, line)); return; }
+    if (bringing) { void bringing.then(() => ctx.openRepo(name, path, write, grownFrom, line, carried)); return; }
     const f = forgeOf!;
     if (current === 'forge' && f.showInForge(name, path, write, line)) return;
     ctx.remember(name);
@@ -100,7 +100,8 @@ const ctx: Context = {
     const from = grownFrom?.isConnected ? grownFrom.getBoundingClientRect()
       : pressedOn?.isConnected && performance.now() - pressedAt < 1500 ? pressedOn.getBoundingClientRect() : null;
     pressedOn = null;
-    select('forge', !!from && morph(from, () => document.querySelector<HTMLElement>(`.col[data-repo="${CSS.escape(name)}"]:not([hidden]) .file`)));
+    select('forge', !!from && morph(from, () => document.querySelector<HTMLElement>(`.col[data-repo="${CSS.escape(name)}"]:not([hidden]) .file`),
+      340, '', 40, grownFrom?.isConnected ? carried : undefined));
   },
   remember(name) { openRepo = name; save(REPO_KEY, name); fileTree.mark(name); },
   reading(path) { readingPath = path; if (current === 'forge') fileTree.markFile(openRepo, path); },

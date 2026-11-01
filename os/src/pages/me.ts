@@ -30,7 +30,9 @@ type Page = 'home' | 'remote';
 // pressed, it opens into the list. It goes away
 // when the pointer leaves, on a press outside, or on Escape.
 
-const OPEN_DELAY = 80;
+// It comes out on a rest, as Server's servers do (server/switcher.ts), not as the pointer passes on its way to it: a
+// press, the moment after arriving, then found it open already, the press doing nothing one could see.
+const OPEN_DELAY = 300;
 const CLOSE_DELAY = 400;
 
 export class Me {
