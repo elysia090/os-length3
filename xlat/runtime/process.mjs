@@ -340,9 +340,9 @@ export class Kernel {
   /**
    * A memory of at least `pages` wasm pages from those let go of, or null. Its first `pages` are zero when given;
    * what lies past them may still hold what its last process left, up to `dirty` (bytes): Process.cover zeroes each
-   * part of that as it is mapped.
+   * part of that as it is mapped. Of its first pages, `over` ([[start, end]]) is not zeroed: the caller writes it whole.
    */
-  takeMemory(pages, image = null) {
+  takeMemory(pages, image = null, over = []) {
     // One that last ran `image` first: what of the program no correct run can change is in it already (as a page
     // cache gives a program its file), and is neither zeroed nor laid again (`keeps`).
     const same = (m) => !!image && !!m.imageOf && (m.imageOf === image || (!!image.file && m.imageOf.file === image.file));
@@ -359,7 +359,7 @@ export class Kernel {
     m.keeps = same(m);
     PROFILE.memoriesReused++;
     if (m.keeps) PROFILE.imagesKept++;
-    clean(m, pages, m.keeps ? image.facts.readOnly ?? [] : []);
+    clean(m, pages, [...m.keeps ? image.facts.readOnly ?? [] : [], ...over]);
     this.reuseMemory(m);
     return m;
   }
@@ -1113,9 +1113,12 @@ export class Process {
     }
   }
 
-  /** A memory for this process of `pages` wasm pages (shared between threads where the backend runs them apart). */
-  newMemory(pages, image = null) {
-    const m = this.kernel.takeMemory(pages, image) ?? new WebAssembly.Memory({initial: pages, maximum: 65536, ...(this.kernel.shared ? {shared: true} : {})});
+  /**
+   * A memory for this process of `pages` wasm pages (shared between threads where the backend runs them apart); `over`:
+   * ranges ([[start, end]]) the caller writes whole before it is used, left as they are meanwhile.
+   */
+  newMemory(pages, image = null, over = []) {
+    const m = this.kernel.takeMemory(pages, image, over) ?? new WebAssembly.Memory({initial: pages, maximum: 65536, ...(this.kernel.shared ? {shared: true} : {})});
     m.users = 1;
     m.written ??= []; // what a process wrote that is not zeroed yet (Kernel.letGo): none, in a new one
     m.deepest = undefined; // how deep its stack has been written (Process.written): its process's to say
@@ -1192,7 +1195,7 @@ export class Process {
     let top = this.stackTop;
     const put = (bytes) => { top -= bytes.length; this.bytes.set(bytes, top); return top; };
     const strings = (list) => list.map((s) => put(enc.encode(s + '\0')));
-    const random = put(crypto.getRandomValues(new Uint8Array(16)));
+    const random = put(randomBytes(16));
     const execfn = put(enc.encode((argv[0] ?? '') + '\0'));
     const envp = strings(env), args = strings(argv);
     const f = this.image.facts;
@@ -1237,19 +1240,25 @@ export class Process {
     return out;
   }
 
-  copyLive(child) {
+  copyLive(child, live = this.copied()) {
     const from = this.bytes, to = child.bytes;
-    const span = (a, b) => { if (b > a) to.set(from.subarray(a, b), a); };
-    const f = this.image.facts;
+    const span = ([a, b]) => { if (b > a) to.set(from.subarray(a, b), a); };
     // What no correct run changes, a memory that ran the same program has already.
-    const image = (a, b) => { for (const [x, y] of gaps(a, b, child.memory.keeps ? f.readOnly ?? [] : [])) span(x, y); };
-    image(f.imageStart ?? 0, Math.min(f.imageEnd, this.stackLow));
+    for (const r of gaps(...live.image, child.memory.keeps ? this.image.facts.readOnly ?? [] : [])) span(r);
+    for (const r of live.rest) span(r);
+    child.memory.deepest = live.low; // its stack is written from here up (Process.written), as its own calls go deeper
+  }
+  /**
+   * What copyLive copies ([start, end]): `image`, and the `rest` (the stack from `low`, what is mapped (the memory past
+   * it is grown ahead, and zero), fixed mappings placed elsewhere).
+   */
+  copied() {
+    const f = this.image.facts;
     const sp = Number(BigInt.asUintN(64, this.task.reg(4)));
     const low = sp > this.stackLow && sp <= this.stackTop ? Math.max(this.stackLow, (sp - 128) & ~15) : this.stackLow;
-    span(low, this.mapBase);
-    child.memory.deepest = low; // its stack is written from here up (Process.written), as its own calls go deeper
-    span(this.mapBase, Math.min(from.length, this.mapEnd)); // the memory past what is mapped is grown ahead, and zero
-    for (const r of this.fixed) span(r.start, Math.min(r.start + r.length, this.mapBase));
+    const rest = [[low, this.mapBase], [this.mapBase, Math.min(this.memory.buffer.byteLength, this.mapEnd)],
+      ...this.fixed.map((r) => [r.start, Math.min(r.start + r.length, this.mapBase)])];
+    return {image: [f.imageStart ?? 0, Math.min(f.imageEnd, this.stackLow)], rest, low};
   }
 
   /**
@@ -1271,16 +1280,18 @@ export class Process {
     for (const key of ['stackLow', 'stackTop', 'mapBase', 'mapEnd', 'argv']) child[key] = this[key];
     child.free = this.free.map((r) => ({...r}));
     child.fixed = this.fixed.map((r) => ({...r}));
+    // What of the parent's it gets a copy of (not zeroed first, as what else its memory's last process wrote is).
+    const live = vm ? null : this.copied();
     if (vm) { child.memory = this.memory; this.memory.users++; }
     else {
-      child.memory = child.newMemory(this.memory.buffer.byteLength / WASM_PAGE, this.image);
+      child.memory = child.newMemory(this.memory.buffer.byteLength / WASM_PAGE, this.image, [live.image, ...live.rest]);
       // Instantiating writes the image's first data; the parent's memory goes
       // over it afterwards, so the child sees what the parent changed.
     }
     ct.mask = t.mask;
     ct.load(this.image, child.memory, t);
     if (!vm) {
-      this.copyLive(child);
+      this.copyLive(child, live);
       for (const m of this.maps) child.mapShared(m.node, m.start, m.length, m.off);
     }
     const regs = t.context().regs;
@@ -1461,6 +1472,15 @@ export const KEEP_INSTANCES = 2;
  * when its module was made without it (share.mjs), and such a module writes nothing as it is instantiated.
  */
 export const goesOn = (image, memory, from) => (from ? from.memory !== memory : !!image.segments);
+
+/** Random bytes drawn ahead (a draw costs tens of microseconds however few it gives: an exec's AT_RANDOM took one). */
+const pool = {bytes: new Uint8Array(0), at: 0};
+/** `n` random bytes (at most 65536), each given once. */
+export function randomBytes(n) {
+  if (pool.at + n > pool.bytes.length) { pool.bytes = crypto.getRandomValues(new Uint8Array(Math.max(4096, n))); pool.at = 0; }
+  pool.at += n;
+  return pool.bytes.subarray(pool.at - n, pool.at);
+}
 
 /** Where the time went (run.mjs prints it with XLAT_TIMING=1): translating, compiling wasm, how much, and what a pack root fetched. */
 export const PROFILE = {images: 0, modules: 0, bytes: 0, translate: 0, compile: 0, fetches: 0, fetched: 0, kept: 0, consolidated: 0, memoriesReused: 0, imagesKept: 0, instancesKept: 0, zeroed: 0, renewed: 0};

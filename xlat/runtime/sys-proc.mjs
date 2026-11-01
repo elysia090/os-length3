@@ -6,7 +6,7 @@
 import {move, zero} from './bulk.mjs';
 import {answerTime, clocks} from './clock.mjs';
 import {E, File, FsError} from './fs.mjs';
-import {Exec, Exit, Wait} from './process.mjs';
+import {Exec, Exit, Wait, randomBytes} from './process.mjs';
 import {CLD, SIG, send, writeInfo} from './signal.mjs';
 
 const N = (x) => Number(BigInt.asIntN(64, x));
@@ -518,7 +518,8 @@ export const PROC_CALLS = {
   },
   318(buf, len) {
     const n = Math.min(N(len), 65536);
-    crypto.getRandomValues(this.bytes.subarray(N(buf), N(buf) + n));
+    // (Copied in: a browser draws none into a shared memory's view.)
+    this.bytes.set(randomBytes(n), N(buf));
     return n;
   },
   170(name, len) { this.kernel.hostname = names(this, name, len); return 0; }, // sethostname: the machine's (its own UTS)
