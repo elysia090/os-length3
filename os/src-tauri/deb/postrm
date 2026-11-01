@@ -1,0 +1,8 @@
+#!/bin/sh
+# Removed (not upgraded): the profile postinst put in place goes, unloaded first.
+set -e
+if { [ "$1" = remove ] || [ "$1" = purge ]; } && [ -e /etc/apparmor.d/length3-l3 ]; then
+  if command -v apparmor_parser > /dev/null 2>&1; then apparmor_parser -R /etc/apparmor.d/length3-l3 2> /dev/null || true; fi
+  rm -f /etc/apparmor.d/length3-l3
+fi
+exit 0
