@@ -82,6 +82,18 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(app.main.locator('.prompt-chip')).toHaveCSS('border-radius', /^(9999|999)px$/);
   });
 
+  test('Run chosen again in the box, a line sent brings the Prompt up: what it prints is seen, never run out of sight', async ({app}) => {
+    // Another of the box's deeds puts the Prompt down, the keyboard staying in the box; Run is chosen back from there.
+    await app.forge.promptBox.press('Alt+3');
+    await expect(app.main.locator('.screen > .glass')).toBeHidden();
+    await app.forge.promptBox.press('Alt+1');
+    await expect(app.forge.promptBox).toBeFocused();
+    await app.forge.promptBox.fill('echo seen');
+    await app.forge.promptBox.press('Control+Enter');
+    await expect(app.main.locator('.screen > .glass')).toBeVisible();
+    await expect(app.forge.prompt.locator('.term-out')).toContainText('seen');
+  });
+
   test('clear clears what the Prompt shows, and Ctrl+C on a run says ^C where it was cut, as a terminal does', async ({app}) => {
     const out = app.forge.prompt.locator('.term-out');
     await app.forge.run('ls');

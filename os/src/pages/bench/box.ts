@@ -393,6 +393,9 @@ export class Box {
     // Ended: started again, and what was written waits in the box to be sent once it is up.
     if (s?.ended) { s.restart(); this.#pillLine.follow(); this.#say(t('Starting up…')); return; }
     if (!sessionFor(repo).send(this.prompt.value)) { this.#say(t('Starting up…')); return; }
+    // Sent with the Prompt put down (Escape, or Run chosen from another of the box's deeds): it comes up, so what is
+    // run is seen run, never answered out of sight.
+    if (!this.#up && document.activeElement === this.prompt) this.#screen?.raise();
     this.#unsay();
     this.#say('');
     this.prompt.value = '';
