@@ -73,8 +73,10 @@ cp -R "$work/out/openssl/usr/." "$dep/usr/"
 
 # curl: libcurl and its command, TLS by that OpenSSL, the root's CA bundle, nothing it could reach a server by
 # that the base's leaves out.
+# (musl's threads are its libc's, and its libpthread.a an empty one: -lpthread is -pthread, in the form curl's
+# configure checks LIBS for.)
 (cd "$work/curl" && CC="$cc" CFLAGS="$hard -fPIE" CPPFLAGS="-I$dep/usr/include" LDFLAGS="$pie -L$dep/usr/lib" \
-  LIBS='-pthread' PKG_CONFIG=pkg-config PKG_CONFIG_LIBDIR="$dep/usr/lib/pkgconfig" PKG_CONFIG_SYSROOT_DIR="$dep" \
+  LIBS='-lpthread' PKG_CONFIG=pkg-config PKG_CONFIG_LIBDIR="$dep/usr/lib/pkgconfig" PKG_CONFIG_SYSROOT_DIR="$dep" \
   ./configure --prefix=/usr --disable-shared --enable-static --disable-docs --disable-manual \
     --disable-ldap --disable-ldaps --disable-rtsp \
     --with-openssl="$dep/usr" --with-zlib="$dep/usr" --with-ca-bundle=/etc/ssl/certs/ca-certificates.crt \
@@ -95,8 +97,7 @@ gitflags="CC=$cc prefix=/usr NO_GETTEXT=YesPlease NO_TCLTK=YesPlease NO_PERL=Yes
 # OpenSSH's client programs, its settings at /etc/ssh.
 (cd "$work/openssh" && CC="$cc" CFLAGS="$hard -fPIE" CPPFLAGS="-I$dep/usr/include" LDFLAGS="$pie -L$dep/usr/lib" \
   LIBS='-pthread' ./configure --prefix=/usr --sysconfdir=/etc/ssh --with-ssl-dir="$dep/usr" --with-zlib="$dep/usr" \
-    --without-pam --without-kerberos5 --without-libedit --without-ldns --without-selinux --without-zstd \
-    --without-pie >/dev/null &&
+    --without-pam --without-kerberos5 --without-libedit --without-ldns --without-selinux --without-pie >/dev/null &&
   make -s -j"$jobs" ssh scp sftp ssh-add ssh-agent ssh-keygen ssh-keyscan)
 mkdir -p "$work/out/openssh-client/usr/bin"
 for p in ssh scp sftp ssh-add ssh-agent ssh-keygen ssh-keyscan; do
