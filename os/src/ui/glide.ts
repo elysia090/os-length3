@@ -406,8 +406,10 @@ const goingOut = new WeakMap<Element, {a: Animation; inert: boolean}>();
 function folded(el: HTMLElement): [Keyframe, Keyframe] {
   const cs = getComputedStyle(el);
   const room = ['paddingTop', 'paddingBottom', 'marginTop', 'marginBottom', 'borderTopWidth', 'borderBottomWidth'] as const;
-  const full: Keyframe = {height: `${el.getBoundingClientRect().height}px`, minHeight: '0px', opacity: 1, overflow: 'hidden'};
-  const none: Keyframe = {height: '0px', minHeight: '0px', opacity: 0, overflow: 'hidden'};
+  // Its height alone says how much room it takes as it goes: a share of a column's free room (a Forge box's flex-grow)
+  // given on top would have it stand at half its size in the first frame.
+  const full: Keyframe = {height: `${el.getBoundingClientRect().height}px`, minHeight: '0px', flexGrow: '0', opacity: 1, overflow: 'hidden'};
+  const none: Keyframe = {height: '0px', minHeight: '0px', flexGrow: '0', opacity: 0, overflow: 'hidden'};
   for (const k of room) { full[k] = cs[k]; none[k] = '0px'; }
   return [full, none];
 }

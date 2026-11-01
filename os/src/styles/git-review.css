@@ -62,4 +62,8 @@
 }
 .diff-line.marked .diff-words, .diff-line.marking .diff-words { background: var(--marker); color: var(--ink); }
 .diff-line.markable:hover:not(.marked, .marking) .diff-words { background: var(--marker-soft); }
+/* The pale stroke the pointer shows comes quickly and goes slowly, as a row's fill under the pointer does (shared.css):
+   a pass across the lines leaves a short trail rather than blinking. */
+.diff-line.markable .diff-words { transition: background-color calc(200ms * var(--pace)) ease-out; }
+.diff-line.markable:hover .diff-words { transition-duration: calc(60ms * var(--pace)); }
 .diff-line.marked .diff-no, .diff-line.marking .diff-no { color: var(--ink); font-weight: 600; }
