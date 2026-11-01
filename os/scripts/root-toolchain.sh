@@ -16,9 +16,9 @@ out=$1
 here=$(cd "$(dirname "$0")/.." && pwd)
 . "$here/../distribution/sources.env"
 grep -q '^3\.24\.' /etc/alpine-release 2>/dev/null || { echo "root-toolchain: run on Alpine 3.24 (its target is the base's)" >&2; exit 2; }
+apk add --no-cache -q build-base bison flex perl curl xz bzip2 linux-headers
 target=$(gcc -dumpmachine)
 [ "$target" = x86_64-alpine-linux-musl ] || { echo "root-toolchain: this compiler targets $target, the base's GCC x86_64-alpine-linux-musl" >&2; exit 2; }
-apk add --no-cache -q build-base bison flex perl curl xz bzip2 linux-headers
 mkdir -p "$out"
 out=$(cd "$out" && pwd)
 src="$out/../toolchain-src"
