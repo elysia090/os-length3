@@ -346,14 +346,17 @@ export class Kernel {
     // One that last ran `image` first: what of the program no correct run can change is in it already (as a page
     // cache gives a program its file), and is neither zeroed nor laid again (`keeps`).
     const same = (m) => !!image && !!m.imageOf && (m.imageOf === image || (!!image.file && m.imageOf.file === image.file));
-    let k = this.spareMemories.findLastIndex(same);
+    // Before those, one an instance of `image` is kept on: that may go on too (Task.load, goesOn); and of those, one
+    // no other program's instance is kept on, so that one is there for its program's next process.
+    const order = image ? [(m) => this.keepsInstance(m, image), (m) => same(m) && !this.keepsInstance(m), same] : [];
+    let k = -1;
+    for (const f of order) if ((k = this.spareMemories.findLastIndex(f)) >= 0) break;
     if (k < 0) k = this.spareMemories.length - 1;
     if (k < 0) return null;
     const [m] = this.spareMemories.splice(k, 1);
     const have = m.buffer.byteLength / WASM_PAGE;
     if (have < pages) m.grow(pages - have);
     m.keeps = same(m);
-    if (!m.keeps) m.pooled = null;
     PROFILE.memoriesReused++;
     if (m.keeps) PROFILE.imagesKept++;
     clean(m, pages, m.keeps ? image.facts.readOnly ?? [] : []);
@@ -387,6 +390,8 @@ export class Kernel {
   }
   /** `memory` is let go of for good (not kept for another process): nothing more to do here (remote.mjs forgets it in its Workers). */
   forget(memory) {}
+  /** Whether an instance of `image` (of any, without one) is kept on `memory`, for a process of it to go on with (Task.load; remote.mjs: a Worker's). */
+  keepsInstance(memory, image = null) { return !!memory.pooled?.some((x) => !image || x.image === image); }
   /** A memory let go of is taken again (the backend forgets what it kept for it: remote.mjs's lock). */
   reuseMemory(memory) {}
 
@@ -755,7 +760,10 @@ export class Kernel {
     // One thread's instance stays with its memory: a fork that takes the memory for the same program runs on it
     // again instead of instantiating it and every module made for it since (Task.load).
     const only = p.tasks.size === 1 ? [...p.tasks][0] : null;
-    if (p.memory && only?.instance && only.slot && p.memory.users === 1) p.memory.pooled = {image: only.image, instance: only.instance, slot: only.slot, attached: only.attached};
+    if (p.memory && only?.instance && only.slot && p.memory.users === 1) {
+      const kept = {image: only.image, instance: only.instance, slot: only.slot, attached: only.attached};
+      p.memory.pooled = [kept, ...(p.memory.pooled ?? []).filter((x) => x.image !== only.image)].slice(0, KEEP_INSTANCES);
+    }
     for (const t of [...p.tasks]) this.endTask(t);
     p.tasks.clear();
     p.unmapShared();
@@ -1334,12 +1342,11 @@ export class Task {
     this.image = image;
     this.fpu = from ? from.fpu.clone(() => this.bytes) : new Fpu(() => this.bytes, image.fpuOps);
     this.memory = memory;
-    // A fork's copy of its parent's memory, one an exited process of the same program left its instance on: that
-    // instance goes on, its globals as a fresh one's, the modules made since attached. What instantiating writes (the
-    // image's first data) is not needed: the parent's memory is copied over all of it (Process.copyLive).
-    const pooled = memory.pooled;
-    memory.pooled = null;
-    if (pooled && from && from.memory !== memory && pooled.image === image) {
+    // A memory an exited process of the same program left its instance on: that instance goes on, its globals as a
+    // fresh one's, the modules made since attached, where nothing instantiating would write is wanted (goesOn).
+    const pooled = goesOn(image, memory, from) ? memory.pooled?.find((x) => x.image === image) : null;
+    if (pooled) {
+      memory.pooled = memory.pooled.filter((x) => x !== pooled);
       this.slot = pooled.slot;
       this.slot.task = this;
       this.instance = pooled.instance;
@@ -1440,6 +1447,20 @@ export class Task {
 
 // 18: what a translation keeps of rflags beyond fl and of MXCSR (DF, AC, ID), when it has it.
 export const REG = [...Array.from({length: 16}, (_, n) => `r${n}`), 'fs', 'fl', 'rf'];
+
+/**
+ * The instances kept on a memory its processes ended on, each of its own program (Task.load; a Worker's, remote.mjs
+ * and cpu.mjs): a shell's fork child and the command it runs take turns on one memory.
+ */
+export const KEEP_INSTANCES = 2;
+
+/**
+ * Whether an instance of `image` made on `memory` before may run it in place of a new one (Task.load, and a Worker's
+ * kept one: remote.mjs): nothing a new instance would write is wanted. A fork's own copy of its parent's memory has
+ * the parent's copied over all of it (Process.copyLive); an exec (or a first process) lays the image's data itself
+ * when its module was made without it (share.mjs), and such a module writes nothing as it is instantiated.
+ */
+export const goesOn = (image, memory, from) => (from ? from.memory !== memory : !!image.segments);
 
 /** Where the time went (run.mjs prints it with XLAT_TIMING=1): translating, compiling wasm, how much, and what a pack root fetched. */
 export const PROFILE = {images: 0, modules: 0, bytes: 0, translate: 0, compile: 0, fetches: 0, fetched: 0, kept: 0, consolidated: 0, memoriesReused: 0, imagesKept: 0, instancesKept: 0, zeroed: 0, renewed: 0};

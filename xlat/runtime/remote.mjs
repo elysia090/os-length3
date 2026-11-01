@@ -13,8 +13,8 @@
 // Where they are missing, process.mjs's Kernel runs the same threads here,
 // one at a time.
 
-import {CH, KEEP_THREADS, OP, REPLY, rouse, sleep, watch} from './channel.mjs';
-import {Exec, Exit, INTERRUPT, Kernel, PROFILE, REG, Redirect, TRACE_SYSCALLS, Task, trace} from './process.mjs';
+import {CH, OP, REPLY, rouse, sleep, watch} from './channel.mjs';
+import {Exec, Exit, INTERRUPT, KEEP_INSTANCES, Kernel, PROFILE, REG, Redirect, TRACE_SYSCALLS, Task, goesOn, trace} from './process.mjs';
 import {deliverable, take} from './signal.mjs';
 
 const isNode = typeof process !== 'undefined' && !!process.versions?.node;
@@ -37,6 +37,8 @@ const warmed = [];
 const ids = new WeakMap();
 let lastId = 0;
 const idOf = (o) => { let n = ids.get(o); if (!n) ids.set(o, n = ++lastId); return n; };
+/** Whether Worker `w` keeps an instance of image `imageId` (of any, null) on memory `memoryId` (as cpu.mjs's kept says). */
+const keeps = (w, memoryId, imageId) => !!memoryId && !!w.kept?.some((x) => x.memoryId === memoryId && (imageId === null || x.imageId === imageId));
 
 /**
  * Start `n` Workers for threads now, before the kernel is made (its program and translator still on their way):
@@ -92,26 +94,34 @@ export class RemoteKernel extends Kernel {
   }
 
   /**
-   * A Worker for `t`'s thread: a fork's child goes to a spare Worker that still holds an instance of its program on
-   * the memory it takes (cpu.mjs keeps its last few: `kept`), which goes on (again); any other, one started ahead.
+   * A Worker for `t`'s thread: one that still holds an instance of its program on the memory it runs on (cpu.mjs keeps
+   * its last few: `kept`), where that may go on (t.mayGoOn: again); any other, one started ahead.
    */
   worker(t = null) {
     let w = null;
-    if (t?.forked) {
-      const memoryId = idOf(t.memory), imageId = idOf(t.image);
-      const k = this.spares.findIndex((s) => s.kept?.some((x) => x.memoryId === memoryId && x.imageId === imageId));
-      if (k >= 0) { [w] = this.spares.splice(k, 1); t.again = true; PROFILE.instancesKept++; }
-    }
+    const k = t?.mayGoOn ? this.spares.findIndex((s) => this.holds(s, t)) : -1;
+    if (k >= 0) { [w] = this.spares.splice(k, 1); t.again = true; PROFILE.instancesKept++; }
     w ??= this.spares.pop() ?? this.spawnWorker();
     while (this.spares.length < this.spareCount) this.spares.push(this.spawnWorker());
     return w;
+  }
+
+  /** Whether Worker `w` keeps an instance of `t`'s image on `t`'s memory. */
+  holds(w, t) { return keeps(w, ids.get(t.memory), ids.get(t.image) ?? -1); }
+
+  /** The Workers here: those spare and those running a thread. */
+  workers() { return new Set([...this.spares, ...[...this.tasks.values()].map((t) => t.worker).filter(Boolean)]); }
+
+  keepsInstance(memory, image = null) {
+    const memoryId = ids.get(memory), imageId = image ? ids.get(image) : null;
+    return !!memoryId && (!image || !!imageId) && [...this.workers()].some((w) => keeps(w, memoryId, imageId));
   }
 
   /** `memory` is let go of for good: no Worker keeps an instance on it (each would hold it). */
   forget(memory) {
     const memoryId = ids.get(memory);
     if (!memoryId) return;
-    for (const w of new Set([...this.spares, ...[...this.tasks.values()].map((t) => t.worker).filter(Boolean)])) {
+    for (const w of this.workers()) {
       if (!w.kept?.some((x) => x.memoryId === memoryId)) continue;
       w.kept = w.kept.filter((x) => x.memoryId !== memoryId);
       w.post({type: 'forget', memoryId});
@@ -325,9 +335,8 @@ export class RemoteTask extends Task {
     this.image = image;
     this.memory = memory;
     this.fpuState = from ? from.fpuState : null;
-    // A fork's own copy of its parent's memory: what instantiating writes is copied over, so an instance kept on it
-    // may go on (RemoteKernel.worker).
-    this.forked = !!from && from.memory !== memory;
+    // An instance a Worker kept of this image on this memory may run it (RemoteKernel.worker, answer: again).
+    this.mayGoOn = goesOn(image, memory, from);
     this.again = false;
     // A module that carries its data, instantiated over a memory in use: the image is put back (cpu.mjs).
     this.keep = from && !image.segments && from.memory === memory ? [image.facts.imageStart ?? 0, image.facts.imageEnd] : null;
@@ -389,7 +398,14 @@ export class RemoteTask extends Task {
     if (this.dead) return;
     this.state = 'running';
     if (!this.worker) { this.worker = this.kernel.worker(this); this.post(); return; }
-    if (this.execd) { this.execd = false; this.reply(REPLY.AWAY); this.post(); return; }
+    if (this.execd) {
+      this.execd = false;
+      this.reply(REPLY.AWAY);
+      // Its Worker may keep an instance of the program it now runs, on the memory it runs it on (a shell's commands).
+      if (this.mayGoOn && this.kernel.holds(this.worker, this)) { this.again = true; PROFILE.instancesKept++; }
+      this.post();
+      return;
+    }
     if (this.renewed) { this.renewed = false; this.i64[CH.RIP] = this.resumeAt; this.reply(REPLY.RENEW); return; }
     if (this.redirected) { this.i64[CH.RIP] = this.resumeAt; this.reply(REPLY.REDIRECT); return; }
     const changed = this.regsChanged;
@@ -401,7 +417,7 @@ export class RemoteTask extends Task {
     const image = this.image, k = this.kernel, w = this.worker;
     // What its Worker keeps after this run, as it keeps it (cpu.mjs kept): this instance first, the few before it.
     const memoryId = idOf(this.memory), imageId = idOf(image);
-    w.kept = [{memoryId, imageId}, ...(w.kept ?? []).filter((x) => x.memoryId !== memoryId || x.imageId !== imageId)].slice(0, KEEP_THREADS);
+    w.kept = [{memoryId, imageId}, ...(w.kept ?? []).filter((x) => x.memoryId !== memoryId || x.imageId !== imageId)].slice(0, KEEP_INSTANCES);
     w.post({
       type: 'run', again: this.again, tid: this.tid, module: image.module, memoryId, imageId,
       extras: image.extras.map(({module, base, count: n}) => ({module, base, count: n})),

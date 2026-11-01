@@ -41,12 +41,6 @@ export const READS_REGS = new Set([15, 56, 57, 58, 131, 158, 435]);
 export const REGS = REG;
 
 /**
- * The threads a Worker keeps after they end (cpu.mjs kept, mirrored in remote.mjs): their instances, each on its
- * memory, for a fork's child of that program on that memory to go on with (an instance costs most of a fork).
- */
-export const KEEP_THREADS = 2;
-
-/**
  * Watch word `index` of `words` for up to `ms` (spinning, as a lock does before it sleeps): true once `ready` says
  * it changed. A thread woken from Atomics.wait takes tens of microseconds to run again; a call answered while its
  * caller still watches costs well under one, so each side watches a little before it sleeps.

@@ -13,10 +13,10 @@
 // `lock`-prefixed instructions to plain loads and stores, which are atomic
 // only while no other thread of the process runs.
 
-import {CH, KEEP_THREADS, OP, READS_REGS, REPLY, REGS, rouse, sleep, watch} from './channel.mjs';
+import {CH, OP, READS_REGS, REPLY, REGS, rouse, sleep, watch} from './channel.mjs';
 import {Fpu} from './fpu.mjs';
 import {answerTime, clocks} from './clock.mjs';
-import {INTERRUPT, Preempted, SHARES, SLICE_LOOPS, TRAP_YIELD, div128, fault, nextSlice, translatorsLimit, trapOrPreempt} from './process.mjs';
+import {INTERRUPT, KEEP_INSTANCES, Preempted, SHARES, SLICE_LOOPS, TRAP_YIELD, div128, fault, nextSlice, translatorsLimit, trapOrPreempt} from './process.mjs';
 
 const isNode = typeof process !== 'undefined' && !!process.versions?.node;
 const port = isNode ? (await import('node:worker_threads')).parentPort : self;
@@ -26,7 +26,7 @@ class Again {} // registers were replaced: run from resumeAt
 class Away {} // the image was replaced, or the thread ended: leave everything
 
 let task = null;
-/** The threads run here last, most recent first, each with its instance on its memory (KEEP_THREADS; remote.mjs mirrors it). */
+/** The threads run here last, most recent first, each with its instance on its memory (KEEP_INSTANCES; remote.mjs mirrors it). */
 let kept = [];
 
 /** The thread, set up from a 'run' message. */
@@ -75,9 +75,9 @@ class Thread {
     this.slice = SLICE_LOOPS;
   }
   /**
-   * A fork's child on the memory this Worker's last thread ran the same program on (remote.mjs worker): the instance
-   * goes on, its globals as a fresh one's, the modules made since attached. Instantiating's writes are not needed:
-   * the parent's memory was copied over them.
+   * A thread of this program on the memory this instance was made on, where nothing instantiating writes is wanted
+   * (process.mjs goesOn; remote.mjs said so: again): the instance goes on, its globals as a fresh one's, the modules
+   * made since attached.
    */
   again(m) {
     this.take(m);
@@ -304,7 +304,7 @@ listen(({data: m}) => {
     const same = (t) => t.memoryId === m.memoryId && t.imageId === m.imageId;
     const was = m.again ? kept.find(same) : null;
     if (was) { task = was; task.again(m); } else task = new Thread(m);
-    kept = [task, ...kept.filter((t) => t !== task && !same(t))].slice(0, KEEP_THREADS);
+    kept = [task, ...kept.filter((t) => t !== task && !same(t))].slice(0, KEEP_INSTANCES);
     task.run();
     // Left: its channel may go to another thread (remote.mjs channel).
     Atomics.store(task.i32, CH.LEFT, 1);
