@@ -773,6 +773,23 @@ function ioctl(p, d, request, arg) {
   }
   fail(E.NOTTY);
 }
+/**
+ * chown of `node` (looked up already: a name not there is ENOENT first): to the one owner this machine has, 0, or -1
+ * to keep it; any other id is not mapped in the Prompt's namespace (EINVAL, as there). As Linux's, it takes away a
+ * file's set-user-ID bit, and its set-group-ID bit where the group may run it.
+ */
+function chown(p, node, uid, gid) {
+  for (const id of [uid, gid]) {
+    const x = Number(BigInt.asUintN(32, id));
+    if (x !== 0 && x !== 0xffffffff) fail(E.INVAL);
+  }
+  if (node && !node.isDir && node.mode !== undefined) {
+    node.mode &= ~0o4000;
+    if (node.mode & 0o010) node.mode &= ~0o2000;
+  }
+  return 0;
+}
+
 function dup(p, oldfd, newfd, cloexec) {
   const d = descriptor(p, oldfd);
   if (newfd < 0 || newfd >= p.fds.limit) fail(E.BADF);
@@ -965,7 +982,9 @@ export const FILE_CALLS = {
   89(name, buf, size) { return readlink(this, BigInt(AT_FDCWD), name, buf, size); },
   90(name, mode) { const n = this.kernel.vfs.lookup(path(this, name), this.cwd); n.mode = (n.mode & ~0o7777) | (N(mode) & 0o7777); return 0; },
   91(fd, mode) { const n = descriptor(this, fd).node; if (n) n.mode = (n.mode & ~0o7777) | (N(mode) & 0o7777); return 0; },
-  92() { return 0; }, 93() { return 0; }, 94() { return 0; },
+  92(name, uid, gid) { return chown(this, this.kernel.vfs.lookup(path(this, name), this.cwd), uid, gid); },
+  93(fd, uid, gid) { return chown(this, descriptor(this, fd).node, uid, gid); }, // fchown
+  94(name, uid, gid) { return chown(this, this.kernel.vfs.lookup(path(this, name), this.cwd, false), uid, gid); }, // lchown
   95(mask) { const old = this.umask; this.umask = N(mask) & 0o777; return old; },
   // utime, utimes, futimesat, utimensat: the times of a file that is there (ENOENT for one that is not, which
   // is how touch knows to make it).
@@ -992,7 +1011,11 @@ export const FILE_CALLS = {
   217(fd, buf, count) { return getdents(this, fd, buf, count); },
   257(dirfd, name, flags, mode) { return openAt(this, dirfd, name, flags, mode); },
   258(dirfd, name, mode) { return makeDir(this, dirfd, name, mode); },
-  260() { return 0; },
+  260(dirfd, name, uid, gid, flags) { // fchownat
+    const f = N(flags), named = N(name) && this.cstring(N(name));
+    if (!named && f & AT.EMPTY_PATH) return chown(this, N(dirfd) === AT_FDCWD ? this.kernel.vfs.lookup(this.cwd, '/') : descriptor(this, dirfd).node, uid, gid);
+    return chown(this, this.kernel.vfs.lookup(path(this, name), base(this, dirfd), !(f & AT.SYMLINK_NOFOLLOW)), uid, gid);
+  },
   262(dirfd, name, st, flags) {
     if ((N(flags) & AT.EMPTY_PATH) && !this.bytes[N(name)]) return writeStat(this, st, describe(descriptor(this, dirfd)));
     return writeStat(this, st, this.kernel.vfs.lookup(path(this, name), base(this, dirfd), !(N(flags) & AT.SYMLINK_NOFOLLOW)));

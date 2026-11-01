@@ -7,6 +7,7 @@
 
 import {Dir, File, Link, S_IFREG} from './fs.mjs';
 import {procNet} from './net-view.mjs';
+import {CAPS} from './process.mjs';
 
 const enc = new TextEncoder();
 const HZ = 100;
@@ -33,7 +34,7 @@ class Pointer extends Link {
   set target(_) { /* made, not kept */ }
 }
 
-const comm = (p) => (p.argv?.[0] ?? 'init').split('/').pop().slice(0, 15);
+const comm = (p) => (p.comm ?? (p.argv?.[0] ?? 'init').split('/').pop()).slice(0, 15);
 const state = (k, p) => p.state === 'zombie' ? 'Z' : p.stopped ? 'T' : k.current?.proc === p ? 'R' : 'S';
 const STATE = {R: 'R (running)', S: 'S (sleeping)', Z: 'Z (zombie)', T: 'T (stopped)'};
 const memoryBytes = (p) => p.memory?.buffer?.byteLength ?? 0;
@@ -90,7 +91,9 @@ export function mountProc(kernel) {
       `Tgid:\t${p.pid}`, 'Ngid:\t0', `Pid:\t${p.pid}`, `PPid:\t${p.ppid}`, 'TracerPid:\t0', 'Uid:\t0\t0\t0\t0', 'Gid:\t0\t0\t0\t0',
       `FDSize:\t${Math.max(64, p.fds?.slots?.size ?? 0)}`, 'Groups:\t', `VmPeak:\t${kb} kB`, `VmSize:\t${kb} kB`, `VmRSS:\t${kb} kB`,
       `Threads:\t${Math.max(1, p.tasks?.size ?? 1)}`, 'SigQ:\t0/63432', `SigPnd:\t${hex(0n)}`, `ShdPnd:\t${hex(0n)}`, `SigBlk:\t${hex(0n)}`,
-      `SigIgn:\t${hex(ign)}`, `SigCgt:\t${hex(cgt)}`, `Cpus_allowed_list:\t0-${cpus - 1}`, ''].join('\n');
+      `SigIgn:\t${hex(ign)}`, `SigCgt:\t${hex(cgt)}`, `CapInh:\t${hex(p.caps?.inheritable ?? 0n)}`, `CapPrm:\t${hex(p.caps?.permitted ?? 0n)}`,
+      `CapEff:\t${hex(p.caps?.effective ?? 0n)}`, `CapBnd:\t${hex(CAPS)}`, 'CapAmb:\t0000000000000000', `NoNewPrivs:\t${p.noNewPrivs ? 1 : 0}`,
+      'Seccomp:\t0', `Cpus_allowed_list:\t0-${cpus - 1}`, ''].join('\n');
   };
   const maps = (p) => {
     const exe = p.exe ?? '';
@@ -118,6 +121,8 @@ export function mountProc(kernel) {
       ['maps', new Made(() => maps(p))],
       ['statm', new Made(() => { const pg = Math.ceil(memoryBytes(p) / PAGE); return `${pg} ${pg} 0 0 0 ${pg} 0\n`; })],
       ['limits', new Made(() => limits(p))],
+      // Its user namespace's: the one id it maps, 0, the person's own outside (core/src/launch.rs).
+      ['uid_map', new Made(() => idMap)], ['gid_map', new Made(() => idMap)], ['setgroups', new Made(() => 'deny\n')],
       ['net', null],
       ['mounts', new Made(() => mounts())],
       ['cwd', new Pointer(() => p.cwd)],
@@ -150,6 +155,7 @@ export function mountProc(kernel) {
       return `${name.padEnd(26)}${say(soft).padEnd(21)}${say(hard).padEnd(21)}${unit ? unit.padEnd(10) : ''}\n`;
     }).join('');
   };
+  const idMap = `${'0'.padStart(10)} ${'1000'.padStart(10)} ${'1'.padStart(10)}\n`;
   // /proc/net (and each process's: one network here), made from net-view.mjs.
   const netFiles = procNet(kernel);
   const net = new Listing(() => new Map(Object.entries(netFiles).map(([name, make]) => [name, new Made(make)])));

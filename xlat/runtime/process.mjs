@@ -42,6 +42,8 @@ const INF = 0xffffffffffffffffn;
 export const RLIMITS = [[INF, INF], [INF, INF], [INF, INF], [BigInt(STACK_BYTES), INF], [0n, INF], [INF, INF], [63432n, 63432n],
   [1024n, 524288n], [8n << 20n, 8n << 20n], [INF, INF], [INF, INF], [63432n, 63432n], [819200n, 819200n], [0n, 0n], [0n, 0n], [INF, INF]];
 const GUARD = 1 << 16;
+/** Every capability Linux has (to CAP_CHECKPOINT_RESTORE, 40): root's in its own user namespace. */
+export const CAPS = (1n << 41n) - 1n;
 
 const CALLS = {...FILE_CALLS, ...PROC_CALLS, ...NET_CALLS, ...SIGNAL_CALLS};
 const dec = new TextDecoder(), enc = new TextEncoder();
@@ -738,6 +740,8 @@ export class Kernel {
     for (const c of p.children) {
       c.ppid = 1;
       if (init?.state === 'live') init.children.add(c); else if (c.state === 'zombie') this.procs.delete(c.pid);
+      // Its parent gone: the signal it asked for then (prctl PR_SET_PDEATHSIG).
+      if (c.state === 'live' && c.deathSignal) send(this, c, c.deathSignal, {code: SI.USER, pid: p.pid, uid: 0});
     }
     p.children.clear();
     const parent = this.procs.get(p.ppid);
@@ -919,6 +923,10 @@ export class Process {
     this.cwd = parent?.cwd ?? '/';
     this.umask = parent?.umask ?? 0o022;
     this.limits = (parent?.limits ?? RLIMITS).map((l) => l.slice()); // getrlimit's, kept across exec
+    // Its capabilities in its user namespace (root's: all of them; capset may drop some, exec as root has them again).
+    this.caps = parent ? {...parent.caps} : {effective: CAPS, permitted: CAPS, inheritable: 0n};
+    this.comm = parent?.comm ?? null; // its name, when prctl(PR_SET_NAME) gave it one (else its program's)
+    this.noNewPrivs = parent?.noNewPrivs ?? false; // PR_SET_NO_NEW_PRIVS: once said, for it and all it starts
     this.children = new Set(); // Process
     this.tasks = new Set(); // its threads
     this.actions = new Map(parent?.actions ?? []); // signal -> {handler, flags, restorer, mask}
@@ -1084,6 +1092,8 @@ export class Process {
     this.memory = this.newMemory(this.mapBase / WASM_PAGE, image);
     this.argv = argv;
     this.env = env;
+    this.comm = null;
+    this.caps = {effective: CAPS, permitted: CAPS, inheritable: this.caps.inheritable};
     this.exe = this.kernel.vfs.realpath(path, this.cwd);
     this.fds.exec();
     // Handled signals go back to their default; ignored ones stay ignored.

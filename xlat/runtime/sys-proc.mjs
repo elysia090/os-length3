@@ -237,6 +237,74 @@ function rlimit(p, target, resource, next, old) {
   return 0;
 }
 
+// ---- who a process is ----
+//
+// The Prompt's user namespace maps one id, 0, the person's own outside it (core/src/launch.rs writes uid_map and
+// gid_map "0 ID 1", and setgroups "deny"). So a process is root and becomes no one else: an id not mapped is EINVAL
+// (su to another user fails there as here), setgroups is EPERM, and it holds every capability within its namespace.
+
+const KEEP = 0xffffffff;
+/** Ids set*id may be given: 0, or (where the call allows it) -1 to keep one. */
+function mapped(ids, keep = true) {
+  for (const id of ids) {
+    const x = Number(BigInt.asUintN(32, id));
+    if (x !== 0 && !(keep && x === KEEP)) fail(E.INVAL);
+  }
+  return 0;
+}
+
+/** capget and capset's header (version, pid): the version known (v3), or EINVAL with the one it should have been. */
+function capHeader(p, header) {
+  const v = p.view, at = N(header), version = v.getUint32(at, true);
+  if (version !== 0x20080522 && version !== 0x20071026 && version !== 0x19980330) { v.setUint32(at, 0x20080522, true); fail(E.INVAL); }
+  const pid = v.getInt32(at + 4, true);
+  const target = pid === 0 || pid === p.pid ? p : p.kernel.procs.get(pid);
+  if (!target || target.state !== 'live') fail(E.SRCH);
+  return {target, words: version === 0x19980330 ? 1 : 2};
+}
+
+/** prctl's options a program asks of itself, as Linux answers them (an option it does not know: EINVAL). */
+function prctl(p, option, arg2, arg3, arg4, arg5) {
+  const v = p.view, a = N(arg2);
+  switch (option) {
+    case 1: if (a < 0 || a > 64) fail(E.INVAL); p.deathSignal = a; return 0; // PR_SET_PDEATHSIG
+    case 2: v.setInt32(a, p.deathSignal ?? 0, true); return 0; // PR_GET_PDEATHSIG
+    case 3: return 1; // PR_GET_DUMPABLE
+    case 4: if (a !== 0 && a !== 1) fail(E.INVAL); return 0; // PR_SET_DUMPABLE
+    case 7: return p.keepCaps ? 1 : 0; // PR_GET_KEEPCAPS
+    case 8: if (a !== 0 && a !== 1) fail(E.INVAL); p.keepCaps = a === 1; return 0; // PR_SET_KEEPCAPS
+    case 15: { // PR_SET_NAME: its name, as /proc says it (15 bytes at most)
+      const b = p.bytes, end = b.subarray(a, a + 16).indexOf(0);
+      p.comm = new TextDecoder().decode(b.subarray(a, a + (end < 0 ? 15 : Math.min(end, 15))));
+      return 0;
+    }
+    case 16: { // PR_GET_NAME
+      const name = new TextEncoder().encode(p.comm ?? (p.argv?.[0] ?? '').split('/').pop()).subarray(0, 15);
+      p.bytes.fill(0, a, a + 16);
+      p.bytes.set(name, a);
+      return 0;
+    }
+    case 21: return 0; // PR_GET_SECCOMP: none
+    case 22: return 0; // PR_SET_SECCOMP: a filter is taken; none of the calls here is one it would have stopped
+    case 23: if (a < 0 || a > 40) fail(E.INVAL); return p.dropped?.has(a) ? 0 : 1; // PR_CAPBSET_READ
+    case 24: if (a < 0 || a > 40) fail(E.INVAL); (p.dropped ??= new Set()).add(a); return 0; // PR_CAPBSET_DROP
+    case 27: return 0; // PR_GET_SECUREBITS
+    case 28: return 0; // PR_SET_SECUREBITS
+    case 29: return 0; // PR_SET_TIMERSLACK
+    case 30: return 50000; // PR_GET_TIMERSLACK: Linux's default, 50 µs
+    case 35: fail(E.PERM); // PR_SET_MM: wants CAP_SYS_RESOURCE where the namespace has it not
+    case 36: p.subreaper = a !== 0; return 0; // PR_SET_CHILD_SUBREAPER
+    case 37: v.setInt32(a, p.subreaper ? 1 : 0, true); return 0; // PR_GET_CHILD_SUBREAPER
+    case 38: if (a !== 1 || N(arg3) || N(arg4) || N(arg5)) fail(E.INVAL); p.noNewPrivs = true; return 0; // PR_SET_NO_NEW_PRIVS
+    case 39: return p.noNewPrivs ? 1 : 0; // PR_GET_NO_NEW_PRIVS
+    case 41: case 42: return 0; // PR_SET_THP_DISABLE, PR_GET_THP_DISABLE
+    case 47: if (a === 1) return 0; if (a >= 2 && a <= 4) return 0; fail(E.INVAL); // PR_CAP_AMBIENT: none raised
+    case 0x59616d61: return 0; // PR_SET_PTRACER
+    case 0x53564d41: return 0; // PR_SET_VMA: a name for a mapping
+  }
+  fail(E.INVAL);
+}
+
 /** A host or domain name of at most 64 bytes, as sethostname takes it. */
 function names(p, address, length) {
   const n = N(length);
@@ -354,8 +422,11 @@ export const PROC_CALLS = {
     return 0;
   },
   100(buf) { if (N(buf)) this.bytes.fill(0, N(buf), N(buf) + 32); return Number(monotonic() / 10000000n); },
-  102() { return 0; }, 104() { return 0; }, 105() { return 0; }, 106() { return 0; },
-  107() { return 0; }, 108() { return 0; },
+  102() { return 0; }, 104() { return 0; }, 107() { return 0; }, 108() { return 0; }, // getuid, getgid, geteuid, getegid
+  105(uid) { return mapped([uid], false); }, // setuid
+  106(gid) { return mapped([gid], false); }, // setgid
+  113(r, e) { return mapped([r, e]); }, // setreuid
+  114(r, e) { return mapped([r, e]); }, // setregid
   109(pid, pgid) { // setpgid: itself or a child of its own, into a group of its session
     const target = proc(this, N(pid));
     if (target !== this && target.ppid !== this.pid) fail(E.SRCH);
@@ -373,13 +444,37 @@ export const PROC_CALLS = {
     this.sid = this.pgid = this.pid;
     return this.pid;
   },
-  115() { return 0; }, 116() { return 0; },
-  117() { return 0; }, 119() { return 0; },
+  115(size) { if (N(size) < 0) fail(E.INVAL); return 0; }, // getgroups: none beside its group
+  116() { fail(E.PERM); }, // setgroups: denied in its namespace
+  117(r, e, s) { return mapped([r, e, s]); }, // setresuid
+  119(r, e, s) { return mapped([r, e, s]); }, // setresgid
+  122() { return 0; }, 123() { return 0; }, // setfsuid, setfsgid: the old one, 0 (an id not mapped is not taken)
+  125(header, data) { // capget
+    const {target, words} = capHeader(this, header);
+    if (!N(data)) return 0;
+    const v = this.view, c = target.caps;
+    for (let k = 0; k < words; k++) {
+      const word = (x) => Number((x >> BigInt(32 * k)) & 0xffffffffn);
+      v.setUint32(N(data) + 12 * k, word(c.effective), true);
+      v.setUint32(N(data) + 12 * k + 4, word(c.permitted), true);
+      v.setUint32(N(data) + 12 * k + 8, word(c.inheritable), true);
+    }
+    return 0;
+  },
+  126(header, data) { // capset: its own, none it does not have
+    const {target, words} = capHeader(this, header);
+    if (target !== this) fail(E.PERM);
+    const v = this.view, read = (off) => { let x = 0n; for (let k = 0; k < words; k++) x |= BigInt(v.getUint32(N(data) + 12 * k + off, true)) << BigInt(32 * k); return x; };
+    const effective = read(0), permitted = read(4), inheritable = read(8);
+    if ((permitted & ~this.caps.permitted) || (effective & ~permitted)) fail(E.PERM);
+    this.caps = {effective, permitted, inheritable};
+    return 0;
+  },
   118(r, e, s) { for (const a of [r, e, s]) if (N(a)) this.view.setUint32(N(a), 0, true); return 0; },
   120(r, e, s) { for (const a of [r, e, s]) if (N(a)) this.view.setUint32(N(a), 0, true); return 0; },
   121(pid) { return proc(this, N(pid)).pgid; },
   124(pid) { return proc(this, N(pid)).sid; },
-  157() { return 0; },
+  157(option, arg2, arg3, arg4, arg5) { return prctl(this, N(option), arg2, arg3, arg4, arg5); },
   158(code, addr) {
     if (N(code) === 0x1002) { this.task.setReg(16, addr); return 0; } // ARCH_SET_FS
     if (N(code) === 0x1003) { this.view.setBigUint64(N(addr), BigInt.asUintN(64, this.task.reg(16)), true); return 0; }
