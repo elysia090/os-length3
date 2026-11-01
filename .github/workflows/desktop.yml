@@ -419,9 +419,12 @@ jobs:
           "$r/usr/bin/ssh" -V 2>&1 | grep -F "OpenSSH_$OPENSSH_VERSION"
           "$r/usr/bin/git" --version | grep -F "git version $GIT_VERSION"
           # Its C compiler is right, inside the root as a Prompt runs it: floating literals as C says them, and make.
-          printf '%s\n' '#include <stdio.h>' 'int main(void) { double f[] = {6.5, 7.3}; printf("%.17g %.17g %d\n", f[0], f[1], (int)(7.3 * 12)); return 0; }' > "$RUNNER_TEMP/literals.c"
-          printf 'literals: literals.c\n\tcc -O1 -o $@ literals.c\n' > "$RUNNER_TEMP/Makefile"
-          said=$(sudo bwrap --ro-bind "$r" / --dev /dev --proc /proc --tmpfs /tmp --bind "$RUNNER_TEMP" /work --chdir /work /bin/sh -c 'make -s literals && ./literals')
+          # The root is bound read-only, so no new directory can be made in it: the work is its /tmp, which it has.
+          cc=$RUNNER_TEMP/cc
+          mkdir -p "$cc"
+          printf '%s\n' '#include <stdio.h>' 'int main(void) { double f[] = {6.5, 7.3}; printf("%.17g %.17g %d\n", f[0], f[1], (int)(7.3 * 12)); return 0; }' > "$cc/literals.c"
+          printf 'literals: literals.c\n\tcc -O1 -o $@ literals.c\n' > "$cc/Makefile"
+          said=$(sudo bwrap --ro-bind "$r" / --dev /dev --proc /proc --bind "$cc" /tmp --chdir /tmp /bin/sh -c 'make -s literals && ./literals')
           [ "$said" = '6.5 7.2999999999999998 87' ] || { echo "the root's gcc compiles literals wrong: $said" >&2; exit 1; }
           for gone in usr/bin/passwd usr/bin/useradd usr/sbin/poweroff usr/sbin/reboot; do
             if [ -e "$r/$gone" ] || [ -L "$r/$gone" ]; then echo "$gone is still in the root" >&2; exit 1; fi
