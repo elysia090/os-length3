@@ -353,6 +353,7 @@ export class Kernel {
     const have = m.buffer.byteLength / WASM_PAGE;
     if (have < pages) m.grow(pages - have);
     m.keeps = same(m);
+    if (!m.keeps) m.pooled = null;
     PROFILE.memoriesReused++;
     if (m.keeps) PROFILE.imagesKept++;
     clean(m, pages, m.keeps ? image.facts.readOnly ?? [] : []);
@@ -743,6 +744,10 @@ export class Kernel {
     if (p.alarm) { this.removeTimer(p.alarm.timer); p.alarm = null; }
     // (What it wrote is known from its threads: before they go.)
     const written = p.memory ? p.written() : null;
+    // One thread's instance stays with its memory: a fork that takes the memory for the same program runs on it
+    // again instead of instantiating it and every module made for it since (Task.load).
+    const only = p.tasks.size === 1 ? [...p.tasks][0] : null;
+    if (p.memory && only?.instance && only.slot && p.memory.users === 1) p.memory.pooled = {image: only.image, instance: only.instance, slot: only.slot, attached: only.attached};
     for (const t of [...p.tasks]) this.endTask(t);
     p.tasks.clear();
     p.unmapShared();
@@ -1321,11 +1326,33 @@ export class Task {
     this.image = image;
     this.fpu = from ? from.fpu.clone(() => this.bytes) : new Fpu(() => this.bytes, image.fpuOps);
     this.memory = memory;
+    // A fork's copy of its parent's memory, one an exited process of the same program left its instance on: that
+    // instance goes on, its globals as a fresh one's, the modules made since attached. What instantiating writes (the
+    // image's first data) is not needed: the parent's memory is copied over all of it (Process.copyLive).
+    const pooled = memory.pooled;
+    memory.pooled = null;
+    if (pooled && from && from.memory !== memory && pooled.image === image) {
+      this.slot = pooled.slot;
+      this.slot.task = this;
+      this.instance = pooled.instance;
+      for (const [g, v] of this.slot.initial) g.value = v;
+      this.attached = pooled.attached;
+      PROFILE.instancesKept++;
+      this.attach();
+      return;
+    }
     // A module that carries its data writes it as it is instantiated: over a memory in use (a thread's, a vfork
     // child's), what the image holds now is put back.
     const keep = from && !image.segments && from.memory === memory ? this.bytes.slice(image.facts.imageStart ?? 0, image.facts.imageEnd) : null;
+    this.slot = {task: this, initial: []};
     this.instance = new WebAssembly.Instance(image.module, this.imports());
     if (keep) this.bytes.set(keep, image.facts.imageStart ?? 0);
+    // Its globals as they start, for when it goes on under another task (a vector register is not read from here,
+    // nor need be: none is kept across a call into the kernel).
+    for (const g of Object.values(this.instance.exports)) {
+      if (!(g instanceof WebAssembly.Global)) continue;
+      try { this.slot.initial.push([g, g.value]); } catch { /* v128 */ }
+    }
     this.attached = 0;
     this.attach();
   }
@@ -1339,17 +1366,25 @@ export class Task {
     if (low) low.value = -1n;
   }
 
+  /** What its instance imports: each call to the task it runs under now (`slot`: a pooled instance changes task). */
   imports() {
+    const slot = this.slot;
     return {env: {
       memory: this.memory,
       // A read of the clock is answered at once (clock.mjs), as Linux's vDSO does.
-      syscall: (nr, a, b, c, d, e, f, next) => ((nr === 228n || nr === 96n || nr === 201n) ? answerTime(this.proc.memory, CLOCK, nr, a, b) : null) ?? this.kernel.enter(this, nr, [a, b, c, d, e, f], next),
+      syscall: (nr, a, b, c, d, e, f, next) => {
+        const t = slot.task;
+        return ((nr === 228n || nr === 96n || nr === 201n) ? answerTime(t.proc.memory, CLOCK, nr, a, b) : null) ?? t.kernel.enter(t, nr, [a, b, c, d, e, f], next);
+      },
       trap: trapOrPreempt,
       div128: (hi, lo, d, signed) => div128(hi, lo, d, signed),
       clock: () => BigInt(Math.round(performance.now() * 1e6)),
-      fpu: (op, size, address, a, b) => this.fpu.call(op, size, address, a, b),
-      trace: (address) => { if (TRACE_BLOCKS) console.error(`[${this.tid}] block 0x${BigInt.asUintN(64, BigInt(address)).toString(16)}`); else if (this.trail) this.trail[this.trailAt++ & 255] = address; },
-      miss: (address) => this.miss(address),
+      fpu: (op, size, address, a, b) => slot.task.fpu.call(op, size, address, a, b),
+      trace: (address) => {
+        const t = slot.task;
+        if (TRACE_BLOCKS) console.error(`[${t.tid}] block 0x${BigInt.asUintN(64, BigInt(address)).toString(16)}`); else if (t.trail) t.trail[t.trailAt++ & 255] = address;
+      },
+      miss: (address) => slot.task.miss(address),
     }};
   }
 
@@ -1399,7 +1434,7 @@ export class Task {
 export const REG = [...Array.from({length: 16}, (_, n) => `r${n}`), 'fs', 'fl', 'rf'];
 
 /** Where the time went (run.mjs prints it with XLAT_TIMING=1): translating, compiling wasm, how much, and what a pack root fetched. */
-export const PROFILE = {images: 0, modules: 0, bytes: 0, translate: 0, compile: 0, fetches: 0, fetched: 0, kept: 0, consolidated: 0, memoriesReused: 0, imagesKept: 0, zeroed: 0, renewed: 0};
+export const PROFILE = {images: 0, modules: 0, bytes: 0, translate: 0, compile: 0, fetches: 0, fetched: 0, kept: 0, consolidated: 0, memoriesReused: 0, imagesKept: 0, instancesKept: 0, zeroed: 0, renewed: 0};
 /** Modules of code reached later past which a program run again is translated again as one (Kernel.consolidate). */
 export const CONSOLIDATE = 16;
 /** Memories let go of that are kept for the next process, and the largest kept (Kernel.letGo). */
