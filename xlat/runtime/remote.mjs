@@ -358,6 +358,7 @@ export class RemoteTask extends Task {
       extras: image.extras.map(({module, base, count: n}) => ({module, base, count: n})),
       memory: this.memory, channel: this.channel, door: k.door.buffer, gil: k.gil(this.memory), count: count(image).buffer,
       regs: REG.map((_, n) => this.reg(n)), resumeAt: this.resumeAt, fpuOps: image.fpuOps, fpu: this.fpuState, keep: this.keep,
+      origin: performance.timeOrigin, // the kernel's clocks begin here (clock.mjs)
     });
   }
 

@@ -29,6 +29,7 @@ import {FILE_CALLS} from './sys-file.mjs';
 import {NET_CALLS} from './sys-net.mjs';
 import {PROC_CALLS} from './sys-proc.mjs';
 import {lay, prepare} from './share.mjs';
+import {answerTime, clocks} from './clock.mjs';
 import {CLD, SA, SIG, SIGNAL_CALLS, Pending, SI, actionOf, bit, deliverable, send, take} from './signal.mjs';
 
 const PAGE = 4096;
@@ -42,6 +43,8 @@ const INF = 0xffffffffffffffffn;
 export const RLIMITS = [[INF, INF], [INF, INF], [INF, INF], [BigInt(STACK_BYTES), INF], [0n, INF], [INF, INF], [63432n, 63432n],
   [1024n, 524288n], [8n << 20n, 8n << 20n], [INF, INF], [INF, INF], [63432n, 63432n], [819200n, 819200n], [0n, 0n], [0n, 0n], [INF, INF]];
 const GUARD = 1 << 16;
+/** The kernel's clocks (clock.mjs). */
+const CLOCK = clocks();
 /** Every capability Linux has (to CAP_CHECKPOINT_RESTORE, 40): root's in its own user namespace. */
 export const CAPS = (1n << 41n) - 1n;
 
@@ -101,6 +104,8 @@ export const SLICE_MS = 1, SLICE_LOOPS = 1 << 16;
 export const nextSlice = (loops, ms) => Math.max(1 << 10, Math.min(1 << 26, Math.round(loops * Math.sqrt(SLICE_MS / Math.max(ms, SLICE_MS / 64)))));
 /** Where translated code looks for the kernel's call to look in (lower.rs INTERRUPT): a word, and whether its process shares memory with another. */
 export const INTERRUPT = 0x100, SHARES = INTERRUPT + 4;
+/** The low words the kernel writes for translated code (INTERRUPT, SHARES): below Linux's vm.mmap_min_addr. */
+const LOW_WORDS = 0x10000;
 export const trapOrPreempt = (address, code) => {
   if (code === TRAP_YIELD || code === TRAP_UNWIND) throw new Preempted(address, code);
   throw new GuestTrap(address, code);
@@ -348,14 +353,21 @@ export class Kernel {
     m.keeps = same(m);
     PROFILE.memoriesReused++;
     if (m.keeps) PROFILE.imagesKept++;
-    zeroExcept(m, 0, Math.min(m.dirty, pages * WASM_PAGE), m.keeps ? image.facts.readOnly ?? [] : []);
+    // What a process wrote and nothing zeroed since, up to what is given out; the rest goes as it is mapped (cover).
+    const end = pages * WASM_PAGE, keep = m.keeps ? image.facts.readOnly ?? [] : [];
+    for (const [a, b] of clip(m.written, 0, end)) { zeroExcept(m, a, b, keep); PROFILE.zeroed += b - a; }
+    m.written = cut(m.written, 0, end);
     this.reuseMemory(m);
     return m;
   }
-  /** `memory` is no longer one process's: kept for another when nothing else can run on it (no other process, no thread left in guest code). */
-  letGo(memory) {
+  /**
+   * `memory` is no longer one process's: kept for another when nothing else can run on it (no other process, no
+   * thread left in guest code). `written`: where its last process may have written ([[start, end]], its kernel words,
+   * image, stack and mappings: Process.written); what lies outside them is still zero, and is not zeroed again.
+   */
+  letGo(memory, written = null) {
     if (!memory || --memory.users > 0 || memory.tainted) return;
-    memory.dirty = memory.buffer.byteLength;
+    memory.written = merge([...memory.written ?? [], ...written ?? [[0, memory.buffer.byteLength]]]);
     // A few, and none so large that keeping it would hold much of what the host has to spare.
     if (this.spareMemories.length < SPARE_MEMORIES && memory.buffer.byteLength <= SPARE_MEMORY_BYTES) this.spareMemories.push(memory);
   }
@@ -721,7 +733,7 @@ export class Kernel {
     for (const t of [...p.tasks]) this.endTask(t);
     p.tasks.clear();
     p.unmapShared();
-    this.letGo(p.memory);
+    if (p.memory) this.letGo(p.memory, p.written());
     p.memory = null;
     p.fds.closeAll();
     this.releaseVfork(p);
@@ -902,6 +914,18 @@ function gaps(from, to, keep) {
   if (at < to) out.push([at, to]);
   return out;
 }
+/** `ranges` ([[start, end]]) sorted, and those that meet made one. */
+function merge(ranges) {
+  const out = [];
+  for (const [a, b] of [...ranges].filter(([a, b]) => b > a).sort((x, y) => x[0] - y[0])) {
+    const last = out[out.length - 1];
+    if (last && a <= last[1]) last[1] = Math.max(last[1], b); else out.push([a, b]);
+  }
+  return out;
+}
+/** The parts of (merged) `ranges` within [from, to), and those outside it. */
+const clip = (ranges, from, to) => (ranges ?? []).map(([a, b]) => [Math.max(a, from), Math.min(b, to)]).filter(([a, b]) => b > a);
+const cut = (ranges, from, to) => (ranges ?? []).flatMap(([a, b]) => [[a, Math.min(b, from)], [Math.max(a, to), b]]).filter(([a, b]) => b > a);
 /** Zero [from, to) of `memory` but for the ranges `keep`. */
 function zeroExcept(memory, from, to, keep) { for (const [a, b] of gaps(from, to, keep)) zero(memory, a, b); }
 /** Whether data segment `s` ({offset, bytes}) lies within one of `ranges`. */
@@ -1002,7 +1026,11 @@ export class Process {
       this.memory.grow(Math.min(65536 - have, Math.max(Math.ceil(need / WASM_PAGE), Math.min(have >> 3, 256))));
     }
     // A memory another process used: what it left past the mapped part goes as that part grows over it.
-    if (this.mapEnd < this.memory.dirty) zero(this.memory, this.mapEnd, Math.min(end, this.memory.dirty));
+    const m = this.memory;
+    if (m.written?.length && end > this.mapEnd) {
+      for (const [a, b] of clip(m.written, this.mapEnd, end)) { zero(m, a, b); PROFILE.zeroed += b - a; }
+      m.written = cut(m.written, this.mapEnd, end);
+    }
     this.mapEnd = Math.max(this.mapEnd, end);
   }
 
@@ -1049,7 +1077,7 @@ export class Process {
   newMemory(pages, image = null) {
     const m = this.kernel.takeMemory(pages, image) ?? new WebAssembly.Memory({initial: pages, maximum: 65536, ...(this.kernel.shared ? {shared: true} : {})});
     m.users = 1;
-    m.dirty ??= 0;
+    m.written ??= []; // what a process wrote that is not zeroed yet (Kernel.letGo): none, in a new one
     m.keeps ??= false;
     m.imageOf = image;
     return m;
@@ -1077,7 +1105,7 @@ export class Process {
     const image = this.kernel.image(node, !!this.call);
     const f = image.facts;
     // The point of no return: the other threads go (Linux's de_thread), and so does a memory shared with a vfork parent.
-    const t = this.task;
+    const t = this.task, written = this.memory ? this.written() : null;
     for (const other of [...this.tasks]) if (other !== t) { this.kernel.endTask(other); this.tasks.delete(other); }
     this.image = image;
     this.stackLow = Math.ceil((f.imageEnd + GUARD) / PAGE) * PAGE;
@@ -1088,7 +1116,7 @@ export class Process {
     this.fixed = []; // MAP_FIXED mappings below mapBase
     this.unmapShared(); // a vfork child's list is its own: empty, though the memory it ran on was its parent's
     this.maps = [];
-    this.kernel.letGo(this.memory); // its own, or still its vfork parent's
+    this.kernel.letGo(this.memory, written); // its own, or still its vfork parent's
     this.memory = this.newMemory(this.mapBase / WASM_PAGE, image);
     this.argv = argv;
     this.env = env;
@@ -1135,6 +1163,14 @@ export class Process {
    * rest of the 8 MiB stack and the room below the image stay zero, as
    * they are in the parent.
    */
+  /** Where this process may have written ([[start, end]]): the kernel's words, its image, its stack, what it mapped. */
+  written() {
+    const f = this.image?.facts ?? {};
+    const out = [[0, LOW_WORDS], [f.imageStart ?? 0, f.imageEnd ?? 0], [this.stackLow, this.stackTop], [this.mapBase, this.mapEnd]];
+    for (const r of this.fixed) out.push([r.start, r.start + r.length]);
+    return out;
+  }
+
   copyLive(child) {
     const from = this.bytes, to = child.bytes;
     const span = (a, b) => { if (b > a) to.set(from.subarray(a, b), a); };
@@ -1253,7 +1289,8 @@ export class Task {
   imports() {
     return {env: {
       memory: this.memory,
-      syscall: (nr, a, b, c, d, e, f, next) => this.kernel.enter(this, nr, [a, b, c, d, e, f], next),
+      // A read of the clock is answered at once (clock.mjs), as Linux's vDSO does.
+      syscall: (nr, a, b, c, d, e, f, next) => ((nr === 228n || nr === 96n || nr === 201n) ? answerTime(this.proc.memory, CLOCK, nr, a, b) : null) ?? this.kernel.enter(this, nr, [a, b, c, d, e, f], next),
       trap: trapOrPreempt,
       div128: (hi, lo, d, signed) => div128(hi, lo, d, signed),
       clock: () => BigInt(Math.round(performance.now() * 1e6)),
@@ -1307,7 +1344,7 @@ export class Task {
 export const REG = [...Array.from({length: 16}, (_, n) => `r${n}`), 'fs', 'fl', 'rf'];
 
 /** Where the time went (run.mjs prints it with XLAT_TIMING=1): translating, compiling wasm, how much, and what a pack root fetched. */
-export const PROFILE = {images: 0, modules: 0, bytes: 0, translate: 0, compile: 0, fetches: 0, fetched: 0, kept: 0, consolidated: 0, memoriesReused: 0, imagesKept: 0};
+export const PROFILE = {images: 0, modules: 0, bytes: 0, translate: 0, compile: 0, fetches: 0, fetched: 0, kept: 0, consolidated: 0, memoriesReused: 0, imagesKept: 0, zeroed: 0};
 /** Modules of code reached later past which a program run again is translated again as one (Kernel.consolidate). */
 export const CONSOLIDATE = 16;
 /** Memories let go of that are kept for the next process, and the largest kept (Kernel.letGo). */

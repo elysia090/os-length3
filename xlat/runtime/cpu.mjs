@@ -15,6 +15,7 @@
 
 import {CH, OP, READS_REGS, REPLY, REGS, rouse, sleep, watch} from './channel.mjs';
 import {Fpu} from './fpu.mjs';
+import {answerTime, clocks} from './clock.mjs';
 import {INTERRUPT, Preempted, SHARES, SLICE_LOOPS, TRAP_YIELD, div128, fault, nextSlice, translatorsLimit, trapOrPreempt} from './process.mjs';
 
 const isNode = typeof process !== 'undefined' && !!process.versions?.node;
@@ -38,6 +39,7 @@ class Thread {
     this.door = new Int32Array(m.door);
     this.gil = new Int32Array(m.gil);
     this.count = new Int32Array(m.count); // modules the program has, made by any process
+    this.clock = clocks(m.origin); // the kernel's (clock.mjs), read here as a vDSO does
     this.module = m.module;
     this.modules = m.extras; // [{module, base, count}] known here
     this.fpu = new Fpu(() => new Uint8Array(this.memory.buffer), m.fpuOps);
@@ -126,6 +128,8 @@ class Thread {
   }
 
   syscall(nr, a, b, c, d, e, f, next) {
+    // A read of the clock is answered here (clock.mjs), not by the kernel.
+    if (nr === 228n || nr === 96n || nr === 201n) { const r = answerTime(this.memory, this.clock, nr, a, b); if (r !== null) return r; }
     const {i64} = this;
     i64[CH.NR] = nr; i64[CH.ARGS] = a; i64[CH.ARGS + 1] = b; i64[CH.ARGS + 2] = c;
     i64[CH.ARGS + 3] = d; i64[CH.ARGS + 4] = e; i64[CH.ARGS + 5] = f; i64[CH.NEXT] = next;

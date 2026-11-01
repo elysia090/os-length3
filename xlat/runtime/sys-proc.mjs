@@ -4,6 +4,7 @@
 // while the call waits and is made again).
 
 import {move, zero} from './bulk.mjs';
+import {answerTime, clocks} from './clock.mjs';
 import {E, File, FsError} from './fs.mjs';
 import {Exec, Exit, Wait} from './process.mjs';
 import {CLD, SIG, send, writeInfo} from './signal.mjs';
@@ -23,9 +24,8 @@ function writeTime(p, address, ns) {
   p.view.setBigInt64(address + 8, ns % 1000000000n, true);
 }
 
-// The wall clock to well under a millisecond (as cpu.mjs's, which answers clock_gettime in a worker): ping's times.
-const wall = () => BigInt(Math.round((performance.timeOrigin + performance.now()) * 1e6));
-const monotonic = () => BigInt(Math.round(performance.now() * 1e6));
+// The kernel's clocks (clock.mjs): what a thread reads without a call is what these say.
+const CLOCK = clocks(), wall = CLOCK.wall, monotonic = CLOCK.monotonic;
 /** A timespec in guest memory, in nanoseconds. */
 const readTime = (p, at) => p.view.getBigInt64(at, true) * 1000000000n + p.view.getBigInt64(at + 8, true);
 const ms = (ns) => Number(ns) / 1e6;
@@ -403,12 +403,7 @@ export const PROC_CALLS = {
     fields.forEach((s, k) => this.bytes.set(enc.encode(s), N(buf) + k * 65));
     return 0;
   },
-  96(tv) {
-    const ns = wall();
-    this.view.setBigInt64(N(tv), ns / 1000000000n, true);
-    this.view.setBigInt64(N(tv) + 8, (ns % 1000000000n) / 1000n, true);
-    return 0;
-  },
+  96(tv, tz) { const r = answerTime(this.memory, CLOCK, 96n, tv, tz); if (r === null) fail(E.FAULT); return r; }, // gettimeofday
   97(resource, limit) { return rlimit(this, this, resource, 0n, limit); }, // getrlimit
   98(who, usage) { this.bytes.fill(0, N(usage), N(usage) + 144); return 0; },
   99(info) { // sysinfo: the machine's memory (machine.mjs), what the kernel's processes hold of it, how many there are
@@ -482,7 +477,7 @@ export const PROC_CALLS = {
   },
   160(resource, limit) { return rlimit(this, this, resource, limit, 0n); }, // setrlimit
   186() { return this.task.tid; },
-  201(t) { const s = wall() / 1000000000n; if (N(t)) this.view.setBigInt64(N(t), s, true); return s; },
+  201(t) { const r = answerTime(this.memory, CLOCK, 201n, t, 0n); if (r === null) fail(E.FAULT); return r; }, // time
   202(uaddr, op, val, timeout, uaddr2, val3) { return futex(this, uaddr, op, val, timeout, uaddr2, val3); },
   203() { return 0; }, // sched_setaffinity
   204(pid, size, mask) { // sched_getaffinity
@@ -493,8 +488,13 @@ export const PROC_CALLS = {
     return bytes;
   },
   218(tidptr) { this.task.clearTid = N(tidptr); return this.task.tid; }, // set_tid_address
-  228(clock, ts) { writeTime(this, N(ts), N(clock) === 0 ? wall() : monotonic()); return 0; },
-  229(clock, ts) { if (N(ts)) writeTime(this, N(ts), 1n); return 0; },
+  228(clock, ts) { // clock_gettime: a CPU-time clock is not kept apart, and reads as the monotonic one
+    const ns = CLOCK.read(Number(BigInt.asIntN(32, clock)));
+    if (ns === undefined) fail(E.INVAL);
+    writeTime(this, N(ts), ns ?? monotonic());
+    return 0;
+  },
+  229(clock, ts) { if (CLOCK.read(Number(BigInt.asIntN(32, clock))) === undefined) fail(E.INVAL); if (N(ts)) writeTime(this, N(ts), 1n); return 0; },
   230(clock, flags, req, rem) { // clock_nanosleep: by an interval, or until a time on that clock (TIMER_ABSTIME)
     const t = readTime(this, N(req));
     if (!(N(flags) & 1)) return sleepUntil(this, performance.now() + ms(t), N(rem));
