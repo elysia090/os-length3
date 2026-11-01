@@ -27,7 +27,16 @@ import {sessions} from './sessions.ts';
 const RUNS = 50;
 
 /** One line sent from the prompt box and what came out until the prompt returned. */
-export interface Run { line: string; output: string; started: number; ms: number | null }
+export interface Run {
+  line: string; output: string; started: number; ms: number | null;
+  /** Its exit status, where the shell says it (the root's shrc: OSC 133 D); null where it does not, or not yet. */
+  status?: number | null;
+}
+
+/** What a shell says to its terminal and not to the person (OSC: a title, a run's end): read, never shown. */
+const OSC = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
+/** A run's end, as shell integration says it: OSC 133 D, with its exit status. */
+const RAN = /\x1b\]133;D(?:;(\d+))?(?:\x07|\x1b\\)/g;
 
 /** One line for where loading l3 is; nothing once it is ready. */
 function loadWords(s: Stage): string {
@@ -157,6 +166,24 @@ export class Session {
   /** How long until what was printed last has all come in, in ms: what comes after it (the prompt line) waits that long. */
   settlesIn(): number { return this.out.settlesIn(); }
 
+  /**
+   * `line` run as if typed, and what it printed and how it ended once its prompt line is back (the Agent's runs: the
+   * person sees them run here). Its status is null where the shell does not say it, or the Prompt ended first.
+   */
+  run(line: string): Promise<{output: string; status: number | null}> {
+    const since = Date.now(), typed = line.trimEnd();
+    if (!this.send(typed)) return Promise.resolve({output: '', status: null});
+    return new Promise((resolve) => {
+      const look = () => {
+        const r = this.runs.find((x) => x.started >= since && x.line === typed);
+        if (r && r.ms !== null) { stop(); resolve({output: r.output, status: r.status ?? null}); }
+        else if (this.ended) { stop(); resolve({output: r?.output ?? '', status: null}); }
+      };
+      const stop = this.watch(look);
+      look();
+    });
+  }
+
   /** Type `text` into the shell, one line per line, starting it if it was not yet. False once it has ended. */
   send(text: string): boolean {
     if (this.ended) return false;
@@ -201,6 +228,10 @@ export class Session {
 
   /** Output goes on screen and into the run in progress, which ends at the next prompt. */
   private received(s: string) {
+    // How the line run ended, where the shell says it: kept on its run, and none of what it says shown.
+    for (const m of s.matchAll(RAN)) { const r = this.runs.at(-1); if (r && r.ms === null) r.status = m[1] === undefined ? null : Number(m[1]); }
+    s = s.replace(OSC, '');
+    if (!s) return;
     if (this.status.textContent === t('Starting…')) this.status.textContent = '';
     this.out.print(s);
     const waits = !!waitsAt(this.out.lastLine);

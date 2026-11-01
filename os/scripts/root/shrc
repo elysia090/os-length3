@@ -11,7 +11,11 @@ __l3_where() {
     *) printf '%s' "$PWD" ;;
   esac
 }
-PS1='$(__l3_where) $ '
+# How the line run before ended, told the app as terminals' shell integration tells it (OSC 133 D, with its exit
+# status), before each prompt line: the app reads it (a run that failed says so, and its Agent knows how a build
+# or the tests went) and shows none of it.
+__l3_ran() { printf '\033]133;D;%s\007' "$1"; }
+PS1='$(__l3_ran $?)$(__l3_where) $ '
 alias ll='ls -l'
 
 # The repo's history is the Remote's: git has nothing to say inside it, so it says where to go.
