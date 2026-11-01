@@ -53,6 +53,8 @@ onRenamed((from, to) => {
 const plain = (e: KeyboardEvent) => !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && !e.isComposing;
 /** Ctrl+Enter (⌘+Enter), never the Enter that confirms a conversion: what sends. */
 const sends = (e: KeyboardEvent) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing;
+/** Off the screen: out of the page, or in a page put away. */
+const offScreen = (el: Element) => !el.isConnected || !!el.closest('[hidden]');
 
 interface BoxParts {
   /** What carries the bench's classes (.unrun). */
@@ -278,14 +280,23 @@ export class Box {
 
   /**
    * The repo's Prompt in this box. A Prompt is one element wherever it is shown, so another page's box (Git's) takes it
-   * while it is there: coming back, it is put back here.
+   * while it is there: coming back, it is put back here. A box off the screen (its page put away and still drawing
+   * what it read, or not yet shown as it is come back to) leaves it with one on the screen, where a question just
+   * asked would be answered out of sight, and takes it once it is on the screen itself (laid out, before it is drawn).
    */
   attach() {
-    const {term, termHead} = this.#p;
+    const {term, termHead, work} = this.#p;
     const el = this.#repo ? terminalFor(this.#repo) : null;
-    if (el ? el.parentElement !== term : term.childElementCount > 1) term.replaceChildren(termHead, ...(el ? [el] : []));
+    const held = !!el && el.parentElement !== term && offScreen(work) && !offScreen(el);
+    if (held) this.#onScreen.observe(term);
+    else if (el ? el.parentElement !== term : term.childElementCount > 1) term.replaceChildren(termHead, ...(el ? [el] : []));
     this.#pillLine.follow();
   }
+  readonly #onScreen = new ResizeObserver(() => {
+    if (offScreen(this.#p.work) || !this.#p.term.getClientRects().length) return;
+    this.#onScreen.disconnect();
+    this.attach();
+  });
 
   /** Whether the repo's Prompt has run anything yet, which is what gives it room. */
   room() { this.#p.work.classList.toggle('unrun', !!this.#repo && !sessionIfAny(this.#repo)?.runs.length); }
