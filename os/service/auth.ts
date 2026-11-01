@@ -153,6 +153,9 @@ export function createAuth(c: AuthConfig) {
     // secret: nothing here reads them, and a copy of the database is then no way into anyone's GitHub or Google.
     account: {accountLinking: {enabled: true, trustedProviders: [], requireLocalEmailVerified: true}, encryptOAuthTokens: true},
     session: c.only ? {expiresIn: 60 * 60 * 24, disableSessionRefresh: true} : {expiresIn: 60 * 60 * 24 * 60, updateAge: 60 * 60 * 24},
+    // What a sign-in is waiting on (an OAuth state, a passkey's challenge, a link sent) is kept by its identifier's
+    // SHA-256, not the identifier: a copy of the database then holds none that could be answered.
+    verification: {storeIdentifier: 'hashed'},
     // For research, no provider admits anyone: the one account is entered by its link alone.
     ...(c.only ? {user: {validateUserInfo: ({user}: {user: {email?: string | null}}) =>
       (user.email === c.only ? undefined : {error: 'closed', errorDescription: 'This Remote does not accept new accounts'})}} : {}),

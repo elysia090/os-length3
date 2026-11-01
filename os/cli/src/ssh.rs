@@ -434,6 +434,20 @@ const KEY_KINDS: [russh::keys::ssh_key::Algorithm; 4] = {
     [Algorithm::Ed25519, Algorithm::Ecdsa { curve: EcdsaCurve::NistP256 }, Algorithm::Ecdsa { curve: EcdsaCurve::NistP384 }, Algorithm::Ecdsa { curve: EcdsaCurve::NistP521 }]
 };
 
+/// How a connection's keys are agreed: as OpenSSH 10's own server agrees them, the post-quantum hybrid (ML-KEM-768
+/// with X25519) first, then X25519 alone; no finite-field Diffie-Hellman, which OpenSSH 10 no longer offers. Strict
+/// key exchange (the Terrapin fix) and extension negotiation besides.
+const KEX: [russh::kex::Name; 7] = {
+    use russh::kex::*;
+    [MLKEM768X25519_SHA256, CURVE25519, CURVE25519_PRE_RFC_8731, EXTENSION_SUPPORT_AS_CLIENT, EXTENSION_SUPPORT_AS_SERVER,
+        EXTENSION_OPENSSH_STRICT_KEX_AS_CLIENT, EXTENSION_OPENSSH_STRICT_KEX_AS_SERVER]
+};
+/// What it is encrypted with: authenticated encryption alone (ChaCha20-Poly1305, AES-GCM), so a packet is never
+/// read before it is known whole and untouched; no counter mode with a MAC beside it.
+const CIPHERS: [russh::cipher::Name; 3] = [russh::cipher::CHACHA20_POLY1305, russh::cipher::AES_256_GCM, russh::cipher::AES_128_GCM];
+/// The MACs, never chosen beside those ciphers (each carries its own): encrypt-then-MAC with SHA-2 only.
+const MACS: [russh::mac::Name; 2] = [russh::mac::HMAC_SHA512_ETM, russh::mac::HMAC_SHA256_ETM];
+
 /// The sockets listened on, one an address (ssh::listen_on), each with the task taking its connections; and the
 /// addresses listened on, as every connection watches them: one that came in on an address let go is closed.
 struct Sockets {
@@ -517,8 +531,15 @@ pub fn serve() -> Result<(), String> {
         inactivity_timeout: None,
         keepalive_interval: Some(Duration::from_secs(30)),
         nodelay: true,
-        // The kinds of key there are here (ssh::KINDS), and nothing more said of them (server-sig-algs).
-        preferred: russh::Preferred { key: std::borrow::Cow::Borrowed(&KEY_KINDS), ..Default::default() },
+        // The kinds of key there are here (ssh::KINDS), and nothing more said of them (server-sig-algs); OpenSSH 10's
+        // key exchange and authenticated encryption alone.
+        preferred: russh::Preferred {
+            kex: std::borrow::Cow::Borrowed(&KEX),
+            key: std::borrow::Cow::Borrowed(&KEY_KINDS),
+            cipher: std::borrow::Cow::Borrowed(&CIPHERS),
+            mac: std::borrow::Cow::Borrowed(&MACS),
+            ..Default::default()
+        },
         ..Default::default()
     });
     let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e| e.to_string())?;
