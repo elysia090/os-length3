@@ -90,7 +90,7 @@ mod tests {
 
     #[test]
     fn one_app_holds_the_device_and_answers_what_it_is_asked() {
-        let data = std::env::temp_dir().join(format!("length3-desktop-{}", std::process::id()));
+        let data = crate::testing::dir("length3-desktop");
         let _ = std::fs::remove_dir_all(&data);
         // None open: nothing answers, and the first to start holds the device.
         assert_eq!(ask(&data, "here"), None);

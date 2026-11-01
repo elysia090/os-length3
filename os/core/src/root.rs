@@ -701,7 +701,7 @@ mod tests {
     }
 
     fn fresh(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("length3-root-{tag}-{}", std::process::id()));
+        let d = crate::testing::dir(&format!("length3-root-{tag}"));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         d

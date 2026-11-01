@@ -319,7 +319,7 @@ mod tests {
 
     #[test]
     fn a_running_prompt_is_listed_while_its_process_runs_and_stopped_with_it() {
-        let data = std::env::temp_dir().join(format!("length3-prompts-{}", std::process::id()));
+        let data = crate::testing::dir("length3-prompts");
         let _ = fs::remove_dir_all(&data);
         let root = a_root(&data, "abc");
         // This process stands for one Prompt; a child that waits on its input for another.
@@ -346,7 +346,7 @@ mod tests {
 
     #[test]
     fn a_record_being_written_is_never_taken_for_one_whose_prompt_is_gone() {
-        let data = std::env::temp_dir().join(format!("length3-prompts-race-{}", std::process::id()));
+        let data = crate::testing::dir("length3-prompts-race");
         let _ = fs::remove_dir_all(&data);
         let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         // Another l3 (or the app) looking at what runs, all the while.
@@ -372,7 +372,7 @@ mod tests {
 
     #[test]
     fn a_prompt_is_recorded_from_its_preparing_with_the_root_it_runs_on() {
-        let data = std::env::temp_dir().join(format!("length3-prompts-prep-{}", std::process::id()));
+        let data = crate::testing::dir("length3-prompts-prep");
         let _ = fs::remove_dir_all(&data);
         let root = a_root(&data, &"a".repeat(64));
         let mut r = record(&data, "here", false, &root).unwrap();
@@ -389,7 +389,7 @@ mod tests {
 
     #[test]
     fn a_root_freed_before_it_is_recorded_is_not_run_on() {
-        let data = std::env::temp_dir().join(format!("length3-prompts-gone-{}", std::process::id()));
+        let data = crate::testing::dir("length3-prompts-gone");
         let _ = fs::remove_dir_all(&data);
         let root = a_root(&data, "abc");
         // Read as current, then freed before the Prompt recorded it (under the lock, as 空ける does).

@@ -502,7 +502,7 @@ mod tests {
     use super::*;
 
     fn book_in(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("l3-tasks-{name}-{}", std::process::id()));
+        let d = crate::testing::dir(&format!("l3-tasks-{name}"));
         let _ = std::fs::remove_dir_all(&d);
         d
     }

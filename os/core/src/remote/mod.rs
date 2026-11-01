@@ -949,7 +949,7 @@ mod tests {
 
     #[test]
     fn a_link_planted_where_a_file_is_written_is_not_written_through() {
-        let d = std::env::temp_dir().join(format!("length3-plant-{}", std::process::id()));
+        let d = crate::testing::dir("length3-plant");
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(d.join("repo")).unwrap();
         let outside = d.join("outside.txt");
@@ -1024,7 +1024,7 @@ mod tests {
 
     #[test]
     fn the_tree_leaves_out_git_and_links_and_says_so() {
-        let d = std::env::temp_dir().join(format!("length3-tree-{}", std::process::id()));
+        let d = crate::testing::dir("length3-tree");
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(d.join(".git")).unwrap();
         fs::create_dir_all(d.join("empty")).unwrap();

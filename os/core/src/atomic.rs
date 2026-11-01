@@ -129,7 +129,7 @@ mod tests {
     use super::*;
 
     fn scratch(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("length3-atomic-{tag}-{}", std::process::id()));
+        let d = crate::testing::dir(&format!("length3-atomic-{tag}"));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         d

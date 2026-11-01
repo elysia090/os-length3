@@ -6,14 +6,16 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-/// A data directory of its own, made empty for one test and left for a look afterwards.
+/// A data directory of its own, made empty for one test under this run's folder (`l3-test-run-<pid>`): gone when
+/// its test passes; left for a look when it fails, until the next run, which first takes away the folders of runs
+/// whose process is gone (passed, failed or killed).
 pub struct Home {
     pub dir: PathBuf,
 }
 
 impl Home {
     pub fn new(name: &str) -> Home {
-        let dir = std::env::temp_dir().join(format!("l3-test-{name}-{}", std::process::id()));
+        let dir = run().join(name);
         if dir.exists() { std::fs::remove_dir_all(&dir).expect("an old test home goes"); }
         std::fs::create_dir_all(&dir).expect("a test home");
         Home { dir }
@@ -47,6 +49,36 @@ impl Home {
     }
 
     pub fn path(&self, rel: &str) -> PathBuf { self.dir.join(rel) }
+}
+
+impl Drop for Home {
+    fn drop(&mut self) {
+        if std::thread::panicking() { eprintln!("left for a look: {}", self.dir.display()); } else { let _ = std::fs::remove_dir_all(&self.dir); }
+    }
+}
+
+const RUN: &str = "l3-test-run-";
+
+/// This run's folder, made once, after the folders of runs whose process is gone are taken away.
+fn run() -> PathBuf {
+    static RUN_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    RUN_DIR.get_or_init(|| {
+        let tmp = std::env::temp_dir();
+        for e in std::fs::read_dir(&tmp).into_iter().flatten().flatten() {
+            let name = e.file_name();
+            let Some(pid) = name.to_str().and_then(|n| n.strip_prefix(RUN)).and_then(|p| p.parse::<u32>().ok()) else { continue };
+            if pid != std::process::id() && !alive(pid) { let _ = std::fs::remove_dir_all(e.path()); }
+        }
+        let d = tmp.join(format!("{RUN}{}", std::process::id()));
+        std::fs::create_dir_all(&d).expect("this test run's folder");
+        d
+    }).clone()
+}
+
+/// Whether a process is there (one of another user's, which may not be signalled, is).
+fn alive(pid: u32) -> bool {
+    // SAFETY: signal 0 only asks whether the process exists; nothing is sent and no memory is passed.
+    (unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }) || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
 // ---- l3 at a terminal: a real pty, driven by keys, waited on by what it writes ----

@@ -51,6 +51,8 @@ pub mod usage;
 pub mod vm;
 pub mod work;
 pub mod text;
+#[cfg(all(test, unix))]
+pub(crate) mod testing;
 
 pub type Result<T> = std::result::Result<T, String>;
 

@@ -715,7 +715,7 @@ mod tests {
 
     #[test]
     fn only_this_oss_dead_old_temporaries_are_reclaimed() {
-        let data = std::env::temp_dir().join(format!("length3-usage-{}", std::process::id()));
+        let data = crate::testing::dir("length3-usage");
         let _ = fs::remove_dir_all(&data);
         let repo = data.join("repos/a");
         fs::create_dir_all(repo.join(".git")).unwrap();
@@ -769,7 +769,7 @@ mod tests {
 
     #[test]
     fn a_sparse_file_counts_what_it_holds() {
-        let data = std::env::temp_dir().join(format!("length3-sparse-{}", std::process::id()));
+        let data = crate::testing::dir("length3-sparse");
         let _ = fs::remove_dir_all(&data);
         let repo = data.join("repos/s");
         fs::create_dir_all(&repo).unwrap();
@@ -799,7 +799,7 @@ mod system_tests {
 
     #[test]
     fn the_root_in_use_and_the_one_before_are_held_older_ones_go() {
-        let data = std::env::temp_dir().join(format!("length3-system-{}", std::process::id()));
+        let data = crate::testing::dir("length3-system");
         let _ = fs::remove_dir_all(&data);
         let old = root_dir(&data, 'a', "0.0.1");
         std::thread::sleep(Duration::from_millis(20));
@@ -832,7 +832,7 @@ mod system_tests {
 
     #[test]
     fn a_root_a_prompt_runs_on_stays_when_another_is_made_current_and_goes_once_it_ends() {
-        let data = std::env::temp_dir().join(format!("length3-system-held-{}", std::process::id()));
+        let data = crate::testing::dir("length3-system-held");
         let _ = fs::remove_dir_all(&data);
         let repos = data.join("repos");
         let l3 = root_dir(&data, 'a', "0.5.0");
@@ -863,7 +863,7 @@ mod system_tests {
 
     #[test]
     fn a_record_older_l3_made_without_its_root_keeps_every_root() {
-        let data = std::env::temp_dir().join(format!("length3-system-unsaid-{}", std::process::id()));
+        let data = crate::testing::dir("length3-system-unsaid");
         let _ = fs::remove_dir_all(&data);
         root_dir(&data, 'a', "1");
         root_dir(&data, 'b', "2");
@@ -883,7 +883,7 @@ mod system_tests {
     /// free waited keeps it, however the free decided before.
     #[test]
     fn a_prompt_recorded_while_a_free_waits_keeps_its_root() {
-        let data = std::env::temp_dir().join(format!("length3-system-race-{}", std::process::id()));
+        let data = crate::testing::dir("length3-system-race");
         let _ = fs::remove_dir_all(&data);
         let old = root_dir(&data, 'a', "1");
         root_dir(&data, 'b', "2");
@@ -907,7 +907,7 @@ mod system_tests {
     /// The root made current under the same lock: one freed meanwhile is not made current.
     #[test]
     fn a_root_freed_as_it_is_made_current_is_not_made_current() {
-        let data = std::env::temp_dir().join(format!("length3-system-switch-{}", std::process::id()));
+        let data = crate::testing::dir("length3-system-switch");
         let _ = fs::remove_dir_all(&data);
         root_dir(&data, 'a', "1");
         let other = root_dir(&data, 'b', "2");
@@ -931,7 +931,7 @@ mod owned_tests {
     #[test]
     fn a_repos_environment_and_caches_are_listed_as_its_and_go_with_it() {
         use std::os::unix::fs::PermissionsExt;
-        let data = std::env::temp_dir().join(format!("length3-owned-{}", std::process::id()));
+        let data = crate::testing::dir("length3-owned");
         let _ = fs::remove_dir_all(&data);
         let repos = data.join("repos");
         fs::create_dir_all(repos.join("here")).unwrap();
@@ -985,7 +985,7 @@ mod owned_tests {
 
     #[test]
     fn what_a_prompt_being_prepared_holds_stays_and_says_so() {
-        let data = std::env::temp_dir().join(format!("length3-owned-prep-{}", std::process::id()));
+        let data = crate::testing::dir("length3-owned-prep");
         let _ = fs::remove_dir_all(&data);
         let repos = data.join("repos");
         fs::create_dir_all(repos.join("os-starting")).unwrap();
@@ -1037,7 +1037,7 @@ mod id_tests {
 
     #[test]
     fn an_id_from_the_page_cannot_lead_out_of_the_data_directory() {
-        let top = std::env::temp_dir().join(format!("length3-ids-{}", std::process::id()));
+        let top = crate::testing::dir("length3-ids");
         let data = top.join("data");
         std::fs::create_dir_all(&data).unwrap();
         // Named like a temporary file left by a process long gone, but outside.

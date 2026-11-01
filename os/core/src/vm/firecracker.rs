@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     fn a_vm_is_configured_started_and_paused_as_firecracker_is_asked_and_its_faults_are_said() {
-        let dir = std::env::temp_dir().join(format!("l3-fc-{}", std::process::id()));
+        let dir = crate::testing::dir("l3-fc");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let (sock, seen) = fake(&dir);

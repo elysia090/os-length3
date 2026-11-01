@@ -14,13 +14,14 @@
 // --test-name-pattern, --test-skip-pattern, --test-only, --test-concurrency and --test-reporter are taken.
 // Files named run instead of every file (npm test -- service/plan.test.ts src/remote/sync.test.ts).
 
-import {mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {availableParallelism, tmpdir} from 'node:os';
 import {dirname, join, relative, resolve} from 'node:path';
 import {run} from 'node:test';
 import * as reporters from 'node:test/reporters';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {parseArgs} from 'node:util';
+import {scratch} from './scratch.ts';
 
 const OS = fileURLToPath(new URL('..', import.meta.url));
 /** Where it was run from, which the paths it is given are from. */
@@ -100,7 +101,7 @@ units.sort((a, b) => unitWeight(b) - unitWeight(a));
 
 // Each one's module, and the folder the files are taken in (a folder each, made once, by whichever process makes
 // it first); made for this run, gone when it ends.
-const kept = mkdtempSync(join(tmpdir(), 'length3-tests-'));
+const kept = scratch('length3-tests-');
 process.on('exit', () => rmSync(kept, {recursive: true, force: true}));
 const together = pathToFileURL(join(OS, 'service/testing-together.ts')).href;
 const entries = Array.from({length: processes}, (_, k) => {

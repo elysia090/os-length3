@@ -16,13 +16,13 @@
 
 import assert from 'node:assert/strict';
 import {spawn, spawnSync, type ChildProcess} from 'node:child_process';
-import {copyFileSync, mkdirSync, mkdtempSync, rmSync} from 'node:fs';
+import {copyFileSync, mkdirSync, rmSync} from 'node:fs';
 import {request} from 'node:http';
 import {createServer} from 'node:net';
-import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {after} from 'node:test';
 import {fileURLToPath} from 'node:url';
+import {scratch} from '../../scripts/scratch.ts';
 
 const OS = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const WORKER = process.env.SELFTEST_REMOTE_KIND === 'worker';
@@ -81,7 +81,7 @@ export interface Ran { code: number; out: string; err: string; json: any } // es
  * LENGTH3_NO_BUCKET=1: it holds no files, as a Worker without R2 is).
  */
 export async function remote(env: Record<string, string> = {}) {
-  const dir = mkdtempSync(join(tmpdir(), 'l3-selftest-'));
+  const dir = scratch('l3-selftest-');
   const l3bin = join(dir, 'l3');
   copyFileSync(buildL3(), l3bin);
   const port = await freePort();

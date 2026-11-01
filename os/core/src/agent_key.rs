@@ -93,7 +93,7 @@ mod tests {
     use super::*;
 
     fn place(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("l3-agent-key-{name}-{}", std::process::id()));
+        let d = crate::testing::dir(&format!("l3-agent-key-{name}"));
         let _ = std::fs::remove_dir_all(&d);
         d.join("agent-key")
     }
