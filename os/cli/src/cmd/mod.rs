@@ -20,6 +20,7 @@ pub mod forge;
 pub mod git;
 pub mod home;
 pub mod people;
+pub mod plan;
 pub mod remote;
 pub mod runtime;
 

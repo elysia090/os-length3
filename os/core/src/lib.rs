@@ -36,6 +36,7 @@ pub mod seccomp;
 pub mod secrets;
 pub mod owned;
 pub mod paths;
+pub mod plan;
 #[cfg(not(target_os = "wasi"))]
 pub mod prompt;
 pub mod remote;
