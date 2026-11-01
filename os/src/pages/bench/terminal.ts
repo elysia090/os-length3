@@ -4,7 +4,7 @@ import {store} from '../../repos/repos.ts';
 import {bytes, h} from '../../ui/dom.ts';
 import {promptOpen, rootFetch, rootHere, rootStatus, type Holding, type Stopped} from '../../app/host.ts';
 import {currentLang, onLang, t, tn} from '../../i18n.ts';
-import {filesNow, keepMore, keepReached, keepTranslation, keptNow, loadL3, promptWorker, readyPrompt, takeReady, usedKept, warmL3, watchLoad, type L3, type Stage} from '../../prompt/userland.ts';
+import {filesNow, hearLater, keepMore, keepReached, keepTranslation, keptNow, loadL3, promptWorker, readyPrompt, takeReady, usedKept, warmL3, watchLoad, type L3, type Stage} from '../../prompt/userland.ts';
 import {every} from '../../app/runs.ts';
 import {errorText} from '../../app/errors.ts';
 import {still} from '../../ui/glide.ts';
@@ -110,6 +110,9 @@ export class Session {
   /** The l3 it runs, in a browser. */
   private l3of: L3 | null = null;
   private unwatch: (() => void) | null = null;
+  /** The paths its Worker was given (the hot programs among them), and how it stops hearing of those ready later. */
+  private given = new Set<string>();
+  private unhear: (() => void) | null = null;
   private copy: WriteBack;
   /** Whether the shell has waited at a prompt line yet; what was sent before it did, held for it. */
   private first = new FirstPrompt();
@@ -204,7 +207,22 @@ export class Session {
     this.first.heard(waits, (held) => { if (this.live) this.send(held); });
     // Its first prompt line: up. What the Prompts after it are given ahead of time (l3's translation) comes a moment later, quietly,
     // so it takes nothing from the first line run.
-    if (this.l3 && waits) { const l3 = this.l3; this.l3 = null; setTimeout(() => warmL3(l3), 3000); }
+    if (this.l3 && waits) {
+      const l3 = this.l3;
+      this.l3 = null;
+      setTimeout(() => {
+        if (!this.worker) return;
+        warmL3(l3);
+        // And this Prompt runs each of them from its next run on, as it is ready.
+        this.unhear = hearLater((f) => {
+          if (this.given.has(f.path) || !this.worker) return;
+          this.given.add(f.path);
+          this.worker.postMessage({type: 'hot', files: [f]});
+          // Which programs it was given so, as its threads are said (data-threads).
+          this.element.dataset.ahead = [this.element.dataset.ahead, f.path].filter(Boolean).join(' ');
+        });
+      }, 3000);
+    }
     const run = this.runs.at(-1);
     // Waiting at a prompt line it had not shown yet (its first, or after output of its own): watchers hear.
     if (!run || run.ms !== null) { if (this.promptLine !== this.toldLine) this.tell(); return; }
@@ -295,7 +313,9 @@ export class Session {
     // Stopped while it came: it stays stopped.
     if (this.worker !== worker) return;
     this.l3of = l3;
-    worker.postMessage(startMessage(this.repo, l3, copy, kept, use ? [`${use.variable}=${use.key}`] : [], ready?.given ?? null));
+    const start = startMessage(this.repo, l3, copy, kept, use ? [`${use.variable}=${use.key}`] : [], ready?.given ?? null);
+    worker.postMessage(start);
+    this.given = new Set([...(ready?.given ?? []), ...start.files.map((f) => f.path)]);
     // What is saved elsewhere comes into the shell's copy.
     this.unwatch = mirror(this.repo, this.id, (m) => this.worker?.postMessage(m));
     // Running is the usual state and says nothing; only what is missing is said. Until the shell says its first
@@ -419,6 +439,8 @@ export class Session {
     this.activity.end();
     this.unwatch?.();
     this.unwatch = null;
+    this.unhear?.();
+    this.unhear = null;
     this.worker?.terminate();
     this.worker = null;
     this.measuring?.stop();

@@ -990,12 +990,17 @@ the same thing for the desktop app and for the web.
   beside it): `l3.json` (which l3: its version and the root's digest), an
   index of every path (type, mode, link target; where each file's bytes
   are), a pack per package of the root, each file a zstd frame, and blobs
-  for the translator and the hot programs (BusyBox and l3) with their
+  for the translator and the hot programs (BusyBox, l3 and git) with their
   translations. Everything but `l3.json` is named by its digest. A Prompt
   fetches the index, the translator and BusyBox with its translation; every
   other file comes from its pack when a program first opens it, and every
-  other program is translated when it first runs (l3's translation follows
-  quietly once the first Prompt is up, for the Prompts after). What was
+  other program is translated when it first runs (l3's and git's
+  translations follow quietly once the first Prompt is up, and that Prompt
+  and every one after runs them from its next run of l3 or git; each name of
+  git, a hard link in the root, is the one file and runs the one
+  translation). A program run again that reached much of its code later is
+  translated again as one module only while the Prompt waits for its next
+  line, so no run waits on that. What was
   fetched is kept by digest (Cache Storage; the packs in the browser's HTTP
   cache), checked whenever it is read, and only within a quarter of what
   the browser says this origin may hold, the least recently used going

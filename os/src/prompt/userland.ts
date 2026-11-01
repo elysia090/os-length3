@@ -26,8 +26,8 @@ export const threadsApart = (): boolean => typeof SharedArrayBuffer === 'functio
 //   packs/<sha256>.pack  one per package: a file is read from it only when a
 //                        program first opens it (the Worker, one Range request)
 //   blobs/<sha256>.bin   the translator, and the hot programs (BusyBox: sh and
-//                        its applets; l3) with their translations made ahead
-//                        of time, gzip'd
+//                        its applets; l3; git, each of its commands a name of
+//                        it) with their translations made ahead of time, gzip'd
 //
 // The first Prompt fetches l3.json, the index, the translator and BusyBox
 // with its translation; l3's own translation follows once the Prompt is up,
@@ -67,9 +67,11 @@ export interface L3 {
   translator: WebAssembly.Module;
   /**
    * What the Worker is given beside the packs: each hot program at its own path in the root, with its translation
-   * (its module, its data kept outside it, and whether its memory is shared: threads in Workers of their own).
+   * (its module, its data kept outside it, and whether its memory is shared: threads in Workers of their own). Its
+   * bytes are the root's own (checked against its digest), so the Worker puts them in the root's file (`root`), which
+   * each of its names shares: git's commands are names of git, and each runs git's translation.
    */
-  files: {path: string; bytes: Uint8Array; module: WebAssembly.Module | null; mode: number; segments: Segment[] | null; shared: boolean; more?: More[]}[];
+  files: {path: string; bytes: Uint8Array; module: WebAssembly.Module | null; mode: number; segments: Segment[] | null; shared: boolean; root?: boolean; more?: More[]}[];
   /** Where the packs are (the Worker reads them under packs/). */
   url: string;
 }
@@ -513,14 +515,14 @@ type Hot = Awaited<ReturnType<typeof hot>>;
 function taken(f: Hot): L3['files'][number] {
   if (!more.has(f.path)) more.set(f.path, {url: f.moreURL, list: f.reached, saved: f.reached.length, timer: 0});
   const {reached: _r, moreURL: _u, ...file} = f;
-  return file;
+  return {...file, root: true};
 }
 
 /**
- * The rest of the hot programs (l3), after a Prompt is up: fetched (or read
- * from what is kept) and compiled quietly, then given to every Prompt
- * started after. Never waited for: compiling l3's translation takes seconds,
- * and until it is ready l3 is translated as it runs, as every other program.
+ * The rest of the hot programs (l3, git), after a Prompt is up: fetched (or
+ * read from what is kept) and compiled quietly, then given to every Prompt
+ * started after. Never waited for: compiling their translations takes seconds,
+ * and until one is ready its program is translated as it runs, as every other.
  */
 const later = new Map<string, L3['files'][number]>();
 let warming: Promise<void> | null = null;
@@ -529,9 +531,25 @@ function warm(index: Index) {
     for (const t of index.translations) {
       if (FIRST.includes(t.path) || later.has(t.path)) continue;
       const f = await hot(t, index.files.find((x) => x.path === t.path)?.mode ?? 0o755, index.translator.sha256, undefined, idle).catch(() => null);
-      if (f?.module) later.set(t.path, taken(f));
+      if (!f?.module) continue;
+      const file = taken(f);
+      later.set(t.path, file);
+      for (const h of hearing) h(withMore(file));
     }
   })();
+}
+
+/** Each Prompt up, told of each hot program as it is ready (hearLater). */
+const hearing = new Set<(f: L3['files'][number]) => void>();
+/**
+ * `hear` each hot program ready after a Prompt started (warm): those ready already at once, the rest as they come, until
+ * the function returned is called. A Prompt up gives each to its Worker, so the next run of git or l3 in it runs its
+ * translation, not one made as it runs (the page's first Prompt is up before they are ready).
+ */
+export function hearLater(hear: (f: L3['files'][number]) => void): () => void {
+  for (const f of later.values()) hear(withMore(f));
+  hearing.add(hear);
+  return () => { hearing.delete(hear); };
 }
 
 /** l3's index, for what only reads it (File's "/"): from what is kept or fetched; null when this build carries none. */
@@ -622,7 +640,9 @@ export const warmL3 = (l3: L3) => warm(l3.index);
  * What a Prompt starting now is given beside the packs: BusyBox, and each other hot program once it is ready, each
  * with the code it reached later in the Prompts before.
  */
-export const filesNow = (l3: L3): L3['files'] => [...l3.files, ...later.values()].map((f) => ({...f, more: more.get(f.path)?.list ?? []}));
+export const filesNow = (l3: L3): L3['files'] => [...l3.files, ...later.values()].map(withMore);
+/** A hot program with the code it reached later in the Prompts before. */
+const withMore = (f: L3['files'][number]): L3['files'][number] => ({...f, more: more.get(f.path)?.list ?? []});
 
 /** The Prompt's Worker: xlat running l3's root (pages/bench/terminal.ts gives it l3 and the repo). */
 export const promptWorker = (): Worker => new Worker(new URL('../../../xlat/runtime/worker.mjs', import.meta.url), {type: 'module'});
