@@ -1,6 +1,7 @@
 // ICMP over loopback, as ping makes it: a raw socket sends an echo request to 127.0.0.1 and reads what comes back
 // (the request itself, as each raw ICMP socket sees what arrives, and the kernel's echo reply), each with its IPv4
 // header; ICMP_FILTER keeps the request out; what an interface is (SIOCGIFINDEX, SIOCGIFFLAGS, SIOCGIFADDR, ...).
+// xlat: raw sockets (run.sh runs the native side as root: a raw socket wants CAP_NET_RAW).
 #define _GNU_SOURCE
 #include <arpa/inet.h>
 #include <errno.h>
@@ -33,6 +34,8 @@ static void drain(int s, const char *what) {
     if (n < 28) break;
     struct iphdr *ip = (struct iphdr *)b;
     struct icmphdr *h = (struct icmphdr *)(b + ip->ihl * 4);
+    // (A host with a network of its own may have other ICMP about: only this test's echo is said.)
+    if (ntohs(h->un.echo.id) != 4242) continue;
     printf("%s: %zd bytes from %s, ttl %d proto %d, type %d id %d seq %d, checksum ok %d\n", what, n, inet_ntoa(from.sin_addr),
            ip->ttl, ip->protocol, h->type, ntohs(h->un.echo.id), ntohs(h->un.echo.sequence), sum(h, n - ip->ihl * 4) == 0);
   }
@@ -53,6 +56,10 @@ int main(void) {
   setvbuf(stdout, 0, _IONBF, 0);
   int s = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
   if (s < 0) { printf("raw socket: %s\n", strerror(errno)); return 0; }
+  // What comes to 127.0.0.1 alone.
+  struct sockaddr_in here = {.sin_family = AF_INET};
+  inet_pton(AF_INET, "127.0.0.1", &here.sin_addr);
+  printf("bind: %d\n", bind(s, (struct sockaddr *)&here, sizeof here));
   echo(s, 1);
   drain(s, "got");
   // Only the replies, as ping asks.
