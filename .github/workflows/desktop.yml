@@ -24,6 +24,10 @@ env:
   CARGO_TERM_COLOR: always
   # Each job builds once: incremental artifacts only make the cache larger.
   CARGO_INCREMENTAL: '0'
+# What rust-cache keeps is keyed by each workspace's own Cargo.toml as well (in its shared-key, or key): rust-cache
+# hashes its members' manifests and the lockfile, not the workspace's, where [profile] is, and keeps nothing again
+# while its key is met, so a build made with a profile since changed (debug info, LTO) was restored and then
+# rebuilt by every run until the lockfile changed.
 
 # Every job side by side, so the run takes as long as its longest (about two minutes when what is kept is
 # still good), and one failure never hides another. Nothing is made twice: what the tests share (the core
@@ -54,7 +58,7 @@ jobs:
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: os -> target
-          shared-key: core-wasm
+          shared-key: core-wasm-${{ hashFiles('os/Cargo.toml') }}
           cache-on-failure: true
       - if: steps.kept.outputs.cache-hit != 'true'
         working-directory: os
@@ -97,7 +101,7 @@ jobs:
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: xlat -> target
-          shared-key: l3-web
+          shared-key: l3-web-${{ hashFiles('xlat/Cargo.toml') }}
           cache-on-failure: true
       - name: l3 for the browser, made from the root this tree pins, and the same as it
         if: steps.kept.outputs.cache-hit != 'true'
@@ -181,7 +185,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: os -> target
-          shared-key: lint
+          shared-key: lint-${{ hashFiles('os/Cargo.toml') }}
           cache-on-failure: true
       # Each step below runs whatever failed before it (only a cancel stops them), so one failure never
       # hides another as skipped: the job fails for each that fails.
@@ -213,7 +217,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: os -> target
-          shared-key: rust
+          shared-key: rust-${{ hashFiles('os/Cargo.toml') }}
           cache-on-failure: true
       - name: Core and l3
         working-directory: os
@@ -251,7 +255,7 @@ jobs:
           workspaces: |
             xlat -> target
             os -> target
-          shared-key: xlat-${{ matrix.part }}
+          shared-key: xlat-${{ matrix.part }}-${{ hashFiles('xlat/Cargo.toml', 'os/Cargo.toml') }}
           cache-on-failure: true
       - name: xlat against native (C and Rust std), and its unit tests
         if: matrix.part == 'native'
@@ -300,7 +304,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: os -> target
-          key: ${{ matrix.target }}
+          key: ${{ matrix.target }}-${{ hashFiles('os/Cargo.toml') }}
       - name: l3 and the app, built and bundled here
         working-directory: os
         shell: bash
@@ -309,6 +313,12 @@ jobs:
           BUNDLES: ${{ matrix.bundles }}
         run: |
           npm ci
+          # tauri build builds the app for its minimum macOS (MACOSX_DEPLOYMENT_TARGET: bundle.macOS.minimumSystemVersion,
+          # 10.13 when it is not set): l3, which goes beside it, is built for the same, and what both build (ring's C,
+          # whose build runs again when that changes) is built once.
+          if [ "$RUNNER_OS" = macOS ]; then
+            export MACOSX_DEPLOYMENT_TARGET=$(node -p "require('./src-tauri/tauri.conf.json').bundle?.macOS?.minimumSystemVersion ?? '10.13'")
+          fi
           cargo build --locked --release -p l3
           ext=; [ "$RUNNER_OS" = Windows ] && ext=.exe
           mkdir -p src-tauri/binaries
@@ -330,7 +340,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: os -> target
-          shared-key: rust
+          shared-key: rust-${{ hashFiles('os/Cargo.toml') }}
       - name: The .deb's profile lets /usr/bin/l3 make user namespaces where they are kept from programs
         working-directory: os
         run: |
@@ -401,7 +411,7 @@ jobs:
           workspaces: |
             xlat -> target
             os -> target
-          shared-key: root
+          shared-key: root-${{ hashFiles('xlat/Cargo.toml', 'os/Cargo.toml') }}
           cache-on-failure: true
       - name: The root as a release makes it, and what it made again, run
         if: steps.kept.outputs.cache-hit != 'true'

@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 use wasm_encoder::{
     BlockType, CodeSection, ConstExpr, CustomSection, ElementSection, Elements, Encode, EntityType, ExportKind,
     ExportSection, Function as WasmFunction, FunctionSection, GlobalSection, GlobalType, ImportSection,
-    Instruction as W, MemArg, MemoryType, Module, RefType, Section, SectionId, TableSection, TableType, TypeSection, ValType,
+    Instruction as W, MemArg, MemArgTarget, MemoryType, Module, RefType, Section, SectionId, TableSection, TableType, TypeSection, ValType,
 };
 
 type I = W<'static>;
@@ -128,7 +128,12 @@ pub const TRAP_HLT: i32 = 9;
 const ALL_FLAGS: u32 = RflagsBits::OF | RflagsBits::SF | RflagsBits::ZF | RflagsBits::CF | RflagsBits::PF;
 
 fn mem(align: u32) -> MemArg {
-    MemArg { offset: 0, align, memory_index: 0 }
+    mem_at(0, align)
+}
+
+/// An access to the guest's memory (the module's only one, 0), at `offset` from its address, plain (not atomic).
+fn mem_at(offset: u64, align: u32) -> MemArg {
+    MemArg { offset, align, target: MemArgTarget::Memory(0), ordering: None }
 }
 
 fn mask(size: u8) -> i64 {
@@ -427,7 +432,7 @@ impl<'p> Fx<'p> {
     fn store_sized(&mut self, size: u8) { self.store_at(size, 0) }
 
     fn load_at(&mut self, size: u8, offset: u64) {
-        let m = MemArg { offset, align: 0, memory_index: 0 };
+        let m = mem_at(offset, 0);
         self.e(match size {
             1 => W::I64Load8U(m),
             2 => W::I64Load16U(m),
@@ -437,7 +442,7 @@ impl<'p> Fx<'p> {
     }
 
     fn store_at(&mut self, size: u8, offset: u64) {
-        let m = MemArg { offset, align: 0, memory_index: 0 };
+        let m = mem_at(offset, 0);
         self.e(match size {
             1 => W::I64Store8(m),
             2 => W::I64Store16(m),
@@ -727,7 +732,7 @@ impl<'p> Fx<'p> {
     /// call that waits for one, as in `while (!got) pause();`, is taken there, by the call, as at a system call).
     fn time_slice(&mut self, address: u64) {
         self.spent();
-        self.c32(0); self.e(W::I32Load(MemArg { offset: INTERRUPT as u64, align: 2, memory_index: 0 }));
+        self.c32(0); self.e(W::I32Load(mem_at(INTERRUPT as u64, 2)));
         self.e(W::I32Or);
         self.e(W::If(BlockType::Empty));
         self.depth += 1;
@@ -2558,7 +2563,7 @@ fn helpers(code: &mut CodeSection, entries: u32, table: u64, cache: u64) {
     code.function(&f);
 
     // resolve(addr): binary search the sorted 16-byte entries in memory 1.
-    let m1 = |offset| MemArg { offset: table + offset, align: 3, memory_index: 0 };
+    let m1 = |offset| mem_at(table + offset, 3);
     let mut f = WasmFunction::new([(3, ValType::I32), (1, ValType::I64)]);
     let (addr, lo, hi, mid, key) = (0, 1, 2, 3, 4);
     for i in [
@@ -2585,7 +2590,7 @@ fn helpers(code: &mut CodeSection, entries: u32, table: u64, cache: u64) {
     // made later, or a return out of every translated frame, then costs a
     // load and a compare, not a search and a call out to the host. An empty
     // slot holds address 0, which is never taken as found.
-    let mc = |offset| MemArg { offset: cache + offset, align: 3, memory_index: 0 };
+    let mc = |offset| mem_at(cache + offset, 3);
     let mut f = WasmFunction::new([(1, ValType::I64), (1, ValType::I32)]);
     let (v, at) = (1, 2);
     for i in [
