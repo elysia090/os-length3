@@ -4,10 +4,13 @@
 //! (src/repos/history.ts):
 //!
 //!   Commit         what is not committed becomes history on the work's line,
-//!                  named after its issue ("Fix：件名")
-//!   Push           the line's commits are handed to the Remote as its state
-//!   Change         what was pushed goes to main as a change; again after more
-//!                  commits, as its next version; Reset takes it back
+//!                  named after its issue ("Fix：件名"), on one's own Remote;
+//!                  on one's own repo it then hands itself in (Submit)
+//!   Submit         the line's commits become its state there (`push`, the
+//!                  line's own word for it) and go to main as a change; again
+//!                  after more commits, as its next version; Reset takes it
+//!                  back. A push in a person's words is to a server or
+//!                  another's Remote, never this
 //!   Review         of one version of a change: approve, ask for changes, comment
 //!   Merge, Reject  the receiver's: main takes the change, or does not
 //!

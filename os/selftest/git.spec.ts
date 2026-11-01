@@ -39,16 +39,22 @@ test('an issue goes from written to merged, and is listed under Merged', async (
   await app.rail.go('git');
   await expect(app.main.getByRole('region', {name: '1 uncommitted file'})).toContainText('HELLO.');
   await app.git.step('Commit').click();
-  // Committed, it hands itself in: Commit and Push are done (no buttons), and the change waits for review, said by
-  // the Review under the box (not by a version beside the steps), each step's mark on its own row at the right.
+  // Committed, it is on one's own Remote, and on one's own repo that hands it in by itself: Commit is done (its mark,
+  // no button), there is no Push (a push is to a server or another's Remote), the Submitted switch is on, and the
+  // change waits for review, said by the Review under the box (not by a version beside the steps).
   await expect(app.git.step('Commit')).toBeHidden();
-  await expect(app.git.step('Push')).toBeHidden();
+  await expect(app.main.locator('.issue-steps .step-done')).toHaveCount(1);
+  await expect(app.main.locator('.issue-steps')).not.toContainText('Push');
   await expect(app.main.locator('.issue-steps')).not.toContainText('v1');
-  const marks = app.main.locator('.issue-steps .step-done');
-  await expect(marks).toHaveCount(2);
-  const [c, p] = [(await marks.nth(0).boundingBox())!, (await marks.nth(1).boundingBox())!];
-  expect(Math.abs(c.x + c.width - (p.x + p.width))).toBeLessThan(2);
-  expect(p.y).toBeGreaterThan(c.y + c.height / 2);
+  const submitted = app.main.getByRole('switch', {name: 'Submitted'});
+  await expect(submitted).toHaveAttribute('aria-checked', 'true');
+  await expect(app.git.review).toBeVisible();
+  // Switched off, the change is taken back; on again, the same commit is handed in anew, as the next version.
+  await submitted.click();
+  await expect(submitted).toHaveAttribute('aria-checked', 'false');
+  await expect(app.git.review).toBeHidden();
+  await submitted.click();
+  await expect(submitted).toHaveAttribute('aria-checked', 'true');
   await expect(app.git.review).toBeVisible();
   await expect(app.git.review.getByText('HELLO.')).toBeVisible();
 
@@ -228,7 +234,7 @@ test('a started issue\'s deeds go down the box\'s right edge, where Start was pr
   await expect(app.git.step('Back to main')).toBeVisible();
   // Asked again until it holds: the box is drawn as Start is pressed and again as the repo's state comes, and a deed
   // measured as the first drawing is taken away has no box.
-  for (const deed of ['Commit', 'Push']) {
+  for (const deed of ['Commit']) {
     await expect.poll(async () => {
       const b = await app.git.step(deed).boundingBox();
       return b ? Math.abs(b.x + b.width - (start.x + start.width)) : Infinity;

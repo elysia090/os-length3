@@ -203,7 +203,7 @@ Every value in `styles.css` comes from a token (§2).
     through its words; a line found keeps a kind's full-width colon tucked
     against its Latin word ("Fix："), as everywhere else.
     What a run prints comes in at the foot a line after another. A step
-    of an issue done here (Commit, Push) has its done mark land, in from
+    of an issue done here (Commit) has its done mark land, in from
     small past its size and settling, its tick drawn after it; a deed
     pressed and done gives a small pop where it was pressed, and so does a
     name or code copied; a message sent comes up out of the box it was
@@ -1286,7 +1286,7 @@ at a terminal is used the same way, and stays a command line:
   first, what goes against it or leaves it last (§3, Where a deed sits); the
   page's own deeds (Write an issue, Add a TODO, Sign in) are rows of their
   own. The deeds are where the thing stands: an issue not started offers
-  Start; changed, Commit; committed, Push; handed in, Approve and Merge (Merge
+  Start; changed, Commit; committed and not in, Submit; handed in, Approve and Merge (Merge
   first once approved), Reply, Ask for changes, Reject.
 - **A deed takes its words from the thing it is pressed on** and asks only
   for the rest, in place, one line each, as the app's fields ask: the name
@@ -1319,7 +1319,7 @@ at a terminal is used the same way, and stays a command line:
   answer is l3's own, and then the page's rows again, read anew, with the
   focus on what was just done or made (§1, What one was doing stays).
 - **After a command typed by hand**, its next deeds are said in one line
-  (`Next for notes#1  Push · Open · Back to main`), and asked nothing: l3
+  (`Next for notes#1  Submit · Open · Back to main`), and asked nothing: l3
   reads no key, so all the person types next is the shell's (a row that
   waited for a key took the first character of the next command, which l3
   cannot give back without replaying input). What a command just made comes
@@ -1364,7 +1364,7 @@ wherever it comes from:
 - **`l3 help` starts with the work.** First the lines that take an issue
   from written to merged, in their order, as one would type them in a repo
   called notes (`l3 issue new notes "Fix：title"`, `l3 git`, `l3 start
-  notes#1`, `l3 commit notes`, `l3 push notes`, `l3 review notes#1 approve`,
+  notes#1`, `l3 commit notes`, `l3 submit notes`, `l3 review notes#1 approve`,
   `l3 merge notes#1`); then every command by the rail; then the flags, the
   exit codes (0–5) and how names are written, each a line under its word.
   Every line fits 80 columns, Japanese counted two a character.
@@ -1386,7 +1386,7 @@ wherever it comes from:
   alone. Never a tab: a terminal puts what follows a tab at its next stop,
   out of line after a long name. A script reads `--json`.
 - **A step is ○ until it is ✓**, on a card as in the TODO: `○ Commit`, `✓
-  Push`. Started and nothing changed, Commit says where the work is done, as
+  Submit`. Started and nothing changed, Commit says where the work is done, as
   the app's card does (edit in notes, with `l3 prompt notes` or `l3 file
   write`; what changes shows here).
 - **What comes next runs as it is pasted.** A card's `next:` line is a
@@ -2682,7 +2682,8 @@ Git, No repos yet: not a way to bring a repo out when there is none.
 
 What happens between a repo and the outside, in the mental model of the
 issues: an issue hides its branch and worktree, and the operations are
-Commit, Push, Change (with Reset), Review, Merge, and Close for one that
+Commit, Change (with Reset; Submit hands it in again), Review, Merge, Push
+for work on another's repo, and Close for one that
 will not be done. It uses the same workbench
 as Forge, in Forge's frame: its band on the top line is the repo chips
 (one repo or all), where Forge's pills are, beside the search box and the
@@ -2746,7 +2747,7 @@ half written after reading its neighbours or another page.
   numbers would not fit), and nothing in it is wider than it: what stands
   beside a step's button where there is room (a diff) goes over it, the
   foot's line wraps, a switch goes under its line.
-- **Drawn again after a deed** (Start, Back to main, Commit, Push, Close…),
+- **Drawn again after a deed** (Start, Back to main, Commit, Submit, Close…),
   the row does not slide as if gone along: the box in full stays the one it
   was, its edges easing to where they now are (its neighbours gone, it
   widens to the column's); main's part over it folds away where it stood,
@@ -2756,7 +2757,7 @@ half written after reading its neighbours or another page.
   one after, else the one before) before the page is drawn again, never a
   hole where it was; reopened, the row goes to it; written, the box written
   in folds away and the row goes to the new issue at its end.
-- **A deed under way** (Start, Commit, Push, Merge, Close, Create, Commit on
+- **A deed under way** (Start, Commit, Submit, Merge, Close, Create, Commit on
   main, Reopen): its button keeps its look and its word, never greyed as one
   that cannot be pressed, and a short line runs under the word until it is
   done; Approve's ○ turns, its arc in the green it lands as.
@@ -2784,26 +2785,27 @@ half written after reading its neighbours or another page.
   copy of the repo, which File, Forge and the Prompt show; the layout says
   this, no sentence explains it. A merged work is done: the repo shows main
   again on its own, and the copy goes.
-- **Each issue is a column**: its card, and once it is pushed, its Review and
+- **Each issue is a column**: its card, and once it is handed in, its Review and
   Merge under it, so they slide with it; the neighbours show only their
   cards' heads. The card's weight sits a little high (less room above than
   below).
 - **Inside the card**, right under its title once it is worked on here:
-  **Commit** and **Push**, one row each: where it stands at the left, the
-  button at the right, down the one edge Start was pressed on (as Merge is
-  under the Review), so the pointer goes down the box, never across it;
-  done, the button's place shows the same word with
-  the done mark (a circle with a check, `done`), and the green says it is
-  done. In Commit's row, what is not committed, its files folded as main's
-  card has them, on the card itself. A commit hands the work to main as its
-  change by itself, again as the next version (Push's row is done with it;
-  its button is there only when that could not go, and the next commit
-  hands it in anyway); while it is undecided, a
-  switch at the foot's right, its word before it (Handed in), is on, and
-  switched off (Reset) takes it back: it goes off at once under the hand,
-  and back on if it could not; taken back (or rejected), Push's row says
-  so (Change · version 1 · Taken back) until it is pushed anew. A change received from
-  someone else shows Commit and Push done.
+  **Commit**, where it stands at the left, the button at the right, down
+  the one edge Start was pressed on (as Merge is under the Review), so the
+  pointer goes down the box, never across it; done, the button's place
+  shows the same word with the done mark (a circle with a check, `done`),
+  and the green says it is done. In its row, what is not committed, its
+  files folded as main's card has them, on the card itself. A commit goes
+  from the device to one's own Remote, and on one's own repo that is all
+  the way the work goes: there it is handed to main as its change by
+  itself, again as the next version, so there is no Push. A push is to a
+  server or another's Remote: a change received from someone else shows
+  Commit and Push done, theirs. Whether the change is in, a switch at the
+  foot's right says, its word before it (Submitted): on while it is in;
+  switched off (Reset) it is taken back, switched on again the commits are
+  handed in anew; it turns at once under the hand, and back if it could
+  not. Not in (taken back, rejected, or commits not handed in), Commit's
+  row says so at its left (Withdrawn; 1 commit not submitted).
 - **The card's foot**: its repo and who started it and when; Start or
   Continue here at the right. Back to main stands under the card at its
   left, out of it, as what leaves the work always is. No file name

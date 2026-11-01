@@ -74,7 +74,7 @@ pub enum Fact {
     // A repo on the Remote: turned off; only there.
     TurnedOff, OnlyThere,
     // An issue (git.rs `facts`).
-    CanStart, CanCommit, CanPush, Undecided, Approved, WorkedHere, OnWork, Closed, Merged,
+    CanStart, CanCommit, CanSubmit, Undecided, Approved, WorkedHere, OnWork, Closed, Merged,
     // A conversation: someone who wrote first, not accepted yet.
     Request,
     // Something on this device by size that can go; anything on the page that can.
@@ -374,9 +374,9 @@ pub static COMMANDS: &[Command] = &[
             f(None, &[REPO_HERE], &[Flag::Note("note")], ["on an issue, named after it", "Issue の作業では、その名前で"], REMOTE, Send, git::commit)),
         f(None, &[REPO_HERE, TITLE], &[Flag::Note("note")], ["with its subject, Kind：subject (on an issue, the words are its note)", "Commit の件名（種別：件名）で（Issue の作業では、メモに）"], REMOTE, Send, git::commit),
     ]),
-    c("push", &[], Group::Git, ["hand the work to main as its change", "作業を Change として main に渡す"], &[
-        offer(&[d(["Push", "Push"], On::Issue).when(&[F::CanPush])],
-            f(None, &[REPO_HERE], &[Flag::Note("note")], ["again: its next version", "もう一度で次の版"], REMOTE, Send, git::push)),
+    c("submit", &[], Group::Git, ["hand the work to main as its change", "作業を Change として main に渡す"], &[
+        offer(&[d(["Submit", "Submit"], On::Issue).when(&[F::CanSubmit])],
+            f(None, &[REPO_HERE], &[Flag::Note("note")], ["again: its next version", "もう一度で次の版"], REMOTE, Send, git::submit)),
     ]),
     c("reset", &[], Group::Git, ["take the change back", "Change を取り下げる"], &[
         offer(&[d(["Reset", "Reset"], On::Issue).when(&[F::WorkedHere, F::Undecided]).away().confirm()],
@@ -739,7 +739,7 @@ mod tests {
 
     #[test]
     fn what_reaches_the_remote_or_the_device_is_kept_out_of_the_prompt() {
-        for name in ["review", "reply", "network", "band", "profile", "lang", "dotfile", "todo", "remote", "login", "logout", "start", "commit", "push", "merge", "reject", "log", "diff", "server", "inbox", "address", "name", "runtime", "free", "root", "prompt", "app"] {
+        for name in ["review", "reply", "network", "band", "profile", "lang", "dotfile", "todo", "remote", "login", "logout", "start", "commit", "submit", "merge", "reject", "log", "diff", "server", "inbox", "address", "name", "runtime", "free", "root", "prompt", "app"] {
             let c = find(name).unwrap();
             assert!(c.forms.iter().all(|f| !f.needs.in_prompt), "{name}");
         }

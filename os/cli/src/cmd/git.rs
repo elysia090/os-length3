@@ -1,7 +1,7 @@
 //! Git, as the app's Git page: the issues not merged yet, oldest first,
 //! each as its box (number, name, where it lives, where it stands) and the
 //! one command that does what comes next; `l3 issue REPO#N` is one box in
-//! full with its Diff, Review and Reply. Then the steps: start, commit, push
+//! full with its Diff, Review and Reply. Then the steps: start, commit, submit
 //! (and reset), review, reply, merge, reject; diff and log to look.
 
 use super::Ctx;
@@ -120,7 +120,7 @@ fn facts(ctx: &Ctx, s: &Stand, i: &Issue) -> Vec<Fact> {
     } else if let Some(w) = &s.work {
         f.push(Fact::WorkedHere);
         if s.uncommitted > 0 { f.push(Fact::CanCommit); }
-        else if w.unpushed > 0 || (w.commits > 0 && !open) { f.push(Fact::CanPush); }
+        else if w.unpushed > 0 || (w.commits > 0 && !open) { f.push(Fact::CanSubmit); }
     }
     if let Some(c) = change.filter(|_| open) {
         f.push(Fact::Undecided);
@@ -142,7 +142,7 @@ fn next(ctx: &Ctx, s: &Stand, i: &Issue) -> Vec<String> {
     let mut out = Vec::new();
     if has(Fact::CanStart) { out.push(format!("l3 start {m}")); }
     if has(Fact::CanCommit) { out.push(format!("l3 commit {}", i.repo)); }
-    if has(Fact::CanPush) { out.push(format!("l3 push {}", i.repo)); }
+    if has(Fact::CanSubmit) { out.push(format!("l3 submit {}", i.repo)); }
     // An undecided change, in the app's order: its Review (approve, or a comment more), then
     // Merge once this version is approved; Reject and Reset (taking it back) last.
     if has(Fact::Undecided) {
@@ -157,11 +157,11 @@ fn next(ctx: &Ctx, s: &Stand, i: &Issue) -> Vec<String> {
     out
 }
 
-/// Whether all that is left to do on the issue here is to leave it: started, nothing changed or to push yet.
+/// Whether all that is left to do on the issue here is to leave it: started, nothing changed or to submit yet.
 /// Its card says so as the way back, not as what comes next (the menu weighs Back to main last too).
 fn only_leaving(ctx: &Ctx, s: &Stand, i: &Issue) -> bool {
     let f = facts(ctx, s, i);
-    f.contains(&Fact::WorkedHere) && ![Fact::CanCommit, Fact::CanPush, Fact::Undecided].iter().any(|x| f.contains(x))
+    f.contains(&Fact::WorkedHere) && ![Fact::CanCommit, Fact::CanSubmit, Fact::Undecided].iter().any(|x| f.contains(x))
 }
 
 /// What can be done with the issue, each deed once: the menu's own (spec.rs), pressed on it here and now, the
@@ -205,9 +205,10 @@ fn version(c: &Change) -> String {
     tr!("change · version {} · {}", "Change · 第{}版 · {}", c.version, state_word(&c.state))
 }
 
-/// The box as the app's card shows it: the title; once worked on here (or
-/// handed in), Commit and Push, ✓ once done and ○ until then, and what each
-/// is about; at the foot, where it lives and who started it; then, on the Git
+/// The box as the app's card shows it: the title; once worked on here, Commit
+/// (to one's own Remote) and Submit (to main, which a commit does by itself),
+/// ✓ once done and ○ until then, and what each is about; a change received
+/// from someone else, Commit and Push (theirs, to here); at the foot, where it lives and who started it; then, on the Git
 /// page, what comes next (in full, the deeds follow the Review: issue_show).
 fn card(ctx: &Ctx, s: &Stand, i: &Issue, full: bool) -> Vec<String> {
     let mut t = vec![heading(i)];
@@ -224,10 +225,10 @@ fn card(ctx: &Ctx, s: &Stand, i: &Issue, full: bool) -> Vec<String> {
                 else if w.commits == 0 { tr!("edit in {} (l3 prompt {0}, or l3 file write); what changes shows here", "{} で編集すると（l3 prompt {0} か l3 file write）、ここに出ます", i.repo) }
                 else { String::new() };
             t.push(format!("    {} Commit  {what}", done(committed)).trim_end().to_string());
-            let push = if pushed { change.map(version).unwrap_or_default() }
-                else if w.unpushed > 0 { if ja() { format!("Push するコミット {}", w.unpushed) } else { format!("{} to push", commits(w.unpushed)) } }
+            let submit = if pushed { change.map(version).unwrap_or_default() }
+                else if w.unpushed > 0 { if ja() { format!("未提出のコミット {}", w.unpushed) } else { format!("{} not submitted", commits(w.unpushed)) } }
                 else { String::new() };
-            t.push(format!("    {} Push    {push}", done(pushed)).trim_end().to_string());
+            t.push(format!("    {} Submit  {submit}", done(pushed)).trim_end().to_string());
         } else if let Some(c) = change.filter(|c| c.state == "open") {
             t.push(format!("    ✓ Commit  {}", if c.submitted_by.is_empty() { "—" } else { &c.submitted_by }));
             t.push(format!("    ✓ Push    {}", version(c)));
@@ -481,13 +482,13 @@ pub fn commit(ctx: &Ctx, call: &Call) -> Result<Reply> {
     Ok(Reply::done(text, json!({"commit": c, "titleAsNote": folded})))
 }
 
-pub fn push(ctx: &Ctx, call: &Call) -> Result<Reply> {
+pub fn submit(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let repo = target::repo(ctx, call, 0)?;
     let h = history::hand_in(&ctx.repos()?, &repo, call.note())?;
     let name = named_change(&h.change);
     let text = match &h.pushed {
-        Some(head) => tr!("Pushed {}; handed {} to main as version {}", "{} を Push し、{} を main に渡しました（第{}版）", out::short(head), name, h.change.version),
-        None if h.same() => tr!("Nothing new to push: version {} of {} is with main already", "Push する新しいものはありません。{1} の第{0}版はもう main にあります", h.change.version, name),
+        Some(head) => tr!("Submitted {}: handed {} to main as version {}", "{} を提出し、{} を main に渡しました（第{}版）", out::short(head), name, h.change.version),
+        None if h.same() => tr!("Nothing new to submit: version {} of {} is with main already", "提出する新しいものはありません。{1} の第{0}版はもう main にあります", h.change.version, name),
         None => tr!("Handed {} to main as version {}", "{} を main に渡しました（第{}版）", name, h.change.version),
     };
     Ok(Reply::done(text, json!({"pushed": h.pushed, "same": h.same(), "change": h.change})))
@@ -506,7 +507,7 @@ pub fn reset(ctx: &Ctx, call: &Call) -> Result<Reply> {
 /// The change handed in for an issue, or why there is none.
 fn change_for(at: &IssueRef) -> Result<Change> {
     history::changes_of_repo(&at.repo)?.into_iter().find(|c| c.issue == at.path())
-        .ok_or_else(|| Error::NotFound(tr!("{} has no change yet (l3 push {} hands it in, from its work)", "{} にはまだ Change がありません（作業から l3 push {} で渡します）", at.name(), at.repo)))
+        .ok_or_else(|| Error::NotFound(tr!("{} has no change yet (l3 submit {} hands it in, from its work)", "{} にはまだ Change がありません（作業から l3 submit {} で渡します）", at.name(), at.repo)))
 }
 
 /// The issue's change, still to be decided: one decided already is said as the issue it is, and what then
@@ -516,8 +517,8 @@ fn undecided(at: &IssueRef) -> Result<Change> {
     match c.state.as_str() {
         "open" => Ok(c),
         "merged" => Err(Error::Refused(tr!("{} is merged already (l3 log {} shows it)", "{} はもう Merge 済みです（l3 log {} で見られます）", at.name(), at.repo))),
-        "rejected" => Err(Error::Refused(tr!("{}'s change was rejected; its next version is handed in from its work: l3 push {}", "{} の Change は Reject 済みです。次の版は作業から l3 push {} で渡します", at.name(), at.repo))),
-        _ => Err(Error::Refused(tr!("{}'s change was taken back; its next version is handed in from its work: l3 push {}", "{} の Change は取り下げ済みです。次の版は作業から l3 push {} で渡します", at.name(), at.repo))),
+        "rejected" => Err(Error::Refused(tr!("{}'s change was rejected; its next version is handed in from its work: l3 submit {}", "{} の Change は Reject 済みです。次の版は作業から l3 submit {} で渡します", at.name(), at.repo))),
+        _ => Err(Error::Refused(tr!("{}'s change was taken back; its next version is handed in from its work: l3 submit {}", "{} の Change は取り下げ済みです。次の版は作業から l3 submit {} で渡します", at.name(), at.repo))),
     }
 }
 
@@ -681,13 +682,13 @@ mod tests {
         // Just started: ○ for each step (bug: a blank), where the work is done, and the way back said as such.
         let just = card(&ctx, &working(0, 0, 0, None), &i, false);
         assert!(just[1].starts_with("    ○ Commit  ") && just[1].contains("l3 prompt r"), "{just:?}");
-        assert_eq!(just[2], "    ○ Push");
+        assert_eq!(just[2], "    ○ Submit");
         assert_eq!(just.last(), Some(&tr!("    back: l3 main r", "    戻る：l3 main r")));
         let changed = card(&ctx, &working(0, 0, 2, None), &i, false);
         assert_eq!(changed[1], tr!("    ○ Commit  2 files not committed", "    ○ Commit  未 Commit 2ファイル"));
         assert_eq!(changed.last(), Some(&tr!("    next: l3 commit r", "    次：l3 commit r")));
         let committed = card(&ctx, &working(1, 1, 0, None), &i, false);
-        assert_eq!(committed[1..3], ["    ✓ Commit".to_string(), tr!("    ○ Push    1 commit to push", "    ○ Push    Push するコミット 1")]);
+        assert_eq!(committed[1..3], ["    ✓ Commit".to_string(), tr!("    ○ Submit  1 commit not submitted", "    ○ Submit  未提出のコミット 1")]);
         // What comes next runs as it is pasted (bug: `[-m note]` came along, brackets and all).
         for s in [working(0, 0, 2, None), working(1, 0, 0, Some(change("open", false))), stand_with_nothing()] {
             for n in next(&ctx, &s, &i) { assert!(!n.contains('[') && !n.contains('…'), "{n}"); }

@@ -974,7 +974,7 @@ mod tests {
         assert_eq!(deeds(Group::Git, On::Issue, &[CanStart], ONLINE), ["Start", "Open", "Close"]);
         assert_eq!(deeds(Group::Git, On::Issue, &[WorkedHere, OnWork], ONLINE), ["Open", "Back to main"]);
         assert_eq!(deeds(Group::Git, On::Issue, &[WorkedHere, CanCommit, OnWork], ONLINE), ["Commit", "Open", "Diff", "Back to main"]);
-        assert_eq!(deeds(Group::Git, On::Issue, &[WorkedHere, CanPush, OnWork], ONLINE), ["Push", "Open", "Back to main"]);
+        assert_eq!(deeds(Group::Git, On::Issue, &[WorkedHere, CanSubmit, OnWork], ONLINE), ["Submit", "Open", "Back to main"]);
         assert_eq!(deeds(Group::Git, On::Issue, &[WorkedHere, Undecided, OnWork], ONLINE),
             ["Approve", "Merge", "Open", "Diff", "Ask for changes", "Reply", "Back to main", "Reset", "Reject"]);
         // Approved, Merge comes first; handed in from another device, nothing of the work here.

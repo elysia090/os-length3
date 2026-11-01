@@ -386,11 +386,12 @@ const about = (...n: (Node | null)[]) => h('div', {class: 'step-about'}, ...n);
 const quiet = (text: string) => h('p', {class: 'muted small'}, text);
 
 /**
- * Commit and Push, inside the issue's box, one under the other at its right (green, the done mark, once done), what
- * each stands at at its left: the work's deeds go down the one edge Start was pressed on, as Merge's does under the
- * Review, so the pointer goes down the box rather than across it. Beside Commit, what is not committed: its diff opens
- * there. Pushing hands the work to main as its change, again as the next version; until it is decided, the change's
- * power switch (low at the box's right: `reset`) is on, and switched off takes it back.
+ * Commit, inside the issue's box at its right (green, the done mark, once done), what is not committed at its left: its
+ * diff opens there. A commit goes from this device to one's own Remote, and on one's own repo that is all the way the
+ * work goes: there it is handed to main as its change by itself, again as the next version with each commit. There is
+ * no Push here: a push is to a server or another's Remote (a change of someone else's comes in pushed: `received`).
+ * Whether the change is in, its power switch (low at the box's right: `reset`) says: switched off it is taken back,
+ * switched on again it is handed in anew.
  */
 function steps(issue: Issue, s: RepoState, events: IssueEvents, after: () => void): {element: HTMLElement; reset: HTMLElement | null} {
   const at = issue.repo;
@@ -410,31 +411,31 @@ function steps(issue: Issue, s: RepoState, events: IssueEvents, after: () => voi
   commit.addEventListener('click', doing(commit, error, () => git.cut(at, null, '', ''), after));
   const committed = !dirty && w.commits > 0;
 
-  // Push
+  // The change's power switch, once there is a commit to hand in: on while its last commit is in, said by its word
+  // beside it (Submitted); switched off, it is taken back (Reset); switched on, the commits are handed in again (a
+  // commit that could not hand itself in, a change taken back or rejected). Pressed, it turns at once, as a switch
+  // does under the hand, and back if it could not.
   const open = w.change?.state === 'open';
-  const pushed = w.commits > 0 && !w.unpushed && (open || w.change?.state === 'merged');
-  const push = button(t('Push'), !dirty && !pushed && w.commits > 0);
-  push.disabled = !w.commits || pushed;
-  push.addEventListener('click', doing(push, error, async () => { await git.push(at); await git.submit(at); }, after));
-  // The change's power switch: on while it is in, said by its word beside it (Handed in); switched off, it is taken
-  // back (Reset). Pressed, it goes off at once, as a switch does under the hand, and back on if it could not.
+  const inNow = w.commits > 0 && !w.unpushed && open;
   let reset: HTMLElement | null = null;
-  if (pushed && open) {
-    const power = h('button', {type: 'button', class: 'power', role: 'switch', 'aria-checked': 'true', 'aria-label': t('Submitted'),
-      title: t('Disabling withdraws this Change')}, h('span', {class: 'knob'})) as HTMLButtonElement;
-    const off = doing(power, error, () => git.reset(at).catch((e: unknown) => { power.setAttribute('aria-checked', 'true'); throw e; }), after);
-    power.addEventListener('click', () => { power.setAttribute('aria-checked', 'false'); void off(); });
+  if (w.commits > 0 && !(w.change?.state === 'merged' && !w.unpushed)) {
+    const power = h('button', {type: 'button', class: 'power', role: 'switch', 'aria-checked': String(inNow), 'aria-label': t('Submitted'),
+      title: inNow ? t('Disabling withdraws this Change') : t('Submit the commits as this Change')}, h('span', {class: 'knob'})) as HTMLButtonElement;
+    power.disabled = !inNow && dirty > 0;
+    const was = String(inNow);
+    const turn = doing(power, error, () => (inNow ? git.reset(at) : git.push(at).then(() => git.submit(at)))
+      .catch((e: unknown) => { power.setAttribute('aria-checked', was); throw e; }), after);
+    power.addEventListener('click', () => { power.setAttribute('aria-checked', String(!inNow)); void turn(); });
     reset = h('span', {class: 'power-line'}, h('span', {class: 'muted small', 'aria-hidden': 'true'}, t('Submitted')), power);
   }
-  // Taken back or rejected, Push's row still says so (the switch gone off has its answer), until it is pushed anew.
-  // Handed in and waiting, it says nothing more: its done mark says it is in, and the Review under the box what is next.
-  const where = w.unpushed ? quiet(tn('{n} commit to push', '{n} commits to push', w.unpushed))
+  // Not in (commits not handed in, a change taken back or rejected), Commit's row says so at its left, where what is
+  // not committed would be; handed in and waiting, it says nothing more: the switch says it is in, and the Review
+  // under the box what is next.
+  const where = w.unpushed ? quiet(tn('{n} commit not submitted', '{n} commits not submitted', w.unpushed))
     : w.change && w.change.state !== 'open' ? quiet(STATE(w.change.state)) : null;
 
-  const commitSlot = slot(commit, committed, t('Commit'));
   return {element: h('div', {class: 'steps issue-steps'},
-    h('div', {class: 'step-about step-changes'}, what), commitSlot,
-    about(where), slot(push, pushed, t('Push'), !!commitSlot.querySelector('.done-mark.fresh')), error), reset};
+    h('div', {class: 'step-about step-changes'}, what ?? where), slot(commit, committed, t('Commit')), error), reset};
 }
 
 /** Someone else's change, received: committed and pushed already, by whom and which version. */
