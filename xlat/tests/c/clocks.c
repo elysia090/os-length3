@@ -13,7 +13,8 @@ int main(void) {
   clock_gettime(CLOCK_REALTIME, &a); gettimeofday(&tv, &tz); time_t t = time(0);
   printf("realtime agrees: %d %d\n", (long)(tv.tv_sec - a.tv_sec) <= 1, (long)(t - a.tv_sec) <= 1);
   printf("tz: %d %d\n", tz.tz_minuteswest, tz.tz_dsttime);
-  clock_gettime(CLOCK_TAI, &b); printf("tai ahead: %ld\n", (long)(b.tv_sec - a.tv_sec));
+  // (TAI's offset is the host's: a time daemon may have set it, so only that it reads is said.)
+  printf("tai reads: %d\n", clock_gettime(CLOCK_TAI, &b) == 0 && b.tv_sec >= a.tv_sec);
   printf("coarse realtime near: %d\n", clock_gettime(CLOCK_REALTIME_COARSE, &b) == 0 && (long)(b.tv_sec - a.tv_sec) <= 1);
   int e = clock_gettime(99, &b); printf("clock 99: %d %s\n", e, e ? strerror(errno) : "");
   e = clock_getres(99, &r); printf("res 99: %d\n", e);
