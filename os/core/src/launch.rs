@@ -468,6 +468,35 @@ fn init(s: &Sandbox) -> ! {
     }
 }
 
+/// Why this machine does not let a Prompt run on the root here, if it does not: a child of this process makes the
+/// namespaces a Prompt is made in (a user namespace, and a mount namespace in it) and mounts in them, then ends.
+/// A kernel may have user namespaces off for everyone (user.max_user_namespaces=0, or
+/// kernel.unprivileged_userns_clone=0); Ubuntu 23.10 and later keep them, through AppArmor, from a program no profile
+/// lets make them (the .deb's lets /usr/bin/l3). Where they cannot be made, Prompts run translated, as in a browser.
+pub fn kept_from_namespaces() -> Option<String> {
+    let child = unsafe { libc::fork() };
+    if child < 0 { return Some(io::Error::last_os_error().to_string()); }
+    if child == 0 {
+        // Only system calls between the fork and the end: the caller may have threads.
+        let code = if unsafe { libc::unshare(libc::CLONE_NEWUSER | libc::CLONE_NEWNS) } != 0 { 1 }
+            else if unsafe { libc::mount(c"none".as_ptr(), c"/".as_ptr(), std::ptr::null(), libc::MS_REC | libc::MS_PRIVATE, std::ptr::null()) } != 0 { 2 }
+            else { 0 };
+        unsafe { libc::_exit(code) };
+    }
+    let mut status = 0;
+    while unsafe { libc::waitpid(child, &mut status, 0) } < 0 {
+        if io::Error::last_os_error().raw_os_error() != Some(libc::EINTR) { return Some(io::Error::last_os_error().to_string()); }
+    }
+    match libc::WIFEXITED(status).then(|| libc::WEXITSTATUS(status)) {
+        Some(0) => None,
+        Some(1) => Some(crate::tr!("This system lets no program make user namespaces, which Prompts are made in (user.max_user_namespaces, kernel.unprivileged_userns_clone)",
+            "このシステムは、Prompt が作られるユーザー名前空間をどのプログラムにも作らせません（user.max_user_namespaces、kernel.unprivileged_userns_clone）")),
+        Some(_) => Some(crate::tr!("AppArmor keeps user namespaces from this l3 (Ubuntu 23.10 and later); the .deb installs the profile that lets /usr/bin/l3 make them",
+            "AppArmor がこの l3 にユーザー名前空間を作らせません（Ubuntu 23.10 以降）。.deb で入れると、/usr/bin/l3 に作らせるプロファイルが入ります")),
+        None => Some(crate::tr!("The check of user namespaces ended by a signal", "ユーザー名前空間の確認がシグナルで終わりました")),
+    }
+}
+
 /// Run `s` and return the shell's exit code. Must be called from a process
 /// with one thread (l3 itself), since it forks and changes namespaces.
 pub fn run(s: &Sandbox) -> io::Result<i32> {

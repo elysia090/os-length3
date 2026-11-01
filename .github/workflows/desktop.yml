@@ -269,26 +269,35 @@ jobs:
           echo "$out" | grep -q 'l3 issue new'
 
   # The .deb's AppArmor profile (os/src-tauri/deb) on Ubuntu 24.04 as a person has it, user namespaces kept from
-  # unprivileged programs: a program at /usr/bin/l3 cannot make the mount namespace a Prompt is made in until the
-  # .deb's postinst has put the profile in place, and can after; its postrm takes it away again.
+  # unprivileged programs: l3 at /usr/bin/l3 says Prompts cannot run on the root here (l3 root check: the namespaces
+  # one is made in cannot be made) until the .deb's postinst has put the profile in place, and can after; its postrm
+  # takes it away again.
   apparmor:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: os -> target
+          shared-key: rust
       - name: The .deb's profile lets /usr/bin/l3 make user namespaces where they are kept from programs
+        working-directory: os
         run: |
           [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" = 1 ]
-          sudo install -m 0755 "$(command -v unshare)" /usr/bin/l3
-          if /usr/bin/l3 -Urm true 2>/dev/null; then echo "user namespaces were not kept from /usr/bin/l3 to begin with" >&2; exit 1; fi
-          sudo install -D -m 0644 os/src-tauri/deb/length3-l3.apparmor /usr/share/length3-os/apparmor/length3-l3
-          sudo sh os/src-tauri/deb/postinst configure
-          /usr/bin/l3 -Urm true
-          sudo sh os/src-tauri/deb/postrm remove
+          cargo build -q --locked -p l3
+          sudo install -m 0755 target/debug/l3 /usr/bin/l3
+          native() { /usr/bin/l3 root check --json | node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync(0, "utf8")).native))'; }
+          [ "$(native)" = false ] || { echo "user namespaces were not kept from /usr/bin/l3 to begin with" >&2; exit 1; }
+          /usr/bin/l3 root check
+          sudo install -D -m 0644 src-tauri/deb/length3-l3.apparmor /usr/share/length3-os/apparmor/length3-l3
+          sudo sh src-tauri/deb/postinst configure
+          [ "$(native)" = true ] || { /usr/bin/l3 root check; exit 1; }
+          sudo sh src-tauri/deb/postrm remove
           [ ! -e /etc/apparmor.d/length3-l3 ]
-          if /usr/bin/l3 -Urm true 2>/dev/null; then echo "the profile stayed after postrm" >&2; exit 1; fi
+          [ "$(native)" = false ] || { echo "the profile stayed after postrm" >&2; exit 1; }
 
   # The root a release makes (root-release.sh): the base laid out for Prompts, what a Prompt has nothing for left
   # out, and OpenSSL, OpenSSH's client, curl and git made again at this tree's pins (root-refresh.sh); each of those

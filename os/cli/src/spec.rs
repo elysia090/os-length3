@@ -442,6 +442,7 @@ pub static COMMANDS: &[Command] = &[
         offer(&[d(["Use a root", "root を選ぶ"], On::Page).second()],
             f(Some("use"), &[Arg::Choice(&["l3", "ubuntu", "debian"])], &[], ["the one Prompts run on (fetched if not held); .packages and .setup set it up", "Prompt が動くもの（なければ取る）。.packages と .setup で用意"], DEVICE, Send, runtime::root_use)),
         f(Some("install"), &[Arg::Text("BUNDLE")], &[], ["from a file", "ファイルから"], DEVICE, Send, runtime::root_install),
+        f(Some("check"), &[], &[], ["whether Prompts run on it here, or translated as in a browser, and why", "ここで root の上で Prompt が動くか、ブラウザと同じく翻訳して動くか、その理由"], DEVICE, Send, runtime::root_check),
     ]),
     c("network", &[], Group::Runtime, ["whether a repo's Prompts may reach the network (on this device)", "repo の Prompt がネットワークに届いてよいか（この端末で）"], &[
         f(None, &[], &[], ["the repos given it", "渡している repo"], DEVICE, Send, runtime::network_list),

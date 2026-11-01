@@ -90,7 +90,7 @@ const coreWasm = (): Plugin => ({
  * runs its own core, the root installed on the machine and signs in through the browser; `X.web.ts` for the
  * app's (Tauri's API), which a browser never has.
  */
-const ONLY = {web: ['core/spawn', 'prompt/userland', 'remote/passkeys'], native: ['app/tauri']};
+const ONLY = {web: ['core/spawn', 'remote/passkeys'], native: ['app/tauri']};
 const hostOnly = (): Plugin => {
   const other = HOST === 'native' ? ONLY.web : ONLY.native;
   const suffix = HOST === 'native' ? '.desktop.ts' : '.web.ts';

@@ -2,7 +2,7 @@ import * as dotfiles from '../../home/dotfiles.ts';
 import {agentUse} from '../../home/agent-key.ts';
 import {store} from '../../repos/repos.ts';
 import {bytes, h} from '../../ui/dom.ts';
-import {isNative, promptOpen, rootFetch, rootStatus, type Holding, type Stopped} from '../../app/host.ts';
+import {promptOpen, rootFetch, rootHere, rootStatus, type Holding, type Stopped} from '../../app/host.ts';
 import {currentLang, onLang, t, tn} from '../../i18n.ts';
 import {filesNow, keepMore, keepReached, keepTranslation, keptNow, loadL3, promptWorker, readyPrompt, takeReady, usedKept, warmL3, watchLoad, type L3, type Stage} from '../../prompt/userland.ts';
 import {every} from '../../app/runs.ts';
@@ -239,7 +239,7 @@ export class Session {
 
   private async start() {
     try {
-      if (isNative) await this.startNative(); else await this.startL3();
+      if ((await rootHere()).native) await this.startNative(); else await this.startL3();
     } catch (e) {
       // Said short at the Prompt's foot; why is the line's title, there when asked for, not a sentence beside the switch.
       const why = errorText(e);
@@ -460,6 +460,8 @@ export function sessionFor(repo: string): Session {
 export function terminalFor(repo: string): HTMLElement {
   const session = sessionFor(repo);
   // (Not once it has begun: it made its own Worker, and another made beside it now only takes from its start.)
-  if (!isNative) void loadL3().then((l3) => { if (!session.begun) readyNext(l3); }, () => { /* said by the Prompt that starts, if it fails again there */ });
+  void rootHere().then((here) => {
+    if (!here.native) void loadL3().then((l3) => { if (!session.begun) readyNext(l3); }, () => { /* said by the Prompt that starts, if it fails again there */ });
+  });
   return session.element;
 }

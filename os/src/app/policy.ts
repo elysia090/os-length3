@@ -26,12 +26,12 @@ export const webPolicy = (remote: string) => [
 
 /**
  * The desktop app's webview policy (src-tauri/tauri.conf.json, which says it for DEFAULT_REMOTE; scripts/desktop.sh
- * gives Tauri this for the Remote a build is for): the web's, with the app's ipc: channel, but no WebAssembly and
- * no worker, since the app's core and its Prompt are its own (vite.config.ts leaves the browser's out of its build),
- * and no inline style.
+ * gives Tauri this for the Remote a build is for): the web's, with the app's ipc: channel, and no inline style. Its
+ * core is its own, but where Prompts do not run on the root (a machine other than Linux on x86-64, or one that keeps
+ * user namespaces from l3) they run translated, as in a browser: WebAssembly is compiled and Workers run, its own.
  */
 export const desktopPolicy = (remote: string) => [
-  "default-src 'self'", "script-src 'self'", "worker-src 'none'", "style-src 'self'", "img-src 'self' data:",
+  "default-src 'self'", "script-src 'self' 'wasm-unsafe-eval'", "worker-src 'self'", "style-src 'self'", "img-src 'self' data:",
   `connect-src 'self' ipc: http://ipc.localhost ${reaches(remote)}`,
   "object-src 'none'", "base-uri 'none'", "form-action 'none'", "frame-src 'none'",
 ].join('; ');

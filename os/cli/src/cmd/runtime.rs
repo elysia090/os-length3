@@ -107,6 +107,20 @@ pub fn roots(_: &Ctx, _: &Call) -> Result<Reply> {
     Ok(Reply::data(t.join("\n"), data))
 }
 
+/// Whether a Prompt runs on the root here: this machine lets l3 make the namespaces one is made in (launch.rs
+/// kept_from_namespaces). Where it does not, the app runs its Prompts translated, as a browser does, and says why.
+pub fn root_check(_: &Ctx, _: &Call) -> Result<Reply> {
+    #[cfg(target_os = "linux")]
+    let why = length3_core::launch::kept_from_namespaces();
+    #[cfg(not(target_os = "linux"))]
+    let why = Some(tr!("A Prompt runs on the root on Linux only; here it runs translated, as in a browser", "root の上で Prompt が動くのは Linux だけです。ここではブラウザと同じく翻訳して動きます"));
+    let data = json!({"native": why.is_none(), "why": why});
+    Ok(Reply::data(match &why {
+        None => tr!("Prompts run on the root here", "ここでは root の上で Prompt が動きます"),
+        Some(why) => tr!("Prompts run translated here, as in a browser: {}", "ここでは Prompt はブラウザと同じく翻訳して動きます：{}", why),
+    }, data))
+}
+
 /// How far a fetch is, on standard error: every 4 MB and at the end, and each retry.
 /// On a terminal the count is redrawn in its line; elsewhere (a log) each is a line of its own.
 pub(crate) fn progress() -> impl FnMut(Progress) {

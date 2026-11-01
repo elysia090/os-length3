@@ -1,5 +1,5 @@
 import {bytes, h} from '../../ui/dom.ts';
-import {isNative, rootStatus, rootUse, type RootStatus} from '../../app/host.ts';
+import {rootHere, rootStatus, rootUse, type RootStatus} from '../../app/host.ts';
 import {t} from '../../i18n.ts';
 import {about} from '../../prompt/userland.ts';
 import {errorText} from '../../app/errors.ts';
@@ -20,12 +20,14 @@ import {button} from './parts.ts';
 export function environment(): HTMLElement {
   const card = h('div', {class: 'card small-card env-card'}, h('span', {class: 'muted small'}, t('Loading…')));
   const paint = async () => {
+    const here = await rootHere();
     let root: Awaited<ReturnType<typeof rootStatus>> = null;
-    try { root = await rootStatus(); } catch (e) { card.replaceChildren(h('p', {class: 'error'}, errorText(e))); return; }
-    if (isNative && root) { card.replaceChildren(...inTheApp(root, paint)); return; }
+    try { root = here.native ? await rootStatus() : null; } catch (e) { card.replaceChildren(h('p', {class: 'error'}, errorText(e))); return; }
+    if (root) { card.replaceChildren(...inTheApp(root, paint)); return; }
     let a: Awaited<ReturnType<typeof about>>;
     try { a = await about(); } catch (e) { card.replaceChildren(h('p', {class: 'error'}, errorText(e))); return; }
-    card.replaceChildren(...onTheWeb(a));
+    // In the app on a machine Prompts do not run on the root, translated as in a browser: said, with why.
+    card.replaceChildren(...onTheWeb(a), ...(here.why ? [h('p', {class: 'muted small env-why'}, t('Prompts run translated here: {why}', {why: here.why}))] : []));
   };
   void paint();
   return card;

@@ -10,7 +10,7 @@ export default {
   '{name} · via xlat': '{name} · xlat 経由',
   'l3 missing (run: npm run l3)': 'l3 が見つかりません（npm run l3 を実行してください）',
   'No root environment on device; install via Runtime': 'このデバイスにはまだ root がありません。Runtime からインストールできます',
-  'App Prompt runs directly on locally installed root (Runtime), bypassing xlat.': 'アプリの Prompt はデバイスに導入された root（Runtime）で直接動作し、xlat は経由しません',
+  'Prompts run translated here: {why}': 'ここでは Prompt はブラウザと同じく翻訳して動きます：{why}',
   '{n} file reserved for Prompt': 'Prompt 用の保持ファイル：{n}件',
   '{n} files reserved for Prompt': 'Prompt 用の保持ファイル：{n}件',
   'Required for Prompt execution; cannot be removed': 'Prompt の動作基盤として必要なため保持されています',

@@ -1,5 +1,7 @@
 import {digest, download, Fatal, type Check} from './l3-files.ts';
 import {errorText} from '../app/errors.ts';
+import {isNative} from '../app/host.ts';
+import {REMOTE_URL} from '../remote/connection.ts';
 import {t} from '../i18n.ts';
 import {prepare, type Segment} from '../../../xlat/runtime/share.mjs';
 import {unpackMore} from '../../../xlat/runtime/keeper.mjs';
@@ -85,7 +87,9 @@ export type Stage =
 
 /** The hot programs a first Prompt waits for; the others in the index come after it. */
 export const FIRST = ['/usr/bin/busybox'];
-const BASE = '/l3/';
+/** Where l3 is read from: the page's own origin in a browser; in the app (on a machine whose Prompts run translated),
+ * the site of the Remote it is built for, which serves the same files to anyone (public/_headers). */
+const BASE = isNative ? `${REMOTE_URL}/l3/` : '/l3/';
 const CACHE = 'l3';
 /** Of what the browser says this origin may hold, the part l3's copies may take (the rest is the repos'). */
 const SHARE = 0.25;

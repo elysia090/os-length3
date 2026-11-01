@@ -5,7 +5,7 @@
 // (/dev, /proc, /sys, made when a shell starts), the person's repos
 // (/root), or nothing (/tmp, /run start empty).
 
-import {isNative, native} from '../app/host.ts';
+import {native, rootHere} from '../app/host.ts';
 import {t} from '../i18n.ts';
 import {shownTree, store} from '../repos/repos.ts';
 
@@ -79,7 +79,7 @@ export async function list(path: string): Promise<SystemEntry[]> {
     return (await shownTree(at.repo, at.path)).map((e) => ({name: e.name, kind: e.kind, path: join(path, e.name), size: e.size}));
   }
   // Anything else is the root: in the app, the one installed here, read as it is on the disk.
-  if (isNative) return origins(path, await native<SystemEntry[]>('root_list', {path}).catch((e) => {
+  if ((await rootHere()).native) return origins(path, await native<SystemEntry[]>('root_list', {path}).catch((e) => {
     // No root yet: "/" still has /root, the repos, which are this device's own; the rest comes with a root (Runtime).
     if (path === '/') return [{name: 'root', kind: 'dir' as const, path: '/root'}];
     throw e;
