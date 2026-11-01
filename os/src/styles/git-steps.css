@@ -44,6 +44,28 @@
 .main-card { display: grid; gap: var(--s3); padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s5); border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper); }
 .main-title { margin: 0; font-size: var(--t-body); font-weight: 600; }
 .main-card + .main-card { margin-top: var(--s3); }
+/* Each card drawn as a history draws its line: the repo's main where it stands (a dot at its name), what waits on it
+   down a dashed line (not yet), and at its foot the ring of the commit Commit makes. The line is the files' edge, so
+   the diff's own green edge gives way to it. A row of many (brief) is one line across, not down: none there. */
+.main-card:not(.brief) { position: relative; padding-left: calc(var(--s5) + 28px); }
+.main-card:not(.brief) .main-title { line-height: 24px; }
+.main-card:not(.brief)::before {
+  content: ''; position: absolute; left: calc(var(--s5) + 6px); width: 2px;
+  top: calc(var(--s4) + var(--s1) + 12px); bottom: calc(var(--s5) + var(--h-control) / 2);
+  background: repeating-linear-gradient(to bottom, var(--edge) 0 4px, transparent 4px 9px);
+}
+.main-card:not(.brief)::after {
+  content: ''; position: absolute; left: calc(var(--s5) + 2px); top: calc(var(--s4) + var(--s1) + 7px);
+  width: 10px; height: 10px; border-radius: 50%; background: var(--ink);
+}
+.main-card:not(.brief) > .main-foot, .main-card:not(.brief) > .off-ask > :is(.card-foot, .answers) { position: relative; }
+.main-card:not(.brief) > .main-foot::before, .main-card:not(.brief) > .off-ask > :is(.card-foot, .answers)::before {
+  content: ''; position: absolute; left: -27px; top: 50%; width: 12px; height: 12px; margin-top: -6px; box-sizing: border-box;
+  border: 2px solid var(--ink); border-radius: 50%; background: var(--paper);
+}
+.main-card:not(.brief) .diff-line { border-left-width: 0; }
+/* Its files close under its name, as what is in it (the card's gap, a step from its foot, is room between parts). */
+.main-card > .main-title + .changes { margin-top: calc(-1 * var(--s2)); }
 /* Many waiting in All (done.ts BRIEF): a row each, its name at the left and how many with Commit at the right; its name
    pressed, its files open under it, the row's own width. Asked for a commit's line, it is the card again. */
 .main-card.brief { grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: var(--s2) var(--s3) var(--s2) var(--s5); }
@@ -58,11 +80,13 @@
    inside the box. */
 .changes { display: grid; gap: var(--s1); min-width: 0; }
 .changes > .diff-file { margin: 0; }
-/* A file of a diff folds at its head, a small triangle before its name saying which way; turned down, it is open. */
+/* A file of a diff folds at its head, a small triangle before its name saying which way; turned down, it is open. It
+   stands on the name's line (its foot on the baseline, then half a pixel up), centred on its capitals: centred in the
+   head's row it sat a pixel and a half under them, the row being taller than its line. */
 details.diff-file > summary.diff-head { list-style: none; }
 details.diff-file > summary.diff-head::-webkit-details-marker { display: none; }
 details.diff-file > summary.diff-head::before {
-  content: ''; flex: none; align-self: center; width: 0; height: 0; margin-right: calc(-1 * var(--s1));
+  content: ''; flex: none; align-self: baseline; translate: 0 -.5px; width: 0; height: 0; margin-right: calc(-1 * var(--s1));
   border-left: 5px solid var(--sub); border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: rotate var(--motion);
 }
 details.diff-file[open] > summary.diff-head::before { rotate: 90deg; }
