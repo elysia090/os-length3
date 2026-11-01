@@ -60,7 +60,7 @@ test('a stalled transfer is noticed and taken up again', async () => {
   const got = await download(s.url, {sha256: await digest(body)}, {bytes() {}, retry(_, why) { retries.push(why); }}, stalls);
   s.close();
   assert.deepEqual(got, body);
-  assert.deepEqual(retries, ['The connection stalled']);
+  assert.deepEqual(retries, ['Connection timed out']);
 });
 
 test('a moment of server errors is waited out; a missing file is not', async () => {
@@ -94,7 +94,7 @@ test('a file changed between tries is never joined to the old half', async () =>
 
 test('bytes that are not the file named are refused after every try', async () => {
   const s = await serve(body, []);
-  await assert.rejects(download(s.url, {sha256: '0'.repeat(64)}, undefined, {...fast, attempts: 2}), /The contents do not match/);
+  await assert.rejects(download(s.url, {sha256: '0'.repeat(64)}, undefined, {...fast, attempts: 2}), /Content mismatch/);
   s.close();
 });
 

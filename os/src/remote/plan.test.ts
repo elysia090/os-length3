@@ -11,6 +11,8 @@ import {browserOnRemote} from '../testing/remote.ts';
 // Stripe a stand-in), what a refused repo, server and name come to here.
 
 const stripe = fakeStripe();
+/** What each paid tier says it adds besides its room and names. */
+const ADDS = ['Create servers', 'Custom domain usernames (name@yourdomain)'];
 const b = await browserOnRemote({plan: {free: {repos: 1, bytes: 3000, names: 1}, grace: GRACE}, billing: stripe.billing});
 const plan = await import('./plan.ts');
 const lifecycle = await import('./lifecycle.ts');
@@ -28,83 +30,84 @@ const usd = (amount: number) => ({amount, currency: 'usd', interval: 'month' as 
 const tiers = [{tier: 'free' as const, allowance: free}, {tier: 'go' as const, allowance: go, sold: true, price: usd(700)},
   {tier: 'pro' as const, allowance: pro, sold: true, price: usd(1400)}, {tier: 'max' as const, allowance: max, sold: true, price: usd(1900)}];
 
-test('the Plan part, free: its use against the free allowance, and free and the three tiers side by side, each to subscribe to', () => {
+test('the Plan part, free: its use against the free allowance, and free and the three tiers side by side, each to subscribe to', async () => {
   const f = plan.planView({plan: 'free', tier: 'free', status: null, usage: {repos: 2, bytes: 25_000_000, names: 1}, allowance: free, free, tiers, buy: true, manage: false}, now);
   assert.equal(f.title, 'Free plan');
-  assert.equal(f.line, 'Keeps 3 repos and 100 MB on the Remote, and one name');
+  assert.equal(f.line, 'Includes 3 repos, 100 MB Remote storage, and 1 username');
   assert.deepEqual(f.meters.map((m) => [m.label, m.used, m.of, m.share, m.over]),
-    [['Repos on the Remote', '2', '3', 2 / 3, false], ['Kept on the Remote', '25.0 MB', '100 MB', 0.25, false], ['Names on this Remote', '1', '1', 1, false]]);
+    [['Remote repos', '2', '3', 2 / 3, false], ['Remote storage used', '25.0 MB', '100 MB', 0.25, false], ['Usernames on this Remote', '1', '1', 1, false]]);
   assert.deepEqual(f.tiers.map((c) => [c.name, c.price, c.keeps, c.current, c.deed?.label ?? null]), [
-    ['Free plan', 'No charge', ['100 MB on the Remote', '3 repos', '1 name here'], true, null],
-    ['Go plan', '$7.00 a month', ['50 GB on the Remote', 'Repos as many as fit', '5 names here'], false, 'Subscribe'],
-    ['Pro plan', '$14.00 a month', ['256 GB on the Remote', 'Repos as many as fit', '10 names here'], false, 'Subscribe'],
-    ['Max plan', '$19.00 a month', ['512 GB on the Remote', 'Repos as many as fit', '20 names here'], false, 'Subscribe']]);
+    ['Free plan', 'Free', ['100 MB Remote storage', '3 repos', '1 username on this Remote'], true, null],
+    ['Go Plan', '$7 / month', ['50 GB Remote storage', 'Unlimited repos (within storage)', '5 usernames on this Remote', ...ADDS], false, 'Subscribe'],
+    ['Pro Plan', '$14 / month', ['256 GB Remote storage', 'Unlimited repos (within storage)', '10 usernames on this Remote', ...ADDS], false, 'Subscribe'],
+    ['Max Plan', '$19 / month', ['512 GB Remote storage', 'Unlimited repos (within storage)', '20 usernames on this Remote', ...ADDS], false, 'Subscribe']]);
   // Free, nothing is managed; each tier is subscribed to from its own card.
-  assert.deepEqual([f.action, f.note, f.adds.length], [null, null, 3]);
+  // Free as free is: its own card says what it keeps, so nothing is said again beside the tiers.
+  assert.deepEqual([f.action, f.note, f.aside], [null, null, null]);
   // Over: the meter is full, and it says what happens to what is new.
   const over = plan.planView({plan: 'free', tier: 'free', usage: {repos: 5, bytes: 120_000_000, names: 1}, allowance: free, free, tiers, buy: true}, now);
   assert.deepEqual(over.meters.map((m) => [m.share, m.over]), [[1, true], [1, true], [1, false]]);
-  assert.match(over.note!, /stays on your device/);
+  assert.match(over.note!, /remain local until space frees up/);
   // Ended: free again, Subscribe again, and what was made stays.
   const ended = plan.planView({plan: 'free', tier: 'free', status: 'canceled', ends: now - DAY, usage: {repos: 1, bytes: 0, names: 1}, allowance: free, free, tiers, buy: true, manage: true}, now);
   assert.deepEqual([ended.line.startsWith('Ended'), ended.tiers[1].deed?.kind, ended.action], [true, 'checkout', null]);
   // Billing off: no tiers to choose among, nothing to press, and it says why.
   const off = plan.planView({plan: 'free', tier: 'free', usage: {repos: 0, bytes: 0, names: 0}, allowance: free, free, tiers: [tiers[0]], buy: false}, now);
-  assert.deepEqual([off.tiers, off.action, off.note], [[], null, 'Paid features cannot be bought on this Remote yet']);
+  assert.deepEqual([off.tiers, off.action, off.note], [[], null, 'Paid upgrades not available on this Remote']);
   // The price not known (Stripe away): said to be shown at payment.
   const unpriced = plan.planView({plan: 'free', tier: 'free', allowance: free, free, tiers: [tiers[0], {tier: 'go', allowance: go, sold: true}], buy: true}, now);
-  assert.equal(unpriced.tiers[1].price, 'Price shown at payment');
-  setLang('ja');
+  assert.equal(unpriced.tiers[1].price, 'Pricing shown at checkout');
+  await setLang('ja');
   const ja = plan.planView({plan: 'free', tier: 'free', usage: {repos: 0, bytes: 0, names: 0}, allowance: free, free, tiers, buy: true}, now, 'ja');
   assert.deepEqual([ja.line, ja.tiers.map((c) => c.name), ja.tiers[2].keeps, ja.tiers[2].deed?.label],
-    ['Remote に repo 3個と 100 MB、名前1つまで', ['無料プラン', 'Go プラン', 'Pro プラン', 'Max プラン'], ['Remote に 256 GB', 'repo は入るだけ', 'この Remote の名前10個'], '登録する']);
-  setLang('en');
+    ['Remote に 3個の repo、100 MB、ユーザー名1つまで保持可能', ['無料プラン', 'Go プラン', 'Pro プラン', 'Max プラン'], ['Remote 容量：256 GB', '容量の許す限り repo を作成可能', 'この Remote での名前：10個', 'サーバー作成機能', 'カスタムドメインのユーザー名（name@yourdomain）'], 'サブスクリプション登録']);
+  await setLang('en');
 });
 
-test('the Plan part, paid: the tier marked, its use against what it keeps, Upgrade and Downgrade, Manage the plan', () => {
+test('the Plan part, paid: the tier marked, its use against what it keeps, Upgrade and Downgrade, Manage plan', () => {
   const day = (ms: number) => new Date(ms).toLocaleDateString('en', {year: 'numeric', month: 'short', day: 'numeric'});
   const p = plan.planView({plan: 'paid', tier: 'pro', status: 'active', renews: now + 20 * DAY, usage: {repos: 5, bytes: 120 * GB, names: 2},
     allowance: pro, free, tiers, buy: true, manage: true}, now);
-  assert.deepEqual([p.title, p.line, p.action, p.note], ['Pro plan', `Renews ${day(now + 20 * DAY)}`, {kind: 'portal', label: 'Manage the plan'}, null]);
-  // Repos as many as fit: the figure alone; bytes and names against Pro's.
+  assert.deepEqual([p.title, p.line, p.action, p.note], ['Pro Plan', `Renews on ${day(now + 20 * DAY)}`, {kind: 'portal', label: 'Manage plan'}, null]);
+  // Unlimited repos (within storage): the figure alone; bytes and names against Pro's.
   assert.deepEqual(p.meters.map((m) => [m.used, m.of, m.share]), [['5', null, 0], ['120 GB', '256 GB', 120 / 256], ['2', '10', 0.2]]);
   // Pro is its own (nothing to press); Go is down, keeping less than is kept now; Max is up; free has nothing (cancelling is Manage's).
   assert.deepEqual(p.tiers.map((c) => [c.tier, c.current, c.deed, c.over]), [['free', false, null, true], ['go', false, {kind: 'change', label: 'Downgrade'}, true],
     ['pro', true, null, false], ['max', false, {kind: 'change', label: 'Upgrade'}, false]]);
-  assert.match(plan.planView({plan: 'paid', tier: 'go', status: 'active', ends: now + DAY, allowance: go, free, tiers, buy: true, manage: true}, now).line, /^Ends /);
+  assert.match(plan.planView({plan: 'paid', tier: 'go', status: 'active', ends: now + DAY, allowance: go, free, tiers, buy: true, manage: true}, now).line, /^Expires on /);
   // A payment that failed is put right first (Manage): no tier is changed to meanwhile.
   const owed = plan.planView({plan: 'paid', tier: 'go', status: 'past_due', graceUntil: now + 10 * DAY, allowance: go, free, tiers, buy: true, manage: true}, now);
-  assert.match(owed.line, /did not go through · paid until/);
+  assert.match(owed.line, /Payment failed · Paid access valid until/);
   assert.deepEqual([owed.tiers.every((c) => !c.deed), owed.action?.kind], [true, 'portal']);
 });
 
-test('what came back from the portal is said once against the plan as it was: a tier, an end set or taken back, the end', () => {
+test('what came back from the portal is said once against the plan as it was: a tier, an end set or taken back, the end', async () => {
   const paid = (o: Partial<Plan>): Plan => ({plan: 'paid', tier: 'pro', renews: now + 9 * DAY, ...o});
   const was = {tier: 'pro' as const, ends: null, paid: true};
-  assert.equal(plan.changedWords(was, paid({tier: 'max'})), 'You are on Max now.');
-  assert.match(plan.changedWords(was, paid({renews: null, ends: now + 9 * DAY}))!, /^Cancelled: Pro stays until .+, and nothing more is charged\.$/);
-  assert.match(plan.changedWords({...was, ends: now + 9 * DAY}, paid({}))!, /^Pro goes on: it renews /);
-  assert.equal(plan.changedWords(was, {plan: 'free', tier: 'free'}), 'The plan has ended; what you made stays.');
+  assert.equal(plan.changedWords(was, paid({tier: 'max'})), 'You are now on Max.');
+  assert.match(plan.changedWords(was, paid({renews: null, ends: now + 9 * DAY}))!, /^Subscription cancelled: Pro remains active until .+; no further charges\.$/);
+  assert.match(plan.changedWords({...was, ends: now + 9 * DAY}, paid({}))!, /^Pro active: renews on /);
+  assert.equal(plan.changedWords(was, {plan: 'free', tier: 'free'}), 'Plan expired; existing content preserved.');
   assert.equal(plan.changedWords(was, paid({})), null);
   // Two at once (a tier changed, then cancelled), one after the other, as the language writes sentences.
   const both = paid({tier: 'max', renews: null, ends: now + 9 * DAY});
-  assert.match(plan.changedWords(was, both)!, /^You are on Max now\. Cancelled: Max stays until /);
-  setLang('ja');
-  assert.match(plan.changedWords(was, both)!, /^Max になりました。解約しました。Max は/);
-  setLang('en');
+  assert.match(plan.changedWords(was, both)!, /^You are now on Max\. Subscription cancelled: Max remains active until /);
+  await setLang('ja');
+  assert.match(plan.changedWords(was, both)!, /^現在 Max を利用中です。解約完了：Max は/);
+  await setLang('en');
 });
 
-test('a refusal of the plan\'s is known by its rule and tier, said in place, and says when paying is not offered here', () => {
+test('a refusal of the plan\'s is known by its rule and tier, said in place, and says when paying is not offered here', async () => {
   const e = new RemoteError(402, 'x', {rule: 'server', buy: true});
   assert.deepEqual(plan.planRefusal(e), {rule: 'server', buy: true, tier: 'free'});
-  assert.equal(plan.refusalWords({rule: 'server', buy: true}), 'Making a server is part of the paid plan.');
-  assert.match(plan.refusalWords({rule: 'repos', buy: false}), /stays on your device\. Paid features cannot be bought on this Remote yet\.$/);
+  assert.equal(plan.refusalWords({rule: 'server', buy: true}), 'Server creation requires a paid plan.');
+  assert.match(plan.refusalWords({rule: 'repos', buy: false}), /remains stored locally\. Paid upgrades are not supported on this Remote yet\.$/);
   // A tier past what it keeps says so by its name.
   assert.deepEqual(plan.planRefusal(new RemoteError(402, 'x', {rule: 'bytes', buy: true, tier: 'go'})), {rule: 'bytes', buy: true, tier: 'go'});
-  assert.equal(plan.refusalWords({rule: 'bytes', buy: true, tier: 'go'}), 'Go keeps no more on the Remote. What changed stays on your device.');
-  setLang('ja');
-  assert.equal(plan.refusalWords({rule: 'names', buy: true, tier: 'pro'}), 'Pro では、この Remote にこれ以上の名前を持てません。');
-  setLang('en');
+  assert.equal(plan.refusalWords({rule: 'bytes', buy: true, tier: 'go'}), 'Go storage full on Remote. Local changes remain on this device.');
+  await setLang('ja');
+  assert.equal(plan.refusalWords({rule: 'names', buy: true, tier: 'pro'}), 'Pro の上限に達したため、これ以上名前を取得できません。');
+  await setLang('en');
   for (const other of [new RemoteError(409, 'x', {rule: 'server'}), new RemoteError(402, 'x', {rule: 'what'}), new Error('x'), 'plan: x']) assert.equal(plan.planRefusal(other), null);
 });
 
@@ -144,7 +147,7 @@ test('Subscribe opens Checkout; once Stripe says it is paid, the Plan says so an
   const r = await fetch(`${b.URL}/v1/stripe/webhook`, {method: 'POST', body: payload, headers: {'Stripe-Signature': await sign(payload, WEBHOOK_SECRET), 'Content-Type': 'application/json'}});
   assert.equal(r.status, 200);
   const p = await plan.plan();
-  assert.deepEqual([p.plan, p.tier, plan.planView(p).action?.kind, plan.planView(p).title], ['paid', 'pro', 'portal', 'Pro plan']);
+  assert.deepEqual([p.plan, p.tier, plan.planView(p).action?.kind, plan.planView(p).title], ['paid', 'pro', 'portal', 'Pro Plan']);
   await lifecycle.flush();
   assert.equal(lifecycle.repoState('two')?.where, 'synced');
   await plan.openPlan('portal');
@@ -152,9 +155,10 @@ test('Subscribe opens Checkout; once Stripe says it is paid, the Plan says so an
 });
 
 test('the price is said before paying, in the currency\'s own places, every period as Stripe says it', () => {
-  assert.equal(plan.priceWords({amount: 800, currency: 'jpy', interval: 'month', every: 1}), '¥800 a month');
-  assert.equal(plan.priceWords({amount: 500, currency: 'usd', interval: 'month', every: 3}), '$5.00 every 3 months');
-  assert.equal(plan.priceWords({amount: 6000, currency: 'eur', interval: 'year', every: 1}), '€60.00 a year');
+  assert.equal(plan.priceWords({amount: 800, currency: 'jpy', interval: 'month', every: 1}), '¥800 / month');
+  assert.equal(plan.priceWords({amount: 500, currency: 'usd', interval: 'month', every: 3}), '$5 every 3 months');
+  assert.equal(plan.priceWords({amount: 450, currency: 'usd', interval: 'week', every: 1}), '$4.50 / week');
+  assert.equal(plan.priceWords({amount: 6000, currency: 'eur', interval: 'year', every: 1}), '€60 / year');
   // A currency no Intl knows still says its amount.
   assert.match(plan.priceWords({amount: 12, currency: 'zzz', interval: 'week', every: 1}), /12|ZZZ/);
   assert.equal(plan.TERMS('pro').length, 3);

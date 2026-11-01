@@ -1,10 +1,12 @@
-// A release root this tree pins (core/src/root.rs RELEASES): VERSION's, or
-// the newest pinned, as a file: from DIR when it is there already, else from
-// the GitHub release that published it, and kept only at the pinned digest
-// and size. Prints its path. For building l3 for the browser
-// (scripts/l3.sh) and checking it against the native root (l3-parity.mjs).
+// A release root this tree pins (core/src/root.rs RELEASES): VERSION's, the
+// newest pinned, or `base`, the root a release is made from (shared/root-base.json:
+// the 0.1.0 root, which each release carries beside its own), as a file: from DIR
+// when it is there already, else from the GitHub release that published it, and
+// kept only at the pinned digest and size. Prints its path. For building l3 for
+// the browser (scripts/l3.sh), checking it against the native root
+// (l3-parity.mjs), and making a release's root (release.sh).
 //
-//   node scripts/root-file.mjs DIR [VERSION]
+//   node scripts/root-file.mjs DIR [VERSION|base]
 //
 // The repository is public: the file is taken from the release's own
 // download link (LENGTH3_RELEASES: where releases are downloaded from, for a
@@ -18,7 +20,8 @@ const here = new URL('..', import.meta.url).pathname;
 const [dir, asked] = process.argv.slice(2);
 if (!dir) { console.error('usage: root-file.mjs DIR [VERSION]'); process.exit(2); }
 const roots = pinnedRoots(readFileSync(join(here, 'core/src/root.rs'), 'utf8'));
-const pin = asked ? roots.find((r) => r.version === asked) : roots[0];
+const pin = asked === 'base' ? JSON.parse(readFileSync(join(here, 'shared/root-base.json'), 'utf8'))
+  : asked ? roots.find((r) => r.version === asked) : roots[0];
 if (!pin) throw new Error(`core/src/root.rs pins no root for ${asked}`);
 const sha = (b) => createHash('sha256').update(b).digest('hex');
 const at = join(dir, pin.file);

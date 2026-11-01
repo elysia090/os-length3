@@ -16,7 +16,7 @@ import {Drag, dropInto} from './drag.ts';
 import {takeFiles} from './files-in.ts';
 import {keysAlong, swipeAlong} from './along.ts';
 import {Place} from './place.ts';
-import {deedsUnder, fileDeeds, split} from '../file-deeds.ts';
+import {deedsUnder, fileDeeds, renaming, split} from '../file-deeds.ts';
 
 /**
  * Forge, the place you work. The repos out to work on run as pills in a band
@@ -135,7 +135,14 @@ class Forge {
     this.element = this.work.element;
     const drag = new Drag(cols);
     this.row = new Row(cols, this.element, drag, {activate: (key) => this.activate(key), close: (key) => this.closeCol(key),
-      beside: (key) => this.beside(key), act: (repo, path) => ctx.actOn(repo, path), make: () => void ctx.go('new-repo')});
+      beside: (key) => this.beside(key), make: () => void ctx.go('new-repo'),
+      rename: async (repo, path, written) => {
+        const to = await renaming(repo, path, written);
+        if (to === path) return;
+        await store.move(repo, path, to);
+        // Named, it is written in: the keyboard goes from its name into it.
+        ctx.openRepo(repo, to, true);
+      }});
     // The Issue view with none open begins one for this repo on Git; Not now there comes back here.
     this.work.reference.writeIssue = (r) => { startIssue(r); ctx.go('git'); };
     this.band = new Band(strip, this.row, drag, {show: (name) => this.show(name), beside: (name) => this.beside(name),

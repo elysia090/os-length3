@@ -71,6 +71,26 @@ test('a repo made and written with l3 is on the Remote byte for byte, CRLF, name
   assert.equal((await draftOf('files')).draft['ノート/メモ.md'], undefined);
 });
 
+test('a file holding a key stays on this device: the Remote never has it, l3 remote and Commit say so, and taken out it goes', async () => {
+  ok(laptop.l3(['repo', 'new', 'keyed', '-t', 'empty']));
+  const key = `sk-ant-api03-${'x'.repeat(91)}k9AA`;
+  ok(laptop.l3(['file', 'write', 'keyed/.env'], `ANTHROPIC_API_KEY=${key}\n`));
+  ok(laptop.l3(['file', 'write', 'keyed/notes.md'], 'plain\n'));
+  // What holds none goes as ever; the key's file does not, nor is anything of it removed there.
+  const there = await draftOf('keyed');
+  assert.equal(there.draft['notes.md'], sha('plain\n'));
+  assert.equal(there.draft['.env'], undefined);
+  // In step otherwise: the key's file is not a change waiting to go, it is one that cannot.
+  assert.match(ok(laptop.l3(['remote'])).out, /\n {2}keyed {2,}in step · 1 cannot be sent\n/);
+  const row = (ok(laptop.l3(['remote', '--json'])).json.here as {name: string; unsendable: string[]}[]).find((x) => x.name === 'keyed');
+  assert.deepEqual(row?.unsendable, ['.env']);
+  refused(laptop.l3(['commit', 'keyed', 'Patch：keys']), 1, /\(\.env: secret sk-ant-…k9AA\)/);
+  // Never the key whole, in anything said.
+  assert.doesNotMatch(JSON.stringify(ok(laptop.l3(['remote', '--json'])).json), /x{20}/);
+  ok(laptop.l3(['file', 'write', 'keyed/.env'], 'ANTHROPIC_API_KEY=\n'));
+  assert.equal((await draftOf('keyed')).draft['.env'], sha('ANTHROPIC_API_KEY=\n'));
+});
+
 test('l3 repo mv and rm do what the repo\'s gear does: one only this device has is renamed and deleted, one on the Remote is not', async () => {
   const alone = r.device();
   ok(alone.l3(['repo', 'new', 'draft', '-t', 'empty']));
@@ -144,9 +164,9 @@ test('an issue goes from written to merged with l3: start, commit (handed in by 
   ok(laptop.l3(['commit', 'work', 'Patch：はじめ']), /^Committed [0-9a-f]{12} {2}Patch：はじめ \(1 file/);
   ok(laptop.l3(['start', 'work#1']), /^Working on work#1 Fix：落ちる/);
   ok(laptop.l3(['file', 'write', 'work/fix.txt'], 'fixed\n'));
-  // On an issue's work a commit is handed in as it is made: there is nothing left to push.
+  // On an issue's work a commit is handed in as it is made: there is nothing left to submit.
   ok(laptop.l3(['commit', 'work']), /^Committed [0-9a-f]{12} {2}Fix：落ちる \(1 file \+1 −0\)\n {2}handed to main as version 1\n$/);
-  ok(laptop.l3(['push', 'work']), /^Nothing new to push: version 1 of Fix：落ちる is with main already\n$/);
+  ok(laptop.l3(['submit', 'work']), /^Nothing new to submit: version 1 of Fix：落ちる is with main already\n$/);
   const change = ((await r.api(ren, 'GET', '/v1/repos/work/changes')).json as {state: string; version: number; issue: string}[])[0];
   assert.deepEqual([change.state, change.version, change.issue], ['open', 1, 'issue/001.md']);
   // main does not have the fix until it is merged.
@@ -254,7 +274,7 @@ test('Inbox: a request to someone who has not accepted, their answer, and a bloc
   assert.match(said, /mioself · はい�\[2J/);
   ok(laptop.l3(['inbox', 'block', 'mioself']), /^Blocked mioself@length3\.test/);
   assert.equal((await r.api(mio, 'POST', '/v1/inbox/messages', {to: 'renself', body: 'again'})).status, 403);
-  refused(laptop.l3(['inbox', 'send', 'nobody-here', 'hi']), 1, /No one has that (address|name)/);
+  refused(laptop.l3(['inbox', 'send', 'nobody-here', 'hi']), 1, /No user found with that (address|name)/);
 });
 
 test('what l3 cannot do has its exit code: how it is written (2), no Remote (3), not there (4), refused (1)', async () => {

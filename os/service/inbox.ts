@@ -107,7 +107,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
   const published = async (domain: string) => {
     const records = await txt(recordName(domain)).catch((e: unknown) => {
       console.error(`DNS for ${domain}`, e);
-      return refuse(503, {error: 'The domain\'s DNS could not be read; try again'});
+      return refuse(503, {error: 'Failed to resolve domain DNS; please retry'});
     });
     return records.map(readRecord).filter(Boolean) as {remote: string; proof: string}[];
   };
@@ -160,7 +160,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
       if (r.n < INBOX.codesPerHour) await tx.insert(throttle).values({key});
       return r.n;
     });
-    if (n >= INBOX.codesPerHour) slowDown(3600, {error: 'Too many codes looked up this hour'});
+    if (n >= INBOX.codesPerHour) slowDown(3600, {error: 'Hourly code lookup limit exceeded'});
   };
 
   /**
@@ -172,25 +172,25 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
     if (/^\d{6}$/.test(q)) {
       await codeAsked(me);
       const who = await byCode(db, q);
-      if (!who) return {why: 'No one has that code'};
-      if (!('userId' in who)) return {why: 'That is a server, not a person'};
+      if (!who) return {why: 'No user matches that code'};
+      if (!('userId' in who)) return {why: 'Entity is a server, not a user'};
       const [first] = await db.select({a: address.address}).from(address).where(and(eq(address.userId, who.userId), live)).orderBy(address.createdAt).limit(1);
-      return first ? {userId: who.userId, address: first.a} : {why: 'No one has that name'};
+      return first ? {userId: who.userId, address: first.a} : {why: 'No user found with that name'};
     }
     const p = parseAddress(q.includes('@') ? q : `${q}@${d.domain}`);
-    if (!p) return {why: 'That is not a name'};
+    if (!p) return {why: 'Invalid name format'};
     const [row] = await db.select().from(address).where(and(eq(address.address, `${p.name}@${p.domain}`), isNull(address.releasedAt))) as Address[];
     if (row?.userId) {
-      if (!await stillNamed(row)) return {why: 'Its domain no longer names this Remote'};
+      if (!await stillNamed(row)) return {why: 'Domain no longer points to this Remote'};
       return {userId: row.userId, address: row.address};
     }
-    if (row) return {why: 'That is a server, not a person'};
-    if (p.domain === d.domain) return {why: 'No one has that name'};
+    if (row) return {why: 'Entity is a server, not a user'};
+    if (p.domain === d.domain) return {why: 'No user found with that name'};
     // Another domain: its DNS says which Remote holds its addresses.
     const records = await published(p.domain);
-    if (!records.length) return {why: 'The domain publishes no Length³ address'};
-    if (!records.some((r) => r.remote === host)) return {why: 'It is on another Remote, which this one does not reach yet'};
-    return {why: 'No one has that name'};
+    if (!records.length) return {why: 'Domain does not publish a Length³ address'};
+    if (!records.some((r) => r.remote === host)) return {why: 'Hosted on another Remote currently unreachable by this instance'};
+    return {why: 'No user found with that name'};
   };
 
   // The Remote's own domain answers for one name at a time: no list of everyone to read.
@@ -203,7 +203,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
   // What to put in a domain's DNS so this account may use it here.
   v1.get('/inbox/domains/:domain', async (c) => {
     const domain = c.req.param('domain').toLowerCase();
-    if (!DOMAIN.test(domain) || domain === d.domain) return c.json({error: 'That is not a domain'}, 400);
+    if (!DOMAIN.test(domain) || domain === d.domain) return c.json({error: 'Invalid domain name'}, 400);
     const proof = await proofOf(c.get('userId'), domain);
     const records = await published(domain);
     return c.json({name: recordName(domain), type: 'TXT', value: `v=length3; remote=${host}; proof=${proof}`,
@@ -234,7 +234,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
     const me = c.get('userId');
     const b = await body<{name?: unknown}>(c);
     const name = typeof b?.name === 'string' ? b.name.trim().replace(/^@/, '').toLowerCase() : '';
-    if (!NAME.test(name)) return c.json({error: 'A name is 2–31 letters, digits, dots, dashes or underscores'}, 400);
+    if (!NAME.test(name)) return c.json({error: 'Name must be 2–31 letters, digits, dots, dashes, or underscores'}, 400);
     const a = `${name}@${d.domain}`;
     const got = await db.transaction(async (tx: Db) => {
       await lock(tx, me);
@@ -242,7 +242,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
       if (was === a) return {ok: true} as const;
       const key = `username:${me}`;
       const [{n, first}] = await rows<{n: number; first: number | null}>(tx, sql`select count(*)::int as n, ${ms(sql`min(at)`)} as first from throttle where key = ${key} and at > ${ago(3600_000)}`);
-      if (n >= INBOX.renamesPerHour) slowDown(((first ?? Date.now()) + 3600_000 - Date.now()) / 1000, {error: 'Your name can change twice an hour'});
+      if (n >= INBOX.renamesPerHour) slowDown(((first ?? Date.now()) + 3600_000 - Date.now()) / 1000, {error: 'Username can only be changed twice per hour'});
       const r = await claim(tx, name, d.domain, {userId: me});
       if (!r.ok) return r;
       // The username is their first name on this Remote: the new one stands where the one it replaces stood, before
@@ -257,7 +257,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
       return r;
     });
     if (got.ok) return c.json({address: a});
-    return c.json(got.until ? {error: 'That name was let go, and is held for its owner a while', until: got.until} : {error: 'That name is taken'}, 409);
+    return c.json(got.until ? {error: 'Name recently released; temporarily reserved for prior owner.', until: got.until} : {error: 'Username already taken'}, 409);
   });
 
   // Claim an address. On this Remote's domain the name is free or not; on another,
@@ -267,14 +267,14 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
     const b = await body<{name?: unknown; domain?: unknown}>(c);
     const name = typeof b?.name === 'string' ? b.name.trim().toLowerCase() : '';
     const domain = typeof b?.domain === 'string' && b.domain.trim() ? b.domain.trim().toLowerCase() : d.domain;
-    if (!NAME.test(name)) return c.json({error: 'A name is 2–31 letters, digits, dots, dashes or underscores'}, 400);
-    if (!DOMAIN.test(domain) && domain !== d.domain) return c.json({error: 'That is not a domain'}, 400);
+    if (!NAME.test(name)) return c.json({error: 'Name must be 2–31 letters, digits, dots, dashes, or underscores'}, 400);
+    if (!DOMAIN.test(domain) && domain !== d.domain) return c.json({error: 'Invalid domain name'}, 400);
     // So many names an account keeps, those let go and still held for it among them; taking one of its own back is no new one.
     // Asked first as they stand (what the plan says comes before what the DNS says), then again under the lock.
     const counted = async (q: Db) => {
       const [{n, own}] = await q.select({n: sql<number>`count(*)::int`, own: sql<number>`count(*) filter (where ${address.address} = ${`${name}@${domain}`})::int`})
         .from(address).where(and(eq(address.userId, me), kept));
-      if (!own && n >= INBOX.addresses) refuse(409, {error: 'Too many names'});
+      if (!own && n >= INBOX.addresses) refuse(409, {error: 'Username limit reached'});
       await d.plans?.claimName(q, me, `${name}@${domain}`, domain, !!own);
     };
     await counted(db);
@@ -282,7 +282,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
       // The domain's owner says, in its DNS, that this Remote holds it for this account.
       const proof = await proofOf(me, domain);
       if (!(await published(domain)).some((r) => r.remote === host && same(r.proof, proof))) {
-        return c.json({error: 'The domain does not name this account yet', publish: {name: recordName(domain), type: 'TXT', value: `v=length3; remote=${host}; proof=${proof}`}}, 409);
+        return c.json({error: 'Domain is not linked to this account yet', publish: {name: recordName(domain), type: 'TXT', value: `v=length3; remote=${host}; proof=${proof}`}}, 409);
       }
     }
     // Counted and claimed under the account's lock: names asked for at once are counted one by one.
@@ -293,17 +293,17 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
       return claim(tx, name, domain, {userId: me});
     });
     if (got.ok) return c.json({address: `${name}@${domain}`}, 201);
-    return c.json(got.until ? {error: 'That name was let go, and is held for its owner a while', until: got.until} : {error: 'That name is taken'}, 409);
+    return c.json(got.until ? {error: 'Name recently released; temporarily reserved for prior owner.', until: got.until} : {error: 'Username already taken'}, 409);
   });
 
   // Let an address go: it stops answering at once, and is held for this account a while (it may take it back).
   v1.delete('/inbox/addresses/:address', async (c) => {
     const a = c.req.param('address').toLowerCase();
     const [row] = await db.select({a: address.address}).from(address).where(and(eq(address.address, a), eq(address.userId, c.get('userId')), isNull(address.releasedAt)));
-    if (!row) return c.json({error: 'That name is not yours'}, 404);
+    if (!row) return c.json({error: 'You do not own this name'}, 404);
     // A username is changed, never let go: without one nobody could find them, and one would be given again at once.
     const [{n}] = await db.select({n: sql<number>`count(*)::int`}).from(address).where(and(eq(address.userId, c.get('userId')), eq(address.domain, d.domain), isNull(address.releasedAt)));
-    if (a.endsWith(`@${d.domain}`) && n <= 1) return c.json({error: 'Your username can be changed, not let go'}, 409);
+    if (a.endsWith(`@${d.domain}`) && n <= 1) return c.json({error: 'Usernames can be changed, but not relinquished'}, 409);
     await db.transaction((tx: Db) => release(tx, a));
     return c.json({address: a, until: Date.now() + HOLD});
   });
@@ -339,9 +339,9 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
     const me = c.get('userId');
     const b = await body<{id?: unknown; to?: unknown; from?: unknown; type?: unknown; target?: unknown; body?: unknown}>(c);
     // The sender's own id for it (a UUID), so sending it again (an answer lost on the way) is the same message, not two.
-    if (b?.id !== undefined && (typeof b.id !== 'string' || !UUID.test(b.id.toLowerCase()))) return c.json({error: 'An id is a UUID'}, 400);
+    if (b?.id !== undefined && (typeof b.id !== 'string' || !UUID.test(b.id.toLowerCase()))) return c.json({error: 'ID must be a valid UUID'}, 400);
     const text = typeof b?.body === 'string' ? b.body.trim() : '';
-    if (!text || text.length > INBOX.body) return c.json({error: 'A message is at most 4000 characters'}, 400);
+    if (!text || text.length > INBOX.body) return c.json({error: 'Message cannot exceed 4000 characters'}, 400);
     const type = TYPES.includes(b?.type as typeof TYPES[number]) ? b!.type as string : 'message';
     const target = Object.fromEntries(Object.entries(typeof b?.target === 'object' && b.target ? b.target : {})
       .filter(([k, v]) => ['repo', 'issue', 'change', 'version', 'server'].includes(k) && (typeof v === 'string' ? v.length <= 200 : typeof v === 'number')));
@@ -357,9 +357,9 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
     }
     const to = await resolve(me, typeof b?.to === 'string' ? b.to : '');
     if (!('userId' in to)) return c.json({error: to.why}, 404);
-    if (to.userId === me) return c.json({error: 'That is you'}, 400);
+    if (to.userId === me) return c.json({error: 'Cannot target own account'}, 400);
     const rel = await relation(me, to.userId);
-    if (rel.theirs === 'blocked') return c.json({error: 'They do not accept messages from you'}, 403);
+    if (rel.theirs === 'blocked') return c.json({error: 'Recipient does not accept your messages'}, 403);
     // What this sender sent within the hour, what waits unread from them, and from anyone they have not accepted: one read,
     // and the message written, under the sender's lock, so messages sent at once are counted one by one.
     const hour = new Date(Date.now() - 3600_000);
@@ -368,7 +368,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
       await lock(tx, `messages:${me}`);
       if (b?.id !== undefined) {
         const [had] = await rows<{from_user: string}>(tx, sql`select from_user from message where id = ${id}`);
-        if (had && had.from_user !== me) refuse(409, {error: 'That id is taken'});
+        if (had && had.from_user !== me) refuse(409, {error: 'ID already in use'});
         // Sent already: nothing is counted or written again.
         if (had) return;
       }
@@ -382,9 +382,9 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
         : sql`${sent} < ${INBOX.perHour} and ${pair} < ${INBOX.requestsPerPeer} and ${waiting} < ${INBOX.requestsInAll}`;
       if (await insertWhere(tx, message, {id, to: to.userId, from: me, fromAddress: from!.address, toAddress: to.address, type, target, body: text}, room)) return;
       const [n] = await rows<{sent: number; pair: number}>(tx, sql`select ${sent}::int as sent, ${pair}::int as pair`);
-      if (n.sent >= INBOX.perHour) slowDown(3600, {error: 'Too many messages this hour'});
-      if (n.pair >= INBOX.requestsPerPeer) refuse(429, {error: 'Wait for them to answer before writing more'});
-      refuse(429, {error: 'They have too many requests waiting'});
+      if (n.sent >= INBOX.perHour) slowDown(3600, {error: 'Hourly message limit exceeded'});
+      if (n.pair >= INBOX.requestsPerPeer) refuse(429, {error: 'Wait for a response before sending more messages'});
+      refuse(429, {error: 'Recipient\'s request queue is full'});
     });
     // Writing to someone is accepting them.
     if (rel.mine !== 'accepted') {
@@ -445,7 +445,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
     const to = await resolve(me, typeof b?.address === 'string' ? b.address : '');
     if (!('userId' in to)) return c.json({error: to.why}, 404);
     // Said, it is one of the three (a word mistyped was taken as accepted); not said, accepted, as before.
-    if (b?.state !== undefined && !['accepted', 'blocked', 'none'].includes(b.state as string)) return c.json({error: 'accepted, blocked or none'}, 400);
+    if (b?.state !== undefined && !['accepted', 'blocked', 'none'].includes(b.state as string)) return c.json({error: 'Must be: accepted, blocked, or none'}, 400);
     const state = b?.state === 'blocked' ? 'blocked' : b?.state === 'none' ? null : 'accepted';
     if (!state) await db.delete(contact).where(and(eq(contact.userId, me), eq(contact.peer, to.userId)));
     else await db.insert(contact).values({userId: me, peer: to.userId, state}).onConflictDoUpdate({target: [contact.userId, contact.peer], set: {state}});
@@ -461,7 +461,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
     const to = await resolve(me, typeof b?.to === 'string' ? b.to : '');
     if (!('userId' in to)) return c.json({error: to.why}, 404);
     const rel = await relation(me, to.userId);
-    if (rel.mine !== 'accepted' || rel.theirs !== 'accepted') return c.json({error: 'Live chat is between accepted contacts'}, 403);
+    if (rel.mine !== 'accepted' || rel.theirs !== 'accepted') return c.json({error: 'Live chat is restricted to mutual contacts'}, 403);
     const data = typeof b?.data === 'string' ? b.data : '';
     if (!['offer', 'answer', 'candidate', 'bye'].includes(String(b?.kind)) || data.length > INBOX.signal || typeof b?.session !== 'string' || b.session.length > 64) return c.json({error: 'a signal'}, 400);
     const session = b.session;
@@ -479,7 +479,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
   // of the one session asked for. Another chat, or another device's session, keeps its own. Taking
   // is a POST ({from, session}): it deletes what it hands back, and no GET changes anything, so no
   // link or page elsewhere can make a browser take someone's signals (audit I2; ASVS 4.2.2, 13.1.x).
-  v1.get('/inbox/signals', (c) => c.json({error: 'Signals are taken with POST /v1/inbox/signals/take'}, 405, {Allow: 'POST'}));
+  v1.get('/inbox/signals', (c) => c.json({error: 'Consume signals via POST /v1/inbox/signals/take'}, 405, {Allow: 'POST'}));
   v1.post('/inbox/signals/take', async (c) => {
     const me = c.get('userId');
     const b = await body<{from?: unknown; session?: unknown}>(c);

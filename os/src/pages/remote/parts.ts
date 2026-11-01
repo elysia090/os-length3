@@ -22,6 +22,6 @@ export async function pressing(b: HTMLButtonElement, error: HTMLElement, f: () =
  */
 export async function atSignIn(note: HTMLElement, again: () => unknown) {
   await account.askBrowser('sign-in');
-  note.textContent = t('Open in your browser, at Sign-in. Come back when it is done: this is read again.');
+  note.textContent = t('Opened at Sign-in in browser. Return after completing to refresh.');
   addEventListener('focus', () => { note.textContent = ''; void again(); }, {once: true});
 }

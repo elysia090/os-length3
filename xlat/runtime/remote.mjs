@@ -13,9 +13,9 @@
 // Where they are missing, process.mjs's Kernel runs the same threads here,
 // one at a time.
 
-import {CH, OP, REPLY} from './channel.mjs';
-import {Exec, Exit, Kernel, REG, Redirect, TRACE_SYSCALLS, Task, trace} from './process.mjs';
-import {deliverable} from './signal.mjs';
+import {CH, OP, REPLY, rouse, sleep, watch} from './channel.mjs';
+import {Exec, Exit, INTERRUPT, KEEP_INSTANCES, Kernel, PROFILE, REG, Redirect, TRACE_SYSCALLS, Task, goesOn, trace} from './process.mjs';
+import {deliverable, take} from './signal.mjs';
 
 const isNode = typeof process !== 'undefined' && !!process.versions?.node;
 const NodeWorker = isNode ? (await import('node:worker_threads')).Worker : null;
@@ -33,6 +33,12 @@ export const canRunApart = () => typeof SharedArrayBuffer === 'function' && type
 
 /** Workers started before any kernel here (warmThreads), for its first threads. */
 const warmed = [];
+/** A number for each memory and image whose module is sent to a Worker: what is posted arrives there as another object each time. */
+const ids = new WeakMap();
+let lastId = 0;
+const idOf = (o) => { let n = ids.get(o); if (!n) ids.set(o, n = ++lastId); return n; };
+/** Whether Worker `w` keeps an instance of image `imageId` (of any, null) on memory `memoryId` (as cpu.mjs's kept says). */
+const keeps = (w, memoryId, imageId) => !!memoryId && !!w.kept?.some((x) => x.memoryId === memoryId && (imageId === null || x.imageId === imageId));
 
 /**
  * Start `n` Workers for threads now, before the kernel is made (its program and translator still on their way):
@@ -59,13 +65,16 @@ export class RemoteKernel extends Kernel {
   constructor(options) {
     super(options);
     this.shared = true;
-    this.door = new Int32Array(new SharedArrayBuffer(8)); // rung by every thread that asks
+    this.door = new Int32Array(new SharedArrayBuffer(8)); // rung by every thread that asks; [1]: the kernel sleeps (channel.mjs sleep)
     this.gils = new WeakMap(); // memory -> its threads' lock
     this.spares = []; // Workers started ahead, for the next thread
+    this.channels = []; // channels of threads that ended, for the next (each given once its Worker has left it)
     this.spareCount = options.spares ?? 2;
     this.onIdle = options.onIdle ?? null; // (r) => void: every thread waits ({waiting, until?}) or it all ended ({status})
     this.serving = null;
     this.closing = false;
+    // Once it ends, its Workers left over go on to the next kernel made here (a start rehearsed: their code is warm).
+    this.passOn = options.passOn ?? false;
     // Started now, while the first program is translated (those warmed already first).
     for (const w of warmed.splice(0)) this.spares.push(this.adoptWorker(w));
     while (this.spares.length < this.spareCount) this.spares.push(this.spawnWorker());
@@ -74,38 +83,83 @@ export class RemoteKernel extends Kernel {
   newTask(proc) { return new RemoteTask(proc, this.nextPid++); }
   ready(t) { this.go(t); }
   go(t) { t.answer(); }
+  /** A memory let go of is taken again: its threads' lock is a new one. */
+  reuseMemory(memory) { this.gils.delete(memory); }
+  /** Raised as an interrupt is: the thread running guest code looks in at its next loop's head (cpu.mjs pause). */
+  lookIn(p) { if (p.memory) Atomics.store(new Int32Array(p.memory.buffer), INTERRUPT >> 2, 1); }
 
   /** A Worker whose thread ended in a call: free for the next thread (up to a few). */
   keep(w) {
     if (this.spares.length < 8) this.spares.push(w); else w.end();
   }
 
-  /** A Worker for a new thread, started ahead where one is spare. */
-  worker() {
-    const w = this.spares.pop() ?? this.spawnWorker();
+  /**
+   * A Worker for `t`'s thread: one that still holds an instance of its program on the memory it runs on (cpu.mjs keeps
+   * its last few: `kept`), where that may go on (t.mayGoOn: again); any other, one started ahead.
+   */
+  worker(t = null) {
+    let w = null;
+    const k = t?.mayGoOn ? this.spares.findIndex((s) => this.holds(s, t)) : -1;
+    if (k >= 0) { [w] = this.spares.splice(k, 1); t.again = true; PROFILE.instancesKept++; }
+    w ??= this.spares.pop() ?? this.spawnWorker();
     while (this.spares.length < this.spareCount) this.spares.push(this.spawnWorker());
     return w;
   }
 
+  /** Whether Worker `w` keeps an instance of `t`'s image on `t`'s memory. */
+  holds(w, t) { return keeps(w, ids.get(t.memory), ids.get(t.image) ?? -1); }
+
+  /** The Workers here: those spare and those running a thread. */
+  workers() { return new Set([...this.spares, ...[...this.tasks.values()].map((t) => t.worker).filter(Boolean)]); }
+
+  keepsInstance(memory, image = null) {
+    const memoryId = ids.get(memory), imageId = image ? ids.get(image) : null;
+    return !!memoryId && (!image || !!imageId) && [...this.workers()].some((w) => keeps(w, memoryId, imageId));
+  }
+
+  /** `memory` is let go of for good: no Worker keeps an instance on it (each would hold it). */
+  forget(memory) {
+    const memoryId = ids.get(memory);
+    if (!memoryId) return;
+    for (const w of this.workers()) {
+      if (!w.kept?.some((x) => x.memoryId === memoryId)) continue;
+      w.kept = w.kept.filter((x) => x.memoryId !== memoryId);
+      w.post({type: 'forget', memoryId});
+    }
+  }
+
+  /** A channel for a new thread: one an ended thread's Worker has left (cleared), else a new one. */
+  channel() {
+    const k = this.channels.findIndex((c) => Atomics.load(new Int32Array(c), CH.LEFT) === 1);
+    if (k < 0) return new SharedArrayBuffer(CH.SIZE);
+    const [c] = this.channels.splice(k, 1);
+    new Int32Array(c, 0, CH.DATA >> 2).fill(0);
+    return c;
+  }
+
   spawnWorker() { return this.adoptWorker(newWorker()); }
 
-  /** A Worker for threads, heard by this kernel. */
+  /** A Worker for threads, heard by this kernel (by the kernel it is passed on to, after: `w.kernel`). */
   adoptWorker(w) {
+    const heard = !!w.kernel;
+    w.kernel = this;
+    if (heard) return w;
     w.on((m) => {
+      const k = w.kernel;
       if (m?.type === 'error') {
-        const t = [...this.tasks.values()].find((x) => x.worker === w);
-        this.console.write(2, enc.encode(`xlat: ${m.message.split('\n')[0]}\n`));
-        if (t) this.exitProcess(t.proc, 11);
-        this.kick();
+        const t = [...k.tasks.values()].find((x) => x.worker === w);
+        k.console.write(2, enc.encode(`xlat: ${m.message.split('\n')[0]}\n`));
+        if (t) k.exitProcess(t.proc, 11);
+        k.kick();
       }
     });
-    w.onError((e) => { this.console.write(2, enc.encode(`xlat: ${e?.message ?? e}\n`)); });
+    w.onError((e) => { w.kernel.console.write(2, enc.encode(`xlat: ${e?.message ?? e}\n`)); });
     return w;
   }
 
   gil(memory) {
     let g = this.gils.get(memory);
-    if (!g) this.gils.set(memory, (g = new SharedArrayBuffer(4)));
+    if (!g) this.gils.set(memory, (g = new SharedArrayBuffer(8))); // [0]: the thread holding it; [1]: how many wait
     return g;
   }
 
@@ -118,14 +172,16 @@ export class RemoteKernel extends Kernel {
 
   /** Answer every thread that asks. True when one did. */
   drain() {
-    let did = false;
-    for (const t of [...this.tasks.values()]) {
+    let asking = null;
+    // Those asking first (handling one can end or add others), then each.
+    for (const t of this.tasks.values()) if (!t.dead && Atomics.load(t.i32, CH.STATE) === 1) (asking ??= []).push(t);
+    if (!asking) return false;
+    for (const t of asking) {
       if (t.dead || Atomics.load(t.i32, CH.STATE) !== 1) continue;
       Atomics.store(t.i32, CH.STATE, 3);
-      did = true;
       this.handle(t);
     }
-    return did;
+    return true;
   }
 
   handle(t) {
@@ -148,6 +204,19 @@ export class RemoteKernel extends Kernel {
       t.i64[CH.ARG0] = BigInt(x.base);
       t.i64[CH.ARG1] = BigInt(x.count);
       return t.reply(REPLY.VALUE);
+    }
+    if (op === OP.YIELD) {
+      // Its time is up in guest code: a signal sent meanwhile is taken now (as at a call's end); else it goes on.
+      t.resumeAt = t.i64[CH.NEXT];
+      t.redirected = false;
+      t.regsChanged = false;
+      if (t.proc.maps.length) t.proc.syncShared();
+      if (deliverable(t)) take(this, t, t.context());
+      if (t.dead) return;
+      if (t.proc.stopped) { t.state = 'stopped'; return; }
+      // Another of its threads that runs guest code (at the lock, next) is wanted too.
+      if ([...t.proc.tasks].some((u) => u !== t && u.state === 'running' && deliverable(u))) this.lookIn(t.proc);
+      return t.answer();
     }
     if (op === OP.FAULT) {
       const said = t.text();
@@ -206,13 +275,17 @@ export class RemoteKernel extends Kernel {
         const until = this.deadline();
         const busy = this.busy();
         if (!busy) this.onIdle?.(until === undefined ? {waiting: true} : {waiting: true, until});
-        // A thread runs and will likely ask soon: wait for it right here, which wakes far sooner than the event loop.
+        // A thread runs and will likely ask soon: wait for it right here, which wakes far sooner than the event loop
+        // (and watching first, sooner than a wait).
         if (busy && BLOCKING) {
-          const r = Atomics.wait(this.door, 0, seen, Math.min(BLOCK_MS, until === undefined ? BLOCK_MS : Math.max(0, until - now)));
+          if (watch(this.door, 0, (v) => v !== seen)) continue;
+          const r = sleep(this.door, 0, seen, 1, Math.min(BLOCK_MS, until === undefined ? BLOCK_MS : Math.max(0, until - now)));
           if (r !== 'timed-out') continue;
         }
+        Atomics.store(this.door, 1, 1);
         const r = Atomics.waitAsync(this.door, 0, seen, until === undefined ? Infinity : Math.max(0, until - performance.now()));
         if (r.async) { await r.value; yielded = performance.now(); }
+        Atomics.store(this.door, 1, 0);
       }
       this.close();
       this.onIdle?.({status: this.status});
@@ -221,11 +294,15 @@ export class RemoteKernel extends Kernel {
     return this.serving;
   }
 
-  /** End every Worker (threads and spares). */
+  /** Everything ends now; serving ends with it. */
+  halt() { super.halt(); this.kick(); }
+
+  /** End every Worker (threads, and spares unless they are passed on). */
   close() {
     this.closing = true;
     for (const t of this.tasks.values()) t.end();
-    for (const w of this.spares.splice(0)) w.end();
+    // (Those passed on wait in warmThreads' list, as Workers started ahead do.)
+    for (const w of this.spares.splice(0)) if (this.passOn) warmed.push(w); else w.end();
   }
 
   /** Run to the end (a sleep is waited out); its wait status. */
@@ -246,7 +323,7 @@ function count(image) {
 export class RemoteTask extends Task {
   constructor(proc, tid) {
     super(proc, tid);
-    this.channel = new SharedArrayBuffer(CH.SIZE);
+    this.channel = this.kernel.channel();
     this.i32 = new Int32Array(this.channel);
     this.i64 = new BigInt64Array(this.channel);
     this.worker = null;
@@ -258,14 +335,54 @@ export class RemoteTask extends Task {
     this.image = image;
     this.memory = memory;
     this.fpuState = from ? from.fpuState : null;
+    // An instance a Worker kept of this image on this memory may run it (RemoteKernel.worker, answer: again).
+    this.mayGoOn = goesOn(image, memory, from);
+    this.again = false;
     // A module that carries its data, instantiated over a memory in use: the image is put back (cpu.mjs).
     this.keep = from && !image.segments && from.memory === memory ? [image.facts.imageStart ?? 0, image.facts.imageEnd] : null;
     if (this.worker) this.execd = true;
   }
+  /** Its image starts again on its memory (Process.execve): its Worker keeps its instance, told to start afresh (REPLY.RENEW). */
+  renew() {
+    this.fpuState = null;
+    if (this.worker) this.renewed = true;
+  }
 
   attach() {}
-  reg(n) { return this.i64[CH.REGS + n]; }
-  setReg(n, v) { this.i64[CH.REGS + n] = BigInt.asIntN(64, BigInt(v)); if (n) this.regsChanged = true; }
+  /** How deep its stack has gone, as its Worker last said (lower.rs G_LOW); null if not known. */
+  low() { const v = this.i64[CH.LOW]; return v === 0n ? null : v; }
+  /** Its process stops: it does too, at its next loop's head if it runs guest code. */
+  stop() { this.kernel.lookIn(this.proc); }
+  /**
+   * Its registers in the channel: a thread sends them only with the calls that read them (channel.mjs READS_REGS).
+   * Needed in another (a signal taken as its call ends, one that cuts its call short), they are asked of it there and
+   * then: it waits in its call, watching for the answer.
+   */
+  regs() {
+    if (Atomics.load(this.i32, CH.HAVE_REGS) || !this.worker || Atomics.load(this.i32, CH.STATE) !== 3) return;
+    this.i32[CH.REPLY] = REPLY.SEND_REGS;
+    Atomics.store(this.i32, CH.STATE, 2);
+    rouse(this.i32, CH.STATE, CH.ASLEEP);
+    // It answers as it asks (cpu.mjs ask): its channel's word set, the kernel's door rung. So it is watched for, then
+    // slept for on the door, never on its own word, which no one notifies (a millisecond's timeout each time, before).
+    const door = this.kernel.door;
+    for (;;) {
+      const seen = Atomics.load(door, 0);
+      if (watch(this.i32, CH.STATE, (state) => state === 1)) break;
+      sleep(door, 0, seen, 1);
+    }
+    Atomics.store(this.i32, CH.STATE, 3);
+  }
+  reg(n) { if (n) this.regs(); return this.i64[CH.REGS + n]; }
+  setReg(n, v) {
+    if (n) { this.regs(); this.regsChanged = true; }
+    this.i64[CH.REGS + n] = BigInt.asIntN(64, BigInt(v));
+  }
+  /** All of them replaced: none needs asking for. */
+  setContext(regs, rip) {
+    Atomics.store(this.i32, CH.HAVE_REGS, 1);
+    super.setContext(regs, rip);
+  }
 
   /** Text the thread left in the data area. */
   text() { return dec.decode(new Uint8Array(this.channel, CH.DATA, this.i32[CH.LENGTH])); }
@@ -273,15 +390,23 @@ export class RemoteTask extends Task {
   reply(kind) {
     this.i32[CH.REPLY] = kind;
     Atomics.store(this.i32, CH.STATE, 2);
-    Atomics.notify(this.i32, CH.STATE);
+    rouse(this.i32, CH.STATE, CH.ASLEEP);
   }
 
   /** It goes on: its Worker starts, or hears its call is done (its value, other registers, or a new image). */
   answer() {
     if (this.dead) return;
     this.state = 'running';
-    if (!this.worker) { this.worker = this.kernel.worker(); this.post(); return; }
-    if (this.execd) { this.execd = false; this.reply(REPLY.AWAY); this.post(); return; }
+    if (!this.worker) { this.worker = this.kernel.worker(this); this.post(); return; }
+    if (this.execd) {
+      this.execd = false;
+      this.reply(REPLY.AWAY);
+      // Its Worker may keep an instance of the program it now runs, on the memory it runs it on (a shell's commands).
+      if (this.mayGoOn && this.kernel.holds(this.worker, this)) { this.again = true; PROFILE.instancesKept++; }
+      this.post();
+      return;
+    }
+    if (this.renewed) { this.renewed = false; this.i64[CH.RIP] = this.resumeAt; this.reply(REPLY.RENEW); return; }
     if (this.redirected) { this.i64[CH.RIP] = this.resumeAt; this.reply(REPLY.REDIRECT); return; }
     const changed = this.regsChanged;
     this.regsChanged = false;
@@ -289,13 +414,22 @@ export class RemoteTask extends Task {
   }
 
   post() {
-    const image = this.image, k = this.kernel;
-    this.worker.post({
-      type: 'run', tid: this.tid, module: image.module,
-      extras: image.extras.map(({module, base, count: n}) => ({module, base, count: n})),
-      memory: this.memory, channel: this.channel, door: k.door.buffer, gil: k.gil(this.memory), count: count(image).buffer,
-      regs: REG.map((_, n) => this.reg(n)), resumeAt: this.resumeAt, fpuOps: image.fpuOps, fpu: this.fpuState, keep: this.keep,
+    const image = this.image, k = this.kernel, w = this.worker;
+    const memoryId = idOf(this.memory), imageId = idOf(image);
+    // What its Worker has already is not sent again (cloning a memory or a module costs tens of microseconds): a
+    // memory one of its kept threads ran on, and an image's module and the modules made for it as of then.
+    const known = w.kept?.some((x) => x.memoryId === memoryId), like = w.kept?.find((x) => x.imageId === imageId);
+    const from = like?.extras ?? 0;
+    // What its Worker keeps after this run, as it keeps it (cpu.mjs kept): this instance first, the few before it.
+    w.kept = [{memoryId, imageId, extras: image.extras.length}, ...(w.kept ?? []).filter((x) => x.memoryId !== memoryId || x.imageId !== imageId)].slice(0, KEEP_INSTANCES);
+    w.post({
+      type: 'run', again: this.again, tid: this.tid, memoryId, imageId, module: like ? undefined : image.module,
+      extrasFrom: from, extras: image.extras.slice(from).map(({module, base, count: n}) => ({module, base, count: n})),
+      memory: known ? undefined : this.memory, channel: this.channel, door: k.door.buffer, gil: k.gil(this.memory), count: count(image).buffer,
+      regs: REG.map((_, n) => this.reg(n)), resumeAt: this.resumeAt, fpuOps: like ? undefined : image.fpuOps, fpu: this.fpuState, keep: this.keep,
+      origin: performance.timeOrigin, // the kernel's clocks begin here (clock.mjs)
     });
+    this.again = false;
   }
 
   end() {
@@ -304,8 +438,17 @@ export class RemoteTask extends Task {
     // A Worker waiting in a call (it ended itself, or was ended while it waited) is told to leave and is kept for the
     // next thread; one running guest code is ended where it is.
     const state = Atomics.load(this.i32, CH.STATE);
-    if (w && (state === 1 || state === 3) && !this.kernel.closing) { this.reply(REPLY.AWAY); this.kernel.keep(w); }
-    else w?.end();
+    if (w && (state === 1 || state === 3) && !this.kernel.closing) {
+      this.reply(REPLY.AWAY);
+      this.kernel.keep(w);
+      // Its channel, for another thread once its Worker has left it (CH.LEFT).
+      if (this.kernel.channels.length < 16) this.kernel.channels.push(this.channel);
+    }
+    else {
+      w?.end();
+      // Ended while it ran guest code: it may write on a little, so its memory is never given to another process.
+      if (w && this.memory) this.memory.tainted = true;
+    }
     // Ended while it held its process's lock (killed while running): the lock goes with it.
     if (this.memory) {
       const gil = new Int32Array(this.kernel.gil(this.memory));

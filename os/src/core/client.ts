@@ -60,6 +60,7 @@ function send() {
 const answered = (id: number, answer: Answer) => {
   if (remote.delete(id)) away--;
   writing.delete(id);
+  stateWrites.delete(id);
   reading.delete(id);
   const p = waiting.get(id);
   if (!p) return;
@@ -68,9 +69,9 @@ const answered = (id: number, answer: Answer) => {
 };
 
 /** What only reads this device's files (core/worker.ts READS, less what may ask the Remote): the reader may answer it. */
-const ANYWHERE = new Set(['repo_list', 'repo_tree', 'repo_read', 'repo_bytes', 'state_get', 'capacity']);
+const ANYWHERE = new Set(['repo_list', 'repo_names', 'repo_tree', 'repo_read', 'repo_bytes', 'state_get', 'capacity']);
 /** What may wait on the Remote: while one is asked of the worker, what only reads goes to the reader. */
-const REMOTE = /^(sync_repo|repo_fetch|home_sync|remote_(?!status$)|history_(push|submit|reset|log|cut)$|change_|changes_list$|work_(lines|start|switch|standings)$|issue_commit$|issues_settle$|plan_page$|app_page$)/;
+const REMOTE = /^(sync_repo|repo_fetch|home_sync|remote_(?!status$)|history_(push|submit|reset|log|cut)$|change_|changes_list$|work_(lines|start|switch|standings|state)$|issue_commit$|issues_settle$|plan_page$|app_page$)/;
 /** The calls asked of the worker that may wait on the Remote, and how many there are. */
 const remote = new Set<number>();
 let away = 0;
@@ -79,6 +80,12 @@ let away = 0;
  * answered, a read goes to the worker after it, as it was asked after it, so it reads what was written.
  */
 const writing = new Set<number>();
+/**
+ * Those of them that write Home's state alone (state_set, its own files): a read of a repo is not held behind one, as
+ * it reads none of it; only what reads that state is (state_get). Going to Forge saves where it stands as it asks for
+ * the repo's files: behind a Remote call ahead of that save, the files had waited on the Remote too.
+ */
+const stateWrites = new Set<number>();
 /** The tab's reader, made when first wanted; null once it could not start (the worker answers everything then). */
 let reader: Worker | null | undefined;
 /** What the reader was asked and has not answered: asked of the worker instead, should the reader stop. */
@@ -111,6 +118,7 @@ function started(): Worker {
     const why = new Error(e.message || 'The core could not start');
     remote.clear();
     writing.clear();
+    stateWrites.clear();
     away = 0;
     for (const p of waiting.values()) p.reject(why);
     waiting.clear();
@@ -118,21 +126,49 @@ function started(): Worker {
   // Another tab's core wrote: what this tab shows is read again.
   if (typeof BroadcastChannel === 'function') {
     new BroadcastChannel('length3-core').onmessage = (e: MessageEvent<{from?: string; paths?: string[]}>) => {
-      if (e.data?.from !== tab) for (const fn of [...heard]) fn(e.data?.paths ?? []);
+      if (e.data?.from !== tab) { sharing.clear(); for (const fn of [...heard]) fn(e.data?.paths ?? []); }
     };
   }
   return worker = w;
 }
 
+/**
+ * Start this tab's worker now, before anything is asked (start.ts, as the page's first script runs): it fetches and
+ * compiles the core's module while the app's own code arrives. What the page tells it of where it runs after
+ * (setEnvironment) reaches it before the first question, as every message does.
+ */
+export function start(): void { started(); }
+
+/**
+ * What only reads and changes nothing a read sees: asked again while the same is on its way (Home and its pane each
+ * list the repos as they draw), it is answered by the one asked first, each asker given its own copy.
+ */
+const SHARED = new Set([...ANYWHERE, 'remote_status', 'agents', 'history_changes', 'history_changed']);
+const sharing = new Map<string, Promise<Answer>>();
+
 /** Ask the core in this tab's worker: sent once this turn of the page is done asking, with what else it asked. */
-export const ask: Ask = (name, args) => new Promise<Answer>((resolve, reject) => {
+export const ask: Ask = (name, args) => {
+  // Anything else may change what a read sees: a read asked after it is its own, never one asked before it.
+  if (!SHARED.has(name)) { sharing.clear(); return asked(name, args); }
+  const key = `${name}\n${JSON.stringify(args)}`;
+  const was = sharing.get(key);
+  if (was) return was.then((a) => structuredClone(a));
+  const p = asked(name, args);
+  sharing.set(key, p);
+  const done = () => { if (sharing.get(key) === p) sharing.delete(key); };
+  p.then(done, done);
+  return p;
+};
+
+const asked: Ask = (name, args) => new Promise<Answer>((resolve, reject) => {
   started();
   const id = next++;
   waiting.set(id, {resolve, reject});
   // Only read, while the worker may be waiting on the Remote: the reader answers it.
-  if (away > 0 && !writing.size && reader !== null && ANYWHERE.has(name)) toRead.push({id, name, args});
+  const held = name === 'state_get' ? writing.size : writing.size - stateWrites.size;
+  if (away > 0 && !held && reader !== null && ANYWHERE.has(name)) toRead.push({id, name, args});
   else {
-    if (REMOTE.test(name)) { remote.add(id); away++; } else if (!ANYWHERE.has(name)) writing.add(id);
+    if (REMOTE.test(name)) { remote.add(id); away++; } else if (!SHARED.has(name)) { writing.add(id); if (name === 'state_set') stateWrites.add(id); }
     queued.push({id, name, args});
   }
   if (queued.length + toRead.length === 1) queueMicrotask(send);

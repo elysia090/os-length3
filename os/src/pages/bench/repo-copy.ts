@@ -62,7 +62,7 @@ export class WriteBack {
         await store.put(repo, f.path, f.bytes, by).catch(() => skipped.push(f.path));
       }
       for (const r of c.removed) await store.remove(repo, r, by).catch(() => skipped.push(r));
-      if (skipped.length) this.#skipped(t('Not written back to the repo: {list}', {list: `${skipped.slice(0, 5).join(', ')}${skipped.length > 5 ? ' …' : ''}`}));
+      if (skipped.length) this.#skipped(t('Failed to sync back to repo: {list}', {list: `${skipped.slice(0, 5).join(', ')}${skipped.length > 5 ? ' …' : ''}`}));
     });
   }
 }

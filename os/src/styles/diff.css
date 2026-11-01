@@ -73,7 +73,9 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .pane h2 { font-size: var(--t-body); font-weight: 600; }
 .pane .empty { margin-top: var(--s3); padding: var(--s5); }
 .term-home { min-height: 0; overflow: hidden; }
-.term-home .term-box { height: 100%; padding: var(--s5); cursor: var(--cursor-text); }
+/* Read in the pane, the Prompt is pressed as a whole to bring it up (box.ts): the hand over it, as over anything that
+   does one thing pressed; up over the center, it is where one writes, and the text's own cursor is its. */
+.term-home .term-box { height: 100%; padding: var(--s5); cursor: var(--cursor-hand); }
 .term-box { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
 .term-box h2 { font-size: var(--t-body); font-weight: 600; }
 .term-box .empty { margin-top: var(--s3); padding: var(--s5); }

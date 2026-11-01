@@ -104,7 +104,7 @@ export async function nameFor(db: Db, userId: string, domain: string): Promise<s
   const tries = [base, ...Array.from({length: 8}, (_, i) => `${base.slice(0, 29)}${i + 2}`),
     ...Array.from({length: 8}, () => `${base.slice(0, 24)}-${crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000}`)];
   for (const name of tries) if ((await claim(db, name, domain, {userId})).ok) return `${name}@${domain}`;
-  refuse(503, {error: 'No name is free to give just now'});
+  refuse(503, {error: 'No usernames currently available'});
 }
 
 /**
@@ -130,7 +130,7 @@ export async function codeOf(db: Db, owner: Owner): Promise<string> {
   for (let tries = 0; ; tries++) {
     const [had] = await db.select({code: principalCode.code}).from(principalCode).where(where) as {code: string}[];
     if (had) return had.code;
-    if (tries >= 64) refuse(503, {error: 'No code is left to give just now'});
+    if (tries >= 64) refuse(503, {error: 'No pairing codes currently available'});
     const n = crypto.getRandomValues(new Uint32Array(1))[0] % 900_000 + 100_000;
     await db.insert(principalCode).values({code: String(n), userId: 'userId' in owner ? owner.userId : null, serverId: 'serverId' in owner ? owner.serverId : null}).onConflictDoNothing();
   }

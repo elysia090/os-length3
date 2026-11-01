@@ -78,6 +78,25 @@ pub fn local_tree_fresh(dir: &Path) -> Local {
     out
 }
 
+/// The files of `here` changed since `agreed` that hold a secret (secrets.rs), with what each holds: they stay here,
+/// unsent. Only what changed is read (what is agreed is on the Remote already), and each content once: the verdict is
+/// kept by its digest while this device's own secrets stay the same.
+pub(super) fn secrets_held(here: &Local, agreed: &Tree, own: &[String]) -> Vec<(String, String)> {
+    type Verdicts = (Vec<String>, HashMap<String, Option<String>>);
+    static V: OnceLock<Mutex<Verdicts>> = OnceLock::new();
+    let Ok(mut v) = V.get_or_init(|| Mutex::new((Vec::new(), HashMap::new()))).lock() else { return Vec::new() };
+    // Another session, or too many kept: read afresh.
+    if v.0 != own || v.1.len() > 4096 { *v = (own.to_vec(), HashMap::new()); }
+    let mine: Vec<&str> = own.iter().map(String::as_str).collect();
+    let mut held = Vec::new();
+    for (p, sha) in here.tree.iter().filter(|(p, s)| agreed.get(*p) != Some(*s)).filter_map(|(p, s)| Some((p, s.as_ref()?))) {
+        let Some(file) = here.files.get(sha) else { continue };
+        let what = v.1.entry(sha.clone()).or_insert_with(|| fs::read(file).ok().and_then(|b| crate::secrets::found(&b, &mine)).map(|f| f.said()));
+        if let Some(what) = what { held.push((p.clone(), what.clone())); }
+    }
+    held
+}
+
 /// A process that holds something in `dir`: a file or a folder in it open, mapped, or as its current
 /// folder or root; it could write on into it by what it holds, whatever is done to its name. Said as
 /// "pid N (its name)"; None when nothing does (or, off Linux, when this cannot be told: then None too).
@@ -178,19 +197,21 @@ pub(super) fn walk(dir: &Path, prefix: &str, out: &mut Local) {
             out.unsynced.push((rel, crate::tr!("git history", "git の履歴")));
             continue;
         }
-        let Ok(meta) = e.path().symlink_metadata() else { continue };
+        // Its own, not what a link names (as lstat), asked of the folder listed rather than by the whole path again.
+        let Ok(meta) = e.metadata() else { continue };
+        let path = e.path();
         if meta.file_type().is_symlink() {
             out.unsynced.push((rel, crate::tr!("a link", "リンク")));
         } else if meta.is_dir() {
             // Made from the repo's own files (owned.rs): not the repo's to send, nor what keeps it here.
-            if crate::owned::derived(dir, &name, &e.path()) { continue; }
-            walk(&e.path(), &rel, out);
+            if crate::owned::derived(dir, &name, &path) { continue; }
+            walk(&path, &rel, out);
         } else if meta.is_file() {
             if meta.len() > BLOB_LIMIT {
-                out.unsynced.push((rel, crate::tr!("a file over 16 MB", "16 MB を超えるファイル")));
+                out.unsynced.push((rel, crate::tr!("File exceeds 16 MB", "16 MB を超えるファイル")));
                 continue;
             }
-            let sha = if out.fresh { fs::read(e.path()).ok().map(|b| sha256(&b)) } else { digest(&e.path(), &meta) };
+            let sha = if out.fresh { fs::read(&path).ok().map(|b| sha256(&b)) } else { digest(&path, &meta) };
             let Some(sha) = sha else { out.unsynced.push((rel, crate::tr!("a file that cannot be read", "読めないファイル"))); continue };
             out.bytes += meta.len();
             #[cfg(unix)]
@@ -199,8 +220,8 @@ pub(super) fn walk(dir: &Path, prefix: &str, out: &mut Local) {
                 let mode = meta.permissions().mode() & 0o777;
                 if mode & 0o111 != 0 { out.modes.insert(rel.clone(), mode); }
             }
-            out.read.push(e.path());
-            out.files.insert(sha.clone(), e.path());
+            out.read.push(path.clone());
+            out.files.insert(sha.clone(), path);
             out.tree.insert(rel, Some(sha));
         } else {
             out.unsynced.push((rel, crate::tr!("a special file", "特殊なファイル")));

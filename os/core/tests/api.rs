@@ -18,6 +18,10 @@ fn a_page_asks_the_core_by_name() {
     assert_eq!(api::answer("repo_read", &json!({"repo": "notes", "path": "a.txt"}))["ok"]["text"], "hi\n");
     let list = api::answer("repo_list", &json!({}));
     assert!(list["ok"].as_array().is_some_and(|l| l.iter().any(|r| r["name"] == "notes")), "{list}");
+    assert_eq!(api::answer("repo_names", &json!({}))["ok"], json!(["notes"]));
+    // Counted as listed: without a Remote, every file is new.
+    let changes = api::answer("history_changes", &json!({"repo": "notes"}));
+    assert_eq!(api::answer("history_changed", &json!({"repo": "notes"}))["ok"], changes["ok"]["files"], "{changes}");
 
     // A missing argument is said by its name; a command there is not, by its.
     let missing = api::answer("repo_read", &json!({"repo": "notes"}));

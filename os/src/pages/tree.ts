@@ -214,29 +214,6 @@ export class FileTree {
     this.trigger?.setAttribute('aria-expanded', 'false');
   }
 
-  /**
-   * The tree out at `path` in `repo` (its folders opened down to it; '' is the repo itself) with that row's menu
-   * open: what can be done to it, as its own ⌄ gives (issue #49). Nothing is done until a deed is chosen there.
-   */
-  async actOn(repo: string, path: string) {
-    const at = path ? `/root/${repo}/${path}` : `/root/${repo}`;
-    const parts = at.split('/').filter(Boolean);
-    for (let i = 1; i < parts.length; i++) expandedPaths.add(`/${parts.slice(0, i).join('/')}`);
-    this.close();
-    this.open(false);
-    // Drawn as its folders are read: waited for a moment, not for good.
-    for (let i = 0; i < 60; i++) {
-      const name = this.nameAt(at);
-      const more = name?.closest('.tree-row')?.querySelector<HTMLButtonElement>(':scope > .tree-more');
-      if (name && more) {
-        name.scrollIntoView({block: 'nearest'});
-        more.click();
-        return;
-      }
-      await new Promise((go) => setTimeout(go, 50));
-    }
-  }
-
   /** Mark the repo Forge shows. */
   mark(repo: string | null) {
     for (const b of this.root.querySelectorAll<HTMLElement>('.tree-name[data-repo]')) {
@@ -328,7 +305,7 @@ export class FileTree {
     const item = h('li', {role: 'treeitem', class: 'tree-repo tree-away', 'aria-label': repo},
       h('div', {class: 'tree-row', style: `--depth:${depth}`}, h('span', {class: 'tree-spacer', 'aria-hidden': 'true'}), name, meta));
     name.addEventListener('click', async () => {
-      meta.textContent = t('Bringing it…');
+      meta.textContent = t('Fetching…');
       try {
         await bring(repo);
         // Here now: its row is a repo's, with what it holds.
@@ -435,7 +412,7 @@ export class FileTree {
    */
   private deeds(row: HTMLElement, name: HTMLElement, e: SystemEntry, at: {repo: string; path: string}, dir: boolean) {
     const more = h('button', {type: 'button', class: 'tree-more', tabindex: '-1', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
-      'aria-label': t('What to do with {name}', {name: e.name})}, mark('down'));
+      'aria-label': t('Actions for {name}', {name: e.name})}, mark('down'));
     row.append(more);
     const open = (focus: boolean) => { if (this.pop?.more === more) this.unpop(); else this.menu(row, name, more, e, at, dir, focus); };
     more.addEventListener('click', (event) => open(event.detail === 0));

@@ -5,7 +5,9 @@
 // first line names it, the lines after are the detail. The file is named by
 // the issue's number, which the OS gives: the next one when an issue is
 // written, and the next free one for a file there that has none (one written
-// by hand, or two devices' issues that met under one number).
+// by hand, or two devices' issues that met under one number). Its issue/ is the OS's: never among the files File,
+// Forge and l3 file show (repos.ts ISSUES), nor made by a scaffold; an issue is met as an issue, in Git, the box, the
+// pane and l3 issue.
 
 import type {RepoStore} from './repos.ts';
 import {kindOf, named} from './text.ts';
@@ -137,14 +139,25 @@ export async function readIssues(store: Pick<RepoStore, 'tree' | 'read'>, repo: 
   return out.sort((a, b) => (b.n ?? Infinity) - (a.n ?? Infinity) || (a.file < b.file ? -1 : 1));
 }
 
-/** Write a new issue: it takes the next number (issue/ is made for the first). */
-export async function writeIssue(store: Pick<RepoStore, 'tree' | 'mkdir' | 'add'> & Commits, repo: string, kind: string | null, title: string, detail: string): Promise<string> {
-  const there = await names(store, repo);
-  if (there === null) await store.mkdir(repo, 'issue');
-  const file = nextIssueName(there ?? []);
-  await store.add(repo, 'issue', file, issueText(kind, title, detail));
-  await store.commit?.(repo, `issue/${file}`, 'new');
-  return file;
+/** The issues being written here, one after another: what the next waits for. */
+let queue: Promise<unknown> = Promise.resolve();
+
+/**
+ * Write a new issue: it takes the next number (issue/ is made for the first), and is committed on main. Each is
+ * numbered once the one before it is written and committed: two written side by side (one asked for while the other
+ * was still being written) both read the same issues and took the same number.
+ */
+export function writeIssue(store: Pick<RepoStore, 'tree' | 'mkdir' | 'add'> & Commits, repo: string, kind: string | null, title: string, detail: string): Promise<string> {
+  const written = queue.then(async () => {
+    const there = await names(store, repo);
+    if (there === null) await store.mkdir(repo, 'issue');
+    const file = nextIssueName(there ?? []);
+    await store.add(repo, 'issue', file, issueText(kind, title, detail));
+    await store.commit?.(repo, `issue/${file}`, 'new');
+    return file;
+  });
+  queue = written.catch(() => {});
+  return written;
 }
 
 /** Change an issue's words; its number stays, and so does its being closed. */

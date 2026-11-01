@@ -65,9 +65,36 @@ async function load(name, {main, more}) {
     at += 8 + len;
   }
   const wasm = m.slice(at + 4, at + 4 + v.getUint32(at));
-  const extras = x ? unpackMore(x) : [];
-  const [module, ...modules] = await Promise.all([WebAssembly.compile(wasm), ...extras.map((e) => WebAssembly.compile(e.bytes))]);
+  // Compiled here and now (the kernel runs in a Worker, and waits for it): a compile handed to the engine's own
+  // threads waits behind what they are busy with, a running program's code being optimized, often for far longer.
+  const module = new WebAssembly.Module(wasm);
+  // Only the modules that follow on from this one (each from the table slot the one before it ended at): what was
+  // kept of code reached later from an earlier translation of the program (before it was consolidated) is not.
+  let slots = WebAssembly.Module.customSections(module, 'xlat.starts')[0]?.byteLength / 8 || 0;
+  const extras = [];
+  for (const e of x ? unpackMore(x) : []) {
+    if (e.base !== slots) break;
+    extras.push(e);
+    slots += moreStarts(e.bytes);
+  }
+  const modules = extras.map((e) => new WebAssembly.Module(e.bytes));
   return {module, segments, size: wasm.length, more: extras.map((e, k) => ({module: modules[k], bytes: e.bytes, base: e.base}))};
+}
+
+/** How many functions a module of code reached later adds (its xlat.starts section, read from its bytes). */
+function moreStarts(bytes) {
+  const leb = (at) => { let v = 0, shift = 0, b; do { b = bytes[at++]; v += (b & 0x7f) * 2 ** shift; shift += 7; } while (b & 0x80); return [v, at]; };
+  const name = new TextEncoder().encode('xlat.starts');
+  for (let at = 8; at < bytes.length;) {
+    const id = bytes[at];
+    const [size, body] = leb(at + 1);
+    if (id === 0) {
+      const [n, p] = leb(body);
+      if (n === name.length && name.every((c, k) => bytes[p + k] === c)) return (body + size - (p + n)) / 8;
+    }
+    at = body + size;
+  }
+  return 0;
 }
 
 /** Kept modules of code reached later ('L3M1', without its digest): [{base, bytes}], or [] if it is not that. */

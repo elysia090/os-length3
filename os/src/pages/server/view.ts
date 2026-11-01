@@ -1,9 +1,10 @@
 import {h} from '../../ui/dom.ts';
 import {t} from '../../i18n.ts';
 import {connection} from '../../remote/connection.ts';
-import type {Me} from '../../remote/inbox.ts';
+import {me, type Me} from '../../remote/inbox.ts';
 import * as servers from '../../remote/servers.ts';
 import {boardNew, onNews} from '../../remote/news.ts';
+import {openNext} from '../inbox.ts';
 import {arrive, panAcross, paced, pop, stage} from '../../ui/glide.ts';
 import {errorText} from '../../app/errors.ts';
 import {pageHead} from '../common.ts';
@@ -74,7 +75,7 @@ export class ServerView {
     this.work = h('div', {class: 'work no-strip'}, center, this.side.element, h('div', {class: 'server-bar'}, this.band.gear));
     // Signed out, whose a board is is not told: there is no right pane, and so no line where it would start.
     if (!signedIn) { this.side.element.hidden = true; this.work.classList.add('no-side'); }
-    this.myself = signedIn ? import('../../remote/inbox.ts').then((inbox) => inbox.me()).catch(() => null) : Promise.resolve(null);
+    this.myself = signedIn ? me().catch(() => null) : Promise.resolve(null);
     this.hear();
     const held = servers.heldInvite();
     void (signedIn ? this.readServers(held) : this.readOpen(held));
@@ -123,7 +124,7 @@ export class ServerView {
         return;
       }
       this.opening();
-    } catch (e) { if (!known?.length) this.failed(e, t('Your servers are here again once it answers')); }
+    } catch (e) { if (!known?.length) this.failed(e, t('Servers will reappear once Remote responds')); }
   }
 
   /** What Server opens at, the servers read: the one last seen, a guest's board, or making the first. */
@@ -175,14 +176,14 @@ export class ServerView {
       // person's own.
       if (!this.here.shown.length) {
         this.row.instead(h('div', {class: 'server-signed-out'}, pageHead('server'),
-          signInPlace(t('Sign in'), ...signInLead(t('Signed in, you make servers: boards for the people in them, and the repos you show them.')), signInBox(() => this.ways.again()))));
+          signInPlace(t('Sign in'), ...signInLead(t('Signing in lets you create servers to share boards and repos with members.')), signInBox(() => this.ways.again()))));
         this.band.element.hidden = true;
         this.paintDock(null);
         return;
       }
       const i = this.here.shown.findIndex((b) => b.id === (held?.board ?? this.at.board));
       this.row.fill(this.here.shown.length, i >= 0 ? i : 0);
-    } catch (e) { this.failed(e, t('Boards open to everyone are here again once it answers')); }
+    } catch (e) { this.failed(e, t('Public boards will reappear once Remote responds')); }
   }
 
   /**
@@ -213,7 +214,7 @@ export class ServerView {
     servers.dropInvite();
     this.here.shown = [];
     this.row.say(h('div', {class: 'slide', 'aria-current': 'true'}, h('div', {class: 'board-card board-said'},
-      h('div', {class: 'board-body'}, h('p', {}, t('This invitation opens no board that takes guests. Ask whoever gave it to you for another.'))))));
+      h('div', {class: 'board-body'}, h('p', {}, t('Invalid invite link. Request a new invite from the server owner.'))))));
     this.paintDock(null);
   }
 
@@ -285,8 +286,9 @@ export class ServerView {
       if (!this.here.naming?.isConnected || !me?.addresses[0]) return;
       this.side.ghost(me.addresses[0].address);
     });
-    // Drawn as the page is built: the keyboard goes to it once it is on the page.
-    queueMicrotask(() => making.name.focus());
+    // Drawn as the page is built: the keyboard goes to it once it is on the page, which is not scrolled for it (it may
+    // be rising in from under the window yet, main.ts select).
+    queueMicrotask(() => making.name.focus({preventScroll: true}));
   }
 
   /** Made: the faint shapes stand whole where they were, its chip taking it in with a pop. */
@@ -416,6 +418,7 @@ export class ServerView {
 
   /** Someone else pressed: a conversation with them, in the Inbox. */
   private write(address: string) {
-    void import('../inbox.ts').then((m) => { m.openNext(address); this.ways.ctx.go('inbox'); });
+    openNext(address);
+    void this.ways.ctx.go('inbox');
   }
 }

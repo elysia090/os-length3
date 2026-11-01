@@ -471,7 +471,7 @@ pub fn inside(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let copy = work::worktree(&repo, &spec.line);
     let dir = if spec.line == work::MAIN { repos.on_main().dir(&repo)? } else if copy.is_dir() { copy } else { repos.dir(&repo)? };
     let s = launch::Sandbox { root, repo: dir, name: repo.clone(), argv: spec.argv.clone(), network: spec.network,
-        dotfiles: launch::dotfiles_in_effect(), data: Some(data.clone()), env: spec.env.clone() };
+        dotfiles: launch::dotfiles_in_effect(), data: Some(data.clone()), env: [spec.env.clone(), length3_core::agent_key::env()].concat() };
     // Recorded as any Prompt is: l3 prompt ls and Runtime see it, l3 prompt stop ends it.
     let mut recorded = prompt::record(&data, &repo, s.network, &s.root)?;
     length3_core::usage::make_room(&data, &paths::repos_dir(), super::forge::PROMPT_ROOM);

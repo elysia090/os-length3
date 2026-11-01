@@ -3,8 +3,10 @@
 // thread and `this.call` the call ({nr, args, next, state}: state lasts
 // while the call waits and is made again).
 
-import {E, FsError} from './fs.mjs';
-import {Exec, Exit, Wait} from './process.mjs';
+import {move, zero} from './bulk.mjs';
+import {answerTime, clocks} from './clock.mjs';
+import {E, File, FsError} from './fs.mjs';
+import {Exec, Exit, Wait, randomBytes} from './process.mjs';
 import {CLD, SIG, send, writeInfo} from './signal.mjs';
 
 const N = (x) => Number(BigInt.asIntN(64, x));
@@ -22,8 +24,8 @@ function writeTime(p, address, ns) {
   p.view.setBigInt64(address + 8, ns % 1000000000n, true);
 }
 
-const wall = () => BigInt(Date.now()) * 1000000n;
-const monotonic = () => BigInt(Math.round(performance.now() * 1e6));
+// The kernel's clocks (clock.mjs): what a thread reads without a call is what these say.
+const CLOCK = clocks(), wall = CLOCK.wall, monotonic = CLOCK.monotonic;
 /** A timespec in guest memory, in nanoseconds. */
 const readTime = (p, at) => p.view.getBigInt64(at, true) * 1000000000n + p.view.getBigInt64(at + 8, true);
 const ms = (ns) => Number(ns) / 1e6;
@@ -140,9 +142,9 @@ function futex(p, uaddr, op, val, timeout, uaddr2, val3) {
         const bitset = cmd === 9 ? Number(BigInt.asIntN(32, val3)) : -1;
         if (!bitset) fail(E.INVAL);
         if (word(address) !== Number(BigInt.asIntN(32, val))) fail(E.AGAIN);
-        const w = s.waiter = {task: p.task, bitset, woken: false, address};
-        k.futexQueue(p.memory, address).add(w);
-        s.cancel = () => { k.futexes.get(p.memory)?.get(w.address)?.delete(w); };
+        const w = s.waiter = {task: p.task, bitset, woken: false, key: p.futexKey(address)};
+        k.futexQueue(w.key).add(w);
+        s.cancel = () => { k.futexes.get(w.key[0])?.get(w.key[1])?.delete(w); };
         if (N(timeout)) {
           const t = readTime(p, N(timeout));
           // WAIT: an interval; WAIT_BITSET: a time on its clock.
@@ -155,16 +157,16 @@ function futex(p, uaddr, op, val, timeout, uaddr2, val3) {
       if (s.deadline !== undefined && performance.now() >= s.deadline) { s.cancel(); fail(E.TIMEDOUT); }
       throw new Wait();
     }
-    case 1: return k.futexWake(p.memory, address, N(val), -1); // WAKE
+    case 1: return k.futexWake(p.futexKey(address), N(val), -1); // WAKE
     case 10: { // WAKE_BITSET
       const bitset = Number(BigInt.asIntN(32, val3));
       if (!bitset) fail(E.INVAL);
-      return k.futexWake(p.memory, address, N(val), bitset);
+      return k.futexWake(p.futexKey(address), N(val), bitset);
     }
     case 3: case 4: { // REQUEUE, CMP_REQUEUE
       if (cmd === 4 && word(address) !== Number(BigInt.asIntN(32, val3))) fail(E.AGAIN);
-      const woken = k.futexWake(p.memory, address, N(val), -1);
-      return woken + k.futexRequeue(p.memory, address, N(uaddr2), Number(BigInt.asUintN(32, timeout)));
+      const woken = k.futexWake(p.futexKey(address), N(val), -1);
+      return woken + k.futexRequeue(p.futexKey(address), p.futexKey(N(uaddr2)), Number(BigInt.asUintN(32, timeout)));
     }
     case 5: { // WAKE_OP
       const at2 = N(uaddr2), code = Number(BigInt.asUintN(32, val3));
@@ -175,9 +177,9 @@ function futex(p, uaddr, op, val, timeout, uaddr2, val3) {
       const next = [oparg, old + oparg, old | oparg, old & ~oparg, old ^ oparg][opcode];
       if (next === undefined) fail(E.NOSYS);
       p.view.setInt32(at2, next, true);
-      let woken = k.futexWake(p.memory, address, N(val), -1);
+      let woken = k.futexWake(p.futexKey(address), N(val), -1);
       const hit = [old === cmparg, old !== cmparg, old < cmparg, old <= cmparg, old > cmparg, old >= cmparg][cmp];
-      if (hit) woken += k.futexWake(p.memory, at2, Number(BigInt.asUintN(32, timeout)), -1);
+      if (hit) woken += k.futexWake(p.futexKey(at2), Number(BigInt.asUintN(32, timeout)), -1);
       return woken;
     }
     default: fail(E.NOSYS); // the priority-inheriting kinds
@@ -215,35 +217,162 @@ const writeTimeval = (p, at, ms) => { p.view.setBigInt64(at, BigInt(Math.floor(m
 /** CPUs a program is told it has: as many as the host gives this kernel's workers (one, where threads take turns here). */
 const cpus = () => Math.max(1, Math.min(64, globalThis.navigator?.hardwareConcurrency ?? 1));
 
+/**
+ * `target`'s limit of `resource`: the old one written to `old`, a new one taken from `next` (each a struct rlimit, or
+ * 0). A soft limit above its hard is EINVAL; a hard one raised, EPERM (the Prompt's root is root in its own user
+ * namespace, without CAP_SYS_RESOURCE where that counts). The descriptor limit holds: a table gives none at or past it.
+ */
+function rlimit(p, target, resource, next, old) {
+  const r = N(resource);
+  if (r < 0 || r >= target.limits.length) fail(E.INVAL);
+  const v = p.view;
+  if (N(old)) { v.setBigUint64(N(old), target.limits[r][0], true); v.setBigUint64(N(old) + 8, target.limits[r][1], true); }
+  if (N(next)) {
+    const soft = v.getBigUint64(N(next), true), hard = v.getBigUint64(N(next) + 8, true);
+    if (soft > hard) fail(E.INVAL);
+    if (hard > target.limits[r][1]) fail(E.PERM);
+    target.limits[r] = [soft, hard];
+    if (r === 7) target.fds.limit = Number(soft);
+  }
+  return 0;
+}
+
+// ---- who a process is ----
+//
+// The Prompt's user namespace maps one id, 0, the person's own outside it (core/src/launch.rs writes uid_map and
+// gid_map "0 ID 1", and setgroups "deny"). So a process is root and becomes no one else: an id not mapped is EINVAL
+// (su to another user fails there as here), setgroups is EPERM, and it holds every capability within its namespace.
+
+const KEEP = 0xffffffff;
+/** Ids set*id may be given: 0, or (where the call allows it) -1 to keep one. */
+function mapped(ids, keep = true) {
+  for (const id of ids) {
+    const x = Number(BigInt.asUintN(32, id));
+    if (x !== 0 && !(keep && x === KEEP)) fail(E.INVAL);
+  }
+  return 0;
+}
+
+/** capget and capset's header (version, pid): the version known (v3), or EINVAL with the one it should have been. */
+function capHeader(p, header) {
+  const v = p.view, at = N(header), version = v.getUint32(at, true);
+  if (version !== 0x20080522 && version !== 0x20071026 && version !== 0x19980330) { v.setUint32(at, 0x20080522, true); fail(E.INVAL); }
+  const pid = v.getInt32(at + 4, true);
+  const target = pid === 0 || pid === p.pid ? p : p.kernel.procs.get(pid);
+  if (!target || target.state !== 'live') fail(E.SRCH);
+  return {target, words: version === 0x19980330 ? 1 : 2};
+}
+
+/** prctl's options a program asks of itself, as Linux answers them (an option it does not know: EINVAL). */
+function prctl(p, option, arg2, arg3, arg4, arg5) {
+  const v = p.view, a = N(arg2);
+  switch (option) {
+    case 1: if (a < 0 || a > 64) fail(E.INVAL); p.deathSignal = a; return 0; // PR_SET_PDEATHSIG
+    case 2: v.setInt32(a, p.deathSignal ?? 0, true); return 0; // PR_GET_PDEATHSIG
+    case 3: return 1; // PR_GET_DUMPABLE
+    case 4: if (a !== 0 && a !== 1) fail(E.INVAL); return 0; // PR_SET_DUMPABLE
+    case 7: return p.keepCaps ? 1 : 0; // PR_GET_KEEPCAPS
+    case 8: if (a !== 0 && a !== 1) fail(E.INVAL); p.keepCaps = a === 1; return 0; // PR_SET_KEEPCAPS
+    case 15: { // PR_SET_NAME: its name, as /proc says it (15 bytes at most)
+      const b = p.bytes, end = b.subarray(a, a + 16).indexOf(0);
+      p.comm = new TextDecoder().decode(b.subarray(a, a + (end < 0 ? 15 : Math.min(end, 15))));
+      return 0;
+    }
+    case 16: { // PR_GET_NAME
+      const name = new TextEncoder().encode(p.comm ?? (p.argv?.[0] ?? '').split('/').pop()).subarray(0, 15);
+      p.bytes.fill(0, a, a + 16);
+      p.bytes.set(name, a);
+      return 0;
+    }
+    case 21: return 0; // PR_GET_SECCOMP: none
+    case 22: return 0; // PR_SET_SECCOMP: a filter is taken; none of the calls here is one it would have stopped
+    case 23: if (a < 0 || a > 40) fail(E.INVAL); return p.dropped?.has(a) ? 0 : 1; // PR_CAPBSET_READ
+    case 24: if (a < 0 || a > 40) fail(E.INVAL); (p.dropped ??= new Set()).add(a); return 0; // PR_CAPBSET_DROP
+    case 27: return 0; // PR_GET_SECUREBITS
+    case 28: return 0; // PR_SET_SECUREBITS
+    case 29: return 0; // PR_SET_TIMERSLACK
+    case 30: return 50000; // PR_GET_TIMERSLACK: Linux's default, 50 µs
+    case 35: fail(E.PERM); // PR_SET_MM: wants CAP_SYS_RESOURCE where the namespace has it not
+    case 36: p.subreaper = a !== 0; return 0; // PR_SET_CHILD_SUBREAPER
+    case 37: v.setInt32(a, p.subreaper ? 1 : 0, true); return 0; // PR_GET_CHILD_SUBREAPER
+    case 38: if (a !== 1 || N(arg3) || N(arg4) || N(arg5)) fail(E.INVAL); p.noNewPrivs = true; return 0; // PR_SET_NO_NEW_PRIVS
+    case 39: return p.noNewPrivs ? 1 : 0; // PR_GET_NO_NEW_PRIVS
+    case 41: case 42: return 0; // PR_SET_THP_DISABLE, PR_GET_THP_DISABLE
+    case 47: if (a === 1) return 0; if (a >= 2 && a <= 4) return 0; fail(E.INVAL); // PR_CAP_AMBIENT: none raised
+    case 0x59616d61: return 0; // PR_SET_PTRACER
+    case 0x53564d41: return 0; // PR_SET_VMA: a name for a mapping
+  }
+  fail(E.INVAL);
+}
+
+/** A host or domain name of at most 64 bytes, as sethostname takes it. */
+function names(p, address, length) {
+  const n = N(length);
+  if (n < 0 || n > 64) fail(E.INVAL);
+  return new TextDecoder().decode(p.bytes.subarray(N(address), N(address) + n));
+}
+
 export const PROC_CALLS = {
   9(addr, len, prot, flags, fd, off) {
-    const length = N(len), fixed = N(flags) & 0x10, anonymous = N(flags) & 0x20;
+    const length = N(len), fixed = N(flags) & 0x10, anonymous = N(flags) & 0x20, shared = (N(flags) & 3) !== 2;
     if (length <= 0) fail(E.INVAL);
+    const d = anonymous ? null : this.fds.get(N(fd));
+    if (!anonymous && (!d || d.kind !== 'file')) fail(E.BADF);
     const start = fixed ? N(addr) : this.reserve(length);
     if (fixed) {
-      this.bytes.fill(0, start, start + length);
+      this.unmapShared(start, length);
+      if (start >= this.mapBase) this.cover(start + length);
+      zero(this.memory, start, start + length);
       if (start < this.mapBase) this.fixed.push({start, length});
     }
-    if (!anonymous) {
-      const d = this.fds.get(N(fd));
-      if (!d || d.kind !== 'file') fail(E.BADF);
+    if (d) {
       this.bytes.set(d.node.read(N(off), N(off) + length), start);
+      if (shared) this.mapShared(d.node, start, length, N(off));
+    } else if (shared) {
+      // Shared anonymous memory (what fork leaves shared): a file of its own, in no directory.
+      const node = new File();
+      node.truncate(length);
+      this.mapShared(node, start, length, 0);
     }
     return start;
   },
-  10() { return 0; },
-  11(addr, len) { this.release(N(addr), N(len)); return 0; },
+  // mprotect is not enforced. A program's read-only bytes made writable may change, so its memory is not given to the
+  // next run of it as holding them (Kernel.takeMemory).
+  10(addr, len, prot) {
+    const a = N(addr), b = a + N(len);
+    if (N(prot) & 2 && this.image?.facts.readOnly?.some(([x, y]) => a < y && x < b)) this.memory.imageOf = null;
+    return 0;
+  },
+  11(addr, len) { this.unmapShared(N(addr), N(len)); this.release(N(addr), N(len)); return 0; },
   12() { return this.mapBase; }, // brk never grows; libc then uses mmap
   24() { return 0; }, // sched_yield: the kernel gives another its turn first (process.mjs YIELDS)
   25(old, oldLength, newLength, flags) {
     const start = this.reserve(N(newLength));
-    this.bytes.copyWithin(start, N(old), N(old) + Math.min(N(oldLength), N(newLength)));
+    move(this.memory, start, N(old), Math.min(N(oldLength), N(newLength)));
+    // A shared file mapping moves with what it maps, and grows into more of the file.
+    const moved = this.maps.filter((m) => m.start === N(old));
+    this.unmapShared(N(old), N(oldLength));
+    for (const m of moved) {
+      if (N(newLength) > N(oldLength)) this.bytes.set(m.node.read(m.off + N(oldLength), m.off + N(newLength)), start + N(oldLength));
+      this.mapShared(m.node, start, N(newLength), m.off);
+    }
     this.release(N(old), N(oldLength));
     return start;
   },
-  26() { return 0; }, 27() { return 0; },
-  28(addr, len, advice) { // madvise: MADV_DONTNEED and MADV_FREE give back pages, which read as zero after (private anonymous memory)
-    if (N(advice) === 4 || N(advice) === 8) this.bytes.fill(0, N(addr), N(addr) + N(len));
+  26(addr, len) { for (const m of this.sharedIn(N(addr), N(len))) m.node.settle(m.off, m.off + m.length, m); return 0; }, // msync
+  27() { return 0; },
+  28(addr, len, advice) {
+    // madvise: MADV_DONTNEED and MADV_FREE give back pages. Private anonymous ones read as zero after; a shared file
+    // mapping's read as the file is (what was written through it is the file's already).
+    const a = N(addr), b = a + N(len);
+    if (N(advice) !== 4 && N(advice) !== 8) return 0;
+    const maps = this.sharedIn(a, N(len));
+    for (const m of maps) m.node.settle(m.off, m.off + m.length, m);
+    zero(this.memory, a, b);
+    for (const m of maps) {
+      const from = Math.max(a, m.start), to = Math.min(b, m.start + m.length);
+      this.bytes.set(m.node.read(m.off + from - m.start, m.off + to - m.start), from);
+    }
     return 0;
   },
   35(req, rem) { return sleepUntil(this, performance.now() + ms(readTime(this, N(req))), N(rem)); }, // nanosleep
@@ -269,21 +398,16 @@ export const PROC_CALLS = {
   60(code) { this.kernel.exitThread(this.task, exitStatus(N(code))); throw new Exit(exitStatus(N(code))); },
   61(pid, status, options, rusage) { return wait4(this, pid, status, options, rusage); },
   63(buf) {
-    const fields = ['Linux', 'length3', '6.1.0', '#1 xlat', 'x86_64', '(none)'];
+    const fields = ['Linux', this.kernel.hostname ?? 'length3', '6.1.0', '#1 xlat', 'x86_64', this.kernel.domainname ?? '(none)'];
     this.bytes.fill(0, N(buf), N(buf) + 390);
     fields.forEach((s, k) => this.bytes.set(enc.encode(s), N(buf) + k * 65));
     return 0;
   },
-  96(tv) {
-    const ns = wall();
-    this.view.setBigInt64(N(tv), ns / 1000000000n, true);
-    this.view.setBigInt64(N(tv) + 8, (ns % 1000000000n) / 1000n, true);
-    return 0;
-  },
-  97(resource, limit) { this.view.setBigInt64(N(limit), -1n, true); this.view.setBigInt64(N(limit) + 8, -1n, true); return 0; },
+  96(tv, tz) { const r = answerTime(this.memory, CLOCK, 96n, tv, tz); if (r === null) fail(E.FAULT); return r; }, // gettimeofday
+  97(resource, limit) { return rlimit(this, this, resource, 0n, limit); }, // getrlimit
   98(who, usage) { this.bytes.fill(0, N(usage), N(usage) + 144); return 0; },
-  99(info) { // sysinfo: the memory a process may have, what the kernel's processes hold of it, how many there are
-    const at = N(info), v = this.view, total = 4n << 30n, used = BigInt(this.kernel.memoryBytes());
+  99(info) { // sysinfo: the machine's memory (machine.mjs), what the kernel's processes hold of it, how many there are
+    const at = N(info), v = this.view, total = BigInt(this.kernel.machine.memory), used = BigInt(this.kernel.memoryBytes());
     this.bytes.fill(0, at, at + 112);
     v.setBigInt64(at, BigInt(Math.floor(performance.now() / 1000)), true); // uptime
     v.setBigUint64(at + 32, total, true); // totalram
@@ -293,8 +417,11 @@ export const PROC_CALLS = {
     return 0;
   },
   100(buf) { if (N(buf)) this.bytes.fill(0, N(buf), N(buf) + 32); return Number(monotonic() / 10000000n); },
-  102() { return 0; }, 104() { return 0; }, 105() { return 0; }, 106() { return 0; },
-  107() { return 0; }, 108() { return 0; },
+  102() { return 0; }, 104() { return 0; }, 107() { return 0; }, 108() { return 0; }, // getuid, getgid, geteuid, getegid
+  105(uid) { return mapped([uid], false); }, // setuid
+  106(gid) { return mapped([gid], false); }, // setgid
+  113(r, e) { return mapped([r, e]); }, // setreuid
+  114(r, e) { return mapped([r, e]); }, // setregid
   109(pid, pgid) { // setpgid: itself or a child of its own, into a group of its session
     const target = proc(this, N(pid));
     if (target !== this && target.ppid !== this.pid) fail(E.SRCH);
@@ -312,21 +439,45 @@ export const PROC_CALLS = {
     this.sid = this.pgid = this.pid;
     return this.pid;
   },
-  115() { return 0; }, 116() { return 0; },
-  117() { return 0; }, 119() { return 0; },
+  115(size) { if (N(size) < 0) fail(E.INVAL); return 0; }, // getgroups: none beside its group
+  116() { fail(E.PERM); }, // setgroups: denied in its namespace
+  117(r, e, s) { return mapped([r, e, s]); }, // setresuid
+  119(r, e, s) { return mapped([r, e, s]); }, // setresgid
+  122() { return 0; }, 123() { return 0; }, // setfsuid, setfsgid: the old one, 0 (an id not mapped is not taken)
+  125(header, data) { // capget
+    const {target, words} = capHeader(this, header);
+    if (!N(data)) return 0;
+    const v = this.view, c = target.caps;
+    for (let k = 0; k < words; k++) {
+      const word = (x) => Number((x >> BigInt(32 * k)) & 0xffffffffn);
+      v.setUint32(N(data) + 12 * k, word(c.effective), true);
+      v.setUint32(N(data) + 12 * k + 4, word(c.permitted), true);
+      v.setUint32(N(data) + 12 * k + 8, word(c.inheritable), true);
+    }
+    return 0;
+  },
+  126(header, data) { // capset: its own, none it does not have
+    const {target, words} = capHeader(this, header);
+    if (target !== this) fail(E.PERM);
+    const v = this.view, read = (off) => { let x = 0n; for (let k = 0; k < words; k++) x |= BigInt(v.getUint32(N(data) + 12 * k + off, true)) << BigInt(32 * k); return x; };
+    const effective = read(0), permitted = read(4), inheritable = read(8);
+    if ((permitted & ~this.caps.permitted) || (effective & ~permitted)) fail(E.PERM);
+    this.caps = {effective, permitted, inheritable};
+    return 0;
+  },
   118(r, e, s) { for (const a of [r, e, s]) if (N(a)) this.view.setUint32(N(a), 0, true); return 0; },
   120(r, e, s) { for (const a of [r, e, s]) if (N(a)) this.view.setUint32(N(a), 0, true); return 0; },
   121(pid) { return proc(this, N(pid)).pgid; },
   124(pid) { return proc(this, N(pid)).sid; },
-  157() { return 0; },
+  157(option, arg2, arg3, arg4, arg5) { return prctl(this, N(option), arg2, arg3, arg4, arg5); },
   158(code, addr) {
     if (N(code) === 0x1002) { this.task.setReg(16, addr); return 0; } // ARCH_SET_FS
     if (N(code) === 0x1003) { this.view.setBigUint64(N(addr), BigInt.asUintN(64, this.task.reg(16)), true); return 0; }
     fail(E.INVAL);
   },
-  160() { return 0; },
+  160(resource, limit) { return rlimit(this, this, resource, limit, 0n); }, // setrlimit
   186() { return this.task.tid; },
-  201(t) { const s = wall() / 1000000000n; if (N(t)) this.view.setBigInt64(N(t), s, true); return s; },
+  201(t) { const r = answerTime(this.memory, CLOCK, 201n, t, 0n); if (r === null) fail(E.FAULT); return r; }, // time
   202(uaddr, op, val, timeout, uaddr2, val3) { return futex(this, uaddr, op, val, timeout, uaddr2, val3); },
   203() { return 0; }, // sched_setaffinity
   204(pid, size, mask) { // sched_getaffinity
@@ -337,8 +488,13 @@ export const PROC_CALLS = {
     return bytes;
   },
   218(tidptr) { this.task.clearTid = N(tidptr); return this.task.tid; }, // set_tid_address
-  228(clock, ts) { writeTime(this, N(ts), N(clock) === 0 ? wall() : monotonic()); return 0; },
-  229(clock, ts) { if (N(ts)) writeTime(this, N(ts), 1n); return 0; },
+  228(clock, ts) { // clock_gettime: a CPU-time clock is not kept apart, and reads as the monotonic one
+    const ns = CLOCK.read(Number(BigInt.asIntN(32, clock)));
+    if (ns === undefined) fail(E.INVAL);
+    writeTime(this, N(ts), ns ?? monotonic());
+    return 0;
+  },
+  229(clock, ts) { if (CLOCK.read(Number(BigInt.asIntN(32, clock))) === undefined) fail(E.INVAL); if (N(ts)) writeTime(this, N(ts), 1n); return 0; },
   230(clock, flags, req, rem) { // clock_nanosleep: by an interval, or until a time on that clock (TIMER_ABSTIME)
     const t = readTime(this, N(req));
     if (!(N(flags) & 1)) return sleepUntil(this, performance.now() + ms(t), N(rem));
@@ -355,20 +511,32 @@ export const PROC_CALLS = {
     this.view.setBigUint64(N(len), 24n, true);
     return 0;
   },
-  302(pid, resource, next, old) {
-    if (N(old)) { this.view.setBigInt64(N(old), -1n, true); this.view.setBigInt64(N(old) + 8, -1n, true); }
-    return 0;
+  302(pid, resource, next, old) { // prlimit64
+    const target = N(pid) === 0 || N(pid) === this.pid ? this : this.kernel.procs.get(N(pid));
+    if (!target || target.state !== 'live') fail(E.SRCH);
+    return rlimit(this, target, resource, next, old);
   },
   318(buf, len) {
     const n = Math.min(N(len), 65536);
-    crypto.getRandomValues(this.bytes.subarray(N(buf), N(buf) + n));
+    // (Copied in: a browser draws none into a shared memory's view.)
+    this.bytes.set(randomBytes(n), N(buf));
     return n;
   },
-  // The network boundary: a Prompt in a browser has no network and no sockets of
-  // any family (internet, netlink, local), so a program is told the family is not
-  // there, as a host without it says, not that the call does not exist.
-  41() { fail(E.AFNOSUPPORT); }, // socket
-  53() { fail(E.AFNOSUPPORT); }, // socketpair
+  170(name, len) { this.kernel.hostname = names(this, name, len); return 0; }, // sethostname: the machine's (its own UTS)
+  171(name, len) { this.kernel.domainname = names(this, name, len); return 0; }, // setdomainname
+  135() { return 0; }, // personality: Linux's own (PER_LINUX); asked, or set, it stays that
+  309(cpu, node) { // getcpu: one machine of one node, as it is to its guests
+    if (N(cpu)) this.view.setUint32(N(cpu), 0, true);
+    if (N(node)) this.view.setUint32(N(node), 0, true);
+    return 0;
+  },
+  324(cmd) { if (N(cmd) === 0) return 0; fail(E.INVAL); }, // membarrier: asked, it offers none (a program then fences itself)
+  // What a container's root without its capabilities is refused: the machine's mounts, clock, log and modules are
+  // the host's, not a Prompt's.
+  165() { fail(E.PERM); }, 166() { fail(E.PERM); }, 155() { fail(E.PERM); }, 161() { fail(E.PERM); }, // mount, umount2, pivot_root, chroot
+  169() { fail(E.PERM); }, 227() { fail(E.PERM); }, 103() { fail(E.PERM); }, 308() { fail(E.PERM); }, // reboot, clock_settime, syslog, setns
+  167() { fail(E.PERM); }, 168() { fail(E.PERM); }, 175() { fail(E.PERM); }, 176() { fail(E.PERM); }, 313() { fail(E.PERM); }, // swapon, swapoff, modules
+  101() { fail(E.PERM); }, // ptrace: no process here can be traced
   334() { fail(E.NOSYS); }, // rseq
   435() { fail(E.NOSYS); }, // clone3: libc falls back to clone
 };

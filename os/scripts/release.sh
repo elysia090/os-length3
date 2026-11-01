@@ -1,13 +1,19 @@
 #!/bin/sh
 # Everything a release of OS Length3 Linux holds, made from this tree, into OUT:
 #
-#   os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst  the root: the pinned 0.1.0 root laid out for Prompts
-#                                                  with this tree's l3, profile and shell (root-release.sh)
+#   os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst  the root: the pinned base root laid out for Prompts
+#                                                  with this tree's l3, profile and shell, and OpenSSL,
+#                                                  OpenSSH's client, curl and git at this tree's pins
+#                                                  (root-release.sh, root-refresh.sh)
+#   os-length3-linux-0.1.0-x86_64-<id>.tar.zst      the base it was made from (shared/root-base.json), carried
+#                                                  in each release so the next is made from it as this one was
 #   os-length3-linux-X.Y.Z-l3-web.tar               the same root as the browser reads it (l3.sh), checked
 #                                                  to be the same tree (l3-parity.mjs)
 #   os-length3-linux-X.Y.Z-web.zip                  the web build, with that l3 (web-release.sh)
 #   os-length3-linux-X.Y.Z-desktop-amd64.deb        the desktop app, its Prompt running that root on the
 #   os-length3-linux-X.Y.Z-desktop-x86_64.AppImage  machine, with l3 beside it (desktop.sh)
+#   os-length3-linux-X.Y.Z-film.mp4                a film of the release at work, when the release-film branch
+#                                                  holds one (film.mp4, its sha256 in film.sha256)
 #   SHA256SUMS, manifest                           the digests; what the root was made from
 #
 # and OUT/../notes.md, the release's notes. Before the web build and the app are made, the root is pinned
@@ -18,8 +24,9 @@
 #
 #   sh scripts/release.sh OUT
 #
-# The version is RELEASE ($VERSION overrides); the commit is HEAD ($GITHUB_SHA overrides). GITHUB_TOKEN, when
-# set, reads the 0.1.0 release through the API (root-file.mjs); the repository is public. Needs Rust with the targets
+# The version is RELEASE ($VERSION overrides); the commit is HEAD ($GITHUB_SHA overrides). The repository is public:
+# the base is read from the release that holds it (root-file.mjs). The base is pinned as held by this release from now
+# on (pin-base.mjs), so the releases before it may be deleted. Needs Rust with the targets
 # x86_64-unknown-linux-musl, wasm32-unknown-unknown and wasm32-wasip1, Node 22, musl-gcc, zstd, zip, the Tauri
 # build's packages (libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf
 # libgles2), and for the AppImage's smoke test bubblewrap, xvfb and imagemagick.
@@ -36,10 +43,24 @@ if [ -z "${GITHUB_SHA:-}" ] && [ -n "$(git -C "$here" status --porcelain)" ]; th
 fi
 cd "$here"
 
-# The root: the 0.1.0 root (root-file.mjs takes it from its release, at its pin) with this tree's l3.
-base=$(node scripts/root-file.mjs "$here/target/root" 0.1.0)
+# The root: the base (root-file.mjs takes it from the release that holds it, at its pin) with this tree's l3 and the
+# programs it makes again (root-refresh.sh). The base goes in this release too, which holds it from now on.
+base=$(node scripts/root-file.mjs "$here/target/root" base)
 sh scripts/root-release.sh "$base" "$out" "$version"
 root=$(ls "$out"/os-length3-linux-"$version"-x86_64-*.tar.zst)
+cp "$base" "$out/"
+node scripts/pin-base.mjs "$version"
+
+# The film of the release, from the branch that holds it (kept out of main's history), checked against its digest.
+film=os-length3-linux-$version-film.mp4
+if git -C "$here" fetch -q --depth=1 "${FILM_REMOTE:-https://github.com/${GITHUB_REPOSITORY:-elysia090/os-length3}.git}" release-film 2>/dev/null \
+  && git -C "$here" cat-file -e FETCH_HEAD:film.mp4 2>/dev/null; then
+  git -C "$here" show FETCH_HEAD:film.mp4 > "$out/$film"
+  echo "$(git -C "$here" show FETCH_HEAD:film.sha256 | cut -d' ' -f1)  $out/$film" | sha256sum -c - >/dev/null \
+    || { echo "release: the film is not the one film.sha256 names" >&2; exit 1; }
+else
+  film=
+fi
 
 # l3 for the browser, the same root: every path, type, mode, link target and sha256 as the app installs.
 sh scripts/l3.sh "$root" public/l3
@@ -69,18 +90,19 @@ mv "$out/smoke.png" "$out/../smoke.png"
 node scripts/pin-desktop.mjs "$version" "$out/$deb" "$out/$appimage"
 
 cd "$out"
-sha256sum "$l3web" "$web" "$deb" "$appimage" >> SHA256SUMS
+basefile=$(basename "$base")
+sha256sum "$l3web" "$web" "$deb" "$appimage" "$basefile" $film >> SHA256SUMS
 rootfile=$(basename "$root")
 size() { stat -c %s "$1"; }
 digest() { sha256sum "$1" | cut -d' ' -f1; }
 {
   echo "# OS Length3 Linux $version"
   echo
-  echo "The 0.1.0 root laid out for Prompts (nothing only a booted machine needs, merged /usr), with l3, its profile and shell from \`$sha\`; the web build of the same tree, whose Prompt runs that whole root (each file fetched when a program first reads it); and the desktop app (Length³ OS for x86-64 Linux, a .deb and an AppImage): the same UI, its Prompt running that root on the machine, which it installs and trusts by the digest pinned in this release."
+  echo "The base root laid out for Prompts (nothing only a booted machine needs, nor what a Prompt has nothing for; merged /usr), with l3, its profile and shell from \`$sha\`, and OpenSSL, OpenSSH's client, curl and git made again at this tree's pins (\`manifest\` says each, and its source's digest); the web build of the same tree, whose Prompt runs that whole root (each file fetched when a program first reads it); and the desktop app (Length³ OS for x86-64 Linux, a .deb and an AppImage): the same UI, its Prompt running that root on the machine, which it installs and trusts by the digest pinned in this release. \`$basefile\` is the base it was made from, carried here so the next release is made from it as this one was.${film:+ \`$film\` shows it at work.}"
   echo
   echo "| File | Bytes | SHA-256 |"
   echo "| --- | --- | --- |"
-  for f in "$rootfile" "$l3web" "$web" "$deb" "$appimage"; do
+  for f in "$rootfile" "$l3web" "$web" "$deb" "$appimage" "$basefile" $film; do
     echo "| \`$f\` | $(size "$f") | \`$(digest "$f")\` |"
   done
   echo

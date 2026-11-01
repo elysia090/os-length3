@@ -53,9 +53,9 @@ export function sshRoutes(d: {db: Db; /** Beats answered without the database sa
 
   v1.put('/ssh/this', async (c) => {
     // A page cannot turn SSH on: that is done at the device (l3 address, the app's switch).
-    if (c.req.header('Origin')) return c.json({error: 'SSH is turned on at the device itself'}, 403);
+    if (c.req.header('Origin')) return c.json({error: 'SSH must be enabled on the physical device'}, 403);
     const scope = scopeOf((await body<{scope?: unknown}>(c))?.scope);
-    if (!scope) return c.json({error: 'device or network'}, 400);
+    if (!scope) return c.json({error: 'Must be "device" or "network"'}, 400);
     await db.insert(ssh).values({sessionId: c.get('sessionId'), userId: c.get('userId'), scope})
       .onConflictDoUpdate({target: ssh.sessionId, set: {scope, since: sql`now()`, seenAt: sql`now()`}});
     return c.json({on: true});
@@ -65,7 +65,7 @@ export function sshRoutes(d: {db: Db; /** Beats answered without the database sa
   v1.post('/ssh/this/beat', async (c) => {
     const said = (await body<{scope?: unknown}>(c))?.scope;
     const scope = said === undefined ? undefined : scopeOf(said);
-    if (scope === null) return c.json({error: 'device or network'}, 400);
+    if (scope === null) return c.json({error: 'Must be "device" or "network"'}, 400);
     const done = await db.update(ssh).set({seenAt: sql`now()`, ...(scope ? {scope} : {})})
       .where(eq(ssh.sessionId, c.get('sessionId'))).returning({device: ssh.sessionId});
     return c.json({on: done.length > 0});
@@ -78,6 +78,6 @@ export function sshRoutes(d: {db: Db; /** Beats answered without the database sa
 
   v1.post('/ssh/:device/off', async (c) => {
     const done = await db.delete(ssh).where(and(eq(ssh.sessionId, c.req.param('device')), eq(ssh.userId, c.get('userId')))).returning({device: ssh.sessionId});
-    return done.length ? c.json({device: done[0].device, on: false}) : c.json({error: 'No device of yours listens there'}, 404);
+    return done.length ? c.json({device: done[0].device, on: false}) : c.json({error: 'None of your devices listen on that port'}, 404);
   });
 }

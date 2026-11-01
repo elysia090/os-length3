@@ -74,7 +74,9 @@ export class IssueRow {
    */
   fill(shown: Issue[], at: number, from = -1) {
     const slide = from >= 0 && from !== at && from < shown.length && !still();
-    if (!slide) this.settle();
+    // Come into sight (none shown before), it is where it is at once: its edges do not ease from where they never were.
+    this.quiet = !!this.stage.hidden || !this.shown.length;
+    if (!slide && !this.quiet) this.settle();
     this.shown = shown;
     this.stage.hidden = false;
     this.column.classList.toggle('single', shown.length === 1);
@@ -87,7 +89,7 @@ export class IssueRow {
     if (was && !had) this.stage.focus({preventScroll: true});
     this.track.replaceChildren(...shown.map((i) => h('div', {class: 'issue-slot', 'data-issue': `${i.repo}/${i.file}`})));
     this.was = -1;
-    if (!slide) { this.go(at, false, had); return; }
+    if (!slide) { this.go(at, false, had); this.quiet = false; return; }
     // Gone to as it is drawn (an issue reopened, one just written): from the box that was in full, the row slides to
     // it, and only it is given the keyboard.
     const land = this.land;
@@ -98,7 +100,10 @@ export class IssueRow {
     this.column.classList.remove('settling');
     this.land = land;
     this.go(at, true);
+    this.quiet = false;
   }
+  /** Being drawn into sight (fill): main's cards over the row are where they are at once too. */
+  private quiet = false;
 
   /** The box of `key` is going (closed): the row goes to the box beside it, the one after or else the one before. */
   aside(key: string): Promise<void> {
@@ -149,7 +154,7 @@ export class IssueRow {
     // The first box starts at the column's edge and the last ends at it; between, both neighbours show.
     const lead = k === 0 ? 0 : k === this.shown.length - 1 ? 2 : 1;
     this.column.style.setProperty('--row-lead', `${lead}`);
-    this.ways.slid(lead, this.shown.length === 1, !moved);
+    this.ways.slid(lead, this.shown.length === 1, !moved && !this.quiet);
     [...this.track.children].forEach((slot, j) => {
       slot.setAttribute('aria-current', String(j === k));
       if (moved && j === was && was !== k && !still()) { this.leave(slot as HTMLElement, this.shown[j]); return; }

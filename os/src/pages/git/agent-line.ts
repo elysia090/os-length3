@@ -17,7 +17,7 @@ function row(s: AgentSession): HTMLElement {
     h('span', {class: 'agent-dot', 'aria-hidden': 'true'}),
     h('span', {class: 'agent-who'}, harnessName(s.harness)),
     s.doing ? h('span', {class: 'agent-doing'}, s.doing) : null,
-    waits ? h('span', {class: 'agent-waits'}, t('waits for you')) : null);
+    waits ? h('span', {class: 'agent-waits'}, t('Awaiting your action')) : null);
 }
 
 /** The agents at work on `issue`, kept as they go; hidden while none is. */

@@ -26,7 +26,7 @@ const part = (title: string, ...body: (Node | null)[]) => h('section', {class: '
 const faceOf = (address: string) => personBadge(named(address));
 
 export class Side {
-  readonly element = h('aside', {class: 'side server-side', 'aria-label': t('Who is in it, and the repos they show')});
+  readonly element = h('aside', {class: 'side server-side', 'aria-label': t('Members and shared repos')});
   /** The reading asked for last: one answered after a later one was asked is dropped. */
   private token = 0;
   private readonly ways: SideWays;
@@ -50,7 +50,7 @@ export class Side {
       const another = !!this.counted && this.counted.id !== id && this.element.childElementCount > 0;
       this.counted = {id, people: people.length, repos: repos.length};
       this.element.replaceChildren(
-        part(t('People'), h('ul', {class: 'people'}, ...people.map((p) => this.person(p)))),
+        part(t('Members'), h('ul', {class: 'people'}, ...people.map((p) => this.person(p)))),
         // The repos shown, when there are any: nothing is said of none here.
         repos.length ? part(t('Repos'), h('ul', {class: 'side-repos'}, ...repos.map((r) => this.repo(r)))) : '');
       if (another && !still()) this.element.animate([{opacity: 0}, {opacity: 1}], {duration: paced(220), easing: 'ease-out'});
@@ -79,17 +79,17 @@ export class Side {
 
   /** The server being made: its first person, oneself (`address`), as its owner, faint. */
   ghost(address: string) {
-    this.element.replaceChildren(h('div', {class: 'side-ghost', 'aria-hidden': 'true'}, part(t('People'), h('ul', {class: 'people'},
-      h('li', {}, faceOf(address), h('span', {}, named(address)), h('span', {class: 'muted small'}, t('owner')))))));
+    this.element.replaceChildren(h('div', {class: 'side-ghost', 'aria-hidden': 'true'}, part(t('Members'), h('ul', {class: 'people'},
+      h('li', {}, faceOf(address), h('span', {}, named(address)), h('span', {class: 'muted small'}, t('Owner')))))));
   }
 
   /** One of its people, its owner said so. */
   private person(p: servers.Person): HTMLElement {
-    const li = h('li', {}, faceOf(p.address), h('span', {}, named(p.address)), p.owner ? h('span', {class: 'muted small'}, t('owner')) : null);
+    const li = h('li', {}, faceOf(p.address), h('span', {}, named(p.address)), p.owner ? h('span', {class: 'muted small'}, t('Owner')) : null);
     // Someone else pressed is a conversation with them, in the Inbox: who they are is who one writes to.
     void this.ways.isMe(p.address).then((me) => {
       if (me || !li.isConnected) return;
-      const b = h('button', {type: 'button', class: 'person-go', title: t('Write to {name}', {name: named(p.address)})}, ...li.childNodes);
+      const b = h('button', {type: 'button', class: 'person-go', title: t('Message {name}', {name: named(p.address)})}, ...li.childNodes);
       b.addEventListener('click', () => this.ways.write(p.address));
       li.replaceChildren(b);
     });
@@ -99,8 +99,8 @@ export class Side {
   /** A repo shown in it: whose, and said when everyone sees it; lit while it is the one in the boards' place. */
   private repo(r: servers.ShownRepo): HTMLElement {
     const b = h('button', {type: 'button', class: 'side-repo', 'data-repo': `${r.owner}:${r.name}`,
-      title: r.as ? t('Everyone sees it as {name}', {name: shownAs(r.as)}) : `${named(r.owner)}:${r.name}`},
-    h('span', {}, r.name), h('span', {class: 'muted small'}, named(r.owner)), r.as ? h('span', {class: 'seen-mark muted small'}, t('everyone')) : null);
+      title: r.as ? t('Publicly visible as "{name}"', {name: shownAs(r.as)}) : `${named(r.owner)}:${r.name}`},
+    h('span', {}, r.name), h('span', {class: 'muted small'}, named(r.owner)), r.as ? h('span', {class: 'seen-mark muted small'}, t('Public')) : null);
     if (b.dataset.repo === this.seeing) b.setAttribute('aria-current', 'true');
     b.addEventListener('click', () => this.ways.seeRepo(r));
     return h('li', {}, b);

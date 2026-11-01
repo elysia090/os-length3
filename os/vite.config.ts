@@ -63,7 +63,7 @@ const buildStamp = (): Plugin => ({
     order: 'post',
     handler(html) {
       const stamped = html.replace('<head>', `<head>\n    <meta name="length3-build" content="${`${process.env.VITE_LENGTH3_RELEASE} ${commit()}`.trim()}">`);
-      return HOST === 'native' ? stamped : stamped.replace(/<script type="module"/g, '<script type="module" data-cfasync="false"');
+      return HOST === 'native' ? stamped : stamped.replace(/<script(?=[^>]*\stype="module")/g, '<script data-cfasync="false"');
     },
   },
 });
@@ -114,6 +114,31 @@ const hostOnly = (): Plugin => {
 };
 
 /**
+ * The app's code is the import of the page's first script (src/start.ts starts the core, then imports main.ts), so it
+ * is named in the page to be fetched at once (modulepreload, with what it imports), beside the first script rather
+ * than after it has run.
+ */
+const preloadApp = (): Plugin => ({
+  name: 'length3-preload-app',
+  apply: 'build',
+  transformIndexHtml: {
+    order: 'post',
+    handler(html, {chunk, bundle}) {
+      if (!chunk || !bundle) return html;
+      const files = new Set<string>();
+      const add = (name: string) => {
+        const c = bundle[name];
+        if (name === chunk.fileName || files.has(name) || c?.type !== 'chunk') return;
+        files.add(name);
+        c.imports.forEach(add);
+      };
+      chunk.dynamicImports.forEach(add);
+      return {html, tags: [...files].map((f) => ({tag: 'link', attrs: {rel: 'modulepreload', crossorigin: true, href: `/${f}`}, injectTo: 'head' as const}))};
+    },
+  },
+});
+
+/**
  * Cross-origin isolation, as public/_headers gives it in production: the page
  * may share memory, so the Prompt runs each guest thread in a Worker of its
  * own. The development server and the preview (the selftest's) say the same.
@@ -130,5 +155,5 @@ export default defineConfig({
   worker: {format: 'es'},
   define: {__LENGTH3_HOST__: JSON.stringify(HOST)},
   build: {target: 'es2022', outDir: ASSETS, emptyOutDir: true},
-  plugins: [hostOnly(), coreWasm(), metaPolicy(), buildStamp()],
+  plugins: [hostOnly(), coreWasm(), metaPolicy(), buildStamp(), preloadApp()],
 });

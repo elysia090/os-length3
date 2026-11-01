@@ -93,10 +93,10 @@
    fills the row again and the others step to its edges. The pane's switch is the switch between the two: working
    on one with the others to hand, or reading them together. */
 .work.bench.pane-closed .columns.split > .col { flex-basis: calc((var(--cols-w, 100%) - 2 * var(--pad)) / var(--n, 2)); transform: translateX(var(--pad)); translate: none; }
-/* Put away or brought back, the row and its prompt box move on the pane's own curve, sent once to where they will
-   stand (columns.ts room): the last box's edge keeps a step inside the pane's edge all the way, as if pushed by it. */
-.work.bench.pane-moving.pane-closed :is(.columns.split > .col, .dock) { transition-duration: var(--leave); transition-timing-function: cubic-bezier(.4, 0, 1, 1); }
-.work.bench.pane-moving:not(.pane-closed) :is(.columns.split > .col, .dock) { transition-duration: var(--slide); transition-timing-function: cubic-bezier(.2, 1.4, .32, 1); }
+/* Put away or brought back, the row moves on the pane's own curve, sent once to where it will stand (columns.ts
+   room): the last box's edge keeps a step inside the pane's edge all the way, as if pushed by it. */
+.work.bench.pane-moving.pane-closed .columns.split > .col { transition-duration: var(--leave); transition-timing-function: cubic-bezier(.4, 0, 1, 1); }
+.work.bench.pane-moving:not(.pane-closed) .columns.split > .col { transition-duration: var(--slide); transition-timing-function: cubic-bezier(.2, 1.4, .32, 1); }
 .work.bench.pane-closed .columns.split > .col:not(.active) .file > :is(.path, .sheet) { opacity: 1; }
 .work.bench.pane-closed .columns.split > .col:not(.active) .file-beside { visibility: visible; }
 .work.bench.pane-closed .columns.split > .col.before > .col-head { flex-direction: row; padding: 0 var(--s3) 0 calc(var(--s3) + var(--s4) - var(--s1)); }

@@ -193,12 +193,17 @@ test('Checkout: a customer made once for the account, the session for the tier a
   // Back only to the app's own pages: another is the app's origin instead; told how Checkout went, and to what.
   assert.deepEqual([asked[1].success, asked[1].cancel, asked[2].success, asked[1].user],
     ['http://app.test/?part=plan&plan=paid&tier=pro', 'http://app.test/?part=plan&plan=cancelled', 'http://app.test/?plan=paid&tier=go', user]);
+  // In the language the OS speaks, when the client says one it speaks; else Stripe's own choice (the browser's).
+  for (const [lang, locale] of [['ja', 'ja'], ['en', 'en'], ['fr', undefined], [7, undefined]] as const) {
+    await s.call('POST', '/v1/plan/checkout', {token: t, body: {tier: 'pro', lang}});
+    assert.equal(stripe.asked.filter((x) => x.call === 'checkout').at(-1)!.locale, locale, String(lang));
+  }
   // A tier that is none, or not sold here, is refused before Stripe is asked.
   const n = stripe.asked.length;
   assert.deepEqual([(await s.call('POST', '/v1/plan/checkout', {token: t, body: {tier: 'gold'}})).status, stripe.asked.length], [400, n]);
   const h2 = await twoSold.person('Hana');
   const notSold = await twoSold.call('POST', '/v1/plan/checkout', {token: h2, body: {tier: 'max'}});
-  assert.deepEqual([notSold.status, notSold.json.error], [400, 'That tier is not sold on this Remote']);
+  assert.deepEqual([notSold.status, notSold.json.error], [400, 'Tier unavailable on this Remote']);
   const now = await planOf(s, t);
   assert.equal(now.manage, true);
   // What paying costs is said before anyone is sent to pay (Stripe asked once an hour for each price, not once a page).
@@ -209,7 +214,7 @@ test('Checkout: a customer made once for the account, the session for the tier a
   // Billing off: nothing can be bought, and every refusal says so.
   const u = await unsold.person('Hana');
   const off = await unsold.call('POST', '/v1/plan/checkout', {token: u, body: {}});
-  assert.deepEqual([off.status, off.json.error], [503, 'Paid features cannot be bought on this Remote yet']);
+  assert.deepEqual([off.status, off.json.error], [503, 'Paid upgrades not available on this Remote']);
   for (const n of ['a', 'b']) await repo(unsold, u, n);
   refused(await repo(unsold, u, 'c'), 'repos', false);
   assert.equal((await sendEvent(unsold, stripeEvent('customer.subscription.created', subscription(await idOf(unsold, u))))).status, 404);
@@ -225,7 +230,7 @@ test('the webhook: a bad or old signature changes nothing; an event sent again i
   const created = stripeEvent('customer.subscription.created', subscription(user));
   for (const bad of [{secret: 'whsec_wrong'}, {t: Math.floor(Date.now() / 1000) - 600}, {signature: 'v1=abc'}, {signature: ''}]) {
     const r = await sendEvent(s, created, bad);
-    assert.deepEqual([r.status, r.json.error], [400, 'The signature does not match'], JSON.stringify(bad));
+    assert.deepEqual([r.status, r.json.error], [400, 'Signature mismatch'], JSON.stringify(bad));
   }
   // Signed, but changed on the way.
   const sig = await sign(created, WEBHOOK_SECRET);
@@ -244,7 +249,7 @@ test('the webhook: a bad or old signature changes nothing; an event sent again i
   // One made longer ago than events are kept is not taken at all.
   const ancient = await sendEvent(s, stripeEvent('customer.subscription.created', subscription(user), {created: Math.floor((Date.now() - 31 * DAY) / 1000)}));
   assert.deepEqual([ancient.status, ancient.json.taken, (await planOf(s, t)).plan], [200, false, 'free']);
-  // Not an event at all.
+  // Invalid event payload at all.
   assert.equal((await sendEvent(s, JSON.stringify({id: 'nope'}))).status, 400);
 });
 
@@ -274,11 +279,11 @@ test('each tier keeps its own: Go past its bytes and names is refused as Go, and
   const user = await subscribe(t);
   let p = await planOf(s, t);
   assert.deepEqual([p.plan, p.tier, p.allowance], ['paid', 'go', PLAN.paid!.go]);
-  // Repos as many as fit; bytes up to Go's.
+  // Unlimited repos (within storage); bytes up to Go's.
   for (const n of ['a', 'b', 'c']) assert.equal((await repo(s, t, n, 6000)).status, 200);
   const over = await repo(s, t, 'd', 6000);
   refused(over, 'bytes', true, 'go');
-  assert.deepEqual([over.json.limit, over.json.error], [20_000, 'Your plan keeps no more on the Remote']);
+  assert.deepEqual([over.json.limit, over.json.error], [20_000, 'Plan storage quota reached on Remote']);
   // Their username is one of Go's three names.
   for (const n of ['one', 'two']) assert.equal((await name(s, t, `ema${n}${process.pid}`)).status, 201);
   refused(await name(s, t, `emathree${process.pid}`), 'names', true, 'go');

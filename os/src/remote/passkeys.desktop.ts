@@ -4,4 +4,4 @@
 import type * as web from './passkeys.ts';
 import {t} from '../i18n.ts';
 
-export const webauthn: typeof web.webauthn = () => Promise.reject(new Error(t('Passkeys and providers are managed in the browser.')));
+export const webauthn: typeof web.webauthn = () => Promise.reject(new Error(t('Manage passkeys and providers in browser.')));

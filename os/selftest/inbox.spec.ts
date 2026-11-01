@@ -15,7 +15,7 @@ test('what one person writes to another arrives in their Inbox, and the rail say
 
   // Bo's rail says a message is not read, without opening anything (once Bo's app has looked).
   await bo.comeBack();
-  await expect(bo.rail.button('inbox')).toHaveAccessibleName('Inbox has messages not read');
+  await expect(bo.rail.button('inbox')).toHaveAccessibleName('Unread messages in Inbox');
   await bo.rail.go('inbox');
   await expect(bo.main.getByRole('heading', {name: 'Requests'})).toBeVisible();
   await bo.inbox.conversation(ada.handle).click();
@@ -77,23 +77,23 @@ test('a message half written stays with its conversation', async ({signedIn: ada
 
 test('a name no one has is said under the field, and nothing is opened', async ({signedIn: ada}) => {
   await ada.inbox.named();
-  await ada.inbox.conversations.getByRole('textbox', {name: 'Write to a name or a code'}).fill('no-one-here');
-  await ada.inbox.conversations.getByRole('button', {name: 'Write', exact: true}).click();
+  await ada.inbox.conversations.getByRole('textbox', {name: 'Send to username or code'}).fill('no-one-here');
+  await ada.inbox.conversations.getByRole('button', {name: 'Compose', exact: true}).click();
 
-  await expect(ada.inbox.conversations.getByRole('alert')).toHaveText(/^Cannot reach no-one-here \(/);
+  await expect(ada.inbox.conversations.getByRole('alert')).toHaveText(/^Cannot deliver to no-one-here \(/);
   await expect(ada.inbox.message).toHaveCount(0);
 });
 
 test('your names open with their heading at the top, and no name is let go from here', async ({signedIn: ada}) => {
   await ada.inbox.named();
-  await ada.main.getByRole('button', {name: 'Your names', exact: true}).click();
-  const names = ada.main.getByRole('group', {name: 'Your names', exact: true});
+  await ada.main.getByRole('button', {name: 'Your usernames', exact: true}).click();
+  const names = ada.main.getByRole('group', {name: 'Your usernames', exact: true});
   await expect(names).toContainText(ada.handle);
-  await expect(ada.main.getByRole('button', {name: 'Add a domain'})).toBeVisible();
+  await expect(ada.main.getByRole('button', {name: 'Add domain'})).toBeVisible();
   // Adding one stays; letting a name go is not offered in Inbox.
   await expect(ada.main.getByRole('button', {name: /^Let .* go$/})).toHaveCount(0);
   // The heading sits on the box's own room (8) and its own (8), with no group's step before it.
   const box = (await names.locator('xpath=..').boundingBox())!;
-  const head = (await names.getByText('Your names', {exact: true}).boundingBox())!;
+  const head = (await names.getByText('Your usernames', {exact: true}).boundingBox())!;
   expect(head.y - box.y).toBeLessThanOrEqual(17);
 });

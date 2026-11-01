@@ -37,7 +37,7 @@ test('on a phone, the pill alone on Forge\'s band stands whole to its ×, a long
   await app.newRepo.openInForge();
   await app.page.setViewportSize({width: 390, height: 844});
   const band = app.forge.band.locator('.pills');
-  const close = app.forge.band.getByRole('button', {name: 'Take trip-notes off the band'});
+  const close = app.forge.band.getByRole('button', {name: 'Remove trip-notes from band'});
   await expect(close).toBeVisible();
   const [b, c] = [(await band.boundingBox())!, (await close.boundingBox())!];
   expect(c.x + c.width).toBeLessThanOrEqual(b.x + b.width);
@@ -81,6 +81,6 @@ test('signed out, Server has no right pane and so no line where it would start',
 
 test('a build without l3 says so in Runtime, never a parser\'s words', async ({app}) => {
   await app.runtime.open('Environments');
-  await expect(app.main.getByRole('heading', {name: /Environment in effect/})).toBeVisible();
+  await expect(app.main.getByRole('heading', {name: /Active environment/})).toBeVisible();
   await expect(app.main).not.toContainText(/Unexpected token|not valid JSON/);
 });

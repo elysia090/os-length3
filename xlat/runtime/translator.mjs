@@ -24,25 +24,33 @@ export async function loadTranslator(source) {
     return output(x.xlat_translate(put(elf), elf.length));
   }
   const words = (list) => new Uint8Array(new BigUint64Array(list.map(BigInt)).buffer);
-  // Each ELF's handle, while the translator holds it parsed with the starts
-  // translated so far (it keeps a few, and adds each module's starts itself).
+  /** As translate, and from the function starts `seeds` too: the program with the code it reached later, as one module. */
+  translate.seeded = function seeded(elf, seeds) {
+    const s = put(words(seeds));
+    const status = x.xlat_translate_seeded(put(elf), elf.length, s, seeds.length);
+    x.xlat_free(s, seeds.length * 8);
+    return output(status);
+  };
+  // Each program's handle (by its set of starts known: one per translation of it, so a program translated again as
+  // one module, and its first translation still running, are told apart), while the translator holds its ELF parsed
+  // with the starts translated so far (it keeps a few, and adds each module's starts itself).
   let handles = new WeakMap();
   const open = new Set();
   const opened = (elf, known) => {
-    known = [...known];
-    const k = put(words(known));
-    const handle = x.xlat_open(put(elf), elf.length, k, known.length);
-    x.xlat_free(k, known.length * 8);
+    const list = [...known];
+    const k = put(words(list));
+    const handle = x.xlat_open(put(elf), elf.length, k, list.length);
+    x.xlat_free(k, list.length * 8);
     if (handle === 0) output(1);
-    handles.set(elf, handle);
+    handles.set(known, handle);
     open.add(handle);
     return handle;
   };
-  /** Code reached later: from `seeds`, past the `known` addresses (any iterable, read only when the ELF is opened), filling table slots from `base`. */
+  /** Code reached later: from `seeds`, past the `known` addresses (a set, read only when the ELF is opened; the program's handle), filling table slots from `base`. */
   translate.more = function more(elf, seeds, known, base) {
     const s = put(words(seeds));
     const go = (handle) => x.xlat_translate_more(handle, s, seeds.length, base);
-    const handle = handles.get(elf) ?? opened(elf, known);
+    const handle = handles.get(known) ?? opened(elf, known);
     let status = go(handle);
     // Let go of by the translator for others since: open it again.
     if (status !== 0 && new TextDecoder().decode(new Uint8Array(x.memory.buffer, x.xlat_output_ptr(), x.xlat_output_len())) === 'that ELF is not open') {
@@ -52,12 +60,12 @@ export async function loadTranslator(source) {
     x.xlat_free(s, seeds.length * 8);
     return output(status);
   };
-  /** Let go of what the translator keeps for `elf` (its program is no longer kept). */
-  translate.close = (elf) => {
-    const handle = handles.get(elf);
+  /** Let go of what the translator keeps for the program whose starts are `known` (it is no longer kept). */
+  translate.close = (known) => {
+    const handle = handles.get(known);
     if (handle === undefined) return;
     x.xlat_close(handle);
-    handles.delete(elf);
+    handles.delete(known);
     open.delete(handle);
   };
   /** A root file from a pack: its zstd frames decoded, `size` bytes (xlat_unzstd). */

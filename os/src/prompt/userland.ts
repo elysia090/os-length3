@@ -434,6 +434,11 @@ export function keepTranslation(l3: L3, origin: string, wasm: Uint8Array, segmen
     v.setUint32(at, wasm.length);
     body.set(wasm, at + 4);
     await keep(translatedURL(origin, tag, 'wasm'), await sealed(body));
+    // The code an earlier translation of it reached later went with that one (a program translated again as one
+    // module: xlat's Kernel.consolidate): a Prompt after would read it all, to take none of it.
+    const c = await open();
+    const more = translatedURL(origin, tag, 'more');
+    if (c && reached.get(origin)?.saved === 0 && await c.delete(more).catch(() => false)) gone(c, more);
   })().catch(() => {});
 }
 
@@ -559,7 +564,7 @@ export const loadL3 = (): Promise<L3> => (loading ??= (async () => {
   ]).catch(() => null) : null;
   const a = await download(`${BASE}l3.json`, {}, undefined, {attempts: 4}).then((b) => {
     // Not JSON is a build without l3 (the host answered with the page): said so, never the parser's words.
-    try { return JSON.parse(new TextDecoder().decode(b)) as About; } catch { throw new Fatal(t('There is no l3 (npm run l3)')); }
+    try { return JSON.parse(new TextDecoder().decode(b)) as About; } catch { throw new Fatal(t('l3 missing (run: npm run l3)')); }
   });
   const read = plan && plan.sha256 === a.sha256 && plan.index.sha256 === a.index.sha256 ? await ahead : null;
   const index0 = read ? read[0] as Uint8Array : await bytesOf(a.index.path, a.index);
@@ -617,3 +622,26 @@ export const filesNow = (l3: L3): L3['files'] => [...l3.files, ...later.values()
 
 /** The Prompt's Worker: xlat running l3's root (pages/bench/terminal.ts gives it l3 and the repo). */
 export const promptWorker = (): Worker => new Worker(new URL('../../../xlat/runtime/worker.mjs', import.meta.url), {type: 'module'});
+
+/**
+ * A Prompt's Worker readied ahead while a Prompt is only shown (worker.mjs 'ready'): its script loaded, the Workers
+ * its first threads run in started, the translator loaded and the root in place around the hot programs, none of it
+ * the repo's, and a start rehearsed there (`rehearse`: the shell as a Prompt starts it, run to its end with nothing
+ * to read), which compiles the code a start runs. The next Prompt started in this page takes it and sends only what
+ * is its own, so its start waits for none of that. One at a time; `given`, the paths of the files it was given.
+ */
+let spare: {worker: Worker; given: Set<string>} | null = null;
+export function readyPrompt(l3: L3, rehearse: {argv: string[]; env: string[]; cwd: string}) {
+  if (spare) return;
+  const worker = promptWorker();
+  const files = filesNow(l3);
+  worker.postMessage({type: 'warm'});
+  worker.postMessage({type: 'ready', translator: l3.translator, files, root: {index: l3.index, url: l3.url}, rehearse});
+  spare = {worker, given: new Set(files.map((f) => f.path))};
+}
+/** The Worker readied ahead, for the Prompt starting now (null when none is). */
+export function takeReady(): {worker: Worker; given: Set<string>} | null {
+  const s = spare;
+  spare = null;
+  return s;
+}

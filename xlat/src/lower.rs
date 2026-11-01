@@ -14,9 +14,9 @@ use iced_x86::{ConditionCode, Instruction, Mnemonic, OpKind, Register, RflagsBit
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use wasm_encoder::{
-    BlockType, CodeSection, ConstExpr, CustomSection, DataSection, ElementSection, Elements, EntityType, ExportKind,
+    BlockType, CodeSection, ConstExpr, CustomSection, ElementSection, Elements, Encode, EntityType, ExportKind,
     ExportSection, Function as WasmFunction, FunctionSection, GlobalSection, GlobalType, ImportSection,
-    Instruction as W, MemArg, MemoryType, Module, RefType, TableSection, TableType, TypeSection, ValType,
+    Instruction as W, MemArg, MemoryType, Module, RefType, Section, SectionId, TableSection, TableType, TypeSection, ValType,
 };
 
 type I = W<'static>;
@@ -53,9 +53,27 @@ const HOST_IMPORTS: [&str; 7] = ["syscall", "trap", "div128", "clock", "fpu", "t
 const SHARED: [&str; 5] = ["mulhu", "mulhs", "resolve", "dispatch", "run"];
 /// Globals every module of a program shares: r0..r15, fs, x0..x15, and the
 /// flags handed from one function to another (fl).
-const GLOBALS: u32 = 34;
-fn global_name(n: u32) -> String { if n < 16 { format!("r{n}") } else if n == G_FS { "fs".into() } else if n == G_FLAGS { "fl".into() } else { format!("x{}", n - 17) } }
-fn global_type(n: u32) -> ValType { if n < 17 || n == G_FLAGS { ValType::I64 } else { ValType::V128 } }
+const GLOBALS: u32 = 37;
+fn global_name(n: u32) -> String {
+    match n { 0..=15 => format!("r{n}"), G_FS => "fs".into(), G_FLAGS => "fl".into(), G_BUDGET => "budget".into(), G_DEPTH => "depth".into(), G_LOW => "low".into(), _ => format!("x{}", n - 17) }
+}
+fn global_type(n: u32) -> ValType { if n < 17 || n == G_FLAGS || n == G_LOW { ValType::I64 } else if n == G_BUDGET || n == G_DEPTH { ValType::I32 } else { ValType::V128 } }
+/// Loops gone round (backward gotos) and calls made before the thread is taken back to the kernel: its time slice,
+/// where it makes no system call. The kernel sets it again each time it runs the thread (about a millisecond's).
+const G_BUDGET: u32 = 34;
+/// Calls the thread is inside, in wasm frames: past DEPTH_LIMIT a call starts afresh from the kernel, its caller's
+/// frame let go (its return goes through the dispatcher), so a recursion as deep as the guest's stack allows never
+/// runs out of the host's.
+const G_DEPTH: u32 = 35;
+const DEPTH_LIMIT: i32 = 400;
+/// The least rsp has been (unsigned; all ones before it moves): how deep the thread's stack has gone, kept where rsp
+/// goes down by more than a push (a write to rsp, as a frame is made; a call), so the kernel zeroes no more of a stack
+/// than was used when its memory goes to another process (process.mjs Process.written).
+const G_LOW: u32 = 36;
+/// A word of memory below where Linux lets anything be mapped (vm.mmap_min_addr): nonzero when the kernel wants the
+/// thread to look in (a signal for it, another thread waiting for its turn). A host thread can write it while the
+/// guest runs, as an interrupt is raised; the guest reads it at each loop's head.
+pub const INTERRUPT: u32 = 0x100;
 
 const G_FS: u32 = 16;
 /// CF, ZF, SF, OF and PF as bits 0..4: what an entry that reads flags first is handed.
@@ -98,6 +116,14 @@ pub const TRAP_UNMAPPED_TARGET: i32 = 1;
 pub const TRAP_UNDECODED: i32 = 2;
 pub const TRAP_UNSUPPORTED: i32 = 3;
 pub const TRAP_DIVIDE: i32 = 4;
+/// Not faults: the thread's time slice is up (at a loop's head, the address named), or its calls are deep enough that
+/// the next one starts from the kernel (the callee's address). Registers and the flags its target reads are in globals.
+pub const TRAP_YIELD: i32 = 5;
+pub const TRAP_UNWIND: i32 = 6;
+/// What the program itself traps with, as the CPU does: ud2 (SIGILL), int3 (SIGTRAP), hlt (a #GP, SIGSEGV).
+pub const TRAP_UD2: i32 = 7;
+pub const TRAP_INT3: i32 = 8;
+pub const TRAP_HLT: i32 = 9;
 
 const ALL_FLAGS: u32 = RflagsBits::OF | RflagsBits::SF | RflagsBits::ZF | RflagsBits::CF | RflagsBits::PF;
 
@@ -165,6 +191,8 @@ struct Fx<'p> {
     handed: &'p BTreeMap<u64, u32>,
     /// Direction flag, tracked statically within a block (std ... cld).
     backward: bool,
+    /// The block being lowered: a goto to it or one before it closes a loop.
+    at: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -320,7 +348,15 @@ impl<'p> Fx<'p> {
                 self.set(l);
             }
         }
+        if n == RSP { self.note_low(); }
         true
+    }
+
+    /// low = min(low, rsp), without a branch (G_LOW).
+    fn note_low(&mut self) {
+        self.get(l_reg(RSP)); self.e(W::GlobalGet(G_LOW));
+        self.get(l_reg(RSP)); self.e(W::GlobalGet(G_LOW)); self.e(W::I64LtU);
+        self.e(W::Select); self.e(W::GlobalSet(G_LOW));
     }
 
     // ---- Memory operands ----
@@ -668,6 +704,7 @@ impl<'p> Fx<'p> {
         }
         match self.function.block_index(address) {
             Some(b) => {
+                if b <= self.at { self.time_slice(address); }
                 self.note(Ev::Edge);
                 self.c32(b as i32);
                 self.set(L_BLK);
@@ -676,6 +713,52 @@ impl<'p> Fx<'p> {
             None => self.tail(address),
         }
     }
+
+    /// Round a loop: one less of the time slice, and at its end back to the kernel, to go on at `address` (a loop's
+    /// head, an entry) once the kernel has seen to timers, signals and other threads.
+    /// Nonzero when the thread's budget is spent (one less now).
+    fn spent(&mut self) {
+        self.e(W::GlobalGet(G_BUDGET)); self.c32(1); self.e(W::I32Sub); self.e(W::GlobalSet(G_BUDGET));
+        self.e(W::GlobalGet(G_BUDGET)); self.e(W::I32Eqz);
+    }
+
+    /// At a loop's head: its turn is up when its budget is spent, or when it is asked to look in (a signal to take
+    /// soon after it came, as a CPU takes an interrupt: at a loop, not a call, so a signal that comes just before a
+    /// call that waits for one, as in `while (!got) pause();`, is taken there, by the call, as at a system call).
+    fn time_slice(&mut self, address: u64) {
+        self.spent();
+        self.c32(0); self.e(W::I32Load(MemArg { offset: INTERRUPT as u64, align: 2, memory_index: 0 }));
+        self.e(W::I32Or);
+        self.e(W::If(BlockType::Empty));
+        self.depth += 1;
+        self.save();
+        self.save_flags(handed(self.handed, address));
+        self.c64(address as i64); self.c32(TRAP_YIELD); self.e(W::Call(F_TRAP)); self.e(W::Unreachable);
+        self.depth -= 1;
+        self.e(W::End);
+    }
+
+    /// Before a call (registers saved, the return address pushed): past DEPTH_LIMIT frames, or when the thread's
+    /// budget is spent (a call counts as a loop does: recursion without loops has its turns too), it is made from the
+    /// kernel instead, to the target in `target` (pushes its address); else it counts as one frame more.
+    fn enter_call(&mut self, flags: u32, target: impl FnOnce(&mut Self)) {
+        self.note_low();
+        self.e(W::GlobalGet(G_DEPTH)); self.c32(DEPTH_LIMIT); self.e(W::I32GeU);
+        self.spent();
+        self.e(W::I32Or);
+        self.e(W::If(BlockType::Empty));
+        self.depth += 1;
+        self.save_flags(flags);
+        target(self);
+        self.c32(TRAP_UNWIND); self.c32(TRAP_YIELD);
+        self.e(W::GlobalGet(G_DEPTH)); self.c32(DEPTH_LIMIT); self.e(W::I32GeU);
+        self.e(W::Select);
+        self.e(W::Call(F_TRAP)); self.e(W::Unreachable);
+        self.depth -= 1;
+        self.e(W::End);
+        self.e(W::GlobalGet(G_DEPTH)); self.c32(1); self.e(W::I32Add); self.e(W::GlobalSet(G_DEPTH));
+    }
+    fn leave_call(&mut self) { self.e(W::GlobalGet(G_DEPTH)); self.c32(1); self.e(W::I32Sub); self.e(W::GlobalSet(G_DEPTH)); }
 
     /// Transfer to code outside this function without growing the stack.
     fn tail(&mut self, address: u64) {
@@ -1387,6 +1470,61 @@ impl Fx<'_> {
                 // The flags come back as they were, held or not.
                 true
             }
+            // RFLAGS as x86 lays it out: CF, bit 1 (always set), PF, AF, ZF, SF, IF (set), DF, OF. AF is known while
+            // an add, sub, inc or dec's operands are still held (bit 4 of a ^ b ^ r), else it reads as clear.
+            Pushfq => {
+                self.push_with(|fx| {
+                    fx.c64(0x202 | if fx.backward { 0x400 } else { 0 });
+                    for (f, bit) in [(Flag::C, 0), (Flag::P, 2), (Flag::Z, 6), (Flag::S, 7), (Flag::O, 11)] {
+                        fx.flag(f); fx.e(W::I64ExtendI32U);
+                        if bit > 0 { fx.c64(bit); fx.e(W::I64Shl); }
+                        fx.e(W::I64Or);
+                    }
+                    if let Flags::Add(_) | Flags::Sub(_) | Flags::Inc(_) | Flags::Dec(_) = fx.flags {
+                        fx.get(L_FA); fx.get(L_FB); fx.e(W::I64Xor); fx.fr(); fx.e(W::I64Xor);
+                        fx.c64(0x10); fx.e(W::I64And); fx.e(W::I64Or);
+                    }
+                    true
+                })
+            }
+            // The flags back from the stack. DF is followed in the code as it is written (std, cld); a popped DF set
+            // is a direction this translation does not follow, so it traps rather than copy the wrong way.
+            Popfq => {
+                self.pop_value(l_t(1));
+                for (l, bit) in [(L_CF, 0), (L_PF, 2), (L_ZF, 6), (L_SF, 7), (L_OF, 11)] {
+                    self.get(l_t(1)); if bit > 0 { self.c64(bit); self.e(W::I64ShrU); }
+                    self.c64(1); self.e(W::I64And); self.e(W::I32WrapI64); self.set(l);
+                }
+                self.set_flags(Flags::Held);
+                self.backward = false;
+                self.get(l_t(1)); self.c64(0x400); self.e(W::I64And); self.e(W::I64Eqz); self.e(W::I32Eqz);
+                self.e(W::If(BlockType::Empty));
+                self.c64(i.ip() as i64); self.c32(TRAP_UNSUPPORTED); self.e(W::Call(F_TRAP)); self.e(W::Unreachable);
+                self.e(W::End);
+                true
+            }
+            Clc | Stc | Cmc => {
+                // CF set, cleared or flipped; the other flags as they were (held first if a producer defers them).
+                self.hold_flags();
+                match i.mnemonic() { Clc => self.c32(0), Stc => self.c32(1), _ => { self.get(L_CF); self.c32(1); self.e(W::I32Xor); } }
+                self.set(L_CF);
+                true
+            }
+            Movnti => { let size = Self::size(i, 0); self.assign(i, size, |fx| fx.read(i, 1, size)) }
+            Clflush | Clflushopt | Clwb => true,
+            // MXCSR as a process starts with it (round to nearest, every exception masked, no flush to zero): what
+            // wasm computes. Another rounding or denormal mode is not followed, so setting one traps rather than
+            // round otherwise than asked.
+            Stmxcsr => { self.c64(0x1f80); self.set(l_t(1)); self.write(i, 0, 4, l_t(1)) }
+            Ldmxcsr => {
+                self.read(i, 0, 4) && {
+                    self.c64(0xffc0); self.e(W::I64And); self.c64(0x1f80); self.e(W::I64Ne);
+                    self.e(W::If(BlockType::Empty));
+                    self.c64(i.ip() as i64); self.c32(TRAP_UNSUPPORTED); self.e(W::Call(F_TRAP)); self.e(W::Unreachable);
+                    self.e(W::End);
+                    true
+                }
+            }
             Cpuid => { self.cpuid(); true }
             Rdtsc => {
                 self.e(W::Call(F_CLOCK)); self.set(l_t(1));
@@ -1518,7 +1656,7 @@ impl Fx<'_> {
                     if !double { self.e(W::F64PromoteF32); }
                     if round { self.e(W::F64Nearest); }
                     self.e(W::LocalSet(l_d(0)));
-                    let limit = if size == 8 { 9.223372036854775808e18 } else { 2147483648.0 };
+                    let limit = if size == 8 { (1u64 << 63) as f64 } else { 2147483648.0 };
                     self.e(W::LocalGet(l_d(0)));
                     self.e(if size == 8 { W::I64TruncSatF64S } else { W::I32TruncSatF64S });
                     if size != 8 { self.e(W::I64ExtendI32U); }
@@ -1846,10 +1984,122 @@ impl Fx<'_> {
                     }
                 }
             }
+            // ---- The rest of SSE and SSE2: x86-64's baseline, every one of it ----
+            Movntdq | Movntps | Movntpd | Movntdqa => self.xread(i, 1, 16) && { self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0)) },
+            Sqrtps => self.unary_v(i, 16, &[W::F32x4Sqrt]),
+            Sqrtpd => self.unary_v(i, 16, &[W::F64x2Sqrt]),
+            // Approximations x86 leaves to each CPU (within 1.5 * 2^-12): given exactly.
+            Rcpps => self.xread(i, 1, 16) && { self.set(l_v(1)); self.e(W::V128Const(f32x4_splat(1.0))); self.get(l_v(1)); self.e(W::F32x4Div); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0)) },
+            Rsqrtps => self.xread(i, 1, 16) && { self.e(W::F32x4Sqrt); self.set(l_v(1)); self.e(W::V128Const(f32x4_splat(1.0))); self.get(l_v(1)); self.e(W::F32x4Div); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0)) },
+            // max: a > b ? a : b, so the second operand wins on a NaN or two zeros, as wasm's pmax(b, a) does.
+            Maxps | Minps | Maxpd | Minpd => {
+                let op = match m { Maxps => W::F32x4PMax, Minps => W::F32x4PMin, Maxpd => W::F64x2PMax, _ => W::F64x2PMin };
+                self.xread(i, 1, 16) && self.xread(i, 0, 16) && { self.e(op); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0)) }
+            }
+            Cmpps | Cmppd => {
+                let ps = m == Cmpps;
+                let (eq, lt, le, ne) = if ps { (W::F32x4Eq, W::F32x4Lt, W::F32x4Le, W::F32x4Ne) } else { (W::F64x2Eq, W::F64x2Lt, W::F64x2Le, W::F64x2Ne) };
+                let pred = i.immediate8() & 7;
+                self.xread(i, 0, 16) && { self.set(l_v(1)); self.xread(i, 1, 16) } && {
+                    self.set(l_v(0));
+                    let unordered = |fx: &mut Self| { fx.get(l_v(1)); fx.get(l_v(1)); fx.e(ne.clone()); fx.get(l_v(0)); fx.get(l_v(0)); fx.e(ne.clone()); fx.e(W::V128Or); };
+                    let pair = |fx: &mut Self, op: I| { fx.get(l_v(1)); fx.get(l_v(0)); fx.e(op); };
+                    match pred {
+                        0 => pair(self, eq.clone()), 1 => pair(self, lt.clone()), 2 => pair(self, le.clone()), 3 => unordered(self),
+                        4 => pair(self, ne.clone()), 5 => { pair(self, lt.clone()); self.e(W::V128Not); }
+                        6 => { pair(self, le.clone()); self.e(W::V128Not); } _ => { unordered(self); self.e(W::V128Not); }
+                    }
+                    self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
+                }
+            }
+            Unpcklps => binary(self, W::I8x16Shuffle([0, 1, 2, 3, 16, 17, 18, 19, 4, 5, 6, 7, 20, 21, 22, 23])),
+            Unpckhps => binary(self, W::I8x16Shuffle([8, 9, 10, 11, 24, 25, 26, 27, 12, 13, 14, 15, 28, 29, 30, 31])),
+            Cvtdq2ps => self.unary_v(i, 16, &[W::F32x4ConvertI32x4S]),
+            Cvtdq2pd => self.unary_v(i, 8, &[W::F64x2ConvertLowI32x4S]),
+            Cvtps2pd => self.unary_v(i, 8, &[W::F64x2PromoteLowF32x4]),
+            Cvtpd2ps => self.unary_v(i, 16, &[W::F32x4DemoteF64x2Zero]),
+            // To integers: a lane out of range (or NaN) is the "integer indefinite" 0x80000000, where wasm saturates.
+            Cvttps2dq | Cvtps2dq => self.xread(i, 1, 16) && {
+                if m == Cvtps2dq { self.e(W::F32x4Nearest); }
+                self.set(l_v(1));
+                self.get(l_v(1)); self.e(W::I32x4TruncSatF32x4S);
+                self.e(W::V128Const(i32x4_splat(i32::MIN)));
+                self.get(l_v(1)); self.e(W::V128Const(f32x4_splat(2147483648.0))); self.e(W::F32x4Lt);
+                self.get(l_v(1)); self.e(W::V128Const(f32x4_splat(-2147483648.0))); self.e(W::F32x4Ge);
+                self.e(W::V128And);
+                self.e(W::V128Bitselect); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
+            },
+            Cvttpd2dq | Cvtpd2dq => self.xread(i, 1, 16) && {
+                if m == Cvtpd2dq { self.e(W::F64x2Nearest); }
+                self.set(l_v(1));
+                self.get(l_v(1)); self.e(W::I32x4TruncSatF64x2SZero);
+                self.e(W::V128Const(i32x4_splat(i32::MIN)));
+                // In range: -2^31 - 1 < v < 2^31 (those truncate into 32 bits); the two upper lanes are zero either way.
+                self.get(l_v(1)); self.e(W::V128Const(f64x2_splat(2147483648.0))); self.e(W::F64x2Lt);
+                self.get(l_v(1)); self.e(W::V128Const(f64x2_splat(-2147483649.0))); self.e(W::F64x2Gt);
+                self.e(W::V128And);
+                self.e(W::V128Const(-1));
+                self.e(W::I8x16Shuffle([0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 20, 21, 22, 23]));
+                self.e(W::V128Bitselect); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
+            },
+            // Unsigned 32 x 32 -> 64 of each qword's low half.
+            Pmuludq => self.xread(i, 0, 16) && { self.e(W::V128Const(LOW32)); self.e(W::V128And); self.xread(i, 1, 16) } && {
+                self.e(W::V128Const(LOW32)); self.e(W::V128And); self.e(W::I64x2Mul); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
+            },
+            // The high halves of the eight 16 x 16 products.
+            Pmulhw | Pmulhuw => {
+                let (lo, hi) = if m == Pmulhw { (W::I32x4ExtMulLowI16x8S, W::I32x4ExtMulHighI16x8S) } else { (W::I32x4ExtMulLowI16x8U, W::I32x4ExtMulHighI16x8U) };
+                self.xread(i, 0, 16) && { self.set(l_v(1)); self.xread(i, 1, 16) } && {
+                    self.set(l_v(0));
+                    self.get(l_v(1)); self.get(l_v(0)); self.e(lo);
+                    self.get(l_v(1)); self.get(l_v(0)); self.e(hi);
+                    self.e(W::I8x16Shuffle([2, 3, 6, 7, 10, 11, 14, 15, 18, 19, 22, 23, 26, 27, 30, 31]));
+                    self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
+                }
+            }
+            Pmaddwd => binary(self, W::I32x4DotI16x8S),
+            // Sums of the bytes' absolute differences, each half into its qword.
+            Psadbw => self.xread(i, 0, 16) && { self.set(l_v(1)); self.xread(i, 1, 16) } && {
+                self.set(l_v(0));
+                self.get(l_v(1)); self.get(l_v(0)); self.e(W::I8x16MaxU);
+                self.get(l_v(1)); self.get(l_v(0)); self.e(W::I8x16MinU);
+                self.e(W::I8x16Sub);
+                self.e(W::I16x8ExtAddPairwiseI8x16U); self.e(W::I32x4ExtAddPairwiseI16x8U);
+                self.set(l_v(1));
+                self.get(l_v(1)); self.e(W::V128Const(LOW32)); self.e(W::V128And);
+                self.get(l_v(1)); self.c32(32); self.e(W::I64x2ShrU);
+                self.e(W::I64x2Add); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
+            },
+            // The bytes of the first whose mask byte (in the second) has its top bit, to [rdi] (operand 0, implied).
+            Maskmovdqu => {
+                self.get(l_reg(RDI)); self.e(W::I32WrapI64); self.set(l_u(1));
+                self.xread(i, 1, 16) && {
+                    self.get(l_u(1)); self.e(W::V128Load(mem(0)));
+                    self.xread(i, 2, 16) && {
+                        self.c32(7); self.e(W::I8x16ShrS);
+                        self.e(W::V128Bitselect); self.set(l_v(0));
+                        self.get(l_u(1)); self.get(l_v(0)); self.e(W::V128Store(mem(0)));
+                        true
+                    }
+                }
+            }
             _ => false,
         }
     }
+
+    /// One operand in (operand 1, `bytes` of it from memory), `ops` on it, the result to operand 0.
+    fn unary_v(&mut self, i: &Instruction, bytes: u32, ops: &[I]) -> bool {
+        self.xread(i, 1, bytes) && {
+            for op in ops { self.e(op.clone()); }
+            self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
+        }
+    }
 }
+
+const LOW32: i128 = 0x0000_0000_ffff_ffff_0000_0000_ffff_ffff;
+fn i32x4_splat(v: i32) -> i128 { let u = v as u32 as u128; (u | u << 32 | u << 64 | u << 96) as i128 }
+fn f32x4_splat(v: f32) -> i128 { i32x4_splat(v.to_bits() as i32) }
+fn f64x2_splat(v: f64) -> i128 { let u = v.to_bits() as u128; (u | u << 64) as i128 }
 
 // ---- x87: an exact 80-bit coprocessor in the host ----
 
@@ -2035,7 +2285,8 @@ fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u6
     let succs: Vec<Successors> = function.blocks.iter().map(|b| successors(function, b, handed)).collect();
     let (live, cases) = live_flags(program, index, &succs);
     let n = function.blocks.len() as u32;
-    let mut fx = Fx { f: WasmFunction::new([]), syncs: Vec::new(), used: 0, ev: vec![Vec::new()], nest: 0, flags: Flags::Held, fr_pending: false, depth: 0, program, function, report, handed, backward: false };
+    let handed_flags = handed;
+    let mut fx = Fx { f: WasmFunction::new([]), syncs: Vec::new(), used: 0, ev: vec![Vec::new()], nest: 0, flags: Flags::Held, fr_pending: false, depth: 0, program, function, report, handed, backward: false, at: 0 };
 
     // Everything the prologue depends on is known, so the function is made in order.
     fx.get(L_ENTRY); fx.set(L_BLK);
@@ -2056,6 +2307,7 @@ fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u6
         fx.depth = n - 1 - k as u32;
         fx.set_flags(Flags::Held);
         fx.backward = false;
+        fx.at = k;
         fx.report.blocks += 1;
         if options.trace {
             fx.c64(block.start as i64);
@@ -2121,11 +2373,13 @@ fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u6
             Exit::Call { target, ret } => {
                 fx.push_with(|fx| { fx.c64(ret as i64); true });
                 fx.save();
+                fx.enter_call(crate::lower::handed(handed_flags, target), |fx| fx.c64(target as i64));
                 match program.entries.get(&target) {
                     Some(&(f, b)) => { fx.c32(b as i32); fx.e(W::Call(FIRST_GUEST + f)); }
                     None => { fx.c64(target as i64); fx.e(W::Call(F_DISPATCH)); }
                 }
                 fx.set(l_t(0));
+                fx.leave_call();
                 fx.after_call(ret, next);
             }
             Exit::IndirectCall { ret } => {
@@ -2134,8 +2388,10 @@ fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u6
                 fx.set(l_t(2));
                 fx.push_with(|fx| { fx.c64(ret as i64); true });
                 fx.save();
+                fx.enter_call(ALL_FLAGS, |fx| fx.get(l_t(2)));
                 fx.get(l_t(2)); fx.e(W::Call(F_DISPATCH));
                 fx.set(l_t(0));
+                fx.leave_call();
                 fx.after_call(ret, next);
             }
             Exit::Return => {
@@ -2148,7 +2404,7 @@ fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u6
             }
             Exit::Trap => {
                 fx.c64(term.ip() as i64);
-                fx.c32(if term.mnemonic() == Mnemonic::Ud2 || term.mnemonic() == Mnemonic::Hlt || term.mnemonic() == Mnemonic::Int3 { TRAP_UNSUPPORTED } else { TRAP_UNDECODED });
+                fx.c32(match term.mnemonic() { Mnemonic::Ud2 => TRAP_UD2, Mnemonic::Int3 => TRAP_INT3, Mnemonic::Hlt => TRAP_HLT, _ => TRAP_UNDECODED });
                 fx.e(W::Call(F_TRAP));
                 fx.e(W::Unreachable);
             }
@@ -2362,36 +2618,92 @@ fn helpers(code: &mut CodeSection, entries: u32, table: u64, cache: u64) {
 
 }
 
-/// Every function of `program`, in order, as the table holds them from
-/// `base`. Each is lowered on its own, so natively they share the cores;
-/// wasm has one thread and lowers in turn.
-fn lower_all(program: &Program, base: u32, options: Options, report: &mut Report) -> Vec<WasmFunction> {
+/// Every function of `program`, lowered into `code` in order, as the table holds them from `base`. Each is lowered
+/// on its own, so natively they share the cores; wasm has one thread and lowers in turn, each into the section as it
+/// is made (a big program's functions are most of what the translator would otherwise hold at once).
+fn lower_all(program: &Program, base: u32, options: Options, report: &mut Report, code: &mut CodeSection) {
     let handed = entry_flags(program);
     let n = program.functions.len();
-    let one = |range: std::ops::Range<usize>, report: &mut Report| -> Vec<WasmFunction> {
-        range.map(|f| lower_function(program, f as u32, base, &handed, options, report)).collect()
-    };
     let threads = if cfg!(target_family = "wasm") { 1 } else { std::thread::available_parallelism().map_or(1, |t| t.get()) };
     // A few functions are not worth a thread.
     if threads == 1 || n < 64 {
-        return one(0..n, report);
+        for f in 0..n { code.function(&lower_function(program, f as u32, base, &handed, options, report)); }
+        return;
     }
     let size = n.div_ceil(threads);
     let parts: Vec<(Vec<WasmFunction>, Report)> = std::thread::scope(|scope| {
         let workers: Vec<_> = (0..n).step_by(size).map(|at| {
-            let one = &one;
-            scope.spawn(move || { let mut r = Report::default(); (one(at..(at + size).min(n), &mut r), r) })
+            let handed = &handed;
+            scope.spawn(move || {
+                let mut r = Report::default();
+                let made = (at..(at + size).min(n)).map(|f| lower_function(program, f as u32, base, handed, options, &mut r)).collect();
+                (made, r)
+            })
         }).collect();
         workers.into_iter().map(|w| w.join().expect("a lowering thread panicked")).collect()
     });
-    let mut out = Vec::with_capacity(n);
     for (functions, r) in parts {
-        out.extend(functions);
+        for f in &functions { code.function(f); }
         report.blocks += r.blocks;
         report.instructions += r.instructions;
         for (m, k) in r.unsupported { *report.unsupported.entry(m).or_default() += k; }
     }
-    out
+}
+
+/// A module of `head`, `code`, `image` and `tail` (sections, in that order), written once into room for all of it.
+/// A big program's translation is nearly all its code and its own bytes; a module grown as it is written held them
+/// a few times over at once, in a memory that only grows (and each time it grows, an engine may collect its whole
+/// heap).
+fn assemble(head: &[&dyn Section], code: &CodeSection, image: Option<&Image>, tail: &[&dyn Section]) -> Vec<u8> {
+    let mut after = Vec::new();
+    for s in tail { s.append_to(&mut after); }
+    let mut wasm = Module::new().finish(); // the header
+    for s in head { s.append_to(&mut wasm); }
+    // Each section's id and two LEB128 u32s (its size, its count) at most, besides its contents.
+    const FRAME: usize = 11;
+    wasm.reserve_exact(FRAME + code.byte_len() + image.map_or(0, |i| FRAME + i.byte_len()) + after.len());
+    code.append_to(&mut wasm);
+    if let Some(i) = image { i.append_to(&mut wasm); }
+    wasm.extend_from_slice(&after);
+    wasm
+}
+
+/// The data section: each segment's bytes (an address, then the bytes there), written from where they lie (an
+/// ELF's own bytes are the most of them; wasm_encoder's DataSection would copy them in first).
+struct Image<'a>(Vec<(u64, &'a [u8])>);
+
+impl Image<'_> {
+    /// Each segment's head: active in memory 0 at a constant address, then its size.
+    fn heads(&self) -> Vec<Vec<u8>> {
+        self.0.iter().map(|&(at, bytes)| {
+            let mut h = vec![0];
+            ConstExpr::i32_const(at as i32).encode(&mut h);
+            (bytes.len() as u32).encode(&mut h);
+            h
+        }).collect()
+    }
+
+    /// Its contents' size: the count, then each segment.
+    fn byte_len(&self) -> usize {
+        let mut count = Vec::new();
+        (self.0.len() as u32).encode(&mut count);
+        count.len() + self.heads().iter().zip(&self.0).map(|(h, s)| h.len() + s.1.len()).sum::<usize>()
+    }
+}
+
+impl Encode for Image<'_> {
+    fn encode(&self, sink: &mut Vec<u8>) {
+        (self.byte_len() as u32).encode(sink);
+        (self.0.len() as u32).encode(sink);
+        for (h, s) in self.heads().iter().zip(&self.0) {
+            sink.extend_from_slice(h);
+            sink.extend_from_slice(s.1);
+        }
+    }
+}
+
+impl Section for Image<'_> {
+    fn id(&self) -> u8 { SectionId::Data.into() }
 }
 
 #[derive(Clone, Copy, Default)]
@@ -2440,8 +2752,6 @@ fn types() -> TypeSection {
 /// function << 32 | block) pairs.
 pub fn translate_more(program: &Program, base: u32, options: Options) -> Translation {
     let mut report = Report { functions: program.functions.len(), entries: program.entries.len(), ..Default::default() };
-    let mut module = Module::new();
-    module.section(&types());
     let mut imports = ImportSection::new();
     imports.import("env", "memory", EntityType::Memory(MemoryType { minimum: 1, maximum: Some(65536), memory64: false, shared: false, page_size_log2: None }));
     let host_types = [T_SYSCALL, T_TRAP, T_DIV, T_CLOCK, T_FPU, T_TRACE, T_RESOLVE];
@@ -2450,11 +2760,9 @@ pub fn translate_more(program: &Program, base: u32, options: Options) -> Transla
     for n in 0..GLOBALS {
         imports.import("main", &global_name(n), EntityType::Global(GlobalType { val_type: global_type(n), mutable: true, shared: false }));
     }
-    module.section(&imports);
 
     let mut functions = FunctionSection::new();
     for _ in &program.functions { functions.function(T_FN); }
-    module.section(&functions);
 
     // Its functions go in a table of its own, which the host copies into the
     // first module's from `base`. It does not import that table: an engine
@@ -2464,19 +2772,15 @@ pub fn translate_more(program: &Program, base: u32, options: Options) -> Transla
     let mut tables = TableSection::new();
     let count = program.functions.len() as u64;
     tables.table(TableType { element_type: RefType::FUNCREF, minimum: count, maximum: Some(count), table64: false, shared: false });
-    module.section(&tables);
     let mut exports = ExportSection::new();
     exports.export("table", ExportKind::Table, 0);
-    module.section(&exports);
 
     let mut elements = ElementSection::new();
     let indices: Vec<u32> = (0..program.functions.len() as u32).map(|f| FIRST_GUEST + f).collect();
     elements.active(Some(0), &ConstExpr::i32_const(0), Elements::Functions(Cow::Owned(indices)));
-    module.section(&elements);
 
     let mut code = CodeSection::new();
-    for f in lower_all(program, base, options, &mut report) { code.function(&f); }
-    module.section(&code);
+    lower_all(program, base, options, &mut report, &mut code);
 
     // Its functions by the guest's names, as in the first module: every module numbers its own from the
     // same index, so without them a profile or a trace cannot tell one module's function from another's.
@@ -2485,26 +2789,23 @@ pub fn translate_more(program: &Program, base: u32, options: Options) -> Transla
     for (k, f) in program.functions.iter().enumerate() { names.append(FIRST_GUEST + k as u32, &format!("{}@{:x}", f.name, f.start)); }
     let mut name_section = wasm_encoder::NameSection::new();
     name_section.functions(&names);
-    module.section(&name_section);
 
     let mut table = Vec::with_capacity(program.entries.len() * 16);
     for (&address, &(f, b)) in &program.entries {
         table.extend_from_slice(&address.to_le_bytes());
         table.extend_from_slice(&((((f + base) as u64) << 32) | b as u64).to_le_bytes());
     }
-    module.section(&CustomSection { name: Cow::Borrowed("xlat.entries"), data: Cow::Owned(table) });
+    let entries = CustomSection { name: Cow::Borrowed("xlat.entries"), data: Cow::Owned(table) };
     // Where each function starts, so code translated later stops there instead of repeating it.
     let starts: Vec<u8> = program.functions.iter().flat_map(|f| f.start.to_le_bytes()).collect();
-    module.section(&CustomSection { name: Cow::Borrowed("xlat.starts"), data: Cow::Owned(starts) });
+    let starts = CustomSection { name: Cow::Borrowed("xlat.starts"), data: Cow::Owned(starts) };
 
-    Translation { wasm: module.finish(), report }
+    let wasm = assemble(&[&types(), &imports, &functions, &tables, &exports, &elements], &code, None, &[&name_section, &entries, &starts]);
+    Translation { wasm, report }
 }
 
 pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation {
     let mut report = Report { functions: program.functions.len(), entries: program.entries.len(), ..Default::default() };
-    let mut module = Module::new();
-
-    module.section(&types());
 
     let mut imports = ImportSection::new();
     // The entry table lives in guest memory just past the image (one memory
@@ -2525,18 +2826,15 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
     imports.import("env", "fpu", EntityType::Function(T_FPU));
     imports.import("env", "trace", EntityType::Function(T_TRACE));
     imports.import("env", "miss", EntityType::Function(T_RESOLVE));
-    module.section(&imports);
 
     let mut functions = FunctionSection::new();
     for ty in [T_PAIR, T_PAIR, T_RESOLVE, T_RESOLVE, T_RUN] { functions.function(ty); }
     for _ in &program.functions { functions.function(T_FN); }
-    module.section(&functions);
 
     let mut tables = TableSection::new();
     let count = program.functions.len() as u64;
     // It grows as code reached later is translated into modules of its own.
     tables.table(TableType { element_type: RefType::FUNCREF, minimum: count, maximum: None, table64: false, shared: false });
-    module.section(&tables);
 
     let entries = program.entries.len() as u64;
 
@@ -2548,38 +2846,33 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
         globals.global(GlobalType { val_type: ValType::V128, mutable: true, shared: false }, &ConstExpr::v128_const(0));
     }
     globals.global(GlobalType { val_type: ValType::I64, mutable: true, shared: false }, &ConstExpr::i64_const(0));
-    module.section(&globals);
+    // The time slice and the frames in use (the kernel sets both each time it runs a thread).
+    globals.global(GlobalType { val_type: ValType::I32, mutable: true, shared: false }, &ConstExpr::i32_const(1 << 20));
+    globals.global(GlobalType { val_type: ValType::I32, mutable: true, shared: false }, &ConstExpr::i32_const(0));
+    // How deep the stack has gone (G_LOW): not at all yet.
+    globals.global(GlobalType { val_type: ValType::I64, mutable: true, shared: false }, &ConstExpr::i64_const(-1));
 
     let mut exports = ExportSection::new();
     // What a module made later for this program imports: the helpers, every register, the table.
     for (k, name) in SHARED.iter().enumerate() { exports.export(name, ExportKind::Func, F_MULHU + k as u32); }
     for n in 0..GLOBALS { exports.export(&global_name(n), ExportKind::Global, n); }
     exports.export("table", ExportKind::Table, 0);
-    module.section(&exports);
 
     let mut elements = ElementSection::new();
     let indices: Vec<u32> = (0..program.functions.len() as u32).map(|f| FIRST_GUEST + f).collect();
     elements.active(Some(0), &ConstExpr::i32_const(0), Elements::Functions(Cow::Owned(indices)));
-    module.section(&elements);
 
     let mut code = CodeSection::new();
     helpers(&mut code, entries as u32, table_base, cache);
-    for f in lower_all(program, 0, options, &mut report) { code.function(&f); }
-    module.section(&code);
+    lower_all(program, 0, options, &mut report, &mut code);
 
-    let mut data = DataSection::new();
-    for s in &elf.segments {
-        if !s.data.is_empty() {
-            data.active(0, &ConstExpr::i32_const(s.vaddr as i32), s.data.iter().copied());
-        }
-    }
     let mut table = Vec::with_capacity(program.entries.len() * 16);
     for (&address, &(f, b)) in &program.entries {
         table.extend_from_slice(&address.to_le_bytes());
         table.extend_from_slice(&(((f as u64) << 32) | b as u64).to_le_bytes());
     }
-    data.active(0, &ConstExpr::i32_const(table_base as i32), table);
-    module.section(&data);
+    let mut image = Image(elf.segments.iter().filter(|s| !s.data.is_empty()).map(|s| (s.vaddr, &s.data[..])).collect());
+    image.0.push((table_base, &table));
 
     let mut names = wasm_encoder::NameMap::new();
     for (k, n) in HOST_IMPORTS.iter().chain(SHARED.iter()).enumerate() {
@@ -2590,20 +2883,25 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
     }
     let mut name_section = wasm_encoder::NameSection::new();
     name_section.functions(&names);
-    module.section(&name_section);
 
     // Loader facts for the host, as a small JSON custom section.
     let tls = elf.tls.as_ref().map(|t| format!(",\"tls\":{{\"vaddr\":{},\"filesz\":{},\"memsz\":{},\"align\":{}}}", t.vaddr, t.filesz, t.memsz, t.align)).unwrap_or_default();
+    // The bytes no correct run can change (segments not writable): a memory that ran this program holds them still.
+    let read_only: Vec<String> = elf.segments.iter().filter(|s| !s.writable && !s.data.is_empty())
+        .map(|s| format!("[{},{}]", s.vaddr, s.vaddr + s.data.len() as u64)).collect();
     let facts = format!(
-        "{{\"entry\":{},\"imageStart\":{},\"imageEnd\":{},\"phdr\":{},\"phnum\":{},\"phent\":56{}}}",
-        elf.entry, image_start(elf), end, elf.phdr_address().unwrap_or(0), elf.phnum, tls
+        "{{\"entry\":{},\"imageStart\":{},\"imageEnd\":{},\"phdr\":{},\"phnum\":{},\"phent\":56,\"readOnly\":[{}]{}}}",
+        elf.entry, image_start(elf), end, elf.phdr_address().unwrap_or(0), elf.phnum, read_only.join(","), tls
     );
-    module.section(&CustomSection { name: Cow::Borrowed("xlat.facts"), data: Cow::Owned(facts.into_bytes()) });
-    module.section(&CustomSection { name: Cow::Borrowed("xlat.fpu"), data: Cow::Owned(X87_OPS.join(",").into_bytes()) });
+    let facts = CustomSection { name: Cow::Borrowed("xlat.facts"), data: Cow::Owned(facts.into_bytes()) };
+    let fpu = CustomSection { name: Cow::Borrowed("xlat.fpu"), data: Cow::Owned(X87_OPS.join(",").into_bytes()) };
     // Where each function starts, so code translated later stops there instead of repeating it.
     let starts: Vec<u8> = program.functions.iter().flat_map(|f| f.start.to_le_bytes()).collect();
-    module.section(&CustomSection { name: Cow::Borrowed("xlat.starts"), data: Cow::Owned(starts) });
+    let starts = CustomSection { name: Cow::Borrowed("xlat.starts"), data: Cow::Owned(starts) };
 
-
-    Translation { wasm: module.finish(), report }
+    let wasm = assemble(
+        &[&types(), &imports, &functions, &tables, &globals, &exports, &elements], &code, Some(&image),
+        &[&name_section, &facts, &fpu, &starts],
+    );
+    Translation { wasm, report }
 }

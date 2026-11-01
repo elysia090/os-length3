@@ -32,7 +32,7 @@ export function boardBox(b: Shown, now: boolean, signedIn: boolean): HTMLElement
   // Its talk and its TODO, side by side on its head after its name, one at a time below it; each board keeps the one
   // it was left at. Its TODO says how many are left on it; none there to show (a guest's board, its list empty), only
   // the talk, and nothing to choose.
-  const sides = parts<'talk' | 'todo'>(`board-${b.id}`, [{id: 'talk', label: t('Talk')}, {id: 'todo', label: 'TODO'}], b.name);
+  const sides = parts<'talk' | 'todo'>(`board-${b.id}`, [{id: 'talk', label: t('Discussions')}, {id: 'todo', label: 'TODO'}], b.name);
   head.append(sides.switch);
   sides.panel('talk').append(talk);
   sides.panel('todo').append(todo);
@@ -83,10 +83,10 @@ interface NewBoardWays {
  */
 export function newBoard(now: boolean, here: Here, ways: NewBoardWays): HTMLElement {
   if (!now) return h('div', {class: 'board-card board-new'}, h('div', {class: 'board-head'}, h('span', {class: 'muted board-mark'}, '+'), h('h2', {class: 'muted'}, t('New board'))));
-  const name = h('input', {class: 'board-name-in', maxlength: '64', placeholder: t('What it is about'), 'aria-label': t('New board'), autocomplete: 'off'}) as HTMLInputElement;
+  const name = h('input', {class: 'board-name-in', maxlength: '64', placeholder: t('Topic / Description'), 'aria-label': t('New board'), autocomplete: 'off'}) as HTMLInputElement;
   const kept = `${here.serverId}`;
   name.value = drafts.get(kept) ?? '';
-  const make = button(t('Make'), 'small-button primary');
+  const make = button(t('Create'), 'small-button primary');
   // Refused (a name another board has), said under the name, where it is written.
   const error = h('p', {class: 'error small', role: 'alert'});
   const field = h('label', {class: 'board-naming'}, name);
@@ -100,7 +100,7 @@ export function newBoard(now: boolean, here: Here, ways: NewBoardWays): HTMLElem
     const n = name.value.trim();
     if (!n) { name.focus(); nudge(field); return; }
     if (current(here)?.boards.some((b) => b.name.trim().toLowerCase() === n.toLowerCase())) {
-      error.textContent = t('There is a board named {name} already', {name: n}); name.focus(); nudge(field); return;
+      error.textContent = t('A board named "{name}" already exists', {name: n}); name.focus(); nudge(field); return;
     }
     error.textContent = '';
     make.disabled = true;
@@ -118,7 +118,7 @@ export function newBoard(now: boolean, here: Here, ways: NewBoardWays): HTMLElem
     h('div', {class: 'board-head'}, h('span', {class: 'muted board-mark', 'aria-hidden': 'true'}, '#'), field, make, error), ghostBody(),
     // At the top of where its talk will be (styles.css), broken where the sentence is: what a board is, then what one
     // may be about.
-    h('p', {class: 'board-lead muted small'}, t('A board is one thing to talk about, with a TODO kept together:'), h('br'), t('a trip, a release, a reading group.')));
+    h('p', {class: 'board-lead muted small'}, t('A board groups discussions and shared tasks around a topic:'), h('br'), t('e.g. trips, releases, or study groups.')));
 }
 
 /**

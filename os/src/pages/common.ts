@@ -86,7 +86,7 @@ export function copying(el: HTMLElement, text: string) {
     pop(el, .04, 260);
     window.setTimeout(() => delete el.dataset.copied, 1200);
   });
-  el.title = t('Press to copy');
+  el.title = t('Click to copy');
 }
 
 /**

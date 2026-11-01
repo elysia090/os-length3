@@ -1,10 +1,11 @@
 import {core, isNative} from '../app/host.ts';
 import {every} from '../app/runs.ts';
 
-// What agents (Claude Code, Grok Build, a harness that runs their hooks) do in this device's repos, as their own hooks
-// say it (core/src/agents.rs), and the work handed to one (core/src/tasks.rs): what it can take, asks, has ready to
-// look at. Read every second while a page that shows it is on screen and the window is: the core answers nothing from
-// two files' sizes while nothing moved, so a second's look costs nothing. Only on a device: a browser runs no agent.
+// What agents (Claude Code, Grok Build, a harness that runs their hooks, and the box's own Agent, which says what it
+// does the same way: pages/bench/agent.ts) do in this device's repos, as their own hooks say it (core/src/agents.rs),
+// and the work handed to one (core/src/tasks.rs): what it can take, asks, has ready to look at. Read every second
+// while a page that shows it is on screen and the window is: the core answers nothing from two files' sizes while
+// nothing moved, so a second's look costs nothing. In a browser, the box's Agent is the one agent there is.
 
 export interface AgentSession {
   harness: string;
@@ -58,6 +59,7 @@ let agent: string | null = null;
 let mark: unknown = null;
 const hearers = new Map<(events: AgentEvent[]) => void, () => boolean>();
 let looking: {stop(): void} | null = null;
+let readOnce = false;
 
 /** The work handed to the agent or offered to it, not over, oldest first. */
 export const tasksNow = (): readonly Task[] => tasks;
@@ -86,7 +88,12 @@ export const agentsOn = (repo: string, line: string) => sessions.filter((s) => s
 export const lineOf = (issueFile: string) => issueFile.replace(/^issue\//, '').replace(/\.md$/, '');
 
 /** A harness as a person knows it. */
-export const harnessName = (h: string) => ({claude: 'Claude Code', grok: 'Grok Build', dsh: 'DeepSeek Harness', codex: 'Codex'})[h] ?? h;
+export const harnessName = (h: string) => ({box: 'Agent', claude: 'Claude Code', grok: 'Grok Build', dsh: 'DeepSeek Harness', codex: 'Codex'})[h] ?? h;
+
+/** What the box's Agent does, said as an agent's hooks say it (core/src/agents.rs from_box); never in its way. */
+export function boxSaid(session: string, repo: string, kind: 'start' | 'prompt' | 'stop', text = '') {
+  void core('agent_said', {session, repo, kind, text}).then(() => look()).catch(() => { /* watched, never held up */ });
+}
 
 async function look() {
   const now = await core<Now | null>('agents', {...(cursor === null ? {} : {cursor}), ...(mark === null ? {} : {tasks: mark})});
@@ -102,10 +109,11 @@ async function look() {
  * (its element on screen); the journal is read while anyone listens, and told once at once of what is so.
  */
 export function onAgents(f: (events: AgentEvent[]) => void, alive: () => boolean): void {
-  if (!isNative) return;
   hearers.set(f, alive);
   if (sessions.length || tasks.length) queueMicrotask(() => { if (alive()) f([]); });
   if (looking) return;
+  // In a browser only the box's Agent writes the journal, and it looks as it says (boxSaid): read once, never every second.
+  if (!isNative) { if (!readOnce) { readOnce = true; void look().catch(() => { /* its next saying reads it */ }); } return; }
   void look().catch(() => { /* the next look says it */ });
   looking = every(1000, look, {alive: () => {
     for (const [g, ok] of [...hearers]) if (!ok()) hearers.delete(g);

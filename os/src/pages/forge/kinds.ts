@@ -79,7 +79,7 @@ export function diffButton(path: string, count: HTMLElement, read: (path: string
 
 /** One issue in full; its words open in the center to be changed (`change`). */
 export function issueOne(issue: Issue, change: () => void): HTMLElement {
-  const go = h('button', {type: 'button', class: 'button small-button choice'}, t('Change its words'));
+  const go = h('button', {type: 'button', class: 'button small-button choice'}, t('Edit description'));
   go.addEventListener('click', change);
   return h('article', {class: 'issue-one'}, h('h3', {}, ...issueHead(issue), issue.title),
     issue.detail ? h('p', {class: 'issue-body'}, issue.detail) : null, answers(go));
@@ -124,7 +124,7 @@ export function runView(r: Run, recall?: (line: string) => void): HTMLElement {
   const shown = r.output ? lines.slice(0, RUN_LINES) : [];
   let line: HTMLElement = h('span', {class: 'run-line'}, r.line);
   if (recall) {
-    line = h('button', {type: 'button', class: 'hit-file run-line', title: t('Put back in the prompt box')}, r.line);
+    line = h('button', {type: 'button', class: 'hit-file run-line', title: t('Send back to prompt')}, r.line);
     line.addEventListener('click', () => recall(r.line));
   }
   return h('div', {class: 'hit-group run', 'data-started': String(r.started)},

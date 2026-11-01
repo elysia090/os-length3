@@ -84,9 +84,14 @@ $ l3 file notes
 [exit 0]
 --- stdout
 docs/
-issue/
 README.md  8 B
 --- stderr
+
+$ l3 file notes/issue/001.md
+[exit 1]
+--- stdout
+--- stderr
+l3: The issues of notes are kept by the OS: read one with l3 issue notes#N, write one with l3 issue new notes "Fix：title"
 
 $ l3 file /
 [exit 4]

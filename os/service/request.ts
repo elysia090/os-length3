@@ -48,8 +48,23 @@ export function slowDown(seconds: number, answer: {error: string}): never {
   refuse(429, {...answer, retryAfter: s}, {'Retry-After': String(s)});
 }
 
-/** The address Cloudflare saw the request come from; '' where nothing in front of the Remote says (dev, tests). */
-export const addressOf = (c: Context) => c.req.header('CF-Connecting-IP') ?? '';
+/**
+ * Who a request comes from, as every limit by address counts it: the address Cloudflare saw it come from, or for one of
+ * IPv6 the /64 it is in. A subscriber is given a /64 at least, every address of it theirs to take, so a limit by each
+ * address was none at all (Better Auth counts its own so too). '' where nothing in front of the Remote says (dev, tests).
+ */
+export const addressOf = (c: Context) => clientOf(c.req.header('CF-Connecting-IP') ?? '');
+
+/** `ip` as limits count it: an IPv4 address as it is (one mapped into IPv6 too), an IPv6 address by its /64. */
+export function clientOf(ip: string): string {
+  if (!ip.includes(':')) return ip;
+  const v4 = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(ip);
+  if (v4) return v4[1];
+  const [head, tail] = ip.toLowerCase().split('%')[0].split('::');
+  const a = head ? head.split(':') : [], b = tail ? tail.split(':') : [];
+  const groups = tail === undefined ? a : [...a, ...Array<string>(Math.max(0, 8 - a.length - b.length)).fill('0'), ...b];
+  return `${groups.slice(0, 4).map((g) => g.padStart(4, '0')).join(':')}::/64`;
+}
 
 /**
  * One more of `key` in the window, or refused (slowDown) when `max` were there already; nothing is
@@ -155,7 +170,7 @@ export async function fits(q: Db, user: string, more: number, quota = QUOTA) {
 }
 /** As fits, with the room `used` read already (with the row it was read with: one round trip fewer). */
 export function fitting(used: number, more: number, quota = QUOTA) {
-  if (more > 0 && used + more > quota) refuse(507, {error: 'The Remote is full for this account', used, quota});
+  if (more > 0 && used + more > quota) refuse(507, {error: 'Remote storage full for this account', used, quota});
 }
 /** The room an account's rows and files take, for a select that reads it with them (fitting). */
 export const usedBy = (user: string) => sql<number>`coalesce((select r.used from room r where r.user_id = ${user}), 0)::float8`;
@@ -208,7 +223,7 @@ export const unkept: MiddlewareHandler = async (c, next) => {
  * none is read past what its route can take, counted as it comes, whatever it says its length is.
  */
 export const bounded: MiddlewareHandler = (c, next) =>
-  bodyLimit({maxSize: roomFor(c.req.method, c.req.path), onError: (c) => c.json({error: 'What was sent is too large'}, 413)})(c, next);
+  bodyLimit({maxSize: roomFor(c.req.method, c.req.path), onError: (c) => c.json({error: 'Payload too large'}, 413)})(c, next);
 
 // ---- what fails unforeseen ----
 
@@ -241,10 +256,10 @@ export const failed: ErrorHandler = (e, c) => {
   console.error('remote failed', id, c.req.method, c.req.path, code, e);
   if (BUSY.has(code) || code.startsWith('08') || e instanceof StoreFailed) {
     c.header('Retry-After', '5');
-    return c.json({error: 'The Remote is busy just now; try again', id, retryAfter: 5}, 503);
+    return c.json({error: 'Remote is busy; please retry shortly', id, retryAfter: 5}, 503);
   }
   // What was sent is no text, number or value the database keeps (a NUL, a lone surrogate, a number out of range, a
   // check refused): the request's, not the Remote's, wherever a route did not say so first.
-  if (INPUT.has(code)) return c.json({error: 'What was sent is not something the Remote keeps', id}, 400);
-  return c.json({error: 'Something went wrong on the Remote', id}, 500);
+  if (INPUT.has(code)) return c.json({error: 'Unsupported data format for Remote storage', id}, 400);
+  return c.json({error: 'Internal error on Remote', id}, 500);
 };

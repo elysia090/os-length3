@@ -30,7 +30,7 @@ function standing(): HTMLElement {
   void account.me().then((u) => { who.textContent = u?.name ? t('Signed in as {name}', {name: u.name}) : t('Signed in'); }, () => { who.textContent = t('Signed in'); });
   const show = () => {
     const away = account.remoteAway();
-    reach.textContent = away ? t('{host} cannot be reached: what changes here is sent once it can', {host}) : t('Connected to {host}', {host});
+    reach.textContent = away ? t('Cannot connect to {host}: local changes will sync once reconnected', {host}) : t('Connected to {host}', {host});
     reach.classList.toggle('away', away);
   };
   show();
@@ -46,7 +46,7 @@ export function remote(ctx: Context): Node[] {
     const now = c ? 'in' : '';
     if (now === shown) return;
     shown = now;
-    if (!c) holder.replaceChildren(signInPlace(t('Sign in'), ...signInLead(t('Signed in, your repos are kept in step across your devices, and shown to whom you choose.')), signInBox(() => paint())));
+    if (!c) holder.replaceChildren(signInPlace(t('Sign in'), ...signInLead(t('Signing in syncs repos across your devices and allows sharing with selected users.')), signInBox(() => paint())));
     else signedIn(ctx, holder, () => { shown = null; paint(); });
   };
   paint();

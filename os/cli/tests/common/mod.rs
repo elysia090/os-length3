@@ -244,6 +244,8 @@ pub struct Asked {
 
 impl Asked {
     pub fn text(&self) -> String { String::from_utf8_lossy(&self.body).into_owned() }
+    /// Its path without the query: what a Remote routes it by (a repo is read with ?since= its version agreed).
+    pub fn route(&self) -> &str { self.path.split('?').next().unwrap_or_default() }
 }
 
 /// An HTTP Remote on 127.0.0.1 answering each request with what `answer` says: (status, body).

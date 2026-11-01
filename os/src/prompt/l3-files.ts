@@ -93,7 +93,7 @@ export async function download(url: string, expect: Expect = {}, progress?: Prog
       const r = await get(url, {headers, signal: abort.signal, cache: 'no-store'});
       if (r.status === 206) {
         const start = Number(/bytes (\d+)-/.exec(r.headers.get('Content-Range') ?? '')?.[1]);
-        if (start !== state.got) { reset(); why = t('Could not receive the rest'); await r.body?.cancel(); continue; }
+        if (start !== state.got) { reset(); why = t('Failed to receive remainder'); await r.body?.cancel(); continue; }
       } else if (r.ok) {
         if (state.got) reset();
       } else if (transient(r.status)) {
@@ -118,17 +118,17 @@ export async function download(url: string, expect: Expect = {}, progress?: Prog
       }
       clearTimeout(timer);
       let bytes: Uint8Array = join(state.parts, state.got);
-      if (expect.size !== undefined && bytes.length !== expect.size) { reset(); why = t('The size does not match'); continue; }
+      if (expect.size !== undefined && bytes.length !== expect.size) { reset(); why = t('Size mismatch'); continue; }
       if (expect.sha256) {
         const c = await check(bytes);
         bytes = c.bytes;
-        if (c.sha256 !== expect.sha256) { reset(); why = t('The contents do not match'); continue; }
+        if (c.sha256 !== expect.sha256) { reset(); why = t('Content mismatch'); continue; }
       }
       partials.delete(url);
       return bytes;
     } catch (e) {
       if (e instanceof Fatal) { partials.delete(url); throw e; }
-      why = abort.signal.aborted ? t('The connection stalled') : t('The connection broke');
+      why = abort.signal.aborted ? t('Connection timed out') : t('Connection lost');
     } finally {
       // Every way out of a try (done, continue, broken) stops its clocks.
       clearTimeout(timer);
@@ -137,7 +137,7 @@ export async function download(url: string, expect: Expect = {}, progress?: Prog
   }
   // What came is kept: the next try in this page continues from it.
   partials.set(url, state);
-  throw new Error(why || t('Could not load'));
+  throw new Error(why || t('Failed to load'));
 }
 
 /** Where an earlier build kept copies of l3; nothing is kept there now. */

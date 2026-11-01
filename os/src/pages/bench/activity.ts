@@ -42,7 +42,7 @@ export class Activity {
     const said = h('span', {class: 'muted'});
     const cut = h('button', {class: 'button small-button', type: 'button'}, t('Interrupt'));
     cut.addEventListener('click', () => this.#ways.interrupt());
-    const again = h('button', {class: 'button small-button', type: 'button'}, t('Stop and start again'));
+    const again = h('button', {class: 'button small-button', type: 'button'}, t('Stop and restart'));
     again.addEventListener('click', () => this.#ways.restart());
     const paint = () => {
       if (run.ms !== null || !this.#ways.live()) { clearInterval(this.#ticker); this.#unfollow(); return; }
@@ -59,7 +59,7 @@ export class Activity {
     const s = Math.floor((Date.now() - run.started) / 1000);
     // A sleep is quiet but heard: quiet is counted from when it is over.
     const now = Date.now(), quiet = Math.floor((now - Math.max(this.heard, Math.min(this.sleepsUntil, now))) / 1000);
-    said.textContent = this.inputWait ? t('Waiting for input') : `${t('Running {n}s', {n: s})}${quiet >= 5 ? ` · ${t('no output')}` : ''}`;
+    said.textContent = this.inputWait ? t('Waiting for input') : `${t('Running ({n}s)', {n: s})}${quiet >= 5 ? ` · ${t('No output')}` : ''}`;
     return this.inputWait ? [said, cut] : s < 2 ? [] : quiet >= 10 ? [said, cut, again] : [said, cut];
   }
 

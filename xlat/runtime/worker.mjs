@@ -40,6 +40,20 @@
 // what 'start' needs is still being fetched): the Workers the first threads
 // will run in are started now, so they are up when the shell starts.
 //
+// {type: 'ready', translator, files, root, rehearse}, before 'start' (a
+// Prompt shown, not started yet): what every start has the same is readied
+// now, the translator loaded and the files given and the root put in place,
+// and 'start' then brings only what is its own (the repo, the dotfiles, argv
+// and env; its `files` go over those readied, and its `translator` and
+// `root` are not needed). Without it, 'start' readies the same itself.
+// With `rehearse: {argv, env, cwd}`, a start is rehearsed: that program
+// runs to its end in a kernel of its own, nothing to read, its output
+// dropped, so that what a start runs (the kernel's code and the program's,
+// each compiled as it is first run) is compiled when 'start' comes, and
+// the Workers its threads ran in are warm and taken by the kernel of
+// 'start'. What it runs must write nothing (a shell reading no input does
+// not), as the files are those 'start' runs on.
+//
 // Every other program of the root is translated when it is first run; with
 // `kept: {cache, at: {[origin]: {main, more}}}` in 'start', a program whose
 // translation an earlier Prompt made is read from that Cache Storage instead
@@ -61,6 +75,8 @@ import {said} from './waiting.mjs';
 
 let kernel = null;
 let mirror = null;
+/** What 'ready' readied ({translate, vfs, files}), or 'start' itself where none came first. */
+let readied = null;
 let apart = false;
 const pending = [];
 let ended = false;
@@ -75,6 +91,41 @@ function read(n) {
   if (head.length <= n) { pending.shift(); return head; }
   pending[0] = head.subarray(n);
   return head.subarray(0, n);
+}
+
+/** The translator loaded, `files` written and the root put around them: what every start has the same. */
+function ready(data) {
+  readied ??= (async () => {
+    const translate = await loadTranslator(data.translator);
+    const vfs = new Vfs();
+    for (const f of data.files ?? []) vfs.writeFile(f.path, f.bytes, f.mode ?? 0o644);
+    // The root after the files given, so what was given (l3, its BusyBox) is what runs.
+    if (data.root) mountPack(vfs, data.root.index, syncRange(data.root.url), translate.unzstd);
+    const r = {translate, vfs, files: data.files ?? []};
+    if (data.rehearse) await rehearse(r, data.rehearse).catch(() => { /* only a start that is not faster */ });
+    return r;
+  })();
+  return readied;
+}
+
+/** How long a rehearsal may take: what has not ended by then is left (a program that waits for time). */
+const REHEARSAL_MS = 2000;
+
+/** `argv` run to its end over what is readied, in a kernel made for it alone (see 'ready'). */
+async function rehearse({translate, vfs, files}, {argv, env, cwd}) {
+  const quiet = {interactive: false, write() {}, read: () => new Uint8Array(0), ready: () => true, pending: () => 0};
+  const runsApart = canRunApart() && files.every((f) => !f.module || f.shared);
+  const k = runsApart ? new RemoteKernel({vfs, translate, console: quiet, passOn: true}) : new Kernel({vfs, translate, console: quiet});
+  for (const f of files) if (f.module) k.prebuilt(vfs.lookup(f.path, '/'), f.module, f.segments ?? null);
+  const timer = setTimeout(() => k.halt(), REHEARSAL_MS);
+  try {
+    if (runsApart) { await k.spawn(argv[0], argv, env, cwd); return; }
+    // In turn here, a turn at a time, the host's own work (messages) between.
+    k.start(argv[0], argv, env, cwd);
+    while (k.status === null) { k.pump(); await new Promise((go) => setTimeout(go, 0)); }
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 const failed = (e) => self.postMessage({type: 'error', message: e instanceof Error ? `${e.name}: ${e.message}\n${e.stack}` : String(e)});
@@ -136,19 +187,23 @@ self.onmessage = async ({data}) => {
   if (data.type === 'put') { mirror?.put(data.path, data.what); return; }
   if (data.type === 'free') { if (kernel) self.postMessage({type: 'freed', ...kernel.free(0)}); return; }
   if (data.type === 'warm') { if (canRunApart()) warmThreads(); return; }
+  // (A failure is said by the 'start' that waits for it.)
+  if (data.type === 'ready') { ready(data).catch(() => {}); return; }
   if (data.type !== 'start') return;
   try {
-    const translate = await loadTranslator(data.translator);
-    const vfs = new Vfs();
+    // Readied before, or now: then this start's files are those readied, put before the root.
+    const before = readied !== null;
+    const {translate, vfs, files: early} = await ready(data);
+    const later = before ? data.files : [];
     for (const d of data.dirs ?? []) vfs.mkdirp(d);
-    for (const f of data.files) vfs.writeFile(f.path, f.bytes, f.mode ?? 0o644);
+    // Over the root, as over the files readied: what this start gives is what is there.
+    for (const f of later) vfs.writeFile(f.path, f.bytes, f.mode ?? 0o644);
     for (const l of data.links ?? []) vfs.symlink(l.target, l.path);
-    // The root after the files given, so what was given (l3, its BusyBox) is what runs.
-    if (data.root) mountPack(vfs, data.root.index, syncRange(data.root.url), translate.unzstd);
     vfs.mkdirp(data.cwd);
+    const files = [...early, ...later];
     // Each thread in a Worker of its own, all at once, where memory can be shared and every ready translation was made
     // for shared memory; otherwise they take turns here.
-    apart = canRunApart() && data.files.every((f) => !f.module || f.shared);
+    apart = canRunApart() && files.every((f) => !f.module || f.shared);
     const console = {
       interactive: false,
       write: (fd, bytes) => self.postMessage({type: 'output', fd, bytes}, [bytes.buffer]),
@@ -159,7 +214,7 @@ self.onmessage = async ({data}) => {
     // Translations kept from earlier Prompts: read when their program is first run, the kernel looking again once they are.
     keep = data.kept ? keeper(data.kept, () => nudge(), (urls) => self.postMessage({type: 'used', urls})) : null;
     kernel = apart ? new RemoteKernel({vfs, translate, console, keeper: keep, onIdle: (r) => paused(r)}) : new Kernel({vfs, translate, console, keeper: keep});
-    for (const f of data.files) {
+    for (const f of files) {
       if (!f.module) continue;
       const node = vfs.lookup(f.path, '/');
       kernel.prebuilt(node, f.module, f.segments ?? null);

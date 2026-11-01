@@ -35,7 +35,7 @@ test('the Worker\'s role is made new, a member of remote_app with its time limit
       rolcreaterole as createrole, rolcreatedb as createdb, rolcanlogin as login, pg_has_role(rolname, 'remote_app', 'member') as app, rolconfig as config
       from pg_roles where rolname = $1`, [name])).rows;
     assert.deepEqual({...r, config: [...r.config].sort()}, {super: false, createrole: false, createdb: false, login: true, app: true,
-      config: ["idle_in_transaction_session_timeout=15s", 'lock_timeout=5s', 'statement_timeout=15s']});
+      config: ["idle_in_transaction_session_timeout=15s", 'jit=off', 'lock_timeout=5s', 'statement_timeout=15s']});
     // Never changed: asked for again by the same name, it is refused, not altered.
     await assert.rejects(workerRole(db, FAKE, name), /there already/);
     const gone = await retireWorkers(db, name);

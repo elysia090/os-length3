@@ -84,9 +84,14 @@ $ l3 file notes
 [exit 0]
 --- stdout
 docs/
-issue/
 README.md  8 B
 --- stderr
+
+$ l3 file notes/issue/001.md
+[exit 1]
+--- stdout
+--- stderr
+l3: notes の Issue は OS が持っています。読むには l3 issue notes#N、書くには l3 issue new notes "Fix：件名"
 
 $ l3 file /
 [exit 4]

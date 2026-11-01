@@ -31,14 +31,20 @@ gles=$(ldconfig -p | sed -n 's/^[[:space:]]*libGLESv2\.so\.2 (libc6,x86-64) => /
 [ -n "$gles" ] || { echo "desktop: libGLESv2.so.2 is not here to put in the AppImage (apt install libgles2)" >&2; exit 1; }
 gles=$(readlink -f "$gles")
 
-# What is said over src-tauri/tauri.conf.json: this version, l3 beside the app, libGLESv2 in the AppImage, and the
+# On Ubuntu 23.10 and later AppArmor keeps user namespaces from unprivileged programs, and l3's Prompts are made in
+# them: the .deb carries a profile that lets /usr/bin/l3 make them (src-tauri/deb), which its postinst puts in place
+# where the kernel has that restriction. An AppImage's l3 has no fixed path for a profile to name.
+# What is said over src-tauri/tauri.conf.json: this version, l3 beside the app, libGLESv2 in the AppImage, the
+# .deb's profile and its scripts, and the
 # webview's policy for the Remote the page is built for (VITE_LENGTH3_REMOTE, as vite.config.ts reads it), from
 # src/app/policy.ts.
 config=$(VERSION="$version" GLES="$gles" node --input-type=module -e '
 import {DEFAULT_REMOTE, desktopPolicy} from "./src/app/policy.ts";
 const remote = process.env.VITE_LENGTH3_REMOTE ?? DEFAULT_REMOTE;
 console.log(JSON.stringify({version: process.env.VERSION, build: {beforeBuildCommand: "npx vite build"},
-  bundle: {externalBin: ["binaries/l3"], linux: {appimage: {files: {"/usr/lib/libGLESv2.so.2": process.env.GLES}}}},
+  bundle: {externalBin: ["binaries/l3"], linux: {appimage: {files: {"/usr/lib/libGLESv2.so.2": process.env.GLES}},
+    deb: {files: {"/usr/share/length3-os/apparmor/length3-l3": "deb/length3-l3.apparmor"},
+      postInstallScript: "deb/postinst", postRemoveScript: "deb/postrm"}}},
   app: {security: {csp: desktopPolicy(remote ? new URL(remote).origin : "")}}}));')
 # The AppImage is bundled by linuxdeploy, itself an AppImage: without FUSE it unpacks itself.
 APPIMAGE_EXTRACT_AND_RUN=1 npx tauri build --config "$config"

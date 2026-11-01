@@ -147,11 +147,15 @@
   .work.bench > .bar { grid-template-columns: minmax(0, 1fr) minmax(80px, 28%) auto; }
   .work.bench > .bar > .repo-strip { gap: var(--s1); }
 }
-/* One line to type in, the same everywhere: the search box, a repo's name. */
+/* One line to type in, the same everywhere: the search box, a repo's name. Its ground turns paper as it is pressed, at
+   once, and back as it is left, more slowly: a box of many lines left for a button under it went grey in one frame,
+   a flash larger than the press. */
 .search-in, .line-in {
   width: 100%; min-height: var(--h-row); padding: 0 var(--s3); border: 1px solid var(--edge); border-radius: var(--r-field);
   background: var(--raised); color: var(--ink);
+  transition: background-color calc(180ms * var(--pace)) ease-out, border-color calc(180ms * var(--pace)) ease-out;
 }
+:is(.search-in, .line-in):focus { transition-duration: var(--motion); }
 .search-in:disabled { opacity: .5; }
 form.search { position: relative; }
 /* In use, the box's own line turns ink and a little heavier: one line, not a ring drawn round a border. */

@@ -51,7 +51,7 @@ export function takeFiles(cols: HTMLElement, drag: Drag, open: (repo: string, pa
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
     const box = cols.getBoundingClientRect(), r = at.col.getBoundingClientRect();
-    drag.hintAt(r.left - box.left, r.width, 'files', t('Put in {where}', {where: at.dir ? `${at.repo}/${at.dir}` : at.repo}));
+    drag.hintAt(r.left - box.left, r.width, 'files', t('Move to {where}', {where: at.dir ? `${at.repo}/${at.dir}` : at.repo}));
   });
   cols.addEventListener('drop', (event) => {
     if (!filesIn(event)) return;

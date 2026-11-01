@@ -7,8 +7,7 @@
 
 import {isNative, native} from '../app/host.ts';
 import {t} from '../i18n.ts';
-import {store} from '../repos/repos.ts';
-import {l3Index} from './userland.ts';
+import {shownTree, store} from '../repos/repos.ts';
 
 export type Origin = 'distribution' | 'kernel' | 'repos' | 'empty';
 
@@ -46,8 +45,9 @@ const join = (dir: string, name: string) => (dir === '/' ? `/${name}` : `${dir}/
 /** Every entry of l3's root under each directory, from its index (what l3 this build carries; none without one). */
 let distribution: Promise<Map<string, SystemEntry[]>> | null = null;
 async function root(): Promise<Map<string, SystemEntry[]>> {
-  const index = await l3Index();
-  if (!index) throw new Error(t('The distribution has not been fetched'));
+  // l3's own module, brought when its root is first listed: the tree of / is drawn without the Prompt's machine.
+  const index = await (await import('./userland.ts')).l3Index();
+  if (!index) throw new Error(t('Distribution not fetched'));
   const under = new Map<string, SystemEntry[]>();
   const add = (e: SystemEntry) => {
     const dir = e.path.slice(0, e.path.lastIndexOf('/')) || '/';
@@ -71,12 +71,12 @@ function origins(path: string, entries: SystemEntry[]): SystemEntry[] {
 
 export async function list(path: string): Promise<SystemEntry[]> {
   if (path === '/root') {
-    return (await store.list()).map((r) => ({name: r.name, kind: 'dir', path: `/root/${r.name}`}));
+    return (await store.names()).map((name) => ({name, kind: 'dir', path: `/root/${name}`}));
   }
   if (path === '/dev') return ['null', 'random', 'urandom', 'zero'].map((name) => ({name, kind: 'device', path: `/dev/${name}`}));
   const at = inRepo(path);
   if (at) {
-    return (await store.tree(at.repo, at.path)).map((e) => ({name: e.name, kind: e.kind, path: join(path, e.name), size: e.size}));
+    return (await shownTree(at.repo, at.path)).map((e) => ({name: e.name, kind: e.kind, path: join(path, e.name), size: e.size}));
   }
   // Anything else is the root: in the app, the one installed here, read as it is on the disk.
   if (isNative) return origins(path, await native<SystemEntry[]>('root_list', {path}).catch((e) => {

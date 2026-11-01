@@ -39,7 +39,7 @@ export function about(d: {db: Db; providers: string[]; domain: string; appOrigin
       return c.json({ok: true});
     } catch (e) {
       console.error('health', e);
-      return c.json({ok: false, error: 'The Remote does not reach its database'}, 503);
+      return c.json({ok: false, error: 'Remote cannot reach its database'}, 503);
     }
   });
 }

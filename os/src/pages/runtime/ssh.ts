@@ -40,7 +40,7 @@ export function sshSection(): HTMLElement {
     const count = others.length + (here?.on ? 1 : 0);
     section.hidden = false;
     section.replaceChildren(h('h2', {id: 'ssh-title'}, h('span', {}, 'SSH', count ? h('small', {}, `${count}`) : null)),
-      ...(isNative ? [] : [h('p', {class: 'muted small'}, t('SSH is the desktop app\'s: a device turns it on there, and its addresses stay on it.'))]),
+      ...(isNative ? [] : [h('p', {class: 'muted small'}, t('SSH is desktop-exclusive. Enabled locally; network addresses are not published.'))]),
       ...(cards.length ? [h('div', {class: 'grid small-grid'}, ...cards)] : []));
   };
   // Drawn again now and then while it is on screen, not while the page or app is hidden, slower while nobody is at it,
@@ -64,20 +64,20 @@ function power(on: boolean, label: string, act: () => Promise<unknown> | void, s
   return b;
 }
 
-const whom = (s: ssh.Scope) => (s === 'network' ? t('Listens for SSH from its network\'s PCs too') : t('Listens for SSH from that device only'));
+const whom = (s: ssh.Scope) => (s === 'network' ? t('Listening for SSH from local network devices') : t('Listening for SSH from this device only'));
 
 /** Another device of the account that listens: its name and to whom, and its switch, which turns it off there. */
 function otherCard(l: ssh.Listening, again: () => void): HTMLElement {
   const said = h('p', {class: 'error small', role: 'alert'});
   const name = deviceWord(l.agent);
-  const lines: (string | Node)[] = [whom(l.scope), ssh.quiet(l) ? t('Not heard from since {when}', {when: ago(l.seen)}) : t('On since {when}', {when: ago(l.since)}), said];
-  return card(name, lines, power(true, t('Turn SSH off on {device}', {device: name}), () => ssh.turnOff(l.device), said, again), 'ssh-card');
+  const lines: (string | Node)[] = [whom(l.scope), ssh.quiet(l) ? t('No signal since {when}', {when: ago(l.seen)}) : t('Active since {when}', {when: ago(l.since)}), said];
+  return card(name, lines, power(true, t('Disable SSH on {device}', {device: name}), () => ssh.turnOff(l.device), said, again), 'ssh-card');
 }
 
 /** This device's card, in the app: what it is, plainly, worked out here (core ssh::Here). */
 function hereCard(m: ssh.Here, again: () => void): HTMLElement {
   const said = h('p', {class: 'error small', role: 'alert'});
-  const keys = tn('{n} key let in (.authorized_keys)', '{n} keys let in (.authorized_keys)', m.keys);
+  const keys = tn('{n} key authorized (.authorized_keys)', '{n} keys authorized (.authorized_keys)', m.keys);
   return m.on ? onCard(m, keys, said, again) : offCard(m, keys, said, again);
 }
 
@@ -85,8 +85,8 @@ function hereCard(m: ssh.Here, again: () => void): HTMLElement {
 function offCard(m: ssh.Here, keys: string, said: HTMLElement, again: () => void): HTMLElement {
   let el: HTMLElement | null = null;
   // Pressed, it asks from where first, in the card, as the network grant asks (the scope kept is offered first).
-  el = card(t('This device'), [t('SSH off. On, each repo here is reached with ssh, by a key in the .authorized_keys dotfile.'), keys, said],
-    power(false, t('Turn SSH on on this device'), () => askScope(el!, m, said, again), said, again), 'ssh-card');
+  el = card(t('This device'), [t('SSH is disabled. When enabled, access repos via SSH using keys in .authorized_keys.'), keys, said],
+    power(false, t('Enable SSH on this device'), () => askScope(el!, m, said, again), said, again), 'ssh-card');
   return el;
 }
 
@@ -101,12 +101,12 @@ function askScope(el: HTMLElement, m: ssh.Here, said: HTMLElement, again: () => 
     });
     return b;
   };
-  const not = button(t('Not now'), 'small-button');
+  const not = button(t('Cancel'), 'small-button');
   not.addEventListener('click', () => el.replaceChildren(...was));
   el.replaceChildren(h('span', {class: 'card-title'}, t('This device')),
-    h('span', {class: 'muted small'}, t('Who may connect?')),
-    choose('device', t('This device only')), h('span', {class: 'muted small'}, t('No other PC finds it.')),
-    choose('network', t('The same network too')), h('span', {class: 'muted small'}, t('PCs on this LAN or VPN; never the Internet.')),
+    h('span', {class: 'muted small'}, t('Allowed connections')),
+    choose('device', t('This device only')), h('span', {class: 'muted small'}, t('Inaccessible to other machines.')),
+    choose('network', t('Local network')), h('span', {class: 'muted small'}, t('Allows local LAN or VPN devices; blocked from Internet.')),
     said, h('div', {class: 'card-foot'}, not, h('span', {class: 'grow'})));
 }
 
@@ -116,14 +116,14 @@ function onCard(m: ssh.Here, keys: string, said: HTMLElement, again: () => void)
   const print = m.fingerprint ? h('button', {type: 'button', class: 'record-value'}, m.fingerprint) : null;
   if (print && m.fingerprint) copying(print, m.fingerprint);
   const el = card(t('This device'), [...dests, reachedFrom(m), keys,
-    ...(print ? [h('span', {class: 'muted small'}, t('Host key, as ssh shows it the first time:')), print] : []),
-    m.started ? t('On since {when}', {when: ago(m.started)}) : '', said], null, 'ssh-card');
+    ...(print ? [h('span', {class: 'muted small'}, t('Host key (presented on initial SSH connection):')), print] : []),
+    m.started ? t('Active since {when}', {when: ago(m.started)}) : '', said], null, 'ssh-card');
   // The other scope, at once (its sessions from elsewhere end when it narrows); off at the right.
   const other: ssh.Scope = m.scope === 'network' ? 'device' : 'network';
-  const change = button(other === 'network' ? t('The same network too') : t('This device only'));
+  const change = button(other === 'network' ? t('Local network') : t('This device only'));
   change.addEventListener('click', () => { change.disabled = true; void ssh.setHere(true, other).then(() => again(), (e) => { said.textContent = errorText(e); change.disabled = false; }); });
   el.append(h('div', {class: 'card-foot'}, change, h('span', {class: 'grow'}),
-    power(true, t('Turn SSH off on {device}', {device: t('This device')}), () => ssh.setHere(false), said, again)));
+    power(true, t('Disable SSH on {device}', {device: t('This device')}), () => ssh.setHere(false), said, again)));
   return el;
 }
 
@@ -131,7 +131,7 @@ function onCard(m: ssh.Here, keys: string, said: HTMLElement, again: () => void)
 function reachedFrom(m: ssh.Here): string {
   const lan = ssh.lan(m);
   return m.scope === 'network'
-    ? (lan.length ? t('From PCs on the same network too ({list}); never from the Internet', {list: lan.join(', ')})
-      : t('From PCs on the same network too (no LAN or VPN address here now)'))
-    : t('From this device only (127.0.0.1): no other PC finds it');
+    ? (lan.length ? t('Local network devices allowed ({list}); blocked from Internet', {list: lan.join(', ')})
+      : t('Local network devices allowed (no active LAN/VPN address detected)'))
+    : t('Localhost only (127.0.0.1): invisible to network');
 }

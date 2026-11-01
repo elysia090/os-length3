@@ -11,7 +11,7 @@ import {accept, enc, service, upload} from './testing.ts';
 const BUDGET: Record<string, number> = {
   'poll what moved': 2, 'list repos': 2, 'read a repo': 2, 'upload a blob held': 2,
   // The account's lock, the line with the room and the blobs, the write.
-  'save a draft': 6, 'commit': 7, 'history': 3,
+  'save a draft': 6, 'commit': 6, 'history': 3,
   'read a setting': 2, 'change a setting': 2, 'make a setting': 5, 'news': 2,
   'my names': 2, 'conversations': 2, 'one conversation': 4,
   // Who it is from, to, how the two stand; then the lock and the counted write.

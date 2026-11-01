@@ -22,7 +22,7 @@ export function jolt(term: HTMLElement, out: HTMLElement) {
 export function endLine(said: string, why: string, restart: () => void): {line: HTMLElement; power: HTMLElement} {
   // Ended: what happened and, at the Prompt's bottom right under its output, its power switch, off: switched on,
   // it starts again (styles.css). The same switch as SSH's and a repo card's, no taller than the line.
-  const power = h('button', {class: 'power', type: 'button', role: 'switch', 'aria-checked': 'false', 'aria-label': t('Start again')}, h('span', {class: 'knob'}));
+  const power = h('button', {class: 'power', type: 'button', role: 'switch', 'aria-checked': 'false', 'aria-label': t('Restart')}, h('span', {class: 'knob'}));
   power.addEventListener('click', restart);
   // The last thing on its thread, under what it printed last: how it ended, and the switch beside it (in the pane a
   // dot of its own, off), not a row of its own over the box's Run.

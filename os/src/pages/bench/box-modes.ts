@@ -9,19 +9,23 @@ import {kindOf} from '../../repos/text.ts';
 import {mark} from '../../ui/icons.ts';
 import {mark as todoMark} from '../todo-list.ts';
 import {issueStore} from '../../repos/issue-store.ts';
+import {hasAgentKey, onAgentKey} from '../../home/agent-key.ts';
 
 // The box at the foot does one of a few things with what is written in it, and its pill, at its left, says which:
 // it runs it in the repo's Prompt (the pill the prompt line the shell waits at, `garden $`), writes it as the repo's
 // next issue (the pill that issue's number, `garden #4`), puts it in Home's TODO (the pill TODO's circle), or edits
-// the file in front with it (the pill a pencil, the file and the caret's line, `README.md :12`; edit-box.ts). The pill
-// pressed, or Alt+↓ in the box, brings the four out of it; Alt+1 to 4 in the box choose one at once. Written for an
+// the file in front with it (the pill a pencil, the file and the caret's line, `README.md :12`; edit-box.ts), or, with
+// an API key kept on this device (Runtime's Agent), asks the Agent about the repo (the pill `Agent@garden`; agent.ts).
+// The pill pressed, or Alt+↓ in the box, brings them out of it; Alt+1 to 5 in the box choose one at once. Written for an
 // issue or a TODO, the first line is its Kind: title as everywhere, the lines under it its detail. Sent, an issue is a
 // file of the repo, which comes in among the repo's own where it is worked on: its words slide on to the right and
 // rise out of sight, and the pill's number turns to the next; a TODO, seen nowhere here, goes in an arc to Home on the
 // rail (glide.ts keep).
 
-export type Mode = 'run' | 'issue' | 'todo' | 'edit';
-export const MODES: readonly Mode[] = ['run', 'issue', 'todo', 'edit'];
+export type Mode = 'run' | 'issue' | 'todo' | 'edit' | 'agent';
+export const MODES: readonly Mode[] = ['run', 'issue', 'todo', 'edit', 'agent'];
+/** What the box can do here now: the Agent only with a key kept on this device. */
+export const modesNow = (): readonly Mode[] => (hasAgentKey() ? MODES : MODES.filter((m) => m !== 'agent'));
 
 /** What the boxes do, the same on every page's box for as long as the app runs. */
 let now: Mode = 'run';
@@ -34,19 +38,23 @@ export function setBoxMode(m: Mode) {
 }
 /** Hear the boxes' mode change (chosen in another page's box too); returns how to stop. */
 export function onBoxMode(f: (m: Mode) => void): () => void { heard.add(f); return () => heard.delete(f); }
+// The key taken away, the boxes asking the Agent run again.
+onAgentKey((k) => { if (!k && now === 'agent') setBoxMode('run'); });
 
 /** What each is called where it is chosen. */
-const modeWord = (m: Mode): string =>
-  (m === 'run' ? t('Run in the Prompt') : m === 'issue' ? t('Write an issue') : m === 'todo' ? t('Add to TODO') : t('Edit the file in front'));
+const modeWord = (m: Mode): string => (m === 'run' ? t('Run in Prompt') : m === 'issue' ? t('Create issue')
+  : m === 'todo' ? t('Add to TODO') : m === 'agent' ? t('Ask Agent') : t('Edit active file'));
 /** The word on the box's own button. */
-export const sendWord = (m: Mode): string => (m === 'run' ? t('Run') : m === 'issue' ? t('Create') : m === 'todo' ? t('Add') : t('Edit'));
+export const sendWord = (m: Mode): string =>
+  (m === 'run' ? t('Run') : m === 'issue' ? t('Create') : m === 'todo' ? t('Add') : m === 'agent' ? t('Ask') : t('Edit'));
 /** Its title, with the keys that do it from the box (Edit has none: what is typed is in the file as it is typed). */
-export const sendTitle = (m: Mode, keys: string): string =>
-  m === 'run' ? t('Run ({keys})', {keys}) : m === 'issue' ? t('Create ({keys})', {keys}) : m === 'todo' ? t('Add ({keys})', {keys}) : t('Edit');
+export const sendTitle = (m: Mode, keys: string): string => (m === 'run' ? t('Run ({keys})', {keys}) : m === 'issue' ? t('Create ({keys})', {keys})
+  : m === 'todo' ? t('Add ({keys})', {keys}) : m === 'agent' ? t('Ask ({keys})', {keys}) : t('Edit'));
 /** What the empty box says goes there (for Edit, with the file in front, `file`: the line held is an empty one). */
-export const modeHint = (m: Mode, repo: string | null, file: string | null = null): string => (!repo ? t('Open a repo to run in it')
-  : m === 'run' ? t('Run in {name}', {name: repo}) : m === 'issue' ? t('Write an issue in {name}', {name: repo}) : m === 'todo' ? t('Add a line to TODO')
-  : file ? t('An empty line: write it here') : t('Open a file to edit it here'));
+export const modeHint = (m: Mode, repo: string | null, file: string | null = null): string => (!repo ? t('Open a repo to run commands')
+  : m === 'run' ? t('Run in {name}', {name: repo}) : m === 'issue' ? t('Create issue in {name}', {name: repo}) : m === 'todo' ? t('Add item to TODO')
+  : m === 'agent' ? t('Ask about {name}', {name: repo})
+  : file ? t('Empty line: type here') : t('Open a file to edit here'));
 
 /** The number the repo's next issue takes, read as its issues change (null until read). */
 const nextOf = new Map<string, number | Promise<number>>();
@@ -65,10 +73,11 @@ export function nextIssue(repo: string): number | Promise<number> {
 
 /**
  * The pill's words for a mode other than Run (Run's are the shell's prompt line, which the bench keeps): the issue's
- * number; TODO; for Edit the file in front and the caret's line (`at`).
+ * number; TODO; for Edit the file in front and the caret's line (`at`); the repo's Agent.
  */
 export function pillWords(m: Mode, repo: string | null, number: number | null, at: {file: string; line: number} | null = null): Node[] {
   if (m === 'issue') return [h('span', {class: 'prompt-mode-repo'}, repo ? `${repo} ` : ''), h('b', {}, number === null ? '#' : `#${number}`)];
+  if (m === 'agent') return [h('b', {}, 'Agent'), h('span', {class: 'prompt-mode-repo'}, repo ? `@${repo}` : '')];
   if (m === 'todo') return [todoMark(false), h('b', {}, 'TODO')];
   if (m === 'edit') return [mark('pen'), h('b', {}, at?.file ?? t('Edit')), ...(at ? [h('span', {class: 'prompt-mode-line'}, `:${at.line}`)] : [])];
   return [];
@@ -91,7 +100,7 @@ export async function sendAs(m: 'issue' | 'todo', repo: string, text: string): P
     const n = numberOf(file);
     if (n !== null) nextOf.set(repo, n + 1);
     const issue = `#${n ?? ''}`;
-    return {head: issue, words: kind ? `${kind}：${title.trim()}` : title.trim(), to: {issue: file}, said: t('Written as {issue} in {name}', {issue, name: repo})};
+    return {head: issue, words: kind ? `${kind}：${title.trim()}` : title.trim(), to: {issue: file}, said: t('Created as {issue} in {name}', {issue, name: repo})};
   }
   let list = todo.add(todo.parse(getState('todo')), first, repo);
   const made = list.at(-1);
@@ -101,7 +110,7 @@ export async function sendAs(m: 'issue' | 'todo', repo: string, text: string): P
 }
 
 /**
- * `m`, the `i`th of the four, as a row of the menu out of the pill: the pill it gives (for `repo`, its next issue's
+ * `m`, the `i`th of them, as a row of the menu out of the pill: the pill it gives (for `repo`, its next issue's
  * number `n`, the file in front and its line `at`), its word and its keys; ticked when it is the one in use.
  */
 function menuItem(m: Mode, i: number, repo: string | null, n: number | null,
@@ -123,12 +132,12 @@ function column(items: HTMLElement[]) {
 }
 
 /**
- * The four, out of the pill (`chip`) when it is pressed: each with the pill it gives, its word and its keys, the
+ * What the box can do, out of the pill (`chip`) when it is pressed: each with the pill it gives, its word and its keys, the
  * one in use ticked. Chosen, `chosen` hears it; put away with Escape, `closed` does, with what had the keyboard.
  */
 export function modeMenu(chip: HTMLElement, o: {repo: () => string | null; at(): {file: string; line: number} | null; chosen(m: Mode): void;
   closed(before: Element | null): void}) {
-  const pop = h('div', {class: 'pop box-modes', role: 'menu', 'aria-label': t('What the box does'), hidden: ''});
+  const pop = h('div', {class: 'pop box-modes', role: 'menu', 'aria-label': t('Input box action'), hidden: ''});
   let items: HTMLButtonElement[] = [];
   /** What had the keyboard before they came out: Escape gives it back (a press elsewhere, or Tab, takes it on). */
   let before: Element | null = null;
@@ -153,7 +162,7 @@ export function modeMenu(chip: HTMLElement, o: {repo: () => string | null; at():
     before = document.activeElement;
     const repo = o.repo();
     const n = repo ? nextIssue(repo) : null;
-    items = MODES.map((m, i) => {
+    items = modesNow().map((m, i) => {
       const item = menuItem(m, i, repo, typeof n === 'number' ? n : null, m === 'edit' ? o.at() : null);
       item.addEventListener('click', () => { show(false); o.chosen(m); });
       return item;

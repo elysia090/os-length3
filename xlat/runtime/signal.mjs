@@ -113,6 +113,7 @@ export function send(kernel, proc, sig, info = {signo: sig, code: SI.KERNEL}, th
   const takers = thread ? [thread] : [...proc.tasks].filter((t) => !(t.mask & bit(sig)));
   const waiting = takers.find((t) => t.call);
   if (waiting) kernel.interruptCall(waiting);
+  else if (takers.length) kernel.lookIn(proc);
 }
 
 /** Whether `task` has a signal it does not block, pending for it or its process. */
@@ -203,6 +204,8 @@ function frame(kernel, task, sig, info, a, ctx) {
   if (at < 0n || base + FRAME > p.memory.buffer.byteLength) { kernel.exitProcess(p, SIG.SEGV); return; }
   const v = p.view;
   p.bytes.fill(0, base, base + FRAME);
+  // The kernel writes this far down the stack (Process.written).
+  if (base >= p.stackLow && base < p.stackTop && p.memory.deepest > base) p.memory.deepest = base;
   v.setBigUint64(base, a.flags & SA.RESTORER ? a.restorer : 0n, true);
   writeStack(p, base + UC + 16, task, BigInt.asUintN(64, regs[4]));
   SIGCONTEXT.forEach((r, k) => v.setBigUint64(base + MCONTEXT + k * 8, BigInt.asUintN(64, regs[r]), true));

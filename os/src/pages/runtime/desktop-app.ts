@@ -32,7 +32,7 @@ export function desktopApp(): HTMLElement {
     const get = h('a', {class: 'button primary small-button download', href: url(first.file), download: first.file, title: `${first.file} · ${bytes(first.bytes)}`},
       mark('download'), h('span', {}, t('Download')));
     // Beside the environments, the same small card: what it is, which file and its size, and Download at its bottom left.
-    section.replaceChildren(h('h2', {id: 'app-title'}, t('Desktop app')),
+    section.replaceChildren(h('h2', {id: 'app-title'}, t('Desktop App')),
       h('div', {class: 'card small-card app-card'},
         // The product's name, and its version apart: a name and a number are two things.
         h('span', {class: 'card-title'}, 'Length³', ' ', h('span', {class: 'version'}, RELEASE)),

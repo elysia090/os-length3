@@ -150,7 +150,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   };
   /** The board, if `me` is one of its server's people. */
   const mine = async (id: string, me: string) => { const at = await boardAt(id, me); return at && at.owner !== null ? at : null; };
-  const notMine = () => refuse(404, {error: 'No such board of yours'});
+  const notMine = () => refuse(404, {error: 'Board not found in your account'});
   // Each with `id`, by which one with no name left (released, let go) is still removed (`id:<user>` in place of the address).
   const people = async (q: Db, serverId: string) =>
     (await q.select({userId: member.userId, address: shownAs(qualified(member.userId)), owner: member.owner}).from(member).where(eq(member.serverId, serverId)).orderBy(member.addedAt))
@@ -197,15 +197,15 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const me = c.get('userId');
     const b = await body<{name?: unknown; address?: unknown; board?: unknown}>(c);
     const n = name(b?.name), first = name(b?.board) || 'general';
-    if (!fine(n) || !fine(first)) return c.json({error: 'A name of at most 64 characters'}, 400);
+    if (!fine(n) || !fine(first)) return c.json({error: 'Name cannot exceed 64 characters'}, 400);
     const wanted = name(b?.address).toLowerCase() || n.toLowerCase();
     const [handle, domain = d.domain] = wanted.split('@');
-    if (!NAME.test(handle)) return c.json({error: 'Its name: letters, digits, - . _'}, 400);
+    if (!NAME.test(handle)) return c.json({error: 'Name: letters, digits, - . _'}, 400);
     // A name on another domain: one this account holds a name on (asked first, so no domain's DNS is asked for anyone
     // who names it), and whose DNS names this account now, not only when the name was claimed.
     if (domain !== d.domain) {
       const [on] = await db.select({a: address.address}).from(address).where(and(eq(address.userId, me), eq(address.domain, domain), isNull(address.releasedAt), isNull(address.lapsedAt)));
-      if (!on || (d.proven && await d.proven(me, domain) === false)) return c.json({error: 'Only on a domain you hold a name on'}, 400);
+      if (!on || (d.proven && await d.proven(me, domain) === false)) return c.json({error: 'Only available on domains you control'}, 400);
     }
     const made = await db.transaction(async (tx: Db) => {
       await lock(tx, me);
@@ -214,19 +214,19 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       await nameFor(tx, me, d.domain);
       if (domain !== d.domain) {
         const [on] = await tx.select({a: address.address}).from(address).where(and(eq(address.userId, me), eq(address.domain, domain), isNull(address.releasedAt), isNull(address.lapsedAt)));
-        if (!on) refuse(400, {error: 'Only on a domain you hold a name on'});
+        if (!on) refuse(400, {error: 'Only available on domains you control'});
       }
       // Only what one owns counts, and what is held for one: being added to servers never stops anyone making one.
       const [count] = await rows<{kept: number; today: number}>(tx, sql`select
         (select count(*)::int from server_member m join server s on s.id = m.server_id and s.gone_at is null where m.user_id = ${me} and m.owner)
           + (select count(*)::int from server s where s.gone_by = ${me} and s.gone_at > ${ago(HOLD)}) as kept,
         (select count(*)::int from server s where s.made_by = ${me} and s.created_at > ${ago(86_400_000)}) as today`);
-      if (count.kept >= SERVER.servers) refuse(429, {error: 'Too many servers'});
-      if (count.today >= SERVER.perDay) slowDown(86_400, {error: 'Too many servers made today'});
+      if (count.kept >= SERVER.servers) refuse(429, {error: 'Server limit reached'});
+      if (count.today >= SERVER.perDay) slowDown(86_400, {error: 'Daily server creation limit reached'});
       const id = key(), bid = key();
       await tx.insert(server).values({id, name: n, madeBy: me});
       const got = await claim(tx, handle, domain, {serverId: id});
-      if (!got.ok) refuse(409, got.until ? {error: 'That name was let go, and is held for its owner a while', until: got.until} : {error: 'That name is taken'});
+      if (!got.ok) refuse(409, got.until ? {error: 'Name recently released; temporarily reserved for prior owner.', until: got.until} : {error: 'Username already taken'});
       await tx.insert(member).values({serverId: id, userId: me, owner: true});
       await tx.insert(board).values({id: bid, serverId: id, name: first});
       return {id, name: n, address: `${handle}@${domain}`, owner: true, made: true, code: await codeOf(tx, {serverId: id}),
@@ -241,7 +241,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const out = await db.transaction(async (tx: Db) => {
       await lock(tx, me);
       const [s] = await tx.select({name: server.name}).from(server).where(and(eq(server.id, id), eq(server.goneBy, me), sql`${server.goneAt} > ${ago(HOLD)}`));
-      if (!s) refuse(404, {error: 'Nothing of yours to bring back'});
+      if (!s) refuse(404, {error: 'No recoverable items found'});
       await nameFor(tx, me, d.domain);
       const [a] = await tx.select({address: address.address, name: address.name, domain: address.domain}).from(address).where(eq(address.serverId, id));
       if (a) await claim(tx, a.name, a.domain, {serverId: id});
@@ -255,10 +255,10 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   v1.patch('/servers/:id', async (c) => {
     const id = c.req.param('id');
     const m = await membership(db, id, c.get('userId'));
-    if (!m) return c.json({error: 'No such server of yours'}, 404);
-    if (!m.owner) return c.json({error: 'Only its owner renames a server'}, 403);
+    if (!m) return c.json({error: 'Server not found in your account'}, 404);
+    if (!m.owner) return c.json({error: 'Only server owner can rename server'}, 403);
     const n = name((await body<{name?: unknown}>(c))?.name);
-    if (!fine(n)) return c.json({error: 'A name of at most 64 characters'}, 400);
+    if (!fine(n)) return c.json({error: 'Name cannot exceed 64 characters'}, 400);
     await db.update(server).set({name: n}).where(eq(server.id, id));
     return c.json({id, name: n});
   });
@@ -266,7 +266,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   v1.delete('/servers/:id', async (c) => {
     const me = c.get('userId'), id = c.req.param('id');
     const until = await db.transaction(async (tx: Db) => {
-      if (!(await membership(tx, id, me))?.owner) refuse(403, {error: 'Only its owner removes a server'});
+      if (!(await membership(tx, id, me))?.owner) refuse(403, {error: 'Only server owner can delete server'});
       await gone(tx, id, me);
       return (await tx.select({at: ms(sql`${server.goneAt}`)}).from(server).where(eq(server.id, id)))[0].at + HOLD;
     });
@@ -275,7 +275,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
 
   // ---- its people ----
   v1.get('/servers/:id/people', async (c) => {
-    if (!await membership(db, c.req.param('id'), c.get('userId'))) return c.json({error: 'No such server of yours'}, 404);
+    if (!await membership(db, c.req.param('id'), c.get('userId'))) return c.json({error: 'Server not found in your account'}, 404);
     return c.json(await people(db, c.req.param('id')));
   });
 
@@ -283,13 +283,13 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   // is people who know each other, and nobody is put in one by someone they have not accepted (or blocked).
   v1.post('/servers/:id/people', async (c) => {
     const me = c.get('userId'), id = c.req.param('id');
-    if (!await membership(db, id, me)) return c.json({error: 'No such server of yours'}, 404);
+    if (!await membership(db, id, me)) return c.json({error: 'Server not found in your account'}, 404);
     const a = name((await body<{address?: unknown}>(c))?.address).toLowerCase();
     const [who] = await rows<{user: string | null; both: number}>(db, sql`select a.user_id as user,
       (select count(*)::int from contact k where k.state = 'accepted' and ((k.user_id = ${me} and k.peer = a.user_id) or (k.user_id = a.user_id and k.peer = ${me}))) as both
       from address a where a.address = ${a} and a.released_at is null and a.lapsed_at is null`);
-    if (!who?.user) return c.json({error: 'No one has that name'}, 404);
-    if (who.both < 2) return c.json({error: 'Only your contacts can be added'}, 403);
+    if (!who?.user) return c.json({error: 'No user found with that name'}, 404);
+    if (who.both < 2) return c.json({error: 'Only existing contacts can be invited'}, 403);
     const came = await db.insert(member).values({serverId: id, userId: who.user}).onConflictDoNothing().returning({u: member.userId});
     // In at once, they are told by the Remote, whichever way they were added: a notice in their Inbox, in the
     // conversation with whoever added them, about the server (its name kept as it was, for the line to say it).
@@ -311,13 +311,13 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       // One leaving or removed at a time: the last two leaving at once both see the other stay, and none would end it.
       await lock(tx, `server:${id}`);
       const m = await membership(tx, id, me);
-      if (!m) refuse(404, {error: 'No such server of yours'});
+      if (!m) refuse(404, {error: 'Server not found in your account'});
       // Whoever has (or had) that address, or the member that id names (one with no name left).
       const by = a.startsWith('id:') ? sql`${c.req.param('address').slice(3)}` : sql`(select a.user_id from address a where a.address = ${a})`;
       const [them] = await tx.select({userId: member.userId, owner: member.owner}).from(member)
         .where(and(eq(member.serverId, id), sql`${qualified(member.userId)} = ${by}`)) as {userId: string; owner: boolean}[];
-      if (!them) refuse(404, {error: 'They are not in this server'});
-      if (them.userId !== me && !m.owner) refuse(403, {error: 'Only its owner removes someone else'});
+      if (!them) refuse(404, {error: 'User is not a member of this server'});
+      if (them.userId !== me && !m.owner) refuse(403, {error: 'Only owner can remove members'});
       await tx.delete(member).where(and(eq(member.serverId, id), eq(member.userId, them.userId)));
       // Gone, they are not taken back by an invitation sent before now (inbox.ts cameIn), nor stay by the guests they let
       // in to its boards (their invitations go with them by key; a guest is let in for a while and stays otherwise).
@@ -338,19 +338,19 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   const named = async (tx: Db, serverId: string, n: string, self = '') => {
     const [took] = await tx.select({id: board.id}).from(board)
       .where(and(eq(board.serverId, serverId), isNull(board.goneAt), sql`lower(${board.name}) = lower(${n})`, sql`${board.id} <> ${self}`)).limit(1);
-    if (took) refuse(409, {error: 'There is a board by that name already'});
+    if (took) refuse(409, {error: 'A board with that name already exists'});
   };
   v1.post('/servers/:id/boards', async (c) => {
     const id = c.req.param('id');
-    if (!await membership(db, id, c.get('userId'))) return c.json({error: 'No such server of yours'}, 404);
+    if (!await membership(db, id, c.get('userId'))) return c.json({error: 'Server not found in your account'}, 404);
     const n = name((await body<{name?: unknown}>(c))?.name);
-    if (!fine(n)) return c.json({error: 'A name of at most 64 characters'}, 400);
+    if (!fine(n)) return c.json({error: 'Name cannot exceed 64 characters'}, 400);
     const bid = key();
     // Counted and made under the server's lock: many asked at once are counted one by one.
     await db.transaction(async (tx: Db) => {
       await lock(tx, `boards:${id}`);
       const [{n: count}] = await tx.select({n: sql<number>`count(*)::int`}).from(board).where(eq(board.serverId, id));
-      if (count >= SERVER.boards) refuse(429, {error: 'Too many boards'});
+      if (count >= SERVER.boards) refuse(429, {error: 'Board limit reached'});
       await named(tx, id, n);
       await tx.insert(board).values({id: bid, serverId: id, name: n});
     });
@@ -367,13 +367,13 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const at = await mine(c.req.param('id'), c.get('userId')) ?? notMine();
     const b = await body<{name?: unknown; open?: unknown; guests?: unknown}>(c);
     const set: {name?: string; reach?: number} = {};
-    if (b?.name !== undefined) { const n = name(b.name); if (!fine(n)) return c.json({error: 'A name of at most 64 characters'}, 400); set.name = n; }
+    if (b?.name !== undefined) { const n = name(b.name); if (!fine(n)) return c.json({error: 'Name cannot exceed 64 characters'}, 400); set.name = n; }
     if (typeof b?.open === 'boolean' || typeof b?.guests === 'boolean') {
       // How far a board is open reaches past its people: its server's owner says.
-      if (!at.owner) return c.json({error: 'Only its server\'s owner opens a board'}, 403);
-      if (d.closed && (b.open === true || b.guests === true)) return c.json({error: 'Nothing is shown to everyone from this Remote'}, 403);
+      if (!at.owner) return c.json({error: 'Only server owner can publish boards'}, 403);
+      if (d.closed && (b.open === true || b.guests === true)) return c.json({error: 'Public sharing disabled on this Remote'}, 403);
       // Guests read it as everyone does: one taking guests is open, and saying both is saying nothing.
-      if (b.open === false && b.guests === true) return c.json({error: 'A board that takes guests is open'}, 400);
+      if (b.open === false && b.guests === true) return c.json({error: 'Guest-enabled board is publicly accessible'}, 400);
       let reach = at.b.reach;
       if (typeof b.open === 'boolean') reach = b.open ? Math.max(reach, REACH.open) : REACH.people;
       if (typeof b.guests === 'boolean') reach = b.guests ? REACH.guests : Math.min(reach, REACH.open);
@@ -393,7 +393,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
 
   v1.delete('/boards/:id', async (c) => {
     const at = await mine(c.req.param('id'), c.get('userId')) ?? notMine();
-    if (!at.owner) return c.json({error: 'Only its server\'s owner removes a board'}, 403);
+    if (!at.owner) return c.json({error: 'Only server owner can delete boards'}, 403);
     // Held 30 days: its talk and TODO with it, back at once until then.
     const [{goneAt}] = await db.update(board).set({goneAt: sql`now()`}).where(eq(board.id, at.b.id)).returning({goneAt: ms(sql`${board.goneAt}`)});
     return c.json({until: goneAt + HOLD});
@@ -402,8 +402,8 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   v1.post('/boards/:id/back', async (c) => {
     const at = await boardAt(c.req.param('id'), c.get('userId'), true);
     if (!at?.b.goneAt || at.owner === null) return notMine();
-    if (!at.owner) return c.json({error: 'Only its server\'s owner brings a board back'}, 403);
-    if (Date.now() - at.b.goneAt.getTime() > HOLD) return c.json({error: 'It is held no longer'}, 410);
+    if (!at.owner) return c.json({error: 'Only server owner can restore boards'}, 403);
+    if (Date.now() - at.b.goneAt.getTime() > HOLD) return c.json({error: 'Retention period expired'}, 410);
     // One of its name made meanwhile has the name now: it comes back only once that one is named otherwise.
     await db.transaction(async (tx: Db) => {
       await lock(tx, `boards:${at.b.serverId}`);
@@ -431,9 +431,9 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     if (!TODO_ID.test(tid)) return c.json({error: 'an item'}, 400);
     const r = await body(c);
     const set: Partial<Item> = {};
-    if (r?.kind !== undefined) { if (r.kind !== null && (typeof r.kind !== 'string' || !KIND.test(r.kind))) return c.json({error: 'A kind is one word of at most 16 letters'}, 400); set.kind = r.kind; }
-    if (r?.title !== undefined) { if (typeof r.title !== 'string' || r.title.length > SERVER.todo.title) return c.json({error: 'A title is at most 200 characters'}, 400); set.title = r.title; }
-    if (r?.detail !== undefined) { if (typeof r.detail !== 'string' || r.detail.length > SERVER.todo.detail) return c.json({error: 'A detail is at most 4000 characters'}, 400); set.detail = r.detail; }
+    if (r?.kind !== undefined) { if (r.kind !== null && (typeof r.kind !== 'string' || !KIND.test(r.kind))) return c.json({error: 'Kind must be a single word (max 16 characters)'}, 400); set.kind = r.kind; }
+    if (r?.title !== undefined) { if (typeof r.title !== 'string' || r.title.length > SERVER.todo.title) return c.json({error: 'Title cannot exceed 200 characters'}, 400); set.title = r.title; }
+    if (r?.detail !== undefined) { if (typeof r.detail !== 'string' || r.detail.length > SERVER.todo.detail) return c.json({error: 'Details cannot exceed 4000 characters'}, 400); set.detail = r.detail; }
     if (r?.done !== undefined) { if (typeof r.done !== 'boolean') return c.json({error: 'done'}, 400); set.done = r.done; }
     if (r?.place !== undefined) { if (typeof r.place !== 'number' || !Number.isFinite(r.place)) return c.json({error: 'a place'}, 400); set.place = r.place; }
     const where = and(eq(todoItem.boardId, at.b.id), eq(todoItem.id, tid));
@@ -441,7 +441,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       ? await db.update(todoItem).set(set).where(where).returning() as Item[]
       : await db.select().from(todoItem).where(where) as Item[];
     if (changed.length) return c.json(todoJson(changed[0]));
-    if (typeof r?.title !== 'string' || typeof r.place !== 'number') return c.json({error: 'That item was taken off'}, 404);
+    if (typeof r?.title !== 'string' || typeof r.place !== 'number') return c.json({error: 'Item already deleted'}, 404);
     // A moment as a client says it: whole milliseconds a bigint holds, else now (1e300 was a 500).
     const created = typeof r.created === 'number' && Number.isSafeInteger(r.created) && r.created >= 0 ? r.created : Date.now();
     const by = at.address ?? await nameFor(db, c.get('userId'), d.domain);
@@ -449,7 +449,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const [made] = await db.transaction(async (tx: Db) => {
       await lock(tx, `todo:${at.b.id}`);
       const [{n}] = await tx.select({n: sql<number>`count(*)::int`}).from(todoItem).where(eq(todoItem.boardId, at.b.id));
-      if (n >= SERVER.todo.items) refuse(429, {error: 'Too many items'});
+      if (n >= SERVER.todo.items) refuse(429, {error: 'Item limit reached'});
       // Two making the same new item at once: the second's fields are laid over the first's.
       return tx.insert(todoItem).values({boardId: at.b.id, id: tid, title: '', detail: '', done: false, place: 0, ...set, by, created})
         .onConflictDoUpdate({target: [todoItem.boardId, todoItem.id], set}).returning() as Promise<Item[]>;
@@ -487,7 +487,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     guestsOf = 0) => {
     const r = await body<{body?: unknown}>(c);
     const text = typeof r?.body === 'string' ? r.body.trim() : '';
-    if (!text || text.length > SERVER.body) return c.json({error: 'A post is at most 2000 characters'}, 400);
+    if (!text || text.length > SERVER.body) return c.json({error: 'Post cannot exceed 2000 characters'}, 400);
     const whose = who.userId ? eq(talk.userId, who.userId) : eq(talk.guestId, who.guestId!);
     const row = {id: postId(), boardId: b.id, userId: who.userId ?? null, guestId: who.guestId ?? null, by: who.by, body: text};
     // Counted and written under the writer's lock (and a guest's under the board's guests' too): posts at once
@@ -498,10 +498,10 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
         await lock(tx, `guests:${b.id}`);
         const [{n: all}] = await tx.select({n: sql<number>`count(*)::int`}).from(talk)
           .where(and(eq(talk.boardId, b.id), isNull(talk.userId), gte(talk.id, idAt(Date.now() - 3600_000))));
-        if (all >= guestsOf) slowDown(3600, {error: 'Guests have written as much as they may here this hour'});
+        if (all >= guestsOf) slowDown(3600, {error: 'Hourly guest posting limit reached'});
       }
       const counted = sql`(select count(*) from ${talk} where ${and(whose, gte(talk.id, idAt(Date.now() - 3600_000)))}) < ${perHour}`;
-      if (!await insertWhere(tx, talk, row, counted)) slowDown(3600, {error: 'Too many posts this hour'});
+      if (!await insertWhere(tx, talk, row, counted)) slowDown(3600, {error: 'Hourly post limit reached'});
     });
     return c.json(shape(who.userId ?? null, false)(row), 201);
   };
@@ -516,7 +516,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const at = await mine(c.req.param('id'), me) ?? notMine();
     const whose = at.owner ? undefined : eq(talk.userId, me);
     const taken = await db.delete(talk).where(and(eq(talk.id, c.req.param('pid')), eq(talk.boardId, at.b.id), whose)).returning({id: talk.id});
-    return taken.length ? c.body(null, 204) : c.json({error: 'No such post of yours'}, 404);
+    return taken.length ? c.body(null, 204) : c.json({error: 'Post not found in your history'}, 404);
   });
 
   // Read so far, by one of its people: the newest post they have had on screen. It only goes forward,
@@ -602,17 +602,17 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   v1.post('/boards/:id/invites', async (c) => {
     const me = c.get('userId');
     const at = await mine(c.req.param('id'), me) ?? notMine();
-    if (at.b.reach !== REACH.guests) return c.json({error: 'This board takes no guests'}, 409);
+    if (at.b.reach !== REACH.guests) return c.json({error: 'This board does not allow guests'}, 409);
     const r = await body<{uses?: unknown; days?: unknown}>(c);
     const whole = (v: unknown, otherwise: number, most: number) => (v === undefined ? otherwise : Number.isInteger(v) && (v as number) >= 1 && (v as number) <= most ? v as number : NaN);
     const uses = whole(r?.uses, 1, SERVER.guest.uses), days = whole(r?.days, SERVER.guest.days, SERVER.guest.maxDays);
-    if (Number.isNaN(uses) || Number.isNaN(days)) return c.json({error: 'For 1 to 20 people, for 1 to 30 days'}, 400);
+    if (Number.isNaN(uses) || Number.isNaN(days)) return c.json({error: 'Must be 1–20 members, valid for 1–30 days'}, 400);
     const code = hex(crypto.getRandomValues(new Uint8Array(16))), id = key(), until = new Date(Date.now() + days * 86_400_000);
     await db.transaction(async (tx: Db) => {
       await lock(tx, `guests:${at.b.id}`);
       const [{n}] = await tx.select({n: sql<number>`count(*)::int`}).from(invite)
         .where(and(eq(invite.boardId, at.b.id), gt(invite.uses, 0), gt(invite.until, sql`now()`)));
-      if (n >= SERVER.guest.invites) refuse(429, {error: 'This board has as many invitations out as it takes; revoke one first'});
+      if (n >= SERVER.guest.invites) refuse(429, {error: 'Invite limit reached; revoke an active invite first'});
       await tx.insert(invite).values({id, boardId: at.b.id, serverId: at.b.serverId, userId: me, digest: await seal(code), uses, until});
     });
     const link = `${(d.appOrigin ?? '').replace(/\/$/, '')}/#guest=${at.b.id}.${code}`;
@@ -624,7 +624,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const at = await mine(c.req.param('id'), me) ?? notMine();
     const gone = await db.delete(invite).where(and(eq(invite.id, c.req.param('iid')), eq(invite.boardId, at.b.id), at.owner ? undefined : eq(invite.userId, me)))
       .returning({id: invite.id});
-    return gone.length ? c.body(null, 204) : c.json({error: 'No such invitation of yours'}, 404);
+    return gone.length ? c.body(null, 204) : c.json({error: 'Invite not found in your account'}, 404);
   });
 
   // A guest removed writes no more, and what they wrote here is taken down with them.
@@ -640,12 +640,12 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       await tx.delete(guest).where(eq(guest.id, g.id));
       return g;
     });
-    return gone ? c.body(null, 204) : c.json({error: 'No such guest of yours'}, 404);
+    return gone ? c.body(null, 204) : c.json({error: 'Guest not found under your management'}, 404);
   });
 
   // ---- for anyone: open boards, and guests (made before /v1's own routes, which ask who is calling) ----
   const open = async (id: string, reach: number = REACH.open) => { const at = await boardAt(id, null); return at && at.b.reach >= reach ? at : null; };
-  const noOpen = () => refuse(404, {error: 'No such open board'});
+  const noOpen = () => refuse(404, {error: 'Public board not found'});
   app.get('/v1/open', async (c) => {
     const list = await db.select({id: board.id, name: board.name, reach: board.reach, server: server.name}).from(board)
       .innerJoin(server, eq(server.id, board.serverId)).where(and(gte(board.reach, REACH.open), isNull(board.goneAt), isNull(server.goneAt)))
@@ -659,7 +659,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
 
   // A guest: an invitation one of its people handed them, and a name they choose; then a token for
   // writing in this board, and nothing else.
-  const guestBoard = async (id: string) => (await open(id, REACH.guests)) ?? refuse(404, {error: 'This board takes no guests'});
+  const guestBoard = async (id: string) => (await open(id, REACH.guests)) ?? refuse(404, {error: 'This board does not allow guests'});
 
   // The invitation is the whole proof: 128 random bits, kept only as a digest, so it is not found by
   // trying and the Remote's copy opens nothing. Spending a use, checking the name and letting the guest
@@ -670,29 +670,29 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const r = await body<{invite?: unknown; name?: unknown}>(c);
     const code = typeof r?.invite === 'string' ? r.invite.trim().toLowerCase() : '';
     const as = name(r?.name);
-    if (!guestName(as)) return c.json({error: 'A name of at most 32 characters, without @'}, 400);
-    if (!INVITE.test(code)) return c.json({error: 'This invitation does not open this board'}, 403);
+    if (!guestName(as)) return c.json({error: 'Name cannot exceed 32 characters (cannot contain "@")'}, 400);
+    if (!INVITE.test(code)) return c.json({error: 'Invite link invalid for this board'}, 403);
     // Tries from one address are counted too (where Cloudflare says the address): 128 bits are not
     // found by trying, but each try takes the board's lock and a write (audit V3; ASVS 2.2.1).
     const from = addressOf(c);
-    if (from) await throttled(db, `guest-join:${from}`, SERVER.guest.joinsPerHour, 3600_000, {error: 'Too many tries from here; try again later'});
+    if (from) await throttled(db, `guest-join:${from}`, SERVER.guest.joinsPerHour, 3600_000, {error: 'Too many attempts from this client; retry later'});
     const sealed = await seal(code), token = hex(crypto.getRandomValues(new Uint8Array(32)));
     const g = await db.transaction(async (tx: Db) => {
       await lock(tx, `guests:${at.b.id}`);
       const [used] = await tx.update(invite).set({uses: sql`${invite.uses} - 1`})
         .where(and(eq(invite.digest, sealed), eq(invite.boardId, at.b.id), gt(invite.uses, 0), gt(invite.until, sql`now()`)))
         .returning({by: invite.userId}) as {by: string}[];
-      if (!used) refuse(403, {error: 'This invitation does not open this board'});
+      if (!used) refuse(403, {error: 'Invite link invalid for this board'});
       // Never one of its people's names, nor the server's: a guest is not taken for someone they are not.
       const [n] = await rows<{taken: boolean; guests: number}>(tx, sql`select
         exists (select 1 from address a where a.released_at is null and lower(a.name) = lower(${as})
           and (a.server_id = ${at.b.serverId} or a.user_id in (select m.user_id from server_member m where m.server_id = ${at.b.serverId}))) as taken,
         (select count(*)::int from board_guest where board_id = ${at.b.id} and token_until > now()) as guests`);
-      if (n.taken) refuse(409, {error: 'That name is taken here'});
-      if (n.guests >= SERVER.guest.guests) refuse(429, {error: 'This board has as many guests as it takes'});
+      if (n.taken) refuse(409, {error: 'Name already taken in this space'});
+      if (n.guests >= SERVER.guest.guests) refuse(429, {error: 'Guest limit reached for this board'});
       const [made] = await tx.insert(guest).values({id: key(), boardId: at.b.id, name: as, token: await seal(token),
         tokenUntil: new Date(Date.now() + HOLD), invitedBy: used.by}).onConflictDoNothing().returning({id: guest.id}) as {id: string}[];
-      if (!made) refuse(409, {error: 'That name is taken here'});
+      if (!made) refuse(409, {error: 'Name already taken in this space'});
       return made;
     });
     return c.json({id: g.id, token, as}, 200, anyone);
@@ -703,7 +703,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const token = c.req.header('X-Guest') ?? '';
     const [g] = /^[0-9a-f]{64}$/.test(token) ? await db.select({id: guest.id, name: guest.name}).from(guest)
       .where(and(eq(guest.boardId, b.id), eq(guest.token, await seal(token)), gt(guest.tokenUntil, sql`now()`))) as {id: string; name: string}[] : [];
-    return g ?? refuse(403, {error: 'You are not a guest here'});
+    return g ?? refuse(403, {error: 'You do not have guest status here'});
   };
 
   // Who one is here, as a guest: so a guest removed, or whose lease ran out, is told so before writing.

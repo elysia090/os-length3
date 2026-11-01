@@ -6,6 +6,21 @@ import {expect, test} from './fixtures.ts';
 // is committed from main's card, named by its line. One that will not be
 // done is closed and can be reopened; a reviewer can ask for changes.
 
+test("on an issue's work, Forge's files come at once however long the Remote takes to say how the work stands", async ({signedIn: app}) => {
+  await app.newRepo.make('hello');
+  await app.newRepo.make('basil');
+  await app.git.write('hello', 'Fix: Say hello louder');
+  await app.git.step('Start').click();
+  await expect(app.git.step('Back to main')).toBeVisible();
+  // How the work stands is the Remote's to say (its line, its changes): slow to answer, it holds up nothing read here.
+  await app.page.context().route(/\/v1\/repos\/hello(\/changes|\?line=)/, async (route) => {
+    await new Promise((r) => setTimeout(r, 5000));
+    await route.continue();
+  });
+  await app.rail.go('forge');
+  await expect(app.forge.editor('README.md')).toBeVisible({timeout: 3000});
+});
+
 test('an issue goes from written to merged, and is listed under Merged', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
 
@@ -22,12 +37,24 @@ test('an issue goes from written to merged, and is listed under Merged', async (
   await app.forge.editFile('README.md', '# hello\n\nHELLO.\n');
 
   await app.rail.go('git');
-  await expect(app.main.getByRole('region', {name: '1 file not committed'})).toContainText('HELLO.');
+  await expect(app.main.getByRole('region', {name: '1 uncommitted file'})).toContainText('HELLO.');
   await app.git.step('Commit').click();
-  // Committed, it hands itself in: Commit and Push are done (no buttons), and the change waits for review.
+  // Committed, it is on one's own Remote, and on one's own repo that hands it in by itself: Commit is done (its mark,
+  // no button), there is no Push (a push is to a server or another's Remote), the Submitted switch is on, and the
+  // change waits for review, said by the Review under the box (not by a version beside the steps).
   await expect(app.git.step('Commit')).toBeHidden();
-  await expect(app.git.step('Push')).toBeHidden();
-  await expect(app.main.getByText('Change · version 1 · Undecided')).toBeVisible();
+  await expect(app.main.locator('.issue-steps .step-done')).toHaveCount(1);
+  await expect(app.main.locator('.issue-steps')).not.toContainText('Push');
+  await expect(app.main.locator('.issue-steps')).not.toContainText('v1');
+  const submitted = app.main.getByRole('switch', {name: 'Submitted'});
+  await expect(submitted).toHaveAttribute('aria-checked', 'true');
+  await expect(app.git.review).toBeVisible();
+  // Switched off, the change is taken back; on again, the same commit is handed in anew, as the next version.
+  await submitted.click();
+  await expect(submitted).toHaveAttribute('aria-checked', 'false');
+  await expect(app.git.review).toBeHidden();
+  await submitted.click();
+  await expect(submitted).toHaveAttribute('aria-checked', 'true');
   await expect(app.git.review).toBeVisible();
   await expect(app.git.review.getByText('HELLO.')).toBeVisible();
 
@@ -52,10 +79,10 @@ test('a change on main is committed from main\'s card, named by its line', async
 
   await app.rail.go('git');
   // A repo nobody has committed yet: the scaffold's README is not committed either.
-  await expect(app.git.mainCard('hello').getByRole('region', {name: '1 file not committed'})).toBeVisible();
+  await expect(app.git.mainCard('hello').getByRole('region', {name: '1 uncommitted file'})).toBeVisible();
   // A line without a title is not a commit: said under it, the keyboard kept there.
   await app.git.commitOnMain('hello', 'Docs:');
-  await expect(app.git.mainCard('hello').getByRole('alert')).toHaveText('A commit needs a title (for example Fix：title)');
+  await expect(app.git.mainCard('hello').getByRole('alert')).toHaveText('Commit requires a title (e.g. Fix: title)');
 
   await app.git.mainCard('hello').getByRole('textbox').fill('Docs: Say where it runs');
   await app.git.commitLine('hello');
@@ -77,11 +104,11 @@ test('an issue is history on main by itself: main\'s card holds only one\'s own 
   await expect(app.git.issue('#1 Fix：Say hello louder')).toBeVisible();
   // main's card: the person's own change, and not the issue (committed on main by itself as it was written).
   const card = app.git.mainCard('hello');
-  await expect(card.getByRole('region', {name: '1 file not committed'})).toContainText('Mine.');
+  await expect(card.getByRole('region', {name: '1 uncommitted file'})).toContainText('Mine.');
   await expect(card.getByText('Fix：Say hello louder')).toHaveCount(0);
   await app.git.write('hello', 'Fix: Say it twice', 'Once is not enough.');
   await expect(app.git.issue('#2 Fix：Say it twice')).toBeVisible();
-  await expect(card.getByRole('region', {name: '1 file not committed'})).toBeVisible();
+  await expect(card.getByRole('region', {name: '1 uncommitted file'})).toBeVisible();
   // Worked on, #2 still has #1 beside it (it is main's, not left out of the work's copy), and #1 is closed from there.
   await app.git.step('Start').click();
   await expect(app.git.step('Back to main')).toBeVisible();
@@ -93,8 +120,8 @@ test('an issue is history on main by itself: main\'s card holds only one\'s own 
   await expect(app.git.issue('#2 Fix：Say it twice')).toBeVisible();
   // Back on main, its card still holds the person's own file alone.
   await app.git.step('Back to main').click();
-  await expect(app.git.step('Continue here')).toBeVisible();
-  await expect(card.getByRole('region', {name: '1 file not committed'})).toContainText('Mine.');
+  await expect(app.git.step('Resume here')).toBeVisible();
+  await expect(card.getByRole('region', {name: '1 uncommitted file'})).toContainText('Mine.');
 });
 
 test('many repos waiting on main are a row each in All, a row\'s name opens its files, and one repo shown is its card', async ({signedIn: app}) => {
@@ -104,33 +131,33 @@ test('many repos waiting on main are a row each in All, a row\'s name opens its 
   const row = app.git.mainCard('a'), open = row.getByRole('button', {name: 'a', exact: true});
   // Four waiting: rows, their files folded until asked for.
   await expect(open).toHaveAttribute('aria-expanded', 'false');
-  await expect(row.getByRole('region', {name: '1 file not committed'})).toHaveCount(0);
+  await expect(row.getByRole('region', {name: '1 uncommitted file'})).toHaveCount(0);
   await expect(row.getByRole('button', {name: 'Commit'})).toBeVisible();
   await open.click();
-  await expect(row.getByRole('region', {name: '1 file not committed'})).toBeVisible();
+  await expect(row.getByRole('region', {name: '1 uncommitted file'})).toBeVisible();
   await expect(open).toBeFocused();
   // One repo shown: its card, the files on it.
   await app.git.repos.getByRole('radio', {name: 'b', exact: true}).click();
-  await expect(app.git.mainCard('b').getByRole('region', {name: '1 file not committed'})).toBeVisible();
+  await expect(app.git.mainCard('b').getByRole('region', {name: '1 uncommitted file'})).toBeVisible();
   await expect(app.git.mainCard('b').getByRole('button', {name: 'b', exact: true})).toHaveCount(0);
 });
 
 test('Escape puts away an issue being written and a commit\'s line, and they come back as they were', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
   await app.rail.go('git');
-  await app.main.getByRole('button', {name: 'Write an issue'}).first().click();
+  await app.main.getByRole('button', {name: 'Create issue'}).first().click();
   await app.git.firstLine.fill('Fix: Say hello louder');
   await app.page.keyboard.press('Escape');
   await expect(app.git.firstLine).toBeHidden();
-  await expect(app.main.getByRole('button', {name: 'Write an issue'}).first()).toBeFocused();
-  await app.main.getByRole('button', {name: 'Write an issue'}).first().click();
+  await expect(app.main.getByRole('button', {name: 'Create issue'}).first()).toBeFocused();
+  await app.main.getByRole('button', {name: 'Create issue'}).first().click();
   await expect(app.git.firstLine).toHaveValue('Fix: Say hello louder');
   await expect(app.git.firstLine).toBeFocused();
-  await app.main.getByRole('button', {name: 'Not now'}).click();
+  await app.main.getByRole('button', {name: 'Cancel'}).click();
 
   const card = app.git.mainCard('hello');
   await card.getByRole('button', {name: 'Commit', exact: true}).click();
-  const line = card.getByRole('textbox', {name: 'The commit\'s line as Kind: title'});
+  const line = card.getByRole('textbox', {name: 'Commit title format: Type: Title'});
   await line.fill('Docs: Say where it runs');
   await app.page.keyboard.press('Escape');
   await expect(line).toBeHidden();
@@ -205,9 +232,13 @@ test('a started issue\'s deeds go down the box\'s right edge, where Start was pr
   const start = (await app.git.step('Start').boundingBox())!;
   await app.git.step('Start').click();
   await expect(app.git.step('Back to main')).toBeVisible();
-  for (const deed of ['Commit', 'Push']) {
-    const b = (await app.git.step(deed).boundingBox())!;
-    expect(Math.abs(b.x + b.width - (start.x + start.width))).toBeLessThan(2);
+  // Asked again until it holds: the box is drawn as Start is pressed and again as the repo's state comes, and a deed
+  // measured as the first drawing is taken away has no box.
+  for (const deed of ['Commit']) {
+    await expect.poll(async () => {
+      const b = await app.git.step(deed).boundingBox();
+      return b ? Math.abs(b.x + b.width - (start.x + start.width)) : Infinity;
+    }).toBeLessThan(2);
   }
 });
 
@@ -233,16 +264,16 @@ test('a reviewer asks for changes with a line marked, and the change waits for t
   await app.git.handIn({path: 'README.md', text: '# hello\n\nhello.\n'});
 
   // Asking says what: with nothing written or marked, it is asked for.
-  await app.git.step('Ask for changes').click();
-  await expect(app.git.review.getByRole('alert')).toHaveText('Say what to change, or mark its lines');
+  await app.git.step('Request changes').click();
+  await expect(app.git.review.getByRole('alert')).toHaveText('Specify requested changes or select target lines');
 
   const line = app.git.review.getByRole('button', {name: 'hello.', exact: true});
   await line.click();
   await expect(line).toHaveAttribute('aria-pressed', 'true');
   await app.git.review.getByRole('textbox', {name: 'Comment'}).fill('Louder, in capitals.');
-  await app.git.step('Ask for changes').click();
+  await app.git.step('Request changes').click();
 
-  await expect(app.git.review.getByText('Asked for changes')).toBeVisible();
+  await expect(app.git.review.getByText('Changes requested')).toBeVisible();
   await expect(app.git.review.getByText('Louder, in capitals.')).toBeVisible();
   await expect(app.main.getByText('Not approved yet')).toBeVisible();
   await expect(app.git.step('Merge')).toBeDisabled();
@@ -266,7 +297,7 @@ test('a new issue\'s repo is chosen in the one row above the box, Create at the 
   for (const r of ['notes', 'tide-tables', 'website-redesign', 'data-pipeline', 'design-system', 'infra-terraform']) await app.newRepo.make(r);
   await app.rail.go('git');
   await app.git.repos.getByRole('radio', {name: 'All', exact: true}).click();
-  await app.main.getByRole('button', {name: 'Write an issue'}).click();
+  await app.main.getByRole('button', {name: 'Create issue'}).click();
   // One row, outside the box: every chip on one line, however many there are; none inside the box.
   const tops = await app.git.repos.getByRole('radio').evaluateAll((all) => all.map((c) => Math.round(c.getBoundingClientRect().top)));
   expect(new Set(tops).size).toBe(1);
@@ -282,10 +313,10 @@ test('a new issue\'s repo is chosen in the one row above the box, Create at the 
 
   // Create first, then Not now; Not now makes nothing.
   const create = await app.git.step('Create').boundingBox();
-  const notNow = await app.git.step('Not now').boundingBox();
+  const notNow = await app.git.step('Cancel').boundingBox();
   expect(create!.x).toBeLessThan(notNow!.x);
   await app.git.firstLine.fill('Fix: Not made');
-  await app.git.step('Not now').click();
+  await app.git.step('Cancel').click();
   await expect(app.git.issues).toContainText('No issues yet');
 
   await app.git.write('tide-tables', 'Fix: The table wraps', 'On a phone.');
@@ -348,7 +379,7 @@ test('a field drawn again under the keyboard keeps its caret and what was select
 test('Enter goes from a new issue\'s first line to its detail, and Ctrl+Enter creates it', async ({app}) => {
   await app.newRepo.make('notes');
   await app.rail.go('git');
-  await app.main.getByRole('button', {name: 'Write an issue'}).click();
+  await app.main.getByRole('button', {name: 'Create issue'}).click();
   await app.git.firstLine.fill('Fix: Made from the keyboard');
   await app.git.firstLine.press('Enter');
   const detail = app.main.getByRole('textbox', {name: 'Summary'});
@@ -362,7 +393,7 @@ test('Enter goes from a new issue\'s first line to its detail, and Ctrl+Enter cr
 test('the detail of a new issue has the room the repos inside the box had', async ({app}) => {
   await app.newRepo.make('notes');
   await app.rail.go('git');
-  await app.main.getByRole('button', {name: 'Write an issue'}).click();
+  await app.main.getByRole('button', {name: 'Create issue'}).click();
   // 96 px, and two rows of chips and the gap under them (32 + 8 + 32 + 12).
   expect((await app.main.getByRole('textbox', {name: 'Summary'}).boundingBox())!.height).toBeGreaterThanOrEqual(180);
 });
@@ -376,14 +407,14 @@ test('an empty Issue view in Forge writes the first issue for its repo, and Not 
   await app.newRepo.openInForge();
   await app.forge.show('Issue');
   await expect(app.forge.reference).toContainText('No issues yet');
-  await app.forge.reference.getByRole('button', {name: 'Write an issue'}).click();
+  await app.forge.reference.getByRole('button', {name: 'Create issue'}).click();
 
   await expect(app.rail.button('git')).toHaveAttribute('aria-current', 'page');
   await expect(app.git.firstLine).toBeFocused();
   await expect(app.git.firstLine).toHaveAccessibleDescription('tide');
   await expect(app.git.repos.getByRole('radio', {name: 'notes', exact: true})).toBeChecked();
 
-  await app.git.step('Not now').click();
+  await app.git.step('Cancel').click();
   await expect(app.rail.button('forge')).toHaveAttribute('aria-current', 'page');
   await expect(app.forge.editor('README.md')).toHaveValue('# tide\n');
   await app.forge.show('Issue');
@@ -442,7 +473,7 @@ test('Git is read and pressed: its box at the foot stands back until asked for, 
   const dock = app.main.locator('.dock:visible');
   await expect(dock).toHaveCSS('opacity', '0');
   await app.page.keyboard.press('Control+Backquote');
-  await expect(app.main.getByRole('textbox', {name: 'Prompt box', exact: true})).toBeFocused();
+  await expect(app.main.getByRole('textbox', {name: 'Prompt input', exact: true})).toBeFocused();
   await expect(dock).toHaveCSS('opacity', '1');
   await app.page.keyboard.press('Escape');
   await expect(dock).toHaveCSS('opacity', '0');

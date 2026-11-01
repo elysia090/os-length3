@@ -15,17 +15,17 @@ import {askFirst, type AskWays, type Deed} from './repo-off.ts';
 /** Where a repo stands, in words. */
 export function syncWord(s: RepoSync | undefined): string {
   if (!s) return '';
-  if (s.where === 'local') return t('Only on this device');
-  if (s.where === 'off') return t('Off on the Remote');
-  if (s.where === 'waits') return t('Kept here · waits for room on the Remote');
-  if (s.where === 'sending') return t('Sending');
+  if (s.where === 'local') return t('Local only');
+  if (s.where === 'off') return t('Disabled on Remote');
+  if (s.where === 'waits') return t('Stored locally · Waiting for Remote storage');
+  if (s.where === 'sending') return t('Sending…');
   if (s.where === 'offline') {
-    const not = s.changed ? tn('Not sent yet ({n} change)', 'Not sent yet ({n} changes)', s.changed) : t('Not sent yet');
+    const not = s.changed ? tn('Unsent changes: {n}', 'Unsent changes: {n}', s.changed) : t('Unsent');
     // Why, as the Remote (or this browser) said it: not reached, full, too large.
     return s.error ? `${not} · ${s.error}` : not;
   }
-  if (s.unsynced.length) return tn('In step · {n} thing cannot be sent', 'In step · {n} things cannot be sent', s.unsynced.length);
-  return t('In step');
+  if (s.unsynced.length) return tn('Synced · {n} unsent item', 'Synced · {n} unsent items', s.unsynced.length);
+  return t('Synced');
 }
 
 /** The copy of a repo on this device, as the store lists it. */
@@ -58,14 +58,14 @@ export function repoCard(name: string, here: Here | null, there: RemoteRepo | nu
   const gone = account.remoteAway();
   const forge = forgeButton(name, here, there, gone, error, w);
   const power = h('button', {type: 'button', class: 'power', role: 'switch', 'aria-checked': String(!off),
-    'aria-label': off ? t('Turn {repo} on', {repo: name}) : t('Turn {repo} off', {repo: name})}, h('span', {class: 'knob'})) as HTMLButtonElement;
+    'aria-label': off ? t('Enable {repo}', {repo: name}) : t('Disable {repo}', {repo: name})}, h('span', {class: 'knob'})) as HTMLButtonElement;
   power.disabled = gone;
   // Held back by the plan: said where it stands, and the way to the Plan beside it.
-  const plan = !off && here && repoState(name)?.where === 'waits' ? button(t('See the plan'), 'small-button') : null;
+  const plan = !off && here && repoState(name)?.where === 'waits' ? button(t('View plan'), 'small-button') : null;
   plan?.addEventListener('click', w.toPlan);
   const share = who && !off ? sharing(who, error, {makeServer: w.makeServer, toPlan: w.toPlan}) : null;
   // Off, beside 空ける: 廃棄, which takes it from the Remote now, for good, asked for as turning it off was.
-  const discard = off ? h('button', {type: 'button', class: 'button small-button discard'}, t('Discard')) as HTMLButtonElement : null;
+  const discard = off ? h('button', {type: 'button', class: 'button small-button discard'}, t('Delete permanently')) as HTMLButtonElement : null;
   if (discard) discard.disabled = gone;
   // A group named by its repo, so what is in it (its switch, Share, Forge) is heard as the repo's.
   const el = h('div', {class: `card repo${off ? ' off' : ''}${plan ? ' held' : ''}`, 'data-repo': name, role: 'group', 'aria-label': name},
@@ -90,11 +90,11 @@ export function repoCard(name: string, here: Here | null, there: RemoteRepo | nu
 /** On, the repo opens in Forge; off, what was Forge frees the copy here (the Remote keeps it 30 days). */
 function forgeButton(name: string, here: Here | null, there: RemoteRepo | null, gone: boolean, error: HTMLElement, w: CardWays): HTMLButtonElement {
   const off = !!there?.offAt;
-  const forge = button(off ? t('Free') : t('Forge'), 'small-button');
+  const forge = button(off ? t('Free space') : t('Forge'), 'small-button');
   forge.disabled = gone && !here;
   if (off) {
     forge.hidden = !here;
-    forge.title = t('The Remote keeps it until {date}; the copy here goes', {date: day(there!.until!)});
+    forge.title = t('Kept on Remote until {date}; local copy will be removed', {date: day(there!.until!)});
     forge.addEventListener('click', () => void pressing(forge, error, async () => { await freeOff(name); await w.paint(); }));
   } else forge.addEventListener('click', () => void pressing(forge, error, async () => { if (!here) await bring(name); w.forge(name); }));
   return forge;
@@ -112,8 +112,8 @@ function facts(name: string, here: Here | null, there: RemoteRepo | null): Node[
   const size = there?.bytes ?? here?.bytes ?? 0;
   const changed = there ? Date.parse(there.updatedAt) : here?.modified ?? 0;
   const where = there?.offAt
-    ? t('Off · back until {date}', {date: day(there.until!)})
-    : here ? syncWord(repoState(name)) : t('Only on the Remote');
-  return [h('span', {class: 'muted'}, `${bytes(size)} · ${t('Changed {when}', {when: ago(changed)})}`),
+    ? t('Disabled · Recoverable until {date}', {date: day(there.until!)})
+    : here ? syncWord(repoState(name)) : t('Remote only');
+  return [h('span', {class: 'muted'}, `${bytes(size)} · ${t('Updated {when}', {when: ago(changed)})}`),
     h('span', {class: 'muted card-sync'}, where)];
 }

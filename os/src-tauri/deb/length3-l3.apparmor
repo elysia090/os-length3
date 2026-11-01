@@ -1,0 +1,12 @@
+# l3 makes the user namespaces its Prompts run in (core/src/launch.rs), which AppArmor keeps from unprivileged
+# programs on Ubuntu 23.10 and later unless a profile lets them. This one lets /usr/bin/l3 make them and changes
+# nothing else: l3 is not confined by it. Put in place by the .deb's postinst only where the kernel has that
+# restriction (deb/postinst).
+abi <abi/4.0>,
+include <tunables/global>
+
+profile length3-l3 /usr/bin/l3 flags=(unconfined) {
+  userns,
+
+  include if exists <local/length3-l3>
+}

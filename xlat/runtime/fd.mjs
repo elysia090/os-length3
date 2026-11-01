@@ -86,7 +86,7 @@ export class Pipe {
 /** One open file description, shared by dup'd and inherited descriptors. */
 export class Description {
   constructor(kind, {node = null, pipe = null, flags = 0, path = ''} = {}) {
-    this.kind = kind; // file | dir | pipe-r | pipe-w | console | device | eventfd | epoll
+    this.kind = kind; // file | dir | pipe-r | pipe-w | console | device | eventfd | epoll | socket (`sock`: sys-net.mjs)
     this.node = node;
     this.pipe = pipe;
     this.flags = flags;
@@ -94,32 +94,37 @@ export class Description {
     this.offset = 0;
     this.refs = 0;
     this.closed = false;
-    if (kind === 'pipe-r') pipe.readers++;
-    if (kind === 'pipe-w') pipe.writers++;
+    // A FIFO opened for both reading and writing (pipe-rw) is a reader and a writer of its pipe at once.
+    if (kind === 'pipe-r' || kind === 'pipe-rw') pipe.readers++;
+    if (kind === 'pipe-w' || kind === 'pipe-rw') pipe.writers++;
   }
   retain() { this.refs++; return this; }
   release() {
     if (--this.refs > 0) return;
     this.closed = true;
-    if (this.kind === 'pipe-r') { this.pipe.readers--; this.pipe.changes++; }
-    if (this.kind === 'pipe-w') { this.pipe.writers--; this.pipe.changes++; }
+    if (this.kind === 'pipe-r' || this.kind === 'pipe-rw') { this.pipe.readers--; this.pipe.changes++; }
+    if (this.kind === 'pipe-w' || this.kind === 'pipe-rw') { this.pipe.writers--; this.pipe.changes++; }
+    // A local socket's last descriptor gone: it is closed (sys-net.mjs).
+    if (this.kind === 'socket') this.sock.close();
   }
 }
 
-export const MAX_FDS = 1024;
+/** How many descriptors a process starts allowed (RLIMIT_NOFILE's soft limit; sys-proc.mjs's setrlimit moves it). */
+export const FDS = 1024;
 
 export class FdTable {
-  constructor() {
+  constructor(limit = FDS) {
     this.slots = new Map(); // fd -> {description, cloexec}
+    this.limit = limit; // RLIMIT_NOFILE's soft limit: no descriptor at or past it
   }
   get(fd) { return this.slots.get(fd)?.description ?? null; }
   lowest(from = 0) {
     let fd = from;
     while (this.slots.has(fd)) fd++;
-    return fd < MAX_FDS ? fd : -1;
+    return fd < this.limit ? fd : -1;
   }
   install(description, {fd = this.lowest(), cloexec = false} = {}) {
-    if (fd < 0) return -1;
+    if (fd < 0 || fd >= this.limit) return -1;
     this.close(fd);
     this.slots.set(fd, {description: description.retain(), cloexec});
     return fd;
@@ -135,7 +140,7 @@ export class FdTable {
   cloexec(fd) { return this.slots.get(fd)?.cloexec ?? false; }
   /** A child's table: the same descriptions, each retained once more. */
   fork() {
-    const t = new FdTable();
+    const t = new FdTable(this.limit);
     for (const [fd, s] of this.slots) t.slots.set(fd, {description: s.description.retain(), cloexec: s.cloexec});
     return t;
   }

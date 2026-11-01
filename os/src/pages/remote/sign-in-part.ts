@@ -12,7 +12,7 @@ import {atSignIn, button, pressing} from './parts.ts';
  * providers are drawn from.
  */
 export function signInBody(ways: account.Ways): Node[] {
-  return ways.enter ? [h('p', {class: 'muted'}, t('You came in by the link you were given; each time lasts a day.'))]
+  return ways.enter ? [h('p', {class: 'muted'}, t('Accessed via invite link; session is valid for 24 hours.'))]
     : [passkeySection(), providerSection(ways)];
 }
 
@@ -24,7 +24,7 @@ function passkeySection(): HTMLElement {
   const paint = async () => {
     const list = await account.passkeys().catch((e) => { error.textContent = errorText(e); return []; });
     // Made where passkeys are: here on the web, in the browser from the app. Removed from either.
-    const add = button(account.deedsHere() ? t('Add a passkey') : t('Add in the browser'), 'small-button');
+    const add = button(account.deedsHere() ? t('Add passkey') : t('Add in browser'), 'small-button');
     add.addEventListener('click', () => void pressing(add, error, async () => {
       if (!account.deedsHere()) { await atSignIn(note, paint); return; }
       await account.addPasskey(); await paint();
@@ -34,8 +34,8 @@ function passkeySection(): HTMLElement {
         const remove = button(t('Remove'), 'small-button');
         remove.addEventListener('click', () => void pressing(remove, error, async () => { await account.removePasskey(k.id); await paint(); }));
         return h('div', {class: 'row-item usage-prompt'}, h('span', {class: 'row-name'}, k.name || t('Passkey')),
-          h('span', {class: 'row-meta'}, `${t('Made {when}', {when: ago(Date.parse(k.createdAt))})}${k.backedUp ? ` · ${t('synced passkey')}` : ''}`), remove);
-      }) : [h('div', {class: 'row-item muted'}, t('No passkeys yet'))])), note, error);
+          h('span', {class: 'row-meta'}, `${t('Created {when}', {when: ago(Date.parse(k.createdAt))})}${k.backedUp ? ` · ${t('Synced passkey')}` : ''}`), remove);
+      }) : [h('div', {class: 'row-item muted'}, t('No passkeys registered'))])), note, error);
   };
   void paint();
   return section;

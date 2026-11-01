@@ -1,5 +1,5 @@
-// Pin the l3 this tree releases: its entry goes first in core/src/root.rs's
-// RELEASES, the whole of its pin for both ways in: the root (the bundle the
+// Pin the l3 this tree releases: its entry is core/src/root.rs's RELEASES,
+// the whole of its pin for both ways in: the root (the bundle the
 // desktop app installs, by sha256 and size) and `web`, the sha256 of the
 // index the browser reads the same root by (scripts/l3.mjs, made from that
 // bundle). l3 and the app built from this tree install that root (and no
@@ -7,7 +7,9 @@
 // (scripts/prompt-files.mjs). The release does it before building what
 // ships beside the root, so the app in a release trusts that release's
 // root; the same entry is then committed, so the source says what was
-// released.
+// released. Only this release is pinned: a device installs the newest pin
+// alone and keeps the root it had beside it, and the releases no longer
+// pinned are deleted (.github/workflows/releases-prune.yml).
 //
 //   node scripts/pin-root.mjs OUT/os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst [WEB] [--rs FILE]
 //
@@ -57,5 +59,9 @@ if (before) {
   if (before[1] === webSha || !webSha) { console.log(`${name}: pinned already${before[1] ? ` (web ${before[1]})` : ''}`); process.exit(0); }
   if (before[1]) throw new Error(`${name} is pinned with web ${before[1]}; this one is ${webSha}: a released index is never changed`);
   writeFileSync(rsAt, src.replace(before[0], entry));
-} else writeFileSync(rsAt, src.replace(head, `${head}${entry}, `));
+} else {
+  const end = src.indexOf('}];', src.indexOf(head));
+  if (end < 0) throw new Error(`${rsAt}: RELEASES has no end ("}];")`);
+  writeFileSync(rsAt, `${src.slice(0, src.indexOf(head))}${head}${entry}];${src.slice(end + 3)}`);
+}
 console.log(`${name}: pinned (${sha256}, ${bytes} bytes${webSha ? `, web ${webSha}` : ''})`);

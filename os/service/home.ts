@@ -41,7 +41,7 @@ export function homeRoutes(d: {db: Db}, v1: Hono<Vars>) {
     if (!done.length) {
       const [row] = await db.select({value: home.value, version: home.version}).from(home).where(and(eq(home.userId, user), eq(home.key, k)));
       // None there, and none made: the account keeps the most settings it may.
-      if (!row && version === 0) return c.json({error: 'Too many settings'}, 429);
+      if (!row && version === 0) return c.json({error: 'Too many configuration settings'}, 429);
       return c.json(row ?? {value: null, version: 0}, 409);
     }
     return c.json({version: done[0].version});

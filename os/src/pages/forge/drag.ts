@@ -77,7 +77,7 @@ export function dropInto(row: Row, drag: Drag, land: (name: string, at: number, 
     const r = d.over?.getBoundingClientRect() ?? box;
     const left = d.instead ? r.left : d.at <= row.shown.indexOf(d.over?.dataset.key ?? '') ? r.left : r.left + r.width / 2;
     const width = d.instead ? r.width : r.width / 2;
-    drag.hintAt(left - box.left, width, d.instead ? 'instead' : 'beside', d.instead ? t('Open here') : t('Open beside'));
+    drag.hintAt(left - box.left, width, d.instead ? 'instead' : 'beside', d.instead ? t('Open here') : t('Open to the side'));
   });
   cols.addEventListener('dragleave', (event) => { if (!cols.contains(event.relatedTarget as Node)) drag.unhint(); });
   cols.addEventListener('drop', (event) => {

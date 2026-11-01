@@ -115,7 +115,7 @@ test('asking too often is 429 with Retry-After and retryAfter, wherever it is co
 
   // The helper every per-address count goes through: many at once are counted one by one.
   const db = await freshDb();
-  const tries = await Promise.allSettled(Array.from({length: 8}, () => throttled(db, 'test:burst', 5, 60_000, {error: 'Too many tries from here; try again later'})));
+  const tries = await Promise.allSettled(Array.from({length: 8}, () => throttled(db, 'test:burst', 5, 60_000, {error: 'Too many attempts from this client; retry later'})));
   assert.deepEqual([tries.filter((x) => x.status === 'fulfilled').length, tries.filter((x) => x.status === 'rejected').length], [5, 3]);
 });
 
@@ -131,7 +131,7 @@ test('Better Auth\'s own refusals for asking too often are said the same way, an
   assert.equal(r.status, 429);
   const wait = r.headers.get('Retry-After');
   assert.ok(wait && Number(wait) > 0 && Number(wait) <= 60, String(wait));
-  assert.deepEqual(await r.json(), {error: 'Too many requests; try again later', retryAfter: Number(wait)});
+  assert.deepEqual(await r.json(), {error: 'Rate limit exceeded; retry later', retryAfter: Number(wait)});
   for (const p of ['/passkey/verify-authentication', '/device/approve', '/device/token']) assert.ok((AUTH_LIMITS[p] as {max: number}).max <= 40, p);
   // What only reads (every page load asks who it is) is counted at the edge, not written to the database each time.
   assert.deepEqual([AUTH_LIMITS['/get-session'], AUTH_LIMITS['/list-accounts']], [false, false]);
@@ -200,12 +200,12 @@ test('the role the Worker connects as reads and writes rows, and can make, chang
   const pg = await database();
   try {
     // Made by the function deploy.ts makes it with (neon.ts workerRole): a login role in remote_app and
-    // nothing more, its statements, idle transactions and lock waits cut off.
+    // nothing more, its statements, idle transactions and lock waits cut off, and nothing compiled (JIT).
     const role = await workerRole(drizzle(pg, {schema}) as unknown as Parameters<typeof workerRole>[0], 'test1');
     const [r] = (await pg.query<{super: boolean; settings: string[]}>(`select r.rolsuper as super, s.setconfig as settings from pg_roles r
       left join pg_db_role_setting s on s.setrole = r.oid where r.rolname = $1`, [role])).rows;
     assert.equal(r.super, false);
-    assert.deepEqual([...r.settings].sort(), ['idle_in_transaction_session_timeout=15s', 'lock_timeout=5s', 'statement_timeout=15s']);
+    assert.deepEqual([...r.settings].sort(), ['idle_in_transaction_session_timeout=15s', 'jit=off', 'lock_timeout=5s', 'statement_timeout=15s']);
     const member = (await pg.query<{role: string}>(`select b.rolname as role from pg_auth_members m join pg_roles a on a.oid = m.member
       join pg_roles b on b.oid = m.roleid where a.rolname = $1`, [role])).rows.map((x) => x.role);
     assert.deepEqual(member, ['remote_app']);

@@ -82,6 +82,18 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(app.main.locator('.prompt-chip')).toHaveCSS('border-radius', /^(9999|999)px$/);
   });
 
+  test('Run chosen again in the box, a line sent brings the Prompt up: what it prints is seen, never run out of sight', async ({app}) => {
+    // Another of the box's deeds puts the Prompt down, the keyboard staying in the box; Run is chosen back from there.
+    await app.forge.promptBox.press('Alt+3');
+    await expect(app.main.locator('.screen > .glass')).toBeHidden();
+    await app.forge.promptBox.press('Alt+1');
+    await expect(app.forge.promptBox).toBeFocused();
+    await app.forge.promptBox.fill('echo seen');
+    await app.forge.promptBox.press('Control+Enter');
+    await expect(app.main.locator('.screen > .glass')).toBeVisible();
+    await expect(app.forge.prompt.locator('.term-out')).toContainText('seen');
+  });
+
   test('clear clears what the Prompt shows, and Ctrl+C on a run says ^C where it was cut, as a terminal does', async ({app}) => {
     const out = app.forge.prompt.locator('.term-out');
     await app.forge.run('ls');
@@ -116,40 +128,40 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
 
   test('a run that takes a while says how long it has run, until it is done', async ({app}) => {
     await app.forge.run('sleep 4; echo slept');
-    await expect(app.forge.prompt.getByText(/^Running [2-9]s/)).toBeVisible({timeout: 30_000});
+    await expect(app.forge.prompt.getByText(/^Running \([2-9]s\)/)).toBeVisible({timeout: 30_000});
     await expect(app.forge.prompt).toContainText(/^slept$/m, {timeout: 60_000});
     await expect(app.forge.prompt.getByText(/^Running /)).toHaveCount(0);
   });
 
-  test('stopped from Runtime, it goes from Prompts running without leaving the page; what holds its repo is said as it is', async ({app}) => {
+  test('stopped from Runtime, it goes from Running Prompts without leaving the page; what holds its repo is said as it is', async ({app}) => {
     await app.forge.run('true');
     await app.runtime.open('This browser');
     const here = app.main.getByRole('region', {name: /^In this browser/});
     // Signed out, there is no Remote to free it to, Prompt or none: that is what is said, not the Prompt.
-    await expect(here).toContainText('Sign in to the Remote to free it');
-    await expect(here).not.toContainText('A Prompt has it open');
-    await app.runtime.part('Prompts running').click();
-    await app.main.getByRole('tabpanel', {name: /^Prompts running/}).getByRole('button', {name: 'Stop', exact: true}).click();
+    await expect(here).toContainText('Sign in to Remote to delete');
+    await expect(here).not.toContainText('Locked by an active Prompt');
+    await app.runtime.part('Running Prompts').click();
+    await app.main.getByRole('tabpanel', {name: /^Running Prompts/}).getByRole('button', {name: 'Stop', exact: true}).click();
     await app.runtime.part('This browser').click();
-    await expect(here).toContainText('Sign in to the Remote to free it');
+    await expect(here).toContainText('Sign in to Remote to delete');
   });
 
   test('a repo whose Prompt waits is renamed from its gear, its Prompt stopped first as the field says', async ({app}) => {
     await app.forge.run('true');
     await app.rail.go('home');
     const card = app.main.getByRole('region', {name: 'Repos'}).getByRole('group', {name: 'hello', exact: true});
-    await card.getByRole('button', {name: 'What to do with hello'}).click();
-    const menu = card.getByRole('menu', {name: 'What to do with hello'});
+    await card.getByRole('button', {name: 'Actions for hello'}).click();
+    const menu = card.getByRole('menu', {name: 'Actions for hello'});
     await menu.getByRole('menuitem', {name: 'Rename'}).click();
-    await expect(menu).toContainText('Its Prompt is stopped first: nothing is running in it.');
+    await expect(menu).toContainText('Prompt is stopped; ready for maintenance.');
     await menu.getByRole('textbox', {name: 'New name'}).fill('hullo');
     await menu.getByRole('textbox', {name: 'New name'}).press('Enter');
     await expect(app.main.getByRole('region', {name: 'Repos'}).getByRole('group', {name: 'hullo', exact: true})).toBeVisible();
     await app.runtime.open('This browser');
-    await expect(app.runtime.part('Prompts running')).toHaveCount(0);
+    await expect(app.runtime.part('Running Prompts')).toHaveCount(0);
   });
 
-  test('put back, the pane tells the line run; up again the Prompt starts at its line, what it printed folded under Earlier', async ({app}) => {
+  test('put back, the pane tells the line run; up again the Prompt starts at its line, and the line pressed in the pane is read there', async ({app}) => {
     await app.forge.run('echo folded-away');
     const said = (where: import('@playwright/test').Locator) => where.locator('.term-out').getByText('folded-away', {exact: true});
     await expect(said(app.forge.prompt)).toBeVisible();
@@ -158,18 +170,35 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     const pane = app.main.locator('.term-home');
     await expect(pane.getByText('echo folded-away')).toBeVisible();
     await expect(said(pane)).toBeHidden();
-    // Up again, it starts at its prompt line, what came before folded under one line that opens it.
+    // Up again, it starts at its prompt line: what came before is the pane's, nothing of it kept in the Prompt.
     await app.forge.promptBox.focus();
-    const earlier = app.forge.prompt.getByRole('button', {name: 'Earlier (1)'});
-    await expect(earlier).toBeVisible();
     await expect(said(app.forge.prompt)).toBeHidden();
-    await earlier.click();
-    await expect(said(app.forge.prompt)).toBeVisible();
-    // Put back and the line pressed in the pane: up with what it printed, there.
-    await app.forge.promptBox.focus();
+    await expect(app.forge.prompt.getByRole('button', {name: /History/})).toHaveCount(0);
     await app.page.keyboard.press('Escape');
+    // The line pressed in the pane: read there, under the search box, with all it printed; the Prompt stays down.
     await pane.getByText('echo folded-away').click();
-    await expect(said(app.forge.prompt)).toBeVisible();
+    const read = app.main.locator('.found-body');
+    await expect(read.getByText('folded-away', {exact: true})).toBeVisible();
+    await expect(said(app.forge.prompt)).toBeHidden();
+  });
+
+  test('each line run starts the screen again: what ran before is only in the pane', async ({app}) => {
+    await app.forge.run('echo first-run');
+    const out = (where: import('@playwright/test').Locator, text: string) => where.locator('.term-out').getByText(text, {exact: true});
+    await expect(out(app.forge.prompt, 'first-run')).toBeVisible();
+    // The Prompt still up, the next line: the screen holds it and what it printed, nothing of the one before.
+    await app.forge.run('echo second-run');
+    await expect(out(app.forge.prompt, 'second-run')).toBeVisible();
+    await expect(out(app.forge.prompt, 'first-run')).toBeHidden();
+    await expect(app.forge.prompt.locator('.term-out .cmd').filter({hasText: 'echo first-run'})).toBeHidden();
+    expect(await app.forge.prompt.locator('.term-out').evaluate((el) => (el as HTMLElement).innerText)).not.toContain('first-run');
+    // The pane lists both lines run, and the first, pressed there, is read there with what it printed.
+    await app.page.keyboard.press('Escape');
+    const pane = app.main.locator('.term-home');
+    await expect(pane.getByText('echo first-run')).toBeVisible();
+    await expect(pane.getByText('echo second-run')).toBeVisible();
+    await pane.getByText('echo first-run').click();
+    await expect(app.main.locator('.found-body').getByText('first-run', {exact: true})).toBeVisible();
   });
 
   test('what the Prompt showed is still there after Git and back, and after Home and back', async ({app}) => {
@@ -185,10 +214,10 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
   test('a Prompt stopped says so as the last thing under its output, with its power switch off beside the words', async ({app}) => {
     await app.forge.run('echo before-stop');
     await expect(app.forge.prompt).toContainText(/^before-stop$/m);
-    await app.runtime.open('Prompts running');
-    await app.main.getByRole('tabpanel', {name: /^Prompts running/}).getByRole('button', {name: 'Stop', exact: true}).click();
+    await app.runtime.open('Running Prompts');
+    await app.main.getByRole('tabpanel', {name: /^Running Prompts/}).getByRole('button', {name: 'Stop', exact: true}).click();
     await app.rail.go('forge');
-    const again = app.forge.prompt.getByRole('switch', {name: 'Start again'});
+    const again = app.forge.prompt.getByRole('switch', {name: 'Restart'});
     await expect(again).toBeVisible();
     await expect(again).toHaveAttribute('aria-checked', 'false');
     // No taller than the line it is on.
@@ -209,8 +238,8 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await app.forge.run('true');
     await app.runtime.makeDotfile('.profile', 'export EDITOR=vi\n');
     const note = app.runtime.dotfiles.getByRole('status');
-    await expect(note).toContainText('The Prompt in hello gets it when it starts again');
-    await note.getByRole('button', {name: 'Start again'}).click();
+    await expect(note).toContainText('Prompt in hello applies updates on restart');
+    await note.getByRole('button', {name: 'Restart'}).click();
     await expect(note).toBeHidden();
   });
 });
@@ -222,8 +251,8 @@ test.describe('the Prompt, started by writing to it', {tag: '@slow'}, () => {
     test.setTimeout(300_000);
     // Shown in Forge, read and gone from: nothing runs, and nothing holds the repo.
     await app.runtime.open('This browser');
-    await expect(app.runtime.part('Prompts running')).toHaveCount(0);
-    await expect(app.main.getByRole('region', {name: /^In this browser/})).not.toContainText('A Prompt has it open');
+    await expect(app.runtime.part('Running Prompts')).toHaveCount(0);
+    await expect(app.main.getByRole('region', {name: /^In this browser/})).not.toContainText('Locked by an active Prompt');
     await app.rail.go('forge');
     await expect(app.main.locator('.prompt-chip')).toHaveAttribute('data-state', 'starting');
     // Written to, it starts; the line sent before its first prompt line runs once it is there.
@@ -231,7 +260,7 @@ test.describe('the Prompt, started by writing to it', {tag: '@slow'}, () => {
     await app.forge.promptBox.press('Control+Enter');
     await expect(app.forge.promptBox).toHaveValue('');
     await expect(app.forge.prompt).toContainText(/^first$/m, {timeout: 240_000});
-    await app.runtime.open('Prompts running');
+    await app.runtime.open('Running Prompts');
   });
 });
 

@@ -135,7 +135,7 @@ export async function claim(name: string, domain?: string): Promise<string> {
   if (r.ok) return body.address!;
   if (body.publish) throw new Published(body.publish);
   const until = (body as {until?: number}).until;
-  throw new RemoteError(r.status, until ? t('That name was let go; it is held for its owner until {date}', {date: day(until)}) : t(String(body.error ?? r.status)));
+  throw new RemoteError(r.status, until ? t('Username released; reserved for previous owner until {date}', {date: day(until)}) : t(String(body.error ?? r.status)));
 }
 
 /** Let an address go: it answers no one from now, and is held for you a while (claim it again to take it back). */
@@ -147,7 +147,7 @@ export const domainRecord = (domain: string) => json<{name: string; type: string
 /** A domain must publish this before an address on it can be claimed. */
 class Published extends Error {
   readonly doc: unknown;
-  constructor(doc: unknown) { super(t('The domain does not name this account yet')); this.doc = doc; }
+  constructor(doc: unknown) { super(t('Domain is not linked to this account yet')); this.doc = doc; }
 }
 
 export async function send(to: string, body: string, type: Kind = 'message', target: Target = {}): Promise<{id: string; request: boolean}> {

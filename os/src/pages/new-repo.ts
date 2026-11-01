@@ -4,23 +4,23 @@ import {connection} from '../remote/connection.ts';
 import {plan} from '../remote/plan.ts';
 import {goToPlan} from './remote/plan.ts';
 import {remoteOnly} from '../remote/lifecycle.ts';
-import {store, templateFiles, validName, type Template} from '../repos/repos.ts';
+import {isIssues, ISSUES, plainPath, store, templateFiles, validName, type Template} from '../repos/repos.ts';
 import {pageHead} from './common.ts';
 import {repoList} from './repo-list.ts';
 import type {Context} from './context.ts';
 import {triangle} from './tree.ts';
-import {ORIGIN_LABEL} from '../prompt/system.ts';
 import {errorText} from '../app/errors.ts';
-import {LAND, morph, nudge, paced, still, where} from '../ui/glide.ts';
+import {mark} from '../ui/icons.ts';
+import {liftLine, morph, nudge, putAway, textAt, unfold, where} from '../ui/glide.ts';
 
 /**
  * +: the repo's name on the first line; under it, in a large box, what it
- * is for, and beside that what will be made, shown exactly as File will show
- * it: /root, the repos already there, and among them, in its place by name,
- * the new one with the one scaffold every repo starts from. Make it, and it is
- * gone into in Forge. What it is for is the repo's own: it goes into its
- * README, under the title. Its files are named and laid out in File, where
- * every repo's are.
+ * is for, and beside that what will be made in it: the repo alone, as File
+ * will show it (nothing else of the device's), from the one scaffold every
+ * repo starts from, and there its files are made, renamed and left out before
+ * it is, as File makes, renames and deletes them. Make it, and it is gone into
+ * in Forge. What it is for is the repo's own: it goes into its README, under
+ * the title (and wherever the README is renamed to).
  *
  * What is written here before Create stays while other pages are looked at,
  * and goes once the repo is made (Make another is a fresh form).
@@ -28,28 +28,34 @@ import {LAND, morph, nudge, paced, still, where} from '../ui/glide.ts';
 
 /**
  * The scaffold (shared/templates.json's `standard`, as `l3 repo new` makes
- * it): a README, with docs/ and issue/, in no language of its own. There is
- * no choosing.
+ * it): a README, with docs/, in no language of its own. There is no
+ * choosing; what is made from it is changed here, file by file.
  */
 const SCAFFOLD: Template = 'standard';
 
-/** What is written before Create: kept while the app runs, as a half-written issue is. */
-interface Draft { name: string; summary: string }
-let draft: Draft = {name: '', summary: ''};
-const fresh = (): Draft => ({name: '', summary: ''});
+/** One thing to be made in the repo: a folder or a file, by its path; the README's words are what it is for. */
+interface Made { path: string; dir: boolean; readme?: true }
+/** What is written before Create, the files to be made among it: kept while the app runs, as a half-written issue is. */
+interface Draft { name: string; summary: string; made: Made[] }
+const scaffold = (): Made[] => [...templateFiles('{name}', SCAFFOLD)].map(([path, text]) => ({path, dir: text === null, ...(path === 'README.md' ? {readme: true as const} : {})}));
+const fresh = (): Draft => ({name: '', summary: '', made: scaffold()});
+let draft: Draft = fresh();
 
-interface Item { name: string; path: string; dir: boolean; children: Item[] }
+interface Item { name: string; path: string; dir: boolean; readme: boolean; children: Item[] }
+const parentOf = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
+const baseOf = (p: string) => p.slice(p.lastIndexOf('/') + 1);
 
-/** The scaffold's paths as a tree, directories first then names, as File lists them. */
-function nest(scaffold: Map<string, string | null>): Item[] {
-  const root: Item = {name: '', path: '', dir: true, children: []};
-  for (const [p, text] of scaffold) {
-    const parts = p.split('/');
+/** What will be made as a tree, folders first then names, as File lists them (a folder only named by a path too). */
+function nest(made: readonly Made[]): Item[] {
+  const root: Item = {name: '', path: '', dir: true, readme: false, children: []};
+  for (const m of made) {
+    const parts = m.path.split('/');
     let at = root;
     parts.forEach((part, i) => {
-      const dir = i < parts.length - 1 || text === null;
+      const dir = i < parts.length - 1 || m.dir;
       let next = at.children.find((c) => c.name === part);
-      if (!next) { next = {name: part, path: parts.slice(0, i + 1).join('/'), dir, children: []}; at.children.push(next); }
+      if (!next) { next = {name: part, path: parts.slice(0, i + 1).join('/'), dir, readme: false, children: []}; at.children.push(next); }
+      if (i === parts.length - 1 && m.readme) next.readme = true;
       at = next;
     });
   }
@@ -61,80 +67,156 @@ function nest(scaffold: Map<string, string | null>): Item[] {
   return root.children;
 }
 
-function row(name: string | Node[], depth: number, dir: boolean, extra: Partial<{meta: Node | string; kind: string; shut: boolean}> = {}): HTMLElement {
+function row(name: string | Node[] | HTMLElement, depth: number, dir: boolean, extra: Partial<{meta: Node | string; kind: string; shut: boolean; tail: Node}> = {}): HTMLElement {
   // A folder with nothing in it yet is shut, as File shows one: an open triangle over nothing says there is something.
   const lead = dir ? h('span', {class: 'tree-toggle', 'aria-hidden': 'true', 'aria-expanded': String(!extra.shut)}) : h('span', {class: 'tree-spacer', 'aria-hidden': 'true'});
   if (dir) lead.append(triangle());
+  const named = name instanceof HTMLElement ? name : h('span', {class: 'tree-name plain'}, ...(typeof name === 'string' ? [name] : name));
   return h('li', {class: extra.kind ?? (dir ? 'tree-dir' : 'tree-file')},
-    h('div', {class: 'tree-row', style: `--depth:${depth}`}, lead, h('span', {class: 'tree-name plain'}, ...(typeof name === 'string' ? [name] : name)),
-      typeof extra.meta === 'string' ? h('span', {class: 'tree-meta'}, extra.meta) : extra.meta ?? null));
+    h('div', {class: 'tree-row', style: `--depth:${depth}`}, lead, named,
+      typeof extra.meta === 'string' ? h('span', {class: 'tree-meta'}, extra.meta) : extra.meta ?? null, extra.tail ?? null));
 }
+
+/** A small deed on a row, its mark alone, named for the ear and the pointer's rest. */
+const rowDeed = (m: 'pen' | 'close', said: string, act: () => void) => {
+  const b = h('button', {type: 'button', class: 'tree-deed', 'aria-label': said, title: said}, mark(m)) as HTMLButtonElement;
+  b.addEventListener('click', act);
+  return b;
+};
 
 export function newRepo(ctx: Context): Node[] {
   // No example in it: one there reads as a name already given (and the row it would draw, as the repo to be made).
   const name = h('input', {id: 'repo-name', class: 'line-in', maxlength: '64', autocapitalize: 'off', spellcheck: 'false',
     'aria-describedby': 'repo-name-rule'}) as HTMLInputElement;
   name.value = draft.name;
-  const scaffold = nest(templateFiles('{name}', SCAFFOLD));
   // The README's size as File gives a file's, of what it will say: it follows the name and what it is for.
   const readmeSize = h('span', {class: 'tree-meta'});
   /**
    * Why the name cannot be, as it is written: not a name (a letter no name has, or a dot first), or one taken here
    * or on the Remote; '' when it can be, or nothing is written yet (said only once Create is pressed).
    */
-  const why = (n: string): string => !n ? '' : !validName(n) ? t('Use letters, digits and . _ -, and do not start with .')
-    : others.includes(n) || remoteOnly().some((r) => r.name === n) ? t('There is a repo named {name} already', {name: n}) : '';
+  const why = (n: string): string => !n ? '' : !validName(n) ? t('Use letters, digits, and . _ - (cannot start with .)')
+    : others.includes(n) || remoteOnly().some((r) => r.name === n) ? t('A repo named "{name}" already exists', {name: n}) : '';
   /** The name as it will stand in File, each letter a name cannot have marked where it is (a dot first, too). */
   const marked = (n: string): Node[] => [...n].map((c, i) => (/[A-Za-z0-9_-]/.test(c) || (c === '.' && i > 0) ? document.createTextNode(c)
     // A space is seen as one, or it would be nothing between two letters.
     : h('mark', {class: 'bad-char'}, /\s/.test(c) ? '␣' : c)));
-  /**
-   * The new repo's own rows: it, filled as File fills the repo in hand (nothing named yet, a quiet dashed place for its
-   * name), and its scaffold, folders first.
-   */
-  const ours = (): HTMLElement[] => {
-    const n = name.value.trim(), bad = !!why(n);
-    const rows = [row(n ? marked(n) : t('name'), 1, true, {kind: `tree-repo tree-new${bad ? ' tree-bad' : ''}${n ? '' : ' tree-unnamed'}`})];
-    const walk = (nodes: Item[], depth: number) => {
-      for (const n of nodes) {
-        rows.push(row(n.name, depth, n.dir, {kind: `${n.dir ? 'tree-dir' : 'tree-file'} tree-ours`, shut: n.dir && !n.children.length,
-          meta: n.path === 'README.md' ? readmeSize : undefined}));
-        if (n.dir) walk(n.children, depth + 1);
-      }
-    };
-    walk(scaffold, 2);
-    return rows;
-  };
-  // The repos here already, shut, quieter than the new one; it stands among them where its name puts it.
+  /** What will be made, as written here (kept with the draft); the path being renamed, if one is. */
+  let made: Made[] = draft.made.map((m) => ({...m}));
+  let renaming: string | null = null;
+  /** Why what was written over a name cannot be, under the card; '' while nothing is wrong. */
+  const fileError = h('p', {class: 'error small', role: 'alert'});
+  /** The repos here already: a name of theirs is taken (said under the name, as it is written). */
   let others: string[] = [];
   const preview = h('ul', {class: 'tree-children'});
-  const showFiles = () => {
-    const mine = name.value.trim();
-    const before = others.filter((o) => o.localeCompare(mine) < 0), after = others.filter((o) => o.localeCompare(mine) >= 0);
-    // One of the same name is the one it would be taken for: marked where it stands.
-    const other = (o: string) => { const r = row(o, 1, true, {kind: `tree-repo tree-other${o === mine && name.value.trim() ? ' tree-clash' : ''}`, shut: true}); r.dataset.key = `o ${o}`; return r; };
-    // Its name moved past another's, the rows go to their new places on their curve, not swapped in one frame: each
-    // from where it was seen (mid-way, if it was still going), the new repo's rows as one with it.
-    const was = new Map<string, number>();
-    for (const li of preview.children as HTMLCollectionOf<HTMLElement>) if (li.dataset.key) was.set(li.dataset.key, li.getBoundingClientRect().top);
-    const mineRows = ours();
-    mineRows.forEach((r, i) => { r.dataset.key = `n ${i}`; });
-    preview.replaceChildren(row('root', 0, true, {meta: t(ORIGIN_LABEL.repos)}), ...before.map(other), ...mineRows, ...after.map(other));
-    if (still() || !was.size) return;
-    for (const li of preview.children as HTMLCollectionOf<HTMLElement>) {
-      const from = li.dataset.key ? was.get(li.dataset.key) : undefined;
-      const by = from === undefined ? 0 : from - li.getBoundingClientRect().top;
-      if (Math.abs(by) > .5) li.animate([{translate: `0 ${by}px`}, {translate: '0 0'}], {duration: paced(260), easing: LAND});
+  /** The path `name` comes to in the folder `dir`, or the first of name-2, name-3… not made there yet. */
+  const free = (dir: string, name: string) => {
+    const at = (n: string) => (dir ? `${dir}/${n}` : n);
+    const dot = name.lastIndexOf('.') > 0 ? name.lastIndexOf('.') : name.length;
+    let n = name;
+    for (let k = 2; made.some((m) => m.path === at(n)); k++) n = `${name.slice(0, dot)}-${k}${name.slice(dot)}`;
+    return at(n);
+  };
+  /**
+   * The repo to be made, alone: its row (filled as File fills the repo in hand; nothing named yet, a quiet dashed
+   * place for its name), and what will be made in it, folders first, each to be renamed or left out where it stands.
+   */
+  const showFiles = (came: string | null = null) => {
+    const n = name.value.trim(), bad = !!why(n);
+    const rows = [row(n ? marked(n) : t('Name'), 0, true, {kind: `tree-repo tree-new${bad ? ' tree-bad' : ''}${n ? '' : ' tree-unnamed'}`})];
+    const walk = (nodes: Item[], depth: number) => {
+      for (const it of nodes) {
+        const named = renaming === it.path ? field(it.path) : h('button', {type: 'button', class: 'tree-name', title: t('Rename {name}', {name: it.name})}, it.name);
+        if (named instanceof HTMLButtonElement) named.addEventListener('click', () => rename(it.path));
+        const li = row(named, depth, it.dir, {kind: `${it.dir ? 'tree-dir' : 'tree-file'} tree-ours`, shut: it.dir && !it.children.length,
+          meta: it.readme ? readmeSize : undefined,
+          tail: h('span', {class: 'tree-deeds'}, rowDeed('pen', t('Rename {name}', {name: it.name}), () => rename(it.path)),
+            rowDeed('close', t('Leave out {name}', {name: it.name}), () => leaveOut(it.path, li)))});
+        li.dataset.path = it.path;
+        rows.push(li);
+        if (it.dir) walk(it.children, depth + 1);
+      }
+    };
+    walk(nest(made), 1);
+    preview.replaceChildren(...rows);
+    const come = came ? preview.querySelector<HTMLElement>(`li[data-path="${CSS.escape(came)}"]`) : null;
+    if (come) unfold(come, 200);
+    const editing = preview.querySelector<HTMLInputElement>('.tree-rename');
+    if (editing) {
+      editing.focus({preventScroll: true});
+      // A file's name without its ending is chosen, as Forge's New file and File's Rename choose it.
+      const dot = editing.value.lastIndexOf('.');
+      editing.setSelectionRange(0, dot > 0 ? dot : editing.value.length);
     }
   };
-  void store.list().then((list) => { others = list.map((r) => r.name).sort((a, b) => a.localeCompare(b)); showFiles(); judge(); }, () => {});
-  // What the card is goes to the ear: the eye sees it is File's tree.
-  const caption = h('p', {class: 'sr-only'}, t('How it will look in File'));
-  const card = h('div', {class: 'tree tree-still', 'aria-label': t('What will be made')}, caption, preview);
-  const keep = () => { draft = {name: name.value, summary: summary.value}; };
+  /** The name of `path` as a field to write over: Enter or leaving it takes what is written, Escape what was. */
+  const field = (path: string): HTMLInputElement => {
+    const f = h('input', {class: 'tree-rename', 'aria-label': t('New name'), spellcheck: 'false', autocapitalize: 'off', value: baseOf(path)}) as HTMLInputElement;
+    f.style.width = `${Math.max(8, baseOf(path).length + 2)}ch`;
+    f.addEventListener('input', () => { f.style.width = `${Math.max(8, f.value.length + 2)}ch`; fileError.textContent = ''; });
+    let done = false;
+    const end = (take: boolean) => {
+      if (done) return;
+      const said = take ? moved(path, f.value) : '';
+      if (said) { fileError.textContent = said; nudge(f); f.focus(); return; }
+      done = true;
+      renaming = null;
+      keep();
+      showFiles();
+    };
+    f.addEventListener('keydown', (e) => {
+      if (e.isComposing) return;
+      if (e.key === 'Enter') { e.preventDefault(); end(true); }
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); fileError.textContent = ''; end(false); }
+    });
+    f.addEventListener('blur', () => { if (!done && !fileError.textContent) end(true); });
+    return f;
+  };
+  /**
+   * `path` given the name `written` (a path from its folder moves it there: notes/plan.md, its folders made with it),
+   * and all in it with it; '' when done, else why it cannot be.
+   */
+  const moved = (path: string, written: string): string => {
+    const to = written.trim().replace(/^\/+|\/+$/g, '');
+    if (!to || to === baseOf(path)) return '';
+    const dir = parentOf(path), full = dir ? `${dir}/${to}` : to;
+    if (!plainPath(full)) return t('Paths joined by "/", segments cannot start with "."');
+    if (isIssues(full)) return t('"{name}" is where the repo\'s issues are kept', {name: ISSUES});
+    if (made.some((m) => m.path === full || m.path.startsWith(`${full}/`))) return t('"{name}" already exists', {name: to});
+    made = made.map((m) => (m.path === path || m.path.startsWith(`${path}/`) ? {...m, path: full + m.path.slice(path.length)} : m));
+    // The folders a path written goes into are made with it.
+    for (let up = parentOf(full); up && up !== dir; up = parentOf(up)) if (!made.some((m) => m.path === up)) made.push({path: up, dir: true});
+    return '';
+  };
+  const rename = (path: string) => { fileError.textContent = ''; renaming = path; showFiles(); };
+  /** `path` and all in it not made: its row folds away and the rows under it close up. */
+  const leaveOut = (path: string, li: HTMLElement) => {
+    fileError.textContent = '';
+    made = made.filter((m) => m.path !== path && !m.path.startsWith(`${path}/`));
+    keep();
+    putAway(li, () => showFiles(), {fold: true, ms: 180});
+  };
+  /** A new file or folder at the repo's top, named as nothing there yet is, its name at once a field to write over. */
+  const add = (dir: boolean) => {
+    const path = free('', dir ? t('folder') : 'untitled.md');
+    made.push({path, dir});
+    keep();
+    renaming = path;
+    showFiles(path);
+  };
+  const newFile = h('button', {type: 'button', class: 'tree-make'}, mark('new-file'), h('span', {}, t('New file')));
+  const newFolder = h('button', {type: 'button', class: 'tree-make'}, mark('new-folder'), h('span', {}, t('New folder')));
+  newFile.addEventListener('click', () => add(false));
+  newFolder.addEventListener('click', () => add(true));
+  void store.names().then((names) => { others = names.sort((a, b) => a.localeCompare(b)); showFiles(); judge(); }, () => {});
+  // What the card is goes to the ear: the eye sees it is File's tree, the repo's own.
+  const caption = h('p', {class: 'sr-only'}, t('Preview in File'));
+  const card = h('div', {class: 'tree tree-still', 'aria-label': t('Items to create')}, caption, preview,
+    h('div', {class: 'tree-makes'}, newFile, newFolder), fileError);
+  const keep = () => { draft = {name: name.value, summary: summary.value, made: made.map((m) => ({...m}))}; };
   // What it is for, in a raised box as Home's TODO is: the words written straight in it, the box the field.
   const summary = h('textarea', {id: 'repo-summary', class: 'todo-detail', maxlength: '2000',
-    placeholder: t('What this repo is for'), 'aria-labelledby': 'repo-summary-label'}) as HTMLTextAreaElement;
+    placeholder: t('Description / Purpose'), 'aria-labelledby': 'repo-summary-label'}) as HTMLTextAreaElement;
   summary.value = draft.summary;
   const summaryBox = h('div', {class: 'summary-box'}, summary);
   /** The README as Create writes it: under the title what it is for, or the scaffold's own README. */
@@ -156,24 +238,24 @@ export function newRepo(ctx: Context): Node[] {
   if (connection()) void plan().then((p) => {
     const of = p.allowance?.repos ?? null;
     if (of === null || (p.usage?.repos ?? 0) < of) return;
-    const see = h('button', {type: 'button', class: 'link'}, t('See the plan'));
+    const see = h('button', {type: 'button', class: 'link'}, t('View plan'));
     see.addEventListener('click', () => goToPlan(ctx));
-    full.replaceChildren(tn('The plan keeps {n} repo on the Remote, and it is there: this one stays on this device until there is room.',
-      'The plan keeps {n} repos on the Remote, and they are there: this one stays on this device until there is room.', of), ' ', see);
+    full.replaceChildren(tn('Your plan allows {n} repo on Remote. This repo stays local until space is freed.',
+      'Your plan allows {n} repos on Remote. This repo stays local until space is freed.', of), ' ', see);
     full.hidden = false;
   }, () => {});
 
   /** Made, but what it is for could not be written: the page stays, says so, and where to go from here. */
-  const made = (n: string) => {
+  const madeIt = (n: string) => {
     draft = fresh();
     name.disabled = true;
     summary.disabled = true;
-    caption.textContent = t('Made at /root/{name} in File', {name: n});
+    caption.textContent = t('Created at /root/{name} in File', {name: n});
     const open = h('button', {class: 'button primary', type: 'button'}, t('Open in Forge'));
     open.addEventListener('click', () => ctx.openRepo(n));
-    const again = h('button', {class: 'button', type: 'button'}, t('Make another'));
+    const again = h('button', {class: 'button', type: 'button'}, t('Create another'));
     again.addEventListener('click', () => { draft = fresh(); ctx.rerender(); });
-    actions.replaceChildren(h('p', {class: 'made', role: 'status'}, t('Made {name}', {name: n})), h('span', {class: 'grow'}), again, open);
+    actions.replaceChildren(h('p', {class: 'made', role: 'status'}, t('Created {name}', {name: n})), h('span', {class: 'grow'}), again, open);
     open.focus({preventScroll: true});
     // What was written becomes the repo's card: an outline goes from the summary down to where it joins the others.
     const from = where(summaryBox)!;
@@ -183,9 +265,9 @@ export function newRepo(ctx: Context): Node[] {
   const form = h('form', {class: 'new-repo'},
     h('div', {class: 'field name-field'}, h('label', {class: 'field-label', for: 'repo-name'}, t('Name')), name,
       // The rule for a name is heard with the field and seen only when it is broken (the error under it).
-      h('span', {id: 'repo-name-rule', class: 'sr-only'}, t('Letters, digits and . _ -, up to 64 characters')), error),
+      h('span', {id: 'repo-name-rule', class: 'sr-only'}, t('Letters, digits, and . _ - (up to 64 chars)')), error),
     h('div', {class: 'field summary-field'}, h('span', {class: 'field-label', id: 'repo-summary-label'}, t('Summary')), summaryBox),
-    h('div', {class: 'field scaffold-field'}, h('span', {class: 'field-label'}, t('What will be made')), card),
+    h('div', {class: 'field scaffold-field'}, h('span', {class: 'field-label'}, t('Items to create')), card),
     actions);
   // Said as it is written, not only once Create is pressed: why it cannot be, under the name, and where in it.
   const judge = () => {
@@ -198,38 +280,52 @@ export function newRepo(ctx: Context): Node[] {
     event.preventDefault();
     const n = name.value.trim();
     // Nothing written yet is not a name broken: what is wanted is said, under the field it goes in.
-    if (!validName(n)) { error.textContent = n ? t('Use letters, digits and . _ -, and do not start with .') : t('Write a name first'); name.focus(); nudge(name); return; }
+    if (!validName(n)) { error.textContent = n ? t('Use letters, digits, and . _ - (cannot start with .)') : t('Please enter a name first'); name.focus(); nudge(name); return; }
     // A name taken is the name's to change, as a name not allowed is: the keyboard goes back to it, as written.
     // One the Remote keeps and this device does not hold yet is taken too: it is the same repo, not another of that name.
-    if ((await store.list()).some((r) => r.name === n) || remoteOnly().some((r) => r.name === n)) { error.textContent = t('There is a repo named {name} already', {name: n}); name.focus(); nudge(name); return; }
+    if ((await store.names()).includes(n) || remoteOnly().some((r) => r.name === n)) { error.textContent = t('A repo named "{name}" already exists', {name: n}); name.focus(); nudge(name); return; }
     submit.disabled = true;
     try {
-      await store.create(n, SCAFFOLD);
+      await store.create(n, 'empty');
     } catch (e) {
-      error.textContent = t('Could not create: {message}', {message: errorText(e)});
+      error.textContent = t('Failed to create: {message}', {message: errorText(e)});
       submit.disabled = false;
       submit.focus();
       return;
     }
-    // What it is for goes into the README, under its title.
-    if (summary.value.trim()) {
-      try { await store.write(n, 'README.md', readme(n)); } catch (e) {
-        made(n);
-        error.textContent = t('{what} could not be written ({why})', {what: `${n}/README.md`, why: errorText(e)});
-        return;
+    // What was laid out here is what is made, as it is: its folders, then its files (the README's words what it is
+    // for, wherever it was renamed to; a file made here, empty), and the minimal scaffold's README gone if it was left out.
+    const readmeAt = made.find((m) => m.readme && !m.dir)?.path ?? null;
+    let at = '';
+    try {
+      for (const m of made.filter((x) => x.dir).sort((a, b) => a.path.split('/').length - b.path.split('/').length)) { at = m.path; await store.mkdir(n, m.path); }
+      for (const m of made.filter((x) => !x.dir)) {
+        at = m.path;
+        const text = m.readme ? readme(n) : '';
+        if (m.path === 'README.md') await store.write(n, m.path, text); else await store.add(n, parentOf(m.path), baseOf(m.path), text);
       }
+      if (!made.some((m) => m.path === 'README.md' && !m.dir)) { at = 'README.md'; await store.remove(n, 'README.md'); }
+    } catch (e) {
+      madeIt(n);
+      error.textContent = t('Failed to write {what} ({why})', {what: `${n}/${at}`, why: errorText(e)});
+      return;
     }
     // Made, it is gone into at once: what was written becomes its README, the summary's sheet growing into that box
-    // in Forge, the caret in it.
+    // in Forge, the caret in it, and its words going with it onto their line there (under the title and a line left
+    // empty: readme), never a sheet gone empty on its way and the words come back after.
     draft = fresh();
-    ctx.openRepo(n, 'README.md', 'end', summaryBox);
+    const words = summary.value.trim() && readmeAt ? liftLine(summary) : null;
+    ctx.openRepo(n, readmeAt ?? '', readmeAt ? 'end' : false, summaryBox, 0, words ? {lifted: words, to: (box) => {
+      const area = box.querySelector<HTMLTextAreaElement>('textarea.code-edit');
+      return area ? textAt(area, 2) : null;
+    }} : undefined);
   });
   // The repos already there, right under the form; a new one joins them.
   const list = repoList(ctx, {newCard: false});
   void list.refresh();
   showFiles();
   sized();
-  queueMicrotask(() => name.focus());
+  queueMicrotask(() => name.focus({preventScroll: true}));
   return [pageHead('new-repo'), h('div', {class: 'new-repo-wrap'}, form),
     h('section', {class: 'section', 'aria-labelledby': 'new-repo-list'}, h('h2', {id: 'new-repo-list'}, t('Repos')), list.element)];
 }

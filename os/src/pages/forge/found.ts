@@ -25,7 +25,7 @@ export type Files = {path: string; text: string}[];
  * level at a time and read a few megabytes at once, so the first search costs a few trips to the core, not one a file.
  */
 export async function readAll(repo: string): Promise<Files> {
-  const files = (await walkRepo(repo)).filter((f) => f.entry.kind === 'file');
+  const files = (await walkRepo(repo, {shown: true})).filter((f) => f.entry.kind === 'file');
   const texts = (got: (Files[number] | null)[]) => got.filter((f) => f !== null).length >= FILE_LIMIT;
   // Gone since the listing (a Prompt, another device): nothing of it to search.
   const read = await inPieces(files, (f) => f.entry.size, (f) => store.read(repo, f.path).then((c) => (c.text != null ? {path: f.path, text: c.text} : null), () => null),
@@ -109,7 +109,7 @@ function fileGroup(g: Group, named: boolean, c: FileChange | undefined, ways: Fo
   const count = g.hits.length ? h('span', {class: 'hit-count'}, tn('{n} line', '{n} lines', g.hits.length)) : null;
   // Changed since the last commit: at the head's other end its diff, said as a diff is everywhere (diff, +n −n, the
   // squares), read under the box when pressed; not a stop of its own on the way down to the lines.
-  const diff = c ? h('button', {type: 'button', class: 'hit-diff', tabindex: '-1', 'aria-label': t('The diff of {path}', {path: fileName(g.path)})},
+  const diff = c ? h('button', {type: 'button', class: 'hit-diff', tabindex: '-1', 'aria-label': t('Diff of {path}', {path: fileName(g.path)})},
     h('span', {class: 'hit-diff-word'}, t('diff')), c.added || c.removed ? counted(c.added, c.removed) : null) : null;
   diff?.addEventListener('click', () => ways.diff(g.path));
   return h('div', {class: 'hit-group'}, h('div', {class: 'hit-head'}, name, count, diff), ...g.hits.map((hit) => {
@@ -132,7 +132,7 @@ export function foundView(found: Found, query: string, changed: FileChange[], wa
   const total = groups.reduce((n, g) => n + g.hits.length, 0);
   const changes = new Map(changed.map((c) => [c.path, c]));
   const said: HTMLElement[] = [];
-  if (groups.length) said.push(h('p', {class: 'muted small search-count'}, `${tn('{n} file', '{n} files', groups.length)} · ${total >= HIT_LIMIT ? t('{n} lines (only the first)', {n: total}) : tn('{n} line', '{n} lines', total)}`));
+  if (groups.length) said.push(h('p', {class: 'muted small search-count'}, `${tn('{n} file', '{n} files', groups.length)} · ${total >= HIT_LIMIT ? t('{n} lines (first preview)', {n: total}) : tn('{n} line', '{n} lines', total)}`));
   // Each line found is drawn a beat after the one above it (styles.css .search-results mark).
   let stroke = 0;
   // Through the style object, not an attribute: the desktop app's policy allows no style written inline.

@@ -11,7 +11,7 @@ test('with no files on the Remote, a repo stays here as it is, not agreed, and t
   await store.create('kept', 'standard');
   const before = await b.files('kept');
   assert.ok(Object.keys(before).length > 0);
-  await assert.rejects(draft.sync('kept'), /The Remote cannot hold files just now; your work stays on this device/);
+  await assert.rejects(draft.sync('kept'), /Remote cannot accept files right now; changes stay on this device/);
   // Every file is here as it was, and nothing was agreed: the next sync sends it all.
   assert.deepEqual(await b.files('kept'), before);
   const [s] = (await draft.status()).filter((x) => x.name === 'kept');

@@ -46,7 +46,7 @@ export function waiting(): string[] {
 
 /** Keep `text` as `name` (made or changed), on every device; it runs here at once, elsewhere once taken there. */
 export async function save(name: string, text: string): Promise<void> {
-  if (!validName(name)) throw new Error(t('A dotfile is named with a dot first: .profile'));
+  if (!validName(name)) throw new Error(t('Dotfiles must begin with a dot (e.g. .profile)'));
   await core('dotfile_set', {name, text});
   await reloadState(['dotfiles', 'trusted']);
 }

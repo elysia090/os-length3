@@ -58,6 +58,16 @@ pub struct Contents {
     pub truncated: bool,
 }
 
+/// Where a repo's issues are kept, at its top (issues.rs). It is the OS's to keep: the issues are met as issues
+/// (Git, the box, l3 issue), never among the files File, Forge and l3 file show; the Prompt's copy still has them.
+pub const ISSUES: &str = "issue";
+
+/// Whether `rel` (a path in a repo) is its issues' folder or in it.
+pub fn is_issues(rel: &str) -> bool {
+    let rel = rel.trim_matches('/');
+    rel == ISSUES || rel.strip_prefix(ISSUES).is_some_and(|r| r.starts_with('/'))
+}
+
 /// Repo names are plain directory names: letters, digits, `.`, `_`, `-`.
 pub fn valid_name(name: &str) -> bool {
     !name.is_empty() && name.len() <= 64 && !name.starts_with('.')
@@ -557,7 +567,8 @@ mod tests {
             assert!(!names.iter().any(|n| n == "inbox.md" || n == "TODO.md"), "{t}: {names:?}");
         }
         let c: Vec<String> = r.tree("c", "").unwrap().into_iter().map(|e| e.name).collect();
-        assert_eq!(c[..3], ["docs", "issue", "src"]);
+        // Its issues' folder is the OS's, made for the first issue, never a scaffold's (repos.ts ISSUES).
+        assert_eq!(c[..2], ["docs", "src"]);
         assert!(r.create("c", "c").is_err());
         assert!(r.create("x", "nope").is_err());
         assert_eq!(r.list().unwrap().len(), 3);
@@ -661,15 +672,23 @@ mod tests {
     }
 
     #[test]
+    fn the_issues_folder_is_named_at_a_repo_top_only() {
+        for (rel, is) in [("issue", true), ("issue/", true), ("/issue/001.md", true), ("issue/a/b", true),
+            ("issues", false), ("issue.md", false), ("docs/issue", false), ("", false)] {
+            assert_eq!(is_issues(rel), is, "{rel:?}");
+        }
+    }
+
+    #[test]
     fn new_files_go_into_existing_directories_and_never_replace() {
         let r = scratch("add");
         r.create("a", "standard").unwrap();
-        assert_eq!(r.add("a", "issue", "001.md", "Fix：x\n", 100).unwrap(), 8);
-        assert_eq!(r.read("a", "issue/001.md", 100).unwrap().text.as_deref(), Some("Fix：x\n"));
-        assert!(r.add("a", "issue", "001.md", "again", 100).is_err());
+        assert_eq!(r.add("a", "docs", "001.md", "Fix：x\n", 100).unwrap(), 8);
+        assert_eq!(r.read("a", "docs/001.md", 100).unwrap().text.as_deref(), Some("Fix：x\n"));
+        assert!(r.add("a", "docs", "001.md", "again", 100).is_err());
         assert!(r.add("a", "missing", "x.md", "x", 100).is_err());
-        assert!(r.add("a", "issue", "../x.md", "x", 100).is_err());
-        assert!(r.add("a", "issue", ".hidden", "x", 100).is_err());
+        assert!(r.add("a", "docs", "../x.md", "x", 100).is_err());
+        assert!(r.add("a", "docs", ".hidden", "x", 100).is_err());
         assert!(r.add("a", "../b", "x.md", "x", 100).is_err());
         assert!(r.add("a", "README.md", "x.md", "x", 100).is_err());
     }

@@ -3,7 +3,7 @@
 // (a host directory, an archive, browser storage) on first read.
 
 export const S_IFMT = 0o170000, S_IFDIR = 0o040000, S_IFREG = 0o100000, S_IFLNK = 0o120000, S_IFCHR = 0o020000,
-  S_IFIFO = 0o010000;
+  S_IFIFO = 0o010000, S_IFSOCK = 0o140000;
 
 let inodes = 1;
 
@@ -37,6 +37,9 @@ export class File extends Node {
     this.shared = false; // a view of the bytes was handed out (share): change a copy
     // Counts every change to the contents; times can repeat within a millisecond.
     this.version = 0;
+    // MAP_SHARED mappings of it (map below): while one lasts, its memory is the file's bytes there (Linux's page
+    // cache), so a read takes what was written through it and a write shows in it.
+    this.maps = null;
   }
   get data() {
     if (this.load) {
@@ -48,9 +51,13 @@ export class File extends Node {
     return this._data;
   }
   /** Bytes [start, end) — a view, not a copy. */
-  read(start, end) { return this.data.subarray(start, Math.min(end, this.size)); }
+  read(start, end) {
+    if (this.maps) this.settle(start, end);
+    return this.data.subarray(start, Math.min(end, this.size));
+  }
   /** The exact contents as a view, not a copy: a later write changes a copy, never what was handed out. */
   share() {
+    if (this.maps) this.settle();
     const data = this.data;
     this.shared = true;
     return data.subarray(0, this.size);
@@ -84,8 +91,11 @@ export class File extends Node {
     this.size = Math.max(this.size, need);
     this.mtime = Date.now();
     this.version++;
+    if (this.maps) this.#show(at, need);
   }
   truncate(length) {
+    if (this.maps) this.settle();
+    const was = this.size;
     this.own();
     const data = this.data;
     if (length > data.length) {
@@ -98,9 +108,81 @@ export class File extends Node {
     this.size = length;
     this.mtime = Date.now();
     this.version++;
+    if (this.maps) this.#show(Math.min(was, length), Math.max(was, length));
   }
   /** The exact contents as an independent array. */
-  bytes() { return this.data.slice(0, this.size); }
+  bytes() {
+    if (this.maps) this.settle();
+    return this.data.slice(0, this.size);
+  }
+
+  /**
+   * A MAP_SHARED mapping of it begins: {proc, start, length, off}, bytes [off, off + length) of it at `start` in that
+   * process's memory, which holds them already. Each mapping keeps what it last had in common with the file (`seen`),
+   * so what changed in its memory since is told from what changed elsewhere: only that goes to the file, and from
+   * the file to every other mapping (another process's memory: fork, or the same file mapped twice).
+   */
+  map(m) {
+    m.seen = m.proc.bytes.slice(m.start, m.start + m.length);
+    (this.maps ??= new Set()).add(m);
+  }
+  /** It ends: what was written through it stays. */
+  unmap(m) {
+    this.settle(m.off, m.off + m.length, m);
+    this.maps.delete(m);
+    if (!this.maps.size) this.maps = null;
+  }
+  /** What was written through the mappings (all, or `only`) into [start, end) goes to the bytes and the other mappings. */
+  settle(start = 0, end = this.size, only = null) {
+    for (const m of only ? [only] : [...this.maps]) {
+      const a = Math.max(start, m.off), b = Math.min(end, m.off + m.length, this.size);
+      if (a >= b) continue;
+      const memory = m.proc.bytes, base = m.start - m.off, seen = m.seen;
+      // A page at a time; within a page that changed, each run of changed bytes.
+      for (let page = a; page < b; page = (Math.floor(page / PAGE) + 1) * PAGE) {
+        const to = Math.min(b, (Math.floor(page / PAGE) + 1) * PAGE);
+        if (same(memory.subarray(base + page, base + to), seen.subarray(page - m.off, to - m.off))) continue;
+        for (let k = page; k < to;) {
+          if (memory[base + k] === seen[k - m.off]) { k++; continue; }
+          let e = k + 1;
+          while (e < to && memory[base + e] !== seen[e - m.off]) e++;
+          const run = memory.slice(base + k, base + e);
+          this.own();
+          this.data.set(run, k);
+          this.#show(k, e, run);
+          k = e;
+        }
+        this.mtime = Date.now();
+        this.version++;
+      }
+    }
+  }
+  /** Bytes [start, end) are these now (`bytes`, or the file's own; zero past its end, as a new page is) in every mapping. */
+  #show(start, end, bytes = null) {
+    for (const m of this.maps) {
+      const a = Math.max(start, m.off), b = Math.min(end, m.off + m.length);
+      if (a >= b) continue;
+      const part = bytes ? bytes.subarray(a - start, b - start) : this.data.subarray(a, Math.max(a, Math.min(b, this.size)));
+      for (const [into, at] of [[m.proc.bytes, m.start + a - m.off], [m.seen, a - m.off]]) {
+        into.set(part, at);
+        into.fill(0, at + part.length, at + b - a);
+      }
+    }
+  }
+}
+
+const PAGE = 4096;
+
+/** Two byte ranges of one length alike: compared a word at a time where both are aligned. */
+function same(x, y) {
+  let k = 0;
+  if (x.byteOffset % 4 === 0 && y.byteOffset % 4 === 0) {
+    const n = x.length >> 2, u = new Uint32Array(x.buffer, x.byteOffset, n), v = new Uint32Array(y.buffer, y.byteOffset, n);
+    for (; k < n; k++) if (u[k] !== v[k]) return false;
+    k = n << 2;
+  }
+  for (; k < x.length; k++) if (x[k] !== y[k]) return false;
+  return true;
 }
 
 export class Dir extends Node {
@@ -119,6 +201,16 @@ export class Link extends Node {
   get size() { return new TextEncoder().encode(this.target).length; }
 }
 
+/** A named pipe (mkfifo): what its opens share is one pipe, made afresh once every end of the last is closed. */
+export class Fifo extends Node {
+  constructor(mode = 0o644) { super(S_IFIFO | mode); this.pipe = null; this.size = 0; }
+}
+
+/** A local socket's name (bind on a path): what connect finds there is the socket bound to it, while it is open. */
+export class SocketName extends Node {
+  constructor(mode = 0o755) { super(S_IFSOCK | mode); this.endpoint = null; this.size = 0; }
+}
+
 export class Device extends Node {
   constructor(rdev, read, write) {
     super(S_IFCHR | 0o666);
@@ -132,7 +224,7 @@ export class Device extends Node {
 export const E = {PERM: 1, NOENT: 2, IO: 5, BADF: 9, CHILD: 10, AGAIN: 11, NOMEM: 12, ACCES: 13, FAULT: 14, EXIST: 17,
   XDEV: 18, NOTDIR: 20, ISDIR: 21, INVAL: 22, MFILE: 24, NOTTY: 25, NOSPC: 28, SPIPE: 29, RANGE: 34, NOSYS: 38,
   NOTEMPTY: 39, LOOP: 40, NAMETOOLONG: 36, PIPE: 32, NOEXEC: 8, SRCH: 3, INTR: 4, AFNOSUPPORT: 97, NXIO: 6, TIMEDOUT: 110,
-  OPNOTSUPP: 95, BUSY: 16};
+  OPNOTSUPP: 95, BUSY: 16, NODEV: 19, NODATA: 61, TOOBIG: 7};
 
 export class FsError extends Error {
   constructor(errno) {

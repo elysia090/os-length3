@@ -6,7 +6,7 @@ import {core} from '../app/host.ts';
 import {home, onElsewhere} from '../core/client.ts';
 import shared from '../../shared/templates.json' with {type: 'json'};
 
-interface RepoSummary {
+export interface RepoSummary {
   name: string;
   files: number;
   bytes: number;
@@ -34,7 +34,10 @@ export type Template = string;
 export const EDIT_LIMIT = 256 * 1024;
 
 export interface RepoStore {
+  /** Each repo with its size and when it last changed: every one walked to say so. */
   list(): Promise<RepoSummary[]>;
+  /** The repos' names, in order, and nothing walked: what only names them, or looks for one, asks. */
+  names(): Promise<string[]>;
   create(name: string, template: Template): Promise<RepoSummary>;
   tree(repo: string, path: string): Promise<Entry[]>;
   read(repo: string, path: string): Promise<Contents>;
@@ -97,6 +100,7 @@ export function validName(name: string): boolean {
 
 class CoreStore implements RepoStore {
   list() { return core<RepoSummary[]>('repo_list'); }
+  names() { return core<string[]>('repo_names'); }
   create(name: string, template: Template) { return core<RepoSummary>('repo_create', {name, template}); }
   tree(repo: string, path: string) { return core<Entry[]>('repo_tree', {repo, path}); }
   read(repo: string, path: string) { return core<Contents>('repo_read', {repo, path}); }
@@ -164,6 +168,7 @@ class Observed implements RepoStore {
   constructor(inner: RepoStore) { this.inner = inner; }
   private tell(c: Change) { this.changes.dispatchEvent(new CustomEvent<Change>('change', {detail: c})); }
   list() { return this.inner.list(); }
+  names() { return this.inner.names(); }
   tree(repo: string, path: string) { return this.inner.tree(repo, path); }
   read(repo: string, path: string) { return this.inner.read(repo, path); }
   bytes(repo: string, path: string) { return this.inner.bytes(repo, path); }
@@ -267,14 +272,29 @@ onElsewhere((paths) => {
 });
 
 /**
+ * A repo's issues are kept in its issue/ (issues.ts), the OS's to keep: they are met as issues (Git, the box, the
+ * pane, l3 issue), never as files where a repo's files are shown (File, Forge, its search, the box's Tab, what the
+ * Agent is told is there). The Prompt's copy has them still: l3 there numbers a new issue after those it sees.
+ */
+export const ISSUES = 'issue';
+/** Whether `path` (in a repo) is its issues' or in them. */
+export const isIssues = (path: string): boolean => path === ISSUES || path.startsWith(`${ISSUES}/`);
+/** `entries` of the folder `path` as a repo's files are shown: its issues' folder left out. */
+export const shownEntries = (path: string, entries: Entry[]): Entry[] =>
+  path ? (isIssues(path) ? [] : entries) : entries.filter((e) => e.name !== ISSUES);
+/** The folder `path` of `repo` as a repo's files are shown (shownEntries). */
+export const shownTree = async (repo: string, path: string): Promise<Entry[]> => shownEntries(path, await store.tree(repo, path));
+
+/**
  * Everything in a repo, folders and files, in the order a walk down it meets them (each folder's entries as the
  * store lists them, a folder's own before what comes after it): listed a level at a time, every folder of a level
- * asked at once, so a repo of many folders is as many trips to the core as it is deep.
+ * asked at once, so a repo of many folders is as many trips to the core as it is deep. `shown`: as a repo's files
+ * are shown (shownTree), its issues left out.
  */
-export async function walkRepo(repo: string): Promise<{path: string; entry: Entry}[]> {
+export async function walkRepo(repo: string, o: {shown?: boolean} = {}): Promise<{path: string; entry: Entry}[]> {
   const listed = new Map<string, Entry[]>();
   for (let level = ['']; level.length;) {
-    const lists = await Promise.all(level.map((dir) => store.tree(repo, dir)));
+    const lists = await Promise.all(level.map((dir) => (o.shown ? shownTree : store.tree.bind(store))(repo, dir)));
     level.forEach((dir, k) => listed.set(dir, lists[k]));
     level = level.flatMap((dir, k) => lists[k].filter((e) => e.kind === 'dir').map((e) => (dir ? `${dir}/${e.name}` : e.name)));
   }

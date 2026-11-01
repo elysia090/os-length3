@@ -24,3 +24,18 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .dot-text { min-height: 16em; resize: vertical; padding: var(--s2) var(--s3); font: var(--t-meta)/1.6 var(--mono); }
 /* Remote's Sign-in and Devices: rows of a readable width, not the page's. */
 #panel-remote-sign-in, #panel-remote-devices { max-width: 720px; }
+/* The Agent's key, beside the dotfiles and apart from them (agent-part.ts): one row in a box as theirs are, the key
+   written in it or, kept, shown by its start and last four, the model it opens beside. */
+.agent-box { display: grid; max-width: 760px; border: 1px solid var(--rule); border-radius: var(--r-place); overflow: hidden; transition: border-color var(--motion); }
+/* Its row is the field: the box itself takes the ring while the key is written in it, never a box in a box. */
+.agent-box:focus-within { border-color: var(--ink); }
+.agent-line { display: flex; align-items: center; gap: var(--s3); min-width: 0; padding: var(--s2) var(--s2) var(--s2) var(--s3); }
+.agent-in { flex: 1; min-width: 0; padding: 4px 0; border: 0; border-radius: 0; background: transparent; }
+.agent-in:focus, .agent-in:focus-visible { outline: none; }
+.agent-in::placeholder { font-family: var(--sans); }
+.agent-shown { font-weight: 600; }
+.agent-model { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-said { margin: 0; padding: 0 var(--s3) var(--s2); }
+.agent-said:empty { display: none; }
+.agent-note { margin: var(--s2) 0 0; }
+.agent-note > span { display: block; }

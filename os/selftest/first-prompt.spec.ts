@@ -55,7 +55,7 @@ test.describe('the first Prompt', {tag: '@slow'}, () => {
     const l3 = {ms: Date.now() - started};
     // A Prompt started after it in this page is given l3's translation: l3 runs again from it.
     await app.forge.run('exit');
-    await app.forge.prompt.getByRole('switch', {name: 'Start again'}).click();
+    await app.forge.prompt.getByRole('switch', {name: 'Restart'}).click();
     await expect(app.forge.prompt).toContainText(/hello \$/, {timeout: 120_000});
     started = Date.now();
     await app.forge.run('l3 --version');

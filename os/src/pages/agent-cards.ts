@@ -41,41 +41,41 @@ function card(k: Task, open: (repo: string, issue: string) => void): HTMLElement
   let head = '';
   let quote: Node[] = [];
   const acts: HTMLElement[] = [];
-  const away = () => button(t('Put away'), false, () => onTask(k.id, 'drop'));
-  const look = () => button(t('Look'), true, async () => open(k.repo, k.issue ?? ''));
+  const away = () => button(t('Close'), false, () => onTask(k.id, 'drop'));
+  const look = () => button(t('Inspect'), true, async () => open(k.repo, k.issue ?? ''));
   if (k.state === 'offered') {
-    head = k.deed === 'fix' ? t('{agent} can make the tests of {at} pass', {agent, at}) : t('{agent} can take {at}', {agent, at});
+    head = k.deed === 'fix' ? t('{agent} can resolve tests for {at}', {agent, at}) : t('{agent} can handle {at}', {agent, at});
     quote = [document.createTextNode(k.words)];
-    acts.push(button(t('Hand it over'), true, () => onTask(k.id, 'take')), button(t('Later'), false, () => onTask(k.id, 'drop')));
+    acts.push(button(t('Delegate'), true, () => onTask(k.id, 'take')), button(t('Later'), false, () => onTask(k.id, 'drop')));
   } else if (k.state === 'asking') {
-    head = t('{agent} asks about {at}', {agent, at});
+    head = t('{agent} has a question regarding {at}', {agent, at});
     quote = (k.questions ?? []).map((q) => h('span', {class: 'agent-question'}, q));
-    const field = h('input', {type: 'text', class: 'field agent-reply', 'aria-label': t('Your answer'), placeholder: t('Your answer')}) as HTMLInputElement;
-    const send = button(t('Answer'), true, async () => { if (field.value.trim()) await onTask(k.id, 'reply', field.value); });
+    const field = h('input', {type: 'text', class: 'field agent-reply', 'aria-label': t('Your response'), placeholder: t('Your response')}) as HTMLInputElement;
+    const send = button(t('Respond'), true, async () => { if (field.value.trim()) await onTask(k.id, 'reply', field.value); });
     field.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); send.click(); } });
     acts.push(field, send);
   } else if (k.state === 'ready' && k.deed === 'review') {
-    head = found.length ? t('{agent} read {at}: the heaviest first', {agent, at}) : t('{agent} read {at}: nothing to change', {agent, at});
+    head = found.length ? t('{agent} analyzed {at} (heaviest tasks first)', {agent, at}) : t('{agent} reviewed {at}: no changes needed', {agent, at});
     quote = found.length ? found.slice(0, 3).map((f) => h('span', {class: 'agent-finding'}, where(f), f.text)) : [document.createTextNode(k.said ?? '')];
     acts.push(look(), away());
   } else if (k.state === 'ready' && k.deed === 'tests') {
-    head = t('The tests fail on {at}', {at});
+    head = t('Tests failed on {at}', {at});
     quote = found.slice(0, 2).map((f) => h('span', {class: 'agent-finding'}, f.text));
     acts.push(look(), away());
   } else if (k.state === 'ready' && k.deed === 'ask') {
-    head = t('{agent} answered', {agent});
+    head = t('{agent} responded', {agent});
     quote = [h('span', {class: 'muted'}, k.words), h('span', {}, k.said ?? '')];
     acts.push(away());
   } else if (k.state === 'ready') {
-    head = t('{agent} is done with {at}', {agent, at});
+    head = t('{agent} completed {at}', {agent, at});
     quote = [document.createTextNode(k.said ?? '')];
     acts.push(look(), away());
   } else if (k.state === 'stopped') {
-    head = t('{agent} could not go on with {at}', {agent, at});
+    head = t('{agent} could not proceed with {at}', {agent, at});
     // The network it needs is asked for here, once: given, it is the repo's from then on, and the work goes on.
     const network = k.fix === `l3 network on ${k.repo}`;
     quote = [document.createTextNode(k.said ?? ''), ...(k.fix && !network ? [h('code', {class: 'agent-fix'}, k.fix)] : [])];
-    acts.push(network ? button(t('Give {repo}\'s Prompt the network', {repo: k.repo}), true, async () => { await grant(k.repo, true); await onTask(k.id, 'take'); })
+    acts.push(network ? button(t('Enable network for {repo} Prompt', {repo: k.repo}), true, async () => { await grant(k.repo, true); await onTask(k.id, 'take'); })
       : button(t('Try again'), true, () => onTask(k.id, 'take')), away());
   }
   return h('div', {class: `agent-card lately-row ${k.state}`, 'data-task': String(k.id)},

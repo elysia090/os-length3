@@ -151,6 +151,14 @@ pub fn report(harness: &str, event: Option<&str>, payload: &str, cwd_here: &std:
     Some(Event { at: now, harness: if harness.is_empty() { "agent".into() } else { harness }, session, repo: here.repo, line: here.line, kind, text: text_of(kind, &v) })
 }
 
+/// The box's own Agent (the app's, asked from the box at a repo's foot) said as a harness's hooks say it, as `box`:
+/// its `session`, the line `repo` shows, `kind` (asked, answered), its words as one line. The same journal and the
+/// same sessions as any agent's: wherever agents are shown at work, it is too.
+pub fn from_box(session: &str, repo: &str, kind: Kind, text: &str, now: u64) -> Event {
+    let session = session.chars().filter(|c| c.is_ascii_alphanumeric() || "-_.".contains(*c)).take(64).collect();
+    Event { at: now, harness: "box".into(), session, repo: repo.into(), line: crate::work::current(repo), kind, text: line_of(text) }
+}
+
 fn journal() -> PathBuf {
     crate::paths::data_dir().join("agents.jsonl")
 }
@@ -282,6 +290,16 @@ mod tests {
             assert_eq!(kind_of(name), Some(kind), "{name}");
         }
         assert_eq!(kind_of("PreCompact"), None);
+    }
+
+    #[test]
+    fn the_box_agent_is_a_session_as_any_harness_is_asked_then_its_turn_over() {
+        let asked = from_box("s1\u{1b}[2J", "garden", Kind::Prompt, "How is it\nbuilt?", 10);
+        assert_eq!((asked.harness.as_str(), asked.session.as_str(), asked.line.as_str(), asked.text.as_str()), ("box", "s12J", "main", "How is it"));
+        let answered = from_box("s1", "garden", Kind::Stop, "Run make.", 20);
+        let s = sessions(&[from_box("s1", "garden", Kind::Start, "", 5), from_box("s1", "garden", Kind::Prompt, "How?", 10), answered], 30, RECENT);
+        assert_eq!(s.len(), 1);
+        assert_eq!((s[0].state.as_str(), s[0].doing.as_str()), ("waits", "Run make."));
     }
 
     #[test]

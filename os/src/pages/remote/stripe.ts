@@ -13,17 +13,17 @@ import {button} from './parts.ts';
  * went, and where to go on, rather than a sign-in card nobody came for. Signed in, Remote's Plan says it instead.
  */
 export function checkoutBackPage(how: 'paid' | 'cancelled' | 'managed', tier: PaidTier | null, goOn: () => void): HTMLElement {
-  const on = button(t('Open the web app'));
+  const on = button(t('Open web app'));
   on.addEventListener('click', goOn);
   const [title, line] = how === 'paid'
-    ? [t('Payment went through'), tier ? t('{tier} shows in the app as soon as Stripe tells the Remote, a moment from now.', {tier: tierName(tier)})
-      : t('The plan shows Paid in the app as soon as Stripe tells the Remote, a moment from now.')]
-    : how === 'cancelled' ? [t('Payment was cancelled'), t('Nothing was charged; the plan is as it was.')]
-    : [t('Back from Stripe'), t('What changed shows in the app as soon as Stripe tells the Remote.')];
+    ? [t('Payment successful'), tier ? t('App status will reflect {tier} as soon as Stripe confirms.', {tier: tierName(tier)})
+      : t('Plan status will update to Paid as soon as Stripe confirms payment.')]
+    : how === 'cancelled' ? [t('Payment cancelled'), t('No charge was made; plan remains unchanged.')]
+    : [t('Returned from Stripe'), t('Changes will reflect in app once confirmed by Stripe.')];
   return h('main', {class: 'device-page sign-in-place'},
     h('section', {class: 'sign-in-card', 'aria-labelledby': 'checkout-back'},
       h('h1', {id: 'checkout-back'}, title), h('p', {}, line),
-      h('p', {class: 'muted'}, t('Go back to the app; you can close this tab.')),
+      h('p', {class: 'muted'}, t('Return to the app; you may close this tab.')),
       answers(null, on)));
 }
 
@@ -48,17 +48,17 @@ export function stripeTrip(again: () => void): StripeTrip {
   let came = stripeReturn();
   /** When the person came back from Stripe's page: the web, as this page loads again; the app, as its window comes back (null till then). */
   let since: number | null = Date.now();
-  if (came?.how === 'cancelled') tell(t('Payment was cancelled: nothing was charged, and the plan is as it was.'));
+  if (came?.how === 'cancelled') tell(t('Payment cancelled: no charge applied and plan remains unchanged.'));
   if (came?.how === 'paid') {
-    tell(came.tier ? t('Payment went through. {tier} shows here as soon as Stripe tells the Remote, a moment from now.', {tier: tierName(came.tier)})
-      : t('Payment went through. The plan shows Paid as soon as Stripe tells the Remote, a moment from now.'));
+    tell(came.tier ? t('Payment successful. Tier updates to {tier} once Stripe confirms.', {tier: tierName(came.tier)})
+      : t('Payment successful. Plan updates to Paid shortly after Stripe confirms.'));
   }
   /** Back from Checkout: paid now, said once, and nothing more is waited for. */
   const paid = (p: Plan) => {
-    if (p.plan === 'paid') { tell(t('Payment went through: you are on {tier} now.', {tier: tierName(p.tier ?? 'free')}), 'done'); came = null; }
+    if (p.plan === 'paid') { tell(t('Payment successful: you are now on {tier}.', {tier: tierName(p.tier ?? 'free')}), 'done'); came = null; }
     // Not heard yet: asked again in a moment, for a minute; then said where to look (the payment itself went through).
     else if (Date.now() - (since ?? Date.now()) < 60_000) setTimeout(again, 3000);
-    else { came = null; tell(t('Stripe has not told the Remote yet. The plan shows Paid once it does; nothing is charged twice.')); }
+    else { came = null; tell(t('Awaiting confirmation from Stripe. Paid status applies once verified (no duplicate charge).')); }
   };
   /** Back from the portal: what changed there, said against the plan as it was when this tab left; nothing, if nothing did. */
   const managed = (p: Plan, left: Left | null) => {
@@ -76,7 +76,7 @@ export function stripeTrip(again: () => void): StripeTrip {
    */
   const opened = (p: Plan) => {
     if (!isNative) return;
-    tell(t('The payment page is open in your browser. When you are done there, come back: the plan is read again.'));
+    tell(t('Payment page opened in browser. Return here after completion to refresh plan status.'));
     came = {how: 'managed', tier: null, left: {tier: p.tier ?? 'free', ends: p.ends ?? null, paid: p.plan === 'paid'}};
     since = null;
   };

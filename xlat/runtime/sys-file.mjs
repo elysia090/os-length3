@@ -4,7 +4,9 @@
 // results, or Wait for a call to be made again once something changed.
 
 import {Description, PIPE_BUF, Pipe} from './fd.mjs';
-import {Dir, Device, E, File, FsError, Link, S_IFIFO} from './fs.mjs';
+import * as net from './sys-net.mjs';
+import {procDescriptor} from './procfs.mjs';
+import {Dir, Device, E, Fifo, File, FsError, Link, S_IFCHR, S_IFDIR, S_IFIFO, S_IFLNK, S_IFSOCK} from './fs.mjs';
 import {Wait} from './process.mjs';
 import {SIG, SI, UNBLOCKABLE, actionOf, bit, deliverable, send} from './signal.mjs';
 
@@ -47,20 +49,87 @@ function writeStat(p, address, node) {
   v.setBigInt64(at + 48, BigInt(size), true);
   v.setBigInt64(at + 56, 4096n, true);
   v.setBigInt64(at + 64, BigInt(Math.ceil(size / 512)), true);
-  const s = BigInt(Math.floor(node.mtime / 1000)), ns = BigInt((node.mtime % 1000) * 1e6);
-  for (const off of [72, 88, 104]) { v.setBigInt64(at + off, s, true); v.setBigInt64(at + off + 8, ns, true); }
+  // atime, mtime, ctime: as set (utimensat keeps nanoseconds), else the time of the last change.
+  for (const [off, ms, ns] of [[72, node.atime ?? node.mtime, node.atimeNs], [88, node.mtime, node.mtimeNs], [104, node.ctime ?? node.mtime, undefined]]) {
+    v.setBigInt64(at + off, BigInt(Math.floor(ms / 1000)), true);
+    v.setBigInt64(at + off + 8, BigInt(ns ?? Math.floor(ms % 1000) * 1e6), true);
+  }
   return 0;
+}
+
+const UTIME_NOW = (1 << 30) - 1, UTIME_OMIT = (1 << 30) - 2;
+/** A directory entry's type (d_type) by its node's: DT_DIR, DT_LNK, DT_CHR, DT_FIFO, DT_SOCK; else DT_REG. */
+const DT = {[S_IFDIR]: 4, [S_IFLNK]: 10, [S_IFCHR]: 2, [S_IFIFO]: 1, [S_IFSOCK]: 12};
+
+/** The file a time-setting call names: by its path from `dirfd`, or the descriptor itself (a NULL or empty path). */
+function timed(p, dirfd, name, follow) {
+  if (!N(name) || !p.bytes[N(name)]) {
+    if (N(dirfd) === AT_FDCWD) return p.kernel.vfs.lookup(p.cwd, '/');
+    const d = descriptor(p, dirfd);
+    if (!d.node) fail(E.BADF);
+    return d.node;
+  }
+  return p.kernel.vfs.lookup(path(p, name), base(p, dirfd), follow);
+}
+
+/** Set a file's access and modification times, each [seconds, nanoseconds], 'now' or 'omit'; its ctime is now. */
+function setTimes(node, access, modify) {
+  const now = Date.now();
+  const at = (t) => t === 'now' ? [now, (now % 1000) * 1e6] : [t[0] * 1000 + Math.floor(t[1] / 1e6), t[1]];
+  if (access !== 'omit') { const [ms, ns] = at(access); node.atime = ms; node.atimeNs = ns; }
+  if (modify !== 'omit') { const [ms, ns] = at(modify); node.mtime = ms; node.mtimeNs = ns; }
+  node.ctime = now;
+  return 0;
+}
+
+/** Times from a struct timespec[2] (utimensat), with UTIME_NOW and UTIME_OMIT; none given is now for both. */
+function timespecs(p, address) {
+  if (!N(address)) return ['now', 'now'];
+  return [0, 16].map((off) => {
+    const s = Number(p.view.getBigInt64(N(address) + off, true)), ns = Number(p.view.getBigInt64(N(address) + off + 8, true));
+    if (ns === UTIME_NOW) return 'now';
+    if (ns === UTIME_OMIT) return 'omit';
+    if (ns < 0 || ns >= 1e9) fail(E.INVAL);
+    return [s, ns];
+  });
+}
+/** Times from a struct timeval[2] (utimes, futimesat): microseconds. */
+function timevals(p, address) {
+  if (!N(address)) return ['now', 'now'];
+  return [0, 16].map((off) => {
+    const s = Number(p.view.getBigInt64(N(address) + off, true)), us = Number(p.view.getBigInt64(N(address) + off + 8, true));
+    if (us < 0 || us >= 1e6) fail(E.INVAL);
+    return [s, us * 1000];
+  });
 }
 
 function describe(d) {
   // Something to stat for a descriptor without a node.
   if (d.node) return d.node;
-  if (d.kind === 'pipe-r' || d.kind === 'pipe-w') return {mode: S_IFIFO | 0o600, ino: 0, nlink: 1, uid: 0, gid: 0, mtime: Date.now(), isFile: false, isDir: false, isLink: false};
+  if (d.kind === 'pipe-r' || d.kind === 'pipe-w' || d.kind === 'pipe-rw') return {mode: S_IFIFO | 0o600, ino: 0, nlink: 1, uid: 0, gid: 0, mtime: Date.now(), isFile: false, isDir: false, isLink: false};
+  if (d.kind === 'socket') return net.stat(d);
   return {mode: 0o020620, ino: 0, nlink: 1, uid: 0, gid: 0, rdev: 0x8800, mtime: Date.now(), isFile: false, isDir: false, isLink: false};
+}
+
+/** /dev/fd/N, /dev/stdin and the rest, and /proc/self/fd/N, as the /proc/PID/fd/N they are. */
+function descriptorPath(p, name) {
+  const std = {'/dev/stdin': 0, '/dev/stdout': 1, '/dev/stderr': 2}[name];
+  if (std !== undefined) return `/proc/${p.pid}/fd/${std}`;
+  const m = /^\/(?:dev\/fd|proc\/self\/fd)\/(\d+)$/.exec(name);
+  return m ? `/proc/${p.pid}/fd/${m[1]}` : name;
 }
 
 function openAt(p, dirfd, address, flags, mode) {
   const f = N(flags), name = path(p, address);
+  // A descriptor opened by its /proc name opens what it has open: the same pipe or terminal, a file afresh.
+  const named = name.startsWith('/') ? procDescriptor(p.kernel, descriptorPath(p, name)) : null;
+  if (named) {
+    const d = named.kind === 'file' || named.kind === 'dir' ? new Description(named.kind, {node: named.node, flags: f, path: named.path}) : named;
+    if (d !== named && named.node?.isFile && (f & 3) && (f & O.TRUNC)) named.node.truncate(0);
+    const fd = p.fds.install(d, {cloexec: !!(f & O.CLOEXEC)});
+    if (fd < 0) fail(E.MFILE);
+    return fd;
+  }
   const r = p.kernel.vfs.resolve(name, base(p, dirfd), !(f & O.NOFOLLOW));
   let node = r.node;
   if (!node) {
@@ -83,6 +152,35 @@ function openAt(p, dirfd, address, flags, mode) {
   const writing = (f & 3) !== 0;
   if (node.isDir && writing) fail(E.ISDIR);
   if (node.isFile && writing && (f & O.TRUNC)) node.truncate(0);
+  // A named pipe: read, write or both ends of the one pipe its opens share. As on Linux, a reader waits for a writer
+  // and a writer for a reader, each there from the moment its open began (so two waiting opens meet); O_RDWR and a
+  // non-blocking reader do not wait, and a non-blocking writer with no reader is ENXIO.
+  if (node instanceof Fifo) {
+    const me = p; // the process whose open waits (a retry may be made from elsewhere than its thread)
+    node.pending ??= new Map();
+    let d = node.pending.get(me);
+    if (!d) {
+      if (!node.pipe || (!node.pipe.readers && !node.pipe.writers)) node.pipe = Object.assign(new Pipe(), {readOpens: 0, writeOpens: 0});
+      const access = f & 3, kind = access === 0 ? 'pipe-r' : access === 1 ? 'pipe-w' : 'pipe-rw';
+      if (kind === 'pipe-w' && (f & O.NONBLOCK) && !node.pipe.readers) fail(E.NXIO);
+      // What each side waits for is an open of the other since it began (Linux's r_counter and w_counter): a writer
+      // that came, wrote and went while a reader waited still lets it go on, to what it wrote.
+      d = new Description(kind, {pipe: node.pipe, flags: f & (3 | O.NONBLOCK), path: name});
+      d.seen = {reads: node.pipe.readOpens, writes: node.pipe.writeOpens};
+      if (kind !== 'pipe-w') node.pipe.readOpens++;
+      if (kind !== 'pipe-r') node.pipe.writeOpens++;
+    }
+    const met = d.kind === 'pipe-rw' || (f & O.NONBLOCK) || (d.kind === 'pipe-r' ? d.pipe.writers || d.pipe.writeOpens !== d.seen.writes : d.pipe.readers || d.pipe.readOpens !== d.seen.reads);
+    if (!met) { node.pending.set(me, d); d.pipe.changes++; p.kernel.dirty = true; throw new Wait(); }
+    node.pending.delete(me);
+    d.pipe.changes++;
+    p.kernel.dirty = true;
+    const fd = p.fds.install(d, {cloexec: !!(f & O.CLOEXEC)});
+    if (fd < 0) fail(E.MFILE);
+    return fd;
+  }
+  // /proc's files are read as they are when opened.
+  if (node.snapshot) node = node.snapshot();
   const kind = node.isDir ? 'dir' : node instanceof Device ? 'device' : 'file';
   const full = p.kernel.vfs.realpath(name, base(p, dirfd));
   const d = new Description(kind, {node, flags: f, path: full});
@@ -117,7 +215,7 @@ function readTo(p, d, into, at, length, offset = null) {
       into.set(data, at);
       return data.length;
     }
-    case 'pipe-r': {
+    case 'pipe-r': case 'pipe-rw': {
       const pipe = d.pipe;
       if (pipe.size) return pipe.readInto(into, at, length);
       // Empty with no writer left: the end of the data.
@@ -151,6 +249,7 @@ function readTo(p, d, into, at, length, offset = null) {
       return data.length;
     }
     case 'dir': fail(E.ISDIR);
+    case 'socket': return net.read(p, d, into, at, length);
   }
   fail(E.BADF);
 }
@@ -167,7 +266,7 @@ function writeData(p, d, data, offset = null) {
   const length = data.length, nonblock = d.flags & O.NONBLOCK;
   switch (d.kind) {
     case 'console': p.kernel.console.write(d.path === 'stderr' ? 2 : 1, data.slice()); return length;
-    case 'pipe-w': {
+    case 'pipe-w': case 'pipe-rw': {
       const pipe = d.pipe, s = p.call.state;
       const done = s.done ?? 0;
       if (!pipe.readers) {
@@ -197,6 +296,7 @@ function writeData(p, d, data, offset = null) {
       return 8;
     }
     case 'device': return d.node.writeDevice(data);
+    case 'socket': return net.write(p, d, data);
     case 'file': {
       if ((d.flags & 3) === 0) fail(E.BADF);
       const at = offset ?? (d.flags & O.APPEND ? d.node.size : d.offset);
@@ -206,6 +306,28 @@ function writeData(p, d, data, offset = null) {
     }
   }
   fail(E.BADF);
+}
+
+/**
+ * struct statfs for the filesystem `at` is on, as large as the machine's storage is and as free (machine.mjs): /proc
+ * is proc's, /dev a tmpfs, and the rest the root as it is, read-only files under the ones written (an overlay).
+ */
+function writeStatfs(p, buf, at) {
+  const BLOCK = 4096, m = p.kernel.machine;
+  const s = m.storage() ?? {total: m.memory, free: Math.max(0, m.memory - p.kernel.memoryBytes())};
+  const type = /^\/proc(\/|$)/.test(at) ? 0x9fa0 : /^\/dev(\/|$)/.test(at) ? 0x01021994 : 0x794c7630;
+  const v = p.view, blocks = BigInt(Math.floor(s.total / BLOCK)), free = BigInt(Math.floor(s.free / BLOCK));
+  p.bytes.fill(0, buf, buf + 120);
+  v.setBigInt64(buf, BigInt(type), true); // f_type
+  v.setBigInt64(buf + 8, BigInt(BLOCK), true); // f_bsize
+  v.setBigUint64(buf + 16, blocks, true); // f_blocks
+  v.setBigUint64(buf + 24, free, true); // f_bfree
+  v.setBigUint64(buf + 32, free, true); // f_bavail
+  v.setBigUint64(buf + 40, blocks, true); // f_files: an inode a block at most
+  v.setBigUint64(buf + 48, free, true); // f_ffree
+  v.setBigInt64(buf + 64, 255n, true); // f_namelen
+  v.setBigInt64(buf + 72, BigInt(BLOCK), true); // f_frsize
+  return 0;
 }
 
 const writeFrom = (p, d, address, length, offset = null) => writeData(p, d, p.bytes.subarray(address, address + length), offset);
@@ -318,7 +440,7 @@ function getdents(p, fd, buf, count) {
     v.setBigUint64(at, BigInt(node.ino), true);
     v.setBigInt64(at + 8, BigInt(d.offset + 1), true);
     v.setUint16(at + 16, reclen, true);
-    v.setUint8(at + 18, node.isDir ? 4 : node.isLink ? 10 : node instanceof Device ? 2 : 8);
+    v.setUint8(at + 18, DT[node.type] ?? 8);
     p.bytes.set(bytes, at + 19);
     p.bytes.fill(0, at + 19 + bytes.length, at + reclen);
     at += reclen;
@@ -329,6 +451,68 @@ function getdents(p, fd, buf, count) {
 
 function access(p, dirfd, address) {
   p.kernel.vfs.lookup(path(p, address), base(p, dirfd));
+  return 0;
+}
+
+// ---- extended attributes ----
+//
+// Kept with each node while this kernel runs, as tmpfs keeps them: names in the namespaces Linux has (user.,
+// trusted., security., system.), values of up to 64 KiB, XATTR_CREATE and XATTR_REPLACE, a size of 0 asking how
+// large. A pipe or socket has none and takes none (ENODATA, EOPNOTSUPP); a link takes no user. attribute (EPERM).
+
+const XATTR = {CREATE: 1, REPLACE: 2, NAME_MOST: 255, VALUE_MOST: 65536};
+const xnode = (p, name, follow) => p.kernel.vfs.lookup(path(p, name), p.cwd, follow);
+/** What a descriptor with no node has (a pipe's, a socket's): no attributes, and room for none. */
+const NONE = {xattrs: null, isLink: false, takesNone: true};
+const xnodeOf = (p, fd) => descriptor(p, fd).node ?? NONE;
+function xname(p, at) {
+  const name = p.cstring(N(at));
+  if (!name || name.length > XATTR.NAME_MOST) fail(E.RANGE);
+  if (!/^(user|trusted|security|system)\./.test(name)) fail(E.OPNOTSUPP);
+  return name;
+}
+function setXattr(p, node, at, value, size, flags) {
+  const name = xname(p, at), n = N(size), f = N(flags);
+  if (n < 0 || n > XATTR.VALUE_MOST) fail(E.TOOBIG);
+  if (f & ~(XATTR.CREATE | XATTR.REPLACE)) fail(E.INVAL);
+  if (node.takesNone) fail(E.OPNOTSUPP);
+  if (node.isLink && name.startsWith('user.')) fail(E.PERM);
+  const all = (node.xattrs ??= new Map());
+  if ((f & XATTR.CREATE) && all.has(name)) fail(E.EXIST);
+  if ((f & XATTR.REPLACE) && !all.has(name)) fail(E.NODATA);
+  all.set(name, p.bytes.slice(N(value), N(value) + n));
+  return 0;
+}
+function getXattr(p, node, at, value, size) {
+  const v = node.xattrs?.get(xname(p, at));
+  if (!v) fail(E.NODATA);
+  if (N(size) === 0) return v.length;
+  if (N(size) < v.length) fail(E.RANGE);
+  p.bytes.set(v, N(value));
+  return v.length;
+}
+function listXattr(p, node, list, size) {
+  const names = enc.encode([...(node.xattrs?.keys() ?? [])].map((k) => `${k}\0`).join(''));
+  if (N(size) === 0) return names.length;
+  if (N(size) < names.length) fail(E.RANGE);
+  p.bytes.set(names, N(list));
+  return names.length;
+}
+function removeXattr(p, node, at) {
+  const name = xname(p, at);
+  if (!node.xattrs?.delete(name)) fail(E.NODATA);
+  return 0;
+}
+
+/** mknod: a named pipe or an empty regular file where nothing is; a device is not made here (EPERM). */
+function makeNode(p, dirfd, address, mode) {
+  const r = p.kernel.vfs.resolve(path(p, address), base(p, dirfd), false);
+  if (r.node) fail(E.EXIST);
+  if (!r.parent.isDir) fail(E.NOTDIR);
+  const m = N(mode), perm = m & ~p.umask & 0o7777, type = m & 0o170000;
+  if (type === S_IFIFO) r.parent.entries.set(r.name, new Fifo(perm));
+  else if (type === 0 || type === 0o100000) r.parent.entries.set(r.name, new File(new Uint8Array(0), perm));
+  else fail(E.PERM);
   return 0;
 }
 
@@ -355,9 +539,11 @@ function readiness(p, d) {
   switch (d.kind) {
     case 'pipe-r': r = (d.pipe.size ? POLL.IN : 0) | (d.pipe.writers ? 0 : POLL.HUP); break;
     case 'pipe-w': r = d.pipe.readers ? (d.pipe.writable ? POLL.OUT : 0) : POLL.ERR; break;
+    case 'pipe-rw': r = (d.pipe.size ? POLL.IN : 0) | (d.pipe.writable ? POLL.OUT : 0); break;
     case 'console': r = (p.kernel.console.ready?.() ? POLL.IN : 0) | POLL.OUT; break;
     case 'eventfd': r = (d.event.count ? POLL.IN : 0) | (d.event.count < 0xfffffffffffffffen ? POLL.OUT : 0); break;
     case 'epoll': r = epollReady(p, d, 1).length ? POLL.IN : 0; break;
+    case 'socket': r = net.ready(d); break;
     default: r = POLL.IN | POLL.OUT;
   }
   if (r & POLL.IN) r |= POLL.RDNORM;
@@ -366,7 +552,7 @@ function readiness(p, d) {
 }
 
 /** A counter that moves whenever `d`'s readiness may have (epoll's edge). */
-const changes = (p, d) => d.pipe?.changes ?? d.event?.changes ?? (d.kind === 'console' ? p.kernel.inputs ?? 0 : 0);
+const changes = (p, d) => (d.kind === 'socket' ? net.changes(d) : d.pipe?.changes ?? d.event?.changes ?? (d.kind === 'console' ? p.kernel.inputs ?? 0 : 0));
 
 /** The calling thread's mask is `set` while the call waits (ppoll, pselect6, epoll_pwait), as rt_sigsuspend does. */
 function swapMask(p, address) {
@@ -534,11 +720,13 @@ function ioctl(p, d, request, arg) {
   }
   if (r === 0x5451 || r === 0x5450) return 0; // FIOCLEX, FIONCLEX (the table's: done by fcntl too)
   if (r === 0x541b) { // FIONREAD
-    const n = d.kind === 'pipe-r' ? d.pipe.size : d.kind === 'console' ? k.console.pending?.() ?? 0 : d.kind === 'file' ? Math.max(0, d.node.size - d.offset) : null;
+    const n = d.kind === 'pipe-r' || d.kind === 'pipe-rw' ? d.pipe.size : d.kind === 'socket' ? net.pending(d) : d.kind === 'console' ? k.console.pending?.() ?? 0 : d.kind === 'file' ? Math.max(0, d.node.size - d.offset) : null;
     if (n === null) fail(E.NOTTY);
     v.setInt32(arg, n, true);
     return 0;
   }
+  // A socket's (SIOCOUTQ, what an interface is): sys-net.mjs's.
+  if (d.kind === 'socket') return net.control(p, d, r, arg);
   // The rest are a terminal's, and only the console is one (when it says it is interactive).
   if (d.kind !== 'console' || !k.console.interactive) fail(E.NOTTY);
   k.tty.termios ??= {...TERMIOS, cc: new Uint8Array([3, 28, 127, 21, 4, 0, 1, 0, 17, 19, 26, 0, 18, 15, 23, 22, 0, 0, 0])};
@@ -585,8 +773,26 @@ function ioctl(p, d, request, arg) {
   }
   fail(E.NOTTY);
 }
+/**
+ * chown of `node` (looked up already: a name not there is ENOENT first): to the one owner this machine has, 0, or -1
+ * to keep it; any other id is not mapped in the Prompt's namespace (EINVAL, as there). As Linux's, it takes away a
+ * file's set-user-ID bit, and its set-group-ID bit where the group may run it.
+ */
+function chown(p, node, uid, gid) {
+  for (const id of [uid, gid]) {
+    const x = Number(BigInt.asUintN(32, id));
+    if (x !== 0 && x !== 0xffffffff) fail(E.INVAL);
+  }
+  if (node && !node.isDir && node.mode !== undefined) {
+    node.mode &= ~0o4000;
+    if (node.mode & 0o010) node.mode &= ~0o2000;
+  }
+  return 0;
+}
+
 function dup(p, oldfd, newfd, cloexec) {
   const d = descriptor(p, oldfd);
+  if (newfd < 0 || newfd >= p.fds.limit) fail(E.BADF);
   return p.fds.install(d, {fd: newfd, cloexec});
 }
 
@@ -630,7 +836,7 @@ export const FILE_CALLS = {
   271(fds, count, spec, mask) { return poll(this, fds, count, timespecMs(this, N(spec)) ?? -1, N(mask)); },
   8(fd, offset, whence) {
     const d = descriptor(this, fd);
-    if (d.kind === 'pipe-r' || d.kind === 'pipe-w' || d.kind === 'console') fail(E.SPIPE);
+    if (d.kind === 'pipe-r' || d.kind === 'pipe-w' || d.kind === 'pipe-rw' || d.kind === 'socket' || d.kind === 'console') fail(E.SPIPE);
     if (d.kind === 'dir') { if (N(offset) === 0 && N(whence) === 0) { d.offset = 0; return 0; } fail(E.INVAL); }
     const start = [0, d.offset, d.node.size ?? 0][N(whence)];
     if (start === undefined || start + N(offset) < 0) fail(E.INVAL);
@@ -651,6 +857,8 @@ export const FILE_CALLS = {
   72(fd, cmd, arg) {
     const d = descriptor(this, fd), c = N(cmd);
     if (c === 0 || c === 1030) { // F_DUPFD, F_DUPFD_CLOEXEC
+      // From past the descriptor limit: EINVAL; none free below it: EMFILE.
+      if (N(arg) < 0 || N(arg) >= this.fds.limit) fail(E.INVAL);
       const target = this.fds.lowest(N(arg));
       if (target < 0) fail(E.MFILE);
       return this.fds.install(d, {fd: target, cloexec: c === 1030});
@@ -671,6 +879,84 @@ export const FILE_CALLS = {
   },
 
   73() { return 0; }, 74() { return 0; }, 75() { return 0; },
+  // What is written is where it goes already (memory; a repo's files mirrored as they change): nothing to wait for.
+  162() { return 0; }, // sync
+  306(fd) { descriptor(this, fd); return 0; }, // syncfs
+  277(fd) { descriptor(this, fd); return 0; }, // sync_file_range
+  221(fd) { // fadvise64: advice, taken and not needed (every file is in memory once read)
+    const d = descriptor(this, fd);
+    if (d.kind !== 'file' && d.kind !== 'dir' && d.kind !== 'device') fail(E.SPIPE);
+    return 0;
+  },
+  // Extended attributes (setfattr, setcap, setfacl): by path (following a link, or not: l*) or by descriptor.
+  188(name, at, value, size, flags) { return setXattr(this, xnode(this, name, true), at, value, size, flags); }, // setxattr
+  189(name, at, value, size, flags) { return setXattr(this, xnode(this, name, false), at, value, size, flags); }, // lsetxattr
+  190(fd, at, value, size, flags) { return setXattr(this, xnodeOf(this, fd), at, value, size, flags); }, // fsetxattr
+  191(name, at, value, size) { return getXattr(this, xnode(this, name, true), at, value, size); }, // getxattr
+  192(name, at, value, size) { return getXattr(this, xnode(this, name, false), at, value, size); }, // lgetxattr
+  193(fd, at, value, size) { return getXattr(this, xnodeOf(this, fd), at, value, size); }, // fgetxattr
+  194(name, list, size) { return listXattr(this, xnode(this, name, true), list, size); }, // listxattr
+  195(name, list, size) { return listXattr(this, xnode(this, name, false), list, size); }, // llistxattr
+  196(fd, list, size) { return listXattr(this, xnodeOf(this, fd), list, size); }, // flistxattr
+  197(name, at) { return removeXattr(this, xnode(this, name, true), at); }, // removexattr
+  198(name, at) { return removeXattr(this, xnode(this, name, false), at); }, // lremovexattr
+  199(fd, at) { return removeXattr(this, xnodeOf(this, fd), at); }, // fremovexattr
+  319(name, flags) { // memfd_create: a file in no directory, as shared anonymous memory is
+    const f = N(flags);
+    if (f & ~0x7) fail(E.INVAL); // MFD_CLOEXEC, MFD_ALLOW_SEALING, MFD_HUGETLB
+    const node = new File(new Uint8Array(0), 0o777);
+    const d = new Description('file', {node, flags: O.RDWR, path: `/memfd:${this.cstring(N(name))} (deleted)`});
+    const fd = this.fds.install(d, {cloexec: !!(f & 1)});
+    if (fd < 0) fail(E.MFILE);
+    return fd;
+  },
+  285(fd, mode, offset, len) { // fallocate: room made (a file's bytes are memory: zeros), or a range made zero
+    const d = descriptor(this, fd), m = N(mode), at = N(offset), n = N(len);
+    // As Linux asks: open for writing, then a file.
+    if ((d.flags & 3) === 0) fail(E.BADF);
+    if (d.kind !== 'file') fail(d.kind.startsWith('pipe') || d.kind === 'socket' ? E.SPIPE : E.NODEV);
+    if (at < 0 || n <= 0) fail(E.INVAL);
+    const KEEP_SIZE = 1, PUNCH_HOLE = 2, ZERO_RANGE = 0x10, node = d.node;
+    if (m & ~(KEEP_SIZE | PUNCH_HOLE | ZERO_RANGE)) fail(E.OPNOTSUPP);
+    if (m & (PUNCH_HOLE | ZERO_RANGE)) {
+      if ((m & PUNCH_HOLE) && !(m & KEEP_SIZE)) fail(E.INVAL);
+      const end = m & KEEP_SIZE ? Math.min(at + n, node.size) : at + n;
+      if (end > at) node.write(at, new Uint8Array(end - at));
+      return 0;
+    }
+    if (!(m & KEEP_SIZE) && at + n > node.size) node.truncate(at + n);
+    return 0;
+  },
+  40(out, from, offsetAt, count) { // sendfile: a file's bytes written to `out`, as a write of them is (it may wait)
+    const dout = descriptor(this, out), din = descriptor(this, from);
+    if (din.kind !== 'file' || (din.flags & 3) === O.WRONLY) fail(E.INVAL);
+    if ((dout.flags & 3) === 0 && dout.kind === 'file') fail(E.BADF);
+    const at = N(offsetAt) ? Number(this.view.getBigInt64(N(offsetAt), true)) : din.offset;
+    if (at < 0) fail(E.INVAL);
+    const data = din.node.read(at, at + Math.min(N(count), 1 << 20));
+    if (!data.length) return 0;
+    const n = writeData(this, dout, data);
+    if (N(offsetAt)) this.view.setBigInt64(N(offsetAt), BigInt(at + n), true); else din.offset = at + n;
+    return n;
+  },
+  326(inFd, inAt, outFd, outAt, len, flags) { // copy_file_range: between files, done here
+    if (N(flags)) fail(E.INVAL);
+    const din = descriptor(this, inFd), dout = descriptor(this, outFd);
+    if (din.kind !== 'file' || dout.kind !== 'file') fail(E.INVAL);
+    if ((din.flags & 3) === O.WRONLY || (dout.flags & 3) === 0 || (dout.flags & O.APPEND)) fail(E.BADF);
+    const from = N(inAt) ? Number(this.view.getBigInt64(N(inAt), true)) : din.offset;
+    const to = N(outAt) ? Number(this.view.getBigInt64(N(outAt), true)) : dout.offset;
+    if (from < 0 || to < 0) fail(E.INVAL);
+    const data = din.node.read(from, from + Math.min(N(len), 1 << 30));
+    if (din.node === dout.node && from < to + data.length && to < from + data.length) fail(E.INVAL);
+    if (data.length) dout.node.write(to, data.slice());
+    if (N(inAt)) this.view.setBigInt64(N(inAt), BigInt(from + data.length), true); else din.offset = from + data.length;
+    if (N(outAt)) this.view.setBigInt64(N(outAt), BigInt(to + data.length), true); else dout.offset = to + data.length;
+    return data.length;
+  },
+  // preadv2 and pwritev2: preadv and pwritev, an offset of -1 the descriptor's own (RWF_ flags change nothing here).
+  327(fd, vec, count, pos) { const at = N(pos); return readv(this, descriptor(this, fd), vec, count, at === -1 ? null : at); },
+  328(fd, vec, count, pos) { const at = N(pos); return writev(this, descriptor(this, fd), vec, count, at === -1 ? null : at); },
   76(name, length) { const node = this.kernel.vfs.lookup(path(this, name), this.cwd); if (!node.isFile) fail(E.INVAL); node.truncate(N(length)); return 0; },
   77(fd, length) { const d = descriptor(this, fd); if (d.kind !== 'file') fail(E.INVAL); d.node.truncate(N(length)); return 0; },
   79(buf, size) {
@@ -696,15 +982,40 @@ export const FILE_CALLS = {
   89(name, buf, size) { return readlink(this, BigInt(AT_FDCWD), name, buf, size); },
   90(name, mode) { const n = this.kernel.vfs.lookup(path(this, name), this.cwd); n.mode = (n.mode & ~0o7777) | (N(mode) & 0o7777); return 0; },
   91(fd, mode) { const n = descriptor(this, fd).node; if (n) n.mode = (n.mode & ~0o7777) | (N(mode) & 0o7777); return 0; },
-  92() { return 0; }, 93() { return 0; }, 94() { return 0; },
+  92(name, uid, gid) { return chown(this, this.kernel.vfs.lookup(path(this, name), this.cwd), uid, gid); },
+  93(fd, uid, gid) { return chown(this, descriptor(this, fd).node, uid, gid); }, // fchown
+  94(name, uid, gid) { return chown(this, this.kernel.vfs.lookup(path(this, name), this.cwd, false), uid, gid); }, // lchown
   95(mask) { const old = this.umask; this.umask = N(mask) & 0o777; return old; },
-  132() { return 0; }, 235() { return 0; }, 280() { return 0; },
-  137(name, buf) { this.bytes.fill(0, N(buf), N(buf) + 120); return 0; },
-  138(fd, buf) { this.bytes.fill(0, N(buf), N(buf) + 120); return 0; },
+  // utime, utimes, futimesat, utimensat: the times of a file that is there (ENOENT for one that is not, which
+  // is how touch knows to make it).
+  133(name, mode, dev) { return makeNode(this, BigInt(AT_FDCWD), name, mode); },
+  259(dirfd, name, mode, dev) { return makeNode(this, dirfd, name, mode); },
+  132(name, buf) {
+    const n = this.kernel.vfs.lookup(path(this, name), this.cwd);
+    if (!N(buf)) return setTimes(n, 'now', 'now');
+    const t = (off) => [Number(this.view.getBigInt64(N(buf) + off, true)), 0];
+    return setTimes(n, t(0), t(8));
+  },
+  235(name, tv) { const [a, m] = timevals(this, tv); return setTimes(this.kernel.vfs.lookup(path(this, name), this.cwd), a, m); },
+  261(dirfd, name, tv) { const [a, m] = timevals(this, tv); return setTimes(timed(this, dirfd, name, true), a, m); },
+  280(dirfd, name, ts, flags) {
+    const [a, m] = timespecs(this, ts);
+    return setTimes(timed(this, dirfd, name, !(N(flags) & AT.SYMLINK_NOFOLLOW)), a, m);
+  },
+  137(name, buf) { // statfs: the filesystem the path is on (it must be there)
+    const at = path(this, name);
+    this.kernel.vfs.lookup(at, this.cwd);
+    return writeStatfs(this, N(buf), at.startsWith('/') ? at : `${this.cwd}/${at}`);
+  },
+  138(fd, buf) { return writeStatfs(this, N(buf), descriptor(this, fd).path ?? '/'); }, // fstatfs
   217(fd, buf, count) { return getdents(this, fd, buf, count); },
   257(dirfd, name, flags, mode) { return openAt(this, dirfd, name, flags, mode); },
   258(dirfd, name, mode) { return makeDir(this, dirfd, name, mode); },
-  260() { return 0; },
+  260(dirfd, name, uid, gid, flags) { // fchownat
+    const f = N(flags), named = N(name) && this.cstring(N(name));
+    if (!named && f & AT.EMPTY_PATH) return chown(this, N(dirfd) === AT_FDCWD ? this.kernel.vfs.lookup(this.cwd, '/') : descriptor(this, dirfd).node, uid, gid);
+    return chown(this, this.kernel.vfs.lookup(path(this, name), base(this, dirfd), !(f & AT.SYMLINK_NOFOLLOW)), uid, gid);
+  },
   262(dirfd, name, st, flags) {
     if ((N(flags) & AT.EMPTY_PATH) && !this.bytes[N(name)]) return writeStat(this, st, describe(descriptor(this, dirfd)));
     return writeStat(this, st, this.kernel.vfs.lookup(path(this, name), base(this, dirfd), !(N(flags) & AT.SYMLINK_NOFOLLOW)));

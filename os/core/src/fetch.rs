@@ -79,18 +79,18 @@ pub fn fetch(url: &str, sha256: &str, size: u64, dest: &Path, mut progress: impl
                 continue;
             }
             if got < size {
-                why = crate::tr!("The connection broke", "回線が切れました");
+                why = crate::tr!("Connection lost", "接続が切断されました");
                 continue;
             }
         }
         if digest_of(&part).map_err(|e| e.to_string())? != sha256 {
             let _ = fs::remove_file(&part);
-            why = crate::tr!("The contents do not match", "中身が合いません");
+            why = crate::tr!("Content mismatch", "内容が一致しません");
             continue;
         }
         fs::rename(&part, dest).map_err(|e| e.to_string())?;
         return Ok(());
     }
     // What came stays in the .part file for the next try.
-    Err(if why.is_empty() { crate::tr!("Could not load", "読み込めませんでした") } else { why })
+    Err(if why.is_empty() { crate::tr!("Failed to load", "読み込めませんでした") } else { why })
 }

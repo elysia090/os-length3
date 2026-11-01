@@ -17,8 +17,8 @@ export function guestsCard(b: servers.BoardRef, w: GearWays): HTMLElement {
   const rows = h('div', {class: 'guest-rows'});
   const made = h('div', {class: 'guest-link'});
   const said = h('p', {class: 'error small', role: 'alert'});
-  const ask = button(t('Invite a guest'), 'small-button primary');
-  const c = smallCard(t('Guests of #{board}', {board: b.name}), rows, made, said, foot(ask));
+  const ask = button(t('Invite guest'), 'small-button primary');
+  const c = smallCard(t('Guests in #{board}', {board: b.name}), rows, made, said, foot(ask));
   const fill = async () => {
     try {
       const {invites, guests} = await servers.guestsOf(b.id);
@@ -35,9 +35,9 @@ export function guestsCard(b: servers.BoardRef, w: GearWays): HTMLElement {
     try {
       const got = await servers.invite(b.id);
       // The link is said once: pressed, it is copied; the Remote keeps only its digest.
-      const link = h('button', {type: 'button', class: 'button small-button mono guest-link-text', 'aria-label': t('The invitation\'s link')}, got.link) as HTMLButtonElement;
+      const link = h('button', {type: 'button', class: 'button small-button mono guest-link-text', 'aria-label': t('Invite link')}, got.link) as HTMLButtonElement;
       copying(link, got.link);
-      made.replaceChildren(link, h('span', {class: 'muted small'}, t('Pass it on yourself, to one person. It lets them in once, until {date}, and is shown only now.', {date: day(got.until)})));
+      made.replaceChildren(link, h('span', {class: 'muted small'}, t('Single-use link valid until {date}. Share directly; will not be displayed again.', {date: day(got.until)})));
       await fill();
     } catch (e) { said.textContent = errorText(e); }
     ask.disabled = false;
@@ -56,9 +56,9 @@ const row = (text: string, sub: string, act: HTMLButtonElement | null) =>
 /** A guest, and who invited them; Remove, asked in card `c`, where they may be removed. */
 function guestRow(c: HTMLElement, b: servers.BoardRef, g: servers.Guest, w: GearWays): HTMLElement {
   const out = g.mayRemove ? button(t('Remove'), 'small-button') : null;
-  out?.addEventListener('click', () => askIn(c, out, g.name, [t('{name} no longer writes in #{board}.', {name: g.name, board: b.name}), t('What they wrote there is taken down.')],
+  out?.addEventListener('click', () => askIn(c, out, g.name, [t('{name} will lose posting access to #{board}.', {name: g.name, board: b.name}), t('Their posts will be removed.')],
     t('Remove'), async () => { await servers.removeGuest(b.id, g.id); w.again(); }));
-  return row(`${g.name} (${t('guest')})`, t('invited by {who}', {who: named(g.by)}), out);
+  return row(`${g.name} (${t('Guest')})`, t('Invited by {who}', {who: named(g.by)}), out);
 }
 
 /** An invitation not used yet, until when; Revoke, at once, where it may be revoked, and the card read again. */
@@ -69,5 +69,5 @@ function inviteRow(b: servers.BoardRef, x: servers.Invitation, said: HTMLElement
     try { await servers.revokeInvite(b.id, x.id); await fill(); } catch (e) { revoke.disabled = false; said.textContent = errorText(e); }
   });
   // Whose first, as a guest's row has the guest first: a name over what it is, which a narrow card keeps whole.
-  return row(named(x.by), t('An invitation, until {date}', {date: day(x.until)}), revoke);
+  return row(named(x.by), t('Invite valid until {date}', {date: day(x.until)}), revoke);
 }

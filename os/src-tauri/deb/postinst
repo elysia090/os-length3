@@ -1,0 +1,9 @@
+#!/bin/sh
+# Where AppArmor keeps user namespaces from unprivileged programs (Ubuntu 23.10 and later), the profile that lets
+# l3 make its Prompts' (deb/length3-l3.apparmor) is put in place and loaded; elsewhere nothing is changed.
+set -e
+if [ "$1" = configure ] && [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ] && [ -d /etc/apparmor.d ]; then
+  install -m 0644 /usr/share/length3-os/apparmor/length3-l3 /etc/apparmor.d/length3-l3
+  if command -v apparmor_parser > /dev/null 2>&1; then apparmor_parser -r -T -W /etc/apparmor.d/length3-l3 || true; fi
+fi
+exit 0

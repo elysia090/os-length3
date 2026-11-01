@@ -73,7 +73,9 @@ export async function workerRole(db: ReturnType<typeof drizzle>, password: strin
   if (had) throw new Error(`${name}: there already; the Worker's role is made new each time, never changed`);
   await run('create', sql.raw(`CREATE ROLE ${name} WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT PASSWORD '${password}'`));
   await run('grant remote_app', sql.raw(`GRANT remote_app TO ${name}`));
-  for (const s of ["statement_timeout = '15s'", "idle_in_transaction_session_timeout = '15s'", "lock_timeout = '5s'"]) await run('settings', sql.raw(`ALTER ROLE ${name} SET ${s}`));
+  // No JIT: the Remote asks small things often, and a statement Postgres thinks large (a guess, from functions it cannot
+  // see into) was compiled before it ran, 1.5 s of LLVM for 80 ms of work.
+  for (const s of ["statement_timeout = '15s'", "idle_in_transaction_session_timeout = '15s'", "lock_timeout = '5s'", 'jit = off']) await run('settings', sql.raw(`ALTER ROLE ${name} SET ${s}`));
   return name;
 }
 

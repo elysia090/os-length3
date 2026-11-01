@@ -1,9 +1,8 @@
 /* The Remote's Plan: the tiers, what one has against them, and the step into paying. */
 
 /* Remote's Plan: what one has (a figure's size), the use against the allowance, the tiers side by side, what paid
-   adds, one deed. What is read keeps to 760 px; the tiers take the room for four small cards. */
+   adds. Everything on the part is as wide as the four small cards: one right edge down the part. */
 .plan-part { max-width: 1040px; }
-.plan-part > .sub-part:not(.plan-tiers), .plan-part > .plan-told, .plan-part > .error, .plan-part > .answers { max-width: 760px; }
 /* Free and each tier at the part's top: four across the part (two, then one, as it narrows), the account's own
    current (an ink edge over raised); the plan it is on said at the heading's right. */
 .tier-cards { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -37,16 +36,18 @@
 .plan-terms li + li { margin-top: var(--s1); }
 .plan-confirm > .answers { margin-top: var(--s4); }
 .plan-confirm > p.muted { margin: 0; }
-/* How the last trip to Checkout went, above the plan until the plan says it. */
-.plan-told { margin: 0 0 var(--s4); padding: var(--s2) var(--s3); border-left: 3px solid var(--edge); }
-.plan-told.done { border-left-color: var(--done); }
+/* How the last trip to Stripe went, above the plan: on paper, nearer than the ground, so it is read first; gone through,
+   the green circle with its tick before the words, as a switch on is green (one green for on and done). */
+.plan-told { display: flex; align-items: center; gap: var(--s3); margin: 0 0 var(--s4); padding: var(--s3) var(--s4);
+  border: 1px solid var(--rule); border-radius: var(--r-card); background: var(--paper); color: var(--ink); }
+.plan-told[hidden] { display: none; }
+.plan-told.done::before { content: ''; flex: none; width: 20px; height: 20px; border-radius: 50%; background: var(--done)
+  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6.5 12.5l3.5 3.5 7.5-8' fill='none' stroke='%23f9f8f5' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 14px no-repeat; }
 /* The meter (DESIGN.md §3): a round track, `raised` inside an `edge` line, filled `ink` as far as the use goes. */
 .meter { height: var(--s2); border: 1px solid var(--edge); border-radius: var(--r-round); background: var(--raised); overflow: hidden; }
 .meter > span { display: block; height: 100%; width: calc(var(--share, 0) * 100%); background: var(--ink); }
 .plan-meter.over .row-meta { color: var(--ink); font-weight: 600; }
 /* A refusal of the plan's, said in place: the words, then the way to the Plan beside them. */
-/* What paid adds is read whole, wrapping where it must, never cut short. */
-.plan-adds .row-name { white-space: normal; }
 /* Narrow (a phone, a tall window): what is measured, its track as wide as the row, its figures; one under another. */
 @media (max-width: 760px) {
   .plan-meter { grid-template-columns: minmax(0, 1fr); row-gap: var(--s1); padding-block: var(--s2); }

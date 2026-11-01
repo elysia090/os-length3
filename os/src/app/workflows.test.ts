@@ -14,13 +14,15 @@ test('every action is pinned to a full commit, its tag beside it', () => {
   assert.deepEqual(loose, []);
 });
 
-test('each workflow\'s token reads by default, and writes only in the job that releases', () => {
+test('each workflow\'s token reads by default, and writes only in the jobs that release and that delete releases, on main', () => {
+  const writers = ['release.yml', 'releases-prune.yml'];
   for (const {name, text} of flows) {
     assert.match(text, /^permissions:\n\s+contents: read$/m, name);
     const writes = [...text.matchAll(/^\s+\w+: write$/gm)].length;
-    assert.equal(writes, name === 'release.yml' ? 1 : 0, name);
+    assert.equal(writes, writers.includes(name) ? 1 : 0, name);
   }
-  assert.match(flows.find((f) => f.name === 'release.yml')!.text, /branches: \['main'\]/);
+  for (const name of writers) assert.match(flows.find((f) => f.name === name)!.text, /branches: \['main'\]/, name);
+  assert.match(flows.find((f) => f.name === 'releases-prune.yml')!.text, /if: github\.ref == 'refs\/heads\/main'/);
 });
 
 test('no workflow runs untrusted code with a privileged token, or pastes event text into a shell', () => {

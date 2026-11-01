@@ -19,17 +19,20 @@
 export interface StripeApi {
   /** A customer for this account; the same account asking again within a day gets the same one (Idempotency-Key). */
   customer(p: {user: string; email: string; name: string}): Promise<string>;
-  /** A Checkout session subscribing `customer` to `price`, the price of `tier`; its URL. */
-  checkout(p: {customer: string; user: string; tier: string; price: string; success: string; cancel: string}): Promise<string>;
+  /** A Checkout session subscribing `customer` to `price`, the price of `tier`; its URL. In `locale`, else the browser's. */
+  checkout(p: {customer: string; user: string; tier: string; price: string; success: string; cancel: string; locale?: Locale}): Promise<string>;
   /**
    * A customer portal session (the card, the invoices, cancelling); its URL. With `change`, it opens at the
    * step that changes the subscription to that price (Stripe says what it costs now, and asks), and goes back
-   * to `back` once it is done.
+   * to `back` once it is done. In `locale`, else the browser's.
    */
-  portal(p: {customer: string; back: string; change?: Change}): Promise<string>;
+  portal(p: {customer: string; back: string; change?: Change; locale?: Locale}): Promise<string>;
   /** What a price is: so much (in the currency's smallest unit), every so many days, weeks, months or years. */
   price(id: string): Promise<Price>;
 }
+
+/** The languages the OS speaks, as Stripe names them: its pages are asked in the one the person chose, not the browser's. */
+export type Locale = 'en' | 'ja';
 
 /** A change of tier asked in the portal: the subscription, its one item (when it is known), the price it is to. */
 export interface Change { subscription: string; item: string | null; price: string }
@@ -72,13 +75,13 @@ export function stripeRest(key: string, f: typeof fetch = fetch): StripeApi {
     // Asked twice for the same tier from the same page within ten minutes (a double click, a retry after a lost
     // answer), it is the same Checkout, not two, each of which could be paid for (two subscriptions, billed both).
     // Another tier is another key: Stripe refuses one used again with other words.
-    checkout: async ({customer, user, tier, price, success, cancel}) => (await post('checkout/sessions', {
-      mode: 'subscription', customer, client_reference_id: user, success_url: success, cancel_url: cancel,
+    checkout: async ({customer, user, tier, price, success, cancel, locale}) => (await post('checkout/sessions', {
+      mode: 'subscription', customer, client_reference_id: user, success_url: success, cancel_url: cancel, ...(locale ? {locale} : {}),
       line_items: {0: {price, quantity: 1}}, subscription_data: {metadata: {user, tier}}, metadata: {user, tier},
     }, `checkout-${user}-${Math.floor(Date.now() / 600_000)}-${(await sha(`${price}\n${success}\n${cancel}`)).slice(0, 16)}`)).url ?? '',
     // A change of tier opens at its own step: confirming it, when the subscription's item is known (then back to the
     // page that asked); else choosing there, among the prices the portal is set to offer.
-    portal: async ({customer, back, change}) => (await post('billing_portal/sessions', {customer, return_url: back,
+    portal: async ({customer, back, change, locale}) => (await post('billing_portal/sessions', {customer, return_url: back, ...(locale ? {locale} : {}),
       ...(change ? {flow_data: change.item
         ? {type: 'subscription_update_confirm', subscription_update_confirm: {subscription: change.subscription, items: {0: {id: change.item, price: change.price, quantity: 1}}},
           after_completion: {type: 'redirect', redirect: {return_url: back}}}

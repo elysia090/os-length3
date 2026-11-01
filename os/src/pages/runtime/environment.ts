@@ -18,7 +18,7 @@ import {button} from './parts.ts';
  * run); the others say where they do. Custom is not yet.
  */
 export function environment(): HTMLElement {
-  const card = h('div', {class: 'card small-card env-card'}, h('span', {class: 'muted small'}, t('Reading…')));
+  const card = h('div', {class: 'card small-card env-card'}, h('span', {class: 'muted small'}, t('Loading…')));
   const paint = async () => {
     let root: Awaited<ReturnType<typeof rootStatus>> = null;
     try { root = await rootStatus(); } catch (e) { card.replaceChildren(h('p', {class: 'error'}, errorText(e))); return; }
@@ -46,7 +46,7 @@ const other = (name: string, v: string, note: string | Node, end: Node | null) =
 const others = (...rows: HTMLElement[]) => h('div', {class: 'env-rows', role: 'list', 'aria-label': t('Other environments')}, ...rows);
 
 /** A root of one's own: not yet. */
-const custom = () => other(t('Custom'), '', t('Your own root (.tar)'), h('span', {class: 'muted small'}, t('Not yet')));
+const custom = () => other(t('Custom'), '', t('Custom root (.tar)'), h('span', {class: 'muted small'}, t('Not yet')));
 
 /** Pressed: fetched if it is not here, then the one in effect; its progress said in `note`, the card drawn again (`again`) once it is. */
 function use(id: string, note: HTMLElement, again: () => void): HTMLButtonElement {
@@ -65,7 +65,7 @@ function inTheApp(root: RootStatus, again: () => void): Node[] {
   const now = root.current?.distro ?? (root.current ? 'l3' : null);
   const all = roots(root, now);
   const current = all.find((e) => e.id === now);
-  return [...(current ? top(current.name, current.version, current.what, current.sha) : [h('span', {class: 'card-title'}, t('Environment in effect'))]),
+  return [...(current ? top(current.name, current.version, current.what, current.sha) : [h('span', {class: 'card-title'}, t('Active environment'))]),
     others(...all.filter((e) => e !== current).map((e) => { const note = h('span', {class: 'muted small env-note'}, e.what); return other(e.name, e.version, note, use(e.id, note, again)); }),
       custom())];
 }
@@ -77,7 +77,7 @@ function roots(root: RootStatus, now: string | null) {
     {id: 'l3', name: 'l3', version: l3?.version ?? root.release.version, what: l3 ? t('{name} · {size}', {name: l3.name, size: bytes(l3.bytes)}) : root.release.name, sha: l3?.sha256 ?? ''},
     ...root.distros.map((d) => {
       const held = root.current?.distro === d.id ? root.current : null;
-      return {id: d.id, name: d.name, version: d.version, what: held ? t('{name} · {size}', {name: d.name, size: bytes(held.bytes)}) : t('apt; .packages and .setup set it up'), sha: held?.sha256 ?? ''};
+      return {id: d.id, name: d.name, version: d.version, what: held ? t('{name} · {size}', {name: d.name, size: bytes(held.bytes)}) : t('apt; provisioned via .packages and .setup'), sha: held?.sha256 ?? ''};
     })];
 }
 
@@ -85,9 +85,9 @@ function roots(root: RootStatus, now: string | null) {
 function onTheWeb(a: Awaited<ReturnType<typeof about>>): Node[] {
   // The same l3 as the app's: its version, and the digest of the root it is (core/src/root.rs), run here through xlat.
   // A build that carries no l3 says so in l3's own row: Ubuntu, Debian and Custom are under it all the same.
-  return [...(a ? top('l3', a.version, t('{name} · through xlat', {name: a.root.name}), a.sha256)
-    : top('l3', '', t('There is no l3 (npm run l3)'), '')),
-  others(other('Ubuntu', '26.04.1 LTS', t('In the app only'), null),
-    other('Debian', '13.7', t('In the app only'), null),
+  return [...(a ? top('l3', a.version, t('{name} · via xlat', {name: a.root.name}), a.sha256)
+    : top('l3', '', t('l3 missing (run: npm run l3)'), '')),
+  others(other('Ubuntu', '26.04.1 LTS', t('App only'), null),
+    other('Debian', '13.7', t('App only'), null),
     custom())];
 }

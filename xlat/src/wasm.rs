@@ -7,8 +7,64 @@
 //! then on (it is parsed where it lies, not copied): the host does not free
 //! it.
 
+use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
+
+/// The translator's allocator: the system's, with its memory grown by a quarter again at a time rather than by as
+/// little as each allocation needs. An engine may collect its whole heap as a wasm memory grows; a big program's
+/// translation grew it hundreds of times (a compiler's, 516 collections), and in a kernel's heap those took longer
+/// than the translation's own work. (By a half: 8 for its 12, with two fifths more held; by an eighth: 16, for a
+/// twentieth less.)
+struct Roomy;
+
+#[global_allocator]
+static ALLOCATOR: Roomy = Roomy;
+
+/// The memory's size now, in 64 KiB pages.
+fn pages() -> usize {
+    core::arch::wasm32::memory_size::<0>()
+}
+
+/// Once the memory has grown past `before` pages: room for a quarter as much again, made now and given back (the
+/// allocator keeps what is freed at its top, and hands it out without growing the memory).
+fn room(before: usize) {
+    if let Ok(layout) = Layout::from_size_align(before * 65536 / 4, 16) {
+        // SAFETY: the layout's size is not zero (a memory that grew held pages), and what is allocated is freed at once.
+        unsafe {
+            let p = System.alloc(layout);
+            if !p.is_null() { System.dealloc(p, layout); }
+        }
+    }
+}
+
+// SAFETY: each call is the system allocator's own, with the same arguments.
+unsafe impl GlobalAlloc for Roomy {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        let before = pages();
+        let p = System.alloc(layout);
+        if pages() != before { room(before); }
+        p
+    }
+
+    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+        let before = pages();
+        let p = System.alloc_zeroed(layout);
+        if pages() != before { room(before); }
+        p
+    }
+
+    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, size: usize) -> *mut u8 {
+        let before = pages();
+        let p = System.realloc(ptr, layout, size);
+        if pages() != before { room(before); }
+        p
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        System.dealloc(ptr, layout)
+    }
+}
 
 thread_local! {
     static OUTPUT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
@@ -50,6 +106,25 @@ pub unsafe extern "C" fn xlat_translate(ptr: *mut u8, len: usize) -> i32 {
     let (status, out) = match crate::elf::Elf::parse_owned(Vec::from_raw_parts(ptr, len, len)) {
         Ok(elf) => {
             let program = crate::discover::discover(&elf);
+            (0, crate::lower::translate(&elf, &program, crate::lower::Options::default()).wasm)
+        }
+        Err(e) => (1, e.to_string().into_bytes()),
+    };
+    OUTPUT.with(|o| *o.borrow_mut() = out);
+    status
+}
+
+/// As `xlat_translate`, and from the function starts at `seeds` (`n_seeds` u64s, left to the host) too: a program
+/// with its code reached later, in one module (discover::discover_seeded).
+///
+/// # Safety
+/// As `xlat_translate`, and `seeds` must point to `n_seeds` u64s.
+#[no_mangle]
+pub unsafe extern "C" fn xlat_translate_seeded(ptr: *mut u8, len: usize, seeds: *const u8, n_seeds: usize) -> i32 {
+    let seeds = words(seeds, n_seeds);
+    let (status, out) = match crate::elf::Elf::parse_owned(Vec::from_raw_parts(ptr, len, len)) {
+        Ok(elf) => {
+            let program = crate::discover::discover_seeded(&elf, &seeds);
             (0, crate::lower::translate(&elf, &program, crate::lower::Options::default()).wasm)
         }
         Err(e) => (1, e.to_string().into_bytes()),

@@ -57,7 +57,7 @@ const WORK: [(Words, Words); 7] = [
     (["l3 git", "l3 git"], ["the issues, each with what comes next", "Issue ごとに、次にすること"]),
     (["l3 start notes#1", "l3 start notes#1"], ["its own copy; edit in it (l3 prompt notes)", "その写しで始める。中で編集（l3 prompt notes）"]),
     (["l3 commit notes", "l3 commit notes"], ["commit what changed, named after the issue", "変えたものを、Issue の名前で Commit"]),
-    (["l3 push notes", "l3 push notes"], ["hand it to main as its change", "Change として main に渡す"]),
+    (["l3 submit notes", "l3 submit notes"], ["hand it to main again (a commit does)", "もう一度 main に渡す（Commit でも渡る）"]),
     (["l3 review notes#1 approve", "l3 review notes#1 approve"], ["approve the change", "Change を承認"]),
     (["l3 merge notes#1", "l3 merge notes#1"], ["main takes it", "main に取り込む"]),
 ];

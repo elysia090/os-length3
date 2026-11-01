@@ -35,7 +35,7 @@ const unread = new Map<Key, string>();
 export const unreadable = (): ReadonlyMap<Key, string> => unread;
 /** A setting as a person knows it. */
 export const settingName = (key: Key): string => ({profile: t('Profile'), todo: 'TODO', band: t('The band'), remote: t('Sign-in'),
-  sync: t('Where each repo stands'), lang: t('Language'), dotfiles: t('Dotfiles'), network: t('Network'), trusted: t('Dotfiles run here')})[key];
+  sync: t('Repo status'), lang: t('Language'), dotfiles: t('Dotfiles'), network: t('Network'), trusted: t('Dotfiles active in this environment')})[key];
 
 /** Read every key (or these) into memory; a value only the page's storage had is moved to its file once. */
 export async function loadState(keys: readonly Key[] = KEYS): Promise<void> {
@@ -85,7 +85,7 @@ onElsewhere((paths) => { if (paths.some((p) => p.startsWith(`${home()}/home/`)))
 /** Store `json` for `key`; rejects with the reason when it could not be kept. */
 export async function setState(key: Key, json: string): Promise<void> {
   const why = unread.get(key);
-  if (why !== undefined) throw new Error(t('{what} could not be read, so it is not written over ({why})', {what: settingName(key), why}));
+  if (why !== undefined) throw new Error(t('Could not read {what}; not overwritten ({why})', {what: settingName(key), why}));
   cache.set(key, json);
   for (const fn of [...listeners]) fn(key, false);
   await core('state_set', {key, json});

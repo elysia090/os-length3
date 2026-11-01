@@ -3,18 +3,24 @@
 // (vite.config.ts), the preview the selftest runs against, and the test that
 // _headers says the same (headers.test.ts).
 
+import {MAKER_ORIGINS} from '../agent/makers.ts';
+
 /** The Remote this OS ships with: one name for the app, the Remote, the DNS records people publish and passkeys. */
 export const DEFAULT_REMOTE = 'https://os.length3.com';
 
+/** Where the page may connect besides itself: the Remote (`remote`, an origin, or '' when it is the page's own), and
+ * the APIs of the models' makers the box's Agent asks with the key kept on the device (agent/makers.ts), nothing else. */
+const reaches = (remote: string) => [...(remote ? [remote] : []), ...MAKER_ORIGINS].join(' ');
+
 /**
- * The web build talks to nothing but its own origin and the Remote (`remote`, an origin, or '' when
- * the Remote is this page's own origin): no third-party script, frame, form target or connection.
+ * The web build talks to nothing but its own origin, the Remote and, for the Agent, the models' makers (reaches): no
+ * third-party script, frame or form target, and no connection elsewhere.
  * WebAssembly is compiled ('wasm-unsafe-eval': the Prompt's translator), never JavaScript from text.
  * Inline style attributes stay allowed: rows are indented through them, and they cannot run code.
  */
 export const webPolicy = (remote: string) => [
   "default-src 'self'", "script-src 'self' 'wasm-unsafe-eval'", "worker-src 'self'",
-  "style-src 'self' 'unsafe-inline'", "img-src 'self' data:", `connect-src 'self'${remote ? ` ${remote}` : ''}`,
+  "style-src 'self' 'unsafe-inline'", "img-src 'self' data:", `connect-src 'self' ${reaches(remote)}`,
   "object-src 'none'", "base-uri 'none'", "form-action 'none'",
 ].join('; ');
 
@@ -26,7 +32,7 @@ export const webPolicy = (remote: string) => [
  */
 export const desktopPolicy = (remote: string) => [
   "default-src 'self'", "script-src 'self'", "worker-src 'none'", "style-src 'self'", "img-src 'self' data:",
-  `connect-src 'self' ipc: http://ipc.localhost${remote ? ` ${remote}` : ''}`,
+  `connect-src 'self' ipc: http://ipc.localhost ${reaches(remote)}`,
   "object-src 'none'", "base-uri 'none'", "form-action 'none'", "frame-src 'none'",
 ].join('; ');
 

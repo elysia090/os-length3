@@ -7,12 +7,11 @@
 // it is opened.
 
 import {core, isNative, readCapacity, type Freed, type Item, type Space} from './host.ts';
-import {flush, look} from '../remote/lifecycle.ts';
+import {flush, holdHome, look} from '../remote/lifecycle.ts';
 import {HOME_KEYS, syncHome} from '../remote/sync.ts';
 import {reloadState, settingName} from '../home/state.ts';
 import {store} from '../repos/repos.ts';
 import {t, tn} from '../i18n.ts';
-import {keptL3} from '../prompt/userland.ts';
 
 /** `open`: repos a Prompt has open in this page (the app knows its own). */
 export async function readSpace(open: string[] = []): Promise<Space> {
@@ -21,19 +20,20 @@ export async function readSpace(open: string[] = []): Promise<Space> {
   // In a browser the core holds the repos; the host is the origin's storage, as the browser estimates it. A repo the
   // core would let go is kept while a Prompt here has it open; one it keeps already says its own reason (no Remote
   // to free it to), not the Prompt.
-  const items: Item[] = s.items.map((i) => (open.includes(i.what) && i.id.startsWith('repo:') && i.room !== 'Keep' ? {...i, room: 'Keep', why: t('A Prompt has it open')} : i));
+  const items: Item[] = s.items.map((i) => (open.includes(i.what) && i.id.startsWith('repo:') && i.room !== 'Keep' ? {...i, room: 'Keep', why: t('Locked by an active Prompt')} : i));
   // What l3 keeps of itself for the Prompt (its index, the translator, the hot programs): the l3 every Prompt runs on,
   // so it is kept, not freed (issue #46), here and in Free all alike; the app keeps its own the same (core/src/usage.rs).
-  const l3 = await keptL3();
-  if (l3.files) items.push({id: 'l3', what: 'l3', detail: tn('{n} file kept for the Prompt', '{n} files kept for the Prompt', l3.files), allocated: l3.bytes,
-    room: 'Keep', why: t('The Prompt runs on it, so it is kept')});
+  // Read from l3's own module only when asked: the Prompt's machine is no part of a page that only lists what is kept.
+  const l3 = await (await import('../prompt/userland.ts')).keptL3();
+  if (l3.files) items.push({id: 'l3', what: 'l3', detail: tn('{n} file reserved for Prompt', '{n} files reserved for Prompt', l3.files), allocated: l3.bytes,
+    room: 'Keep', why: t('Required for Prompt execution; cannot be removed')});
   items.sort((a, b) => b.allocated - a.allocated || a.what.localeCompare(b.what));
   const c = await readCapacity();
   // The browser's figure for this OS holds more than what is listed (its own keeping of them): that more is a row of
   // its own, last, so the rows add up to the total said over them; a figure under them is theirs.
   const listed = items.reduce((n, i) => n + i.allocated, 0);
   const counted = c?.app ?? listed;
-  if (counted > listed) items.push({id: 'other', what: t('Other'), detail: t('what the browser counts beside these, estimated'), allocated: counted - listed, room: 'Keep', why: ''});
+  if (counted > listed) items.push({id: 'other', what: t('Other'), detail: t('Additional estimated browser storage usage'), allocated: counted - listed, room: 'Keep', why: ''});
   return {
     host_total: c?.total ?? 0, host_free: c?.free ?? 0, host: 'Estimated',
     allocated: Math.max(counted, listed),
@@ -57,15 +57,17 @@ export async function freeOff(name: string): Promise<void> {
  * 空ける takes it (sent first, and gone only once the Remote has all of it), and Home's settings that are the person's
  * (the profile, the TODO, the dotfiles), sent first, go once they are what the Remote has (home.rs leave). Nothing the
  * Remote lacks goes: what stays is returned, each by its name with why. The Prompts that have a repo open are the
- * caller's to stop first (a browser's core does not know them).
+ * caller's to stop first (a browser's core does not know them). Home's settings are agreed no more from here on
+ * (lifecycle.ts holdHome): the caller lifts that (releaseHome) once it stays signed in, or signing out does.
  */
 export async function takeOff(): Promise<[string, string][]> {
-  const repos = await store.list();
-  const freed = repos.length ? await free(repos.map((r) => `repo:${r.name}`)) : null;
+  const repos = await store.names();
+  const freed = repos.length ? await free(repos.map((r) => `repo:${r}`)) : null;
   const kept = (freed?.kept ?? []).map(([id, why]): [string, string] => [id.replace(/^repo:/, ''), why]);
+  await holdHome();
   for (const key of HOME_KEYS) {
     await syncHome(key).catch(() => {});
-    if (!await core<boolean>('home_leave', {key})) kept.push([settingName(key), t('It is not on the Remote yet')]);
+    if (!await core<boolean>('home_leave', {key})) kept.push([settingName(key), t('Not yet synced to Remote')]);
   }
   await reloadState([...HOME_KEYS, 'sync']);
   return kept;

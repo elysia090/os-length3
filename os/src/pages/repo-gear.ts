@@ -7,7 +7,7 @@ import {keepOut, nudge, putAway} from '../ui/glide.ts';
 import {store, validName} from '../repos/repos.ts';
 import {forget, remoteAll, remoteOnly, repoState} from '../remote/lifecycle.ts';
 import {connection} from '../remote/connection.ts';
-import {promptHolds, stopPrompt} from './bench/terminal.ts';
+import {promptHolds, stopPrompt} from './bench/sessions.ts';
 import {openRepoPlace} from './remote/repos.ts';
 import {askFirst} from './remote/repo-off.ts';
 import type {Context} from './context.ts';
@@ -49,7 +49,7 @@ let open: (() => void) | null = null;
 
 const note = (text: string) => h('p', {class: 'muted small pop-note'}, text);
 /** What a Prompt with nothing running in it comes to, said in the ask of a deed that lets its repo go. */
-const stopsFirst = () => h('p', {class: 'muted small'}, t('Its Prompt is stopped first: nothing is running in it.'));
+const stopsFirst = () => h('p', {class: 'muted small'}, t('Prompt is stopped; ready for maintenance.'));
 
 /**
  * The gear of `repo` and its list. A card holds both at its top right, the list over the card; a row (Runtime's,
@@ -58,8 +58,8 @@ const stopsFirst = () => h('p', {class: 'muted small'}, t('Its Prompt is stopped
  */
 export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): {gear: HTMLButtonElement; list: HTMLElement} {
   const gear = h('button', {type: 'button', class: 'repo-gear-button', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
-    'aria-label': t('What to do with {name}', {name: repo}), title: t('What to do with {name}', {name: repo})}, mark('gear')) as HTMLButtonElement;
-  const list = h('div', {class: 'pop repo-gear-pop', role: 'menu', 'aria-label': t('What to do with {name}', {name: repo}), hidden: ''});
+    'aria-label': t('Actions for {name}', {name: repo}), title: t('Actions for {name}', {name: repo})}, mark('gear')) as HTMLButtonElement;
+  const list = h('div', {class: 'pop repo-gear-pop', role: 'menu', 'aria-label': t('Actions for {name}', {name: repo}), hidden: ''});
 
   const away = (e: Event) => {
     const mine = (n: Node | null) => !!n && (gear.contains(n) || list.contains(n));
@@ -87,13 +87,13 @@ export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): 
     const there = signedIn && (listed || !here || state?.agreed) ? {offAt: listed?.offAt ?? (state?.where === 'off' ? 1 : null)} : null;
     // What a Prompt running here holds back: one with something running in it, everything; one waiting, nothing.
     const holds = promptHolds(repo);
-    const busy = holds === 'busy' ? t('Something is running in its Prompt') : null;
+    const busy = holds === 'busy' ? t('A process is currently running in Prompt') : null;
     // Only what can be done here is offered (a renamed repo the Remote knows by its name is not, nor freeing one with
     // no Remote to keep it): the list says what can be, not why the rest cannot. What is done for good stands last,
     // in red, after a rule.
     const rows: HTMLElement[] = [];
     if (signedIn) {
-      const place = menuItem(t('Show on the Remote'), 'remote');
+      const place = menuItem(t('View on Remote'), 'remote');
       place.addEventListener('click', () => { show(false); openRepoPlace(ctx, repo); });
       rows.push(place);
     }
@@ -105,7 +105,7 @@ export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): 
     }
     // Freed only into a Remote that keeps it: offered while that is so, and taken back if what this device holds
     // keeps it here (changes the Remote lacks, a Prompt with something running), as it is read.
-    const free = here && signedIn ? menuItem(t('Free from this device'), 'free') : null;
+    const free = here && signedIn ? menuItem(t('Remove from device (free space)'), 'free') : null;
     if (free) { free.disabled = true; rows.push(free); }
     const del = menuItem(t('Delete'), 'trash', true);
     del.disabled = !!busy;
@@ -117,7 +117,7 @@ export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): 
     void w.why().then((no) => {
       if (!list.contains(free)) return;
       // Its Prompt waiting is no reason to keep it: it is stopped first, and the ask says so.
-      if (no === t('A Prompt has it open') && holds === 'idle') no = null;
+      if (no === t('Locked by an active Prompt') && holds === 'idle') no = null;
       if (no) { if (document.activeElement === free) del.focus(); free.remove(); } else free.disabled = false;
     }, () => free.remove());
     free.addEventListener('click', () => askFree(free, holds === 'idle'));
@@ -129,12 +129,12 @@ export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): 
    */
   const askFree = (free: HTMLButtonElement, stops: boolean) => {
     const foot = askFoot(free, list);
-    const no = h('button', {type: 'button', class: 'button small-button'}, t('Not now')) as HTMLButtonElement;
-    const yes = h('button', {type: 'button', class: 'button small-button primary'}, t('Free')) as HTMLButtonElement;
+    const no = h('button', {type: 'button', class: 'button small-button'}, t('Cancel')) as HTMLButtonElement;
+    const yes = h('button', {type: 'button', class: 'button small-button primary'}, t('Free space')) as HTMLButtonElement;
     const error = h('p', {class: 'error small', role: 'alert'});
-    const ask = h('div', {class: 'pop-ask', role: 'group', 'aria-label': t('Free {repo} from this device', {repo})},
-      h('p', {class: 'muted small'}, t('{repo} leaves this device.', {repo})),
-      h('p', {class: 'muted small'}, t('It stays on the Remote and comes back when opened.')), stops ? stopsFirst() : null, error, foot(no, yes));
+    const ask = h('div', {class: 'pop-ask', role: 'group', 'aria-label': t('Remove {repo} from device (free space)', {repo})},
+      h('p', {class: 'muted small'}, t('{repo} will be removed from this device.', {repo})),
+      h('p', {class: 'muted small'}, t('Preserved on Remote; re-downloads when opened.')), stops ? stopsFirst() : null, error, foot(no, yes));
     no.addEventListener('click', () => { ask.replaceWith(free); free.focus(); });
     const shown = performance.now();
     yes.addEventListener('click', async () => {
@@ -158,7 +158,7 @@ export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): 
     const input = h('input', {class: 'line-in mono', 'aria-label': t('New name'), placeholder: t('New name'), autocapitalize: 'off', spellcheck: 'false', maxlength: '64'}) as HTMLInputElement;
     input.value = repo;
     const error = h('p', {class: 'error small', role: 'alert'});
-    const no = h('button', {type: 'button', class: 'button small-button'}, t('Not now')) as HTMLButtonElement;
+    const no = h('button', {type: 'button', class: 'button small-button'}, t('Cancel')) as HTMLButtonElement;
     const yes = h('button', {type: 'button', class: 'button small-button primary'}, t('Rename')) as HTMLButtonElement;
     const box = h('div', {class: 'pop-field', role: 'group', 'aria-label': t('Rename {repo}', {repo})}, input, stops ? stopsFirst() : null, error, answers(no, yes));
     const refuse = (why: string) => { error.textContent = why; input.focus(); nudge(input); };
@@ -166,8 +166,8 @@ export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): 
       const to = input.value.trim();
       if (input.disabled) return;
       if (to === repo) { done(); return; }
-      if (!validName(to)) { refuse(t('Use letters, digits and . _ -, and do not start with .')); return; }
-      if ((await store.list()).some((r) => r.name === to) || remoteOnly().some((r) => r.name === to)) { refuse(t('There is a repo named {name} already', {name: to})); return; }
+      if (!validName(to)) { refuse(t('Use letters, digits, and . _ - (cannot start with .)')); return; }
+      if ((await store.names()).includes(to) || remoteOnly().some((r) => r.name === to)) { refuse(t('A repo named "{name}" already exists', {name: to})); return; }
       input.disabled = yes.disabled = no.disabled = true;
       try {
         if (stops) await stopPrompt(repo, true);
@@ -192,12 +192,12 @@ export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): 
   /** Delete of a repo no Remote has: asked in its row, as File's Delete is; it goes from here, and nothing has it after. */
   const askHere = (del: HTMLButtonElement, stops: boolean) => {
     const foot = askFoot(del, list);
-    const no = h('button', {type: 'button', class: 'button small-button'}, t('Not now')) as HTMLButtonElement;
+    const no = h('button', {type: 'button', class: 'button small-button'}, t('Cancel')) as HTMLButtonElement;
     const yes = h('button', {type: 'button', class: 'button small-button primary'}, t('Delete')) as HTMLButtonElement;
     const error = h('p', {class: 'error small', role: 'alert'});
     const ask = h('div', {class: 'pop-ask', role: 'group', 'aria-label': t('Delete {repo}', {repo})},
-      h('p', {class: 'muted small'}, t('{repo} goes from this device, with everything in it.', {repo})),
-      h('p', {class: 'muted small'}, t('It is kept nowhere else, so it cannot be brought back.')), stops ? stopsFirst() : null, error, foot(no, yes));
+      h('p', {class: 'muted small'}, t('Permanently removes {repo} and its contents from this device.', {repo})),
+      h('p', {class: 'muted small'}, t('No backup exists; cannot be recovered.')), stops ? stopsFirst() : null, error, foot(no, yes));
     no.addEventListener('click', () => { ask.replaceWith(del); del.focus(); });
     const shown = performance.now();
     yes.addEventListener('click', async () => {

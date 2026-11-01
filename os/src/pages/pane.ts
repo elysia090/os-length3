@@ -208,6 +208,9 @@ export function paneWord(open: (address: string) => void): HTMLElement {
       return {b, key: `${th.address} ${th.last.time}`};
     });
     list.replaceChildren(...rows.map((r) => r.b));
+    // It arrives in the pane on the screen: a page's pane out of sight (hearing the same news first) never takes the
+    // arrival for itself, leaving the one seen to show it standing in a frame.
+    if (!list.getClientRects().length) return;
     for (const r of rows) if (!arrived.has(r.key)) { arrived.add(r.key); arrive(r.b, 1, 'x', 32, 360); }
   };
   void paint();

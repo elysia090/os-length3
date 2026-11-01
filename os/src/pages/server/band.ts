@@ -44,8 +44,8 @@ export class Band {
     this.here = here;
     this.ways = ways;
     this.chips = h('div', {class: 'chips server-chips', role: 'radiogroup', 'aria-label': 'Server'});
-    this.gear = h('button', {type: 'button', class: 'server-gear unseen', 'aria-label': t('Its people, boards and repos'), title: t('Its people, boards and repos'), 'aria-expanded': 'false', disabled: ''}, mark('gear')) as HTMLButtonElement;
-    this.plus = h('button', {type: 'button', class: 'band-add', 'aria-label': t('Make a server'), title: t('Make a server'), hidden: ''}, mark('plus')) as HTMLButtonElement;
+    this.gear = h('button', {type: 'button', class: 'server-gear unseen', 'aria-label': t('Manage members, boards, and repos'), title: t('Manage members, boards, and repos'), 'aria-expanded': 'false', disabled: ''}, mark('gear')) as HTMLButtonElement;
+    this.plus = h('button', {type: 'button', class: 'band-add', 'aria-label': t('Create server'), title: t('Create server'), hidden: ''}, mark('plus')) as HTMLButtonElement;
     this.plus.addEventListener('click', () => ways.make());
     this.gear.addEventListener('click', () => ways.gear());
     this.element = h('div', {class: 'server-top'}, this.plus, this.chips, this.said);
@@ -67,7 +67,7 @@ export class Band {
     this.gear.classList.toggle('unseen', !serverId);
     this.plus.hidden = !signedIn;
     this.said.replaceChildren(...(this.here.naming && this.asked ? [this.asked] : []));
-    if (!signedIn) { this.chips.replaceChildren(h('span', {class: 'muted'}, t('Open boards'))); return; }
+    if (!signedIn) { this.chips.replaceChildren(h('span', {class: 'muted'}, t('Public boards'))); return; }
     const each = this.here.list.map((s) => {
       const b = h('button', {type: 'button', class: 'chip', role: 'radio', 'aria-checked': String(s.id === serverId), title: `${named(s.address)} · ${s.code}`, 'data-server': s.id}, s.name);
       markChip(b, this.here.list);
@@ -113,7 +113,7 @@ export class Band {
     const ours = new Set(this.here.list.flatMap((s) => s.boards.map((b) => b.id)));
     return servers.guestBoards().filter(({id}) => !ours.has(id)).map(({id, here}) => {
       const b = h('button', {type: 'button', class: 'chip guest-chip', role: 'radio', 'aria-checked': String(id === this.here.alone),
-        title: t('#{board} of {server}, as a guest', {board: here.name, server: here.server})}, `#${here.name}`, h('span', {class: 'muted small'}, t('guest')));
+        title: t('#{board} ({server}) · Guest', {board: here.name, server: here.server})}, `#${here.name}`, h('span', {class: 'muted small'}, t('Guest')));
       b.addEventListener('click', () => this.ways.showAlone({id, name: here.name, member: false, guests: true, server: here.server}));
       return b;
     });
@@ -135,5 +135,5 @@ function markChip(chip: HTMLElement, list: servers.Server[]) {
   const on = serverNew(chip.dataset.server ?? '');
   chip.classList.toggle('news', on);
   const name = list.find((s) => s.id === chip.dataset.server)?.name ?? '';
-  chip.setAttribute('aria-label', on ? t('{server}, new posts', {server: name}) : name);
+  chip.setAttribute('aria-label', on ? t('{server} (new posts)', {server: name}) : name);
 }

@@ -13,3 +13,18 @@ node_modules/
 
 # Native download bytes are release assets, not Git history. Keep receipts.
 /releases/native/*.tar.zst
+
+# Secrets never enter history, wherever they are left: environment files (Wrangler's local ones included), private
+# keys and certificates' keys, and the Agent's key file should one be copied out of the data directory.
+.env
+.env.*
+.dev.vars
+.dev.vars.*
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+id_ecdsa*
+agent-key
