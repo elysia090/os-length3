@@ -36,6 +36,15 @@
 // {type: 'more', path, from, more: [{module, bytes, base}]}: the modules from
 // the `from`th on, for the page to keep and give the next Prompt.
 //
+// {type: 'hot', files}, after 'start': programs given with their translation
+// once the Prompt is up (the page readies l3's and git's after its first
+// Prompt starts), each in the root's file (pack.mjs provide: each name of it,
+// a hard link, runs it), run from its next run on.
+//
+// A program run again that reached much of its code later is translated
+// again as one module only once the shell waits for its next line, a moment
+// after it does (Kernel.consolidateDue), so no run waits on that.
+//
 // {type: 'warm'}, before 'start' (sent as soon as the Worker is made, while
 // what 'start' needs is still being fetched): the Workers the first threads
 // will run in are started now, so they are up when the shell starts.
@@ -66,7 +75,7 @@
 
 import {Vfs} from './fs.mjs';
 import {Mirror} from './mirror.mjs';
-import {mountPack, syncRange} from './pack.mjs';
+import {mountPack, provide, syncRange} from './pack.mjs';
 import {Kernel} from './process.mjs';
 import {RemoteKernel, canRunApart, warmThreads} from './remote.mjs';
 import {keeper} from './keeper.mjs';
@@ -98,9 +107,9 @@ function ready(data) {
   readied ??= (async () => {
     const translate = await loadTranslator(data.translator);
     const vfs = new Vfs();
-    for (const f of data.files ?? []) vfs.writeFile(f.path, f.bytes, f.mode ?? 0o644);
-    // The root after the files given, so what was given (l3, its BusyBox) is what runs.
     if (data.root) mountPack(vfs, data.root.index, syncRange(data.root.url), translate.unzstd);
+    // Over the root, so what was given (l3, its BusyBox) is what runs: a hot program in the root's own node.
+    for (const f of data.files ?? []) provide(vfs, f);
     const r = {translate, vfs, files: data.files ?? []};
     if (data.rehearse) await rehearse(r, data.rehearse).catch(() => { /* only a start that is not faster */ });
     return r;
@@ -130,8 +139,26 @@ async function rehearse({translate, vfs, files}, {argv, env, cwd}) {
 
 const failed = (e) => self.postMessage({type: 'error', message: e instanceof Error ? `${e.name}: ${e.message}\n${e.stack}` : String(e)});
 
+/**
+ * How long the Prompt waits for its next line before what is due is translated again as one module (Kernel.consolidate):
+ * a moment, so a line sent at once after the one before (a script, a paste) does not wait on it.
+ */
+const IDLE_MS = 1200;
+let idle;
+
 /** The kernel paused (here: every thread waits or it ended, `r` as pump says): what the shell changed, and why it waits. */
 function paused(r) {
+  told();
+  const m = said(r, kernel.held(), performance.now(), (keep?.reading() ?? 0) > 0);
+  self.postMessage(m);
+  // Waiting for a person: what is due is consolidated while they read or type, then said as anything translated is.
+  clearTimeout(idle);
+  if (m.type === 'waiting' && m.for === 'input' && kernel.due.size) idle = setTimeout(() => { if (kernel.consolidateDue()) told(); }, IDLE_MS);
+  return m;
+}
+
+/** What the shell changed, and what was translated here or reached later since it was last said. */
+function told() {
   const c = mirror?.changes();
   if (c) self.postMessage({type: 'changes', ...c}, c.files.filter((f) => f.bytes).map((f) => f.bytes.buffer));
   // Code reached later since it was last said, for the page to keep (each module's bytes copied: the image keeps its own).
@@ -159,9 +186,6 @@ function paused(r) {
       im.told = im.extras.length;
     }
   }
-  const m = said(r, kernel.held(), performance.now(), (keep?.reading() ?? 0) > 0);
-  self.postMessage(m);
-  return m;
 }
 
 let waking;
@@ -177,8 +201,24 @@ function pump() {
   }
 }
 
+/** The node of `f`, a program given with its translation, runs that translation from its next run on. */
+function runs(node, f) {
+  kernel.prebuilt(node, f.module, f.segments ?? null);
+  const image = kernel.images.get(node).image;
+  kept.push({path: f.path, image, told: f.more?.length ? image.adopt(f.more) : 0});
+}
+
+/**
+ * Hot programs ready after this Prompt started (l3, git: the page readies them once its first Prompt is up), each put
+ * in the root's file and run from its next run on; what runs it now goes on as it is. One made for memory not shared
+ * cannot run where threads run apart: it stays translated as it runs.
+ */
+function given(files) {
+  for (const f of files) if (f.module && (!apart || f.shared)) runs(provide(kernel.vfs, f), f);
+}
+
 /** Something came from outside (input, Ctrl-C): the kernel looks again. */
-const nudge = () => { if (!kernel) return; if (apart) kernel.kick(); else pump(); };
+const nudge = () => { if (!kernel) return; clearTimeout(idle); if (apart) kernel.kick(); else pump(); };
 
 self.onmessage = async ({data}) => {
   if (data.type === 'input') { pending.push(data.bytes); nudge(); return; }
@@ -187,6 +227,7 @@ self.onmessage = async ({data}) => {
   if (data.type === 'put') { mirror?.put(data.path, data.what); return; }
   if (data.type === 'free') { if (kernel) self.postMessage({type: 'freed', ...kernel.free(0)}); return; }
   if (data.type === 'warm') { if (canRunApart()) warmThreads(); return; }
+  if (data.type === 'hot') { if (kernel) given(data.files); return; }
   // (A failure is said by the 'start' that waits for it.)
   if (data.type === 'ready') { ready(data).catch(() => {}); return; }
   if (data.type !== 'start') return;
@@ -197,7 +238,7 @@ self.onmessage = async ({data}) => {
     const later = before ? data.files : [];
     for (const d of data.dirs ?? []) vfs.mkdirp(d);
     // Over the root, as over the files readied: what this start gives is what is there.
-    for (const f of later) vfs.writeFile(f.path, f.bytes, f.mode ?? 0o644);
+    for (const f of later) provide(vfs, f);
     for (const l of data.links ?? []) vfs.symlink(l.target, l.path);
     vfs.mkdirp(data.cwd);
     const files = [...early, ...later];
@@ -213,14 +254,9 @@ self.onmessage = async ({data}) => {
     };
     // Translations kept from earlier Prompts: read when their program is first run, the kernel looking again once they are.
     keep = data.kept ? keeper(data.kept, () => nudge(), (urls) => self.postMessage({type: 'used', urls})) : null;
-    kernel = apart ? new RemoteKernel({vfs, translate, console, keeper: keep, onIdle: (r) => paused(r)}) : new Kernel({vfs, translate, console, keeper: keep});
-    for (const f of files) {
-      if (!f.module) continue;
-      const node = vfs.lookup(f.path, '/');
-      kernel.prebuilt(node, f.module, f.segments ?? null);
-      const image = kernel.images.get(node).image;
-      kept.push({path: f.path, image, told: f.more?.length ? image.adopt(f.more) : 0});
-    }
+    kernel = apart ? new RemoteKernel({vfs, translate, console, keeper: keep, onIdle: (r) => paused(r), consolidateIdle: true})
+      : new Kernel({vfs, translate, console, keeper: keep, consolidateIdle: true});
+    for (const f of files) if (f.module) runs(vfs.lookup(f.path, '/'), f);
     if (data.mirror) mirror = new Mirror(vfs, data.mirror);
     kernel.start(data.argv[0], data.argv, data.env, data.cwd);
     self.postMessage({type: 'threads', apart});

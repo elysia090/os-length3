@@ -29,3 +29,26 @@ test('a program run again is one module, on a memory let go of, and says what it
   assert.ok(PROFILE.memoriesReused > before.memoriesReused, 'a process took a memory let go of');
   assert.ok(PROFILE.imagesKept > before.imagesKept, 'one with the program read-only bytes in it already');
 });
+
+test('where the host gives idle time, a program is gathered into one module then, not as it runs', {skip: !have}, async () => {
+  const vfs = new Vfs();
+  vfs.writeFile('/bin/reexec', readFileSync(new URL('reexec', out)), 0o755);
+  let said = '';
+  const k = new Kernel({
+    vfs, translate: await loadTranslator(readFileSync(wasm)), consolidateIdle: true,
+    console: {interactive: false, write: (_, b) => { said += new TextDecoder().decode(b); }, read: () => null, ready: () => false},
+  });
+  const before = PROFILE.consolidated;
+  assert.equal(k.spawn('/bin/reexec', ['/bin/reexec', 'a', 'b'], [], '/'), 0);
+  assert.equal(said, readFileSync(new URL('reexec.native', out), 'utf8'));
+  assert.equal(PROFILE.consolidated, before, 'nothing gathered while it ran');
+  assert.equal(k.due.size, 1);
+  assert.equal(k.consolidateDue(), 1);
+  assert.equal(PROFILE.consolidated, before + 1);
+  assert.equal(k.due.size, 0);
+  // Run again on the one module (as a Prompt's next line is: a new init in the same kernel): the same words.
+  said = '';
+  k.status = null; k.initPid = k.nextPid;
+  assert.equal(k.spawn('/bin/reexec', ['/bin/reexec', 'a', 'b'], [], '/'), 0);
+  assert.equal(said, readFileSync(new URL('reexec.native', out), 'utf8'));
+});

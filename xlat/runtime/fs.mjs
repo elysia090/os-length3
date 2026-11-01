@@ -62,6 +62,17 @@ export class File extends Node {
     this.shared = true;
     return data.subarray(0, this.size);
   }
+  /**
+   * Its bytes, given (a hot program's, sent with its translation, checked against the root's digest of it): the very
+   * bytes its loader would read, so they are not read.
+   */
+  given(bytes) {
+    if (!this.load) return;
+    this._data = bytes;
+    this.size = bytes.length;
+    this.load = null;
+    if (this.reload) LOADED.add(this);
+  }
   /** About to change the bytes: from here on they are this file's own. */
   own() {
     if (this.shared) { this._data = this.data.slice(0, this.size); this.shared = false; }

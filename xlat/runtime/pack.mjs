@@ -25,10 +25,17 @@ export function mountPack(vfs, index, range, decode, at = '/') {
     const [dir, name] = place(l.path);
     if (!dir.entries.has(name)) dir.entries.set(name, new Link(l.target));
   }
+  // A file with more than one name (a hard link in the root: git's commands, each a name of git) is put in the index
+  // at one place; each name of it is the same node here, as on the device, so what is made from it once (its
+  // translation, its bytes read) serves every name, and a write through one name is seen through each.
+  const named = new Map();
   for (const f of index.files) {
     const [dir, name] = place(f.path);
     if (dir.entries.has(name)) continue;
     const pack = index.packs[f.pack].name;
+    const where = `${f.pack}:${f.at}:${f.len}`;
+    const same = f.len ? named.get(where) : undefined;
+    if (same) { dir.entries.set(name, same); same.nlink++; continue; }
     const file = new File(new Uint8Array(0), f.mode, () => {
       const stored = range(pack, f.at, f.len);
       return f.raw ? stored.slice() : decode(stored, f.size);
@@ -38,7 +45,22 @@ export function mountPack(vfs, index, range, decode, at = '/') {
     // them (a program's translation) can be kept by it while the file is unchanged (version 0).
     file.origin = `${pack.replace(/\.pack$/, '')}_${f.at}_${f.len}`;
     dir.entries.set(name, file);
+    if (f.len) named.set(where, file);
   }
+}
+
+/**
+ * A file of the root given with its bytes (`root`: a hot program, its bytes the root's own, checked against the
+ * root's digest of them): put in the root's node, so every name of it (a hard link) is still the one file, and its
+ * bytes are not read from its pack. Anything else given is written over the root, as it is given.
+ */
+export function provide(vfs, {path, bytes, mode = 0o644, root = false}) {
+  if (root) {
+    let node = null;
+    try { node = vfs.lookup(path, '/', false); } catch { /* not in the root: written */ }
+    if (node instanceof File && node.origin && node.version === 0 && node.size === bytes.length) { node.given(bytes); return node; }
+  }
+  return vfs.writeFile(path, bytes, mode);
 }
 
 /** In a Worker: the bytes [at, at+len) of a pack in `packs/` under `base`, fetched synchronously. */

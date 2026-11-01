@@ -4,7 +4,7 @@ import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
 import {constants, zstdCompressSync, zstdDecompressSync} from 'node:zlib';
 import {Vfs} from '../runtime/fs.mjs';
-import {mountPack} from '../runtime/pack.mjs';
+import {mountPack, provide} from '../runtime/pack.mjs';
 import {loadTranslator} from '../runtime/translator.mjs';
 
 const enc = new TextEncoder(), dec = new TextDecoder();
@@ -54,5 +54,26 @@ test('packs mount their tree at once and each file only when read; what was ther
   assert.equal(dec.decode(v.readFile('/etc/os-release', '/')), 'NAME=x\n');
   assert.equal(dec.decode(v.readFile('/etc/given', '/')), 'given first');
   assert.equal(v.lookup('/usr/bin/one', '/').mode & 0o777, 0o755);
-  assert.equal(reads.length, 3);
+  // A hard link is the file it names: one node, read once, two links.
+  assert.equal(v.lookup('/usr/bin/hard', '/'), v.lookup('/usr/bin/one', '/'));
+  assert.equal(v.lookup('/usr/bin/one', '/').nlink, 2);
+  assert.equal(reads.length, 2);
+});
+
+test("a file of the root given with its bytes goes in the root's node, which each of its names shares", () => {
+  const bytes = enc.encode('#!/bin/sh\necho one\n'), stored = zstdCompressSync(bytes);
+  const f = {mode: 0o755, size: bytes.length, at: 0, len: stored.length, pack: 0};
+  const index = {dirs: [{path: '/bin', mode: 0o755}], links: [], files: [{path: '/bin/a', ...f}, {path: '/bin/b', ...f}], codec: 'zstd',
+    packs: [{name: 'p.pack', owner: 'local', bytes: stored.length}]};
+  let reads = 0;
+  const v = new Vfs();
+  mountPack(v, index, () => { reads++; return new Uint8Array(stored); }, (b) => new Uint8Array(zstdDecompressSync(b)));
+  const node = provide(v, {path: '/bin/a', bytes, mode: 0o755, root: true});
+  assert.equal(node, v.lookup('/bin/b', '/'));
+  assert.equal(dec.decode(v.readFile('/bin/b', '/')), '#!/bin/sh\necho one\n');
+  assert.equal(reads, 0, 'its bytes are not read from the pack');
+  // Not said to be the root's own (a file of one's own over the root): written over that name alone.
+  const mine = provide(v, {path: '/bin/b', bytes: enc.encode('mine'), mode: 0o644});
+  assert.notEqual(mine, node);
+  assert.equal(dec.decode(v.readFile('/bin/a', '/')), '#!/bin/sh\necho one\n');
 });
