@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {plainPart, renamed, TEMPLATES, templateFiles, validName} from './repos.ts';
+import {isIssues, plainPart, renamed, shownEntries, TEMPLATES, templateFiles, validName} from './repos.ts';
 
 test('repo names match the native rule', () => {
   assert.ok(validName('my-repo_1.0'));
@@ -22,4 +22,12 @@ test('templates hold the repo\'s own files, never inbox or TODO', () => {
     const shown = t.files.map((f) => f.replace(/\/$/, '')).sort();
     assert.deepEqual([...files.keys()].sort(), shown, t.id);
   }
+});
+
+test('a repo\'s issues are not among its files where files are shown: its issue/ at the top, never one deeper', () => {
+  const e = (name: string, kind: 'dir' | 'file' = 'dir') => ({name, kind, size: 0});
+  assert.deepEqual(shownEntries('', [e('docs'), e('issue'), e('issues'), e('README.md', 'file')]).map((x) => x.name), ['docs', 'issues', 'README.md']);
+  assert.deepEqual(shownEntries('issue', [e('001.md', 'file')]), []);
+  assert.deepEqual(shownEntries('docs', [e('issue')]).map((x) => x.name), ['issue']);
+  for (const [path, is] of [['issue', true], ['issue/001.md', true], ['issues', false], ['docs/issue', false], ['', false]] as const) assert.equal(isIssues(path), is, path);
 });

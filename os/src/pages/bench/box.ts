@@ -5,7 +5,7 @@ import {keepOut, LAND, nudge, paced, putAway, still} from '../../ui/glide.ts';
 import {t} from '../../i18n.ts';
 import {complete, pathWord, Recall} from '../../prompt/recall.ts';
 import {kindOf} from '../../repos/text.ts';
-import {onChange, onRenamed, store, type Entry} from '../../repos/repos.ts';
+import {onChange, onRenamed, shownTree, type Entry} from '../../repos/repos.ts';
 import {boxMode, modeHint, modeMenu, modesNow, nextIssue, onBoxMode, pillWords, sendAs, sendInto, sendTitle, sendWord, setBoxMode, turn, type Mode} from './box-modes.ts';
 import type {Screen, ScreenState} from './screen.ts';
 import {sessionFor, terminalFor} from './terminal.ts';
@@ -462,7 +462,7 @@ export class Box {
     const key = `${this.#repo}\n${dir}`;
     let got = this.#listed.get(key);
     if (!got) {
-      const reading: Promise<Entry[]> = store.tree(this.#repo!, dir).catch(() => [] as Entry[]);
+      const reading: Promise<Entry[]> = shownTree(this.#repo!, dir).catch(() => [] as Entry[]);
       this.#listed.set(key, got = reading);
       void reading.then((e) => { if (this.#listed.get(key) === reading) this.#listed.set(key, e); });
     }

@@ -25,7 +25,7 @@ export type Files = {path: string; text: string}[];
  * level at a time and read a few megabytes at once, so the first search costs a few trips to the core, not one a file.
  */
 export async function readAll(repo: string): Promise<Files> {
-  const files = (await walkRepo(repo)).filter((f) => f.entry.kind === 'file');
+  const files = (await walkRepo(repo, {shown: true})).filter((f) => f.entry.kind === 'file');
   const texts = (got: (Files[number] | null)[]) => got.filter((f) => f !== null).length >= FILE_LIMIT;
   // Gone since the listing (a Prompt, another device): nothing of it to search.
   const read = await inPieces(files, (f) => f.entry.size, (f) => store.read(repo, f.path).then((c) => (c.text != null ? {path: f.path, text: c.text} : null), () => null),

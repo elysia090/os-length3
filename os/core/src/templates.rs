@@ -104,7 +104,7 @@ mod tests {
             assert!(tag.starts_with("Signature: 8a477f597d28d172789f06886806bc55"), "{tag:?}");
             assert_eq!(crate::owned::derived_in(&dir), [dir.join("build")]);
             let sent: Vec<String> = crate::remote::local_tree(&dir).tree.keys().cloned().collect();
-            assert_eq!(sent, ["Makefile", "README.md", "docs", "issue", "src/main.c"]);
+            assert_eq!(sent, ["Makefile", "README.md", "docs", "src/main.c"]);
             // Freed as Runtime frees what is derived: the directory goes, and the sources stay to make it again.
             std::fs::remove_dir_all(dir.join("build")).unwrap();
         }

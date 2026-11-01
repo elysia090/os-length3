@@ -136,6 +136,8 @@ fn paths(ctx: &Ctx, cur: &str) -> Vec<String> {
     let Ok((repo, rel)) = target::path_of(ctx, word.filter(|b| !b.is_empty()).or(if cur.starts_with('/') { Some("/") } else { None })) else { return out };
     let Ok(r) = ctx.repos() else { return out };
     for e in r.tree(&repo, &rel).unwrap_or_default() {
+        // Its issues are l3 issue's, not a path to complete.
+        if length3_core::repos::is_issues(&format!("{rel}/{}", e.name)) { continue; }
         out.push(format!("{shown_base}{}{}", e.name, if e.kind == "dir" { "/" } else { "" }));
     }
     out

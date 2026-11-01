@@ -7,23 +7,33 @@ use crate::args::Call;
 use crate::out::{bytes, files, note, Error, Reply, Result};
 use crate::spec::{Fact, On};
 use crate::target;
-use length3_core::repos::shown;
+use length3_core::repos::{is_issues, shown, ISSUES};
 use length3_core::tr;
 use serde_json::json;
 
 /// What l3 reads or writes of a file at most.
 const LIMIT: u64 = 256 * 1024;
 
+/// A repo's issues are not files to l3 file (repos::is_issues): they are read and written as issues, with l3 issue.
+fn not_issues(repo: &str, rel: &str) -> Result<()> {
+    if !is_issues(rel) { return Ok(()); }
+    Err(Error::Refused(tr!("The issues of {0} are kept by the OS: read one with l3 issue {0}#N, write one with l3 issue new {0} \"Fix：title\"",
+        "{0} の Issue は OS が持っています。読むには l3 issue {0}#N、書くには l3 issue new {0} \"Fix：件名\"", repo)))
+}
+
 pub fn read(ctx: &Ctx, call: &Call) -> Result<Reply> {
     // Outside a repo, with nothing named (or /root, where they are): the repos.
     if ctx.here.is_none() && call.word(0).is_none_or(|w| w.trim_end_matches('/') == "/root") { return super::forge::repo_list(ctx, call); }
     let (repo, rel) = target::path(ctx, call, 0)?;
+    not_issues(&repo, &rel)?;
     let r = ctx.repos()?;
     let at = shown(&repo, &rel);
     if !ctx.exists(&repo, &rel) { return Err(Error::NotFound(tr!("There is no {}", "{} はありません", at))); }
     // A link to nothing is there, but what it names is not (4, as for anything not there; bug: 1).
     if r.dangling(&repo, &rel) { return Err(Error::NotFound(tr!("{} is a link to something that is not there", "{} はリンクですが、指す先がありません", at))); }
-    if let Ok(entries) = r.tree(&repo, &rel) {
+    if let Ok(mut entries) = r.tree(&repo, &rel) {
+        // Its issues are not among its files.
+        if rel.is_empty() { entries.retain(|e| e.name != ISSUES); }
         // The folder is where the menu is now, empty or not: what it offers next is done here.
         crate::menu::shown_at(if rel.is_empty() { repo.clone() } else { format!("{repo}/{rel}") });
         // Each entry, for the menu, named as File names it (REPO/PATH).
@@ -54,6 +64,7 @@ pub fn read(ctx: &Ctx, call: &Call) -> Result<Reply> {
 
 pub fn write(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let (repo, rel) = target::path(ctx, call, 0)?;
+    not_issues(&repo, &rel)?;
     let at = shown(&repo, &rel);
     if rel.is_empty() { return Err(Error::Usage(tr!("Name a file in {}: {}/PATH", "{} の中のファイルを書いてください：{}/PATH", repo, repo))); }
     let text = stdin_text(&at, call.flags.empty, LIMIT)?;
@@ -64,6 +75,7 @@ pub fn write(ctx: &Ctx, call: &Call) -> Result<Reply> {
 
 pub fn mkdir(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let (repo, rel) = target::path(ctx, call, 0)?;
+    not_issues(&repo, &rel)?;
     let at = shown(&repo, &rel);
     if rel.is_empty() { return Err(Error::Usage(tr!("Name a folder in {}: {}/PATH", "{} の中のフォルダーを書いてください：{}/PATH", repo, repo))); }
     let was = ctx.exists(&repo, &rel);
@@ -74,6 +86,7 @@ pub fn mkdir(ctx: &Ctx, call: &Call) -> Result<Reply> {
 
 pub fn rm(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let (repo, rel) = target::path(ctx, call, 0)?;
+    not_issues(&repo, &rel)?;
     let at = shown(&repo, &rel);
     if rel.is_empty() { return Err(Error::Refused(tr!("The repo itself is not removed this way", "repo そのものはこの方法では消せません"))); }
     if !ctx.exists(&repo, &rel) { return Err(Error::NotFound(tr!("There is no {}", "{} はありません", at))); }

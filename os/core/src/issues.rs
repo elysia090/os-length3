@@ -5,7 +5,9 @@
 //! detail. The file is named by the issue's number, which the OS gives: the
 //! next one when an issue is written, and the next free one for a file there
 //! that has none (one written by hand, or two devices' issues that met under
-//! one number). Dates go in the text, never in the name.
+//! one number). Dates go in the text, never in the name. Its issue/ is the OS's
+//! (repos::ISSUES): never among the files File, Forge and l3 file show, nor
+//! made by a scaffold; an issue is met as an issue (Git, the box, l3 issue).
 
 // No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
 #![forbid(unsafe_code)]

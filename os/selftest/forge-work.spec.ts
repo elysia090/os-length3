@@ -231,9 +231,8 @@ test('side by side, a view kept out stands beside the box worked on, never over 
 });
 
 test('the right pane put away gives the center the width and takes the search with it; brought back, both are where they were', async ({app}) => {
-  // issue/ is there from the start (the scaffold's).
-  await app.file.named('hello', 'issue', 'New file', '001.md');
-  await app.forge.editFile('#1', 'Fix: the first\n');
+  await app.git.write('hello', 'Fix: the first');
+  await app.rail.go('forge');
   await app.forge.show('Issue');
   await app.forge.reference.getByRole('button', {name: /#1 Fix：the first/}).click();
   await expect(app.forge.reference.getByRole('button', {name: 'Edit description'})).toBeVisible();

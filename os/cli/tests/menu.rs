@@ -150,7 +150,7 @@ fn a_folder_opened_is_where_the_menu_is_empty_or_not_and_a_new_one_is_made_there
     l3.send(ENTER).expect("→ l3 file").expect("› 1  notes").expect("[Open]");
     l3.send(ENTER).expect("→ l3 file notes").expect("File · notes").expect("Backspace purposes");
     // New folder asks its path from the folder the menu is in.
-    l3.send("n").expect("› 4  New folder");
+    l3.send("n").expect("› 3  New folder");
     l3.send(ENTER).expect("Path").expect("› notes/");
     l3.send("empty\r").expect("→ l3 file mkdir notes/empty").expect("Made the folder notes/empty").expect("empty/");
     // Opened, the empty folder is the page: its own deeds, not its parent's list again.

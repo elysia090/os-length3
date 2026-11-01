@@ -1,7 +1,7 @@
 import {bytes, h} from '../../ui/dom.ts';
 import {t} from '../../i18n.ts';
 import {readingOrder} from '../../repos/reading.ts';
-import {store, type Change, type Entry} from '../../repos/repos.ts';
+import {shownTree, store, type Change, type Entry} from '../../repos/repos.ts';
 import {mark} from '../../ui/icons.ts';
 import {nudge, still} from '../../ui/glide.ts';
 import {errorText} from '../../app/errors.ts';
@@ -279,7 +279,7 @@ export class Reader {
     this.root = section;
     this.single = path;
     const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
-    void store.tree(this.repo, dir).then((entries) => {
+    void shownTree(this.repo, dir).then((entries) => {
       const e = entries.find((x) => x.kind !== 'dir' && join(dir, x.name) === path);
       section.replaceChildren(e ? this.file(path, e) : h('div', {class: 'empty'}, t('{path} no longer exists', {path})));
     }, (err: unknown) => section.replaceChildren(h('p', {class: 'muted'}, String(err))));
@@ -288,7 +288,7 @@ export class Reader {
 
   private async fill(path: string, section: HTMLElement) {
     let entries: Entry[];
-    try { entries = await store.tree(this.repo, path); } catch (e) { section.replaceChildren(h('p', {class: 'muted'}, String(e))); return; } finally { section.classList.remove('unlisted'); }
+    try { entries = await shownTree(this.repo, path); } catch (e) { section.replaceChildren(h('p', {class: 'muted'}, String(e))); return; } finally { section.classList.remove('unlisted'); }
     // An empty directory shows nothing; only an empty repo says so.
     if (!entries.length) { section.replaceChildren(path ? '' : h('div', {class: 'empty'}, t('No files yet'))); return; }
     section.replaceChildren(...readingOrder(entries).map((e) =>

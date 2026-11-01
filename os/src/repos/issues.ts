@@ -5,7 +5,9 @@
 // first line names it, the lines after are the detail. The file is named by
 // the issue's number, which the OS gives: the next one when an issue is
 // written, and the next free one for a file there that has none (one written
-// by hand, or two devices' issues that met under one number).
+// by hand, or two devices' issues that met under one number). Its issue/ is the OS's: never among the files File,
+// Forge and l3 file show (repos.ts ISSUES), nor made by a scaffold; an issue is met as an issue, in Git, the box, the
+// pane and l3 issue.
 
 import type {RepoStore} from './repos.ts';
 import {kindOf, named} from './text.ts';

@@ -20,6 +20,8 @@ const SCRIPT: &[&[&str]] = &[
     &["band"],
     &["file"],
     &["file", "notes"],
+    // Its issues are not files to l3 file (shown by l3 issue): asked for as one, it says where they are read.
+    &["file", "notes/issue/001.md"],
     // What l3 file reads is the repos: / and what else is under it are named as such, never as a repo.
     &["file", "/"],
     &["file", "/root"],

@@ -1,6 +1,6 @@
 import {h} from '../../ui/dom.ts';
 import {t} from '../../i18n.ts';
-import {store} from '../../repos/repos.ts';
+import {shownTree} from '../../repos/repos.ts';
 import {ask, AgentError, type Use} from '../../agent/ask.ts';
 import {boxSaid} from '../../repos/agents.ts';
 import {LAND, paced, still} from '../../ui/glide.ts';
@@ -24,7 +24,7 @@ export interface InFront { path: string; text: string; line: number }
 
 /** What the Agent is told before the question: where it is asked from, and what is in front of the person. */
 export async function told(repo: string, front: InFront | null): Promise<string> {
-  const top = await store.tree(repo, '').catch(() => []);
+  const top = await shownTree(repo, '').catch(() => []);
   const lines = [
     `You are the Agent of length3 OS, asked from the box at the foot of the repo "${repo}".`,
     'Answer briefly and plainly, in the language the question is written in. Put code in fenced blocks.',

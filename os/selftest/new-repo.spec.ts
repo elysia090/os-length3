@@ -1,7 +1,7 @@
 import {expect, test} from './fixtures.ts';
 
 // New repo (+): a name, what it is for (into its README, under the title),
-// and the one scaffold (a README, docs/ and issue/), its file named in the box (nothing to choose); made,
+// and the one scaffold (a README and docs/; its issues' place is the OS's, made with the first), its file named in the box (nothing to choose); made,
 // it is gone into in Forge, the caret in its README. A name taken is said under the name, with
 // the keyboard back on it. What is written stays while other pages are seen.
 
@@ -34,9 +34,9 @@ test('what will be made is shown as File will show it: /root, the repos there, a
   const card = app.main.locator('.tree-still');
   await app.newRepo.name.fill('harbour');
   // The new one stands where its name puts it among those there (harbour before tide), its scaffold under it.
-  await expect(card.locator('.tree-name')).toHaveText(['root', 'harbour', 'docs', 'issue', 'README.md', 'tide']);
+  await expect(card.locator('.tree-name')).toHaveText(['root', 'harbour', 'docs', 'README.md', 'tide']);
   await app.newRepo.name.fill('wharf');
-  await expect(card.locator('.tree-name')).toHaveText(['root', 'tide', 'wharf', 'docs', 'issue', 'README.md']);
+  await expect(card.locator('.tree-name')).toHaveText(['root', 'tide', 'wharf', 'docs', 'README.md']);
   // Only the new one is the card's: /root and tide, there already, do not answer the pointer; wharf's rows do.
   const row = (name: string) => card.locator('.tree-row', {has: app.page.locator('.tree-name', {hasText: new RegExp(`^${name}$`)})});
   for (const there of ['root', 'tide']) await expect(row(there)).toHaveCSS('pointer-events', 'none');

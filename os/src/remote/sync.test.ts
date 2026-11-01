@@ -239,6 +239,8 @@ test('a change that cannot get in, round after round, is said so and not taken f
 });
 
 test('an issue is worked on in its own copy; each commit handed in, reviewed and merged into main', async () => {
+  // Its issues' folder is made for the first (no scaffold has one).
+  await store.mkdir('notes', 'issue');
   await store.add('notes', 'issue', '001.md', 'Fix：落ちる\n');
   await draft.sync('notes');
   await history.cut('notes', null, 'Patch：issue', '');

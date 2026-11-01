@@ -80,6 +80,7 @@ export default {
   'Name cannot contain "/" or start with "."': '名前には「/」を含めず、先頭を「.」以外にしてください',
   'Paths joined by "/", segments cannot start with "."': '各階層を「/」でつなぎ、階層名は「.」から始まらないようにしてください',
   '"{name}" already exists': '「{name}」は既に存在します',
+  '"{name}" is where the repo\'s issues are kept': '「{name}」は repo の Issue を OS が置く場所です',
   'Delete {name}': '{name}を削除',
   'Delete {name} and its contents': '{name}を中身ごと削除',
   'Unsaved': '未保存',

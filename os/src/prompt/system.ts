@@ -7,7 +7,7 @@
 
 import {isNative, native} from '../app/host.ts';
 import {t} from '../i18n.ts';
-import {store} from '../repos/repos.ts';
+import {shownTree, store} from '../repos/repos.ts';
 
 export type Origin = 'distribution' | 'kernel' | 'repos' | 'empty';
 
@@ -76,7 +76,7 @@ export async function list(path: string): Promise<SystemEntry[]> {
   if (path === '/dev') return ['null', 'random', 'urandom', 'zero'].map((name) => ({name, kind: 'device', path: `/dev/${name}`}));
   const at = inRepo(path);
   if (at) {
-    return (await store.tree(at.repo, at.path)).map((e) => ({name: e.name, kind: e.kind, path: join(path, e.name), size: e.size}));
+    return (await shownTree(at.repo, at.path)).map((e) => ({name: e.name, kind: e.kind, path: join(path, e.name), size: e.size}));
   }
   // Anything else is the root: in the app, the one installed here, read as it is on the disk.
   if (isNative) return origins(path, await native<SystemEntry[]>('root_list', {path}).catch((e) => {

@@ -272,14 +272,29 @@ onElsewhere((paths) => {
 });
 
 /**
+ * A repo's issues are kept in its issue/ (issues.ts), the OS's to keep: they are met as issues (Git, the box, the
+ * pane, l3 issue), never as files where a repo's files are shown (File, Forge, its search, the box's Tab, what the
+ * Agent is told is there). The Prompt's copy has them still: l3 there numbers a new issue after those it sees.
+ */
+export const ISSUES = 'issue';
+/** Whether `path` (in a repo) is its issues' or in them. */
+export const isIssues = (path: string): boolean => path === ISSUES || path.startsWith(`${ISSUES}/`);
+/** `entries` of the folder `path` as a repo's files are shown: its issues' folder left out. */
+export const shownEntries = (path: string, entries: Entry[]): Entry[] =>
+  path ? (isIssues(path) ? [] : entries) : entries.filter((e) => e.name !== ISSUES);
+/** The folder `path` of `repo` as a repo's files are shown (shownEntries). */
+export const shownTree = async (repo: string, path: string): Promise<Entry[]> => shownEntries(path, await store.tree(repo, path));
+
+/**
  * Everything in a repo, folders and files, in the order a walk down it meets them (each folder's entries as the
  * store lists them, a folder's own before what comes after it): listed a level at a time, every folder of a level
- * asked at once, so a repo of many folders is as many trips to the core as it is deep.
+ * asked at once, so a repo of many folders is as many trips to the core as it is deep. `shown`: as a repo's files
+ * are shown (shownTree), its issues left out.
  */
-export async function walkRepo(repo: string): Promise<{path: string; entry: Entry}[]> {
+export async function walkRepo(repo: string, o: {shown?: boolean} = {}): Promise<{path: string; entry: Entry}[]> {
   const listed = new Map<string, Entry[]>();
   for (let level = ['']; level.length;) {
-    const lists = await Promise.all(level.map((dir) => store.tree(repo, dir)));
+    const lists = await Promise.all(level.map((dir) => (o.shown ? shownTree : store.tree.bind(store))(repo, dir)));
     level.forEach((dir, k) => listed.set(dir, lists[k]));
     level = level.flatMap((dir, k) => lists[k].filter((e) => e.kind === 'dir').map((e) => (dir ? `${dir}/${e.name}` : e.name)));
   }

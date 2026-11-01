@@ -1,7 +1,7 @@
 import {h} from '../ui/dom.ts';
 import {nudge, putAway} from '../ui/glide.ts';
 import {t} from '../i18n.ts';
-import {plainPart, plainPath, store} from '../repos/repos.ts';
+import {isIssues, ISSUES, plainPart, plainPath, store} from '../repos/repos.ts';
 import {answers, askFoot, menuItem, menuRule, SETTLE} from './common.ts';
 import type {MarkName} from '../ui/icons.ts';
 import {errorText} from '../app/errors.ts';
@@ -19,6 +19,8 @@ export const split = (path: string) => (path.includes('/') ? [path.slice(0, path
 /** Whether `child` is in the folder `inside` of `repo` already (asked of the store, not of what was last shown; no folder, no). */
 const there = async (repo: string, inside: string, child: string) => (await store.tree(repo, inside).catch(() => [])).some((x) => x.name === child);
 const taken = (child: string) => new Error(t('"{name}" already exists', {name: child}));
+/** Its issues' place at a repo's top is the OS's (repos.ts ISSUES): nothing of a person's is made or moved there. */
+const kept = (to: string) => (isIssues(to) ? new Error(t('"{name}" is where the repo\'s issues are kept', {name: ISSUES})) : null);
 
 /**
  * `written` as the path `path` of `repo` goes to (a name, or a path that moves it: notes/plan.md), put plainly; thrown
@@ -28,6 +30,8 @@ export async function renaming(repo: string, path: string, written: string): Pro
   const to = written.replace(/^\/+|\/+$/g, '');
   if (!plainPath(to)) throw new Error(t('Paths joined by "/", segments cannot start with "."'));
   const [inside, name] = split(to);
+  const theirs = kept(to);
+  if (theirs) throw theirs;
   if (to !== path && await there(repo, inside, name)) throw taken(name);
   return to;
 }
@@ -118,6 +122,8 @@ export function fileDeeds(d: Deeds): HTMLElement {
   };
   rows.push(entry(t('New file'), 'new-file', (b) => void make(b)));
   rows.push(entry(t('New folder'), 'new-folder', (b) => field(b, t('Folder name'), '', t('Create'), async (n) => {
+    const theirs = kept(joined(into, n));
+    if (theirs) throw theirs;
     if (await there(repo, into, n)) throw taken(n);
     d.opening?.(into);
     await store.mkdir(repo, joined(into, n));

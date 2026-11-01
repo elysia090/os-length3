@@ -29,6 +29,14 @@ test('the box\'s pill chooses what the box does: an issue written there is the r
   await expect(box).toHaveValue('');
   await expect(said).toHaveText('Created as #1 in hello');
   await expect(pill).toHaveText('hello #2', {useInnerText: true});
+  // An issue is met as an issue (the pane, Git), never as a file: Forge shows no box for it, File no folder of them.
+  await app.page.waitForTimeout(600);
+  await expect(app.main.locator('section.file[data-path^="issue/"], section.dir[data-path="issue"]')).toHaveCount(0);
+  const hello = await app.file.item('hello', '', {open: true});
+  await expect(hello.getByRole('treeitem', {name: 'README.md', exact: true})).toBeVisible();
+  await expect(hello.getByRole('treeitem', {name: /^(issue|#1)$/})).toHaveCount(0);
+  await app.file.close();
+  await box.click();
   // Alt+3 from the box: TODO, at once.
   await box.press('Alt+3');
   await expect(pill).toHaveAccessibleName('Input box action: Add');
