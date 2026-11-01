@@ -106,6 +106,8 @@ export const nextSlice = (loops, ms) => Math.max(1 << 10, Math.min(1 << 26, Math
 export const INTERRUPT = 0x100, SHARES = INTERRUPT + 4;
 /** The low words the kernel writes for translated code (INTERRUPT, SHARES): below Linux's vm.mmap_min_addr. */
 const LOW_WORDS = 0x10000;
+/** What goes below the least rsp written down without a write to rsp: pushes, the red zone (Process.written). */
+const STACK_SLACK = 64 << 10;
 export const trapOrPreempt = (address, code) => {
   if (code === TRAP_YIELD || code === TRAP_UNWIND) throw new Preempted(address, code);
   throw new GuestTrap(address, code);
@@ -730,10 +732,12 @@ export class Kernel {
     p.exitStatus = status;
     p.stopped = 0;
     if (p.alarm) { this.removeTimer(p.alarm.timer); p.alarm = null; }
+    // (What it wrote is known from its threads: before they go.)
+    const written = p.memory ? p.written() : null;
     for (const t of [...p.tasks]) this.endTask(t);
     p.tasks.clear();
     p.unmapShared();
-    if (p.memory) this.letGo(p.memory, p.written());
+    if (p.memory) this.letGo(p.memory, written);
     p.memory = null;
     p.fds.closeAll();
     this.releaseVfork(p);
@@ -1078,6 +1082,7 @@ export class Process {
     const m = this.kernel.takeMemory(pages, image) ?? new WebAssembly.Memory({initial: pages, maximum: 65536, ...(this.kernel.shared ? {shared: true} : {})});
     m.users = 1;
     m.written ??= []; // what a process wrote that is not zeroed yet (Kernel.letGo): none, in a new one
+    m.deepest = undefined; // how deep its stack has been written (Process.written): its process's to say
     m.keeps ??= false;
     m.imageOf = image;
     return m;
@@ -1131,7 +1136,9 @@ export class Process {
     t.load(image, this.memory);
     // A program starts with every register zero but its stack pointer (as Linux's start_thread leaves them).
     t.setContext(REG.map(() => 0n), 0n);
-    t.setReg(4, BigInt(this.stack(argv, env)));
+    const sp = this.stack(argv, env);
+    t.setReg(4, BigInt(sp));
+    this.memory.deepest = sp; // the kernel wrote from here up (argv, the environment, auxv)
     t.resumeAt = BigInt(f.entry);
     t.redirected = true;
     this.kernel.releaseVfork(this);
@@ -1163,10 +1170,26 @@ export class Process {
    * rest of the 8 MiB stack and the room below the image stay zero, as
    * they are in the parent.
    */
-  /** Where this process may have written ([[start, end]]): the kernel's words, its image, its stack, what it mapped. */
+  /**
+   * Where this process may have written ([[start, end]]): the kernel's low words, its image, what it mapped, and of
+   * its stack what it used: down to the least rsp its threads had (translated code keeps it, lower.rs G_LOW) or the
+   * kernel wrote at (Memory.deepest), less STACK_SLACK for what goes below rsp with no write to it (pushes, the red
+   * zone); all of the stack, and the guard under it, where that is not known. The memory keeps what was learnt, for
+   * another process on it (a vfork child's depth is its parent's memory's).
+   */
   written() {
-    const f = this.image?.facts ?? {};
-    const out = [[0, LOW_WORDS], [f.imageStart ?? 0, f.imageEnd ?? 0], [this.stackLow, this.stackTop], [this.mapBase, this.mapEnd]];
+    const f = this.image?.facts ?? {}, m = this.memory;
+    let deepest = m?.deepest ?? -Infinity;
+    for (const t of this.tasks) {
+      const low = t.low?.();
+      if (low === null || low === undefined) { deepest = -Infinity; break; }
+      const at = Number(BigInt.asUintN(64, low));
+      if (at >= this.stackTop) continue; // not moved, or a stack elsewhere (a thread's, mapped)
+      deepest = at < this.stackLow ? -Infinity : Math.min(deepest, at); // below the stack: not known how far
+    }
+    if (m) m.deepest = deepest;
+    const stack = deepest === -Infinity ? f.imageEnd ?? this.stackLow : Math.max(this.stackLow, deepest - STACK_SLACK);
+    const out = [[0, LOW_WORDS], [f.imageStart ?? 0, f.imageEnd ?? 0], [stack, this.stackTop], [this.mapBase, this.mapEnd]];
     for (const r of this.fixed) out.push([r.start, r.start + r.length]);
     return out;
   }
@@ -1181,6 +1204,7 @@ export class Process {
     const sp = Number(BigInt.asUintN(64, this.task.reg(4)));
     const low = sp > this.stackLow && sp <= this.stackTop ? Math.max(this.stackLow, (sp - 128) & ~15) : this.stackLow;
     span(low, this.mapBase);
+    child.memory.deepest = low; // its stack is written from here up (Process.written), as its own calls go deeper
     span(this.mapBase, Math.min(from.length, this.mapEnd)); // the memory past what is mapped is grown ahead, and zero
     for (const r of this.fixed) span(r.start, Math.min(r.start + r.length, this.mapBase));
   }
@@ -1327,6 +1351,8 @@ export class Task {
   // ---- registers: 0..15 as x86 numbers them (rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi, r8..r15), 16 fs, 17 the flags, 18 the rest of rflags and MXCSR ----
 
   reg(n) { return this.instance.exports[REG[n]]?.value ?? 0n; }
+  /** How deep its stack has gone (lower.rs G_LOW: all ones before it moved); null for a translation without it. */
+  low() { return this.instance?.exports.low?.value ?? null; }
   setReg(n, v) { const g = this.instance.exports[REG[n]]; if (g) g.value = BigInt.asIntN(64, BigInt(v)); }
   /** Its registers and where it goes on. */
   context() { return {regs: REG.map((_, n) => this.reg(n)), rip: this.resumeAt}; }

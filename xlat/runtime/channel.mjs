@@ -15,6 +15,7 @@ export const CH = {
   HAVE_REGS: 121, // the registers are in REGS (a call that reads them, or the kernel asked: REPLY.SEND_REGS)
   // BigInt64 indices
   NR: 2, ARGS: 3, NEXT: 9, VALUE: 10, RIP: 11, ARG0: 12, ARG1: 13, REGS: 16,
+  LOW: 40, // how deep the thread's stack has gone (lower.rs G_LOW), as of its last request; 0: not known
   // bytes
   DATA: 512, DATA_BYTES: 256 << 10,
 };

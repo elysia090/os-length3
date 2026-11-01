@@ -47,6 +47,7 @@ class Thread {
     this.lock();
     const keep = m.keep ? new Uint8Array(this.memory.buffer).slice(m.keep[0], m.keep[1]) : null;
     this.instance = new WebAssembly.Instance(m.module, this.imports());
+    this.low = this.instance.exports.low ?? null; // (a translation made before it had one: not known)
     if (keep) new Uint8Array(this.memory.buffer).set(keep, m.keep[0]);
     this.attached = 0;
     this.attach();
@@ -109,6 +110,7 @@ class Thread {
   /** Make request `op` and wait for the answer; returns the reply's kind (the registers sent first if the kernel asks). */
   ask(op) {
     const {i32} = this;
+    this.i64[CH.LOW] = this.low ? this.low.value : 0n;
     for (;;) {
       i32[CH.OP] = op;
       Atomics.store(i32, CH.STATE, 1);

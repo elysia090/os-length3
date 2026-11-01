@@ -53,11 +53,11 @@ const HOST_IMPORTS: [&str; 7] = ["syscall", "trap", "div128", "clock", "fpu", "t
 const SHARED: [&str; 5] = ["mulhu", "mulhs", "resolve", "dispatch", "run"];
 /// Globals every module of a program shares: r0..r15, fs, x0..x15, and the
 /// flags handed from one function to another (fl).
-const GLOBALS: u32 = 36;
+const GLOBALS: u32 = 37;
 fn global_name(n: u32) -> String {
-    match n { 0..=15 => format!("r{n}"), G_FS => "fs".into(), G_FLAGS => "fl".into(), G_BUDGET => "budget".into(), G_DEPTH => "depth".into(), _ => format!("x{}", n - 17) }
+    match n { 0..=15 => format!("r{n}"), G_FS => "fs".into(), G_FLAGS => "fl".into(), G_BUDGET => "budget".into(), G_DEPTH => "depth".into(), G_LOW => "low".into(), _ => format!("x{}", n - 17) }
 }
-fn global_type(n: u32) -> ValType { if n < 17 || n == G_FLAGS { ValType::I64 } else if n == G_BUDGET || n == G_DEPTH { ValType::I32 } else { ValType::V128 } }
+fn global_type(n: u32) -> ValType { if n < 17 || n == G_FLAGS || n == G_LOW { ValType::I64 } else if n == G_BUDGET || n == G_DEPTH { ValType::I32 } else { ValType::V128 } }
 /// Loops gone round (backward gotos) and calls made before the thread is taken back to the kernel: its time slice,
 /// where it makes no system call. The kernel sets it again each time it runs the thread (about a millisecond's).
 const G_BUDGET: u32 = 34;
@@ -66,6 +66,10 @@ const G_BUDGET: u32 = 34;
 /// runs out of the host's.
 const G_DEPTH: u32 = 35;
 const DEPTH_LIMIT: i32 = 400;
+/// The least rsp has been (unsigned; all ones before it moves): how deep the thread's stack has gone, kept where rsp
+/// goes down by more than a push (a write to rsp, as a frame is made; a call), so the kernel zeroes no more of a stack
+/// than was used when its memory goes to another process (process.mjs Process.written).
+const G_LOW: u32 = 36;
 /// A word of memory below where Linux lets anything be mapped (vm.mmap_min_addr): nonzero when the kernel wants the
 /// thread to look in (a signal for it, another thread waiting for its turn). A host thread can write it while the
 /// guest runs, as an interrupt is raised; the guest reads it at each loop's head.
@@ -344,7 +348,15 @@ impl<'p> Fx<'p> {
                 self.set(l);
             }
         }
+        if n == RSP { self.note_low(); }
         true
+    }
+
+    /// low = min(low, rsp), without a branch (G_LOW).
+    fn note_low(&mut self) {
+        self.get(l_reg(RSP)); self.e(W::GlobalGet(G_LOW));
+        self.get(l_reg(RSP)); self.e(W::GlobalGet(G_LOW)); self.e(W::I64LtU);
+        self.e(W::Select); self.e(W::GlobalSet(G_LOW));
     }
 
     // ---- Memory operands ----
@@ -730,6 +742,7 @@ impl<'p> Fx<'p> {
     /// budget is spent (a call counts as a loop does: recursion without loops has its turns too), it is made from the
     /// kernel instead, to the target in `target` (pushes its address); else it counts as one frame more.
     fn enter_call(&mut self, flags: u32, target: impl FnOnce(&mut Self)) {
+        self.note_low();
         self.e(W::GlobalGet(G_DEPTH)); self.c32(DEPTH_LIMIT); self.e(W::I32GeU);
         self.spent();
         self.e(W::I32Or);
@@ -2794,6 +2807,8 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
     // The time slice and the frames in use (the kernel sets both each time it runs a thread).
     globals.global(GlobalType { val_type: ValType::I32, mutable: true, shared: false }, &ConstExpr::i32_const(1 << 20));
     globals.global(GlobalType { val_type: ValType::I32, mutable: true, shared: false }, &ConstExpr::i32_const(0));
+    // How deep the stack has gone (G_LOW): not at all yet.
+    globals.global(GlobalType { val_type: ValType::I64, mutable: true, shared: false }, &ConstExpr::i64_const(-1));
     module.section(&globals);
 
     let mut exports = ExportSection::new();

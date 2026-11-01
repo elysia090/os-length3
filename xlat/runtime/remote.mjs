@@ -297,6 +297,8 @@ export class RemoteTask extends Task {
   }
 
   attach() {}
+  /** How deep its stack has gone, as its Worker last said (lower.rs G_LOW); null if not known. */
+  low() { const v = this.i64[CH.LOW]; return v === 0n ? null : v; }
   /** Its process stops: it does too, at its next loop's head if it runs guest code. */
   stop() { this.kernel.lookIn(this.proc); }
   /**
