@@ -237,11 +237,14 @@ fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], is_start: &(dyn Fn(u64) 
     // Each block runs from a leader along next_ip until a terminator or the
     // next leader. Following next_ip (not address order) keeps blocks right
     // even when a wrong table guess decoded bytes inside an instruction.
-    let mut blocks = Vec::new();
     let mut order: Vec<u64> = leaders.iter().copied().filter(|a| instructions.contains_key(a)).collect();
     order.sort_unstable();
+    // Each block's code is gathered in one buffer, then kept at its size: a big program's instructions are most of
+    // what the translator holds, and vectors grown as they go held half again as many.
+    let mut blocks = Vec::with_capacity(order.len());
+    let mut code = Vec::new();
     for block_start in order {
-        let mut code = Vec::new();
+        code.clear();
         let mut at = block_start;
         let exit = loop {
             let i = instructions[&at];
@@ -273,7 +276,7 @@ fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], is_start: &(dyn Fn(u64) 
                 _ => break Exit::Trap,
             }
         };
-        blocks.push(Block { start: block_start, code, exit });
+        blocks.push(Block { start: block_start, code: code.to_vec(), exit });
     }
     (blocks, calls)
 }
@@ -518,8 +521,8 @@ pub fn discover(elf: &Elf) -> Program {
 /// Exactly the functions starting at `seeds` (with the entry and the named ones): what the program's runs have
 /// translated so far, its first module's and those of the code they reached later, in one translation of its own,
 /// so each process of it starts with one module, not hundreds, and every jump among that code is found in its first
-/// table. A call to a function past these is not followed (it is reached later, as before): following them all
-/// would translate much of a large program no run has reached.
+/// table. A call to a function past these is not followed, nor a switch's table (each is reached later, as before):
+/// following them all would translate much of a large program no run has reached.
 pub fn discover_seeded(elf: &Elf, seeds: &[u64]) -> Program {
     walk_program(elf, &elf.relocation_targets, false, seeds, Follow::Not)
 }
@@ -584,7 +587,7 @@ fn walk_program(elf: &Elf, targets: &[u64], pointed_start: bool, seeds: &[u64], 
         let guess = elf.relative_slots.is_empty();
         let mut switches = Vec::new();
         for (start, blocks, calls) in walk_all(elf, &jobs, &|a| starts.contains(&a), &mut references) {
-            if guess { switches.extend(switch_targets(elf, &blocks, start, range[&start])); }
+            if guess && follow != Follow::Not { switches.extend(switch_targets(elf, &blocks, start, range[&start])); }
             // Not following calls, code it goes on to all the same: what it jumps or runs into past its range is code
             // the runs reached as part of it before more starts cut it there.
             let next: Vec<u64> = if follow == Follow::Not { continuations(&blocks) } else { calls };
@@ -593,7 +596,9 @@ fn walk_program(elf: &Elf, targets: &[u64], pointed_start: bool, seeds: &[u64], 
         }
         // Code whose address code takes (as a callback is passed): a function, as a pointer to it is.
         if follow == Follow::Everything { found.extend(references.iter().copied().filter(|&a| elf.is_code(a) && !starts.contains(&a))); }
-        let mut tables = if guess { switches } else { relative_table_targets(elf, &references) };
+        // Not following calls, nor the cases of switches (as discover_within: each is reached later as it is taken;
+        // following them all, a compiler's consolidation translated two and a half times the functions its runs had).
+        let mut tables = if follow == Follow::Not { Vec::new() } else if guess { switches } else { relative_table_targets(elf, &references) };
         tables.sort_unstable();
         tables.dedup();
         tables.retain(|t| pointers.binary_search(t).is_err());

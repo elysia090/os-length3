@@ -14,9 +14,9 @@ use iced_x86::{ConditionCode, Instruction, Mnemonic, OpKind, Register, RflagsBit
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use wasm_encoder::{
-    BlockType, CodeSection, ConstExpr, CustomSection, DataSection, ElementSection, Elements, EntityType, ExportKind,
+    BlockType, CodeSection, ConstExpr, CustomSection, ElementSection, Elements, Encode, EntityType, ExportKind,
     ExportSection, Function as WasmFunction, FunctionSection, GlobalSection, GlobalType, ImportSection,
-    Instruction as W, MemArg, MemoryType, Module, RefType, TableSection, TableType, TypeSection, ValType,
+    Instruction as W, MemArg, MemoryType, Module, RefType, Section, SectionId, TableSection, TableType, TypeSection, ValType,
 };
 
 type I = W<'static>;
@@ -2618,36 +2618,92 @@ fn helpers(code: &mut CodeSection, entries: u32, table: u64, cache: u64) {
 
 }
 
-/// Every function of `program`, in order, as the table holds them from
-/// `base`. Each is lowered on its own, so natively they share the cores;
-/// wasm has one thread and lowers in turn.
-fn lower_all(program: &Program, base: u32, options: Options, report: &mut Report) -> Vec<WasmFunction> {
+/// Every function of `program`, lowered into `code` in order, as the table holds them from `base`. Each is lowered
+/// on its own, so natively they share the cores; wasm has one thread and lowers in turn, each into the section as it
+/// is made (a big program's functions are most of what the translator would otherwise hold at once).
+fn lower_all(program: &Program, base: u32, options: Options, report: &mut Report, code: &mut CodeSection) {
     let handed = entry_flags(program);
     let n = program.functions.len();
-    let one = |range: std::ops::Range<usize>, report: &mut Report| -> Vec<WasmFunction> {
-        range.map(|f| lower_function(program, f as u32, base, &handed, options, report)).collect()
-    };
     let threads = if cfg!(target_family = "wasm") { 1 } else { std::thread::available_parallelism().map_or(1, |t| t.get()) };
     // A few functions are not worth a thread.
     if threads == 1 || n < 64 {
-        return one(0..n, report);
+        for f in 0..n { code.function(&lower_function(program, f as u32, base, &handed, options, report)); }
+        return;
     }
     let size = n.div_ceil(threads);
     let parts: Vec<(Vec<WasmFunction>, Report)> = std::thread::scope(|scope| {
         let workers: Vec<_> = (0..n).step_by(size).map(|at| {
-            let one = &one;
-            scope.spawn(move || { let mut r = Report::default(); (one(at..(at + size).min(n), &mut r), r) })
+            let handed = &handed;
+            scope.spawn(move || {
+                let mut r = Report::default();
+                let made = (at..(at + size).min(n)).map(|f| lower_function(program, f as u32, base, handed, options, &mut r)).collect();
+                (made, r)
+            })
         }).collect();
         workers.into_iter().map(|w| w.join().expect("a lowering thread panicked")).collect()
     });
-    let mut out = Vec::with_capacity(n);
     for (functions, r) in parts {
-        out.extend(functions);
+        for f in &functions { code.function(f); }
         report.blocks += r.blocks;
         report.instructions += r.instructions;
         for (m, k) in r.unsupported { *report.unsupported.entry(m).or_default() += k; }
     }
-    out
+}
+
+/// A module of `head`, `code`, `image` and `tail` (sections, in that order), written once into room for all of it.
+/// A big program's translation is nearly all its code and its own bytes; a module grown as it is written held them
+/// a few times over at once, in a memory that only grows (and each time it grows, an engine may collect its whole
+/// heap).
+fn assemble(head: &[&dyn Section], code: &CodeSection, image: Option<&Image>, tail: &[&dyn Section]) -> Vec<u8> {
+    let mut after = Vec::new();
+    for s in tail { s.append_to(&mut after); }
+    let mut wasm = Module::new().finish(); // the header
+    for s in head { s.append_to(&mut wasm); }
+    // Each section's id and two LEB128 u32s (its size, its count) at most, besides its contents.
+    const FRAME: usize = 11;
+    wasm.reserve_exact(FRAME + code.byte_len() + image.map_or(0, |i| FRAME + i.byte_len()) + after.len());
+    code.append_to(&mut wasm);
+    if let Some(i) = image { i.append_to(&mut wasm); }
+    wasm.extend_from_slice(&after);
+    wasm
+}
+
+/// The data section: each segment's bytes (an address, then the bytes there), written from where they lie (an
+/// ELF's own bytes are the most of them; wasm_encoder's DataSection would copy them in first).
+struct Image<'a>(Vec<(u64, &'a [u8])>);
+
+impl Image<'_> {
+    /// Each segment's head: active in memory 0 at a constant address, then its size.
+    fn heads(&self) -> Vec<Vec<u8>> {
+        self.0.iter().map(|&(at, bytes)| {
+            let mut h = vec![0];
+            ConstExpr::i32_const(at as i32).encode(&mut h);
+            (bytes.len() as u32).encode(&mut h);
+            h
+        }).collect()
+    }
+
+    /// Its contents' size: the count, then each segment.
+    fn byte_len(&self) -> usize {
+        let mut count = Vec::new();
+        (self.0.len() as u32).encode(&mut count);
+        count.len() + self.heads().iter().zip(&self.0).map(|(h, s)| h.len() + s.1.len()).sum::<usize>()
+    }
+}
+
+impl Encode for Image<'_> {
+    fn encode(&self, sink: &mut Vec<u8>) {
+        (self.byte_len() as u32).encode(sink);
+        (self.0.len() as u32).encode(sink);
+        for (h, s) in self.heads().iter().zip(&self.0) {
+            sink.extend_from_slice(h);
+            sink.extend_from_slice(s.1);
+        }
+    }
+}
+
+impl Section for Image<'_> {
+    fn id(&self) -> u8 { SectionId::Data.into() }
 }
 
 #[derive(Clone, Copy, Default)]
@@ -2696,8 +2752,6 @@ fn types() -> TypeSection {
 /// function << 32 | block) pairs.
 pub fn translate_more(program: &Program, base: u32, options: Options) -> Translation {
     let mut report = Report { functions: program.functions.len(), entries: program.entries.len(), ..Default::default() };
-    let mut module = Module::new();
-    module.section(&types());
     let mut imports = ImportSection::new();
     imports.import("env", "memory", EntityType::Memory(MemoryType { minimum: 1, maximum: Some(65536), memory64: false, shared: false, page_size_log2: None }));
     let host_types = [T_SYSCALL, T_TRAP, T_DIV, T_CLOCK, T_FPU, T_TRACE, T_RESOLVE];
@@ -2706,11 +2760,9 @@ pub fn translate_more(program: &Program, base: u32, options: Options) -> Transla
     for n in 0..GLOBALS {
         imports.import("main", &global_name(n), EntityType::Global(GlobalType { val_type: global_type(n), mutable: true, shared: false }));
     }
-    module.section(&imports);
 
     let mut functions = FunctionSection::new();
     for _ in &program.functions { functions.function(T_FN); }
-    module.section(&functions);
 
     // Its functions go in a table of its own, which the host copies into the
     // first module's from `base`. It does not import that table: an engine
@@ -2720,19 +2772,15 @@ pub fn translate_more(program: &Program, base: u32, options: Options) -> Transla
     let mut tables = TableSection::new();
     let count = program.functions.len() as u64;
     tables.table(TableType { element_type: RefType::FUNCREF, minimum: count, maximum: Some(count), table64: false, shared: false });
-    module.section(&tables);
     let mut exports = ExportSection::new();
     exports.export("table", ExportKind::Table, 0);
-    module.section(&exports);
 
     let mut elements = ElementSection::new();
     let indices: Vec<u32> = (0..program.functions.len() as u32).map(|f| FIRST_GUEST + f).collect();
     elements.active(Some(0), &ConstExpr::i32_const(0), Elements::Functions(Cow::Owned(indices)));
-    module.section(&elements);
 
     let mut code = CodeSection::new();
-    for f in lower_all(program, base, options, &mut report) { code.function(&f); }
-    module.section(&code);
+    lower_all(program, base, options, &mut report, &mut code);
 
     // Its functions by the guest's names, as in the first module: every module numbers its own from the
     // same index, so without them a profile or a trace cannot tell one module's function from another's.
@@ -2741,26 +2789,23 @@ pub fn translate_more(program: &Program, base: u32, options: Options) -> Transla
     for (k, f) in program.functions.iter().enumerate() { names.append(FIRST_GUEST + k as u32, &format!("{}@{:x}", f.name, f.start)); }
     let mut name_section = wasm_encoder::NameSection::new();
     name_section.functions(&names);
-    module.section(&name_section);
 
     let mut table = Vec::with_capacity(program.entries.len() * 16);
     for (&address, &(f, b)) in &program.entries {
         table.extend_from_slice(&address.to_le_bytes());
         table.extend_from_slice(&((((f + base) as u64) << 32) | b as u64).to_le_bytes());
     }
-    module.section(&CustomSection { name: Cow::Borrowed("xlat.entries"), data: Cow::Owned(table) });
+    let entries = CustomSection { name: Cow::Borrowed("xlat.entries"), data: Cow::Owned(table) };
     // Where each function starts, so code translated later stops there instead of repeating it.
     let starts: Vec<u8> = program.functions.iter().flat_map(|f| f.start.to_le_bytes()).collect();
-    module.section(&CustomSection { name: Cow::Borrowed("xlat.starts"), data: Cow::Owned(starts) });
+    let starts = CustomSection { name: Cow::Borrowed("xlat.starts"), data: Cow::Owned(starts) };
 
-    Translation { wasm: module.finish(), report }
+    let wasm = assemble(&[&types(), &imports, &functions, &tables, &exports, &elements], &code, None, &[&name_section, &entries, &starts]);
+    Translation { wasm, report }
 }
 
 pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation {
     let mut report = Report { functions: program.functions.len(), entries: program.entries.len(), ..Default::default() };
-    let mut module = Module::new();
-
-    module.section(&types());
 
     let mut imports = ImportSection::new();
     // The entry table lives in guest memory just past the image (one memory
@@ -2781,18 +2826,15 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
     imports.import("env", "fpu", EntityType::Function(T_FPU));
     imports.import("env", "trace", EntityType::Function(T_TRACE));
     imports.import("env", "miss", EntityType::Function(T_RESOLVE));
-    module.section(&imports);
 
     let mut functions = FunctionSection::new();
     for ty in [T_PAIR, T_PAIR, T_RESOLVE, T_RESOLVE, T_RUN] { functions.function(ty); }
     for _ in &program.functions { functions.function(T_FN); }
-    module.section(&functions);
 
     let mut tables = TableSection::new();
     let count = program.functions.len() as u64;
     // It grows as code reached later is translated into modules of its own.
     tables.table(TableType { element_type: RefType::FUNCREF, minimum: count, maximum: None, table64: false, shared: false });
-    module.section(&tables);
 
     let entries = program.entries.len() as u64;
 
@@ -2809,38 +2851,28 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
     globals.global(GlobalType { val_type: ValType::I32, mutable: true, shared: false }, &ConstExpr::i32_const(0));
     // How deep the stack has gone (G_LOW): not at all yet.
     globals.global(GlobalType { val_type: ValType::I64, mutable: true, shared: false }, &ConstExpr::i64_const(-1));
-    module.section(&globals);
 
     let mut exports = ExportSection::new();
     // What a module made later for this program imports: the helpers, every register, the table.
     for (k, name) in SHARED.iter().enumerate() { exports.export(name, ExportKind::Func, F_MULHU + k as u32); }
     for n in 0..GLOBALS { exports.export(&global_name(n), ExportKind::Global, n); }
     exports.export("table", ExportKind::Table, 0);
-    module.section(&exports);
 
     let mut elements = ElementSection::new();
     let indices: Vec<u32> = (0..program.functions.len() as u32).map(|f| FIRST_GUEST + f).collect();
     elements.active(Some(0), &ConstExpr::i32_const(0), Elements::Functions(Cow::Owned(indices)));
-    module.section(&elements);
 
     let mut code = CodeSection::new();
     helpers(&mut code, entries as u32, table_base, cache);
-    for f in lower_all(program, 0, options, &mut report) { code.function(&f); }
-    module.section(&code);
+    lower_all(program, 0, options, &mut report, &mut code);
 
-    let mut data = DataSection::new();
-    for s in &elf.segments {
-        if !s.data.is_empty() {
-            data.active(0, &ConstExpr::i32_const(s.vaddr as i32), s.data.iter().copied());
-        }
-    }
     let mut table = Vec::with_capacity(program.entries.len() * 16);
     for (&address, &(f, b)) in &program.entries {
         table.extend_from_slice(&address.to_le_bytes());
         table.extend_from_slice(&(((f as u64) << 32) | b as u64).to_le_bytes());
     }
-    data.active(0, &ConstExpr::i32_const(table_base as i32), table);
-    module.section(&data);
+    let mut image = Image(elf.segments.iter().filter(|s| !s.data.is_empty()).map(|s| (s.vaddr, &s.data[..])).collect());
+    image.0.push((table_base, &table));
 
     let mut names = wasm_encoder::NameMap::new();
     for (k, n) in HOST_IMPORTS.iter().chain(SHARED.iter()).enumerate() {
@@ -2851,7 +2883,6 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
     }
     let mut name_section = wasm_encoder::NameSection::new();
     name_section.functions(&names);
-    module.section(&name_section);
 
     // Loader facts for the host, as a small JSON custom section.
     let tls = elf.tls.as_ref().map(|t| format!(",\"tls\":{{\"vaddr\":{},\"filesz\":{},\"memsz\":{},\"align\":{}}}", t.vaddr, t.filesz, t.memsz, t.align)).unwrap_or_default();
@@ -2862,12 +2893,15 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
         "{{\"entry\":{},\"imageStart\":{},\"imageEnd\":{},\"phdr\":{},\"phnum\":{},\"phent\":56,\"readOnly\":[{}]{}}}",
         elf.entry, image_start(elf), end, elf.phdr_address().unwrap_or(0), elf.phnum, read_only.join(","), tls
     );
-    module.section(&CustomSection { name: Cow::Borrowed("xlat.facts"), data: Cow::Owned(facts.into_bytes()) });
-    module.section(&CustomSection { name: Cow::Borrowed("xlat.fpu"), data: Cow::Owned(X87_OPS.join(",").into_bytes()) });
+    let facts = CustomSection { name: Cow::Borrowed("xlat.facts"), data: Cow::Owned(facts.into_bytes()) };
+    let fpu = CustomSection { name: Cow::Borrowed("xlat.fpu"), data: Cow::Owned(X87_OPS.join(",").into_bytes()) };
     // Where each function starts, so code translated later stops there instead of repeating it.
     let starts: Vec<u8> = program.functions.iter().flat_map(|f| f.start.to_le_bytes()).collect();
-    module.section(&CustomSection { name: Cow::Borrowed("xlat.starts"), data: Cow::Owned(starts) });
+    let starts = CustomSection { name: Cow::Borrowed("xlat.starts"), data: Cow::Owned(starts) };
 
-
-    Translation { wasm: module.finish(), report }
+    let wasm = assemble(
+        &[&types(), &imports, &functions, &tables, &globals, &exports, &elements], &code, Some(&image),
+        &[&name_section, &facts, &fpu, &starts],
+    );
+    Translation { wasm, report }
 }
