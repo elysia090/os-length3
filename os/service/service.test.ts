@@ -1278,7 +1278,9 @@ test('a release is public: its root by digest and the desktop app by its pinned 
   const s = await service();
   const sha = 'b'.repeat(64);
   await s.bucket.put(`os/${sha}`, new Uint8Array(100).map((_, i) => i));
-  const deb = desktopPins['0.4.1'].deb.file, appimage = desktopPins['0.4.1'].appimage.file;
+  // The one version pinned (a release pins only itself: scripts/pin-desktop.mjs).
+  const pinned = (desktopPins as Record<string, {deb: {file: string; sha256: string}; appimage: {file: string}}>)[Object.keys(desktopPins)[0]];
+  const deb = pinned.deb.file, appimage = pinned.appimage.file;
   await s.bucket.put(`desktop/${deb}`, new Uint8Array(50).map((_, i) => 200 - i));
   const get = (path: string, headers: Record<string, string> = {}, method = 'GET') => s.app.request(`${BASE}${path}`, {method, headers});
   const body = async (r: Response) => [...new Uint8Array(await r.arrayBuffer())];
@@ -1288,7 +1290,7 @@ test('a release is public: its root by digest and the desktop app by its pinned 
   assert.equal(whole.status, 200);
   assert.deepEqual(Object.fromEntries(['content-type', 'content-length', 'accept-ranges', 'etag', 'content-disposition'].map((k) => [k, whole.headers.get(k)])), {
     'content-type': 'application/vnd.debian.binary-package', 'content-length': '50', 'accept-ranges': 'bytes',
-    etag: `"${desktopPins['0.4.1'].deb.sha256}"`, 'content-disposition': `attachment; filename="${deb}"`});
+    etag: `"${pinned.deb.sha256}"`, 'content-disposition': `attachment; filename="${deb}"`});
   assert.equal((await body(whole)).length, 50);
   const root = await get(`/v1/os/${sha}`);
   assert.deepEqual([root.status, root.headers.get('content-type'), root.headers.get('content-disposition'), (await body(root)).length],

@@ -1,7 +1,7 @@
 // Pin the desktop app a release made: its .deb and AppImage, by name, size and sha256, under the version in
 // shared/desktop-releases.json, where the web offers them and the Remote's deploy takes them (service/releases.ts).
 // The release does it beside pin-root.mjs, and both are proposed to main as one change (release.yml), so the
-// source says what was released.
+// source says what was released. Only this version is pinned, as only its root is (pin-root.mjs).
 //
 //   node scripts/pin-desktop.mjs VERSION DEB APPIMAGE [--json FILE]
 //
@@ -23,8 +23,7 @@ const pin = (file) => {
   if (!basename(file).includes(`-${version}-`)) throw new Error(`${file} is not of ${version}`);
   return {file: basename(file), bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex')};
 };
-const pins = JSON.parse(readFileSync(at, 'utf8'));
-pins[version] = {deb: pin(deb), appimage: pin(appimage)};
+const pins = {[version]: {deb: pin(deb), appimage: pin(appimage)}};
 // As the file is written by hand: versions oldest first, each file of a version on one line.
 const versions = Object.keys(pins).sort((a, b) => a.localeCompare(b, 'en', {numeric: true}));
 const line = (p) => `{"file": ${JSON.stringify(p.file)}, "bytes": ${p.bytes}, "sha256": ${JSON.stringify(p.sha256)}}`;

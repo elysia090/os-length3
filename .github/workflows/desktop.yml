@@ -268,6 +268,71 @@ jobs:
           echo "$out" | head -3
           echo "$out" | grep -q 'l3 issue new'
 
+  # The root a release makes (root-release.sh): the base laid out for Prompts, what a Prompt has nothing for left
+  # out, and OpenSSL, OpenSSH's client, curl and git made again at this tree's pins (root-refresh.sh); each of those
+  # then run, natively and translated as the browser's Prompt runs it. Made only when what makes the root changed.
+  root:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: key
+        run: echo "key=root-${{ hashFiles('os/scripts/root-release.sh', 'os/scripts/root-refresh.sh', 'os/scripts/root-refresh-db.mjs', 'os/scripts/root/**', 'os/shared/root-base.json', 'distribution/sources.env') }}" >> "$GITHUB_OUTPUT"
+      - id: kept
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: os/target/root-made/manifest
+          key: ${{ steps.key.outputs.key }}
+          lookup-only: true
+      - if: steps.kept.outputs.cache-hit != 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Toolchains
+        if: steps.kept.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends musl-tools pkg-config
+          rustup target add x86_64-unknown-linux-musl wasm32-unknown-unknown
+      - if: steps.kept.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: |
+            xlat -> target
+            os -> target
+          shared-key: root
+          cache-on-failure: true
+      - name: The root as a release makes it, and what it made again, run
+        if: steps.kept.outputs.cache-hit != 'true'
+        working-directory: os
+        run: |
+          base=$(node scripts/root-file.mjs target/root base)
+          sh scripts/root-release.sh "$base" target/root-made 0.0.0
+          grep '^refreshed\.' target/root-made/manifest
+          mkdir -p target/root-open
+          tar --zstd -xf target/root-made/os-length3-linux-0.0.0-x86_64-*.tar.zst -C target/root-open
+          r=$PWD/target/root-open/root
+          . ../distribution/sources.env
+          "$r/usr/bin/openssl" version | grep -F "OpenSSL $OPENSSL_VERSION "
+          "$r/usr/bin/curl" --version | grep -F "curl $CURL_VERSION "
+          "$r/usr/bin/ssh" -V 2>&1 | grep -F "OpenSSH_$OPENSSH_VERSION"
+          "$r/usr/bin/git" --version | grep -F "git version $GIT_VERSION"
+          for gone in usr/bin/passwd usr/bin/useradd usr/sbin/poweroff usr/sbin/reboot; do
+            if [ -e "$r/$gone" ] || [ -L "$r/$gone" ]; then echo "$gone is still in the root" >&2; exit 1; fi
+          done
+          "$r/usr/bin/apk" --root "$r" --no-network info -v | grep -E '^(openssl|curl|git|openssh-client)-'
+          cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path ../xlat/Cargo.toml
+          node ../xlat/runtime/run.mjs "$r/usr/bin/git" --version | grep -F "git version $GIT_VERSION"
+          node ../xlat/runtime/run.mjs "$r/usr/bin/openssl" version | grep -F "OpenSSL $OPENSSL_VERSION "
+          rm -rf target/root-open
+      - if: steps.kept.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: os/target/root-made/manifest
+          key: ${{ steps.key.outputs.key }}
+
   # What ships has no known high or critical advisory: npm's (build-only tools such as drizzle-kit are dev
   # dependencies, left out) and RustSec's against both lockfiles (an unmaintained or unsound crate deep in the
   # desktop's GTK tree is said, not failed on).

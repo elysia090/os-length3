@@ -1,6 +1,7 @@
 #!/bin/sh
-# OS Length3 Linux, repackaged: the pinned 0.1.0 root (built by distribution/build.sh)
-# with l3 in it, so the root and the app are one OS in the same words.
+# OS Length3 Linux, repackaged: the pinned base root (shared/root-base.json: the 0.1.0
+# root, built by distribution/build.sh) with l3 in it, so the root and the app are one OS
+# in the same words.
 #
 #   sh scripts/root-release.sh BASE.tar.zst OUT_DIR [VERSION]
 #
@@ -8,7 +9,13 @@
 # So what only booting needed goes (the kernel and initramfs, /init and its
 # s6 services, dhcpcd, chrony, mdevd, kmod, e2fsprogs, nftables, the build's
 # own test Makefile, the 0.1.0 repository index no package can be fetched
-# from), the root takes the merged /usr layout (/bin, /sbin and /lib are
+# from), and so does what a Prompt has nothing for: shadow's tools for users
+# and passwords (its root is read-only and its one user root), busybox's
+# poweroff and reboot (it is not a machine). What speaks to the network and
+# keeps its secrets is made again from this tree's pins (root-refresh.sh:
+# OpenSSL, OpenSSH's client, curl, git), so a release has their security
+# fixes though the base was built before them. The root takes the merged
+# /usr layout (/bin, /sbin and /lib are
 # links into /usr, as on Fedora, Debian, Arch), its records are named for
 # this OS (/usr/share/length3), and the package database is rewritten to
 # say exactly what is there. What a root is, by where it is:
@@ -30,8 +37,9 @@
 set -eu
 base=$1; out=$2; version=${3:-0.2.0}
 here=$(cd "$(dirname "$0")/.." && pwd)
-BASE_SHA=56229f242fd8860583cb8b17b5f64f21aced1abad99770b306a0432fc260d7b4
-echo "$BASE_SHA  $base" | sha256sum -c - >/dev/null || { echo "root-release: $base is not the pinned 0.1.0 bundle" >&2; exit 1; }
+pinned() { sed -n "s/^ *\"$1\": \"\([^\"]*\)\".*/\1/p" "$here/shared/root-base.json"; }
+BASE_SHA=$(pinned sha256); BASE_VERSION=$(pinned version)
+echo "$BASE_SHA  $base" | sha256sum -c - >/dev/null || { echo "root-release: $base is not the pinned base bundle" >&2; exit 1; }
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/length3-root.XXXXXX")
 trap 'rm -rf "$work"' EXIT
@@ -43,9 +51,9 @@ db="$root/lib/apk/db/installed"
 # Packages only a booted machine needs, and files of kept packages that are
 # the same (or that another package gives in full: busybox's mount beside
 # util-linux's).
-DROP="linux-boot base-services mdevd s6-rc s6 execline skalibs chrony dhcpcd kmod e2fsprogs nftables"
-GONE="busybox:init busybox:opt/qm/Makefile system-config:etc/mdev.conf system-config:etc/nftables.conf shadow:usr/sbin/logoutd"
-for n in switch_root insmod lsmod modprobe rmmod blkid fdisk ip; do GONE="$GONE busybox:sbin/$n"; done
+DROP="linux-boot base-services mdevd s6-rc s6 execline skalibs chrony dhcpcd kmod e2fsprogs nftables shadow"
+GONE="busybox:init busybox:opt/qm/Makefile system-config:etc/mdev.conf system-config:etc/nftables.conf"
+for n in switch_root insmod lsmod modprobe rmmod blkid fdisk ip poweroff reboot halt; do GONE="$GONE busybox:sbin/$n"; done
 for n in dmesg mount umount; do GONE="$GONE busybox:bin/$n"; done
 
 # Every file the db gives a package, as package:path.
@@ -113,6 +121,8 @@ grep -v -E "^($(echo $DROP | tr ' ' '|'))=" "$root/etc/apk/world" > "$root/etc/a
 mv "$root/etc/apk/world.new" "$root/etc/apk/world"
 chmod 0644 "$db" "$root/etc/apk/world"
 printf '%s\n' "# No repository yet: what is installed is all there is (lib/apk/db/installed)." > "$root/etc/apk/repositories"
+# OpenSSL, OpenSSH's client, curl and git at this tree's pins, in place of the base's.
+sh "$here/scripts/root-refresh.sh" "$root" "$work/refreshed"
 # Every file the db names is there.
 owned | while IFS=: read -r p f; do
   [ -e "$root/$f" ] || [ -L "$root/$f" ] || { echo "root-release: $p owns $f, which is not there" >&2; exit 1; }
@@ -132,11 +142,13 @@ chmod 0644 "$root/etc/os-release"
   echo "format=length3-root-repackage-v2"
   echo "dropped=$DROP"
   echo "version=$version"
-  echo "base.version=0.1.0"
+  echo "base.version=$BASE_VERSION"
   echo "base.sha256=$BASE_SHA"
+  # What was made again from this tree's pins: name, version, its source's sha256.
+  sed 's/^\([^ ]*\) \([^ ]*\) \([^ ]*\)$/refreshed.\1=\2 \3/' "$work/refreshed"
   echo "l3.sha256=$(sha256sum "$l3" | cut -d' ' -f1)"
   echo "l3.source=$(git -C "$here" rev-parse HEAD 2>/dev/null || echo unknown)$(git -C "$here" status --porcelain -- core cli shared scripts 2>/dev/null | grep -q . && echo +changed)"
-  echo "script.sha256=$(cat "$here/scripts/root-release.sh" "$here/scripts/root/"* | sha256sum | cut -d' ' -f1)"
+  echo "script.sha256=$(cat "$here/scripts/root-release.sh" "$here/scripts/root-refresh.sh" "$here/scripts/root-refresh-db.mjs" "$here/scripts/root/"* | sha256sum | cut -d' ' -f1)"
   sed 's/^/base./' "$work/tree/manifest"
 } > "$work/manifest.new"
 mv "$work/manifest.new" "$work/tree/manifest"

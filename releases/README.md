@@ -4,21 +4,29 @@ Each release is a GitHub release tagged `os-length3-linux-vX.Y.Z`, made from
 a commit on main. Its notes (on the release page) list every file with its
 size and SHA-256, and `SHA256SUMS` beside them holds the same digests.
 
+Only the release main pins is published: a device installs only the newest
+pinned root, and once a release's pins are merged the releases before it are
+deleted (`.github/workflows/releases-prune.yml`; their tags stay, so each
+commit they were made from is still named). A release carries the base its
+root is made from (`os/shared/root-base.json`: the 0.1.0 root), so the next is
+made from it as this one was, and the film of the release at work, when there
+is one.
+
 | Version | What it is |
 | --- | --- |
-| [0.6.0](https://github.com/elysia090/os-length3/releases/tag/os-length3-linux-v0.6.0) | agents at work in the repos (tasks offered, asked and handed in, hardest first, each run measured and bounded in time and space), commits that hand themselves in, room made by itself, a machine as a host of the OS's VMs (`l3 host`: KVM, Firecracker v1.17.0), Ubuntu 26.04.1 LTS and Debian 13.7 among the environments, and every dependency at its newest (ureq 3.5, russh 0.65 with its security fixes); the first release made in two merges by Actions |
-| [0.5.0](https://github.com/elysia090/os-length3/releases/tag/os-length3-linux-v0.5.0) | Length³ OS with one core for the app and the web (the web runs the core the app runs, built for `wasm32-wasip1`), the desktop app opened from `l3 app`, SSH into a repo's Prompt, Runtime's environments (l3, Ubuntu, Debian, Custom) |
-| [0.4.1](https://github.com/elysia090/os-length3/releases/tag/os-length3-linux-v0.4.1) | the root laid out for Prompts, the web build and the desktop app (.deb, AppImage) |
-| [0.4.0](https://github.com/elysia090/os-length3/releases/tag/os-length3-linux-v0.4.0) | the first release with the desktop app |
-| [0.3.0](https://github.com/elysia090/os-length3/releases/tag/os-length3-linux-v0.3.0) | the 0.1.0 root with l3 in it, and the web build whose Prompt runs that whole root |
-| [0.1.0](https://github.com/elysia090/os-length3/releases/tag/os-length3-linux-v0.1.0) | the native base: `development-standard-v1` post-link compiled, packaged and booted ([notes](native/RELEASE-0.1.0.md)) |
-| [0.1.0-rc.1](https://github.com/elysia090/os-length3/releases/tag/os-length3-linux-v0.1.0-rc.1) | its candidate ([notes](native/RELEASE.md), [measurements](native/README.md)) |
+| 0.6.2 | the root's OpenSSL (3.5.9), OpenSSH client (10.6p1), curl (8.23.0) and git (2.56.0) made again at their pins, as static PIEs with the standard hardening; what a Prompt has nothing for (shadow's user tools, poweroff and reboot) out; the base carried, and only this release published; `l3 ssh` on OpenSSH 10's modern algorithms; Workers that keep their instances (a process in the browser about 4× quicker to start); a film |
+| 0.6.0, 0.6.1 | agents at work in the repos (tasks offered, asked and handed in, hardest first, each run measured and bounded in time and space), commits that hand themselves in, room made by itself, a machine as a host of the OS's VMs (`l3 host`: KVM, Firecracker v1.17.0), Ubuntu 26.04.1 LTS and Debian 13.7 among the environments, and every dependency at its newest (ureq 3.5, russh 0.65 with its security fixes); 0.6.1: the AppImage carries libGLESv2 (#37) |
+| 0.5.0 | Length³ OS with one core for the app and the web (the web runs the core the app runs, built for `wasm32-wasip1`), the desktop app opened from `l3 app`, SSH into a repo's Prompt, Runtime's environments (l3, Ubuntu, Debian, Custom) |
+| 0.4.0, 0.4.1 | the first release with the desktop app; the root laid out for Prompts, the web build and the desktop app (.deb, AppImage) |
+| 0.3.0 | the 0.1.0 root with l3 in it, and the web build whose Prompt runs that whole root |
+| 0.1.0 | the native base: `development-standard-v1` post-link compiled, packaged and booted ([notes](native/RELEASE-0.1.0.md)); 0.1.0-rc.1 its candidate ([notes](native/RELEASE.md), [measurements](native/README.md)) |
 
 Every release from 0.3.0 on is the 0.1.0 root repackaged
 (`os/scripts/root-release.sh`: what only a booted machine needs goes, `/usr`
-is merged, and `/usr/bin/l3` from that release's commit goes in), so its root
-is a few megabytes smaller and otherwise the same programs. 0.2.0 was
-prepared ([notes](native/RELEASE-0.2.0.md)) and not published.
+is merged, and `/usr/bin/l3` from that release's commit goes in); from 0.6.2
+on, the programs that speak to the network and keep its secrets are made again
+from the tree's pins (`os/scripts/root-refresh.sh`). 0.2.0 was prepared
+([notes](native/RELEASE-0.2.0.md)) and not published.
 
 ## Making one
 
@@ -31,7 +39,11 @@ Two merges, and nothing by hand between them:
    RELEASES and its desktop app in `os/shared/desktop-releases.json`.
 2. **Pin vX.Y.Z** is merged. The tree now ships it: the web build takes
    that l3, devices trust that root, and the Remote's deploy puts the
-   release's files on the Remote.
+   release's files on the Remote. The releases it no longer pins are then
+   deleted.
+
+The film goes in by the `release-film` branch (kept out of main's history):
+`film.mp4` and `film.sha256` there are put in the release as it is made.
 
 Until the pins are merged, the tree ships the newest version it pins (RELEASE
 names the one being made), so nothing in between is broken. A version

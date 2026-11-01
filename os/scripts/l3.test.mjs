@@ -83,12 +83,12 @@ test('a pack or an index that is not the root is caught', () => {
 test('one entry pins l3 for both: the root, and the index the browser reads it by', () => {
   const rs = join(work, 'root.rs');
   copyFileSync(join(os, 'core/src/root.rs'), rs);
-  const before = pinnedRoots(readFileSync(rs, 'utf8')).length;
   const r = node([join(os, 'scripts/pin-root.mjs'), rootFile, out, '--rs', rs]);
   assert.equal(r.status, 0, r.stderr);
   const pins = pinnedRoots(readFileSync(rs, 'utf8'));
   const about = JSON.parse(readFileSync(join(out, 'l3.json'), 'utf8'));
-  assert.equal(pins.length, before + 1);
+  // Only the release made is pinned: a device installs the newest pin alone, and the releases before it are deleted.
+  assert.equal(pins.length, 1);
   assert.deepEqual([pins[0].version, pins[0].sha256, pins[0].web, pins[0].bytes], ['9.9.9', about.sha256, about.index.sha256, statSync(rootFile).size]);
   // Again: nothing changes. Another index for a root pinned with one: refused, never changed.
   assert.match(node([join(os, 'scripts/pin-root.mjs'), rootFile, out, '--rs', rs]).stdout, /pinned already/);
