@@ -53,7 +53,7 @@ db="$root/lib/apk/db/installed"
 # util-linux's).
 DROP="linux-boot base-services mdevd s6-rc s6 execline skalibs chrony dhcpcd kmod e2fsprogs nftables shadow"
 GONE="busybox:init busybox:opt/qm/Makefile system-config:etc/mdev.conf system-config:etc/nftables.conf"
-for n in switch_root insmod lsmod modprobe rmmod blkid fdisk ip poweroff reboot halt; do GONE="$GONE busybox:sbin/$n"; done
+for n in switch_root insmod lsmod modprobe rmmod blkid fdisk ip poweroff reboot; do GONE="$GONE busybox:sbin/$n"; done
 for n in dmesg mount umount; do GONE="$GONE busybox:bin/$n"; done
 
 # Every file the db gives a package, as package:path.
@@ -69,10 +69,14 @@ rm -f "$root/system/apk/Packages.adb"; rmdir "$root/system/apk" "$root/system"
 mv "$root/usr/share/qm" "$root/usr/share/length3"
 
 # Merged /usr.
+# (One left empty by what was taken out, as /sbin now is, or not there at all, is a link the same.)
 for d in bin sbin lib; do
   mkdir -p "$root/usr/$d"
-  for f in "$root/$d"/*; do mv "$f" "$root/usr/$d/"; done
-  rmdir "$root/$d"; ln -s "usr/$d" "$root/$d"
+  if [ -d "$root/$d" ]; then
+    find "$root/$d" -mindepth 1 -maxdepth 1 -exec mv -t "$root/usr/$d/" {} +
+    rmdir "$root/$d"
+  fi
+  ln -s "usr/$d" "$root/$d"
 done
 # The places every root has, whatever packages made or left them.
 mkdir -p "$root/dev" "$root/proc" "$root/sys" "$root/run" "$root/var/cache" "$root/var/lib" "$root/var/log"
