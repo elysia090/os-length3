@@ -8,7 +8,8 @@
 #   sh scripts/root-toolchain.sh OUT
 #
 # Run on Alpine 3.24 (x86_64-alpine-linux-musl, the base's target: its own GCC and musl build these, C++ and all),
-# as root, as CI does in its container. OUT gets make/, binutils/ and gcc/, each what its install put there
+# as root, as CI does in its container; OWNER (uid:gid) given, what it writes is that user's when it ends, however it
+# ends (the host's user reads it, caches it and builds beside it after the container is gone). OUT gets make/, binutils/ and gcc/, each what its install put there
 # (DESTDIR), and `record`, a line each: name, version, its source's sha256. Sources are kept in OUT/../toolchain-src
 # by name, each checked against its pin before it is opened.
 set -eu
@@ -24,7 +25,7 @@ out=$(cd "$out" && pwd)
 src="$out/../toolchain-src"
 mkdir -p "$src"
 work=$(mktemp -d "${TMPDIR:-/tmp}/length3-toolchain.XXXXXX")
-trap 'rm -rf "$work"' EXIT
+trap 'rm -rf "$work"; if [ -n "${OWNER:-}" ]; then chown "$OWNER" "$out/.."; chown -R "$OWNER" "$out" "$src"; fi' EXIT
 jobs=$(nproc)
 # Alpine 3.24's GCC writes C23 by default, where `char *getenv ();` (make's gnulib, GMP's configure) declares a
 # function of no arguments: what the host compiler builds is C17, and is built as such. What the GCC made builds

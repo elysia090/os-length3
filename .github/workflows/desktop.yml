@@ -389,7 +389,7 @@ jobs:
           key: ${{ steps.toolchain-key.outputs.key }}
       - name: The C toolchain from its pins
         if: steps.kept.outputs.cache-hit != 'true' && steps.toolchain.outputs.cache-hit != 'true'
-        run: docker run --rm -v "$GITHUB_WORKSPACE:/w" alpine:3.24 sh /w/os/scripts/root-toolchain.sh /w/os/target/toolchain
+        run: docker run --rm -v "$GITHUB_WORKSPACE:/w" -e OWNER="$(id -u):$(id -g)" alpine:3.24 sh /w/os/scripts/root-toolchain.sh /w/os/target/toolchain
       - if: steps.kept.outputs.cache-hit != 'true' && steps.toolchain.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

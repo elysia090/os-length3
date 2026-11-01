@@ -103,7 +103,7 @@ jobs:
           key: ${{ steps.toolchain-key.outputs.key }}
       - name: The C toolchain from its pins
         if: env.SKIP != '1' && steps.toolchain.outputs.cache-hit != 'true'
-        run: docker run --rm -v "$GITHUB_WORKSPACE:/w" alpine:3.24 sh /w/os/scripts/root-toolchain.sh /w/os/target/toolchain
+        run: docker run --rm -v "$GITHUB_WORKSPACE:/w" -e OWNER="$(id -u):$(id -g)" alpine:3.24 sh /w/os/scripts/root-toolchain.sh /w/os/target/toolchain
       # What the release holds and its notes, made as by hand (os/scripts/release.sh), then published.
       - name: Root, l3 for the browser, web build and desktop app
         if: env.SKIP != '1'
