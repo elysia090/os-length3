@@ -130,7 +130,9 @@ run({
   files: [...alone.map((f) => join(OS, f)), ...entries], concurrency: processes + alone.length, signal: stop.signal,
   // WebAssembly (PGlite's Postgres, the core) as V8 first compiles it, and no further: compiling a hot function
   // again, optimized, took more CPU on other threads than the faster code saved.
-  execArgv: ['--liftoff-only', '--import', pathToFileURL(join(OS, 'scripts/tests-load.mjs')).href, '--import', pathToFileURL(join(OS, 'src/testing/core.ts')).href],
+  // node:test's mock timers are still marked experimental in Node 22: that notice is about the tests' own clock,
+  // not about what is tested, and is the one notice of its kind they print.
+  execArgv: ['--liftoff-only', '--disable-warning=ExperimentalWarning', '--import', pathToFileURL(join(OS, 'scripts/tests-load.mjs')).href, '--import', pathToFileURL(join(OS, 'src/testing/core.ts')).href],
   testNamePatterns: values['test-name-pattern'], testSkipPatterns: values['test-skip-pattern'], only: values['test-only'],
 })
   .on('test:pass', timed)

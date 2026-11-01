@@ -1,6 +1,7 @@
 import {execFileSync} from 'node:child_process';
 import {existsSync, readFileSync, rmSync} from 'node:fs';
 import {dirname, resolve} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {defineConfig, type Plugin} from 'vite';
 import {buildCoreWasm, coreWasmPath} from './scripts/core-wasm.ts';
 import {DEFAULT_REMOTE, headersOf, webPolicy} from './src/app/policy.ts';
@@ -153,7 +154,11 @@ export default defineConfig({
   server: {port: 1420, strictPort: true, fs: {allow: ['..']}, headers: ISOLATED,
     proxy: DEV_REMOTE ? Object.fromEntries(WORKER_FIRST.map((p) => [p, DEV_REMOTE])) : undefined},
   worker: {format: 'es'},
+  // xlat's runtime reaches for Node's workers only under Node: in the browser bundle that module is nothing.
+  resolve: {alias: [{find: 'node:worker_threads', replacement: fileURLToPath(new URL('./src/shims/worker-threads.ts', import.meta.url))}]},
   define: {__LENGTH3_HOST__: JSON.stringify(HOST)},
-  build: {target: 'es2022', outDir: ASSETS, emptyOutDir: true},
+  // Most of a build is the core compiled for the browser (coreWasm's buildStart, cargo), which Rolldown would
+  // report each time as a plugin's slow callback: it is the build's work, not a plugin's overhead.
+  build: {target: 'es2022', outDir: ASSETS, emptyOutDir: true, rolldownOptions: {checks: {bundlerTimings: false}}},
   plugins: [hostOnly(), coreWasm(), metaPolicy(), buildStamp(), preloadApp()],
 });
