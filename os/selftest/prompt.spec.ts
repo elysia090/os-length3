@@ -182,6 +182,25 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(said(app.forge.prompt)).toBeHidden();
   });
 
+  test('each line run starts the screen again: what ran before is only in the pane', async ({app}) => {
+    await app.forge.run('echo first-run');
+    const out = (where: import('@playwright/test').Locator, text: string) => where.locator('.term-out').getByText(text, {exact: true});
+    await expect(out(app.forge.prompt, 'first-run')).toBeVisible();
+    // The Prompt still up, the next line: the screen holds it and what it printed, nothing of the one before.
+    await app.forge.run('echo second-run');
+    await expect(out(app.forge.prompt, 'second-run')).toBeVisible();
+    await expect(out(app.forge.prompt, 'first-run')).toBeHidden();
+    await expect(app.forge.prompt.locator('.term-out .cmd').filter({hasText: 'echo first-run'})).toBeHidden();
+    expect(await app.forge.prompt.locator('.term-out').evaluate((el) => (el as HTMLElement).innerText)).not.toContain('first-run');
+    // The pane lists both lines run, and the first, pressed there, is read there with what it printed.
+    await app.page.keyboard.press('Escape');
+    const pane = app.main.locator('.term-home');
+    await expect(pane.getByText('echo first-run')).toBeVisible();
+    await expect(pane.getByText('echo second-run')).toBeVisible();
+    await pane.getByText('echo first-run').click();
+    await expect(app.main.locator('.found-body').getByText('first-run', {exact: true})).toBeVisible();
+  });
+
   test('what the Prompt showed is still there after Git and back, and after Home and back', async ({app}) => {
     await app.forge.run('echo kept-here');
     await expect(app.forge.prompt).toContainText(/^kept-here$/m);

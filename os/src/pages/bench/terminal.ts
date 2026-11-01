@@ -164,6 +164,10 @@ export class Session {
     // prompt line, and what it printed read as the line run).
     if (!this.first.waited) { this.first.hold(lines); return true; }
     if (!this.live || (!this.worker && !this.native)) return false;
+    // What ran before is the pane's (it lists every line run, and reads one pressed with all it printed): at its
+    // prompt line the screen starts again from the line sent, as it does when it comes up. Input to a program still
+    // running goes on under what that program said.
+    if (this.promptLine) this.out.fold();
     this.out.sent(lines);
     this.runs.push({line: lines.trimEnd(), output: '', started: Date.now(), ms: null});
     if (this.runs.length > RUNS) this.runs.shift();
