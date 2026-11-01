@@ -398,15 +398,16 @@ Every page:
 | `edge` | `#6F6D68` | outlines of fields and controls, which must be seen (3.7:1) |
 | `raised` | `#E6E3DE` | field fill, hover (the same small step above ground as before) |
 | `paper` | `#F9F8F5` | the sheet: what is worked on, and only that (a file's box, the TODO, the issue or board in hand, Inbox's box, what the search found); never a card that leads somewhere, a pane or a page (Runtime's box, which is read rather than worked in, stays on the ground) |
-| `done` | `#0F8C69` | done and on: a step of an issue's work done, a switch on (its knob), a box ticked (its circle, and a TODO done's tick), a line added (its bar), the Prompt's dot while its shell waits; a fresh emerald leaning to blue, so it sits with the greys and does not tire, light enough not to read heavy as a filled circle (white on it 4.2:1, it on the ground 3:1) |
-| `add` | `#157357` | the words of an addition, a step darker than `done` to read small: +n and its squares, a line's + (4.9:1 on its tint) |
-| `add-tint` | `#D8F2E6` | the ground of a line added in a diff: a mint of its own, not `done` thinned |
-| `marker` | `#FFE066` | what is marked, as with a highlighter: a line marked in a diff (a review, Forge's diff), over its words only (not its indent or number, which turns ink), each wrapped line its own stroke with softened ends; the words the search found, in its lines; the head of a file just landed on, for a moment. A warm, clear lemon, neither cream nor dense: `ink` on it 10.9:1 |
-| `marker-soft` | `#FFF2B8` | the pointer on a line it can mark: the stroke, paler; a line just landed on (merged, committed, closed), lit a moment on the ground, solid (a thinned marker on the grey goes olive) |
-| `off` | `#A8324F` | a repo turned off: its switch; a removal held, its button red (`ground` words on it 4.6:1); a line removed (its bar); a rosy crimson leaning to blue, not a brick |
-| `del` | `#B23452` | the words of a removal: −n and its squares, a line's − (4.8:1 on its tint) |
-| `del-tint` | `#FCE0E7` | the ground of a line removed in a diff |
-| `sky-tint` | `#DBE9FB` | a fourth soft tint, beside the three marks' (`marker-soft`, `add-tint`, `del-tint`), only to tell people apart by their round initial (Lately, the pane's word) |
+| `done` | `#0E7C5E` | done and on: a step of an issue's work done, a switch on (its knob), a box ticked (its circle, and a TODO done's tick), a line added (its bar), the Prompt's dot while its shell waits; a deep emerald leaning to blue, so it sits with the greys and does not tire (white on it 5.2:1, it on the ground 3.7:1) |
+| `add` | `#13684F` | the words of an addition, a step darker than `done` to read small: +n and its squares, a line's + (5.4:1 on its tint) |
+| `add-tint` | `#D6EADF` | the ground of a line added in a diff: a sage mint of its own, not `done` thinned |
+| `marker` | `#ECCA5F` | what is marked, as with a highlighter: a line marked in a diff (a review, Forge's diff), over its words only (not its indent or number, which turns ink), each wrapped line its own stroke with softened ends; the words the search found, in its lines; the head of a file just landed on, for a moment. A deep gold, warm and clear, that marks without glaring off the grey as a lemon did: `ink` on it 9.0:1 |
+| `marker-soft` | `#F3E5BB` | the pointer on a line it can mark: the stroke, paler; a line just landed on (merged, committed, closed), lit a moment on the ground, solid (a thinned marker on the grey goes olive) |
+| `off` | `#7F2B3C` | a repo turned off: its switch; a removal held, its button red (`ground` words on it 6.5:1); a line removed (its bar); a deep wine leaning to blue, not a brick nor a raspberry |
+| `del` | `#883146` | the words of a removal: −n and its squares, a line's − (5.9:1 on its tint) |
+| `del-tint` | `#EDD6D9` | the ground of a line removed in a diff: a dusty rose, not a pink |
+| `sky-tint` | `#D3DCE7` | a fourth soft tint, beside the three marks' (`marker-soft`, `add-tint`, `del-tint`), only to tell people apart by their round initial (Lately, the pane's word) |
+| `agent` | `#20426E` | the Agent's own line, round its pill (in the box and the pane): a deep navy, the one colour nothing else here is drawn in (9.6:1 on paper) |
 
 No other colours; the three families (`done`, `marker`, `off`, each with
 the words and the ground drawn from it) each mean their one thing only; the
