@@ -268,6 +268,54 @@ jobs:
           echo "$out" | head -3
           echo "$out" | grep -q 'l3 issue new'
 
+  # The desktop app on the other machines it is for, each built on its own: macOS (Apple silicon and Intel), Windows
+  # and Linux on Arm. There its Prompts run translated (l3 root check says why), as a browser's do; l3 is built for
+  # the machine and goes beside the app, as on Linux x86-64 (scripts/desktop.sh), and each is bundled as its
+  # machine installs it.
+  elsewhere:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: macos-15, target: aarch64-apple-darwin, bundles: app}
+          - {os: macos-15-intel, target: x86_64-apple-darwin, bundles: app}
+          - {os: windows-2025, target: x86_64-pc-windows-msvc, bundles: nsis}
+          - {os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, bundles: deb}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: os/package-lock.json
+      - name: Linux's webview
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: os -> target
+          key: ${{ matrix.target }}
+      - name: l3 and the app, built and bundled here
+        working-directory: os
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          BUNDLES: ${{ matrix.bundles }}
+        run: |
+          npm ci
+          cargo build --locked --release -p l3
+          ext=; [ "$RUNNER_OS" = Windows ] && ext=.exe
+          mkdir -p src-tauri/binaries
+          cp "target/release/l3$ext" "src-tauri/binaries/l3-$TARGET$ext"
+          "target/release/l3$ext" root check
+          npx tauri build --bundles "$BUNDLES" --config '{"build": {"beforeBuildCommand": "npx vite build"}, "bundle": {"externalBin": ["binaries/l3"]}}'
+
   # The .deb's AppArmor profile (os/src-tauri/deb) on Ubuntu 24.04 as a person has it, user namespaces kept from
   # unprivileged programs: l3 at /usr/bin/l3 says Prompts cannot run on the root here (l3 root check: the namespaces
   # one is made in cannot be made) until the .deb's postinst has put the profile in place, and can after; its postrm
