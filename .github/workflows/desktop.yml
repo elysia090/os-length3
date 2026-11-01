@@ -352,13 +352,14 @@ jobs:
   # then run, natively and translated as the browser's Prompt runs it. Made only when what makes the root changed.
   root:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    # GCC made from its pins the first time (kept after: its key below) takes most of an hour.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=root-${{ hashFiles('os/scripts/root-release.sh', 'os/scripts/root-refresh.sh', 'os/scripts/root-refresh-db.mjs', 'os/scripts/root/**', 'os/shared/root-base.json', 'distribution/sources.env') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=root-${{ hashFiles('os/scripts/root-release.sh', 'os/scripts/root-refresh.sh', 'os/scripts/root-refresh-db.mjs', 'os/scripts/root-toolchain.sh', 'os/scripts/root/**', 'os/shared/root-base.json', 'distribution/sources.env') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -373,8 +374,27 @@ jobs:
         if: steps.kept.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends musl-tools pkg-config
+          sudo apt-get install -y --no-install-recommends musl-tools pkg-config bubblewrap
           rustup target add x86_64-unknown-linux-musl wasm32-unknown-unknown
+      # The root's C toolchain made from its pins on Alpine 3.24, the base's target (root-toolchain.sh), kept by its
+      # sources and its script: a root made again does not make GCC again.
+      - id: toolchain-key
+        if: steps.kept.outputs.cache-hit != 'true'
+        run: echo "key=toolchain-${{ hashFiles('os/scripts/root-toolchain.sh', 'distribution/sources.env') }}" >> "$GITHUB_OUTPUT"
+      - id: toolchain
+        if: steps.kept.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: os/target/toolchain
+          key: ${{ steps.toolchain-key.outputs.key }}
+      - name: The C toolchain from its pins
+        if: steps.kept.outputs.cache-hit != 'true' && steps.toolchain.outputs.cache-hit != 'true'
+        run: docker run --rm -v "$GITHUB_WORKSPACE:/w" alpine:3.24 sh /w/os/scripts/root-toolchain.sh /w/os/target/toolchain
+      - if: steps.kept.outputs.cache-hit != 'true' && steps.toolchain.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: os/target/toolchain
+          key: ${{ steps.toolchain-key.outputs.key }}
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -388,7 +408,7 @@ jobs:
         working-directory: os
         run: |
           base=$(node scripts/root-file.mjs target/root base)
-          sh scripts/root-release.sh "$base" target/root-made 0.0.0
+          ROOT_TOOLCHAIN=$PWD/target/toolchain sh scripts/root-release.sh "$base" target/root-made 0.0.0
           grep '^refreshed\.' target/root-made/manifest
           mkdir -p target/root-open
           tar --zstd -xf target/root-made/os-length3-linux-0.0.0-x86_64-*.tar.zst -C target/root-open
@@ -398,6 +418,11 @@ jobs:
           "$r/usr/bin/curl" --version | grep -F "curl $CURL_VERSION "
           "$r/usr/bin/ssh" -V 2>&1 | grep -F "OpenSSH_$OPENSSH_VERSION"
           "$r/usr/bin/git" --version | grep -F "git version $GIT_VERSION"
+          # Its C compiler is right, inside the root as a Prompt runs it: floating literals as C says them, and make.
+          printf '%s\n' '#include <stdio.h>' 'int main(void) { double f[] = {6.5, 7.3}; printf("%.17g %.17g %d\n", f[0], f[1], (int)(7.3 * 12)); return 0; }' > "$RUNNER_TEMP/literals.c"
+          printf 'literals: literals.c\n\tcc -O1 -o $@ literals.c\n' > "$RUNNER_TEMP/Makefile"
+          said=$(sudo bwrap --ro-bind "$r" / --dev /dev --proc /proc --tmpfs /tmp --bind "$RUNNER_TEMP" /work --chdir /work /bin/sh -c 'make -s literals && ./literals')
+          [ "$said" = '6.5 7.2999999999999998 87' ] || { echo "the root's gcc compiles literals wrong: $said" >&2; exit 1; }
           for gone in usr/bin/passwd usr/bin/useradd usr/sbin/poweroff usr/sbin/reboot; do
             if [ -e "$r/$gone" ] || [ -L "$r/$gone" ]; then echo "$gone is still in the root" >&2; exit 1; fi
           done

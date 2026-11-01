@@ -127,6 +127,15 @@ chmod 0644 "$db" "$root/etc/apk/world"
 printf '%s\n' "# No repository yet: what is installed is all there is (lib/apk/db/installed)." > "$root/etc/apk/repositories"
 # OpenSSL, OpenSSH's client, curl and git at this tree's pins, in place of the base's.
 sh "$here/scripts/root-refresh.sh" "$root" "$work/refreshed"
+# The C toolchain, made from this tree's pins with nothing done to it after the linker (root-toolchain.sh, on Alpine
+# 3.24 as CI runs it), in place of the base's post-linked one: its programs, and what its database says of them.
+toolchain=${ROOT_TOOLCHAIN:-}
+[ -n "$toolchain" ] && [ -s "$toolchain/record" ] || {
+  echo "root-release: ROOT_TOOLCHAIN must name what root-toolchain.sh made (the base's post-linked gcc writes floating literals wrong)" >&2; exit 1; }
+for p in make binutils gcc; do
+  node "$here/scripts/root-refresh-db.mjs" "$root" "$p" "$(awk -v p="$p" '$1 == p {print $2}' "$toolchain/record")" "$toolchain/$p"
+done
+cat "$toolchain/record" >> "$work/refreshed"
 # Every file the db names is there.
 owned | while IFS=: read -r p f; do
   [ -e "$root/$f" ] || [ -L "$root/$f" ] || { echo "root-release: $p owns $f, which is not there" >&2; exit 1; }
@@ -152,7 +161,7 @@ chmod 0644 "$root/etc/os-release"
   sed 's/^\([^ ]*\) \([^ ]*\) \([^ ]*\)$/refreshed.\1=\2 \3/' "$work/refreshed"
   echo "l3.sha256=$(sha256sum "$l3" | cut -d' ' -f1)"
   echo "l3.source=$(git -C "$here" rev-parse HEAD 2>/dev/null || echo unknown)$(git -C "$here" status --porcelain -- core cli shared scripts 2>/dev/null | grep -q . && echo +changed)"
-  echo "script.sha256=$(cat "$here/scripts/root-release.sh" "$here/scripts/root-refresh.sh" "$here/scripts/root-refresh-db.mjs" "$here/scripts/root/"* | sha256sum | cut -d' ' -f1)"
+  echo "script.sha256=$(cat "$here/scripts/root-release.sh" "$here/scripts/root-refresh.sh" "$here/scripts/root-refresh-db.mjs" "$here/scripts/root-toolchain.sh" "$here/scripts/root/"* | sha256sum | cut -d' ' -f1)"
   sed 's/^/base./' "$work/tree/manifest"
 } > "$work/manifest.new"
 mv "$work/manifest.new" "$work/tree/manifest"

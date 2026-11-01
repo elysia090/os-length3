@@ -91,12 +91,26 @@ jobs:
           echo "TAG=os-length3-linux-v$v" >> "$GITHUB_ENV"
           # A version already published is left as it is.
           if gh release view "os-length3-linux-v$v" >/dev/null 2>&1; then echo "SKIP=1" >> "$GITHUB_ENV"; echo "os-length3-linux-v$v is published already"; fi
+      # The root's C toolchain made from its pins on Alpine 3.24 (root-toolchain.sh), as the root job makes and keeps it.
+      - id: toolchain-key
+        if: env.SKIP != '1'
+        run: echo "key=toolchain-${{ hashFiles('os/scripts/root-toolchain.sh', 'distribution/sources.env') }}" >> "$GITHUB_OUTPUT"
+      - id: toolchain
+        if: env.SKIP != '1'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: os/target/toolchain
+          key: ${{ steps.toolchain-key.outputs.key }}
+      - name: The C toolchain from its pins
+        if: env.SKIP != '1' && steps.toolchain.outputs.cache-hit != 'true'
+        run: docker run --rm -v "$GITHUB_WORKSPACE:/w" alpine:3.24 sh /w/os/scripts/root-toolchain.sh /w/os/target/toolchain
       # What the release holds and its notes, made as by hand (os/scripts/release.sh), then published.
       - name: Root, l3 for the browser, web build and desktop app
         if: env.SKIP != '1'
         working-directory: os
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          ROOT_TOOLCHAIN: ${{ github.workspace }}/os/target/toolchain
         run: sh scripts/release.sh "$GITHUB_WORKSPACE/out"
       - name: Publish
         if: env.SKIP != '1'
