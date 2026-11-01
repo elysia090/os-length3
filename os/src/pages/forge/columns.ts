@@ -322,22 +322,41 @@ export class Row {
    * over the place asked for.
    */
   landing() {
-    if (this.again) { clearTimeout(this.again); this.readAgain(false); }
+    if (this.again) { clearTimeout(this.again); this.readAgain(false, true); }
     cancelAnimationFrame(this.putBack);
   }
 
-  /** The open repo's page read again where it was read; `keep` false when it is about to be scrolled elsewhere. */
-  private readAgain(keep = true) {
+  /**
+   * The open repo's page read again where it was read; `keep` false when it is about to be scrolled elsewhere. Read
+   * first, then put in the old one's place: what was in view there listed and loaded (a short while at most), so the
+   * page is never seen empty between the two. Gone to at once (`now`: a place in it is about to be gone to), it
+   * takes the old one's place as it is.
+   */
+  private readAgain(keep = true, now = false) {
     this.again = 0;
     if (!this.repo) return;
-    const was = this.views.get(this.repo);
+    const repo = this.repo, was = this.views.get(repo);
     if (!was) return;
-    const top = was.top;
-    const fresh = this.reread(this.repo, was);
+    const fresh = this.reread(repo, was);
+    if (now) { this.swap(repo, was, fresh, keep); return; }
+    const view = was.flow.getBoundingClientRect();
+    const seen = [...was.root.querySelectorAll<HTMLElement>('section.file')].filter((el) => {
+      const r = el.getBoundingClientRect();
+      return r.bottom > view.top && r.top < view.bottom;
+    }).flatMap((el) => el.dataset.path ? [el.dataset.path] : []);
+    void Promise.race([fresh.reader.prime(seen).catch(() => {}), new Promise((r) => setTimeout(r, 250))]).then(() => {
+      // Read again since (another change), or gone: that one stands.
+      if (this.views.get(repo) === was && this.repo === repo) this.swap(repo, was, fresh, keep);
+    });
+  }
+
+  /** `fresh`, read again, in the place of `was` in `repo`'s box. */
+  private swap(repo: string, was: View, fresh: View, keep: boolean) {
+    const top = was.flow.scrollTop;
     // The file being written keeps the keyboard and its caret through the page read again.
     const writing = document.activeElement instanceof HTMLTextAreaElement && was.root.contains(document.activeElement) ? document.activeElement : null;
     const at = writing?.closest<HTMLElement>('section.file')?.dataset.path;
-    this.views.set(this.repo, fresh);
+    this.views.set(repo, fresh);
     was.root.replaceWith(fresh.root);
     this.layout();
     if (keep) this.putBack = requestAnimationFrame(() => { fresh.flow.scrollTop = top; });

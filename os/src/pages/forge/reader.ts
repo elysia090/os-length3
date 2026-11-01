@@ -142,6 +142,15 @@ export class Reader {
   }
 
   /**
+   * Read before it is shown: the page's folders down to each of `paths` listed and those files loaded, so it takes the
+   * place of the page it is read again for whole, with what was in view there, rather than as a "…" filling in.
+   */
+  async prime(paths: string[]) {
+    await this.loads.get('')?.();
+    await Promise.all(paths.map(async (path) => { await this.down(path); await this.fileLoads.get(path)?.(); }));
+  }
+
+  /**
    * Give `path`'s editor the keyboard again, its selection as it was, without moving the page: the page was
    * read again under the person's caret. Nothing is taken from what has the keyboard meanwhile.
    */

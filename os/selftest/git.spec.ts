@@ -6,6 +6,21 @@ import {expect, test} from './fixtures.ts';
 // is committed from main's card, named by its line. One that will not be
 // done is closed and can be reopened; a reviewer can ask for changes.
 
+test("on an issue's work, Forge's files come at once however long the Remote takes to say how the work stands", async ({signedIn: app}) => {
+  await app.newRepo.make('hello');
+  await app.newRepo.make('basil');
+  await app.git.write('hello', 'Fix: Say hello louder');
+  await app.git.step('Start').click();
+  await expect(app.git.step('Back to main')).toBeVisible();
+  // How the work stands is the Remote's to say (its line, its changes): slow to answer, it holds up nothing read here.
+  await app.page.context().route(/\/v1\/repos\/hello(\/changes|\?line=)/, async (route) => {
+    await new Promise((r) => setTimeout(r, 5000));
+    await route.continue();
+  });
+  await app.rail.go('forge');
+  await expect(app.forge.editor('README.md')).toBeVisible({timeout: 3000});
+});
+
 test('an issue goes from written to merged, and is listed under Merged', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
 
