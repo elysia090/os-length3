@@ -477,6 +477,59 @@ fn sh_refs(f: &Src, index: &HashMap<&str, usize>) -> Vec<(usize, u32)> {
     out
 }
 
+/// Which Rust files a build compiles: those a crate's roots (src/lib.rs, src/main.rs, src/bin/, tests/, examples/,
+/// benches/, build.rs) reach through `mod name;` (and `#[path = "…"] mod name;`). A file under a crate's src/ that
+/// none reaches is never compiled. Files outside every crate are not judged (true). None where there is no crate.
+pub fn rust_built(files: &[Src], all: &[(&str, &[u8])]) -> Option<Vec<bool>> {
+    let index: HashMap<&str, usize> = all.iter().enumerate().map(|(i, (p, _))| (*p, i)).collect();
+    let crate_srcs: Vec<&str> = all.iter().filter_map(|(p, _)| p.strip_suffix("/lib.rs").or_else(|| p.strip_suffix("/main.rs"))).filter(|d| d.ends_with("src")).collect();
+    if crate_srcs.is_empty() { return None; }
+    let rust: HashMap<&str, &Src> = files.iter().filter(|f| f.lang == Lang::Rust).map(|f| (f.path, f)).collect();
+    let is_root = |p: &str| {
+        let name = p.rsplit('/').next().unwrap_or(p);
+        crate_srcs.iter().any(|s| p == format!("{s}/lib.rs") || p == format!("{s}/main.rs") || p.starts_with(&format!("{s}/bin/")))
+            || name == "build.rs" || p.split('/').any(|seg| matches!(seg, "tests" | "examples" | "benches"))
+    };
+    let mut built = vec![false; all.len()];
+    let mut todo: Vec<usize> = all.iter().enumerate().filter(|(_, (p, _))| p.ends_with(".rs") && is_root(p)).map(|(i, _)| i).collect();
+    for &i in &todo { built[i] = true; }
+    while let Some(i) = todo.pop() {
+        let path = all[i].0;
+        let Some(f) = rust.get(path) else { continue };
+        let dir = dir_of(path);
+        let name = path.rsplit('/').next().unwrap_or(path);
+        // A file's own modules are in its folder (mod.rs, lib.rs, main.rs) or in the folder named after it.
+        let own = if matches!(name, "mod.rs" | "lib.rs" | "main.rs") || is_root(path) && !name.ends_with("mod.rs") && dir.ends_with("/bin") { dir.to_string() }
+            else { format!("{}{}", if dir.is_empty() { String::new() } else { format!("{dir}/") }, name.trim_end_matches(".rs")) };
+        let t = f.toks;
+        for k in 0..t.len() {
+            if !(word(f, t.get(k), b"mod") && t.get(k + 1).is_some_and(|x| x.k == K::Word) && t.get(k + 2).is_some_and(|x| x.k == K::Semi)) { continue; }
+            let m = String::from_utf8_lossy(text(f, &t[k + 1])).into_owned();
+            // #[path = "…"] before it (pub, pub(crate) between).
+            let mut j = k;
+            while j > 0 && (word(f, t.get(j - 1), b"pub") || t[j - 1].k == K::RParen) { j -= 1; if t[j].k == K::RParen { while j > 0 && t[j].k != K::LParen { j -= 1; } } }
+            let mut given: Option<String> = None;
+            if j > 0 && t[j - 1].k == K::RBrack {
+                let mut a = j - 1;
+                while a > 0 && t[a].k != K::LBrack { a -= 1; }
+                if word(f, t.get(a + 1), b"path") && punct(f, t.get(a + 2), b"=") { given = t.get(a + 3).and_then(|x| unquote(text(f, x))).map(String::from); }
+            }
+            let cands: Vec<String> = match given {
+                Some(p) => join(dir, &p).into_iter().collect(),
+                None => vec![format!("{own}/{m}.rs"), format!("{own}/{m}/mod.rs")].into_iter().map(|c| c.trim_start_matches('/').to_string()).collect(),
+            };
+            for c in cands {
+                if let Some(&to) = index.get(c.as_str()) { if !built[to] { built[to] = true; todo.push(to); } }
+            }
+        }
+    }
+    // Only files under a crate's src/ are judged.
+    for (i, (p, _)) in all.iter().enumerate() {
+        if !p.ends_with(".rs") || !crate_srcs.iter().any(|s| p.starts_with(&format!("{s}/"))) { built[i] = true; }
+    }
+    Some(built)
+}
+
 // ---- what the structure costs ----
 
 /// The strongly connected components (Tarjan's, without recursion): each a group of files that reach each other,
@@ -674,6 +727,22 @@ mod tests {
         ]);
         // Uses are counted: lib.rs names text twice (`mod text;`, `use crate::text::…`).
         assert_eq!(d[1].2, 2);
+    }
+
+    #[test]
+    fn a_rust_file_no_mod_names_is_never_built() {
+        let files = [
+            ("c/src/lib.rs", "pub mod a;\n#[cfg(unix)]\n#[path = \"else/b.rs\"]\npub(crate) mod b;\n"),
+            ("c/src/a.rs", "mod inner;\n"), ("c/src/a/inner.rs", ""), ("c/src/else/b.rs", ""), ("c/src/stray.rs", "fn f() {}\n"),
+            ("c/src/bin/tool.rs", "mod helper;\n"), ("c/src/bin/helper.rs", ""), ("c/tests/t.rs", ""), ("c/build.rs", ""), ("other/x.rs", ""),
+        ];
+        let lexed: Vec<_> = files.iter().map(|(_, s)| lex(s.as_bytes(), Lang::Rust)).collect();
+        let srcs: Vec<Src> = files.iter().zip(&lexed).map(|((p, s), l)| Src { path: p, lang: Lang::Rust, src: s.as_bytes(), toks: &l.toks }).collect();
+        let all: Vec<(&str, &[u8])> = files.iter().map(|(p, s)| (*p, s.as_bytes())).collect();
+        let built = rust_built(&srcs, &all).expect("a crate");
+        let never: Vec<&str> = files.iter().zip(&built).filter(|(_, b)| !**b).map(|((p, _), _)| *p).collect();
+        assert_eq!(never, ["c/src/stray.rs"]);
+        assert!(rust_built(&[], &[("a.py", b"")]).is_none());
     }
 
     #[test]

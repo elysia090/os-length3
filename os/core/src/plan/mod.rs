@@ -16,6 +16,7 @@ pub mod dup;
 pub mod past;
 pub mod debt;
 pub mod locate;
+pub mod weak;
 
 use lex::{Lang, K};
 use serde::Serialize;
@@ -152,6 +153,8 @@ pub struct Analysis {
     /// The circles: components of more than one file, the largest first.
     pub circles: Vec<Vec<usize>>,
     pub copies: Vec<Copied>,
+    /// What is plainly weak (weak.rs), file by file and repo-wide, in no order.
+    pub findings: Vec<weak::Finding>,
     pub history: past::History,
     pub rates: past::Rates,
     /// Each file's words (names in its code, words of its comments and strings), for finding an issue's place.
@@ -177,6 +180,8 @@ const KEYWORDS: [&[u8]; 64] = [b"if", b"else", b"for", b"while", b"do", b"switch
 /// What one file gives the analysis.
 struct Read {
     facts: FileFacts,
+    findings: Vec<weak::Finding>,
+    names: HashMap<String, u32>,
     compared: Vec<u32>,
     written: Vec<u32>,
     tok_lines: Vec<u32>,
@@ -193,7 +198,9 @@ fn read_one(t: &Text, want_words: bool) -> Read {
     let Some(lang) = lang else {
         let lines = t.bytes.iter().filter(|&&b| b == b'\n').count() as u32;
         count(&String::from_utf8_lossy(&t.bytes), 1);
-        return Read { facts: FileFacts { path: t.path.clone(), lang: None, lines, funcs: Vec::new() }, compared: Vec::new(), written: Vec::new(), tok_lines: Vec::new(), words: sorted(counts), lexed: None };
+        let mut names = HashMap::new();
+        weak::count_names(&t.bytes, &mut names);
+        return Read { facts: FileFacts { path: t.path.clone(), lang: None, lines, funcs: Vec::new() }, findings: Vec::new(), names, compared: Vec::new(), written: Vec::new(), tok_lines: Vec::new(), words: sorted(counts), lexed: None };
     };
     let lexed = lex::lex(&t.bytes, lang);
     let sh = shape::shape(&t.bytes, &lexed, lang);
@@ -210,7 +217,11 @@ fn read_one(t: &Text, want_words: bool) -> Read {
     for &(a, b) in &lexed.prose { count(&String::from_utf8_lossy(&t.bytes[a as usize..b as usize]), 1); }
     // A function's name is what the file is about: it counts more.
     for f in &sh.funcs { count(&f.name, 2); }
+    let findings = weak::scan(&weak::File { path: &t.path, lang, src: &t.bytes, lexed: &lexed, funcs: &sh.funcs });
+    let mut names = HashMap::new();
+    weak::count_names(&t.bytes, &mut names);
     Read {
+        findings, names,
         facts: FileFacts { path: t.path.clone(), lang: Some(lang), lines: sh.code_lines, funcs: sh.funcs },
         compared: compared_toks, written, tok_lines, words: sorted(counts), lexed: Some((lang, lexed)),
     }
@@ -241,6 +252,7 @@ pub fn analyze_timed(snap: &Snapshot, history: past::History, words: bool, done:
     let all: Vec<(&str, &[u8])> = snap.texts.iter().map(|t| (t.path.as_str(), t.bytes.as_slice())).collect();
     let srcs: Vec<graph::Src> = reads.iter().zip(&snap.texts).filter_map(|(r, t)| r.lexed.as_ref().map(|(lang, lx)| graph::Src { path: &t.path, lang: *lang, src: &t.bytes, toks: &lx.toks })).collect();
     let g = graph::build(&srcs, &all);
+    let built = graph::rust_built(&srcs, &all);
     done("graph");
     let adj = g.adjacency();
     let reach = graph::reach(&adj);
@@ -253,9 +265,22 @@ pub fn analyze_timed(snap: &Snapshot, history: past::History, words: bool, done:
         Copied { a: (c.a.0, line(c.a.0, c.a.1), line(c.a.0, c.a.2 - 1)), b: (c.b.0, line(c.b.0, c.b.1), line(c.b.0, c.b.2 - 1)), tokens: c.tokens() }
     }).collect();
     done("copies");
+    // What is weak: each file's own, then the repo's (what nothing names or builds, structure).
+    let mut findings: Vec<weak::Finding> = Vec::new();
+    let mut names: HashMap<String, u32> = HashMap::new();
+    for (i, r) in reads.iter_mut().enumerate() {
+        for mut f in std::mem::take(&mut r.findings) { f.file = i; findings.push(f); }
+        for (k, v) in std::mem::take(&mut r.names) { *names.entry(k).or_insert(0) += v; }
+    }
+    let mut importers = vec![0u32; n];
+    for e in &g.edges { importers[e.to] += 1; }
+    let repo_files: Vec<weak::RepoFile> = reads.iter().map(|r| weak::RepoFile { path: &r.facts.path, lang: r.facts.lang, lines: r.facts.lines, funcs: &r.facts.funcs, test: weak::test_path(&r.facts.path) }).collect();
+    findings.extend(weak::repo(&repo_files, &names, &importers, built.as_deref()));
+    drop(repo_files);
+    done("weak");
     let rates = past::rates(&history, n);
     let words = reads.iter_mut().map(|r| std::mem::take(&mut r.words)).collect();
-    Analysis { files: reads.into_iter().map(|r| r.facts).collect(), graph: g, reach, circles, copies, history, rates, words, set_aside: snap.set_aside }
+    Analysis { files: reads.into_iter().map(|r| r.facts).collect(), graph: g, reach, circles, copies, findings, history, rates, words, set_aside: snap.set_aside }
 }
 
 /// The repo at `dir` analyzed: its files now and (in a git repository) its history; the files' texts beside; their
@@ -321,6 +346,17 @@ mod tests {
         let mut last = std::time::Duration::ZERO;
         for (part, at) in marks { println!("{part:>10} {:>7.1} ms (+{:.1})", at.as_secs_f64() * 1e3, (at - last).as_secs_f64() * 1e3); last = at; }
         println!("{} files, {} copies, {} edges, {} steps", a.files.len(), a.copies.len(), a.graph.edges.len(), p.steps.len());
+        // E12: what weak.rs finds, by kind, with a few of each and the line they are on (to read for precision).
+        let mut by: std::collections::BTreeMap<weak::Kind, Vec<&weak::Finding>> = std::collections::BTreeMap::new();
+        for f in &a.findings { by.entry(f.kind).or_default().push(f); }
+        let sample = std::env::var("PLAN_SAMPLE").ok().and_then(|v| v.parse().ok()).unwrap_or(3usize);
+        for (k, list) in &by {
+            println!("{k:?}: {}", list.len());
+            for f in list.iter().step_by((list.len() / sample.max(1)).max(1)).take(sample) {
+                let text = snap.texts[f.file].bytes.split(|&b| b == b'\n').nth(f.line.saturating_sub(1) as usize).map(|l| String::from_utf8_lossy(l).trim().chars().take(110).collect::<String>()).unwrap_or_default();
+                println!("    {}:{} {:?} {} | {text}", a.files[f.file].path, f.line, f.func.as_deref().unwrap_or(""), f.about);
+            }
+        }
     }
 
     /// E9, by hand: `PLAN_DIR=<a full clone> cargo test --release -p length3-core plan::tests::backtest -- --ignored
