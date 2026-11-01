@@ -27,7 +27,8 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/length3-toolchain.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 jobs=$(nproc)
 # Alpine 3.24's GCC writes C23 by default, where `char *getenv ();` (make's gnulib, GMP's configure) declares a
-# function of no arguments: these sources are C17, and are built as such.
+# function of no arguments: what the host compiler builds is C17, and is built as such. What the GCC made builds
+# (libgcc) is GCC's own and written for its default (C23: `bool` a keyword), so it is given its flags apart.
 c17='-O2 -std=gnu17'
 record="$out/record"
 : > "$record"
@@ -76,7 +77,7 @@ make -s -C "$work/binutils-o" MAKEINFO=true LDFLAGS='-static' DESTDIR="$out/binu
 
 # GCC: C, as the base's, its libgcc built by the GCC just made.
 mkdir -p "$work/gcc-o"
-(cd "$work/gcc-o" && CFLAGS="$c17" CXXFLAGS='-O2' LDFLAGS='-static' \
+(cd "$work/gcc-o" && CFLAGS="$c17" CXXFLAGS='-O2' LDFLAGS='-static' CFLAGS_FOR_TARGET='-O2' CXXFLAGS_FOR_TARGET='-O2' \
   "$work/gcc/configure" --prefix=/usr --build="$target" --host="$target" --target="$target" \
     --enable-languages=c --disable-lto --disable-bootstrap --disable-multilib --disable-nls --disable-shared \
     --enable-static --disable-libatomic --disable-libgomp --disable-libquadmath --disable-libsanitizer \

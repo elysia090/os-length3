@@ -5,7 +5,7 @@
 //! rail: Home, Forge (and its Prompt), File, Git, Runtime, Remote; then the
 //! two whose subject is people, Server and Inbox; then l3's own words.
 
-use crate::cmd::{address, agent, app, file, forge, git, home, people, plan, remote, runtime, Ctx};
+use crate::cmd::{address, agent, app, file, forge, git, home, people, remote, runtime, Ctx};
 use crate::{args::Call, help, out::{Reply, Result}};
 
 /// Words in English and in Japanese.
@@ -349,10 +349,6 @@ pub static COMMANDS: &[Command] = &[
     ]),
     c("git", &[], Group::Git, ["the issues not merged, and what comes next", "Merge されていない Issue と、次にすること"], &[
         page(f(None, &[REPO_HERE], &[], ["each issue, with what comes next", "Issue ごとに、次にすること"], LOCAL, TakeIn, git::page)),
-    ]),
-    c("plan", &[], Group::Git, ["what to fix first, and where an issue's fix goes", "先に直すものと、Issue の直す場所"], &[
-        f(None, &[REPO_HERE], &[], ["the repo's debt, the soonest to pay back first", "repo の負債を、早く元が取れる順に"], LOCAL, Keep, plan::debt),
-        f(None, &[Arg::Issue], &[], ["where its fix likely goes, and what to read first", "直す場所の見込みと、読む順"], LOCAL, Keep, plan::issue),
     ]),
     c("issue", &[], Group::Git, ["one issue, a new one, or closing one", "Issue ひとつ、新しく、または閉じる"], &[
         offer(&[d(["Write an issue", "Issue を書く"], On::Page)],
