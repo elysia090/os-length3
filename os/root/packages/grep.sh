@@ -1,8 +1,8 @@
 # GNU grep, with egrep and fgrep: the searches a developer's hands know (-r with --include and --exclude, context,
-# colour). Perl's regular expressions (-P) are left out: the root has no PCRE2.
+# colour). Perl's regular expressions (-P) are left out (the root has no PCRE2), as is libsigsegv.
 pins="GREP"
 build() {
-  ./configure --prefix=/usr --disable-nls --disable-perl-regexp
+  ./configure --prefix=/usr --disable-nls --disable-perl-regexp --without-libsigsegv
   make -j"$jobs"
   make DESTDIR="$dest" install
 }

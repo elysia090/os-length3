@@ -1,9 +1,10 @@
 # less, Mark Nudelman's: the pager git and every program that reaches for one find. It keeps a diff's colours (-R)
-# and leaves at once when what it is given fits the screen (-F), as git asks it to; over the root's ncurses.
+# and leaves at once when what it is given fits the screen (-F), as git asks it to; over the root's ncurses. Its v
+# opens $VISUAL or $EDITOR, else nano, as the root's other editing does.
 pins="LESS"
 needs="ncurses"
 build() {
-  ./configure --prefix=/usr --sysconfdir=/etc --with-regex=posix
+  ./configure --prefix=/usr --sysconfdir=/etc --with-regex=posix --with-editor=nano
   make -j"$jobs"
   make DESTDIR="$dest" install
 }

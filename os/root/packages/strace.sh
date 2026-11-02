@@ -3,7 +3,7 @@
 # root has no others), and no stack traces (no libunwind or libdw in the root), each said.
 pins="STRACE"
 build() {
-  ./configure --prefix=/usr --enable-mpers=no --disable-gcc-Werror \
+  ./configure --prefix=/usr --enable-mpers=no --enable-stacktrace=no --disable-gcc-Werror \
     --without-libunwind --without-libdw --without-libiberty --without-libselinux
   make -j"$jobs"
   make DESTDIR="$dest" install
