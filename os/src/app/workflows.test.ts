@@ -22,13 +22,15 @@ test('every action is pinned to a full commit, its tag beside it, or is one of t
 });
 
 test('each workflow\'s token reads by default, and writes only in the jobs that release and that delete releases, on main', () => {
-  const writers = ['release.yml', 'releases-prune.yml'];
+  // What each may write: the release its repository's contents, its pins' pull request, and the provenance of what it
+  // made (signed as the run: id-token, attestations); the prune the releases it deletes.
+  const writers: Record<string, string[]> = {'release.yml': ['attestations', 'contents', 'id-token', 'pull-requests'], 'releases-prune.yml': ['contents']};
   for (const {name, text} of flows) {
     assert.match(text, /^permissions:\n\s+contents: read$/m, name);
-    const writes = [...text.matchAll(/^\s+\w+: write$/gm)].length;
-    assert.equal(writes, writers.includes(name) ? 1 : 0, name);
+    const writes = [...text.matchAll(/^\s+([\w-]+): write$/gm)].map(([, what]) => what).sort();
+    assert.deepEqual(writes, writers[name] ?? [], name);
   }
-  for (const name of writers) assert.match(flows.find((f) => f.name === name)!.text, /branches: \['main'\]/, name);
+  for (const name of Object.keys(writers)) assert.match(flows.find((f) => f.name === name)!.text, /branches: \['main'\]/, name);
   assert.match(flows.find((f) => f.name === 'releases-prune.yml')!.text, /if: github\.ref == 'refs\/heads\/main'/);
 });
 
