@@ -3,19 +3,21 @@
 # Remote by the app, and l3 speaks the app's words (`l3 help`).
 case $- in *i*) ;; *) return 0 2>/dev/null ;; esac
 
-# Where you are, as File shows it: the repo and the folder in it, else the path.
+# Where you are, as File shows it: the repo and the folder in it, else the path; kept as you move (__l3_moved).
 __l3_where() {
   case $PWD in
-    "/root/$LENGTH3_REPO") printf '%s' "$LENGTH3_REPO" ;;
-    "/root/$LENGTH3_REPO"/*) printf '%s' "$LENGTH3_REPO${PWD#/root/$LENGTH3_REPO}" ;;
-    *) printf '%s' "$PWD" ;;
+    "/root/$LENGTH3_REPO") __l3_here=$LENGTH3_REPO ;;
+    "/root/$LENGTH3_REPO"/*) __l3_here=$LENGTH3_REPO${PWD#/root/$LENGTH3_REPO} ;;
+    *) __l3_here=$PWD ;;
   esac
 }
+__l3_where
 # How the line run before ended, told the app as terminals' shell integration tells it (OSC 133 D, with its exit
 # status), before each prompt line: the app reads it (a run that failed says so, and its Agent knows how a build
-# or the tests went) and shows none of it.
-__l3_ran() { printf '\033]133;D;%s\007' "$1"; }
-PS1='$(__l3_ran $?)$(__l3_where) $ '
+# or the tests went) and shows none of it. The prompt line is read again each time it is shown, and starts no
+# shell for it (a subshell is a process of its own each time, and in the browser a costly one, which the app's
+# Prompt was seen waiting on): $? and where you are are read as it is shown.
+PS1=$'\033]133;D;''$?'$'\a''$__l3_here $ '
 alias ll='ls -l'
 
 # What programs keep of a person's work from one Prompt to the next. /root is made new for each Prompt, and its
@@ -33,26 +35,30 @@ export RIPGREP_CONFIG_PATH=/etc/ripgreprc TEALDEER_CONFIG_DIR=/etc/tealdeer FZF_
 # Moving to a directory: zoxide learns it (z goes back to it by a part of its name: `z web` for /root/web-42/src),
 # and direnv loads its .envrc and unloads the one left, where one has been allowed (direnv allow). In ash, which has
 # no hook run before each prompt, both follow cd and z. Neither keeps cd waiting: zoxide learns on its own time, and
-# direnv is asked only where it has something to do (an .envrc here or above, or one loaded to be left).
+# direnv is asked only where it has something to do (an .envrc here or above, or one loaded to be left), which the
+# shell finds out itself, as it does whether git has a repository here: a program started for it is one more each
+# time, and in the browser a costly one.
 . /usr/share/zoxide/init.sh
 # (Without a hook, zoxide's setup leaves out the check its z calls first: there is nothing for it to check.)
 __zoxide_doctor() { :; }
-__l3_envrc() {
-  [ -z "${DIRENV_DIR:-}" ] || return 0
+# Whether NAME is in this folder or one above it, up to STOP (else /).
+__l3_above() {
   __l3_d=$PWD
   while :; do
-    [ ! -e "${__l3_d%/}/.envrc" ] || return 0
-    [ -n "$__l3_d" ] && [ "$__l3_d" != / ] || return 1
+    [ ! -e "${__l3_d%/}/$1" ] || return 0
+    [ -n "$__l3_d" ] && [ "$__l3_d" != "${2:-/}" ] && [ "$__l3_d" != / ] || return 1
     __l3_d=${__l3_d%/*}
   done
 }
+__l3_direnv() { if [ -n "${DIRENV_DIR:-}" ] || __l3_above .envrc; then eval "$(command direnv export bash)"; fi; }
 # zoxide learns a place by reading what it knows and writing it all again, with nothing to keep two from writing at
 # once: of two learnt together (cd a && cd b) the one written last is all that is kept. They learn one at a time,
 # under a lock beside what they keep (where the system has no locks to give, flock says so, and it learns without).
 __l3_learn() { flock "$XDG_DATA_HOME/zoxide.lock" zoxide add -- "$1" || command zoxide add -- "$1"; }
 __l3_moved() {
+  __l3_where
   (__l3_learn "$PWD" > /dev/null 2>&1 &)
-  if __l3_envrc; then eval "$(command direnv export bash)"; fi
+  __l3_direnv
 }
 cd() { command cd "$@" && __l3_moved; }
 z() { __zoxide_z "$@" && __l3_moved; }
@@ -60,16 +66,19 @@ zi() { __zoxide_zi "$@" && __l3_moved; }
 direnv() {
   command direnv "$@"
   set -- $? "${1:-}"
-  case $2 in allow|permit|grant|deny|revoke|disallow|block|reload) __l3_moved ;; esac
+  case $2 in allow|permit|grant|deny|revoke|disallow|block|reload) __l3_direnv ;; esac
   return "$1"
 }
-__l3_moved
+# Started in its repo: what direnv was told to trust there is loaded. zoxide learns the repo when you come back to it,
+# not as each Prompt starts (a process of its own, every start, for a place you are already in).
+__l3_direnv
 
-# The repo's history is the Remote's: git has nothing to say inside it, so it says where to go.
+# The repo's history is the Remote's: git has nothing to say inside it, so it says where to go (unless a repository
+# of git's own is there: a .git in this folder or one above it in the repo, or GIT_DIR).
 git() {
   case $PWD/ in
     "/root/$LENGTH3_REPO"/*)
-      if ! command git rev-parse --git-dir >/dev/null 2>&1; then
+      if [ -z "${GIT_DIR:-}" ] && ! __l3_above .git "/root/$LENGTH3_REPO"; then
         if [ "$LENGTH3_LANG" = ja ]; then
           echo "git: $LENGTH3_REPO の履歴は Remote にあります。Commit・Push・Change はアプリの Git から（l3 git $LENGTH3_REPO で Issue を見られます）" >&2
         else
