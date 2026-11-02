@@ -82,7 +82,7 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=l3-web-${{ hashFiles('os/RELEASE', 'os/core/src/root.rs', 'os/service/releases.ts', 'os/scripts/l3.sh', 'os/scripts/l3.mjs', 'os/scripts/l3-tree.mjs', 'os/scripts/root-file.mjs', 'os/scripts/l3-parity.mjs', 'xlat/Cargo.toml', 'xlat/Cargo.lock', 'xlat/src/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=l3-web-${{ hashFiles('os/RELEASE', 'os/core/src/root.rs', 'os/service/releases.ts', 'os/scripts/l3.sh', 'os/scripts/l3.mjs', 'os/scripts/l3-tree.mjs', 'os/scripts/root-file.mjs', 'os/scripts/l3-parity.mjs', 'xlat/runtime/table.mjs', 'xlat/Cargo.toml', 'xlat/Cargo.lock', 'xlat/src/**') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
