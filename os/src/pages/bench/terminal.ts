@@ -10,6 +10,7 @@ import {errorText} from '../../app/errors.ts';
 import {still} from '../../ui/glide.ts';
 import {Activity} from './activity.ts';
 import {endLine, goDark, jolt, switchOver} from './ending.ts';
+import {clips, heldBack, OSC, RAN} from './osc.ts';
 import {Output, strip} from './output.ts';
 import {FirstPrompt, waitsAt} from './prompt-line.ts';
 import {mirror, snapshot, WriteBack} from './repo-copy.ts';
@@ -33,10 +34,6 @@ export interface Run {
   status?: number | null;
 }
 
-/** What a shell says to its terminal and not to the person (OSC: a title, a run's end): read, never shown. */
-const OSC = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
-/** A run's end, as shell integration says it: OSC 133 D, with its exit status. */
-const RAN = /\x1b\]133;D(?:;(\d+))?(?:\x07|\x1b\\)/g;
 
 /** One line for where loading l3 is; nothing once it is ready. */
 function loadWords(s: Stage): string {
@@ -134,6 +131,8 @@ export class Session {
   private copy: WriteBack;
   /** Whether the shell has waited at a prompt line yet; what was sent before it did, held for it. */
   private first = new FirstPrompt();
+  /** An OSC begun in the last piece of output and not yet ended (osc.ts): read when it ends. */
+  private oscHeld = '';
   /** The prompt line last told to the watchers. */
   private toldLine = '';
 
@@ -237,7 +236,13 @@ export class Session {
   fold() { this.out.fold(); }
 
   /** Output goes on screen and into the run in progress, which ends at the next prompt. */
-  private received(s: string) {
+  private received(piece: string) {
+    // What a shell says to its terminal and not to the person (osc.ts) is read whole, however it came in pieces.
+    const {now, held} = heldBack(this.oscHeld, piece);
+    this.oscHeld = held;
+    let s = now;
+    // What it puts on the clipboard (clip, tmux) goes there, as a terminal puts it; it says itself what it sent.
+    for (const text of clips(s)) void navigator.clipboard?.writeText(text).catch(() => {});
     // How the line run ended, where the shell says it: kept on its run, and none of what it says shown.
     // (The first it says for a run: the line's own, before the prompt line says the last command's again.)
     for (const m of s.matchAll(RAN)) { const r = this.runs.at(-1); if (r && r.ms === null && r.status === undefined) r.status = m[1] === undefined ? null : Number(m[1]); }

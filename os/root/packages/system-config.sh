@@ -1,15 +1,17 @@
 # The root's own settings, as root/etc has them: its accounts (root, who works in it; nobody, for what runs as no
 # one), with no password either, its hosts, git's (the defaults a developer comes to set, delta as its pager, Git
 # LFS's filters), OpenSSH's client's with the keys of the forges it knows from the start, and the Prompt's shell
-# (/etc/profile, /etc/length3/shrc). The shadow files are root's alone. A program's own settings come with it
-# (tmux's, nano's, ripgrep's, lazygit's, tldr's).
+# (/etc/profile, /etc/length3/shrc), and the root's own small commands (clip: what it is given put on the clipboard
+# of the terminal it is shown in). The shadow files are root's alone. A program's own settings come with it (tmux's,
+# nano's, ripgrep's, lazygit's, tldr's).
 version=1
-tools="openssh-keygen openssh-client-default git"
+# script (util-linux-misc): a terminal for clip to be checked on.
+tools="openssh-keygen openssh-client-default git util-linux-misc"
 inputs="etc/passwd etc/group etc/shadow etc/gshadow etc/hosts etc/gitconfig etc/ssh/ssh_config etc/ssh/ssh_known_hosts
-  etc/profile etc/length3/shrc"
+  etc/profile etc/length3/shrc usr/bin/clip"
 build() {
   for f in $inputs; do
-    case $f in etc/shadow|etc/gshadow) m=0600 ;; *) m=0644 ;; esac
+    case $f in etc/shadow|etc/gshadow) m=0600 ;; usr/bin/*) m=0755 ;; *) m=0644 ;; esac
     install -D -m "$m" "$here/$f" "$dest/$f"
   done
 }
@@ -33,4 +35,9 @@ check() {
   # The shell's settings are sh.
   sh -n "$dest/etc/length3/shrc"
   sh -n "$dest/etc/profile"
+  # clip sends what it is given as the terminal reads it, and says what it sent.
+  printf 'one\n日本語\n' > c
+  script -qc "sh '$dest/usr/bin/clip' c" /dev/null < /dev/null > o 2>&1
+  grep -q "$(printf '\033')]52;c;$(base64 < c | tr -d '\n')$(printf '\a')" o
+  grep -q 'clip: 2 lines (14 bytes) sent to the clipboard' o
 }
