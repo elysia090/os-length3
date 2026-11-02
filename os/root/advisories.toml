@@ -54,3 +54,7 @@ reason = "git2 before 0.21: a BlameHunk's signature; delta shows blame from git 
 id = "RUSTSEC-2026-0235"
 ignoreUntil = 2027-02-01
 reason = "rkyv before 0.8: validating an archive; it is rust_decimal's (hyperfine), and hyperfine reads no rkyv archive"
+[[IgnoredVulns]]
+id = "GO-2026-5932"
+ignoreUntil = 2027-02-01
+reason = "golang.org/x/crypto/openpgp, unmaintained with no fix; neither age nor git-lfs imports it"
