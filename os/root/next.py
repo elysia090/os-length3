@@ -22,6 +22,8 @@ Rules beyond "the newest release, not a candidate":
   ncdu               its C line (1.x, its maker's long-term one): 2.x is written in a Zig the build machine has
                      not (2.9 takes 0.14 or 0.15; Alpine 3.24 has 0.16).
   libevent           its stable releases (X.Y.Z-stable); zip, Info-ZIP's last (3.0).
+  tldr-pages         the release before the newest: its makers build the newest release's files again with each
+                     change to the pages (v2.3's of 2 November 2026), so only an older one's stay the file pinned.
   Rust's and Go's    their crates.io and module-proxy releases: what those name is immutable and checked (crates.io's
                      index holds each crate's digest; Go's checksum database each module's); the newest the
                      builder's Rust or Go (Alpine's, as its index has it) builds, by the version each asks for.
@@ -60,13 +62,14 @@ def newest(url, pattern, skip=r'(rc|alpha|beta|pre)\d*'):
     return max(found, key=key)
 
 
-def github(repo, prefix='v', line=''):
-    """The newest release tag of a GitHub repository (its tags, so a release not marked latest is seen too)."""
+def github(repo, prefix='v', line='', back=0):
+    """The newest release tag of a GitHub repository (its tags, so a release not marked latest is seen too); `back`
+    releases before it."""
     tags = re.findall(r'refs/tags/' + re.escape(prefix) + r'(' + re.escape(line) + r'[0-9][0-9.]*)$',
                       get(f'https://github.com/{repo}.git/info/refs?service=git-upload-pack'), re.M)
-    if not tags:
+    if len(set(tags)) <= back:
         raise RuntimeError(f'no tags of {repo}')
-    return max(tags, key=key)
+    return sorted(set(tags), key=key)[-1 - back]
 
 
 @functools.lru_cache(maxsize=None)
@@ -207,8 +210,8 @@ NEWEST = {
     'ZIP': lambda: '3.0',
     'WGET': lambda: newest('https://ftp.gnu.org/gnu/wget/', r'wget-(\d+\.\d+(?:\.\d+)?)\.tar\.gz'),
     'MOREUTILS': lambda: newest('https://deb.debian.org/debian/pool/main/m/moreutils/', r'moreutils_(\d+\.\d+)\.orig\.tar\.xz'),
-    'TLDR_PAGES_EN': lambda: github('tldr-pages/tldr', 'v'),
-    'TLDR_PAGES_JA': lambda: github('tldr-pages/tldr', 'v'),
+    'TLDR_PAGES_EN': lambda: github('tldr-pages/tldr', 'v', back=1),
+    'TLDR_PAGES_JA': lambda: github('tldr-pages/tldr', 'v', back=1),
 }
 
 
