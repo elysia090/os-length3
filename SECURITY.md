@@ -63,7 +63,9 @@ request passes, and the one secret") and are tested in
   in the OS's keyring (the Keychain, Credential Manager without roaming, the
   Secret Service), never in Home's state, a repo or a dotfile; where there is
   no keyring that answers, in a file only the person reads (0600), and
-  `l3 remote sign-in` says which. A program running as the person can still
+  `l3 remote sign-in` says which. In a browser the Agent's key is sealed by
+  the person's passkey (WebAuthn PRF, AES-256-GCM) and opened once a session;
+  where no passkey can seal it, Runtime says it is kept as given. A program running as the person can still
   ask an unlocked keyring for them, as it can on every desktop; what limits
   that is a session's being seen and ended from any other device, and
   Prompts never seeing the folder they are kept in.

@@ -453,7 +453,9 @@ export class Box {
   async #ask(at: string) {
     const question = this.prompt.value.trim();
     if (!question) return;
-    const use = await agentUse();
+    // A sealed key is opened by the person's passkey the first time this session; not opened, nothing is asked.
+    let use;
+    try { use = await agentUse(); } catch (e) { this.#refuse(errorText(e)); return; }
     if (!use) { this.#refuse(t('No API key configured on this device; set one in Runtime')); return; }
     if (this.prompt.value.trim() !== question) return;
     const front = this.#edit.inFront();

@@ -125,5 +125,8 @@ export default {
   'Paste API key': 'API キーを貼り付け',
   'Validating API key…': 'キーを検証中…',
   'Stored securely on this device only. Excluded from dotfiles and Remote sync.': 'このデバイスにのみ安全に保存されます。dotfile には記録されず、Remote に送信されることもありません。',
+  'Sealed by your passkey in this browser, opened once a session. Never sent to the Remote.': 'このブラウザにパスキーで封をして保存し、セッションごとに一度開きます。Remote には送信されません。',
+  'Kept in this browser as given; with a passkey on your Remote it is sealed. Never sent to the Remote.': 'このブラウザにそのまま保存されます。Remote にパスキーがあれば封をして保存します。Remote には送信されません。',
+  'The passkey cannot open the sealed API key': 'パスキーで封をした API キーを開けませんでした',
   'Used by UI Agent and inherited by local Prompts.': '入力欄の Agent がこのキーを使用し、ここで起動した Prompt にも受け渡されます。',
 } as Record<string, string>;

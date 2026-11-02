@@ -20,19 +20,7 @@ test('signing in through a provider shows the Remote as yours, this device among
   expect(cookie?.httpOnly, 'the session is an HttpOnly cookie').toBe(true);
   const signature = decodeURIComponent(cookie!.value).split('.')[1];
   expect(signature.length).toBeGreaterThan(20);
-  const kept = await app.page.evaluate(async () => {
-    const out: string[] = [document.cookie, JSON.stringify({...localStorage}), JSON.stringify({...sessionStorage})];
-    const text = (_k: string, v: unknown) => (v instanceof Uint8Array || v instanceof ArrayBuffer ? new TextDecoder().decode(v) : typeof v === 'bigint' ? String(v) : v);
-    for (const {name} of await indexedDB.databases()) {
-      const db = await new Promise<IDBDatabase>((ok, no) => { const r = indexedDB.open(name!); r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); });
-      for (const store of db.objectStoreNames) {
-        const all = await new Promise<unknown[]>((ok, no) => { const r = db.transaction(store).objectStore(store).getAll(); r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); });
-        out.push(...all.map((v) => JSON.stringify(v, text)));
-      }
-      db.close();
-    }
-    return out.join('\n');
-  });
+  const kept = await app.kept();
   const [session] = decodeURIComponent(cookie!.value).split('.');
   expect(kept.includes(session), 'which session this is, the page knows (what it keeps was read)').toBe(true);
   expect(kept.includes(signature), 'what proves it is in nothing the page keeps').toBe(false);

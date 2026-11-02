@@ -68,8 +68,25 @@ export class App {
     await cdp.send('WebAuthn.enable');
     await cdp.send('WebAuthn.addVirtualAuthenticator', {options: {
       protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true,
-      isUserVerified: true, automaticPresenceSimulation: true,
+      isUserVerified: true, automaticPresenceSimulation: true, hasPrf: true,
     }});
+  }
+
+  /** Everything this page keeps where a page keeps things (cookies scripts read, storage, IndexedDB), as text. */
+  async kept(): Promise<string> {
+    return this.page.evaluate(async () => {
+      const out: string[] = [document.cookie, JSON.stringify({...localStorage}), JSON.stringify({...sessionStorage})];
+      const text = (_k: string, v: unknown) => (v instanceof Uint8Array || v instanceof ArrayBuffer ? new TextDecoder().decode(v) : typeof v === 'bigint' ? String(v) : v);
+      for (const {name} of await indexedDB.databases()) {
+        const db = await new Promise<IDBDatabase>((ok, no) => { const r = indexedDB.open(name!); r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); });
+        for (const store of db.objectStoreNames) {
+          const all = await new Promise<unknown[]>((ok, no) => { const r = db.transaction(store).objectStore(store).getAll(); r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); });
+          out.push(...all.map((v) => JSON.stringify(v, text)));
+        }
+        db.close();
+      }
+      return out.join('\n');
+    });
   }
 
   /** Open the app and wait until it has drawn what it knows. */

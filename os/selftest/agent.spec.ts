@@ -1,5 +1,5 @@
 import type {Page} from '@playwright/test';
-import {expect, test} from './fixtures.ts';
+import {expect, personName, test} from './fixtures.ts';
 
 // The box's Agent: an API key given in Runtime's Agent (beside the dotfiles, apart from them) brings it among what the
 // box does; asked there, the question goes into the right pane, and what the Agent does and says comes under it, the
@@ -68,6 +68,33 @@ test('a key given in Runtime opens the box\'s Agent: asked, it answers in the pa
   await pill.click();
   await expect(app.main.getByRole('menuitemradio', {name: /Ask Agent/})).toHaveCount(0);
   await expect(app.main.getByRole('menuitemradio')).toHaveCount(4);
+});
+
+test('signed in with a passkey, the key given is sealed by it: kept as given nowhere, opened once a session when the Agent is asked', async ({app}, info) => {
+  const told: string[] = [];
+  await maker(app.page, told, () => [{type: 'text', text: 'Sealed and answered.'}]);
+  await app.signIn(personName(info));
+  await app.main.getByRole('region', {name: 'Add passkey'}).getByRole('button', {name: 'Add passkey'}).click();
+  await expect(app.main.getByText('Passkey added', {exact: true})).toBeVisible();
+  await app.runtime.open('Agent');
+  await app.main.getByRole('textbox', {name: 'API key'}).fill(KEY);
+  await app.main.getByRole('button', {name: 'Use', exact: true}).click();
+  await expect(app.main.locator('.agent-line')).toContainText('sk-ant-…9fAA');
+  await expect(app.main.locator('.agent-note')).toContainText('Sealed by your passkey');
+  // Nothing the page keeps holds the key as given.
+  expect((await app.kept()).includes(KEY.slice(13, 40)), 'the key, as given, is in nothing the page keeps').toBe(false);
+
+  // A new session: the Agent asked, the passkey opens the key (the authenticator here answers at once), and it answers.
+  await app.page.reload();
+  await app.settled();
+  await app.rail.go('forge');
+  const box = app.forge.promptBox;
+  await box.click();
+  await box.press('Alt+5');
+  await box.fill('Still there?');
+  await box.press('Control+Enter');
+  const flow = app.page.locator('.work.bench:not([hidden]) .term-out');
+  await expect(flow.locator('.term-answer')).toContainText('Sealed and answered.');
 });
 
 test.describe('signed in', () => {

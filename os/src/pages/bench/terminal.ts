@@ -364,7 +364,7 @@ export class Session {
     this.worker = worker;
     if (!ready) worker.postMessage({type: 'warm'});
     worker.onmessage = ({data}) => this.fromWorker(data);
-    const [l3, copy, kept, use] = await Promise.all([loadL3(), snapshot(this.repo), loadL3().then(keptNow).catch(() => null), agentUse()]).finally(unwatch);
+    const [l3, copy, kept, use] = await Promise.all([loadL3(), snapshot(this.repo), loadL3().then(keptNow).catch(() => null), agentUse(false)]).finally(unwatch);
     // Stopped while it came: it stays stopped.
     if (this.worker !== worker) return;
     this.l3of = l3;

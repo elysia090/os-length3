@@ -74,7 +74,18 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         "dotfiles_in_effect" => to(home::dotfiles_in_effect().into_iter().collect::<std::collections::BTreeMap<_, _>>()),
         // The Agent's key (agent_key.rs), kept on this device only: whether there is one, as it may be shown; kept (with
         // the model it opens) or taken away (`key` null); and, whole, for the page that asks the model with it.
-        "agent_key" => to(agent_key::kept().map(|k| json!({"shown": agent_key::shown(&k.key), "model": k.model}))),
+        // A key a passkey sealed (a browser's: src/home/seal.ts) is said as sealed; the page opens it, once a session.
+        "agent_key" => to(agent_key::held().map(|h| match h {
+            agent_key::Held::Given(k) => json!({"shown": agent_key::shown(&k.key), "model": k.model}),
+            agent_key::Held::Sealed(s) => json!({"shown": s.shown, "model": s.model, "sealed": true}),
+        })),
+        // A key a page sealed by a passkey, kept sealed: `key` read only for how it is shown and its variable, never kept.
+        "agent_key_seal" => {
+            let key = a.s("key")?;
+            let (_, variable) = agent_key::kind(key.trim()).ok_or_else(|| crate::tr!("This is not an API key this OS knows", "この OS が知っている API キーではありません"))?;
+            to(agent_key::seal(&agent_key::Sealed { sealed: a.get("sealed")?, shown: agent_key::shown(key.trim()), variable: variable.into(),
+                model: a.opt::<String>("model")?.unwrap_or_default().trim().into() })?)
+        }
         "agent_key_set" => {
             let key = a.opt::<String>("key")?;
             let model = a.opt::<String>("model")?.unwrap_or_default();
@@ -83,7 +94,10 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         // What a key given would be read as (its variable), before it is kept; refused when it is no key this OS knows.
         "agent_key_kind" => to(agent_key::kind(a.s("key")?.trim()).map(|(_, var)| var)
             .ok_or_else(|| crate::tr!("This is not an API key this OS knows", "この OS が知っている API キーではありません"))?),
-        "agent_key_use" => to(agent_key::kept().and_then(|k| agent_key::kind(&k.key).map(|(_, var)| json!({"key": k.key, "variable": var, "model": k.model})))),
+        "agent_key_use" => to(agent_key::held().and_then(|h| match h {
+            agent_key::Held::Given(k) => agent_key::kind(&k.key).map(|(_, var)| json!({"key": k.key, "variable": var, "model": k.model})),
+            agent_key::Held::Sealed(s) => Some(json!({"sealed": s.sealed, "variable": s.variable, "model": s.model})),
+        })),
 
         // The box's Agent saying what it does, as an agent's hooks do (agents.rs from_box): asked, answered.
         "agent_said" => {

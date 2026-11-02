@@ -394,7 +394,9 @@ export async function addPasskey(name = deviceName()): Promise<void> {
   const {startRegistration} = await webauthn();
   const options = await confirming(() => json<Record<string, unknown>>(`/api/auth/passkey/generate-register-options?name=${encodeURIComponent(name)}`),
     t('Session expired. Please sign in again (via passkey or provider) to continue.'));
-  const response = await startRegistration({optionsJSON: options as never}).catch((e: unknown) => {
+  // Made able to seal (home/seal.ts: WebAuthn's PRF, which an authenticator gives only for a passkey made asking for it).
+  const extensions = {...(options.extensions as Record<string, unknown> | undefined), prf: {}};
+  const response = await startRegistration({optionsJSON: {...options, extensions} as never}).catch((e: unknown) => {
     throw new RemoteError(0, cancelled(e) ? t('Passkey creation cancelled.') : madeAlready(e) ? t('This device already has a passkey for this account.')
       : t('Failed to create passkey ({why}).', {why: String(e)}));
   });

@@ -51,6 +51,29 @@ pub struct Kept {
     pub model: String,
 }
 
+/// The variables a key is read from (kind), by its maker's own tools.
+const VARIABLES: [&str; 10] = ["ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY", "XAI_API_KEY",
+    "GROQ_API_KEY", "GEMINI_API_KEY", "PERPLEXITY_API_KEY", "FIREWORKS_API_KEY", "HF_TOKEN"];
+
+/// The key as a browser keeps it when a passkey sealed it (src/home/seal.ts): opened by the page alone, with the
+/// passkey, once a session; beside it, what is known of it without opening it.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Sealed {
+    /// The key sealed, as the page made it (the passkey's id, the salt it was asked with, the nonce, what was sealed).
+    pub sealed: serde_json::Value,
+    pub shown: String,
+    pub variable: String,
+    #[serde(default)]
+    pub model: String,
+}
+
+/// What is kept: the key as given, or sealed by a passkey (a browser's).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Held {
+    Given(Kept),
+    Sealed(Sealed),
+}
+
 /// What a Prompt started here is told besides: the key under its maker's variable; nothing without one.
 pub fn env() -> Vec<(String, String)> {
     kept().and_then(|k| kind(&k.key).map(|(_, var)| vec![(var.to_string(), k.key)])).unwrap_or_default()
@@ -59,9 +82,9 @@ pub fn env() -> Vec<(String, String)> {
 /// Where earlier releases kept it: a file of its own beside Home's state.
 fn before() -> PathBuf { crate::paths::data_dir().join("agent-key") }
 
-/// The key as given, if one is kept here (vault.rs: the OS's keyring, or a file only this account reads). One kept
-/// where earlier releases kept it is moved there the first time it is read.
-pub fn kept() -> Option<Kept> {
+/// What is kept here, if anything (vault.rs: the OS's keyring, or a file only this account reads). One kept where
+/// earlier releases kept it is moved there the first time it is read.
+pub fn held() -> Option<Held> {
     let text = match crate::vault::get(Secret::AgentKey).ok().flatten() {
         Some(t) => t,
         None => {
@@ -73,10 +96,32 @@ pub fn kept() -> Option<Kept> {
     read(&text)
 }
 
-/// What is kept, read: a key of a form known here, and its model.
-fn read(text: &str) -> Option<Kept> {
-    let k: Kept = serde_json::from_str(text).ok()?;
-    kind(&k.key).map(|_| k)
+/// The key as given, if one is kept here as it was given.
+pub fn kept() -> Option<Kept> {
+    match held()? { Held::Given(k) => Some(k), Held::Sealed(_) => None }
+}
+
+/// What is kept, read: a key of a form known here and its model, or one sealed as `seal` takes it.
+fn read(text: &str) -> Option<Held> {
+    if let Ok(k) = serde_json::from_str::<Kept>(text) { return kind(&k.key).map(|_| Held::Given(k)); }
+    let s: Sealed = serde_json::from_str(text).ok()?;
+    sealed_well(&s).then_some(Held::Sealed(s))
+}
+
+/// Whether `s` is a sealed key as a page makes one: its variable a maker's, how it is shown a key's start and last
+/// four, and what is sealed its four fields of base64url, no larger than a key sealed is.
+fn sealed_well(s: &Sealed) -> bool {
+    let b64 = |v: &serde_json::Value| v.as_str().is_some_and(|t| !t.is_empty() && t.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'));
+    VARIABLES.contains(&s.variable.as_str()) && (5..=24).contains(&s.shown.chars().count()) && s.shown.contains('…')
+        && s.sealed.as_object().is_some_and(|o| o.len() == 5 && o.get("v") == Some(&serde_json::json!(1))
+            && ["credential", "salt", "iv", "data"].iter().all(|k| o.get(*k).is_some_and(b64)))
+        && s.sealed.to_string().len() <= 4096
+}
+
+/// Keep the key sealed, in place of any kept before (a browser's, where a passkey sealed it: src/home/seal.ts).
+pub fn seal(s: &Sealed) -> Result<()> {
+    if !sealed_well(s) { return Err(crate::tr!("This is not a sealed key this OS knows", "この OS が知っている封をしたキーではありません")); }
+    crate::vault::set(Secret::AgentKey, &serde_json::to_string(s).map_err(|e| e.to_string())?)
 }
 
 /// Keep `key` (and the model it opens) here from now on, in place of any kept before; None takes it away.
@@ -145,8 +190,27 @@ mod tests {
     fn kept_as_given_shown_by_its_start_and_last_four() {
         let given = format!("{}a9AA", key("sk-ant-api03-", 91, 'x', None));
         let k = read(&written(&format!(" {given} "), " m ").unwrap()).unwrap();
-        assert_eq!(k, Kept { key: given.clone(), model: "m".into() });
-        assert_eq!(shown(&k.key), "sk-ant-…a9AA");
+        assert_eq!(k, Held::Given(Kept { key: given.clone(), model: "m".into() }));
+        assert_eq!(shown(&given), "sk-ant-…a9AA");
+    }
+
+    #[test]
+    fn a_key_sealed_is_kept_as_a_page_seals_one_and_nothing_else_is() {
+        let sealed = |v: serde_json::Value| Sealed { sealed: v, shown: "sk-ant-…a9AA".into(), variable: "ANTHROPIC_API_KEY".into(), model: "m".into() };
+        let good = serde_json::json!({"v": 1, "credential": "Y3JlZA", "salt": "c2FsdA", "iv": "aXY", "data": "ZGF0YQ"});
+        let s = sealed(good.clone());
+        assert_eq!(read(&serde_json::to_string(&s).unwrap()), Some(Held::Sealed(s)));
+        // The key itself is never taken for sealed, nor anything but the four fields of base64url.
+        for bad in [serde_json::json!({"v": 1, "credential": "c", "salt": "s", "iv": "i"}), serde_json::json!({"v": 2, "credential": "c", "salt": "s", "iv": "i", "data": "d"}),
+            serde_json::json!({"v": 1, "credential": "c", "salt": "s", "iv": "i", "data": "sk-ant-api03 key"}), serde_json::json!("text")] {
+            assert!(!sealed_well(&sealed(bad.clone())), "{bad}");
+        }
+        assert!(!sealed_well(&Sealed { variable: "PATH".into(), ..sealed(good.clone()) }), "a maker's variable only");
+        assert!(!sealed_well(&Sealed { shown: format!("{}a9AA", key("sk-ant-api03-", 91, 'x', None)), ..sealed(good) }), "shown, never whole");
+        // Every maker's variable is one a sealed key may be read from.
+        for k in [format!("{}AA", key("sk-ant-api03-", 93, 'x', None)), key("sk-or-v1-", 64, 'f', None), key("hf_", 34, 'Q', None)] {
+            assert!(VARIABLES.contains(&kind(&k).unwrap().1));
+        }
     }
 
     #[test]

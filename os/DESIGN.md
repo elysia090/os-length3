@@ -2695,8 +2695,13 @@ or goes).
   newest the key opens that answers, read from the maker's own list when the
   key is given (Trying the key…), never written into the OS. It is kept as
   the device's session is (`core/src/vault.rs`: the OS's keyring, else a file
-  only the person reads; in the browser's own keeping on the web), whole only
-  to the page that asks and to
+  only the person reads). In a browser, whose keeping is its profile's files,
+  it is sealed by the person's passkey where there is one with PRF
+  (`src/home/seal.ts`: AES-256-GCM under a key HKDF derives from what the
+  passkey's PRF gives, after it verifies the person), opened the first time
+  the Agent is asked in a session, and the key itself never reaches the
+  core; where none can seal it, it is kept as given, and Runtime says which.
+  A passkey is made asking for PRF. Whole only to the page that asks and to
   each Prompt started here, in its environment under the name its maker's
   tools read (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …). The page asks the
   maker directly, so its policy lets it reach those makers' APIs and nothing
