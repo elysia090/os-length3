@@ -237,18 +237,21 @@ make_one() {
   # Every unit of its programs and libraries compiled with the hardening every unit here is (the compiler's defaults),
   # but for what its recipe departs from, as GCC recorded each unit's flags. A program none of whose units GCC
   # recorded is Rust's or Go's (whose compilers take none of these), or it was compiled by another compiler than
-  # this; a library's units without a record are its assembly.
+  # this; a library's units without a record are its assembly. A Go program's C is Go's runtime/cgo (and what its
+  # module compiles), which Go compiles without the stack protector, on stacks it makes itself (cgo.go; Go issues
+  # 52919, 54313, 58385).
   departs=" $(field "$name" departs) "
   weak=$(find "$t" -type f | while read -r f; do
     case $f in *.a|*.o) ;; *) [ -x "$f" ] && is_elf "$f" || continue ;; esac
     units=$(readelf -p .GCC.command.line "$f" 2>/dev/null | sed -n 's/^ *\[ *[0-9a-f]*\]  //p')
+    go=; readelf -S "$f" 2>/dev/null | grep -qF .go.buildinfo && go=1
     if [ -z "$units" ]; then
       case $f in *.a|*.o) continue ;; esac
       readelf -p .comment "$f" 2>/dev/null | grep -q 'rustc version' && continue
-      readelf -S "$f" | grep -qF .go.buildinfo && continue
+      [ -z "$go" ] || continue
       echo "${f#"$t/"} (compiled with no record of its flags)"; continue
     fi
-    lacks=$(echo "$units" | awk -v departs="$departs" "$weaker")
+    lacks=$(echo "$units" | awk -v departs="$departs${go:+stack-protector }" "$weaker")
     [ -z "$lacks" ] || echo "${f#"$t/"} (without $lacks)"
   done)
   [ -z "$weak" ] || { say "$name: compiled with less than every build is: $weak"; exit 1; }
