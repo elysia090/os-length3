@@ -18,7 +18,7 @@
 #                       the first unpacked where it is built, the others by `unpack NAME DIR`
 #   needs="PKG..."      packages it builds against: their trees, together, are $deps, which CPPFLAGS, LDFLAGS and
 #                       pkg-config point to (and nothing of the build machine's own besides its libc and kernel headers)
-#   tools="APK..."      Alpine packages it is built with
+#   tools="APK..."      Alpine packages it is built with (their versions are in its key)
 #   patches="FILE..."   under root/packages/, applied in order (-p1)
 #   inputs="FILE..."    other files of root/ it is made from (from root/: etc/passwd), in its key too; $here is root/
 #   flat=1              its first pin's archive has no top directory to take off (tzdata's)
@@ -81,6 +81,8 @@ key_of() {
     for p in $(field "$1" patches); do echo "$p"; cat "$recipes/$p"; done
     for f in $(field "$1" inputs); do echo "$f"; cat "$here/$f"; done
     for n in $(field "$1" needs); do echo "$n $(cat "$out/$n/key")"; done
+    # The tools it is built with, at the versions this machine has them (a Rust or Go program is its compiler's).
+    for t in $(field "$1" tools); do echo "$t $(installed "$t")"; done
   } | sha256sum | cut -d' ' -f1
 }
 
@@ -129,6 +131,16 @@ make_one() {
     # libtool takes -static as "prefer static libraries" and links a dynamic program: at make time it is told
     # -all-static, which it passes on.
     allstatic="-all-static $ld${with:+ -L$deps/usr/lib}"
+    # What is written in Rust or Go is built as the rest is: static PIEs with full RELRO and no executable stack,
+    # their dependencies exactly as their lockfiles say (cargo --locked; go -mod=readonly, each module checked
+    # against Go's checksum database), fetched into this build's own place, and nothing of that place in what they
+    # make (rustc's --remap-path-prefix, go's -trimpath). Go links through GCC, as a static PIE ($golink, inside a
+    # recipe's -ldflags).
+    export CARGO_HOME="$w/cargo" CARGO_TARGET_DIR="$w/target" \
+      RUSTFLAGS="-C target-feature=+crt-static -C relocation-model=pie -C link-arg=$ld --remap-path-prefix=$w/=" \
+      GOPATH="$w/go" GOCACHE="$w/go-cache" GOTOOLCHAIN=local GOFLAGS='-trimpath -mod=readonly -buildvcs=false' \
+      CGO_ENABLED=1 CGO_CFLAGS='-O2 -fstack-protector-strong -fstack-clash-protection -fcf-protection' CGO_LDFLAGS="$ld"
+    golink='-linkmode=external -extldflags=-static-pie'
     eval "$fields"
     . "$recipes/$name.sh"
     build
