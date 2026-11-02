@@ -100,6 +100,9 @@ else
   }
   less() { __l3_whole "$@"; }
   more() { __l3_whole "$@"; }
+  # The Prompt clears what it shows when told as a terminal is (ESC [ H ESC [ 2 J); clear asks terminfo how, and a
+  # dumb terminal there has no way to, so it would say nothing.
+  clear() { printf '\033[H\033[2J'; }
   __l3_screen() {
     if [ "$LENGTH3_LANG" = ja ]; then
       echo "$1 は画面に描くプログラムで、アプリの Prompt は出力を見せるだけです。ファイルは Forge で編集でき、自分の端末からは SSH でこの Prompt に入れます（l3 address）" >&2
