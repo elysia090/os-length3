@@ -51,13 +51,11 @@ __l3_above() {
   done
 }
 __l3_direnv() { if [ -n "${DIRENV_DIR:-}" ] || __l3_above .envrc; then eval "$(command direnv export bash)"; fi; }
-# zoxide learns a place by reading what it knows and writing it all again, with nothing to keep two from writing at
-# once: of two learnt together (cd a && cd b) the one written last is all that is kept. They learn one at a time,
-# under a lock beside what they keep (where the system has no locks to give, flock says so, and it learns without).
-__l3_learn() { flock "$XDG_DATA_HOME/zoxide.lock" zoxide add -- "$1" || command zoxide add -- "$1"; }
+# (Two zoxides at once, a place learnt while z looks one up, each keep what the other did: the root's zoxide holds
+# what it keeps while it reads and writes it, packages/zoxide.sh.)
 __l3_moved() {
   __l3_where
-  (__l3_learn "$PWD" > /dev/null 2>&1 &)
+  (zoxide add -- "$PWD" > /dev/null 2>&1 &)
   __l3_direnv
 }
 cd() { command cd "$@" && __l3_moved; }

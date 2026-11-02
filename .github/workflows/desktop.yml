@@ -450,10 +450,9 @@ jobs:
           # once allowed, is what the environment becomes there.
           echo 'export MADE=here' > "$w/p/src/.envrc"
           prompt() { inside "HOME=/tmp/home XDG_DATA_HOME=/tmp/home/share XDG_STATE_HOME=/tmp/home/state TERM=dumb ENV=/etc/length3/shrc sh -ic '$1' 2>/dev/null"; }
-          # (zoxide learns a place on its own time, so cd is not kept waiting: it is given up to five seconds. Not
-          # learnt, what zoxide keeps and what it says when asked to learn it are said.)
-          says "prompt 'cd /tmp/p/src && cd / && for i in 1 2 3 4 5 6 7 8 9 10; do zoxide query src > /dev/null 2>&1 && break; sleep 0.5; done; z src && pwd'" /tmp/p/src ||
-            { inside 'ls -laR /tmp/home; HOME=/tmp/home XDG_DATA_HOME=/tmp/home/share zoxide add /tmp/p/src; echo "add: $?"; HOME=/tmp/home XDG_DATA_HOME=/tmp/home/share zoxide query --list' >&2; exit 1; }
+          # (zoxide learns a place on its own time, so cd is not kept waiting: it is given up to five seconds, while
+          # the place left is learnt too and z's own lookups run.)
+          says "prompt 'cd /tmp/p/src && cd / && for i in 1 2 3 4 5 6 7 8 9 10; do zoxide query src > /dev/null 2>&1 && break; sleep 0.5; done; z src && pwd'" /tmp/p/src
           says "prompt 'cd /tmp/p/src && direnv allow . && echo \$MADE'" here
           # clear clears the app's Prompt, as the Prompt is told (ncurses' clear, asking terminfo of a dumb terminal, says nothing).
           says "prompt clear | od -An -c | tr -d ' \\n'" '033[H033[2J'
