@@ -18,11 +18,15 @@ Rules beyond "the newest release, not a candidate":
   OpenSSL            the newest patch release of the long-term-support line pinned (3.5 is supported to 2030).
   Linux              kernel.org's latest stable.
   tzcode             the release of tzdata (the build checks they are the same).
+  less               the version its maker recommends (the download page lists betas beside it).
+  bash               its release; its makers' patches to it are root/packages/bash/ (each checked by its signature
+                     when it is taken), and a patch past them is said (bash-X.Y-patches/).
 Runs where every maker's site can be reached (GitHub Actions: .github/workflows/sources-next.yml).
 """
 import functools
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -101,6 +105,9 @@ NEWEST = {
     'XZ': lambda: github('tukaani-project/xz'),
     'BZIP2': lambda: newest('https://sourceware.org/pub/bzip2/', r'bzip2-(\d+\.\d+\.\d+)\.tar\.gz'),
     'PATCH': lambda: newest('https://ftp.gnu.org/gnu/patch/', r'patch-(\d+\.\d+(?:\.\d+)?)\.tar\.xz'),
+    'GREP': lambda: newest('https://ftp.gnu.org/gnu/grep/', r'grep-(\d+\.\d+(?:\.\d+)?)\.tar\.xz'),
+    'LESS': lambda: newest('https://www.greenwoodsoftware.com/less/download.html', r'RECOMMENDED</strong> version (\d+)'),
+    'GNU_BASH': lambda: newest('https://ftp.gnu.org/gnu/bash/', r'bash-(\d+\.\d+)\.tar\.gz'),
     'FILE': lambda: newest('https://astron.com/pub/file/', r'file-(\d+\.\d+)\.tar\.gz'),
     'PKGCONF': lambda: newest('https://distfiles.ariadne.space/pkgconf/', r'pkgconf-(\d+\.\d+\.\d+)\.tar\.xz'),
     'OPENSSH': lambda: newest('https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/', r'openssh-(\d+\.\d+p\d+)\.tar\.gz'),
@@ -173,11 +180,28 @@ def one_file(path):
     return [r[:4] for r in rows], out
 
 
+def bash_patches(path):
+    """bash's makers' patches to the release pinned: how many root/packages/bash/ holds, and how many they publish."""
+    pins = dict(l.split('=', 1) for l in open(path).read().splitlines() if '=' in l and not l.startswith('#'))
+    release = pins.get('GNU_BASH_VERSION')
+    if not release:
+        return []
+    tag = 'bash' + release.replace('.', '')
+    held = os.path.join(os.path.dirname(os.path.abspath(path)), 'packages', 'bash')
+    have = len([f for f in os.listdir(held) if re.fullmatch(tag + r'-\d{3}', f)]) if os.path.isdir(held) else 0
+    try:
+        out = len(set(re.findall(tag + r'-(\d{3})(?![.\d])', get(f'https://ftp.gnu.org/gnu/bash/bash-{release}-patches/'))))
+        note = 'patches held' if out == have else f'{out - have} more of its makers\' patches: take each, checked by its .sig'
+    except Exception as e:
+        out, note = '?', f'{type(e).__name__}: {e}'
+    return [('GNU_BASH patches', str(have), str(out), note)]
+
+
 def main():
     rows, outs = [], []
     for path in sys.argv[1:]:
         r, out = one_file(path)
-        rows += r
+        rows += r + bash_patches(path)
         outs.append(out)
     width = max(len(r[0]) for r in rows)
     print(f'{"":{width}}  pinned        newest        ')

@@ -1,2 +1,4 @@
 # Unified patch context records an empty line with a single leading space.
 os/root/packages/**/*.patch whitespace=-blank-at-eol
+# bash's own patches, kept as its makers publish them (context diffs of their source, whitespace and all).
+os/root/packages/bash/bash53-* whitespace=-blank-at-eol,-trailing-space,-space-before-tab

@@ -36,7 +36,7 @@ check() {
   [ "$("$b" find . -maxdepth 1 -type f -name t -exec "$b" wc -l {} +)" = '3 ./t' ]
   "$b" mkdir --parents p/q && "$b" cp --recursive p r && "$b" ls --color=never --almost-all r | grep -qx q
   # Not here: what a package has whole, what only a booting machine has, servers, logins, an unchecked TLS.
-  for a in tar gzip mount ip clear strings init modprobe mdev httpd crond su passwd wget hush man; do
+  for a in tar grep less gzip mount ip clear strings init modprobe mdev httpd crond su passwd wget hush man; do
     ! "$b" --list | grep -qx "$a"
   done
 }
