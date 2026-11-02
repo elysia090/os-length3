@@ -101,3 +101,21 @@ test('kept: a root program translated once is taken from the keeper by the next 
   assert.equal(a.reads.n, 1);
   assert.equal(b.reads.n, 0);
 });
+
+test('kept: a root program translated ahead (ahead.mjs, as the page does while a person reads) is run from that, never translated or read', {skip: !have}, async () => {
+  const {translatedAhead} = await import('../runtime/ahead.mjs');
+  const elf = readFileSync(new URL('busybox', stage));
+  // As its pack holds it, zstd's frame or as it is: here as it is.
+  const {wasm, segments} = await translatedAhead(readFileSync(new URL('xlat.wasm', stage)), new Uint8Array(elf), {raw: true, size: elf.length, shared: false});
+  const kept = {module: new WebAssembly.Module(wasm), segments, size: wasm.length, more: []};
+  let asked = 0;
+  const keeper = {has: (origin) => origin === 'pack_0_1', take: () => (++asked === 1 ? undefined : kept)};
+  const a = await kernel();
+  assert.equal(await run(a.k, '/usr/bin/echo echo ahead'), 0);
+  const b = await kernel({keeper});
+  const before = PROFILE.images;
+  assert.equal(await run(b.k, '/usr/bin/echo echo ahead'), 0);
+  assert.equal(b.out(), a.out());
+  assert.equal(PROFILE.images - before, 0, 'not translated when run');
+  assert.equal(b.reads.n, 0, 'nor read');
+});

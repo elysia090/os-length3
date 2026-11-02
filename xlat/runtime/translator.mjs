@@ -23,6 +23,8 @@ export async function loadTranslator(source) {
   function translate(elf) {
     return output(x.xlat_translate(put(elf), elf.length));
   }
+  /** As translate, all of the program: as the release translates the hot ones, and a page a program ahead of its run. */
+  translate.whole = (elf) => output(x.xlat_translate_whole(put(elf), elf.length));
   const words = (list) => new Uint8Array(new BigUint64Array(list.map(BigInt)).buffer);
   /** As translate, and from the function starts `seeds` too: the program with the code it reached later, as one module. */
   translate.seeded = function seeded(elf, seeds) {

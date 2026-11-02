@@ -68,6 +68,8 @@
 // translation an earlier Prompt made is read from that Cache Storage instead
 // (by its file's origin, pack.mjs: the URLs of its translation and of the
 // code it reached later, keeper.mjs), and the exec waits only for that read.
+// A program the page translates ahead while a person reads (os/src/prompt/ahead.ts) is told as it is kept,
+// {type: 'kept', at: {[origin]: {main, more}}}, and read as one kept before would be.
 // What is translated here of a root file is said once the kernel pauses, for
 // the page to keep: {type: 'translated', origin, wasm, segments} once, then
 // {type: 'reached', origin, from, more} as code is reached later; and what
@@ -93,6 +95,8 @@ let ended = false;
 const kept = [];
 /** Translations kept from earlier Prompts (keeper.mjs), when the page has any. */
 let keep = null;
+/** What is kept, by origin, as 'start' said it: a program translated ahead later ({type: 'kept', at}) is put here. */
+let keptAt = null;
 
 function read(n) {
   if (!pending.length) return ended ? new Uint8Array(0) : null;
@@ -228,6 +232,8 @@ self.onmessage = async ({data}) => {
   if (data.type === 'free') { if (kernel) self.postMessage({type: 'freed', ...kernel.free(0)}); return; }
   if (data.type === 'warm') { if (canRunApart()) warmThreads(); return; }
   if (data.type === 'hot') { if (kernel) given(data.files); return; }
+  // A program translated ahead by the page since this Prompt started (os/src/prompt/ahead.ts): read when it is run.
+  if (data.type === 'kept') { if (keptAt) Object.assign(keptAt, data.at); return; }
   // (A failure is said by the 'start' that waits for it.)
   if (data.type === 'ready') { ready(data).catch(() => {}); return; }
   if (data.type !== 'start') return;
@@ -254,6 +260,7 @@ self.onmessage = async ({data}) => {
     };
     // Translations kept from earlier Prompts: read when their program is first run, the kernel looking again once they are.
     keep = data.kept ? keeper(data.kept, () => nudge(), (urls) => self.postMessage({type: 'used', urls})) : null;
+    keptAt = data.kept?.at ?? null;
     kernel = apart ? new RemoteKernel({vfs, translate, console, keeper: keep, onIdle: (r) => paused(r), consolidateIdle: true})
       : new Kernel({vfs, translate, console, keeper: keep, consolidateIdle: true});
     for (const f of files) if (f.module) runs(vfs.lookup(f.path, '/'), f);

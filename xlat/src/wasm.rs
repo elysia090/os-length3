@@ -114,6 +114,24 @@ pub unsafe extern "C" fn xlat_translate(ptr: *mut u8, len: usize) -> i32 {
     status
 }
 
+/// As `xlat_translate`, all of the program (discover::discover_whole), as the hot programs are translated in the
+/// release: what a page translates ahead of a program's first run (runtime/ahead.mjs), so the run reaches nothing later.
+///
+/// # Safety
+/// As `xlat_translate`.
+#[no_mangle]
+pub unsafe extern "C" fn xlat_translate_whole(ptr: *mut u8, len: usize) -> i32 {
+    let (status, out) = match crate::elf::Elf::parse_owned(Vec::from_raw_parts(ptr, len, len)) {
+        Ok(elf) => {
+            let program = crate::discover::discover_whole(&elf);
+            (0, crate::lower::translate(&elf, &program, crate::lower::Options::default()).wasm)
+        }
+        Err(e) => (1, e.to_string().into_bytes()),
+    };
+    OUTPUT.with(|o| *o.borrow_mut() = out);
+    status
+}
+
 /// As `xlat_translate`, and from the function starts at `seeds` (`n_seeds` u64s, left to the host) too: a program
 /// with its code reached later, in one module (discover::discover_seeded).
 ///

@@ -421,14 +421,24 @@ async function sealed(body: Uint8Array): Promise<Uint8Array> {
 type Reached = {list: {bytes: Uint8Array; base: number}[]; saved: number; timer: number; url: string; ready: Promise<void>};
 const reached = new Map<string, Reached>();
 
+/** Where a file of the root is in its pack, as a translation of it is kept by (xlat/runtime/pack.mjs origin). */
+export const originOf = (index: Index, f: Index['files'][number]) => `${index.packs[f.pack].name.replace(/\.pack$/, '')}_${f.at}_${f.len}`;
+
+/** Whether a translation of the file at `origin`, by this translator, is kept here. */
+export async function translationKept(l3: L3, origin: string): Promise<boolean> {
+  const c = await open();
+  return !!(await c?.match(translatedURL(origin, keptTag(l3.index), 'wasm')).catch(() => undefined));
+}
+
 /**
- * A program a Prompt translated (its module as the kernel runs it, and its data segments, or null when they are in
- * it): kept for the Prompts after it, 'L3T1' (keeper.mjs).
+ * A program a Prompt translated, or one translated ahead of its first run (ahead.ts) (its module as the kernel runs
+ * it, and its data segments, or null when they are in it): kept for the Prompts after it, 'L3T1' (keeper.mjs). Once
+ * kept, the URL it is kept at; null when it is not (no room, no Cache Storage).
  */
-export function keepTranslation(l3: L3, origin: string, wasm: Uint8Array, segments: Segment[] | null) {
+export function keepTranslation(l3: L3, origin: string, wasm: Uint8Array, segments: Segment[] | null): Promise<string | null> {
   const tag = keptTag(l3.index);
   reached.set(origin, {list: [], saved: 0, timer: 0, url: translatedURL(origin, tag, 'more'), ready: Promise.resolve()});
-  void (async () => {
+  return (async () => {
     await idle();
     const n = segments?.length ?? 0;
     const body = new Uint8Array(8 + (segments ?? []).reduce((k, s) => k + 8 + s.bytes.length, 0) + 4 + wasm.length);
@@ -439,13 +449,15 @@ export function keepTranslation(l3: L3, origin: string, wasm: Uint8Array, segmen
     for (const s of segments ?? []) { v.setUint32(at, s.offset); v.setUint32(at + 4, s.bytes.length); body.set(s.bytes, at + 8); at += 8 + s.bytes.length; }
     v.setUint32(at, wasm.length);
     body.set(wasm, at + 4);
-    await keep(translatedURL(origin, tag, 'wasm'), await sealed(body));
+    const main = translatedURL(origin, tag, 'wasm');
+    const kept = await keep(main, await sealed(body));
     // The code an earlier translation of it reached later went with that one (a program translated again as one
     // module: xlat's Kernel.consolidate): a Prompt after would read it all, to take none of it.
     const c = await open();
     const more = translatedURL(origin, tag, 'more');
     if (c && reached.get(origin)?.saved === 0 && await c.delete(more).catch(() => false)) gone(c, more);
-  })().catch(() => {});
+    return kept ? whole(main) : null;
+  })().catch(() => null);
 }
 
 /** The code a translated program reached later (the kernel's modules from the `from`th on): kept with it. */

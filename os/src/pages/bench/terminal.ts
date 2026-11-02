@@ -8,6 +8,7 @@ import {filesNow, hearLater, keepMore, keepReached, keepTranslation, keptNow, lo
 import {every} from '../../app/runs.ts';
 import {errorText} from '../../app/errors.ts';
 import {still} from '../../ui/glide.ts';
+import {aheadFor, hearAhead, translateAhead} from '../../prompt/ahead.ts';
 import {Activity} from './activity.ts';
 import {endLine, goDark, jolt, switchOver} from './ending.ts';
 import {clips, heldBack, OSC, RAN} from './osc.ts';
@@ -128,6 +129,8 @@ export class Session {
   /** The paths its Worker was given (the hot programs among them), and how it stops hearing of those ready later. */
   private given = new Set<string>();
   private unhear: (() => void) | null = null;
+  /** The repo's files as its Prompt was started with them: what it is likely to run is read from them (ahead.ts). */
+  private repoFiles: string[] = [];
   private copy: WriteBack;
   /** Whether the shell has waited at a prompt line yet; what was sent before it did, held for it. */
   private first = new FirstPrompt();
@@ -261,13 +264,18 @@ export class Session {
         if (!this.worker) return;
         warmL3(l3);
         // And this Prompt runs each of them from its next run on, as it is ready.
-        this.unhear = hearLater((f) => {
+        const hot = hearLater((f) => {
           if (this.given.has(f.path) || !this.worker) return;
           this.given.add(f.path);
           this.worker.postMessage({type: 'hot', files: [f]});
           // Which programs it was given so, as its threads are said (data-threads).
           this.element.dataset.ahead = [this.element.dataset.ahead, f.path].filter(Boolean).join(' ');
         });
+        // What this repo is likely to run next, translated by this browser while the person reads (ahead.ts): each one
+        // kept is told to this Prompt's kernel, which reads it when it is first run rather than translating it then.
+        const ahead = hearAhead((origin, url) => this.worker?.postMessage({type: 'kept', at: {[origin]: {main: url, more: null}}}));
+        this.unhear = () => { hot(); ahead(); };
+        void translateAhead(l3, aheadFor(l3.index, this.repoFiles));
       }, 3000);
     }
     const run = this.runs.at(-1);
@@ -360,6 +368,7 @@ export class Session {
     // Stopped while it came: it stays stopped.
     if (this.worker !== worker) return;
     this.l3of = l3;
+    this.repoFiles = copy.files.map((f) => f.path);
     const start = startMessage(this.repo, l3, copy, kept, use ? [`${use.variable}=${use.key}`] : [], ready?.given ?? null);
     worker.postMessage(start);
     this.given = new Set([...(ready?.given ?? []), ...start.files.map((f) => f.path)]);
