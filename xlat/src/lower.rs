@@ -997,6 +997,53 @@ impl Fx<'_> {
         self.write(i, 0, size, l_t(3))
     }
 
+    /// rcl/rcr: rotate through the carry, by a count the instruction holds (its immediate, or the 1 of its short
+    /// form; a count in CL is not lowered). Go's compiler makes `rcr $1` for division by a constant (the carry of
+    /// an add put back as the top bit). Only CF and OF change.
+    fn rotate_carry(&mut self, i: &Instruction, op: Mnemonic, need: bool) -> bool {
+        let size = Self::size(i, 0);
+        let bits = size as i64 * 8;
+        let masked = match i.op1_kind() {
+            OpKind::Register => return false,
+            OpKind::Immediate8 => i.immediate8() as i64 & if size == 8 { 63 } else { 31 },
+            _ => 1,
+        };
+        // The rotation goes through bits + 1 places (the value and CF): an 8- or 16-bit count is taken mod that.
+        let c = if size < 4 { masked % (bits + 1) } else { masked };
+        if c == 0 {
+            return true;
+        }
+        if !self.read(i, 0, size) { return false; }
+        self.set(l_t(1));
+        self.flag(Flag::C); self.e(W::I64ExtendI32U); self.set(l_t(2));
+        let left = op == Mnemonic::Rcl;
+        // rcr: x >> c | CF << (bits - c) | x << (bits + 1 - c); rcl: x << c | CF << (c - 1) | x >> (bits + 1 - c).
+        // A term shifted by the whole width holds nothing (wasm would take the shift mod 64): it is left out.
+        let (near, far) = if left { (W::I64Shl, W::I64ShrU) } else { (W::I64ShrU, W::I64Shl) };
+        if c < bits { self.get(l_t(1)); self.c64(c); self.e(near); } else { self.c64(0); }
+        self.get(l_t(2)); self.c64(if left { c - 1 } else { bits - c }); self.e(W::I64Shl); self.e(W::I64Or);
+        if c > 1 { self.get(l_t(1)); self.c64(bits + 1 - c); self.e(far); self.e(W::I64Or); }
+        self.mask_to(size); self.set(l_t(3));
+        if need {
+            self.hold_flags();
+            // CF: the last bit rotated out of the value.
+            self.get(l_t(1)); self.c64(if left { bits - c } else { c - 1 }); self.e(W::I64ShrU);
+            self.c64(1); self.e(W::I64And); self.e(W::I32WrapI64); self.set(L_CF);
+            // OF, defined for a count of 1: the result's top bit against CF after (rcl) or its next bit (rcr).
+            if c == 1 {
+                self.sign_bit(l_t(3), size);
+                if left {
+                    self.get(L_CF);
+                } else {
+                    self.get(l_t(3)); self.c64(bits - 2); self.e(W::I64ShrU); self.c64(1); self.e(W::I64And);
+                    self.e(W::I32WrapI64);
+                }
+                self.e(W::I32Xor); self.set(L_OF);
+            }
+        }
+        self.write(i, 0, size, l_t(3))
+    }
+
     /// shld/shrd: shift `dst` filling from `src`.
     fn double_shift(&mut self, i: &Instruction, need: bool) -> bool {
         let size = Self::size(i, 0);
@@ -1369,6 +1416,7 @@ impl Fx<'_> {
             Sbb => self.carry(i, true),
             Inc | Dec | Neg | Not => self.unary(i, m),
             Shl | Sal | Shr | Sar | Rol | Ror => self.shift(i, m, need),
+            Rcl | Rcr => self.rotate_carry(i, m, need),
             Imul | Mul => self.multiply(i, need),
             Div | Idiv => self.divide(i),
             Cbw => { self.read_reg(Register::AL); self.sign_extend(1); self.write_reg(Register::AX) }
