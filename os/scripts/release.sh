@@ -82,19 +82,18 @@ mv "$out/smoke.png" "$out/../smoke.png"
 node scripts/pin-desktop.mjs "$version" "$out/$deb" "$out/$appimage"
 
 cd "$out"
-basefile=$(basename "$base")
-sha256sum "$l3web" "$web" "$deb" "$appimage" "$basefile" $film >> SHA256SUMS
+sha256sum "$l3web" "$web" "$deb" "$appimage" $film >> SHA256SUMS
 rootfile=$(basename "$root")
 size() { stat -c %s "$1"; }
 digest() { sha256sum "$1" | cut -d' ' -f1; }
 {
   echo "# OS Length3 Linux $version"
   echo
-  echo "The base root laid out for Prompts (nothing only a booted machine needs, nor what a Prompt has nothing for; merged /usr), with l3, its profile and shell from \`$sha\`, and OpenSSL, OpenSSH's client, curl and git made again at this tree's pins (\`manifest\` says each, and its source's digest); the web build of the same tree, whose Prompt runs that whole root (each file fetched when a program first reads it); and the desktop app (Length³ OS for x86-64 Linux, a .deb and an AppImage): the same UI, its Prompt running that root on the machine, which it installs and trusts by the digest pinned in this release. \`$basefile\` is the base it was made from, carried here so the next release is made from it as this one was.${film:+ \`$film\` shows it at work.}"
+  echo "The root, laid out for Prompts (merged /usr): each of its $(grep -c '^package\.' manifest) packages made by its recipe (\`os/root/packages\`) from the source this tree pins, checked against its digest, on one pinned Alpine, static and hardened, with l3, its profile and shell from \`$sha\` (\`manifest\` says each package's version, its source's digest and the key it was made under); the web build of the same tree, whose Prompt runs that whole root (each file fetched when a program first reads it); and the desktop app (Length³ OS for x86-64 Linux, a .deb and an AppImage): the same UI, its Prompt running that root on the machine, which it installs and trusts by the digest pinned in this release.${film:+ \`$film\` shows it at work.}"
   echo
   echo "| File | Bytes | SHA-256 |"
   echo "| --- | --- | --- |"
-  for f in "$rootfile" "$l3web" "$web" "$deb" "$appimage" "$basefile" $film; do
+  for f in "$rootfile" "$l3web" "$web" "$deb" "$appimage" $film; do
     echo "| \`$f\` | $(size "$f") | \`$(digest "$f")\` |"
   done
   echo
@@ -120,6 +119,6 @@ digest() { sha256sum "$1" | cut -d' ' -f1; }
   echo "}"
   echo '```'
   echo
-  echo "\`manifest\` names the base, the l3 inside and the script that made it. The web build opens with any static server (\`npx serve\` in the unzipped folder). The desktop app: \`sudo apt install ./$deb\`, or \`chmod +x $appimage\` and run it (x86-64 Linux with glibc 2.39 or newer: Ubuntu 24.04, Debian 13 and later, with a desktop's libEGL)."
+  echo "\`manifest\` names each package, the l3 inside and the script that put them together. The web build opens with any static server (\`npx serve\` in the unzipped folder). The desktop app: \`sudo apt install ./$deb\`, or \`chmod +x $appimage\` and run it (x86-64 Linux with glibc 2.39 or newer: Ubuntu 24.04, Debian 13 and later, with a desktop's libEGL)."
 } > ../notes.md
 cat ../notes.md
