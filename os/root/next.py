@@ -19,17 +19,25 @@ Rules beyond "the newest release, not a candidate":
   Linux              kernel.org's latest stable.
   tzcode             the release of tzdata (the build checks they are the same).
   less               the version its maker recommends (the download page lists betas beside it).
+  ncdu               its C line (1.x, its maker's long-term one): 2.x is written in a Zig the build machine has
+                     not (2.9 takes 0.14 or 0.15; Alpine 3.24 has 0.16).
+  libevent           its stable releases (X.Y.Z-stable); zip, Info-ZIP's last (3.0).
+  Rust's and Go's    their crates.io and module-proxy releases: what those name is immutable and checked (crates.io's
+                     index holds each crate's digest; Go's checksum database each module's); the newest the
+                     builder's Rust or Go (Alpine's, as its index has it) builds, by the version each asks for.
   bash               its release; its makers' patches to it are root/packages/bash/ (each checked by its signature
                      when it is taken), and a patch past them is said (bash-X.Y-patches/).
 Runs where every maker's site can be reached (GitHub Actions: .github/workflows/sources-next.yml).
 """
 import functools
 import hashlib
+import io
 import json
 import os
 import re
 import subprocess
 import sys
+import tarfile
 from concurrent.futures import ThreadPoolExecutor
 
 
@@ -59,6 +67,53 @@ def github(repo, prefix='v', line=''):
     if not tags:
         raise RuntimeError(f'no tags of {repo}')
     return max(tags, key=key)
+
+
+@functools.lru_cache(maxsize=None)
+def alpine(package, repo):
+    """The version of an Alpine package the builder installs: its Alpine (root/build.sh's), the repository's index."""
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'build.sh')) as f:
+        release = '.'.join(re.search(r"grep -q '\^(\d+)\\\.(\d+)\\\.' /etc/alpine-release", f.read()).groups())
+    index = get(f'https://dl-cdn.alpinelinux.org/alpine/v{release}/{repo}/x86_64/APKINDEX.tar.gz', binary=True)
+    with tarfile.open(fileobj=io.BytesIO(index)) as t:
+        text = t.extractfile('APKINDEX').read().decode()
+    for block in text.split('\n\n'):
+        fields = dict(l.split(':', 1) for l in block.splitlines() if ':' in l)
+        if fields.get('P') == package:
+            return fields['V'].split('-r')[0]
+    raise RuntimeError(f'no {package} in Alpine {release} {repo}')
+
+
+def crate(name):
+    """The newest release of a crate on crates.io the builder's Rust (Alpine's) can build: from its index (not
+    yanked, not a pre-release), its rust-version no newer than that Rust."""
+    rust = key(alpine('rust', 'main'))
+    p = name if len(name) <= 2 else f'3/{name[0]}' if len(name) == 3 else f'{name[:2]}/{name[2:4]}'
+    found = [json.loads(l) for l in get(f'https://index.crates.io/{p}/{name}').splitlines() if l.strip()]
+    vers = [e['vers'] for e in found if not e.get('yanked') and re.fullmatch(r'\d+\.\d+\.\d+', e['vers'])
+            and key(e.get('rust_version') or '0') <= rust]
+    if not vers:
+        raise RuntimeError(f'no release of {name} on crates.io that Rust {alpine("rust", "main")} builds')
+    return max(vers, key=key)
+
+
+def gomod(path):
+    """The newest release of a Go module, as Go's module proxy has it (without its v), whose go.mod asks for no
+    newer Go than the builder's (Alpine's; it builds with GOTOOLCHAIN=local, so takes no other)."""
+    go = key(alpine('go', 'community'))
+    vers = [v for v in get(f'https://proxy.golang.org/{path}/@v/list').split() if re.fullmatch(r'v\d+\.\d+\.\d+', v)]
+    for v in sorted(vers, key=key, reverse=True):
+        wants = re.search(r'^go (\S+)', get(f'https://proxy.golang.org/{path}/@v/{v}.mod'), re.M)
+        if key(wants.group(1) if wants else '0') <= go:
+            return v.removeprefix('v')
+    raise RuntimeError(f'no release of {path} that Go {alpine("go", "community")} builds')
+
+
+def sqlite():
+    """sqlite's newest release and where it is (its download page names the year's folder it is in)."""
+    at = re.findall(r'(\d{4})/sqlite-autoconf-(\d{7})\.tar\.gz', get('https://sqlite.org/download.html'))
+    year, v = max(at, key=lambda a: a[1])
+    return v, f'https://sqlite.org/{year}/sqlite-autoconf-{v}.tar.gz'
 
 
 def busybox():
@@ -125,6 +180,34 @@ NEWEST = {
     'NANO': lambda: newest('https://ftp.gnu.org/gnu/nano/', r'nano-(\d+\.\d+)\.tar\.xz'),
     'TZDATA': lambda: newest('https://ftp.iana.org/tz/releases/', r'tzdata(\d{4}[a-z])\.tar\.gz'),
     'TZCODE': lambda: newest('https://ftp.iana.org/tz/releases/', r'tzcode(\d{4}[a-z])\.tar\.gz'),
+    'RIPGREP': lambda: crate('ripgrep'),
+    'FD': lambda: crate('fd-find'),
+    'BAT': lambda: crate('bat'),
+    'DELTA': lambda: crate('git-delta'),
+    'ZOXIDE': lambda: crate('zoxide'),
+    'JUST': lambda: crate('just'),
+    'HYPERFINE': lambda: crate('hyperfine'),
+    'TEALDEER': lambda: crate('tealdeer'),
+    'FZF': lambda: gomod('github.com/junegunn/fzf'),
+    'DIRENV': lambda: gomod('github.com/direnv/direnv/v2'),
+    'LAZYGIT': lambda: gomod('github.com/jesseduffield/lazygit'),
+    'YQ': lambda: gomod('github.com/mikefarah/yq/v4'),
+    'AGE': lambda: gomod('filippo.io/age'),
+    'GIT_LFS': lambda: gomod('github.com/git-lfs/git-lfs/v3'),
+    'LIBEVENT': lambda: newest('https://libevent.org/', r'libevent-(\d+\.\d+\.\d+)-stable\.tar\.gz'),
+    'TMUX': lambda: github('tmux/tmux', ''),
+    'NCDU': lambda: newest('https://dev.yorhel.nl/download/', r'ncdu-(1\.\d+)\.tar\.gz'),
+    'RSYNC': lambda: newest('https://download.samba.org/pub/rsync/src/', r'rsync-(\d+\.\d+\.\d+)\.tar\.gz'),
+    'ENTR': lambda: newest('https://eradman.com/entrproject/', r'entr-(\d+\.\d+)\.tar\.gz'),
+    'READLINE': lambda: newest('https://ftp.gnu.org/gnu/readline/', r'readline-(\d+\.\d+)\.tar\.gz'),
+    'SQLITE': sqlite,
+    'PV': lambda: newest('https://www.ivarch.com/programs/pv.shtml', r'pv-(\d+\.\d+\.\d+)\.tar\.gz'),
+    'HTOP': lambda: github('htop-dev/htop', ''),
+    'ZIP': lambda: '3.0',
+    'WGET': lambda: newest('https://ftp.gnu.org/gnu/wget/', r'wget-(\d+\.\d+(?:\.\d+)?)\.tar\.gz'),
+    'MOREUTILS': lambda: newest('https://deb.debian.org/debian/pool/main/m/moreutils/', r'moreutils_(\d+\.\d+)\.orig\.tar\.xz'),
+    'TLDR_PAGES_EN': lambda: github('tldr-pages/tldr', 'v'),
+    'TLDR_PAGES_JA': lambda: github('tldr-pages/tldr', 'v'),
 }
 
 
@@ -156,9 +239,12 @@ def one_file(path):
 
     def take(found):
         name, latest, why = found
+        at = None
+        if isinstance(latest, tuple):  # a rule that knows where the release is, not only its version
+            latest, at = latest
         was = pins.get(f'{name}_VERSION') or pins.get(f'{name}_DATE')
         newer = latest and not why and latest != was
-        url = moved_url(pins[f'{name}_URL'], was, latest) if newer else pins[f'{name}_URL']
+        url = (at or moved_url(pins[f'{name}_URL'], was, latest)) if newer else pins[f'{name}_URL']
         try:
             data = get(url, binary=True)
         except Exception as e:

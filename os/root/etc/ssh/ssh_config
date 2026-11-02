@@ -1,3 +1,11 @@
+# OpenSSH's client as the root has it. The forges' host keys are known from the start (ssh_known_hosts).
 Host *
     HashKnownHosts yes
     SendEnv LANG LC_*
+    # One connection to a host carries the sessions after it (a second git fetch starts at once), and stays a
+    # few minutes after the last ends; its socket is in /tmp, this Prompt's own.
+    ControlMaster auto
+    ControlPath /tmp/ssh-%C
+    ControlPersist 5m
+    # A connection whose other end has gone is found out within a few minutes, not left hanging.
+    ServerAliveInterval 60

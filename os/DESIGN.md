@@ -976,17 +976,24 @@ the same thing for the desktop app and for the web.
   `bytes`, the root; `web`, the sha256 of the index the browser reads the
   same root by. The release writes that entry (`scripts/pin-root.mjs`) and
   it is committed; nothing else pins l3.
-- **What it holds.** Thirty packages, each made from the source this tree
-  pins (`root/sources.env`) by its recipe
+- **What it holds.** Sixty-two packages, each made from the source this
+  tree pins (`root/sources.env`) by its recipe
   (`root/packages/NAME.sh`, made by `root/build.sh` on
   Alpine 3.24 at one digest, with one libc: its musl, at the root's own
-  musl's version and with the same security fixes), and `/usr/bin/l3`, put
-  together by `root/assemble.sh`: BusyBox (sh and the small tools),
-  the C toolchain (GCC, binutils, make, musl, Linux's headers), git, curl,
-  OpenSSL, OpenSSH's client, nano, apk and the rest, `/etc`. Every program is
-  a static PIE built with one set of flags (the stack protector, stack clash
-  protection, CET, full RELRO), stripped, and nothing is done to it after
-  the linker; a library comes with what building against it needs; no two
+  musl's version and with the same security fixes; a package's own build
+  tools are there for its build alone), and `/usr/bin/l3`, put together by
+  `root/assemble.sh`: BusyBox (sh and the small tools), the C toolchain
+  (GCC, binutils, make, musl, Linux's headers; its `cc` makes a static PIE
+  unasked), git with delta and Git LFS, curl, wget, OpenSSL, OpenSSH's
+  client, rsync, bash, the searches and finders a developer's hands know
+  (GNU grep, ripgrep, fd, fzf, zoxide), jq and yq, sqlite3, tmux, htop,
+  ncdu, lazygit, direnv, just, hyperfine, age, tldr with its pages, nano,
+  apk and the rest, and `/etc`, where each tool is set up to work with the
+  others (git's diffs through delta, lazygit's too; fzf's list from fd; the
+  shell's cd teaching zoxide and loading direnv). Every program, C, Rust or
+  Go, is a static PIE built with one set of flags (the stack protector,
+  stack clash protection, CET, full RELRO), stripped, and nothing is done to
+  it after the linker; every script is for sh or bash; a library comes with what building against it needs; no two
   packages give one path; each package is checked by doing what it is for
   before it is taken, and its database (`apk info`, `apk audit`) says every
   file as it was made. Each package is made again only when what it is made

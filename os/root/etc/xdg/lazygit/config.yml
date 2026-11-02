@@ -1,0 +1,4 @@
+# lazygit as the root has it: its diffs through delta, as git's own are on a terminal.
+git:
+  diffRenderers:
+    - command: delta --{{colorScheme}} --paging=never

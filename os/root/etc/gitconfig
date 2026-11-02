@@ -1,3 +1,62 @@
-# git as the root has it: a new repository's first branch is main, as the app's Git calls it.
+# git as the root has it: its own defaults where they are the ones a developer comes to set, each said. A person's
+# ~/.gitconfig (a dotfile, from Home) comes after and wins.
 [init]
+	# A new repository's first branch is main, as the app's Git calls it.
 	defaultBranch = main
+[core]
+	# Diffs, logs and blames through delta on a terminal (over SSH); the app's Prompt, which shows output as text,
+	# takes git's own (GIT_PAGER=cat, from the root's shrc).
+	pager = delta
+[interactive]
+	diffFilter = delta --color-only
+[delta]
+	# n and N move between files in a long diff.
+	navigate = true
+[diff]
+	# Diffs that follow what was moved and changed, not where lines happen to match.
+	algorithm = histogram
+	colorMoved = default
+[merge]
+	# A conflict shows the common ancestor's lines between both sides, with what both sides agree on left out.
+	conflictStyle = zdiff3
+[rerere]
+	# A conflict resolved once is resolved the same way when it comes again (a rebase run twice).
+	enabled = true
+[push]
+	# The first push of a new branch sets where it goes.
+	autoSetupRemote = true
+[fetch]
+	# What is gone from the remote's branches goes from its remote-tracking ones here (local branches and tags
+	# are left alone).
+	prune = true
+[rebase]
+	# fixup! and squash! commits put in place, what is uncommitted kept aside and back, and the branches on top
+	# moved along.
+	autoSquash = true
+	autoStash = true
+	updateRefs = true
+[commit]
+	# The diff being committed shown under the message being written.
+	verbose = true
+[branch]
+	# Branches listed newest first; tags by version.
+	sort = -committerdate
+[tag]
+	sort = version:refname
+[column]
+	ui = auto
+[help]
+	# A command mistyped is offered as the one meant, and run when it is said yes to.
+	autocorrect = prompt
+[credential]
+	# A password or token given once is kept in memory a quarter of an hour (git's cache), never written to disk.
+	helper = cache
+[gpg]
+	# Commits and tags signed by an SSH key, where a person names one (user.signingKey).
+	format = ssh
+[filter "lfs"]
+	# Git LFS: a clone's large files fetched as it is checked out.
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge -- %f
+	process = git-lfs filter-process
+	required = true

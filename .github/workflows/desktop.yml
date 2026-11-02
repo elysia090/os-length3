@@ -431,11 +431,31 @@ jobs:
           # As a person meets it the first time: a Japanese name shown as written, a new repository on main.
           [ "$(inside 'touch 日本語.txt && ls 日本語.txt')" = 日本語.txt ]
           [ "$(inside 'git init -q r && git -C r symbolic-ref HEAD')" = refs/heads/main ]
+          # The tools a developer reaches for, as they are first met: a search and a find that leave out what
+          # .gitignore does, a list narrowed by a fuzzy finder, YAML asked as jq asks JSON, a command's common uses
+          # in the person's language, and git's diffs through delta.
+          mkdir -p "$w/p/.git" "$w/p/src" "$w/p/build" "$w/home"
+          echo build > "$w/p/.gitignore"; echo needle > "$w/p/src/a.ts"; echo needle > "$w/p/build/b.ts"
+          [ "$(inside 'cd p && rg -l needle')" = src/a.ts ]
+          [ "$(inside 'cd p && fd -e ts')" = src/a.ts ]
+          [ "$(inside 'printf "lib/x.c\nweb/src/main.ts\n" | fzf --filter main')" = web/src/main.ts ]
+          [ "$(inside 'echo "a: {b: 1}" | yq .a.b')" = 1 ]
+          inside 'LANG=C.UTF-8 LANGUAGE=ja TEALDEER_CONFIG_DIR=/etc/tealdeer tldr --raw tar' | grep -q 'アーカイブ'
+          [ "$(inside 'git config --system core.pager')" = delta ]
+          # The Prompt's shell as a person meets it: z goes back to a place by a part of its name, and an .envrc,
+          # once allowed, is what the environment becomes there.
+          echo 'export MADE=here' > "$w/p/src/.envrc"
+          prompt() { inside "HOME=/tmp/home XDG_DATA_HOME=/tmp/home/share XDG_STATE_HOME=/tmp/home/state TERM=dumb ENV=/etc/length3/shrc sh -ic '$1' 2>/dev/null"; }
+          # (zoxide learns a place on its own time, so cd is not kept waiting: a moment is given it.)
+          [ "$(prompt 'cd /tmp/p/src && cd / && sleep 1 && z src && pwd')" = /tmp/p/src ]
+          [ "$(prompt 'cd /tmp/p/src && direnv allow . && echo $MADE')" = here ]
           # And translated, as the browser's Prompt runs them.
           cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path ../xlat/Cargo.toml
           node ../xlat/runtime/run.mjs "$r/usr/bin/git" --version | grep -F "git version $GIT_VERSION"
           node ../xlat/runtime/run.mjs "$r/usr/bin/openssl" version | grep -F "OpenSSL $OPENSSL_VERSION "
           node ../xlat/runtime/run.mjs "$r/usr/bin/busybox" sh -c 'echo $((6 * 7))' | grep -x 42
+          node ../xlat/runtime/run.mjs "$r/usr/bin/rg" --version | grep -F "ripgrep $RIPGREP_VERSION"
+          printf 'lib/x.c\nweb/src/main.ts\n' | node ../xlat/runtime/run.mjs "$r/usr/bin/fzf" --filter main | grep -x web/src/main.ts
           sudo rm -rf target/root-open
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
