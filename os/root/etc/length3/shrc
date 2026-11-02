@@ -34,7 +34,9 @@ export RIPGREP_CONFIG_PATH=/etc/ripgreprc TEALDEER_CONFIG_DIR=/etc/tealdeer FZF_
 # and direnv loads its .envrc and unloads the one left, where one has been allowed (direnv allow). In ash, which has
 # no hook run before each prompt, both follow cd and z. Neither keeps cd waiting: zoxide learns on its own time, and
 # direnv is asked only where it has something to do (an .envrc here or above, or one loaded to be left).
-eval "$(zoxide init posix --no-cmd --hook none)"
+. /usr/share/zoxide/init.sh
+# (Without a hook, zoxide's setup leaves out the check its z calls first: there is nothing for it to check.)
+__zoxide_doctor() { :; }
 __l3_envrc() {
   [ -z "${DIRENV_DIR:-}" ] || return 0
   __l3_d=$PWD
