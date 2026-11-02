@@ -7,8 +7,8 @@
 //
 // ROOT  the release root (os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst),
 //       or a root installed from it (<data>/system/<sha256>/root)
-// WEB   l3 for the browser (public/l3, scripts/l3.mjs); a root of packs of
-//       before (root.json) is read too, to say how far it was from native
+// WEB   l3 for the browser (public/l3, scripts/l3.mjs), each pack checked
+//       whole against its table (xlat/runtime/table.mjs)
 // --manifests DIR  writes native.txt and web.txt there, one line a path
 import {mkdirSync, statSync, writeFileSync} from 'node:fs';
 import {basename, join} from 'node:path';

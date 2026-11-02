@@ -224,6 +224,21 @@ pub unsafe extern "C" fn xlat_unzstd(ptr: *const u8, len: usize, size: usize) ->
     status
 }
 
+/// The SHA-256 of the bytes at `ptr` (left to the host to free): a root
+/// file as its pack stores it, checked against the pack's table
+/// (runtime/table.mjs) before it is decoded, where the host's own digests
+/// come only later. Returns 0 with the 32 bytes of the digest as output.
+///
+/// # Safety
+/// `ptr` must point to `len` initialized bytes.
+#[no_mangle]
+pub unsafe extern "C" fn xlat_sha256(ptr: *const u8, len: usize) -> i32 {
+    use sha2::Digest;
+    let digest = sha2::Sha256::digest(std::slice::from_raw_parts(ptr, len));
+    OUTPUT.with(|o| *o.borrow_mut() = digest.to_vec());
+    0
+}
+
 /// Set how much code reached later one module may hold (discover_within;
 /// 0: all it reaches); for measuring against discover::BUDGET.
 #[no_mangle]

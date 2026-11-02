@@ -77,6 +77,13 @@ export async function loadTranslator(source) {
     x.xlat_free(p, bytes.length);
     return output(status);
   };
+  /** The SHA-256 of `bytes`, its 32 bytes (xlat_sha256): what a pack's table holds of a file, checked at once. */
+  translate.sha256 = (bytes) => {
+    const p = put(bytes);
+    const status = x.xlat_sha256(p, bytes.length);
+    x.xlat_free(p, bytes.length);
+    return output(status);
+  };
   /** Bytes the translator's memory holds now. */
   translate.held = () => x.memory.buffer.byteLength;
   /** Of those, what a fresh instance would give back. */

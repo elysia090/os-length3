@@ -24,6 +24,7 @@ import {mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync}
 import {join} from 'node:path';
 import {Readable} from 'node:stream';
 import {pinnedRoots} from '../service/releases.ts';
+import {checkPacks} from '../../xlat/runtime/table.mjs';
 import {tarMembers} from './l3-tree.mjs';
 
 const here = new URL('..', import.meta.url).pathname;
@@ -67,13 +68,17 @@ const indexBytes = members.get(about.index.path);
 if (!indexBytes || sha(indexBytes) !== pin.web) throw new Error(`${asset}: ${about.index.path} is not the index this tree pins (${pin.web})`);
 const index = JSON.parse(indexBytes.toString('utf8'));
 if (index.sha256 !== pin.sha256 || index.version !== version) throw new Error(`${asset}: its index is of root ${index.sha256} ${index.version}`);
-const named = [...index.packs.map((p) => [`packs/${p.name}`, p.name.slice(0, 64)]), [index.translator.path, index.translator.sha256], ...index.translations.flatMap((t) => [[t.elf.path, t.elf.sha256], [t.wasm.path, t.wasm.sha256]])];
+const named = [[index.translator.path, index.translator.sha256], ...index.translations.flatMap((t) => [[t.elf.path, t.elf.sha256], [t.wasm.path, t.wasm.sha256]])];
 for (const [path, digest] of named) {
   const bytes = members.get(path);
   if (!bytes) throw new Error(`${asset} has no ${path}, which its index names`);
   if (sha(bytes) !== digest) throw new Error(`${asset}: ${path} is sha256 ${sha(bytes)}, its index says ${digest}`);
 }
-const known = new Set(['l3.json', about.index.path, ...named.map(([path]) => path)]);
+// Each pack whole: its table against its name, each file it stores against its table, nothing else in it.
+for (const p of index.packs) if (!members.has(`packs/${p.name}`)) throw new Error(`${asset} has no packs/${p.name}, which its index names`);
+checkPacks(index, (name, at, len) => members.get(`packs/${name}`).subarray(at, at + len), (name) => members.get(`packs/${name}`).length,
+  (b) => createHash('sha256').update(b).digest());
+const known = new Set(['l3.json', about.index.path, ...named.map(([path]) => path), ...index.packs.map((p) => `packs/${p.name}`)]);
 const unnamed = [...members.keys()].filter((name) => !known.has(name));
 if (unnamed.length) throw new Error(`${asset} holds ${unnamed.join(', ')}, which its index does not name`);
 

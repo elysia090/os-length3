@@ -10,6 +10,8 @@ iced-x86 = { version = "1.21", default-features = false, features = ["std", "dec
 wasm-encoder = "0.263"
 # Decodes the browser root's packs (zstd), where a system call must have the bytes at once.
 ruzstd = { version = "0.9", default-features = false, features = ["std"] }
+# Checks what is read from those packs against their tables (runtime/table.mjs), as at once.
+sha2 = { version = "0.11", default-features = false }
 
 [dev-dependencies]
 wasmparser = "0.263"

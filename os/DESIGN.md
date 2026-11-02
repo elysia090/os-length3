@@ -1020,9 +1020,14 @@ the same thing for the desktop app and for the web.
   index of every path (type, mode, link target; where each file's bytes
   are), a pack per package of the root, each file a zstd frame, and blobs
   for the translator and the hot programs (BusyBox, l3 and git) with their
-  translations. Everything but `l3.json` is named by its digest. A Prompt
-  fetches the index, the translator and BusyBox with its translation; every
-  other file comes from its pack when a program first opens it, and every
+  translations. Everything but `l3.json` is named by its digest; a pack by
+  the digest of its table, the SHA-256 of each file it stores, at its head
+  (`xlat/runtime/table.mjs`), so a file read alone from it is checked as
+  the whole pack would be, and one that is not what its table says is not
+  used (its read fails with EIO, and says why). A Prompt fetches the index,
+  the translator and BusyBox with its translation; every other file comes
+  from its pack (one Range request, and its pack's table once) when a
+  program first opens it, and every
   other program is translated when it first runs (l3's and git's
   translations follow quietly once the first Prompt is up, and that Prompt
   and every one after runs them from its next run of l3 or git; each name of

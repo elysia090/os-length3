@@ -17,8 +17,11 @@ import {createHash} from 'node:crypto';
 import {createReadStream, lstatSync, openSync, readFileSync, readSync, readdirSync, readlinkSync, closeSync, statSync} from 'node:fs';
 import {join} from 'node:path';
 import {createZstdDecompress, gunzipSync, zstdDecompressSync} from 'node:zlib';
+import {checkPacks, checkedRange} from '../../xlat/runtime/table.mjs';
 
 export const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
+/** The 32 bytes of a SHA-256, as table.mjs takes it. */
+const digest = (bytes) => createHash('sha256').update(bytes).digest();
 
 /**
  * Every member of a tar stream: {name, kind ('0' file, '5' dir, '2' symlink, '1' hard link), mode, link, size, bytes},
@@ -142,24 +145,21 @@ export async function nativeTree(at) {
   return statSync(at).isDirectory() ? readDir(at) : readTarball(at);
 }
 
-/**
- * l3 for the browser, opened: {about (l3.json), index, dir, packs (where its packs are), blob(name)}.
- * Also takes a root of packs of before (root.json beside packs/), which has no l3.json.
- */
+/** l3 for the browser, opened: {about (l3.json), index, dir, packs (where its packs are), read(file), blob(name)}. */
 export function openWeb(dir) {
-  let about = null, index;
-  try { about = JSON.parse(readFileSync(join(dir, 'l3.json'), 'utf8')); } catch { /* a root of packs alone */ }
-  if (about) {
-    const bytes = readFileSync(join(dir, about.index.path));
-    if (sha256(bytes) !== about.index.sha256) throw new Error(`${about.index.path}: not the index l3.json names (sha256 ${sha256(bytes)})`);
-    index = JSON.parse(bytes.toString('utf8'));
-  } else index = JSON.parse(readFileSync(join(dir, 'root.json'), 'utf8'));
+  const about = JSON.parse(readFileSync(join(dir, 'l3.json'), 'utf8'));
+  const bytes = readFileSync(join(dir, about.index.path));
+  if (sha256(bytes) !== about.index.sha256) throw new Error(`${about.index.path}: not the index l3.json names (sha256 ${sha256(bytes)})`);
+  const index = JSON.parse(bytes.toString('utf8'));
   const fds = new Map();
   const fd = (name) => { if (!fds.has(name)) fds.set(name, openSync(join(dir, 'packs', name), 'r')); return fds.get(name); };
-  /** A file's stored bytes from its pack, and decoded. */
+  /** Bytes [at, at+len) of the pack named `pack`, into `into` (as the browser's Range request gives them). */
+  const readRange = (pack, at, len, into) => { if (len) readSync(fd(pack), into, 0, len, at); return into; };
+  const range = (pack, at, len) => readRange(pack, at, len, Buffer.alloc(len));
+  /** A file's stored bytes from its pack, checked against its table, and decoded. */
+  const checked = checkedRange(index, range, digest);
   const read = (f) => {
-    const stored = Buffer.alloc(f.len);
-    if (f.len) readSync(fd(index.packs[f.pack].name), stored, 0, f.len, f.at);
+    const stored = Buffer.from(checked(f.pack, f.at, f.len));
     return f.raw || !f.len ? stored : zstdDecompressSync(stored);
   };
   /** A blob (the translator, a translation): its gzip'd bytes checked against its name, then unpacked. */
@@ -168,22 +168,19 @@ export function openWeb(dir) {
     if (sha256(bytes) !== b.sha256) throw new Error(`${b.path}: sha256 ${sha256(bytes)}, its index says ${b.sha256}`);
     return gunzipSync(bytes);
   };
-  /** Bytes [at, at+len) of the pack named `pack`, into `into` (as the browser's Range request gives them). */
-  const readRange = (pack, at, len, into) => { if (len) readSync(fd(pack), into, 0, len, at); return into; };
   const unzstd = (bytes) => zstdDecompressSync(bytes);
   const close = () => { for (const f of fds.values()) closeSync(f); fds.clear(); };
-  return {about, index, dir, packs: join(dir, 'packs'), read, readRange, unzstd, blob, close};
+  /** Every pack whole: its table, each file it stores, and nothing besides (table.mjs checkPacks). */
+  const checkAll = () => checkPacks(index, range, (name) => statSync(join(dir, 'packs', name)).size, digest);
+  return {about, index, dir, packs: join(dir, 'packs'), read, readRange, unzstd, blob, checkAll, close};
 }
 
-/** Every path of l3 for the browser, each file's bytes decoded from its pack and hashed; and each pack checked against its name. */
+/** Every path of l3 for the browser, each file's bytes decoded from its pack and hashed; and each pack checked whole. */
 export function webTree(dir) {
   const web = openWeb(dir);
   const {index} = web;
   try {
-    for (const p of index.packs) {
-      const got = sha256(readFileSync(join(web.packs, p.name)));
-      if (`${got}.pack` !== p.name) throw new Error(`packs/${p.name}: its bytes are sha256 ${got}`);
-    }
+    web.checkAll();
     const entries = [
       ...index.dirs.map((d) => ({path: d.path, type: 'dir', mode: d.mode})),
       ...index.links.map((l) => ({path: l.path, type: 'link', mode: 0o777, target: l.target})),

@@ -111,7 +111,7 @@ function ready(data) {
   readied ??= (async () => {
     const translate = await loadTranslator(data.translator);
     const vfs = new Vfs();
-    if (data.root) mountPack(vfs, data.root.index, syncRange(data.root.url), translate.unzstd);
+    if (data.root) mountPack(vfs, data.root.index, {range: syncRange(data.root.url), decode: translate.unzstd, sha256: translate.sha256});
     // Over the root, so what was given (l3, its BusyBox) is what runs: a hot program in the root's own node.
     for (const f of data.files ?? []) provide(vfs, f);
     const r = {translate, vfs, files: data.files ?? []};

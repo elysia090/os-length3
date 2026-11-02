@@ -43,7 +43,9 @@ export class File extends Node {
   }
   get data() {
     if (this.load) {
-      this._data = this.load();
+      // Its bytes not to be had (its pack gave other bytes than its table names, or nothing): the call that wanted
+      // them fails as a read of a disk's bad block does (EIO), said once here, and a later call asks again.
+      try { this._data = this.load(); } catch (e) { console.warn(e instanceof Error ? e.message : String(e)); throw new FsError(E.IO); }
       this.size = this._data.length;
       this.load = null;
       if (this.reload) LOADED.add(this);

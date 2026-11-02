@@ -23,8 +23,11 @@ export const threadsApart = (): boolean => typeof SharedArrayBuffer === 'functio
 // by digest; everything else is named by its digest too:
 //
 //   index-<sha256>.json  every path of the root, and where each file's bytes are
-//   packs/<sha256>.pack  one per package: a file is read from it only when a
-//                        program first opens it (the Worker, one Range request)
+//   packs/<sha256>.pack  one per package, named by the digest of its table (the
+//                        SHA-256 of each file it stores, at its head): a file is
+//                        read from it only when a program first opens it (the
+//                        Worker, one Range request), and used only once it is
+//                        what the table says (xlat/runtime/table.mjs)
 //   blobs/<sha256>.bin   the translator, and the hot programs (BusyBox: sh and
 //                        its applets; l3; git, each of its commands a name of
 //                        it) with their translations made ahead of time, gzip'd

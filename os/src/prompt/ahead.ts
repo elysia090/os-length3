@@ -6,6 +6,7 @@
 // would have downloaded, nothing is asked of a server, and it holds offline: the release is not made bigger by
 // translations made for every program, which every browser would have to fetch whether it ran them or not.
 
+import {entriesOf} from '../../../xlat/runtime/table.mjs';
 import {keepTranslation, originOf, threadsApart, translationKept, type Index, type L3} from './userland.ts';
 
 /** What anyone reaches for at a Prompt and the root has as a program of its own (not BusyBox's, which is hot). */
@@ -47,15 +48,20 @@ const idle = () => new Promise<void>((r) => {
   document.addEventListener('visibilitychange', shown);
 });
 
+/** Of each pack of an index, each file it stores by where it is: its line of the pack's table (table.mjs). */
+const tables = new WeakMap<Index, ReturnType<typeof entriesOf>>();
+const entries = (index: Index) => { if (!tables.has(index)) tables.set(index, entriesOf(index)); return tables.get(index)!; };
+
 /** One program translated in a worker of its own, which then ends (its memory goes back with it). */
 function translated(l3: L3, f: Index['files'][number]): Promise<{wasm: Uint8Array; segments: {offset: number; bytes: Uint8Array}[] | null} | null> {
+  const pack = entries(l3.index)[f.pack];
   return new Promise((resolve) => {
     const w = new Worker(new URL('../../../xlat/runtime/ahead.mjs', import.meta.url), {type: 'module'});
     const done = (v: Awaited<ReturnType<typeof translated>>) => { w.terminate(); resolve(v); };
     w.onmessage = ({data}) => done(data.error ? null : data);
     w.onerror = () => done(null);
     w.postMessage({translator: l3.translator, url: new URL(l3.url, location.href).href, pack: l3.index.packs[f.pack].name,
-      at: f.at, len: f.len, size: f.size, raw: !!f.raw, shared: threadsApart()});
+      at: f.at, len: f.len, size: f.size, raw: !!f.raw, shared: threadsApart(), lines: pack.size, line: pack.get(f.at)?.line});
   });
 }
 

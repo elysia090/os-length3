@@ -1,16 +1,19 @@
-// A root from packs (os/scripts/webroot.mjs): its directories and
-// links at once, each file's bytes only when a program first reads it. The
-// kernel reads inside a system call, where nothing can wait, so the bytes
-// are fetched synchronously: `range(pack, at, len)` returns them from the
-// pack of that name (in a Worker, a synchronous Range request; in node, a
-// read of the pack file). A file is stored as zstd frames (`decode(bytes,
-// size)` gives it back: in a Worker the translator's decoder, in node its
-// own) or as it is (`raw`), whichever is smaller.
+// A root from packs (os/scripts/l3.mjs): its directories and links at
+// once, each file's bytes only when a program first reads it. The kernel
+// reads inside a system call, where nothing can wait, so the bytes are
+// fetched synchronously: `range(pack, at, len)` returns them from the pack
+// of that name (in a Worker, a synchronous Range request; in node, a read of
+// the pack file), and they are used only once they are checked against the
+// pack's table (table.mjs; `sha256`: in a Worker the translator's, in node
+// its own). A file is stored as zstd frames (`decode(bytes, size)` gives it
+// back: in a Worker the translator's decoder, in node its own) or as it is
+// (`raw`), whichever is smaller.
 
 import {Dir, File, Link} from './fs.mjs';
+import {checkedRange} from './table.mjs';
 
 /** Put the pack's tree under `at` ('/' for the whole root); what is already there stays. */
-export function mountPack(vfs, index, range, decode, at = '/') {
+export function mountPack(vfs, index, {range, decode, sha256}, at = '/') {
   if (index.codec !== 'zstd') throw new Error(`root: packs in ${index.codec ?? 'an older form'} are not read here`);
   const base = at === '/' ? '' : at.replace(/\/$/, '');
   for (const d of index.dirs) {
@@ -29,6 +32,7 @@ export function mountPack(vfs, index, range, decode, at = '/') {
   // at one place; each name of it is the same node here, as on the device, so what is made from it once (its
   // translation, its bytes read) serves every name, and a write through one name is seen through each.
   const named = new Map();
+  const read = checkedRange(index, range, sha256);
   for (const f of index.files) {
     const [dir, name] = place(f.path);
     if (dir.entries.has(name)) continue;
@@ -37,7 +41,7 @@ export function mountPack(vfs, index, range, decode, at = '/') {
     const same = f.len ? named.get(where) : undefined;
     if (same) { dir.entries.set(name, same); same.nlink++; continue; }
     const file = new File(new Uint8Array(0), f.mode, () => {
-      const stored = range(pack, f.at, f.len);
+      const stored = read(f.pack, f.at, f.len);
       return f.raw ? stored.slice() : decode(stored, f.size);
     });
     file.size = f.size;
