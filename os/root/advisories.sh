@@ -19,7 +19,8 @@ here=$(cd "$(dirname "$0")" && pwd)
 scanner=${1:-osv-scanner}
 . "$here/sources.env"
 work=$(mktemp -d "${TMPDIR:-/tmp}/length3-advisories.XXXXXX")
-trap 'rm -rf "${work:?}"' EXIT
+# (Go keeps the modules it fetches read-only: they are made writable again to be removed.)
+trap 'chmod -R u+w "${work:?}" 2>/dev/null; rm -rf "${work:?}"' EXIT
 
 . "$here/lift.sh"
 export CARGO_HOME="$work/cargo" GOPATH="$work/go" GOMODCACHE="$work/go/mod"
