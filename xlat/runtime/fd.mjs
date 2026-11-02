@@ -83,6 +83,38 @@ export class Pipe {
   }
 }
 
+/**
+ * flock's advisory locks, by what is locked (a file's node, a pipe): the one description holding it exclusive (`ex`)
+ * and those holding it shared (`sh`). A lock is the open file description's (dup'd and inherited descriptors share
+ * it), and goes with its last descriptor.
+ */
+const flocks = new WeakMap();
+
+/**
+ * Lock what `d` opened, exclusive or shared, for `d` (one lock each: taking another changes the one it holds). Whether
+ * it was taken: false while another description holds it otherwise, and then nothing changed.
+ */
+export function flock(d, exclusive) {
+  const key = d.node ?? d.pipe ?? d;
+  const held = flocks.get(key) ?? {ex: null, sh: new Set()};
+  const others = (held.ex !== null && held.ex !== d) || (exclusive && [...held.sh].some((x) => x !== d));
+  if (others) return false;
+  held.sh.delete(d);
+  if (held.ex === d) held.ex = null;
+  if (exclusive) held.ex = d; else held.sh.add(d);
+  flocks.set(key, held);
+  d.locked = key;
+  return true;
+}
+
+/** Let go of the lock `d` holds, if any. */
+export function unflock(d) {
+  if (!d.locked) return;
+  const held = flocks.get(d.locked);
+  if (held) { if (held.ex === d) held.ex = null; held.sh.delete(d); }
+  d.locked = null;
+}
+
 /** One open file description, shared by dup'd and inherited descriptors. */
 export class Description {
   constructor(kind, {node = null, pipe = null, flags = 0, path = ''} = {}) {
@@ -94,6 +126,7 @@ export class Description {
     this.offset = 0;
     this.refs = 0;
     this.closed = false;
+    this.locked = null; // what it holds a flock on
     // A FIFO opened for both reading and writing (pipe-rw) is a reader and a writer of its pipe at once.
     if (kind === 'pipe-r' || kind === 'pipe-rw') pipe.readers++;
     if (kind === 'pipe-w' || kind === 'pipe-rw') pipe.writers++;
@@ -102,6 +135,7 @@ export class Description {
   release() {
     if (--this.refs > 0) return;
     this.closed = true;
+    unflock(this);
     if (this.kind === 'pipe-r' || this.kind === 'pipe-rw') { this.pipe.readers--; this.pipe.changes++; }
     if (this.kind === 'pipe-w' || this.kind === 'pipe-rw') { this.pipe.writers--; this.pipe.changes++; }
     // A local socket's last descriptor gone: it is closed (sys-net.mjs).
