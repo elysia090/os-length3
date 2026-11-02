@@ -22,12 +22,17 @@ build() {
   for l in form menu panel; do ln -s "lib${l}w.a" "$dest/usr/lib/lib$l.a"; done
   for m in ncurses form menu panel; do ln -s "${m}w.pc" "$dest/usr/lib/pkgconfig/$m.pc"; done
   ln -s . "$dest/usr/include/ncursesw"
+  # The names kitty and Ghostty give TERM (xterm-kitty, xterm-ghostty), for ncurses's own entries for them: reached
+  # over SSH from either, the root's full-screen programs know the terminal they draw on.
+  ln -s ../k/kitty "$dest/usr/share/terminfo/x/xterm-kitty"
+  ln -s ../g/ghostty "$dest/usr/share/terminfo/x/xterm-ghostty"
 }
 check() {
   # The database it compiled, read back by path; and root, steering it by TERMINFO, finds the same entry.
   db="$dest/usr/share/terminfo"
   "$dest/usr/bin/infocmp" -A "$db" xterm-256color | grep -Eq 'colors#(256|0x100)'
   [ "$(TERMINFO="$db" "$dest/usr/bin/tput" -T xterm-256color colors)" = 256 ]
+  for t in xterm-kitty xterm-ghostty tmux-256color alacritty foot wezterm; do "$dest/usr/bin/infocmp" -A "$db" "$t" > /dev/null; done
   # A program built against it by another system's names reads the same.
   printf '%s\n' '#include <ncursesw/curses.h>' '#include <term.h>' \
     'int main(void) { setupterm("xterm-256color", 1, 0); return tigetnum("colors") != 256; }' > c.c

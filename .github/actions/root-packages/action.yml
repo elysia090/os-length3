@@ -20,8 +20,9 @@ runs:
     # The machine every package is made on: Alpine 3.24 (x86_64), at this digest and no other.
     - shell: bash
       run: docker run --rm -v "$GITHUB_WORKSPACE:/w" -e OWNER="$(id -u):$(id -g)" alpine@sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d sh /w/os/root/build.sh /w/os/target/root-packages
-    # Kept even when one failed: what was made before it is made already.
-    - if: ${{ !cancelled() }}
+    # Kept even when one failed or the run was cancelled: what was made before is made already, and the package being
+    # made when it stopped has no key, so it is made again.
+    - if: ${{ always() }}
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: os/target/root-packages

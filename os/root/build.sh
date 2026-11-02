@@ -73,6 +73,10 @@ src="$out/../root-src"
 mkdir -p "$src"
 work=$(mktemp -d "${TMPDIR:-/tmp}/length3-root-build.XXXXXX")
 trap 'rm -rf "${work:?}"; if [ -n "${OWNER:-}" ]; then chown "$OWNER" "$out/.."; chown -R "$OWNER" "$out" "$src"; fi' EXIT
+# Stopped (Ctrl-C, a CI run cancelled), it ends as it ends otherwise: what was made is kept and its owner's, and the
+# package it was making has no key, so it is made again.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 jobs=$(nproc)
 # What a build may stamp into what it makes (a date, a build time) is the epoch, so the same inputs make the same bytes.
 export SOURCE_DATE_EPOCH=0
