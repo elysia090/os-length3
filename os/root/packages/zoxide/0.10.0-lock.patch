@@ -1,0 +1,84 @@
+--- a/src/db/mod.rs
++++ b/src/db/mod.rs
+@@ -1,6 +1,7 @@
+ mod dir;
+ mod stream;
+ 
++use std::fs::File;
+ use std::path::{Path, PathBuf};
+ use std::{fs, io};
+ 
+@@ -20,6 +21,7 @@
+     #[covariant]
+     pub dirs: Vec<Dir<'this>>,
+     dirty: bool,
++    lock: Option<File>,
+ }
+ 
+ impl Database {
+@@ -35,15 +37,25 @@
+         let path = data_dir.join("db.zo");
+         let path = fs::canonicalize(&path).unwrap_or(path);
+ 
++        // Create data directory, but don't create the database yet. The file will be
++        // created later by [`Database::save`] if any data is modified.
++        fs::create_dir_all(data_dir)
++            .with_context(|| format!("unable to create data directory: {}", data_dir.display()))?;
++        // Every command writes the whole database back (a query too, since it sorts it),
++        // so one that read it before another saved would undo the other's change. Each
++        // holds it from here until it is saved; where the file system cannot lock, it goes
++        // on without.
++        let lock = File::options()
++            .create(true)
++            .append(true)
++            .open(data_dir.join("db.zo.lock"))
++            .ok()
++            .filter(|lock| lock.lock().is_ok());
++
+         match fs::read(&path) {
+-            Ok(bytes) => Self::try_new(path, bytes, |bytes| Self::deserialize(bytes), false),
++            Ok(bytes) => Self::try_new(path, bytes, |bytes| Self::deserialize(bytes), false, lock),
+             Err(e) if e.kind() == io::ErrorKind::NotFound => {
+-                // Create data directory, but don't create any file yet. The file will be
+-                // created later by [`Database::save`] if any data is modified.
+-                fs::create_dir_all(data_dir).with_context(|| {
+-                    format!("unable to create data directory: {}", data_dir.display())
+-                })?;
+-                Ok(Self::new(path, Vec::new(), |_| Vec::new(), false))
++                Ok(Self::new(path, Vec::new(), |_| Vec::new(), false, lock))
+             }
+             Err(e) => {
+                 Err(e).with_context(|| format!("could not read from database: {}", path.display()))
+@@ -53,14 +65,15 @@
+ 
+     pub fn save(&mut self) -> Result<()> {
+         // Only write to disk if the database is modified.
+-        if !self.dirty() {
+-            return Ok(());
++        if self.dirty() {
++            let bytes = Self::serialize(self.dirs())?;
++            util::write(self.borrow_path(), bytes).context("could not write to database")?;
++            self.with_dirty_mut(|dirty| *dirty = false);
+         }
+ 
+-        let bytes = Self::serialize(self.dirs())?;
+-        util::write(self.borrow_path(), bytes).context("could not write to database")?;
+-        self.with_dirty_mut(|dirty| *dirty = false);
+-
++        // Saved, it is given up: what runs after (the reloads `zoxide edit` binds in fzf)
++        // opens it again.
++        self.with_lock_mut(|lock| *lock = None);
+         Ok(())
+     }
+ 
+--- a/src/db/stream.rs
++++ b/src/db/stream.rs
+@@ -203,7 +203,7 @@
+     #[case(&["/foo/", "/bar"], "/foo/bar", false)]
+     #[case(&["/foo/", "/bar"], "/foo/baz/bar", true)]
+     fn query(#[case] keywords: &[&str], #[case] path: &str, #[case] is_match: bool) {
+-        let db = &mut Database::new(PathBuf::new(), Vec::new(), |_| Vec::new(), false);
++        let db = &mut Database::new(PathBuf::new(), Vec::new(), |_| Vec::new(), false, None);
+         let options = StreamOptions::new(0).with_keywords(keywords.iter());
+         let stream = Stream::new(db, options);
+         assert_eq!(is_match, stream.filter_by_keywords(path));

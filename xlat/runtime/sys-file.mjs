@@ -3,7 +3,7 @@
 // the call, whose `state` lasts while it waits) and throw FsError for errno
 // results, or Wait for a call to be made again once something changed.
 
-import {Description, PIPE_BUF, Pipe} from './fd.mjs';
+import {Description, PIPE_BUF, Pipe, flock, unflock} from './fd.mjs';
 import * as net from './sys-net.mjs';
 import {procDescriptor} from './procfs.mjs';
 import {Dir, Device, E, Fifo, File, FsError, Link, S_IFCHR, S_IFDIR, S_IFIFO, S_IFLNK, S_IFSOCK} from './fs.mjs';
@@ -875,10 +875,20 @@ export const FILE_CALLS = {
       if (n === -2) fail(E.BUSY);
       return n;
     }
-    return 0; // locks and the rest succeed trivially
+    return 0; // the rest succeed trivially, record locks (F_SETLK and its kin) among them: each is granted
   },
 
-  73() { return 0; }, 74() { return 0; }, 75() { return 0; },
+  // flock: LOCK_SH 1 or LOCK_EX 2, or LOCK_UN 8; with LOCK_NB 4 it says EWOULDBLOCK rather than wait. Waiting, it is
+  // made again when another call is done (a lock let go is one: LOCK_UN, the last close, an exit).
+  73(fd, op) {
+    const d = descriptor(this, fd), o = N(op), kind = o & ~4;
+    if (kind === 8) { unflock(d); return 0; }
+    if (kind !== 1 && kind !== 2) fail(E.INVAL);
+    if (flock(d, kind === 2)) return 0;
+    if (o & 4) fail(E.AGAIN);
+    throw new Wait();
+  },
+  74() { return 0; }, 75() { return 0; },
   // What is written is where it goes already (memory; a repo's files mirrored as they change): nothing to wait for.
   162() { return 0; }, // sync
   306(fd) { descriptor(this, fd); return 0; }, // syncfs

@@ -444,15 +444,18 @@ jobs:
           says "inside 'echo \"a: {b: 1}\" | yq .a.b'" 1
           says "inside 'LANG=C.UTF-8 LANGUAGE=ja TEALDEER_CONFIG_DIR=/etc/tealdeer tldr --raw tar' | grep -q 'アーカイブ' && echo in Japanese" 'in Japanese'
           says "inside 'git config --system core.pager'" delta
+          # sleep is a program of its own, not the shell's builtin, which a job of the shell's ending would cut short.
+          says "inside 'type sleep'" 'sleep is /usr/bin/sleep'
           # The Prompt's shell as a person meets it: z goes back to a place by a part of its name, and an .envrc,
           # once allowed, is what the environment becomes there.
           echo 'export MADE=here' > "$w/p/src/.envrc"
           prompt() { inside "HOME=/tmp/home XDG_DATA_HOME=/tmp/home/share XDG_STATE_HOME=/tmp/home/state TERM=dumb ENV=/etc/length3/shrc sh -ic '$1' 2>/dev/null"; }
-          # (zoxide learns a place on its own time, so cd is not kept waiting: it is given up to five seconds. Not
-          # learnt, what zoxide keeps and what it says when asked to learn it are said.)
-          says "prompt 'cd /tmp/p/src && cd / && for i in 1 2 3 4 5 6 7 8 9 10; do zoxide query src > /dev/null 2>&1 && break; sleep 0.5; done; z src && pwd'" /tmp/p/src ||
-            { inside 'ls -laR /tmp/home; HOME=/tmp/home XDG_DATA_HOME=/tmp/home/share zoxide add /tmp/p/src; echo "add: $?"; HOME=/tmp/home XDG_DATA_HOME=/tmp/home/share zoxide query --list' >&2; exit 1; }
+          # (zoxide learns a place on its own time, so cd is not kept waiting: it is given up to five seconds, while
+          # the place left is learnt too and z's own lookups run.)
+          says "prompt 'cd /tmp/p/src && cd / && for i in 1 2 3 4 5 6 7 8 9 10; do zoxide query src > /dev/null 2>&1 && break; sleep 0.5; done; z src && pwd'" /tmp/p/src
           says "prompt 'cd /tmp/p/src && direnv allow . && echo \$MADE'" here
+          # clear clears the app's Prompt, as the Prompt is told (ncurses' clear, asking terminfo of a dumb terminal, says nothing).
+          says "prompt clear | od -An -c | tr -d ' \\n'" '033[H033[2J'
           # And translated, as the browser's Prompt runs them.
           cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path ../xlat/Cargo.toml
           node ../xlat/runtime/run.mjs "$r/usr/bin/git" --version | grep -F "git version $GIT_VERSION"

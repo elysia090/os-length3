@@ -8,7 +8,7 @@ import {have, shell} from './busybox.mjs';
 // handlers: each as BusyBox shows it, beside the same script on Linux
 // (the outputs here are what Linux prints).
 
-const APPLETS = ['sh', 'cat', 'sleep', 'dd', 'wc', 'kill', 'yes', 'head', 'sha256sum', 'echo', 'true'];
+const APPLETS = ['sh', 'cat', 'sleep', 'dd', 'wc', 'kill', 'yes', 'head', 'sha256sum', 'echo', 'true', 'flock'];
 
 /** Run `script` to its end, waiting out its sleeps; {status, out, ms}. */
 async function run(script) {
@@ -59,6 +59,17 @@ test('an untrapped TERM ends the shell (143), an ignored one does nothing', {ski
   assert.equal((await run('kill -TERM $$; echo not here')).status, 15);
   const r = await run('trap "" TERM; kill -TERM $$; echo still here');
   assert.equal(r.out, 'still here\n');
+});
+
+test('flock: one holds a lock at a time; -n is refused while it is held, and taken once it is let go', {skip: !have}, async () => {
+  const r = await run('(flock /l sleep 1) & sleep 0.3; flock -n /l echo got || echo held; wait; flock -n /l echo free');
+  assert.equal(r.out, 'held\nfree\n');
+});
+
+test('flock: one waiting for a lock goes on when its holder ends, not before', {skip: !have}, async () => {
+  const r = await run('(flock /l sh -c "sleep 1; echo first") & sleep 0.3; flock /l echo second; wait');
+  assert.equal(r.out, 'first\nsecond\n');
+  assert.ok(r.ms >= 1000, `${r.ms} ms`);
 });
 
 test('SIGPIPE ends a writer whose reader has gone, quietly, as 141', {skip: !have}, async () => {

@@ -129,8 +129,6 @@ export class Session {
   /** The paths its Worker was given (the hot programs among them), and how it stops hearing of those ready later. */
   private given = new Set<string>();
   private unhear: (() => void) | null = null;
-  /** The repo's files as its Prompt was started with them: what it is likely to run is read from them (ahead.ts). */
-  private repoFiles: string[] = [];
   private copy: WriteBack;
   /** Whether the shell has waited at a prompt line yet; what was sent before it did, held for it. */
   private first = new FirstPrompt();
@@ -275,7 +273,7 @@ export class Session {
         // kept is told to this Prompt's kernel, which reads it when it is first run rather than translating it then.
         const ahead = hearAhead((origin, url) => this.worker?.postMessage({type: 'kept', at: {[origin]: {main: url, more: null}}}));
         this.unhear = () => { hot(); ahead(); };
-        void translateAhead(l3, aheadFor(l3.index, this.repoFiles));
+        void translateAhead(l3, aheadFor(l3.index));
       }, 3000);
     }
     const run = this.runs.at(-1);
@@ -368,7 +366,6 @@ export class Session {
     // Stopped while it came: it stays stopped.
     if (this.worker !== worker) return;
     this.l3of = l3;
-    this.repoFiles = copy.files.map((f) => f.path);
     const start = startMessage(this.repo, l3, copy, kept, use ? [`${use.variable}=${use.key}`] : [], ready?.given ?? null);
     worker.postMessage(start);
     this.given = new Set([...(ready?.given ?? []), ...start.files.map((f) => f.path)]);
