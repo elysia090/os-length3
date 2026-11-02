@@ -1,6 +1,8 @@
 # GCC, C, with GMP, MPFR and MPC built inside it (cc1 links them statically), its libgcc built by the GCC just made,
 # and `cc`, the name make and every build reaches for, with POSIX's c99 and c89. What the build machine's compiler
-# builds of it is C17; libgcc is built by the new GCC for its own default, so it is given only -O2.
+# builds of it is C17; libgcc is built by the new GCC for its own default, so it is given only -O2. Its own programs
+# are position-independent and bound at once (host PIE, BIND_NOW), as the root's others are: GCC makes them neither
+# unless told.
 pins="GCC GMP MPFR MPC"
 tools="bison flex perl texinfo"
 build() {
@@ -9,6 +11,7 @@ build() {
   CFLAGS_FOR_TARGET='-O2' CXXFLAGS_FOR_TARGET='-O2' \
     ../src/configure --prefix=/usr --build="$target" --host="$target" --target="$target" \
       --enable-languages=c --disable-lto --disable-bootstrap --disable-multilib --disable-nls --disable-shared \
+      --enable-host-pie --enable-host-bind-now \
       --enable-static --disable-libatomic --disable-libgomp --disable-libquadmath --disable-libsanitizer \
       --disable-libssp --disable-libstdcxx-pch --disable-libvtv --without-isl --without-zstd --with-sysroot=/ \
       --with-native-system-header-dir=/usr/include

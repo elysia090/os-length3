@@ -30,11 +30,13 @@
 # Every build is given the same flags (a recipe that departs from them says why): C17 (Alpine's GCC writes C23 by
 # default, which code written for C17 does not build as), the stack protector, stack clash protection and CET, and
 # static links with full RELRO and no executable stack; Alpine's GCC makes position-independent code and links
-# -static as a static PIE, and defines _FORTIFY_SOURCE. A library comes with what building against it needs (its
-# headers, archive and pkg-config file), not its libtool archive; no package keeps manuals, translations or another
-# shell's completions (the root has no man, no locales and no bash). Nothing a package made names where it was
-# made: what it says of what it was built against is said as the root has it, a recipe whose build names its
-# sources by where they are says them from their top, and a package that still names its build's place is not made.
+# -static as a static PIE, and defines _FORTIFY_SOURCE; every program made is checked to be such a PIE, with full
+# RELRO and no executable stack. A library comes with what building against it needs (its headers, archive and
+# pkg-config file), not its libtool archive; no package keeps manuals, translations or shell completions (the root
+# has no man and no locales, and its interactive shell is ash, whose are its own). Nothing a package made names
+# where it was made: what it says of what it was built against is said as the root has it, a recipe whose build
+# names its sources by where they are says them from their top, and a package that still names its build's place
+# is not made.
 set -eu
 out=$1; shift
 here=$(cd "$(dirname "$0")" && pwd)
@@ -158,6 +160,17 @@ make_one() {
     [ -z "$interp" ] || echo "${f#"$t/"} (interpreter $interp)"
   done)
   [ -z "$bad" ] || { say "$name: not static: $bad"; exit 1; }
+  # And hardened as every build is asked to make it: position-independent (where ASLR puts it), its relocations
+  # read-only before it runs (full RELRO: GNU_RELRO and BIND_NOW), its stack not executable.
+  soft=$(find "$t" -type f -perm -u+x | while read -r f; do
+    is_elf "$f" || continue
+    h=$(readelf -hld "$f" 2>/dev/null)
+    if ! echo "$h" | grep -q 'Type: *DYN'; then echo "${f#"$t/"} (not position-independent)"
+    elif ! echo "$h" | grep -q GNU_RELRO || ! echo "$h" | grep -qE 'BIND_NOW|FLAGS_1.*NOW'; then echo "${f#"$t/"} (not full RELRO)"
+    elif echo "$h" | grep -A1 GNU_STACK | grep -q RWE; then echo "${f#"$t/"} (executable stack)"
+    fi
+  done)
+  [ -z "$soft" ] || { say "$name: not hardened: $soft"; exit 1; }
   # Nothing it made names where it was made.
   named=$(grep -rlF "$w" "$t" 2>/dev/null | sed "s|^$t/||" | tr '\n' ' ')
   [ -z "$named" ] || { say "$name: names where it was made ($w): $named"; exit 1; }
