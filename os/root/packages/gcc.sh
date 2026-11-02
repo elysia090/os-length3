@@ -3,9 +3,11 @@
 # builds of it is C17; libgcc is built by the new GCC for its own default, so it is given only -O2. Its own programs
 # are position-independent and bound at once (host PIE, BIND_NOW), as the root's others are: GCC makes them neither
 # unless told. And what it makes is what the root's own programs are, unless asked otherwise (-static, -shared, -r,
-# -nostdlib, -nostartfiles, or each flag's own no-): a static PIE (musl's rcrt1.o; the root has no dynamic loader),
-# with the stack protector, stack clash protection, CET and full RELRO; so a program built here runs wherever the
-# root runs, a browser's Prompt among them.
+# -nostdlib, -nostartfiles, -nostdinc, -U_FORTIFY_SOURCE, or each flag's own other value): a static PIE (musl's
+# rcrt1.o; the root has no dynamic loader), with the stack protector, stack clash protection, its locals zeroed where
+# they would hold what was there before, the C library's checks of sizes (fortify-headers', ahead of musl's headers,
+# at _FORTIFY_SOURCE=3 wherever it optimizes) and full RELRO; so a program built here runs wherever the root runs, a
+# browser's Prompt among them, and is as hard to turn as the root's own.
 pins="GCC GMP MPFR MPC"
 tools="bison flex perl texinfo"
 build() {
@@ -15,7 +17,7 @@ build() {
     ../src/configure --prefix=/usr --build="$target" --host="$target" --target="$target" \
       --enable-languages=c --disable-lto --disable-bootstrap --disable-multilib --disable-nls --disable-shared \
       --enable-host-pie --enable-host-bind-now --enable-default-pie --enable-default-ssp \
-      --with-specs='%{!shared:%{!static:%{!static-pie:%{!r:%{!nostdlib:%{!nostartfiles:-static-pie}}}}}} %{!fno-stack-clash-protection:-fstack-clash-protection} %{!fcf-protection*:-fcf-protection} %{!shared:%{!r:-Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack}}' \
+      --with-specs='%{!shared:%{!static:%{!static-pie:%{!r:%{!nostdlib:%{!nostartfiles:-static-pie}}}}}} %{!fno-stack-clash-protection:-fstack-clash-protection} %{!ftrivial-auto-var-init=*:-ftrivial-auto-var-init=zero} %{O*:%{!O0:%{!D_FORTIFY_SOURCE*:%{!U_FORTIFY_SOURCE:-D_FORTIFY_SOURCE=3}}}} %{!nostdinc:-isystem /usr/include/fortify} %{!shared:%{!r:-Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack}}' \
       --enable-static --disable-libatomic --disable-libgomp --disable-libquadmath --disable-libsanitizer \
       --disable-libssp --disable-libstdcxx-pch --disable-libvtv --without-isl --without-zstd --with-sysroot=/ \
       --with-native-system-header-dir=/usr/include
@@ -44,4 +46,13 @@ check() {
   echo "$h" | not grep -q INTERP
   echo "$h" | grep -qE 'BIND_NOW|FLAGS_1.*NOW'
   nm guard | grep -q ' __stack_chk_fail$'
+  # And a write past a buffer, of a size known only as it runs, stops there (fortify-headers', here the build
+  # machine's: the root's are their own package).
+  printf '%s\n' '#include <stdlib.h>' '#include <string.h>' \
+    'int main(int argc, char **argv) { char b[8]; size_t n = strtoul(argv[1], 0, 10); memset(b, 1, n); return b[n - 1] != 1; }' > past.c
+  "$dest/usr/bin/gcc" -B"$dest/usr/libexec/gcc/$target/$GCC_VERSION/" -B"$dest/usr/lib/gcc/$target/$GCC_VERSION/" \
+    -O2 -o past past.c
+  ./past 8
+  s=0; ./past 9 || s=$?
+  [ "$s" = 132 ]
 }

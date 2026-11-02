@@ -25,23 +25,29 @@
 #   inputs="FILE..."    other files of root/ it is made from (from root/: etc/passwd), in its key too; $here is root/
 #   flat=1              its first pin's archive has no top directory to take off (tzdata's)
 #   version=V           its version, where it has no pin to take it from (the root's own settings)
+#   departs="WHAT..."   what of the hardening every unit is compiled with its own build turns off (stack-protector,
+#                       stack-clash, auto-var-init, fortify), a comment saying why
 #   build() { ... }     run in the unpacked source; installs into $dest as the root lays it out (/usr, /etc)
 #   check() { ... }     optional: run after it is made, against what is in $dest (with what it needs in $deps); a
 #                       package that does not do what it is for is not made
 # Each runs with set -e, so each of its lines is an assertion: one that must fail is said `not CMD` (sh does not
 # stop on a failed `! CMD`, nor on the failure of any but the last of `a && b`).
 #
-# Every build is given the same flags (a recipe that departs from them says why): C17 (Alpine's GCC writes C23 by
-# default, which code written for C17 does not build as), the stack protector, stack clash protection and CET, and
-# static links with full RELRO and no executable stack; Alpine's GCC makes position-independent code and links
-# -static as a static PIE, and defines _FORTIFY_SOURCE; every program made is checked to be such a PIE, with full
-# RELRO and no executable stack. A library comes with what building against it needs (its headers, archive and
-# pkg-config file), not its libtool archive; no package keeps manuals, translations, shell completions or desktop
-# entries and icons (the root has no man, no locales and no desktop, and its interactive shell is ash, whose
-# completions are its own). Nothing a package made names where it was made: what it says of what it was built
-# against is said as the root has it, a recipe whose build names its sources by where they are says them from their
-# top, and a package that still names its build's place is not made. Every script it made is for sh or bash, the
-# root's languages.
+# Every build is given the same flags: C17 (Alpine's GCC writes C23 by default, which code written for C17 does not
+# build as), and static links with full RELRO and no executable stack; Alpine's GCC makes position-independent code
+# and links -static as a static PIE. The hardening of what is compiled is the compiler's own (see `specs` below), so a
+# build that passes flags of its own, or none, keeps it: every unit compiled here has the stack protector, stack clash
+# protection, its locals zeroed where they would hold what was there before, and the C and C++ libraries' checks of
+# sizes and bounds. Every program made is checked to be a static PIE with full RELRO and no executable stack, and
+# every unit of it and of every library made to have been compiled with that hardening, as GCC recorded each one's
+# flags (a build that turns some of it off is not made, unless its recipe departs from it and says why); nothing made
+# is setuid or setgid, or writable by everyone. A library comes with what building against it needs (its headers,
+# archive and pkg-config file), not its libtool archive; no package keeps manuals, translations, shell completions or
+# desktop entries and icons (the root has no man, no locales and no desktop, and its interactive shell is ash, whose
+# completions are its own). Nothing a package made names where it was made: what it says of what it was built against
+# is said as the root has it, a recipe whose build names its sources by where they are says them from their top, and a
+# package that still names its build's place is not made. Every script it made is for sh or bash, the root's
+# languages.
 set -eu
 out=$1; shift
 here=$(cd "$(dirname "$0")" && pwd)
@@ -57,6 +63,40 @@ apk update -q
 apk add -q build-base linux-headers curl xz bzip2 tar patch unzip
 target=$(gcc -dumpmachine)
 [ "$target" = x86_64-alpine-linux-musl ] || { say "this compiler targets $target, not x86_64-alpine-linux-musl"; exit 2; }
+# The compiler's defaults, as a distribution's compiler hardens what it builds: written into the specs GCC reads
+# before anything it is told (its own, dumped, with these put ahead of a build's own flags, so a build may still turn
+# one off, and what it records says so). They are GCC's -fhardened, which is not used itself: it does not raise
+# Alpine's _FORTIFY_SOURCE=2 to 3 (fortify-headers checks sizes known only at run time at 3), and leaves out its
+# link options when a link is -static. Nor is -fcf-protection among them: CET marks a program only where every part
+# of it is marked, and Alpine's musl and start files are not, so no program here would be; and -frecord-gcc-switches
+# is, for the check, and taken out with the symbols.
+specs="$(dirname "$(gcc -print-libgcc-file-name)")/specs"
+gcc -dumpspecs | awk -v cc1='-fstack-protector-strong -fstack-clash-protection -ftrivial-auto-var-init=zero -frecord-gcc-switches' \
+  -v cpp='%{O*:%{!O0:-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3}} -D_GLIBCXX_ASSERTIONS' '
+  prev == "*cc1_options:" { n = index($0, "%{f*}"); if (!n) exit 1; $0 = substr($0, 1, n - 1) cc1 " " substr($0, n); done++ }
+  prev == "*cpp_unique_options:" { n = index($0, "%{D*&U*&A*}"); if (!n) exit 1; $0 = substr($0, 1, n - 1) cpp " " substr($0, n); done++ }
+  { print; prev = $0 }
+  END { if (done != 2) exit 1 }' > "$specs.new" || { say "GCC's specs are not as this script knows them"; exit 2; }
+mv "$specs.new" "$specs"
+# What of those defaults each unit GCC recorded went without (its flags, one line), by the names recipes depart by.
+weaker='
+  { ssp = clash = init = opt = ""; fort = "none"
+    for (i = 1; i <= NF; i++) {
+      a = $i; if ((a == "-D" || a == "-U") && i < NF) { i++; a = a $i }
+      if (a ~ /^-f(no-)?stack-protector/) ssp = a
+      else if (a ~ /^-f(no-)?stack-clash-protection$/) clash = a
+      else if (a ~ /^-ftrivial-auto-var-init=/) init = a
+      else if (a ~ /^-D_FORTIFY_SOURCE/) fort = a
+      else if (a == "-U_FORTIFY_SOURCE") fort = "none"
+      else if (a ~ /^-O/) opt = a
+    }
+    if (ssp != "-fstack-protector-strong" && ssp != "-fstack-protector-all") lack["stack-protector"] = 1
+    if (clash != "-fstack-clash-protection") lack["stack-clash"] = 1
+    if (init != "-ftrivial-auto-var-init=zero" && init != "-ftrivial-auto-var-init=pattern") lack["auto-var-init"] = 1
+    # (Unoptimized, it has no checks of sizes: fortify-headers works through the optimizer.)
+    if (fort != "-D_FORTIFY_SOURCE=3" || opt == "" || opt == "-O0") lack["fortify"] = 1
+  }
+  END { for (k in lack) if (!index(departs, " " k " ")) s = s (s ? ", " : "") k; print s }'
 # An installed Alpine package's version, as its database says it; and the version of one this machine would install.
 installed() { awk -v p="$1" '/^P:/ {n = substr($0, 3)} /^V:/ && n == p {print substr($0, 3)}' /lib/apk/db/installed; }
 offered() { apk search -x "$1" | while read -r l; do echo "${l#"$1"-}"; done; }
@@ -81,7 +121,7 @@ jobs=$(nproc)
 # What a build may stamp into what it makes (a date, a build time) is the epoch, so the same inputs make the same bytes.
 export SOURCE_DATE_EPOCH=0
 
-fields='pins= needs= tools= patches= inputs= flat= version='
+fields='pins= needs= tools= patches= inputs= flat= version= departs='
 field() { (eval "$fields"; . "$recipes/$1.sh"; eval "echo \"\$$2\""); }
 all=$(cd "$recipes" && ls *.sh | sed 's/\.sh$//')
 
@@ -98,8 +138,9 @@ key_of() {
 }
 
 # PIN DIR [flat]: the pinned source, checked against its digest, unpacked into DIR (its top directory taken off,
-# unless flat; a file that is no archive, as the CA bundle, put there as it is). A crate (crates.io's) is a tar; a
-# zip from Go's module proxy has the module and its version as its top (path@version/), which is what is taken off.
+# unless flat; a file that is no archive, as the CA bundle, put there by the name its URL gives it). A crate
+# (crates.io's) is a tar; a zip from Go's module proxy has the module and its version as its top (path@version/),
+# which is what is taken off.
 unpack() {
   url=$(eval "echo \"\${$1_URL}\""); sum=$(eval "echo \"\${$1_SHA256:-}\""); alg=sha256
   [ -n "$sum" ] || { sum=$(eval "echo \"\${$1_SHA512}\""); alg=sha512; }
@@ -124,7 +165,7 @@ unpack() {
       top=$(unzip -Z1 "$f" | head -n 1 | sed -n 's|^\([^@]*@[^/]*\)/.*|\1|p')
       if [ "${3:-}" = flat ] || [ -z "$top" ]; then cp -a "$2.zip/." "$2/"; else cp -a "$2.zip/$top/." "$2/"; fi
       rm -rf "${2:?}.zip" ;;
-    *) cp "$f" "$2/" ;;
+    *) cp "$f" "$2/$(basename "$url")" ;;
   esac
 }
 is_elf() { [ "$(head -c 4 "$1" | od -An -c | tr -d ' ')" = "177ELF" ]; }
@@ -154,8 +195,7 @@ make_one() {
     # down: OpenSSL's are in every program linked with it).
     with=; [ -z "$(field "$name" needs)" ] || with=1
     export CC=gcc CXX=g++ AR=ar RANLIB=ranlib \
-      CFLAGS='-O2 -std=gnu17 -fstack-protector-strong -fstack-clash-protection -fcf-protection' \
-      CXXFLAGS='-O2 -fstack-protector-strong -fstack-clash-protection -fcf-protection' \
+      CFLAGS='-O2 -std=gnu17' CXXFLAGS='-O2' \
       CPPFLAGS="${with:+-I$deps/usr/include}" LDFLAGS="-static $ld${with:+ -L$deps/usr/lib}" \
       PKG_CONFIG=pkg-config PKG_CONFIG_LIBDIR="$deps/usr/lib/pkgconfig" PKG_CONFIG_SYSROOT_DIR="$deps"
     # libtool takes -static as "prefer static libraries" and links a dynamic program: at make time it is told
@@ -171,7 +211,7 @@ make_one() {
       "CFLAGS_$(echo "$target" | tr - _)=$CFLAGS -ffile-prefix-map=$w/=" \
       GOPATH="$w/go" GOCACHE="$w/go-cache" GOTOOLCHAIN=local \
       GOFLAGS='-trimpath -mod=readonly -buildvcs=false -buildmode=pie' \
-      CGO_ENABLED=1 CGO_CFLAGS='-O2 -fstack-protector-strong -fstack-clash-protection -fcf-protection' CGO_LDFLAGS="$ld"
+      CGO_ENABLED=1 CGO_CFLAGS='-O2' CGO_LDFLAGS="$ld"
     golink='-linkmode=external -extldflags=-static-pie'
     eval "$fields"
     . "$recipes/$name.sh"
@@ -194,11 +234,29 @@ make_one() {
   grep -rlF "$w/deps" "$t" 2>/dev/null | while read -r f; do
     if [ ! -L "$f" ] && tr -d '\000' < "$f" | cmp -s - "$f"; then sed -i "s|$w/deps||g" "$f"; fi
   done
+  # Every unit of its programs and libraries compiled with the hardening every unit here is (the compiler's defaults),
+  # but for what its recipe departs from, as GCC recorded each unit's flags. A program none of whose units GCC
+  # recorded is Rust's or Go's (whose compilers take none of these), or it was compiled by another compiler than
+  # this; a library's units without a record are its assembly.
+  departs=" $(field "$name" departs) "
+  weak=$(find "$t" -type f | while read -r f; do
+    case $f in *.a|*.o) ;; *) [ -x "$f" ] && is_elf "$f" || continue ;; esac
+    units=$(readelf -p .GCC.command.line "$f" 2>/dev/null | sed -n 's/^ *\[ *[0-9a-f]*\]  //p')
+    if [ -z "$units" ]; then
+      case $f in *.a|*.o) continue ;; esac
+      readelf -p .comment "$f" 2>/dev/null | grep -q 'rustc version' && continue
+      readelf -S "$f" | grep -qF .go.buildinfo && continue
+      echo "${f#"$t/"} (compiled with no record of its flags)"; continue
+    fi
+    lacks=$(echo "$units" | awk -v departs="$departs" "$weaker")
+    [ -z "$lacks" ] || echo "${f#"$t/"} (without $lacks)"
+  done)
+  [ -z "$weak" ] || { say "$name: compiled with less than every build is: $weak"; exit 1; }
   # Stripped in place (a hard link stays one): a program's symbols and debug sections out; an archive or object
-  # keeps its symbols (a link needs them) and loses its debug sections.
+  # keeps its symbols (a link needs them) and loses its debug sections; and both, the record of their flags.
   find "$t" -type f | while read -r f; do
     case $f in *.a|*.o) mode=--strip-debug ;; *) is_elf "$f" || continue; mode=--strip-all ;; esac
-    strip "$mode" -o "$w/stripped" "$f" && cat "$w/stripped" > "$f"
+    strip "$mode" --remove-section=.GCC.command.line -o "$w/stripped" "$f" && cat "$w/stripped" > "$f"
   done
   rm -f "${w:?}/stripped"
   bad=$(find "$t" -type f -perm -u+x | while read -r f; do
@@ -218,6 +276,9 @@ make_one() {
     fi
   done)
   [ -z "$soft" ] || { say "$name: not hardened: $soft"; exit 1; }
+  # Nothing it made runs with more than the rights of whoever runs it, or is everyone's to change.
+  loose=$(find "$t" \( -type f \( -perm -4000 -o -perm -2000 \) \) -o \( ! -type l -perm -0002 \) | sed "s|^$t/||" | tr '\n' ' ')
+  [ -z "$loose" ] || { say "$name: setuid, setgid or writable by everyone: $loose"; exit 1; }
   # Every script it made runs in the root: by sh or bash, the root having no other language (git's sample hooks,
   # which nothing runs until a person renames one, aside).
   stray=$(find "$t" -type f -perm -u+x ! -name '*.sample' | while read -r f; do

@@ -3,6 +3,7 @@
 # its banner.
 pins="BUSYBOX"
 inputs="packages/busybox.config"
+patches="busybox/split-include-fgets.patch"
 build() {
   export KCONFIG_NOTIMESTAMP=1
   # An applet is what a source file declares with //applet:IF_NAME(...): NAME is the setting that builds it.
