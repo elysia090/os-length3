@@ -4,9 +4,8 @@ name: Release
 # os-length3-linux-vX.Y.Z, by a push that writes X.Y.Z into
 # os/RELEASE (the tag is then made at that commit), or by hand. It
 # publishes the root
-# (the pinned 0.1.0 root, laid out for Prompts (what only booting needed
-# dropped, merged /usr) with this tree's l3, profile and shell, repackaged
-# by os/scripts/root-release.sh), the web build (the app with
+# (every package made from this tree's pins by its recipe, os/scripts/root-build.sh,
+# with this tree's l3, profile and shell, os/scripts/root-assemble.sh), the web build (the app with
 # l3 for the browser: the same root as the browser reads it, os/scripts/l3.mjs
 # and web-release.sh) and the desktop app (the
 # same UI, its Prompt running that root on the machine: a .deb and an
@@ -91,26 +90,34 @@ jobs:
           echo "TAG=os-length3-linux-v$v" >> "$GITHUB_ENV"
           # A version already published is left as it is.
           if gh release view "os-length3-linux-v$v" >/dev/null 2>&1; then echo "SKIP=1" >> "$GITHUB_ENV"; echo "os-length3-linux-v$v is published already"; fi
-      # The root's C toolchain made from its pins on Alpine 3.24 (root-toolchain.sh), as the root job makes and keeps it.
-      - id: toolchain-key
+      # The root's packages, each made from its pin on Alpine 3.24 at the root job's digest (root-build.sh), kept from
+      # run to run as the root job keeps them: a package is made again only when what it is made of changed.
+      - id: packages
         if: env.SKIP != '1'
-        run: echo "key=toolchain-${{ hashFiles('os/scripts/root-toolchain.sh', 'distribution/sources.env') }}" >> "$GITHUB_OUTPUT"
-      - id: toolchain
-        if: env.SKIP != '1'
+        run: echo "key=root-packages-${{ hashFiles('os/scripts/root-build.sh', 'os/scripts/root-packages/**', 'distribution/sources.env', 'distribution/bootstrap/tzcode.env', 'distribution/config/**') }}" >> "$GITHUB_OUTPUT"
+      - if: env.SKIP != '1'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: os/target/toolchain
-          key: ${{ steps.toolchain-key.outputs.key }}
-      - name: The C toolchain from its pins
-        if: env.SKIP != '1' && steps.toolchain.outputs.cache-hit != 'true'
-        run: docker run --rm -v "$GITHUB_WORKSPACE:/w" -e OWNER="$(id -u):$(id -g)" alpine:3.24 sh /w/os/scripts/root-toolchain.sh /w/os/target/toolchain
+          path: os/target/root-packages
+          key: ${{ steps.packages.outputs.key }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ steps.packages.outputs.key }}-
+            root-packages-
+      - name: The root's packages from their pins
+        if: env.SKIP != '1'
+        run: docker run --rm -v "$GITHUB_WORKSPACE:/w" -e OWNER="$(id -u):$(id -g)" alpine@sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d sh /w/os/scripts/root-build.sh /w/os/target/root-packages
+      - if: env.SKIP != '1' && !cancelled()
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: os/target/root-packages
+          key: ${{ steps.packages.outputs.key }}-${{ github.run_id }}
       # What the release holds and its notes, made as by hand (os/scripts/release.sh), then published.
       - name: Root, l3 for the browser, web build and desktop app
         if: env.SKIP != '1'
         working-directory: os
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          ROOT_TOOLCHAIN: ${{ github.workspace }}/os/target/toolchain
+          ROOT_PACKAGES: ${{ github.workspace }}/os/target/root-packages
         run: sh scripts/release.sh "$GITHUB_WORKSPACE/out"
       - name: Publish
         if: env.SKIP != '1'
@@ -118,7 +125,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/publish-release.mjs "$GITHUB_WORKSPACE/out"
-      # The pins the release wrote (release.sh: pin-root.mjs, pin-desktop.mjs, pin-base.mjs), proposed to main as one
+      # The pins the release wrote (release.sh: pin-root.mjs, pin-desktop.mjs), proposed to main as one
       # change; merged, the releases they no longer name are deleted (releases-prune.yml). A
       # pull request opened with this token runs no workflow; the pins are checked where they are read (the web
       # build, the deploy). Where the repository does not let Actions open pull requests, the branch is pushed and
@@ -132,8 +139,8 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git switch -c "$branch"
-          git add os/core/src/root.rs os/shared/desktop-releases.json os/shared/root-base.json
-          git commit -m "Pin $TAG: its root (os/core/src/root.rs RELEASES), its desktop app (os/shared/desktop-releases.json) and the base it carries (os/shared/root-base.json)"
+          git add os/core/src/root.rs os/shared/desktop-releases.json
+          git commit -m "Pin $TAG: its root (os/core/src/root.rs RELEASES) and its desktop app (os/shared/desktop-releases.json)"
           git push "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" "$branch"
           gh pr create --base main --head "$branch" --title "Pin $TAG" \
             --body "What $TAG pinned as it was made (its notes say the same): merged, the tree ships it." \

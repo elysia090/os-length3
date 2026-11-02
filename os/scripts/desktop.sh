@@ -7,7 +7,7 @@
 #   sh scripts/desktop.sh [VERSION]
 #
 # The version is RELEASE's unless given. l3 is static (musl) and has SSH, so it runs on any x86-64 Linux
-# whatever its libc; the root's own l3 (root-release.sh) is another build, without SSH. Needs Rust with the
+# whatever its libc; the root's own l3 (root-assemble.sh) is another build, without SSH. Needs Rust with the
 # target x86_64-unknown-linux-musl, musl-gcc, Node 22, libgles2 and the Tauri build's packages (release.sh names
 # them).
 # The bundles are in target/release/bundle/{deb,appimage}.

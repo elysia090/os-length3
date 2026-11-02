@@ -357,25 +357,49 @@ jobs:
           [ ! -e /etc/apparmor.d/length3-l3 ]
           [ "$(native)" = false ] || { echo "the profile stayed after postrm" >&2; exit 1; }
 
-  # The root a release makes (root-release.sh): the base laid out for Prompts, what a Prompt has nothing for left
-  # out, and OpenSSL, OpenSSH's client, curl and git made again at this tree's pins (root-refresh.sh); each of those
-  # then run, natively and translated as the browser's Prompt runs it. Made only when what makes the root changed.
+  # The root as a release makes it: each package made from its pin by its recipe on Alpine 3.24 at one digest
+  # (root-build.sh; each kept from run to run and made again only when what it is made of changed), put together with
+  # this tree's l3 (root-assemble.sh), then used: run inside the root as a Prompt runs it (read-only, its own /tmp),
+  # its database audited against what is there, and translated as the browser's Prompt runs it. Made only when what
+  # makes the root changed.
   root:
     runs-on: ubuntu-24.04
-    # GCC made from its pins the first time (kept after: its key below) takes most of an hour.
-    timeout-minutes: 120
+    # Every package made the first time (GCC most of all) takes most of an hour; after, a pin raised makes that
+    # package and what is built against it.
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=root-${{ hashFiles('os/scripts/root-release.sh', 'os/scripts/root-refresh.sh', 'os/scripts/root-refresh-db.mjs', 'os/scripts/root-toolchain.sh', 'os/scripts/root/**', 'os/shared/root-base.json', 'distribution/sources.env') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=root-${{ hashFiles('os/scripts/root-build.sh', 'os/scripts/root-packages/**', 'os/scripts/root-assemble.sh', 'os/scripts/root-db.mjs', 'os/scripts/root/**', 'distribution/sources.env', 'distribution/bootstrap/tzcode.env', 'distribution/config/**') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: os/target/root-made/manifest
           key: ${{ steps.key.outputs.key }}
           lookup-only: true
+      - id: packages
+        if: steps.kept.outputs.cache-hit != 'true'
+        run: echo "key=root-packages-${{ hashFiles('os/scripts/root-build.sh', 'os/scripts/root-packages/**', 'distribution/sources.env', 'distribution/bootstrap/tzcode.env', 'distribution/config/**') }}" >> "$GITHUB_OUTPUT"
+      # The packages made before, the newest first: each whose key still holds is kept, the rest made again.
+      - if: steps.kept.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: os/target/root-packages
+          key: ${{ steps.packages.outputs.key }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ steps.packages.outputs.key }}-
+            root-packages-
+      - name: The root's packages from their pins
+        if: steps.kept.outputs.cache-hit != 'true'
+        run: docker run --rm -v "$GITHUB_WORKSPACE:/w" -e OWNER="$(id -u):$(id -g)" alpine@sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d sh /w/os/scripts/root-build.sh /w/os/target/root-packages
+      # Kept even when one failed: what was made before it is made already.
+      - if: steps.kept.outputs.cache-hit != 'true' && !cancelled()
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: os/target/root-packages
+          key: ${{ steps.packages.outputs.key }}-${{ github.run_id }}
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -384,27 +408,8 @@ jobs:
         if: steps.kept.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends musl-tools pkg-config bubblewrap
+          sudo apt-get install -y --no-install-recommends musl-tools bubblewrap
           rustup target add x86_64-unknown-linux-musl wasm32-unknown-unknown
-      # The root's C toolchain made from its pins on Alpine 3.24, the base's target (root-toolchain.sh), kept by its
-      # sources and its script: a root made again does not make GCC again.
-      - id: toolchain-key
-        if: steps.kept.outputs.cache-hit != 'true'
-        run: echo "key=toolchain-${{ hashFiles('os/scripts/root-toolchain.sh', 'distribution/sources.env') }}" >> "$GITHUB_OUTPUT"
-      - id: toolchain
-        if: steps.kept.outputs.cache-hit != 'true'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: os/target/toolchain
-          key: ${{ steps.toolchain-key.outputs.key }}
-      - name: The C toolchain from its pins
-        if: steps.kept.outputs.cache-hit != 'true' && steps.toolchain.outputs.cache-hit != 'true'
-        run: docker run --rm -v "$GITHUB_WORKSPACE:/w" -e OWNER="$(id -u):$(id -g)" alpine:3.24 sh /w/os/scripts/root-toolchain.sh /w/os/target/toolchain
-      - if: steps.kept.outputs.cache-hit != 'true' && steps.toolchain.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: os/target/toolchain
-          key: ${{ steps.toolchain-key.outputs.key }}
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -413,36 +418,38 @@ jobs:
             os -> target
           shared-key: root-${{ hashFiles('xlat/Cargo.toml', 'os/Cargo.toml') }}
           cache-on-failure: true
-      - name: The root as a release makes it, and what it made again, run
+      - name: The root, put together, and used
         if: steps.kept.outputs.cache-hit != 'true'
         working-directory: os
         run: |
-          base=$(node scripts/root-file.mjs target/root base)
-          ROOT_TOOLCHAIN=$PWD/target/toolchain sh scripts/root-release.sh "$base" target/root-made 0.0.0
-          grep '^refreshed\.' target/root-made/manifest
+          sh scripts/root-assemble.sh target/root-packages target/root-made 0.0.0
           mkdir -p target/root-open
           tar --zstd -xf target/root-made/os-length3-linux-0.0.0-x86_64-*.tar.zst -C target/root-open
           r=$PWD/target/root-open/root
           . ../distribution/sources.env
-          "$r/usr/bin/openssl" version | grep -F "OpenSSL $OPENSSL_VERSION "
-          "$r/usr/bin/curl" --version | grep -F "curl $CURL_VERSION "
-          "$r/usr/bin/ssh" -V 2>&1 | grep -F "OpenSSH_$OPENSSH_VERSION"
-          "$r/usr/bin/git" --version | grep -F "git version $GIT_VERSION"
-          # Its C compiler is right, inside the root as a Prompt runs it: floating literals as C says them, and make.
-          # The root is bound read-only, so no new directory can be made in it: the work is its /tmp, which it has.
-          cc=$RUNNER_TEMP/cc
-          mkdir -p "$cc"
-          printf '%s\n' '#include <stdio.h>' 'int main(void) { double f[] = {6.5, 7.3}; printf("%.17g %.17g %d\n", f[0], f[1], (int)(7.3 * 12)); return 0; }' > "$cc/literals.c"
-          printf 'literals: literals.c\n\tcc -O1 -o $@ literals.c\n' > "$cc/Makefile"
-          said=$(sudo bwrap --ro-bind "$r" / --dev /dev --proc /proc --bind "$cc" /tmp --chdir /tmp /bin/sh -c 'make -s literals && ./literals')
+          # Inside the root as a Prompt runs it: read-only, so the work is its /tmp, which it has.
+          w=$RUNNER_TEMP/w
+          mkdir -p "$w"
+          inside() { sudo bwrap --ro-bind "$r" / --dev /dev --proc /proc --bind "$w" /tmp --chdir /tmp /bin/sh -c "$1"; }
+          # Its compiler is right: floating literals as C says them, built by its make.
+          printf '%s\n' '#include <stdio.h>' 'int main(void) { double f[] = {6.5, 7.3}; printf("%.17g %.17g %d\n", f[0], f[1], (int)(7.3 * 12)); return 0; }' > "$w/literals.c"
+          printf 'literals: literals.c\n\tcc -O1 -o $@ literals.c\n' > "$w/Makefile"
+          said=$(inside 'make -s literals && ./literals')
           [ "$said" = '6.5 7.2999999999999998 87' ] || { echo "the root's gcc compiles literals wrong: $said" >&2; exit 1; }
-          for gone in usr/bin/passwd usr/bin/useradd usr/sbin/poweroff usr/sbin/reboot; do
-            if [ -e "$r/$gone" ] || [ -L "$r/$gone" ]; then echo "$gone is still in the root" >&2; exit 1; fi
-          done
-          "$r/usr/bin/apk" --root "$r" --no-network info -v | grep -E '^(openssl|curl|git|openssh-client)-'
+          # Its database says every package put together, and every file in it is as it was made.
+          inside 'apk info' | sort > "$w/apk-info"
+          { cut -d' ' -f1 target/root-packages/record; echo l3; } | sort | diff - "$w/apk-info"
+          audit=$(inside 'apk audit --system 2>&1' || true)
+          [ -z "$audit" ] || { echo "apk audit says:" >&2; echo "$audit" >&2; exit 1; }
+          inside 'openssl version' | grep -F "OpenSSL $OPENSSL_VERSION "
+          inside 'curl --version' | grep -F "curl $CURL_VERSION "
+          inside 'ssh -V 2>&1' | grep -F "OpenSSH_$OPENSSH_VERSION"
+          inside 'git --version' | grep -F "git version $GIT_VERSION"
+          # And translated, as the browser's Prompt runs them.
           cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path ../xlat/Cargo.toml
           node ../xlat/runtime/run.mjs "$r/usr/bin/git" --version | grep -F "git version $GIT_VERSION"
           node ../xlat/runtime/run.mjs "$r/usr/bin/openssl" version | grep -F "OpenSSL $OPENSSL_VERSION "
+          node ../xlat/runtime/run.mjs "$r/usr/bin/busybox" sh -c 'echo $((6 * 7))' | grep -x 42
           rm -rf target/root-open
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
