@@ -501,6 +501,23 @@ jobs:
         run: |
           cargo audit --file os/Cargo.lock
           cargo audit --file xlat/Cargo.lock
+      # And the root's Rust and Go programs, by what each is made of (os/root/advisories.sh), with osv-scanner, built
+      # once from its pinned release (its modules checked against Go's checksum database) and kept as cargo-audit is.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: osv
+        with:
+          path: ~/go/bin/osv-scanner
+          key: osv-scanner-2.7.0-${{ runner.os }}
+      - if: ${{ !cancelled() && steps.osv.outputs.cache-hit != 'true' }}
+        run: GOTOOLCHAIN=auto go install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.7.0
+      - if: ${{ !cancelled() && steps.osv.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/go/bin/osv-scanner
+          key: osv-scanner-2.7.0-${{ runner.os }}
+      - name: The root's Rust and Go programs
+        if: ${{ !cancelled() }}
+        run: sh os/root/advisories.sh ~/go/bin/osv-scanner
 
   # The app end to end, as a person uses it (os/selftest): Chromium against a fresh Remote of its own, in four
   # shards, each with its own Remote and its own build of the app (the build that ships, for a Remote on its own

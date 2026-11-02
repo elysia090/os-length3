@@ -1,15 +1,17 @@
 name: Sources, newest
 
 # What every source the root is built from (os/root/sources.env) has as its newest release, with the digests to pin
-# it by, and every other pin downloaded and checked (os/root/next.py): the table in the run's summary, the files as they would be as an
-# artifact. A pin its maker broke fails the run. Every week, by hand, and when the pins or the script change.
-# Nothing is pushed: a person reads the table and moves the files over.
+# it by, and every other pin downloaded and checked (os/root/next.py): the table in the run's summary, the files as
+# they would be as an artifact. A pin its maker broke fails the run. And what its Rust and Go programs are made of,
+# against the advisories published since (os/root/advisories.sh): one that reaches a pin fails the run, which is said
+# to whoever owns the repository. Every week, by hand, and when the pins or the scripts change. Nothing is pushed: a
+# person reads the table and moves the files over.
 on:
   schedule:
     - cron: '17 4 * * 1'
   workflow_dispatch:
   push:
-    paths: ['.github/workflows/sources-next.yml', 'os/root/next.py', 'os/root/sources.env']
+    paths: ['.github/workflows/sources-next.yml', 'os/root/next.py', 'os/root/sources.env', 'os/root/advisories.sh', 'os/root/advisories.toml']
 
 permissions:
   contents: read
@@ -35,3 +37,17 @@ jobs:
             *.next
             table.txt
           retention-days: 30
+
+  advisories:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: osv-scanner, from its pinned release (its modules checked against Go's checksum database)
+        run: GOTOOLCHAIN=auto go install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.7.0
+      - name: The root's Rust and Go programs, against the advisories published of what they are made of
+        run: |
+          set -o pipefail
+          OSV_FORMAT=markdown sh os/root/advisories.sh ~/go/bin/osv-scanner | tee -a "$GITHUB_STEP_SUMMARY"

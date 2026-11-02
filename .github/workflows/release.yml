@@ -20,8 +20,9 @@ name: Release
 # Only main's commits are released (audit R1): a push to main, a tag on a
 # commit main has, or a run by hand from main; anything else stops at
 # Version. One version at a time (audit R2). The token can write the
-# repository's contents (the release, the pins' branch) and open the pins'
-# pull request in this job alone; every action is pinned to a full commit
+# repository's contents (the release, the pins' branch), open the pins'
+# pull request and attest what it made (each file's provenance, signed as
+# this run) in this job alone; every action is pinned to a full commit
 # (the tag is beside it).
 on:
   push:
@@ -48,6 +49,9 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      # The provenance of what it publishes: signed with this run's identity (OIDC), kept by GitHub.
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -101,6 +105,14 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           ROOT_PACKAGES: ${{ github.workspace }}/os/target/root-packages
         run: sh scripts/release.sh "$GITHUB_WORKSPACE/out"
+      # Every file the release holds, attested as made by this run of this workflow at this commit (SLSA build
+      # provenance, signed through Sigstore): `gh attestation verify FILE -R OWNER/REPO` says so of a file anyone
+      # downloaded, beside the digest a device already checks it by.
+      - name: Provenance
+        if: env.SKIP != '1'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: out/*
       - name: Publish
         if: env.SKIP != '1'
         working-directory: os

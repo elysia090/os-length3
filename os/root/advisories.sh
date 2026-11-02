@@ -1,0 +1,51 @@
+#!/bin/sh
+# What the root's Rust and Go programs are made of, against the advisories published of it: each one's lockfile
+# (Cargo.lock; go.mod), taken from the very archive its pin names and checked against the pin's digest, asked of OSV
+# (osv-scanner: RustSec's advisories and Go's vulnerability database among them). A Go program's standard library is
+# the one it is built with, the build machine's Go (Alpine's, at the version root/build.sh's Alpine has: root/next.py
+# finds it), not the version its go.mod asks for at least. An advisory that is known and does not reach the root, or
+# has nothing to raise to yet, is named in root/advisories.toml with why, and until when.
+#
+#   sh root/advisories.sh [OSV-SCANNER]
+#
+# Fails when one is known to be vulnerable, saying which, by what, and fixed where. (The root's C is not in it: its
+# makers' advisories carry no versions OSV knows them by. What fixes them comes with each newer pin, root/next.py, and
+# the security fixes Alpine carries, which its recipes take.)
+set -eu
+here=$(cd "$(dirname "$0")" && pwd)
+scanner=${1:-osv-scanner}
+. "$here/sources.env"
+work=$(mktemp -d "${TMPDIR:-/tmp}/length3-advisories.XXXXXX")
+trap 'rm -rf "${work:?}"' EXIT
+
+set --
+for pin in $(sed -n 's/^\([A-Z0-9_]*\)_URL=.*/\1/p' "$here/sources.env"); do
+  url=$(eval "echo \"\${${pin}_URL}\"")
+  case $url in https://static.crates.io/crates/*.crate|https://proxy.golang.org/*.zip) ;; *) continue ;; esac
+  sum=$(eval "echo \"\${${pin}_SHA256}\"")
+  f="$work/$pin.archive"
+  curl -fsSL --retry 4 -o "$f" "$url"
+  echo "$sum  $f" | sha256sum -c - >/dev/null 2>&1 || { echo "advisories: $url is not the file $pin is pinned at" >&2; exit 1; }
+  mkdir "$work/$pin"
+  case $url in
+    *.crate)
+      tar -xzf "$f" -C "$work/$pin" --strip-components=1 --wildcards '*/Cargo.lock'
+      set -- "$@" -L "$work/$pin/Cargo.lock" ;;
+    *.zip)
+      # A module's zip has the module and its version as its top (path@version/).
+      top=$(unzip -Z1 "$f" | head -n 1 | sed -n 's|^\([^@]*@[^/]*\)/.*|\1|p')
+      unzip -p "$f" "$top/go.mod" > "$work/$pin/go.mod"
+      set -- "$@" -L "$work/$pin/go.mod" ;;
+  esac
+done
+[ "$#" -gt 0 ] || { echo "advisories: no Rust or Go program is pinned in $here/sources.env" >&2; exit 1; }
+
+go=$(cd "$here" && python3 -c 'import next; print(next.alpine("go", "community"))')
+{
+  echo "# What advisories.sh asks OSV with: the Go the programs are built with, and what root/advisories.toml names."
+  echo "GoVersionOverride = \"$go\""
+  echo "ScanGoModVersion = true"
+  cat "$here/advisories.toml"
+} > "$work/osv-scanner.toml"
+echo "advisories: $(($# / 2)) lockfiles of the root's Rust and Go programs, Go $go" >&2
+"$scanner" scan source --config "$work/osv-scanner.toml" ${OSV_FORMAT:+--format "$OSV_FORMAT"} "$@"

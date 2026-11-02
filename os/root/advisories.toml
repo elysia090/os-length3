@@ -1,0 +1,8 @@
+# Advisories of the root's Rust and Go programs (advisories.sh) known not to reach the root, or with nothing yet to
+# raise to: each with its id, why, and until when (osv-scanner's IgnoredVulns). An entry is a judgment written down,
+# taken away when it no longer holds; none is kept past its date.
+#
+# [[IgnoredVulns]]
+# id = "GHSA-xxxx-xxxx-xxxx"
+# ignoreUntil = 2027-01-01
+# reason = "..."
