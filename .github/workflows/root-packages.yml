@@ -1,12 +1,11 @@
 name: Root packages
 
-# The root's packages, each made from its pin by its recipe (os/scripts/root-build.sh) on Alpine 3.24 at the
-# digest below. What is made is kept from run to run: each package is made again only when its own key changed (its
-# recipe, pins, patches, the builder or what it builds against), so a run after a pin is raised makes that package and
-# what is built against it, and nothing else.
+# The root's packages, each made from its pin by its recipe (os/root/build.sh, through the root-packages action),
+# whenever what they are made of changes: a run after a pin is raised makes that package and what is built against
+# it, and keeps them for the root job and the release.
 on:
   push:
-    paths: ['os/scripts/root-build.sh', 'os/scripts/root-packages/**', 'distribution/sources.env', 'distribution/bootstrap/tzcode.env', 'distribution/config/**', '.github/workflows/root-packages.yml']
+    paths: ['os/root/build.sh', 'os/root/packages/**', 'os/root/sources.env', 'os/root/etc/**', '.github/actions/root-packages/**', '.github/workflows/root-packages.yml']
   workflow_dispatch:
 
 permissions:
@@ -25,24 +24,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - id: key
-        run: echo "key=root-packages-${{ hashFiles('os/scripts/root-build.sh', 'os/scripts/root-packages/**', 'distribution/sources.env', 'distribution/bootstrap/tzcode.env', 'distribution/config/**') }}" >> "$GITHUB_OUTPUT"
-      # The packages made before, the newest first: each one whose key still holds is kept, the rest made again.
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: os/target/root-packages
-          key: ${{ steps.key.outputs.key }}-${{ github.run_id }}
-          restore-keys: |
-            ${{ steps.key.outputs.key }}-
-            root-packages-
-      - name: The root's packages from their pins
-        run: docker run --rm -v "$GITHUB_WORKSPACE:/w" -e OWNER="$(id -u):$(id -g)" alpine@sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d sh /w/os/scripts/root-build.sh /w/os/target/root-packages
-      # Kept even when one failed: what was made before it is made already.
-      - if: ${{ !cancelled() }}
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: os/target/root-packages
-          key: ${{ steps.key.outputs.key }}-${{ github.run_id }}
+      - uses: ./.github/actions/root-packages
       - name: What was made
         if: ${{ !cancelled() }}
         run: |

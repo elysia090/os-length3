@@ -1,1 +1,0 @@
-native parity: green (BusyBox, GCC compile, compiler C population, ld, curl, gzip, apk options, file, ld -r)

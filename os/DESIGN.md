@@ -977,11 +977,11 @@ the same thing for the desktop app and for the web.
   same root by. The release writes that entry (`scripts/pin-root.mjs`) and
   it is committed; nothing else pins l3.
 - **What it holds.** Thirty packages, each made from the source this tree
-  pins (`distribution/sources.env`) by its recipe
-  (`scripts/root-packages/NAME.sh`, made by `scripts/root-build.sh` on
+  pins (`root/sources.env`) by its recipe
+  (`root/packages/NAME.sh`, made by `root/build.sh` on
   Alpine 3.24 at one digest, with one libc: its musl, at the root's own
   musl's version and with the same security fixes), and `/usr/bin/l3`, put
-  together by `scripts/root-assemble.sh`: BusyBox (sh and the small tools),
+  together by `root/assemble.sh`: BusyBox (sh and the small tools),
   the C toolchain (GCC, binutils, make, musl, Linux's headers), git, curl,
   OpenSSL, OpenSSH's client, nano, apk and the rest, `/etc`. Every program is
   a static PIE built with one set of flags (the stack protector, stack clash

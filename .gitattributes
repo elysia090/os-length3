@@ -1,7 +1,2 @@
-# Verification receipts retain exact UART/sanitizer output, including CR and
-# diagnostic cursor spacing. Do not rewrite evidence as source formatting.
-releases/native/verification/*.log -text whitespace=-blank-at-eol
-releases/native/verification/**/*.log -text whitespace=-blank-at-eol
-releases/native/verification/*.report -text whitespace=-blank-at-eol
 # Unified patch context records an empty line with a single leading space.
-distribution/patches/*.patch whitespace=-blank-at-eol
+os/root/packages/**/*.patch whitespace=-blank-at-eol

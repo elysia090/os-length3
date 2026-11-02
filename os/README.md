@@ -534,8 +534,7 @@ to this repository, and its Settings → Build say, once:
 
 The Prompt the web serves is a released one: a newer one ships by releasing
 it (a new version in `RELEASE`, `.github/workflows/release.yml`; without
-Actions, `scripts/release.sh` and `scripts/publish-release.mjs` by hand, as
-[`releases/README.md`](../releases/README.md) says), then merging the pins
+Actions, `scripts/release.sh` and `scripts/publish-release.mjs` by hand), then merging the pins
 the release proposes (Pin vX.Y.Z): l3's one entry in `core/src/root.rs`
 (the root, and the index the web reads it by) and the desktop app in
 `shared/desktop-releases.json`. A build

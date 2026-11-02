@@ -4,8 +4,8 @@ name: Release
 # os-length3-linux-vX.Y.Z, by a push that writes X.Y.Z into
 # os/RELEASE (the tag is then made at that commit), or by hand. It
 # publishes the root
-# (every package made from this tree's pins by its recipe, os/scripts/root-build.sh,
-# with this tree's l3, profile and shell, os/scripts/root-assemble.sh), the web build (the app with
+# (every package made from this tree's pins by its recipe, os/root/build.sh,
+# with this tree's l3, os/root/assemble.sh), the web build (the app with
 # l3 for the browser: the same root as the browser reads it, os/scripts/l3.mjs
 # and web-release.sh) and the desktop app (the
 # same UI, its Prompt running that root on the machine: a .deb and an
@@ -90,27 +90,9 @@ jobs:
           echo "TAG=os-length3-linux-v$v" >> "$GITHUB_ENV"
           # A version already published is left as it is.
           if gh release view "os-length3-linux-v$v" >/dev/null 2>&1; then echo "SKIP=1" >> "$GITHUB_ENV"; echo "os-length3-linux-v$v is published already"; fi
-      # The root's packages, each made from its pin on Alpine 3.24 at the root job's digest (root-build.sh), kept from
-      # run to run as the root job keeps them: a package is made again only when what it is made of changed.
-      - id: packages
-        if: env.SKIP != '1'
-        run: echo "key=root-packages-${{ hashFiles('os/scripts/root-build.sh', 'os/scripts/root-packages/**', 'distribution/sources.env', 'distribution/bootstrap/tzcode.env', 'distribution/config/**') }}" >> "$GITHUB_OUTPUT"
+      # The root's packages, made and kept as the root job makes and keeps them (the root-packages action).
       - if: env.SKIP != '1'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: os/target/root-packages
-          key: ${{ steps.packages.outputs.key }}-${{ github.run_id }}
-          restore-keys: |
-            ${{ steps.packages.outputs.key }}-
-            root-packages-
-      - name: The root's packages from their pins
-        if: env.SKIP != '1'
-        run: docker run --rm -v "$GITHUB_WORKSPACE:/w" -e OWNER="$(id -u):$(id -g)" alpine@sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d sh /w/os/scripts/root-build.sh /w/os/target/root-packages
-      - if: env.SKIP != '1' && !cancelled()
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: os/target/root-packages
-          key: ${{ steps.packages.outputs.key }}-${{ github.run_id }}
+        uses: ./.github/actions/root-packages
       # What the release holds and its notes, made as by hand (os/scripts/release.sh), then published.
       - name: Root, l3 for the browser, web build and desktop app
         if: env.SKIP != '1'

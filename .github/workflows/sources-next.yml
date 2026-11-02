@@ -1,8 +1,7 @@
 name: Sources, newest
 
-# What every source the root is built from (distribution/sources.env, and the zic its build makes:
-# bootstrap/tzcode.env) has as its newest release, with the digests to pin it by, and every other pin downloaded
-# and checked (distribution/sources-next.py): the table in the run's summary, the files as they would be as an
+# What every source the root is built from (os/root/sources.env) has as its newest release, with the digests to pin
+# it by, and every other pin downloaded and checked (os/root/next.py): the table in the run's summary, the files as they would be as an
 # artifact. A pin its maker broke fails the run. Every week, by hand, and when the pins or the script change.
 # Nothing is pushed: a person reads the table and moves the files over.
 on:
@@ -10,7 +9,7 @@ on:
     - cron: '17 4 * * 1'
   workflow_dispatch:
   push:
-    paths: ['.github/workflows/sources-next.yml', 'distribution/sources-next.py', 'distribution/sources.env', 'distribution/bootstrap/tzcode.env']
+    paths: ['.github/workflows/sources-next.yml', 'os/root/next.py', 'os/root/sources.env']
 
 permissions:
   contents: read
@@ -26,7 +25,7 @@ jobs:
       - name: Newest releases and their digests
         run: |
           set -o pipefail
-          python3 distribution/sources-next.py distribution/sources.env distribution/bootstrap/tzcode.env | tee table.txt
+          python3 os/root/next.py os/root/sources.env | tee table.txt
           { echo '```'; cat table.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           for f in *.next; do echo "--- $f"; cat "$f"; done
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
