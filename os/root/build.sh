@@ -27,6 +27,8 @@
 #   version=V           its version, where it has no pin to take it from (the root's own settings)
 #   departs="WHAT..."   what of the hardening every unit is compiled with its own build turns off (stack-protector,
 #                       stack-clash, auto-var-init, fortify), a comment saying why
+#   lifts="SPEC=V..."   crates or Go modules its lockfile holds at versions with advisories, taken to the versions
+#                       their makers fixed them in before it is built (lift.sh), a comment saying which advisories
 #   build() { ... }     run in the unpacked source; installs into $dest as the root lays it out (/usr, /etc)
 #   check() { ... }     optional: run after it is made, against what is in $dest (with what it needs in $deps); a
 #                       package that does not do what it is for is not made
@@ -53,6 +55,7 @@ out=$1; shift
 here=$(cd "$(dirname "$0")" && pwd)
 recipes="$here/packages"
 pins_file="$here/sources.env"
+. "$here/lift.sh"
 . "$pins_file"
 say() { echo "root-build: $*" >&2; }
 grep -q '^3\.24\.' /etc/alpine-release 2>/dev/null || { say "run on Alpine 3.24 (the root's target)"; exit 2; }
@@ -104,7 +107,7 @@ offered() { apk search -x "$1" | while read -r l; do echo "${l#"$1"-}"; done; }
 libc=$(installed musl-dev)
 case $libc in "$MUSL_VERSION"-r*) ;; *) say "Alpine's musl is ${libc:-not installed}, the root's $MUSL_VERSION: pin them alike"; exit 2 ;; esac
 # What a build's output follows from beyond its recipe: this script, and the compiler, linker, libc and kernel headers.
-machine=$({ cat "$0"; for p in gcc binutils musl-dev linux-headers make fortify-headers; do echo "$p $(installed "$p")"; done; } |
+machine=$({ cat "$0" "$here/lift.sh"; for p in gcc binutils musl-dev linux-headers make fortify-headers; do echo "$p $(installed "$p")"; done; } |
   sha256sum | cut -d' ' -f1)
 
 mkdir -p "$out"
@@ -121,7 +124,7 @@ jobs=$(nproc)
 # What a build may stamp into what it makes (a date, a build time) is the epoch, so the same inputs make the same bytes.
 export SOURCE_DATE_EPOCH=0
 
-fields='pins= needs= tools= patches= inputs= flat= version= departs='
+fields='pins= needs= tools= patches= inputs= flat= version= departs= lifts='
 field() { (eval "$fields"; . "$recipes/$1.sh"; eval "echo \"\$$2\""); }
 all=$(cd "$recipes" && ls *.sh | sed 's/\.sh$//')
 
@@ -215,6 +218,7 @@ make_one() {
     golink='-linkmode=external -extldflags=-static-pie'
     eval "$fields"
     . "$recipes/$name.sh"
+    for l in $lifts; do lift "$l"; done
     build
   ) > "$w/log" 2>&1
   ok=$?; set -e

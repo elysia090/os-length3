@@ -1,6 +1,7 @@
 #!/bin/sh
 # What the root's Rust and Go programs are made of, against the advisories published of it: each one's lockfile
-# (Cargo.lock; go.mod), taken from the very archive its pin names and checked against the pin's digest, asked of OSV
+# (Cargo.lock; go.mod), taken from the very archive its pin names and checked against the pin's digest, with what its
+# recipe lifts past advisories taken as the builder takes it (lift.sh: cargo update, go get), asked of OSV
 # (osv-scanner: RustSec's advisories and Go's vulnerability database among them). A Go program's standard library is
 # the one it is built with, the build machine's Go (Alpine's, at the version root/build.sh's Alpine has: root/next.py
 # finds it), not the version its go.mod asks for at least: that Go is asked of OSV itself, by its version (osv-scanner
@@ -20,8 +21,12 @@ scanner=${1:-osv-scanner}
 work=$(mktemp -d "${TMPDIR:-/tmp}/length3-advisories.XXXXXX")
 trap 'rm -rf "${work:?}"' EXIT
 
+. "$here/lift.sh"
+export CARGO_HOME="$work/cargo" GOPATH="$work/go" GOMODCACHE="$work/go/mod"
 set --
-for pin in $(sed -n 's/^\([A-Z0-9_]*\)_URL=.*/\1/p' "$here/sources.env"); do
+for recipe in "$here"/packages/*.sh; do
+  pin=$(pins=; . "$recipe"; echo "${pins%% *}")
+  [ -n "$pin" ] || continue
   url=$(eval "echo \"\${${pin}_URL}\"")
   case $url in https://static.crates.io/crates/*.crate|https://proxy.golang.org/*.zip) ;; *) continue ;; esac
   sum=$(eval "echo \"\${${pin}_SHA256}\"")
@@ -30,15 +35,15 @@ for pin in $(sed -n 's/^\([A-Z0-9_]*\)_URL=.*/\1/p' "$here/sources.env"); do
   echo "$sum  $f" | sha256sum -c - >/dev/null 2>&1 || { echo "advisories: $url is not the file $pin is pinned at" >&2; exit 1; }
   mkdir "$work/$pin"
   case $url in
-    *.crate)
-      tar -xzf "$f" -C "$work/$pin" --strip-components=1 --wildcards '*/Cargo.lock'
-      set -- "$@" -L "$work/$pin/Cargo.lock" ;;
+    *.crate) tar -xzf "$f" -C "$work/$pin" --strip-components=1; lock=Cargo.lock ;;
     *.zip)
       # A module's zip has the module and its version as its top (path@version/).
       top=$(unzip -Z1 "$f" | head -n 1 | sed -n 's|^\([^@]*@[^/]*\)/.*|\1|p')
-      unzip -p "$f" "$top/go.mod" > "$work/$pin/go.mod"
-      set -- "$@" -L "$work/$pin/go.mod" ;;
+      unzip -q "$f" -d "$work/$pin.zip" && cp -a "$work/$pin.zip/$top/." "$work/$pin/"; lock=go.mod ;;
   esac
+  lifts=$(lifts=; . "$recipe"; echo "$lifts")
+  (cd "$work/$pin" && for l in $lifts; do lift "$l"; done)
+  set -- "$@" -L "$work/$pin/$lock"
 done
 [ "$#" -gt 0 ] || { echo "advisories: no Rust or Go program is pinned in $here/sources.env" >&2; exit 1; }
 

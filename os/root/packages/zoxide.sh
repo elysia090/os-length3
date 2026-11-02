@@ -3,6 +3,8 @@
 # every shell's start; z itself is the shrc's, over it.
 pins="ZOXIDE"
 tools="rust cargo"
+# Past what its lockfile is still open to (root/advisories.sh): anyhow (RUSTSEC-2026-0190).
+lifts="anyhow=1.0.103"
 build() {
   cargo build --release --locked --target "$target"
   z="$CARGO_TARGET_DIR/$target/release/zoxide"
