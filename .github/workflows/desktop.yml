@@ -405,7 +405,9 @@ jobs:
         run: |
           sh root/assemble.sh target/root-packages target/root-made 0.0.0
           mkdir -p target/root-open
-          tar --zstd -xf target/root-made/os-length3-linux-0.0.0-x86_64-*.tar.zst -C target/root-open
+          # Owned as the bundle says (root's), as a Prompt sees it: its user is root there. apk takes a database
+          # another user owns for one it may not change, and will not audit it.
+          sudo tar --zstd -xf target/root-made/os-length3-linux-0.0.0-x86_64-*.tar.zst -C target/root-open
           r=$PWD/target/root-open/root
           . root/sources.env
           # Inside the root as a Prompt runs it: read-only, so the work is its /tmp, which it has.
@@ -426,12 +428,15 @@ jobs:
           inside 'curl --version' | grep -F "curl $CURL_VERSION "
           inside 'ssh -V 2>&1' | grep -F "OpenSSH_$OPENSSH_VERSION"
           inside 'git --version' | grep -F "git version $GIT_VERSION"
+          # As a person meets it the first time: a Japanese name shown as written, a new repository on main.
+          [ "$(inside 'touch 日本語.txt && ls 日本語.txt')" = 日本語.txt ]
+          [ "$(inside 'git init -q r && git -C r symbolic-ref HEAD')" = refs/heads/main ]
           # And translated, as the browser's Prompt runs them.
           cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path ../xlat/Cargo.toml
           node ../xlat/runtime/run.mjs "$r/usr/bin/git" --version | grep -F "git version $GIT_VERSION"
           node ../xlat/runtime/run.mjs "$r/usr/bin/openssl" version | grep -F "OpenSSL $OPENSSL_VERSION "
           node ../xlat/runtime/run.mjs "$r/usr/bin/busybox" sh -c 'echo $((6 * 7))' | grep -x 42
-          rm -rf target/root-open
+          sudo rm -rf target/root-open
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

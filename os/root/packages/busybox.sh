@@ -1,23 +1,42 @@
-# BusyBox: the shell and the small tools, as busybox.config says them (what a package of the root gives in full is
-# not an applet; nothing of a machine that boots is). KCONFIG_NOTIMESTAMP leaves the build's time out of its banner.
+# BusyBox: the shell and the small tools, each whole, as busybox.config names them (what a package of the root gives
+# in full is not an applet; nothing of a machine that boots is). KCONFIG_NOTIMESTAMP leaves the build's time out of
+# its banner.
 pins="BUSYBOX"
 inputs="packages/busybox.config"
 build() {
   export KCONFIG_NOTIMESTAMP=1
-  make allnoconfig
-  while IFS= read -r line; do
-    case $line in
-      CONFIG_*=n) k=${line%%=*}; sed -i -e "/^$k=/d" -e "/^# $k is not set\$/d" .config; echo "# $k is not set" >> .config ;;
-      CONFIG_*=*) k=${line%%=*}; sed -i -e "/^$k=/d" -e "/^# $k is not set\$/d" .config; echo "$line" >> .config ;;
-    esac
-  done < "$recipes/busybox.config"
+  # An applet is what a source file declares with //applet:IF_NAME(...): NAME is the setting that builds it.
+  applets=$(find . -name '*.c' -exec grep -hoE '^//applet:IF_[A-Z0-9_]+\(' {} + | sed 's|^//applet:IF_||; s|($||' | sort -u)
+  [ "$(echo "$applets" | wc -l)" -gt 300 ] || { echo "found $(echo "$applets" | wc -l) applets in BusyBox's sources"; exit 1; }
+  put() {
+    k=${1%%=*}
+    sed -i -e "/^$k=/d" -e "/^# $k is not set\$/d" .config
+    case $1 in *=n) echo "# $k is not set" ;; *) echo "$1" ;; esac >> .config
+  }
+  make defconfig
+  for a in $applets; do put "CONFIG_$a=n"; done
+  while IFS= read -r line; do case $line in CONFIG_*=*) put "$line" ;; esac; done < "$recipes/busybox.config"
   make oldconfig < /dev/null
+  # Every applet named is made, and no other (one whose own needs are not met would be dropped without a word).
+  for a in $applets; do grep -qx "CONFIG_$a=y" "$recipes/busybox.config" && echo "$a"; done > asked
+  for a in $applets; do grep -qx "CONFIG_$a=y" .config && echo "$a"; done > made
+  diff asked made || { echo "busybox.config's applets (<) and those made (>) differ"; exit 1; }
   make -j"$jobs" CC=gcc
   make CC=gcc CONFIG_PREFIX="$dest" install
 }
 check() {
   b="$dest/usr/bin/busybox"
-  "$b" | head -1 | grep -q "^BusyBox v$BUSYBOX_VERSION () multi-call binary"
+  "$b" | "$b" head -n 1 | grep -q "^BusyBox v$BUSYBOX_VERSION () multi-call binary"
   [ "$("$b" sh -c 'x=1; echo $((x + 1))')" = 2 ]
-  for a in mount umount dmesg blkid fdisk ip clear reset init poweroff; do ! "$b" --list | grep -qx "$a"; done
+  # Its tools as scripts written elsewhere use them: sort keys, head -N, grep's context, find's tests and -exec,
+  # long options.
+  printf 'b 2\na 1\nc 3\n' > t
+  [ "$("$b" sort -k2,2n t | "$b" head -1)" = 'a 1' ]
+  [ "$("$b" grep -A1 '^a' t | "$b" tail -n +2)" = 'c 3' ]
+  [ "$("$b" find . -maxdepth 1 -type f -name t -exec "$b" wc -l {} +)" = '3 ./t' ]
+  "$b" mkdir --parents p/q && "$b" cp --recursive p r && "$b" ls --color=never --almost-all r | grep -qx q
+  # Not here: what a package has whole, what only a booting machine has, servers, logins, an unchecked TLS.
+  for a in tar gzip mount ip clear strings init modprobe mdev httpd crond su passwd wget hush man; do
+    ! "$b" --list | grep -qx "$a"
+  done
 }

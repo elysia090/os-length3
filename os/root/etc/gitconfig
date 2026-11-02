@@ -1,0 +1,3 @@
+# git as the root has it: a new repository's first branch is main, as the app's Git calls it.
+[init]
+	defaultBranch = main

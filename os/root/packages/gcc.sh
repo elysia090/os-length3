@@ -1,6 +1,6 @@
 # GCC, C, with GMP, MPFR and MPC built inside it (cc1 links them statically), its libgcc built by the GCC just made,
-# and `cc`, the name make and every build reaches for. What the build machine's compiler builds of it is C17; libgcc
-# is built by the new GCC for its own default, so it is given only -O2.
+# and `cc`, the name make and every build reaches for, with POSIX's c99 and c89. What the build machine's compiler
+# builds of it is C17; libgcc is built by the new GCC for its own default, so it is given only -O2.
 pins="GCC GMP MPFR MPC"
 tools="bison flex perl texinfo"
 build() {
@@ -15,6 +15,8 @@ build() {
   make -j"$jobs" all-gcc all-target-libgcc
   make DESTDIR="$dest" install-gcc install-target-libgcc
   ln -sf gcc "$dest/usr/bin/cc"
+  # POSIX's c99 (and c89, which configure scripts still look for): the C compiler held to that standard.
+  for s in 99 89; do printf '#!/bin/sh\nexec gcc -std=c%s "$@"\n' "$s" > "$dest/usr/bin/c$s"; chmod 0755 "$dest/usr/bin/c$s"; done
 }
 check() {
   # It compiles C as C says: floating literals as written (the base's post-linked cc1 made `7.3 * 12` 57).

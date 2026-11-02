@@ -32,7 +32,9 @@
 # static links with full RELRO and no executable stack; Alpine's GCC makes position-independent code and links
 # -static as a static PIE, and defines _FORTIFY_SOURCE. A library comes with what building against it needs (its
 # headers, archive and pkg-config file), not its libtool archive; no package keeps manuals, translations or another
-# shell's completions (the root has no man, no locales and no bash).
+# shell's completions (the root has no man, no locales and no bash). Nothing a package made names where it was
+# made: what it says of what it was built against is said as the root has it, a recipe whose build names its
+# sources by where they are says them from their top, and a package that still names its build's place is not made.
 set -eu
 out=$1; shift
 here=$(cd "$(dirname "$0")" && pwd)
@@ -114,14 +116,17 @@ make_one() {
     cd "$w/src"
     dest=$t; deps="$w/deps"
     ld='-Wl,-z,relro,-z,now,-z,noexecstack'
+    # What it builds against is pointed to only where it builds against something (a build may write its flags
+    # down: OpenSSL's are in every program linked with it).
+    with=; [ -z "$(field "$name" needs)" ] || with=1
     export CC=gcc CXX=g++ AR=ar RANLIB=ranlib \
       CFLAGS='-O2 -std=gnu17 -fstack-protector-strong -fstack-clash-protection -fcf-protection' \
       CXXFLAGS='-O2 -fstack-protector-strong -fstack-clash-protection -fcf-protection' \
-      CPPFLAGS="-I$deps/usr/include" LDFLAGS="-static $ld -L$deps/usr/lib" \
+      CPPFLAGS="${with:+-I$deps/usr/include}" LDFLAGS="-static $ld${with:+ -L$deps/usr/lib}" \
       PKG_CONFIG=pkg-config PKG_CONFIG_LIBDIR="$deps/usr/lib/pkgconfig" PKG_CONFIG_SYSROOT_DIR="$deps"
     # libtool takes -static as "prefer static libraries" and links a dynamic program: at make time it is told
     # -all-static, which it passes on.
-    allstatic="-all-static $ld -L$deps/usr/lib"
+    allstatic="-all-static $ld${with:+ -L$deps/usr/lib}"
     eval "$fields"
     . "$recipes/$name.sh"
     build
@@ -135,6 +140,11 @@ make_one() {
     rm -rf "${t:?}/$d"
   done
   find "$t" -name '*.la' -type f -delete
+  # What it writes down of what it was built against (a pkg-config file, a -config script) it says as the root has
+  # it: the deps are laid out as the root is, so the deps' /usr is /usr. Only text is written to.
+  grep -rlF "$w/deps" "$t" 2>/dev/null | while read -r f; do
+    if [ ! -L "$f" ] && tr -d '\000' < "$f" | cmp -s - "$f"; then sed -i "s|$w/deps||g" "$f"; fi
+  done
   # Stripped in place (a hard link stays one): a program's symbols and debug sections out; an archive or object
   # keeps its symbols (a link needs them) and loses its debug sections.
   find "$t" -type f | while read -r f; do
@@ -148,6 +158,9 @@ make_one() {
     [ -z "$interp" ] || echo "${f#"$t/"} (interpreter $interp)"
   done)
   [ -z "$bad" ] || { say "$name: not static: $bad"; exit 1; }
+  # Nothing it made names where it was made.
+  named=$(grep -rlF "$w" "$t" 2>/dev/null | sed "s|^$t/||" | tr '\n' ' ')
+  [ -z "$named" ] || { say "$name: names where it was made ($w): $named"; exit 1; }
   # What it is for, done by what was made.
   (
     cd "$w"; dest=$t

@@ -34,11 +34,31 @@ git() {
   command git "$@"
 }
 
-# The editor this root has.
-if ! command -v vi >/dev/null 2>&1 && command -v nano >/dev/null 2>&1; then
-  vi() {
-    if [ "$LENGTH3_LANG" = ja ]; then echo "vi はこの root にありません。nano があります: nano $*" >&2
-    else echo "vi is not in this root; nano is: nano $*" >&2; fi
-    return 127
+# The app's Prompt shows what a run says and is no screen to draw on (TERM=dumb), and what is typed into it is
+# sent a line at a time. A pager there has nothing to page on and would wait for keys no one is asked for: it shows
+# what it was given, whole (git's log and diff too, through PAGER). What draws on a screen says where it can: a
+# file is edited in Forge, and a terminal of your own reaches this Prompt over SSH (l3 address). Over SSH, TERM is
+# that terminal's, and all of them are themselves.
+if [ "$TERM" = dumb ]; then
+  export PAGER=cat
+  __l3_whole() {
+    while [ $# -gt 0 ]; do case $1 in --) shift; break ;; -*) shift ;; *) break ;; esac; done
+    cat "$@"
   }
+  less() { __l3_whole "$@"; }
+  more() { __l3_whole "$@"; }
+  __l3_screen() {
+    if [ "$LENGTH3_LANG" = ja ]; then
+      echo "$1 は画面に描くプログラムで、アプリの Prompt は出力を見せるだけです。ファイルは Forge で編集でき、自分の端末からは SSH でこの Prompt に入れます（l3 address）" >&2
+    else
+      echo "$1 draws on a screen, and the app's Prompt shows output only: edit files in Forge, or reach this Prompt from a terminal of your own over SSH (l3 address)." >&2
+    fi
+    return 1
+  }
+  nano() { __l3_screen nano; }
+  vi() { __l3_screen vi; }
+  top() { __l3_screen top; }
+  watch() { __l3_screen watch; }
+  hexedit() { __l3_screen hexedit; }
+  cfdisk() { __l3_screen cfdisk; }
 fi

@@ -2,6 +2,8 @@
 # not linked libraries: each is said off (HAVE_*=0), so none is found by chance; no legacy formats.
 pins="ZSTD"
 build() {
+  # Its programs' build names the library's sources by where they are (in an assertion's words): from the top.
+  export CFLAGS="$CFLAGS -ffile-prefix-map=$PWD/="
   set -- CC=gcc AR=ar PREFIX=/usr ZSTD_LEGACY_SUPPORT=0 HAVE_ZLIB=0 HAVE_LZMA=0 HAVE_LZ4=0
   make -j"$jobs" "$@" zstd
   make -C lib "$@" DESTDIR="$dest" install-pc install-static install-includes

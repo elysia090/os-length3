@@ -7,6 +7,10 @@ build() {
   ../src/configure --prefix=/usr --sysconfdir=/etc --disable-nls --enable-utf8
   make -j"$jobs"
   make DESTDIR="$dest" install
+  # Its settings as the root has them: every syntax it comes with, so a file is coloured as its kind is.
+  mkdir -p "$dest/etc"
+  printf '%s\n' '# nano as the root has it: every syntax it comes with.' \
+    'include "/usr/share/nano/*.nanorc"' 'include "/usr/share/nano/extra/*.nanorc"' > "$dest/etc/nanorc"
 }
 check() {
   v=$("$dest/usr/bin/nano" --version)
