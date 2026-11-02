@@ -1,5 +1,6 @@
-# The root's own settings, as root/etc has them: its one user and group (root) and their shadow entries, its hosts,
-# OpenSSH's client's, and the Prompt's shell (/etc/profile, /etc/length3/shrc). The shadow files are root's alone.
+# The root's own settings, as root/etc has them: its accounts (root, who works in it; nobody, for what runs as no
+# one), with no password either, its hosts, OpenSSH's client's, and the Prompt's shell (/etc/profile,
+# /etc/length3/shrc). The shadow files are root's alone.
 version=1
 inputs="etc/passwd etc/group etc/shadow etc/gshadow etc/hosts etc/ssh/ssh_config etc/profile etc/length3/shrc"
 build() {

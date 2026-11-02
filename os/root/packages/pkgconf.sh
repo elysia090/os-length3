@@ -8,6 +8,10 @@ build() {
   ln -sf pkgconf "$dest/usr/bin/pkg-config"
 }
 check() {
-  mkdir pc && printf 'Name: t\nDescription: t\nVersion: 1.2\nCflags: -It\n' > pc/t.pc
-  [ "$(PKG_CONFIG_LIBDIR="$PWD/pc" "$dest/usr/bin/pkg-config" --cflags --modversion t | tr '\n' ' ')" = '1.2 -It ' ]
+  # A module's version, compared and given; its flags, as a build asks for them.
+  mkdir pc && printf 'Name: t\nDescription: t\nVersion: 1.2\nCflags: -It\nLibs: -lt\n' > pc/t.pc
+  export PKG_CONFIG_LIBDIR="$PWD/pc"
+  "$dest/usr/bin/pkg-config" --atleast-version 1.1 t && ! "$dest/usr/bin/pkg-config" --atleast-version 1.3 t
+  [ "$("$dest/usr/bin/pkg-config" --modversion t)" = 1.2 ]
+  [ "$("$dest/usr/bin/pkg-config" --cflags --libs t)" = '-It -lt' ]
 }
