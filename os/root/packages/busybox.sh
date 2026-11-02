@@ -28,11 +28,11 @@ check() {
   b="$dest/usr/bin/busybox"
   "$b" | "$b" head -n 1 | grep -q "^BusyBox v$BUSYBOX_VERSION () multi-call binary"
   [ "$("$b" sh -c 'x=1; echo $((x + 1))')" = 2 ]
-  # Its tools as scripts written elsewhere use them: sort keys, head -N, grep's context, find's tests and -exec,
-  # long options.
+  # Its tools as scripts written elsewhere use them: sort keys, head -N, awk's fields, find's tests and -exec, long
+  # options. (grep is GNU grep's package.)
   printf 'b 2\na 1\nc 3\n' > t
   [ "$("$b" sort -k2,2n t | "$b" head -1)" = 'a 1' ]
-  [ "$("$b" grep -A1 '^a' t | "$b" tail -n +2)" = 'c 3' ]
+  [ "$("$b" awk '$2 > 1 { printf "%s", $1 }' t)" = bc ]
   [ "$("$b" find . -maxdepth 1 -type f -name t -exec "$b" wc -l {} +)" = '3 ./t' ]
   "$b" mkdir --parents p/q
   "$b" cp --recursive p r
