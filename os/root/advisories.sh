@@ -3,8 +3,10 @@
 # (Cargo.lock; go.mod), taken from the very archive its pin names and checked against the pin's digest, asked of OSV
 # (osv-scanner: RustSec's advisories and Go's vulnerability database among them). A Go program's standard library is
 # the one it is built with, the build machine's Go (Alpine's, at the version root/build.sh's Alpine has: root/next.py
-# finds it), not the version its go.mod asks for at least. An advisory that is known and does not reach the root, or
-# has nothing to raise to yet, is named in root/advisories.toml with why, and until when.
+# finds it), not the version its go.mod asks for at least: that Go is asked of OSV itself, by its version (osv-scanner
+# matches the standard library by go.mod's version, whatever it is told the toolchain is). An advisory that is known
+# and does not reach the root, or has nothing to raise to yet, is named in root/advisories.toml with why, and until
+# when.
 #
 #   sh root/advisories.sh [OSV-SCANNER]
 #
@@ -40,12 +42,14 @@ for pin in $(sed -n 's/^\([A-Z0-9_]*\)_URL=.*/\1/p' "$here/sources.env"); do
 done
 [ "$#" -gt 0 ] || { echo "advisories: no Rust or Go program is pinned in $here/sources.env" >&2; exit 1; }
 
+# The Go every Go program is built with: its standard library's advisories, as OSV has them for that version.
 go=$(cd "$here" && python3 -c 'import next; print(next.alpine("go", "community"))')
-{
-  echo "# What advisories.sh asks OSV with: the Go the programs are built with, and what root/advisories.toml names."
-  echo "GoVersionOverride = \"$go\""
-  echo "ScanGoModVersion = true"
-  cat "$here/advisories.toml"
-} > "$work/osv-scanner.toml"
-echo "advisories: $(($# / 2)) lockfiles of the root's Rust and Go programs, Go $go" >&2
-"$scanner" scan source --config "$work/osv-scanner.toml" ${OSV_FORMAT:+--format "$OSV_FORMAT"} "$@"
+stdlib=$(curl -fsS --retry 4 -X POST https://api.osv.dev/v1/query \
+  -d "{\"package\": {\"name\": \"stdlib\", \"ecosystem\": \"Go\"}, \"version\": \"$go\"}" |
+  python3 -c 'import json, sys; print(" ".join(v["id"] for v in json.load(sys.stdin).get("vulns", [])))')
+failed=0
+if [ -n "$stdlib" ]; then echo "advisories: Go $go, which the Go programs are built with: $stdlib" >&2; failed=1; fi
+
+echo "advisories: $(($# / 2)) lockfiles of the root's Rust and Go programs; Go $go" >&2
+"$scanner" scan source --config "$here/advisories.toml" ${OSV_FORMAT:+--format "$OSV_FORMAT"} "$@" || failed=1
+exit "$failed"
