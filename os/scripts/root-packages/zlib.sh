@@ -1,8 +1,11 @@
-# zlib: libz.a and its headers, for what is linked here (OpenSSL, curl, git, OpenSSH, apk) and for the Prompt's own
-# builds; position-independent, so static PIEs link it too.
+# zlib: libz for what is linked here (OpenSSL, curl, git, OpenSSH, apk) and for the Prompt's own builds.
 pins="ZLIB"
 build() {
-  CFLAGS="$hard -fPIC" ./configure --prefix=/usr --static
+  ./configure --prefix=/usr --static
   make -j"$jobs"
   make DESTDIR="$dest" install
+}
+check() {
+  printf '#include <zlib.h>\n#include <string.h>\nint main(void) { const char *v = zlibVersion(); return strcmp(v, ZLIB_VERSION); }\n' > t.c
+  gcc -static -I"$dest/usr/include" -o t t.c -L"$dest/usr/lib" -lz && ./t
 }

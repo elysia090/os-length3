@@ -1,0 +1,10 @@
+--- a/libmount/src/hook_idmap.c
++++ b/libmount/src/hook_idmap.c
+@@ -27,6 +27,7 @@
+ #include "namespace.h"
+ 
+ #include "mountP.h"
++#include <linux/openat2.h>
+ 
+ #ifdef HAVE_LINUX_NSFS_H
+ # include <linux/nsfs.h>

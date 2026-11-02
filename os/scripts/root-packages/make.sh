@@ -1,7 +1,11 @@
-# GNU make, as the base built it: static, no translations.
+# GNU make.
 pins="MAKE"
 build() {
-  CFLAGS="$c17" LDFLAGS='-static' ./configure --prefix=/usr --disable-nls
+  ./configure --prefix=/usr --disable-nls
   make -j"$jobs"
   make DESTDIR="$dest" install
+}
+check() {
+  printf 'all: a\n\techo made\na:\n\ttouch a\n' > Makefile
+  [ "$("$dest/usr/bin/make" -s)" = made ] && [ -f a ]
 }
