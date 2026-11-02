@@ -44,9 +44,11 @@ install -m 0755 "$l3" "$work/l3/usr/bin/l3"
 # NAME VERSION URL TREE, a line each: the packages, and l3.
 . "$here/sources.env"
 while read -r n v _; do
+  # Where its first pin's source is from; - for a package made of this tree's files alone (system-config).
   pin=$(sed -n 's/^pins="\([A-Z0-9_]*\).*/\1/p' "$here/packages/$n.sh")
-  url=$( [ -n "$pin" ] && eval "echo \"\${${pin}_URL:-}\"" )
-  echo "$n $v ${url:--} $pkgs/$n/tree"
+  url=-
+  [ -z "$pin" ] || eval "url=\${${pin}_URL}"
+  echo "$n $v $url $pkgs/$n/tree"
 done < "$pkgs/record" > "$work/list"
 echo "l3 $version https://github.com/elysia090/os-length3 $work/l3" >> "$work/list"
 
