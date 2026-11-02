@@ -5,6 +5,7 @@
 # is pinned.
 pins="UTIL_LINUX"
 needs="ncurses"
+tools="pkgconf"
 patches="util-linux/2.42.4-openat2.patch"
 build() {
   [ "$UTIL_LINUX_VERSION" = 2.42.4 ] || { echo "util-linux $UTIL_LINUX_VERSION: review util-linux/2.42.4-openat2.patch"; exit 1; }

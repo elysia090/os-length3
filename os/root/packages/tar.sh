@@ -7,6 +7,7 @@ build() {
   make DESTDIR="$dest" install
 }
 check() {
-  mkdir -p d && echo roundtrip > d/f
+  mkdir -p d
+  echo roundtrip > d/f
   "$dest/usr/bin/tar" -cf a.tar d && mkdir x && "$dest/usr/bin/tar" -xf a.tar -C x && cmp d/f x/d/f
 }

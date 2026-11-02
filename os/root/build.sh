@@ -28,6 +28,8 @@
 #   build() { ... }     run in the unpacked source; installs into $dest as the root lays it out (/usr, /etc)
 #   check() { ... }     optional: run after it is made, against what is in $dest (with what it needs in $deps); a
 #                       package that does not do what it is for is not made
+# Each runs with set -e, so each of its lines is an assertion: one that must fail is said `not CMD` (sh does not
+# stop on a failed `! CMD`, nor on the failure of any but the last of `a && b`).
 #
 # Every build is given the same flags (a recipe that departs from them says why): C17 (Alpine's GCC writes C23 by
 # default, which code written for C17 does not build as), the stack protector, stack clash protection and CET, and
@@ -136,7 +138,11 @@ make_one() {
   tools=$(field "$name" tools)
   [ -z "$tools" ] || apk add -q --virtual ".tools-$name" $tools
   say "$name: making"
+  # The build and the check each run in a shell of their own that stops at the first step that fails. (Tested as
+  # the left of ||, a subshell would run on past a failure, and only its last step would count.)
+  set +e
   (
+    set -e; not() { ! "$@"; }
     cd "$w/src"
     dest=$t; deps="$w/deps"
     ld='-Wl,-z,relro,-z,now,-z,noexecstack'
@@ -166,7 +172,9 @@ make_one() {
     eval "$fields"
     . "$recipes/$name.sh"
     build
-  ) > "$w/log" 2>&1 || { tail -n 100 "$w/log" >&2; say "$name: its build failed (the end of its log is above)"; exit 1; }
+  ) > "$w/log" 2>&1
+  ok=$?; set -e
+  [ "$ok" = 0 ] || { tail -n 100 "$w/log" >&2; say "$name: its build failed (the end of its log is above)"; exit 1; }
   # Laid out as the root is: /bin, /sbin and /lib are /usr's.
   for d in bin sbin lib; do
     [ -d "$t/$d" ] && [ ! -L "$t/$d" ] || continue
@@ -220,12 +228,16 @@ make_one() {
   named=$(grep -rlF "$w" "$t" 2>/dev/null | sed "s|^$t/||" | tr '\n' ' ')
   [ -z "$named" ] || { say "$name: names where it was made ($w): $named"; exit 1; }
   # What it is for, done by what was made.
+  set +e
   (
+    set -e; not() { ! "$@"; }
     cd "$w"; dest=$t; deps="$w/deps"
     eval "$fields"; check() { :; }
     . "$recipes/$name.sh"
     check
-  ) > "$w/check" 2>&1 || { cat "$w/check" >&2; say "$name: made, but its check failed (above)"; exit 1; }
+  ) > "$w/check" 2>&1
+  ok=$?; set -e
+  [ "$ok" = 0 ] || { cat "$w/check" >&2; say "$name: made, but its check failed (above)"; exit 1; }
   [ -z "$tools" ] || apk del -q ".tools-$name"
   v=$(field "$name" version)
   [ -n "$v" ] || [ -z "$first" ] || v=$(eval "echo \"\${${first}_VERSION:-\${${first}_DATE:-}}\"")

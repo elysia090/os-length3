@@ -40,6 +40,8 @@ check() {
     -O2 -o guard guard.c
   ./guard
   h=$(readelf -hld guard)
-  echo "$h" | grep -q 'Type: *DYN' && ! echo "$h" | grep -q INTERP && echo "$h" | grep -qE 'BIND_NOW|FLAGS_1.*NOW'
+  echo "$h" | grep -q 'Type: *DYN'
+  echo "$h" | not grep -q INTERP
+  echo "$h" | grep -qE 'BIND_NOW|FLAGS_1.*NOW'
   nm guard | grep -q ' __stack_chk_fail$'
 }

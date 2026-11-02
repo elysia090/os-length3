@@ -7,7 +7,9 @@ build() {
   make DESTDIR="$dest" install
 }
 check() {
-  mkdir -p s/a s/b && echo needle > s/a/x.ts && echo needle > s/b/x.js
+  mkdir -p s/a s/b
+  echo needle > s/a/x.ts
+  echo needle > s/b/x.js
   [ "$("$dest/usr/bin/grep" -rl --include='*.ts' needle s)" = s/a/x.ts ]
   [ "$(printf 'a\nb\nc\n' | "$dest/usr/bin/grep" -A1 '^a' | tail -n 1)" = b ]
 }

@@ -15,6 +15,9 @@ check() {
   g="$dest/usr/bin/git"
   "$g" --version | grep -qx "git version $GIT_VERSION"
   export HOME=$PWD GIT_EXEC_PATH="$dest/usr/libexec/git-core"
-  "$g" init -q r && cd r && echo one > f && "$g" add f
+  "$g" init -q r
+  cd r
+  echo one > f
+  "$g" add f
   "$g" -c user.name=t -c user.email=t@t commit -qm one && [ "$("$g" log --format=%s)" = one ]
 }

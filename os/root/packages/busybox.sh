@@ -34,9 +34,11 @@ check() {
   [ "$("$b" sort -k2,2n t | "$b" head -1)" = 'a 1' ]
   [ "$("$b" grep -A1 '^a' t | "$b" tail -n +2)" = 'c 3' ]
   [ "$("$b" find . -maxdepth 1 -type f -name t -exec "$b" wc -l {} +)" = '3 ./t' ]
-  "$b" mkdir --parents p/q && "$b" cp --recursive p r && "$b" ls --color=never --almost-all r | grep -qx q
+  "$b" mkdir --parents p/q
+  "$b" cp --recursive p r
+  "$b" ls --color=never --almost-all r | grep -qx q
   # Not here: what a package has whole, what only a booting machine has, servers, logins, an unchecked TLS.
   for a in tar grep less gzip mount ip clear strings init modprobe mdev httpd crond su passwd wget hush man; do
-    ! "$b" --list | grep -qx "$a"
+    "$b" --list | not grep -qx "$a"
   done
 }
