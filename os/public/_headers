@@ -40,3 +40,10 @@
   Cache-Control: public, max-age=31536000, immutable
 /l3/blobs/*
   Cache-Control: public, max-age=31536000, immutable
+# The desktop app reads the same l3 from here where its Prompts run translated (a machine other than Linux on x86-64,
+# or one that keeps user namespaces from l3): from its own origin, so by CORS. They are public files, each named by
+# its digest (the release carries the same): anyone may read them, and the Worker's Range requests into a pack say
+# what they got.
+/l3/*
+  Access-Control-Allow-Origin: *
+  Access-Control-Expose-Headers: Content-Range, Content-Length, ETag

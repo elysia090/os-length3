@@ -1,13 +1,12 @@
 name: Releases kept
 
 # What main pins is what is published, and nothing more: a release main no longer names (os/core/src/root.rs
-# RELEASES, os/shared/desktop-releases.json, and os/shared/root-base.json for the release that carries the base a
-# release is made from) is deleted. Its tag stays, so the commit it was made from is still named. Runs when the pins
+# RELEASES, os/shared/desktop-releases.json) is deleted. Its tag stays, so the commit it was made from is still named. Runs when the pins
 # on main change (a release's Pin pull request merged), or by hand; never while a release is being made (one group).
 on:
   push:
     branches: ['main']
-    paths: ['os/core/src/root.rs', 'os/shared/desktop-releases.json', 'os/shared/root-base.json']
+    paths: ['os/core/src/root.rs', 'os/shared/desktop-releases.json']
   workflow_dispatch:
 
 permissions:
@@ -33,7 +32,6 @@ jobs:
         run: |
           keep=$({
             grep -o 'tag: "os-length3-linux-v[^"]*"' os/core/src/root.rs | cut -d'"' -f2
-            grep -o '"tag": "[^"]*"' os/shared/root-base.json | cut -d'"' -f4
             node -e 'for (const v of Object.keys(require("./os/shared/desktop-releases.json"))) console.log(`os-length3-linux-v${v}`)'
           } | sort -u)
           # Pins that cannot be read keep everything.

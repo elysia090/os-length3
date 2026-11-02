@@ -44,7 +44,7 @@ fn approving(user: &'static str) -> FakeRemote {
         match (a.method.as_str(), a.route()) {
             ("POST", "/api/auth/device/code") => (200, format!(r#"{{"device_code":"d","user_code":"ABCD","verification_uri":"{page}","verification_uri_complete":"{page}","interval":1,"expires_in":60}}"#)),
             ("POST", "/api/auth/device/token") => (200, r#"{"access_token":"new"}"#.into()),
-            ("GET", "/api/auth/get-session") if a.auth.as_deref() == Some("Bearer new") => (200, format!(r#"{{"user":{{"id":"{user}","name":"{user}"}}}}"#)),
+            ("GET", "/api/auth/get-session") if a.auth.as_deref() == Some("Bearer new") => (200, format!(r#"{{"user":{{"id":"{user}","name":"{user}"}},"session":{{"token":"new"}}}}"#)),
             ("GET", "/api/auth/get-session") => (401, r#"{"error":"Unauthorized"}"#.into()),
             ("POST", "/v1/blobs/missing") => (200, a.text()),
             ("PUT", p) if p.starts_with("/v1/blobs/") => (200, "{}".into()),
@@ -92,8 +92,10 @@ fn signing_in_as_another_account_or_on_another_remote_never_takes_the_last_ones_
             // Another Remote: it goes there as new.
             assert!(sent.contains("\"a.txt\"") && sent.contains("\"version\":0"), "{case}: {sent}");
         }
+        // Which session it is, in Home's state; what proves it, apart (vault.rs), never in a state a page reads.
         let kept = std::fs::read_to_string(home.path("home/remote.json")).unwrap();
-        assert!(kept.contains("\"token\":\"new\"") && kept.contains("\"user\":\"u2\""), "{case}: {kept}");
+        assert!(kept.contains("\"session\":\"new\"") && kept.contains("\"user\":\"u2\"") && !kept.contains("token"), "{case}: {kept}");
+        assert_eq!(std::fs::read_to_string(home.path("secrets/session")).unwrap(), "new", "{case}");
     }
 }
 
@@ -189,8 +191,31 @@ fn signing_in_again_where_the_session_is_alive_changes_nothing() {
     let ran = home.run("en", &["login", "http://127.0.0.1:9"]);
     assert_eq!(ran.code, 1, "{ran:?}");
     assert!(ran.stderr.contains("l3 logout first"), "{ran:?}");
-    assert!(std::fs::read_to_string(home.path("home/remote.json")).unwrap().contains("\"token\":\"new\""));
+    assert!(std::fs::read_to_string(home.path("home/remote.json")).unwrap().contains("\"session\":\"new\""));
+    assert_eq!(std::fs::read_to_string(home.path("secrets/session")).unwrap(), "new");
     assert!(home.path("sync/notes.json").exists());
+}
+
+#[test]
+fn a_session_kept_as_before_has_its_bearer_moved_apart_and_goes_on_as_it_was() {
+    // Earlier releases kept the bearer in Home's state, which the app's page reads: it moves out of it, unchanged.
+    let remote = FakeRemote::start(|a| match (a.method.as_str(), a.route()) {
+        ("GET", "/v1/repos") if a.auth.as_deref() == Some("Bearer old.sig") => (200, "[]".into()),
+        _ => (401, r#"{"error":"Unauthorized"}"#.into()),
+    });
+    let home = Home::new("kept-before");
+    std::fs::create_dir_all(home.path("home")).unwrap();
+    std::fs::write(home.path("home/remote.json"), format!(r#"{{"url":"{}","token":"old.sig","user":"u1"}}"#, remote.url)).unwrap();
+    let ran = home.run("en", &["remote"]);
+    assert!(remote.said().iter().any(|s| s.starts_with("GET /v1/repos")), "{:?}\n{ran:?}", remote.said());
+    assert!(!ran.stderr.contains("sign in again"), "the session goes on: {ran:?}");
+    let kept = std::fs::read_to_string(home.path("home/remote.json")).unwrap();
+    assert!(kept.contains("\"session\":\"old\"") && kept.contains("\"user\":\"u1\"") && !kept.contains("sig"), "{kept}");
+    assert_eq!(std::fs::read_to_string(home.path("secrets/session")).unwrap(), "old.sig");
+    // Signed out, neither is kept.
+    let ran = home.run("en", &["logout"]);
+    assert_eq!(ran.code, 0, "{ran:?}");
+    assert!(!home.path("secrets/session").exists());
 }
 
 /// What a writer here did while Free ran: each file it wrote by its name and was told was written.

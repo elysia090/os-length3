@@ -10,7 +10,8 @@ use crate::net::{send, Sent};
 
 pub(crate) struct Client {
     pub(super) url: String,
-    token: String,
+    /// What proves the session (mod.rs bearer); none in a browser, which sends its cookie.
+    bearer: Option<String>,
 }
 
 /// What a request's body is.
@@ -28,9 +29,9 @@ pub(super) enum Got {
     Unreachable(String),
 }
 
-/// One request to the Remote: `method` to `url`, carrying `token` when there is one.
-pub(super) fn request(method: &str, url: &str, token: Option<&str>, body: Body) -> Got {
-    let auth = token.map(|t| format!("Bearer {t}"));
+/// One request to the Remote: `method` to `url`, carrying `bearer` when there is one.
+pub(super) fn request(method: &str, url: &str, bearer: Option<&str>, body: Body) -> Got {
+    let auth = bearer.map(|t| format!("Bearer {t}"));
     let mut headers: Vec<(&str, &str)> = auth.as_deref().map(|a| vec![("Authorization", a)]).unwrap_or_default();
     let json = match &body { Body::Json(v) => Some(v.to_string()), _ => None };
     let bytes = match (&body, &json) {
@@ -39,8 +40,8 @@ pub(super) fn request(method: &str, url: &str, token: Option<&str>, body: Body) 
         _ => None,
     };
     match send(method, url, &headers, bytes, Duration::from_secs(60)) {
-        Sent::Answer { status, body } if status < 400 => Got::Ok(body),
-        Sent::Answer { status, body } => Got::Status(status, body),
+        Sent::Answer { status, body, .. } if status < 400 => Got::Ok(body),
+        Sent::Answer { status, body, .. } => Got::Status(status, body),
         Sent::Unreachable { host, why } => Got::Unreachable(unreachable(&host, &why)),
     }
 }
@@ -183,11 +184,16 @@ pub(super) fn odd(url: &str) -> String {
 impl Client {
     pub(crate) fn open() -> Result<Client> {
         let c = connection().ok_or_else(|| failed(Failure::NotConnected, crate::tr!("This device is not signed in to a Remote (l3 login)", "この端末は Remote にサインインしていません（l3 login）")))?;
-        Ok(Client { url: c.url, token: c.token })
+        // Natively the session is the bearer kept apart: without it, nothing here can be this device's session.
+        let bearer = bearer().map_err(|why| failed(Failure::NotConnected, crate::tr!("This device's sign-in could not be read: {}", "この端末のサインイン情報を読めませんでした：{}", why)))?;
+        if bearer.is_none() && cfg!(not(target_os = "wasi")) {
+            return Err(failed(Failure::NotConnected, crate::tr!("This device's sign-in is no longer kept here; sign in again (l3 login)", "この端末のサインイン情報がもうありません。もう一度サインインしてください（l3 login）")));
+        }
+        Ok(Client { url: c.url, bearer })
     }
 
     fn to(&self, method: &str, path: &str, body: Body) -> Got {
-        request(method, &format!("{}{path}", self.url), Some(&self.token), body)
+        request(method, &format!("{}{path}", self.url), self.bearer.as_deref(), body)
     }
 
     pub(crate) fn call(&self, method: &str, path: &str, body: Option<serde_json::Value>) -> Result<Reply> {
@@ -247,4 +253,40 @@ impl Client {
 
 pub fn sha256(bytes: &[u8]) -> String {
     Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// What a page's request to the Remote came to (`ask`): its status, the headers a page reads of it (net::HEARD), and
+/// its body, as base64 (a file's bytes are not always text).
+#[derive(Serialize, Debug)]
+pub struct Asked {
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    pub body: String,
+}
+
+/// The headers a page may send with its request: a look's tag, a guest's pass, what its body is.
+const ASKED_WITH: [&str; 3] = ["if-none-match", "x-guest", "content-type"];
+
+/// A request of the app's page to the Remote this device is on, sent here with this device's session: the page
+/// holds no bearer (mod.rs bearer), so it never has one to give away. Only the Remote's own routes (`/v1/`,
+/// `/api/auth/`), only to the Remote this device is on, with only the headers a page sends (ASKED_WITH).
+pub fn ask(method: &str, path: &str, body: Option<&str>, headers: &[(String, String)]) -> Result<Asked> {
+    use base64::Engine;
+    if !matches!(method, "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE")
+        || !(path.starts_with("/v1/") || path.starts_with("/api/auth/")) || path.contains("..") || path.contains('#') {
+        return Err(crate::tr!("Not a request to the Remote: {} {}", "Remote への要求ではありません：{} {}", method, path));
+    }
+    let c = Client::open()?;
+    let auth = c.bearer.as_deref().map(|b| format!("Bearer {b}"));
+    let mut with: Vec<(&str, &str)> = headers.iter().filter(|(k, _)| ASKED_WITH.contains(&k.to_ascii_lowercase().as_str()))
+        .map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    if let Some(a) = &auth { with.push(("Authorization", a)); }
+    match send(method, &format!("{}{path}", c.url), &with, body.map(str::as_bytes), Duration::from_secs(60)) {
+        Sent::Answer { status, heard, mut body } => {
+            let mut bytes = Vec::new();
+            body.by_ref().take(ANSWER_LIMIT).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+            Ok(Asked { status, headers: heard, body: base64::engine::general_purpose::STANDARD.encode(bytes) })
+        }
+        Sent::Unreachable { host, why } => Err(unreachable(&host, &why)),
+    }
 }

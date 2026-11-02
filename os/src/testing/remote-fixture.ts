@@ -6,7 +6,8 @@ import {createApp} from '../../service/app.ts';
 import {createAuth} from '../../service/auth.ts';
 import {memoryBucket} from '../../service/bucket.ts';
 import * as schema from '../../service/schema.ts';
-import {fileDb} from '../../service/testing.ts';
+import {bearerOf, fileDb} from '../../service/testing.ts';
+import {cookieJar} from './cookies.ts';
 
 export const REMOTE = 'http://remote.test';
 const APP = 'http://app.test';
@@ -20,10 +21,14 @@ export async function inProcessRemote() {
   const db = await fileDb();
   const auth = createAuth({db, secret: 'test-secret-'.repeat(4), baseURL: REMOTE, appOrigin: APP, rateLimit: false, dev: true});
   const app = createApp({db, auth, bucket: memoryBucket(), origins: [APP], providers: ['dev']});
-  Object.assign(globalThis, {fetch: (url: string, init?: RequestInit) => {
-    const headers = new Headers(init?.headers);
+  // The browser's cookies for the Remote: its session's among them, which no page reads.
+  const jar = cookieJar();
+  Object.assign(globalThis, {fetch: async (url: string, init?: RequestInit) => {
+    const {headers, browser} = jar.sent(init);
     headers.set('Origin', APP);
-    return app.request(url, {...init, headers});
+    const r = await app.request(url, {...init, headers});
+    if (browser) jar.keep(r);
+    return r;
   }});
   const bearer = (token: string) => ({Authorization: `Bearer ${token}`, 'Content-Type': 'application/json'});
 
@@ -37,7 +42,7 @@ export async function inProcessRemote() {
     for (const k of ['redirect_uri', 'state']) approve.searchParams.set(k, go.searchParams.get(k) ?? '');
     approve.searchParams.set('name', name);
     const back = (await fetch(approve.toString())).headers.get('Location')!;
-    return (await fetch(back, {headers: {Cookie: cookies}})).headers.get('set-auth-token')!;
+    return bearerOf((await fetch(back, {headers: {Cookie: cookies}})).headers.getSetCookie())!;
   };
 
   /** Whether `token` is still a session the Remote answers. */
@@ -55,5 +60,13 @@ export async function inProcessRemote() {
     await fetch(`${REMOTE}/v1/repos/${name}/draft`, {method: 'PATCH', headers: bearer(token), body: JSON.stringify({version: 0, set: {}, remove: []})});
   };
 
-  return {db, signIn, answers, prove, repo};
+  /** This browser in as `token`'s session, as a sign-in leaves it: the session's cookie, and the core told which it is. */
+  const browserAs = async (token: string, url = REMOTE) => {
+    jar.session(token);
+    const {core} = await import('../app/host.ts');
+    await core('remote_connect', {url});
+    await (await import('../home/state.ts')).loadState(['remote']);
+  };
+
+  return {db, signIn, answers, prove, repo, browserAs};
 }

@@ -30,13 +30,16 @@ test('no referrer, no sniffing, no window shared with another site, no file take
 });
 
 // The desktop app (Tauri's security checklist): its webview's policy as strict as the web's but for its
-// ipc: channel, no remote page, the plain-http origin never, and a window that may do almost nothing.
+// ipc: channel (and no inline style), no remote page, the plain-http origin never, and a window that may do almost nothing.
 test('the desktop webview runs only the app\'s own files, under a strict policy, with no host permission but events and its title', () => {
   const conf = JSON.parse(readFileSync(new URL('../../src-tauri/tauri.conf.json', import.meta.url), 'utf8'));
   const csp: string = conf.app.security.csp;
   // One policy, src/app/policy.ts's, for the Remote the app ships with (scripts/desktop.sh gives Tauri it for another).
   assert.equal(csp, desktopPolicy(DEFAULT_REMOTE));
-  assert.doesNotMatch(csp, /'unsafe-eval'|'unsafe-inline'|'wasm-unsafe-eval'|\*|http:\/\/(?!ipc\.localhost)/);
+  // WebAssembly compiled as the web's is (its Prompts run translated where they do not run on the root), never
+  // JavaScript from text; isolated as the web's page is, so its translated Prompts share memory as they do there.
+  assert.doesNotMatch(csp, /'unsafe-eval'|'unsafe-inline'|\*|http:\/\/(?!ipc\.localhost)/);
+  assert.deepEqual(conf.app.security.headers, {'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp'});
   for (const d of ["default-src 'self'", "object-src 'none'", "base-uri 'none'", "form-action 'none'", "frame-src 'none'"]) assert.ok(csp.includes(d), d);
   assert.equal(conf.build.frontendDist, '../dist');
   assert.ok(conf.app.windows.every((w: {url?: string; useHttpsScheme?: boolean}) => !w.url && w.useHttpsScheme === true));

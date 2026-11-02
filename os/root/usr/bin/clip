@@ -1,0 +1,16 @@
+#!/bin/sh
+# clip [FILE...]: what it reads, or the files it is given, put on the clipboard of the terminal this is shown in, as
+# terminals let a program put it there (OSC 52): the app's Prompt's, or a terminal of your own reached over SSH
+# (inside tmux too). It says what it sent; a terminal that does not take it says nothing back.
+set -eu
+t=$(mktemp)
+trap 'rm -f "$t"' EXIT
+cat "$@" > "$t"
+lines=$(wc -l < "$t" | tr -d ' ') size=$(wc -c < "$t" | tr -d ' ')
+# Said to the terminal itself, so a pipe after clip takes nothing of it.
+printf '\033]52;c;%s\a' "$(base64 < "$t" | tr -d '\n')" > /dev/tty
+if [ "${LENGTH3_LANG:-}" = ja ]; then
+  echo "clip: $lines 行（$size バイト）をクリップボードへ送りました" >&2
+else
+  echo "clip: $lines lines ($size bytes) sent to the clipboard" >&2
+fi

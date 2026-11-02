@@ -12,9 +12,13 @@ use std::io::Read;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
+/// The headers of an answer a reader goes by (what kind it is, its tag, how long to wait), lower-cased.
+pub const HEARD: [&str; 4] = ["content-type", "etag", "retry-after", "x-retry-after"];
+
 /// What a request came to: an answer (any status: a refusal is an answer too), or no answer at all, and why.
 pub enum Sent {
-    Answer { status: u16, body: Box<dyn Read + Send> },
+    /// Its status, the headers of `HEARD` it gave (natively; a browser's core reads none), and its body.
+    Answer { status: u16, heard: Vec<(String, String)>, body: Box<dyn Read + Send> },
     /// Not reached: where (its host, and port if any) and why, in a person's words.
     Unreachable { host: String, why: String },
 }
@@ -39,7 +43,10 @@ fn native(method: &str, url: &str, headers: &[(&str, &str)], body: Option<&[u8]>
         None => req.body(()).map(|q| agent.run(q)),
     };
     match r.map_err(ureq::Error::Http).and_then(|r| r) {
-        Ok(r) => Sent::Answer { status: r.status().as_u16(), body: Box::new(r.into_body().into_reader()) },
+        Ok(r) => {
+            let heard = HEARD.iter().filter_map(|k| r.headers().get(*k).and_then(|v| v.to_str().ok()).map(|v| (k.to_string(), v.to_string()))).collect();
+            Sent::Answer { status: r.status().as_u16(), heard, body: Box::new(r.into_body().into_reader()) }
+        }
         Err(e) => Sent::Unreachable {
             host: authority(url).to_string(),
             why: match e {
@@ -83,7 +90,7 @@ mod web {
         if status == 0 {
             return Sent::Unreachable { host: String::new(), why: String::from_utf8_lossy(&bytes).into_owned() };
         }
-        Sent::Answer { status: status as u16, body: Box::new(std::io::Cursor::new(bytes)) }
+        Sent::Answer { status: status as u16, heard: Vec::new(), body: Box::new(std::io::Cursor::new(bytes)) }
     }
 }
 

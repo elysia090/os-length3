@@ -131,7 +131,11 @@ class Forge {
     const cols = h('div', {class: 'columns'});
     this.work = bench({strip, main: cols, reveal: (path, line, write) => this.revealAt(path, line, write),
       word: (a) => { openConversation(a); void ctx.go('inbox'); },
-      went: (repo, to) => { if (to !== 'todo') showIssue(repo, to.issue); void ctx.go(to === 'todo' ? 'home' : 'git'); }});
+      went: (repo, to) => {
+        if (to !== 'todo' && 'file' in to) { ctx.openRepo(repo, to.file); return; }
+        if (to !== 'todo') showIssue(repo, to.issue);
+        void ctx.go(to === 'todo' ? 'home' : 'git');
+      }});
     this.element = this.work.element;
     const drag = new Drag(cols);
     this.row = new Row(cols, this.element, drag, {activate: (key) => this.activate(key), close: (key) => this.closeCol(key),

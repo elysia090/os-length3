@@ -24,6 +24,10 @@ env:
   CARGO_TERM_COLOR: always
   # Each job builds once: incremental artifacts only make the cache larger.
   CARGO_INCREMENTAL: '0'
+# What rust-cache keeps is keyed by each workspace's own Cargo.toml as well (in its shared-key, or key): rust-cache
+# hashes its members' manifests and the lockfile, not the workspace's, where [profile] is, and keeps nothing again
+# while its key is met, so a build made with a profile since changed (debug info, LTO) was restored and then
+# rebuilt by every run until the lockfile changed.
 
 # Every job side by side, so the run takes as long as its longest (about two minutes when what is kept is
 # still good), and one failure never hides another. Nothing is made twice: what the tests share (the core
@@ -54,7 +58,7 @@ jobs:
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: os -> target
-          shared-key: core-wasm
+          shared-key: core-wasm-${{ hashFiles('os/Cargo.toml') }}
           cache-on-failure: true
       - if: steps.kept.outputs.cache-hit != 'true'
         working-directory: os
@@ -78,7 +82,7 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=l3-web-${{ hashFiles('os/RELEASE', 'os/core/src/root.rs', 'os/service/releases.ts', 'os/scripts/l3.sh', 'os/scripts/l3.mjs', 'os/scripts/l3-tree.mjs', 'os/scripts/root-file.mjs', 'os/scripts/l3-parity.mjs', 'xlat/Cargo.toml', 'xlat/Cargo.lock', 'xlat/src/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=l3-web-${{ hashFiles('os/RELEASE', 'os/core/src/root.rs', 'os/service/releases.ts', 'os/scripts/l3.sh', 'os/scripts/l3.mjs', 'os/scripts/l3-tree.mjs', 'os/scripts/root-file.mjs', 'os/scripts/l3-parity.mjs', 'xlat/runtime/table.mjs', 'xlat/Cargo.toml', 'xlat/Cargo.lock', 'xlat/src/**') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -97,7 +101,7 @@ jobs:
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: xlat -> target
-          shared-key: l3-web
+          shared-key: l3-web-${{ hashFiles('xlat/Cargo.toml') }}
           cache-on-failure: true
       - name: l3 for the browser, made from the root this tree pins, and the same as it
         if: steps.kept.outputs.cache-hit != 'true'
@@ -181,7 +185,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: os -> target
-          shared-key: lint
+          shared-key: lint-${{ hashFiles('os/Cargo.toml') }}
           cache-on-failure: true
       # Each step below runs whatever failed before it (only a cancel stops them), so one failure never
       # hides another as skipped: the job fails for each that fails.
@@ -213,7 +217,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: os -> target
-          shared-key: rust
+          shared-key: rust-${{ hashFiles('os/Cargo.toml') }}
           cache-on-failure: true
       - name: Core and l3
         working-directory: os
@@ -251,7 +255,7 @@ jobs:
           workspaces: |
             xlat -> target
             os -> target
-          shared-key: xlat-${{ matrix.part }}
+          shared-key: xlat-${{ matrix.part }}-${{ hashFiles('xlat/Cargo.toml', 'os/Cargo.toml') }}
           cache-on-failure: true
       - name: xlat against native (C and Rust std), and its unit tests
         if: matrix.part == 'native'
@@ -268,46 +272,115 @@ jobs:
           echo "$out" | head -3
           echo "$out" | grep -q 'l3 issue new'
 
-  # The .deb's AppArmor profile (os/src-tauri/deb) on Ubuntu 24.04 as a person has it, user namespaces kept from
-  # unprivileged programs: a program at /usr/bin/l3 cannot make the mount namespace a Prompt is made in until the
-  # .deb's postinst has put the profile in place, and can after; its postrm takes it away again.
-  apparmor:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
+  # The desktop app on the other machines it is for, each built on its own: macOS (Apple silicon and Intel), Windows
+  # and Linux on Arm. There its Prompts run translated (l3 root check says why), as a browser's do; l3 is built for
+  # the machine and goes beside the app, as on Linux x86-64 (scripts/desktop.sh), and each is bundled as its
+  # machine installs it.
+  elsewhere:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: macos-15, target: aarch64-apple-darwin, bundles: app}
+          - {os: macos-15-intel, target: x86_64-apple-darwin, bundles: app}
+          - {os: windows-2025, target: x86_64-pc-windows-msvc, bundles: nsis}
+          - {os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, bundles: deb}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: os/package-lock.json
+      - name: Linux's webview
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: os -> target
+          key: ${{ matrix.target }}-${{ hashFiles('os/Cargo.toml') }}
+      - name: l3 and the app, built and bundled here
+        working-directory: os
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          BUNDLES: ${{ matrix.bundles }}
+        run: |
+          npm ci
+          # tauri build builds the app for its minimum macOS (MACOSX_DEPLOYMENT_TARGET: bundle.macOS.minimumSystemVersion,
+          # 10.13 when it is not set): l3, which goes beside it, is built for the same, and what both build (ring's C,
+          # whose build runs again when that changes) is built once.
+          if [ "$RUNNER_OS" = macOS ]; then
+            export MACOSX_DEPLOYMENT_TARGET=$(node -p "require('./src-tauri/tauri.conf.json').bundle?.macOS?.minimumSystemVersion ?? '10.13'")
+          fi
+          cargo build --locked --release -p l3
+          ext=; [ "$RUNNER_OS" = Windows ] && ext=.exe
+          mkdir -p src-tauri/binaries
+          cp "target/release/l3$ext" "src-tauri/binaries/l3-$TARGET$ext"
+          "target/release/l3$ext" root check
+          npx tauri build --bundles "$BUNDLES" --config '{"build": {"beforeBuildCommand": "npx vite build"}, "bundle": {"externalBin": ["binaries/l3"]}}'
+
+  # The .deb's AppArmor profile (os/src-tauri/deb) on Ubuntu 24.04 as a person has it, user namespaces kept from
+  # unprivileged programs: l3 at /usr/bin/l3 says Prompts cannot run on the root here (l3 root check: the namespaces
+  # one is made in cannot be made) until the .deb's postinst has put the profile in place, and can after; its postrm
+  # takes it away again.
+  apparmor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: os -> target
+          shared-key: rust-${{ hashFiles('os/Cargo.toml') }}
       - name: The .deb's profile lets /usr/bin/l3 make user namespaces where they are kept from programs
+        working-directory: os
         run: |
           [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" = 1 ]
-          sudo install -m 0755 "$(command -v unshare)" /usr/bin/l3
-          if /usr/bin/l3 -Urm true 2>/dev/null; then echo "user namespaces were not kept from /usr/bin/l3 to begin with" >&2; exit 1; fi
-          sudo install -D -m 0644 os/src-tauri/deb/length3-l3.apparmor /usr/share/length3-os/apparmor/length3-l3
-          sudo sh os/src-tauri/deb/postinst configure
-          /usr/bin/l3 -Urm true
-          sudo sh os/src-tauri/deb/postrm remove
+          cargo build -q --locked -p l3
+          sudo install -m 0755 target/debug/l3 /usr/bin/l3
+          native() { /usr/bin/l3 root check --json | node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync(0, "utf8")).native))'; }
+          [ "$(native)" = false ] || { echo "user namespaces were not kept from /usr/bin/l3 to begin with" >&2; exit 1; }
+          /usr/bin/l3 root check
+          sudo install -D -m 0644 src-tauri/deb/length3-l3.apparmor /usr/share/length3-os/apparmor/length3-l3
+          sudo sh src-tauri/deb/postinst configure
+          [ "$(native)" = true ] || { /usr/bin/l3 root check; exit 1; }
+          sudo sh src-tauri/deb/postrm remove
           [ ! -e /etc/apparmor.d/length3-l3 ]
-          if /usr/bin/l3 -Urm true 2>/dev/null; then echo "the profile stayed after postrm" >&2; exit 1; fi
+          [ "$(native)" = false ] || { echo "the profile stayed after postrm" >&2; exit 1; }
 
-  # The root a release makes (root-release.sh): the base laid out for Prompts, what a Prompt has nothing for left
-  # out, and OpenSSL, OpenSSH's client, curl and git made again at this tree's pins (root-refresh.sh); each of those
-  # then run, natively and translated as the browser's Prompt runs it. Made only when what makes the root changed.
+  # The root as a release makes it: each package made from its pin by its recipe on Alpine 3.24 at one digest
+  # (os/root/build.sh; each kept from run to run and made again only when what it is made of changed), put together
+  # with this tree's l3 (os/root/assemble.sh), then used: run inside the root as a Prompt runs it (read-only, its own /tmp),
+  # its database audited against what is there, and translated as the browser's Prompt runs it. Made only when what
+  # makes the root changed.
   root:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    # Every package made the first time (GCC most of all) takes most of an hour; after, a pin raised makes that
+    # package and what is built against it.
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=root-${{ hashFiles('os/scripts/root-release.sh', 'os/scripts/root-refresh.sh', 'os/scripts/root-refresh-db.mjs', 'os/scripts/root/**', 'os/shared/root-base.json', 'distribution/sources.env') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=root-${{ hashFiles('os/root/**', '.github/actions/root-packages/**') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: os/target/root-made/manifest
           key: ${{ steps.key.outputs.key }}
           lookup-only: true
+      - if: steps.kept.outputs.cache-hit != 'true'
+        uses: ./.github/actions/root-packages
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -316,7 +389,7 @@ jobs:
         if: steps.kept.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends musl-tools pkg-config
+          sudo apt-get install -y --no-install-recommends musl-tools bubblewrap
           rustup target add x86_64-unknown-linux-musl wasm32-unknown-unknown
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
@@ -324,31 +397,70 @@ jobs:
           workspaces: |
             xlat -> target
             os -> target
-          shared-key: root
+          shared-key: root-${{ hashFiles('xlat/Cargo.toml', 'os/Cargo.toml') }}
           cache-on-failure: true
-      - name: The root as a release makes it, and what it made again, run
+      - name: The root, put together, and used
         if: steps.kept.outputs.cache-hit != 'true'
         working-directory: os
         run: |
-          base=$(node scripts/root-file.mjs target/root base)
-          sh scripts/root-release.sh "$base" target/root-made 0.0.0
-          grep '^refreshed\.' target/root-made/manifest
+          sh root/assemble.sh target/root-packages target/root-made 0.0.0
           mkdir -p target/root-open
-          tar --zstd -xf target/root-made/os-length3-linux-0.0.0-x86_64-*.tar.zst -C target/root-open
+          # Owned as the bundle says (root's), as a Prompt sees it: its user is root there. apk takes a database
+          # another user owns for one it may not change, and will not audit it.
+          sudo tar --zstd -xf target/root-made/os-length3-linux-0.0.0-x86_64-*.tar.zst -C target/root-open
           r=$PWD/target/root-open/root
-          . ../distribution/sources.env
-          "$r/usr/bin/openssl" version | grep -F "OpenSSL $OPENSSL_VERSION "
-          "$r/usr/bin/curl" --version | grep -F "curl $CURL_VERSION "
-          "$r/usr/bin/ssh" -V 2>&1 | grep -F "OpenSSH_$OPENSSH_VERSION"
-          "$r/usr/bin/git" --version | grep -F "git version $GIT_VERSION"
-          for gone in usr/bin/passwd usr/bin/useradd usr/sbin/poweroff usr/sbin/reboot; do
-            if [ -e "$r/$gone" ] || [ -L "$r/$gone" ]; then echo "$gone is still in the root" >&2; exit 1; fi
-          done
-          "$r/usr/bin/apk" --root "$r" --no-network info -v | grep -E '^(openssl|curl|git|openssh-client)-'
+          . root/sources.env
+          # Inside the root as a Prompt runs it: read-only, so the work is its /tmp, which it has.
+          w=$RUNNER_TEMP/w
+          mkdir -p "$w"
+          inside() { sudo bwrap --ro-bind "$r" / --dev /dev --proc /proc --bind "$w" /tmp --chdir /tmp /bin/sh -c "$1"; }
+          # What `ask` says inside it is `want`, or the run says what was asked, what it said, and what it should have.
+          says() { got=$(eval "$1" 2>&1 < /dev/null) || true; [ "$got" = "$2" ] || { printf 'asked: %s\nsaid:  %s\nnot:   %s\n' "$1" "$got" "$2" >&2; return 1; }; }
+          # Its compiler is right: floating literals as C says them, built by its make.
+          printf '%s\n' '#include <stdio.h>' 'int main(void) { double f[] = {6.5, 7.3}; printf("%.17g %.17g %d\n", f[0], f[1], (int)(7.3 * 12)); return 0; }' > "$w/literals.c"
+          printf 'literals: literals.c\n\tcc -O1 -o $@ literals.c\n' > "$w/Makefile"
+          said=$(inside 'make -s literals && ./literals')
+          [ "$said" = '6.5 7.2999999999999998 87' ] || { echo "the root's gcc compiles literals wrong: $said" >&2; exit 1; }
+          # Its database says every package put together, and every file in it is as it was made.
+          inside 'apk info' | sort > "$w/apk-info"
+          { cut -d' ' -f1 target/root-packages/record; echo l3; } | sort | diff - "$w/apk-info"
+          audit=$(inside 'apk audit --system 2>&1' || true)
+          [ -z "$audit" ] || { echo "apk audit says:" >&2; echo "$audit" >&2; exit 1; }
+          inside 'openssl version' | grep -F "OpenSSL $OPENSSL_VERSION "
+          inside 'curl --version' | grep -F "curl $CURL_VERSION "
+          inside 'ssh -V 2>&1' | grep -F "OpenSSH_$OPENSSH_VERSION"
+          inside 'git --version' | grep -F "git version $GIT_VERSION"
+          # As a person meets it the first time: a Japanese name shown as written, a new repository on main.
+          says "inside 'touch 日本語.txt && ls 日本語.txt'" 日本語.txt
+          says "inside 'git init -q r && git -C r symbolic-ref HEAD'" refs/heads/main
+          # The tools a developer reaches for, as they are first met: a search and a find that leave out what
+          # .gitignore does, a list narrowed by a fuzzy finder, YAML asked as jq asks JSON, a command's common uses
+          # in the person's language, and git's diffs through delta.
+          mkdir -p "$w/p/.git" "$w/p/src" "$w/p/build" "$w/home"
+          echo build > "$w/p/.gitignore"; echo needle > "$w/p/src/a.ts"; echo needle > "$w/p/build/b.ts"
+          says "inside 'cd p && rg -l needle'" src/a.ts
+          says "inside 'cd p && fd -e ts'" src/a.ts
+          says "inside 'printf \"lib/x.c\\nweb/src/main.ts\\n\" | fzf --filter main'" web/src/main.ts
+          says "inside 'echo \"a: {b: 1}\" | yq .a.b'" 1
+          says "inside 'LANG=C.UTF-8 LANGUAGE=ja TEALDEER_CONFIG_DIR=/etc/tealdeer tldr --raw tar' | grep -q 'アーカイブ' && echo in Japanese" 'in Japanese'
+          says "inside 'git config --system core.pager'" delta
+          # The Prompt's shell as a person meets it: z goes back to a place by a part of its name, and an .envrc,
+          # once allowed, is what the environment becomes there.
+          echo 'export MADE=here' > "$w/p/src/.envrc"
+          prompt() { inside "HOME=/tmp/home XDG_DATA_HOME=/tmp/home/share XDG_STATE_HOME=/tmp/home/state TERM=dumb ENV=/etc/length3/shrc sh -ic '$1' 2>/dev/null"; }
+          # (zoxide learns a place on its own time, so cd is not kept waiting: it is given up to five seconds. Not
+          # learnt, what zoxide keeps and what it says when asked to learn it are said.)
+          says "prompt 'cd /tmp/p/src && cd / && for i in 1 2 3 4 5 6 7 8 9 10; do zoxide query src > /dev/null 2>&1 && break; sleep 0.5; done; z src && pwd'" /tmp/p/src ||
+            { inside 'ls -laR /tmp/home; HOME=/tmp/home XDG_DATA_HOME=/tmp/home/share zoxide add /tmp/p/src; echo "add: $?"; HOME=/tmp/home XDG_DATA_HOME=/tmp/home/share zoxide query --list' >&2; exit 1; }
+          says "prompt 'cd /tmp/p/src && direnv allow . && echo \$MADE'" here
+          # And translated, as the browser's Prompt runs them.
           cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path ../xlat/Cargo.toml
           node ../xlat/runtime/run.mjs "$r/usr/bin/git" --version | grep -F "git version $GIT_VERSION"
           node ../xlat/runtime/run.mjs "$r/usr/bin/openssl" version | grep -F "OpenSSL $OPENSSL_VERSION "
-          rm -rf target/root-open
+          node ../xlat/runtime/run.mjs "$r/usr/bin/busybox" sh -c 'echo $((6 * 7))' | grep -x 42
+          node ../xlat/runtime/run.mjs "$r/usr/bin/rg" --version | grep -F "ripgrep $RIPGREP_VERSION"
+          printf 'lib/x.c\nweb/src/main.ts\n' | node ../xlat/runtime/run.mjs "$r/usr/bin/fzf" --filter main | grep -x web/src/main.ts
+          sudo rm -rf target/root-open
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -393,6 +505,23 @@ jobs:
         run: |
           cargo audit --file os/Cargo.lock
           cargo audit --file xlat/Cargo.lock
+      # And the root's Rust and Go programs, by what each is made of (os/root/advisories.sh), with osv-scanner, built
+      # once from its pinned release (its modules checked against Go's checksum database) and kept as cargo-audit is.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: osv
+        with:
+          path: ~/go/bin/osv-scanner
+          key: osv-scanner-2.7.0-${{ runner.os }}
+      - if: ${{ !cancelled() && steps.osv.outputs.cache-hit != 'true' }}
+        run: GOTOOLCHAIN=auto go install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.7.0
+      - if: ${{ !cancelled() && steps.osv.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/go/bin/osv-scanner
+          key: osv-scanner-2.7.0-${{ runner.os }}
+      - name: The root's Rust and Go programs
+        if: ${{ !cancelled() }}
+        run: sh os/root/advisories.sh ~/go/bin/osv-scanner
 
   # The app end to end, as a person uses it (os/selftest): Chromium against a fresh Remote of its own, in four
   # shards, each with its own Remote and its own build of the app (the build that ships, for a Remote on its own

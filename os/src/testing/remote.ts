@@ -11,9 +11,10 @@ import assert from 'node:assert/strict';
 import {createApp, sha256} from '../../service/app.ts';
 import {createAuth} from '../../service/auth.ts';
 import {memoryBucket} from '../../service/bucket.ts';
-import {fileDb, SECRET} from '../../service/testing.ts';
+import {bearerOf, fileDb, SECRET} from '../../service/testing.ts';
 import type {Billing, PlanConfig} from '../../service/plan.ts';
 import {buildCoreWasm} from '../../scripts/core-wasm.ts';
+import {cookieJar} from './cookies.ts';
 import {nodeCore} from './node-core.ts';
 
 const URL_ = 'http://remote.test', APP = 'http://app.test';
@@ -37,11 +38,15 @@ export async function browserOnRemote(o: {plan?: PlanConfig; billing?: Billing; 
     sessionKept: 10_000, ...plan});
   /** What this browser asked the Remote, by path. */
   const asked: string[] = [];
-  Object.assign(globalThis, {fetch: (url: string, init?: RequestInit) => {
-    const headers = new Headers(init?.headers);
+  // The browser's cookies for the Remote: its session's among them, which no page reads.
+  const jar = cookieJar();
+  Object.assign(globalThis, {fetch: async (url: string, init?: RequestInit) => {
+    const {headers, browser} = jar.sent(init);
     headers.set('Origin', APP);
     asked.push(new URL(url).pathname);
-    return app.request(url, {...init, headers});
+    const r = await app.request(url, {...init, headers});
+    if (browser) jar.keep(r);
+    return r;
   }});
 
   // The core this browser runs, the very one (core/web), over files of its own; it is the device named in
@@ -63,10 +68,16 @@ export async function browserOnRemote(o: {plan?: PlanConfig; billing?: Billing; 
     for (const k of ['redirect_uri', 'state']) approve.searchParams.set(k, go.searchParams.get(k) ?? '');
     if (name) approve.searchParams.set('name', name);
     const back = (await fetch(approve.toString())).headers.get('Location')!;
-    return (await fetch(back, {headers: {Cookie: cookies}})).headers.get('set-auth-token')!;
+    return bearerOf((await fetch(back, {headers: {Cookie: cookies}})).headers.getSetCookie())!;
+  };
+  /** This browser in as `token`'s session, as a sign-in leaves it: the session's cookie, and the core told which it is. */
+  const browserAs = async (token: string) => {
+    jar.session(token);
+    await (await import('../app/host.ts')).core('remote_connect', {url: URL_});
+    await state.loadState(['remote']);
   };
   const token = await signIn();
-  await state.setState('remote', JSON.stringify({url: URL_, token}));
+  await browserAs(token);
   const auth_ = {Authorization: `Bearer ${token}`, 'Content-Type': 'application/json'};
 
   /** Another device on the same account, speaking to the Remote directly: a file's text or bytes, or null to remove it. */
@@ -130,5 +141,5 @@ export async function browserOnRemote(o: {plan?: PlanConfig; billing?: Billing; 
     return out;
   }
 
-  return {URL: URL_, token, db, signIn, store, draft, history, state, asked, elsewhere, elsewhereFolder, elsewhereHome, remoteFiles, remoteHome, text, put, names, files};
+  return {URL: URL_, token, db, signIn, browserAs, store, draft, history, state, asked, elsewhere, elsewhereFolder, elsewhereHome, remoteFiles, remoteHome, text, put, names, files};
 }

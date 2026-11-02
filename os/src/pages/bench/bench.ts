@@ -171,7 +171,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   /** A conversation's word in the pane pressed: open it in Inbox. */
   word?(address: string): void;
   /** A line of the box's own in the Prompt pressed: the issue it wrote (its file, in `repo`), or Home's TODO. */
-  went(repo: string, to: {issue: string} | 'todo'): void;
+  went(repo: string, to: {issue: string} | {file: string} | 'todo'): void;
   /** A page read and pressed rather than written in (Git): its box at the foot stands back until it is asked for
    * (Ctrl+`, the pointer resting at the foot), and back again once the Prompt is done with, never over a button. */
   back?: boolean}): Bench {

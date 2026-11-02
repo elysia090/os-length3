@@ -3,8 +3,9 @@
 //
 // Run a static x86-64 program translated by xlat. PROGRAM is a host path
 // (placed at /bin/<name>) or, with --root, a path inside that tree; --pack
-// mounts a web root (root.json and its packs, scripts/webroot.mjs) as the
-// browser does, each file read from the pack when first opened.
+// mounts l3 for the browser (os/scripts/l3.mjs: l3.json, its index and its
+// packs) as the browser does, each file read from its pack when first
+// opened, and checked.
 // stdin/stdout/stderr attach to this process.
 import {execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
@@ -123,11 +124,17 @@ const [program, ...rest] = args;
 const vfs = new Vfs();
 if (root) mount(vfs, root, '/');
 if (pack) {
-  const index = JSON.parse(readFileSync(join(pack, 'root.json'), 'utf8'));
+  const about = JSON.parse(readFileSync(join(pack, 'l3.json'), 'utf8'));
+  const indexBytes = readFileSync(join(pack, about.index.path));
+  if (createHash('sha256').update(indexBytes).digest('hex') !== about.index.sha256) throw new Error(`${about.index.path} is not the index l3.json names`);
+  const index = JSON.parse(indexBytes.toString('utf8'));
   const fds = new Map();
   const fd = (name) => { if (!fds.has(name)) fds.set(name, openSync(join(pack, 'packs', name), 'r')); return fds.get(name); };
-  mountPack(vfs, index, (name, at, len) => { const b = new Uint8Array(len); readSync(fd(name), b, 0, len, at); PROFILE.fetches++; PROFILE.fetched += len; return b; },
-    (bytes) => new Uint8Array(zstdDecompressSync(bytes)));
+  mountPack(vfs, index, {
+    range: (name, at, len) => { const b = new Uint8Array(len); readSync(fd(name), b, 0, len, at); PROFILE.fetches++; PROFILE.fetched += len; return b; },
+    decode: (bytes) => new Uint8Array(zstdDecompressSync(bytes)),
+    sha256: (bytes) => new Uint8Array(createHash('sha256').update(bytes).digest()),
+  });
   process.on('exit', () => { for (const f of fds.values()) closeSync(f); });
 }
 let path = program;

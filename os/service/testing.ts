@@ -36,7 +36,7 @@ import {sql} from 'drizzle-orm';
 import {drizzle} from 'drizzle-orm/pglite';
 import {migrate} from 'drizzle-orm/pglite/migrator';
 import {createApp, sha256} from './app.ts';
-import {createAuth} from './auth.ts';
+import {createAuth, SESSION_COOKIES} from './auth.ts';
 import {memoryBucket} from './bucket.ts';
 import type {Limits} from './budget.ts';
 import type {Edge} from './files.ts';
@@ -60,6 +60,19 @@ export const BASE = 'http://remote.test';
 export const APP = 'http://app.test';
 export const SECRET = 'test-secret-'.repeat(4);
 export const enc = new TextEncoder();
+
+/**
+ * The bearer of the session whose cookie `setCookies` (an answer's Set-Cookie) sets: the cookie's own value, the
+ * token signed, which is the bearer's form too (auth.ts signedToken). A page never reads it (HttpOnly) and is handed
+ * no bearer; a test, which is no page, holds what it was sent, as a device holds its own from the device flow.
+ */
+export function bearerOf(setCookies: string[]): string | null {
+  for (const c of setCookies) {
+    const pair = c.split(';')[0], at = pair.indexOf('=');
+    if (at > 0 && SESSION_COOKIES.includes(pair.slice(0, at)) && pair.length > at + 1) return decodeURIComponent(pair.slice(at + 1));
+  }
+  return null;
+}
 
 /** fetch as the process had it, before any Remote here was laid over it. */
 const realFetch = globalThis.fetch;
@@ -343,7 +356,7 @@ async function make(store: Store, records: Record<string, string[]>, o: Options)
     const done = await request(back, {headers: {Cookie: cookies}});
     assert.equal(done.status, 302, await done.clone().text());
     assert.equal(done.headers.get('Location'), `${APP}/?signed-in`);
-    const token = done.headers.get('set-auth-token');
+    const token = bearerOf(done.headers.getSetCookie());
     assert.ok(token);
     sessions.set(token!, done.headers.getSetCookie().map((c) => c.split(';')[0]).join('; '));
     return token!;

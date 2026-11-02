@@ -328,7 +328,7 @@ mod tests {
 
     #[test]
     fn a_page_reads_only_what_came_since_and_all_again_once_the_journal_was_cut() {
-        let dir = std::env::temp_dir().join(format!("l3-agents-{}", std::process::id()));
+        let dir = crate::testing::dir("l3-agents");
         let _ = std::fs::remove_dir_all(&dir);
         let path = dir.join("agents.jsonl");
         let e = |at: u64, kind: Kind| Event { at, harness: "grok".into(), session: "a".into(), repo: "notes".into(), line: "main".into(), kind, text: String::new() };

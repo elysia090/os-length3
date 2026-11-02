@@ -196,8 +196,13 @@ export class Kernel {
    * vfs: the filesystem. translate(bytes) -> wasm bytes for an ELF.
    * console: {write(fd, bytes), read(n) -> Uint8Array | null (nothing yet), ready?(), interactive?}.
    */
-  constructor({vfs = new Vfs(), translate, console, keeper = null, machine: host = machine()}) {
+  constructor({vfs = new Vfs(), translate, console, keeper = null, machine: host = machine(), consolidateIdle = false}) {
     this.vfs = vfs;
+    // A program due to be translated again as one module (consolidate): at once as it is run again, or, where the
+    // host has idle time to give (a Prompt waiting for its next line: worker.mjs), only then (consolidateDue), so no
+    // run waits on it. Each due one: its node -> its entry.
+    this.consolidateIdle = consolidateIdle;
+    this.due = new Map();
     // The memory and storage the host says it has (machine.mjs): what meminfo, sysinfo and statfs tell programs.
     this.machine = host;
     this.translate = translate;
@@ -294,7 +299,24 @@ export class Kernel {
   consolidateIfDue(node, cached, idle = false) {
     const im = cached.image;
     const due = idle ? im.extras.length > 0 : im.extras.length >= CONSOLIDATE && (im.slots - im.firstSlots) * 4 >= im.firstSlots;
-    if (due && this.translate?.seeded && im.source) this.consolidate(node, cached);
+    if (!due || !this.translate?.seeded || !im.source) return;
+    if (this.consolidateIdle && !idle) this.due.set(node, cached);
+    else this.consolidate(node, cached);
+  }
+
+  /**
+   * The host has time (nothing runs, and it waits for a person): each program due is translated again as one module
+   * (consolidate), unless it changed or went since; the process that ran it goes on with what it has. How many were.
+   */
+  consolidateDue() {
+    let n = 0;
+    for (const [node, cached] of this.due) {
+      this.due.delete(node);
+      if (this.images.get(node) !== cached || cached.version !== node.version || !cached.image.extras.length) continue;
+      this.consolidate(node, cached);
+      n++;
+    }
+    return n;
   }
 
   consolidate(node, cached) {

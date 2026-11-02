@@ -12,12 +12,13 @@
 // identity, which is also what keeps the Remote from being anyone's free,
 // anonymous store or relay (app.ts sets the limits).
 //
-// Clients hold a session token (the bearer plugin): the web app reads its
-// own once the provider sends it back, the app and l3 get theirs from the
-// device flow, so a session can be seen and ended from any of them. Each
-// holds it signed (`token.signature`, as the session cookie is), and only so
-// is it taken: the token the database keeps is no way in by itself, so a copy
-// of the database (a backup, a leaked connection string) opens no session.
+// A browser's session is its cookie (HttpOnly: no script reads it, so none
+// can carry it off); the app and l3 hold a bearer (the bearer plugin), each
+// its own from the device flow, and a page is handed none. Each session can
+// be seen and ended from any device. A session is taken only signed
+// (`token.signature`, the cookie's form and the bearer's alike): the token the
+// database keeps is no way in by itself, so a copy of the database (a backup,
+// a leaked connection string) opens no session.
 //
 //   /api/auth/*   Better Auth: sign-in (social, passkey), sessions and devices
 //                 (get-session, list-sessions, revoke-session, sign-out), linked
@@ -270,9 +271,12 @@ export function signIn(d: {auth: Auth; db: Db; providers: string[]; enter: boole
     let res = await d.auth.handler(c.req.raw);
     // A session ended here is not taken as still there from what signedIn keeps.
     if (res.ok && /\/(sign-out|revoke-session|revoke-sessions|revoke-other-sessions)$/.test(c.req.path)) forgetSessions();
-    // Where Better Auth hands a session's token over bare (the device flow's answer; the session a provider's return
-    // left in the cookie, which the page reads once), it is handed over signed: the only form a bearer is taken in.
-    if (res.ok && /\/(device\/token|get-session)$/.test(c.req.path)) res = await handedSigned(d.auth, res);
+    // A bearer is a device's alone: the device flow's answer hands one over, signed (the only form one is taken in).
+    // A page is handed none, ever: its session is the cookie, which no script reads (HttpOnly), so a script that
+    // should not be on the page cannot carry the session off (the bearer plugin says the token of each session it
+    // makes in set-auth-token; it is taken out of every answer).
+    if (res.ok && c.req.path.endsWith('/device/token')) res = await handedSigned(d.auth, res);
+    if (res.headers.has('set-auth-token')) { res = new Response(res.body, res); res.headers.delete('set-auth-token'); }
     // Asked too often: said as everywhere on the Remote (request.ts slowDown), Retry-After and retryAfter,
     // beside Better Auth's own X-Retry-After.
     const wait = res.status === 429 ? res.headers.get('X-Retry-After') : null;
@@ -293,22 +297,17 @@ export async function signedToken(auth: Auth, token: string): Promise<string> {
   return `${token}.${btoa(String.fromCharCode(...mac))}`;
 }
 
-/** `res` with the session's token it hands over signed: the device flow's access_token, and get-session's session as
- *  set-auth-token (beside the session it says, as signing in says it). Any other answer is as it was. */
+/** `res` with the device flow's access_token signed. Any other answer is as it was. */
 async function handedSigned(auth: Auth, res: Response): Promise<Response> {
-  const body = await res.clone().json().catch(() => null) as {access_token?: unknown; session?: {token?: unknown}} | null;
+  const body = await res.clone().json().catch(() => null) as {access_token?: unknown} | null;
+  if (typeof body?.access_token !== 'string' || !body.access_token || body.access_token.includes('.')) return res;
   const headers = new Headers(res.headers);
-  if (typeof body?.access_token === 'string' && body.access_token && !body.access_token.includes('.')) {
-    headers.delete('Content-Length');
-    return new Response(JSON.stringify({...body, access_token: await signedToken(auth, body.access_token)}), {status: res.status, headers});
-  }
-  if (typeof body?.session?.token !== 'string' || !body.session.token) return res;
-  headers.set('set-auth-token', await signedToken(auth, body.session.token));
-  return new Response(res.body, {status: res.status, headers});
+  headers.delete('Content-Length');
+  return new Response(JSON.stringify({...body, access_token: await signedToken(auth, body.access_token)}), {status: res.status, headers});
 }
 
 /** The session cookie by its exact name (createAuth: `__Host-length3` over HTTPS, Better Auth's own name otherwise). */
-const SESSION_COOKIES = ['__Host-length3.session_token', 'better-auth.session_token'];
+export const SESSION_COOKIES = ['__Host-length3.session_token', 'better-auth.session_token'];
 
 /** The one credential a request names: its bearer token, else its session cookie by that exact name; null when neither. */
 export function credentialOf(headers: Headers): {kind: 'bearer' | 'cookie'; key: string; headers: Headers} | null {

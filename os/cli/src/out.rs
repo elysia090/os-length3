@@ -41,7 +41,8 @@ pub enum Error {
     /// The device's files or streams failed (1).
     Io(String),
     /// What was asked for is turned off on this device, and the answer says how to turn it on (5): `l3 address`
-    /// when SSH is off.
+    /// when SSH is off (only where it can be on: cmd/elsewhere/address.rs).
+    #[cfg(unix)]
     Off(String),
 }
 
@@ -49,17 +50,26 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 impl Error {
     pub fn code(&self) -> u8 {
-        match self { Error::Usage(_) => 2, Error::Offline(_) => 3, Error::NotFound(_) => 4, Error::Off(_) => 5, _ => 1 }
+        match self {
+            Error::Usage(_) => 2, Error::Offline(_) => 3, Error::NotFound(_) => 4,
+            #[cfg(unix)]
+            Error::Off(_) => 5,
+            _ => 1,
+        }
     }
     pub fn kind(&self) -> &'static str {
         match self {
             Error::Usage(_) => "usage", Error::Offline(_) => "offline", Error::NotFound(_) => "notFound",
-            Error::Refused(_) => "refused", Error::Remote { .. } => "remote", Error::Io(_) => "io", Error::Off(_) => "off",
+            Error::Refused(_) => "refused", Error::Remote { .. } => "remote", Error::Io(_) => "io",
+            #[cfg(unix)]
+            Error::Off(_) => "off",
         }
     }
     pub fn message(&self) -> &str {
         match self {
-            Error::Usage(m) | Error::Offline(m) | Error::NotFound(m) | Error::Refused(m) | Error::Io(m) | Error::Off(m) => m,
+            Error::Usage(m) | Error::Offline(m) | Error::NotFound(m) | Error::Refused(m) | Error::Io(m) => m,
+            #[cfg(unix)]
+            Error::Off(m) => m,
             Error::Remote { message, .. } => message,
         }
     }
@@ -247,6 +257,7 @@ mod tests {
         assert_eq!(Error::Offline("x".into()).code(), 3);
         assert_eq!(Error::NotFound("x".into()).code(), 4);
         // SSH off, when l3 address cannot ask (a script): a code of its own, so a script can tell it from a failure.
+        #[cfg(unix)]
         assert_eq!((Error::Off("x".into()).code(), Error::Off("x".into()).kind()), (5, "off"));
         assert_eq!(Error::Refused("x".into()).code(), 1);
         assert_eq!(Error::Remote { status: 400, message: "x".into() }.code(), 1);

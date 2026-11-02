@@ -200,6 +200,31 @@ pub struct Release {
     bytes: u64,
 }
 
+/// Whether Prompts run on the root here, and if not why: the l3 beside the app asked once (`l3 root check`), since it
+/// is what makes a Prompt's namespaces, and AppArmor may let it and not the app. Where they do not, the page runs its
+/// Prompts translated, as a browser does.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct Native {
+    native: bool,
+    why: Option<String>,
+}
+
+#[tauri::command]
+pub async fn root_native() -> Native {
+    static ASKED: std::sync::OnceLock<Native> = std::sync::OnceLock::new();
+    ASKED.get_or_init(|| {
+        if !cfg!(target_arch = "x86_64") {
+            return Native { native: false, why: Some(length3_core::tr!("The root is x86-64, and this machine is {}", "root は x86-64 で、この機械は {} です", std::env::consts::ARCH)) };
+        }
+        let asked = std::env::current_exe().map_err(|e| e.to_string()).and_then(|exe| Command::new(prompt::l3_path(&exe))
+            .args(["root", "check", "--json"]).stdin(Stdio::null()).stderr(Stdio::null()).output().map_err(|e| e.to_string()));
+        match asked {
+            Ok(out) => serde_json::from_slice(&out.stdout).unwrap_or_else(|e| Native { native: false, why: Some(e.to_string()) }),
+            Err(e) => Native { native: false, why: Some(e) },
+        }
+    }).clone()
+}
+
 #[tauri::command]
 pub fn root_status() -> RootStatus {
     let data = paths::data_dir();

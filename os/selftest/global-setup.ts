@@ -35,11 +35,11 @@ import {createHash} from 'node:crypto';
 import {createWriteStream, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {cp} from 'node:fs/promises';
 import {createServer} from 'node:net';
-import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import type {FullConfig} from '@playwright/test';
 import {OS, OUT, LOGS} from './paths.ts';
+import {scratch} from '../scripts/scratch.ts';
 
 /** A port nothing listens on now, chosen by the system. */
 function freePort(): Promise<number> {
@@ -184,7 +184,7 @@ async function worker(): Promise<() => Promise<void>> {
   const {remote, bridgeProcess} = await import('./prod/stack.ts');
   const pg = await cluster();
   const b = await bridgeProcess().catch((e) => { pg.destroy(); throw e; });
-  const dir = mkdtempSync(join(tmpdir(), 'length3-selftest-worker-'));
+  const dir = scratch('length3-selftest-worker-');
   const made: Awaited<ReturnType<typeof remote>>[] = [];
   const teardown = async () => {
     for (const [i, x] of made.entries()) writeFileSync(join(LOGS, i ? 'worker-plan.log' : 'worker.log'), x.log());
@@ -227,7 +227,7 @@ export default async function globalSetup(_config: FullConfig) {
   // Said where it is waited for, below, once the servers are stopped.
   built.catch(() => {});
   const empty = process.env.CI ? null : await emptyDatabase();
-  const data = mkdtempSync(join(tmpdir(), 'length3-selftest-'));
+  const data = scratch('length3-selftest-data-');
   const [remotePort, appPort, planRemotePort, planAppPort] = [await freePort(), await freePort(), await freePort(), await freePort()];
   const app = `http://localhost:${appPort}`, planApp = `http://localhost:${planAppPort}`;
   const remoteURL = `http://localhost:${remotePort}`;

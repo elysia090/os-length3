@@ -544,7 +544,7 @@ mod tests {
     use super::*;
 
     fn scratch(tag: &str) -> Repos {
-        let root = std::env::temp_dir().join(format!("length3-repos-{tag}-{}", std::process::id()));
+        let root = crate::testing::dir(&format!("length3-repos-{tag}"));
         let _ = fs::remove_dir_all(&root);
         Repos::new(root).unwrap()
     }

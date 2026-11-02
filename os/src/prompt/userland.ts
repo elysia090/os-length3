@@ -1,5 +1,7 @@
 import {digest, download, Fatal, type Check} from './l3-files.ts';
 import {errorText} from '../app/errors.ts';
+import {isNative} from '../app/host.ts';
+import {REMOTE_URL} from '../remote/connection.ts';
 import {t} from '../i18n.ts';
 import {prepare, type Segment} from '../../../xlat/runtime/share.mjs';
 import {unpackMore} from '../../../xlat/runtime/keeper.mjs';
@@ -21,11 +23,14 @@ export const threadsApart = (): boolean => typeof SharedArrayBuffer === 'functio
 // by digest; everything else is named by its digest too:
 //
 //   index-<sha256>.json  every path of the root, and where each file's bytes are
-//   packs/<sha256>.pack  one per package: a file is read from it only when a
-//                        program first opens it (the Worker, one Range request)
+//   packs/<sha256>.pack  one per package, named by the digest of its table (the
+//                        SHA-256 of each file it stores, at its head): a file is
+//                        read from it only when a program first opens it (the
+//                        Worker, one Range request), and used only once it is
+//                        what the table says (xlat/runtime/table.mjs)
 //   blobs/<sha256>.bin   the translator, and the hot programs (BusyBox: sh and
-//                        its applets; l3) with their translations made ahead
-//                        of time, gzip'd
+//                        its applets; l3; git, each of its commands a name of
+//                        it) with their translations made ahead of time, gzip'd
 //
 // The first Prompt fetches l3.json, the index, the translator and BusyBox
 // with its translation; l3's own translation follows once the Prompt is up,
@@ -65,9 +70,11 @@ export interface L3 {
   translator: WebAssembly.Module;
   /**
    * What the Worker is given beside the packs: each hot program at its own path in the root, with its translation
-   * (its module, its data kept outside it, and whether its memory is shared: threads in Workers of their own).
+   * (its module, its data kept outside it, and whether its memory is shared: threads in Workers of their own). Its
+   * bytes are the root's own (checked against its digest), so the Worker puts them in the root's file (`root`), which
+   * each of its names shares: git's commands are names of git, and each runs git's translation.
    */
-  files: {path: string; bytes: Uint8Array; module: WebAssembly.Module | null; mode: number; segments: Segment[] | null; shared: boolean; more?: More[]}[];
+  files: {path: string; bytes: Uint8Array; module: WebAssembly.Module | null; mode: number; segments: Segment[] | null; shared: boolean; root?: boolean; more?: More[]}[];
   /** Where the packs are (the Worker reads them under packs/). */
   url: string;
 }
@@ -85,7 +92,9 @@ export type Stage =
 
 /** The hot programs a first Prompt waits for; the others in the index come after it. */
 export const FIRST = ['/usr/bin/busybox'];
-const BASE = '/l3/';
+/** Where l3 is read from: the page's own origin in a browser; in the app (on a machine whose Prompts run translated),
+ * the site of the Remote it is built for, which serves the same files to anyone (public/_headers). */
+const BASE = isNative ? `${REMOTE_URL}/l3/` : '/l3/';
 const CACHE = 'l3';
 /** Of what the browser says this origin may hold, the part l3's copies may take (the rest is the repos'). */
 const SHARE = 0.25;
@@ -415,14 +424,24 @@ async function sealed(body: Uint8Array): Promise<Uint8Array> {
 type Reached = {list: {bytes: Uint8Array; base: number}[]; saved: number; timer: number; url: string; ready: Promise<void>};
 const reached = new Map<string, Reached>();
 
+/** Where a file of the root is in its pack, as a translation of it is kept by (xlat/runtime/pack.mjs origin). */
+export const originOf = (index: Index, f: Index['files'][number]) => `${index.packs[f.pack].name.replace(/\.pack$/, '')}_${f.at}_${f.len}`;
+
+/** Whether a translation of the file at `origin`, by this translator, is kept here. */
+export async function translationKept(l3: L3, origin: string): Promise<boolean> {
+  const c = await open();
+  return !!(await c?.match(translatedURL(origin, keptTag(l3.index), 'wasm')).catch(() => undefined));
+}
+
 /**
- * A program a Prompt translated (its module as the kernel runs it, and its data segments, or null when they are in
- * it): kept for the Prompts after it, 'L3T1' (keeper.mjs).
+ * A program a Prompt translated, or one translated ahead of its first run (ahead.ts) (its module as the kernel runs
+ * it, and its data segments, or null when they are in it): kept for the Prompts after it, 'L3T1' (keeper.mjs). Once
+ * kept, the URL it is kept at; null when it is not (no room, no Cache Storage).
  */
-export function keepTranslation(l3: L3, origin: string, wasm: Uint8Array, segments: Segment[] | null) {
+export function keepTranslation(l3: L3, origin: string, wasm: Uint8Array, segments: Segment[] | null): Promise<string | null> {
   const tag = keptTag(l3.index);
   reached.set(origin, {list: [], saved: 0, timer: 0, url: translatedURL(origin, tag, 'more'), ready: Promise.resolve()});
-  void (async () => {
+  return (async () => {
     await idle();
     const n = segments?.length ?? 0;
     const body = new Uint8Array(8 + (segments ?? []).reduce((k, s) => k + 8 + s.bytes.length, 0) + 4 + wasm.length);
@@ -433,13 +452,15 @@ export function keepTranslation(l3: L3, origin: string, wasm: Uint8Array, segmen
     for (const s of segments ?? []) { v.setUint32(at, s.offset); v.setUint32(at + 4, s.bytes.length); body.set(s.bytes, at + 8); at += 8 + s.bytes.length; }
     v.setUint32(at, wasm.length);
     body.set(wasm, at + 4);
-    await keep(translatedURL(origin, tag, 'wasm'), await sealed(body));
+    const main = translatedURL(origin, tag, 'wasm');
+    const kept = await keep(main, await sealed(body));
     // The code an earlier translation of it reached later went with that one (a program translated again as one
     // module: xlat's Kernel.consolidate): a Prompt after would read it all, to take none of it.
     const c = await open();
     const more = translatedURL(origin, tag, 'more');
     if (c && reached.get(origin)?.saved === 0 && await c.delete(more).catch(() => false)) gone(c, more);
-  })().catch(() => {});
+    return kept ? whole(main) : null;
+  })().catch(() => null);
 }
 
 /** The code a translated program reached later (the kernel's modules from the `from`th on): kept with it. */
@@ -509,14 +530,14 @@ type Hot = Awaited<ReturnType<typeof hot>>;
 function taken(f: Hot): L3['files'][number] {
   if (!more.has(f.path)) more.set(f.path, {url: f.moreURL, list: f.reached, saved: f.reached.length, timer: 0});
   const {reached: _r, moreURL: _u, ...file} = f;
-  return file;
+  return {...file, root: true};
 }
 
 /**
- * The rest of the hot programs (l3), after a Prompt is up: fetched (or read
- * from what is kept) and compiled quietly, then given to every Prompt
- * started after. Never waited for: compiling l3's translation takes seconds,
- * and until it is ready l3 is translated as it runs, as every other program.
+ * The rest of the hot programs (l3, git), after a Prompt is up: fetched (or
+ * read from what is kept) and compiled quietly, then given to every Prompt
+ * started after. Never waited for: compiling their translations takes seconds,
+ * and until one is ready its program is translated as it runs, as every other.
  */
 const later = new Map<string, L3['files'][number]>();
 let warming: Promise<void> | null = null;
@@ -525,9 +546,25 @@ function warm(index: Index) {
     for (const t of index.translations) {
       if (FIRST.includes(t.path) || later.has(t.path)) continue;
       const f = await hot(t, index.files.find((x) => x.path === t.path)?.mode ?? 0o755, index.translator.sha256, undefined, idle).catch(() => null);
-      if (f?.module) later.set(t.path, taken(f));
+      if (!f?.module) continue;
+      const file = taken(f);
+      later.set(t.path, file);
+      for (const h of hearing) h(withMore(file));
     }
   })();
+}
+
+/** Each Prompt up, told of each hot program as it is ready (hearLater). */
+const hearing = new Set<(f: L3['files'][number]) => void>();
+/**
+ * `hear` each hot program ready after a Prompt started (warm): those ready already at once, the rest as they come, until
+ * the function returned is called. A Prompt up gives each to its Worker, so the next run of git or l3 in it runs its
+ * translation, not one made as it runs (the page's first Prompt is up before they are ready).
+ */
+export function hearLater(hear: (f: L3['files'][number]) => void): () => void {
+  for (const f of later.values()) hear(withMore(f));
+  hearing.add(hear);
+  return () => { hearing.delete(hear); };
 }
 
 /** l3's index, for what only reads it (File's "/"): from what is kept or fetched; null when this build carries none. */
@@ -618,7 +655,9 @@ export const warmL3 = (l3: L3) => warm(l3.index);
  * What a Prompt starting now is given beside the packs: BusyBox, and each other hot program once it is ready, each
  * with the code it reached later in the Prompts before.
  */
-export const filesNow = (l3: L3): L3['files'] => [...l3.files, ...later.values()].map((f) => ({...f, more: more.get(f.path)?.list ?? []}));
+export const filesNow = (l3: L3): L3['files'] => [...l3.files, ...later.values()].map(withMore);
+/** A hot program with the code it reached later in the Prompts before. */
+const withMore = (f: L3['files'][number]): L3['files'][number] => ({...f, more: more.get(f.path)?.list ?? []});
 
 /** The Prompt's Worker: xlat running l3's root (pages/bench/terminal.ts gives it l3 and the repo). */
 export const promptWorker = (): Worker => new Worker(new URL('../../../xlat/runtime/worker.mjs', import.meta.url), {type: 'module'});

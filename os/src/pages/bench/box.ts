@@ -5,7 +5,7 @@ import {keepOut, LAND, nudge, paced, putAway, still} from '../../ui/glide.ts';
 import {t} from '../../i18n.ts';
 import {complete, pathWord, Recall} from '../../prompt/recall.ts';
 import {kindOf} from '../../repos/text.ts';
-import {onChange, onRenamed, shownTree, type Entry} from '../../repos/repos.ts';
+import {isIssues, onChange, onRenamed, plainPath, shownTree, store, type Entry} from '../../repos/repos.ts';
 import {boxMode, modeHint, modeMenu, modesNow, nextIssue, onBoxMode, pillWords, sendAs, sendInto, sendTitle, sendWord, setBoxMode, turn, type Mode} from './box-modes.ts';
 import type {Screen, ScreenState} from './screen.ts';
 import {sessionFor, terminalFor} from './terminal.ts';
@@ -14,7 +14,10 @@ import {PillLine} from './pill-line.ts';
 import {EditLine} from './edit-box.ts';
 import {agentKey, agentUse} from '../../home/agent-key.ts';
 import {setRightPane} from '../pane.ts';
-import {answer, told} from './agent.ts';
+import {atWork, told} from './agent.ts';
+import type {Hands} from '../../agent/work.ts';
+import {work as workOf} from '../../repos/history.ts';
+import {counts, lineOps} from '../../repos/linediff.ts';
 
 // The box at the foot of a work page's center (DESIGN.md § Forge, The box at the foot): one field, and at its left a
 // pill that says what it does: Run in the repo's Prompt (the pill the prompt line the shell waits at, pill-line.ts),
@@ -67,8 +70,8 @@ interface BoxParts {
   termHead: HTMLElement;
   /** Stepped back from the start, until it is asked for (Git). */
   back: boolean;
-  /** A line of the box's own in the Prompt's flow pressed: the issue it wrote (its file, in `repo`), or Home's TODO. */
-  went(repo: string, to: {issue: string} | 'todo'): void;
+  /** A line of the box's own in the Prompt's flow pressed: the issue it wrote (its file, in `repo`), a file the Agent read or edited, or Home's TODO. */
+  went(repo: string, to: {issue: string} | {file: string} | 'todo'): void;
 }
 
 /** The box at the foot of a bench's center: its field and pill, what is said under it, what it does with what is written. */
@@ -450,7 +453,9 @@ export class Box {
   async #ask(at: string) {
     const question = this.prompt.value.trim();
     if (!question) return;
-    const use = await agentUse();
+    // A sealed key is opened by the person's passkey the first time this session; not opened, nothing is asked.
+    let use;
+    try { use = await agentUse(); } catch (e) { this.#refuse(errorText(e)); return; }
     if (!use) { this.#refuse(t('No API key configured on this device; set one in Runtime')); return; }
     if (this.prompt.value.trim() !== question) return;
     const front = this.#edit.inFront();
@@ -465,7 +470,11 @@ export class Box {
     drafts.delete(this.#draft());
     this.#fit();
     this.heard.textContent = t('Prompt sent to Agent');
-    await answer(session.answer(row), at, use, await told(at, front), question);
+    // On an issue's work the Agent was handed it, and writes; on main it reads and runs only.
+    const w = await workOf(at).catch(() => null);
+    const issuePath = w?.issue ? (w.issue.startsWith('issue/') ? w.issue : `issue/${w.issue}`) : null;
+    const issue = issuePath ? (await store.read(at, issuePath).catch(() => null))?.text ?? '' : null;
+    await atWork(session, row, at, use, await told(at, front, issue), question, agentHands(at, issue !== null), (path) => this.#p.went(at, {file: path}));
   }
 
   /** The repo's directory `dir` as Tab reads it, read once and kept until the repo changes. */
@@ -716,3 +725,33 @@ export class Box {
     prompt.addEventListener('focus', () => this.#rest(false));
   }
 }
+
+/**
+ * What the box's Agent does its work with in `repo`, through the OS's own calls, the screen following as it follows
+ * the person's work: its files read as they stand, its commands run in the repo's Prompt as a line typed there runs
+ * (seen run), and, where it was handed the work (`writes`: an issue's), files written whole, which an editor open on
+ * them shows changing; never the issues' own folder, which the OS keeps.
+ */
+function agentHands(repo: string, writes: boolean): Hands {
+  const read = async (path: string) => {
+    const c = await store.read(repo, path);
+    if (c.text === null) throw new Error(t('{path} is not text', {path}));
+    return c.text;
+  };
+  return {
+    read,
+    run: (command) => sessionFor(repo).run(command),
+    ...(writes ? {write: async (path: string, text: string) => {
+      if (!plainPath(path) || isIssues(path)) throw new Error(t('{path} is not a file the Agent may write', {path}));
+      const before = await read(path).catch(() => null);
+      if (before === null) {
+        const at = path.lastIndexOf('/');
+        await store.add(repo, at < 0 ? '' : path.slice(0, at), path.slice(at + 1), text, AGENT);
+      } else await store.write(repo, path, text, AGENT);
+      return counts(lineOps(before ?? '', text));
+    }} : {}),
+  };
+}
+
+/** Who writes, for what watches the repo's files: the Agent, so an editor open on the file takes it in as written elsewhere. */
+const AGENT = 'agent';

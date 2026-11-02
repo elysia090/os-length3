@@ -1,0 +1,6 @@
+# ripgrep as the root has it (RIPGREP_CONFIG_PATH, from the root's shrc): a pattern in lower case matches either
+# case, one with a capital matches as written; a line longer than a screenful (a minified file's) is said, not
+# printed whole.
+--smart-case
+--max-columns=300
+--max-columns-preview

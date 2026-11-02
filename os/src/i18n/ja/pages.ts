@@ -207,4 +207,10 @@ export default {
   'API key invalid; re-enter in Runtime': 'API キーが認証されませんでした。Runtime で再設定してください',
   'Rate limit exceeded; try again shortly': 'リクエスト回数が上限を超えました。しばらく待ってから再試行してください',
   'Agent returned no response': 'Agent からの応答はありませんでした',
+  'Read {path}': '{path}を読みました',
+  'Edited {path} (+{added} −{removed})': '{path}を直しました（+{added} −{removed}）',
+  'Could not read {path}: {why}': '{path}を読めませんでした：{why}',
+  'Could not edit {path}: {why}': '{path}を直せませんでした：{why}',
+  '{path} is not text': '{path}はテキストではありません',
+  '{path} is not a file the Agent may write': '{path}は Agent が書けるファイルではありません',
 } as Record<string, string>;

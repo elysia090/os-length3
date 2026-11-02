@@ -24,6 +24,7 @@
 // too), ROOT_DIR the same root unpacked (for the native run). The translator
 // is l3's own (its index names it), else ../xlat's wasm build.
 import {spawn} from 'node:child_process';
+import {createHash} from 'node:crypto';
 import {existsSync, readFileSync, writeFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {openWeb} from './l3-tree.mjs';
@@ -84,7 +85,7 @@ async function keptIn(dir) {
 /** One program under xlat, in this process: prints {status, stdout, stderr, error?, ms} as JSON. */
 async function child({web, path, args, translator, fresh, kept: keptDir}) {
   const {Vfs} = await import('../../xlat/runtime/fs.mjs');
-  const {mountPack} = await import('../../xlat/runtime/pack.mjs');
+  const {mountPack, provide} = await import('../../xlat/runtime/pack.mjs');
   const {Kernel} = await import('../../xlat/runtime/process.mjs');
   // As a cross-origin isolated page runs it: each thread in a Worker of its own (XLAT_INLINE=1: all in turn here).
   const {RemoteKernel, canRunApart} = await import('../../xlat/runtime/remote.mjs');
@@ -96,13 +97,17 @@ async function child({web, path, args, translator, fresh, kept: keptDir}) {
   // --fresh: this checkout's translator, translating everything as it runs (what the next l3 will be).
   const translate = await loadTranslator(w.index.translator && !fresh ? w.blob(w.index.translator) : readFileSync(translator));
   const vfs = new Vfs();
-  // As the page gives them: each program translated ahead of time, with its bytes.
+  mountPack(vfs, w.index, {
+    range: (pack, at, len) => { const b = Buffer.alloc(len); w.readRange(pack, at, len, b); return new Uint8Array(b); },
+    decode: (b) => new Uint8Array(w.unzstd(b)),
+    sha256: (b) => new Uint8Array(createHash('sha256').update(b).digest()),
+  });
+  // As the page gives them: each program translated ahead of time, with its bytes, in the root's file (each of its names).
   const ready = (fresh ? [] : w.index.translations ?? []).map((t) => {
     const f = w.index.files.find((x) => x.path === t.path);
-    vfs.writeFile(t.path, new Uint8Array(w.blob(t.elf)), f.mode);
+    provide(vfs, {path: t.path, bytes: new Uint8Array(w.blob(t.elf)), mode: f.mode, root: true});
     return {path: t.path, wasm: new Uint8Array(w.blob(t.wasm))};
   });
-  mountPack(vfs, w.index, (pack, at, len) => { const b = Buffer.alloc(len); w.readRange(pack, at, len, b); return new Uint8Array(b); }, (b) => new Uint8Array(w.unzstd(b)));
   vfs.mkdirp('/root');
   let stdout = '', stderr = '';
   const dec = new TextDecoder();

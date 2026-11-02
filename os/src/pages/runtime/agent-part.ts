@@ -2,6 +2,7 @@ import {h} from '../../ui/dom.ts';
 import {t} from '../../i18n.ts';
 import {errorText} from '../../app/errors.ts';
 import {agentKey, forgetAgentKey, giveAgentKey, onAgentKey, type Shown} from '../../home/agent-key.ts';
+import {isNative} from '../../app/host.ts';
 import {button} from './parts.ts';
 
 // Runtime's Agent: the one API key the box's Agent answers with, kept on this device alone. One line to give it in,
@@ -14,13 +15,23 @@ export function agentSection(counted: (n: number) => void = () => {}): HTMLEleme
   const paint = (k: Shown | null) => {
     counted(k ? 1 : 0);
     section.replaceChildren(h('div', {class: 'agent-box'}, ...(k ? kept(k) : given())),
-      h('p', {class: 'muted small agent-note'}, h('span', {}, t('Stored securely on this device only. Excluded from dotfiles and Remote sync.')),
+      h('p', {class: 'muted small agent-note'}, h('span', {}, keptWhere(k)),
         h('span', {}, t('Used by UI Agent and inherited by local Prompts.'))));
   };
   void agentKey().then(paint);
   // Heard while this page's part is there; once it is gone (the page made again), no longer.
   const stop = onAgentKey((k) => { if (!section.isConnected && section.childElementCount) stop(); else paint(k); });
   return section;
+}
+
+/**
+ * Where the key is kept, as it is: in the app, the device's keyring (core vault.rs); in a browser, sealed by the
+ * person's passkey (home/seal.ts), or, where it could not be, as given in the browser's own keeping.
+ */
+function keptWhere(k: Shown | null): string {
+  if (isNative || !k) return t('Stored securely on this device only. Excluded from dotfiles and Remote sync.');
+  return k.sealed ? t('Sealed by your passkey in this browser, opened once a session. Never sent to the Remote.')
+    : t('Kept in this browser as given; with a passkey on your Remote it is sealed. Never sent to the Remote.');
 }
 
 /** The key kept: shown by its start and last four, the model it opens, and Remove. */

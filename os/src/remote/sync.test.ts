@@ -9,7 +9,7 @@ import {sql} from 'drizzle-orm';
 // follow one repo, `notes`, through its life, each from where the one
 // before left it.
 const b = await browserOnRemote();
-const {store, draft, history, asked, elsewhere, text, names, token, URL: URL_, db, signIn} = b;
+const {store, draft, history, asked, elsewhere, text, names, token, URL: URL_, db, signIn, browserAs} = b;
 const {setState, getState} = b.state;
 const enc = new TextEncoder();
 
@@ -145,10 +145,10 @@ test('a copy in step is never taken apart by a Remote that does not have it: dis
   assert.equal(await text('kept', 'README.md'), '# kept\n');
   // Someone else signed in on this browser: not theirs to take apart either.
   const other = await signIn('Mio Other');
-  await setState('remote', JSON.stringify({url: URL_, token: other}));
+  await browserAs(other);
   await assert.rejects(draft.sync('kept'), /another account/);
   assert.deepEqual(await files(), before);
-  await setState('remote', JSON.stringify({url: URL_, token}));
+  await browserAs(token);
 });
 
 test('a copy, or a setting, agreed with one account is not sent to another that signs in on this browser', async () => {
@@ -166,7 +166,7 @@ test('a copy, or a setting, agreed with one account is not sent to another that 
   // Sora's TODO, changed here and not sent yet.
   await draft.syncHome('todo');
   await setState('todo', JSON.stringify([{id: 'sora', title: 'Sora\'s, not sent yet'}]));
-  await setState('remote', JSON.stringify({url: URL_, token: other}));
+  await browserAs(other);
   // Signed in as Mio: Sora's copy is neither sent into Mio's repo nor joined with it, and Sora's TODO stays Sora's.
   await assert.rejects(draft.sync('mine'), /another account/);
   assert.deepEqual(await files(), before);
@@ -177,7 +177,7 @@ test('a copy, or a setting, agreed with one account is not sent to another that 
   assert.equal((mioTodo.value ?? '').includes('Sora'), false);
   assert.match(getState('todo') ?? '', /not sent yet/);
   // Sora again: all of it goes to Sora's.
-  await setState('remote', JSON.stringify({url: URL_, token}));
+  await browserAs(token);
   assert.equal((await draft.sync('mine')).sent, 0);
   await draft.syncHome('todo');
   const soraTodo = await (await fetch(`${URL_}/v1/home/todo`, {headers: {Authorization: `Bearer ${token}`}})).json() as {value: string};

@@ -91,7 +91,7 @@ export const lineOf = (issueFile: string) => issueFile.replace(/^issue\//, '').r
 export const harnessName = (h: string) => ({box: 'Agent', claude: 'Claude Code', grok: 'Grok Build', dsh: 'DeepSeek Harness', codex: 'Codex'})[h] ?? h;
 
 /** What the box's Agent does, said as an agent's hooks say it (core/src/agents.rs from_box); never in its way. */
-export function boxSaid(session: string, repo: string, kind: 'start' | 'prompt' | 'stop', text = '') {
+export function boxSaid(session: string, repo: string, kind: 'start' | 'prompt' | 'tool' | 'stop', text = '') {
   void core('agent_said', {session, repo, kind, text}).then(() => look()).catch(() => { /* watched, never held up */ });
 }
 

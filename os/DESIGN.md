@@ -976,10 +976,45 @@ the same thing for the desktop app and for the web.
   `bytes`, the root; `web`, the sha256 of the index the browser reads the
   same root by. The release writes that entry (`scripts/pin-root.mjs`) and
   it is committed; nothing else pins l3.
-- **What it holds.** The whole distribution root, the development-standard
-  profile laid out for Prompts (`scripts/root-release.sh`): BusyBox (sh and
-  its applets), the C toolchain, git, curl, openssl, nano, apk and the rest,
-  `/etc`, and `/usr/bin/l3`. For the web it also holds the translator
+- **What it holds.** Sixty-three packages, each made from the source this
+  tree pins (`root/sources.env`) by its recipe
+  (`root/packages/NAME.sh`, made by `root/build.sh` on
+  Alpine 3.24 at one digest, with one libc: its musl, at the root's own
+  musl's version and with the same security fixes; a package's own build
+  tools are there for its build alone), and `/usr/bin/l3`, put together by
+  `root/assemble.sh`: BusyBox (sh and the small tools), the C toolchain
+  (GCC, binutils, make, musl with fortify-headers, Linux's headers; its
+  `cc` makes a static PIE, hardened as the root's own programs are,
+  unasked), git with delta and Git LFS, curl, wget, OpenSSL, OpenSSH's
+  client, rsync, bash, the searches and finders a developer's hands know
+  (GNU grep, ripgrep, fd, fzf, zoxide), jq and yq, sqlite3, tmux, htop,
+  ncdu, lazygit, direnv, just, hyperfine, age, tldr with its pages, nano,
+  apk and the rest, and `/etc`, where each tool is set up to work with the
+  others (git's diffs through delta, lazygit's too; fzf's list from fd; the
+  shell's cd teaching zoxide and loading direnv). Every program, C, Rust or
+  Go, is a static PIE with full RELRO, stripped, and nothing is done to it
+  after the linker; every unit of C in it, and in every library, was
+  compiled with the hardening the build machine's GCC is set to give
+  everything it compiles, whatever a package's makefiles pass (the stack
+  protector, stack clash protection, locals zeroed, fortify-headers' checks
+  of sizes at `_FORTIFY_SOURCE=3`, libstdc++'s of bounds), checked unit by
+  unit from what GCC recorded of each one's flags, and a package whose build
+  turns any of it off says why (musl, freestanding, has no stack protector).
+  Not CET: a static program is marked for it only if every part is, and
+  musl's are not, so it would protect nothing. Nothing is setuid or setgid;
+  every script is for sh or bash; a library comes with what building against it needs; no two
+  packages give one path; each package is checked by doing what it is for
+  before it is taken, and its database (`apk info`, `apk audit`) says every
+  file as it was made. Each package is made again only when what it is made
+  of changed (its recipe, pins, patches, the builder, the compiler and libc,
+  what it builds against), so raising one pin makes that package and what
+  is built against it. A Rust or Go program is built from its makers'
+  lockfile, with what its recipe lifts: a crate or module its makers have
+  fixed an advisory in, taken to that version where the program asks for
+  it at all (`lifts=`, `root/lift.sh`); what those programs are made of is
+  asked of OSV with every change and every week (`root/advisories.sh`), and
+  what no lift answers is written down with why and until when
+  (`root/advisories.toml`). For the web it also holds the translator
   (xlat, as WebAssembly) and the translations of the hot programs made
   ahead of time.
 - **On a device**, the app and `l3` install the root by its digest: from the
@@ -990,12 +1025,22 @@ the same thing for the desktop app and for the web.
   beside it): `l3.json` (which l3: its version and the root's digest), an
   index of every path (type, mode, link target; where each file's bytes
   are), a pack per package of the root, each file a zstd frame, and blobs
-  for the translator and the hot programs (BusyBox and l3) with their
-  translations. Everything but `l3.json` is named by its digest. A Prompt
-  fetches the index, the translator and BusyBox with its translation; every
-  other file comes from its pack when a program first opens it, and every
-  other program is translated when it first runs (l3's translation follows
-  quietly once the first Prompt is up, for the Prompts after). What was
+  for the translator and the hot programs (BusyBox, l3 and git) with their
+  translations. Everything but `l3.json` is named by its digest; a pack by
+  the digest of its table, the SHA-256 of each file it stores, at its head
+  (`xlat/runtime/table.mjs`), so a file read alone from it is checked as
+  the whole pack would be, and one that is not what its table says is not
+  used (its read fails with EIO, and says why). A Prompt fetches the index,
+  the translator and BusyBox with its translation; every other file comes
+  from its pack (one Range request, and its pack's table once) when a
+  program first opens it, and every
+  other program is translated when it first runs (l3's and git's
+  translations follow quietly once the first Prompt is up, and that Prompt
+  and every one after runs them from its next run of l3 or git; each name of
+  git, a hard link in the root, is the one file and runs the one
+  translation). A program run again that reached much of its code later is
+  translated again as one module only while the Prompt waits for its next
+  line, so no run waits on that. What was
   fetched is kept by digest (Cache Storage; the packs in the browser's HTTP
   cache), checked whenever it is read, and only within a quarter of what
   the browser says this origin may hold, the least recently used going
@@ -1514,12 +1559,29 @@ open (`core/src/account.rs` app_page names only that page, of the Remote's
 own app, the way a sign-in's page is checked). Done there, the page says
 to go back; the app reads again what changed when its window comes back.
 Every device is a session, listed on the Remote page and ended
-from any other. Sessions are bearer tokens, kept on the device (in the app
-with its settings, 0600), and taken only signed (`token.signature`, as the
-session cookie is) with the Remote's secret: the token the database keeps
-is no way in by itself, so a copy of the database opens no session. What a
-provider hands over at sign-in (its access and refresh tokens) is kept
-encrypted with the same secret; nothing reads it.
+from any other. What proves a session is held where no page reads it. In a
+browser it is the session's cookie (`__Host-`: Secure, HttpOnly,
+SameSite=Lax), which the browser sends and no script reads, so a script
+that should not be on the page cannot carry the session off: the Remote
+hands a page no token, ever (`service/auth.ts`), and the browser's core
+sends the cookie with its own requests. A device (the app, l3) holds a
+bearer from the device flow, kept apart from everything a page reads
+(`core/src/vault.rs`, never in Home's state, which a page reads and which
+is synced): in the OS's own keyring (the Keychain, Credential Manager on
+this computer alone, the Secret Service over D-Bus from Rust alone, so the
+static l3 reaches it as the app does), encrypted at rest with what the
+person signs in with and in no file a backup or a token-hunting program
+comes across; where there is none that answers within a minute (a server,
+SSH, a locked keyring), or `LENGTH3_KEYRING=off`, a file only the person
+reads (`<data>/secrets/`, 0600). `l3 remote sign-in` says which. The
+app's page asks its Remote through the core (`remote_ask`), which sends
+it. Home's state says only which session the
+device is (its token unsigned) and whose. Either is taken only signed
+(`token.signature`) with the Remote's secret: the token the database keeps
+is no way in by itself, so a copy of the database opens no session. Which
+Remote a device is on is changed only by signing in or out, never by a
+page setting it. What a provider hands over at sign-in (its access and
+refresh tokens) is kept encrypted with the same secret; nothing reads it.
 
 What leaves this system is kept to what is said here:
 
@@ -2631,9 +2693,15 @@ or goes).
   Perplexity's, Fireworks', Hugging Face's; an admin key, which opens no
   model, and a key of no form of its own, refused), and the model is the
   newest the key opens that answers, read from the maker's own list when the
-  key is given (Trying the key…), never written into the OS. It is a file of
-  this device (`agent-key`, 0600, beside the others the device keeps, in the
-  browser's own keeping on the web), whole only to the page that asks and to
+  key is given (Trying the key…), never written into the OS. It is kept as
+  the device's session is (`core/src/vault.rs`: the OS's keyring, else a file
+  only the person reads). In a browser, whose keeping is its profile's files,
+  it is sealed by the person's passkey where there is one with PRF
+  (`src/home/seal.ts`: AES-256-GCM under a key HKDF derives from what the
+  passkey's PRF gives, after it verifies the person), opened the first time
+  the Agent is asked in a session, and the key itself never reaches the
+  core; where none can seal it, it is kept as given, and Runtime says which.
+  A passkey is made asking for PRF. Whole only to the page that asks and to
   each Prompt started here, in its environment under the name its maker's
   tools read (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …). The page asks the
   maker directly, so its policy lets it reach those makers' APIs and nothing

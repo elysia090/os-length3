@@ -114,6 +114,24 @@ pub unsafe extern "C" fn xlat_translate(ptr: *mut u8, len: usize) -> i32 {
     status
 }
 
+/// As `xlat_translate`, all of the program (discover::discover_whole), as the hot programs are translated in the
+/// release: what a page translates ahead of a program's first run (runtime/ahead.mjs), so the run reaches nothing later.
+///
+/// # Safety
+/// As `xlat_translate`.
+#[no_mangle]
+pub unsafe extern "C" fn xlat_translate_whole(ptr: *mut u8, len: usize) -> i32 {
+    let (status, out) = match crate::elf::Elf::parse_owned(Vec::from_raw_parts(ptr, len, len)) {
+        Ok(elf) => {
+            let program = crate::discover::discover_whole(&elf);
+            (0, crate::lower::translate(&elf, &program, crate::lower::Options::default()).wasm)
+        }
+        Err(e) => (1, e.to_string().into_bytes()),
+    };
+    OUTPUT.with(|o| *o.borrow_mut() = out);
+    status
+}
+
 /// As `xlat_translate`, and from the function starts at `seeds` (`n_seeds` u64s, left to the host) too: a program
 /// with its code reached later, in one module (discover::discover_seeded).
 ///
@@ -204,6 +222,21 @@ pub unsafe extern "C" fn xlat_unzstd(ptr: *const u8, len: usize, size: usize) ->
     };
     OUTPUT.with(|o| *o.borrow_mut() = out);
     status
+}
+
+/// The SHA-256 of the bytes at `ptr` (left to the host to free): a root
+/// file as its pack stores it, checked against the pack's table
+/// (runtime/table.mjs) before it is decoded, where the host's own digests
+/// come only later. Returns 0 with the 32 bytes of the digest as output.
+///
+/// # Safety
+/// `ptr` must point to `len` initialized bytes.
+#[no_mangle]
+pub unsafe extern "C" fn xlat_sha256(ptr: *const u8, len: usize) -> i32 {
+    use sha2::Digest;
+    let digest = sha2::Sha256::digest(std::slice::from_raw_parts(ptr, len));
+    OUTPUT.with(|o| *o.borrow_mut() = digest.to_vec());
+    0
 }
 
 /// Set how much code reached later one module may hold (discover_within;

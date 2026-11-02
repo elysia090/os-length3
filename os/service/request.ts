@@ -188,8 +188,8 @@ export const fromOrigins = (origins: string[]) => cors({
   // If-None-Match: a look's tag (mark.ts), from the desktop app's webview too.
   allowHeaders: ['Authorization', 'Content-Type', 'X-Guest', 'If-None-Match'],
   allowMethods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  // The bearer plugin hands a new session's token back in this header; a look's answer, its tag (ETag).
-  exposeHeaders: ['set-auth-token', 'ETag'],
+  // A look's answer, its tag (ETag). (A session's token is handed to no page: auth.ts.)
+  exposeHeaders: ['ETag'],
   credentials: true,
   maxAge: 600,
 });

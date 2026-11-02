@@ -16,6 +16,7 @@
 
 import {eq, sql} from 'drizzle-orm';
 import type {Hono} from 'hono';
+import {setCookie} from 'hono/cookie';
 import {signedToken, type Auth} from './auth.ts';
 import {ago, body, lock, rows, slowDown, type Db, type Vars} from './request.ts';
 import {guard, throttle, user} from './schema.ts';
@@ -69,6 +70,10 @@ export function enter(d: {db: Db; auth: Auth; enter: Enter}, app: Hono<Vars>) {
     // Entering is proof the person is here just now, as a passkey sign-in is (app.ts proven).
     const at = new Date(), proof = {proofSession: session.id, proofAt: at, signedSession: session.id, signedAt: at};
     await d.db.insert(guard).values({userId: one.id, ...proof}).onConflictDoUpdate({target: guard.userId, set: proof});
-    return c.json({token: await signedToken(d.auth, session.token), name: one.name});
+    // The page is in as a sign-in leaves it: by the session's cookie, which no script reads (auth.ts), never a token.
+    const {name, attributes} = ctx.authCookies.sessionToken;
+    setCookie(c, name, await signedToken(d.auth, session.token), {...attributes, sameSite: 'Lax',
+      maxAge: Math.max(0, Math.floor((new Date(session.expiresAt).getTime() - Date.now()) / 1000))});
+    return c.json({name: one.name});
   });
 }

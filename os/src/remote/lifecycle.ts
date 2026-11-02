@@ -271,7 +271,7 @@ async function lookOnce(): Promise<void> {
   for (const k of [...states.keys()]) if (!here.some((s) => s.name === k)) states.delete(k);
   if (c) {
     // Asked again when the session changed meanwhile: what moved is the session's.
-    const now = asked.token === c.token ? await moving : await draft.moved().catch(away);
+    const now = asked?.session === c.session ? await moving : await draft.moved().catch(away);
     if (now && now.repos !== reposSeen) {
       const list = await draft.remoteRepos().catch(away);
       if (list) { everyThere = list; reposSeen = now.repos; }

@@ -1,12 +1,8 @@
 #!/bin/sh
 # Everything a release of OS Length3 Linux holds, made from this tree, into OUT:
 #
-#   os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst  the root: the pinned base root laid out for Prompts
-#                                                  with this tree's l3, profile and shell, and OpenSSL,
-#                                                  OpenSSH's client, curl and git at this tree's pins
-#                                                  (root-release.sh, root-refresh.sh)
-#   os-length3-linux-0.1.0-x86_64-<id>.tar.zst      the base it was made from (shared/root-base.json), carried
-#                                                  in each release so the next is made from it as this one was
+#   os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst  the root: every package made from this tree's pins by its
+#                                                  recipe (root/build.sh), with this tree's l3 (root/assemble.sh)
 #   os-length3-linux-X.Y.Z-l3-web.tar               the same root as the browser reads it (l3.sh), checked
 #                                                  to be the same tree (l3-parity.mjs)
 #   os-length3-linux-X.Y.Z-web.zip                  the web build, with that l3 (web-release.sh)
@@ -24,9 +20,9 @@
 #
 #   sh scripts/release.sh OUT
 #
-# The version is RELEASE ($VERSION overrides); the commit is HEAD ($GITHUB_SHA overrides). The repository is public:
-# the base is read from the release that holds it (root-file.mjs). The base is pinned as held by this release from now
-# on (pin-base.mjs), so the releases before it may be deleted. Needs Rust with the targets
+# The version is RELEASE ($VERSION overrides); the commit is HEAD ($GITHUB_SHA overrides). The root's packages are
+# ROOT_PACKAGES, what root/build.sh made on Alpine 3.24 (release.yml makes them through the root-packages action and
+# keeps them from release to release; by hand, as the top README says). Needs Rust with the targets
 # x86_64-unknown-linux-musl, wasm32-unknown-unknown and wasm32-wasip1, Node 22, musl-gcc, zstd, zip, the Tauri
 # build's packages (libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf
 # libgles2), and for the AppImage's smoke test bubblewrap, xvfb and imagemagick.
@@ -43,13 +39,9 @@ if [ -z "${GITHUB_SHA:-}" ] && [ -n "$(git -C "$here" status --porcelain)" ]; th
 fi
 cd "$here"
 
-# The root: the base (root-file.mjs takes it from the release that holds it, at its pin) with this tree's l3 and the
-# programs it makes again (root-refresh.sh). The base goes in this release too, which holds it from now on.
-base=$(node scripts/root-file.mjs "$here/target/root" base)
-sh scripts/root-release.sh "$base" "$out" "$version"
+# The root: its packages, made from this tree's pins, with this tree's l3.
+sh root/assemble.sh "${ROOT_PACKAGES:?the root's packages, as root/build.sh made them}" "$out" "$version"
 root=$(ls "$out"/os-length3-linux-"$version"-x86_64-*.tar.zst)
-cp "$base" "$out/"
-node scripts/pin-base.mjs "$version"
 
 # The film of the release, from the branch that holds it (kept out of main's history), checked against its digest.
 film=os-length3-linux-$version-film.mp4

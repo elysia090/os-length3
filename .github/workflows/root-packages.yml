@@ -1,0 +1,32 @@
+name: Root packages
+
+# The root's packages, each made from its pin by its recipe (os/root/build.sh, through the root-packages action),
+# whenever what they are made of changes: a run after a pin is raised makes that package and what is built against
+# it, and keeps them for the root job and the release.
+on:
+  push:
+    paths: ['os/root/build.sh', 'os/root/packages/**', 'os/root/sources.env', 'os/root/etc/**', '.github/actions/root-packages/**', '.github/workflows/root-packages.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  packages:
+    runs-on: ubuntu-24.04
+    # GCC, made the first time, takes most of the first run.
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/root-packages
+      - name: What was made
+        if: ${{ !cancelled() }}
+        run: |
+          cat os/target/root-packages/record 2>/dev/null || true
+          du -sh os/target/root-packages/*/tree 2>/dev/null | sort -h | tail -20 || true

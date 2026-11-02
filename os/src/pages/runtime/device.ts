@@ -1,5 +1,5 @@
 import {bytes, h} from '../../ui/dom.ts';
-import {isNative, rootFetch, rootStatus, type Certainty, type Freed, type RootStatus, type Space} from '../../app/host.ts';
+import {isNative, rootFetch, rootHere, rootStatus, type Certainty, type Freed, type RootStatus, type Space} from '../../app/host.ts';
 import {t, tn} from '../../i18n.ts';
 import {bring, remoteOnly, repoState} from '../../remote/lifecycle.ts';
 import {connection} from '../../remote/connection.ts';
@@ -160,7 +160,8 @@ function remoteColumn(repo: RepoParts, again: (r: Freed | null) => void, error: 
   // What is only there, not all it holds: its size is what would come here.
   const col = column('remote-col', t('Remote only'), remoteOnly().reduce((n, r) => n + r.bytes, 0), coming,
     connection() ? t('Fully synced locally') : t('Sign in to view Remote data'));
-  if (isNative) void rootStatus().then((root) => { if (root && !root.current) rootRow(col, root, again); }, (e) => { error.textContent = errorText(e); });
+  // The release root is fetched only where Prompts run on it; elsewhere they run translated, and l3 comes as it is read.
+  void rootHere().then((here) => (here.native ? rootStatus() : null)).then((root) => { if (root && !root.current) rootRow(col, root, again); }, (e) => { error.textContent = errorText(e); });
   return col;
 }
 

@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import {afterEach, test} from 'node:test';
-import {ask, choose, wordsOf} from './ask.ts';
+import {choose} from './ask.ts';
 import {MAKER_ORIGINS, newest} from './makers.ts';
 
 // The Agent's asking (ask.ts) over a maker's API as fetch sees it: the model a key opens found from its list, newest
-// first, the first that answers; an answer read a few words at a time from server-sent events.
+// first, the first that answers.
 
 const real = globalThis.fetch;
 afterEach(() => { globalThis.fetch = real; });
@@ -41,16 +41,4 @@ test('the model chosen is the newest that answers; a key refused is said at once
 
   maker((url) => (url.endsWith('/models') ? json({data: [{id: 'a', created: 1}, {id: 'b', created: 2}]}) : json({error: {message: 'invalid key'}}, 401)));
   await assert.rejects(choose('k', 'OPENAI_API_KEY'), (e: Error & {status: number}) => e.status === 401 && e.message === 'invalid key');
-});
-
-test('an answer comes a few words at a time, an event cut between two reads put together, each protocol as it says them', async () => {
-  const events = ['data: {"type":"content_block_delta","delta":{"text":"Hel"}}\n\n', 'data: {"type":"content_block_del', 'ta","delta":{"text":"lo"}}\n\n',
-    'data: {"type":"message_stop"}\n\n'];
-  maker(() => new Response(new ReadableStream({start(c) { for (const e of events) c.enqueue(new TextEncoder().encode(e)); c.close(); }})));
-  const words: string[] = [];
-  for await (const w of ask({key: 'k', variable: 'ANTHROPIC_API_KEY', model: 'm'}, 'told', 'asked')) words.push(w);
-  assert.deepEqual(words, ['Hel', 'lo']);
-  assert.equal(wordsOf('chat', '{"choices":[{"delta":{"content":"hi"}}]}'), 'hi');
-  assert.equal(wordsOf('chat', '[DONE]'), '');
-  assert.equal(wordsOf('messages', 'not json'), '');
 });

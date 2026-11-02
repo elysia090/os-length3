@@ -3,7 +3,7 @@ import {after, test} from 'node:test';
 import {bridge, throughBridge} from './bridge.ts';
 import {NO_FILES} from './bucket.ts';
 import {sha256} from './request.ts';
-import {database, enc} from './testing.ts';
+import {bearerOf, database, enc} from './testing.ts';
 import worker, {type Env} from './worker.ts';
 
 // The Worker itself (worker.ts: its fetch and its scheduled sweep, each on a
@@ -34,7 +34,7 @@ const ask = async (method: string, path: string, o: {token?: string; body?: unkn
   await Promise.all(waiting.splice(0));
   let json: unknown = null;
   try { json = JSON.parse(text); } catch { /* not json */ }
-  return {status: r.status, json: json as Record<string, unknown>};
+  return {status: r.status, json: json as Record<string, unknown>, ...(r.headers.getSetCookie().length ? {cookies: r.headers.getSetCookie()} : {})};
 };
 
 test('the Worker with no bucket starts, answers from its database, and refuses only what would move bytes', async () => {
@@ -42,7 +42,7 @@ test('the Worker with no bucket starts, answers from its database, and refuses o
   assert.equal((await ask('GET', '/v1/about')).json.enter, true);
   const entered = await ask('POST', '/v1/enter', {body: {key: env.ENTER_KEY}});
   assert.equal(entered.status, 200);
-  const token = entered.json.token as string;
+  const token = bearerOf(entered.cookies ?? [])!;
   const sha = await sha256(enc.encode('# notes\n'));
   // Rows: which files it lacks, a draft, a commit, Home, the list of repos.
   assert.deepEqual((await ask('POST', '/v1/blobs/missing', {token, body: [sha]})).json, [sha]);

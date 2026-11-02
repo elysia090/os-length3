@@ -4,6 +4,12 @@
 members = ["core", "core/web", "cli", "src-tauri"]
 resolver = "2"
 
+# Builds made while working (tests, checks, debug runs): this workspace's own code keeps its debug info, for a
+# debugger and backtraces with lines; its dependencies keep none, which is most of what target/ held (a debug
+# build of the app and its tests went from 12 GB to a fraction), and a backtrace into them still names each frame.
+[profile.dev.package."*"]
+debug = false
+
 [profile.release]
 codegen-units = 1
 lto = true

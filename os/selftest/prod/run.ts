@@ -113,10 +113,22 @@ async function headers() {
 
 /** Run l3 with `args` in its own home against `url`. */
 function l3(bin: string, home: string, url: string, args: string[]) {
-  const r = spawnSync(bin, args, {env: {PATH: process.env.PATH ?? '', HOME: home, LENGTH3_HOME: join(home, 'length3'), LENGTH3_LANG: 'en', LENGTH3_REMOTE: url, NO_COLOR: '1'},
+  const r = spawnSync(bin, args, {env: {PATH: process.env.PATH ?? '', HOME: home, LENGTH3_HOME: join(home, 'length3'), LENGTH3_LANG: 'en', LENGTH3_REMOTE: url, NO_COLOR: '1', LENGTH3_KEYRING: 'off'},
     encoding: 'utf8', cwd: home, timeout: 120_000});
   return {code: r.status ?? -1, out: r.stdout, err: r.stderr};
 }
+
+/**
+ * The bearer of the session a Set-Cookie sets: the session cookie's own value (the token signed, the bearer's form too).
+ * A page is handed no bearer (service/auth.ts); this, which is no page, holds what it was sent, as a device holds its own.
+ */
+const bearerIn = (setCookies: string[]): string | null => {
+  for (const c of setCookies) {
+    const m = /^(?:__Host-length3|better-auth)\.session_token=([^;]+)/.exec(c);
+    if (m) return decodeURIComponent(m[1]);
+  }
+  return null;
+};
 
 /** A Remote for research (ENTER_AS), as production is configured today: in by the link alone; l3 through the device flow. */
 async function research() {
@@ -128,7 +140,7 @@ async function research() {
       const text = await res.text();
       let j: any = null; // eslint-disable-line @typescript-eslint/no-explicit-any
       try { j = JSON.parse(text); } catch { /* not json */ }
-      return {status: res.status, json: j, text};
+      return {status: res.status, json: j, text, cookies: res.headers.getSetCookie()};
     };
     const about = await json('GET', '/v1/about');
     assert.equal(about.json.enter, true);
@@ -138,7 +150,9 @@ async function research() {
     assert.notEqual((await json('POST', '/v1/enter', {body: {key: `${key}x`}})).status, 200, 'a wrong key opens nothing');
     const entered = await json('POST', '/v1/enter', {body: {key}});
     assert.equal(entered.status, 200, entered.text);
-    const token = entered.json.token as string;
+    // In by the session's cookie, as a browser is: no token is said to a page.
+    assert.equal(entered.json.token, undefined);
+    const token = bearerIn(entered.cookies)!;
     assert.equal((await json('GET', '/api/auth/passkey/list-user-passkeys', {token})).status, 403, 'no passkey for research');
     assert.equal((await json('PUT', '/v1/home/todo', {token, body: {value: '[]', version: 0}})).status, 200);
     const bin = process.env.L3;
@@ -146,7 +160,7 @@ async function research() {
       const home = mkdtempSync(join(tmpdir(), 'length3-prod-l3-'));
       try {
         const login = await new Promise<{code: number; out: string}>((resolve, reject) => {
-          const p = spawn(bin, ['login', r.url], {env: {PATH: process.env.PATH ?? '', HOME: home, LENGTH3_HOME: join(home, 'length3'), LENGTH3_LANG: 'en', NO_COLOR: '1'}, cwd: home});
+          const p = spawn(bin, ['login', r.url], {env: {PATH: process.env.PATH ?? '', HOME: home, LENGTH3_HOME: join(home, 'length3'), LENGTH3_LANG: 'en', NO_COLOR: '1', LENGTH3_KEYRING: 'off'}, cwd: home});
           let out = '', approved = false;
           p.stdout.on('data', (d: Buffer) => {
             out += d;

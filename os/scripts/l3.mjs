@@ -23,15 +23,17 @@
 //                         release pins for the web (core/src/root.rs, `web`)
 //   packs/<sha256>.pack   one per package of the root (lib/apk/db/installed says
 //                         which owns a file; what none owns is one more, `local`):
-//                         its files' bytes, each a zstd frame (level 19; as it is
-//                         when that is no smaller), so a release that changes a
-//                         few packages leaves every other pack's name, and what a
-//                         browser has of it
+//                         its table (the SHA-256 of each file it stores), then its
+//                         files' bytes, each a zstd frame (level 19; as it is when
+//                         that is no smaller); named by its table's digest, so a
+//                         file read alone from it is checked (xlat/runtime/table.mjs),
+//                         and a release that changes a few packages leaves every
+//                         other pack's name, and what a browser has of it
 //   blobs/<sha256>.bin    the translator (xlat.wasm) and each translation made
 //                         ahead of time with its program's bytes, gzip'd: the hot programs (`--hot`, by
 //                         default BusyBox, which is sh and every coreutils
-//                         applet, and l3), translated whole by the same translator so
-//                         no Prompt spends its first seconds on them; every other
+//                         applet, l3, and git, which every repo is), translated whole by the same
+//                         translator so no Prompt spends its first seconds on them; every other
 //                         program is translated in the browser when it first runs
 //
 // Names are sorted and nothing depends on time, so the same root and
@@ -46,6 +48,7 @@ import {basename, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Worker} from 'node:worker_threads';
 import {gzipSync} from 'node:zlib';
+import {packOf} from '../../xlat/runtime/table.mjs';
 import {readTarball, sha256} from './l3-tree.mjs';
 
 const here = fileURLToPath(new URL('..', import.meta.url));
@@ -55,7 +58,7 @@ const args = process.argv.slice(2);
 const flag = (name, d = null) => { const i = args.indexOf(name); if (i < 0) return d; const v = args[i + 1]; args.splice(i, 2); return v; };
 const translatorWasm = flag('--translator', join(repo, 'xlat/target/wasm32-unknown-unknown/release/xlat.wasm'));
 const xlat = flag('--xlat', join(repo, 'xlat/target/release/xlat'));
-const hot = flag('--hot', '/usr/bin/busybox,/usr/bin/l3').split(',').filter(Boolean);
+const hot = flag('--hot', '/usr/bin/busybox,/usr/bin/l3,/usr/bin/git').split(',').filter(Boolean);
 const stage = flag('--stage');
 const [rootFile, out] = args;
 if (!rootFile || !out) { console.error('usage: l3.mjs ROOT OUT [--translator XLAT.wasm] [--xlat XLAT] [--hot PATH,…] [--stage DIR]'); process.exit(2); }
@@ -120,37 +123,37 @@ const packed = new Map((await Promise.all(stored.map(async (s) => [s.path, await
 for (const w of pool) void w.terminate();
 const packs = new Map();
 const places = new Map();
-const files = [];
+const placed = [];
 for (const e of entries.filter((x) => x.type === 'file')) {
   const place = places.get(e.same ?? e.path) ?? (() => {
     const who = owner.get(e.path) ?? LOCAL;
     const {z, raw} = packed.get(e.path);
     const bytes = z ?? raw;
-    if (!packs.has(who)) packs.set(who, {parts: [], at: 0});
-    const p = packs.get(who);
-    p.parts.push(bytes);
-    const at = p.at;
-    p.at += bytes.length;
-    const pl = {owner: who, at, len: bytes.length, ...(raw ? {raw: true} : {})};
+    if (!packs.has(who)) packs.set(who, []);
+    // An empty file stores nothing, and has no line of its pack's table.
+    const pl = {who, entry: bytes.length ? packs.get(who).push(bytes) - 1 : -1, len: bytes.length, raw: !z};
     places.set(e.path, pl);
     return pl;
   })();
-  files.push({path: e.path, mode: e.mode, size: e.size, ...place});
+  placed.push({e, place});
 }
 packed.clear();
 
 mkdirSync(join(out, 'packs'), {recursive: true});
 mkdirSync(join(out, 'blobs'), {recursive: true});
 const order = [...packs.keys()].sort();
+const ats = new Map();
 const packList = order.map((who) => {
-  const bytes = Buffer.concat(packs.get(who).parts);
-  const name = `${sha256(bytes)}.pack`;
-  const file = join(out, 'packs', name);
-  if (!existsSync(file)) writeFileSync(file, bytes);
-  return {name, owner: who, bytes: bytes.length};
+  const made = packOf(packs.get(who), (b) => createHash('sha256').update(b).digest());
+  const file = join(out, 'packs', made.name);
+  if (!existsSync(file)) writeFileSync(file, made.bytes);
+  ats.set(who, made.at);
+  return {name: made.name, owner: who, bytes: made.bytes.length};
 });
 const number = new Map(order.map((who, k) => [who, k]));
-for (const f of files) { f.pack = number.get(f.owner); delete f.owner; }
+const files = placed.map(({e, place: {who, entry, len, raw}}) => ({
+  path: e.path, mode: e.mode, size: e.size, pack: number.get(who), at: entry < 0 ? 0 : ats.get(who)[entry], len, ...(raw ? {raw: true} : {}),
+}));
 
 /** A blob: gzip'd (level 9, no name or time, so the same bytes give the same blob), named by its digest. */
 const blob = (bytes) => {

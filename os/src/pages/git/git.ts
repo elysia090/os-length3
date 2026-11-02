@@ -205,7 +205,11 @@ class GitPage {
       ...this.sections.under);
     // Its repos are its band, on the top line as Forge's pills are, so the page starts where the rail's places do.
     return bench({strip: h('div', {class: 'git-band'}, this.chips), main, reveal: (path) => { if (this.at) this.ctx.openRepo(this.at, path); }, word: (a) => { openConversation(a); void this.ctx.go('inbox'); }, back: true,
-      went: (repo, to) => { if (to === 'todo') { void this.ctx.go('home'); return; } showIssue(repo, to.issue); this.row.land = true; void this.paint(); }});
+      went: (repo, to) => {
+        if (to === 'todo') { void this.ctx.go('home'); return; }
+        if ('file' in to) { this.ctx.openRepo(repo, to.file); return; }
+        showIssue(repo, to.issue); this.row.land = true; void this.paint();
+      }});
   }
 
   /** Point the reference and the Prompt at `repo`; `chosen` when the person chose it, which makes it the repo worked on. */

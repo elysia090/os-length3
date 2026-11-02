@@ -61,7 +61,7 @@ mod tests {
             if !tools {
                 continue;
             }
-            let dir = std::env::temp_dir().join(format!("length3-template-{}-{name}", std::process::id()));
+            let dir = crate::testing::dir(&format!("length3-template-{name}"));
             for d in &t.dirs {
                 std::fs::create_dir_all(dir.join(d)).unwrap();
             }
@@ -89,7 +89,7 @@ mod tests {
             return;
         }
         let t = find("c").unwrap();
-        let dir = std::env::temp_dir().join(format!("length3-template-derived-{}", std::process::id()));
+        let dir = crate::testing::dir("length3-template-derived");
         for d in &t.dirs {
             std::fs::create_dir_all(dir.join(d)).unwrap();
         }

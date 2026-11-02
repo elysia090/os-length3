@@ -43,8 +43,10 @@ test('reading a board is told the Remote only past what was told, ids sorting as
 });
 
 test('a board seen up to a post, when the Remote could not be told, is told again the next time', async () => {
-  const {setState} = await import('../home/state.ts');
-  await setState('remote', JSON.stringify({url: 'http://remote.test', token: 't'}));
+  // Signed in: the Remote says which session the browser's cookie is.
+  Object.assign(globalThis, {fetch: async () => Response.json({user: {id: 'u'}, session: {token: 't'}})});
+  await (await import('../app/host.ts')).core('remote_connect', {url: 'http://remote.test'});
+  await (await import('../home/state.ts')).loadState(['remote']);
   const sent: string[] = [];
   let away = true;
   Object.assign(globalThis, {

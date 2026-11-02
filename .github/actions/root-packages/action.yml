@@ -1,0 +1,29 @@
+name: The root's packages
+description: >-
+  Each package of the root made from its pin by its recipe (os/root/build.sh) on Alpine 3.24 at one digest, into
+  os/target/root-packages, kept from run to run: a package is made again only when what it is made of changed (its
+  recipe, pins, patches and files, the builder, the compiler and libc, what it builds against).
+runs:
+  using: composite
+  steps:
+    - id: key
+      shell: bash
+      run: echo "key=root-packages-${{ hashFiles('os/root/build.sh', 'os/root/packages/**', 'os/root/sources.env', 'os/root/etc/**', 'os/root/usr/**') }}" >> "$GITHUB_OUTPUT"
+    # What was made before, the newest first: each package whose key still holds is kept, the rest made again.
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: os/target/root-packages
+        key: ${{ steps.key.outputs.key }}-${{ github.run_id }}
+        restore-keys: |
+          ${{ steps.key.outputs.key }}-
+          root-packages-
+    # The machine every package is made on: Alpine 3.24 (x86_64), at this digest and no other.
+    - shell: bash
+      run: docker run --rm -v "$GITHUB_WORKSPACE:/w" -e OWNER="$(id -u):$(id -g)" alpine@sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d sh /w/os/root/build.sh /w/os/target/root-packages
+    # Kept even when one failed or the run was cancelled: what was made before is made already, and the package being
+    # made when it stopped has no key, so it is made again.
+    - if: ${{ always() }}
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: os/target/root-packages
+        key: ${{ steps.key.outputs.key }}-${{ github.run_id }}

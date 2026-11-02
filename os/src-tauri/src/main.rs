@@ -3,7 +3,10 @@
 // them is what `l3` does on the command line, through the same core.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use length3_core::{api, paths};
+use length3_core::api;
+// The data directory, for what only a Unix has here: one app at a time (desktop.rs), and SSH's card.
+#[cfg(unix)]
+use length3_core::paths;
 
 #[cfg(target_os = "linux")]
 mod shells;
@@ -19,6 +22,9 @@ mod shells {
     #[tauri::command] pub fn prompt_held(_id: u32) -> Result<Option<length3_core::prompt::Held>, String> { Ok(None) }
     #[tauri::command] pub fn prompt_close(_id: u32) -> Result<length3_core::prompt::Stopped, String> { Err(not_here()) }
     #[tauri::command] pub fn root_status() -> Option<()> { None }
+    #[derive(serde::Serialize)]
+    pub struct Native { native: bool, why: String }
+    #[tauri::command] pub async fn root_native() -> Native { Native { native: false, why: length3_core::tr!("A Prompt runs on the root on Linux only; here it runs translated, as in a browser", "root の上で Prompt が動くのは Linux だけです。ここではブラウザと同じく翻訳して動きます") } }
     #[tauri::command] pub async fn root_list(_path: String) -> Result<Vec<()>, String> { Err(not_here()) }
     #[tauri::command] pub async fn root_fetch() -> Result<(), String> { Err(not_here()) }
     #[tauri::command] pub async fn root_use(_id: String) -> Result<(), String> { Err(not_here()) }
@@ -199,7 +205,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             core, remote_login_start, remote_login_reopen, window_forward, plan_open, app_open,
             shells::prompt_open, shells::prompt_input, shells::prompt_interrupt, shells::prompt_held, shells::prompt_close,
-            shells::root_status, shells::root_list, shells::root_fetch, shells::root_use, ssh_here, ssh_set
+            shells::root_status, shells::root_native, shells::root_list, shells::root_fetch, shells::root_use, ssh_here, ssh_set
         ])
         .run(tauri::generate_context!())
         .expect("Length³ OS shell failed to start");

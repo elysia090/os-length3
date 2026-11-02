@@ -1,8 +1,7 @@
 import {MAKERS, newest, type Listed, type Maker} from './makers.ts';
 
-// The Agent asked: the model a key opens, found once when the key is given, and a question sent to it with what the
-// person is looking at, its answer coming back a few words at a time. Straight from this device to the maker: nothing
-// of it, the key least of all, goes by the Remote.
+// The model a key opens, found once when the key is given (its work: work.ts). Straight from this device to the
+// maker: nothing of it, the key least of all, goes by the Remote.
 
 /** What asking needs: the key, the variable it is read from (its maker), and the model it opens. */
 export interface Use { key: string; variable: string; model: string }
@@ -62,39 +61,4 @@ export async function choose(key: string, variable: string, signal?: AbortSignal
     if (r.status === 401 || r.status === 403) throw last;
   }
   throw last ?? new AgentError(0, 'no model to talk to');
-}
-
-/** The words of one event of a streamed answer, as each protocol says them. */
-export function wordsOf(protocol: 'messages' | 'chat', data: string): string {
-  if (data === '[DONE]') return '';
-  try {
-    const e = JSON.parse(data) as {type?: string; delta?: {text?: string}; choices?: {delta?: {content?: string}}[]};
-    if (protocol === 'messages') return e.type === 'content_block_delta' ? e.delta?.text ?? '' : '';
-    return e.choices?.[0]?.delta?.content ?? '';
-  } catch { return ''; }
-}
-
-/** `question` asked of the model `use` opens, told `system`: its answer, a few words at a time as they come. */
-export async function* ask(use: Use, system: string, question: string, signal?: AbortSignal): AsyncGenerator<string> {
-  const m = makerOf(use.variable);
-  const r = await fetch(`${m.base}${m.protocol === 'messages' ? '/messages' : '/chat/completions'}`, {
-    method: 'POST', headers: {...m.headers(use.key), 'content-type': 'application/json', accept: 'text/event-stream'}, signal,
-    body: JSON.stringify(body(m, use.model, system, question, true, 2048)),
-  });
-  if (!r.ok || !r.body) throw await refused(r);
-  const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
-  let held = '';
-  for (;;) {
-    const {value, done} = await reader.read();
-    if (done) break;
-    held += value;
-    // Server-sent events, one `data:` line each; a line cut between two reads waits for its end.
-    const lines = held.split('\n');
-    held = lines.pop() ?? '';
-    for (const line of lines) {
-      if (!line.startsWith('data:')) continue;
-      const words = wordsOf(m.protocol, line.slice(5).trim());
-      if (words) yield words;
-    }
-  }
 }

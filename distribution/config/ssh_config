@@ -1,3 +1,0 @@
-Host *
-    HashKnownHosts yes
-    SendEnv LANG LC_*

@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 use wasm_encoder::{
     BlockType, CodeSection, ConstExpr, CustomSection, ElementSection, Elements, Encode, EntityType, ExportKind,
     ExportSection, Function as WasmFunction, FunctionSection, GlobalSection, GlobalType, ImportSection,
-    Instruction as W, MemArg, MemoryType, Module, RefType, Section, SectionId, TableSection, TableType, TypeSection, ValType,
+    Instruction as W, MemArg, MemArgTarget, MemoryType, Module, RefType, Section, SectionId, TableSection, TableType, TypeSection, ValType,
 };
 
 type I = W<'static>;
@@ -128,7 +128,12 @@ pub const TRAP_HLT: i32 = 9;
 const ALL_FLAGS: u32 = RflagsBits::OF | RflagsBits::SF | RflagsBits::ZF | RflagsBits::CF | RflagsBits::PF;
 
 fn mem(align: u32) -> MemArg {
-    MemArg { offset: 0, align, memory_index: 0 }
+    mem_at(0, align)
+}
+
+/// An access to the guest's memory (the module's only one, 0), at `offset` from its address, plain (not atomic).
+fn mem_at(offset: u64, align: u32) -> MemArg {
+    MemArg { offset, align, target: MemArgTarget::Memory(0), ordering: None }
 }
 
 fn mask(size: u8) -> i64 {
@@ -427,7 +432,7 @@ impl<'p> Fx<'p> {
     fn store_sized(&mut self, size: u8) { self.store_at(size, 0) }
 
     fn load_at(&mut self, size: u8, offset: u64) {
-        let m = MemArg { offset, align: 0, memory_index: 0 };
+        let m = mem_at(offset, 0);
         self.e(match size {
             1 => W::I64Load8U(m),
             2 => W::I64Load16U(m),
@@ -437,7 +442,7 @@ impl<'p> Fx<'p> {
     }
 
     fn store_at(&mut self, size: u8, offset: u64) {
-        let m = MemArg { offset, align: 0, memory_index: 0 };
+        let m = mem_at(offset, 0);
         self.e(match size {
             1 => W::I64Store8(m),
             2 => W::I64Store16(m),
@@ -727,7 +732,7 @@ impl<'p> Fx<'p> {
     /// call that waits for one, as in `while (!got) pause();`, is taken there, by the call, as at a system call).
     fn time_slice(&mut self, address: u64) {
         self.spent();
-        self.c32(0); self.e(W::I32Load(MemArg { offset: INTERRUPT as u64, align: 2, memory_index: 0 }));
+        self.c32(0); self.e(W::I32Load(mem_at(INTERRUPT as u64, 2)));
         self.e(W::I32Or);
         self.e(W::If(BlockType::Empty));
         self.depth += 1;
@@ -988,6 +993,53 @@ impl Fx<'_> {
             self.e(W::I32WrapI64);
             if constant.is_none() { self.get(L_CF); self.get(l_t(2)); self.c64(0); self.e(W::I64Ne); self.e(W::Select); }
             self.set(L_CF);
+        }
+        self.write(i, 0, size, l_t(3))
+    }
+
+    /// rcl/rcr: rotate through the carry, by a count the instruction holds (its immediate, or the 1 of its short
+    /// form; a count in CL is not lowered). Go's compiler makes `rcr $1` for division by a constant (the carry of
+    /// an add put back as the top bit). Only CF and OF change.
+    fn rotate_carry(&mut self, i: &Instruction, op: Mnemonic, need: bool) -> bool {
+        let size = Self::size(i, 0);
+        let bits = size as i64 * 8;
+        let masked = match i.op1_kind() {
+            OpKind::Register => return false,
+            OpKind::Immediate8 => i.immediate8() as i64 & if size == 8 { 63 } else { 31 },
+            _ => 1,
+        };
+        // The rotation goes through bits + 1 places (the value and CF): an 8- or 16-bit count is taken mod that.
+        let c = if size < 4 { masked % (bits + 1) } else { masked };
+        if c == 0 {
+            return true;
+        }
+        if !self.read(i, 0, size) { return false; }
+        self.set(l_t(1));
+        self.flag(Flag::C); self.e(W::I64ExtendI32U); self.set(l_t(2));
+        let left = op == Mnemonic::Rcl;
+        // rcr: x >> c | CF << (bits - c) | x << (bits + 1 - c); rcl: x << c | CF << (c - 1) | x >> (bits + 1 - c).
+        // A term shifted by the whole width holds nothing (wasm would take the shift mod 64): it is left out.
+        let (near, far) = if left { (W::I64Shl, W::I64ShrU) } else { (W::I64ShrU, W::I64Shl) };
+        if c < bits { self.get(l_t(1)); self.c64(c); self.e(near); } else { self.c64(0); }
+        self.get(l_t(2)); self.c64(if left { c - 1 } else { bits - c }); self.e(W::I64Shl); self.e(W::I64Or);
+        if c > 1 { self.get(l_t(1)); self.c64(bits + 1 - c); self.e(far); self.e(W::I64Or); }
+        self.mask_to(size); self.set(l_t(3));
+        if need {
+            self.hold_flags();
+            // CF: the last bit rotated out of the value.
+            self.get(l_t(1)); self.c64(if left { bits - c } else { c - 1 }); self.e(W::I64ShrU);
+            self.c64(1); self.e(W::I64And); self.e(W::I32WrapI64); self.set(L_CF);
+            // OF, defined for a count of 1: the result's top bit against CF after (rcl) or its next bit (rcr).
+            if c == 1 {
+                self.sign_bit(l_t(3), size);
+                if left {
+                    self.get(L_CF);
+                } else {
+                    self.get(l_t(3)); self.c64(bits - 2); self.e(W::I64ShrU); self.c64(1); self.e(W::I64And);
+                    self.e(W::I32WrapI64);
+                }
+                self.e(W::I32Xor); self.set(L_OF);
+            }
         }
         self.write(i, 0, size, l_t(3))
     }
@@ -1364,6 +1416,7 @@ impl Fx<'_> {
             Sbb => self.carry(i, true),
             Inc | Dec | Neg | Not => self.unary(i, m),
             Shl | Sal | Shr | Sar | Rol | Ror => self.shift(i, m, need),
+            Rcl | Rcr => self.rotate_carry(i, m, need),
             Imul | Mul => self.multiply(i, need),
             Div | Idiv => self.divide(i),
             Cbw => { self.read_reg(Register::AL); self.sign_extend(1); self.write_reg(Register::AX) }
@@ -2558,7 +2611,7 @@ fn helpers(code: &mut CodeSection, entries: u32, table: u64, cache: u64) {
     code.function(&f);
 
     // resolve(addr): binary search the sorted 16-byte entries in memory 1.
-    let m1 = |offset| MemArg { offset: table + offset, align: 3, memory_index: 0 };
+    let m1 = |offset| mem_at(table + offset, 3);
     let mut f = WasmFunction::new([(3, ValType::I32), (1, ValType::I64)]);
     let (addr, lo, hi, mid, key) = (0, 1, 2, 3, 4);
     for i in [
@@ -2585,7 +2638,7 @@ fn helpers(code: &mut CodeSection, entries: u32, table: u64, cache: u64) {
     // made later, or a return out of every translated frame, then costs a
     // load and a compare, not a search and a call out to the host. An empty
     // slot holds address 0, which is never taken as found.
-    let mc = |offset| MemArg { offset: cache + offset, align: 3, memory_index: 0 };
+    let mc = |offset| mem_at(cache + offset, 3);
     let mut f = WasmFunction::new([(1, ValType::I64), (1, ValType::I32)]);
     let (v, at) = (1, 2);
     for i in [

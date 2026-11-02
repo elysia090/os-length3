@@ -64,13 +64,31 @@ pub const FORMER_URL: &str = "https://remote.length3.com";
 /// Paths one diff carries at most (the Remote takes 5000).
 const CHUNK: usize = 2000;
 
+/// Which session this device is on which Remote. Nothing in it is a secret: what proves the session is kept apart
+/// from it (`bearer`), so Home's state, which a page reads, carries none.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Connection {
     pub url: String,
-    pub token: String,
+    /// The session's token as the Remote keeps it, unsigned: how this device knows itself among the account's
+    /// sessions (account.rs devices). By itself it opens nothing: the Remote takes a token only signed with its
+    /// secret, as a bearer and as its cookie alike (service/auth.ts signedToken).
+    #[serde(default)]
+    pub session: String,
     /// The account the session is (its id on the Remote), when it was told at sign-in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
+}
+
+/// A connection as earlier releases kept it: the bearer itself in Home's state, beside the rest.
+#[derive(Deserialize)]
+struct KeptBefore {
+    url: String,
+    #[serde(default)]
+    session: String,
+    #[serde(default)]
+    token: Option<String>,
+    #[serde(default)]
+    user: Option<String>,
 }
 
 /// A Remote's URL as it is used now: the former name of the one this OS ships with is its name today.
@@ -79,26 +97,45 @@ pub fn current_url(url: &str) -> String {
     if url.eq_ignore_ascii_case(FORMER_URL) { DEFAULT_URL.into() } else { url.into() }
 }
 
-/// The Remote this device is connected to, if it is (Home's `remote` setting).
+/// The Remote this device is connected to, if it is (Home's `remote` setting). One kept as earlier releases kept it,
+/// its bearer beside the rest, is kept as now the first time it is read: the bearer apart (vault.rs), or, in a
+/// browser, not at all (its cookie is the session there).
 pub fn connection() -> Option<Connection> {
     let text = crate::home::get("remote").ok()??;
-    let c: Connection = serde_json::from_str(&text).ok()?;
-    Some(Connection { url: current_url(&c.url), ..c })
+    let k: KeptBefore = serde_json::from_str(&text).ok()?;
+    let mut c = Connection { url: current_url(&k.url), session: k.session, user: k.user };
+    if let Some(token) = k.token.filter(|t| !t.is_empty()) {
+        c.session = token.split('.').next().unwrap_or_default().to_string();
+        #[cfg(not(target_os = "wasi"))]
+        crate::vault::set(crate::vault::Secret::Session, &token).ok()?;
+        save_connection(&c).ok()?;
+    }
+    (!c.session.is_empty()).then_some(c)
 }
 
 pub fn save_connection(c: &Connection) -> Result<()> {
     crate::home::set("remote", &serde_json::to_string(c).map_err(|e| e.to_string())?)
 }
 
-/// This device's own secrets a file must not carry (secrets.rs): its session on the Remote, whole and without its
-/// signature.
+/// What proves this device is its session to the Remote: the bearer kept apart (vault.rs), the session's token
+/// signed; why not, when the keyring keeping it did not give it. A browser holds none: its session is the cookie the
+/// Remote set, which it sends itself and no script reads (core/worker.ts sends it with the core's requests).
+pub(crate) fn bearer() -> Result<Option<String>> {
+    #[cfg(not(target_os = "wasi"))]
+    { crate::vault::get(crate::vault::Secret::Session) }
+    #[cfg(target_os = "wasi")]
+    { Ok(None) }
+}
+
+/// This device's own secrets a file must not carry (secrets.rs): its session's bearer, whole and without its signature.
 fn own_secrets() -> Vec<String> {
-    connection().map(|c| c.token.split('.').next().map(String::from).into_iter().chain([c.token.clone()]).collect()).unwrap_or_default()
+    bearer().ok().flatten().map(|b| vec![b.split('.').next().unwrap_or_default().to_string(), b]).unwrap_or_default()
 }
 
 /// Forget the Remote here: its session and every base (the repos stay).
 pub fn forget_connection() -> Result<()> {
     crate::home::set("remote", "null")?;
+    crate::vault::remove(crate::vault::Secret::Session)?;
     // A base left behind would be taken for what the next Remote agreed (another account's, perhaps),
     // and a file it does not hold would be removed here as if removed there: it must go.
     gone(fs::remove_dir_all(sync_dir()))
@@ -493,7 +530,7 @@ impl crate::home::HomeThere for Client {
 /// Remote is asked whose it is, once, and it is noted.
 fn account_id() -> Option<String> {
     connection().and_then(|c| c.user.clone().or_else(|| {
-        let who = login::whose(&c.url, &c.token)?;
+        let who = login::whose(&c.url, bearer().ok().flatten().as_deref())?.user;
         let _ = save_connection(&Connection { user: Some(who.clone()), ..c });
         Some(who)
     }))
@@ -884,7 +921,7 @@ mod tests {
 
     #[test]
     fn a_session_is_another_on_another_remote_or_for_another_account() {
-        let was = |user: Option<&str>| Connection { url: DEFAULT_URL.into(), token: "t".into(), user: user.map(String::from) };
+        let was = |user: Option<&str>| Connection { url: DEFAULT_URL.into(), session: "t".into(), user: user.map(String::from) };
         assert!(!another(&was(Some("u1")), DEFAULT_URL, Some("u1")));
         assert!(another(&was(Some("u1")), DEFAULT_URL, Some("u2")));
         assert!(another(&was(Some("u1")), "http://127.0.0.1:8787", Some("u1")));
@@ -892,10 +929,11 @@ mod tests {
         // Whose either is cannot be told: the same account.
         assert!(!another(&was(None), DEFAULT_URL, Some("u2")));
         assert!(!another(&was(Some("u1")), DEFAULT_URL, None));
-        // A session kept without an account reads as before; one with it keeps it.
-        let old: Connection = serde_json::from_str(r#"{"url":"https://os.length3.com","token":"t"}"#).unwrap();
-        assert_eq!(old.user, None);
-        assert_eq!(serde_json::to_string(&was(None)).unwrap(), r#"{"url":"https://os.length3.com","token":"t"}"#);
+        // A session kept without an account reads as before; one with it keeps it. Kept, it says which session, never
+        // what proves it.
+        let old: KeptBefore = serde_json::from_str(r#"{"url":"https://os.length3.com","token":"t.sig"}"#).unwrap();
+        assert_eq!((old.user, old.token.as_deref()), (None, Some("t.sig")));
+        assert_eq!(serde_json::to_string(&was(None)).unwrap(), r#"{"url":"https://os.length3.com","session":"t"}"#);
     }
 
     #[test]
@@ -949,7 +987,7 @@ mod tests {
 
     #[test]
     fn a_link_planted_where_a_file_is_written_is_not_written_through() {
-        let d = std::env::temp_dir().join(format!("length3-plant-{}", std::process::id()));
+        let d = crate::testing::dir("length3-plant");
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(d.join("repo")).unwrap();
         let outside = d.join("outside.txt");
@@ -1024,7 +1062,7 @@ mod tests {
 
     #[test]
     fn the_tree_leaves_out_git_and_links_and_says_so() {
-        let d = std::env::temp_dir().join(format!("length3-tree-{}", std::process::id()));
+        let d = crate::testing::dir("length3-tree");
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(d.join(".git")).unwrap();
         fs::create_dir_all(d.join("empty")).unwrap();

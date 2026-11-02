@@ -60,6 +60,10 @@ test.describe('the Prompt with its threads apart', {tag: '@slow'}, () => {
       const cut = app.page.getByRole('button', {name: 'Interrupt', exact: true});
       await cut.click({timeout: 30_000});
       await expect(cut).toHaveCount(0, {timeout: 15_000});
+      // The button goes when what ran in front has ended, a moment before its shell has said its prompt again:
+      // a line sent then is typed ahead, echoed before that prompt as a terminal echoes it, and its output comes
+      // after the prompt on one line. A person waits for the prompt; so does this.
+      await expect(app.forge.prompt).toContainText(/\^C\nhello \$\s*$/, {timeout: 15_000});
       await app.forge.run(`echo "status $? after ${k}"`);
       await expect(app.forge.prompt).toContainText(new RegExp(`^status 130 after ${k}$`, 'm'));
     }

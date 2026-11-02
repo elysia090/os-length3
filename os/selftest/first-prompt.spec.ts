@@ -48,15 +48,13 @@ test.describe('the first Prompt', {tag: '@slow'}, () => {
     };
     const cold = await first(() => app.newRepo.openInForge(), false);
     const warm = await first(async () => { await app.page.reload(); await app.forge.promptBox.waitFor(); }, true);
-    // l3 itself in that Prompt: translated as it runs (its translation made ahead of time comes after the prompt line, for later Prompts).
+    // l3 itself in that Prompt: translated as it runs, until its translation made ahead of time is ready (it comes after
+    // the prompt line), when this Prompt is given it and runs l3 from it from its next run on.
     let started = Date.now();
     await app.forge.run('l3 --version');
     await expect(app.forge.prompt).toContainText(/^l3 \d+\.\d+\.\d+/m, {timeout: 120_000});
     const l3 = {ms: Date.now() - started};
-    // A Prompt started after it in this page is given l3's translation: l3 runs again from it.
-    await app.forge.run('exit');
-    await app.forge.prompt.getByRole('switch', {name: 'Restart'}).click();
-    await expect(app.forge.prompt).toContainText(/hello \$/, {timeout: 120_000});
+    await expect(app.page.locator('.term[data-ahead]')).toHaveAttribute('data-ahead', /\/usr\/bin\/l3/, {timeout: 120_000});
     started = Date.now();
     await app.forge.run('l3 --version');
     await expect(app.forge.prompt).toContainText(/^l3 \d+\.\d+\.\d+/m, {timeout: 120_000});

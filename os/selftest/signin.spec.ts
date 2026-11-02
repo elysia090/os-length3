@@ -13,6 +13,17 @@ test('signing in through a provider shows the Remote as yours, this device among
   await expect(app.remote.part('Repos')).toHaveAttribute('aria-selected', 'true');
   await app.remote.part('Devices').click();
   await expect(app.main.getByRole('tabpanel', {name: /^Devices/})).toContainText('This device');
+
+  // What proves the session is the browser's alone: a cookie no script reads, and nothing the page keeps holds it
+  // (a script that should not be on the page could carry off what the page keeps, never the cookie).
+  const cookie = (await app.page.context().cookies()).find((c) => /\.session_token$/.test(c.name));
+  expect(cookie?.httpOnly, 'the session is an HttpOnly cookie').toBe(true);
+  const signature = decodeURIComponent(cookie!.value).split('.')[1];
+  expect(signature.length).toBeGreaterThan(20);
+  const kept = await app.kept();
+  const [session] = decodeURIComponent(cookie!.value).split('.');
+  expect(kept.includes(session), 'which session this is, the page knows (what it keeps was read)').toBe(true);
+  expect(kept.includes(signature), 'what proves it is in nothing the page keeps').toBe(false);
 });
 
 test('a Remote that answers with a page or a 503 is said to be away, not to offer nothing, and Try again finds it back', async ({app}) => {

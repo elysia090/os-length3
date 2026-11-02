@@ -1,0 +1,8 @@
+# tldr as the root has it (TEALDEER_CONFIG_DIR, from the root's shrc): its pages where the root keeps them,
+# updated only when asked (tldr --update), in English and Japanese.
+[directories]
+cache_dir = "/usr/share/tldr"
+[updates]
+auto_update = false
+warn_cache_age = "never"
+download_languages = ["en", "ja"]

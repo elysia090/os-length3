@@ -2,8 +2,18 @@
 //! Remote, then people (Server, Inbox). Each takes where l3 runs (Ctx) and
 //! the call, and answers with a Reply.
 
+// SSH into the Prompts and the app's window are the root's and the desktop's of a Unix: elsewhere (Windows, where
+// Prompts run translated) their commands say so.
+#[cfg(unix)]
+pub mod address;
+#[cfg(not(unix))]
+#[path = "elsewhere/address.rs"]
 pub mod address;
 pub mod agent;
+#[cfg(unix)]
+pub mod app;
+#[cfg(not(unix))]
+#[path = "elsewhere/app.rs"]
 pub mod app;
 pub mod file;
 pub mod forge;

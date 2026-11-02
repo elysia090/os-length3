@@ -72,11 +72,11 @@ tracked in issue #20.
   l3: the one base): in a browser, `public/l3`, made from the release root
   by `scripts/l3.mjs`: `l3.json` (which l3, and the root's digest), an index
   of every path, a pack per package that a file is read from when a program
-  first opens it, and the translator with BusyBox and l3 translated ahead of
-  time. A first Prompt fetches about 0.8 MB (the index, the translator,
+  first opens it, and the translator with BusyBox, l3 and git translated
+  ahead of time. A first Prompt fetches about 0.8 MB (the index, the translator,
   BusyBox and its translation); what it fetched is kept by digest within
   the browser's storage budget, so the next fetches only `l3.json`. What a
-  Prompt translates as it runs (the code its shell reaches, gcc's cc1, git)
+  Prompt translates as it runs (the code its shell reaches, gcc's cc1, curl)
   is kept the same way, by the file it was made from, so the next Prompt
   reads it rather than translating it again. Make it
   with `npm run l3` (`scripts/l3.sh`: the translator from this tree and the
@@ -534,8 +534,7 @@ to this repository, and its Settings → Build say, once:
 
 The Prompt the web serves is a released one: a newer one ships by releasing
 it (a new version in `RELEASE`, `.github/workflows/release.yml`; without
-Actions, `scripts/release.sh` and `scripts/publish-release.mjs` by hand, as
-[`releases/README.md`](../releases/README.md) says), then merging the pins
+Actions, `scripts/release.sh` and `scripts/publish-release.mjs` by hand), then merging the pins
 the release proposes (Pin vX.Y.Z): l3's one entry in `core/src/root.rs`
 (the root, and the index the web reads it by) and the desktop app in
 `shared/desktop-releases.json`. A build

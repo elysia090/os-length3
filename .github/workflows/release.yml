@@ -4,9 +4,8 @@ name: Release
 # os-length3-linux-vX.Y.Z, by a push that writes X.Y.Z into
 # os/RELEASE (the tag is then made at that commit), or by hand. It
 # publishes the root
-# (the pinned 0.1.0 root, laid out for Prompts (what only booting needed
-# dropped, merged /usr) with this tree's l3, profile and shell, repackaged
-# by os/scripts/root-release.sh), the web build (the app with
+# (every package made from this tree's pins by its recipe, os/root/build.sh,
+# with this tree's l3, os/root/assemble.sh), the web build (the app with
 # l3 for the browser: the same root as the browser reads it, os/scripts/l3.mjs
 # and web-release.sh) and the desktop app (the
 # same UI, its Prompt running that root on the machine: a .deb and an
@@ -21,8 +20,9 @@ name: Release
 # Only main's commits are released (audit R1): a push to main, a tag on a
 # commit main has, or a run by hand from main; anything else stops at
 # Version. One version at a time (audit R2). The token can write the
-# repository's contents (the release, the pins' branch) and open the pins'
-# pull request in this job alone; every action is pinned to a full commit
+# repository's contents (the release, the pins' branch), open the pins'
+# pull request and attest what it made (each file's provenance, signed as
+# this run) in this job alone; every action is pinned to a full commit
 # (the tag is beside it).
 on:
   push:
@@ -49,6 +49,9 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      # The provenance of what it publishes: signed with this run's identity (OIDC), kept by GitHub.
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -91,20 +94,32 @@ jobs:
           echo "TAG=os-length3-linux-v$v" >> "$GITHUB_ENV"
           # A version already published is left as it is.
           if gh release view "os-length3-linux-v$v" >/dev/null 2>&1; then echo "SKIP=1" >> "$GITHUB_ENV"; echo "os-length3-linux-v$v is published already"; fi
+      # The root's packages, made and kept as the root job makes and keeps them (the root-packages action).
+      - if: env.SKIP != '1'
+        uses: ./.github/actions/root-packages
       # What the release holds and its notes, made as by hand (os/scripts/release.sh), then published.
       - name: Root, l3 for the browser, web build and desktop app
         if: env.SKIP != '1'
         working-directory: os
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          ROOT_PACKAGES: ${{ github.workspace }}/os/target/root-packages
         run: sh scripts/release.sh "$GITHUB_WORKSPACE/out"
+      # Every file the release holds, attested as made by this run of this workflow at this commit (SLSA build
+      # provenance, signed through Sigstore): `gh attestation verify FILE -R OWNER/REPO` says so of a file anyone
+      # downloaded, beside the digest a device already checks it by.
+      - name: Provenance
+        if: env.SKIP != '1'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: out/*
       - name: Publish
         if: env.SKIP != '1'
         working-directory: os
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/publish-release.mjs "$GITHUB_WORKSPACE/out"
-      # The pins the release wrote (release.sh: pin-root.mjs, pin-desktop.mjs, pin-base.mjs), proposed to main as one
+      # The pins the release wrote (release.sh: pin-root.mjs, pin-desktop.mjs), proposed to main as one
       # change; merged, the releases they no longer name are deleted (releases-prune.yml). A
       # pull request opened with this token runs no workflow; the pins are checked where they are read (the web
       # build, the deploy). Where the repository does not let Actions open pull requests, the branch is pushed and
@@ -118,8 +133,8 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git switch -c "$branch"
-          git add os/core/src/root.rs os/shared/desktop-releases.json os/shared/root-base.json
-          git commit -m "Pin $TAG: its root (os/core/src/root.rs RELEASES), its desktop app (os/shared/desktop-releases.json) and the base it carries (os/shared/root-base.json)"
+          git add os/core/src/root.rs os/shared/desktop-releases.json
+          git commit -m "Pin $TAG: its root (os/core/src/root.rs RELEASES) and its desktop app (os/shared/desktop-releases.json)"
           git push "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" "$branch"
           gh pr create --base main --head "$branch" --title "Pin $TAG" \
             --body "What $TAG pinned as it was made (its notes say the same): merged, the tree ships it." \

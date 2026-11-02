@@ -136,12 +136,30 @@ fn environment(name: &str, told: &[(String, String)]) -> Vec<CString> {
         "ENV=/etc/length3/shrc".into(),
         format!("LENGTH3_REPO={name}"),
     ].into();
+    // The person's clock: the root has every zone the host may name, so date, ls -l and git's log read as theirs.
+    if let Some(z) = zone() { all.push(format!("TZ={z}")); }
     let fixed: Vec<String> = all.iter().filter_map(|e| e.split_once('=').map(|(k, _)| k.to_string())).collect();
     for (k, v) in told {
         if k.is_empty() || !k.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_') || fixed.contains(k) { continue; }
         all.push(format!("{k}={}", v.replace('\0', "")));
     }
     all.iter().map(c).collect()
+}
+
+/// The host's time zone by its name: TZ where it names one, else the zone /etc/localtime is (a link into a
+/// zoneinfo directory, on Linux and macOS alike). Only a plain name passes; none, and the Prompt keeps UTC.
+fn zone() -> Option<String> {
+    let named = std::env::var("TZ").ok().map(|t| t.trim_start_matches(':').to_string()).filter(|t| !t.is_empty()).or_else(|| {
+        let at = std::fs::read_link("/etc/localtime").ok()?;
+        Some(at.to_str()?.split_once("zoneinfo/")?.1.to_string())
+    })?;
+    plain_zone(&named).then_some(named)
+}
+
+/// A zone's name as zoneinfo has them (Asia/Tokyo, Etc/GMT+9), or a POSIX rule (JST-9): nothing that leaves it.
+fn plain_zone(z: &str) -> bool {
+    !z.is_empty() && z.len() <= 64 && !z.contains("..") && !z.starts_with('/')
+        && z.bytes().all(|b| b.is_ascii_alphanumeric() || b"/_+-".contains(&b))
 }
 
 /// The terminal the Prompt is drawn on: a real one's name when l3 runs in one (so nano and
@@ -468,6 +486,35 @@ fn init(s: &Sandbox) -> ! {
     }
 }
 
+/// Why this machine does not let a Prompt run on the root here, if it does not: a child of this process makes the
+/// namespaces a Prompt is made in (a user namespace, and a mount namespace in it) and mounts in them, then ends.
+/// A kernel may have user namespaces off for everyone (user.max_user_namespaces=0, or
+/// kernel.unprivileged_userns_clone=0); Ubuntu 23.10 and later keep them, through AppArmor, from a program no profile
+/// lets make them (the .deb's lets /usr/bin/l3). Where they cannot be made, Prompts run translated, as in a browser.
+pub fn kept_from_namespaces() -> Option<String> {
+    let child = unsafe { libc::fork() };
+    if child < 0 { return Some(io::Error::last_os_error().to_string()); }
+    if child == 0 {
+        // Only system calls between the fork and the end: the caller may have threads.
+        let code = if unsafe { libc::unshare(libc::CLONE_NEWUSER | libc::CLONE_NEWNS) } != 0 { 1 }
+            else if unsafe { libc::mount(c"none".as_ptr(), c"/".as_ptr(), std::ptr::null(), libc::MS_REC | libc::MS_PRIVATE, std::ptr::null()) } != 0 { 2 }
+            else { 0 };
+        unsafe { libc::_exit(code) };
+    }
+    let mut status = 0;
+    while unsafe { libc::waitpid(child, &mut status, 0) } < 0 {
+        if io::Error::last_os_error().raw_os_error() != Some(libc::EINTR) { return Some(io::Error::last_os_error().to_string()); }
+    }
+    match libc::WIFEXITED(status).then(|| libc::WEXITSTATUS(status)) {
+        Some(0) => None,
+        Some(1) => Some(crate::tr!("This system lets no program make user namespaces, which Prompts are made in (user.max_user_namespaces, kernel.unprivileged_userns_clone)",
+            "このシステムは、Prompt が作られるユーザー名前空間をどのプログラムにも作らせません（user.max_user_namespaces、kernel.unprivileged_userns_clone）")),
+        Some(_) => Some(crate::tr!("AppArmor keeps user namespaces from this l3 (Ubuntu 23.10 and later); the .deb installs the profile that lets /usr/bin/l3 make them",
+            "AppArmor がこの l3 にユーザー名前空間を作らせません（Ubuntu 23.10 以降）。.deb で入れると、/usr/bin/l3 に作らせるプロファイルが入ります")),
+        None => Some(crate::tr!("The check of user namespaces ended by a signal", "ユーザー名前空間の確認がシグナルで終わりました")),
+    }
+}
+
 /// Run `s` and return the shell's exit code. Must be called from a process
 /// with one thread (l3 itself), since it forks and changes namespaces.
 pub fn run(s: &Sandbox) -> io::Result<i32> {
@@ -734,6 +781,12 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_time_zone_passes_by_its_name_and_nothing_that_leaves_zoneinfo() {
+        for ok in ["Asia/Tokyo", "UTC", "America/Argentina/Buenos_Aires", "Etc/GMT+9", "JST-9"] { assert!(plain_zone(ok), "{ok}"); }
+        for bad in ["", "../../etc/shadow", "/etc/localtime", "Asia/To kyo", "Asia/$(x)", "a;b"] { assert!(!plain_zone(bad), "{bad}"); }
+    }
+
+    #[test]
     fn a_package_name_is_what_apt_takes_and_nothing_a_shell_reads() {
         for ok in ["jq", "build-essential", "python3.12", "libc6:amd64", "nodejs=20.1-1", "g++", "ca-certificates"] { assert!(package_name(ok), "{ok}"); }
         for bad in ["", "-y", "a;rm", "$(x)", "a b", "`x`", "a|b", "a&b", "a>b"] { assert!(!package_name(bad), "{bad}"); }
@@ -753,7 +806,7 @@ mod tests {
         if !Path::new("/usr/bin/cc").exists() || !Path::new("/usr/bin/python3").exists() { return None; }
         // A place of each call's own: the tests that call this run side by side.
         static CALLS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-        let top = std::env::temp_dir().join(format!("l3-prompt-test-{}-{}", std::process::id(), CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst)));
+        let top = crate::testing::dir(&format!("l3-prompt-test-{}", CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst)));
         let (root, repo) = (top.join("root"), top.join("repo"));
         std::fs::create_dir_all(&root).ok()?;
         std::fs::create_dir_all(&repo).ok()?;
@@ -904,7 +957,7 @@ fi
     /// copy-up), renaming and writing after another was stopped (its supervisor killed, as Stop does) or ended.
     #[test]
     fn prompts_of_one_repo_share_its_environment_whatever_order_they_start_and_end_in() {
-        let top = std::env::temp_dir().join(format!("l3-environment-test-{}", std::process::id()));
+        let top = crate::testing::dir("l3-environment-test");
         let (root, repo, data) = (top.join("root"), top.join("repo"), top.join("data"));
         let _ = std::fs::remove_dir_all(&top);
         for d in ["etc", "usr/share/doc", "usr/lib", "opt", "srv", "var/lib", "root", "tmp", "run", "dev", "proc"] {

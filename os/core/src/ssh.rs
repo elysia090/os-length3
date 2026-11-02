@@ -914,7 +914,7 @@ mod tests {
 
     #[test]
     fn the_scope_is_kept_on_this_device_and_this_device_only_until_one_is_chosen() {
-        let data = std::env::temp_dir().join(format!("length3-ssh-scope-{}", std::process::id()));
+        let data = crate::testing::dir("length3-ssh-scope");
         let _ = std::fs::remove_dir_all(&data);
         assert_eq!(scope(&data), Scope::Device);
         set_scope(&data, Scope::Network).unwrap();
@@ -960,7 +960,7 @@ mod tests {
 
     #[test]
     fn the_listener_is_known_while_its_process_runs_and_stopped_with_it() {
-        let data = std::env::temp_dir().join(format!("length3-ssh-{}", std::process::id()));
+        let data = crate::testing::dir("length3-ssh");
         let _ = std::fs::remove_dir_all(&data);
         assert_eq!(listening(&data), None);
         let mut kept = record(&data, 22000, Scope::Device, ips(&["127.0.0.1", "::1"]), Vec::new(), "SHA256:x".into()).unwrap();

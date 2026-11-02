@@ -121,7 +121,11 @@ read the sweep through it.
   on the app's origin (`/v1/about` `app`, so a Remote reached by another
   name sends them to its own page only), and they poll `device/token` for a
   session of their own, sent as a bearer token. Each device is a session,
-  listed and ended from any other (`list-sessions`, `revoke-session`).
+  listed and ended from any other (`list-sessions`, `revoke-session`). A
+  browser's session is its cookie alone: no answer hands a page a token
+  (`auth.ts` takes the bearer plugin's `set-auth-token` out of every one,
+  and `/v1/enter` sets the cookie), so no script on a page can carry a
+  session off.
 - **Requests without an Origin.** core never sends one; `signedIn` takes a
   bearer token from anywhere and a cookie only from the app's own pages,
   and `PUT /v1/ssh/this` is refused to anything with an Origin, so only a
@@ -239,8 +243,9 @@ To rotate it (a leak, or someone who held it leaving), put a new one, 48
 random bytes as base64url, with `npx wrangler secret put BETTER_AUTH_SECRET`
 (it reads the value on its standard input), and end every session, as the
 database's owner: `delete from session;`. The secret signs the browsers'
-cookies, but the app's and l3's bearer tokens are the sessions' own ids,
-which a new secret alone does not end. Then, at once and by design:
+cookies and the devices' bearer tokens alike, so a new one alone stops
+every session being taken; deleting the rows ends them in the database
+too. Then, at once and by design:
 every session ends (everyone signs in again; devices pair again), every
 custom domain's TXT record must be given anew (the Remote shows the new one
 under Inbox; until then the address lapses, and is let go after its hold),

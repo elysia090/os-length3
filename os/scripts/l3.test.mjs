@@ -64,7 +64,7 @@ test('a pack or an index that is not the root is caught', () => {
   const b = readFileSync(pack); b[b.length - 1] ^= 1; writeFileSync(pack, b);
   let r = node([join(os, 'scripts/l3-parity.mjs'), rootFile, bad]);
   assert.equal(r.status, 1);
-  assert.match(r.stderr + r.stdout, /its bytes are sha256/);
+  assert.match(r.stderr + r.stdout, /not the file its table names/);
 
   rmSync(bad, {recursive: true, force: true});
   cpSync(out, bad, {recursive: true});
@@ -102,10 +102,13 @@ test('one entry pins l3 for both: the root, and the index the browser reads it b
 
 test('a Node-only build takes l3 from its release only at the pin, and refuses anything else', async () => {
   // A tree as prompt-files.mjs reads it: the pins, newest 9.9.9, and the scripts; and a release that has l3's tar.
-  const tree = join(work, 'tree');
+  const tree = join(work, 'repo/os');
   for (const d of ['core/src', 'scripts', 'service', 'shared', 'public']) mkdirSync(join(tree, d), {recursive: true});
   copyFileSync(join(os, 'core/src/root.rs'), join(tree, 'core/src/root.rs'));
   for (const f of ['scripts/prompt-files.mjs', 'scripts/l3-tree.mjs', 'service/releases.ts', 'shared/desktop-releases.json']) copyFileSync(join(os, f), join(tree, f));
+  // And what both of those check packs by, where the repository has it, beside os/.
+  mkdirSync(join(tree, '../xlat/runtime'), {recursive: true});
+  copyFileSync(join(os, '../xlat/runtime/table.mjs'), join(tree, '../xlat/runtime/table.mjs'));
   assert.equal(node([join(os, 'scripts/pin-root.mjs'), rootFile, out, '--rs', join(tree, 'core/src/root.rs')]).status, 0);
 
   const tarOf = (dir) => execFileSync('tar', ['-C', dir, '--sort=name', '--mtime=@0', '--owner=0', '--group=0', '--numeric-owner', '--format=pax', '-cf', '-', '.'], {maxBuffer: 1 << 28});

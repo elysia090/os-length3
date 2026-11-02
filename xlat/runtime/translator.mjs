@@ -23,6 +23,8 @@ export async function loadTranslator(source) {
   function translate(elf) {
     return output(x.xlat_translate(put(elf), elf.length));
   }
+  /** As translate, all of the program: as the release translates the hot ones, and a page a program ahead of its run. */
+  translate.whole = (elf) => output(x.xlat_translate_whole(put(elf), elf.length));
   const words = (list) => new Uint8Array(new BigUint64Array(list.map(BigInt)).buffer);
   /** As translate, and from the function starts `seeds` too: the program with the code it reached later, as one module. */
   translate.seeded = function seeded(elf, seeds) {
@@ -72,6 +74,13 @@ export async function loadTranslator(source) {
   translate.unzstd = (bytes, size) => {
     const p = put(bytes);
     const status = x.xlat_unzstd(p, bytes.length, size);
+    x.xlat_free(p, bytes.length);
+    return output(status);
+  };
+  /** The SHA-256 of `bytes`, its 32 bytes (xlat_sha256): what a pack's table holds of a file, checked at once. */
+  translate.sha256 = (bytes) => {
+    const p = put(bytes);
+    const status = x.xlat_sha256(p, bytes.length);
     x.xlat_free(p, bytes.length);
     return output(status);
   };

@@ -55,10 +55,8 @@ if rustup target list --installed 2>/dev/null | grep -q x86_64-unknown-linux-mus
 else
   echo "skip rust (no x86_64-unknown-linux-musl target)"
 fi
-# Go (threads: the runtime's own and goroutines over them), as git-lfs is built.
-# XLAT_GO=1: the translator does not lower RCR yet, which every Go program's
-# runtime.semacquire1 uses, so it is asked for until it does.
-if [ -n "${XLAT_GO:-}" ] && command -v go >/dev/null; then
+# Go (threads: the runtime's own and goroutines over them), as git-lfs is built, where Go is installed.
+if command -v go >/dev/null; then
   for g in "$here"/go/*.go; do
     name=go-$(basename "$g" .go)
     dir="$out/$name.src"; mkdir -p "$dir"; cp "$g" "$dir/main.go"; printf 'module t\ngo 1.21\n' > "$dir/go.mod"

@@ -2,14 +2,16 @@ import * as dotfiles from '../../home/dotfiles.ts';
 import {agentUse} from '../../home/agent-key.ts';
 import {store} from '../../repos/repos.ts';
 import {bytes, h} from '../../ui/dom.ts';
-import {isNative, promptOpen, rootFetch, rootStatus, type Holding, type Stopped} from '../../app/host.ts';
+import {promptOpen, rootFetch, rootHere, rootStatus, type Holding, type Stopped} from '../../app/host.ts';
 import {currentLang, onLang, t, tn} from '../../i18n.ts';
-import {filesNow, keepMore, keepReached, keepTranslation, keptNow, loadL3, promptWorker, readyPrompt, takeReady, usedKept, warmL3, watchLoad, type L3, type Stage} from '../../prompt/userland.ts';
+import {filesNow, hearLater, keepMore, keepReached, keepTranslation, keptNow, loadL3, promptWorker, readyPrompt, takeReady, usedKept, warmL3, watchLoad, type L3, type Stage} from '../../prompt/userland.ts';
 import {every} from '../../app/runs.ts';
 import {errorText} from '../../app/errors.ts';
 import {still} from '../../ui/glide.ts';
+import {aheadFor, hearAhead, translateAhead} from '../../prompt/ahead.ts';
 import {Activity} from './activity.ts';
 import {endLine, goDark, jolt, switchOver} from './ending.ts';
+import {clips, heldBack, OSC, RAN} from './osc.ts';
 import {Output, strip} from './output.ts';
 import {FirstPrompt, waitsAt} from './prompt-line.ts';
 import {mirror, snapshot, WriteBack} from './repo-copy.ts';
@@ -27,7 +29,12 @@ import {sessions} from './sessions.ts';
 const RUNS = 50;
 
 /** One line sent from the prompt box and what came out until the prompt returned. */
-export interface Run { line: string; output: string; started: number; ms: number | null }
+export interface Run {
+  line: string; output: string; started: number; ms: number | null;
+  /** Its exit status, where the shell says it (the root's shrc: OSC 133 D); null where it does not, or not yet. */
+  status?: number | null;
+}
+
 
 /** One line for where loading l3 is; nothing once it is ready. */
 function loadWords(s: Stage): string {
@@ -43,9 +50,18 @@ function loadWords(s: Stage): string {
 
 /** The Prompt's shell, as the app's Prompts run it. */
 const SHELL = ['/bin/sh', '-i'];
-/** Its environment: l3 here sees repos where the shell does, under /root; its shell reads as the app's. */
-const shellEnv = (repo: string) => ['HOME=/root', 'TERM=dumb', 'LENGTH3_REPOS=/root', 'L3_PROMPT=1', `LENGTH3_LANG=${currentLang()}`,
-  `LENGTH3_REPO=${repo}`, 'PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', 'ENV=/etc/length3/shrc'];
+/** The person's time zone by its name, as the browser knows it: the root has every zone, so its clock reads as theirs. */
+function zone(): string {
+  try {
+    const z = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return /^[A-Za-z0-9_+-]+(\/[A-Za-z0-9_+-]+)*$/.test(z) ? z : 'UTC';
+  } catch { return 'UTC'; }
+}
+/** Its environment, as the app's Prompts on the machine have it (core's launch.rs): l3 here sees repos where the
+ * shell does, under /root; its shell reads as the app's; its clock is the person's. */
+const shellEnv = (repo: string) => ['HOME=/root', 'USER=root', 'LOGNAME=root', 'SHELL=/bin/sh', 'TERM=dumb', 'LANG=C.UTF-8',
+  `TZ=${zone()}`, 'LENGTH3_REPOS=/root', 'L3_PROMPT=1', `LENGTH3_LANG=${currentLang()}`, `LENGTH3_REPO=${repo}`,
+  'PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', 'ENV=/etc/length3/shrc'];
 /** A start rehearsed in a Worker readied ahead (readyPrompt): the same shell, in no repo yet, with no key. */
 const readyNext = (l3: L3) => readyPrompt(l3, {argv: SHELL, env: shellEnv(''), cwd: '/root'});
 
@@ -110,9 +126,16 @@ export class Session {
   /** The l3 it runs, in a browser. */
   private l3of: L3 | null = null;
   private unwatch: (() => void) | null = null;
+  /** The paths its Worker was given (the hot programs among them), and how it stops hearing of those ready later. */
+  private given = new Set<string>();
+  private unhear: (() => void) | null = null;
+  /** The repo's files as its Prompt was started with them: what it is likely to run is read from them (ahead.ts). */
+  private repoFiles: string[] = [];
   private copy: WriteBack;
   /** Whether the shell has waited at a prompt line yet; what was sent before it did, held for it. */
   private first = new FirstPrompt();
+  /** An OSC begun in the last piece of output and not yet ended (osc.ts): read when it ends. */
+  private oscHeld = '';
   /** The prompt line last told to the watchers. */
   private toldLine = '';
 
@@ -153,6 +176,25 @@ export class Session {
 
   /** How long until what was printed last has all come in, in ms: what comes after it (the prompt line) waits that long. */
   settlesIn(): number { return this.out.settlesIn(); }
+
+  /**
+   * `line` run here as a line typed is (the Agent's: it runs, and is seen, as the person's would), and what it printed
+   * and how it ended once its prompt line is back: its status as the root's shrc says it (OSC 133 D), null where the
+   * root does not, or the Prompt ended first.
+   */
+  run(line: string): Promise<{output: string; status: number | null}> {
+    const since = Date.now(), typed = line.trim();
+    if (!this.send(typed)) return Promise.resolve({output: '', status: null});
+    return new Promise((resolve) => {
+      const look = () => {
+        const r = this.runs.find((x) => x.started >= since && x.line === typed);
+        if (r && r.ms !== null) { stop(); resolve({output: r.output, status: r.status ?? null}); }
+        else if (this.ended) { stop(); resolve({output: r?.output ?? '', status: null}); }
+      };
+      const stop = this.watch(look);
+      look();
+    });
+  }
 
   /** Type `text` into the shell, one line per line, starting it if it was not yet. False once it has ended. */
   send(text: string): boolean {
@@ -197,14 +239,45 @@ export class Session {
   fold() { this.out.fold(); }
 
   /** Output goes on screen and into the run in progress, which ends at the next prompt. */
-  private received(s: string) {
+  private received(piece: string) {
+    // What a shell says to its terminal and not to the person (osc.ts) is read whole, however it came in pieces.
+    const {now, held} = heldBack(this.oscHeld, piece);
+    this.oscHeld = held;
+    let s = now;
+    // What it puts on the clipboard (clip, tmux) goes there, as a terminal puts it; it says itself what it sent.
+    for (const text of clips(s)) void navigator.clipboard?.writeText(text).catch(() => {});
+    // How the line run ended, where the shell says it: kept on its run, and none of what it says shown.
+    // (The first it says for a run: the line's own, before the prompt line says the last command's again.)
+    for (const m of s.matchAll(RAN)) { const r = this.runs.at(-1); if (r && r.ms === null && r.status === undefined) r.status = m[1] === undefined ? null : Number(m[1]); }
+    s = s.replace(OSC, '');
+    if (!s) return;
     if (this.status.textContent === t('Starting…')) this.status.textContent = '';
     this.out.print(s);
     const waits = !!waitsAt(this.out.lastLine);
     this.first.heard(waits, (held) => { if (this.live) this.send(held); });
     // Its first prompt line: up. What the Prompts after it are given ahead of time (l3's translation) comes a moment later, quietly,
     // so it takes nothing from the first line run.
-    if (this.l3 && waits) { const l3 = this.l3; this.l3 = null; setTimeout(() => warmL3(l3), 3000); }
+    if (this.l3 && waits) {
+      const l3 = this.l3;
+      this.l3 = null;
+      setTimeout(() => {
+        if (!this.worker) return;
+        warmL3(l3);
+        // And this Prompt runs each of them from its next run on, as it is ready.
+        const hot = hearLater((f) => {
+          if (this.given.has(f.path) || !this.worker) return;
+          this.given.add(f.path);
+          this.worker.postMessage({type: 'hot', files: [f]});
+          // Which programs it was given so, as its threads are said (data-threads).
+          this.element.dataset.ahead = [this.element.dataset.ahead, f.path].filter(Boolean).join(' ');
+        });
+        // What this repo is likely to run next, translated by this browser while the person reads (ahead.ts): each one
+        // kept is told to this Prompt's kernel, which reads it when it is first run rather than translating it then.
+        const ahead = hearAhead((origin, url) => this.worker?.postMessage({type: 'kept', at: {[origin]: {main: url, more: null}}}));
+        this.unhear = () => { hot(); ahead(); };
+        void translateAhead(l3, aheadFor(l3.index, this.repoFiles));
+      }, 3000);
+    }
     const run = this.runs.at(-1);
     // Waiting at a prompt line it had not shown yet (its first, or after output of its own): watchers hear.
     if (!run || run.ms !== null) { if (this.promptLine !== this.toldLine) this.tell(); return; }
@@ -239,7 +312,7 @@ export class Session {
 
   private async start() {
     try {
-      if (isNative) await this.startNative(); else await this.startL3();
+      if ((await rootHere()).native) await this.startNative(); else await this.startL3();
     } catch (e) {
       // Said short at the Prompt's foot; why is the line's title, there when asked for, not a sentence beside the switch.
       const why = errorText(e);
@@ -291,11 +364,14 @@ export class Session {
     this.worker = worker;
     if (!ready) worker.postMessage({type: 'warm'});
     worker.onmessage = ({data}) => this.fromWorker(data);
-    const [l3, copy, kept, use] = await Promise.all([loadL3(), snapshot(this.repo), loadL3().then(keptNow).catch(() => null), agentUse()]).finally(unwatch);
+    const [l3, copy, kept, use] = await Promise.all([loadL3(), snapshot(this.repo), loadL3().then(keptNow).catch(() => null), agentUse(false)]).finally(unwatch);
     // Stopped while it came: it stays stopped.
     if (this.worker !== worker) return;
     this.l3of = l3;
-    worker.postMessage(startMessage(this.repo, l3, copy, kept, use ? [`${use.variable}=${use.key}`] : [], ready?.given ?? null));
+    this.repoFiles = copy.files.map((f) => f.path);
+    const start = startMessage(this.repo, l3, copy, kept, use ? [`${use.variable}=${use.key}`] : [], ready?.given ?? null);
+    worker.postMessage(start);
+    this.given = new Set([...(ready?.given ?? []), ...start.files.map((f) => f.path)]);
     // What is saved elsewhere comes into the shell's copy.
     this.unwatch = mirror(this.repo, this.id, (m) => this.worker?.postMessage(m));
     // Running is the usual state and says nothing; only what is missing is said. Until the shell says its first
@@ -419,6 +495,8 @@ export class Session {
     this.activity.end();
     this.unwatch?.();
     this.unwatch = null;
+    this.unhear?.();
+    this.unhear = null;
     this.worker?.terminate();
     this.worker = null;
     this.measuring?.stop();
@@ -460,6 +538,8 @@ export function sessionFor(repo: string): Session {
 export function terminalFor(repo: string): HTMLElement {
   const session = sessionFor(repo);
   // (Not once it has begun: it made its own Worker, and another made beside it now only takes from its start.)
-  if (!isNative) void loadL3().then((l3) => { if (!session.begun) readyNext(l3); }, () => { /* said by the Prompt that starts, if it fails again there */ });
+  void rootHere().then((here) => {
+    if (!here.native) void loadL3().then((l3) => { if (!session.begun) readyNext(l3); }, () => { /* said by the Prompt that starts, if it fails again there */ });
+  });
   return session.element;
 }

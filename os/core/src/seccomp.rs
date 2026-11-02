@@ -46,6 +46,8 @@ struct SockFprog { len: u16, filter: *const SockFilter }
 // Classic BPF (linux/filter.h) and seccomp (linux/seccomp.h).
 const LD_W_ABS: u16 = 0x20; // BPF_LD | BPF_W | BPF_ABS
 const JEQ_K: u16 = 0x15; // BPF_JMP | BPF_JEQ | BPF_K
+// Only x86-64 has a second ABI (x32) to turn away by its syscall numbers' bit.
+#[cfg(target_arch = "x86_64")]
 const JGE_K: u16 = 0x35; // BPF_JMP | BPF_JGE | BPF_K
 const JSET_K: u16 = 0x45; // BPF_JMP | BPF_JSET | BPF_K
 const RET_K: u16 = 0x06; // BPF_RET | BPF_K

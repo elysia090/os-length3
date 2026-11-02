@@ -1,0 +1,9 @@
+# nano as the root has it. A person's ~/.nanorc (a dotfile, from Home) comes after and wins.
+# Every syntax it comes with, so a file is coloured as its kind is.
+include "/usr/share/nano/*.nanorc"
+include "/usr/share/nano/extra/*.nanorc"
+# A new line starts where the one above it did.
+set autoindent
+# A file is opened where it was left, and what was searched for is there to search for again.
+set positionlog
+set historylog
