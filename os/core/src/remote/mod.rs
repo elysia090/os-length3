@@ -118,18 +118,18 @@ pub fn save_connection(c: &Connection) -> Result<()> {
 }
 
 /// What proves this device is its session to the Remote: the bearer kept apart (vault.rs), the session's token
-/// signed. A browser holds none: its session is the cookie the Remote set, which it sends itself and no script reads
-/// (core/worker.ts sends it with the core's requests).
-pub(crate) fn bearer() -> Option<String> {
+/// signed; why not, when the keyring keeping it did not give it. A browser holds none: its session is the cookie the
+/// Remote set, which it sends itself and no script reads (core/worker.ts sends it with the core's requests).
+pub(crate) fn bearer() -> Result<Option<String>> {
     #[cfg(not(target_os = "wasi"))]
     { crate::vault::get(crate::vault::Secret::Session) }
     #[cfg(target_os = "wasi")]
-    { None }
+    { Ok(None) }
 }
 
 /// This device's own secrets a file must not carry (secrets.rs): its session's bearer, whole and without its signature.
 fn own_secrets() -> Vec<String> {
-    bearer().map(|b| vec![b.split('.').next().unwrap_or_default().to_string(), b]).unwrap_or_default()
+    bearer().ok().flatten().map(|b| vec![b.split('.').next().unwrap_or_default().to_string(), b]).unwrap_or_default()
 }
 
 /// Forget the Remote here: its session and every base (the repos stay).
@@ -530,7 +530,7 @@ impl crate::home::HomeThere for Client {
 /// Remote is asked whose it is, once, and it is noted.
 fn account_id() -> Option<String> {
     connection().and_then(|c| c.user.clone().or_else(|| {
-        let who = login::whose(&c.url, bearer().as_deref())?.user;
+        let who = login::whose(&c.url, bearer().ok().flatten().as_deref())?.user;
         let _ = save_connection(&Connection { user: Some(who.clone()), ..c });
         Some(who)
     }))

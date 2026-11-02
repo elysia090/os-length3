@@ -33,6 +33,8 @@ impl Home {
         c.args(args).current_dir(&self.dir).env_clear()
             .env("PATH", std::env::var_os("PATH").unwrap_or_default())
             .env("HOME", &self.dir).env("LENGTH3_HOME", &self.dir).env("LENGTH3_LANG", lang)
+            // What it keeps it keeps in files of its home, never in the keyring of whoever runs the tests.
+            .env("LENGTH3_KEYRING", "off")
             // What a test made stays whatever room the host has left: no reserve kept on its behalf.
             .env("LENGTH3_RESERVE", "0")
             // Nothing answers here: a test that reached for the Remote would say so, not wait.

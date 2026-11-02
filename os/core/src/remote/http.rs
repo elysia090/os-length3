@@ -184,8 +184,8 @@ pub(super) fn odd(url: &str) -> String {
 impl Client {
     pub(crate) fn open() -> Result<Client> {
         let c = connection().ok_or_else(|| failed(Failure::NotConnected, crate::tr!("This device is not signed in to a Remote (l3 login)", "この端末は Remote にサインインしていません（l3 login）")))?;
-        let bearer = bearer();
         // Natively the session is the bearer kept apart: without it, nothing here can be this device's session.
+        let bearer = bearer().map_err(|why| failed(Failure::NotConnected, crate::tr!("This device's sign-in could not be read: {}", "この端末のサインイン情報を読めませんでした：{}", why)))?;
         if bearer.is_none() && cfg!(not(target_os = "wasi")) {
             return Err(failed(Failure::NotConnected, crate::tr!("This device's sign-in is no longer kept here; sign in again (l3 login)", "この端末のサインイン情報がもうありません。もう一度サインインしてください（l3 login）")));
         }

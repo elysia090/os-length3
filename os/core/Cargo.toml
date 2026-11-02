@@ -24,3 +24,15 @@ ureq = { version = "3.5", default-features = false, features = ["rustls-no-provi
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 webpki-root-certs = "1.0"
 rustls-native-certs = "0.8"
+# This device's secrets in its OS's own keyring (vault.rs): keyring-core, and each OS's store of it.
+keyring-core = "1.0.1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+apple-native-keyring-store = { version = "1.0.2", features = ["keychain"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-native-keyring-store = { version = "1.1.0", default-features = false }
+
+# The Secret Service over D-Bus from Rust alone (zbus, and its crypto in Rust): the static l3 reaches it as the app does.
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus-secret-service-keyring-store = { version = "1.0.1", features = ["rt-async-io-crypto-rust"] }

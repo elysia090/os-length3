@@ -1,5 +1,5 @@
 //! The Agent's key: the one API key a person gives this device for the box's Agent, whoever made the model it opens.
-//! It is kept on this device alone and private to the person (0600), apart from the dotfiles: never sent to the Remote,
+//! It is kept on this device alone, in its keyring (vault.rs), apart from the dotfiles: never sent to the Remote,
 //! never written into a repo or a dotfile, and said whole only to the page that asks the model with it and to the
 //! Prompts started here, in whose environment it is under the name its maker's own tools read it by
 //! (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …), so those tools work there too. What it is a key for is read from how it
@@ -7,7 +7,8 @@
 
 use crate::Result;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use crate::vault::Secret;
+use std::path::PathBuf;
 
 /// Whether every byte of `s` is one `ok` takes, and there are `n` of them (`lo..=hi`).
 fn made_of(s: &str, lo: usize, hi: usize, ok: impl Fn(u8) -> bool) -> bool { (lo..=hi).contains(&s.len()) && s.bytes().all(ok) }
@@ -55,30 +56,47 @@ pub fn env() -> Vec<(String, String)> {
     kept().and_then(|k| kind(&k.key).map(|(_, var)| vec![(var.to_string(), k.key)])).unwrap_or_default()
 }
 
-fn file() -> PathBuf { crate::paths::data_dir().join("agent-key") }
+/// Where earlier releases kept it: a file of its own beside Home's state.
+fn before() -> PathBuf { crate::paths::data_dir().join("agent-key") }
 
-/// The key as given, if one is kept here.
-pub fn kept() -> Option<Kept> { kept_in(&file()) }
+/// The key as given, if one is kept here (vault.rs: the OS's keyring, or a file only this account reads). One kept
+/// where earlier releases kept it is moved there the first time it is read.
+pub fn kept() -> Option<Kept> {
+    let text = match crate::vault::get(Secret::AgentKey).ok().flatten() {
+        Some(t) => t,
+        None => {
+            let t = std::fs::read_to_string(before()).ok()?;
+            if crate::vault::set(Secret::AgentKey, &t).is_ok() { let _ = std::fs::remove_file(before()); }
+            t
+        }
+    };
+    read(&text)
+}
 
-fn kept_in(path: &Path) -> Option<Kept> {
-    let k: Kept = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
+/// What is kept, read: a key of a form known here, and its model.
+fn read(text: &str) -> Option<Kept> {
+    let k: Kept = serde_json::from_str(text).ok()?;
     kind(&k.key).map(|_| k)
 }
 
 /// Keep `key` (and the model it opens) here from now on, in place of any kept before; None takes it away.
-pub fn set(key: Option<(&str, &str)>) -> Result<()> { set_in(&file(), key) }
+pub fn set(key: Option<(&str, &str)>) -> Result<()> {
+    match key {
+        Some((key, model)) => crate::vault::set(Secret::AgentKey, &written(key, model)?),
+        None => {
+            let _ = std::fs::remove_file(before());
+            crate::vault::remove(Secret::AgentKey)
+        }
+    }
+}
 
-fn set_in(path: &Path, key: Option<(&str, &str)>) -> Result<()> {
-    let Some((key, model)) = key else {
-        return match std::fs::remove_file(path) { Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()), _ => Ok(()) };
-    };
+/// What is kept for `key` and `model`: refused when it is no key this OS knows.
+fn written(key: &str, model: &str) -> Result<String> {
     let key = key.trim();
     if kind(key).is_none() {
         return Err(crate::tr!("This is not an API key this OS knows", "この OS が知っている API キーではありません"));
     }
-    if let Some(dir) = path.parent() { crate::boundary::private_dir(dir).map_err(|e| e.to_string())?; }
-    let bytes = serde_json::to_vec(&Kept { key: key.into(), model: model.trim().into() }).map_err(|e| e.to_string())?;
-    crate::atomic::replace(path, &bytes, crate::atomic::How::PRIVATE).map_err(|e| e.to_string())
+    serde_json::to_string(&Kept { key: key.into(), model: model.trim().into() }).map_err(|e| e.to_string())
 }
 
 /// The key as it may be shown: its kind's start and its last four, never more of it (`sk-ant-…a9f2`).
@@ -91,12 +109,6 @@ pub fn shown(key: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn place(name: &str) -> PathBuf {
-        let d = crate::testing::dir(&format!("l3-agent-key-{name}"));
-        let _ = std::fs::remove_dir_all(&d);
-        d.join("agent-key")
-    }
 
     /// A key of the form `start` + `body`, its body `n` of `c` (with `mid` at `at`, when given).
     fn key(start: &str, n: usize, c: char, mid: Option<(usize, &str)>) -> String {
@@ -130,29 +142,20 @@ mod tests {
     }
 
     #[test]
-    fn kept_private_shown_by_its_start_and_last_four_and_taken_away() {
-        let f = place("keep");
+    fn kept_as_given_shown_by_its_start_and_last_four() {
         let given = format!("{}a9AA", key("sk-ant-api03-", 91, 'x', None));
-        set_in(&f, Some((&format!(" {given} "), "m"))).unwrap();
-        let k = kept_in(&f).unwrap();
+        let k = read(&written(&format!(" {given} "), " m ").unwrap()).unwrap();
         assert_eq!(k, Kept { key: given.clone(), model: "m".into() });
         assert_eq!(shown(&k.key), "sk-ant-…a9AA");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            assert_eq!(std::fs::metadata(&f).unwrap().permissions().mode() & 0o777, 0o600);
-        }
-        set_in(&f, None).unwrap();
-        assert_eq!(kept_in(&f), None);
-        set_in(&f, None).unwrap();
     }
 
     #[test]
     fn what_is_no_known_key_is_refused_and_nothing_is_kept() {
-        let f = place("refuse");
         for bad in ["", "sk-ant", "password1234567890", "sk-ant-api03- with spaces in it", &format!("sk-ant-api03-{}", "x".repeat(600))] {
-            assert!(set_in(&f, Some((bad, ""))).is_err(), "{bad:?}");
+            assert!(written(bad, "").is_err(), "{bad:?}");
         }
-        assert_eq!(kept_in(&f), None);
+        // What is read is a key of a known form, whatever was written there.
+        assert_eq!(read(r#"{"key":"password1234567890","model":"m"}"#), None);
+        assert_eq!(read("not json"), None);
     }
 }

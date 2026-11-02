@@ -113,7 +113,7 @@ async function headers() {
 
 /** Run l3 with `args` in its own home against `url`. */
 function l3(bin: string, home: string, url: string, args: string[]) {
-  const r = spawnSync(bin, args, {env: {PATH: process.env.PATH ?? '', HOME: home, LENGTH3_HOME: join(home, 'length3'), LENGTH3_LANG: 'en', LENGTH3_REMOTE: url, NO_COLOR: '1'},
+  const r = spawnSync(bin, args, {env: {PATH: process.env.PATH ?? '', HOME: home, LENGTH3_HOME: join(home, 'length3'), LENGTH3_LANG: 'en', LENGTH3_REMOTE: url, NO_COLOR: '1', LENGTH3_KEYRING: 'off'},
     encoding: 'utf8', cwd: home, timeout: 120_000});
   return {code: r.status ?? -1, out: r.stdout, err: r.stderr};
 }
@@ -160,7 +160,7 @@ async function research() {
       const home = mkdtempSync(join(tmpdir(), 'length3-prod-l3-'));
       try {
         const login = await new Promise<{code: number; out: string}>((resolve, reject) => {
-          const p = spawn(bin, ['login', r.url], {env: {PATH: process.env.PATH ?? '', HOME: home, LENGTH3_HOME: join(home, 'length3'), LENGTH3_LANG: 'en', NO_COLOR: '1'}, cwd: home});
+          const p = spawn(bin, ['login', r.url], {env: {PATH: process.env.PATH ?? '', HOME: home, LENGTH3_HOME: join(home, 'length3'), LENGTH3_LANG: 'en', NO_COLOR: '1', LENGTH3_KEYRING: 'off'}, cwd: home});
           let out = '', approved = false;
           p.stdout.on('data', (d: Buffer) => {
             out += d;

@@ -1567,8 +1567,15 @@ hands a page no token, ever (`service/auth.ts`), and the browser's core
 sends the cookie with its own requests. A device (the app, l3) holds a
 bearer from the device flow, kept apart from everything a page reads
 (`core/src/vault.rs`, never in Home's state, which a page reads and which
-is synced); the app's page asks its Remote through the core
-(`remote_ask`), which sends it. Home's state says only which session the
+is synced): in the OS's own keyring (the Keychain, Credential Manager on
+this computer alone, the Secret Service over D-Bus from Rust alone, so the
+static l3 reaches it as the app does), encrypted at rest with what the
+person signs in with and in no file a backup or a token-hunting program
+comes across; where there is none that answers within a minute (a server,
+SSH, a locked keyring), or `LENGTH3_KEYRING=off`, a file only the person
+reads (`<data>/secrets/`, 0600). `l3 remote sign-in` says which. The
+app's page asks its Remote through the core (`remote_ask`), which sends
+it. Home's state says only which session the
 device is (its token unsigned) and whose. Either is taken only signed
 (`token.signature`) with the Remote's secret: the token the database keeps
 is no way in by itself, so a copy of the database opens no session. Which
@@ -2686,9 +2693,10 @@ or goes).
   Perplexity's, Fireworks', Hugging Face's; an admin key, which opens no
   model, and a key of no form of its own, refused), and the model is the
   newest the key opens that answers, read from the maker's own list when the
-  key is given (Trying the key…), never written into the OS. It is a file of
-  this device (`agent-key`, 0600, beside the others the device keeps, in the
-  browser's own keeping on the web), whole only to the page that asks and to
+  key is given (Trying the key…), never written into the OS. It is kept as
+  the device's session is (`core/src/vault.rs`: the OS's keyring, else a file
+  only the person reads; in the browser's own keeping on the web), whole only
+  to the page that asks and to
   each Prompt started here, in its environment under the name its maker's
   tools read (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …). The page asks the
   maker directly, so its policy lets it reach those makers' APIs and nothing

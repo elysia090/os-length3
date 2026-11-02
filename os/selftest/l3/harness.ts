@@ -169,7 +169,9 @@ export async function remote(env: Record<string, string> = {}) {
   function device() {
     const home = join(dir, `device-${++devices}`);
     mkdirSync(home);
-    const env = {PATH: process.env.PATH ?? '', HOME: home, LENGTH3_HOME: join(home, 'length3'), LENGTH3_LANG: 'en', LENGTH3_REMOTE: url, NO_COLOR: '1'};
+    const env = {PATH: process.env.PATH ?? '', HOME: home, LENGTH3_HOME: join(home, 'length3'), LENGTH3_LANG: 'en', LENGTH3_REMOTE: url, NO_COLOR: '1',
+      // What it keeps it keeps in files of its home, never in the keyring of whoever runs it.
+      LENGTH3_KEYRING: 'off'};
     const parse = (out: string) => { try { return JSON.parse(out); } catch { return null; } };
     /** Run l3 with these words (and standard input), to its end. */
     const l3 = (args: string[], input = ''): Ran => {
