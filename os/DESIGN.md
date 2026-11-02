@@ -1008,7 +1008,13 @@ the same thing for the desktop app and for the web.
   file as it was made. Each package is made again only when what it is made
   of changed (its recipe, pins, patches, the builder, the compiler and libc,
   what it builds against), so raising one pin makes that package and what
-  is built against it. For the web it also holds the translator
+  is built against it. A Rust or Go program is built from its makers'
+  lockfile, with what its recipe lifts: a crate or module its makers have
+  fixed an advisory in, taken to that version where the program asks for
+  it at all (`lifts=`, `root/lift.sh`); what those programs are made of is
+  asked of OSV with every change and every week (`root/advisories.sh`), and
+  what no lift answers is written down with why and until when
+  (`root/advisories.toml`). For the web it also holds the translator
   (xlat, as WebAssembly) and the translations of the hot programs made
   ahead of time.
 - **On a device**, the app and `l3` install the root by its digest: from the
