@@ -39,7 +39,11 @@ git() {
 # what it was given, whole (git's log and diff too, through PAGER). What draws on a screen says where it can: a
 # file is edited in Forge, and a terminal of your own reaches this Prompt over SSH (l3 address). Over SSH, TERM is
 # that terminal's, and all of them are themselves.
-if [ "$TERM" = dumb ]; then
+if [ "$TERM" != dumb ]; then
+  # On a terminal, what opens an editor (git commit) opens the root's whole one. In the app's Prompt none is set,
+  # so git asks for -m rather than draw on a screen that is not there.
+  export EDITOR=nano VISUAL=nano
+else
   export PAGER=cat
   __l3_whole() {
     while [ $# -gt 0 ]; do case $1 in --) shift; break ;; -*) shift ;; *) break ;; esac; done
@@ -62,3 +66,21 @@ if [ "$TERM" = dumb ]; then
   hexedit() { __l3_screen hexedit; }
   cfdisk() { __l3_screen cfdisk; }
 fi
+
+# What a person reaches for and the root does not keep says so, and what is there instead: the root has no manuals
+# (each program says how it is used, with --help), and its packages are its release's (apk info lists them): none
+# is added in a Prompt, whose root is read-only.
+man() {
+  if [ "$LENGTH3_LANG" = ja ]; then echo "man: この root はマニュアルを持ちません。使い方は ${1:-プログラム} --help が言います" >&2
+  else echo "man: the root keeps no manuals; ${1:-a program} --help says how it is used." >&2; fi
+  return 1
+}
+apk() {
+  case $1 in
+    add|del|fix|upgrade|update|cache)
+      if [ "$LENGTH3_LANG" = ja ]; then echo "apk: この root のパッケージはリリースのもので、Prompt の中では足せません（root は読み取り専用）。あるものは apk info で" >&2
+      else echo "apk: the root's packages are its release's, and none is added in a Prompt (its root is read-only); apk info lists them." >&2; fi
+      return 1 ;;
+  esac
+  command apk "$@"
+}

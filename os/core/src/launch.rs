@@ -136,12 +136,30 @@ fn environment(name: &str, told: &[(String, String)]) -> Vec<CString> {
         "ENV=/etc/length3/shrc".into(),
         format!("LENGTH3_REPO={name}"),
     ].into();
+    // The person's clock: the root has every zone the host may name, so date, ls -l and git's log read as theirs.
+    if let Some(z) = zone() { all.push(format!("TZ={z}")); }
     let fixed: Vec<String> = all.iter().filter_map(|e| e.split_once('=').map(|(k, _)| k.to_string())).collect();
     for (k, v) in told {
         if k.is_empty() || !k.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_') || fixed.contains(k) { continue; }
         all.push(format!("{k}={}", v.replace('\0', "")));
     }
     all.iter().map(c).collect()
+}
+
+/// The host's time zone by its name: TZ where it names one, else the zone /etc/localtime is (a link into a
+/// zoneinfo directory, on Linux and macOS alike). Only a plain name passes; none, and the Prompt keeps UTC.
+fn zone() -> Option<String> {
+    let named = std::env::var("TZ").ok().map(|t| t.trim_start_matches(':').to_string()).filter(|t| !t.is_empty()).or_else(|| {
+        let at = std::fs::read_link("/etc/localtime").ok()?;
+        Some(at.to_str()?.split_once("zoneinfo/")?.1.to_string())
+    })?;
+    plain_zone(&named).then_some(named)
+}
+
+/// A zone's name as zoneinfo has them (Asia/Tokyo, Etc/GMT+9), or a POSIX rule (JST-9): nothing that leaves it.
+fn plain_zone(z: &str) -> bool {
+    !z.is_empty() && z.len() <= 64 && !z.contains("..") && !z.starts_with('/')
+        && z.bytes().all(|b| b.is_ascii_alphanumeric() || b"/_+-".contains(&b))
 }
 
 /// The terminal the Prompt is drawn on: a real one's name when l3 runs in one (so nano and
@@ -761,6 +779,12 @@ extern "C" fn interrupt(_: libc::c_int) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_time_zone_passes_by_its_name_and_nothing_that_leaves_zoneinfo() {
+        for ok in ["Asia/Tokyo", "UTC", "America/Argentina/Buenos_Aires", "Etc/GMT+9", "JST-9"] { assert!(plain_zone(ok), "{ok}"); }
+        for bad in ["", "../../etc/shadow", "/etc/localtime", "Asia/To kyo", "Asia/$(x)", "a;b"] { assert!(!plain_zone(bad), "{bad}"); }
+    }
 
     #[test]
     fn a_package_name_is_what_apt_takes_and_nothing_a_shell_reads() {

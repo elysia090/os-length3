@@ -52,9 +52,18 @@ function loadWords(s: Stage): string {
 
 /** The Prompt's shell, as the app's Prompts run it. */
 const SHELL = ['/bin/sh', '-i'];
-/** Its environment: l3 here sees repos where the shell does, under /root; its shell reads as the app's. */
-const shellEnv = (repo: string) => ['HOME=/root', 'TERM=dumb', 'LENGTH3_REPOS=/root', 'L3_PROMPT=1', `LENGTH3_LANG=${currentLang()}`,
-  `LENGTH3_REPO=${repo}`, 'PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', 'ENV=/etc/length3/shrc'];
+/** The person's time zone by its name, as the browser knows it: the root has every zone, so its clock reads as theirs. */
+function zone(): string {
+  try {
+    const z = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return /^[A-Za-z0-9_+-]+(\/[A-Za-z0-9_+-]+)*$/.test(z) ? z : 'UTC';
+  } catch { return 'UTC'; }
+}
+/** Its environment, as the app's Prompts on the machine have it (core's launch.rs): l3 here sees repos where the
+ * shell does, under /root; its shell reads as the app's; its clock is the person's. */
+const shellEnv = (repo: string) => ['HOME=/root', 'USER=root', 'LOGNAME=root', 'SHELL=/bin/sh', 'TERM=dumb', 'LANG=C.UTF-8',
+  `TZ=${zone()}`, 'LENGTH3_REPOS=/root', 'L3_PROMPT=1', `LENGTH3_LANG=${currentLang()}`, `LENGTH3_REPO=${repo}`,
+  'PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', 'ENV=/etc/length3/shrc'];
 /** A start rehearsed in a Worker readied ahead (readyPrompt): the same shell, in no repo yet, with no key. */
 const readyNext = (l3: L3) => readyPrompt(l3, {argv: SHELL, env: shellEnv(''), cwd: '/root'});
 
