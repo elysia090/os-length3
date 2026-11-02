@@ -7,8 +7,12 @@
 //          approves it on the Remote's page, and the app gets a session of
 //          its own (core/src/remote.rs). l3 does the same.
 //
-// Every client holds a session token, sent as a bearer token; each device
-// is a session that can be seen and ended from any other.
+// Each device is a session that can be seen and ended from any other. What
+// proves it is held where no page can read it: in a browser, the cookie the
+// Remote set (HttpOnly), sent with every request to it; in the app, the
+// bearer kept apart from everything a page reads (core vault.rs), which the
+// core sends for the page (remote_ask). A page knows which session it is,
+// never what proves it.
 
 import {core, isNative, native} from '../app/host.ts';
 import {t} from '../i18n.ts';
@@ -36,15 +40,32 @@ export const REMOTE_URL: string = (() => {
 // The core signs in to the same Remote as the page.
 setEnvironment({LENGTH3_REMOTE: REMOTE_URL});
 
-/** The session this device is in on a Remote; `user`, the account it is (its id there), when the core was told at sign-in. */
-export interface Connection { url: string; token: string; user?: string }
+/**
+ * The session this device is in on a Remote: `session`, which of the account's it is (its token unsigned, which opens
+ * nothing by itself); `user`, the account it is (its id there), when the core was told at sign-in.
+ */
+export interface Connection { url: string; session: string; user?: string }
 
 export const connection = (): Connection | null => {
   try {
     const c = JSON.parse(getState('remote') ?? 'null') as Connection | null;
-    return c?.token ? {...c, url: currentURL(c.url ?? '')} : null;
+    return c?.session ? {...c, url: currentURL(c.url ?? '')} : null;
   } catch { return null; }
 };
+
+/** What the core answers for the app's page's request (core remote/http.rs ask). */
+interface Asked { status: number; headers: [string, string][]; body: string }
+/** Statuses an answer has no body for (a Response refuses one). */
+const BODILESS = new Set([101, 204, 205, 304]);
+
+/** `path` asked of this device's Remote by the core, which sends it with the session the page never holds (the app). */
+async function askedByCore(path: string, init: RequestInit, headers: Headers): Promise<Response> {
+  if (init.body !== undefined && init.body !== null && typeof init.body !== 'string') throw new Error('a request to the Remote is sent with words');
+  const a = await core<Asked>('remote_ask', {method: (init.method ?? 'GET').toUpperCase(), path, ...(typeof init.body === 'string' ? {body: init.body} : {}),
+    headers: [...headers]});
+  const body = BODILESS.has(a.status) ? null : Uint8Array.from(atob(a.body), (c) => c.charCodeAt(0));
+  return new Response(body, {status: a.status, headers: a.headers});
+}
 
 /**
  * Why the Remote did not give what was asked, when it was not the Remote saying no: it was not reached (or not
@@ -103,14 +124,18 @@ export const onWrite = (f: () => void) => { wrote.add(f); };
 
 export async function api(path: string, init: RequestInit = {}, c: Connection | null = connection(), url = c?.url ?? REMOTE_URL): Promise<Response> {
   const headers = new Headers(init.headers);
-  if (c) headers.set('Authorization', `Bearer ${c.token}`);
   if (typeof init.body === 'string' && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   // Another Remote (a person's elsewhere) not answering says nothing of this one.
   const ours = url === (connection()?.url ?? REMOTE_URL);
   let r: Response;
   // Never waited on for good: a connection that went quiet half-open would hold every look after it (news, moved).
   const signal = init.signal ?? AbortSignal.timeout(ASKED_WAIT);
-  try { r = await fetch(url + path, {...init, headers, signal, credentials: 'include'}); } catch (e) {
+  // As this device's session: the browser sends its cookie (a passkey's challenge, too, is a cookie between asking and
+  // answering); the app's core sends its bearer, which the page never holds.
+  try {
+    r = c && isNative && url === c.url ? await askedByCore(path, init, headers)
+      : await fetch(url + path, {...init, headers, signal, credentials: 'include'});
+  } catch (e) {
     if (ours) reached(false);
     const late = e instanceof DOMException && e.name === 'TimeoutError';
     throw new RemoteError(0, late ? t('Remote timed out') : t('Cannot connect to Remote'), {}, 'unreached');
@@ -137,7 +162,7 @@ export async function api(path: string, init: RequestInit = {}, c: Connection | 
   if (ours && !['GET', 'HEAD', 'OPTIONS'].includes((init.method ?? 'GET').toUpperCase())) for (const f of wrote) f();
   if (r.status === 401 && c) {
     // The session was ended (from another device, or it ran out): this device is signed out, and nothing here is lost.
-    if (ours && c.token === connection()?.token) void ended();
+    if (ours && c.session === connection()?.session) void ended();
     throw new RemoteError(401, t('Device not recognized by Remote. Please sign in again.'));
   }
   if (r.status >= 400 && r.status !== 404 && r.status !== 409) {
@@ -162,7 +187,7 @@ export async function json<T>(path: string, init: RequestInit = {}): Promise<T> 
  */
 export function askedOnce<T>(ask: () => Promise<T>): () => Promise<T> {
   const asking = shared((_token: string) => ask());
-  return () => asking(connection()?.token ?? '').then((v) => structuredClone(v));
+  return () => asking(connection()?.session ?? '').then((v) => structuredClone(v));
 }
 
 /** The Remote's JSON in `r`; words that do not read as it are not its answer (said so, never the parser's own error). */
@@ -178,19 +203,14 @@ const listeners = new Set<() => void>();
 export function onConnection(fn: () => void): () => void { listeners.add(fn); return () => listeners.delete(fn); }
 const told = () => { for (const fn of [...listeners]) fn(); };
 
-async function keep(token: string, url = REMOTE_URL) {
+/** Keep the session a sign-in here just made: the cookie the Remote set, which the browser keeps and no script reads. */
+async function keep(url = REMOTE_URL) {
   tryingAgain();
-  // As the app keeps a session it signed in with: the core notes whose it is, and another account's copies stay theirs.
-  await core('remote_connect', {url, token});
+  // As the app keeps a session it signed in with: the core asks which it is and notes whose, and another account's
+  // copies stay theirs.
+  await core('remote_connect', {url});
   await loadState(['remote', 'sync']);
   told();
-}
-
-/** The token a sign-in answered with (the bearer plugin's header). */
-function tokenOf(r: Response): string {
-  const token = r.headers.get('set-auth-token');
-  if (!token) throw new RemoteError(r.status, t('Sign-in failed'));
-  return token;
 }
 
 // ---- signing in (web) ----
@@ -218,9 +238,10 @@ export const about = askedOnce(async (): Promise<Ways> => {
 /** In by a link (…/#enter=KEY): the one account of a Remote for research. Why not, said once on the sign-in card. */
 export async function enterWith(key: string): Promise<boolean> {
   try {
-    const {token} = await (await api('/v1/enter', {method: 'POST', body: JSON.stringify({key})}, null)).json() as {token?: unknown};
-    if (typeof token !== 'string') { signInTrouble = t('Invite link invalid for this Remote'); return false; }
-    await keep(token);
+    // In as a sign-in leaves a browser: by the cookie the Remote set.
+    const r = await api('/v1/enter', {method: 'POST', body: JSON.stringify({key})}, null);
+    if (!r.ok) { signInTrouble = t('Invite link invalid for this Remote'); return false; }
+    await keep();
     return true;
   } catch (e) {
     signInTrouble = e instanceof Error ? e.message : String(e);
@@ -266,16 +287,14 @@ export function signedInURL(): string {
   return u.toString();
 }
 
-/** Back from a provider: the Remote set its session cookie; keep the session's token here. */
+/** Back from a provider: the Remote set its session cookie, which the browser keeps; keep which session it is here. */
 export async function claim(): Promise<boolean> {
   try {
-    // The session the provider's return made, and its token as the Remote hands it over (signed: the only form it
-    // takes a bearer in), not as the session says it.
+    // The session the provider's return made, as its cookie says it.
     const r = await api('/api/auth/get-session', {}, null);
     const s = await r.json() as {session?: unknown} | null;
-    const token = r.headers.get('set-auth-token');
-    if (!s?.session || !token) { signInTrouble = t('Provider authentication failed. Please try again.'); return false; }
-    await keep(token);
+    if (!s?.session) { signInTrouble = t('Provider authentication failed. Please try again.'); return false; }
+    await keep();
     return true;
   } catch (e) {
     signInTrouble = e instanceof Error ? e.message : String(e);
@@ -394,8 +413,8 @@ export async function signIn(stopped?: string): Promise<void> {
   const response = await startAuthentication({optionsJSON: options}).catch((e: unknown) => {
     throw new RemoteError(0, cancelled(e) ? stopped ?? t('Sign-in cancelled.') : t('Failed to sign in with passkey ({why}).', {why: String(e)}));
   });
-  const r = await api('/api/auth/passkey/verify-authentication', {method: 'POST', body: JSON.stringify({response})}, null);
-  await keep(tokenOf(r));
+  await api('/api/auth/passkey/verify-authentication', {method: 'POST', body: JSON.stringify({response})}, null);
+  await keep();
   cameIn('passkey');
 }
 
@@ -461,8 +480,7 @@ export const removePasskey = (id: string) => confirming(() => json('/api/auth/pa
 export interface Device { id: string; token: string; userAgent?: string | null; createdAt: string; updatedAt: string; current: boolean }
 
 export async function devices(): Promise<Device[]> {
-  // The bearer token is the session's token and its signature.
-  const mine = connection()?.token.split('.')[0];
+  const mine = connection()?.session;
   const list = await json<Omit<Device, 'current'>[]>('/api/auth/list-sessions');
   return list.map((d) => ({...d, current: d.token === mine})).sort((a, b) => Number(b.current) - Number(a.current) || b.updatedAt.localeCompare(a.updatedAt));
 }
@@ -472,7 +490,7 @@ export async function devices(): Promise<Device[]> {
  * device is never ended from the list: it signs out from the person's menu, which forgets it here too.
  */
 export async function endDevice(d: Pick<Device, 'token'>): Promise<void> {
-  if (d.token === connection()?.token.split('.')[0]) throw new RemoteError(0, t('This device signs out from your menu at the foot of the rail.'));
+  if (d.token === connection()?.session) throw new RemoteError(0, t('This device signs out from your menu at the foot of the rail.'));
   await json('/api/auth/revoke-session', {method: 'POST', body: JSON.stringify({token: d.token})});
 }
 
@@ -539,16 +557,16 @@ async function ended() {
  * what is agreed with the Remote is agreed with an account, and is not
  * taken for another's that signs in on the same device later.
  */
-let account: {token: string; id: Promise<string | null>} | null = null;
+let account: {session: string; id: Promise<string | null>} | null = null;
 export function accountId(): Promise<string | null> {
   const c = connection();
   if (!c) return Promise.resolve(null);
-  if (account?.token !== c.token) {
-    const token = c.token;
+  if (account?.session !== c.session) {
+    const session = c.session;
     const id = json<{user?: {id?: string}} | null>('/api/auth/get-session').then((s) => s?.user?.id ?? null);
     // Not answered (offline): asked again next time.
-    id.catch(() => { if (account?.token === token) account = null; });
-    account = {token, id};
+    id.catch(() => { if (account?.session === session) account = null; });
+    account = {session, id};
   }
   return account.id;
 }
@@ -561,15 +579,15 @@ export async function me(): Promise<{id: string; name: string} | null> {
 }
 
 /** The name the Remote knows the person by (what a commit, a start or a review says), asked once until it changes. */
-let named: {token: string; name: Promise<string>} | null = null;
+let named: {session: string; name: Promise<string>} | null = null;
 export function myName(): Promise<string> {
   const c = connection();
   if (!c) return Promise.resolve('');
-  if (named?.token !== c.token) {
-    const token = c.token;
+  if (named?.session !== c.session) {
+    const session = c.session;
     const name = me().then((m) => m?.name ?? '');
-    name.catch(() => { if (named?.token === token) named = null; });
-    named = {token, name};
+    name.catch(() => { if (named?.session === session) named = null; });
+    named = {session, name};
   }
   return named.name;
 }

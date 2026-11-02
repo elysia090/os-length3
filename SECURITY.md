@@ -53,8 +53,12 @@ request passes, and the one secret") and are tested in
 - **Who someone is.** GitHub, Google or Apple say it once, and then a
   passkey does. Passkeys require user verification. A device is a session
   that a browser approved by its code (RFC 8628), and any other session can
-  end it. Sessions are bearer tokens, or `__Host-` cookies that are taken only
-  from the app's own pages.
+  end it. In a browser a session is a `__Host-` cookie (HttpOnly: no script
+  reads it; the Remote hands a page no token, ever), taken only from the
+  app's own pages; on a device (the app, l3) it is a bearer token from the
+  device flow, kept apart from everything the app's page reads
+  (`os/core/src/vault.rs`), and the page asks the Remote through the core.
+  Either is taken only signed with the Remote's secret.
 - **What is trusted for what.** The Remote holds one secret and derives one
   key a purpose from it (`os/service/keys.ts`). A domain's name is trusted
   while its DNS names this Remote and account. A root is trusted only by the

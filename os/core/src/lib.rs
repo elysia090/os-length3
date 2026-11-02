@@ -47,6 +47,7 @@ pub mod system;
 pub mod tasks;
 pub mod templates;
 pub mod usage;
+pub mod vault;
 #[cfg(target_os = "linux")]
 pub mod vm;
 pub mod work;

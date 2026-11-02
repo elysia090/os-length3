@@ -11,7 +11,6 @@ export default {
   'Remote cannot accept files right now; changes stay on this device': 'Remote に現在保存できません。作業内容はローカルデバイスに保持されます',
   'Kept on Remote until {date}; local copy will be removed': 'Remote には{date}まで保持されます。このデバイス上のコピーを削除します。',
   'Device not recognized by Remote. Please sign in again.': 'Remote がこのデバイスを認識できません。再度サインインしてください。',
-  'Sign-in failed': 'サインインできませんでした',
   'Provider authentication failed. Please try again.': 'プロバイダーでのサインインが完了しませんでした。もう一度お試しください。',
   'Passkey creation cancelled.': 'パスキーの作成をキャンセルしました。',
   'Failed to create passkey ({why}).': 'パスキーを作成できませんでした（{why}）。',

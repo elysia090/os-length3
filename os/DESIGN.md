@@ -1559,12 +1559,22 @@ open (`core/src/account.rs` app_page names only that page, of the Remote's
 own app, the way a sign-in's page is checked). Done there, the page says
 to go back; the app reads again what changed when its window comes back.
 Every device is a session, listed on the Remote page and ended
-from any other. Sessions are bearer tokens, kept on the device (in the app
-with its settings, 0600), and taken only signed (`token.signature`, as the
-session cookie is) with the Remote's secret: the token the database keeps
-is no way in by itself, so a copy of the database opens no session. What a
-provider hands over at sign-in (its access and refresh tokens) is kept
-encrypted with the same secret; nothing reads it.
+from any other. What proves a session is held where no page reads it. In a
+browser it is the session's cookie (`__Host-`: Secure, HttpOnly,
+SameSite=Lax), which the browser sends and no script reads, so a script
+that should not be on the page cannot carry the session off: the Remote
+hands a page no token, ever (`service/auth.ts`), and the browser's core
+sends the cookie with its own requests. A device (the app, l3) holds a
+bearer from the device flow, kept apart from everything a page reads
+(`core/src/vault.rs`, never in Home's state, which a page reads and which
+is synced); the app's page asks its Remote through the core
+(`remote_ask`), which sends it. Home's state says only which session the
+device is (its token unsigned) and whose. Either is taken only signed
+(`token.signature`) with the Remote's secret: the token the database keeps
+is no way in by itself, so a copy of the database opens no session. Which
+Remote a device is on is changed only by signing in or out, never by a
+page setting it. What a provider hands over at sign-in (its access and
+refresh tokens) is kept encrypted with the same secret; nothing reads it.
 
 What leaves this system is kept to what is said here:
 

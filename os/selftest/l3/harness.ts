@@ -72,6 +72,17 @@ function http(method: string, url: string | URL, headers: Record<string, string>
     r.end(body);
   });
 }
+/**
+ * The bearer of the session a Set-Cookie sets: the session cookie's own value (the token signed, the bearer's form too).
+ * A page is handed no bearer (service/auth.ts); this, which is no page, holds what it was sent, as a device holds its own.
+ */
+const bearerIn = (setCookies: string[]): string | null => {
+  for (const c of setCookies) {
+    const m = /^(?:__Host-length3|better-auth)\.session_token=([^;]+)/.exec(c);
+    if (m) return decodeURIComponent(m[1]);
+  }
+  return null;
+};
 const cookiesOf = (h: Record<string, string | string[] | undefined>) => ([h['set-cookie'] ?? []].flat() as string[]).map((c) => c.split(';')[0]).join('; ');
 
 export interface Ran { code: number; out: string; err: string; json: any } // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -139,7 +150,7 @@ export async function remote(env: Record<string, string> = {}) {
     approve.searchParams.set('name', name);
     const back = (await http('GET', approve, {'CF-Connecting-IP': at})).headers.location as string;
     const done = await http('GET', back, {Cookie: cookiesOf(asked.headers), 'CF-Connecting-IP': at});
-    const token = done.headers['set-auth-token'] as string | undefined;
+    const token = bearerIn([done.headers['set-cookie'] ?? []].flat() as string[]) ?? undefined;
     assert.ok(token, `no session for ${name}: ${done.status} ${done.text}`);
     addressOf.set(token, at);
     return token;

@@ -52,11 +52,19 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         // A repo itself renamed, or taken from this device whole (`open`: the repos a Prompt has open, the host's to know).
         "repo_rename" => to(remote::rename_repo(&repos()?, &a.s("repo")?, &a.s("to")?, &a.list("open")?)?),
         "repo_delete" => to(remote::delete_repo(&repos()?, &a.s("repo")?, &a.list("open")?)?),
-        "state_get" => to(home::get(&a.s("key")?)?),
-        // What this device runs of the dotfiles is changed only by a dotfile written here or taken here (below), never set.
+        "state_get" => {
+            let key = a.s("key")?;
+            // A session kept as earlier releases kept it (its bearer beside the rest) is kept as now before it is read.
+            if key == "remote" { let _ = remote::connection(); }
+            to(home::get(&key)?)
+        }
+        // What this device runs of the dotfiles is changed only by a dotfile written here or taken here (below), never set;
+        // and which Remote it is on, as whom, only by signing in or out (a page set it, and this device's repos would be
+        // sent wherever it said).
         "state_set" => {
             let key = a.s("key")?;
             if key == "trusted" { return Err(crate::tr!("What runs here is changed by writing a dotfile or taking one", "ここで動くものは、dotfile を書くか取り込むかで変わります")); }
+            if key == "remote" { return Err(crate::tr!("Which Remote this device is on is changed by signing in or out", "どの Remote につなぐかは、サインインかサインアウトで変わります")); }
             to(home::set(&key, &a.s("json")?)?)
         }
         // A dotfile written here (`text` null: removed) runs here at once; one changed elsewhere runs here once taken
@@ -121,9 +129,12 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         }
         "remote_login_wait" => to(remote::device_finish(&remote::default_url(), &a.s("client")?, &a.get("code")?)?),
         "remote_logout" => to(remote::logout(&repos()?)?),
-        // A session a page signed in with (a provider, a passkey): kept as the app keeps its own, another account's
-        // copies kept theirs (login.rs connect).
-        "remote_connect" => to(remote::connect(&a.s("url")?, a.s("token")?)?),
+        // A session a page signed in with (a provider, a passkey): the cookie the Remote set, which the browser keeps
+        // and no script reads; another account's copies kept theirs (login.rs connect).
+        "remote_connect" => to(remote::connect(&a.s("url")?, None)?),
+        // The app's page asking its Remote, sent with this device's session, which the page never holds.
+        "remote_ask" => to(remote::ask(&a.s("method")?, &a.s("path")?, a.opt::<String>("body")?.as_deref(),
+            &a.opt::<Vec<(String, String)>>("headers")?.unwrap_or_default())?),
         // The Remote already let this session go: nothing can be sent with it, and nothing here is let go.
         "remote_forget" => to(remote::forget_connection()?),
         "remote_repos" => to(remote::remote_repos()?),

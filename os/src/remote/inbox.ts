@@ -88,15 +88,15 @@ export const me = () => json<Me>('/v1/inbox/me').then((m) => { home = m.domain; 
 export const username = (m: Me) => (m.addresses.find((a) => a.address.endsWith(`@${m.domain}`)) ?? m.addresses[0])?.address ?? '';
 
 /** Their username, shown as a name on this Remote is (`ren`); '' signed out. Asked once a sign-in, again once changed. */
-let mine: {token: string; name: Promise<string>} | null = null;
+let mine: {session: string; name: Promise<string>} | null = null;
 export function myUsername(): Promise<string> {
   const c = connection();
   if (!c) return Promise.resolve('');
-  if (mine?.token !== c.token) {
-    const token = c.token;
+  if (mine?.session !== c.session) {
+    const session = c.session;
     const name = me().then((m) => shown(username(m)));
-    name.catch(() => { if (mine?.token === token) mine = null; });
-    mine = {token, name};
+    name.catch(() => { if (mine?.session === session) mine = null; });
+    mine = {session, name};
   }
   return mine.name;
 }

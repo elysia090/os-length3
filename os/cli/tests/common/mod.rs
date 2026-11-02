@@ -337,11 +337,12 @@ fn serve_one(mut stream: std::net::TcpStream, answer: &Answer, kept: &std::sync:
 }
 
 impl Home {
-    /// This home signed in to `url` (Home's `remote` setting, as l3 login leaves it).
+    /// This home signed in to `url` as l3 login leaves it: which session, in Home's `remote` setting; its bearer
+    /// ("test-token") apart, in `secrets/`.
     pub fn signed_in(&self, url: &str) {
-        let dir = self.path("home");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("remote.json"), format!(r#"{{"url":"{url}","token":"test-token"}}"#)).unwrap();
+        for dir in ["home", "secrets"] { std::fs::create_dir_all(self.path(dir)).unwrap(); }
+        std::fs::write(self.path("home/remote.json"), format!(r#"{{"url":"{url}","session":"test-token"}}"#)).unwrap();
+        std::fs::write(self.path("secrets/session"), "test-token").unwrap();
     }
 
     /// A repo here holding these files (path, text).

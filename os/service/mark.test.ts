@@ -4,7 +4,7 @@ import {createApp} from './app.ts';
 import {createAuth} from './auth.ts';
 import {memoryBucket} from './bucket.ts';
 import {MarkObject, memoryMarks, objectMarks, tagUntil, type MarkNamespace} from './mark.ts';
-import {APP, BASE, fileDb, SECRET} from './testing.ts';
+import {APP, BASE, bearerOf, fileDb, SECRET} from './testing.ts';
 
 // The mark (mark.ts): a look whose answer nothing has written over since its tag is answered without the database,
 // its session not looked up either; every write moves it, so the next look reads again; a device's beat the same.
@@ -44,7 +44,7 @@ async function person() {
   for (const k of ['redirect_uri', 'state']) approve.searchParams.set(k, go.searchParams.get(k) ?? '');
   approve.searchParams.set('name', `Mark ${process.pid}-${++people}`);
   const done = await app.request((await app.request(approve.toString())).headers.get('Location')!, {headers: {Cookie: cookies}});
-  return {token: done.headers.get('set-auth-token')!, cookie: done.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ')};
+  return {token: bearerOf(done.headers.getSetCookie())!, cookie: done.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ')};
 }
 /** How many statements `f` asked the database. */
 const counting = async <T>(f: () => Promise<T>): Promise<[T, number]> => { const was = asked; const r = await f(); return [r, asked - was]; };

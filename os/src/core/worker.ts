@@ -50,6 +50,11 @@ const READS = new Set(['repo_list', 'repo_names', 'repo_tree', 'repo_read', 'rep
 /** The slowest line a file still goes over (bytes a millisecond: 32 KB/s), and the largest file (service LIMIT.blob). */
 const SLOW = 32, BLOB = 16 << 20;
 
+/** Whether `url` is at the origin `of` names. */
+const sameOrigin = (url: string, of: string): boolean => {
+  try { return new URL(url, self.location.href).origin === new URL(of, self.location.href).origin; } catch { return false; }
+};
+
 const send: Send = (head, body) => {
   const x = new XMLHttpRequest();
   try {
@@ -60,6 +65,8 @@ const send: Send = (head, body) => {
     // slow line still finishes what it sends and gets, not cut at a minute and sent again from the start.
     if (head.timeout) x.timeout = head.timeout + Math.ceil(body.length / SLOW) + (/\/v1\/blobs\/[0-9a-f]{64}$/.test(head.url) && head.method === 'GET' ? Math.ceil(BLOB / SLOW) : 0);
     for (const [k, v] of head.headers) x.setRequestHeader(k, v);
+    // The Remote's session is the cookie the browser keeps for it (no script reads it): sent to the Remote alone.
+    x.withCredentials = sameOrigin(head.url, env.LENGTH3_REMOTE || self.location.origin);
     x.send(body.length ? (body as Uint8Array<ArrayBuffer>) : null);
   } catch (e) {
     // A synchronous request says only that it failed (refused, no name, a policy, a cut), or that it timed out.

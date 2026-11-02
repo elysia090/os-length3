@@ -7,13 +7,12 @@ import {inProcessRemote, REMOTE} from '../testing/remote-fixture.ts';
 const remote = await inProcessRemote();
 const servers = await import('./servers.ts');
 const inbox = await import('./inbox.ts');
-const {setState} = await import('../home/state.ts');
 const schema = await import('../../service/schema.ts');
 const {HOLD} = await import('../../service/names.ts');
 const {SERVER} = await import('../../service/servers.ts');
 
 const DAY = 86_400_000;
-const as = (token: string) => setState('remote', JSON.stringify({url: REMOTE, token}));
+const as = (token: string) => remote.browserAs(token);
 /** Someone signed in with a name of their own on this Remote; `id` their account. */
 async function person(name: string) {
   const token = await remote.signIn(name);

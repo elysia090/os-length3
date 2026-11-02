@@ -55,8 +55,7 @@ pub fn providers() -> Result<Vec<Provider>> {
 
 /// Every session of the account, this device's first, then the most recently used.
 pub fn devices() -> Result<Vec<Device>> {
-    // The bearer token is the session's token and its signature.
-    let mine = crate::remote::connection().map(|c| c.token.split('.').next().unwrap_or_default().to_string()).unwrap_or_default();
+    let mine = crate::remote::connection().map(|c| c.session).unwrap_or_default();
     let mut list: Vec<Device> = get("/api/auth/list-sessions")?;
     for d in &mut list { d.current = d.token == mine; }
     list.sort_by(|a, b| b.current.cmp(&a.current).then_with(|| b.updated_at.cmp(&a.updated_at)));

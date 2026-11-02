@@ -6,15 +6,24 @@
 
 use super::*;
 
-/// Keep a session just approved. What was agreed with another Remote, or
+/// Keep a session just approved: `bearer`, the one a device was handed (the device flow's), or none in a browser,
+/// whose session is the cookie the Remote just set. What was agreed with another Remote, or
 /// with another account as far as can be told, goes first: kept, it would be
 /// taken for what this one agreed, and every file it holds that this one
 /// does not (all of them, for an account that has never seen the repo) would
 /// be removed here as if removed there (bug: signing in elsewhere without
 /// signing out emptied each repo of what was unchanged).
-pub fn connect(url: &str, token: String) -> Result<()> {
+pub fn connect(url: &str, bearer: Option<String>) -> Result<()> {
     let url = current_url(url);
-    let user = whose(&url, &token);
+    // A browser keeps no bearer (its cookie is its session), and a device keeps no cookie: each is signed in as it can.
+    let browser = cfg!(target_os = "wasi");
+    let bearer = bearer.filter(|b| !browser && !b.is_empty());
+    if bearer.is_none() && !browser {
+        return Err(crate::tr!("The Remote handed this device no session", "Remote はこの端末にセッションを渡しませんでした"));
+    }
+    // Which session it is, as the Remote says: no answer, and there is none to keep.
+    let who = whose(&url, bearer.as_deref()).ok_or_else(|| failed(Failure::NotConnected, crate::tr!("The Remote does not know this session; sign in again", "Remote はこのセッションを知りません。もう一度サインインしてください")))?;
+    let user = Some(who.user);
     if let Some(was) = connection().filter(|was| another(was, &url, user.as_deref())) {
         if was.url != url {
             gone(fs::remove_dir_all(sync_dir()))?;
@@ -24,7 +33,11 @@ pub fn connect(url: &str, token: String) -> Result<()> {
             stamp(was.user.as_deref())?;
         }
     }
-    save_connection(&Connection { url, token, user })
+    match &bearer {
+        Some(b) => crate::vault::set(crate::vault::Secret::Session, b)?,
+        None => crate::vault::remove(crate::vault::Secret::Session)?,
+    }
+    save_connection(&Connection { url, session: who.session, user })
 }
 
 /// Note `who` on every agreement that does not say whose it is yet.
@@ -46,11 +59,18 @@ pub(super) fn another(was: &Connection, url: &str, user: Option<&str>) -> bool {
     was.url != url || matches!((was.user.as_deref(), user), (Some(a), Some(b)) if a != b)
 }
 
-/// The account a session is, as the Remote at `url` says; None when it does not say.
-pub(super) fn whose(url: &str, token: &str) -> Option<String> {
-    let Got::Ok(r) = request("GET", &format!("{url}/api/auth/get-session"), Some(token), Body::None) else { return None };
+/// A session as the Remote says it is: its account's id, and its own token unsigned (mod.rs Connection).
+pub(super) struct Who {
+    pub(super) user: String,
+    pub(super) session: String,
+}
+
+/// The session `bearer` proves (none: the browser's cookie), as the Remote at `url` says; None when it does not say.
+pub(super) fn whose(url: &str, bearer: Option<&str>) -> Option<Who> {
+    let Got::Ok(r) = request("GET", &format!("{url}/api/auth/get-session"), bearer, Body::None) else { return None };
     let v = answer(url, r).ok()?;
-    v["user"]["id"].as_str().filter(|id| !id.is_empty()).map(String::from)
+    let said = |v: &serde_json::Value| v.as_str().filter(|s| !s.is_empty()).map(String::from);
+    Some(Who { user: said(&v["user"]["id"])?, session: said(&v["session"]["token"])? })
 }
 
 
@@ -163,7 +183,7 @@ pub fn device_finish(url: &str, client: &str, code: &DeviceCode) -> Result<()> {
     loop {
         std::thread::sleep(step);
         match device_poll(url, client, code)? {
-            Polled::Approved(token) => return connect(url, token),
+            Polled::Approved(token) => return connect(url, Some(token)),
             Polled::SlowDown => step = (step + Duration::from_secs(5)).min(Duration::from_secs(60)),
             Polled::Waiting => {}
         }

@@ -37,6 +37,18 @@ const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); retu
 const p90 = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.min(s.length - 1, Math.floor(s.length * 0.9))] : NaN; };
 const timing = (h: string | null, k: string) => { const m = new RegExp(`${k};dur=([\\d.]+)`).exec(h ?? ''); return m ? Number(m[1]) : NaN; };
 
+/**
+ * The bearer of the session a Set-Cookie sets: the session cookie's own value (the token signed, the bearer's form too).
+ * A page is handed no bearer (service/auth.ts); this, which is no page, holds what it was sent, as a device holds its own.
+ */
+const bearerIn = (setCookies: string[]): string | null => {
+  for (const c of setCookies) {
+    const m = /^(?:__Host-length3|better-auth)\.session_token=([^;]+)/.exec(c);
+    if (m) return decodeURIComponent(m[1]);
+  }
+  return null;
+};
+
 /** Signed in through the stand-in provider at `base`, from address `ip`: the bearer token. */
 async function signIn(base: string, name: string, ip: string): Promise<string> {
   const asked = await fetch(`${base}/api/auth/sign-in/social`, {method: 'POST', headers: {Origin: base, 'Content-Type': 'application/json', 'CF-Connecting-IP': ip},
@@ -48,7 +60,7 @@ async function signIn(base: string, name: string, ip: string): Promise<string> {
   approve.searchParams.set('name', name);
   const back = (await fetch(approve, {redirect: 'manual', headers: {'CF-Connecting-IP': ip}})).headers.get('location')!;
   const done = await fetch(back, {redirect: 'manual', headers: {Cookie: cookie, 'CF-Connecting-IP': ip}});
-  const token = done.headers.get('set-auth-token');
+  const token = bearerIn(done.headers.getSetCookie());
   if (!token) throw new Error(`no session for ${name}: ${done.status}`);
   return token;
 }

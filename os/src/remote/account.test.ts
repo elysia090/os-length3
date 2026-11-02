@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {inProcessRemote, REMOTE} from '../testing/remote-fixture.ts';
+import {inProcessRemote} from '../testing/remote-fixture.ts';
 
 // remote.ts as Remote → Devices and a repo's off ask use it, against the Remote itself.
 const remote = await inProcessRemote();
 const account = await import('./connection.ts');
-const {setState} = await import('../home/state.ts');
+const {loadState} = await import('../home/state.ts');
+const {core} = await import('../app/host.ts');
 
 /** This browser signed in as `token`. */
-const here = (token: string) => setState('remote', JSON.stringify({url: REMOTE, token}));
+const here = (token: string) => remote.browserAs(token);
 
 test('the device list marks this device, first', async () => {
   // Each test is its own account, so no test sees another's sessions.
@@ -52,7 +53,11 @@ test('this OS signs in to os.length3.com; a device that kept the former name goe
   assert.equal(account.DEFAULT_REMOTE, 'https://os.length3.com');
   for (const former of ['https://remote.length3.com', 'https://remote.length3.com/', 'https://Remote.Length3.com']) assert.equal(account.currentURL(former), account.DEFAULT_REMOTE);
   for (const other of ['', 'https://os.length3.com', 'http://127.0.0.1:8787', 'https://remote.length3.com/x', 'http://remote.length3.com']) assert.equal(account.currentURL(other), other);
-  await setState('remote', JSON.stringify({url: 'https://remote.length3.com', token: 'kept'}));
-  assert.deepEqual(account.connection(), {url: 'https://os.length3.com', token: 'kept'});
-  await setState('remote', 'null');
+  // Signed in by the former name (a link kept from before), it is kept by today's.
+  const t = await remote.signIn('Kei');
+  await remote.browserAs(t, 'https://remote.length3.com');
+  assert.equal(account.connection()?.url, 'https://os.length3.com');
+  assert.equal(account.connection()?.session, t.split('.')[0]);
+  await core('remote_forget');
+  await loadState(['remote']);
 });

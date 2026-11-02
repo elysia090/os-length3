@@ -17,7 +17,7 @@ import {hmacHex, keyFor, same} from './keys.ts';
 import {workerRole} from './neon.ts';
 import {API_POLICY, throttled} from './request.ts';
 import * as schema from './schema.ts';
-import {APP, BASE, database, freshDb, idOf, named, SECRET, service, sessionOf} from './testing.ts';
+import {APP, BASE, bearerOf, database, freshDb, idOf, named, SECRET, service, sessionOf} from './testing.ts';
 
 const EVIL = 'https://evil.example';
 
@@ -253,7 +253,7 @@ test('sign-in is the authorization code flow with state and PKCE, back only to t
   // A callback whose state this browser was not given makes no session.
   const cookies = asked.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
   const forged = await s.app.request(`${BASE}/api/auth/callback/dev?code=x&state=forged`, {headers: {Cookie: cookies}});
-  assert.equal(forged.headers.get('set-auth-token'), null);
+  assert.equal(bearerOf(forged.headers.getSetCookie()), null);
   assert.ok(forged.status >= 300, String(forged.status));
   assert.doesNotMatch(forged.headers.get('Location') ?? '', /signed-in/);
 
@@ -307,7 +307,7 @@ test('a second sign-in joins an account only by an address its provider proved: 
     for (const k of ['redirect_uri', 'state']) approve.searchParams.set(k, go.searchParams.get(k) ?? '');
     for (const [k, v] of Object.entries({name, ...said})) approve.searchParams.set(k, v);
     const back = (await s.app.request(approve.toString())).headers.get('Location')!;
-    return (await s.app.request(back, {headers: {Cookie: cookies}})).headers.get('set-auth-token');
+    return bearerOf((await s.app.request(back, {headers: {Cookie: cookies}})).headers.getSetCookie());
   };
   // Someone else at a provider that lets them say Ren's address without proving it (Google's email_verified: false):
   // no session of Ren's, and nothing of theirs joined to Ren's account.

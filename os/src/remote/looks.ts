@@ -6,8 +6,8 @@
 
 import {api, connection, onWrite} from './connection.ts';
 
-/** Each path's last answer (its words, so each read is a copy of its own) and its tag, under the token it was asked with. */
-const kept = new Map<string, {token: string; tag: string; text: string; type: string; at: number}>();
+/** Each path's last answer (its words, so each read is a copy of its own) and its tag, under the session it was asked as. */
+const kept = new Map<string, {session: string; tag: string; text: string; type: string; at: number}>();
 /** An answer this new is the answer: parts of the page that look one after another as it is drawn (Home's Lately,
  * then the pane's word) ask the Remote once. A write here, or the window coming back, lets every answer go. */
 const FRESH = 1500;
@@ -26,7 +26,7 @@ const asking = new Map<string, Promise<Answer>>();
  * changed since (304), the one kept here, as a 200 of its own. Read as any answer of api()'s is.
  */
 export async function lookAt(path: string): Promise<Response> {
-  const key = `${connection()?.token ?? ''} ${path}`;
+  const key = `${connection()?.session ?? ''} ${path}`;
   let under = asking.get(key);
   if (!under) {
     const now = look(path).finally(() => { if (asking.get(key) === now) asking.delete(key); });
@@ -39,7 +39,7 @@ export async function lookAt(path: string): Promise<Response> {
 async function look(path: string): Promise<Answer> {
   const c = connection();
   const had = kept.get(path);
-  const tag = had && c && had.token === c.token ? had.tag : null;
+  const tag = had && c && had.session === c.session ? had.tag : null;
   const keptAnswer = (k: NonNullable<typeof had>): Answer => ({status: 200, statusText: 'OK', headers: [['Content-Type', k.type]], text: k.text});
   if (had && tag && performance.now() - had.at < FRESH) return keptAnswer(had);
   const r = await api(path, {cache: 'no-store', ...(tag ? {headers: {'If-None-Match': tag}} : {})});
@@ -50,7 +50,7 @@ async function look(path: string): Promise<Answer> {
   const now = r.headers.get('ETag');
   if (!now || !c || r.status !== 200) return answer;
   const type = r.headers.get('Content-Type') ?? 'application/json';
-  kept.set(path, {token: c.token, tag: now, text, type, at: performance.now()});
+  kept.set(path, {session: c.session, tag: now, text, type, at: performance.now()});
   if (kept.size > MOST) kept.delete(kept.keys().next().value!);
   return answer;
 }

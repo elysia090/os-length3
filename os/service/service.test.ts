@@ -7,7 +7,7 @@ import {memoryBucket} from './bucket.ts';
 import * as schema from './schema.ts';
 import type {Db} from './request.ts';
 import {sweep} from './sweep.ts';
-import {accept, APP, BASE, count, enc, freshDb as fresh, idOf, named, SECRET, service, sessionOf, upload, type Service} from './testing.ts';
+import {accept, APP, BASE, bearerOf, count, enc, freshDb as fresh, idOf, named, SECRET, service, sessionOf, upload, type Service} from './testing.ts';
 import homeSync from '../shared/home-sync.json' with {type: 'json'};
 import desktopPins from '../shared/desktop-releases.json' with {type: 'json'};
 
@@ -40,13 +40,13 @@ test('an account is a provider identity: the same person signs in to the same ac
   assert.notEqual((await who(a)).id, (await who(other)).id);
   assert.equal((await who(a)).name, 'Ren');
   // The session's own token as the database keeps it (and get-session says it) is no bearer by itself: only signed,
-  // as get-session hands it over too. A copy of the database opens no session.
+  // as its cookie holds it. A copy of the database opens no session. And a page is handed no bearer, ever.
   const asked = await s.call('GET', '/api/auth/get-session', {token: a});
   const raw = (asked.json as unknown as {session: {token: string}}).session.token;
   assert.equal((await s.call('GET', '/v1/repos', {token: raw})).status, 401);
-  const signed = asked.headers.get('set-auth-token')!;
-  assert.match(signed, new RegExp(`^${raw}\\.[A-Za-z0-9+/]+=*$`));
-  assert.equal((await s.call('GET', '/v1/repos', {token: signed})).status, 200);
+  assert.equal(asked.headers.get('set-auth-token'), null);
+  assert.match(a, new RegExp(`^${raw}\\.[A-Za-z0-9+/]+=*$`));
+  assert.equal((await s.call('GET', '/v1/repos', {token: a})).status, 200);
   // Signed by anything but the Remote's secret, it is no one.
   assert.equal((await s.call('GET', '/v1/repos', {token: `${raw}.${btoa('x'.repeat(32))}`})).status, 401);
   // No way in without a provider: there are no blank accounts.
@@ -1229,7 +1229,7 @@ test('Requests: a body is read no further than its route takes, however it is se
   assert.equal((await send('POST', '/v1/enter', big, {'Content-Length': String(big.length)})).status, 413);
   assert.equal((await send('POST', '/v1/enter', big)).status, 413);
   assert.equal(await count(s, sql`select count(*)::int as n from throttle`), 0);
-  const t = (await s.call('POST', '/v1/enter', {body: {key}})).json.token as string;
+  const t = bearerOf((await s.call('POST', '/v1/enter', {body: {key}})).headers.getSetCookie())!;
   // A file is as large as a file may be, and no larger; a draft's diff larger than any other body is still read.
   const auth = {Authorization: `Bearer ${t}`};
   assert.equal((await send('PUT', `/v1/blobs/${'0'.repeat(64)}`, new Uint8Array((16 << 20) + 1), {...auth, 'Content-Type': 'application/octet-stream'})).status, 413);
@@ -1555,7 +1555,7 @@ test('On Workers the app is made once, and each request uses the database it ope
   const approve = new URL(`${BASE}/dev-oauth/approve`);
   for (const k of ['redirect_uri', 'state']) approve.searchParams.set(k, go.searchParams.get(k) ?? '');
   const back = (await ask(approve.toString())).headers.get('Location')!;
-  const token = (await ask(back, {headers: {Cookie: cookies}})).headers.get('set-auth-token')!;
+  const token = bearerOf((await ask(back, {headers: {Cookie: cookies}})).headers.getSetCookie())!;
   const repos = async () => (await ask(`${BASE}/v1/repos`, {headers: {Authorization: `Bearer ${token}`}})).status;
   // The session is in the database its sign-in's requests opened, and only there.
   assert.equal(await repos(), 200);
@@ -1639,17 +1639,20 @@ test('For research: nobody signs up, the link enters the one account, and nothin
   for (const k of ['redirect_uri', 'state']) approve.searchParams.set(k, go.searchParams.get(k) ?? '');
   const back = (await s.app.request(approve.toString())).headers.get('Location')!;
   const done = await s.app.request(back, {headers: {Cookie: asked.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ')}});
-  assert.ok(!done.headers.get('set-auth-token') && !(done.headers.get('Location') ?? '').includes('signed-in'), done.headers.get('Location') ?? '');
+  assert.ok(!bearerOf(done.headers.getSetCookie()) && !(done.headers.get('Location') ?? '').includes('signed-in'), done.headers.get('Location') ?? '');
   assert.equal(await count(s, sql`select count(*)::int as n from "user"`), 0);
   // The link: a wrong key opens nothing; the key enters the one account, the same one each time.
   const enter = (k: unknown) => s.call('POST', '/v1/enter', {body: {key: k}});
   assert.deepEqual(await Promise.all(['', 'k'.repeat(39), 'k'.repeat(41), 42].map(async (k) => (await enter(k)).status)), [403, 403, 403, 403]);
   const a = await enter(key), b = await enter(key);
   assert.deepEqual([a.status, a.json.name, b.status], [200, 'banana000000', 200]);
+  // In by the session's cookie alone, as any sign-in in a browser: no token said to the page.
+  assert.deepEqual([a.json.token, a.headers.get('set-auth-token')], [undefined, null]);
+  assert.match(a.headers.getSetCookie().join('\n'), /session_token=[^;]+;.*HttpOnly/i);
   // The latest entry is the one that proves the person is here.
-  const t = b.json.token as string;
+  const t = bearerOf(b.headers.getSetCookie())!;
   const who = async (token: string) => ((await s.call('GET', '/api/auth/get-session', {token})).json as unknown as {user: {id: string}} | null)?.user.id;
-  assert.ok((await who(t)) && (await who(t)) === (await who(a.json.token as string)));
+  assert.ok((await who(t)) && (await who(t)) === (await who(bearerOf(a.headers.getSetCookie())!)));
   assert.equal(await count(s, sql`select count(*)::int as n from "user"`), 1);
   // A session made by the link ends a day after it was made, and using it does not draw it out.
   await s.call('GET', '/v1/repos', {token: t});
