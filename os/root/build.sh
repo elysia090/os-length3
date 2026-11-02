@@ -11,32 +11,35 @@
 # the packages it builds against: OUT/NAME holds what its install put there (tree/), its key, version and source
 # digest, and is made again only when its key is not the one there. NAMEs given are made (with what they need);
 # none, every one. Run as root (CI runs it in its container); OWNER (uid:gid) given, OUT is that user's when it ends,
-# however it ends. Sources are kept in OUT/../root-src by name, each checked against its pin before it is opened.
+# however it ends. Sources are kept in OUT/../root-src by pin and name, each checked against its pin before it is
+# opened.
 #
 # A recipe is sh, read in a shell of its own, saying:
 #   pins="NAME..."      the sources.env prefixes it is made from (NAME_VERSION, NAME_URL, NAME_SHA256 or _SHA512);
 #                       the first unpacked where it is built, the others by `unpack NAME DIR`
 #   needs="PKG..."      packages it builds against: their trees, together, are $deps, which CPPFLAGS, LDFLAGS and
 #                       pkg-config point to (and nothing of the build machine's own besides its libc and kernel headers)
-#   tools="APK..."      Alpine packages it is built with (their versions are in its key)
+#   tools="APK..."      Alpine packages it is built with, added for its build and check alone and taken away after
+#                       (so none reaches another package's build unseen); their versions are in its key
 #   patches="FILE..."   under root/packages/, applied in order (-p1)
 #   inputs="FILE..."    other files of root/ it is made from (from root/: etc/passwd), in its key too; $here is root/
 #   flat=1              its first pin's archive has no top directory to take off (tzdata's)
 #   version=V           its version, where it has no pin to take it from (the root's own settings)
 #   build() { ... }     run in the unpacked source; installs into $dest as the root lays it out (/usr, /etc)
-#   check() { ... }     optional: run after it is made, against what is in $dest; a package that does not do what it
-#                       is for is not made
+#   check() { ... }     optional: run after it is made, against what is in $dest (with what it needs in $deps); a
+#                       package that does not do what it is for is not made
 #
 # Every build is given the same flags (a recipe that departs from them says why): C17 (Alpine's GCC writes C23 by
 # default, which code written for C17 does not build as), the stack protector, stack clash protection and CET, and
 # static links with full RELRO and no executable stack; Alpine's GCC makes position-independent code and links
 # -static as a static PIE, and defines _FORTIFY_SOURCE; every program made is checked to be such a PIE, with full
 # RELRO and no executable stack. A library comes with what building against it needs (its headers, archive and
-# pkg-config file), not its libtool archive; no package keeps manuals, translations or shell completions (the root
-# has no man and no locales, and its interactive shell is ash, whose are its own). Nothing a package made names
-# where it was made: what it says of what it was built against is said as the root has it, a recipe whose build
-# names its sources by where they are says them from their top, and a package that still names its build's place
-# is not made.
+# pkg-config file), not its libtool archive; no package keeps manuals, translations, shell completions or desktop
+# entries and icons (the root has no man, no locales and no desktop, and its interactive shell is ash, whose
+# completions are its own). Nothing a package made names where it was made: what it says of what it was built
+# against is said as the root has it, a recipe whose build names its sources by where they are says them from their
+# top, and a package that still names its build's place is not made. Every script it made is for sh or bash, the
+# root's languages.
 set -eu
 out=$1; shift
 here=$(cd "$(dirname "$0")" && pwd)
@@ -46,13 +49,15 @@ pins_file="$here/sources.env"
 say() { echo "root-build: $*" >&2; }
 grep -q '^3\.24\.' /etc/alpine-release 2>/dev/null || { say "run on Alpine 3.24 (the root's target)"; exit 2; }
 
-# What every recipe is built with, and each one's own tools.
-apk add --no-cache -q build-base linux-headers curl xz bzip2 tar patch \
-  $(sed -n 's/^tools="\(.*\)"$/\1/p' "$recipes"/*.sh | tr ' ' '\n' | sort -u)
+# What every recipe is built with. Each one's own tools are added as it is made, from packages kept here once fetched.
+mkdir -p /etc/apk/cache
+apk update -q
+apk add -q build-base linux-headers curl xz bzip2 tar patch unzip
 target=$(gcc -dumpmachine)
 [ "$target" = x86_64-alpine-linux-musl ] || { say "this compiler targets $target, not x86_64-alpine-linux-musl"; exit 2; }
-# An installed Alpine package's version, as its database says it.
+# An installed Alpine package's version, as its database says it; and the version of one this machine would install.
 installed() { awk -v p="$1" '/^P:/ {n = substr($0, 3)} /^V:/ && n == p {print substr($0, 3)}' /lib/apk/db/installed; }
+offered() { apk search -x "$1" | while read -r l; do echo "${l#"$1"-}"; done; }
 # The one libc: Alpine's musl, at the version the root's own is made from.
 libc=$(installed musl-dev)
 case $libc in "$MUSL_VERSION"-r*) ;; *) say "Alpine's musl is ${libc:-not installed}, the root's $MUSL_VERSION: pin them alike"; exit 2 ;; esac
@@ -81,25 +86,38 @@ key_of() {
     for p in $(field "$1" patches); do echo "$p"; cat "$recipes/$p"; done
     for f in $(field "$1" inputs); do echo "$f"; cat "$here/$f"; done
     for n in $(field "$1" needs); do echo "$n $(cat "$out/$n/key")"; done
-    # The tools it is built with, at the versions this machine has them (a Rust or Go program is its compiler's).
-    for t in $(field "$1" tools); do echo "$t $(installed "$t")"; done
+    # The tools it is built with, at the versions this machine installs (a Rust or Go program is its compiler's).
+    for t in $(field "$1" tools); do echo "$t $(offered "$t")"; done
   } | sha256sum | cut -d' ' -f1
 }
 
 # PIN DIR [flat]: the pinned source, checked against its digest, unpacked into DIR (its top directory taken off,
-# unless flat; a file that is no archive, as the CA bundle, put there as it is).
+# unless flat; a file that is no archive, as the CA bundle, put there as it is). A crate (crates.io's) is a tar; a
+# zip from Go's module proxy has the module and its version as its top (path@version/), which is what is taken off.
 unpack() {
   url=$(eval "echo \"\${$1_URL}\""); sum=$(eval "echo \"\${$1_SHA256:-}\""); alg=sha256
   [ -n "$sum" ] || { sum=$(eval "echo \"\${$1_SHA512}\""); alg=sha512; }
-  f="$src/$(basename "$url")"
-  if ! echo "$sum  $f" | ${alg}sum -c - >/dev/null 2>&1; then
-    curl -fsSL --retry 4 -o "$f.part" "$url"
-    echo "$sum  $f.part" | ${alg}sum -c - >/dev/null || { say "$url is not the file pinned"; exit 1; }
-    mv "$f.part" "$f"
-  fi
+  f="$src/$1-$(basename "$url")"
+  # A maker's site may answer once with something else (a CDN's page, a cut-off file): it is asked again, and only
+  # the file pinned is ever taken.
+  tries=0
+  while ! echo "$sum  $f" | ${alg}sum -c - >/dev/null 2>&1; do
+    tries=$((tries + 1))
+    if [ "$tries" -gt 3 ]; then
+      say "$url is not the file pinned: $(wc -c < "$f.part") bytes, $(head -c 64 "$f.part" | od -An -c | tr -s ' ' | head -c 60)"
+      exit 1
+    fi
+    [ "$tries" = 1 ] || sleep $((tries * 5))
+    curl -fsSL --retry 4 -o "$f.part" "$url" && echo "$sum  $f.part" | ${alg}sum -c - >/dev/null 2>&1 && mv "$f.part" "$f"
+  done
   mkdir -p "$2"
   case $f in
-    *.tar.*|*.tgz) if [ "${3:-}" = flat ]; then tar -xf "$f" -C "$2"; else tar -xf "$f" -C "$2" --strip-components=1; fi ;;
+    *.tar.*|*.tgz|*.crate) if [ "${3:-}" = flat ]; then tar -xf "$f" -C "$2"; else tar -xf "$f" -C "$2" --strip-components=1; fi ;;
+    *.zip)
+      rm -rf "${2:?}.zip"; unzip -q "$f" -d "$2.zip"
+      top=$(unzip -Z1 "$f" | head -n 1 | sed -n 's|^\([^@]*@[^/]*\)/.*|\1|p')
+      if [ "${3:-}" = flat ] || [ -z "$top" ]; then cp -a "$2.zip/." "$2/"; else cp -a "$2.zip/$top/." "$2/"; fi
+      rm -rf "${2:?}.zip" ;;
     *) cp "$f" "$2/" ;;
   esac
 }
@@ -115,6 +133,8 @@ make_one() {
   [ -z "$first" ] || unpack "$first" "$w/src" "$([ -n "$(field "$name" flat)" ] && echo flat)"
   for n in $(field "$name" needs); do cp -a "$out/$n/tree/." "$w/deps/"; done
   for p in $(field "$name" patches); do patch -d "$w/src" -p1 -s < "$recipes/$p"; done
+  tools=$(field "$name" tools)
+  [ -z "$tools" ] || apk add -q --virtual ".tools-$name" $tools
   say "$name: making"
   (
     cd "$w/src"
@@ -134,11 +154,13 @@ make_one() {
     # What is written in Rust or Go is built as the rest is: static PIEs with full RELRO and no executable stack,
     # their dependencies exactly as their lockfiles say (cargo --locked; go -mod=readonly, each module checked
     # against Go's checksum database), fetched into this build's own place, and nothing of that place in what they
-    # make (rustc's --remap-path-prefix, go's -trimpath). Go links through GCC, as a static PIE ($golink, inside a
-    # recipe's -ldflags).
+    # make (rustc's --remap-path-prefix, go's -trimpath; the C a crate builds, by the name only Rust's cc crate
+    # reads, -ffile-prefix-map). Go links through GCC, as a static PIE ($golink, inside a recipe's -ldflags).
     export CARGO_HOME="$w/cargo" CARGO_TARGET_DIR="$w/target" \
       RUSTFLAGS="-C target-feature=+crt-static -C relocation-model=pie -C link-arg=$ld --remap-path-prefix=$w/=" \
-      GOPATH="$w/go" GOCACHE="$w/go-cache" GOTOOLCHAIN=local GOFLAGS='-trimpath -mod=readonly -buildvcs=false' \
+      "CFLAGS_$(echo "$target" | tr - _)=$CFLAGS -ffile-prefix-map=$w/=" \
+      GOPATH="$w/go" GOCACHE="$w/go-cache" GOTOOLCHAIN=local \
+      GOFLAGS='-trimpath -mod=readonly -buildvcs=false -buildmode=pie' \
       CGO_ENABLED=1 CGO_CFLAGS='-O2 -fstack-protector-strong -fstack-clash-protection -fcf-protection' CGO_LDFLAGS="$ld"
     golink='-linkmode=external -extldflags=-static-pie'
     eval "$fields"
@@ -150,7 +172,8 @@ make_one() {
     [ -d "$t/$d" ] && [ ! -L "$t/$d" ] || continue
     mkdir -p "$t/usr/$d"; cp -a "$t/$d/." "$t/usr/$d/"; rm -rf "${t:?}/${d:?}"
   done
-  for d in usr/share/man usr/man usr/share/doc usr/share/info usr/share/locale usr/share/gtk-doc usr/share/bash-completion; do
+  for d in usr/share/man usr/man usr/share/doc usr/share/info usr/share/locale usr/share/gtk-doc usr/share/bash-completion \
+    usr/share/applications usr/share/icons usr/share/pixmaps; do
     rm -rf "${t:?}/$d"
   done
   find "$t" -name '*.la' -type f -delete
@@ -183,21 +206,32 @@ make_one() {
     fi
   done)
   [ -z "$soft" ] || { say "$name: not hardened: $soft"; exit 1; }
+  # Every script it made runs in the root: by sh or bash, the root having no other language (git's sample hooks,
+  # which nothing runs until a person renames one, aside).
+  stray=$(find "$t" -type f -perm -u+x ! -name '*.sample' | while read -r f; do
+    l=$(head -c 128 "$f" | head -n 1 | tr -d '\000')
+    case $l in '#!'*) ;; *) continue ;; esac
+    set -f; set -- ${l#??}; set +f
+    [ "${1:-}" != /usr/bin/env ] || shift
+    case ${1##*/} in sh|bash) ;; *) echo "${f#"$t/"} (${1:-nothing})" ;; esac
+  done)
+  [ -z "$stray" ] || { say "$name: scripts for a language the root has not: $stray"; exit 1; }
   # Nothing it made names where it was made.
   named=$(grep -rlF "$w" "$t" 2>/dev/null | sed "s|^$t/||" | tr '\n' ' ')
   [ -z "$named" ] || { say "$name: names where it was made ($w): $named"; exit 1; }
   # What it is for, done by what was made.
   (
-    cd "$w"; dest=$t
+    cd "$w"; dest=$t; deps="$w/deps"
     eval "$fields"; check() { :; }
     . "$recipes/$name.sh"
     check
   ) > "$w/check" 2>&1 || { cat "$w/check" >&2; say "$name: made, but its check failed (above)"; exit 1; }
+  [ -z "$tools" ] || apk del -q ".tools-$name"
   v=$(field "$name" version)
   [ -n "$v" ] || [ -z "$first" ] || v=$(eval "echo \"\${${first}_VERSION:-\${${first}_DATE:-}}\"")
   echo "${v:-0}" > "$out/$name/version"
   if [ -n "$first" ]; then
-    url=$(eval "echo \"\${${first}_URL}\""); sha256sum "$src/$(basename "$url")" | cut -d' ' -f1 > "$out/$name/source"
+    url=$(eval "echo \"\${${first}_URL}\""); sha256sum "$src/$first-$(basename "$url")" | cut -d' ' -f1 > "$out/$name/source"
   else : > "$out/$name/source"; fi
   echo "$key" > "$out/$name/key"
   say "$name $(cat "$out/$name/version"): made"
