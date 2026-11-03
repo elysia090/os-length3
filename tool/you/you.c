@@ -17,7 +17,7 @@
  * directory.
  *
  * What it is made for: a shell runs it at every cd, so learning a place is the program's start and five calls
- * (newfstatat, open, flock, fstat, write), reading nothing, and finding one four (open, pread, newfstatat, write).
+ * (newfstatat, open, flock, fstat, write), reading nothing, and finding one four (open, pread, newfstatat, writev).
  * No C library, no allocation, nothing to relocate: the program is its own few pages, which the kernel maps and it
  * runs, and which a browser's Prompt translates in a moment (xlat), each of its calls one a Linux kernel and xlat's
  * answer alike. Its time is the vDSO's, not a call. What it works in is one arena, used from its start as far as a run
@@ -47,13 +47,14 @@ typedef unsigned char u8;
 /* ---- The kernel: its calls, as x86-64 Linux numbers them. */
 
 enum {
-  SYS_read = 0, SYS_write = 1, SYS_open = 2, SYS_close = 3, SYS_fstat = 5, SYS_mmap = 9, SYS_pread = 17,
-  SYS_getpid = 39, SYS_flock = 73, SYS_fsync = 74, SYS_getcwd = 79, SYS_rename = 82, SYS_mkdir = 83,
+  SYS_read = 0, SYS_write = 1, SYS_open = 2, SYS_writev = 20, SYS_close = 3, SYS_fstat = 5, SYS_mmap = 9, SYS_pread = 17,
+  SYS_flock = 73, SYS_fsync = 74, SYS_getcwd = 79, SYS_rename = 82, SYS_mkdir = 83,
   SYS_unlink = 87, SYS_clock_gettime = 228, SYS_exit_group = 231, SYS_newfstatat = 262,
 };
-enum { O_RDONLY = 0, O_WRONLY = 1, O_RDWR = 2, O_CREAT = 0100, O_TRUNC = 01000, O_APPEND = 02000, O_CLOEXEC = 02000000 };
+enum { O_RDONLY = 0, O_WRONLY = 1, O_RDWR = 2, O_CREAT = 0100, O_TRUNC = 01000, O_APPEND = 02000, O_NONBLOCK = 04000,
+       O_CLOEXEC = 02000000 };
 enum { LOCK_SH = 1, LOCK_EX = 2 };
-enum { ENOENT = 2, EINTR = 4, EEXIST = 17 };
+enum { ENOENT = 2, EINTR = 4, EEXIST = 17, EINVAL = 22, ENOLCK = 37, ENOSYS = 38, EOPNOTSUPP = 95 };
 #define AT_FDCWD (-100)
 
 static inline i64 sys1(i64 n, i64 a) {
@@ -94,6 +95,7 @@ __attribute__((noreturn)) static void leave(int code) {
 struct kstat { u64 dev, ino, nlink; u32 mode, uid, gid, pad; u64 rdev; i64 size, blksize, blocks, times[6], unused[3]; };
 _Static_assert(sizeof(struct kstat) == 144, "struct stat is 144 bytes on x86-64 Linux");
 #define IS_DIR(m) (((m) & 0170000) == 0040000)
+#define IS_REG(m) (((m) & 0170000) == 0100000)
 
 /* ---- What the compiler may call (a copy or a clearing it makes of a struct or a loop): no C library has them. Eight
  * bytes at a time; built without loops turned back into calls to themselves (-fno-tree-loop-distribute-patterns). */
@@ -105,18 +107,37 @@ static inline void st64(u8 *p, u64 v) { __builtin_memcpy(p, &v, 8); }
 static inline void st32(u8 *p, u32 v) { __builtin_memcpy(p, &v, 4); }
 static inline void st16(u8 *p, u16 v) { __builtin_memcpy(p, &v, 2); }
 
+#define ONES 0x0101010101010101ull
+
+/* Words, the last one laid over the one before it where n is not a multiple of eight: never a byte past either end,
+ * and no loop of bytes (a copy of under eight, two words of four, or of under four, three bytes, laid over each other). */
 void *memset(void *d, int c, u64 n) {
   u8 *p = d;
-  u64 w = (u8)c * 0x0101010101010101ull;
-  for (; n >= 8; n -= 8, p += 8) st64(p, w);
-  while (n--) *p++ = (u8)c;
+  u64 w = (u8)c * ONES;
+  if (n >= 8) {
+    for (u64 i = 0; i + 8 < n; i += 8) st64(p + i, w);
+    st64(p + n - 8, w);
+  } else if (n >= 4) {
+    st32(p, (u32)w), st32(p + n - 4, (u32)w);
+  } else if (n) {
+    p[0] = p[n / 2] = p[n - 1] = (u8)c;
+  }
   return d;
 }
 void *memcpy(void *d, const void *s, u64 n) {
   u8 *p = d;
   const u8 *q = s;
-  for (; n >= 8; n -= 8, p += 8, q += 8) st64(p, ld64(q));
-  while (n--) *p++ = *q++;
+  if (n >= 8) {
+    u64 last = ld64(q + n - 8); /* (read first: memmove copies forward through this) */
+    for (u64 i = 0; i + 8 < n; i += 8) st64(p + i, ld64(q + i));
+    st64(p + n - 8, last);
+  } else if (n >= 4) {
+    u32 a = ld32(q), b = ld32(q + n - 4);
+    st32(p, a), st32(p + n - 4, b);
+  } else if (n) {
+    u8 a = q[0], b = q[n / 2], c = q[n - 1];
+    p[0] = a, p[n / 2] = b, p[n - 1] = c;
+  }
   return d;
 }
 void *memmove(void *d, const void *s, u64 n) {
@@ -143,10 +164,18 @@ __attribute__((noreturn, cold)) void __stack_chk_fail(void) {
 
 /* ---- Small things. */
 
+/* The high bit of each byte of x that is zero, and of no other (exactly: no carry from one byte into the next). */
+static inline u64 zeros(u64 x) {
+  const u64 low7 = 0x7f7f7f7f7f7f7f7full;
+  return ~(((x & low7) + low7) | x | low7);
+}
+/* A string's length, a word at a time: words read where they are aligned, so none crosses into a page past the
+ * string's (the bytes of the first before the string made not zero). */
 static u64 slen(const char *s) {
-  const char *p = s;
-  while (*p) p++;
-  return (u64)(p - s);
+  const u8 *p = (const u8 *)((u64)s & ~7ul);
+  u64 z = zeros(ld64(p) | ((1ull << (8 * ((u64)s & 7))) - 1));
+  while (!z) p += 8, z = zeros(ld64(p));
+  return (u64)(p - (const u8 *)s) + (u64)(__builtin_ctzll(z) >> 3);
 }
 static int same(const char *a, const char *b) {
   while (*a && *a == *b) a++, b++;
@@ -176,27 +205,28 @@ static u8 *grab(u64 n) {
 }
 #define LEFT (sizeof arena - used)
 
-/* What is written to standard output, gathered and written whole (a page of it at a time). */
-static u8 out[1 << 16];
-static u64 outn;
+/* What is written to standard output: pieces of what is already in memory (a place where the file was read, made a
+ * line there; a score, in `text`), not copied, gathered and written by one writev each IOV of them. */
+struct iovec { const void *base; u64 len; };
+#define IOV 1024
+static struct iovec iov[IOV];
+static u32 niov;
+static u8 text[IOV / 2 * 32]; /* a score each piece but one in two at most, in 32 bytes each */
+static u64 textn;
 static void flush(void) {
-  u64 at = 0;
-  while (at < outn) {
-    i64 r = sys3(SYS_write, 1, (i64)(out + at), (i64)(outn - at));
+  struct iovec *v = iov;
+  for (u32 k = niov; k;) {
+    i64 r = sys3(SYS_writev, 1, (i64)v, k);
     if (r == -EINTR) continue;
     if (r <= 0) leave(1);
-    at += (u64)r;
+    for (; k && (u64)r >= v->len; v++, k--) r -= (i64)v->len;
+    if (k) v->base = (const u8 *)v->base + r, v->len -= (u64)r; /* written in part: the rest */
   }
-  outn = 0;
+  niov = 0, textn = 0;
 }
-static void put(const void *s, u64 n) {
-  const u8 *p = s;
-  while (n) {
-    u64 room = sizeof out - outn, k = n < room ? n : room;
-    __builtin_memcpy(out + outn, p, k);
-    outn += k, p += k, n -= k;
-    if (outn == sizeof out) flush();
-  }
+static void put(const void *p, u64 n) {
+  iov[niov].base = p, iov[niov++].len = n;
+  if (niov == IOV) flush();
 }
 
 __attribute__((noreturn, cold)) static void fail(const char *what, const char *about) {
@@ -214,6 +244,9 @@ __attribute__((noreturn, cold)) static void fail(const char *what, const char *a
 /* ---- The environment: the few names it reads. */
 
 static const char *env_home, *env_xdg, *env_data, *env_exclude;
+#ifdef YOU_TEST_CLOCK /* (a test's build: its time is $YOU_NOW, when set) */
+static const char *env_now;
+#endif
 
 static void read_env(char **envp) {
   for (char **e = envp; *e; e++) {
@@ -224,6 +257,9 @@ static void read_env(char **envp) {
       case 'Y':
         if (!memcmp(s, "YOU_DATA=", 9)) env_data = s + 9;
         else if (!memcmp(s, "YOU_EXCLUDE=", 12)) env_exclude = s + 12;
+#ifdef YOU_TEST_CLOCK
+        else if (!memcmp(s, "YOU_NOW=", 8)) env_now = s + 8;
+#endif
         break;
     }
   }
@@ -235,7 +271,30 @@ static void read_env(char **envp) {
 
 /* `in`, made plain into `o` (room for PLACE_MAX bytes and SLACK) and NUL-terminated; its length, or 0 when it cannot
  * be (too long, or the working directory unknown). */
+static int plain_line; /* whether the place plain made has a line's end in it: 1, 0, or -1, not seen */
 static u32 plain(const char *in, u8 *o) {
+  /* What a shell's $PWD is, at once: absolute, and no / at its end, after another, or before a . or .. that is a part
+   * of it (a part that only begins with a dot, as .config, is as any other): copied whole, then looked through a word
+   * at a time for what would make it otherwise. */
+  u64 len = slen(in);
+  plain_line = -1;
+  if (in[0] == '/' && len < PLACE_MAX) {
+    memcpy(o, in, len);
+    st64(o + len, 0);
+    int odd = len > 1 && o[len - 1] == '/';
+    u64 nl = 0;
+    for (u64 i = 0, carry = 0; i < len && !odd; i += 8) {
+      u64 w = ld64(o + i), sl = zeros(w ^ ('/' * ONES)), dot = zeros(w ^ ('.' * ONES));
+      nl |= zeros(w ^ ('\n' * ONES)) | zeros(w ^ ('\r' * ONES)); /* (and a line's end, which add asks of it) */
+      u64 c = (sl << 8 | carry) & (sl | dot); /* each byte after a /, that is a / or a . */
+      carry = sl >> 56;
+      for (; c && !odd; c &= c - 1) {
+        const u8 *b = o + i + (__builtin_ctzll(c) >> 3);
+        odd = b[0] == '/' || ((b[1] == '/' || !b[1]) || (b[1] == '.' && (b[2] == '/' || !b[2])));
+      }
+    }
+    if (!odd) return plain_line = nl != 0, (u32)len;
+  }
   u64 n = 0;
   if (in[0] != '/') {
     i64 r = sys2(SYS_getcwd, (i64)o, PLACE_MAX);
@@ -302,7 +361,9 @@ static int is_dir(const u8 *p) {
 #define HEAD 20
 #define ONE 256u /* a rank of 1 */
 #define MAXAGE (10000u * ONE)
+#ifndef COMPACT_EVERY /* (a test's build makes it again more often: stress.sh) */
 #define COMPACT_EVERY 16384
+#endif
 #define FORGET_GONE (90u * 86400u)
 
 /* A place's hash, and from it a record's sum. Its bytes eight at a time in two lanes of their own (each word xored in,
@@ -318,12 +379,13 @@ static inline u64 mix(u64 h) {
 static u64 hash(const u8 *p, u32 n) {
   const u64 k1 = 0x9e3779b97f4a7c15ull, k2 = 0xd6e8feb86659fd93ull;
   u64 a = n * k1, b = ~a;
-  for (; n >= 16; n -= 16, p += 16) {
-    a = rotl((a ^ ld64(p)) * k2, 29);
-    b = rotl((b ^ ld64(p + 8)) * k1, 31);
+  for (const u8 *e = p + (n & ~31u); p != e; p += 32) { /* (two turns of 16 at a time: half the counting) */
+    a = rotl((a ^ ld64(p)) * k2, 29), b = rotl((b ^ ld64(p + 8)) * k1, 31);
+    a = rotl((a ^ ld64(p + 16)) * k2, 29), b = rotl((b ^ ld64(p + 24)) * k1, 31);
   }
-  if (n >= 8) a = rotl((a ^ ld64(p)) * k2, 29), p += 8, n -= 8;
-  if (n) b = rotl((b ^ (ld64(p) & (~0ull >> (64 - 8 * n)))) * k1, 31);
+  if (n & 16) a = rotl((a ^ ld64(p)) * k2, 29), b = rotl((b ^ ld64(p + 8)) * k1, 31), p += 16;
+  if (n & 8) a = rotl((a ^ ld64(p)) * k2, 29), p += 8;
+  if (n & 7) b = rotl((b ^ (ld64(p) & (~0ull >> (64 - 8 * (n & 7))))) * k1, 31);
   return mix(a ^ rotl(b, 17));
 }
 static inline u32 sum_of(u64 h, u32 n, u32 rank, u32 last) {
@@ -381,7 +443,8 @@ static struct place *find(const u8 *p, u32 n) {
 /* Read the whole file `fd` holds (from its start, whoever appends meanwhile) and add up its records: of the places
  * `wanted` says (a query's: what its keywords name), or all. What fits in what is left of the arena is read in one
  * call, its size unasked (a file read short is read to its end); a file bigger, into room made for it. */
-static int (*wanted)(const u8 *p, u32 n);
+static int asked(const u8 *p, u32 n);
+static int querying; /* only what a query asks for (asked), not all */
 static void load(int fd) {
   file = arena + used;
   u64 cap = LEFT - SLACK, got = 0;
@@ -407,19 +470,23 @@ static void load(int fd) {
   mask = slots_n - 1;
   const u8 *p = file, *end = file + got;
   while (end - p >= HEAD) {
-    u32 n;
-    if (ld32(p) != TAG || (n = ld16(p + 4)) == 0 || n >= PLACE_MAX || ld16(p + 6) || (u64)(end - p - HEAD) < n) {
-      p++; /* not a whole record here: the next one, wherever it starts */
+    /* Its head in two words: the tag, then its length and the 0 after it as one u32 (so 0, past the longest place,
+     * or a 0 that is not, are each out of 1 to PLACE_MAX - 1); then its rank and when. */
+    u64 h0 = ld64(p), h1 = ld64(p + 8);
+    u32 n = (u32)(h0 >> 32);
+    u64 h;
+    if ((u32)h0 == TAG && n - 1 < PLACE_MAX - 1 && (u64)(end - p - HEAD) >= n &&
+        ld32(p + 16) == sum_of(h = hash(p + HEAD, n), n, (u32)h1, (u32)(h1 >> 32))) {
+      if (!querying || asked(p + HEAD, n)) take(p + HEAD, n, h, (u32)h1, (u32)(h1 >> 32));
+      p += HEAD + n;
       continue;
     }
-    u32 rank = ld32(p + 8), last = ld32(p + 12);
-    u64 h = hash(p + HEAD, n);
-    if (ld32(p + 16) != sum_of(h, n, rank, last)) {
-      p++;
-      continue;
-    }
-    if (!wanted || wanted(p + HEAD, n)) take(p + HEAD, n, h, rank, last);
-    p += HEAD + n;
+    /* Not a whole record here: the next one, wherever it starts, from the next "y" its tag begins with (what is read
+     * past the end is SLACK, zeros). */
+    const u8 *q = p + 1;
+    u64 c;
+    while (q < end && !(c = zeros(ld64(q) ^ ('y' * ONES)))) q += 8;
+    p = q < end ? q + (__builtin_ctzll(c) >> 3) : end;
   }
 }
 
@@ -435,6 +502,10 @@ static void where(void) {
     else if (env_home && *env_home) base = env_home, tail = "/.local/share/you";
     else fail("nowhere to keep places: set YOU_DATA, XDG_DATA_HOME or HOME", 0);
   }
+  if (!*tail) { /* $YOU_DATA, as it is (its length, only when wanted: db_len) */
+    db = (char *)base;
+    return;
+  }
   u64 a = slen(base), b = slen(tail);
   if (a + b >= PLACE_MAX) fail("where it keeps places is too long", 0);
   dbn = a + b;
@@ -442,12 +513,17 @@ static void where(void) {
   __builtin_memcpy(db, base, a);
   __builtin_memcpy(db + a, tail, b + 1);
 }
+static u64 db_len(void) {
+  if (!dbn) dbn = slen(db);
+  return dbn;
+}
 
 /* The directories it is kept in, made where they are not (as mkdir -p). */
 __attribute__((cold)) static void make_dirs(void) {
-  char *d = (char *)grab(dbn + 1);
-  __builtin_memcpy(d, db, dbn + 1);
-  for (u64 i = 1; i < dbn; i++) {
+  u64 dn = db_len();
+  char *d = (char *)grab(dn + 1);
+  __builtin_memcpy(d, db, dn + 1);
+  for (u64 i = 1; i < dn; i++) {
     if (d[i] != '/') continue;
     d[i] = 0;
     i64 r = sys2(SYS_mkdir, (i64)d, 0755);
@@ -456,8 +532,18 @@ __attribute__((cold)) static void make_dirs(void) {
   }
 }
 
+/* Hold `fd` as `how` (flock), waiting as long as it takes; 0, or why not. Where the file system cannot hold a file
+ * (NFS without its lock daemon), it goes on without: a visit is still appended whole, and the file still remade, though
+ * a visit appended while it is remade may be lost. */
+static i64 lock(int fd, int how) {
+  i64 r;
+  while ((r = sys2(SYS_flock, fd, how)) == -EINTR) {}
+  return r == -ENOLCK || r == -ENOSYS || r == -EOPNOTSUPP || r == -EINVAL ? 0 : r;
+}
+
 /* The file, open (made, with what holds it, when `create`) and held as `how` (flock), and as it is now (`st`): the
- * file there, not one renamed over since it was opened. -1 when there is none and none is to be made. */
+ * file there, not one renamed over since it was opened, and a file (not a FIFO, which would hold a learner, or
+ * anything else). -1 when there is none and none is to be made. */
 static int hold(int create, int how, struct kstat *st) {
   for (int tries = 0;; tries++) {
     int fd = (int)sys3(SYS_open, (i64)db, O_RDWR | O_APPEND | O_CLOEXEC | (create ? O_CREAT : 0), 0644);
@@ -467,10 +553,9 @@ static int hold(int create, int how, struct kstat *st) {
     }
     if (fd == -ENOENT) return -1;
     if (fd < 0) fail("cannot open ", db);
-    i64 r;
-    while ((r = sys2(SYS_flock, fd, how)) == -EINTR) {}
-    if (r) fail("cannot lock ", db);
+    if (lock(fd, how)) fail("cannot lock ", db);
     if (sys2(SYS_fstat, fd, (i64)st)) fail("cannot read ", db);
+    if (!IS_REG(st->mode)) fail("not a file: ", db);
     if (st->nlink) return fd;
     sys1(SYS_close, fd); /* remade and renamed over while this waited: the one there now */
   }
@@ -478,14 +563,22 @@ static int hold(int create, int how, struct kstat *st) {
 
 /* ---- Making the file again: each place once, aged, what is gone forgotten; then renamed over the one held alone. */
 
-__attribute__((cold)) static void remake(const struct kstat *st, u32 now) {
-  u8 *z = grab(PLACE_MAX);
+/* What remaking works in, taken before the file is read (which may take all the room there is left). */
+static u8 *rz, *rbuf;
+static char *rtmp;
+__attribute__((cold)) static void ready(void) {
+  rz = grab(PLACE_MAX), rtmp = (char *)grab(db_len() + 5), rbuf = grab(1 << 16);
+}
+
+/* Whether it was made again (else it is as it was). */
+__attribute__((cold)) static int remake(const struct kstat *st, u32 now) {
+  u8 *z = rz;
   u64 total = 0;
   for (u32 i = 0; i < nplaces; i++) {
     struct place *e = &places[i];
     if (e->gone) continue;
     /* A place not been in for 90 days, and no longer there. */
-    if (now - e->last > FORGET_GONE) {
+    if (now > e->last && now - e->last > FORGET_GONE) {
       __builtin_memcpy(z, file + e->at, e->n);
       z[e->n] = 0;
       if (!is_dir(z)) { e->gone = 1; continue; }
@@ -494,20 +587,14 @@ __attribute__((cold)) static void remake(const struct kstat *st, u32 now) {
   }
   /* Past 10000 in all, each cut by the same part, so that they make 9000; under 1, forgotten. */
   u64 keep = (u64)MAXAGE * 9 / 10;
-  /* Beside it, named by this process: no other remakes it while this holds it, and one left by a process stopped
-   * before it renamed is written over by the next of its number. */
-  char *tmp = (char *)grab(dbn + 24);
-  __builtin_memcpy(tmp, db, dbn);
-  u64 n = dbn, pid = (u64)sys1(SYS_getpid, 0);
-  tmp[n++] = '.';
-  char digits[24];
-  int k = 0;
-  do digits[k++] = (char)('0' + pid % 10), pid /= 10; while (pid);
-  while (k) tmp[n++] = digits[--k];
-  tmp[n] = 0;
+  /* Beside it, as <it>.new: only the one holding the file there alone remakes it, so no two write this at once, and
+   * one left by a process stopped before it renamed is written over by the next remaking (one such, at most). */
+  char *tmp = rtmp;
+  __builtin_memcpy(tmp, db, db_len());
+  __builtin_memcpy(tmp + dbn, ".new", 5);
   int w = (int)sys3(SYS_open, (i64)tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, st->mode & 0777);
-  if (w < 0) return; /* left as it is: read as well as before, only longer */
-  u8 *buf = grab(1 << 16);
+  if (w < 0) return 0; /* left as it is: read as well as before, only longer */
+  u8 *buf = rbuf;
   u64 wn = 0;
   int bad = 0;
   for (u32 i = 0; i < nplaces && !bad; i++) {
@@ -529,7 +616,9 @@ __attribute__((cold)) static void remake(const struct kstat *st, u32 now) {
   /* On the disk before it is renamed over what was: a machine stopped after keeps the one or the other, whole. */
   if (!bad && sys1(SYS_fsync, w)) bad = 1;
   sys1(SYS_close, w);
-  if (bad || sys2(SYS_rename, (i64)tmp, (i64)db)) sys1(SYS_unlink, (i64)tmp);
+  if (!bad && !sys2(SYS_rename, (i64)tmp, (i64)db)) return 1;
+  sys1(SYS_unlink, (i64)tmp);
+  return 0;
 }
 
 /* ---- The time: the kernel's own clock_gettime, in the vDSO it maps into a process (AT_SYSINFO_EHDR), with no call
@@ -538,6 +627,13 @@ __attribute__((cold)) static void remake(const struct kstat *st, u32 now) {
 
 static const u8 *vdso_at;
 static u32 now_s(void) {
+#ifdef YOU_TEST_CLOCK
+  if (env_now) {
+    u32 t = 0;
+    for (const char *c = env_now; *c >= '0' && *c <= '9'; c++) t = t * 10 + (u32)(*c - '0');
+    return t;
+  }
+#endif
   __attribute__((uninitialized)) struct { i64 s, ns; } ts;
   const u8 *b = vdso_at;
   if (b && ld32(b) == 0x464c457fu) { /* \x7fELF */
@@ -574,6 +670,16 @@ static u32 now_s(void) {
 
 /* ---- The commands. */
 
+/* Whether `p` (n bytes, SLACK after) has a line's end in it (\n or \r), a word at a time. */
+static int line_in(const u8 *p, u32 n) {
+  for (u32 i = 0; i < n; i += 8) {
+    u64 w = ld64(p + i), c = zeros(w ^ ('\n' * ONES)) | zeros(w ^ ('\r' * ONES));
+    if (n - i < 8) c &= ~0ull >> (64 - 8 * (n - i));
+    if (c) return 1;
+  }
+  return 0;
+}
+
 static int add(int argc, char **argv) {
   /* The records, one after another where the arena begins, each place made plain where its record puts it. */
   u8 *recs = arena + used, *r = recs;
@@ -584,9 +690,7 @@ static int add(int argc, char **argv) {
     u32 n = plain(argv[i], p);
     if (!n) fail("not a place it can keep: ", argv[i]);
     if (excluded(p, n)) continue;
-    int nl = 0;
-    for (u32 j = 0; j < n; j++) nl |= p[j] == '\n' || p[j] == '\r';
-    if (nl) continue; /* a name a line of output could not hold */
+    if (plain_line < 0 ? line_in(p, n) : plain_line) continue; /* a name a line of output could not hold */
     if (!is_dir(p)) fail("not a directory: ", (const char *)p);
     if (!now) now = now_s();
     head(r, n, ONE, now, hash(p, n));
@@ -603,9 +707,8 @@ static int add(int argc, char **argv) {
   if (wr != (i64)len) fail("cannot write ", db); /* in part: passed over when read */
   /* The writer that crosses a mark makes it again, holding it alone. */
   if ((u64)st.size / COMPACT_EVERY != ((u64)st.size + len) / COMPACT_EVERY) {
-    i64 l;
-    while ((l = sys2(SYS_flock, fd, LOCK_EX)) == -EINTR) {}
-    if (!l && !sys2(SYS_fstat, fd, (i64)&st) && st.nlink) {
+    if (!lock(fd, LOCK_EX) && !sys2(SYS_fstat, fd, (i64)&st) && st.nlink) {
+      ready();
       load(fd);
       remake(&st, now);
     }
@@ -634,41 +737,56 @@ static inline int eqi(const u8 *a, const u8 *k, u32 n) {
 }
 
 /* The last place in `h` (n bytes, any case) where `k` (m bytes, small) is, case aside, or -1; both with SLACK after
- * them. The bytes that are k's first, eight at a time (each such byte of a word exactly, made small as it is read),
- * and the rest of k compared at each of them from the right. */
-static i64 rfind(const u8 *h, u32 n, const u8 *k, u32 m) {
+ * them. Eight places at a time, from the right, those where both k's first byte and its last are (each byte taken
+ * with 0x20 set, which a letter is in either case: a byte it would not match may pass, one it would never fails),
+ * then the whole of k compared at each of them, the rightmost first. */
+static const u8 *kw[64];
+static u32 kwn[64], nkw;
+static u64 kwa[64], kwz[64]; /* each keyword's first byte and last, with 0x20 set, in every byte of a word */
+#define UP (0x20 * ONES)
+__attribute__((always_inline)) static inline i64 rfind(const u8 *h, u32 n, u32 kj) {
+  const u8 *k = kw[kj];
+  u32 m = kwn[kj];
   if (m > n) return -1;
-  const u64 low7 = 0x7f7f7f7f7f7f7f7full, b = k[0] * 0x0101010101010101ull;
+  const u64 a = kwa[kj], z = kwz[kj];
   for (i64 i = (i64)(n - m); i >= 0;) {
     i64 s = i > 7 ? i - 7 : 0;
-    u64 x = lower8(ld64(h + s)) ^ b;
-    u64 z = ~(((x & low7) + low7) | x | low7); /* the high bit of each byte that is k's first */
-    z &= ~0ull >> (8 * (7 - (i - s))); /* none past i */
-    while (z) {
-      u32 j = (u32)(63 - __builtin_clzll(z)) >> 3;
-      if (eqi(h + s + j + 1, k + 1, m - 1)) return s + j;
-      z ^= 0x80ull << (8 * j);
+    u64 c = zeros(((ld64(h + s) | UP) ^ a) | ((ld64(h + s + m - 1) | UP) ^ z));
+    c &= ~0ull >> (8 * (7 - (i - s))); /* none past i */
+    while (c) {
+      u32 j = (u32)(63 - __builtin_clzll(c)) >> 3;
+      if (eqi(h + s + j, k, m)) return s + j;
+      c ^= 0x80ull << (8 * j);
     }
     i = s - 1;
   }
   return -1;
 }
 
-static const u8 *kw[64];
-static u32 kwn[64], nkw;
 static const u8 *excl;
 static u32 excln;
 
+/* Where the last / in `p` (n bytes, absolute) is: a word at a time, from the right. */
+static u32 last_slash(const u8 *p, u32 n) {
+  for (i64 i = n; i > 0;) {
+    i64 s = i > 8 ? i - 8 : 0;
+    u64 c = zeros(ld64(p + s) ^ ('/' * ONES)) & (~0ull >> (64 - 8 * (i - s)));
+    if (c) return (u32)s + ((63 - __builtin_clzll(c)) >> 3);
+    i = s;
+  }
+  return 0;
+}
+
 /* Whether the keywords name `p` (a place, n bytes): each in it, in order, case aside, the last within its last part
- * (nothing after it is a /). */
+ * (nothing after it is a /). So the last is looked for only where it would end past the last /: from as far before
+ * it as the keyword is long, less one. */
 static int named(const u8 *p, u32 n) {
-  i64 at = rfind(p, n, kw[nkw - 1], kwn[nkw - 1]);
+  u32 m = kwn[nkw - 1], ls = last_slash(p, n), lo = ls + 1 > m ? ls + 1 - m : 0;
+  i64 at = rfind(p + lo, n - lo, nkw - 1);
   if (at < 0) return 0;
-  for (u32 i = (u32)at + kwn[nkw - 1]; i < n; i++)
-    if (p[i] == '/') return 0;
-  u32 end = (u32)at;
+  u32 end = lo + (u32)at;
   for (u32 j = nkw - 1; j--;) {
-    at = rfind(p, end, kw[j], kwn[j]);
+    i64 at = rfind(p, end, j);
     if (at < 0) return 0;
     end = (u32)at;
   }
@@ -683,57 +801,61 @@ static int asked(const u8 *p, u32 n) {
 
 /* How much a place is yours now: its rank by how recently (x4 within the hour, x2 the day, x1/2 the week, x1/4). */
 static inline u64 score(const struct place *e, u32 now) {
-  u32 age = now - e->last;
+  u32 age = now > e->last ? now - e->last : 0; /* (a clock gone back: now) */
   u64 f = age < 3600 ? 16 : age < 86400 ? 8 : age < 604800 ? 2 : 1;
   return e->rank * f;
 }
 
-__attribute__((cold)) static void put_score(u64 s) {
-  /* As zoxide shows it: the score to a tenth, six wide. In 1/1024ths (a rank's 1/256ths, by four). */
-  u64 t = (s * 10 + 512) / 1024;
-  char b[24];
-  int n = 0;
-  b[n++] = (char)('0' + t % 10), b[n++] = '.', t /= 10;
-  do b[n++] = (char)('0' + t % 10), t /= 10; while (t);
-  while (n < 6) b[n++] = ' ';
-  char o[24];
-  for (int i = 0; i < n; i++) o[i] = b[n - 1 - i];
-  o[n] = ' ';
-  put(o, (u64)n + 1);
-}
-
-/* The candidates (places named) and their scores, in the arena after the file; in order of their scores, least
- * first (a heap, taken from). */
-static u32 *cand;
-static u64 *cscore;
-__attribute__((cold)) static void sift(u32 i, u32 n) {
-  for (;;) {
-    u32 l = 2 * i + 1, m = i;
-    if (l < n && cscore[l] > cscore[m]) m = l;
-    if (l + 1 < n && cscore[l + 1] > cscore[m]) m = l + 1;
-    if (m == i) return;
-    u32 c = cand[i]; cand[i] = cand[m], cand[m] = c;
-    u64 s = cscore[i]; cscore[i] = cscore[m], cscore[m] = s;
-    i = m;
-  }
-}
+/* The candidates (places named), each its score and which place it is in one word, so that the greater is the more
+ * yours, and of two as much, the one first in the file (as it was learnt first): the score (at most 2^50 - 1, past all
+ * a file can add up to) above, the place's index (under PLACES_MAX, 2^14) turned over below. */
+static u64 key[PLACES_MAX];
+#define KEY(score, i) ((score) < (1ull << 50) ? (score) << 14 | (PLACES_MAX - 1 - (i)) : ~0ull << 14 | (PLACES_MAX - 1 - (i)))
+/* In order, least first: by each byte of the keys, the lowest first, each pass keeping the order of the one before;
+ * only the bytes in which the keys differ (where all of them and any of them are not alike: the place's index, and of
+ * the score what its magnitudes reach), each counted, then laid out. */
+static u64 key2[PLACES_MAX];
+static u32 counts[256];
 __attribute__((cold)) static void sort(u32 n) {
-  for (u32 i = n / 2; i--;) sift(i, n);
-  for (u32 k = n; k > 1; k--) {
-    u32 c = cand[0]; cand[0] = cand[k - 1], cand[k - 1] = c;
-    u64 s = cscore[0]; cscore[0] = cscore[k - 1], cscore[k - 1] = s;
-    sift(0, k - 1);
+  u64 any = 0, all = ~0ull;
+  for (u32 i = 0; i < n; i++) any |= key[i], all &= key[i];
+  u64 *a = key, *b = key2;
+  for (u32 sh = 0; sh < 64; sh += 8) {
+    if (!(u8)((any ^ all) >> sh)) continue;
+    memset(counts, 0, sizeof counts);
+    for (u32 i = 0; i < n; i++) counts[(u8)(a[i] >> sh)]++;
+    for (u32 v = 0, at = 0; v < 256; v++) {
+      u32 t = counts[v];
+      counts[v] = at, at += t;
+    }
+    for (u32 i = 0; i < n; i++) b[counts[(u8)(a[i] >> sh)]++] = a[i];
+    u64 *t = a;
+    a = b, b = t;
   }
+  if (a != key) memcpy(key, a, n * 8ul);
 }
 
-/* Candidate `j` written out, when it is still a directory (`z`, room for a place); whether it was. */
-static int give(u32 j, int show, u8 *z) {
-  const struct place *e = &places[cand[j]];
-  __builtin_memcpy(z, file + e->at, e->n);
+/* The candidate `k` written out, its score first when `show`, when it is still a directory; whether it was. The
+ * place as it was read, made a name to be asked of, then a line, where it is: the byte after it is the next record's,
+ * whose head, the file read, is wanted no more (or SLACK, after the last). */
+static int give(u64 k, int show) {
+  const struct place *e = &places[PLACES_MAX - 1 - (k & (PLACES_MAX - 1))];
+  u8 *z = file + e->at;
   z[e->n] = 0;
   if (!is_dir(z)) return 0;
-  if (show) put_score(cscore[j]);
   z[e->n] = '\n';
+  if (show) {
+    /* As zoxide shows it: the score to a tenth, six wide, a tie to even. In 1/1024ths (a rank's 1/256ths, by four). */
+    /* (written from its end back, into the next 32 bytes of `text`) */
+    u64 s = k >> 14, t = (s * 10 + 512) >> 10;
+    if ((s * 10 & 1023) == 512 && t & 1) t--;
+    u8 *e = text + textn + 32, *o = e;
+    *--o = ' ', *--o = (u8)('0' + t % 10), *--o = '.', t /= 10;
+    do *--o = (u8)('0' + t % 10), t /= 10; while (t);
+    while (e - o < 7) *--o = ' ';
+    textn += 32;
+    put(o, (u64)(e - o));
+  }
   put(z, e->n + 1);
   return 1;
 }
@@ -760,34 +882,33 @@ static int query(int argc, char **argv) {
     u8 *k = grab(m);
     __builtin_memcpy(k, argv[i], m);
     lower(k, k, m);
+    kwa[nkw] = (k[0] | 0x20) * ONES, kwz[nkw] = (k[m - 1] | 0x20) * ONES;
     kw[nkw] = k, kwn[nkw++] = m;
   }
   if (exclude) {
     u8 *x = grab(PLACE_MAX);
     excln = plain(exclude, x), excl = x;
   }
-  u8 *z = grab(PLACE_MAX); /* a place written out */
   where();
   /* Only what is named is added up: a place's records are all named, or none. */
-  wanted = asked;
-  int fd = (int)sys3(SYS_open, (i64)db, O_RDONLY | O_CLOEXEC, 0);
+  querying = 1;
+  /* (not waiting on a FIFO there: what is not a file reads as nothing) */
+  int fd = (int)sys3(SYS_open, (i64)db, O_RDONLY | O_NONBLOCK | O_CLOEXEC, 0);
   if (fd >= 0) load(fd); /* (closed as the process ends) */
-  cand = (u32 *)grab(nplaces * 4ul), cscore = (u64 *)grab(nplaces * 8ul);
-  u32 now = now_s(), nc = 0;
-  for (u32 j = 0; j < nplaces; j++) cand[nc] = j, cscore[nc++] = score(&places[j], now);
+  u32 now = now_s(), nc = nplaces;
+  for (u32 j = 0; j < nc; j++) key[j] = KEY(score(&places[j], now), j);
   /* The most yours first, each still a directory: all of them, or the first there (the best found in one pass, and
    * again past one gone). */
   int found = 0;
   if (list) {
     sort(nc);
-    for (u32 j = nc; j--;) found |= give(j, show, z);
+    for (u32 j = nc; j--;) found |= give(key[j], show);
   } else {
     while (nc && !found) {
       u32 best = 0;
-      for (u32 j = 1; j < nc; j++)
-        if (cscore[j] > cscore[best]) best = j;
-      found = give(best, show, z);
-      cand[best] = cand[--nc], cscore[best] = cscore[nc];
+      for (u32 j = 1; j < nc; j++) best = key[j] > key[best] ? j : best;
+      found = give(key[best], show);
+      key[best] = key[--nc];
     }
   }
   flush();
@@ -801,15 +922,16 @@ __attribute__((cold)) static int remove_(int argc, char **argv) {
   __attribute__((uninitialized)) struct kstat st;
   int fd = hold(0, LOCK_EX, &st);
   if (fd < 0) fail("not kept: ", argv[0]);
-  load(fd);
+  ready();
   u8 *p = grab(PLACE_MAX);
+  load(fd);
   for (int i = 0; i < argc; i++) {
     u32 n = plain(argv[i], p);
     struct place *e = n ? find(p, n) : 0;
     if (!e || e->gone) fail("not kept: ", argv[i]);
     e->gone = 1;
   }
-  remake(&st, now_s());
+  if (!remake(&st, now_s())) fail("cannot write ", db);
   return 0;
 }
 
