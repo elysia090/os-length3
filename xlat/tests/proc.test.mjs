@@ -72,6 +72,14 @@ test('flock: one waiting for a lock goes on when its holder ends, not before', {
   assert.ok(r.ms >= 1000, `${r.ms} ms`);
 });
 
+test('flock: two holding a lock shared that both ask for it exclusive each get it in turn, as Linux lets go of the one held first', {skip: !have}, async () => {
+  // (Each takes it shared, waits until the other has it too, then asks for it exclusive: held through the asking,
+  // they would wait on each other for ever.)
+  const r = await run('w() { exec 3> /l; flock -s 3; : > /s$1; while [ ! -e /s$2 ]; do sleep 0.05; done; flock -x 3; echo "ex $1"; flock -u 3; }; ' +
+    'w 1 2 & w 2 1 & wait');
+  assert.deepEqual(r.out.split('\n').filter(Boolean).sort(), ['ex 1', 'ex 2']);
+});
+
 test('a file renamed over or removed while it is held has no link left, as fstat on it says; a directory gone, one fewer for its parent', {skip: !have}, async () => {
   // (What a program that holds a file renamed over learns from fstat: that it holds one no longer there.)
   const r = await run('echo a > /f; echo b > /g; exec 3< /f; stat -L -c %h /proc/self/fd/3; mv /g /f; stat -L -c %h /proc/self/fd/3; ' +

@@ -92,15 +92,20 @@ const flocks = new WeakMap();
 
 /**
  * Lock what `d` opened, exclusive or shared, for `d` (one lock each: taking another changes the one it holds). Whether
- * it was taken: false while another description holds it otherwise, and then nothing changed.
+ * it was taken: false while another description holds it otherwise. A lock changed, shared to exclusive or back, is
+ * let go first, as Linux does (flock_lock_inode), taken or not: so two that hold it shared and both ask for it
+ * exclusive do not wait on each other for ever, and one that waits for it holds nothing meanwhile.
  */
 export function flock(d, exclusive) {
   const key = d.node ?? d.pipe ?? d;
   const held = flocks.get(key) ?? {ex: null, sh: new Set()};
-  const others = (held.ex !== null && held.ex !== d) || (exclusive && [...held.sh].some((x) => x !== d));
-  if (others) return false;
+  if (exclusive ? held.ex === d : held.sh.has(d)) return true;
   held.sh.delete(d);
   if (held.ex === d) held.ex = null;
+  flocks.set(key, held);
+  d.locked = null;
+  const others = held.ex !== null || (exclusive && held.sh.size > 0);
+  if (others) return false;
   if (exclusive) held.ex = d; else held.sh.add(d);
   flocks.set(key, held);
   d.locked = key;
