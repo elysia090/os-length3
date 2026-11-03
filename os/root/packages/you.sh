@@ -4,6 +4,7 @@
 version=1
 inputs="../../tool/you/you.c ../../tool/you/build.sh ../../tool/you/test.sh"
 build() {
+  mkdir -p "$dest/usr/bin"
   sh "$here/../../tool/you/build.sh" "$dest/usr/bin/you"
 }
 check() {
