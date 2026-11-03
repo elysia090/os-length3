@@ -7,16 +7,24 @@
 #   sh build.sh [OUT]          OUT: where the program goes (./you beside this)
 #
 # CC (cc) builds it; CFLAGS are added after its own.
+#
+# Compiled, then linked with no C library: a distribution's GCC (Alpine's) turns the stack protector off for a unit
+# compiled freestanding or told there is no C library (-ffreestanding, -nostdlib), whose __stack_chk_fail it takes to be
+# missing. This one has its own, so it is compiled as any unit is, its own memcpy and the rest not taken for the
+# library's (-fno-builtin), and told there is none only as it is linked.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 out=${1:-$here/you}
-"${CC:-cc}" -std=gnu17 -O2 -ffreestanding -nostdlib -static-pie -fpie \
+o=$(mktemp -d)
+trap 'rm -rf "$o"' EXIT
+"${CC:-cc}" -std=gnu17 -O2 -fno-builtin -fpie \
   -fstack-protector-strong -fstack-clash-protection -ftrivial-auto-var-init=zero \
   -mstack-protector-guard=global -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-tree-loop-distribute-patterns \
   -ffunction-sections -fdata-sections -Wall -Wextra ${CFLAGS:-} \
-  -Wl,-z,relro,-z,now,-z,noexecstack,--gc-sections,--build-id=none \
-  -o "$out" "$here/you.c"
+  -c -o "$o/you.o" "$here/you.c"
+"${CC:-cc}" -nostdlib -static-pie -Wl,-z,relro,-z,now,-z,noexecstack,--gc-sections,--build-id=none -o "$out" "$o/you.o"
 bad() { echo "you: $*" >&2; exit 1; }
+objdump -d "$out" | grep -q 'call.*<__stack_chk_fail>' || bad "no stack protector"
 h=$(readelf -hlrdsW "$out")
 echo "$h" | grep -q 'Type: *DYN' || bad "not position-independent"
 echo "$h" | grep -q 'There are no relocations in this file' || bad "something to relocate"
