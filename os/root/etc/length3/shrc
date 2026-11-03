@@ -21,9 +21,9 @@ PS1=$'\033]133;D;''$?'$'\a''$__l3_here $ '
 alias ll='ls -l'
 
 # What programs keep of a person's work from one Prompt to the next. /root is made new for each Prompt, and its
-# .cache is the repo's own, kept between them (and freed when room is wanted): so what zoxide learns of the places
-# you go, the .envrc files direnv was told to trust, where nano left each file and what less was asked to find are
-# kept there.
+# .cache is the repo's own, kept between them (and freed when room is wanted): so what you learns of the places you
+# go, the .envrc files direnv was told to trust, where nano left each file and what less was asked to find are kept
+# there.
 export XDG_DATA_HOME="${XDG_DATA_HOME:-/root/.cache/share}" XDG_STATE_HOME="${XDG_STATE_HOME:-/root/.cache/state}"
 # (made here: nano makes only the last directory of where it keeps them, and says so at every start otherwise)
 [ -d "$XDG_DATA_HOME" ] && [ -d "$XDG_STATE_HOME" ] || mkdir -p "$XDG_DATA_HOME" "$XDG_STATE_HOME" 2>/dev/null
@@ -32,15 +32,12 @@ export XDG_DATA_HOME="${XDG_DATA_HOME:-/root/.cache/share}" XDG_STATE_HOME="${XD
 export RIPGREP_CONFIG_PATH=/etc/ripgreprc TEALDEER_CONFIG_DIR=/etc/tealdeer FZF_DEFAULT_COMMAND='fd --type f'
 [ "$LENGTH3_LANG" != ja ] || export LANGUAGE=ja
 
-# Moving to a directory: zoxide learns it (z goes back to it by a part of its name: `z web` for /root/web-42/src),
-# and direnv loads its .envrc and unloads the one left, where one has been allowed (direnv allow). In ash, which has
-# no hook run before each prompt, both follow cd and z. Neither keeps cd waiting: zoxide learns on its own time, and
-# direnv is asked only where it has something to do (an .envrc here or above, or one loaded to be left), which the
-# shell finds out itself, as it does whether git has a repository here: a program started for it is one more each
-# time, and in the browser a costly one.
-. /usr/share/zoxide/init.sh
-# (Without a hook, zoxide's setup leaves out the check its z calls first: there is nothing for it to check.)
-__zoxide_doctor() { :; }
+# Moving to a directory: you learns it (z goes back to it by a part of its name: `z web` for /root/web-42/src), and
+# direnv loads its .envrc and unloads the one left, where one has been allowed (direnv allow). In ash, which has no
+# hook run before each prompt, both follow cd and z. Neither keeps cd waiting: you learns a place in five calls and
+# reads nothing (/usr/bin/you, made for this: tool/you), and direnv is asked only where it has something to do (an
+# .envrc here or above, or one loaded to be left), which the shell finds out itself, as it does whether git has a
+# repository here: a program started for it is one more each time, and in the browser a costly one.
 # Whether NAME is in this folder or one above it, up to STOP (else /).
 __l3_above() {
   __l3_d=$PWD
@@ -51,24 +48,30 @@ __l3_above() {
   done
 }
 __l3_direnv() { if [ -n "${DIRENV_DIR:-}" ] || __l3_above .envrc; then eval "$(command direnv export bash)"; fi; }
-# (Two zoxides at once, a place learnt while z looks one up, each keep what the other did: the root's zoxide holds
-# what it keeps while it reads and writes it, packages/zoxide.sh.)
 __l3_moved() {
   __l3_where
-  (zoxide add -- "$PWD" > /dev/null 2>&1 &)
+  command you add -- "$PWD" 2> /dev/null
   __l3_direnv
 }
 cd() { command cd "$@" && __l3_moved; }
-z() { __zoxide_z "$@" && __l3_moved; }
-zi() { __zoxide_zi "$@" && __l3_moved; }
+# z goes home with nothing, back with -, into a directory named as it is, else to the place most yours its words name
+# (you query, not the one you are in); zi, to one picked from all of them (fzf), the most yours first.
+z() {
+  if [ $# -eq 0 ]; then cd ~
+  elif [ $# -eq 1 ] && [ "$1" = - ]; then [ -n "${OLDPWD:-}" ] && cd "$OLDPWD"
+  elif [ $# -eq 1 ] && [ -d "$1" ]; then cd "$1"
+  else __l3_to=$(command you query --exclude "$PWD" -- "$@") && cd "$__l3_to"
+  fi
+}
+zi() { __l3_to=$(command you query --list -- "$@" | command fzf --height=45% --layout=reverse --no-sort --select-1 --exit-0) && cd "$__l3_to"; }
 direnv() {
   command direnv "$@"
   set -- $? "${1:-}"
   case $2 in allow|permit|grant|deny|revoke|disallow|block|reload) __l3_direnv ;; esac
   return "$1"
 }
-# Started in its repo: what direnv was told to trust there is loaded. zoxide learns the repo when you come back to it,
-# not as each Prompt starts (a process of its own, every start, for a place you are already in).
+# Started in its repo: what direnv was told to trust there is loaded. you learns the repo when you come back to it, not
+# as each Prompt starts (a process of its own, every start, for a place you are already in).
 __l3_direnv
 
 # The repo's history is the Remote's: git has nothing to say inside it, so it says where to go (unless a repository

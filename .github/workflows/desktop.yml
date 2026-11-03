@@ -6,7 +6,7 @@ on:
   # A change is tested once: in its pull request, on what merging it would make (refs/pull/N/merge), so
   # main is not tested again when it lands. A branch without a pull request runs by hand.
   pull_request:
-    paths: ['os/**', 'xlat/**', '.github/workflows/desktop.yml']
+    paths: ['os/**', 'xlat/**', 'tool/**', '.github/workflows/desktop.yml']
   workflow_dispatch:
 
 # Nothing here writes: the token reads the repository and nothing else. Every action is pinned
@@ -372,7 +372,7 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=root-${{ hashFiles('os/root/**', '.github/actions/root-packages/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=root-${{ hashFiles('os/root/**', 'tool/you/**', '.github/actions/root-packages/**') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -450,9 +450,9 @@ jobs:
           # once allowed, is what the environment becomes there.
           echo 'export MADE=here' > "$w/p/src/.envrc"
           prompt() { inside "HOME=/tmp/home XDG_DATA_HOME=/tmp/home/share XDG_STATE_HOME=/tmp/home/state TERM=dumb ENV=/etc/length3/shrc sh -ic '$1' 2>/dev/null"; }
-          # (zoxide learns a place on its own time, so cd is not kept waiting: it is given up to five seconds, while
-          # the place left is learnt too and z's own lookups run.)
-          says "prompt 'cd /tmp/p/src && cd / && for i in 1 2 3 4 5 6 7 8 9 10; do zoxide query src > /dev/null 2>&1 && break; sleep 0.5; done; z src && pwd'" /tmp/p/src
+          # (Learnt as cd goes there: z just after it finds it. z with a directory goes into it, and - goes back.)
+          says "prompt 'cd /tmp/p/src && cd / && z src && pwd'" /tmp/p/src
+          says "prompt 'cd /tmp/p && z src && z - && pwd'" /tmp/p
           says "prompt 'cd /tmp/p/src && direnv allow . && echo \$MADE'" here
           # clear clears the app's Prompt, as the Prompt is told (ncurses' clear, asking terminfo of a dumb terminal, says nothing).
           says "prompt clear | od -An -c | tr -d ' \\n'" '033[H033[2J'

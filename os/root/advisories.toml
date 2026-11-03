@@ -11,7 +11,7 @@
 [[IgnoredVulns]]
 id = "RUSTSEC-2025-0141"
 ignoreUntil = 2027-02-01
-reason = "bincode is unmaintained (bat, delta, zoxide: their own caches); no vulnerability is known in it"
+reason = "bincode is unmaintained (bat, delta: their own caches); no vulnerability is known in it"
 [[IgnoredVulns]]
 id = "RUSTSEC-2024-0449"
 ignoreUntil = 2027-02-01

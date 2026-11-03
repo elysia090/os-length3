@@ -188,7 +188,6 @@ NEWEST = {
     'FD': lambda: crate('fd-find'),
     'BAT': lambda: crate('bat'),
     'DELTA': lambda: crate('git-delta'),
-    'ZOXIDE': lambda: crate('zoxide'),
     'JUST': lambda: crate('just'),
     'HYPERFINE': lambda: crate('hyperfine'),
     'TEALDEER': lambda: crate('tealdeer'),

@@ -12,11 +12,10 @@ import {entriesOf} from '../../../xlat/runtime/table.mjs';
 import {keepTranslation, originOf, threadsApart, translationKept, type Index, type L3} from './userland.ts';
 
 /**
- * What runs at a Prompt and the root has as a program of its own (not BusyBox's, which is hot): first what its shell
- * runs itself as a person moves (zoxide, at every cd: translated as that cd's place is learnt, it held the Prompt's
- * kernel, and the line after the cd, a third of a second), then what anyone reaches for.
+ * What anyone reaches for at a Prompt and the root has as a program of its own (not BusyBox's, which is hot; nor what
+ * the shell runs at every cd, you, whose few pages are translated in a millisecond).
  */
-const REACHED = ['/usr/bin/zoxide', '/usr/bin/grep', '/usr/bin/rg', '/usr/bin/fd', '/usr/bin/jq', '/usr/bin/make', '/usr/bin/curl', '/usr/bin/tar'];
+const REACHED = ['/usr/bin/grep', '/usr/bin/rg', '/usr/bin/fd', '/usr/bin/jq', '/usr/bin/make', '/usr/bin/curl', '/usr/bin/tar'];
 /**
  * The root's programs to translate ahead for a Prompt, the most worth it first: what anyone reaches for. The hot
  * programs (translated in the release: BusyBox, l3, git) are not among them.
