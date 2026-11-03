@@ -8,7 +8,7 @@ import {have, shell} from './busybox.mjs';
 // handlers: each as BusyBox shows it, beside the same script on Linux
 // (the outputs here are what Linux prints).
 
-const APPLETS = ['sh', 'cat', 'sleep', 'dd', 'wc', 'kill', 'yes', 'head', 'sha256sum', 'echo', 'true', 'flock'];
+const APPLETS = ['sh', 'cat', 'sleep', 'dd', 'wc', 'kill', 'yes', 'head', 'sha256sum', 'echo', 'true', 'flock', 'stat', 'mv', 'rm', 'mkdir', 'rmdir', 'find', 'ls'];
 
 /** Run `script` to its end, waiting out its sleeps; {status, out, ms}. */
 async function run(script) {
@@ -70,6 +70,20 @@ test('flock: one waiting for a lock goes on when its holder ends, not before', {
   const r = await run('(flock /l sh -c "sleep 1; echo first") & sleep 0.3; flock /l echo second; wait');
   assert.equal(r.out, 'first\nsecond\n');
   assert.ok(r.ms >= 1000, `${r.ms} ms`);
+});
+
+test('a file renamed over or removed while it is held has no link left, as fstat on it says; a directory gone, one fewer for its parent', {skip: !have}, async () => {
+  // (What a program that holds a file renamed over learns from fstat: that it holds one no longer there.)
+  const r = await run('echo a > /f; echo b > /g; exec 3< /f; stat -L -c %h /proc/self/fd/3; mv /g /f; stat -L -c %h /proc/self/fd/3; ' +
+    'exec 4< /f; rm /f; stat -L -c %h /proc/self/fd/4; mkdir -p /p/d; stat -c %h /p; rmdir /p/d; stat -c %h /p');
+  assert.equal(r.out, '1\n0\n0\n3\n2\n');
+});
+
+test('a directory read while what is in it moves away gives each of its entries once (find -exec mv, rm -r)', {skip: !have}, async () => {
+  // (200 of them: more than one read of a directory gives, so it is read again after some have gone.)
+  const r = await run('mkdir -p /x /y; i=0; while [ $i -lt 200 ]; do mkdir /x/d$i; i=$((i + 1)); done; ' +
+    'find /x -mindepth 1 -maxdepth 1 -exec mv {} /y \\; ; ls /x | wc -l; ls /y | wc -l');
+  assert.equal(r.out, '0\n200\n');
 });
 
 test('SIGPIPE ends a writer whose reader has gone, quietly, as 141', {skip: !have}, async () => {

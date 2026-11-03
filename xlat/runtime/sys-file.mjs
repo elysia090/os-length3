@@ -119,6 +119,13 @@ function descriptorPath(p, name) {
   return m ? `/proc/${p.pid}/fd/${m[1]}` : name;
 }
 
+/** What a stat of `name` that follows links stats: a descriptor's /proc name (Linux's links to what is open there), what
+ * that descriptor has open, a file renamed over or removed included; else the node there. */
+function statNode(p, name, dirfd, follow) {
+  const d = follow && name.startsWith('/') ? procDescriptor(p.kernel, descriptorPath(p, name)) : null;
+  return d ? describe(d) : p.kernel.vfs.lookup(name, base(p, dirfd), follow);
+}
+
 function openAt(p, dirfd, address, flags, mode) {
   const f = N(flags), name = path(p, address);
   // A descriptor opened by its /proc name opens what it has open: the same pipe or terminal, a file afresh.
@@ -392,7 +399,14 @@ function remove(p, dirfd, address, directory) {
     fail(E.ISDIR);
   }
   r.parent.entries.delete(r.name);
+  unlinked(r.parent, r.node);
   return 0;
+}
+
+/** `node`'s name in `dir` gone: one link fewer (none, for a directory, and one fewer for its parent's ..), as fstat
+ * on what a process still holds open of it says. */
+function unlinked(dir, node) {
+  if (node.isDir) { node.nlink = 0; dir.nlink--; } else if (node.nlink > 0) node.nlink--;
 }
 
 function makeDir(p, dirfd, address, mode) {
@@ -410,8 +424,11 @@ function rename(p, olddir, oldaddr, newdir, newaddr) {
   const to = vfs.resolve(path(p, newaddr), base(p, newdir), false);
   if (to.node?.isDir && !from.node.isDir) fail(E.ISDIR);
   if (to.node?.isDir && to.node.entries.size) fail(E.NOTEMPTY);
+  if (to.node === from.node) return 0; /* the same file by two names: nothing changes */
   from.parent.entries.delete(from.name);
+  if (to.node) unlinked(to.parent, to.node);
   to.parent.entries.set(to.name, from.node);
+  if (from.node.isDir && from.parent !== to.parent) { from.parent.nlink--; to.parent.nlink++; }
   return 0;
 }
 
@@ -426,13 +443,19 @@ function readlink(p, dirfd, address, buf, size) {
 function getdents(p, fd, buf, count) {
   const d = descriptor(p, fd);
   if (d.kind !== 'dir') fail(E.NOTDIR);
-  // Linux leaves the order unspecified; name order keeps listings readable.
-  const names = ['.', '..', ...[...d.node.entries.keys()].sort()];
+  // Linux leaves the order unspecified; name order keeps listings readable. Where it goes on from is the name it gave
+  // last (d.after), not how many it gave, so one removed or added meanwhile moves none of the others: each there all
+  // along is given once (rm -r removes what it reads as it reads).
+  const names = [...d.node.entries.keys()].sort();
+  let i = 0;
+  if (d.after !== undefined) for (let hi = names.length; i < hi;) { const m = (i + hi) >> 1; if (names[m] <= d.after) i = m + 1; else hi = m; }
   let at = N(buf);
   const end = at + N(count);
-  while (d.offset < names.length) {
-    const name = names[d.offset];
-    const node = name === '.' || name === '..' ? d.node : d.node.entries.get(name);
+  for (;;) {
+    const dot = d.offset < 2;
+    if (!dot && i >= names.length) break;
+    const name = dot ? (d.offset ? '..' : '.') : names[i];
+    const node = dot ? d.node : d.node.entries.get(name);
     const bytes = enc.encode(name);
     const reclen = (19 + bytes.length + 1 + 7) & ~7;
     if (at + reclen > end) break;
@@ -445,6 +468,7 @@ function getdents(p, fd, buf, count) {
     p.bytes.fill(0, at + 19 + bytes.length, at + reclen);
     at += reclen;
     d.offset++;
+    if (!dot) d.after = names[i++];
   }
   return at - N(buf);
 }
@@ -829,7 +853,7 @@ export const FILE_CALLS = {
   1(fd, buf, len) { return writeFrom(this, descriptor(this, fd), N(buf), N(len)); },
   2(name, flags, mode) { return openAt(this, BigInt(AT_FDCWD), name, flags, mode); },
   3(fd) { if (!this.fds.close(N(fd))) fail(E.BADF); return 0; },
-  4(name, st) { return writeStat(this, st, this.kernel.vfs.lookup(path(this, name), this.cwd)); },
+  4(name, st) { return writeStat(this, st, statNode(this, path(this, name), BigInt(AT_FDCWD), true)); },
   5(fd, st) { return writeStat(this, st, describe(descriptor(this, fd))); },
   6(name, st) { return writeStat(this, st, this.kernel.vfs.lookup(path(this, name), this.cwd, false)); },
   7(fds, count, timeout) { return poll(this, fds, count, Number(BigInt.asIntN(32, timeout))); },
@@ -837,7 +861,7 @@ export const FILE_CALLS = {
   8(fd, offset, whence) {
     const d = descriptor(this, fd);
     if (d.kind === 'pipe-r' || d.kind === 'pipe-w' || d.kind === 'pipe-rw' || d.kind === 'socket' || d.kind === 'console') fail(E.SPIPE);
-    if (d.kind === 'dir') { if (N(offset) === 0 && N(whence) === 0) { d.offset = 0; return 0; } fail(E.INVAL); }
+    if (d.kind === 'dir') { if (N(offset) === 0 && N(whence) === 0) { d.offset = 0; d.after = undefined; return 0; } fail(E.INVAL); }
     const start = [0, d.offset, d.node.size ?? 0][N(whence)];
     if (start === undefined || start + N(offset) < 0) fail(E.INVAL);
     d.offset = start + N(offset);
@@ -1028,7 +1052,7 @@ export const FILE_CALLS = {
   },
   262(dirfd, name, st, flags) {
     if ((N(flags) & AT.EMPTY_PATH) && !this.bytes[N(name)]) return writeStat(this, st, describe(descriptor(this, dirfd)));
-    return writeStat(this, st, this.kernel.vfs.lookup(path(this, name), base(this, dirfd), !(N(flags) & AT.SYMLINK_NOFOLLOW)));
+    return writeStat(this, st, statNode(this, path(this, name), dirfd, !(N(flags) & AT.SYMLINK_NOFOLLOW)));
   },
   263(dirfd, name, flags) { return remove(this, dirfd, name, (N(flags) & AT.REMOVEDIR) !== 0); },
   264(od, oa, nd, na) { return rename(this, od, oa, nd, na); },
