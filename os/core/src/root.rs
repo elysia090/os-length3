@@ -51,12 +51,12 @@ pub struct Release {
 /// The releases l3 trusts, newest first. Nothing else is installed.
 pub const RELEASES: &[Release] = &[Release {
     name: "OS Length3 Linux",
-    version: "0.6.2",
-    sha256: "04568ffeea75d8b6b98c07509aef361232decea9f3e687317d9f2c321823f9c2",
-    bytes: 63_325_886,
-    file: "os-length3-linux-0.6.2-x86_64-04568ffeea75d8b6b98c07509aef361232decea9f3e687317d9f2c321823f9c2.tar.zst",
-    tag: "os-length3-linux-v0.6.2",
-    web: "f9ad75b56a15437cb1b654d6be3d6fdbb58c8d0079afac2db77450495fe9a9fb",
+    version: "0.6.4",
+    sha256: "aa5b0dc6a71f924da5b83e5f11ca93262d8bcd6bb19350a4b2acd746e14132e7",
+    bytes: 114_940_014,
+    file: "os-length3-linux-0.6.4-x86_64-aa5b0dc6a71f924da5b83e5f11ca93262d8bcd6bb19350a4b2acd746e14132e7.tar.zst",
+    tag: "os-length3-linux-v0.6.4",
+    web: "dc174e9900a75a75eed65699adafb1b3e98c2047a136f1073daa21723e453c5d",
 }];
 
 /// Another distribution's root, as its makers publish it (a .tar.gz of the
