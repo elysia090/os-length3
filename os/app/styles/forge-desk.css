@@ -32,16 +32,27 @@
 .desk-none { display: grid; place-items: center; height: 100%; color: var(--sub); }
 /* The Prompt's box: what it printed, at most 24 lines (scrolled within), at least 8; under it the line one types at,
    its pill saying what the line does. Its name is said over the box, as any box's is. */
-.desk-term { display: grid; align-content: start; gap: var(--s1); padding: var(--s4); min-height: calc(8 * 1.6em + 2 * var(--s4)); }
+/* Its lines start where a file's code does (the sheet's step, two figures of line number, the step after them), so the
+   desk reads down one edge; its prompts are the shell's, green and heavier, as a terminal colours them; the line one
+   types at follows what was printed with nothing between, the box at least 8 lines tall with the room under them. */
+.desk-term { display: grid; align-content: start; gap: 0; padding: var(--s4) var(--s4) var(--s4) calc(2 * var(--s4) + 1.2 * var(--t-code));
+  min-height: calc(8 * 1.6 * var(--t-code) + 2 * var(--s4)); }
+.desk-term .term { margin: 0; gap: 0; }
+.desk-term .term > p:empty, .desk-term .term-activity:empty { display: none; }
+.desk-term .term-out > .ps { color: var(--add); font-weight: 600; }
 .desk-term .term-box { display: block; padding: 0; min-height: 0; }
 .desk-term .term-head { display: none; }
-.desk-term .term-out { font: var(--t-code)/1.6 var(--mono); max-height: calc(24 * 1.6em); overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain; }
+.desk-term .term-out { margin: 0; font: var(--t-code)/1.6 var(--mono); max-height: calc(24 * 1.6em); overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain; }
 .desk-term > .dock { position: static; max-width: none; margin: 0; }
 .desk-term > .dock::after { display: none; }
 .desk-after { margin-left: 1ch; }
 /* The line one types at is the Prompt's own last line: no field round it, the pill its prompt (garden $), what is
    written after it in the Prompt's letters; the prompt line the shell waits at is not said again above it. */
 .desk-term .term-out > .ps.waits:last-child { display: none; }
-.desk-term > .dock .prompt { background: none; border: 0; box-shadow: none; padding: 0; }
+.desk-term > .dock .prompt { background: none; border: 0; box-shadow: none; padding: 0; gap: 0; align-items: baseline; min-height: 0; }
+.desk-term > .dock .prompt-chip[data-mode='run'] { height: auto; min-height: 0; padding: 0; margin: 0 1ch 0 0; border-radius: 0; background: none; box-shadow: none;
+  text-shadow: none; color: var(--add); font: 600 var(--t-code)/1.6 var(--mono); }
+.desk-term > .dock .prompt-chip[data-mode='run'] > .lamp { display: none; }
+.desk-term > .dock .prompt-chip[data-mode='run'] > .prompt-ps { color: inherit; height: auto; }
 .desk-term > .dock .prompt-in { font: var(--t-code)/1.6 var(--mono); }
 .desk-term > .dock :is(.prompt-caps, .prompt-run) { display: none; }

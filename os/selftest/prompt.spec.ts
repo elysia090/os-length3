@@ -66,7 +66,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(app.forge.promptBox).toBeFocused();
   });
 
-  test('the box\'s line is the terminal\'s: its pill says the prompt line the shell waits at, said once', async ({app}) => {
+  test('the box\'s line is the terminal\'s: it starts with the prompt line the shell waits at, said once, green as the shell\'s', async ({app}) => {
     const waits = app.main.locator('.desk-term .prompt-chip');
     await expect(waits).toHaveText('hello $');
     // The output's own last line, the same words, is not shown then.
@@ -75,7 +75,10 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     // The line run is a prompt line among the output (in the green), and the box's line waits at the next.
     await expect(app.forge.prompt.locator('.term-out > .ps:not(.waits)').first()).toHaveText('hello $ ');
     await expect(waits).toHaveText('hello $');
-    await expect(waits).toHaveCSS('border-radius', /^(9999|999)px$/);
+    // No pill: the prompt as a terminal shows it, in the green of the prompt lines above it.
+    await expect(waits).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    const green = await app.forge.prompt.locator('.term-out > .ps:not(.waits)').first().evaluate((e) => getComputedStyle(e).color);
+    await expect(waits).toHaveCSS('color', green);
   });
 
   test('Run chosen again after another of the box\'s deeds, a line sent runs in the Prompt\'s box: what it prints is seen', async ({app}) => {
