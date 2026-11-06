@@ -1941,20 +1941,29 @@ pointer, a chevron at the row's end says it goes there.
 ### Forge
 
 The center is the repo's desk. What is open lies on a plane on dots, each box
-as wide as 80 columns of code, inked round with a hard shadow, its name
+as wide as 80 columns of its code (14 px, a step larger than elsewhere: a box
+is read at its own size), inked round with a hard shadow, its name
 outside its top-left corner (its folder quiet before it) and its close a dot
 outside its bottom-right. The Prompt is the first box: what it printed, and
 under it the line one types at, its pill the prompt (`garden $`) and what the
 line does (Run, Issue, TODO, Agent; Alt and a number, or pressed). Under Run,
 Enter runs the line as a terminal's does, Shift+Enter is a new line. Each
 file opened is a box of its own beside it, written in where it lies (there
-is no Edit to choose: the file is typed into). One box is in hand: the camera
-works close to it, the box in the middle across, under the top, and moves as
-a scroll does, so the keyboard going into a box, or something brought into
-view, takes the camera there and that box into hand. Escape steps back to
-the whole desk, at most half its size; Enter, or a box pressed, comes close
-again. Alt and an arrow hand over to the next box that way; Alt, Shift and
-an arrow carry the box in hand a slot, the others stepping over. A file
+is no Edit to choose: the file is typed into). One box is in hand. The camera
+has two distances. At the base every box is at its own size, the box in hand
+in the middle across, under the top, and the camera moves as a scroll does, so
+the keyboard going into a box, or something brought into view, takes the
+camera there and that box into hand. Close (Ctrl and +, or a pinch) it is as
+near as the box still fits the face across (an eighth to a quarter nearer), for
+work on a few lines: where the work is in the box is kept
+in sight as it goes, a line written past the face's edge, the caret taken down,
+the box growing under it, the camera going along only when the work leaves the
+middle; the wheel moves it along the box. Ctrl and -, Ctrl and 0, a pinch out
+or Escape go back to the base, and nothing goes further back than the base:
+what is not in sight there is a scroll away. At the base, Escape lets go of a
+box's text, the box still in hand. Alt and an arrow hand over to the next box
+that way, as near as the camera was; Alt, Shift and an arrow carry the box in
+hand a slot, the others stepping over, gliding there. A file
 gone goes from the desk; moved, its box is the file where it went. Each
 repo keeps its own desk, as it was left, from one visit to the next; a desk
 never worked at begins with the Prompt and the README beside it.
@@ -2227,8 +2236,9 @@ What the Agent does is played on the desk as a person would do it, after it
 and at a person's pace, never as a screen of its own. It works at its own pace
 behind (its commands in a Prompt of its own); what is played is the part a
 person wants to see, each box a lane of its own and the lanes going side by
-side, the camera over the boxes at work, so the work is seen going on in
-several places at once. Reads alone are not played; a long piece is typed in
+side, the camera at the base over the boxes at work (all of them when they fit,
+else the one last at work; never stepped back to fit more), so the work is
+seen going on in several places at once. Reads alone are not played; a long piece is typed in
 part, the rest coming at once as a paste does; what a command printed is
 shown only once what came before it in the other boxes has been played. The Agent is Pi's loop,
 thin: read, run, edit and write, each by the core's rules, its last words what

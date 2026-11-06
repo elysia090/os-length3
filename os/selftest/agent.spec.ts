@@ -45,7 +45,7 @@ test('a key given in Runtime opens the box\'s Agent: asked, it answers in the pa
   await app.rail.go('forge');
   const box = app.forge.promptBox, pill = app.main.getByRole('button', {name: /^Input box action/});
   await box.focus();
-  await box.press('Alt+5');
+  await box.press('Alt+4');
   await expect(pill).toHaveAccessibleName('Input box action: Ask');
   await expect(pill.locator('.prompt-mode')).toHaveText('Agent@hello');
   await box.fill('How is it built?');
@@ -67,7 +67,8 @@ test('a key given in Runtime opens the box\'s Agent: asked, it answers in the pa
   await expect(pill).toHaveAccessibleName('Input box action: Run');
   await pill.click();
   await expect(app.main.getByRole('menuitemradio', {name: /Ask Agent/})).toHaveCount(0);
-  await expect(app.main.getByRole('menuitemradio')).toHaveCount(4);
+  // Run, Issue, TODO: on the desk the files are written in where they lie, so the box has no Edit.
+  await expect(app.main.getByRole('menuitemradio')).toHaveCount(3);
 });
 
 test('signed in with a passkey, the key given is sealed by it: kept as given nowhere, opened once a session when the Agent is asked', async ({app}, info) => {
@@ -90,7 +91,7 @@ test('signed in with a passkey, the key given is sealed by it: kept as given now
   await app.rail.go('forge');
   const box = app.forge.promptBox;
   await box.focus();
-  await box.press('Alt+5');
+  await box.press('Alt+4');
   await box.fill('Still there?');
   await box.press('Control+Enter');
   const flow = app.page.locator('.work.bench:not([hidden]) .pane-rows');
@@ -119,7 +120,7 @@ test('handed an issue\'s work, the box\'s Agent reads and writes its files: the 
   await app.rail.go('forge');
   const box = app.forge.promptBox;
   await box.focus();
-  await box.press('Alt+5');
+  await box.press('Alt+4');
   await box.fill('Say in the README how it is built.');
   await box.press('Control+Enter');
   const flow = app.page.locator('.work.bench:not([hidden]) .pane-rows');

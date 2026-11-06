@@ -35,6 +35,9 @@ export interface Bench {
 
 let benches = 0;
 
+/** Whether `el` is laid out on the page (not in a page put away, nor out of the document). */
+const onScreen = (el: HTMLElement) => el.isConnected && el.getClientRects().length > 0;
+
 /** Each repo's rows, one for every bench: the pane on screen holds them (only one bench is on screen at a time). */
 const repoRows = new Map<string, Rows>();
 function rowsOf(repo: string): Rows {
@@ -174,12 +177,17 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const none = h('div', {class: 'pane-rows'});
   // The pane's room: the reference's heads (Issue, diff, Output, Agent) over the rows.
   const room = h('div', {class: 'pane-room'}, none);
+  /** The repo whose rows this pane holds. */
+  let rowsOfRepo: string | null = null;
   /** The rows of `name` (none: nothing) in this pane, taken from another page's if they were there. */
   const showRows = (name: string | null) => {
+    rowsOfRepo = name;
     const r = name ? rowsOf(name) : null;
     if (r) r.open = openRun;
     const next = r?.element ?? none;
     if (next.parentElement === room) return;
+    // Never taken from the pane on screen by a page out of sight (one drawing itself late, after it was left).
+    if (r && onScreen(r.element) && !onScreen(work)) return;
     room.querySelector(':scope > .pane-rows')?.remove();
     room.append(next);
     r?.shown();
@@ -225,6 +233,8 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     else if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.isComposing) editorKey(event, box, pane, reference);
   });
 
+  // Come on screen (its page come to, the pan to it begun), the pane takes its rows back from the page left.
+  new ResizeObserver(() => { if (onScreen(room)) showRows(rowsOfRepo); }).observe(room);
   const setRepo = (name: string | null) => {
     showRows(name);
     if (name === box.repo && name) { box.attach(); return; }
@@ -234,7 +244,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   setRepo(null);
   // A page taken off the screen loses its focus without a focusout, so the Prompt may still be up.
   const settle = () => {
-    showRows(box.repo);
+    showRows(rowsOfRepo ?? box.repo);
     box.attach();
     box.room();
     reference.resume();

@@ -77,6 +77,17 @@ export class Output {
   /** How long until what was printed last has all come in, in ms: what comes after it (the prompt line) waits that long. */
   settlesIn(): number { return Math.max(0, this.#settles - performance.now()); }
 
+  /** `line`, the last line as it stands (a prompt line put there for the shell, not by it), taken back; false when the
+   * last line is something else now. */
+  takeBack(line: string): boolean {
+    if (!line || this.#lastLine !== line || !this.#text.endsWith(line)) return false;
+    this.#text = this.#text.slice(0, -line.length);
+    this.#lastLine = '';
+    this.#whole = true;
+    this.#painting ||= requestAnimationFrame(() => this.#draw());
+    return true;
+  }
+
   /** `lines` sent from the box, echoed as a terminal does: drawn as the line written moved up a line. */
   sent(lines: string) {
     this.#echo = lines;

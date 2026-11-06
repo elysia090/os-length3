@@ -32,10 +32,13 @@ function caretAt(f: Field, copy: HTMLElement): {x: number; y: number; h: number;
   mark.textContent = f.value.slice(at, at + 1).replace('\n', '') || '\u200b';
   copy.append(mark);
   const r = f.getBoundingClientRect();
-  const h = mark.offsetHeight || parseFloat(cs.fontSize) * 1.25;
-  const x = r.left + parseFloat(cs.borderLeftWidth) + mark.offsetLeft - f.scrollLeft;
+  // A field seen nearer or further than its own size (the desk's close camera scales what lies on it): its letters,
+  // and the caret with them, as large as they are seen.
+  const k = f.offsetWidth ? r.width / f.offsetWidth : 1;
+  const h = (mark.offsetHeight || parseFloat(cs.fontSize) * 1.25) * k;
+  const x = r.left + (parseFloat(cs.borderLeftWidth) + mark.offsetLeft - f.scrollLeft) * k;
   // A one-line field holds its line in the middle of its height.
-  const y = f instanceof HTMLInputElement ? r.top + (r.height - h) / 2 : r.top + parseFloat(cs.borderTopWidth) + mark.offsetTop - f.scrollTop;
+  const y = f instanceof HTMLInputElement ? r.top + (r.height - h) / 2 : r.top + (parseFloat(cs.borderTopWidth) + mark.offsetTop - f.scrollTop) * k;
   return {x, y, h, field: r};
 }
 

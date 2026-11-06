@@ -24,8 +24,9 @@ import {hasAgentKey, onAgentKey} from '../../account/agent-key.ts';
 
 export type Mode = 'run' | 'issue' | 'todo' | 'edit' | 'agent';
 const MODES: readonly Mode[] = ['run', 'issue', 'todo', 'edit', 'agent'];
-/** What the box can do here now: the Agent only with a key kept on this device. */
-export const modesNow = (): readonly Mode[] => (hasAgentKey() ? MODES : MODES.filter((m) => m !== 'agent'));
+/** What the box can do here now: the Agent only with a key kept on this device; on a desk (`desk`), no Edit, the files
+ * on it being written in where they lie. */
+export const modesNow = (desk = false): readonly Mode[] => MODES.filter((m) => (m !== 'agent' || hasAgentKey()) && (m !== 'edit' || !desk));
 
 /** What the boxes do, the same on every page's box for as long as the app runs. */
 let now: Mode = 'run';
@@ -136,7 +137,7 @@ function column(items: HTMLElement[]) {
  * one in use ticked. Chosen, `chosen` hears it; put away with Escape, `closed` does, with what had the keyboard.
  */
 export function modeMenu(chip: HTMLElement, o: {repo: () => string | null; at(): {file: string; line: number} | null; chosen(m: Mode): void;
-  closed(before: Element | null): void}) {
+  closed(before: Element | null): void; desk?: boolean}) {
   const pop = h('div', {class: 'pop box-modes', role: 'menu', 'aria-label': t('Input box action'), hidden: ''});
   let items: HTMLButtonElement[] = [];
   /** What had the keyboard before they came out: Escape gives it back (a press elsewhere, or Tab, takes it on). */
@@ -162,7 +163,7 @@ export function modeMenu(chip: HTMLElement, o: {repo: () => string | null; at():
     before = document.activeElement;
     const repo = o.repo();
     const n = repo ? nextIssue(repo) : null;
-    items = modesNow().map((m, i) => {
+    items = modesNow(o.desk).map((m, i) => {
       const item = menuItem(m, i, repo, typeof n === 'number' ? n : null, m === 'edit' ? o.at() : null);
       item.addEventListener('click', () => { show(false); o.chosen(m); });
       return item;

@@ -385,17 +385,42 @@ test('the band\'s first button brings out the deeds for what is read now, under 
   await expect(app.file.tree).toBeHidden();
 });
 
-test('pressed anywhere in the Prompt\'s box, beside its line too, it comes close and the caret goes into its line', async ({app}) => {
+test('pressed anywhere in the Prompt\'s box, beside its line too, the caret goes into its line', async ({app}) => {
   await app.rail.go('forge');
-  // Stepped back to the whole desk, the Prompt's box pressed in its room (not on its line).
-  await app.page.locator('.desk:not([hidden])').evaluate((d: HTMLElement) => d.focus());
+  // Let go of with Escape, the keyboard on the desk, the box still in hand; pressed in its room (not on its line).
+  await app.forge.promptBox.focus();
   await app.page.keyboard.press('Escape');
-  await expect(app.page.locator('.desk:not([hidden])')).toHaveClass(/whole/);
+  await expect(app.forge.promptBox).not.toBeFocused();
   const term = app.page.locator('.desk-box[data-key="term"]');
   const box = (await term.boundingBox())!;
   await app.page.mouse.click(box.x + 8, box.y + 8);
   await expect(app.forge.promptBox).toBeFocused();
-  await expect(app.page.locator('.desk:not([hidden])')).not.toHaveClass(/whole/);
+});
+
+test('the desk comes nearer the box worked in and goes back to its base, and never further back', async ({app}) => {
+  await app.rail.go('forge');
+  const desk = app.page.locator('.desk:not([hidden])');
+  const own = app.forge.editor('README.md');
+  await own.focus();
+  const readme = app.page.locator('.desk-box[data-key="README.md"]');
+  const width = async () => (await readme.boundingBox())!.width;
+  const base = await width();
+  await app.page.keyboard.press('Control+Equal');
+  await expect(desk).toHaveClass(/near/);
+  await expect.poll(async () => (await width()) / base).toBeGreaterThan(1.1);
+  // Written in close, the keyboard stays where it was.
+  await app.page.keyboard.type('x');
+  await expect(own).toBeFocused();
+  await app.page.keyboard.press('Escape');
+  await expect(desk).not.toHaveClass(/near/);
+  await expect.poll(width).toBeCloseTo(base, 0);
+  // Never further back than the base; Escape there lets go of the text, the box still in hand.
+  await app.page.keyboard.press('Control+Minus');
+  await expect.poll(width).toBeCloseTo(base, 0);
+  await expect(own).toBeFocused();
+  await app.page.keyboard.press('Escape');
+  await expect(own).not.toBeFocused();
+  await expect.poll(width).toBeCloseTo(base, 0);
 });
 
 test('Home says where one left off: the line last written in a box on the desk', async ({app}) => {

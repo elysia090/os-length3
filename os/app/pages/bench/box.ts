@@ -131,6 +131,7 @@ export class Box {
 
   constructor(p: BoxParts) {
     this.#p = p;
+    if (p.desk && this.#mode === 'edit') this.#mode = 'run';
     // Run: Ctrl+Enter (⌘+Enter) is how it is done from the box, said in its title, not beside the word. Never Enter
     // alone: Enter is what confirms a Japanese conversion, and a line must not run because a word was chosen.
     const mac = /Mac|iPhone|iPad/.test(navigator.platform);
@@ -157,7 +158,7 @@ export class Box {
       active: () => this.#mode === 'edit' && document.activeElement === this.prompt,
       idle: () => this.#mayEdit() && document.activeElement === this.prompt,
       takeUp: () => { this.#auto = true; this.choose('edit', false, true); }});
-    this.#menu = modeMenu(this.chip, {repo: () => this.#repo, at: () => this.#edit.where(), chosen: (m) => { this.choose(m); this.prompt.focus(); },
+    this.#menu = modeMenu(this.chip, {repo: () => this.#repo, at: () => this.#edit.where(), chosen: (m) => { this.choose(m); this.prompt.focus(); }, desk: !!p.desk,
       // Put away without a choice, the keyboard is where one writes (it was in the box, or the pill was pressed to
       // choose what the box does next); only from somewhere else of its own does it go nowhere in particular.
       closed: (before) => { if (!before || before === this.prompt || before === this.chip || before === document.body) this.prompt.focus(); else (document.activeElement as HTMLElement | null)?.blur(); }});
@@ -227,7 +228,7 @@ export class Box {
 
   /** Ctrl+G: the box edits the file in front, and has the keyboard; false when it can do nothing (no repo). */
   edit(): boolean {
-    if (this.prompt.disabled) return false;
+    if (this.prompt.disabled || this.#p.desk) return false;
     this.choose('edit');
     this.prompt.focus();
     return true;
@@ -238,6 +239,8 @@ export class Box {
    * of itself (Edit while one works in a file), not chosen: the mode one chose stays the boxes' own.
    */
   choose(m: Mode, seen = true, byItself = false) {
+    // Edit chosen on another page's box: on a desk the box runs instead.
+    if (m === 'edit' && this.#p.desk) m = 'run';
     if (!byItself) this.#auto = false;
     // Told to the other pages' boxes once this one has turned (it hears its own telling, and is there already).
     if (m === this.#mode) { if (!byItself) setBoxMode(m); return; }
@@ -266,7 +269,8 @@ export class Box {
 
   /** Running, nothing written, in a repo: the box may be Edit of itself (up as the Prompt, it goes down for it). */
   #mayEdit() {
-    return this.#mode === 'run' && !this.prompt.value && !!this.#repo && !this.prompt.disabled;
+    // On a desk the files are written in where they lie: the box never takes up Edit.
+    return !this.#p.desk && this.#mode === 'run' && !this.prompt.value && !!this.#repo && !this.prompt.disabled;
   }
 
   /**
@@ -600,6 +604,8 @@ export class Box {
 
   /** Escape: the Prompt put back and the box let go; editing, what is in the box goes first (and then the box). */
   #escape(event: KeyboardEvent) {
+    // On a desk the line is the Prompt's box's own: Escape is the desk's (back to the base, then the text let go of).
+    if (this.#p.desk) return;
     // Editing, Escape gives the keyboard back to the file, where the box was in it.
     if (this.#mode === 'edit' && !event.isComposing) {
       event.preventDefault();
@@ -627,7 +633,7 @@ export class Box {
   #modeKey(event: KeyboardEvent): boolean {
     if (!event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return false;
     const n = /^Digit([1-9])$/.exec(event.code)?.[1];
-    const m = n ? modesNow()[Number(n) - 1] : undefined;
+    const m = n ? modesNow(this.#p.desk)[Number(n) - 1] : undefined;
     if (m) { event.preventDefault(); this.choose(m); return true; }
     if (event.key !== 'ArrowDown' || this.prompt.disabled) return false;
     event.preventDefault();

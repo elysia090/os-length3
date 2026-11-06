@@ -212,7 +212,9 @@ export class Editor {
     const at = area.getBoundingClientRect();
     if (event.clientX < at.left && event.clientY < at.bottom) {
       const lines = area.value.split('\n');
-      const n = Math.min(Math.max(Math.floor((event.clientY - at.top) / lineHeight(area)), 0), lines.length - 1);
+      // The box may be seen nearer than its own size (the desk's close camera): its lines as tall as they are seen.
+      const scale = at.height / (area.offsetHeight || at.height || 1);
+      const n = Math.min(Math.max(Math.floor((event.clientY - at.top) / (lineHeight(area) * scale)), 0), lines.length - 1);
       const from = lineStart(lines, n);
       area.setSelectionRange(from, from + lines[n].length);
       return;

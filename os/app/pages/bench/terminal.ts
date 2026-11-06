@@ -90,6 +90,8 @@ export class Session implements Prompt {
   private status: HTMLElement;
   private activity: Activity;
   private live = false;
+  /** The prompt line put at the foot for a shell not yet started (a line the Agent ran, shown): its own takes its place. */
+  private standIn = '';
   private worker: Worker | null = null;
   private repo: string;
   /** What was run here, newest last. */
@@ -235,6 +237,8 @@ export class Session implements Prompt {
     if (!this.out.lastLine) this.out.print(ps);
     this.out.sent(`${typed}\n`);
     this.out.print(`${output}${output && !output.endsWith('\n') ? '\n' : ''}${ps}`);
+    // A shell not yet started says its own first prompt line: this one, put there for it, makes way for it then.
+    this.standIn = this.live ? '' : ps;
     this.runs.push({line: typed, output, started: Date.now(), ms: 0, status});
     if (this.runs.length > RUNS) this.runs.shift();
     this.tell();
@@ -254,6 +258,7 @@ export class Session implements Prompt {
     s = s.replace(OSC, '');
     if (!s) return;
     if (this.status.textContent === t('Starting…')) this.status.textContent = '';
+    if (this.standIn) { this.out.takeBack(this.standIn); this.standIn = ''; }
     this.out.print(s);
     const waits = !!waitsAt(this.out.lastLine);
     this.first.heard(waits, (held) => { if (this.live) this.send(held); });
