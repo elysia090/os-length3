@@ -1,0 +1,15 @@
+int main(void) { return foo_bar(42) + 0x1F; }
+static const char *name = "hello, world";
+The quick brown fox jumps over the lazy dog.
+a.b.c aaa bbb abcabc ab ac
+x=1; y=22; z=333; w=4444
+café naïve 日本語のテキスト Ünïcödé
+path/to/file.rs src/main.rs README.md Cargo.toml
+  leading spaces	and	tabs  
+foo123bar 456 baz7
+UPPER lower MiXeD camelCase snake_case kebab-case
+email@example.com other.name+tag@sub.example.org
+(parens) [brackets] {braces} <angles>
+$dollar ^caret *star +plus ?question |pipe \backslash
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+abab abba baab
