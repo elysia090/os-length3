@@ -5,7 +5,8 @@ use serde::Serialize;
 use std::fs;
 use crate::fs::write::temporary_writer;
 use crate::fs::size::{allocated, blocks, links};
-use crate::repos::measure::{measure, Measure};
+use crate::fs::kept::Kept;
+use crate::repos::measure::{measured, Measure};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
@@ -14,21 +15,24 @@ pub fn all_freeable(s: &Space) -> Vec<String> {
     s.items.iter().filter(|i| i.room != Room::Keep).map(|i| i.id.clone()).collect()
 }
 
-/// Everything this OS holds under `data` (repos in `repos`), largest first.
+/// Everything this OS holds under `data` (repos in `repos`), largest first: each folder's size as last measured
+/// in this process (fs/kept.rs), or with `fresh` measured now.
 /// `open`: repos a Prompt the host knows of has open now (a browser's own);
 /// every Prompt on a root, the app's and l3's, is read from its record here.
-pub fn space(data: &Path, repos_dir: &Path, open: &[String]) -> Space {
+pub fn space(data: &Path, repos_dir: &Path, open: &[String], fresh: bool) -> Space {
     let (host_total, host_free, host) = host(data);
     let mut items = Vec::new();
     let connected = crate::remote::connection().is_some();
     let in_use = InUse::now(data, open);
     let mut left = Vec::new();
+    let mut kept = false;
     // What was walked as a repo's copies is not walked again for leftovers.
     let mut walked = vec![repos_dir.to_path_buf()];
     if let Ok(repos) = crate::repos::store::Repos::new(repos_dir.to_path_buf()) {
         for name in repos.names().unwrap_or_default() {
             let Ok(dir) = repos.dir(&name) else { continue };
-            let c = copies(&dir, &name, &mut left);
+            let c = copies(&dir, &name, fresh, &mut left);
+            kept |= c.kept;
             walked.push(crate::fs::paths::data_dir().join("work").join(&name));
             items.extend(repo_item(&repos, &name, &c, connected, &in_use));
             items.extend(derived_item(&name, &c.derived, &in_use));
@@ -38,7 +42,7 @@ pub fn space(data: &Path, repos_dir: &Path, open: &[String]) -> Space {
         items.push(root_item(row, &in_use));
     }
     for (kind, repo, _) in crate::prompt::writes::held(data) {
-        items.extend(owned_item(data, repos_dir, kind, &repo, &in_use));
+        items.extend(owned_item(data, repos_dir, kind, &repo, fresh, &in_use, &mut kept));
     }
     leftovers(data, data, &walked, &mut left);
     system_leftovers(data, &mut left);
@@ -52,6 +56,7 @@ pub fn space(data: &Path, repos_dir: &Path, open: &[String]) -> Space {
         host_total, host_free, host,
         allocated: items.iter().map(|i| i.allocated).sum(),
         freeable: items.iter().filter(|i| i.room != Room::Keep).map(|i| i.allocated).sum(),
+        kept,
         items,
     }
 }
@@ -60,18 +65,18 @@ pub fn space(data: &Path, repos_dir: &Path, open: &[String]) -> Space {
 pub(super) fn item(data: &Path, repos_dir: &Path, id: &str, in_use: &InUse) -> Option<Item> {
     if let Some(name) = id.strip_prefix("repo:") {
         let repos = crate::repos::store::Repos::new(repos_dir.to_path_buf()).ok()?;
-        repo_item(&repos, name, &copies(&repos.dir(name).ok()?, name, &mut Vec::new()), crate::remote::connection().is_some(), in_use)
+        repo_item(&repos, name, &copies(&repos.dir(name).ok()?, name, true, &mut Vec::new()), crate::remote::connection().is_some(), in_use)
     } else if let Some(sha) = id.strip_prefix("root:") {
         system(data).into_iter().find(|(r, _)| r.sha256 == sha).map(|(r, _)| root_item(r, in_use))
     } else if let Some(path) = id.strip_prefix("path:") {
         leftover_at(data, repos_dir, Path::new(path)).map(leftover_item)
     } else if let Some(repo) = id.strip_prefix("env:") {
-        owned_item(data, repos_dir, "env", repo, in_use)
+        owned_item(data, repos_dir, "env", repo, true, in_use, &mut false)
     } else if let Some(repo) = id.strip_prefix("cache:") {
-        owned_item(data, repos_dir, "cache", repo, in_use)
+        owned_item(data, repos_dir, "cache", repo, true, in_use, &mut false)
     } else if let Some(repo) = id.strip_prefix("derived:") {
         if !crate::text::names::valid_name(repo) { return None; }
-        derived_item(repo, &copies(&repos_dir.join(repo), repo, &mut Vec::new()).derived, in_use)
+        derived_item(repo, &copies(&repos_dir.join(repo), repo, true, &mut Vec::new()).derived, in_use)
     } else if id == "home" {
         Some(Item { id: "home".into(), what: "Home".into(), detail: String::new(), allocated: 0, room: Room::Keep, why: crate::tr!("This device's settings", "この端末の設定です") })
     } else {
@@ -113,21 +118,37 @@ struct Copies {
     works: usize,
     /// What is derived in the repo, each folder's blocks counted once.
     derived: Vec<(PathBuf, u64)>,
+    /// Some of it as last measured, not now.
+    kept: bool,
 }
 
-/// The repo `name` at `dir`, its works measured with it; what this OS left behind in them goes to `left`.
-fn copies(dir: &Path, name: &str, left: &mut Vec<Leftover>) -> Copies {
-    let repo = measure(dir);
-    let works: Vec<Measure> = crate::repos::lines::worktrees(name).iter().map(|(_, p)| measure(p)).collect();
+/// The blocks of a folder walked whole (what is derived, an environment, caches), as last measured (fs/kept.rs).
+static ALLOCATED: Kept<u64> = Kept::new();
+
+/// `dir`'s blocks as last measured in this process (and true: so they may be older than now), or with `fresh`
+/// measured now.
+fn allocated_of(dir: &Path, fresh: bool) -> (u64, bool) {
+    ALLOCATED.of(dir, fresh, || allocated(dir))
+}
+
+/// Nothing measured is kept: what was just taken away is measured again when next asked.
+pub(super) fn forget() {
+    ALLOCATED.forget();
+    crate::repos::measure::forget();
+}
+
+/// The repo `name` at `dir`, its works measured with it (`fresh`: now, not as last measured); what this OS left
+/// behind in them goes to `left`.
+fn copies(dir: &Path, name: &str, fresh: bool, left: &mut Vec<Leftover>) -> Copies {
+    let (repo, mut kept) = measured(dir, fresh);
+    let works: Vec<Measure> = crate::repos::lines::worktrees(name).iter().map(|(_, p)| { let (w, k) = measured(p, fresh); kept |= k; w }).collect();
     for t in repo.temporaries.iter().chain(works.iter().flat_map(|w| &w.temporaries)) {
         if let Some(l) = t.symlink_metadata().ok().and_then(|m| left_behind(t, &m, false)) { left.push(l); }
     }
-    let whole = |m: &Measure| m.allocated + m.derived.iter().map(|d| allocated(d)).sum::<u64>();
-    Copies {
-        allocated: repo.allocated + works.iter().map(whole).sum::<u64>(),
-        works: works.len(),
-        derived: repo.derived.iter().map(|d| (d.clone(), allocated(d))).collect(),
-    }
+    let mut of = |d: &PathBuf| { let (n, k) = allocated_of(d, fresh); kept |= k; n };
+    let whole: u64 = works.iter().map(|m| m.allocated + m.derived.iter().map(&mut of).sum::<u64>()).sum();
+    let derived = repo.derived.iter().map(|d| (d.clone(), of(d))).collect();
+    Copies { allocated: repo.allocated + whole, works: works.len(), derived, kept }
 }
 
 fn leftover_item(l: Leftover) -> Item {
@@ -163,7 +184,7 @@ fn derived_item(repo: &str, derived: &[(PathBuf, u64)], in_use: &InUse) -> Optio
 }
 
 /// A repo's environment ("env") or caches ("cache"), if it has them here.
-fn owned_item(data: &Path, repos_dir: &Path, kind: &str, repo: &str, in_use: &InUse) -> Option<Item> {
+fn owned_item(data: &Path, repos_dir: &Path, kind: &str, repo: &str, fresh: bool, in_use: &InUse, kept: &mut bool) -> Option<Item> {
     if !crate::text::names::valid_name(repo) { return None; }
     let dir = if kind == "env" { crate::prompt::writes::env_dir(data, repo) } else { crate::prompt::writes::cache_dir(data, repo) };
     if !dir.is_dir() { return None; }
@@ -177,7 +198,9 @@ fn owned_item(data: &Path, repos_dir: &Path, kind: &str, repo: &str, in_use: &In
         (Room::Free, crate::tr!("Made again when needed", "必要になればまた作られます"))
     };
     let detail = if kind == "env" { crate::tr!("environment", "環境") } else { crate::tr!("caches", "キャッシュ") };
-    Some(Item { id: format!("{kind}:{repo}"), what: repo.into(), detail, allocated: allocated(&dir), room, why })
+    let (allocated, was) = allocated_of(&dir, fresh);
+    *kept |= was;
+    Some(Item { id: format!("{kind}:{repo}"), what: repo.into(), detail, allocated, room, why })
 }
 
 fn repo_item(repos: &crate::repos::store::Repos, name: &str, copies: &Copies, connected: bool, in_use: &InUse) -> Option<Item> {
@@ -280,6 +303,8 @@ pub struct Space {
     pub freeable: u64,
     /// Largest first.
     pub items: Vec<Item>,
+    /// Some figure as last measured in this process, so possibly older than now: the page asks for it measured afresh.
+    pub kept: bool,
 }
 
 /// One thing this OS holds on the device.

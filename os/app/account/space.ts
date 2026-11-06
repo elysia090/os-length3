@@ -13,9 +13,10 @@ import {reloadState, settingName} from '../home/state.ts';
 import {store} from '../repos/repos.ts';
 import {t, tn} from '../i18n/i18n.ts';
 
-/** `open`: repos a Prompt has open in this page (the app knows its own). */
-export async function readSpace(open: string[] = []): Promise<Space> {
-  const s = await core<Space>('space');
+/** `open`: repos a Prompt has open in this page (the app knows its own); `fresh`: every figure measured now, not as
+ *  last measured (what a page draws at once, then asks for afresh when `kept` says it may be older than now). */
+export async function readSpace(open: string[] = [], fresh = false): Promise<Space> {
+  const s = await core<Space>('space', {fresh});
   if (isNative) return s;
   // In a browser the core holds the repos; the host is the origin's storage, as the browser estimates it. A repo the
   // core would let go is kept while a Prompt here has it open; one it keeps already says its own reason (no Remote
@@ -37,7 +38,7 @@ export async function readSpace(open: string[] = []): Promise<Space> {
   return {
     host_total: c?.total ?? 0, host_free: c?.free ?? 0, host: 'Estimated',
     allocated: Math.max(counted, listed),
-    freeable: items.filter((i) => i.room !== 'Keep').reduce((n, i) => n + i.allocated, 0), items,
+    freeable: items.filter((i) => i.room !== 'Keep').reduce((n, i) => n + i.allocated, 0), items, kept: s.kept,
   };
 }
 

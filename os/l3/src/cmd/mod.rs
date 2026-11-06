@@ -126,7 +126,7 @@ pub fn version(_: &Ctx, _: &Call) -> Result<Reply> {
 /// `l3` alone: this device at a glance.
 pub fn overview(ctx: &Ctx, _: &Call) -> Result<Reply> {
     let r = ctx.repos()?;
-    let list = r.list()?;
+    let list = r.list(false)?;
     let todos = if ctx.prompt { Vec::new() } else { core_home::todos()? };
     let open = todos.iter().filter(|t| !t.done).count();
     let issues: usize = list.iter().map(|s| r.on_main().issues(&s.name).map_or(0, |v| v.len())).sum();

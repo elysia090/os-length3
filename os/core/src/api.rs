@@ -27,7 +27,7 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
     // The repo as it is seen now, or (`main`) main's copy whatever work it shows: where its issues are.
     let seen = || -> crate::Result<crate::repos::store::Repos> { let r = repos()?; Ok(if a.opt::<bool>("main")?.unwrap_or(false) { r.on_main() } else { r }) };
     match name {
-        "repo_list" => to(repos()?.list()?),
+        "repo_list" => to(repos()?.list(a.opt("fresh")?.unwrap_or(false))?),
         // Their names alone: nothing walked (what a page that only names them, or only checks one is there, asks).
         "repo_names" => to(repos()?.names()?),
         "repo_create" => to(repos()?.create(&a.s("name")?, &a.s("template")?)?),
@@ -127,7 +127,7 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         },
 
         // What this OS holds: `open`, the repos a Prompt has open (the host's to know).
-        "space" => to(storage::space(paths::data_dir(), paths::repos_dir(), &a.list("open")?)),
+        "space" => to(storage::space(paths::data_dir(), paths::repos_dir(), &a.list("open")?, a.opt("fresh")?.unwrap_or(false))),
         "free" => to(storage::free(paths::data_dir(), paths::repos_dir(), &a.list("ids")?, &a.list("open")?)),
 
         // Signing in: the code, and the page to approve it on, which only the host can open; the page is the

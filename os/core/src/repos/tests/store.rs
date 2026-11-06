@@ -30,7 +30,7 @@ fn templates_hold_only_repo_files() {
     assert_eq!(c[..2], ["docs", "src"]);
     assert!(r.create("c", "c").is_err());
     assert!(r.create("x", "nope").is_err());
-    assert_eq!(r.list().unwrap().len(), 3);
+    assert_eq!(r.list(true).unwrap().len(), 3);
     assert_eq!(r.names().unwrap(), ["c", "empty", "standard"]);
     // Nothing made aside is left, and what is in the way of a name is never written into.
     assert!(fs::read_dir(&r.root).unwrap().flatten().all(|e| !e.file_name().to_string_lossy().starts_with('.')));

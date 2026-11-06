@@ -13,7 +13,7 @@ use serde_json::json;
 pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
     // What a Prompt here holds (the app's or l3's, running or being prepared) stays while it does: the core reads
     // their records itself (storage/), so there is nothing to tell it as open.
-    let s = storage::space(paths::data_dir(), paths::repos_dir(), &[]);
+    let s = storage::space(paths::data_dir(), paths::repos_dir(), &[], true);
     let current = root::current(paths::data_dir()).map(|(_, r)| r);
     let mut t = vec![match &current {
         Some(r) => tr!("root  {} {} (where Prompts run)", "root  {} {}（Prompt が動く環境）", r.name, r.version),
@@ -60,7 +60,7 @@ pub fn free(_: &Ctx, call: &Call) -> Result<Reply> {
     if words.iter().any(|w| w.trim().is_empty()) {
         return Err(Error::Usage(tr!("Name what to free: l3 free ID… (l3 runtime lists them), or l3 free all", "空けるものを書いてください：l3 free ID…（l3 runtime で一覧）、または l3 free all")));
     }
-    let space = storage::space(data, paths::repos_dir(), &[]);
+    let space = storage::space(data, paths::repos_dir(), &[], true);
     let ids: Vec<String> = if words == ["all"] {
         storage::all_freeable(&space)
     } else {

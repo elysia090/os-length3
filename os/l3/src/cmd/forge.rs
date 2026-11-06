@@ -11,7 +11,7 @@ use serde_json::json;
 /// `l3 repo`: each repo here and where it stands, then those only on the Remote.
 pub fn repo_list(ctx: &Ctx, _: &Call) -> Result<Reply> {
     let r = ctx.repos()?;
-    let here = r.list()?;
+    let here = r.list(false)?;
     let connected = ctx.connected();
     let there = if connected { remote::remote_repos().unwrap_or_default() } else { Vec::new() };
     let only_there: Vec<&remote::RemoteRepo> = there.iter().filter(|t| !here.iter().any(|h| h.name == t.name)).collect();
@@ -93,7 +93,7 @@ pub fn repo_open(ctx: &Ctx, call: &Call) -> Result<Reply> {
 }
 
 fn here_names(ctx: &Ctx) -> Result<Vec<String>> {
-    Ok(ctx.repos()?.list()?.into_iter().map(|s| s.name).collect())
+    Ok(ctx.repos()?.names()?)
 }
 
 pub fn band_list(ctx: &Ctx, _: &Call) -> Result<Reply> {

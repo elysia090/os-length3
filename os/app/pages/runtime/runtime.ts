@@ -35,10 +35,15 @@ export function runtime(ctx: Context): Node[] {
     {id: 'environments', label: t('Environments')}, {id: 'dotfiles', label: t('Dotfiles')}, {id: 'agent', label: t('Agent')}]);
   const holder = h('div', {}, h('section', {class: 'section'}, h('p', {class: 'muted'}, t('Calculating storage…'))));
   let last: Freed | null = null;
-  const read = (): void => void readSpace(allSessions().filter(([, s]) => s.running).map(([repo]) => repo)).then((u) => {
+  // Drawn at once from what the core last measured, then, if some of it was that, measured now and drawn again where
+  // it differs (what is drawn the same is left as it is).
+  let drawn = '';
+  const read = (fresh = false): void => void readSpace(allSessions().filter(([, s]) => s.running).map(([repo]) => repo), fresh).then((u) => {
     // A repo's gear list out is not drawn away under the pointer: read again once it is put away.
-    if (holder.isConnected && holder.querySelector('.repo-gear-pop:not([hidden])')) { setTimeout(read, 1000); return; }
-    holder.replaceChildren(device(ctx, u, last, (r) => { last = r; read(); }));
+    if (holder.isConnected && holder.querySelector('.repo-gear-pop:not([hidden])')) { setTimeout(() => read(fresh), 1000); return; }
+    const now = JSON.stringify({u: {...u, kept: false}, last});
+    if (now !== drawn) { drawn = now; holder.replaceChildren(device(ctx, u, last, (r) => { last = r; read(); })); }
+    if (u.kept && holder.isConnected) read(true);
   },
     (e) => holder.replaceChildren(h('section', {class: 'section'}, h('p', {class: 'error'}, t('Storage calculation failed ({why})', {why: errorText(e)})))));
   read();

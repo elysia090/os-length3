@@ -268,7 +268,7 @@ fn issue_json(ctx: &Ctx, s: &Stand, i: &Issue) -> Value {
 pub fn page(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let r = ctx.repos()?;
     // The repo named, or the one you are in; else every repo here.
-    let names: Vec<String> = if call.word(0).is_some() || ctx.here.is_some() { vec![target::repo(ctx, call, 0)?] } else { r.list()?.into_iter().map(|s| s.name).collect() };
+    let names: Vec<String> = if call.word(0).is_some() || ctx.here.is_some() { vec![target::repo(ctx, call, 0)?] } else { r.names()? };
     let (mut boxes, mut data, mut merged, mut closed) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     let mut offline = false;
     for n in &names {

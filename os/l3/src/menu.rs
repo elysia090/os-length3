@@ -555,7 +555,7 @@ fn run(ctx: &Ctx, offer: Offer, subject: Option<&Subject>, place: Option<&str>) 
             Arg::Argv => {}
             Arg::Repo { .. } => {
                 let (label, _) = spec::field_words(*a);
-                let here: Vec<String> = ctx.repos().and_then(|r| Ok(r.list()?)).map(|l| l.into_iter().map(|s| s.name).collect()).unwrap_or_default();
+                let here: Vec<String> = ctx.repos().and_then(|r| Ok(r.names()?)).unwrap_or_default();
                 let at = ctx.here.as_ref().and_then(|h| here.iter().position(|n| *n == h.repo));
                 let pick = match (here.len(), at) {
                     (0, _) => { out::note(&tr!("No repos yet (l3 repo new NAME makes one)", "repo はまだありません（l3 repo new NAME で作れます）")); return Done::NotNow; }
@@ -667,8 +667,7 @@ fn next_view(ctx: &Ctx, view: &View, seen: Seen, argv: Vec<String>) -> View {
 /// What is there now in each place on the rail, in a few words (as bare `l3` says it off a terminal).
 fn states(ctx: &Ctx) -> Vec<String> {
     let r = ctx.repos().ok();
-    let list = r.as_ref().and_then(|r| r.list().ok()).unwrap_or_default();
-    let names: Vec<String> = list.iter().map(|s| s.name.clone()).collect();
+    let names: Vec<String> = r.as_ref().and_then(|r| r.names().ok()).unwrap_or_default();
     let repos = |n: usize| if i18n::ja() { format!("repo {n}") } else if n == 1 { "1 repo".to_string() } else { format!("{n} repos") };
     let connected = ctx.connected();
     // What only the Remote knows, asked side by side and waited for a moment only, so the rail is never slow.
@@ -698,8 +697,8 @@ fn states(ctx: &Ctx) -> Vec<String> {
     }
     Group::RAIL.iter().map(|g| match g {
         Group::Home => tr!("TODO {} open of {}", "TODO 残り {} / {}", todos.iter().filter(|t| !t.done).count(), todos.len()),
-        Group::Forge => tr!("{} · {} on the band", "{} · 帯に {}", repos(list.len()), band),
-        Group::File => tr!("/root holds {}", "/root に {}", repos(list.len())),
+        Group::Forge => tr!("{} · {} on the band", "{} · 帯に {}", repos(names.len()), band),
+        Group::File => tr!("/root holds {}", "/root に {}", repos(names.len())),
         Group::Git => if i18n::ja() { format!("開いている Issue {open_issues}件") } else if open_issues == 1 { "1 issue open".into() } else { format!("{open_issues} issues open") },
         Group::Runtime => if running > 0 { tr!("{} · {} Prompts running", "{} · Prompt {} 個が動いています", root_now, running) } else { root_now.clone() },
         Group::Remote => match remote::connection().filter(|_| connected) {

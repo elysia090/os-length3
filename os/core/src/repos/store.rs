@@ -32,6 +32,8 @@ pub struct Summary {
     pub bytes: u64,
     /// Milliseconds since the epoch of the newest change seen.
     pub modified: u64,
+    /// As last counted in this process, so possibly older than now: the page asks for it counted afresh.
+    pub kept: bool,
 }
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -168,23 +170,28 @@ impl Repos {
         Ok(out)
     }
 
-    pub fn list(&self) -> Result<Vec<Summary>> {
+    /// Each repo as its card says it, as last counted (repos/measure.rs); `fresh`: counted now.
+    pub fn list(&self, fresh: bool) -> Result<Vec<Summary>> {
         let mut out = Vec::new();
         for entry in fs::read_dir(&self.root).map_err(|e| io_error(self.root.display(), &e))?.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
             if !valid_name(&name) || !entry.path().is_dir() {
                 continue;
             }
-            out.push(self.summary(&name)?);
+            out.push(self.summary_of(&name, fresh)?);
         }
         out.sort_by(|a, b| b.modified.cmp(&a.modified).then(a.name.cmp(&b.name)));
         Ok(out)
     }
 
-    /// The repo `name` as its card says it: its own files, their bytes, and when they last changed (measure.rs).
+    /// The repo `name` as its card says it now: its own files, their bytes, and when they last changed (measure.rs).
     pub fn summary(&self, name: &str) -> Result<Summary> {
-        let m = super::measure::measure(&self.place(name)?);
-        Ok(Summary { name: name.to_string(), files: m.files, bytes: m.bytes, modified: m.modified })
+        self.summary_of(name, true)
+    }
+
+    fn summary_of(&self, name: &str, fresh: bool) -> Result<Summary> {
+        let (m, kept) = super::measure::measured(&self.place(name)?, fresh);
+        Ok(Summary { name: name.to_string(), files: m.files, bytes: m.bytes, modified: m.modified, kept })
     }
 
     /// Create a repo from a template (shared/templates.json). Inbox and TODO

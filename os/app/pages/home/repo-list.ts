@@ -61,7 +61,7 @@ function repoCard(ctx: Context, name: string, size: number, modified: number, ag
   // What it is, in the words it was made with: its README's first plain line, under its name, once read.
   const what = h('span', {class: 'card-summary'});
   void summaryOf(name).then((line) => { what.textContent = line; });
-  return gearCard(ctx, name, [what, h('span', {class: 'muted'}, sizeAndWhen(size, modified)),
+  return gearCard(ctx, name, [what, h('span', {class: 'muted', 'data-size': ''}, sizeAndWhen(size, modified)),
     // Where it stands against the Remote; filled in once it is known.
     h('span', {class: 'muted card-sync'})], false, again);
 }
@@ -106,6 +106,17 @@ export function repoList(ctx: Context, options: {newCard: boolean; counted?: (n:
       ...(options.newCard ? [newRepoCard(ctx)] : []));
     if (!repos.length && !remoteOnly().length && !options.newCard) grid.replaceChildren(h('div', {class: 'empty'}, t('No repos yet')));
     marks();
+    // Drawn from what the core last counted; counted again now, a card whose size or time moved says it again.
+    if (repos.some((r) => r.kept)) {
+      void store.list(true).then((now) => {
+        for (const r of now) {
+          const was = repos.find((x) => x.name === r.name);
+          if (!was || (was.bytes === r.bytes && was.modified === r.modified)) continue;
+          const slot = grid.querySelector(`.card.repo[data-repo="${CSS.escape(r.name)}"] [data-size]`);
+          if (slot) slot.textContent = sizeAndWhen(r.bytes, r.modified);
+        }
+      }, () => {});
+    }
     const shown = light ? grid.querySelector<HTMLElement>(`.card.repo[data-repo="${CSS.escape(light)}"]`) : null;
     // The page stays where it is: the new card only lights where it joins the list.
     if (shown) {

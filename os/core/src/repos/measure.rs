@@ -2,9 +2,11 @@
 //! nor what is derived, nor a link or a temporary), their bytes and the newest change among them; the blocks the host
 //! set aside for all of it but what is derived; the derived folders, not walked into (Storage counts each of them
 //! once, the list of repos never needs to); and the temporaries this OS left in it. The list of repos and Storage
-//! each walked the folder again for each of these.
+//! each walked the folder again for each of these. What was counted is kept (`measured`): asked again, a repo's
+//! count costs a look-up, and the page asks for it counted afresh after.
 
 use super::derived::derived;
+use crate::fs::kept::Kept;
 use crate::fs::size::{blocks, inode, links};
 use crate::fs::write::is_temporary;
 use crate::text::names::is_git_name;
@@ -26,6 +28,20 @@ pub struct Measure {
     pub derived: Vec<PathBuf>,
     /// Files named as this OS names a file while it writes it (fs/write.rs), outside .git and what is derived.
     pub temporaries: Vec<PathBuf>,
+}
+
+/// What was counted of each repo's folder (fs/kept.rs).
+static MEASURED: Kept<Measure> = Kept::new();
+
+/// The repo at `dir` as last counted in this process (and true: so it may be older than now), else counted now;
+/// `fresh`: counted now whatever was kept.
+pub fn measured(dir: &Path, fresh: bool) -> (Measure, bool) {
+    MEASURED.of(dir, fresh, || measure(dir))
+}
+
+/// Nothing kept: what this process took away from a repo is counted again when next asked.
+pub fn forget() {
+    MEASURED.forget();
 }
 
 /// The repo at `dir`, counted now.

@@ -25,7 +25,8 @@ export type Certainty = 'Verified' | 'Estimated' | 'Unknown';
 export type Room = 'Free' | 'SyncFree' | 'Keep';
 /** One thing this OS holds on the device: "repo:<name>", "root:<sha>", "path:<path>" or "home". */
 export interface Item { id: string; what: string; detail: string; allocated: number; room: Room; why: string }
-export interface Space { host_total: number; host_free: number; host: Certainty; allocated: number; freeable: number; items: Item[] }
+/** What this OS holds here; `kept`: some figure as last measured, so possibly older than now (core/src/storage). */
+export interface Space { host_total: number; host_free: number; host: Certainty; allocated: number; freeable: number; items: Item[]; kept: boolean }
 export interface Freed {
   freed: number; freed_certainty: Certainty; removed: string[]; kept: [string, string][];
   host_free_before: number; host_free_after: number; host_change: Certainty; reflected_ms: number | null;

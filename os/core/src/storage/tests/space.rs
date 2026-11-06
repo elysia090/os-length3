@@ -40,7 +40,7 @@ fn only_this_oss_dead_old_temporaries_are_reclaimed() {
     for p in [&dead, &live, &in_git, &mine, &dated, &setting] {
         fs::File::options().write(true).open(p).unwrap().set_modified(old).unwrap();
     }
-    let u = space(&data, &data.join("repos"), &[]);
+    let u = space(&data, &data.join("repos"), &[], true);
     let mut found: Vec<PathBuf> = u.items.iter().filter_map(|i| i.id.strip_prefix("path:").map(PathBuf::from)).collect();
     found.sort();
     assert_eq!(found, [setting.clone(), dead.clone()]);
@@ -70,7 +70,7 @@ fn a_sparse_file_counts_what_it_holds() {
     fs::create_dir_all(&repo).unwrap();
     let f = fs::File::create(repo.join("big")).unwrap();
     f.set_len(1 << 30).unwrap(); // 1 GiB logical, nothing written
-    let u = space(&data, &data.join("repos"), &[]);
+    let u = space(&data, &data.join("repos"), &[], true);
     let s = u.items.iter().find(|i| i.id == "repo:s").unwrap();
     assert!(s.allocated < 1 << 20, "{s:?}");
     let _ = fs::remove_dir_all(&data);
@@ -106,7 +106,7 @@ mod system_tests {
         std::os::unix::fs::symlink("c".repeat(64), crate::root::system_dir(&data).join("current")).unwrap();
         let held: Vec<(String, Held)> = system(&data).into_iter().map(|(s, _)| (s.version, s.held)).collect();
         assert!(held.contains(&("0.1.0".into(), Held::Current)) && held.contains(&("0.0.2".into(), Held::Previous)) && held.contains(&("0.0.1".into(), Held::Older)), "{held:?}");
-        let u = space(&data, &data.join("repos"), &[]);
+        let u = space(&data, &data.join("repos"), &[], true);
         let room = |v: &str| u.items.iter().find(|i| i.what == format!("OS {v}")).unwrap();
         // The root in use stays; the others can be fetched again, so they can go.
         assert_eq!((room("0.1.0").room, room("0.0.2").room, room("0.0.1").room), (Room::Keep, Room::Free, Room::Free));
@@ -136,7 +136,7 @@ mod system_tests {
         root_dir(&data, 'b', "24.04.5");
         assert!(crate::root::use_held(&data, &"b".repeat(64)).is_some());
         let running = crate::tr!("A Prompt running uses it", "動いている Prompt が使っています");
-        let u = space(&data, &repos, &[]);
+        let u = space(&data, &repos, &[], true);
         assert_eq!(room_of(&u, 'a'), (Room::Keep, running.clone()), "the root the Prompt runs on stays");
         // The current one stays as ever, with no Prompt on it (#46).
         assert_eq!(room_of(&u, 'b').0, Room::Keep);
@@ -147,7 +147,7 @@ mod system_tests {
         assert!(l3.join("root/bin/busybox").is_file(), "its programs are still there to run");
         // The Prompt ends: the root before is one that can go, as it always was.
         drop(prompt);
-        let u = space(&data, &repos, &[]);
+        let u = space(&data, &repos, &[], true);
         assert_eq!(room_of(&u, 'a').0, Room::Free);
         assert_eq!(free(&data, &repos, &all_freeable(&u), &[]).removed, [format!("root:{}", "a".repeat(64))]);
         assert!(!l3.exists() && crate::root::current(&data).is_some_and(|(_, r)| r.version == "24.04.5"));
@@ -165,10 +165,10 @@ mod system_tests {
         let me = std::process::id();
         fs::create_dir_all(data.join("prompts")).unwrap();
         fs::write(data.join(format!("prompts/{me}.json")), format!(r#"{{"repo":"x","pid":{me},"network":false,"started":1,"startTicks":{}}}"#, crate::prompt::running::start_ticks(me).unwrap())).unwrap();
-        let u = space(&data, &data.join("repos"), &[]);
+        let u = space(&data, &data.join("repos"), &[], true);
         assert_eq!(room_of(&u, 'a').0, Room::Keep, "{:?}", room_of(&u, 'a'));
         fs::remove_file(data.join(format!("prompts/{me}.json"))).unwrap();
-        assert_eq!(room_of(&space(&data, &data.join("repos"), &[]), 'a').0, Room::Free);
+        assert_eq!(room_of(&space(&data, &data.join("repos"), &[], true), 'a').0, Room::Free);
         let _ = fs::remove_dir_all(&data);
     }
 
@@ -182,7 +182,7 @@ mod system_tests {
         root_dir(&data, 'b', "2");
         std::os::unix::fs::symlink("b".repeat(64), crate::root::system_dir(&data).join("current")).unwrap();
         let id = format!("root:{}", "a".repeat(64));
-        assert!(all_freeable(&space(&data, &data.join("repos"), &[])).contains(&id), "nothing holds it yet");
+        assert!(all_freeable(&space(&data, &data.join("repos"), &[], true)).contains(&id), "nothing holds it yet");
         // A Prompt starting on it holds the lock (prompt::record), and the free waits for it.
         let still = lock(&data).unwrap();
         let freeing = { let (data, id) = (data.clone(), id.clone()); std::thread::spawn(move || free(&data, &data.join("repos"), &[id], &[])) };
@@ -254,7 +254,7 @@ mod owned_tests {
         assert!(crate::repos::derived::within_derived(&repos.join("here"), "node_modules/x/index.js"));
         assert!(!crate::repos::derived::within_derived(&repos.join("here"), "vendor/node_modules/keep.js"));
 
-        let s = space(&data, &repos, &[]);
+        let s = space(&data, &repos, &[], true);
         let find = |id: &str| s.items.iter().find(|i| i.id == id).cloned();
         let d = find("derived:here").expect("what is derived is listed");
         assert!(d.room == Room::Free && d.allocated >= 40_000 && d.detail.contains("node_modules") && d.detail.contains("out"), "{d:?}");
@@ -297,25 +297,25 @@ mod owned_tests {
         fs::write(cache.join("var-cache/apt/pkgcache.bin"), vec![b'y'; 10_000]).unwrap();
         let ids = ["env:os-starting", "cache:os-starting", "derived:os-starting"].map(String::from);
         let why = |s: &Space, id: &str| s.items.iter().find(|i| i.id == id).map(|i| (i.room, i.why.clone()));
-        let s = space(&data, &repos, &[]);
+        let s = space(&data, &repos, &[], true);
         let preparing = crate::tr!("A Prompt being prepared uses it (.packages, .setup)", "用意中の Prompt が使っています（.packages、.setup）");
         for id in ids.iter().chain([&"repo:os-starting".to_string()]) {
             assert_eq!(why(&s, id), Some((Room::Keep, preparing.clone())), "{id}");
         }
         // The app tells its own Prompts as open: their records say more, and are what is said.
-        assert_eq!(why(&space(&data, &repos, &["os-starting".into()]), "env:os-starting"), Some((Room::Keep, preparing.clone())));
+        assert_eq!(why(&space(&data, &repos, &["os-starting".into()], true), "env:os-starting"), Some((Room::Keep, preparing.clone())));
         // Neither one by one nor all at once: each looked at again, it is still held.
         let f = free(&data, &repos, &[all_freeable(&s), ids.to_vec()].concat(), &[]);
         assert!(f.removed.is_empty(), "{:?}", f.removed);
         assert!(env.join("upper/usr/bin/jq").is_file() && cache.join("var-cache/apt/pkgcache.bin").is_file());
         // Prepared, it holds them as running.
         prompt.ready().unwrap();
-        assert_eq!(why(&space(&data, &repos, &[]), "env:os-starting").map(|(r, _)| r), Some(Room::Keep));
+        assert_eq!(why(&space(&data, &repos, &[], true), "env:os-starting").map(|(r, _)| r), Some(Room::Keep));
         // Its process lost while it was prepared (killed: its record left behind) holds nothing.
         drop(prompt);
         fs::create_dir_all(data.join("prompts")).unwrap();
         fs::write(data.join("prompts/4194304.json"), format!(r#"{{"repo":"os-starting","pid":4194304,"network":false,"root":"{}","preparing":true,"started":1,"startTicks":1}}"#, "a".repeat(64))).unwrap();
-        let s = space(&data, &repos, &[]);
+        let s = space(&data, &repos, &[], true);
         assert!(ids.iter().all(|id| why(&s, id).is_some_and(|(r, _)| r == Room::Free)), "{:?}", s.items);
         assert_eq!(free(&data, &repos, &ids, &[]).removed.len(), 3);
         assert!(!env.exists() && !cache.exists() && repos.join("os-starting/package.json").is_file());

@@ -46,7 +46,7 @@ pub fn repo(ctx: &Ctx, call: &Call, i: usize) -> Result<String> {
     repo_named(ctx, call.word(i)).map_err(|e| match e {
         Error::Usage(_) if call.word(i).is_none() => {
             let form = crate::spec::usage(call.command, call.form).replacen("[REPO]", "REPO", 1);
-            let here: Option<Vec<String>> = ctx.repos().and_then(|r| Ok(r.list()?)).ok().map(|l| l.into_iter().map(|s| s.name).collect());
+            let here: Option<Vec<String>> = ctx.repos().and_then(|r| Ok(r.names()?)).ok();
             let some = match here {
                 None => String::new(),
                 Some(h) if h.is_empty() => tr!(" (there is none yet: l3 repo new NAME)", "（まだありません：l3 repo new NAME）"),
@@ -204,8 +204,8 @@ pub fn issue(ctx: &Ctx, call: &Call, i: usize) -> Result<IssueRef> {
 /// A bare number outside a repo: the one repo here that has an issue of that number.
 fn by_number(r: &length3_core::repos::store::Repos, n: &str) -> Result<(String, String)> {
     let mut found = Vec::new();
-    for s in r.list()? {
-        if let Ok(file) = r.issue_file(&s.name, n) { found.push((s.name, file)); }
+    for name in r.names()? {
+        if let Ok(file) = r.issue_file(&name, n) { found.push((name, file)); }
     }
     match found.len() {
         1 => Ok(found.remove(0)),
@@ -217,7 +217,7 @@ fn by_number(r: &length3_core::repos::store::Repos, n: &str) -> Result<(String, 
 
 /// The one issue whose title the words name; several are a choice to make, not a guess.
 fn by_title(ctx: &Ctx, r: &length3_core::repos::store::Repos, words: &str) -> Result<(String, String)> {
-    let names: Vec<String> = match &ctx.here { Some(h) => vec![h.repo.clone()], None => r.list()?.into_iter().map(|s| s.name).collect() };
+    let names: Vec<String> = match &ctx.here { Some(h) => vec![h.repo.clone()], None => r.names()? };
     let mut all = Vec::new();
     for n in &names { all.extend(r.issues(n)?); }
     all.sort_by(|a, b| a.repo.cmp(&b.repo).then(a.n.unwrap_or(u64::MAX).cmp(&b.n.unwrap_or(u64::MAX))).then(a.file.cmp(&b.file)));

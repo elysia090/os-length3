@@ -85,9 +85,9 @@ pub fn fetch(repos: &Repos, repo: &str, room: impl FnOnce()) -> Result<Synced> {
 pub fn sync_all(repos: &Repos) -> Result<Vec<(String, Result<Synced>)>> {
     let client = Client::open()?;
     let mut out = Vec::new();
-    for s in repos.list()? {
-        let r = lock(&key(repos, &s.name).0).and_then(|_held| sync_with(&client, repos, &s.name));
-        out.push((s.name, r));
+    for name in repos.names()? {
+        let r = lock(&key(repos, &name).0).and_then(|_held| sync_with(&client, repos, &name));
+        out.push((name, r));
     }
     Ok(out)
 }

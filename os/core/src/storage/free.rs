@@ -10,7 +10,7 @@ use crate::fs::size::{allocated, blocks, links};
 use crate::fs::lock::lock;
 use std::path::Path;
 use std::time::{Duration, Instant};
-use super::items::{Certainty, Held, host, InUse, Item, item, Room, space, system};
+use super::items::{Certainty, forget, Held, host, InUse, Item, item, Room, space, system};
 
 /// Another distribution's root fetched and installed (root/fetch.rs fetch_distro), room made for it first.
 #[cfg(not(target_os = "wasi"))]
@@ -81,10 +81,10 @@ pub fn make_room(data: &Path, repos_dir: &Path, want: u64) -> Option<Freed> {
     if certainty == Certainty::Unknown || total == 0 { return None; }
     let reserve = std::env::var("LENGTH3_RESERVE").ok().and_then(|v| v.parse().ok()).unwrap_or((total / 20).clamp(512 << 20, 4 << 30));
     let need = (want + reserve).checked_sub(free_now).filter(|n| *n > 0)?;
-    let s = space(data, repos_dir, &[]);
+    let s = space(data, repos_dir, &[], true);
     let previous: Vec<String> = system(data).into_iter().filter(|(r, _)| r.held == Held::Previous).map(|(r, _)| format!("root:{}", r.sha256)).collect();
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
-    let touched: std::collections::HashMap<String, u64> = crate::repos::store::Repos::new(repos_dir.to_path_buf()).and_then(|r| r.list())
+    let touched: std::collections::HashMap<String, u64> = crate::repos::store::Repos::new(repos_dir.to_path_buf()).and_then(|r| r.list(true))
         .map(|l| l.into_iter().map(|x| (format!("repo:{}", x.name), x.modified)).collect()).unwrap_or_default();
     let ids = room_order(&s.items, &previous, &touched, now, need);
     if ids.is_empty() { return None; }
@@ -135,6 +135,8 @@ pub fn free(data: &Path, repos_dir: &Path, ids: &[String], open: &[String]) -> F
             Err(e) => kept.push((id.clone(), e)),
         }
     }
+    // What went was measured before it went: measured again when next asked.
+    if !removed.is_empty() { forget(); }
     let started = Instant::now();
     let mut after = before;
     let mut reflected = None;

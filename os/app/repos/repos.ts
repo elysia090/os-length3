@@ -11,6 +11,8 @@ export interface RepoSummary {
   files: number;
   bytes: number;
   modified: number;
+  /** As the core last counted it (core/src/repos/measure.rs), so possibly older than now: `list(true)` counts it now. */
+  kept: boolean;
 }
 
 export interface Entry {
@@ -34,8 +36,8 @@ export type Template = string;
 export const EDIT_LIMIT = 256 * 1024;
 
 export interface RepoStore {
-  /** Each repo with its size and when it last changed: every one walked to say so. */
-  list(): Promise<RepoSummary[]>;
+  /** Each repo with its size and when it last changed, as last counted; `fresh`: each walked now to say so. */
+  list(fresh?: boolean): Promise<RepoSummary[]>;
   /** The repos' names, in order, and nothing walked: what only names them, or looks for one, asks. */
   names(): Promise<string[]>;
   create(name: string, template: Template): Promise<RepoSummary>;
@@ -99,7 +101,7 @@ export function validName(name: string): boolean {
 }
 
 class CoreStore implements RepoStore {
-  list() { return core<RepoSummary[]>('repo_list'); }
+  list(fresh = false) { return core<RepoSummary[]>('repo_list', {fresh}); }
   names() { return core<string[]>('repo_names'); }
   create(name: string, template: Template) { return core<RepoSummary>('repo_create', {name, template}); }
   tree(repo: string, path: string) { return core<Entry[]>('repo_tree', {repo, path}); }
@@ -167,7 +169,7 @@ class Observed implements RepoStore {
   private inner: RepoStore;
   constructor(inner: RepoStore) { this.inner = inner; }
   private tell(c: Change) { this.changes.dispatchEvent(new CustomEvent<Change>('change', {detail: c})); }
-  list() { return this.inner.list(); }
+  list(fresh = false) { return this.inner.list(fresh); }
   names() { return this.inner.names(); }
   tree(repo: string, path: string) { return this.inner.tree(repo, path); }
   read(repo: string, path: string) { return this.inner.read(repo, path); }
