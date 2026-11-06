@@ -2,6 +2,7 @@
 //! keeps its profile, TODO and band here (in a browser, in its storage), and
 //! l3 reads and writes the same TODO.
 
+// No unsafe code in this layer.
 #![forbid(unsafe_code)]
 
 mod state;

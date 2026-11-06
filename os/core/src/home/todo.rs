@@ -1,35 +1,57 @@
 //! Home's TODO: its items, each a first line (a kind and a title) and a detail, and two lists joined as they were
 //! written on two devices.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use crate::text::title::kind_of;
 use crate::Result;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::HashMap;
 use super::state::{get, set};
 
-/// Two TODO lists as one, against the one both last agreed (`base`), as
-/// src/remote/sync.ts `joinTodo`: an item only one side changed or removed is as
-/// that side left it, one both changed is this device's, and every item
-/// either side added is kept, the Remote's new ones first. Nothing agreed
-/// (or not a list): every item from both, this device's where both have it.
-/// One side not a list, or an item that is null: this device's stands.
+/// Two TODO lists as one, against the one both last agreed (`base`): an item only one side changed or removed is as
+/// that side left it, one both changed is this device's, and every item either side added is kept, the Remote's new
+/// ones first. Nothing agreed (or not a list): every item from both, this device's where both have it. One side not
+/// a list, or an item that is null: this device's stands.
 pub fn join_todo(base: &str, here: &str, there: &str) -> String {
-    use serde_json::Value;
     let lists = (serde_json::from_str::<Value>(here), serde_json::from_str::<Value>(there));
     let (Ok(Value::Array(a)), Ok(Value::Array(b))) = lists else { return here.to_string() };
-    if a.iter().chain(&b).any(|x| x.is_null()) { return here.to_string(); }
+    if a.iter().chain(&b).any(Value::is_null) { return here.to_string(); }
     let was: Vec<Value> = match serde_json::from_str::<Value>(base) { Ok(Value::Array(o)) => o.into_iter().filter(|x| !x.is_null()).collect(), _ => Vec::new() };
-    let id = |x: &Value| x.as_object().and_then(|o| o.get("id")).cloned();
-    // By id as the app's Map holds them: the last of each.
-    let find = |list: &[Value], x: &Value| list.iter().rev().find(|y| same_id(id(y).as_ref(), id(x).as_ref())).cloned();
-    let untouched = |x: &Value| find(&was, x).is_some_and(|w| w == *x);
-    let mut out: Vec<Value> = b.iter().filter(|x| find(&a, x).is_none() && !untouched(x)).cloned().collect();
+    // Each list by id, once: an item is looked up, not searched for, and nothing is copied until the list is written.
+    let (was_by, a_by, b_by) = (by_id(&was), by_id(&a), by_id(&b));
+    let untouched = |x: &Value| find(&was_by, x).is_some_and(|w| w == x);
+    let mut out: Vec<&Value> = b.iter().filter(|x| find(&a_by, x).is_none() && !untouched(x)).collect();
     for x in &a {
-        if !untouched(x) { out.push(x.clone()); } else if let Some(t) = find(&b, x) { out.push(t); }
+        if !untouched(x) { out.push(x); } else if let Some(t) = find(&b_by, x) { out.push(t); }
     }
     serde_json::to_string(&out).unwrap_or_else(|_| here.to_string())
+}
+
+/// An item's id, told from another's as the app's lists always have (a JavaScript Map's keys): every item without one
+/// shares one, and equal strings, numbers (0 and -0 alike), booleans and nulls are one; an object or a list is
+/// no other's, so it has none here.
+#[derive(PartialEq, Eq, Hash)]
+enum Id<'a> { Absent, Null, Bool(bool), Number(u64), Text(&'a str) }
+
+fn id_of(x: &Value) -> Option<Id<'_>> {
+    match x.as_object().and_then(|o| o.get("id")) {
+        None => Some(Id::Absent),
+        Some(Value::Null) => Some(Id::Null),
+        Some(Value::Bool(b)) => Some(Id::Bool(*b)),
+        Some(Value::Number(n)) => n.as_f64().map(|f| Id::Number((f + 0.0).to_bits())),
+        Some(Value::String(s)) => Some(Id::Text(s)),
+        Some(_) => None,
+    }
+}
+
+/// A list's items by id: the last of each, as a Map built from it holds them.
+fn by_id(list: &[Value]) -> HashMap<Id<'_>, &Value> {
+    list.iter().filter_map(|x| Some((id_of(x)?, x))).collect()
+}
+
+/// The item of `by` with `x`'s id.
+fn find<'v>(by: &HashMap<Id<'_>, &'v Value>, x: &Value) -> Option<&'v Value> {
+    by.get(&id_of(x)?).copied()
 }
 
 /// `item` with its first line written again as `line` reads (app/home/todo.ts `edit`): the same item,
@@ -90,28 +112,15 @@ pub struct Todo {
     pub created: u64,
 }
 
-/// Whether two items' ids are the same as a JavaScript Set sees them (src/remote/sync.ts):
-/// absent ones are, as are equal strings, numbers, booleans and nulls; objects never are.
-fn same_id(a: Option<&serde_json::Value>, b: Option<&serde_json::Value>) -> bool {
-    use serde_json::Value as V;
-    match (a, b) {
-        (None, None) => true,
-        (Some(V::Number(x)), Some(V::Number(y))) => x.as_f64() == y.as_f64(),
-        (Some(x @ (V::String(_) | V::Bool(_) | V::Null)), Some(y)) => x == y,
-        _ => false,
-    }
-}
-
+/// `n` in base 36, as JavaScript's `toString(36)` writes it.
 pub(super) fn radix36(mut n: u64) -> String {
-    let digits = b"0123456789abcdefghijklmnopqrstuvwxyz";
-    let mut out = Vec::new();
+    let mut digits = Vec::new();
     loop {
-        out.push(digits[(n % 36) as usize]);
+        digits.push(b"0123456789abcdefghijklmnopqrstuvwxyz"[(n % 36) as usize]);
         n /= 36;
         if n == 0 { break; }
     }
-    out.reverse();
-    String::from_utf8(out).unwrap()
+    digits.iter().rev().map(|&d| char::from(d)).collect()
 }
 
 /// A number no other call is likely to have: std's random per-process keys, moved on at each call, over the time.
@@ -121,5 +130,3 @@ pub(super) fn unique() -> u64 {
     h.write_u128(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos()));
     h.finish()
 }
-
-

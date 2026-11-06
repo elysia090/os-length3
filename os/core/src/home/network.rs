@@ -1,8 +1,5 @@
 //! The repos whose Prompts may reach the network, on this device only (never sent).
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use crate::Result;
 use super::state::{get, set};
 

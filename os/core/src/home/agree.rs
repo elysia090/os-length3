@@ -1,16 +1,13 @@
 //! Home's settings agreed with the Remote (remote/app.ts `/v1/home/:key`): each read and written on a version, two
 //! changes to one joined, and what this device took kept apart from what is still to send.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use crate::Result;
 use serde::Serialize;
 use super::state::{get, remove, set};
 use super::todo::join_todo;
 
 /// Home's files here, and what was last agreed for each: the `sync`
-/// setting's `home`, as the app keeps it (src/remote/sync.ts), beside its other records.
+/// setting's `home`, beside the other records of what was agreed (app/remote/settings.ts reads it).
 pub struct Files;
 
 /// Agree `key` with the Remote. Unchanged here, the Remote's is taken.
@@ -192,7 +189,7 @@ pub struct Agreed {
     pub who: Option<String>,
 }
 
-/// Home's settings that are the person's, kept on the Remote (src/remote/sync.ts
-/// `HOME_KEYS`). The band, the language and the network grant are this device's.
+/// Home's settings that are the person's, kept on the Remote (app/remote/settings.ts `HOME_KEYS`). The band, the
+/// language and the network grant are this device's.
 pub const SYNCED: [&str; 3] = ["profile", "todo", "dotfiles"];
 

@@ -1,9 +1,6 @@
 //! The dotfiles every Prompt starts with, kept on the Remote, and of them what this device runs: only what it took
 //! here, so a dotfile written elsewhere runs once taken.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use crate::Result;
 use super::state::{get, set};
 

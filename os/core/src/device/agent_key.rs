@@ -55,7 +55,7 @@ pub struct Kept {
 const VARIABLES: [&str; 10] = ["ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY", "XAI_API_KEY",
     "GROQ_API_KEY", "GEMINI_API_KEY", "PERPLEXITY_API_KEY", "FIREWORKS_API_KEY", "HF_TOKEN"];
 
-/// The key as a browser keeps it when a passkey sealed it (src/home/seal.ts): opened by the page alone, with the
+/// The key as a browser keeps it when a passkey sealed it (app/account/seal.ts): opened by the page alone, with the
 /// passkey, once a session; beside it, what is known of it without opening it.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Sealed {
@@ -118,7 +118,7 @@ fn sealed_well(s: &Sealed) -> bool {
         && s.sealed.to_string().len() <= 4096
 }
 
-/// Keep the key sealed, in place of any kept before (a browser's, where a passkey sealed it: src/home/seal.ts).
+/// Keep the key sealed, in place of any kept before (a browser's, where a passkey sealed it: app/account/seal.ts).
 pub fn seal(s: &Sealed) -> Result<()> {
     if !sealed_well(s) { return Err(crate::tr!("This is not a sealed key this OS knows", "この OS が知っている封をしたキーではありません")); }
     crate::device::vault::set(Secret::AgentKey, &serde_json::to_string(s).map_err(|e| e.to_string())?)

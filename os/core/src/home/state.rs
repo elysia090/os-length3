@@ -1,8 +1,5 @@
 //! Home's settings as files the person owns (`<data>/home/<key>.json`), each replaced whole; the language among them.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use crate::fs::paths::home_dir;
 use crate::Result;
 use std::fs;
@@ -26,15 +23,15 @@ pub const LANGS: [&str; 2] = ["en", "ja"];
 /// Store `json` for `key`: it must parse, and it is replaced whole (written
 /// beside and renamed), so a reader never sees half of it.
 pub fn set(key: &str, json: &str) -> Result<()> {
-    serde_json::from_str::<serde_json::Value>(json).map_err(|e| format!("{key}: {e}"))?;
+    let path = file(key)?;
     if json.len() > 1 << 20 {
         // Kept as one value (every dotfile together, every TODO), so what was being added is what makes it too large.
         return Err(crate::tr!("Home's {} would be larger than 1 MiB in all, so nothing was saved; make room in it first", "Home の {} が合わせて 1 MiB を超えるので、保存していません。先に空きを作ってください", key));
     }
-    let path = file(key)?;
+    serde_json::from_str::<serde::de::IgnoredAny>(json).map_err(|e| format!("{key}: {e}"))?;
     // Home's state (profile, TODO, the Remote's session) is the person's alone: the directory is private and
     // the file owner-only.
-    crate::fs::write::private_dir(path.parent().unwrap()).map_err(|e| e.to_string())?;
+    crate::fs::write::private_dir(home_dir()).map_err(|e| e.to_string())?;
     crate::fs::write::replace(&path, json.as_bytes(), crate::fs::write::How::PRIVATE).map_err(|e| crate::tr!("{}: {}", "{}：{}", path.display(), e))?;
     if key == "lang" { crate::text::i18n::changed(); }
     Ok(())
@@ -59,7 +56,7 @@ pub fn get(key: &str) -> Result<Option<String>> {
 
 fn file(key: &str) -> Result<PathBuf> {
     if !KEYS.contains(&key) {
-        return Err(format!("unknown state {key:?}"));
+        return Err(crate::tr!("Home keeps no {:?}", "Home は {:?} を持ちません", key));
     }
     Ok(home_dir().join(format!("{key}.json")))
 }

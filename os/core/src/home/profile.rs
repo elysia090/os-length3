@@ -1,8 +1,5 @@
 //! Home's profile: the name, the handle and the few words a person says of themselves.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use crate::Result;
 use serde::{Deserialize, Serialize};
 use super::state::{get, set};

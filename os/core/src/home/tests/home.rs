@@ -281,3 +281,30 @@ fn two_lists_join_as_the_app_joins_them() {
     // Items without an id are one id (absent) as the app's Set holds them; object ids are never the same.
     assert_eq!(join_todo("", r#"[{}]"#, r#"[{"t":1},{"id":{}}]"#), r#"[{"id":{}},{}]"#);
 }
+
+#[test]
+fn ids_are_told_apart_as_the_apps_lists_tell_them() {
+    // 0 and -0 are one id; a number and its text are two; the last of an id is the one a list holds.
+    assert_eq!(join_todo("", r#"[{"id":0}]"#, r#"[{"id":-0.0},{"id":"0"}]"#), r#"[{"id":"0"},{"id":0}]"#);
+    let base = r#"[{"id":"a","t":1}]"#;
+    assert_eq!(join_todo(base, r#"[{"id":"a","t":1}]"#, r#"[{"id":"a","t":2},{"id":"a","t":3}]"#), r#"[{"id":"a","t":3}]"#);
+    // An object as an id is no other's, not even an equal one's.
+    assert_eq!(join_todo(r#"[{"id":{}}]"#, r#"[{"id":{}}]"#, r#"[{"id":{}}]"#), r#"[{"id":{}},{"id":{}}]"#);
+}
+
+#[test]
+fn a_long_list_is_joined_item_by_item() {
+    let item = |i: usize, t: &str| format!(r#"{{"id":"{i}","t":"{t}"}}"#);
+    let list = |n: usize, f: &dyn Fn(usize) -> String| format!("[{}]", (0..n).map(f).collect::<Vec<_>>().join(","));
+    let base = list(5000, &|i| item(i, "x"));
+    // Here every tenth changed; there every seventh removed and one added.
+    let here = list(5000, &|i| item(i, if i % 10 == 0 { "here" } else { "x" }));
+    let there = format!("[{},{}]", (0..5000).filter(|i| i % 7 != 0).map(|i| item(i, "x")).collect::<Vec<_>>().join(","), item(9999, "new"));
+    let joined: Vec<serde_json::Value> = serde_json::from_str(&join_todo(&base, &here, &there)).unwrap();
+    let ids: Vec<&str> = joined.iter().map(|x| x["id"].as_str().unwrap()).collect();
+    // The Remote's new one first; then each kept: changed here, or untouched here and kept there.
+    let kept: Vec<String> = (0..5000).filter(|i| i % 10 == 0 || i % 7 != 0).map(|i| i.to_string()).collect();
+    assert_eq!(ids[0], "9999");
+    assert_eq!(ids[1..], kept.iter().map(String::as_str).collect::<Vec<_>>()[..]);
+    assert!(joined.iter().filter(|x| x["t"] == "here").count() == 500);
+}

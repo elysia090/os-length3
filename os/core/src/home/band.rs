@@ -1,8 +1,5 @@
 //! Home's band: the repos the person keeps at hand, in their order.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use crate::Result;
 use super::state::{get, set};
 

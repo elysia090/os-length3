@@ -74,7 +74,7 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         "dotfiles_in_effect" => to(home::dotfiles_in_effect().into_iter().collect::<std::collections::BTreeMap<_, _>>()),
         // The Agent's key (device/agent_key.rs), kept on this device only: whether there is one, as it may be shown; kept (with
         // the model it opens) or taken away (`key` null); and, whole, for the page that asks the model with it.
-        // A key a passkey sealed (a browser's: src/home/seal.ts) is said as sealed; the page opens it, once a session.
+        // A key a passkey sealed (a browser's: app/account/seal.ts) is said as sealed; the page opens it, once a session.
         "agent_key" => to(agent_key::held().map(|h| match h {
             agent_key::Held::Given(k) => json!({"shown": agent_key::shown(&k.key), "model": k.model}),
             agent_key::Held::Sealed(s) => json!({"shown": s.shown, "model": s.model, "sealed": true}),
