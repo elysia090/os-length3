@@ -1,6 +1,6 @@
 // A stand-in release root, a few files of each kind a root has, and l3 for
 // the browser made from it with a stand-in translator: for tests
-// (scripts/l3.test.mjs, app/prompt/userland.test.ts), so they need neither the real
+// (scripts/l3.test.ts, app/prompt/userland.test.ts), so they need neither the real
 // root nor Rust.
 import {execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
@@ -10,10 +10,10 @@ import {fileURLToPath} from 'node:url';
 import {zstdCompressSync} from 'node:zlib';
 
 const os = fileURLToPath(new URL('..', import.meta.url));
-const sha = (b) => createHash('sha256').update(b).digest('hex');
+const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 
 /** A release root of a few files: a program and its links (one a hard link), set-id and sticky bits, an empty file, the package db. */
-export function standIn(dir, version) {
+export function standIn(dir: string, version: string) {
   const tree = join(dir, 'tree'), root = join(tree, 'root');
   for (const d of ['usr/bin', 'usr/lib/apk/db', 'etc/length3', 'tmp', 'root', 'var/empty']) mkdirSync(join(root, d), {recursive: true});
   writeFileSync(join(root, 'usr/bin/busybox'), Buffer.concat([Buffer.from('\x7fELF'), Buffer.alloc(4096, 7)]));
@@ -39,13 +39,13 @@ export function standIn(dir, version) {
   return file;
 }
 
-/** l3.mjs into `dir` with a stand-in translator (kept in `work`): a wasm module with nothing in it, and a "translation" that is the same. */
-export function makeL3(root, dir, work) {
+/** l3.ts into `dir` with a stand-in translator (kept in `work`): a wasm module with nothing in it, and a "translation" that is the same. */
+export function makeL3(root: string, dir: string, work: string) {
   const wasm = join(work, 'xlat.wasm');
   writeFileSync(wasm, Buffer.from([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]));
   const xlat = join(work, 'xlat');
   writeFileSync(xlat, `#!${process.execPath}\nrequire('fs').copyFileSync(${JSON.stringify(wasm)}, process.argv.at(-1));\n`);
   chmodSync(xlat, 0o755);
-  return spawnSync(process.execPath, [join(os, 'scripts/l3.mjs'), root, dir, '--translator', wasm, '--xlat', xlat, '--hot', '/usr/bin/busybox'], {encoding: 'utf8'});
+  return spawnSync(process.execPath, [join(os, 'scripts/l3.ts'), root, dir, '--translator', wasm, '--xlat', xlat, '--hot', '/usr/bin/busybox'], {encoding: 'utf8'});
 }
 

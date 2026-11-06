@@ -49,7 +49,7 @@ export function pinnedRoots(rootRs: string): PinnedRoot[] {
     /Release \{\s*name: "[^"]*",\s*version: "([^"]+)",\s*sha256: "([0-9a-f]{64})",\s*bytes: ([\d_]+),\s*file: "([^"]+)",\s*tag: "([^"]+)",\s*web: "((?:[0-9a-f]{64})?)",\s*\}/g)]
     .map(([, version, sha256, bytes, file, tag, web]) => ({key: rootKey(sha256), path: `/v1/os/${sha256}`, tag, file, sha256, bytes: Number(bytes.replace(/_/g, '')), type: 'application/octet-stream', version, web}));
   // Every entry is read, or none is: an entry the pattern missed would be a root left out unsaid.
-  if (roots.length !== (rootRs.slice(at, end).match(/Release \{/g) ?? []).length) throw new Error('core/src/root/pins.rs: a RELEASES entry is not as pin-root.mjs writes one');
+  if (roots.length !== (rootRs.slice(at, end).match(/Release \{/g) ?? []).length) throw new Error('core/src/root/pins.rs: a RELEASES entry is not as pin-root.ts writes one');
   return roots;
 }
 
@@ -69,7 +69,7 @@ export function pinnedDistros(rootRs: string): Pinned[] {
 
 /**
  * The version this tree ships: the newest whose desktop app it pins (its root is pinned in the same change,
- * scripts/pin-root.mjs and pin-desktop.mjs). RELEASE names the version being made, which is shipped once the
+ * scripts/pin-root.ts and pin-desktop.ts). RELEASE names the version being made, which is shipped once the
  * release has pinned it: the web, its build and the deploy take this one, never RELEASE.
  */
 export function shipped(pins: DesktopPins = desktopPins as DesktopPins): string {

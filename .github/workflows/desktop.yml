@@ -82,7 +82,7 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=l3-web-${{ hashFiles('os/RELEASE', 'os/core/src/root/pins.rs', 'os/remote/releases.ts', 'os/scripts/l3.sh', 'os/scripts/l3.mjs', 'os/scripts/l3-tree.mjs', 'os/scripts/root-file.mjs', 'os/scripts/l3-parity.mjs', 'xlat/runtime/table.mjs', 'xlat/Cargo.toml', 'xlat/Cargo.lock', 'xlat/src/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=l3-web-${{ hashFiles('os/RELEASE', 'os/core/src/root/pins.rs', 'os/remote/releases.ts', 'os/scripts/l3.sh', 'os/scripts/l3.ts', 'os/scripts/l3-tree.ts', 'os/scripts/root-file.ts', 'os/scripts/l3-parity.ts', 'xlat/runtime/table.mjs', 'xlat/Cargo.toml', 'xlat/Cargo.lock', 'xlat/src/**') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -110,9 +110,9 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           npm ci
-          root=$(node scripts/root-file.mjs target/root)
+          root=$(node scripts/root-file.ts target/root)
           sh scripts/l3.sh "$root" public/l3
-          node scripts/l3-parity.mjs "$root" public/l3
+          node scripts/l3-parity.ts "$root" public/l3
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

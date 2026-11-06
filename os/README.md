@@ -70,7 +70,7 @@ tracked in issue #20.
   what is saved anywhere else is put into the shell's copy, so the shell,
   File, Forge and Git see one repo. Its one dependency is l3 (DESIGN.md,
   l3: the one base): in a browser, `public/l3`, made from the release root
-  by `scripts/l3.mjs`: `l3.json` (which l3, and the root's digest), an index
+  by `scripts/l3.ts`: `l3.json` (which l3, and the root's digest), an index
   of every path, a pack per package that a file is read from when a program
   first opens it, and the translator with BusyBox, l3 and git translated
   ahead of time. A first Prompt fetches about 0.8 MB (the index, the translator,
@@ -81,7 +81,7 @@ tracked in issue #20.
   reads it rather than translating it again. Make it
   with `npm run l3` (`scripts/l3.sh`: the translator from this tree and the
   newest root `core/src/root/pins.rs` pins), and check it against that root
-  with `npm run l3:parity -- ROOT public/l3`; `node scripts/l3-runnable.mjs
+  with `npm run l3:parity -- ROOT public/l3`; `node scripts/l3-runnable.ts
   public/l3 ROOT_DIR` says which programs of it run under xlat today.
 
 ## l3: the same OS on the command line
@@ -526,15 +526,15 @@ to this repository, and its Settings → Build say, once:
 | | |
 |---|---|
 | Root directory | `os` |
-| Build command | `npm run build:cloudflare`: l3 for the browser from the release of the newest l3 `core/src/root/pins.rs` pins (`scripts/prompt-files.mjs`, taken only at the index pinned for it), then the app |
+| Build command | `npm run build:cloudflare`: l3 for the browser from the release of the newest l3 `core/src/root/pins.rs` pins (`scripts/prompt-files.ts`, taken only at the index pinned for it), then the app |
 | Deploy command | `node remote/deploy.ts`: the migrations on Neon's production branch (no branch is made for a deploy; a contract step waits until the new Worker answers), the bucket, then the Worker with the secrets it lacks (the first build prints the link in its log), then the release's files the Remote serves to anyone (`remote/mirror.ts`): each root `core/src/root/pins.rs` pins and the newest desktop app `shared/desktop-releases.json` pins, taken from the GitHub release where the bucket lacks them, checked against those pins, and put with wrangler |
 | Variables and secrets | `NEON_PROJECT_ID`; secrets `NEON_API_KEY` (a Neon API key for the project) and `GITHUB_TOKEN` (optional, read-only: the deploy reads the release's files through GitHub's API, which limits a caller without one to 60 requests an hour; the build's Prompt is read from the public release without it) |
 | Non-production branch deploy command | `npx wrangler versions upload`: another branch's build uploads a version and never deploys (`remote/deploy.ts` refuses to run for a branch other than main). The version has no preview URL (`wrangler.toml`: `workers_dev = false`, `preview_urls = false`), since it would run against production's database and bucket: it is checked that it builds. A version that brings a Durable Object class production has not made yet (`[[migrations]]`, as `mark` did) is refused by Cloudflare until main's deploy has made it. Never `npx wrangler deploy`, which would replace production from any branch, without its migrations or its bucket |
-| Branch control | main deploys; other branches build previews, each with the Prompt the tree ships (`scripts/prompt-files.mjs`, from the public release) |
+| Branch control | main deploys; other branches build previews, each with the Prompt the tree ships (`scripts/prompt-files.ts`, from the public release) |
 
 The Prompt the web serves is a released one: a newer one ships by releasing
 it (a new version in `RELEASE`, `.github/workflows/release.yml`; without
-Actions, `scripts/release.sh` and `scripts/publish-release.mjs` by hand), then merging the pins
+Actions, `scripts/release.sh` and `scripts/publish-release.ts` by hand), then merging the pins
 the release proposes (Pin vX.Y.Z): l3's one entry in `core/src/root/pins.rs`
 (the root, and the index the web reads it by) and the desktop app in
 `shared/desktop-releases.json`. A build
@@ -589,7 +589,7 @@ The desktop app's build does not: its core is the app's own.
 ### Where the page's code is
 
 `src/` holds the page, a folder to each kind of thing it does, in layers: each takes only from those above it in this
-table, never from one below, and `pages/` is layered the same way within it (`scripts/layers.mjs` holds both orders;
+table, never from one below, and `pages/` is layered the same way within it (`scripts/layers.ts` holds both orders;
 `npm test` fails on an import against them, a type as much as a value). A module's tests stand beside it
 (`x.test.ts`), and may take from any layer they put together.
 
@@ -642,9 +642,9 @@ npm run verify:remote          # the Remote on a real Postgres: DATABASE_URL (se
 npx tauri dev                  # window against the Vite dev server
 npx tauri build --debug --no-bundle
 sh scripts/desktop.sh          # the .deb and the AppImage as they ship, l3 beside the app
-node scripts/styles-prune.mjs  # take out of the stylesheet the rules no element can match (--dry: only say which)
-node scripts/styles-split.mjs  # the stylesheet in parts by what each styles (app/styles/), in the cascade's order
-node scripts/styles-check.mjs  # the stylesheet against HEAD's: the same rules in the same order, the same built CSS
+node scripts/styles-prune.ts  # take out of the stylesheet the rules no element can match (--dry: only say which)
+node scripts/styles-split.ts  # the stylesheet in parts by what each styles (app/styles/), in the cascade's order
+node scripts/styles-check.ts  # the stylesheet against HEAD's: the same rules in the same order, the same built CSS
 ```
 
 ### CI
@@ -695,7 +695,7 @@ repository is read. About 95 journeys take about four minutes on four cores.
   `PLAYWRIGHT_BROWSERS_PATH` where one is installed).
 - The Prompt's tests are tagged `@slow` (the root's BusyBox and l3 through
   the translator) and run with `SELFTEST_SLOW=1` once `public/l3` holds l3
-  (`npm run l3`, or `node scripts/prompt-files.mjs`); the build then
+  (`npm run l3`, or `node scripts/prompt-files.ts`); the build then
   carries it. `first-prompt.spec.ts` measures what a first Prompt fetches.
 - CI (`selftest` in `.github/workflows/desktop.yml`) runs everything in four
   shards (`npm run selftest -- --shard=2/4` is one), retries a failure once,

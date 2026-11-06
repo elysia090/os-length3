@@ -3,7 +3,7 @@
 // may hold a tree of its own (pages/), ordered the same way within it. A type taken counts as much as a value: what
 // a module names of another, it depends on.
 //
-//   node scripts/layers.mjs          the imports against the order, each with the file that makes it; fails if any
+//   node scripts/layers.ts          the imports against the order, each with the file that makes it; fails if any
 //
 // Tests (*.test.ts, app/testing/) are left out: a test may take from any layer it puts together.
 import {readdirSync, readFileSync} from 'node:fs';
@@ -13,7 +13,7 @@ import {fileURLToPath} from 'node:url';
 const OS = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Each tree, its modules from the bottom up. A module not named is wrong in its tree until it is. */
-export const TREES = [
+export const TREES: {root: string; order: string[]; skip?: string[]}[] = [
   {root: 'app', order: ['i18n', 'agent', 'core', 'ui', 'host', 'repos', 'home', 'remote', 'prompt', 'account', 'pages', '.'],
     skip: ['styles', 'shims', 'testing']},
   // The pages: what they share (kit), the bench Forge and Git work at (with its search), then each page.
@@ -23,8 +23,8 @@ export const TREES = [
 
 const IMPORT = /(?:import|export)\s+(?:type\s+)?(?:[^'";]*?\s+from\s+)?['"](\.[^'"]+)['"]|import\(\s*['"](\.[^'"]+)['"]\s*\)/g;
 
-function files(dir) {
-  const out = [];
+function files(dir: string): string[] {
+  const out: string[] = [];
   for (const e of readdirSync(dir, {withFileTypes: true})) {
     const p = join(dir, e.name);
     if (e.isDirectory()) out.push(...files(p));
@@ -34,14 +34,14 @@ function files(dir) {
 }
 
 /** The module of `file` in `tree`: the first directory under its root, or '.'. */
-const moduleOf = (tree, file) => {
+const moduleOf = (tree: (typeof TREES)[number], file: string) => {
   const parts = relative(join(OS, tree.root), file).split(sep);
   return parts.length > 1 ? parts[0] : '.';
 };
 
 /** Every import against the order: [tree, from module, to module, file, what it imports]. */
-export function violations() {
-  const found = [];
+export function violations(): [string, string, string, string, string][] {
+  const found: [string, string, string, string, string][] = [];
   for (const tree of TREES) {
     const root = join(OS, tree.root);
     for (const file of files(root)) {
@@ -49,12 +49,13 @@ export function violations() {
       if (tree.skip?.includes(from)) continue;
       const src = readFileSync(file, 'utf8');
       for (const m of src.matchAll(IMPORT)) {
-        const target = resolve(dirname(file), m[1] ?? m[2]);
+        const spec = m[1] ?? m[2] ?? '';
+        const target = resolve(dirname(file), spec);
         if (!target.startsWith(root + sep)) continue;
         const to = moduleOf(tree, target);
         if (to === from || tree.skip?.includes(to)) continue;
         const a = tree.order.indexOf(from), b = tree.order.indexOf(to);
-        if (a < 0 || b < 0 || b > a) found.push([tree.root, from, to, relative(OS, file), m[1] ?? m[2]]);
+        if (a < 0 || b < 0 || b > a) found.push([tree.root, from, to, relative(OS, file), spec]);
       }
     }
   }
@@ -69,30 +70,37 @@ export function violations() {
 /** Where no file may reach back to itself: the app, the Remote, these scripts, and xlat's runtime the Prompt runs. */
 export const ACYCLIC = ['app', 'remote', 'scripts', '../xlat/runtime'];
 
-export function cycles() {
+export function cycles(): string[][] {
   const all = ACYCLIC.flatMap((root) => files(join(OS, root)));
-  const takes = new Map(all.map((f) => [f, new Set()]));
+  const takes = new Map(all.map((f) => [f, new Set<string>()]));
   for (const f of all) {
     for (const m of readFileSync(f, 'utf8').matchAll(IMPORT)) {
-      const t = resolve(dirname(f), m[1] ?? m[2]);
-      if (takes.has(t)) takes.get(f).add(t);
+      const t = resolve(dirname(f), m[1] ?? m[2] ?? '');
+      if (takes.has(t)) takes.get(f)?.add(t);
     }
   }
-  // Tarjan's strongly connected components; any of more than one file is a cycle.
+  return loops(takes).map((c) => c.map((f) => relative(OS, f)).sort());
+}
+
+/**
+ * The sets of nodes of `takes` that reach each other (Tarjan's strongly connected components), each of more than one
+ * node: the cycles.
+ */
+function loops(takes: Map<string, Set<string>>): string[][] {
   let n = 0;
-  const index = new Map(), low = new Map(), stack = [], on = new Set(), found = [];
-  const visit = (v) => {
+  const index = new Map<string, number>(), low = new Map<string, number>(), stack: string[] = [], on = new Set<string>(), found: string[][] = [];
+  const visit = (v: string) => {
     index.set(v, n); low.set(v, n); n++; stack.push(v); on.add(v);
-    for (const w of takes.get(v)) {
-      if (!index.has(w)) { visit(w); low.set(v, Math.min(low.get(v), low.get(w))); } else if (on.has(w)) low.set(v, Math.min(low.get(v), index.get(w)));
+    for (const w of takes.get(v) ?? []) {
+      if (!index.has(w)) { visit(w); low.set(v, Math.min(low.get(v)!, low.get(w)!)); } else if (on.has(w)) low.set(v, Math.min(low.get(v)!, index.get(w)!));
     }
     if (low.get(v) !== index.get(v)) return;
-    const c = [];
-    let w;
-    do { w = stack.pop(); on.delete(w); c.push(relative(OS, w)); } while (w !== v);
-    if (c.length > 1) found.push(c.sort());
+    const c: string[] = [];
+    let w: string | undefined;
+    do { w = stack.pop(); if (w === undefined) break; on.delete(w); c.push(w); } while (w !== v);
+    if (c.length > 1) found.push(c);
   };
-  for (const f of all) if (!index.has(f)) visit(f);
+  for (const k of takes.keys()) if (!index.has(k)) visit(k);
   return found;
 }
 
@@ -105,12 +113,12 @@ export function cycles() {
 const CORE = join(OS, 'core/src');
 
 /** The core's layers, from the bottom up, as lib.rs declares them. */
-export const coreLayers = () => [...readFileSync(join(CORE, 'lib.rs'), 'utf8').matchAll(/^pub mod ([a-z_]+);/gm)].map((m) => m[1]);
+export const coreLayers = (): string[] => [...readFileSync(join(CORE, 'lib.rs'), 'utf8').matchAll(/^pub mod ([a-z_]+);/gm)].map((m) => m[1] ?? '');
 
 /** The core's files of code (not lib.rs, not tests), each with its layer and its unit. */
-function coreFiles() {
-  const out = [];
-  const walk = (dir) => {
+function coreFiles(): {file: string; layer: string; unit: string}[] {
+  const out: string[] = [];
+  const walk = (dir: string) => {
     for (const e of readdirSync(dir, {withFileTypes: true})) {
       const p = join(dir, e.name);
       if (e.isDirectory()) { if (e.name !== 'tests') walk(p); } else if (e.name.endsWith('.rs') && p !== join(CORE, 'lib.rs')) out.push(p);
@@ -119,19 +127,19 @@ function coreFiles() {
   walk(CORE);
   return out.map((file) => {
     const parts = relative(CORE, file).replace(/\.rs$/, '').split(sep);
-    return {file, layer: parts[0], unit: parts[1] ?? 'mod'};
+    return {file, layer: parts[0] ?? '', unit: parts[1] ?? 'mod'};
   });
 }
 
 /** A file's code without its comments and strings: what it names, not what it says. */
-const codeOf = (src) => src.replace(/r(#*)"[\s\S]*?"\1/g, '""').replace(/"(?:\\.|[^"\\])*"/g, '""').replace(/\/\/[^\n]*/g, '');
+const codeOf = (src: string) => src.replace(/r(#*)"[\s\S]*?"\1/g, '""').replace(/"(?:\\.|[^"\\])*"/g, '""').replace(/\/\/[^\n]*/g, '');
 
 /** Every use of a later layer in the core: [from, to, file]. */
-export function coreViolations() {
-  const order = coreLayers(), found = [];
+export function coreViolations(): [string, string, string][] {
+  const order = coreLayers(), found: [string, string, string][] = [];
   for (const {file, layer} of coreFiles()) {
     const code = codeOf(readFileSync(file, 'utf8'));
-    const takes = new Set([...code.matchAll(/\bcrate::([a-z_]+)/g)].map((m) => m[1]));
+    const takes = new Set([...code.matchAll(/\bcrate::([a-z_]+)/g)].map((m) => m[1] ?? ''));
     if (/\btr!\(/.test(code)) takes.add('text');
     for (const to of takes) {
       if (to === layer || !order.includes(to)) continue;
@@ -142,30 +150,16 @@ export function coreViolations() {
 }
 
 /** Units of a core layer that reach back to themselves through their siblings: each set, by layer/unit. */
-export function coreCycles() {
-  const all = coreFiles(), takes = new Map(all.map((f) => [`${f.layer}/${f.unit}`, new Set()]));
+export function coreCycles(): string[][] {
+  const all = coreFiles(), takes = new Map(all.map((f) => [`${f.layer}/${f.unit}`, new Set<string>()]));
   for (const {file, layer, unit} of all) {
     const code = codeOf(readFileSync(file, 'utf8'));
     for (const m of code.matchAll(new RegExp(`\\b(?:super|crate::${layer})::([a-z_]+)`, 'g'))) {
       const to = `${layer}/${m[1]}`;
-      if (unit !== 'mod' && takes.has(to) && m[1] !== unit) takes.get(`${layer}/${unit}`).add(to);
+      if (unit !== 'mod' && takes.has(to) && m[1] !== unit) takes.get(`${layer}/${unit}`)?.add(to);
     }
   }
-  let n = 0;
-  const index = new Map(), low = new Map(), stack = [], on = new Set(), found = [];
-  const visit = (v) => {
-    index.set(v, n); low.set(v, n); n++; stack.push(v); on.add(v);
-    for (const w of takes.get(v)) {
-      if (!index.has(w)) { visit(w); low.set(v, Math.min(low.get(v), low.get(w))); } else if (on.has(w)) low.set(v, Math.min(low.get(v), index.get(w)));
-    }
-    if (low.get(v) !== index.get(v)) return;
-    const c = [];
-    let w;
-    do { w = stack.pop(); on.delete(w); c.push(w); } while (w !== v);
-    if (c.length > 1) found.push(c.sort());
-  };
-  for (const k of takes.keys()) if (!index.has(k)) visit(k);
-  return found;
+  return loops(takes).map((c) => c.sort());
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

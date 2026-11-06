@@ -1,4 +1,4 @@
-/* The OS's stylesheet, in parts by what each styles: scripts/styles-split.mjs wrote them from one sheet, and writes
+/* The OS's stylesheet, in parts by what each styles: scripts/styles-split.ts wrote them from one sheet, and writes
    them again from these. The order is the cascade's: of two rules as heavy, the later wins, so where a part stands in
    this list is part of what it says, and a part that comes back further down (bench-2.css) stands where its rules do. */
 @import './styles/tokens.css';

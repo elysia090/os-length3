@@ -1,6 +1,6 @@
 // l3 for the browser's Prompt (public/l3), taken from the release of the
 // newest l3 this tree pins: the same root the desktop app installs, as the browser reads it
-// (scripts/l3.mjs). It is made where Rust is, by the release
+// (scripts/l3.ts). It is made where Rust is, by the release
 // (.github/workflows/release.yml), and is the OS that version is; a build
 // that only has Node (Cloudflare's Workers Builds) takes it from it, and
 // takes only the l3 this tree pins: core/src/root/pins.rs
@@ -12,7 +12,7 @@
 // nothing is put in public/l3. Shipping a newer Prompt is releasing it (a
 // new version in RELEASE): the release proposes the entry it pinned to main.
 //
-//   node scripts/prompt-files.mjs
+//   node scripts/prompt-files.ts
 //
 // The repository is public: each file is taken from the release's own
 // download link, which anyone may read (LENGTH3_RELEASES: where releases are
@@ -25,7 +25,7 @@ import {join} from 'node:path';
 import {Readable} from 'node:stream';
 import {pinnedRoots} from '../remote/releases.ts';
 import {checkPacks} from '../../xlat/runtime/table.mjs';
-import {tarMembers} from './l3-tree.mjs';
+import {tarMembers, type About, type Index} from './l3-tree.ts';
 
 const here = new URL('..', import.meta.url).pathname;
 const repo = process.env.GITHUB_REPOSITORY || 'elysia090/os-length3';
@@ -35,12 +35,12 @@ const pin = pinnedRoots(readFileSync(join(here, 'core/src/root/pins.rs'), 'utf8'
 if (!pin) throw new Error('core/src/root/pins.rs pins no l3: release one, and merge the change it proposes');
 const {version, tag} = pin;
 const asset = `os-length3-linux-${version}-l3-web.tar`;
-if (!/^[0-9a-f]{64}$/.test(pin.web)) throw new Error(`core/src/root/pins.rs pins l3 ${version}'s root but no index for the web (web: "${pin.web}"): a release since l3.mjs pins both`);
+if (!/^[0-9a-f]{64}$/.test(pin.web)) throw new Error(`core/src/root/pins.rs pins l3 ${version}'s root but no index for the web (web: "${pin.web}"): a release since l3.ts pins both`);
 
-const sha = (b) => createHash('sha256').update(b).digest('hex');
+const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 /** One of the release's files, from its download link. Never waited on for good (a download that stalls holds the
  * build until it is killed): ten minutes, its body included. */
-const file = async (name) => {
+const file = async (name: string) => {
   const r = await fetch(`${releases}/${tag}/${name}`, {headers: {'user-agent': 'length3-build'}, signal: AbortSignal.timeout(10 * 60_000)});
   if (!r.ok) throw new Error(`${name} of ${tag}: ${r.status}`);
   return Buffer.from(await r.arrayBuffer());
@@ -60,13 +60,13 @@ for await (const m of tarMembers(Readable.from([tar]))) {
   if (m.kind !== '0' || !NAMES.test(name)) throw new Error(`${asset}: ${m.name} is not part of l3 for the web`);
   members.set(name, m.bytes);
 }
-const about = JSON.parse(members.get('l3.json')?.toString('utf8') ?? 'null');
+const about: About | null = JSON.parse(members.get('l3.json')?.toString('utf8') ?? 'null');
 if (!about) throw new Error(`${asset} has no l3.json`);
 if (about.version !== version || about.sha256 !== pin.sha256) throw new Error(`${asset}: l3.json is l3 ${about.version} from root ${about.sha256}; this tree pins ${version} from ${pin.sha256}`);
 if (about.index?.sha256 !== pin.web) throw new Error(`${asset}: l3.json names index ${about.index?.sha256}; this tree pins ${pin.web}`);
 const indexBytes = members.get(about.index.path);
 if (!indexBytes || sha(indexBytes) !== pin.web) throw new Error(`${asset}: ${about.index.path} is not the index this tree pins (${pin.web})`);
-const index = JSON.parse(indexBytes.toString('utf8'));
+const index: Index = JSON.parse(indexBytes.toString('utf8'));
 if (index.sha256 !== pin.sha256 || index.version !== version) throw new Error(`${asset}: its index is of root ${index.sha256} ${index.version}`);
 const named = [[index.translator.path, index.translator.sha256], ...index.translations.flatMap((t) => [[t.elf.path, t.elf.sha256], [t.wasm.path, t.wasm.sha256]])];
 for (const [path, digest] of named) {

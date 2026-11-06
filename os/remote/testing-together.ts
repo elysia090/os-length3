@@ -1,4 +1,4 @@
-// For npm test (scripts/tests.mjs): test files that make a Remote run one after another in one process, each a
+// For npm test (scripts/tests.ts): test files that make a Remote run one after another in one process, each a
 // suite of its own. Alone, each paid for loading the service (about a second), making a database (another) and,
 // for the page's, starting a core before its first test; here a process loads the service once, and lends its
 // databases from file to file (testing.ts).

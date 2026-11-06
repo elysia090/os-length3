@@ -45,7 +45,7 @@ test('what reaches the Worker first is the Remote\'s own paths, and the developm
   assert.deepEqual(first, ['/v1/*', '/api/*', '/.well-known/*']);
   process.env.LENGTH3_DEV_REMOTE = 'http://127.0.0.1:1';
   // Its own instance, apart from the one imported above, so it reads the variable just set; at an address the same
-  // each run, so what loading it keeps (scripts/tests-load.mjs) is kept once.
+  // each run, so what loading it keeps (scripts/tests-load.ts) is kept once.
   const again = '../vite.config.ts?dev';
   const {default: vite} = await import(again);
   assert.deepEqual(Object.keys((vite as {server: {proxy: Record<string, string>}}).server.proxy), ['/v1', '/api', '/.well-known']);

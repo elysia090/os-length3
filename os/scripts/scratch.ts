@@ -6,7 +6,7 @@
 // could leaves its folder only until the next run of its kind. Folders that
 // say no owner are not this helper's, and are left as they are.
 //
-// For what tests and their servers make: scripts/tests.mjs, selftest's
+// For what tests and their servers make: scripts/tests.ts, selftest's
 // global setup and selftest/l3. Rust's tests do the same by their process's
 // own folder (core/src/testing.rs, l3/tests/common).
 

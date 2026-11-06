@@ -974,7 +974,7 @@ the same thing for the desktop app and for the web.
   `os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst`. One entry of
   `core/src/root/pins.rs` RELEASES pins it, for both ways in: `sha256` and
   `bytes`, the root; `web`, the sha256 of the index the browser reads the
-  same root by. The release writes that entry (`scripts/pin-root.mjs`) and
+  same root by. The release writes that entry (`scripts/pin-root.ts`) and
   it is committed; nothing else pins l3.
 - **What it holds.** Sixty-three packages, each made from the source this
   tree pins (`root/sources.env`) by its recipe
@@ -1023,7 +1023,7 @@ the same thing for the desktop app and for the web.
   device's Remote, then the publisher's (each deploy mirrors every pinned
   root to its bucket), then the release itself.
 - **In a browser**, the same root is read through xlat (`public/l3`, made
-  from the root itself by `scripts/l3.mjs`, never from anything built
+  from the root itself by `scripts/l3.ts`, never from anything built
   beside it): `l3.json` (which l3: its version and the root's digest), an
   index of every path (type, mode, link target; where each file's bytes
   are), a pack per package of the root, each file a zstd frame, and blobs
@@ -1051,9 +1051,9 @@ the same thing for the desktop app and for the web.
 - **The same content.** The web's tree is the root's: every path, type,
   mode, link target and sha256 the same as the root l3 installs
   (directories at least 0700, files without set-id bits, as the installer
-  makes them). `scripts/l3-parity.mjs` proves it on every release and in CI;
+  makes them). `scripts/l3-parity.ts` proves it on every release and in CI;
   a program that xlat cannot run yet still ships, and
-  `scripts/l3-runnable.mjs` says which, against the same root run natively.
+  `scripts/l3-runnable.ts` says which, against the same root run natively.
 - **One release, one pin.** The release makes the root, then l3 for the
   browser from it (checked by the parity), pins both in one entry, and only
   then builds the web app and the desktop app, which both trust that entry.

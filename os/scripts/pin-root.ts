@@ -1,17 +1,17 @@
 // Pin the l3 this tree releases: its entry is core/src/root/pins.rs's RELEASES,
 // the whole of its pin for both ways in: the root (the bundle the
 // desktop app installs, by sha256 and size) and `web`, the sha256 of the
-// index the browser reads the same root by (scripts/l3.mjs, made from that
+// index the browser reads the same root by (scripts/l3.ts, made from that
 // bundle). l3 and the app built from this tree install that root (and no
 // other new one), and the web build takes only that index
-// (scripts/prompt-files.mjs). The release does it before building what
+// (scripts/prompt-files.ts). The release does it before building what
 // ships beside the root, so the app in a release trusts that release's
 // root; the same entry is then committed, so the source says what was
 // released. Only this release is pinned: a device installs the newest pin
 // alone and keeps the root it had beside it, and the releases no longer
 // pinned are deleted (.github/workflows/releases-prune.yml).
 //
-//   node scripts/pin-root.mjs OUT/os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst [WEB] [--rs FILE]
+//   node scripts/pin-root.ts OUT/os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst [WEB] [--rs FILE]
 //
 // WEB is l3 for the browser made from that root (public/l3); its l3.json
 // must name this root. --rs writes another root/ (for a test).
@@ -25,9 +25,9 @@ const rsAt = args.includes('--rs') ? args.splice(args.indexOf('--rs'), 2)[1] : n
 const [file, web] = args;
 const name = file ? basename(file) : '';
 const m = /^os-length3-linux-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)-x86_64-[0-9a-f]{64}\.tar\.zst$/.exec(name);
-if (!m) { console.error('node scripts/pin-root.mjs OUT/os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst [WEB] [--rs FILE]'); process.exit(2); }
+if (!m) { console.error('node scripts/pin-root.ts OUT/os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst [WEB] [--rs FILE]'); process.exit(2); }
 const version = m[1];
-const sha = (b) => createHash('sha256').update(b).digest('hex');
+const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex');
 const sha256 = sha(readFileSync(file));
 const bytes = statSync(file).size.toLocaleString('en').replace(/,/g, '_');
 

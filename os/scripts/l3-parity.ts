@@ -3,23 +3,23 @@
 // a device and l3 as the browser reads it, file by file from its packs, and
 // says where they differ; exits 1 when they do.
 //
-//   node scripts/l3-parity.mjs ROOT WEB [--manifests DIR]
+//   node scripts/l3-parity.ts ROOT WEB [--manifests DIR]
 //
 // ROOT  the release root (os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst),
 //       or a root installed from it (<data>/system/<sha256>/root)
-// WEB   l3 for the browser (public/l3, scripts/l3.mjs), each pack checked
+// WEB   l3 for the browser (public/l3, scripts/l3.ts), each pack checked
 //       whole against its table (xlat/runtime/table.mjs)
 // --manifests DIR  writes native.txt and web.txt there, one line a path
 import {mkdirSync, statSync, writeFileSync} from 'node:fs';
 import {basename, join} from 'node:path';
-import {counts, differences, manifestOf, nativeTree, sha256, webTree} from './l3-tree.mjs';
+import {counts, differences, manifestOf, nativeTree, sha256, webTree} from './l3-tree.ts';
 import {readFileSync} from 'node:fs';
 
 const args = process.argv.slice(2);
-const flag = (name) => { const i = args.indexOf(name); if (i < 0) return null; const v = args[i + 1]; args.splice(i, 2); return v; };
+const flag = (name: string) => { const i = args.indexOf(name); if (i < 0) return null; const v = args[i + 1]; args.splice(i, 2); return v; };
 const manifests = flag('--manifests');
 const [rootAt, webAt] = args;
-if (!rootAt || !webAt) { console.error('usage: l3-parity.mjs ROOT WEB [--manifests DIR]'); process.exit(2); }
+if (!rootAt || !webAt) { console.error('usage: l3-parity.ts ROOT WEB [--manifests DIR]'); process.exit(2); }
 
 const native = await nativeTree(rootAt);
 const web = webTree(webAt);
@@ -35,11 +35,11 @@ if (manifests) {
 }
 const d = differences(native, web);
 const n = counts(native), w = counts(web);
-const say = (c) => `${c.files} files, ${c.dirs} directories, ${c.links} links, ${c.bytes} bytes`;
+const say = (c: ReturnType<typeof counts>) => `${c.files} files, ${c.dirs} directories, ${c.links} links, ${c.bytes} bytes`;
 console.log(`native  ${say(n)}`);
 console.log(`web     ${say(w)}`);
 if (d.same) { console.log(`same: every path, type, mode, link target and sha256 (${native.entries.length} paths)`); process.exit(0); }
-const some = (list, f = (x) => x) => list.slice(0, 20).map((x) => `  ${f(x)}`).join('\n') + (list.length > 20 ? `\n  … ${list.length - 20} more` : '');
+const some = <T,>(list: T[], f: (x: T) => string = String) => list.slice(0, 20).map((x) => `  ${f(x)}`).join('\n') + (list.length > 20 ? `\n  … ${list.length - 20} more` : '');
 if (d.missing.length) console.log(`only native (${d.missing.length}):\n${some(d.missing)}`);
 if (d.extra.length) console.log(`only web (${d.extra.length}):\n${some(d.extra)}`);
 if (d.changed.length) console.log(`different (${d.changed.length}):\n${some(d.changed, (c) => `${c.a}\n  ${c.b.replace(/^[^\t]*/, ' '.repeat(c.path.length))}`)}`);

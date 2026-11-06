@@ -1,4 +1,4 @@
-// What each part of the stylesheet styles (styles-split.mjs): its file, the comment it starts with, and the
+// What each part of the stylesheet styles (styles-split.ts): its file, the comment it starts with, and the
 // classes that make a rule its. A rule is the part of the classes its selector is about: from its subject out, the
 // first class a part names (a common part's, such as a button's, only when nothing more particular is there); when
 // a compound anywhere names a place (Home's column, a board, the Review…), the place's. A rule about several parts at
@@ -106,11 +106,13 @@ export const PARTS = [
 ];
 
 /** The part a class names, and whether it names a place: {part, place} or undefined. */
-export function classPart(name) {
+export function classPart(name: string): Part | undefined {
   return EXACT.get(name) ?? PREFIX.find(([p]) => name.startsWith(p))?.[1];
 }
 
-const EXACT = new Map(), PREFIX = [];
+/** The part a class is of, and whether the class names a place (a `^` after it in PARTS). */
+interface Part { part: string; place: boolean }
+const EXACT = new Map<string, Part>(), PREFIX: [string, Part][] = [];
 for (const p of PARTS) {
   for (const c of p.classes) {
     const place = c.endsWith('^'), k = place ? c.slice(0, -1) : c;

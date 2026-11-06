@@ -101,7 +101,7 @@ test('mirror: a file its makers publish is taken from their URL, without the tok
 });
 
 test('the pins: every root core/src/root/pins.rs pins, newest first, and the desktop app of a version, by its file', () => {
-  // One at least: main pins the newest release alone (scripts/pin-root.mjs), which a release makes as it is made.
+  // One at least: main pins the newest release alone (scripts/pin-root.ts), which a release makes as it is made.
   const roots = pinnedRoots(readFileSync(new URL('../core/src/root/pins.rs', import.meta.url), 'utf8'));
   assert.ok(roots.length >= 1);
   for (const r of roots) {
@@ -110,8 +110,8 @@ test('the pins: every root core/src/root/pins.rs pins, newest first, and the des
     assert.match(r.tag, /^os-length3-linux-v/);
     assert.ok(r.bytes > 1e6 && r.file.endsWith('.tar.zst'), r.file);
   }
-  // An entry not as pin-root.mjs writes it is refused, not skipped.
-  assert.throws(() => pinnedRoots('pub const RELEASES: &[Release] = &[Release { name: "x" }];'), /not as pin-root\.mjs writes one/);
+  // An entry not as pin-root.ts writes it is refused, not skipped.
+  assert.throws(() => pinnedRoots('pub const RELEASES: &[Release] = &[Release { name: "x" }];'), /not as pin-root\.ts writes one/);
 
   // Other distributions' roots: by digest too, each from the URL that names its one build.
   const distros = pinnedDistros(readFileSync(new URL('../core/src/root/pins.rs', import.meta.url), 'utf8'));

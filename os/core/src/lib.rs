@@ -10,7 +10,7 @@
 //! `#![forbid(unsafe_code)]` once, for all its files (fs/), and so does every module without it.
 
 // The layers, each above the ones before it: a module uses only what is in its own layer or one listed before
-// it (scripts/layers.mjs checks it). Each is a folder whose mod.rs says what it holds.
+// it (scripts/layers.ts checks it). Each is a folder whose mod.rs says what it holds.
 pub mod fs;
 pub mod text;
 pub mod device;

@@ -6,7 +6,7 @@ name: Release
 # publishes the root
 # (every package made from this tree's pins by its recipe, os/root/build.sh,
 # with this tree's l3, os/root/assemble.sh), the web build (the app with
-# l3 for the browser: the same root as the browser reads it, os/scripts/l3.mjs
+# l3 for the browser: the same root as the browser reads it, os/scripts/l3.ts
 # and web-release.sh) and the desktop app (the
 # same UI, its Prompt running that root on the machine: a .deb and an
 # AppImage), with their digests. Then it proposes the pins to main as one
@@ -118,8 +118,8 @@ jobs:
         working-directory: os
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: node scripts/publish-release.mjs "$GITHUB_WORKSPACE/out"
-      # The pins the release wrote (release.sh: pin-root.mjs, pin-desktop.mjs), proposed to main as one
+        run: node scripts/publish-release.ts "$GITHUB_WORKSPACE/out"
+      # The pins the release wrote (release.sh: pin-root.ts, pin-desktop.ts), proposed to main as one
       # change; merged, the releases they no longer name are deleted (releases-prune.yml). A
       # pull request opened with this token runs no workflow; the pins are checked where they are read (the web
       # build, the deploy). Where the repository does not let Actions open pull requests, the branch is pushed and

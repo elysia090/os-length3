@@ -6,7 +6,7 @@
 //                        without set-id bits, symlinks as they are, a hard link the
 //                        same bytes as its file. No other kind is part of a root.
 //   nativeTree(DIR)      a root already installed (<data>/system/<sha256>/root)
-//   webTree(DIR)         l3 as the browser reads it (scripts/l3.mjs): its index,
+//   webTree(DIR)         l3 as the browser reads it (scripts/l3.ts): its index,
 //                        and every file decoded from its pack
 //
 // Each gives the same shape, one entry a path (sorted):
@@ -17,22 +17,43 @@ import {createHash} from 'node:crypto';
 import {createReadStream, lstatSync, openSync, readFileSync, readSync, readdirSync, readlinkSync, closeSync, statSync} from 'node:fs';
 import {join} from 'node:path';
 import {createZstdDecompress, gunzipSync, zstdDecompressSync} from 'node:zlib';
+import type {Readable} from 'node:stream';
 import {checkPacks, checkedRange} from '../../xlat/runtime/table.mjs';
+import type {About, Blob, Index} from '../app/prompt/userland.ts';
 
-export const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
+export type {About, Index};
+/** A file of l3 for the browser, as its index names it. */
+export type IndexFile = Index['files'][number];
+/** One path of a tree: a directory, a file (its size and digest), a link (its target), or what no root holds. */
+export interface Entry {
+  path: string;
+  type: 'dir' | 'file' | 'link' | 'other';
+  mode: number;
+  target?: string;
+  size?: number;
+  sha256?: string;
+  /** A hard link: the file it is another name of. */
+  same?: string;
+}
+export interface Tree { entries: Entry[]; manifest?: string; about?: About; index?: Index }
+/** One member of a tar stream, as core/src/root/pins.rs reads it. */
+export interface TarMember { name: string; kind: string; mode: number; link: string; size: number; bytes: Buffer }
+
+export const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 /** The 32 bytes of a SHA-256, as table.mjs takes it. */
-const digest = (bytes) => createHash('sha256').update(bytes).digest();
+const digest = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest();
+const byPath = (a: Entry, b: Entry) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
 
 /**
  * Every member of a tar stream: {name, kind ('0' file, '5' dir, '2' symlink, '1' hard link), mode, link, size, bytes},
  * with pax path and linkpath applied, as core/src/root/pins.rs reads one.
  */
-export async function* tarMembers(stream) {
+export async function* tarMembers(stream: Readable): AsyncGenerator<TarMember> {
   // The stream's chunks as they come, and how far into the first one is read: each member is copied out once.
-  const chunks = [];
+  const chunks: Buffer[] = [];
   let have = 0, skip = 0, done = false;
-  const it = stream[Symbol.asyncIterator]();
-  const take = async (n) => {
+  const it: AsyncIterator<Buffer> = stream[Symbol.asyncIterator]();
+  const take = async (n: number) => {
     while (have < n && !done) {
       const r = await it.next();
       if (r.done) done = true;
@@ -51,9 +72,9 @@ export async function* tarMembers(stream) {
     have -= n;
     return out;
   };
-  const octal = (b) => { const t = b.toString('latin1').replace(/\0.*$/s, '').trim(); return t ? parseInt(t, 8) : 0; };
-  const text = (b) => b.toString('utf8').replace(/\0.*$/s, '');
-  let longName = null, longLink = null;
+  const octal = (b: Buffer) => { const t = b.toString('latin1').replace(/\0.*$/s, '').trim(); return t ? parseInt(t, 8) : 0; };
+  const text = (b: Buffer) => b.toString('utf8').replace(/\0.*$/s, '');
+  let longName: string | null = null, longLink: string | null = null;
   for (;;) {
     const block = await take(512);
     if (block.every((b) => b === 0)) return;
@@ -84,7 +105,7 @@ export async function* tarMembers(stream) {
 }
 
 /** A member's place in the root: '/usr/bin/sh' for root/usr/bin/sh; null for what is beside the root (manifest) or the root itself. */
-const inRoot = (name) => {
+const inRoot = (name: string) => {
   const parts = name.split('/').filter((p) => p && p !== '.');
   if (parts[0] !== 'root' || parts.length < 2) return null;
   if (parts.some((p) => p === '..')) throw new Error(`tar: ${name} leaves the tree`);
@@ -94,11 +115,11 @@ const inRoot = (name) => {
 /**
  * The root in a release tarball, as l3 installs it, and its manifest file:
  * {entries, manifest}. `each(entry, bytes)` sees every file's bytes once
- * (scripts/l3.mjs packs them from here).
+ * (scripts/l3.ts packs them from here).
  */
-export async function readTarball(file, each = () => {}) {
-  const entries = [];
-  const files = new Map();
+export async function readTarball(file: string, each: (entry: Entry, bytes: Buffer | null) => void = () => {}): Promise<Tree> {
+  const entries: Entry[] = [];
+  const files = new Map<string, Entry>();
   let manifest = '';
   const stream = createReadStream(file).pipe(createZstdDecompress());
   for await (const m of tarMembers(stream)) {
@@ -108,7 +129,7 @@ export async function readTarball(file, each = () => {}) {
     if (m.kind === '5') entries.push({path, type: 'dir', mode: m.mode | 0o700});
     else if (m.kind === '2') entries.push({path, type: 'link', mode: 0o777, target: m.link});
     else if (m.kind === '0') {
-      const e = {path, type: 'file', mode: m.mode & 0o777, size: m.size, sha256: sha256(m.bytes)};
+      const e: Entry = {path, type: 'file', mode: m.mode & 0o777, size: m.size, sha256: sha256(m.bytes)};
       files.set(path, e);
       entries.push(e);
       each(e, m.bytes);
@@ -116,19 +137,19 @@ export async function readTarball(file, each = () => {}) {
       const to = files.get(inRoot(m.link) ?? '');
       if (!to) throw new Error(`tar: ${m.name} links to ${m.link}, which is not a file before it`);
       // One file with two names: its mode is the file's.
-      const e = {...to, path, same: to.path};
+      const e: Entry = {...to, path, same: to.path};
       entries.push(e);
       each(e, null);
     } else throw new Error(`tar: ${m.name}: kind ${m.kind} is not part of a root`);
   }
-  entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  entries.sort(byPath);
   return {entries, manifest};
 }
 
 /** An installed root, walked as the host has it. */
-export function readDir(root) {
-  const entries = [];
-  (function walk(dir, rel) {
+export function readDir(root: string): Tree {
+  const entries: Entry[] = [];
+  (function walk(dir: string, rel: string) {
     for (const name of readdirSync(dir).sort()) {
       const full = join(dir, name), path = `${rel}/${name}`, st = lstatSync(full);
       if (st.isSymbolicLink()) entries.push({path, type: 'link', mode: 0o777, target: readlinkSync(full)});
@@ -137,38 +158,38 @@ export function readDir(root) {
       else entries.push({path, type: 'other', mode: st.mode & 0o7777});
     }
   })(root, '');
-  entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  entries.sort(byPath);
   return {entries};
 }
 
-export async function nativeTree(at) {
+export async function nativeTree(at: string): Promise<Tree> {
   return statSync(at).isDirectory() ? readDir(at) : readTarball(at);
 }
 
 /** l3 for the browser, opened: {about (l3.json), index, dir, packs (where its packs are), read(file), blob(name)}. */
-export function openWeb(dir) {
-  const about = JSON.parse(readFileSync(join(dir, 'l3.json'), 'utf8'));
+export function openWeb(dir: string) {
+  const about: About = JSON.parse(readFileSync(join(dir, 'l3.json'), 'utf8'));
   const bytes = readFileSync(join(dir, about.index.path));
   if (sha256(bytes) !== about.index.sha256) throw new Error(`${about.index.path}: not the index l3.json names (sha256 ${sha256(bytes)})`);
-  const index = JSON.parse(bytes.toString('utf8'));
-  const fds = new Map();
-  const fd = (name) => { if (!fds.has(name)) fds.set(name, openSync(join(dir, 'packs', name), 'r')); return fds.get(name); };
+  const index: Index = JSON.parse(bytes.toString('utf8'));
+  const fds = new Map<string, number>();
+  const fd = (name: string) => { let f = fds.get(name); if (f === undefined) { f = openSync(join(dir, 'packs', name), 'r'); fds.set(name, f); } return f; };
   /** Bytes [at, at+len) of the pack named `pack`, into `into` (as the browser's Range request gives them). */
-  const readRange = (pack, at, len, into) => { if (len) readSync(fd(pack), into, 0, len, at); return into; };
-  const range = (pack, at, len) => readRange(pack, at, len, Buffer.alloc(len));
+  const readRange = <T extends Uint8Array>(pack: string, at: number, len: number, into: T): T => { if (len) readSync(fd(pack), into, 0, len, at); return into; };
+  const range = (pack: string, at: number, len: number) => readRange(pack, at, len, Buffer.alloc(len));
   /** A file's stored bytes from its pack, checked against its table, and decoded. */
   const checked = checkedRange(index, range, digest);
-  const read = (f) => {
+  const read = (f: IndexFile): Buffer => {
     const stored = Buffer.from(checked(f.pack, f.at, f.len));
     return f.raw || !f.len ? stored : zstdDecompressSync(stored);
   };
   /** A blob (the translator, a translation): its gzip'd bytes checked against its name, then unpacked. */
-  const blob = (b) => {
+  const blob = (b: Blob) => {
     const bytes = readFileSync(join(dir, b.path));
     if (sha256(bytes) !== b.sha256) throw new Error(`${b.path}: sha256 ${sha256(bytes)}, its index says ${b.sha256}`);
     return gunzipSync(bytes);
   };
-  const unzstd = (bytes) => zstdDecompressSync(bytes);
+  const unzstd = (bytes: Uint8Array) => zstdDecompressSync(bytes);
   const close = () => { for (const f of fds.values()) closeSync(f); fds.clear(); };
   /** Every pack whole: its table, each file it stores, and nothing besides (table.mjs checkPacks). */
   const checkAll = () => checkPacks(index, range, (name) => statSync(join(dir, 'packs', name)).size, digest);
@@ -176,21 +197,21 @@ export function openWeb(dir) {
 }
 
 /** Every path of l3 for the browser, each file's bytes decoded from its pack and hashed; and each pack checked whole. */
-export function webTree(dir) {
+export function webTree(dir: string): Tree {
   const web = openWeb(dir);
   const {index} = web;
   try {
     web.checkAll();
-    const entries = [
-      ...index.dirs.map((d) => ({path: d.path, type: 'dir', mode: d.mode})),
-      ...index.links.map((l) => ({path: l.path, type: 'link', mode: 0o777, target: l.target})),
-      ...index.files.map((f) => {
+    const entries: Entry[] = [
+      ...index.dirs.map((d): Entry => ({path: d.path, type: 'dir', mode: d.mode})),
+      ...index.links.map((l): Entry => ({path: l.path, type: 'link', mode: 0o777, target: l.target})),
+      ...index.files.map((f): Entry => {
         const bytes = web.read(f);
         if (bytes.length !== f.size) throw new Error(`${f.path}: ${bytes.length} bytes from its pack, its index says ${f.size}`);
         return {path: f.path, type: 'file', mode: f.mode, size: f.size, sha256: sha256(bytes)};
       }),
     ];
-    entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    entries.sort(byPath);
     // What a page gives its Prompt beside the packs (a hot program with its translation) is the same file, byte for byte.
     const at = new Map(entries.map((e) => [e.path, e]));
     for (const t of index.translations ?? []) {
@@ -203,23 +224,23 @@ export function webTree(dir) {
 }
 
 /** What is compared: one line a path, its type, mode, link target and the sha256 of its bytes. */
-export const lineOf = (e) => `${e.path}\t${e.type}\t${e.mode.toString(8).padStart(4, '0')}\t${e.type === 'link' ? e.target : e.type === 'file' ? `${e.size}\t${e.sha256}` : ''}`;
-export const manifestOf = (tree) => tree.entries.map(lineOf).join('\n') + '\n';
+export const lineOf = (e: Entry) => `${e.path}\t${e.type}\t${e.mode.toString(8).padStart(4, '0')}\t${e.type === 'link' ? e.target : e.type === 'file' ? `${e.size}\t${e.sha256}` : ''}`;
+export const manifestOf = (tree: Tree) => tree.entries.map(lineOf).join('\n') + '\n';
 
 /** How two trees differ: {missing (in a, not b), extra (in b, not a), changed: [{path, a, b}]}. */
-export function differences(a, b) {
-  const by = (t) => new Map(t.entries.map((e) => [e.path, lineOf(e)]));
+export function differences(a: Tree, b: Tree) {
+  const by = (t: Tree) => new Map(t.entries.map((e) => [e.path, lineOf(e)]));
   const [x, y] = [by(a), by(b)];
   const missing = [...x.keys()].filter((p) => !y.has(p));
   const extra = [...y.keys()].filter((p) => !x.has(p));
-  const changed = [...x.keys()].filter((p) => y.has(p) && x.get(p) !== y.get(p)).map((p) => ({path: p, a: x.get(p), b: y.get(p)}));
+  const changed = [...x.keys()].filter((p) => y.has(p) && x.get(p) !== y.get(p)).map((p) => ({path: p, a: x.get(p) ?? '', b: y.get(p) ?? ''}));
   return {missing, extra, changed, same: !missing.length && !extra.length && !changed.length};
 }
 
 /** {files, dirs, links, bytes} of a tree. */
-export const counts = (t) => ({
+export const counts = (t: Tree) => ({
   files: t.entries.filter((e) => e.type === 'file').length,
   dirs: t.entries.filter((e) => e.type === 'dir').length,
   links: t.entries.filter((e) => e.type === 'link').length,
-  bytes: t.entries.reduce((n, e) => n + (e.type === 'file' ? e.size : 0), 0),
+  bytes: t.entries.reduce((n, e) => n + (e.type === 'file' ? e.size ?? 0 : 0), 0),
 });

@@ -14,7 +14,7 @@
 // A program that cannot run yet still ships: this says which, and why, for
 // the translator's work.
 //
-//   node scripts/l3-runnable.mjs WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N] [--fresh] [--warm]
+//   node scripts/l3-runnable.ts WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N] [--fresh] [--warm]
 //
 // --fresh: this checkout's translator (../xlat's wasm build), every program translated as it runs, not what WEB carries.
 // --warm: each line run once before the run timed, what it translated kept between runs as a browser keeps it (Cache
@@ -27,9 +27,18 @@ import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {existsSync, readFileSync, writeFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
-import {openWeb} from './l3-tree.mjs';
+import type {Kernel} from '../../xlat/runtime/process.mjs';
+import {openWeb, type Index} from './l3-tree.ts';
 
-const here = fileURLToPath(new URL('.', import.meta.url));
+/** What one program run under xlat says: its wait status, its output, and how long it took. */
+interface Ran { status: number | null; stdout: string; stderr: string; error: string | null; ms: number }
+/** What the child (`--child`) is asked to run. */
+interface Asked { web: string; path: string; args: string[]; translator: string; fresh: boolean; kept: string | null }
+/** One thing compared: a program's --version, or a line of sh. */
+interface Item { name: string; what: string; path: string; args: string[] }
+interface Row { name: string; what: string; verdict: 'runs' | 'not yet'; why: string; native: string | number | null; ms: number | null; nativeMs: number; first: string }
+interface Finished { code: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string; timedOut: boolean }
+
 const ENV = ['HOME=/root', 'PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', 'LANG=C.UTF-8', 'TERM=dumb'];
 
 
@@ -37,22 +46,23 @@ const ENV = ['HOME=/root', 'PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', 
  * Translations kept in `dir` as a browser keeps them (xlat/runtime/keeper.mjs: 'L3T1' and 'L3M1', each sealed with
  * its SHA-256), for a kernel's keeper: {kept, save(kernel)}, save writing what the kernel translated since.
  */
-async function keptIn(dir) {
+async function keptIn(dir: string) {
   const {mkdirSync, readdirSync, renameSync, rmSync} = await import('node:fs');
   const {createHash} = await import('node:crypto');
   mkdirSync(dir, {recursive: true});
-  const url = (name) => new URL(name, `file://${dir}/`).href;
-  // keeper.mjs reads through the Cache Storage API: here, the files.
-  globalThis.caches ??= {open: async () => ({match: async (u) => { try { return new Response(readFileSync(new URL(u))); } catch { return undefined; } }})};
-  const at = {};
+  const url = (name: string) => new URL(name, `file://${dir}/`).href;
+  // keeper.mjs reads through the Cache Storage API (its match alone): here, the files.
+  const files = {open: async () => ({match: async (u: string) => { try { return new Response(readFileSync(new URL(u))); } catch { return undefined; } }})};
+  globalThis.caches ??= files as unknown as CacheStorage;
+  const at: Record<string, {main: string; more: string | null}> = {};
   for (const f of readdirSync(dir)) {
-    const m = /^(.+)\.wasm$/.exec(f);
-    if (m) at[m[1]] = {main: url(f), more: existsSync(`${dir}/${m[1]}.more`) ? url(`${m[1]}.more`) : null};
+    const name = /^(.+)\.wasm$/.exec(f)?.[1];
+    if (name) at[name] = {main: url(f), more: existsSync(`${dir}/${name}.more`) ? url(`${name}.more`) : null};
   }
-  const sealed = (body) => Buffer.concat([body, createHash('sha256').update(body).digest()]);
+  const sealed = (body: Buffer) => Buffer.concat([body, createHash('sha256').update(body).digest()]);
   // Written whole, then named: lines run side by side read what another keeps.
-  const put = (name, body) => { const tmp = `${dir}/.${name}.${process.pid}`; writeFileSync(tmp, sealed(body)); renameSync(tmp, `${dir}/${name}`); };
-  const save = (kernel) => {
+  const put = (name: string, body: Buffer) => { const tmp = `${dir}/.${name}.${process.pid}`; writeFileSync(tmp, sealed(body)); renameSync(tmp, `${dir}/${name}`); };
+  const save = (kernel: Kernel) => {
     // What a run reached later is gathered before it is kept, as a browser does once its Prompt is idle: the next run
     // reads one module, not one for each part reached.
     for (const [node, e] of kernel.images) if (!e.kept && e.image.origin) kernel.consolidateIfDue(node, e, true);
@@ -83,7 +93,7 @@ async function keptIn(dir) {
 }
 
 /** One program under xlat, in this process: prints {status, stdout, stderr, error?, ms} as JSON. */
-async function child({web, path, args, translator, fresh, kept: keptDir}) {
+async function child({web, path, args, translator, fresh, kept: keptDir}: Asked) {
   const {Vfs} = await import('../../xlat/runtime/fs.mjs');
   const {mountPack, provide} = await import('../../xlat/runtime/pack.mjs');
   const {Kernel} = await import('../../xlat/runtime/process.mjs');
@@ -105,85 +115,91 @@ async function child({web, path, args, translator, fresh, kept: keptDir}) {
   // As the page gives them: each program translated ahead of time, with its bytes, in the root's file (each of its names).
   const ready = (fresh ? [] : w.index.translations ?? []).map((t) => {
     const f = w.index.files.find((x) => x.path === t.path);
-    provide(vfs, {path: t.path, bytes: new Uint8Array(w.blob(t.elf)), mode: f.mode, root: true});
+    provide(vfs, {path: t.path, bytes: new Uint8Array(w.blob(t.elf)), mode: f?.mode ?? 0o755, root: true});
     return {path: t.path, wasm: new Uint8Array(w.blob(t.wasm))};
   });
   vfs.mkdirp('/root');
   let stdout = '', stderr = '';
   const dec = new TextDecoder();
-  let kernel = null;
-  kernel = new (apart ? RemoteKernel : Kernel)({vfs, translate, keeper: store ? keeper(store.kept, () => kernel?.kick?.()) : null, console: {
+  let kernel: Kernel | null = null;
+  const options = {vfs, translate, keeper: store ? keeper(store.kept, () => kernel?.kick?.()) : null, console: {
     interactive: false,
     // A program that writes on and on is cut at a megabyte: what it said first is what is compared.
-    write: (fd, b) => {
+    write: (fd: number, b: Uint8Array) => {
       if (fd === 2) { if (stderr.length < 1 << 20) stderr += dec.decode(b, {stream: true}); }
       else if (stdout.length < 1 << 20) stdout += dec.decode(b, {stream: true});
     },
     read: () => new Uint8Array(0),
     ready: () => true,
-  }});
+  }};
+  const k = kernel = apart ? new RemoteKernel(options) : new Kernel(options);
   // As the kernel runs them (its memory shared, where threads run apart).
-  for (const r of ready) { const {wasm, segments} = kernel.prepare(r.wasm); kernel.prebuilt(vfs.lookup(r.path, '/'), new WebAssembly.Module(wasm), segments); }
+  for (const r of ready) { const {wasm, segments} = k.prepare(r.wasm); k.prebuilt(vfs.lookup(r.path, '/'), new WebAssembly.Module(wasm), segments); }
+  const argv = [path.split('/').pop() ?? path, ...args];
   const t = performance.now();
-  let status = null, error = null;
+  let status: number | null = null, error: string | null = null;
   try {
-    if (apart) status = await kernel.spawn(path, [path.split('/').pop(), ...args], ENV, '/root');
+    if (k instanceof RemoteKernel) status = await k.spawn(path, argv, ENV, '/root');
     // As spawn runs it, and also waiting out a kept translation being read.
-    else kernel.start(path, [path.split('/').pop(), ...args], ENV, '/root');
-    while (!apart) {
-      const r = kernel.pump();
-      if (!r.waiting) { status = r.status; break; }
-      if (r.until !== undefined) await new Promise((go) => setTimeout(go, Math.max(0, r.until - performance.now())));
-      else if (kernel.keeper?.reading()) await new Promise((go) => setTimeout(go, 1));
-      else throw new Error('process waits for input that will never come');
+    else {
+      k.start(path, argv, ENV, '/root');
+      for (;;) {
+        const r = k.pump();
+        if (!r.waiting) { status = r.status; break; }
+        const until = r.until;
+        if (until !== undefined) await new Promise((go) => setTimeout(go, Math.max(0, until - performance.now())));
+        else if (k.keeper?.reading()) await new Promise((go) => setTimeout(go, 1));
+        else throw new Error('process waits for input that will never come');
+      }
     }
-  } catch (e) { error = e instanceof Error ? e.message.split('\n')[0] : String(e); }
+  } catch (e) { error = e instanceof Error ? e.message.split('\n')[0] ?? '' : String(e); }
   const ms = Math.round(performance.now() - t);
-  store?.save(kernel);
-  process.stdout.write(JSON.stringify({status, stdout, stderr, error, ms}));
+  store?.save(k);
+  const ran: Ran = {status, stdout, stderr, error, ms};
+  process.stdout.write(JSON.stringify(ran));
 }
 
 /** The root as a Prompt on the device has it: its own /, /dev, /proc, /tmp and /root, no network, nothing of this machine's. */
-const sandbox = (root) => ['--unshare-all', '--die-with-parent', '--ro-bind', root, '/', '--dev', '/dev', '--proc', '/proc',
+const sandbox = (root: string) => ['--unshare-all', '--die-with-parent', '--ro-bind', root, '/', '--dev', '/dev', '--proc', '/proc',
   '--tmpfs', '/tmp', '--tmpfs', '/root', '--chdir', '/root', '--clearenv', ...ENV.flatMap((e) => ['--setenv', ...e.split(/=(.*)/s).slice(0, 2)])];
 
 /** Run `cmd` with a time limit: {code, signal, stdout, stderr, timedOut}. */
-function run(cmd, argv, {seconds, env}) {
+function run(cmd: string, argv: string[], {seconds, env}: {seconds: number; env: NodeJS.ProcessEnv}): Promise<Finished> {
   return new Promise((resolve) => {
     const p = spawn(cmd, argv, {stdio: ['ignore', 'pipe', 'pipe'], env});
-    const out = [], err = [];
+    const out: Buffer[] = [], err: Buffer[] = [];
     let outBytes = 0, errBytes = 0, timedOut = false;
-    p.stdout.on('data', (b) => { outBytes += b.length; if (outBytes < 16 << 20) out.push(b); });
+    p.stdout.on('data', (b: Buffer) => { outBytes += b.length; if (outBytes < 16 << 20) out.push(b); });
     // A trace of every system call can be long: what matters is kept (the calls that are not there).
-    p.stderr.on('data', (b) => { errBytes += b.length; if (errBytes < 64 << 20) err.push(b); });
+    p.stderr.on('data', (b: Buffer) => { errBytes += b.length; if (errBytes < 64 << 20) err.push(b); });
     const timer = setTimeout(() => { timedOut = true; p.kill('SIGKILL'); }, seconds * 1000);
     p.on('close', (code, signal) => { clearTimeout(timer); resolve({code, signal, stdout: Buffer.concat(out).subarray(0, 1 << 20).toString('utf8'), stderr: Buffer.concat(err).toString('latin1'), timedOut}); });
   });
 }
 
 /** The programs: every executable regular file under /usr/bin, /usr/sbin, /usr/libexec, and the links in /usr/bin and /usr/sbin to one. */
-function programs(index) {
+function programs(index: Index): {path: string; file: string; kind: 'link' | null}[] {
   const files = new Map(index.files.map((f) => [f.path, f]));
   const links = new Map(index.links.map((l) => [l.path, l.target]));
-  const resolve = (path, depth = 0) => {
+  const resolve = (path: string, depth = 0): string | null => {
     if (depth > 8) return null;
     if (files.has(path)) return path;
     // A link in a path (/bin is usr/bin): resolved part by part.
     const parts = path.split('/').filter(Boolean);
     for (let k = 1; k <= parts.length; k++) {
       const head = `/${parts.slice(0, k).join('/')}`;
-      if (links.has(head)) {
-        const t = links.get(head);
+      const t = links.get(head);
+      if (t !== undefined) {
         const base = `/${parts.slice(0, k - 1).join('/')}`;
         const to = t.startsWith('/') ? t : `${base === '/' ? '' : base}/${t}`;
-        const norm = [];
+        const norm: string[] = [];
         for (const p of `${to}/${parts.slice(k).join('/')}`.split('/')) { if (!p || p === '.') continue; if (p === '..') norm.pop(); else norm.push(p); }
         return resolve(`/${norm.join('/')}`, depth + 1);
       }
     }
     return null;
   };
-  const out = [];
+  const out: {path: string; file: string; kind: 'link' | null}[] = [];
   for (const f of index.files) {
     if (!/^\/usr\/(bin|sbin|libexec)\//.test(f.path) || !(f.mode & 0o111)) continue;
     out.push({path: f.path, file: f.path, kind: null});
@@ -191,14 +207,14 @@ function programs(index) {
   for (const l of index.links) {
     if (!/^\/usr\/s?bin\/[^/]+$/.test(l.path)) continue;
     const file = resolve(l.path);
-    if (file && files.get(file).mode & 0o111) out.push({path: l.path, file, kind: 'link'});
+    if (file && (files.get(file)?.mode ?? 0) & 0o111) out.push({path: l.path, file, kind: 'link'});
   }
   return out.sort((a, b) => (a.path < b.path ? -1 : 1));
 }
 
 async function main() {
   const args = process.argv.slice(2);
-  const flag = (name, d = null) => { const i = args.indexOf(name); if (i < 0) return d; const v = args[i + 1]; args.splice(i, 2); return v; };
+  const flag = (name: string, d: string | null = null) => { const i = args.indexOf(name); if (i < 0) return d; const v = args[i + 1] ?? d; args.splice(i, 2); return v; };
   const outMd = flag('--out'), outJson = flag('--json'), jobs = Number(flag('--jobs', '4')), only = flag('--only'), seconds = Number(flag('--seconds', '30'));
   const workOnly = args.includes('--work-only') && args.splice(args.indexOf('--work-only'), 1);
   const fresh = args.includes('--fresh') && !!args.splice(args.indexOf('--fresh'), 1);
@@ -206,16 +222,16 @@ async function main() {
   const {mkdtempSync} = await import('node:fs');
   const kept = warm ? mkdtempSync('/tmp/l3-kept-') : null;
   const [web, rootDir] = args;
-  if (!web || !rootDir) { console.error('usage: l3-runnable.mjs WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N]'); process.exit(2); }
+  if (!web || !rootDir) { console.error('usage: l3-runnable.ts WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N]'); process.exit(2); }
   const w = openWeb(web);
   const translator = new URL('../../xlat/target/wasm32-unknown-unknown/release/xlat.wasm', import.meta.url).pathname;
   if (!w.index.translator && !existsSync(translator)) throw new Error(`no translator: l3 names none, and ${translator} is not built`);
   // What each file is, by its first bytes (ELF, a script and its interpreter).
-  const head = (path) => { const f = w.index.files.find((x) => x.path === path); return f ? w.read(f).subarray(0, 128) : Buffer.alloc(0); };
-  const what = (path) => {
+  const head = (path: string) => { const f = w.index.files.find((x) => x.path === path); return f ? w.read(f).subarray(0, 128) : Buffer.alloc(0); };
+  const what = (path: string) => {
     const b = head(path);
     if (b[0] === 0x7f && b.subarray(1, 4).toString('latin1') === 'ELF') return 'ELF';
-    if (b[0] === 0x23 && b[1] === 0x21) return `script (${b.toString('latin1').slice(2).split('\n')[0].trim().split(/\s+/)[0]})`;
+    if (b[0] === 0x23 && b[1] === 0x21) return `script (${(b.toString('latin1').slice(2).split('\n')[0] ?? '').trim().split(/\s+/)[0]})`;
     return 'data';
   };
   let list = programs(w.index).map((p) => ({...p, type: p.kind === 'link' ? `link to ${p.file}` : what(p.file)}));
@@ -225,13 +241,13 @@ async function main() {
   const rows = await compare(list.map((p) => ({name: p.path, what: p.type, path: p.path, args: ['--version']})), {web, rootDir, translator, jobs, seconds, fresh, kept});
   // Work a person does in a Prompt, each a line of sh, compared the same way: what --version cannot show (fork, pipes, signals, threads).
   const work = only ? [] : await compare(WORK.map(([name, line]) => ({name, what: line, path: '/usr/bin/sh', args: ['-c', line]})), {web, rootDir, translator, jobs, seconds: seconds * 4, fresh, kept});
-  const tally = (rs, v) => rs.filter((r) => r.verdict === v).length;
+  const tally = (rs: Row[], v: Row['verdict']) => rs.filter((r) => r.verdict === v).length;
   const about = w.about ? `l3 ${w.about.version} (sha256 ${w.about.sha256})` : `${w.index.name} ${w.index.version} (a root of packs of before)`;
-  const cell = (t) => String(t).replace(/\|/g, '\\|').replace(/`/g, "'").replace(/\n/g, ' ');
+  const cell = (t: unknown) => String(t).replace(/\|/g, '\\|').replace(/`/g, "'").replace(/\n/g, ' ');
   const md = [
     `# Which programs of l3 the browser's Prompt runs`,
     '',
-    `${about}. Each program is run under the xlat kernel in node (mounted from l3's packs as the browser mounts it, with its translations made ahead of time) and natively in the same root (bwrap: its own /, /dev, /proc, as a Prompt on the device has it), and the two are compared. Made by \`node os/scripts/l3-runnable.mjs\`.`,
+    `${about}. Each program is run under the xlat kernel in node (mounted from l3's packs as the browser mounts it, with its translations made ahead of time) and natively in the same root (bwrap: its own /, /dev, /proc, as a Prompt on the device has it), and the two are compared. Made by \`node os/scripts/l3-runnable.ts\`.`,
     '',
     `- **runs**: the same exit status and output as native (or, as native, no end)`,
     `- **not yet**: present, not yet runnable under xlat: it ends otherwise than native (what differs, the system calls it was answered ENOSYS), xlat said why, or no end within the time`,
@@ -255,7 +271,7 @@ async function main() {
   if (work.length) {
     console.log(`${work.length} lines of work: ${tally(work, 'runs')} run as native, ${tally(work, 'not yet')} not yet`);
     // How long each took, natively and in the browser's kernel (its own work: the program, not node starting).
-    const timed = work.filter((w) => w.verdict === 'runs' && w.ms && w.nativeMs);
+    const timed = work.flatMap((w) => (w.verdict === 'runs' && w.ms && w.nativeMs ? [{...w, ms: w.ms}] : []));
     for (const w of timed) console.log(`  ${String(w.nativeMs).padStart(6)} ms native  ${String(w.ms).padStart(6)} ms xlat  ${(w.ms / w.nativeMs).toFixed(2).padStart(6)}x  ${w.name}`);
     const geo = Math.exp(timed.reduce((a, w) => a + Math.log(w.ms / w.nativeMs), 0) / Math.max(1, timed.length));
     if (timed.length) console.log(`  geometric mean ${geo.toFixed(2)}x over ${timed.length}`);
@@ -263,7 +279,7 @@ async function main() {
 }
 
 /** Lines of sh a Prompt runs, each named: what --version does not reach. */
-const WORK = [
+const WORK: [string, string][] = [
   ['pipeline', "printf 'b\\na\\nb\\n' | sort | uniq -c"],
   ['text tools', "echo 'a,b,c' | sed s/b/x/ | awk -F, '{print $2}' | tr a-z A-Z"],
   ['grep -r', "mkdir -p /tmp/g && echo needle > /tmp/g/f && grep -rn needle /tmp/g"],
@@ -348,38 +364,41 @@ gcc -O2 mm.c -o mm && ./mm`],
  * sandbox here are different machines, so what they say is compared by its form, each line of the one as each line
  * of the other is made: the same header, the same labels, every process line a process line.
  */
-const SHAPES = {
-  '/usr/bin/free': (out) => out.split('\n').map((l) => l.trim().split(/\s+/)[0]),
+const SHAPES: Record<string, (out: string) => string[]> = {
+  '/usr/bin/free': (out) => out.split('\n').map((l) => l.trim().split(/\s+/)[0] ?? ''),
   '/usr/bin/ps': (out) => out.split('\n').filter(Boolean).map((l) => /^\s*PID\b/.test(l) ? l.trim() : /^\s*\d+ \S+\s+\d+ [RSDZTW]\s+\S/.test(l) ? 'a process' : l),
 };
-function sameShape(path, a, b) {
+function sameShape(path: string, a: string, b: string): boolean {
   const shape = SHAPES[path];
   if (!shape) return false;
   const [x, y] = [shape(a), shape(b)];
   // The same lines, in kind: each process's line a process line, however many processes each machine has.
-  const kinds = (v) => [...new Set(v)].sort().join('\n');
+  const kinds = (v: string[]) => [...new Set(v)].sort().join('\n');
   return path === '/usr/bin/ps' ? kinds(x) === kinds(y) : x.join('\n') === y.join('\n');
 }
 
 /** Each of `items` ({name, what, path, args}) under xlat and natively, `jobs` at a time: one row each. */
-async function compare(items, {web, rootDir, translator, jobs, seconds, fresh, kept}) {
-  const rows = [];
+async function compare(items: Item[], {web, rootDir, translator, jobs, seconds, fresh, kept}:
+  {web: string; rootDir: string; translator: string; jobs: number; seconds: number; fresh: boolean; kept: string | null}): Promise<Row[]> {
+  const rows: Row[] = [];
   let next = 0;
   const worker = async () => {
     while (next < items.length) {
       const p = items[next++];
+      if (!p) break;
       // One after the other, so neither's time is the other's load.
       const started = performance.now();
       const native = {...await run('bwrap', [...sandbox(rootDir), p.path, ...p.args], {seconds, env: {}}), ms: Math.round(performance.now() - started)};
-      const under = (env) => run(process.execPath, [fileURLToPath(import.meta.url), '--child', JSON.stringify({web, path: p.path, args: p.args, translator, fresh, kept})], {seconds, env: {...process.env, ...env}});
+      const asked: Asked = {web, path: p.path, args: p.args, translator, fresh, kept};
+      const under = (env: NodeJS.ProcessEnv) => run(process.execPath, [fileURLToPath(import.meta.url), '--child', JSON.stringify(asked)], {seconds, env: {...process.env, ...env}});
       // Warm: run once first, keeping what it translates (a Prompt that ran it before).
       if (kept) await under({});
       // Timed as it runs; traced (every system call, which costs) only when it did not run, to say what it lacked.
       const xlat = await under({});
-      let x = null;
+      let x: Ran | null = null;
       try { x = JSON.parse(xlat.stdout); } catch { /* ended without saying: killed, or the kernel threw */ }
       const nativeStatus = native.timedOut ? 'no end' : native.signal ? `signal ${native.signal}` : native.code;
-      let verdict, why = '';
+      let verdict: Row['verdict'], why = '';
       if (xlat.timedOut) {
         if (native.timedOut) verdict = 'runs';
         else { verdict = 'not yet'; why = `no end within ${seconds} s`; }
@@ -387,7 +406,8 @@ async function compare(items, {web, rootDir, translator, jobs, seconds, fresh, k
       else if (!x) { verdict = 'not yet'; why = (xlat.stderr.split('\n').filter((l) => l && !l.startsWith('[')).pop() ?? 'the kernel stopped').slice(0, 160); }
       else if (x.error) { verdict = 'not yet'; why = x.error.slice(0, 160); }
       else {
-        const xs = x.status & 0x7f ? `signal ${x.status & 0x7f}` : x.status >> 8;
+        const st = x.status ?? 0;
+        const xs = st & 0x7f ? `signal ${st & 0x7f}` : st >> 8;
         const said = x.stderr.split('\n').find((l) => l.startsWith('xlat:'));
         if (said) { verdict = 'not yet'; why = said.slice(0, 160); }
         else if (xs === nativeStatus && (x.stdout === native.stdout || sameShape(p.path, x.stdout, native.stdout))) verdict = 'runs';
@@ -407,7 +427,7 @@ async function compare(items, {web, rootDir, translator, jobs, seconds, fresh, k
         const calls = [...new Set([...missing, ...enosys])].sort((a, b) => a - b);
         if (calls.length) why += `${why ? '; ' : ''}ENOSYS: ${calls.join(' ')}`;
       }
-      rows.push({name: p.name, what: p.what, verdict, why, native: nativeStatus, ms: x?.ms ?? null, nativeMs: native.ms, first: (x?.stdout || native.stdout).split('\n')[0].slice(0, 80)});
+      rows.push({name: p.name, what: p.what, verdict, why, native: nativeStatus, ms: x?.ms ?? null, nativeMs: native.ms, first: ((x?.stdout || native.stdout).split('\n')[0] ?? '').slice(0, 80)});
       process.stderr.write(`${verdict.padEnd(14)} ${p.name}${why ? `  (${why})` : ''}\n`);
     }
   };

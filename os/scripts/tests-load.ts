@@ -1,4 +1,4 @@
-// For npm test (scripts/tests.mjs): how each test process loads its modules, loaded before any of them; and the
+// For npm test (scripts/tests.ts): how each test process loads its modules, loaded before any of them; and the
 // selftest's Remotes (selftest/global-setup.ts), which load the service the same way each run. A test process
 // loads the same modules each run, and most of a short one's time went on loading them again:
 //
@@ -13,11 +13,12 @@
 //   resolves it, the package's "type" read once; and whatever is asked again from the same folder is where node
 //   found it the first time.
 //
-// Not a module of the tests: a plain .mjs, so that loading it needs nothing it makes faster.
+// Not a module of the tests: nothing it imports is one of theirs, so loading it needs nothing it makes faster.
 
 import {createHash} from 'node:crypto';
 import {mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync} from 'node:fs';
 import {enableCompileCache, registerHooks, stripTypeScriptTypes} from 'node:module';
+import type {ResolveHookContext} from 'node:module';
 import {tmpdir} from 'node:os';
 import {basename, dirname, join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
@@ -34,7 +35,7 @@ mkdirSync(STRIPPED, {recursive: true});
  * text it was made from: a module changed replaces what was kept of it, so what is kept stays as many files as there
  * are addresses, not one more each edit.
  */
-function stripped(url, text) {
+function stripped(url: string, text: string): string {
   const kept = join(STRIPPED, `${createHash('sha256').update(url).digest('hex')}.js`);
   const of = `${createHash('sha256').update(text).digest('hex')}\n`;
   try {
@@ -60,15 +61,16 @@ function stripped(url, text) {
 }
 
 /** The "type" of the package.json nearest above a folder, as node finds it (null: none says), each read once. */
-const types = new Map();
-function typeAt(dir) {
-  if (types.has(dir)) return types.get(dir);
-  let type = null;
+const types = new Map<string, string | null>();
+function typeAt(dir: string): string | null {
+  const known = types.get(dir);
+  if (known !== undefined) return known;
+  let type: string | null = null;
   try {
     type = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).type ?? null;
   } catch (e) {
     // None here: the folder above's, but never past a node_modules folder, where node stops looking.
-    if (e.code === 'ENOENT' && basename(dir) !== 'node_modules' && dirname(dir) !== dir) type = typeAt(dirname(dir));
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT' && basename(dir) !== 'node_modules' && dirname(dir) !== dir) type = typeAt(dirname(dir));
   }
   types.set(dir, type);
   return type;
@@ -83,7 +85,7 @@ function typeAt(dir) {
 const found = new Map();
 
 /** Where `specifier` from `parent` is, as node would find it: a relative .js module of a package that says it is one. */
-function moduleOfPackage(specifier, parent, context) {
+function moduleOfPackage(specifier: string, parent: string, context: ResolveHookContext) {
   if (!(specifier.startsWith('./') || specifier.startsWith('../')) || !specifier.endsWith('.js') || !parent.includes('/node_modules/')
     || parent.includes('?') || !context.conditions?.includes('import')) return null;
   const path = fileURLToPath(new URL(specifier, parent));
@@ -101,7 +103,7 @@ registerHooks({
     const key = [specifier, own ? '' : new URL('.', parent).href, context.conditions?.join(), JSON.stringify(context.importAttributes ?? {})].join('\0');
     const was = found.get(key);
     if (was) return {...was, shortCircuit: true};
-    const r = (!own && moduleOfPackage(specifier, parent, context)) || nextResolve(specifier, context);
+    const r = (!own && parent !== undefined && moduleOfPackage(specifier, parent, context)) || nextResolve(specifier, context);
     found.set(key, r);
     return {...r, shortCircuit: true};
   },

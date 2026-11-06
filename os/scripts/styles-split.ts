@@ -1,6 +1,6 @@
 // Splits the stylesheet into files by what each part styles, keeping every rule where the cascade has it:
 //
-//   node scripts/styles-split.mjs [--plan] [SHEET]
+//   node scripts/styles-split.ts [--plan] [SHEET]
 //
 // SHEET (app/styles.css) is one sheet of rules, or the entry this wrote before, whose parts it reads back first (each
 // part's first comment is its own, said again when it is written). It writes the parts to styles/ beside SHEET (taking
@@ -9,7 +9,7 @@
 //
 // A rule wins over another as heavy only by coming later, so the order is the sheet's: each part is a run of the
 // sheet's rules one after another, and the entry imports the parts in the order the runs stand in. Which rules a run
-// holds is chosen so that most of its rules are about one part (styles-parts.mjs says which, from their classes):
+// holds is chosen so that most of its rules are about one part (styles-parts.ts says which, from their classes):
 // a new part costs as much as a few rules that stand in a part not their own, so a rule or two about something else
 // among many about one thing stay where they are, in the part around them. A part that comes back later in the
 // sheet is written again under its name and a number (bench-2.css, after bench.css).
@@ -21,8 +21,13 @@ import {mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync} from 'n
 import {dirname, join, relative, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
-import {PARTS, classPart} from './styles-parts.mjs';
-import {entryOf, leavesOf, readLeaf, readSheet} from './styles-sheet.mjs';
+import {PARTS, classPart} from './styles-parts.ts';
+import {entryOf, leavesOf, readLeaf, readSheet, type Complex, type GroupNode, type Leaf, type SheetNode} from './styles-sheet.ts';
+
+/** A leaf with the part it is about (null: whatever stands round it) and why. */
+export interface Parted extends Leaf { part: string | null; why: string }
+/** A run of leaves of one part: [from, to). */
+export interface Run { part: string; from: number; to: number }
 
 const OS = fileURLToPath(new URL('..', import.meta.url));
 const ABOUT = new Map(PARTS.map((p) => [p.name, p.about]));
@@ -32,13 +37,13 @@ const COMMON = new Set(['base', 'shared', 'controls', 'switch', 'menus', 'page',
 // ---- Reading the sheet, whole ----
 
 /** A part file's text without its first comment (the one this writes over it). */
-export const withoutHead = (text) => text.replace(/^\s*\/\*[\s\S]*?\*\/[ \t]*\n?/, '');
+export const withoutHead = (text: string) => text.replace(/^\s*\/\*[\s\S]*?\*\/[ \t]*\n?/, '');
 
 /**
  * The sheet as one text: SHEET itself, or the parts its entry imports read back one after another (each ends a line,
  * which the next starts after), then any rules after them.
  */
-export function wholeSheet(sheet) {
+export function wholeSheet(sheet: string): string {
   const text = readFileSync(sheet, 'utf8');
   const entry = entryOf(text);
   if (!entry) return text;
@@ -52,13 +57,13 @@ export function wholeSheet(sheet) {
 // ---- Which part a rule is about ----
 
 /** The parts one complex selector is about: its own when its classes name one, else what its :is() names, else ''. */
-function partsOfComplex(c) {
-  let place = null, own = null, common = null, base = null;
+function partsOfComplex(c: Complex): string[] {
+  let place: string | null = null, own: string | null = null, common: string | null = null, base: string | null = null;
   // From the subject out: the first class a part names, a place's before anything, a common part's after, the
   // base's last; what a compound :has() is about is about it too, as what stands round it is.
-  const scan = (complex) => {
+  const scan = (complex: Complex) => {
     for (let k = complex.compounds.length - 1; k >= 0; k--) {
-      const parts = complex.compounds[k].parts;
+      const parts = complex.compounds[k]?.parts ?? [];
       for (const p of parts) {
         if (p.kind !== 'class') continue;
         const hit = classPart(p.name);
@@ -74,7 +79,7 @@ function partsOfComplex(c) {
   scan(c);
   const found = place ?? own ?? common ?? base;
   if (found) return [found];
-  const inner = new Set();
+  const inner = new Set<string>();
   for (const cp of c.compounds) for (const p of cp.parts) if (p.list && p.name !== 'not') for (const a of p.list) for (const x of partsOfComplex(a.complex)) inner.add(x);
   if (inner.size) return [...inner];
   const last = c.compounds.at(-1)?.parts ?? [];
@@ -84,13 +89,14 @@ function partsOfComplex(c) {
 }
 
 /** The part a leaf of the sheet is about: {part, why}; an at-rule (@keyframes) is about whatever stands round it. */
-export function partOf(leaf) {
+export function partOf(leaf: Leaf): {part: string | null; why: string} {
   const r = readLeaf(leaf);
   if (r.kind === 'at') return {part: null, why: `@${r.name}`};
-  if (r.sels.length === 1 && r.sels[0].text === ':root' && r.decls.every((d) => d.prop.startsWith('--'))) return {part: 'tokens', why: ':root'};
+  if (r.sels.length === 1 && r.sels[0]?.text === ':root' && r.decls.every((d) => d.prop.startsWith('--'))) return {part: 'tokens', why: ':root'};
   const all = new Set(r.sels.flatMap(partsOfComplex));
   const named = [...all].filter(Boolean);
-  if (named.length === 1) return {part: named[0], why: named[0]};
+  const [one] = named;
+  if (named.length === 1 && one) return {part: one, why: one};
   if (named.length > 1) return {part: 'shared', why: named.join(' ')};
   return {part: 'shared', why: 'no class a part names'};
 }
@@ -108,29 +114,32 @@ const SHARED_COST = 0.5;
  * The runs the leaves are cut into: [{part, from, to}] (to exclusive), as cheap as can be: each new run costs
  * NEW_PART, each line of a rule costs 1 in a run of another part (of a shared rule, less), nothing in its own.
  */
-export function runsOf(leaves) {
+export function runsOf(leaves: Parted[]): Run[] {
   const parts = [...new Set(leaves.map((l) => l.part).filter((p) => p !== null))];
   const n = leaves.length, P = parts.length;
-  const cost = (leaf, p) => (leaf.part === null || leaf.part === parts[p] ? 0 : (leaf.part === 'shared' ? SHARED_COST : 1) * leaf.node.text.split('\n').length);
+  if (!n) return [];
+  const leaf = (i: number) => leaves[i]!;
+  const cost = (leaf: Parted, p: number) => (leaf.part === null || leaf.part === parts[p] ? 0 : (leaf.part === 'shared' ? SHARED_COST : 1) * leaf.node.text.split('\n').length);
   // prev[p]: the least cost of the leaves so far with the last run of part p; back[i][p]: the part of the run
   // leaf i-1 is in, on that way (p itself when leaf i goes on in the same run, -1 for the first leaf).
-  let prev = parts.map((_, p) => NEW_PART + cost(leaves[0], p));
+  let prev = parts.map((_, p) => NEW_PART + cost(leaf(0), p));
   const back = [parts.map(() => -1)];
+  const at = (costs: number[], p: number) => costs[p] ?? Infinity;
   for (let i = 1; i < n; i++) {
     let low = 0;
-    for (let p = 1; p < P; p++) if (prev[p] < prev[low]) low = p;
-    const cut = leaves[i].parents.length > 0 && leaves[i - 1].parents[0] === leaves[i].parents[0];
-    const start = prev[low] + NEW_PART + (cut ? CUT_GROUP : 0);
-    back.push(parts.map((_, p) => (prev[p] < start ? p : low)));
-    prev = parts.map((_, p) => Math.min(prev[p], start) + cost(leaves[i], p));
+    for (let p = 1; p < P; p++) if (at(prev, p) < at(prev, low)) low = p;
+    const cut = leaf(i).parents.length > 0 && leaf(i - 1).parents[0] === leaf(i).parents[0];
+    const start = at(prev, low) + NEW_PART + (cut ? CUT_GROUP : 0);
+    back.push(parts.map((_, p) => (at(prev, p) < start ? p : low)));
+    prev = parts.map((_, p) => Math.min(at(prev, p), start) + cost(leaf(i), p));
   }
   let p = 0;
-  for (let q = 1; q < P; q++) if (prev[q] < prev[p]) p = q;
-  const runs = [];
+  for (let q = 1; q < P; q++) if (at(prev, q) < at(prev, p)) p = q;
+  const runs: Run[] = [];
   let to = n;
   for (let i = n - 1; i >= 0; i--) {
-    const was = back[i][p];
-    if (was !== p) { runs.unshift({part: parts[p], from: i, to}); to = i; p = was; }
+    const was = back[i]?.[p] ?? -1;
+    if (was !== p) { runs.unshift({part: parts[p] ?? '', from: i, to}); to = i; p = was; }
   }
   return runs;
 }
@@ -138,23 +147,23 @@ export function runsOf(leaves) {
 // ---- Writing a run ----
 
 /** The text of the leaves from..to, each in the @media (and so on) it stands in, opened and closed round them. */
-export function runText(all, from, to, tail) {
+export function runText(all: Leaf[], from: number, to: number, tail?: string): string {
   let out = '';
-  const open = [];
-  const closeTo = (depth, leaf) => {
+  const open: GroupNode[] = [];
+  const closeTo = (depth: number, leaf: number) => {
     while (open.length > depth) {
-      const g = open.pop();
+      const g = open.pop()!;
       // Closed where it closes: its own end and what follows it; else a brace, the group going on in the next part.
       out += lastLeafOf(all, g) < leaf ? g.tail + g.trail : '\n}';
     }
   };
   for (let i = from; i < to; i++) {
-    const leaf = all[i];
+    const leaf = all[i]!;
     let same = 0;
     while (same < open.length && same < leaf.parents.length && open[same] === leaf.parents[same]) same++;
     closeTo(same, i);
     for (let d = same; d < leaf.parents.length; d++) {
-      const g = leaf.parents[d];
+      const g = leaf.parents[d]!;
       out += (firstLeafOf(all, g) === i ? g.lead : '\n') + g.head;
       open.push(g);
     }
@@ -167,10 +176,17 @@ export function runText(all, from, to, tail) {
   return out.replace(/^\n/, '').replace(/\s*$/, '\n');
 }
 
-function firstLeafOf(all, g) { return g.first ??= all.findIndex((l) => l.parents.includes(g)); }
-function lastLeafOf(all, g) {
-  if (g.last === undefined) { g.last = -1; all.forEach((l, i) => { if (l.parents.includes(g)) g.last = i; }); }
-  return g.last;
+/** Where each group's first and last leaves are, found once. */
+const firsts = new WeakMap<GroupNode, number>(), lasts = new WeakMap<GroupNode, number>();
+function firstLeafOf(all: Leaf[], g: GroupNode): number {
+  let k = firsts.get(g);
+  if (k === undefined) { k = all.findIndex((l) => l.parents.includes(g)); firsts.set(g, k); }
+  return k;
+}
+function lastLeafOf(all: Leaf[], g: GroupNode): number {
+  let k = lasts.get(g);
+  if (k === undefined) { k = -1; all.forEach((l, i) => { if (l.parents.includes(g)) k = i; }); lasts.set(g, k); }
+  return k;
 }
 
 // ---- The same sheet ----
@@ -179,11 +195,11 @@ function lastLeafOf(all, g) {
  * What a sheet says, in order, whatever the room in it and however its @media are cut: each comment and each rule
  * with the @media (and so on) it stands in, every run of space made one.
  */
-export function said(text) {
-  const out = [];
-  const norm = (s) => s.replace(/\s+/g, ' ').trim();
-  const comments = (s, ctx) => { for (const c of s.match(/\/\*[\s\S]*?\*\//g) ?? []) out.push(`${ctx}${norm(c)}`); };
-  const walk = (nodes, tail, ctx) => {
+export function said(text: string): string[] {
+  const out: string[] = [];
+  const norm = (s: string) => s.replace(/\s+/g, ' ').trim();
+  const comments = (s: string, ctx: string) => { for (const c of s.match(/\/\*[\s\S]*?\*\//g) ?? []) out.push(`${ctx}${norm(c)}`); };
+  const walk = (nodes: SheetNode[], tail: string, ctx: string) => {
     for (const n of nodes) {
       comments(n.lead, ctx);
       if (n.kind === 'group') {
@@ -200,7 +216,7 @@ export function said(text) {
 }
 
 /** Where two sheets first say something else, or -1 when they say the same. */
-export function firstDifference(a, b) {
+export function firstDifference(a: string, b: string): number {
   const x = said(a), y = said(b);
   for (let i = 0; i < Math.max(x.length, y.length); i++) if (x[i] !== y[i]) return i;
   return -1;
@@ -209,28 +225,26 @@ export function firstDifference(a, b) {
 // ---- The split ----
 
 /** The parts a sheet is split into: [{name, file, about, text, leaves, strays}] in order, and the entry's text. */
-export function split(text) {
+export function split(text: string) {
   const sheet = readSheet(text);
-  const leaves = leavesOf(sheet.nodes);
-  for (const l of leaves) Object.assign(l, partOf(l));
+  const leaves: Parted[] = leavesOf(sheet.nodes).map((l) => Object.assign(l, partOf(l)));
   const runs = runsOf(leaves);
-  const seen = new Map();
+  const seen = new Map<string, number>();
   const parts = runs.map((r, k) => {
     const count = (seen.get(r.part) ?? 0) + 1;
     seen.set(r.part, count);
     const name = count === 1 ? r.part : `${r.part}-${count}`;
     const body = runText(leaves, r.from, r.to, k === runs.length - 1 ? sheet.tail : undefined);
     const strays = leaves.slice(r.from, r.to).filter((l) => l.part !== null && l.part !== r.part);
-    return {name, part: r.part, count, file: `${name}.css`, leaves: r.to - r.from, from: leaves[r.from].node.line, strays, body};
-  });
-  for (const p of parts) {
-    const others = parts.filter((o) => o.part === p.part && o !== p);
+    return {name, part: r.part, count, file: `${name}.css`, leaves: r.to - r.from, from: leaves[r.from]?.node.line ?? 0, strays, body};
+  }).map((p, _, all) => {
+    const others = all.filter((o) => o.part === p.part && o !== p);
     const more = !others.length ? '' : others.map((o) => `${o.count > p.count ? 'later' : 'earlier'} in the cascade, ${o.file}`).join('; ');
-    p.head = comment(`${ABOUT.get(p.part)}${more ? ` More of it ${more}.` : ''}`);
-    p.text = p.head + p.body;
-  }
+    const head = comment(`${ABOUT.get(p.part)}${more ? ` More of it ${more}.` : ''}`);
+    return {...p, head, text: head + p.body};
+  });
   const again = parts.find((p) => p.count > 1);
-  const entry = comment(`The OS's stylesheet, in parts by what each styles: scripts/styles-split.mjs wrote them from one sheet, and
+  const entry = comment(`The OS's stylesheet, in parts by what each styles: scripts/styles-split.ts wrote them from one sheet, and
     writes them again from these. The order is the cascade's: of two rules as heavy, the later wins, so where a part stands in this list
     is part of what it says${again ? `, and a part that comes back further down (${again.file}) stands where its rules do` : ''}.`)
     + parts.map((p) => `@import './styles/${p.file}';\n`).join('');
@@ -238,17 +252,18 @@ export function split(text) {
 }
 
 /** A comment of these words, its lines no longer than the sheet's. */
-function comment(words, width = 118) {
+function comment(words: string, width = 118): string {
   const lines = [''];
   for (const w of words.split(/\s+/)) {
-    if (lines.at(-1) && (lines.length === 1 ? 3 : 3) + lines.at(-1).length + 1 + w.length > width) lines.push('');
-    lines[lines.length - 1] += (lines.at(-1) ? ' ' : '') + w;
+    const last = lines.at(-1) ?? '';
+    if (last && 3 + last.length + 1 + w.length > width) lines.push(w);
+    else lines[lines.length - 1] = last ? `${last} ${w}` : w;
   }
   return `/* ${lines.join('\n   ')} */\n`;
 }
 
 /** What the parts say, read back in order, as wholeSheet reads them. */
-const readBack = (parts) => parts.map((p) => p.body).join('');
+const readBack = (parts: {body: string}[]) => parts.map((p) => p.body).join('');
 
 function main() {
   const {values, positionals} = parseArgs({allowPositionals: true, options: {plan: {type: 'boolean'}}});
@@ -258,11 +273,11 @@ function main() {
   const at = firstDifference(text, readBack(parts));
   if (at >= 0) throw new Error(`the parts read back are not the sheet (they part at what it says ${at}th): nothing is written`);
   const dir = join(dirname(sheet), 'styles');
-  const lines = (s) => s.split('\n').length - 1;
+  const lines = (s: string) => s.split('\n').length - 1;
   for (const p of parts) {
     console.log(`${p.file.padEnd(22)} ${String(lines(p.text)).padStart(5)} lines, ${String(p.leaves).padStart(4)} rules from line ${p.from}`
       + (p.strays.length ? `; about other parts: ${p.strays.length}` : ''));
-    if (values.plan) for (const l of p.strays) console.log(`    ${l.node.line}: ${(l.node.selector ?? `@${l.node.name}`).replace(/\s+/g, ' ').slice(0, 90)}  (${l.why})`);
+    if (values.plan) for (const l of p.strays) console.log(`    ${l.node.line}: ${(l.node.kind === 'rule' ? l.node.selector : `@${l.node.name}`).replace(/\s+/g, ' ').slice(0, 90)}  (${l.why})`);
   }
   if (values.plan) return;
   mkdirSync(dir, {recursive: true});

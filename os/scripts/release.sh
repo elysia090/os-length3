@@ -4,7 +4,7 @@
 #   os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst  the root: every package made from this tree's pins by its
 #                                                  recipe (root/build.sh), with this tree's l3 (root/assemble.sh)
 #   os-length3-linux-X.Y.Z-l3-web.tar               the same root as the browser reads it (l3.sh), checked
-#                                                  to be the same tree (l3-parity.mjs)
+#                                                  to be the same tree (l3-parity.ts)
 #   os-length3-linux-X.Y.Z-web.zip                  the web build, with that l3 (web-release.sh)
 #   os-length3-linux-X.Y.Z-desktop-amd64.deb        the desktop app, its Prompt running that root on the
 #   os-length3-linux-X.Y.Z-desktop-x86_64.AppImage  machine, with l3 beside it (desktop.sh)
@@ -13,9 +13,9 @@
 #   SHA256SUMS, manifest                           the digests; what the root was made from
 #
 # and OUT/../notes.md, the release's notes. Before the web build and the app are made, the root is pinned
-# in core/src/root/pins.rs (pin-root.mjs), so what ships trusts this release's root; once the app is made, it is
-# pinned in shared/desktop-releases.json (pin-desktop.mjs). Both changes stay in the tree, to be committed as
-# one: release.yml proposes them to main. The release itself is made by publish-release.mjs (or
+# in core/src/root/pins.rs (pin-root.ts), so what ships trusts this release's root; once the app is made, it is
+# pinned in shared/desktop-releases.json (pin-desktop.ts). Both changes stay in the tree, to be committed as
+# one: release.yml proposes them to main. The release itself is made by publish-release.ts (or
 # .github/workflows/release.yml, which runs this script).
 #
 #   sh scripts/release.sh OUT
@@ -56,13 +56,13 @@ fi
 
 # l3 for the browser, the same root: every path, type, mode, link target and sha256 as the app installs.
 sh scripts/l3.sh "$root" public/l3
-node scripts/l3-parity.mjs "$root" public/l3
+node scripts/l3-parity.ts "$root" public/l3
 l3web=os-length3-linux-$version-l3-web.tar
 tar -C public/l3 --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --format=pax \
   --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime -cf "$out/$l3web" .
 
 # One entry pins both ways in, before anything that trusts it is built.
-node scripts/pin-root.mjs "$root" public/l3
+node scripts/pin-root.ts "$root" public/l3
 
 # The web build (it checks the types and runs the tests) and the desktop app.
 L3_READY=1 sh scripts/web-release.sh
@@ -79,7 +79,7 @@ cp target/release/bundle/appimage/*_"$version"_*.AppImage "$out/$appimage"
 # Started as a machine without the build's extra libraries starts it (#37): a window, or no release.
 sh scripts/desktop-smoke.sh "$out/$appimage"
 mv "$out/smoke.png" "$out/../smoke.png"
-node scripts/pin-desktop.mjs "$version" "$out/$deb" "$out/$appimage"
+node scripts/pin-desktop.ts "$version" "$out/$deb" "$out/$appimage"
 
 cd "$out"
 sha256sum "$l3web" "$web" "$deb" "$appimage" $film >> SHA256SUMS
@@ -110,7 +110,7 @@ digest() { sha256sum "$1" | cut -d' ' -f1; }
   awk '/^pub const RELEASES/{on=1; sub(/^pub const RELEASES: &\[Release\] = &\[/, "")} on{print} on && /^}/{exit}' "$here/core/src/root/pins.rs"
   echo '```'
   echo
-  echo "and its desktop app in \`os/shared/desktop-releases.json\`, as below. Both are proposed to main as one change (Pin $version); once it is in, each deploy of the Remote takes the pinned root and desktop files from this release, checks them against those pins and puts them on the Remote, which hands them to anyone beside this release; a web build takes l3 from \`$l3web\` only at the pinned index (\`os/scripts/prompt-files.mjs\`)."
+  echo "and its desktop app in \`os/shared/desktop-releases.json\`, as below. Both are proposed to main as one change (Pin $version); once it is in, each deploy of the Remote takes the pinned root and desktop files from this release, checks them against those pins and puts them on the Remote, which hands them to anyone beside this release; a web build takes l3 from \`$l3web\` only at the pinned index (\`os/scripts/prompt-files.ts\`)."
   echo
   echo '```json'
   echo "\"$version\": {"

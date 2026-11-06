@@ -2,7 +2,7 @@
 // from, its notes OUT/../notes.md and every file in OUT. A version published already is left as it is
 // (exit 0), and only a commit main has is released.
 //
-//   GITHUB_TOKEN=… node scripts/publish-release.mjs OUT
+//   GITHUB_TOKEN=… node scripts/publish-release.ts OUT
 //
 // The version is RELEASE ($VERSION overrides); the commit is HEAD ($GITHUB_SHA overrides). GITHUB_REPOSITORY
 // names the repository when it is not this one (and GITHUB_API_URL the API, as on GitHub Actions).
@@ -12,7 +12,7 @@ import {join, resolve} from 'node:path';
 
 const here = new URL('..', import.meta.url).pathname;
 const [outArg] = process.argv.slice(2);
-if (!outArg) { console.error('usage: node scripts/publish-release.mjs OUT'); process.exit(2); }
+if (!outArg) { console.error('usage: node scripts/publish-release.ts OUT'); process.exit(2); }
 const out = resolve(outArg);
 const version = process.env.VERSION || readFileSync(join(here, 'RELEASE'), 'utf8').trim();
 const sha = process.env.GITHUB_SHA || execFileSync('git', ['-C', here, 'rev-parse', 'HEAD'], {encoding: 'utf8'}).trim();
@@ -22,11 +22,11 @@ const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
 const tag = `os-length3-linux-v${version}`;
 const headers = {accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28', 'user-agent': 'length3-release', ...(token ? {authorization: `Bearer ${token}`} : {})};
 
-async function ask(path, init = {}) {
+async function ask(path: string, init: RequestInit & {headers?: Record<string, string>} = {}): Promise<Response> {
   const r = await fetch(path.startsWith('http') ? path : `${api}/repos/${repo}${path}`, {...init, headers: {...headers, ...init.headers}});
   return r;
 }
-async function must(r, what) {
+async function must(r: Response, what: string): Promise<Response> {
   if (r.ok) return r;
   throw new Error(`${what}: ${r.status} ${await r.text()}`);
 }

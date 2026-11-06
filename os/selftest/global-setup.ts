@@ -146,7 +146,7 @@ function copyDir(from: string, to: string): Promise<void> {
 }
 
 /** How npm test's processes load their modules (types stripped and code compiled once for every run), for the Remotes too. */
-const LOAD = pathToFileURL(join(OS, 'scripts', 'tests-load.mjs')).href;
+const LOAD = pathToFileURL(join(OS, 'scripts', 'tests-load.ts')).href;
 
 /** Start `args` with node, its output in logs/<name>.log. */
 function start(name: string, args: string[], env: NodeJS.ProcessEnv = {}): ChildProcess {
@@ -250,7 +250,7 @@ export default async function globalSetup(_config: FullConfig) {
     }
     const at = `http://localhost:${aPort}`;
     // The Remote's own name is localhost too, so the session it sets on sign-in is the app's. It loads its modules as
-    // npm test's processes do (scripts/tests-load.mjs: their types stripped once, their code compiled once, for every
+    // npm test's processes do (scripts/tests-load.ts: their types stripped once, their code compiled once, for every
     // run): a fifth less of the CPU its start took, which every run waited for.
     children.push(start(`remote${name}`, ['--import', LOAD, 'remote/dev.ts', join(data, dir), String(rPort), at], {LENGTH3_DEV_BASE: `http://localhost:${rPort}`, ...env}));
     // Through the preview, so both are up and the one passes to the other. (Between the servers and

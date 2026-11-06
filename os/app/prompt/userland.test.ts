@@ -5,13 +5,12 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {after, before, test} from 'node:test';
 import {gunzipSync} from 'node:zlib';
-// @ts-expect-error: a plain script beside the build's, with no types of its own
-import {makeL3, standIn} from '../../scripts/l3-standin.mjs';
+import {makeL3, standIn} from '../../scripts/l3-standin.ts';
 import type {About, Index} from './userland.ts';
 
 // What a Prompt in a browser is given of l3: the root's own files at their
 // own paths, nothing in place of them. Served from l3 made from a stand-in
-// root (scripts/l3-standin.mjs), as the page fetches it.
+// root (scripts/l3-standin.ts), as the page fetches it.
 
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 let work = '', out = '';
@@ -22,7 +21,7 @@ before(() => {
   out = join(work, 'l3');
   const r = makeL3(standIn(work, '9.9.9'), out, work);
   assert.equal(r.status, 0, r.stderr);
-  // The page's origin: /l3/… is the directory l3.mjs wrote.
+  // The page's origin: /l3/… is the directory l3.ts wrote.
   Object.assign(globalThis, {location: new URL('http://page.test/')});
   globalThis.fetch = (async (input: string | URL | Request) => {
     const path = new URL(String(input), 'http://page.test/').pathname;
@@ -67,7 +66,7 @@ test('l3.json names what l3 is: the version and the root digest core/src/root.rs
   assert.ok(index.links.some((l) => l.path === '/bin' && l.target === 'usr/bin'));
 });
 
-// l3 this build carries, when it carries one (npm run l3, or prompt-files.mjs): what l3.json names is beside it.
+// l3 this build carries, when it carries one (npm run l3, or prompt-files.ts): what l3.json names is beside it.
 const built = new URL('../../public/l3/', import.meta.url);
 test('the l3 in public/ is whole: its index is the digest l3.json says, and names only what is there', {skip: !existsSync(new URL('l3.json', built))}, () => {
   const about = JSON.parse(readFileSync(new URL('l3.json', built), 'utf8')) as About;

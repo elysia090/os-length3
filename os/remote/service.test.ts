@@ -1278,7 +1278,7 @@ test('a release is public: its root by digest and the desktop app by its pinned 
   const s = await service();
   const sha = 'b'.repeat(64);
   await s.bucket.put(`os/${sha}`, new Uint8Array(100).map((_, i) => i));
-  // The one version pinned (a release pins only itself: scripts/pin-desktop.mjs).
+  // The one version pinned (a release pins only itself: scripts/pin-desktop.ts).
   const pinned = (desktopPins as Record<string, {deb: {file: string; sha256: string}; appimage: {file: string}}>)[Object.keys(desktopPins)[0]];
   const deb = pinned.deb.file, appimage = pinned.appimage.file;
   await s.bucket.put(`desktop/${deb}`, new Uint8Array(50).map((_, i) => 200 - i));

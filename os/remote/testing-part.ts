@@ -1,4 +1,4 @@
-// For npm test (scripts/tests.mjs, testing-together.ts): node:test as one part of a test file sees it. A file
+// For npm test (scripts/tests.ts, testing-together.ts): node:test as one part of a test file sees it. A file
 // whose tests are each their own (each makes its own Remote) may be run in parts, in several processes at
 // once: each process reads the file as a module of its own (`?part=k/n`), and its `node:test` is this one,
 // read as `?part=k/n` too, under which the file registers only every n-th of its tests from the k-th, in

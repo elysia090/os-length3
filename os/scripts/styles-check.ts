@@ -1,6 +1,6 @@
-// Whether the stylesheet as it is now is the same stylesheet as it was (after styles-split.mjs, say):
+// Whether the stylesheet as it is now is the same stylesheet as it was (after styles-split.ts, say):
 //
-//   node scripts/styles-check.mjs [--before REV|FILE] [SHEET]
+//   node scripts/styles-check.ts [--before REV|FILE] [SHEET]
 //
 // BEFORE is a file, or a git revision whose SHEET it reads (HEAD unless named; an entry there is read with its parts
 // at that revision). Two things are held side by side, and both must be the same:
@@ -18,25 +18,25 @@ import {dirname, join, relative, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import {build} from 'vite';
-import {said, wholeSheet} from './styles-split.mjs';
-import {entryOf} from './styles-sheet.mjs';
+import {said, wholeSheet} from './styles-split.ts';
+import {entryOf} from './styles-sheet.ts';
 
 const OS = fileURLToPath(new URL('..', import.meta.url));
 
 /** The sheet and the files it imports, as {path (from the sheet's folder): text}: from disk, or from git at `rev`. */
-function filesOf(sheet, rev) {
-  const read = rev ? (p) => git(['show', `${rev}:${gitPath(p)}`]) : (p) => readFileSync(p, 'utf8');
+function filesOf(sheet: string, rev: string | null): Record<string, string> {
+  const read = rev ? (p: string) => git(['show', `${rev}:${gitPath(p)}`]) : (p: string) => readFileSync(p, 'utf8');
   const entry = read(sheet);
-  const out = {[relative(dirname(sheet), sheet)]: entry};
+  const out: Record<string, string> = {[relative(dirname(sheet), sheet)]: entry};
   for (const p of entryOf(entry)?.files ?? []) out[p.replace(/^\.\//, '')] = read(resolve(dirname(sheet), p));
   return out;
 }
 
-const git = (args) => execFileSync('git', args, {cwd: OS, encoding: 'utf8', maxBuffer: 64 << 20});
-const gitPath = (p) => relative(git(['rev-parse', '--show-toplevel']).trim(), p);
+const git = (args: string[]) => execFileSync('git', args, {cwd: OS, encoding: 'utf8', maxBuffer: 64 << 20});
+const gitPath = (p: string) => relative(git(['rev-parse', '--show-toplevel']).trim(), p);
 
 /** The files written in a folder of their own, with what is in it read as one sheet. */
-function laidOut(files, name) {
+function laidOut(files: Record<string, string>, name: string) {
   const dir = mkdtempSync(join(tmpdir(), `styles-check-${name}-`));
   for (const [p, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, p)), {recursive: true});
@@ -46,12 +46,14 @@ function laidOut(files, name) {
 }
 
 /** The CSS Vite builds from the sheet at `dir/<sheet>`, linked from a page as index.html links the app's. */
-async function built(dir, sheet) {
+async function built(dir: string, sheet: string) {
   writeFileSync(join(dir, 'index.html'), `<!doctype html>\n<link rel="stylesheet" href="/${sheet}">\n`);
   const out = await build({configFile: false, root: dir, logLevel: 'silent', build: {target: 'es2022', write: false, emptyOutDir: false}});
-  const assets = (Array.isArray(out) ? out : [out]).flatMap((o) => o.output).filter((a) => a.fileName.endsWith('.css'));
-  if (assets.length !== 1) throw new Error(`the build made ${assets.length} stylesheets, not one`);
-  return String(assets[0].source);
+  const outputs = (Array.isArray(out) ? out : [out]).flatMap((o) => ('output' in o ? o.output : []));
+  const assets = outputs.filter((a) => a.type === 'asset' && a.fileName.endsWith('.css'));
+  const [css] = assets;
+  if (assets.length !== 1 || css?.type !== 'asset') throw new Error(`the build made ${assets.length} stylesheets, not one`);
+  return String(css.source);
 }
 
 async function main() {
@@ -60,7 +62,7 @@ async function main() {
   const before = values.before ?? 'HEAD';
   const old = existsSync(before) ? filesOf(resolve(before), null) : filesOf(sheet, before);
   const now = filesOf(sheet, null);
-  const name = (files) => Object.keys(files)[0];
+  const name = (files: Record<string, string>) => Object.keys(files)[0] ?? '';
   const dirs = [laidOut(old, 'before'), laidOut(now, 'now')];
   let same = true;
   try {

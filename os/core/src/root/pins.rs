@@ -86,7 +86,7 @@ pub struct Release {
     /// The GitHub release it was published under (its tag).
     pub tag: &'static str,
     /// The same root as a browser reads it: the sha256 of l3's index for the
-    /// web (os/scripts/l3.mjs), made from this bundle in the same release.
+    /// web (os/scripts/l3.ts), made from this bundle in the same release.
     /// Empty for a release made before there was one. The app never reads it;
     /// it is here so one entry is the whole of l3's pin, for both.
     pub web: &'static str,

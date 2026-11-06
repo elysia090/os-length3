@@ -1,4 +1,4 @@
-// What the app can put on the page, read from its sources rather than from a page drawn (styles-prune.mjs): the
+// What the app can put on the page, read from its sources rather than from a page drawn (styles-prune.ts): the
 // classes, the ids and the elements. Every place a class is given is followed back to the words it is made of:
 //
 //   h('div', {class: …}), el.className = …, el.classList.add(…) / toggle / replace, setAttribute('class', …)
@@ -17,23 +17,53 @@
 
 import {existsSync, readdirSync, readFileSync} from 'node:fs';
 import {dirname, join, relative, resolve} from 'node:path';
-import {parseSync} from 'vite';
+import {parseSync, type ESTree} from 'vite';
 
 /** A word as it may be a class, an id or an element's name. */
 const WORD = /[-\w]+/g;
-const lower = (s) => s.toLowerCase();
-const empty = () => ({words: new Set(), prefixes: new Set(), suffixes: new Set(), infixes: new Set(), unknown: false});
-const merge = (into, from) => {
-  for (const k of ['words', 'prefixes', 'suffixes', 'infixes']) for (const w of from[k]) into[k].add(w);
+const lower = (s: string) => s.toLowerCase();
+
+type Node = ESTree.Node;
+/** What a given value may be: words whole, and parts of words (a word a value runs into the end, start or both of). */
+export interface Words { words: Set<string>; prefixes: Set<string>; suffixes: Set<string>; infixes: Set<string>; unknown: boolean }
+/** A value read: its words, and while they are few, the strings it may be exactly. */
+interface Value extends Words { strings?: Set<string> }
+const PARTS = ['words', 'prefixes', 'suffixes', 'infixes'] as const;
+const empty = (): Value => ({words: new Set(), prefixes: new Set(), suffixes: new Set(), infixes: new Set(), unknown: false});
+const merge = <T extends Words>(into: T, from: Words): T => {
+  for (const k of PARTS) for (const w of from[k]) into[k].add(w);
   into.unknown ||= from.unknown;
   return into;
 };
-const UNKNOWN = () => ({...empty(), unknown: true});
+const UNKNOWN = (): Value => ({...empty(), unknown: true});
+
+/** A source of the app, parsed, with what is declared, imported and read as a value in it. */
+interface Source {
+  file: string; text: string; program: ESTree.Program;
+  /** Each name's values as declared or assigned (null: a function's own name). */
+  decls: Map<string, (Node | null)[]>;
+  imports: Map<string, {from: string; name: string | null}>;
+  values: Set<string>;
+  namespaces: Map<string, string>;
+}
+/** A place a class or an id is given. */
+interface Sink { what: 'class' | 'id'; file: Source; value: Node }
+/** A call of a function: by its name, after a dot, or on a module read whole. */
+interface Call { file: Source; call: ESTree.CallExpression; by: 'name' | 'member' | 'module' }
+/** A value a property is given, or the type it is declared with. */
+type Given = {file: Source; value: Node; typed?: false} | {file: Source; typed: true; type: ESTree.TSType | undefined};
+interface Index {
+  sinks: Sink[]; calls: Map<string, Call[]>; props: Map<string, Given[]>; types: Map<string, (ESTree.TSType | ESTree.TSInterfaceBody)[]>;
+  memberValues: Set<string>; reexported: Set<string>; named: Map<string, Call[]>; escaped: Set<string>; unseen: boolean;
+  words: Set<string>; files: Source[]; tInClass: boolean;
+}
+interface Ctx { index: Index; memo: Map<string, Value>; busy: Set<string> }
+type Fn = ESTree.Function | ESTree.ArrowFunctionExpression;
 
 /** The sources of the app: src/'s modules (not its tests, app/testing/ or app/i18n/), and public/'s scripts. */
-export function appSources(os) {
-  const out = [];
-  const walk = (dir) => {
+export function appSources(os: string): string[] {
+  const out: string[] = [];
+  const walk = (dir: string) => {
     for (const e of readdirSync(dir, {withFileTypes: true})) {
       const p = join(dir, e.name);
       if (e.isDirectory()) { if (p !== join(os, 'app', 'testing') && p !== join(os, 'app', 'i18n')) walk(p); }
@@ -46,40 +76,46 @@ export function appSources(os) {
   return out.sort();
 }
 
+const isNode = (x: unknown): x is Node => !!x && typeof x === 'object' && typeof (x as {type?: unknown}).type === 'string';
+
 /** Each node under `node`, with `parent` set on it; `visit` returning false keeps out of the node's children. */
-function walk(node, parent, visit) {
+function walk(node: unknown, parent: Node | null, visit: (n: Node) => boolean): void {
   if (!node || typeof node !== 'object') return;
   if (Array.isArray(node)) { for (const x of node) walk(x, parent, visit); return; }
-  const isNode = typeof node.type === 'string';
-  if (isNode) {
-    Object.defineProperty(node, 'parent', {value: parent, enumerable: false, configurable: true, writable: true});
-    if (visit(node) === false) return;
+  const here = isNode(node) ? node : null;
+  if (here) {
+    Object.defineProperty(here, 'parent', {value: parent, enumerable: false, configurable: true, writable: true});
+    if (visit(here) === false) return;
   }
-  for (const k in node) {
-    const v = node[k];
-    if (v && typeof v === 'object') walk(v, isNode ? node : parent, visit);
-  }
+  for (const v of Object.values(node)) if (v && typeof v === 'object') walk(v, here ?? parent, visit);
 }
 
-const isFunction = (n) => ['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(n?.type);
-const keyName = (k) => (k?.type === 'Identifier' ? k.name : typeof k?.value === 'string' ? k.value : null);
-const stringLiteral = (n) => n?.type === 'Literal' && typeof n.value === 'string';
+const isFunction = (n: Node | null | undefined): n is Fn => n?.type === 'FunctionDeclaration' || n?.type === 'FunctionExpression' || n?.type === 'ArrowFunctionExpression';
+const keyName = (k: Node | null | undefined): string | null => (k?.type === 'Identifier' ? k.name : k?.type === 'Literal' && typeof k.value === 'string' ? k.value : null);
+const stringLiteral = (n: Node | null | undefined): n is ESTree.StringLiteral => n?.type === 'Literal' && typeof n.value === 'string';
+/** The name a member expression reads (`o.name`), when it is not computed. */
+const memberName = (n: Node | null | undefined): string | null => (n?.type === 'MemberExpression' && !n.computed ? n.property.name : null);
+/** The type a parameter or a property is declared with, if any. */
+const annotated = (n: Node | null | undefined): ESTree.TSType | undefined => {
+  const a = n && 'typeAnnotation' in n ? n.typeAnnotation : null;
+  return a?.type === 'TSTypeAnnotation' ? a.typeAnnotation : undefined;
+};
 
 /**
  * The words the app can put on the page: {classes, ids, tags}, each {words, prefixes, suffixes, infixes} in lower
  * case, with `unread`: each place a class or an id is given that could not be followed ({what: 'class' | 'id', at}).
  */
-export function pageWords(os) {
-  const files = appSources(os).map((file) => {
+export function pageWords(os: string) {
+  const files = appSources(os).map((file): Source => {
     const text = readFileSync(file, 'utf8');
     const r = parseSync(file, text, {lang: file.endsWith('.ts') ? 'ts' : 'js'});
-    if (r.errors.length) throw new Error(`${relative(os, file)} cannot be read: ${r.errors[0].message}`);
-    return {file, text, program: r.program};
+    if (r.errors.length) throw new Error(`${relative(os, file)} cannot be read: ${r.errors[0]?.message}`);
+    return {file, text, program: r.program, decls: new Map(), imports: new Map(), values: new Set(), namespaces: new Map()};
   });
   const index = indexOf(files);
-  const ctx = {index, memo: new Map(), busy: new Set()};
+  const ctx: Ctx = {index, memo: new Map(), busy: new Set()};
 
-  const classes = empty(), ids = empty(), unread = [];
+  const classes = empty(), ids = empty(), unread: {what: 'class' | 'id'; at: string}[] = [];
   for (const s of index.sinks) {
     const v = valueOf(ctx, s.file, s.value, 0);
     merge(s.what === 'class' ? classes : ids, wordsOf(v));
@@ -87,7 +123,7 @@ export function pageWords(os) {
     if (v.unknown) unread.push({what: s.what, at: `${relative(os, s.file.file)}:${lineOf(s.file.text, e.start)}  ${s.file.text.slice(e.start, e.end).replace(/\s+/g, ' ').slice(0, 120)}`});
   }
   const html = readFileSync(join(os, 'index.html'), 'utf8');
-  for (const m of html.matchAll(/\b(class|id)="([^"]*)"/g)) for (const w of m[2].match(WORD) ?? []) (m[1] === 'class' ? classes : ids).words.add(lower(w));
+  for (const m of html.matchAll(/\b(class|id)="([^"]*)"/g)) for (const w of m[2]?.match(WORD) ?? []) (m[1] === 'class' ? classes : ids).words.add(lower(w));
 
   // Whatever could not be followed may be any word of a string; an element, any word at all that names one.
   const said = empty();
@@ -98,30 +134,26 @@ export function pageWords(os) {
   return {classes, ids, tags: said, unread, files: files.map((f) => relative(os, f.file)).concat('index.html')};
 }
 
-const lineOf = (text, at) => text.slice(0, at).split('\n').length;
+const lineOf = (text: string, at: number) => text.slice(0, at).split('\n').length;
 
 /** What the analysis looks things up in: where classes and ids are given, declarations, functions, calls, properties. */
-function indexOf(files) {
-  const index = {sinks: [], calls: new Map(), props: new Map(), types: new Map(), memberValues: new Set(), reexported: new Set(),
+function indexOf(files: Source[]): Index {
+  const index: Index = {sinks: [], calls: new Map(), props: new Map(), types: new Map(), memberValues: new Set(), reexported: new Set(),
     named: new Map(), escaped: new Set(), unseen: false, words: new Set(), files, tInClass: false};
-  const add = (map, k, v) => { if (!map.has(k)) map.set(k, []); map.get(k).push(v); };
+  const add = <K, V>(map: Map<K, V[]>, k: K, v: V) => { const at = map.get(k); if (at) at.push(v); else map.set(k, [v]); };
   for (const file of files) {
-    file.decls = new Map();
-    file.imports = new Map();
-    file.values = new Set();
-    file.namespaces = new Map();
     // Every node's parent first, so what is read below may look up from any node.
     walk(file.program, null, () => true);
     walk(file.program, null, (n) => {
-      const sink = (what, value) => index.sinks.push({what, file, value});
+      const sink = (what: 'class' | 'id', value: Node) => index.sinks.push({what, file, value});
       // A `class` (or className, as Object.assign gives it) or `id` in any object: h()'s props, and any other.
-      if (n.type === 'Property' && !n.computed && ['class', 'className'].includes(keyName(n.key))) sink('class', n.value);
+      if (n.type === 'Property' && !n.computed && ['class', 'className'].includes(keyName(n.key) ?? '')) sink('class', n.value);
       if (n.type === 'Property' && !n.computed && keyName(n.key) === 'id') sink('id', n.value);
       if (n.type === 'AssignmentExpression' && n.left.type === 'MemberExpression' && !n.left.computed) {
         const p = n.left.property.name, on = n.left.object;
         // h() itself (ui/dom.ts) gives className what its caller's `class` property holds, read there already.
         if (p === 'className' && !fromEntries(n.right)) sink('class', n.right);
-        if (p === 'value' && on.type === 'MemberExpression' && !on.computed && on.property.name === 'classList') sink('class', n.right);
+        if (p === 'value' && memberName(on) === 'classList') sink('class', n.right);
         if (p === 'id') sink('id', n.right);
         if (p === 'innerHTML' || p === 'outerHTML') { sink('class', n.right); sink('id', n.right); }
         add(index.props, p, {file, value: n.right});
@@ -131,13 +163,13 @@ function indexOf(files) {
       if (n.type === 'MemberExpression' && !n.computed && !(n.parent?.type === 'CallExpression' && n.parent.callee === n)) index.memberValues.add(n.property.name);
       if (n.type === 'CallExpression' && n.callee.type === 'MemberExpression' && !n.callee.computed) {
         const m = n.callee.property.name, on = n.callee.object;
-        if (on.type === 'MemberExpression' && !on.computed && on.property.name === 'classList') {
+        if (memberName(on) === 'classList') {
           const given = m === 'add' ? n.arguments : m === 'toggle' ? n.arguments.slice(0, 1) : m === 'replace' ? n.arguments.slice(1, 2) : [];
           for (const a of given) index.sinks.push({what: 'class', file, value: a});
         }
         const [name, value] = n.arguments;
         if (m === 'setAttribute' && value) {
-          if (stringLiteral(name)) { if (['class', 'id'].includes(name.value)) sink(name.value, value); }
+          if (stringLiteral(name)) { if (name.value === 'class' || name.value === 'id') sink(name.value, value); }
           // An attribute named by a value may be either, but for what h() copies from its props (read there).
           else if (!fromEntries(value)) { sink('class', value); sink('id', value); }
         }
@@ -150,9 +182,10 @@ function indexOf(files) {
       if (n.type === 'VariableDeclarator' && n.id.type === 'Identifier') add(file.decls, n.id.name, n.init);
       if (n.type === 'AssignmentExpression' && n.left.type === 'Identifier') add(file.decls, n.left.name, n.right);
       if (n.type === 'FunctionDeclaration' && n.id) add(file.decls, n.id.name, null);
-      if (n.type === 'Property' && !n.computed && keyName(n.key)) add(index.props, keyName(n.key), {file, value: n.value});
-      if (n.type === 'PropertyDefinition' && !n.computed && keyName(n.key) && n.value) add(index.props, keyName(n.key), {file, value: n.value});
-      if (n.type === 'TSPropertySignature' && !n.computed && keyName(n.key)) add(index.props, keyName(n.key), {file, typed: true, type: n.typeAnnotation?.typeAnnotation});
+      const key = 'key' in n && !('computed' in n && n.computed) ? keyName(n.key) : null;
+      if (n.type === 'Property' && key) add(index.props, key, {file, value: n.value});
+      if (n.type === 'PropertyDefinition' && key && n.value) add(index.props, key, {file, value: n.value});
+      if (n.type === 'TSPropertySignature' && key) add(index.props, key, {file, typed: true, type: annotated(n)});
       if (n.type === 'TSTypeAliasDeclaration') add(index.types, n.id.name, n.typeAnnotation);
       if (n.type === 'TSInterfaceDeclaration') add(index.types, n.id.name, n.body);
       // A module imported as it runs: its functions are called as m.f() on the name it is given, or anyhow.
@@ -160,15 +193,17 @@ function indexOf(files) {
         if (!stringLiteral(n.source)) index.unseen = true;
         else if (n.source.value.startsWith('.')) {
           const from = moduleAt(file, n.source.value), p = n.parent?.type === 'AwaitExpression' ? n.parent.parent : n.parent;
-          const then = p?.type === 'MemberExpression' && p.property.name === 'then' && p.parent?.type === 'CallExpression' ? p.parent.arguments[0] : null;
+          const then = memberName(p) === 'then' && p?.parent?.type === 'CallExpression' ? p.parent.arguments[0] : null;
+          const first = isFunction(then) ? then.params[0] : null;
           if (p?.type === 'VariableDeclarator' && p.id.type === 'Identifier') file.namespaces.set(p.id.name, from);
-          else if (isFunction(then) && then.params[0]?.type === 'Identifier') file.namespaces.set(then.params[0].name, from);
+          else if (first?.type === 'Identifier') file.namespaces.set(first.name, from);
           else index.escaped.add(from);
         }
       }
       // A function exported again (from here or from another module) is called by a name this does not follow.
       if (n.type === 'ExportSpecifier') {
-        const from = n.parent?.source ? moduleAt(file, n.parent.source.value) : file.file;
+        const source = n.parent?.type === 'ExportNamedDeclaration' ? n.parent.source : null;
+        const from = source ? moduleAt(file, source.value) : file.file;
         index.reexported.add(`${from}:${keyName(n.local)}`);
       }
       if (n.type === 'ImportDeclaration') {
@@ -193,17 +228,17 @@ function indexOf(files) {
     walk(file.program, null, (n) => {
       if (n.type !== 'Identifier' || !file.namespaces.has(n.name) || declares(n)) return true;
       const from = file.namespaces.get(n.name), p = n.parent;
-      if (p.type === 'MemberExpression' && p.object === n && !p.computed) {
+      if (p?.type === 'MemberExpression' && p.object === n && !p.computed) {
         const key = `${from}:${p.property.name}`;
         if (p.parent?.type === 'CallExpression' && p.parent.callee === p) add(index.named, key, {file, call: p.parent, by: 'module'});
         else index.reexported.add(key);
-      } else if (!(isFunction(p) && p.params.includes(n))) index.escaped.add(from);
+      } else if (!(isFunction(p) && (p.params as Node[]).includes(n)) && from) index.escaped.add(from);
       return true;
     });
   }
   // A class made from t(): its English is then a class's words too.
   for (const s of index.sinks) {
-    walk(s.value, s.value.parent, (n) => {
+    walk(s.value, s.value.parent ?? null, (n) => {
       if (n.type === 'CallExpression' && n.callee.type === 'Identifier' && n.callee.name === 't') index.tInClass = true;
       return true;
     });
@@ -215,43 +250,45 @@ function indexOf(files) {
 }
 
 /** The file a module specifier names from `file`. */
-function moduleAt(file, spec) {
+function moduleAt(file: Source, spec: string): string {
   const at = resolve(dirname(file.file), spec);
   return /\.[mc]?[jt]s$/.test(at) ? at : `${at}.ts`;
 }
 
 /** Whether identifier `n` is where a name is declared, or a key, rather than a name read. */
-function declares(n) {
+function declares(n: Node): boolean {
   const p = n.parent;
   if (!p) return true;
   if ((p.type === 'VariableDeclarator' || p.type === 'FunctionDeclaration' || p.type === 'FunctionExpression' || p.type === 'ClassDeclaration') && p.id === n) return true;
   if ((p.type === 'Property' || p.type === 'PropertyDefinition' || p.type === 'MethodDefinition' || p.type === 'TSPropertySignature') && p.key === n && !p.computed && !(p.type === 'Property' && p.shorthand)) return true;
   if (p.type === 'MemberExpression' && p.property === n && !p.computed) return true;
   if (/^(Import|Export)\w*Specifier$/.test(p.type) || p.type === 'LabeledStatement' || p.type === 'BreakStatement' || p.type === 'ContinueStatement') return true;
-  if (isFunction(p) && p.params.includes(n)) return true;
+  if (isFunction(p) && (p.params as Node[]).includes(n)) return true;
   if (p.type === 'AssignmentPattern' && p.left === n) return true;
   if (/^TS/.test(p.type)) return true;
   return false;
 }
 
 /** Whether `e` is a name bound by `for (const [k, v] of Object.entries(…))`: what h() copies from its props. */
-function fromEntries(e) {
+function fromEntries(e: Node): boolean {
   if (e.type !== 'Identifier') return false;
-  for (let p = e.parent; p; p = p.parent) {
+  for (let p: Node | null | undefined = e.parent; p; p = p.parent) {
     if (p.type !== 'ForOfStatement') continue;
-    const d = p.left.declarations?.[0];
+    const d = p.left.type === 'VariableDeclaration' ? p.left.declarations[0] : undefined;
     const right = p.right;
     if (d?.id.type === 'ArrayPattern' && d.id.elements.some((x) => x?.type === 'Identifier' && x.name === e.name)
-      && right.type === 'CallExpression' && right.callee.type === 'MemberExpression' && right.callee.object.name === 'Object' && right.callee.property.name === 'entries') return true;
+      && right.type === 'CallExpression' && right.callee.type === 'MemberExpression' && !right.callee.computed
+      && right.callee.object.type === 'Identifier' && right.callee.object.name === 'Object' && right.callee.property.name === 'entries') return true;
   }
   return false;
 }
 
 /** The words an expression may hold. */
-function valueOf(ctx, file, e, depth) {
+function valueOf(ctx: Ctx, file: Source, e: Node | null | undefined, depth: number): Value {
   if (!e) return exactly('');
   const key = `${file.file}:${e.start}:${e.end}:${e.type}`;
-  if (ctx.memo.has(key)) return ctx.memo.get(key);
+  const known = ctx.memo.get(key);
+  if (known) return known;
   if (ctx.busy.has(key) || depth > 12) return UNKNOWN();
   ctx.busy.add(key);
   const v = read(ctx, file, e, depth + 1);
@@ -263,10 +300,10 @@ function valueOf(ctx, file, e, depth) {
 /** At most this many strings are kept as they are; past that, only their words. */
 const CAP = 256;
 /** A value that is one of these strings. */
-const exactly = (...strings) => ({...empty(), strings: new Set(strings)});
+const exactly = (...strings: string[]): Value => ({...empty(), strings: new Set(strings)});
 
 /** A value as words: what a value of known strings holds, its words. */
-function wordsOf(v) {
+function wordsOf(v: Value): Value {
   if (!v.strings) return v;
   const out = empty();
   for (const s of v.strings) for (const w of s.match(WORD) ?? []) out.words.add(lower(w));
@@ -274,7 +311,7 @@ function wordsOf(v) {
 }
 
 /** One value or the other. */
-function either(a, b) {
+function either(a: Value, b: Value): Value {
   if (a.strings && b.strings && a.strings.size + b.strings.size <= CAP) return {...empty(), strings: new Set([...a.strings, ...b.strings])};
   return merge(merge(empty(), wordsOf(a)), wordsOf(b));
 }
@@ -283,10 +320,11 @@ function either(a, b) {
  * Values put one after another (a template, a + b): every string they make, when they are few; else their words,
  * a word at an edge where an unknown value meets it being the start (or end) of whatever class it runs into.
  */
-function concat(values) {
-  if (values.every((v) => v.strings) && values.reduce((n, v) => n * v.strings.size, 1) <= CAP) {
+function concat(values: Value[]): Value {
+  const known = values.map((v) => v.strings);
+  if (known.every((s) => s !== undefined) && known.reduce((n, s) => n * s.size, 1) <= CAP) {
     let out = [''];
-    for (const v of values) out = out.flatMap((a) => [...v.strings].map((b) => a + b));
+    for (const s of known) out = out.flatMap((a) => [...s].map((b) => a + b));
     return {...empty(), strings: new Set(out)};
   }
   const out = empty();
@@ -296,30 +334,34 @@ function concat(values) {
     const before = i > 0, after = i < values.length - 1;
     for (const s of v.strings) {
       const words = s.match(WORD) ?? [];
+      const first = words[0], last = words.at(-1);
       const startsWord = /^[-\w]/.test(s), endsWord = /[-\w]$/.test(s);
-      if (before && after && words.length === 1 && startsWord && endsWord) out.infixes.add(lower(words[0]));
+      if (before && after && words.length === 1 && startsWord && endsWord && first) out.infixes.add(lower(first));
       else {
-        if (before && startsWord && words.length) out.suffixes.add(lower(words[0]));
-        if (after && endsWord && words.length) out.prefixes.add(lower(words.at(-1)));
+        if (before && startsWord && first) out.suffixes.add(lower(first));
+        if (after && endsWord && last) out.prefixes.add(lower(last));
       }
     }
   });
   return out;
 }
 
-function plusItems(e) {
+function plusItems(e: Node): Node[] {
   if (e.type === 'BinaryExpression' && e.operator === '+') return [...plusItems(e.left), ...plusItems(e.right)];
   return [e];
 }
 
 /** What a falsy value is, written as a class: a && b may be a. */
 const FALSY = exactly('', 'false', '0', 'null', 'undefined', 'NaN');
+/** The string methods that keep a string's words as they are, but for case or room at its ends. */
+const CASE: Record<string, (s: string) => string> = {trim: (s) => s.trim(), trimStart: (s) => s.trimStart(), trimEnd: (s) => s.trimEnd(),
+  toLowerCase: (s) => s.toLowerCase(), toUpperCase: (s) => s.toUpperCase()};
 
-function read(ctx, file, e, depth) {
+function read(ctx: Ctx, file: Source, e: Node, depth: number): Value {
   switch (e.type) {
     case 'Literal': return exactly(e.value === null ? 'null' : String(e.value));
     case 'TemplateLiteral': {
-      const items = [];
+      const items: Value[] = [];
       e.quasis.forEach((q, i) => {
         items.push(exactly(q.value.cooked ?? q.value.raw));
         if (i < e.expressions.length) items.push(valueOf(ctx, file, e.expressions[i], depth));
@@ -338,9 +380,10 @@ function read(ctx, file, e, depth) {
       const c = e.callee;
       if (c.type === 'MemberExpression' && !c.computed) {
         const m = c.property.name, v = () => valueOf(ctx, file, c.object, depth);
-        if (['trim', 'trimStart', 'trimEnd', 'toLowerCase', 'toUpperCase'].includes(m)) {
+        const change = CASE[m];
+        if (change) {
           const x = v();
-          return x.strings ? {...empty(), strings: new Set([...x.strings].map((s) => s[m]()))} : x;
+          return x.strings ? {...empty(), strings: new Set([...x.strings].map(change))} : x;
         }
         if (m === 'filter') return v();
         // Words joined by a space stay words; joined by anything else, each may run into the next.
@@ -359,12 +402,12 @@ function read(ctx, file, e, depth) {
 }
 
 /** The value of each declaration given, one or another. */
-const anyOf = (values) => (values.length ? values.reduce(either) : UNKNOWN());
+const anyOf = (values: Value[]) => (values.length ? values.reduce(either) : UNKNOWN());
 
 /** The words a name may hold where it is read: a parameter of the function it is in, or what its file gives it. */
-function nameValue(ctx, file, e, depth) {
+function nameValue(ctx: Ctx, file: Source, e: Extract<Node, {type: 'Identifier'}>, depth: number): Value {
   if (e.name === 'undefined') return exactly('undefined');
-  for (let p = e.parent; p; p = p.parent) {
+  for (let p: Node | null | undefined = e.parent; p; p = p.parent) {
     if (!isFunction(p)) continue;
     const at = p.params.findIndex((x) => paramName(x) === e.name);
     if (at >= 0) return paramValue(ctx, file, p, at, depth);
@@ -374,22 +417,22 @@ function nameValue(ctx, file, e, depth) {
   const imported = file.imports.get(e.name);
   if (imported) {
     const from = ctx.index.files.find((f) => f.file === imported.from);
-    const there = from?.decls.get(imported.name);
-    if (there) return anyOf(there.map((d) => (d ? valueOf(ctx, from, d, depth) : UNKNOWN())));
+    const there = imported.name === null ? undefined : from?.decls.get(imported.name);
+    if (from && there) return anyOf(there.map((d) => (d ? valueOf(ctx, from, d, depth) : UNKNOWN())));
   }
   return UNKNOWN();
 }
 
-const paramName = (x) => (x.type === 'Identifier' ? x.name : x.type === 'AssignmentPattern' && x.left.type === 'Identifier' ? x.left.name
+const paramName = (x: Node): string | null => (x.type === 'Identifier' ? x.name : x.type === 'AssignmentPattern' && x.left.type === 'Identifier' ? x.left.name
   : x.type === 'TSParameterProperty' ? paramName(x.parameter) : null);
 
 /** Strings a type names (`'a' | 'b'`), or null when it names anything else. */
-function typeWords(t) {
+function typeWords(t: ESTree.TSType | null | undefined): string[] | null {
   if (!t) return null;
   if (t.type === 'TSLiteralType' && stringLiteral(t.literal)) return [t.literal.value];
   if (t.type === 'TSUnionType') {
     const parts = t.types.map(typeWords);
-    return parts.every(Boolean) ? parts.flat() : null;
+    return parts.every((p) => p !== null) ? parts.flat() : null;
   }
   if (t.type === 'TSUndefinedKeyword') return ['undefined'];
   if (t.type === 'TSNullKeyword') return ['null'];
@@ -397,10 +440,11 @@ function typeWords(t) {
 }
 
 /** The words parameter `at` of function `fn` may hold: its type's strings, else its default and what each call gives. */
-function paramValue(ctx, file, fn, at, depth) {
+function paramValue(ctx: Ctx, file: Source, fn: Fn, at: number, depth: number): Value {
   const param = fn.params[at];
+  if (!param) return UNKNOWN();
   const base = param.type === 'AssignmentPattern' ? param.left : param;
-  const typed = typeWords(base.typeAnnotation?.typeAnnotation);
+  const typed = typeWords(annotated(base));
   if (typed) return exactly(...typed);
   const calls = callsOf(ctx, file, fn);
   if (!calls) return UNKNOWN();
@@ -418,7 +462,7 @@ function paramValue(ctx, file, fn, at, depth) {
  * (by its own name or its variable's) is called by that name in its file and in the files that import it; a method
  * or a property's function, by that name after a dot anywhere. Read as a value anywhere (passed on), it is not known.
  */
-function callsOf(ctx, file, fn) {
+function callsOf(ctx: Ctx, file: Source, fn: Fn): Call[] | null {
   const p = fn.parent;
   // A module's default is called by whatever name each importer gives it.
   if (p?.type === 'ExportDefaultDeclaration') return null;
@@ -430,8 +474,8 @@ function callsOf(ctx, file, fn) {
     const calls = [...(ctx.index.calls.get(named) ?? []).filter((c) => c.by === 'name' && there.has(c.file)), ...(ctx.index.named.get(`${file.file}:${named}`) ?? [])];
     return calls.length ? calls : null;
   }
-  if ((p?.type === 'MethodDefinition' || p?.type === 'Property' || p?.type === 'PropertyDefinition') && !p.computed && keyName(p.key)) {
-    const name = keyName(p.key);
+  const name = (p?.type === 'MethodDefinition' || p?.type === 'Property' || p?.type === 'PropertyDefinition') && !p.computed ? keyName(p.key) : null;
+  if (name) {
     if (ctx.index.memberValues.has(name)) return null;
     const calls = (ctx.index.calls.get(name) ?? []).filter((c) => c.by === 'member');
     return calls.length ? calls : null;
@@ -443,12 +487,12 @@ function callsOf(ctx, file, fn) {
  * The words property `o.p` may hold: when `o` is a parameter, what each call's object gives `p`; else from the type
  * `o` is declared with; else every value any object anywhere gives a `p`.
  */
-function propertyValue(ctx, file, e, depth) {
+function propertyValue(ctx: Ctx, file: Source, e: ESTree.StaticMemberExpression | ESTree.PrivateFieldExpression, depth: number): Value {
   const p = e.property.name;
   const given = optionValue(ctx, file, e.object, p, depth);
   if (given) return given;
   const m = declaredMembers(ctx, e.object)?.find((x) => x.type === 'TSPropertySignature' && keyName(x.key) === p);
-  const words = typeWords(m?.typeAnnotation?.typeAnnotation);
+  const words = typeWords(annotated(m));
   if (words) return exactly(...words);
   return anyOf((ctx.index.props.get(p) ?? []).map((g) => {
     if (!g.typed) return valueOf(ctx, g.file, g.value, depth);
@@ -458,26 +502,26 @@ function propertyValue(ctx, file, e, depth) {
 }
 
 /** What property `p` of parameter `o` holds, from the object each call (or the default) gives it; null if not that. */
-function optionValue(ctx, file, o, p, depth) {
+function optionValue(ctx: Ctx, file: Source, o: Node, p: string, depth: number): Value | null {
   if (o.type !== 'Identifier') return null;
-  for (let fn = o.parent; fn; fn = fn.parent) {
+  for (let fn: Node | null | undefined = o.parent; fn; fn = fn.parent) {
     if (!isFunction(fn)) continue;
     const at = fn.params.findIndex((x) => paramName(x) === o.name);
     if (at < 0) continue;
     const calls = callsOf(ctx, file, fn);
     if (!calls) return null;
     const param = fn.params[at];
-    const of = (obj, f) => {
+    const of = (obj: Node | null | undefined, f: Source): Value | null => {
       if (obj?.type !== 'ObjectExpression') return null;
       if (obj.properties.some((x) => x.type === 'SpreadElement' || x.computed)) return UNKNOWN();
-      const prop = obj.properties.find((x) => keyName(x.key) === p);
-      return prop ? valueOf(ctx, f, prop.value, depth) : exactly('undefined');
+      const prop = obj.properties.find((x) => x.type === 'Property' && keyName(x.key) === p);
+      return prop?.type === 'Property' ? valueOf(ctx, f, prop.value, depth) : exactly('undefined');
     };
-    const values = [];
+    const values: Value[] = [];
     for (const {file: f, call} of calls) {
       if (call.arguments.slice(0, at + 1).some((a) => a.type === 'SpreadElement')) return null;
       const a = call.arguments[at];
-      const v = a ? of(a, f) : param.type === 'AssignmentPattern' ? of(param.right, file) : exactly('undefined');
+      const v = a ? of(a, f) : param?.type === 'AssignmentPattern' ? of(param.right, file) : exactly('undefined');
       if (!v) return null;
       values.push(v);
     }
@@ -490,29 +534,29 @@ function optionValue(ctx, file, o, p, depth) {
  * The members of the type a parameter is declared with, when that is an object type written there or named in the
  * project (`m: Mark`, `m: {kind: 'a' | 'b'}`, `o: Partial<{kind: …}>`); else null.
  */
-function declaredMembers(ctx, o) {
+function declaredMembers(ctx: Ctx, o: Node): ESTree.TSSignature[] | null {
   if (o.type !== 'Identifier') return null;
-  for (let p = o.parent; p; p = p.parent) {
+  for (let p: Node | null | undefined = o.parent; p; p = p.parent) {
     if (!isFunction(p)) continue;
     const x = p.params.find((q) => paramName(q) === o.name);
-    if (x) return membersOf(ctx, (x.type === 'AssignmentPattern' ? x.left : x).typeAnnotation?.typeAnnotation);
+    if (x) return membersOf(ctx, annotated(x.type === 'AssignmentPattern' ? x.left : x));
   }
   return null;
 }
 
-function membersOf(ctx, t) {
+function membersOf(ctx: Ctx, t: ESTree.TSType | ESTree.TSInterfaceBody | null | undefined): ESTree.TSSignature[] | null {
   if (!t) return null;
   if (t.type === 'TSTypeLiteral') return t.members;
   if (t.type === 'TSInterfaceBody') return t.body;
   if (t.type !== 'TSTypeReference' || t.typeName.type !== 'Identifier') return null;
-  const args = t.typeArguments?.params ?? t.typeParameters?.params ?? [];
+  const args = t.typeArguments?.params ?? [];
   if (['Partial', 'Readonly', 'Required'].includes(t.typeName.name) && args.length === 1) return membersOf(ctx, args[0]);
   const decls = ctx.index.types.get(t.typeName.name);
   return decls?.length === 1 ? membersOf(ctx, decls[0]) : null;
 }
 
 /** How the sources may put `name` on the page: 'word', the prefix, suffix or infix that may make it, or '' (never). */
-export function madeBy(words, name) {
+export function madeBy(words: Words, name: string): string {
   const n = lower(name);
   if (words.words.has(n)) return 'word';
   for (const p of words.prefixes) if (n.startsWith(p)) return `${p}…`;

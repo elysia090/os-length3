@@ -1,10 +1,36 @@
-// The stylesheet as the scripts that prune it and split it read it (styles-prune.mjs, styles-split.mjs,
-// styles-check.mjs): its rules in order, each with the comments written over it, and each rule's selectors (and
+// The stylesheet as the scripts that prune it and split it read it (styles-prune.ts, styles-split.ts,
+// styles-check.ts): its rules in order, each with the comments written over it, and each rule's selectors (and
 // what they weigh) and declarations.
 //
 // Read as the browser reads it, but only as far as these need: a rule is a selector and a body of declarations; an
 // at-rule that holds rules (@media, @supports, @container) holds them as the sheet does; any other at-rule
 // (@keyframes, @font-face) is one thing, read by its name.
+
+/** Where a node of the sheet stands, and its own text: what is written over it, it, and a comment after it. */
+interface Placed { lead: string; text: string; trail: string; start: number; line: number }
+export interface RuleNode extends Placed { kind: 'rule'; selector: string; body: string }
+export interface AtNode extends Placed { kind: 'at'; name: string; prelude: string }
+export interface GroupNode extends Placed { kind: 'group'; name: string; prelude: string; head: string; nodes: SheetNode[]; tail: string }
+export type SheetNode = RuleNode | AtNode | GroupNode;
+/** Rules in order, and the text after the last. */
+export interface Sheet { nodes: SheetNode[]; tail: string }
+/** A piece of a list, trimmed, and where it stands. */
+export interface Piece { text: string; start: number; end: number }
+/** An argument of a pseudo-class that is a selector. */
+export interface Arg extends Piece { complex: Complex }
+export interface Part {
+  kind: 'type' | 'universal' | 'id' | 'class' | 'attr' | 'pseudo-class' | 'pseudo-element';
+  name: string; text: string; start: number; end: number;
+  args?: string; list?: Arg[]; attr?: {name: string; op: string; value?: string; flag: string};
+}
+export interface Compound { parts: Part[]; combinator: string }
+export interface Complex { text: string; compounds: Compound[] }
+/** [ids, classes, types]. */
+export type Spec = [number, number, number];
+export interface Decl { prop: string; value: string; important: boolean }
+export type ReadLeaf = {kind: 'rule'; sels: Complex[]; decls: Decl[]} | {kind: 'at'; name: string; prelude: string};
+/** A rule (or an at-rule that holds none) with the groups it stands in, outermost first. */
+export interface Leaf { node: RuleNode | AtNode; parents: GroupNode[]; read?: ReadLeaf }
 
 /** At-rules whose block holds rules, read as the sheet is: conditions on them. */
 const GROUPS = new Set(['media', 'supports', 'container', 'starting-style']);
@@ -12,14 +38,14 @@ const GROUPS = new Set(['media', 'supports', 'container', 'starting-style']);
 const UNREAD = new Set(['layer', 'scope', 'import']);
 
 /** Where the comment at `i` ends (the index after it). */
-function commentEnd(text, i) {
+function commentEnd(text: string, i: number): number {
   const e = text.indexOf('*/', i + 2);
   if (e < 0) throw new Error(`a comment is never closed (at ${where(text, i)})`);
   return e + 2;
 }
 
 /** Where the string at `i` ends (the index after its closing quote). */
-function stringEnd(text, i) {
+function stringEnd(text: string, i: number): number {
   const q = text[i];
   for (let j = i + 1; j < text.length; j++) {
     if (text[j] === '\\') { j++; continue; }
@@ -30,19 +56,19 @@ function stringEnd(text, i) {
 }
 
 /** Line and column of index `i`, to say where something is. */
-export function where(text, i) {
+export function where(text: string, i: number): string {
   const before = text.slice(0, i).split('\n');
-  return `${before.length}:${before.at(-1).length + 1}`;
+  return `${before.length}:${(before.at(-1) ?? '').length + 1}`;
 }
 
 /**
  * The first index from `i` (before `to`) where `text` has one of `stops`, outside comments, strings, (), [] and
  * {} opened after `i`; -1 if none.
  */
-function findTop(text, i, to, stops) {
+function findTop(text: string, i: number, to: number, stops: string): number {
   let depth = 0;
   for (let j = i; j < to; j++) {
-    const c = text[j];
+    const c = text[j] ?? '';
     if (c === '/' && text[j + 1] === '*') { j = commentEnd(text, j) - 1; continue; }
     if (c === '"' || c === "'") { j = stringEnd(text, j) - 1; continue; }
     if (c === '\\') { j++; continue; }
@@ -54,7 +80,7 @@ function findTop(text, i, to, stops) {
 }
 
 /** The index of the `}` closing the block opened at `open`. */
-function blockEnd(text, open, to) {
+function blockEnd(text: string, open: number, to: number): number {
   const e = findTop(text, open + 1, to, '}');
   if (e < 0) throw new Error(`a block is never closed (opened at ${where(text, open)})`);
   return e;
@@ -68,45 +94,44 @@ function blockEnd(text, open, to) {
  *   {kind: 'group', name, prelude, head (up to its `{`), nodes, tail (from its last rule to its `}`)}
  *   {kind: 'at', name, prelude}
  */
-export function parseRules(text, from = 0, to = text.length, lines = lineStarts(text)) {
-  const nodes = [];
+export function parseRules(text: string, from = 0, to = text.length, lines = lineStarts(text)): Sheet {
+  const nodes: SheetNode[] = [];
   let i = from;
   for (;;) {
     const leadStart = i;
     while (i < to) {
-      if (/\s/.test(text[i])) i++;
+      if (/\s/.test(text[i] ?? '')) i++;
       else if (text.startsWith('/*', i)) i = commentEnd(text, i);
       else break;
     }
     if (i >= to) return {nodes, tail: text.slice(leadStart, to)};
     const start = i;
-    let node;
+    let node: Omit<RuleNode, keyof Placed> | Omit<AtNode, keyof Placed> | Omit<GroupNode, keyof Placed>;
+    let end: number;
     if (text[i] === '@') {
-      const name = /^@([-\w]+)/.exec(text.slice(i, i + 64))[1].toLowerCase();
+      const name = (/^@([-\w]+)/.exec(text.slice(i, i + 64))?.[1] ?? '').toLowerCase();
       const j = findTop(text, i, to, ';{');
       if (j < 0) throw new Error(`@${name} never ends (at ${where(text, i)})`);
       const prelude = text.slice(i + 1 + name.length, j).trim();
       if (UNREAD.has(name)) throw new Error(`@${name} weighs rules in a way these scripts do not read (at ${where(text, i)})`);
-      if (text[j] === ';') node = {kind: 'at', name, prelude, end: j + 1};
+      if (text[j] === ';') { node = {kind: 'at', name, prelude}; end = j + 1; }
       else {
         const k = blockEnd(text, j, to);
+        end = k + 1;
         if (GROUPS.has(name)) {
           const inner = parseRules(text, j + 1, k, lines);
-          node = {kind: 'group', name, prelude, head: text.slice(start, j + 1), nodes: inner.nodes, tail: inner.tail + '}', end: k + 1};
-        } else node = {kind: 'at', name, prelude, end: k + 1};
+          node = {kind: 'group', name, prelude, head: text.slice(start, j + 1), nodes: inner.nodes, tail: inner.tail + '}'};
+        } else node = {kind: 'at', name, prelude};
       }
     } else {
       const j = findTop(text, i, to, '{;}');
       if (j < 0 || text[j] !== '{') throw new Error(`a rule has no block (at ${where(text, i)})`);
       const k = blockEnd(text, j, to);
-      node = {kind: 'rule', selector: text.slice(i, j).trim(), body: text.slice(j + 1, k), end: k + 1};
+      node = {kind: 'rule', selector: text.slice(i, j).trim(), body: text.slice(j + 1, k)};
+      end = k + 1;
     }
-    node.start = start;
-    node.line = lineAt(lines, start);
-    node.lead = text.slice(leadStart, start);
-    node.text = text.slice(start, node.end);
     // A comment after the rule on the rule's own last line is about the rule.
-    let e = node.end;
+    let e = end;
     for (;;) {
       const m = /^[ \t]*\/\*/.exec(text.slice(e, Math.min(to, e + 256)));
       if (!m) break;
@@ -114,34 +139,32 @@ export function parseRules(text, from = 0, to = text.length, lines = lineStarts(
       if (ce > to) break;
       e = ce;
     }
-    node.trail = text.slice(node.end, e);
+    nodes.push({...node, start, line: lineAt(lines, start), lead: text.slice(leadStart, start), text: text.slice(start, end), trail: text.slice(end, e)});
     i = e;
-    delete node.end;
-    nodes.push(node);
   }
 }
 
 /** Where each line of `text` starts. */
-function lineStarts(text) {
+function lineStarts(text: string): number[] {
   const out = [0];
   for (let i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) out.push(i + 1);
   return out;
 }
 
 /** The line (from 1) index `i` is on. */
-function lineAt(starts, i) {
+function lineAt(starts: number[], i: number): number {
   let lo = 0, hi = starts.length - 1;
-  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (starts[mid] <= i) lo = mid; else hi = mid - 1; }
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if ((starts[mid] ?? 0) <= i) lo = mid; else hi = mid - 1; }
   return lo + 1;
 }
 
 /** The nodes' text again, as it was read. */
-export function textOf(nodes, tail = '') {
+export function textOf(nodes: SheetNode[], tail = ''): string {
   return nodes.map((n) => n.lead + (n.kind === 'group' ? n.head + textOf(n.nodes, n.tail) : n.text) + n.trail).join('') + tail;
 }
 
 /** The whole sheet: its nodes and what comes after the last. */
-export function readSheet(text) {
+export function readSheet(text: string): Sheet {
   return parseRules(text);
 }
 
@@ -150,15 +173,15 @@ export function readSheet(text) {
  * order (as written: `./styles/rail.css`), its text up to the last of them, and what follows them (rules written in
  * the entry itself, or nothing); null for a sheet of rules.
  */
-export function entryOf(text) {
-  const files = [];
+export function entryOf(text: string): {files: string[]; head: string; rest: string} | null {
+  const files: string[] = [];
   let end = 0;
   for (let i = 0; ;) {
-    while (i < text.length && /\s/.test(text[i])) i++;
+    while (i < text.length && /\s/.test(text[i] ?? '')) i++;
     if (text.startsWith('/*', i)) { i = commentEnd(text, i); continue; }
     const m = /^@import\s+(?:url\(\s*)?(['"])([^'"\n]+)\1\s*\)?\s*;/.exec(text.slice(i, i + 512));
     if (!m) break;
-    files.push(m[2]);
+    files.push(m[2] ?? '');
     end = i += m[0].length;
   }
   // Only parts beside it: an @import of anything else (a font's sheet) is not an entry's.
@@ -170,18 +193,18 @@ export function entryOf(text) {
  * Every rule of the sheet in order, with the groups (@media…) it stands in, outermost first: {node, parents}. A
  * group's rules are leaves; an at-rule that is not a group (@keyframes) is a leaf of its own.
  */
-export function leavesOf(nodes, parents = []) {
+export function leavesOf(nodes: SheetNode[], parents: GroupNode[] = []): Leaf[] {
   return nodes.flatMap((n) => (n.kind === 'group' ? leavesOf(n.nodes, [...parents, n]) : [{node: n, parents}]));
 }
 
 // ---- Declarations ----
 
 /** Text with its comments taken out. */
-export const uncommented = (s) => s.replace(/\/\*[\s\S]*?\*\//g, ' ');
+export const uncommented = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, ' ');
 
 /** The pieces of `s` between each `sep` outside strings and brackets, with where each starts and ends (trimmed). */
-export function splitTop(s, sep) {
-  const out = [];
+export function splitTop(s: string, sep: string): Piece[] {
+  const out: Piece[] = [];
   let i = 0;
   for (;;) {
     const j = findTop(s, i, s.length, sep);
@@ -195,7 +218,7 @@ export function splitTop(s, sep) {
 }
 
 /** A rule's declarations: {prop (lower case; a custom property as written), value, important}. */
-export function declarations(body) {
+export function declarations(body: string): Decl[] {
   return splitTop(uncommented(body), ';').filter((p) => p.text).map((p) => {
     const c = p.text.indexOf(':');
     if (c < 0) throw new Error(`a declaration without a colon: ${p.text}`);
@@ -223,22 +246,22 @@ const SELECTOR_ARGS = new Set(['is', 'where', 'not', 'has', 'matches', '-webkit-
  *    attr?: {name, op, value}}
  * with start and end its place in `s` (from `offset`).
  */
-export function parseComplex(s, offset = 0) {
-  const compounds = [];
-  let parts = [], combinator = '', i = 0;
+export function parseComplex(s: string, offset = 0): Complex {
+  const compounds: Compound[] = [];
+  let parts: Part[] = [], combinator = '', i = 0;
   const flush = () => { if (parts.length) { compounds.push({parts, combinator}); parts = []; combinator = ''; } };
   while (i < s.length) {
-    const c = s[i];
+    const c = s[i] ?? '';
     if (/\s/.test(c)) {
       let j = i;
-      while (j < s.length && /\s/.test(s[j])) j++;
-      if (j < s.length && !'>+~'.includes(s[j]) && parts.length) { flush(); combinator = ' '; }
+      while (j < s.length && /\s/.test(s[j] ?? '')) j++;
+      if (j < s.length && !'>+~'.includes(s[j] ?? '') && parts.length) { flush(); combinator = ' '; }
       i = j;
       continue;
     }
     if ('>+~'.includes(c)) { flush(); combinator = c; i++; continue; }
     const start = i;
-    let part;
+    let part: Omit<Part, 'start' | 'end' | 'text'>;
     if (c === '*') { part = {kind: 'universal', name: '*'}; i++; }
     else if (c === '#' || c === '.') {
       const m = IDENT.exec(s.slice(i + 1));
@@ -252,7 +275,8 @@ export function parseComplex(s, offset = 0) {
       const m = /^([-\w|*]+)\s*(?:([~|^$*]?=)\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s\]]+)\s*([is])?)?$/i.exec(inner);
       if (!m) throw new Error(`an attribute selector this cannot read: [${inner}]`);
       const value = m[3] === undefined ? undefined : /^['"]/.test(m[3]) ? m[3].slice(1, -1) : m[3];
-      part = {kind: 'attr', name: m[1].toLowerCase(), attr: {name: m[1].toLowerCase(), op: m[2] ?? '', value, flag: m[4] ?? ''}};
+      const name = (m[1] ?? '').toLowerCase();
+      part = {kind: 'attr', name, attr: {name, op: m[2] ?? '', value, flag: m[4] ?? ''}};
       i = e + 1;
     } else if (c === ':') {
       const element = s[i + 1] === ':';
@@ -264,15 +288,16 @@ export function parseComplex(s, offset = 0) {
       if (s[i] === '(') {
         const e = findTop(s, i + 1, s.length, ')');
         if (e < 0) throw new Error(`a selector this cannot read: ${s}`);
-        part.args = s.slice(i + 1, e);
+        const inner = s.slice(i + 1, e);
+        part.args = inner;
         const argsAt = i + 1;
         // Each argument with where it stands in the whole selector (start, end), as a part does.
-        const args = (pieces, from = 0) => pieces.map((p) => ({text: p.text, start: offset + argsAt + from + p.start,
+        const args = (pieces: Piece[], from = 0): Arg[] => pieces.map((p) => ({text: p.text, start: offset + argsAt + from + p.start,
           end: offset + argsAt + from + p.end, complex: parseComplex(p.text, offset + argsAt + from + p.start)}));
-        if (part.kind === 'pseudo-class' && SELECTOR_ARGS.has(name)) part.list = args(splitTop(part.args, ','));
+        if (part.kind === 'pseudo-class' && SELECTOR_ARGS.has(name)) part.list = args(splitTop(inner, ','));
         else if (part.kind === 'pseudo-class' && /^nth-(last-)?child$/.test(name)) {
-          const of = /\bof\b/i.exec(part.args);
-          if (of) part.list = args(splitTop(part.args.slice(of.index + of[0].length), ','), of.index + of[0].length);
+          const of = /\bof\b/i.exec(inner);
+          if (of) part.list = args(splitTop(inner.slice(of.index + of[0].length), ','), of.index + of[0].length);
         }
         i = e + 1;
       }
@@ -282,17 +307,14 @@ export function parseComplex(s, offset = 0) {
       part = {kind: 'type', name: m[0].toLowerCase()};
       i += m[0].length;
     }
-    part.start = offset + start;
-    part.end = offset + i;
-    part.text = s.slice(start, i);
-    parts.push(part);
+    parts.push({...part, start: offset + start, end: offset + i, text: s.slice(start, i)});
   }
   flush();
   return {text: s, compounds};
 }
 
 /** A rule's selector list: each complex selector with where it stands in the list's text. */
-export function selectorList(selector) {
+export function selectorList(selector: string): Arg[] {
   return splitTop(selector, ',').map((p) => ({...p, complex: parseComplex(p.text, p.start)}));
 }
 
@@ -300,32 +322,33 @@ export function selectorList(selector) {
  * The text that takes `pieces[k]` out of a list of pieces (a selector list, or the arguments of :is()), as
  * [start, end]: the piece and the separator after it, or, for the last, the separator before it.
  */
-export function cutOf(pieces, k) {
+export function cutOf(pieces: Piece[], k: number): [number, number] {
+  const at = (j: number) => { const p = pieces[j]; if (!p) throw new Error(`no piece ${j} of ${pieces.length}`); return p; };
   if (pieces.length < 2) throw new Error('a list cannot lose its only piece');
-  return k < pieces.length - 1 ? [pieces[k].start, pieces[k + 1].start] : [pieces[k - 1].end, pieces[k].end];
+  return k < pieces.length - 1 ? [at(k).start, at(k + 1).start] : [at(k - 1).end, at(k).end];
 }
 
 /** `text` with each [start, end, by] put in (the ranges may come in any order; they must not overlap). */
-export function spliced(text, edits) {
+export function spliced(text: string, edits: [number, number, string?][]): string {
   let out = text;
   for (const [s, e, by = ''] of [...edits].sort((a, b) => b[0] - a[0])) out = out.slice(0, s) + by + out.slice(e);
   return out;
 }
 
-const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
-export const compareSpec = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
-const maxSpec = (list) => list.reduce((m, s) => (compareSpec(s, m) > 0 ? s : m), [0, 0, 0]);
+const add = (a: Spec, b: Spec): Spec => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+export const compareSpec = (a: Spec, b: Spec) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+const maxSpec = (list: Spec[]) => list.reduce<Spec>((m, s) => (compareSpec(s, m) > 0 ? s : m), [0, 0, 0]);
 /** The weight :is(), :not() or :has() of these arguments has: the heaviest of them. */
-export const listSpec = (list) => maxSpec(list.map((a) => specificity(a.complex)));
+export const listSpec = (list: Arg[]) => maxSpec(list.map((a) => specificity(a.complex)));
 
 /** The specificity of a complex selector, as [ids, classes, types] (Selectors 4). */
-export function specificity(complex) {
-  let s = [0, 0, 0];
+export function specificity(complex: Complex): Spec {
+  let s: Spec = [0, 0, 0];
   for (const {parts} of complex.compounds) for (const p of parts) s = add(s, partSpec(p));
   return s;
 }
 
-function partSpec(p) {
+function partSpec(p: Part): Spec {
   switch (p.kind) {
     case 'id': return [1, 0, 0];
     case 'class': case 'attr': return [0, 1, 0];
@@ -343,7 +366,7 @@ function partSpec(p) {
 // ---- A rule, read ----
 
 /** What a leaf is, read once: its complex selectors and its declarations; or the at-rule it is. */
-export function readLeaf(leaf) {
+export function readLeaf(leaf: Leaf): ReadLeaf {
   if (leaf.read) return leaf.read;
   const n = leaf.node;
   leaf.read = n.kind === 'rule' ? {kind: 'rule', sels: selectorList(n.selector).map((s) => s.complex), decls: declarations(n.body)}

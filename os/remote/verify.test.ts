@@ -27,9 +27,9 @@ test('a Neon endpoint is production when Neon or REMOTE_PRODUCTION_HOSTS says it
   assert.match(await production(neon(branch), {}, none) ?? '', /cannot tell/);
 });
 
-// verify.ts run as a command, its modules loaded as npm test's are (scripts/tests-load.mjs): types stripped once for
+// verify.ts run as a command, its modules loaded as npm test's are (scripts/tests-load.ts): types stripped once for
 // every run, not each time (most of a second of each start).
-const verify = [`--import=${new URL('../scripts/tests-load.mjs', import.meta.url).href}`, new URL('./verify.ts', import.meta.url).pathname];
+const verify = [`--import=${new URL('../scripts/tests-load.ts', import.meta.url).href}`, new URL('./verify.ts', import.meta.url).pathname];
 
 test('refused, it says why and never the URL, its host or its password', () => {
   const r = spawnSync(process.execPath, verify, {encoding: 'utf8',

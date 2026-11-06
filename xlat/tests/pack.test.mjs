@@ -26,7 +26,7 @@ test('the translator decodes what zstd encoded, at every level and size, as the 
 const sha256 = (b) => new Uint8Array(createHash('sha256').update(b).digest());
 const unzstd = (bytes) => new Uint8Array(zstdDecompressSync(bytes));
 
-/** A pack of these files ({text, raw?}), as os/scripts/l3.mjs makes one: {pack, name, places} (each file's {size, at, len, raw?}). */
+/** A pack of these files ({text, raw?}), as os/scripts/l3.ts makes one: {pack, name, places} (each file's {size, at, len, raw?}). */
 function made(files) {
   const stored = files.map(({text, raw}) => (raw ? enc.encode(text) : new Uint8Array(zstdCompressSync(enc.encode(text)))));
   const {bytes, name, at} = packOf(stored, sha256);

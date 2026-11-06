@@ -1,4 +1,4 @@
-// npm test: every test file (src/**/*.test.ts, service/*.test.ts, scripts/*.test.mjs) under node:test, each
+// npm test: every test file (src/**/*.test.ts, service/*.test.ts, scripts/*.test.ts) under node:test, each
 // process with the core a page runs (app/testing/core.ts), reported as node --test reports.
 //
 // node --test runs each file in a process of its own: a process paid for starting, loading what its file uses
@@ -7,7 +7,7 @@
 // first, and runs it with what the process has made already (remote/testing-together.ts), so that they end
 // about together; a long file whose tests are each their own (PARTS) is run in parts, several at once. The few
 // files that need a process of their own (ALONE) run beside them from the start.
-// Each process loads its modules as scripts/tests-load.mjs says: their types stripped and their code compiled
+// Each process loads its modules as scripts/tests-load.ts says: their types stripped and their code compiled
 // once for every run, not once a process.
 //
 // As node --test: NODE_OPTIONS=--test-shard=i/n runs every n-th file from the i-th (CI's four shards), and
@@ -36,7 +36,7 @@ const ALONE = new Set([
   // it in a shared process, and an interval of prompt/l3-files.ts's own.
   'app/prompt/l3-files.test.ts',
   // Builds l3 with child processes, and waits for them.
-  'scripts/l3.test.mjs',
+  'scripts/l3.test.ts',
 ]);
 
 /**
@@ -52,13 +52,13 @@ const {values, positionals} = parseArgs({allowPositionals: true, options: {
 }});
 
 /** Each file under `dir` (and its folders, when `deep`) whose name `keep` takes, as a path from os/. */
-const under = (dir, keep, deep) => readdirSync(dir, {withFileTypes: true}).flatMap((e) =>
+const under = (dir: string, keep: (name: string) => boolean, deep = false): string[] => readdirSync(dir, {withFileTypes: true}).flatMap((e) =>
   e.isDirectory() ? (deep ? under(join(dir, e.name), keep, deep) : []) : keep(e.name) ? [join(dir, e.name)] : []);
 const named = positionals.map((p) => relative(OS, resolve(HERE, p)));
 // Every path from here on is from os/, as the tests expect to be run.
 process.chdir(OS);
 let files = named.length ? named : [...under('app', (n) => n.endsWith('.test.ts'), true), ...under('remote', (n) => n.endsWith('.test.ts')),
-  ...under('scripts', (n) => n.endsWith('.test.mjs'))].sort();
+  ...under('scripts', (n) => n.endsWith('.test.ts'))].sort();
 
 // A shard: every n-th file from the i-th, as node --test gives one.
 const shard = values['test-shard'] ?? /--test-shard[= ](\S+)/.exec(process.env.NODE_OPTIONS ?? '')?.[1];
@@ -68,20 +68,20 @@ if (shard) {
   files = files.filter((_, k) => k % n === i - 1);
 }
 
-const text = new Map();
-const read = (f) => text.get(f) ?? text.set(f, readFileSync(f, 'utf8')).get(f);
+const text = new Map<string, string>();
+const read = (f: string): string => { let t = text.get(f); if (t === undefined) { t = readFileSync(f, 'utf8'); text.set(f, t); } return t; };
 /** How long each file took in the runs before on this machine (ms, its tests'), kept in its temporary directory. */
 const TOOK = join(tmpdir(), 'length3-test-times.json');
-let took = {};
+let took: Record<string, number> = {};
 try { took = JSON.parse(readFileSync(TOOK, 'utf8')); } catch { /* the first run here */ }
 /**
  * What a file is likely to take, to start the longest first: what it took before, or until it has run here, a
  * guess from its length, with any test file it runs again (contract.nobucket.test.ts), and a few seconds for
  * each database or process it makes of its own.
  */
-const guess = (f) => read(f).length / 5 + 3000 * (read(f).match(/new PGlite\(|\bdatabase\(\)|spawnSync\(|execFile\(/g)?.length ?? 0) +
+const guess = (f: string): number => read(f).length / 5 + 3000 * (read(f).match(/new PGlite\(|\bdatabase\(\)|spawnSync\(|execFile\(/g)?.length ?? 0) +
   [...read(f).matchAll(/'\.\/([\w.-]+\.test\.ts)/g)].reduce((n, [, again]) => n + guess(join(dirname(f), again)), 0);
-const weight = (f) => took[f] ?? guess(f);
+const weight = (f: string) => took[f] ?? guess(f);
 
 // As node --test, but every core: the runner itself only reports.
 const concurrency = Number(values['test-concurrency'] ?? availableParallelism());
@@ -96,7 +96,7 @@ const units = shared.flatMap((f) => {
   const n = PARTS.has(f) ? Math.min(processes, Math.ceil(weight(f) / most)) : 1;
   return n > 1 ? Array.from({length: n}, (_, k) => `${f}#${k + 1}/${n}`) : [f];
 });
-const unitWeight = (u) => { const [f, part] = u.split('#'); return weight(f) / (part ? Number(part.split('/')[1]) : 1); };
+const unitWeight = (u: string) => { const [f = '', part] = u.split('#'); return weight(f) / (part ? Number(part.split('/')[1]) : 1); };
 units.sort((a, b) => unitWeight(b) - unitWeight(a));
 
 // Each one's module, and the folder the files are taken in (a folder each, made once, by whichever process makes
@@ -106,7 +106,7 @@ process.on('exit', () => rmSync(kept, {recursive: true, force: true}));
 const together = pathToFileURL(join(OS, 'remote/testing-together.ts')).href;
 const entries = Array.from({length: processes}, (_, k) => {
   const entry = join(kept, `together-${k + 1}.mjs`);
-  writeFileSync(entry, `// One of the processes the test files share in npm test (scripts/tests.mjs).\n` +
+  writeFileSync(entry, `// One of the processes the test files share in npm test (scripts/tests.ts).\n` +
     `import {together} from ${JSON.stringify(together)};\nawait together(${JSON.stringify(units)}, ${JSON.stringify(join(kept, 'taken'))});\n`);
   return entry;
 });
@@ -116,13 +116,16 @@ const stop = new AbortController();
 process.once('SIGINT', () => stop.abort());
 // node's own reporters by name (spec on a terminal, tap otherwise, as node --test), or a module's default export.
 const name = values['test-reporter'] ?? (process.stdout.isTTY ? 'spec' : 'tap');
-const reporter = name === 'spec' ? new reporters.spec() : reporters[name] ?? (await import(pathToFileURL(resolve(HERE, name)).href)).default;
+const builtIn = (reporters as Record<string, unknown>)[name];
+const reporter = name === 'spec' ? new reporters.spec() : builtIn ?? (await import(pathToFileURL(resolve(HERE, name)).href)).default;
 /** What each file took in this run: a shared file's suite (or its parts'), or the sum of a file's own tests. */
-const took_ = {};
-const timed = (t) => {
+const took_: Record<string, number> = {};
+/** What node:test tells of a test that ended (its test:pass and test:fail events), as far as it is read here. */
+interface TestEvent { name: string; nesting: number; file?: string; todo?: string | boolean; details?: {type?: string; duration_ms?: number} }
+const timed = (t: TestEvent) => {
   // A part's suite is named by its file and the part (testing-together.ts): what a file took is its parts' together.
   const suite = t.nesting === 0 && t.details?.type === 'suite' ? t.name.replace(/ \[\d+\/\d+\]$/, '') : null;
-  const f = shared.includes(suite) ? suite : t.nesting === 0 && t.file && !t.file.startsWith(kept) ? relative(OS, t.file) : null;
+  const f = suite !== null && shared.includes(suite) ? suite : t.nesting === 0 && t.file && !t.file.startsWith(kept) ? relative(OS, t.file) : null;
   if (f) took_[f] = (took_[f] ?? 0) + Math.round(t.details?.duration_ms ?? 0);
 };
 run({
@@ -132,7 +135,7 @@ run({
   // again, optimized, took more CPU on other threads than the faster code saved.
   // node:test's mock timers are still marked experimental in Node 22: that notice is about the tests' own clock,
   // not about what is tested, and is the one notice of its kind they print.
-  execArgv: ['--liftoff-only', '--disable-warning=ExperimentalWarning', '--import', pathToFileURL(join(OS, 'scripts/tests-load.mjs')).href, '--import', pathToFileURL(join(OS, 'app/testing/core.ts')).href],
+  execArgv: ['--liftoff-only', '--disable-warning=ExperimentalWarning', '--import', pathToFileURL(join(OS, 'scripts/tests-load.ts')).href, '--import', pathToFileURL(join(OS, 'app/testing/core.ts')).href],
   testNamePatterns: values['test-name-pattern'], testSkipPatterns: values['test-skip-pattern'], only: values['test-only'],
 })
   .on('test:pass', timed)

@@ -6,10 +6,10 @@ import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test} from 'node:test';
-import {madeBy, pageWords} from './styles-classes.mjs';
-import {pruneText} from './styles-prune.mjs';
-import {said, split} from './styles-split.mjs';
-import {entryOf, leavesOf, parseComplex, readSheet, specificity, textOf} from './styles-sheet.mjs';
+import {madeBy, pageWords} from './styles-classes.ts';
+import {pruneText} from './styles-prune.ts';
+import {said, split} from './styles-split.ts';
+import {entryOf, leavesOf, parseComplex, readSheet, specificity, textOf} from './styles-sheet.ts';
 
 const SHEET = `/* The tokens. */
 :root { --ink: #222; --mark: url("data:image/svg+xml,%3Csvg%3E{}%3C/svg%3E"); }
@@ -33,13 +33,14 @@ test('a sheet is read as it is written: every comment, string and group where it
   assert.equal(leaves[1].node.trail, ' /* about .a */');
   assert.match(leaves[2].node.lead, /Inside/);
   const entry = entryOf(`/* The parts. */\n@import './styles/a.css';\n@import "./styles/b.css";\n.added { color: red; }\n`);
+  assert.ok(entry);
   assert.deepEqual(entry.files, ['./styles/a.css', './styles/b.css']);
   assert.equal(entry.rest, '\n.added { color: red; }\n');
   assert.equal(entryOf(SHEET), null);
 });
 
 test('a selector weighs what the cascade says', () => {
-  const w = (s) => specificity(parseComplex(s));
+  const w = (s: string) => specificity(parseComplex(s));
   assert.deepEqual(w('.a .b'), [0, 2, 0]);
   assert.deepEqual(w('#x:is(.a, #y) > p::before'), [2, 0, 2]);
   assert.deepEqual(w(':where(.a, #b) .c'), [0, 1, 0]);
@@ -51,7 +52,7 @@ test('a selector weighs what the cascade says', () => {
 });
 
 /** An app of its own: src/ with these files, and index.html. */
-function app(files, html = '<html class="opening"><body><main class="page" id="page"></main></body></html>') {
+function app(files: Record<string, string>, html = '<html class="opening"><body><main class="page" id="page"></main></body></html>') {
   const dir = mkdtempSync(join(tmpdir(), 'styles-test-'));
   mkdirSync(join(dir, 'app'));
   for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, 'app', name), text);
@@ -104,8 +105,8 @@ export const note = (el: HTMLElement) => h('p', {class: \`kind-\${el.dataset.kin
 });
 
 /** What an app with these classes and elements can put on a page. */
-const given = (classes, tags = ['p', 'div'], prefixes = []) => {
-  const w = (words, pre = []) => ({words: new Set(words), prefixes: new Set(pre), suffixes: new Set(), infixes: new Set()});
+const given = (classes: string[], tags = ['p', 'div'], prefixes: string[] = []) => {
+  const w = (words: string[], pre: string[] = []) => ({words: new Set(words), prefixes: new Set(pre), suffixes: new Set<string>(), infixes: new Set<string>(), unknown: false});
   return {classes: w(classes, prefixes), ids: w([]), tags: w(tags)};
 };
 
@@ -138,13 +139,13 @@ test('what can match nothing goes, and nothing else, with the comment over it wh
 /* Over a gone one and a kept one. */
 .c { color: blue; }
 `);
-  assert.equal(out.filter((o) => o.whole).length, 4);
+  assert.equal(out.filter((o) => 'whole' in o && o.whole).length, 4);
   // #gone stays in :is(): without it the rule would weigh less.
-  assert.ok(!out.some((o) => /#gone/.test(o.what)));
+  assert.ok(!out.some((o) => 'what' in o && /#gone/.test(o.what)));
 });
 
 test('a sheet split into parts reads back as the same sheet, an @media cut where the parts are', () => {
-  const rules = (cls, n, indent = '') => Array.from({length: n}, (_, i) => `${indent}.${cls}.n${i} { margin: ${i}px; }`).join('\n');
+  const rules = (cls: string, n: number, indent = '') => Array.from({length: n}, (_, i) => `${indent}.${cls}.n${i} { margin: ${i}px; }`).join('\n');
   const text = `/* The rail. */\n${rules('rail-item', 12)}\n@media (max-width: 760px) {\n${rules('rail', 6, '  ')}\n${rules('git-band', 12, '  ')}\n}\n/* Git. */\n${rules('git-flow', 12)}\n`;
   const {parts, entry} = split(text);
   assert.deepEqual(parts.map((p) => p.file), ['rail.css', 'git.css']);

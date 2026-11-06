@@ -18,7 +18,7 @@ export const threadsApart = (): boolean => typeof SharedArrayBuffer === 'functio
 
 // l3, the one thing the Prompt depends on: the release root the desktop app
 // installs (core/src/root pins it, one entry for both), read here as the
-// browser reads it (scripts/l3.mjs). l3.json says which l3 it is (its
+// browser reads it (scripts/l3.ts). l3.json says which l3 it is (its
 // version, and the sha256 of the root it was made from) and names its index
 // by digest; everything else is named by its digest too:
 //
