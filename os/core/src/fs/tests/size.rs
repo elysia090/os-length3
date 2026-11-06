@@ -25,9 +25,9 @@ fn a_folder_takes_its_files_blocks_each_file_once_and_no_links_followed() {
 }
 
 #[test]
-fn room_is_the_filesystems_and_never_more_free_than_there_is() {
+fn room_is_the_filesystems_and_never_more_free_than_there_is_and_nothing_is_made_to_say_it() {
     let d = crate::fs::testing::dir("room");
-    let (total, free) = room(&d).unwrap();
+    let (total, free) = room(&d.join("not/yet")).unwrap();
     assert!(total > 0 && free <= total);
-    let _ = fs::remove_dir_all(&d);
+    assert!(!d.exists());
 }

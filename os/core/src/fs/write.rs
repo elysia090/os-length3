@@ -25,7 +25,8 @@ impl How {
     pub const RECORD: How = How { mode: None, durable: true };
     /// The person's own state (a session token, Home's settings): theirs alone.
     pub const PRIVATE: How = How { mode: Some(0o600), durable: true };
-    /// Work saved, made again when lost.
+    /// Work saved, made again when lost: not flushed, and its old copy taken away just before the new one is named
+    /// (`replace`), so a reader may meanwhile find none, which for a cache is only not kept; never half of one.
     pub const CACHE: How = How { mode: None, durable: false };
 }
 
@@ -147,16 +148,19 @@ pub fn is_temporary(name: &str) -> bool {
     name.starts_with(".length3-") || temporary_writer(name, false).is_some()
 }
 
-/// Make the OS's own directory private to the person (0700). Other users of
-/// the host see neither repos nor Home's state.
-pub fn private_dir(dir: &Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(dir)?;
+/// Make the OS's own directory private to the person (0700), and every folder made on the way to it: made so, never
+/// for a moment open, and one there already made so. Other users of the host see neither repos nor Home's state.
+pub fn private_dir(dir: &Path) -> io::Result<()> {
+    let mut make = fs::DirBuilder::new();
+    make.recursive(true);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+        use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+        make.mode(0o700).create(dir)?;
+        fs::set_permissions(dir, fs::Permissions::from_mode(0o700))
     }
-    Ok(())
+    #[cfg(not(unix))]
+    make.create(dir)
 }
 
 #[cfg(test)]

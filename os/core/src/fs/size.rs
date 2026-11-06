@@ -6,10 +6,11 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
-/// The filesystem's `total` and `free` alone: no walk of what the OS holds.
+/// The `total` and `free` bytes of the filesystem `dir` is on (or will be: the nearest folder there is above it), and
+/// nothing made or walked to say so.
 pub fn room(dir: &Path) -> crate::Result<(u64, u64)> {
-    fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    filesystem(dir).map_err(|e| e.to_string())
+    let at = dir.ancestors().find(|a| a.exists()).unwrap_or(dir);
+    filesystem(at).map_err(|e| e.to_string())
 }
 
 #[cfg(unix)]

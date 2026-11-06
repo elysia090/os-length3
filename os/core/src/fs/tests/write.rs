@@ -85,3 +85,20 @@ fn a_temporary_is_known_by_its_whole_name_from_the_end() {
     }
     assert!(is_temporary(".length3-1-x") && is_temporary(".x.length3-1-0") && !is_temporary(".gitignore"));
 }
+
+#[cfg(unix)]
+#[test]
+fn a_private_folder_is_made_so_with_every_folder_on_the_way() {
+    use std::os::unix::fs::PermissionsExt;
+    let d = scratch("private-dir");
+    let leaf = d.join("a/b/c");
+    private_dir(&leaf).unwrap();
+    for p in [d.join("a"), d.join("a/b"), leaf.clone()] {
+        assert_eq!(fs::metadata(&p).unwrap().permissions().mode() & 0o777, 0o700, "{}", p.display());
+    }
+    // One there already, open to others, is made private.
+    fs::set_permissions(&leaf, fs::Permissions::from_mode(0o755)).unwrap();
+    private_dir(&leaf).unwrap();
+    assert_eq!(fs::metadata(&leaf).unwrap().permissions().mode() & 0o777, 0o700);
+    let _ = fs::remove_dir_all(&d);
+}
