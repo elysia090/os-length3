@@ -2,19 +2,19 @@
  * you's regular expressions, as fd and rg read them (Rust's regex crate's syntax): literals and escapes, ., classes
  * ([a-z], [^…], \d \w \s and their negations, [[:alpha:]] and the other POSIX names), groups ((…), (?:…), (?i)…),
  * alternation, the quantifiers *, +, ?, {n}, {n,}, {n,m} and their lazy forms, and the assertions ^, $, \A, \z, \b, \B.
- * Text is UTF-8: . and a negated class take a whole character, and a class may hold characters past ASCII. Not here, as
- * not in Rust's crate either: back-references and look-around.
+ * Text is UTF-8, and Unicode's as the crate's is: . and a negated class take a whole character; \w, \d, \s and \b are
+ * Unicode's; case aside is Unicode's simple folding (k is K and K, the Kelvin sign) — the tables, unicode.h, made from
+ * ripgrep's own answers. Not here: \p{…}, back-references and look-around (the last two not in the crate either).
  *
- * Compiled to a Thompson automaton over bytes and run as a Pike machine: every place a match may start is tried in
- * one pass over the text, each state at most once a byte, so no pattern takes more than the text's length times its
- * own; leftmost-first, as Rust's crate finds a match. Before it, what every match must hold: a pattern that is only a
- * literal is found by the literal alone, a word at a time, and one that holds a literal is run only where it is.
- *
- * Where it differs from Rust's crate (said, not hidden): \w, \b and case-insensitivity know ASCII's letters and take
- * every character past ASCII as a word's; a negated class that names characters past ASCII still takes them.
+ * Compiled to a Thompson automaton over bytes (a class's characters as a trie of their UTF-8 bytes, like branches made
+ * one), run three ways: as a DFA made as it runs (dfa.c), which says which lines hold a match, and where one ends;
+ * backwards, to where it starts (re_reverse); and as a Pike machine, where the DFA cannot say (a \b beside a character
+ * past ASCII). Leftmost-first, as Rust's crate finds a match. Before any of it, what every match must hold: a pattern
+ * that is only a literal is found by the literal alone, and one that holds a literal is run only where it is.
  */
+#include "unicode.h"
 
-enum { RE_ICASE = 1, RE_MULTILINE = 2 };
+enum { RE_ICASE = 1, RE_MULTILINE = 2, RE_LINES = 4 };
 
 /* A state: one byte of a set (SET), a choice of two (SPLIT, `out` first), a jump (JUMP), an assertion (ASSERT),
  * or the match (MATCH). */
@@ -28,19 +28,22 @@ struct frag { u32 start, hole; };
 struct re {
   struct rstate *st;
   u32 n, cap;
-  u64 *sets; /* 256 bits each */
+  u64 *sets; /* 256 bits each, each set once */
   u32 nsets, setcap;
   u32 start;
   /* What every match must hold, and whether the pattern is that literal and nothing more (then case aside or not). */
   u8 *lit;
   u32 litn;
   int only_lit, icase;
+  /* The assertions it holds: a word's edge (\b \B), a line's or the text's ends (^ $ \A \z). */
+  int has_word, has_ends;
+  struct re *rev; /* backwards (re_reverse), made when first asked for */
 };
 
 static const char *re_error;
 static const u8 *rp, *rend;
 static struct re *R;
-static int icase, multiline;
+static int icase, multiline, lines;
 
 static u32 state(u8 op, u8 a, u16 set, u32 out, u32 out1) {
   if (R->n == R->cap) {
@@ -51,17 +54,19 @@ static u32 state(u8 op, u8 a, u16 set, u32 out, u32 out1) {
   R->st[R->n] = (struct rstate){op, a, set, out, out1};
   return R->n++;
 }
-static u16 newset(void) {
+/* The set of these 256 bits: the one already made that is the same, or a new one. */
+static u16 set_of(const u64 *b) {
+  for (u32 i = 0; i < R->nsets; i++)
+    if (!memcmp(R->sets + 4 * i, b, 32)) return (u16)i;
   if (R->nsets == R->setcap) {
-    u64 *m = (u64 *)grab(32 * R->setcap * 2);
-    memcpy(m, R->sets, 32 * R->nsets);
+    u64 *m = (u64 *)grab(32 * (u64)R->setcap * 2);
+    memcpy(m, R->sets, 32 * (u64)R->nsets);
     R->sets = m, R->setcap *= 2;
   }
-  memset(R->sets + 4 * R->nsets, 0, 32);
+  memcpy(R->sets + 4 * R->nsets, b, 32);
   return (u16)R->nsets++;
 }
-static void set_add(u16 s, u32 lo, u32 hi) {
-  u64 *b = R->sets + 4 * s;
+static void bits_add(u64 *b, u32 lo, u32 hi) {
   for (u32 c = lo; c <= hi && c < 256; c++) b[c >> 6] |= 1ull << (c & 63);
 }
 static int set_has(const u64 *b, u8 c) { return (b[c >> 6] >> (c & 63)) & 1; }
@@ -89,12 +94,6 @@ static struct frag one(u8 op, u8 a, u16 set) {
   u32 s = state(op, a, set, 0, 0);
   return (struct frag){s, hole_of(s, 0)};
 }
-/* A byte range as a fragment. */
-static struct frag range(u32 lo, u32 hi) {
-  u16 s = newset();
-  set_add(s, lo, hi);
-  return one(S_SET, 0, s);
-}
 static struct frag cat(struct frag a, struct frag b) {
   if (a.start == ~0u) return b;
   if (b.start == ~0u) return a;
@@ -109,8 +108,95 @@ static struct frag alt(struct frag a, struct frag b) {
 }
 static const struct frag NONE = {~0u, 0};
 
-/* ---- Characters past ASCII: a range of code points as the UTF-8 byte sequences that spell them (split until each
- * piece is the same length, and each of its bytes a range of its own). */
+/* ---- Unicode's tables (unicode.h): numbers seven bits a byte. */
+
+static u32 varint(const u8 *t, u32 *i) {
+  u32 v = 0;
+  for (u32 shift = 0;; shift += 7) {
+    u8 b = t[(*i)++];
+    v |= (u32)(b & 0x7f) << shift;
+    if (!(b & 0x80)) return v;
+  }
+}
+
+/* ---- Classes: ranges of characters, gathered in any order, then sorted and joined (cls_norm). */
+
+struct cls { u32 *r, n, cap; }; /* r[2i], r[2i+1]: a range, both ends in */
+
+static void cls_init(struct cls *k) { k->cap = 16, k->n = 0, k->r = (u32 *)grab(8 * 16); }
+static void cls_add(struct cls *k, u32 lo, u32 hi) {
+  if (k->n == k->cap) {
+    u32 *m = (u32 *)grab(8 * (u64)k->cap * 2);
+    memcpy(m, k->r, 8 * (u64)k->n);
+    k->r = m, k->cap *= 2;
+  }
+  k->r[2 * k->n] = lo, k->r[2 * k->n + 1] = hi, k->n++;
+}
+static void cls_norm(struct cls *k) {
+  for (u32 i = 1; i < k->n; i++) { /* insertion sort: what is added comes mostly in order */
+    u32 lo = k->r[2 * i], hi = k->r[2 * i + 1], j = i;
+    for (; j && k->r[2 * j - 2] > lo; j--) k->r[2 * j] = k->r[2 * j - 2], k->r[2 * j + 1] = k->r[2 * j - 1];
+    k->r[2 * j] = lo, k->r[2 * j + 1] = hi;
+  }
+  u32 m = 0;
+  for (u32 i = 0; i < k->n; i++) {
+    u32 lo = k->r[2 * i], hi = k->r[2 * i + 1];
+    if (m && lo <= k->r[2 * m - 1] + 1) { if (hi > k->r[2 * m - 1]) k->r[2 * m - 1] = hi; }
+    else k->r[2 * m] = lo, k->r[2 * m + 1] = hi, m++;
+  }
+  k->n = m;
+}
+/* Every character the class does not take (0 to 0x10ffff). */
+static void cls_negate(struct cls *k) {
+  cls_norm(k);
+  u32 n = k->n, *r = k->r, next = 0;
+  cls_init(k);
+  for (u32 i = 0; i < n; i++) {
+    if (r[2 * i] > next) cls_add(k, next, r[2 * i] - 1);
+    next = r[2 * i + 1] + 1;
+  }
+  if (next <= 0x10ffff) cls_add(k, next, 0x10ffff);
+}
+/* A table's ranges past ASCII (unicode.h's U_WORD and the rest). */
+static void cls_table(struct cls *k, const u8 *t, u32 len) {
+  for (u32 i = 0, at = 0x7f; i < len;) {
+    u32 lo = at + 1 + varint(t, &i), hi = lo + varint(t, &i);
+    cls_add(k, lo, hi);
+    at = hi;
+  }
+}
+/* What is the same with case aside, added: each character's next in its circle of case, round the circle. */
+static void cls_fold(struct cls *k) {
+  for (int round = 1; round < U_FOLD_ROUND; round++) {
+    cls_norm(k);
+    u32 n = k->n;
+    for (u32 i = 0, at = ~0u; i < sizeof U_FOLD;) {
+      u32 start = at + 1 + varint(U_FOLD, &i), count = varint(U_FOLD, &i), kind = varint(U_FOLD, &i);
+      u32 step = (kind & 3) == 1 ? 2 : 1, last = start + count * step, z = kind >> 2;
+      i64 d = z & 1 ? -(i64)(z >> 1) - 1 : (i64)(z >> 1);
+      at = last;
+      for (u32 j = 0; j < n; j++) {
+        u32 lo = k->r[2 * j] > start ? k->r[2 * j] : start, hi = k->r[2 * j + 1] < last ? k->r[2 * j + 1] : last;
+        if (lo > hi) continue;
+        switch (kind & 3) {
+          case 0: cls_add(k, (u32)(lo + d), (u32)(hi + d)); break;
+          case 1: for (u32 c = lo + ((lo - start) & 1); c <= hi; c += 2) cls_add(k, (u32)(c + d), (u32)(c + d)); break;
+          case 2: cls_add(k, lo & ~1u, hi | 1u); break; /* 2k ↔ 2k+1 */
+          default: cls_add(k, lo & 1 ? lo : lo - 1, hi & 1 ? hi + 1 : hi); /* 2k+1 ↔ 2k+2 */
+        }
+      }
+    }
+  }
+  cls_norm(k);
+}
+
+/* ---- A class as bytes: its characters spelled in UTF-8, each range as sequences of byte ranges (split until each
+ * piece is the same length and each of its bytes a range of its own), put in a trie; then, from the leaves up, like
+ * branches made one, and a branch's bytes that go the same way made one set. Node 0 is the leaf, 1 the root. */
+
+struct tedge { u8 lo, hi; u32 to, next; };
+static struct tedge *te;
+static u32 nte, cte, *tfirst, *tmade, ntn, ctn;
 
 static u32 utf8_len(u32 c) { return c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4; }
 static void utf8_put(u32 c, u8 *o) {
@@ -119,30 +205,115 @@ static void utf8_put(u32 c, u8 *o) {
   for (u32 i = n - 1; i > 0; i--) o[i] = (u8)(0x80 | (c & 0x3f)), c >>= 6;
   o[0] = (u8)((n == 2 ? 0xc0 : n == 3 ? 0xe0 : 0xf0) | c);
 }
-static struct frag utf8_range(u32 lo, u32 hi) {
-  if (lo > hi) return NONE;
+static u32 tnode(void) {
+  if (ntn == ctn) {
+    u32 *f = (u32 *)grab(4 * (u64)ctn * 2), *m = (u32 *)grab(4 * (u64)ctn * 2);
+    memcpy(f, tfirst, 4 * (u64)ntn), memcpy(m, tmade, 4 * (u64)ntn);
+    tfirst = f, tmade = m, ctn *= 2;
+  }
+  tfirst[ntn] = 0, tmade[ntn] = ~0u;
+  return ntn++;
+}
+static void tinsert(u32 n, const u8 *lo, const u8 *hi) {
+  u32 v = 1;
+  for (u32 i = 0; i < n; i++) {
+    u32 e = tfirst[v];
+    while (e && !(te[e].lo == lo[i] && te[e].hi == hi[i])) e = te[e].next;
+    if (!e) {
+      if (nte == cte) {
+        struct tedge *m = (struct tedge *)grab(sizeof *m * cte * 2);
+        memcpy(m, te, sizeof *m * nte);
+        te = m, cte *= 2;
+      }
+      u32 to = i + 1 < n ? tnode() : 0;
+      e = nte++;
+      te[e] = (struct tedge){lo[i], hi[i], to, tfirst[v]};
+      tfirst[v] = e;
+    }
+    v = te[e].to;
+  }
+}
+static void tseqs(u32 lo, u32 hi) {
+  if (lo > hi) return;
+  if (lo <= 0xdfff && hi >= 0xd800) { /* no surrogates: they are not characters */
+    if (lo < 0xd800) tseqs(lo, 0xd7ff);
+    if (hi > 0xdfff) tseqs(0xe000, hi);
+    return;
+  }
   if (utf8_len(lo) != utf8_len(hi)) {
     u32 edge = utf8_len(lo) == 1 ? 0x7f : utf8_len(lo) == 2 ? 0x7ff : 0xffff;
-    return alt(utf8_range(lo, edge), utf8_range(edge + 1, hi));
+    tseqs(lo, edge), tseqs(edge + 1, hi);
+    return;
   }
   u32 n = utf8_len(lo);
-  if (n == 1) return range(lo, hi);
-  /* Split where a trailing byte would wrap: each piece then varies only in a suffix of whole ranges. */
   for (u32 i = 1; i < n; i++) {
     u32 m = (1u << (6 * i)) - 1;
     if ((lo & ~m) != (hi & ~m)) {
-      if (lo & m) return alt(utf8_range(lo, lo | m), utf8_range((lo | m) + 1, hi));
-      if ((hi & m) != m) return alt(utf8_range(lo, (hi & ~m) - 1), utf8_range(hi & ~m, hi));
+      if (lo & m) { tseqs(lo, lo | m), tseqs((lo | m) + 1, hi); return; }
+      if ((hi & m) != m) { tseqs(lo, (hi & ~m) - 1), tseqs(hi & ~m, hi); return; }
     }
   }
   u8 a[4], b[4];
   utf8_put(lo, a), utf8_put(hi, b);
-  struct frag f = NONE;
-  for (u32 i = 0; i < n; i++) f = cat(f, range(a[i], b[i]));
-  return f;
+  tinsert(n, a, b);
 }
-/* Any one character past ASCII (a well-formed sequence's lead byte and its continuations). */
-static struct frag any_wide(void) { return utf8_range(0x80, 0x10ffff); }
+/* The branches made so far, each as its edges (range, and the state its branch begins at), to find a like one by. */
+static u32 *tsig, ntsig, ctsig, *tmadeat, *tmadelen, *tmadestate, ntmade, ctmade;
+static u32 thole;
+/* The state the branch at node v begins at (made, or found made): its edges' sets, each a SET to where they go,
+ * chained by SPLITs. */
+static u32 temit(u32 v) {
+  if (!v) return ~0u; /* the leaf: the class's end, a hole */
+  if (tmade[v] != ~0u) return tmade[v];
+  for (u32 e = tfirst[v]; e; e = te[e].next) temit(te[e].to); /* the branches below first: their edges are read after */
+  u32 at = ntsig, k = 0;
+  for (u32 e = tfirst[v]; e; e = te[e].next, k++) {
+    u32 to = temit(te[e].to);
+    if (ntsig + 3 > ctsig) {
+      u32 *m = (u32 *)grab(4 * (u64)ctsig * 2);
+      memcpy(m, tsig, 4 * (u64)ntsig);
+      tsig = m, ctsig *= 2;
+    }
+    tsig[ntsig++] = te[e].lo, tsig[ntsig++] = te[e].hi, tsig[ntsig++] = to;
+  }
+  for (u32 i = 1; i < k; i++) /* by the range's start, so like branches read alike */
+    for (u32 j = i; j && tsig[at + 3 * j - 3] > tsig[at + 3 * j]; j--)
+      for (u32 x = 0; x < 3; x++) { u32 t = tsig[at + 3 * j + x]; tsig[at + 3 * j + x] = tsig[at + 3 * j - 3 + x], tsig[at + 3 * j - 3 + x] = t; }
+  for (u32 m = 0; m < ntmade; m++)
+    if (tmadelen[m] == 3 * k && !memcmp(tsig + tmadeat[m], tsig + at, 12 * (u64)k)) { ntsig = at; return tmade[v] = tmadestate[m]; }
+  u32 head = ~0u;
+  for (u32 i = 0; i < k; i++) {
+    u32 to = tsig[at + 3 * i + 2], j = 0;
+    for (; j < i && tsig[at + 3 * j + 2] != to; j++) {}
+    if (j < i) continue; /* gathered already, with the first edge going there */
+    u64 b[4] = {0};
+    for (u32 x = i; x < k; x++) if (tsig[at + 3 * x + 2] == to) bits_add(b, tsig[at + 3 * x], tsig[at + 3 * x + 1]);
+    u32 s = state(S_SET, 0, set_of(b), to == ~0u ? 0 : to, 0);
+    if (to == ~0u) thole = join_holes(hole_of(s, 0), thole);
+    head = head == ~0u ? s : state(S_SPLIT, 0, 0, s, head);
+  }
+  if (ntmade == ctmade) {
+    u32 *a = (u32 *)grab(12 * (u64)ctmade * 2);
+    memcpy(a, tmadeat, 4 * (u64)ntmade), memcpy(a + 2 * ctmade, tmadelen, 4 * (u64)ntmade), memcpy(a + 4 * ctmade, tmadestate, 4 * (u64)ntmade);
+    tmadeat = a, tmadelen = a + 2 * ctmade, tmadestate = a + 4 * ctmade, ctmade *= 2;
+  }
+  tmadeat[ntmade] = at, tmadelen[ntmade] = 3 * k, tmadestate[ntmade++] = head;
+  return tmade[v] = head;
+}
+static struct frag cls_frag(struct cls *k) {
+  cls_norm(k);
+  if (!ctn) {
+    ctn = cte = ctsig = ctmade = 64;
+    tfirst = (u32 *)grab(4 * 64), tmade = (u32 *)grab(4 * 64), te = (struct tedge *)grab(sizeof *te * 64);
+    tsig = (u32 *)grab(4 * 64), tmadeat = (u32 *)grab(12 * 64), tmadelen = tmadeat + 64, tmadestate = tmadeat + 128;
+  }
+  ntn = 0, nte = 1, ntsig = 0, ntmade = 0, thole = 0;
+  tnode(), tnode();
+  for (u32 i = 0; i < k->n; i++) tseqs(k->r[2 * i], k->r[2 * i + 1]);
+  if (!tfirst[1]) { u64 b[4] = {0}; return one(S_SET, 0, set_of(b)); } /* nothing: a set of no byte */
+  u32 s = temit(1);
+  return (struct frag){s, thole};
+}
 
 /* ---- Parsing ---- */
 
@@ -157,31 +328,19 @@ static u32 next_char(void) { /* a character of the pattern, decoded */
   return c;
 }
 
-/* A class being made: its ASCII part (a set) and its ranges past ASCII. */
-struct cls { u16 set; u32 wide[64][2]; u32 nwide; int any_wide; };
-static void cls_add(struct cls *k, u32 lo, u32 hi) {
-  if (lo < 0x80) set_add(k->set, lo, hi < 0x80 ? hi : 0x7f);
-  if (icase)
-    for (u32 c = lo; c <= hi && c < 0x80; c++) {
-      if (c >= 'a' && c <= 'z') set_add(k->set, c - 32, c - 32);
-      else if (c >= 'A' && c <= 'Z') set_add(k->set, c + 32, c + 32);
-    }
-  if (hi >= 0x80 && k->nwide < 64) k->wide[k->nwide][0] = lo < 0x80 ? 0x80 : lo, k->wide[k->nwide++][1] = hi;
-}
-/* \d \w \s and the POSIX names, ASCII's (a word's characters past ASCII: any_wide). */
+/* \d \w \s (Unicode's) and their negations, into k. */
 static void cls_named(struct cls *k, u8 name, int neg) {
-  u16 t = newset();
-  struct cls tmp = {t, {{0}}, 0, 0};
-  int wide = 0;
+  struct cls t;
+  cls_init(&t);
   switch (name) {
-    case 'd': cls_add(&tmp, '0', '9'); break;
-    case 's': cls_add(&tmp, '\t', '\r'); cls_add(&tmp, ' ', ' '); break;
-    case 'w': cls_add(&tmp, '0', '9'); cls_add(&tmp, 'A', 'Z'); cls_add(&tmp, 'a', 'z'); cls_add(&tmp, '_', '_'); wide = 1; break;
+    case 'd': cls_add(&t, '0', '9'), cls_table(&t, U_DIGIT, sizeof U_DIGIT); break;
+    case 's': cls_add(&t, '\t', '\r'), cls_add(&t, ' ', ' '), cls_table(&t, U_SPACE, sizeof U_SPACE); break;
+    default: cls_add(&t, '0', '9'), cls_add(&t, 'A', 'Z'), cls_add(&t, '_', '_'), cls_add(&t, 'a', 'z'), cls_table(&t, U_WORD, sizeof U_WORD);
   }
-  const u64 *b = R->sets + 4 * t;
-  for (u32 c = 0; c < 0x80; c++) if (set_has(b, (u8)c) != neg) set_add(k->set, c, c);
-  if (wide != neg) k->any_wide = 1;
+  if (neg) cls_negate(&t);
+  for (u32 i = 0; i < t.n; i++) cls_add(k, t.r[2 * i], t.r[2 * i + 1]);
 }
+/* [:name:] at rp (ASCII's, as in the crate): 1 when it was one (added to k), else 0. */
 static int posix_named(struct cls *k) {
   const char *names = "alnum\0alpha\0ascii\0blank\0cntrl\0digit\0graph\0lower\0print\0punct\0space\0upper\0word\0xdigit\0";
   const u8 *at = rp;
@@ -193,26 +352,27 @@ static int posix_named(struct cls *k) {
   u32 len = (u32)(e - nm), which = 0;
   for (const char *s = names; *s; s += slen(s) + 1, which++) {
     if (slen(s) != len || memcmp(s, nm, len)) continue;
-    u16 t = newset();
-    struct cls tmp = {t, {{0}}, 0, 0};
+    struct cls t;
+    cls_init(&t);
     switch (which) {
-      case 0: cls_add(&tmp, '0', '9'); cls_add(&tmp, 'a', 'z'); cls_add(&tmp, 'A', 'Z'); break;
-      case 1: cls_add(&tmp, 'a', 'z'); cls_add(&tmp, 'A', 'Z'); break;
-      case 2: cls_add(&tmp, 0, 0x7f); break;
-      case 3: cls_add(&tmp, ' ', ' '); cls_add(&tmp, '\t', '\t'); break;
-      case 4: cls_add(&tmp, 0, 0x1f); cls_add(&tmp, 0x7f, 0x7f); break;
-      case 5: cls_add(&tmp, '0', '9'); break;
-      case 6: cls_add(&tmp, '!', '~'); break;
-      case 7: cls_add(&tmp, 'a', 'z'); break;
-      case 8: cls_add(&tmp, ' ', '~'); break;
-      case 9: cls_add(&tmp, '!', '/'); cls_add(&tmp, ':', '@'); cls_add(&tmp, '[', '`'); cls_add(&tmp, '{', '~'); break;
-      case 10: cls_add(&tmp, '\t', '\r'); cls_add(&tmp, ' ', ' '); break;
-      case 11: cls_add(&tmp, 'A', 'Z'); break;
-      case 12: cls_add(&tmp, '0', '9'); cls_add(&tmp, 'a', 'z'); cls_add(&tmp, 'A', 'Z'); cls_add(&tmp, '_', '_'); break;
-      case 13: cls_add(&tmp, '0', '9'); cls_add(&tmp, 'a', 'f'); cls_add(&tmp, 'A', 'F'); break;
+      case 0: cls_add(&t, '0', '9'), cls_add(&t, 'a', 'z'), cls_add(&t, 'A', 'Z'); break;
+      case 1: cls_add(&t, 'a', 'z'), cls_add(&t, 'A', 'Z'); break;
+      case 2: cls_add(&t, 0, 0x7f); break;
+      case 3: cls_add(&t, ' ', ' '), cls_add(&t, '\t', '\t'); break;
+      case 4: cls_add(&t, 0, 0x1f), cls_add(&t, 0x7f, 0x7f); break;
+      case 5: cls_add(&t, '0', '9'); break;
+      case 6: cls_add(&t, '!', '~'); break;
+      case 7: cls_add(&t, 'a', 'z'); break;
+      case 8: cls_add(&t, ' ', '~'); break;
+      case 9: cls_add(&t, '!', '/'), cls_add(&t, ':', '@'), cls_add(&t, '[', '`'), cls_add(&t, '{', '~'); break;
+      case 10: cls_add(&t, '\t', '\r'), cls_add(&t, ' ', ' '); break;
+      case 11: cls_add(&t, 'A', 'Z'); break;
+      case 12: cls_add(&t, '0', '9'), cls_add(&t, 'a', 'z'), cls_add(&t, 'A', 'Z'), cls_add(&t, '_', '_'); break;
+      default: cls_add(&t, '0', '9'), cls_add(&t, 'a', 'f'), cls_add(&t, 'A', 'F');
     }
-    const u64 *b = R->sets + 4 * t;
-    for (u32 c = 0; c < 0x80; c++) if (set_has(b, (u8)c) != neg) set_add(k->set, c, c);
+    if (icase) cls_fold(&t); /* (before it is negated, as the crate does: [[:^alpha:]] takes neither ſ nor s) */
+    if (neg) cls_negate(&t);
+    for (u32 i = 0; i < t.n; i++) cls_add(k, t.r[2 * i], t.r[2 * i + 1]);
     rp = e + 2;
     return 1;
   }
@@ -244,6 +404,7 @@ static i64 escape(struct cls *k, int *named) {
       }
       if (brace) { if (more() && *rp == '}') rp++; else bad("\\x{ not closed"); }
       if (!n) bad("\\x without digits");
+      if (v > 0x10ffff || (v >= 0xd800 && v <= 0xdfff)) bad("\\x of no character");
       return v;
     }
     case 'd': case 'D': case 'w': case 'W': case 's': case 'S':
@@ -255,56 +416,90 @@ static i64 escape(struct cls *k, int *named) {
   return c;
 }
 
-static struct frag from_cls(struct cls *k) {
-  struct frag f = one(S_SET, 0, k->set);
-  if (k->any_wide) return alt(f, any_wide());
-  for (u32 i = 0; i < k->nwide; i++) f = alt(f, utf8_range(k->wide[i][0], k->wide[i][1]));
-  return f;
+/* Two classes made one by a set operation: && both, -- the first's not the second's, ~~ either's not both's. */
+static int set_op(void) {
+  return rend - rp >= 2 && rp[0] == rp[1] && (rp[0] == '&' || rp[0] == '-' || rp[0] == '~') ? rp[0] : 0;
+}
+static void cls_apply(struct cls *a, struct cls *b, int op) {
+  cls_norm(a), cls_norm(b);
+  u32 n = a->n, *r = a->r, i = 0, j = 0;
+  cls_init(a);
+  if (op == '~') { /* either's, less both's */
+    struct cls both;
+    cls_init(&both);
+    for (u32 x = 0; x < n; x++) cls_add(&both, r[2 * x], r[2 * x + 1]);
+    cls_apply(&both, b, '&');
+    for (u32 x = 0; x < n; x++) cls_add(a, r[2 * x], r[2 * x + 1]);
+    for (u32 x = 0; x < b->n; x++) cls_add(a, b->r[2 * x], b->r[2 * x + 1]);
+    cls_apply(a, &both, '-');
+    return;
+  }
+  if (op == '-') cls_negate(b);
+  while (i < n && j < b->n) { /* both sorted: what each pair of ranges shares */
+    u32 lo = r[2 * i] > b->r[2 * j] ? r[2 * i] : b->r[2 * j], hi = r[2 * i + 1] < b->r[2 * j + 1] ? r[2 * i + 1] : b->r[2 * j + 1];
+    if (lo <= hi) cls_add(a, lo, hi);
+    if (r[2 * i + 1] < b->r[2 * j + 1]) i++; else j++;
+  }
+}
+
+/* A class in brackets, after its [: Rust's crate's grammar. Its items (a character, a range, an escape, \d and the
+ * like, [:name:], or a class in brackets of its own) are one class; classes joined by &&, -- or ~~ are taken left to
+ * right; case aside, each is folded before it is joined; a ^ at its start negates the whole, last. A ] first is a
+ * character, as a - first or last is. */
+static void class_set(struct cls *k, int depth) {
+  if (depth > 100) { bad("classes too deep"); return; }
+  int neg = more() && *rp == '^', op = 0;
+  if (neg) rp++;
+  cls_init(k);
+  for (int first = 1;; first = 0) {
+    struct cls part;
+    cls_init(&part);
+    for (int lead = first; more() && (lead || *rp != ']') && !set_op() && !re_error; lead = 0) {
+      if (*rp == '[') {
+        if (posix_named(&part)) continue;
+        rp++;
+        struct cls sub;
+        class_set(&sub, depth + 1);
+        for (u32 x = 0; x < sub.n; x++) cls_add(&part, sub.r[2 * x], sub.r[2 * x + 1]);
+        continue;
+      }
+      i64 lo;
+      int named;
+      if (*rp == '\\') { rp++; lo = escape(&part, &named); if (named) continue; }
+      else lo = next_char();
+      i64 hi = lo;
+      if (rend - rp >= 2 && rp[0] == '-' && rp[1] != ']' && rp[1] != '-') {
+        rp++;
+        if (*rp == '\\') { rp++; hi = escape(0, &named); if (named) bad("a range to a class"); }
+        else hi = next_char();
+        if (hi < lo) bad("a range backwards");
+      }
+      cls_add(&part, (u32)lo, (u32)hi);
+    }
+    if (icase) cls_fold(&part); /* (folded, then negated: [^a] with case aside takes neither a nor A) */
+    if (first) for (u32 x = 0; x < part.n; x++) cls_add(k, part.r[2 * x], part.r[2 * x + 1]);
+    else cls_apply(k, &part, op);
+    if (!(op = set_op())) break;
+    rp += 2;
+  }
+  if (!more()) { bad("a [ not closed"); return; }
+  rp++;
+  if (neg) cls_negate(k);
 }
 
 static struct frag bracket(void) {
-  struct cls k = {newset(), {{0}}, 0, 0};
-  int neg = more() && *rp == '^';
-  if (neg) rp++;
-  int first = 1;
-  while (more() && (first || *rp != ']')) {
-    first = 0;
-    if (*rp == '[' && posix_named(&k)) continue;
-    i64 lo;
-    int named;
-    if (*rp == '\\') { rp++; lo = escape(&k, &named); if (named) continue; }
-    else lo = next_char();
-    i64 hi = lo;
-    if (rend - rp >= 2 && rp[0] == '-' && rp[1] != ']') {
-      rp++;
-      if (*rp == '\\') { rp++; hi = escape(0, &named); if (named) bad("a range to a class"); }
-      else hi = next_char();
-      if (hi < lo) bad("a range backwards");
-    }
-    cls_add(&k, (u32)lo, (u32)hi);
-  }
-  if (!more()) { bad("a [ not closed"); return NONE; }
-  rp++;
-  if (neg) {
-    u64 *b = R->sets + 4 * k.set;
-    for (int w = 0; w < 2; w++) b[w] = ~b[w];
-    b[2] = b[3] = 0;
-    k.any_wide = 1, k.nwide = 0;
-  }
-  return from_cls(&k);
+  struct cls k;
+  class_set(&k, 0);
+  if (re_error) return NONE;
+  return cls_frag(&k);
 }
 
 static struct frag lit_char(u32 c) {
-  if (c < 0x80) {
-    struct cls k = {newset(), {{0}}, 0, 0};
-    cls_add(&k, c, c);
-    return one(S_SET, 0, k.set);
-  }
-  u8 b[4];
-  utf8_put(c, b);
-  struct frag f = NONE;
-  for (u32 i = 0; i < utf8_len(c); i++) f = cat(f, range(b[i], b[i]));
-  return f;
+  struct cls k;
+  cls_init(&k);
+  cls_add(&k, c, c);
+  if (icase) cls_fold(&k);
+  return cls_frag(&k);
 }
 
 static struct frag alternation(int depth);
@@ -340,23 +535,26 @@ static struct frag atom(int depth) {
   rp++;
   switch (c) {
     case '.': {
-      struct cls k = {newset(), {{0}}, 0, 1};
-      set_add(k.set, 0, 0x7f);
-      R->sets[4 * k.set] &= ~(1ull << '\n');
-      return from_cls(&k);
+      struct cls k;
+      cls_init(&k);
+      cls_add(&k, 0, '\n' - 1), cls_add(&k, '\n' + 1, 0x10ffff);
+      return cls_frag(&k);
     }
     case '[': return bracket();
-    case '^': return one(S_ASSERT, multiline ? A_BOL : A_BOT, 0);
-    case '$': return one(S_ASSERT, multiline ? A_EOL : A_EOT, 0);
+    case '^': R->has_ends = 1; return one(S_ASSERT, multiline || lines ? A_BOL : A_BOT, 0);
+    case '$': R->has_ends = 1; return one(S_ASSERT, multiline || lines ? A_EOL : A_EOT, 0);
     case '\\': {
       if (more() && (*rp == 'b' || *rp == 'B' || *rp == 'A' || *rp == 'z')) {
         u8 a = *rp++;
-        return one(S_ASSERT, a == 'b' ? A_WORD : a == 'B' ? A_NOTWORD : a == 'A' ? A_BOT : A_EOT, 0);
+        if (a == 'b' || a == 'B') R->has_word = 1; else R->has_ends = 1;
+        /* (each line is the text when matching lines: \A and \z are its ends) */
+        return one(S_ASSERT, a == 'b' ? A_WORD : a == 'B' ? A_NOTWORD : a == 'A' ? (lines ? A_BOL : A_BOT) : lines ? A_EOL : A_EOT, 0);
       }
-      struct cls k = {newset(), {{0}}, 0, 0};
+      struct cls k;
+      cls_init(&k);
       int named;
       i64 v = escape(&k, &named);
-      return named ? from_cls(&k) : lit_char((u32)v);
+      return named ? cls_frag(&k) : lit_char((u32)v);
     }
     case '*': case '+': case '?': case '{': bad("a repetition of nothing"); return NONE;
     default: rp--; return lit_char(next_char());
@@ -447,8 +645,26 @@ static struct frag alternation(int depth) {
 
 /* ---- What every match holds: the longest run of plain characters in the pattern's top-level sequence (a run's last
  * character dropped when a *, ? or {…} follows it, which may take it away; a + keeps it). None when the pattern has a
- * top-level alternation or sets its own flags; every byte of it small when case is aside (and then no byte past ASCII,
- * whose case is not folded here). `only_lit`: the pattern is that literal and nothing else. */
+ * top-level alternation or sets flags past its start. Case aside (by the flags given, or a (?i) the pattern begins
+ * with): every byte of it small, and a run broken at a character whose case is past ASCII (k: K, the Kelvin sign; s: ſ;
+ * any past ASCII). `only_lit`: the pattern is that literal and nothing else. */
+
+/* The index after the class in brackets at i, past the classes in it (its escapes, [:name:] and a leading ] too). */
+static u32 skip_class(const u8 *p, u32 n, u32 i) {
+  i++;
+  if (i < n && p[i] == '^') i++;
+  if (i < n && p[i] == ']') i++;
+  while (i < n && p[i] != ']') {
+    if (p[i] == '\\') i += 2;
+    else if (p[i] == '[' && i + 1 < n && p[i + 1] == ':') {
+      u32 j = i + 2;
+      while (j + 1 < n && !(p[j] == ':' && p[j + 1] == ']')) j++;
+      i = j + 2;
+    } else if (p[i] == '[') i = skip_class(p, n, i);
+    else i++;
+  }
+  return i + 1;
+}
 /* The index after the token at i that is not a plain character: an escape (\x41, \x{…}, \d…), a class ([…], with
  * its own escapes, [:name:] and a leading ]) or a count ({n,m}); one byte for anything else. */
 static u32 skip_token(const u8 *p, u32 n, u32 i) {
@@ -461,42 +677,47 @@ static u32 skip_token(const u8 *p, u32 n, u32 i) {
     }
     return i + 1;
   }
-  if (p[i] == '[') {
-    i++;
-    if (i < n && p[i] == '^') i++;
-    if (i < n && p[i] == ']') i++;
-    while (i < n && p[i] != ']') {
-      if (p[i] == '\\') i += 2;
-      else if (p[i] == '[' && i + 1 < n && p[i + 1] == ':') {
-        u32 j = i + 2;
-        while (j + 1 < n && !(p[j] == ':' && p[j + 1] == ']')) j++;
-        i = j + 2;
-      } else i++;
-    }
-    return i + 1;
-  }
+  if (p[i] == '[') return skip_class(p, n, i);
   if (p[i] == '{') { while (i < n && p[i] != '}') i++; return i + 1; }
   return i + 1;
 }
 
-static void required(struct re *r, const u8 *p, u32 n) {
+/* Whether a character's circle of case reaches past ASCII. */
+static int case_wide(u32 c) {
+  struct cls k;
+  cls_init(&k);
+  cls_add(&k, c, c);
+  cls_fold(&k);
+  return k.r[2 * k.n - 1] >= 0x80;
+}
+
+static void required(struct re *r, const u8 *p, u32 n, int ci) {
+  u32 from = 0;
+  if (n >= 4 && p[0] == '(' && p[1] == '?') { /* flags for the whole pattern, at its start */
+    u32 i = 2;
+    int on = 1;
+    for (; i < n && p[i] != ')' && p[i] != ':'; i++)
+      if (p[i] == '-') on = 0;
+      else if (p[i] == 'i') ci = on;
+    if (i < n && p[i] == ')') from = i + 1;
+  }
   int depth = 0;
-  for (u32 i = 0; i < n;) {
+  for (u32 i = from; i < n;) {
     if (p[i] == '(' && i + 1 < n && p[i + 1] == '?') return; /* its own flags: case may differ inside */
     if (p[i] == '(') depth++;
     else if (p[i] == ')') depth--;
     else if (p[i] == '|' && !depth) return;
-    else if (icase && p[i] >= 0x80) return;
     i = p[i] == '\\' || p[i] == '[' || p[i] == '{' ? skip_token(p, n, i) : i + 1;
   }
   u32 best = 0, bestat = 0, run = 0, at = 0;
   int plain_only = 1;
   depth = 0;
-  for (u32 i = 0; i <= n;) {
+  for (u32 i = from; i <= n;) {
     u8 c = i < n ? p[i] : 0;
     int meta = c == '\\' || c == '.' || c == '[' || c == '(' || c == ')' || c == '|' || c == '*' || c == '+' || c == '?' || c == '{'
       || c == '^' || c == '$';
-    if (i < n && !depth && !meta) { if (!run) at = i; run++; i++; continue; }
+    int wide = i < n && ci && (c >= 0x80 || case_wide(c));
+    if (i < n && !depth && !meta && !wide) { if (!run) at = i; run++; i++; continue; }
     if (i < n) plain_only = 0;
     if (run && (c == '*' || c == '?' || c == '{')) run--; /* its last character repeated, or not there at all */
     if (run > best) best = run, bestat = at;
@@ -504,17 +725,17 @@ static void required(struct re *r, const u8 *p, u32 n) {
     if (i >= n) break;
     if (c == '(') depth++;
     else if (c == ')' && depth) depth--;
-    i = skip_token(p, n, i);
+    i = meta ? skip_token(p, n, i) : i + 1;
   }
   if (!best) return;
   r->lit = grab(best);
   r->litn = best;
   for (u32 i = 0; i < best; i++) {
     u8 c = p[bestat + i];
-    r->lit[i] = icase && c >= 'A' && c <= 'Z' ? c | 0x20 : c;
+    r->lit[i] = ci && c >= 'A' && c <= 'Z' ? c | 0x20 : c;
   }
-  r->only_lit = plain_only && best == n;
-  r->icase = icase;
+  r->only_lit = plain_only && !from && best == n;
+  r->icase = ci;
 }
 
 static struct re *re_compile(const u8 *pat, u32 n, int flags) {
@@ -523,38 +744,166 @@ static struct re *re_compile(const u8 *pat, u32 n, int flags) {
   r->cap = 64, r->st = (struct rstate *)grab(sizeof *r->st * 64);
   r->setcap = 16, r->sets = (u64 *)grab(32 * 16);
   R = r, re_error = 0, rp = pat, rend = pat + n, icase = flags & RE_ICASE, multiline = flags & RE_MULTILINE;
+  lines = flags & RE_LINES;
   struct frag f = alternation(0);
   if (more() && !re_error) bad("a ) not opened");
   if (re_error) return 0;
   u32 m = state(S_MATCH, 0, 0, 0, 0);
   patch(f.hole, m);
+  if (lines) for (u32 i = 0; i < r->nsets; i++) r->sets[4 * i] &= ~(1ull << '\n'); /* no match crosses a line */
   r->start = f.start == ~0u ? m : f.start;
-  icase = flags & RE_ICASE;
-  required(r, pat, n);
+  required(r, pat, n, flags & RE_ICASE);
+  return r;
+}
+
+/* ---- Backwards: every edge turned around (a byte's, an empty one's, an assertion's, the assertion mirrored: ^ for $,
+ * \A for \z), begun at the match and matching where the pattern begins. Run from where a match ends, it finds where
+ * the match begins: the furthest back it reaches (the leftmost start is the leftmost that ends there). State v's
+ * reverse is v, a jump to its edges (a SPLIT chain over them); the match is state n. */
+static struct re *re_reverse(struct re *f) {
+  if (f->rev) return f->rev;
+  struct re *r = (struct re *)grab(sizeof *r);
+  *r = *f;
+  r->rev = 0, r->lit = 0, r->litn = 0, r->only_lit = 0;
+  u32 n = f->n, *cnt = (u32 *)grab(4 * ((u64)n + 1)), *first = (u32 *)grab(4 * ((u64)n + 1));
+  memset(cnt, 0, 4 * ((u64)n + 1));
+  for (u32 u = 0; u < n; u++) {
+    struct rstate *s = &f->st[u];
+    if (s->op == S_MATCH) continue;
+    cnt[s->out]++;
+    if (s->op == S_SPLIT) cnt[s->out1]++;
+  }
+  cnt[f->start]++; /* the start's way to the match */
+  u32 *pred = (u32 *)grab(4 * ((u64)n * 2 + 2)), at = 0;
+  for (u32 v = 0; v < n; v++) first[v] = at, at += cnt[v], cnt[v] = 0;
+  for (u32 u = 0; u < n; u++) {
+    struct rstate *s = &f->st[u];
+    if (s->op == S_MATCH) continue;
+    pred[first[s->out] + cnt[s->out]++] = u;
+    if (s->op == S_SPLIT) pred[first[s->out1] + cnt[s->out1]++] = u;
+  }
+  pred[first[f->start] + cnt[f->start]++] = n;
+  R = r;
+  r->cap = n + 2 * at + 8, r->n = n + 1, r->st = (struct rstate *)grab(sizeof *r->st * r->cap);
+  r->st[n] = (struct rstate){S_MATCH, 0, 0, 0, 0};
+  u64 none[4] = {0};
+  u16 empty = set_of(none);
+  u32 mstate = 0;
+  for (u32 v = 0; v < n; v++) {
+    u32 head = ~0u;
+    for (u32 k = 0; k < cnt[v]; k++) {
+      u32 u = pred[first[v] + k], e;
+      if (u == n) e = state(S_JUMP, 0, 0, n, 0);
+      else {
+        struct rstate *s = &f->st[u];
+        if (s->op == S_SET) e = state(S_SET, 0, s->set, u, 0);
+        else if (s->op == S_ASSERT) {
+          u8 a = s->a == A_BOL ? A_EOL : s->a == A_EOL ? A_BOL : s->a == A_BOT ? A_EOT : s->a == A_EOT ? A_BOT : s->a;
+          e = state(S_ASSERT, a, 0, u, 0);
+        } else e = state(S_JUMP, 0, 0, u, 0);
+      }
+      head = head == ~0u ? e : state(S_SPLIT, 0, 0, e, head);
+    }
+    r->st[v] = head == ~0u ? (struct rstate){S_SET, 0, empty, 0, 0} : (struct rstate){S_JUMP, 0, 0, head, 0};
+    if (f->st[v].op == S_MATCH) mstate = v;
+  }
+  r->start = mstate;
+  f->rev = r;
   return r;
 }
 
 /* ---- Running it ---- */
 
-static inline int is_word(const u8 *s, u64 n, u64 i) { return i < n && (s[i] >= 0x80 || s[i] == '_' || (u32)((s[i] | 0x20) - 'a') < 26u || (u32)(s[i] - '0') < 10u); }
+/* Whether a character is a word's (\w): ASCII's by its bytes, Unicode's by U_WORD, read once into ranges. */
+static u32 *wordr, nwordr;
+static int char_word(u32 c) {
+  if (c < 0x80) return c == '_' || (u32)((c | 0x20) - 'a') < 26u || (u32)(c - '0') < 10u;
+  if (!wordr) {
+    struct cls k;
+    cls_init(&k);
+    cls_table(&k, U_WORD, sizeof U_WORD);
+    wordr = k.r, nwordr = k.n;
+  }
+  u32 lo = 0, hi = nwordr;
+  while (lo < hi) {
+    u32 mid = (lo + hi) / 2;
+    if (c > wordr[2 * mid + 1]) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo < nwordr && c >= wordr[2 * lo];
+}
+/* The character at s[i] (decoded, or ~0 when the bytes there are not one), and its length (1 when not one). */
+static u32 decode(const u8 *s, u64 n, u64 i, u32 *len) {
+  u8 b = s[i];
+  *len = 1;
+  if (b < 0x80) return b;
+  u32 k = b >= 0xf0 ? 4 : b >= 0xe0 ? 3 : b >= 0xc0 ? 2 : 0;
+  if (!k || b > 0xf4 || i + k > n) return ~0u;
+  u32 c = b & (0x7f >> k);
+  for (u32 j = 1; j < k; j++) {
+    if ((s[i + j] & 0xc0) != 0x80) return ~0u;
+    c = c << 6 | (s[i + j] & 0x3f);
+  }
+  if ((k == 2 && c < 0x80) || (k == 3 && (c < 0x800 || (c >= 0xd800 && c <= 0xdfff))) || (k == 4 && (c < 0x10000 || c > 0x10ffff))) return ~0u;
+  *len = k;
+  return c;
+}
+/* Whether a word's character begins at i / ends just before i, in s[0..n): 1, 0, or -1 when the bytes there are not a
+ * character (as Rust's crate reads them: then neither \b nor \B holds there). */
+static int word_at(const u8 *s, u64 n, u64 i) {
+  if (i >= n) return 0;
+  u32 len, c = decode(s, n, i, &len);
+  return c == ~0u ? -1 : char_word(c);
+}
+static int word_before(const u8 *s, u64 n, u64 i) {
+  if (!i) return 0;
+  if (s[i - 1] < 0x80) return char_word(s[i - 1]);
+  for (u64 j = i - 1, k = 0; k < 4; j--, k++) {
+    if ((s[j] & 0xc0) != 0x80) {
+      u32 len, c = decode(s, n, j, &len);
+      return c != ~0u && j + len == i ? char_word(c) : -1;
+    }
+    if (!j) break;
+  }
+  return -1;
+}
+/* Whether assertion a holds at i in t[0..n). */
+static int holds(u8 a, const u8 *t, u64 n, u64 i) {
+  switch (a) {
+    case A_BOT: return i == 0;
+    case A_EOT: return i == n;
+    case A_BOL: return i == 0 || t[i - 1] == '\n';
+    case A_EOL: return i == n || t[i] == '\n';
+    case A_WORD: return (word_before(t, n, i) == 1) != (word_at(t, n, i) == 1);
+    default: {
+      int b = word_before(t, n, i), w = word_at(t, n, i);
+      return b >= 0 && w >= 0 && b == w;
+    }
+  }
+}
 
-/* Where a literal is in s[from..n), case aside when told (the literal small): its place, or n. */
+/* Where a literal is in s[from..n), case aside when told (the literal small): its place, or n. Sixteen places at a time:
+ * where its first byte and its last are both (either case), then the rest compared. */
+typedef char v16 __attribute__((vector_size(16)));
+static inline v16 ld128(const u8 *p) { v16 v; __builtin_memcpy(&v, p, 16); return v; }
+static inline v16 splat(u8 c) { return (v16){0} + (char)c; }
+static inline u32 mask16(v16 v) { return (u32)__builtin_ia32_pmovmskb128(v); }
+static inline u8 up(u8 c) { return c >= 'a' && c <= 'z' ? c - 32 : c; }
 static u64 lit_find(const u8 *s, u64 n, u64 from, const u8 *lit, u32 litn, int ci) {
   if (litn > n || from > n - litn) return n;
-  u8 f0 = lit[0], f1 = ci && f0 >= 'a' && f0 <= 'z' ? f0 - 32 : f0;
-  u64 w0 = f0 * ONES, w1 = f1 * ONES;
-  for (u64 i = from, last = n - litn; i <= last;) {
-    if (i + 8 <= last + 1) {
-      u64 w = ld64(s + i), m = zeros(w ^ w0) | zeros(w ^ w1);
-      if (!m) { i += 8; continue; }
-      i += (u64)__builtin_ctzll(m) >> 3;
-    } else if (s[i] != f0 && s[i] != f1) { i++; continue; }
-    u32 k = 1;
-    if (ci) while (k < litn && (s[i + k] >= 'A' && s[i + k] <= 'Z' ? s[i + k] | 0x20 : s[i + k]) == lit[k]) k++;
-    else while (k < litn && s[i + k] == lit[k]) k++;
-    if (k == litn) return i;
-    i++;
+  u32 o = litn - 1;
+  u8 f0 = lit[0], f1 = ci ? up(f0) : f0, l0 = lit[o], l1 = ci ? up(l0) : l0;
+  v16 F0 = splat(f0), F1 = splat(f1), L0 = splat(l0), L1 = splat(l1);
+  u64 i = from, last = n - litn;
+  for (; i + 16 <= last + 1; i += 16) {
+    v16 a = ld128(s + i), b = ld128(s + i + o);
+    for (u32 m = mask16(((a == F0) | (a == F1)) & ((b == L0) | (b == L1))); m; m &= m - 1) {
+      u64 p = i + (u32)__builtin_ctz(m);
+      if (ci ? eqi(s + p, lit, litn) : eq(s + p, lit, litn)) return p;
+    }
   }
+  for (; i <= last; i++)
+    if ((s[i] == f0 || s[i] == f1) && (ci ? eqi(s + i, lit, litn) : eq(s + i, lit, litn))) return i;
   return n;
 }
 
@@ -565,7 +914,7 @@ static u32 pk_cap;
 static int pk_has(int l, u32 s) { u32 k = pk_sparse[l][s]; return k < pk_n[l] && pk_dense[l][k] == s; }
 
 static u32 *pk_stack;
-/* Follow the epsilon edges from `s` at position i into list l, in priority order (a stack, out before out1). */
+/* Follow the empty edges from `s` at position i into list l, in priority order (a stack, out before out1). */
 static void pk_add(struct re *r, int l, u32 s0, u64 from, const u8 *t, u64 n, u64 i) {
   u32 top = 0;
   pk_stack[top++] = s0;
@@ -578,17 +927,7 @@ static void pk_add(struct re *r, int l, u32 s0, u64 from, const u8 *t, u64 n, u6
     struct rstate *st = &r->st[s];
     if (st->op == S_JUMP) pk_stack[top++] = st->out;
     else if (st->op == S_SPLIT) pk_stack[top++] = st->out1, pk_stack[top++] = st->out;
-    else if (st->op == S_ASSERT) {
-      int ok;
-      switch (st->a) {
-        case A_BOT: ok = i == 0; break;
-        case A_EOT: ok = i == n; break;
-        case A_BOL: ok = i == 0 || t[i - 1] == '\n'; break;
-        case A_EOL: ok = i == n || t[i] == '\n'; break;
-        default: { int w = (i && is_word(t, n, i - 1)) != is_word(t, n, i); ok = st->a == A_WORD ? w : !w; }
-      }
-      if (ok) pk_stack[top++] = st->out;
-    }
+    else if (st->op == S_ASSERT && holds(st->a, t, n, i)) pk_stack[top++] = st->out;
   }
 }
 
@@ -621,17 +960,4 @@ static int re_run(struct re *r, const u8 *t, u64 n, u64 from, u64 *ms, u64 *me) 
     cur = nx;
   }
   return found;
-}
-
-/* The leftmost-first match of r in t[from..n) (a literal alone found as one; one that holds a literal run only from
- * the line the literal is on, when the pattern cannot cross a line). */
-static int re_find(struct re *r, const u8 *t, u64 n, u64 from, u64 *ms, u64 *me) {
-  if (r->only_lit) {
-    u64 at = lit_find(t, n, from, r->lit, r->litn, r->icase);
-    if (at == n) return 0;
-    *ms = at, *me = at + r->litn;
-    return 1;
-  }
-  if (r->litn && lit_find(t, n, from, r->lit, r->litn, r->icase) == n) return 0;
-  return re_run(r, t, n, from, ms, me);
 }

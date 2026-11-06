@@ -13,3 +13,12 @@ email@example.com other.name+tag@sub.example.org
 $dollar ^caret *star +plus ?question |pipe \backslash
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaab
 abab abba baab
+日本語、テスト。全角　スペース　と全角数字０１２３と半角123
+Ελληνικά ΣΊΣΥΦΟΣ σίσυφος ς KELVIN K k ſtraße STRASSE
+emoji 😀👍🏽 mixed—dash… “quotes” «guillemets» non breaking
+combining é ä ｈｅｌｌｏ ＨＥＬＬＯ
+Ünïcödé_wörd straße_ß İstanbul ıi
+windows line
+
+x
+bad�byte�end � cut

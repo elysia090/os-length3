@@ -7,6 +7,10 @@ build() {
   # Its configure refuses to run as root unless told (the builder's container is root's).
   FORCE_UNSAFE_CONFIGURE=1 ./configure --prefix=/usr --disable-nls --disable-acl --disable-xattr --disable-libcap \
     --without-selinux --without-openssl --without-libgmp --disable-dependency-tracking
+  # Named programs are made without what `all` makes first (BUILT_SOURCES: gnulib's own locale.h, string.h and the
+  # rest, which its library is compiled against): made first here, by the Makefile's own list.
+  printf 'built-sources:\n\t@echo $(BUILT_SOURCES)\n' > built-sources.mk
+  make -j"$jobs" $(make -s -f Makefile -f built-sources.mk built-sources)
   make -j"$jobs" src/join src/fmt src/b2sum
   for p in join fmt b2sum; do install -D -m 0755 "src/$p" "$dest/usr/bin/$p"; done
 }
