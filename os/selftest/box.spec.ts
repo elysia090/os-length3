@@ -57,7 +57,7 @@ test('the box\'s pill chooses what the box does: an issue written there is the r
 
 test('what the box writes comes into the Prompt\'s flow as it came, and pressed goes to where it is', async ({app}) => {
   const box = app.forge.promptBox;
-  const flow = app.page.locator('.work.bench:not([hidden]) .term-out');
+  const flow = app.page.locator('.work.bench:not([hidden]) .pane-rows');
   await box.focus();
   await box.press('Alt+2');
   await box.fill('Fix: The table wraps on a phone');
@@ -66,13 +66,14 @@ test('what the box writes comes into the Prompt\'s flow as it came, and pressed 
   await box.fill('Water the mint');
   await box.press('Control+Enter');
   await box.press('Escape');
-  // Each a line of its own, in the order written, before the prompt line the shell waits at.
+  // Each a row of its own in the pane.
   const issue = flow.getByRole('button', {name: '#1 Fix：The table wraps on a phone'});
   const todo = flow.getByRole('button', {name: 'TODO Water the mint'});
   await expect(issue).toBeVisible();
   await expect(todo).toBeVisible();
-  // In the order written; and an issue or a TODO is not a line written to the shell, so neither started it.
-  await expect.poll(() => flow.evaluate((el) => el.textContent!.replace(/\u2063/g, '').trimEnd().split('\n').slice(-2)), {timeout: 60_000}).toEqual(
+  // In the order written, a row each in the pane; and an issue or a TODO is not a line written to the shell, so neither
+  // started it.
+  await expect.poll(() => flow.locator('.pane-row').evaluateAll((rows) => rows.slice(-2).map((r) => r.getAttribute('aria-label'))), {timeout: 60_000}).toEqual(
     ['#1 Fix：The table wraps on a phone', 'TODO Water the mint']);
   await expect(app.main.locator('.prompt-chip')).toHaveAttribute('data-state', 'starting');
 

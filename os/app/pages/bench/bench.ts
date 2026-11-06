@@ -8,6 +8,8 @@ import type {Writing} from '../kit/context.ts';
 import {Reference} from './reference.ts';
 import {Screen} from './screen.ts';
 import {sessionIfAny} from './sessions.ts';
+import {sessionFor} from './terminal.ts';
+import {Rows} from './rows.ts';
 import type {Run} from './sessions.ts';
 
 // The workbench Forge and Git share, put together from its parts: the page's own content in the large center (3/4)
@@ -184,6 +186,21 @@ function levelled(work: HTMLElement, termHome: HTMLElement, main: HTMLElement) {
   first.observe(main, {childList: true, subtree: true});
 }
 
+/**
+ * A run pressed in the pane, read where it was run: the Prompt's box in hand (`terminal`), its line lit there a moment
+ * and brought into view with what it printed.
+ */
+function litRun(terminal: HTMLElement | null, run: Run) {
+  if (!terminal) return;
+  terminal.querySelector<HTMLTextAreaElement>('.prompt-in')?.focus({preventScroll: true});
+  const lines = [...terminal.querySelectorAll<HTMLElement>('.term-out .cmd')].filter((c) => c.textContent?.trim().endsWith(run.line.trim()));
+  const at = lines.at(-1);
+  if (!at) return;
+  at.scrollIntoView({block: 'center'});
+  at.classList.add('lit');
+  setTimeout(() => at.classList.remove('lit'), 1400);
+}
+
 /** A bench put together round `main`, a page's content (Forge's, Git's): its box, the Prompt, the right pane, the keys. */
 export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(path: string, line?: number, write?: Writing): void;
   /** A conversation's word in the pane pressed: open it in Inbox. */
@@ -202,11 +219,25 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const {termHead, term, termHome} = promptBox();
   const center = h('div', {class: 'center'}, parts.main);
   const sideId = `side-${++benches}`;
-  const side = h('aside', {class: 'side', id: sideId, 'aria-label': t('Plugins and Prompt')}, pluginArea(), termHome, agentCards((repo, issue) => parts.went(repo, {issue: issue.replace(/^issue\//, '')})), ...(parts.word ? [paneWord(parts.word)] : []));
+  // On a desk the pane is what was done in the repo, a big row each (rows.ts), the Prompt itself being on the desk.
+  const rows = new Map<string, Rows>();
+  let shownRows: HTMLElement = h('div', {class: 'pane-rows'});
+  const rowsFor = (repo: string): Rows => {
+    let r = rows.get(repo);
+    if (!r) {
+      r = new Rows(t('Prompt'), sessionFor(repo), (run) => litRun(parts.desk ? terminal : null, run));
+      rows.set(repo, r);
+    }
+    return r;
+  };
+  // On a desk the pane's room holds the reference's heads (Issue, diff, Output, Agent) over the rows.
+  const room = h('div', {class: 'pane-room'}, shownRows);
+  const side = h('aside', {class: 'side', id: sideId, 'aria-label': t('Plugins and Prompt')}, pluginArea(), parts.desk ? room : termHome, agentCards((repo, issue) => parts.went(repo, {issue: issue.replace(/^issue\//, '')})), ...(parts.word ? [paneWord(parts.word)] : []));
   const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': sideId}, paneMark()) as HTMLButtonElement;
   const work = h('div', {class: parts.strip ? 'work bench' : 'work bench no-strip'});
 
   const box = new Box({work, main: parts.main, center, term, termHead, back: !!parts.back, went: parts.went, reveal: (path, line) => parts.reveal(path, line), desk: !!parts.desk,
+    ...(parts.desk ? {flow: (repo: string) => rowsFor(repo)} : {}),
     ...(parts.place ? {place: parts.place} : {}), ...(parts.frame ? {frame: parts.frame} : {})});
   // On a desk the Prompt is a box of its own: its output, and the line one types at under it.
   const terminal = parts.desk ? h('section', {class: 'desk-term'}, term, box.dock) : null;
@@ -229,7 +260,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   }, true);
   box.onFollow = () => reference.runsAgain();
   // At rest the pane says what else the search shows, beside the Prompt's head, on its line.
-  termHome.append(reference.heads);
+  (parts.desk ? room : termHome).prepend(reference.heads);
   const bar = h('div', {class: 'bar'}, parts.strip ?? h('span', {class: 'bar-room'}), reference.search, toggle);
   work.append(bar, center, side);
   const pane = new Pane(work, side, toggle);
@@ -248,6 +279,10 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   });
 
   const setRepo = (name: string | null) => {
+    if (parts.desk) {
+      const next = name ? rowsFor(name).element : h('div', {class: 'pane-rows'});
+      if (next !== shownRows) { shownRows.replaceWith(next); shownRows = next; }
+    }
     if (name === box.repo && name) { box.attach(); return; }
     reference.setRepo(name);
     box.setRepo(name);

@@ -51,10 +51,10 @@ test('a key given in Runtime opens the box\'s Agent: asked, it answers in the pa
   await box.fill('How is it built?');
   await box.press('Control+Enter');
   await expect(box).toHaveValue('');
-  const flow = app.page.locator('.work.bench:not([hidden]) .term-out');
+  const flow = app.page.locator('.work.bench:not([hidden]) .pane-rows');
   await expect(flow.getByRole('button', {name: 'Agent How is it built?'})).toBeVisible();
-  await expect(flow.locator('.term-answer')).toContainText('Run it so:');
-  await expect(flow.locator('.term-answer .answer-code')).toHaveText('make');
+  await expect(flow.locator('.pane-answer')).toContainText('Run it so:');
+  await expect(flow.locator('.pane-answer .answer-code')).toHaveText('make');
   // Told the repo and the file in front, and asked without the Prompt coming up for it.
   expect(told[0]).toContain('"hello"');
   expect(told[0]).toContain('The file in front of the person: README.md');
@@ -93,8 +93,8 @@ test('signed in with a passkey, the key given is sealed by it: kept as given now
   await box.press('Alt+5');
   await box.fill('Still there?');
   await box.press('Control+Enter');
-  const flow = app.page.locator('.work.bench:not([hidden]) .term-out');
-  await expect(flow.locator('.term-answer')).toContainText('Sealed and answered.');
+  const flow = app.page.locator('.work.bench:not([hidden]) .pane-rows');
+  await expect(flow.locator('.pane-answer')).toContainText('Sealed and answered.');
 });
 
 test.describe('signed in', () => {
@@ -122,11 +122,11 @@ test('handed an issue\'s work, the box\'s Agent reads and writes its files: the 
   await box.press('Alt+5');
   await box.fill('Say in the README how it is built.');
   await box.press('Control+Enter');
-  const flow = app.page.locator('.work.bench:not([hidden]) .term-out');
+  const flow = app.page.locator('.work.bench:not([hidden]) .pane-rows');
   // Each step a line of the flow, its words under the line they follow.
   await expect(flow.getByRole('button', {name: 'Agent Read README.md'})).toBeVisible();
   await expect(flow.getByRole('button', {name: 'Agent Edited README.md (+2 −0)'})).toBeVisible();
-  await expect(flow.locator('.term-answer').last()).toContainText('Added how it is built to the README.');
+  await expect(flow.locator('.pane-answer').last()).toContainText('Added how it is built to the README.');
   // Written through the OS, as an editor elsewhere would: the one open on it shows it.
   await expect(app.forge.editor('README.md')).toHaveValue(/\n\nBuild it with make\.\n$/);
   // Told the issue whose work it is, and that it may write here.

@@ -76,6 +76,8 @@ export const PARTS = [
       'edit-pointing', 'edit-ring', 'edit-front', 'unsaved-dot']},
   {name: 'forge-columns', about: 'Forge\'s row of boxes, one per repo out: alone, or side by side with the one worked on, and where a repo dragged in would stand.',
     classes: ['columns', 'col', 'col-*', 'forge-*', 'drop-hint', 'dir']},
+  {name: 'pane-rows', about: 'The right pane on a desk: what was done, a big row each, its bar saying how a run ended, cut at two lines.',
+    classes: ['pane-room', 'pane-rows', 'pane-row', 'pane-bar', 'pane-line', 'pane-at', 'pane-exit', 'pane-answer']},
   {name: 'forge-desk', about: 'Forge\'s desk: what is open lying on a dotted plane, each box its name outside its corner, the one in hand, the camera close or back over the whole.',
     classes: ['desk', 'desk-*']},
   {name: 'prompt', about: 'The prompt box at the foot of the center, what it does (its pill and the modes out of it), and the Prompt up as a screen.',

@@ -14,7 +14,7 @@ import {PillLine} from './pill-line.ts';
 import {EditLine} from './edit-box.ts';
 import {agentKey, agentUse} from '../../account/agent-key.ts';
 import {setRightPane} from '../kit/pane.ts';
-import {atWork, told} from './agent.ts';
+import {atWork, told, type Flow} from './agent.ts';
 import {Player, type Stage} from './play.ts';
 import type {Hands} from '../../agent/loop.ts';
 import {fileHands, tail} from '../../repos/agent-hands.ts';
@@ -75,6 +75,8 @@ interface BoxParts {
   went(repo: string, to: {issue: string} | {file: string} | 'todo'): void;
   /** A file of the repo in front brought into view at a line (Forge's; Git's shows the file). */
   reveal(path: string, line?: number): void;
+  /** On a desk: where what the box does is said (the pane's rows), not the Prompt's flow. */
+  flow?(repo: string): Flow;
   /** On a desk: a file's box laid without taking the person's hand (false: it cannot be); the camera over boxes. */
   place?(path: string): boolean;
   frame?(keys: string[]): void;
@@ -454,7 +456,7 @@ export class Box {
       // another page's that had the repo's Prompt last.
       this.attach();
       const to = sent.to;
-      const row = sessionFor(at).note(sent.head, sent.words, () => this.#p.went(at, 'issue' in to ? {issue: to.issue} : 'todo'));
+      const row = this.#flow(at).note(sent.head, sent.words, () => this.#p.went(at, 'issue' in to ? {issue: to.issue} : 'todo'));
       if (this.prompt.value === text) { land(row); this.prompt.value = ''; drafts.delete(this.#draft()); this.#fit(); }
       this.heard.textContent = sent.said;
       this.#pillSays();
@@ -479,7 +481,7 @@ export class Box {
     setRightPane(true);
     // The repo's Prompt in this box's pane (another page's box may have it), where the question and its answer go.
     this.attach();
-    const session = sessionFor(at);
+    const session = this.#flow(at);
     const row = session.note('Agent', question, () => { this.choose('agent'); this.#put(question); this.prompt.focus(); });
     land(row);
     this.prompt.value = '';
@@ -493,6 +495,9 @@ export class Box {
     const player = new Player(at, this.#stage(at));
     await atWork(session, row, at, use, await told(at, front, issue), question, agentHands(at, issue !== null), player, (path) => this.#p.went(at, {file: path}));
   }
+
+  /** Where what the box does in `repo` is said: the pane's rows on a desk, else the Prompt's own flow. */
+  #flow(repo: string): Flow { return this.#p.flow?.(repo) ?? sessionFor(repo); }
 
   /**
    * Where the Agent's work in `at` is played (play.ts): its commands typed in this box under Run, as a person types

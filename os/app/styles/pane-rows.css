@@ -1,0 +1,30 @@
+/* The right pane on a desk (pages/bench/rows.ts): what was done, a big row each, its bar saying how a run ended, its
+   line in the display face; at most two lines said, the second fading out partway along. */
+.pane-rows { display: grid; align-content: start; gap: var(--s1); overflow-y: auto; scrollbar-width: none; min-height: 0; padding: var(--s2) 0 var(--s5); }
+.pane-row { display: grid; grid-template-columns: 6px minmax(0, 1fr); grid-template-areas: "bar line" "bar at"; gap: 4px 14px; align-items: center;
+  text-align: left; padding: 10px 10px 10px 12px; margin: 0 -10px; border: 0; border-radius: var(--r-field); background: none; color: var(--ink);
+  font: inherit; cursor: var(--cursor-hand); transition: background var(--motion); }
+.pane-row:hover, .pane-row.lit { background: var(--raised); }
+.pane-bar { grid-area: bar; align-self: stretch; width: 6px; border-radius: 3px; background: var(--ink); }
+.pane-row[data-state='done'] .pane-bar { background: var(--add); }
+.pane-row[data-state='failed'] .pane-bar { background: var(--del); }
+.pane-line { grid-area: line; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere;
+  font: 900 30px/1.02 var(--display); letter-spacing: -.01em; }
+.pane-row.note .pane-line { font: 600 15px/1.35 var(--sans); }
+/* What the box did, not the shell: its bar the paper's rule, its pill's words (TODO, #1, Agent) under it. */
+.pane-row.note .pane-bar { background: var(--rule); }
+.pane-row.note .pane-at { font-weight: 600; color: var(--ink); }
+/* Cut: the lines before the last whole, the last fading out from a third of the way along. */
+.pane-line.cut, .pane-answer.cut:not(.whole) {
+  mask: linear-gradient(#000 0 0) top / 100% calc(100% - 1lh) no-repeat, linear-gradient(to right, #000 30%, transparent 75%) bottom / 100% 1lh no-repeat; }
+.pane-at { grid-area: at; font: 12px/1.3 var(--mono); color: var(--sub); }
+.pane-exit { color: var(--del); font-weight: 600; margin-right: 8px; }
+.pane-answer { margin: 0 0 var(--s2) 20px; font: 14px/1.5 var(--sans); color: var(--ink); display: -webkit-box; -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2; overflow: hidden; cursor: var(--cursor-hand); }
+.pane-answer.whole { display: block; }
+.pane-answer.waiting:empty::after { content: '…'; color: var(--sub); }
+.pane-answer > :is(p, pre) { margin: 0; }
+/* Where the Prompt's flow stood in the pane (its second row), the rows stand on a desk. */
+.work.bench > .side > .pane-room { grid-row: 2; display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; padding-inline: var(--s5); }
+/* The reference's heads on their own line over the rows, at the pane's right. */
+.pane-room > .pane-heads { position: static; justify-content: flex-end; margin: var(--s4) calc(-1 * var(--pad)) var(--s1) 0; }

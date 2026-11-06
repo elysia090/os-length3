@@ -210,4 +210,6 @@ export default {
   '{path} is not text': '{path}はテキストではありません',
   '{path} is not a file the Agent may write': '{path}は Agent が書けるファイルではありません',
   '{path} is too large to edit here': '{path}は大きすぎてここでは直せません',
+  'Prompt': 'Prompt',
+  'exit {n}': '終了 {n}',
 } as Record<string, string>;
