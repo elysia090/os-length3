@@ -292,11 +292,12 @@ static int apropos(char **words, int nwords) {
     lw[w] = grab(lwn[w]);
     lower(lw[w], (const u8 *)words[w], lwn[w]);
   }
-  /* Every name of the root's programs, once. */
+  /* Every name of the root's programs, once: in /usr's folders and in / 's (a machine whose /bin is not /usr/bin keeps
+   * some there, Alpine's ls among them). */
   const char *names[2048];
   u32 nn = 0;
-  for (u32 d = 0; d < 2; d++) {
-    i64 fd = sys3(SYS_open, (i64)(d ? "/usr/sbin" : "/usr/bin"), O_RDONLY | O_CLOEXEC | 0200000 /* O_DIRECTORY */, 0);
+  for (const char *dir = "/usr/bin\0/usr/sbin\0/bin\0/sbin\0"; *dir; dir += slen(dir) + 1) {
+    i64 fd = sys3(SYS_open, (i64)dir, O_RDONLY | O_CLOEXEC | 0200000 /* O_DIRECTORY */, 0);
     if (fd < 0) continue;
     for (;;) {
       u8 *buf = grab(32768);
