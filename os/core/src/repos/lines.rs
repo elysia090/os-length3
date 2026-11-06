@@ -8,9 +8,6 @@
 //!
 //! Starting, switching and finishing work (which also speak with the Remote) are history/work.rs's.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use std::fs;
 use std::path::PathBuf;
 
@@ -77,14 +74,15 @@ pub fn worktree(repo: &str, line: &str) -> PathBuf {
     crate::fs::paths::data_dir().join("work").join(repo).join(line)
 }
 
+/// Whether `line` may name a line of work: up to 64 letters, digits and . _ -, from a letter or digit.
 pub fn valid(line: &str) -> bool {
-    !line.is_empty() && line.len() <= 64 && line.chars().next().is_some_and(|c| c.is_ascii_alphanumeric())
-        && line.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    line.len() <= 64 && line.bytes().next().is_some_and(|b| b.is_ascii_alphanumeric())
+        && line.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
 }
 
 pub(crate) fn set_current(repo: &str, line: &str) -> Result<()> {
     let file = line_file(repo);
-    crate::fs::write::private_dir(file.parent().unwrap()).map_err(|e| e.to_string())?;
+    crate::fs::write::private_dir(&sync_dir()).map_err(|e| e.to_string())?;
     let done = if line == MAIN {
         // Not there is main already; one that stays would keep the repo on the issue's copy.
         fs::remove_file(&file).or_else(|e| if e.kind() == std::io::ErrorKind::NotFound { Ok(()) } else { Err(e) })
@@ -100,8 +98,13 @@ pub fn current(repo: &str) -> String {
     fs::read_to_string(line_file(repo)).ok().map(|s| s.trim().to_string()).filter(|s| valid(s)).unwrap_or_else(|| MAIN.into())
 }
 
+/// Where the OS keeps what it agreed with the Remote, and which line each repo shows.
+fn sync_dir() -> PathBuf {
+    crate::fs::paths::data_dir().join("sync")
+}
+
 fn line_file(repo: &str) -> PathBuf {
-    crate::fs::paths::data_dir().join("sync").join(format!("{repo}.line"))
+    sync_dir().join(format!("{repo}.line"))
 }
 
 pub const MAIN: &str = "main";

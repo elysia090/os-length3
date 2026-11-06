@@ -1,4 +1,4 @@
-//! The tests of /repos.rs.
+//! The tests of repos/store.rs.
 
 use super::*;
 
@@ -375,4 +375,16 @@ mod shared_cases {
     fn a_dotfile_may_be_written_into_root_under_the_names_the_app_allows() {
         assert_eq!(disagreeing("dotfileName", |c| c[1].clone(), |c| serde_json::json!(crate::home::dotfile_name(s(&c[0])))), Vec::<String>::new());
     }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_pipe_in_a_repo_is_refused_not_waited_on() {
+    use rustix::fs::{mknodat, FileType, Mode, CWD};
+    let r = scratch("pipe");
+    r.create("p", "empty").unwrap();
+    mknodat(CWD, r.root().join("p/pipe"), FileType::Fifo, Mode::from_raw_mode(0o600), 0).unwrap();
+    // Opened, it would wait for a writer that never comes; it is not opened at all.
+    assert!(r.read("p", "pipe", 1024).unwrap_err().contains("not a file"));
+    assert!(r.bytes("p", "pipe", 1024).unwrap_err().contains("not a file"));
 }

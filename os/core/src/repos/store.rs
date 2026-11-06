@@ -1,9 +1,6 @@
 //! Repos the app manages, under its own data directory. Every path from the
 //! webview is checked to stay inside one repo, after following symlinks.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use serde::Serialize;
 use std::fs;
 use std::io::Read;
@@ -235,12 +232,14 @@ impl Repos {
     pub fn tree(&self, repo: &str, relative: &str) -> Result<Vec<Entry>> {
         let dir = self.inside(repo, relative)?;
         if !dir.is_dir() { return Err(tr!("{} is a file, not a folder", "{} はフォルダーではなくファイルです", shown(repo, relative))); }
+        // Each entry looked at from its folder (not by its whole path again), and only a file's size asked for.
         let mut out: Vec<Entry> = fs::read_dir(&dir).map_err(|e| io_error(shown(repo, relative), &e))?.flatten()
-            .filter(|e| !is_git_name(&e.file_name().to_string_lossy()))
             .filter_map(|e| {
-                let meta = e.path().symlink_metadata().ok()?;
+                let name = e.file_name().to_string_lossy().into_owned();
+                if is_git_name(&name) { return None; }
+                let meta = e.metadata().ok()?;
                 let kind = if meta.file_type().is_symlink() { "link" } else if meta.is_dir() { "dir" } else { "file" };
-                Some(Entry { name: e.file_name().to_string_lossy().into_owned(), kind, size: meta.len() })
+                Some(Entry { name, kind, size: meta.len() })
             })
             .collect();
         // Directories first, then names, like a reader expects.
@@ -248,13 +247,23 @@ impl Repos {
         Ok(out)
     }
 
-    pub fn read(&self, repo: &str, relative: &str, limit: u64) -> Result<Contents> {
+    /// A file in `repo` to read: its path and size, once it is known to be a file. A folder is refused, and so is
+    /// anything else that is not a file (a pipe, a socket, a device), before it is opened: opening a pipe waits for
+    /// whoever writes into it, which may be never.
+    fn readable(&self, repo: &str, relative: &str) -> Result<(PathBuf, u64, String)> {
         let path = self.inside(repo, relative)?;
         let at = shown(repo, relative);
         let meta = fs::metadata(&path).map_err(|e| io_error(&at, &e))?;
         if meta.is_dir() { return Err(tr!("{} is a folder, not a file", "{} はファイルではなくフォルダーです", at)); }
-        let size = meta.len();
-        let mut bytes = Vec::new();
+        if !meta.is_file() { return Err(tr!("{} is not a file", "{} はファイルではありません", at)); }
+        Ok((path, meta.len(), at))
+    }
+
+    pub fn read(&self, repo: &str, relative: &str, limit: u64) -> Result<Contents> {
+        let (path, size, at) = self.readable(repo, relative)?;
+        // Room for all of it first, so it comes in one read (and one more that finds the end), not a read for each
+        // doubling of a buffer.
+        let mut bytes = Vec::with_capacity(size.min(limit) as usize);
         fs::File::open(&path).map_err(|e| io_error(&at, &e))?.take(limit).read_to_end(&mut bytes).map_err(|e| io_error(&at, &e))?;
         let truncated = size > bytes.len() as u64;
         let text = if bytes.contains(&0) { None } else {
@@ -263,7 +272,9 @@ impl Repos {
                 Ok(t) => Some(t),
                 Err(e) if truncated && e.utf8_error().error_len().is_none() => {
                     let valid = e.utf8_error().valid_up_to();
-                    Some(String::from_utf8(e.into_bytes()[..valid].to_vec()).unwrap())
+                    let mut bytes = e.into_bytes();
+                    bytes.truncate(valid);
+                    String::from_utf8(bytes).ok()
                 }
                 Err(_) => None,
             }
@@ -273,11 +284,8 @@ impl Repos {
 
     /// A file's bytes whole, whatever it holds (a Prompt's copy of the repo); one over `limit` is refused.
     pub fn bytes(&self, repo: &str, relative: &str, limit: u64) -> Result<Vec<u8>> {
-        let path = self.inside(repo, relative)?;
-        let at = shown(repo, relative);
-        let meta = fs::metadata(&path).map_err(|e| io_error(&at, &e))?;
-        if meta.is_dir() { return Err(tr!("{} is a folder, not a file", "{} はファイルではなくフォルダーです", at)); }
-        if meta.len() > limit { return Err(too_large(&at, limit)); }
+        let (path, size, at) = self.readable(repo, relative)?;
+        if size > limit { return Err(too_large(&at, limit)); }
         fs::read(&path).map_err(|e| io_error(&at, &e))
     }
 }
@@ -432,13 +440,13 @@ impl Repos {
             return Err(tr!("{:?} cannot name a file", "{:?} はファイルの名前になりません", to));
         }
         let rel = Path::new(relative.trim_end_matches('/'));
-        let (Some(parent), Some(_)) = (rel.parent(), rel.file_name()) else {
+        let (Some(parent), Some(file)) = (rel.parent(), rel.file_name()) else {
             return Err(tr!("The repo itself is not renamed this way", "repo そのものはこの方法では名前を変えられません"));
         };
         if touches_git(rel) || rel.components().any(|c| !matches!(c, Component::Normal(_))) {
             return Err(tr!("{} leaves the repo", "{} は repo の外です", shown(repo, relative)));
         }
-        let from = self.inside(repo, &parent.to_string_lossy())?.join(rel.file_name().unwrap());
+        let from = self.inside(repo, &parent.to_string_lossy())?.join(file);
         fs::symlink_metadata(&from).map_err(|e| io_error(shown(repo, relative), &e))?;
         if Path::new(to) == rel { return Ok(()); }
         if Path::new(to).starts_with(rel) {

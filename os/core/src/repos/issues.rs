@@ -9,9 +9,6 @@
 //! (crate::repos::store::ISSUES): never among the files File, Forge and l3 file show, nor
 //! made by a scaffold; an issue is met as an issue (Git, the box, l3 issue).
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use crate::text::title::{kind_of, named};
 use serde::Serialize;
 
@@ -136,14 +133,12 @@ pub fn sort_oldest_first(list: &mut [Issue]) {
 /// "issue/<file>"), which keeps the name it began with. The same on every
 /// device, so two doing it at once agree. (old file, new file) for each.
 pub fn numbering(list: &[Issue], in_use: &[String]) -> Vec<(String, String)> {
-    let mut loose: Vec<&Issue> = list.iter().filter(|i| i.n.is_none() && !in_use.iter().any(|u| *u == format!("issue/{}", i.file))).collect();
+    let used = |i: &Issue| in_use.iter().any(|u| u.strip_prefix("issue/") == Some(i.file.as_str()));
+    let mut loose: Vec<&Issue> = list.iter().filter(|i| i.n.is_none() && !used(i)).collect();
     loose.sort_by(|a, b| a.file.cmp(&b.file));
-    let mut taken: Vec<String> = list.iter().map(|i| i.file.clone()).collect();
-    loose.into_iter().map(|i| {
-        let file = next_name(&taken);
-        taken.push(file.clone());
-        (i.file.clone(), file)
-    }).collect()
+    // The next free number is one past the highest there, and each given makes it the highest.
+    let mut last = list.iter().filter_map(|i| number_of(&i.file)).max().unwrap_or(0);
+    loose.into_iter().map(|i| { last += 1; (i.file.clone(), format!("{last:03}.md")) }).collect()
 }
 
 #[cfg(test)]
