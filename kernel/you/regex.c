@@ -34,7 +34,7 @@ struct re {
   /* What every match must hold, and whether the pattern is that literal and nothing more (then case aside or not). */
   u8 *lit;
   u32 litn;
-  int only_lit, icase;
+  int only_lit, icase, lit_first; /* lit_first: every match begins with the literal */
   /* The assertions it holds: a word's edge (\b \B), a line's or the text's ends (^ $ \A \z). */
   int has_word, has_ends;
   struct re *rev; /* backwards (re_reverse), made when first asked for */
@@ -734,7 +734,8 @@ static void required(struct re *r, const u8 *p, u32 n, int ci) {
     u8 c = p[bestat + i];
     r->lit[i] = ci && c >= 'A' && c <= 'Z' ? c | 0x20 : c;
   }
-  r->only_lit = plain_only && !from && best == n;
+  r->only_lit = plain_only && best == n - from;
+  r->lit_first = bestat == from;
   r->icase = ci;
 }
 
@@ -764,7 +765,7 @@ static struct re *re_reverse(struct re *f) {
   if (f->rev) return f->rev;
   struct re *r = (struct re *)grab(sizeof *r);
   *r = *f;
-  r->rev = 0, r->lit = 0, r->litn = 0, r->only_lit = 0;
+  r->rev = 0, r->lit = 0, r->litn = 0, r->only_lit = 0, r->lit_first = 0;
   u32 n = f->n, *cnt = (u32 *)grab(4 * ((u64)n + 1)), *first = (u32 *)grab(4 * ((u64)n + 1));
   memset(cnt, 0, 4 * ((u64)n + 1));
   for (u32 u = 0; u < n; u++) {
@@ -882,8 +883,8 @@ static int holds(u8 a, const u8 *t, u64 n, u64 i) {
   }
 }
 
-/* Where a literal is in s[from..n), case aside when told (the literal small): its place, or n. Sixteen places at a time:
- * where its first byte and its last are both (either case), then the rest compared. */
+/* Where a literal is in s[from..n), case aside when told (the literal small): its place, or n. Thirty-two places at
+ * a time: where its first byte and its last are both (either case, when case is aside), then the rest compared. */
 typedef char v16 __attribute__((vector_size(16)));
 static inline v16 ld128(const u8 *p) { v16 v; __builtin_memcpy(&v, p, 16); return v; }
 static inline v16 splat(u8 c) { return (v16){0} + (char)c; }
@@ -892,18 +893,30 @@ static inline u8 up(u8 c) { return c >= 'a' && c <= 'z' ? c - 32 : c; }
 static u64 lit_find(const u8 *s, u64 n, u64 from, const u8 *lit, u32 litn, int ci) {
   if (litn > n || from > n - litn) return n;
   u32 o = litn - 1;
-  u8 f0 = lit[0], f1 = ci ? up(f0) : f0, l0 = lit[o], l1 = ci ? up(l0) : l0;
-  v16 F0 = splat(f0), F1 = splat(f1), L0 = splat(l0), L1 = splat(l1);
+  u8 f0 = lit[0], l0 = lit[o];
   u64 i = from, last = n - litn;
-  for (; i + 16 <= last + 1; i += 16) {
-    v16 a = ld128(s + i), b = ld128(s + i + o);
-    for (u32 m = mask16(((a == F0) | (a == F1)) & ((b == L0) | (b == L1))); m; m &= m - 1) {
-      u64 p = i + (u32)__builtin_ctz(m);
-      if (ci ? eqi(s + p, lit, litn) : eq(s + p, lit, litn)) return p;
+  if (!ci || (up(f0) == f0 && up(l0) == l0)) { /* each byte one way */
+    v16 F = splat(f0), L = splat(l0);
+    for (; i + 32 <= last + 1; i += 32) {
+      u32 m = mask16((ld128(s + i) == F) & (ld128(s + i + o) == L)) | mask16((ld128(s + i + 16) == F) & (ld128(s + i + 16 + o) == L)) << 16;
+      for (; m; m &= m - 1) {
+        u64 p = i + (u32)__builtin_ctz(m);
+        if (ci ? eqi(s + p, lit, litn) : eq(s + p, lit, litn)) return p;
+      }
+    }
+  } else {
+    v16 F0 = splat(f0), F1 = splat(up(f0)), L0 = splat(l0), L1 = splat(up(l0));
+    for (; i + 32 <= last + 1; i += 32) {
+      v16 a = ld128(s + i), b = ld128(s + i + o), c = ld128(s + i + 16), d = ld128(s + i + 16 + o);
+      u32 m = mask16(((a == F0) | (a == F1)) & ((b == L0) | (b == L1))) | mask16(((c == F0) | (c == F1)) & ((d == L0) | (d == L1))) << 16;
+      for (; m; m &= m - 1) {
+        u64 p = i + (u32)__builtin_ctz(m);
+        if (eqi(s + p, lit, litn)) return p;
+      }
     }
   }
   for (; i <= last; i++)
-    if ((s[i] == f0 || s[i] == f1) && (ci ? eqi(s + i, lit, litn) : eq(s + i, lit, litn))) return i;
+    if ((s[i] == f0 || (ci && up(s[i]) == up(f0))) && (ci ? eqi(s + i, lit, litn) : eq(s + i, lit, litn))) return i;
   return n;
 }
 

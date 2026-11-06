@@ -11,8 +11,9 @@
  *            before it but four lanes' do not.
  *   D_FWD    where the leftmost-first match ends: the states in order of priority, the unanchored start lowest (a
  *            PREFIX entry, last), and all after a match cut off; run until no thread is left.
- *   D_REV    where it begins: the automaton backwards (re_reverse), anchored where the match ends, run back as far as
- *            any thread lives; the furthest back it matched is where the match begins.
+ *   D_ANCH   anchored: begun at one place and run as far as any thread lives. Backwards (re_reverse), from where a
+ *            match ends: the furthest back it matched is where the match begins. Forwards, from where a literal the
+ *            pattern begins with is: whether a match begins there.
  *
  * Empty-width assertions are decided when the byte after is known (as RE2 does): ^ by the state's flags, $ by the byte
  * (or the end), \b by the flag and the byte. A \b beside a character past ASCII asks for Unicode's \w, which a byte
@@ -31,7 +32,7 @@
 #define T_ROW 0x0fffffffu
 #define T_SLOW T_UNKNOWN /* a move at or past it is one of the above */
 
-enum { D_LINES, D_FWD, D_REV };
+enum { D_LINES, D_FWD, D_ANCH };
 enum { F_BOT = 1, F_BOL = 2, F_WORD = 4 };
 
 struct dfa {
@@ -223,7 +224,9 @@ static struct dfa *dfa_new(struct re *r, int mode) {
   dfa_classes(d);
   d->max = DFA_ROOM / 4 / d->ncls;
   if (d->max > 65536) d->max = 65536;
-  d->trans = (u32 *)grab(4 * (u64)d->max * d->ncls);
+  u8 *block = grab(256 + 4 * (u64)d->max * d->ncls); /* the classes, then the moves (lanes_run reads both from one) */
+  memcpy(block, d->cls, 256);
+  d->trans = (u32 *)(block + 256);
   d->setat = (u32 *)grab(4 * (u64)d->max), d->setn = (u32 *)grab(4 * (u64)d->max), d->flags = grab(d->max);
   for (d->hmask = 1; d->hmask < 2 * d->max; d->hmask <<= 1) {}
   d->hmask--;
@@ -234,7 +237,7 @@ static struct dfa *dfa_new(struct re *r, int mode) {
   d->next = (u32 *)grab(4 * n), d->saved = (u32 *)grab(4 * 5 * n);
   memset(d->mark, 0, 4 * n);
   dfa_forget(d);
-  /* Row 0: in D_FWD and D_REV the dead state, its moves dead; in D_LINES a state that stays itself (a parked lane). */
+  /* Row 0: in D_FWD and D_ANCH the dead state, its moves dead; in D_LINES a state that stays itself (a parked lane). */
   for (u32 c = 0; c < d->ncls; c++) d->trans[c] = mode == D_LINES ? 0 : T_DEAD;
   return d;
 }
@@ -318,6 +321,27 @@ static i64 dfa_rev(struct dfa *d, const u8 *t, u64 ls, u64 le, u64 x, u64 e) {
   return v & T_MATCH ? (i64)x : s;
 }
 
+/* Whether a match begins at x in t[0..n) (the DFA anchored there, forwards; it dies at the line's \n, a match ending
+ * there said by the move on it): 1; 0 when none does and it died before the line's end, 2 when it ran to the end
+ * (another place on the line may cost as much again: the caller asks of the line once instead); -1 when the DFA
+ * cannot say. */
+static int dfa_at(struct dfa *d, const u8 *t, u64 n, u64 x) {
+  if (x && t[x - 1] >= 0x80 && d->quit) return -1;
+  u32 row = dfa_start(d, !x || t[x - 1] == '\n' ? F_BOL | F_BOT : byte_word(t[x - 1]) ? F_WORD : 0, 0, 0);
+  const u8 *cl = d->cls;
+  for (u64 i = x; i < n; i++) {
+    u32 v = d->trans[row + cl[t[i]]];
+    if (v >= T_SLOW) {
+      v = dfa_step(d, &row, cl[t[i]], 0, 0);
+      if (v & T_QUIT) return -1;
+      if (v & T_MATCH) return 1;
+      if (v & T_DEAD) return t[i] == '\n' ? 2 : 0;
+    }
+    row = v;
+  }
+  return dfa_step(d, &row, cl['\n'], 0, 0) & T_MATCH ? 1 : 2;
+}
+
 /* Where the line holding byte i starts (after the \n before it, or `from`), and where it ends (its \n, or n). */
 static u64 line_start(const u8 *t, u64 from, u64 i) {
   while (i > from && t[i - 1] != '\n') i--;
@@ -332,6 +356,65 @@ static u64 line_end(const u8 *t, u64 n, u64 i) {
   while (i < n && t[i] != '\n') i++;
   return i;
 }
+
+/* The lanes' run while every move is plain: m bytes at most of each of a[0..4), from the rows in r[] (written back:
+ * those before the byte that is not plain). How many bytes each took. Two steps a turn, each lane's state passed
+ * between two registers (none copied), the bytes counted up to 0 from -m (no bound held), each move tested on its
+ * own (no register to gather them in), the classes read 256 bytes before the moves (dfa_new puts them there: one
+ * register for both). The four moves of a step wait on nothing but their own lane's last. Fourteen registers: GCC
+ * spills some of what this needs to the stack, so on x86-64 it is written out. */
+#if defined(__x86_64__)
+__attribute__((noinline)) static u64 lanes_run(const u32 *tr, const u8 *const *a, u64 m, u32 *r) {
+  register const u8 *e0 asm("r8") = a[0] + m, *e1 asm("r9") = a[1] + m, *e2 asm("r10") = a[2] + m, *e3 asm("r11") = a[3] + m;
+  register u64 r0 asm("rax") = r[0], r1 asm("rbx") = r[1], r2 asm("rcx") = r[2], r3 asm("rsi") = r[3];
+  register u64 v0 asm("r12"), v1 asm("r13"), v2 asm("r14"), v3 asm("r15");
+  register i64 k asm("rdx") = -(i64)m;
+#define STEP(e, from, to) "movzbl (%[" #e "],%[k]), %k[" #to "]\n\t"
+#define CLS(to) "movzbl -256(%[tr],%[" #to "]), %k[" #to "]\n\t"
+#define MOVE(from, to) "add %[" #from "], %[" #to "]\n\t" "mov (%[tr],%[" #to "],4), %k[" #to "]\n\t"
+#define TEST(x, out) "cmp $0xfffffff, %k[" #x "]\n\t" "ja " #out "\n\t"
+  asm volatile(
+    "1:\n\t"
+    STEP(e0, r0, v0) STEP(e1, r1, v1) STEP(e2, r2, v2) STEP(e3, r3, v3)
+    CLS(v0) CLS(v1) CLS(v2) CLS(v3)
+    MOVE(r0, v0) MOVE(r1, v1) MOVE(r2, v2) MOVE(r3, v3)
+    TEST(v0, 3f) TEST(v1, 3f) TEST(v2, 3f) TEST(v3, 3f)
+    "inc %[k]\n\t"
+    "jz 2f\n\t"
+    STEP(e0, v0, r0) STEP(e1, v1, r1) STEP(e2, v2, r2) STEP(e3, v3, r3)
+    CLS(r0) CLS(r1) CLS(r2) CLS(r3)
+    MOVE(v0, r0) MOVE(v1, r1) MOVE(v2, r2) MOVE(v3, r3)
+    TEST(r0, 2f) TEST(r1, 2f) TEST(r2, 2f) TEST(r3, 2f)
+    "inc %[k]\n\t"
+    "jnz 1b\n\t"
+    "jmp 3f\n"
+    "2:\n\t" /* the rows are those of the step before */
+    "mov %[v0], %[r0]\n\t" "mov %[v1], %[r1]\n\t" "mov %[v2], %[r2]\n\t" "mov %[v3], %[r3]\n"
+    "3:"
+    : [r0] "+r"(r0), [r1] "+r"(r1), [r2] "+r"(r2), [r3] "+r"(r3), [v0] "=&r"(v0), [v1] "=&r"(v1), [v2] "=&r"(v2),
+      [v3] "=&r"(v3), [k] "+r"(k)
+    : [tr] "D"(tr), [e0] "r"(e0), [e1] "r"(e1), [e2] "r"(e2), [e3] "r"(e3)
+    : "cc", "memory");
+#undef STEP
+#undef CLS
+#undef MOVE
+#undef TEST
+  r[0] = (u32)r0, r[1] = (u32)r1, r[2] = (u32)r2, r[3] = (u32)r3;
+  return (u64)((i64)m + k);
+}
+#else
+static u64 lanes_run(const u32 *tr, const u8 *const *a, u64 m, u32 *r) {
+  const u8 *cl = (const u8 *)tr - 256;
+  u64 k = 0;
+  for (u32 r0 = r[0], r1 = r[1], r2 = r[2], r3 = r[3];; k++) {
+    if (k == m) { r[0] = r0, r[1] = r1, r[2] = r2, r[3] = r3; break; }
+    u32 v0 = tr[r0 + cl[a[0][k]]], v1 = tr[r1 + cl[a[1][k]]], v2 = tr[r2 + cl[a[2][k]]], v3 = tr[r3 + cl[a[3][k]]];
+    if ((v0 | v1 | v2 | v3) >= T_SLOW) { r[0] = r0, r[1] = r1, r[2] = r2, r[3] = r3; break; }
+    r0 = v0, r1 = v1, r2 = v2, r3 = v3;
+  }
+  return k;
+}
+#endif
 
 /* Lanes: the lines of t[from..to) that hold a match (from at a line's start, to at one's end: after its \n, or the
  * text's end n), their starts into out[] (room for to - from) in order: four stretches of whole lines run at once,
@@ -354,18 +437,10 @@ static u32 dfa_lanes(struct dfa *d, const u8 *t, u64 n, u64 from, u64 to, u64 *o
     for (u32 j = 0; j < 4; j++) if (live[j]) { if (e[j] - p[j] < m) m = e[j] - p[j]; any = j; }
     if (any == 4) break;
     if (m) {
-      const u32 *tr = d->trans;
-      const u8 *cl = d->cls, *a[4];
-      for (u32 j = 0; j < 4; j++) a[j] = t + p[live[j] ? j : any];
-      u32 r0 = live[0] ? row[0] : 0, r1 = live[1] ? row[1] : 0, r2 = live[2] ? row[2] : 0, r3 = live[3] ? row[3] : 0;
-      const u8 *a0 = a[0], *a1 = a[1], *a2 = a[2], *a3 = a[3];
-      u64 k = 0;
-      for (; k < m; k++) {
-        u32 v0 = tr[r0 + cl[a0[k]]], v1 = tr[r1 + cl[a1[k]]], v2 = tr[r2 + cl[a2[k]]], v3 = tr[r3 + cl[a3[k]]];
-        if (__builtin_expect((v0 | v1 | v2 | v3) >= T_SLOW, 0)) break;
-        r0 = v0, r1 = v1, r2 = v2, r3 = v3;
-      }
-      u32 rs[4] = {r0, r1, r2, r3};
+      const u8 *a[4];
+      u32 rs[4];
+      for (u32 j = 0; j < 4; j++) a[j] = t + p[live[j] ? j : any], rs[j] = live[j] ? row[j] : 0;
+      u64 k = lanes_run(d->trans, a, m, rs);
       for (u32 j = 0; j < 4; j++) if (live[j]) row[j] = rs[j], p[j] += k;
     }
     /* Each live lane a step alone: its stretch ended (its last line, if no \n ends it, seen to), or a move not plain

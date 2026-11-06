@@ -22,7 +22,7 @@ static int main_(int argc, char **argv, char **envp) {
   u64 n = 0;
   struct kstat st;
   if (!sys2(SYS_fstat, 0, (i64)&st) && IS_REG(st.mode) && st.size > 0) {
-    i64 m = sys6(SYS_mmap, 0, st.size, 1 /* PROT_READ */, 2 /* MAP_PRIVATE */, 0, 0);
+    i64 m = sys6(SYS_mmap, 0, st.size, 1 /* PROT_READ */, 2 | 0x8000 /* MAP_PRIVATE, MAP_POPULATE: its pages at once */, 0, 0);
     if (m < 0 && m > -4096) fail("cannot map the text", 0);
     in = (const u8 *)m, n = (u64)st.size;
   } else {

@@ -78,7 +78,9 @@ export const LINES: Line[] = [
   {uses: ['bc'], line: "echo 'scale=5; 4*a(1)' | bc -l; echo '2^100' | bc"},
   {uses: ['uname'], line: 'uname -s -m'},
   {uses: ['hostname'], line: '[ -n "$(hostname)" ] && echo has-name'},
-  {uses: ['whoami', 'id', 'groups'], line: 'whoami; id; id -un; groups'},
+  // (Not `id` bare nor `groups` bare: they say the groups of whoever made the sandbox, which bwrap made by any but root
+  // cannot drop and its namespace shows as nobody's; the root's own groups are its /etc/group's.)
+  {uses: ['whoami', 'id', 'groups'], line: 'whoami; id -u; id -g; id -un; id -gn; groups root'},
   {uses: ['printenv'], line: 'printenv HOME; FOO=bar printenv FOO'},
   {uses: ['getconf'], line: 'getconf PAGESIZE; getconf PATH_MAX /'},
   {uses: ['shuf', 'sort'], line: "seq 5 | shuf | sort -n | tr '\\n' ' '; shuf -i 1-3 -n 3 | sort | tr '\\n' ' '"},

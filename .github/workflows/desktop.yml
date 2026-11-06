@@ -153,9 +153,7 @@ jobs:
           npm ci
           root=$(node scripts/root-file.ts target/root)
           mkdir -p target/root-open && tar --zstd -xf "$root" -C target/root-open
-          # As root, as a Prompt's commands run: bwrap made by anyone else cannot drop the runner's own groups, which a
-          # namespace then shows as nobody's (`id` would say groups=65534 natively and none under xlat).
-          sudo env "PATH=$PATH" node scripts/commands.ts public/l3 target/root-open/root --jobs 4 --check
+          node scripts/commands.ts public/l3 target/root-open/root --jobs 4 --check
 
   # The page's and the Remote's types. (The build that ships is the one the selftest builds and uses.)
   types:

@@ -2,6 +2,8 @@
  * A text searched as rg searches it: the lines that hold a match, in order, and each match on a line. Which way the
  * lines are found is the pattern's:
  *   - a literal and nothing more: found by the literal (lit_find, sixteen places at a time), each place its line;
+ *   - one that begins with a literal: the literal's places, each asked of the DFA anchored there (dfa_at: a few bytes,
+ *     not the line);
  *   - one that holds a literal: the literal's places, each line asked of the DFA (dfa_line) — until those lines are
  *     a quarter of what is passed over, when the lanes are cheaper;
  *   - else the DFA's four lanes over the whole text (dfa_lanes), a block at a time.
@@ -13,7 +15,7 @@
 
 struct grep {
   struct re *r;
-  struct dfa *lines, *fwd, *rev;
+  struct dfa *lines, *fwd, *rev, *at_dfa; /* at_dfa: anchored, forwards (a pattern that begins with its literal) */
   const u8 *t;
   u64 n, at;
   u64 *found, cap;
@@ -26,6 +28,7 @@ static void grep_init(struct grep *g, struct re *r) {
   memset(g, 0, sizeof *g);
   g->r = r;
   if (!r->only_lit) g->lines = dfa_new(r, D_LINES);
+  if (!r->only_lit && r->lit_first) g->at_dfa = dfa_new(r, D_ANCH);
 }
 static void grep_text(struct grep *g, const u8 *t, u64 n) {
   g->t = t, g->n = n, g->at = 0, g->nfound = g->took = 0;
@@ -52,13 +55,14 @@ static u64 grep_line(struct grep *g) {
     }
     u64 p = lit_find(t, n, g->at, r->lit, r->litn, r->icase);
     if (p == n) { g->at = n; break; }
-    u64 ls = line_start(t, g->at, p), le = line_end(t, n, p + r->litn);
-    g->passed += le + 1 - g->at;
+    int k = 1;
+    if (!r->only_lit && r->lit_first && (k = dfa_at(g->at_dfa, t, n, p)) == 0) { g->at = p + 1; continue; } /* none begins here */
+    u64 ls = line_start(t, 0, p), le = line_end(t, n, p + r->litn), ms, me;
+    if (!r->only_lit && (!r->lit_first || k == 2)) {
+      g->passed += le + 1 - g->at, g->verified += le - ls, g->tried++;
+      k = dfa_line(g->lines, t, ls, le);
+    }
     g->at = le < n ? le + 1 : n;
-    if (r->only_lit) return ls;
-    g->verified += le - ls, g->tried++;
-    int k = dfa_line(g->lines, t, ls, le);
-    u64 ms, me;
     if (k > 0 || (k < 0 && re_run(r, t + ls, le - ls, 0, &ms, &me))) return ls;
     if (g->tried >= 32 && g->verified * 4 > g->passed) g->lanes = 1, g->nfound = g->took = 0;
   }
@@ -79,7 +83,7 @@ static int grep_span(struct grep *g, u64 ls, u64 le, u64 *x, u64 *last, u64 *ms,
       if (s == n) return 0;
       e = s + r->litn;
     } else {
-      if (!g->fwd) g->fwd = dfa_new(r, D_FWD), g->rev = dfa_new(re_reverse(r), D_REV);
+      if (!g->fwd) g->fwd = dfa_new(r, D_FWD), g->rev = dfa_new(re_reverse(r), D_ANCH);
       i64 end = dfa_fwd(g->fwd, t, 0, n, from), start = end >= 0 ? dfa_rev(g->rev, t, 0, n, from, (u64)end) : end;
       if (end == -1) return 0;
       if (start < 0) { /* the DFA cannot say: the Pike machine */
