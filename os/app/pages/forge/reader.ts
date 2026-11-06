@@ -9,7 +9,7 @@ import {errorText} from '../../host/errors.ts';
 import {shownPath} from '../../repos/issues.ts';
 import {Editor, fileState, lineHeight, lineStart, numbering, type FileState} from './editor.ts';
 import {AGENT} from '../../repos/agent-hands.ts';
-import {editorOn, holdBack} from '../bench/play.ts';
+import {editorOn, holdBack, openingWith} from '../bench/play.ts';
 
 // The center of Forge: one repo read top to bottom as an endless page. Each
 // file is a plain text editor in its own box (editor.ts), loaded as it comes near; in
@@ -356,7 +356,8 @@ export class Reader {
       state.el.textContent = t('First {part} only (total {size}) · Read-only', {part: bytes(new TextEncoder().encode(c.text).length), size: bytes(c.size)});
       return;
     }
-    const editor = new Editor(c.text, {...box, repo: this.repo, path, flow: this.flow,
+    // A file the Agent made, its making still to be played: it opens empty, and is typed in (bench/play.ts).
+    const editor = new Editor(openingWith(this.repo, path, c.text), {...box, repo: this.repo, path, flow: this.flow,
       // Out of sight (folded, or its page hidden) it cannot be measured: it is fitted again when it shows.
       seen: (measured) => { if (measured) this.stale.delete(path); else this.stale.add(path); }});
     this.editors.set(path, editor.area);

@@ -490,7 +490,8 @@ export class Box {
 
   /**
    * Where the Agent's work in `at` is played (play.ts): its commands typed in this box under Run, as a person types
-   * them, the box given back after as it was (its mode, what was written in it); its files brought into view. Neither
+   * them, and sent, the Prompt up while they run as for a person's; the box given back after as it was (its mode, what
+   * was written in it, the Prompt down); its files brought into view. Neither
    * while another repo is in front: the work goes on there unseen.
    */
   #stage(at: string): Stage {
@@ -502,6 +503,7 @@ export class Box {
         const before = this.prompt.value;
         return {
           put: (text) => { this.prompt.value = text; this.#fit(); },
+          sent: () => { if (this.#repo === at && !this.#up) this.#screen?.raise(); },
           done: () => {
             this.prompt.value = before;
             this.#fit();
