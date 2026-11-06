@@ -285,7 +285,7 @@ test('a repo renamed from its gear keeps its place on the band, worked on, with 
   await app.rail.go('home');
   await expect(app.page.getByRole('complementary').first()).toContainText('alpha · Continue where you left off');
   await app.rail.go('forge');
-  await app.forge.promptBox.click();
+  await app.forge.promptBox.focus();
   await app.forge.promptBox.press('Alt+2');
   await app.forge.promptBox.fill('Fix: the map is upside down');
   await app.forge.search.fill('needle');

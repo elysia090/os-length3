@@ -1,50 +1,31 @@
-import {closeBeside, moveTo, openBeside, removeFromBand, showIn} from '../../home/band.ts';
+import {removeFromBand} from '../../home/band.ts';
 import {currentLang, t} from '../../i18n/i18n.ts';
 import {h} from '../../ui/dom.ts';
+import {icon} from '../../ui/icons.ts';
 import {onSync} from '../../remote/lifecycle.ts';
-import {onRenamed, store} from '../../repos/repos.ts';
+import {onChange, onRenamed, store} from '../../repos/repos.ts';
 import type {Context} from '../kit/context.ts';
 import {bench, type Bench} from '../bench/bench.ts';
 import {openNext as openConversation} from '../kit/next.ts';
 import type {Writing} from '../kit/context.ts';
 import {startIssue} from '../git/issue-form.ts';
 import {showIssue} from '../git/git.ts';
-import {panAcross, still} from '../../ui/glide.ts';
-import {besideRenamed, fileOf, keyOf, narrow, repoOf, Row, shrink} from './columns.ts';
 import {Band, bandRenamed} from './pills.ts';
-import {Drag, dropInto} from './drag.ts';
+import {Drag} from './drag.ts';
 import {takeFiles} from './files-in.ts';
-import {keysAlong, swipeAlong} from './along.ts';
-import {Place} from './place.ts';
+import {Desk} from './desk.ts';
+import {deskFile, renameIn, type DeskFile} from './desk-file.ts';
 import {deedsUnder, fileDeeds, renaming, split} from '../kit/file-deeds.ts';
 
 /**
- * Forge, the place you work. The repos out to work on run as pills in a band
- * on the top line; ⊕ brings the rest out and each
- * pill comes off with its ×. The large center is the open repo's files one
- * after another, an endless page you scroll through and edit in place,
- * opened at the file chosen in File; there are no tabs. Up to three repos
- * stand side by side in it, each its own page, tiled: one is opened beside
- * the others by dragging its pill into the center (where it is let go is
- * where it stands), by Ctrl+click on its pill, or Ctrl+\ (the next on the
- * band); the one worked on (the prompt, the search and File follow it) is
- * the one last pressed in, drawn in ink. A prompt box sits at
- * the bottom of the center. The narrow right pane holds the search box and a
- * reference switched freely on top and the Prompt below; using the prompt
- * box sends the Prompt up over the center, just above the box, and the
- * reference grows down into the room it leaves.
+ * Forge, the place you work. The repos out to work on run as pills in a band on the top line; ⊕ brings the rest out
+ * and each pill comes off with its ×. The large center is the repo's desk (desk.ts): its Prompt a box of its own, the
+ * line one types at under what it printed, its pill saying what that line does (Run, Issue, TODO, Agent); each file
+ * opened a box beside it, written in where it lies. One box is in hand and the camera works close to it; Escape steps
+ * back to the whole desk. Each repo on the band keeps its own desk, as it was left, while the app runs.
  *
- * Forge is made once and stays as it was while another page is shown, so
- * coming back is coming back to the same repo, where it was read, what was
- * searched and what was half written. Each repo on the band keeps its own
- * place the same way: going to another repo and back is going back to where
- * one was in it.
- *
- * Its parts, each in a file of its own here: the band (pills.ts), the row of
- * boxes in the center (columns.ts), a repo dragged (drag.ts) and files dragged
- * in from the desktop (files-in.ts), going along the row (along.ts), and where
- * one is in it (place.ts); this file puts them together and says which repo
- * stands where.
+ * Forge is made once and stays as it was while another page is shown, so coming back is coming back to the same
+ * repo, the same box in hand, what was searched and what was half written.
  */
 
 /** Set when Forge is opened for a repo: the path to scroll to ('' for the top), and whether to write there. */
@@ -72,12 +53,11 @@ export const keptForge = (): HTMLElement | null => (madeIn === currentLang() ? m
 /** The language Forge was made in: another chosen since, it is made again, so none of its words stay in the last one. */
 let madeIn: string | null = null;
 
-// A repo renamed (from its gear on Home or Runtime): its pill keeps its place on the band and its boxes theirs in the
-// row, under the new name; Forge not made yet in this visit, what it will read is kept so.
+// A repo renamed (from its gear on Home or Runtime): its pill keeps its place on the band and its desk its boxes,
+// under the new name; Forge not made yet in this visit, the band is kept so.
 onRenamed((from, to) => {
   if (made) { made.renamed(from, to); return; }
   bandRenamed(from, to);
-  besideRenamed(from, to);
 });
 
 /** Forge's page: made once (again in another language), and come back to as it was left. */
@@ -88,48 +68,45 @@ export function forge(ctx: Context): Node[] {
   return [made.element];
 }
 
-/** The page, its parts put together: which repos are on the band, which stand in the row, and the one worked on. */
+/** What a repo's desk is kept as, while the app is away: its columns' keys and the one in hand. */
+interface Kept { cols: string[][]; held: string | null }
+const KEPT = 'forge.desk.';
+
+function keptDesk(repo: string): Kept | null {
+  try { const k = JSON.parse(localStorage.getItem(KEPT + repo) ?? 'null') as Kept | null; return k && Array.isArray(k.cols) ? k : null; } catch { return null; }
+}
+
+function kept(repo: string, desk: Desk) {
+  try { localStorage.setItem(KEPT + repo, JSON.stringify({cols: desk.columns, held: desk.held})); } catch { /* kept for this run only */ }
+}
+
+/** A repo's desk, and the files lying on it. */
+interface Laid { desk: Desk; files: Map<string, DeskFile> }
+
+/** The page, its parts put together: which repos are on the band, the desk of each, and the one worked on. */
 class Forge {
   readonly element: HTMLElement;
   private work: Bench;
-  private row: Row;
   private band: Band;
+  /** The repo worked on (the band's ink, the Prompt's, the desk on screen). */
+  private now: {repo: string | null} = {repo: null};
+  private desks = new Map<string, Laid>();
+  private center: HTMLElement;
   /** The files button's deeds while they are out: the way to put them away. */
   private deedsOut: (() => void) | null = null;
-
-  /**
-   * The deeds for the file read now (the repo's own, with none), out under the band's files button: done here, where
-   * one works, never carrying one off to File. Made, a new file is opened to write in; renamed or moved, the file is
-   * shown where it went.
-   */
-  private deeds(at: HTMLElement) {
-    if (!this.row.repo || this.deedsOut) return;
-    const repo = repoOf(this.row.repo), path = this.place.reading ?? '';
-    const done = () => this.deedsOut?.();
-    const pop = fileDeeds({repo, path, name: path ? split(path)[1] : repo, dir: !path,
-      made: (made, file) => { done(); if (file) this.ctx.openRepo(repo, made, true); },
-      move: async (to) => {
-        if (to !== path) await store.move(repo, path, to);
-        done();
-        this.ctx.openRepo(repo, to);
-      },
-      removed: () => done(),
-      back: () => {}});
-    this.deedsOut = deedsUnder(at, pop, () => { this.deedsOut = null; });
-  }
-
-  private place: Place;
   /** The repo worked on as Forge last knew it: chosen anew elsewhere (Git, Home, File), Forge follows. */
   private known: string | null;
-  private offChange: () => void;
   private offSync: () => void;
+  private offChange: () => void;
+  /** The file last told as the one Forge works on. */
+  private told: string | null = null;
   private ctx: Context;
 
   constructor(ctx: Context) {
     this.ctx = ctx;
     const strip = h('nav', {class: 'repo-strip', 'aria-label': 'repo'});
-    const cols = h('div', {class: 'columns'});
-    this.work = bench({strip, main: cols, reveal: (path, line, write) => this.revealAt(path, line, write),
+    this.center = h('div', {class: 'desk-room'});
+    this.work = bench({strip, main: this.center, desk: true, reveal: (path, line, write) => this.revealAt(path, line, write),
       word: (a) => { openConversation(a); void ctx.go('inbox'); },
       went: (repo, to) => {
         if (to !== 'todo' && 'file' in to) { ctx.openRepo(repo, to.file); return; }
@@ -137,236 +114,236 @@ class Forge {
         void ctx.go(to === 'todo' ? 'home' : 'git');
       }});
     this.element = this.work.element;
-    const drag = new Drag(cols);
-    this.row = new Row(cols, this.element, drag, {activate: (key) => this.activate(key), close: (key) => this.closeCol(key),
-      beside: (key) => this.beside(key), make: () => void ctx.go('new-repo'),
-      rename: async (repo, path, written) => {
-        const to = await renaming(repo, path, written);
-        if (to === path) return;
-        await store.move(repo, path, to);
-        // Named, it is written in: the keyboard goes from its name into it.
-        ctx.openRepo(repo, to, true);
-      }});
     // The Issue view with none open begins one for this repo on Git; Not now there comes back here.
     this.work.reference.writeIssue = (r) => { startIssue(r); ctx.go('git'); };
-    this.band = new Band(strip, this.row, drag, {show: (name) => this.show(name), beside: (name) => this.beside(name),
+    const drag = new Drag(this.center);
+    this.band = new Band(strip, this.now, drag, {show: (name) => this.show(name), beside: (name) => this.show(name),
       takeOff: (name) => this.takeOff(name), act: (at) => this.deeds(at)});
-    dropInto(this.row, drag, (name, at, instead) => this.land(name, at, instead));
-    takeFiles(cols, drag, (repo, path) => this.show(repo, path));
-    swipeAlong(this.row, (key) => this.activate(key));
-    keysAlong(this.element, this.row, this.band, {beside: (name) => this.beside(name), activate: (key) => this.activate(key)});
-    this.place = new Place(this.element, this.row, ctx);
-    this.offChange = this.row.follow();
-    // What the Remote holds is learnt a moment after: ⊕ counts it once it is. The pills stay as they
-    // are (and the one with the keyboard keeps it): what the Remote holds does not change the band.
+    // Files from the desktop let go over a box: into its folder (none written over), the first opened.
+    takeFiles(this.center, drag, (repo, path) => this.show(repo, path));
+    // What the Remote holds is learnt a moment after: ⊕ counts it once it is.
     this.offSync = onSync(() => this.band.paintAdd());
+    // Something on the desk scrolled into view (the keyboard going to it, a find): the desk's camera goes there instead.
+    this.element.addEventListener('scroll', (e) => {
+      const desk = this.now.repo ? this.desks.get(this.now.repo)?.desk : undefined;
+      const at = e.target as HTMLElement;
+      if (desk && at instanceof HTMLElement && at !== desk.element && at.contains(desk.element)) desk.scrolled(at);
+    }, true);
+    // A file gone (put back, removed from File, a folder of it removed): its box goes from the desk; moved (gone, and
+    // a file made a moment after), its box is the file where it went, where the box lay.
+    let going: {repo: string; path: string; timer: number} | null = null;
+    this.offChange = onChange((c) => {
+      const d = this.desks.get(c.repo);
+      if (!d) return;
+      if (c.what === 'removed') {
+        const gone = [...d.files.keys()].filter((path) => path === c.path || path.startsWith(`${c.path}/`));
+        if (gone.length === 1 && gone[0] === c.path) {
+          if (going) { clearTimeout(going.timer); this.shut(going.repo, going.path); }
+          going = {repo: c.repo, path: c.path, timer: window.setTimeout(() => { if (going) this.shut(going.repo, going.path); going = null; }, 600)};
+        } else for (const path of gone) this.shut(c.repo, path);
+      } else if (c.what === 'file' && going && going.repo === c.repo && !d.files.has(c.path)) {
+        clearTimeout(going.timer);
+        const from = going.path, col = d.desk.columns.findIndex((k) => k.includes(from));
+        going = null;
+        this.shut(c.repo, from);
+        this.layFile(c.repo, d, c.path, col < 0 ? undefined : col);
+      }
+    });
     this.known = ctx.repo;
     // Forge's head is its band; its name is still the page's heading, for those who hear the page.
     this.element.prepend(h('h1', {class: 'sr-only'}, t('Forge')));
   }
 
   /** Made again (another language): it no longer follows the store or the Remote. */
-  drop() { this.offChange(); this.offSync(); }
+  drop() {
+    this.offSync();
+    this.offChange();
+    for (const d of this.desks.values()) for (const f of d.files.values()) f.drop();
+  }
 
   /**
-   * A repo renamed: on the band and in the row under its new name, where it stood. Worked on, it is again when Forge
-   * is come back to (the repo worked on follows the name, main.ts), its page read anew under it.
+   * The deeds for the file in hand (the repo's own, with none), out under the band's files button: done here, where
+   * one works. Made, a new file is a box to write in; renamed or moved, the box says where it went.
    */
+  private deeds(at: HTMLElement) {
+    const repo = this.now.repo;
+    if (!repo || this.deedsOut) return;
+    const held = this.desks.get(repo)?.desk.held;
+    const path = held && held !== 'term' ? held : '';
+    const done = () => this.deedsOut?.();
+    const pop = fileDeeds({repo, path, name: path ? split(path)[1] : repo, dir: !path,
+      made: (made, file) => { done(); if (file) this.ctx.openRepo(repo, made, true); },
+      move: async (to) => {
+        if (to !== path) await store.move(repo, path, to);
+        done();
+        this.shut(repo, path);
+        this.ctx.openRepo(repo, to);
+      },
+      removed: () => { done(); this.shut(repo, path); },
+      back: () => {}});
+    this.deedsOut = deedsUnder(at, pop, () => { this.deedsOut = null; });
+  }
+
+  /** `repo`'s desk, made the first time: its Prompt the first box. */
+  private deskOf(repo: string): Laid {
+    let d = this.desks.get(repo);
+    if (!d) {
+      const files = new Map<string, DeskFile>();
+      let restoring = true;
+      const desk = new Desk(t('Files in {name}', {name: repo}), repo, (key) => this.shut(repo, key), () => {
+        if (restoring) return;
+        kept(repo, desk);
+        // The file in hand is the one Forge works on: File marks it (told once each time it is another).
+        if (this.now.repo === repo && desk.held && desk.held !== 'term' && desk.held !== this.told) {
+          this.told = desk.held;
+          this.ctx.reading(desk.held);
+          // Where the person left off (Home says it): the file in hand.
+          this.ctx.leftAt(repo, desk.held, 0);
+        }
+      });
+      d = {desk, files};
+      this.desks.set(repo, d);
+      // Written in a box: where the person left off (Home says the line) is where its caret is.
+      desk.element.addEventListener('input', (e) => {
+        const area = e.target as HTMLTextAreaElement;
+        const path = area.closest<HTMLElement>('.desk-file')?.dataset.path;
+        if (path && area.selectionStart !== undefined) this.ctx.leftAt(repo, path, area.selectionStart);
+      });
+      const term = this.work.terminal!;
+      desk.lay('term', {element: h('div', {class: 'desk-term-home'}), name: 'sh', dir: '', after: `/root/${repo}`,
+        focus: () => term.querySelector<HTMLTextAreaElement>('.prompt-in')?.focus({preventScroll: true})}, 0);
+      // As it was left: the boxes where they lay, the one in hand.
+      const was = keptDesk(repo);
+      was?.cols.forEach((col, c) => { for (const key of col) if (key !== 'term') this.layFile(repo, d!, key, c); });
+      if (was?.held && desk.has(was.held)) desk.take(was.held, false);
+      // A desk never worked at: its README beside the Prompt, to be read first.
+      if (!was) { const laid = d; void store.read(repo, 'README.md').then((c) => { if (c.text !== null && !laid.files.has('README.md')) this.layFile(repo, laid, 'README.md', 1); }).catch(() => {}); }
+      restoring = false;
+    }
+    return d;
+  }
+
+  /** `path` of `repo` laid on its desk `d` as a box (in column `col`, or under the box in hand). */
+  private layFile(repo: string, d: Laid, path: string, col?: number): DeskFile {
+    const f = deskFile(repo, path, () => d.desk.relayout(), (name) => renameIn(name, path, async (from, written) => {
+      const to = await renaming(repo, from, written);
+      if (to === from) return;
+      await store.move(repo, from, to);
+      // Named, it is written in: the keyboard goes from its name into it.
+      this.shut(repo, from);
+      this.ctx.openRepo(repo, to, true);
+    }));
+    d.files.set(path, f);
+    d.desk.lay(path, f, col);
+    return f;
+  }
+
+  /** A file's box taken off the desk (its close, or the file gone); the Prompt's stays. */
+  private shut(repo: string, key: string) {
+    const d = this.desks.get(repo);
+    if (!d || key === 'term') return;
+    d.files.get(key)?.drop();
+    d.files.delete(key);
+    d.desk.lift(key);
+  }
+
+  /** `path` of the repo worked on, a box on its desk (laid now, under the box in hand, if it was not), in hand; at `line`. */
+  private open(path: string, line = 0) {
+    const repo = this.now.repo;
+    if (!repo || !path) return;
+    const d = this.deskOf(repo);
+    // A file laid for the first time goes in the column beside the Prompt's, under the last there.
+    const f = d.files.get(path) ?? this.layFile(repo, d, path, d.desk.held === 'term' || !d.desk.held ? 1 : undefined);
+    d.desk.take(path);
+    f.at(line);
+  }
+
+  /** Renamed: on the band and on its desk under its new name. */
   renamed(from: string, to: string) {
     this.band.renamed(from, to);
-    this.row.renamed(from, to);
+    const d = this.desks.get(from);
+    if (d) { this.desks.delete(from); this.desks.set(to, d); }
+    if (this.now.repo === from) this.now.repo = to;
     if (this.known === from) this.known = to;
   }
 
-  /**
-   * `name`, shown, is the one worked on: the prompt, the search and File follow it, the row as it is. `anew`, it is
-   * laid out and said again even if it already was.
-   */
-  private activate(name: string, anew = false) {
-    const {row} = this;
-    if (anew) row.repo = null;
-    if (name === row.repo || !row.shown.includes(name)) return;
-    row.repo = name;
-    this.known = repoOf(name);
-    this.ctx.remember(repoOf(name));
-    this.work.setRepo(repoOf(name));
-    row.layout();
+  /** Show `name` in the band and the center, its desk; at `path` if given (a box for it, at `line`). */
+  show(name: string, path = '', _write: Writing = false, line = 0) {
+    this.band.put(name);
+    const d = this.deskOf(name);
+    if (this.now.repo !== name) {
+      this.now.repo = name;
+      this.known = name;
+      this.ctx.remember(name);
+      this.work.setRepo(name);
+      // Every desk stays in the page, those not worked at hidden: a text taken out of the page loses its Undo.
+      this.center.querySelector('.desk-none')?.remove();
+      if (!d.desk.element.isConnected) this.center.append(d.desk.element);
+      for (const o of this.desks.values()) o.desk.element.hidden = o !== d;
+    }
+    // The Prompt's own box is the one terminal of the bench: it lies on the desk shown.
+    d.desk.element.querySelector('.desk-box[data-key="term"] .desk-term-home')?.replaceChildren(this.work.terminal!);
     this.band.paint();
-    // Only come to (pressed, or come in as another closed): what it reads is said, not taken as where one left off.
-    this.place.track(false);
+    if (path) this.open(path, line);
+    else if (!d.desk.held) d.desk.take('term', false);
+    else d.desk.relayout();
   }
 
-  /** Show `name` in the band, the center and the terminal, in place; at `path` if given, ready to write with `write`. */
-  show(name: string, path = '', write: Writing = false, line = 0, pan = true) {
-    const {row, band} = this;
-    band.put(name);
-    const from = row.repo;
-    const switching = from !== name || !row.shown.includes(name);
-    // Coming into a box another stood in, the camera pans along the band to it: from the side its pill is on. Come
-    // from another page (a repo made, opened from File or Home), the camera is already going down the rail to Forge:
-    // it arrives with the repo in its box, not panning sideways as well (the neighbour beside it passing through).
-    const across = pan && switching && !!from && !row.shown.includes(name) ? Math.sign(band.names.indexOf(name) - band.names.indexOf(repoOf(from!))) : 0;
-    const go = () => {
-      if (switching) {
-        row.keep(from ?? '');
-        row.shown = showIn(row.shown.filter((n) => row.views.has(n) || n === name), name, from);
-        const v = row.viewOf(name);
-        this.activate(name, true);
-        v.flow.scrollTop = v.top;
-      }
-      band.paint();
-      if (path) row.landing();
-      this.place.goTo(path, line, write);
-    };
-    if (across) panAcross(row.element, across, go); else go();
+  /** A place asked for in the repo worked on: its file's box, in hand, at `line`. */
+  private revealAt(path: string, line = 0, _write: Writing = false) {
+    if (this.now.repo) this.open(path, line);
   }
 
-  // A place asked for in another file than the one a box beside holds is read in the repo's page, which comes in
-  // where that box stood (or is gone to, standing in the row already).
-  private revealAt(path: string, line = 0, write: Writing = false) {
-    const {row} = this;
-    const file = row.repo ? fileOf(row.repo) : null;
-    // A file standing in a box of its own is read there, not in the page where it is only its head.
-    const own = row.repo ? keyOf(repoOf(row.repo), path) : '';
-    if (row.repo && own !== row.repo && row.shown.includes(own)) {
-      this.activate(own, true);
-      this.band.paint();
-    } else if (row.repo && file !== null && file !== path) {
-      const page = repoOf(row.repo);
-      if (!row.shown.includes(page)) { row.shown = showIn(row.shown, page, row.repo); row.viewOf(page); }
-      this.activate(page, true);
-      this.band.paint();
-    }
-    void row.view()?.reader.reveal(path, line, write).then(() => this.place.track());
-  }
-
-  /** `name` opened beside what is shown (at `at`, an index among the boxes), and worked on. */
-  private beside(name: string, at?: number) {
-    if (narrow()) { this.show(repoOf(name), fileOf(name) ?? ''); return; }
-    const {row} = this;
-    this.band.put(repoOf(name));
-    const before = row.shown;
-    row.shown = openBeside(row.shown, name, row.repo, at);
-    const v = row.viewOf(name);
-    const fresh = !before.includes(name);
-    for (const gone of before.filter((n) => !row.shown.includes(n))) row.keep(gone);
-    // Come in, it opens from no width where it stands as the row slides to it, so it pushes in from its side.
-    const opening = fresh && row.shown.length > 1 && !still();
-    if (opening) {
-      v.col.classList.add('nothing');
-      // It stands in the row where the row is now, before the row moves to it: drawn first at the row's present place,
-      // it then goes with the others on their curve, not at once to where they are only on their way to.
-      row.layout();
-      void row.element.offsetWidth;
-    }
-    this.activate(name, true);
-    v.flow.scrollTop = v.top;
-    // The keyboard goes with it: what opened it (a file's head, now only peeking) is no longer the place to hold it,
-    // and given back to the box it was in, that box would be the one worked on again.
-    v.flow.focus({preventScroll: true});
-    if (opening) requestAnimationFrame(() => v.col.classList.remove('nothing'));
-  }
-
-  /** `name`'s box closed (the repo stays on the band); the last one stays. */
-  private closeCol(name: string) {
-    const {row} = this;
-    if (row.shown.length < 2 || !row.shown.includes(name)) return;
-    const v = row.views.get(name);
-    const c = closeBeside(row.shown, name, row.repo);
-    const done = () => row.slide(c.shown, () => {
-      row.shown = c.shown;
-      if (c.active && c.active !== row.repo) this.activate(c.active, true); else { row.layout(); this.band.paint(); }
-    });
-    if (!v) { done(); return; }
-    v.top = v.flow.scrollTop;
-    v.col.classList.add('going');
-    // The one worked on closed, the one taking its place comes in as it goes (the row sliding to it), the keyboard
-    // with it: never an empty row while the closed one closes.
-    const next = c.active && c.active !== row.repo ? row.views.get(c.active) : undefined;
-    if (next && c.active) { this.activate(c.active); next.flow.focus({preventScroll: true}); }
-    void shrink(v.col).then(() => { v.col.classList.remove('going', 'nothing'); done(); });
-  }
-
-  /** `name` let go in the center: to stand at `at` among the boxes, or (`instead`) in the place of the box there. */
-  private land(name: string, at: number, instead: boolean) {
-    const {row} = this;
-    const there = row.shown[at] ?? null;
-    if (row.shown.includes(name)) {
-      // A box dragged along the row: it stands where it is let go (in a box's middle, the two change places).
-      row.shown = instead && there ? row.shown.map((n) => (n === name ? there : n === there ? name : n)) : moveTo(row.shown, name, at);
-      this.activate(name, true);
-      row.layout();
-      return;
-    }
-    if (instead && there) { row.repo = there; this.show(name); } else this.beside(name, at);
-  }
-
-  /** `name` off the band, and its boxes from the row. */
+  /** `name` off the band, and its desk with it. */
   private takeOff(name: string) {
-    const {row, band} = this;
-    const r = removeFromBand(band.names, name, row.repo && repoOf(row.repo));
+    const {band} = this;
+    const r = removeFromBand(band.names, name, this.now.repo);
     band.names = r.band;
     band.save();
-    // Off the band, its boxes go from the row too (its page, and any file of it beside); their place is not kept:
-    // brought out again, it opens at its top.
-    let c: {shown: string[]; active: string | null} = {shown: row.shown, active: row.repo};
-    for (const k of [...row.views.keys()].filter((k) => repoOf(k) === name)) {
-      c = closeBeside(c.shown, k, c.active);
-      row.forget(k);
-    }
-    row.shown = c.shown;
+    const d = this.desks.get(name);
+    if (d) { for (const f of d.files.values()) f.drop(); d.desk.element.remove(); this.desks.delete(name); }
+    if (this.now.repo === name) this.now.repo = null;
     if (!r.active) { this.none(); return; }
-    const next = c.active && band.names.includes(repoOf(c.active)) ? c.active : r.active;
-    if (!row.shown.includes(next)) this.show(repoOf(next));
-    else if (next !== row.repo) this.activate(next, true);
-    else { row.layout(); band.paint(); }
+    this.show(r.active);
   }
 
-  /** Nothing on the band: the center says how to bring a repo out (Server is laid over any page, not kept here). */
+  /** Nothing on the band: the center is empty, the Prompt with no repo. */
   private none() {
-    this.row.repo = null;
-    this.row.shown = [];
+    this.now.repo = null;
     this.work.setRepo(null);
-    this.row.layout();
-    this.place.told(null);
+    // With none at all, the way to the first, where the desk would be.
+    const first = h('button', {type: 'button', class: 'card new forge-first'}, icon('new-repo'), h('span', {}, t('Create your first repo')),
+      h('small', {class: 'muted'}, t('A personal Git repository: compatible with Forge, Git, and Prompt.')));
+    first.addEventListener('click', () => void this.ctx.go('new-repo'));
+    for (const o of this.desks.values()) o.desk.element.hidden = true;
+    this.center.querySelector('.desk-none')?.remove();
+    this.center.append(h('div', {class: 'desk-none'}, first));
     this.band.paint();
   }
 
-  /** Come to (back) on the screen: each place where it was, then the repo asked for, chosen elsewhere, or as it was. */
+  /** Come to (back) on the screen: the repo asked for, chosen elsewhere, or as it was. */
   enter() {
     this.work.settle();
-    this.place.back();
     void store.list().then((repos) => this.choose(repos.map((r) => r.name)));
   }
 
-  /** The repos here are `all`: the band and the row keep those still here, and one of them is worked on. */
+  /** The repos here are `all`: the band keeps those still here, and one of them is worked on. */
   private choose(all: string[]) {
-    const {row, band, ctx} = this;
+    const {band, ctx} = this;
     band.known(all, ctx.repo);
-    row.known(all.length > 0);
-    for (const name of [...row.views.keys()]) if (!all.includes(repoOf(name))) row.forget(name);
-    // What stood side by side, as far as it is still on the band.
-    row.shown = row.shown.filter((n) => band.names.includes(repoOf(n)));
-    for (const n of row.shown) row.viewOf(n);
+    for (const name of [...this.desks.keys()]) if (!all.includes(name)) { this.desks.get(name)!.desk.element.remove(); this.desks.delete(name); }
     const asked = pending;
     pending = null;
     const chosen = ctx.repo !== this.known;
     this.known = ctx.repo;
-    // Opened for a repo (from File, Home or a new repo), or one chosen to work on elsewhere: it goes on the band.
     if (ctx.repo && all.includes(ctx.repo) && (asked || chosen)) {
       const at = asked ?? {path: '', write: false, line: 0};
-      this.show(ctx.repo, at.path, at.write, at.line, false);
+      this.show(ctx.repo, at.path, at.write, at.line);
       return;
     }
-    this.goOn(all);
-  }
-
-  /** Nothing asked for: the box worked on as it was, else the repo chosen, the first beside or the first on the band. */
-  private goOn(all: string[]) {
-    const {row, band, ctx} = this;
-    if (row.repo && all.includes(repoOf(row.repo)) && row.shown.includes(row.repo)) { row.layout(); band.paint(); this.place.track(false); return; }
-    row.repo = null;
-    const open = ctx.repo && band.names.includes(ctx.repo) ? ctx.repo : row.shown[0] ?? band.names[0];
-    if (open && fileOf(open) !== null) { this.activate(open); band.paint(); this.place.track(false); } else if (open) this.show(open); else this.none();
+    const open = this.now.repo && all.includes(this.now.repo) ? this.now.repo
+      : ctx.repo && band.names.includes(ctx.repo) ? ctx.repo : band.names[0];
+    if (open) this.show(open); else this.none();
   }
 }
+

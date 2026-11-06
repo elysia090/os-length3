@@ -1,0 +1,40 @@
+/* Forge's desk (pages/forge/desk.ts): what is open lies on a plane on dots, each box as wide as 80 columns of code,
+   inked round with a hard shadow, its name outside its top-left corner (its folder quiet before it), its close a dot
+   outside its bottom-right. The camera moves the plane, never a box; the box in hand is the one worked in. */
+.desk { position: absolute; inset: 0; overflow: hidden; outline: none;
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--rule) 55%, transparent) 1.1px, transparent 1.4px);
+  background-size: 24px 24px; background-position: 12px 12px; }
+.desk-plane { position: absolute; left: 0; top: 0; width: 1px; height: 1px; transform-origin: 0 0; }
+.desk-box { position: absolute; left: 0; top: 0; box-sizing: border-box; border: 2px solid var(--ink); border-radius: var(--r-place);
+  background: var(--paper); box-shadow: 8px 8px 0 0 var(--ink); transition: translate 320ms var(--land), opacity 180ms ease-out; }
+.desk.whole .desk-box { cursor: var(--cursor-hand); }
+.desk.whole .desk-box.held { outline: 3px solid var(--ink); outline-offset: 10px; }
+.desk-label { position: absolute; left: 0; bottom: 100%; display: flex; align-items: baseline; gap: 0; white-space: nowrap;
+  font: 600 12px/1 var(--mono); color: var(--ink); padding: 4px 8px 7px 0; transform-origin: 0 100%; scale: var(--inv, 1); }
+.desk-dir { font-weight: 400; color: var(--sub); }
+.desk-close { position: absolute; right: -4px; top: calc(100% + 16px); width: 9px; height: 9px; padding: 0; border: 0; border-radius: 50%;
+  background: var(--ink); cursor: var(--cursor-hand); transform-origin: 100% 0; scale: var(--inv, 1);
+  transition: background var(--motion), scale 140ms var(--land); }
+.desk-close::before { content: ''; position: absolute; inset: -10px; }
+.desk-close:hover { background: var(--del); scale: calc(var(--inv, 1) * 1.6); }
+.desk-file { position: relative; }
+.desk-file > .sheet { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--s4); padding: var(--s4); }
+.desk-file-head { position: absolute; right: var(--s3); top: var(--s2); margin: 0; font: inherit; }
+/* Where the repo's desk is: the whole center. */
+.desk-room { position: relative; height: 100%; min-height: 0; }
+.desk-none { display: grid; place-items: center; height: 100%; color: var(--sub); }
+/* The Prompt's box: what it printed, at most 24 lines (scrolled within), at least 8; under it the line one types at,
+   its pill saying what the line does. Its name is said over the box, as any box's is. */
+.desk-term { display: grid; align-content: start; gap: var(--s1); padding: var(--s4); min-height: calc(8 * 1.6em + 2 * var(--s4)); }
+.desk-term .term-box { display: block; padding: 0; min-height: 0; }
+.desk-term .term-head { display: none; }
+.desk-term .term-out { font: var(--t-meta)/1.6 var(--mono); max-height: calc(24 * 1.6em); overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain; }
+.desk-term > .dock { position: static; max-width: none; margin: 0; }
+.desk-term > .dock::after { display: none; }
+.desk-after { margin-left: 1ch; }
+/* The line one types at is the Prompt's own last line: no field round it, the pill its prompt (garden $), what is
+   written after it in the Prompt's letters; the prompt line the shell waits at is not said again above it. */
+.desk-term .term-out > .ps.waits:last-child { display: none; }
+.desk-term > .dock .prompt { background: none; border: 0; box-shadow: none; padding: 0; }
+.desk-term > .dock .prompt-in { font: var(--t-meta)/1.6 var(--mono); }
+.desk-term > .dock :is(.prompt-caps, .prompt-run) { display: none; }

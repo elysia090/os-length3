@@ -44,7 +44,7 @@ test('a key given in Runtime opens the box\'s Agent: asked, it answers in the pa
 
   await app.rail.go('forge');
   const box = app.forge.promptBox, pill = app.main.getByRole('button', {name: /^Input box action/});
-  await box.click();
+  await box.focus();
   await box.press('Alt+5');
   await expect(pill).toHaveAccessibleName('Input box action: Ask');
   await expect(pill.locator('.prompt-mode')).toHaveText('Agent@hello');
@@ -89,7 +89,7 @@ test('signed in with a passkey, the key given is sealed by it: kept as given now
   await app.settled();
   await app.rail.go('forge');
   const box = app.forge.promptBox;
-  await box.click();
+  await box.focus();
   await box.press('Alt+5');
   await box.fill('Still there?');
   await box.press('Control+Enter');
@@ -118,7 +118,7 @@ test('handed an issue\'s work, the box\'s Agent reads and writes its files: the 
   await expect(app.git.step('Back to main')).toBeVisible();
   await app.rail.go('forge');
   const box = app.forge.promptBox;
-  await box.click();
+  await box.focus();
   await box.press('Alt+5');
   await box.fill('Say in the README how it is built.');
   await box.press('Control+Enter');

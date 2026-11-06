@@ -170,7 +170,9 @@ export function modeMenu(chip: HTMLElement, o: {repo: () => string | null; at():
     pop.replaceChildren(...items);
     // Out of the pill, its rows' pills standing over it.
     const r = chip.getBoundingClientRect();
-    Object.assign(pop.style, {left: `${Math.max(8, r.left - 9)}px`, bottom: `${innerHeight - r.top + 8}px`});
+    // Over the pill; where there is no room over it (the Prompt's line high on a desk), under it.
+    const room = r.top > 260;
+    Object.assign(pop.style, {left: `${Math.max(8, r.left - 9)}px`, bottom: room ? `${innerHeight - r.top + 8}px` : '', top: room ? '' : `${r.bottom + 8}px`});
     show(true);
     column(items);
     (items.find((x) => x.getAttribute('aria-checked') === 'true') ?? items[0]).focus();

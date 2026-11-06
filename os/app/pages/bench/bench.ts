@@ -26,6 +26,9 @@ export interface Bench {
   setRepo(name: string | null): void;
   /** Back on screen after another page: the Prompt is home again unless its box still has the keyboard. */
   settle(): void;
+  /** On a desk (Forge's): the Prompt's own box, its output and, at its foot, the line one types at, its pill saying
+   * what that line does (Run, Issue, TODO, Agent). Laid on the desk by the page; null on any other bench. */
+  terminal: HTMLElement | null;
 }
 
 let benches = 0;
@@ -189,7 +192,10 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   went(repo: string, to: {issue: string} | {file: string} | 'todo'): void;
   /** A page read and pressed rather than written in (Git): its box at the foot stands back until it is asked for
    * (Ctrl+`, the pointer resting at the foot), and back again once the Prompt is done with, never over a button. */
-  back?: boolean}): Bench {
+  back?: boolean;
+  /** A desk (Forge's): no box at the center's foot and no Prompt rising over it; the Prompt is a box of its own, its
+   * output over the line one types at (`terminal`), which the page lays on the desk. */
+  desk?: boolean}): Bench {
   const {termHead, term, termHome} = promptBox();
   const center = h('div', {class: 'center'}, parts.main);
   const sideId = `side-${++benches}`;
@@ -197,14 +203,19 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': sideId}, paneMark()) as HTMLButtonElement;
   const work = h('div', {class: parts.strip ? 'work bench' : 'work bench no-strip'});
 
-  const box = new Box({work, main: parts.main, center, term, termHead, back: !!parts.back, went: parts.went, reveal: (path, line) => parts.reveal(path, line)});
-  const {screen, element: screenEl} = screenOf(work, box, term, termHome);
-  center.append(box.dock);
+  const box = new Box({work, main: parts.main, center, term, termHead, back: !!parts.back, went: parts.went, reveal: (path, line) => parts.reveal(path, line), desk: !!parts.desk});
+  // On a desk the Prompt is a box of its own: its output, and the line one types at under it.
+  const terminal = parts.desk ? h('section', {class: 'desk-term'}, term, box.dock) : null;
+  const shown = parts.desk ? null : screenOf(work, box, term, termHome);
+  if (shown) center.append(box.dock); else box.dock.prepend(box.form);
+  // On a desk the box lies on a moving plane: what opens out of its pill (fixed to the window) lies on the page instead.
+  if (!shown) for (const pop of box.dock.querySelectorAll<HTMLElement>(':scope > .box-modes')) work.append(pop);
+  const screen = shown?.screen ?? null;
   const reference = new Reference({reveal: parts.reveal, recall: (line) => box.recall(line)}, {keeps: true});
   // A line run, pressed in the pane (which tells that it ran): read there, under the search box, with all it printed,
   // as from Output; the Prompt, up again, starts at its line. Taken as the press begins, before the pane's box takes
   // it as a press to bring the Prompt up.
-  termHome.addEventListener('pointerdown', (event) => {
+  (terminal ?? termHome).addEventListener('pointerdown', (event) => {
     const line = (event.target as Element).closest<HTMLElement>('.term-out > :is(.cmd, .ps:not(.waits))');
     const run = box.repo && line ? runPressed(line, sessionIfAny(box.repo)?.runs ?? []) : undefined;
     if (!run) return;
@@ -218,9 +229,11 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const bar = h('div', {class: 'bar'}, parts.strip ?? h('span', {class: 'bar-room'}), reference.search, toggle);
   work.append(bar, center, side);
   const pane = new Pane(work, side, toggle);
-  measured(work, side, screenEl, box, reference);
-  roomForHeads(termHome, termHead, reference.heads);
-  levelled(work, termHome, parts.main);
+  if (shown) {
+    measured(work, side, shown.element, box, reference);
+    roomForHeads(termHome, termHead, reference.heads);
+    levelled(work, termHome, parts.main);
+  }
   requestAnimationFrame(() => { work.dataset.shown = '1'; });
 
   document.addEventListener('keydown', (event) => {
@@ -241,7 +254,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     box.attach();
     box.room();
     reference.resume();
-    if (screen.state !== 'rest' && !box.dock.contains(document.activeElement)) screen.drop();
+    if (screen && screen.state !== 'rest' && !box.dock.contains(document.activeElement)) screen.drop();
   };
-  return {element: work, reference, setRepo, settle};
+  return {element: work, reference, setRepo, settle, terminal};
 }

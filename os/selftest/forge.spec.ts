@@ -101,7 +101,7 @@ test('a file saved on another device while written here is asked about, and Keep
 });
 
 test('Escape out of an empty search gives the keyboard back to what had it', async ({signedIn: app}) => {
-  await app.forge.promptBox.click();
+  await app.forge.promptBox.focus();
   await app.forge.search.click();
   await app.forge.search.fill('hello');
   await app.page.keyboard.press('Escape');

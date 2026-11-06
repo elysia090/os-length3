@@ -53,4 +53,4 @@
 .work.bench.no-strip > .center { grid-row: 1 / -1; }
 .work.bench.no-strip > .bar { pointer-events: none; }
 .work.bench.no-strip > .bar > * { pointer-events: auto; }
-.work.bench > .center > .flow, .work.bench > .center > .columns, .col > .flow { flex: 1; min-height: 0; height: auto; }
+.work.bench > .center > .flow, .col > .flow { flex: 1; min-height: 0; height: auto; }

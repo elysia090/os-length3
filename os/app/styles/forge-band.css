@@ -42,9 +42,6 @@
 .band-add:disabled { opacity: .5; cursor: var(--cursor-arrow); background: transparent; }
 /* The files mark is the band's first, square to the pills' rounded line; ⊕ follows the pills. */
 .band-acts .mark { width: 18px; height: 18px; }
-/* ⊕ in running words: the band's own mark at the words' height, sitting on their line. */
-.inline-add { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 1.4em; height: 1.4em; margin: 0 .2em; vertical-align: middle; border: 1px solid var(--edge); border-radius: var(--r-round); }
-.inline-add .mark { width: .9em; height: .9em; }
 /* A chip picks one of several, like the template choice: round, outlined. */
 .chip {
   flex: none; min-height: var(--h-row); padding: 0 var(--s3); border: 1px solid var(--edge); border-radius: var(--r-round);

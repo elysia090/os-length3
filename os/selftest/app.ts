@@ -271,7 +271,7 @@ class Forge extends Part {
   /** A file's text, which is where it is edited. */
   editor(path: string) { return this.main.getByRole('textbox', {name: `Edit ${path}`, exact: true}); }
   /** A file's name in its head (its path in the repo), pressed to write it over. */
-  fileName(path: string) { return this.main.locator(`section.file[data-path="${path}"] > .path .path-name`).locator('visible=true'); }
+  fileName(path: string) { return this.main.locator(`.desk-box[data-key="${path}"] .desk-name`).locator('visible=true'); }
 
   /** A file renamed from its head: its name pressed, `written` (its path in the repo) written over it, Enter. */
   async rename(path: string, written: string) {

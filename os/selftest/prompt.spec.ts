@@ -276,15 +276,19 @@ test.describe('the Prompt, started by writing to it', {tag: '@slow'}, () => {
   });
 });
 
-test('Enter is a new line in the prompt box, so confirming a conversion never runs it; Ctrl+Enter runs', async ({app}) => {
+test('on the desk Enter runs the Prompt\'s line, as a terminal\'s does, Shift+Enter is a new line, and confirming a conversion never runs it', async ({app}) => {
   // Once the Prompt is up (before, a line sent waits for its first prompt line).
   await app.forge.startPrompt('hello');
   const box = app.forge.promptBox;
   await box.fill('echo one');
-  await box.press('Enter');
+  await box.press('Shift+Enter');
   await expect(box).toHaveValue('echo one\n');
+  // An Enter that confirms what an input method composes is the composing's, not a run.
+  await box.fill('echo composing');
+  await box.evaluate((el: HTMLTextAreaElement) => el.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', isComposing: true, bubbles: true, cancelable: true})));
+  await expect(box).toHaveValue('echo composing');
   await box.fill('echo entered');
-  await box.press('Control+Enter');
+  await box.press('Enter');
   await expect(box).toHaveValue('');
   await expect(app.forge.prompt).toContainText(/^entered$/m);
 });

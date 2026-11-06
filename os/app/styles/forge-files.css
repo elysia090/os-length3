@@ -7,11 +7,7 @@
 /* A file gone to (from File, from a search) stands where its head stops, inside the page's top padding: brought to
    the very edge instead, the box ran on a padding's height over its stuck head, its sides showing above the lid. */
 .work.bench .flow { scroll-padding-top: var(--s3); }
-.columns.split > .col > .flow { scroll-padding-top: var(--s1); }
 .flow:focus-visible { outline-offset: -2px; }
-/* A folder not listed yet stands a window tall: what follows it is not near until it is listed and laid out (reader.ts
-   directory). */
-.flow .dir.unlisted { min-height: 100vh; }
 /* Forge's files run on far enough past the last for it to come up to the top (a file just made, opened at the end):
    not the empty foot of the one before it filling the column over it. */
 .col > .flow::after { content: ''; display: block; height: max(0px, calc(100% + var(--s3) - var(--file-min) - var(--s6))); }
@@ -33,10 +29,6 @@
 /* Beside: at the head's right end, the window cut in two; pressed (or the head with Ctrl), the file opens in a box
    of its own beside the repo's page, the row sliding to it. Quiet until the file is pointed at. */
 .path > .file-state { margin-left: auto; }
-.file-beside { display: grid; place-items: center; flex: none; width: 24px; height: 24px; margin: -5px -6px -5px 0; padding: 0; border: 0; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: var(--cursor-hand); opacity: .55; transition: opacity var(--motion); }
-.file-beside .mark { width: var(--s4); height: var(--s4); }
-.file:hover .file-beside, .file-beside:focus-visible { opacity: 1; }
-.file-beside:hover { background: var(--raised); color: var(--ink); }
 /* Each file is a box drawn a little heavier than other lines, since it is
    the thing being worked on, and tall: a short file too reaches down to the
    foot of the rail's last place (Inbox, the eighth: the rail's first place,
@@ -103,8 +95,6 @@
 .file:focus-within > .path { color: var(--ink); }
 /* Its name, pressed, is written over where it stands (reader.ts renameIn): under the pointer a faint box round it, as
    a name to write in; written in, the box is ink and the name as wide as what is written (its size, in a mono font). */
-.path-name.renames { margin: -2px -4px; padding: 1px 3px; border: 1px solid transparent; border-radius: var(--r-field); cursor: var(--cursor-text); transition: border-color var(--motion); }
-.path-name.renames:hover { border-color: var(--edge); }
 .path-rename { min-width: 0; max-width: 100%; margin: -2px -4px; padding: 1px 3px; border: 1px solid var(--ink); border-radius: var(--r-field); outline: 0; background: var(--paper); color: var(--ink); font: inherit; }
 .path-rename:disabled { opacity: .6; }
 .path-error { margin-left: var(--s3); font-family: var(--sans); }
@@ -118,7 +108,6 @@
 .file.elsewhere { min-height: 0; border-width: 0; }
 .file.elsewhere > :not(.path) { display: none; }
 .file.elsewhere > .path { margin: 0; padding-bottom: var(--s3); border-bottom: 1px solid; border-color: inherit; border-radius: var(--r-place); color: var(--sub); }
-.file.elsewhere .file-beside { opacity: 1; color: var(--ink); }
 @keyframes landed { from, 30% { background: color-mix(in srgb, var(--marker) 70%, var(--paper)); } }
 .flow .revealed .code-edit::selection { background: var(--marker); color: var(--ink); }
 /* Saved elsewhere while this one had unsaved edits: asked in the box, under

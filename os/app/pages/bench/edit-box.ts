@@ -187,9 +187,15 @@ export class EditLine {
     const repo = this.#p.repo();
     if (!repo) return null;
     // Shown, asked of its style: offsetParent laid the page out first, at every keystroke.
-    const ok = (a: HTMLTextAreaElement | null) => !!a?.isConnected && (a.checkVisibility?.() ?? !!a.offsetParent) && a.closest<HTMLElement>('.col')?.dataset.repo === repo;
-    const area = ok(this.#last) ? this.#last : readIn(this.#p.main, repo);
-    const path = area?.closest<HTMLElement>('section.file')?.dataset.path;
+    // A box's repo: its column's (Forge's row), or the desk's it lies on.
+    const repoOf = (a: HTMLTextAreaElement) => a.closest<HTMLElement>('.col, .desk')?.dataset.repo;
+    const ok = (a: HTMLTextAreaElement | null) => !!a?.isConnected && (a.checkVisibility?.() ?? !!a.offsetParent) && repoOf(a) === repo;
+    // On a desk, the file in hand, else the last there was in hand; on a page, the one read.
+    const desk = this.#p.main.querySelector<HTMLElement>(`.desk[data-repo="${CSS.escape(repo)}"]`);
+    const area = ok(this.#last) ? this.#last
+      : desk ? desk.querySelector<HTMLTextAreaElement>('.desk-box.held .code-edit') ?? desk.querySelector<HTMLTextAreaElement>('.desk-box .code-edit')
+      : readIn(this.#p.main, repo);
+    const path = area?.closest<HTMLElement>('section.file, .desk-file')?.dataset.path;
     if (!area || !path) return null;
     // Never written in: its caret starts at the line read (a third down the center), not at its top.
     if (!this.#placed.has(area)) {

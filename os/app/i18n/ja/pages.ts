@@ -53,8 +53,6 @@ export default {
   'System': 'システム',
 
   // Forge: the reader
-  'No files yet': 'ファイルはまだありません',
-  'Symbolic link': 'シンボリックリンク',
   'Binary · {size}': 'バイナリ · {size}',
   'First {part} only (total {size}) · Read-only': '先頭{part}のみ表示（全体{size}）· 読み取り専用',
   'File too large to save here': 'ファイルが大きすぎるため、ここでは保存できません',
@@ -142,12 +140,8 @@ export default {
   'Files: New, Rename, Delete': 'ファイル：新規作成・名前変更・削除',
   'Ctrl+Click: Open to the side': 'Ctrl+クリックで並べて開く',
   'Working on {issue}: changes apply here': '{issue}の作業中：ここでの入力はこの Issue に紐づきます',
-  'Close adjacent {name}': '隣の{name}を閉じる',
   'Files in {name}': '{name}のファイル一覧',
-  'Open here': 'ここで開く',
   'Open to the side': '並べて開く',
-  'Open {path} to the side': '{path}を並べて開く',
-  '{path} no longer exists': '{path}は既に存在しません',
   'Move to {where}': '{where}に追加',
   'Search results': '検索結果',
   'Diff of {path}': '{path}の diff',

@@ -7,7 +7,6 @@ import {glide, LAND, paced, still, where} from '../../ui/glide.ts';
 import {bring, remoteOnly} from '../../remote/lifecycle.ts';
 import {work as workOn} from '../../repos/history.ts';
 import {rekey} from '../../repos/repos.ts';
-import {repoOf, type Row} from './columns.ts';
 import type {Drag} from './drag.ts';
 
 // The band: ⊕ first, then the repos out to work on, each a pill that comes
@@ -58,12 +57,13 @@ export class Band {
   private painted = '';
   /** Not read from what is kept yet: the band is, the first time the repos here are known. */
   private first = true;
-  private row: Row;
+  /** The repo worked on, as Forge holds it. */
+  private row: {repo: string | null};
   private drag: Drag;
   private ways: BandWays;
 
   /** The band is drawn in `strip`; a pill is dragged with `drag`. */
-  constructor(strip: HTMLElement, row: Row, drag: Drag, ways: BandWays) {
+  constructor(strip: HTMLElement, row: {repo: string | null}, drag: Drag, ways: BandWays) {
     this.row = row; this.drag = drag; this.ways = ways;
     arrowKeys(this.pills, '.pill-name');
     this.acts.addEventListener('click', () => ways.act(this.acts));
@@ -134,10 +134,10 @@ export class Band {
     }
   }
 
-  /** `name` in the row: in the box worked on ('on'), open beside ('beside'), or not out (''). */
+  /** `name` worked on ('on'), or not ('': each repo has its own desk, and one is on screen). */
   private stand(name: string) {
-    const {repo, shown} = this.row;
-    return repo && name === repoOf(repo) ? 'on' : shown.some((k) => repoOf(k) === name) ? 'beside' : '';
+    const {repo} = this.row;
+    return repo && name === repo ? 'on' : '';
   }
 
   /** The band drawn as the row stands: which pills, and which is worked on or open beside. */
@@ -176,10 +176,8 @@ export class Band {
     // The middle button takes it off, as it closes a tab.
     pill.addEventListener('auxclick', (event) => { if (event.button === 1) { event.preventDefault(); this.ways.takeOff(name); } });
     this.drag.from(pill, name, true);
-    // The pill shows it (ink); its button says it, which is what is heard. Beside it, its outline in ink.
-    const stands = this.stand(name);
-    if (stands === 'on') { pill.setAttribute('aria-current', 'page'); open.setAttribute('aria-current', 'page'); }
-    else if (stands === 'beside') pill.classList.add('beside');
+    // The pill shows it (ink); its button says it, which is what is heard.
+    if (this.stand(name) === 'on') { pill.setAttribute('aria-current', 'page'); open.setAttribute('aria-current', 'page'); }
     return pill;
   }
 

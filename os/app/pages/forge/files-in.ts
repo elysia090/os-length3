@@ -8,9 +8,11 @@ import type {Drag} from './drag.ts';
 /** Where files let go at `event` would go: the repo of the box under the pointer, and the folder of the file there. */
 function dropTarget(event: DragEvent) {
   const el = event.target as HTMLElement;
-  const col = el.closest<HTMLElement>('.col');
-  const file = el.closest<HTMLElement>('section.file')?.dataset.path ?? '';
-  return col?.dataset.repo ? {repo: col.dataset.repo, col, dir: file.includes('/') ? file.slice(0, file.lastIndexOf('/')) : ''} : null;
+  // The repo: its desk's (or its column's); where it is shown going: the box under the pointer, else the desk.
+  const desk = el.closest<HTMLElement>('.desk, .col');
+  const col = el.closest<HTMLElement>('.desk-box') ?? desk;
+  const file = el.closest<HTMLElement>('section.file, .desk-file')?.dataset.path ?? '';
+  return desk?.dataset.repo && col ? {repo: desk.dataset.repo, col, dir: file.includes('/') ? file.slice(0, file.lastIndexOf('/')) : ''} : null;
 }
 
 /** `name`, or the first of "name (2)", "name (3)"… that `taken` does not have (before its extension, if it has one). */

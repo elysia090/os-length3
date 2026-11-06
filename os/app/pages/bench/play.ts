@@ -34,7 +34,7 @@ const editors = new Map<string, {take(text: string): boolean; area: HTMLTextArea
  * opened on it meanwhile starts empty, and the file is typed into it). */
 const held = new Map<string, {count: number; text: string | null; made: boolean}>();
 
-/** An editor open on `path` of `repo` (forge/reader.ts): the player types into it through `take`. */
+/** An editor open on `path` of `repo` (forge/desk-file.ts): the player types into it through `take`. */
 export function editorOn(repo: string, path: string, editor: {take(text: string): boolean; area: HTMLTextAreaElement}) {
   editors.set(key(repo, path), editor);
 }

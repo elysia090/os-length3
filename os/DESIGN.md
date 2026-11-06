@@ -1944,6 +1944,25 @@ pointer, a chevron at the row's end says it goes there.
 
 ### Forge
 
+The center is the repo's desk. What is open lies on a plane on dots, each box
+as wide as 80 columns of code, inked round with a hard shadow, its name
+outside its top-left corner (its folder quiet before it) and its close a dot
+outside its bottom-right. The Prompt is the first box: what it printed, and
+under it the line one types at, its pill the prompt (`garden $`) and what the
+line does (Run, Issue, TODO, Agent; Alt and a number, or pressed). Under Run,
+Enter runs the line as a terminal's does, Shift+Enter is a new line. Each
+file opened is a box of its own beside it, written in where it lies (there
+is no Edit to choose: the file is typed into). One box is in hand: the camera
+works close to it, the box in the middle across, under the top, and moves as
+a scroll does, so the keyboard going into a box, or something brought into
+view, takes the camera there and that box into hand. Escape steps back to
+the whole desk, at most half its size; Enter, or a box pressed, comes close
+again. Alt and an arrow hand over to the next box that way; Alt, Shift and
+an arrow carry the box in hand a slot, the others stepping over. A file
+gone goes from the desk; moved, its box is the file where it went. Each
+repo keeps its own desk, as it was left, from one visit to the next; a desk
+never worked at begins with the Prompt and the README beside it.
+
 Where you work. The repos out to work on run as pills in a band on the top
 line; the search box sits on the same line over the right pane, and at the
 line's right end the round switch that puts the right pane away and brings

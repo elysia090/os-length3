@@ -75,6 +75,9 @@ interface BoxParts {
   went(repo: string, to: {issue: string} | {file: string} | 'todo'): void;
   /** A file of the repo in front brought into view at a line (Forge's; Git's shows the file). */
   reveal(path: string, line?: number): void;
+  /** The box is the Prompt's own last line, on a desk (Forge's): under Run, Enter runs what is written, as a
+   * terminal's does (Shift+Enter a new line). */
+  desk?: boolean;
 }
 
 /** The box at the foot of a bench's center: its field and pill, what is said under it, what it does with what is written. */
@@ -636,6 +639,7 @@ export class Box {
     // Enter is a new line; Ctrl+Enter (⌘+Enter) sends. Enter on a line of one, as a terminal's hand presses it, the
     // keys that run it give beside Run, one after the other, as keys pressed together.
     if (sends(event)) { event.preventDefault(); this.#send(); return; }
+    if (this.#p.desk && this.#mode === 'run' && event.key === 'Enter' && plain(event) && !event.isComposing) { event.preventDefault(); this.#send(); return; }
     if (event.key === 'Enter' && plain(event) && !prompt.value.includes('\n') && prompt.value.trim() && !still())
       [...this.#sends.children].forEach((k, i) => k.animate([{translate: '0 0'}, {translate: '0 2px', offset: .35}, {translate: '0 0'}],
         {duration: paced(260), delay: paced(i * 90), easing: 'ease-out'}));
