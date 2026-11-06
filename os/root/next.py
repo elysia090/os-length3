@@ -29,6 +29,8 @@ Rules beyond "the newest release, not a candidate":
                      builder's Rust or Go (Alpine's, as its index has it) builds, by the version each asks for.
   bash               its release; its makers' patches to it are root/packages/bash/ (each checked by its signature
                      when it is taken), and a patch past them is said (bash-X.Y-patches/).
+  getconf, iconv     Alpine's musl-utils for the builder's Alpine: its version is the musl it is built with, and a
+                     newer one is taken from the head of that Alpine's stable branch of aports.
 Runs where every maker's site can be reached (GitHub Actions: .github/workflows/sources-next.yml).
 """
 import functools
@@ -85,6 +87,16 @@ def alpine(package, repo):
         if fields.get('P') == package:
             return fields['V'].split('-r')[0]
     raise RuntimeError(f'no {package} in Alpine {release} {repo}')
+
+
+def aports(path):
+    """A file of Alpine's musl-utils (aports' main/musl/) as the builder's Alpine has it: (its package's version, the
+    file at the head of that Alpine's stable branch)."""
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'build.sh')) as f:
+        release = '.'.join(re.search(r"grep -q '\^(\d+)\\\.(\d+)\\\.' /etc/alpine-release", f.read()).groups())
+    refs = get('https://gitlab.alpinelinux.org/alpine/aports.git/info/refs?service=git-upload-pack')
+    commit = re.search(rf'([0-9a-f]{{40}}) refs/heads/{re.escape(release)}-stable$', refs, re.M).group(1)
+    return alpine('musl-utils', 'main'), f'https://gitlab.alpinelinux.org/alpine/aports/-/raw/{commit}/main/musl/{path}'
 
 
 def crate(name):
@@ -148,6 +160,8 @@ NEWEST = {
     'IPROUTE2': lambda: newest('https://mirrors.edge.kernel.org/pub/linux/utils/net/iproute2/', r'iproute2-(\d+\.\d+\.\d+)\.tar\.xz'),
     'MAKE': lambda: newest('https://ftp.gnu.org/gnu/make/', r'make-(\d+\.\d+(?:\.\d+)?)\.tar\.gz'),
     'MUSL': lambda: newest('https://musl.libc.org/releases.html', r'musl-(\d+\.\d+\.\d+)\.tar\.gz'),
+    'MUSL_GETCONF': lambda: aports('getconf.c'),
+    'MUSL_ICONV': lambda: aports('iconv.c'),
     'FORTIFY_HEADERS': lambda: github('jvoisin/fortify-headers', prefix=''),
     # binutils itself; gold, which every build here leaves out, was a separate archive (binutils-with-gold) until 2.47.
     'BINUTILS': lambda: newest('https://ftp.gnu.org/gnu/binutils/', r'binutils-(\d+\.\d+(?:\.\d+)?)\.tar\.xz'),
@@ -160,6 +174,7 @@ NEWEST = {
     'CURL': lambda: newest('https://curl.se/download/', r'curl-(\d+\.\d+\.\d+)\.tar\.xz'),
     'GIT': lambda: newest('https://www.kernel.org/pub/software/scm/git/', r'git-(\d+\.\d+\.\d+)\.tar\.xz'),
     'TAR': lambda: newest('https://ftp.gnu.org/gnu/tar/', r'tar-(\d+\.\d+(?:\.\d+)?)\.tar\.xz'),
+    'COREUTILS': lambda: newest('https://ftp.gnu.org/gnu/coreutils/', r'coreutils-(\d+\.\d+(?:\.\d+)?)\.tar\.xz'),
     'GZIP': lambda: newest('https://ftp.gnu.org/gnu/gzip/', r'gzip-(\d+\.\d+(?:\.\d+)?)\.tar\.xz'),
     'XZ': lambda: github('tukaani-project/xz'),
     'BZIP2': lambda: newest('https://sourceware.org/pub/bzip2/', r'bzip2-(\d+\.\d+\.\d+)\.tar\.gz'),
