@@ -269,15 +269,17 @@ static struct dfa *dfa_new(struct re *r, int mode) {
 }
 
 /* The row of the state where a run begins, by the flags of the byte before. */
-static u32 dfa_start(struct dfa *d, u32 flags, u32 *keep, u32 nkeep) {
-  flags &= d->need;
-  if (d->starts[flags]) return d->starts[flags] - 1;
+__attribute__((noinline)) static u32 dfa_start_made(struct dfa *d, u32 flags, u32 *keep, u32 nkeep) {
   u32 s = d->mode == D_FWD ? d->prefix : d->r->start;
   for (;;) {
     u32 k = dfa_state(d, &s, d->mode == D_LINES ? 0 : 1, flags);
     if (k != ~0u) return (d->starts[flags] = k * d->ncls + 1) - 1;
     dfa_room(d, keep, nkeep);
   }
+}
+static inline u32 dfa_start(struct dfa *d, u32 flags, u32 *keep, u32 nkeep) {
+  flags &= d->need;
+  return __builtin_expect(d->starts[flags] != 0, 1) ? d->starts[flags] - 1 : dfa_start_made(d, flags, keep, nkeep);
 }
 
 /* What the move on class c from the row says, worked out if it is not yet. */
@@ -291,12 +293,11 @@ static int dfa_line(struct dfa *d, const u8 *t, u64 ls, u64 le) {
   u32 row = dfa_start(d, F_BOL | F_BOT, 0, 0);
   const u32 *tr = d->trans;
   const u8 *cl = d->cls;
-  for (u64 i = ls; i < le; i++) {
-    u32 v = tr[row + cl[t[i]]];
+  for (const u8 *p = t + ls, *e = t + le; p < e; p++) {
+    u32 v = tr[row + cl[*p]];
     if (__builtin_expect(v >= T_SLOW, 0)) {
-      v = dfa_step(d, &row, cl[t[i]], 0, 0);
-      if (v & T_QUIT) return -1;
-      if (v & T_MATCH) return 1;
+      if (v & T_UNKNOWN) v = dfa_move(d, &row, cl[*p], 0, 0);
+      if (v & (T_QUIT | T_MATCH)) return v & T_QUIT ? -1 : 1;
     }
     row = v;
   }
@@ -307,14 +308,15 @@ static int dfa_line(struct dfa *d, const u8 *t, u64 ls, u64 le) {
  * none, -2 when the DFA cannot say. */
 static i64 dfa_fwd(struct dfa *d, const u8 *t, u64 ls, u64 le, u64 x) {
   u32 row = dfa_start(d, x == ls ? F_BOL | F_BOT : before(t[x - 1]), 0, 0);
+  const u32 *tr = d->trans;
   const u8 *cl = d->cls;
   i64 end = -1;
-  for (u64 i = x; i < le; i++) {
-    u32 v = d->trans[row + cl[t[i]]];
-    if (v >= T_SLOW) {
-      v = dfa_step(d, &row, cl[t[i]], 0, 0);
+  for (const u8 *p = t + x, *e = t + le; p < e; p++) {
+    u32 v = tr[row + cl[*p]];
+    if (__builtin_expect(v >= T_SLOW, 0)) {
+      if (v & T_UNKNOWN) v = dfa_move(d, &row, cl[*p], 0, 0);
       if (v & T_QUIT) return -2;
-      if (v & T_MATCH) end = (i64)i;
+      if (v & T_MATCH) end = p - t;
       if (v & T_DEAD) return end;
       v &= T_ROW;
     }
@@ -327,14 +329,15 @@ static i64 dfa_fwd(struct dfa *d, const u8 *t, u64 ls, u64 le, u64 x) {
  * DFA cannot say. */
 static i64 dfa_rev(struct dfa *d, const u8 *t, u64 ls, u64 le, u64 x, u64 e) {
   u32 row = dfa_start(d, e == le ? F_BOL | F_BOT : before(t[e]), 0, 0);
+  const u32 *tr = d->trans;
   const u8 *cl = d->cls;
   i64 s = -1;
-  for (u64 i = e; i > x; i--) {
-    u32 v = d->trans[row + cl[t[i - 1]]];
-    if (v >= T_SLOW) {
-      v = dfa_step(d, &row, cl[t[i - 1]], 0, 0);
+  for (const u8 *p = t + e, *b = t + x; p > b; p--) {
+    u32 v = tr[row + cl[p[-1]]];
+    if (__builtin_expect(v >= T_SLOW, 0)) {
+      if (v & T_UNKNOWN) v = dfa_move(d, &row, cl[p[-1]], 0, 0);
       if (v & T_QUIT) return -2;
-      if (v & T_MATCH) s = (i64)i;
+      if (v & T_MATCH) s = p - t;
       if (v & T_DEAD) return s;
       v &= T_ROW;
     }
@@ -351,14 +354,13 @@ static i64 dfa_rev(struct dfa *d, const u8 *t, u64 ls, u64 le, u64 x, u64 e) {
  * cannot say. */
 static int dfa_at(struct dfa *d, const u8 *t, u64 n, u64 x) {
   u32 row = dfa_start(d, !x || t[x - 1] == '\n' ? F_BOL | F_BOT : before(t[x - 1]), 0, 0);
+  const u32 *tr = d->trans;
   const u8 *cl = d->cls;
-  for (u64 i = x; i < n; i++) {
-    u32 v = d->trans[row + cl[t[i]]];
-    if (v >= T_SLOW) {
-      v = dfa_step(d, &row, cl[t[i]], 0, 0);
-      if (v & T_QUIT) return -1;
-      if (v & T_MATCH) return 1;
-      if (v & T_DEAD) return t[i] == '\n' ? 2 : 0;
+  for (const u8 *p = t + x, *e = t + n; p < e; p++) {
+    u32 v = tr[row + cl[*p]];
+    if (__builtin_expect(v >= T_SLOW, 0)) {
+      if (v & T_UNKNOWN) v = dfa_move(d, &row, cl[*p], 0, 0);
+      if (v & (T_QUIT | T_MATCH | T_DEAD)) return v & T_QUIT ? -1 : v & T_MATCH ? 1 : *p == '\n' ? 2 : 0;
     }
     row = v;
   }
@@ -367,6 +369,11 @@ static int dfa_at(struct dfa *d, const u8 *t, u64 n, u64 x) {
 
 /* Where the line holding byte i starts (after the \n before it, or `from`), and where it ends (its \n, or n). */
 static u64 line_start(const u8 *t, u64 from, u64 i) {
+  const v16 nl = splat('\n');
+  for (; i >= from + 16; i -= 16) { /* the sixteen before i, the last \n among them */
+    u32 m = mask16(ld128(t + i - 16) == nl);
+    if (m) return i - 16 + (u32)(31 - __builtin_clz(m)) + 1;
+  }
   while (i > from && t[i - 1] != '\n') i--;
   return i;
 }

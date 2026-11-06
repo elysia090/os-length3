@@ -32,6 +32,7 @@ static int main_(int argc, char **argv, char **envp) {
   }
   struct grep g;
   grep_init(&g, r);
+  g.spans = !whole;
   grep_text(&g, in, n);
   for (u64 ls; (ls = grep_line(&g)) < n;) {
     u64 le = line_end(in, n, ls);

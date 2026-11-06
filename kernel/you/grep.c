@@ -21,6 +21,8 @@ struct grep {
   u64 *found, cap;
   u32 nfound, took;
   int lanes;           /* the literal let go of: the lanes from here */
+  int spans;           /* the caller asks each line for its matches (grep_span): a line the literal finds is not asked
+                        * of the DFA first, the first grep_span is that question (one pass over it, not two) */
   u64 passed, verified, tried;
 };
 
@@ -35,7 +37,8 @@ static void grep_text(struct grep *g, const u8 *t, u64 n) {
   g->lanes = !g->r->litn, g->passed = g->verified = g->tried = 0;
 }
 
-/* The start of the next line that holds a match, or n when there is none. */
+/* The start of the next line that holds a match, or n when there is none (with spans: a line that may hold one, which
+ * then has none when its first grep_span finds none). */
 static u64 grep_line(struct grep *g) {
   struct re *r = g->r;
   const u8 *t = g->t;
@@ -60,11 +63,12 @@ static u64 grep_line(struct grep *g) {
     u64 ls = line_start(t, 0, p), le = line_end(t, n, p + r->litn), ms, me;
     if (!r->only_lit && (!r->lit_first || k == 2)) {
       g->passed += le + 1 - g->at, g->verified += le - ls, g->tried++;
+      if (g->tried >= 32 && g->verified * 4 > g->passed) g->lanes = 1, g->nfound = g->took = 0; /* (from the next) */
+      if (g->spans) { g->at = le < n ? le + 1 : n; return ls; } /* (asked by its first grep_span) */
       k = dfa_line(g->lines, t, ls, le);
     }
     g->at = le < n ? le + 1 : n;
     if (k > 0 || (k < 0 && re_run(r, t + ls, le - ls, 0, &ms, &me))) return ls;
-    if (g->tried >= 32 && g->verified * 4 > g->passed) g->lanes = 1, g->nfound = g->took = 0;
   }
   if (g->took < g->nfound) return g->found[g->took++];
   return n;
