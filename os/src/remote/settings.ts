@@ -1,4 +1,4 @@
-// Home's settings that are the person's, agreed with the Remote (core/src/home.rs), and what moved there since this
+// Home's settings that are the person's, agreed with the Remote (core/src/home/), and what moved there since this
 // device last asked: the two looks lifecycle.ts takes to know what to agree and what to fetch.
 
 import {core} from '../app/host.ts';
@@ -28,7 +28,7 @@ export function homeMoved(key: HomeKey, version: number): boolean {
   return version !== (b?.version ?? 0) || (getState(key) ?? '') !== (b?.value ?? '');
 }
 
-/** Agree a setting with the Remote (core/src/home.rs agree_with): what changed here is sent, what changed there taken. */
+/** Agree a setting with the Remote (core/src/home/agree.rs agree_with): what changed here is sent, what changed there taken. */
 export async function syncHome(key: HomeKey): Promise<void> {
   await core('home_sync', {key});
   await reloadState([key, 'sync']);

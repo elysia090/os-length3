@@ -7,7 +7,6 @@ use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
-use super::listener::dir;
 
 /// One address one way: an IPv4 peer that reached a socket taking both comes as ::ffff:a.b.c.d, and is a.b.c.d.
 pub fn canonical(ip: IpAddr) -> IpAddr {
@@ -358,4 +357,10 @@ pub fn port_for(uid: u32) -> u16 {
 
 /// The first port: a person's is this plus their user number (mod 10000), 22000–31999.
 pub const BASE_PORT: u16 = 22000;
+
+/// Where SSH keeps its things on this device.
+pub fn dir(data: &Path) -> PathBuf {
+    data.join("ssh")
+}
+
 

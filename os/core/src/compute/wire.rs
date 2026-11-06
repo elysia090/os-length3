@@ -15,7 +15,7 @@ pub const PORT: u32 = 1024;
 
 #[derive(Debug, PartialEq)]
 pub enum Frame {
-    /// Host to guest: the run (compute.rs Spec, JSON).
+    /// Host to guest: the run (compute/spec.rs Spec, JSON).
     Spec(Vec<u8>),
     /// Guest to host: what the run printed to standard output, and to standard error.
     Out(Vec<u8>),

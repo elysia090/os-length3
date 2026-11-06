@@ -307,3 +307,18 @@ pub struct FileChange {
     pub binary: bool,
 }
 
+/// The folders a change touches (each once, in order) and how many files.
+pub(super) fn places(then: &Tree, now: &Tree) -> (Vec<String>, usize) {
+    let mut folders: Vec<String> = Vec::new();
+    let mut files = 0;
+    let paths: std::collections::BTreeSet<&String> = then.keys().chain(now.keys()).collect();
+    for p in paths {
+        if then.get(p) == now.get(p) || !(matches!(now.get(p), Some(Some(_))) || matches!(then.get(p), Some(Some(_)))) { continue; }
+        files += 1;
+        let f = folder_of(p);
+        if !folders.contains(&f) { folders.push(f); }
+    }
+    (folders, files)
+}
+
+

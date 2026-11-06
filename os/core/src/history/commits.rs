@@ -6,90 +6,11 @@
 
 use crate::remote::{self, Client, Reply, Tree};
 use crate::repos::store::Repos;
-use crate::text::title::{kind_of, named};
+use crate::text::title::named;
 use crate::Result;
-use serde::Serialize;
-use std::collections::HashMap;
-use super::changes::{After, blob, changes_of, folder_of, head_tree, text};
-use super::review::submit;
-
-/// Push: the work's commits become the line's state on the Remote.
-pub fn push(repos: &Repos, repo: &str) -> Result<String> {
-    let on = repos.line(repo);
-    if on == crate::repos::lines::MAIN {
-        return Err(crate::tr!("main is pushed by merging changes into it; work on an issue to push", "main には Change を Merge して入れます。Issue の作業で Push してください"));
-    }
-    // Nothing new is no push: an empty answer says so.
-    let l = remote::line(repo, &on)?.ok_or_else(|| crate::tr!("The Remote has no such work", "Remote にその作業がありません"))?;
-    let (commits, unpushed) = progress(repo, &l)?;
-    if commits == 0 { return Err(crate::tr!("No commits made yet", "作業開始以降コミットされた内容はありません")); }
-    if unpushed == 0 { return Ok(String::new()); }
-    let client = Client::open()?;
-    let (key, _) = remote::key(repos, repo);
-    let head = remote::base(&key).and_then(|b| b.head).ok_or_else(|| crate::tr!("Nothing committed yet", "まだ何も Commit していません"))?;
-    let v = client.json("POST", &format!("/v1/repos/{repo}/lines/{on}/push"), Some(serde_json::json!({"head": head})))?;
-    Ok(v["pushed"].as_str().unwrap_or_default().to_string())
-}
-
-/// How many commits the work on line `l` has made since it began, and how many of them are not pushed yet.
-pub(crate) fn progress(repo: &str, l: &remote::Line) -> Result<(usize, usize)> {
-    let log = log_of(repo, &l.line, 200)?;
-    let mine: Vec<&Cut> = log.iter().take_while(|c| Some(&c.id) != l.base.as_ref()).collect();
-    let unpushed = mine.iter().take_while(|c| Some(&c.id) != l.pushed.as_ref()).count();
-    Ok((mine.len(), if l.pushed == l.base && !mine.is_empty() { mine.len() } else { unpushed }))
-}
-
-/// "Fix：件名" for a commit.
-pub fn line(c: &Cut) -> String {
-    named(c.kind.as_deref(), &c.title)
-}
-
-/// The folders a change touches (each once, in order) and how many files.
-pub(super) fn places(then: &Tree, now: &Tree) -> (Vec<String>, usize) {
-    let mut folders: Vec<String> = Vec::new();
-    let mut files = 0;
-    let paths: std::collections::BTreeSet<&String> = then.keys().chain(now.keys()).collect();
-    for p in paths {
-        if then.get(p) == now.get(p) || !(matches!(now.get(p), Some(Some(_))) || matches!(then.get(p), Some(Some(_)))) { continue; }
-        files += 1;
-        let f = folder_of(p);
-        if !folders.contains(&f) { folders.push(f); }
-    }
-    (folders, files)
-}
-
-pub fn log_of(repo: &str, line: &str, n: usize) -> Result<Vec<Cut>> {
-    let Ok(client) = Client::open() else { return Ok(Vec::new()) };
-    // What each commit changed, as the Remote counted it, without its tree; a Remote that does not count
-    // it yet sends the trees, and they are compared here.
-    let v = match client.call("GET", &format!("{}{}limit={n}&summary=1", remote::at_path(repo, line, "/log"), if line == crate::repos::lines::MAIN { "?" } else { "&" }), None)? {
-        Reply::Ok(v) => v,
-        _ => return Ok(Vec::new()),
-    };
-    let list = v.as_array().cloned().unwrap_or_default();
-    let trees: HashMap<String, Tree> = list.iter().filter_map(|c| Some((c["id"].as_str()?.to_string(), remote::tree_of(&c["tree"])))).collect();
-    Ok(list.iter().map(|c| {
-        let counted = c["files"].as_u64().zip(c["folders"].as_array())
-            .map(|(n, f)| (f.iter().filter_map(|x| x.as_str().map(String::from)).collect::<Vec<_>>(), n as usize));
-        let (folders, files) = counted.unwrap_or_else(|| {
-            let tree = remote::tree_of(&c["tree"]);
-            let parent = c["parent"].as_str().and_then(|p| trees.get(p)).cloned().unwrap_or_default();
-            places(&parent, &tree)
-        });
-        let s = |k: &str| c[k].as_str().unwrap_or_default().to_string();
-        Cut {
-            id: s("id"), issue: Some(s("issue")).filter(|i| !i.is_empty()), kind: Some(s("kind")).filter(|k| !k.is_empty()),
-            title: s("title"), note: s("note"), time: c["time"].as_u64().unwrap_or(0), folders, files,
-            added: c["added"].as_u64().unwrap_or(0), removed: c["removed"].as_u64().unwrap_or(0),
-            merged: c["merged"].as_str().map(String::from), handed: None,
-        }
-    }).collect())
-}
-
-/// The commits of the line `repo` shows (or of `line`), newest first.
-pub fn log(repos: &Repos, repo: &str, n: usize) -> Result<Vec<Cut>> {
-    log_of(repo, &repos.line(repo), n)
-}
+use super::changes::{After, blob, changes_of, head_tree, text};
+use super::log::Cut;
+use super::review::{push, submit, words};
 
 /// Each issue file main's draft holds and its last commit does not (written while signed out, renumbered, or one
 /// whose own commit did not go): committed now, each by itself, by what happened to it; a file gone goes with the
@@ -129,7 +50,7 @@ pub fn settle_issues(repos: &Repos, repo: &str) -> Result<usize> {
 pub fn commit_issue(repos: &Repos, repo: &str, file: &str, deed: &str) -> Result<bool> {
     let path = format!("issue/{}", file.trim_start_matches("issue/"));
     let text = repos.on_main().read(repo, &path, 256 * 1024).ok().and_then(|c| c.text);
-    // Written here, it is offered to the agent; closed, what was for it is done with (tasks.rs). Signed in or not.
+    // Written here, it is offered to the agent; closed, what was for it is done with (agent/tasks.rs). Signed in or not.
     match deed {
         "new" => crate::agent::tasks::issue_written(repo, &path, &text.as_deref().map(|t| crate::repos::issues::parse(repo, file, t).title).unwrap_or_default()),
         "close" => crate::agent::tasks::issue_over(repo, &path),
@@ -239,7 +160,7 @@ pub fn cut(repos: &Repos, repo: &str, issue: Option<&str>, line: &str, note: &st
                 // Not kept here: the next sync takes the Remote's head again, which is this commit.
                 let _ = remote::set_head(&key, &id);
                 // A commit on an issue's work is handed in as it is made: there is no step of its own to push it, and
-                // its change is always its last commit. Its tests run by themselves too (tasks.rs).
+                // its change is always its last commit. Its tests run by themselves too (agent/tasks.rs).
                 let handed = if on == crate::repos::lines::MAIN { None } else { push(repos, repo).and_then(|_| submit(repos, repo, "")).ok().map(|c| c.version) };
                 if let Ok(dir) = repos.dir(repo) { crate::agent::tasks::committed(repo, &on, &dir); }
                 return Ok(Cut {
@@ -255,47 +176,5 @@ pub fn cut(repos: &Repos, repo: &str, issue: Option<&str>, line: &str, note: &st
         }
     }
     Err(crate::tr!("Remote changed concurrently; commit aborted", "Remote 側で更新が続いているためコミットできませんでした"))
-}
-
-/// The words a commit goes by: an issue's first line (and its file), or the line given.
-pub(super) fn words(repos: &Repos, repo: &str, issue: Option<&str>, line: &str) -> Result<(Option<String>, String, String)> {
-    // Work on an issue commits under it, whatever else is said.
-    let on = repos.line(repo);
-    let issue = issue.map(String::from).or_else(|| (on != crate::repos::lines::MAIN).then(|| format!("issue/{on}.md")));
-    match issue {
-        Some(file) => {
-            let file = file.trim_start_matches("issue/").to_string();
-            let text = repos.read(repo, &format!("issue/{file}"), 256 * 1024)?.text.ok_or_else(|| crate::tr!("The issue is not text", "Issue がバイナリです"))?;
-            let i = crate::repos::issues::parse(repo, &file, &text);
-            Ok((i.kind, i.title, format!("issue/{file}")))
-        }
-        None => {
-            let (kind, title) = kind_of(line);
-            Ok((kind, title, String::new()))
-        }
-    }
-}
-
-/// A cut, as a page shows it.
-#[derive(Serialize, Debug, Clone, PartialEq)]
-pub struct Cut {
-    pub id: String,
-    /// The issue it was cut under ("issue/001.md"), if any.
-    pub issue: Option<String>,
-    pub kind: Option<String>,
-    pub title: String,
-    pub note: String,
-    /// Milliseconds since the epoch.
-    pub time: u64,
-    pub folders: Vec<String>,
-    pub files: usize,
-    pub added: u64,
-    pub removed: u64,
-    /// For a merge: the line's commit main took.
-    pub merged: Option<String>,
-    /// On an issue's work: the version of its change it was handed in as, by itself (none when that did not go:
-    /// the next commit hands it in).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub handed: Option<i64>,
 }
 

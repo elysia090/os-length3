@@ -14,7 +14,7 @@
 //   node scripts/pin-root.mjs OUT/os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst [WEB] [--rs FILE]
 //
 // WEB is l3 for the browser made from that root (public/l3); its l3.json
-// must name this root. --rs writes another root.rs (for a test).
+// must name this root. --rs writes another root/ (for a test).
 
 import {createHash} from 'node:crypto';
 import {readFileSync, statSync, writeFileSync} from 'node:fs';

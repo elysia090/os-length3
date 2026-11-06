@@ -1,9 +1,9 @@
 //! What a file must not carry to the Remote: a secret. A Prompt started here has the Agent's key in its environment
-//! (agent_key.rs), and whatever runs there can write it into a file of the repo; the Remote would then keep it, and
+//! (device/agent_key.rs), and whatever runs there can write it into a file of the repo; the Remote would then keep it, and
 //! show it to everyone a repo is shared with. So a file about to be sent is read for one first, as GitHub's push
 //! protection reads a push, and one that holds a secret stays on this device, named as what cannot be sent (as a file
 //! over 16 MB is): a Commit then says which and why until it is taken out. Only forms nothing else has are looked
-//! for, so nothing ordinary is held back: the models' makers' keys (as agent_key.rs knows them), Stripe's live keys,
+//! for, so nothing ordinary is held back: the models' makers' keys (as device/agent_key.rs knows them), Stripe's live keys,
 //! GitHub's tokens, and this device's own sign-in, whole.
 
 use crate::device::agent_key;

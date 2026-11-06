@@ -1,6 +1,6 @@
 // Where issues are kept: main's copy of a repo, whatever work it shows now (an issue is main's, the same issue from
 // the work on it as from anywhere else), and history at once. Each issue's file is committed on main by itself as it
-// is written, its words changed, closed or reopened (core history.rs commit_issue): main's card holds only the
+// is written, its words changed, closed or reopened (core history/commits.rs commit_issue): main's card holds only the
 // person's own files, a work starts from a main that has every issue, and a work's change never carries one.
 // Signed out, an issue is written and waits; Git commits what waits once there is a Remote (settle).
 

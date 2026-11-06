@@ -3,13 +3,13 @@
 
 // No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
 #![forbid(unsafe_code)]
-use super::base::sync_dir;
 use crate::text::names::is_git_name;
 use crate::fs::hash::sha256;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
+use super::connection::sync_dir;
 
 
 #[derive(Debug, Default)]
@@ -84,7 +84,7 @@ pub fn local_tree_fresh(dir: &Path) -> Local {
     out
 }
 
-/// The files of `here` changed since `agreed` that hold a secret (secrets.rs), with what each holds: they stay here,
+/// The files of `here` changed since `agreed` that hold a secret (device/secrets.rs), with what each holds: they stay here,
 /// unsent. Only what changed is read (what is agreed is on the Remote already), and each content once: the verdict is
 /// kept by its digest while this device's own secrets stay the same.
 pub(super) fn secrets_held(here: &Local, agreed: &Tree, own: &[String]) -> Vec<(String, String)> {
@@ -209,7 +209,7 @@ pub(super) fn walk(dir: &Path, prefix: &str, out: &mut Local) {
         if meta.file_type().is_symlink() {
             out.unsynced.push((rel, crate::tr!("a link", "リンク")));
         } else if meta.is_dir() {
-            // Made from the repo's own files (owned.rs): not the repo's to send, nor what keeps it here.
+            // Made from the repo's own files (prompt/writes.rs): not the repo's to send, nor what keeps it here.
             if crate::prompt::writes::derived(dir, &name, &path) { continue; }
             walk(&path, &rel, out);
         } else if meta.is_file() {

@@ -1,6 +1,6 @@
-//! This device, apart from what the person keeps on it: its secrets (vault.rs, agent_key.rs, and what must not
-//! leave with a file: secrets.rs), how it reaches the network (net.rs, download.rs), and the desktop app on it
-//! (desktop.rs).
+//! This device, apart from what the person keeps on it: its secrets (device/vault.rs, device/agent_key.rs, and what must not
+//! leave with a file: device/secrets.rs), how it reaches the network (device/net.rs, download.rs), and the desktop app on it
+//! (device/desktop.rs).
 
 pub mod agent_key;
 #[cfg(unix)]

@@ -1,4 +1,4 @@
-//! What a Prompt's programs may not ask the kernel at all (launch.rs): a
+//! What a Prompt's programs may not ask the kernel at all (prompt/launch.rs): a
 //! seccomp filter over the namespaces, so that what the user namespace makes
 //! "root" cannot reach the parts of the kernel a sandboxed program has no
 //! use for, and that are where escapes are found. It is installed in the
@@ -161,7 +161,7 @@ pub fn install_with(errno: u16) -> io::Result<()> {
     Ok(())
 }
 
-/// The Prompt's filter (launch.rs), refusing with EPERM.
+/// The Prompt's filter (prompt/launch.rs), refusing with EPERM.
 pub fn install() -> io::Result<()> { install_with(libc::EPERM as u16) }
 
 #[cfg(test)]

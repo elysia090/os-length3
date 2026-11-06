@@ -6,7 +6,7 @@
 //!   <data>/work/<repo>/<line>/        each issue's copy
 //!   <data>/sync/<repo>.line           which one the repo shows now
 //!
-//! Starting, switching and finishing work (which also speak with the Remote) are work.rs's.
+//! Starting, switching and finishing work (which also speak with the Remote) are history/work.rs's.
 
 // No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
 #![forbid(unsafe_code)]

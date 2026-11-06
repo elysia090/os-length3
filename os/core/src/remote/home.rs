@@ -6,16 +6,15 @@
 
 use crate::Result;
 use super::base::lock;
-use super::connection::{bearer, Connection, connection, save_connection};
 use super::http::{Client, failed, Failure, Reply};
-use super::login::whose;
+use super::login::account_id;
 
 /// Whether a setting here waits to be sent (it differs from what was last agreed); no request is made.
 pub fn home_waiting(key: &str) -> bool {
     crate::home::SYNCED.contains(&key) && crate::home::waiting(&crate::home::Files, key)
 }
 
-/// One of Home's settings taken off this device, when it is what the Remote has (home.rs leave): whether it went.
+/// One of Home's settings taken off this device, when it is what the Remote has (home/agree.rs leave): whether it went.
 pub fn leave_home(key: &str) -> Result<bool> {
     if !crate::home::SYNCED.contains(&key) {
         return Err(crate::tr!("{} is this device's own; it is not kept on the Remote", "{} はこの端末のもので、Remote には置きません", key));
@@ -34,19 +33,9 @@ pub fn sync_home(key: &str) -> Result<crate::home::HomeSynced> {
     let who = account_id();
     // Not a repo's name (no repo is called with a ~), so its own lock.
     let _held = lock("~home")?;
-    // What this device ran is kept as what it trusts before the Remote's dotfiles come in (home.rs keep_trust).
+    // What this device ran is kept as what it trusts before the Remote's dotfiles come in (home/dotfiles.rs keep_trust).
     if key == "dotfiles" { crate::home::keep_trust()?; }
     crate::home::agree_with(&mut crate::home::Files, &client, key, who.as_deref())
-}
-
-/// The account this device is signed in as. A session kept without it noted (a browser's sign-in): the
-/// Remote is asked whose it is, once, and it is noted.
-pub(super) fn account_id() -> Option<String> {
-    connection().and_then(|c| c.user.clone().or_else(|| {
-        let who = whose(&c.url, bearer().ok().flatten().as_deref())?.user;
-        let _ = save_connection(&Connection { user: Some(who.clone()), ..c });
-        Some(who)
-    }))
 }
 
 impl crate::home::HomeThere for Client {

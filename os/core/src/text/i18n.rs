@@ -20,7 +20,7 @@ pub fn ja() -> bool {
     }
     let ja = match std::env::var("LENGTH3_LANG").ok().filter(|v| !v.is_empty()) {
         Some(v) => v.starts_with("ja"),
-        // Home's `lang`, read where Home keeps it (home.rs), as the one setting the words hang on.
+        // Home's `lang`, read where Home keeps it (home/), as the one setting the words hang on.
         None => std::fs::read_to_string(crate::fs::paths::home_dir().join("lang.json")).ok()
             .and_then(|t| serde_json::from_str::<String>(&t).ok()).is_some_and(|l| l == "ja"),
     };

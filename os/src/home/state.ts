@@ -54,7 +54,7 @@ export async function loadState(keys: readonly Key[] = KEYS): Promise<void> {
       try { localStorage.removeItem(STORAGE[key]); } catch { /* moved; the leftover is never read again natively */ }
     }
     // None yet (a device from before it was kept): what this device ran until now is what it trusts, so the core
-    // is asked to keep that first (core/src/home.rs keep_trust), and it is read as it kept it.
+    // is asked to keep that first (core/src/home/dotfiles.rs keep_trust), and it is read as it kept it.
     if (key === 'trusted' && value === null) {
       try { await core('dotfiles_in_effect', {}); value = await core<string | null>('state_get', {key}); } catch { /* none run, then */ }
     }

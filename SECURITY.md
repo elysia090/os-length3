@@ -57,7 +57,7 @@ request passes, and the one secret") and are tested in
   reads it; the Remote hands a page no token, ever), taken only from the
   app's own pages; on a device (the app, l3) it is a bearer token from the
   device flow, kept apart from everything the app's page reads
-  (`os/core/src/vault.rs`), and the page asks the Remote through the core.
+  (`os/core/src/device/vault.rs`), and the page asks the Remote through the core.
   Either is taken only signed with the Remote's secret.
 - **Secrets on a device.** The session's bearer and the Agent's key are kept
   in the OS's keyring (the Keychain, Credential Manager without roaming, the
@@ -72,14 +72,14 @@ request passes, and the one secret") and are tested in
 - **What is trusted for what.** The Remote holds one secret and derives one
   key a purpose from it (`os/service/keys.ts`). A domain's name is trusted
   while its DNS names this Remote and account. A root is trusted only by the
-  digest pinned in `os/core/src/root.rs`, and so is the browser's copy of
+  digest pinned in `os/core/src/root/pins.rs`, and so is the browser's copy of
   it: its index by the digest pinned beside it, each pack by the table of
   its files' digests that names it, each file read from a pack by its line
   of that table (`xlat/runtime/table.mjs`), before any of it is used.
 - **What runs where.** A Prompt runs a distribution's root on the device's
   own kernel without privilege: user, mount, pid, ipc, uts and network
   namespaces, a read-only root, no_new_privs and a seccomp filter
-  (`os/core/src/seccomp.rs`). Its network is a per-device grant. The desktop
+  (`os/core/src/prompt/seccomp.rs`). Its network is a per-device grant. The desktop
   webview runs only the app's own files and may only listen for events and
   set its title.
 - **What is out of reach.**

@@ -21,7 +21,7 @@ interface Capacity {
 declare const __LENGTH3_HOST__: 'native' | 'web' | undefined;
 export const isNative: boolean = typeof __LENGTH3_HOST__ === 'string' ? __LENGTH3_HOST__ === 'native' : '__TAURI_INTERNALS__' in globalThis;
 
-/** How a figure is known (core/src/usage.rs). */
+/** How a figure is known (core/src/storage/). */
 export type Certainty = 'Verified' | 'Estimated' | 'Unknown';
 /** What can be done with a thing this OS holds: it can go, it can go once sent, or it stays (and why). */
 export type Room = 'Free' | 'SyncFree' | 'Keep';
@@ -80,7 +80,7 @@ export async function persisted(): Promise<boolean | null> {
   try { return await navigator.storage?.persisted?.() ?? null; } catch { return null; }
 }
 
-// ---- the distribution's root on this machine (app only; core/src/root.rs, launch.rs) ----
+// ---- the distribution's root on this machine (app only; core/src/root/, prompt/launch.rs) ----
 
 interface Installed { name: string; version: string; sha256: string; files: number; bytes: number; distro?: string }
 export interface RootStatus {

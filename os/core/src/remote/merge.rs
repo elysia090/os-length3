@@ -1,14 +1,14 @@
 //! Taking in what changed on the Remote: the plan (file by file against
 //! the base), and writing the Remote's side into the copy here, beside
 //! what is in its way and never through a link.
-use super::http::Client;
-use super::local::{digest, Modes, Tree};
 use crate::text::names::is_git_name;
 use crate::fs::hash::sha256;
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use crate::Result;
+use super::http::Client;
+use super::local::{digest, Modes, Tree};
 
 
 /// What taking in a remote tree means here.
@@ -93,7 +93,7 @@ pub(super) fn place(dir: &Path, rel: &str) -> Result<PathBuf> {
     Ok(at.join(parts[parts.len() - 1]))
 }
 
-/// Write `bytes` to `path` whole (atomic.rs): never through what is already
+/// Write `bytes` to `path` whole (fs/write.rs): never through what is already
 /// there, since a program in a Prompt can plant a link at any name in the
 /// repo, and writing through it would reach any file the person can write.
 /// Durable before the base that records it is (set_base): a file the base

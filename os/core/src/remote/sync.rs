@@ -5,15 +5,16 @@
 #![forbid(unsafe_code)]
 
 use crate::repos::store::Repos;
-use serde::Serialize;
 use crate::fs::hash::sha256;
 use std::fs;
 use crate::Result;
-use super::base::{at, Base, base, forget_base, key, lock, set_base, tree_of};
-use super::connection::own_secrets;
-use super::home::account_id;
+
+use serde::Serialize;
+use super::base::{at, Base, base, forget_base, key, key_of, lock, set_base, tree_of};
+use super::connection::{forget_connection, own_secrets};
 use super::http::{Client, failed, Failure, odd, Reply};
 use super::local::{local_tree, Modes, modes_for, secrets_held, Tree};
+use super::login::account_id;
 use super::merge::{apply, plan, take_modes};
 
 pub fn status(repos: &Repos) -> Result<Vec<Status>> {
@@ -57,7 +58,7 @@ pub struct Status {
 }
 
 /// Bring a repo that is only on the Remote here (opening it does this).
-/// `room` is asked for room before the repo comes (usage.rs bring_repo).
+/// `room` is asked for room before the repo comes (storage/free.rs bring_repo).
 pub fn fetch(repos: &Repos, repo: &str, room: impl FnOnce()) -> Result<Synced> {
     if repos.dir(repo).is_ok() {
         return sync(repos, repo);
@@ -170,7 +171,7 @@ pub(super) fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Sy
         let moded = |p: &String| kept && here.modes.get(p) != base.modes.get(p);
         let mut set: Vec<(&String, &Option<String>)> = here.tree.iter().filter(|(p, v)| base.tree.get(*p) != Some(*v) || moded(p)).collect();
         let mut remove: Vec<&String> = base.tree.keys().filter(|p| !here.tree.contains_key(*p)).collect();
-        // A file holding a secret is not sent (secrets.rs): it stays here as it is, named as what cannot be sent, and
+        // A file holding a secret is not sent (device/secrets.rs): it stays here as it is, named as what cannot be sent, and
         // the Remote keeps the version it had (nothing of it is removed there).
         let held = secrets_held(&here, &base.tree, &own_secrets());
         set.retain(|(p, _)| !held.iter().any(|(h, _)| h == *p));
@@ -320,4 +321,38 @@ pub(super) struct LineThere {
 
 /// Paths one diff carries at most (the Remote takes 5000).
 const CHUNK: usize = 2000;
+
+/// End this device's session on the Remote, then forget it here. Every repo
+/// is sent first: forgetting what was agreed with a change still unsent
+/// (a file removed here, say) would undo it at the next sign-in, when the
+/// Remote's copy comes back as new. So a repo that cannot be sent stops it.
+pub fn logout(repos: &Repos) -> Result<()> {
+    let Ok(c) = Client::open() else { return forget_connection() };
+    for name in repos.names()? {
+        // Main's copy and each issue's, each in step before any record of them goes.
+        let shown = repos.line(&name);
+        let mut lines: Vec<String> = crate::repos::lines::worktrees(&name).into_iter().map(|(l, _)| l).collect();
+        lines.push(crate::repos::lines::MAIN.into());
+        for line in lines {
+            let r = lock(&key_of(&name, &line)).and_then(|_held| {
+                // Not shown, it would not be the copy sent; and the repo is shown again as it was, whatever sending did.
+                crate::repos::lines::show_for_free(&name, &line)?;
+                let r = sync_with(&c, repos, &name);
+                crate::repos::lines::show_for_free(&name, &shown).and(r)
+            });
+            if let Err(e) = r {
+                let what = if line == crate::repos::lines::MAIN { name.clone() } else { format!("{name}@{line}") };
+                return Err(crate::tr!("{} could not be sent first ({}); this device stays on the Remote so nothing is lost. Once it is sent, sign out again",
+                    "{} を先に送れませんでした（{}）。何も失わないよう、この端末は Remote につないだままです。送れたら、もう一度外してください", what, e));
+            }
+        }
+    }
+    // SSH stops with the device's session: no one reaches its Prompts once it is signed out.
+    #[cfg(unix)]
+    let _ = crate::ssh::stop(&crate::fs::paths::data_dir());
+    // Everything is sent: signed out here whatever the Remote answers (its session ends there by itself).
+    let _ = c.call("POST", "/api/auth/sign-out", Some(serde_json::json!({})));
+    forget_connection()
+}
+
 

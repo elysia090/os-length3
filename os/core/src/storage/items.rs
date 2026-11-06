@@ -229,7 +229,7 @@ impl InUse {
     }
 }
 
-/// The Prompts recorded here, each its repo, its root, and whether it is still being prepared (prompt.rs).
+/// The Prompts recorded here, each its repo, its root, and whether it is still being prepared (prompt/running.rs).
 /// The core built for the web runs none.
 fn recorded(data: &Path) -> Vec<(String, Option<String>, bool)> {
     #[cfg(not(target_os = "wasi"))]

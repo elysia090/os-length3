@@ -10,8 +10,8 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use crate::Result;
-use super::base::{at, base, forget_base, key_of, lock, sync_dir};
-use super::connection::{connection, gone};
+use super::base::{at, base, forget_base, key_of, lock};
+use super::connection::{connection, gone, sync_dir};
 use super::http::Client;
 use super::local::{held_open, local_tree, local_tree_fresh, Modes, Tree};
 use super::sync::{line_there, sync_with};
@@ -186,7 +186,7 @@ pub fn rename_repo(repos: &Repos, repo: &str, to: &str, open: &[String]) -> Resu
     Ok(())
 }
 
-/// Whether a Prompt has `repo` open: one its host runs (`open`), or one recorded running here (core/src/prompt.rs).
+/// Whether a Prompt has `repo` open: one its host runs (`open`), or one recorded running here (core/src/prompt/running.rs).
 fn prompted(repo: &str, open: &[String]) -> bool {
     #[cfg(not(target_os = "wasi"))]
     if crate::prompt::running::all(&crate::fs::paths::data_dir()).iter().any(|r| r.repo == repo) { return true; }

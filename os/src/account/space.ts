@@ -1,5 +1,5 @@
 // この端末: everything this OS holds here, largest first, and what can be
-// done with each (core/src/usage.rs in the app). In a browser what it holds
+// done with each (core/src/storage in the app). In a browser what it holds
 // is its copy of the repos, and what l3 keeps of itself for the Prompt (kept:
 // the Prompt runs on it, so it is said apart and never freed); each repo the Remote has all of can go now, one
 // with changes not sent yet goes once they are sent, and without a Remote
@@ -22,7 +22,7 @@ export async function readSpace(open: string[] = []): Promise<Space> {
   // to free it to), not the Prompt.
   const items: Item[] = s.items.map((i) => (open.includes(i.what) && i.id.startsWith('repo:') && i.room !== 'Keep' ? {...i, room: 'Keep', why: t('Locked by an active Prompt')} : i));
   // What l3 keeps of itself for the Prompt (its index, the translator, the hot programs): the l3 every Prompt runs on,
-  // so it is kept, not freed (issue #46), here and in Free all alike; the app keeps its own the same (core/src/usage.rs).
+  // so it is kept, not freed (issue #46), here and in Free all alike; the app keeps its own the same (core/src/storage/).
   // Read from l3's own module only when asked: the Prompt's machine is no part of a page that only lists what is kept.
   const l3 = await (await import('../prompt/userland.ts')).keptL3();
   if (l3.files) items.push({id: 'l3', what: 'l3', detail: tn('{n} file reserved for Prompt', '{n} files reserved for Prompt', l3.files), allocated: l3.bytes,
@@ -55,7 +55,7 @@ export async function freeOff(name: string): Promise<void> {
 /**
  * This device's copies taken off as one leaves a computer others use, before signing out: every repo here goes as
  * 空ける takes it (sent first, and gone only once the Remote has all of it), and Home's settings that are the person's
- * (the profile, the TODO, the dotfiles), sent first, go once they are what the Remote has (home.rs leave). Nothing the
+ * (the profile, the TODO, the dotfiles), sent first, go once they are what the Remote has (home/agree.rs leave). Nothing the
  * Remote lacks goes: what stays is returned, each by its name with why. The Prompts that have a repo open are the
  * caller's to stop first (a browser's core does not know them). Home's settings are agreed no more from here on
  * (lifecycle.ts holdHome): the caller lifts that (releaseHome) once it stays signed in, or signing out does.

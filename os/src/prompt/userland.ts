@@ -17,7 +17,7 @@ export const threadsApart = (): boolean => typeof SharedArrayBuffer === 'functio
   && typeof (Atomics as {waitAsync?: unknown}).waitAsync === 'function';
 
 // l3, the one thing the Prompt depends on: the release root the desktop app
-// installs (core/src/root.rs pins it, one entry for both), read here as the
+// installs (core/src/root pins it, one entry for both), read here as the
 // browser reads it (scripts/l3.mjs). l3.json says which l3 it is (its
 // version, and the sha256 of the root it was made from) and names its index
 // by digest; everything else is named by its digest too:
@@ -47,7 +47,7 @@ export const threadsApart = (): boolean => typeof SharedArrayBuffer === 'functio
 export interface Blob { path: string; sha256: string; size: number; bytes: number }
 export interface About {
   name: string; version: string;
-  /** The root this l3 was made from, by the digest core/src/root.rs pins: the same as the app's. */
+  /** The root this l3 was made from, by the digest core/src/root pins: the same as the app's. */
   sha256: string; bytes: number; file: string;
   root: {name: string; profile: string};
   index: {path: string; sha256: string; size: number};

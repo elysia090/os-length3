@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use crate::Result;
-use super::base::sync_dir;
+use std::path::PathBuf;
 
 /// The Remote to sign in to: $LENGTH3_REMOTE, else the one this OS ships with.
 pub fn default_url() -> String {
@@ -32,12 +32,12 @@ pub fn forget_connection() -> Result<()> {
     gone(fs::remove_dir_all(sync_dir()))
 }
 
-/// This device's own secrets a file must not carry (secrets.rs): its session's bearer, whole and without its signature.
+/// This device's own secrets a file must not carry (device/secrets.rs): its session's bearer, whole and without its signature.
 pub(super) fn own_secrets() -> Vec<String> {
     bearer().ok().flatten().map(|b| vec![b.split('.').next().unwrap_or_default().to_string(), b]).unwrap_or_default()
 }
 
-/// What proves this device is its session to the Remote: the bearer kept apart (vault.rs), the session's token
+/// What proves this device is its session to the Remote: the bearer kept apart (device/vault.rs), the session's token
 /// signed; why not, when the keyring keeping it did not give it. A browser holds none: its session is the cookie the
 /// Remote set, which it sends itself and no script reads (core/worker.ts sends it with the core's requests).
 pub(crate) fn bearer() -> Result<Option<String>> {
@@ -52,7 +52,7 @@ pub fn save_connection(c: &Connection) -> Result<()> {
 }
 
 /// The Remote this device is connected to, if it is (Home's `remote` setting). One kept as earlier releases kept it,
-/// its bearer beside the rest, is kept as now the first time it is read: the bearer apart (vault.rs), or, in a
+/// its bearer beside the rest, is kept as now the first time it is read: the bearer apart (device/vault.rs), or, in a
 /// browser, not at all (its cookie is the session there).
 pub fn connection() -> Option<Connection> {
     let text = crate::home::get("remote").ok()??;
@@ -107,4 +107,11 @@ pub const FORMER_URL: &str = "https://remote.length3.com";
 /// The Remote this OS ships with: one name for the app, the Remote, the DNS records people
 /// publish (`remote=os.length3.com`) and passkeys.
 pub const DEFAULT_URL: &str = "https://os.length3.com";
+
+/// Bases are kept one file per line: `<data>/sync/<repo>.json` for main,
+/// `<data>/sync/<repo>@<line>.json` for an issue's work. A key names one.
+pub(super) fn sync_dir() -> PathBuf {
+    crate::fs::paths::data_dir().join("sync")
+}
+
 

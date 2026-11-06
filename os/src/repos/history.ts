@@ -1,4 +1,4 @@
-// History in the issues' terms (core/src/history.rs, issue #17). An issue
+// History in the issues' terms (core/src/history/, issue #17). An issue
 // is the unit of work; its branch and worktree are the OS's to keep. The
 // operations are Commit, Push, Change (again: the next version;
 // Reset takes it back), Review (of one version), and the receiver's Merge

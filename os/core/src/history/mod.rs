@@ -1,5 +1,5 @@
 //! History in the issues' terms (issue #17). An issue is the unit of work;
-//! its branch and worktree are the OS's to keep (work.rs). The operations
+//! its branch and worktree are the OS's to keep (history/work.rs). The operations
 //! a person does are few, and are the same from the app, l3 and a browser
 //! (src/repos/history.ts):
 //!
@@ -22,10 +22,12 @@
 pub mod work;
 mod changes;
 mod commits;
+mod log;
 mod review;
 
 pub use self::changes::{at_head, changed, Changes, changes, diff, DiffLine, FileChange, FileDiff, Folder};
-pub use self::commits::{commit_issue, Cut, cut, issue_words, line, log, log_of, push, settle_issues};
-pub(crate) use self::commits::progress;
-pub use self::review::{Change, change_diff, changes_of_repo, hand_in, HandIn, merge, merged_seen, reject, reset, Review, review, state_word, submit};
+pub use self::commits::{commit_issue, cut, issue_words, settle_issues};
+pub use self::log::{Cut, line, log, log_of};
+pub(crate) use self::log::progress;
+pub use self::review::{Change, change_diff, changes_of_repo, hand_in, HandIn, merge, merged_seen, push, reject, reset, Review, review, state_word, submit};
 pub(crate) use self::review::{listed, remember_merged};

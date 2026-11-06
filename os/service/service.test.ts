@@ -61,7 +61,7 @@ test('a device asks for a code, a signed-in browser approves it, the device gets
   assert.equal(asked.status, 200, JSON.stringify(asked.json));
   const {device_code, user_code, verification_uri_complete} = asked.json as unknown as {device_code: string; user_code: string; verification_uri_complete: string};
   assert.ok(verification_uri_complete.startsWith(`${APP}/?device`));
-  // On the origin the Remote says its app is on, by whatever name a device reaches it (core/src/remote.rs device_page_ok).
+  // On the origin the Remote says its app is on, by whatever name a device reaches it (core/src/remote/login.rs device_page_ok).
   assert.ok(verification_uri_complete.startsWith(`${(await s.call('GET', '/v1/about')).json.app}/?device`));
   const poll = () => s.call('POST', '/api/auth/device/token', {body: {grant_type: 'urn:ietf:params:oauth:grant-type:device_code', device_code, client_id: 'l3'}});
   assert.equal((await poll()).json.error, 'authorization_pending');

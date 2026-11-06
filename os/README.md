@@ -80,7 +80,7 @@ tracked in issue #20.
   is kept the same way, by the file it was made from, so the next Prompt
   reads it rather than translating it again. Make it
   with `npm run l3` (`scripts/l3.sh`: the translator from this tree and the
-  newest root `core/src/root.rs` pins), and check it against that root
+  newest root `core/src/root/pins.rs` pins), and check it against that root
   with `npm run l3:parity -- ROOT public/l3`; `node scripts/l3-runnable.mjs
   public/l3 ROOT_DIR` says which programs of it run under xlat today.
 
@@ -224,7 +224,7 @@ SSH and signs in to no Remote it is not signed in to already. l3 reaches
 it through a socket in the app's own folder of the data directory
 (`<data>/app/`, owner-only), which only the person can open; while the app
 runs it holds a lock there, which is how a second one knows it is open
-(`core/src/desktop.rs`).
+(`core/src/device/desktop.rs`).
 
 ### SSH into a repo's Prompt
 
@@ -338,7 +338,7 @@ to it first, and after every command each repo whose files differ from what
 was last agreed is sent (which differ is seen from the digests kept, so a
 repo in step costs no request). Home's settings kept on the Remote
 (profile, TODO, dotfiles) go the same way, by the app's protocol and rules
-(`core/src/home.rs`, as `src/remote/settings.ts`): a command that reads one (`l3
+(`core/src/home/`, as `src/remote/settings.ts`): a command that reads one (`l3
 todo`, `l3 profile`, `l3 dotfile`, `l3 prompt`) takes it in first, and one
 that differs from what was last agreed is sent after any command; two TODO
 lists changed on two devices are joined item by item. What a person does to the Remote is only
@@ -433,7 +433,7 @@ the app.
 
 The webview has no other host access: it reads nothing outside the app's
 data directory, runs no shell and launches no root. The app starts no host
-program for a repo; its own tools run inside the root (`core/src/launch.rs`).
+program for a repo; its own tools run inside the root (`core/src/prompt/launch.rs`).
 
 The Remote (`service/`): Hono with Better Auth (provider sign-in, then
 passkeys; device authorization; bearer sessions) on Drizzle; Neon in
@@ -470,7 +470,7 @@ the work on the device, say so, and send it once the Remote can hold it.
 
 On Cloudflare it is one Worker on one origin, the app's files and the Remote
 together (`wrangler.toml`), under one name: `os.length3.com` is the app, the
-Remote the desktop app and l3 sign in to (`core/src/remote.rs` DEFAULT_URL,
+Remote the desktop app and l3 sign in to (`core/src/remote/` DEFAULT_URL,
 the desktop CSP), what a domain's DNS record names (`remote=os.length3.com`,
 and `/.well-known/length3`) and where passkeys belong. Its former name,
 `remote.length3.com`, still reaches the same Worker, so released clients
@@ -526,8 +526,8 @@ to this repository, and its Settings → Build say, once:
 | | |
 |---|---|
 | Root directory | `os` |
-| Build command | `npm run build:cloudflare`: l3 for the browser from the release of the newest l3 `core/src/root.rs` pins (`scripts/prompt-files.mjs`, taken only at the index pinned for it), then the app |
-| Deploy command | `node service/deploy.ts`: the migrations on Neon's production branch (no branch is made for a deploy; a contract step waits until the new Worker answers), the bucket, then the Worker with the secrets it lacks (the first build prints the link in its log), then the release's files the Remote serves to anyone (`service/mirror.ts`): each root `core/src/root.rs` pins and the newest desktop app `shared/desktop-releases.json` pins, taken from the GitHub release where the bucket lacks them, checked against those pins, and put with wrangler |
+| Build command | `npm run build:cloudflare`: l3 for the browser from the release of the newest l3 `core/src/root/pins.rs` pins (`scripts/prompt-files.mjs`, taken only at the index pinned for it), then the app |
+| Deploy command | `node service/deploy.ts`: the migrations on Neon's production branch (no branch is made for a deploy; a contract step waits until the new Worker answers), the bucket, then the Worker with the secrets it lacks (the first build prints the link in its log), then the release's files the Remote serves to anyone (`service/mirror.ts`): each root `core/src/root/pins.rs` pins and the newest desktop app `shared/desktop-releases.json` pins, taken from the GitHub release where the bucket lacks them, checked against those pins, and put with wrangler |
 | Variables and secrets | `NEON_PROJECT_ID`; secrets `NEON_API_KEY` (a Neon API key for the project) and `GITHUB_TOKEN` (optional, read-only: the deploy reads the release's files through GitHub's API, which limits a caller without one to 60 requests an hour; the build's Prompt is read from the public release without it) |
 | Non-production branch deploy command | `npx wrangler versions upload`: another branch's build uploads a version and never deploys (`service/deploy.ts` refuses to run for a branch other than main). The version has no preview URL (`wrangler.toml`: `workers_dev = false`, `preview_urls = false`), since it would run against production's database and bucket: it is checked that it builds. A version that brings a Durable Object class production has not made yet (`[[migrations]]`, as `mark` did) is refused by Cloudflare until main's deploy has made it. Never `npx wrangler deploy`, which would replace production from any branch, without its migrations or its bucket |
 | Branch control | main deploys; other branches build previews, each with the Prompt the tree ships (`scripts/prompt-files.mjs`, from the public release) |
@@ -535,7 +535,7 @@ to this repository, and its Settings → Build say, once:
 The Prompt the web serves is a released one: a newer one ships by releasing
 it (a new version in `RELEASE`, `.github/workflows/release.yml`; without
 Actions, `scripts/release.sh` and `scripts/publish-release.mjs` by hand), then merging the pins
-the release proposes (Pin vX.Y.Z): l3's one entry in `core/src/root.rs`
+the release proposes (Pin vX.Y.Z): l3's one entry in `core/src/root/pins.rs`
 (the root, and the index the web reads it by) and the desktop app in
 `shared/desktop-releases.json`. A build
 takes only the l3 this tree pins, and a deploy puts on the Remote only the roots and

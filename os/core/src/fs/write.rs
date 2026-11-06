@@ -3,7 +3,7 @@
 //! reader nor a crash ever sees half of it: the bytes go into a new file beside it, made afresh (O_EXCL: never
 //! opened through a link someone planted at its name), are flushed to the disk, and the new file is renamed over
 //! the old in one step; then the directory is flushed, so the rename itself outlives a crash. The new file's name
-//! is this OS's temporary (`.<name>.length3-<pid>-<n>`), which a walk skips and space.rs reclaims when it is left.
+//! is this OS's temporary (`.<name>.length3-<pid>-<n>`), which a walk skips and storage reclaims when it is left.
 
 use std::fs;
 use std::io::{self, Write};

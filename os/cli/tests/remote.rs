@@ -92,7 +92,7 @@ fn signing_in_as_another_account_or_on_another_remote_never_takes_the_last_ones_
             // Another Remote: it goes there as new.
             assert!(sent.contains("\"a.txt\"") && sent.contains("\"version\":0"), "{case}: {sent}");
         }
-        // Which session it is, in Home's state; what proves it, apart (vault.rs), never in a state a page reads.
+        // Which session it is, in Home's state; what proves it, apart (device/vault.rs), never in a state a page reads.
         let kept = std::fs::read_to_string(home.path("home/remote.json")).unwrap();
         assert!(kept.contains("\"session\":\"new\"") && kept.contains("\"user\":\"u2\"") && !kept.contains("token"), "{case}: {kept}");
         assert_eq!(std::fs::read_to_string(home.path("secrets/session")).unwrap(), "new", "{case}");

@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 use crate::Result;
-use super::connection::gone;
+use super::connection::{gone, sync_dir};
 use super::local::{Modes, Tree};
 
 pub(crate) fn tree_of(v: &serde_json::Value) -> Tree {
@@ -89,12 +89,6 @@ pub fn key_of(repo: &str, line: &str) -> String {
 pub fn key(repos: &Repos, repo: &str) -> (String, String) {
     let line = repos.line(repo);
     (key_of(repo, &line), line)
-}
-
-/// Bases are kept one file per line: `<data>/sync/<repo>.json` for main,
-/// `<data>/sync/<repo>@<line>.json` for an issue's work. A key names one.
-pub(super) fn sync_dir() -> PathBuf {
-    crate::fs::paths::data_dir().join("sync")
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]

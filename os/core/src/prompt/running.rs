@@ -1,5 +1,5 @@
 //! What a running Prompt holds of the host, read from the host's own /proc:
-//! its processes are exactly those in its pid namespace (launch.rs gives
+//! its processes are exactly those in its pid namespace (prompt/launch.rs gives
 //! each Prompt one), and what they hold is their proportional share of
 //! memory (Pss; resident size where Pss cannot be read). Stopping is only
 //! called done once none of them is left, and how long the host took to
@@ -159,7 +159,7 @@ pub fn wait_empty(ns: u64, before: Held, limit: Duration) -> Stopped {
 // process is gone (it was killed) is let go when the list is read. What a
 // record names the Prompt holds: its repo, with the repo's environment,
 // caches and what is derived in it, and its root; none of it is freed while
-// the record is there (usage.rs).
+// the record is there (storage/).
 
 /// A Prompt running here: its supervisor's pid (the `l3 prompt` process).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

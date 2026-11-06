@@ -262,7 +262,7 @@ fn an_issue_written_is_offered_and_handed_over_it_says_what_it_needs() {
 }
 
 /// A Prompt paused keeps what it holds and uses no CPU; going on, it uses it again (counted by the kernel, every
-/// process it ever had: core prompt.rs cpu_ms).
+/// process it ever had: core prompt/running.rs cpu_ms).
 #[test]
 fn a_prompt_paused_uses_no_cpu_until_it_goes_on() {
     let home = Home::new("prompt-pause");

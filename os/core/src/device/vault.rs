@@ -1,6 +1,6 @@
 //! This device's secrets, kept apart from everything else it keeps: the bearer of its session on the Remote, and the
 //! Agent's key. Never in Home's state (which a page reads, and which is synced), never in a repo or a dotfile, never
-//! sent to the Remote (secrets.rs holds a file that carries one). A browser keeps no bearer at all: its session is a
+//! sent to the Remote (prompt/running.rs holds a file that carries one). A browser keeps no bearer at all: its session is a
 //! cookie no script reads (remote/mod.rs), so on the web only the Agent's key is kept here.
 //!
 //! Each is kept in the OS's own keyring, the one its other programs keep theirs in: the Keychain (macOS), Credential
@@ -16,7 +16,7 @@
 //! What no store here stops, and nothing on the device can: a program running as the person reading the keyring as
 //! the app does (Linux and Windows give any of them each secret of an unlocked keyring; macOS asks the person first
 //! for a program that did not keep it). What limits that is elsewhere: a session is seen and ended from any other
-//! device, and Prompts never see this folder (launch.rs).
+//! device, and Prompts never see this folder (prompt/launch.rs).
 
 // No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
 #![forbid(unsafe_code)]
@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 pub enum Secret {
     /// The bearer of this device's session on the Remote (its token signed, as the Remote hands it over).
     Session,
-    /// The Agent's key, and the model it opens (agent_key.rs).
+    /// The Agent's key, and the model it opens (device/agent_key.rs).
     AgentKey,
 }
 

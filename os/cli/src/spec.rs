@@ -421,7 +421,7 @@ pub static COMMANDS: &[Command] = &[
         f(Some("hooks"), &[Arg::Choice(&["claude", "grok"])], &[], ["the hooks l3 agent on writes, to set them by hand", "l3 agent on が書くフック（手で設定するなら）"], DEVICE, Keep, agent::hooks),
         f(Some("hook"), &[Arg::Text("HARNESS")], &[], ["what a harness's hooks call: its event's JSON on standard input; says nothing, never fails", "ハーネスのフックが呼ぶもの（イベントの JSON を標準入力に）。何も言わず、失敗しない"], LOCAL, Keep, agent::hook),
         f(Some("hook"), &[Arg::Text("HARNESS"), Arg::Text("EVENT")], &[], ["for one whose JSON does not name its event", "JSON がイベント名を持たないハーネス用"], LOCAL, Keep, agent::hook),
-        // What a deed sets off (core tasks.rs): a repo's runner, and one run inside its Prompt.
+        // What a deed sets off (core agent/tasks.rs): a repo's runner, and one run inside its Prompt.
         hidden(Some("run"), &[], DEVICE, Keep, agent::run),
         hidden(Some("inside"), &[Arg::Number("N")], DEVICE, Keep, agent::inside),
     ]),

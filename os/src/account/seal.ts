@@ -1,4 +1,4 @@
-// The Agent's key in a browser, sealed by the person's passkey (core agent_key.rs Sealed). What a page keeps, a
+// The Agent's key in a browser, sealed by the person's passkey (core device/agent_key.rs Sealed). What a page keeps, a
 // browser keeps in its profile's files as it was given: there a program reading those files (an infostealer's first
 // look) or a copy of the disk finds it. Sealed, what is kept is the key encrypted (AES-256-GCM) under a key derived
 // (HKDF-SHA-256) from what the passkey's PRF gives for a salt of its own (WebAuthn's prf extension: the authenticator

@@ -12,7 +12,7 @@
 import type {RepoStore} from './repos.ts';
 import {kindOf, named} from './text.ts';
 
-/** What happened to an issue's file, for the words its own commit on main goes by (core history.rs issue_words). */
+/** What happened to an issue's file, for the words its own commit on main goes by (core history/commits.rs issue_words). */
 export type IssueDeed = 'new' | 'change' | 'close' | 'reopen';
 /**
  * A store an issue is kept in that also makes it history: each issue's file committed on main by itself as it is

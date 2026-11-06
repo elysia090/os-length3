@@ -1,5 +1,5 @@
 //! `l3 app`: the desktop app, the same OS in a window, opened from here. One
-//! is open on a device at a time (core desktop.rs): the one open is brought
+//! is open on a device at a time (core device/desktop.rs): the one open is brought
 //! forward, never a second started. Otherwise the app this device has is
 //! started on its own (the terminal stays free) and waited for until it
 //! answers; one that ends or never answers is said as such, never as open.

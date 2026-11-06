@@ -1,7 +1,7 @@
 // Who answers the box's Agent, by the key it was given: where each maker's API is reached and how it is spoken to.
 // Kept as the open tools keep theirs (Charm's Catwalk, models.dev, which OpenCode reads): an endpoint, a protocol and
 // the variable the key is read from, one entry a maker. The maker is never asked for: the key's own form says it
-// (core agent_key.rs kind, after the forms gitleaks and TruffleHog look for), and the model is the newest the key opens,
+// (core device/agent_key.rs kind, after the forms gitleaks and TruffleHog look for), and the model is the newest the key opens,
 // read from the maker's own list when the key is given (newest), never written down here.
 
 export type Protocol = 'messages' | 'chat';
@@ -17,7 +17,7 @@ export interface Maker {
 
 const bearer = (key: string) => ({authorization: `Bearer ${key}`});
 
-/** By the variable the key is read from (core agent_key.rs kind). */
+/** By the variable the key is read from (core device/agent_key.rs kind). */
 export const MAKERS: Readonly<Record<string, Maker>> = {
   // From a page, Anthropic asks to be told so (its key is in the page anyway: the person's own, on their device).
   ANTHROPIC_API_KEY: {base: 'https://api.anthropic.com/v1', protocol: 'messages',

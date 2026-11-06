@@ -96,7 +96,81 @@ export function cycles() {
   return found;
 }
 
+// ---- the core (Rust) ----
+//
+// Its layers are lib.rs's `pub mod` lines, in that order, each a folder: a layer's units take from their own layer
+// and the layers before it, never after (the tr! macro is the text layer's). Within a layer, no unit reaches back to
+// itself through its siblings. Tests (each layer's tests/) are left out.
+
+const CORE = join(OS, 'core/src');
+
+/** The core's layers, from the bottom up, as lib.rs declares them. */
+export const coreLayers = () => [...readFileSync(join(CORE, 'lib.rs'), 'utf8').matchAll(/^pub mod ([a-z_]+);/gm)].map((m) => m[1]);
+
+/** The core's files of code (not lib.rs, not tests), each with its layer and its unit. */
+function coreFiles() {
+  const out = [];
+  const walk = (dir) => {
+    for (const e of readdirSync(dir, {withFileTypes: true})) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) { if (e.name !== 'tests') walk(p); } else if (e.name.endsWith('.rs') && p !== join(CORE, 'lib.rs')) out.push(p);
+    }
+  };
+  walk(CORE);
+  return out.map((file) => {
+    const parts = relative(CORE, file).replace(/\.rs$/, '').split(sep);
+    return {file, layer: parts[0], unit: parts[1] ?? 'mod'};
+  });
+}
+
+/** A file's code without its comments and strings: what it names, not what it says. */
+const codeOf = (src) => src.replace(/r(#*)"[\s\S]*?"\1/g, '""').replace(/"(?:\\.|[^"\\])*"/g, '""').replace(/\/\/[^\n]*/g, '');
+
+/** Every use of a later layer in the core: [from, to, file]. */
+export function coreViolations() {
+  const order = coreLayers(), found = [];
+  for (const {file, layer} of coreFiles()) {
+    const code = codeOf(readFileSync(file, 'utf8'));
+    const takes = new Set([...code.matchAll(/\bcrate::([a-z_]+)/g)].map((m) => m[1]));
+    if (/\btr!\(/.test(code)) takes.add('text');
+    for (const to of takes) {
+      if (to === layer || !order.includes(to)) continue;
+      if (order.indexOf(to) > order.indexOf(layer) || !order.includes(layer)) found.push([layer, to, relative(OS, file)]);
+    }
+  }
+  return found;
+}
+
+/** Units of a core layer that reach back to themselves through their siblings: each set, by layer/unit. */
+export function coreCycles() {
+  const all = coreFiles(), takes = new Map(all.map((f) => [`${f.layer}/${f.unit}`, new Set()]));
+  for (const {file, layer, unit} of all) {
+    const code = codeOf(readFileSync(file, 'utf8'));
+    for (const m of code.matchAll(new RegExp(`\\b(?:super|crate::${layer})::([a-z_]+)`, 'g'))) {
+      const to = `${layer}/${m[1]}`;
+      if (unit !== 'mod' && takes.has(to) && m[1] !== unit) takes.get(`${layer}/${unit}`).add(to);
+    }
+  }
+  let n = 0;
+  const index = new Map(), low = new Map(), stack = [], on = new Set(), found = [];
+  const visit = (v) => {
+    index.set(v, n); low.set(v, n); n++; stack.push(v); on.add(v);
+    for (const w of takes.get(v)) {
+      if (!index.has(w)) { visit(w); low.set(v, Math.min(low.get(v), low.get(w))); } else if (on.has(w)) low.set(v, Math.min(low.get(v), index.get(w)));
+    }
+    if (low.get(v) !== index.get(v)) return;
+    const c = [];
+    let w;
+    do { w = stack.pop(); on.delete(w); c.push(w); } while (w !== v);
+    if (c.length > 1) found.push(c.sort());
+  };
+  for (const k of takes.keys()) if (!index.has(k)) visit(k);
+  return found;
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  for (const [from, to, file] of coreViolations()) console.log(`core: ${from} -> ${to}\t${file}`);
+  for (const units of coreCycles()) console.log(`a cycle in the core: ${units.join(' ')}`);
   const v = violations(), c = cycles();
   for (const [tree, from, to, file, spec] of v) console.log(`${tree}: ${from} -> ${to}\t${file} -> ${spec}`);
   for (const files of c) console.log(`a cycle: ${files.join(' ')}`);

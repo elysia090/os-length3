@@ -3,7 +3,7 @@
 //! is needed: a user namespace makes the caller root inside it only.
 //!
 //!   /               the installed root, with the repo's environment over
-//!                   it (owned.rs): what a package manager installs is the
+//!                   it (prompt/writes.rs): what a package manager installs is the
 //!                   repo's, written to the host beside the root, which
 //!                   itself is never written; one overlay for all the
 //!                   repo's Prompts on that root (Environment)
@@ -16,7 +16,7 @@
 //!   /proc           this Prompt's processes only (its own pid namespace)
 //!   network         none (its own empty namespace) unless asked for
 //!   system calls    none of those a sandboxed program has no use for and
-//!                   escapes are found through (seccomp.rs): ptrace, mount,
+//!                   escapes are found through (prompt/seccomp.rs): ptrace, mount,
 //!                   namespaces, modules, bpf, keys and the like
 //!
 //! The environment is set, not inherited: no host home, keys, agent or
@@ -43,14 +43,14 @@ pub struct Sandbox {
     /// The person's dotfiles (Home's), written into /root before the shell starts.
     pub dotfiles: Vec<(String, String)>,
     /// The data directory, where the repo's environment and caches are kept
-    /// (owned.rs); without one the root is read-only and nothing outlives the Prompt.
+    /// (prompt/writes.rs); without one the root is read-only and nothing outlives the Prompt.
     pub data: Option<PathBuf>,
-    /// What it is told besides, in its environment (a task's words: compute.rs Spec): added to what every Prompt
+    /// What it is told besides, in its environment (a task's words: compute/spec.rs Spec): added to what every Prompt
     /// runs with, never over it.
     pub env: Vec<(String, String)>,
 }
 
-/// Home keeps the dotfiles (home.rs); a Prompt writes into /root those this device took (dotfiles_in_effect).
+/// Home keeps the dotfiles (home/); a Prompt writes into /root those this device took (dotfiles_in_effect).
 pub use crate::home::{dotfile_name, dotfiles_in_effect};
 
 fn check(r: libc::c_int, what: &str) -> io::Result<()> {
@@ -573,7 +573,7 @@ pub fn run(s: &Sandbox) -> io::Result<i32> {
                 unsafe { libc::_exit(126) };
             }
         }
-        // The tree is laid out: from here on nothing in the Prompt asks the kernel what seccomp.rs refuses,
+        // The tree is laid out: from here on nothing in the Prompt asks the kernel what prompt/seccomp.rs refuses,
         // init and everything it starts. A kernel that cannot filter runs no Prompt (fails closed).
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         if let Err(e) = crate::prompt::seccomp::install() {
@@ -696,7 +696,7 @@ pub fn root_digest(root: &Path) -> String {
 }
 
 /// What an environment is, by what set it up: the root (its sha256), `.packages` and `.setup`. The same key is the
-/// same environment wherever it is made (compute.rs Spec), and a change to any of them sets it up again.
+/// same environment wherever it is made (compute/spec.rs Spec), and a change to any of them sets it up again.
 pub fn environment_key(root: &str, packages: &[&str], setup: &str) -> String {
     crate::fs::hash::sha256(format!("{root}\n{}\n{setup}", packages.join(" ")))
 }

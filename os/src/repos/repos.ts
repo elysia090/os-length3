@@ -1,4 +1,4 @@
-// Repos the OS manages: directories under its data directory, kept by the core (core/src/repos.rs), the
+// Repos the OS manages: directories under its data directory, kept by the core (core/src/repos/store.rs), the
 // app's own or the same built for the web, over the files this browser keeps (core/client.ts). Either way
 // a repo is the same thing, read and written by the same code.
 

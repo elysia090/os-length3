@@ -24,7 +24,7 @@ pub fn list() -> Result<Vec<Server>> {
     Ok(all)
 }
 
-/// A server, or one of its boards, as names are written (names.rs): `trip`, `trip@length3.com`,
+/// A server, or one of its boards, as names are written (text/names.rs): `trip`, `trip@length3.com`,
 /// `trip#general`, or `#general` when one is in one server only. The server, and the boards meant
 /// (all of them when none is named).
 pub fn find(target: &str) -> Result<(Server, Vec<Board>)> {

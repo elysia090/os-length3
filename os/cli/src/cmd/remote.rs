@@ -95,7 +95,7 @@ pub fn sign_in(_: &Ctx, _: &Call) -> Result<Reply> {
     for k in &keys { t.push(format!("  {}  {}", k.name.as_deref().filter(|n| !n.is_empty()).unwrap_or("passkey"), k.created_at.get(..10).unwrap_or(&k.created_at))); }
     t.push(tr!("Sign-in providers", "サインイン方法"));
     for p in &providers { t.push(format!("  {}  {}", p.provider, p.created_at.get(..10).unwrap_or(&p.created_at))); }
-    // Where what proves this device's session is kept (core vault.rs): the OS's keyring, or a file only this account reads.
+    // Where what proves this device's session is kept (core device/vault.rs): the OS's keyring, or a file only this account reads.
     let kept = length3_core::device::vault::kept_in();
     t.push(tr!("This device's sign-in", "この端末のサインイン情報"));
     t.push(tr!("  kept in {}", "  保管場所：{}", kept));

@@ -49,7 +49,7 @@ function zone(): string {
     return /^[A-Za-z0-9_+-]+(\/[A-Za-z0-9_+-]+)*$/.test(z) ? z : 'UTC';
   } catch { return 'UTC'; }
 }
-/** Its environment, as the app's Prompts on the machine have it (core's launch.rs): l3 here sees repos where the
+/** Its environment, as the app's Prompts on the machine have it (core's prompt/launch.rs): l3 here sees repos where the
  * shell does, under /root; its shell reads as the app's; its clock is the person's. */
 const shellEnv = (repo: string) => ['HOME=/root', 'USER=root', 'LOGNAME=root', 'SHELL=/bin/sh', 'TERM=dumb', 'LANG=C.UTF-8',
   `TZ=${zone()}`, 'LENGTH3_REPOS=/root', 'L3_PROMPT=1', `LENGTH3_LANG=${currentLang()}`, `LENGTH3_REPO=${repo}`,

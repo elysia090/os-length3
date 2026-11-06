@@ -51,7 +51,7 @@ pub struct Contents {
     pub truncated: bool,
 }
 
-/// Where a repo's issues are kept, at its top (issues.rs). It is the OS's to keep: the issues are met as issues
+/// Where a repo's issues are kept, at its top (repos/issues.rs). It is the OS's to keep: the issues are met as issues
 /// (Git, the box, l3 issue), never among the files File, Forge and l3 file show; the Prompt's copy still has them.
 pub const ISSUES: &str = "issue";
 
@@ -67,7 +67,7 @@ fn touches_git(path: &Path) -> bool {
 
 pub struct Repos {
     root: PathBuf,
-    /// Whether a repo here is seen through the work it is on (work.rs):
+    /// Whether a repo here is seen through the work it is on (history/work.rs):
     /// the person's repos on the host are; a Prompt's /root and tests are not.
     lines: bool,
 }
@@ -97,7 +97,7 @@ impl Repos {
         Ok(Repos { root, lines: false })
     }
 
-    /// The line of work `name` shows now: main, or an issue's (work.rs).
+    /// The line of work `name` shows now: main, or an issue's (history/work.rs).
     pub fn line(&self, name: &str) -> String {
         if self.lines { crate::repos::lines::current(name) } else { crate::repos::lines::MAIN.into() }
     }

@@ -4,15 +4,16 @@
 // No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
 #![forbid(unsafe_code)]
 
-use crate::remote::{Client, Reply};
 use crate::repos::store::Repos;
 use crate::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::sync::{Mutex, OnceLock};
-use super::changes::{After, diff_of, differ, FileDiff, pairs};
-use super::commits::{places, push, words};
+use crate::remote::{self, Client, Reply};
+use crate::text::title::kind_of;
+use super::changes::{After, diff_of, differ, FileDiff, pairs, places};
+use super::log::progress;
 
 /// A change's diff against where it began, line by line.
 pub fn change_diff(repo: &str, id: &str, limit: usize) -> Result<Vec<FileDiff>> {
@@ -42,7 +43,7 @@ pub fn reject(repo: &str, id: &str, note: &str) -> Result<Change> {
 pub fn merge(repo: &str, id: &str) -> Result<Change> {
     let c = find(repo, id)?;
     let merged = placed(repo, change_call(repo, &c.id, "merge", serde_json::json!({"version": c.version}))?)?;
-    // What was offered or waiting for its issue is done with (tasks.rs).
+    // What was offered or waiting for its issue is done with (agent/tasks.rs).
     crate::agent::tasks::issue_over(repo, &merged.issue);
     Ok(merged)
 }
@@ -134,7 +135,7 @@ pub fn submit(repos: &Repos, repo: &str, note: &str) -> Result<Change> {
     match v {
         Reply::Ok(v) => {
             let c = placed(repo, v)?;
-            // Handed in here: the agent reads it by itself (tasks.rs).
+            // Handed in here: the agent reads it by itself (agent/tasks.rs).
             crate::agent::tasks::handed_in(repo, &c.line, &c.issue, &c.title);
             Ok(c)
         }
@@ -265,4 +266,42 @@ pub struct Change {
     #[serde(default)]
     pub files: usize,
 }
+
+/// The words a commit goes by: an issue's first line (and its file), or the line given.
+pub(super) fn words(repos: &Repos, repo: &str, issue: Option<&str>, line: &str) -> Result<(Option<String>, String, String)> {
+    // Work on an issue commits under it, whatever else is said.
+    let on = repos.line(repo);
+    let issue = issue.map(String::from).or_else(|| (on != crate::repos::lines::MAIN).then(|| format!("issue/{on}.md")));
+    match issue {
+        Some(file) => {
+            let file = file.trim_start_matches("issue/").to_string();
+            let text = repos.read(repo, &format!("issue/{file}"), 256 * 1024)?.text.ok_or_else(|| crate::tr!("The issue is not text", "Issue がバイナリです"))?;
+            let i = crate::repos::issues::parse(repo, &file, &text);
+            Ok((i.kind, i.title, format!("issue/{file}")))
+        }
+        None => {
+            let (kind, title) = kind_of(line);
+            Ok((kind, title, String::new()))
+        }
+    }
+}
+
+/// Push: the work's commits become the line's state on the Remote.
+pub fn push(repos: &Repos, repo: &str) -> Result<String> {
+    let on = repos.line(repo);
+    if on == crate::repos::lines::MAIN {
+        return Err(crate::tr!("main is pushed by merging changes into it; work on an issue to push", "main には Change を Merge して入れます。Issue の作業で Push してください"));
+    }
+    // Nothing new is no push: an empty answer says so.
+    let l = remote::line(repo, &on)?.ok_or_else(|| crate::tr!("The Remote has no such work", "Remote にその作業がありません"))?;
+    let (commits, unpushed) = progress(repo, &l)?;
+    if commits == 0 { return Err(crate::tr!("No commits made yet", "作業開始以降コミットされた内容はありません")); }
+    if unpushed == 0 { return Ok(String::new()); }
+    let client = Client::open()?;
+    let (key, _) = remote::key(repos, repo);
+    let head = remote::base(&key).and_then(|b| b.head).ok_or_else(|| crate::tr!("Nothing committed yet", "まだ何も Commit していません"))?;
+    let v = client.json("POST", &format!("/v1/repos/{repo}/lines/{on}/push"), Some(serde_json::json!({"head": head})))?;
+    Ok(v["pushed"].as_str().unwrap_or_default().to_string())
+}
+
 

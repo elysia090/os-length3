@@ -4,7 +4,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use length3_core::api;
-// The data directory, for what only a Unix has here: one app at a time (desktop.rs), and SSH's card.
+// The data directory, for what only a Unix has here: one app at a time (device/desktop.rs), and SSH's card.
 #[cfg(unix)]
 use length3_core::fs::paths;
 
@@ -115,7 +115,7 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Sen
     tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())?
 }
 
-// ---- SSH into this device's Prompts (core/src/ssh.rs; the listener is l3's) ----
+// ---- SSH into this device's Prompts (core/src/ssh/; the listener is l3's) ----
 
 /// This device's SSH as its card shows it (core ssh::Here): whether it listens, who may connect, where each repo is
 /// reached, its host key and how many keys are let in. Worked out here; none of it goes to the Remote.
@@ -155,7 +155,7 @@ async fn ssh_set(on: bool, scope: Option<String>) -> Result<serde_json::Value, S
     }).await
 }
 
-// ---- one app on a device, and l3 app (core/src/desktop.rs) ----
+// ---- one app on a device, and l3 app (core/src/device/desktop.rs) ----
 
 /// What the app answers l3 on its socket: it is here; its window forward; its window closed, as its close
 /// button closes it (the last window closed, the app ends as it always does).

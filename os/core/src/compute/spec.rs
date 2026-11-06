@@ -1,17 +1,17 @@
 //! Compute, in time and in space: what a run is wherever it runs (Spec), what it may use (Budget), what it used
 //! (Usage, read from the kernel, never assumed), and every run's account (the ledger).
 //!
-//! A Spec names what a run is made of, never where it is: the root by its sha256 (root.rs pins it), the
-//! environment by the key of what set it up (launch.rs environment_key), the repo by its name and line, and what
+//! A Spec names what a run is made of, never where it is: the root by its sha256 (root pins it), the
+//! environment by the key of what set it up (prompt/launch.rs environment_key), the repo by its name and line, and what
 //! runs, with what it is told, the network it may have, and its budget. This device builds the run from it
 //! (`l3 agent inside`), and a place elsewhere that can fetch by digest (another device, a machine in the cloud)
 //! is given the same Spec and builds the same run: nothing in it says this machine. What it may use is checked
 //! where it runs, not where it was asked for: the network only as the repo was given it there.
 //!
-//! Time is counted as the kernel counts it: CPU in ms of every process ever in the run's namespace (prompt.rs
+//! Time is counted as the kernel counts it: CPU in ms of every process ever in the run's namespace (prompt/running.rs
 //! cpu_ms), wall time from its start; space as what its processes hold (their proportional share of memory) and
 //! how many there are. A run is watched every quarter second; past its budget it is stopped, and what it went
-//! past is said. A run paused keeps all it holds and uses no CPU until it goes on (prompt.rs pause).
+//! past is said. A run paused keeps all it holds and uses no CPU until it goes on (prompt/running.rs pause).
 
 // No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
 #![forbid(unsafe_code)]

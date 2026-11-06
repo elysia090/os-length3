@@ -385,7 +385,7 @@ pub fn issue_new(ctx: &Ctx, call: &Call) -> Result<Reply> {
     // On main, whatever work the repo shows, and committed there by itself at once (signed out, once signed in).
     let r = ctx.repos()?;
     let file = r.on_main().add_issue(&repo, kind.as_deref(), &title, &detail)?;
-    // Committed signed in; offered to the agent either way (core tasks.rs). Never from a Prompt: the app's to do.
+    // Committed signed in; offered to the agent either way (core agent/tasks.rs). Never from a Prompt: the app's to do.
     let committed = !ctx.prompt && history::commit_issue(&r, &repo, &file, "new").unwrap_or(false);
     Ok(Reply::done(tr!("Wrote {}{} {}", "{}{} {} を書きました", repo, number(&file), title::named(kind.as_deref(), title.trim())),
         json!({"repo": repo, "file": file, "number": number(&file), "kind": kind, "title": title.trim(), "committed": committed})))

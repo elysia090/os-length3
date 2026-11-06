@@ -9,7 +9,7 @@ use std::fs;
 use std::path::Path;
 
 pub fn lock(data: &Path) -> std::io::Result<Lock> {
-    // Beside the Prompts' records (prompt.rs), which it is about.
+    // Beside the Prompts' records (prompt/running.rs), which it is about.
     let dir = data.join("prompts");
     crate::fs::write::private_dir(&dir)?;
     let f = fs::OpenOptions::new().create(true).truncate(false).write(true).open(dir.join(".lock"))?;
@@ -18,8 +18,8 @@ pub fn lock(data: &Path) -> std::io::Result<Lock> {
     Ok(Lock(f))
 }
 
-/// One at a time, across the app and l3: a Prompt recording what it holds (prompt.rs), the root made
-/// current (root.rs), and a thing looked at again and let go (`free`). What a Prompt took, or the root
+/// One at a time, across the app and l3: a Prompt recording what it holds (prompt/running.rs), the root made
+/// current (root/), and a thing looked at again and let go (`free`). What a Prompt took, or the root
 /// made current, before the look is seen by it; after, it finds the thing there, or not at all, never going.
 pub struct Lock(fs::File);
 

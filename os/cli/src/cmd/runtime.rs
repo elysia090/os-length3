@@ -12,7 +12,7 @@ use serde_json::json;
 
 pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
     // What a Prompt here holds (the app's or l3's, running or being prepared) stays while it does: the core reads
-    // their records itself (usage.rs), so there is nothing to tell it as open.
+    // their records itself (storage/), so there is nothing to tell it as open.
     let s = storage::space(&paths::data_dir(), &paths::repos_dir(), &[]);
     let current = root::current(&paths::data_dir()).map(|(_, r)| r);
     let mut t = vec![match &current {
@@ -23,7 +23,7 @@ pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
     t.push(ssh_said);
     t.push(String::new());
     t.push(tr!("This device  {} free of {} (the host's figures) · this OS {}", "この端末  空き {} / {}（ホストの値） · この OS {}", bytes(s.host_free), bytes(s.host_total), bytes(s.allocated)));
-    // What runs used of time and space in the last day, by repo (core compute.rs ledger): the most CPU first.
+    // What runs used of time and space in the last day, by repo (core compute/spec.rs ledger): the most CPU first.
     let used = length3_core::compute::spec::by_repo(&length3_core::compute::spec::runs(), crate::out::now_ms().saturating_sub(24 * 60 * 60 * 1000));
     if !used.is_empty() {
         t.push(tr!("Compute, the last day", "計算資源（この1日）"));
@@ -103,7 +103,7 @@ pub fn roots(_: &Ctx, _: &Call) -> Result<Reply> {
     Ok(Reply::data(t.join("\n"), data))
 }
 
-/// Whether a Prompt runs on the root here: this machine lets l3 make the namespaces one is made in (launch.rs
+/// Whether a Prompt runs on the root here: this machine lets l3 make the namespaces one is made in (prompt/launch.rs
 /// kept_from_namespaces). Where it does not, the app runs its Prompts translated, as a browser does, and says why.
 pub fn root_check(_: &Ctx, _: &Call) -> Result<Reply> {
     #[cfg(target_os = "linux")]
@@ -229,7 +229,7 @@ pub fn dotfile_list(_: &Ctx, _: &Call) -> Result<Reply> {
 }
 
 /// `l3 dotfile take [NAME]`: what changed on another device (or on the Remote) runs here from now; until then it is
-/// kept and runs nowhere here (core/src/home.rs dotfiles_in_effect).
+/// kept and runs nowhere here (core/src/home/dotfiles.rs dotfiles_in_effect).
 pub fn dotfile_take(_: &Ctx, call: &Call) -> Result<Reply> {
     let names: Vec<String> = call.word(0).map(|n| vec![n.to_string()]).unwrap_or_default();
     let taken = home::take_dotfiles(&names).map_err(Error::NotFound)?;

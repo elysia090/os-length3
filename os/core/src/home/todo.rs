@@ -7,7 +7,6 @@
 use crate::text::title::kind_of;
 use crate::Result;
 use serde::{Deserialize, Serialize};
-use super::agree::{radix36, same_id, unique};
 use super::state::{get, set};
 
 /// Two TODO lists as one, against the one both last agreed (`base`), as
@@ -90,4 +89,37 @@ pub struct Todo {
     pub repo: Option<String>,
     pub created: u64,
 }
+
+/// Whether two items' ids are the same as a JavaScript Set sees them (src/remote/sync.ts):
+/// absent ones are, as are equal strings, numbers, booleans and nulls; objects never are.
+pub(super) fn same_id(a: Option<&serde_json::Value>, b: Option<&serde_json::Value>) -> bool {
+    use serde_json::Value as V;
+    match (a, b) {
+        (None, None) => true,
+        (Some(V::Number(x)), Some(V::Number(y))) => x.as_f64() == y.as_f64(),
+        (Some(x @ (V::String(_) | V::Bool(_) | V::Null)), Some(y)) => x == y,
+        _ => false,
+    }
+}
+
+pub(super) fn radix36(mut n: u64) -> String {
+    let digits = b"0123456789abcdefghijklmnopqrstuvwxyz";
+    let mut out = Vec::new();
+    loop {
+        out.push(digits[(n % 36) as usize]);
+        n /= 36;
+        if n == 0 { break; }
+    }
+    out.reverse();
+    String::from_utf8(out).unwrap()
+}
+
+/// A number no other call is likely to have: std's random per-process keys, moved on at each call, over the time.
+pub(super) fn unique() -> u64 {
+    use std::hash::{BuildHasher, Hasher};
+    let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+    h.write_u128(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos()));
+    h.finish()
+}
+
 

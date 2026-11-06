@@ -21,7 +21,7 @@
 //!              network of the address it came in on (admit), or from the
 //!              device itself
 //!   record     `<data>/ssh/listening.json` while the listener runs, as a
-//!              running Prompt records itself (prompt.rs), so l3 and the app
+//!              running Prompt records itself (prompt/running.rs), so l3 and the app
 //!              see it and stop it; the host key beside it, made once
 //!   Remote     only that a device listens, and to whom (its scope word),
 //!              per device (service/ssh.ts): no address, port or repo name
@@ -35,8 +35,8 @@ mod reach;
 mod listener;
 
 pub use self::keys::{fingerprint, Key, KEYS, Keys, keys, KINDS, parse_keys};
-pub use self::reach::{admit, BASE_PORT, bridge, BRIDGES, canonical, destinations, host, Iface, interfaces, listen_on, listened, port, port_for, repo_names, route_dev, Scope, scope, set_scope, Taken, taken, TRIES, Tries, TRIES_WHILE, vpn, VPNS};
-pub use self::listener::{dir, Here, here, host_key, Listening, listening, record, Recorded, rescope, stop};
+pub use self::reach::{admit, BASE_PORT, bridge, BRIDGES, canonical, destinations, dir, host, Iface, interfaces, listen_on, listened, port, port_for, repo_names, route_dev, Scope, scope, set_scope, Taken, taken, TRIES, Tries, TRIES_WHILE, vpn, VPNS};
+pub use self::listener::{Here, here, host_key, Listening, listening, record, Recorded, rescope, stop};
 
 #[cfg(test)]
 #[path = "tests/ssh.rs"]

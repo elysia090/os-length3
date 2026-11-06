@@ -1,5 +1,5 @@
 // "/" is the root of the whole system, the same tree the Prompt's shell
-// sees: in the app, the root installed on this machine (core/src/root.rs
+// sees: in the app, the root installed on this machine (core/src/root/
 // list); in a browser, l3's root (userland.ts), read from its index. Each top-level
 // directory says where it comes from: the distribution (l3), the kernel
 // (/dev, /proc, /sys, made when a shell starts), the person's repos

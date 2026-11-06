@@ -12,7 +12,7 @@ export interface Profile {
 
 export const EMPTY: Profile = {name: '', handle: '', bio: ''};
 
-/** In characters, as l3 counts them (core/src/home.rs PROFILE_LIMITS). */
+/** In characters, as l3 counts them (core/src/home/profile.rs PROFILE_LIMITS). */
 export const LIMITS = {name: 50, handle: 31, bio: 160};
 
 /** A handle is a username: 2–31 lowercase letters, digits, `.`, `-` and `_`, from a letter or digit (service/names.ts NAME). */

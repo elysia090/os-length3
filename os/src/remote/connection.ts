@@ -5,12 +5,12 @@
 //          with the provider again.
 //   app    the browser does the signing in: the app shows a code, the browser
 //          approves it on the Remote's page, and the app gets a session of
-//          its own (core/src/remote.rs). l3 does the same.
+//          its own (core/src/remote/). l3 does the same.
 //
 // Each device is a session that can be seen and ended from any other. What
 // proves it is held where no page can read it: in a browser, the cookie the
 // Remote set (HttpOnly), sent with every request to it; in the app, the
-// bearer kept apart from everything a page reads (core vault.rs), which the
+// bearer kept apart from everything a page reads (core device/vault.rs), which the
 // core sends for the page (remote_ask). A page knows which session it is,
 // never what proves it.
 
@@ -26,7 +26,7 @@ import {DEFAULT_REMOTE} from '../app/policy.ts';
 export {DEFAULT_REMOTE};
 /** Its name before (0.4.x signed in by it): the same Worker answers it, and a device that kept it goes on by the one name. */
 const FORMER_REMOTE = 'https://remote.length3.com';
-/** A Remote's URL as it is used now (core/src/remote.rs current_url). */
+/** A Remote's URL as it is used now (core/src/remote/connection.rs current_url). */
 export const currentURL = (url: string): string => {
   const u = url.replace(/\/$/, '');
   return u.toLowerCase() === FORMER_REMOTE ? DEFAULT_REMOTE : u;

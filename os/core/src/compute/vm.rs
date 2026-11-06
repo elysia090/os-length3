@@ -1,7 +1,7 @@
 //! Virtual machines: this OS on servers, ours or a person's own. Each run is a microVM of its own on KVM, made and
 //! driven through Firecracker (firecracker.rs): a kernel, the root as a read-only disk shared by every VM booted
 //! from it (image.rs), a small disk of its own, no network unless the repo was given it, and one vsock to its host,
-//! over which the host gives it its run (compute.rs Spec) and it says what it prints (wire.rs). A host is any Linux
+//! over which the host gives it its run (compute/spec.rs Spec) and it says what it prints (wire.rs). A host is any Linux
 //! with /dev/kvm: `l3 host` says what it has and what it lacks.
 //!
 //! What scales worst on a host, in order, and how each is met:
@@ -13,12 +13,12 @@
 //! 2. Boot time, which bounds how finely time is sold. A VM booted once is snapshotted; a run starts as a VM loaded
 //!    from it (no boot), from a pool kept warm.
 //! 3. Disk. Nothing is copied per VM but what it is given and what it writes: the root by its digest, an environment
-//!    by its key (compute.rs), a run's disk sparse.
+//!    by its key (compute/spec.rs), a run's disk sparse.
 //! 4. Network. None by default: the vsock alone. A repo given the network goes out through the host, which sees and
 //!    bounds what leaves.
 //! 5. Placement across hosts: each host says what it has room for; the Remote places by memory first.
 //! 6. The VMM's own boundary: Firecracker under its jailer (its own user, chroot, seccomp, cgroup).
-//! 7. Metering: each VM's CPU and memory from its cgroup, into the ledger (compute.rs), by the millisecond.
+//! 7. Metering: each VM's CPU and memory from its cgroup, into the ledger (compute/spec.rs), by the millisecond.
 
 
 use crate::compute::spec::Spec;
@@ -26,7 +26,7 @@ use super::firecracker::{Balloon, BootSource, Drive, MachineConfig, Vsock};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
-/// What a host fetches to run VMs, pinned by digest as roots are (root.rs): Firecracker's release (its jailer with
+/// What a host fetches to run VMs, pinned by digest as roots are (root/): Firecracker's release (its jailer with
 /// it), the digest its publisher gives beside it; and the kernel its CI boots VMs with (6.18, the guest kernel it
 /// supports since v1.17, with vsock, virtio block, balloon and free page reporting, ext4 and overlayfs built in),
 /// pinned as it was fetched for this table.

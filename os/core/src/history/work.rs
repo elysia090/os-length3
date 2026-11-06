@@ -1,4 +1,4 @@
-//! Work on an issue: a line of its own on the Remote (a branch) and a copy of its own here (a worktree, lines.rs),
+//! Work on an issue: a line of its own on the Remote (a branch) and a copy of its own here (a worktree, repos/lines.rs),
 //! neither of which the person names or manages. Choosing to work on an issue makes both and puts that copy where
 //! the repo is seen (/root/<repo> in File, Forge and the Prompt); going back to main puts main's copy there again;
 //! a work merged is finished, its copy here given back.
@@ -13,7 +13,7 @@ use crate::repos::store::Repos;
 use serde::Serialize;
 use std::fs;
 
-type Result<T> = std::result::Result<T, String>;
+pub(super) type Result<T> = std::result::Result<T, String>;
 
 /// Work on `issue` ("issue/001.md"): its line is made on the Remote from
 /// main's last commit if it is not there yet, its copy is brought here, and
@@ -42,7 +42,7 @@ pub fn switch(repos: &Repos, repo: &str, line: &str) -> Result<()> {
     // Away, switching is this device's alone: what the shown copy has not sent stays in it and goes later.
     if remote::connection().is_some() { let _ = remote::sync(repos, repo); }
     show(repos, repo, line)?;
-    // Back on main: work handed over that waited for it begins (tasks.rs).
+    // Back on main: work handed over that waited for it begins (agent/tasks.rs).
     if line == MAIN { crate::agent::tasks::back_on_main(repo); }
     Ok(())
 }

@@ -147,11 +147,11 @@ pub fn prompt(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let argv: Vec<String> = if cmd.is_empty() { vec![if bash { "/bin/bash" } else { "/bin/sh" }.into(), "-i".into()] } else { cmd };
     let s = launch::Sandbox { root, repo: dir, name: repo.clone(), argv, network: call.flags.network || length3_core::home::network(&repo), dotfiles: launch::dotfiles_in_effect(), data: Some(data.clone()), env: length3_core::device::agent_key::env() };
     // Recorded from the start, by the process that runs it, so `l3 prompt ls` (and Runtime) see it, `l3 prompt stop`
-    // can end it, and nothing it holds is freed (usage.rs): first being prepared, as what .packages and .setup ask for
+    // can end it, and nothing it holds is freed (storage/): first being prepared, as what .packages and .setup ask for
     // is set up (once, while they and the root stay as they are), then running.
     let prepared = || -> std::io::Result<running::Recorded> {
         let mut recorded = running::record(&data, &repo, s.network, &s.root)?;
-        // Recorded, what it holds stays; room is made round it if the device is short (usage.rs make_room).
+        // Recorded, what it holds stays; room is made round it if the device is short (storage/free.rs make_room).
         length3_core::storage::make_room(&data, &paths::repos_dir(), PROMPT_ROOM);
         launch::set_up(&s, about.distro.is_some())?;
         recorded.ready()?;

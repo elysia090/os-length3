@@ -60,7 +60,7 @@ const send: Send = (head, body) => {
   try {
     x.open(head.method, head.url, false);
     x.responseType = 'arraybuffer';
-    // The core's timeout is for nothing read in so long (net.rs), a request's here is for the whole of it: as long
+    // The core's timeout is for nothing read in so long (device/net.rs), a request's here is for the whole of it: as long
     // again as its bytes take at 32 KB/s, and a file's (a blob, up to 16 MB) as long as the largest does, so a
     // slow line still finishes what it sends and gets, not cut at a minute and sent again from the start.
     if (head.timeout) x.timeout = head.timeout + Math.ceil(body.length / SLOW) + (/\/v1\/blobs\/[0-9a-f]{64}$/.test(head.url) && head.method === 'GET' ? Math.ceil(BLOB / SLOW) : 0);

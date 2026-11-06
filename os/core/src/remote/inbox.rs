@@ -8,7 +8,7 @@
 
 use crate::remote::{Client, Reply};
 use serde::{Deserialize, Serialize};
-type Result<T> = std::result::Result<T, String>;
+pub(super) type Result<T> = std::result::Result<T, String>;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Me { pub domain: String, pub account: String, #[serde(default)] pub code: String, pub addresses: Vec<Address> }

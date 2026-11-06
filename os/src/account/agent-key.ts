@@ -3,7 +3,7 @@ import {choose, type Use} from '../agent/ask.ts';
 import {connection, passkeys} from '../remote/connection.ts';
 import {canSeal, seal, unseal, type SealedKey} from './seal.ts';
 
-// The Agent's key on this device (core agent_key.rs): kept here alone, never sent to the Remote, whole only for the
+// The Agent's key on this device (core device/agent_key.rs): kept here alone, never sent to the Remote, whole only for the
 // asking. Whether there is one decides whether the box offers the Agent at all. In a browser, where what is kept is
 // in the profile's files, it is sealed by the person's passkey where there is one with PRF (seal.ts), and opened
 // once a session, the first time the Agent is asked.

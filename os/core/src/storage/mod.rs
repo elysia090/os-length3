@@ -11,7 +11,7 @@
 //!                   cannot be sent, Home's settings
 //!
 //! What a repo's Prompts wrote outside it is listed too, by owner and
-//! lifetime (owned.rs): its environment (what its package manager put over
+//! lifetime (prompt/writes.rs): its environment (what its package manager put over
 //! the root; freeing it brings the plain root back) and its caches (made
 //! again when needed); and inside it, what is derived from its files
 //! (node_modules, target, a venv: made again by the tool that made them).
@@ -23,7 +23,7 @@
 //! What a Prompt holds stays while it runs, and from the moment it starts
 //! being prepared (`.packages`, `.setup`): its repo, the repo's environment,
 //! caches and what is derived in it, and the root it runs on, whichever is
-//! current now. Each Prompt here records what it holds (prompt.rs) under the
+//! current now. Each Prompt here records what it holds (prompt/running.rs) under the
 //! same lock (`lock`) a thing is looked at again under just before it goes,
 //! and the current root is changed under, so none of these comes between the
 //! look and the removal.

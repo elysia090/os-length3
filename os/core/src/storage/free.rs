@@ -12,19 +12,19 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 use super::items::{Certainty, Held, host, InUse, Item, item, Room, space, system};
 
-/// Another distribution's root fetched and installed (root.rs fetch_distro), room made for it first.
+/// Another distribution's root fetched and installed (root/fetch.rs fetch_distro), room made for it first.
 #[cfg(not(target_os = "wasi"))]
 pub fn fetch_distro(data: &Path, remote: &str, d: &crate::root::Distro, progress: impl FnMut(crate::device::download::Progress)) -> Result<crate::root::Installed, String> {
     crate::root::fetch_distro(data, remote, d, |want| { make_room(data, &crate::fs::paths::repos_dir(), want); }, progress)
 }
 
-/// The newest pinned root fetched and installed (root.rs fetch_and_install), room made for it first.
+/// The newest pinned root fetched and installed (root/fetch.rs fetch_and_install), room made for it first.
 #[cfg(not(target_os = "wasi"))]
 pub fn fetch_root(data: &Path, remote: &str, progress: impl FnMut(crate::device::download::Progress)) -> Result<crate::root::Installed, String> {
     crate::root::fetch_and_install(data, remote, |want| { make_room(data, &crate::fs::paths::repos_dir(), want); }, progress)
 }
 
-/// A repo brought here from the Remote (remote.rs fetch), room made for it first if the device is short.
+/// A repo brought here from the Remote (compute/vm.rs fetch), room made for it first if the device is short.
 pub fn bring_repo(repos: &crate::repos::store::Repos, repo: &str) -> Result<crate::remote::Synced, String> {
     crate::remote::fetch(repos, repo, || { make_room(&crate::fs::paths::data_dir(), &crate::fs::paths::repos_dir(), 0); })
 }

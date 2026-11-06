@@ -1,6 +1,6 @@
 //! Whether this device listens for SSH, as the Remote is told it (service/ssh.ts): that it listens, and the scope's
 //! word, never an address, a port or a repo name. Pages of the account show "<device> listens for SSH" with its
-//! off switch, and nothing of where. The listener itself is ssh.rs's (and l3's: cli/src/ssh.rs).
+//! off switch, and nothing of where. The listener itself is ssh/'s (and l3's: cli/src/ssh.rs).
 
 // No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
 #![forbid(unsafe_code)]

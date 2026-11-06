@@ -1,5 +1,5 @@
 //! The Agent's key: the one API key a person gives this device for the box's Agent, whoever made the model it opens.
-//! It is kept on this device alone, in its keyring (vault.rs), apart from the dotfiles: never sent to the Remote,
+//! It is kept on this device alone, in its keyring (device/vault.rs), apart from the dotfiles: never sent to the Remote,
 //! never written into a repo or a dotfile, and said whole only to the page that asks the model with it and to the
 //! Prompts started here, in whose environment it is under the name its maker's own tools read it by
 //! (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …), so those tools work there too. What it is a key for is read from how it
@@ -82,7 +82,7 @@ pub fn env() -> Vec<(String, String)> {
 /// Where earlier releases kept it: a file of its own beside Home's state.
 fn before() -> PathBuf { crate::fs::paths::data_dir().join("agent-key") }
 
-/// What is kept here, if anything (vault.rs: the OS's keyring, or a file only this account reads). One kept where
+/// What is kept here, if anything (device/vault.rs: the OS's keyring, or a file only this account reads). One kept where
 /// earlier releases kept it is moved there the first time it is read.
 pub fn held() -> Option<Held> {
     let text = match crate::device::vault::get(Secret::AgentKey).ok().flatten() {

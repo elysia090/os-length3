@@ -1,5 +1,5 @@
-//! Agents: the work handed to one (core tasks.rs), and what Claude Code, Grok Build and the like do in the person's
-//! repos, as their own hooks say it (core agents.rs). `l3 agent` is what is offered, asked, ready to look at, and at
+//! Agents: the work handed to one (core agent/tasks.rs), and what Claude Code, Grok Build and the like do in the person's
+//! repos, as their own hooks say it (core agent/activity.rs). `l3 agent` is what is offered, asked, ready to look at, and at
 //! work; take, drop, reply and ask are the person's deeds on it. `l3 agent on` sets an agent up (its hooks, and the
 //! work handed to it), `off` takes that out again, `hooks` only shows them; `l3 agent hook HARNESS` is what a
 //! harness calls on each event. `l3 agent run` (set off by a deed) runs a repo's tasks one at a time, each in its
@@ -230,7 +230,7 @@ pub fn off(_: &Ctx, call: &Call) -> Result<Reply> {
     Ok(Reply::done(tr!("{} is handed nothing more, and no longer says what it does here", "{} にはもう何も任せず、作業も知らせません", harness_said(harness)), json!({"harness": harness, "path": path})))
 }
 
-// ---- the work handed to it (core tasks.rs) ----
+// ---- the work handed to it (core agent/tasks.rs) ----
 
 fn task_id(call: &Call) -> Result<u64> {
     call.word(0).and_then(|w| w.trim_start_matches('#').parse().ok()).ok_or_else(|| Error::Usage(tr!("Name a task by its number (l3 agent lists them)", "タスクを番号で書いてください（l3 agent で一覧）")))
@@ -271,7 +271,7 @@ const LOG: u64 = 1024 * 1024;
 const SAY_EVERY: u64 = 500;
 const SAY_MOST: usize = 2000;
 
-/// `l3 agent run` (set off by a deed, core tasks.rs kick): the repo's tasks waiting, one at a time, the most complex
+/// `l3 agent run` (set off by a deed, core agent/tasks.rs kick): the repo's tasks waiting, one at a time, the most complex
 /// first, each in the repo's Prompt; another runner for the repo already at it, this one leaves at once.
 pub fn run(ctx: &Ctx, _: &Call) -> Result<Reply> {
     let repo = ctx.here.as_ref().map(|h| h.repo.clone()).ok_or_else(|| Error::Usage(tr!("Which repo? (LENGTH3_REPO)", "どの repo ですか（LENGTH3_REPO）")))?;
@@ -348,7 +348,7 @@ fn run_one(ctx: &Ctx, k: &tasks::Task) -> tasks::Outcome {
             repo: repo.into(), line: line.into(), kind, text: activity::line_of(text) };
         if let Err(why) = activity::append(&e) { crate::out::note(&why); }
     };
-    // What the run is, by what it is made of (core compute.rs): the same Spec builds it here, and anywhere else.
+    // What the run is, by what it is made of (core compute/spec.rs): the same Spec builds it here, and anywhere else.
     let root = match super::runtime::root_now(&paths::data_dir()) {
         Ok((_, about)) => about.sha256,
         Err(e) => return stopped(e.message().to_string(), "l3 root fetch".into()),
@@ -378,7 +378,7 @@ fn run_one(ctx: &Ctx, k: &tasks::Task) -> tasks::Outcome {
     o
 }
 
-/// The environment the person's dotfiles ask of the root `root` here (launch.rs environment_of; none off Linux).
+/// The environment the person's dotfiles ask of the root `root` here (prompt/launch.rs environment_of; none off Linux).
 fn launch_environment(root: &str) -> String {
     #[cfg(target_os = "linux")]
     return length3_core::prompt::launch::environment_of(root, &length3_core::home::dotfiles_in_effect());
@@ -386,7 +386,7 @@ fn launch_environment(root: &str) -> String {
     return { let _ = root; String::new() };
 }
 
-/// The run itself: `l3 agent inside N` (the Prompt), given its Spec; watched as it goes (core compute.rs watch),
+/// The run itself: `l3 agent inside N` (the Prompt), given its Spec; watched as it goes (core compute/spec.rs watch),
 /// stopped past its budget; what it prints read line by line into the journal (an agent's stream of JSON as its
 /// tools) and the log; its last words and session kept. What it used, and what of its budget it went past.
 fn supervise(k: &tasks::Task, spec: &spec::Spec, journal: &dyn Fn(activity::Kind, &str)) -> (tasks::Outcome, spec::Usage, Option<spec::Over>) {
@@ -438,7 +438,7 @@ fn supervise(k: &tasks::Task, spec: &spec::Spec, journal: &dyn Fn(activity::Kind
     (o, usage, over)
 }
 
-/// The run `pid` supervises, watched until `ended` (core compute.rs watch); off Linux, only its wall time.
+/// The run `pid` supervises, watched until `ended` (core compute/spec.rs watch); off Linux, only its wall time.
 fn watched(pid: u32, budget: &spec::Budget, ended: &std::sync::atomic::AtomicBool, stop: impl FnOnce()) -> (spec::Usage, Option<spec::Over>) {
     let is_over = || ended.load(std::sync::atomic::Ordering::SeqCst);
     #[cfg(target_os = "linux")]
@@ -448,7 +448,7 @@ fn watched(pid: u32, budget: &spec::Budget, ended: &std::sync::atomic::AtomicBoo
         (spec::Usage { wall_ms: t.elapsed().as_millis() as u64, ..Default::default() }, None) };
 }
 
-/// `l3 agent inside N` (by `l3 agent run`): the run its Spec says (L3_SPEC, core compute.rs), built here: the root
+/// `l3 agent inside N` (by `l3 agent run`): the run its Spec says (L3_SPEC, core compute/spec.rs), built here: the root
 /// it names (held here by its sha256), the repo's copy of its line (main's, the issue's), what it is told in its
 /// environment, the network only if the repo has it here (a Spec asking for more is refused, whoever wrote it).
 /// Ends with its command's code.

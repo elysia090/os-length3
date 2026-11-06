@@ -68,11 +68,11 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
             to(home::set(&key, &a.s("json")?)?)
         }
         // A dotfile written here (`text` null: removed) runs here at once; one changed elsewhere runs here once taken
-        // (`names`, or every one waiting). home.rs dotfiles_in_effect.
+        // (`names`, or every one waiting). home/dotfiles.rs dotfiles_in_effect.
         "dotfile_set" => to(home::set_dotfile(&a.s("name")?, a.opt::<String>("text")?.as_deref())?),
         "dotfiles_take" => to(home::take_dotfiles(&a.list("names")?)?),
         "dotfiles_in_effect" => to(home::dotfiles_in_effect().into_iter().collect::<std::collections::BTreeMap<_, _>>()),
-        // The Agent's key (agent_key.rs), kept on this device only: whether there is one, as it may be shown; kept (with
+        // The Agent's key (device/agent_key.rs), kept on this device only: whether there is one, as it may be shown; kept (with
         // the model it opens) or taken away (`key` null); and, whole, for the page that asks the model with it.
         // A key a passkey sealed (a browser's: src/home/seal.ts) is said as sealed; the page opens it, once a session.
         "agent_key" => to(agent_key::held().map(|h| match h {
@@ -99,15 +99,15 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
             agent_key::Held::Sealed(s) => Some(json!({"sealed": s.sealed, "variable": s.variable, "model": s.model})),
         })),
 
-        // The box's Agent saying what it does, as an agent's hooks do (agents.rs from_box): asked, answered.
+        // The box's Agent saying what it does, as an agent's hooks do (agent/activity.rs from_box): asked, answered.
         "agent_said" => {
             let repo = a.s("repo")?;
             crate::repos::store::Repos::open()?.dir(&repo)?;
             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
             to(activity::append(&activity::from_box(&a.s("session")?, &repo, a.get("kind")?, &a.opt::<String>("text")?.unwrap_or_default(), now))?)
         }
-        // What agents do in the repos, as their hooks said it (agents.rs): null when nothing came since `cursor`.
-        // And the work handed to the agent (tasks.rs), when it changed since `tasks` (the mark last read). Null when
+        // What agents do in the repos, as their hooks said it (agent/activity.rs): null when nothing came since `cursor`.
+        // And the work handed to the agent (agent/tasks.rs), when it changed since `tasks` (the mark last read). Null when
         // neither moved: what a page asks every second reads a few bytes then.
         "agents" => {
             let journal = activity::now_since(&a.opt::<activity::Cursor>("cursor")?.unwrap_or_default(),
@@ -155,9 +155,9 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         "remote_status" => to(remote::status(&repos()?)?),
         "sync_repo" => to(remote::sync(&repos()?, &a.s("repo")?)?),
         "repo_fetch" => to(storage::bring_repo(&repos()?, &a.s("repo")?)?),
-        // One of Home's settings agreed with the Remote (home.rs agree_with).
+        // One of Home's settings agreed with the Remote (home/agree.rs agree_with).
         "home_sync" => to(remote::sync_home(&a.s("key")?)?),
-        // One of them taken off this device, only as the Remote has it (home.rs leave).
+        // One of them taken off this device, only as the Remote has it (home/agree.rs leave).
         "home_leave" => to(remote::leave_home(&a.s("key")?)?),
         // The plan's page (Checkout, or the portal) as the Remote makes it for this account; the host opens it.
         "plan_page" => to(account::plan_page(if a.s("kind")? == "portal" { "portal" } else { "checkout" }, a.opt::<String>("tier")?.as_deref())?),

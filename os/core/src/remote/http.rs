@@ -6,14 +6,14 @@
 #![forbid(unsafe_code)]
 
 use crate::device::net::{send, Sent};
-use super::connection::{bearer, connection};
-use super::local::BLOB_LIMIT;
 use serde::Serialize;
 use crate::fs::hash::sha256;
 use std::io::Read;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use crate::Result;
+use super::connection::{bearer, connection};
+use super::local::BLOB_LIMIT;
 
 pub(crate) struct Client {
     pub(super) url: String,

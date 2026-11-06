@@ -3,7 +3,7 @@
 //! device without it is told where to get it (exit 4); a start that fails
 //! or never answers is never said as open; closing closes only the app.
 //! The app here is the test's own: a program that notes it was started,
-//! and a socket answering as the app answers (core/src/desktop.rs).
+//! and a socket answering as the app answers (core/src/device/desktop.rs).
 
 mod common;
 use common::{Home, Ran};

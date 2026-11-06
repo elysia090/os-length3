@@ -25,7 +25,7 @@ export function agentSection(counted: (n: number) => void = () => {}): HTMLEleme
 }
 
 /**
- * Where the key is kept, as it is: in the app, the device's keyring (core vault.rs); in a browser, sealed by the
+ * Where the key is kept, as it is: in the app, the device's keyring (core device/vault.rs); in a browser, sealed by the
  * person's passkey (account/seal.ts), or, where it could not be, as given in the browser's own keeping.
  */
 function keptWhere(k: Shown | null): string {

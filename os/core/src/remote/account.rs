@@ -42,7 +42,7 @@ pub struct Device {
     pub current: bool,
 }
 
-fn get<T: for<'a> Deserialize<'a>>(path: &str) -> Result<T> {
+pub(super) fn get<T: for<'a> Deserialize<'a>>(path: &str) -> Result<T> {
     serde_json::from_value(Client::open()?.json("GET", path, None)?).map_err(|e| e.to_string())
 }
 

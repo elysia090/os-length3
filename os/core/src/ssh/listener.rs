@@ -6,7 +6,7 @@ use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use super::keys::keys;
-use super::reach::{destinations, host, repo_names, Scope, scope, Taken};
+use super::reach::{destinations, dir, host, repo_names, Scope, scope, Taken};
 
 /// Stop the listener here: asked to end (it closes every session and says so to the Remote), then killed if it
 /// has not within a few seconds. What was running, if anything was.
@@ -64,7 +64,7 @@ pub fn record(data: &Path, port: u16, scope: Scope, bound: Vec<IpAddr>, interfac
     Ok(Recorded(path, l))
 }
 
-/// Replaced whole (atomic.rs), so a reader never sees half of it.
+/// Replaced whole (fs/write.rs), so a reader never sees half of it.
 fn write_record(path: &Path, l: &Listening) -> std::io::Result<()> {
     crate::fs::write::replace(path, &serde_json::to_vec(l).map_err(std::io::Error::other)?, crate::fs::write::How::RECORD)
 }
@@ -95,11 +95,6 @@ pub(super) fn record_file(data: &Path) -> PathBuf {
 /// The host key, made once per device (OpenSSH's private key format, owner-only).
 pub fn host_key(data: &Path) -> PathBuf {
     dir(data).join("host_ed25519")
-}
-
-/// Where SSH keeps its things on this device.
-pub fn dir(data: &Path) -> PathBuf {
-    data.join("ssh")
 }
 
 pub fn here(data: &Path) -> Here {

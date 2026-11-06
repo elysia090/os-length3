@@ -12,7 +12,7 @@ use std::path::Path;
 
 /// Fetch the newest pinned release from the Remote and install it; the
 /// bundle is let go once its root is in place. `room` is asked for what the
-/// bundle and its tree take before a byte comes (usage.rs fetch_root).
+/// bundle and its tree take before a byte comes (storage/free.rs fetch_root).
 pub fn fetch_and_install(data: &Path, remote: &str, room: impl FnOnce(u64), progress: impl FnMut(crate::device::download::Progress)) -> Result<Installed, String> {
     let r = &RELEASES[0];
     let bundles = system_dir(data).join(".bundles");
@@ -31,7 +31,7 @@ pub fn fetch_and_install(data: &Path, remote: &str, room: impl FnOnce(u64), prog
 
 /// Fetch another distribution's root (the Remote by digest first, then its
 /// makers), install it, and make it the one Prompts use. `room` is asked for
-/// what its bundle and its tree take before a byte comes (usage.rs fetch_distro).
+/// what its bundle and its tree take before a byte comes (root/fetch.rs fetch_distro).
 pub fn fetch_distro(data: &Path, remote: &str, d: &Distro, room: impl FnOnce(u64), progress: impl FnMut(crate::device::download::Progress)) -> Result<Installed, String> {
     if let Some(had) = use_held(data, d.sha256) { return Ok(had); }
     let bundles = system_dir(data).join(".bundles");
