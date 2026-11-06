@@ -1,4 +1,4 @@
-// Pin the l3 this tree releases: its entry is core/src/root.rs's RELEASES,
+// Pin the l3 this tree releases: its entry is core/src/root/pins.rs's RELEASES,
 // the whole of its pin for both ways in: the root (the bundle the
 // desktop app installs, by sha256 and size) and `web`, the sha256 of the
 // index the browser reads the same root by (scripts/l3.mjs, made from that
@@ -21,7 +21,7 @@ import {readFileSync, statSync, writeFileSync} from 'node:fs';
 import {basename, join} from 'node:path';
 
 const args = process.argv.slice(2);
-const rsAt = args.includes('--rs') ? args.splice(args.indexOf('--rs'), 2)[1] : new URL('../core/src/root.rs', import.meta.url).pathname;
+const rsAt = args.includes('--rs') ? args.splice(args.indexOf('--rs'), 2)[1] : new URL('../core/src/root/pins.rs', import.meta.url).pathname;
 const [file, web] = args;
 const name = file ? basename(file) : '';
 const m = /^os-length3-linux-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)-x86_64-[0-9a-f]{64}\.tar\.zst$/.exec(name);

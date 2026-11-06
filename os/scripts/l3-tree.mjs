@@ -1,7 +1,7 @@
 // The tree l3 is, read two ways, so the two can be held side by side:
 //
 //   nativeTree(TARBALL)  a release root (os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst)
-//                        as l3 installs it on a device (core/src/root.rs unpack):
+//                        as l3 installs it on a device (core/src/root/pins.rs unpack):
 //                        what is under root/, directories at least 0700, files
 //                        without set-id bits, symlinks as they are, a hard link the
 //                        same bytes as its file. No other kind is part of a root.
@@ -25,7 +25,7 @@ const digest = (bytes) => createHash('sha256').update(bytes).digest();
 
 /**
  * Every member of a tar stream: {name, kind ('0' file, '5' dir, '2' symlink, '1' hard link), mode, link, size, bytes},
- * with pax path and linkpath applied, as core/src/root.rs reads one.
+ * with pax path and linkpath applied, as core/src/root/pins.rs reads one.
  */
 export async function* tarMembers(stream) {
   // The stream's chunks as they come, and how far into the first one is read: each member is copied out once.

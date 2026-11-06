@@ -221,7 +221,7 @@ fn record_as(data: &Path, pid: u32, repo: &str, network: bool, root: &Path) -> s
     crate::fs::write::private_dir(&dir)?;
     let start_ticks = start_ticks(pid).ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, format!("/proc/{pid}/stat")))?;
     let started = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
-    let _still = crate::fs::size::lock(data)?;
+    let _still = crate::fs::lock::lock(data)?;
     let Some(digest) = root.parent().filter(|d| d.join("installed.json").is_file()).and_then(|d| d.file_name()) else {
         return Err(std::io::Error::new(std::io::ErrorKind::NotFound,
             crate::tr!("Its root was freed as it started; start it again", "始めるあいだに root が空けられました。もう一度始めてください")));

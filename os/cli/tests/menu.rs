@@ -5,7 +5,7 @@
 //! --json, TERM=dumb), it writes exactly what it writes off a terminal.
 
 mod common;
-use common::{Home, DOWN, ENTER, ESC, LEFT, RIGHT};
+use common::{DOWN, ENTER, ESC, Home, LEFT, RIGHT};
 
 /// A home with the repo notes in it.
 fn with_notes(name: &str) -> Home {

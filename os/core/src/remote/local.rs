@@ -3,8 +3,14 @@
 
 // No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
 #![forbid(unsafe_code)]
+use super::base::sync_dir;
+use crate::text::names::is_git_name;
+use crate::fs::hash::sha256;
+use std::collections::{BTreeMap, HashMap};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 
-use super::*;
 
 #[derive(Debug, Default)]
 pub struct Local {
@@ -231,3 +237,17 @@ pub(super) fn walk(dir: &Path, prefix: &str, out: &mut Local) {
         out.tree.insert(prefix.to_string(), None);
     }
 }
+
+pub const BLOB_LIMIT: u64 = 16 << 20;
+
+/// The modes of `tree`'s files only.
+pub(crate) fn modes_for(tree: &Tree, modes: &Modes) -> Modes {
+    modes.iter().filter(|(p, _)| matches!(tree.get(*p), Some(Some(_)))).map(|(p, m)| (p.clone(), *m)).collect()
+}
+
+/// Beside a tree, each file's mode where it has an execute bit: path -> its permission bits (0o755). A path
+/// not in it is a plain file. The Remote keeps the same beside each draft and commit (DESIGN.md §6, "A file's mode").
+pub type Modes = BTreeMap<String, u32>;
+
+pub type Tree = BTreeMap<String, Option<String>>;
+

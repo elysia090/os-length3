@@ -3,7 +3,7 @@
 
 use super::Ctx;
 use crate::args::Call;
-use crate::out::{ago, day, plain, Error, Reply, Result};
+use crate::out::{ago, day, Error, plain, Reply, Result};
 use crate::spec::{Fact, On};
 use crate::target;
 use length3_core::{remote::inbox, remote::servers, tr};

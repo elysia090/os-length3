@@ -22,7 +22,7 @@
 //         ENTER_KEY, for a Remote for research (enter.ts): the one given, or
 //           else, the first time, a new one, whose link is handed on.
 //       Then the release's files the Remote serves to anyone (mirror.ts):
-//       every root core/src/root.rs pins and the desktop app of the version
+//       every root core/src/root/pins.rs pins and the desktop app of the version
 //       RELEASE names (shared/desktop-releases.json), each one the bucket
 //       lacks taken from the GitHub release with GITHUB_TOKEN (read-only;
 //       GITHUB_REPOSITORY names the repository when it is not this one),
@@ -144,7 +144,7 @@ async function releaseFiles(bucket: string) {
   const version = shipped();
   const desktop = pinnedDesktop(version);
   if (!desktop.length) console.log(`shared/desktop-releases.json pins no desktop app for ${version}: the web offers none until it is pinned (the release's notes say what to pin)`);
-  const rootRs = readFileSync(new URL('../core/src/root.rs', import.meta.url), 'utf8');
+  const rootRs = readFileSync(new URL('../core/src/root/pins.rs', import.meta.url), 'utf8');
   const pins = [...pinnedRoots(rootRs), ...pinnedDistros(rootRs), ...desktop];
   // The same budget as the Worker's (wrangler.toml [vars]): asked before a file is fetched (a put of the month,
   // and the bytes R2 would hold with it in place of what it replaces); counted once it is put, with its record

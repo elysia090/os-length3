@@ -2,7 +2,7 @@
 
 use super::Ctx;
 use crate::args::Call;
-use crate::out::{bytes, files, Error, Reply, Result};
+use crate::out::{bytes, Error, files, Reply, Result};
 use crate::spec::{Fact, On};
 use crate::target;
 use length3_core::{home, remote, tr};

@@ -13,7 +13,7 @@
 #   SHA256SUMS, manifest                           the digests; what the root was made from
 #
 # and OUT/../notes.md, the release's notes. Before the web build and the app are made, the root is pinned
-# in core/src/root.rs (pin-root.mjs), so what ships trusts this release's root; once the app is made, it is
+# in core/src/root/pins.rs (pin-root.mjs), so what ships trusts this release's root; once the app is made, it is
 # pinned in shared/desktop-releases.json (pin-desktop.mjs). Both changes stay in the tree, to be committed as
 # one: release.yml proposes them to main. The release itself is made by publish-release.mjs (or
 # .github/workflows/release.yml, which runs this script).
@@ -104,10 +104,10 @@ digest() { sha256sum "$1" | cut -d' ' -f1; }
   echo "mkdir opened && tar --zstd -xf $rootfile -C opened"
   echo '```'
   echo
-  echo "l3 $version is the root (the desktop app installs it) and \`$l3web\`, the same root as the browser reads it (the same paths, modes, links and bytes: checked when it was made). One entry of \`os/core/src/root.rs\` RELEASES pins both; the release pinned it:"
+  echo "l3 $version is the root (the desktop app installs it) and \`$l3web\`, the same root as the browser reads it (the same paths, modes, links and bytes: checked when it was made). One entry of \`os/core/src/root/pins.rs\` RELEASES pins both; the release pinned it:"
   echo
   echo '```rust'
-  awk '/^pub const RELEASES/{on=1; sub(/^pub const RELEASES: &\[Release\] = &\[/, "")} on{print} on && /^}/{exit}' "$here/core/src/root.rs"
+  awk '/^pub const RELEASES/{on=1; sub(/^pub const RELEASES: &\[Release\] = &\[/, "")} on{print} on && /^}/{exit}' "$here/core/src/root/pins.rs"
   echo '```'
   echo
   echo "and its desktop app in \`os/shared/desktop-releases.json\`, as below. Both are proposed to main as one change (Pin $version); once it is in, each deploy of the Remote takes the pinned root and desktop files from this release, checks them against those pins and puts them on the Remote, which hands them to anyone beside this release; a web build takes l3 from \`$l3web\` only at the pinned index (\`os/scripts/prompt-files.mjs\`)."

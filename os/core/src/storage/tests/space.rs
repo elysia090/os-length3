@@ -1,6 +1,12 @@
 //! The tests of /space.rs.
 
 use super::*;
+use super::items::*;
+use super::free::*;
+use std::fs;
+use crate::fs::lock::lock;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 #[test]
 fn only_this_oss_dead_old_temporaries_are_reclaimed() {
@@ -71,7 +77,7 @@ fn a_sparse_file_counts_what_it_holds() {
 }
 
 mod system_tests {
-    use super::super::*;
+    use super::*;
 
     fn root_dir(data: &Path, sha: char, version: &str) -> PathBuf {
         let d = crate::root::system_dir(data).join(sha.to_string().repeat(64));
@@ -212,7 +218,7 @@ mod system_tests {
 }
 
 mod owned_tests {
-    use super::super::*;
+    use super::*;
 
     #[test]
     fn a_repos_environment_and_caches_are_listed_as_its_and_go_with_it() {
@@ -318,7 +324,7 @@ mod owned_tests {
 }
 
 mod id_tests {
-    use super::super::*;
+    use super::*;
 
     #[test]
     fn an_id_from_the_page_cannot_lead_out_of_the_data_directory() {
@@ -336,7 +342,7 @@ mod id_tests {
 }
 
 mod room_tests {
-    use super::super::*;
+    use super::*;
 
     #[test]
     fn room_is_made_from_what_comes_back_first_and_never_from_what_only_this_device_has() {

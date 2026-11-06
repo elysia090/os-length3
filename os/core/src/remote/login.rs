@@ -3,8 +3,16 @@
 
 // No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
 #![forbid(unsafe_code)]
+use super::base::{Base, base, key_of, lock, set_base, sync_dir};
+use super::connection::{Connection, connection, current_url, forget_connection, gone, save_connection};
+use super::http::{answer, Body, Client, failed, Failure, Got, odd, refusal, refused, request, unknown};
+use super::sync::sync_with;
+use crate::repos::store::Repos;
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::time::Duration;
+use crate::Result;
 
-use super::*;
 
 /// Keep a session just approved: `bearer`, the one a device was handed (the device flow's), or none in a browser,
 /// whose session is the cookie the Remote just set. What was agreed with another Remote, or

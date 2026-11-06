@@ -1,6 +1,10 @@
 //! The tests of /root.rs.
 
 use super::*;
+use super::held::*;
+use super::install::*;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 fn header(name: &str, kind: u8, size: usize, link: &str) -> Vec<u8> {
     let mut h = vec![0u8; 512];

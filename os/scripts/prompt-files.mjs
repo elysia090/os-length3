@@ -3,7 +3,7 @@
 // (scripts/l3.mjs). It is made where Rust is, by the release
 // (.github/workflows/release.yml), and is the OS that version is; a build
 // that only has Node (Cloudflare's Workers Builds) takes it from it, and
-// takes only the l3 this tree pins: core/src/root.rs
+// takes only the l3 this tree pins: core/src/root/pins.rs
 // RELEASES, whose entry is the whole of l3's pin (the root, by sha256, and
 // `web`, the sha256 of the index the browser reads it by). The release's
 // SHA256SUMS must say the same of the file it is in; l3.json must name that
@@ -31,11 +31,11 @@ const here = new URL('..', import.meta.url).pathname;
 const repo = process.env.GITHUB_REPOSITORY || 'elysia090/os-length3';
 const releases = process.env.LENGTH3_RELEASES || `https://github.com/${repo}/releases/download`;
 // The pin this tree has comes first: without one, nothing is fetched or taken.
-const pin = pinnedRoots(readFileSync(join(here, 'core/src/root.rs'), 'utf8'))[0];
-if (!pin) throw new Error('core/src/root.rs pins no l3: release one, and merge the change it proposes');
+const pin = pinnedRoots(readFileSync(join(here, 'core/src/root/pins.rs'), 'utf8'))[0];
+if (!pin) throw new Error('core/src/root/pins.rs pins no l3: release one, and merge the change it proposes');
 const {version, tag} = pin;
 const asset = `os-length3-linux-${version}-l3-web.tar`;
-if (!/^[0-9a-f]{64}$/.test(pin.web)) throw new Error(`core/src/root.rs pins l3 ${version}'s root but no index for the web (web: "${pin.web}"): a release since l3.mjs pins both`);
+if (!/^[0-9a-f]{64}$/.test(pin.web)) throw new Error(`core/src/root/pins.rs pins l3 ${version}'s root but no index for the web (web: "${pin.web}"): a release since l3.mjs pins both`);
 
 const sha = (b) => createHash('sha256').update(b).digest('hex');
 /** One of the release's files, from its download link. Never waited on for good (a download that stalls holds the

@@ -6,7 +6,7 @@
 
 use super::Ctx;
 use crate::args::Call;
-use crate::out::{self, ago, commits, files, issues, Error, Reply, Result};
+use crate::out::{self, ago, commits, Error, files, issues, Reply, Result};
 use crate::spec::{Fact, On};
 use crate::target::{self, IssueRef};
 use length3_core::history::{self, state_word, Change};
@@ -652,7 +652,7 @@ mod tests {
 
     #[test]
     fn the_cards_next_line_and_the_menus_deeds_are_read_from_the_same_facts() {
-        use crate::menu::{offered, Env};
+        use crate::menu::{Env, offered};
         use crate::spec::{Group, Weight};
         let ctx = Ctx::test(None, Vec::new()).online();
         let i = parse("r", "001.md", "Fix：x\n");
@@ -715,7 +715,7 @@ mod tests {
 
     #[test]
     fn a_merged_issue_is_offered_nothing_to_do_but_to_be_read() {
-        use crate::menu::{offered, Env};
+        use crate::menu::{Env, offered};
         use crate::spec::Group;
         let ctx = Ctx::test(None, Vec::new()).online();
         let i = parse("r", "001.md", "Fix：x\n");

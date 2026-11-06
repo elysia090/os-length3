@@ -2,7 +2,7 @@
 //! the rail), `l3 help COMMAND` (its forms), `l3 help all` (every form, each
 //! group aligned on its own). `l3 COMMAND --help` is `l3 help COMMAND`.
 
-use crate::args::{not_a_command, Call};
+use crate::args::{Call, not_a_command};
 use crate::cmd::Ctx;
 use crate::out::{Error, Reply, Result};
 use crate::spec::{self, Command, Group, Words};

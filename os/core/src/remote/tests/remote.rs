@@ -1,6 +1,12 @@
 //! The tests of /remote.rs.
 
 use super::*;
+use super::login::*;
+use super::merge::*;
+use super::connection::*;
+use super::sync::*;
+use std::fs;
+use std::time::Duration;
 
 #[test]
 fn a_remote_that_holds_no_files_says_the_work_stays_here() {

@@ -6,8 +6,8 @@
 // No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
 #![forbid(unsafe_code)]
 
-use crate::history::{changes_of_repo, listed, Change};
-use crate::repos::lines::{current, line_for, set_current, valid, worktree, MAIN};
+use crate::history::{Change, changes_of_repo, listed};
+use crate::repos::lines::{current, line_for, MAIN, set_current, valid, worktree};
 use crate::remote::{self, Client, Line, Reply};
 use crate::repos::store::Repos;
 use serde::Serialize;

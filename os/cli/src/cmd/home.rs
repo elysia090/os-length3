@@ -2,7 +2,7 @@
 
 use super::Ctx;
 use crate::args::Call;
-use crate::out::{now_ms, Error, Reply, Result};
+use crate::out::{Error, now_ms, Reply, Result};
 use crate::spec::{Fact, On};
 use length3_core::{home, remote, remote::inbox, text::i18n, text::title, tr};
 use serde_json::json;

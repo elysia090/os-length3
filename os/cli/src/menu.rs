@@ -18,7 +18,7 @@
 use crate::args;
 use crate::cmd::{self, Ctx};
 use crate::out::{self, Error};
-use crate::spec::{self, say, Arg, Command, Deed, Fact, Flag, Form, Group, On};
+use crate::spec::{self, Arg, Command, Deed, Fact, Flag, Form, Group, On, say};
 use crate::term::{self, Block, Key, Keys, Style};
 use length3_core::{fs::paths, home, remote, root, text::i18n, tr};
 use std::cell::{Cell, RefCell};

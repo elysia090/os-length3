@@ -1,6 +1,8 @@
 //! The tests of device/home.rs.
 
 use super::*;
+use super::todo::*;
+use super::agree::*;
 
 fn item(id: &str, title: &str) -> String {
     format!(r#"{{"id":"{id}","kind":null,"title":"{title}","detail":"","done":false,"repo":null,"created":1}}"#)
@@ -65,6 +67,7 @@ fn an_item_written_again_is_the_same_item() {
 use serde_json::{json, Value};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use crate::Result;
 
 fn recorded() -> Vec<Value> {
     let v: Value = serde_json::from_str(include_str!("../../../../shared/home-sync.json")).unwrap();

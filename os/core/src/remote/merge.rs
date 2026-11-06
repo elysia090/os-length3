@@ -1,8 +1,15 @@
 //! Taking in what changed on the Remote: the plan (file by file against
 //! the base), and writing the Remote's side into the copy here, beside
 //! what is in its way and never through a link.
+use super::http::Client;
+use super::local::{digest, Modes, Tree};
+use crate::text::names::is_git_name;
+use crate::fs::hash::sha256;
+use std::collections::{BTreeSet, HashMap};
+use std::fs;
+use std::path::{Path, PathBuf};
+use crate::Result;
 
-use super::*;
 
 /// What taking in a remote tree means here.
 #[derive(Debug, Default, PartialEq)]

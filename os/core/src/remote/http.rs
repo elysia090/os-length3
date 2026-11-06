@@ -5,8 +5,15 @@
 // No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
 #![forbid(unsafe_code)]
 
-use super::*;
 use crate::device::net::{send, Sent};
+use super::connection::{bearer, connection};
+use super::local::BLOB_LIMIT;
+use serde::Serialize;
+use crate::fs::hash::sha256;
+use std::io::Read;
+use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
+use crate::Result;
 
 pub(crate) struct Client {
     pub(super) url: String,

@@ -2,9 +2,9 @@
 //! input, making a folder, removing. Paths are a repo's (REPO/PATH), or from
 //! where you are in one.
 
-use super::{stdin_text, Ctx};
+use super::{Ctx, stdin_text};
 use crate::args::Call;
-use crate::out::{bytes, files, note, Error, Reply, Result};
+use crate::out::{bytes, Error, files, note, Reply, Result};
 use crate::spec::{Fact, On};
 use crate::target;
 use length3_core::repos::store::{is_issues, shown, ISSUES};

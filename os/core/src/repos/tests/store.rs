@@ -354,7 +354,7 @@ mod shared_cases {
 
     #[test]
     fn lines_changed_are_counted_and_laid_out_as_the_app_does() {
-        use crate::text::diff::{counts, ops, Kind};
+        use crate::text::diff::{counts, Kind, ops};
         assert_eq!(disagreeing("lineDiff", |c| serde_json::json!([c[2], c[3]]), |c| serde_json::json!(counts(&ops(s(&c[0]), s(&c[1]))))), Vec::<String>::new());
         let laid = |c: &Value| {
             if c[4].is_null() { return Value::Null; }

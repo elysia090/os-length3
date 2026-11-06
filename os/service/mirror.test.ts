@@ -100,9 +100,9 @@ test('mirror: a file its makers publish is taken from their URL, without the tok
   await assert.rejects(mirror([{...p, key: 'os/other', url: 'https://makers.test/gone'}], fakeBucket().store, {api: 'https://api.test', repo: 'me/os', fetch: f}, quiet), /gone: 404/);
 });
 
-test('the pins: every root core/src/root.rs pins, newest first, and the desktop app of a version, by its file', () => {
+test('the pins: every root core/src/root/pins.rs pins, newest first, and the desktop app of a version, by its file', () => {
   // One at least: main pins the newest release alone (scripts/pin-root.mjs), which a release makes as it is made.
-  const roots = pinnedRoots(readFileSync(new URL('../core/src/root.rs', import.meta.url), 'utf8'));
+  const roots = pinnedRoots(readFileSync(new URL('../core/src/root/pins.rs', import.meta.url), 'utf8'));
   assert.ok(roots.length >= 1);
   for (const r of roots) {
     assert.match(r.sha256, /^[0-9a-f]{64}$/);
@@ -114,7 +114,7 @@ test('the pins: every root core/src/root.rs pins, newest first, and the desktop 
   assert.throws(() => pinnedRoots('pub const RELEASES: &[Release] = &[Release { name: "x" }];'), /not as pin-root\.mjs writes one/);
 
   // Other distributions' roots: by digest too, each from the URL that names its one build.
-  const distros = pinnedDistros(readFileSync(new URL('../core/src/root.rs', import.meta.url), 'utf8'));
+  const distros = pinnedDistros(readFileSync(new URL('../core/src/root/pins.rs', import.meta.url), 'utf8'));
   assert.deepEqual(distros.map((d) => d.tag.split(' ')[0]), ['ubuntu', 'debian']);
   for (const d of distros) {
     assert.deepEqual([d.key, d.path], [`os/${d.sha256}`, `/v1/os/${d.sha256}`]);

@@ -1,6 +1,11 @@
 //! The tests of /ssh.rs.
 
 use super::*;
+use super::keys::*;
+use super::reach::*;
+use super::listener::*;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::time::{Duration, Instant};
 
 // A real Ed25519 public key (from ssh-keygen; its private half was never kept).
 const ED: &str = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJyDkovadQYieQGc+7m7KbrvkEYluozpLzNrNbQJeW2a ren@laptop";

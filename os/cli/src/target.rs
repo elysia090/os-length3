@@ -4,7 +4,7 @@
 //! in a REPO, path or issue slot, never in text: "Docs:readme" as a title
 //! is a title.
 
-use crate::args::{owner_shaped, Call};
+use crate::args::{Call, owner_shaped};
 use crate::cmd::Ctx;
 use crate::out::{Error, Result};
 use length3_core::text::names::{self, Name};

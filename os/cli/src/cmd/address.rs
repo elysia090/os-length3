@@ -16,7 +16,7 @@
 
 use super::Ctx;
 use crate::args::Call;
-use crate::out::{note, Error, Reply, Result};
+use crate::out::{Error, note, Reply, Result};
 use length3_core::{fs::paths, remote, ssh, tr};
 use serde_json::json;
 

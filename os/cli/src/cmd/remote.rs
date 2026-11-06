@@ -1,7 +1,7 @@
 //! Remote: where this device is connected and where each repo stands; the
 //! account's sign-in and devices; connecting and disconnecting.
 
-use super::{host, Ctx};
+use super::{Ctx, host};
 use crate::args::Call;
 use crate::out::{self, bytes, Error, Reply, Result};
 use crate::spec::{Fact, On};

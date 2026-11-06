@@ -10,7 +10,7 @@ name: Release
 # and web-release.sh) and the desktop app (the
 # same UI, its Prompt running that root on the machine: a .deb and an
 # AppImage), with their digests. Then it proposes the pins to main as one
-# pull request (Pin vX.Y.Z: the root in os/core/src/root.rs, the desktop app
+# pull request (Pin vX.Y.Z: the root in os/core/src/root/pins.rs, the desktop app
 # in os/shared/desktop-releases.json); merged, they are what the tree ships:
 # devices trust the root by its digest, the web takes that l3, and the
 # Remote's deploy (os/service/deploy.ts) takes the pinned files from the
@@ -133,8 +133,8 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git switch -c "$branch"
-          git add os/core/src/root.rs os/shared/desktop-releases.json
-          git commit -m "Pin $TAG: its root (os/core/src/root.rs RELEASES) and its desktop app (os/shared/desktop-releases.json)"
+          git add os/core/src/root/pins.rs os/shared/desktop-releases.json
+          git commit -m "Pin $TAG: its root (os/core/src/root/pins.rs RELEASES) and its desktop app (os/shared/desktop-releases.json)"
           git push "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" "$branch"
           gh pr create --base main --head "$branch" --title "Pin $TAG" \
             --body "What $TAG pinned as it was made (its notes say the same): merged, the tree ships it." \

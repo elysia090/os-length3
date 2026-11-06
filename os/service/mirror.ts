@@ -2,7 +2,7 @@
 // beside the GitHub release they are published in (GitHub holds no Cloudflare
 // credentials). The deploy (deploy.ts) runs it after the
 // Worker answers, for what this tree pins (releases.ts): every root in
-// core/src/root.rs RELEASES and DISTROS (a distribution's root from its
+// core/src/root/pins.rs RELEASES and DISTROS (a distribution's root from its
 // makers' URL), and the desktop app of the version RELEASE names. One the Remote recorded as put at its pinned digest and size
 // (release_file, written only once the put is done) is kept as it is. Otherwise the file is taken from the GitHub release with the read-only
 // GITHUB_TOKEN, streamed to a file while its digest is taken, and put into

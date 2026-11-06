@@ -96,7 +96,7 @@ fn a_root_freed_before_it_is_recorded_is_not_run_on() {
     let _ = fs::remove_dir_all(&data);
     let root = a_root(&data, "abc");
     // Read as current, then freed before the Prompt recorded it (under the lock, as 空ける does).
-    let still = crate::fs::size::lock(&data).unwrap();
+    let still = crate::fs::lock::lock(&data).unwrap();
     let starting = { let (data, root) = (data.clone(), root.clone()); std::thread::spawn(move || record(&data, "here", false, &root).map(|_| ())) };
     std::thread::sleep(Duration::from_millis(200));
     fs::remove_dir_all(root.parent().unwrap()).unwrap();

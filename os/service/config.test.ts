@@ -9,7 +9,7 @@ const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.ur
 const wrangler = read('wrangler.toml');
 const value = (key: string) => new RegExp(`^${key}\\s*=\\s*"([^"]*)"`, 'm').exec(wrangler)?.[1];
 const routes = [...wrangler.matchAll(/^pattern\s*=\s*"([^"]+)"/gm)].map((m) => m[1]);
-const rust = read('core/src/remote/mod.rs');
+const rust = read('core/src/remote/connection.rs');
 const constant = (name: string) => new RegExp(`pub const ${name}: &str = "([^"]+)"`).exec(rust)?.[1];
 const tauri = JSON.parse(read('src-tauri/tauri.conf.json'));
 

@@ -2,9 +2,9 @@
 //! holds, largest first, each with what can be done with it); what every
 //! Prompt is given (dotfiles); and whether SSH reaches this device's Prompts (l3 address).
 
-use super::{stdin_text, Ctx};
+use super::{Ctx, stdin_text};
 use crate::args::Call;
-use crate::out::{self, bytes, things, Error, Reply, Result};
+use crate::out::{self, bytes, Error, Reply, Result, things};
 use crate::spec::{Fact, On};
 use crate::target;
 use length3_core::{device::download::Progress, fs::paths, home, remote, root, storage, tr};
