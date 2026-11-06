@@ -92,8 +92,7 @@ pub fn sync_all(repos: &Repos) -> Result<Vec<(String, Result<Synced>)>> {
 /// What the Remote has of a line, for a copy that last agreed `agreed` with it,
 /// taken only as a Remote says it (line_there). Not there, it has nothing of the
 /// line, unless the copy was in step before (discarded there, or another
-/// account's): then nothing here is taken for removed, and why is said
-/// (src/remote/sync.ts does the same).
+/// account's): then nothing here is taken for removed, and why is said.
 pub(super) fn there_of(url: &str, reply: Reply, agreed: i64, tree: Option<&Tree>) -> Result<Option<LineThere>> {
     match reply {
         Reply::Ok(v) => Ok(Some(line_there(url, &v, tree)?)),
@@ -108,7 +107,7 @@ pub(super) fn there_of(url: &str, reply: Reply, agreed: i64, tree: Option<&Tree>
 }
 
 /// Where a line's diff is sent. A copy never in step with the Remote makes it
-/// anew, even under a name the Remote remembers as discarded (src/remote/sync.ts);
+/// anew, even under a name the Remote remembers as discarded;
 /// one that was in step cannot bring back what was discarded by sending itself.
 pub(super) fn draft_path(repo: &str, line: &str, agreed: bool) -> String {
     let p = at(repo, line, "/draft");
