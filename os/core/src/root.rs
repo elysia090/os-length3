@@ -124,10 +124,10 @@ pub fn sources(remote: &str, r: &Release) -> Vec<String> {
 
 /// The first of `urls` that gives the pinned file; when none does, what each said.
 #[cfg(not(target_os = "wasi"))]
-fn fetch_first(urls: &[String], sha256: &str, bytes: u64, dest: &Path, mut progress: impl FnMut(crate::fetch::Progress)) -> Result<(), String> {
+fn fetch_first(urls: &[String], sha256: &str, bytes: u64, dest: &Path, mut progress: impl FnMut(crate::device::fetch::Progress)) -> Result<(), String> {
     let mut said = Vec::new();
     for url in urls {
-        match crate::fetch::fetch(url, sha256, bytes, dest, &mut progress) {
+        match crate::device::fetch::fetch(url, sha256, bytes, dest, &mut progress) {
             Ok(()) => return Ok(()),
             Err(e) => said.push(e),
         }
@@ -140,17 +140,17 @@ fn fetch_first(urls: &[String], sha256: &str, bytes: u64, dest: &Path, mut progr
 /// makers), install it, and make it the one Prompts use. `room` is asked for
 /// what its bundle and its tree take before a byte comes (usage.rs fetch_distro).
 #[cfg(not(target_os = "wasi"))]
-pub fn fetch_distro(data: &Path, remote: &str, d: &Distro, room: impl FnOnce(u64), progress: impl FnMut(crate::fetch::Progress)) -> Result<Installed, String> {
+pub fn fetch_distro(data: &Path, remote: &str, d: &Distro, room: impl FnOnce(u64), progress: impl FnMut(crate::device::fetch::Progress)) -> Result<Installed, String> {
     if let Some(had) = use_held(data, d.sha256) { return Ok(had); }
     let bundles = system_dir(data).join(".bundles");
-    crate::boundary::private_dir(&system_dir(data)).map_err(|e| e.to_string())?;
+    crate::disk::write::private_dir(&system_dir(data)).map_err(|e| e.to_string())?;
     fs::create_dir_all(&bundles).map_err(|e| e.to_string())?;
     let archive = bundles.join(format!("{}.tar.gz", d.sha256));
     // Its bundle and its tree: room made for them first.
     room(d.bytes.saturating_mul(3));
     let mut progress = progress;
-    if let Err(first) = crate::fetch::fetch(&by_digest(remote, d.sha256), d.sha256, d.bytes, &archive, &mut progress) {
-        crate::fetch::fetch(d.url, d.sha256, d.bytes, &archive, &mut progress).map_err(|e| format!("{first} / {e}"))?;
+    if let Err(first) = crate::device::fetch::fetch(&by_digest(remote, d.sha256), d.sha256, d.bytes, &archive, &mut progress) {
+        crate::device::fetch::fetch(d.url, d.sha256, d.bytes, &archive, &mut progress).map_err(|e| format!("{first} / {e}"))?;
     }
     let installed = install_distro(data, d, &archive);
     let _ = fs::remove_file(&archive);
@@ -200,7 +200,7 @@ pub fn use_held(data: &Path, sha256: &str) -> Option<Installed> {
 fn point_current(data: &Path, sha256: &str) -> Result<(), String> {
     // Under the lock 空ける looks again under (usage::lock), and only at a root still whole: one freed since
     // it was found here is not made current, and the one made current is not freed after.
-    let _still = crate::system::lock(data).map_err(|e| e.to_string())?;
+    let _still = crate::disk::room::lock(data).map_err(|e| e.to_string())?;
     if !system_dir(data).join(sha256).join("installed.json").is_file() {
         return Err(crate::tr!("That root was freed meanwhile; fetch it again", "その root はそのあいだに空けられました。もう一度取ってください"));
     }
@@ -215,10 +215,10 @@ fn point_current(data: &Path, sha256: &str) -> Result<(), String> {
 /// bundle is let go once its root is in place. `room` is asked for what the
 /// bundle and its tree take before a byte comes (usage.rs fetch_root).
 #[cfg(not(target_os = "wasi"))]
-pub fn fetch_and_install(data: &Path, remote: &str, room: impl FnOnce(u64), progress: impl FnMut(crate::fetch::Progress)) -> Result<Installed, String> {
+pub fn fetch_and_install(data: &Path, remote: &str, room: impl FnOnce(u64), progress: impl FnMut(crate::device::fetch::Progress)) -> Result<Installed, String> {
     let r = &RELEASES[0];
     let bundles = system_dir(data).join(".bundles");
-    crate::boundary::private_dir(&system_dir(data)).map_err(|e| e.to_string())?;
+    crate::disk::write::private_dir(&system_dir(data)).map_err(|e| e.to_string())?;
     fs::create_dir_all(&bundles).map_err(|e| e.to_string())?;
     let bundle = bundles.join(format!("{}.tar.zst", r.sha256));
     room(r.bytes.saturating_mul(3));
@@ -271,7 +271,7 @@ fn not_pinned(sha: &str, n: u64) -> String {
 /// put in its place between them, or a disk that answers twice differently).
 fn open_pinned<T>(path: &Path, pinned: impl FnOnce(&str, u64) -> Result<T, String>) -> Result<(fs::File, T), String> {
     let mut f = fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let (sha, n) = crate::digest::sha256_read(&mut f).map_err(|e| format!("{}: {e}", path.display()))?;
+    let (sha, n) = crate::disk::digest::sha256_read(&mut f).map_err(|e| format!("{}: {e}", path.display()))?;
     let what = pinned(&sha, n)?;
     io::Seek::rewind(&mut f).map_err(|e| e.to_string())?;
     Ok((f, what))
@@ -562,7 +562,7 @@ pub fn install(data: &Path, bundle: &Path) -> Result<Installed, String> {
 /// into place in one rename and make it current. Held already: only made current.
 fn put_in_place(data: &Path, sha256: &str, name: &str, version: &str, distro: Option<&str>, fill: impl FnOnce(&Path) -> io::Result<(u64, u64)>) -> Result<Installed, String> {
     let system = system_dir(data);
-    crate::boundary::private_dir(&system).map_err(|e| e.to_string())?;
+    crate::disk::write::private_dir(&system).map_err(|e| e.to_string())?;
     let dir = system.join(sha256);
     if !dir.join("installed.json").exists() {
         let aside = system.join(format!(".{sha256}.length3-{}-0", crate::pid()));
@@ -577,7 +577,7 @@ fn put_in_place(data: &Path, sha256: &str, name: &str, version: &str, distro: Op
             return Err(crate::tr!("This release has no root/bin/sh", "このリリースには root/bin/sh がありません"));
         }
         let about = Installed { name: name.into(), version: version.into(), sha256: sha256.into(), files, bytes,
-            allocated: Some(crate::system::allocated(&aside)), distro: distro.map(String::from) };
+            allocated: Some(crate::disk::room::allocated(&aside)), distro: distro.map(String::from) };
         fs::write(aside.join("installed.json"), serde_json::to_string(&about).unwrap()).map_err(|e| e.to_string())?;
         // installed.json says the root is whole, and nothing checks it again: the tree is on the disk before
         // it is renamed into place, or a crash soon after could leave a root that says so with empty files.

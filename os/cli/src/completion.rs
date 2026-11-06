@@ -9,7 +9,7 @@ use crate::cmd::Ctx;
 use crate::out::{Error, Reply, Result};
 use crate::spec::{self, Arg, Command, Flag};
 use crate::target;
-use length3_core::{home, templates};
+use length3_core::{device::home, words::templates};
 use serde_json::json;
 
 pub fn script(_: &Ctx, call: &Call) -> Result<Reply> {
@@ -111,7 +111,7 @@ fn slot(ctx: &Ctx, _c: &Command, a: Arg, cur: &str, verb: Option<&str>) -> Vec<S
             let mut out = Vec::new();
             for name in repos() {
                 for i in r.on_main().issues(&name).unwrap_or_default().into_iter().filter(|i| i.n.is_some()) {
-                    let n = length3_core::issues::number(&i.file);
+                    let n = length3_core::words::issues::number(&i.file);
                     if ctx.here.as_ref().is_some_and(|h| h.repo == name) { out.push(n.clone()); }
                     out.push(format!("{name}{n}"));
                 }

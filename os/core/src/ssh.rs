@@ -100,7 +100,7 @@ pub fn parse_keys(text: &str) -> Keys {
 /// The keys in Home's `.authorized_keys` as this device took it (home.rs dotfiles_in_effect): a key the Remote's
 /// copy holds and the person at this device never took is let in nowhere.
 pub fn keys() -> Keys {
-    crate::home::dotfiles_in_effect().into_iter().find(|(n, _)| n == KEYS).map(|(_, t)| parse_keys(&t)).unwrap_or_default()
+    crate::device::home::dotfiles_in_effect().into_iter().find(|(n, _)| n == KEYS).map(|(_, t)| parse_keys(&t)).unwrap_or_default()
 }
 
 /// The kind a key blob names first (a string: a 4-byte length, then its bytes).
@@ -202,8 +202,8 @@ pub fn scope(data: &Path) -> Scope {
 
 /// Keep the scope chosen, on this device (never sent).
 pub fn set_scope(data: &Path, s: Scope) -> std::io::Result<()> {
-    crate::boundary::private_dir(&dir(data))?;
-    crate::atomic::replace(&scope_file(data), serde_json::json!({"scope": s.word()}).to_string().as_bytes(), crate::atomic::How::PRIVATE)
+    crate::disk::write::private_dir(&dir(data))?;
+    crate::disk::write::replace(&scope_file(data), serde_json::json!({"scope": s.word()}).to_string().as_bytes(), crate::disk::write::How::PRIVATE)
 }
 
 /// One address of one interface of this host, as `getifaddrs` has it: the interface's name, the address and its
@@ -587,14 +587,14 @@ impl Drop for Recorded {
 
 /// Replaced whole (atomic.rs), so a reader never sees half of it.
 fn write_record(path: &Path, l: &Listening) -> std::io::Result<()> {
-    crate::atomic::replace(path, &serde_json::to_vec(l).map_err(std::io::Error::other)?, crate::atomic::How::RECORD)
+    crate::disk::write::replace(path, &serde_json::to_vec(l).map_err(std::io::Error::other)?, crate::disk::write::How::RECORD)
 }
 
 /// Record that this process listens.
 pub fn record(data: &Path, port: u16, scope: Scope, bound: Vec<IpAddr>, interfaces: Vec<Taken>, fingerprint: String) -> std::io::Result<Recorded> {
-    crate::boundary::private_dir(&dir(data))?;
+    crate::disk::write::private_dir(&dir(data))?;
     let pid = std::process::id();
-    let start_ticks = crate::prompt::start_ticks(pid).ok_or_else(|| std::io::Error::other(format!("/proc/{pid}/stat")))?;
+    let start_ticks = crate::device::prompts::start_ticks(pid).ok_or_else(|| std::io::Error::other(format!("/proc/{pid}/stat")))?;
     let started = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
     let l = Listening { pid, start_ticks, port, started, scope, bound, interfaces, fingerprint };
     let path = record_file(data);
@@ -606,7 +606,7 @@ pub fn record(data: &Path, port: u16, scope: Scope, bound: Vec<IpAddr>, interfac
 pub fn listening(data: &Path) -> Option<Listening> {
     let path = record_file(data);
     let l: Listening = serde_json::from_slice(&std::fs::read(&path).ok()?).ok()?;
-    if crate::prompt::start_ticks(l.pid) == Some(l.start_ticks) && !crate::prompt::zombie(l.pid) { return Some(l); }
+    if crate::device::prompts::start_ticks(l.pid) == Some(l.start_ticks) && !crate::device::prompts::zombie(l.pid) { return Some(l); }
     let _ = std::fs::remove_file(&path);
     None
 }
@@ -637,7 +637,7 @@ pub fn stop(data: &Path) -> Option<Listening> {
     let started = Instant::now();
     while listening(data).is_some() {
         if started.elapsed() > Duration::from_secs(5) {
-            if crate::prompt::start_ticks(l.pid) == Some(l.start_ticks) { unsafe { libc::kill(l.pid as libc::pid_t, libc::SIGKILL) }; }
+            if crate::device::prompts::start_ticks(l.pid) == Some(l.start_ticks) { unsafe { libc::kill(l.pid as libc::pid_t, libc::SIGKILL) }; }
             let _ = std::fs::remove_file(record_file(data));
             break;
         }

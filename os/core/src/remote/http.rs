@@ -6,7 +6,7 @@
 #![forbid(unsafe_code)]
 
 use super::*;
-use crate::net::{send, Sent};
+use crate::device::net::{send, Sent};
 
 pub(crate) struct Client {
     pub(super) url: String,

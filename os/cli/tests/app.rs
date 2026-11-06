@@ -37,7 +37,7 @@ fn program(home: &Home, body: &str) -> PathBuf {
 /// The app open, as l3 reaches it: a socket in the app's folder answering each word as the app does, and keeping
 /// the words. `close` closes it (its socket goes, and nothing answers after).
 fn open_app(data: &Path) -> Arc<Mutex<Vec<String>>> {
-    let dir = length3_core::desktop::dir(data);
+    let dir = length3_core::device::desktop::dir(data);
     std::fs::create_dir_all(&dir).unwrap();
     let socket = dir.join("socket");
     let listener = UnixListener::bind(&socket).unwrap();

@@ -20,10 +20,13 @@
 // No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
 #![forbid(unsafe_code)]
 
-use crate::linediff::{self, Kind};
+
+pub mod work;
+
+use crate::words::linediff::{self, Kind};
 use crate::remote::{self, Client, Reply, Tree};
 use crate::repos::Repos;
-use crate::text::{kind_of, named};
+use crate::words::title::{kind_of, named};
 use crate::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -137,7 +140,7 @@ fn head_tree(client: &Client, repo: &str, key: &str, head: Option<&str>) -> Resu
     };
     // Kept to spare the next read; not kept, the next read asks again.
     if let Ok(b) = serde_json::to_vec(&Head { id: Some(id.into()), tree: tree.clone() }) {
-        let _ = crate::atomic::replace(&head_file(key), &b, crate::atomic::How::CACHE);
+        let _ = crate::disk::write::replace(&head_file(key), &b, crate::disk::write::How::CACHE);
     }
     Ok(tree)
 }
@@ -198,7 +201,7 @@ fn prefetch(client: &Client, shas: Vec<&String>) {
         for (sha, b64) in v.as_object().into_iter().flatten() {
             let Some(bytes) = b64.as_str().and_then(|t| base64::engine::general_purpose::STANDARD.decode(t).ok()) else { continue };
             // Only what its name says: a digest is the file's own proof.
-            if crate::digest::sha256(&bytes) == *sha && bytes.len() <= TEXT_LIMIT { cache.insert(sha.clone(), bytes); }
+            if crate::disk::digest::sha256(&bytes) == *sha && bytes.len() <= TEXT_LIMIT { cache.insert(sha.clone(), bytes); }
         }
     }
 }
@@ -353,12 +356,12 @@ fn diff_of(pairs: Vec<Pair>, limit: usize) -> Result<Vec<FileDiff>> {
 fn words(repos: &Repos, repo: &str, issue: Option<&str>, line: &str) -> Result<(Option<String>, String, String)> {
     // Work on an issue commits under it, whatever else is said.
     let on = repos.line(repo);
-    let issue = issue.map(String::from).or_else(|| (on != crate::lines::MAIN).then(|| format!("issue/{on}.md")));
+    let issue = issue.map(String::from).or_else(|| (on != crate::repos::lines::MAIN).then(|| format!("issue/{on}.md")));
     match issue {
         Some(file) => {
             let file = file.trim_start_matches("issue/").to_string();
             let text = repos.read(repo, &format!("issue/{file}"), 256 * 1024)?.text.ok_or_else(|| crate::tr!("The issue is not text", "Issue がバイナリです"))?;
-            let i = crate::issues::parse(repo, &file, &text);
+            let i = crate::words::issues::parse(repo, &file, &text);
             Ok((i.kind, i.title, format!("issue/{file}")))
         }
         None => {
@@ -400,8 +403,8 @@ pub fn cut(repos: &Repos, repo: &str, issue: Option<&str>, line: &str, note: &st
                 let _ = remote::set_head(&key, &id);
                 // A commit on an issue's work is handed in as it is made: there is no step of its own to push it, and
                 // its change is always its last commit. Its tests run by themselves too (tasks.rs).
-                let handed = if on == crate::lines::MAIN { None } else { push(repos, repo).and_then(|_| submit(repos, repo, "")).ok().map(|c| c.version) };
-                if let Ok(dir) = repos.dir(repo) { crate::tasks::committed(repo, &on, &dir); }
+                let handed = if on == crate::repos::lines::MAIN { None } else { push(repos, repo).and_then(|_| submit(repos, repo, "")).ok().map(|c| c.version) };
+                if let Ok(dir) = repos.dir(repo) { crate::agent::tasks::committed(repo, &on, &dir); }
                 return Ok(Cut {
                     id, issue: (!issue.is_empty()).then_some(issue), kind, title: title.trim().into(), note: note.trim().into(),
                     time: v["time"].as_u64().unwrap_or(0), folders: c.folders.iter().map(|f| f.folder.clone()).collect(),
@@ -426,7 +429,7 @@ pub fn cut(repos: &Repos, repo: &str, issue: Option<&str>, line: &str, note: &st
 fn cut_paths(repos: &Repos, repo: &str, paths: &[String], title: &str) -> Result<Option<Cut>> {
     let main = repos.on_main();
     let client = Client::open()?;
-    let key = remote::key_of(repo, crate::lines::MAIN);
+    let key = remote::key_of(repo, crate::repos::lines::MAIN);
     let only = |t: &Tree| -> Tree { t.iter().filter(|(p, _)| paths.contains(p)).map(|(p, v)| (p.clone(), v.clone())).collect() };
     for _ in 0..4 {
         let s = remote::sync(&main, repo)?;
@@ -445,7 +448,7 @@ fn cut_paths(repos: &Repos, repo: &str, paths: &[String], title: &str) -> Result
                 let mut body = serde_json::json!({"version": s.version, "parent": null, "kind": "", "title": "Start", "issue": "", "note": "", "added": 0, "removed": 0});
                 // Without the issue, where the paths are few enough to name (else the whole draft, the issue in it).
                 if rest.len() <= 5000 { body["paths"] = serde_json::json!(rest); }
-                match client.call("POST", &remote::at_path(repo, crate::lines::MAIN, "/cuts"), Some(body))? {
+                match client.call("POST", &remote::at_path(repo, crate::repos::lines::MAIN, "/cuts"), Some(body))? {
                     Reply::Ok(v) => { let _ = remote::set_head(&key, v["id"].as_str().unwrap_or_default()); }
                     Reply::Conflict(v) => { let _ = remote::set_head_from(&key, &v); }
                     Reply::NotFound(_) => return Err(crate::tr!("The Remote does not have this repo", "Remote にこの repo がありません")),
@@ -460,7 +463,7 @@ fn cut_paths(repos: &Repos, repo: &str, paths: &[String], title: &str) -> Result
             "version": s.version, "parent": b.head, "kind": "", "title": title, "issue": "", "note": "",
             "added": c.added, "removed": c.removed, "paths": paths,
         });
-        match client.call("POST", &remote::at_path(repo, crate::lines::MAIN, "/cuts"), Some(body))? {
+        match client.call("POST", &remote::at_path(repo, crate::repos::lines::MAIN, "/cuts"), Some(body))? {
             Reply::Ok(v) => {
                 let id = v["id"].as_str().unwrap_or_default().to_string();
                 let _ = remote::set_head(&key, &id);
@@ -480,10 +483,10 @@ fn cut_paths(repos: &Repos, repo: &str, paths: &[String], title: &str) -> Result
 /// "Reopen #3: …"; "Issue #3 removed" for a file gone (renumbered).
 pub fn issue_words(file: &str, text: Option<&str>, deed: &str) -> String {
     let file = file.trim_start_matches("issue/");
-    let n = crate::issues::number(file);
+    let n = crate::words::issues::number(file);
     let which = if n.is_empty() { file.trim_end_matches(".md").to_string() } else { n };
     let Some(text) = text else { return format!("Issue {which} removed") };
-    let i = crate::issues::parse("", file, text);
+    let i = crate::words::issues::parse("", file, text);
     let verb = match deed { "close" => "Close", "reopen" => "Reopen", _ => "Issue" };
     format!("{verb} {which}: {}", named(i.kind.as_deref(), &i.title))
 }
@@ -496,8 +499,8 @@ pub fn commit_issue(repos: &Repos, repo: &str, file: &str, deed: &str) -> Result
     let text = repos.on_main().read(repo, &path, 256 * 1024).ok().and_then(|c| c.text);
     // Written here, it is offered to the agent; closed, what was for it is done with (tasks.rs). Signed in or not.
     match deed {
-        "new" => crate::tasks::issue_written(repo, &path, &text.as_deref().map(|t| crate::issues::parse(repo, file, t).title).unwrap_or_default()),
-        "close" => crate::tasks::issue_over(repo, &path),
+        "new" => crate::agent::tasks::issue_written(repo, &path, &text.as_deref().map(|t| crate::words::issues::parse(repo, file, t).title).unwrap_or_default()),
+        "close" => crate::agent::tasks::issue_over(repo, &path),
         _ => {}
     }
     if Client::open().is_err() { return Ok(false); }
@@ -510,14 +513,14 @@ pub fn commit_issue(repos: &Repos, repo: &str, file: &str, deed: &str) -> Result
 pub fn settle_issues(repos: &Repos, repo: &str) -> Result<usize> {
     let Ok(client) = Client::open() else { return Ok(0) };
     let main = repos.on_main();
-    let key = remote::key_of(repo, crate::lines::MAIN);
+    let key = remote::key_of(repo, crate::repos::lines::MAIN);
     let now = remote::local_tree(&main.dir(repo)?).tree;
     let then = head_tree(&client, repo, &key, remote::base(&key).and_then(|b| b.head).as_deref())?;
     let file = |t: &Tree, p: &str| matches!(t.get(p), Some(Some(_)));
     let loose: std::collections::BTreeSet<String> = then.keys().chain(now.keys())
         .filter(|p| p.starts_with("issue/") && then.get(*p) != now.get(*p) && (file(&then, p) || file(&now, p))).cloned().collect();
     let (here, mut gone): (Vec<String>, Vec<String>) = loose.into_iter().partition(|p| file(&now, p));
-    let closed = |t: Option<&str>| t.and_then(|t| crate::issues::parse("", "x.md", t).closed).is_some();
+    let closed = |t: Option<&str>| t.and_then(|t| crate::words::issues::parse("", "x.md", t).closed).is_some();
     let mut made = 0;
     for p in &here {
         let text = main.read(repo, p, 256 * 1024).ok().and_then(|c| c.text);
@@ -545,7 +548,7 @@ pub fn log_of(repo: &str, line: &str, n: usize) -> Result<Vec<Cut>> {
     let Ok(client) = Client::open() else { return Ok(Vec::new()) };
     // What each commit changed, as the Remote counted it, without its tree; a Remote that does not count
     // it yet sends the trees, and they are compared here.
-    let v = match client.call("GET", &format!("{}{}limit={n}&summary=1", remote::at_path(repo, line, "/log"), if line == crate::lines::MAIN { "?" } else { "&" }), None)? {
+    let v = match client.call("GET", &format!("{}{}limit={n}&summary=1", remote::at_path(repo, line, "/log"), if line == crate::repos::lines::MAIN { "?" } else { "&" }), None)? {
         Reply::Ok(v) => v,
         _ => return Ok(Vec::new()),
     };
@@ -601,7 +604,7 @@ pub(crate) fn progress(repo: &str, l: &remote::Line) -> Result<(usize, usize)> {
 /// Push: the work's commits become the line's state on the Remote.
 pub fn push(repos: &Repos, repo: &str) -> Result<String> {
     let on = repos.line(repo);
-    if on == crate::lines::MAIN {
+    if on == crate::repos::lines::MAIN {
         return Err(crate::tr!("main is pushed by merging changes into it; work on an issue to push", "main には Change を Merge して入れます。Issue の作業で Push してください"));
     }
     // Nothing new is no push: an empty answer says so.
@@ -730,15 +733,15 @@ pub(crate) fn remember_merged(repo: &str, issues: impl Iterator<Item = String>) 
     if all.len() == before { return; }
     all.sort();
     // What this device saw merged, to hide it while away; not kept, it is seen again once the Remote answers.
-    if crate::boundary::private_dir(&crate::paths::data_dir().join("sync")).is_ok() {
-        if let Ok(b) = serde_json::to_vec(&all) { let _ = crate::atomic::replace(&merged_file(repo), &b, crate::atomic::How::CACHE); }
+    if crate::disk::write::private_dir(&crate::paths::data_dir().join("sync")).is_ok() {
+        if let Ok(b) = serde_json::to_vec(&all) { let _ = crate::disk::write::replace(&merged_file(repo), &b, crate::disk::write::How::CACHE); }
     }
 }
 
 /// Change: what the work pushed goes to main (again: a new version).
 pub fn submit(repos: &Repos, repo: &str, note: &str) -> Result<Change> {
     let on = repos.line(repo);
-    if on == crate::lines::MAIN {
+    if on == crate::repos::lines::MAIN {
         return Err(crate::tr!("A change comes from an issue's work (l3 start REPO#N)", "Change は Issue の作業から渡します（l3 start REPO#N）"));
     }
     let (kind, title, _) = words(repos, repo, None, "")?;
@@ -749,7 +752,7 @@ pub fn submit(repos: &Repos, repo: &str, note: &str) -> Result<Change> {
         Reply::Ok(v) => {
             let c = placed(repo, v)?;
             // Handed in here: the agent reads it by itself (tasks.rs).
-            crate::tasks::handed_in(repo, &c.line, &c.issue, &c.title);
+            crate::agent::tasks::handed_in(repo, &c.line, &c.issue, &c.title);
             Ok(c)
         }
         Reply::Conflict(v) if v["error"] == "Push required: Changes reflect pushed commits" => Err(crate::tr!("Push required: Changes reflect pushed commits", "先にプッシュしてください。Change にはプッシュされた内容が含まれます。")),
@@ -778,7 +781,7 @@ impl HandIn {
 /// Push, then Change, as the app's Push button does: what is pushed goes to main as its next version.
 pub fn hand_in(repos: &Repos, repo: &str, note: &str) -> Result<HandIn> {
     let on = repos.line(repo);
-    let before = if on == crate::lines::MAIN { None } else { changes_of_repo(repo)?.into_iter().find(|c| c.line == on) };
+    let before = if on == crate::repos::lines::MAIN { None } else { changes_of_repo(repo)?.into_iter().find(|c| c.line == on) };
     let head = push(repos, repo)?;
     let change = submit(repos, repo, note)?;
     Ok(HandIn { pushed: (!head.is_empty()).then_some(head), change, before })
@@ -815,7 +818,7 @@ fn find(repo: &str, id: &str) -> Result<Change> {
     changes_of_repo(repo)?.into_iter().find(|c| c.id == id || c.id.starts_with(id) || c.line == id)
         .ok_or_else(|| {
             // Named as a person calls it: the work on issue 002 is notes#2 (bug: "handed in for 002").
-            let n = crate::issues::number(&format!("{id}.md"));
+            let n = crate::words::issues::number(&format!("{id}.md"));
             let called = if n.is_empty() { id.to_string() } else { format!("{repo}{n}") };
             crate::tr!("{} has no change yet: its work is pushed first", "{} にはまだ Change がありません。先に作業を Push します", called)
         })
@@ -838,7 +841,7 @@ pub fn merge(repo: &str, id: &str) -> Result<Change> {
     let c = find(repo, id)?;
     let merged = placed(repo, change_call(repo, &c.id, "merge", serde_json::json!({"version": c.version}))?)?;
     // What was offered or waiting for its issue is done with (tasks.rs).
-    crate::tasks::issue_over(repo, &merged.issue);
+    crate::agent::tasks::issue_over(repo, &merged.issue);
     Ok(merged)
 }
 
@@ -851,7 +854,7 @@ pub fn reject(repo: &str, id: &str, note: &str) -> Result<Change> {
 /// Reset: take back the change the work handed in (its author's decision).
 pub fn reset(repos: &Repos, repo: &str) -> Result<Change> {
     let on = repos.line(repo);
-    if on == crate::lines::MAIN {
+    if on == crate::repos::lines::MAIN {
         return Err(crate::tr!("{} shows main: reset takes back the change of the issue being worked on (l3 start REPO#N first)", "{} は main を見せています。reset は作業中の Issue の Change を取り下げます（先に l3 start REPO#N）", repo));
     }
     let c = find(repo, &on)?;

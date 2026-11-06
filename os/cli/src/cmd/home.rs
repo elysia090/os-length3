@@ -4,7 +4,7 @@ use super::Ctx;
 use crate::args::Call;
 use crate::out::{now_ms, Error, Reply, Result};
 use crate::spec::{Fact, On};
-use length3_core::{home, i18n, inbox, remote, text, tr};
+use length3_core::{device::home, i18n, remote::inbox, remote, words::title, tr};
 use serde_json::json;
 
 pub fn todo_list(_: &Ctx, _: &Call) -> Result<Reply> {
@@ -16,9 +16,9 @@ pub fn todo_list(_: &Ctx, _: &Call) -> Result<Reply> {
     for (k, item) in list.iter().enumerate() {
         let mark = if item.done { "✓" } else { "○" };
         crate::menu::see(|| crate::menu::Subject { on: On::Todo, word: (k + 1).to_string(), repo: None,
-            label: format!("{mark} {}", text::named(item.kind.as_deref(), &item.title)), detail: String::new(),
+            label: format!("{mark} {}", title::named(item.kind.as_deref(), &item.title)), detail: String::new(),
             facts: vec![if item.done { Fact::Done } else { Fact::NotDone }] });
-        t.push(format!("{:>3} {} {}", k + 1, mark, text::named(item.kind.as_deref(), &item.title)));
+        t.push(format!("{:>3} {} {}", k + 1, mark, title::named(item.kind.as_deref(), &item.title)));
         for line in item.detail.lines() { t.push(format!("        {line}")); }
     }
     Ok(Reply::data(t.join("\n"), json!(list)))
@@ -29,7 +29,7 @@ pub fn todo_add(_: &Ctx, call: &Call) -> Result<Reply> {
     let item = home::todo_from(call.word(0).unwrap_or_default(), call.note(), now_ms())
         .ok_or_else(|| Error::Usage(tr!("The TODO's first line is empty: l3 todo add \"Fix：title\"", "TODO の1行目が空です：l3 todo add \"Fix：件名\"")))?;
     fits(&item)?;
-    let name = text::named(item.kind.as_deref(), &item.title);
+    let name = title::named(item.kind.as_deref(), &item.title);
     list.push(item.clone());
     home::save_todos(&list)?;
     let open = list.iter().filter(|t| !t.done).count();
@@ -40,7 +40,7 @@ pub fn todo_add(_: &Ctx, call: &Call) -> Result<Reply> {
 pub fn todo_line(word: Option<&str>) -> Option<String> {
     let k: usize = word?.parse().ok()?;
     let item = home::todos().ok()?.into_iter().nth(k.checked_sub(1)?)?;
-    Some(text::named(item.kind.as_deref(), &item.title))
+    Some(title::named(item.kind.as_deref(), &item.title))
 }
 
 /// A field of the profile as it is now, for the menu's Edit to start from.
@@ -71,7 +71,7 @@ pub fn todo_edit(_: &Ctx, call: &Call) -> Result<Reply> {
     let changed = item != list[at];
     list[at] = item.clone();
     if changed { home::save_todos(&list)?; }
-    let name = text::named(item.kind.as_deref(), &item.title);
+    let name = title::named(item.kind.as_deref(), &item.title);
     let text = if changed { tr!("Changed TODO {}: {}", "TODO {} を変えました：{}", at + 1, name) } else { tr!("TODO {} was so already: {}", "TODO {} はもうそのとおりです：{}", at + 1, name) };
     Ok(Reply::done(text, json!({"number": at + 1, "todo": item, "changed": changed})))
 }
@@ -93,7 +93,7 @@ pub fn todo_done(_: &Ctx, call: &Call) -> Result<Reply> {
     let k = at + 1;
     let item = &mut list[at];
     item.done = !item.done;
-    let (name, done, item) = (text::named(item.kind.as_deref(), &item.title), item.done, item.clone());
+    let (name, done, item) = (title::named(item.kind.as_deref(), &item.title), item.done, item.clone());
     home::save_todos(&list)?;
     Ok(Reply::done(if done { tr!("Done: {}", "完了にしました：{}", name) } else { tr!("Not done again: {}", "未完了に戻しました：{}", name) }, json!({"number": k, "todo": item})))
 }
@@ -105,7 +105,7 @@ pub fn todo_rm(_: &Ctx, call: &Call) -> Result<Reply> {
     let item = list.remove(at);
     home::save_todos(&list)?;
     let open = list.iter().filter(|t| !t.done).count();
-    Ok(Reply::done(tr!("Removed from TODO: {} ({} open)", "TODO から消しました：{}（残り{}件）", text::named(item.kind.as_deref(), &item.title), open),
+    Ok(Reply::done(tr!("Removed from TODO: {} ({} open)", "TODO から消しました：{}（残り{}件）", title::named(item.kind.as_deref(), &item.title), open),
         json!({"removed": item, "number": at + 1, "open": open})))
 }
 

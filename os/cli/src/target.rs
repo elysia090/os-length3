@@ -7,8 +7,8 @@
 use crate::args::{owner_shaped, Call};
 use crate::cmd::Ctx;
 use crate::out::{Error, Result};
-use length3_core::names::{self, Name};
-use length3_core::{inbox, issues, remote, repos, text, tr};
+use length3_core::words::names::{self, Name};
+use length3_core::{remote::inbox, words::issues, remote, repos, words::title, tr};
 
 /// A repo written `owner:repo[/path][#n]` is one's own, read as `repo[/path][#n]`; another's is not here.
 fn own(w: &str) -> Result<String> {
@@ -23,7 +23,7 @@ fn own(w: &str) -> Result<String> {
 
 /// Not here: say so, and where it is if the Remote has it.
 fn missing(ctx: &Ctx, repo: &str) -> Error {
-    if !length3_core::names::valid_name(repo) {
+    if !length3_core::words::names::valid_name(repo) {
         return Error::Usage(tr!("{:?} is not a repo name (letters, digits, . _ -)", "{:?} は repo の名前になりません（英数字と . _ -）", repo));
     }
     let there = !ctx.prompt && remote::connection().is_some() && remote::remote_repos().is_ok_and(|l| l.iter().any(|r| r.name == repo));
@@ -105,7 +105,7 @@ pub fn path(ctx: &Ctx, call: &Call, i: usize) -> Result<(String, String)> {
 }
 
 /// `w` read from where `h` is: (repo, path); `..` past the repo's top reaches the repos beside it.
-fn joined(h: &length3_core::lines::Here, w: &str) -> (String, String) {
+fn joined(h: &length3_core::repos::lines::Here, w: &str) -> (String, String) {
     let mut at: Vec<String> = if w.starts_with('/') { vec![h.repo.clone()] } else { std::iter::once(h.repo.clone()).chain(h.folder.split('/').filter(|p| !p.is_empty()).map(String::from)).collect() };
     for part in w.split('/') {
         match part { "" | "." => {} ".." => { at.pop(); } p => at.push(p.to_string()) }
@@ -197,7 +197,7 @@ pub fn issue(ctx: &Ctx, call: &Call, i: usize) -> Result<IssueRef> {
         by_title(ctx, &r, w)?
     };
     let title = r.read(&repo, &format!("issue/{file}"), 256 * 1024).ok().and_then(|c| c.text)
-        .map(|t| { let i = issues::parse(&repo, &file, &t); text::named(i.kind.as_deref(), &i.title) }).unwrap_or_default();
+        .map(|t| { let i = issues::parse(&repo, &file, &t); title::named(i.kind.as_deref(), &i.title) }).unwrap_or_default();
     Ok(IssueRef { repo, file, title })
 }
 
@@ -230,7 +230,7 @@ fn by_title(ctx: &Ctx, r: &repos::Repos, words: &str) -> Result<(String, String)
         many => {
             let rows: Vec<String> = many.iter().map(|i| {
                 let at = i.n.map_or_else(|| i.repo.clone(), |n| format!("{}#{n}", i.repo));
-                format!("  {at} {}", text::named(i.kind.as_deref(), &i.title))
+                format!("  {at} {}", title::named(i.kind.as_deref(), &i.title))
             }).collect();
             Err(Error::Usage(tr!("\"{}\" could be any of these; name one by its number:\n{}", "「{}」はどれのことか決まりません。番号で書いてください：\n{}", words, rows.join("\n"))))
         }
@@ -246,7 +246,7 @@ pub fn address(word: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use length3_core::lines::Here;
+    use length3_core::repos::lines::Here;
 
     fn here(repo: &str, folder: &str) -> Here { Here { repo: repo.into(), line: "main".into(), folder: folder.into() } }
 

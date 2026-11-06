@@ -91,7 +91,7 @@ pub(super) fn secrets_held(here: &Local, agreed: &Tree, own: &[String]) -> Vec<(
     let mut held = Vec::new();
     for (p, sha) in here.tree.iter().filter(|(p, s)| agreed.get(*p) != Some(*s)).filter_map(|(p, s)| Some((p, s.as_ref()?))) {
         let Some(file) = here.files.get(sha) else { continue };
-        let what = v.1.entry(sha.clone()).or_insert_with(|| fs::read(file).ok().and_then(|b| crate::secrets::found(&b, &mine)).map(|f| f.said()));
+        let what = v.1.entry(sha.clone()).or_insert_with(|| fs::read(file).ok().and_then(|b| crate::device::secrets::found(&b, &mine)).map(|f| f.said()));
         if let Some(what) = what { held.push((p.clone(), what.clone())); }
     }
     held
@@ -179,7 +179,7 @@ pub(super) fn stamps_save(file: &Path, read: &[PathBuf]) {
     let Some(dir) = file.parent() else { return };
     if fs::create_dir_all(dir).is_err() { return; }
     // Not kept, the next run reads those files again: work lost, nothing wrong.
-    let _ = crate::atomic::replace(file, text.as_bytes(), crate::atomic::How::CACHE);
+    let _ = crate::disk::write::replace(file, text.as_bytes(), crate::disk::write::How::CACHE);
 }
 
 pub(super) fn walk(dir: &Path, prefix: &str, out: &mut Local) {
@@ -188,7 +188,7 @@ pub(super) fn walk(dir: &Path, prefix: &str, out: &mut Local) {
     for e in entries.flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
         // A file this OS is writing is not the repo's yet.
-        if crate::atomic::is_temporary(&name) {
+        if crate::disk::write::is_temporary(&name) {
             continue;
         }
         empty = false;
@@ -204,7 +204,7 @@ pub(super) fn walk(dir: &Path, prefix: &str, out: &mut Local) {
             out.unsynced.push((rel, crate::tr!("a link", "リンク")));
         } else if meta.is_dir() {
             // Made from the repo's own files (owned.rs): not the repo's to send, nor what keeps it here.
-            if crate::owned::derived(dir, &name, &path) { continue; }
+            if crate::repos::owned::derived(dir, &name, &path) { continue; }
             walk(&path, &rel, out);
         } else if meta.is_file() {
             if meta.len() > BLOB_LIMIT {

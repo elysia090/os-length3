@@ -7,13 +7,13 @@ use crate::args::Call;
 use crate::out::{self, bytes, things, Error, Reply, Result};
 use crate::spec::{Fact, On};
 use crate::target;
-use length3_core::{fetch::Progress, home, paths, remote, root, tr, usage};
+use length3_core::{device::fetch::Progress, device::home, paths, remote, root, tr, space};
 use serde_json::json;
 
 pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
     // What a Prompt here holds (the app's or l3's, running or being prepared) stays while it does: the core reads
     // their records itself (usage.rs), so there is nothing to tell it as open.
-    let s = usage::space(&paths::data_dir(), &paths::repos_dir(), &[]);
+    let s = space::space(&paths::data_dir(), &paths::repos_dir(), &[]);
     let current = root::current(&paths::data_dir()).map(|(_, r)| r);
     let mut t = vec![match &current {
         Some(r) => tr!("root  {} {} (where Prompts run)", "root  {} {}（Prompt が動く環境）", r.name, r.version),
@@ -24,7 +24,7 @@ pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
     t.push(String::new());
     t.push(tr!("This device  {} free of {} (the host's figures) · this OS {}", "この端末  空き {} / {}（ホストの値） · この OS {}", bytes(s.host_free), bytes(s.host_total), bytes(s.allocated)));
     // What runs used of time and space in the last day, by repo (core compute.rs ledger): the most CPU first.
-    let used = length3_core::compute::by_repo(&length3_core::compute::runs(), crate::out::now_ms().saturating_sub(24 * 60 * 60 * 1000));
+    let used = length3_core::run::compute::by_repo(&length3_core::run::compute::runs(), crate::out::now_ms().saturating_sub(24 * 60 * 60 * 1000));
     if !used.is_empty() {
         t.push(tr!("Compute, the last day", "計算資源（この1日）"));
         let secs = |ms: u64| if ms < 60_000 { format!("{:.1} s", ms as f64 / 1000.0) } else { format!("{} min", ms / 60_000) };
@@ -38,12 +38,12 @@ pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
     let (go, stays) = (tr!("can go", "空ける"), tr!("stays", "残す"));
     let w = crate::term::width(&go).max(crate::term::width(&stays));
     for i in &s.items {
-        let said = match i.room { usage::Room::Free | usage::Room::SyncFree => &go, usage::Room::Keep => &stays };
+        let said = match i.room { space::Room::Free | space::Room::SyncFree => &go, space::Room::Keep => &stays };
         let act = format!("{said}{}", " ".repeat(w - crate::term::width(said)));
         crate::menu::see(|| crate::menu::Subject { on: On::Thing, word: i.id.strip_prefix("repo:").unwrap_or(&i.id).to_string(), repo: None,
-            label: i.what.clone(), detail: format!("{} · {said}", bytes(i.allocated)), facts: if i.room == usage::Room::Keep { Vec::new() } else { vec![Fact::Freeable] } });
+            label: i.what.clone(), detail: format!("{} · {said}", bytes(i.allocated)), facts: if i.room == space::Room::Keep { Vec::new() } else { vec![Fact::Freeable] } });
         t.push(format!("  {:>9}  {}  {}  {}", bytes(i.allocated), act, i.what, i.detail));
-        t.push(format!("             {}{}", i.why, if i.room == usage::Room::Keep { String::new() } else { tr!("  (l3 free {})", "（l3 free {}）", i.id.strip_prefix("repo:").unwrap_or(&i.id)) }));
+        t.push(format!("             {}{}", i.why, if i.room == space::Room::Keep { String::new() } else { tr!("  (l3 free {})", "（l3 free {}）", i.id.strip_prefix("repo:").unwrap_or(&i.id)) }));
     }
     if s.freeable > 0 { t.push(tr!("Can be freed: {} (all of it: l3 free all)", "空けられるもの：{}（全部なら l3 free all）", bytes(s.freeable))); }
     let items: Vec<_> = s.items.iter().map(|i| json!({"id": i.id, "what": i.what, "allocated": i.allocated, "room": i.room})).collect();
@@ -60,9 +60,9 @@ pub fn free(_: &Ctx, call: &Call) -> Result<Reply> {
     if words.iter().any(|w| w.trim().is_empty()) {
         return Err(Error::Usage(tr!("Name what to free: l3 free ID… (l3 runtime lists them), or l3 free all", "空けるものを書いてください：l3 free ID…（l3 runtime で一覧）、または l3 free all")));
     }
-    let space = usage::space(&data, &paths::repos_dir(), &[]);
+    let space = space::space(&data, &paths::repos_dir(), &[]);
     let ids: Vec<String> = if words == ["all"] {
-        usage::all_freeable(&space)
+        space::all_freeable(&space)
     } else {
         words.iter().map(|i| if i.contains(':') || i == "home" { i.clone() } else { format!("repo:{i}") }).collect()
     };
@@ -70,7 +70,7 @@ pub fn free(_: &Ctx, call: &Call) -> Result<Reply> {
         return Err(Error::NotFound(tr!("Nothing here is called {} (l3 runtime lists what there is)", "{} というものはここにありません（l3 runtime で一覧）", unknown.strip_prefix("repo:").unwrap_or(unknown))));
     }
     if ids.is_empty() { return Ok(Reply::done(tr!("Nothing can be freed", "空けられるものはありません"), json!({"freed": 0, "removed": [], "kept": []}))); }
-    let r = usage::free(&data, &paths::repos_dir(), &ids, &[]);
+    let r = space::free(&data, &paths::repos_dir(), &ids, &[]);
     let kept: Vec<_> = r.kept.iter().map(|(id, why)| json!({"id": id, "why": why})).collect();
     let data = json!({"freed": r.freed, "removed": r.removed, "kept": kept, "hostFreeBefore": r.host_free_before, "hostFreeAfter": r.host_free_after, "reflectedMs": r.reflected_ms});
     let reasons: Vec<String> = r.kept.iter().map(|(id, why)| tr!("  kept {}: {}", "  残したもの {}：{}", id.strip_prefix("repo:").unwrap_or(id), why)).collect();
@@ -107,7 +107,7 @@ pub fn roots(_: &Ctx, _: &Call) -> Result<Reply> {
 /// kept_from_namespaces). Where it does not, the app runs its Prompts translated, as a browser does, and says why.
 pub fn root_check(_: &Ctx, _: &Call) -> Result<Reply> {
     #[cfg(target_os = "linux")]
-    let why = length3_core::launch::kept_from_namespaces();
+    let why = length3_core::run::launch::kept_from_namespaces();
     #[cfg(not(target_os = "linux"))]
     let why = Some(tr!("A Prompt runs on the root on Linux only; here it runs translated, as in a browser", "root の上で Prompt が動くのは Linux だけです。ここではブラウザと同じく翻訳して動きます"));
     let data = json!({"native": why.is_none(), "why": why});
@@ -150,7 +150,7 @@ pub(crate) fn the_remote() -> String {
 pub(crate) fn root_now(data: &std::path::Path) -> Result<(std::path::PathBuf, root::Installed)> {
     if let Some(r) = root::current(data) { return Ok(r); }
     crate::out::note(&tr!("Fetching the root Prompts run on (once)", "Prompt が動く root を取ってきます（最初の一度だけ）"));
-    usage::fetch_root(data, &the_remote(), progress())?;
+    space::fetch_root(data, &the_remote(), progress())?;
     root::current(data).ok_or_else(|| Error::NotFound(tr!("No root yet (l3 root fetch)", "root がありません（l3 root fetch）")))
 }
 
@@ -159,7 +159,7 @@ fn installed(r: &root::Installed) -> String {
 }
 
 pub fn root_fetch(_: &Ctx, _: &Call) -> Result<Reply> {
-    let r = usage::fetch_root(&paths::data_dir(), &the_remote(), progress())?;
+    let r = space::fetch_root(&paths::data_dir(), &the_remote(), progress())?;
     Ok(Reply::done(installed(&r), json!(r)))
 }
 
@@ -169,11 +169,11 @@ pub fn root_use(_: &Ctx, call: &Call) -> Result<Reply> {
     let r = match call.word(0).unwrap_or_default() {
         "l3" => match root::use_held(&data, root::RELEASES[0].sha256) {
             Some(r) => r,
-            None => usage::fetch_root(&data, &the_remote(), progress())?,
+            None => space::fetch_root(&data, &the_remote(), progress())?,
         },
         id => {
             let d = root::distro(id).ok_or_else(|| Error::Usage(tr!("No such root: {} (l3, ubuntu or debian)", "そういう root はありません：{}（l3、ubuntu、debian）", id)))?;
-            usage::fetch_distro(&data, &the_remote(), d, progress())?
+            space::fetch_distro(&data, &the_remote(), d, progress())?
         }
     };
     Ok(Reply::done(tr!("Prompts run on {} {}", "Prompt は {} {} で動きます", r.name, r.version), json!(r)))
@@ -201,7 +201,7 @@ pub fn network_set(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let on = call.word(0) == Some("on");
     let repo = target::repo(ctx, call, 1)?;
     let changed = home::set_network(&repo, on)?;
-    let running = length3_core::prompt::running(&paths::data_dir()).iter().filter(|r| r.repo == repo).count();
+    let running = length3_core::device::prompts::running(&paths::data_dir()).iter().filter(|r| r.repo == repo).count();
     let stopped = if !on && running > 0 { super::forge::stop_prompts(&repo) } else { Vec::new() };
     let mut text = match (on, changed) {
         // "The Prompts of notes", not "notes's Prompts": a repo's name is a name, often a plural one.
@@ -278,7 +278,7 @@ fn ssh_here() -> (String, serde_json::Value) {
 
 #[cfg(target_os = "linux")]
 pub fn host(_: &Ctx, _: &Call) -> Result<Reply> {
-    let h = length3_core::vm::host(&paths::data_dir());
+    let h = length3_core::run::vm::host(&paths::data_dir());
     let yes = |b: bool| if b { "✓" } else { "○" };
     let mut t = vec![
         format!("{} KVM", yes(h.kvm)),
@@ -295,7 +295,7 @@ pub fn host(_: &Ctx, _: &Call) -> Result<Reply> {
 /// `l3 host fetch`: what this machine lacks to run VMs (Firecracker, its jailer, the kernel), fetched by digest.
 #[cfg(target_os = "linux")]
 pub fn host_fetch(ctx: &Ctx, call: &Call) -> Result<Reply> {
-    length3_core::vm::fetch(&paths::data_dir(), progress())?;
+    length3_core::run::vm::fetch(&paths::data_dir(), progress())?;
     host(ctx, call)
 }
 

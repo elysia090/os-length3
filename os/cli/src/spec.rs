@@ -593,7 +593,7 @@ pub fn schema(f: &Form) -> serde_json::Value {
     }).collect();
     let flags: Vec<serde_json::Value> = f.flags.iter().map(|fl| match fl {
         Flag::Note(w) => json!({"flag": "-m", "value": w}),
-        Flag::Template => json!({"flag": "-t", "value": "template", "choices": length3_core::templates::all().iter().map(|t| t.id.clone()).collect::<Vec<_>>()}),
+        Flag::Template => json!({"flag": "-t", "value": "template", "choices": length3_core::words::templates::all().iter().map(|t| t.id.clone()).collect::<Vec<_>>()}),
         Flag::Network => json!({"flag": "--network"}),
         Flag::Todo => json!({"flag": "--todo"}),
         Flag::Empty => json!({"flag": "--empty"}),
@@ -629,7 +629,7 @@ pub fn usage(c: &Command, f: &Form) -> String {
         s += " ";
         s += &match fl {
             Flag::Note(w) => format!("[-m {}]", placeholder(w)),
-            Flag::Template => format!("[-t {}]", length3_core::templates::all().iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join("|")),
+            Flag::Template => format!("[-t {}]", length3_core::words::templates::all().iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join("|")),
             Flag::Network => "[--network]".to_string(),
             Flag::Todo => "[--todo]".to_string(),
             Flag::Empty => "[--empty]".to_string(),
@@ -731,7 +731,7 @@ mod tests {
     #[test]
     fn what_reads_homes_settings_takes_them_in_from_the_remote() {
         // Each names only settings the Remote keeps (the band, the language and the network grant are the device's).
-        for c in COMMANDS { for k in c.home { assert!(length3_core::home::SYNCED.contains(k), "{}: {k}", c.name); } }
+        for c in COMMANDS { for k in c.home { assert!(length3_core::device::home::SYNCED.contains(k), "{}: {k}", c.name); } }
         for (name, key) in [("todo", "todo"), ("profile", "profile"), ("dotfile", "dotfiles"), ("prompt", "dotfiles"), ("", "todo")] {
             assert!(find(name).unwrap().home.contains(&key), "{name}");
         }

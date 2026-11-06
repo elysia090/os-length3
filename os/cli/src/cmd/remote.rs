@@ -5,7 +5,7 @@ use super::{host, Ctx};
 use crate::args::Call;
 use crate::out::{self, bytes, Error, Reply, Result};
 use crate::spec::{Fact, On};
-use length3_core::{account, remote, tr};
+use length3_core::{remote::account, remote, tr};
 use serde_json::{json, Value};
 
 /// What bringing a repo into step did, as a line (and its notes), its name in `cols` columns, and as data.
@@ -96,7 +96,7 @@ pub fn sign_in(_: &Ctx, _: &Call) -> Result<Reply> {
     t.push(tr!("Sign-in providers", "サインイン方法"));
     for p in &providers { t.push(format!("  {}  {}", p.provider, p.created_at.get(..10).unwrap_or(&p.created_at))); }
     // Where what proves this device's session is kept (core vault.rs): the OS's keyring, or a file only this account reads.
-    let kept = length3_core::vault::kept_in();
+    let kept = length3_core::device::vault::kept_in();
     t.push(tr!("This device's sign-in", "この端末のサインイン情報"));
     t.push(tr!("  kept in {}", "  保管場所：{}", kept));
     Ok(Reply::data(t.join("\n"), json!({"passkeys": keys, "providers": providers, "keptIn": kept})))

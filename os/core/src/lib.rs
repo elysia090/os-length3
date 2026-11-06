@@ -3,57 +3,29 @@
 //! or inside the app's Prompt) both use this crate, so the two cannot drift.
 //!
 //! Unsafe code is only where the OS is called through libc (the Prompt's
-//! namespaces and seccomp filter: launch.rs, seccomp.rs; SSH's pty: ssh.rs;
-//! the host's name, a rename, a sync, a signal, a disk's room: remote,
-//! atomic, root, prompt, usage, system), each block a single call with its
-//! arguments made just before it. A lock is std's (File::lock), not a call.
+//! namespaces and seccomp filter: run/launch.rs, run/seccomp.rs; SSH's pty:
+//! ssh; the host's name, a rename, a sync, a signal, a disk's room: remote,
+//! disk/write.rs, root, device/prompts.rs, space, disk/room.rs), each block a
+//! single call with its arguments made just before it. A lock is std's (File::lock), not a call.
 //! Every other module says `#![forbid(unsafe_code)]`, so none is added there.
 
-pub mod account;
-pub mod agent_key;
-pub mod agents;
-pub mod api;
-pub mod atomic;
-pub mod boundary;
-pub mod compute;
-#[cfg(unix)]
-pub mod desktop;
-pub mod digest;
-#[cfg(not(target_os = "wasi"))]
-pub mod fetch;
-pub mod root;
-pub mod history;
-pub mod home;
-pub mod i18n;
-pub mod inbox;
-pub mod issues;
-pub mod linediff;
-pub mod lines;
-pub mod names;
-pub mod net;
-#[cfg(target_os = "linux")]
-pub mod launch;
-#[cfg(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "aarch64")))]
-pub mod seccomp;
-pub mod secrets;
-pub mod owned;
+// The layers, each above the ones before it: a module uses only what is in its own layer or one listed before
+// it (scripts/layers.mjs checks it).
 pub mod paths;
-#[cfg(not(target_os = "wasi"))]
-pub mod prompt;
-pub mod remote;
+pub mod i18n;
+pub mod disk;
+pub mod words;
+pub mod device;
 pub mod repos;
-pub mod servers;
 #[cfg(unix)]
 pub mod ssh;
-pub mod system;
-pub mod tasks;
-pub mod templates;
-pub mod usage;
-pub mod vault;
-#[cfg(target_os = "linux")]
-pub mod vm;
-pub mod work;
-pub mod text;
+pub mod agent;
+pub mod remote;
+pub mod history;
+pub mod root;
+pub mod space;
+pub mod run;
+pub mod api;
 #[cfg(all(test, unix))]
 pub(crate) mod testing;
 

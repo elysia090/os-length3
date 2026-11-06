@@ -8,7 +8,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use crate::{account, agent_key, agents, history, tasks, home, paths, remote, repos, system, usage, work};
+use crate::{remote::account, device::agent_key, agent::reports, history, agent::tasks, device::home, paths, remote, repos, disk::room, space, history::work};
 
 /// Files the editor may save; anything read in part is never written back.
 pub const READ_LIMIT: u64 = 256 * 1024;
@@ -104,13 +104,13 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
             let repo = a.s("repo")?;
             repos::Repos::open()?.dir(&repo)?;
             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
-            to(agents::append(&agents::from_box(&a.s("session")?, &repo, a.get("kind")?, &a.opt::<String>("text")?.unwrap_or_default(), now))?)
+            to(reports::append(&reports::from_box(&a.s("session")?, &repo, a.get("kind")?, &a.opt::<String>("text")?.unwrap_or_default(), now))?)
         }
         // What agents do in the repos, as their hooks said it (agents.rs): null when nothing came since `cursor`.
         // And the work handed to the agent (tasks.rs), when it changed since `tasks` (the mark last read). Null when
         // neither moved: what a page asks every second reads a few bytes then.
         "agents" => {
-            let journal = agents::now_since(&a.opt::<agents::Cursor>("cursor")?.unwrap_or_default(),
+            let journal = reports::now_since(&a.opt::<reports::Cursor>("cursor")?.unwrap_or_default(),
                 std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64));
             let mark = tasks::mark();
             let book = (a.opt::<[u64; 3]>("tasks")? != Some(mark)).then(|| json!({"mark": mark, "agent": tasks::agent(),
@@ -127,9 +127,9 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         },
 
         // The capacity and what this OS holds: `open`, the repos a Prompt has open (the host's to know).
-        "capacity" => to(system::capacity(&paths::data_dir())?),
-        "space" => to(usage::space(&paths::data_dir(), &paths::repos_dir(), &a.list("open")?)),
-        "free" => to(usage::free(&paths::data_dir(), &paths::repos_dir(), &a.list("ids")?, &a.list("open")?)),
+        "capacity" => to(room::capacity(&paths::data_dir())?),
+        "space" => to(space::space(&paths::data_dir(), &paths::repos_dir(), &a.list("open")?)),
+        "free" => to(space::free(&paths::data_dir(), &paths::repos_dir(), &a.list("ids")?, &a.list("open")?)),
 
         // Signing in: the code, and the page to approve it on, which only the host can open; the page is the
         // Remote's own (or its app's, on the origin it says), never one a page names.
@@ -154,7 +154,7 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         "remote_repos" => to(remote::remote_repos()?),
         "remote_status" => to(remote::status(&repos()?)?),
         "sync_repo" => to(remote::sync(&repos()?, &a.s("repo")?)?),
-        "repo_fetch" => to(usage::bring_repo(&repos()?, &a.s("repo")?)?),
+        "repo_fetch" => to(space::bring_repo(&repos()?, &a.s("repo")?)?),
         // One of Home's settings agreed with the Remote (home.rs agree_with).
         "home_sync" => to(remote::sync_home(&a.s("key")?)?),
         // One of them taken off this device, only as the Remote has it (home.rs leave).
@@ -182,12 +182,12 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         "history_reset" => to(history::reset(&repos()?, &a.s("repo")?)?),
         "work_start" => to(work::start(&repos()?, &a.s("repo")?, &a.s("issue")?)?),
         "work_switch" => to(work::switch(&repos()?, &a.s("repo")?, &a.s("line")?)?),
-        "work_state" => to(crate::work::state(&repos()?, &a.s("repo")?)?),
+        "work_state" => to(crate::history::work::state(&repos()?, &a.s("repo")?)?),
         "work_lines" => to(crate::remote::lines(&a.s("repo")?)?),
         "changes_list" => to(history::changes_of_repo(&a.s("repo")?)?),
         // Each repo's own answer, as `answer` gives one: {ok: {work, lines, changes}}, or {error} (with its status and
         // detail when the Remote refused it).
-        "work_standings" => to(crate::work::standings(&repos()?, &a.list("repos")?)?.into_iter()
+        "work_standings" => to(crate::history::work::standings(&repos()?, &a.list("repos")?)?.into_iter()
             .map(|r| r.map_or_else(|why| why, |s| json!({"ok": s}))).collect::<Vec<_>>()),
         "change_review" => to(history::review(&a.s("repo")?, &a.s("id")?, &a.s("verdict")?, &a.s("note")?, &a.list("marks")?)?),
         "change_merge" => to(history::merge(&a.s("repo")?, &a.s("id")?)?),

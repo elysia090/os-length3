@@ -34,8 +34,8 @@ pub fn connect(url: &str, bearer: Option<String>) -> Result<()> {
         }
     }
     match &bearer {
-        Some(b) => crate::vault::set(crate::vault::Secret::Session, b)?,
-        None => crate::vault::remove(crate::vault::Secret::Session)?,
+        Some(b) => crate::device::vault::set(crate::device::vault::Secret::Session, b)?,
+        None => crate::device::vault::remove(crate::device::vault::Secret::Session)?,
     }
     save_connection(&Connection { url, session: who.session, user })
 }
@@ -223,17 +223,17 @@ pub fn logout(repos: &Repos) -> Result<()> {
     for name in repos.names()? {
         // Main's copy and each issue's, each in step before any record of them goes.
         let shown = repos.line(&name);
-        let mut lines: Vec<String> = crate::lines::worktrees(&name).into_iter().map(|(l, _)| l).collect();
-        lines.push(crate::lines::MAIN.into());
+        let mut lines: Vec<String> = crate::repos::lines::worktrees(&name).into_iter().map(|(l, _)| l).collect();
+        lines.push(crate::repos::lines::MAIN.into());
         for line in lines {
             let r = lock(&key_of(&name, &line)).and_then(|_held| {
                 // Not shown, it would not be the copy sent; and the repo is shown again as it was, whatever sending did.
-                crate::lines::show_for_free(&name, &line)?;
+                crate::repos::lines::show_for_free(&name, &line)?;
                 let r = sync_with(&c, repos, &name);
-                crate::lines::show_for_free(&name, &shown).and(r)
+                crate::repos::lines::show_for_free(&name, &shown).and(r)
             });
             if let Err(e) = r {
-                let what = if line == crate::lines::MAIN { name.clone() } else { format!("{name}@{line}") };
+                let what = if line == crate::repos::lines::MAIN { name.clone() } else { format!("{name}@{line}") };
                 return Err(crate::tr!("{} could not be sent first ({}); this device stays on the Remote so nothing is lost. Once it is sent, sign out again",
                     "{} を先に送れませんでした（{}）。何も失わないよう、この端末は Remote につないだままです。送れたら、もう一度外してください", what, e));
             }

@@ -25,12 +25,12 @@ pub mod runtime;
 
 use crate::args::Call;
 use crate::out::{Error, Reply, Result};
-use length3_core::{home as core_home, paths, remote as core_remote, repos::Repos, tr};
+use length3_core::{device::home as core_home, paths, remote as core_remote, repos::Repos, tr};
 use serde_json::json;
 
 /// Where l3 runs: in which repo (and where in it), and whether inside the app's Prompt.
 pub struct Ctx {
-    pub here: Option<length3_core::lines::Here>,
+    pub here: Option<length3_core::repos::lines::Here>,
     /// Inside the app's Prompt: only the open repo is here (under /root), written back and sent by the app.
     pub prompt: bool,
     /// What it reads: this device (None), or words alone, never the device (a form read, a line completed, a card
@@ -43,7 +43,7 @@ struct Words { known: Vec<&'static str>, online: bool }
 impl Ctx {
     pub fn new() -> Ctx {
         Ctx {
-            here: std::env::current_dir().ok().and_then(|d| length3_core::lines::here(&d)),
+            here: std::env::current_dir().ok().and_then(|d| length3_core::repos::lines::here(&d)),
             prompt: std::env::var_os("L3_PROMPT").is_some(),
             words: None,
         }
@@ -52,7 +52,7 @@ impl Ctx {
     /// Words alone, in `here`, knowing the repos `known`, on no Remote: what a test reads l3 with.
     #[cfg(test)]
     pub fn test(here: Option<&str>, known: Vec<&'static str>) -> Ctx {
-        Ctx { here: here.map(|r| length3_core::lines::Here { repo: r.into(), line: length3_core::lines::MAIN.into(), folder: String::new() }), prompt: false,
+        Ctx { here: here.map(|r| length3_core::repos::lines::Here { repo: r.into(), line: length3_core::repos::lines::MAIN.into(), folder: String::new() }), prompt: false,
             words: Some(Words { known, online: false }) }
     }
 
@@ -70,7 +70,7 @@ impl Ctx {
     pub fn has_repo(&self, name: &str) -> bool {
         match &self.words {
             Some(w) => w.known.contains(&name),
-            None => length3_core::names::valid_name(name) && Repos::open().is_ok_and(|r| r.dir(name).is_ok()),
+            None => length3_core::words::names::valid_name(name) && Repos::open().is_ok_and(|r| r.dir(name).is_ok()),
         }
     }
 

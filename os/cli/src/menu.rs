@@ -20,7 +20,7 @@ use crate::cmd::{self, Ctx};
 use crate::out::{self, Error};
 use crate::spec::{self, say, Arg, Command, Deed, Fact, Flag, Form, Group, On};
 use crate::term::{self, Block, Key, Keys, Style};
-use length3_core::{home, i18n, paths, remote, root, tr};
+use length3_core::{device::home, i18n, paths, remote, root, tr};
 use std::cell::{Cell, RefCell};
 use std::process::ExitCode;
 
@@ -675,8 +675,8 @@ fn states(ctx: &Ctx) -> Vec<String> {
     let (tx, rx) = std::sync::mpsc::channel();
     if connected {
         let t = tx.clone();
-        std::thread::spawn(move || { let _ = t.send(("server", length3_core::servers::list().map(|l| l.len()).ok())); });
-        std::thread::spawn(move || { let _ = tx.send(("inbox", length3_core::inbox::threads().map(|l| l.iter().filter(|t| t.unread > 0).count()).ok())); });
+        std::thread::spawn(move || { let _ = t.send(("server", length3_core::remote::servers::list().map(|l| l.len()).ok())); });
+        std::thread::spawn(move || { let _ = tx.send(("inbox", length3_core::remote::inbox::threads().map(|l| l.iter().filter(|t| t.unread > 0).count()).ok())); });
     } else { drop(tx); }
     let todos = if ctx.prompt { Vec::new() } else { home::todos().unwrap_or_default() };
     let open_issues: usize = names.iter().map(|n| {
@@ -684,7 +684,7 @@ fn states(ctx: &Ctx) -> Vec<String> {
         r.as_ref().and_then(|r| r.on_main().issues(n).ok()).unwrap_or_default().iter().filter(|i| i.closed.is_none() && !merged.contains(&format!("issue/{}", i.file))).count()
     }).sum();
     let band = home::band(&names).map(|b| b.len()).unwrap_or(0);
-    let running = length3_core::prompt::running(&paths::data_dir()).len();
+    let running = length3_core::device::prompts::running(&paths::data_dir()).len();
     let root_now = root::current(&paths::data_dir()).map(|(_, i)| format!("root {} {}", i.name, i.version)).unwrap_or_else(|| tr!("no root yet", "root はまだありません"));
     let not_sent = r.as_ref().and_then(|r| remote::status(r).ok()).map_or(0, |l| l.iter().filter(|s| s.fresh || s.changed > 0).count());
     let signed_out = tr!("not signed in", "サインインしていません");
@@ -838,7 +838,7 @@ pub fn made(call: &args::Call, reply: &out::Reply) -> Option<String> {
     match (call.command.name, call.form.verb) {
         ("todo", Some("add")) => json["number"].as_u64().map(|n| n.to_string()),
         ("issue", Some("new")) => Some(crate::target::called(json["repo"].as_str()?, json["file"].as_str()?,
-            &length3_core::text::named(json["kind"].as_str().filter(|k| !k.is_empty()), json["title"].as_str()?))),
+            &length3_core::words::title::named(json["kind"].as_str().filter(|k| !k.is_empty()), json["title"].as_str()?))),
         ("repo", Some("new")) => json["repo"]["name"].as_str().map(String::from),
         _ => None,
     }
@@ -907,7 +907,7 @@ pub fn after(ctx: &Ctx, call: &args::Call, argv: &[String], seen: Seen, made: Op
     let kept = serde_json::json!({"argv": argv, "word": word, "shown": shown});
     let file = next_file();
     if file.parent().is_some_and(|d| std::fs::create_dir_all(d).is_ok()) {
-        let _ = length3_core::atomic::replace(&file, kept.to_string().as_bytes(), length3_core::atomic::How::CACHE);
+        let _ = length3_core::disk::write::replace(&file, kept.to_string().as_bytes(), length3_core::disk::write::How::CACHE);
     }
 }
 

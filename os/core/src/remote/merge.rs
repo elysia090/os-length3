@@ -106,8 +106,8 @@ pub(super) fn write_file_as(path: &Path, bytes: &[u8], mode: Option<Option<u32>>
     let kept = { use std::os::unix::fs::PermissionsExt; was.ok().map(|m| m.permissions().mode() & 0o777).filter(|m| m & 0o111 != 0) };
     #[cfg(not(unix))]
     let kept: Option<u32> = None;
-    let how = crate::atomic::How { mode: mode.unwrap_or(kept), ..crate::atomic::How::RECORD };
-    crate::atomic::replace(path, bytes, how).map_err(|e| crate::tr!("{}: {}", "{}：{}", path.display(), e))
+    let how = crate::disk::write::How { mode: mode.unwrap_or(kept), ..crate::disk::write::How::RECORD };
+    crate::disk::write::replace(path, bytes, how).map_err(|e| crate::tr!("{}: {}", "{}：{}", path.display(), e))
 }
 
 /// The modes the Remote changed and this device did not, for files whose bytes are as agreed: taken, as
@@ -117,7 +117,7 @@ pub(super) fn take_modes(dir: &Path, base: &Modes, here: &Modes, there: &Modes, 
     let paths: BTreeSet<&String> = base.keys().chain(there.keys()).collect();
     for path in paths {
         let (b, l, r) = (base.get(path), here.get(path), there.get(path));
-        if r == b || l != b || taken.contains(path) || !matches!(tree.get(path), Some(Some(_))) || crate::owned::within_derived(dir, path) { continue; }
+        if r == b || l != b || taken.contains(path) || !matches!(tree.get(path), Some(Some(_))) || crate::repos::owned::within_derived(dir, path) { continue; }
         #[cfg(unix)]
         if let Some(at) = place(dir, path).ok().filter(|at| fs::symlink_metadata(at).is_ok_and(|m| m.is_file())) {
             use std::os::unix::fs::PermissionsExt;
@@ -209,7 +209,7 @@ pub(super) fn apply(client: &Client, dir: &Path, here: &Tree, p: &Plan, modes: O
     };
     for (path, what) in &p.take {
         // What a derived directory holds here is made here; the Remote's word on it is not taken.
-        if crate::owned::within_derived(dir, path) { continue; }
+        if crate::repos::owned::within_derived(dir, path) { continue; }
         let Ok(at) = place(dir, path) else {
             if let Some(Some(sha)) = what {
                 let bytes = bring.get(sha)?;

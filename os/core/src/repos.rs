@@ -10,10 +10,13 @@ use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
+pub mod lines;
+pub mod owned;
+
 pub use crate::Result;
-use crate::{issues, templates, tr};
+use crate::{words::issues, words::templates, tr};
 use crate::i18n::io_error;
-use crate::names::{is_git_name, valid_name};
+use crate::words::names::{is_git_name, valid_name};
 
 /// `repo/rel` as it is named to a person ("hello", "hello/src/a.c").
 pub fn shown(repo: &str, rel: &str) -> String {
@@ -89,7 +92,7 @@ impl Repos {
         // Inside the Prompt the repos are the guest's /root; on the host
         // they are the person's alone.
         if std::env::var_os("L3_PROMPT").is_none() {
-            crate::boundary::private_dir(&root).map_err(|e| io_error(root.display(), &e))?;
+            crate::disk::write::private_dir(&root).map_err(|e| io_error(root.display(), &e))?;
         } else {
             fs::create_dir_all(&root).map_err(|e| io_error(root.display(), &e))?;
         }
@@ -98,7 +101,7 @@ impl Repos {
 
     /// The line of work `name` shows now: main, or an issue's (work.rs).
     pub fn line(&self, name: &str) -> String {
-        if self.lines { crate::lines::current(name) } else { crate::lines::MAIN.into() }
+        if self.lines { crate::repos::lines::current(name) } else { crate::repos::lines::MAIN.into() }
     }
 
     /// Where `name`'s files are now: its own directory (main), or the
@@ -108,8 +111,8 @@ impl Repos {
         if !self.lines {
             return Ok(main);
         }
-        let line = crate::lines::current(name);
-        Ok(if line == crate::lines::MAIN { main } else { crate::lines::worktree(name, &line) })
+        let line = crate::repos::lines::current(name);
+        Ok(if line == crate::repos::lines::MAIN { main } else { crate::repos::lines::worktree(name, &line) })
     }
 
     fn repo(&self, name: &str) -> Result<PathBuf> {
@@ -230,7 +233,7 @@ impl Repos {
                 }
                 fs::write(target, text).map_err(|e| io_error(shown(name, &path), &e))?;
             }
-            crate::atomic::rename_new(&aside, &dir).map_err(|e| if e.kind() == std::io::ErrorKind::AlreadyExists { there() } else { io_error(name, &e) })
+            crate::disk::write::rename_new(&aside, &dir).map_err(|e| if e.kind() == std::io::ErrorKind::AlreadyExists { there() } else { io_error(name, &e) })
         };
         if let Err(e) = fill() {
             let _ = fs::remove_dir_all(&aside);
@@ -312,7 +315,7 @@ impl Repos {
         let mode = { use std::os::unix::fs::PermissionsExt; Some(meta.permissions().mode() & 0o7777) };
         #[cfg(not(unix))]
         let mode = None;
-        crate::atomic::replace(&path, text, crate::atomic::How { mode, durable: true })
+        crate::disk::write::replace(&path, text, crate::disk::write::How { mode, durable: true })
             .map_err(|e| io_error(shown(repo, relative), &e))?;
         Ok(text.len() as u64)
     }
@@ -785,7 +788,7 @@ mod tests {
 #[cfg(test)]
 mod shared_cases {
     //! The cases in shared/cases.json, which the app's tests read too.
-    use crate::{issues, text};
+    use crate::{words::issues, words::title};
     use serde_json::Value;
 
     fn cases() -> Value {
@@ -797,7 +800,7 @@ mod shared_cases {
     fn kinds_issues_and_names_agree_with_the_app() {
         let c = cases();
         for k in c["kind"].as_array().unwrap() {
-            let (kind, title) = text::kind_of(k[0].as_str().unwrap());
+            let (kind, title) = title::kind_of(k[0].as_str().unwrap());
             assert_eq!((kind, title), (opt(&k[1]), k[2].as_str().unwrap().to_string()), "{k}");
         }
         for k in c["issue"].as_array().unwrap() {
@@ -869,7 +872,7 @@ mod shared_cases {
 
     #[test]
     fn lines_changed_are_counted_and_laid_out_as_the_app_does() {
-        use crate::linediff::{counts, ops, Kind};
+        use crate::words::linediff::{counts, ops, Kind};
         assert_eq!(disagreeing("lineDiff", |c| serde_json::json!([c[2], c[3]]), |c| serde_json::json!(counts(&ops(s(&c[0]), s(&c[1]))))), Vec::<String>::new());
         let laid = |c: &Value| {
             if c[4].is_null() { return Value::Null; }
@@ -882,12 +885,12 @@ mod shared_cases {
     fn two_todo_lists_are_joined_as_the_app_joins_them() {
         // Compared as JSON (l3 writes an item's fields in its own order), or as text where it is none.
         let read = |t: &str| serde_json::from_str::<Value>(t).unwrap_or_else(|_| Value::String(t.into()));
-        let got = |c: &Value| read(&crate::home::join_todo(s(&c["base"]), s(&c["here"]), s(&c["there"])));
+        let got = |c: &Value| read(&crate::device::home::join_todo(s(&c["base"]), s(&c["here"]), s(&c["there"])));
         assert_eq!(disagreeing("todoJoin", |c| read(s(&c["want"])), got), Vec::<String>::new());
     }
 
     #[test]
     fn a_dotfile_may_be_written_into_root_under_the_names_the_app_allows() {
-        assert_eq!(disagreeing("dotfileName", |c| c[1].clone(), |c| serde_json::json!(crate::home::dotfile_name(s(&c[0])))), Vec::<String>::new());
+        assert_eq!(disagreeing("dotfileName", |c| c[1].clone(), |c| serde_json::json!(crate::device::home::dotfile_name(s(&c[0])))), Vec::<String>::new());
     }
 }
