@@ -46,6 +46,9 @@ within() {
              for (k in got) if (!(k in hi)) { print "place " k ": " got[k] " visits, never learnt"; bad = 1 }
              exit bad }' "$1" "$2" "$3"
 }
+# The file as it is once remade: a learner that crosses a mark has it remade by a child of its own, which holds it until
+# done (so whatever holds it after waits; flock(1) is one).
+settle() { flock "$YOU_DATA" true; }
 # An LCG, the same in every shell: next RANDOM after $seed, 0 to 32767.
 next() { seed=$(( (seed * 1103515245 + 12345) % 2147483648 )); r=$(( seed / 65536 )); }
 
@@ -134,6 +137,7 @@ for prog in "$you" "$yt"; do
   export YOU_DATA="$t/full/$(basename "$prog")/db"
   i=0; while [ $i -lt 200 ]; do mkdir -p "$t/full/n$i"; i=$((i + 1)); done
   "$prog" add "$t/c/p0" "$t/c/p1"
+  settle
   size=$(wc -c < "$YOU_DATA")
   : > "$t/full.done"
   (
@@ -168,6 +172,7 @@ cat "$t/junk/random" "$t/junk/tags" "$t/junk/random" > "$YOU_DATA"
 fails "$you" query p
 i=0; while [ $i -lt 400 ]; do "$you" add "$t/c/p$((i % 4))"; i=$((i + 1)); done
 n=$((n + 1))
+settle
 [ "$(wc -c < "$YOU_DATA")" -lt 65536 ] || bad "garbage: not remade ($(wc -c < "$YOU_DATA") bytes)"
 says "$t/c/p0
 $t/c/p1
@@ -188,6 +193,7 @@ while [ $m -le 132 ]; do
   n=$((n + 1))
   "$you" add "$t/c/p1" 2> "$t/edge/err" || bad "a file of $((m * 16384 - 30)) bytes: $(cat "$t/edge/err")"
   n=$((n + 1))
+  settle
   [ "$(wc -c < "$YOU_DATA")" -lt 4096 ] || bad "a file of $((m * 16384 - 30)) bytes: not remade"
   m=$((m + 1))
 done
@@ -291,7 +297,9 @@ says "$t/time/left" env YOU_NOW=$((T + 89 * 86400)) "$yt" query time/left
 rmdir "$t/time/left"
 i=0; while [ $i -lt 20 ]; do YOU_NOW=$((T + 91 * 86400)) "$yt" add "$t/c/p8"; i=$((i + 1)); done
 mkdir "$t/time/gone" "$t/time/left"
+settle
 fails env YOU_NOW=$((T + 91 * 86400)) "$yt" query time/gone
 fails env YOU_NOW=$((T + 91 * 86400)) "$yt" query time/left
 
+settle
 echo "ok $n"

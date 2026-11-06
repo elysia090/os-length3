@@ -23,6 +23,9 @@ fails() { # fails CMD...: CMD fails
   if "$@" > /dev/null 2>&1; then printf 'not ok %d: %s did not fail\n' "$n" "$*" >&2; exit 1; fi
 }
 d() { mkdir -p "$t/$1"; echo "$t/$1"; }
+# The file as it is once remade: a learner that crosses a mark has it remade by a child of its own, which holds it until
+# done (so whatever holds it after waits; flock(1) is one).
+settle() { flock "$YOU_DATA" true; }
 
 # Nothing learnt: nothing found (and where it is kept made only when something is).
 fails "$you" query web
@@ -99,16 +102,19 @@ says 100 sh -c "'$you' query --list --score c/p | grep -c '^  32.0 '"
 
 # A record written in part (a disk full, a machine stopped), then more learnt: what came after it is found again; and
 # a byte changed in one: that one passed over, the rest kept.
+settle
 printf 'you\001\377' >> "$YOU_DATA"
 "$you" add "$(d after/torn)"
 says "$t/after/torn" "$you" query torn
 "$you" add "$(d bit/flipped)"
+settle
 size=$(wc -c < "$YOU_DATA")
 printf X | dd of="$YOU_DATA" bs=1 seek=$((size - 3)) conv=notrunc 2> /dev/null
 fails "$you" query flipped
 says "$t/after/torn" "$you" query torn
 
 # Aged: past 10000 visits in all, each cut so that they make 9000; a place under one visit forgotten.
+settle
 rm -f "$YOU_DATA"
 "$you" add "$(d once)"
 many=$(i=0; while [ $i -lt 1000 ]; do printf '%s\n' "$t/p/other"; i=$((i + 1)); done)
@@ -118,7 +124,9 @@ k=0; while [ $k -lt 11 ]; do
   "$you" add $many
   k=$((k + 1))
 done
+settle
 fails "$you" query once
 "$you" query --score other | awk '{ if ($1 < 30000 || $1 > 40000) { print "aged to " $1; exit 1 } }'
 
+settle
 echo "ok $n"

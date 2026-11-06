@@ -29,9 +29,10 @@
  *
  * Learning a place appends one record (rank 1) in one write(2) to the file opened O_APPEND, which goes whole to the
  * end whoever else writes (a kernel writes one write to a file at a time). Reading adds every record of a place up.
- * Every 16 KiB appended, the writer that crosses the mark makes it again: each place once, aged (past 10000 in all,
- * each rank cut so that they make 9000, a place under 1 forgotten), a place gone for 90 days forgotten, written to a
- * file beside it, fsync'd, and renamed over it. Learners hold the file shared (flock) while they append and the one
+ * Every 16 KiB appended, the writer that crosses the mark has it made again, by a child of its own (so that a cd
+ * waits for its one write, not for this): each place once, aged (past 10000 in all, each rank cut so that they make
+ * 9000, a place under 1 forgotten), a place gone for 90 days forgotten, written to a file beside it, fsync'd, and
+ * renamed over it. Learners hold the file shared (flock) while they append and the one
  * remaking it holds it alone, so nothing is appended to a file being remade; one that waited on it finds what it
  * holds no longer there (fstat: no link) and opens it again. Readers take no lock: the file they read is whole, or
  * whole but for a record still being written at its end, which they leave. `sum` makes each record its own check:
@@ -48,6 +49,7 @@ typedef unsigned char u8;
 
 enum {
   SYS_read = 0, SYS_write = 1, SYS_open = 2, SYS_writev = 20, SYS_close = 3, SYS_fstat = 5, SYS_mmap = 9, SYS_pread = 17,
+  SYS_dup2 = 33, SYS_fork = 57, SYS_pipe2 = 293,
   SYS_flock = 73, SYS_fsync = 74, SYS_getcwd = 79, SYS_rename = 82, SYS_mkdir = 83,
   SYS_unlink = 87, SYS_clock_gettime = 228, SYS_exit_group = 231, SYS_newfstatat = 262,
 };
@@ -705,9 +707,31 @@ static int add(int argc, char **argv) {
   i64 wr;
   while ((wr = sys3(SYS_write, fd, (i64)recs, (i64)len)) == -EINTR) {}
   if (wr != (i64)len) fail("cannot write ", db); /* in part: passed over when read */
-  /* The writer that crosses a mark makes it again, holding it alone. */
+  /* The writer that crosses a mark has it made again, held alone: by a child of its own, so that what ran it (a shell,
+   * at a cd) waits for its visit, one write, and not for the remaking (a fsync and the whole file written). The parent
+   * ends once the child holds the file alone, as it says by closing a pipe (or by ending), so whatever holds the file
+   * after the parent ended waits for the remaking (flock it to know it done). The child's standard input and output are
+   * nothing, so it holds open no pipe that what ran it reads to its end. Where there can be no child, it remakes it
+   * itself. */
   if ((u64)st.size / COMPACT_EVERY != ((u64)st.size + len) / COMPACT_EVERY) {
-    if (!lock(fd, LOCK_EX) && !sys2(SYS_fstat, fd, (i64)&st) && st.nlink) {
+    int pp[2];
+    i64 pid = -1;
+    if (!sys2(SYS_pipe2, (i64)pp, O_CLOEXEC) && (pid = sys1(SYS_fork, 0)) < 0) sys1(SYS_close, pp[0]), sys1(SYS_close, pp[1]);
+    if (pid > 0) {
+      sys1(SYS_close, pp[1]);
+      u8 b;
+      while (sys3(SYS_read, pp[0], (i64)&b, 1) == -EINTR) {}
+      return 0;
+    }
+    if (!pid) {
+      int nul = (int)sys3(SYS_open, (i64)"/dev/null", O_RDWR, 0);
+      for (int f = 0; f < 3; f++)
+        if (nul < 0) sys1(SYS_close, f);
+        else if (nul != f) sys2(SYS_dup2, nul, f);
+    }
+    int held = !lock(fd, LOCK_EX) && !sys2(SYS_fstat, fd, (i64)&st) && st.nlink;
+    if (!pid) sys1(SYS_close, pp[1]); /* the parent ends */
+    if (held) {
       ready();
       load(fd);
       remake(&st, now);
