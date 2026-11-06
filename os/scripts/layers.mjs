@@ -62,13 +62,15 @@ export function violations() {
 }
 
 /**
- * Files that reach each other within a module, which the order between modules does not see: every set of them, each
- * a cycle (a file takes from another that takes back from it, however far round). None is allowed: within a module too,
- * what a file stands on is under it.
+ * Files that reach each other, which the order between modules does not see: every set of them, each a cycle (a file
+ * takes from another that takes back from it, however far round), in any of ACYCLIC. None is allowed: within a module
+ * too, what a file stands on is under it.
  */
+/** Where no file may reach back to itself: the app, the Remote, these scripts, and xlat's runtime the Prompt runs. */
+export const ACYCLIC = ['src', 'service', 'scripts', '../xlat/runtime'];
+
 export function cycles() {
-  const root = join(OS, 'src');
-  const all = files(root);
+  const all = ACYCLIC.flatMap((root) => files(join(OS, root)));
   const takes = new Map(all.map((f) => [f, new Set()]));
   for (const f of all) {
     for (const m of readFileSync(f, 'utf8').matchAll(IMPORT)) {
