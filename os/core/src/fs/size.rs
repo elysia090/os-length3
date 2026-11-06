@@ -1,24 +1,10 @@
 //! Room: what the filesystem holding the OS's data has (`room`), and what a folder takes of it (`allocated`), counted
-//! as the host counts it: in blocks set aside, each file once however many names it has.
+//! as the host counts it: in blocks set aside, each file once however many names it has. A repo's folder is counted
+//! by repos/measure.rs, in the one walk that also counts its files.
 
-use serde::Serialize;
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
-
-/// The filesystem's `total` and `free` bytes, as the outermost host reports them, and what the OS has set aside
-/// under its own directory (`app`).
-#[derive(Serialize, Debug)]
-pub struct Capacity {
-    pub total: u64,
-    pub free: u64,
-    pub app: u64,
-}
-
-pub fn capacity(dir: &Path) -> crate::Result<Capacity> {
-    let (total, free) = room(dir)?;
-    Ok(Capacity { total, free, app: allocated(dir) })
-}
 
 /// The filesystem's `total` and `free` alone: no walk of what the OS holds.
 pub fn room(dir: &Path) -> crate::Result<(u64, u64)> {

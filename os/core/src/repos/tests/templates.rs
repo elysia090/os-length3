@@ -63,7 +63,7 @@ fn what_c_builds_is_derived_and_made_again_once_freed() {
         assert!(made.status.success(), "{}", String::from_utf8_lossy(&made.stderr));
         let tag = std::fs::read_to_string(dir.join("build/CACHEDIR.TAG")).unwrap();
         assert!(tag.starts_with("Signature: 8a477f597d28d172789f06886806bc55"), "{tag:?}");
-        assert_eq!(crate::prompt::writes::derived_in(&dir), [dir.join("build")]);
+        assert_eq!(crate::repos::derived::derived_in(&dir), [dir.join("build")]);
         let sent: Vec<String> = crate::remote::local_tree(&dir).tree.keys().cloned().collect();
         assert_eq!(sent, ["Makefile", "README.md", "docs", "src/main.c"]);
         // Freed as Runtime frees what is derived: the directory goes, and the sources stay to make it again.

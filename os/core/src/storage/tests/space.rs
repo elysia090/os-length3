@@ -251,8 +251,8 @@ mod owned_tests {
         fs::write(repos.join("here/vendor/node_modules/keep.js"), "mine").unwrap();
         let tree = crate::remote::local_tree(&repos.join("here"));
         assert_eq!(tree.tree.keys().cloned().collect::<Vec<_>>(), ["package.json", "vendor/node_modules/keep.js"]);
-        assert!(crate::prompt::writes::within_derived(&repos.join("here"), "node_modules/x/index.js"));
-        assert!(!crate::prompt::writes::within_derived(&repos.join("here"), "vendor/node_modules/keep.js"));
+        assert!(crate::repos::derived::within_derived(&repos.join("here"), "node_modules/x/index.js"));
+        assert!(!crate::repos::derived::within_derived(&repos.join("here"), "vendor/node_modules/keep.js"));
 
         let s = space(&data, &repos, &[]);
         let find = |id: &str| s.items.iter().find(|i| i.id == id).cloned();

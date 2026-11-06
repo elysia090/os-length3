@@ -124,7 +124,7 @@ pub(super) fn take_modes(dir: &Path, base: &Modes, here: &Modes, there: &Modes, 
     let paths: BTreeSet<&String> = base.keys().chain(there.keys()).collect();
     for path in paths {
         let (b, l, r) = (base.get(path), here.get(path), there.get(path));
-        if r == b || l != b || taken.contains(path) || !matches!(tree.get(path), Some(Some(_))) || crate::prompt::writes::within_derived(dir, path) { continue; }
+        if r == b || l != b || taken.contains(path) || !matches!(tree.get(path), Some(Some(_))) || crate::repos::derived::within_derived(dir, path) { continue; }
         #[cfg(unix)]
         if let Some(at) = place(dir, path).ok().filter(|at| fs::symlink_metadata(at).is_ok_and(|m| m.is_file())) {
             use std::os::unix::fs::PermissionsExt;
@@ -216,7 +216,7 @@ pub(super) fn apply(client: &Client, dir: &Path, here: &Tree, p: &Plan, modes: O
     };
     for (path, what) in &p.take {
         // What a derived directory holds here is made here; the Remote's word on it is not taken.
-        if crate::prompt::writes::within_derived(dir, path) { continue; }
+        if crate::repos::derived::within_derived(dir, path) { continue; }
         let Ok(at) = place(dir, path) else {
             if let Some(Some(sha)) = what {
                 let bytes = bring.get(sha)?;

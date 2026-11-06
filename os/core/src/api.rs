@@ -8,7 +8,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use crate::{agent::activity, agent::tasks, device::agent_key, fs::paths, fs::size, history, history::work, home, remote, remote::account, storage};
+use crate::{agent::activity, agent::tasks, device::agent_key, fs::paths, history, history::work, home, remote, remote::account, storage};
 
 /// Files the editor may save; anything read in part is never written back.
 pub const READ_LIMIT: u64 = 256 * 1024;
@@ -126,8 +126,7 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
             d => Err(crate::tr!("There is no deed {}", "{} という操作はありません", d)),
         },
 
-        // The capacity and what this OS holds: `open`, the repos a Prompt has open (the host's to know).
-        "capacity" => to(size::capacity(paths::data_dir())?),
+        // What this OS holds: `open`, the repos a Prompt has open (the host's to know).
         "space" => to(storage::space(paths::data_dir(), paths::repos_dir(), &a.list("open")?)),
         "free" => to(storage::free(paths::data_dir(), paths::repos_dir(), &a.list("ids")?, &a.list("open")?)),
 

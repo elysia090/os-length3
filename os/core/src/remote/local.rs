@@ -210,7 +210,7 @@ pub(super) fn walk(dir: &Path, prefix: &str, out: &mut Local) {
             out.unsynced.push((rel, crate::tr!("a link", "リンク")));
         } else if meta.is_dir() {
             // Made from the repo's own files (prompt/writes.rs): not the repo's to send, nor what keeps it here.
-            if crate::prompt::writes::derived(dir, &name, &path) { continue; }
+            if crate::repos::derived::derived(dir, &name, &path) { continue; }
             walk(&path, &rel, out);
         } else if meta.is_file() {
             if meta.len() > BLOB_LIMIT {

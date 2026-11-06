@@ -7,14 +7,12 @@ import {RemoteError} from './errors.ts';
 import {invoke, listen} from './tauri.ts';
 
 interface Capacity {
-  /** Bytes the measured layer can hold in total. */
+  /** Bytes this origin may hold in total. */
   total: number;
   /** Bytes still available to it. */
   free: number;
-  /** Bytes this app holds there. */
+  /** Bytes it holds. */
   app: number;
-  /** Which layer was measured. */
-  layer: 'host-filesystem' | 'browser-origin';
 }
 
 /** Which host this build is for (vite.config.ts), so each build carries only its own; run from source (the tests), the page says. */
@@ -55,16 +53,16 @@ export function failure(a: Exclude<Answer, {ok: unknown}>): Error {
 }
 
 
+/**
+ * What the browser says this origin holds and may hold (StorageManager.estimate); null where it cannot say. On the
+ * device the core says it itself, from the host's filesystem, in `space`.
+ */
 export async function readCapacity(): Promise<Capacity | null> {
   try {
-    if (isNative) {
-      const c = await core<{total: number; free: number; app: number}>('capacity');
-      return {total: c.total, free: c.free, app: c.app, layer: 'host-filesystem'};
-    }
     const e = await navigator.storage?.estimate?.();
     if (!e?.quota) return null;
     const usage = e.usage ?? 0;
-    return {total: e.quota, free: Math.max(0, e.quota - usage), app: usage, layer: 'browser-origin'};
+    return {total: e.quota, free: Math.max(0, e.quota - usage), app: usage};
   } catch {
     return null;
   }

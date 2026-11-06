@@ -8,7 +8,6 @@ use serde::Serialize;
 use std::fs;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
-use std::time::UNIX_EPOCH;
 
 
 pub use crate::Result;
@@ -182,24 +181,10 @@ impl Repos {
         Ok(out)
     }
 
+    /// The repo `name` as its card says it: its own files, their bytes, and when they last changed (measure.rs).
     pub fn summary(&self, name: &str) -> Result<Summary> {
-        let dir = self.place(name)?;
-        let (mut files, mut bytes, mut modified) = (0, 0, 0);
-        // Bounded walk: summaries must stay cheap for large repos.
-        let mut stack = vec![dir.clone()];
-        let mut budget = 20_000;
-        while let Some(d) = stack.pop() {
-            for e in fs::read_dir(&d).map_err(|e| io_error(d.display(), &e))?.flatten() {
-                budget -= 1;
-                if budget == 0 { break; }
-                if is_git_name(&e.file_name().to_string_lossy()) { continue; }
-                let Ok(meta) = e.metadata() else { continue };
-                let time = meta.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map_or(0, |d| d.as_millis() as u64);
-                modified = modified.max(time);
-                if meta.is_dir() { stack.push(e.path()); } else { files += 1; bytes += meta.len(); }
-            }
-        }
-        Ok(Summary { name: name.to_string(), files, bytes, modified })
+        let m = super::measure::measure(&self.place(name)?);
+        Ok(Summary { name: name.to_string(), files: m.files, bytes: m.bytes, modified: m.modified })
     }
 
     /// Create a repo from a template (shared/templates.json). Inbox and TODO

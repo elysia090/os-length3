@@ -5,6 +5,7 @@ use serde::Serialize;
 use std::fs;
 use crate::fs::write::temporary_writer;
 use crate::fs::size::{allocated, blocks, links};
+use crate::repos::measure::{measure, Measure};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
@@ -21,10 +22,16 @@ pub fn space(data: &Path, repos_dir: &Path, open: &[String]) -> Space {
     let mut items = Vec::new();
     let connected = crate::remote::connection().is_some();
     let in_use = InUse::now(data, open);
+    let mut left = Vec::new();
+    // What was walked as a repo's copies is not walked again for leftovers.
+    let mut walked = vec![repos_dir.to_path_buf()];
     if let Ok(repos) = crate::repos::store::Repos::new(repos_dir.to_path_buf()) {
         for name in repos.names().unwrap_or_default() {
-            items.extend(repo_item(&repos, &name, connected, &in_use));
-            items.extend(derived_item(repos_dir, &name, &in_use));
+            let Ok(dir) = repos.dir(&name) else { continue };
+            let c = copies(&dir, &name, &mut left);
+            walked.push(crate::fs::paths::data_dir().join("work").join(&name));
+            items.extend(repo_item(&repos, &name, &c, connected, &in_use));
+            items.extend(derived_item(&name, &c.derived, &in_use));
         }
     }
     for (row, _) in system(data) {
@@ -33,8 +40,7 @@ pub fn space(data: &Path, repos_dir: &Path, open: &[String]) -> Space {
     for (kind, repo, _) in crate::prompt::writes::held(data) {
         items.extend(owned_item(data, repos_dir, kind, &repo, &in_use));
     }
-    let mut left = Vec::new();
-    leftovers(data, data, &mut left);
+    leftovers(data, data, &walked, &mut left);
     system_leftovers(data, &mut left);
     for l in left.into_iter().filter(|l| !l.root) {
         items.push(leftover_item(l));
@@ -54,17 +60,18 @@ pub fn space(data: &Path, repos_dir: &Path, open: &[String]) -> Space {
 pub(super) fn item(data: &Path, repos_dir: &Path, id: &str, in_use: &InUse) -> Option<Item> {
     if let Some(name) = id.strip_prefix("repo:") {
         let repos = crate::repos::store::Repos::new(repos_dir.to_path_buf()).ok()?;
-        repo_item(&repos, name, crate::remote::connection().is_some(), in_use)
+        repo_item(&repos, name, &copies(&repos.dir(name).ok()?, name, &mut Vec::new()), crate::remote::connection().is_some(), in_use)
     } else if let Some(sha) = id.strip_prefix("root:") {
         system(data).into_iter().find(|(r, _)| r.sha256 == sha).map(|(r, _)| root_item(r, in_use))
     } else if let Some(path) = id.strip_prefix("path:") {
-        leftover_at(data, Path::new(path)).map(leftover_item)
+        leftover_at(data, repos_dir, Path::new(path)).map(leftover_item)
     } else if let Some(repo) = id.strip_prefix("env:") {
         owned_item(data, repos_dir, "env", repo, in_use)
     } else if let Some(repo) = id.strip_prefix("cache:") {
         owned_item(data, repos_dir, "cache", repo, in_use)
     } else if let Some(repo) = id.strip_prefix("derived:") {
-        derived_item(repos_dir, repo, in_use)
+        if !crate::text::names::valid_name(repo) { return None; }
+        derived_item(repo, &copies(&repos_dir.join(repo), repo, &mut Vec::new()).derived, in_use)
     } else if id == "home" {
         Some(Item { id: "home".into(), what: "Home".into(), detail: String::new(), allocated: 0, room: Room::Keep, why: crate::tr!("This device's settings", "この端末の設定です") })
     } else {
@@ -74,7 +81,7 @@ pub(super) fn item(data: &Path, repos_dir: &Path, id: &str, in_use: &InUse) -> O
 
 /// Whether `path` is a leftover now, by the same rules as the scans, looked
 /// at alone (freeing one thing does not walk everything again).
-fn leftover_at(data: &Path, path: &Path) -> Option<Leftover> {
+fn leftover_at(data: &Path, repos_dir: &Path, path: &Path) -> Option<Leftover> {
     let system = crate::root::system_dir(data);
     let dir = path.parent()?;
     if dir == system || dir == system.join(".bundles") {
@@ -82,16 +89,45 @@ fn leftover_at(data: &Path, path: &Path) -> Option<Leftover> {
         system_leftovers(data, &mut found);
         return found.into_iter().find(|l| l.path == path && !l.root);
     }
-    // Under the data directory, never inside a repo's .git or the system directory.
-    let rel = path.strip_prefix(data).ok()?;
+    // Under the data directory or the repos', never inside a repo's .git or the system directory.
+    let rel = path.strip_prefix(data).or_else(|_| path.strip_prefix(repos_dir)).ok()?;
     // Plain names only: an id from the page with `..` in it must not lead out of the data directory.
     if rel.components().any(|c| !matches!(c, std::path::Component::Normal(_))) { return None; }
     if rel.components().any(|c| crate::text::names::is_git_name(&c.as_os_str().to_string_lossy())) || path.starts_with(&system) { return None; }
-    let meta = path.symlink_metadata().ok()?;
-    if !meta.is_file() || links(&meta) != 1 { return None; }
-    let pid = temporary_writer(&path.file_name()?.to_string_lossy(), dir == data.join("home"))?;
-    (age(&meta) >= AGE && pid != crate::pid() && !running(pid))
-        .then(|| Leftover { path: path.to_path_buf(), allocated: blocks(&meta), what: crate::tr!("A temporary file left behind", "残った一時ファイル"), root: false })
+    left_behind(path, &path.symlink_metadata().ok()?, dir == data.join("home"))
+}
+
+/// The temporary `path` (`meta` its own, not a link's), if this OS left it behind: named as it names a file while it
+/// writes it (a setting's form only in the settings directory), one name of it alone, a minute old, its writer gone.
+fn left_behind(path: &Path, meta: &fs::Metadata, in_settings: bool) -> Option<Leftover> {
+    if !meta.is_file() || links(meta) != 1 { return None; }
+    let pid = temporary_writer(&path.file_name()?.to_string_lossy(), in_settings)?;
+    (age(meta) >= AGE && pid != crate::pid() && !running(pid))
+        .then(|| Leftover { path: path.to_path_buf(), allocated: blocks(meta), what: crate::tr!("A temporary file left behind", "残った一時ファイル"), root: false })
+}
+
+/// A repo's copies here, each walked once (measure.rs): the repo itself, and each work on it.
+struct Copies {
+    /// The blocks of the repo but what is derived in it, and of each work whole.
+    allocated: u64,
+    works: usize,
+    /// What is derived in the repo, each folder's blocks counted once.
+    derived: Vec<(PathBuf, u64)>,
+}
+
+/// The repo `name` at `dir`, its works measured with it; what this OS left behind in them goes to `left`.
+fn copies(dir: &Path, name: &str, left: &mut Vec<Leftover>) -> Copies {
+    let repo = measure(dir);
+    let works: Vec<Measure> = crate::repos::lines::worktrees(name).iter().map(|(_, p)| measure(p)).collect();
+    for t in repo.temporaries.iter().chain(works.iter().flat_map(|w| &w.temporaries)) {
+        if let Some(l) = t.symlink_metadata().ok().and_then(|m| left_behind(t, &m, false)) { left.push(l); }
+    }
+    let whole = |m: &Measure| m.allocated + m.derived.iter().map(|d| allocated(d)).sum::<u64>();
+    Copies {
+        allocated: repo.allocated + works.iter().map(whole).sum::<u64>(),
+        works: works.len(),
+        derived: repo.derived.iter().map(|d| (d.clone(), allocated(d))).collect(),
+    }
 }
 
 fn leftover_item(l: Leftover) -> Item {
@@ -111,12 +147,10 @@ fn root_item(row: SystemUsage, in_use: &InUse) -> Item {
     Item { id: format!("root:{}", row.sha256), what: format!("{} {}", row.name, row.version), detail: "root".into(), allocated: row.allocated, room, why }
 }
 
-/// What is derived from a repo's own files, if it has any.
-fn derived_item(repos_dir: &Path, repo: &str, in_use: &InUse) -> Option<Item> {
-    if !crate::text::names::valid_name(repo) { return None; }
-    let found = crate::prompt::writes::derived_in(&repos_dir.join(repo));
-    if found.is_empty() { return None; }
-    let mut names: Vec<String> = found.iter().filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned())).collect();
+/// What is derived from a repo's own files, if it has any, each folder with its blocks.
+fn derived_item(repo: &str, derived: &[(PathBuf, u64)], in_use: &InUse) -> Option<Item> {
+    if derived.is_empty() { return None; }
+    let mut names: Vec<String> = derived.iter().filter_map(|(p, _)| p.file_name().map(|n| n.to_string_lossy().into_owned())).collect();
     names.sort();
     names.dedup();
     let (room, why) = if let Some(why) = in_use.repo(repo) {
@@ -125,7 +159,7 @@ fn derived_item(repos_dir: &Path, repo: &str, in_use: &InUse) -> Option<Item> {
         (Room::Free, crate::tr!("Made again from its files by the tool that made it", "元のファイルから、作ったツールがまた作ります"))
     };
     Some(Item { id: format!("derived:{repo}"), what: repo.into(), detail: crate::tr!("derived · {}", "派生物 · {}", names.join(", ")),
-        allocated: found.iter().map(|p| allocated(p)).sum(), room, why })
+        allocated: derived.iter().map(|(_, n)| n).sum(), room, why })
 }
 
 /// A repo's environment ("env") or caches ("cache"), if it has them here.
@@ -146,8 +180,7 @@ fn owned_item(data: &Path, repos_dir: &Path, kind: &str, repo: &str, in_use: &In
     Some(Item { id: format!("{kind}:{repo}"), what: repo.into(), detail, allocated: allocated(&dir), room, why })
 }
 
-fn repo_item(repos: &crate::repos::store::Repos, name: &str, connected: bool, in_use: &InUse) -> Option<Item> {
-    let dir = repos.dir(name).ok()?;
+fn repo_item(repos: &crate::repos::store::Repos, name: &str, copies: &Copies, connected: bool, in_use: &InUse) -> Option<Item> {
     let s = crate::remote::status_of(repos, name).ok()?;
     let files = s.unsynced.len() + s.files;
     let (room, why) = if let Some(why) = in_use.repo(name) {
@@ -162,12 +195,10 @@ fn repo_item(repos: &crate::repos::store::Repos, name: &str, connected: bool, in
         (Room::SyncFree, if s.fresh { crate::tr!("Not on the Remote yet; sent, then freed", "まだ Remote にありません。送ってから空けます") } else { if s.changed == 1 { crate::tr!("1 change is sent, then it is freed", "1件の変更を送ってから空けます") } else { crate::tr!("{} changes are sent, then it is freed", "{}件の変更を送ってから空けます", s.changed) } })
     };
     // Every copy of it counts: main's and each issue's being worked on; what is derived in it is its own item.
-    let works = crate::repos::lines::worktrees(name);
-    let derived: u64 = crate::prompt::writes::derived_in(&dir).iter().map(|p| allocated(p)).sum();
-    let size = allocated(&dir).saturating_sub(derived) + works.iter().map(|(_, p)| allocated(p)).sum::<u64>();
+    let size = copies.allocated;
     // One file is one file (1 file, not 1 files); Japanese counts the same either way.
     let files = if files == 1 { crate::tr!("1 file", "1ファイル") } else { crate::tr!("{} files", "{}ファイル", files) };
-    let detail = match works.len() {
+    let detail = match copies.works {
         0 => crate::tr!("repo · {}", "repo · {}", files),
         1 => crate::tr!("repo · {} · 1 work", "repo · {} · 作業 1", files),
         n => crate::tr!("repo · {} · {} works", "repo · {} · 作業 {}", files, n),
@@ -281,27 +312,24 @@ pub(super) fn host(dir: &Path) -> (u64, u64, Certainty) {
     }
 }
 
-/// This OS's own leftover temporaries under `dir` (never inside a repo's
-/// .git, and not in the system directory, which has its own rules), for
-/// the data directory `data`.
-fn leftovers(dir: &Path, data: &Path, out: &mut Vec<Leftover>) {
+/// This OS's own leftover temporaries under `dir` (never inside a repo's .git, and not in the system directory, which
+/// has its own rules, nor in what was `walked` as a repo's copies), for the data directory `data`.
+fn leftovers(dir: &Path, data: &Path, walked: &[PathBuf], out: &mut Vec<Leftover>) {
     let settings = data.join("home");
     let Ok(entries) = fs::read_dir(dir) else { return };
     for e in entries.flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
         if crate::text::names::is_git_name(&name) { continue; }
         let path = e.path();
-        let Ok(meta) = path.symlink_metadata() else { continue };
-        if meta.is_dir() && path == crate::root::system_dir(data) { continue; }
-        // A repo's environment and caches are listed as theirs, not walked for leftovers.
-        if meta.is_dir() && dir == data && (name == "envs" || name == "caches") { continue; }
-        if meta.is_dir() { leftovers(&path, data, out); continue; }
-        if !meta.is_file() || links(&meta) != 1 { continue; }
-        let Some(pid) = temporary_writer(&name, dir == settings.as_path()) else { continue };
-        let old = meta.modified().ok().and_then(|t| SystemTime::now().duration_since(t).ok()).is_some_and(|age| age >= AGE);
-        if old && pid != crate::pid() && !running(pid) {
-            out.push(Leftover { path, allocated: blocks(&meta), what: crate::tr!("A temporary file left behind", "残った一時ファイル"), root: false });
+        // Asked of the directory already open (fstatat), links not followed.
+        let Ok(meta) = e.metadata() else { continue };
+        if meta.is_dir() {
+            // A repo's environment and caches are listed as theirs, not walked for leftovers.
+            let theirs = dir == data && (name == "envs" || name == "caches");
+            if !theirs && path != crate::root::system_dir(data) && !walked.contains(&path) { leftovers(&path, data, walked, out); }
+            continue;
         }
+        out.extend(left_behind(&path, &meta, dir == settings.as_path()));
     }
 }
 

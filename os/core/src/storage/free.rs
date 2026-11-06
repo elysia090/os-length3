@@ -124,7 +124,7 @@ pub fn free(data: &Path, repos_dir: &Path, ids: &[String], open: &[String]) -> F
         } else if let Some(repo) = id.strip_prefix("cache:") {
             remove_owned(&crate::prompt::writes::cache_dir(data, repo))
         } else if let Some(repo) = id.strip_prefix("derived:") {
-            crate::prompt::writes::derived_in(&repos_dir.join(repo)).iter().try_fold(0, |n, p| remove_owned(p).map(|k| n + k))
+            crate::repos::derived::derived_in(&repos_dir.join(repo)).iter().try_fold(0, |n, p| remove_owned(p).map(|k| n + k))
         } else if let Some(path) = id.strip_prefix("path:") {
             remove_leftover(data, Path::new(path))
         } else {
