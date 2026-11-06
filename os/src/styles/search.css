@@ -19,15 +19,6 @@
 /* Let go, it goes back up into the box before it is gone (reference.ts), and nothing in it is pressed meanwhile. */
 .search-box.leaving > .search-results { animation: none; pointer-events: none; }
 .search-results { display: flex; flex-direction: column; gap: var(--s3); max-height: none; overflow: visible; }
-/* Out with the keyboard in the file (something read there, or a list held out), the view stands beside the file: in
-   the pane's own width, a step in from the pane's line, over the pane and never over the file, which keeps its whole
-   width. The keyboard coming back into it (a press on it, the search box) opens it out over the center again to be
-   read, the window stepping back, and its switch comes back with it. */
-@media (min-width: 761px) {
-  .work.bench > .bar > .search-box > .search-results { transition: width var(--move) var(--land); }
-  .work.bench > .bar > .search-box:is(.kept, .reading):not(:focus-within) > .search-results { width: calc(var(--pane-w) - var(--s5) + var(--s3) - var(--line-frame)); }
-  .work.bench > .bar > .search-box:is(.kept, .reading):not(:focus-within) .search-pills { visibility: hidden; }
-}
 /* Issue, diff and Output at the large box's left end, standing on it: their foot a hair (s1) over its top, up
    beside the search box rather than level with it, so the three and the box they switch read as one. */
 .search-pills { display: flex; gap: var(--s2); isolation: isolate; position: absolute; left: var(--s3); bottom: calc(100% - var(--s3) + var(--s1)); }
@@ -110,16 +101,19 @@
 .plugins .empty { margin-top: 0; padding: var(--s4) var(--s5); }
 .plugins .slide { height: auto; }
 /* At rest, on the Prompt's head line at the pane's right end, what else the search shows: Issue, diff with how many
-   files are changed, Output; heads as quiet as the Prompt's, pressed to open that view under the search box, which
+   files are changed, Output, Agent; heads as quiet as the Prompt's, pressed to open that view under the search box, which
    stays out beside the file until it is put away (reference.ts). */
 .term-home { position: relative; }
-.pane-heads { position: absolute; top: var(--s5); right: calc(var(--s5) - var(--s2)); display: flex; }
-.pane-head { padding: 0 var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: var(--sub);
+.pane-heads { --pad: 5px; position: absolute; top: var(--s5); right: calc(var(--s5) - var(--pad)); display: flex; }
+.pane-head { padding: 0 var(--pad); border: 0; border-radius: var(--r-field); background: transparent; color: var(--sub);
   font: 600 var(--t-meta)/calc(var(--t-body) * 1.6) var(--sans); letter-spacing: .02em; cursor: var(--cursor-hand); }
 .pane-head:hover, .pane-head[aria-pressed='true'] { color: var(--ink); }
 .pane-head:hover { background: var(--raised); }
 .pane-head-n { margin-left: var(--s1); font-weight: 400; font-variant-numeric: tabular-nums; }
 .pane-head-n:empty { display: none; }
+/* A pane too narrow for both on one line (a narrow window, longer words): the heads keep it, the Prompt's name gives
+   them its room; its section is still named Prompt for those who listen (bench.ts measures). */
+.term-home.heads-over > .term-box > .term-head > h2 { visibility: hidden; }
 /* Narrow (after the wide rules above, which it changes): the search at the top line's right, the right pane
    folded away and, brought out with its switch, laid over the center under the top line. */
 @media (max-width: 760px) {
@@ -175,7 +169,17 @@ form.search { position: relative; }
 .term > p:empty { display: none; }
 /* 実行結果: the line as typed, then what came out, quiet. */
 .run-head { display: flex; justify-content: space-between; gap: var(--s2); min-height: var(--h-row); align-items: center; }
-.run-line { font: 600 var(--t-meta) var(--mono); overflow-wrap: anywhere; }
+/* A question asked of the Agent, read whole: the question as written, each step quiet in the Prompt's letters, its
+   words as the pane's answers read (prompt-pane.css), its code on the Prompt's glass. */
+.ask-question { margin: 0 0 var(--s3); font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ask-step { margin: 0 0 var(--s1); font: var(--t-meta) var(--mono); color: var(--sub); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ask-words { margin: var(--s2) 0 var(--s3); font: 400 var(--t-meta)/1.65 var(--sans); overflow-wrap: anywhere; }
+.ask-words > .answer-p { margin: 0 0 6px; white-space: pre-wrap; }
+.ask-words > .answer-code { display: block; margin: 6px 0; padding: 8px 10px; border-radius: var(--r-field); background: var(--screen); color: var(--add-tint);
+  font: 12px/1.5 var(--mono); white-space: pre; overflow-x: auto; }
+/* Its lines as they were written, several sent at once each on its own (never run together into one). */
+.run-line { font: 600 var(--t-meta) var(--mono); overflow-wrap: anywhere; white-space: pre-wrap; text-align: start; }
+.run-head:has(> .run-line) { align-items: flex-start; }
 /* Pressed, the line is back in the prompt box: its hover fill reaches out past the text, which stays over the output. */
 button.run-line { margin-inline-start: calc(-1 * var(--s1)); min-width: 0; }
 .run-out { margin: 0; color: var(--sub); font: var(--t-meta)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -113,6 +113,8 @@ export default {
   'No results found for "{query}"': '「{query}」に一致する結果は見つかりませんでした',
   '{n} lines (first preview)': '{n}行（先頭プレビュー）',
   'No runs yet': '実行結果はまだありません',
+  'Nothing asked of the Agent yet': 'Agent にはまだ何も質問していません',
+  'At work': '作業中',
   'No changes': '変更はありません',
   'Running': '実行中',
   'Send back to prompt': 'プロンプト入力欄に戻す',

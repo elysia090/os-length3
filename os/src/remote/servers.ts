@@ -8,7 +8,7 @@
 // (the same posts, less any taken down), so what a reader holds stays about
 // what is near the screen however far they scroll.
 
-import {api, askedOnce, connection, json, onWrite, reading, RemoteError, retryAfter} from './connection.ts';
+import {api, askedOnce, connection, json, onWrite, reading, REMOTE_URL, RemoteError, retryAfter} from './connection.ts';
 import {lookAt} from './looks.ts';
 import type {Todo} from '../home/todo.ts';
 import {t} from '../i18n.ts';
@@ -137,8 +137,31 @@ export const makeBoard = (server: string, name: string) => call<BoardRef>(`/v1/s
 /** Its server's owner's: it goes with its talk and TODO, held 30 days (until) to bring back. */
 export const removeBoard = (id: string) => call<{until: number}>(`/v1/boards/${id}`, send('DELETE'));
 export const bringBackBoard = (id: string) => call<Board>(`/v1/boards/${id}/back`, send('POST'));
-/** Open boards, for anyone. */
-export const openBoards = () => json<OpenBoard[]>('/v1/open');
+/**
+ * Open boards, for anyone. Asked once for all who ask within a moment (the pointer resting on Server asks ahead of the
+ * press, the page drawn asks again), and the last answer kept on this device per Remote: Server signed out is drawn
+ * from it at once, the first time in a launch too, as it asks again (they are anyone's to read, nothing of one's own).
+ */
+let opened: {at: number; url: string; list: Promise<OpenBoard[]>} | null = null;
+const OPEN_KEPT = 'length3.open-boards';
+export const openBoards = (): Promise<OpenBoard[]> => {
+  const url = connection()?.url ?? REMOTE_URL;
+  if (!opened || opened.url !== url || Date.now() - opened.at > SHARED_FOR) {
+    const list = json<OpenBoard[]>('/v1/open');
+    const kept = opened = {at: Date.now(), url, list};
+    list.then((l) => { try { localStorage.setItem(OPEN_KEPT, JSON.stringify({url, list: l})); } catch { /* asked again next time */ } },
+      () => { if (opened === kept) opened = null; });
+  }
+  return opened.list.then((l) => structuredClone(l));
+};
+/** The open boards this Remote last gave on this device, if it has: as they were, to be asked again. */
+export const lastOpenBoards = (): OpenBoard[] | null => {
+  try {
+    const kept = JSON.parse(localStorage.getItem(OPEN_KEPT) ?? 'null') as {url?: unknown; list?: unknown} | null;
+    const ok = (b: unknown): b is OpenBoard => !!b && typeof b === 'object' && typeof (b as OpenBoard).id === 'string' && typeof (b as OpenBoard).name === 'string';
+    return kept?.url === (connection()?.url ?? REMOTE_URL) && Array.isArray(kept.list) && kept.list.every(ok) ? kept.list : null;
+  } catch { return null; }
+};
 /** A board: as one of its people, or as anyone if it is open. */
 export const board = (id: string, member: boolean) => call<Board>(member ? `/v1/boards/${id}` : `/v1/open/${id}`);
 export const setBoard = (id: string, change: {name?: string; open?: boolean; guests?: boolean}) => call<Board>(`/v1/boards/${id}`, send('PATCH', change));

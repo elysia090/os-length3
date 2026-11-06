@@ -107,6 +107,8 @@ export class Box {
   readonly #sends: HTMLElement;
   /** What had the keyboard before the box took it (from outside the box and what it brings out): Escape gives it back. */
   #before: HTMLElement | null = null;
+  /** The issue or TODO written last, until its line is in the flow: the next waits for it, so they land as written. */
+  #landing: Promise<void> = Promise.resolve();
   readonly #keys: string;
   readonly #menu: ReturnType<typeof modeMenu>;
   /** Run: the repo's Prompt followed, and the prompt line its shell waits at, in the pill. */
@@ -426,8 +428,13 @@ export class Box {
   async #write(as: 'issue' | 'todo', at: string) {
     const text = this.prompt.value;
     const land = sendInto(this.prompt);
+    // Written one after another, they land in the order written, whichever was made first (a TODO before an issue).
+    const before = this.#landing;
+    let landed = () => {};
+    this.#landing = new Promise((done) => { landed = done; });
     try {
       const sent = await sendAs(as, at, text);
+      await before;
       // Nothing to make it of: said in ink, and the box shakes its head, keeping the keyboard (Fix： alone has a kind, not a title).
       if (!sent) {
         const {kind} = kindOf(text.split('\n')[0] ?? '');
@@ -442,7 +449,7 @@ export class Box {
       if (this.prompt.value === text) { land(row); this.prompt.value = ''; drafts.delete(this.#draft()); this.#fit(); }
       this.heard.textContent = sent.said;
       this.#pillSays();
-    } catch (e) { this.#say(errorText(e)); }
+    } catch (e) { this.#say(errorText(e)); } finally { landed(); }
   }
 
   /**

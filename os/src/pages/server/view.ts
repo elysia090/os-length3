@@ -159,31 +159,45 @@ export class ServerView {
     if (now && this.showing === 'boards' && boards(was) !== boards(now)) this.show(now.id);
   }
 
-  /** Signed out: the boards open to everyone, and an invitation's board among them, on screen. */
+  /**
+   * Signed out: the boards open to everyone, and an invitation's board among them, on screen. Drawn at once from those
+   * this Remote last gave (servers.ts), as they are asked again: changed meanwhile, Server is drawn again from them.
+   */
   private async readOpen(held: {board: string} | null) {
     this.band.paint();
     this.side.paint(this.here.serverId);
+    const anyones = (l: {id: string; name: string; guests: boolean; server: string}[]): Shown[] =>
+      l.map((b) => ({id: b.id, name: b.name, member: false, guests: b.guests, server: b.server}));
+    const known = held ? null : servers.lastOpenBoards();
+    if (known) this.drawOpen(anyones(known), null);
     try {
       const got = await servers.openBoards();
-      this.here.shown = got.map((b) => ({id: b.id, name: b.name, member: false, guests: b.guests, server: b.server}));
-      if (held && !this.here.shown.some((b) => b.id === held.board && b.guests)) {
+      if (known) { if (JSON.stringify(got) !== JSON.stringify(known)) this.ways.again(); return; }
+      let shown = anyones(got);
+      if (held && !shown.some((b) => b.id === held.board && b.guests)) {
         const b = await this.invited(held);
         if (!b) return;
-        this.here.shown = [b, ...this.here.shown.filter((x) => x.id !== b.id)];
+        shown = [b, ...shown.filter((x) => x.id !== b.id)];
       }
-      // Nothing open to everyone: Server's head and the sign-in card under it, where every page that needs one has
-      // them (Remote's, Inbox's: going between them, the card does not move); signed in, Server is drawn again as the
-      // person's own.
-      if (!this.here.shown.length) {
-        this.row.instead(h('div', {class: 'server-signed-out'}, pageHead('server'),
-          signInPlace(t('Sign in'), ...signInLead(t('Signing in lets you create servers to share boards and repos with members.')), signInBox(() => this.ways.again()))));
-        this.band.element.hidden = true;
-        this.paintDock(null);
-        return;
-      }
-      const i = this.here.shown.findIndex((b) => b.id === (held?.board ?? this.at.board));
-      this.row.fill(this.here.shown.length, i >= 0 ? i : 0);
-    } catch (e) { this.failed(e, t('Public boards will reappear once Remote responds')); }
+      this.drawOpen(shown, held);
+    } catch (e) { if (!known) this.failed(e, t('Public boards will reappear once Remote responds')); }
+  }
+
+  /** The open boards on screen, at the invitation's or the one last seen. */
+  private drawOpen(shown: Shown[], held: {board: string} | null) {
+    this.here.shown = shown;
+    // Nothing open to everyone: Server's head and the sign-in card under it, where every page that needs one has
+    // them (Remote's, Inbox's: going between them, the card does not move); signed in, Server is drawn again as the
+    // person's own.
+    if (!shown.length) {
+      this.row.instead(h('div', {class: 'server-signed-out'}, pageHead('server'),
+        signInPlace(t('Sign in'), ...signInLead(t('Signing in lets you create servers to share boards and repos with members.')), signInBox(() => this.ways.again()))));
+      this.band.element.hidden = true;
+      this.paintDock(null);
+      return;
+    }
+    const i = shown.findIndex((b) => b.id === (held?.board ?? this.at.board));
+    this.row.fill(shown.length, i >= 0 ? i : 0);
   }
 
   /**

@@ -16,7 +16,7 @@ import {begin as lookForNews, look, marks, news, onNews} from './remote/news.ts'
 import {about, claim, connection, enterWith, holdAsk, justSignedIn, mayAsk, onConnection, onReach, remoteAway, signInFailed} from './remote/connection.ts';
 import {cameBackFromStripe, isPaidTier} from './remote/plan.ts';
 import {every} from './app/runs.ts';
-import {heldInvite, holdInvite, inviteIn} from './remote/servers.ts';
+import {heldInvite, holdInvite, inviteIn, openBoards} from './remote/servers.ts';
 import {getState, loadState} from './home/state.ts';
 import {onLang, t, useLang} from './i18n.ts';
 import {NEW_REPO, PURPOSES, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from './app/purposes.ts';
@@ -163,6 +163,9 @@ function railButton(id: PurposeId): HTMLButtonElement {
     fileTree.attach(button);
   } else if (id === 'server') {
     serverSwitch.attach(button);
+    // Signed out, what its page shows first is asked as the pointer comes onto it, a moment before the press: the
+    // page drawn takes that answer (servers.ts), not waiting on one of its own.
+    button.addEventListener('pointerenter', () => { if (!connection()) void openBoards().catch(() => {}); });
   } else if (id === 'plugin') {
     // The plug opens the plugin area at the top of the center, and closes it; elsewhere it opens it in Forge.
     // It says the area is out only where the area is (Forge's, Git's center): on another page it is kept for

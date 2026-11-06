@@ -9,14 +9,18 @@ import {connection} from '../../remote/connection.ts';
 import {kindWords} from '../todo-list.ts';
 import {diffFiles, fileName} from './diff-view.ts';
 import {issueStore} from '../../repos/issue-store.ts';
+import type {Ask} from '../bench/asks.ts';
+import {answerNodes} from '../bench/agent.ts';
 
-// The three kinds under the search box, side by side to switch between: the repo's issues, its diff, and what was
-// run in its Prompt (Output). Each as a row, in a pill's list and in what a search finds, and one of each read whole.
+// The kinds under the search box, side by side to switch between: the repo's issues, its diff, what was run in its
+// Prompt (Output), and what was asked of its Agent. Each as a row, in a pill's list and in what a search finds, and
+// one of each read whole.
 
-export type Kind = 'issue' | 'diff' | 'output';
+export type Kind = 'issue' | 'diff' | 'output' | 'agent';
 /** The kinds as the switch shows them, in order, each with its word. */
 export const KINDS: {kind: Kind; label: () => string}[] = [
   {kind: 'issue', label: () => t('Issue')}, {kind: 'diff', label: () => t('diff')}, {kind: 'output', label: () => t('Output')},
+  {kind: 'agent', label: () => t('Agent')},
 ];
 
 /** Lines of a run's output shown before "n more lines". */
@@ -62,12 +66,34 @@ export function issueButton(i: Issue, query: string, read: (i: Issue) => void): 
   return b;
 }
 
-/** A run as a row: its line, and how long it took (or that it is running). */
+/** A line run as a row says it: its first line, and that more follow (lines sent at once). */
+export const firstLine = (line: string) => { const nl = line.indexOf('\n'); return nl < 0 ? line : `${line.slice(0, nl)} …`; };
+
+/** A run as a row: its line (the first of several), and how long it took (or that it is running). */
 export function runButton(r: Run, read: (r: Run) => void): HTMLElement {
-  const b = h('button', {type: 'button', class: 'choice found-item'}, h('span', {class: 'found-what mono'}, r.line),
+  const b = h('button', {type: 'button', class: 'choice found-item'}, h('span', {class: 'found-what mono'}, firstLine(r.line)),
     h('span', {class: 'row-meta'}, r.ms === null ? t('Running') : `${r.ms} ms`));
   b.addEventListener('click', () => read(r));
   return b;
+}
+
+/** A question asked of the Agent as a row: its first line, and that it is still at work. */
+export function askButton(a: Ask, read: (a: Ask) => void): HTMLElement {
+  const b = h('button', {type: 'button', class: 'choice found-item'}, h('span', {class: 'found-what'}, firstLine(a.question)),
+    a.done ? null : h('span', {class: 'row-meta'}, t('At work')));
+  b.addEventListener('click', () => read(a));
+  return b;
+}
+
+/**
+ * One question asked of the Agent, whole: the question, then what it did and said in the order it came (a step as
+ * the pane's flow says it, its words as an answer reads), why it stopped where it was refused, and that it is at work.
+ */
+export function askView(a: Ask): HTMLElement {
+  return h('div', {class: 'hit-group ask'}, h('p', {class: 'ask-question'}, a.question),
+    ...a.parts.map((p) => (p.kind === 'step' ? h('p', {class: 'ask-step'}, p.text) : h('div', {class: 'ask-words'}, ...answerNodes(p.text)))),
+    a.refused ? h('p', {class: 'answer-refused'}, a.refused) : null,
+    a.done ? null : h('p', {class: 'muted small'}, t('At work')));
 }
 
 /** A changed file as a row: its name, and what its change comes to (`count`); pressed, its diff is read. */

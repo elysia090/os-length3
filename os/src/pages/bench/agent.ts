@@ -5,6 +5,7 @@ import {AgentError, type Use} from '../../agent/ask.ts';
 import {work, type Hands, type Step} from '../../agent/work.ts';
 import {boxSaid} from '../../repos/agents.ts';
 import {LAND, paced, still} from '../../ui/glide.ts';
+import {askChanged, asked} from './asks.ts';
 
 // The box's Agent (box-modes.ts): something asked of it in the repo, worked on by the model the key kept on this
 // device opens (agent/work.ts), told what the person is looking at (the repo's top, the issue whose work it is, and
@@ -95,6 +96,9 @@ export interface Flow {
 export async function atWork(flow: Flow, row: HTMLElement, repo: string, use: Use, system: string, question: string, hands: Hands, open: (path: string) => void): Promise<void> {
   if (!started.has(repo)) { started.add(repo); boxSaid(SESSION, repo, 'start'); }
   boxSaid(SESSION, repo, 'prompt', question);
+  // Kept too, as it comes, for Agent's list under the search box (asks.ts).
+  const ask = asked(repo, question);
+  const kept = (part: (typeof ask.parts)[number]) => { ask.parts.push(part); askChanged(repo); };
   // The question first: its words go on from the box into their line (box-modes sendInto); nothing comes under that
   // line before they are there.
   const flying = row.getAnimations({subtree: true}).map((a) => a.finished);
@@ -112,10 +116,11 @@ export async function atWork(flow: Flow, row: HTMLElement, repo: string, use: Us
   };
   try {
     const said = await work(use, system, question, hands, (s) => {
-      if (s.kind === 'text') { words(answerNodes(s.text)); return; }
+      if (s.kind === 'text') { words(answerNodes(s.text)); kept({kind: 'words', text: s.text}); return; }
       boxSaid(SESSION, repo, 'tool', hookWords(s));
       settle();
-      if (s.kind === 'run') return;
+      if (s.kind === 'run') { kept({kind: 'step', text: `$ ${hookWords(s)}`}); return; }
+      kept({kind: 'step', text: stepWords(s)});
       last = flow.note('Agent', stepWords(s), () => open(s.path));
     });
     settle();
@@ -123,6 +128,10 @@ export async function atWork(flow: Flow, row: HTMLElement, repo: string, use: Us
     boxSaid(SESSION, repo, 'stop', said);
   } catch (e) {
     words([h('span', {class: 'answer-refused'}, whyNot(e))], true);
+    ask.refused = whyNot(e);
     boxSaid(SESSION, repo, 'stop', whyNot(e));
+  } finally {
+    ask.done = true;
+    askChanged(repo);
   }
 }

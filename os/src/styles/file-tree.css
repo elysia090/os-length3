@@ -4,15 +4,18 @@
    its "/" level with the File icon; nothing under it moves. It opens under the pointer and stays a while after it
    leaves (tree.ts). */
 .tree {
-  position: fixed; top: var(--tree-top, var(--outer-top)); left: calc(var(--outer) + var(--rail) + var(--s2) - var(--s3)); z-index: 5;
+  position: fixed; top: var(--tree-top, var(--outer-top)); left: calc(var(--outer) + var(--rail)); z-index: 5;
   width: min(clamp(260px, 20vw, 340px), calc(100vw - 2 * var(--outer) - var(--rail) - var(--s2))); max-height: calc(100vh - var(--tree-top, var(--outer-top)) - var(--outer-bottom)); overflow: auto;
   /* Concentric with its rows: the card's corner is the row's corner plus the padding between them. */
   padding: var(--s2); background: var(--paper); border: 1px solid var(--rule); border-radius: var(--r-card);
   /* It comes out of the rail it was opened from: a few pixels from the left, drawn out from its left edge as a drawer
      is, whole the while (never faded over the page, the page's words through its own); it goes back the same way.
-     (Moved by its left edge, not a transform, which would make it the frame its row menus are placed in.) */
+     (Moved by its left edge, not a transform, which would make it the frame its row menus are placed in.) Put away,
+     it goes back in a fraction of its coming, gathering speed to the rail's line and never under it (tokens.css
+     --leave): settling slowly there, its last few pixels stood beside the line as a sliver the line seemed to shake
+     with, while the page panned away (File, then Home). */
   visibility: hidden; clip-path: inset(-2px 100% -2px -2px round var(--r-card));
-  transition: clip-path calc(220ms * var(--pace)) var(--land), left calc(220ms * var(--pace)) var(--land), visibility 0s calc(220ms * var(--pace));
+  transition: clip-path var(--leave) cubic-bezier(.7, 0, 1, 1), left var(--leave) cubic-bezier(.7, 0, 1, 1), visibility 0s var(--leave);
 }
 .tree.open { left: calc(var(--outer) + var(--rail) + var(--s2)); visibility: visible; clip-path: inset(-2px -2px -2px -2px round var(--r-card));
   transition: clip-path calc(220ms * var(--pace)) var(--land), left calc(220ms * var(--pace)) var(--land), visibility 0s; }

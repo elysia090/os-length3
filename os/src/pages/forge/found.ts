@@ -7,10 +7,11 @@ import {findInText, nameFirst, nameMatches, type Hit} from '../../repos/search.t
 import type {Run} from '../bench/terminal.ts';
 import {kindColon} from '../todo-list.ts';
 import {counted, fileName} from './diff-view.ts';
-import {diffButton, issueButton, runButton, type Kind} from './kinds.ts';
+import {askButton, diffButton, issueButton, runButton, type Kind} from './kinds.ts';
+import type {Ask} from '../bench/asks.ts';
 
 // What a search under the box finds in the repo: its files and the lines in them, and of the pill pressed (or of
-// all three) its issues, its changes and its runs.
+// all of them) its issues, its changes, its runs and what was asked of its Agent.
 
 const FILE_LIMIT = 2000;
 const HIT_LIMIT = 200;
@@ -51,8 +52,8 @@ const tucked = (text: string): Node[] => text.split(/(?<=[A-Za-z0-9])(：)/).fil
 
 type Group = {path: string; hits: Hit[]};
 
-/** What was found: the files with the lines found in them, and the issues, changes and runs. */
-interface Found { groups: Group[]; issues: Issue[]; diffs: FileChange[]; runs: Run[] }
+/** What was found: the files with the lines found in them, and the issues, changes, runs and asks of the Agent. */
+interface Found { groups: Group[]; issues: Issue[]; diffs: FileChange[]; runs: Run[]; asks: Ask[] }
 
 /** The files whose name or lines have `query`, each with its lines, HIT_LIMIT lines at most in all. */
 function inFiles(files: Files, query: string): Group[] {
@@ -69,15 +70,17 @@ function inFiles(files: Files, query: string): Group[] {
 }
 
 /**
- * What is found for `query` in the repo's `files`, its open `issues`, what `changed` and its `runs`: with a pill
- * pressed (`kind`), only what is of its kind; files are under no pill.
+ * What is found for `query` in the repo's `files`, its open `issues`, what `changed`, its `runs` and what was asked of
+ * its Agent (`asks`: the question, its steps and its words): with a pill pressed (`kind`), only what is of its kind;
+ * files are under no pill.
  */
-export function search(query: string, kind: Kind | null, files: Files, issues: Issue[], changed: FileChange[], runs: Run[]): Found {
+export function search(query: string, kind: Kind | null, files: Files, issues: Issue[], changed: FileChange[], runs: Run[], asks: Ask[] = []): Found {
   const q = query.toLowerCase();
   const found = {
     issues: !kind || kind === 'issue' ? issues.filter((i) => `${issueName(i)} ${i.kind ?? ''}：${i.title}\n${i.detail}`.toLowerCase().includes(q)).slice(0, OTHER_LIMIT) : [],
     diffs: kind === 'diff' ? changed.filter((c) => c.path.toLowerCase().includes(q) || fileName(c.path).toLowerCase().includes(q)).slice(0, OTHER_LIMIT) : [],
     runs: !kind || kind === 'output' ? runs.slice().reverse().filter((r) => r.line.toLowerCase().includes(q) || r.output.toLowerCase().includes(q)).slice(0, OTHER_LIMIT) : [],
+    asks: !kind || kind === 'agent' ? asks.slice().reverse().filter((a) => [a.question, ...a.parts.map((p) => p.text)].some((x) => x.toLowerCase().includes(q))).slice(0, OTHER_LIMIT) : [],
   };
   // An issue found is said once, as the issue (its number, kind and title), not again as its file's lines.
   const asIssue = new Set(found.issues.map((i) => issuePath(i)));
@@ -94,6 +97,7 @@ interface FoundWays {
   diff(path: string): void;
   issue(i: Issue): void;
   run(r: Run): void;
+  ask(a: Ask): void;
 }
 
 /**
@@ -146,6 +150,7 @@ export function foundView(found: Found, query: string, changed: FileChange[], wa
   if (found.diffs.length) said.push(h('div', {class: 'hit-group'}, h('h3', {class: 'hit-kind'}, t('diff')),
     ...found.diffs.map((c) => diffButton(c.path, counted(c.added, c.removed), ways.diff))));
   if (found.runs.length) said.push(h('div', {class: 'hit-group'}, h('h3', {class: 'hit-kind'}, t('Output')), ...found.runs.map((r) => runButton(r, ways.run))));
+  if (found.asks.length) said.push(h('div', {class: 'hit-group'}, h('h3', {class: 'hit-kind'}, t('Agent')), ...found.asks.map((a) => askButton(a, ways.ask))));
   const first = said.map((el) => el.querySelector<HTMLElement>('.choice')).find((b) => b);
   first?.classList.add('first');
   first?.append(h('kbd', {class: 'enter-cap', 'aria-hidden': 'true'}, 'Enter'));

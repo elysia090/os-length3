@@ -13,7 +13,7 @@ import {Activity} from './activity.ts';
 import {endLine, goDark, jolt, switchOver} from './ending.ts';
 import {clips, heldBack, OSC, RAN} from './osc.ts';
 import {Output, strip} from './output.ts';
-import {FirstPrompt, waitsAt} from './prompt-line.ts';
+import {asOne, FirstPrompt, waitsAt} from './prompt-line.ts';
 import {mirror, snapshot, WriteBack} from './repo-copy.ts';
 import {sessions} from './sessions.ts';
 
@@ -207,7 +207,10 @@ export class Session {
     // What ran before is the pane's (it lists every line run, and reads one pressed with all it printed): at its
     // prompt line the screen starts again from the line sent, as it does when it comes up. Input to a program still
     // running goes on under what that program said.
-    if (this.promptLine) this.out.fold();
+    // Sent at the prompt line, several lines go as one, run whole (prompt-line.ts asOne); what is shown and kept is
+    // what was written. To a program still running, they go as they are, its input.
+    const atPrompt = !!this.promptLine, wire = atPrompt ? asOne(lines) : lines;
+    if (atPrompt) this.out.fold();
     this.out.sent(lines);
     this.runs.push({line: lines.trimEnd(), output: '', started: Date.now(), ms: null});
     if (this.runs.length > RUNS) this.runs.shift();
@@ -216,8 +219,8 @@ export class Session {
     this.activity.heard = Date.now();
     this.follow();
     this.tell();
-    if (this.native) { void this.native.input(lines).catch(() => this.end(() => t('Not running'))); return true; }
-    const bytes = new TextEncoder().encode(lines);
+    if (this.native) { void this.native.input(wire).catch(() => this.end(() => t('Not running'))); return true; }
+    const bytes = new TextEncoder().encode(wire);
     this.worker!.postMessage({type: 'input', bytes}, [bytes.buffer]);
     return true;
   }

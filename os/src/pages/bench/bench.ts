@@ -123,6 +123,21 @@ function measured(work: HTMLElement, side: HTMLElement, screen: HTMLElement, box
 }
 
 /**
+ * The heads beside the Prompt's name on its line (reference.ts) and the name itself, measured where they are: when
+ * the pane is too narrow for both (a narrow window, a language with longer words), the name gives the heads its room
+ * (search.css). Again when either changes size: the pane, the diff's count, the faces loaded, the Prompt come back.
+ */
+function roomForHeads(termHome: HTMLElement, termHead: HTMLElement, heads: HTMLElement) {
+  const name = termHead.firstElementChild!;
+  const fit = () => {
+    if (!termHome.contains(termHead) || !heads.offsetWidth) return;
+    termHome.classList.toggle('heads-over', heads.getBoundingClientRect().left < name.getBoundingClientRect().right + 12);
+  };
+  const sized = new ResizeObserver(fit);
+  for (const el of [termHome, termHead, heads]) sized.observe(el);
+}
+
+/**
  * The pane's Prompt head on the file heads' line, as this computer sets the two faces. The styles put it there for
  * one face (bench-2.css); the faces are the system's, and one whose letters stand higher or lower in their line moves
  * the words a pixel or two off it. Once the head is at rest where the two are meant to be level (the pane out,
@@ -204,6 +219,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   work.append(bar, center, side);
   const pane = new Pane(work, side, toggle);
   measured(work, side, screenEl, box, reference);
+  roomForHeads(termHome, termHead, reference.heads);
   levelled(work, termHome, parts.main);
   requestAnimationFrame(() => { work.dataset.shown = '1'; });
 

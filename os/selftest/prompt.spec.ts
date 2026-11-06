@@ -108,6 +108,18 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(app.main.locator('.screen .prompt-ps')).toHaveText('hello $');
   });
 
+  test('several lines sent at once run as they would one after another, the shell waiting once after them all', async ({app}) => {
+    const out = app.forge.prompt.locator('.term-out');
+    await app.forge.promptBox.fill('x=42\necho "sum=$((x + 8))"\nfor i in 1 2; do\n  echo "it=$i"\ndone');
+    await app.forge.promptBox.press('Control+Enter');
+    await expect(out).toContainText('it=2');
+    // What they print together, as they print it: no prompt line said for each line read, nor > for a line going on.
+    const said = await out.innerText();
+    expect(said).toMatch(/sum=50\s+it=1\s+it=2/);
+    expect(said).not.toMatch(/hello \$ hello \$|^> /m);
+    await expect(app.main.locator('.screen .prompt-ps')).toHaveText('hello $');
+  });
+
   test('↑ and ↓ walk the lines run before, and come back to what was being written', async ({app}) => {
     await app.forge.run('echo one');
     await expect(app.forge.prompt).toContainText(/^one$/m);

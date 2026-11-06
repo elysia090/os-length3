@@ -9,7 +9,8 @@ import {stillAt} from '../../repos/search.ts';
 import type {Run} from '../bench/terminal.ts';
 import {sessionIfAny} from '../bench/sessions.ts';
 import {errorText} from '../../app/errors.ts';
-import {diffButton, issueButton, issueLabel, issueOne, KINDS, markedDiff, openIssues, runButton, runView, type Kind} from './kinds.ts';
+import {askButton, askView, diffButton, issueButton, issueLabel, issueOne, KINDS, markedDiff, openIssues, runButton, runView, type Kind} from './kinds.ts';
+import {asksIn, watchAsks, type Ask} from '../bench/asks.ts';
 import {foundView, patched, readAll, search, type Files} from './found.ts';
 import {drawLine, remember, seenButton, seenIn, seenKey, seenKind, seenLabel, type Seen, type Slot} from './seen.ts';
 import {issueStore} from '../../repos/issue-store.ts';
@@ -18,17 +19,17 @@ import {issueStore} from '../../repos/issue-store.ts';
 // reaching a quarter of the pane's width into the center so that what opens
 // under it is not cut off (issue #20); with the pane put away the box goes too, its room kept (issue #45).
 // Out of use, nothing of it is under the box and the right pane is straight.
-// Pressed, under the box at its width: Issue, diff and Output side by side to
+// Pressed, under the box at its width: Issue, diff, Output and Agent side by side to
 // switch between (kinds.ts), and under them a large box: what was searched and read here,
 // newest first. Something typed: what is found in the repo's files and, of
-// the one pressed (or all three), its issues, its changes and its runs (found.ts). What
+// the one pressed (or all of them), its issues, its changes, its runs and its Agent's asks (found.ts). What
 // is searched and read lines up sideways, in the order it came (seen.ts): the one in
 // hand fills the box, the ones beside it hidden past its edges but for a
 // sliver, pressed (or ← →) to move to them. A file or a line opens in the
 // center. Each repo keeps its own search, switch and line while the app runs.
-// At rest the right pane says the three beside the Prompt's head (`heads`, diff with how many files are changed):
-// pressed there, or on the switch, a kind's list stays out while the keyboard goes back to the file, as something
-// read does, until it is put away (Escape, or pressed again).
+// At rest the right pane says the four beside the Prompt's head (`heads`, diff with how many files are changed):
+// pressed there, or on the switch, a kind's list opens under the box; the keyboard gone elsewhere in the page, it goes
+// back up, as anything searched or read there does (nothing searched stays over the pane).
 
 /** Per repo, while the app is open: what was typed, and the switch pressed (a repo renamed keeps them). */
 const queries = new Map<string, string>();
@@ -65,9 +66,9 @@ export class Reference {
   /** Issue, diff and Output as the pane says them at rest, beside the Prompt's head: pressed, their list opens here. */
   readonly heads: HTMLElement;
   private headButtons = new Map<Kind, HTMLButtonElement>();
-  /** A kind's list opened from its pill or its head: it stays out while the keyboard is elsewhere, until put away. */
+  /** A kind's list opened from its pill or its head: out until put away, or the keyboard gone elsewhere in the page. */
   private held = false;
-  /** Whether a kind's list chosen is held out (a bench's, where a file is written beside it; not Home's). */
+  /** Whether a kind's list chosen is held out, its head in the pane pressed (a bench's, which has the heads; not Home's). */
   private keeps: boolean;
   private countTimer = 0;
   private panel: HTMLElement;
@@ -215,14 +216,27 @@ export class Reference {
   /**
    * Let go (the keyboard gone elsewhere, Escape with nothing typed, or put away by its × while the keyboard is
    * elsewhere), what is under the box goes back up into it as it came down out of it, not at once (styles.css
-   * .leaving); come back to meanwhile, it stays.
+   * .leaving); come back to meanwhile, it stays. The keyboard gone elsewhere in the page (the file, the pane, the
+   * rail), all of it goes, what is read and a list held out with it: nothing searched stays over the pane, covering
+   * what the pane says under the box. Gone to another window, it stays as it was, to come back to.
    */
   private goesUp() {
     this.search.addEventListener('focusout', (event) => {
       const to = event.relatedTarget as Node | null;
-      // (Asked as the keyboard leaves, when it is no longer within: the box itself is what must be on screen.)
-      if ((to && this.search.contains(to)) || this.search.matches('.reading, .moving, .kept')) return;
-      this.goUp();
+      // (Gone to a head in the pane: its press says what becomes of the list, fromHead.)
+      if ((to && (this.search.contains(to) || this.heads.contains(to))) || this.search.matches('.moving')) return;
+      // Asked once the keyboard has landed (a run pressed in the pane brings it straight back into the box).
+      setTimeout(() => {
+        if (!document.hasFocus() || this.search.contains(document.activeElement) || this.search.matches('.moving')) return;
+        // (What it shows goes up as it is; drawn again when the box next has the keyboard.)
+        if (this.search.matches('.reading, .kept')) {
+          this.held = false;
+          this.close();
+          this.paintPills();
+          this.dirty = true;
+        }
+        this.goUp();
+      });
     });
     this.search.addEventListener('focusin', () => { this.leaving?.cancel(); this.leaving = null; this.search.classList.remove('leaving'); });
   }
@@ -247,7 +261,7 @@ export class Reference {
     // From one kind to another the ink goes along the row to it, as along Git's.
     const was = this.pill && this.pill !== kind ? where(this.pillButtons.get(this.pill)) : null;
     pills.set(this.repo, this.pill === kind ? null : kind);
-    // Chosen, its list stays out while one writes beside it; let go, it is under the box only while the box is in use.
+    // Chosen, its list is out (its head in the pane pressed) until the keyboard goes elsewhere in the page (goesUp).
     this.held = this.keeps && this.pill !== null;
     this.close();
     void this.draw();
@@ -264,16 +278,18 @@ export class Reference {
   }
 
   /**
-   * A head in the pane pressed: its kind's list opens under the box, as from its pill, and stays out while the
-   * keyboard goes back to the file; pressed while it is out, it is put away.
+   * A head in the pane pressed: its kind's list opens under the box, as from its pill, until the keyboard goes
+   * elsewhere in the page (goesUp); pressed while it is out, it is put away.
    */
   private fromHead(kind: Kind) {
     if (!this.repo) return;
     if (this.pill !== kind) { this.press(kind); return; }
-    this.held = !this.held;
+    if (this.held) { this.putAway(); return; }
+    this.held = true;
     this.close();
+    this.paintPills();
     void this.draw();
-    if (this.held) this.query.focus({preventScroll: true});
+    this.query.focus({preventScroll: true});
   }
 
   /** How many files are changed since the last commit, said beside diff in the pane (none: nothing). */
@@ -411,6 +427,11 @@ export class Reference {
       else { this.open(s, (into) => { into.replaceChildren(h('p', {class: 'muted small'}, t('Run output no longer available'))); }); }
       return;
     }
+    if (s.what === 'ask') {
+      const a = asksIn(repo).find((x) => x.started === s.started);
+      if (a) this.readAsk(a);
+      return;
+    }
     const issue = (await openIssues(repo).catch(() => [])).find((i) => issuePath(i) === s.path)
       ?? (await readIssues(issueStore, repo).catch(() => [])).find((i) => issuePath(i) === s.path);
     if (issue && this.repo === repo) this.readIssue(issue);
@@ -419,12 +440,33 @@ export class Reference {
   /** The list of `kind` in `repo` is no longer what is under the box: another repo or pill, something read or typed. */
   private listGone(repo: string, kind: Kind) { return this.repo !== repo || this.pill !== kind || !!this.reading || !!this.query.value.trim(); }
 
-  /** The pill's list: the repo's open issues, its changes file by file, or what was run, newest first. */
+  /** The pill's list: the repo's open issues, its changes file by file, what was run, or what was asked of its Agent, newest first. */
   private async list(kind: Kind) {
     const repo = this.repo!;
     if (kind === 'issue') return this.listIssues(repo);
     if (kind === 'diff') return this.listDiff(repo);
+    if (kind === 'agent') return this.listAsks(repo);
     this.listRuns(repo);
+  }
+
+  /** What was asked of the Agent here, newest first, drawn again as an ask goes on. */
+  private listAsks(repo: string) {
+    const draw = () => {
+      if (this.listGone(repo, 'agent')) return;
+      const asks = asksIn(repo);
+      if (!asks.length) { this.body.replaceChildren(h('p', {class: 'muted small'}, t('Nothing asked of the Agent yet'))); return; }
+      this.body.replaceChildren(h('ul', {class: 'found-list'}, ...asks.slice().reverse().map((a) => h('li', {}, askButton(a, (x) => this.readAsk(x))))));
+    };
+    draw();
+    this.unwatch?.();
+    this.unwatch = watchAsks((r) => { if (r === repo) draw(); });
+  }
+
+  /** One question asked of the Agent, whole, following it while it is at work. */
+  private readAsk(a: Ask) {
+    const repo = this.repo!;
+    this.open({what: 'ask', started: a.started, question: a.question}, (into) => { into.replaceChildren(askView(a)); });
+    this.unwatch = watchAsks((r) => { if (r === repo && this.reading?.seen.what === 'ask') void this.reading.draw(); });
   }
 
   private async listIssues(repo: string) {
@@ -527,12 +569,13 @@ export class Reference {
         gitops.changes(repo).then((c) => c.folders.flatMap((f) => f.files), () => [])]);
     } catch (e) { this.body.replaceChildren(h('p', {class: 'muted small'}, t('Search failed: {message}', {message: String(e)}))); return; }
     if (run !== this.found || repo !== this.repo || this.reading) return;
-    const said = foundView(search(query, kind, files, issues, changed, sessionIfAny(repo)?.runs ?? []), query, changed, {
+    const said = foundView(search(query, kind, files, issues, changed, sessionIfAny(repo)?.runs ?? [], asksIn(repo)), query, changed, {
       file: (path) => { this.remember({what: 'query', text: query}); this.remember({what: 'file', path}); this.events.reveal(path, 0, true); },
       line: (path, line) => void this.go(path, line, query),
       diff: (path) => this.readDiff(path),
       issue: (i) => this.readIssue(i),
       run: (r) => this.readRun(r),
+      ask: (a) => this.readAsk(a),
     });
     if (!said.length) { this.body.replaceChildren(h('p', {class: 'muted small'}, t('No results found for "{query}"', {query}))); return; }
     const had = this.choices().indexOf(document.activeElement as HTMLElement);
