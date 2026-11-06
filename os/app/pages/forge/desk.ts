@@ -90,6 +90,12 @@ export class Desk {
       const key = (e.target as Element).closest<HTMLElement>('.desk-box')?.dataset.key;
       if (key && key !== this.#held && key !== this.#pressing) this.take(key, false);
     });
+    // Framed over the Agent's work, the person writing in the box in hand (their terminal) takes the camera back to it.
+    this.element.addEventListener('keydown', (e) => {
+      if (!this.#framed || this.#whole || e.isComposing || (e.key.length !== 1 && e.key !== 'Enter' && e.key !== 'Backspace')) return;
+      const key = (e.target as Element).closest<HTMLElement>('.desk-box')?.dataset.key;
+      if (key && key === this.#held) { this.#framed = null; this.#topAt = null; this.#look(true); }
+    }, true);
     this.element.addEventListener('pointerdown', (e) => { this.#pressing = (e.target as Element).closest<HTMLElement>('.desk-box')?.dataset.key ?? null; }, true);
     for (const end of ['pointerup', 'pointercancel'] as const) addEventListener(end, () => { setTimeout(() => { this.#pressing = null; }); }, true);
     new ResizeObserver(() => this.#relay()).observe(this.element);

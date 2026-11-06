@@ -484,6 +484,8 @@ export class Box {
     // fewer waits a moment, so a step ending and the next starting is not a step back and in again.
     let framed: string[] = [];
     let narrowing = 0;
+    // Its birth beside the person's terminal is seen whole before the camera goes on to its work.
+    let born = 0;
     return {
       typing: () => term.typing(),
       shown: (line, output, status) => term.shown(line, output, status),
@@ -493,7 +495,11 @@ export class Box {
         if (framed.length && !keys.length) return;
         clearTimeout(narrowing);
         const go = () => { framed = next; if (this.#repo === at) this.#p.frame?.(next); };
-        if (framed.length && next.every((k) => framed.includes(k))) narrowing = window.setTimeout(go, 900); else go();
+        if (!framed.length) born = performance.now() + 1800;
+        const held = Math.max(0, born - performance.now());
+        if (framed.length && next.every((k) => framed.includes(k))) narrowing = window.setTimeout(go, Math.max(900, held));
+        else if (held && framed.length) narrowing = window.setTimeout(go, held);
+        else go();
       },
     };
   }
