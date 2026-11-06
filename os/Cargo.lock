@@ -2438,7 +2438,6 @@ dependencies = [
  "length3-core",
  "libc",
  "russh",
- "serde",
  "serde_json",
  "tokio",
 ]

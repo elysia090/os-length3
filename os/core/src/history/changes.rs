@@ -251,7 +251,7 @@ fn head_file(key: &str) -> std::path::PathBuf {
 #[derive(Serialize, Deserialize, Default)]
 struct Head { id: Option<String>, tree: Tree }
 
-pub(super) fn folder_of(path: &str) -> String {
+fn folder_of(path: &str) -> String {
     path.rfind('/').map_or(String::new(), |at| path[..at].to_string())
 }
 

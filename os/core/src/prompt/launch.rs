@@ -644,14 +644,9 @@ impl Front {
     }
 }
 
-/// Run `s` in a child, so this process keeps its own namespaces and can run
-/// another after it; the exit code of the child's shell.
-pub fn run_apart(s: &Sandbox) -> io::Result<i32> {
-    run_apart_with(s, || Ok(()))
-}
-
-/// As run_apart, with `keep` made in the child first and held while it runs: the child is the
-/// Prompt's supervisor, so its record (prompt::record) names the child, which Stop ends.
+/// Run `s` in a child, so this process keeps its own namespaces and can run another after it, with `keep` made in
+/// the child first and held while it runs: the child is the Prompt's supervisor, so its record (prompt::record) names
+/// the child, which Stop ends. The exit code of the child's shell.
 pub fn run_apart_with<G>(s: &Sandbox, keep: impl FnOnce() -> io::Result<G>) -> io::Result<i32> {
     let front = Front::now();
     let pid = unsafe { libc::fork() };
@@ -691,13 +686,13 @@ fn package_name(p: &str) -> bool {
 }
 
 /// A root's sha256, by where it is held (`system/<sha256>/root`): the name it is fetched by anywhere.
-pub fn root_digest(root: &Path) -> String {
+fn root_digest(root: &Path) -> String {
     root.parent().and_then(|d| d.file_name()).map_or_else(|| root.display().to_string(), |n| n.to_string_lossy().into_owned())
 }
 
 /// What an environment is, by what set it up: the root (its sha256), `.packages` and `.setup`. The same key is the
 /// same environment wherever it is made (compute/spec.rs Spec), and a change to any of them sets it up again.
-pub fn environment_key(root: &str, packages: &[&str], setup: &str) -> String {
+fn environment_key(root: &str, packages: &[&str], setup: &str) -> String {
     crate::fs::hash::sha256(format!("{root}\n{}\n{setup}", packages.join(" ")))
 }
 

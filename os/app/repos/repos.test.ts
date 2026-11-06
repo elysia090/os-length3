@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {isIssues, plainPart, renamed, shownEntries, TEMPLATES, templateFiles, validName} from './repos.ts';
+import shared from '../../shared/templates.json' with {type: 'json'};
+import {isIssues, plainPart, renamed, shownEntries, templateFiles, validName, type Template} from './repos.ts';
 
 test('repo names match the native rule', () => {
   assert.ok(validName('my-repo_1.0'));
@@ -15,12 +16,11 @@ test('a new or renamed file or folder is one plain part, as core\'s add takes it
 });
 
 test('templates hold the repo\'s own files, never inbox or TODO', () => {
-  for (const t of TEMPLATES) {
+  for (const t of shared as {id: Template; dirs: string[]; files: string[][]}[]) {
     const files = templateFiles('r', t.id);
     assert.ok(files.has('README.md') && !files.has('inbox.md') && !files.has('TODO.md'), t.id);
-    // The list shown to the user names exactly what is created.
-    const shown = t.files.map((f) => f.replace(/\/$/, '')).sort();
-    assert.deepEqual([...files.keys()].sort(), shown, t.id);
+    // What the template names is exactly what is made: its files and its folders.
+    assert.deepEqual([...files.keys()].sort(), [...t.files.map(([p]) => p), ...t.dirs].sort(), t.id);
   }
 });
 

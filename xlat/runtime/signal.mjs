@@ -17,7 +17,7 @@ import {Redirect, Wait} from './flow.mjs';
 export const SIG = {HUP: 1, INT: 2, QUIT: 3, ILL: 4, TRAP: 5, ABRT: 6, BUS: 7, FPE: 8, KILL: 9, USR1: 10, SEGV: 11,
   USR2: 12, PIPE: 13, ALRM: 14, TERM: 15, STKFLT: 16, CHLD: 17, CONT: 18, STOP: 19, TSTP: 20, TTIN: 21, TTOU: 22,
   URG: 23, XCPU: 24, XFSZ: 25, VTALRM: 26, PROF: 27, WINCH: 28, IO: 29, PWR: 30, SYS: 31};
-export const NSIG = 64;
+const NSIG = 64;
 export const SA = {NOCLDSTOP: 1, NOCLDWAIT: 2, SIGINFO: 4, RESTORER: 0x04000000, ONSTACK: 0x08000000,
   RESTART: 0x10000000, NODEFER: 0x40000000, RESETHAND: 0x80000000};
 export const SI = {USER: 0, KERNEL: 0x80, QUEUE: -1, TKILL: -6};
@@ -31,7 +31,7 @@ const ALL = (1n << 64n) - 1n;
 const STOPS = bit(SIG.STOP) | bit(SIG.TSTP) | bit(SIG.TTIN) | bit(SIG.TTOU);
 
 /** What a signal does when nothing else is asked: 'term', 'core', 'ign', 'stop' or 'cont'. */
-export function defaultAction(sig) {
+function defaultAction(sig) {
   switch (sig) {
     case SIG.CHLD: case SIG.URG: case SIG.WINCH: return 'ign';
     case SIG.CONT: return 'cont';

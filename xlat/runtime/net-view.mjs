@@ -17,7 +17,7 @@ const IPPROTO = {TCP: 6, UDP: 17, ICMP: 1, ICMPV6: 58};
 const E = {PERM: 1, NOENT: 2, NODEV: 19, INVAL: 22, OPNOTSUPP: 95, NETUNREACH: 101};
 
 /** The one interface, as Linux has lo. */
-export const LO = {
+const LO = {
   index: 1, name: 'lo', mtu: 65536, txqlen: 1000, type: 772, // ARPHRD_LOOPBACK
   flags: 0x1 | 0x8 | 0x40 | 0x10000, // IFF_UP, IFF_LOOPBACK, IFF_RUNNING, IFF_LOWER_UP
   ipv4: [127, 0, 0, 1], netmask: [255, 0, 0, 0], ipv6: [...Array(15).fill(0), 1],

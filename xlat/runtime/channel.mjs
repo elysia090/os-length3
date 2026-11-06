@@ -53,7 +53,7 @@ export function watch(words, index, ready, ms = WATCH_MS) {
   return false;
 }
 /** How long: about what a call takes the kernel, and what a program computes between two calls that come quickly. */
-export const WATCH_MS = 0.05;
+const WATCH_MS = 0.05;
 
 /**
  * Wait (Atomics.wait) while `words[index]` is `value`, saying so in `words[asleep]` first: who changes the word then

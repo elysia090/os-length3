@@ -135,7 +135,7 @@ pub fn valid_url(url: &str) -> bool {
 
 /// What one poll for a device's code heard.
 #[derive(Debug, PartialEq)]
-pub(super) enum Polled {
+enum Polled {
     Approved(String),
     Waiting,
     /// Asked too often: wait longer between asks from now on (RFC 8628 §3.5).
@@ -143,7 +143,7 @@ pub(super) enum Polled {
 }
 
 /// Poll once.
-pub(super) fn device_poll(url: &str, client: &str, code: &DeviceCode) -> Result<Polled> {
+fn device_poll(url: &str, client: &str, code: &DeviceCode) -> Result<Polled> {
     let r = request("POST", &format!("{url}/api/auth/device/token"), None, Body::Json(serde_json::json!({
         "grant_type": "urn:ietf:params:oauth:grant-type:device_code", "device_code": code.device_code, "client_id": client,
     })));

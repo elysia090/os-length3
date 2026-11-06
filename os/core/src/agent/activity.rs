@@ -95,7 +95,7 @@ pub fn line_of(s: &str) -> String {
 }
 
 /// A tool and what it is used on, as a report says it ("Bash: npm test").
-pub fn tool_text(tool: &str, input: Option<&serde_json::Value>) -> String {
+fn tool_text(tool: &str, input: Option<&serde_json::Value>) -> String {
     let on = input.map(|i| {
         let f = |k: &str| i.get(k).and_then(|x| x.as_str()).unwrap_or("");
         [f("command"), f("file_path"), f("path"), f("pattern"), f("url"), f("description")].into_iter().find(|x| !x.is_empty()).unwrap_or("").to_string()
@@ -194,7 +194,7 @@ pub(crate) fn append_line(path: &std::path::Path, line: &str, most: u64) -> Resu
 }
 
 /// Every report the journal holds, oldest first (a line that cannot be read is passed over).
-pub fn events_in(text: &str) -> Vec<Event> {
+fn events_in(text: &str) -> Vec<Event> {
     text.lines().filter_map(|l| serde_json::from_str(l).ok()).collect()
 }
 

@@ -3,8 +3,8 @@
 /** Bytes a write of at most this many lands whole or not at all (POSIX PIPE_BUF). */
 export const PIPE_BUF = 4096;
 /** A pipe's room, as Linux gives one (16 pages); F_SETPIPE_SZ changes it. */
-export const PIPE_SIZE = 65536;
-export const PIPE_MAX = 1 << 20;
+const PIPE_SIZE = 65536;
+const PIPE_MAX = 1 << 20;
 
 const PAGE = 4096;
 
@@ -149,7 +149,7 @@ export class Description {
 }
 
 /** How many descriptors a process starts allowed (RLIMIT_NOFILE's soft limit; sys-proc.mjs's setrlimit moves it). */
-export const FDS = 1024;
+const FDS = 1024;
 
 export class FdTable {
   constructor(limit = FDS) {

@@ -21,7 +21,7 @@ export interface AgentSession {
   doing: string;
 }
 
-export interface AgentEvent {
+interface AgentEvent {
   at: number;
   harness: string;
   session: string;
@@ -72,15 +72,6 @@ export async function onTask(id: number, deed: 'take' | 'drop' | 'reply', words 
   await look();
 }
 
-/** A question about `repo`, answered by the agent reading only; the answer comes as a task ready. */
-export async function askAgent(repo: string, words: string) {
-  await core('task', {deed: 'ask', repo, words});
-  await look();
-}
-
-/** Every agent's session now (and those ended a moment ago), newest first. */
-export const agentsNow = (): readonly AgentSession[] => sessions;
-
 /** The sessions at work on `line` of `repo` (not ended). */
 export const agentsOn = (repo: string, line: string) => sessions.filter((s) => s.repo === repo && s.line === line && s.state !== 'ended');
 
@@ -105,7 +96,7 @@ async function look() {
 }
 
 /**
- * `f` told what came each time something did (with what is so then in agentsNow), for as long as `alive` holds
+ * `f` told what came each time something did, for as long as `alive` holds
  * (its element on screen); the journal is read while anyone listens, and told once at once of what is so.
  */
 export function onAgents(f: (events: AgentEvent[]) => void, alive: () => boolean): void {

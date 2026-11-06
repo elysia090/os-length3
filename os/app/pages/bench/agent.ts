@@ -24,7 +24,7 @@ const started = new Set<string>();
 const FILE_MOST = 24_000;
 
 /** What the person is looking at, for the Agent: the file in front as it stands, and the caret's line in it. */
-export interface InFront { path: string; text: string; line: number }
+interface InFront { path: string; text: string; line: number }
 
 /**
  * What the Agent is told before what it is asked: where it is asked from, what it can do there, the issue whose work
@@ -61,7 +61,7 @@ export function answerNodes(text: string): Node[] {
 }
 
 /** What went wrong, as a person would read it: the key refused, too many asks, nobody reached, or the maker's words. */
-export function whyNot(e: unknown): string {
+function whyNot(e: unknown): string {
   if (!(e instanceof AgentError)) return t('Cannot connect to Agent');
   if (e.status === 401 || e.status === 403) return t('API key invalid; re-enter in Runtime');
   if (e.status === 429) return t('Rate limit exceeded; try again shortly');

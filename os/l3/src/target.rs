@@ -31,7 +31,7 @@ fn missing(ctx: &Ctx, repo: &str) -> Error {
 }
 
 /// The repo a word names (or, none given, the one you are in), once it is here.
-pub fn repo_named(ctx: &Ctx, word: Option<&str>) -> Result<String> {
+fn repo_named(ctx: &Ctx, word: Option<&str>) -> Result<String> {
     let name = match word {
         Some(w) => own(w)?,
         None => ctx.here.as_ref().map(|h| h.repo.clone())

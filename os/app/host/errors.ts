@@ -6,7 +6,7 @@ export const errorText = (e: unknown): string => (e instanceof Error ? e.message
  * in time), it is there but not taking requests (a gateway's 502, 503 or 504), or what answered is not its reply
  * (a page, as a host's fallback or a proxy gives, or words that do not read as its JSON).
  */
-export type Trouble = 'unreached' | 'unavailable' | 'malformed';
+type Trouble = 'unreached' | 'unavailable' | 'malformed';
 
 /** The Remote's refusal, as a page catches it: its status, its words, what it said besides, and its Trouble when it
  * was not the Remote saying no. */

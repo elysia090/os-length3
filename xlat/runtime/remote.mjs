@@ -321,7 +321,7 @@ function count(image) {
 }
 
 /** A thread whose registers live in its channel while it waits there, and whose code runs in its Worker. */
-export class RemoteTask extends Task {
+class RemoteTask extends Task {
   constructor(proc, tid) {
     super(proc, tid);
     this.channel = this.kernel.channel();

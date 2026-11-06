@@ -121,7 +121,7 @@ pub struct Deed {
 }
 
 /// What a field starts with, given the word of the thing a deed is pressed on.
-pub type Prefill = fn(Option<&str>) -> Option<String>;
+type Prefill = fn(Option<&str>) -> Option<String>;
 
 impl Deed {
     pub const fn when(self, when: &'static [Fact]) -> Deed { Deed { when, ..self } }

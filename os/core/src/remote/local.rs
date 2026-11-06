@@ -134,7 +134,7 @@ pub fn held_open(dir: &Path) -> Option<String> {
 /// time) reads again only what changed instead of every byte of every repo.
 /// They are what sync last read, so they are kept with sync's other records.
 /// Only copies this OS holds are kept for.
-pub(super) fn stamps_file(dir: &Path) -> Option<PathBuf> {
+fn stamps_file(dir: &Path) -> Option<PathBuf> {
     let (data, repos) = (crate::fs::paths::data_dir(), crate::fs::paths::repos_dir());
     if !(dir.starts_with(data) || dir.starts_with(repos)) { return None; }
     // Where they were kept before (cache/digests): nothing reads it now.
@@ -146,7 +146,7 @@ pub(super) fn stamps_file(dir: &Path) -> Option<PathBuf> {
 /// Take in kept digests. A file changed within the same moment the stamps
 /// were written may look unchanged (a coarse clock), so, as git does with a
 /// racily clean index, those are read again.
-pub(super) fn stamps_load(file: &Path) {
+fn stamps_load(file: &Path) {
     let Ok(text) = fs::read_to_string(file) else { return };
     let mut lines = text.lines();
     let Some(written) = lines.next().and_then(|l| l.parse::<i128>().ok()) else { return };
@@ -162,7 +162,7 @@ pub(super) fn stamps_load(file: &Path) {
 }
 
 /// Keep the digests of the files just read: exactly these, so what is gone is forgotten.
-pub(super) fn stamps_save(file: &Path, read: &[PathBuf]) {
+fn stamps_save(file: &Path, read: &[PathBuf]) {
     let Ok(map) = seen().lock() else { return };
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos() as i128);
     let mut body = String::new();

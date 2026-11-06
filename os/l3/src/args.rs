@@ -216,7 +216,7 @@ fn suits(a: Arg, w: &str, strict: bool, ctx: &Ctx) -> bool {
 
 /// How far apart two words are: edits, a swap of two letters side by side
 /// counting as one (optimal string alignment).
-pub fn distance(a: &str, b: &str) -> usize {
+fn distance(a: &str, b: &str) -> usize {
     let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
     let mut d = vec![vec![0usize; b.len() + 1]; a.len() + 1];
     for (i, row) in d.iter_mut().enumerate() { row[0] = i; }
@@ -247,7 +247,7 @@ pub fn not_a_command(word: &str) -> String {
 }
 
 /// A command's forms, as help shows them; `l3` alone, which shows none, points to the commands.
-pub fn forms_of(c: &Command) -> String {
+fn forms_of(c: &Command) -> String {
     let rows: Vec<String> = c.forms.iter().filter(|f| !f.hidden).map(|f| format!("  {}", spec::usage(c, f))).collect();
     if rows.is_empty() { return tr!("`l3 help` lists the commands", "`l3 help` でコマンドの一覧を見られます"); }
     rows.join("\n")

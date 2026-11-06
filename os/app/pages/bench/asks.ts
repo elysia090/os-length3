@@ -6,7 +6,7 @@ import {onRenamed, rekey} from '../../repos/repos.ts';
 // and one of them read whole (reference.ts), as Output's are of what was run (agent.ts writes it).
 
 /** One of what an ask comes to, in order: a step it took, or its words. */
-export type AskPart = {kind: 'step'; text: string} | {kind: 'words'; text: string};
+type AskPart = {kind: 'step'; text: string} | {kind: 'words'; text: string};
 
 export interface Ask {
   question: string;

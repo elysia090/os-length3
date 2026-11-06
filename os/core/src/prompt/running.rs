@@ -104,7 +104,7 @@ fn clock_ticks() -> u64 {
 fn clock_ticks() -> u64 { 100 }
 
 /// The first child of `supervisor` (the Prompt's pid 1), once it exists.
-pub fn init_of(supervisor: u32) -> Option<u32> {
+fn init_of(supervisor: u32) -> Option<u32> {
     let t = fs::read_to_string(format!("/proc/{supervisor}/task/{supervisor}/children")).ok()?;
     t.split_whitespace().next()?.parse().ok()
 }

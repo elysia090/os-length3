@@ -92,7 +92,7 @@ pub struct Todo {
 
 /// Whether two items' ids are the same as a JavaScript Set sees them (src/remote/sync.ts):
 /// absent ones are, as are equal strings, numbers, booleans and nulls; objects never are.
-pub(super) fn same_id(a: Option<&serde_json::Value>, b: Option<&serde_json::Value>) -> bool {
+fn same_id(a: Option<&serde_json::Value>, b: Option<&serde_json::Value>) -> bool {
     use serde_json::Value as V;
     match (a, b) {
         (None, None) => true,

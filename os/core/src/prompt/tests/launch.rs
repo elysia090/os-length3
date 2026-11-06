@@ -49,8 +49,8 @@ fn prompt_on_this_host(script: &str, network: bool) -> Option<String> {
                 std::os::unix::fs::symlink(to, root.join(link))?;
             }
             for d in ["usr", "etc"] { bind(&Path::new("/").join(d), &root.join(d), false)?; }
-            run_apart(&Sandbox { root: root.clone(), repo: repo.clone(), name: "t".into(), argv: vec!["/bin/sh".into(), "-c".into(), script.into()], env: Vec::new(),
-                network, dotfiles: Vec::new(), data: None })
+            run_apart_with(&Sandbox { root: root.clone(), repo: repo.clone(), name: "t".into(), argv: vec!["/bin/sh".into(), "-c".into(), script.into()], env: Vec::new(),
+                network, dotfiles: Vec::new(), data: None }, || Ok(()))
         })();
         unsafe { libc::_exit(code.unwrap_or(200)) };
     }

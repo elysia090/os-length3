@@ -97,7 +97,7 @@ export interface Holding extends Held { preparing: boolean }
 export interface Stopped { before: Held; left: number; ms: number | null }
 
 /** Whether Prompts run on the root here, and if not why. */
-export interface RootHere { native: boolean; why: string | null }
+interface RootHere { native: boolean; why: string | null }
 let rootAsked: Promise<RootHere> | null = null;
 /**
  * Whether Prompts run on the root here: the app asks the l3 beside it once (`l3 root check`), which makes a Prompt's

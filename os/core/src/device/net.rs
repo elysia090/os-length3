@@ -13,7 +13,8 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 /// The headers of an answer a reader goes by (what kind it is, its tag, how long to wait), lower-cased.
-pub const HEARD: [&str; 4] = ["content-type", "etag", "retry-after", "x-retry-after"];
+#[cfg(not(target_os = "wasi"))]
+const HEARD: [&str; 4] = ["content-type", "etag", "retry-after", "x-retry-after"];
 
 /// What a request came to: an answer (any status: a refusal is an answer too), or no answer at all, and why.
 pub enum Sent {

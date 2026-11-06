@@ -483,7 +483,7 @@ fn fills(a: Arg, s: &Subject) -> Option<String> {
 }
 
 /// A word as it is written on a command line: quoted when a shell would split or read it.
-pub fn shell_word(w: &str) -> String {
+fn shell_word(w: &str) -> String {
     let plain = !w.is_empty() && !w.starts_with(['#', '~']) && w.chars().all(|c| !c.is_ascii() && !c.is_whitespace() || c.is_ascii_alphanumeric() || "-_./:#@+=,%".contains(c));
     if plain { return w.to_string(); }
     let mut q = String::from("\"");

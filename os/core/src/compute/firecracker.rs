@@ -91,11 +91,6 @@ impl Api {
     pub fn vsock(&self, v: &Vsock) -> Result<(), Fault> { self.put("/vsock", v) }
     pub fn balloon(&self, b: Balloon) -> Result<(), Fault> { self.put("/balloon", b) }
 
-    /// The balloon resized: `mib` of the guest's memory taken back by the host (0: all of it given back).
-    pub fn reclaim(&self, mib: u32) -> Result<(), Fault> {
-        self.ask("PATCH", "/balloon", Some(&serde_json::json!({"amount_mib": mib}))).map(|_| ())
-    }
-
     pub fn start(&self) -> Result<(), Fault> { self.put("/actions", serde_json::json!({"action_type": "InstanceStart"})) }
 
     /// Paused: its vCPUs stop where they are, its memory stays; or going on.
@@ -116,11 +111,6 @@ impl Api {
     pub fn load(&self, at: &Snapshot, resume: bool) -> Result<(), Fault> {
         self.put("/snapshot/load", serde_json::json!({"snapshot_path": at.snapshot_path,
             "mem_backend": {"backend_type": "File", "backend_path": at.mem_file_path}, "track_dirty_pages": true, "resume_vm": resume}))
-    }
-
-    /// What the guest says of its memory through the balloon (bytes free, available…), as Firecracker answers it.
-    pub fn balloon_stats(&self) -> Result<serde_json::Value, Fault> {
-        self.ask("GET", "/balloon/statistics", None).map(|t| serde_json::from_str(&t).unwrap_or_default())
     }
 }
 

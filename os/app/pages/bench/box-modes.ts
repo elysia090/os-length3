@@ -23,7 +23,7 @@ import {hasAgentKey, onAgentKey} from '../../account/agent-key.ts';
 // rail (glide.ts keep).
 
 export type Mode = 'run' | 'issue' | 'todo' | 'edit' | 'agent';
-export const MODES: readonly Mode[] = ['run', 'issue', 'todo', 'edit', 'agent'];
+const MODES: readonly Mode[] = ['run', 'issue', 'todo', 'edit', 'agent'];
 /** What the box can do here now: the Agent only with a key kept on this device. */
 export const modesNow = (): readonly Mode[] => (hasAgentKey() ? MODES : MODES.filter((m) => m !== 'agent'));
 

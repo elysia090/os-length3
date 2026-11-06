@@ -104,7 +104,7 @@ pub(super) fn write_file(path: &Path, bytes: &[u8]) -> Result<()> {
 
 /// As write_file, with its mode: Some(Some(bits)) those, Some(None) a plain file's (as the umask makes one),
 /// None (a Remote that keeps no modes says nothing) the mode the file had here, if it was here.
-pub(super) fn write_file_as(path: &Path, bytes: &[u8], mode: Option<Option<u32>>) -> Result<()> {
+fn write_file_as(path: &Path, bytes: &[u8], mode: Option<Option<u32>>) -> Result<()> {
     let was = fs::symlink_metadata(path);
     if was.as_ref().is_ok_and(|m| !m.is_file()) {
         return Err(crate::tr!("{}: something that is not a file is there", "{}：ファイルではないものがあります", path.display()));

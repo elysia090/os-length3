@@ -32,8 +32,8 @@ use std::path::{Path, PathBuf};
 /// pinned as it was fetched for this table.
 pub struct Pin { pub arch: &'static str, pub url: &'static str, pub sha256: &'static str, pub bytes: u64 }
 
-pub const FIRECRACKER_VERSION: &str = "v1.17.0";
-pub const FIRECRACKER: [Pin; 2] = [
+const FIRECRACKER_VERSION: &str = "v1.17.0";
+const FIRECRACKER: [Pin; 2] = [
     Pin { arch: "x86_64", url: "https://github.com/firecracker-microvm/firecracker/releases/download/v1.17.0/firecracker-v1.17.0-x86_64.tgz",
         sha256: "06094a1108ae9e82aa4c23a775aa92758f53f1175d422270d9d6162cb9ade558", bytes: 7_464_385 },
     Pin { arch: "aarch64", url: "https://github.com/firecracker-microvm/firecracker/releases/download/v1.17.0/firecracker-v1.17.0-aarch64.tgz",
@@ -99,7 +99,7 @@ pub struct Host {
 }
 
 /// Where the kernel VMs boot is kept.
-pub fn kernel_path(data: &Path) -> PathBuf { data.join("vm").join("kernel").join("vmlinux") }
+fn kernel_path(data: &Path) -> PathBuf { data.join("vm").join("kernel").join("vmlinux") }
 
 /// A program's version, the host's own copy first (`l3 host fetch`), then one on PATH.
 fn version(data: &Path, program: &str) -> Option<String> {
@@ -132,7 +132,7 @@ pub fn host(data: &Path) -> Host {
 pub struct Plan { pub machine: MachineConfig, pub boot: BootSource, pub drives: Vec<Drive>, pub vsock: Vsock, pub balloon: Balloon }
 
 /// What the kernel is told: the root disk, read-only, and l3 as the first process (`l3 guest`, the run's agent).
-pub const BOOT_ARGS: &str = "console=ttyS0 reboot=k panic=1 pci=off root=/dev/vda ro rootfstype=ext4 init=/usr/bin/l3 -- guest";
+const BOOT_ARGS: &str = "console=ttyS0 reboot=k panic=1 pci=off root=/dev/vda ro rootfstype=ext4 init=/usr/bin/l3 -- guest";
 
 /// A VM for `spec`: as much memory as its budget lets it hold (512 MB when it says none; 128 MB to 32 GB), two
 /// vCPUs, the root disk and its own, the vsock at `dir`, a balloon that gives back what the guest frees.

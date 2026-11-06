@@ -425,7 +425,7 @@ pub fn branches(text: &str) -> u64 {
 }
 
 /// Paths, each with its weight, the heaviest first.
-pub type Weighed = Vec<(String, u64)>;
+type Weighed = Vec<(String, u64)>;
 
 /// A change's files and folders, each weighed (lines changed, times how tangled what they are now is), the heaviest
 /// first: the order a review reads them in. `files`: each path, the lines added and removed, and its text now.

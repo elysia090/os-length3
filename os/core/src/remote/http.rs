@@ -158,9 +158,9 @@ pub(crate) fn refused_in(code: u16, v: &serde_json::Value) -> String {
 /// The most of one answer read as JSON. The largest a Remote gives is a log: 50 commits with a tree each
 /// (a tree is at most 8 MiB, remote/app.ts LIMIT.tree); what goes past this is not an answer but a stream
 /// that would be held in memory until there is none left.
-pub(super) const ANSWER_LIMIT: u64 = 256 << 20;
+const ANSWER_LIMIT: u64 = 256 << 20;
 /// The most of a refusal read: its words, a few fields.
-pub(super) const REFUSAL_LIMIT: u64 = 64 << 10;
+const REFUSAL_LIMIT: u64 = 64 << 10;
 
 /// The JSON a Remote answered with; an empty answer (204) is null. One that is not JSON, or larger than
 /// any answer is, is no answer to go by: what is in the way (a network's sign-in page, a proxy's) is not the Remote.

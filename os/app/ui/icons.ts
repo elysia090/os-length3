@@ -16,7 +16,7 @@ const PATHS = {
   // A plug (the male end): two pins over its body, the cord under it.
   plugin: 'M9 3.5v4M15 3.5v4M6.5 7.5h11V11a5.5 5.5 0 0 1-11 0zM12 16.5v4',
 } satisfies Record<string, string>;
-export type PlaceIcon = keyof typeof PATHS;
+type PlaceIcon = keyof typeof PATHS;
 
 export function icon(id: PlaceIcon): SVGSVGElement {
   const ns = 'http://www.w3.org/2000/svg';

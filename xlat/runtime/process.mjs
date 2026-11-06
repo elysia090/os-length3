@@ -41,7 +41,7 @@ const STACK_BYTES = 8 << 20;
  * raised to 524288 by whoever asks): unlimited is all ones.
  */
 const INF = 0xffffffffffffffffn;
-export const RLIMITS = [[INF, INF], [INF, INF], [INF, INF], [BigInt(STACK_BYTES), INF], [0n, INF], [INF, INF], [63432n, 63432n],
+const RLIMITS = [[INF, INF], [INF, INF], [INF, INF], [BigInt(STACK_BYTES), INF], [0n, INF], [INF, INF], [63432n, 63432n],
   [1024n, 524288n], [8n << 20n, 8n << 20n], [INF, INF], [INF, INF], [63432n, 63432n], [819200n, 819200n], [0n, 0n], [0n, 0n], [INF, INF]];
 const GUARD = 1 << 16;
 /** The kernel's clocks (clock.mjs). */
@@ -57,7 +57,7 @@ const YIELDS = new Set([0, 1, 7, 17, 18, 19, 20, 23, 24, 35, 61, 202, 230, 232, 
 /** Calls Linux makes again after a handler with SA_RESTART (the rest say EINTR). */
 const RESTARTS = new Set([0, 1, 2, 16, 17, 18, 19, 20, 61, 72, 73, 202, 247, 257, 295, 296]);
 
-export class GuestTrap extends Error {
+class GuestTrap extends Error {
   constructor(address, code) {
     const kind = {1: 'jump to untranslated code', 2: 'undecodable code', 3: 'unsupported instruction', 4: 'divide error',
       7: 'ud2', 8: 'int3', 9: 'hlt'}[code] ?? `trap ${code}`;
@@ -1490,7 +1490,7 @@ export const goesOn = (image, memory, from) => (from ? from.memory !== memory : 
 /** Where the time went (run.mjs prints it with XLAT_TIMING=1): translating, compiling wasm, how much, and what a pack root fetched. */
 export const PROFILE = {images: 0, modules: 0, bytes: 0, translate: 0, compile: 0, fetches: 0, fetched: 0, kept: 0, consolidated: 0, memoriesReused: 0, imagesKept: 0, instancesKept: 0, zeroed: 0, renewed: 0};
 /** Modules of code reached later past which a program run again is translated again as one (Kernel.consolidate). */
-export const CONSOLIDATE = 16;
+const CONSOLIDATE = 16;
 /** Memories let go of that are kept for the next process, and the largest kept (Kernel.letGo). */
 const SPARE_MEMORIES = 4, SPARE_MEMORY_BYTES = 256 << 20;
 /** XLAT_SYSCALLS=1 lists every system call on stderr (node only). */

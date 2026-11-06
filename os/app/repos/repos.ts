@@ -71,9 +71,6 @@ export interface RepoStore {
 
 interface SharedTemplate { id: string; label: string; dirs: string[]; files: [string, string][] }
 
-/** Templates as l3 and the native side read them: shared/templates.json. */
-export const TEMPLATES: readonly {id: Template; label: string; files: readonly string[]}[] =
-  (shared as SharedTemplate[]).map((t) => ({id: t.id, label: t.label, files: [...t.files.map(([p]) => p), ...t.dirs.map((d) => `${d}/`)]}));
 
 /**
  * Whether a path part names a repo's .git however it is spelt (core's

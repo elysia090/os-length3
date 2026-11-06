@@ -149,7 +149,7 @@ pub fn fail(e: &Error, json: bool) -> std::process::ExitCode {
 
 /// Keys as the app writes them (camelCase): `host_free` → `hostFree`. Only
 /// keys that are words joined by `_` change; l3's data never keys by a name.
-pub fn camel(v: Value) -> Value {
+fn camel(v: Value) -> Value {
     match v {
         Value::Object(m) => Value::Object(m.into_iter().map(|(k, v)| (camel_key(&k), camel(v))).collect()),
         Value::Array(a) => Value::Array(a.into_iter().map(camel).collect()),

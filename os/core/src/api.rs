@@ -13,7 +13,7 @@ use crate::{agent::activity, agent::tasks, device::agent_key, fs::paths, history
 /// Files the editor may save; anything read in part is never written back.
 pub const READ_LIMIT: u64 = 256 * 1024;
 /// Lines of difference shown at most, across all files.
-pub const DIFF_LIMIT: usize = 2000;
+const DIFF_LIMIT: usize = 2000;
 
 /// The commands that write a repo's files or Home's state: a host runs them in the order the page sent them
 /// (the app on its window's thread), never side by side with each other.

@@ -141,7 +141,7 @@ pub(crate) fn progress() -> impl FnMut(Progress) {
     }
 }
 
-pub(crate) fn the_remote() -> String {
+fn the_remote() -> String {
     remote::connection().map_or_else(remote::default_url, |c| c.url)
 }
 
