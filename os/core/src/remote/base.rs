@@ -1,9 +1,6 @@
 //! What was last agreed with the Remote, per repo and line (the base): the version read, its tree and the head;
 //! the lock one repo's sync holds; and where these are kept (`<data>/sync/`).
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use crate::repos::store::Repos;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

@@ -1,9 +1,6 @@
 //! Home's settings agreed with the Remote (home/agree.rs says how): the Remote's side of the agreement, kept per
 //! account.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use crate::Result;
 use super::base::lock;
 use super::http::{Client, failed, Failure, Reply};

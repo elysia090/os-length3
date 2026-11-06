@@ -2,9 +2,6 @@
 //! session, what kind of failure the last request was (l3 says each with
 //! its own exit code), and answers taken only as a Remote gives them.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use crate::device::net::{send, Sent};
 use serde::Serialize;
 use crate::fs::hash::sha256;

@@ -1,9 +1,6 @@
 //! A copy kept in step with the Remote: the draft sent as a diff on the version it was read at, what changed there
 //! taken in file by file against the base (merge.rs), a repo brought here whole, and where each copy stands.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use crate::repos::store::Repos;
 use crate::fs::hash::sha256;
 use std::fs;

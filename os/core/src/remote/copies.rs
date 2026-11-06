@@ -1,9 +1,6 @@
 //! This device's copies as wholes: freed (sent first, let go once the Remote holds all of it), renamed or deleted,
 //! with what is kept of each by its name moved or let go with it; and the repos the Remote holds.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use crate::repos::store::Repos;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;

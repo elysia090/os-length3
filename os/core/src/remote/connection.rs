@@ -2,9 +2,6 @@
 //! the device's vault; a browser keeps none, its session being a cookie no script reads), and all of it let go on
 //! signing out.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use serde::{Deserialize, Serialize};
 use std::fs;
 use crate::Result;

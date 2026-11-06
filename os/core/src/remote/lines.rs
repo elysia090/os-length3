@@ -1,9 +1,6 @@
 //! The lines of work on a repo as the Remote has them: each issue's branch, its head, what is pushed of it, its
 //! base.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use serde::{Deserialize, Serialize};
 use crate::Result;
 use super::http::{Client, Reply};

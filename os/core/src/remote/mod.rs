@@ -23,6 +23,9 @@
 //!   local   the copy here as the Remote would hold it
 //!   merge   the plan for taking in, and writing it into the copy
 
+// No unsafe code in this layer.
+#![forbid(unsafe_code)]
+
 pub mod account;
 mod http;
 pub mod inbox;

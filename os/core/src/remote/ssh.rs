@@ -2,9 +2,6 @@
 //! word, never an address, a port or a repo name. Pages of the account show "<device> listens for SSH" with its
 //! off switch, and nothing of where. The listener itself is ssh/'s (and l3's: l3/src/ssh.rs).
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use super::{Client, Failure};
 use crate::ssh::Scope;
 
