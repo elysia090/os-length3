@@ -69,3 +69,10 @@ fn what_is_no_known_key_is_refused_and_nothing_is_kept() {
     assert_eq!(read(r#"{"key":"password1234567890","model":"m"}"#), None);
     assert_eq!(read("not json"), None);
 }
+
+#[test]
+fn a_short_or_unknown_key_is_shown_by_its_last_four_at_most() {
+    assert_eq!(shown("ab"), "…ab");
+    assert_eq!(shown("あいうえお"), "…いうえお");
+    assert_eq!(shown(""), "…");
+}

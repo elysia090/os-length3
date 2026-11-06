@@ -147,7 +147,7 @@ fn written(key: &str, model: &str) -> Result<String> {
 /// The key as it may be shown: its kind's start and its last four, never more of it (`sk-ant-…a9f2`).
 pub fn shown(key: &str) -> String {
     let start = kind(key).map_or("", |(s, _)| s);
-    let tail: String = key.chars().rev().take(4).collect::<Vec<_>>().into_iter().rev().collect();
+    let tail = key.char_indices().rev().nth(3).map_or(key, |(at, _)| &key[at..]);
     format!("{start}…{tail}")
 }
 

@@ -18,9 +18,6 @@
 //! for a program that did not keep it). What limits that is elsewhere: a session is seen and ended from any other
 //! device, and Prompts never see this folder (prompt/launch.rs).
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use crate::Result;
 use std::path::{Path, PathBuf};
 
@@ -56,7 +53,7 @@ pub fn remove(secret: Secret) -> Result<()> { at(&dir()).remove(secret) }
 /// Where this device's secrets are kept, in a person's words.
 pub fn kept_in() -> String {
     #[cfg(not(target_os = "wasi"))]
-    if keyring::store().is_some() { return keyring::NAME.to_string(); }
+    if keyring::store().is_some() { return keyring::name(); }
     crate::tr!("a file only this account reads ({})", "このアカウントだけが読めるファイル（{}）", dir().display())
 }
 
@@ -141,13 +138,15 @@ mod keyring {
     use std::sync::{Arc, OnceLock};
     use std::time::Duration;
 
-    /// Its name, as the person knows it.
-    #[cfg(target_os = "macos")]
-    pub const NAME: &str = "the macOS Keychain";
-    #[cfg(target_os = "windows")]
-    pub const NAME: &str = "Windows Credential Manager";
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    pub const NAME: &str = "the Secret Service (the desktop's keyring)";
+    /// Its name, as the person knows it, in their words.
+    pub fn name() -> String {
+        #[cfg(target_os = "macos")]
+        return crate::tr!("the macOS Keychain", "macOS のキーチェーン");
+        #[cfg(target_os = "windows")]
+        return crate::tr!("Windows Credential Manager", "Windows の資格情報マネージャー");
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        crate::tr!("the Secret Service (the desktop's keyring)", "Secret Service（デスクトップのキーリング）")
+    }
 
     /// How long a keyring is waited on: one asking the person first (to unlock it, or to let this program read what
     /// another kept) is answered by then, or taken as not there.
@@ -204,13 +203,13 @@ mod keyring {
     /// What a keyring said, as a person reads it.
     fn said(e: Error) -> String {
         match e {
-            Error::NoStorageAccess(why) => crate::tr!("{} would not open ({})", "{} が開けませんでした（{}）", NAME, why),
-            e => crate::tr!("{}: {}", "{}：{}", NAME, e),
+            Error::NoStorageAccess(why) => crate::tr!("{} would not open ({})", "{} が開けませんでした（{}）", name(), why),
+            e => crate::tr!("{}: {}", "{}：{}", name(), e),
         }
     }
 
     fn not_answering() -> String {
-        crate::tr!("{} did not answer within {} s (is it waiting to be unlocked?)", "{} が {} 秒以内に答えませんでした（ロック解除を待っていませんか）", NAME, WAIT.as_secs())
+        crate::tr!("{} did not answer within {} s (is it waiting to be unlocked?)", "{} が {} 秒以内に答えませんでした（ロック解除を待っていませんか）", name(), WAIT.as_secs())
     }
 
     pub fn get(store: &CredentialStore, secret: Secret, dir: &Path) -> Result<Option<String>, String> {

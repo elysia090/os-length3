@@ -349,6 +349,17 @@ test('the core runs over these files as the app runs it', {skip: wasm ? false : 
   assert.deepEqual(sent, []);
 });
 
+test('the core reaches the network through the page it runs in', {skip: wasm ? false : 'cargo is not installed, so the core (core/web) cannot be built'}, async () => {
+  const heads: string[] = [];
+  const core = await Core.start(new WebAssembly.Module(readFileSync(wasm!)), new WASI({fs: new MemoryFS(), env: {LENGTH3_HOME: '/data'}, out: () => {}}), (head) => {
+    heads.push(`${head.method} ${head.url}`);
+    return {status: 0, body: encoder.encode('offline')};
+  });
+  // Not reached: an error, and the request was the page's to send.
+  assert.ok('error' in core.call('remote_connect', {url: 'https://remote.test'}));
+  assert.ok(heads.some((h) => h.includes('https://remote.test/')), heads.join(', '));
+});
+
 test('a trap in the core is thrown to its host (the worker answers it as an error and starts afresh)', async () => {
   // memory, l3_alloc (0), l3_call (unreachable: what a panic comes to) and l3_free, by hand.
   const bytes = new Uint8Array([

@@ -8,6 +8,8 @@ publish = false
 [dependencies]
 base64 = "0.23"
 libc = "0.2"
+# A file read for this device's own secret before it is sent (device/secrets.rs): the search serde_json links already.
+memchr = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ruzstd = "0.9"

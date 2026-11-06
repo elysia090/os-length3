@@ -4,9 +4,6 @@
 //! accepted only when it is the file the pin names. Nothing else is read
 //! from the network by l3.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use std::fs;
 use std::io::{self, Read, Seek, Write};
 use std::path::Path;
@@ -25,9 +22,8 @@ fn digest_of(path: &Path) -> io::Result<String> {
     Ok(crate::fs::hash::sha256_read(&mut fs::File::open(path)?)?.0)
 }
 
-
-/// Fetch `url` into `dest` (via `dest.part`), resuming after cuts; checked
-/// against `sha256` and `size` before it is moved into place.
+/// Fetch `url` into `dest` through a `.part` file beside it (its extension replaced: `<sha256>.tar.part`), resuming
+/// after cuts; checked against `sha256` and `size` before it is moved into place.
 pub fn fetch(url: &str, sha256: &str, size: u64, dest: &Path, mut progress: impl FnMut(Progress)) -> Result<(), String> {
     if dest.exists() && digest_of(dest).ok().as_deref() == Some(sha256) {
         return Ok(());

@@ -5,8 +5,6 @@
 //! (its store, or SSL_CERT_FILE), beside the ones bundled for a host that
 //! has none. A root fetched is checked by digest whatever the TLS says.
 
-// Unsafe code only in `web`: the two calls to the page that sends a request for the core in a browser.
-
 use std::io::Read;
 #[cfg(not(target_os = "wasi"))]
 use std::sync::{Arc, OnceLock};
@@ -63,33 +61,37 @@ fn native(method: &str, url: &str, headers: &[(&str, &str)], body: Option<&[u8]>
     }
 }
 
-/// In a browser the page sends it (web/core.js, `length3.http`), from the Worker the core runs in, synchronously:
-/// the answer's status and body are copied in once it is whole.
+/// How a browser's core has a request sent: `head` (JSON {method, url, headers, timeout}) and its body in, the answer's
+/// status (0: not reached) and its body (or why it was not reached) out, whole.
+#[cfg(target_os = "wasi")]
+pub type Page = fn(head: &str, body: &[u8]) -> (u32, Vec<u8>);
+
+#[cfg(target_os = "wasi")]
+static PAGE: std::sync::OnceLock<Page> = std::sync::OnceLock::new();
+
+/// The page's way of sending, given once by core/web as the core starts (its `length3.http` import, app/core/abi.ts):
+/// the call out of the module is core/web's, so this crate holds no unsafe code for it.
+#[cfg(target_os = "wasi")]
+pub fn through_page(page: Page) {
+    let _ = PAGE.set(page);
+}
+
+/// In a browser the page sends it, from the Worker the core runs in, synchronously: the answer's status and body are
+/// copied in once it is whole.
 #[cfg(target_os = "wasi")]
 mod web {
-    use super::Sent;
+    use super::{authority, Sent, PAGE};
     use std::time::Duration;
 
-    #[link(wasm_import_module = "length3")]
-    extern "C" {
-        /// Send a request (`head`: JSON {method, url, headers, timeout}); the answer's status (0: not reached) and
-        /// its body's length are written back, the body (or why it was not reached) kept as `handle`.
-        fn http(head: *const u8, head_len: usize, body: *const u8, body_len: usize, status: *mut u32, len: *mut u32) -> u32;
-        /// Copy the body kept as `handle` (its length as said) and let it go.
-        fn http_body(handle: u32, out: *mut u8);
-    }
-
     pub fn send(method: &str, url: &str, headers: &[(&str, &str)], body: Option<&[u8]>, read: Duration) -> Sent {
+        let host = authority(url).to_string();
+        let Some(page) = PAGE.get() else {
+            return Sent::Unreachable { host, why: crate::tr!("this core has no page to send through", "この core には送り出すページがありません") };
+        };
         let head = serde_json::json!({"method": method, "url": url, "headers": headers, "timeout": read.as_millis() as u64}).to_string();
-        let body = body.unwrap_or_default();
-        let (mut status, mut len) = (0u32, 0u32);
-        // SAFETY: the pointers are to this function's own buffers, valid for the lengths given; the host writes
-        // only `status` and `len`, then copies `len` bytes into a buffer of exactly that length.
-        let handle = unsafe { http(head.as_ptr(), head.len(), body.as_ptr(), body.len(), &mut status, &mut len) };
-        let mut bytes = vec![0u8; len as usize];
-        unsafe { http_body(handle, bytes.as_mut_ptr()) };
+        let (status, bytes) = page(&head, body.unwrap_or_default());
         if status == 0 {
-            return Sent::Unreachable { host: String::new(), why: String::from_utf8_lossy(&bytes).into_owned() };
+            return Sent::Unreachable { host, why: String::from_utf8_lossy(&bytes).into_owned() };
         }
         Sent::Answer { status: status as u16, heard: Vec::new(), body: Box::new(std::io::Cursor::new(bytes)) }
     }
@@ -111,7 +113,6 @@ fn var(k: &str) -> Option<String> {
 }
 
 /// The host of a URL, and its port if it says one: what a person reads as where it went.
-#[cfg(not(target_os = "wasi"))]
 fn authority(url: &str) -> &str {
     let rest = url.split("://").nth(1).unwrap_or(url);
     let auth = rest.split(['/', '?', '#']).next().unwrap_or("");

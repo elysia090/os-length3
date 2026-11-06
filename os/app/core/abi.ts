@@ -1,5 +1,5 @@
 // The core built for the browser (core/web/src/lib.rs): its three exports, and the one import of its own
-// (length3.http, core/src/device/net.rs mod web) beside WASI. core/worker.ts runs it; wasi.test.ts runs it in Node.
+// (length3.http, core/web/src/lib.rs mod page) beside WASI. core/worker.ts runs it; wasi.test.ts runs it in Node.
 
 import type {WASI} from './wasi.ts';
 

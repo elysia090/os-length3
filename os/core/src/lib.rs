@@ -4,8 +4,8 @@
 //!
 //! Unsafe code is only where the OS is called and no safe interface has the call yet, each block a single call with
 //! its arguments made just before it: the Prompt's namespaces and seccomp filter (prompt/launch.rs, prompt/seccomp.rs),
-//! the interfaces a network is reached on (ssh/reach.rs), and the page the browser's core asks (device/net.rs). The
-//! host's other calls (a signal, a sync, its name, a filesystem's room) go through rustix's safe interface. A layer
+//! the interfaces a network is reached on (ssh/reach.rs). The browser's core asks the page through core/web, which
+//! hands device/net.rs the call. The host's other calls (a signal, a sync, its name, a filesystem's room) go through rustix's safe interface. A layer
 //! with none says `#![forbid(unsafe_code)]` once, for all its files (fs/), and so does every module without it.
 
 // The layers, each above the ones before it: a module uses only what is in its own layer or one listed before
