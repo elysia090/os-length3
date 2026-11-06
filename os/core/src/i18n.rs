@@ -20,7 +20,9 @@ pub fn ja() -> bool {
     }
     let ja = match std::env::var("LENGTH3_LANG").ok().filter(|v| !v.is_empty()) {
         Some(v) => v.starts_with("ja"),
-        None => crate::home::get("lang").ok().flatten().and_then(|t| serde_json::from_str::<String>(&t).ok()).is_some_and(|l| l == "ja"),
+        // Home's `lang`, read where Home keeps it (home.rs), as the one setting the words hang on.
+        None => std::fs::read_to_string(crate::paths::home_dir().join("lang.json")).ok()
+            .and_then(|t| serde_json::from_str::<String>(&t).ok()).is_some_and(|l| l == "ja"),
     };
     SPOKEN.store(if ja { 2 } else { 1 }, Ordering::Relaxed);
     ja
@@ -29,21 +31,6 @@ pub fn ja() -> bool {
 /// Home's `lang` was just written: the words chosen next are in the language it says now.
 pub(crate) fn changed() {
     SPOKEN.store(0, Ordering::Relaxed);
-}
-
-/// The languages the OS speaks.
-pub const LANGS: [&str; 2] = ["en", "ja"];
-
-/// The language Home keeps (what the app and l3 speak unless $LENGTH3_LANG says otherwise).
-pub fn lang() -> String {
-    crate::home::get("lang").ok().flatten().and_then(|t| serde_json::from_str::<String>(&t).ok())
-        .filter(|l| LANGS.contains(&l.as_str())).unwrap_or_else(|| "en".into())
-}
-
-/// Choose the language Home keeps, for the app and l3 alike.
-pub fn set_lang(lang: &str) -> crate::Result<()> {
-    if !LANGS.contains(&lang) { return Err(crate::tr!("The OS speaks en or ja", "OS が話すのは en か ja です")); }
-    crate::home::set("lang", &serde_json::to_string(lang).map_err(|e| e.to_string())?)
 }
 
 #[macro_export]
@@ -55,3 +42,14 @@ macro_rules! tr {
         if $crate::i18n::ja() { format!($ja, $($arg)*) } else { format!($en, $($arg)*) }
     };
 }
+
+/// An error of the file system about `at` (a repo, or repo/path), in the OS's words.
+pub fn io_error(at: impl std::fmt::Display, e: &std::io::Error) -> String {
+    match e.kind() {
+        std::io::ErrorKind::NotFound => tr!("There is no {}", "{} はありません", at),
+        std::io::ErrorKind::PermissionDenied => tr!("{}: not allowed", "{}：許可されていません", at),
+        std::io::ErrorKind::AlreadyExists => tr!("{} is there already", "{} はもうあります", at),
+        _ => tr!("{}: {}", "{}：{}", at, e),
+    }
+}
+

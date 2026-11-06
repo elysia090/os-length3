@@ -75,6 +75,27 @@ fn repo(s: &str) -> Result<Name, String> {
     Ok(Name::Repo { owner: None, repo: repo.into(), path: path.into(), issue })
 }
 
+/// Whether a path part names a repo's `.git` however it is spelt: git, and
+/// the file systems under it, treat `.GIT` (case-insensitive volumes),
+/// `.git.` or `.git ` (trailing dots and spaces dropped), `git~1` (the short
+/// name) and `.git` with invisible code points (ignored by HFS+) as `.git`
+/// itself. Nothing reached through the store may land in it: its config and
+/// hooks run commands on the host the next time git runs.
+pub fn is_git_name(part: &str) -> bool {
+    let visible: String = part.chars()
+        .filter(|c| !matches!(*c as u32, 0x200C..=0x200F | 0x202A..=0x202E | 0x206A..=0x206F | 0xFEFF))
+        .collect::<String>().to_ascii_lowercase();
+    let name = visible.trim_end_matches(['.', ' ']);
+    name == ".git" || name == "git~1"
+}
+
+/// Repo names are plain directory names: letters, digits, `.`, `_`, `-`.
+pub fn valid_name(name: &str) -> bool {
+    !name.is_empty() && name.len() <= 64 && !name.starts_with('.')
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -134,7 +134,7 @@ impl Shared {
 
 /// Whether `user` names a repo here (an SSH user is a repo).
 fn is_repo(user: &str) -> bool {
-    repos::valid_name(user) && repos::Repos::open().is_ok_and(|r| r.dir(user).is_ok())
+    length3_core::names::valid_name(user) && repos::Repos::open().is_ok_and(|r| r.dir(user).is_ok())
 }
 
 struct Conn {
@@ -545,7 +545,7 @@ pub fn serve() -> Result<(), String> {
     let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e| e.to_string())?;
     let mut sockets = Sockets { port, open: Vec::new(), bound: tokio::sync::watch::channel(Vec::new()).0 };
     let (mut bound, taken) = rt.block_on(async { sockets.take(scope, &shared, &config) })?;
-    ssh::announce(scope)?;
+    remote::ssh::announce(scope)?;
     let mut recorded = ssh::record(&data, port, scope, bound.clone(), taken, print.clone()).map_err(|e| e.to_string())?;
     // Turning on waits for this line; then the log takes standard output and error.
     println!("ready");
@@ -582,12 +582,12 @@ pub fn serve() -> Result<(), String> {
                 () = &mut beat => {
                     follow(&mut sockets, &mut scope, &mut bound);
                     let said = scope;
-                    let heard = tokio::time::timeout(Duration::from_secs(20), tokio::task::spawn_blocking(move || ssh::beat(said))).await
-                        .ok().and_then(|r| r.ok()).unwrap_or(ssh::Heard::Unreachable);
-                    if !ssh::goes_on(heard) {
-                        return Ok(if heard == ssh::Heard::Off { Why::Off } else { Why::SignedOut });
+                    let heard = tokio::time::timeout(Duration::from_secs(20), tokio::task::spawn_blocking(move || remote::ssh::beat(said))).await
+                        .ok().and_then(|r| r.ok()).unwrap_or(remote::ssh::Heard::Unreachable);
+                    if !remote::ssh::goes_on(heard) {
+                        return Ok(if heard == remote::ssh::Heard::Off { Why::Off } else { Why::SignedOut });
                     }
-                    missed = if heard == ssh::Heard::Unreachable { missed + 1 } else { 0 };
+                    missed = if heard == remote::ssh::Heard::Unreachable { missed + 1 } else { 0 };
                     beat.as_mut().reset(tokio::time::Instant::now() + next_beat(missed));
                 }
                 // Another scope was chosen (l3 address ssh on device|network): taken now, not at the next beat,
@@ -614,7 +614,7 @@ pub fn serve() -> Result<(), String> {
     if why == Why::Asked {
         // Said to the Remote, so pages stop showing it; not waited on past a few seconds.
         let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || { let _ = tx.send(ssh::withdraw()); });
+        std::thread::spawn(move || { let _ = tx.send(remote::ssh::withdraw()); });
         let _ = rx.recv_timeout(Duration::from_secs(5));
     }
     log(&format!("stopped ({why:?})"));

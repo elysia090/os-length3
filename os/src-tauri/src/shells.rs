@@ -5,7 +5,7 @@
 // namespace) every process inside; it is only called stopped once the host
 // shows none left, and what they held and how long it took are said.
 
-use length3_core::{paths, prompt, root};
+use length3_core::{paths, prompt, root, usage};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -281,10 +281,10 @@ pub async fn root_use(app: AppHandle, id: String) -> Result<root::Installed, Str
         if id == "l3" {
             return match root::use_held(&data, root::RELEASES[0].sha256) {
                 Some(r) => Ok(r),
-                None => root::fetch_and_install(&data, &remote_url(), progress),
+                None => usage::fetch_root(&data, &remote_url(), progress),
             };
         }
         let d = root::distro(&id).ok_or_else(|| format!("no root {id}"))?;
-        root::fetch_distro(&data, &remote_url(), d, progress)
+        usage::fetch_distro(&data, &remote_url(), d, progress)
     }).await.map_err(|e| e.to_string())?
 }

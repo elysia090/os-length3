@@ -98,8 +98,7 @@ pub struct Spec {
 impl Spec {
     /// What it is, as one name: the sha256 of its JSON (the same run is the same name anywhere).
     pub fn digest(&self) -> String {
-        use sha2::{Digest, Sha256};
-        Sha256::digest(serde_json::to_vec(self).unwrap_or_default()).iter().map(|b| format!("{b:02x}")).collect()
+        crate::digest::sha256(serde_json::to_vec(self).unwrap_or_default())
     }
 }
 

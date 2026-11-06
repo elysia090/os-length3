@@ -188,7 +188,7 @@ pub(super) fn walk(dir: &Path, prefix: &str, out: &mut Local) {
     for e in entries.flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
         // A file this OS is writing is not the repo's yet.
-        if crate::usage::is_temporary(&name) {
+        if crate::atomic::is_temporary(&name) {
             continue;
         }
         empty = false;

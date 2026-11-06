@@ -698,8 +698,7 @@ pub fn root_digest(root: &Path) -> String {
 /// What an environment is, by what set it up: the root (its sha256), `.packages` and `.setup`. The same key is the
 /// same environment wherever it is made (compute.rs Spec), and a change to any of them sets it up again.
 pub fn environment_key(root: &str, packages: &[&str], setup: &str) -> String {
-    use sha2::{Digest, Sha256};
-    Sha256::digest(format!("{root}\n{}\n{setup}", packages.join(" "))).iter().map(|b| format!("{b:02x}")).collect()
+    crate::digest::sha256(format!("{root}\n{}\n{setup}", packages.join(" ")))
 }
 
 /// The environment `dotfiles` ask of the root `root` (its sha256), as environment_key names it; empty when they ask

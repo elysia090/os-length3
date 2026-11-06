@@ -5,7 +5,7 @@ use crate::args::Call;
 use crate::out::{bytes, files, Error, Reply, Result};
 use crate::spec::{Fact, On};
 use crate::target;
-use length3_core::{home, remote, repos, tr, work};
+use length3_core::{home, remote, tr};
 use serde_json::json;
 
 /// `l3 repo`: each repo here and where it stands, then those only on the Remote.
@@ -18,7 +18,7 @@ pub fn repo_list(ctx: &Ctx, _: &Call) -> Result<Reply> {
     let mut rows = Vec::new();
     let mut t = Vec::new();
     for s in &here {
-        let line = if ctx.prompt { work::MAIN.to_string() } else { r.line(&s.name) };
+        let line = if ctx.prompt { length3_core::lines::MAIN.to_string() } else { r.line(&s.name) };
         let st = if ctx.prompt { None } else { remote::status_of(&r, &s.name).ok() };
         // Where it stands with the Remote, as a word for data and words for a person.
         let (state, said) = match &st {
@@ -28,7 +28,7 @@ pub fn repo_list(ctx: &Ctx, _: &Call) -> Result<Reply> {
             Some(st) if st.changed > 0 => ("changed", tr!(" · {} not sent", " · {}件未送信", st.changed)),
             Some(_) => ("inStep", tr!(" · in step", " · Remote と同じ")),
         };
-        let working = if line != work::MAIN { tr!(" · working on {}", " · {} の作業中", super::git::line_called(&line)) } else { String::new() };
+        let working = if line != length3_core::lines::MAIN { tr!(" · working on {}", " · {} の作業中", super::git::line_called(&line)) } else { String::new() };
         crate::menu::see(|| crate::menu::Subject { on: On::Repo, word: s.name.clone(), repo: Some(s.name.clone()), label: s.name.clone(),
             detail: format!("{} · {}{working}{said}", files(s.files as usize), bytes(s.bytes)), facts: Vec::new() });
         t.push((s.name.clone(), format!("{} · {}{working}{said}", files(s.files as usize), bytes(s.bytes))));
@@ -46,7 +46,7 @@ pub fn repo_list(ctx: &Ctx, _: &Call) -> Result<Reply> {
 
 pub fn repo_new(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let name = call.word(0).unwrap_or_default();
-    if !repos::valid_name(name) {
+    if !length3_core::names::valid_name(name) {
         return Err(Error::Usage(tr!("{:?} is not a repo name (letters, digits, . _ -)", "{:?} は repo の名前になりません（英数字と . _ -）", name)));
     }
     let template = call.flags.template.as_deref().unwrap_or("standard");
@@ -86,7 +86,7 @@ pub fn repo_open(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let name = call.word(0).unwrap_or_default();
     let r = ctx.repos()?;
     let was_here = r.dir(name).is_ok();
-    let s = remote::fetch(&r, name)?;
+    let s = length3_core::usage::bring_repo(&r, name)?;
     let text = if was_here { tr!("{} was here already; brought into step ({} taken in, {} sent)", "{} はもうこの端末にありました。Remote とそろえました（取り込み{}件、送信{}件）", name, s.taken, s.sent) }
         else { tr!("{} is here now ({})", "{} をこの端末に開きました（{}）", name, files(s.taken)) };
     Ok(Reply::done(text, json!({"repo": name, "synced": s, "wasHere": was_here})))

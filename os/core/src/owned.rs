@@ -61,7 +61,7 @@ pub fn held(data: &Path) -> Vec<(&'static str, String, PathBuf)> {
         let Ok(entries) = std::fs::read_dir(&dir) else { continue };
         for e in entries.flatten() {
             let name = e.file_name().to_string_lossy().into_owned();
-            if crate::repos::valid_name(&name) && e.path().is_dir() { out.push((kind, name, e.path())); }
+            if crate::names::valid_name(&name) && e.path().is_dir() { out.push((kind, name, e.path())); }
         }
     }
     out.sort();
@@ -105,7 +105,7 @@ pub fn derived_in(dir: &Path) -> Vec<PathBuf> {
     fn go(dir: &Path, out: &mut Vec<PathBuf>) {
         for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
             let name = e.file_name().to_string_lossy().into_owned();
-            if crate::repos::is_git_name(&name) || !e.file_type().is_ok_and(|t| t.is_dir()) { continue; }
+            if crate::names::is_git_name(&name) || !e.file_type().is_ok_and(|t| t.is_dir()) { continue; }
             let path = e.path();
             if derived(dir, &name, &path) { out.push(path); } else { go(&path, out); }
         }

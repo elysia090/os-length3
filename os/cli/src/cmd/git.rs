@@ -9,7 +9,8 @@ use crate::args::Call;
 use crate::out::{self, ago, commits, files, issues, Error, Reply, Result};
 use crate::spec::{Fact, On};
 use crate::target::{self, IssueRef};
-use length3_core::history::{self, state_word, Change, Work};
+use length3_core::history::{self, state_word, Change};
+use length3_core::work::Work;
 use length3_core::issues::{number, Issue};
 use length3_core::{i18n::ja, text, tr, work};
 use serde_json::{json, Value};
@@ -19,7 +20,7 @@ use serde_json::{json, Value};
 struct Stand {
     known: bool,
     work: Option<Work>,
-    lines: Vec<work::Line>,
+    lines: Vec<length3_core::remote::Line>,
     changes: Vec<Change>,
     merged: Vec<String>,
     uncommitted: usize,
@@ -31,9 +32,9 @@ fn stand(ctx: &Ctx, r: &length3_core::repos::Repos, repo: &str) -> Stand {
     // On no Remote there is no work to know of; one out of reach knows only the merges seen before.
     if !ctx.connected() { return empty(true, merged); }
     let Ok(changes) = history::changes_of_repo(repo) else { return empty(false, merged) };
-    let w = history::work(r, repo).ok();
-    let uncommitted = if w.as_ref().is_some_and(|w| w.line != work::MAIN) { history::changes(r, repo).map(|c| c.files).unwrap_or(0) } else { 0 };
-    Stand { known: true, work: w, lines: work::lines(repo).unwrap_or_default(), merged: history::merged_seen(repo), changes, uncommitted }
+    let w = length3_core::work::state(r, repo).ok();
+    let uncommitted = if w.as_ref().is_some_and(|w| w.line != length3_core::lines::MAIN) { history::changes(r, repo).map(|c| c.files).unwrap_or(0) } else { 0 };
+    Stand { known: true, work: w, lines: length3_core::remote::lines(repo).unwrap_or_default(), merged: history::merged_seen(repo), changes, uncommitted }
 }
 
 fn path_of(i: &Issue) -> String { format!("issue/{}", i.file) }
@@ -65,7 +66,7 @@ impl Stand {
     fn change(&self, i: &Issue) -> Option<&Change> { self.changes.iter().find(|c| c.issue == path_of(i)) }
     /// Being worked on here, now.
     fn here(&self, i: &Issue) -> bool {
-        self.work.as_ref().is_some_and(|w| w.line != work::MAIN && w.issue.as_deref() == Some(path_of(i).as_str()))
+        self.work.as_ref().is_some_and(|w| w.line != length3_core::lines::MAIN && w.issue.as_deref() == Some(path_of(i).as_str()))
     }
     fn merged(&self, i: &Issue) -> bool {
         self.change(i).is_some_and(|c| c.state == "merged") || self.merged.contains(&path_of(i))
@@ -187,7 +188,7 @@ fn subject(ctx: &Ctx, s: &Stand, i: &Issue, facts: Vec<Fact>) -> crate::menu::Su
 fn seen(ctx: &Ctx, r: &length3_core::repos::Repos, s: &Stand, i: &Issue) {
     crate::menu::see(|| {
         let mut f = facts(ctx, s, i);
-        if r.line(&i.repo) != work::MAIN { f.push(Fact::OnWork); }
+        if r.line(&i.repo) != length3_core::lines::MAIN { f.push(Fact::OnWork); }
         subject(ctx, s, i, f)
     });
 }
@@ -361,7 +362,7 @@ pub fn issue_show(ctx: &Ctx, call: &Call) -> Result<Reply> {
 /// without one, and nothing but closing it can be done).
 fn deeds_here(ctx: &Ctx, r: &length3_core::repos::Repos, s: &Stand, i: &Issue) -> Vec<(&'static str, String)> {
     if s.merged(i) { return Vec::new(); }
-    let mut list = deeds(ctx, s, i, r.line(&i.repo) != work::MAIN);
+    let mut list = deeds(ctx, s, i, r.line(&i.repo) != length3_core::lines::MAIN);
     if !ctx.connected() && i.closed.is_none() {
         let sign_in = crate::menu::offered_here(ctx, crate::spec::Group::Git, On::Page, &[]).into_iter().find(|o| o.command.name == "login");
         if let Some(o) = sign_in { list.insert(0, (o.label(), "l3 login".to_string())); }
@@ -446,12 +447,12 @@ pub fn main(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let repo = target::repo(ctx, call, 0)?;
     let r = ctx.repos()?;
     let was = r.line(&repo);
-    if was == work::MAIN { return Ok(Reply::done(tr!("{} shows main already", "{} はもう main を見せています", repo), json!({"repo": repo, "line": work::MAIN, "changed": false}))); }
-    work::switch(&r, &repo, work::MAIN)?;
+    if was == length3_core::lines::MAIN { return Ok(Reply::done(tr!("{} shows main already", "{} はもう main を見せています", repo), json!({"repo": repo, "line": length3_core::lines::MAIN, "changed": false}))); }
+    work::switch(&r, &repo, length3_core::lines::MAIN)?;
     let called = line_called(&was);
     let again = if called.starts_with('#') { format!("l3 start {repo}{called}") } else { format!("l3 start {called}") };
     Ok(Reply::done(tr!("{} shows main now (the work on {} waits: {})", "{} は main を見せています（{} の作業はそのまま：{}）", repo, called, again),
-        json!({"repo": repo, "line": work::MAIN, "was": was, "changed": true})))
+        json!({"repo": repo, "line": length3_core::lines::MAIN, "was": was, "changed": true})))
 }
 
 pub fn commit(ctx: &Ctx, call: &Call) -> Result<Reply> {
@@ -460,7 +461,7 @@ pub fn commit(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let title = call.word(1).unwrap_or_default().trim().to_string();
     let on = r.line(&repo);
     // Work on an issue commits under its name, as the app does; words given go in as its note.
-    let folded = on != work::MAIN && !title.is_empty();
+    let folded = on != length3_core::lines::MAIN && !title.is_empty();
     let (line, note) = if folded {
         (String::new(), if call.note().is_empty() { title.clone() } else { format!("{title}\n\n{}", call.note()) })
     } else {
@@ -468,7 +469,7 @@ pub fn commit(ctx: &Ctx, call: &Call) -> Result<Reply> {
         let (first, note) = split_line(&title, call.note());
         (first.trim().to_string(), note)
     };
-    if on == work::MAIN && text::kind_of(&line).1.trim().is_empty() {
+    if on == length3_core::lines::MAIN && text::kind_of(&line).1.trim().is_empty() {
         return Err(Error::Usage(tr!("On main a commit needs its subject, Kind：subject: l3 commit [REPO] \"Fix：title\" (on an issue it is named after the issue, and words given are its note: l3 start REPO#N)", "main では Commit の件名（種別：件名）が要ります：l3 commit [REPO] \"Fix：件名\"（Issue の作業では Issue の名前で、書いた言葉はメモに：l3 start REPO#N）")));
     }
     // Nothing changed: said of the repo it looked at (bug: "Nothing to commit", and no more).
@@ -585,7 +586,7 @@ pub fn reply(ctx: &Ctx, call: &Call) -> Result<Reply> {
 pub fn merge(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let at = target::issue(ctx, call, 0)?;
     undecided(&at)?;
-    let c = history::merge_and_finish(&ctx.repos()?, &at.repo, &at.line())?;
+    let c = length3_core::work::merge_and_finish(&ctx.repos()?, &at.repo, &at.line())?;
     Ok(Reply::done(tr!("Merged {} into main (version {})", "{} を main に Merge しました（第{}版）", named_change(&c), c.version), json!({"change": c})))
 }
 

@@ -22,7 +22,7 @@ pub enum Progress<'a> {
 }
 
 fn digest_of(path: &Path) -> io::Result<String> {
-    Ok(crate::root::sha256_read(&mut fs::File::open(path)?)?.0)
+    Ok(crate::digest::sha256_read(&mut fs::File::open(path)?)?.0)
 }
 
 

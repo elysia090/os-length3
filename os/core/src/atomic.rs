@@ -124,6 +124,25 @@ fn sync_dir(path: &Path) {
 #[cfg(not(unix))]
 fn sync_dir(_: &Path) {}
 
+/// The pid in a name this OS gives its temporary files, if it is one. A
+/// setting's temporary (`<key>.json.<pid>`) is only one in the settings
+/// directory: in a repo, a name like that is a person's own file.
+pub(crate) fn temporary_writer(name: &str, in_settings: bool) -> Option<u32> {
+    if let Some(rest) = name.strip_prefix('.') {
+        if let Some((_, writer)) = rest.rsplit_once(".length3-") {
+            return writer.split('-').next()?.parse().ok();
+        }
+    }
+    let (stem, pid) = name.rsplit_once('.')?;
+    if in_settings && stem.ends_with(".json") { pid.parse().ok() } else { None }
+}
+
+/// Whether a name in a repo is one this OS gives a file while it writes it.
+pub fn is_temporary(name: &str) -> bool {
+    name.starts_with(".length3-") || temporary_writer(name, false).is_some()
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;

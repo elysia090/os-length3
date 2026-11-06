@@ -1,101 +1,19 @@
-//! Work on an issue, the way the OS keeps it: a line of its own on the
-//! Remote (a branch) and a copy of its own here (a worktree), neither of
-//! which the person names or manages. Choosing to work on an issue makes
-//! both and puts that copy where the repo is seen (/root/<repo> in File,
-//! Forge and the Prompt); going back to main puts main's copy there again.
-//! A line is named after its issue's file (issue/001.md is 001).
-//!
-//!   <data>/repos/<repo>               main's copy
-//!   <data>/work/<repo>/<line>/        each issue's copy
-//!   <data>/sync/<repo>.line           which one the repo shows now
+//! Work on an issue: a line of its own on the Remote (a branch) and a copy of its own here (a worktree, lines.rs),
+//! neither of which the person names or manages. Choosing to work on an issue makes both and puts that copy where
+//! the repo is seen (/root/<repo> in File, Forge and the Prompt); going back to main puts main's copy there again;
+//! a work merged is finished, its copy here given back.
 
 // No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
 #![forbid(unsafe_code)]
 
-use crate::remote::{self, Client, Reply};
+use crate::history::{changes_of_repo, listed, Change};
+use crate::lines::{current, line_for, set_current, valid, worktree, MAIN};
+use crate::remote::{self, Client, Line, Reply};
 use crate::repos::Repos;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::fs;
-use std::path::PathBuf;
 
-pub const MAIN: &str = "main";
 type Result<T> = std::result::Result<T, String>;
-
-fn line_file(repo: &str) -> PathBuf {
-    crate::paths::data_dir().join("sync").join(format!("{repo}.line"))
-}
-
-/// The line `repo` shows now ("main" unless work on an issue was chosen).
-pub fn current(repo: &str) -> String {
-    fs::read_to_string(line_file(repo)).ok().map(|s| s.trim().to_string()).filter(|s| valid(s)).unwrap_or_else(|| MAIN.into())
-}
-
-fn set_current(repo: &str, line: &str) -> Result<()> {
-    let file = line_file(repo);
-    crate::boundary::private_dir(file.parent().unwrap()).map_err(|e| e.to_string())?;
-    let done = if line == MAIN {
-        // Not there is main already; one that stays would keep the repo on the issue's copy.
-        fs::remove_file(&file).or_else(|e| if e.kind() == std::io::ErrorKind::NotFound { Ok(()) } else { Err(e) })
-    } else {
-        // Whole: a crash part way through left it empty (main) or naming a line with no copy.
-        crate::atomic::replace(&file, line.as_bytes(), crate::atomic::How::RECORD)
-    };
-    done.map_err(|e| crate::tr!("{}: {}", "{}：{}", file.display(), e))
-}
-
-pub fn valid(line: &str) -> bool {
-    !line.is_empty() && line.len() <= 64 && line.chars().next().is_some_and(|c| c.is_ascii_alphanumeric())
-        && line.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-}
-
-pub fn worktree(repo: &str, line: &str) -> PathBuf {
-    crate::paths::data_dir().join("work").join(repo).join(line)
-}
-
-/// Every issue's copy of `repo` held here.
-pub fn worktrees(repo: &str) -> Vec<(String, PathBuf)> {
-    let dir = crate::paths::data_dir().join("work").join(repo);
-    let mut out: Vec<(String, PathBuf)> = fs::read_dir(&dir).into_iter().flatten().flatten()
-        .filter(|e| e.path().is_dir()).map(|e| (e.file_name().to_string_lossy().into_owned(), e.path()))
-        .filter(|(n, _)| valid(n)).collect();
-    out.sort();
-    out
-}
-
-/// The line for an issue file ("issue/001.md" → "001").
-pub fn line_for(issue: &str) -> Option<String> {
-    let stem = issue.trim_start_matches('/').strip_prefix("issue/")?.strip_suffix(".md")?;
-    valid(stem).then(|| stem.to_string())
-}
-
-/// A line as the Remote has it.
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Line {
-    pub line: String,
-    #[serde(default)]
-    pub issue: String,
-    pub head: Option<String>,
-    pub pushed: Option<String>,
-    pub base: Option<String>,
-    #[serde(default, rename = "startedBy")]
-    pub started_by: String,
-    #[serde(default, rename = "startedAt")]
-    pub started_at: u64,
-    #[serde(default)]
-    pub version: i64,
-}
-
-pub fn lines(repo: &str) -> Result<Vec<Line>> {
-    let v = Client::open()?.json("GET", &format!("/v1/repos/{repo}/lines"), None)?;
-    serde_json::from_value(v).map_err(|e| e.to_string())
-}
-
-pub fn line(repo: &str, line: &str) -> Result<Option<Line>> {
-    match Client::open()?.call("GET", &format!("/v1/repos/{repo}?line={line}"), None)? {
-        Reply::Ok(v) => Ok(Some(serde_json::from_value(v).map_err(|e| e.to_string())?)),
-        _ => Ok(None),
-    }
-}
 
 /// Work on `issue` ("issue/001.md"): its line is made on the Remote from
 /// main's last commit if it is not there yet, its copy is brought here, and
@@ -105,7 +23,7 @@ pub fn start(repos: &Repos, repo: &str, issue: &str) -> Result<Line> {
     let client = Client::open()?;
     // A merged issue is done: its work is main's now.
     let path = format!("issue/{}", issue.trim_start_matches('/').trim_start_matches("issue/"));
-    if crate::history::changes_of_repo(repo)?.iter().any(|c| c.issue == path && c.state == "merged") {
+    if changes_of_repo(repo)?.iter().any(|c| c.issue == path && c.state == "merged") {
         return Err(crate::tr!("{}{} is merged already: its work is in main", "{}{} はもう Merge 済みです。その作業は main にあります", repo, crate::issues::number(&path)));
     }
     // What is here goes first, the issue just written above all: the Remote makes the work
@@ -161,49 +79,115 @@ pub fn finish(repos: &Repos, repo: &str, line: &str) -> Result<u64> {
         set_current(repo, MAIN)?;
         crate::tasks::back_on_main(repo);
     }
-    let size = crate::usage::allocated(&at);
+    let size = crate::system::allocated(&at);
     fs::remove_dir_all(&at).map_err(|e| e.to_string())?;
     remote::forget_line(repo, line)?;
     Ok(size)
 }
 
-/// Where a directory is, as this OS sees it: in which repo, on which line
-/// of work, and the folder inside it ("" at its top).
-#[derive(Debug, Clone, PartialEq)]
-pub struct Here {
-    pub repo: String,
+/// Merge, and the work is done: the repo shows main again, and the work's copy here goes.
+pub fn merge_and_finish(repos: &Repos, repo: &str, line: &str) -> Result<Change> {
+    let c = crate::history::merge(repo, line)?;
+    finish(repos, repo, &c.line)?;
+    crate::history::remember_merged(repo, std::iter::once(c.issue.clone()));
+    Ok(c)
+}
+
+/// `s` as it goes in a query string: anything but letters, digits and -._~ as %XX.
+fn query_part(s: &str) -> String {
+    s.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-._~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect()
+}
+
+/// Where each of `names` stands, each its own answer or why not (as `api::answer` says why: its words, and how the
+/// Remote refused it when it did). The Remote is asked for all their lines and changes at once (GET /v1/standing): Git
+/// asked the two of each repo one after another, each a round trip the core waited on. A Remote without the route is
+/// asked repo by repo, as before.
+pub fn standings(repos: &Repos, names: &[String]) -> Result<Vec<std::result::Result<Standing, serde_json::Value>>> {
+    if names.is_empty() { return Ok(Vec::new()); }
+    let client = Client::open()?;
+    let query: Vec<String> = names.iter().map(|n| format!("repo={}", query_part(n))).collect();
+    let each: Vec<serde_json::Value> = match client.call("GET", &format!("/v1/standing?{}", query.join("&")), None)? {
+        Reply::Ok(v) => serde_json::from_value(v).map_err(|e| e.to_string())?,
+        Reply::NotFound(_) => return Ok(names.iter().map(|r| {
+            let one = || Ok(Standing { work: state(repos, r)?, lines: crate::remote::lines(r)?, changes: changes_of_repo(r)? });
+            one().map_err(|e: String| serde_json::json!({"error": e}))
+        }).collect()),
+        Reply::Conflict(v) => return Err(crate::remote::refused_in(409, &v)),
+    };
+    Ok(names.iter().map(|name| {
+        let v = each.iter().find(|x| x["name"].as_str() == Some(name.as_str()))
+            .ok_or_else(|| serde_json::json!({"error": crate::tr!("The Remote did not say where {} stands", "Remote が {} の状態を答えませんでした", name)}))?;
+        // Refused for this repo (turned off): as its own routes refuse it, with what the Remote said of it.
+        if let Some(status) = v["status"].as_u64() {
+            return Err(serde_json::json!({"error": crate::remote::refused_in(status as u16, v), "status": status, "detail": v}));
+        }
+        let one = || {
+            let lines: Vec<crate::remote::Line> = serde_json::from_value(v["lines"].clone()).map_err(|e| e.to_string())?;
+            let changes = listed(&client, name, v["changes"].clone())?;
+            let work = work_from(repos, name, Some((&lines, &changes)))?;
+            Ok(Standing { work, lines, changes })
+        };
+        one().map_err(|e: String| serde_json::json!({"error": e}))
+    }).collect())
+}
+
+/// Where a repo stands, for Git's page: the work it shows, every issue's work on the Remote, the changes to its main.
+#[derive(Serialize, Debug)]
+pub struct Standing {
+    pub work: Work,
+    pub lines: Vec<crate::remote::Line>,
+    pub changes: Vec<Change>,
+}
+
+/// `work`, from the repo's lines and changes as the Remote just answered them (`asked`), when they were asked already.
+fn work_from(repos: &Repos, repo: &str, asked: Option<(&[crate::remote::Line], &[Change])>) -> Result<Work> {
+    // A work merged (here or on another device) is done: back to main, and its copy goes. The changes are asked of
+    // the Remote only when there is a copy here: with none, there is nothing to let go of, and the work shown is main
+    // (most repos, most of the time), which Forge and Git asked about each time they drew the repo.
+    let copies = crate::lines::worktrees(repo);
+    let mut listed = asked.map(|(_, changes)| changes.to_vec());
+    if !copies.is_empty() {
+        let list = match &listed { Some(l) => Ok(l.clone()), None => changes_of_repo(repo) };
+        let merged: Vec<&str> = list.iter().flatten().filter(|c| c.state == "merged").map(|c| c.line.as_str()).collect();
+        for (line, _) in &copies {
+            // A merged work's copy that cannot go now is tried again the next time the issues are read.
+            if merged.contains(&line.as_str()) { let _ = finish(repos, repo, line); }
+        }
+        listed = list.ok();
+    }
+    let on = repos.line(repo);
+    if on == crate::lines::MAIN {
+        return Ok(Work { line: on, issue: None, started_by: String::new(), started_at: 0, commits: 0, unpushed: 0, change: None });
+    }
+    // The work's line as the Remote answered it with the others, or asked of it.
+    let l = match asked.and_then(|(lines, _)| lines.iter().find(|x| x.line == on)) {
+        Some(l) => l.clone(),
+        None => crate::remote::line(repo, &on)?.ok_or_else(|| crate::tr!("The Remote has no such work", "Remote にその作業がありません"))?,
+    };
+    let (commits, unpushed) = crate::history::progress(repo, &l)?;
+    // The list read above, when it was: what was let go of meanwhile was merged, never the work shown.
+    let change = match listed { Some(list) => list, None => changes_of_repo(repo)? }.into_iter().find(|c| c.line == on);
+    Ok(Work { line: on, issue: Some(l.issue), started_by: l.started_by, started_at: l.started_at, commits, unpushed, change })
+}
+
+pub fn state(repos: &Repos, repo: &str) -> Result<Work> {
+    work_from(repos, repo, None)
+}
+
+/// The work the repo shows now: main, or an issue's, and where it stands.
+#[derive(Serialize, Debug, Clone)]
+pub struct Work {
+    /// "main", or the issue's line ("001").
     pub line: String,
-    pub folder: String,
+    pub issue: Option<String>,
+    /// Who started it and when (ms): how a person tells works apart.
+    pub started_by: String,
+    pub started_at: u64,
+    /// Commits made on it, and how many of them are not pushed yet.
+    pub commits: usize,
+    pub unpushed: usize,
+    /// The change it was handed in as, if it was.
+    pub change: Option<Change>,
 }
 
-/// Where `cwd` is: in a repo's copy (`<repos>/<repo>/…`), or an issue's copy
-/// of one (`<data>/work/<repo>/<line>/…`); else, in a Prompt, its repo
-/// (`$LENGTH3_REPO`).
-pub fn here(cwd: &std::path::Path) -> Option<Here> {
-    let parts = |rel: &std::path::Path| -> Vec<String> { rel.iter().map(|p| p.to_string_lossy().into_owned()).collect() };
-    let repos = crate::paths::repos_dir();
-    let repos = repos.canonicalize().unwrap_or(repos);
-    let cwd = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
-    if let Ok(rel) = cwd.strip_prefix(&repos) {
-        if let [repo, rest @ ..] = parts(rel).as_slice() {
-            if crate::repos::valid_name(repo) {
-                return Some(Here { repo: repo.clone(), line: current(repo), folder: rest.join("/") });
-            }
-        }
-    }
-    let work = crate::paths::data_dir().join("work");
-    let work = work.canonicalize().unwrap_or(work);
-    if let Ok(rel) = cwd.strip_prefix(&work) {
-        if let [repo, line, rest @ ..] = parts(rel).as_slice() {
-            if crate::repos::valid_name(repo) && valid(line) {
-                return Some(Here { repo: repo.clone(), line: line.clone(), folder: rest.join("/") });
-            }
-        }
-    }
-    std::env::var("LENGTH3_REPO").ok().filter(|r| crate::repos::valid_name(r)).map(|repo| Here { repo, line: MAIN.into(), folder: String::new() })
-}
 
-/// Point the repo at `line` without bringing anything (freeing walks each copy).
-pub(crate) fn show_for_free(repo: &str, line: &str) -> Result<()> {
-    set_current(repo, line)
-}

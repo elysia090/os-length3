@@ -251,9 +251,6 @@ impl Client {
     }
 }
 
-pub fn sha256(bytes: &[u8]) -> String {
-    Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
-}
 
 /// What a page's request to the Remote came to (`ask`): its status, the headers a page reads of it (net::HEARD), and
 /// its body, as base64 (a file's bytes are not always text).

@@ -150,7 +150,7 @@ pub(crate) fn the_remote() -> String {
 pub(crate) fn root_now(data: &std::path::Path) -> Result<(std::path::PathBuf, root::Installed)> {
     if let Some(r) = root::current(data) { return Ok(r); }
     crate::out::note(&tr!("Fetching the root Prompts run on (once)", "Prompt が動く root を取ってきます（最初の一度だけ）"));
-    root::fetch_and_install(data, &the_remote(), progress())?;
+    usage::fetch_root(data, &the_remote(), progress())?;
     root::current(data).ok_or_else(|| Error::NotFound(tr!("No root yet (l3 root fetch)", "root がありません（l3 root fetch）")))
 }
 
@@ -159,7 +159,7 @@ fn installed(r: &root::Installed) -> String {
 }
 
 pub fn root_fetch(_: &Ctx, _: &Call) -> Result<Reply> {
-    let r = root::fetch_and_install(&paths::data_dir(), &the_remote(), progress())?;
+    let r = usage::fetch_root(&paths::data_dir(), &the_remote(), progress())?;
     Ok(Reply::done(installed(&r), json!(r)))
 }
 
@@ -169,11 +169,11 @@ pub fn root_use(_: &Ctx, call: &Call) -> Result<Reply> {
     let r = match call.word(0).unwrap_or_default() {
         "l3" => match root::use_held(&data, root::RELEASES[0].sha256) {
             Some(r) => r,
-            None => root::fetch_and_install(&data, &the_remote(), progress())?,
+            None => usage::fetch_root(&data, &the_remote(), progress())?,
         },
         id => {
             let d = root::distro(id).ok_or_else(|| Error::Usage(tr!("No such root: {} (l3, ubuntu or debian)", "そういう root はありません：{}（l3、ubuntu、debian）", id)))?;
-            root::fetch_distro(&data, &the_remote(), d, progress())?
+            usage::fetch_distro(&data, &the_remote(), d, progress())?
         }
     };
     Ok(Reply::done(tr!("Prompts run on {} {}", "Prompt は {} {} で動きます", r.name, r.version), json!(r)))

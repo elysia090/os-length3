@@ -44,6 +44,8 @@
 
 use serde::Serialize;
 use std::fs;
+use crate::atomic::temporary_writer;
+use crate::system::{allocated, blocks, links, lock, tally};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -90,47 +92,6 @@ pub struct SystemUsage {
 
 const AGE: Duration = Duration::from_secs(60);
 const WAIT: Duration = Duration::from_secs(2);
-
-#[cfg(unix)]
-fn blocks(meta: &fs::Metadata) -> u64 { use std::os::unix::fs::MetadataExt; meta.blocks() * 512 }
-#[cfg(not(unix))]
-fn blocks(meta: &fs::Metadata) -> u64 { meta.len() }
-
-#[cfg(unix)]
-fn links(meta: &fs::Metadata) -> u64 { use std::os::unix::fs::MetadataExt; meta.nlink() }
-#[cfg(not(unix))]
-fn links(_: &fs::Metadata) -> u64 { 1 }
-
-#[cfg(unix)]
-fn inode(meta: &fs::Metadata) -> (u64, u64) { use std::os::unix::fs::MetadataExt; (meta.dev(), meta.ino()) }
-#[cfg(not(unix))]
-fn inode(_: &fs::Metadata) -> (u64, u64) { (0, 0) }
-
-/// Files, logical and allocated bytes under `dir`, not following links; a
-/// file with several hard links is counted once.
-fn tally(dir: &Path) -> (u64, u64, u64) {
-    tally_into(dir, &mut std::collections::HashSet::new())
-}
-
-fn tally_into(dir: &Path, seen: &mut std::collections::HashSet<(u64, u64)>) -> (u64, u64, u64) {
-    let mut out = (0, 0, 0);
-    let Ok(entries) = fs::read_dir(dir) else { return out };
-    for e in entries.flatten() {
-        let Ok(meta) = e.path().symlink_metadata() else { continue };
-        if meta.is_dir() {
-            let (f, l, a) = tally_into(&e.path(), seen);
-            out = (out.0 + f, out.1 + l, out.2 + a + blocks(&meta));
-        } else if links(&meta) < 2 || seen.insert(inode(&meta)) {
-            out = (out.0 + 1, out.1 + meta.len(), out.2 + blocks(&meta));
-        }
-    }
-    out
-}
-
-/// Bytes the host has set aside for everything under `dir`.
-pub fn allocated(dir: &Path) -> u64 {
-    tally(dir).2 + dir.symlink_metadata().map(|m| blocks(&m)).unwrap_or(0)
-}
 
 fn age(meta: &fs::Metadata) -> Duration {
     meta.modified().ok().and_then(|t| SystemTime::now().duration_since(t).ok()).unwrap_or_default()
@@ -205,24 +166,6 @@ fn system_leftovers(data: &Path, out: &mut Vec<Leftover>) {
     }
 }
 
-/// Whether a name in a repo is one this OS gives a file while it writes it.
-pub fn is_temporary(name: &str) -> bool {
-    name.starts_with(".length3-") || temporary_writer(name, false).is_some()
-}
-
-/// The pid in a name this OS gives its temporary files, if it is one. A
-/// setting's temporary (`<key>.json.<pid>`) is only one in the settings
-/// directory: in a repo, a name like that is a person's own file.
-fn temporary_writer(name: &str, in_settings: bool) -> Option<u32> {
-    if let Some(rest) = name.strip_prefix('.') {
-        if let Some((_, writer)) = rest.rsplit_once(".length3-") {
-            return writer.split('-').next()?.parse().ok();
-        }
-    }
-    let (stem, pid) = name.rsplit_once('.')?;
-    if in_settings && stem.ends_with(".json") { pid.parse().ok() } else { None }
-}
-
 #[cfg(unix)]
 fn running(pid: u32) -> bool {
     // Signal 0 checks existence; EPERM means it exists but is not ours.
@@ -240,7 +183,7 @@ fn leftovers(dir: &Path, data: &Path, out: &mut Vec<Leftover>) {
     let Ok(entries) = fs::read_dir(dir) else { return };
     for e in entries.flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
-        if crate::repos::is_git_name(&name) { continue; }
+        if crate::names::is_git_name(&name) { continue; }
         let path = e.path();
         let Ok(meta) = path.symlink_metadata() else { continue };
         if meta.is_dir() && path == crate::root::system_dir(data) { continue; }
@@ -314,26 +257,6 @@ pub struct Freed {
     /// How long the host took to show at least the freed room (None: not
     /// seen within the wait).
     pub reflected_ms: Option<u64>,
-}
-
-/// One at a time, across the app and l3: a Prompt recording what it holds (prompt.rs), the root made
-/// current (root.rs), and a thing looked at again and let go (`free`). What a Prompt took, or the root
-/// made current, before the look is seen by it; after, it finds the thing there, or not at all, never going.
-pub struct Lock(fs::File);
-
-impl Drop for Lock {
-    /// Let go of as soon as it is done with (closing the file would too).
-    fn drop(&mut self) { let _ = self.0.unlock(); }
-}
-
-pub fn lock(data: &Path) -> std::io::Result<Lock> {
-    // Beside the Prompts' records (prompt.rs), which it is about.
-    let dir = data.join("prompts");
-    crate::boundary::private_dir(&dir)?;
-    let f = fs::OpenOptions::new().create(true).truncate(false).write(true).open(dir.join(".lock"))?;
-    // The browser's core is one instance at a time, and has no locks to take.
-    match f.lock() { Err(e) if e.kind() != std::io::ErrorKind::Unsupported => return Err(e), _ => {} }
-    Ok(Lock(f))
 }
 
 /// The Prompts recorded here, each its repo, its root, and whether it is still being prepared (prompt.rs).
@@ -415,7 +338,7 @@ fn repo_item(repos: &crate::repos::Repos, name: &str, connected: bool, in_use: &
         (Room::SyncFree, if s.fresh { crate::tr!("Not on the Remote yet; sent, then freed", "まだ Remote にありません。送ってから空けます") } else { if s.changed == 1 { crate::tr!("1 change is sent, then it is freed", "1件の変更を送ってから空けます") } else { crate::tr!("{} changes are sent, then it is freed", "{}件の変更を送ってから空けます", s.changed) } })
     };
     // Every copy of it counts: main's and each issue's being worked on; what is derived in it is its own item.
-    let works = crate::work::worktrees(name);
+    let works = crate::lines::worktrees(name);
     let derived: u64 = crate::owned::derived_in(&dir).iter().map(|p| allocated(p)).sum();
     let size = allocated(&dir).saturating_sub(derived) + works.iter().map(|(_, p)| allocated(p)).sum::<u64>();
     // One file is one file (1 file, not 1 files); Japanese counts the same either way.
@@ -430,7 +353,7 @@ fn repo_item(repos: &crate::repos::Repos, name: &str, connected: bool, in_use: &
 
 /// A repo's environment ("env") or caches ("cache"), if it has them here.
 fn owned_item(data: &Path, repos_dir: &Path, kind: &str, repo: &str, in_use: &InUse) -> Option<Item> {
-    if !crate::repos::valid_name(repo) { return None; }
+    if !crate::names::valid_name(repo) { return None; }
     let dir = if kind == "env" { crate::owned::env_dir(data, repo) } else { crate::owned::cache_dir(data, repo) };
     if !dir.is_dir() { return None; }
     let (room, why) = if let Some(why) = in_use.repo(repo) {
@@ -448,7 +371,7 @@ fn owned_item(data: &Path, repos_dir: &Path, kind: &str, repo: &str, in_use: &In
 
 /// What is derived from a repo's own files, if it has any.
 fn derived_item(repos_dir: &Path, repo: &str, in_use: &InUse) -> Option<Item> {
-    if !crate::repos::valid_name(repo) { return None; }
+    if !crate::names::valid_name(repo) { return None; }
     let found = crate::owned::derived_in(&repos_dir.join(repo));
     if found.is_empty() { return None; }
     let mut names: Vec<String> = found.iter().filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned())).collect();
@@ -512,7 +435,7 @@ fn leftover_at(data: &Path, path: &Path) -> Option<Leftover> {
     let rel = path.strip_prefix(data).ok()?;
     // Plain names only: an id from the page with `..` in it must not lead out of the data directory.
     if rel.components().any(|c| !matches!(c, std::path::Component::Normal(_))) { return None; }
-    if rel.components().any(|c| crate::repos::is_git_name(&c.as_os_str().to_string_lossy())) || path.starts_with(&system) { return None; }
+    if rel.components().any(|c| crate::names::is_git_name(&c.as_os_str().to_string_lossy())) || path.starts_with(&system) { return None; }
     let meta = path.symlink_metadata().ok()?;
     if !meta.is_file() || links(&meta) != 1 { return None; }
     let pid = temporary_writer(&path.file_name()?.to_string_lossy(), dir == data.join("home"))?;
@@ -710,6 +633,25 @@ fn remove_leftover(data: &Path, path: &Path) -> Result<u64, String> {
         Ok(_) => Err(crate::tr!("It is not a temporary file any more", "もう一時ファイルではありません")),
         Err(_) => Ok(0),
     }
+}
+
+// ---- room for what comes ----
+
+/// A repo brought here from the Remote (remote.rs fetch), room made for it first if the device is short.
+pub fn bring_repo(repos: &crate::repos::Repos, repo: &str) -> Result<crate::remote::Synced, String> {
+    crate::remote::fetch(repos, repo, || { make_room(&crate::paths::data_dir(), &crate::paths::repos_dir(), 0); })
+}
+
+/// The newest pinned root fetched and installed (root.rs fetch_and_install), room made for it first.
+#[cfg(not(target_os = "wasi"))]
+pub fn fetch_root(data: &Path, remote: &str, progress: impl FnMut(crate::fetch::Progress)) -> Result<crate::root::Installed, String> {
+    crate::root::fetch_and_install(data, remote, |want| { make_room(data, &crate::paths::repos_dir(), want); }, progress)
+}
+
+/// Another distribution's root fetched and installed (root.rs fetch_distro), room made for it first.
+#[cfg(not(target_os = "wasi"))]
+pub fn fetch_distro(data: &Path, remote: &str, d: &crate::root::Distro, progress: impl FnMut(crate::fetch::Progress)) -> Result<crate::root::Installed, String> {
+    crate::root::fetch_distro(data, remote, d, |want| { make_room(data, &crate::paths::repos_dir(), want); }, progress)
 }
 
 #[cfg(test)]

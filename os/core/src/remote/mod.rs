@@ -27,15 +27,18 @@ mod http;
 mod local;
 mod login;
 mod merge;
+#[cfg(unix)]
+pub mod ssh;
 
 pub use self::http::*;
 pub use self::local::*;
 pub use self::login::*;
 pub use self::merge::*;
 
-use crate::repos::{is_git_name, Repos};
+use crate::names::is_git_name;
+use crate::repos::Repos;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use crate::digest::sha256;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::io::Read;
@@ -185,12 +188,12 @@ pub fn key(repos: &Repos, repo: &str) -> (String, String) {
 }
 
 pub fn key_of(repo: &str, line: &str) -> String {
-    if line == crate::work::MAIN { repo.to_string() } else { format!("{repo}@{line}") }
+    if line == crate::lines::MAIN { repo.to_string() } else { format!("{repo}@{line}") }
 }
 
 /// The Remote's address of a line: the repo, and the line when not main.
 fn at(repo: &str, line: &str, rest: &str) -> String {
-    let q = if line == crate::work::MAIN { String::new() } else { format!("?line={line}") };
+    let q = if line == crate::lines::MAIN { String::new() } else { format!("?line={line}") };
     format!("/v1/repos/{repo}{rest}{q}")
 }
 
@@ -464,7 +467,7 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
 /// one that was in step cannot bring back what was discarded by sending itself.
 fn draft_path(repo: &str, line: &str, agreed: bool) -> String {
     let p = at(repo, line, "/draft");
-    if agreed || line != crate::work::MAIN { p } else { format!("{p}?anew=1") }
+    if agreed || line != crate::lines::MAIN { p } else { format!("{p}?anew=1") }
 }
 
 /// What the Remote has of a line, for a copy that last agreed `agreed` with it,
@@ -578,16 +581,17 @@ pub fn sync_all(repos: &Repos) -> Result<Vec<(String, Result<Synced>)>> {
 }
 
 /// Bring a repo that is only on the Remote here (opening it does this).
-pub fn fetch(repos: &Repos, repo: &str) -> Result<Synced> {
+/// `room` is asked for room before the repo comes (usage.rs bring_repo).
+pub fn fetch(repos: &Repos, repo: &str, room: impl FnOnce()) -> Result<Synced> {
     if repos.dir(repo).is_ok() {
         return sync(repos, repo);
     }
-    if !crate::repos::valid_name(repo) {
+    if !crate::names::valid_name(repo) {
         return Err(crate::tr!("{} is not a repo name", "{} は repo の名前になりません", repo));
     }
     let client = Client::open()?;
-    // Brought here: room made for it first if the device is short (usage.rs make_room).
-    crate::usage::make_room(&crate::paths::data_dir(), &crate::paths::repos_dir(), 0);
+    // Brought here: room made for it first if the device is short.
+    room();
     let _held = lock(repo)?;
     if let Reply::NotFound(_) = client.call("GET", &format!("/v1/repos/{repo}"), None)? {
         return Err(failed(Failure::Status(404), crate::tr!("The Remote has no repo {}", "Remote に repo {} はありません", repo)));
@@ -693,7 +697,7 @@ fn prompted(repo: &str, open: &[String]) -> bool {
 /// and never over a repo of that name, here or (signed in) on the Remote.
 pub fn rename_repo(repos: &Repos, repo: &str, to: &str, open: &[String]) -> Result<()> {
     repos.dir(repo)?;
-    if !crate::repos::valid_name(to) {
+    if !crate::names::valid_name(to) {
         return Err(crate::tr!("{:?} is not a repo name (letters, digits, . _ -)", "{:?} は repo の名前になりません（英数字と . _ -）", to));
     }
     if to == repo { return Ok(()); }
@@ -708,7 +712,7 @@ pub fn rename_repo(repos: &Repos, repo: &str, to: &str, open: &[String]) -> Resu
     if connection().is_some() && remote_repos()?.iter().any(|r| r.name == to) { return Err(there()); }
     let _held = lock(repo)?;
     crate::atomic::rename_new(&repos.root().join(repo), &repos.root().join(to))
-        .map_err(|e| if e.kind() == std::io::ErrorKind::AlreadyExists { there() } else { crate::repos::io_error(repo, &e) })?;
+        .map_err(|e| if e.kind() == std::io::ErrorKind::AlreadyExists { there() } else { crate::i18n::io_error(repo, &e) })?;
     // What goes with it by name follows it; what cannot (another left under the new name) stays without an owner,
     // as what a repo freed from here leaves, for Runtime to free.
     for (from, into) in kept_by_name(repo).iter().zip(kept_by_name(to)) {
@@ -730,8 +734,8 @@ pub fn delete_repo(repos: &Repos, repo: &str, open: &[String]) -> Result<()> {
     let _held = lock(repo)?;
     // Moved aside in one step first, so nothing lists, opens or syncs it by its name while it goes.
     let aside = dir.with_file_name(format!(".{repo}.deleting-{}", crate::pid()));
-    crate::atomic::rename_new(&dir, &aside).map_err(|e| crate::repos::io_error(repo, &e))?;
-    fs::remove_dir_all(&aside).map_err(|e| crate::repos::io_error(repo, &e))?;
+    crate::atomic::rename_new(&dir, &aside).map_err(|e| crate::i18n::io_error(repo, &e))?;
+    fs::remove_dir_all(&aside).map_err(|e| crate::i18n::io_error(repo, &e))?;
     for kept in kept_by_name(repo) { gone(fs::remove_dir_all(kept))?; }
     for record in records_of(repo) { gone(fs::remove_file(record))?; }
     Ok(())
@@ -739,13 +743,13 @@ pub fn delete_repo(repos: &Repos, repo: &str, open: &[String]) -> Result<()> {
 
 /// Where a copy of `repo` is: main's in the repos, an issue's among the works.
 fn copy_dir(repos: &Repos, repo: &str, line: &str) -> PathBuf {
-    if line == crate::work::MAIN { repos.root().join(repo) } else { crate::work::worktree(repo, line) }
+    if line == crate::lines::MAIN { repos.root().join(repo) } else { crate::lines::worktree(repo, line) }
 }
 
 fn free_with(client: &Client, repos: &Repos, repo: &str) -> Result<u64> {
     let shown = repos.line(repo);
-    let mut copies: Vec<String> = crate::work::worktrees(repo).into_iter().map(|(l, _)| l).collect();
-    copies.push(crate::work::MAIN.into());
+    let mut copies: Vec<String> = crate::lines::worktrees(repo).into_iter().map(|(l, _)| l).collect();
+    copies.push(crate::lines::MAIN.into());
     // Turned off on the Remote: nothing can be sent to it, so a copy goes
     // only when it holds nothing the Remote lacks (the Remote keeps it 30 days).
     let off = serde_json::from_value::<Vec<RemoteRepo>>(client.json("GET", "/v1/repos", None)?).map_err(|e| e.to_string())?
@@ -773,9 +777,9 @@ fn free_with(client: &Client, repos: &Repos, repo: &str) -> Result<u64> {
             checked.push((key, line.clone(), dir, agreed, modes));
             continue;
         }
-        crate::work::show_for_free(repo, line)?;
+        crate::lines::show_for_free(repo, line)?;
         let s = sync_with(client, repos, repo);
-        crate::work::show_for_free(repo, &shown)?;
+        crate::lines::show_for_free(repo, &shown)?;
         let s = s?;
         if let Some((path, why)) = s.unsynced.first() {
             return Err(crate::tr!("Something cannot be sent to the Remote ({}: {})", "Remote に送れないものがあります（{}: {}）", path, why));
@@ -830,12 +834,12 @@ fn free_with(client: &Client, repos: &Repos, repo: &str) -> Result<u64> {
     }
     let mut bytes = 0;
     for (key, _, aside) in &moved {
-        bytes += crate::usage::allocated(aside);
+        bytes += crate::system::allocated(aside);
         fs::remove_dir_all(aside).map_err(|e| e.to_string())?;
         forget_base(key)?;
     }
     drop(held);
-    if !off { crate::work::show_for_free(repo, crate::work::MAIN)?; }
+    if !off { crate::lines::show_for_free(repo, crate::lines::MAIN)?; }
     Ok(bytes)
 }
 
@@ -856,6 +860,36 @@ fn put_back(moved: &[(String, PathBuf, PathBuf)]) -> Option<String> {
     }
     (!lost.is_empty()).then(|| lost.join("; "))
 }
+
+pub fn line(repo: &str, line: &str) -> Result<Option<Line>> {
+    match Client::open()?.call("GET", &format!("/v1/repos/{repo}?line={line}"), None)? {
+        Reply::Ok(v) => Ok(Some(serde_json::from_value(v).map_err(|e| e.to_string())?)),
+        _ => Ok(None),
+    }
+}
+
+pub fn lines(repo: &str) -> Result<Vec<Line>> {
+    let v = Client::open()?.json("GET", &format!("/v1/repos/{repo}/lines"), None)?;
+    serde_json::from_value(v).map_err(|e| e.to_string())
+}
+
+/// A line as the Remote has it.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Line {
+    pub line: String,
+    #[serde(default)]
+    pub issue: String,
+    pub head: Option<String>,
+    pub pushed: Option<String>,
+    pub base: Option<String>,
+    #[serde(default, rename = "startedBy")]
+    pub started_by: String,
+    #[serde(default, rename = "startedAt")]
+    pub started_at: u64,
+    #[serde(default)]
+    pub version: i64,
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -968,8 +1002,8 @@ mod tests {
 
     #[test]
     fn a_copy_never_in_step_is_sent_as_a_new_repo() {
-        assert!(draft_path("notes", crate::work::MAIN, false).ends_with("/draft?anew=1"));
-        assert!(draft_path("notes", crate::work::MAIN, true).ends_with("/draft"));
+        assert!(draft_path("notes", crate::lines::MAIN, false).ends_with("/draft?anew=1"));
+        assert!(draft_path("notes", crate::lines::MAIN, true).ends_with("/draft"));
         assert_eq!(draft_path("notes", "001", false), "/v1/repos/notes/draft?line=001");
     }
 

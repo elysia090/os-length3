@@ -132,7 +132,7 @@ pub fn profile_set(_: &Ctx, call: &Call) -> Result<Reply> {
 }
 
 pub fn lang_show(_: &Ctx, _: &Call) -> Result<Reply> {
-    let kept = i18n::lang();
+    let kept = home::lang();
     let spoken = if i18n::ja() { "ja" } else { "en" };
     let mut text = kept.clone();
     if spoken != kept { text += &tr!(" (LENGTH3_LANG speaks {} now)", "（いまは LENGTH3_LANG で {}）", spoken); }
@@ -141,7 +141,7 @@ pub fn lang_show(_: &Ctx, _: &Call) -> Result<Reply> {
 
 pub fn lang_set(_: &Ctx, call: &Call) -> Result<Reply> {
     let l = call.word(0).unwrap_or_default();
-    i18n::set_lang(l).map_err(Error::Usage)?;
+    home::set_lang(l).map_err(Error::Usage)?;
     // Said in the language just chosen.
     let text = if l == "ja" { "日本語で話します（アプリも同じです）" } else { "Speaking English (the app does too)" };
     Ok(Reply::done(text, json!({"lang": l})))

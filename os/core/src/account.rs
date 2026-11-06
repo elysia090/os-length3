@@ -185,7 +185,7 @@ fn ask_page(base: &str, ask: &str, repo: Option<&str>) -> Result<String> {
     let base = base.trim_end_matches('/');
     if ask == "sign-in" { return Ok(format!("{base}/?account=sign-in")); }
     match repo {
-        Some(r) if crate::repos::valid_name(r) => Ok(format!("{base}/?account={ask}&repo={r}")),
+        Some(r) if crate::names::valid_name(r) => Ok(format!("{base}/?account={ask}&repo={r}")),
         _ => Err(crate::tr!("No such repo", "そのリポジトリはありません")),
     }
 }

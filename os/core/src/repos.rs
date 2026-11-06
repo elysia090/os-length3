@@ -12,16 +12,8 @@ use std::time::UNIX_EPOCH;
 
 pub use crate::Result;
 use crate::{issues, templates, tr};
-
-/// An error of the file system about `at` (a repo, or repo/path), in the OS's words.
-pub fn io_error(at: impl std::fmt::Display, e: &std::io::Error) -> String {
-    match e.kind() {
-        std::io::ErrorKind::NotFound => tr!("There is no {}", "{} はありません", at),
-        std::io::ErrorKind::PermissionDenied => tr!("{}: not allowed", "{}：許可されていません", at),
-        std::io::ErrorKind::AlreadyExists => tr!("{} is there already", "{} はもうあります", at),
-        _ => tr!("{}: {}", "{}：{}", at, e),
-    }
-}
+use crate::i18n::io_error;
+use crate::names::{is_git_name, valid_name};
 
 /// `repo/rel` as it is named to a person ("hello", "hello/src/a.c").
 pub fn shown(repo: &str, rel: &str) -> String {
@@ -68,26 +60,6 @@ pub fn is_issues(rel: &str) -> bool {
     rel == ISSUES || rel.strip_prefix(ISSUES).is_some_and(|r| r.starts_with('/'))
 }
 
-/// Repo names are plain directory names: letters, digits, `.`, `_`, `-`.
-pub fn valid_name(name: &str) -> bool {
-    !name.is_empty() && name.len() <= 64 && !name.starts_with('.')
-        && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-}
-
-/// Whether a path part names a repo's `.git` however it is spelt: git, and
-/// the file systems under it, treat `.GIT` (case-insensitive volumes),
-/// `.git.` or `.git ` (trailing dots and spaces dropped), `git~1` (the short
-/// name) and `.git` with invisible code points (ignored by HFS+) as `.git`
-/// itself. Nothing reached through the store may land in it: its config and
-/// hooks run commands on the host the next time git runs.
-pub fn is_git_name(part: &str) -> bool {
-    let visible: String = part.chars()
-        .filter(|c| !matches!(*c as u32, 0x200C..=0x200F | 0x202A..=0x202E | 0x206A..=0x206F | 0xFEFF))
-        .collect::<String>().to_ascii_lowercase();
-    let name = visible.trim_end_matches(['.', ' ']);
-    name == ".git" || name == "git~1"
-}
-
 fn touches_git(path: &Path) -> bool {
     path.components().any(|c| matches!(c, Component::Normal(p) if is_git_name(&p.to_string_lossy())))
 }
@@ -126,7 +98,7 @@ impl Repos {
 
     /// The line of work `name` shows now: main, or an issue's (work.rs).
     pub fn line(&self, name: &str) -> String {
-        if self.lines { crate::work::current(name) } else { crate::work::MAIN.into() }
+        if self.lines { crate::lines::current(name) } else { crate::lines::MAIN.into() }
     }
 
     /// Where `name`'s files are now: its own directory (main), or the
@@ -136,8 +108,8 @@ impl Repos {
         if !self.lines {
             return Ok(main);
         }
-        let line = crate::work::current(name);
-        Ok(if line == crate::work::MAIN { main } else { crate::work::worktree(name, &line) })
+        let line = crate::lines::current(name);
+        Ok(if line == crate::lines::MAIN { main } else { crate::lines::worktree(name, &line) })
     }
 
     fn repo(&self, name: &str) -> Result<PathBuf> {

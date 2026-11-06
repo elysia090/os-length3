@@ -111,7 +111,7 @@ pub fn set(_: &Ctx, call: &Call) -> Result<Reply> {
     }
     let stopped = ssh::stop(&data);
     // Said to the Remote here too, in case the listener could not (it was killed): pages stop showing it.
-    if remote::connection().is_some() { let _ = ssh::withdraw(); }
+    if remote::connection().is_some() { let _ = remote::ssh::withdraw(); }
     let text = if stopped.is_some() { tr!("SSH is off; its sessions ended", "SSH をオフにしました。そのセッションは終わりました") }
         else { tr!("SSH was off already", "SSH はもうオフです") };
     Ok(Reply::done(text, json!({"changed": stopped.is_some(), "ssh": {"on": false}})))

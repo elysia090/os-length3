@@ -137,16 +137,17 @@ fn fetch_first(urls: &[String], sha256: &str, bytes: u64, dest: &Path, mut progr
 }
 
 /// Fetch another distribution's root (the Remote by digest first, then its
-/// makers), install it, and make it the one Prompts use.
+/// makers), install it, and make it the one Prompts use. `room` is asked for
+/// what its bundle and its tree take before a byte comes (usage.rs fetch_distro).
 #[cfg(not(target_os = "wasi"))]
-pub fn fetch_distro(data: &Path, remote: &str, d: &Distro, progress: impl FnMut(crate::fetch::Progress)) -> Result<Installed, String> {
+pub fn fetch_distro(data: &Path, remote: &str, d: &Distro, room: impl FnOnce(u64), progress: impl FnMut(crate::fetch::Progress)) -> Result<Installed, String> {
     if let Some(had) = use_held(data, d.sha256) { return Ok(had); }
     let bundles = system_dir(data).join(".bundles");
     crate::boundary::private_dir(&system_dir(data)).map_err(|e| e.to_string())?;
     fs::create_dir_all(&bundles).map_err(|e| e.to_string())?;
     let archive = bundles.join(format!("{}.tar.gz", d.sha256));
-    // Its bundle and its tree: room made for them first, by itself (usage.rs make_room).
-    crate::usage::make_room(data, &crate::paths::repos_dir(), d.bytes.saturating_mul(3));
+    // Its bundle and its tree: room made for them first.
+    room(d.bytes.saturating_mul(3));
     let mut progress = progress;
     if let Err(first) = crate::fetch::fetch(&by_digest(remote, d.sha256), d.sha256, d.bytes, &archive, &mut progress) {
         crate::fetch::fetch(d.url, d.sha256, d.bytes, &archive, &mut progress).map_err(|e| format!("{first} / {e}"))?;
@@ -199,7 +200,7 @@ pub fn use_held(data: &Path, sha256: &str) -> Option<Installed> {
 fn point_current(data: &Path, sha256: &str) -> Result<(), String> {
     // Under the lock 空ける looks again under (usage::lock), and only at a root still whole: one freed since
     // it was found here is not made current, and the one made current is not freed after.
-    let _still = crate::usage::lock(data).map_err(|e| e.to_string())?;
+    let _still = crate::system::lock(data).map_err(|e| e.to_string())?;
     if !system_dir(data).join(sha256).join("installed.json").is_file() {
         return Err(crate::tr!("That root was freed meanwhile; fetch it again", "その root はそのあいだに空けられました。もう一度取ってください"));
     }
@@ -211,15 +212,16 @@ fn point_current(data: &Path, sha256: &str) -> Result<(), String> {
 }
 
 /// Fetch the newest pinned release from the Remote and install it; the
-/// bundle is let go once its root is in place.
+/// bundle is let go once its root is in place. `room` is asked for what the
+/// bundle and its tree take before a byte comes (usage.rs fetch_root).
 #[cfg(not(target_os = "wasi"))]
-pub fn fetch_and_install(data: &Path, remote: &str, progress: impl FnMut(crate::fetch::Progress)) -> Result<Installed, String> {
+pub fn fetch_and_install(data: &Path, remote: &str, room: impl FnOnce(u64), progress: impl FnMut(crate::fetch::Progress)) -> Result<Installed, String> {
     let r = &RELEASES[0];
     let bundles = system_dir(data).join(".bundles");
     crate::boundary::private_dir(&system_dir(data)).map_err(|e| e.to_string())?;
     fs::create_dir_all(&bundles).map_err(|e| e.to_string())?;
     let bundle = bundles.join(format!("{}.tar.zst", r.sha256));
-    crate::usage::make_room(data, &crate::paths::repos_dir(), r.bytes.saturating_mul(3));
+    room(r.bytes.saturating_mul(3));
     // The Remote first, then the publisher's, then the release channel
     // (`sources`). Whichever gives it, the bytes are only kept if they are
     // the pinned digest.
@@ -250,23 +252,6 @@ pub fn system_dir(data: &Path) -> PathBuf {
     data.join("system")
 }
 
-/// The sha256 of all `r` reads (in hex), and how many bytes that was.
-pub(crate) fn sha256_read(r: &mut impl io::Read) -> io::Result<(String, u64)> {
-    use sha2::Digest;
-    let mut h = sha2::Sha256::new();
-    let mut buf = vec![0u8; 1 << 16];
-    let mut n = 0u64;
-    loop {
-        match r.read(&mut buf) {
-            Ok(0) => break,
-            Ok(k) => { h.update(&buf[..k]); n += k as u64; }
-            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
-            Err(e) => return Err(e),
-        }
-    }
-    Ok((h.finalize().iter().map(|b| format!("{b:02x}")).collect(), n))
-}
-
 /// The release a bundle is, by its digest; anything not pinned is refused.
 pub fn identify(bundle: &Path) -> Result<&'static Release, String> {
     open_pinned(bundle, release_of).map(|(_, r)| r)
@@ -286,7 +271,7 @@ fn not_pinned(sha: &str, n: u64) -> String {
 /// put in its place between them, or a disk that answers twice differently).
 fn open_pinned<T>(path: &Path, pinned: impl FnOnce(&str, u64) -> Result<T, String>) -> Result<(fs::File, T), String> {
     let mut f = fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let (sha, n) = sha256_read(&mut f).map_err(|e| format!("{}: {e}", path.display()))?;
+    let (sha, n) = crate::digest::sha256_read(&mut f).map_err(|e| format!("{}: {e}", path.display()))?;
     let what = pinned(&sha, n)?;
     io::Seek::rewind(&mut f).map_err(|e| e.to_string())?;
     Ok((f, what))
@@ -592,7 +577,7 @@ fn put_in_place(data: &Path, sha256: &str, name: &str, version: &str, distro: Op
             return Err(crate::tr!("This release has no root/bin/sh", "このリリースには root/bin/sh がありません"));
         }
         let about = Installed { name: name.into(), version: version.into(), sha256: sha256.into(), files, bytes,
-            allocated: Some(crate::usage::allocated(&aside)), distro: distro.map(String::from) };
+            allocated: Some(crate::system::allocated(&aside)), distro: distro.map(String::from) };
         fs::write(aside.join("installed.json"), serde_json::to_string(&about).unwrap()).map_err(|e| e.to_string())?;
         // installed.json says the root is whole, and nothing checks it again: the tree is on the disk before
         // it is renamed into place, or a crash soon after could leave a root that says so with empty files.

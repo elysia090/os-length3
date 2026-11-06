@@ -229,13 +229,13 @@ pub fn agent_command(harness: &str) -> Option<String> {
 
 /// An issue written here: offered to the agent, when one is set up.
 pub fn issue_written(repo: &str, issue: &str, title: &str) {
-    let (Some(_), Some(line)) = (agent(), crate::work::line_for(issue)) else { return };
+    let (Some(_), Some(line)) = (agent(), crate::lines::line_for(issue)) else { return };
     let _ = with(|b| put(b, Ask { repo, line: &line, issue, deed: Deed::Take, unit: Unit::Goal, words: title, weight: 0 }, State::Offered));
 }
 
 /// A commit on an issue's work: its tests run by themselves, when the repo says how to run them.
 pub fn committed(repo: &str, line: &str, dir: &Path) {
-    if line == crate::work::MAIN || tests_command(dir).is_none() { return; }
+    if line == crate::lines::MAIN || tests_command(dir).is_none() { return; }
     let issue = format!("issue/{line}.md");
     if with(|b| put(b, Ask { repo, line, issue: &issue, deed: Deed::Tests, unit: Unit::Test, words: "", weight: 0 }, State::Waiting)).is_ok() { kick(repo); }
 }
@@ -295,7 +295,7 @@ pub fn reply(id: u64, words: &str) -> Result<Task> {
 /// A question about `repo` (its main, or the line it shows): answered by the agent, reading only.
 pub fn ask(repo: &str, words: &str) -> Result<Task> {
     if agent().is_none() { return Err(crate::tr!("No agent to ask (l3 agent on claude)", "聞けるエージェントがいません（l3 agent on claude）")); }
-    let line = crate::work::current(repo);
+    let line = crate::lines::current(repo);
     let k = with(|b| put(b, Ask { repo, line: &line, issue: "", deed: Deed::Ask, unit: Unit::Question, words: words.trim(), weight: 0 }, State::Waiting))?;
     kick(&k.repo);
     Ok(k)
@@ -306,10 +306,10 @@ pub fn ask(repo: &str, words: &str) -> Result<Task> {
 /// The next task of `repo` to run, now working: the most complex unit first, the heaviest within it, then the oldest.
 /// One that writes waits while the repo shows another issue's work (the person's own), and runs once it is back.
 pub fn next(repo: &str) -> Result<Option<Task>> {
-    let shown = crate::work::current(repo);
+    let shown = crate::lines::current(repo);
     with(|b| {
         let mut ready: Vec<&mut Task> = b.tasks.iter_mut().filter(|k| k.repo == repo && k.state == State::Waiting
-            && (!k.deed.writes() || shown == crate::work::MAIN || shown == k.line)).collect();
+            && (!k.deed.writes() || shown == crate::lines::MAIN || shown == k.line)).collect();
         ready.sort_by(|a, b| a.unit.cmp(&b.unit).then(b.weight.cmp(&a.weight)).then(a.made.cmp(&b.made)));
         ready.into_iter().next().map(|k| { k.state = State::Working; k.updated = now(); k.clone() })
     })

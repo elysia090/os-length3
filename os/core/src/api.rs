@@ -154,7 +154,7 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         "remote_repos" => to(remote::remote_repos()?),
         "remote_status" => to(remote::status(&repos()?)?),
         "sync_repo" => to(remote::sync(&repos()?, &a.s("repo")?)?),
-        "repo_fetch" => to(remote::fetch(&repos()?, &a.s("repo")?)?),
+        "repo_fetch" => to(usage::bring_repo(&repos()?, &a.s("repo")?)?),
         // One of Home's settings agreed with the Remote (home.rs agree_with).
         "home_sync" => to(remote::sync_home(&a.s("key")?)?),
         // One of them taken off this device, only as the Remote has it (home.rs leave).
@@ -182,12 +182,12 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         "history_reset" => to(history::reset(&repos()?, &a.s("repo")?)?),
         "work_start" => to(work::start(&repos()?, &a.s("repo")?, &a.s("issue")?)?),
         "work_switch" => to(work::switch(&repos()?, &a.s("repo")?, &a.s("line")?)?),
-        "work_state" => to(history::work(&repos()?, &a.s("repo")?)?),
-        "work_lines" => to(work::lines(&a.s("repo")?)?),
+        "work_state" => to(crate::work::state(&repos()?, &a.s("repo")?)?),
+        "work_lines" => to(crate::remote::lines(&a.s("repo")?)?),
         "changes_list" => to(history::changes_of_repo(&a.s("repo")?)?),
         // Each repo's own answer, as `answer` gives one: {ok: {work, lines, changes}}, or {error} (with its status and
         // detail when the Remote refused it).
-        "work_standings" => to(history::standings(&repos()?, &a.list("repos")?)?.into_iter()
+        "work_standings" => to(crate::work::standings(&repos()?, &a.list("repos")?)?.into_iter()
             .map(|r| r.map_or_else(|why| why, |s| json!({"ok": s}))).collect::<Vec<_>>()),
         "change_review" => to(history::review(&a.s("repo")?, &a.s("id")?, &a.s("verdict")?, &a.s("note")?, &a.list("marks")?)?),
         "change_merge" => to(history::merge(&a.s("repo")?, &a.s("id")?)?),

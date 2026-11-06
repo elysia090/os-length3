@@ -23,7 +23,7 @@ fn own(w: &str) -> Result<String> {
 
 /// Not here: say so, and where it is if the Remote has it.
 fn missing(ctx: &Ctx, repo: &str) -> Error {
-    if !repos::valid_name(repo) {
+    if !length3_core::names::valid_name(repo) {
         return Error::Usage(tr!("{:?} is not a repo name (letters, digits, . _ -)", "{:?} は repo の名前になりません（英数字と . _ -）", repo));
     }
     let there = !ctx.prompt && remote::connection().is_some() && remote::remote_repos().is_ok_and(|l| l.iter().any(|r| r.name == repo));
@@ -105,7 +105,7 @@ pub fn path(ctx: &Ctx, call: &Call, i: usize) -> Result<(String, String)> {
 }
 
 /// `w` read from where `h` is: (repo, path); `..` past the repo's top reaches the repos beside it.
-fn joined(h: &length3_core::work::Here, w: &str) -> (String, String) {
+fn joined(h: &length3_core::lines::Here, w: &str) -> (String, String) {
     let mut at: Vec<String> = if w.starts_with('/') { vec![h.repo.clone()] } else { std::iter::once(h.repo.clone()).chain(h.folder.split('/').filter(|p| !p.is_empty()).map(String::from)).collect() };
     for part in w.split('/') {
         match part { "" | "." => {} ".." => { at.pop(); } p => at.push(p.to_string()) }
@@ -246,7 +246,7 @@ pub fn address(word: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use length3_core::work::Here;
+    use length3_core::lines::Here;
 
     fn here(repo: &str, folder: &str) -> Here { Here { repo: repo.into(), line: "main".into(), folder: folder.into() } }
 

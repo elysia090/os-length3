@@ -18,6 +18,7 @@ pub mod boundary;
 pub mod compute;
 #[cfg(unix)]
 pub mod desktop;
+pub mod digest;
 #[cfg(not(target_os = "wasi"))]
 pub mod fetch;
 pub mod root;
@@ -27,6 +28,7 @@ pub mod i18n;
 pub mod inbox;
 pub mod issues;
 pub mod linediff;
+pub mod lines;
 pub mod names;
 pub mod net;
 #[cfg(target_os = "linux")]

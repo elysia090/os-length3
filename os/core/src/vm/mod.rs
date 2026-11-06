@@ -115,10 +115,7 @@ fn version(data: &Path, program: &str) -> Option<String> {
 pub fn host(data: &Path) -> Host {
     let kvm = std::fs::OpenOptions::new().read(true).write(true).open("/dev/kvm");
     let (firecracker, jailer) = (version(data, "firecracker"), version(data, "jailer"));
-    let kernel = std::fs::read(kernel_path(data)).ok().map(|b| {
-        use sha2::{Digest, Sha256};
-        Sha256::digest(&b).iter().map(|x| format!("{x:02x}")).collect::<String>()
-    });
+    let kernel = std::fs::read(kernel_path(data)).ok().map(crate::digest::sha256);
     let memory = std::fs::read_to_string("/proc/meminfo").ok().and_then(|t| t.lines()
         .find_map(|l| l.strip_prefix("MemTotal:")?.trim().strip_suffix("kB")?.trim().parse::<u64>().ok())).map_or(0, |kb| kb * 1024);
     let mut lacks = Vec::new();

@@ -221,7 +221,7 @@ fn record_as(data: &Path, pid: u32, repo: &str, network: bool, root: &Path) -> s
     crate::boundary::private_dir(&dir)?;
     let start_ticks = start_ticks(pid).ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, format!("/proc/{pid}/stat")))?;
     let started = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
-    let _still = crate::usage::lock(data)?;
+    let _still = crate::system::lock(data)?;
     let Some(digest) = root.parent().filter(|d| d.join("installed.json").is_file()).and_then(|d| d.file_name()) else {
         return Err(std::io::Error::new(std::io::ErrorKind::NotFound,
             crate::tr!("Its root was freed as it started; start it again", "始めるあいだに root が空けられました。もう一度始めてください")));
@@ -294,6 +294,7 @@ pub fn stop(data: &Path, r: &Running) -> Stopped {
 pub fn l3_path(app: &Path) -> std::path::PathBuf {
     std::env::var_os("LENGTH3_L3").map(Into::into).unwrap_or_else(|| app.with_file_name("l3"))
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -393,7 +394,7 @@ mod tests {
         let _ = fs::remove_dir_all(&data);
         let root = a_root(&data, "abc");
         // Read as current, then freed before the Prompt recorded it (under the lock, as 空ける does).
-        let still = crate::usage::lock(&data).unwrap();
+        let still = crate::system::lock(&data).unwrap();
         let starting = { let (data, root) = (data.clone(), root.clone()); std::thread::spawn(move || record(&data, "here", false, &root).map(|_| ())) };
         std::thread::sleep(Duration::from_millis(200));
         fs::remove_dir_all(root.parent().unwrap()).unwrap();

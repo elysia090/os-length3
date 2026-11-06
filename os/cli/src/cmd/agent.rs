@@ -20,7 +20,7 @@ const PAYLOAD: usize = 4 * 1024 * 1024;
 
 /// A session as a line: the harness, where (repo, and the issue as #N), what it does, how long ago.
 fn said(s: &agents::Session) -> (String, String) {
-    let at = if s.line == length3_core::work::MAIN { s.repo.clone() } else { format!("{} {}", s.repo, super::git::line_called(&s.line)) };
+    let at = if s.line == length3_core::lines::MAIN { s.repo.clone() } else { format!("{} {}", s.repo, super::git::line_called(&s.line)) };
     let state = match s.state.as_str() {
         "working" => tr!("working", "作業中"),
         "waits" => tr!("waits for you", "あなたを待っています"),
@@ -283,8 +283,8 @@ pub fn run(ctx: &Ctx, _: &Call) -> Result<Reply> {
         }
         drop(hold);
         // One set off while this let go is left to this one: nothing waiting is ever left without a runner.
-        let shown = length3_core::work::current(&repo);
-        if !tasks::all().iter().any(|k| k.repo == repo && k.state == tasks::State::Waiting && (!k.deed.writes() || shown == length3_core::work::MAIN || shown == k.line)) {
+        let shown = length3_core::lines::current(&repo);
+        if !tasks::all().iter().any(|k| k.repo == repo && k.state == tasks::State::Waiting && (!k.deed.writes() || shown == length3_core::lines::MAIN || shown == k.line)) {
             return Ok(Reply::Nothing);
         }
     }
@@ -306,12 +306,12 @@ fn run_one(ctx: &Ctx, k: &tasks::Task) -> tasks::Outcome {
     let name = harness.as_deref().map(tasks::agent_name).unwrap_or_default();
     // What writes runs on the issue's own copy, shown as the work the person would have started; what reads, on the
     // copy it is about.
-    if k.deed.writes() && work::current(repo) != line {
-        let at = if work::worktree(repo, line).is_dir() { work::switch(&repos, repo, line) } else { work::start(&repos, repo, &k.issue).map(|_| ()) };
+    if k.deed.writes() && length3_core::lines::current(repo) != line {
+        let at = if length3_core::lines::worktree(repo, line).is_dir() { work::switch(&repos, repo, line) } else { work::start(&repos, repo, &k.issue).map(|_| ()) };
         if let Err(why) = at { return stopped(why, if ctx.connected() { String::new() } else { "l3 login".into() }); }
     }
-    let copy = work::worktree(repo, line);
-    let dir = if work::current(repo) == line || line == work::MAIN || !copy.is_dir() { repos.dir(repo) } else { Ok(copy) };
+    let copy = length3_core::lines::worktree(repo, line);
+    let dir = if length3_core::lines::current(repo) == line || line == length3_core::lines::MAIN || !copy.is_dir() { repos.dir(repo) } else { Ok(copy) };
     let Ok(dir) = dir else { return stopped(tr!("{} is not here", "{} はここにありません", repo), String::new()) };
     let command = match &harness {
         None => match tasks::tests_command(&dir) { Some(c) => c, None => return stopped(String::new(), String::new()) },
@@ -454,7 +454,7 @@ fn watched(pid: u32, budget: &compute::Budget, ended: &std::sync::atomic::Atomic
 /// Ends with its command's code.
 #[cfg(target_os = "linux")]
 pub fn inside(ctx: &Ctx, call: &Call) -> Result<Reply> {
-    use length3_core::{home, launch, prompt, root, work};
+    use length3_core::{home, launch, prompt, root};
     let repo = ctx.here.as_ref().map(|h| h.repo.clone()).ok_or_else(|| Error::Usage(tr!("Which repo? (LENGTH3_REPO)", "どの repo ですか（LENGTH3_REPO）")))?;
     task_id(call)?;
     let spec: compute::Spec = serde_json::from_str(&std::env::var("L3_SPEC").unwrap_or_default())
@@ -468,8 +468,8 @@ pub fn inside(ctx: &Ctx, call: &Call) -> Result<Reply> {
         .ok_or_else(|| Error::NotFound(tr!("The root it runs on is not here (l3 root fetch)", "実行する root がここにありません（l3 root fetch）")))?;
     let root = root::system_dir(&data).join(&spec.root).join("root");
     let repos = ctx.repos()?;
-    let copy = work::worktree(&repo, &spec.line);
-    let dir = if spec.line == work::MAIN { repos.on_main().dir(&repo)? } else if copy.is_dir() { copy } else { repos.dir(&repo)? };
+    let copy = length3_core::lines::worktree(&repo, &spec.line);
+    let dir = if spec.line == length3_core::lines::MAIN { repos.on_main().dir(&repo)? } else if copy.is_dir() { copy } else { repos.dir(&repo)? };
     let s = launch::Sandbox { root, repo: dir, name: repo.clone(), argv: spec.argv.clone(), network: spec.network,
         dotfiles: launch::dotfiles_in_effect(), data: Some(data.clone()), env: [spec.env.clone(), length3_core::agent_key::env()].concat() };
     // Recorded as any Prompt is: l3 prompt ls and Runtime see it, l3 prompt stop ends it.

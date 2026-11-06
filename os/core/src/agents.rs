@@ -145,7 +145,7 @@ pub fn report(harness: &str, event: Option<&str>, payload: &str, cwd_here: &std:
     let name = s("hook_event_name").or(s("event")).or(s("type")).or(event)?;
     let kind = kind_of(name)?;
     let cwd = s("cwd").map(PathBuf::from).unwrap_or_else(|| cwd_here.to_path_buf());
-    let here = crate::work::here(&cwd)?;
+    let here = crate::lines::here(&cwd)?;
     let harness: String = harness.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').take(24).collect::<String>().to_ascii_lowercase();
     let session: String = s("session_id").or(s("session")).unwrap_or("").chars().filter(|c| c.is_ascii_alphanumeric() || "-_.".contains(*c)).take(64).collect();
     Some(Event { at: now, harness: if harness.is_empty() { "agent".into() } else { harness }, session, repo: here.repo, line: here.line, kind, text: text_of(kind, &v) })
@@ -156,7 +156,7 @@ pub fn report(harness: &str, event: Option<&str>, payload: &str, cwd_here: &std:
 /// same sessions as any agent's: wherever agents are shown at work, it is too.
 pub fn from_box(session: &str, repo: &str, kind: Kind, text: &str, now: u64) -> Event {
     let session = session.chars().filter(|c| c.is_ascii_alphanumeric() || "-_.".contains(*c)).take(64).collect();
-    Event { at: now, harness: "box".into(), session, repo: repo.into(), line: crate::work::current(repo), kind, text: line_of(text) }
+    Event { at: now, harness: "box".into(), session, repo: repo.into(), line: crate::lines::current(repo), kind, text: line_of(text) }
 }
 
 fn journal() -> PathBuf {

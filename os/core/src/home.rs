@@ -567,6 +567,22 @@ fn radix36(mut n: u64) -> String {
     String::from_utf8(out).unwrap()
 }
 
+/// Choose the language Home keeps, for the app and l3 alike.
+pub fn set_lang(lang: &str) -> crate::Result<()> {
+    if !LANGS.contains(&lang) { return Err(crate::tr!("The OS speaks en or ja", "OS が話すのは en か ja です")); }
+    set("lang", &serde_json::to_string(lang).map_err(|e| e.to_string())?)
+}
+
+/// The language Home keeps (what the app and l3 speak unless $LENGTH3_LANG says otherwise).
+pub fn lang() -> String {
+    get("lang").ok().flatten().and_then(|t| serde_json::from_str::<String>(&t).ok())
+        .filter(|l| LANGS.contains(&l.as_str())).unwrap_or_else(|| "en".into())
+}
+
+/// The languages the OS speaks.
+pub const LANGS: [&str; 2] = ["en", "ja"];
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
