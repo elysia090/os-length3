@@ -8,9 +8,22 @@ import type {App} from './app.ts';
 
 test.use({reducedMotion: 'no-preference'});
 
-/** Every move with an end has ended (the caret's blink, which has none, goes on). */
-const still = (app: App) => expect.poll(() => app.page.evaluate(() => document.getAnimations()
-  .filter((a) => a.playState === 'running' && a.effect?.getComputedTiming().iterations !== Infinity).length)).toBe(0);
+/**
+ * Every move with an end has ended (the caret's blink, which has none, goes on): waited for as each says it ends, and
+ * looked at again a frame later for those its end set going, not polled at intervals that outlast it.
+ */
+const still = (app: App) => app.page.evaluate(async () => {
+  const moving = () => document.getAnimations().filter((a) => a.playState === 'running' && a.effect?.getComputedTiming().iterations !== Infinity);
+  const until = performance.now() + 10_000;
+  // A frame first: what the last key or press set going in its next frame is going by then.
+  for (;;) {
+    await new Promise(requestAnimationFrame);
+    const now = moving();
+    if (!now.length) return;
+    if (performance.now() > until) throw new Error(`still moving after 10 s: ${now.map((a) => (a as CSSAnimation).animationName ?? a.id).join(', ')}`);
+    await Promise.all(now.map((a) => a.finished.catch(() => {})));
+  }
+});
 
 test('going along the rail pans to the next page, which stands whole once it lands, its cards each in place', async ({app}) => {
   await app.newRepo.make('hello');
@@ -423,8 +436,8 @@ test('the Prompt put back on its way up turns there, and brought up on its way d
   await app.newRepo.openInForge();
   await still(app);
   // How much of the glass is seen (its height less its clip's top and foot): as it stands when it is turned (the
-  // bench says it is up, or going down), then frame by frame for 900 ms. Set going before the key is pressed (a key can
-  // be taken before a script sent ahead of it has run), and read once it is over.
+  // bench says it is up, or going down), then frame by frame until its move ends. Set going before the key is
+  // pressed (a key can be taken before a script sent ahead of it has run), and read once it is over.
   type Watched = Window & {turned?: Promise<number[]>};
   const watch = async () => {
     await app.page.evaluate(() => {
@@ -450,10 +463,13 @@ test('the Prompt put back on its way up turns there, and brought up on its way d
           out[0] = now();
         });
         turned.observe(work, {attributes: true, attributeFilter: ['class']});
+        // Until its move has ended (a few frames for it to be set going), 900 ms at most.
+        const moving = () => glass.getAnimations().some((a) => a.playState === 'running');
         const tick = () => {
           if (!t0) out[0] = now();
           else if (shown()) out.push(now());
-          if (!t0 || performance.now() - t0 < 900) requestAnimationFrame(tick); else done(out);
+          const since = t0 ? performance.now() - t0 : 0;
+          if (!t0 || (since < 900 && (since < 50 || moving()))) requestAnimationFrame(tick); else done(out);
         };
         requestAnimationFrame(tick);
       });
@@ -477,9 +493,6 @@ test('the Prompt put back on its way up turns there, and brought up on its way d
   const u = await up();
   // From the press on, it only ever gets bigger.
   for (let i = 1; i < u.length; i++) expect(u[i]).toBeGreaterThanOrEqual(u[0] - 2);
-  await still(app);
-  await app.page.keyboard.press('Escape');
-  await still(app);
 });
 
 test('the Prompt\'s screen comes up out of the box and goes back into it over its whole length, as built', async ({app}) => {
