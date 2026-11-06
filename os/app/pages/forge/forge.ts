@@ -109,6 +109,7 @@ class Forge {
     this.work = bench({strip, main: this.center, desk: true, reveal: (path, line, write) => this.revealAt(path, line, write),
       place: (path) => this.place(path), frame: (keys) => { if (this.now.repo) this.deskOf(this.now.repo).desk.frame(keys); },
       word: (a) => { openConversation(a); void ctx.go('inbox'); },
+      toTerm: () => { if (this.now.repo) this.deskOf(this.now.repo).desk.take('term'); },
       went: (repo, to) => {
         if (to !== 'todo' && 'file' in to) { ctx.openRepo(repo, to.file); return; }
         if (to !== 'todo') showIssue(repo, to.issue);
@@ -119,7 +120,7 @@ class Forge {
     this.work.reference.writeIssue = (r) => { startIssue(r); ctx.go('git'); };
     const drag = new Drag(this.center);
     this.band = new Band(strip, this.now, drag, {show: (name) => this.show(name), beside: (name) => this.show(name),
-      takeOff: (name) => this.takeOff(name), act: (at) => this.deeds(at)});
+      takeOff: (name) => this.takeOff(name), act: (at) => this.deeds(at)}, this.work.tools);
     // Files from the desktop let go over a box: into its folder (none written over), the first opened.
     takeFiles(this.center, drag, (repo, path) => this.show(repo, path));
     // What the Remote holds is learnt a moment after: ⊕ counts it once it is.

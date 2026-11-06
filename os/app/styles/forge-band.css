@@ -51,3 +51,41 @@
 .center { grid-column: 1; position: relative; min-height: 0; border-right: var(--line-frame) solid var(--ink); overflow: clip; }
 /* No pane, no line (Server signed out): the center keeps its width, so nothing on it moves. */
 .work.no-side > .center { border-right-color: transparent; }
+/* A desk's top line (Forge's): the band's tools first (>_ to the terminal on the desk, the file deeds, the search), then
+   the pills; the right pane's switch lies at the foot instead, level with the person at the rail's (bench.ts). One
+   corner on the band, a field's: the tools, the pills and their inner parts and rings, ⊕ (a round ring left inside a
+   square pill is a second shape). */
+.work.desk-bench { position: relative; }
+.work.bench.desk-bench > .bar { grid-template-columns: auto minmax(0, 1fr); }
+.work.bench.desk-bench > .bar > .band-tools { grid-column: 1; display: flex; align-items: center; gap: var(--s2); }
+.work.bench.desk-bench > .bar > .repo-strip { grid-column: 2; }
+.band-tool {
+  flex: none; display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--ink);
+  border-radius: var(--r-field); background: transparent; color: var(--ink); cursor: var(--cursor-hand); transition: background var(--motion);
+}
+.band-tool:hover { background: var(--raised); }
+.band-tool .mark { width: 18px; height: 18px; }
+.band-tools > .search-box { flex: none; width: 220px; }
+.band-tools form.search > .mark { position: absolute; left: 10px; top: calc((var(--h-row) - 16px) / 2); width: 16px; height: 16px; color: var(--ink); pointer-events: none; z-index: 1; }
+.band-tools .search-in { padding-left: 34px; border-color: var(--ink); background: transparent; font-size: var(--t-body); }
+.band-tools .search-in::placeholder { color: var(--sub); }
+.desk-bench .repo-strip :is(.pill, .pill *, .band-add) { border-radius: var(--r-field); }
+.desk-bench .repo-strip .pill :focus-visible { outline-offset: -2px; }
+/* What the band's search found opens under it from its left, its kinds over what they show. */
+.band-tools .search-results { left: calc(-1 * var(--s3)); right: auto; }
+.band-tools .search-pills { position: static; }
+/* The pane's switch at the foot: its middle the person's (rail.css: s5 and half the prompt's height over the foot). */
+.work.bench.desk-bench > .pane-toggle {
+  position: absolute; right: var(--s5); bottom: calc(var(--s5) + var(--prompt-h) / 2 - var(--h-row) / 2); z-index: 6;
+  width: var(--h-row); height: var(--h-row); border-color: var(--ink); border-radius: var(--r-field);
+}
+/* With no heads over them, a desk's runs start where the mock's do: their first bar a band's height under the top line. */
+.desk-bench .pane-room > .pane-rows { padding-top: calc(var(--s2) + 6px); }
+/* On a phone the band's search is its lens alone, as wide as a tool, and opens to be written in: the pills keep the
+   band's room. */
+@media (max-width: 560px) {
+  .band-tools > .search-box { width: var(--h-row); transition: width var(--motion); }
+  .band-tools > .search-box:focus-within { width: min(220px, 56vw); }
+  .band-tools .search-in { padding-right: 0; }
+  .band-tools .search-in:not(:focus)::placeholder { color: transparent; }
+}

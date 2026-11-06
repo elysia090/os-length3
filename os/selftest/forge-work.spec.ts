@@ -136,7 +136,7 @@ test('what the search found follows what is saved, and a line found opens where 
   await expect(app.forge.search).toHaveValue('Written');
 });
 
-test('a file found by its name is opened to write in from the keyboard alone, and Escape and Shift+Tab come back', async ({app}) => {
+test('a file found by its name is opened to write in from the keyboard alone, and Escape and / come back', async ({app}) => {
   await app.forge.search.fill('main.c');
   await expect(app.forge.results.getByRole('button', {name: 'src/main.c', exact: true})).toBeVisible();
   // Enter takes the first found: the file found by its name, with the caret in it.
@@ -144,11 +144,11 @@ test('a file found by its name is opened to write in from the keyboard alone, an
   await expect(app.forge.editor('src/main.c')).toBeFocused();
   expect(await app.forge.editor('src/main.c').evaluate((el: HTMLTextAreaElement) => el.selectionStart)).toBe(0);
 
-  // ↓ walks what was found; Escape goes back up to the box.
+  // Out of the file, / goes back to the search on the band; ↓ walks what was found; Escape goes back up to the box.
   await app.page.keyboard.press('Escape');
-  await app.page.keyboard.press('Shift+Tab');
-  await app.page.keyboard.press('Shift+Tab');
+  await app.page.keyboard.press('/');
   await expect(app.forge.search).toBeFocused();
+  await expect(app.forge.search).toHaveValue('main.c');
   await app.forge.search.press('ArrowDown');
   await expect(app.forge.results.getByRole('button', {name: 'src/main.c', exact: true})).toBeFocused();
   await app.page.keyboard.press('ArrowDown');
@@ -173,41 +173,33 @@ test('Enter in the search opens the first line found, selected; a file found by 
   await expect.poll(() => app.forge.selected('README.md')).toBe('Written in Forge.');
 });
 
-test('at rest the right pane says Issue, diff, Output and Agent beside the Prompt\'s head; what one opens goes back up once the keyboard is in the file', async ({app}) => {
+test('the right pane holds the runs alone; Issue, diff and Output are the search\'s, on the band, and what one opens goes back up once the keyboard is in the file', async ({app}) => {
   await app.forge.editFile('README.md', '# hello\n\nA line written in Forge, long enough to run on past the middle of its box.\n');
-  const heads = app.main.getByRole('complementary', {name: 'Plugins and Prompt'}).getByRole('group', {name: 'Search target'});
-  const diff = heads.getByRole('button', {name: /^diff/});
-  // diff says how many files are changed since the last commit.
-  await expect(heads.getByRole('button')).toHaveText(['Issue', /^diff\s*\d+$/, 'Output', 'Agent']);
-  await diff.click();
-  await expect(diff).toHaveAttribute('aria-pressed', 'true');
-  await expect(app.forge.kind('diff')).toHaveAttribute('aria-pressed', 'true');
+  const pane = app.main.getByRole('complementary', {name: 'Plugins and Prompt'});
+  // Nothing in the pane says what else there is to see: no heads over its rows.
+  await expect(pane.getByRole('group', {name: 'Search target'})).toHaveCount(0);
+  await app.forge.show('diff');
   await expect(app.forge.results.getByRole('button', {name: /^README\.md/})).toBeVisible();
-  // Back in the file and written in: nothing searched stays over the pane, and the head is let go.
+  // The search lies on the band, at its left, before the repos.
+  const search = (await app.forge.search.boundingBox())!, band = (await app.forge.band.boundingBox())!;
+  expect(search.x + search.width).toBeLessThan(band.x + 1);
+  // Back in the file (the sheet lies over the desk: the keyboard goes there, as Alt and an arrow take it) and written
+  // in: nothing searched stays over the desk.
   const editor = app.forge.editor('README.md');
-  await editor.click({position: {x: 40, y: 20}});
+  await editor.focus();
   await app.page.keyboard.type('x');
   await expect(app.forge.results).toBeHidden();
   await expect(editor).toBeFocused();
-  await expect(diff).toHaveAttribute('aria-pressed', 'false');
   // A file's diff read from there goes the same way.
-  await diff.click();
+  await app.forge.show('diff');
   await app.forge.results.getByRole('button', {name: /^README\.md/}).click();
   await expect(app.forge.results.locator('.slide[aria-current="true"] > .found-card')).toBeVisible();
-  await editor.click({position: {x: 40, y: 20}});
+  await editor.focus();
   await expect(app.forge.results).toBeHidden();
   await expect(editor).toBeFocused();
-  // Agent's: what was asked of it here. Escape puts it away.
-  const agent = heads.getByRole('button', {name: 'Agent'});
-  await agent.click();
-  await expect(app.forge.results).toContainText('Nothing asked of the Agent yet');
-  await expect(app.forge.search).toBeFocused();
-  await app.page.keyboard.press('Escape');
-  await expect(app.forge.results).toBeHidden();
-  await expect(agent).toHaveAttribute('aria-pressed', 'false');
 });
 
-test('the right pane put away gives the center the width and takes the search with it; brought back, both are where they were', async ({app}) => {
+test('the right pane put away gives the center the width; the search on the band and the switch at the foot stay where they are', async ({app}) => {
   await app.git.write('hello', 'Fix: the first');
   await app.rail.go('forge');
   await app.forge.show('Issue');
@@ -217,16 +209,23 @@ test('the right pane put away gives the center the width and takes the search wi
   const wide = (await center.boundingBox())!.width;
   const box = (await app.forge.search.boundingBox())!;
 
+  const foot = (await app.forge.paneSwitch.boundingBox())!;
+  // The switch is at the foot, its middle level with the person's at the rail's foot.
+  const me = (await app.me.button.boundingBox())!;
+  expect(Math.abs(foot.y + foot.height / 2 - (me.y + me.height / 2))).toBeLessThan(1.5);
+
   await app.forge.paneSwitch.click();
   await expect(app.forge.paneSwitch).toHaveAttribute('aria-expanded', 'false');
   await expect(app.main.getByRole('complementary', {name: 'Plugins and Prompt'})).toBeHidden();
   expect((await center.boundingBox())!.width).toBeGreaterThan(wide + 200);
-  // The search goes with the pane (issue #45); the switch stays, the way back.
-  await expect(app.forge.search).toBeHidden();
-  await expect(app.forge.paneSwitch).toBeVisible();
+  // The search is the band's, not the pane's: it stays, and so does the switch, the way back. What was read under
+  // the search goes up as the pane goes (nothing searched stays over the desk).
+  const away = (await app.forge.search.boundingBox())!, footAway = (await app.forge.paneSwitch.boundingBox())!;
+  expect(Math.abs(away.x - box.x)).toBeLessThan(1);
+  expect(Math.abs(footAway.x - foot.x)).toBeLessThan(1);
+  await expect(app.forge.results).toBeHidden();
 
-  // Back: the search where it was, what was read under it gone up with the pane (nothing searched stays over it, to
-  // come back covering what the pane says); and it stays as left when the page is opened again.
+  // Back: each where it was; and it stays as left when the page is opened again.
   await app.forge.paneSwitch.click();
   await expect(app.main.getByRole('complementary', {name: 'Plugins and Prompt'})).toBeVisible();
   const still = (await app.forge.search.boundingBox())!;
@@ -340,16 +339,17 @@ test('the current repo\'s pill shows which part has the keyboard, in ground over
   expect(at.y - scroller.y).toBeGreaterThanOrEqual(4);
 });
 
-test('the band\'s first button brings out the deeds for what is read now, under it in Forge, and does them there', async ({app}) => {
+test('the files tool on the band brings out the deeds for what is read now, under it in Forge, and does them there', async ({app}) => {
   // What is read now: the Makefile, gone to from File (the page opens at its first file, the README).
   await app.file.open('hello', 'Makefile');
   await app.rail.go('forge');
-  const band = app.forge.band;
-  // The files button first, ⊕ after the repos.
-  const buttons = band.getByRole('button');
-  const files = buttons.first();
+  // The tools first on the top line (>_, the files, the search), then the repos, ⊕ after them.
+  const tools = app.forge.tools.getByRole('button');
+  await expect(tools).toHaveCount(2);
+  await expect(tools.first()).toHaveAccessibleName('Terminal');
+  const files = tools.nth(1);
   await expect(files).toHaveAccessibleName('Files: New, Rename, Delete');
-  await expect(buttons.last()).toHaveAccessibleName(/^Add all repos to band/);
+  await expect(app.forge.band.getByRole('button').last()).toHaveAccessibleName(/^Add all repos to band/);
   await files.click();
   // Its menu, under it, here: File stays where it is.
   const menu = app.page.getByRole('menu', {name: 'Makefile', exact: true});

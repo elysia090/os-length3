@@ -32,6 +32,10 @@ export function icon(id: PlaceIcon): SVGSVGElement {
 
 const MARKS = {
   plus: 'M12 5v14M5 12h14',
+  // A terminal's prompt: > and the line it waits on.
+  term: 'M5 7l5 5-5 5M12.5 17.5h7',
+  // A lens: what is looked for.
+  search: 'M10.5 16a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11zM15 15l5 5',
   close: 'M7 7l10 10M17 7L7 17',
   // A window with its right pane: the pane the switch puts away and brings back.
   pane: 'M4 5.5h16v13H4zM14.5 5.5v13',

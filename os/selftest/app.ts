@@ -256,6 +256,8 @@ class NewRepo extends Part {
 /** Forge: the band of repos and the search on the top line, the files one after another, the right pane at the right. */
 class Forge extends Part {
   get band() { return this.main.getByRole('navigation', {name: 'repo'}); }
+  /** The tools first on the top line, before the repos: >_ (the terminal on the desk), the files, the search. */
+  get tools() { return this.main.getByRole('group', {name: 'Tools'}); }
   get search() { return this.main.getByRole('searchbox', {name: 'Search this repo'}); }
   /**
    * Under the search box while it (or what is under it) has the keyboard, or something is read there: Issue,
@@ -266,7 +268,7 @@ class Forge extends Part {
   get reference() { return this.results; }
   /** Issue, diff or Output, side by side under the box. */
   kind(view: 'Issue' | 'diff' | 'Output') { return this.results.getByRole('group', {name: 'Search target'}).getByRole('button', {name: view, exact: true}); }
-  /** The switch at the top line's right end that puts the right pane away and brings it back. */
+  /** The switch at the foot, level with the person's, that puts the right pane away and brings it back. */
   get paneSwitch() { return this.main.getByRole('button', {name: 'Right pane', exact: true}); }
   /** A file's text, which is where it is edited. */
   editor(path: string) { return this.main.getByRole('textbox', {name: `Edit ${path}`, exact: true}); }

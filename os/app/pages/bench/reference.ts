@@ -70,6 +70,8 @@ export class Reference {
   private held = false;
   /** Whether a kind's list chosen is held out, its head in the pane pressed (a bench's, which has the heads; not Home's). */
   private keeps: boolean;
+  /** The box lies on the band (a desk's): it says only Search. */
+  private band: boolean;
   private countTimer = 0;
   private panel: HTMLElement;
   /** The inside of the card in hand, where what is found, listed or read is drawn. */
@@ -96,9 +98,10 @@ export class Reference {
   /** Begin a new issue in the repo shown, from the Issue pill with none open (the page says where it is written). */
   writeIssue: ((repo: string) => void) | null = null;
 
-  constructor(events: ReferenceEvents, o: {keeps?: boolean} = {}) {
+  constructor(events: ReferenceEvents, o: {keeps?: boolean; band?: boolean} = {}) {
     this.events = events;
     this.keeps = !!o.keeps;
+    this.band = !!o.band;
     const n = ++made;
     this.query = h('input', {type: 'search', class: 'search-in', placeholder: t('Search this repo'),
       'aria-label': t('Search this repo'), autocomplete: 'off', spellcheck: 'false', 'aria-controls': `found-${n}`}) as HTMLInputElement;
@@ -143,9 +146,9 @@ export class Reference {
     this.follow();
   }
 
-  /** What the box says where the words would be, and is heard as. */
+  /** What the box says where the words would be, and is heard as; on the band, where it is short, only Search. */
   private say(words: string) {
-    this.query.placeholder = words;
+    this.query.placeholder = this.band && this.repo ? t('Search') : words;
     this.query.setAttribute('aria-label', words);
   }
 

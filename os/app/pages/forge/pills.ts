@@ -46,7 +46,7 @@ export class Band {
   // First on the band, what can be done to the file read now (or the repo itself): File's menu for it, out of the
   // tree at its row (New file, New folder, Rename, Delete, as each allows); ⊕ after the pills (issue #49).
   private acts = h('button', {type: 'button', class: 'band-add band-acts', 'aria-label': t('Files: New, Rename, Delete'),
-    title: t('Files: New, Rename, Delete')}, mark('files')) as HTMLButtonElement;
+    title: t('Files: New, Rename, Delete')}, mark('new-file')) as HTMLButtonElement;
   private caret = h('span', {class: 'band-caret', 'aria-hidden': 'true'});
   /**
    * The issue each repo on the band is worked on for (#n), while its copy is an issue's rather than main: Start in Git
@@ -62,12 +62,14 @@ export class Band {
   private drag: Drag;
   private ways: BandWays;
 
-  /** The band is drawn in `strip`; a pill is dragged with `drag`. */
-  constructor(strip: HTMLElement, row: {repo: string | null}, drag: Drag, ways: BandWays) {
+  /** The band is drawn in `strip`; a pill is dragged with `drag`. Its files button goes among the band's `tools`
+   * when there are some (after >_, before the search), else first on the band. */
+  constructor(strip: HTMLElement, row: {repo: string | null}, drag: Drag, ways: BandWays, tools: HTMLElement | null = null) {
     this.row = row; this.drag = drag; this.ways = ways;
     arrowKeys(this.pills, '.pill-name');
     this.acts.addEventListener('click', () => ways.act(this.acts));
-    strip.append(this.acts, this.pills, this.add);
+    if (tools) { this.acts.classList.replace('band-add', 'band-tool'); tools.insertBefore(this.acts, tools.children[1] ?? null); }
+    strip.append(...(tools ? [] : [this.acts]), this.pills, this.add);
     this.add.addEventListener('click', () => void this.bringOut());
     this.along();
   }
