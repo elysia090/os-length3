@@ -17,15 +17,25 @@ const pageHidden = () => typeof document !== 'undefined' && document.visibilityS
 const IDLE = 2 * 60_000, AWAY = 10 * 60_000;
 let lastHeard = Date.now();
 const backs = new Set<() => void>();
-/** Someone is here (a key, a click, the window taken up): told to every paced look if nobody was for IDLE. */
-export function heard(at = Date.now()) {
-  const was = at - lastHeard >= IDLE;
+/**
+ * Someone is here (a key, a click, the window taken up): told to every paced look if nobody was for IDLE, or when they
+ * come back to the window (`back`): what changed while they were in another (someone they asked in accepted) is there
+ * as they look, not up to a look's interval later.
+ */
+export function heard(at = Date.now(), back = false) {
+  const was = at - lastHeard >= IDLE || back;
   lastHeard = at;
   if (was) for (const f of [...backs]) f();
 }
+/** Whether the window was left (another taken up, or the page hidden): taken up again, someone came back to it. */
+let left = false;
+const cameBack = () => { const away = left; left = false; heard(Date.now(), away); };
 if (typeof addEventListener === 'function' && typeof document !== 'undefined') {
   for (const e of ['pointerdown', 'keydown', 'wheel', 'touchstart', 'focus']) addEventListener(e, () => heard(), {capture: true, passive: true});
-  document.addEventListener('visibilitychange', () => { if (!pageHidden()) heard(); });
+  // The window's own (not a field's, which capture also hears): left, and taken up again.
+  addEventListener('blur', (e) => { if (e.target === window) left = true; }, {passive: true});
+  addEventListener('focus', (e) => { if (e.target === window) cameBack(); }, {passive: true});
+  document.addEventListener('visibilitychange', () => { if (pageHidden()) left = true; else cameBack(); });
 }
 /** `ms`, give or take a fifth: many devices told the same wait do not all ask again in the same second. */
 export const jitter = (ms: number, r = Math.random()): number => Math.round(ms * (0.8 + 0.4 * r));

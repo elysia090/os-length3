@@ -100,16 +100,19 @@ test('a board\'s name half written is there when Server is come back to', async 
 });
 
 test('someone added by name is asked in their Inbox, and is in the server once they accept', async ({signedIn: ada, another}) => {
+  // Ada leaves her window for Bo's while Bo accepts (a window of one's own is left as another is taken up).
+  await ada.page.evaluate(() => dispatchEvent(new Event('blur')));
   const bo = await addBo(ada, another);
 
   await bo.server.open();
   await expect(bo.server.chip('Trip')).toBeVisible();
   await expect(bo.server.side).toContainText(ada.handle);
-  // Who asked sees them come in where they are, not only when Server is next opened: who is in it is looked at again
-  // every little while (15 s).
-  await expect(ada.server.side).toContainText(bo.handle, {timeout: 30_000});
+  // Who asked sees them come in where they are, not only when Server is next opened: back in her window, who is in it
+  // is looked at again at once (and every little while it is on screen, 15 s, app/runs.ts).
+  await ada.page.evaluate(() => dispatchEvent(new Event('focus')));
+  await expect(ada.server.side).toContainText(bo.handle, {timeout: 5000});
   // And behind the gear, where it was asked, People counts them.
-  await expect(ada.server.view.getByRole('tab', {name: /^Members\s?2$/})).toBeVisible({timeout: 30_000});
+  await expect(ada.server.view.getByRole('tab', {name: /^Members\s?2$/})).toBeVisible();
   // Added already, the card says so rather than asking again.
   await ada.server.close();
   await ada.server.open();

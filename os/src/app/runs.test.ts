@@ -233,3 +233,26 @@ test('how often can be said each time, and a wait told to many is spread over a 
     loop.stop();
   } finally { mock.timers.reset(); }
 });
+
+test('a look is taken at once when someone comes back to the window, however briefly they were away', async () => {
+  const t0 = Date.now();
+  heard(t0);
+  mock.timers.enable({apis: ['setTimeout', 'Date'], now: t0});
+  try {
+    let runs = 0;
+    const loop = every(15_000, () => { runs++; }, {hidden: () => false, paced: true});
+    mock.timers.tick(3000); await settle();
+    assert.equal(runs, 0);
+    // Someone here all along: at its own pace.
+    heard();
+    await settle();
+    assert.equal(runs, 0);
+    // Back to the window from another: at once, not up to fifteen seconds later.
+    heard(Date.now(), true);
+    await settle();
+    assert.equal(runs, 1);
+    mock.timers.tick(15_000); await settle();
+    assert.equal(runs, 2);
+    loop.stop();
+  } finally { mock.timers.reset(); heard(); }
+});
