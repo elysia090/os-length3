@@ -1,6 +1,7 @@
 // Niceness and the room a file takes, as nice, renice, top and du read them: getpriority and setpriority of the
 // process itself, its group and its user, a child taking its parent's, a niceness past 19 taken to 19, the wrong
-// `which` and a process that is not there refused; and st_blocks, whole 4 KiB blocks of 512-byte units.
+// `which` and a process that is not there refused (each nicer only, as any user may make it, root or not); and
+// st_blocks, whole 4 KiB blocks of 512-byte units.
 #define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>
@@ -15,20 +16,22 @@ static void said(const char *what, long r) { printf("%s: %ld %s\n", what, r, r <
 
 int main(void) {
   setvbuf(stdout, 0, _IONBF, 0);
-  errno = 0;
-  said("nice at start", getpriority(PRIO_PROCESS, 0));
-  said("set 5", setpriority(PRIO_PROCESS, 0, 5));
-  said("is 5", getpriority(PRIO_PROCESS, getpid()));
+  // Only ever nicer, which anyone may be (less nice takes a capability): each value from where it started. Its own
+  // process group, so that the group made nicer is this process and its child, not whatever ran it.
+  setpgid(0, 0);
+  int base = getpriority(PRIO_PROCESS, 0);
+  said("set 5 more", setpriority(PRIO_PROCESS, 0, base + 5));
+  said("is 5 more", getpriority(PRIO_PROCESS, getpid()) - base);
   pid_t pid = fork();
-  if (pid == 0) { printf("child's: %d\n", getpriority(PRIO_PROCESS, 0)); _exit(0); }
+  if (pid == 0) { printf("child's: %d more\n", getpriority(PRIO_PROCESS, 0) - base); _exit(0); }
   waitpid(pid, 0, 0);
+  said("group's 7 more", setpriority(PRIO_PGRP, 0, base + 7));
+  said("group is 7 more", getpriority(PRIO_PGRP, 0) - base);
   said("past 19", setpriority(PRIO_PROCESS, 0, 40));
-  said("is 19", getpriority(PRIO_PROCESS, 0));
-  said("group's", setpriority(PRIO_PGRP, 0, 7));
-  said("group is 7", getpriority(PRIO_PGRP, 0));
+  said("is 19", getpriority(PRIO_PROCESS, 0) == 19);
   said("user's", getpriority(PRIO_USER, getuid()) >= -20);
-  said("no such which", setpriority(9, 0, 1));
-  said("no such process", setpriority(PRIO_PROCESS, 999999, 1));
+  said("no such which", setpriority(9, 0, 19));
+  said("no such process", setpriority(PRIO_PROCESS, 999999, 19));
   // A file of 5000 bytes takes two blocks of 4 KiB: 16 of 512 bytes; an empty one none.
   int fd = open("blocks.tmp", O_CREAT | O_TRUNC | O_WRONLY, 0600);
   char b[5000];
