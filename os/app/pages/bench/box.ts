@@ -75,8 +75,8 @@ interface BoxParts {
   went(repo: string, to: {issue: string} | {file: string} | 'todo'): void;
   /** A file of the repo in front brought into view at a line (Forge's; Git's shows the file). */
   reveal(path: string, line?: number): void;
-  /** On a desk: where what the box does is said (the pane's rows), not the Prompt's flow. */
-  flow?(repo: string): Flow;
+  /** Where what the box does in a repo is said: the pane's rows. */
+  flow(repo: string): Flow;
   /** On a desk: a file's box laid without taking the person's hand (false: it cannot be); the camera over boxes. */
   place?(path: string): boolean;
   frame?(keys: string[]): void;
@@ -496,8 +496,8 @@ export class Box {
     await atWork(session, row, at, use, await told(at, front, issue), question, agentHands(at, issue !== null), player, (path) => this.#p.went(at, {file: path}));
   }
 
-  /** Where what the box does in `repo` is said: the pane's rows on a desk, else the Prompt's own flow. */
-  #flow(repo: string): Flow { return this.#p.flow?.(repo) ?? sessionFor(repo); }
+  /** Where what the box does in `repo` is said: the pane's rows. */
+  #flow(repo: string): Flow { return this.#p.flow(repo); }
 
   /**
    * Where the Agent's work in `at` is played (play.ts): its commands typed in this box under Run, as a person types

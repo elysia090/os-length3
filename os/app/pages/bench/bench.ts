@@ -13,13 +13,13 @@ import {Rows} from './rows.ts';
 import type {Run} from './sessions.ts';
 
 // The workbench Forge and Git share, put together from its parts: the page's own content in the large center (3/4)
-// with the box at its foot (box.ts), which becomes the Prompt's screen over the center while the Prompt is in use
-// (screen.ts); and the narrow right pane (1/4, pane.ts) with the plugin area at its top, what the center refers to
-// (reference.ts, under the search box that sits over the pane, the three it shows said at rest beside the Prompt's
-// head), the Prompt (the repo's sh) under it, and at its foot a conversation's word. The center's top line holds the band (Forge's), the search box in its middle, and at its
-// right end the switch that puts the right pane away and brings it back. Until something is run in the repo's
-// Prompt it holds only its prompt line, so the reference takes the pane's room; from the first run on, the Prompt
-// has its 3 parts.
+// and the narrow right pane (1/4, pane.ts) with the plugin area at its top, what the center refers to (reference.ts,
+// under the search box that sits over the pane, the three it shows said at rest over the rows), and what was done in
+// the repo, a big row each (rows.ts), at its foot a conversation's word. On Forge's desk the Prompt is a box of its own
+// with the line one types at under it; on Git the box stands at the center's foot (box.ts) and becomes the Prompt's
+// screen over the center while it is in use (screen.ts), out of sight otherwise. The center's top line holds the band
+// (Forge's), the search box in its middle, and at its right end the switch that puts the right pane away and brings
+// it back.
 
 export interface Bench {
   element: HTMLElement;
@@ -34,6 +34,14 @@ export interface Bench {
 }
 
 let benches = 0;
+
+/** Each repo's rows, one for every bench: the pane on screen holds them (only one bench is on screen at a time). */
+const repoRows = new Map<string, Rows>();
+function rowsOf(repo: string): Rows {
+  let r = repoRows.get(repo);
+  if (!r) repoRows.set(repo, r = new Rows(t('Prompt'), sessionFor(repo)));
+  return r;
+}
 
 /** A letter typed with no Ctrl, Alt or ⌘ (a space is a button's), or the start of a conversion. */
 const letter = (e: KeyboardEvent) =>
@@ -82,7 +90,7 @@ function runPressed(line: HTMLElement, runs: readonly Run[]): Run | undefined {
   return runs.filter((r) => r.line === words).at(-1 - after);
 }
 
-/** The Prompt's own box, its head and where it lives in the pane (where the repo's terminal stands, up or at rest). */
+/** The Prompt's own box, its head, and where it is kept while it is not up (out of sight: the pane has its rows). */
 function promptBox() {
   // Named for what one does there: type at the prompt of the repo's sh. Up as a screen, a lamp at its head is lit
   // while its shell runs (styles.css).
@@ -128,65 +136,6 @@ function measured(work: HTMLElement, side: HTMLElement, screen: HTMLElement, box
 }
 
 /**
- * The heads beside the Prompt's name on its line (reference.ts) and the name itself, measured where they are: when
- * the pane is too narrow for both (a narrow window, a language with longer words), the name gives the heads its room
- * (search.css). Again when either changes size: the pane, the diff's count, the faces loaded, the Prompt come back.
- */
-function roomForHeads(termHome: HTMLElement, termHead: HTMLElement, heads: HTMLElement) {
-  const name = termHead.firstElementChild!;
-  const fit = () => {
-    if (!termHome.contains(termHead) || !heads.offsetWidth) return;
-    termHome.classList.toggle('heads-over', heads.getBoundingClientRect().left < name.getBoundingClientRect().right + 12);
-  };
-  const sized = new ResizeObserver(fit);
-  for (const el of [termHome, termHead, heads]) sized.observe(el);
-}
-
-/**
- * The pane's Prompt head on the file heads' line, as this computer sets the two faces. The styles put it there for
- * one face (bench-2.css); the faces are the system's, and one whose letters stand higher or lower in their line moves
- * the words a pixel or two off it. Once the head is at rest where the two are meant to be level (the pane out,
- * nothing over the Prompt, a file's head at the top of the center), the difference is measured and taken up by
- * --head-nudge: again when the faces load, and when the head has moved (the pane, a file opened beside).
- */
-function levelled(work: HTMLElement, termHome: HTMLElement, main: HTMLElement) {
-  let nudge = 0;
-  let found = false;
-  /** Where a line of text in `el` stands: its baseline. */
-  const baseline = (el: Element) => {
-    const m = document.createElement('span');
-    m.style.cssText = 'display: inline-block; width: 0; height: 0';
-    el.append(m);
-    const y = m.getBoundingClientRect().bottom;
-    m.remove();
-    return y;
-  };
-  const level = () => {
-    const head = termHome.querySelector('.term-box h2');
-    const file = work.querySelector('.col.active section.file > .path > span');
-    if (!head || !file || !work.isConnected || work.classList.contains('pane-closed') || work.classList.contains('pane-moving')) return;
-    if (!work.querySelector(':scope > .side > .plugins[hidden]') || termHome.getAnimations().length) return;
-    const off = baseline(file) - baseline(head);
-    // A head scrolled away, or one not on the top line: nothing to level with.
-    if (Math.abs(off) > 6) return;
-    found = true;
-    if (Math.abs(off) < .25) return;
-    nudge += off;
-    work.style.setProperty('--head-nudge', `${nudge.toFixed(2)}px`);
-  };
-  termHome.addEventListener('transitionend', (e) => { if (e.target === termHome && e.propertyName === 'margin-top') level(); });
-  void document.fonts?.ready.then(level);
-  // Until a file's head has been there to level with, each change under the center is a chance (after it is drawn).
-  let soon = 0;
-  const first = new MutationObserver(() => {
-    if (found) { first.disconnect(); return; }
-    cancelAnimationFrame(soon);
-    soon = requestAnimationFrame(level);
-  });
-  first.observe(main, {childList: true, subtree: true});
-}
-
-/**
  * A run pressed in the pane, read where it was run: the Prompt's box in hand (`terminal`), its line lit there a moment
  * and brought into view with what it printed.
  */
@@ -219,25 +168,28 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const {termHead, term, termHome} = promptBox();
   const center = h('div', {class: 'center'}, parts.main);
   const sideId = `side-${++benches}`;
-  // On a desk the pane is what was done in the repo, a big row each (rows.ts), the Prompt itself being on the desk.
-  const rows = new Map<string, Rows>();
-  let shownRows: HTMLElement = h('div', {class: 'pane-rows'});
-  const rowsFor = (repo: string): Rows => {
-    let r = rows.get(repo);
-    if (!r) {
-      r = new Rows(t('Prompt'), sessionFor(repo), (run) => litRun(parts.desk ? terminal : null, run));
-      rows.set(repo, r);
-    }
-    return r;
+  // The pane is what was done in the repo, a big row each (rows.ts): a run pressed is read where it was run (the
+  // Prompt's box, on a desk), or under the search box with all it printed (the Prompt being up only while in use).
+  const openRun = (run: Run) => { if (terminal) litRun(terminal, run); else reference.showRun(run); };
+  const none = h('div', {class: 'pane-rows'});
+  // The pane's room: the reference's heads (Issue, diff, Output, Agent) over the rows.
+  const room = h('div', {class: 'pane-room'}, none);
+  /** The rows of `name` (none: nothing) in this pane, taken from another page's if they were there. */
+  const showRows = (name: string | null) => {
+    const r = name ? rowsOf(name) : null;
+    if (r) r.open = openRun;
+    const next = r?.element ?? none;
+    if (next.parentElement === room) return;
+    room.querySelector(':scope > .pane-rows')?.remove();
+    room.append(next);
+    r?.shown();
   };
-  // On a desk the pane's room holds the reference's heads (Issue, diff, Output, Agent) over the rows.
-  const room = h('div', {class: 'pane-room'}, shownRows);
-  const side = h('aside', {class: 'side', id: sideId, 'aria-label': t('Plugins and Prompt')}, pluginArea(), parts.desk ? room : termHome, agentCards((repo, issue) => parts.went(repo, {issue: issue.replace(/^issue\//, '')})), ...(parts.word ? [paneWord(parts.word)] : []));
+  const side = h('aside', {class: 'side', id: sideId, 'aria-label': t('Plugins and Prompt')}, pluginArea(), room, agentCards((repo, issue) => parts.went(repo, {issue: issue.replace(/^issue\//, '')})), ...(parts.word ? [paneWord(parts.word)] : []));
   const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': sideId}, paneMark()) as HTMLButtonElement;
   const work = h('div', {class: parts.strip ? 'work bench' : 'work bench no-strip'});
 
   const box = new Box({work, main: parts.main, center, term, termHead, back: !!parts.back, went: parts.went, reveal: (path, line) => parts.reveal(path, line), desk: !!parts.desk,
-    ...(parts.desk ? {flow: (repo: string) => rowsFor(repo)} : {}),
+    flow: (repo: string) => rowsOf(repo),
     ...(parts.place ? {place: parts.place} : {}), ...(parts.frame ? {frame: parts.frame} : {})});
   // On a desk the Prompt is a box of its own: its output, and the line one types at under it.
   const terminal = parts.desk ? h('section', {class: 'desk-term'}, term, box.dock) : null;
@@ -247,10 +199,9 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   if (!shown) for (const pop of box.dock.querySelectorAll<HTMLElement>(':scope > .box-modes')) work.append(pop);
   const screen = shown?.screen ?? null;
   const reference = new Reference({reveal: parts.reveal, recall: (line) => box.recall(line)}, {keeps: true});
-  // A line run, pressed in the pane (which tells that it ran): read there, under the search box, with all it printed,
-  // as from Output; the Prompt, up again, starts at its line. Taken as the press begins, before the pane's box takes
-  // it as a press to bring the Prompt up.
-  (terminal ?? termHome).addEventListener('pointerdown', (event) => {
+  // A line run, pressed in the Prompt's box on a desk: read under the search box, with all it printed, as from Output.
+  // Taken as the press begins, before the box takes it as a press to put the keyboard in it.
+  terminal?.addEventListener('pointerdown', (event) => {
     const line = (event.target as Element).closest<HTMLElement>('.term-out > :is(.cmd, .ps:not(.waits))');
     const run = box.repo && line ? runPressed(line, sessionIfAny(box.repo)?.runs ?? []) : undefined;
     if (!run) return;
@@ -259,16 +210,12 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     reference.showRun(run);
   }, true);
   box.onFollow = () => reference.runsAgain();
-  // At rest the pane says what else the search shows, beside the Prompt's head, on its line.
-  (parts.desk ? room : termHome).prepend(reference.heads);
+  // At rest the pane says what else the search shows, over its rows.
+  room.prepend(reference.heads);
   const bar = h('div', {class: 'bar'}, parts.strip ?? h('span', {class: 'bar-room'}), reference.search, toggle);
   work.append(bar, center, side);
   const pane = new Pane(work, side, toggle);
-  if (shown) {
-    measured(work, side, shown.element, box, reference);
-    roomForHeads(termHome, termHead, reference.heads);
-    levelled(work, termHome, parts.main);
-  }
+  if (shown) measured(work, side, shown.element, box, reference);
   requestAnimationFrame(() => { work.dataset.shown = '1'; });
 
   document.addEventListener('keydown', (event) => {
@@ -279,10 +226,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   });
 
   const setRepo = (name: string | null) => {
-    if (parts.desk) {
-      const next = name ? rowsFor(name).element : h('div', {class: 'pane-rows'});
-      if (next !== shownRows) { shownRows.replaceWith(next); shownRows = next; }
-    }
+    showRows(name);
     if (name === box.repo && name) { box.attach(); return; }
     reference.setRepo(name);
     box.setRepo(name);
@@ -290,6 +234,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   setRepo(null);
   // A page taken off the screen loses its focus without a focusout, so the Prompt may still be up.
   const settle = () => {
+    showRows(box.repo);
     box.attach();
     box.room();
     reference.resume();

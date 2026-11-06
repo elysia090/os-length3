@@ -406,7 +406,7 @@ test('Home says where one left off: the line last written in a box on the desk',
   await app.page.keyboard.type('\nWritten here last.');
   await app.page.waitForTimeout(300);
   await app.rail.go('home');
-  await expect(app.main.locator('.lately-row').first()).toContainText('Written here last.');
+  await expect(app.main.getByRole('region', {name: 'Recent activity'}).getByRole('button').first()).toContainText('Written here last.');
 });
 
 test('a pill dragged along the band lands where it is let go', async ({app}) => {

@@ -1,11 +1,9 @@
 import {h} from '../../ui/dom.ts';
-import {kindColon, mark as todoMark} from '../kit/todo-list.ts';
 import {waitsAt} from './prompt-line.ts';
 
 // What a Prompt shows of what its shell wrote (terminal.ts): plain lines at the foot of its screen, drawn once a
 // frame, a run's lines coming in one after another, the prompt lines it waited at told apart from what the lines run
-// printed, and in the pane only the tail of what each line printed. Lines of the box's own (an issue written, a TODO
-// added, a question asked of the Agent, its answer under it) stand among them as they came.
+// printed. What the box does that is not the shell's is the pane's (rows.ts), not the Prompt's.
 
 /** What clears a terminal's screen (clear, Ctrl+L): the output before it goes. */
 const CLEARS = /\x1b\[H\x1b\[[23]?J|\x1b\[[23]J|\x1bc/g;
@@ -25,41 +23,10 @@ const KEEP_MOST = 200_000, KEEP_LEAST = 150_000;
 const BLOCK = 8_000;
 /** Of what a run prints in one frame, the lines that come in one after another; the rest comes in with the last of them. */
 const ONE_BY_ONE = 24;
-/** In the pane, what a line printed is its last this many lines (styles.css .term-home .above, .cut): none, the pane
- * tells what was run and the screen holds what it printed. */
-const TAIL = 0;
-
-/**
- * A line of the box's own in the Prompt's flow (an issue written, a TODO added from the box), marked at its start
- * (an invisible separator) so a drawing of it all from the text knows it again; what each goes to when pressed, by
- * its words.
- */
-const SAID = '⁣';
-const goes = new Map<string, (row: HTMLElement) => void>();
-/** The Agent's answer under a question of the box's own, by its line: not the shell's, so not in the text kept, but
- * drawn under its question again wherever the flow is drawn whole. */
-const answers = new Map<string, HTMLElement>();
-
-/**
- * A line of the box's own, as it stands in the flow: its head as the box's pill said it (#3 in ink, TODO with its
- * circle) and its words, which are a person's, not the shell's; pressed, it opens where it stands.
- */
-function ownLine(line: string): HTMLElement {
-  const words = line.slice(SAID.length, -1), cut = words.indexOf(' ');
-  const head = cut < 0 ? words : words.slice(0, cut), todo = head === 'TODO', agent = head === 'Agent';
-  // Its Kind's colon set as everywhere (todo-list.ts kindWords), the words as they were.
-  // A TODO's kind may be written with the narrow colon (Buy: …), an issue's is the wide one (Fix：…): either is its kind.
-  const said = words.slice(head.length), kind = /^(\s*(?:[^\s：:]+(?=：)|[A-Za-z][A-Za-z0-9-]{0,15}(?=:(?!\/\/))))([：:])/.exec(said);
-  const b = h('button', {type: 'button', class: 'term-said-go'}, h('b', {}, ...(todo ? [todoMark(false)] : []), head),
-    h('span', {class: 'said-words'}, ...(kind ? [h('b', {class: 'said-kind'}, kind[1], kind[2] === '：' ? kindColon() : ':'), said.slice(kind[0].length)] : [said])));
-  b.addEventListener('click', () => goes.get(line)?.(b));
-  return h('span', {class: `term-said ${todo ? 'said-todo' : agent ? 'said-agent' : 'said-issue'}`}, SAID, b, '\n');
-}
 
 /** A line sent, after the prompt line it was written at: its words an element of their own, its line break after. */
 function command(line: string): Node[] {
-  // Its end of line is its own: in the pane the line run is a block beside its prompt line's pill (it goes on under
-  // itself), and the end of a block is not one more line.
+  // Its end of line is its own: the end of the line run's element is not one more line.
   return [h('span', {class: 'cmd'}, line)];
 }
 
@@ -74,40 +41,6 @@ function oneByOne(lines: string[]): HTMLElement[] {
     ...(end ? [h('div', {class: 'fresh term-lines'}, rest.slice(0, end))] : []), ...(end < rest.length ? [h('span', {class: 'fresh'}, rest.slice(end))] : [])];
   fresh.forEach((s, i) => { s.style.animationDelay = `${Math.min(i, ONE_BY_ONE) * STAGGER}ms`; });
   return fresh;
-}
-
-/**
- * The pane refers, it does not hold: of what each line run printed, its last TAIL lines are shown there (none: the
- * line run alone, a notification of it, pressed to see what it printed). From the foot
- * back, each piece of a run's output past them is marked above (not shown in the pane), the one they start in cut to
- * its last lines with a fade where more is above. Up as the screen, the marks mean nothing: all of it is there. Only
- * the runs just drawn are walked (the last two: one ended and the next started in the same frame); drawn whole, all.
- */
-function tails(out: HTMLElement, all: boolean) {
-  let left = TAIL, top: HTMLElement | null = null, starts = 0;
-  for (let n = out.lastChild; n; n = n.previousSibling) {
-    const el = n instanceof HTMLElement ? n : null;
-    if (el && (el.classList.contains('ps') || el.classList.contains('term-said'))) {
-      if (el.classList.contains('waits')) continue;
-      if (!all && ++starts === 2) return;
-      left = TAIL; top = null;
-      continue;
-    }
-    // A line run, the Prompt's end and the Agent's answer are never what a line printed.
-    if (el && ['cmd', 'term-end', 'term-answer'].some((c) => el.classList.contains(c))) continue;
-    if (left <= 0) {
-      top?.classList.add('cut');
-      if (el) el.classList.add('above');
-      // A piece of a line between blocks (the rest of a line one frame began) is put in a span to be marked.
-      else if (n.textContent) { const held = h('span', {class: 'above'}); n.replaceWith(held); held.append(n); n = held; }
-      continue;
-    }
-    const text = n.textContent ?? '', lines = text.split('\n').length - 1;
-    if (!el) { left -= lines; continue; }
-    if (lines > left) { el.classList.add('cut'); el.style.setProperty('--tail', String(left)); }
-    left -= Math.max(lines, 1);
-    top = el;
-  }
 }
 
 /** A Prompt's screen: what its shell wrote, as plain lines, and the lines of the box's own among them. */
@@ -201,49 +134,6 @@ export class Output {
   }
 
   /**
-   * Something the box did that is not the shell's (an issue written, a TODO added: `head` and its words), in the
-   * Prompt's flow as it came: a line of its own before the prompt line the shell waits at (after a line being
-   * printed, under it), pressed to `go` to it (told the line pressed: a drawing of it all from the text draws it anew).
-   * Its line is returned, there now, for what lands on it.
-   */
-  note(head: string, words: string, go: (row: HTMLElement) => void): HTMLElement {
-    // What waits for the next frame is drawn first: the line goes after all that came before it.
-    if (this.#painting) { cancelAnimationFrame(this.#painting); this.#draw(); }
-    const line = `${SAID}${head} ${words.replace(/\s+/g, ' ').trim()}\n`;
-    goes.set(line, go);
-    const row = ownLine(line);
-    const tail = this.#tail?.isConnected && waitsAt(this.#lastLine) ? this.#tail : null;
-    if (tail) {
-      this.#text = this.#text.slice(0, this.#text.length - this.#lastLine.length) + line + this.#lastLine;
-      this.element.insertBefore(row, tail);
-    } else {
-      const under = this.#lastLine ? '\n' : '';
-      this.#text += under + line;
-      this.element.append(under, row);
-      this.#lastLine = '';
-      this.#drawnLast = '';
-    }
-    this.#drawnLength = this.#text.length;
-    this.#trim();
-    this.element.scrollTo({top: this.element.scrollHeight});
-    return row.querySelector('button')!;
-  }
-
-  /**
-   * The Agent's answer to the question `row` stands for (a line of the box's own, note's), an element of its own under
-   * it, for its words to be put in as they come. Not the shell's: it is not in the text kept (trimmed with what is
-   * above it, gone with all else when the screen is cleared), and drawn again under its question if the flow is.
-   */
-  answer(row: HTMLElement): HTMLElement {
-    const said = row.closest<HTMLElement>('.term-said')!;
-    const el = h('div', {class: 'term-answer waiting'});
-    said.after(el);
-    // Its line as the text keeps it is the words it stands for, its end of line too.
-    answers.set(said.textContent ?? '', el);
-    return el;
-  }
-
-  /**
    * Put back into the box, the Prompt is read afresh from its line: what it printed so far is folded away (`.earlier`),
    * so up next time the screen holds the prompt line it waits at and what comes after it. The pane, the same lines
    * seen there, still lists every line run; pressed, one is read there with all it printed (forge/reference.ts).
@@ -292,7 +182,6 @@ export class Output {
     this.#drawnLast = this.#lastLine;
     this.#trim();
     this.#markTail();
-    tails(this.element, add === null);
     // Full, what comes in scrolls the rest up, smoothly, as a terminal's screen does (at once when much came at once).
     const out = this.element, far = out.scrollHeight - out.clientHeight - out.scrollTop;
     const smooth = add !== null && far < out.clientHeight && moving;
@@ -320,8 +209,6 @@ export class Output {
     let cut = 0;
     while (left > 0 && this.element.firstChild) {
       const node = this.element.firstChild;
-      // An answer is none of the text kept: it goes with what is above it, counting nothing.
-      if (node instanceof HTMLElement && node.classList.contains('term-answer')) { node.remove(); continue; }
       const n = node.textContent?.length ?? 0;
       if (n <= left || node.childNodes.length > 1) { node.remove(); left -= n; cut += n; continue; }
       // Within a block (or a text): its first lines go, the rest of it stays where it is.
@@ -356,12 +243,6 @@ export class Output {
       const nl = text.indexOf('\n', at) + 1;
       const line = text.slice(at, nl);
       at = nl;
-      if (line.startsWith(SAID)) {
-        close();
-        const answer = answers.get(line);
-        out.push(ownLine(line), ...(answer ? [answer] : []));
-        continue;
-      }
       const ps = prompts.length ? prompts.find((p) => line.startsWith(p)) : undefined;
       if (ps) { close(); out.push(h('span', {class: 'ps'}, ps), ...command(line.slice(ps.length))); continue; }
       block += line;

@@ -8,11 +8,11 @@
 /* The page then reaches the window's edge too (its words where they were), clipped there and never scrolled. */
 .work.bench > .side { z-index: 1; background: var(--ground); }
 /* Word from someone come while one works (bench.ts paneWord): at the pane's foot, its last row's foot on the prompt
-   box's, a sheet to act on (paper, a rule edge), who and the first line of what they said, the newest come in from
-   the window's edge. Pressed, Inbox at that conversation. */
+   box's, a sheet to act on (paper), who and the first line of what they said, the newest come in from the window's
+   edge. Pressed, Inbox at that conversation. */
 .pane-word { position: absolute; left: var(--s5); right: var(--s5); bottom: var(--s5); z-index: 2; display: grid; gap: var(--s2); }
-/* What came, over the Prompt's lines: a card lifted a little off them, as something arrived. */
-.pane-word .lately-row { box-shadow: 0 6px 16px -10px color-mix(in srgb, var(--ink) 30%, transparent); }
+/* What came, over the pane's rows: a card lifted a little off them, as something arrived. */
+.pane-word > .pane-row { margin: 0; background: var(--paper); box-shadow: 0 6px 16px -10px color-mix(in srgb, var(--ink) 30%, transparent); }
 .pane-word:empty { display: none; }
 
 /* The row slides as one. A box opened comes in at its own width where it stands, fading in as the row brings it, and

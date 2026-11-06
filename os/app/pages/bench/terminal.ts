@@ -217,13 +217,6 @@ export class Session implements Prompt {
     return true;
   }
 
-  /**
-   * Something the box did that is not the shell's (an issue written, a TODO added: `head` and its words), in the
-   * Prompt's flow as it came, pressed to `go` to it (output.ts). Its line is returned, there now, for what lands on it.
-   */
-  note(head: string, words: string, go: (row: HTMLElement) => void): HTMLElement { return this.out.note(head, words, go); }
-  /** Under a question asked of the Agent (`row`, note's), where its answer comes in (output.ts). */
-  answer(row: HTMLElement): HTMLElement { return this.out.answer(row); }
 
   /**
    * Put back into the box: up again, the screen starts at its prompt line (output.ts fold). What came before is the

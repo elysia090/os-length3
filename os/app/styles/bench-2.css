@@ -11,17 +11,12 @@
   .home-pane, .home-layout.pane-closed .home-pane { transition: none; }
 }
 /* The one line, between the center and the pane: from the top line to the prompt box's foot, not edge to edge. */
-/* The pane's top is the plugin area's; opened, the Prompt starts level with the foot of the rail's Inbox (bench.ts
+/* The pane's top is the plugin area's; opened, the rows start level with the foot of the rail's Inbox (bench.ts
    measures it into --prompt-at), pushed down only by a plugin area opened taller than that. */
 .work.bench > .side, .work.bench:is(.unrun, .prompting) > .side { position: relative; grid-row: 2; grid-template-rows: minmax(var(--prompt-at, 40%), auto) minmax(0, 1fr); }
-.work.bench > .side > .term-home { grid-row: 2; margin-top: calc(-1 * var(--s5)); } /* its words, not its padding, on that line */
-/* The plugin area shut, nothing is over the Prompt: it holds the pane from its top, its head level with the file box's
-   top, so the pane reads at once as open and what it is (an empty top would read as nothing, or as put away). */
+/* The plugin area shut, nothing is over the rows: they hold the pane from its top, so the pane reads at once as open
+   and what it is (an empty top would read as nothing, or as put away). */
 .work.bench > .side:has(> .plugins[hidden]) { grid-template-rows: 0 minmax(0, 1fr); }
-/* Its head's words stand on the file heads' line: their baseline, the one of a box s3 under the center's top (the
-   Prompt's words larger, so it sits a step higher); side by side, under the boxes' own heads, as far down as they
-   go, at the pace they go. --head-nudge: what the system's faces put off that line, measured (bench.ts levelled). */
-.work.bench > .side:has(> .plugins[hidden]) > .term-home { margin-top: calc(-1 * var(--s1) + var(--head-nudge, 0px)); transition: margin-top var(--move) var(--land); }
 /* The pane stands on the ground, as the rail does, and is cut from the work by the line the rail is: the same
    weight, in ink, from the top line to the foot, so the center reads at once as the thing framed between the two.
    It goes with the pane (put away, no pane, no line). */

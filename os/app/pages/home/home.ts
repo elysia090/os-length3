@@ -140,7 +140,7 @@ function homePane(main: HTMLElement, ctx: Context, listed: Promise<RepoSummary[]
  */
 function lately(ctx: Context): HTMLElement {
   const list = h('div', {class: 'lately-list'});
-  arrowKeys(list, '.lately-row');
+  arrowKeys(list, '.pane-row');
   const box = h('section', {class: 'lately', 'aria-labelledby': 'lately-title'}, h('h2', {id: 'lately-title'}, t('Recent activity')), list);
   let asked = 0;
   const paint = async () => {
@@ -154,7 +154,7 @@ function lately(ctx: Context): HTMLElement {
       const end = text === null || left.at === null ? -1 : text.indexOf('\n', left.at);
       const quote = text === null ? '' : text.slice(0, end < 0 ? text.length : end).split('\n').reverse().find((l) => /[\p{L}\p{N}]/u.test(l))?.trim() ?? '';
       const goOn = () => ctx.openRepo(left.repo, left.path, left.at === null ? 'end' : {at: left.at});
-      rows.push(latelyRow(shownName(left.path), t('{repo} · Continue where you left off', {repo: left.repo}), {quote, place: left.repo, badge: 'file', go: goOn}));
+      rows.push(latelyRow(shownName(left.path), t('{repo} · Continue where you left off', {repo: left.repo}), {quote, place: left.repo, go: goOn}));
     }
     // The servers and the conversations asked at once: neither waits on the other (one round to the Remote, not two).
     const [all, threads] = connection()
@@ -164,7 +164,7 @@ function lately(ctx: Context): HTMLElement {
       for (const th of waiting(threads, 3)) {
         const who = th.name || inbox.shown(th.address);
         const answer = () => { openNext(th.address); void ctx.go('inbox'); };
-        rows.push(latelyRow(who, wordLine(th), {fresh: true, badge: {who}, go: answer}));
+        rows.push(latelyRow(who, wordLine(th), {fresh: true, go: answer}));
       }
       for (const b of news().boards.slice(0, 3)) {
         const s = all.find((x) => x.id === b.server);
@@ -174,7 +174,7 @@ function lately(ctx: Context): HTMLElement {
           remember({server: s.id, board: board.id});
           void ctx.go('server');
         };
-        rows.push(latelyRow(board.name, t('{server} · New posts', {server: s.name}), {fresh: true, badge: 'board', go: there}));
+        rows.push(latelyRow(board.name, t('{server} · New posts', {server: s.name}), {fresh: true, go: there}));
       }
     }
     // The boards this browser writes in as a guest (none of its servers'): where one writes, a way back always,
@@ -182,7 +182,7 @@ function lately(ctx: Context): HTMLElement {
     const ours = new Set(all.flatMap((s) => s.boards.map((x) => x.id)));
     for (const {id, here} of servers.guestBoards().filter((g) => !ours.has(g.id)).slice(0, 3)) {
       const there = () => { remember({board: id}); void ctx.go('server'); };
-      rows.push(latelyRow(here.name, t('{server} · Joined as guest', {server: here.server}), {badge: 'board', go: there}));
+      rows.push(latelyRow(here.name, t('{server} · Joined as guest', {server: here.server}), {go: there}));
     }
     if (mine !== asked) return;
     list.replaceChildren(...(rows.length ? rows : [h('p', {class: 'muted small lately-none'}, t('Nothing new'))]));

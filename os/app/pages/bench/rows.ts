@@ -1,8 +1,9 @@
 import {h} from '../../ui/dom.ts';
 import {t} from '../../i18n/i18n.ts';
+import {cutWhenLonger} from '../../ui/cut.ts';
 import type {Run} from './sessions.ts';
 
-// The right pane on a desk (Forge's): what was done in the repo, a big row each, newest last. A line run, its bar in
+// The right pane of Forge and Git: what was done in the repo, a big row each, newest last, one for both pages. A line run, its bar in
 // green (it ended well), red (it failed, its exit status said) or ink (still running), the line itself in the display
 // face; what the box did that is not the shell's (an issue written, a TODO added, what the Agent read or edited), its
 // pill and its words; the Agent's words under the question they answer. Every row says at most two lines, the second
@@ -14,23 +15,23 @@ export interface Runs { readonly runs: Run[]; watch(fn: () => void): () => void 
 
 const time = (ms: number) => new Date(ms).toLocaleTimeString(undefined, {hour: '2-digit', minute: '2-digit', hourCycle: 'h23'});
 
-/** `el` cut at two lines, its second fading out, when what it says is longer (measured once it is laid out). */
-function clamp(el: HTMLElement) {
-  requestAnimationFrame(() => el.classList.toggle('cut', el.scrollHeight > el.clientHeight + 1));
-}
-
 /** A repo's flow as the pane shows it. */
 export class Rows {
   readonly element = h('div', {class: 'pane-rows', role: 'log'});
   readonly #rows = new Map<Run, HTMLElement>();
-  readonly #open: (run: Run) => void;
+  /** How a run pressed is read: as the page that holds the rows now reads it (the Prompt's box, at it; or Output's). */
+  open: (run: Run) => void = () => {};
 
-  /** `prompt`'s runs followed; `open` reads a run pressed (the Prompt's box, at it). */
-  constructor(label: string, prompt: Runs, open: (run: Run) => void) {
+  /** `prompt`'s runs followed. */
+  constructor(label: string, prompt: Runs) {
     this.element.setAttribute('aria-label', label);
-    this.#open = open;
     prompt.watch(() => this.#sync(prompt.runs));
     this.#sync(prompt.runs);
+  }
+
+  /** On screen again (in another page's pane, or its page come back to): at the newest. */
+  shown() {
+    this.element.scrollTo({top: this.element.scrollHeight});
   }
 
   #sync(runs: Run[]) {
@@ -39,10 +40,10 @@ export class Rows {
       if (!row) {
         row = h('button', {type: 'button', class: 'pane-row run'},
           h('span', {class: 'pane-bar', 'aria-hidden': 'true'}), h('span', {class: 'pane-line'}, run.line), h('span', {class: 'pane-at'}));
-        row.addEventListener('click', () => this.#open(run));
+        row.addEventListener('click', () => this.open(run));
         this.#rows.set(run, row);
         this.#add(row);
-        clamp(row.querySelector('.pane-line')!);
+        cutWhenLonger(row.querySelector('.pane-line')!);
       }
       const ended = run.ms !== null, failed = ended && (run.status ?? 0) !== 0;
       row.dataset.state = !ended ? 'running' : failed ? 'failed' : 'done';
@@ -65,7 +66,7 @@ export class Rows {
       h('span', {class: 'pane-bar', 'aria-hidden': 'true'}), h('span', {class: 'pane-line'}, text), h('span', {class: 'pane-at'}, head));
     row.addEventListener('click', () => go(row));
     this.#add(row);
-    clamp(row.querySelector('.pane-line')!);
+    cutWhenLonger(row.querySelector('.pane-line')!);
     return row;
   }
 
@@ -74,7 +75,7 @@ export class Rows {
     const el = h('div', {class: 'pane-answer waiting'});
     row.after(el);
     // Its words, as they come, cut at two lines; pressed, all of them.
-    new MutationObserver(() => clamp(el)).observe(el, {childList: true});
+    cutWhenLonger(el, true);
     el.addEventListener('click', () => el.classList.toggle('whole'));
     return el;
   }

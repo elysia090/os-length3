@@ -1,3 +1,4 @@
+import {cutWhenLonger} from '../../ui/cut.ts';
 import {h} from '../../ui/dom.ts';
 import {after, arrive, closeUp, paneIn, paneOut} from '../../ui/glide.ts';
 import {t} from '../../i18n/i18n.ts';
@@ -5,7 +6,6 @@ import * as inbox from '../../remote/inbox.ts';
 import {news, onNews} from '../../remote/news.ts';
 import {onPlugins, pluginsOpen, setPluginsOpen, slots} from '../../host/plugins.ts';
 import {connection} from '../../remote/connection.ts';
-import {icon} from '../../ui/icons.ts';
 import {kindWords} from './todo-list.ts';
 
 // The right pane beside the center (Forge's, Git's, Home's): what the center refers to, the plugin area at its top,
@@ -140,13 +140,6 @@ export function pluginArea(): HTMLElement {
   return area;
 }
 
-/** What a row is, in a round badge at its head: who wrote (their initial, on one of four soft tints, the same for the same name), a file, a board. */
-type Badge = {who: string} | 'file' | 'board';
-function badge(b: Badge): HTMLElement {
-  if (b === 'file') return h('span', {class: 'lately-badge', 'aria-hidden': 'true'}, icon('file'));
-  if (b === 'board') return h('span', {class: 'lately-badge', 'aria-hidden': 'true'}, '#');
-  return personBadge(b.who);
-}
 /** Someone, as a round initial on their soft tint (the same for the same name): Lately, the pane's word, Inbox, Server's people. */
 export function personBadge(who: string): HTMLElement {
   const tint = [...who].reduce((n, c) => n + c.codePointAt(0)!, 0) % 4;
@@ -154,22 +147,23 @@ export function personBadge(who: string): HTMLElement {
 }
 
 /**
- * A row of what waits, as Home's Lately and the bench's pane both show it: what it is in a round badge (who wrote,
- * the file, the board) and in words, a dot while something of it is not read, a quoted line if it has one, and its
- * line (what was said, where it is). Every row the same rounded box; who it is from, its initial says. Pressed, it
- * opens where it stands (look.ts), never at once another page.
+ * A row of what waits, as Home's Lately and the bench's pane both show it, in the rows the pane has for what was done
+ * (bench/rows.ts): a bar (ink while something of it is not read, quiet once it is), what it is in the display face (a
+ * file, who wrote, a board), under it what was said or the line it was left at (two lines at most, the second fading
+ * out), and where it is, quiet. Pressed, it goes to where the thing is done (a conversation, a board, the line).
  */
-export function latelyRow(what: string, line: Node[] | string, o: {fresh?: boolean; quote?: string; place?: string; badge: Badge; go(): void}): HTMLButtonElement {
-  // Its name, where it is (a repo) quiet at its right, and at its end one slot: the dot while something of it is not
-  // read. A quoted line is its second line, and says where it was left better than words would: the words are heard
-  // only. It tells, it does not hold: pressed, it goes to where the thing is done (a conversation, a board, the line).
-  const b = h('button', {type: 'button', class: 'lately-row'},
-    h('span', {class: 'lately-what'}, badge(o.badge), h('span', {class: 'lately-name'}, what),
-      o.place ? h('span', {class: 'lately-place'}, o.place) : null,
-      h('span', {class: 'lately-end', 'aria-hidden': 'true'}, o.fresh ? h('span', {class: 'lately-dot'}) : null)),
-    o.quote ? h('span', {class: 'lately-quote'}, o.quote) : null,
-    h('span', {class: `muted small lately-line${o.quote ? ' sr-only' : ''}`}, ...(typeof line === 'string' ? [line] : line))) as HTMLButtonElement;
+export function latelyRow(what: string, line: Node[] | string, o: {fresh?: boolean; quote?: string; place?: string; go(): void}): HTMLButtonElement {
+  const words = typeof line === 'string' ? [line] : line;
+  // A quoted line says where it was left better than words would: the words are heard only.
+  const said = o.quote ? h('span', {class: 'pane-said quote'}, o.quote) : h('span', {class: 'pane-said'}, ...words);
+  const b = h('button', {type: 'button', class: 'pane-row news', 'data-state': o.fresh ? 'fresh' : 'seen'},
+    h('span', {class: 'pane-bar', 'aria-hidden': 'true'}), h('span', {class: 'pane-line'}, what), said,
+    o.place ? h('span', {class: 'pane-at'}, o.place) : null,
+    o.quote ? h('span', {class: 'sr-only'}, ...words) : null) as HTMLButtonElement;
   b.addEventListener('click', () => o.go());
+  // Cut at two lines, the second fading out, when what it says is longer.
+  cutWhenLonger(b.querySelector<HTMLElement>('.pane-line')!);
+  cutWhenLonger(said);
   return b;
 }
 
@@ -204,7 +198,7 @@ export function paneWord(open: (address: string) => void): HTMLElement {
     const rows = come.map((th) => {
       const who = th.name || inbox.shown(th.address);
       // The same row as Home's Lately: who and their first line; pressed, the conversation in Inbox.
-      const b = latelyRow(who, wordLine(th), {fresh: true, badge: {who}, go: () => open(th.address)});
+      const b = latelyRow(who, wordLine(th), {fresh: true, go: () => open(th.address)});
       return {b, key: `${th.address} ${th.last.time}`};
     });
     list.replaceChildren(...rows.map((r) => r.b));

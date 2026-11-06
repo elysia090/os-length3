@@ -276,3 +276,11 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
 .term-shut:hover { opacity: 1; background: color-mix(in srgb, currentColor 12%, transparent); }
 :is(.prompting, .prompt-leaving) .screen .term-head > .term-shut { display: grid; }
 :is(.prompting, .prompt-leaving) .screen .term-head > .lamp { margin-left: auto; }
+/* Up again after it was put back, the screen starts at its prompt line: what it printed before is the pane's, which
+   lists the lines run, one pressed read with all it printed (output.ts fold). */
+.term-slot .term-out > .earlier { display: none; }
+@keyframes fresh { from { opacity: 0; } }
+/* What Tab could complete to, said under the box: paths, so monospace. */
+.prompt-note.paths { font-family: var(--mono); white-space: pre-wrap; }
+/* Several of them run to more than one line: a sheet's corner, not a pill's ends. */
+.dock > .prompt-note.paths { padding-block: var(--s1); border-radius: var(--r-field); }

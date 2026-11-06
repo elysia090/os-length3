@@ -100,20 +100,16 @@
 .plugins { padding: 0 var(--s5) var(--s3); }
 .plugins .empty { margin-top: 0; padding: var(--s4) var(--s5); }
 .plugins .slide { height: auto; }
-/* At rest, on the Prompt's head line at the pane's right end, what else the search shows: Issue, diff with how many
-   files are changed, Output, Agent; heads as quiet as the Prompt's, pressed to open that view under the search box, which
-   stays out beside the file until it is put away (reference.ts). */
-.term-home { position: relative; }
-.pane-heads { --pad: 5px; position: absolute; top: var(--s5); right: calc(var(--s5) - var(--pad)); display: flex; }
+/* At rest, on their own line over the pane's rows at its right end, what else the search shows: Issue, diff with how
+   many files are changed, Output, Agent; quiet heads, pressed to open that view under the search box, which stays out
+   beside the file until it is put away (reference.ts). */
+.pane-heads { --pad: 5px; display: flex; justify-content: flex-end; margin: var(--s4) calc(-1 * var(--pad)) var(--s1) 0; }
 .pane-head { padding: 0 var(--pad); border: 0; border-radius: var(--r-field); background: transparent; color: var(--sub);
   font: 600 var(--t-meta)/calc(var(--t-body) * 1.6) var(--sans); letter-spacing: .02em; cursor: var(--cursor-hand); }
 .pane-head:hover, .pane-head[aria-pressed='true'] { color: var(--ink); }
 .pane-head:hover { background: var(--raised); }
 .pane-head-n { margin-left: var(--s1); font-weight: 400; font-variant-numeric: tabular-nums; }
 .pane-head-n:empty { display: none; }
-/* A pane too narrow for both on one line (a narrow window, longer words): the heads keep it, the Prompt's name gives
-   them its room; its section is still named Prompt for those who listen (bench.ts measures). */
-.term-home.heads-over > .term-box > .term-head > h2 { visibility: hidden; }
 /* Narrow (after the wide rules above, which it changes): the search at the top line's right, the right pane
    folded away and, brought out with its switch, laid over the center under the top line. */
 @media (max-width: 760px) {
@@ -128,8 +124,8 @@
     top: calc(var(--band) + var(--h-row) + var(--s2)); right: var(--s2); width: min(360px, calc(100% - 2 * var(--s2))); max-height: 70vh;
     background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-card);
   }
-  /* Laid over, it is the plugin area: the Prompt is the center's here (its dock, while it is written to). */
-  .work.bench.pane-out > .side > .term-home { display: none; }
+  /* Laid over, it is the plugin area: what was done is the search's here (Output), the Prompt the center's. */
+  .work.bench.pane-out > .side > .pane-room { display: none; }
   .work.bench.pane-out > .side { grid-template-columns: minmax(0, 1fr); }
   .work.bench .search-results { left: auto; right: 0; width: min(360px, calc(100vw - var(--rail) - 2 * var(--s4))); }
   /* No room on the top line here: Issue, diff and Output at the top of what opens. */

@@ -1906,23 +1906,19 @@ Ctrl+B as there; what is found opens in Forge, a line at that line,
 selected. While it is out the window steps back under the one shade. Its
 first line, the name and Edit profile, stands on that top line too. Under
 it the pane holds
-Lately: what waits since the person was last here, a row each on the
-ground (no box round each, a raised fill under the pointer; between rows a
-hairline from where their words start, so rows of many lines are each seen
-whole), under a quiet head (a pane's own heads, Lately, the Prompt, People,
-are small and in the quiet colour, on the line a file's head is on): where they left
-off (the file last read in Forge, its mark, its repo quiet at the right, and
-under it the line it was left at, as written), the conversations with
-something not read (who wrote, their initial on one of four soft tints, the
-marker's, a step done's, a removal's, the sky's, the same for the same name;
-what it is and its words: Review：…), the boards with posts not seen (#),
-and the boards this browser writes in as a guest (#, Trip · where you write
+Lately: what waits since the person was last here, a row each in the rows
+Forge's and Git's pane have for what was done (a bar, ink while something of
+it is not read, the paper's rule once it is; what it is in the display face;
+under it what was said, or the line it was left at as written there, in mono;
+where it is, quiet), under a quiet head (a pane's own heads, Lately, People,
+are small and in the quiet colour): where they left
+off (the file last read in Forge, its repo, and the line it was left at), the
+conversations with something not read (who wrote; what it is and its words:
+Review：…), the boards with posts not seen,
+and the boards this browser writes in as a guest (Trip · where you write
 as a guest: a way back always there, signed in or not, the one written in
-last first, pressed to that board); at each row's end one slot, the unread
-dot, a chevron under the pointer (it goes there). A row is two lines at
-most: its name, going on under itself where it must (its badge, its place
-and its slot on its first line), and one line of what came, cut where it
-runs out of room. The pane keeps its width. In
+last first, pressed to that board). A row is two lines at
+most under its name, the second fading out where it runs out of room. The pane keeps its width. In
 the Prompt's lines there, a line run that goes past the pane's width goes on
 under itself beside its prompt line's pill, never back under it; a line
 sent before the shell first waits at its prompt line waits for it. The same round initial
@@ -2155,17 +2151,9 @@ off does, staying dim to be read; switched on again, the old screen goes down
 to a bright line across its middle, the box takes the new one's height, and
 the new one opens out of the line. The prompt lines before are in
 the green, so what was run stands out from what it printed. A lamp at its head is
-lit while its shell runs; the terminal, put back, comes into the pane where it
-lives, and the reference grows down into the room it leaves. In the pane it is
-read as a line of what was done in the repo, in the page's own colours, as a
-history is drawn: a dot for each thing done, all on one thin thread from the
-first to the prompt line the shell waits at (it scrolls with them, and ends at
-the last dot). A line run is a ring on the thread, the prompt line it was written at
-in the pill the box wore for it (the screen's glass, its words in the green),
-and the line in ink, bold; what it printed is under it, quieter. The pills sit
-on their line's middle, beside the words they head. The prompt line the shell waits at is last, its dot lit in the green
-and glowing as the lamp is (off once it has ended). Up as the screen, it is the
-terminal again, its lines as a terminal's. The terminal's box
+lit while its shell runs; put back (Git's), it goes out of sight, the pane
+holding what was done in the repo as its rows (below); up as the screen, it is
+the terminal, its lines as a terminal's. The terminal's box
 is labelled Prompt, after what one does there (the shell is BusyBox sh, so
 it is not called Bash); leaving the prompt
 (or Escape, or the × at the right end of its head, beside the lamp, there
@@ -2200,17 +2188,20 @@ Create, Add; Edit has none) and the empty box where it goes. Only Run brings the
 An issue or a TODO is written as everywhere, its first line Kind: title and
 the lines under it its detail; sent, the box empties and where it went is said
 to be heard (Written as #4 in garden). What the box made
-comes into the right pane as the Prompt's own lines do, one stream of what
-was done in the repo in the order it was done: a line of its own in the
-Prompt's flow, before the prompt line the shell waits at, on a dot of its own
-(in ink, an issue or a TODO alike: the green is the live prompt line's), its head in the pill
-the box wore for it (`#4` in ink, `TODO` on paper with its circle) and its
-words in the letters people write in, not the shell's (`#4 Fix：…`), beside
-the pill (a second line goes on under them, never back under the pill), its
-kind in bold as everywhere. Sent, its first line goes on a
+comes into the right pane's rows as the lines run do, one stream of what was
+done in the repo in the order it was done (Forge's and Git's the same
+stream). A line run is a row: a bar (green once it ended well, red with its
+exit status beside its time when it failed, ink while it runs), the line
+itself in the display face, its time under it. What the box made is a row of
+its own, its bar the paper's rule, its words in the letters people write in
+(`Fix：…`) and its pill's head under them (`#4`, `TODO`). Every row says two
+lines at most, the second fading out partway along: the pane is a
+notification, not a second workplace. A run pressed is read where it ran,
+lit in the Prompt's box on Forge's desk, under the search box with all it
+printed on Git. Sent, its first line goes on a
 slip of paper out of the box, on to the right as a sheet slid off, then up
-and on into that line, coming down to its size; the slip gives up its paper
-as it lands on the line's words, and the line is lit a moment as a file
+and on into that row, coming down to its size; the slip gives up its paper
+as it lands on the row's words, and the row is lit a moment as a file
 landed on is. Issue and TODO go the same way; the pill's number turns to the
 next as a counter's figure does. With the pane put away (or narrow), the
 slip slides on and rises out of sight, and the line is there when the pane
@@ -2220,8 +2211,8 @@ is half written is kept for the repo and for what the box does.
 Asking the Agent is the box's too, never the Prompt's: written to, the box does
 not bring the screen up, and what is written is a person's words, in their
 letters (not the terminal's). Sent (Ctrl+Enter, Ask), the question goes into the
-right pane as an issue does, on a slip, a line of the flow with its head in the
-pill the box wore (`Agent`, ringed in the blue), the pane brought out for it;
+right pane as an issue does, on a slip, a row of its own with `Agent` under its
+words, the pane brought out for it;
 the answer comes in under it a few words at a time, in the letters people write
 in, its paragraphs a little apart, and its code, what would be run, on the
 Prompt's own glass in its green. Until its first words, a quiet ellipsis;
@@ -2229,9 +2220,8 @@ refused (the key no longer taken, asked too often, nobody reached), why, in the
 red, where the answer would be. It is told the repo, its top, and the file in
 front as it stands (written in and not saved too) with the caret's line, so a
 question needs no saying where. Pressed, the question is back in the box to be
-asked again. The answer is not the shell's: it is kept with its question while
-the flow is drawn again, and goes with what is above it, or with all of it when
-the screen is cleared. The key taken away, the boxes asking run again.
+asked again. The answer, two lines of it fading out as a row's, is all there
+pressed. The key taken away, the boxes asking run again.
 
 What the Agent does is played on the desk as a person would do it, after it
 and at a person's pace, never as a screen of its own. It works at its own pace
@@ -2348,11 +2338,11 @@ by side, one at a time (none yet). With none it stays plain, nothing put
 there to fill it (issue #45): opened, the pane's top is that empty area and
 the Prompt moves down under it, level with the foot of the rail's Inbox, as
 it does under plugins; the plug, which says it is out, is the way back.
-The right pane has no switch of its own. At rest it says, on the Prompt's
-head line at its right end and as quiet as that head, Issue, diff (with how
-many files are changed since the last commit, diff 2) and 実行結果, the three
-the search box switches between, so a pane that holds only a prompt line
-still shows what else is there: a head pressed opens its view under the
+The right pane has no switch of its own. At rest it says, on a line of their
+own over its rows at its right end, quiet, Issue, diff (with how many files
+are changed since the last commit, diff 2), 実行結果 and Agent, what the search
+box switches between, so a pane with no rows yet still shows what else is
+there: a head pressed opens its view under the
 search box, as its pill there does, and the view stays out beside the file as
 the keyboard goes back to it, until it is put away. Beside the file it stands in
 the pane's own width, a step in from the pane's line, over the pane and never
