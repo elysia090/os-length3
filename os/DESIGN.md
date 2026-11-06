@@ -1967,20 +1967,23 @@ gone goes from the desk; moved, its box is the file where it went. Each
 repo keeps its own desk, as it was left, from one visit to the next; a desk
 never worked at begins with the Prompt and the README beside it.
 
-Where you work. The repos out to work on run as pills in a band on the top
-line; the search box sits on the same line over the right pane, and at the
-line's right end the round switch that puts the right pane away and brings
-it back. Put away, the pane closes as a wipe, the center takes the whole
-width and the search goes with the pane; the switch stays where it was, the
-way back, and what the pane showed, what was chosen there and where it was
-read come back with it. The files button stands first, at the band's left
-end: pressed, the deeds for the file read now (New file and New folder
+Where you work. The top line starts with its tools, square as a field: >_,
+which takes the terminal on the desk in hand; the files tool, a page with +;
+and the search, 220 px with its lens, saying only Search (/ goes to it from
+anywhere nothing is written in; on a phone it folds to its lens and opens to
+be written in). The repos out to work on run as pills after them, the pills,
+their parts and ⊕ square-cornered as the tools are. The right pane holds the
+runs alone; its switch lies at the foot, its middle level with the person's at
+the rail's foot. Put away, the pane closes as a wipe and the center takes the
+whole width; the band and its search stay where they are, the switch too, the
+way back, and what the pane showed comes back with it. The files tool, pressed,
+brings out the deeds for the file read now (New file and New folder
 beside it, Rename, which moves it given a path, Delete; the repo's own with
-none read) come out under it, in Forge, done there with the field or the
+none read) under it, in Forge, done there with the field or the
 ask in its place as File's are, never carrying one off to File; a new file
 is made at once and opened to write in, one renamed or moved is shown where
 it went. The
-pills follow it and scroll, and ⊕ comes right after the last
+pills scroll when there are many, and ⊕ comes right after the last
 pill. One press brings every repo not on the band out at once; this is not
 adding tabs one at a time.
 Each pill comes off the band with its × (the repo itself is untouched);
@@ -2216,43 +2219,56 @@ slip slides on and rises out of sight, and the line is there when the pane
 comes back. Pressed, the line goes to it (the issue in Git, the TODO on Home). What
 is half written is kept for the repo and for what the box does.
 
-Asking the Agent is the box's too, never the Prompt's: written to, the box does
-not bring the screen up, and what is written is a person's words, in their
-letters (not the terminal's). Sent (Ctrl+Enter, Ask), the question goes into the
-right pane as an issue does, on a slip, a row of its own with `Agent` under its
-words, the pane brought out for it;
-the answer comes in under it a few words at a time, in the letters people write
-in, its paragraphs a little apart, and its code, what would be run, on the
-Prompt's own glass in its green. Until its first words, a quiet ellipsis;
-refused (the key no longer taken, asked too often, nobody reached), why, in the
-red, where the answer would be. It is told the repo, its top, and the file in
-front as it stands (written in and not saved too) with the caret's line, so a
-question needs no saying where. Pressed, the question is back in the box to be
-asked again. The answer, two lines of it fading out as a row's, is all there
-pressed. The key taken away, the boxes asking run again.
+On the desk the Agent is asked in the terminal, as any program is: `agent`
+and what to do, Enter. The line is the person's, run in their terminal and
+listed in the pane as any line run; the terminal is theirs again at once
+(refused, the key not taken or nobody reached, the line says why as a command
+does, `agent: ...`). The Agent's own terminal is born beside the person's: a
+box of its own, `agent /root/garden`, coming out from under the person's
+terminal and sliding across to the column just right of it, the columns after
+it making way, its name coming once it is out. What it was asked heads it, in
+the heavier weight, a quiet › hanging before it; then what it does, as it is
+played: its words in ink, its code set off by a rule; each file it read or
+edited a quiet line (pressed, the file); each command typed after its own
+prompt, the green of the person's, key by key with a terminal's block caret,
+then what it printed, and how it ended where it ended otherwise than well. Its
+prompt line waits at its foot. The camera steps back to have both terminals in
+sight as it is born, then keeps the Agent's terminal and the files it is at
+work in in sight together, stepped back as far as they need (never nearer than
+the standard); narrowing to fewer waits a moment, so a step ending and the
+next starting is not a step back and in again. The person takes a box in hand
+and the camera is theirs. The box has no Agent of its own on the desk: no pill
+says it, no answer comes in the pane.
 
-What the Agent does is played on the desk as a person would do it, after it
-and at a person's pace, never as a screen of its own. It works at its own pace
-behind (its commands in a Prompt of its own); what is played is the part a
-person wants to see, each box a lane of its own and the lanes going side by
-side, the camera at the base over the boxes at work (all of them when they fit,
-else the one last at work; never stepped back to fit more), so the work is
-seen going on in several places at once. Reads alone are not played; a long piece is typed in
-part, the rest coming at once as a paste does; what a command printed is
-shown only once what came before it in the other boxes has been played. The Agent is Pi's loop,
-thin: read, run, edit and write, each by the core's rules, its last words what
-it says it did; it goes as fast as the model and the tools go, is never shown
-the screen, and nothing a person does at the keys or the mouse stops it. What
-it did is played one thing after another: a command typed into the box under
-Run, key by key with each key heard (kbsim's Cream Space for a key, its
-Backspace for Enter, Alpaca's Space for Space), then run; an edit typed where
-it is in the file, the line lit, the old words going and the new typed in,
-the caret after them; a file read, gone to. The hand is steady, a little
-quicker than a person's first pace (about 120 ms a key, a new line a breath
-longer), with no slips. A command waits for the screen, so what it prints
+Elsewhere (Git's box), asking the Agent is the box's, never the Prompt's:
+written to, the box does not bring the screen up, and what is written is a
+person's words, in their letters (not the terminal's). Sent (Ctrl+Enter, Ask),
+the question goes into the right pane as an issue does, on a slip, a row of its
+own with `Agent` under its words; the answer comes in under it a few words at a
+time; refused, why, in the red, where the answer would be. It is told the repo,
+its top, and the file in front as it stands (written in and not saved too) with
+the caret's line, so a question needs no saying where.
+
+What the Agent does is played as a person would do it, after it and at a
+person's pace, never as a screen of its own. It works at its own pace behind
+(its commands in a Prompt of its own); what is played is the part a person
+wants to see, each box a lane of its own and the lanes going side by side, so
+the work is seen going on in several places at once. Reads alone are not
+played; what a command printed is shown only once what came before it in the
+other boxes has been played. The Agent is Pi's loop, thin: read, run, edit and
+write, each by the core's rules, its last words what it says it did; it goes as
+fast as the model and the tools go, is never shown the screen, and nothing a
+person does at the keys or the mouse stops it. Every edit it makes is seen
+made: the old words go from their end, Backspace pressed a few times and then
+held (its repeat), a long piece a line at a time; the new are typed in whole,
+the caret after them (only a page or more comes in at once, as a paste does);
+a file it made is typed into its box from the top. Each key is heard (kbsim's
+Cream Space for a key, its Backspace for Enter, Alpaca's Space for Space). The
+hand is quick and steady, about twice a person's first pace, quicker still
+over a long piece, with no slips, so what it writes is seen written and the
+playing keeps near the work. A command waits for the screen, so what it prints
 never comes before the edit it builds; the file is written at once, and only
-its editor waits to take it in as it is played. The pane's lines and the
-Agent's words come in as they are played, and the box is given back as it was.
+its editor waits to take it in as it is played.
 
 Edit makes the box a line of the file in front, written there as the line is
 in the file: nothing to learn, no words that ask for things, no line first

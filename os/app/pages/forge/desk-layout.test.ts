@@ -36,11 +36,15 @@ test('stepped back, the whole desk fits, at most half its size, and in the middl
   assert.ok(w.x + right * w.s <= 1000 - 47);
 });
 
-test('over several boxes at once at the standard: centred when they fit, none when they do not (never smaller)', () => {
+test('over several boxes at once: at the standard, centred, when they fit; stepped back as far as they need when not', () => {
   const at = slots(cols, heights);
   const two = overAll([{slot: at.get('a.c')!, h: 200}, {slot: at.get('b.c')!, h: 200}], 1000, 800);
-  assert.ok(two && two.s === 1 && Math.abs(two.x + (at.get('a.c')!.x + WIDTH / 2) - 500) < 1e-9);
-  assert.equal(overAll([{slot: at.get('term')!, h: 400}, {slot: at.get('a.c')!, h: 200}], 1000, 800), null);
+  assert.ok(two.s === 1 && Math.abs(two.x + (at.get('a.c')!.x + WIDTH / 2 + 4) - 500) < 1e-9);
+  const both = overAll([{slot: at.get('term')!, h: 400}, {slot: at.get('a.c')!, h: 200}], 1000, 800);
+  assert.ok(both.s < 1 && both.s >= .4);
+  // Side by side, both in the face, the term's left and a.c's right inside it.
+  assert.ok(both.x + at.get('term')!.x * both.s >= 0);
+  assert.ok(both.x + (at.get('a.c')!.x + WIDTH) * both.s <= 1000);
 });
 
 test('Alt and an arrow hand over along a column or to the next; Ctrl and an arrow carry a box', () => {

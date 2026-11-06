@@ -26,7 +26,7 @@ export interface Stage {
   shown(line: string, output: string, status: number | null): void;
   /** `path`'s box laid on the desk if it is not there, without taking the person's hand; false when it cannot be. */
   place(path: string): boolean;
-  /** The camera over these boxes at once ('term' is the Prompt's); none: back to the box in hand. */
+  /** The camera over these boxes at once ('agent' is the Agent's terminal); none: back to the box in hand. */
   frame(keys: string[]): void;
 }
 
@@ -80,12 +80,19 @@ function offsetOf(text: string, line: number, column: number): number {
   return at;
 }
 
-/** Of a piece written, at most this much is typed key by key; the rest comes in at once, as a paste does. */
-const TYPED_MOST = 80;
+/** Of a piece written, at most this much is typed key by key; the rest comes in at once, as a paste does. Every edit
+ * an agent makes is seen made: typed whole, unless it is a page or more. */
+const TYPED_MOST = 1600;
 /** Of a file made, at most this much. */
-const MADE_MOST = 200;
-/** An old piece this short goes a key at a time (Backspace); a longer one is chosen and goes at once. */
-const BACKSPACED_MOST = 8;
+const MADE_MOST = 2400;
+/** An old piece this long or shorter goes a key at a time, Backspace held after the first few as a hand holds it; a
+ * longer one goes a line at a time. */
+const BACKSPACED_MOST = 600;
+/** Backspace pressed the first few times, then held: its repeat. */
+const BACKSPACE_MS = 85, REPEAT_MS = 30;
+/** The Agent's hand against a person's (cadence.ts gap): quick, and quicker still over a long piece, so that what it
+ * writes is seen written and the playing keeps near the work. */
+const hand = (length: number) => (length > 300 ? .3 : .55);
 /** What a command printed, read a moment before the Prompt's line is given back. */
 const READ_MS = 900;
 
@@ -93,7 +100,7 @@ const READ_MS = 900;
 export class Player {
   readonly #repo: string;
   readonly #stage: Stage;
-  /** Each lane's last act: 'term' (the Prompt) and each file's path. */
+  /** Each lane's last act: 'agent' (its terminal) and each file's path. */
   readonly #lanes = new Map<string, Promise<void>>();
   /** The lanes at work now, which the camera frames. */
   readonly #working = new Set<string>();
@@ -168,7 +175,7 @@ export class Player {
     if (done.tool === 'bash') {
       const d = done;
       // Typed at once; what it printed shown once what came before it in the other lanes is played.
-      void this.#on('term', () => this.#run(d), this.#before());
+      void this.#on('agent', () => this.#run(d), this.#before());
     } else if (done.tool === 'edit') { const d = done; void this.#on(d.path, () => this.#edit(d)); }
     else if (done.tool === 'write') { const d = done; void this.#on(d.path, () => this.#write(d)); }
   }
@@ -181,7 +188,7 @@ export class Player {
         await sleep(leadIn());
         let typed = '', prev = '';
         for (const ch of d.command) {
-          await sleep(gap(ch, prev));
+          await sleep(gap(ch, prev) * hand(d.command.length));
           typed += ch;
           box.put(typed);
           strike(keyOf(ch));
@@ -195,7 +202,7 @@ export class Player {
     }
     this.#stage.shown(d.command, d.output, d.status);
     // Read a moment: no longer at work, the camera may go to where the work is.
-    this.#work('term', false);
+    this.#work('agent', false);
     if (box) { await sleep(READ_MS); box.done(); }
   }
 
@@ -228,7 +235,7 @@ export class Player {
     const typed = d.text.slice(0, MADE_MOST);
     let prev = '';
     for (let i = 0; i < typed.length; i++) {
-      await sleep(gap(typed[i], prev));
+      await sleep(gap(typed[i], prev) * hand(typed.length));
       if (!e.take(typed.slice(0, i + 1))) break;
       strike(keyOf(typed[i]));
       prev = typed[i];
@@ -266,20 +273,27 @@ export class Player {
       const at = offsetOf(d.before, s.line, s.column) + shift;
       await sleep(leadIn());
       if (s.old.length <= BACKSPACED_MOST) {
-        for (let i = s.old.length; i > 0; i--) {
+        // From its end, as Backspace takes it: a few presses, then held.
+        for (let i = s.old.length, n = 0; i > 0; i--, n++) {
           if (!take(cur.slice(0, at + i - 1) + cur.slice(at + i), at + i - 1)) break play;
-          strike('key');
-          await sleep(70 + 20 * Math.random());
+          if (n < 4 || n % 3 === 0) strike('key');
+          await sleep(n < 4 ? BACKSPACE_MS + 20 * Math.random() : REPEAT_MS);
         }
       } else {
-        if (!take(cur.slice(0, at) + cur.slice(at + s.old.length), at)) break;
-        strike('key');
-        await sleep(220);
+        // A long piece: a line at a time from its end, each line chosen and gone.
+        let left = s.old.length;
+        while (left > 0) {
+          const cut = s.old.lastIndexOf('\n', left - 2) + 1;
+          if (!take(cur.slice(0, at + cut) + cur.slice(at + left), at + cut)) break play;
+          strike('key');
+          left = cut;
+          await sleep(60);
+        }
       }
       let prev = '';
       const typed = s.new.slice(0, TYPED_MOST);
       for (let i = 0; i < typed.length; i++) {
-        await sleep(gap(typed[i], prev));
+        await sleep(gap(typed[i], prev) * hand(typed.length));
         if (!take(cur.slice(0, at + i) + typed[i] + cur.slice(at + i), at + i + 1)) break play;
         strike(keyOf(typed[i]));
         prev = typed[i];

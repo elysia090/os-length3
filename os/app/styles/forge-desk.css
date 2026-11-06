@@ -56,3 +56,29 @@
 .desk-term > .dock .prompt-chip[data-mode='run'] > .prompt-ps { color: inherit; height: auto; }
 .desk-term > .dock .prompt-in { font: var(--t-code)/1.6 var(--mono); }
 .desk-term > .dock :is(.prompt-caps, .prompt-run) { display: none; }
+/* The Agent's own terminal, born beside the person's (bench/agent-term.ts): what it was asked heads it, heavier; then
+   what it does, as it is played: each command typed after its prompt and what it printed, as the person's terminal
+   shows them; each file read or edited a quiet line (pressed, the file); its words in ink, its code set off by a rule.
+   Its prompt line waits at its foot; while a command is typed there, the cell after it is the caret, a terminal's. */
+.agent-term { outline: none; }
+/* (A terminal's output stands on its second row in a Prompt's box, under its head: here it is first, its prompt line after it.) */
+.agent-term > .agent-out { grid-row: auto; }
+.agent-term .agent-out { margin: 0; font: var(--t-code)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere;
+  max-height: calc(24 * 1.6 * var(--t-code)); overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain; }
+.agent-asked { position: relative; font-weight: 700; margin-bottom: .4em; }
+.agent-asked::before { content: '›'; position: absolute; right: calc(100% + 1ch); color: var(--sub); font-weight: 400; }
+.agent-step { display: block; width: 100%; padding: 0; border: 0; background: none; font: inherit; color: var(--sub); text-align: left; cursor: var(--cursor-hand); }
+.agent-step:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+.agent-run .ps, .agent-prompt .ps { color: var(--add); font-weight: 600; }
+.agent-exit { display: block; color: var(--del); font-weight: 600; }
+.agent-words { margin: .4em 0; }
+.agent-words .answer-p { margin: 0 0 .4em; white-space: pre-wrap; }
+.agent-words .answer-code { display: block; margin: 0 0 .4em; padding-left: 1ch; border-left: 2px solid var(--rule); white-space: pre; overflow-x: auto; scrollbar-width: none; }
+.agent-words.waiting::after { content: '…'; color: var(--sub); }
+.agent-words.refused { color: var(--del); }
+.agent-prompt { font: var(--t-code)/1.6 var(--mono); white-space: pre-wrap; }
+.agent-cur { display: inline-block; width: .6em; height: 1.25em; vertical-align: -.25em; background: var(--ink); opacity: 0; }
+.agent-term.typing .agent-cur { opacity: 1; }
+/* Born from under another box (the Agent's terminal from under the person's): its name comes once it is out. */
+.desk-box.born > .desk-label { opacity: 0; }
+.desk-box > .desk-label { transition: opacity 180ms ease-out; }

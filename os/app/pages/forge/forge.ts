@@ -110,6 +110,10 @@ class Forge {
       place: (path) => this.place(path), frame: (keys) => { if (this.now.repo) this.deskOf(this.now.repo).desk.frame(keys); },
       word: (a) => { openConversation(a); void ctx.go('inbox'); },
       toTerm: () => { if (this.now.repo) this.deskOf(this.now.repo).desk.take('term'); },
+      besideTerm: (repo, element) => {
+        const {desk} = this.deskOf(repo);
+        if (!desk.has('agent')) desk.lay('agent', {element, name: 'agent', dir: '', after: `/root/${repo}`, focus: () => element.focus({preventScroll: true})}, undefined, 'term');
+      },
       went: (repo, to) => {
         if (to !== 'todo' && 'file' in to) { ctx.openRepo(repo, to.file); return; }
         if (to !== 'todo') showIssue(repo, to.issue);
@@ -216,7 +220,8 @@ class Forge {
         focus: () => term.querySelector<HTMLTextAreaElement>('.prompt-in')?.focus({preventScroll: true})}, 0);
       // As it was left: the boxes where they lay, the one in hand.
       const was = keptDesk(repo);
-      was?.cols.forEach((col, c) => { for (const key of col) if (key !== 'term') this.layFile(repo, d!, key, c); });
+      // (The Agent's terminal is born again when it is asked again; a desk kept has none.)
+      was?.cols.forEach((col, c) => { for (const key of col) if (key !== 'term' && key !== 'agent') this.layFile(repo, d!, key, c); });
       if (was?.held && desk.has(was.held)) desk.take(was.held, false);
       // A desk never worked at: its README beside the Prompt, to be read first.
       if (!was) { const laid = d; void store.read(repo, 'README.md').then((c) => { if (c.text !== null && !laid.files.has('README.md')) this.layFile(repo, laid, 'README.md', 1); }).catch(() => {}); }

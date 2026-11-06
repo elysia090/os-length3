@@ -185,7 +185,9 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   place?(path: string): boolean;
   frame?(keys: string[]): void;
   /** On a desk: >_ on the band pressed, the terminal taken in hand. */
-  toTerm?(): void}): Bench {
+  toTerm?(): void;
+  /** On a desk: the Agent's own terminal laid beside the person's in `repo`'s desk. */
+  besideTerm?(repo: string, element: HTMLElement): void}): Bench {
   const {termHead, term, termHome} = promptBox();
   const center = h('div', {class: 'center'}, parts.main);
   const sideId = `side-${++benches}`;
@@ -216,7 +218,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
 
   const box = new Box({work, main: parts.main, center, term, termHead, back: !!parts.back, went: parts.went, reveal: (path, line) => parts.reveal(path, line), desk: !!parts.desk,
     flow: (repo: string) => rowsOf(repo),
-    ...(parts.place ? {place: parts.place} : {}), ...(parts.frame ? {frame: parts.frame} : {})});
+    ...(parts.place ? {place: parts.place} : {}), ...(parts.frame ? {frame: parts.frame} : {}), ...(parts.besideTerm ? {besideTerm: parts.besideTerm} : {})});
   // On a desk the Prompt is a box of its own: its output, and the line one types at under it.
   const terminal = parts.desk ? h('section', {class: 'desk-term'}, term, box.dock) : null;
   const shown = parts.desk ? null : screenOf(work, box, term, termHome);

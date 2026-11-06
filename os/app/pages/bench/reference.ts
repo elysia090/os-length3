@@ -105,7 +105,9 @@ export class Reference {
     const n = ++made;
     this.query = h('input', {type: 'search', class: 'search-in', placeholder: t('Search this repo'),
       'aria-label': t('Search this repo'), autocomplete: 'off', spellcheck: 'false', 'aria-controls': `found-${n}`}) as HTMLInputElement;
-    const pillRow = h('div', {class: 'search-pills', role: 'group', 'aria-label': t('Search target')}, ...KINDS.map(({kind, label}) => {
+    // On the band (a desk's) what the Agent was asked is its terminal's, on the desk: the search has no Agent of its own.
+    const kinds = this.band ? KINDS.filter((k) => k.kind !== 'agent') : KINDS;
+    const pillRow = h('div', {class: 'search-pills', role: 'group', 'aria-label': t('Search target')}, ...kinds.map(({kind, label}) => {
       const b = h('button', {type: 'button', class: 'chip pill-kind', 'aria-pressed': 'false'}, label()) as HTMLButtonElement;
       b.addEventListener('click', () => this.press(kind));
       this.pillButtons.set(kind, b);

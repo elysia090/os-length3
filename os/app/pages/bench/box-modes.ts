@@ -26,7 +26,9 @@ export type Mode = 'run' | 'issue' | 'todo' | 'edit' | 'agent';
 const MODES: readonly Mode[] = ['run', 'issue', 'todo', 'edit', 'agent'];
 /** What the box can do here now: the Agent only with a key kept on this device; on a desk (`desk`), no Edit, the files
  * on it being written in where they lie. */
-export const modesNow = (desk = false): readonly Mode[] => MODES.filter((m) => (m !== 'agent' || hasAgentKey()) && (m !== 'edit' || !desk));
+// On a desk the Agent is asked in the terminal (`agent ...`), and works in a terminal of its own beside it: the box has
+// no Agent of its own there, and no Edit (the files are written in where they lie).
+export const modesNow = (desk = false): readonly Mode[] => MODES.filter((m) => (m !== 'agent' || (hasAgentKey() && !desk)) && (m !== 'edit' || !desk));
 
 /** What the boxes do, the same on every page's box for as long as the app runs. */
 let now: Mode = 'run';

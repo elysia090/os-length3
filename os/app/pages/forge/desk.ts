@@ -144,8 +144,9 @@ export class Desk {
   /** The keys on the desk, column by column. */
   get columns(): string[][] { return this.#cols.map((c) => [...c]); }
 
-  /** `laid` put on the desk as `key`: in column `col`, or under the box in hand (the first box, the first column). */
-  lay(key: string, laid: Laid, col?: number) {
+  /** `laid` put on the desk as `key`: beside the box `beside` (a column of its own after that one's), in column `col`,
+   * or under the box in hand (the first box, the first column). */
+  lay(key: string, laid: Laid, col?: number, beside?: string) {
     if (this.#boxes.has(key)) return;
     const name = h('span', {class: 'desk-name'}, laid.name);
     const label = h('div', {class: 'desk-label'}, h('span', {class: 'desk-dir'}, laid.dir), name,
@@ -162,11 +163,25 @@ export class Desk {
       if (this.#whole) { if (this.#held !== key) this.take(key, false); return; }
       if (this.#held !== key || !el.contains(document.activeElement)) this.take(key, !el.contains(document.activeElement));
     });
-    this.#plane.append(el);
+    const by = beside === undefined ? undefined : this.#boxes.get(beside);
+    // Born beside another (the Agent's terminal beside the person's): a column of its own just right of that one's,
+    // the columns after it making way; it comes out from under that box, sliding across to its place.
+    if (by) {
+      this.#plane.insertBefore(el, by.el);
+      // Its name comes once it is out from under the other's.
+      el.classList.add('born');
+      el.addEventListener('transitionend', () => el.classList.remove('born'), {once: true});
+      el.style.width = `${WIDTH}px`;
+      el.style.translate = `${by.slot.x}px ${by.slot.y}px`;
+      // (Where it starts taken as its style before it is moved, so it goes from there.)
+      void el.offsetWidth;
+    } else this.#plane.append(el);
     this.#sized.observe(el);
     const box: Box = {key, laid, el, label, slot: {x: 0, y: 0}};
     this.#boxes.set(key, box);
-    if (col !== undefined) {
+    const byCol = by ? this.#cols.findIndex((k) => k.includes(by.key)) : -1;
+    if (byCol >= 0) this.#cols.splice(byCol + 1, 0, [key]);
+    else if (col !== undefined) {
       while (this.#cols.length <= col) this.#cols.push([]);
       this.#cols[col].push(key);
     } else {
@@ -222,27 +237,11 @@ export class Desk {
     if (!this.#whole) this.#look(true);
   }
 
-  /** Where the camera stands over the framed boxes; null when none of them lies here. */
+  /** Where the camera stands over the framed boxes (stepped back as far as they need); null when none lies here. */
   #frameView(keys: string[]): View | null {
     const boxes = keys.map((k) => this.#boxes.get(k)).filter((b): b is Box => !!b);
     if (!boxes.length) return null;
-    const w = this.element.clientWidth, hgt = this.element.clientHeight;
-    const all = overAll(boxes.map((b) => ({slot: b.slot, h: b.el.offsetHeight})), w, hgt);
-    if (all) return all;
-    // Not all in sight at once: where it stands, while one at work is well in sight there (no going to and fro between
-    // lanes at work side by side); else on the one last at work.
-    const v = this.#view;
-    if (v.s === 1 && boxes.some((b) => this.#seen(b, v, w, hgt) >= .4)) return {...v};
-    const last = boxes[boxes.length - 1];
-    return standardOn(last.slot, last.el.offsetHeight, w, hgt);
-  }
-
-  /** How much of `b` the camera at `v` shows in a face `w` by `hgt` (0 to 1). */
-  #seen(b: Box, v: View, w: number, hgt: number): number {
-    const h = b.el.offsetHeight || 1;
-    const l = v.x + b.slot.x * v.s, t = v.y + b.slot.y * v.s, r = l + WIDTH * v.s, bt = t + h * v.s;
-    const seen = Math.max(0, Math.min(r, w) - Math.max(l, 0)) * Math.max(0, Math.min(bt, hgt) - Math.max(t, 0));
-    return seen / (WIDTH * v.s * h * v.s);
+    return overAll(boxes.map((b) => ({slot: b.slot, h: b.el.offsetHeight})), this.element.clientWidth, this.element.clientHeight);
   }
 
   /** A wheel over the desk: with Ctrl (a pinch), stepped back or come back to the standard; without it, the camera

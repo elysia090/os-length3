@@ -1,9 +1,9 @@
 import type {Page} from '@playwright/test';
 import {expect, personName, test} from './fixtures.ts';
 
-// The box's Agent: an API key given in Runtime's Agent (beside the dotfiles, apart from them) brings it among what the
-// box does; asked there, the question goes into the right pane, and what the Agent does and says comes under it, the
-// Prompt up only for what it runs. The maker is played here (its key's form is Anthropic's): its list of models, a
+// The Agent: an API key given in Runtime's Agent (beside the dotfiles, apart from them), and `agent` and what to do run
+// in the terminal on Forge's desk: the line is the person's, run there; the Agent's own terminal is born beside it, and
+// what it does and says comes there, played at a person's pace, the person's terminal left to them. The maker is played here (its key's form is Anthropic's): its list of models, a
 // ping, and each turn of its model's as `turns` says it (the conversation so far in, its next words and tools out).
 
 test.use({storageState: async ({helloC}, use) => { await use(helloC); }});
@@ -32,7 +32,7 @@ async function maker(page: Page, told: string[], turns: (asked: Asked) => Block[
 /** What the last tool given back said, in the conversation so far. */
 const given = (asked: Asked) => ((asked.messages.at(-1)?.content as {content?: string}[] | undefined)?.[0]?.content ?? '');
 
-test('a key given in Runtime opens the box\'s Agent: asked, it answers in the pane, the Prompt never up; taken away, the box runs', async ({app}) => {
+test('a key given in Runtime: `agent` run in the terminal is asked of the Agent, whose own terminal is born beside it; taken away, the line says so', async ({app}) => {
   const told: string[] = [];
   await maker(app.page, told, () => [{type: 'text', text: 'Run it so:\n\n```sh\nmake\n```\n'}]);
   await app.runtime.open('Agent');
@@ -43,32 +43,39 @@ test('a key given in Runtime opens the box\'s Agent: asked, it answers in the pa
   await expect(app.main.locator('.agent-line')).toContainText('model-one');
 
   await app.rail.go('forge');
-  const box = app.forge.promptBox, pill = app.main.getByRole('button', {name: /^Input box action/});
+  const box = app.forge.promptBox;
   await box.focus();
-  await box.press('Alt+4');
-  await expect(pill).toHaveAccessibleName('Input box action: Ask');
-  await expect(pill.locator('.prompt-mode')).toHaveText('Agent@hello');
-  await box.fill('How is it built?');
-  await box.press('Control+Enter');
+  await box.fill('agent How is it built?');
+  await box.press('Enter');
+  // The line is the person's: run in their terminal, the box empty for the next at once.
   await expect(box).toHaveValue('');
-  const flow = app.page.locator('.work.bench:not([hidden]) .pane-rows');
-  await expect(flow.getByRole('button', {name: 'Agent How is it built?'})).toBeVisible();
-  await expect(flow.locator('.pane-answer')).toContainText('Run it so:');
-  await expect(flow.locator('.pane-answer .answer-code')).toHaveText('make');
-  // Told the repo and the file in front, and asked without the Prompt coming up for it.
+  await expect(app.forge.prompt.locator('.term-out')).toContainText('agent How is it built?');
+  // The Agent's terminal, beside the person's on the desk: what it was asked, then its words.
+  const agent = app.main.getByRole('region', {name: 'Agent', exact: true});
+  await expect(agent.locator('.agent-asked')).toHaveText('How is it built?');
+  await expect(agent.locator('.agent-words')).toContainText('Run it so:');
+  await expect(agent.locator('.agent-words .answer-code')).toHaveText('make');
+  const term = (await app.main.locator('.desk-box[data-key="term"]').boundingBox())!;
+  const beside = (await app.main.locator('.desk-box[data-key="agent"]').boundingBox())!;
+  expect(beside.x).toBeGreaterThan(term.x + term.width);
+  expect(Math.abs(beside.y - term.y)).toBeLessThan(2);
+  // Told the repo and the file in front, and nothing of it in the pane but the line run.
   expect(told[0]).toContain('"hello"');
   expect(told[0]).toContain('The file in front of the person: README.md');
-  await expect(app.page.locator('.work.bench.prompting')).toHaveCount(0);
+  await expect(app.page.locator('.work.bench:not([hidden]) .pane-answer')).toHaveCount(0);
+  // The box has no Agent of its own on the desk: it is the terminal's.
+  await app.main.getByRole('button', {name: /^Input box action/}).click();
+  await expect(app.main.getByRole('menuitemradio', {name: /Ask Agent/})).toHaveCount(0);
+  await app.page.keyboard.press('Escape');
 
   await app.runtime.open('Agent');
   await app.main.getByRole('button', {name: 'Remove', exact: true}).click();
   await expect(app.main.getByRole('textbox', {name: 'API key'})).toBeVisible();
   await app.rail.go('forge');
-  await expect(pill).toHaveAccessibleName('Input box action: Run');
-  await pill.click();
-  await expect(app.main.getByRole('menuitemradio', {name: /Ask Agent/})).toHaveCount(0);
-  // Run, Issue, TODO: on the desk the files are written in where they lie, so the box has no Edit.
-  await expect(app.main.getByRole('menuitemradio')).toHaveCount(3);
+  await box.focus();
+  await box.fill('agent Again?');
+  await box.press('Enter');
+  await expect(app.forge.prompt.locator('.term-out')).toContainText('agent: No API key configured on this device; set one in Runtime');
 });
 
 test('signed in with a passkey, the key given is sealed by it: kept as given nowhere, opened once a session when the Agent is asked', async ({app}, info) => {
@@ -91,16 +98,14 @@ test('signed in with a passkey, the key given is sealed by it: kept as given now
   await app.rail.go('forge');
   const box = app.forge.promptBox;
   await box.focus();
-  await box.press('Alt+4');
-  await box.fill('Still there?');
-  await box.press('Control+Enter');
-  const flow = app.page.locator('.work.bench:not([hidden]) .pane-rows');
-  await expect(flow.locator('.pane-answer')).toContainText('Sealed and answered.');
+  await box.fill('agent Still there?');
+  await box.press('Enter');
+  await expect(app.main.getByRole('region', {name: 'Agent', exact: true}).locator('.agent-words')).toContainText('Sealed and answered.');
 });
 
 test.describe('signed in', () => {
   test.use({storageState: undefined});
-test('handed an issue\'s work, the box\'s Agent reads and writes its files: the editor and the pane follow, and its box in Git says so', async ({signedIn: app}) => {
+test('handed an issue\'s work, the Agent reads and writes its files: its terminal and the editor follow, and its box in Git says so', async ({signedIn: app}) => {
   const told: string[] = [];
   await maker(app.page, told, (asked) => {
     const turn = asked.messages.filter((m) => m.role === 'assistant').length;
@@ -120,14 +125,13 @@ test('handed an issue\'s work, the box\'s Agent reads and writes its files: the 
   await app.rail.go('forge');
   const box = app.forge.promptBox;
   await box.focus();
-  await box.press('Alt+4');
-  await box.fill('Say in the README how it is built.');
-  await box.press('Control+Enter');
-  const flow = app.page.locator('.work.bench:not([hidden]) .pane-rows');
-  // Each step a line of the flow, its words under the line they follow.
-  await expect(flow.getByRole('button', {name: 'Agent Read README.md'})).toBeVisible();
-  await expect(flow.getByRole('button', {name: 'Agent Edited README.md (+2 −0)'})).toBeVisible();
-  await expect(flow.locator('.pane-answer').last()).toContainText('Added how it is built to the README.');
+  await box.fill('agent Say in the README how it is built.');
+  await box.press('Enter');
+  const agent = app.main.getByRole('region', {name: 'Agent', exact: true});
+  // Each step a line of its terminal, in the order done, its words where it said them.
+  await expect(agent.getByRole('button', {name: 'Read README.md'})).toBeVisible();
+  await expect(agent.getByRole('button', {name: 'Edited README.md (+2 −0)'})).toBeVisible();
+  await expect(agent.locator('.agent-words').last()).toContainText('Added how it is built to the README.');
   // Written through the OS, as an editor elsewhere would: the one open on it shows it.
   await expect(app.forge.editor('README.md')).toHaveValue(/\n\nBuild it with make\.\n$/);
   // Told the issue whose work it is, and that it may write here.

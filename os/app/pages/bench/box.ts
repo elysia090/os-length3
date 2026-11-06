@@ -9,6 +9,7 @@ import {onChange, onRenamed, shownTree, store, type Entry} from '../../repos/rep
 import {boxMode, modeHint, modeMenu, modesNow, nextIssue, onBoxMode, pillWords, sendAs, sendInto, sendTitle, sendWord, setBoxMode, turn, type Mode} from './box-modes.ts';
 import type {Screen, ScreenState} from './screen.ts';
 import {agentSessionFor, sessionFor, terminalFor} from './terminal.ts';
+import {type AgentTerm, agentTermFor} from './agent-term.ts';
 import {sessionIfAny} from './sessions.ts';
 import {PillLine} from './pill-line.ts';
 import {EditLine} from './edit-box.ts';
@@ -80,6 +81,8 @@ interface BoxParts {
   /** On a desk: a file's box laid without taking the person's hand (false: it cannot be); the camera over boxes. */
   place?(path: string): boolean;
   frame?(keys: string[]): void;
+  /** On a desk: the Agent's own terminal (`element`) laid beside the person's in `repo`'s desk, if it is not there. */
+  besideTerm?(repo: string, element: HTMLElement): void;
   /** The box is the Prompt's own last line, on a desk (Forge's): under Run, Enter runs what is written, as a
    * terminal's does (Shift+Enter a new line). */
   desk?: boolean;
@@ -420,6 +423,9 @@ export class Box {
     if (this.#mode === 'edit') return;
     if (this.#mode === 'agent') { void this.#ask(repo); return; }
     if (this.#mode !== 'run') { void this.#write(this.#mode, repo); return; }
+    // `agent` and what to do, run in the terminal on a desk: asked of the Agent, which works in a terminal of its own.
+    const agentLine = this.#p.besideTerm ? /^\s*agent\s+(\S[\s\S]*)$/.exec(this.prompt.value) : null;
+    if (agentLine) { void this.#askBeside(repo, this.prompt.value.trim(), agentLine[1].trim()); this.#emptied(); return; }
     const s = sessionIfAny(repo);
     // Ended: started again, and what was written waits in the box to be sent once it is up.
     if (s?.ended) { s.restart(); this.#pillLine.follow(); this.#say(t('Starting up…')); return; }
@@ -427,6 +433,11 @@ export class Box {
     // Sent with the Prompt put down (Escape, or Run chosen from another of the box's deeds): it comes up, so what is
     // run is seen run, never answered out of sight.
     if (!this.#up && document.activeElement === this.prompt) this.#screen?.raise();
+    this.#emptied();
+  }
+
+  /** What was written sent: the box empty for the next line, as a terminal's line is after Enter. */
+  #emptied() {
     this.#unsay();
     this.#say('');
     this.prompt.value = '';
@@ -434,6 +445,57 @@ export class Box {
     this.#walk.reset();
     this.room();
     this.#fit();
+  }
+
+  /**
+   * `agent ...` run in the person's terminal on a desk (`line`, asking `question`): the line is the person's, shown
+   * run there at once (refused, why, as a command says it); the Agent's own terminal is born beside it on the desk,
+   * where what it was asked heads what it does, played at a person's pace while it works at its own. The person's
+   * terminal is theirs again at once: nothing the Agent does is typed into it, and nothing waits on them.
+   */
+  async #askBeside(at: string, line: string, question: string) {
+    const said = (why: string) => sessionFor(at).shown(line, `agent: ${why}`, 1);
+    let use;
+    try { use = await agentUse(); } catch (e) { said(errorText(e)); return; }
+    if (!use) { said(t('No API key configured on this device; set one in Runtime')); return; }
+    sessionFor(at).shown(line, '', 0);
+    const term = agentTermFor(at);
+    this.#p.besideTerm?.(at, term.element);
+    const row = term.asked(question);
+    const stage = this.#stageBeside(at, term);
+    // Born, the camera steps back to have both terminals in sight, side by side.
+    stage.frame([]);
+    const front = this.#edit.inFront();
+    // On an issue's work the Agent was handed it, and writes; on main it reads and runs only.
+    const w = await workOf(at).catch(() => null);
+    const issuePath = w?.issue ? (w.issue.startsWith('issue/') ? w.issue : `issue/${w.issue}`) : null;
+    const issue = issuePath ? (await store.read(at, issuePath).catch(() => null))?.text ?? '' : null;
+    const player = new Player(at, stage);
+    await atWork(term, row, at, use, await told(at, front, issue), question, agentHands(at, issue !== null), player, (path) => this.#p.went(at, {file: path}));
+  }
+
+  /**
+   * Where the Agent asked from a desk's terminal is played: its own terminal (typed into, its runs shown), its files'
+   * boxes laid without taking the person's hand. The camera has the Agent's terminal and the files it is at work in in
+   * sight together (stepped back as far as they need), until the person takes a box in hand.
+   */
+  #stageBeside(at: string, term: AgentTerm): Stage {
+    // Framed: both terminals as it is born; then its own and the files it is at work in, as each starts. Narrowing to
+    // fewer waits a moment, so a step ending and the next starting is not a step back and in again.
+    let framed: string[] = [];
+    let narrowing = 0;
+    return {
+      typing: () => term.typing(),
+      shown: (line, output, status) => term.shown(line, output, status),
+      place: (path) => this.#repo === at && !!this.#p.place?.(path),
+      frame: (keys) => {
+        const next = framed.length ? [...new Set(['agent', ...keys])] : ['term', 'agent'];
+        if (framed.length && !keys.length) return;
+        clearTimeout(narrowing);
+        const go = () => { framed = next; if (this.#repo === at) this.#p.frame?.(next); };
+        if (framed.length && next.every((k) => framed.includes(k))) narrowing = window.setTimeout(go, 900); else go();
+      },
+    };
   }
 
   /**
