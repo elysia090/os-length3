@@ -94,9 +94,10 @@ def aports(path):
     file at the head of that Alpine's stable branch)."""
     with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'build.sh')) as f:
         release = '.'.join(re.search(r"grep -q '\^(\d+)\\\.(\d+)\\\.' /etc/alpine-release", f.read()).groups())
-    refs = get('https://gitlab.alpinelinux.org/alpine/aports.git/info/refs?service=git-upload-pack')
+    refs = get('https://git.alpinelinux.org/aports/info/refs?service=git-upload-pack')
     commit = re.search(rf'([0-9a-f]{{40}}) refs/heads/{re.escape(release)}-stable$', refs, re.M).group(1)
-    return alpine('musl-utils', 'main'), f'https://gitlab.alpinelinux.org/alpine/aports/-/raw/{commit}/main/musl/{path}'
+    # (Read from Alpine's own git, by its commit: GitLab's raw files answer a script with 418, a page for browsers.)
+    return alpine('musl-utils', 'main'), f'https://git.alpinelinux.org/aports/plain/main/musl/{path}?id={commit}'
 
 
 def crate(name):
