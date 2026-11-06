@@ -1,9 +1,6 @@
 //! Commits: what is not committed becomes history on the work's line, issues committed as they are written and
 //! settled, the log of a line, and a work's commits pushed.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use crate::remote::{self, Client, Reply, Tree};
 use crate::repos::store::Repos;
 use crate::text::title::named;

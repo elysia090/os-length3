@@ -42,6 +42,9 @@
 //! that died, and a release bundle or partial download not in use. Nothing
 //! in a repo's .git and no file the person made is ever a leftover.
 
+// No unsafe code in this layer.
+#![forbid(unsafe_code)]
+
 mod items;
 mod free;
 

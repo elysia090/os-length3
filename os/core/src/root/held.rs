@@ -1,9 +1,6 @@
 //! The roots held on this device (`<data>/system/<sha256>`), the one Prompts use (`current`), what is in one, and a
 //! bundle checked against its pin through the very handle it is read from.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use std::fs;
 use std::io::{self};
 #[cfg(unix)]

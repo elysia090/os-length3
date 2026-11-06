@@ -17,6 +17,7 @@
 //! What is not committed is the draft against the line's last commit, shown
 //! by the folder it is in, so a reader enters from the area they look after.
 
+// No unsafe code in this layer.
 #![forbid(unsafe_code)]
 
 pub mod work;

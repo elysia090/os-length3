@@ -4,6 +4,9 @@
 //! whichever of the three they are in front of. What only a host can do (open a page in the browser, start a
 //! Prompt on the root, SSH) is the host's, around this.
 
+// No unsafe code here.
+#![forbid(unsafe_code)]
+
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{json, Value};

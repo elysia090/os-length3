@@ -1,9 +1,6 @@
 //! A work handed to main as a change: handed in, reviewed, merged, rejected or taken back; a repo's changes and
 //! where each stands; the merged issues this device has seen.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use crate::repos::store::Repos;
 use crate::Result;
 use serde::{Deserialize, Serialize};

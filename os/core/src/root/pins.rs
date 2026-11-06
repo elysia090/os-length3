@@ -1,10 +1,6 @@
 //! The roots this l3 knows by their pins: each release and distribution, by its sha256 and size, and where it is
 //! fetched from (the Remote by digest first, then its makers).
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
-
 /// Where a pinned root is fetched from, in turn: the Remote this device
 /// uses; the publisher's Remote (remote::DEFAULT_URL), which each of its
 /// deploys fills with every root pinned here (remote/mirror.ts), when the

@@ -1,9 +1,6 @@
 //! What is not committed yet, and how a file differs: the draft against the head, file by file and line by
 //! line, the head's files read from the Remote once and kept.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use crate::text::diff::{self, Kind};
 use crate::remote::{self, Client, Reply, Tree};
 use crate::repos::store::Repos;

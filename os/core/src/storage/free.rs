@@ -1,9 +1,6 @@
 //! 空ける: what can go, looked at again just before it goes; room made by itself when the device is short, in an
 //! order that never takes what only this device has; and room made for what comes (a repo brought, a root fetched).
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use serde::Serialize;
 use std::fs;
 use crate::fs::size::{allocated, blocks, links};

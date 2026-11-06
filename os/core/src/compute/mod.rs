@@ -2,6 +2,9 @@
 //! (vm.rs), driven through Firecracker (firecracker.rs) with their disks (image.rs) and their line to the host
 //! (wire.rs).
 
+// No unsafe code in this layer.
+#![forbid(unsafe_code)]
+
 #[cfg(target_os = "linux")]
 pub mod firecracker;
 #[cfg(target_os = "linux")]

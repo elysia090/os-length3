@@ -13,9 +13,6 @@
 //! how many there are. A run is watched every quarter second; past its budget it is stopped, and what it went
 //! past is said. A run paused keeps all it holds and uses no CPU until it goes on (prompt/running.rs pause).
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use crate::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;

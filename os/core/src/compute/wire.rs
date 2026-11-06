@@ -3,9 +3,6 @@
 //! it prints it, then the repo's files as the run left them (a tar stream), then its exit code. A frame larger than
 //! FRAME is no frame: the line is let go.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use std::io::{self, Read, Write};
 
 /// The most one frame may hold.

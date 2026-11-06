@@ -3,9 +3,6 @@
 //! the repo is seen (/root/<repo> in File, Forge and the Prompt); going back to main puts main's copy there again;
 //! a work merged is finished, its copy here given back.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use crate::history::{Change, changes_of_repo, listed};
 use crate::repos::lines::{current, line_for, MAIN, set_current, valid, worktree};
 use crate::remote::{self, Client, Line, Reply};

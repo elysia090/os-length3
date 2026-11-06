@@ -4,9 +4,6 @@
 //! snapshotted (its state and its memory, each a file) and a new one loaded from a snapshot, its memory read in only
 //! as the guest touches it.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use serde::Serialize;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;

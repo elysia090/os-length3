@@ -1,9 +1,6 @@
 //! A root's bundle unpacked: zstd frames one after another, then tar, every entry placed under the top and never
 //! through a link, its mode kept.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};

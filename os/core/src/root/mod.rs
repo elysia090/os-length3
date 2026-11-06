@@ -18,6 +18,9 @@
 //! makers' own root archive, taken only at the digest pinned here, unpacked
 //! by the same rules. A Prompt runs whichever root is current.
 
+// No unsafe code in this layer.
+#![forbid(unsafe_code)]
+
 mod pins;
 mod held;
 mod unpack;

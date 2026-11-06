@@ -4,9 +4,6 @@
 //! write, its blocks taken on the host only as it writes them (a sparse file). Both are ext4, made by mke2fs from a
 //! folder, without mounting anything (no privilege asked).
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;

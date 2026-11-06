@@ -1,9 +1,6 @@
 //! A line's history: its commits, newest first, each said in one line; and how many of a work's commits are its
 //! own and how many of those are not pushed yet.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use crate::remote::{self, Client, Reply, Tree};
 use crate::repos::store::Repos;
 use crate::Result;
