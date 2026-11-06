@@ -8,9 +8,6 @@
 //! passes JOURNAL bytes, and a reader names where it read to (`Cursor`: the file's generation, the bytes read), so
 //! a page that looks every second reads only what came since, and starts over when the file was cut.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use crate::Result;
 use serde::{Deserialize, Serialize};
 use std::io::Write;

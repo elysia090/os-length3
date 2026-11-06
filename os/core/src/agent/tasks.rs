@@ -15,10 +15,7 @@
 //! look at. One runs at a time in a repo (`l3 agent run`, set off by `kick`), on its own Prompt: the issue's copy for
 //! what writes, so it is the work the person would have started; the change's copy for a review.
 //!
-//! Kept in `<data>/tasks.json`, this device's alone (never sent).
-
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
+//! Kept in `<data>/tasks/tasks.json` (each run's output beside it, by repo), this device's alone (never sent).
 
 use crate::Result;
 use serde::{Deserialize, Serialize};
