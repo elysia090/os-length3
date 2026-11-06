@@ -253,6 +253,8 @@ self.onmessage = async ({data}) => {
     apart = canRunApart() && files.every((f) => !f.module || f.shared);
     const console = {
       interactive: false,
+      // Shown as a terminal's screen (the app's Prompt), its output is a terminal's, this many columns wide.
+      screen: !!data.screen, cols: data.cols ?? 80, rows: data.rows ?? 24,
       write: (fd, bytes) => self.postMessage({type: 'output', fd, bytes}, [bytes.buffer]),
       read,
       ready: () => pending.length > 0 || ended,

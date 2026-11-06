@@ -73,6 +73,8 @@ function startMessage(repo: string, l3: L3, copy: Awaited<ReturnType<typeof snap
     ...(given ? {} : {translator: l3.translator, root: {index: l3.index, url: l3.url}}),
     argv: SHELL,
     env: [...shellEnv(repo), ...key],
+    // Its output is shown as a terminal's screen, as wide as a box on the desk (80 columns): a listing comes in columns.
+    screen: true, cols: 80,
     cwd,
     mirror: cwd,
     // The translations Prompts before it made of the root's programs, read when a program is first run.

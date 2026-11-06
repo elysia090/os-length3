@@ -185,7 +185,8 @@ export class Image {
 export class Kernel {
   /**
    * vfs: the filesystem. translate(bytes) -> wasm bytes for an ELF.
-   * console: {write(fd, bytes), read(n) -> Uint8Array | null (nothing yet), ready?(), interactive?}.
+   * console: {write(fd, bytes), read(n) -> Uint8Array | null (nothing yet), ready?(), interactive?, screen?, cols?,
+   * rows?} (`screen`: its output is shown as a terminal's screen, `cols` by `rows`, though keys come a line at a time).
    */
   constructor({vfs = new Vfs(), translate, console, keeper = null, machine: host = machine(), consolidateIdle = false}) {
     this.vfs = vfs;

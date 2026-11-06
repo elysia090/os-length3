@@ -53,10 +53,12 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await app.forge.startPrompt('hello');
   });
 
-  test('ls lists the repo\'s files, and Output keeps the run to be put back in the box', async ({app}) => {
+  test('ls lists the repo\'s files in columns, as on a terminal 80 wide, and Output keeps the run to be put back in the box', async ({app}) => {
     await app.forge.run('ls');
     await expect(app.forge.prompt).toContainText('Makefile');
     await expect(app.forge.prompt).toContainText('README.md');
+    // Its output is a terminal's screen to it: the names side by side, not one under another.
+    await expect(app.forge.prompt.locator('.term-out')).toContainText(/Makefile\s{2,}\S/);
 
     await app.forge.show('Output');
     await expect(app.forge.reference).toContainText(/\d+ ms/);

@@ -753,6 +753,24 @@ function ioctl(p, d, request, arg) {
   }
   // A socket's (SIOCOUTQ, what an interface is): sys-net.mjs's.
   if (d.kind === 'socket') return net.control(p, d, r, arg);
+  // The console's output, where what is written to it is shown as a terminal's screen (`screen`: the app's Prompt), is
+  // a terminal to what writes to it: as wide as the screen, set as a terminal is, so a listing comes in columns. What
+  // reads keys from it is not, until the console is interactive (the keys are sent a line at a time).
+  if (d.kind === 'console' && !k.console.interactive && k.console.screen && (d.path === 'stdout' || d.path === 'stderr')) {
+    if (r === 0x5413) { // TIOCGWINSZ
+      p.bytes.fill(0, arg, arg + 8);
+      v.setUint16(arg, k.console.rows ?? 24, true);
+      v.setUint16(arg + 2, k.console.cols ?? 80, true);
+      return 0;
+    }
+    if (r === 0x5401) { // TCGETS
+      p.bytes.fill(0, arg, arg + 36);
+      v.setUint32(arg, TERMIOS.iflag, true); v.setUint32(arg + 4, TERMIOS.oflag, true);
+      v.setUint32(arg + 8, TERMIOS.cflag, true); v.setUint32(arg + 12, TERMIOS.lflag, true);
+      return 0;
+    }
+    fail(E.NOTTY);
+  }
   // The rest are a terminal's, and only the console is one (when it says it is interactive).
   if (d.kind !== 'console' || !k.console.interactive) fail(E.NOTTY);
   k.tty.termios ??= {...TERMIOS, cc: new Uint8Array([3, 28, 127, 21, 4, 0, 1, 0, 17, 19, 26, 0, 18, 15, 23, 22, 0, 0, 0])};
