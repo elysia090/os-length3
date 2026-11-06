@@ -624,16 +624,19 @@ pub fn free(data: &Path, repos_dir: &Path, ids: &[String], open: &[String]) -> F
         }
     }
     let started = Instant::now();
-    let mut after;
+    let mut after = before;
     let mut reflected = None;
-    loop {
-        after = host(data).1;
-        if freed == 0 || after >= before.saturating_add(freed) {
-            reflected = Some(started.elapsed().as_millis() as u64);
-            break;
+    // A host that cannot say how much room it has (no adapter for it: the browser's core) is not waited on.
+    if certainty != Certainty::Unknown {
+        loop {
+            after = host(data).1;
+            if freed == 0 || after >= before.saturating_add(freed) {
+                reflected = Some(started.elapsed().as_millis() as u64);
+                break;
+            }
+            if started.elapsed() >= WAIT { break; }
+            std::thread::sleep(Duration::from_millis(20));
         }
-        if started.elapsed() >= WAIT { break; }
-        std::thread::sleep(Duration::from_millis(20));
     }
     Freed {
         freed, freed_certainty: Certainty::Verified, removed, kept,
