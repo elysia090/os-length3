@@ -2,7 +2,7 @@
 pins="PKGCONF"
 build() {
   mkdir ../o && cd ../o
-  ../app/configure --prefix=/usr --disable-shared --enable-static
+  ../src/configure --prefix=/usr --disable-shared --enable-static
   make -j"$jobs" LDFLAGS="$allstatic"
   make DESTDIR="$dest" LDFLAGS="$allstatic" install
   ln -sf pkgconf "$dest/usr/bin/pkg-config"

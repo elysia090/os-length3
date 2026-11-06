@@ -7,7 +7,7 @@ tools="pkgconf"
 inputs="etc/nanorc"
 build() {
   mkdir ../o && cd ../o
-  ../app/configure --prefix=/usr --sysconfdir=/etc --disable-nls --enable-utf8
+  ../src/configure --prefix=/usr --sysconfdir=/etc --disable-nls --enable-utf8
   make -j"$jobs"
   make DESTDIR="$dest" install
   install -D -m 0644 "$here/etc/nanorc" "$dest/etc/nanorc"

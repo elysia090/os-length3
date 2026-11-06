@@ -8,7 +8,7 @@ build() {
   # itself, configure decides from the build machine's own /etc/passwd whether it is built for a multiuser system,
   # and in a container with no login user it shuts root out of them. Root is the root's one user and reads them;
   # a privileged program (setuid, setcap) does not, and opens its files as the user who ran it (CVE-2023-29491).
-  cf_cv_multiuser=yes ../app/configure --prefix=/usr --libdir=/usr/lib --without-shared --with-normal \
+  cf_cv_multiuser=yes ../src/configure --prefix=/usr --libdir=/usr/lib --without-shared --with-normal \
     --without-debug --without-ada --without-cxx --without-cxx-binding --without-tests --without-manpages \
     --enable-widec --with-terminfo-dirs=/usr/share/terminfo --enable-pc-files \
     --with-pkg-config-libdir=/usr/lib/pkgconfig --disable-pkg-ldflags \
