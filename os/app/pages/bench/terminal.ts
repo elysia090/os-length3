@@ -231,6 +231,22 @@ export class Session implements Prompt {
    */
   fold() { this.out.fold(); }
 
+  /**
+   * `line` shown run here, with what it printed and how it ended, as the Agent ran it in a Prompt of its own
+   * (agentSessionFor): in the flow and among the runs as any line run, never run in this shell. The screen starts
+   * again from it at its prompt line, as at a line sent.
+   */
+  shown(line: string, output: string, status: number | null) {
+    const typed = line.trim(), ps = this.promptLine || `${this.repo} $ `;
+    this.out.fold();
+    if (!this.out.lastLine) this.out.print(ps);
+    this.out.sent(`${typed}\n`);
+    this.out.print(`${output}${output && !output.endsWith('\n') ? '\n' : ''}${ps}`);
+    this.runs.push({line: typed, output, started: Date.now(), ms: 0, status});
+    if (this.runs.length > RUNS) this.runs.shift();
+    this.tell();
+  }
+
   /** Output goes on screen and into the run in progress, which ends at the next prompt. */
   private received(piece: string) {
     // What a shell says to its terminal and not to the person (osc.ts) is read whole, however it came in pieces.
@@ -522,6 +538,16 @@ export function sessionFor(repo: string): Session {
   const made = new Session(repo);
   sessions.set(repo, made);
   return made;
+}
+
+/** The Agent's own Prompt in each repo: never on screen, what it runs shown after in the repo's Prompt (shown). */
+const agents = new Map<string, Session>();
+
+/** The Agent's Prompt in `repo`, made if it has none: it runs at once, whatever the screen is playing. */
+export function agentSessionFor(repo: string): Session {
+  let s = agents.get(repo);
+  if (!s || s.ended) agents.set(repo, s = new Session(repo));
+  return s;
 }
 
 /**

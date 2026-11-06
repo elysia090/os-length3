@@ -8,7 +8,7 @@ import {kindOf} from '../../repos/text.ts';
 import {onChange, onRenamed, shownTree, store, type Entry} from '../../repos/repos.ts';
 import {boxMode, modeHint, modeMenu, modesNow, nextIssue, onBoxMode, pillWords, sendAs, sendInto, sendTitle, sendWord, setBoxMode, turn, type Mode} from './box-modes.ts';
 import type {Screen, ScreenState} from './screen.ts';
-import {sessionFor, terminalFor} from './terminal.ts';
+import {agentSessionFor, sessionFor, terminalFor} from './terminal.ts';
 import {sessionIfAny} from './sessions.ts';
 import {PillLine} from './pill-line.ts';
 import {EditLine} from './edit-box.ts';
@@ -75,6 +75,9 @@ interface BoxParts {
   went(repo: string, to: {issue: string} | {file: string} | 'todo'): void;
   /** A file of the repo in front brought into view at a line (Forge's; Git's shows the file). */
   reveal(path: string, line?: number): void;
+  /** On a desk: a file's box laid without taking the person's hand (false: it cannot be); the camera over boxes. */
+  place?(path: string): boolean;
+  frame?(keys: string[]): void;
   /** The box is the Prompt's own last line, on a desk (Forge's): under Run, Enter runs what is written, as a
    * terminal's does (Shift+Enter a new line). */
   desk?: boolean;
@@ -488,7 +491,7 @@ export class Box {
     const issuePath = w?.issue ? (w.issue.startsWith('issue/') ? w.issue : `issue/${w.issue}`) : null;
     const issue = issuePath ? (await store.read(at, issuePath).catch(() => null))?.text ?? '' : null;
     const player = new Player(at, this.#stage(at));
-    await atWork(session, row, at, use, await told(at, front, issue), question, agentHands(at, issue !== null, player), player, (path) => this.#p.went(at, {file: path}));
+    await atWork(session, row, at, use, await told(at, front, issue), question, agentHands(at, issue !== null), player, (path) => this.#p.went(at, {file: path}));
   }
 
   /**
@@ -514,11 +517,14 @@ export class Box {
           },
         };
       },
-      reveal: (path, line) => {
+      shown: (line, output, status) => sessionFor(at).shown(line, output, status),
+      place: (path) => {
         if (this.#repo !== at) return false;
-        this.#p.reveal(path, line);
+        if (this.#p.place) return this.#p.place(path);
+        this.#p.reveal(path, 1);
         return true;
       },
+      frame: (keys) => { if (this.#repo === at) this.#p.frame?.(keys); },
     };
   }
 
@@ -775,11 +781,11 @@ export class Box {
 /**
  * What the box's Agent does its work with in `repo`, through the OS's own calls: its files read, and where it was
  * handed the work (`writes`: an issue's) edited and written, by the core's rules (repos/agent-hands.ts); its commands
- * run in the repo's Prompt as a line typed there runs, once typed in the box as the screen plays it (play.ts).
+ * run at once in a Prompt of its own, shown after in the repo's as the screen plays them (play.ts).
  */
-function agentHands(repo: string, writes: boolean, player: Player): Hands {
-  return {...fileHands(repo, writes), run: (command) => player.bash(command, async () => {
-    const r = await sessionFor(repo).run(command);
+function agentHands(repo: string, writes: boolean): Hands {
+  return {...fileHands(repo, writes), run: async (command) => {
+    const r = await agentSessionFor(repo).run(command);
     return {...r, given: await tail(r.output)};
-  })};
+  }};
 }

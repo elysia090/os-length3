@@ -3,26 +3,31 @@ import {gap, keyOf, leadIn} from '../../ui/cadence.ts';
 import {still} from '../../ui/glide.ts';
 import {strike} from '../../ui/keys.ts';
 
-// The Agent's work as the person sees it. The Agent goes as fast as the model and the tools go (agent/loop.ts); what
-// the person watches is played after it, one thing after another, at a person's pace, as a person would do it: a
-// command typed into the box under Run, key by key with each key heard, then run; a file edited where it is, the old
-// words going and the new typed in; a file read, gone to. The screen is never the Agent's interface: it is not shown
-// it, nothing it does waits on a person, and a person at the keys or the mouse stops nothing.
+// The Agent's work as the person sees it. The Agent goes as fast as the model and the tools go (agent/loop.ts), on
+// files written at once and in a Prompt of its own (terminal.ts agentSessionFor); what the person watches is a part
+// of it, played after it on the desk at a person's pace, as a person would do it: a command typed into the Prompt's
+// line, key by key with each key heard, and what it printed shown; a file edited where it is, the old words going and
+// the new typed in; a file made typed into its box from the top. Each box is a lane of its own and the lanes go side by
+// side, so the work is seen going on in several places at once, each at a hand's pace; only what a command printed
+// waits for what came before it, so an effect is never seen before its cause. What reads alone is not played; what is
+// long is typed in part, the rest coming at once as a paste does. The screen is never the Agent's interface: it is not
+// shown it, nothing it does waits on the screen, and a person at the keys or the mouse stops nothing.
 //
-// Only a command waits for the screen: the Prompt is the repo's one shell, so it runs once everything before it has
-// been seen, and what it prints never comes before the edit it builds. A file the Agent writes is written at once (the
-// repo, the Prompt's copy, Git have it), but the editor open on it is held back from taking it in (`holdBack`) until
-// it is played there. What listens to the player (the pane's lines, the Agent's words) hears each event in its turn
-// on screen, never ahead of it.
+// A file the Agent writes is written at once (the repo, the Prompts' copies, Git have it), but the editor open on it is
+// held back from taking it in (`holdBack`) until it is played there. What listens to the player (the pane's lines, the
+// Agent's words) hears each event once everything before it has been played.
 
-/** What the screen shows the Agent's work in: the box (a command typed under Run), and the file at a line. */
+/** What the screen shows the Agent's work in: the Prompt's line (a command typed), its flow (a run shown), the boxes. */
 export interface Stage {
-  /** The box taken for a command, Run chosen; `put` writes what is typed so far, `sent` brings the Prompt up as a run
-   * sent from the box does (what it prints is seen), `done` gives the box back as it was, the Prompt down again. Null
-   * when the box is not the repo's now (another repo in front): the command is run unseen typed. */
+  /** The Prompt's line taken for a command, Run chosen; `put` writes what is typed so far, `sent` brings it into view
+   * as sent, `done` gives the line back as it was. Null when the line is not the repo's now (another repo in front). */
   typing(): {put(text: string): void; sent(): void; done(): void} | null;
-  /** `path` brought into view at `line` (1-based); false when it cannot be (another repo in front). */
-  reveal(path: string, line: number): boolean;
+  /** A command shown run in the repo's Prompt with what it printed (the Agent ran it in a Prompt of its own). */
+  shown(line: string, output: string, status: number | null): void;
+  /** `path`'s box laid on the desk if it is not there, without taking the person's hand; false when it cannot be. */
+  place(path: string): boolean;
+  /** The camera over these boxes at once ('term' is the Prompt's); none: back to the box in hand. */
+  frame(keys: string[]): void;
 }
 
 const key = (repo: string, path: string) => `${repo}\n${path}`;
@@ -75,16 +80,26 @@ function offsetOf(text: string, line: number, column: number): number {
   return at;
 }
 
-/** Of what is written, at most this much is typed key by key; the rest comes in at once, as a paste does. */
-const TYPED_MOST = 240;
+/** Of a piece written, at most this much is typed key by key; the rest comes in at once, as a paste does. */
+const TYPED_MOST = 80;
+/** Of a file made, at most this much. */
+const MADE_MOST = 200;
 /** An old piece this short goes a key at a time (Backspace); a longer one is chosen and goes at once. */
 const BACKSPACED_MOST = 8;
+/** What a command printed, read a moment before the Prompt's line is given back. */
+const READ_MS = 900;
 
-/** One repo's Agent at work, played on screen. */
+/** One repo's Agent at work, played on the desk. */
 export class Player {
   readonly #repo: string;
   readonly #stage: Stage;
-  #queue: Promise<void> = Promise.resolve();
+  /** Each lane's last act: 'term' (the Prompt) and each file's path. */
+  readonly #lanes = new Map<string, Promise<void>>();
+  /** The lanes at work now, which the camera frames. */
+  readonly #working = new Set<string>();
+  #framing = 0;
+  /** What listeners hear, in order, each once all before it is played. */
+  #told: Promise<void> = Promise.resolve();
   readonly #listeners = new Set<(e: AgentEvent) => void>();
 
   constructor(repo: string, stage: Stage) {
@@ -96,80 +111,92 @@ export class Player {
   subscribe(fn: (e: AgentEvent) => void): () => void { this.#listeners.add(fn); return () => this.#listeners.delete(fn); }
 
   /** Everything given so far, played. */
-  idle(): Promise<void> { return this.#queue; }
-
-  #then(act: () => Promise<void> | void): Promise<void> {
-    this.#queue = this.#queue.then(act).catch(() => { /* a part not played is let go; the rest goes on */ });
-    return this.#queue;
+  async idle(): Promise<void> {
+    await Promise.all([...this.#lanes.values(), this.#told]);
   }
 
-  #told(e: AgentEvent) {
-    for (const fn of [...this.#listeners]) {
-      try { fn(e); } catch { this.#listeners.delete(fn); }
-    }
+  /** Every lane as it stands now (what is to be played before what comes next). */
+  #before(): Promise<unknown> { return Promise.all([...this.#lanes.values()]); }
+
+  /** `act` played in `lane` after what is before it there, and after `after` too. */
+  #on(lane: string, act: () => Promise<void>, after?: Promise<unknown>): Promise<void> {
+    const prev = this.#lanes.get(lane) ?? Promise.resolve();
+    const next = Promise.all([prev, after]).then(async () => {
+      this.#work(lane, true);
+      try { await act(); } finally { this.#work(lane, false); }
+    }).catch(() => { /* a part not played is let go; the rest goes on */ });
+    this.#lanes.set(lane, next);
+    return next;
   }
 
-  /** An event of the Agent's: a file it is about to write is held back from its editor at once; played in its turn. */
+  /** The camera over the lanes at work (a frame later, so lanes starting together are framed together). */
+  #work(lane: string, on: boolean) {
+    if (on) this.#working.add(lane); else this.#working.delete(lane);
+    if (still()) return;
+    cancelAnimationFrame(this.#framing);
+    this.#framing = requestAnimationFrame(() => this.#stage.frame([...this.#working]));
+  }
+
+  #tell(e: AgentEvent) {
+    const before = this.#before();
+    this.#told = Promise.all([this.#told, before]).then(() => {
+      for (const fn of [...this.#listeners]) {
+        try { fn(e); } catch { this.#listeners.delete(fn); }
+      }
+    });
+  }
+
+  /** An event of the Agent's: a file it is about to write is held back from its editor at once; played in its lane. */
   hear(e: AgentEvent): void {
     if (e.type === 'tool_execution_start' && (e.name === 'edit' || e.name === 'write') && typeof e.args.path === 'string') {
       const k = key(this.#repo, e.args.path), h = held.get(k);
       if (h) h.count++; else held.set(k, {count: 1, text: null, made: false});
     }
-    // A file it made: an editor opened on it before it is played starts empty (the reader opens it about now).
+    // A file it made: an editor opened on it before it is played starts empty (the box is laid about now).
     if (e.type === 'tool_execution_end' && e.done?.tool === 'write' && e.done.before === null) {
       const h = held.get(key(this.#repo, e.done.path));
       if (h) h.made = true;
     }
-    void this.#then(async () => {
-      if (e.type === 'tool_execution_end') await this.#done(e.name, e.args, e.done);
-      this.#told(e);
-    });
+    if (e.type === 'tool_execution_end') this.#play(e.name, e.args, e.done);
+    this.#tell(e);
   }
 
-  /** `command` typed into the box in its turn, then `run` (the Prompt runs it); what it gave back. */
-  bash<T>(command: string, run: () => Promise<T>): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-      void this.#then(async () => {
-        const box = await this.#type(command);
-        try { resolve(await run()); } catch (e) { reject(e); } finally {
-          // What it printed read a moment, as a person running it would, then the box given back.
-          if (box) { await sleep(1400); box.done(); }
-        }
-      });
-    });
-  }
-
-  /** `command` typed into the box and sent, the Prompt up; the box, to be given back once it has run. */
-  async #type(command: string) {
-    if (still()) return null;
-    const box = this.#stage.typing();
-    if (!box) return null;
-    try {
-      await sleep(leadIn());
-      let typed = '', prev = '';
-      for (const ch of command) {
-        await sleep(gap(ch, prev));
-        typed += ch;
-        box.put(typed);
-        strike(keyOf(ch));
-        prev = ch;
-      }
-      await sleep(gap('\n', prev));
-      strike('enter');
-      box.put('');
-      box.sent();
-      return box;
-    } catch (e) { box.done(); throw e; }
-  }
-
-  /** What a file tool did, played: a file read gone to, an edit typed in where it is, a file written shown. */
-  async #done(name: string, args: Record<string, unknown>, done: Done | undefined) {
+  /** What a tool did, put in its lane: a run in the Prompt's, an edit or a file made in the file's; a read, not played. */
+  #play(name: string, args: Record<string, unknown>, done: Done | undefined) {
     const path = typeof args.path === 'string' ? args.path : '';
-    if (!done) { if (name === 'edit' || name === 'write') this.#release(path, null); return; }
-    if (done.tool === 'read') {
-      if (this.#stage.reveal(done.path, done.from) && !still()) await sleep(700);
-    } else if (done.tool === 'edit') await this.#edit(done);
-    else if (done.tool === 'write') await this.#write(done);
+    if (!done) { if (name === 'edit' || name === 'write') void this.#on(path, async () => this.#release(path, null)); return; }
+    if (done.tool === 'bash') {
+      const d = done;
+      // Typed at once; what it printed shown once what came before it in the other lanes is played.
+      void this.#on('term', () => this.#run(d), this.#before());
+    } else if (done.tool === 'edit') { const d = done; void this.#on(d.path, () => this.#edit(d)); }
+    else if (done.tool === 'write') { const d = done; void this.#on(d.path, () => this.#write(d)); }
+  }
+
+  /** A command typed into the Prompt's line, sent, and what it printed shown. */
+  async #run(d: Extract<Done, {tool: 'bash'}>) {
+    const box = still() ? null : this.#stage.typing();
+    if (box) {
+      try {
+        await sleep(leadIn());
+        let typed = '', prev = '';
+        for (const ch of d.command) {
+          await sleep(gap(ch, prev));
+          typed += ch;
+          box.put(typed);
+          strike(keyOf(ch));
+          prev = ch;
+        }
+        await sleep(gap('\n', prev));
+        strike('enter');
+        box.put('');
+        box.sent();
+      } catch { /* the line is given back below */ }
+    }
+    this.#stage.shown(d.command, d.output, d.status);
+    // Read a moment: no longer at work, the camera may go to where the work is.
+    this.#work('term', false);
+    if (box) { await sleep(READ_MS); box.done(); }
   }
 
   /**
@@ -185,25 +212,24 @@ export class Player {
     if (h.text !== null) e?.take(h.text);
   }
 
-  /**
-   * A file written whole, played: one it made typed into its editor from the top, key by key (past TYPED_MOST, the
-   * rest at once); one it wrote over taken in at once, as a paste is.
-   */
+  /** A file written whole: one made typed into its box from the top (its first part); one written over, at once. */
   async #write(d: Extract<Done, {tool: 'write'}>) {
-    const k = key(this.#repo, d.path), e = editors.get(k), h = held.get(k);
-    const shown = this.#stage.reveal(d.path, 1);
-    if (!shown || still() || d.before !== null || !e?.area.isConnected || !h?.made || h.text === null) {
-      if (shown && !still()) { await sleep(leadIn()); strike('enter'); }
+    const k = key(this.#repo, d.path);
+    const shown = this.#stage.place(d.path) && !still();
+    // Its box laid now: its editor opens a moment after.
+    for (let i = 0; i < 20 && shown && !editors.get(k)?.area.isConnected; i++) await sleep(50);
+    const e = editors.get(k), h = held.get(k);
+    if (!shown || d.before !== null || !e?.area.isConnected || !h?.made || h.text === null) {
+      if (shown) strike('enter');
       this.#release(d.path, d.text);
       return;
     }
-    await sleep(450 + leadIn());
-    const typed = d.text.slice(0, TYPED_MOST);
+    await sleep(leadIn());
+    const typed = d.text.slice(0, MADE_MOST);
     let prev = '';
     for (let i = 0; i < typed.length; i++) {
       await sleep(gap(typed[i], prev));
       if (!e.take(typed.slice(0, i + 1))) break;
-      if (document.activeElement === e.area) e.area.setSelectionRange(i + 1, i + 1);
       strike(keyOf(typed[i]));
       prev = typed[i];
     }
@@ -212,10 +238,12 @@ export class Player {
     this.#release(d.path, d.text);
   }
 
-  /** An edit typed in where it is: each piece in turn, the old words going and the new typed in, key by key. */
+  /** An edit typed in where it is: each piece in turn, the old words going and the new typed in (its first part). */
   async #edit(d: Extract<Done, {tool: 'edit'}>) {
-    const k = key(this.#repo, d.path), e = editors.get(k), h = held.get(k);
-    const shown = this.#stage.reveal(d.path, d.spans[0]?.line ?? 1);
+    const k = key(this.#repo, d.path);
+    const shown = this.#stage.place(d.path) && !still();
+    for (let i = 0; i < 20 && shown && !editors.get(k)?.area.isConnected; i++) await sleep(50);
+    const e = editors.get(k), h = held.get(k);
     // The file as this edit left it: each piece replaced where it was, first in the file first.
     let now = d.before, moved = 0;
     for (const s of d.spans) {
@@ -224,8 +252,8 @@ export class Player {
       moved += s.new.length - s.old.length;
     }
     // Typed only where its editor was held back from taking it in, and is in view.
-    if (!shown || !e?.area.isConnected || !h || h.text === null || still()) { this.#release(d.path, null); return; }
-    await sleep(450);
+    if (!shown || !e?.area.isConnected || !h || h.text === null) { this.#release(d.path, null); return; }
+    await sleep(300);
     let cur = d.before, shift = 0;
     // Each step taken in, the caret (where the editor has the keyboard) where the hand is: after what was just typed.
     const take = (text: string, caret: number) => {

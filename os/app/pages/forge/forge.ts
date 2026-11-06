@@ -107,6 +107,7 @@ class Forge {
     const strip = h('nav', {class: 'repo-strip', 'aria-label': 'repo'});
     this.center = h('div', {class: 'desk-room'});
     this.work = bench({strip, main: this.center, desk: true, reveal: (path, line, write) => this.revealAt(path, line, write),
+      place: (path) => this.place(path), frame: (keys) => { if (this.now.repo) this.deskOf(this.now.repo).desk.frame(keys); },
       word: (a) => { openConversation(a); void ctx.go('inbox'); },
       went: (repo, to) => {
         if (to !== 'todo' && 'file' in to) { ctx.openRepo(repo, to.file); return; }
@@ -256,6 +257,15 @@ class Forge {
     const f = d.files.get(path) ?? this.layFile(repo, d, path, d.desk.held === 'term' || !d.desk.held ? 1 : undefined);
     d.desk.take(path);
     f.at(line);
+  }
+
+  /** `path` of the repo worked on, a box on its desk, laid if it was not (beside the Prompt), the hand left where it is. */
+  private place(path: string): boolean {
+    const repo = this.now.repo;
+    if (!repo || !path) return false;
+    const d = this.deskOf(repo);
+    if (!d.files.has(path)) this.layFile(repo, d, path, 1);
+    return true;
   }
 
   /** Renamed: on the band and on its desk under its new name. */

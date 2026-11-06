@@ -38,6 +38,8 @@ export class Desk {
   #moving = 0;
   /** The camera on its way (its scroll is its own then, not someone's going somewhere). */
   #gliding = false;
+  /** The boxes the camera stands over at once (the Agent's at work), or none. */
+  #framed: string[] | null = null;
   readonly #shut: (key: string) => void;
 
   readonly #changed: () => void;
@@ -130,10 +132,34 @@ export class Desk {
     for (const o of this.#boxes.values()) o.el.classList.toggle('held', o === b);
     this.#held = key;
     this.#whole = false;
+    this.#framed = null;
     this.element.classList.remove('whole');
     this.#look(glide);
     if (focus) b.laid.focus();
     this.#changed();
+  }
+
+  /**
+   * The camera over `keys` at once (each box at work, close as they all fit, at most full size, centred); none, back
+   * close on the box in hand.
+   */
+  frame(keys: string[]) {
+    this.#framed = keys.length ? keys : null;
+    this.#look(true);
+  }
+
+  /** Where the camera stands over the framed boxes; null when none of them lies here. */
+  #frameView(keys: string[]): View | null {
+    const boxes = keys.map((k) => this.#boxes.get(k)).filter((b): b is Box => !!b);
+    if (!boxes.length) return null;
+    const w = this.element.clientWidth, hgt = this.element.clientHeight;
+    if (boxes.length === 1) return closeOn(boxes[0].slot, boxes[0].el.offsetHeight, w, hgt);
+    let l = Infinity, t = Infinity, r = 0, bt = 0;
+    for (const b of boxes) { l = Math.min(l, b.slot.x); t = Math.min(t, b.slot.y); r = Math.max(r, b.slot.x + WIDTH); bt = Math.max(bt, b.slot.y + b.el.offsetHeight); }
+    const s = Math.min(1, (w - 2 * PAD) / (r - l), (hgt - 2 * PAD) / (bt - t));
+    // Too small to read so: the box last at work, close.
+    if (s < 0.7) { const last = boxes[boxes.length - 1]; return closeOn(last.slot, last.el.offsetHeight, w, hgt); }
+    return {s, x: (w - (r - l) * s) / 2 - l * s, y: Math.max(PAD, (hgt - (bt - t) * s) / 2) - t * s};
   }
 
   /** Places measured again (a box grew or shrank): the boxes go where they now belong, the camera with them. */
@@ -166,6 +192,9 @@ export class Desk {
     if (!w || !hgt) return;
     const heights = (key: string) => this.#boxes.get(key)?.el.offsetHeight ?? 0;
     const b = this.#held ? this.#boxes.get(this.#held) : undefined;
+    // Framed over boxes at work (the Agent's, played), it stays so as they grow, until it is let go or one is taken.
+    const framed = !this.#whole && this.#framed ? this.#frameView(this.#framed) : null;
+    if (framed) { this.#go(framed, moving && !still()); return; }
     const to = this.#whole || !b ? wholeOf(new Map([...this.#boxes].map(([k, x]) => [k, x.slot])), heights, w, hgt)
       : closeOn(b.slot, b.el.offsetHeight, w, hgt);
     this.#go(to, moving && !still());

@@ -195,7 +195,10 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   back?: boolean;
   /** A desk (Forge's): no box at the center's foot and no Prompt rising over it; the Prompt is a box of its own, its
    * output over the line one types at (`terminal`), which the page lays on the desk. */
-  desk?: boolean}): Bench {
+  desk?: boolean;
+  /** On a desk: a file's box laid without taking the person's hand; the camera over these boxes (none: the one in hand). */
+  place?(path: string): boolean;
+  frame?(keys: string[]): void}): Bench {
   const {termHead, term, termHome} = promptBox();
   const center = h('div', {class: 'center'}, parts.main);
   const sideId = `side-${++benches}`;
@@ -203,7 +206,8 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': sideId}, paneMark()) as HTMLButtonElement;
   const work = h('div', {class: parts.strip ? 'work bench' : 'work bench no-strip'});
 
-  const box = new Box({work, main: parts.main, center, term, termHead, back: !!parts.back, went: parts.went, reveal: (path, line) => parts.reveal(path, line), desk: !!parts.desk});
+  const box = new Box({work, main: parts.main, center, term, termHead, back: !!parts.back, went: parts.went, reveal: (path, line) => parts.reveal(path, line), desk: !!parts.desk,
+    ...(parts.place ? {place: parts.place} : {}), ...(parts.frame ? {frame: parts.frame} : {})});
   // On a desk the Prompt is a box of its own: its output, and the line one types at under it.
   const terminal = parts.desk ? h('section', {class: 'desk-term'}, term, box.dock) : null;
   const shown = parts.desk ? null : screenOf(work, box, term, termHome);

@@ -2233,8 +2233,14 @@ asked again. The answer is not the shell's: it is kept with its question while
 the flow is drawn again, and goes with what is above it, or with all of it when
 the screen is cleared. The key taken away, the boxes asking run again.
 
-What the Agent does is played on the screen as a person would do it, after it
-and at a person's pace, never as a screen of its own. The Agent is Pi's loop,
+What the Agent does is played on the desk as a person would do it, after it
+and at a person's pace, never as a screen of its own. It works at its own pace
+behind (its commands in a Prompt of its own); what is played is the part a
+person wants to see, each box a lane of its own and the lanes going side by
+side, the camera over the boxes at work, so the work is seen going on in
+several places at once. Reads alone are not played; a long piece is typed in
+part, the rest coming at once as a paste does; what a command printed is
+shown only once what came before it in the other boxes has been played. The Agent is Pi's loop,
 thin: read, run, edit and write, each by the core's rules, its last words what
 it says it did; it goes as fast as the model and the tools go, is never shown
 the screen, and nothing a person does at the keys or the mouse stops it. What
