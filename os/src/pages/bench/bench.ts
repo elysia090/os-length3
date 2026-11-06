@@ -8,7 +8,7 @@ import type {Writing} from '../kit/context.ts';
 import {Reference} from './reference.ts';
 import {Screen} from './screen.ts';
 import {sessionIfAny} from './sessions.ts';
-import type {Run} from './terminal.ts';
+import type {Run} from './sessions.ts';
 
 // The workbench Forge and Git share, put together from its parts: the page's own content in the large center (3/4)
 // with the box at its foot (box.ts), which becomes the Prompt's screen over the center while the Prompt is in use

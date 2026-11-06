@@ -61,9 +61,43 @@ export function violations() {
   return found;
 }
 
+/**
+ * Files that reach each other within a module, which the order between modules does not see: every set of them, each
+ * a cycle (a file takes from another that takes back from it, however far round). None is allowed: within a module too,
+ * what a file stands on is under it.
+ */
+export function cycles() {
+  const root = join(OS, 'src');
+  const all = files(root);
+  const takes = new Map(all.map((f) => [f, new Set()]));
+  for (const f of all) {
+    for (const m of readFileSync(f, 'utf8').matchAll(IMPORT)) {
+      const t = resolve(dirname(f), m[1] ?? m[2]);
+      if (takes.has(t)) takes.get(f).add(t);
+    }
+  }
+  // Tarjan's strongly connected components; any of more than one file is a cycle.
+  let n = 0;
+  const index = new Map(), low = new Map(), stack = [], on = new Set(), found = [];
+  const visit = (v) => {
+    index.set(v, n); low.set(v, n); n++; stack.push(v); on.add(v);
+    for (const w of takes.get(v)) {
+      if (!index.has(w)) { visit(w); low.set(v, Math.min(low.get(v), low.get(w))); } else if (on.has(w)) low.set(v, Math.min(low.get(v), index.get(w)));
+    }
+    if (low.get(v) !== index.get(v)) return;
+    const c = [];
+    let w;
+    do { w = stack.pop(); on.delete(w); c.push(relative(OS, w)); } while (w !== v);
+    if (c.length > 1) found.push(c.sort());
+  };
+  for (const f of all) if (!index.has(f)) visit(f);
+  return found;
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const v = violations();
+  const v = violations(), c = cycles();
   for (const [tree, from, to, file, spec] of v) console.log(`${tree}: ${from} -> ${to}\t${file} -> ${spec}`);
-  if (v.length) { console.error(`${v.length} imports against the layers' order`); process.exit(1); }
-  console.log('the layers are in order');
+  for (const files of c) console.log(`a cycle: ${files.join(' ')}`);
+  if (v.length || c.length) { console.error(`${v.length} imports against the layers' order, ${c.length} cycles of files`); process.exit(1); }
+  console.log('the layers are in order, and no file reaches back to itself');
 }

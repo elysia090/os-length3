@@ -4,7 +4,7 @@ import {lookup, send, shown as named, shownAs, threads} from '../../remote/inbox
 import * as servers from '../../remote/servers.ts';
 import {deed, parts, type Parts} from '../kit/common.ts';
 import {every} from '../../app/runs.ts';
-import {askIn, boardName, button, foot, footLeft, line, MOVE, smallCard} from './parts.ts';
+import {askIn, boardName, button, foot, footLeft, line, MOVE, smallCard, type GearWays} from './parts.ts';
 import {guestsCard} from './guests.ts';
 import {errorText} from '../../app/errors.ts';
 import {personBadge} from '../kit/pane.ts';
@@ -16,24 +16,6 @@ import {personBadge} from '../kit/pane.ts';
 
 type Part = 'people' | 'repos' | 'boards' | 'server';
 
-/** What the gear needs of the page it is on. */
-export interface GearWays {
-  /** The boards' place, where the gear's sheet goes. */
-  sheet: HTMLElement;
-  /** Still behind the gear of this server: a reading that comes after it is put away is dropped. */
-  still(): boolean;
-  /** Done: back to the boards. */
-  done(): void;
-  /** Something changed: the gear and the side are drawn again. */
-  again(): void;
-  /** How many people and repos the pane last drew for this server, if it has: the parts' counts at once. */
-  known(): {people: number; repos: number} | null;
-  /** A board was removed or brought back: the boards are built again on the way back to them. */
-  boardsChanged(): void;
-  /** One left the server, or removed it: the next one, or making one. */
-  gone(id: string): void;
-  isMe(address: string): Promise<boolean>;
-}
 
 /** What each part is drawn from: the server, what was read of it, and who one is among its people (`mine`). */
 interface Read {

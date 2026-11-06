@@ -15,7 +15,7 @@ import {clips, heldBack, OSC, RAN} from './osc.ts';
 import {Output, strip} from './output.ts';
 import {asOne, FirstPrompt, waitsAt} from './prompt-line.ts';
 import {mirror, snapshot, WriteBack} from './repo-copy.ts';
-import {sessions} from './sessions.ts';
+import {sessions, type Prompt, type Run} from './sessions.ts';
 
 // A shell per repo: in a browser, l3's root (its BusyBox sh, and every other
 // program of it) translated in a Worker; in the app, the same root on the
@@ -27,14 +27,6 @@ import {sessions} from './sessions.ts';
 // shell's copy (repo-copy.ts).
 
 const RUNS = 50;
-
-/** One line sent from the prompt box and what came out until the prompt returned. */
-export interface Run {
-  line: string; output: string; started: number; ms: number | null;
-  /** Its exit status, where the shell says it (the root's shrc: OSC 133 D); null where it does not, or not yet. */
-  status?: number | null;
-}
-
 
 /** One line for where loading l3 is; nothing once it is ready. */
 function loadWords(s: Stage): string {
@@ -92,7 +84,7 @@ function startMessage(repo: string, l3: L3, copy: Awaited<ReturnType<typeof snap
  * A repo's shell: started once it is written to (shown, it holds nothing), what it printed on its element, the lines
  * run in it, how it ended.
  */
-export class Session {
+export class Session implements Prompt {
   readonly element: HTMLElement;
   private out = new Output();
   private status: HTMLElement;
@@ -525,9 +517,11 @@ export class Session {
 
 /** The repo's session, made if it has none (made, it is not started: writing to it starts it). */
 export function sessionFor(repo: string): Session {
-  let s = sessions.get(repo);
-  if (!s) { s = new Session(repo); sessions.set(repo, s); }
-  return s;
+  const s = sessions.get(repo);
+  if (s instanceof Session) return s;
+  const made = new Session(repo);
+  sessions.set(repo, made);
+  return made;
 }
 
 /**

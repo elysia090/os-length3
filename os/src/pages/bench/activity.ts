@@ -1,7 +1,7 @@
 import {h} from '../../ui/dom.ts';
 import {t} from '../../i18n/i18n.ts';
 import {paced, still} from '../../ui/glide.ts';
-import type {Run} from './terminal.ts';
+import type {Run} from './sessions.ts';
 
 // While a line runs in a Prompt, what it is doing, said under its output once it has taken a moment (terminal.ts):
 // reading input (Interrupt reaches it: the kernel is paused), running and still talking (Interrupt lands when it next

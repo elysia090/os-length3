@@ -2,8 +2,7 @@ import {grant, granted} from '../../home/network.ts';
 import {bytes, h} from '../../ui/dom.ts';
 import type {Stopped} from '../../app/host.ts';
 import {t, tn} from '../../i18n/i18n.ts';
-import type {Session} from '../bench/terminal.ts';
-import {allSessions} from '../bench/sessions.ts';
+import {allSessions, type Prompt} from '../bench/sessions.ts';
 import {errorText} from '../../app/errors.ts';
 import {button, card} from './parts.ts';
 
@@ -19,7 +18,7 @@ const stoppedNow = new Set<string>();
  * be given a network once made, so turning it on asks, then stops the Prompt
  * (it has the network from its next start); turning it off stops it at once.
  */
-function networkSwitch(repo: string, s: Session, card: () => HTMLElement): HTMLElement {
+function networkSwitch(repo: string, s: Prompt, card: () => HTMLElement): HTMLElement {
   const on = granted().includes(repo);
   const sw = h('button', {type: 'button', class: 'power plain', role: 'switch', 'aria-checked': String(on),
     'aria-label': on ? t('Disable network for {repo} Prompt', {repo}) : t('Enable network for {repo} Prompt', {repo})}, h('span', {class: 'knob'})) as HTMLButtonElement;
@@ -48,8 +47,8 @@ export function prompts(shown_: (running: number, any: boolean) => void = () => 
   const section = h('section', {class: 'section prompts-part', 'aria-label': t('Running Prompts'), hidden: ''});
   let had = '';
   // Each session is watched once, for as long as the page is shown.
-  const watched = new Map<Session, () => void>();
-  const watch = (s: Session) => { if (!watched.has(s)) watched.set(s, s.watch(paint)); };
+  const watched = new Map<Prompt, () => void>();
+  const watch = (s: Prompt) => { if (!watched.has(s)) watched.set(s, s.watch(paint)); };
   let first = true;
   const paint = () => {
     if (!first && !section.isConnected) { for (const u of watched.values()) u(); watched.clear(); return; }
@@ -82,7 +81,7 @@ function stoppedCard(repo: string, st: Stopped): HTMLElement {
 }
 
 /** A Prompt running: where it runs and the memory it holds, what it gave back, the root's network; Free and Stop. */
-function runningCard(repo: string, s: Session): HTMLElement {
+function runningCard(repo: string, s: Prompt): HTMLElement {
   const stop = button(t('Stop'), 'small-button');
   stop.addEventListener('click', () => { stoppedNow.add(repo); s.stop(); });
   // In a browser, what it keeps for programs it ran can go without stopping it.

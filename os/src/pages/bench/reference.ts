@@ -6,7 +6,7 @@ import {issuePath, readIssues, type Issue} from '../../repos/issues.ts';
 import {t} from '../../i18n/i18n.ts';
 import {onChange, onRenamed, rekey, store} from '../../repos/repos.ts';
 import {stillAt} from '../../repos/search.ts';
-import type {Run} from './terminal.ts';
+import type {Run} from './sessions.ts';
 import {sessionIfAny} from './sessions.ts';
 import {errorText} from '../../app/errors.ts';
 import {askButton, askView, diffButton, issueButton, issueLabel, issueOne, KINDS, markedDiff, openIssues, runButton, runView, type Kind} from './kinds.ts';

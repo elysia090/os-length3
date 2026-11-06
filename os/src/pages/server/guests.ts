@@ -4,8 +4,7 @@ import {shown as named} from '../../remote/inbox.ts';
 import * as servers from '../../remote/servers.ts';
 import {copying} from '../kit/common.ts';
 import {errorText} from '../../app/errors.ts';
-import type {GearWays} from './gear.ts';
-import {askIn, button, foot, smallCard} from './parts.ts';
+import {askIn, button, foot, smallCard, type GearWays} from './parts.ts';
 
 // Behind the gear, a board's guests, where it takes them: any of its people invites someone, by a link they pass on
 // themselves (the Remote sends nothing), for one person, shown only when it is made. Each revokes their own

@@ -3,7 +3,7 @@ import * as gitops from '../../repos/history.ts';
 import {issueName, issuePath, readIssues, type Issue} from '../../repos/issues.ts';
 import {t, tn} from '../../i18n/i18n.ts';
 import {onRenamed, rekey} from '../../repos/repos.ts';
-import type {Run} from './terminal.ts';
+import type {Run} from './sessions.ts';
 import {answers} from '../kit/common.ts';
 import {connection} from '../../remote/connection.ts';
 import {kindWords} from '../kit/todo-list.ts';

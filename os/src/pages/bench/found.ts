@@ -4,7 +4,7 @@ import {issueName, issuePath, shownPath, type Issue} from '../../repos/issues.ts
 import {t, tn} from '../../i18n/i18n.ts';
 import {inPieces, store, walkRepo, type Change} from '../../repos/repos.ts';
 import {findInText, nameFirst, nameMatches, type Hit} from '../../repos/search.ts';
-import type {Run} from './terminal.ts';
+import type {Run} from './sessions.ts';
 import {kindColon} from '../kit/todo-list.ts';
 import {counted, fileName} from '../kit/diff-view.ts';
 import {askButton, diffButton, issueButton, runButton, type Kind} from './kinds.ts';

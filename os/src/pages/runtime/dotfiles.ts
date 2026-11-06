@@ -2,8 +2,7 @@ import {bytes, h} from '../../ui/dom.ts';
 import {t, tn} from '../../i18n/i18n.ts';
 import * as dotfiles from '../../home/dotfiles.ts';
 import {askFoot, SETTLE} from '../kit/common.ts';
-import type {Session} from '../bench/terminal.ts';
-import {allSessions} from '../bench/sessions.ts';
+import {allSessions, type Prompt} from '../bench/sessions.ts';
 import {errorText} from '../../app/errors.ts';
 import {onState} from '../../home/state.ts';
 import {unfold} from '../../ui/glide.ts';
@@ -134,7 +133,7 @@ function askRemove(name: string, box: HTMLElement, acts: HTMLElement, remove: HT
 }
 
 /** Saved while the Prompts `now` run: which get it when they start again, and Start again. */
-function startAgain(now: [string, Session][], w: BoxWays): HTMLElement {
+function startAgain(now: [string, Prompt][], w: BoxWays): HTMLElement {
   const again = button(t('Restart'));
   const note = h('p', {class: 'muted small dot-note', role: 'status'},
     tn('Prompt in {list} applies updates on restart', 'Prompts in {list} apply updates on restart', now.length, {list: now.map(([repo]) => repo).join(', ')}), ' ', again);

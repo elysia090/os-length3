@@ -1,7 +1,6 @@
 import {indentOf, leading, lineEnd, lineOf, lineStarts, type Mark} from '../../repos/edit.ts';
 import {keep, type Writes} from './edit-apply.ts';
 import {bringLead, drawMarks} from './edit-marks.ts';
-import type {EditParts} from './edit-box.ts';
 
 // What the box holds of the file in front (edit-box.ts): a line of it (the caret's, or one pressed; words marked on it
 // chosen in the box), the box and the file one text: what is typed in the box is in the file as it is typed. Lit where
@@ -12,15 +11,18 @@ import type {EditParts} from './edit-box.ts';
 /** What the box holds: where it is in `area`, and its words as the file and the box last had them alike. */
 interface Held { area: HTMLTextAreaElement; from: number; to: number; text: string }
 
+/** What a holding stands on of the box's Edit (edit-box.ts EditParts): the box, the dock it stands in, and its pill told the line held moved. */
+type Stands = {box: HTMLTextAreaElement; dock: HTMLElement; moved(): void};
+
 /** The part of the file the box holds, written in as the box is. */
 export class Holding {
   #held: Held | null = null;
-  readonly #p: EditParts;
+  readonly #p: Stands;
   readonly #writes: Writes;
   readonly #took: (area: HTMLTextAreaElement) => void;
 
   /** `took` hears the editor a part is held from, which is the one in front from then on. */
-  constructor(p: EditParts, writes: Writes, took: (area: HTMLTextAreaElement) => void) {
+  constructor(p: Stands, writes: Writes, took: (area: HTMLTextAreaElement) => void) {
     this.#p = p;
     this.#writes = writes;
     this.#took = took;

@@ -1,7 +1,6 @@
 import {fieldMoved} from '../../ui/caret.ts';
 import {still} from '../../ui/glide.ts';
-import type {Session} from './terminal.ts';
-import {sessionIfAny} from './sessions.ts';
+import {sessionIfAny, type Prompt} from './sessions.ts';
 
 // The box's pill while it runs (box.ts): the prompt line the repo's shell waits at, and its lamp, lit while the shell
 // runs. The repo's Prompt is followed for them, and a new one from the moment it is started again.
@@ -20,7 +19,7 @@ interface PillParts {
 /** The Prompt the box follows, and the prompt line its pill says. */
 export class PillLine {
   /** The Prompt followed (its prompt line, its lamp): the repo's own, a new one once it is started again. */
-  #followed: Session | null = null;
+  #followed: Prompt | null = null;
   #unwatch: (() => void) | null = null;
   /** The prompt line each repo's shell last waited at: the pill's at rest, while a line runs or before it starts. */
   readonly #lastLine = new Map<string, string>();
@@ -57,7 +56,7 @@ export class PillLine {
   }
 
   /** `now` the prompt line in the pill: at once, or (up, after a run) once what the run printed has come in. */
-  #waitsAt(now: string, s: Session | undefined) {
+  #waitsAt(now: string, s: Prompt | undefined) {
     const {waits} = this.#p;
     cancelAnimationFrame(this.#saying);
     clearTimeout(this.#speaking);

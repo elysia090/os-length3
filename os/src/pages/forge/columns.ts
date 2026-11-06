@@ -6,7 +6,6 @@ import {onChange} from '../../repos/repos.ts';
 import {renamedIn} from '../../home/band.ts';
 import {shownName} from '../../repos/issues.ts';
 import {Reader} from './reader.ts';
-import type {Drag} from './drag.ts';
 
 // Forge's center is a row of boxes, up to three repos side by side, each its own page. Each repo's box stays in the
 // row once made, those not shown hidden, and each stands where CSS `order` puts it, never moved in the document (a
@@ -63,6 +62,9 @@ interface RowWays {
 }
 
 /** The row of boxes in the center: which stand, in what order, and the one worked on. */
+/** What a row asks of a drag (drag.ts Drag): that a box's head takes it up. */
+interface Lifts { from(el: HTMLElement, name: string): void }
+
 export class Row {
   readonly views = new Map<string, View>();
   /** The repos side by side in the center, left to right; the one worked on is among them. */
@@ -81,11 +83,11 @@ export class Row {
   /** The row's own element, in the center of the bench (`work`). */
   readonly element: HTMLElement;
   private work: HTMLElement;
-  private drag: Drag;
+  private drag: Lifts;
   private ways: RowWays;
 
   /** The row is `element`, the center of the bench `work`; a box's head is dragged with `drag`. */
-  constructor(element: HTMLElement, work: HTMLElement, drag: Drag, ways: RowWays) {
+  constructor(element: HTMLElement, work: HTMLElement, drag: Lifts, ways: RowWays) {
     this.element = element; this.work = work; this.drag = drag; this.ways = ways;
     // ⊕ in the words is the band's own mark (its circle and plus, on the words' line), not a glyph of the font set high.
     this.bring = t('Add repos to band via ⊕ or open from File').split('⊕').flatMap((part, i) => (i ? [h('span', {class: 'inline-add', 'aria-label': '⊕'}, mark('plus')), part] : [part]));

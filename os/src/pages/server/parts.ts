@@ -97,3 +97,22 @@ export function fitting(...fields: HTMLInputElement[]): () => void {
   };
   return () => { for (const f of fields) wide(f); };
 }
+
+/** What the gear needs of the page it is on. */
+export interface GearWays {
+  /** The boards' place, where the gear's sheet goes. */
+  sheet: HTMLElement;
+  /** Still behind the gear of this server: a reading that comes after it is put away is dropped. */
+  still(): boolean;
+  /** Done: back to the boards. */
+  done(): void;
+  /** Something changed: the gear and the side are drawn again. */
+  again(): void;
+  /** How many people and repos the pane last drew for this server, if it has: the parts' counts at once. */
+  known(): {people: number; repos: number} | null;
+  /** A board was removed or brought back: the boards are built again on the way back to them. */
+  boardsChanged(): void;
+  /** One left the server, or removed it: the next one, or making one. */
+  gone(id: string): void;
+  isMe(address: string): Promise<boolean>;
+}
