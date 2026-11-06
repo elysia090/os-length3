@@ -2214,6 +2214,22 @@ asked again. The answer is not the shell's: it is kept with its question while
 the flow is drawn again, and goes with what is above it, or with all of it when
 the screen is cleared. The key taken away, the boxes asking run again.
 
+What the Agent does is played on the screen as a person would do it, after it
+and at a person's pace, never as a screen of its own. The Agent is Pi's loop,
+thin: read, run, edit and write, each by the core's rules, its last words what
+it says it did; it goes as fast as the model and the tools go, is never shown
+the screen, and nothing a person does at the keys or the mouse stops it. What
+it did is played one thing after another: a command typed into the box under
+Run, key by key with each key heard (kbsim's Cream Space for a key, its
+Backspace for Enter, Alpaca's Space for Space), then run; an edit typed where
+it is in the file, the line lit, the old words going and the new typed in,
+the caret after them; a file read, gone to. The hand is steady, a little
+quicker than a person's first pace (about 120 ms a key, a new line a breath
+longer), with no slips. A command waits for the screen, so what it prints
+never comes before the edit it builds; the file is written at once, and only
+its editor waits to take it in as it is played. The pane's lines and the
+Agent's words come in as they are played, and the box is given back as it was.
+
 Edit makes the box a line of the file in front, written there as the line is
 in the file: nothing to learn, no words that ask for things, no line first
 written and then applied. It need not be chosen: while one works in a file of

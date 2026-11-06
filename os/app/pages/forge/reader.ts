@@ -8,6 +8,8 @@ import {nudge, still} from '../../ui/glide.ts';
 import {errorText} from '../../host/errors.ts';
 import {shownPath} from '../../repos/issues.ts';
 import {Editor, fileState, lineHeight, lineStart, numbering, type FileState} from './editor.ts';
+import {AGENT} from '../../repos/agent-hands.ts';
+import {editorOn, holdBack} from '../bench/play.ts';
 
 // The center of Forge: one repo read top to bottom as an endless page. Each
 // file is a plain text editor in its own box (editor.ts), loaded as it comes near; in
@@ -125,6 +127,8 @@ export class Reader {
     // One file alone is not read again for another's change.
     if (this.single !== null && c.what === 'file' && c.path !== this.single) return false;
     if (c.what !== 'file') return true;
+    // What the Agent wrote is taken in as its typing is played there (bench/play.ts), not before.
+    if (c.by === AGENT && holdBack(this.repo, c.path, c.text ?? '')) return false;
     const taker = this.takers.get(c.path);
     if (taker) { taker(c.text ?? ''); return false; }
     // Not open yet: shown when it comes into view, if it is already listed.
@@ -358,6 +362,7 @@ export class Reader {
     this.editors.set(path, editor.area);
     this.fitters.set(path, () => editor.fit());
     this.takers.set(path, (text) => editor.take(text));
+    editorOn(this.repo, path, {take: (text) => editor.take(text), area: editor.area});
   }
 }
 

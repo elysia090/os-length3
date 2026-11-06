@@ -6,6 +6,7 @@ import {Agent, type Done, type Hands} from '../../agent/loop.ts';
 import {boxSaid} from '../../repos/agents.ts';
 import {LAND, paced, still} from '../../ui/glide.ts';
 import {askChanged, asked} from './asks.ts';
+import type {Player} from './play.ts';
 
 // The box's Agent (box-modes.ts): something asked of it in the repo, worked on by the model the key kept on this
 // device opens (agent/loop.ts), told what the person is looking at (the repo's top, the issue whose work it is, and
@@ -102,14 +103,16 @@ export interface Flow {
 
 /**
  * `question` (its line in the flow: `row`) worked on in `repo` with `use`, told `system`, done with `hands` (the
- * Agent's loop, agent/loop.ts). The flow follows what it does as it follows the person's work: what it runs is run in
- * the Prompt (`hands`), a line typed and its output as any; what it reads and edits, a line of its own each
- * (pressed, the file is opened with `open`); its words under the line they follow; refused, why, in the red. Until its
- * first step it waits under the question (styles: a quiet ellipsis). Its hooks are said beside, as any agent's are.
+ * Agent's loop, agent/loop.ts), and played on screen by `player` (play.ts) at a person's pace. The flow follows what
+ * is played as it follows the person's work: what it runs is run in the Prompt (`hands`), a line typed and its output
+ * as any; what it reads and edits, a line of its own each (pressed, the file is opened with `open`); its words under
+ * the line they follow; refused, why, in the red. Until its first step it waits under the question (styles: a quiet
+ * ellipsis). Its hooks are said beside, as any agent's are, as it goes.
  */
-export async function atWork(flow: Flow, row: HTMLElement, repo: string, use: Use, system: string, question: string, hands: Hands, open: (path: string) => void): Promise<void> {
+export async function atWork(flow: Flow, row: HTMLElement, repo: string, use: Use, system: string, question: string, hands: Hands, player: Player, open: (path: string) => void): Promise<void> {
   const agent = new Agent({use, system, hands});
   hooks(agent, repo);
+  agent.subscribe((e) => player.hear(e));
   // Kept too, as it comes, for Agent's list under the search box (asks.ts).
   const ask = asked(repo, question);
   const kept = (part: (typeof ask.parts)[number]) => { ask.parts.push(part); askChanged(repo); };
@@ -128,7 +131,8 @@ export async function atWork(flow: Flow, row: HTMLElement, repo: string, use: Us
     if (refused) a.classList.add('refused');
     if (!still()) a.animate([{opacity: 0, translate: '0 4px'}, {opacity: 1, translate: '0 0'}], {duration: paced(220), easing: LAND});
   };
-  agent.subscribe((e) => {
+  // The pane follows the screen: each line as what it says is played (play.ts), never ahead of it.
+  player.subscribe((e) => {
     if (e.type === 'message_end') { words(answerNodes(e.text)); kept({kind: 'words', text: e.text}); return; }
     if (e.type !== 'tool_execution_end') return;
     settle();
@@ -140,9 +144,11 @@ export async function atWork(flow: Flow, row: HTMLElement, repo: string, use: Us
   });
   try {
     const said = await agent.prompt(question);
+    await player.idle();
     settle();
     if (!said.trim()) throw new AgentError(0, t('Agent returned no response'));
   } catch (e) {
+    await player.idle();
     words([h('span', {class: 'answer-refused'}, whyNot(e))], true);
     ask.refused = whyNot(e);
   } finally {

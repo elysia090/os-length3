@@ -197,7 +197,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': sideId}, paneMark()) as HTMLButtonElement;
   const work = h('div', {class: parts.strip ? 'work bench' : 'work bench no-strip'});
 
-  const box = new Box({work, main: parts.main, center, term, termHead, back: !!parts.back, went: parts.went});
+  const box = new Box({work, main: parts.main, center, term, termHead, back: !!parts.back, went: parts.went, reveal: (path, line) => parts.reveal(path, line)});
   const {screen, element: screenEl} = screenOf(work, box, term, termHome);
   center.append(box.dock);
   const reference = new Reference({reveal: parts.reveal, recall: (line) => box.recall(line)}, {keeps: true});

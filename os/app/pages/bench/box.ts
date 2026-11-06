@@ -15,6 +15,7 @@ import {EditLine} from './edit-box.ts';
 import {agentKey, agentUse} from '../../account/agent-key.ts';
 import {setRightPane} from '../kit/pane.ts';
 import {atWork, told} from './agent.ts';
+import {Player, type Stage} from './play.ts';
 import type {Hands} from '../../agent/loop.ts';
 import {fileHands, tail} from '../../repos/agent-hands.ts';
 import {work as workOf} from '../../repos/history.ts';
@@ -72,6 +73,8 @@ interface BoxParts {
   back: boolean;
   /** A line of the box's own in the Prompt's flow pressed: the issue it wrote (its file, in `repo`), a file the Agent read or edited, or Home's TODO. */
   went(repo: string, to: {issue: string} | {file: string} | 'todo'): void;
+  /** A file of the repo in front brought into view at a line (Forge's; Git's shows the file). */
+  reveal(path: string, line?: number): void;
 }
 
 /** The box at the foot of a bench's center: its field and pill, what is said under it, what it does with what is written. */
@@ -481,7 +484,37 @@ export class Box {
     const w = await workOf(at).catch(() => null);
     const issuePath = w?.issue ? (w.issue.startsWith('issue/') ? w.issue : `issue/${w.issue}`) : null;
     const issue = issuePath ? (await store.read(at, issuePath).catch(() => null))?.text ?? '' : null;
-    await atWork(session, row, at, use, await told(at, front, issue), question, agentHands(at, issue !== null), (path) => this.#p.went(at, {file: path}));
+    const player = new Player(at, this.#stage(at));
+    await atWork(session, row, at, use, await told(at, front, issue), question, agentHands(at, issue !== null, player), player, (path) => this.#p.went(at, {file: path}));
+  }
+
+  /**
+   * Where the Agent's work in `at` is played (play.ts): its commands typed in this box under Run, as a person types
+   * them, the box given back after as it was (its mode, what was written in it); its files brought into view. Neither
+   * while another repo is in front: the work goes on there unseen.
+   */
+  #stage(at: string): Stage {
+    return {
+      typing: () => {
+        if (this.#repo !== at || this.prompt.disabled) return null;
+        const was = this.#mode;
+        this.choose('run', true, true);
+        const before = this.prompt.value;
+        return {
+          put: (text) => { this.prompt.value = text; this.#fit(); },
+          done: () => {
+            this.prompt.value = before;
+            this.#fit();
+            if (this.#repo === at && was !== 'run') this.choose(was, true, true);
+          },
+        };
+      },
+      reveal: (path, line) => {
+        if (this.#repo !== at) return false;
+        this.#p.reveal(path, line);
+        return true;
+      },
+    };
   }
 
   /** The repo's directory `dir` as Tab reads it, read once and kept until the repo changes. */
@@ -736,11 +769,11 @@ export class Box {
 /**
  * What the box's Agent does its work with in `repo`, through the OS's own calls: its files read, and where it was
  * handed the work (`writes`: an issue's) edited and written, by the core's rules (repos/agent-hands.ts); its commands
- * run in the repo's Prompt as a line typed there runs.
+ * run in the repo's Prompt as a line typed there runs, once typed in the box as the screen plays it (play.ts).
  */
-function agentHands(repo: string, writes: boolean): Hands {
-  return {...fileHands(repo, writes), run: async (command) => {
+function agentHands(repo: string, writes: boolean, player: Player): Hands {
+  return {...fileHands(repo, writes), run: (command) => player.bash(command, async () => {
     const r = await sessionFor(repo).run(command);
     return {...r, given: await tail(r.output)};
-  }};
+  })};
 }
