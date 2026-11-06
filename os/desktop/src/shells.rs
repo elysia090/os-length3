@@ -130,7 +130,7 @@ pub fn prompt_input(shells: State<'_, Shells>, id: u32, text: String) -> Result<
 pub fn prompt_interrupt(shells: State<'_, Shells>, id: u32) -> Result<(), String> {
     let open = shells.open.lock().unwrap();
     let s = open.get(&id).ok_or_else(|| length3_core::tr!("This Prompt has ended", "この Prompt は終わっています"))?;
-    unsafe { libc::kill(s.child.id() as libc::pid_t, libc::SIGINT) };
+    running::signal(s.child.id(), running::Signal::Int);
     Ok(())
 }
 
@@ -168,7 +168,7 @@ fn close(shells: &Shells, id: u32) -> Result<running::Stopped, String> {
     // Stopped while it is prepared too: what prepares it ends with its supervisor (launch::set_up).
     let ns = running::ns_of(supervisor);
     let before = ns.map(running::held).unwrap_or(running::Held { processes: 0, memory: 0 });
-    unsafe { libc::kill(supervisor as libc::pid_t, libc::SIGKILL) };
+    running::signal(supervisor, running::Signal::Kill);
     Ok(match ns {
         Some(ns) => running::wait_empty(ns, before, Duration::from_secs(3)),
         None => running::Stopped { before, left: 0, ms: None },

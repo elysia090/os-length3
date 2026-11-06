@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+use crate::prompt::running::{signal, Signal};
 use super::keys::keys;
 use super::reach::{destinations, dir, host, repo_names, Scope, scope, Taken};
 
@@ -12,11 +13,11 @@ use super::reach::{destinations, dir, host, repo_names, Scope, scope, Taken};
 /// has not within a few seconds. What was running, if anything was.
 pub fn stop(data: &Path) -> Option<Listening> {
     let l = listening(data)?;
-    unsafe { libc::kill(l.pid as libc::pid_t, libc::SIGTERM) };
+    signal(l.pid, Signal::Term);
     let started = Instant::now();
     while listening(data).is_some() {
         if started.elapsed() > Duration::from_secs(5) {
-            if crate::prompt::running::start_ticks(l.pid) == Some(l.start_ticks) { unsafe { libc::kill(l.pid as libc::pid_t, libc::SIGKILL) }; }
+            if crate::prompt::running::start_ticks(l.pid) == Some(l.start_ticks) { signal(l.pid, Signal::Kill); }
             let _ = std::fs::remove_file(record_file(data));
             break;
         }
@@ -31,7 +32,7 @@ pub fn stop(data: &Path) -> Option<Listening> {
 pub fn rescope(data: &Path, to: Scope) -> Option<Listening> {
     let l = listening(data)?;
     if l.scope == to { return Some(l); }
-    unsafe { libc::kill(l.pid as libc::pid_t, libc::SIGUSR1) };
+    signal(l.pid, Signal::Usr1);
     let started = Instant::now();
     while started.elapsed() < Duration::from_secs(5) {
         match listening(data) {

@@ -15,10 +15,10 @@ ruzstd = "0.9"
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 sha2 = "0.11"
 
-# The host's own calls (a filesystem's room, a rename that never replaces one, whether a process is there) through
+# The host's own calls (a filesystem's room, a rename that never replaces one, a signal, the host's name, a sync) through
 # a safe interface: the core's own code says no unsafe for them.
 [target.'cfg(unix)'.dependencies]
-rustix = { version = "1.1", default-features = false, features = ["std", "fs", "process"] }
+rustix = { version = "1.1", default-features = false, features = ["std", "fs", "param", "process", "system"] }
 
 # The network as a host reaches it (net.rs). Built for the web (wasm32-wasip1) the core asks the page
 # that runs it instead, so none of this is in it.

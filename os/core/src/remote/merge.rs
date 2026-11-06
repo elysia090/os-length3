@@ -58,11 +58,7 @@ pub fn beside_as(path: &str, who: &str, n: u32) -> String {
 /// This machine as a file's name can carry it: its host name, its letters, digits and . _ - alone.
 pub fn device_tag() -> String {
     #[cfg(unix)]
-    let raw = {
-        let mut buf = [0u8; 256];
-        let got = unsafe { libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len()) } == 0;
-        if got { String::from_utf8_lossy(&buf[..buf.iter().position(|&b| b == 0).unwrap_or(buf.len())]).into_owned() } else { String::new() }
-    };
+    let raw = rustix::system::uname().nodename().to_string_lossy().into_owned();
     // In a browser the page names the device (its host gives LENGTH3_DEVICE), as it has no host name.
     #[cfg(not(unix))]
     let raw = std::env::var("LENGTH3_DEVICE").unwrap_or_default();

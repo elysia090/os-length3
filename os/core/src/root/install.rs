@@ -10,16 +10,11 @@ use super::unpack::{Frames, unpack};
 /// Put what was written on the filesystem holding `dir` on the disk.
 fn flush(dir: &Path) -> io::Result<()> {
     #[cfg(target_os = "linux")]
-    {
-        use std::os::fd::AsRawFd;
-        let d = fs::File::open(dir)?;
-        // SAFETY: syncfs on a descriptor this function owns.
-        if unsafe { libc::syncfs(d.as_raw_fd()) } != 0 { return Err(io::Error::last_os_error()); }
-    }
+    rustix::fs::syncfs(fs::File::open(dir)?)?;
     #[cfg(all(unix, not(target_os = "linux")))]
     {
         let _ = dir;
-        unsafe { libc::sync() };
+        rustix::fs::sync();
     }
     #[cfg(not(unix))]
     let _ = dir;

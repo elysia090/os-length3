@@ -358,13 +358,11 @@ fn leftovers(dir: &Path, data: &Path, walked: &[PathBuf], out: &mut Vec<Leftover
     }
 }
 
+/// Whether the writer `pid` is there; where that cannot be asked (not unix), it may be, so what it wrote stays.
 #[cfg(unix)]
 fn running(pid: u32) -> bool {
-    // Signal 0 checks existence; EPERM means it exists but is not ours.
-    pid as libc::pid_t > 0 && (unsafe { libc::kill(pid as libc::pid_t, 0) } == 0
-        || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM))
+    crate::prompt::running::alive(pid)
 }
-
 #[cfg(not(unix))]
 fn running(_: u32) -> bool { true }
 

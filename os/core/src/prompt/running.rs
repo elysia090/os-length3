@@ -79,26 +79,34 @@ pub fn pause(ns: u64, paused: bool) -> usize {
     members(ns).into_iter().filter(|&p| signal(p, sig)).count()
 }
 
-/// A signal for a process of a Prompt's.
+/// A signal for a process this OS started: a Prompt's, the SSH listener, a shell.
 #[derive(Clone, Copy)]
-pub enum Signal { Stop, Cont, Kill }
+pub enum Signal { Stop, Cont, Kill, Term, Int, Usr1 }
 
 /// `sig` sent to `pid`: whether it was. Where Prompts never run on the root (Windows: they run translated, as in a
 /// browser), there is no process of one to send it to.
 #[cfg(unix)]
 pub fn signal(pid: u32, sig: Signal) -> bool {
-    let s = match sig { Signal::Stop => libc::SIGSTOP, Signal::Cont => libc::SIGCONT, Signal::Kill => libc::SIGKILL };
-    // SAFETY: kill sends a signal to a pid; no memory is passed.
-    unsafe { libc::kill(pid as libc::pid_t, s) == 0 }
+    use rustix::process::{kill_process, Pid, Signal as S};
+    let s = match sig { Signal::Stop => S::STOP, Signal::Cont => S::CONT, Signal::Kill => S::KILL, Signal::Term => S::TERM, Signal::Int => S::INT, Signal::Usr1 => S::USR1 };
+    i32::try_from(pid).ok().and_then(Pid::from_raw).is_some_and(|p| kill_process(p, s).is_ok())
 }
 #[cfg(not(unix))]
 pub fn signal(_pid: u32, _sig: Signal) -> bool { false }
 
+/// Whether a process `pid` is there (one of another user's, which may not be signalled, is).
+#[cfg(unix)]
+pub fn alive(pid: u32) -> bool {
+    use rustix::{io::Errno, process::{test_kill_process, Pid}};
+    i32::try_from(pid).ok().and_then(Pid::from_raw).is_some_and(|p| matches!(test_kill_process(p), Ok(()) | Err(Errno::PERM)))
+}
+#[cfg(not(unix))]
+pub fn alive(_pid: u32) -> bool { false }
+
 /// Clock ticks a second, as /proc/<pid>/stat counts CPU in them.
 #[cfg(unix)]
 fn clock_ticks() -> u64 {
-    // SAFETY: sysconf reads a constant of the system; no memory is passed.
-    (unsafe { libc::sysconf(libc::_SC_CLK_TCK) }).max(1) as u64
+    rustix::param::clock_ticks_per_second().max(1)
 }
 #[cfg(not(unix))]
 fn clock_ticks() -> u64 { 100 }
