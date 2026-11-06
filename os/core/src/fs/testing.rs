@@ -36,6 +36,7 @@ fn run() -> PathBuf {
 
 /// Whether a process is there (one of another user's, which may not be signalled, is).
 fn alive(pid: u32) -> bool {
-    // SAFETY: signal 0 only asks whether the process exists; nothing is sent and no memory is passed.
-    (unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }) || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+    use rustix::{io::Errno, process::{test_kill_process, Pid}};
+    let Some(pid) = i32::try_from(pid).ok().and_then(Pid::from_raw) else { return false };
+    matches!(test_kill_process(pid), Ok(()) | Err(Errno::PERM))
 }

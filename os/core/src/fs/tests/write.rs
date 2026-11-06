@@ -1,4 +1,4 @@
-//! The tests of disk/write.rs.
+//! The tests of fs/write.rs.
 
 use super::*;
 
@@ -71,4 +71,17 @@ fn a_link_planted_at_the_temporarys_name_is_not_written_through() {
     assert_eq!(fs::read_to_string(&outside).unwrap(), "the person's own");
     assert_eq!(fs::read_to_string(d.join("a")).unwrap(), "new");
     let _ = fs::remove_dir_all(&d);
+}
+
+#[test]
+fn a_temporary_is_known_by_its_whole_name_from_the_end() {
+    for (name, settings, pid) in [
+        (".state.json.length3-12-3", false, Some(12)), ("..length3-7-0", false, Some(7)), (".a1.length3-4-10", false, Some(4)),
+        ("k.json.99", true, Some(99)), ("k.json.99", false, None), (".a.length3-12", false, None), (".a.length3-x-1", false, None),
+        (".length3-1-2", false, None), (".gitignore", false, None), ("main.rs", false, None), (".a.length3--1", false, None),
+        (".notes.length3-1-draft", false, None),
+    ] {
+        assert_eq!(temporary_writer(name, settings), pid, "{name}");
+    }
+    assert!(is_temporary(".length3-1-x") && is_temporary(".x.length3-1-0") && !is_temporary(".gitignore"));
 }

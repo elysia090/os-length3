@@ -189,14 +189,14 @@ pub fn rename_repo(repos: &Repos, repo: &str, to: &str, open: &[String]) -> Resu
 /// Whether a Prompt has `repo` open: one its host runs (`open`), or one recorded running here (core/src/prompt/running.rs).
 fn prompted(repo: &str, open: &[String]) -> bool {
     #[cfg(not(target_os = "wasi"))]
-    if crate::prompt::running::all(&crate::fs::paths::data_dir()).iter().any(|r| r.repo == repo) { return true; }
+    if crate::prompt::running::all(crate::fs::paths::data_dir()).iter().any(|r| r.repo == repo) { return true; }
     open.iter().any(|o| o == repo)
 }
 
 /// What this device keeps of `repo` by its name besides its copy: its works' copies, its environment and caches.
 fn kept_by_name(repo: &str) -> [PathBuf; 3] {
     let data = crate::fs::paths::data_dir();
-    [data.join("work").join(repo), crate::prompt::writes::env_dir(&data, repo), crate::prompt::writes::cache_dir(&data, repo)]
+    [data.join("work").join(repo), crate::prompt::writes::env_dir(data, repo), crate::prompt::writes::cache_dir(data, repo)]
 }
 
 /// Whether a Remote agreed `repo` with this device (a base is kept of it, or of the work on one of its issues): it

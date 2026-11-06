@@ -1,4 +1,4 @@
-//! The tests of disk/digest.rs.
+//! The tests of fs/hash.rs.
 
 use super::*;
 

@@ -136,7 +136,7 @@ pub fn held_open(dir: &Path) -> Option<String> {
 /// Only copies this OS holds are kept for.
 pub(super) fn stamps_file(dir: &Path) -> Option<PathBuf> {
     let (data, repos) = (crate::fs::paths::data_dir(), crate::fs::paths::repos_dir());
-    if !(dir.starts_with(&data) || dir.starts_with(&repos)) { return None; }
+    if !(dir.starts_with(data) || dir.starts_with(repos)) { return None; }
     // Where they were kept before (cache/digests): nothing reads it now.
     let old = data.join("cache");
     if old.join("digests").is_dir() { let _ = fs::remove_dir_all(old.join("digests")); let _ = fs::remove_dir(&old); }

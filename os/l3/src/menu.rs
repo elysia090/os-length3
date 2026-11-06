@@ -98,7 +98,7 @@ impl Env {
 /// What holds of this device.
 fn device(ctx: &Ctx) -> Vec<Fact> {
     let mut f = vec![if ctx.connected() { Fact::SignedIn } else { Fact::SignedOut }];
-    if root::current(&paths::data_dir()).is_none() { f.push(Fact::NoRoot); }
+    if root::current(paths::data_dir()).is_none() { f.push(Fact::NoRoot); }
     f
 }
 
@@ -684,8 +684,8 @@ fn states(ctx: &Ctx) -> Vec<String> {
         r.as_ref().and_then(|r| r.on_main().issues(n).ok()).unwrap_or_default().iter().filter(|i| i.closed.is_none() && !merged.contains(&format!("issue/{}", i.file))).count()
     }).sum();
     let band = home::band(&names).map(|b| b.len()).unwrap_or(0);
-    let running = length3_core::prompt::running::all(&paths::data_dir()).len();
-    let root_now = root::current(&paths::data_dir()).map(|(_, i)| format!("root {} {}", i.name, i.version)).unwrap_or_else(|| tr!("no root yet", "root はまだありません"));
+    let running = length3_core::prompt::running::all(paths::data_dir()).len();
+    let root_now = root::current(paths::data_dir()).map(|(_, i)| format!("root {} {}", i.name, i.version)).unwrap_or_else(|| tr!("no root yet", "root はまだありません"));
     let not_sent = r.as_ref().and_then(|r| remote::status(r).ok()).map_or(0, |l| l.iter().filter(|s| s.fresh || s.changed > 0).count());
     let signed_out = tr!("not signed in", "サインインしていません");
     let mut server = if connected { "—".to_string() } else { signed_out.clone() };

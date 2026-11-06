@@ -515,10 +515,10 @@ pub fn serve() -> Result<(), String> {
     if ssh::keys().keys.is_empty() {
         return Err(tr!("There is no key in {} to let anyone in with", "{} に入れる鍵がありません", ssh::KEYS));
     }
-    let key = host_key(&data)?;
+    let key = host_key(data)?;
     let print = fingerprint(&key);
     let port = ssh::port();
-    let mut scope = ssh::scope(&data);
+    let mut scope = ssh::scope(data);
     let shared = Arc::new(Shared { exe: std::env::current_exe().map_err(|e| e.to_string())?, keys: Mutex::new((Instant::now(), ssh::keys().keys)),
         tries: Mutex::new(ssh::Tries::default()), sessions: Mutex::new(HashSet::new()) });
     let config = Arc::new(server::Config {
@@ -546,11 +546,11 @@ pub fn serve() -> Result<(), String> {
     let mut sockets = Sockets { port, open: Vec::new(), bound: tokio::sync::watch::channel(Vec::new()).0 };
     let (mut bound, taken) = rt.block_on(async { sockets.take(scope, &shared, &config) })?;
     remote::ssh::announce(scope)?;
-    let mut recorded = ssh::record(&data, port, scope, bound.clone(), taken, print.clone()).map_err(|e| e.to_string())?;
+    let mut recorded = ssh::record(data, port, scope, bound.clone(), taken, print.clone()).map_err(|e| e.to_string())?;
     // Turning on waits for this line; then the log takes standard output and error.
     println!("ready");
     let _ = std::io::stdout().flush();
-    if let Ok(f) = std::fs::OpenOptions::new().create(true).write(true).truncate(true).open(ssh::dir(&data).join("log")) {
+    if let Ok(f) = std::fs::OpenOptions::new().create(true).write(true).truncate(true).open(ssh::dir(data).join("log")) {
         unsafe { libc::dup2(f.as_raw_fd(), 1); libc::dup2(f.as_raw_fd(), 2); }
     }
     log(&format!("on port {port}, {} · {print}", scope.word()));
@@ -563,7 +563,7 @@ pub fn serve() -> Result<(), String> {
         };
         // The scope kept now, and the host's addresses now: what is listened on follows both.
         let mut follow = |sockets: &mut Sockets, scope: &mut ssh::Scope, bound: &mut Vec<IpAddr>| {
-            let next = ssh::scope(&data);
+            let next = ssh::scope(data);
             match sockets.take(next, &shared, &config) {
                 Ok((now, taken)) if (next, &now) != (*scope, &*bound) => {
                     if next != *scope { log(&format!("now {}", next.word())); }

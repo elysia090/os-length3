@@ -27,7 +27,7 @@ pub(crate) fn show_for_free(repo: &str, line: &str) -> Result<()> {
 pub fn here(cwd: &std::path::Path) -> Option<Here> {
     let parts = |rel: &std::path::Path| -> Vec<String> { rel.iter().map(|p| p.to_string_lossy().into_owned()).collect() };
     let repos = crate::fs::paths::repos_dir();
-    let repos = repos.canonicalize().unwrap_or(repos);
+    let repos = repos.canonicalize().unwrap_or_else(|_| repos.to_path_buf());
     let cwd = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
     if let Ok(rel) = cwd.strip_prefix(&repos) {
         if let [repo, rest @ ..] = parts(rel).as_slice() {

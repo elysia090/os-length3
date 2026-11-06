@@ -349,7 +349,7 @@ fn run_one(ctx: &Ctx, k: &tasks::Task) -> tasks::Outcome {
         if let Err(why) = activity::append(&e) { crate::out::note(&why); }
     };
     // What the run is, by what it is made of (core compute/spec.rs): the same Spec builds it here, and anywhere else.
-    let root = match super::runtime::root_now(&paths::data_dir()) {
+    let root = match super::runtime::root_now(paths::data_dir()) {
         Ok((_, about)) => about.sha256,
         Err(e) => return stopped(e.message().to_string(), "l3 root fetch".into()),
     };
@@ -464,17 +464,17 @@ pub fn inside(ctx: &Ctx, call: &Call) -> Result<Reply> {
         return Err(Error::Refused(tr!("{} has no network here (l3 network on {0})", "{} にはここでネットワークがありません（l3 network on {0}）", repo)));
     }
     let data = paths::data_dir();
-    let held = root::held(&data).into_iter().map(|(a, _)| a).find(|a| a.sha256 == spec.root)
+    let held = root::held(data).into_iter().map(|(a, _)| a).find(|a| a.sha256 == spec.root)
         .ok_or_else(|| Error::NotFound(tr!("The root it runs on is not here (l3 root fetch)", "実行する root がここにありません（l3 root fetch）")))?;
-    let root = root::system_dir(&data).join(&spec.root).join("root");
+    let root = root::system_dir(data).join(&spec.root).join("root");
     let repos = ctx.repos()?;
     let copy = length3_core::repos::lines::worktree(&repo, &spec.line);
     let dir = if spec.line == length3_core::repos::lines::MAIN { repos.on_main().dir(&repo)? } else if copy.is_dir() { copy } else { repos.dir(&repo)? };
     let s = launch::Sandbox { root, repo: dir, name: repo.clone(), argv: spec.argv.clone(), network: spec.network,
-        dotfiles: launch::dotfiles_in_effect(), data: Some(data.clone()), env: [spec.env.clone(), length3_core::device::agent_key::env()].concat() };
+        dotfiles: launch::dotfiles_in_effect(), data: Some(data.to_path_buf()), env: [spec.env.clone(), length3_core::device::agent_key::env()].concat() };
     // Recorded as any Prompt is: l3 prompt ls and Runtime see it, l3 prompt stop ends it.
-    let mut recorded = running::record(&data, &repo, s.network, &s.root)?;
-    length3_core::storage::make_room(&data, &paths::repos_dir(), super::forge::PROMPT_ROOM);
+    let mut recorded = running::record(data, &repo, s.network, &s.root)?;
+    length3_core::storage::make_room(data, paths::repos_dir(), super::forge::PROMPT_ROOM);
     launch::set_up(&s, held.distro.is_some())?;
     recorded.ready()?;
     let code = launch::run(&s)?;

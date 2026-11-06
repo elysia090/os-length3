@@ -30,7 +30,7 @@ const PINS: &str = include_str!("../../../shared/desktop-releases.json");
 /// `l3 app`: the one open brought forward; else the app here started and waited for; else where to get it.
 pub fn open(_: &Ctx, _: &Call) -> Result<Reply> {
     let data = paths::data_dir();
-    if desktop::ask(&data, "show").is_some() {
+    if desktop::ask(data, "show").is_some() {
         return Ok(Reply::done(tr!("The app is open already: brought it forward (no second one is started)", "アプリはもう開いています。前に出しました（もうひとつは開きません）"),
             json!({"open": true, "started": false})));
     }
@@ -55,7 +55,7 @@ pub fn open(_: &Ctx, _: &Call) -> Result<Reply> {
             return Err(Error::Refused(tr!("The app could not start: it ended at once ({1}), and nothing is open. {0} run in a terminal says why",
                 "アプリを起動できませんでした。すぐに終わり（{1}）、何も開いていません。理由はターミナルで {0} を実行するとわかります", program.display(), status)));
         }
-        if desktop::ask(&data, "here").is_some() {
+        if desktop::ask(data, "here").is_some() {
             // Answered by the one this l3 started, or (it ended handing over) by one opened meanwhile.
             let started = ended.is_none();
             let text = if started { tr!("Opened the app. Its window's close button, or l3 app close, closes it", "アプリを開きました。ウィンドウの閉じるボタンか l3 app close で閉じます") }
@@ -78,13 +78,13 @@ pub fn open(_: &Ctx, _: &Call) -> Result<Reply> {
 /// `l3 app close`: the app open closed as its close button closes it, and waited for until it has gone.
 pub fn close(_: &Ctx, _: &Call) -> Result<Reply> {
     let data = paths::data_dir();
-    match desktop::ask(&data, "close").as_deref() {
+    match desktop::ask(data, "close").as_deref() {
         None => return Ok(Reply::done(tr!("The app was not open", "アプリは開いていませんでした"), json!({"open": false, "changed": false}))),
         Some("closing") => {}
         Some(_) => return Err(Error::Refused(tr!("The app open does not take l3 app close: close its window", "開いているアプリは l3 app close を受けません。ウィンドウを閉じてください"))),
     }
     let until = Instant::now() + CLOSING;
-    while desktop::ask(&data, "here").is_some() {
+    while desktop::ask(data, "here").is_some() {
         if Instant::now() > until {
             return Err(Error::Refused(tr!("Asked the app to close, and it is still open: its window may be asking something. Close it there",
                 "アプリに閉じるよう伝えましたが、まだ開いています。ウィンドウが何か尋ねているかもしれません。そちらで閉じてください")));

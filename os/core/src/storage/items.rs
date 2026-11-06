@@ -4,7 +4,7 @@
 use serde::Serialize;
 use std::fs;
 use crate::fs::write::temporary_writer;
-use crate::fs::size::{allocated, blocks, links, tally};
+use crate::fs::size::{allocated, blocks, links};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
@@ -331,7 +331,7 @@ fn system_leftovers(data: &Path, out: &mut Vec<Leftover>) {
         if meta.is_dir() && name.starts_with('.') {
             if let Some(pid) = temporary_writer(&name, false) {
                 if age(&meta) >= AGE && pid != crate::pid() && !running(pid) {
-                    out.push(Leftover { allocated: tally(&e.path()).2 + blocks(&meta), path: e.path(), what: crate::tr!("An unpacking that stopped half way", "途中で止まった展開"), root: false });
+                    out.push(Leftover { allocated: allocated(&e.path()), path: e.path(), what: crate::tr!("An unpacking that stopped half way", "途中で止まった展開"), root: false });
                 }
             }
         }
@@ -365,7 +365,7 @@ pub fn system(data: &Path) -> Vec<(SystemUsage, PathBuf)> {
         let allocated = match about.allocated {
             Some(n) => n,
             None => {
-                let n = tally(&e.path()).2;
+                let n = allocated(&e.path());
                 about.allocated = Some(n);
                 // Not kept, it is counted again next time.
                 if let Ok(text) = serde_json::to_vec(&about) { let _ = crate::fs::write::replace(&e.path().join("installed.json"), &text, crate::fs::write::How::RECORD); }

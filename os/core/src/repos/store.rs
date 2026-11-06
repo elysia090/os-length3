@@ -75,7 +75,7 @@ pub struct Repos {
 impl Repos {
     /// The repos of this person, where the app keeps them.
     pub fn open() -> Result<Repos> {
-        let mut r = Repos::new(crate::fs::paths::repos_dir())?;
+        let mut r = Repos::new(crate::fs::paths::repos_dir().to_path_buf())?;
         r.lines = std::env::var_os("L3_PROMPT").is_none();
         Ok(r)
     }

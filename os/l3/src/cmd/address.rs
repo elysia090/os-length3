@@ -60,7 +60,7 @@ fn how_on() -> String {
 /// terminal (whether, then from where) and says so elsewhere.
 pub fn show(_: &Ctx, call: &Call) -> Result<Reply> {
     let data = paths::data_dir();
-    let h = ssh::here(&data);
+    let h = ssh::here(data);
     if h.on {
         for f in facts(&h) { note(&f); }
         return Ok(Reply::data(h.destinations.join("\n"), shown(&h)));
@@ -76,7 +76,7 @@ pub fn show(_: &Ctx, call: &Call) -> Result<Reply> {
     if !matches!(answer.trim(), "y" | "Y" | "yes" | "Yes" | "YES" | "はい") {
         return Err(Error::Off(tr!("SSH stays off. {}", "SSH はオフのままです。{}", how_on())));
     }
-    let kept = ssh::scope(&data);
+    let kept = ssh::scope(data);
     let first = if kept == ssh::Scope::Network { 2 } else { 1 };
     eprint!("{}", tr!("Who may connect?\n  1  this device only: no other PC finds it\n  2  PCs on the same network too (a LAN, a VPN), never the Internet\n[{}] ",
         "どこから接続できるようにしますか？\n  1  この端末からだけ：ほかの PC からは見えません\n  2  同じネットワークの PC からも（LAN、VPN）。インターネットからは入れません\n[{}] ", first));
@@ -98,8 +98,8 @@ pub fn show(_: &Ctx, call: &Call) -> Result<Reply> {
 pub fn set(_: &Ctx, call: &Call) -> Result<Reply> {
     let data = paths::data_dir();
     if call.word(0) == Some("on") {
-        let was = ssh::listening(&data);
-        let scope = call.word(1).and_then(ssh::Scope::from_word).unwrap_or_else(|| ssh::scope(&data));
+        let was = ssh::listening(data);
+        let scope = call.word(1).and_then(ssh::Scope::from_word).unwrap_or_else(|| ssh::scope(data));
         let h = turn_on(scope)?;
         let first = match &was {
             Some(l) if l.scope == scope => tr!("SSH was on already", "SSH はもうオンです"),
@@ -109,7 +109,7 @@ pub fn set(_: &Ctx, call: &Call) -> Result<Reply> {
         let lines: Vec<String> = std::iter::once(first).chain(facts(&h)).chain(h.destinations.iter().cloned()).collect();
         return Ok(Reply::done(lines.join("\n"), json!({"changed": was.is_none_or(|l| l.scope != scope), "ssh": shown(&h)})));
     }
-    let stopped = ssh::stop(&data);
+    let stopped = ssh::stop(data);
     // Said to the Remote here too, in case the listener could not (it was killed): pages stop showing it.
     if remote::connection().is_some() { let _ = remote::ssh::withdraw(); }
     let text = if stopped.is_some() { tr!("SSH is off; its sessions ended", "SSH をオフにしました。そのセッションは終わりました") }
@@ -122,10 +122,10 @@ pub fn set(_: &Ctx, call: &Call) -> Result<Reply> {
 /// takes the scope at once, its other sessions going on.
 fn turn_on(scope: ssh::Scope) -> Result<ssh::Here> {
     let data = paths::data_dir();
-    if ssh::listening(&data).is_some() {
-        ssh::set_scope(&data, scope)?;
-        ssh::rescope(&data, scope).ok_or_else(|| Error::Io(tr!("The SSH listener did not take the scope asked; l3 address ssh off, then on", "SSH の待ち受けが範囲の変更を受けませんでした。l3 address ssh off のあと、もう一度 on にしてください")))?;
-        return Ok(ssh::here(&data));
+    if ssh::listening(data).is_some() {
+        ssh::set_scope(data, scope)?;
+        ssh::rescope(data, scope).ok_or_else(|| Error::Io(tr!("The SSH listener did not take the scope asked; l3 address ssh off, then on", "SSH の待ち受けが範囲の変更を受けませんでした。l3 address ssh off のあと、もう一度 on にしてください")))?;
+        return Ok(ssh::here(data));
     }
     if remote::connection().is_none() {
         return Err(Error::Offline(tr!("SSH is turned on for a device signed in to a Remote, so any of your devices can see it and turn it off (l3 login)",
@@ -139,9 +139,9 @@ fn turn_on(scope: ssh::Scope) -> Result<ssh::Here> {
         return Err(Error::Refused(tr!("Add a key first: your OpenSSH public key, one a line, in the {0} dotfile (Runtime → Dotfiles, or l3 dotfile write {0} < ~/.ssh/id_ed25519.pub)",
             "先に鍵を置いてください：OpenSSH の公開鍵を1行にひとつ、{0} の dotfile に（Runtime → Dotfiles、または l3 dotfile write {0} < ~/.ssh/id_ed25519.pub）", ssh::KEYS)));
     }
-    ssh::set_scope(&data, scope)?;
+    ssh::set_scope(data, scope)?;
     start_listener()?;
-    let h = ssh::here(&data);
+    let h = ssh::here(data);
     if !h.on { return Err(Error::Io(tr!("The SSH listener said it listens, but is not there", "SSH の待ち受けは始まったと言いましたが、見当たりません"))); }
     Ok(h)
 }

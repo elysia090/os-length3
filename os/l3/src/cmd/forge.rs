@@ -100,7 +100,7 @@ pub fn band_list(ctx: &Ctx, _: &Call) -> Result<Reply> {
     let here = here_names(ctx)?;
     let b = home::band(&here)?;
     // Each repo here, for the menu: those out on the band first, as the band reads.
-    let running: Vec<String> = length3_core::prompt::running::all(&length3_core::fs::paths::data_dir()).into_iter().map(|r| r.repo).collect();
+    let running: Vec<String> = length3_core::prompt::running::all(length3_core::fs::paths::data_dir()).into_iter().map(|r| r.repo).collect();
     for name in b.iter().chain(here.iter().filter(|n| !b.contains(n))) {
         let on = b.contains(name);
         crate::menu::see(|| {
@@ -140,19 +140,19 @@ pub fn prompt(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let repo = target::repo(ctx, call, 0)?;
     let data = paths::data_dir();
     let dir = ctx.repos()?.dir(&repo)?;
-    let (root, about) = super::runtime::root_now(&data)?;
+    let (root, about) = super::runtime::root_now(data)?;
     // Another distribution's own shell where there is a terminal to draw it on; sh otherwise.
     let bash = about.distro.is_some() && root.join("bin/bash").exists() && std::io::stdin().is_terminal();
     let cmd = call.words(1);
     let argv: Vec<String> = if cmd.is_empty() { vec![if bash { "/bin/bash" } else { "/bin/sh" }.into(), "-i".into()] } else { cmd };
-    let s = launch::Sandbox { root, repo: dir, name: repo.clone(), argv, network: call.flags.network || length3_core::home::network(&repo), dotfiles: launch::dotfiles_in_effect(), data: Some(data.clone()), env: length3_core::device::agent_key::env() };
+    let s = launch::Sandbox { root, repo: dir, name: repo.clone(), argv, network: call.flags.network || length3_core::home::network(&repo), dotfiles: launch::dotfiles_in_effect(), data: Some(data.to_path_buf()), env: length3_core::device::agent_key::env() };
     // Recorded from the start, by the process that runs it, so `l3 prompt ls` (and Runtime) see it, `l3 prompt stop`
     // can end it, and nothing it holds is freed (storage/): first being prepared, as what .packages and .setup ask for
     // is set up (once, while they and the root stay as they are), then running.
     let prepared = || -> std::io::Result<running::Recorded> {
-        let mut recorded = running::record(&data, &repo, s.network, &s.root)?;
+        let mut recorded = running::record(data, &repo, s.network, &s.root)?;
         // Recorded, what it holds stays; room is made round it if the device is short (storage/free.rs make_room).
-        length3_core::storage::make_room(&data, &paths::repos_dir(), PROMPT_ROOM);
+        length3_core::storage::make_room(data, paths::repos_dir(), PROMPT_ROOM);
         launch::set_up(&s, about.distro.is_some())?;
         recorded.ready()?;
         Ok(recorded)
@@ -187,7 +187,7 @@ pub fn prompt(_: &Ctx, _: &Call) -> Result<Reply> {
 /// `l3 prompt ls`: each Prompt running on this device, the app's among them.
 pub fn prompt_list(_: &Ctx, _: &Call) -> Result<Reply> {
     use length3_core::{fs::paths, prompt::running};
-    let all = running::all(&paths::data_dir());
+    let all = running::all(paths::data_dir());
     let mut t = Vec::new();
     let mut rows = Vec::new();
     for r in &all {
@@ -221,7 +221,7 @@ pub fn prompt_pause(ctx: &Ctx, call: &Call) -> Result<Reply> {
     use length3_core::{fs::paths, prompt::running};
     let paused = call.word(0) == Some("pause");
     let repo = target::repo(ctx, call, 1)?;
-    let told: usize = running::all(&paths::data_dir()).iter().filter(|r| r.repo == repo).filter_map(running::ns_of_record).map(|ns| running::pause(ns, paused)).sum();
+    let told: usize = running::all(paths::data_dir()).iter().filter(|r| r.repo == repo).filter_map(running::ns_of_record).map(|ns| running::pause(ns, paused)).sum();
     if told == 0 { return Err(Error::NotFound(tr!("No Prompt of {} is running (l3 prompt ls lists those that are)", "{} の Prompt は動いていません（動いているものは l3 prompt ls）", repo))); }
     let text = if paused { tr!("Paused {}'s Prompt: what it holds stays, it uses no CPU (l3 prompt resume {0})", "{} の Prompt を一時停止しました。持っているものはそのまま、CPU は使いません（l3 prompt resume {0}）", repo) }
         else { tr!("{}'s Prompt goes on", "{} の Prompt を再開しました", repo) };
@@ -237,7 +237,7 @@ pub fn prompt_pause(_: &Ctx, _: &Call) -> Result<Reply> {
 pub fn stop_prompts(repo: &str) -> Vec<length3_core::prompt::running::Stopped> {
     use length3_core::{fs::paths, prompt::running};
     let data = paths::data_dir();
-    running::all(&data).iter().filter(|r| r.repo == repo).map(|r| running::stop(&data, r)).collect()
+    running::all(data).iter().filter(|r| r.repo == repo).map(|r| running::stop(data, r)).collect()
 }
 
 /// What stopping gave back, as Runtime says it.

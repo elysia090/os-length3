@@ -1,9 +1,6 @@
 //! What a thing is by its bytes: their sha256, written in lowercase hex, as the Remote names a file, a pin names a
 //! release, and a run, an environment or a kernel is named here.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use sha2::{Digest, Sha256};
 use std::io;
 
@@ -28,11 +25,13 @@ pub fn sha256_read(r: &mut impl io::Read) -> io::Result<(String, u64)> {
     Ok((hex(&h.finalize()), n))
 }
 
-/// `bytes` in lowercase hex: two digits a byte, from a table (not a formatter called per byte).
+/// `bytes` in lowercase hex: two digits a byte, from a table, into a buffer of the length they take.
 pub fn hex(bytes: &[u8]) -> String {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
-    let mut out = Vec::with_capacity(bytes.len() * 2);
-    for b in bytes { out.extend_from_slice(&[DIGITS[(b >> 4) as usize], DIGITS[(b & 15) as usize]]); }
+    let mut out = vec![0u8; bytes.len() * 2];
+    for (pair, b) in out.as_chunks_mut::<2>().0.iter_mut().zip(bytes) {
+        *pair = [DIGITS[usize::from(b >> 4)], DIGITS[usize::from(b & 15)]];
+    }
     // Only ASCII digits were written.
     String::from_utf8(out).unwrap_or_default()
 }

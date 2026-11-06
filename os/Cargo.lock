@@ -2452,6 +2452,7 @@ dependencies = [
  "flate2",
  "keyring-core",
  "libc",
+ "rustix",
  "rustls",
  "rustls-native-certs",
  "ruzstd",

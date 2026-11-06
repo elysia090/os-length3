@@ -74,7 +74,12 @@ fn fill(mut f: fs::File, bytes: &[u8], how: How) -> io::Result<()> {
 /// Replace `path` with `bytes`, whole. On failure `path` is as it was and nothing is left beside it.
 pub fn replace(path: &Path, bytes: &[u8], how: How) -> io::Result<()> {
     let (tmp, f) = beside(path, how)?;
-    let done = fill(f, bytes, how).and_then(|_| fs::rename(&tmp, path));
+    let done = fill(f, bytes, how).and_then(|_| {
+        // A cache's old copy goes first: renamed over one, ext4 writes the new file out at once (auto_da_alloc), some
+        // 20 times the write itself. A reader between the two finds none, which for a cache is only not kept.
+        if !how.durable { let _ = fs::remove_file(path); }
+        fs::rename(&tmp, path)
+    });
     match done {
         Ok(()) => { if how.durable { sync_dir(path); } Ok(()) }
         Err(e) => { let _ = fs::remove_file(&tmp); Err(e) }
@@ -96,17 +101,15 @@ pub fn create(path: &Path, bytes: &[u8], how: How) -> io::Result<()> {
 /// Move `from` to `to` in one step unless something is at `to` (AlreadyExists then): a directory made
 /// aside goes into place whole, and never over (or, empty, into) one another made meanwhile.
 pub fn rename_new(from: &Path, to: &Path) -> io::Result<()> {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
-        use std::os::unix::ffi::OsStrExt;
-        let c = |p: &Path| std::ffi::CString::new(p.as_os_str().as_bytes()).map_err(io::Error::other);
-        let (a, b) = (c(from)?, c(to)?);
-        // SAFETY: two NUL-terminated paths that live across the call.
-        let r = unsafe { libc::syscall(libc::SYS_renameat2, libc::AT_FDCWD, a.as_ptr(), libc::AT_FDCWD, b.as_ptr(), libc::RENAME_NOREPLACE) };
-        if r == 0 { return Ok(()); }
-        let e = io::Error::last_os_error();
-        // A kernel or filesystem without it: asked the slower way below.
-        if !matches!(e.raw_os_error(), Some(libc::ENOSYS) | Some(libc::EINVAL)) { return Err(e); }
+        use rustix::{fs::{renameat_with, RenameFlags, CWD}, io::Errno};
+        match renameat_with(CWD, from, CWD, to, RenameFlags::NOREPLACE) {
+            Ok(()) => return Ok(()),
+            // A kernel or filesystem without it: asked the slower way below.
+            Err(Errno::NOSYS | Errno::INVAL | Errno::NOTSUP) => {}
+            Err(e) => return Err(e.into()),
+        }
     }
     if to.symlink_metadata().is_ok() { return Err(io::Error::from(io::ErrorKind::AlreadyExists)); }
     fs::rename(from, to)
@@ -123,13 +126,16 @@ fn sync_dir(path: &Path) {
 #[cfg(not(unix))]
 fn sync_dir(_: &Path) {}
 
-/// The pid in a name this OS gives its temporary files, if it is one. A
-/// setting's temporary (`<key>.json.<pid>`) is only one in the settings
-/// directory: in a repo, a name like that is a person's own file.
+/// The pid in a name this OS gives its temporary files (`.<name>.length3-<pid>-<n>`), if it is one. A setting's
+/// temporary (`<key>.json.<pid>`) is only one in the settings directory: in a repo, a name like that is a person's
+/// own file. Read back from the name's end, so a name that is neither costs a byte or two, not a search.
 pub(crate) fn temporary_writer(name: &str, in_settings: bool) -> Option<u32> {
-    if let Some(rest) = name.strip_prefix('.') {
-        if let Some((_, writer)) = rest.rsplit_once(".length3-") {
-            return writer.split('-').next()?.parse().ok();
+    /// `s` split before the digits it ends with.
+    fn digits(s: &str) -> (&str, &str) { s.split_at(s.trim_end_matches(|c: char| c.is_ascii_digit()).len()) }
+    if name.starts_with('.') {
+        let (rest, n) = digits(name);
+        if let Some((mark, pid)) = rest.strip_suffix('-').map(digits) {
+            if !n.is_empty() && mark.len() > ".length3-".len() && mark.ends_with(".length3-") { return pid.parse().ok(); }
         }
     }
     let (stem, pid) = name.rsplit_once('.')?;

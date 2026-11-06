@@ -2,15 +2,14 @@
 //! The app (through Tauri commands) and `l3` (on the command line, on the host
 //! or inside the app's Prompt) both use this crate, so the two cannot drift.
 //!
-//! Unsafe code is only where the OS is called through libc (the Prompt's
-//! namespaces and seccomp filter: run/launch.rs, run/seccomp.rs; SSH's pty:
-//! ssh; the host's name, a rename, a sync, a signal, a disk's room: remote,
-//! disk/write.rs, root, device/prompts.rs, space, disk/room.rs), each block a
-//! single call with its arguments made just before it. A lock is std's (File::lock), not a call.
-//! Every other module says `#![forbid(unsafe_code)]`, so none is added there.
+//! Unsafe code is only where the OS is called and no safe interface has the call yet, each block a single call with
+//! its arguments made just before it: the Prompt's namespaces and seccomp filter (prompt/launch.rs, prompt/seccomp.rs),
+//! a signal or the clock's tick (prompt/running.rs, ssh/listener.rs, storage/items.rs), SSH's pty (ssh/reach.rs), a
+//! sync (root/install.rs), the host's name (remote/merge.rs), and the page the browser's core asks (device/net.rs).
+//! A layer with none says `#![forbid(unsafe_code)]` once, for all its files (fs/), and so does every module without it.
 
 // The layers, each above the ones before it: a module uses only what is in its own layer or one listed before
-// it (scripts/check/layers checks it). Each is a folder whose mod.rs says what it holds.
+// it (scripts/layers.mjs checks it). Each is a folder whose mod.rs says what it holds.
 pub mod fs;
 pub mod text;
 pub mod device;

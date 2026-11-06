@@ -127,9 +127,9 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         },
 
         // The capacity and what this OS holds: `open`, the repos a Prompt has open (the host's to know).
-        "capacity" => to(size::capacity(&paths::data_dir())?),
-        "space" => to(storage::space(&paths::data_dir(), &paths::repos_dir(), &a.list("open")?)),
-        "free" => to(storage::free(&paths::data_dir(), &paths::repos_dir(), &a.list("ids")?, &a.list("open")?)),
+        "capacity" => to(size::capacity(paths::data_dir())?),
+        "space" => to(storage::space(paths::data_dir(), paths::repos_dir(), &a.list("open")?)),
+        "free" => to(storage::free(paths::data_dir(), paths::repos_dir(), &a.list("ids")?, &a.list("open")?)),
 
         // Signing in: the code, and the page to approve it on, which only the host can open; the page is the
         // Remote's own (or its app's, on the origin it says), never one a page names.
