@@ -48,6 +48,14 @@ struct dfa {
   u32 starts[8]; /* each flags' start (row + 1), 0 when not made */
   u32 *scratch, *next, *mark, gen, *stack, prefix;
   u32 *saved; /* the sets of the rows kept while room is made (five at most) */
+  u32 epoch;  /* how many times room was made (a move worked out across it is not kept) */
+  /* Pairs (D_LINES, 16 classes at most): two bytes a move. Two strings that no state tells apart are one, as Myhill
+   * and Nerode have it; for a pair, a class each is enough (a pair of classes, at most 256 of them). pc2 a byte's
+   * class, pc1 the same times P (16 at most); the pair's move from a state at ptrans[state << p2 | pc1[b1] + pc2[b2]]. */
+  int pairs;
+  u32 p2;
+  u8 *pc1, *pc2;
+  u32 *ptrans;
 };
 
 static int byte_word(u8 b) { return b == '_' || (u32)((b | 0x20) - 'a') < 26u || (u32)(b - '0') < 10u; }
@@ -125,7 +133,7 @@ static u32 dfa_closure(struct dfa *d, const u32 *in, u32 n, u32 flags, int next)
 }
 
 static void dfa_forget(struct dfa *d) {
-  d->n = 1, d->pooltop = 0;
+  d->n = 1, d->pooltop = 0, d->epoch++;
   memset(d->hash, 0, 4 * ((u64)d->hmask + 1));
   memset(d->starts, 0, sizeof d->starts);
 }
@@ -153,6 +161,7 @@ static u32 dfa_state(struct dfa *d, u32 *s, u32 n, u32 flags) {
   memcpy(d->pool + d->pooltop, s, 4 * (u64)n);
   d->pooltop += n;
   memset(d->trans + (u64)k * d->ncls, 0x10, 4 * (u64)d->ncls);
+  if (d->pairs) memset(d->ptrans + ((u64)k << d->p2), 0x10, 4ul << d->p2);
   d->hash[h] = k + 1;
   return k;
 }
@@ -222,11 +231,23 @@ static struct dfa *dfa_new(struct re *r, int mode) {
   d->need = (r->has_ends ? F_BOL | F_BOT : 0) | (r->has_word ? F_WORD : 0);
   d->prefix = mode == D_FWD ? r->n : ~0u;
   dfa_classes(d);
+  u32 lg = 0;
+  if (mode == D_LINES) { /* pairs, when the classes are 16 at most */
+    while ((1u << lg) < d->ncls) lg++;
+    d->pairs = lg <= 4, d->p2 = 2 * lg;
+  }
   d->max = DFA_ROOM / 4 / d->ncls;
+  if (d->pairs && d->max > DFA_ROOM / (4u << d->p2)) d->max = DFA_ROOM / (4u << d->p2);
   if (d->max > 65536) d->max = 65536;
   u8 *block = grab(256 + 4 * (u64)d->max * d->ncls); /* the classes, then the moves (lanes_run reads both from one) */
   memcpy(block, d->cls, 256);
   d->trans = (u32 *)(block + 256);
+  if (d->pairs) {
+    u8 *pb = grab(512 + (4ul << d->p2) * d->max); /* pc1, pc2, then the pairs' moves (pairs_run reads all three) */
+    d->pc1 = pb, d->pc2 = pb + 256, d->ptrans = (u32 *)(pb + 512);
+    for (u32 b = 0; b < 256; b++) d->pc2[b] = d->cls[b], d->pc1[b] = (u8)(d->cls[b] << lg);
+    memset(d->ptrans, 0, 4ul << d->p2); /* row 0: a parked lane's, staying itself */
+  }
   d->setat = (u32 *)grab(4 * (u64)d->max), d->setn = (u32 *)grab(4 * (u64)d->max), d->flags = grab(d->max);
   for (d->hmask = 1; d->hmask < 2 * d->max; d->hmask <<= 1) {}
   d->hmask--;
@@ -416,6 +437,83 @@ static u64 lanes_run(const u32 *tr, const u8 *const *a, u64 m, u32 *r) {
 }
 #endif
 
+/* The pair move of the state at `row` (a single row) on b1 b2: worked out by single moves and kept when both are
+ * plain (no match, nothing past what the DFA can say); else left unknown, so the two are taken one at a time there.
+ * Not kept when room was made meanwhile (the state may be another's now). */
+static void pair_fill(struct dfa *d, u32 row, u8 b1, u8 b2, u32 *keep, u32 nkeep) {
+  u32 ep = d->epoch, from = row / d->ncls, r = row;
+  u32 v = dfa_step(d, &r, d->cls[b1], keep, nkeep);
+  if (v >= T_SLOW || d->epoch != ep) return;
+  r = v, v = dfa_step(d, &r, d->cls[b2], keep, nkeep);
+  if (v >= T_SLOW || d->epoch != ep) return;
+  d->ptrans[(from << d->p2) + d->pc1[b1] + d->pc2[b2]] = v / d->ncls << d->p2;
+}
+
+/* The lanes' run two bytes a move while every pair's move is plain: m (even) bytes at most of each of a[0..4), from
+ * the pair rows in r[] (written back: those before the pair that is not plain). How many bytes each took. As
+ * lanes_run, but a move is a pair's: two bytes' pair classes (pc1 512 bytes and pc2 256 before the pairs' moves)
+ * added, then the move; so a lane's chain of loads that wait on each other is half as long. Written whole: it needs
+ * every register (rbp too), which GCC will not give an asm statement. */
+#if defined(__x86_64__)
+__attribute__((visibility("hidden"))) u64 pairs_run(const u32 *pt, const u8 *const *a, u64 m, u32 *r);
+#define PAIR(e, from, to) \
+  "movzbl (%" e ",%rdx), %" to "d\n\t" "movzbl 1(%" e ",%rdx), %ecx\n\t" \
+  "movzbl -512(%rdi,%" to "), %" to "d\n\t" "movzbl -256(%rdi,%rcx), %ecx\n\t" \
+  "add %rcx, %" to "\n\t" "add %" from ", %" to "\n\t" "mov (%rdi,%" to ",4), %" to "d\n\t"
+#define PAIRX(e, from, to, to32) \
+  "movzbl (%" e ",%rdx), " to32 "\n\t" "movzbl 1(%" e ",%rdx), %ecx\n\t" \
+  "movzbl -512(%rdi,%" to "), " to32 "\n\t" "movzbl -256(%rdi,%rcx), %ecx\n\t" \
+  "add %rcx, %" to "\n\t" "add %" from ", %" to "\n\t" "mov (%rdi,%" to ",4), " to32 "\n\t"
+#define PTEST(x, out) "cmp $0xfffffff, " x "\n\t" "ja " out "\n\t"
+__asm__(
+  ".section .text.pairs_run,\"ax\",@progbits\n"
+  ".p2align 5\n"
+  ".hidden pairs_run\n"
+  ".type pairs_run, @function\n"
+  "pairs_run:\n\t"
+  "push %rbx\n\t" "push %rbp\n\t" "push %r12\n\t" "push %r13\n\t" "push %r14\n\t" "push %r15\n\t"
+  "push %rcx\n\t" "push %rdx\n\t"
+  "mov (%rsi), %r8\n\t" "add %rdx, %r8\n\t" "mov 8(%rsi), %r9\n\t" "add %rdx, %r9\n\t"
+  "mov 16(%rsi), %r10\n\t" "add %rdx, %r10\n\t" "mov 24(%rsi), %r11\n\t" "add %rdx, %r11\n\t"
+  "mov (%rcx), %eax\n\t" "mov 4(%rcx), %ebx\n\t" "mov 8(%rcx), %ebp\n\t" "mov 12(%rcx), %esi\n\t"
+  "neg %rdx\n"
+  "1:\n\t"
+  PAIR("r8", "rax", "r12") PAIR("r9", "rbx", "r13") PAIR("r10", "rbp", "r14") PAIR("r11", "rsi", "r15")
+  PTEST("%r12d", "3f") PTEST("%r13d", "3f") PTEST("%r14d", "3f") PTEST("%r15d", "3f")
+  "add $2, %rdx\n\t"
+  "jz 2f\n\t"
+  PAIRX("r8", "r12", "rax", "%eax") PAIRX("r9", "r13", "rbx", "%ebx") PAIRX("r10", "r14", "rbp", "%ebp") PAIRX("r11", "r15", "rsi", "%esi")
+  PTEST("%eax", "2f") PTEST("%ebx", "2f") PTEST("%ebp", "2f") PTEST("%esi", "2f")
+  "add $2, %rdx\n\t"
+  "jnz 1b\n\t"
+  "jmp 3f\n"
+  "2:\n\t" /* the rows are those of the move before */
+  "mov %r12d, %eax\n\t" "mov %r13d, %ebx\n\t" "mov %r14d, %ebp\n\t" "mov %r15d, %esi\n"
+  "3:\n\t"
+  "pop %r8\n\t" "pop %rcx\n\t"
+  "mov %eax, (%rcx)\n\t" "mov %ebx, 4(%rcx)\n\t" "mov %ebp, 8(%rcx)\n\t" "mov %esi, 12(%rcx)\n\t"
+  "lea (%r8,%rdx), %rax\n\t"
+  "pop %r15\n\t" "pop %r14\n\t" "pop %r13\n\t" "pop %r12\n\t" "pop %rbp\n\t" "pop %rbx\n\t"
+  "ret\n\t"
+  ".size pairs_run, .-pairs_run\n\t"
+  ".text\n");
+#undef PAIR
+#undef PAIRX
+#undef PTEST
+#else
+static u64 pairs_run(const u32 *pt, const u8 *const *a, u64 m, u32 *r) {
+  const u8 *pc1 = (const u8 *)pt - 512, *pc2 = (const u8 *)pt - 256;
+  u64 k = 0;
+  for (; k < m; k += 2) {
+    u32 v[4];
+    for (u32 j = 0; j < 4; j++) v[j] = pt[r[j] + pc1[a[j][k]] + pc2[a[j][k + 1]]];
+    if ((v[0] | v[1] | v[2] | v[3]) >= T_SLOW) break;
+    for (u32 j = 0; j < 4; j++) r[j] = v[j];
+  }
+  return k;
+}
+#endif
+
 /* Lanes: the lines of t[from..to) that hold a match (from at a line's start, to at one's end: after its \n, or the
  * text's end n), their starts into out[] (room for to - from) in order: four stretches of whole lines run at once,
  * each its own state; a lane whose stretch is done is parked on row 0 (in D_LINES a state that stays itself, saying
@@ -439,9 +537,17 @@ static u32 dfa_lanes(struct dfa *d, const u8 *t, u64 n, u64 from, u64 to, u64 *o
     if (m) {
       const u8 *a[4];
       u32 rs[4];
-      for (u32 j = 0; j < 4; j++) a[j] = t + p[live[j] ? j : any], rs[j] = live[j] ? row[j] : 0;
-      u64 k = lanes_run(d->trans, a, m, rs);
-      for (u32 j = 0; j < 4; j++) if (live[j]) row[j] = rs[j], p[j] += k;
+      u64 k = 0;
+      for (u32 j = 0; j < 4; j++) a[j] = t + p[live[j] ? j : any];
+      if (d->pairs && m >= 2) { /* two bytes a move, on rows of the pairs' table */
+        for (u32 j = 0; j < 4; j++) rs[j] = live[j] ? row[j] / d->ncls << d->p2 : 0;
+        k = pairs_run(d->ptrans, a, m & ~1ul, rs);
+        for (u32 j = 0; j < 4; j++) if (live[j]) row[j] = (rs[j] >> d->p2) * d->ncls, p[j] += k;
+      } else {
+        for (u32 j = 0; j < 4; j++) rs[j] = live[j] ? row[j] : 0;
+        k = lanes_run(d->trans, a, m, rs);
+        for (u32 j = 0; j < 4; j++) if (live[j]) row[j] = rs[j], p[j] += k;
+      }
     }
     /* Each live lane a step alone: its stretch ended (its last line, if no \n ends it, seen to), or a move not plain
      * (a match: the line kept, and the lane on at the next; or a byte the DFA cannot say of). */
@@ -453,6 +559,7 @@ static u32 dfa_lanes(struct dfa *d, const u8 *t, u64 n, u64 from, u64 to, u64 *o
         continue;
       }
       u64 i = p[j];
+      if (d->pairs && i + 1 < e[j]) pair_fill(d, row[j], t[i], t[i + 1], row, 4);
       u32 v = dfa_step(d, &row[j], d->cls[t[i]], row, 4);
       if (!(v & (T_MATCH | T_QUIT))) { row[j] = v, p[j] = i + 1; continue; }
       u64 ls = line_start(t, b[j], i), le = line_end(t, e[j], i), ms, me;
