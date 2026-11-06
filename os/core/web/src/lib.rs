@@ -7,17 +7,17 @@
 //! and gives it back with `l3_free`. Its one import of its own beside WASI is the page's way of sending a request
 //! (`length3.http`, mod page), handed to the core as each call starts (device/net.rs `through_page`).
 
-use std::alloc::{alloc, dealloc, Layout};
+use std::alloc::{dealloc, Layout};
 
 fn layout(len: usize) -> Layout {
     Layout::from_size_align(len.max(1), 1).expect("a byte buffer's layout")
 }
 
-/// A buffer of `len` bytes for the host to write a question into.
+/// A buffer of `len` bytes for the host to write a question into: at least one byte, so it is a real allocation of
+/// the layout `l3_free` gives back, never a dangling pointer of an empty one.
 #[no_mangle]
 pub extern "C" fn l3_alloc(len: usize) -> *mut u8 {
-    // SAFETY: a layout of at least one byte.
-    unsafe { alloc(layout(len)) }
+    Box::leak(vec![0u8; len.max(1)].into_boxed_slice()).as_mut_ptr()
 }
 
 /// Give back a buffer this module handed out (`l3_alloc`'s, or an answer's).
