@@ -48,7 +48,9 @@ function writeStat(p, address, node) {
   v.setBigUint64(at + 40, BigInt(node.rdev ?? 0), true);
   v.setBigInt64(at + 48, BigInt(size), true);
   v.setBigInt64(at + 56, 4096n, true);
-  v.setBigInt64(at + 64, BigInt(Math.ceil(size / 512)), true);
+  // What it takes on a disk, in 512-byte units, as Linux's filesystems count it: whole 4 KiB blocks (a symlink's
+  // target is kept in its inode, and takes none).
+  v.setBigInt64(at + 64, node.isLink ? 0n : BigInt(Math.ceil(size / 4096) * 8), true);
   // atime, mtime, ctime: as set (utimensat keeps nanoseconds), else the time of the last change.
   for (const [off, ms, ns] of [[72, node.atime ?? node.mtime, node.atimeNs], [88, node.mtime, node.mtimeNs], [104, node.ctime ?? node.mtime, undefined]]) {
     v.setBigInt64(at + off, BigInt(Math.floor(ms / 1000)), true);

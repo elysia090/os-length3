@@ -222,6 +222,17 @@ const cpus = () => Math.max(1, Math.min(64, globalThis.navigator?.hardwareConcur
  * 0). A soft limit above its hard is EINVAL; a hard one raised, EPERM (the Prompt's root is root in its own user
  * namespace, without CAP_SYS_RESOURCE where that counts). The descriptor limit holds: a table gives none at or past it.
  */
+/** The processes getpriority and setpriority speak of: `who` (0: the caller's own) of a process, a group or a user. */
+function priorityOf(p, which, who) {
+  const live = p.kernel.live();
+  const procs = which === 0 ? live.filter((q) => q.pid === (who || p.pid)) // PRIO_PROCESS
+    : which === 1 ? live.filter((q) => q.pgid === (who || p.pgid)) // PRIO_PGRP
+    : which === 2 ? (who === 0 ? live : []) // PRIO_USER: every process here is root's
+    : fail(E.INVAL);
+  if (!procs.length) fail(E.SRCH);
+  return procs;
+}
+
 function rlimit(p, target, resource, next, old) {
   const r = N(resource);
   if (r < 0 || r >= target.limits.length) fail(E.INVAL);
@@ -474,6 +485,17 @@ export const PROC_CALLS = {
     if (N(code) === 0x1002) { this.task.setReg(16, addr); return 0; } // ARCH_SET_FS
     if (N(code) === 0x1003) { this.view.setBigUint64(N(addr), BigInt.asUintN(64, this.task.reg(16)), true); return 0; }
     fail(E.INVAL);
+  },
+  // getpriority, setpriority: of a process, a group or a user's (all are root's here), as Linux answers them: the raw
+  // call gives 20 less the niceness (so never below 1), the C library turns it back; a nice past -20..19 is taken to it.
+  140(which, who) {
+    const procs = priorityOf(this, N(which), N(who));
+    return 20 - Math.min(...procs.map((q) => q.nice));
+  },
+  141(which, who, prio) {
+    const nice = Math.max(-20, Math.min(19, Number(BigInt.asIntN(32, prio))));
+    for (const q of priorityOf(this, N(which), N(who))) q.nice = nice;
+    return 0;
   },
   160(resource, limit) { return rlimit(this, this, resource, limit, 0n); }, // setrlimit
   186() { return this.task.tid; },

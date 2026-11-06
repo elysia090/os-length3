@@ -119,6 +119,42 @@ jobs:
           path: os/public/l3
           key: ${{ steps.key.outputs.key }}
 
+  # What `help` says runs in a Prompt is what does: every command of issue #80 tried as a line of sh under the browser's
+  # kernel (from l3 for the browser, as the l3-web job made it) and natively in the root this tree pins, and the table
+  # the root ships (os/root/etc/length3/commands) checked against what was seen.
+  commands:
+    needs: l3-web
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: os/package-lock.json
+      - name: l3 for the browser, as the l3-web job made it
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: os/public/l3
+          key: ${{ needs.l3-web.outputs.key }}
+          fail-on-cache-miss: true
+      # A Prompt's own /, /dev, /proc and /tmp, as bwrap makes them: a user namespace, which Ubuntu's AppArmor holds back.
+      - run: |
+          sudo apt-get install -y --no-install-recommends bubblewrap
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; fi
+      - name: Every command tried, and the table checked against what was seen
+        working-directory: os
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          npm ci
+          root=$(node scripts/root-file.ts target/root)
+          mkdir -p target/root-open && tar --zstd -xf "$root" -C target/root-open
+          node scripts/commands.ts public/l3 target/root-open/root --jobs 4 --check
+
   # The page's and the Remote's types. (The build that ships is the one the selftest builds and uses.)
   types:
     runs-on: ubuntu-24.04

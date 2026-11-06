@@ -16,7 +16,7 @@
 enum {
   SYS_read = 0, SYS_write = 1, SYS_open = 2, SYS_writev = 20, SYS_close = 3, SYS_fstat = 5, SYS_mmap = 9, SYS_pread = 17,
   SYS_dup2 = 33, SYS_fork = 57, SYS_pipe2 = 293,
-  SYS_flock = 73, SYS_fsync = 74, SYS_getcwd = 79, SYS_rename = 82, SYS_mkdir = 83,
+  SYS_flock = 73, SYS_fsync = 74, SYS_getcwd = 79, SYS_getdents64 = 217, SYS_rename = 82, SYS_mkdir = 83,
   SYS_unlink = 87, SYS_clock_gettime = 228, SYS_exit_group = 231, SYS_newfstatat = 262,
 };
 enum { O_RDONLY = 0, O_WRONLY = 1, O_RDWR = 2, O_CREAT = 0100, O_TRUNC = 01000, O_APPEND = 02000, O_NONBLOCK = 04000,

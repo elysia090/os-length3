@@ -999,6 +999,8 @@ export class Process {
     this.fds = parent ? parent.fds.fork() : new FdTable();
     this.cwd = parent?.cwd ?? '/';
     this.umask = parent?.umask ?? 0o022;
+    // How nice it is (-20 to 19), as getpriority says and a child takes: no scheduling here weighs it.
+    this.nice = parent?.nice ?? 0;
     this.limits = (parent?.limits ?? RLIMITS).map((l) => l.slice()); // getrlimit's, kept across exec
     // Its capabilities in its user namespace (root's: all of them; capset may drop some, exec as root has them again).
     this.caps = parent ? {...parent.caps} : {effective: CAPS, permitted: CAPS, inheritable: 0n};

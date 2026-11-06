@@ -147,12 +147,16 @@ else
   zi() { __l3_screen zi; }
 fi
 
+# What a Prompt has, by kind, each marked by whether it runs here, and what any one of them is (help NAME): otter
+# (kernel/otter), not the shell's own help, which names its builtins alone.
+help() { otter "$@"; }
+
 # What a person reaches for and the root does not keep says so, and what is there instead: the root has no manuals
 # (each program says how it is used, with --help), and its packages are its release's (apk info lists them): none
 # is added in a Prompt, whose root is read-only.
 man() {
-  if [ "$LENGTH3_LANG" = ja ]; then echo "man: この root はマニュアルを持ちません。使い方は ${1:-プログラム} --help が、よくある使い方の例は tldr ${1:-プログラム} が言います" >&2
-  else echo "man: the root keeps no manuals; ${1:-a program} --help says how it is used, and tldr ${1:-program} shows its common uses." >&2; fi
+  if [ "$LENGTH3_LANG" = ja ]; then echo "man: この root はマニュアルを持ちません。help ${1:-名前} がそれが何かを、${1:-プログラム} --help が使い方を、tldr ${1:-プログラム} がよくある使い方を言います" >&2
+  else echo "man: the root keeps no manuals; help ${1:-NAME} says what it is, ${1:-a program} --help how it is used, and tldr ${1:-program} its common uses." >&2; fi
   return 1
 }
 apk() {

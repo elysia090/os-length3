@@ -32,8 +32,8 @@ import {openWeb, type Index} from './l3-tree.ts';
 
 /** What one program run under xlat says: its wait status, its output, and how long it took. */
 interface Ran { status: number | null; stdout: string; stderr: string; error: string | null; ms: number }
-/** What the child (`--child`) is asked to run. */
-interface Asked { web: string; path: string; args: string[]; translator: string; fresh: boolean; kept: string | null }
+/** What the child (`--child`) is asked to run, and in what environment (ENV unless said). */
+export interface Asked { web: string; path: string; args: string[]; translator: string; fresh: boolean; kept: string | null; env?: string[] }
 /** One thing compared: a program's --version, or a line of sh. */
 interface Item { name: string; what: string; path: string; args: string[] }
 interface Row { name: string; what: string; verdict: 'runs' | 'not yet'; why: string; native: string | number | null; ms: number | null; nativeMs: number; first: string }
@@ -93,7 +93,7 @@ async function keptIn(dir: string) {
 }
 
 /** One program under xlat, in this process: prints {status, stdout, stderr, error?, ms} as JSON. */
-async function child({web, path, args, translator, fresh, kept: keptDir}: Asked) {
+async function child({web, path, args, translator, fresh, kept: keptDir, env = ENV}: Asked) {
   const {Vfs} = await import('../../xlat/runtime/fs.mjs');
   const {mountPack, provide} = await import('../../xlat/runtime/pack.mjs');
   const {Kernel} = await import('../../xlat/runtime/process.mjs');
@@ -139,10 +139,10 @@ async function child({web, path, args, translator, fresh, kept: keptDir}: Asked)
   const t = performance.now();
   let status: number | null = null, error: string | null = null;
   try {
-    if (k instanceof RemoteKernel) status = await k.spawn(path, argv, ENV, '/root');
+    if (k instanceof RemoteKernel) status = await k.spawn(path, argv, env, '/root');
     // As spawn runs it, and also waiting out a kept translation being read.
     else {
-      k.start(path, argv, ENV, '/root');
+      k.start(path, argv, env, '/root');
       for (;;) {
         const r = k.pump();
         if (!r.waiting) { status = r.status; break; }
