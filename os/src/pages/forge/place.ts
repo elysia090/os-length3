@@ -1,5 +1,5 @@
-import type {Context} from '../context.ts';
-import type {Writing} from './reader.ts';
+import type {Context} from '../kit/context.ts';
+import type {Writing} from '../kit/context.ts';
 import type {Row} from './columns.ts';
 
 // Where the center is read is kept for its repo at each scroll, and the

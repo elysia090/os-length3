@@ -3,7 +3,7 @@ import {isNative, native} from '../../app/host.ts';
 import {t} from '../../i18n/i18n.ts';
 import * as account from '../../remote/connection.ts';
 import {errorText} from '../../app/errors.ts';
-import {button, pressing} from './parts.ts';
+import {button, pressing} from './remote-parts.ts';
 
 // Signing in: one card where what the Remote holds would be, and the ways in under its title. Remote's page
 // shows it signed out; Inbox, Server and the page a device's code opens show the same card in the same place.

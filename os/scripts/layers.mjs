@@ -16,6 +16,9 @@ const OS = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const TREES = [
   {root: 'src', order: ['i18n', 'agent', 'core', 'ui', 'app', 'repos', 'home', 'remote', 'prompt', 'account', 'pages', '.'],
     skip: ['styles', 'shims', 'testing']},
+  // The pages: what they share (kit), the bench Forge and Git work at (with its search), then each page.
+  {root: 'src/pages', order: ['kit', 'bench', 'git', 'forge', 'file', 'remote', 'runtime', 'server', 'inbox', 'home', 'new-repo',
+    'me']},
 ];
 
 const IMPORT = /(?:import|export)\s+(?:type\s+)?(?:[^'";]*?\s+from\s+)?['"](\.[^'"]+)['"]|import\(\s*['"](\.[^'"]+)['"]\s*\)/g;

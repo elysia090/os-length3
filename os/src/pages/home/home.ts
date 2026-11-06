@@ -1,25 +1,26 @@
-import {agentCards} from './agent-cards.ts';
-import {arrowKeys, h} from '../ui/dom.ts';
-import {t, tn} from '../i18n/i18n.ts';
-import {LIMITS, initials, normalize, parse, type Profile} from '../home/profile.ts';
-import {connection, myName, rename} from '../remote/connection.ts';
-import {getState, onState, setState, settingName, unreadable} from '../home/state.ts';
-import * as servers from '../remote/servers.ts';
-import * as inbox from '../remote/inbox.ts';
-import {news, onNews} from '../remote/news.ts';
-import {onRenamed, store, type RepoSummary} from '../repos/repos.ts';
-import {homeIsHeld} from '../remote/lifecycle.ts';
-import {shownName} from '../repos/issues.ts';
+import {openNext} from '../kit/next.ts';
+import {agentCards} from '../kit/agent-cards.ts';
+import {arrowKeys, h} from '../../ui/dom.ts';
+import {t, tn} from '../../i18n/i18n.ts';
+import {LIMITS, initials, normalize, parse, type Profile} from '../../home/profile.ts';
+import {connection, myName, rename} from '../../remote/connection.ts';
+import {getState, onState, setState, settingName, unreadable} from '../../home/state.ts';
+import * as servers from '../../remote/servers.ts';
+import * as inbox from '../../remote/inbox.ts';
+import {news, onNews} from '../../remote/news.ts';
+import {onRenamed, store, type RepoSummary} from '../../repos/repos.ts';
+import {homeIsHeld} from '../../remote/lifecycle.ts';
+import {shownName} from '../../repos/issues.ts';
 import {repoList} from './repo-list.ts';
-import {todoBox} from './todo-list.ts';
-import {remember} from './server/parts.ts';
-import {Reference} from './forge/reference.ts';
-import type {Context} from './context.ts';
-import {latelyRow, onRightPane, pluginArea, rightPaneOpen, setRightPane, waiting, wordLine} from './pane.ts';
-import {mark, paneMark} from '../ui/icons.ts';
-import {onPlugins, pluginsOpen} from '../app/plugins.ts';
-import {errorText} from '../app/errors.ts';
-import {LAND, after, nudge, paced, paneIn, paneOut, still} from '../ui/glide.ts';
+import {todoBox} from '../kit/todo-list.ts';
+import {remember} from '../server/parts.ts';
+import {Reference} from '../bench/reference.ts';
+import type {Context} from '../kit/context.ts';
+import {latelyRow, onRightPane, pluginArea, rightPaneOpen, setRightPane, waiting, wordLine} from '../kit/pane.ts';
+import {mark, paneMark} from '../../ui/icons.ts';
+import {onPlugins, pluginsOpen} from '../../app/plugins.ts';
+import {errorText} from '../../app/errors.ts';
+import {LAND, after, nudge, paced, paneIn, paneOut, still} from '../../ui/glide.ts';
 
 let editing = false;
 
@@ -57,7 +58,7 @@ export function home(ctx: Context): Node[] {
  * as there). It stays where it is while Home scrolls under the rail; put away, Home takes the width.
  */
 function homePane(main: HTMLElement, ctx: Context, listed: Promise<RepoSummary[] | null>): HTMLElement {
-  const side = h('aside', {class: 'home-side', id: 'home-side', 'aria-label': t('Recent activity')}, pluginArea(), agentCards((repo, issue) => { void import('./git/git.ts').then((g) => { g.showIssue(repo, issue.replace(/^issue\//, '')); void ctx.go('git'); }); }), lately(ctx));
+  const side = h('aside', {class: 'home-side', id: 'home-side', 'aria-label': t('Recent activity')}, pluginArea(), agentCards((repo, issue) => { void import('../git/git.ts').then((g) => { g.showIssue(repo, issue.replace(/^issue\//, '')); void ctx.go('git'); }); }), lately(ctx));
   const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': 'home-side'}, paneMark()) as HTMLButtonElement;
   // The search Forge and Git have, where theirs is: in the repo last worked in (named in it, there being no band to
   // say which), what is found opened in Forge, at its line.
@@ -162,7 +163,7 @@ function lately(ctx: Context): HTMLElement {
     if (connection()) {
       for (const th of waiting(threads, 3)) {
         const who = th.name || inbox.shown(th.address);
-        const answer = () => { void import('./inbox.ts').then((i) => { i.openNext(th.address); void ctx.go('inbox'); }); };
+        const answer = () => { openNext(th.address); void ctx.go('inbox'); };
         rows.push(latelyRow(who, wordLine(th), {fresh: true, badge: {who}, go: answer}));
       }
       for (const b of news().boards.slice(0, 3)) {

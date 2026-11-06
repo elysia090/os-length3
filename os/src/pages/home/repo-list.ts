@@ -1,14 +1,15 @@
-import {ago, arrowKeys, bytes, h} from '../ui/dom.ts';
-import {t} from '../i18n/i18n.ts';
-import {icon} from '../ui/icons.ts';
-import {store, type RepoSummary} from '../repos/repos.ts';
-import {bring, onSync, remoteOnly, repoState} from '../remote/lifecycle.ts';
-import {free, readSpace} from '../account/space.ts';
-import {syncWord} from './remote/repo-card.ts';
-import {repoGear} from './repo-gear.ts';
-import {allSessions} from './bench/sessions.ts';
-import type {Context} from './context.ts';
-import {errorText} from '../app/errors.ts';
+import {summaryOf} from '../kit/repo-words.ts';
+import {ago, arrowKeys, bytes, h} from '../../ui/dom.ts';
+import {t} from '../../i18n/i18n.ts';
+import {icon} from '../../ui/icons.ts';
+import {store, type RepoSummary} from '../../repos/repos.ts';
+import {bring, onSync, remoteOnly, repoState} from '../../remote/lifecycle.ts';
+import {free, readSpace} from '../../account/space.ts';
+import {syncWord} from '../remote/repo-card.ts';
+import {repoGear} from '../remote/repo-gear.ts';
+import {allSessions} from '../bench/sessions.ts';
+import type {Context} from '../kit/context.ts';
+import {errorText} from '../../app/errors.ts';
 
 // The repos as large cards, about three across: on Home, and under the New
 // repo form so a repo just made is seen joining the others.
@@ -65,11 +66,6 @@ function repoCard(ctx: Context, name: string, size: number, modified: number, ag
     h('span', {class: 'muted card-sync'})], false, again);
 }
 
-/** A repo's README's first line that is neither a heading nor empty ('' when there is none): Home's and Remote's cards. */
-export async function summaryOf(name: string): Promise<string> {
-  const c = await store.read(name, 'README.md').catch(() => null);
-  return c?.text?.split('\n').map((l) => l.trim()).find((l) => l && !l.startsWith('#')) ?? '';
-}
 
 /** A repo on the Remote and not here: pressed, it is brought here and opened. */
 function awayCard(ctx: Context, name: string, size: number, modified: number, again: () => Promise<void>): HTMLElement {

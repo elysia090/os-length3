@@ -5,8 +5,8 @@ import type {RemoteRepo} from '../../repos/sync.ts';
 import * as account from '../../remote/connection.ts';
 import {freeOff} from '../../account/space.ts';
 import type * as servers from '../../remote/servers.ts';
-import {summaryOf} from '../repo-list.ts';
-import {button, pressing} from './parts.ts';
+import {summaryOf} from '../kit/repo-words.ts';
+import {button, pressing} from '../kit/remote-parts.ts';
 import {sharing} from './share.ts';
 import {askFirst, type AskWays, type Deed} from './repo-off.ts';
 

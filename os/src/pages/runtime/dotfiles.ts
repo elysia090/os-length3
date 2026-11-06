@@ -1,7 +1,7 @@
 import {bytes, h} from '../../ui/dom.ts';
 import {t, tn} from '../../i18n/i18n.ts';
 import * as dotfiles from '../../home/dotfiles.ts';
-import {askFoot, SETTLE} from '../common.ts';
+import {askFoot, SETTLE} from '../kit/common.ts';
 import type {Session} from '../bench/terminal.ts';
 import {allSessions} from '../bench/sessions.ts';
 import {errorText} from '../../app/errors.ts';

@@ -3,9 +3,9 @@ import {bytes, h} from '../../ui/dom.ts';
 import {t} from '../../i18n/i18n.ts';
 import {lineCount} from '../../repos/reading.ts';
 import {EDIT_LIMIT, store} from '../../repos/repos.ts';
-import {answers} from '../common.ts';
+import {answers} from '../kit/common.ts';
 import {keepOut, putAway} from '../../ui/glide.ts';
-import {diffFiles} from './diff-view.ts';
+import {diffFiles} from '../kit/diff-view.ts';
 import {shownPath} from '../../repos/issues.ts';
 import {errorText} from '../../app/errors.ts';
 

@@ -1,38 +1,15 @@
 import {h} from '../../ui/dom.ts';
 import {isNative} from '../../app/host.ts';
 import {currentLang, t} from '../../i18n/i18n.ts';
-import {plan as readPlan, planRefusal, planView, priceWords, refusalWords, TERMS, tierName,
-  type Meter, type PaidTier, type Plan, type PlanRefusal, type PlanView, type Price, type TierCard} from '../../remote/plan.ts';
-import {answers, choosePart} from '../common.ts';
-import type {Context} from '../context.ts';
+import {plan as readPlan, planView, priceWords, TERMS, tierName,
+  type Meter, type PaidTier, type Plan, type PlanView, type Price, type TierCard} from '../../remote/plan.ts';
+import {answers} from '../kit/common.ts';
 import {errorText} from '../../app/errors.ts';
-import {button, pressing} from './parts.ts';
+import {button, pressing} from '../kit/remote-parts.ts';
 import {stripeTrip} from './stripe.ts';
 
-// Remote's Plan part: the tier this account is on, its use, the tiers to choose from; and the way to it from a
-// place the plan refused.
-
-/** Remote's page, at its Plan part: where a place refused for the plan's sake leads. */
-export function goToPlan(ctx: Context) {
-  choosePart('remote', 'plan');
-  ctx.go('remote');
-}
-
-/**
- * Said in place where the Remote refused for the plan's sake: what is paid, what happens to the work, and the
- * way to the Plan (`go`). Anything else, null: the place says it as it says any failure.
- */
-export function planRefused(e: unknown, go: () => void): HTMLElement | null {
-  const r = planRefusal(e);
-  return r ? planSaid(r, go) : null;
-}
-
-/** What the plan says of `r` (refused, or known before anything is asked), with See the plan after it: the sentence whole, the button beside it or under it. */
-export function planSaid(r: PlanRefusal, go: () => void): HTMLElement {
-  const to = h('button', {type: 'button', class: 'button small-button'}, t('View plan')) as HTMLButtonElement;
-  to.addEventListener('click', go);
-  return h('span', {class: 'plan-refused'}, h('span', {}, refusalWords(r)), to);
-}
+// Remote's Plan part: the tier this account is on, its use, the tiers to choose from (the way to it from a place the
+// plan refused is kit/plan-gate.ts).
 
 /** `el`'s children, those of `nodes` that are there (a part left out is null). */
 const put = (el: HTMLElement, ...nodes: (Node | null)[]) => el.replaceChildren(...nodes.filter((n): n is Node => !!n));

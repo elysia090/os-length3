@@ -1,9 +1,9 @@
 import {ago, h} from '../../ui/dom.ts';
 import {t} from '../../i18n/i18n.ts';
 import * as account from '../../remote/connection.ts';
-import {askFoot, SETTLE} from '../common.ts';
+import {askFoot, SETTLE} from '../kit/common.ts';
 import {errorText} from '../../app/errors.ts';
-import {button, pressing} from './parts.ts';
+import {button, pressing} from '../kit/remote-parts.ts';
 import {joining} from './device-page.ts';
 import {mark} from '../../ui/icons.ts';
 

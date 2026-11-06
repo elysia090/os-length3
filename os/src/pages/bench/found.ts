@@ -4,11 +4,11 @@ import {issueName, issuePath, shownPath, type Issue} from '../../repos/issues.ts
 import {t, tn} from '../../i18n/i18n.ts';
 import {inPieces, store, walkRepo, type Change} from '../../repos/repos.ts';
 import {findInText, nameFirst, nameMatches, type Hit} from '../../repos/search.ts';
-import type {Run} from '../bench/terminal.ts';
-import {kindColon} from '../todo-list.ts';
-import {counted, fileName} from './diff-view.ts';
+import type {Run} from './terminal.ts';
+import {kindColon} from '../kit/todo-list.ts';
+import {counted, fileName} from '../kit/diff-view.ts';
 import {askButton, diffButton, issueButton, runButton, type Kind} from './kinds.ts';
-import type {Ask} from '../bench/asks.ts';
+import type {Ask} from './asks.ts';
 
 // What a search under the box finds in the repo: its files and the lines in them, and of the pill pressed (or of
 // all of them) its issues, its changes, its runs and what was asked of its Agent.

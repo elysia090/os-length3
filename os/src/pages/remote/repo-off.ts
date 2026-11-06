@@ -3,9 +3,9 @@ import {t} from '../../i18n/i18n.ts';
 import {flush, look, remoteAll} from '../../remote/lifecycle.ts';
 import * as account from '../../remote/connection.ts';
 import {freeOff} from '../../account/space.ts';
-import {askFoot, SETTLE} from '../common.ts';
+import {askFoot, SETTLE} from '../kit/common.ts';
 import {errorText} from '../../app/errors.ts';
-import {button, pressing} from './parts.ts';
+import {button, pressing} from '../kit/remote-parts.ts';
 
 // Turning a repo off, or discarding it: asked in its card first, its name written out, then a passkey (as GitHub asks
 // for a repository's name before it is deleted). Deleting it from a list's gear (repo-gear.ts) is asked the same, in

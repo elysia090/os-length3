@@ -1,4 +1,4 @@
-import type {Context} from '../context.ts';
+import type {Context} from '../kit/context.ts';
 import {ServerView} from './view.ts';
 import {seenNow} from './talk.ts';
 

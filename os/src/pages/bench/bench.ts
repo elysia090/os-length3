@@ -1,11 +1,11 @@
-import {agentCards} from '../agent-cards.ts';
+import {agentCards} from '../kit/agent-cards.ts';
 import {h} from '../../ui/dom.ts';
 import {t} from '../../i18n/i18n.ts';
 import {mark, paneMark} from '../../ui/icons.ts';
 import {Box} from './box.ts';
-import {Pane, paneWord, pluginArea} from '../pane.ts';
-import type {Writing} from '../forge/reader.ts';
-import {Reference} from '../forge/reference.ts';
+import {Pane, paneWord, pluginArea} from '../kit/pane.ts';
+import type {Writing} from '../kit/context.ts';
+import {Reference} from './reference.ts';
 import {Screen} from './screen.ts';
 import {sessionIfAny} from './sessions.ts';
 import type {Run} from './terminal.ts';

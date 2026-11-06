@@ -103,7 +103,7 @@ export class App {
   /**
    * Answer an ask with `yes`: a deed that comes under the pointer holds still a moment (so a double
    * click cannot answer it), so it is pressed until the ask (`ask`) is gone. Pressed again soon: the
-   * moment is half a second (SETTLE, src/pages/common.ts), and a press it takes disables the deed
+   * moment is half a second (SETTLE, src/pages/kit/common.ts), and a press it takes disables the deed
    * until it is done, so a press while it is being done waits for it rather than doing it twice.
    */
   async answer(yes: Locator, ask: Locator) {

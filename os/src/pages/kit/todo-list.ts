@@ -1,11 +1,11 @@
-import {h, shortDay} from '../ui/dom.ts';
-import {t} from '../i18n/i18n.ts';
-import {getState, onState, setState} from '../home/state.ts';
-import * as todo from '../home/todo.ts';
-import {errorText} from '../app/errors.ts';
-import {arrive, closeUp, pop} from '../ui/glide.ts';
-import {mark as glyph} from '../ui/icons.ts';
-import {KIND_WORD, named} from '../repos/text.ts';
+import {h, shortDay} from '../../ui/dom.ts';
+import {t} from '../../i18n/i18n.ts';
+import {getState, onState, setState} from '../../home/state.ts';
+import * as todo from '../../home/todo.ts';
+import {errorText} from '../../app/errors.ts';
+import {arrive, closeUp, pop} from '../../ui/glide.ts';
+import {mark as glyph} from '../../ui/icons.ts';
+import {KIND_WORD, named} from '../../repos/text.ts';
 import {SETTLE} from './common.ts';
 
 // The TODO box, Home's and each server board's: the same list, kept in

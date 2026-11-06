@@ -1,6 +1,6 @@
 import {h} from '../../ui/dom.ts';
 import {t} from '../../i18n/i18n.ts';
-import {askFoot, SETTLE} from '../common.ts';
+import {askFoot, SETTLE} from '../kit/common.ts';
 import {errorText} from '../../app/errors.ts';
 import type {Server} from '../../remote/servers.ts';
 

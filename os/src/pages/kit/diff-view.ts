@@ -1,10 +1,10 @@
 import {h} from '../../ui/dom.ts';
 import type {DiffLine, FileDiff} from '../../repos/history.ts';
 import {t, tn} from '../../i18n/i18n.ts';
-import {askFoot, SETTLE} from '../common.ts';
+import {askFoot, SETTLE} from './common.ts';
 import {errorText} from '../../app/errors.ts';
 import {shownPath} from '../../repos/issues.ts';
-import {kindLine} from '../todo-list.ts';
+import {kindLine} from './todo-list.ts';
 
 /**
  * A file of a diff as it is called: an issue's file is the issue (issue/001.md is #1), every other file its path.

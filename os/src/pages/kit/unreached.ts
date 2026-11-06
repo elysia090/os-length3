@@ -3,7 +3,7 @@ import {t} from '../../i18n/i18n.ts';
 import {RemoteError} from '../../app/errors.ts';
 import * as account from '../../remote/connection.ts';
 import {nudge} from '../../ui/glide.ts';
-import {button} from './parts.ts';
+import {button} from './remote-parts.ts';
 import {signInPlace} from './sign-in.ts';
 
 // The Remote out of reach, said in the place of what only it holds (Inbox, Server), on the sign-in card.

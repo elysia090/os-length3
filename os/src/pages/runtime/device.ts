@@ -4,9 +4,9 @@ import {t, tn} from '../../i18n/i18n.ts';
 import {bring, remoteOnly, repoState} from '../../remote/lifecycle.ts';
 import {connection} from '../../remote/connection.ts';
 import {free} from '../../account/space.ts';
-import type {Context} from '../context.ts';
+import type {Context} from '../kit/context.ts';
 import {syncWord} from '../remote/repo-card.ts';
-import {repoGear} from '../repo-gear.ts';
+import {repoGear} from '../remote/repo-gear.ts';
 import {errorText} from '../../app/errors.ts';
 import {button} from './parts.ts';
 

@@ -2,8 +2,8 @@ import {h} from '../../ui/dom.ts';
 import {t} from '../../i18n/i18n.ts';
 import * as account from '../../remote/connection.ts';
 import {putAway} from '../../ui/glide.ts';
-import {answers} from '../common.ts';
-import {atSignIn, button, pressing} from './parts.ts';
+import {answers} from '../kit/common.ts';
+import {atSignIn, button, pressing} from '../kit/remote-parts.ts';
 
 // A passkey offered while the account has none: once at the top of Remote's page just after a provider's
 // sign-in, and under the repos until there is one (it is what lets a repo be turned off).

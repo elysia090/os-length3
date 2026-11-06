@@ -5,7 +5,7 @@ import {every} from '../../app/runs.ts';
 import {paced, still} from '../../ui/glide.ts';
 import * as servers from '../../remote/servers.ts';
 import type {Shown} from './parts.ts';
-import {todoList} from '../todo-list.ts';
+import {todoList} from '../kit/todo-list.ts';
 
 /** How often a board's TODO is looked at again, while the page is in view. */
 const EVERY = 15_000;

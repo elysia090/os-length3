@@ -3,7 +3,7 @@ import {isNative} from '../../app/host.ts';
 import {t, tn} from '../../i18n/i18n.ts';
 import {connection, deviceWord} from '../../remote/connection.ts';
 import * as ssh from '../../prompt/ssh.ts';
-import {copying} from '../common.ts';
+import {copying} from '../kit/common.ts';
 import {every} from '../../app/runs.ts';
 import {errorText} from '../../app/errors.ts';
 import {button, card} from './parts.ts';

@@ -1,6 +1,11 @@
-import type {PurposeId} from '../app/purposes.ts';
-import type {Writing} from './forge/reader.ts';
-import type {Carry} from '../ui/glide.ts';
+import type {PurposeId} from '../../app/purposes.ts';
+import type {Carry} from '../../ui/glide.ts';
+
+/**
+ * Where the caret goes in a file opened to write in: its start (true), its end, back at `at` (an offset kept when it
+ * was left), or not in it (false).
+ */
+export type Writing = boolean | 'end' | {at: number};
 
 /** What a page may ask of the shell. */
 export interface Context {

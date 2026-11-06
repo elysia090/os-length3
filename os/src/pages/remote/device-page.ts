@@ -1,8 +1,8 @@
 import {h} from '../../ui/dom.ts';
 import {t} from '../../i18n/i18n.ts';
 import * as remote from '../../remote/connection.ts';
-import {signInBox} from './sign-in.ts';
-import {answers} from '../common.ts';
+import {signInBox} from '../kit/sign-in.ts';
+import {answers} from '../kit/common.ts';
 import {errorText} from '../../app/errors.ts';
 
 // The page a device's code opens (?device&user_code=…): l3 or the app asks

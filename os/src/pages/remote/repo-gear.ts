@@ -1,16 +1,16 @@
-import {h} from '../ui/dom.ts';
-import {errorText} from '../app/errors.ts';
-import {t} from '../i18n/i18n.ts';
-import {mark} from '../ui/icons.ts';
-import {answers, askFoot, menuItem, menuRule, SETTLE} from './common.ts';
-import {keepOut, nudge, putAway} from '../ui/glide.ts';
-import {store, validName} from '../repos/repos.ts';
-import {forget, remoteAll, remoteOnly, repoState} from '../remote/lifecycle.ts';
-import {connection} from '../remote/connection.ts';
-import {promptHolds, stopPrompt} from './bench/sessions.ts';
-import {openRepoPlace} from './remote/repos.ts';
-import {askFirst} from './remote/repo-off.ts';
-import type {Context} from './context.ts';
+import {h} from '../../ui/dom.ts';
+import {errorText} from '../../app/errors.ts';
+import {t} from '../../i18n/i18n.ts';
+import {mark} from '../../ui/icons.ts';
+import {answers, askFoot, menuItem, menuRule, SETTLE} from '../kit/common.ts';
+import {keepOut, nudge, putAway} from '../../ui/glide.ts';
+import {store, validName} from '../../repos/repos.ts';
+import {forget, remoteAll, remoteOnly, repoState} from '../../remote/lifecycle.ts';
+import {connection} from '../../remote/connection.ts';
+import {promptHolds, stopPrompt} from '../bench/sessions.ts';
+import {openRepoPlace} from './repos.ts';
+import {askFirst} from './repo-off.ts';
+import type {Context} from '../kit/context.ts';
 
 // A repo's gear, the same in every list of repos (Home's cards, Runtime's
 // three columns): near a repo (the pointer on it, or the keyboard in it) a

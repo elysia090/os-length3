@@ -1,11 +1,11 @@
-import {h} from '../ui/dom.ts';
-import {t} from '../i18n/i18n.ts';
-import {arrive} from '../ui/glide.ts';
-import {agentNow, harnessName, onAgents, onTask, tasksNow, type Task} from '../repos/agents.ts';
-import {issueName} from '../repos/issues.ts';
+import {h} from '../../ui/dom.ts';
+import {t} from '../../i18n/i18n.ts';
+import {arrive} from '../../ui/glide.ts';
+import {agentNow, harnessName, onAgents, onTask, tasksNow, type Task} from '../../repos/agents.ts';
+import {issueName} from '../../repos/issues.ts';
 import {personBadge} from './pane.ts';
-import {errorText} from '../app/errors.ts';
-import {grant} from './runtime/prompts.ts';
+import {errorText} from '../../app/errors.ts';
+import {grant} from '../../home/network.ts';
 
 // What the agent brings to the person, in the right pane, as word from someone comes there (pane.ts paneWord): what
 // it can take, what it asks, what it has to look at (the heaviest first), what it could not do and the one thing

@@ -411,7 +411,7 @@ the app.
   purpose whose subject is people, not a repo (`service/servers.ts`). A
   server is people who know each other (added from someone's Inbox
   contacts); its boards are each a conversation and a TODO they keep
-  together: Home's TODO box (`pages/todo-list.ts`), kept on the Remote item
+  together: Home's TODO box (`pages/kit/todo-list.ts`), kept on the Remote item
   by item and field by field, so people writing at once do not undo each
   other. Boards are boxes slid like the issues, each with its TODO pinned
   at its top and its talk under it; the plain box at the foot writes in
@@ -588,23 +588,26 @@ The desktop app's build does not: its core is the app's own.
 
 ### Where the page's code is
 
-`src/` holds the page, a folder to each kind of thing it does; a module's
-tests stand beside it (`x.test.ts`).
+`src/` holds the page, a folder to each kind of thing it does, in layers: each takes only from those above it in this
+table, never from one below, and `pages/` is layered the same way within it (`scripts/layers.mjs` holds both orders;
+`npm test` fails on an import against them, a type as much as a value). A module's tests stand beside it
+(`x.test.ts`), and may take from any layer they put together.
 
 | Folder | What is in it |
 | --- | --- |
-| `start.ts` | the page's first script: starts the core's worker, then runs the shell once the page is read |
-| `main.ts` | the shell: the rail, the page drawn for each place, the moves between them |
-| `pages/` | each place on the rail and its parts; Forge, Git, Server, Remote and Runtime have folders of their own, and `bench/` is the work bench Forge and Git stand on (the box, the Prompt's screen and terminal) |
-| `ui/` | what every page draws and moves with: elements (`dom.ts`), motion (`glide.ts`), the caret, focus, touch, icons |
+| `i18n/` | the words: English by default, wholly Japanese when chosen (`i18n.ts`), and the Japanese catalog |
+| `agent/` | the box's Agent: the models' makers, asking one, the work loop (it takes nothing else of the app) |
 | `core/` | the Rust core as a page runs it: its worker, its ABI, WASI over the browser's files |
+| `ui/` | what every page draws and moves with: elements (`dom.ts`), motion (`glide.ts`), the caret, focus, touch, icons |
+| `app/` | the two hosts and what the app stands on around the pages: the policy, plugins, the rail's purposes, pacing, errors |
+| `repos/` | what a repo holds and how it is read, and each repo kept in step with the Remote (`sync.ts`): issues, history, diffs, search, Edit's grammar, first lines |
+| `home/` | Home's own: the profile, the TODO, dotfiles, the band, the Prompts' network grant, what is half written |
+| `remote/` | talking to the Remote: the connection, Home's settings agreed (`settings.ts`), servers, Inbox, the plan, what is new, and the timing of it all (`lifecycle.ts`) |
 | `prompt/` | the Prompt's machine in a browser: l3's files and guest threads (`userland.ts`), the box's recall, SSH, the tree of `/` |
-| `remote/` | talking to the Remote: the connection, each repo kept in step (`sync.ts`), servers, Inbox, the plan, what is new, and the timing of it all (`lifecycle.ts`) |
-| `repos/` | what a repo holds and how it is read: issues, history, diffs, search, Edit's grammar, first lines |
-| `home/` | Home's own: the profile, the TODO, dotfiles, the band, what is half written |
-| `app/` | the two hosts and what the app is made of around the pages: the policy, plugins, the rail's purposes, pacing, errors |
+| `account/` | what this device holds for the person signed in: the Agent's key sealed by their passkey, and what is taken off before signing out |
+| `pages/` | each place on the rail: `kit/` what they share (a page's parts, its context, the pane, the TODO list, diffs, the ways to sign in and to the Plan), `bench/` the work bench Forge and Git stand on (the box, the Prompt's screen and terminal, the search), then `git/`, `forge/`, `file/`, `remote/`, `runtime/`, `server/`, `inbox/`, `home/`, `new-repo/`, `me/` |
+| `main.ts`, `start.ts` | the shell (the rail, the page drawn for each place, the moves between them) and the page's first script |
 | `testing/` | what tests stand on: the core in Node, a browser on a Remote in this process |
-| `i18n/` | the Japanese words (`i18n.ts` chooses) |
 
 ### One core, two hosts
 

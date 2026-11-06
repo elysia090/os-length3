@@ -1,9 +1,9 @@
-import {h} from '../ui/dom.ts';
-import {errorText} from '../app/errors.ts';
-import {t} from '../i18n/i18n.ts';
-import {icon, mark, type MarkName} from '../ui/icons.ts';
-import {arrive, glide, pop, still, where} from '../ui/glide.ts';
-import {purpose, RAIL, type PurposeId} from '../app/purposes.ts';
+import {h} from '../../ui/dom.ts';
+import {errorText} from '../../app/errors.ts';
+import {t} from '../../i18n/i18n.ts';
+import {icon, mark, type MarkName} from '../../ui/icons.ts';
+import {arrive, glide, pop, still, where} from '../../ui/glide.ts';
+import {purpose, RAIL, type PurposeId} from '../../app/purposes.ts';
 
 export function pageHead(id: PurposeId): HTMLElement {
   const p = purpose(id);

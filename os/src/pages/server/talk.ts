@@ -5,7 +5,7 @@ import {shown} from '../../remote/inbox.ts';
 import * as servers from '../../remote/servers.ts';
 import {coalesced, every} from '../../app/runs.ts';
 import {errorText} from '../../app/errors.ts';
-import {personBadge} from '../pane.ts';
+import {personBadge} from '../kit/pane.ts';
 
 // A board's talk: read as a conversation is, oldest above and newest at the
 // foot, by the box one writes in. Its people write in it; so may a guest,

@@ -3,10 +3,10 @@ import {currentLang, t} from '../../i18n/i18n.ts';
 import {h} from '../../ui/dom.ts';
 import {onSync} from '../../remote/lifecycle.ts';
 import {onRenamed, store} from '../../repos/repos.ts';
-import type {Context} from '../context.ts';
+import type {Context} from '../kit/context.ts';
 import {bench, type Bench} from '../bench/bench.ts';
-import {openNext as openConversation} from '../inbox.ts';
-import type {Writing} from './reader.ts';
+import {openNext as openConversation} from '../kit/next.ts';
+import type {Writing} from '../kit/context.ts';
 import {startIssue} from '../git/issue-form.ts';
 import {showIssue} from '../git/git.ts';
 import {panAcross, still} from '../../ui/glide.ts';
@@ -16,7 +16,7 @@ import {Drag, dropInto} from './drag.ts';
 import {takeFiles} from './files-in.ts';
 import {keysAlong, swipeAlong} from './along.ts';
 import {Place} from './place.ts';
-import {deedsUnder, fileDeeds, renaming, split} from '../file-deeds.ts';
+import {deedsUnder, fileDeeds, renaming, split} from '../kit/file-deeds.ts';
 
 /**
  * Forge, the place you work. The repos out to work on run as pills in a band

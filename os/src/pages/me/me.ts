@@ -1,15 +1,15 @@
-import {h} from '../ui/dom.ts';
-import {currentLang, LANGS, setLang, t} from '../i18n/i18n.ts';
-import {mark} from '../ui/icons.ts';
-import {connection, myName, signOut} from '../remote/connection.ts';
-import {onState, setState} from '../home/state.ts';
-import {initials, type Profile} from '../home/profile.ts';
-import {answers, choosePart, SETTLE} from './common.ts';
-import {errorText} from '../app/errors.ts';
-import {takeOff} from '../account/space.ts';
-import {releaseHome} from '../remote/lifecycle.ts';
-import {allSessions} from './bench/sessions.ts';
-import type {Context} from './context.ts';
+import {h} from '../../ui/dom.ts';
+import {currentLang, LANGS, setLang, t} from '../../i18n/i18n.ts';
+import {mark} from '../../ui/icons.ts';
+import {connection, myName, signOut} from '../../remote/connection.ts';
+import {onState, setState} from '../../home/state.ts';
+import {initials, type Profile} from '../../home/profile.ts';
+import {answers, choosePart, SETTLE} from '../kit/common.ts';
+import {errorText} from '../../app/errors.ts';
+import {takeOff} from '../../account/space.ts';
+import {releaseHome} from '../../remote/lifecycle.ts';
+import {allSessions} from '../bench/sessions.ts';
+import type {Context} from '../kit/context.ts';
 
 /** The person's name as written on Home; none written there, the one signed in with (the Remote's), as Home says it. */
 function shownName(written: string): HTMLElement {

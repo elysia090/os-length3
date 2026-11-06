@@ -1,13 +1,13 @@
-import {bytes, h} from '../ui/dom.ts';
-import {closeUp, keepOut, putAway, still, unfold} from '../ui/glide.ts';
-import {t} from '../i18n/i18n.ts';
-import {mark} from '../ui/icons.ts';
-import {bring, remoteOnly} from '../remote/lifecycle.ts';
-import {store} from '../repos/repos.ts';
-import {shownName} from '../repos/issues.ts';
-import {inRepo, list, ORIGIN_LABEL, type SystemEntry} from '../prompt/system.ts';
-import {fileDeeds, joined, split} from './file-deeds.ts';
-import {errorText} from '../app/errors.ts';
+import {bytes, h} from '../../ui/dom.ts';
+import {closeUp, keepOut, putAway, still, unfold} from '../../ui/glide.ts';
+import {t} from '../../i18n/i18n.ts';
+import {mark} from '../../ui/icons.ts';
+import {bring, remoteOnly} from '../../remote/lifecycle.ts';
+import {store} from '../../repos/repos.ts';
+import {shownName} from '../../repos/issues.ts';
+import {inRepo, list, ORIGIN_LABEL, type SystemEntry} from '../../prompt/system.ts';
+import {fileDeeds, joined, split} from '../kit/file-deeds.ts';
+import {errorText} from '../../app/errors.ts';
 
 // File is an operation, not a page: the tree of "/", the whole system, as a
 // card laid over whatever page is showing, right beside the rail and only as

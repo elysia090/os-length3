@@ -3,7 +3,7 @@ import {t} from '../../i18n/i18n.ts';
 import {connection, onConnection} from '../../remote/connection.ts';
 import {lastServers, servers, type Server} from '../../remote/servers.ts';
 import {news, onNews} from '../../remote/news.ts';
-import type {Context} from '../context.ts';
+import type {Context} from '../kit/context.ts';
 import {remember, remembered} from './parts.ts';
 
 // Server, glanced at: a rest on its icon brings out one's servers beside the rail, as File's tree comes out of File,

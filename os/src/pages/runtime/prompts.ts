@@ -1,10 +1,9 @@
+import {grant, granted} from '../../home/network.ts';
 import {bytes, h} from '../../ui/dom.ts';
 import type {Stopped} from '../../app/host.ts';
 import {t, tn} from '../../i18n/i18n.ts';
 import type {Session} from '../bench/terminal.ts';
 import {allSessions} from '../bench/sessions.ts';
-import {getState, setState} from '../../home/state.ts';
-import {onRenamed} from '../../repos/repos.ts';
 import {errorText} from '../../app/errors.ts';
 import {button, card} from './parts.ts';
 
@@ -14,16 +13,6 @@ import {button, card} from './parts.ts';
 /** The repos whose Prompt was stopped from its card just now, until their card says so (and lights what it gave back). */
 const stoppedNow = new Set<string>();
 
-// Which repos' Prompts may reach the network: this device's grant (core's home `network`, which l3 reads too).
-const granted = (): string[] => { try { return JSON.parse(getState('network') ?? '[]') as string[]; } catch { return []; } };
-/** Give `repo`'s Prompts the network (from their next start), or take it. */
-export async function grant(repo: string, on: boolean) {
-  const all = new Set(granted());
-  if (on) all.add(repo); else all.delete(repo);
-  await setState('network', JSON.stringify([...all].sort()));
-}
-// A repo renamed keeps its grant under its new name.
-onRenamed((from, to) => { if (granted().includes(from)) void grant(from, false).then(() => grant(to, true)).catch(() => {}); });
 
 /**
  * The network for a Prompt on the root, as a plain switch: a namespace cannot

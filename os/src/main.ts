@@ -1,12 +1,12 @@
 import {h} from './ui/dom.ts';
 import {setWindowTitle} from './app/tauri.ts';
 import {icon} from './ui/icons.ts';
-import {placeholder} from './pages/common.ts';
-import type {Context} from './pages/context.ts';
-import {currentProfile, home, startEditing} from './pages/home.ts';
-import {Me} from './pages/me.ts';
+import {placeholder} from './pages/kit/common.ts';
+import type {Context} from './pages/kit/context.ts';
+import {currentProfile, home, startEditing} from './pages/home/home.ts';
+import {Me} from './pages/me/me.ts';
 import {ServerSwitcher} from './pages/server/switcher.ts';
-import {FileTree} from './pages/tree.ts';
+import {FileTree} from './pages/file/tree.ts';
 import {onRenamed} from './repos/repos.ts';
 import {begin} from './remote/lifecycle.ts';
 import {forgetExcept} from './prompt/l3-files.ts';
@@ -62,10 +62,10 @@ let forgeOf: typeof import('./pages/forge/forge.ts') | null = null;
 const BRING: Partial<Record<PurposeId, () => Promise<Drawn>>> = {
   'forge': () => import('./pages/forge/forge.ts').then((m) => { forgeOf = m; return m.forge; }),
   'git': () => import('./pages/git/git.ts').then((m) => m.git),
-  'new-repo': () => import('./pages/new-repo.ts').then((m) => m.newRepo),
+  'new-repo': () => import('./pages/new-repo/new-repo.ts').then((m) => m.newRepo),
   'runtime': () => import('./pages/runtime/runtime.ts').then((m) => m.runtime),
   'remote': () => import('./pages/remote/remote.ts').then((m) => m.remote),
-  'inbox': () => import('./pages/inbox.ts').then((m) => m.inboxPage),
+  'inbox': () => import('./pages/inbox/inbox.ts').then((m) => m.inboxPage),
   'server': () => import('./pages/server/page.ts').then((m) => (c: Context) => m.serverPage(c, () => { if (current === 'server') render(); })),
 };
 const pages: Partial<Record<PurposeId, Drawn>> = {home};

@@ -1,10 +1,10 @@
-import {h} from '../ui/dom.ts';
-import {nudge, putAway} from '../ui/glide.ts';
-import {t} from '../i18n/i18n.ts';
-import {isIssues, ISSUES, plainPart, plainPath, store} from '../repos/repos.ts';
+import {h} from '../../ui/dom.ts';
+import {nudge, putAway} from '../../ui/glide.ts';
+import {t} from '../../i18n/i18n.ts';
+import {isIssues, ISSUES, plainPart, plainPath, store} from '../../repos/repos.ts';
 import {answers, askFoot, menuItem, menuRule, SETTLE} from './common.ts';
-import type {MarkName} from '../ui/icons.ts';
-import {errorText} from '../app/errors.ts';
+import type {MarkName} from '../../ui/icons.ts';
+import {errorText} from '../../app/errors.ts';
 
 // What can be done to a file or a folder of a repo, as one menu (the person's menu, `.pop`), wherever it is brought
 // out: File's row, and Forge's files button for the file in front. Its name over its deeds; a deed pressed becomes

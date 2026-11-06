@@ -13,7 +13,7 @@ import {sessionIfAny} from './sessions.ts';
 import {PillLine} from './pill-line.ts';
 import {EditLine} from './edit-box.ts';
 import {agentKey, agentUse} from '../../account/agent-key.ts';
-import {setRightPane} from '../pane.ts';
+import {setRightPane} from '../kit/pane.ts';
 import {atWork, told} from './agent.ts';
 import type {Hands} from '../../agent/work.ts';
 import {work as workOf} from '../../repos/history.ts';

@@ -1,23 +1,24 @@
-import {ago, arrowKeys, h} from '../ui/dom.ts';
-import {t} from '../i18n/i18n.ts';
-import * as inbox from '../remote/inbox.ts';
-import {connection} from '../remote/connection.ts';
-import {look, onNews} from '../remote/news.ts';
-import {Drafts} from '../home/drafts.ts';
-import {kindOf} from '../repos/text.ts';
-import {mark} from '../ui/icons.ts';
-import {copying, pageHead} from './common.ts';
-import {personBadge} from './pane.ts';
-import {every} from '../app/runs.ts';
-import {goToPlan, planRefused, planSaid} from './remote/plan.ts';
-import {signInBox, signInLead, signInPlace} from './remote/sign-in.ts';
-import {unreachedError, unreachedPlace} from './remote/unreached.ts';
-import {plan as readPlan} from '../remote/plan.ts';
-import type {Context} from './context.ts';
-import {errorText} from '../app/errors.ts';
-import * as servers from '../remote/servers.ts';
-import {remember as serverAt} from './server/parts.ts';
-import {arrive, closeUp, keepOut, LAND, nudge, paced, putAway, still, where} from '../ui/glide.ts';
+import {takeNext} from '../kit/next.ts';
+import {ago, arrowKeys, h} from '../../ui/dom.ts';
+import {t} from '../../i18n/i18n.ts';
+import * as inbox from '../../remote/inbox.ts';
+import {connection} from '../../remote/connection.ts';
+import {look, onNews} from '../../remote/news.ts';
+import {Drafts} from '../../home/drafts.ts';
+import {kindOf} from '../../repos/text.ts';
+import {mark} from '../../ui/icons.ts';
+import {copying, pageHead} from '../kit/common.ts';
+import {personBadge} from '../kit/pane.ts';
+import {every} from '../../app/runs.ts';
+import {goToPlan, planRefused, planSaid} from '../kit/plan-gate.ts';
+import {signInBox, signInLead, signInPlace} from '../kit/sign-in.ts';
+import {unreachedError, unreachedPlace} from '../kit/unreached.ts';
+import {plan as readPlan} from '../../remote/plan.ts';
+import type {Context} from '../kit/context.ts';
+import {errorText} from '../../app/errors.ts';
+import * as servers from '../../remote/servers.ts';
+import {remember as serverAt} from '../server/parts.ts';
+import {arrive, closeUp, keepOut, LAND, nudge, paced, putAway, still, where} from '../../ui/glide.ts';
 
 // Inbox: what comes to you, typed, from people found by address. Not a mail
 // screen: each message says what it is (a message, a review request, a
@@ -240,9 +241,6 @@ const drafts = new Drafts();
 /** The name or code being written to, under its own key. */
 const TO = '\0to';
 
-/** The conversation the page is next come to for (Home's Lately), opened as it is drawn. */
-let wanted: string | null = null;
-export function openNext(address: string) { wanted = address; }
 /** The conversation open as Inbox was left: open again, as it was, when Inbox is come back to. */
 let left: string | null = null;
 
@@ -313,7 +311,8 @@ export function inboxPage(ctx: Context): Node[] {
     if (landing && stub) took(stub, landing);
     landing = null;
     await paintList(rows, pane);
-    if (wanted) { const at = wanted; wanted = null; void show(at, rows, pane); }
+    const at = takeNext();
+    if (at) void show(at, rows, pane);
     else if (open && rows.querySelector(`.inbox-row[data-address="${CSS.escape(open)}"]`)) void show(open, rows, pane);
     else if (open) { open = left = null; pane.parentElement?.classList.toggle('none', bare); }
   };

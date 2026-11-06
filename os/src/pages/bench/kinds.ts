@@ -3,14 +3,14 @@ import * as gitops from '../../repos/history.ts';
 import {issueName, issuePath, readIssues, type Issue} from '../../repos/issues.ts';
 import {t, tn} from '../../i18n/i18n.ts';
 import {onRenamed, rekey} from '../../repos/repos.ts';
-import type {Run} from '../bench/terminal.ts';
-import {answers} from '../common.ts';
+import type {Run} from './terminal.ts';
+import {answers} from '../kit/common.ts';
 import {connection} from '../../remote/connection.ts';
-import {kindWords} from '../todo-list.ts';
-import {diffFiles, fileName} from './diff-view.ts';
+import {kindWords} from '../kit/todo-list.ts';
+import {diffFiles, fileName} from '../kit/diff-view.ts';
 import {issueStore} from '../../repos/issue-store.ts';
-import type {Ask} from '../bench/asks.ts';
-import {answerNodes} from '../bench/agent.ts';
+import type {Ask} from './asks.ts';
+import {answerNodes} from './agent.ts';
 
 // The kinds under the search box, side by side to switch between: the repo's issues, its diff, what was run in its
 // Prompt (Output), and what was asked of its Agent. Each as a row, in a pill's list and in what a search finds, and

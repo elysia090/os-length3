@@ -1,3 +1,4 @@
+import type {Writing} from '../kit/context.ts';
 import {bytes, h} from '../../ui/dom.ts';
 import {t} from '../../i18n/i18n.ts';
 import {readingOrder} from '../../repos/reading.ts';
@@ -52,11 +53,6 @@ function light(target: HTMLElement) {
   setTimeout(off, 1600);
 }
 
-/**
- * Where the caret goes in a file opened to write in: its start (true), its end, back at `at` (an offset kept when it
- * was left), or not in it (false).
- */
-export type Writing = boolean | 'end' | {at: number};
 
 /** One repo read top to bottom: only files, directories are just where they come from. */
 export class Reader {

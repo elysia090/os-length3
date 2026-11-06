@@ -7,7 +7,7 @@ import * as todo from '../../home/todo.ts';
 import {getState, setState} from '../../home/state.ts';
 import {kindOf} from '../../repos/text.ts';
 import {mark} from '../../ui/icons.ts';
-import {mark as todoMark} from '../todo-list.ts';
+import {mark as todoMark} from '../kit/todo-list.ts';
 import {issueStore} from '../../repos/issue-store.ts';
 import {hasAgentKey, onAgentKey} from '../../account/agent-key.ts';
 

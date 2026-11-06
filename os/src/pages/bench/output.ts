@@ -1,5 +1,5 @@
 import {h} from '../../ui/dom.ts';
-import {kindColon, mark as todoMark} from '../todo-list.ts';
+import {kindColon, mark as todoMark} from '../kit/todo-list.ts';
 import {waitsAt} from './prompt-line.ts';
 
 // What a Prompt shows of what its shell wrote (terminal.ts): plain lines at the foot of its screen, drawn once a

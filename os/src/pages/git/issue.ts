@@ -1,4 +1,4 @@
-import {kindWords} from '../todo-list.ts';
+import {kindWords} from '../kit/todo-list.ts';
 import {ago, h} from '../../ui/dom.ts';
 import {arrive, LAND, lift, type Lifted, morph, paced, putAway, still} from '../../ui/glide.ts';
 import * as git from '../../repos/history.ts';
@@ -7,7 +7,7 @@ import {closeMark, issueName, issuePath, saveIssue, setClosed, type Issue} from 
 import {connection, myName} from '../../remote/connection.ts';
 import {changeFor, type Standing} from '../../repos/git-state.ts';
 import {named} from '../../repos/text.ts';
-import {diffFiles} from '../forge/diff-view.ts';
+import {diffFiles} from '../kit/diff-view.ts';
 import {beingChanged, issueEditor} from './issue-form.ts';
 import {agentLine, agentMark} from './agent-line.ts';
 import {errorText} from '../../app/errors.ts';

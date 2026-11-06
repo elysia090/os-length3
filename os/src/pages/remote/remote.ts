@@ -1,9 +1,9 @@
 import {h} from '../../ui/dom.ts';
 import {t} from '../../i18n/i18n.ts';
 import * as account from '../../remote/connection.ts';
-import {pageHead, parts, type Parts} from '../common.ts';
-import type {Context} from '../context.ts';
-import {signInBox, signInLead, signInPlace} from './sign-in.ts';
+import {pageHead, parts, type Parts} from '../kit/common.ts';
+import type {Context} from '../kit/context.ts';
+import {signInBox, signInLead, signInPlace} from '../kit/sign-in.ts';
 import {repoSection} from './repos.ts';
 import {passkeyNext, passkeyOffer} from './passkey-offers.ts';
 import {signInBody} from './sign-in-part.ts';

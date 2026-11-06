@@ -1,17 +1,17 @@
-import {bytes, h} from '../ui/dom.ts';
-import {t, tn} from '../i18n/i18n.ts';
-import {connection} from '../remote/connection.ts';
-import {plan} from '../remote/plan.ts';
-import {goToPlan} from './remote/plan.ts';
-import {remoteOnly} from '../remote/lifecycle.ts';
-import {isIssues, ISSUES, plainPath, store, templateFiles, validName, type Template} from '../repos/repos.ts';
-import {pageHead} from './common.ts';
-import {repoList} from './repo-list.ts';
-import type {Context} from './context.ts';
-import {triangle} from './tree.ts';
-import {errorText} from '../app/errors.ts';
-import {mark} from '../ui/icons.ts';
-import {liftLine, morph, nudge, putAway, textAt, unfold, where} from '../ui/glide.ts';
+import {bytes, h} from '../../ui/dom.ts';
+import {t, tn} from '../../i18n/i18n.ts';
+import {connection} from '../../remote/connection.ts';
+import {plan} from '../../remote/plan.ts';
+import {goToPlan} from '../kit/plan-gate.ts';
+import {remoteOnly} from '../../remote/lifecycle.ts';
+import {isIssues, ISSUES, plainPath, store, templateFiles, validName, type Template} from '../../repos/repos.ts';
+import {pageHead} from '../kit/common.ts';
+import {repoList} from '../home/repo-list.ts';
+import type {Context} from '../kit/context.ts';
+import {triangle} from '../file/tree.ts';
+import {errorText} from '../../app/errors.ts';
+import {mark} from '../../ui/icons.ts';
+import {liftLine, morph, nudge, putAway, textAt, unfold, where} from '../../ui/glide.ts';
 
 /**
  * +: the repo's name on the first line; under it, in a large box, what it

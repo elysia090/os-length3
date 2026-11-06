@@ -2,7 +2,7 @@ import {h} from '../../ui/dom.ts';
 import {t} from '../../i18n/i18n.ts';
 import {shown as named, shownAs} from '../../remote/inbox.ts';
 import * as servers from '../../remote/servers.ts';
-import {personBadge} from '../pane.ts';
+import {personBadge} from '../kit/pane.ts';
 import {errorText} from '../../app/errors.ts';
 import {every} from '../../app/runs.ts';
 import {paced, still} from '../../ui/glide.ts';

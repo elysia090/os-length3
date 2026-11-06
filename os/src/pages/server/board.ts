@@ -5,7 +5,7 @@ import {boardNew, sawBoard} from '../../remote/news.ts';
 import {nudge} from '../../ui/glide.ts';
 import {errorText} from '../../app/errors.ts';
 import {seenNow, timeline} from './talk.ts';
-import {parts} from '../common.ts';
+import {parts} from '../kit/common.ts';
 import {boardTodo} from './todo.ts';
 import {button, current, fitting, type Here, type Shown} from './parts.ts';
 

@@ -2,12 +2,12 @@ import {day, h} from '../../ui/dom.ts';
 import {t, tn} from '../../i18n/i18n.ts';
 import {lookup, send, shown as named, shownAs, threads} from '../../remote/inbox.ts';
 import * as servers from '../../remote/servers.ts';
-import {deed, parts, type Parts} from '../common.ts';
+import {deed, parts, type Parts} from '../kit/common.ts';
 import {every} from '../../app/runs.ts';
 import {askIn, boardName, button, foot, footLeft, line, MOVE, smallCard} from './parts.ts';
 import {guestsCard} from './guests.ts';
 import {errorText} from '../../app/errors.ts';
-import {personBadge} from '../pane.ts';
+import {personBadge} from '../kit/pane.ts';
 
 // Behind the gear: what changes the server for everyone. In parts, as
 // Remote's page is (its people, the repos shown, its boards, the server

@@ -3,12 +3,12 @@ import * as git from '../../repos/history.ts';
 import {t, tn} from '../../i18n/i18n.ts';
 import {closedBy, numberOf, type Issue} from '../../repos/issues.ts';
 import {kindOf} from '../../repos/text.ts';
-import {answers, askFoot, SETTLE} from '../common.ts';
-import {counted, diffFiles} from '../forge/diff-view.ts';
+import {answers, askFoot, SETTLE} from '../kit/common.ts';
+import {counted, diffFiles} from '../kit/diff-view.ts';
 import {clock, LAND, nudge, paced, putAway, still, unfold} from '../../ui/glide.ts';
 import {crossfade, justClosed, justMerged, notCommitted, reopenIssue, resize, type IssueEvents, type RepoState} from './issue.ts';
 import type {Laid} from '../../repos/git-state.ts';
-import {kindWords} from '../todo-list.ts';
+import {kindWords} from '../kit/todo-list.ts';
 import {errorText} from '../../app/errors.ts';
 import {busy} from './held.ts';
 

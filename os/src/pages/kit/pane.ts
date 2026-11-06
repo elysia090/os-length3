@@ -1,11 +1,11 @@
-import {h} from '../ui/dom.ts';
-import {after, arrive, closeUp, paneIn, paneOut} from '../ui/glide.ts';
-import {t} from '../i18n/i18n.ts';
-import * as inbox from '../remote/inbox.ts';
-import {news, onNews} from '../remote/news.ts';
-import {onPlugins, pluginsOpen, setPluginsOpen, slots} from '../app/plugins.ts';
-import {connection} from '../remote/connection.ts';
-import {icon} from '../ui/icons.ts';
+import {h} from '../../ui/dom.ts';
+import {after, arrive, closeUp, paneIn, paneOut} from '../../ui/glide.ts';
+import {t} from '../../i18n/i18n.ts';
+import * as inbox from '../../remote/inbox.ts';
+import {news, onNews} from '../../remote/news.ts';
+import {onPlugins, pluginsOpen, setPluginsOpen, slots} from '../../app/plugins.ts';
+import {connection} from '../../remote/connection.ts';
+import {icon} from '../../ui/icons.ts';
 import {kindWords} from './todo-list.ts';
 
 // The right pane beside the center (Forge's, Git's, Home's): what the center refers to, the plugin area at its top,

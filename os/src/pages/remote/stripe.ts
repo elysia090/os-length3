@@ -3,8 +3,8 @@ import {isNative} from '../../app/host.ts';
 import {t} from '../../i18n/i18n.ts';
 import {flush} from '../../remote/lifecycle.ts';
 import {changedWords, leftFor, openPlan, takeLeft, takeStripeReturn, tierName, type Back, type Left, type PaidTier, type Plan} from '../../remote/plan.ts';
-import {answers} from '../common.ts';
-import {button} from './parts.ts';
+import {answers} from '../kit/common.ts';
+import {button} from '../kit/remote-parts.ts';
 
 // Trips to Stripe's pages and back: what goes to the Remote before one, and how it went, said once back.
 
