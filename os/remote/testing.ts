@@ -27,7 +27,7 @@
 
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {existsSync, readdirSync, readFileSync, renameSync, writeFileSync} from 'node:fs';
+import {existsSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {after, afterEach} from 'node:test';
@@ -79,9 +79,10 @@ const realFetch = globalThis.fetch;
 
 /**
  * A database's files made once on this machine by `make`, as Postgres left them shut down, and kept in its
- * temporary directory as `name` (named by all it was made from), for the test processes after the first.
+ * temporary directory as `name` (named by all it was made from), for the test processes after the first. One made
+ * anew lets go of the others of its `kind`, made from older migrations or another PGlite, which nothing reads again.
  */
-async function keptAs(name: string, make: () => Promise<DataDir>): Promise<DataDir> {
+async function keptAs(name: string, kind: RegExp, make: () => Promise<DataDir>): Promise<DataDir> {
   const kept = join(tmpdir(), name);
   if (existsSync(kept)) return unpacked(readFileSync(kept));
   const made = await make();
@@ -89,6 +90,7 @@ async function keptAs(name: string, make: () => Promise<DataDir>): Promise<DataD
   const aside = `${kept}.${process.pid}`;
   writeFileSync(aside, packed(made));
   renameSync(aside, kept);
+  for (const other of readdirSync(tmpdir())) if (other !== name && kind.test(other)) rmSync(join(tmpdir(), other), {force: true});
   return made;
 }
 /** A database's files, as PGlite left them when the database it made over `from` (none: initdb's) was closed after `f`. */
@@ -107,7 +109,7 @@ const short = (h: ReturnType<typeof createHash>) => h.digest('hex').slice(0, 16)
 let initialized: Promise<DataDir> | null = null;
 /** A Postgres as initdb leaves it: three seconds each time PGlite runs initdb. */
 const initdb = () => (initialized ??= keptAs(`length3-pglite-${short(createHash('sha256').update(PGLITE))}-initdb.data`,
-  () => closedAfter(undefined, async () => {})));
+  /^length3-pglite-[0-9a-f]{16}-initdb\.data$/, () => closedAfter(undefined, async () => {})));
 
 let template: Promise<DataDir> | null = null;
 /**
@@ -118,7 +120,8 @@ let template: Promise<DataDir> | null = null;
 const migrated = () => (template ??= (async () => {
   const hash = createHash('sha256').update(PGLITE);
   for (const f of readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql')).sort()) hash.update(f).update(readFileSync(join(MIGRATIONS, f)));
-  return keptAs(`length3-pglite-${short(hash)}.data`, async () => closedAfter(await initdb(), (pg) => migrate(drizzle(pg, {schema}), {migrationsFolder: MIGRATIONS})));
+  return keptAs(`length3-pglite-${short(hash)}.data`, /^length3-pglite-[0-9a-f]{16}\.data$/,
+    async () => closedAfter(await initdb(), (pg) => migrate(drizzle(pg, {schema}), {migrationsFolder: MIGRATIONS})));
 })());
 /**
  * How Postgres is started for a test: as PGlite starts it, with shared buffers of 16 MB, not 128 (a test's

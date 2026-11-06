@@ -9,7 +9,7 @@
 // stdin/stdout/stderr attach to this process.
 import {execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, readlinkSync, statSync, writeFileSync, writeSync} from 'node:fs';
+import {closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, readlinkSync, rmSync, statSync, writeFileSync, writeSync} from 'node:fs';
 import {basename, dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {zstdDecompressSync} from 'node:zlib';
@@ -22,7 +22,6 @@ import {loadTranslator} from './translator.mjs';
 const here = dirname(fileURLToPath(import.meta.url));
 const translator = join(here, '..', 'target', 'release', 'xlat');
 const wasmTranslator = join(here, '..', 'target', 'wasm32-unknown-unknown', 'release', 'xlat.wasm');
-const cacheDir = join(here, '..', 'target', 'xlat-cache');
 
 // XLAT_BLOCKS=1: translate with --trace, so every block entered is reported (process.mjs prints it).
 const traced = process.env.XLAT_BLOCKS ? ['--trace'] : [];
@@ -36,7 +35,21 @@ const inProcess = !traced.length && mtime(wasmTranslator) >= mtime(translator) ?
 
 // Cached translations are keyed by the translator too, so rebuilding it
 // never reuses modules made by an older one.
-const translatorId = createHash('sha256').update(readFileSync(inProcess ? wasmTranslator : translator)).digest('hex');
+const fileDigest = (f) => createHash('sha256').update(readFileSync(f)).digest('hex');
+const translatorId = fileDigest(inProcess ? wasmTranslator : translator);
+
+// Each translator's translations in a folder of its own, named by its digest. A translator rebuilt starts a new
+// one, and then the folders of translators no longer built (neither the native one's nor the wasm one's) go: an
+// older translator's modules are never read again.
+const cacheRoot = join(here, '..', 'target', 'xlat-cache');
+const cacheDir = join(cacheRoot, translatorId);
+if (!existsSync(cacheDir)) {
+  const built = new Set([translator, wasmTranslator].filter(existsSync).map(fileDigest));
+  for (const name of existsSync(cacheRoot) ? readdirSync(cacheRoot) : []) {
+    if (!built.has(name)) rmSync(join(cacheRoot, name), {recursive: true, force: true});
+  }
+  mkdirSync(cacheDir, {recursive: true});
+}
 
 // Each program's digest, taken once however often its code is asked for.
 const digests = new WeakMap();

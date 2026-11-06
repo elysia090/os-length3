@@ -28,11 +28,18 @@ enableCompileCache();
 const STRIPPED = join(tmpdir(), `length3-ts-${process.version}`);
 mkdirSync(STRIPPED, {recursive: true});
 
-/** A .ts module's text without its types, as node's loader makes it: kept from before, or made and kept. */
+/**
+ * A .ts module's text without its types, as node's loader makes it: kept from before, or made and kept. One file an
+ * address (a test's realm asks the page's modules at addresses of its own), whose first line is the digest of the
+ * text it was made from: a module changed replaces what was kept of it, so what is kept stays as many files as there
+ * are addresses, not one more each edit.
+ */
 function stripped(url, text) {
-  const kept = join(STRIPPED, `${createHash('sha256').update(url).update('\0').update(text).digest('hex')}.js`);
+  const kept = join(STRIPPED, `${createHash('sha256').update(url).digest('hex')}.js`);
+  const of = `${createHash('sha256').update(text).digest('hex')}\n`;
   try {
-    return readFileSync(kept, 'utf8');
+    const was = readFileSync(kept, 'utf8');
+    if (was.startsWith(of)) return was.slice(of.length);
   } catch {
     // Made below.
   }
@@ -47,7 +54,7 @@ function stripped(url, text) {
   }
   // Written aside, then named: a process reading it never meets half of it.
   const aside = `${kept}.${process.pid}`;
-  writeFileSync(aside, code);
+  writeFileSync(aside, of + code);
   renameSync(aside, kept);
   return code;
 }

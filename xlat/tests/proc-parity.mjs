@@ -67,14 +67,18 @@ if (isMain) {
   const f = (ms) => (ms === null ? '-' : `${(ms / 1000).toFixed(3)} s`);
   const rows = ['| case | native | xlat | same | first line native / xlat |', '|---|---|---|---|---|'];
   let bad = 0;
-  for (const c of want) {
-    const r = await runCase(c, bin);
-    if (!r.same) bad++;
-    const show = (x) => `${JSON.stringify(x.out.length > 60 ? x.out.slice(0, 57) + '...' : x.out)} (${x.status}) ${f(x.ms)}`;
-    rows.push(`| ${c.name} | ${show(r.native)} | ${show(r.xlat)} | ${r.same ? 'yes' : '**no**'} | ${f(r.native.first)} / ${f(r.xlat.first)} |`);
-    console.error(`${r.same ? 'ok  ' : 'FAIL'} ${c.name}`);
+  try {
+    for (const c of want) {
+      const r = await runCase(c, bin);
+      if (!r.same) bad++;
+      const show = (x) => `${JSON.stringify(x.out.length > 60 ? x.out.slice(0, 57) + '...' : x.out)} (${x.status}) ${f(x.ms)}`;
+      rows.push(`| ${c.name} | ${show(r.native)} | ${show(r.xlat)} | ${r.same ? 'yes' : '**no**'} | ${f(r.native.first)} / ${f(r.xlat.first)} |`);
+      console.error(`${r.same ? 'ok  ' : 'FAIL'} ${c.name}`);
+    }
+  } finally {
+    // A case that throws leaves no folder behind either.
+    rmSync(bin, {recursive: true, force: true});
   }
-  rmSync(bin, {recursive: true});
   const text = rows.join('\n') + '\n';
   process.stdout.write(text);
   if (table) { mkdirSync(join(table, '..'), {recursive: true}); writeFileSync(table, text); }
