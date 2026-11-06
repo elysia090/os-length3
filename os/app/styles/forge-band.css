@@ -89,3 +89,20 @@
   .band-tools .search-in { padding-right: 0; }
   .band-tools .search-in:not(:focus)::placeholder { color: transparent; }
 }
+/* What the band's search finds drops as a sheet under the band, across the center (a step in from its sides), inked
+   and shadowed as a box on the desk is: the words searched for at its head, large; under them what was found. While it
+   is down the desk steps back out of sight, and comes back as it goes up. */
+.band-tools .search-results {
+  top: calc(100% + var(--s3)); left: calc(var(--s4) - var(--search-x, 104px)); right: auto; width: calc(var(--center-w, 900px) - 40px);
+  max-height: calc(var(--center-h, 760px) * .82); overflow-y: auto; scrollbar-width: none; box-sizing: border-box;
+  padding: 18px 28px 22px; background: var(--paper); border: 2px solid var(--ink); border-radius: var(--r-place); box-shadow: 8px 8px 0 0 var(--ink);
+  transform-origin: top; animation: drop-in calc(220ms * var(--pace)) var(--land);
+}
+@keyframes drop-in { from { clip-path: inset(0 0 100% 0); opacity: .4; } }
+.band-tools .search-results:not([data-q=''])::before {
+  content: attr(data-q); display: block; margin: 0 0 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 900 56px/.95 var(--display); letter-spacing: -.025em; color: var(--ink);
+}
+.band-tools .found-card { border: 0; background: none; height: auto; max-height: none; }
+.band-tools .found-body { padding: 0; }
+.work.desk-bench:has(.band-tools > .search-box:is(:focus-within, .reading, .moving):not(.leaving)) .desk-box { opacity: 0; }

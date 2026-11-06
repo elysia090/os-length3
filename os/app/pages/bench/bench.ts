@@ -129,6 +129,23 @@ function screenOf(work: HTMLElement, box: Box, term: HTMLElement, home: HTMLElem
 }
 
 /**
+ * On a desk, what the band's search finds is a sheet dropped under the band across the center (styles: forge-band.css):
+ * measured, it knows the center's width and where the search box stands in it; it says the words searched for, large,
+ * at its head.
+ */
+function dropSheet(work: HTMLElement, center: HTMLElement, search: HTMLElement) {
+  const query = search.querySelector('input')!, under = search.querySelector<HTMLElement>('.search-results')!;
+  const said = () => { under.dataset.q = query.value.trim(); };
+  query.addEventListener('input', said);
+  said();
+  new ResizeObserver(() => {
+    work.style.setProperty('--center-w', `${center.clientWidth}px`);
+    work.style.setProperty('--center-h', `${center.clientHeight}px`);
+    work.style.setProperty('--search-x', `${search.getBoundingClientRect().left - center.getBoundingClientRect().left}px`);
+  }).observe(center);
+}
+
+/**
  * Measured, not queried (a box queried for its width would make a layer the search could not rise out of): the
  * bench's width, for what is laid out from it (the pane's W, which the search box and what opens under it take);
  * the search's room above the box, so the Prompt brought up over the center is never under it (issue #20); the
@@ -244,8 +261,9 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   // On a desk the band's tools come first on the top line: >_ to the terminal on the desk, the file deeds (the page's
   // band puts its own between), the search; the pane's switch lies at the foot, level with the person at the rail's.
   const tools = parts.desk ? h('div', {class: 'band-tools', role: 'group', 'aria-label': t('Tools')}, toolButton('term', t('Terminal'), () => parts.toTerm?.()), reference.search) : null;
-  // The band's search box says what it is by a lens at its left, as a short box must.
-  if (tools) reference.search.querySelector('form')?.prepend(mark('search'));
+  // The band's search box says what it is by a lens at its left, as a short box must; what it finds drops as a sheet
+  // under the band, over the desk, the words searched for heading it (dropSheet).
+  if (tools) { reference.search.querySelector('form')?.prepend(mark('search')); dropSheet(work, center, reference.search); }
   const bar = tools ? h('div', {class: 'bar'}, tools, parts.strip ?? h('span', {class: 'bar-room'}))
     : h('div', {class: 'bar'}, parts.strip ?? h('span', {class: 'bar-room'}), reference.search, toggle);
   work.append(bar, center, side, ...(tools ? [toggle] : []));
