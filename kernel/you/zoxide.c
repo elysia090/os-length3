@@ -1,5 +1,6 @@
 /*
- * you: the places you have been, and back to one by a part of its name.
+ * you's zoxide: the places you have been, and back to one by a part of its name (zoxide's, made again as one unit of
+ * the kernel/: lib's three headers and this; its checks in test/).
  *
  *   you add DIR...                         learn that you were in each DIR (a shell runs it at every cd)
  *   you query [--list] [--score] [--exclude DIR] [--] [KEYWORD...]
@@ -39,209 +40,10 @@
  * one written in part (a disk full, a machine stopped) is passed over, and the next whole one found again.
  */
 
-typedef unsigned long u64;
-typedef long i64;
-typedef unsigned int u32;
-typedef unsigned short u16;
-typedef unsigned char u8;
-
-/* ---- The kernel: its calls, as x86-64 Linux numbers them. */
-
-enum {
-  SYS_read = 0, SYS_write = 1, SYS_open = 2, SYS_writev = 20, SYS_close = 3, SYS_fstat = 5, SYS_mmap = 9, SYS_pread = 17,
-  SYS_dup2 = 33, SYS_fork = 57, SYS_pipe2 = 293,
-  SYS_flock = 73, SYS_fsync = 74, SYS_getcwd = 79, SYS_rename = 82, SYS_mkdir = 83,
-  SYS_unlink = 87, SYS_clock_gettime = 228, SYS_exit_group = 231, SYS_newfstatat = 262,
-};
-enum { O_RDONLY = 0, O_WRONLY = 1, O_RDWR = 2, O_CREAT = 0100, O_TRUNC = 01000, O_APPEND = 02000, O_NONBLOCK = 04000,
-       O_CLOEXEC = 02000000 };
-enum { LOCK_SH = 1, LOCK_EX = 2 };
-enum { ENOENT = 2, EINTR = 4, EEXIST = 17, EINVAL = 22, ENOLCK = 37, ENOSYS = 38, EOPNOTSUPP = 95 };
-#define AT_FDCWD (-100)
-
-static inline i64 sys1(i64 n, i64 a) {
-  i64 r;
-  __asm__ volatile("syscall" : "=a"(r) : "a"(n), "D"(a) : "rcx", "r11", "memory");
-  return r;
-}
-static inline i64 sys2(i64 n, i64 a, i64 b) {
-  i64 r;
-  __asm__ volatile("syscall" : "=a"(r) : "a"(n), "D"(a), "S"(b) : "rcx", "r11", "memory");
-  return r;
-}
-static inline i64 sys3(i64 n, i64 a, i64 b, i64 c) {
-  i64 r;
-  __asm__ volatile("syscall" : "=a"(r) : "a"(n), "D"(a), "S"(b), "d"(c) : "rcx", "r11", "memory");
-  return r;
-}
-static inline i64 sys4(i64 n, i64 a, i64 b, i64 c, i64 d) {
-  i64 r;
-  register i64 r10 __asm__("r10") = d;
-  __asm__ volatile("syscall" : "=a"(r) : "a"(n), "D"(a), "S"(b), "d"(c), "r"(r10) : "rcx", "r11", "memory");
-  return r;
-}
-static inline i64 sys6(i64 n, i64 a, i64 b, i64 c, i64 d, i64 e, i64 f) {
-  i64 r;
-  register i64 r10 __asm__("r10") = d;
-  register i64 r8 __asm__("r8") = e;
-  register i64 r9 __asm__("r9") = f;
-  __asm__ volatile("syscall" : "=a"(r) : "a"(n), "D"(a), "S"(b), "d"(c), "r"(r10), "r"(r8), "r"(r9) : "rcx", "r11", "memory");
-  return r;
-}
-
-__attribute__((noreturn)) static void leave(int code) {
-  for (;;) sys1(SYS_exit_group, code);
-}
-
-/* struct stat as x86-64 Linux lays it out. */
-struct kstat { u64 dev, ino, nlink; u32 mode, uid, gid, pad; u64 rdev; i64 size, blksize, blocks, times[6], unused[3]; };
-_Static_assert(sizeof(struct kstat) == 144, "struct stat is 144 bytes on x86-64 Linux");
-#define IS_DIR(m) (((m) & 0170000) == 0040000)
-#define IS_REG(m) (((m) & 0170000) == 0100000)
-
-/* ---- What the compiler may call (a copy or a clearing it makes of a struct or a loop): no C library has them. Eight
- * bytes at a time; built without loops turned back into calls to themselves (-fno-tree-loop-distribute-patterns). */
-
-static inline u64 ld64(const u8 *p) { u64 v; __builtin_memcpy(&v, p, 8); return v; }
-static inline u32 ld32(const u8 *p) { u32 v; __builtin_memcpy(&v, p, 4); return v; }
-static inline u16 ld16(const u8 *p) { u16 v; __builtin_memcpy(&v, p, 2); return v; }
-static inline void st64(u8 *p, u64 v) { __builtin_memcpy(p, &v, 8); }
-static inline void st32(u8 *p, u32 v) { __builtin_memcpy(p, &v, 4); }
-static inline void st16(u8 *p, u16 v) { __builtin_memcpy(p, &v, 2); }
-
-#define ONES 0x0101010101010101ull
-
-/* Words, the last one laid over the one before it where n is not a multiple of eight: never a byte past either end,
- * and no loop of bytes (a copy of under eight, two words of four, or of under four, three bytes, laid over each other). */
-void *memset(void *d, int c, u64 n) {
-  u8 *p = d;
-  u64 w = (u8)c * ONES;
-  if (n >= 8) {
-    for (u64 i = 0; i + 8 < n; i += 8) st64(p + i, w);
-    st64(p + n - 8, w);
-  } else if (n >= 4) {
-    st32(p, (u32)w), st32(p + n - 4, (u32)w);
-  } else if (n) {
-    p[0] = p[n / 2] = p[n - 1] = (u8)c;
-  }
-  return d;
-}
-void *memcpy(void *d, const void *s, u64 n) {
-  u8 *p = d;
-  const u8 *q = s;
-  if (n >= 8) {
-    u64 last = ld64(q + n - 8); /* (read first: memmove copies forward through this) */
-    for (u64 i = 0; i + 8 < n; i += 8) st64(p + i, ld64(q + i));
-    st64(p + n - 8, last);
-  } else if (n >= 4) {
-    u32 a = ld32(q), b = ld32(q + n - 4);
-    st32(p, a), st32(p + n - 4, b);
-  } else if (n) {
-    u8 a = q[0], b = q[n / 2], c = q[n - 1];
-    p[0] = a, p[n / 2] = b, p[n - 1] = c;
-  }
-  return d;
-}
-void *memmove(void *d, const void *s, u64 n) {
-  u8 *p = d;
-  const u8 *q = s;
-  if (p <= q || p >= q + n) return memcpy(d, s, n);
-  while (n--) p[n] = q[n];
-  return d;
-}
-int memcmp(const void *a, const void *b, u64 n) {
-  const u8 *p = a, *q = b;
-  for (; n; n--, p++, q++) if (*p != *q) return *p - *q;
-  return 0;
-}
-
-/* The stack protector's guard, a word of its own (-mstack-protector-guard=global: not one in thread-local storage,
- * which would take a call to set up, and which a program with no C library has none of), set from the kernel's random
- * bytes before anything it guards runs; and what a smashed stack comes to. */
-__attribute__((visibility("hidden"))) u64 __stack_chk_guard;
-__attribute__((noreturn, cold)) void __stack_chk_fail(void) {
-  sys3(SYS_write, 2, (i64)"you: stack smashed\n", 19);
-  leave(127);
-}
-
-/* ---- Small things. */
-
-/* The high bit of each byte of x that is zero, and of no other (exactly: no carry from one byte into the next). */
-static inline u64 zeros(u64 x) {
-  const u64 low7 = 0x7f7f7f7f7f7f7f7full;
-  return ~(((x & low7) + low7) | x | low7);
-}
-/* A string's length, a word at a time: words read where they are aligned, so none crosses into a page past the
- * string's (the bytes of the first before the string made not zero). */
-static u64 slen(const char *s) {
-  const u8 *p = (const u8 *)((u64)s & ~7ul);
-  u64 z = zeros(ld64(p) | ((1ull << (8 * ((u64)s & 7))) - 1));
-  while (!z) p += 8, z = zeros(ld64(p));
-  return (u64)(p - (const u8 *)s) + (u64)(__builtin_ctzll(z) >> 3);
-}
-static int same(const char *a, const char *b) {
-  while (*a && *a == *b) a++, b++;
-  return *a == *b;
-}
-/* Room past the end of all a run works in, for a word read there (eq, hash, lower read and write 8 bytes at a time). */
-#define SLACK 8
-/* Whether `a` and `b` agree in their first n bytes, eight at a time (what is read past them, within their SLACK, is
- * masked off). */
-static inline int eq(const u8 *a, const u8 *b, u32 n) {
-  for (; n >= 8; n -= 8, a += 8, b += 8)
-    if (ld64(a) != ld64(b)) return 0;
-  return !n || !((ld64(a) ^ ld64(b)) & (~0ull >> (64 - 8 * n)));
-}
-
-/* What a run works in, used from its start and as far as it needs: what it is given is SLACK past what it asks for. */
-static u8 arena[1 << 21];
-static u64 used;
-static u8 *grab(u64 n) {
-  u8 *p = arena + used;
-  used += (n + SLACK + 15) & ~15ul;
-  if (used > sizeof arena) {
-    sys3(SYS_write, 2, (i64)"you: out of room\n", 17);
-    leave(1);
-  }
-  return p;
-}
-#define LEFT (sizeof arena - used)
-
-/* What is written to standard output: pieces of what is already in memory (a place where the file was read, made a
- * line there; a score, in `text`), not copied, gathered and written by one writev each IOV of them. */
-struct iovec { const void *base; u64 len; };
-#define IOV 1024
-static struct iovec iov[IOV];
-static u32 niov;
-static u8 text[IOV / 2 * 32]; /* a score each piece but one in two at most, in 32 bytes each */
-static u64 textn;
-static void flush(void) {
-  struct iovec *v = iov;
-  for (u32 k = niov; k;) {
-    i64 r = sys3(SYS_writev, 1, (i64)v, k);
-    if (r == -EINTR) continue;
-    if (r <= 0) leave(1);
-    for (; k && (u64)r >= v->len; v++, k--) r -= (i64)v->len;
-    if (k) v->base = (const u8 *)v->base + r, v->len -= (u64)r; /* written in part: the rest */
-  }
-  niov = 0, textn = 0;
-}
-static void put(const void *p, u64 n) {
-  iov[niov].base = p, iov[niov++].len = n;
-  if (niov == IOV) flush();
-}
-
-__attribute__((noreturn, cold)) static void fail(const char *what, const char *about) {
-  flush();
-  __attribute__((uninitialized)) u8 m[600];
-  u64 n = 0;
-  const char *parts[3] = {"you: ", what, about};
-  for (int i = 0; i < 3; i++)
-    for (const char *s = parts[i]; s && *s && n < sizeof m - 2; s++) m[n++] = (u8)*s;
-  m[n++] = '\n';
-  sys3(SYS_write, 2, (i64)m, (i64)n);
-  leave(1);
-}
+#define UNIT "you"
+#include "../lib/word.h"
+#include "../lib/sys.h"
+#include "../lib/io.h"
 
 /* ---- The environment: the few names it reads. */
 
@@ -363,7 +165,7 @@ static int is_dir(const u8 *p) {
 #define HEAD 20
 #define ONE 256u /* a rank of 1 */
 #define MAXAGE (10000u * ONE)
-#ifndef COMPACT_EVERY /* (a test's build makes it again more often: stress.sh) */
+#ifndef COMPACT_EVERY /* (a test's build makes it again more often: test/zoxide-stress.sh) */
 #define COMPACT_EVERY 16384
 #endif
 #define FORGET_GONE (90u * 86400u)
@@ -623,11 +425,8 @@ __attribute__((cold)) static int remake(const struct kstat *st, u32 now) {
   return 0;
 }
 
-/* ---- The time: the kernel's own clock_gettime, in the vDSO it maps into a process (AT_SYSINFO_EHDR), with no call
- * into it. Found by name among the vDSO's symbols (its DT_HASH says how many); where there is none (xlat's processes),
- * the call. */
+/* ---- The time (sys.h), or a test's: its build reads $YOU_NOW when set. */
 
-static const u8 *vdso_at;
 static u32 now_s(void) {
 #ifdef YOU_TEST_CLOCK
   if (env_now) {
@@ -636,51 +435,10 @@ static u32 now_s(void) {
     return t;
   }
 #endif
-  __attribute__((uninitialized)) struct { i64 s, ns; } ts;
-  const u8 *b = vdso_at;
-  if (b && ld32(b) == 0x464c457fu) { /* \x7fELF */
-    u64 phoff = ld64(b + 32), dynv = 0;
-    u16 phent = ld16(b + 54), phnum = ld16(b + 56);
-    i64 bias = 0;
-    int loaded = 0;
-    for (u16 i = 0; i < phnum; i++) {
-      const u8 *ph = b + phoff + (u64)i * phent;
-      u32 type = ld32(ph);
-      if (type == 1 && !loaded) bias = (i64)(b + ld64(ph + 8)) - (i64)ld64(ph + 16), loaded = 1; /* PT_LOAD */
-      else if (type == 2) dynv = ld64(ph + 16); /* PT_DYNAMIC */
-    }
-    const u8 *strtab = 0, *symtab = 0, *hashtab = 0;
-    for (const u8 *d = loaded && dynv ? (const u8 *)(dynv + (u64)bias) : 0; d && ld64(d); d += 16) {
-      u64 tag = ld64(d), at = ld64(d + 8) + (u64)bias;
-      if (tag == 5) strtab = (const u8 *)at;
-      else if (tag == 6) symtab = (const u8 *)at;
-      else if (tag == 4) hashtab = (const u8 *)at;
-    }
-    for (u32 i = 0, n = strtab && symtab && hashtab ? ld32(hashtab + 4) : 0; i < n; i++) {
-      const u8 *sym = symtab + (u64)i * 24;
-      if ((sym[4] & 0xf) != 2 || !ld16(sym + 6)) continue; /* a function, defined */
-      if (same((const char *)strtab + ld32(sym), "__vdso_clock_gettime")) {
-        i64 (*gettime)(i64, void *) = (i64 (*)(i64, void *))(ld64(sym + 8) + (u64)bias);
-        if (!gettime(0, &ts)) return (u32)ts.s;
-        break;
-      }
-    }
-  }
-  sys2(SYS_clock_gettime, 0, (i64)&ts);
-  return (u32)ts.s;
+  return clock_s();
 }
 
 /* ---- The commands. */
-
-/* Whether `p` (n bytes, SLACK after) has a line's end in it (\n or \r), a word at a time. */
-static int line_in(const u8 *p, u32 n) {
-  for (u32 i = 0; i < n; i += 8) {
-    u64 w = ld64(p + i), c = zeros(w ^ ('\n' * ONES)) | zeros(w ^ ('\r' * ONES));
-    if (n - i < 8) c &= ~0ull >> (64 - 8 * (n - i));
-    if (c) return 1;
-  }
-  return 0;
-}
 
 static int add(int argc, char **argv) {
   /* The records, one after another where the arena begins, each place made plain where its record puts it. */
@@ -740,26 +498,6 @@ static int add(int argc, char **argv) {
   return 0; /* the file closed, and its lock let go, as the process ends */
 }
 
-/* ASCII letters made small, eight bytes at a time: a byte from A to Z, and only such, gains 0x20. Into `d` from `s`,
- * both with SLACK after them (the last word written whole). */
-static inline u64 lower8(u64 x) {
-  const u64 ones = 0x0101010101010101ull, high = 0x8080808080808080ull;
-  u64 low7 = x & ~high;
-  u64 ge_a = low7 + (0x80 - 'A') * ones; /* high bit: >= 'A' */
-  u64 gt_z = low7 + (0x80 - 'Z' - 1) * ones; /* high bit: > 'Z' */
-  return x | ((ge_a & ~gt_z & ~x & high) >> 2);
-}
-static void lower(u8 *d, const u8 *s, u32 n) {
-  for (u32 i = 0; i < n; i += 8) st64(d + i, lower8(ld64(s + i)));
-}
-
-/* Whether `a` (any case) is `k` (small) in their first n bytes, case aside; both with SLACK after them. */
-static inline int eqi(const u8 *a, const u8 *k, u32 n) {
-  for (; n >= 8; n -= 8, a += 8, k += 8)
-    if (lower8(ld64(a)) != ld64(k)) return 0;
-  return !n || !((lower8(ld64(a)) ^ ld64(k)) & (~0ull >> (64 - 8 * n)));
-}
-
 /* The last place in `h` (n bytes, any case) where `k` (m bytes, small) is, case aside, or -1; both with SLACK after
  * them. Eight places at a time, from the right, those where both k's first byte and its last are (each byte taken
  * with 0x20 set, which a letter is in either case: a byte it would not match may pass, one it would never fails),
@@ -789,17 +527,6 @@ __attribute__((always_inline)) static inline i64 rfind(const u8 *h, u32 n, u32 k
 
 static const u8 *excl;
 static u32 excln;
-
-/* Where the last / in `p` (n bytes, absolute) is: a word at a time, from the right. */
-static u32 last_slash(const u8 *p, u32 n) {
-  for (i64 i = n; i > 0;) {
-    i64 s = i > 8 ? i - 8 : 0;
-    u64 c = zeros(ld64(p + s) ^ ('/' * ONES)) & (~0ull >> (64 - 8 * (i - s)));
-    if (c) return (u32)s + ((63 - __builtin_clzll(c)) >> 3);
-    i = s;
-  }
-  return 0;
-}
 
 /* Whether the keywords name `p` (a place, n bytes): each in it, in order, case aside, the last within its last part
  * (nothing after it is a /). So the last is looked for only where it would end past the last /: from as far before
@@ -983,29 +710,3 @@ static int main_(int argc, char **argv, char **envp) {
   sys3(SYS_write, 2, (i64)usage, sizeof usage - 1);
   return 2;
 }
-
-/* ---- Where the kernel starts it: the stack it was given (argc, argv, envp, the auxiliary vector), the guard set
- * from AT_RANDOM, then main. */
-
-__attribute__((noreturn, used, no_stack_protector)) void start(u64 *sp) {
-  int argc = (int)sp[0];
-  char **argv = (char **)(sp + 1), **envp = argv + argc + 1;
-  u64 *aux = (u64 *)envp;
-  while (*aux++) {}
-  for (; aux[0]; aux += 2) {
-    if (aux[0] == 25) __stack_chk_guard = ld64((const u8 *)aux[1]) & ~0xffull; /* AT_RANDOM; a zero byte first, as libcs do */
-    else if (aux[0] == 33) vdso_at = (const u8 *)aux[1]; /* AT_SYSINFO_EHDR */
-  }
-  leave(main_(argc, argv, envp));
-}
-
-__asm__(
-  ".text\n"
-  ".global _start\n"
-  ".type _start, @function\n"
-  "_start:\n"
-  "  xor %ebp, %ebp\n"
-  "  mov %rsp, %rdi\n"
-  "  and $-16, %rsp\n"
-  "  call start\n"
-  "  hlt\n");

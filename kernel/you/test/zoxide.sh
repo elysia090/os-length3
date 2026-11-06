@@ -2,10 +2,10 @@
 # you, checked as it is used: what a query finds and in what order, what is not learnt, what is forgotten, and what
 # it keeps through what goes wrong (learners at once with its remaking, a record written in part, a byte changed).
 #
-#   sh test.sh [YOU]           YOU: the program (./you beside this)
+#   sh kernel/you/test/zoxide.sh [YOU]     YOU: the program (kernel/you/you, as kernel/lib/build.sh makes it)
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
-you=$(cd "$(dirname "${1:-$here/you}")" && pwd)/$(basename "${1:-$here/you}")
+you=$(cd "$(dirname "${1:-$here/../you}")" && pwd)/$(basename "${1:-$here/../you}")
 t=$(mktemp -d)
 trap 'rm -rf "$t"' EXIT
 export YOU_DATA="$t/data/you" HOME="$t/home"

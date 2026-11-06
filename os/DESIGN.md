@@ -988,7 +988,7 @@ the same thing for the desktop app and for the web.
   unasked), git with delta and Git LFS, curl, wget, OpenSSL, OpenSSH's
   client, rsync, bash, the searches and finders a developer's hands know
   (GNU grep, ripgrep, fd, fzf, and `you`, this repository's own: z's
-  memory of places, in `tool/you`, one unit of C with no C library), jq
+  memory of places, in `kernel/you`, one unit of C with no C library), jq
   and yq, sqlite3, tmux, htop, ncdu, lazygit, direnv, just, hyperfine,
   age, tldr with its pages, nano, apk and the rest, and `/etc`, where each
   tool is set up to work with the others (git's diffs through delta,
