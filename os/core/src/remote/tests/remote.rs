@@ -1,4 +1,4 @@
-//! The tests of /remote.rs.
+//! The tests of remote/ (mod.rs).
 
 use super::*;
 use super::login::*;

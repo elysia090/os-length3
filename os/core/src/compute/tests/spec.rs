@@ -1,4 +1,4 @@
-//! The tests of run/compute.rs.
+//! The tests of compute/spec.rs.
 
 use super::*;
 

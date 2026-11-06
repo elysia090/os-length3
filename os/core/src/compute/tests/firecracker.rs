@@ -1,4 +1,4 @@
-//! The tests of vm/firecracker.rs.
+//! The tests of compute/firecracker.rs.
 
 use super::*;
 use std::os::unix::net::UnixListener;

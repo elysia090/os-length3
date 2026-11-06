@@ -5,6 +5,9 @@
 //! called done once none of them is left, and how long the host took to
 //! get their memory back is measured, not assumed.
 
+// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
+#![forbid(unsafe_code)]
+
 use std::fs;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -16,12 +19,19 @@ pub fn pid_ns(pid: u32) -> Option<u64> {
     s.strip_prefix("pid:[")?.strip_suffix(']')?.parse().ok()
 }
 
+/// A process's state (its letter: `Z` ended and waiting to be reaped) and when it started, in the host's clock ticks
+/// since boot: both from one read of /proc/PID/stat.
+fn state_and_start(pid: u32) -> Option<(u8, u64)> {
+    let t = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    // After the command's name (in parentheses, which may hold anything): the state is field 3, the start time 22.
+    let mut fields = t.rsplit_once(')')?.1.split_whitespace();
+    let state = *fields.next()?.as_bytes().first()?;
+    Some((state, fields.nth(18)?.parse().ok()?))
+}
+
 /// Whether a process has ended and only waits to be reaped (it holds nothing).
 pub(crate) fn zombie(pid: u32) -> bool {
-    // The state follows the command name, which is in parentheses and may hold spaces.
-    fs::read_to_string(format!("/proc/{pid}/stat")).ok()
-        .and_then(|t| t.rsplit_once(')').map(|(_, rest)| rest.trim_start().starts_with('Z')))
-        .unwrap_or(false)
+    state_and_start(pid).is_some_and(|(state, _)| state == b'Z')
 }
 
 /// Host pids of every live process in namespace `ns` (an ended one waiting
@@ -195,9 +205,7 @@ fn records(data: &Path) -> std::path::PathBuf {
 
 /// When process `pid` started, in the host's clock ticks since boot.
 pub(crate) fn start_ticks(pid: u32) -> Option<u64> {
-    let t = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-    // After the command's name (in parentheses, which may hold anything), the state is field 3; the start time is field 22.
-    t.rsplit_once(')')?.1.split_whitespace().nth(19)?.parse().ok()
+    state_and_start(pid).map(|(_, start)| start)
 }
 
 /// This Prompt's record while it is kept; it goes when this is dropped (or the process is killed, at the next read).
@@ -261,7 +269,7 @@ pub fn all(data: &Path) -> Vec<Running> {
             Err(_) => Vec::new(),
         };
         match serde_json::from_slice::<Running>(&read) {
-            Ok(r) if start_ticks(r.pid) == Some(r.start_ticks) && !zombie(r.pid) => out.push(r),
+            Ok(r) if state_and_start(r.pid).is_some_and(|(state, start)| start == r.start_ticks && state != b'Z') => out.push(r),
             // Its process is gone (or the pid is another's now), or it is no record: nothing runs.
             _ => { let _ = fs::remove_file(&path); }
         }

@@ -1,4 +1,4 @@
-//! The tests of /root.rs.
+//! The tests of root/ (mod.rs).
 
 use super::*;
 use super::held::*;

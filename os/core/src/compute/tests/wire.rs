@@ -1,4 +1,4 @@
-//! The tests of vm/wire.rs.
+//! The tests of compute/wire.rs.
 
 use super::*;
 

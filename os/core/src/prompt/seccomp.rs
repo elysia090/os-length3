@@ -150,13 +150,11 @@ fn program(errno: u16) -> Vec<SockFilter> {
 pub fn install_with(errno: u16) -> io::Result<()> {
     let p = program(errno);
     let prog = SockFprog { len: p.len() as u16, filter: p.as_ptr() };
-    // SAFETY: prctl with integer arguments; PR_SET_SECCOMP reads `prog`, which (and the vector it points
-    // into) lives across the call; the kernel copies the program.
-    unsafe {
-        if libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 { return Err(io::Error::last_os_error()); }
-        if libc::prctl(libc::PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog as *const SockFprog as libc::c_ulong, 0, 0) != 0 {
-            return Err(io::Error::last_os_error());
-        }
+    rustix::thread::set_no_new_privs(true)?;
+    // SAFETY: PR_SET_SECCOMP reads `prog`, which (and the vector it points into) lives across the call; the kernel
+    // copies the program. No safe call installs a filter.
+    if unsafe { libc::prctl(libc::PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog as *const SockFprog as libc::c_ulong, 0, 0) } != 0 {
+        return Err(io::Error::last_os_error());
     }
     Ok(())
 }

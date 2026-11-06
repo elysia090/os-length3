@@ -1,4 +1,4 @@
-//! The tests of /ssh.rs.
+//! The tests of ssh/ (mod.rs).
 
 use super::*;
 use super::keys::*;

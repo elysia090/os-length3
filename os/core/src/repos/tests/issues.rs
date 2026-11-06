@@ -1,4 +1,4 @@
-//! The tests of words/issues.rs.
+//! The tests of repos/issues.rs.
 
 use super::*;
 

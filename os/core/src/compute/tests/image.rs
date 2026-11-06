@@ -1,4 +1,4 @@
-//! The tests of vm/image.rs.
+//! The tests of compute/image.rs.
 
 use super::*;
 

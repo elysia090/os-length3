@@ -1,4 +1,4 @@
-//! The tests of words/templates.rs.
+//! The tests of repos/templates.rs.
 
 use super::*;
 use std::process::Command;

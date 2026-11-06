@@ -1,4 +1,4 @@
-//! The tests of run/launch.rs.
+//! The tests of prompt/launch.rs.
 
 use super::*;
 

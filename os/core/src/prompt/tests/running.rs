@@ -1,4 +1,4 @@
-//! The tests of device/prompts.rs.
+//! The tests of prompt/running.rs.
 
 use super::*;
 
@@ -133,4 +133,23 @@ fn a_prompt_being_prepared_is_measured_in_its_own_namespace() {
         let _ = sup.kill();
     }
     let _ = sup.wait();
+}
+
+#[test]
+fn a_process_whose_name_holds_a_parenthesis_and_spaces_is_read_rightly() {
+    // A program named as if its name ended early and said it was a zombie: the state is read after the last `)`.
+    let dir = crate::fs::testing::dir("l3-running-name");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let Ok(sleep) = std::fs::canonicalize("/bin/sleep") else { return };
+    let named = dir.join("a) Z 1");
+    std::fs::copy(&sleep, &named).unwrap();
+    let mut child = std::process::Command::new(&named).arg("5").spawn().unwrap();
+    let (state, start) = state_and_start(child.id()).unwrap();
+    assert_ne!(state, b'Z');
+    assert_eq!(start_ticks(child.id()), Some(start));
+    assert!(!zombie(child.id()));
+    child.kill().unwrap();
+    child.wait().unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
 }

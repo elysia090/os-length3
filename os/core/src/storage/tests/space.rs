@@ -1,4 +1,4 @@
-//! The tests of /space.rs.
+//! The tests of storage/ (mod.rs).
 
 use super::*;
 use super::items::*;

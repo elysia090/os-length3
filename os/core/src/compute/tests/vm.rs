@@ -1,4 +1,4 @@
-//! The tests of run/vm.rs.
+//! The tests of compute/vm.rs.
 
 use super::*;
 use crate::compute::spec::Budget;

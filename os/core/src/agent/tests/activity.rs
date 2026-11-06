@@ -1,4 +1,4 @@
-//! The tests of agent/reports.rs.
+//! The tests of agent/activity.rs.
 
 use super::*;
 

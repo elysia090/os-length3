@@ -1,4 +1,4 @@
-//! The tests of run/seccomp.rs.
+//! The tests of prompt/seccomp.rs.
 
 use super::*;
 

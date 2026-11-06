@@ -1,4 +1,4 @@
-//! The tests of device/home.rs.
+//! The tests of home/ (mod.rs).
 
 use super::*;
 use super::todo::*;
