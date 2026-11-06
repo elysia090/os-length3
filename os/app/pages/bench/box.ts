@@ -5,7 +5,7 @@ import {keepOut, LAND, nudge, paced, putAway, still} from '../../ui/glide.ts';
 import {t} from '../../i18n/i18n.ts';
 import {complete, pathWord, Recall} from '../../prompt/recall.ts';
 import {kindOf} from '../../repos/text.ts';
-import {isIssues, onChange, onRenamed, plainPath, shownTree, store, type Entry} from '../../repos/repos.ts';
+import {onChange, onRenamed, shownTree, store, type Entry} from '../../repos/repos.ts';
 import {boxMode, modeHint, modeMenu, modesNow, nextIssue, onBoxMode, pillWords, sendAs, sendInto, sendTitle, sendWord, setBoxMode, turn, type Mode} from './box-modes.ts';
 import type {Screen, ScreenState} from './screen.ts';
 import {sessionFor, terminalFor} from './terminal.ts';
@@ -15,9 +15,9 @@ import {EditLine} from './edit-box.ts';
 import {agentKey, agentUse} from '../../account/agent-key.ts';
 import {setRightPane} from '../kit/pane.ts';
 import {atWork, told} from './agent.ts';
-import type {Hands} from '../../agent/work.ts';
+import type {Hands} from '../../agent/loop.ts';
+import {fileHands, tail} from '../../repos/agent-hands.ts';
 import {work as workOf} from '../../repos/history.ts';
-import {counts, lineOps} from '../../repos/linediff.ts';
 
 // The box at the foot of a work page's center (DESIGN.md § Forge, The box at the foot): one field, and at its left a
 // pill that says what it does: Run in the repo's Prompt (the pill the prompt line the shell waits at, pill-line.ts),
@@ -734,31 +734,13 @@ export class Box {
 }
 
 /**
- * What the box's Agent does its work with in `repo`, through the OS's own calls, the screen following as it follows
- * the person's work: its files read as they stand, its commands run in the repo's Prompt as a line typed there runs
- * (seen run), and, where it was handed the work (`writes`: an issue's), files written whole, which an editor open on
- * them shows changing; never the issues' own folder, which the OS keeps.
+ * What the box's Agent does its work with in `repo`, through the OS's own calls: its files read, and where it was
+ * handed the work (`writes`: an issue's) edited and written, by the core's rules (repos/agent-hands.ts); its commands
+ * run in the repo's Prompt as a line typed there runs.
  */
 function agentHands(repo: string, writes: boolean): Hands {
-  const read = async (path: string) => {
-    const c = await store.read(repo, path);
-    if (c.text === null) throw new Error(t('{path} is not text', {path}));
-    return c.text;
-  };
-  return {
-    read,
-    run: (command) => sessionFor(repo).run(command),
-    ...(writes ? {write: async (path: string, text: string) => {
-      if (!plainPath(path) || isIssues(path)) throw new Error(t('{path} is not a file the Agent may write', {path}));
-      const before = await read(path).catch(() => null);
-      if (before === null) {
-        const at = path.lastIndexOf('/');
-        await store.add(repo, at < 0 ? '' : path.slice(0, at), path.slice(at + 1), text, AGENT);
-      } else await store.write(repo, path, text, AGENT);
-      return counts(lineOps(before ?? '', text));
-    }} : {}),
-  };
+  return {...fileHands(repo, writes), run: async (command) => {
+    const r = await sessionFor(repo).run(command);
+    return {...r, given: await tail(r.output)};
+  }};
 }
-
-/** Who writes, for what watches the repo's files: the Agent, so an editor open on the file takes it in as written elsewhere. */
-const AGENT = 'agent';

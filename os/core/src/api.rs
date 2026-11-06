@@ -11,7 +11,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use crate::{agent::activity, agent::tasks, device::agent_key, fs::paths, history, history::work, home, remote, remote::account, storage};
+use crate::{agent::activity, agent::hands, agent::tasks, device::agent_key, fs::paths, history, history::work, home, remote, remote::account, storage};
 
 /// Files the editor may save; anything read in part is never written back.
 pub const READ_LIMIT: u64 = 256 * 1024;
@@ -101,6 +101,18 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
             agent_key::Held::Given(k) => agent_key::kind(&k.key).map(|(_, var)| json!({"key": k.key, "variable": var, "model": k.model})),
             agent_key::Held::Sealed(s) => Some(json!({"sealed": s.sealed, "variable": s.variable, "model": s.model})),
         })),
+
+        // The Agent's hands' rules (agent/hands.rs), one meaning wherever it works: a file's lines read from where asked,
+        // with where to go on; a run's output as it is given back; an edit as pieces of text found once and replaced
+        // (the file is the caller's to write, so what watches the repo hears of it as of any write).
+        "agent_read" => {
+            let (repo, path) = (a.s("repo")?, a.s("path")?);
+            let c = seen()?.read(&repo, &path, READ_LIMIT)?;
+            let text = c.text.ok_or_else(|| crate::tr!("{} is not text", "{} はテキストではありません", path))?;
+            to(hands::part(&text, a.opt("offset")?, a.opt("limit")?)?)
+        }
+        "agent_tail" => to(hands::tail(&a.s("output")?)),
+        "agent_edit" => to(hands::edit(&a.s("path")?, &a.s("text")?, &a.get::<Vec<hands::Change>>("edits")?)?),
 
         // The box's Agent saying what it does, as an agent's hooks do (agent/activity.rs from_box): asked, answered.
         "agent_said" => {

@@ -103,8 +103,8 @@ test('handed an issue\'s work, the box\'s Agent reads and writes its files: the 
   const told: string[] = [];
   await maker(app.page, told, (asked) => {
     const turn = asked.messages.filter((m) => m.role === 'assistant').length;
-    if (turn === 0) return [{type: 'text', text: 'Looking at the README.'}, {type: 'tool_use', id: 't1', name: 'read_file', input: {path: 'README.md'}}];
-    if (turn === 1) return [{type: 'tool_use', id: 't2', name: 'write_file', input: {path: 'README.md', content: `${given(asked).trimEnd()}\n\nBuild it with make.\n`}}];
+    if (turn === 0) return [{type: 'text', text: 'Looking at the README.'}, {type: 'tool_use', id: 't1', name: 'read', input: {path: 'README.md'}}];
+    if (turn === 1) return [{type: 'tool_use', id: 't2', name: 'edit', input: {path: 'README.md', edits: [{oldText: given(asked).trimEnd(), newText: `${given(asked).trimEnd()}\n\nBuild it with make.`}]}}];
     return [{type: 'text', text: 'Added how it is built to the README.'}];
   });
   await app.newRepo.make('hello');

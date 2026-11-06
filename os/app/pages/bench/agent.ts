@@ -2,13 +2,13 @@ import {h} from '../../ui/dom.ts';
 import {t} from '../../i18n/i18n.ts';
 import {shownTree} from '../../repos/repos.ts';
 import {AgentError, type Use} from '../../agent/ask.ts';
-import {work, type Hands, type Step} from '../../agent/work.ts';
+import {Agent, type Done, type Hands} from '../../agent/loop.ts';
 import {boxSaid} from '../../repos/agents.ts';
 import {LAND, paced, still} from '../../ui/glide.ts';
 import {askChanged, asked} from './asks.ts';
 
 // The box's Agent (box-modes.ts): something asked of it in the repo, worked on by the model the key kept on this
-// device opens (agent/work.ts), told what the person is looking at (the repo's top, the issue whose work it is, and
+// device opens (agent/loop.ts), told what the person is looking at (the repo's top, the issue whose work it is, and
 // the file in front with the caret's line, as it stands). It works behind the screen, through the OS's own calls: it
 // reads the repo's files, runs its commands in a Prompt of its own that no one looks at (a build, the tests), and, on
 // an issue's work only, writes files, which the screen shows changing where they are open (Forge, its diff). What it
@@ -68,16 +68,30 @@ function whyNot(e: unknown): string {
   return e.message;
 }
 
-/** A step as a line of the Prompt's flow says it: what was done, and on what (a run is its own line there). */
-function stepWords(s: Exclude<Step, {kind: 'text' | 'run'}>): string {
-  if (s.error) return s.kind === 'write' ? t('Could not edit {path}: {why}', {path: s.path, why: s.error}) : t('Could not read {path}: {why}', {path: s.path, why: s.error});
-  return s.kind === 'read' ? t('Read {path}', {path: s.path}) : t('Edited {path} (+{added} −{removed})', {path: s.path, added: s.added, removed: s.removed});
+/** A file tool as a line of the Prompt's flow says it: what was done, and on what (a run is its own line there). */
+function stepWords(name: string, path: string, done: Done | undefined, why: string): string {
+  if (!done) return name === 'read' ? t('Could not read {path}: {why}', {path, why}) : t('Could not edit {path}: {why}', {path, why});
+  if (done.tool === 'read') return t('Read {path}', {path});
+  return done.tool === 'bash' ? '' : t('Edited {path} (+{added} −{removed})', {path, added: done.added, removed: done.removed});
 }
 
-/** A step in the words an agent's hooks say a tool in (the journal: an issue's box in Git shows it). */
-function hookWords(s: Exclude<Step, {kind: 'text'}>): string {
-  if (s.kind === 'run') return `${s.command}${s.status === null ? '' : ` (exit ${s.status})`}`;
-  return `${s.kind === 'read' ? 'read' : 'edited'} ${s.path}`;
+/** A tool about to be used, in the words an agent's hooks say it in (the journal: an issue's box in Git shows it). */
+function hookWords(name: string, args: Record<string, unknown>): string {
+  const s = (k: string) => (typeof args[k] === 'string' ? args[k] as string : '');
+  return name === 'bash' ? s('command') : `${name === 'read' ? 'read' : 'edited'} ${s('path')}`;
+}
+
+/**
+ * An agent's hooks, outside its loop: started once per repo, asked, each tool about to be used, its turn over (with
+ * its last words, or why it stopped), said as any agent's hooks say them (repos/agents.ts boxSaid).
+ */
+function hooks(agent: Agent, repo: string): void {
+  if (!started.has(repo)) { started.add(repo); boxSaid(SESSION, repo, 'start'); }
+  agent.subscribe((e) => {
+    if (e.type === 'agent_start') boxSaid(SESSION, repo, 'prompt', e.question);
+    else if (e.type === 'tool_execution_start') boxSaid(SESSION, repo, 'tool', hookWords(e.name, e.args));
+    else if (e.type === 'agent_end') boxSaid(SESSION, repo, 'stop', e.error ? whyNot(e.error) : e.said);
+  });
 }
 
 /** Where the Agent's work is written: the repo's Prompt's flow (terminal.ts Session). */
@@ -87,15 +101,15 @@ export interface Flow {
 }
 
 /**
- * `question` (its line in the flow: `row`) worked on in `repo` with `use`, told `system`, done with `hands`
- * (agent/work.ts). The flow follows it as it follows the person's work: what it runs is run in the Prompt (`hands`),
- * a line typed and its output as any; what it reads and edits, a line of its own each (pressed, the file is opened
- * with `open`); its words under the line they follow; refused, why, in the red. Until its first step it waits under
- * the question (styles: a quiet ellipsis). Asked, each step, and its turn over are said as an agent's hooks say them.
+ * `question` (its line in the flow: `row`) worked on in `repo` with `use`, told `system`, done with `hands` (the
+ * Agent's loop, agent/loop.ts). The flow follows what it does as it follows the person's work: what it runs is run in
+ * the Prompt (`hands`), a line typed and its output as any; what it reads and edits, a line of its own each
+ * (pressed, the file is opened with `open`); its words under the line they follow; refused, why, in the red. Until its
+ * first step it waits under the question (styles: a quiet ellipsis). Its hooks are said beside, as any agent's are.
  */
 export async function atWork(flow: Flow, row: HTMLElement, repo: string, use: Use, system: string, question: string, hands: Hands, open: (path: string) => void): Promise<void> {
-  if (!started.has(repo)) { started.add(repo); boxSaid(SESSION, repo, 'start'); }
-  boxSaid(SESSION, repo, 'prompt', question);
+  const agent = new Agent({use, system, hands});
+  hooks(agent, repo);
   // Kept too, as it comes, for Agent's list under the search box (asks.ts).
   const ask = asked(repo, question);
   const kept = (part: (typeof ask.parts)[number]) => { ask.parts.push(part); askChanged(repo); };
@@ -114,22 +128,23 @@ export async function atWork(flow: Flow, row: HTMLElement, repo: string, use: Us
     if (refused) a.classList.add('refused');
     if (!still()) a.animate([{opacity: 0, translate: '0 4px'}, {opacity: 1, translate: '0 0'}], {duration: paced(220), easing: LAND});
   };
+  agent.subscribe((e) => {
+    if (e.type === 'message_end') { words(answerNodes(e.text)); kept({kind: 'words', text: e.text}); return; }
+    if (e.type !== 'tool_execution_end') return;
+    settle();
+    const path = typeof e.args.path === 'string' ? e.args.path : '';
+    if (e.name === 'bash') { kept({kind: 'step', text: `$ ${hookWords(e.name, e.args)}`}); return; }
+    const said = stepWords(e.name, path, e.done, e.result);
+    kept({kind: 'step', text: said});
+    last = flow.note('Agent', said, () => open(path));
+  });
   try {
-    const said = await work(use, system, question, hands, (s) => {
-      if (s.kind === 'text') { words(answerNodes(s.text)); kept({kind: 'words', text: s.text}); return; }
-      boxSaid(SESSION, repo, 'tool', hookWords(s));
-      settle();
-      if (s.kind === 'run') { kept({kind: 'step', text: `$ ${hookWords(s)}`}); return; }
-      kept({kind: 'step', text: stepWords(s)});
-      last = flow.note('Agent', stepWords(s), () => open(s.path));
-    });
+    const said = await agent.prompt(question);
     settle();
     if (!said.trim()) throw new AgentError(0, t('Agent returned no response'));
-    boxSaid(SESSION, repo, 'stop', said);
   } catch (e) {
     words([h('span', {class: 'answer-refused'}, whyNot(e))], true);
     ask.refused = whyNot(e);
-    boxSaid(SESSION, repo, 'stop', whyNot(e));
   } finally {
     ask.done = true;
     askChanged(repo);

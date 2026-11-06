@@ -1,6 +1,6 @@
 import {MAKERS, newest, type Listed, type Maker} from './makers.ts';
 
-// The model a key opens, found once when the key is given (its work: work.ts). Straight from this device to the
+// The model a key opens, found once when the key is given (its work: loop.ts). Straight from this device to the
 // maker: nothing of it, the key least of all, goes by the Remote.
 
 /** What asking needs: the key, the variable it is read from (its maker), and the model it opens. */
