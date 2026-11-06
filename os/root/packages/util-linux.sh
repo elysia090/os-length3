@@ -2,14 +2,15 @@
 # table of what it is given, over libsmartcols) and whereis (where a command's program is), and their
 # libraries (libuuid, libblkid, libmount, libsmartcols, libfdisk). Nothing else optional is linked (no udev, systemd,
 # readline, libmagic, libcap-ng, econf), each said so it is not found by chance. Its idmapped-mount hook needs
-# linux/openat2.h, which 2.42.4 does not include: the patch is for that release, and another is reviewed before it
-# is pinned.
+# linux/openat2.h, which 2.42.4 does not include; and its configure has no switch for column (built only by default,
+# which --disable-all-programs turns off), so --enable-column is made to build it. Both patches are for that release,
+# and another's are reviewed before it is pinned.
 pins="UTIL_LINUX"
 needs="ncurses"
 tools="pkgconf"
-patches="util-linux/2.42.4-openat2.patch"
+patches="util-linux/2.42.4-openat2.patch util-linux/2.42.4-column.patch"
 build() {
-  [ "$UTIL_LINUX_VERSION" = 2.42.4 ] || { echo "util-linux $UTIL_LINUX_VERSION: review util-linux/2.42.4-openat2.patch"; exit 1; }
+  [ "$UTIL_LINUX_VERSION" = 2.42.4 ] || { echo "util-linux $UTIL_LINUX_VERSION: review util-linux/2.42.4-*.patch"; exit 1; }
   mkdir ../o && cd ../o
   ../src/configure --prefix=/usr --bindir=/usr/bin --sbindir=/usr/bin --libdir=/usr/lib \
     --disable-shared --enable-static --disable-rpath \
