@@ -1,9 +1,8 @@
 // Where each box of the desk lies (desk.ts), and where the camera looks: kept apart from the page so it is measured
 // and tested as numbers. The desk is a plane on a 24 px grid; its boxes stand in columns, each box as wide as 80
 // columns of code, one under another in its column with three grid steps between them, the columns two steps apart.
-// The camera has two distances: the base, every box at its own size, and close, as near as the box still fits the
-// face across (an eighth to a quarter nearer), for work on a few lines. It never steps back further than the base:
-// what is not in sight there is a scroll away.
+// The camera has its standard, every box at its own size, the box in hand in the middle (a balance found good: never
+// nearer than that); from there it steps back to see the whole desk, and comes back.
 
 /** The grid the desk is laid on. */
 export const GRID = 24;
@@ -16,10 +15,9 @@ export const VGAP = 3 * GRID;
 export const PAD = 36;
 /** Room above a column's first box for its name. */
 export const TOP = 48;
-/** The camera's two distances: the base, and close (between the least and the most, as near as the box fits across). */
-export const BASE = 1;
-export const CLOSE_LEAST = 1.12;
-export const CLOSE_MOST = 1.25;
+/** The standard: every box at its own size. Stepped back, at most half of it. */
+export const STANDARD = 1;
+export const WHOLE_MOST = 0.5;
 
 function up(v: number): number { return GRID * Math.ceil(v / GRID); }
 
@@ -42,46 +40,36 @@ export function slots(cols: readonly (readonly string[])[], heights: (key: strin
 export interface View { s: number; x: number; y: number }
 
 /**
- * At the base, on the box at `slot` (`h` high) in a face `w` by `hgt`: the box's middle in the face's middle across, its
- * top a little under the face's top (all of it, when it fits; its top, when it does not).
+ * At the standard, on the box at `slot` (`h` high) in a face `w` by `hgt`: the box's middle in the face's middle across;
+ * a box that fits in the middle of the height too, but never lower than a third of the way down (a short box stands
+ * where the eye starts, not in a hole in the middle), a tall one from its top.
  */
-export function baseOn(slot: Slot, h: number, w: number, hgt: number): View {
-  const s = BASE;
+export function standardOn(slot: Slot, h: number, w: number, hgt: number): View {
+  const s = STANDARD;
   const x = w / 2 - (slot.x + WIDTH / 2) * s;
-  const fits = h * s + 2 * TOP <= hgt;
-  const y = fits ? Math.min(TOP, (hgt - h * s) / 2) - slot.y * s : TOP - slot.y * s;
-  return {s, x, y};
+  const top = Math.min(Math.max(TOP + 16, (hgt - h * s) / 2), Math.max(TOP + 16, hgt * .3));
+  return {s, x, y: top - slot.y * s};
+}
+
+/** Stepped back: the whole desk (each box's slot and height, its name over it, its shadow) in the face, at most
+ * WHOLE_MOST, centred. */
+export function wholeOf(boxes: {slot: Slot; h: number}[], w: number, hgt: number): View {
+  let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+  for (const {slot, h} of boxes) { l = Math.min(l, slot.x); t = Math.min(t, slot.y - 24); r = Math.max(r, slot.x + WIDTH + 8); b = Math.max(b, slot.y + h + 8); }
+  if (!isFinite(l)) return {s: WHOLE_MOST, x: 0, y: 0};
+  const s = Math.min(WHOLE_MOST, (w - 96) / (r - l), (hgt - 96) / (b - t));
+  return {s, x: (w - (r - l) * s) / 2 - l * s, y: Math.max(TOP, (hgt - (b - t) * s) / 2) - t * s};
 }
 
 /**
- * Close on the box at `slot` (`h` high), where the work is in it (`at`, from the box's top left; none: its top): the
- * box in the middle across when it fits, else from its left edge, `at` kept in sight; `at` a little over the face's
- * middle, never past the box's top or foot when the box is taller than the face.
- */
-export function closeOn(slot: Slot, h: number, w: number, hgt: number, at: {x: number; y: number} | null): View {
-  const s = Math.min(CLOSE_MOST, Math.max(CLOSE_LEAST, (w - 2 * PAD) / WIDTH)), bw = WIDTH * s, bh = h * s;
-  let x = bw + 2 * PAD <= w ? w / 2 - (slot.x + WIDTH / 2) * s : PAD - slot.x * s;
-  // The work past the face's right: along with it, never so far that the box's right edge comes in off the margin.
-  if (at && x + (slot.x + at.x) * s > w - 2 * PAD) x = Math.max(w * 2 / 3 - (slot.x + at.x) * s, w - PAD - (slot.x + WIDTH) * s);
-  let y: number;
-  if (bh + 2 * TOP <= hgt) y = Math.min(TOP, (hgt - bh) / 2) - slot.y * s;
-  else {
-    y = at ? hgt * .42 - (slot.y + at.y) * s : TOP - slot.y * s;
-    y = Math.min(y, TOP - slot.y * s);
-    y = Math.max(y, hgt - TOP - (slot.y + h) * s);
-  }
-  return {s, x, y};
-}
-
-/**
- * At the base, over the boxes at `boxes` (each its slot and height) at once, as they lie: their middle in the face's
- * middle when they all fit in it; null when they do not (the camera goes to the one last at work instead).
+ * At the standard, over the boxes at `boxes` (each its slot and height) at once, as they lie: their middle in the
+ * face's middle when they all fit in it; null when they do not (the camera goes to the one last at work instead).
  */
 export function overAll(boxes: {slot: Slot; h: number}[], w: number, hgt: number): View | null {
   let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
   for (const {slot, h} of boxes) { l = Math.min(l, slot.x); t = Math.min(t, slot.y); r = Math.max(r, slot.x + WIDTH); b = Math.max(b, slot.y + h); }
   if (r - l > w - 2 * PAD || b - t > hgt - 2 * PAD) return null;
-  return {s: BASE, x: (w - (r - l)) / 2 - l, y: Math.max(PAD, (hgt - (b - t)) / 2) - t};
+  return {s: STANDARD, x: (w - (r - l)) / 2 - l, y: Math.max(PAD, (hgt - (b - t)) / 2) - t};
 }
 
 /** The box `from` hands over to going `way` (Alt and an arrow): along its column, or the next column's nearest. */

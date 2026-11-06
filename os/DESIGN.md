@@ -1950,20 +1950,19 @@ line does (Run, Issue, TODO, Agent; Alt and a number, or pressed). Under Run,
 Enter runs the line as a terminal's does, Shift+Enter is a new line. Each
 file opened is a box of its own beside it, written in where it lies (there
 is no Edit to choose: the file is typed into). One box is in hand. The camera
-has two distances. At the base every box is at its own size, the box in hand
-in the middle across, under the top, and the camera moves as a scroll does, so
-the keyboard going into a box, or something brought into view, takes the
-camera there and that box into hand. Close (Ctrl and +, or a pinch) it is as
-near as the box still fits the face across (an eighth to a quarter nearer), for
-work on a few lines: where the work is in the box is kept
-in sight as it goes, a line written past the face's edge, the caret taken down,
-the box growing under it, the camera going along only when the work leaves the
-middle; the wheel moves it along the box. Ctrl and -, Ctrl and 0, a pinch out
-or Escape go back to the base, and nothing goes further back than the base:
-what is not in sight there is a scroll away. At the base, Escape lets go of a
-box's text, the box still in hand. Alt and an arrow hand over to the next box
-that way, as near as the camera was; Alt, Shift and an arrow carry the box in
-hand a slot, the others stepping over, gliding there. A file
+has its standard: every box at its own size, the box in hand in the middle
+across (a short one no lower than a third of the way down), the balance the work
+is done at, and it never comes nearer than that. At the standard the camera
+moves as a scroll does, so the keyboard going into a box, or something brought
+into view, takes the camera there and that box into hand, and the wheel moves
+it along the desk. Escape (Ctrl and -, a pinch out) steps back to the whole
+desk, at most half its size, zooming first and then going; Enter (a box pressed
+twice, Ctrl and 0, a pinch in) comes back to the box in hand, going first and
+then zooming. Stepped back, the box in hand is ringed, a press takes another
+in hand and an arrow hands over; at the standard Alt and an arrow do. Alt,
+Shift and an arrow carry the box in hand a slot: held, Alt and Shift lift it
+off the desk, its shadow long; the others step over, gliding there, and let
+go, it is put down. A file
 gone goes from the desk; moved, its box is the file where it went. Each
 repo keeps its own desk, as it was left, from one visit to the next; a desk
 never worked at begins with the Prompt and the README beside it.
