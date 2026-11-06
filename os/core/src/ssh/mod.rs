@@ -1,5 +1,5 @@
 //! SSH into a repo's Prompt from any OpenSSH client. The listener is l3's
-//! (cli/src/ssh.rs, `l3 address ssh serve`, started by turning SSH on); what
+//! (l3/src/ssh.rs, `l3 address ssh serve`, started by turning SSH on); what
 //! the app and l3 share of it is here:
 //!
 //!   keys       the Runtime dotfile `.authorized_keys`, one OpenSSH public
@@ -24,7 +24,7 @@
 //!              running Prompt records itself (prompt/running.rs), so l3 and the app
 //!              see it and stop it; the host key beside it, made once
 //!   Remote     only that a device listens, and to whom (its scope word),
-//!              per device (service/ssh.ts): no address, port or repo name
+//!              per device (remote/ssh.ts): no address, port or repo name
 //!              leaves the device. The listener says so when it starts and
 //!              asks every few seconds whether it still should (off from any
 //!              page stops it); where it is reached is worked out and shown

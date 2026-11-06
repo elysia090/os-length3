@@ -1,10 +1,10 @@
 // npm test: every test file (src/**/*.test.ts, service/*.test.ts, scripts/*.test.mjs) under node:test, each
-// process with the core a page runs (src/testing/core.ts), reported as node --test reports.
+// process with the core a page runs (app/testing/core.ts), reported as node --test reports.
 //
 // node --test runs each file in a process of its own: a process paid for starting, loading what its file uses
 // and, for a file on a Remote, making a database (some 3 s of CPU before its first test), often more than its
 // tests then took. Here there is a process a core, and each takes the next file no other has taken, the longest
-// first, and runs it with what the process has made already (service/testing-together.ts), so that they end
+// first, and runs it with what the process has made already (remote/testing-together.ts), so that they end
 // about together; a long file whose tests are each their own (PARTS) is run in parts, several at once. The few
 // files that need a process of their own (ALONE) run beside them from the start.
 // Each process loads its modules as scripts/tests-load.mjs says: their types stripped and their code compiled
@@ -12,7 +12,7 @@
 //
 // As node --test: NODE_OPTIONS=--test-shard=i/n runs every n-th file from the i-th (CI's four shards), and
 // --test-name-pattern, --test-skip-pattern, --test-only, --test-concurrency and --test-reporter are taken.
-// Files named run instead of every file (npm test -- service/plan.test.ts src/remote/sync.test.ts).
+// Files named run instead of every file (npm test -- remote/plan.test.ts app/remote/sync.test.ts).
 
 import {mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {availableParallelism, tmpdir} from 'node:os';
@@ -31,10 +31,10 @@ const HERE = process.cwd();
 const ALONE = new Set([
   // The Worker as an isolate has it: its app is made once a process, from the first env it is given, and Neon's
   // driver is pointed at this file's bridge. Another file's Worker (service.test.ts's sweep) would meet both.
-  'service/worker.test.ts',
+  'remote/worker.test.ts',
   // Transfers over sockets, timed: seconds of waiting for stalls and retries, which would hold up the files after
   // it in a shared process, and an interval of prompt/l3-files.ts's own.
-  'src/prompt/l3-files.test.ts',
+  'app/prompt/l3-files.test.ts',
   // Builds l3 with child processes, and waits for them.
   'scripts/l3.test.mjs',
 ]);
@@ -44,7 +44,7 @@ const ALONE = new Set([
  * kept from one test to the next), which may run in parts in several processes at once (testing-part.ts): one
  * of them, service.test.ts, was a third of all the Remote's tests, and the run waited for it alone at the end.
  */
-const PARTS = new Set(['service/service.test.ts', 'service/security.test.ts', 'service/budget.test.ts', 'service/audit.test.ts']);
+const PARTS = new Set(['remote/service.test.ts', 'remote/security.test.ts', 'remote/budget.test.ts', 'remote/audit.test.ts']);
 
 const {values, positionals} = parseArgs({allowPositionals: true, options: {
   'test-name-pattern': {type: 'string', multiple: true}, 'test-skip-pattern': {type: 'string', multiple: true},
@@ -57,7 +57,7 @@ const under = (dir, keep, deep) => readdirSync(dir, {withFileTypes: true}).flatM
 const named = positionals.map((p) => relative(OS, resolve(HERE, p)));
 // Every path from here on is from os/, as the tests expect to be run.
 process.chdir(OS);
-let files = named.length ? named : [...under('src', (n) => n.endsWith('.test.ts'), true), ...under('service', (n) => n.endsWith('.test.ts')),
+let files = named.length ? named : [...under('app', (n) => n.endsWith('.test.ts'), true), ...under('remote', (n) => n.endsWith('.test.ts')),
   ...under('scripts', (n) => n.endsWith('.test.mjs'))].sort();
 
 // A shard: every n-th file from the i-th, as node --test gives one.
@@ -103,7 +103,7 @@ units.sort((a, b) => unitWeight(b) - unitWeight(a));
 // it first); made for this run, gone when it ends.
 const kept = scratch('length3-tests-');
 process.on('exit', () => rmSync(kept, {recursive: true, force: true}));
-const together = pathToFileURL(join(OS, 'service/testing-together.ts')).href;
+const together = pathToFileURL(join(OS, 'remote/testing-together.ts')).href;
 const entries = Array.from({length: processes}, (_, k) => {
   const entry = join(kept, `together-${k + 1}.mjs`);
   writeFileSync(entry, `// One of the processes the test files share in npm test (scripts/tests.mjs).\n` +
@@ -132,7 +132,7 @@ run({
   // again, optimized, took more CPU on other threads than the faster code saved.
   // node:test's mock timers are still marked experimental in Node 22: that notice is about the tests' own clock,
   // not about what is tested, and is the one notice of its kind they print.
-  execArgv: ['--liftoff-only', '--disable-warning=ExperimentalWarning', '--import', pathToFileURL(join(OS, 'scripts/tests-load.mjs')).href, '--import', pathToFileURL(join(OS, 'src/testing/core.ts')).href],
+  execArgv: ['--liftoff-only', '--disable-warning=ExperimentalWarning', '--import', pathToFileURL(join(OS, 'scripts/tests-load.mjs')).href, '--import', pathToFileURL(join(OS, 'app/testing/core.ts')).href],
   testNamePatterns: values['test-name-pattern'], testSkipPatterns: values['test-skip-pattern'], only: values['test-only'],
 })
   .on('test:pass', timed)

@@ -2,7 +2,7 @@
 pins="ATTR"
 build() {
   mkdir ../o && cd ../o
-  ../src/configure --prefix=/usr --sysconfdir=/etc --disable-shared --enable-static --disable-nls
+  ../app/configure --prefix=/usr --sysconfdir=/etc --disable-shared --enable-static --disable-nls
   make -j"$jobs" LDFLAGS="$allstatic"
   make DESTDIR="$dest" LDFLAGS="$allstatic" install
 }

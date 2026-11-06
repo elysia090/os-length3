@@ -13,7 +13,7 @@
     "selftest:l3": "tsc -p selftest/l3 && node --test \"selftest/l3/*.test.ts\"",
     "selftest": "playwright test -c selftest",
     "selftest:prod": "node selftest/prod/run.ts",
-    "verify:remote": "node service/verify.ts",
+    "verify:remote": "node remote/verify.ts",
     "tauri": "tauri",
     "l3": "sh scripts/l3.sh",
     "l3:parity": "node scripts/l3-parity.mjs",

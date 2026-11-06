@@ -96,7 +96,7 @@ type Dotfiles = std::collections::BTreeMap<String, String>;
 /// The names the app offers for a new dotfile.
 pub const COMMON_DOTFILES: [&str; 8] = [".profile", ".shrc", ".gitconfig", ".nanorc", ".inputrc", ".editorconfig", ".packages", ".setup"];
 
-/// A dotfile's name as it may be written into /root: a dot, then letters, digits and . _ - (src/home/dotfiles.ts).
+/// A dotfile's name as it may be written into /root: a dot, then letters, digits and . _ - (app/home/dotfiles.ts).
 pub fn dotfile_name(name: &str) -> bool {
     name.len() > 1 && name.len() <= 64 && name.starts_with('.') && name != ".." && !name.contains("..")
         && name.bytes().skip(1).all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))

@@ -35,7 +35,7 @@ pub fn profile() -> Profile {
     get("profile").ok().flatten().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
 }
 
-/// A handle is a username: 2–31 lowercase letters, digits, . - and _, from a letter or digit (src/home/profile.ts).
+/// A handle is a username: 2–31 lowercase letters, digits, . - and _, from a letter or digit (app/home/profile.ts).
 pub fn valid_handle(h: &str) -> bool {
     let word = |b: u8| b.is_ascii_lowercase() || b.is_ascii_digit();
     (2..=31).contains(&h.len()) && h.bytes().next().is_some_and(word) && h.bytes().all(|b| word(b) || b"._-".contains(&b))
@@ -44,7 +44,7 @@ pub fn valid_handle(h: &str) -> bool {
 /// How long each field of a profile may be, in characters.
 pub const PROFILE_LIMITS: [(&str, usize); 3] = [("name", 50), ("handle", 31), ("bio", 160)];
 
-/// Home's profile, as the app keeps it (src/home/profile.ts).
+/// Home's profile, as the app keeps it (app/home/profile.ts).
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
 pub struct Profile {
     #[serde(default)]

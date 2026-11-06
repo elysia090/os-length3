@@ -4,7 +4,7 @@ pins="BINUTILS"
 tools="bison flex perl texinfo"
 build() {
   mkdir ../o && cd ../o
-  MAKEINFO=true ../src/configure --prefix=/usr --build="$target" --host="$target" --target="$target" \
+  MAKEINFO=true ../app/configure --prefix=/usr --build="$target" --host="$target" --target="$target" \
     --disable-gold --disable-gdb --disable-gdbserver --disable-gprofng --disable-libdecnumber --disable-nls \
     --disable-readline --disable-shared --disable-sim --disable-werror --enable-static --without-babeltrace \
     --without-debuginfod --without-zstd

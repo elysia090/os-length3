@@ -1,21 +1,21 @@
 # The production-like selftest
 
-`npm run selftest` and `npm run selftest:l3` run the Remote as `service/dev.ts`:
+`npm run selftest` and `npm run selftest:l3` run the Remote as `remote/dev.ts`:
 Hono on Node, PGlite, blobs in files. Production is a Worker on workerd over
 Neon and R2. This folder runs the same tests, and more, against the Remote as
 production runs it, on this machine, reaching nothing else:
 
 | Production | Here |
 |---|---|
-| `service/worker.ts` on workerd, `nodejs_compat` | the same, under `wrangler dev --local` (workerd and Miniflare from `node_modules`), from a configuration made from `wrangler.toml` (`stack.ts` says each difference and why) |
-| Neon Postgres, the Worker as `remote_worker_<when>` (member of `remote_app`), migrations as the owner | a Postgres 16 cluster of its own (`postgres.ts`: `/usr/lib/postgresql/16`, 127.0.0.1 only, a free port, a new directory, gone at the end); migrations by `migrateRemote` and the role by `workerRole` (`service/neon.ts`), exactly what `deploy.ts` runs, a role of its own for each Remote on the cluster |
+| `remote/worker.ts` on workerd, `nodejs_compat` | the same, under `wrangler dev --local` (workerd and Miniflare from `node_modules`), from a configuration made from `wrangler.toml` (`stack.ts` says each difference and why) |
+| Neon Postgres, the Worker as `remote_worker_<when>` (member of `remote_app`), migrations as the owner | a Postgres 16 cluster of its own (`postgres.ts`: `/usr/lib/postgresql/16`, 127.0.0.1 only, a free port, a new directory, gone at the end); migrations by `migrateRemote` and the role by `workerRole` (`remote/neon.ts`), exactly what `deploy.ts` runs, a role of its own for each Remote on the cluster |
 | the Neon serverless driver over a WebSocket to Neon's proxy, startup pipelined | the same driver code, pointed (`worker.ts` here: `neonConfig.wsProxy`) at `wsbridge.ts`, a process that hands each WebSocket's bytes to a TCP connection to the Postgres; each `remote_worker_…` logs in by password so the driver pipelines its startup as it does to Neon |
 | R2 | Miniflare's local R2 (`--persist-to`), or none (`noBucket`) |
 | Workers Assets, SPA fallback, `run_worker_first`, `public/_headers` | the same, serving the app built for its own origin (`VITE_LENGTH3_REMOTE=''`, as `build:cloudflare` builds it; without the Prompt's files, which come from the release) |
 | the Cron Trigger | wrangler's `/__scheduled` (`--test-scheduled`) |
 | secrets | a `.dev.vars` of throwaway values, made for the run in a temporary directory, never in the tree |
-| Stripe | `service/devbilling.ts`, answering Stripe's REST API inside the Worker (`LOCAL_STRIPE=1`); nothing reaches Stripe |
-| GitHub/Google/Apple sign-in | the stand-in provider (`DEV_SIGN_IN=1`, which `service/worker.ts` takes only when `BASE_URL` is this machine) |
+| Stripe | `remote/devbilling.ts`, answering Stripe's REST API inside the Worker (`LOCAL_STRIPE=1`); nothing reaches Stripe |
+| GitHub/Google/Apple sign-in | the stand-in provider (`DEV_SIGN_IN=1`, which `remote/worker.ts` takes only when `BASE_URL` is this machine) |
 
 Proxies are taken out of the Worker's environment, so it cannot reach the
 network at all; wrangler's attempt to fetch `Request.cf` fails and is said in
@@ -32,7 +32,7 @@ its log.
 
 - **headers**: real answers of workerd and Workers Assets: `index.html`, the
   SPA fallback and a hashed asset carry `public/_headers` (the whole CSP,
-  exactly `src/app/policy.ts`'s with frame-ancestors; X-Frame-Options, HSTS with
+  exactly `app/host/policy.ts`'s with frame-ancestors; X-Frame-Options, HSTS with
   subdomains, CORP, Permissions-Policy, …; the hashed files immutable); `/v1`,
   `/api` and `/.well-known` carry the Remote's own (`no-store`, `nosniff`,
   the API's CSP, X-Frame-Options, HSTS, CORP, Referrer-Policy, CORS), and
@@ -46,7 +46,7 @@ its log.
   research the plan always holds on a Worker, and servers are paid: each
   account the run makes is paid by a trigger in that database alone. A
   second Worker beside it, its accounts free until they pay through
-  Stripe's stand-in (each tier's price `service/devbilling.ts` has), is the
+  Stripe's stand-in (each tier's price `remote/devbilling.ts` has), is the
   one the specs about paying meet (`SELFTEST_PLAN_APP`).
 - **l3**: `selftest/l3` with `SELFTEST_REMOTE_KIND=worker`, a Postgres and a
   Worker per test file, one file at a time; stopping the Remote is the

@@ -13,7 +13,7 @@ name: Release
 # pull request (Pin vX.Y.Z: the root in os/core/src/root/pins.rs, the desktop app
 # in os/shared/desktop-releases.json); merged, they are what the tree ships:
 # devices trust the root by its digest, the web takes that l3, and the
-# Remote's deploy (os/service/deploy.ts) takes the pinned files from the
+# Remote's deploy (os/remote/deploy.ts) takes the pinned files from the
 # release and puts them on the Remote, which serves them to anyone. No
 # Cloudflare credentials are kept here.
 #

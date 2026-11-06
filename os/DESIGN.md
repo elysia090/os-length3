@@ -930,7 +930,7 @@ nobody else can take it and be taken for its owner:
 | a guest's invitation | the one of its people who made it, lent to whoever they hand it | its Remote, and its digest | used, revoked, its maker leaves the server, or a week (at most 30 days) |
 | a guest | the board, by an invitation | its token's digest | a lease of 30 days; removed (their posts with them), or the board stops taking guests: at once |
 
-What goes, goes in one place, once a day (`service/sweep.ts`): nothing a
+What goes, goes in one place, once a day (`remote/sweep.ts`): nothing a
 person asks for purges anything on the way, and a file no tree names any
 more goes with the rest.
 
@@ -1376,7 +1376,7 @@ at a terminal is used the same way, and stays a command line:
   quiet line that `l3 next` chooses one with the keys. `l3 next` opens them: the same row walked with
   ←→ and Enter, Enter alone or Esc going on, each deed done as its command
   and those after it offered again.
-- **One table drives both.** A deed is a form of `cli/src/spec.rs` with what
+- **One table drives both.** A deed is a form of `l3/src/spec.rs` with what
   the menu needs beside it: its word in both languages, what it is pressed
   on, the facts it is offered under, the words it gives itself, what it
   asks, its weight. Each page notes its things and their facts while it is
@@ -1400,8 +1400,8 @@ at a terminal is used the same way, and stays a command line:
   `--json`, with `TERM=dumb`, or with `L3_PLAIN=1` (the one switch that keeps
   a terminal plain too, for a screen reader that prefers it or a recorded
   session), nothing is offered or asked, and what l3 writes and how it exits
-  are byte for byte what they were (`cli/tests/plain.rs` keeps the
-  transcripts; `cli/tests/menu.rs` drives the menu through a real pty).
+  are byte for byte what they were (`l3/tests/plain.rs` keeps the
+  transcripts; `l3/tests/menu.rs` drives the menu through a real pty).
 
 ### What l3 writes
 
@@ -1519,7 +1519,7 @@ into a file; read before it goes, as a push is read by GitHub's push
 protection, that file stays here unsent, said as `secret sk-ant-…a9AA`, and
 Commit says which until it is taken out. Home's
 settings (profile, TODO, dotfiles) are kept there too, by the app and l3
-alike (src/remote/settings.ts, core/src/home/: one protocol, one record of what was
+alike (app/remote/settings.ts, core/src/home/: one protocol, one record of what was
 agreed), each changed only from the version it was read at: unchanged
 here, the Remote's is taken; changed on both sides, two TODO lists are
 joined item by item, and any other setting is the Remote's. The band, the
@@ -1565,7 +1565,7 @@ from any other. What proves a session is held where no page reads it. In a
 browser it is the session's cookie (`__Host-`: Secure, HttpOnly,
 SameSite=Lax), which the browser sends and no script reads, so a script
 that should not be on the page cannot carry the session off: the Remote
-hands a page no token, ever (`service/auth.ts`), and the browser's core
+hands a page no token, ever (`remote/auth.ts`), and the browser's core
 sends the cookie with its own requests. A device (the app, l3) holds a
 bearer from the device flow, kept apart from everything a page reads
 (`core/src/device/vault.rs`, never in Home's state, which a page reads and which
@@ -1641,7 +1641,7 @@ What leaves this system is kept to what is said here:
   would land outside, go through a link or be a device. It is fetched from
   the Remote this device uses, then the publisher's Remote, which each of
   its deploys fills with every root pinned in `core/src/root/pins.rs`
-  (`service/mirror.ts`), and last from the GitHub release, which answers
+  (`remote/mirror.ts`), and last from the GitHub release, which answers
   only while the repository is public; when none has it, the error says
   what each said.
 - **Host.** The app starts no host program for a repo: history is the
@@ -1664,12 +1664,12 @@ apart: Postgres holds everything said here, the bucket only file contents,
 and a Remote without a bucket does all the rest and says plainly that it
 cannot hold files now, so a device keeps its work until it can. Each part,
 its routes and tables, and what the app and l3 need of it that a page does
-not: `service/README.md`.
+not: `remote/README.md`.
 
 ### The plan: the Remote decides what an account may do
 
 Billing lives on the Remote. The Remote alone decides what an account may
-do (`service/plan.ts`); every client, the web app, the desktop app and l3,
+do (`remote/plan.ts`); every client, the web app, the desktop app and l3,
 only shows what it says (Remote → Plan, `l3 remote plan`) and asks. No
 client counts, guesses or greys out on its own.
 
@@ -1734,7 +1734,7 @@ allowance still holds, and the Remote says paid features cannot be bought
 here yet. A Remote given no plan (a Remote of one's own, development unless
 asked, a Remote for research) has no allowance at all.
 
-**Stripe's stand-in** (`service/devbilling.ts`), on a Remote of one's own
+**Stripe's stand-in** (`remote/devbilling.ts`), on a Remote of one's own
 asked for the plan (`LENGTH3_PLAN=1`) and the selftest's, looks and does as
 Stripe's pages do in test mode, so the way from the Plan to paying and back
 is the one people meet; it is Stripe's look, not this language's, and says
@@ -1751,7 +1751,7 @@ credited), the card (the same form and test cards), the invoices, cancelling
 at the period's end and Renew plan to keep it, and, marked as not Stripe's,
 test controls (a payment fails, a payment goes through, it ends now). Each
 step sends the Remote the events Stripe would, signed, before the page goes
-on. The development sign-in provider (`service/devoauth.ts`) asks as a real
+on. The development sign-in provider (`remote/devoauth.ts`) asks as a real
 one does: a name, then what length3 asks of it (your name and email), Allow
 or Cancel; Cancel comes back with the error a provider sends then.
 
@@ -2699,7 +2699,7 @@ or goes).
   the device's session is (`core/src/device/vault.rs`: the OS's keyring, else a file
   only the person reads). In a browser, whose keeping is its profile's files,
   it is sealed by the person's passkey where there is one with PRF
-  (`src/account/seal.ts`: AES-256-GCM under a key HKDF derives from what the
+  (`app/account/seal.ts`: AES-256-GCM under a key HKDF derives from what the
   passkey's PRF gives, after it verifies the person), opened the first time
   the Agent is asked in a session, and the key itself never reaches the
   core; where none can seal it, it is kept as given, and Runtime says which.
@@ -2724,7 +2724,7 @@ or goes).
   AppImage when the Remote has no .deb (the release still has both). They are
   the files `shared/desktop-releases.json` pins for that version, served by
   the Remote (`/v1/desktop/<file>`, to anyone, by range), where each deploy
-  puts them from the release (`service/mirror.ts`). It is offered only once
+  puts them from the release (`remote/mirror.ts`). It is offered only once
   the Remote says it has it; with neither there, the section is not shown,
   never a button that cannot act.
 

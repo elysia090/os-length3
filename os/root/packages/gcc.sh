@@ -14,7 +14,7 @@ build() {
   for p in GMP MPFR MPC; do unpack "$p" "$PWD/$(echo "$p" | tr 'A-Z' 'a-z')"; done
   mkdir ../o && cd ../o
   CFLAGS_FOR_TARGET='-O2' CXXFLAGS_FOR_TARGET='-O2' \
-    ../src/configure --prefix=/usr --build="$target" --host="$target" --target="$target" \
+    ../app/configure --prefix=/usr --build="$target" --host="$target" --target="$target" \
       --enable-languages=c --disable-lto --disable-bootstrap --disable-multilib --disable-nls --disable-shared \
       --enable-host-pie --enable-host-bind-now --enable-default-pie --enable-default-ssp \
       --with-specs='%{!shared:%{!static:%{!static-pie:%{!r:%{!nostdlib:%{!nostartfiles:-static-pie}}}}}} %{!fno-stack-clash-protection:-fstack-clash-protection} %{!ftrivial-auto-var-init=*:-ftrivial-auto-var-init=zero} %{O*:%{!O0:%{!D_FORTIFY_SOURCE*:%{!U_FORTIFY_SOURCE:-D_FORTIFY_SOURCE=3}}}} %{!nostdinc:-isystem /usr/include/fortify} %{!shared:%{!r:-Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack}}' \

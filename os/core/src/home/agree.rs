@@ -1,4 +1,4 @@
-//! Home's settings agreed with the Remote (service/app.ts `/v1/home/:key`): each read and written on a version, two
+//! Home's settings agreed with the Remote (remote/app.ts `/v1/home/:key`): each read and written on a version, two
 //! changes to one joined, and what this device took kept apart from what is still to send.
 
 // No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).

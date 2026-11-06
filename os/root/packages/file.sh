@@ -3,7 +3,7 @@
 pins="FILE"
 build() {
   mkdir ../o && cd ../o
-  ../src/configure --prefix=/usr --disable-shared --enable-static --disable-libseccomp \
+  ../app/configure --prefix=/usr --disable-shared --enable-static --disable-libseccomp \
     --disable-zlib --disable-bzlib --disable-xzlib --disable-zstdlib --disable-lzlib --disable-lrziplib
   make -j"$jobs" LDFLAGS="$allstatic"
   make DESTDIR="$dest" LDFLAGS="$allstatic" install

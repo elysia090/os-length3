@@ -53,8 +53,8 @@ test('a selector weighs what the cascade says', () => {
 /** An app of its own: src/ with these files, and index.html. */
 function app(files, html = '<html class="opening"><body><main class="page" id="page"></main></body></html>') {
   const dir = mkdtempSync(join(tmpdir(), 'styles-test-'));
-  mkdirSync(join(dir, 'src'));
-  for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, 'src', name), text);
+  mkdirSync(join(dir, 'app'));
+  for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, 'app', name), text);
   writeFileSync(join(dir, 'index.html'), html);
   try { return pageWords(dir); } finally { rmSync(dir, {recursive: true, force: true}); }
 }

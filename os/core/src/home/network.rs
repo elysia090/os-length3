@@ -7,7 +7,7 @@ use crate::Result;
 use super::state::{get, set};
 
 /// Give `repo`'s Prompts the network here (`on`), or take it; kept sorted, as Runtime keeps it
-/// (src/pages/runtime/prompts.ts). Whether it changed.
+/// (app/pages/runtime/prompts.ts). Whether it changed.
 pub fn set_network(repo: &str, on: bool) -> Result<bool> {
     // A file that could not be read is not written over.
     let mut all: Vec<String> = get("network")?.and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();

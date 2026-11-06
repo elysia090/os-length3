@@ -92,7 +92,7 @@ pub struct Connection {
     pub url: String,
     /// The session's token as the Remote keeps it, unsigned: how this device knows itself among the account's
     /// sessions (account.rs devices). By itself it opens nothing: the Remote takes a token only signed with its
-    /// secret, as a bearer and as its cookie alike (service/auth.ts signedToken).
+    /// secret, as a bearer and as its cookie alike (remote/auth.ts signedToken).
     #[serde(default)]
     pub session: String,
     /// The account the session is (its id on the Remote), when it was told at sign-in.

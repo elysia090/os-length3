@@ -34,7 +34,7 @@ fn issues_sort_by_number_not_by_name() {
 
 #[test]
 fn issues_without_a_number_take_the_next_free_ones_unless_a_work_holds_them() {
-    // As the app's own test (src/repos/issues.test.ts).
+    // As the app's own test (app/repos/issues.test.ts).
     let list = vec![parse("a", "001.md", "A"), parse("a", "002.md", "B"), parse("a", "002 (other device).md", "C"), parse("a", "notes.md", "D"), parse("a", "worked.md", "E")];
     let plan = numbering(&list, &["issue/worked.md".to_string()]);
     assert_eq!(plan, [("002 (other device).md".to_string(), "003.md".to_string()), ("notes.md".into(), "004.md".into())]);

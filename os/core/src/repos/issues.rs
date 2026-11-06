@@ -1,5 +1,5 @@
 //! An issue is a number and its words: "#3 Fix：件名", then the detail
-//! (src/repos/issues.ts). That is all a person meets; how it is kept is the OS's
+//! (app/repos/issues.ts). That is all a person meets; how it is kept is the OS's
 //! business. It is kept as one plain file in the repo's `issue/`, written
 //! the way TODO items are: the first line names it, the lines after are the
 //! detail. The file is named by the issue's number, which the OS gives: the

@@ -5,7 +5,7 @@
 //
 //   node scripts/layers.mjs          the imports against the order, each with the file that makes it; fails if any
 //
-// Tests (*.test.ts, src/testing/) are left out: a test may take from any layer it puts together.
+// Tests (*.test.ts, app/testing/) are left out: a test may take from any layer it puts together.
 import {readdirSync, readFileSync} from 'node:fs';
 import {dirname, join, relative, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -14,10 +14,10 @@ const OS = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Each tree, its modules from the bottom up. A module not named is wrong in its tree until it is. */
 export const TREES = [
-  {root: 'src', order: ['i18n', 'agent', 'core', 'ui', 'app', 'repos', 'home', 'remote', 'prompt', 'account', 'pages', '.'],
+  {root: 'app', order: ['i18n', 'agent', 'core', 'ui', 'host', 'repos', 'home', 'remote', 'prompt', 'account', 'pages', '.'],
     skip: ['styles', 'shims', 'testing']},
   // The pages: what they share (kit), the bench Forge and Git work at (with its search), then each page.
-  {root: 'src/pages', order: ['kit', 'bench', 'git', 'forge', 'file', 'remote', 'runtime', 'server', 'inbox', 'home', 'new-repo',
+  {root: 'app/pages', order: ['kit', 'bench', 'git', 'forge', 'file', 'remote', 'runtime', 'server', 'inbox', 'home', 'new-repo',
     'me']},
 ];
 
@@ -67,7 +67,7 @@ export function violations() {
  * too, what a file stands on is under it.
  */
 /** Where no file may reach back to itself: the app, the Remote, these scripts, and xlat's runtime the Prompt runs. */
-export const ACYCLIC = ['src', 'service', 'scripts', '../xlat/runtime'];
+export const ACYCLIC = ['app', 'remote', 'scripts', '../xlat/runtime'];
 
 export function cycles() {
   const all = ACYCLIC.flatMap((root) => files(join(OS, root)));

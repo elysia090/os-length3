@@ -10,7 +10,7 @@ patches="util-linux/2.42.4-openat2.patch"
 build() {
   [ "$UTIL_LINUX_VERSION" = 2.42.4 ] || { echo "util-linux $UTIL_LINUX_VERSION: review util-linux/2.42.4-openat2.patch"; exit 1; }
   mkdir ../o && cd ../o
-  ../src/configure --prefix=/usr --bindir=/usr/bin --sbindir=/usr/bin --libdir=/usr/lib \
+  ../app/configure --prefix=/usr --bindir=/usr/bin --sbindir=/usr/bin --libdir=/usr/lib \
     --disable-shared --enable-static --disable-rpath \
     --enable-libuuid --enable-libblkid --enable-libmount --enable-libsmartcols --enable-libfdisk \
     --disable-all-programs --enable-lsblk --enable-fdisks --enable-blkid --enable-mount --enable-dmesg \

@@ -3,7 +3,7 @@
 //
 //   1. the app is built for a Remote on its own origin (VITE_LENGTH3_REMOTE=''),
 //      into selftest/.dist, unless that build is newer than every source;
-//   2. a fresh Remote (service/dev.ts) starts on a free port, its data in a
+//   2. a fresh Remote (remote/dev.ts) starts on a free port, its data in a
 //      new temporary directory: PGlite, blobs, mail.log, nothing kept (off
 //      CI, its database a copy of an empty one made once, in selftest/.pg);
 //   3. `vite preview` serves the build on another free port and passes /api
@@ -66,7 +66,7 @@ function newest(path: string): number {
 }
 
 // The core the browser runs (core/web, built by vite.config.ts) is made from core/src.
-const SOURCES = ['src', 'shared', 'public', 'index.html', 'vite.config.ts', 'package-lock.json', 'core/src', 'core/web/src', 'scripts/core-wasm.ts', '../xlat/runtime'];
+const SOURCES = ['app', 'shared', 'public', 'index.html', 'vite.config.ts', 'package-lock.json', 'core/src', 'core/web/src', 'scripts/core-wasm.ts', '../xlat/runtime'];
 const STAMP = join(OUT, '.built');
 
 /** What the build carries besides the sources: the browser's Prompt, when public/ has it. */
@@ -106,7 +106,7 @@ function hashTree(hash: ReturnType<typeof createHash>, path: string) {
  * (one made first and copied would be the slower).
  */
 async function emptyDatabase(): Promise<string> {
-  const migrations = join(OS, 'service', 'migrations');
+  const migrations = join(OS, 'remote', 'migrations');
   const hash = createHash('sha256');
   for (const pkg of ['@electric-sql/pglite', 'drizzle-orm']) hash.update(readFileSync(join(OS, 'node_modules', pkg, 'package.json')));
   hashTree(hash, migrations);
@@ -252,7 +252,7 @@ export default async function globalSetup(_config: FullConfig) {
     // The Remote's own name is localhost too, so the session it sets on sign-in is the app's. It loads its modules as
     // npm test's processes do (scripts/tests-load.mjs: their types stripped once, their code compiled once, for every
     // run): a fifth less of the CPU its start took, which every run waited for.
-    children.push(start(`remote${name}`, ['--import', LOAD, 'service/dev.ts', join(data, dir), String(rPort), at], {LENGTH3_DEV_BASE: `http://localhost:${rPort}`, ...env}));
+    children.push(start(`remote${name}`, ['--import', LOAD, 'remote/dev.ts', join(data, dir), String(rPort), at], {LENGTH3_DEV_BASE: `http://localhost:${rPort}`, ...env}));
     // Through the preview, so both are up and the one passes to the other. (Between the servers and
     // from here, the address itself: what localhost names first, ::1 or 127.0.0.1, is the system's.)
     return ready(`http://127.0.0.1:${aPort}/v1/about`, children);

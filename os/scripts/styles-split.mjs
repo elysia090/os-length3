@@ -2,7 +2,7 @@
 //
 //   node scripts/styles-split.mjs [--plan] [SHEET]
 //
-// SHEET (src/styles.css) is one sheet of rules, or the entry this wrote before, whose parts it reads back first (each
+// SHEET (app/styles.css) is one sheet of rules, or the entry this wrote before, whose parts it reads back first (each
 // part's first comment is its own, said again when it is written). It writes the parts to styles/ beside SHEET (taking
 // away any .css there it did not write) and SHEET as the entry that imports them, in order. --plan only says what it
 // would write: each part, its lines, and the rules in it that are about another part.
@@ -252,7 +252,7 @@ const readBack = (parts) => parts.map((p) => p.body).join('');
 
 function main() {
   const {values, positionals} = parseArgs({allowPositionals: true, options: {plan: {type: 'boolean'}}});
-  const sheet = resolve(positionals[0] ?? join(OS, 'src', 'styles.css'));
+  const sheet = resolve(positionals[0] ?? join(OS, 'app', 'styles.css'));
   const text = wholeSheet(sheet);
   const {parts, entry} = split(text);
   const at = firstDifference(text, readBack(parts));

@@ -12,8 +12,8 @@
 //
 // What cannot be followed (a value from a call, from data) may be any word written in a string anywhere in the
 // sources: that is the one thing taken on trust, that a class is never put together from parts none of which is a
-// word written whole (from what a person typed). The tests and src/testing/ are not the app; the Japanese of
-// src/i18n/ and the English given to t() are words said, not classes, unless a class is ever made from t().
+// word written whole (from what a person typed). The tests and app/testing/ are not the app; the Japanese of
+// app/i18n/ and the English given to t() are words said, not classes, unless a class is ever made from t().
 
 import {existsSync, readdirSync, readFileSync} from 'node:fs';
 import {dirname, join, relative, resolve} from 'node:path';
@@ -30,17 +30,17 @@ const merge = (into, from) => {
 };
 const UNKNOWN = () => ({...empty(), unknown: true});
 
-/** The sources of the app: src/'s modules (not its tests, src/testing/ or src/i18n/), and public/'s scripts. */
+/** The sources of the app: src/'s modules (not its tests, app/testing/ or app/i18n/), and public/'s scripts. */
 export function appSources(os) {
   const out = [];
   const walk = (dir) => {
     for (const e of readdirSync(dir, {withFileTypes: true})) {
       const p = join(dir, e.name);
-      if (e.isDirectory()) { if (p !== join(os, 'src', 'testing') && p !== join(os, 'src', 'i18n')) walk(p); }
+      if (e.isDirectory()) { if (p !== join(os, 'app', 'testing') && p !== join(os, 'app', 'i18n')) walk(p); }
       else if (/\.ts$/.test(e.name) && !/\.test\.ts$/.test(e.name)) out.push(p);
     }
   };
-  walk(join(os, 'src'));
+  walk(join(os, 'app'));
   const pub = join(os, 'public');
   if (existsSync(pub)) for (const e of readdirSync(pub, {withFileTypes: true})) if (e.isFile() && /\.m?js$/.test(e.name)) out.push(join(pub, e.name));
   return out.sort();

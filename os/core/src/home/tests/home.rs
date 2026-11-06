@@ -74,7 +74,7 @@ fn recorded() -> Vec<Value> {
     v["exchanges"].as_array().unwrap().clone()
 }
 
-/// The Remote's settings as service/app.ts keeps them: a value and its version each,
+/// The Remote's settings as remote/app.ts keeps them: a value and its version each,
 /// changed only from the version it is at (0: made, if it is not there yet).
 #[derive(Default)]
 struct Remote { kept: RefCell<HashMap<String, (String, i64)>>, asked: RefCell<Vec<String>>, before_put: RefCell<Option<(String, String)>> }
@@ -185,7 +185,7 @@ fn a_device_with_only_l3_sends_its_todo_and_takes_the_remotes() {
 
 #[test]
 fn todo_from_two_devices_is_joined_item_by_item() {
-    // As src/remote/sync.test.ts: this device sent [a]; another made it [a, b]; this one made it [a, c].
+    // As app/remote/sync.test.ts: this device sent [a]; another made it [a, b]; this one made it [a, c].
     let r = Remote::default();
     let mut d = Device::default();
     d.values.insert("todo".into(), r#"[{"id":"a","title":"here"}]"#.into());

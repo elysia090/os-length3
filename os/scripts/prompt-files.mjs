@@ -23,7 +23,7 @@ import {createHash} from 'node:crypto';
 import {mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {Readable} from 'node:stream';
-import {pinnedRoots} from '../service/releases.ts';
+import {pinnedRoots} from '../remote/releases.ts';
 import {checkPacks} from '../../xlat/runtime/table.mjs';
 import {tarMembers} from './l3-tree.mjs';
 

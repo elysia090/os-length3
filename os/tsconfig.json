@@ -16,5 +16,5 @@
     "resolveJsonModule": true,
     "types": ["node"]
   },
-  "include": ["src", "service", "selftest/*.ts", "vite.config.ts"]
+  "include": ["app", "remote", "selftest/*.ts", "vite.config.ts"]
 }

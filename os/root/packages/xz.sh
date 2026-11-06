@@ -2,7 +2,7 @@
 pins="XZ"
 build() {
   mkdir ../o && cd ../o
-  ../src/configure --prefix=/usr --disable-shared --enable-static --disable-nls --disable-doc
+  ../app/configure --prefix=/usr --disable-shared --enable-static --disable-nls --disable-doc
   make -j"$jobs" LDFLAGS="$allstatic"
   make DESTDIR="$dest" LDFLAGS="$allstatic" install
 }

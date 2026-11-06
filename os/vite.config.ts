@@ -4,19 +4,19 @@ import {dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {defineConfig, type Plugin} from 'vite';
 import {buildCoreWasm, coreWasmPath} from './scripts/core-wasm.ts';
-import {DEFAULT_REMOTE, headersOf, webPolicy} from './src/app/policy.ts';
-import {shipped} from './service/releases.ts';
+import {DEFAULT_REMOTE, headersOf, webPolicy} from './app/host/policy.ts';
+import {shipped} from './remote/releases.ts';
 
 // Tauri serves the built files from ../dist and points its dev webview at this
 // fixed port, so the port must not drift to a free one. The Terminal's kernel
 // lives in ../xlat.
 
-// The web build's policy is src/app/policy.ts's: its own origin and the Remote. Tauri applies its own
+// The web build's policy is app/host/policy.ts's: its own origin and the Remote. Tauri applies its own
 // policy (with its ipc: channel) to the desktop build, so the meta tag is only for the web.
-// The Remote (service/) is the one other origin it may reach: where the
+// The Remote (remote/) is the one other origin it may reach: where the
 // canonical copy lives. VITE_LENGTH3_REMOTE points a build at another one;
 // '' is this page's own origin, which in development LENGTH3_DEV_REMOTE
-// (a `node service/dev.ts`) answers through the dev server.
+// (a `node remote/dev.ts`) answers through the dev server.
 const REMOTE_URL = process.env.VITE_LENGTH3_REMOTE ?? DEFAULT_REMOTE;
 const REMOTE = REMOTE_URL ? new URL(REMOTE_URL).origin : '';
 const DEV_REMOTE = process.env.LENGTH3_DEV_REMOTE;
@@ -26,8 +26,8 @@ const DEV_REMOTE = process.env.LENGTH3_DEV_REMOTE;
 const WRANGLER = readFileSync(new URL('./wrangler.toml', import.meta.url), 'utf8');
 const ASSETS = /^directory\s*=\s*"([^"]+)"/m.exec(WRANGLER)![1];
 const WORKER_FIRST = (JSON.parse(/^run_worker_first\s*=\s*(\[.*\])$/m.exec(WRANGLER)![1]) as string[]).map((p) => p.replace(/\/\*$/, ''));
-// The release this tree ships (service/releases.ts shipped, the newest pinned; not RELEASE, which names the one being
-// made): the web's Runtime offers that version's desktop app, as the deploy puts it on the Remote (service/mirror.ts).
+// The release this tree ships (remote/releases.ts shipped, the newest pinned; not RELEASE, which names the one being
+// made): the web's Runtime offers that version's desktop app, as the deploy puts it on the Remote (remote/mirror.ts).
 process.env.VITE_LENGTH3_RELEASE ??= shipped();
 const WEB_POLICY = webPolicy(REMOTE);
 
@@ -80,7 +80,7 @@ const coreWasm = (): Plugin => ({
     resolve: {alias: [{find: /^virtual:length3-core\.wasm/, replacement: coreWasmPath()}]},
     server: {fs: {allow: [dirname(coreWasmPath())]}},
   }),
-  // The desktop app's core is its own (src-tauri), so its build needs none for the browser.
+  // The desktop app's core is its own (desktop), so its build needs none for the browser.
   buildStart() { if (HOST === 'web') buildCoreWasm(); },
 });
 
@@ -95,7 +95,7 @@ const ONLY = {web: ['core/spawn', 'remote/passkeys'], native: ['app/tauri']};
 const hostOnly = (): Plugin => {
   const other = HOST === 'native' ? ONLY.web : ONLY.native;
   const suffix = HOST === 'native' ? '.desktop.ts' : '.web.ts';
-  const named = new RegExp(`/src/(${other.join('|')})\\.ts$`);
+  const named = new RegExp(`/app/(${other.join('|')})\\.ts$`);
   let out = '';
   return {
     name: 'length3-host',
@@ -115,7 +115,7 @@ const hostOnly = (): Plugin => {
 };
 
 /**
- * The app's code is the import of the page's first script (src/start.ts starts the core, then imports main.ts), so it
+ * The app's code is the import of the page's first script (app/start.ts starts the core, then imports main.ts), so it
  * is named in the page to be fetched at once (modulepreload, with what it imports), beside the first script rather
  * than after it has run.
  */
@@ -155,7 +155,7 @@ export default defineConfig({
     proxy: DEV_REMOTE ? Object.fromEntries(WORKER_FIRST.map((p) => [p, DEV_REMOTE])) : undefined},
   worker: {format: 'es'},
   // xlat's runtime reaches for Node's workers only under Node: in the browser bundle that module is nothing.
-  resolve: {alias: [{find: 'node:worker_threads', replacement: fileURLToPath(new URL('./src/shims/worker-threads.ts', import.meta.url))}]},
+  resolve: {alias: [{find: 'node:worker_threads', replacement: fileURLToPath(new URL('./app/shims/worker-threads.ts', import.meta.url))}]},
   define: {__LENGTH3_HOST__: JSON.stringify(HOST)},
   // Most of a build is the core compiled for the browser (coreWasm's buildStart, cargo), which Rolldown would
   // report each time as a plugin's slow callback: it is the build's work, not a plugin's overhead.
