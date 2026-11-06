@@ -66,8 +66,8 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(app.forge.promptBox).toBeFocused();
   });
 
-  test('up, the box is the terminal\'s line: it starts with the prompt line the shell waits at, said once', async ({app}) => {
-    const waits = app.main.locator('.screen .prompt-ps');
+  test('the box\'s line is the terminal\'s: its pill says the prompt line the shell waits at, said once', async ({app}) => {
+    const waits = app.main.locator('.desk-term .prompt-chip');
     await expect(waits).toHaveText('hello $');
     // The output's own last line, the same words, is not shown then.
     await expect(app.forge.prompt.locator('.term-out > .ps.waits')).toBeHidden();
@@ -75,23 +75,20 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     // The line run is a prompt line among the output (in the green), and the box's line waits at the next.
     await expect(app.forge.prompt.locator('.term-out > .ps:not(.waits)').first()).toHaveText('hello $ ');
     await expect(waits).toHaveText('hello $');
-    // Put back, the box is the box at rest again (no glass), and the prompt line it last waited at is in its pill.
-    await app.forge.promptBox.press('Escape');
-    await expect(app.main.locator('.screen > .glass')).toBeHidden();
-    await expect(app.main.locator('.prompt-chip')).toHaveText('hello $');
-    await expect(app.main.locator('.prompt-chip')).toHaveCSS('border-radius', /^(9999|999)px$/);
+    await expect(waits).toHaveCSS('border-radius', /^(9999|999)px$/);
   });
 
-  test('Run chosen again in the box, a line sent brings the Prompt up: what it prints is seen, never run out of sight', async ({app}) => {
-    // Another of the box's deeds puts the Prompt down, the keyboard staying in the box; Run is chosen back from there.
+  test('Run chosen again after another of the box\'s deeds, a line sent runs in the Prompt\'s box: what it prints is seen', async ({app}) => {
+    // Another of the box's deeds, the keyboard staying in the box; Run is chosen back from there.
+    const pill = app.main.locator('.desk-term .prompt-chip');
     await app.forge.promptBox.press('Alt+3');
-    await expect(app.main.locator('.screen > .glass')).toBeHidden();
+    await expect(pill).toHaveText(/TODO/);
     await app.forge.promptBox.press('Alt+1');
+    await expect(pill).toHaveText('hello $');
     await expect(app.forge.promptBox).toBeFocused();
     await app.forge.promptBox.fill('echo seen');
     await app.forge.promptBox.press('Control+Enter');
-    await expect(app.main.locator('.screen > .glass')).toBeVisible();
-    await expect(app.forge.prompt.locator('.term-out')).toContainText('seen');
+    await expect(app.forge.prompt.locator('.term-out').getByText('seen', {exact: true})).toBeInViewport();
   });
 
   test('clear clears what the Prompt shows, and Ctrl+C on a run says ^C where it was cut, as a terminal does', async ({app}) => {
@@ -105,7 +102,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(app.forge.promptBox).toHaveValue('');
     await app.forge.promptBox.press('Control+c');
     await expect(out).toContainText('^C');
-    await expect(app.main.locator('.screen .prompt-ps')).toHaveText('hello $');
+    await expect(app.main.locator('.desk-term .prompt-chip')).toHaveText('hello $');
   });
 
   test('several lines sent at once run as they would one after another, the shell waiting once after them all', async ({app}) => {
@@ -117,7 +114,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     const said = await out.innerText();
     expect(said).toMatch(/sum=50\s+it=1\s+it=2/);
     expect(said).not.toMatch(/hello \$ hello \$|^> /m);
-    await expect(app.main.locator('.screen .prompt-ps')).toHaveText('hello $');
+    await expect(app.main.locator('.desk-term .prompt-chip')).toHaveText('hello $');
   });
 
   test('↑ and ↓ walk the lines run before, and come back to what was being written', async ({app}) => {
@@ -173,44 +170,32 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(app.runtime.part('Running Prompts')).toHaveCount(0);
   });
 
-  test('put back, the pane tells the line run; up again the Prompt starts at its line, and the line pressed in the pane is read there', async ({app}) => {
+  test('the pane tells the line run, not what it printed; pressed there, the line is lit in the Prompt\'s box', async ({app}) => {
     await app.forge.run('echo folded-away');
-    const said = (where: import('@playwright/test').Locator) => where.locator('.term-out').getByText('folded-away', {exact: true});
-    await expect(said(app.forge.prompt)).toBeVisible();
-    await app.page.keyboard.press('Escape');
-    // In the pane: that it ran, not what it printed.
-    const pane = app.main.locator('.term-home');
-    await expect(pane.getByText('echo folded-away')).toBeVisible();
-    await expect(said(pane)).toBeHidden();
-    // Up again, it starts at its prompt line: what came before is the pane's, nothing of it kept in the Prompt.
-    await app.forge.promptBox.focus();
-    await expect(said(app.forge.prompt)).toBeHidden();
-    await expect(app.forge.prompt.getByRole('button', {name: /History/})).toHaveCount(0);
-    await app.page.keyboard.press('Escape');
-    // The line pressed in the pane: read there, under the search box, with all it printed; the Prompt stays down.
-    await pane.getByText('echo folded-away').click();
-    const read = app.main.locator('.found-body');
-    await expect(read.getByText('folded-away', {exact: true})).toBeVisible();
-    await expect(said(app.forge.prompt)).toBeHidden();
+    const out = app.forge.prompt.locator('.term-out');
+    await expect(out.getByText('folded-away', {exact: true})).toBeVisible();
+    // In the pane: that it ran (its bar green, it ended well), not what it printed.
+    await expect(app.forge.paneRun('echo folded-away')).toHaveAttribute('data-state', 'done');
+    await expect(app.forge.pane.getByText('folded-away', {exact: true})).toHaveCount(0);
+    // Pressed: its line lit where it was run, in view, the keyboard on the box's line again.
+    await app.forge.paneRun('echo folded-away').click();
+    const lit = out.locator('.cmd.lit');
+    await expect(lit).toContainText('echo folded-away');
+    await expect(lit).toBeInViewport();
+    await expect(app.forge.promptBox).toBeFocused();
   });
 
-  test('each line run starts the screen again: what ran before is only in the pane', async ({app}) => {
+  test('lines run follow one another in the Prompt\'s box, as a terminal\'s; the pane lists each, newest last, a failure in red', async ({app}) => {
     await app.forge.run('echo first-run');
-    const out = (where: import('@playwright/test').Locator, text: string) => where.locator('.term-out').getByText(text, {exact: true});
-    await expect(out(app.forge.prompt, 'first-run')).toBeVisible();
-    // The Prompt still up, the next line: the screen holds it and what it printed, nothing of the one before.
-    await app.forge.run('echo second-run');
-    await expect(out(app.forge.prompt, 'second-run')).toBeVisible();
-    await expect(out(app.forge.prompt, 'first-run')).toBeHidden();
-    await expect(app.forge.prompt.locator('.term-out .cmd').filter({hasText: 'echo first-run'})).toBeHidden();
-    expect(await app.forge.prompt.locator('.term-out').evaluate((el) => (el as HTMLElement).innerText)).not.toContain('first-run');
-    // The pane lists both lines run, and the first, pressed there, is read there with what it printed.
-    await app.page.keyboard.press('Escape');
-    const pane = app.main.locator('.term-home');
-    await expect(pane.getByText('echo first-run')).toBeVisible();
-    await expect(pane.getByText('echo second-run')).toBeVisible();
-    await pane.getByText('echo first-run').click();
-    await expect(app.main.locator('.found-body').getByText('first-run', {exact: true})).toBeVisible();
+    await app.forge.run('false');
+    const out = app.forge.prompt.locator('.term-out');
+    // The box keeps what ran before it, as a terminal does.
+    await expect(out.getByText('first-run', {exact: true})).toBeVisible();
+    const rows = app.forge.pane.locator('.pane-row.run');
+    await expect(rows).toHaveCount(2);
+    await expect(rows.last()).toHaveAttribute('data-state', 'failed');
+    await expect(rows.last()).toContainText('exit 1');
+    await expect(rows.first()).toHaveAttribute('data-state', 'done');
   });
 
   test('what the Prompt showed is still there after Git and back, and after Home and back', async ({app}) => {

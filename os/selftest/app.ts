@@ -346,6 +346,10 @@ class Forge extends Part {
   /** The prompt box at the center's foot, and the Prompt (the repo's sh) it writes to. */
   get promptBox() { return this.main.getByRole('textbox', {name: 'Prompt input', exact: true}); }
   get prompt() { return this.main.getByRole('region', {name: 'Prompt', exact: true}); }
+  /** The right pane's rows: what was done in the repo, a line run each (and what the box did that is not the shell's). */
+  get pane() { return this.main.getByRole('log', {name: 'Prompt', exact: true}); }
+  /** A line run, as the pane tells it. */
+  paneRun(line: string) { return this.pane.getByRole('button', {name: new RegExp(`^${escape(line)}\\b`)}); }
 
   /** What is said under the prompt box (the choices Tab found, Starting up……). */
   promptSays(text: string | RegExp) { return this.main.getByRole('status').filter({hasText: text}); }
