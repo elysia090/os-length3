@@ -1,4 +1,4 @@
-//! The tests of words/names.rs.
+//! The tests of text/names.rs.
 
 use super::*;
 fn p(n: &str, d: Option<&str>) -> Principal { Principal { name: n.into(), domain: d.map(Into::into) } }
@@ -18,5 +18,17 @@ fn a_names_kind_is_read_from_its_shape() {
     assert!(read("a b:c", false).is_err());
     assert!(read("hello#", false).is_err());
     assert!(p("trip", None).is("trip@length3.com", "length3.com"));
+    assert!(p("trip", None).is("Trip@Length3.com", "length3.com"));
     assert!(!p("trip", Some("ren.dev")).is("trip@length3.com", "length3.com"));
+    assert!(!p("trip", None).is("trip", "length3.com") && !p("trip", None).is("tri@length3.com", "length3.com"));
+}
+
+#[test]
+fn a_git_folder_is_known_however_it_is_spelt() {
+    for git in [".git", ".GIT", ".Git.", ".git ", ".git. .", "git~1", "GIT~1", ".g\u{200c}it", "\u{feff}.git", ".git\u{200d}"] {
+        assert!(is_git_name(git), "{git:?}");
+    }
+    for not in ["", ".", "git", ".gi", ".gitignore", "..git", ".git.git", ".gi t", "x.git", "git~2", "main.rs", ".github"] {
+        assert!(!is_git_name(not), "{not:?}");
+    }
 }

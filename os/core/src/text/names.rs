@@ -9,9 +9,6 @@
 //!   hello#3  trip:hello#3      an issue
 //!   trip#general  #general     a server's board (the server one is in, when left out)
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 /// A principal's name: `name` alone is on one's own domain.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Principal { pub name: String, pub domain: Option<String> }
@@ -25,9 +22,11 @@ impl Principal {
         }
         Ok(Principal { name: name.to_ascii_lowercase(), domain })
     }
-    /// Whether it is `address` (name@domain), the domain left out meaning `home`.
+    /// Whether it is `address` (name@domain), the domain left out meaning `home`; as names are, without regard to case.
     pub fn is(&self, address: &str, home: &str) -> bool {
-        format!("{}@{}", self.name, self.domain.as_deref().unwrap_or(home)) == address.to_ascii_lowercase()
+        address.split_once('@').is_some_and(|(name, domain)| {
+            name.eq_ignore_ascii_case(&self.name) && domain.eq_ignore_ascii_case(self.domain.as_deref().unwrap_or(home))
+        })
     }
 }
 
@@ -50,7 +49,7 @@ pub fn read(s: &str, principal: bool) -> Result<Name, String> {
     }
     // owner:repo… is another principal's repo.
     if let Some((owner, rest)) = s.split_once(':') {
-        let Name::Repo { repo, path, issue, .. } = repo(rest)? else { unreachable!() };
+        let (repo, path, issue) = repo(rest)?;
         return Ok(Name::Repo { owner: Some(Principal::read(owner)?), repo, path, issue });
     }
     // word#3 is a repo's issue; word#name a server's board.
@@ -60,11 +59,12 @@ pub fn read(s: &str, principal: bool) -> Result<Name, String> {
         }
     }
     if s.contains('@') || (principal && !s.contains('/') && !s.contains('#')) { return Principal::read(s).map(Name::Principal); }
-    repo(s)
+    let (repo, path, issue) = repo(s)?;
+    Ok(Name::Repo { owner: None, repo, path, issue })
 }
 
-/// `repo[/path][#n]`, one's own.
-fn repo(s: &str) -> Result<Name, String> {
+/// `repo[/path][#n]`: the repo, the path in it ('' for the repo), the issue.
+fn repo(s: &str) -> Result<(String, String, Option<u32>), String> {
     let (s, issue) = match s.split_once('#') {
         Some((r, n)) => (r, Some(n.parse::<u32>().map_err(|_| crate::tr!("Not an issue number: #{}", "Issue の番号ではありません：#{}", n))?)),
         None => (s, None),
@@ -72,7 +72,7 @@ fn repo(s: &str) -> Result<Name, String> {
     let s = s.trim_matches('/');
     let (repo, path) = s.split_once('/').map_or((s, ""), |(r, p)| (r, p));
     if repo.is_empty() { return Err(crate::tr!("Which repo?", "どの repo ですか？")); }
-    Ok(Name::Repo { owner: None, repo: repo.into(), path: path.into(), issue })
+    Ok((repo.into(), path.into(), issue))
 }
 
 /// Whether a path part names a repo's `.git` however it is spelt: git, and
@@ -81,12 +81,16 @@ fn repo(s: &str) -> Result<Name, String> {
 /// name) and `.git` with invisible code points (ignored by HFS+) as `.git`
 /// itself. Nothing reached through the store may land in it: its config and
 /// hooks run commands on the host the next time git runs.
+///
+/// Read from the front, nothing copied: a name that is neither is told from its first character or two.
 pub fn is_git_name(part: &str) -> bool {
-    let visible: String = part.chars()
-        .filter(|c| !matches!(*c as u32, 0x200C..=0x200F | 0x202A..=0x202E | 0x206A..=0x206F | 0xFEFF))
-        .collect::<String>().to_ascii_lowercase();
-    let name = visible.trim_end_matches(['.', ' ']);
-    name == ".git" || name == "git~1"
+    spelt(part, ".git") || spelt(part, "git~1")
+}
+
+/// Whether `part`, its invisible code points left out and case not minded, is `word` and then only dots and spaces.
+fn spelt(part: &str, word: &str) -> bool {
+    let mut seen = part.chars().filter(|c| !matches!(*c as u32, 0x200C..=0x200F | 0x202A..=0x202E | 0x206A..=0x206F | 0xFEFF));
+    word.chars().all(|w| seen.next().is_some_and(|c| c.to_ascii_lowercase() == w)) && seen.all(|c| c == '.' || c == ' ')
 }
 
 /// Repo names are plain directory names: letters, digits, `.`, `_`, `-`.

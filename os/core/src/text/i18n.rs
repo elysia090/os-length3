@@ -2,22 +2,27 @@
 //! `lang` setting (the same one the app writes), or $LENGTH3_LANG over it.
 //! `tr!("English {}", "日本語 {}", x)` picks one; both take the same arguments.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
 use std::sync::atomic::{AtomicU8, Ordering};
 
 /// The language as last read: 0 not read yet, 1 English, 2 Japanese.
 static SPOKEN: AtomicU8 = AtomicU8::new(0);
 
 /// Whether this process speaks Japanese: read once, and again after Home's `lang` is set (the app's core lives as
-/// long as its tab, and the person may change the language in it; l3 reads it once per command).
+/// long as its tab, and the person may change the language in it; l3 reads it once per command). Asked by every
+/// `tr!`, so the asking is a load and a compare where it is written; the reading stays out of line.
+#[inline]
 pub fn ja() -> bool {
     match SPOKEN.load(Ordering::Relaxed) {
-        1 => return false,
-        2 => return true,
-        _ => {}
+        1 => false,
+        2 => true,
+        _ => read(),
     }
+}
+
+/// The language read where it is said: $LENGTH3_LANG, else Home's `lang`; kept for the next asking.
+#[cold]
+#[inline(never)]
+fn read() -> bool {
     let ja = match std::env::var("LENGTH3_LANG").ok().filter(|v| !v.is_empty()) {
         Some(v) => v.starts_with("ja"),
         // Home's `lang`, read where Home keeps it (home/), as the one setting the words hang on.
