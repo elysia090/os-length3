@@ -7,7 +7,7 @@ import {Description, PIPE_BUF, Pipe, flock, unflock} from './fd.mjs';
 import * as net from './sys-net.mjs';
 import {procDescriptor} from './procfs.mjs';
 import {Dir, Device, E, Fifo, File, FsError, Link, S_IFCHR, S_IFDIR, S_IFIFO, S_IFLNK, S_IFSOCK} from './fs.mjs';
-import {Wait} from './process.mjs';
+import {Wait} from './flow.mjs';
 import {SIG, SI, UNBLOCKABLE, actionOf, bit, deliverable, send} from './signal.mjs';
 
 const AT_FDCWD = -100;

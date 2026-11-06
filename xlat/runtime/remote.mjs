@@ -14,7 +14,8 @@
 // one at a time.
 
 import {CH, OP, REPLY, rouse, sleep, watch} from './channel.mjs';
-import {Exec, Exit, INTERRUPT, KEEP_INSTANCES, Kernel, PROFILE, REG, Redirect, TRACE_SYSCALLS, Task, goesOn, trace} from './process.mjs';
+import {INTERRUPT, KEEP_INSTANCES, Kernel, PROFILE, REG, TRACE_SYSCALLS, Task, goesOn, trace} from './process.mjs';
+import {Exec, Exit, Redirect} from './flow.mjs';
 import {deliverable, take} from './signal.mjs';
 
 const isNode = typeof process !== 'undefined' && !!process.versions?.node;

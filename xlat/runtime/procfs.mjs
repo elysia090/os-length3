@@ -7,7 +7,7 @@
 
 import {Dir, File, Link, S_IFREG} from './fs.mjs';
 import {procNet} from './net-view.mjs';
-import {CAPS} from './process.mjs';
+import {CAPS} from './flow.mjs';
 
 const enc = new TextEncoder();
 const HZ = 100;

@@ -27,7 +27,7 @@
 import {Description, Pipe} from './fd.mjs';
 import {E, FsError, SocketName, S_IFSOCK} from './fs.mjs';
 import {answer, interfaceControl, traffic} from './net-view.mjs';
-import {Wait} from './process.mjs';
+import {Wait} from './flow.mjs';
 import {SIG, SI, send} from './signal.mjs';
 
 const N = (x) => Number(BigInt.asIntN(64, x));

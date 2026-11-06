@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {CAPS, Kernel, Process} from '../runtime/process.mjs';
+import {Kernel, Process} from '../runtime/process.mjs';
+import {CAPS} from '../runtime/flow.mjs';
 
 // Who a process is, as the device's Prompt has it: root in a user namespace that maps one id, 0 (core/src/launch.rs
 // writes uid_map and gid_map "0 ID 1" and setgroups "deny"). So it may become no one else (an id not mapped is

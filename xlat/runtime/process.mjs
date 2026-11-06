@@ -19,6 +19,7 @@
 //     memory shared (SharedArrayBuffer) and system calls made to this
 //     kernel through Atomics: preempted by the host, as a Linux thread is.
 
+import {CAPS, Exec, Exit, Redirect, Wait, randomBytes} from './flow.mjs';
 import {zero} from './bulk.mjs';
 import {Fpu} from './fpu.mjs';
 import {machine} from './machine.mjs';
@@ -45,8 +46,6 @@ export const RLIMITS = [[INF, INF], [INF, INF], [INF, INF], [BigInt(STACK_BYTES)
 const GUARD = 1 << 16;
 /** The kernel's clocks (clock.mjs). */
 const CLOCK = clocks();
-/** Every capability Linux has (to CAP_CHECKPOINT_RESTORE, 40): root's in its own user namespace. */
-export const CAPS = (1n << 41n) - 1n;
 
 const CALLS = {...FILE_CALLS, ...PROC_CALLS, ...NET_CALLS, ...SIGNAL_CALLS};
 const dec = new TextDecoder(), enc = new TextEncoder();
@@ -80,14 +79,8 @@ export function fault(e) {
   return null;
 }
 
-/** Thrown through wasm frames once the thread (or its whole process) has ended. */
-export class Exit { constructor(status) { this.status = status; } }
 /** A trap that is the translator's limit, not the program's: said on stderr, so it is not taken for the program's own. */
 export const translatorsLimit = (e) => e instanceof GuestTrap && e.code >= 1 && e.code <= 3;
-/** Thrown through wasm frames after execve replaced the image. */
-export class Exec {}
-/** Thrown by a system call that must wait; the kernel makes the call again later. */
-export class Wait {}
 /**
  * Thrown through wasm frames when translated code gives the thread back: its time slice is up at a loop's head
  * (code 5), or its calls are deep and the next one starts afresh (code 6). Registers are in their globals; it goes
@@ -113,8 +106,6 @@ export const trapOrPreempt = (address, code) => {
   throw new GuestTrap(address, code);
 };
 
-/** Thrown through wasm frames once a thread's registers were replaced (a signal handler, sigreturn): it goes on at resumeAt. */
-export class Redirect {}
 /** What attempt() says of a call that waits. */
 const WAITS = Symbol('waits');
 
@@ -1495,14 +1486,6 @@ export const KEEP_INSTANCES = 2;
  */
 export const goesOn = (image, memory, from) => (from ? from.memory !== memory : !!image.segments);
 
-/** Random bytes drawn ahead (a draw costs tens of microseconds however few it gives: an exec's AT_RANDOM took one). */
-const pool = {bytes: new Uint8Array(0), at: 0};
-/** `n` random bytes (at most 65536), each given once. */
-export function randomBytes(n) {
-  if (pool.at + n > pool.bytes.length) { pool.bytes = crypto.getRandomValues(new Uint8Array(Math.max(4096, n))); pool.at = 0; }
-  pool.at += n;
-  return pool.bytes.subarray(pool.at - n, pool.at);
-}
 
 /** Where the time went (run.mjs prints it with XLAT_TIMING=1): translating, compiling wasm, how much, and what a pack root fetched. */
 export const PROFILE = {images: 0, modules: 0, bytes: 0, translate: 0, compile: 0, fetches: 0, fetched: 0, kept: 0, consolidated: 0, memoriesReused: 0, imagesKept: 0, instancesKept: 0, zeroed: 0, renewed: 0};

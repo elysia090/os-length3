@@ -6,7 +6,7 @@
 import {move, zero} from './bulk.mjs';
 import {answerTime, clocks} from './clock.mjs';
 import {E, File, FsError} from './fs.mjs';
-import {Exec, Exit, Wait, randomBytes} from './process.mjs';
+import {Exec, Exit, Wait, randomBytes} from './flow.mjs';
 import {CLD, SIG, send, writeInfo} from './signal.mjs';
 
 const N = (x) => Number(BigInt.asIntN(64, x));
