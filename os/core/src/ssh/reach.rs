@@ -66,39 +66,18 @@ pub fn host(bound: &[IpAddr]) -> Ipv4Addr {
 /// This host's interface addresses, IPv4 and IPv6, each with its interface's name and its prefix, as the kernel has
 /// them now.
 pub fn interfaces() -> Vec<Iface> {
-    let mut out = Vec::new();
-    let mut list: *mut libc::ifaddrs = std::ptr::null_mut();
-    if unsafe { libc::getifaddrs(&mut list) } != 0 { return out; }
-    let mut at = list;
-    while !at.is_null() {
-        let i = unsafe { &*at };
-        at = i.ifa_next;
-        if i.ifa_addr.is_null() || i.ifa_name.is_null() { continue; }
-        let name = unsafe { std::ffi::CStr::from_ptr(i.ifa_name) }.to_string_lossy().into_owned();
-        let mask = i.ifa_netmask;
-        match unsafe { (*i.ifa_addr).sa_family } as i32 {
-            libc::AF_INET => {
-                let sin = unsafe { &*(i.ifa_addr as *const libc::sockaddr_in) };
-                let prefix = if mask.is_null() { 32 } else { unsafe { &*(mask as *const libc::sockaddr_in) }.sin_addr.s_addr.count_ones() as u8 };
-                out.push(Iface { name, addr: IpAddr::V4(Ipv4Addr::from(u32::from_be(sin.sin_addr.s_addr))), prefix });
-            }
-            libc::AF_INET6 => {
-                let sin6 = unsafe { &*(i.ifa_addr as *const libc::sockaddr_in6) };
-                let prefix = if mask.is_null() { 128 } else { unsafe { &*(mask as *const libc::sockaddr_in6) }.sin6_addr.s6_addr.iter().map(|b| b.count_ones() as u8).sum() };
-                out.push(Iface { name, addr: IpAddr::V6(Ipv6Addr::from(sin6.sin6_addr.s6_addr)), prefix });
-            }
-            _ => {}
-        }
-    }
-    unsafe { libc::freeifaddrs(list) };
-    out
-}
-
-#[cfg(target_os = "linux")]
-fn if_name(index: u32) -> Option<String> {
-    let mut name = [0 as libc::c_char; libc::IF_NAMESIZE];
-    if unsafe { libc::if_indextoname(index, name.as_mut_ptr()) }.is_null() { return None; }
-    unsafe { std::ffi::CStr::from_ptr(name.as_ptr()) }.to_str().ok().map(String::from)
+    let Ok(all) = nix::ifaddrs::getifaddrs() else { return Vec::new() };
+    let ones = |bytes: &[u8]| bytes.iter().map(|b| b.count_ones() as u8).sum::<u8>();
+    all.filter_map(|i| {
+        let (addr, mask) = (i.address?, i.netmask);
+        let (addr, prefix) = if let Some(v4) = addr.as_sockaddr_in() {
+            (IpAddr::V4(v4.ip()), mask.as_ref().and_then(|m| m.as_sockaddr_in()).map_or(32, |m| ones(&m.ip().octets())))
+        } else {
+            let v6 = addr.as_sockaddr_in6()?;
+            (IpAddr::V6(v6.ip()), mask.as_ref().and_then(|m| m.as_sockaddr_in6()).map_or(128, |m| ones(&m.ip().octets())))
+        };
+        Some(Iface { name: i.interface_name, addr, prefix })
+    }).collect()
 }
 
 /// The output interface (RTA_OIF) of a netlink answer that is a route (RTM_NEWROUTE); None for an error.
@@ -122,7 +101,7 @@ pub(super) fn oif(msg: &[u8]) -> Option<u32> {
 /// no route, or the kernel could not be asked.
 #[cfg(target_os = "linux")]
 pub fn route_dev(to: Ipv4Addr, from: Ipv4Addr) -> Option<String> {
-    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+    use rustix::net::{netlink, sockopt, AddressFamily, RecvFlags, SendFlags, SocketFlags, SocketType};
     // nlmsghdr (16) + rtmsg (12) + RTA_DST (8) + RTA_SRC (8).
     let mut req = [0u8; 44];
     req[0..4].copy_from_slice(&44u32.to_ne_bytes());
@@ -137,19 +116,17 @@ pub fn route_dev(to: Ipv4Addr, from: Ipv4Addr) -> Option<String> {
         req[at + 2..at + 4].copy_from_slice(&kind.to_ne_bytes());
         req[at + 4..at + 8].copy_from_slice(&a.octets());
     }
-    let fd = unsafe { libc::socket(libc::AF_NETLINK, libc::SOCK_RAW | libc::SOCK_CLOEXEC, libc::NETLINK_ROUTE) };
-    if fd < 0 { return None; }
-    let fd = unsafe { OwnedFd::from_raw_fd(fd) };
-    let tv = libc::timeval { tv_sec: 1, tv_usec: 0 };
-    unsafe { libc::setsockopt(fd.as_raw_fd(), libc::SOL_SOCKET, libc::SO_RCVTIMEO, &tv as *const _ as *const libc::c_void, std::mem::size_of::<libc::timeval>() as u32) };
-    let mut kernel: libc::sockaddr_nl = unsafe { std::mem::zeroed() };
-    kernel.nl_family = libc::AF_NETLINK as u16;
-    let sent = unsafe { libc::sendto(fd.as_raw_fd(), req.as_ptr() as *const libc::c_void, req.len(), 0, &kernel as *const _ as *const libc::sockaddr, std::mem::size_of::<libc::sockaddr_nl>() as u32) };
-    if sent != req.len() as isize { return None; }
+    let fd = rustix::net::socket_with(AddressFamily::NETLINK, SocketType::RAW, SocketFlags::CLOEXEC, None).ok()?; // protocol 0: NETLINK_ROUTE
+    let _ = sockopt::set_socket_timeout(&fd, sockopt::Timeout::Recv, Some(Duration::from_secs(1)));
+    let sent = rustix::net::sendto(&fd, &req, SendFlags::empty(), &netlink::SocketAddrNetlink::new(0, 0)).ok()?;
+    if sent != req.len() { return None; }
     let mut buf = [0u8; 4096];
-    let n = unsafe { libc::recv(fd.as_raw_fd(), buf.as_mut_ptr() as *mut libc::c_void, buf.len(), 0) };
-    if n < 16 { return None; }
-    oif(&buf[..n as usize]).and_then(if_name)
+    let (got, _) = rustix::net::recv(&fd, &mut buf, RecvFlags::empty()).ok()?;
+    if got < 16 { return None; }
+    // The interface by its index, asked of a socket of the kind such questions are put to.
+    let index = oif(&buf[..got])?;
+    let inet = rustix::net::socket_with(AddressFamily::INET, SocketType::DGRAM, SocketFlags::CLOEXEC, None).ok()?;
+    rustix::net::netdevice::index_to_name(&inet, index).ok()
 }
 
 /// Elsewhere (macOS) the kernel is not asked so: a VPN's peer is let in only from inside the subnet it came in on.
@@ -347,7 +324,7 @@ impl Scope {
 /// This person's port: $LENGTH3_SSH_PORT when it names one above 1023 (another is in use, or a test), else theirs.
 pub fn port() -> u16 {
     std::env::var("LENGTH3_SSH_PORT").ok().and_then(|p| p.parse::<u16>().ok()).filter(|p| *p > 1023)
-        .unwrap_or_else(|| port_for(unsafe { libc::getuid() }))
+        .unwrap_or_else(|| port_for(rustix::process::getuid().as_raw()))
 }
 
 /// The port of the person with user number `uid` on a host.

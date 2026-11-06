@@ -2452,6 +2452,7 @@ dependencies = [
  "keyring-core",
  "libc",
  "memchr",
+ "nix",
  "rustix",
  "rustls",
  "rustls-native-certs",
@@ -2733,6 +2734,7 @@ dependencies = [
  "cfg-if",
  "cfg_aliases",
  "libc",
+ "memoffset",
 ]
 
 [[package]]

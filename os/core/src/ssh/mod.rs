@@ -30,6 +30,9 @@
 //!              page stops it); where it is reached is worked out and shown
 //!              on the device alone (`l3 address`, the app's Runtime)
 
+// No unsafe code in this layer: the host's interfaces through nix, the kernel's routes over netlink through rustix.
+#![forbid(unsafe_code)]
+
 mod keys;
 mod reach;
 mod listener;

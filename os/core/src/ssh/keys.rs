@@ -1,10 +1,6 @@
 //! The keys let in: the Runtime dotfile `.authorized_keys`, one OpenSSH public key a line, read and named by
 //! fingerprint.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
-
-
 /// Standard base64, padded or not; None when it is not that.
 pub(super) fn base64_decode(s: &str) -> Option<Vec<u8>> {
     let s = s.trim_end_matches('=');
