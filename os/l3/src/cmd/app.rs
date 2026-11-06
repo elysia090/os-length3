@@ -135,7 +135,8 @@ fn start(program: &Path) -> Result<std::process::Child> {
     let mut cmd = Command::new(program);
     cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
     if let Some(home) = std::env::var_os("HOME") { cmd.current_dir(home); }
-    unsafe { cmd.pre_exec(|| { libc::setsid(); Ok(()) }); }
+    // A group of its own: a terminal's Ctrl-C or hangup, which go to the group in front, are never the app's.
+    cmd.process_group(0);
     cmd.spawn().map_err(|e| Error::Refused(tr!("Could not start {}: {}", "{} を起動できませんでした：{}", program.display(), e)))
 }
 

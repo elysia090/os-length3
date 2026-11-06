@@ -43,7 +43,6 @@ use russh::{Channel, ChannelId, ChannelMsg, MethodKind, MethodSet};
 use std::collections::HashSet;
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -262,7 +261,7 @@ async fn run_channel(mut ch: Channel<Msg>, handle: server::Handle, shared: Arc<S
                 if want_reply { let _ = if input.is_some() { handle.channel_success(id).await } else { handle.channel_failure(id).await }; }
             }
             ChannelMsg::WindowChange { col_width, row_height, .. } => {
-                if let Some(Input::Pty(m)) = &input { resize(m.get_ref().as_raw_fd(), col_width.min(1000) as u16, row_height.min(1000) as u16); }
+                if let Some(Input::Pty(m)) = &input { resize(m.get_ref(), col_width.min(1000) as u16, row_height.min(1000) as u16); }
             }
             ChannelMsg::Data { data } => match &mut input {
                 Some(Input::Pty(m)) => { let _ = write_all(m, &data).await; }
@@ -284,7 +283,7 @@ async fn run_channel(mut ch: Channel<Msg>, handle: server::Handle, shared: Arc<S
     // and its Prompt with it, as a terminal's hangup would.
     if let Some(pid) = pid.filter(|p| *p > 0 && shared.sessions.lock().is_ok_and(|s| s.contains(p))) {
         log(&format!("session {repo}: the client went; ended"));
-        unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL) };
+        length3_core::prompt::running::signal(pid, length3_core::prompt::running::Signal::Kill);
     }
 }
 
@@ -341,16 +340,26 @@ async fn start(shared: &Arc<Shared>, handle: &server::Handle, id: ChannelId, rep
     Some((input, pid, done))
 }
 
+/// What a session's program is told to make of itself as it starts (`session_start`): `tty` or `pipe`, and the
+/// listener's pid. Made there, not between the fork and the exec, where nothing but raw system calls may run.
+const SESSION: &str = "L3_SSH_SESSION";
+
 /// What every session's process is started with: its own session, and an end with the listener's.
 fn detach(cmd: &mut tokio::process::Command, tty: bool) {
-    unsafe {
-        cmd.pre_exec(move || {
-            libc::setsid();
-            if tty { libc::ioctl(0, libc::TIOCSCTTY as _, 0); }
-            libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0);
-            Ok(())
-        });
-    }
+    cmd.env(SESSION, format!("{}:{}", if tty { "tty" } else { "pipe" }, std::process::id()));
+}
+
+/// In a session's program (l3, started by `detach`), before anything else: its own session, so the job control of
+/// its Prompt is its own; on a terminal, that terminal as its own (it is standard input); and an end with the
+/// listener, or one now if the listener has gone already.
+pub fn session_start() {
+    let Ok(said) = std::env::var(SESSION) else { return };
+    std::env::remove_var(SESSION);
+    let Some((tty, parent)) = said.split_once(':').and_then(|(k, p)| Some((k == "tty", p.parse::<i32>().ok()?))) else { return };
+    let _ = rustix::process::setsid();
+    if tty { let _ = rustix::process::ioctl_tiocsctty(rustix::stdio::stdin()); }
+    let _ = rustix::process::set_parent_process_death_signal(Some(rustix::process::Signal::KILL));
+    if rustix::process::getppid().map(|p| p.as_raw_nonzero().get()) != Some(parent) { std::process::exit(128 + 9); }
 }
 
 fn on_pipes(mut cmd: tokio::process::Command) -> std::io::Result<(tokio::process::Child, tokio::process::ChildStdin, (tokio::process::ChildStdout, tokio::process::ChildStderr))> {
@@ -363,27 +372,31 @@ fn on_pipes(mut cmd: tokio::process::Command) -> std::io::Result<(tokio::process
 }
 
 fn on_pty(mut cmd: tokio::process::Command, cols: u16, rows: u16) -> std::io::Result<(tokio::process::Child, Arc<AsyncFd<std::fs::File>>)> {
-    let (mut master, mut slave) = (-1, -1);
-    let size = libc::winsize { ws_row: rows.max(1), ws_col: cols.max(1), ws_xpixel: 0, ws_ypixel: 0 };
-    if unsafe { libc::openpty(&mut master, &mut slave, std::ptr::null_mut(), std::ptr::null(), &size) } != 0 { return Err(std::io::Error::last_os_error()); }
-    let (master, slave) = unsafe { (OwnedFd::from_raw_fd(master), OwnedFd::from_raw_fd(slave)) };
-    unsafe {
-        libc::fcntl(master.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC);
-        libc::fcntl(master.as_raw_fd(), libc::F_SETFL, libc::fcntl(master.as_raw_fd(), libc::F_GETFL) | libc::O_NONBLOCK);
-    }
+    use rustix::pty::{grantpt, openpt, ptsname, unlockpt, OpenptFlags};
+    use std::os::unix::{ffi::OsStrExt, fs::OpenOptionsExt};
+    // The listener's end, never its controlling terminal and closed on exec; the program's end opened by its name.
+    let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY | OpenptFlags::CLOEXEC)?;
+    grantpt(&master)?;
+    unlockpt(&master)?;
+    let name = ptsname(&master, Vec::new())?;
+    let slave = std::fs::OpenOptions::new().read(true).write(true).custom_flags(libc::O_NOCTTY).open(std::ffi::OsStr::from_bytes(name.as_bytes()))?;
+    resize(&slave, cols, rows);
+    rustix::fs::fcntl_setfl(&master, rustix::fs::fcntl_getfl(&master)? | rustix::fs::OFlags::NONBLOCK)?;
     cmd.stdin(slave.try_clone()?).stdout(slave.try_clone()?).stderr(slave);
     detach(&mut cmd, true);
     let child = cmd.spawn()?;
     // The listener's own copies of the terminal's other end are closed with `cmd`, so it reads its end until the program's is gone.
     drop(cmd);
     // The terminal's end is owned by the File alone, and closed only by it.
+    // SAFETY: the File owns the descriptor, open and the same one for as long as the AsyncFd holds it (tokio asks this
+    // of `register`: no safe constructor takes an owned descriptor yet).
     let master = unsafe { AsyncFd::register(std::fs::File::from(master)) }.map_err(std::io::Error::from)?;
     Ok((child, Arc::new(master)))
 }
 
-fn resize(fd: i32, cols: u16, rows: u16) {
-    let size = libc::winsize { ws_row: rows.max(1), ws_col: cols.max(1), ws_xpixel: 0, ws_ypixel: 0 };
-    unsafe { libc::ioctl(fd, libc::TIOCSWINSZ as _, &size) };
+fn resize(terminal: impl std::os::fd::AsFd, cols: u16, rows: u16) {
+    let size = rustix::termios::Winsize { ws_row: rows.max(1), ws_col: cols.max(1), ws_xpixel: 0, ws_ypixel: 0 };
+    let _ = rustix::termios::tcsetwinsize(terminal, size);
 }
 
 async fn write_all(m: &AsyncFd<std::fs::File>, mut bytes: &[u8]) -> std::io::Result<()> {
@@ -551,7 +564,8 @@ pub fn serve() -> Result<(), String> {
     println!("ready");
     let _ = std::io::stdout().flush();
     if let Ok(f) = std::fs::OpenOptions::new().create(true).write(true).truncate(true).open(ssh::dir(data).join("log")) {
-        unsafe { libc::dup2(f.as_raw_fd(), 1); libc::dup2(f.as_raw_fd(), 2); }
+        let _ = rustix::stdio::dup2_stdout(&f);
+        let _ = rustix::stdio::dup2_stderr(&f);
     }
     log(&format!("on port {port}, {} · {print}", scope.word()));
     let why = rt.block_on(async {
@@ -605,7 +619,7 @@ pub fn serve() -> Result<(), String> {
     })?;
     // Every session ends with it: its Prompt's supervisor is killed, and with it everything in the Prompt.
     for pid in shared.sessions.lock().map(|s| s.clone()).unwrap_or_default() {
-        if pid > 0 { unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL) }; }
+        if pid > 0 { length3_core::prompt::running::signal(pid, length3_core::prompt::running::Signal::Kill); }
     }
     // The sockets close before the record goes (bug: they lived as long as the runtime, after the record was gone,
     // so l3 said SSH was off while the port still took a connection, reset when the process ended).

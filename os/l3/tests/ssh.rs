@@ -68,14 +68,23 @@ fn a_connection_kept_open_takes_one_session_after_another() {
     let gcm = only("curve25519-sha256", "aes256-gcm@openssh.com");
     let dh = only("diffie-hellman-group14-sha256,diffie-hellman-group16-sha512", "chacha20-poly1305@openssh.com");
     let ctr = only("curve25519-sha256", "aes256-ctr,aes128-ctr");
+    // On a terminal (forced: this test has none of its own): the program's standard input is that terminal, and it is
+    // its session's controlling one (the shell's tty_nr in /proc/self/stat is not 0), so the Prompt's shell has job
+    // control.
+    let on_tty = Command::new("ssh").args(["-F", "/dev/null", "-tt", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+        "-o", "IdentitiesOnly=yes", "-o", "LogLevel=QUIET"]).arg("-i").arg(&key).args(["-p", &port.to_string(), "notes@127.0.0.1", "test -t 0 && echo on-a-terminal; read -r s < /proc/self/stat; echo \"stat ${s##*) }\""])
+        .env("HOME", &home.dir).stdin(Stdio::null()).output().unwrap();
+    let said = String::from_utf8_lossy(&on_tty.stdout).to_string();
     let _ = serve.kill();
     let _ = serve.wait();
     let log = std::fs::read_to_string(home.path("ssh/log")).unwrap_or_default();
+    let tty_nr = said.lines().find_map(|l| l.trim().strip_prefix("stat ")).and_then(|s| s.split(' ').nth(4)).and_then(|n| n.parse::<u64>().ok());
+    assert!(said.contains("on-a-terminal") && tty_nr.is_some_and(|n| n != 0), "{said:?} {log}");
     assert_eq!(codes, vec![Some(3); 6], "{log}");
     // More than CHANNELS (4), one after another, all on the one connection (bug: every session ever opened
     // counted, so the fifth was refused there, and the client signed in anew for each one after); then the two
     // connections of their own that were taken, each signed in once.
-    assert_eq!(log.matches(" in as notes ").count(), 1 + 2, "{log}");
+    assert_eq!(log.matches(" in as notes ").count(), 1 + 2 + 1, "{log}");
     assert_eq!(log.matches("session notes: ended 3").count(), 6 + 2, "{log}");
     assert_eq!((modern, gcm), (Some(3), Some(3)), "{log}");
     assert_eq!((dh, ctr), (Some(255), Some(255)), "{log}");

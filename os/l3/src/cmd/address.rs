@@ -155,8 +155,9 @@ fn start_listener() -> Result<()> {
     let mut cmd = Command::new(exe);
     // From the data directory: wherever this l3 was run from is nothing of the listener's (nor its sessions').
     cmd.args(["address", "ssh", "serve"]).current_dir(paths::data_dir()).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
-    // Its own session: it outlives this l3, and a terminal's Ctrl-C or hangup is not its.
-    unsafe { cmd.pre_exec(|| { libc::setsid(); Ok(()) }); }
+    // A group of its own: it outlives this l3, and a terminal's Ctrl-C or hangup, which go to the group in front, are
+    // not its.
+    cmd.process_group(0);
     let mut child = cmd.spawn()?;
     let out = child.stdout.take().ok_or_else(|| Error::Io("stdout".into()))?;
     let (tx, rx) = std::sync::mpsc::channel();

@@ -23,3 +23,8 @@ libc = "0.2"
 # Left out of the root's own l3 (--no-default-features): a Prompt listens for no one.
 russh = { version = "=0.65.0", default-features = false, features = ["ring"], optional = true }
 tokio = { version = "1.53", default-features = false, features = ["rt", "net", "time", "process", "io-util", "macros", "signal", "sync"], optional = true }
+
+# The terminal (term.rs: its size, its keys one at a time, a key waited for) and an SSH session's (ssh.rs: its pty, its
+# session) through rustix's safe calls; the core has it already.
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1.1", default-features = false, features = ["std", "event", "fs", "process", "pty", "stdio", "termios"] }

@@ -28,6 +28,9 @@ mod term;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
+    // A session's program made what an SSH session's must be, before anything else is done (ssh.rs).
+    #[cfg(all(target_os = "linux", feature = "ssh"))]
+    ssh::session_start();
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let ctx = cmd::Ctx::new();
     let call = match args::parse(&argv, &ctx) {

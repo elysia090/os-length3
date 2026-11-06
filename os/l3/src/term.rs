@@ -79,9 +79,8 @@ pub fn break_lines(s: &str, cols: usize) -> Vec<String> {
 /// The terminal's columns and rows (80×24 when it does not say).
 pub fn size() -> (usize, usize) {
     #[cfg(unix)]
-    unsafe {
-        let mut w: libc::winsize = std::mem::zeroed();
-        if libc::ioctl(1, libc::TIOCGWINSZ, &mut w) == 0 && w.ws_col > 0 && w.ws_row > 0 { return (w.ws_col as usize, w.ws_row as usize); }
+    if let Ok(w) = rustix::termios::tcgetwinsize(rustix::stdio::stdout()) {
+        if w.ws_col > 0 && w.ws_row > 0 { return (w.ws_col as usize, w.ws_row as usize); }
     }
     (80, 24)
 }
@@ -94,29 +93,31 @@ pub enum Key { Up, Down, Left, Right, Home, End, Enter, Esc, Back, Delete, Tab, 
 /// cursor hidden. Dropped (or l3 ending any way), it is as it was.
 pub struct Keys {
     #[cfg(unix)]
-    saved: libc::termios,
+    saved: rustix::termios::Termios,
 }
 
 impl Keys {
     /// None where the terminal will not be set (it is then not one l3 can ask in).
     pub fn take() -> Option<Keys> {
         #[cfg(unix)]
-        unsafe {
-            let mut t: libc::termios = std::mem::zeroed();
-            if libc::tcgetattr(0, &mut t) != 0 { return None; }
-            let saved = t;
-            t.c_lflag &= !(libc::ICANON | libc::ECHO | libc::ISIG | libc::IEXTEN);
-            t.c_iflag &= !(libc::IXON | libc::ICRNL);
-            t.c_cc[libc::VMIN] = 1;
-            t.c_cc[libc::VTIME] = 0;
-            if libc::tcsetattr(0, libc::TCSANOW, &t) != 0 { return None; }
+        {
+            use rustix::termios::{tcgetattr, tcsetattr, InputModes, LocalModes, OptionalActions, SpecialCodeIndex};
+            let input = rustix::stdio::stdin();
+            let mut t = tcgetattr(input).ok()?;
+            let saved = t.clone();
+            // A key at a time, unechoed, and Ctrl-C a key like any other (said apart: Key::Interrupt).
+            t.local_modes.remove(LocalModes::ICANON | LocalModes::ECHO | LocalModes::ISIG | LocalModes::IEXTEN);
+            t.input_modes.remove(InputModes::IXON | InputModes::ICRNL);
+            t.special_codes[SpecialCodeIndex::VMIN] = 1;
+            t.special_codes[SpecialCodeIndex::VTIME] = 0;
+            tcsetattr(input, OptionalActions::Now, &t).ok()?;
             // Even if l3 fails while it holds the keys (a release aborts on a panic, so no Drop runs), the terminal is given back.
             static HOOK: std::sync::Once = std::sync::Once::new();
             HOOK.call_once(|| {
                 let before = std::panic::take_hook();
                 std::panic::set_hook(Box::new(move |p| { give_back(); before(p) }));
             });
-            *HELD.lock().unwrap_or_else(|e| e.into_inner()) = Some(saved);
+            *HELD.lock().unwrap_or_else(|e| e.into_inner()) = Some(saved.clone());
             put("\x1b[?25l");
             Some(Keys { saved })
         }
@@ -157,7 +158,7 @@ impl Drop for Keys {
     fn drop(&mut self) {
         put("\x1b[?25h");
         #[cfg(unix)]
-        unsafe { libc::tcsetattr(0, libc::TCSANOW, &self.saved); }
+        let _ = rustix::termios::tcsetattr(rustix::stdio::stdin(), rustix::termios::OptionalActions::Now, &self.saved);
         #[cfg(unix)]
         { *HELD.lock().unwrap_or_else(|e| e.into_inner()) = None; }
     }
@@ -165,13 +166,13 @@ impl Drop for Keys {
 
 /// The terminal's modes from before the keys were held, to give back if l3 fails meanwhile.
 #[cfg(unix)]
-static HELD: std::sync::Mutex<Option<libc::termios>> = std::sync::Mutex::new(None);
+static HELD: std::sync::Mutex<Option<rustix::termios::Termios>> = std::sync::Mutex::new(None);
 
 #[cfg(unix)]
 fn give_back() {
     if let Some(t) = HELD.lock().unwrap_or_else(|e| e.into_inner()).take() {
         put("\x1b[?25h\r\n");
-        unsafe { libc::tcsetattr(0, libc::TCSANOW, &t); }
+        let _ = rustix::termios::tcsetattr(rustix::stdio::stdin(), rustix::termios::OptionalActions::Now, &t);
     }
 }
 
@@ -195,17 +196,20 @@ fn csi() -> Key {
 /// One byte of standard input; with `wait` (ms), None if none comes by then.
 fn byte(wait: Option<i32>) -> Option<u8> {
     #[cfg(unix)]
-    unsafe {
+    {
+        use rustix::event::{poll, PollFd, PollFlags, Timespec};
+        let input = rustix::stdio::stdin();
         if let Some(ms) = wait {
-            let mut p = libc::pollfd { fd: 0, events: libc::POLLIN, revents: 0 };
-            if libc::poll(&mut p, 1, ms) <= 0 { return None; }
+            let by = Timespec { tv_sec: i64::from(ms / 1000), tv_nsec: i64::from(ms % 1000) * 1_000_000 };
+            if !poll(&mut [PollFd::new(&input, PollFlags::IN)], Some(&by)).is_ok_and(|n| n > 0) { return None; }
         }
-        let mut b = 0u8;
+        let mut b = [0u8; 1];
         loop {
-            let n = libc::read(0, (&mut b as *mut u8).cast(), 1);
-            if n == 1 { return Some(b); }
-            if n < 0 && std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted { continue; }
-            return None;
+            match rustix::io::read(input, &mut b) {
+                Ok(1) => return Some(b[0]),
+                Err(rustix::io::Errno::INTR) => continue,
+                _ => return None,
+            }
         }
     }
     #[cfg(not(unix))]
