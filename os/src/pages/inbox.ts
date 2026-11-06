@@ -1,5 +1,5 @@
 import {ago, arrowKeys, h} from '../ui/dom.ts';
-import {t} from '../i18n.ts';
+import {t} from '../i18n/i18n.ts';
 import * as inbox from '../remote/inbox.ts';
 import {connection} from '../remote/connection.ts';
 import {look, onNews} from '../remote/news.ts';

@@ -1,7 +1,7 @@
 // The other tabs of this app in this browser. They share one copy of the
 // repos (repos.ts, IndexedDB) and one set of settings (state.ts,
 // localStorage), so each tab hears what the others keep, a repo is kept in
-// step by one tab at a time (remote/sync.ts), and nothing is let go while another
+// step by one tab at a time (repos/sync.ts), and nothing is let go while another
 // tab still holds it (lifecycle.ts). The app's one window is a tab with no
 // others: the same code, with nobody to tell.
 

@@ -1,9 +1,9 @@
 import * as dotfiles from '../../home/dotfiles.ts';
-import {agentUse} from '../../home/agent-key.ts';
+import {agentUse} from '../../account/agent-key.ts';
 import {store} from '../../repos/repos.ts';
 import {bytes, h} from '../../ui/dom.ts';
 import {promptOpen, rootFetch, rootHere, rootStatus, type Holding, type Stopped} from '../../app/host.ts';
-import {currentLang, onLang, t, tn} from '../../i18n.ts';
+import {currentLang, onLang, t, tn} from '../../i18n/i18n.ts';
 import {filesNow, hearLater, keepMore, keepReached, keepTranslation, keptNow, loadL3, promptWorker, readyPrompt, takeReady, usedKept, warmL3, watchLoad, type L3, type Stage} from '../../prompt/userland.ts';
 import {every} from '../../app/runs.ts';
 import {errorText} from '../../app/errors.ts';

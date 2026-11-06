@@ -48,7 +48,7 @@ const money = (cents: number) => `${cents < 0 ? '-' : ''}$${(Math.abs(cents) / 1
 // ---- Stripe's words, in the language its pages were asked in (the OS's: plan.ts) ----
 
 /**
- * Stripe's pages in Japanese, by the English (as the app's own words are: src/i18n.ts), {name} where a value goes.
+ * Stripe's pages in Japanese, by the English (as the app's own words are: src/i18n/i18n.ts), {name} where a value goes.
  * As Stripe says them where it is known how; a Latin word a space apart from kana and kanji (DESIGN.md §1).
  */
 const JA: Record<string, string> = {
@@ -100,7 +100,7 @@ const JA: Record<string, string> = {
   'Update': '更新', 'Add': '追加', '{from} → {to} · the rest of this period': '{from} → {to} · この期間の残り',
 };
 
-/** Kana and kanji, which a Latin word is set a space apart from (src/i18n.ts, DESIGN.md §1). */
+/** Kana and kanji, which a Latin word is set a space apart from (src/i18n/i18n.ts, DESIGN.md §1). */
 const KANA_KANJI = /[぀-ヺー-ヿ㐀-鿿]/;
 /** Stripe's words in `locale`: the English with each {name} filled, or the Japanese for it, a Latin value set apart from kana and kanji. */
 type Say = (en: string, vars?: Record<string, string>) => string;

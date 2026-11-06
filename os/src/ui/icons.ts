@@ -1,8 +1,7 @@
-import type {PurposeId} from '../app/purposes.ts';
-
 // 24px line icons drawn with currentColor so selection is carried by the rail's
-// own text color and indicator bar, never by the icon alone.
-const PATHS: Record<PurposeId, string> = {
+// own text color and indicator bar, never by the icon alone: one for each place on the rail (app/purposes.ts names
+// them; a place with none is a type error where its icon is asked for).
+const PATHS = {
   home: 'M4 11 12 4l8 7v9h-5v-6H9v6H4z',
   file: 'M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6',
   // A line of work and a branch coming back into it: two commits as rings the size of the stroke's room, the branch one arc.
@@ -16,9 +15,10 @@ const PATHS: Record<PurposeId, string> = {
   'new-repo': 'M12 5v14M5 12h14',
   // A plug (the male end): two pins over its body, the cord under it.
   plugin: 'M9 3.5v4M15 3.5v4M6.5 7.5h11V11a5.5 5.5 0 0 1-11 0zM12 16.5v4',
-};
+} satisfies Record<string, string>;
+export type PlaceIcon = keyof typeof PATHS;
 
-export function icon(id: PurposeId): SVGSVGElement {
+export function icon(id: PlaceIcon): SVGSVGElement {
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');

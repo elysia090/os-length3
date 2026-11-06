@@ -3,7 +3,7 @@
 // says which layer measured it so the two are never presented as one.
 
 import {ask, type Answer, type Ask} from '../core/client.ts';
-import {RemoteError} from '../remote/connection.ts';
+import {RemoteError} from './errors.ts';
 import {invoke, listen} from './tauri.ts';
 
 interface Capacity {

@@ -11,10 +11,11 @@
 //
 // Nothing the Remote does not have yet is let go: it stays, and is shown.
 
-import {forgetExcept} from '../prompt/l3-files.ts';
-import * as draft from './sync.ts';
+import * as draft from '../repos/sync.ts';
+import * as settings from './settings.ts';
 import {core, isNative} from '../app/host.ts';
-import {connection, mayAsk, onConnection, onReach, remoteAway, RemoteError, retryAfter} from './connection.ts';
+import {connection, mayAsk, onConnection, onReach, remoteAway, retryAfter} from './connection.ts';
+import {RemoteError} from '../app/errors.ts';
 import {ELSEWHERE, onChange, store} from '../repos/repos.ts';
 import {coalesced, every, jitter, shared} from '../app/runs.ts';
 import {onState} from '../home/state.ts';
@@ -164,15 +165,15 @@ export async function flush(): Promise<void> {
 // ---- Home's settings: each agreed with the Remote one at a time ----
 //
 // Each keystroke in Home's TODO sets the setting. Agreeing it is a read and a
-// write on the Remote (draft.syncHome), so it waits for a pause (SOON), runs
+// write on the Remote (settings.syncHome), so it waits for a pause (SOON), runs
 // one at a time per setting, and a change while it runs is agreed once more
 // after it. (Before: every keystroke began its own, side by side, and each one
 // that lost the race was refused and tried again: 30 keystrokes, 146 requests.)
 
-const homeTimers = new Map<draft.HomeKey, ReturnType<typeof setTimeout>>();
-const homeRuns = new Map<draft.HomeKey, () => Promise<void>>();
+const homeTimers = new Map<settings.HomeKey, ReturnType<typeof setTimeout>>();
+const homeRuns = new Map<settings.HomeKey, () => Promise<void>>();
 /** Changes made here to each setting, and how many of them the last agreement took in: more made than taken, not on the Remote yet. */
-const homeMade = new Map<draft.HomeKey, number>(), homeTaken = new Map<draft.HomeKey, number>();
+const homeMade = new Map<settings.HomeKey, number>(), homeTaken = new Map<settings.HomeKey, number>();
 
 /**
  * Home's settings being taken off this device (Remove from device): none is agreed with the Remote again until the
@@ -181,16 +182,16 @@ const homeMade = new Map<draft.HomeKey, number>(), homeTaken = new Map<draft.Hom
  */
 let homeHeld = false;
 /** Each setting's agreement under way, to be waited for before what it agrees is taken off. */
-const homeRunning = new Map<draft.HomeKey, Promise<void>>();
+const homeRunning = new Map<settings.HomeKey, Promise<void>>();
 
-function agreeHome(k: draft.HomeKey): Promise<void> {
+function agreeHome(k: settings.HomeKey): Promise<void> {
   if (homeHeld) return Promise.resolve();
   let f = homeRuns.get(k);
   if (!f) {
     f = coalesced(async () => {
       if (homeHeld) return;
       const made = homeMade.get(k) ?? 0;
-      await draft.syncHome(k);
+      await settings.syncHome(k);
       homeTaken.set(k, Math.max(homeTaken.get(k) ?? 0, made));
     });
     homeRuns.set(k, f);
@@ -216,7 +217,7 @@ export function releaseHome() { homeHeld = false; }
 export const homeIsHeld = (): boolean => homeHeld;
 
 /** A Home setting changed here (a keystroke in the TODO, a profile saved): agreed with the Remote after a pause. */
-export function homeChanged(k: draft.HomeKey) {
+export function homeChanged(k: settings.HomeKey) {
   homeMade.set(k, (homeMade.get(k) ?? 0) + 1);
   if (!connection() || homeHeld) return;
   clearTimeout(homeTimers.get(k));
@@ -224,7 +225,7 @@ export function homeChanged(k: draft.HomeKey) {
 }
 
 /** Whether a change to `k` made here is not on the Remote yet. */
-export const homeUnsent = (k: draft.HomeKey): boolean => homeTimers.has(k) || (homeMade.get(k) ?? 0) > (homeTaken.get(k) ?? 0);
+export const homeUnsent = (k: settings.HomeKey): boolean => homeTimers.has(k) || (homeMade.get(k) ?? 0) > (homeTaken.get(k) ?? 0);
 
 /**
  * See where every repo here stands, and what the Remote has that is not here.
@@ -252,7 +253,7 @@ async function lookOnce(): Promise<void> {
     tell();
     return;
   }
-  const moving = draft.moved().catch(away);
+  const moving = settings.moved().catch(away);
   // Not waited for when nothing is decided from it (below): what it threw is thrown where it is waited for.
   moving.catch(() => {});
   // What is here could not be read: nothing is decided from nothing (no state is dropped), and it is said.
@@ -271,7 +272,7 @@ async function lookOnce(): Promise<void> {
   for (const k of [...states.keys()]) if (!here.some((s) => s.name === k)) states.delete(k);
   if (c) {
     // Asked again when the session changed meanwhile: what moved is the session's.
-    const now = asked?.session === c.session ? await moving : await draft.moved().catch(away);
+    const now = asked?.session === c.session ? await moving : await settings.moved().catch(away);
     if (now && now.repos !== reposSeen) {
       const list = await draft.remoteRepos().catch(away);
       if (list) { everyThere = list; reposSeen = now.repos; }
@@ -294,7 +295,7 @@ async function lookOnce(): Promise<void> {
       }
     }
     // A setting not agreed now still differs at the next look, which agrees it then.
-    if (now) for (const k of draft.HOME_KEYS) if (draft.homeMoved(k, now.home[k] ?? 0)) track(agreeHome(k).catch(away));
+    if (now) for (const k of settings.HOME_KEYS) if (settings.homeMoved(k, now.home[k] ?? 0)) track(agreeHome(k).catch(away));
   } else { onlyThere = []; everyThere = []; reposSeen = null; }
   tell();
 }
@@ -328,8 +329,6 @@ let polling: {stop(): void} | undefined;
 export async function begin() {
   if (begun) return;
   begun = true;
-  // What an earlier build kept of l3 goes; l3 now keeps its own copies, by digest, and lets them go itself (userland.ts).
-  void forgetExcept(new Set());
   // Every change a person (or a Prompt) makes is sent; sync's own writes are not news, nor another tab's (it sends its own).
   onChange((c) => { if (c.by !== draft.BY && c.by !== ELSEWHERE) schedule(c.repo); else tell(); });
   // A setting changed here is agreed after a pause; one another tab changed, that tab sends.

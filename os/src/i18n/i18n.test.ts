@@ -18,7 +18,7 @@ function texts(dir: string, out: string[] = []): string[] {
 }
 
 test('every English text has its Japanese', async () => {
-  const all = [...new Set(texts(new URL('.', import.meta.url).pathname))];
+  const all = [...new Set(texts(new URL('..', import.meta.url).pathname))];
   assert.deepEqual(await missing(all), []);
 });
 
@@ -44,7 +44,7 @@ test('no Japanese is written outside the catalog', () => {
       });
     }
   };
-  walk(new URL('.', import.meta.url).pathname);
+  walk(new URL('..', import.meta.url).pathname);
   assert.deepEqual(offenders, []);
 });
 
@@ -55,7 +55,7 @@ const MACHINE = new Set(['not signed in', 'not from the app', 'a list of digests
   'a signal', 'too many', 'an item', 'done', 'a place', 'a post', 'private, servers or everyone']);
 
 test('every error the Remote can answer with has its Japanese', async () => {
-  const dir = new URL('../service/', import.meta.url).pathname;
+  const dir = new URL('../../service/', import.meta.url).pathname;
   const said: string[] = [], unread: string[] = [];
   for (const name of readdirSync(dir)) {
     if (!name.endsWith('.ts') || name.endsWith('.test.ts')) continue;
@@ -72,8 +72,8 @@ test('every error the Remote can answer with has its Japanese', async () => {
 });
 
 // How Japanese is written beside Latin words and numbers (DESIGN.md §1).
-const catalog = () => readdirSync(new URL('./i18n/ja/', import.meta.url).pathname).filter((f) => f !== 'index.ts')
-  .flatMap((f) => [...readFileSync(new URL(`./i18n/ja/${f}`, import.meta.url), 'utf8')
+const catalog = () => readdirSync(new URL('./ja/', import.meta.url).pathname).filter((f) => f !== 'index.ts')
+  .flatMap((f) => [...readFileSync(new URL(`./ja/${f}`, import.meta.url), 'utf8')
     .matchAll(/^\s*(?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"): '((?:[^'\\]|\\.)*)'/gm)]
     .map((m) => ({file: f, en: m[1] ?? m[2], ja: m[3]})));
 const KANA_KANJI = '\\u3040-\\u30fa\\u30fc-\\u30ff\\u3400-\\u9fff';
@@ -118,8 +118,8 @@ test('no Japanese is kept for a text nothing says', () => {
     }
     return out;
   };
-  const here = new URL('.', import.meta.url).pathname;
-  const said = [...read(here, '.ts'), ...read(new URL('../service/', import.meta.url).pathname, '.ts'), ...read(new URL('../core/src/', import.meta.url).pathname, '.rs')].join('\n');
+  const here = new URL('..', import.meta.url).pathname;
+  const said = [...read(here, '.ts'), ...read(new URL('../../service/', import.meta.url).pathname, '.ts'), ...read(new URL('../../core/src/', import.meta.url).pathname, '.rs')].join('\n');
   // As written in a source: an apostrophe escaped in a single-quoted literal, or not.
   const ways = (en: string) => [en, en.replace(/\\'/g, "'"), en.replace(/'/g, "\\'")];
   const unsaid = catalog().filter((e) => !ways(e.en).some((w) => said.includes(w))).map((e) => `${e.file}: ${e.en}`);

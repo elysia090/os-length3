@@ -1,12 +1,12 @@
 import {h} from '../ui/dom.ts';
-import {currentLang, LANGS, setLang, t} from '../i18n.ts';
+import {currentLang, LANGS, setLang, t} from '../i18n/i18n.ts';
 import {mark} from '../ui/icons.ts';
 import {connection, myName, signOut} from '../remote/connection.ts';
 import {onState, setState} from '../home/state.ts';
 import {initials, type Profile} from '../home/profile.ts';
 import {answers, choosePart, SETTLE} from './common.ts';
 import {errorText} from '../app/errors.ts';
-import {takeOff} from '../app/space.ts';
+import {takeOff} from '../account/space.ts';
 import {releaseHome} from '../remote/lifecycle.ts';
 import {allSessions} from './bench/sessions.ts';
 import type {Context} from './context.ts';

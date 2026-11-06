@@ -1,6 +1,6 @@
 import {bytes, h} from '../../ui/dom.ts';
 import {rootHere, rootStatus, rootUse, type RootStatus} from '../../app/host.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {about} from '../../prompt/userland.ts';
 import {errorText} from '../../app/errors.ts';
 import {button} from './parts.ts';

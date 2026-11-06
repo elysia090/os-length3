@@ -1,6 +1,6 @@
 import {addToBand, moveTo, offBand, parseBand, renamedIn} from '../../home/band.ts';
 import {getState, setState} from '../../home/state.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {arrowKeys, h} from '../../ui/dom.ts';
 import {mark} from '../../ui/icons.ts';
 import {glide, LAND, paced, still, where} from '../../ui/glide.ts';

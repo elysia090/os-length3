@@ -1,6 +1,6 @@
 import {day, h} from '../../ui/dom.ts';
-import {t} from '../../i18n.ts';
-import {RemoteError} from '../../remote/connection.ts';
+import {t} from '../../i18n/i18n.ts';
+import {RemoteError} from '../../app/errors.ts';
 import * as servers from '../../remote/servers.ts';
 import {nudge} from '../../ui/glide.ts';
 import {deed} from '../common.ts';

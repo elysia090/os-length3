@@ -1,5 +1,5 @@
 import {h, shortDay} from '../ui/dom.ts';
-import {t} from '../i18n.ts';
+import {t} from '../i18n/i18n.ts';
 import {getState, onState, setState} from '../home/state.ts';
 import * as todo from '../home/todo.ts';
 import {errorText} from '../app/errors.ts';

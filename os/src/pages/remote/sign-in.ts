@@ -1,6 +1,6 @@
 import {h} from '../../ui/dom.ts';
 import {isNative, native} from '../../app/host.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import * as account from '../../remote/connection.ts';
 import {errorText} from '../../app/errors.ts';
 import {button, pressing} from './parts.ts';

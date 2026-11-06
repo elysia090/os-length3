@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {addByName, dayOf, farFrom, guestBoards, inviteIn, onTop, pageOf, RUN_MS, sameRun, todoKeeper, type AddWays, type BoardTodo, type Post, type TodoWays} from './servers.ts';
-import {RemoteError} from './connection.ts';
+import {RemoteError} from '../app/errors.ts';
 
 const post = (id: string): Post => ({id, by: 'ren@length3.test', body: id, at: 0});
 

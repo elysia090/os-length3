@@ -1,5 +1,5 @@
 import {bytes, h} from '../../ui/dom.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {REMOTE_URL} from '../../remote/connection.ts';
 import {mark} from '../../ui/icons.ts';
 import desktopPins from '../../../shared/desktop-releases.json' with {type: 'json'};

@@ -1,5 +1,5 @@
 import {bytes, h} from '../../ui/dom.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {readingOrder} from '../../repos/reading.ts';
 import {shownTree, store, type Change, type Entry} from '../../repos/repos.ts';
 import {mark} from '../../ui/icons.ts';

@@ -1,6 +1,6 @@
 import {bytes, h} from '../ui/dom.ts';
 import {closeUp, keepOut, putAway, still, unfold} from '../ui/glide.ts';
-import {t} from '../i18n.ts';
+import {t} from '../i18n/i18n.ts';
 import {mark} from '../ui/icons.ts';
 import {bring, remoteOnly} from '../remote/lifecycle.ts';
 import {store} from '../repos/repos.ts';

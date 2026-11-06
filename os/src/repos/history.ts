@@ -5,7 +5,7 @@
 // and Reject. What is not committed is the draft against the work's last
 // commit, by folder. The core does each, the app's or the same in a browser.
 
-import {showLine, sync} from '../remote/sync.ts';
+import {showLine, sync} from './sync.ts';
 import {core, failure} from '../app/host.ts';
 import type {Answer} from '../core/client.ts';
 import {restore} from './putback.ts';

@@ -5,12 +5,12 @@
 
 import {core} from '../app/host.ts';
 import {home, onElsewhere} from '../core/client.ts';
-import {t} from '../i18n.ts';
+import {t} from '../i18n/i18n.ts';
 import {errorText} from '../app/errors.ts';
 
 // `remote` is which Remote this device talks to and as whom; `sync` is,
 // for each repo and setting, the version on the Remote this copy came from;
-// `lang` is the language the OS speaks here (i18n.ts), l3 included.
+// `lang` is the language the OS speaks here (i18n/i18n.ts), l3 included.
 // `network` is which repos' Prompts may reach the network here (the app only; never sent).
 // `trusted` is the dotfiles this device runs, as taken here (never sent, never set: home/dotfiles.ts).
 export type Key = 'profile' | 'todo' | 'band' | 'remote' | 'sync' | 'lang' | 'dotfiles' | 'network' | 'trusted';

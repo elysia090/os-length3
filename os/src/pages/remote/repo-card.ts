@@ -1,9 +1,9 @@
 import {ago, bytes, day, h} from '../../ui/dom.ts';
-import {t, tn} from '../../i18n.ts';
+import {t, tn} from '../../i18n/i18n.ts';
 import {bring, look, repoState, type RepoSync} from '../../remote/lifecycle.ts';
-import type {RemoteRepo} from '../../remote/sync.ts';
+import type {RemoteRepo} from '../../repos/sync.ts';
 import * as account from '../../remote/connection.ts';
-import {freeOff} from '../../app/space.ts';
+import {freeOff} from '../../account/space.ts';
 import type * as servers from '../../remote/servers.ts';
 import {summaryOf} from '../repo-list.ts';
 import {button, pressing} from './parts.ts';

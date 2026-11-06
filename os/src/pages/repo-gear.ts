@@ -1,6 +1,6 @@
 import {h} from '../ui/dom.ts';
 import {errorText} from '../app/errors.ts';
-import {t} from '../i18n.ts';
+import {t} from '../i18n/i18n.ts';
 import {mark} from '../ui/icons.ts';
 import {answers, askFoot, menuItem, menuRule, SETTLE} from './common.ts';
 import {keepOut, nudge, putAway} from '../ui/glide.ts';

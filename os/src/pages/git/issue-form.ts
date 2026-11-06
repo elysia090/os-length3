@@ -1,5 +1,5 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {saveIssue, writeIssue, type Issue} from '../../repos/issues.ts';
 import {kindOf, named} from '../../repos/text.ts';
 import {answers} from '../common.ts';

@@ -1,5 +1,5 @@
 import {h} from '../ui/dom.ts';
-import {t} from '../i18n.ts';
+import {t} from '../i18n/i18n.ts';
 import {arrive} from '../ui/glide.ts';
 import {agentNow, harnessName, onAgents, onTask, tasksNow, type Task} from '../repos/agents.ts';
 import {issueName} from '../repos/issues.ts';

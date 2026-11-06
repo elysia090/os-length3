@@ -1,7 +1,7 @@
 import {h} from '../../ui/dom.ts';
 import * as gitops from '../../repos/history.ts';
 import {issueName, issuePath, readIssues, type Issue} from '../../repos/issues.ts';
-import {t, tn} from '../../i18n.ts';
+import {t, tn} from '../../i18n/i18n.ts';
 import {onRenamed, rekey} from '../../repos/repos.ts';
 import type {Run} from '../bench/terminal.ts';
 import {answers} from '../common.ts';

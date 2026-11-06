@@ -1,5 +1,5 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {pop} from '../../ui/glide.ts';
 import {agentsOn, harnessName, lineOf, onAgents, type AgentSession} from '../../repos/agents.ts';
 import type {Issue} from '../../repos/issues.ts';

@@ -1,4 +1,4 @@
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {h} from '../../ui/dom.ts';
 import {icon, mark} from '../../ui/icons.ts';
 import {after, LAND, paced, still, unfold} from '../../ui/glide.ts';

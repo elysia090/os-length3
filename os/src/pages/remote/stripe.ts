@@ -1,6 +1,6 @@
 import {h} from '../../ui/dom.ts';
 import {isNative} from '../../app/host.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {flush} from '../../remote/lifecycle.ts';
 import {changedWords, leftFor, openPlan, takeLeft, takeStripeReturn, tierName, type Back, type Left, type PaidTier, type Plan} from '../../remote/plan.ts';
 import {answers} from '../common.ts';

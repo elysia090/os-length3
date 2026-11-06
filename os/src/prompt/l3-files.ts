@@ -5,7 +5,7 @@
 // reached (a Range request, guarded so two versions are never spliced), and
 // accepts the result only when it is exactly the file the manifest names.
 
-import {t} from '../i18n.ts';
+import {t} from '../i18n/i18n.ts';
 
 interface Expect { size?: number; sha256?: string }
 

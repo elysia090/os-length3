@@ -7,6 +7,7 @@ import {test} from 'node:test';
 const shelf = new Map<string, string>();
 Object.assign(globalThis, {localStorage: {getItem: (k: string) => shelf.get(k) ?? null, setItem: (k: string, v: string) => void shelf.set(k, v), removeItem: (k: string) => void shelf.delete(k)}});
 const remote = await import('./connection.ts');
+const {RemoteError} = await import('../app/errors.ts');
 
 /** The Remote answers the next asks with `f`. */
 const answering = (f: (url: string, init?: RequestInit) => Promise<Response>) => Object.assign(globalThis, {fetch: f});
@@ -58,9 +59,9 @@ test('asked twice at once, the Remote is asked once; asked again once it answere
 
 test('what is read from the Remote says the same, not the parser\'s error', async () => {
   answering(async () => new Response('<!doctype html>', {status: 200, headers: {'Content-Type': 'text/html'}}));
-  await assert.rejects(remote.json('/v1/open'), (e: unknown) => e instanceof remote.RemoteError && e.trouble === 'malformed' && !/JSON/.test(e.message));
+  await assert.rejects(remote.json('/v1/open'), (e: unknown) => e instanceof RemoteError && e.trouble === 'malformed' && !/JSON/.test(e.message));
   answering(async () => new Response('nope', {status: 200, headers: {'Content-Type': 'application/json'}}));
-  await assert.rejects(remote.json('/v1/open'), (e: unknown) => e instanceof remote.RemoteError && e.trouble === 'malformed' && /Cannot parse Remote response/.test(e.message));
+  await assert.rejects(remote.json('/v1/open'), (e: unknown) => e instanceof RemoteError && e.trouble === 'malformed' && /Cannot parse Remote response/.test(e.message));
   // A Remote that holds no files says so itself with its 503: that is the Remote answering, not away.
   answering(json({error: 'No place for files', files: false}, 503));
   await assert.rejects(remote.json('/v1/blobs/missing'), /Remote cannot accept files right now/);

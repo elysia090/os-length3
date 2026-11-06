@@ -1,5 +1,5 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {connection, onConnection} from '../../remote/connection.ts';
 import {lastServers, servers, type Server} from '../../remote/servers.ts';
 import {news, onNews} from '../../remote/news.ts';

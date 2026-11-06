@@ -15,7 +15,8 @@
 // never what proves it.
 
 import {core, isNative, native} from '../app/host.ts';
-import {t} from '../i18n.ts';
+import {RemoteError} from '../app/errors.ts';
+import {t} from '../i18n/i18n.ts';
 import {getState, loadState} from '../home/state.ts';
 import {setEnvironment} from '../core/client.ts';
 import {webauthn} from './passkeys.ts';
@@ -65,22 +66,6 @@ async function askedByCore(path: string, init: RequestInit, headers: Headers): P
     headers: [...headers]});
   const body = BODILESS.has(a.status) ? null : Uint8Array.from(atob(a.body), (c) => c.charCodeAt(0));
   return new Response(body, {status: a.status, headers: a.headers});
-}
-
-/**
- * Why the Remote did not give what was asked, when it was not the Remote saying no: it was not reached (or not
- * in time), it is there but not taking requests (a gateway's 502, 503 or 504), or what answered is not its reply
- * (a page, as a host's fallback or a proxy gives, or words that do not read as its JSON).
- */
-type Trouble = 'unreached' | 'unavailable' | 'malformed';
-
-export class RemoteError extends Error {
-  readonly status: number;
-  readonly detail: Record<string, unknown>;
-  readonly trouble?: Trouble;
-  constructor(status: number, message: string, detail: Record<string, unknown> = {}, trouble?: Trouble) {
-    super(message); this.status = status; this.detail = detail; this.trouble = trouble;
-  }
 }
 
 // Whether this device's Remote answered when last asked. While it does not,
@@ -394,7 +379,7 @@ export async function addPasskey(name = deviceName()): Promise<void> {
   const {startRegistration} = await webauthn();
   const options = await confirming(() => json<Record<string, unknown>>(`/api/auth/passkey/generate-register-options?name=${encodeURIComponent(name)}`),
     t('Session expired. Please sign in again (via passkey or provider) to continue.'));
-  // Made able to seal (home/seal.ts: WebAuthn's PRF, which an authenticator gives only for a passkey made asking for it).
+  // Made able to seal (account/seal.ts: WebAuthn's PRF, which an authenticator gives only for a passkey made asking for it).
   const extensions = {...(options.extensions as Record<string, unknown> | undefined), prf: {}};
   const response = await startRegistration({optionsJSON: {...options, extensions} as never}).catch((e: unknown) => {
     throw new RemoteError(0, cancelled(e) ? t('Passkey creation cancelled.') : madeAlready(e) ? t('This device already has a passkey for this account.')

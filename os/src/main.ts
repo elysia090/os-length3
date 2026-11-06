@@ -9,6 +9,7 @@ import {ServerSwitcher} from './pages/server/switcher.ts';
 import {FileTree} from './pages/tree.ts';
 import {onRenamed} from './repos/repos.ts';
 import {begin} from './remote/lifecycle.ts';
+import {forgetExcept} from './prompt/l3-files.ts';
 import {keepFocus} from './ui/focus.ts';
 import {onPlugins, pluginsOpen, setPluginsOpen} from './app/plugins.ts';
 import {learnHome} from './remote/inbox.ts';
@@ -18,7 +19,7 @@ import {cameBackFromStripe, isPaidTier} from './remote/plan.ts';
 import {every} from './app/runs.ts';
 import {heldInvite, holdInvite, inviteIn, openBoards} from './remote/servers.ts';
 import {getState, loadState} from './home/state.ts';
-import {onLang, t, useLang} from './i18n.ts';
+import {onLang, t, useLang} from './i18n/i18n.ts';
 import {NEW_REPO, PURPOSES, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from './app/purposes.ts';
 import {LAND, glide, morph, paced, paneOut, stage, still, where} from './ui/glide.ts';
 import {letGo, touch} from './ui/touch.ts';
@@ -646,6 +647,8 @@ if (asking.has('device')) {
     // Busy until what the Remote has is taken in and the page drawn from it (the first look). Signed out, that look
     // reads the repos' names alone, and what shows where a repo stands follows it (onSync): the page drawn as the OS
     // opened is the page, not drawn whole a second time.
+    // What an earlier build kept of l3 goes; l3 now keeps its own copies, by digest, and lets them go itself (userland.ts).
+    void forgetExcept(new Set());
     void begin().then(() => brought(current)).then(() => { if (connection()) render(); }).finally(() => {
       $('page').removeAttribute('aria-busy');
       // The other places' pages, brought while the person reads the first: a place pressed later is drawn at once.

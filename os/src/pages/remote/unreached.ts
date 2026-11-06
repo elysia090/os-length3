@@ -1,5 +1,6 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
+import {RemoteError} from '../../app/errors.ts';
 import * as account from '../../remote/connection.ts';
 import {nudge} from '../../ui/glide.ts';
 import {button} from './parts.ts';
@@ -8,7 +9,7 @@ import {signInPlace} from './sign-in.ts';
 // The Remote out of reach, said in the place of what only it holds (Inbox, Server), on the sign-in card.
 
 /** Whether `e` is the Remote not answering at all (not a refusal, nor a failure it said). */
-export const unreachedError = (e: unknown): boolean => e instanceof account.RemoteError && e.trouble === 'unreached';
+export const unreachedError = (e: unknown): boolean => e instanceof RemoteError && e.trouble === 'unreached';
 
 /** When Try again was last pressed: a card drawn again just after, the Remote still away, shakes its head. */
 let tried = 0;

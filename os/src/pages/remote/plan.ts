@@ -1,6 +1,6 @@
 import {h} from '../../ui/dom.ts';
 import {isNative} from '../../app/host.ts';
-import {currentLang, t} from '../../i18n.ts';
+import {currentLang, t} from '../../i18n/i18n.ts';
 import {plan as readPlan, planRefusal, planView, priceWords, refusalWords, TERMS, tierName,
   type Meter, type PaidTier, type Plan, type PlanRefusal, type PlanView, type Price, type TierCard} from '../../remote/plan.ts';
 import {answers, choosePart} from '../common.ts';

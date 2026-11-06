@@ -1,5 +1,5 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {connection} from '../../remote/connection.ts';
 import {me, type Me} from '../../remote/inbox.ts';
 import * as servers from '../../remote/servers.ts';

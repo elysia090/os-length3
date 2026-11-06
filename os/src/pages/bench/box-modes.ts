@@ -1,5 +1,5 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {keepOut, paced, putAway, still} from '../../ui/glide.ts';
 import {onChange} from '../../repos/repos.ts';
 import {nextIssueName, numberOf, writeIssue} from '../../repos/issues.ts';
@@ -9,7 +9,7 @@ import {kindOf} from '../../repos/text.ts';
 import {mark} from '../../ui/icons.ts';
 import {mark as todoMark} from '../todo-list.ts';
 import {issueStore} from '../../repos/issue-store.ts';
-import {hasAgentKey, onAgentKey} from '../../home/agent-key.ts';
+import {hasAgentKey, onAgentKey} from '../../account/agent-key.ts';
 
 // The box at the foot does one of a few things with what is written in it, and its pill, at its left, says which:
 // it runs it in the repo's Prompt (the pill the prompt line the shell waits at, `garden $`), writes it as the repo's

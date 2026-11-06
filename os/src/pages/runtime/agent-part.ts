@@ -1,7 +1,7 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {errorText} from '../../app/errors.ts';
-import {agentKey, forgetAgentKey, giveAgentKey, onAgentKey, type Shown} from '../../home/agent-key.ts';
+import {agentKey, forgetAgentKey, giveAgentKey, onAgentKey, type Shown} from '../../account/agent-key.ts';
 import {isNative} from '../../app/host.ts';
 import {button} from './parts.ts';
 
@@ -26,7 +26,7 @@ export function agentSection(counted: (n: number) => void = () => {}): HTMLEleme
 
 /**
  * Where the key is kept, as it is: in the app, the device's keyring (core vault.rs); in a browser, sealed by the
- * person's passkey (home/seal.ts), or, where it could not be, as given in the browser's own keeping.
+ * person's passkey (account/seal.ts), or, where it could not be, as given in the browser's own keeping.
  */
 function keptWhere(k: Shown | null): string {
   if (isNative || !k) return t('Stored securely on this device only. Excluded from dotfiles and Remote sync.');

@@ -1,9 +1,9 @@
 import {ago, arrowKeys, bytes, h} from '../ui/dom.ts';
-import {t} from '../i18n.ts';
+import {t} from '../i18n/i18n.ts';
 import {icon} from '../ui/icons.ts';
 import {store, type RepoSummary} from '../repos/repos.ts';
 import {bring, onSync, remoteOnly, repoState} from '../remote/lifecycle.ts';
-import {free, readSpace} from '../app/space.ts';
+import {free, readSpace} from '../account/space.ts';
 import {syncWord} from './remote/repo-card.ts';
 import {repoGear} from './repo-gear.ts';
 import {allSessions} from './bench/sessions.ts';

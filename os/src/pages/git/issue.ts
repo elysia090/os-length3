@@ -2,7 +2,7 @@ import {kindWords} from '../todo-list.ts';
 import {ago, h} from '../../ui/dom.ts';
 import {arrive, LAND, lift, type Lifted, morph, paced, putAway, still} from '../../ui/glide.ts';
 import * as git from '../../repos/history.ts';
-import {t, tn} from '../../i18n.ts';
+import {t, tn} from '../../i18n/i18n.ts';
 import {closeMark, issueName, issuePath, saveIssue, setClosed, type Issue} from '../../repos/issues.ts';
 import {connection, myName} from '../../remote/connection.ts';
 import {changeFor, type Standing} from '../../repos/git-state.ts';

@@ -1,5 +1,5 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import * as servers from '../../remote/servers.ts';
 import {boardNew, sawBoard} from '../../remote/news.ts';
 import {nudge} from '../../ui/glide.ts';

@@ -7,7 +7,7 @@
 // while the key is open (it is in the page as it asks), as nothing can. Where the browser or the passkey has no PRF,
 // nothing is sealed, and Runtime says the key is kept as given.
 
-import {t} from '../i18n.ts';
+import {t} from '../i18n/i18n.ts';
 
 /** The key sealed: the passkey's id, the salt its PRF was asked with, the nonce, and what was sealed (base64url). */
 export interface SealedKey { v: 1; credential: string; salt: string; iv: string; data: string }

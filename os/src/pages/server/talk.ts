@@ -1,6 +1,6 @@
 import {dateFormat, h} from '../../ui/dom.ts';
 import {arrive, closeUp, paced, still} from '../../ui/glide.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {shown} from '../../remote/inbox.ts';
 import * as servers from '../../remote/servers.ts';
 import {coalesced, every} from '../../app/runs.ts';

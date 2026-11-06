@@ -1,5 +1,5 @@
 import {day, h} from '../../ui/dom.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {shown as named} from '../../remote/inbox.ts';
 import * as servers from '../../remote/servers.ts';
 import {copying} from '../common.ts';

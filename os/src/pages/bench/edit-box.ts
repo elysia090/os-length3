@@ -1,5 +1,5 @@
 import {lineEnd, lineOf, lineStarts} from '../../repos/edit.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {shownName} from '../../repos/issues.ts';
 import {Writes} from './edit-apply.ts';
 import {drawMarks, offsetAt, Ring} from './edit-marks.ts';

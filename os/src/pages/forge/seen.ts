@@ -1,5 +1,5 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {mark} from '../../ui/icons.ts';
 import {fileName} from './diff-view.ts';
 import {firstLine} from './kinds.ts';

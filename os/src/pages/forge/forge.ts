@@ -1,5 +1,5 @@
 import {closeBeside, moveTo, openBeside, removeFromBand, showIn} from '../../home/band.ts';
-import {currentLang, t} from '../../i18n.ts';
+import {currentLang, t} from '../../i18n/i18n.ts';
 import {h} from '../../ui/dom.ts';
 import {onSync} from '../../remote/lifecycle.ts';
 import {onRenamed, store} from '../../repos/repos.ts';

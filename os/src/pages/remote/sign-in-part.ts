@@ -1,5 +1,5 @@
 import {ago, h} from '../../ui/dom.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import * as account from '../../remote/connection.ts';
 import {errorText} from '../../app/errors.ts';
 import {atSignIn, button, pressing} from './parts.ts';

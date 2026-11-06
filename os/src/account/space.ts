@@ -6,12 +6,12 @@
 // nothing goes. A repo that goes stays on the Remote and comes back when
 // it is opened.
 
-import {core, isNative, readCapacity, type Freed, type Item, type Space} from './host.ts';
+import {core, isNative, readCapacity, type Freed, type Item, type Space} from '../app/host.ts';
 import {flush, holdHome, look} from '../remote/lifecycle.ts';
-import {HOME_KEYS, syncHome} from '../remote/sync.ts';
+import {HOME_KEYS, syncHome} from '../remote/settings.ts';
 import {reloadState, settingName} from '../home/state.ts';
 import {store} from '../repos/repos.ts';
-import {t, tn} from '../i18n.ts';
+import {t, tn} from '../i18n/i18n.ts';
 
 /** `open`: repos a Prompt has open in this page (the app knows its own). */
 export async function readSpace(open: string[] = []): Promise<Space> {

@@ -1,6 +1,6 @@
 import {h} from '../../ui/dom.ts';
 import {errorText} from '../../app/errors.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import * as account from '../../remote/connection.ts';
 
 // The pieces Remote's parts share (sign-in, repos, the Sign-in part, devices, plan).

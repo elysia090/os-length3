@@ -1519,7 +1519,7 @@ into a file; read before it goes, as a push is read by GitHub's push
 protection, that file stays here unsent, said as `secret sk-ant-…a9AA`, and
 Commit says which until it is taken out. Home's
 settings (profile, TODO, dotfiles) are kept there too, by the app and l3
-alike (src/remote/sync.ts, core/src/home.rs: one protocol, one record of what was
+alike (src/remote/settings.ts, core/src/home.rs: one protocol, one record of what was
 agreed), each changed only from the version it was read at: unchanged
 here, the Remote's is taken; changed on both sides, two TODO lists are
 joined item by item, and any other setting is the Remote's. The band, the
@@ -2699,7 +2699,7 @@ or goes).
   the device's session is (`core/src/vault.rs`: the OS's keyring, else a file
   only the person reads). In a browser, whose keeping is its profile's files,
   it is sealed by the person's passkey where there is one with PRF
-  (`src/home/seal.ts`: AES-256-GCM under a key HKDF derives from what the
+  (`src/account/seal.ts`: AES-256-GCM under a key HKDF derives from what the
   passkey's PRF gives, after it verifies the person), opened the first time
   the Agent is asked in a session, and the key itself never reaches the
   core; where none can seal it, it is kept as given, and Runtime says which.

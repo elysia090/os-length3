@@ -1,7 +1,7 @@
 import {h} from '../../ui/dom.ts';
 import {after, arrive, LAND, paced, pop, putAway, still, unfold} from '../../ui/glide.ts';
 import * as gitops from '../../repos/history.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {issuePath, number, readIssues, type Issue} from '../../repos/issues.ts';
 import {bring, remoteOnly} from '../../remote/lifecycle.ts';
 import {connection} from '../../remote/connection.ts';

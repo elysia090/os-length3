@@ -1,4 +1,4 @@
-import {t} from '../i18n.ts';
+import {t} from '../i18n/i18n.ts';
 import {core} from '../app/host.ts';
 import {getState, reloadState} from './state.ts';
 

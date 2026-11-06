@@ -1,6 +1,6 @@
 import {h} from '../../ui/dom.ts';
 import type {DiffLine, FileDiff} from '../../repos/history.ts';
-import {t, tn} from '../../i18n.ts';
+import {t, tn} from '../../i18n/i18n.ts';
 import {askFoot, SETTLE} from '../common.ts';
 import {errorText} from '../../app/errors.ts';
 import {shownPath} from '../../repos/issues.ts';

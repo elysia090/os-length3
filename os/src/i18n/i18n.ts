@@ -18,7 +18,7 @@ export const currentLang = (): Lang => lang;
 /** The Japanese words, by the English they stand for: once read. */
 let ja: Record<string, string> | null = null;
 let reading: Promise<void> | null = null;
-const readJa = () => (reading ??= import('./i18n/ja/index.ts').then((m) => { ja = m.default; }));
+const readJa = () => (reading ??= import('./ja/index.ts').then((m) => { ja = m.default; }));
 // Japanese last time: its words are on their way from the first moment, beside what else the first page waits for.
 if (lang === 'ja') void readJa();
 

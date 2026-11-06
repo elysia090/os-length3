@@ -1,6 +1,6 @@
 import {agentCards} from '../agent-cards.ts';
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {mark, paneMark} from '../../ui/icons.ts';
 import {Box} from './box.ts';
 import {Pane, paneWord, pluginArea} from '../pane.ts';

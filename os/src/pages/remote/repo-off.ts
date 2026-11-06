@@ -1,8 +1,8 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {flush, look, remoteAll} from '../../remote/lifecycle.ts';
 import * as account from '../../remote/connection.ts';
-import {freeOff} from '../../app/space.ts';
+import {freeOff} from '../../account/space.ts';
 import {askFoot, SETTLE} from '../common.ts';
 import {errorText} from '../../app/errors.ts';
 import {button, pressing} from './parts.ts';

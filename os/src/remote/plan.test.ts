@@ -18,8 +18,8 @@ const plan = await import('./plan.ts');
 const lifecycle = await import('./lifecycle.ts');
 const servers = await import('./servers.ts');
 const inbox = await import('./inbox.ts');
-const {RemoteError} = await import('./connection.ts');
-const {setLang} = await import('../i18n.ts');
+const {RemoteError} = await import('../app/errors.ts');
+const {setLang} = await import('../i18n/i18n.ts');
 
 const DAY = 86_400_000, now = Date.UTC(2031, 9, 17);
 const free = {repos: 3, bytes: 100_000_000, names: 1};

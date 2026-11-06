@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {browserOnRemote} from '../testing/remote.ts';
 
-// A browser's copy kept in step with the Remote (remote/sync.ts), where the two
+// A browser's copy kept in step with the Remote (repos/sync.ts), where the two
 // sides changed the same path in different ways: whatever is in whose way,
 // nothing either side wrote is lost, the sync goes through, and the Remote
 // ends holding the same as this copy. Each test has a repo of its own.
 
 const b = await browserOnRemote();
-const {store, draft} = b;
+const {store, draft, settings} = b;
 
 /** A repo made here and on the Remote, holding `files`. */
 async function made(repo: string, files: Record<string, string>) {
@@ -88,16 +88,16 @@ test('a name and text beyond ASCII, with CRLF line ends, reach the Remote and co
 test('the profile changed on both: the Remote\'s is taken, agreed, and the next change here goes to the Remote', async () => {
   const {getState, setState} = b.state;
   await setState('profile', JSON.stringify({name: 'Here', handle: 'ren', bio: ''}));
-  await draft.syncHome('profile');
+  await settings.syncHome('profile');
   await b.elsewhereHome('profile', JSON.stringify({name: 'There', handle: 'ren', bio: ''}));
   await setState('profile', JSON.stringify({name: 'Here again', handle: 'ren', bio: ''}));
-  await draft.syncHome('profile');
+  await settings.syncHome('profile');
   assert.equal(JSON.parse(getState('profile')!).name, 'There');
   const remote = await b.remoteHome('profile');
-  assert.equal(draft.homeMoved('profile', remote.version), false);
+  assert.equal(settings.homeMoved('profile', remote.version), false);
   // A change made after that is this device's, and is sent, not taken back.
   await setState('profile', JSON.stringify({name: 'Later', handle: 'ren', bio: ''}));
-  await draft.syncHome('profile');
+  await settings.syncHome('profile');
   assert.equal(JSON.parse(getState('profile')!).name, 'Later');
   assert.equal(JSON.parse((await b.remoteHome('profile')).value!).name, 'Later');
 });
@@ -106,11 +106,11 @@ test('TODO changed on two devices at once: the other\'s edit and this one\'s new
   const {getState, setState} = b.state;
   const item = (id: string, title: string, done = false) => ({id, kind: null, title, detail: '', done, repo: null, created: 1});
   await setState('todo', JSON.stringify([item('a', 'a'), item('b', 'b')]));
-  await draft.syncHome('todo');
+  await settings.syncHome('todo');
   // Elsewhere: a is done, b is removed. Here, meanwhile: c is added.
   await b.elsewhereHome('todo', JSON.stringify([item('a', 'a', true)]));
   await setState('todo', JSON.stringify([item('a', 'a'), item('b', 'b'), item('c', 'c')]));
-  await draft.syncHome('todo');
+  await settings.syncHome('todo');
   const now = (v: string | null) => (JSON.parse(v!) as {id: string; done: boolean}[]).map((t) => `${t.id}${t.done ? '✓' : ''}`);
   assert.deepEqual(now(getState('todo')), ['a✓', 'c']);
   assert.deepEqual(now((await b.remoteHome('todo')).value), ['a✓', 'c']);

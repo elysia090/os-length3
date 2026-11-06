@@ -1,5 +1,5 @@
 import {bytes, h} from '../ui/dom.ts';
-import {t, tn} from '../i18n.ts';
+import {t, tn} from '../i18n/i18n.ts';
 import {connection} from '../remote/connection.ts';
 import {plan} from '../remote/plan.ts';
 import {goToPlan} from './remote/plan.ts';

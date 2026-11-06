@@ -1,6 +1,6 @@
 import {h} from '../ui/dom.ts';
 import {nudge, putAway} from '../ui/glide.ts';
-import {t} from '../i18n.ts';
+import {t} from '../i18n/i18n.ts';
 import {isIssues, ISSUES, plainPart, plainPath, store} from '../repos/repos.ts';
 import {answers, askFoot, menuItem, menuRule, SETTLE} from './common.ts';
 import type {MarkName} from '../ui/icons.ts';

@@ -2,7 +2,7 @@ import {digest, download, Fatal, type Check} from './l3-files.ts';
 import {errorText} from '../app/errors.ts';
 import {isNative} from '../app/host.ts';
 import {REMOTE_URL} from '../remote/connection.ts';
-import {t} from '../i18n.ts';
+import {t} from '../i18n/i18n.ts';
 import {prepare, type Segment} from '../../../xlat/runtime/share.mjs';
 import {unpackMore} from '../../../xlat/runtime/keeper.mjs';
 

@@ -1,4 +1,4 @@
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 
 // What the box's Edit writes into the file in front (edit-box.ts) is written into it as typing in it would be: the
 // editor hears it as typed and saves it a moment after the typing stops. The keyboard stays in the box: were it taken

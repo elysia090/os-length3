@@ -1,5 +1,5 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {LAND, paced, still} from '../../ui/glide.ts';
 
 // How a Prompt is seen to be cut and to end (terminal.ts): a run interrupted jolts the screen; ended, the Prompt says

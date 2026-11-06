@@ -1,6 +1,6 @@
 import {h} from '../../ui/dom.ts';
 import {glide, where} from '../../ui/glide.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 
 // Git's repo chips: one row that slides sideways, however many repos there are, so they never push the issues down.
 // The one chosen holds the ink, and is kept in view as the row slides.

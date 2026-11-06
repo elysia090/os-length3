@@ -8,10 +8,11 @@
 // (the same posts, less any taken down), so what a reader holds stays about
 // what is near the screen however far they scroll.
 
-import {api, askedOnce, connection, json, onWrite, reading, REMOTE_URL, RemoteError, retryAfter} from './connection.ts';
+import {api, askedOnce, connection, json, onWrite, reading, REMOTE_URL, retryAfter} from './connection.ts';
+import {RemoteError} from '../app/errors.ts';
 import {lookAt} from './looks.ts';
 import type {Todo} from '../home/todo.ts';
-import {t} from '../i18n.ts';
+import {t} from '../i18n/i18n.ts';
 import {errorText} from '../app/errors.ts';
 
 /** `gone`: removed, and held until then (ms); its server's owner may bring it back meanwhile. */

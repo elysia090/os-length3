@@ -54,7 +54,8 @@ export async function browserOnRemote(o: {plan?: PlanConfig; billing?: Billing; 
   const {useCore} = await import('../app/host.ts');
   useCore(nodeCore(buildCoreWasm({quiet: true}), {LENGTH3_HOME: '/data', LENGTH3_REMOTE: URL_, LENGTH3_DEVICE: 'Chrome Linux'}));
   const {store} = await import('../repos/repos.ts');
-  const draft = await import('../remote/sync.ts');
+  const draft = await import('../repos/sync.ts');
+  const settings = await import('../remote/settings.ts');
   const history = await import('../repos/history.ts');
   const state = await import('../home/state.ts');
 
@@ -141,5 +142,5 @@ export async function browserOnRemote(o: {plan?: PlanConfig; billing?: Billing; 
     return out;
   }
 
-  return {URL: URL_, token, db, signIn, browserAs, store, draft, history, state, asked, elsewhere, elsewhereFolder, elsewhereHome, remoteFiles, remoteHome, text, put, names, files};
+  return {URL: URL_, token, db, signIn, browserAs, store, draft, settings, history, state, asked, elsewhere, elsewhereFolder, elsewhereHome, remoteFiles, remoteHome, text, put, names, files};
 }

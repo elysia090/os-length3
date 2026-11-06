@@ -8,8 +8,9 @@
 
 import {bytes, day} from '../ui/dom.ts';
 import {isNative, native} from '../app/host.ts';
-import {currentLang, t, tn} from '../i18n.ts';
-import {api, json, leaveFor, RemoteError} from './connection.ts';
+import {currentLang, t, tn} from '../i18n/i18n.ts';
+import {api, json, leaveFor} from './connection.ts';
+import {RemoteError} from '../app/errors.ts';
 
 /** The tiers one pays for, the least first, and free before them. */
 const PAID_TIERS = ['go', 'pro', 'max'] as const;

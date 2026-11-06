@@ -1,4 +1,4 @@
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {inPieces, onChange, store, walkRepo} from '../../repos/repos.ts';
 
 // The repo in a browser's Prompt is the repo (terminal.ts): copied in for the shell as it starts, what the shell

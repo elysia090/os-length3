@@ -2,6 +2,6 @@
 // the passkeys are (remote.ts), so it carries no WebAuthn of its own.
 
 import type * as web from './passkeys.ts';
-import {t} from '../i18n.ts';
+import {t} from '../i18n/i18n.ts';
 
 export const webauthn: typeof web.webauthn = () => Promise.reject(new Error(t('Manage passkeys and providers in browser.')));

@@ -1,6 +1,6 @@
 import {agentCards} from './agent-cards.ts';
 import {arrowKeys, h} from '../ui/dom.ts';
-import {t, tn} from '../i18n.ts';
+import {t, tn} from '../i18n/i18n.ts';
 import {LIMITS, initials, normalize, parse, type Profile} from '../home/profile.ts';
 import {connection, myName, rename} from '../remote/connection.ts';
 import {getState, onState, setState, settingName, unreadable} from '../home/state.ts';

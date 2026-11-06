@@ -338,7 +338,7 @@ to it first, and after every command each repo whose files differ from what
 was last agreed is sent (which differ is seen from the digests kept, so a
 repo in step costs no request). Home's settings kept on the Remote
 (profile, TODO, dotfiles) go the same way, by the app's protocol and rules
-(`core/src/home.rs`, as `src/remote/sync.ts`): a command that reads one (`l3
+(`core/src/home.rs`, as `src/remote/settings.ts`): a command that reads one (`l3
 todo`, `l3 profile`, `l3 dotfile`, `l3 prompt`) takes it in first, and one
 that differs from what was last agreed is sent after any command; two TODO
 lists changed on two devices are joined item by item. What a person does to the Remote is only

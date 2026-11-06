@@ -1,8 +1,8 @@
 import {h} from '../../ui/dom.ts';
 import {isNative, type Freed} from '../../app/host.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {onSync} from '../../remote/lifecycle.ts';
-import {readSpace} from '../../app/space.ts';
+import {readSpace} from '../../account/space.ts';
 import {pageHead, parts} from '../common.ts';
 import type {Context} from '../context.ts';
 import {allSessions} from '../bench/sessions.ts';

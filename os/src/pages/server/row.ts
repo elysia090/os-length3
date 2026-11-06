@@ -1,5 +1,5 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {msOf} from '../../ui/glide.ts';
 
 /** How long the hand rests on an edge before the box it goes to is read ahead (passing over it reads nothing). */

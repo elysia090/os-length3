@@ -1,4 +1,4 @@
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {store} from '../../repos/repos.ts';
 import type {Drag} from './drag.ts';
 

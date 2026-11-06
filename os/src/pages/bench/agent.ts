@@ -1,5 +1,5 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {shownTree} from '../../repos/repos.ts';
 import {AgentError, type Use} from '../../agent/ask.ts';
 import {work, type Hands, type Step} from '../../agent/work.ts';

@@ -1,7 +1,7 @@
 import {h} from '../../ui/dom.ts';
 import type {FileChange} from '../../repos/history.ts';
 import {issueName, issuePath, shownPath, type Issue} from '../../repos/issues.ts';
-import {t, tn} from '../../i18n.ts';
+import {t, tn} from '../../i18n/i18n.ts';
 import {inPieces, store, walkRepo, type Change} from '../../repos/repos.ts';
 import {findInText, nameFirst, nameMatches, type Hit} from '../../repos/search.ts';
 import type {Run} from '../bench/terminal.ts';

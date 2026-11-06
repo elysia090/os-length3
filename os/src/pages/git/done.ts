@@ -1,6 +1,6 @@
 import {ago, day, h} from '../../ui/dom.ts';
 import * as git from '../../repos/history.ts';
-import {t, tn} from '../../i18n.ts';
+import {t, tn} from '../../i18n/i18n.ts';
 import {closedBy, numberOf, type Issue} from '../../repos/issues.ts';
 import {kindOf} from '../../repos/text.ts';
 import {answers, askFoot, SETTLE} from '../common.ts';

@@ -1,6 +1,6 @@
 import {h} from '../../ui/dom.ts';
 import {mark} from '../../ui/icons.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import * as servers from '../../remote/servers.ts';
 import {keepOut, putAway} from '../../ui/glide.ts';
 import {errorText} from '../../app/errors.ts';

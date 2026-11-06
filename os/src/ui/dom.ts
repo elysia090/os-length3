@@ -1,6 +1,6 @@
 // Element construction. Text is always set as text, never parsed as HTML.
 
-import {currentLang, t} from '../i18n.ts';
+import {currentLang, t} from '../i18n/i18n.ts';
 
 type Child = Node | string | null | undefined | false;
 

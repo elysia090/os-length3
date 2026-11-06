@@ -1,6 +1,6 @@
 import {differs, Held} from '../../repos/conflict.ts';
 import {bytes, h} from '../../ui/dom.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {lineCount} from '../../repos/reading.ts';
 import {EDIT_LIMIT, store} from '../../repos/repos.ts';
 import {answers} from '../common.ts';

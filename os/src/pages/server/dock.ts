@@ -1,7 +1,7 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {nudge} from '../../ui/glide.ts';
-import {RemoteError} from '../../remote/connection.ts';
+import {RemoteError} from '../../app/errors.ts';
 import * as servers from '../../remote/servers.ts';
 import {postNow} from './talk.ts';
 import {button, type Shown} from './parts.ts';

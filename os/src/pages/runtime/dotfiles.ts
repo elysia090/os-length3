@@ -1,5 +1,5 @@
 import {bytes, h} from '../../ui/dom.ts';
-import {t, tn} from '../../i18n.ts';
+import {t, tn} from '../../i18n/i18n.ts';
 import * as dotfiles from '../../home/dotfiles.ts';
 import {askFoot, SETTLE} from '../common.ts';
 import type {Session} from '../bench/terminal.ts';

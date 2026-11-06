@@ -3,7 +3,7 @@ import {glide, LAND, paced, still, where} from '../../ui/glide.ts';
 import {counted} from './diff-view.ts';
 import * as gitops from '../../repos/history.ts';
 import {issuePath, readIssues, type Issue} from '../../repos/issues.ts';
-import {t} from '../../i18n.ts';
+import {t} from '../../i18n/i18n.ts';
 import {onChange, onRenamed, rekey, store} from '../../repos/repos.ts';
 import {stillAt} from '../../repos/search.ts';
 import type {Run} from '../bench/terminal.ts';

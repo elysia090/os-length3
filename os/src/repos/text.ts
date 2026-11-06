@@ -3,7 +3,7 @@
 // cuts all use it.
 
 /**
- * A kind: a short word, Latin from a letter (Fix) or Japanese in kana and kanji alone (買う), as KANA_KANJI (i18n.ts)
+ * A kind: a short word, Latin from a letter (Fix) or Japanese in kana and kanji alone (買う), as KANA_KANJI (i18n/i18n.ts)
  * and 々 count them.
  */
 export const KIND_WORD = '[A-Za-z][A-Za-z0-9-]{0,15}|[\\u3005\\u3040-\\u30fa\\u30fc-\\u30ff\\u3400-\\u9fff]{1,16}';

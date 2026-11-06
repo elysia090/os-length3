@@ -6,7 +6,7 @@
 // (/root), or nothing (/tmp, /run start empty).
 
 import {native, rootHere} from '../app/host.ts';
-import {t} from '../i18n.ts';
+import {t} from '../i18n/i18n.ts';
 import {shownTree, store} from '../repos/repos.ts';
 
 export type Origin = 'distribution' | 'kernel' | 'repos' | 'empty';

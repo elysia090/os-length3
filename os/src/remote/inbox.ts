@@ -7,9 +7,10 @@
 // the signalling, and offers no relay: without a direct path, messages
 // simply go through the Remote as text.
 
-import {about, api, connection, json, reading, RemoteError} from './connection.ts';
+import {about, api, connection, json, reading} from './connection.ts';
+import {RemoteError} from '../app/errors.ts';
 import {lookAt} from './looks.ts';
-import {t} from '../i18n.ts';
+import {t} from '../i18n/i18n.ts';
 import {day} from '../ui/dom.ts';
 import {every} from '../app/runs.ts';
 
