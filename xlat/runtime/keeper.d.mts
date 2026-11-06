@@ -1,4 +1,4 @@
-// Types for keeper.mjs, as the page reads them (os/src/userland.ts).
+// Types for keeper.mjs, as the page reads them (os/app/userland.ts).
 export const MAIN: number;
 export const MORE: number;
 export interface Kept { cache: string; at: Record<string, {main: string; more: string | null}> }

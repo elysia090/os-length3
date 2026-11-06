@@ -68,7 +68,7 @@
 // translation an earlier Prompt made is read from that Cache Storage instead
 // (by its file's origin, pack.mjs: the URLs of its translation and of the
 // code it reached later, keeper.mjs), and the exec waits only for that read.
-// A program the page translates ahead while a person reads (os/src/prompt/ahead.ts) is told as it is kept,
+// A program the page translates ahead while a person reads (os/app/prompt/ahead.ts) is told as it is kept,
 // {type: 'kept', at: {[origin]: {main, more}}}, and read as one kept before would be.
 // What is translated here of a root file is said once the kernel pauses, for
 // the page to keep: {type: 'translated', origin, wasm, segments} once, then
@@ -232,7 +232,7 @@ self.onmessage = async ({data}) => {
   if (data.type === 'free') { if (kernel) self.postMessage({type: 'freed', ...kernel.free(0)}); return; }
   if (data.type === 'warm') { if (canRunApart()) warmThreads(); return; }
   if (data.type === 'hot') { if (kernel) given(data.files); return; }
-  // A program translated ahead by the page since this Prompt started (os/src/prompt/ahead.ts): read when it is run.
+  // A program translated ahead by the page since this Prompt started (os/app/prompt/ahead.ts): read when it is run.
   if (data.type === 'kept') { if (keptAt) Object.assign(keptAt, data.at); return; }
   // (A failure is said by the 'start' that waits for it.)
   if (data.type === 'ready') { ready(data).catch(() => {}); return; }

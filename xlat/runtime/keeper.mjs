@@ -1,4 +1,4 @@
-// Translations kept from earlier runs, read where the kernel runs (worker.mjs). The page keeps them (os/src/userland.ts,
+// Translations kept from earlier runs, read where the kernel runs (worker.mjs). The page keeps them (os/app/userland.ts,
 // within its share of the browser's room) in Cache Storage, each program's under the origin of its file in the root
 // (pack.mjs: its pack, named by its digest, and its place in it), and says at the start which there are:
 // kept = {cache, at: {[origin]: {main, more}}}, the URL of a program's translation and that of the code it reached
