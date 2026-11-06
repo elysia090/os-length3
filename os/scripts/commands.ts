@@ -156,7 +156,8 @@ export const LINES: Line[] = [
   // Process
   {uses: ['ps', 'top'], line: 'ps | head -1 | cut -c1-20; top -bn1 | head -1 | cut -c1-4'},
   {uses: ['time', 'timeout', 'env', 'sleep'], line: "time -p true 2>&1 | head -1 | cut -c1-4; timeout 1 sleep 5; echo \"timeout $?\"; env -i A=1 sh -c 'echo $A'; sleep 0.1 && echo slept"},
-  {uses: ['pgrep', 'pkill', 'killall'], line: 'sleep 30 & pgrep -x sleep >/dev/null && echo found; pkill -x sleep; wait; sleep 30 & killall sleep; wait; echo killed'},
+  // (Each waits until sleep is there: begun with &, it is the shell's fork, not yet sleep, for a moment.)
+  {uses: ['pgrep', 'pkill', 'killall'], line: 'sleep 30 & until pgrep -x sleep >/dev/null; do :; done; echo found; pkill -x sleep; wait; sleep 30 & until pgrep -x sleep >/dev/null; do :; done; killall sleep; wait; echo killed'},
   {uses: ['nice'], line: "nice -n 5 sh -c 'echo nice'; nice"},
   {uses: ['renice'], line: 'sleep 2 & renice -n 3 -p $! >/dev/null && echo reniced; kill $!'},
   {uses: ['nohup'], line: 'cd /tmp && nohup sh -c "echo kept" > o 2>/dev/null; cat o'},
