@@ -6,6 +6,7 @@ import {errorText} from '../../app/errors.ts';
 import {button, pressing} from '../kit/remote-parts.ts';
 import {joining} from './device-page.ts';
 import {mark} from '../../ui/icons.ts';
+import {every} from '../../app/runs.ts';
 
 // Remote's Devices part: the devices signed in to the account, signing one out, and letting another in by its code.
 
@@ -18,24 +19,29 @@ import {mark} from '../../ui/icons.ts';
 export function deviceSection(counted: (n: number) => void): HTMLElement {
   const section = h('div', {class: 'sub-part'});
   const error = h('p', {class: 'error', role: 'alert'});
-  // The one place for the next device, kept as the list is read again (its steps half taken stay as they are).
-  const next = connectRow(() => void paint());
+  let drawn = 0;
   const paint = async () => {
     const list = await account.devices().catch((e) => { error.textContent = errorText(e); return []; });
-    counted(list.length);
+    counted(drawn = list.length);
     section.replaceChildren(h('div', {class: 'rows'}, ...list.map((d) => deviceRow(d, paint)), next), error);
+    return drawn;
   };
+  // The one place for the next device, kept as the list is read again (its steps half taken stay as they are).
+  const next = connectRow(paint, () => drawn);
   void paint();
   return section;
 }
 
+/** How long a device let in takes at most to come for its session: one of its asks (every 5 s, service/auth.ts) and a little more. */
+const COMES = 7000;
+
 /**
  * Room for another device at the list's foot, and the way to it: a dashed row, Connect a device. Pressed, the row is
  * the steps the code's own page takes (device-page.ts joining): the code the device shows, which device asks, Connect
- * or Refuse, Not now putting the row back until the device asks. Let in, the devices are read again (`again`), once
- * now and once the device has had time to ask for its session.
+ * or Refuse, Not now putting the row back until the device asks. Let in, the devices are read again (`again`) every
+ * second until it is among them (it takes its session at its next ask), for as long as that can take.
  */
-function connectRow(again: () => void): HTMLElement {
+function connectRow(again: () => Promise<number>, drawn: () => number): HTMLElement {
   const place = h('div', {class: 'connect-place'});
   const open = h('button', {type: 'button', class: 'row-item row-new'}, mark('plus'), h('span', {}, t('Connect device'))) as HTMLButtonElement;
   open.addEventListener('click', () => {
@@ -51,15 +57,17 @@ function connectRow(again: () => void): HTMLElement {
       if (step !== 'done') return;
       no.textContent = t('Done');
       no.focus();
-      again();
-      setTimeout(again, 6000);
+      const had = drawn(), until = performance.now() + COMES;
+      const looking = every(1000, async () => {
+        if (await again() > had || performance.now() > until) looking.stop();
+      }, {alive: () => place.isConnected});
     });
   });
   place.append(open);
   return place;
 }
 
-function deviceRow(d: account.Device, again: () => Promise<void>): HTMLElement {
+function deviceRow(d: account.Device, again: () => Promise<unknown>): HTMLElement {
   const name = account.deviceWord(d.userAgent);
   const out = d.current ? null : button(t('Sign out'), 'small-button');
   out?.setAttribute('aria-label', t('Sign out {name}', {name}));
@@ -73,7 +81,7 @@ const head = (d: account.Device, name: string) => [h('span', {class: 'row-name'}
   h('span', {class: 'row-meta'}, t('Last used: {when}', {when: ago(Date.parse(d.updatedAt))}))];
 
 /** Signing `d` out, asked in its `row` first, pressed at `out`; signed out, the devices are read again (`again`). */
-function askOut(d: account.Device, name: string, row: HTMLElement, out: HTMLButtonElement, again: () => Promise<void>) {
+function askOut(d: account.Device, name: string, row: HTMLElement, out: HTMLButtonElement, again: () => Promise<unknown>) {
   const foot = askFoot(out, row);
   const error = h('p', {class: 'error small', role: 'alert'});
   const no = button(t('Cancel'), 'small-button'), yes = button(t('Sign out'), 'small-button primary');
