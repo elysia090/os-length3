@@ -154,7 +154,7 @@ pub fn plan_page(kind: &str, tier: Option<&str>) -> Result<String> {
     if let Some(t) = tier { if !TIERS.contains(&t) { return Err(crate::tr!("Invalid tier: choose go, pro, or max", "該当するプランはありません（go、pro、max のいずれかを指定してください）")); } }
     let c = Client::open()?;
     // In the language the OS speaks (Stripe's pages are asked in it, not in the browser's).
-    let mut asked = serde_json::json!({"lang": if crate::i18n::ja() { "ja" } else { "en" }});
+    let mut asked = serde_json::json!({"lang": if crate::text::i18n::ja() { "ja" } else { "en" }});
     if let Some(t) = tier { asked["tier"] = serde_json::json!(t); }
     let v = c.json("POST", &format!("/v1/plan/{kind}"), Some(asked))?;
     let url = v["url"].as_str().unwrap_or_default().to_string();
@@ -185,7 +185,7 @@ fn ask_page(base: &str, ask: &str, repo: Option<&str>) -> Result<String> {
     let base = base.trim_end_matches('/');
     if ask == "sign-in" { return Ok(format!("{base}/?account=sign-in")); }
     match repo {
-        Some(r) if crate::words::names::valid_name(r) => Ok(format!("{base}/?account={ask}&repo={r}")),
+        Some(r) if crate::text::names::valid_name(r) => Ok(format!("{base}/?account={ask}&repo={r}")),
         _ => Err(crate::tr!("No such repo", "そのリポジトリはありません")),
     }
 }

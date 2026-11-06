@@ -11,8 +11,8 @@ use crate::spec::{Fact, On};
 use crate::target::{self, IssueRef};
 use length3_core::history::{self, state_word, Change};
 use length3_core::history::work::Work;
-use length3_core::words::issues::{number, Issue};
-use length3_core::{i18n::ja, words::title, tr, history::work};
+use length3_core::repos::issues::{number, Issue};
+use length3_core::{history::work, text::i18n::ja, text::title, tr};
 use serde_json::{json, Value};
 
 /// Where a repo stands, read once for all its issues. `known`: read from
@@ -26,7 +26,7 @@ struct Stand {
     uncommitted: usize,
 }
 
-fn stand(ctx: &Ctx, r: &length3_core::repos::Repos, repo: &str) -> Stand {
+fn stand(ctx: &Ctx, r: &length3_core::repos::store::Repos, repo: &str) -> Stand {
     let merged = history::merged_seen(repo);
     let empty = |known, merged| Stand { known, work: None, lines: Vec::new(), changes: Vec::new(), merged, uncommitted: 0 };
     // On no Remote there is no work to know of; one out of reach knows only the merges seen before.
@@ -54,7 +54,7 @@ pub fn line_called(line: &str) -> String {
 /// copy, where issues are, whatever work the repo shows; one a work or a change
 /// refers to keeps its name. Renamed, they are committed on main by themselves,
 /// as every issue's file is. What was renamed, (old, new).
-fn number_loose(ctx: &Ctx, r: &length3_core::repos::Repos, repo: &str, s: &Stand) -> Vec<(String, String)> {
+fn number_loose(ctx: &Ctx, r: &length3_core::repos::store::Repos, repo: &str, s: &Stand) -> Vec<(String, String)> {
     if ctx.prompt || !ctx.connected() || !s.known { return Vec::new(); }
     let in_use: Vec<String> = s.lines.iter().map(|l| l.issue.clone()).chain(s.changes.iter().map(|c| c.issue.clone())).collect();
     let done = r.on_main().number_issues(repo, &in_use).unwrap_or_default();
@@ -185,7 +185,7 @@ fn subject(ctx: &Ctx, s: &Stand, i: &Issue, facts: Vec<Fact>) -> crate::menu::Su
 }
 
 /// The issue as a thing on the page, for the menu: its card's head and foot, and its facts.
-fn seen(ctx: &Ctx, r: &length3_core::repos::Repos, s: &Stand, i: &Issue) {
+fn seen(ctx: &Ctx, r: &length3_core::repos::store::Repos, s: &Stand, i: &Issue) {
     crate::menu::see(|| {
         let mut f = facts(ctx, s, i);
         if r.line(&i.repo) != length3_core::repos::lines::MAIN { f.push(Fact::OnWork); }
@@ -276,7 +276,7 @@ pub fn page(ctx: &Ctx, call: &Call) -> Result<Reply> {
         // Issues are main's, whatever work the repo shows.
         let mut list = r.on_main().issues(n)?;
         if list.iter().any(|i| i.n.is_none()) && !number_loose(ctx, &r, n, &s).is_empty() { list = r.on_main().issues(n)?; }
-        length3_core::words::issues::sort_oldest_first(&mut list);
+        length3_core::repos::issues::sort_oldest_first(&mut list);
         offline |= ctx.connected() && !s.known;
         let done = list.iter().filter(|i| s.merged(i)).count();
         if done > 0 { merged.push((n.clone(), done)); }
@@ -302,7 +302,7 @@ pub fn page(ctx: &Ctx, call: &Call) -> Result<Reply> {
 
 fn read_issue(ctx: &Ctx, at: &IssueRef) -> Result<Issue> {
     let c = ctx.repos()?.on_main().read(&at.repo, &at.path(), 256 * 1024)?;
-    Ok(length3_core::words::issues::parse(&at.repo, &at.file, &c.text.ok_or_else(|| Error::Refused(tr!("{} is binary", "{} はバイナリです", at.name())))?))
+    Ok(length3_core::repos::issues::parse(&at.repo, &at.file, &c.text.ok_or_else(|| Error::Refused(tr!("{} is binary", "{} はバイナリです", at.name())))?))
 }
 
 /// `l3 issue REPO#N`: one box in full, then its Diff, Review and Reply.
@@ -360,7 +360,7 @@ pub fn issue_show(ctx: &Ctx, call: &Call) -> Result<Reply> {
 
 /// The issue's deeds, and Sign in first while this device is on no Remote (where it stands is not known
 /// without one, and nothing but closing it can be done).
-fn deeds_here(ctx: &Ctx, r: &length3_core::repos::Repos, s: &Stand, i: &Issue) -> Vec<(&'static str, String)> {
+fn deeds_here(ctx: &Ctx, r: &length3_core::repos::store::Repos, s: &Stand, i: &Issue) -> Vec<(&'static str, String)> {
     if s.merged(i) { return Vec::new(); }
     let mut list = deeds(ctx, s, i, r.line(&i.repo) != length3_core::repos::lines::MAIN);
     if !ctx.connected() && i.closed.is_none() {
@@ -403,22 +403,22 @@ fn set_closed(ctx: &Ctx, call: &Call, close: bool) -> Result<Reply> {
     // The issue is main's, whatever work the repo shows: closed or reopened there, and committed there by itself.
     let main = r.on_main();
     let text = main.read(&at.repo, &at.path(), 256 * 1024)?.text.ok_or_else(|| Error::Refused(tr!("{} is binary", "{} はバイナリです", at.name())))?;
-    let i = length3_core::words::issues::parse(&at.repo, &at.file, &text);
+    let i = length3_core::repos::issues::parse(&at.repo, &at.file, &text);
     let s = stand(ctx, &r, &at.repo);
     if s.merged(&i) { return Err(Error::Refused(tr!("{} is merged already", "{} はもう Merge 済みです", at.name()))); }
     // Undecided, it is main's to take or not first, as the app's card offers no Close then.
     if close && s.change(&i).is_some_and(|c| c.state == "open") {
         return Err(Error::Refused(tr!("{0} has an undecided change; decide it first (l3 reject {0})", "{0} には未決の Change があります。先に決めてください（l3 reject {0}）", at.name())));
     }
-    let data = |changed: bool| json!({"repo": at.repo, "n": length3_core::words::issues::number_of(&at.file), "file": at.file, "closed": close, "changed": changed});
+    let data = |changed: bool| json!({"repo": at.repo, "n": length3_core::repos::issues::number_of(&at.file), "file": at.file, "closed": close, "changed": changed});
     if close == i.closed.is_some() {
         let said = if close { tr!("{} is closed already", "{} はもう閉じています", at.name()) } else { tr!("{} is open", "{} は開いています", at.name()) };
         return Ok(Reply::done(said, data(false)));
     }
     let new = if close {
         let who = if ctx.connected() { length3_core::remote::account().ok().flatten().map(|a| a.name).unwrap_or_default() } else { String::new() };
-        length3_core::words::issues::close_text(&text, format!("{} {who}", out::day(out::now_ms())).trim())
-    } else { length3_core::words::issues::reopen_text(&text) };
+        length3_core::repos::issues::close_text(&text, format!("{} {who}", out::day(out::now_ms())).trim())
+    } else { length3_core::repos::issues::reopen_text(&text) };
     main.write(&at.repo, &at.path(), &new, 256 * 1024)?;
     if !ctx.prompt { let _ = history::commit_issue(&r, &at.repo, &at.file, if close { "close" } else { "reopen" }); }
     Ok(Reply::done(if close { tr!("Closed {0}; it will not be done (back with: l3 issue reopen {0})", "{0} を閉じました。やらないものです（戻すには l3 issue reopen {0}）", at.name()) }
@@ -432,7 +432,7 @@ pub fn start(ctx: &Ctx, call: &Call) -> Result<Reply> {
         return Err(Error::Refused(tr!("{0} is closed; open it again first (l3 issue reopen {0})", "{0} は閉じています。先にもう一度開いてください（l3 issue reopen {0}）", at.name())));
     }
     // One without a number takes its number first, so its work is named by it (as Git would have done).
-    if length3_core::words::issues::number_of(&at.file).is_none() {
+    if length3_core::repos::issues::number_of(&at.file).is_none() {
         let s = stand(ctx, &r, &at.repo);
         if let Some((_, new)) = number_loose(ctx, &r, &at.repo, &s).into_iter().find(|(old, _)| *old == at.file) { at.file = new; }
     }
@@ -440,7 +440,7 @@ pub fn start(ctx: &Ctx, call: &Call) -> Result<Reply> {
     // Then the way on, and the way back (bug: only the way back was said, and the card's next was leaving).
     Ok(Reply::done(tr!("Working on {0} — {1} shows its copy now\n  edit in it (l3 prompt {1}, or l3 file write), then l3 commit {1} · back to main: l3 main {1}",
         "{0} を始めました。{1} はその写しを見せています\n  中で編集して（l3 prompt {1} か l3 file write）、l3 commit {1} · main に戻るには l3 main {1}", at.shown(), at.repo),
-        json!({"repo": at.repo, "n": length3_core::words::issues::number_of(&at.file), "title": at.title, "file": at.file, "line": l})))
+        json!({"repo": at.repo, "n": length3_core::repos::issues::number_of(&at.file), "title": at.title, "file": at.file, "line": l})))
 }
 
 pub fn main(ctx: &Ctx, call: &Call) -> Result<Reply> {
@@ -609,7 +609,7 @@ fn counts(binary: bool, added: usize, removed: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use length3_core::words::issues::parse;
+    use length3_core::repos::issues::parse;
 
     #[test]
     fn a_line_is_named_by_its_first_line_and_the_rest_is_its_note() {

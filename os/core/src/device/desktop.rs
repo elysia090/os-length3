@@ -53,7 +53,7 @@ pub struct Held {
 /// Take the hold, as the app starts: None when another app has it (that one is open).
 pub fn hold(data: &Path) -> std::io::Result<Option<Held>> {
     let dir = dir(data);
-    crate::disk::write::private_dir(&dir)?;
+    crate::fs::write::private_dir(&dir)?;
     let lock = OpenOptions::new().create(true).truncate(false).write(true).open(dir.join("lock"))?;
     match lock.try_lock() {
         Ok(()) => {}

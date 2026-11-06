@@ -129,7 +129,7 @@ fn now() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
 }
 
-fn dir() -> PathBuf { crate::paths::data_dir().join("tasks") }
+fn dir() -> PathBuf { crate::fs::paths::data_dir().join("tasks") }
 
 /// The book, changed by `f` under its lock (the app, l3 and each repo's runner change it).
 fn with<T>(f: impl FnOnce(&mut Book) -> T) -> Result<T> {
@@ -137,7 +137,7 @@ fn with<T>(f: impl FnOnce(&mut Book) -> T) -> Result<T> {
 }
 
 fn with_in<T>(dir: &Path, f: impl FnOnce(&mut Book) -> T) -> Result<T> {
-    crate::disk::write::private_dir(dir).map_err(|e| e.to_string())?;
+    crate::fs::write::private_dir(dir).map_err(|e| e.to_string())?;
     let lock = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(dir.join(".lock")).map_err(|e| e.to_string())?;
     // The browser's core is one instance at a time, and has no locks to take.
     match lock.lock() { Err(e) if e.kind() != std::io::ErrorKind::Unsupported => return Err(e.to_string()), _ => {} }
@@ -149,7 +149,7 @@ fn with_in<T>(dir: &Path, f: impl FnOnce(&mut Book) -> T) -> Result<T> {
     let extra = book.tasks.len().saturating_sub(MOST);
     book.tasks.drain(..extra);
     let bytes = serde_json::to_vec(&book).map_err(|e| e.to_string())?;
-    crate::disk::write::replace(&path, &bytes, crate::disk::write::How::PRIVATE).map_err(|e| e.to_string())?;
+    crate::fs::write::replace(&path, &bytes, crate::fs::write::How::PRIVATE).map_err(|e| e.to_string())?;
     Ok(out)
 }
 
@@ -201,9 +201,9 @@ pub fn agent() -> Option<String> {
 
 /// Hand work to `harness` from now on (None: to none).
 pub fn set_agent(harness: Option<&str>) -> Result<()> {
-    crate::disk::write::private_dir(&dir()).map_err(|e| e.to_string())?;
+    crate::fs::write::private_dir(&dir()).map_err(|e| e.to_string())?;
     match harness {
-        Some(h) => crate::disk::write::replace(&dir().join("agent"), h.as_bytes(), crate::disk::write::How::PRIVATE).map_err(|e| e.to_string()),
+        Some(h) => crate::fs::write::replace(&dir().join("agent"), h.as_bytes(), crate::fs::write::How::PRIVATE).map_err(|e| e.to_string()),
         None => match std::fs::remove_file(dir().join("agent")) { Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()), _ => Ok(()) },
     }
 }
@@ -216,7 +216,7 @@ pub fn agent_name(harness: &str) -> String {
 /// How the agent is run in a Prompt, told `$L3_TASK` (and `$L3_RESUME`, its session to go on in): the first line of
 /// the person's `.agent` dotfile when they keep one, else the harness's own way.
 pub fn agent_command(harness: &str) -> Option<String> {
-    let own = crate::device::home::dotfiles_in_effect().into_iter().find(|(n, _)| n == ".agent")
+    let own = crate::home::dotfiles_in_effect().into_iter().find(|(n, _)| n == ".agent")
         .and_then(|(_, t)| t.lines().map(str::trim).find(|l| !l.is_empty() && !l.starts_with('#')).map(String::from));
     own.or_else(|| match harness {
         // Its own Prompt is the sandbox: nothing outside the repo, the network only as the repo was given it.
@@ -369,19 +369,19 @@ pub fn read_result(text: &str) -> (Vec<Finding>, Vec<String>, String) {
         if let Some(rest) = l.strip_prefix("FINDING ") {
             let mut w = rest.splitn(3, ' ');
             let (unit, at, what) = (w.next().unwrap_or(""), w.next().unwrap_or(""), w.next().unwrap_or(""));
-            let Some(unit) = Unit::of(unit) else { found.push(Finding { unit: Unit::File, path: String::new(), line: None, text: crate::agent::reports::line_of(rest) }); continue };
+            let Some(unit) = Unit::of(unit) else { found.push(Finding { unit: Unit::File, path: String::new(), line: None, text: crate::agent::activity::line_of(rest) }); continue };
             let (path, line) = match at.rsplit_once(':') { Some((p, n)) if n.parse::<u32>().is_ok() => (p, n.parse().ok()), _ => (at, None) };
             // A path is a repo's own, never one out of it.
             let path = if path == "-" || path.starts_with('/') || path.split('/').any(|p| p == "..") { "" } else { path };
-            found.push(Finding { unit, path: path.into(), line, text: crate::agent::reports::line_of(what) });
+            found.push(Finding { unit, path: path.into(), line, text: crate::agent::activity::line_of(what) });
         } else if let Some(q) = l.strip_prefix("QUESTION ") {
-            questions.push(crate::agent::reports::line_of(q));
+            questions.push(crate::agent::activity::line_of(q));
         } else if let Some(d) = l.strip_prefix("DONE ") {
-            done = crate::agent::reports::line_of(d);
+            done = crate::agent::activity::line_of(d);
         }
     }
     if done.is_empty() && found.is_empty() && questions.is_empty() {
-        done = text.lines().rev().find(|l| !l.trim().is_empty()).map(crate::agent::reports::line_of).unwrap_or_default();
+        done = text.lines().rev().find(|l| !l.trim().is_empty()).map(crate::agent::activity::line_of).unwrap_or_default();
     }
     // The most complex unit first, as it read them.
     found.sort_by_key(|f| f.unit);
@@ -391,10 +391,10 @@ pub fn read_result(text: &str) -> (Vec<Finding>, Vec<String>, String) {
 /// The lines of a test run that say what failed (at most five), else its last line.
 fn failing(out: &str) -> Vec<String> {
     let said = |l: &str| { let l = l.to_ascii_lowercase(); ["fail", "error", "panicked", "not ok", "assert"].iter().any(|w| l.contains(w)) };
-    let mut v: Vec<String> = out.lines().filter(|l| said(l)).map(crate::agent::reports::line_of).filter(|l| !l.is_empty()).collect();
+    let mut v: Vec<String> = out.lines().filter(|l| said(l)).map(crate::agent::activity::line_of).filter(|l| !l.is_empty()).collect();
     v.dedup();
     v.truncate(5);
-    if v.is_empty() { v.extend(out.lines().rev().find(|l| !l.trim().is_empty()).map(crate::agent::reports::line_of)); }
+    if v.is_empty() { v.extend(out.lines().rev().find(|l| !l.trim().is_empty()).map(crate::agent::activity::line_of)); }
     v
 }
 
@@ -470,10 +470,10 @@ pub fn kick(repo: &str) {
         use std::os::unix::process::CommandExt;
         use std::process::{Command, Stdio};
         let Ok(exe) = std::env::current_exe() else { return };
-        let l3 = if exe.file_name().is_some_and(|n| n == "l3") { exe } else { crate::device::prompts::l3_path(&exe) };
+        let l3 = if exe.file_name().is_some_and(|n| n == "l3") { exe } else { crate::prompt::running::l3_path(&exe) };
         // The repo named by LENGTH3_REPO from the data directory, never as a word (a repo called --network is no flag).
         let mut c = Command::new(l3);
-        c.args(["agent", "run"]).env("LENGTH3_REPO", repo).current_dir(crate::paths::data_dir())
+        c.args(["agent", "run"]).env("LENGTH3_REPO", repo).current_dir(crate::fs::paths::data_dir())
             .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
             // Its own group: a terminal's Ctrl-C to the l3 that set it off does not reach it.
             .process_group(0);
@@ -485,7 +485,7 @@ pub fn kick(repo: &str) {
 
 /// The runner's hold on `repo`: one at a time (the others leave at once). None when another holds it.
 pub fn hold(repo: &str) -> Result<Option<std::fs::File>> {
-    crate::disk::write::private_dir(&dir()).map_err(|e| e.to_string())?;
+    crate::fs::write::private_dir(&dir()).map_err(|e| e.to_string())?;
     let f = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(dir().join(format!("{repo}.run"))).map_err(|e| e.to_string())?;
     match f.try_lock() {
         Ok(()) => Ok(Some(f)),

@@ -7,8 +7,8 @@
 use crate::args::{owner_shaped, Call};
 use crate::cmd::Ctx;
 use crate::out::{Error, Result};
-use length3_core::words::names::{self, Name};
-use length3_core::{remote::inbox, words::issues, remote, repos, words::title, tr};
+use length3_core::text::names::{self, Name};
+use length3_core::{remote, remote::inbox, repos::issues, text::title, tr};
 
 /// A repo written `owner:repo[/path][#n]` is one's own, read as `repo[/path][#n]`; another's is not here.
 fn own(w: &str) -> Result<String> {
@@ -23,7 +23,7 @@ fn own(w: &str) -> Result<String> {
 
 /// Not here: say so, and where it is if the Remote has it.
 fn missing(ctx: &Ctx, repo: &str) -> Error {
-    if !length3_core::words::names::valid_name(repo) {
+    if !length3_core::text::names::valid_name(repo) {
         return Error::Usage(tr!("{:?} is not a repo name (letters, digits, . _ -)", "{:?} は repo の名前になりません（英数字と . _ -）", repo));
     }
     let there = !ctx.prompt && remote::connection().is_some() && remote::remote_repos().is_ok_and(|l| l.iter().any(|r| r.name == repo));
@@ -202,7 +202,7 @@ pub fn issue(ctx: &Ctx, call: &Call, i: usize) -> Result<IssueRef> {
 }
 
 /// A bare number outside a repo: the one repo here that has an issue of that number.
-fn by_number(r: &repos::Repos, n: &str) -> Result<(String, String)> {
+fn by_number(r: &length3_core::repos::store::Repos, n: &str) -> Result<(String, String)> {
     let mut found = Vec::new();
     for s in r.list()? {
         if let Ok(file) = r.issue_file(&s.name, n) { found.push((s.name, file)); }
@@ -216,7 +216,7 @@ fn by_number(r: &repos::Repos, n: &str) -> Result<(String, String)> {
 }
 
 /// The one issue whose title the words name; several are a choice to make, not a guess.
-fn by_title(ctx: &Ctx, r: &repos::Repos, words: &str) -> Result<(String, String)> {
+fn by_title(ctx: &Ctx, r: &length3_core::repos::store::Repos, words: &str) -> Result<(String, String)> {
     let names: Vec<String> = match &ctx.here { Some(h) => vec![h.repo.clone()], None => r.list()?.into_iter().map(|s| s.name).collect() };
     let mut all = Vec::new();
     for n in &names { all.extend(r.issues(n)?); }

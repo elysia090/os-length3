@@ -26,26 +26,26 @@ pub(crate) fn show_for_free(repo: &str, line: &str) -> Result<()> {
 /// (`$LENGTH3_REPO`).
 pub fn here(cwd: &std::path::Path) -> Option<Here> {
     let parts = |rel: &std::path::Path| -> Vec<String> { rel.iter().map(|p| p.to_string_lossy().into_owned()).collect() };
-    let repos = crate::paths::repos_dir();
+    let repos = crate::fs::paths::repos_dir();
     let repos = repos.canonicalize().unwrap_or(repos);
     let cwd = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
     if let Ok(rel) = cwd.strip_prefix(&repos) {
         if let [repo, rest @ ..] = parts(rel).as_slice() {
-            if crate::words::names::valid_name(repo) {
+            if crate::text::names::valid_name(repo) {
                 return Some(Here { repo: repo.clone(), line: current(repo), folder: rest.join("/") });
             }
         }
     }
-    let work = crate::paths::data_dir().join("work");
+    let work = crate::fs::paths::data_dir().join("work");
     let work = work.canonicalize().unwrap_or(work);
     if let Ok(rel) = cwd.strip_prefix(&work) {
         if let [repo, line, rest @ ..] = parts(rel).as_slice() {
-            if crate::words::names::valid_name(repo) && valid(line) {
+            if crate::text::names::valid_name(repo) && valid(line) {
                 return Some(Here { repo: repo.clone(), line: line.clone(), folder: rest.join("/") });
             }
         }
     }
-    std::env::var("LENGTH3_REPO").ok().filter(|r| crate::words::names::valid_name(r)).map(|repo| Here { repo, line: MAIN.into(), folder: String::new() })
+    std::env::var("LENGTH3_REPO").ok().filter(|r| crate::text::names::valid_name(r)).map(|repo| Here { repo, line: MAIN.into(), folder: String::new() })
 }
 
 /// Where a directory is, as this OS sees it: in which repo, on which line
@@ -65,7 +65,7 @@ pub fn line_for(issue: &str) -> Option<String> {
 
 /// Every issue's copy of `repo` held here.
 pub fn worktrees(repo: &str) -> Vec<(String, PathBuf)> {
-    let dir = crate::paths::data_dir().join("work").join(repo);
+    let dir = crate::fs::paths::data_dir().join("work").join(repo);
     let mut out: Vec<(String, PathBuf)> = fs::read_dir(&dir).into_iter().flatten().flatten()
         .filter(|e| e.path().is_dir()).map(|e| (e.file_name().to_string_lossy().into_owned(), e.path()))
         .filter(|(n, _)| valid(n)).collect();
@@ -74,7 +74,7 @@ pub fn worktrees(repo: &str) -> Vec<(String, PathBuf)> {
 }
 
 pub fn worktree(repo: &str, line: &str) -> PathBuf {
-    crate::paths::data_dir().join("work").join(repo).join(line)
+    crate::fs::paths::data_dir().join("work").join(repo).join(line)
 }
 
 pub fn valid(line: &str) -> bool {
@@ -84,13 +84,13 @@ pub fn valid(line: &str) -> bool {
 
 pub(crate) fn set_current(repo: &str, line: &str) -> Result<()> {
     let file = line_file(repo);
-    crate::disk::write::private_dir(file.parent().unwrap()).map_err(|e| e.to_string())?;
+    crate::fs::write::private_dir(file.parent().unwrap()).map_err(|e| e.to_string())?;
     let done = if line == MAIN {
         // Not there is main already; one that stays would keep the repo on the issue's copy.
         fs::remove_file(&file).or_else(|e| if e.kind() == std::io::ErrorKind::NotFound { Ok(()) } else { Err(e) })
     } else {
         // Whole: a crash part way through left it empty (main) or naming a line with no copy.
-        crate::disk::write::replace(&file, line.as_bytes(), crate::disk::write::How::RECORD)
+        crate::fs::write::replace(&file, line.as_bytes(), crate::fs::write::How::RECORD)
     };
     done.map_err(|e| crate::tr!("{}: {}", "{}：{}", file.display(), e))
 }
@@ -101,7 +101,7 @@ pub fn current(repo: &str) -> String {
 }
 
 fn line_file(repo: &str) -> PathBuf {
-    crate::paths::data_dir().join("sync").join(format!("{repo}.line"))
+    crate::fs::paths::data_dir().join("sync").join(format!("{repo}.line"))
 }
 
 pub const MAIN: &str = "main";

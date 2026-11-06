@@ -5,7 +5,7 @@
 // namespace) every process inside; it is only called stopped once the host
 // shows none left, and what they held and how long it took are said.
 
-use length3_core::{paths, device::prompts, root, space};
+use length3_core::{fs::paths, prompt::running, root, storage};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -76,13 +76,13 @@ fn open(app: AppHandle, repo: String) -> Result<u32, String> {
         return Err(length3_core::tr!("There is no root", "root がありません"));
     }
     // Said plainly when it is not here, rather than as l3's "which repo?".
-    length3_core::repos::Repos::open()?.dir(&repo)?;
+    length3_core::repos::store::Repos::open()?.dir(&repo)?;
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let (mut reader, writer) = std::io::pipe().map_err(|e| e.to_string())?;
     // One pipe for both, so what it prints keeps its order. The repo is named by LENGTH3_REPO from the data
     // directory, never as a word: l3 reads a word against its forms first, so a repo called ls or stop was
     // `l3 prompt ls` (the list) or `l3 prompt stop`, and one called --network a flag.
-    let mut child = Command::new(prompts::l3_path(&exe))
+    let mut child = Command::new(running::l3_path(&exe))
         .arg("prompt")
         .env("LENGTH3_REPO", &repo)
         .current_dir(paths::data_dir())
@@ -138,7 +138,7 @@ pub fn prompt_interrupt(shells: State<'_, Shells>, id: u32) -> Result<(), String
 #[derive(serde::Serialize)]
 pub struct Holding {
     #[serde(flatten)]
-    held: prompts::Held,
+    held: running::Held,
     preparing: bool,
 }
 
@@ -148,30 +148,30 @@ pub struct Holding {
 pub async fn prompt_held(app: AppHandle, id: u32) -> Result<Option<Holding>, String> {
     apart(move || {
         let Some(supervisor) = tauri::Manager::state::<Shells>(&app).open.lock().unwrap().get(&id).map(|s| s.child.id()) else { return Ok(None) };
-        let preparing = prompts::running(&paths::data_dir()).iter().any(|r| r.pid == supervisor && r.preparing);
-        Ok(prompts::ns_of(supervisor).map(|ns| Holding { held: prompts::held(ns), preparing }))
+        let preparing = running::all(&paths::data_dir()).iter().any(|r| r.pid == supervisor && r.preparing);
+        Ok(running::ns_of(supervisor).map(|ns| Holding { held: running::held(ns), preparing }))
     }).await
 }
 
 /// Stop: every process inside ends; said done only once the host shows none (up to 3 s).
 #[tauri::command]
-pub async fn prompt_close(app: AppHandle, id: u32) -> Result<prompts::Stopped, String> {
+pub async fn prompt_close(app: AppHandle, id: u32) -> Result<running::Stopped, String> {
     apart(move || close(&tauri::Manager::state::<Shells>(&app), id)).await
 }
 
-fn close(shells: &Shells, id: u32) -> Result<prompts::Stopped, String> {
+fn close(shells: &Shells, id: u32) -> Result<running::Stopped, String> {
     let supervisor = {
         let open = shells.open.lock().unwrap();
         let s = open.get(&id).ok_or_else(|| length3_core::tr!("This Prompt has ended", "この Prompt は終わっています"))?;
         s.child.id()
     };
     // Stopped while it is prepared too: what prepares it ends with its supervisor (launch::set_up).
-    let ns = prompts::ns_of(supervisor);
-    let before = ns.map(prompts::held).unwrap_or(prompts::Held { processes: 0, memory: 0 });
+    let ns = running::ns_of(supervisor);
+    let before = ns.map(running::held).unwrap_or(running::Held { processes: 0, memory: 0 });
     unsafe { libc::kill(supervisor as libc::pid_t, libc::SIGKILL) };
     Ok(match ns {
-        Some(ns) => prompts::wait_empty(ns, before, Duration::from_secs(3)),
-        None => prompts::Stopped { before, left: 0, ms: None },
+        Some(ns) => running::wait_empty(ns, before, Duration::from_secs(3)),
+        None => running::Stopped { before, left: 0, ms: None },
     })
 }
 
@@ -216,7 +216,7 @@ pub async fn root_native() -> Native {
         if !cfg!(target_arch = "x86_64") {
             return Native { native: false, why: Some(length3_core::tr!("The root is x86-64, and this machine is {}", "root は x86-64 で、この機械は {} です", std::env::consts::ARCH)) };
         }
-        let asked = std::env::current_exe().map_err(|e| e.to_string()).and_then(|exe| Command::new(prompts::l3_path(&exe))
+        let asked = std::env::current_exe().map_err(|e| e.to_string()).and_then(|exe| Command::new(running::l3_path(&exe))
             .args(["root", "check", "--json"]).stdin(Stdio::null()).stderr(Stdio::null()).output().map_err(|e| e.to_string()));
         match asked {
             Ok(out) => serde_json::from_slice(&out.stdout).unwrap_or_else(|e| Native { native: false, why: Some(e.to_string()) }),
@@ -268,12 +268,12 @@ pub async fn root_use(app: AppHandle, id: String) -> Result<root::Installed, Str
     tauri::async_runtime::spawn_blocking(move || {
         let data = paths::data_dir();
         let mut last = 0u64;
-        let progress = |p: length3_core::device::fetch::Progress| match p {
-            length3_core::device::fetch::Progress::Bytes(got, of) if got - last >= 1 << 20 || got == of => {
+        let progress = |p: length3_core::device::download::Progress| match p {
+            length3_core::device::download::Progress::Bytes(got, of) if got - last >= 1 << 20 || got == of => {
                 last = got;
                 let _ = app.emit("root-fetch", Fetching { got, of, retry: None });
             }
-            length3_core::device::fetch::Progress::Retry(n, why) => {
+            length3_core::device::download::Progress::Retry(n, why) => {
                 let _ = app.emit("root-fetch", Fetching { got: last, of: 0, retry: Some(length3_core::tr!("{} (try {})", "{}（{}回目）", why, n)) });
             }
             _ => {}
@@ -281,10 +281,10 @@ pub async fn root_use(app: AppHandle, id: String) -> Result<root::Installed, Str
         if id == "l3" {
             return match root::use_held(&data, root::RELEASES[0].sha256) {
                 Some(r) => Ok(r),
-                None => space::fetch_root(&data, &remote_url(), progress),
+                None => storage::fetch_root(&data, &remote_url(), progress),
             };
         }
         let d = root::distro(&id).ok_or_else(|| format!("no root {id}"))?;
-        space::fetch_distro(&data, &remote_url(), d, progress)
+        storage::fetch_distro(&data, &remote_url(), d, progress)
     }).await.map_err(|e| e.to_string())?
 }

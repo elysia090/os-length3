@@ -25,7 +25,7 @@ pub mod runtime;
 
 use crate::args::Call;
 use crate::out::{Error, Reply, Result};
-use length3_core::{device::home as core_home, paths, remote as core_remote, repos::Repos, tr};
+use length3_core::{fs::paths, home as core_home, remote as core_remote, repos::store::Repos, tr};
 use serde_json::json;
 
 /// Where l3 runs: in which repo (and where in it), and whether inside the app's Prompt.
@@ -70,7 +70,7 @@ impl Ctx {
     pub fn has_repo(&self, name: &str) -> bool {
         match &self.words {
             Some(w) => w.known.contains(&name),
-            None => length3_core::words::names::valid_name(name) && Repos::open().is_ok_and(|r| r.dir(name).is_ok()),
+            None => length3_core::text::names::valid_name(name) && Repos::open().is_ok_and(|r| r.dir(name).is_ok()),
         }
     }
 

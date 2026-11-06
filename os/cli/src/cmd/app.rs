@@ -14,7 +14,7 @@
 use super::Ctx;
 use crate::args::Call;
 use crate::out::{Error, Reply, Result};
-use length3_core::{device::desktop, paths, remote, tr};
+use length3_core::{device::desktop, fs::paths, remote, tr};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};

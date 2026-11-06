@@ -10,24 +10,22 @@
 //! Every other module says `#![forbid(unsafe_code)]`, so none is added there.
 
 // The layers, each above the ones before it: a module uses only what is in its own layer or one listed before
-// it (scripts/layers.mjs checks it).
-pub mod paths;
-pub mod i18n;
-pub mod disk;
-pub mod words;
+// it (scripts/check/layers checks it). Each is a folder whose mod.rs says what it holds.
+pub mod fs;
+pub mod text;
 pub mod device;
+pub mod home;
 pub mod repos;
+pub mod prompt;
 #[cfg(unix)]
 pub mod ssh;
 pub mod agent;
 pub mod remote;
 pub mod history;
 pub mod root;
-pub mod space;
-pub mod run;
+pub mod storage;
+pub mod compute;
 pub mod api;
-#[cfg(all(test, unix))]
-pub(crate) mod testing;
 
 pub type Result<T> = std::result::Result<T, String>;
 

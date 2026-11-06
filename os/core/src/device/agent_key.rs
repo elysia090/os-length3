@@ -80,7 +80,7 @@ pub fn env() -> Vec<(String, String)> {
 }
 
 /// Where earlier releases kept it: a file of its own beside Home's state.
-fn before() -> PathBuf { crate::paths::data_dir().join("agent-key") }
+fn before() -> PathBuf { crate::fs::paths::data_dir().join("agent-key") }
 
 /// What is kept here, if anything (vault.rs: the OS's keyring, or a file only this account reads). One kept where
 /// earlier releases kept it is moved there the first time it is read.

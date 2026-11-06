@@ -9,7 +9,7 @@
 use crate::history::{changes_of_repo, listed, Change};
 use crate::repos::lines::{current, line_for, set_current, valid, worktree, MAIN};
 use crate::remote::{self, Client, Line, Reply};
-use crate::repos::Repos;
+use crate::repos::store::Repos;
 use serde::Serialize;
 use std::fs;
 
@@ -24,7 +24,7 @@ pub fn start(repos: &Repos, repo: &str, issue: &str) -> Result<Line> {
     // A merged issue is done: its work is main's now.
     let path = format!("issue/{}", issue.trim_start_matches('/').trim_start_matches("issue/"));
     if changes_of_repo(repo)?.iter().any(|c| c.issue == path && c.state == "merged") {
-        return Err(crate::tr!("{}{} is merged already: its work is in main", "{}{} はもう Merge 済みです。その作業は main にあります", repo, crate::words::issues::number(&path)));
+        return Err(crate::tr!("{}{} is merged already: its work is in main", "{}{} はもう Merge 済みです。その作業は main にあります", repo, crate::repos::issues::number(&path)));
     }
     // What is here goes first, the issue just written above all: the Remote makes the work
     // from its main (bringing the issue along from main's draft), so a work started before
@@ -79,7 +79,7 @@ pub fn finish(repos: &Repos, repo: &str, line: &str) -> Result<u64> {
         set_current(repo, MAIN)?;
         crate::agent::tasks::back_on_main(repo);
     }
-    let size = crate::disk::room::allocated(&at);
+    let size = crate::fs::size::allocated(&at);
     fs::remove_dir_all(&at).map_err(|e| e.to_string())?;
     remote::forget_line(repo, line)?;
     Ok(size)

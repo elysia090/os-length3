@@ -129,7 +129,7 @@ pub fn held_open(dir: &Path) -> Option<String> {
 /// They are what sync last read, so they are kept with sync's other records.
 /// Only copies this OS holds are kept for.
 pub(super) fn stamps_file(dir: &Path) -> Option<PathBuf> {
-    let (data, repos) = (crate::paths::data_dir(), crate::paths::repos_dir());
+    let (data, repos) = (crate::fs::paths::data_dir(), crate::fs::paths::repos_dir());
     if !(dir.starts_with(&data) || dir.starts_with(&repos)) { return None; }
     // Where they were kept before (cache/digests): nothing reads it now.
     let old = data.join("cache");
@@ -179,7 +179,7 @@ pub(super) fn stamps_save(file: &Path, read: &[PathBuf]) {
     let Some(dir) = file.parent() else { return };
     if fs::create_dir_all(dir).is_err() { return; }
     // Not kept, the next run reads those files again: work lost, nothing wrong.
-    let _ = crate::disk::write::replace(file, text.as_bytes(), crate::disk::write::How::CACHE);
+    let _ = crate::fs::write::replace(file, text.as_bytes(), crate::fs::write::How::CACHE);
 }
 
 pub(super) fn walk(dir: &Path, prefix: &str, out: &mut Local) {
@@ -188,7 +188,7 @@ pub(super) fn walk(dir: &Path, prefix: &str, out: &mut Local) {
     for e in entries.flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
         // A file this OS is writing is not the repo's yet.
-        if crate::disk::write::is_temporary(&name) {
+        if crate::fs::write::is_temporary(&name) {
             continue;
         }
         empty = false;
@@ -204,7 +204,7 @@ pub(super) fn walk(dir: &Path, prefix: &str, out: &mut Local) {
             out.unsynced.push((rel, crate::tr!("a link", "リンク")));
         } else if meta.is_dir() {
             // Made from the repo's own files (owned.rs): not the repo's to send, nor what keeps it here.
-            if crate::repos::owned::derived(dir, &name, &path) { continue; }
+            if crate::prompt::writes::derived(dir, &name, &path) { continue; }
             walk(&path, &rel, out);
         } else if meta.is_file() {
             if meta.len() > BLOB_LIMIT {

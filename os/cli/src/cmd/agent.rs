@@ -8,7 +8,7 @@
 use super::Ctx;
 use crate::args::Call;
 use crate::out::{ago, Error, Reply, Result};
-use length3_core::{agent::reports, disk::write, run::compute, paths, agent::tasks, tr};
+use length3_core::{agent::activity, agent::tasks, compute::spec, fs::paths, fs::write, tr};
 use serde_json::{json, Map, Value};
 use std::path::PathBuf;
 
@@ -19,7 +19,7 @@ const EVENTS: [&str; 7] = ["SessionStart", "UserPromptSubmit", "PreToolUse", "Po
 const PAYLOAD: usize = 4 * 1024 * 1024;
 
 /// A session as a line: the harness, where (repo, and the issue as #N), what it does, how long ago.
-fn said(s: &reports::Session) -> (String, String) {
+fn said(s: &activity::Session) -> (String, String) {
     let at = if s.line == length3_core::repos::lines::MAIN { s.repo.clone() } else { format!("{} {}", s.repo, super::git::line_called(&s.line)) };
     let state = match s.state.as_str() {
         "working" => tr!("working", "作業中"),
@@ -32,7 +32,7 @@ fn said(s: &reports::Session) -> (String, String) {
 
 /// Where a task is, as a person calls it: the repo, and its issue as #N.
 fn task_at(k: &tasks::Task) -> String {
-    if k.issue.is_empty() { k.repo.clone() } else { format!("{} {}", k.repo, length3_core::words::issues::number(&k.issue)) }
+    if k.issue.is_empty() { k.repo.clone() } else { format!("{} {}", k.repo, length3_core::repos::issues::number(&k.issue)) }
 }
 
 /// A task as a line: what it is for, and the deed that goes on with it.
@@ -59,7 +59,7 @@ fn task_line(k: &tasks::Task) -> (String, String) {
 /// at work on this device now.
 pub fn list(_: &Ctx, _: &Call) -> Result<Reply> {
     let now = crate::out::now_ms();
-    let list = reports::sessions(&reports::all(), now, reports::RECENT);
+    let list = activity::sessions(&activity::all(), now, activity::RECENT);
     let all: Vec<tasks::Task> = tasks::all().into_iter().filter(|k| !k.state.over()).collect();
     let mut t = Vec::new();
     for (state, head) in [(tasks::State::Asking, tr!("Asks you", "あなたへの質問")), (tasks::State::Ready, tr!("To look at", "見てほしいもの")),
@@ -92,8 +92,8 @@ pub fn hook(ctx: &Ctx, call: &Call) -> Result<Reply> {
     if ctx.prompt { return Ok(Reply::Nothing); }
     let harness = call.word(0).unwrap_or_default();
     let cwd = std::env::current_dir().unwrap_or_default();
-    if let Some(e) = reports::report(harness, call.word(1), &payload, &cwd, crate::out::now_ms()) {
-        if let Err(why) = reports::append(&e) { crate::out::note(&why); }
+    if let Some(e) = activity::report(harness, call.word(1), &payload, &cwd, crate::out::now_ms()) {
+        if let Err(why) = activity::append(&e) { crate::out::note(&why); }
     }
     Ok(Reply::Nothing)
 }
@@ -297,7 +297,7 @@ fn stopped(why: String, fix: String) -> tasks::Outcome {
 /// One task run: where (its copy), how (its command), what it is told, then its Prompt, what it prints said on its
 /// issue as an agent's work is and kept whole in its log; what it ended with read back.
 fn run_one(ctx: &Ctx, k: &tasks::Task) -> tasks::Outcome {
-    use length3_core::{history, device::home, history::work};
+    use length3_core::{history, history::work, home};
     let (repo, line) = (k.repo.as_str(), k.line.as_str());
     let Ok(repos) = ctx.repos() else { return stopped(tr!("{} is not here", "{} はここにありません", repo), String::new()) };
     let harness = if k.deed == tasks::Deed::Tests { None } else {
@@ -325,7 +325,7 @@ fn run_one(ctx: &Ctx, k: &tasks::Task) -> tasks::Outcome {
     }
     // The issue's words, and for a review the change's files, weighed: the order it reads in.
     let issue = (!k.issue.is_empty()).then(|| repos.on_main().read(repo, &k.issue, 64 * 1024).ok().and_then(|c| c.text)
-        .map(|t| length3_core::words::issues::parse(repo, k.issue.trim_start_matches("issue/"), &t))).flatten();
+        .map(|t| length3_core::repos::issues::parse(repo, k.issue.trim_start_matches("issue/"), &t))).flatten();
     let number = issue.as_ref().and_then(|i| i.n).map(|n| format!("#{n}")).unwrap_or_else(|| line.to_string());
     let detail = issue.as_ref().map(|i| i.detail.clone()).unwrap_or_default();
     let (parts, files) = if k.deed == tasks::Deed::Review {
@@ -343,10 +343,10 @@ fn run_one(ctx: &Ctx, k: &tasks::Task) -> tasks::Outcome {
         tasks::Deed::Fix => tr!("fixes the tests", "テストを直します"),
         tasks::Deed::Ask => k.words.clone(),
     };
-    let journal = |kind: reports::Kind, text: &str| {
-        let e = reports::Event { at: crate::out::now_ms(), harness: harness.clone().unwrap_or_else(|| "tests".into()), session: format!("task-{}", k.id),
-            repo: repo.into(), line: line.into(), kind, text: reports::line_of(text) };
-        if let Err(why) = reports::append(&e) { crate::out::note(&why); }
+    let journal = |kind: activity::Kind, text: &str| {
+        let e = activity::Event { at: crate::out::now_ms(), harness: harness.clone().unwrap_or_else(|| "tests".into()), session: format!("task-{}", k.id),
+            repo: repo.into(), line: line.into(), kind, text: activity::line_of(text) };
+        if let Err(why) = activity::append(&e) { crate::out::note(&why); }
     };
     // What the run is, by what it is made of (core compute.rs): the same Spec builds it here, and anywhere else.
     let root = match super::runtime::root_now(&paths::data_dir()) {
@@ -356,21 +356,21 @@ fn run_one(ctx: &Ctx, k: &tasks::Task) -> tasks::Outcome {
     let title = issue.as_ref().map(|i| i.title.clone()).unwrap_or_default();
     let resume = if k.reply.is_empty() { String::new() } else { k.session.clone() };
     let minutes = match k.deed { tasks::Deed::Ask => 10, tasks::Deed::Tests => 15, tasks::Deed::Review => 20, tasks::Deed::Fix => 30, tasks::Deed::Take => 60 };
-    let spec = compute::Spec {
+    let spec = spec::Spec {
         environment: launch_environment(&root),
         root, repo: repo.into(), line: line.into(),
         argv: vec!["/bin/sh".into(), "-c".into(), format!("[ -f /root/.profile ] && . /root/.profile\n{command}")],
         env: [("L3_TASK", told), ("L3_RESUME", resume), ("L3_ISSUE", number), ("L3_TITLE", title), ("L3_REPO", repo.to_string())]
             .into_iter().map(|(k, v)| (k.to_string(), v)).collect(),
         network: home::network(repo),
-        budget: compute::Budget::minutes(minutes),
+        budget: spec::Budget::minutes(minutes),
     };
-    journal(reports::Kind::Start, &said_first);
+    journal(activity::Kind::Start, &said_first);
     let (o, usage, over) = supervise(k, &spec, &journal);
     let what = match k.deed { tasks::Deed::Take => "take", tasks::Deed::Review => "review", tasks::Deed::Tests => "tests", tasks::Deed::Fix => "fix", tasks::Deed::Ask => "ask" };
-    let _ = compute::record(&compute::Run { spec: spec.digest(), place: "here".into(), repo: repo.into(), line: line.into(), what: what.into(),
+    let _ = spec::record(&spec::Run { spec: spec.digest(), place: "here".into(), repo: repo.into(), line: line.into(), what: what.into(),
         at: crate::out::now_ms().saturating_sub(usage.wall_ms), usage, over, code: o.code });
-    journal(reports::Kind::End, &if o.code == 0 { tr!("done", "完了") } else { tr!("ended ({})", "終了（{}）", o.code) });
+    journal(activity::Kind::End, &if o.code == 0 { tr!("done", "完了") } else { tr!("ended ({})", "終了（{}）", o.code) });
     if let Some(over) = over { return stopped(over.said(&spec.budget), String::new()); }
     if o.code == 127 {
         return if harness.is_some() { stopped(tr!("{} is not in {}'s Prompt", "{} が {} の Prompt にありません", name, repo), tr!("put it in .setup", ".setup に入れる")) } else { stopped(String::new(), String::new()) };
@@ -381,7 +381,7 @@ fn run_one(ctx: &Ctx, k: &tasks::Task) -> tasks::Outcome {
 /// The environment the person's dotfiles ask of the root `root` here (launch.rs environment_of; none off Linux).
 fn launch_environment(root: &str) -> String {
     #[cfg(target_os = "linux")]
-    return length3_core::run::launch::environment_of(root, &length3_core::device::home::dotfiles_in_effect());
+    return length3_core::prompt::launch::environment_of(root, &length3_core::home::dotfiles_in_effect());
     #[cfg(not(target_os = "linux"))]
     return { let _ = root; String::new() };
 }
@@ -389,12 +389,12 @@ fn launch_environment(root: &str) -> String {
 /// The run itself: `l3 agent inside N` (the Prompt), given its Spec; watched as it goes (core compute.rs watch),
 /// stopped past its budget; what it prints read line by line into the journal (an agent's stream of JSON as its
 /// tools) and the log; its last words and session kept. What it used, and what of its budget it went past.
-fn supervise(k: &tasks::Task, spec: &compute::Spec, journal: &dyn Fn(reports::Kind, &str)) -> (tasks::Outcome, compute::Usage, Option<compute::Over>) {
+fn supervise(k: &tasks::Task, spec: &spec::Spec, journal: &dyn Fn(activity::Kind, &str)) -> (tasks::Outcome, spec::Usage, Option<spec::Over>) {
     use std::io::{BufRead, Write};
     let mut o = tasks::Outcome { code: -1, ..Default::default() };
     let log_path = tasks::log_path(k);
     let started = (|| -> std::io::Result<_> {
-        length3_core::disk::write::private_dir(log_path.parent().unwrap())?;
+        length3_core::fs::write::private_dir(log_path.parent().unwrap())?;
         let log = std::fs::OpenOptions::new().create(true).write(true).truncate(true).open(&log_path)?;
         let (reader, writer) = std::io::pipe()?;
         let child = std::process::Command::new(std::env::current_exe()?).args(["agent", "inside", &k.id.to_string()])
@@ -403,7 +403,7 @@ fn supervise(k: &tasks::Task, spec: &compute::Spec, journal: &dyn Fn(reports::Ki
         Ok((log, reader, child))
     })();
     let Ok((mut log, reader, child)) = started else {
-        return (stopped(tr!("The Prompt could not start", "Prompt を始められませんでした"), String::new()), compute::Usage::default(), None);
+        return (stopped(tr!("The Prompt could not start", "Prompt を始められませんでした"), String::new()), spec::Usage::default(), None);
     };
     // Watched from beside it while its output is read: past its budget, its supervisor goes, and the Prompt with it.
     let pid = child.id();
@@ -426,11 +426,11 @@ fn supervise(k: &tasks::Task, spec: &compute::Spec, journal: &dyn Fn(reports::Ki
             tail.push_back(text.clone());
             if tail.len() > 40 { tail.pop_front(); }
         }
-        let Some(words) = reports::said_in_output(&text) else { continue };
+        let Some(words) = activity::said_in_output(&text) else { continue };
         let now = crate::out::now_ms();
-        if now - last >= SAY_EVERY && said < SAY_MOST { journal(reports::Kind::Tool, &words); said += 1; last = now; waiting = None; } else { waiting = Some(words); }
+        if now - last >= SAY_EVERY && said < SAY_MOST { journal(activity::Kind::Tool, &words); said += 1; last = now; waiting = None; } else { waiting = Some(words); }
     }
-    if let Some(words) = waiting { journal(reports::Kind::Tool, &words); }
+    if let Some(words) = waiting { journal(activity::Kind::Tool, &words); }
     o.code = child.lock().ok().and_then(|mut c| c.wait().ok()).map(|s| s.code().unwrap_or(-1)).unwrap_or(-1);
     ended.store(true, std::sync::atomic::Ordering::SeqCst);
     let (usage, over) = watcher.join().unwrap_or_default();
@@ -439,13 +439,13 @@ fn supervise(k: &tasks::Task, spec: &compute::Spec, journal: &dyn Fn(reports::Ki
 }
 
 /// The run `pid` supervises, watched until `ended` (core compute.rs watch); off Linux, only its wall time.
-fn watched(pid: u32, budget: &compute::Budget, ended: &std::sync::atomic::AtomicBool, stop: impl FnOnce()) -> (compute::Usage, Option<compute::Over>) {
+fn watched(pid: u32, budget: &spec::Budget, ended: &std::sync::atomic::AtomicBool, stop: impl FnOnce()) -> (spec::Usage, Option<spec::Over>) {
     let is_over = || ended.load(std::sync::atomic::Ordering::SeqCst);
     #[cfg(target_os = "linux")]
-    return compute::watch(pid, budget, std::time::Duration::from_millis(250), is_over, stop);
+    return spec::watch(pid, budget, std::time::Duration::from_millis(250), is_over, stop);
     #[cfg(not(target_os = "linux"))]
     return { let _ = (pid, budget, stop); let t = std::time::Instant::now(); while !is_over() { std::thread::sleep(std::time::Duration::from_millis(250)); }
-        (compute::Usage { wall_ms: t.elapsed().as_millis() as u64, ..Default::default() }, None) };
+        (spec::Usage { wall_ms: t.elapsed().as_millis() as u64, ..Default::default() }, None) };
 }
 
 /// `l3 agent inside N` (by `l3 agent run`): the run its Spec says (L3_SPEC, core compute.rs), built here: the root
@@ -454,10 +454,10 @@ fn watched(pid: u32, budget: &compute::Budget, ended: &std::sync::atomic::Atomic
 /// Ends with its command's code.
 #[cfg(target_os = "linux")]
 pub fn inside(ctx: &Ctx, call: &Call) -> Result<Reply> {
-    use length3_core::{device::home, run::launch, device::prompts, root};
+    use length3_core::{home, prompt::launch, prompt::running, root};
     let repo = ctx.here.as_ref().map(|h| h.repo.clone()).ok_or_else(|| Error::Usage(tr!("Which repo? (LENGTH3_REPO)", "どの repo ですか（LENGTH3_REPO）")))?;
     task_id(call)?;
-    let spec: compute::Spec = serde_json::from_str(&std::env::var("L3_SPEC").unwrap_or_default())
+    let spec: spec::Spec = serde_json::from_str(&std::env::var("L3_SPEC").unwrap_or_default())
         .map_err(|_| Error::Usage(tr!("l3 agent inside is l3 agent run's", "l3 agent inside は l3 agent run が使うものです")))?;
     if spec.repo != repo { return Err(Error::Refused(tr!("The run is for {}, not {}", "この実行は {} のもので、{} のものではありません", spec.repo, repo))); }
     if spec.network && !home::network(&repo) {
@@ -473,8 +473,8 @@ pub fn inside(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let s = launch::Sandbox { root, repo: dir, name: repo.clone(), argv: spec.argv.clone(), network: spec.network,
         dotfiles: launch::dotfiles_in_effect(), data: Some(data.clone()), env: [spec.env.clone(), length3_core::device::agent_key::env()].concat() };
     // Recorded as any Prompt is: l3 prompt ls and Runtime see it, l3 prompt stop ends it.
-    let mut recorded = prompts::record(&data, &repo, s.network, &s.root)?;
-    length3_core::space::make_room(&data, &paths::repos_dir(), super::forge::PROMPT_ROOM);
+    let mut recorded = running::record(&data, &repo, s.network, &s.root)?;
+    length3_core::storage::make_room(&data, &paths::repos_dir(), super::forge::PROMPT_ROOM);
     launch::set_up(&s, held.distro.is_some())?;
     recorded.ready()?;
     let code = launch::run(&s)?;

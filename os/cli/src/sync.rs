@@ -13,7 +13,7 @@ use crate::out::note;
 use crate::spec::{Arg, Sync};
 use crate::target;
 use length3_core::remote::{self, Failure};
-use length3_core::{device::home, repos::Repos, tr};
+use length3_core::{home, repos::store::Repos, tr};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 pub fn before(ctx: &Ctx, call: &Call) {

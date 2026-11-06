@@ -36,7 +36,7 @@
 //!             off, the device is signed out, or it is told to (SIGTERM:
 //!             l3 address ssh off, logout, the app)
 
-use length3_core::{paths, remote, repos, ssh, tr};
+use length3_core::{fs::paths, remote, ssh, tr};
 use russh::keys::{PrivateKey, PublicKey};
 use russh::server::{self, Auth, Msg, Session};
 use russh::{Channel, ChannelId, ChannelMsg, MethodKind, MethodSet};
@@ -89,13 +89,13 @@ pub fn host_key(data: &Path) -> Result<PrivateKey, String> {
     let read = |text: Vec<u8>| PrivateKey::from_openssh(text).map_err(|e| tr!("The host key {} cannot be read: {}. Remove it to make a new one (each ssh client then says the host key changed)",
         "ホスト鍵 {} を読めません：{}。消せば新しく作ります（そのあと各 ssh クライアントはホスト鍵が変わったと言います）", at.display(), e));
     if let Ok(text) = std::fs::read(&at) { return read(text); }
-    length3_core::disk::write::private_dir(&ssh::dir(data)).map_err(|e| e.to_string())?;
+    length3_core::fs::write::private_dir(&ssh::dir(data)).map_err(|e| e.to_string())?;
     let mut seed = [0u8; 32];
     std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut seed)).map_err(|e| e.to_string())?;
     let pair = russh::keys::ssh_key::private::Ed25519Keypair::from_seed(&seed);
     let key = PrivateKey::new(pair.into(), "length3").map_err(|e| e.to_string())?;
     let text = key.to_openssh(russh::keys::ssh_key::LineEnding::LF).map_err(|e| e.to_string())?;
-    match length3_core::disk::write::create(&at, text.as_bytes(), length3_core::disk::write::How::PRIVATE) {
+    match length3_core::fs::write::create(&at, text.as_bytes(), length3_core::fs::write::How::PRIVATE) {
         Ok(()) => Ok(key),
         // Another start made it first: that one is this device's.
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => read(std::fs::read(&at).map_err(|e| e.to_string())?),
@@ -134,7 +134,7 @@ impl Shared {
 
 /// Whether `user` names a repo here (an SSH user is a repo).
 fn is_repo(user: &str) -> bool {
-    length3_core::words::names::valid_name(user) && repos::Repos::open().is_ok_and(|r| r.dir(user).is_ok())
+    length3_core::text::names::valid_name(user) && length3_core::repos::store::Repos::open().is_ok_and(|r| r.dir(user).is_ok())
 }
 
 struct Conn {

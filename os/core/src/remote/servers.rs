@@ -28,7 +28,7 @@ pub fn list() -> Result<Vec<Server>> {
 /// `trip#general`, or `#general` when one is in one server only. The server, and the boards meant
 /// (all of them when none is named).
 pub fn find(target: &str) -> Result<(Server, Vec<Board>)> {
-    use crate::words::names::{read, Name};
+    use crate::text::names::{read, Name};
     let (who, board) = match read(target, true)? {
         Name::Principal(p) => (Some(p), None),
         Name::Board { server, board } => (server, Some(board)),

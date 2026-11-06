@@ -42,7 +42,7 @@ impl Secret {
     }
 }
 
-fn dir() -> PathBuf { crate::paths::data_dir().join("secrets") }
+fn dir() -> PathBuf { crate::fs::paths::data_dir().join("secrets") }
 
 /// `secret`, if it is kept here; why not, when the keyring holding it did not give it.
 pub fn get(secret: Secret) -> Result<Option<String>> { at(&dir()).get(secret) }
@@ -84,8 +84,8 @@ impl Vault<'_> {
     }
 
     fn write(&self, secret: Secret, value: &str) -> Result<()> {
-        crate::disk::write::private_dir(self.dir).map_err(|e| e.to_string())?;
-        crate::disk::write::replace(&self.file(secret), value.as_bytes(), crate::disk::write::How::PRIVATE).map_err(|e| e.to_string())
+        crate::fs::write::private_dir(self.dir).map_err(|e| e.to_string())?;
+        crate::fs::write::replace(&self.file(secret), value.as_bytes(), crate::fs::write::How::PRIVATE).map_err(|e| e.to_string())
     }
 
     fn unlink(&self, secret: Secret) -> Result<()> {
@@ -155,7 +155,7 @@ mod keyring {
 
     /// What every secret is kept under, beside its name and the data folder it is this device's for (so two folders,
     /// a test's and the person's, never share one).
-    const SERVICE: &str = crate::paths::IDENTIFIER;
+    const SERVICE: &str = crate::fs::paths::IDENTIFIER;
 
     /// This device's keyring, made once; none where it has none that answers, or `LENGTH3_KEYRING=off`.
     pub fn store() -> Option<&'static Arc<CredentialStore>> {

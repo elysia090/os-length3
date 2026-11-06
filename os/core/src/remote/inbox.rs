@@ -95,7 +95,7 @@ pub fn release(address: &str) -> Result<u64> {
 /// What a written message is, as in the app: its kind named first the way an issue is
 /// ("Review：…", "Question：…"), and the repo a /root/… path in it is about.
 pub fn written(text: &str) -> (&'static str, String, Option<String>) {
-    let (kind, title) = crate::words::title::kind_of(text);
+    let (kind, title) = crate::text::title::kind_of(text);
     let kind = match kind.as_deref().map(str::to_ascii_lowercase).as_deref() { Some("review") => "review", Some("question") => "question", _ => "message" };
     let body = if kind == "message" { text.trim().to_string() } else { title };
     let repo = text.split("/root/").nth(1).map(|rest| rest.chars().take_while(|c| c.is_ascii_alphanumeric() || "._-".contains(*c)).collect::<String>()).filter(|r| !r.is_empty());

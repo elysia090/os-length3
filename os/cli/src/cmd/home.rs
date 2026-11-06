@@ -4,7 +4,7 @@ use super::Ctx;
 use crate::args::Call;
 use crate::out::{now_ms, Error, Reply, Result};
 use crate::spec::{Fact, On};
-use length3_core::{device::home, i18n, remote::inbox, remote, words::title, tr};
+use length3_core::{home, remote, remote::inbox, text::i18n, text::title, tr};
 use serde_json::json;
 
 pub fn todo_list(_: &Ctx, _: &Call) -> Result<Reply> {

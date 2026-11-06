@@ -139,10 +139,10 @@ fn a_prompt_interrupted_or_lost_while_prepared_leaves_no_record_or_process() {
     std::fs::remove_file(home.path("repos/os-starting/began")).unwrap();
     let mut l3 = start(&home, "os-starting", "touch ran-again");
     if !wrote(&home, "os-starting", "began", &mut l3) { return; }
-    let ns = length3_core::device::prompts::ns_of(l3.0.id()).expect("what prepares it, in a namespace of its own");
+    let ns = length3_core::prompt::running::ns_of(l3.0.id()).expect("what prepares it, in a namespace of its own");
     l3.0.kill().unwrap();
     l3.0.wait().unwrap();
-    let gone = length3_core::device::prompts::wait_empty(ns, length3_core::device::prompts::Held { processes: 0, memory: 0 }, Duration::from_secs(3));
+    let gone = length3_core::prompt::running::wait_empty(ns, length3_core::prompt::running::Held { processes: 0, memory: 0 }, Duration::from_secs(3));
     assert_eq!(gone.left, 0, "nothing of its setting up is left");
     assert!(home.run("en", &["prompt", "ls"]).stdout.contains("No Prompt is running"));
     assert_eq!(home.run("en", &["free", "env:os-starting", "cache:os-starting"]).code, 0, "its record holds nothing now");
@@ -270,8 +270,8 @@ fn a_prompt_paused_uses_no_cpu_until_it_goes_on() {
     home.repo("busy", &[("README", "busy\n")]);
     let mut l3 = start(&home, "busy", ": > up; while :; do :; done");
     if !wrote(&home, "busy", "up", &mut l3) { return; }
-    let ns = length3_core::device::prompts::ns_of(l3.0.id()).expect("its namespace");
-    let cpu = || length3_core::device::prompts::cpu_ms(ns);
+    let ns = length3_core::prompt::running::ns_of(l3.0.id()).expect("its namespace");
+    let cpu = || length3_core::prompt::running::cpu_ms(ns);
     let spun = cpu();
     std::thread::sleep(Duration::from_millis(300));
     assert!(cpu() > spun + 100, "running, it spins");

@@ -6,7 +6,7 @@ use crate::args::{not_a_command, Call};
 use crate::cmd::Ctx;
 use crate::out::{Error, Reply, Result};
 use crate::spec::{self, Command, Group, Words};
-use length3_core::i18n::ja;
+use length3_core::text::i18n::ja;
 use serde_json::json;
 use std::io::IsTerminal;
 
@@ -134,7 +134,7 @@ pub fn command(c: &Command) -> String {
         s += &format!("\n\n{}", if ja() { "ISSUE：repo の中なら N か #N、外なら REPO#N、または件名の言葉（「再起動」など。ひとつに決まらなければ番号で）" } else { "ISSUE: N or #N in its repo, REPO#N elsewhere, or words of its title (\"restart\"; by its number when the words fit more than one)" });
     }
     if c.name == "repo" {
-        let t: Vec<String> = length3_core::words::templates::all().into_iter().map(|t| format!("{} ({})", t.id, t.label)).collect();
+        let t: Vec<String> = length3_core::repos::templates::all().into_iter().map(|t| format!("{} ({})", t.id, t.label)).collect();
         s += &format!("\n\n{}{}", if ja() { "テンプレート：" } else { "Templates: " }, t.join(", "));
     }
     s

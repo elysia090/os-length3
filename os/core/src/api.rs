@@ -8,7 +8,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use crate::{remote::account, device::agent_key, agent::reports, history, agent::tasks, device::home, paths, remote, repos, disk::room, space, history::work};
+use crate::{agent::activity, agent::tasks, device::agent_key, fs::paths, fs::size, history, history::work, home, remote, remote::account, storage};
 
 /// Files the editor may save; anything read in part is never written back.
 pub const READ_LIMIT: u64 = 256 * 1024;
@@ -23,9 +23,9 @@ pub const WRITES: &[&str] = &["repo_create", "repo_write", "repo_put", "repo_add
 /// Answer `name` with `args` (an object of the command's arguments, by name).
 pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
     let a = Args(args);
-    let repos = || repos::Repos::open();
+    let repos = || crate::repos::store::Repos::open();
     // The repo as it is seen now, or (`main`) main's copy whatever work it shows: where its issues are.
-    let seen = || -> crate::Result<repos::Repos> { let r = repos()?; Ok(if a.opt::<bool>("main")?.unwrap_or(false) { r.on_main() } else { r }) };
+    let seen = || -> crate::Result<crate::repos::store::Repos> { let r = repos()?; Ok(if a.opt::<bool>("main")?.unwrap_or(false) { r.on_main() } else { r }) };
     match name {
         "repo_list" => to(repos()?.list()?),
         // Their names alone: nothing walked (what a page that only names them, or only checks one is there, asks).
@@ -102,15 +102,15 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         // The box's Agent saying what it does, as an agent's hooks do (agents.rs from_box): asked, answered.
         "agent_said" => {
             let repo = a.s("repo")?;
-            repos::Repos::open()?.dir(&repo)?;
+            crate::repos::store::Repos::open()?.dir(&repo)?;
             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
-            to(reports::append(&reports::from_box(&a.s("session")?, &repo, a.get("kind")?, &a.opt::<String>("text")?.unwrap_or_default(), now))?)
+            to(activity::append(&activity::from_box(&a.s("session")?, &repo, a.get("kind")?, &a.opt::<String>("text")?.unwrap_or_default(), now))?)
         }
         // What agents do in the repos, as their hooks said it (agents.rs): null when nothing came since `cursor`.
         // And the work handed to the agent (tasks.rs), when it changed since `tasks` (the mark last read). Null when
         // neither moved: what a page asks every second reads a few bytes then.
         "agents" => {
-            let journal = reports::now_since(&a.opt::<reports::Cursor>("cursor")?.unwrap_or_default(),
+            let journal = activity::now_since(&a.opt::<activity::Cursor>("cursor")?.unwrap_or_default(),
                 std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64));
             let mark = tasks::mark();
             let book = (a.opt::<[u64; 3]>("tasks")? != Some(mark)).then(|| json!({"mark": mark, "agent": tasks::agent(),
@@ -127,9 +127,9 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         },
 
         // The capacity and what this OS holds: `open`, the repos a Prompt has open (the host's to know).
-        "capacity" => to(room::capacity(&paths::data_dir())?),
-        "space" => to(space::space(&paths::data_dir(), &paths::repos_dir(), &a.list("open")?)),
-        "free" => to(space::free(&paths::data_dir(), &paths::repos_dir(), &a.list("ids")?, &a.list("open")?)),
+        "capacity" => to(size::capacity(&paths::data_dir())?),
+        "space" => to(storage::space(&paths::data_dir(), &paths::repos_dir(), &a.list("open")?)),
+        "free" => to(storage::free(&paths::data_dir(), &paths::repos_dir(), &a.list("ids")?, &a.list("open")?)),
 
         // Signing in: the code, and the page to approve it on, which only the host can open; the page is the
         // Remote's own (or its app's, on the origin it says), never one a page names.
@@ -154,7 +154,7 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         "remote_repos" => to(remote::remote_repos()?),
         "remote_status" => to(remote::status(&repos()?)?),
         "sync_repo" => to(remote::sync(&repos()?, &a.s("repo")?)?),
-        "repo_fetch" => to(space::bring_repo(&repos()?, &a.s("repo")?)?),
+        "repo_fetch" => to(storage::bring_repo(&repos()?, &a.s("repo")?)?),
         // One of Home's settings agreed with the Remote (home.rs agree_with).
         "home_sync" => to(remote::sync_home(&a.s("key")?)?),
         // One of them taken off this device, only as the Remote has it (home.rs leave).

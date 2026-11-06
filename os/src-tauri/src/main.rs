@@ -6,7 +6,7 @@
 use length3_core::api;
 // The data directory, for what only a Unix has here: one app at a time (desktop.rs), and SSH's card.
 #[cfg(unix)]
-use length3_core::paths;
+use length3_core::fs::paths;
 
 #[cfg(target_os = "linux")]
 mod shells;
@@ -19,8 +19,8 @@ mod shells {
     #[tauri::command] pub fn prompt_open(_repo: String) -> Result<u32, String> { Err(not_here()) }
     #[tauri::command] pub fn prompt_input(_id: u32, _text: String) -> Result<(), String> { Err(not_here()) }
     #[tauri::command] pub fn prompt_interrupt(_id: u32) -> Result<(), String> { Err(not_here()) }
-    #[tauri::command] pub fn prompt_held(_id: u32) -> Result<Option<length3_core::device::prompts::Held>, String> { Ok(None) }
-    #[tauri::command] pub fn prompt_close(_id: u32) -> Result<length3_core::device::prompts::Stopped, String> { Err(not_here()) }
+    #[tauri::command] pub fn prompt_held(_id: u32) -> Result<Option<length3_core::prompt::running::Held>, String> { Ok(None) }
+    #[tauri::command] pub fn prompt_close(_id: u32) -> Result<length3_core::prompt::running::Stopped, String> { Err(not_here()) }
     #[tauri::command] pub fn root_status() -> Option<()> { None }
     #[derive(serde::Serialize)]
     pub struct Native { native: bool, why: String }
@@ -144,7 +144,7 @@ async fn ssh_set(on: bool, scope: Option<String>) -> Result<serde_json::Value, S
         let mut args = vec!["address", "ssh", if on { "on" } else { "off" }];
         if on { if let Some(s) = scope.as_deref().filter(|s| matches!(*s, "device" | "network")) { args.push(s); } }
         args.push("--json");
-        let out = std::process::Command::new(length3_core::device::prompts::l3_path(&exe)).args(&args)
+        let out = std::process::Command::new(length3_core::prompt::running::l3_path(&exe)).args(&args)
             .stdin(std::process::Stdio::null()).output()
             .map_err(|e| length3_core::tr!("Could not start l3: {}", "l3 を起動できませんでした：{}", e))?;
         if !out.status.success() {

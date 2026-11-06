@@ -3,7 +3,7 @@
 use super::*;
 
 fn place(name: &str) -> PathBuf {
-    let d = crate::testing::dir(name);
+    let d = crate::fs::testing::dir(name);
     let _ = std::fs::remove_dir_all(&d);
     d
 }
@@ -47,7 +47,7 @@ fn with_a_keyring_each_is_kept_there_alone_a_file_kept_before_is_moved_in_and_on
     assert!(!d.join("agent-key").exists(), "moved into the keyring");
     assert_eq!(keyring::get(keyring, Secret::AgentKey, &d), Ok(Some("{\"key\":\"k\"}".into())));
     // A keyring that refuses it (locked, over SSH): kept as a file, and read from there.
-    let entry = |s: Secret| store.build(crate::paths::IDENTIFIER, &format!("{} ({})", s.name(), d.display()), None).unwrap();
+    let entry = |s: Secret| store.build(crate::fs::paths::IDENTIFIER, &format!("{} ({})", s.name(), d.display()), None).unwrap();
     let refuse = |s: Secret| entry(s).as_any().downcast_ref::<mock::Cred>().unwrap().set_error(Error::NoStorageAccess("locked".into()));
     refuse(Secret::Session);
     v.set(Secret::Session, "two.sig").unwrap();

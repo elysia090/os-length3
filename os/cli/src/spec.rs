@@ -13,7 +13,7 @@ pub type Words = [&'static str; 2];
 
 /// The words for the language spoken.
 pub fn say(w: Words) -> &'static str {
-    if length3_core::i18n::ja() { w[1] } else { w[0] }
+    if length3_core::text::i18n::ja() { w[1] } else { w[0] }
 }
 
 /// Each command's purpose: the rail's places, then l3's own words. New is
@@ -561,7 +561,7 @@ pub fn shown() -> impl Iterator<Item = &'static Command> {
 /// person writes are named in their language; REPO, N and the like are names
 /// of slots, the same in both (as the help's own text writes them).
 pub fn placeholder(w: &str) -> &str {
-    if !length3_core::i18n::ja() { return w; }
+    if !length3_core::text::i18n::ja() { return w; }
     match w {
         "\"Fix：title\"" => "\"Fix：件名\"",
         "\"text\"" => "\"本文\"",
@@ -593,7 +593,7 @@ pub fn schema(f: &Form) -> serde_json::Value {
     }).collect();
     let flags: Vec<serde_json::Value> = f.flags.iter().map(|fl| match fl {
         Flag::Note(w) => json!({"flag": "-m", "value": w}),
-        Flag::Template => json!({"flag": "-t", "value": "template", "choices": length3_core::words::templates::all().iter().map(|t| t.id.clone()).collect::<Vec<_>>()}),
+        Flag::Template => json!({"flag": "-t", "value": "template", "choices": length3_core::repos::templates::all().iter().map(|t| t.id.clone()).collect::<Vec<_>>()}),
         Flag::Network => json!({"flag": "--network"}),
         Flag::Todo => json!({"flag": "--todo"}),
         Flag::Empty => json!({"flag": "--empty"}),
@@ -629,7 +629,7 @@ pub fn usage(c: &Command, f: &Form) -> String {
         s += " ";
         s += &match fl {
             Flag::Note(w) => format!("[-m {}]", placeholder(w)),
-            Flag::Template => format!("[-t {}]", length3_core::words::templates::all().iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join("|")),
+            Flag::Template => format!("[-t {}]", length3_core::repos::templates::all().iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join("|")),
             Flag::Network => "[--network]".to_string(),
             Flag::Todo => "[--todo]".to_string(),
             Flag::Empty => "[--empty]".to_string(),
@@ -651,13 +651,13 @@ mod tests {
             assert!(c.forms.iter().any(|f| !f.hidden), "{}", c.name);
         }
         let all: Vec<String> = shown().flat_map(|c| c.forms.iter().filter(|f| !f.hidden).map(move |f| usage(c, f))).collect();
-        let new = if length3_core::i18n::ja() { "l3 issue new [REPO] \"Fix：件名\" [-m 詳細]" } else { "l3 issue new [REPO] \"Fix：title\" [-m detail]" };
+        let new = if length3_core::text::i18n::ja() { "l3 issue new [REPO] \"Fix：件名\" [-m 詳細]" } else { "l3 issue new [REPO] \"Fix：title\" [-m detail]" };
         assert!(all.iter().any(|u| u.starts_with(new)), "{all:?}");
         assert!(all.contains(&format!("l3 todo edit N {} [-m {}]", placeholder("\"Fix：title\""), placeholder("detail"))), "{all:?}");
         assert!(all.contains(&"l3 prompt ls".to_string()) && all.contains(&"l3 prompt stop [REPO]".to_string()));
         assert!(all.contains(&"l3 network on|off REPO".to_string()));
         // In Japanese, what a person writes is named in Japanese (bug: "Fix：title" and "-m note" stayed English).
-        if length3_core::i18n::ja() {
+        if length3_core::text::i18n::ja() {
             for english in ["title", "\"text\"", "-m note", "-m detail", "-m why"] { assert!(!all.iter().any(|u| u.contains(english)), "{english}: {all:?}"); }
         }
         assert!(all.contains(&"l3 server get SERVER[#BOARD] [--todo] [-o FILE] [--force]".to_string()));
@@ -731,7 +731,7 @@ mod tests {
     #[test]
     fn what_reads_homes_settings_takes_them_in_from_the_remote() {
         // Each names only settings the Remote keeps (the band, the language and the network grant are the device's).
-        for c in COMMANDS { for k in c.home { assert!(length3_core::device::home::SYNCED.contains(k), "{}: {k}", c.name); } }
+        for c in COMMANDS { for k in c.home { assert!(length3_core::home::SYNCED.contains(k), "{}: {k}", c.name); } }
         for (name, key) in [("todo", "todo"), ("profile", "profile"), ("dotfile", "dotfiles"), ("prompt", "dotfiles"), ("", "todo")] {
             assert!(find(name).unwrap().home.contains(&key), "{name}");
         }
