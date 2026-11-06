@@ -42,8 +42,8 @@ fn prompt_on_this_host(script: &str, network: bool) -> Option<String> {
             write("/proc/self/setgroups", "deny")?;
             write("/proc/self/uid_map", &format!("0 {uid} 1"))?;
             write("/proc/self/gid_map", &format!("0 {gid} 1"))?;
-            mount(None, Path::new("/"), None, libc::MS_REC | libc::MS_PRIVATE, None)?;
-            mount(Some(Path::new("tmpfs")), &root, Some("tmpfs"), 0, Some("mode=0755"))?;
+            private(Path::new("/"), true)?;
+            fresh("tmpfs", &root, MountFlags::empty(), Some("mode=0755"))?;
             for d in ["usr", "etc", "root", "tmp", "run", "dev", "proc"] { std::fs::create_dir(root.join(d))?; }
             for (link, to) in [("bin", "usr/bin"), ("sbin", "usr/sbin"), ("lib", "usr/lib"), ("lib64", "usr/lib64")] {
                 std::os::unix::fs::symlink(to, root.join(link))?;

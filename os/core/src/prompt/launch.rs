@@ -24,9 +24,15 @@
 //! reaps everything and, when the shell ends, ends everything left; and it
 //! is killed with its supervisor, so no process of a Prompt outlives it.
 
+// The kernel is asked through rustix's safe calls (mounts, pivot_root, namespaces entered, waits, signals sent, the
+// terminal's group). Unsafe is left only for what no safe call says: fork, unshare, a signal's handler set, the
+// shell's exec in the child of a fork, kill(-1), and _exit after a fork; each block one call, its reason beside it.
+
+use rustix::mount::{MountFlags, MountPropagationFlags};
+use rustix::process::{Pid, Signal, WaitOptions, WaitStatus};
 use std::ffi::CString;
 use std::io;
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::fd::{AsFd, OwnedFd};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
@@ -70,45 +76,67 @@ fn write(path: &str, text: &str) -> io::Result<()> {
     std::fs::write(path, text).map_err(|e| io::Error::new(e.kind(), format!("{path}: {e}")))
 }
 
-fn mount(src: Option<&Path>, dst: &Path, fstype: Option<&str>, flags: libc::c_ulong, data: Option<&str>) -> io::Result<()> {
-    let (s, t, d) = (src.map(c), fstype.map(c), data.map(c));
-    let r = unsafe {
-        libc::mount(
-            s.as_ref().map_or(std::ptr::null(), |x| x.as_ptr()),
-            c(dst).as_ptr(),
-            t.as_ref().map_or(std::ptr::null(), |x| x.as_ptr()),
-            flags,
-            d.as_ref().map_or(std::ptr::null(), |x| x.as_ptr() as *const libc::c_void),
-        )
-    };
-    check(r, &format!("mount {}", dst.display()))
+/// What a call that failed says, after what was asked.
+fn failed(what: impl std::fmt::Display) -> impl FnOnce(rustix::io::Errno) -> io::Error {
+    move |e| {
+        let e = io::Error::from(e);
+        io::Error::new(e.kind(), format!("{what}: {e}"))
+    }
+}
+
+/// A filesystem of `kind` (tmpfs, proc, devpts, overlay) made at `at`, with `options`.
+fn fresh(kind: &str, at: &Path, flags: MountFlags, options: Option<&str>) -> io::Result<()> {
+    let options = options.map(c);
+    rustix::mount::mount(kind, at, kind, flags, options.as_deref()).map_err(failed(format!("mount {}", at.display())))
+}
+
+/// What is mounted at `at` (and under it, `deep`) is seen in this namespace only: nothing done here goes out, nothing
+/// mounted outside later comes in.
+fn private(at: &Path, deep: bool) -> io::Result<()> {
+    let flags = if deep { MountPropagationFlags::PRIVATE | MountPropagationFlags::REC } else { MountPropagationFlags::PRIVATE };
+    rustix::mount::mount_change(at, flags).map_err(failed(format!("mount {}", at.display())))
 }
 
 /// The flags a mount already has that a remount inside a user namespace
 /// must keep (the kernel refuses to drop locked ones).
-fn locked_flags(path: &Path) -> libc::c_ulong {
-    let mut s: libc::statvfs = unsafe { std::mem::zeroed() };
-    if unsafe { libc::statvfs(c(path).as_ptr(), &mut s) } != 0 {
-        return 0;
-    }
-    // Linux's ST_RELATIME; the libc crate leaves it out on musl.
-    const ST_RELATIME: libc::c_ulong = 0x1000;
-    let mut out = 0;
-    for (st, ms) in [(libc::ST_NOSUID, libc::MS_NOSUID), (libc::ST_NODEV, libc::MS_NODEV), (libc::ST_NOEXEC, libc::MS_NOEXEC),
-        (libc::ST_NOATIME, libc::MS_NOATIME), (libc::ST_NODIRATIME, libc::MS_NODIRATIME), (ST_RELATIME, libc::MS_RELATIME)] {
-        if s.f_flag & st != 0 {
-            out |= ms;
-        }
-    }
-    out
+fn locked_flags(path: &Path) -> MountFlags {
+    use rustix::fs::StatVfsMountFlags as St;
+    let Ok(s) = rustix::fs::statvfs(path) else { return MountFlags::empty() };
+    [(St::NOSUID, MountFlags::NOSUID), (St::NODEV, MountFlags::NODEV), (St::NOEXEC, MountFlags::NOEXEC),
+        (St::NOATIME, MountFlags::NOATIME), (St::NODIRATIME, MountFlags::NODIRATIME), (St::RELATIME, MountFlags::RELATIME)]
+        .into_iter().filter(|(st, _)| s.f_flag.contains(*st)).fold(MountFlags::empty(), |out, (_, ms)| out | ms)
 }
 
-fn bind(src: &Path, dst: &Path, read_only: bool) -> io::Result<()> {
-    mount(Some(src), dst, None, libc::MS_BIND | libc::MS_REC, None)?;
-    if read_only {
-        mount(None, dst, None, libc::MS_BIND | libc::MS_REMOUNT | libc::MS_RDONLY | locked_flags(dst), None)?;
-    }
+/// `at`, mounted already, made read-only, with the flags it must keep.
+fn read_only(at: &Path) -> io::Result<()> {
+    rustix::mount::mount_remount(at, MountFlags::BIND | MountFlags::RDONLY | locked_flags(at), "").map_err(failed(format!("mount {}", at.display())))
+}
+
+fn bind(src: &Path, dst: &Path, read_only_too: bool) -> io::Result<()> {
+    rustix::mount::mount_bind_recursive(src, dst).map_err(failed(format!("mount {}", dst.display())))?;
+    if read_only_too { read_only(dst)?; }
     Ok(())
+}
+
+/// A process's wait status as a shell says it: its exit code, or 128 and the signal that ended it.
+fn code_of(status: WaitStatus) -> i32 {
+    status.exit_status().unwrap_or_else(|| 128 + status.terminating_signal().unwrap_or(0))
+}
+
+/// Wait for `pid` to end, through signals that interrupt the waiting.
+fn wait_for(pid: Pid) -> io::Result<WaitStatus> {
+    loop {
+        match rustix::process::waitpid(Some(pid), WaitOptions::empty()) {
+            Ok(Some((_, status))) => return Ok(status),
+            Ok(None) | Err(rustix::io::Errno::INTR) => continue,
+            Err(e) => return Err(e.into()),
+        }
+    }
+}
+
+/// The child's pid as fork gave it to the parent; none when fork failed (-1, and errno says why).
+fn pid(raw: libc::pid_t) -> io::Result<Pid> {
+    (raw > 0).then(|| Pid::from_raw(raw)).flatten().ok_or_else(io::Error::last_os_error)
 }
 
 /// Where a Prompt's programs are looked for.
@@ -175,7 +203,7 @@ fn term() -> String {
 /// environment) if given; whether the repo's environment is over the root.
 fn build(s: &Sandbox, joined: Option<OwnedFd>) -> io::Result<bool> {
     // Nothing done here is seen outside, and nothing outside comes in later.
-    mount(None, Path::new("/"), None, libc::MS_REC | libc::MS_PRIVATE, None)?;
+    private(Path::new("/"), true)?;
     // The repo's environment over the root, where the kernel lets a user make an overlay; else the root alone
     // (never under a Prompt that has it: one that joins it has it, or does not start).
     let layered = match &s.data {
@@ -184,10 +212,10 @@ fn build(s: &Sandbox, joined: Option<OwnedFd>) -> io::Result<bool> {
         None => None,
     };
     let top = layered.as_ref().unwrap_or(&s.root);
-    if layered.is_none() { mount(Some(top), top, None, libc::MS_BIND | libc::MS_REC, None)?; }
+    if layered.is_none() { rustix::mount::mount_bind_recursive(top, top).map_err(failed(format!("mount {}", top.display())))?; }
     // Writable places first, while their mount points can still be made.
     let home = top.join("root");
-    mount(Some(Path::new("tmpfs")), &home, Some("tmpfs"), libc::MS_NOSUID | libc::MS_NODEV, Some("mode=0700,size=16m"))?;
+    fresh("tmpfs", &home, MountFlags::NOSUID | MountFlags::NODEV, Some("mode=0700,size=16m"))?;
     let at = home.join(&s.name);
     std::fs::create_dir(&at)?;
     bind(&s.repo, &at, false)?;
@@ -207,12 +235,12 @@ fn build(s: &Sandbox, joined: Option<OwnedFd>) -> io::Result<bool> {
         }
     }
     for (dir, size) in [("tmp", "1g"), ("run", "64m")] {
-        mount(Some(Path::new("tmpfs")), &top.join(dir), Some("tmpfs"), libc::MS_NOSUID | libc::MS_NODEV, Some(&format!("mode=1777,size={size}")))?;
+        fresh("tmpfs", &top.join(dir), MountFlags::NOSUID | MountFlags::NODEV, Some(&format!("mode=1777,size={size}")))?;
     }
     // With the network, the host's resolver too, where the root looks for it.
     if s.network { resolver(top)?; }
     let dev = top.join("dev");
-    mount(Some(Path::new("tmpfs")), &dev, Some("tmpfs"), libc::MS_NOSUID | libc::MS_NOEXEC, Some("mode=0755,size=64k"))?;
+    fresh("tmpfs", &dev, MountFlags::NOSUID | MountFlags::NOEXEC, Some("mode=0755,size=64k"))?;
     for node in ["null", "zero", "full", "random", "urandom", "tty"] {
         let host = Path::new("/dev").join(node);
         if !host.exists() {
@@ -226,23 +254,23 @@ fn build(s: &Sandbox, joined: Option<OwnedFd>) -> io::Result<bool> {
     // theirs). The host keeps its own (kernel.pty.reserve). Where the kernel will not make one, there is none.
     let pts = dev.join("pts");
     std::fs::create_dir(&pts)?;
-    if mount(Some(Path::new("devpts")), &pts, Some("devpts"), libc::MS_NOSUID | libc::MS_NOEXEC, Some("newinstance,ptmxmode=0666,mode=0620")).is_ok() {
+    if fresh("devpts", &pts, MountFlags::NOSUID | MountFlags::NOEXEC, Some("newinstance,ptmxmode=0666,mode=0620")).is_ok() {
         std::os::unix::fs::symlink("pts/ptmx", dev.join("ptmx"))?;
     }
     for (link, to) in [("fd", "/proc/self/fd"), ("stdin", "/proc/self/fd/0"), ("stdout", "/proc/self/fd/1"), ("stderr", "/proc/self/fd/2")] {
         std::os::unix::fs::symlink(to, dev.join(link))?;
     }
-    mount(Some(Path::new("proc")), &top.join("proc"), Some("proc"), libc::MS_NOSUID | libc::MS_NODEV | libc::MS_NOEXEC, None)?;
+    fresh("proc", &top.join("proc"), MountFlags::NOSUID | MountFlags::NODEV | MountFlags::NOEXEC, None)?;
     // Then the root itself becomes read-only (unless the repo's environment is over it, which takes
     // what is written); what was mounted on it stays as it is.
-    if layered.is_none() { mount(None, top, None, libc::MS_BIND | libc::MS_REMOUNT | libc::MS_RDONLY | locked_flags(top), None)?; }
+    if layered.is_none() { read_only(top)?; }
     // Become that root, and let go of the host's tree entirely.
-    check(unsafe { libc::chdir(c(top).as_ptr()) }, "chdir")?;
-    check(unsafe { libc::syscall(libc::SYS_pivot_root, c(".").as_ptr(), c(".").as_ptr()) as libc::c_int }, "pivot_root")?;
-    check(unsafe { libc::umount2(c(".").as_ptr(), libc::MNT_DETACH) }, "umount old root")?;
-    check(unsafe { libc::chdir(c(format!("/root/{}", s.name)).as_ptr()) }, "chdir repo")?;
-    let name = b"length3";
-    unsafe { libc::sethostname(name.as_ptr() as *const libc::c_char, name.len()) };
+    let chdir = |to: &Path| std::env::set_current_dir(to).map_err(|e| io::Error::new(e.kind(), format!("chdir {}: {e}", to.display())));
+    chdir(top)?;
+    rustix::process::pivot_root(".", ".").map_err(failed("pivot_root"))?;
+    rustix::mount::unmount(".", rustix::mount::UnmountFlags::DETACH).map_err(failed("umount old root"))?;
+    chdir(&Path::new("/root").join(&s.name))?;
+    let _ = rustix::system::sethostname(b"length3");
     Ok(layered.is_some())
 }
 
@@ -295,17 +323,16 @@ fn environment_over(root: &Path, data: &Path, repo: &str, joined: Option<OwnedFd
     let (upper, work, merged) = (env.join("upper"), env.join("work"), env.join("merged"));
     for d in [&upper, &work, &merged] { std::fs::create_dir_all(d)?; }
     if let Some(overlay) = joined {
-        // SAFETY: move_mount of the detached mount `overlay` holds, by its descriptor, onto a directory just made.
-        let r = unsafe { libc::syscall(libc::SYS_move_mount, overlay.as_raw_fd(), c"".as_ptr(), libc::AT_FDCWD, c(&merged).as_ptr(), libc::MOVE_MOUNT_F_EMPTY_PATH) };
-        check(r as libc::c_int, "move_mount")?;
+        // The detached mount `overlay` holds, by its descriptor, onto a directory just made.
+        rustix::mount::move_mount(&overlay, "", rustix::fs::CWD, &merged, rustix::mount::MoveMountFlags::MOVE_MOUNT_F_EMPTY_PATH).map_err(failed("move_mount"))?;
         // This Prompt's own mount of it: what is mounted on it here never reaches the other Prompt's tree, nor theirs this one's.
-        mount(None, &merged, None, libc::MS_PRIVATE, None)?;
+        private(&merged, false)?;
         return Ok(merged);
     }
     // userxattr: in a user namespace the overlay keeps its marks in user.* xattrs; without it it cannot mark
     // a new directory as its own and refuses to rename any (dpkg renames each it unpacks).
     let options = format!("lowerdir={},upperdir={},workdir={},userxattr", root.display(), upper.display(), work.display());
-    mount(Some(Path::new("overlay")), &merged, Some("overlay"), libc::MS_NOSUID | libc::MS_NODEV, Some(&options))?;
+    fresh("overlay", &merged, MountFlags::NOSUID | MountFlags::NODEV, Some(&options))?;
     Ok(merged)
 }
 
@@ -324,7 +351,7 @@ struct Environment {
     /// `dir`, open: the lock (flock) while held, and where this Prompt's file is written and removed once its tree
     /// is laid out (by then the supervisor's `/` is the Prompt's, not the host's: pivot_root moved it).
     prompts: std::fs::File,
-    mine: Option<CString>,
+    mine: Option<String>,
 }
 
 impl Environment {
@@ -369,14 +396,15 @@ impl Environment {
 
     /// This Prompt's tree is laid out, its pid 1 `init` in the mount namespace `ns`: recorded, if the environment is
     /// its root, for the next to join; and the lock let go of.
-    fn hold(&mut self, init: libc::pid_t, ns: u64, layered: bool) -> io::Result<()> {
+    fn hold(&mut self, init: Pid, ns: u64, layered: bool) -> io::Result<()> {
         if layered {
-            let name = c(init.to_string());
-            // SAFETY: openat in the directory this holds, by a name just made; the descriptor is taken into a File.
-            let fd = unsafe { libc::openat(self.prompts.as_raw_fd(), name.as_ptr(), libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC | libc::O_CLOEXEC, 0o600) };
-            check(fd, "prompts")?;
+            use rustix::fs::{Mode, OFlags};
+            // Made in the directory this holds (its descriptor, not its path: by now `/` is the Prompt's).
+            let name = init.as_raw_nonzero().to_string();
+            let fd = rustix::fs::openat(&self.prompts, name.as_str(), OFlags::WRONLY | OFlags::CREATE | OFlags::TRUNC | OFlags::CLOEXEC, Mode::from_raw_mode(0o600))
+                .map_err(failed("prompts"))?;
             self.mine = Some(name);
-            std::io::Write::write_all(&mut unsafe { std::fs::File::from_raw_fd(fd) }, ns.to_string().as_bytes())?;
+            std::io::Write::write_all(&mut std::fs::File::from(fd), ns.to_string().as_bytes())?;
         }
         self.prompts.unlock()
     }
@@ -384,8 +412,8 @@ impl Environment {
 
 impl Drop for Environment {
     fn drop(&mut self) {
-        // SAFETY: unlinkat in the directory this holds, of the name it wrote there.
-        if let Some(name) = &self.mine { unsafe { libc::unlinkat(self.prompts.as_raw_fd(), name.as_ptr(), 0) }; }
+        // The name it wrote in the directory this holds.
+        if let Some(name) = &self.mine { let _ = rustix::fs::unlinkat(&self.prompts, name.as_str(), rustix::fs::AtFlags::empty()); }
     }
 }
 
@@ -394,14 +422,14 @@ impl Drop for Environment {
 fn clone_root(mnt: &OwnedFd) -> io::Result<OwnedFd> {
     let here = std::env::current_dir().ok();
     let own = std::fs::File::open("/proc/self/ns/mnt")?;
-    check(unsafe { libc::setns(mnt.as_raw_fd(), libc::CLONE_NEWNS) }, "setns")?;
-    // SAFETY: open_tree of `/` there, which is that Prompt's root; a new descriptor, or -1.
-    let fd = unsafe { libc::syscall(libc::SYS_open_tree, libc::AT_FDCWD, c"/".as_ptr(), libc::OPEN_TREE_CLONE | libc::OPEN_TREE_CLOEXEC) } as libc::c_int;
-    // SAFETY: a descriptor open_tree just made, owned from here on.
-    let cloned = check(fd, "open_tree").map(|()| unsafe { OwnedFd::from_raw_fd(fd) });
+    let enter = |ns: std::os::fd::BorrowedFd| rustix::thread::move_into_link_name_space(ns, Some(rustix::thread::LinkNameSpaceType::Mount)).map_err(failed("setns"));
+    enter(mnt.as_fd())?;
+    // `/` there, which is that Prompt's root.
+    use rustix::mount::OpenTreeFlags;
+    let cloned = rustix::mount::open_tree(rustix::fs::CWD, "/", OpenTreeFlags::OPEN_TREE_CLONE | OpenTreeFlags::OPEN_TREE_CLOEXEC).map_err(failed("open_tree"));
     // Back in its own namespace, and where it was (setns leaves it at the namespace's /), so a relative data
     // directory is found as before.
-    check(unsafe { libc::setns(own.as_raw_fd(), libc::CLONE_NEWNS) }, "setns")?;
+    enter(own.as_fd())?;
     if let Some(here) = here { std::env::set_current_dir(here)?; }
     cloned
 }
@@ -463,25 +491,25 @@ fn init(s: &Sandbox) -> ! {
             libc::_exit(127);
         }
     }
-    unsafe { libc::setpgid(shell, shell) };
-    SHELL.store(shell, std::sync::atomic::Ordering::SeqCst);
+    let Ok(shell) = pid(shell) else { unsafe { libc::_exit(126) } };
+    let _ = rustix::process::setpgid(Some(shell), Some(shell));
+    SHELL.store(shell.as_raw_nonzero().get(), std::sync::atomic::Ordering::SeqCst);
     // SIGUSR1 from the supervisor is Ctrl-C: SIGINT to the shell's group.
     unsafe {
         libc::signal(libc::SIGINT, libc::SIG_IGN);
         libc::signal(libc::SIGUSR1, interrupt as *const () as libc::sighandler_t);
     }
     loop {
-        let mut status = 0;
-        let pid = unsafe { libc::waitpid(-1, &mut status, 0) };
-        if pid == shell {
-            // Whatever the shell left running ends with it.
-            unsafe { libc::kill(-1, libc::SIGKILL) };
-            while unsafe { libc::waitpid(-1, std::ptr::null_mut(), 0) } > 0 {}
-            let code = if libc::WIFEXITED(status) { libc::WEXITSTATUS(status) } else { 128 + libc::WTERMSIG(status) };
-            unsafe { libc::_exit(code) };
-        }
-        if pid < 0 && io::Error::last_os_error().raw_os_error() != Some(libc::EINTR) {
-            unsafe { libc::_exit(1) };
+        match rustix::process::wait(WaitOptions::empty()) {
+            Ok(Some((ended, status))) if ended == shell => {
+                // Whatever the shell left running ends with it: every process this pid namespace holds (kill(-1),
+                // which no safe call says).
+                unsafe { libc::kill(-1, libc::SIGKILL) };
+                while rustix::process::wait(WaitOptions::empty()).is_ok_and(|w| w.is_some()) {}
+                unsafe { libc::_exit(code_of(status)) };
+            }
+            Err(e) if e != rustix::io::Errno::INTR => unsafe { libc::_exit(1) },
+            _ => {}
         }
     }
 }
@@ -492,20 +520,17 @@ fn init(s: &Sandbox) -> ! {
 /// kernel.unprivileged_userns_clone=0); Ubuntu 23.10 and later keep them, through AppArmor, from a program no profile
 /// lets make them (the .deb's lets /usr/bin/l3). Where they cannot be made, Prompts run translated, as in a browser.
 pub fn kept_from_namespaces() -> Option<String> {
+    // SAFETY: the child makes only system calls (no allocation, no lock: the caller may have threads), then _exit.
     let child = unsafe { libc::fork() };
     if child < 0 { return Some(io::Error::last_os_error().to_string()); }
     if child == 0 {
-        // Only system calls between the fork and the end: the caller may have threads.
         let code = if unsafe { libc::unshare(libc::CLONE_NEWUSER | libc::CLONE_NEWNS) } != 0 { 1 }
-            else if unsafe { libc::mount(c"none".as_ptr(), c"/".as_ptr(), std::ptr::null(), libc::MS_REC | libc::MS_PRIVATE, std::ptr::null()) } != 0 { 2 }
+            else if rustix::mount::mount_change(c"/", MountPropagationFlags::PRIVATE | MountPropagationFlags::REC).is_err() { 2 }
             else { 0 };
         unsafe { libc::_exit(code) };
     }
-    let mut status = 0;
-    while unsafe { libc::waitpid(child, &mut status, 0) } < 0 {
-        if io::Error::last_os_error().raw_os_error() != Some(libc::EINTR) { return Some(io::Error::last_os_error().to_string()); }
-    }
-    match libc::WIFEXITED(status).then(|| libc::WEXITSTATUS(status)) {
+    let status = match pid(child).and_then(wait_for) { Ok(s) => s, Err(e) => return Some(e.to_string()) };
+    match status.exit_status() {
         Some(0) => None,
         Some(1) => Some(crate::tr!("This system lets no program make user namespaces, which Prompts are made in (user.max_user_namespaces, kernel.unprivileged_userns_clone)",
             "このシステムは、Prompt が作られるユーザー名前空間をどのプログラムにも作らせません（user.max_user_namespaces、kernel.unprivileged_userns_clone）")),
@@ -521,7 +546,7 @@ pub fn run(s: &Sandbox) -> io::Result<i32> {
     if !s.root.join("bin").exists() {
         return Err(io::Error::new(io::ErrorKind::NotFound, crate::tr!("There is no root (l3 root install)", "root がありません（l3 root install）")));
     }
-    let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
+    let (uid, gid) = (rustix::process::getuid().as_raw(), rustix::process::getgid().as_raw());
     let mut flags = libc::CLONE_NEWNS | libc::CLONE_NEWPID | libc::CLONE_NEWIPC | libc::CLONE_NEWUTS;
     if !s.network {
         flags |= libc::CLONE_NEWNET;
@@ -533,7 +558,7 @@ pub fn run(s: &Sandbox) -> io::Result<i32> {
     let joined = match env.as_ref().map(Environment::running).transpose().map_err(|e| not_joined(s, e))?.flatten() {
         Some((user, mnt)) => {
             let join = || {
-                check(unsafe { libc::setns(user.as_raw_fd(), libc::CLONE_NEWUSER) }, "setns")?;
+                rustix::thread::move_into_link_name_space(user.as_fd(), Some(rustix::thread::LinkNameSpaceType::User)).map_err(failed("setns"))?;
                 check(unsafe { libc::unshare(flags) }, "unshare")?;
                 clone_root(&mnt)
             };
@@ -550,9 +575,9 @@ pub fn run(s: &Sandbox) -> io::Result<i32> {
     // The mount namespace pid 1 lays out its tree in (this one's), as a Prompt after it finds it.
     let ns = std::fs::metadata("/proc/self/ns/mnt")?.ino();
     // Pid 1 says once its tree is laid out whether the environment is its root (or, failing, ends unsaid).
-    let mut ready = [0; 2];
-    check(unsafe { libc::pipe2(ready.as_mut_ptr(), libc::O_CLOEXEC) }, "pipe")?;
+    let (heard, said_by) = rustix::pipe::pipe_with(rustix::pipe::PipeFlags::CLOEXEC).map_err(failed("pipe"))?;
     let front = Front::now();
+    // SAFETY: called from a process of one thread (above), so the child may go on as this process did.
     let child = unsafe { libc::fork() };
     if child < 0 {
         return Err(io::Error::last_os_error());
@@ -561,12 +586,12 @@ pub fn run(s: &Sandbox) -> io::Result<i32> {
         // Pid 1 inside: dies with its supervisor, and everything in it with it. The environment's lock is the
         // supervisor's to let go of, not held on in here.
         drop(env);
-        unsafe { libc::close(ready[0]) };
-        unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0) };
+        drop(heard);
+        let _ = rustix::process::set_parent_process_death_signal(Some(Signal::KILL));
         match build(s, joined) {
             Ok(layered) => {
-                unsafe { libc::write(ready[1], [layered as u8].as_ptr() as *const libc::c_void, 1) };
-                unsafe { libc::close(ready[1]) };
+                let _ = rustix::io::write(&said_by, &[layered as u8]);
+                drop(said_by);
             }
             Err(e) => {
                 eprintln!("{}", crate::tr!("l3: Could not prepare the Prompt: {}", "l3: Prompt を用意できませんでした：{}", e));
@@ -583,36 +608,28 @@ pub fn run(s: &Sandbox) -> io::Result<i32> {
         init(s);
     }
     drop(joined);
-    unsafe { libc::close(ready[1]) };
+    drop(said_by);
+    let child = pid(child)?;
     // The supervisor: pass Ctrl-C to init, which hands it to the shell's group.
-    SUPERVISED.store(child, std::sync::atomic::Ordering::SeqCst);
+    SUPERVISED.store(child.as_raw_nonzero().get(), std::sync::atomic::Ordering::SeqCst);
+    // SAFETY: the handler only loads an atomic and sends a signal, both safe in a handler.
     unsafe { libc::signal(libc::SIGINT, forward as *const () as libc::sighandler_t) };
     // Laid out: recorded over the environment if that is its root, and the next Prompt may join it. One that
     // could not be recorded is ended (a Prompt after it would not know to join it).
     let mut said = [0u8; 1];
     let n = loop {
-        let n = unsafe { libc::read(ready[0], said.as_mut_ptr() as *mut libc::c_void, 1) };
-        if n >= 0 || io::Error::last_os_error().raw_os_error() != Some(libc::EINTR) { break n; }
+        match rustix::io::read(&heard, &mut said) { Err(rustix::io::Errno::INTR) => continue, r => break r.unwrap_or(0) }
     };
-    unsafe { libc::close(ready[0]) };
+    drop(heard);
     let held = env.as_mut().map_or(Ok(()), |e| e.hold(child, ns, n == 1 && said[0] == 1));
-    if held.is_err() { unsafe { libc::kill(child, libc::SIGKILL) }; }
-    let mut status = 0;
-    let waited = loop {
-        let r = unsafe { libc::waitpid(child, &mut status, 0) };
-        if r == child {
-            break Ok(());
-        }
-        if io::Error::last_os_error().raw_os_error() != Some(libc::EINTR) {
-            break Err(io::Error::last_os_error());
-        }
-    };
+    if held.is_err() { let _ = rustix::process::kill_process(child, Signal::KILL); }
+    let waited = wait_for(child);
     front.give_back();
     // Ended: its file over the environment goes (dropped), and the environment is unmounted once no Prompt holds it.
     drop(env);
-    waited?;
+    let status = waited?;
     held?;
-    Ok(if libc::WIFEXITED(status) { libc::WEXITSTATUS(status) } else { 128 + libc::WTERMSIG(status) })
+    Ok(code_of(status))
 }
 
 /// A Prompt of the repo is running over its environment, and this one could not join it: it is not started.
@@ -625,22 +642,22 @@ fn not_joined(s: &Sandbox, e: io::Error) -> io::Error {
 /// The terminal's group in front when a Prompt starts. The shell inside takes the terminal (init),
 /// and when it ends its group is gone: whoever started it is left behind, where reading a key stops
 /// it (SIGTTIN) or ends input (bug: Menu → Prompt → exit left l3 instead of the menu). So it is given back.
-struct Front(Option<libc::pid_t>);
+struct Front(Option<Pid>);
 
 impl Front {
     fn now() -> Front {
-        // SAFETY: plain calls on standard input.
-        Front(unsafe { (libc::isatty(0) == 1).then(|| libc::tcgetpgrp(0)).filter(|p| *p > 0) })
+        let input = std::io::stdin();
+        Front(rustix::termios::isatty(&input).then(|| rustix::termios::tcgetpgrp(&input).ok()).flatten())
     }
 
     fn give_back(&self) {
         let Some(group) = self.0 else { return };
-        // SAFETY: asked from behind, the request is SIGTTOU; ignored for the asking, then as it was.
-        unsafe {
-            let before = libc::signal(libc::SIGTTOU, libc::SIG_IGN);
-            libc::tcsetpgrp(0, group);
-            libc::signal(libc::SIGTTOU, before);
-        }
+        // Asked from behind, the request is SIGTTOU: ignored for the asking, then as it was.
+        // SAFETY: the disposition set is SIG_IGN, and then the one there before.
+        let before = unsafe { libc::signal(libc::SIGTTOU, libc::SIG_IGN) };
+        let _ = rustix::termios::tcsetpgrp(std::io::stdin(), group);
+        // SAFETY: as above.
+        unsafe { libc::signal(libc::SIGTTOU, before) };
     }
 }
 
@@ -649,9 +666,11 @@ impl Front {
 /// the child, which Stop ends. The exit code of the child's shell.
 pub fn run_apart_with<G>(s: &Sandbox, keep: impl FnOnce() -> io::Result<G>) -> io::Result<i32> {
     let front = Front::now();
-    let pid = unsafe { libc::fork() };
-    if pid < 0 { return Err(io::Error::last_os_error()); }
-    if pid == 0 {
+    // SAFETY: called from a process of one thread (l3), so the child may go on as this process did; it leaves
+    // with _exit, never returning into the caller's code.
+    let child = unsafe { libc::fork() };
+    if child < 0 { return Err(io::Error::last_os_error()); }
+    if child == 0 {
         let code = match keep() {
             Ok(held) => { let code = run(s).unwrap_or_else(|e| { eprintln!("l3: {e}"); 126 }); drop(held); code }
             Err(e) => { eprintln!("l3: {e}"); 126 }
@@ -659,24 +678,20 @@ pub fn run_apart_with<G>(s: &Sandbox, keep: impl FnOnce() -> io::Result<G>) -> i
         unsafe { libc::_exit(code) };
     }
     // Ctrl-C is the child's to pass on; this one waits it out.
+    // SAFETY: the disposition set is SIG_IGN, and then the one there before.
     let before = unsafe { libc::signal(libc::SIGINT, libc::SIG_IGN) };
-    let mut status = 0;
-    let waited = loop {
-        let r = unsafe { libc::waitpid(pid, &mut status, 0) };
-        if r == pid { break Ok(()); }
-        if io::Error::last_os_error().raw_os_error() != Some(libc::EINTR) { break Err(io::Error::last_os_error()); }
-    };
+    let waited = pid(child).and_then(wait_for);
+    // SAFETY: as above.
     unsafe { libc::signal(libc::SIGINT, before) };
     // Stopped from outside, the child gave nothing back itself.
     front.give_back();
-    waited?;
-    Ok(if libc::WIFEXITED(status) { libc::WEXITSTATUS(status) } else { 128 + libc::WTERMSIG(status) })
+    Ok(code_of(waited?))
 }
 
 /// In a child: killed when `parent` ends, or ended now if it has already.
 fn ends_with(parent: u32) -> io::Result<()> {
-    unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0) };
-    if unsafe { libc::getppid() } as u32 != parent { unsafe { libc::_exit(128 + libc::SIGKILL) } }
+    rustix::process::set_parent_process_death_signal(Some(Signal::KILL)).map_err(failed("prctl"))?;
+    if rustix::process::getppid().map(|p| p.as_raw_nonzero().get() as u32) != Some(parent) { unsafe { libc::_exit(128 + libc::SIGKILL) } }
     Ok(())
 }
 
@@ -755,18 +770,16 @@ static SHELL: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0
 
 /// In the supervisor: Ctrl-C becomes SIGUSR1 to init (both calls are signal-safe).
 extern "C" fn forward(_: libc::c_int) {
-    let pid = SUPERVISED.load(std::sync::atomic::Ordering::SeqCst);
-    if pid > 0 {
-        unsafe { libc::kill(pid, libc::SIGUSR1) };
+    if let Some(init) = Pid::from_raw(SUPERVISED.load(std::sync::atomic::Ordering::SeqCst)) {
+        let _ = rustix::process::kill_process(init, Signal::USR1);
     }
 }
 
 /// In init: SIGINT to the shell's process group. An interactive shell
 /// survives it; what it runs does not, as at a terminal.
 extern "C" fn interrupt(_: libc::c_int) {
-    let shell = SHELL.load(std::sync::atomic::Ordering::SeqCst);
-    if shell > 0 {
-        unsafe { libc::kill(-shell, libc::SIGINT) };
+    if let Some(shell) = Pid::from_raw(SHELL.load(std::sync::atomic::Ordering::SeqCst)) {
+        let _ = rustix::process::kill_process_group(shell, Signal::INT);
     }
 }
 
