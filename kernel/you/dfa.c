@@ -17,7 +17,8 @@
  *
  * Empty-width assertions are decided when the byte after is known (as RE2 does): ^ by the state's flags, $ by the byte
  * (or the end), \b by the flag and the byte. A \b beside a character past ASCII asks for Unicode's \w, which a byte
- * does not say: a pattern with \b quits on such a byte, and the caller asks the Pike machine. Lines: no class holds
+ * does not say: the move where one is asked so quits (F_UNK: the byte before was past ASCII), and the caller asks
+ * the Pike machine; a byte past ASCII where no \b is asked is a byte as any. Lines: no class holds
  * \n (RE_LINES), so the move on \n is to the state of a line's start.
  *
  * Kept: as many states as DFA_ROOM bytes of moves hold; past that, all are forgotten and made again from where the run
@@ -33,19 +34,19 @@
 #define T_SLOW T_UNKNOWN /* a move at or past it is one of the above */
 
 enum { D_LINES, D_FWD, D_ANCH };
-enum { F_BOT = 1, F_BOL = 2, F_WORD = 4 };
+enum { F_BOT = 1, F_BOL = 2, F_WORD = 4, F_UNK = 8 }; /* F_UNK: the byte before is past ASCII (a word's, or not, unknown) */
 
 struct dfa {
   struct re *r;
-  int mode, quit;
+  int mode, unsure; /* unsure: a \b was asked beside a byte past ASCII, while a move was worked out */
   u32 need; /* the flags the pattern asks about */
   u8 cls[256], rep[256];
-  u32 ncls, hicls;
+  u32 ncls;
   u32 *trans, max, n; /* a row of ncls moves a state; row 0 is the dead state */
   u32 *setat, *setn, *pool, pooln, pooltop;
   u8 *flags;
   u32 *hash, hmask;
-  u32 starts[8]; /* each flags' start (row + 1), 0 when not made */
+  u32 starts[16]; /* each flags' start (row + 1), 0 when not made */
   u32 *scratch, *next, *mark, gen, *stack, prefix;
   u32 *saved; /* the sets of the rows kept while room is made (five at most) */
   u32 epoch;  /* how many times room was made (a move worked out across it is not kept) */
@@ -59,14 +60,16 @@ struct dfa {
 };
 
 static int byte_word(u8 b) { return b == '_' || (u32)((b | 0x20) - 'a') < 26u || (u32)(b - '0') < 10u; }
+/* The flags a run begun after byte b starts with (a line's start aside). */
+static u32 before(u8 b) { return b >= 0x80 ? F_UNK : byte_word(b) ? F_WORD : 0; }
 
-/* Split each class by whether its bytes are in `in` (bytes past ASCII kept whole when they quit). */
-static u32 refine(u8 *c, u32 n, const u64 *in, int keep_high) {
+/* Split each class by whether its bytes are in `in`. */
+static u32 refine(u8 *c, u32 n, const u64 *in) {
   u16 to_in[256], to_out[256];
   for (u32 i = 0; i < n; i++) to_in[i] = to_out[i] = 0xffff;
   u32 m = 0;
   for (u32 b = 0; b < 256; b++) {
-    u16 *t = set_has(in, (u8)b) && !(keep_high && b >= 0x80) ? to_in : to_out;
+    u16 *t = set_has(in, (u8)b) ? to_in : to_out;
     if (t[c[b]] == 0xffff) t[c[b]] = (u16)m++;
     c[b] = (u8)t[c[b]];
   }
@@ -78,17 +81,16 @@ static void dfa_classes(struct dfa *d) {
   u32 n = 1;
   memset(d->cls, 0, 256);
   u64 b[4] = {0};
-  if (d->quit) { bits_add(b, 0x80, 0xff); n = refine(d->cls, n, b, 0); }
-  memset(b, 0, 32), bits_add(b, '\n', '\n'), n = refine(d->cls, n, b, d->quit);
+  if (r->has_word) { bits_add(b, 0x80, 0xff); n = refine(d->cls, n, b); } /* (a \b beside them is not the DFA's) */
+  memset(b, 0, 32), bits_add(b, '\n', '\n'), n = refine(d->cls, n, b);
   if (r->has_word) {
     memset(b, 0, 32);
     for (u32 x = 0; x < 128; x++) if (byte_word((u8)x)) bits_add(b, x, x);
-    n = refine(d->cls, n, b, d->quit);
+    n = refine(d->cls, n, b);
   }
-  for (u32 s = 0; s < r->nsets; s++) n = refine(d->cls, n, r->sets + 4 * s, d->quit);
+  for (u32 s = 0; s < r->nsets; s++) n = refine(d->cls, n, r->sets + 4 * s);
   d->ncls = n;
   for (u32 x = 256; x-- > 0;) d->rep[d->cls[x]] = (u8)x;
-  d->hicls = d->quit ? d->cls[0x80] : ~0u;
 }
 
 /* The automaton's states reached from `in` through empty edges (and from the start, in D_LINES), assertions decided by
@@ -119,7 +121,9 @@ static u32 dfa_closure(struct dfa *d, const u32 *in, u32 n, u32 flags, int next)
             case A_BOL: ok = flags & F_BOL; break;
             case A_EOT: ok = next < 0; break;
             case A_EOL: ok = nnl; break;
-            default: ok = (!!(flags & F_WORD) != nword) == (st->a == A_WORD);
+            default:
+              if ((flags & F_UNK) || next >= 0x80) { d->unsure = 1; ok = 0; break; } /* Unicode's \w: the Pike machine's */
+              ok = (!!(flags & F_WORD) != nword) == (st->a == A_WORD);
           }
           if (ok) d->stack[top++] = st->out;
           break;
@@ -185,11 +189,12 @@ static void dfa_room(struct dfa *d, u32 *keep, u32 nkeep) {
 /* The move of the state at `row` on class c, worked out and kept: its target's row and what it says (T_*). keep[]: the
  * rows the caller holds, made again (and written back) when room must be made. */
 static u32 dfa_move(struct dfa *d, u32 *row, u32 c, u32 *keep, u32 nkeep) {
-  if (c == d->hicls) return d->trans[*row + c] = T_QUIT;
   u8 b = d->rep[c];
   for (;;) {
     u32 k = *row / d->ncls;
+    d->unsure = 0;
     u32 m = dfa_closure(d, d->pool + d->setat[k], d->setn[k], d->flags[k], b), matched = 0, nn = 0;
+    if (d->unsure) return d->trans[*row + c] = T_QUIT;
     u32 g = ++d->gen;
     if (!g) { memset(d->mark, 0, 4 * (u64)d->r->n); g = d->gen = 1; }
     for (u32 i = 0; i < m; i++) {
@@ -204,7 +209,7 @@ static u32 dfa_move(struct dfa *d, u32 *row, u32 c, u32 *keep, u32 nkeep) {
         d->next[nn++] = st->out;
       }
     }
-    u32 f = ((b == '\n' ? F_BOL : 0) | (byte_word(b) ? F_WORD : 0)) & d->need, v;
+    u32 f = ((b == '\n' ? F_BOL : 0) | (b >= 0x80 ? F_UNK : byte_word(b) ? F_WORD : 0)) & d->need, v;
     if (!nn && d->mode != D_LINES) v = T_DEAD; /* row 0 */
     else {
       u32 t = dfa_state(d, d->next, nn, f);
@@ -227,8 +232,8 @@ static u32 dfa_move(struct dfa *d, u32 *row, u32 c, u32 *keep, u32 nkeep) {
 static struct dfa *dfa_new(struct re *r, int mode) {
   struct dfa *d = (struct dfa *)grab(sizeof *d);
   memset(d, 0, sizeof *d);
-  d->r = r, d->mode = mode, d->quit = r->has_word;
-  d->need = (r->has_ends ? F_BOL | F_BOT : 0) | (r->has_word ? F_WORD : 0);
+  d->r = r, d->mode = mode;
+  d->need = (r->has_ends ? F_BOL | F_BOT : 0) | (r->has_word ? F_WORD | F_UNK : 0);
   d->prefix = mode == D_FWD ? r->n : ~0u;
   dfa_classes(d);
   u32 lg = 0;
@@ -301,8 +306,7 @@ static int dfa_line(struct dfa *d, const u8 *t, u64 ls, u64 le) {
 /* Where the leftmost-first match in the line t[ls..le) that begins at x or after it ends: its end, -1 when there is
  * none, -2 when the DFA cannot say. */
 static i64 dfa_fwd(struct dfa *d, const u8 *t, u64 ls, u64 le, u64 x) {
-  if (x > ls && t[x - 1] >= 0x80 && d->quit) return -2;
-  u32 row = dfa_start(d, x == ls ? F_BOL | F_BOT : x > ls && byte_word(t[x - 1]) ? F_WORD : 0, 0, 0);
+  u32 row = dfa_start(d, x == ls ? F_BOL | F_BOT : before(t[x - 1]), 0, 0);
   const u8 *cl = d->cls;
   i64 end = -1;
   for (u64 i = x; i < le; i++) {
@@ -322,8 +326,7 @@ static i64 dfa_fwd(struct dfa *d, const u8 *t, u64 ls, u64 le, u64 x) {
 /* Where the match that ends at e begins, it having begun at x or after (by the reverse DFA): its start, or -2 when the
  * DFA cannot say. */
 static i64 dfa_rev(struct dfa *d, const u8 *t, u64 ls, u64 le, u64 x, u64 e) {
-  if (e < le && t[e] >= 0x80 && d->quit) return -2;
-  u32 row = dfa_start(d, e == le ? F_BOL | F_BOT : byte_word(t[e]) ? F_WORD : 0, 0, 0);
+  u32 row = dfa_start(d, e == le ? F_BOL | F_BOT : before(t[e]), 0, 0);
   const u8 *cl = d->cls;
   i64 s = -1;
   for (u64 i = e; i > x; i--) {
@@ -347,8 +350,7 @@ static i64 dfa_rev(struct dfa *d, const u8 *t, u64 ls, u64 le, u64 x, u64 e) {
  * (another place on the line may cost as much again: the caller asks of the line once instead); -1 when the DFA
  * cannot say. */
 static int dfa_at(struct dfa *d, const u8 *t, u64 n, u64 x) {
-  if (x && t[x - 1] >= 0x80 && d->quit) return -1;
-  u32 row = dfa_start(d, !x || t[x - 1] == '\n' ? F_BOL | F_BOT : byte_word(t[x - 1]) ? F_WORD : 0, 0, 0);
+  u32 row = dfa_start(d, !x || t[x - 1] == '\n' ? F_BOL | F_BOT : before(t[x - 1]), 0, 0);
   const u8 *cl = d->cls;
   for (u64 i = x; i < n; i++) {
     u32 v = d->trans[row + cl[t[i]]];
