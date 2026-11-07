@@ -18,6 +18,7 @@ enum {
   SYS_dup2 = 33, SYS_fork = 57, SYS_pipe2 = 293,
   SYS_flock = 73, SYS_fsync = 74, SYS_getcwd = 79, SYS_getdents64 = 217, SYS_rename = 82, SYS_mkdir = 83,
   SYS_unlink = 87, SYS_clock_gettime = 228, SYS_exit_group = 231, SYS_newfstatat = 262,
+  SYS_madvise = 28, SYS_clone = 56, SYS_exit = 60, SYS_futex = 202, SYS_sched_getaffinity = 204,
 };
 enum { O_RDONLY = 0, O_WRONLY = 1, O_RDWR = 2, O_CREAT = 0100, O_TRUNC = 01000, O_APPEND = 02000, O_NONBLOCK = 04000,
        O_CLOEXEC = 02000000 };
@@ -57,6 +58,47 @@ static inline i64 sys6(i64 n, i64 a, i64 b, i64 c, i64 d, i64 e, i64 f) {
 
 __attribute__((noreturn)) static void leave(int code) {
   for (;;) sys1(SYS_exit_group, code);
+}
+
+/* ---- Threads: another flow of this process on a stack of its own, all else shared (as a C library's pthread_create,
+ * with none): run(arg) is called on the stack's top, and *left, the thread's id until it ends, is cleared then and
+ * woken (CLONE_CHILD_CLEARTID), which join waits for. What it may not do is what is not shared safely: lib's output
+ * (io.h put), and anything kept in a global; the arena it may take from (grab). */
+#define CLONE_THREAD_FLAGS (0x100 | 0x200 | 0x400 | 0x800 | 0x10000 | 0x40000 | 0x100000 | 0x200000)
+static i64 spawn(void (*run)(void *), void *arg, u8 *stack, u64 size, int *left) {
+  u64 *top = (u64 *)((u64)(stack + size) & ~15ul);
+  *--top = (u64)arg, *--top = (u64)run; /* (taken off it by the new thread: then the stack is as a call leaves it) */
+  i64 r;
+  register i64 r10 __asm__("r10") = (i64)left;
+  register i64 r8 __asm__("r8") = 0;
+  __asm__ volatile(
+      "syscall\n\t"
+      "test %%rax, %%rax\n\t"
+      "jnz 1f\n\t"
+      "pop %%rax\n\t"
+      "pop %%rdi\n\t"
+      "call *%%rax\n\t"
+      "mov $60, %%eax\n\t" /* exit: this thread only */
+      "xor %%edi, %%edi\n\t"
+      "syscall\n\t"
+      "ud2\n"
+      "1:"
+      : "=a"(r)
+      : "a"(SYS_clone), "D"(CLONE_THREAD_FLAGS), "S"(top), "d"(left), "r"(r10), "r"(r8)
+      : "rcx", "r11", "memory");
+  return r;
+}
+static void join(int *left) {
+  for (int v; (v = __atomic_load_n(left, __ATOMIC_ACQUIRE));) sys4(SYS_futex, (i64)left, 0 /* FUTEX_WAIT */, v, 0);
+}
+/* How many cores this process may run on (its affinity), one when the kernel will not say. */
+static u32 cores(void) {
+  u64 mask[16] = {0};
+  i64 n = sys3(SYS_sched_getaffinity, 0, sizeof mask, (i64)mask);
+  u32 c = 0;
+  for (i64 i = 0; i < n / 8; i++)
+    for (u64 m = mask[i]; m; m &= m - 1) c++; /* (no popcount: the baseline x86-64 has none, and libgcc's is not here) */
+  return c ? c : 1;
 }
 
 /* struct stat as x86-64 Linux lays it out. */

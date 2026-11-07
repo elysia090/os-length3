@@ -20,25 +20,19 @@ static int main_(int argc, char **argv, char **envp) {
   if (!r) fail("bad pattern: ", re_error);
   const u8 *in;
   u64 n = 0;
+  int mapped = 0;
   struct kstat st;
   if (!sys2(SYS_fstat, 0, (i64)&st) && IS_REG(st.mode) && st.size > 0) {
-    i64 m = sys6(SYS_mmap, 0, st.size, 1 /* PROT_READ */, 2 | 0x8000 /* MAP_PRIVATE, MAP_POPULATE: its pages at once */, 0, 0);
+    i64 m = sys6(SYS_mmap, 0, st.size, 1 /* PROT_READ */, 2 /* MAP_PRIVATE: its pages read in by each part's thread */, 0, 0);
     if (m < 0 && m > -4096) fail("cannot map the text", 0);
-    in = (const u8 *)m, n = (u64)st.size;
+    in = (const u8 *)m, n = (u64)st.size, mapped = 1;
   } else {
     u8 *b = grab(1 << 26);
     for (i64 k; n < (1 << 26) && (k = sys3(SYS_read, 0, (i64)(b + n), (i64)((1 << 26) - n))) > 0;) n += (u64)k;
     in = b;
   }
-  struct grep g;
-  grep_init(&g, r);
-  g.spans = !whole;
-  grep_text(&g, in, n);
-  for (u64 ls; (ls = grep_line(&g)) < n;) {
-    u64 le = line_end(in, n, ls);
-    if (whole) { put(in + ls, le - ls); put("\n", 1); continue; }
-    for (u64 x = ls, last = ~0ull, ms, me; grep_span(&g, ls, le, &x, &last, &ms, &me);) { put(in + ms, me - ms); put("\n", 1); }
-  }
+  struct pieces *all = grep_all(r, in, n, !whole, mapped);
+  for (u32 i = 0; i < all->n; i++) if (all->p[i].outn) put(all->p[i].out, all->p[i].outn);
   flush();
   return 0;
 }

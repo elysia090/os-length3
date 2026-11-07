@@ -2,7 +2,8 @@
 # you's regular expressions against Rust's regex crate as ripgrep runs it: every pattern of regex-patterns.txt over
 # regex-corpus.txt (code, punctuation, UTF-8 past ASCII and bytes that are not UTF-8), each line's matches as `rg -o`
 # gives them (empty ones too), the lines that hold one as `rg` gives them, and both with case aside (`-i`); then the
-# lines over the corpus many times over (past a block of the DFA's lanes). A pattern both refuse is the same too.
+# lines and the matches over the corpus many times over (past a block of the DFA's lanes, and in pieces searched by
+# threads at once). A pattern both refuse is the same too.
 #
 #   sh kernel/you/test/regex.sh RG     RG: ripgrep, to compare with; the driver is built by kernel/lib/build.sh
 set -eu
@@ -11,7 +12,8 @@ rg=$1
 t=$(mktemp -d)
 trap 'rm -rf "$t"' EXIT
 sh "$here/../../lib/build.sh" "$here/regex-driver.c" "$t/re" 2>/dev/null
-for k in $(seq 300); do cat "$here/regex-corpus.txt"; done > "$t/big"
+# (Past a block of the DFA's lanes, and cut into pieces for threads: more than 512 KiB a piece, grep.c GREP_PIECE.)
+for k in $(seq 3000); do cat "$here/regex-corpus.txt"; done > "$t/big"
 n=0 bad=0
 same() { # same WHAT FILE RG-ARGS -- RE-ARGS: the two say the same over FILE
   what=$1 file=$2; shift 2
@@ -32,6 +34,7 @@ while IFS= read -r p; do
   same "-i -o" "$here/regex-corpus.txt" -i -o -- -i
   same "-i lines" "$here/regex-corpus.txt" -i -- -i -l
   same "lines, many" "$t/big" -- -l
+  same "-o, many" "$t/big" -o --
 done < "$here/regex-patterns.txt"
-[ "$bad" = 0 ] || { echo "$bad of $((n * 5)) runs differ from ripgrep's" >&2; exit 1; }
-echo "ok: $n patterns, five ways each, as ripgrep finds them"
+[ "$bad" = 0 ] || { echo "$bad of $((n * 6)) runs differ from ripgrep's" >&2; exit 1; }
+echo "ok: $n patterns, six ways each, as ripgrep finds them"

@@ -6,16 +6,17 @@
 #pragma once
 #include "sys.h"
 
-/* What a run works in, used from its start and as far as it needs: what it is given is SLACK past what it asks for. */
+/* What a run works in, used from its start and as far as it needs: what it is given is SLACK past what it asks for.
+ * Taken at once (an atomic add), so threads (sys.h spawn) take from it side by side. */
 #ifndef ARENA
 #define ARENA (1 << 21)
 #endif
 static u8 arena[ARENA];
 static u64 used;
 static u8 *grab(u64 n) {
-  u8 *p = arena + used;
-  used += (n + SLACK + 15) & ~15ul;
-  if (used > sizeof arena) {
+  u64 size = (n + SLACK + 15) & ~15ul, at = __atomic_fetch_add(&used, size, __ATOMIC_RELAXED);
+  u8 *p = arena + at;
+  if (at + size > sizeof arena) {
     static const char m[] = UNIT ": out of room\n";
     sys3(SYS_write, 2, (i64)m, sizeof m - 1);
     leave(1);

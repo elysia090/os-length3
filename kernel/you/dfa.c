@@ -45,7 +45,7 @@ struct dfa {
   u32 *trans, max, n; /* a row of ncls moves a state; row 0 is the dead state */
   u32 *setat, *setn, *pool, pooln, pooltop;
   u8 *flags;
-  u32 *hash, hmask;
+  u32 *hash, hmask, hmost; /* the states by their sets: as large as half of it holds them, up to hmost + 1 */
   u32 starts[16]; /* each flags' start (row + 1), 0 when not made */
   u32 *scratch, *next, *mark, gen, *stack, prefix;
   u32 *saved; /* the sets of the rows kept while room is made (five at most) */
@@ -57,6 +57,7 @@ struct dfa {
   u32 p2;
   u8 *pc1, *pc2;
   u32 *ptrans;
+  struct pike pk; /* where it cannot say, the Pike machine's lists (its own: a thread's DFAs are its own) */
 };
 
 static int byte_word(u8 b) { return b == '_' || (u32)((b | 0x20) - 'a') < 26u || (u32)(b - '0') < 10u; }
@@ -76,20 +77,28 @@ static u32 refine(u8 *c, u32 n, const u64 *in) {
   return m;
 }
 /* The classes: bytes in the same sets, alike as words' characters and as \n, are one (refined set by set). */
-static void dfa_classes(struct dfa *d) {
-  struct re *r = d->r;
+/* The pattern's bytes in classes, made once for it (each DFA, of each thread, takes them: made before any thread is,
+ * grep.c grep_all). */
+static void re_classes(struct re *r) {
+  if (r->cls) return;
+  u8 *cls = grab(256);
   u32 n = 1;
-  memset(d->cls, 0, 256);
+  memset(cls, 0, 256);
   u64 b[4] = {0};
-  if (r->has_word) { bits_add(b, 0x80, 0xff); n = refine(d->cls, n, b); } /* (a \b beside them is not the DFA's) */
-  memset(b, 0, 32), bits_add(b, '\n', '\n'), n = refine(d->cls, n, b);
+  if (r->has_word) { bits_add(b, 0x80, 0xff); n = refine(cls, n, b); } /* (a \b beside them is not the DFA's) */
+  memset(b, 0, 32), bits_add(b, '\n', '\n'), n = refine(cls, n, b);
   if (r->has_word) {
     memset(b, 0, 32);
     for (u32 x = 0; x < 128; x++) if (byte_word((u8)x)) bits_add(b, x, x);
-    n = refine(d->cls, n, b);
+    n = refine(cls, n, b);
   }
-  for (u32 s = 0; s < r->nsets; s++) n = refine(d->cls, n, r->sets + 4 * s);
-  d->ncls = n;
+  for (u32 s = 0; s < r->nsets; s++) n = refine(cls, n, r->sets + 4 * s);
+  r->ncls = n, r->cls = cls;
+}
+static void dfa_classes(struct dfa *d) {
+  re_classes(d->r);
+  memcpy(d->cls, d->r->cls, 256);
+  d->ncls = d->r->ncls;
   for (u32 x = 256; x-- > 0;) d->rep[d->cls[x]] = (u8)x;
 }
 
@@ -142,6 +151,22 @@ static void dfa_forget(struct dfa *d) {
   memset(d->starts, 0, sizeof d->starts);
 }
 
+/* Where the set s (n states) with flags is, or would go, in the table. */
+static u32 dfa_hash(const struct dfa *d, const u32 *s, u32 n, u32 flags) {
+  u32 h = 2166136261u ^ flags;
+  for (u32 i = 0; i < n; i++) h = (h ^ s[i]) * 16777619u;
+  return h & d->hmask;
+}
+/* The table twice as large, every state put in again. */
+static void dfa_rehash(struct dfa *d) {
+  d->hmask = 2 * d->hmask + 1;
+  memset(d->hash, 0, 4 * ((u64)d->hmask + 1));
+  for (u32 k = 1; k < d->n; k++) {
+    u32 h = dfa_hash(d, d->pool + d->setat[k], d->setn[k], d->flags[k]);
+    while (d->hash[h]) h = (h + 1) & d->hmask;
+    d->hash[h] = k + 1;
+  }
+}
 /* The state of these automaton states (put in order when order does not matter, so one set is one state) and flags:
  * found, or made; ~0 when there is no room. */
 static u32 dfa_state(struct dfa *d, u32 *s, u32 n, u32 flags) {
@@ -151,15 +176,18 @@ static u32 dfa_state(struct dfa *d, u32 *s, u32 n, u32 flags) {
       for (; j && s[j - 1] > x; j--) s[j] = s[j - 1];
       s[j] = x;
     }
-  u32 h = 2166136261u ^ flags;
-  for (u32 i = 0; i < n; i++) h = (h ^ s[i]) * 16777619u;
-  for (h &= d->hmask;; h = (h + 1) & d->hmask) {
+  u32 h = dfa_hash(d, s, n, flags);
+  for (;; h = (h + 1) & d->hmask) {
     u32 k = d->hash[h];
     if (!k) break;
     k--;
     if (d->setn[k] == n && d->flags[k] == flags && !memcmp(d->pool + d->setat[k], s, 4 * (u64)n)) return k;
   }
   if (d->n == d->max || d->pooltop + n > d->pooln) return ~0u;
+  if (2 * (d->n + 1) > d->hmask + 1 && d->hmask < d->hmost) {
+    dfa_rehash(d);
+    for (h = dfa_hash(d, s, n, flags); d->hash[h]; h = (h + 1) & d->hmask) {}
+  }
   u32 k = d->n++;
   d->setat[k] = d->pooltop, d->setn[k] = n, d->flags[k] = (u8)flags;
   memcpy(d->pool + d->pooltop, s, 4 * (u64)n);
@@ -254,9 +282,12 @@ static struct dfa *dfa_new(struct re *r, int mode) {
     memset(d->ptrans, 0, 4ul << d->p2); /* row 0: a parked lane's, staying itself */
   }
   d->setat = (u32 *)grab(4 * (u64)d->max), d->setn = (u32 *)grab(4 * (u64)d->max), d->flags = grab(d->max);
-  for (d->hmask = 1; d->hmask < 2 * d->max; d->hmask <<= 1) {}
-  d->hmask--;
-  d->hash = (u32 *)grab(4 * ((u64)d->hmask + 1));
+  for (d->hmost = 1; d->hmost < 2 * d->max; d->hmost <<= 1) {}
+  d->hmost--;
+  /* Begun small and made larger as states come: most runs make a few dozen, and clearing a table for 65536 (and the
+   * pages it is on) took a thread most of a millisecond before it read a byte. */
+  d->hmask = d->hmost < 1023 ? d->hmost : 1023;
+  d->hash = (u32 *)grab(4 * ((u64)d->hmost + 1));
   d->pooln = DFA_ROOM / 4, d->pool = (u32 *)grab(DFA_ROOM);
   u64 n = (u64)r->n + 2;
   d->scratch = (u32 *)grab(4 * n), d->mark = (u32 *)grab(4 * n), d->stack = (u32 *)grab(4 * 3 * n);
@@ -572,7 +603,7 @@ static u32 dfa_lanes(struct dfa *d, const u8 *t, u64 n, u64 from, u64 to, u64 *o
       u32 v = dfa_step(d, &row[j], d->cls[t[i]], row, 4);
       if (!(v & (T_MATCH | T_QUIT))) { row[j] = v, p[j] = i + 1; continue; }
       u64 ls = line_start(t, b[j], i), le = line_end(t, e[j], i), ms, me;
-      if (v & T_MATCH || re_run(d->r, t + ls, le - ls, 0, &ms, &me)) out[b[j] - from + got[j]++] = ls;
+      if (v & T_MATCH || re_run(&d->pk, d->r, t + ls, le - ls, 0, &ms, &me)) out[b[j] - from + got[j]++] = ls;
       if (le == e[j]) live[j] = 0; /* the text's last line, no \n after it: seen to */
       else p[j] = le + 1, row[j] = dfa_start(d, F_BOL | F_BOT, row, 4);
     }

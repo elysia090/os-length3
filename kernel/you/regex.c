@@ -30,13 +30,22 @@ struct re {
   u32 n, cap;
   u64 *sets; /* 256 bits each, each set once */
   u32 nsets, setcap;
+  u16 *sethash; /* the sets by their bits (each its place + 1; 0: none), for set_of: twice as many places as sets */
+  u32 sethmask;
+  u8 *cls;      /* its bytes in classes, a class each set tells apart from the rest (dfa.c dfa_classes), once made */
+  u32 ncls;
   u32 start;
-  /* What every match must hold, and whether the pattern is that literal and nothing more (then case aside or not). */
+  /* What every match must hold, and whether the pattern is that literal and nothing more (then case aside or not);
+   * the places in it of its two rarest bytes (rare[0] < rare[1], one place twice when it is a byte), looked for first. */
   u8 *lit;
-  u32 litn;
+  u32 litn, rare[2];
   int only_lit, icase, lit_first; /* lit_first: every match begins with the literal */
   /* The assertions it holds: a word's edge (\b \B), a line's or the text's ends (^ $ \A \z). */
   int has_word, has_ends;
+  /* What every match begins with, byte by byte, where that is rare enough to look for (firsts): nfirst bytes, the jth
+   * one in one of first[j]'s ranges (lo, hi, inclusive), nrange[j] of them. */
+  u32 nfirst;
+  u8 first[4][4][2], nrange[4];
   struct re *rev; /* backwards (re_reverse), made when first asked for */
 };
 
@@ -54,10 +63,28 @@ static u32 state(u8 op, u8 a, u16 set, u32 out, u32 out1) {
   R->st[R->n] = (struct rstate){op, a, set, out, out1};
   return R->n++;
 }
-/* The set of these 256 bits: the one already made that is the same, or a new one. */
+/* Where the set b goes in the table of sets. */
+static u32 set_hash(const u64 *b) {
+  u64 h = b[0] * 0x9e3779b97f4a7c15ull ^ b[1] * 0xc2b2ae3d27d4eb4full ^ b[2] * 0x165667b19e3779f9ull ^ b[3] * 0x27d4eb2f165667c5ull;
+  return (u32)(h ^ h >> 31) & R->sethmask;
+}
+/* The set of these 256 bits: the one already made that is the same, or a new one. Found by its bits in a table (a
+ * Unicode class makes hundreds of sets, each looked for among those before it: \w took 3 ms to make). */
 static u16 set_of(const u64 *b) {
-  for (u32 i = 0; i < R->nsets; i++)
-    if (!memcmp(R->sets + 4 * i, b, 32)) return (u16)i;
+  if (2 * (R->nsets + 1) > R->sethmask + 1) {
+    R->sethmask = R->sethmask ? 2 * R->sethmask + 1 : 63;
+    R->sethash = (u16 *)grab(2 * ((u64)R->sethmask + 1));
+    memset(R->sethash, 0, 2 * ((u64)R->sethmask + 1));
+    for (u32 i = 0; i < R->nsets; i++) {
+      u32 h = set_hash(R->sets + 4 * i);
+      while (R->sethash[h]) h = (h + 1) & R->sethmask;
+      R->sethash[h] = (u16)(i + 1);
+    }
+  }
+  u32 h = set_hash(b);
+  for (; R->sethash[h]; h = (h + 1) & R->sethmask)
+    if (!memcmp(R->sets + 4 * (R->sethash[h] - 1), b, 32)) return (u16)(R->sethash[h] - 1);
+  R->sethash[h] = (u16)(R->nsets + 1);
   if (R->nsets == R->setcap) {
     u64 *m = (u64 *)grab(32 * (u64)R->setcap * 2);
     memcpy(m, R->sets, 32 * (u64)R->nsets);
@@ -682,6 +709,25 @@ static u32 skip_token(const u8 *p, u32 n, u32 i) {
   return i + 1;
 }
 
+/* How common each byte is in text as code is (0 the rarest, 255 the most common: a space), from a corpus of this
+ * repository's own source (C, Rust, TypeScript, shell, Markdown): a literal is looked for by its two rarest bytes, as
+ * ripgrep does, not by its first and last ("fn " found by its f and n, not by every f two before a space). */
+static const u8 RARITY[256] = {
+  0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 239, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+  255, 198, 220, 169, 178, 124, 209, 234, 243, 244, 213, 176, 238, 211, 242, 228, 216, 204, 194, 191, 188, 171, 184, 159, 172, 160, 233, 231, 189, 227, 215, 196,
+  117, 202, 182, 193, 185, 212, 181, 170, 180, 199, 137, 166, 192, 187, 195, 200, 197, 90, 205, 214, 210, 174, 168, 179, 136, 148, 99, 208, 177, 207, 131, 219,
+  203, 251, 226, 240, 245, 254, 232, 229, 241, 247, 183, 222, 246, 235, 250, 249, 237, 190, 248, 252, 253, 236, 221, 230, 217, 223, 173, 225, 201, 224, 89, 31,
+  163, 206, 186, 175, 139, 110, 123, 103, 151, 158, 140, 155, 152, 141, 86, 127, 125, 97, 132, 149, 102, 138, 120, 156, 93, 146, 133, 143, 121, 101, 87, 129,
+  109, 116, 104, 96, 130, 105, 150, 147, 122, 107, 126, 154, 94, 119, 162, 153, 92, 91, 88, 134, 95, 100, 98, 115, 118, 113, 111, 108, 165, 106, 161, 114,
+  32, 33, 112, 85, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61,
+  62, 63, 135, 218, 144, 167, 164, 145, 142, 128, 64, 65, 66, 67, 68, 157, 84, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83
+};
+static u32 rarity(u8 c, int ci) {
+  u32 r = RARITY[c];
+  if (ci && c >= 'a' && c <= 'z' && RARITY[c - 32] > r) r = RARITY[c - 32];
+  return r;
+}
+
 /* Whether a character's circle of case reaches past ASCII. */
 static int case_wide(u32 c) {
   struct cls k;
@@ -737,6 +783,73 @@ static void required(struct re *r, const u8 *p, u32 n, int ci) {
   r->only_lit = plain_only && best == n - from;
   r->lit_first = bestat == from;
   r->icase = ci;
+  /* Its two rarest bytes (in text as code is, either case where case is aside): where it is looked for. */
+  u32 a = 0, b = 0;
+  for (u32 i = 1; i < best; i++) {
+    u32 ri = rarity(r->lit[i], ci);
+    if (ri < rarity(r->lit[a], ci)) b = a, a = i;
+    else if (b == a || ri < rarity(r->lit[b], ci)) b = i;
+  }
+  r->rare[0] = a < b ? a : b, r->rare[1] = a < b ? b : a;
+}
+
+/*
+ * What every match begins with, a byte at a time: the bytes the states reached from the start with none read can take
+ * (its first), those the states they lead to can take (its second), and so on, while no match can have ended (the
+ * match state is not reached), each such set a few ranges, and none of them most of what text holds. Where they make
+ * a match rare enough among a text's places (each's share of text's bytes, multiplied: under 1/32), they are kept
+ * (grep.c: a text's places looked at 16 or 32 bytes at a time for those that begin so, each asked of the DFA there).
+ */
+static u32 share(const u64 *b) { /* a set's share of a text's bytes, in 1/1024: printable ASCII and tab as common, the rest rare */
+  u32 w = 0;
+  for (u32 c = 0; c < 256; c++)
+    if (b[c >> 6] >> (c & 63) & 1) w += (c >= 0x20 && c < 0x7f) || c == '\t' ? 1024 / 96 : 0;
+  return w + 1;
+}
+static void firsts(struct re *r) {
+  u32 n = r->n, *mark = (u32 *)grab(4 * (u64)n), *now = (u32 *)grab(4 * (u64)n), *stack = (u32 *)grab(8 * (u64)n + 8);
+  memset(mark, 0xff, 4 * (u64)n);
+  u32 nnow = 1, odds = 1024; /* (the share of places that begin so, in 1/1024: a product) */
+  now[0] = r->start;
+  r->nfirst = 0;
+  for (u32 j = 0; j < 4 && nnow; j++) {
+    /* The states reached with no byte read: those that take a byte, and whether a match ends here. */
+    u64 b[4] = {0};
+    u32 top = 0, sets = 0, ended = 0;
+    for (u32 k = 0; k < nnow; k++) stack[top++] = now[k];
+    while (top) {
+      u32 v = stack[--top];
+      if (mark[v] == j) continue;
+      mark[v] = j;
+      struct rstate *st = &r->st[v];
+      if (st->op == S_MATCH) ended = 1;
+      else if (st->op == S_SET) { for (int w = 0; w < 4; w++) b[w] |= r->sets[4 * st->set + w]; now[sets++] = v; }
+      else if (st->op == S_SPLIT) stack[top++] = st->out1, stack[top++] = st->out;
+      else stack[top++] = st->out; /* a jump, an assertion (it only narrows) */
+    }
+    if (ended) break;
+    /* As ranges, four at most. */
+    u32 nr = 0;
+    for (u32 c = 0; c < 256 && nr <= 4;) {
+      if (!(b[c >> 6] >> (c & 63) & 1)) { c++; continue; }
+      u32 e = c;
+      while (e + 1 < 256 && b[(e + 1) >> 6] >> ((e + 1) & 63) & 1) e++;
+      if (nr < 4) r->first[j][nr][0] = (u8)c, r->first[j][nr][1] = (u8)e;
+      nr++;
+      c = e + 1;
+    }
+    u32 sh = share(b);
+    if (!nr || nr > 4 || sh > 1024 * 6 / 10) break;
+    r->nrange[j] = (u8)nr;
+    r->nfirst = j + 1;
+    odds = odds * sh / 1024;
+    /* What those states lead to. */
+    u32 next = 0;
+    for (u32 k = 0; k < sets; k++) stack[next++] = r->st[now[k]].out;
+    for (u32 k = 0; k < next; k++) now[k] = stack[k];
+    nnow = next;
+  }
+  if (odds * 32 > 1024) r->nfirst = 0;
 }
 
 static struct re *re_compile(const u8 *pat, u32 n, int flags) {
@@ -754,6 +867,7 @@ static struct re *re_compile(const u8 *pat, u32 n, int flags) {
   if (lines) for (u32 i = 0; i < r->nsets; i++) r->sets[4 * i] &= ~(1ull << '\n'); /* no match crosses a line */
   r->start = f.start == ~0u ? m : f.start;
   required(r, pat, n, flags & RE_ICASE);
+  firsts(r);
   return r;
 }
 
@@ -765,7 +879,7 @@ static struct re *re_reverse(struct re *f) {
   if (f->rev) return f->rev;
   struct re *r = (struct re *)grab(sizeof *r);
   *r = *f;
-  r->rev = 0, r->lit = 0, r->litn = 0, r->only_lit = 0, r->lit_first = 0;
+  r->rev = 0, r->lit = 0, r->litn = 0, r->only_lit = 0, r->lit_first = 0, r->nfirst = 0;
   u32 n = f->n, *cnt = (u32 *)grab(4 * ((u64)n + 1)), *first = (u32 *)grab(4 * ((u64)n + 1));
   memset(cnt, 0, 4 * ((u64)n + 1));
   for (u32 u = 0; u < n; u++) {
@@ -884,21 +998,70 @@ static int holds(u8 a, const u8 *t, u64 n, u64 i) {
 }
 
 /* Where a literal is in s[from..n), case aside when told (the literal small): its place, or n. Thirty-two places at
- * a time: where its first byte and its last are both (either case, when case is aside), then the rest compared. */
+ * a time: where its two rarest bytes (rare[]) are both (either case, when case is aside), then the rest compared. */
 typedef char v16 __attribute__((vector_size(16)));
 static inline v16 ld128(const u8 *p) { v16 v; __builtin_memcpy(&v, p, 16); return v; }
 static inline v16 splat(u8 c) { return (v16){0} + (char)c; }
 static inline u32 mask16(v16 v) { return (u32)__builtin_ia32_pmovmskb128(v); }
 static inline u8 up(u8 c) { return c >= 'a' && c <= 'z' ? c - 32 : c; }
-static u64 lit_find(const u8 *s, u64 n, u64 from, const u8 *lit, u32 litn, int ci) {
+/* Whether this core runs AVX2 and the kernel keeps its registers (cpuid's leaf 7, and XGETBV's YMM state): a part of
+ * the text is then looked at 64 bytes a step. xlat (the browser) says it has no AVX: there the 16-byte way. Asked once,
+ * before any thread (grep_init). */
+static int avx2;
+static void avx2_ask(void) {
+  u32 a, b, c, d;
+  __asm__("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(0), "c"(0));
+  if (a < 7) return;
+  __asm__("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(1), "c"(0));
+  if (!(c & (1u << 27)) || !(c & (1u << 28))) return; /* OSXSAVE, AVX */
+  u32 lo, hi;
+  __asm__("xgetbv" : "=a"(lo), "=d"(hi) : "c"(0));
+  if ((lo & 6) != 6) return; /* the XMM and YMM state kept */
+  __asm__("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(7), "c"(0));
+  avx2 = (b >> 5) & 1;
+}
+typedef char v32 __attribute__((vector_size(32)));
+__attribute__((target("avx2"))) static inline v32 ld256(const u8 *p) { v32 v; __builtin_memcpy(&v, p, 32); return v; }
+__attribute__((target("avx2"))) static inline u32 mask32(v32 v) { return (u32)__builtin_ia32_pmovmskb256(v); }
+/* lit_find (below), 64 places a step: the same, in 32-byte registers. */
+__attribute__((target("avx2"))) static u64 lit_find_avx2(const u8 *s, u64 n, u64 from, const u8 *lit, u32 litn, int ci, const u32 *rare) {
+  u32 a = rare[0], b = rare[1];
+  u8 f0 = lit[a], l0 = lit[b];
+  u64 i = from, last = n - litn;
+  if (!ci || (up(f0) == f0 && up(l0) == l0)) {
+    v32 F = (v32){0} + (char)f0, L = (v32){0} + (char)l0;
+    for (; i + 64 <= last + 1; i += 64) {
+      u64 m = (u64)mask32((ld256(s + i + a) == F) & (ld256(s + i + b) == L)) | (u64)mask32((ld256(s + i + 32 + a) == F) & (ld256(s + i + 32 + b) == L)) << 32;
+      for (; m; m &= m - 1) {
+        u64 p = i + (u32)__builtin_ctzll(m);
+        if (ci ? eqi(s + p, lit, litn) : eq(s + p, lit, litn)) return p;
+      }
+    }
+  } else {
+    v32 F0 = (v32){0} + (char)f0, F1 = (v32){0} + (char)up(f0), L0 = (v32){0} + (char)l0, L1 = (v32){0} + (char)up(l0);
+    for (; i + 64 <= last + 1; i += 64) {
+      v32 w = ld256(s + i + a), x = ld256(s + i + b), y = ld256(s + i + 32 + a), z = ld256(s + i + 32 + b);
+      u64 m = (u64)mask32(((w == F0) | (w == F1)) & ((x == L0) | (x == L1))) | (u64)mask32(((y == F0) | (y == F1)) & ((z == L0) | (z == L1))) << 32;
+      for (; m; m &= m - 1) {
+        u64 p = i + (u32)__builtin_ctzll(m);
+        if (eqi(s + p, lit, litn)) return p;
+      }
+    }
+  }
+  for (; i <= last; i++)
+    if ((s[i + a] == f0 || (ci && up(s[i + a]) == up(f0))) && (ci ? eqi(s + i, lit, litn) : eq(s + i, lit, litn))) return i;
+  return n;
+}
+static u64 lit_find(const u8 *s, u64 n, u64 from, const u8 *lit, u32 litn, int ci, const u32 *rare) {
   if (litn > n || from > n - litn) return n;
-  u32 o = litn - 1;
-  u8 f0 = lit[0], l0 = lit[o];
+  if (avx2) return lit_find_avx2(s, n, from, lit, litn, ci, rare);
+  u32 a = rare[0], b = rare[1];
+  u8 f0 = lit[a], l0 = lit[b];
   u64 i = from, last = n - litn;
   if (!ci || (up(f0) == f0 && up(l0) == l0)) { /* each byte one way */
     v16 F = splat(f0), L = splat(l0);
     for (; i + 32 <= last + 1; i += 32) {
-      u32 m = mask16((ld128(s + i) == F) & (ld128(s + i + o) == L)) | mask16((ld128(s + i + 16) == F) & (ld128(s + i + 16 + o) == L)) << 16;
+      u32 m = mask16((ld128(s + i + a) == F) & (ld128(s + i + b) == L)) | mask16((ld128(s + i + 16 + a) == F) & (ld128(s + i + 16 + b) == L)) << 16;
       for (; m; m &= m - 1) {
         u64 p = i + (u32)__builtin_ctz(m);
         if (ci ? eqi(s + p, lit, litn) : eq(s + p, lit, litn)) return p;
@@ -907,8 +1070,8 @@ static u64 lit_find(const u8 *s, u64 n, u64 from, const u8 *lit, u32 litn, int c
   } else {
     v16 F0 = splat(f0), F1 = splat(up(f0)), L0 = splat(l0), L1 = splat(up(l0));
     for (; i + 32 <= last + 1; i += 32) {
-      v16 a = ld128(s + i), b = ld128(s + i + o), c = ld128(s + i + 16), d = ld128(s + i + 16 + o);
-      u32 m = mask16(((a == F0) | (a == F1)) & ((b == L0) | (b == L1))) | mask16(((c == F0) | (c == F1)) & ((d == L0) | (d == L1))) << 16;
+      v16 w = ld128(s + i + a), x = ld128(s + i + b), y = ld128(s + i + 16 + a), z = ld128(s + i + 16 + b);
+      u32 m = mask16(((w == F0) | (w == F1)) & ((x == L0) | (x == L1))) | mask16(((y == F0) | (y == F1)) & ((z == L0) | (z == L1))) << 16;
       for (; m; m &= m - 1) {
         u64 p = i + (u32)__builtin_ctz(m);
         if (eqi(s + p, lit, litn)) return p;
@@ -916,31 +1079,29 @@ static u64 lit_find(const u8 *s, u64 n, u64 from, const u8 *lit, u32 litn, int c
     }
   }
   for (; i <= last; i++)
-    if ((s[i] == f0 || (ci && up(s[i]) == up(f0))) && (ci ? eqi(s + i, lit, litn) : eq(s + i, lit, litn))) return i;
+    if ((s[i + a] == f0 || (ci && up(s[i + a]) == up(f0))) && (ci ? eqi(s + i, lit, litn) : eq(s + i, lit, litn))) return i;
   return n;
 }
 
-/* The Pike machine's lists: the states live now, each once, in the order of their priority (sparse sets). */
-static u32 *pk_dense[2], *pk_sparse[2], pk_n[2];
-static u64 *pk_from[2];
-static u32 pk_cap;
-static int pk_has(int l, u32 s) { u32 k = pk_sparse[l][s]; return k < pk_n[l] && pk_dense[l][k] == s; }
+/* The Pike machine's lists: the states live now, each once, in the order of their priority (sparse sets), and its
+ * stack. Each DFA has its own (dfa.c), so threads each with their own DFAs run it at once. */
+struct pike { u32 *dense[2], *sparse[2], n[2]; u64 *from[2]; u32 cap; u32 *stack; };
+static int pk_has(struct pike *pk, int l, u32 s) { u32 k = pk->sparse[l][s]; return k < pk->n[l] && pk->dense[l][k] == s; }
 
-static u32 *pk_stack;
 /* Follow the empty edges from `s` at position i into list l, in priority order (a stack, out before out1). */
-static void pk_add(struct re *r, int l, u32 s0, u64 from, const u8 *t, u64 n, u64 i) {
+static void pk_add(struct pike *pk, struct re *r, int l, u32 s0, u64 from, const u8 *t, u64 n, u64 i) {
   u32 top = 0;
-  pk_stack[top++] = s0;
+  pk->stack[top++] = s0;
   while (top) {
-    u32 s = pk_stack[--top];
-    if (pk_has(l, s)) continue;
-    pk_sparse[l][s] = pk_n[l];
-    pk_dense[l][pk_n[l]] = s;
-    pk_from[l][pk_n[l]++] = from;
+    u32 s = pk->stack[--top];
+    if (pk_has(pk, l, s)) continue;
+    pk->sparse[l][s] = pk->n[l];
+    pk->dense[l][pk->n[l]] = s;
+    pk->from[l][pk->n[l]++] = from;
     struct rstate *st = &r->st[s];
-    if (st->op == S_JUMP) pk_stack[top++] = st->out;
-    else if (st->op == S_SPLIT) pk_stack[top++] = st->out1, pk_stack[top++] = st->out;
-    else if (st->op == S_ASSERT && holds(st->a, t, n, i)) pk_stack[top++] = st->out;
+    if (st->op == S_JUMP) pk->stack[top++] = st->out;
+    else if (st->op == S_SPLIT) pk->stack[top++] = st->out1, pk->stack[top++] = st->out;
+    else if (st->op == S_ASSERT && holds(st->a, t, n, i)) pk->stack[top++] = st->out;
   }
 }
 
@@ -948,26 +1109,26 @@ static void pk_add(struct re *r, int l, u32 s0, u64 from, const u8 *t, u64 n, u6
  * thread before it) until a match is found; each thread, in priority order, matched (then those after it are cut off:
  * they rank below it) or taken over the byte. A thread ranked above the match goes on and may end a longer match,
  * which then stands, as leftmost-first has it. */
-static int re_run(struct re *r, const u8 *t, u64 n, u64 from, u64 *ms, u64 *me) {
-  if (pk_cap < r->n) {
-    pk_cap = r->n;
+static int re_run(struct pike *pk, struct re *r, const u8 *t, u64 n, u64 from, u64 *ms, u64 *me) {
+  if (pk->cap < r->n) {
+    pk->cap = r->n;
     for (int l = 0; l < 2; l++) {
-      pk_dense[l] = (u32 *)grab(4 * (u64)pk_cap), pk_sparse[l] = (u32 *)grab(4 * (u64)pk_cap);
-      pk_from[l] = (u64 *)grab(8 * (u64)pk_cap);
+      pk->dense[l] = (u32 *)grab(4 * (u64)pk->cap), pk->sparse[l] = (u32 *)grab(4 * (u64)pk->cap);
+      pk->from[l] = (u64 *)grab(8 * (u64)pk->cap);
     }
-    pk_stack = (u32 *)grab(4 * (u64)pk_cap * 2 + 8);
+    pk->stack = (u32 *)grab(4 * (u64)pk->cap * 2 + 8);
   }
   int cur = 0, found = 0;
-  pk_n[0] = 0;
+  pk->n[0] = 0;
   for (u64 i = from;; i++) {
-    if (!found) pk_add(r, cur, r->start, i, t, n, i);
-    if (!pk_n[cur]) break;
+    if (!found) pk_add(pk, r, cur, r->start, i, t, n, i);
+    if (!pk->n[cur]) break;
     int nx = cur ^ 1;
-    pk_n[nx] = 0;
-    for (u32 k = 0; k < pk_n[cur]; k++) {
-      struct rstate *st = &r->st[pk_dense[cur][k]];
-      if (st->op == S_MATCH) { *ms = pk_from[cur][k], *me = i, found = 1; break; }
-      if (st->op == S_SET && i < n && set_has(r->sets + 4 * st->set, t[i])) pk_add(r, nx, st->out, pk_from[cur][k], t, n, i + 1);
+    pk->n[nx] = 0;
+    for (u32 k = 0; k < pk->n[cur]; k++) {
+      struct rstate *st = &r->st[pk->dense[cur][k]];
+      if (st->op == S_MATCH) { *ms = pk->from[cur][k], *me = i, found = 1; break; }
+      if (st->op == S_SET && i < n && set_has(r->sets + 4 * st->set, t[i])) pk_add(pk, r, nx, st->out, pk->from[cur][k], t, n, i + 1);
     }
     if (i >= n) break;
     cur = nx;
