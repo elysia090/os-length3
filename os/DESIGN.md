@@ -2306,7 +2306,16 @@ cuts short while it reads each key (killed, or stopped with Ctrl+Z) gives the
 shell the terminal back as the shell had it, its prompt line a line again, as
 bash does; brought back with fg, the program has its own again.
 The editor's own keys (Ctrl+K and Ctrl+P to the search, Ctrl+B the pane) stay
-the page's, as an editor's terminal leaves them. Ended (exit, stopped), its switch comes in
+the page's, as an editor's terminal leaves them. On the desk its box holds 24
+lines and scrolls within itself by its own scroll, not the page's: a short ink
+bar at the box's right edge, as long as what is shown is of the whole and where
+it is, there while it is scrolled or pointed at and a moment after, thicker
+under the hand and dragged; what lies past its top or foot fades out at that
+edge, so it is seen to be there. Exited or stopped there (or its close
+pressed), it is seen ended a beat, then its box goes as a terminal's window
+closes; the band's >_ lays it again at the top of the first column with a new
+shell in it, the keyboard in it (failing to start, it stays, to be read). Ended
+(exit, stopped), its switch comes in
 going over from on to off and its output flares and dims as a tube switched
 off does, staying dim to be read; switched on again, the old screen goes down
 to a bright line across its middle, the box takes the new one's height, and

@@ -6,6 +6,7 @@ import {onSync} from '../../remote/lifecycle.ts';
 import {onChange, onRenamed, store} from '../../repos/repos.ts';
 import type {Context} from '../kit/context.ts';
 import {bench, type Bench} from '../bench/bench.ts';
+import {sessionIfAny} from '../bench/sessions.ts';
 import {openNext as openConversation} from '../kit/next.ts';
 import type {Writing} from '../kit/context.ts';
 import {startIssue} from '../git/issue-form.ts';
@@ -17,6 +18,10 @@ import {Desk} from './desk.ts';
 import {deskFile, renameIn, type DeskFile} from './desk-file.ts';
 import {asPath, isFile, wordAt} from './term-links.ts';
 import {deedsUnder, fileDeeds, renaming, split, untitled} from '../kit/file-deeds.ts';
+
+/** A terminal exited or stopped is seen ended (what it said, its switch going over to off) this long before its box
+ * goes. */
+const TERM_GOES_MS = 900;
 
 /**
  * Forge, the place you work. The repos out to work on run as pills in a band on the top line; ⊕ brings the rest out
@@ -115,7 +120,7 @@ class Forge {
     this.work = bench({strip, main: this.center, desk: true, reveal: (path, line, write) => this.revealAt(path, line, write),
       place: (path) => this.place(path), frame: (keys) => { if (this.now.repo) this.deskOf(this.now.repo).desk.frame(keys); },
       word: (a) => { openConversation(a); void ctx.go('inbox'); },
-      toTerm: () => { if (this.now.repo) this.deskOf(this.now.repo).desk.take('term'); },
+      toTerm: () => { if (this.now.repo) this.termTo(this.now.repo); },
       besideTerm: (repo, element) => {
         const {desk} = this.deskOf(repo);
         if (!desk.has('agent')) desk.lay('agent', {element, name: 'agent', dir: '', after: `/root/${repo}`, focus: () => element.focus({preventScroll: true})}, undefined, 'term');
@@ -320,9 +325,12 @@ class Forge {
         const path = area.closest<HTMLElement>('.desk-file')?.dataset.path;
         if (path && area.selectionStart !== undefined) this.ctx.leftAt(repo, path, area.selectionStart);
       });
-      const term = this.work.terminal!;
-      desk.lay('term', {element: h('div', {class: 'desk-term-home'}), name: 'sh', dir: '', after: `/root/${repo}`,
-        focus: () => term.querySelector<HTMLTextAreaElement>('.prompt-in')?.focus({preventScroll: true})}, 0);
+      this.layTerm(repo, desk);
+      // Exited or stopped (not failed: that is read where it is), the terminal's box goes, as a terminal's window
+      // closes; the band's >_ opens one again (termTo).
+      desk.element.addEventListener('term-gone', () => {
+        setTimeout(() => { if (sessionIfAny(repo)?.ended && desk.has('term')) desk.lift('term'); }, TERM_GOES_MS);
+      });
       // As it was left: the boxes where they lay, the one in hand.
       const was = keptDesk(repo);
       // (The Agent's terminal is born again when it is asked again; a desk kept has none.)
@@ -333,6 +341,28 @@ class Forge {
       restoring = false;
     }
     return d;
+  }
+
+  /** The terminal's box laid on `repo`'s `desk` (at the top of the first column: `top`, when it is laid again). */
+  private layTerm(repo: string, desk: Desk, top = false) {
+    const term = this.work.terminal!;
+    desk.lay('term', {element: h('div', {class: 'desk-term-home'}), name: 'sh', dir: '', after: `/root/${repo}`,
+      focus: () => term.querySelector<HTMLTextAreaElement>('.prompt-in')?.focus({preventScroll: true})}, 0, undefined, {top});
+  }
+
+  /**
+   * The band's >_: the terminal in hand; gone from the desk (exited, stopped, closed), it is laid again at the top of
+   * the first column, a shell started in it (an ended one started again), and taken in hand.
+   */
+  private termTo(repo: string) {
+    const {desk} = this.deskOf(repo);
+    if (!desk.has('term')) {
+      this.layTerm(repo, desk, true);
+      desk.element.querySelector('.desk-box[data-key="term"] .desk-term-home')?.replaceChildren(this.work.terminal!);
+      const s = sessionIfAny(repo);
+      if (s?.ended) s.restart();
+    }
+    desk.take('term');
   }
 
   /** `path` of `repo` laid on its desk `d` as a box (in column `col`, or under the box in hand). */
@@ -352,7 +382,14 @@ class Forge {
   /** A file's box taken off the desk (its close, or the file gone); the Prompt's stays. */
   private shut(repo: string, key: string) {
     const d = this.desks.get(repo);
-    if (!d || key === 'term') return;
+    if (!d) return;
+    // The terminal's close: its box goes at once and its shell is stopped, as a terminal's window closed.
+    if (key === 'term') {
+      d.desk.lift('term');
+      const s = sessionIfAny(repo);
+      if (s && !s.ended) void s.stop();
+      return;
+    }
     d.files.get(key)?.drop();
     d.files.delete(key);
     d.desk.lift(key);

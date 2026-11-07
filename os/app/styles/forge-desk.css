@@ -110,6 +110,20 @@
 .desk-term .term-box { display: block; padding: 0; min-height: 0; }
 .desk-term .term-head { display: none; }
 .desk-term .term-out { margin: 0; font: var(--t-code)/1.6 var(--mono); max-height: calc(24 * 1.6em); overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain; }
+/* The terminal's own scroll (ui/scroll-thumb.ts), in its box: an ink bar at the box's right edge, as long as what is
+   shown is of the whole, there while it is scrolled or pointed at, a moment more; held, it is thicker. What lies past
+   the top or the foot fades out at that edge, so it is seen to be there. */
+.desk-term .term { position: relative; }
+.scroll-thumb { display: none; }
+.desk-term .scroll-thumb { display: block; position: absolute; top: 0; right: calc(-1 * var(--s4) + 6px); width: 3px; border-radius: 0;
+  background: var(--ink); opacity: 0; pointer-events: none; cursor: var(--cursor-hand);
+  transition: opacity calc(160ms * var(--pace)) ease-out, width calc(120ms * var(--pace)) var(--land), right calc(120ms * var(--pace)) var(--land); }
+.desk-term .scroll-thumb.shown { opacity: 1; pointer-events: auto; }
+.desk-term .scroll-thumb:is(:hover, .held) { width: 6px; right: calc(-1 * var(--s4) + 4px); }
+.desk-term .term.more-above > .term-out { mask-image: linear-gradient(transparent, #000 1.6em); }
+.desk-term .term.more-below > .term-out { mask-image: linear-gradient(#000 calc(100% - 1.6em), transparent); }
+.desk-term .term.more-above.more-below > .term-out { mask-image: linear-gradient(transparent, #000 1.6em, #000 calc(100% - 1.6em), transparent); }
+@media (prefers-reduced-motion: reduce) { .desk-term .scroll-thumb { transition: none; } }
 .desk-term > .dock { position: static; max-width: none; margin: 0; }
 .desk-term > .dock::after { display: none; }
 .desk-after { margin-left: 1ch; }

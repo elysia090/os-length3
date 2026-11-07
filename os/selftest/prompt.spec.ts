@@ -108,6 +108,8 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(out).toContainText(/\[1\]\+\s+Stopped/);
     await box.fill('fg');
     await box.press('Enter');
+    // Brought back: the shell says the job's line as it puts it in front again, and it runs on till cut.
+    await expect(out).toContainText(/^sleep 30$/m);
     await expect(ps).toHaveText('');
     await box.press('Control+c');
     await expect(ps).toHaveText(/hello \$/);
@@ -143,6 +145,20 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(page.locator('.vt-screen')).toHaveCount(0);
     await app.forge.run('echo whole');
     await expect(out).toContainText(/^whole$/m);
+  });
+
+  test('exit closes the terminal\'s box as a terminal\'s window closes; the band\'s >_ lays it again with a new shell in it', async ({app}) => {
+    const page = app.forge.prompt.page(), termBox = page.locator('.desk-box[data-key="term"]');
+    await app.forge.run('echo before');
+    await app.forge.promptBox.fill('exit');
+    await app.forge.promptBox.press('Enter');
+    await expect(termBox).toHaveCount(0);
+    await app.forge.tools.getByRole('button', {name: 'Terminal', exact: true}).click();
+    await expect(termBox).toHaveCount(1);
+    await expect(app.forge.promptBox).toBeFocused();
+    await app.forge.run('echo again');
+    await expect(app.forge.prompt.locator('.term-out')).toContainText(/^again$/m);
+    await expect(app.forge.prompt.locator('.term-out')).not.toContainText('before');
   });
 
   test('on the desk, a line running has no prompt line after it, as a terminal has none till it is done; the line written is moved up at once', async ({app}) => {

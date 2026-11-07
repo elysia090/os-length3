@@ -13,6 +13,7 @@ import {Activity} from './activity.ts';
 import {endLine, goDark, jolt, switchOver} from './ending.ts';
 import {clips, heldBack, OSC, RAN} from './osc.ts';
 import {Output, strip} from './output.ts';
+import {scrollThumb} from '../../ui/scroll-thumb.ts';
 import {asOne, FirstPrompt, waitsAt} from './prompt-line.ts';
 import {mirror, snapshot, WriteBack} from './repo-copy.ts';
 import {sessions, type Prompt, type Run} from './sessions.ts';
@@ -183,6 +184,8 @@ export class Session implements Prompt {
     onLang(() => this.sayEnded());
     this.activity = new Activity({live: () => this.live, interrupt: () => this.interrupt(), restart: () => this.restart()});
     this.element = h('div', {class: 'term'}, this.status, this.out.element, this.activity.element);
+    // Its own scroll, drawn in its box (on the desk: forge-desk.css .scroll-thumb), in place of the page's thin bar.
+    scrollThumb(this.out.element);
     this.copy = new WriteBack(repo, this.id, (said) => { this.status.textContent = said; });
   }
 
@@ -463,7 +466,7 @@ export class Session implements Prompt {
     if (!root?.current) return false;
     this.native = await promptOpen(this.repo, {
       output: (text) => { this.activity.heard = Date.now(); this.received(text); },
-      exit: (code) => { if (this.live) this.end(() => t('Exited with code {code}', {code})); },
+      exit: (code) => { if (this.live) this.end(() => t('Exited with code {code}', {code}), '', true); },
     });
     this.on = 'root';
     this.live = true;
@@ -532,7 +535,7 @@ export class Session implements Prompt {
         this.tell();
         break;
       case 'waiting': this.waiting(data); break;
-      case 'exit': this.end(() => t('Exited with code {code}', {code: data.status >> 8})); break;
+      case 'exit': this.end(() => t('Exited with code {code}', {code: data.status >> 8}), '', true); break;
       case 'error': this.end(() => t('Halted: {message}', {message: data.message.split('\n')[0]})); break;
     }
   }
@@ -568,7 +571,7 @@ export class Session implements Prompt {
    * then does it say so, and the promise is kept once it has.
    */
   stop(): Promise<void> {
-    if (!this.native) { this.end(() => t('Stopped')); return Promise.resolve(); }
+    if (!this.native) { this.end(() => t('Stopped'), '', true); return Promise.resolve(); }
     // On the root: stopped only once the host shows none of its processes left.
     const n = this.native;
     return n.close().then((s) => {
@@ -577,8 +580,8 @@ export class Session implements Prompt {
         const back = s.before.memory ? t('Freed {size}', {size: bytes(s.before.memory)}) : '';
         return s.left ? tn('Stopping ({n} process remaining)', 'Stopping ({n} processes remaining)', s.left)
           : back ? t('Stopped (freed {back} · {ms} ms)', {back, ms: String(s.ms)}) : t('Stopped');
-      });
-    }, () => this.end(() => t('Stopped')));
+      }, '', true);
+    }, () => this.end(() => t('Stopped'), '', true));
   }
 
   /** While a line runs, say what it is doing, once it has taken a moment (activity.ts). */
@@ -657,7 +660,12 @@ export class Session implements Prompt {
   /** Why it ended, when it did not start: the title of what it says. */
   private why = '';
 
-  private end(message: () => string, why = '') {
+  /**
+   * Ended: what it says once ended (`message`; `why` it did not start, where it did not). `gone`: it ended as one
+   * closes a terminal (exit, stopped), not by failing: whatever shows it hears so ('term-gone', bubbling from its
+   * element: a desk takes its box off, to be opened again from the band), unless it is being started again.
+   */
+  private end(message: () => string, why = '', gone = false) {
     this.ended = true;
     this.holding(false);
     this.said = message;
@@ -679,6 +687,7 @@ export class Session implements Prompt {
     this.preparing = false;
     this.tell();
     this.sayEnded(true);
+    if (gone && !this.restarting) this.element.dispatchEvent(new CustomEvent('term-gone', {bubbles: true}));
   }
 
   /** What it says once ended; `now` as it ends, which is seen: the switch goes over to off, and the screen goes dark. */

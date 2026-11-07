@@ -327,7 +327,7 @@ export class Desk {
    * sliding down to its place (one opened now, not one laid again as it was left); `how.instead`: it takes the place
    * of that box, where it lies, as it is (a file renamed: no move at all), in hand if that one was.
    */
-  lay(key: string, laid: Laid, col?: number, beside?: string, how: {slide?: boolean; instead?: string} = {}) {
+  lay(key: string, laid: Laid, col?: number, beside?: string, how: {slide?: boolean; instead?: string; top?: boolean} = {}) {
     if (this.#boxes.has(key)) return;
     const name = h('span', {class: 'desk-name'}, laid.name);
     const label = h('div', {class: 'desk-label'}, h('span', {class: 'desk-dir'}, laid.dir), name,
@@ -382,7 +382,7 @@ export class Desk {
     if (byCol >= 0) this.#cols.splice(byCol + 1, 0, [key]);
     else if (col !== undefined) {
       while (this.#cols.length <= col) this.#cols.push([]);
-      this.#cols[col].push(key);
+      if (how.top) this.#cols[col].unshift(key); else this.#cols[col].push(key);
     } else {
       const c = this.#held === null ? -1 : this.#cols.findIndex((k) => k.includes(this.#held!));
       if (c < 0) this.#cols[0].push(key);
