@@ -90,6 +90,40 @@ export function wholeOf(boxes: {slot: Slot; h: number}[], w: number, hgt: number
   return {s, x: (w - (r - l) * s) / 2 - l * s, y: Math.max(TOP, (hgt - (b - t) * s) / 2) - t * s};
 }
 
+/** Held up to be carried, the least the camera goes back to have the desk in sight whole round the box; a desk too
+ * wide for it is seen round the box at it. */
+export const LIFTED_LEAST = 0.25;
+/** How far in from the face's edges a box carried is kept. */
+export const KEPT = 2 * GRID;
+
+/**
+ * Held up to be carried (Ctrl), the camera over the desk as it may stand while `held` goes across it, still: every box,
+ * room for one more column (the box's own, out of the column it shares: `shares`) and for the box under the longest
+ * column, laid as wholeOf lays them; the box goes across a desk that stands, never with a camera after it. A desk too
+ * wide for that at LIFTED_LEAST is seen at it round the box instead (the camera goes with the box only as far as keeps
+ * it in sight: kept).
+ */
+export function liftedOf(boxes: {slot: Slot; h: number}[], held: {slot: Slot; h: number}, shares: boolean, w: number, hgt: number): View {
+  let right = -Infinity, low = -Infinity, top = Infinity;
+  for (const {slot, h} of boxes) { right = Math.max(right, slot.x); low = Math.max(low, slot.y + h); top = Math.min(top, slot.y); }
+  const room = [...boxes, {slot: {x: held.slot.x, y: low + VGAP}, h: held.h}];
+  if (shares) room.push({slot: {x: right + WIDTH + GAP, y: top}, h: held.h});
+  const whole = wholeOf(room, w, hgt);
+  if (whole.s >= LIFTED_LEAST) return whole;
+  const s = LIFTED_LEAST, t = top - 24, b = low + VGAP + held.h + 8;
+  return {s, x: w / 2 - (held.slot.x + WIDTH / 2) * s, y: Math.max(TOP, (hgt - (b - t) * s) / 2) - t * s};
+}
+
+/** `v` moved the least that keeps the box at `slot` (`h` high) KEPT in from the edges of a face `w` by `hgt` (its top
+ * only, down to a third of the face, when it is taller than the face): `v` itself while it is in sight. */
+export function kept(v: View, slot: Slot, h: number, w: number, hgt: number): View {
+  const l = v.x + slot.x * v.s, r = l + WIDTH * v.s, t = v.y + slot.y * v.s, tall = h * v.s;
+  const dx = l < KEPT ? KEPT - l : r > w - KEPT ? w - KEPT - r : 0;
+  const low = tall <= hgt - 2 * KEPT ? hgt - KEPT - tall : hgt / 3;
+  const dy = t < KEPT ? KEPT - t : t > low ? low - t : 0;
+  return dx || dy ? {s: v.s, x: v.x + dx, y: v.y + dy} : v;
+}
+
 /**
  * At the standard, over the boxes at `boxes` (each its slot and height) at once, as they lie: their middle in the
  * face's middle when they all fit in it; null when they do not (the camera goes along to the one at work instead,

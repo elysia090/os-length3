@@ -1987,8 +1987,16 @@ under it at the standard, the hand gone. Ctrl and an arrow carry the box in
 hand a slot, wherever the keyboard is (writing in it, it stays there; with the
 finger on a box, Ctrl alone takes it up): lifted while Ctrl is held, its shadow
 long and the hand closed on it (its fingers over the edge), the others stepping
-over, the camera following a little behind; Ctrl let go, it is put down with a
-small give. Sideways the slots alternate, as a sheet is put between two others:
+over. Held up, the camera stands back over the desk it is to go across (the
+whole desk, with room for the column it may make; with the finger on it, once
+Ctrl has been held a moment, so a shortcut's Ctrl moves nothing) and stays
+still while it goes: the box crosses a desk that stands, never with the camera
+after it (after it, a little behind, the box was neither still nor moving).
+Carried at once, the camera steps back about the box as it slides, one move;
+only a desk too wide to be seen whole is gone along, as far as keeps the box in
+sight, with it, in its own way and time. Ctrl let go, it is put down with a
+small give, and the camera comes back to where it stood, on the box where it
+now lies. Sideways the slots alternate, as a sheet is put between two others:
 out of a column with others it goes first into the gap beside it, a column of
 its own between two side by side, then on into the next column; at the desk's
 edge it stays and the desk nudges. The other arrow takes each step back

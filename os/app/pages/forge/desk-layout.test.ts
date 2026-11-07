@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {ABOVE_SEEN, bornOn, carried, EYE, FOOT, GAP, next, overAll, PAD, PULLED, pulledOn, slots, standardOn, tabbed, TOP, VGAP, WHOLE_MOST, WIDTH, wholeOf} from './desk-layout.ts';
+import {ABOVE_SEEN, bornOn, carried, EYE, FOOT, GAP, kept, KEPT, LIFTED_LEAST, liftedOf, next, overAll, PAD, PULLED, pulledOn, slots, standardOn, tabbed, TOP, VGAP, WHOLE_MOST, WIDTH, wholeOf} from './desk-layout.ts';
 
 // The desk's places and its camera (desk-layout.ts), as numbers.
 
@@ -100,4 +100,41 @@ test('an arrow takes the finger along a column or to the next; Ctrl and an arrow
   // Out of the last column with others: a column past it; a column of its own at the edge stays.
   assert.deepEqual(carried([['term', 'x']], 'x', 'right'), [['term'], ['x']]);
   assert.deepEqual(carried([['term'], ['x']], 'x', 'right'), [['term'], ['x']]);
+});
+
+test('held up, the camera stands over the desk as it may stand: the box carried across it every way stays in sight', () => {
+  const tall = (key: string) => (key === 'term' ? 160 : 70);
+  const boxes = (c: string[][]) => [...slots(c, tall)].map(([key, slot]) => ({key, slot, h: tall(key)}));
+  const start = [['term', 'a.c'], ['README.md'], ['notes.md']];
+  const held = boxes(start).find((b) => b.key === 'a.c')!;
+  const v = liftedOf(boxes(start), held, true, 956, 780);
+  assert.ok(v.s <= WHOLE_MOST && v.s >= LIFTED_LEAST);
+  // Every way it can be carried, three steps each way: every box wholly in the face, the camera never moved.
+  const seen = (c: string[][]) => {
+    for (const b of boxes(c)) {
+      const l = v.x + b.slot.x * v.s, t = v.y + b.slot.y * v.s;
+      assert.ok(l >= 0 && l + WIDTH * v.s <= 956 && t >= 0 && t + b.h * v.s <= 780, `${b.key} out of sight in ${JSON.stringify(c)}`);
+    }
+  };
+  for (const way of ['left', 'right', 'up', 'down'] as const) {
+    let c = start;
+    for (let k = 0; k < 3; k++) { c = carried(c, 'a.c', way); seen(c); }
+  }
+  // A desk too wide for that is seen round the box, at the least.
+  const wide = [['term', 'a.c'], ...Array.from({length: 12}, (_, k) => [`f${k}`])];
+  const round = liftedOf(boxes(wide), boxes(wide).find((b) => b.key === 'a.c')!, true, 956, 780);
+  assert.equal(round.s, LIFTED_LEAST);
+  assert.equal(round.x + (PAD + WIDTH / 2) * round.s, 956 / 2);
+});
+
+test('carried out of sight, the camera goes only as far as keeps the box in; in sight, it stays', () => {
+  const v = {s: .5, x: 0, y: 0}, slot = {x: 100, y: 100};
+  assert.equal(kept(v, slot, 70, 956, 780), v);
+  const right = kept(v, {x: 1800, y: 100}, 70, 956, 780);
+  assert.deepEqual(right, {s: .5, x: 956 - KEPT - (1800 + WIDTH) * .5, y: 0});
+  const left = kept(v, {x: -400, y: 100}, 70, 956, 780);
+  assert.equal(left.x + -400 * .5, KEPT);
+  // Too tall for the face: its top kept a third of the way down, at most.
+  const deep = kept(v, {x: 100, y: 1400}, 4000, 956, 780);
+  assert.equal(deep.y + 1400 * .5, 780 / 3);
 });

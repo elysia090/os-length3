@@ -1,7 +1,7 @@
 import {h} from '../../ui/dom.ts';
 import {still} from '../../ui/glide.ts';
 import {t} from '../../i18n/i18n.ts';
-import {bornOn, carried, next, overAll, PAD, pulledOn, slots, standardOn, tabbed, WIDTH, wholeOf, type Slot, type View} from './desk-layout.ts';
+import {bornOn, carried, kept, liftedOf, next, overAll, PAD, pulledOn, slots, standardOn, tabbed, WIDTH, wholeOf, type Slot, type View} from './desk-layout.ts';
 
 // A repo's desk, Forge's center (DESIGN.md § Forge, the desk): what is open lies on a plane, each box as wide as 80
 // columns of code, its name outside its top-left corner, on dots. The Prompt's box is the first; files opened lie
@@ -56,9 +56,31 @@ function scrollsItself(from: Element, desk: Element, dx: number, dy: number): bo
 const pan = (x: number) => x * x * x * (10 - 15 * x + 6 * x * x);
 /** Landing: quick away, slowing into its place. */
 const land = (x: number) => 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 3);
+/** A cubic Bézier from rest to rest, as CSS's cubic-bezier(x1, y1, x2, y2): how far along at `x` of the time. */
+function bezier(x1: number, y1: number, x2: number, y2: number) {
+  const at = (a: number, b: number, t: number) => 3 * a * t * (1 - t) * (1 - t) + 3 * b * t * t * (1 - t) + t * t * t;
+  return (x: number) => {
+    if (x <= 0 || x >= 1) return Math.min(1, Math.max(0, x));
+    let lo = 0, hi = 1;
+    for (let k = 0; k < 20; k++) { const t = (lo + hi) / 2; if (at(x1, x2, t) < x) lo = t; else hi = t; }
+    return at(y1, y2, (lo + hi) / 2);
+  };
+}
+/** A box's way to its place, and its time (styles: .desk-box, its translate): the camera made to go with a box goes so. */
+const slide = bezier(.45, 0, .2, 1);
+const SLIDE_MS = 640;
+/** Back over the desk as a box is held up: quick, done before the arrow that carries it is pressed; and how long Ctrl
+ * is held on it first (a shortcut's Ctrl, Ctrl and S, Ctrl and -, is let go or joined by its key before then). */
+const LIFT_MS = 300;
+const LIFT_WAIT = 140;
 /** How the camera goes: along (pan); coming back to the box (in: going first, then zooming); stepping back (out:
- * zooming first, then going). */
-type Way2 = 'pan' | 'in' | 'out';
+ * zooming first, then going); with a box carried (slide: as it slides, the same way in the same time); back over the
+ * desk as a box is held up (lift: going and zooming at once, as a slide, quick). */
+type Way2 = 'pan' | 'in' | 'out' | 'slide' | 'lift';
+interface Point { x: number; y: number }
+/** A box carried a slot: its middle on the desk where it stood, and the camera over the desk to stand still at, if it
+ * is the first slot it is carried (none: the camera stands still already). */
+interface Carried { from: Point; over: View | null }
 
 /** A box on the desk; `placed` once it has stood somewhere (before, it has no place to move from). */
 interface Box { key: string; laid: Laid; el: HTMLElement; label: HTMLElement; slot: Slot; placed?: boolean }
@@ -150,6 +172,18 @@ export class Desk {
   /** Where the box in hand's top stands on the face, as it was when it was taken in hand: it stays there as the box
    * grows or shrinks under the work (none: to be found again). */
   #topAt: number | null = null;
+  /** Where the camera stands still while a box is carried, over the desk as it may stand (liftedOf): the box goes across
+   * it, the camera never after it (one after it, a little behind, left the box neither still nor moving). Moved only as
+   * far as keeps the box in sight, with it. Let go once the box is put down (the camera back where it stood) or the
+   * camera is moved otherwise. */
+  #still: View | null = null;
+  /** Where the camera stood before the box in hand was held up: gone back to once it is put down, on the box where it now
+   * lies. */
+  #liftedFrom: Camera | null = null;
+  /** The camera's going back over the desk, waiting on Ctrl held a moment; and whether the box held up has been carried
+   * yet (a key other than an arrow before then was a shortcut's: the camera stays the person's). */
+  #lifting = 0;
+  #carrying = false;
   /** Each box's size heard: grown or shrunk (a line written, a notice in its head), the desk is laid again. */
   readonly #sized = new ResizeObserver(() => { cancelAnimationFrame(this.#sizing); this.#sizing = requestAnimationFrame(() => this.#relay()); });
   #sizing = 0;
@@ -207,7 +241,7 @@ export class Desk {
     this.element.addEventListener('beforeinput', (e) => writtenIn(e.target), true);
     this.element.addEventListener('pointerdown', (e) => { this.#pressing = (e.target as Element).closest<HTMLElement>('.desk-box')?.dataset.key ?? null; }, true);
     for (const end of ['pointerup', 'pointercancel'] as const) addEventListener(end, () => { setTimeout(() => { this.#pressing = null; }); }, true);
-    new ResizeObserver(() => this.#relay()).observe(this.element);
+    new ResizeObserver(() => { this.#still = null; this.#relay(); }).observe(this.element);
     this.element.addEventListener('scroll', () => {
       // On its way the camera is the plane's move, the desk's scroll at rest: what the page scrolls meanwhile (the caret
       // brought into view as a box far off is written in) is undone before it is drawn.
@@ -253,8 +287,10 @@ export class Desk {
   }
 
   /** The camera to `c` (gliding there, unless `glide` is false): stepping back it zooms and then goes, coming nearer it
-   * goes and then zooms. */
-  #setCam(c: Camera, glide = true) {
+   * goes and then zooms (or as `how` says, the box carried on `path`, as #go). Over the whole desk, it stands at
+   * `still` if it is given (a box carried across it). */
+  #setCam(c: Camera, glide = true, still: View | null = null, how?: Way2, path?: {from: Point; to: Point}) {
+    this.#still = still;
     if (c === this.#cam) return;
     const back = CAMERAS.indexOf(c) > CAMERAS.indexOf(this.#cam);
     this.#cam = c;
@@ -263,7 +299,7 @@ export class Desk {
     if (c === 'standard') this.#bornUnder = null;
     this.element.classList.toggle('pulled', c === 'pulled');
     this.element.classList.toggle('whole', c === 'whole');
-    this.#look(glide, back ? 'out' : 'in');
+    this.#look(glide, how ?? (back ? 'out' : 'in'), path);
   }
 
   /** The camera a place back (`by` 1) or nearer (-1), no further than the whole desk nor nearer than the standard. */
@@ -372,6 +408,7 @@ export class Desk {
       standAt(el, above.slot.x, above.slot.y + Math.max(0, above.el.offsetHeight - tall));
       box.placed = true;
     }
+    this.#still = null;
     this.#relay();
   }
 
@@ -403,7 +440,8 @@ export class Desk {
     this.#boxes.delete(key);
     this.#cols = this.#cols.map((c) => c.filter((k) => k !== key)).filter((c, i) => c.length || i === 0);
     this.#trail = null;
-    this.#relay(false, true);
+    this.#still = null;
+    this.#relay(null, true);
     if (this.#held === key) { this.#held = null; if (after) this.take(after); }
   }
 
@@ -435,6 +473,7 @@ export class Desk {
     this.#placeHand();
     this.#framed = null;
     this.#topAt = null;
+    this.#still = null;
     if (focus && this.#cam !== 'standard') this.#setCam('standard', glide);
     else this.#look(glide);
     // The keyboard into it: the finger, the keyboard's on the desk, goes (as Enter into it takes it away).
@@ -494,24 +533,56 @@ export class Desk {
     this.element.scrollBy(e.deltaX, e.deltaY);
   }
 
-  /** Held up (`on`): the box in hand lifted, its shadow longer, the hand closed on it; put down, with a small give. */
-  #lifted(on: boolean) {
+  /** Held up (`on`): the box in hand lifted, its shadow longer, the hand closed on it, and (`look`: Ctrl held a moment,
+   * the finger on it) the camera stepping back over the desk it is to go across, before it goes. Put down, with a small
+   * give, the camera back to where it stood, on the box where it now lies. */
+  #lifted(on: boolean, look = false) {
     const b = this.#held ? this.#boxes.get(this.#held) : undefined;
     if (!b || b.el.classList.contains('lifted') === on) return;
     b.el.classList.toggle('lifted', on);
     if (on) this.#showHand(true);
     this.#hand.classList.toggle('shut', on);
     this.#placeHand();
-    if (!on && !still()) b.el.animate([{scale: '1'}, {scale: '.992'}, {scale: '1'}], {duration: 200, easing: 'ease-out'});
+    clearTimeout(this.#lifting);
+    this.#lifting = 0;
+    if (on) {
+      this.#liftedFrom = this.#cam;
+      this.#carrying = false;
+      if (look) this.#lifting = window.setTimeout(() => this.#liftCamera(), LIFT_WAIT);
+      return;
+    }
+    if (!still()) b.el.animate([{scale: '1'}, {scale: '.992'}, {scale: '1'}], {duration: 200, easing: 'ease-out'});
+    const was = this.#liftedFrom;
+    this.#liftedFrom = null;
+    if (was && was !== this.#cam) this.#setCam(was);
+    else if (was && this.#still) { this.#still = null; this.#look(true); }
+  }
+
+  /** Ctrl held on the box in hand a moment, nothing carried yet: the camera back over the desk it is to go across. */
+  #liftCamera() {
+    this.#lifting = 0;
+    const over = this.#liftedFrom && !this.#carrying ? this.#overDesk() : null;
+    if (over && this.#cam !== 'whole') this.#setCam('whole', true, over, 'lift');
+    else if (over) { this.#still = over; this.#look(true, 'lift'); }
+  }
+
+  /** A key other than an arrow while a box is held up: a shortcut's, not a carry. The camera stays the person's (where
+   * it stood when the box was held up, if nothing was carried), not taken back once Ctrl is let go. */
+  #liftDropped() {
+    clearTimeout(this.#lifting);
+    this.#lifting = 0;
+    const was = this.#liftedFrom;
+    this.#liftedFrom = null;
+    if (was && !this.#carrying && was !== this.#cam) this.#setCam(was);
   }
 
   /** Places measured again (a box grew or shrank): the boxes go where they now belong, the camera with them. */
   relayout() { this.#relay(); }
 
   /** The boxes to their places, the camera with them: at once (or, on its way, going on to where it now goes), gliding
-   * there (`glide`: the desk changed under it, a box taken off), or following them a little behind (`follow`: a box
-   * carried). */
-  #relay(follow = false, glide = false) {
+   * there (`glide`: the desk changed under it, a box taken off), or standing still as a box is carried across it
+   * (`follow`). */
+  #relay(follow: Carried | null = null, glide = false) {
     const heights = (key: string) => this.#boxes.get(key)?.el.offsetHeight ?? 0;
     const at = slots(this.#cols, heights);
     // Room round the boxes for the camera to stand any one of them in the middle, across and down (it scrolls over the
@@ -533,7 +604,7 @@ export class Desk {
     this.#plane.style.width = `${right + w}px`;
     this.#plane.style.height = `${bottom + hgt}px`;
     this.#placeHand();
-    if (follow) this.#look(true, 'pan', 900);
+    if (follow) this.#follow(follow);
     else {
       const to = this.#target();
       if (to && this.#glide) this.#glide.to = to;
@@ -548,6 +619,7 @@ export class Desk {
   #target(): View | null {
     const w = this.element.clientWidth, hgt = this.element.clientHeight;
     if (!w || !hgt) return null;
+    if (this.#cam === 'whole' && this.#still) return this.#still;
     if (this.#cam === 'whole') return wholeOf([...this.#boxes.values()].map((b) => ({slot: b.slot, h: b.el.offsetHeight})), w, hgt);
     const b = this.#held ? this.#boxes.get(this.#held) : this.#boxes.values().next().value;
     const under = b && this.#bornUnder?.key === b.key ? this.#boxes.get(this.#bornUnder.above) : undefined;
@@ -564,10 +636,40 @@ export class Desk {
     return to;
   }
 
-  /** The camera to where it should look now (`moving`: gliding there, the way `how`, in `ms`). */
-  #look(moving: boolean, how: Way2 = 'pan', ms?: number) {
+  /** The camera to where it should look now (`moving`: gliding there, the way `how`). */
+  #look(moving: boolean, how: Way2 = 'pan', path?: {from: Point; to: Point}) {
     const to = this.#target();
-    if (to) this.#go(to, moving && !still(), how, ms);
+    if (to) this.#go(to, moving && !still(), how, undefined, path);
+  }
+
+  /** Where the camera stands over the desk as it stands now while the box in hand is carried across it (liftedOf); or
+   * (`about`: carried at once, no Ctrl held first) as far back, about the box where it is on the face, so that it goes
+   * across the face the way it is carried as the camera steps back. */
+  #overDesk(about = false): View | null {
+    const b = this.#held ? this.#boxes.get(this.#held) : undefined;
+    const el = this.element, w = el.clientWidth, hgt = el.clientHeight;
+    if (!b || !w || !hgt) return null;
+    const shares = (this.#cols.find((c) => c.includes(b.key))?.length ?? 0) > 1;
+    const over = liftedOf([...this.#boxes.values()].map((o) => ({slot: o.slot, h: o.el.offsetHeight})), {slot: b.slot, h: b.el.offsetHeight}, shares, w, hgt);
+    if (!about) return over;
+    const cur = this.#glide?.to ?? (el.scrollLeft || el.scrollTop ? {s: 1, x: -el.scrollLeft, y: -el.scrollTop} : this.#view);
+    const mx = b.slot.x + WIDTH / 2, my = b.slot.y + b.el.offsetHeight / 2;
+    return {s: over.s, x: cur.x + mx * (cur.s - over.s), y: cur.y + my * (cur.s - over.s)};
+  }
+
+  /** A box carried a slot (`c`): the camera still (held up with Ctrl, it stands over the desk already), unless it is the
+   * first slot carried at once (back about the box then, as it slides: one move, not two) or the box would go out of
+   * sight (as far as keeps it in, with it). Moving, it goes as the box goes, the same way in the same time, the box's
+   * own way across the face one straight move. */
+  #follow(c: Carried) {
+    const b = this.#held ? this.#boxes.get(this.#held) : undefined;
+    const base = c.over ?? this.#still;
+    if (!b || !base) { this.#look(true); return; }
+    const to = kept(base, b.slot, b.el.offsetHeight, this.element.clientWidth, this.element.clientHeight);
+    const path = {from: c.from, to: {x: b.slot.x + WIDTH / 2, y: b.slot.y + b.el.offsetHeight / 2}};
+    if (this.#cam !== 'whole') this.#setCam('whole', true, to, 'slide', path);
+    // (Still on its way back over the desk, or after the slot before, it goes on there as the box goes.)
+    else if (c.over || to !== this.#still || this.#glide) { this.#still = to; this.#go(to, !still(), 'slide', SLIDE_MS, path); }
   }
 
   /**
@@ -577,7 +679,7 @@ export class Desk {
    * stands on the face and how near: going along, both at once; coming back, it goes before it zooms; stepping back, it
    * zooms before it goes.
    */
-  #go(to: View, moving: boolean, how: Way2 = 'pan', ms = how === 'pan' ? 560 : 520) {
+  #go(to: View, moving: boolean, how: Way2 = 'pan', ms = how === 'pan' ? 560 : how === 'slide' ? SLIDE_MS : how === 'lift' ? LIFT_MS : 520, path?: {from: Point; to: Point}) {
     cancelAnimationFrame(this.#moving);
     this.#moving = 0;
     this.#glide = null;
@@ -600,10 +702,12 @@ export class Desk {
     };
     this.#gliding = true;
     if (!moving) { set(to, true); this.#gliding = false; return; }
-    // The box in hand's middle, on the desk: where it is on the face, and how near, are what move.
+    // The box in hand's middle, on the desk: where it is on the face, and how near, are what move. Carried (`path`), it
+    // is where the box is on its way, so the box goes across the face in one straight move however the camera moves.
     const b = this.#held ? this.#boxes.get(this.#held) : undefined;
-    const m = b ? {x: b.slot.x + WIDTH / 2, y: b.slot.y + b.el.offsetHeight / 2} : {x: (el.clientWidth / 2 - from.x) / from.s, y: (el.clientHeight / 2 - from.y) / from.s};
-    const pf = {x: m.x * from.s + from.x, y: m.y * from.s + from.y};
+    const m0 = b ? {x: b.slot.x + WIDTH / 2, y: b.slot.y + b.el.offsetHeight / 2} : {x: (el.clientWidth / 2 - from.x) / from.s, y: (el.clientHeight / 2 - from.y) / from.s};
+    const mid = (p: number) => (path ? {x: path.from.x + (path.to.x - path.from.x) * p, y: path.from.y + (path.to.y - path.from.y) * p} : m0);
+    const pf = {x: mid(0).x * from.s + from.x, y: mid(0).y * from.s + from.y};
     const glide = this.#glide = {to};
     // A box coming out from under another: it is out before the camera goes after it.
     const lag = performance.now() - this.#comingAt < 60 ? 90 : 0, t0 = performance.now() + lag;
@@ -614,9 +718,9 @@ export class Desk {
       // A glide gone after another is let go: two at once would draw the camera back and forth a frame at a time.
       if (this.#glide !== glide) return;
       const k = Math.max(0, Math.min(1, (now - t0) / ms));
-      const [p, q] = how === 'in' ? [land(k / .45), land((k - .45) / .55)] : how === 'out' ? [land((k - .55) / .45), land(k / .55)] : [pan(k), pan(k)];
-      const end = glide.to, pt = {x: m.x * end.s + end.x, y: m.y * end.s + end.y};
-      const s = from.s * Math.pow(end.s / from.s, q);
+      const [p, q] = how === 'slide' || how === 'lift' ? [slide(k), slide(k)] : how === 'in' ? [land(k / .45), land((k - .45) / .55)] : how === 'out' ? [land((k - .55) / .45), land(k / .55)] : [pan(k), pan(k)];
+      const end = glide.to, m1 = mid(1), pt = {x: m1.x * end.s + end.x, y: m1.y * end.s + end.y};
+      const s = from.s * Math.pow(end.s / from.s, q), m = mid(p);
       const at = {x: pf.x + (pt.x - pf.x) * p, y: pf.y + (pt.y - pf.y) * p};
       set(k >= 1 ? end : {s, x: at.x - m.x * s, y: at.y - m.y * s}, k >= 1);
       veil.follow(this.#pointerAt);
@@ -661,6 +765,7 @@ export class Desk {
     const bare = !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey;
     // The finger on a box: the keyboard on the desk itself.
     const finger = e.target === this.element && this.#held !== null;
+    if (this.#liftedFrom && e.key !== 'Control' && !(way && e.ctrlKey)) this.#liftDropped();
     if (zoom && e.key === '-') { e.preventDefault(); this.#step(1); }
     // Never nearer than the standard: Ctrl and + comes a place nearer, Ctrl and 0 to the standard.
     else if (zoom && (e.key === '=' || e.key === '+')) { e.preventDefault(); this.#step(-1); }
@@ -673,8 +778,8 @@ export class Desk {
       this.#showHand(true);
       this.#setCam(CAMERAS[(CAMERAS.indexOf(this.#cam) + 1) % CAMERAS.length]);
     } else if (e.key === 'Control' && !e.repeat && finger) {
-      // Ctrl, the finger on a box: the hand closes on it, held up to be carried.
-      this.#lifted(true);
+      // Ctrl, the finger on a box: the hand closes on it, held up to be carried, the camera back over the desk.
+      this.#lifted(true, true);
     } else if (way && e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey && this.#held) {
       e.preventDefault();
       this.#carry(way);
@@ -707,24 +812,26 @@ export class Desk {
     else this.take(this.#held);
   }
 
-  /** The box in hand carried a slot `way`, lifted (put down once Ctrl is let go), the camera following it. */
+  /** The box in hand carried a slot `way`, lifted (put down once Ctrl is let go), across a desk that stands still. */
   #carry(way: Way) {
     const key = this.#held!;
     this.#lifted(true);
-    const was = this.#cols.map((c) => c.join('\n')).join('\t');
+    const was = this.#cols, laid = (cols: string[][]) => cols.map((c) => c.join('\n')).join('\t');
     if (this.#trail?.key !== key) this.#trail = {key, steps: []};
-    const last = this.#trail.steps.at(-1);
-    if (last && last.way === BACK[way]) {
-      this.#trail.steps.pop();
-      this.#cols = last.cols;
-    } else {
-      const after = carried(this.#cols, key, way);
-      if (after.map((c) => c.join('\n')).join('\t') !== was) this.#trail.steps.push({way, cols: this.#cols.map((c) => [...c])});
-      this.#cols = after;
-    }
-    if (this.#cols.map((c) => c.join('\n')).join('\t') === was) { this.#bump(way); return; }
+    const last = this.#trail.steps.at(-1), back = last && last.way === BACK[way];
+    const to = back ? last.cols : carried(was, key, way);
+    if (laid(to) === laid(was)) { this.#bump(way); return; }
+    // Where it stands, and (first carried) the camera over the desk as it stands, read before it goes.
+    clearTimeout(this.#lifting);
+    this.#lifting = 0;
+    this.#carrying = true;
+    const b = this.#boxes.get(key)!, from = {x: b.slot.x + WIDTH / 2, y: b.slot.y + b.el.offsetHeight / 2};
+    const over = this.#still && this.#cam === 'whole' ? null : this.#overDesk(true);
+    if (back) this.#trail.steps.pop();
+    else this.#trail.steps.push({way, cols: was.map((c) => [...c])});
+    this.#cols = to;
     this.#topAt = null;
-    this.#relay(true);
+    this.#relay({from, over});
   }
 
   /** The finger shown (`on`), the pointer hidden while it is (out of the pointer, where that was over the desk), or gone. */
