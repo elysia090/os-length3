@@ -26,6 +26,8 @@ export interface Laid {
 
 type Way = 'up' | 'down' | 'left' | 'right';
 const WAYS: Record<string, Way> = {ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right'};
+/** Each way's other way: a step carried that way is taken back. */
+const BACK: Record<Way, Way> = {up: 'down', down: 'up', left: 'right', right: 'left'};
 
 /** Where the camera stands: at its standard, a step back, over the whole desk (Escape goes round them in this order). */
 type Camera = 'standard' | 'pulled' | 'whole';
@@ -124,6 +126,10 @@ export class Desk {
   /** The box whose name is being written over (a file just made): the keyboard going on into it after (Enter, Escape)
    * is the way in, and brings the camera to the standard, as Enter does with the finger on a box. */
   #naming: string | null = null;
+  /** The way the box in hand was carried, a step at a time, and how the desk stood before each: an arrow the other way
+   * takes the last step back exactly (where it stood in its column too), as a sheet slid out is slid back where it
+   * was. Forgotten once another box is taken, or the desk changes otherwise. */
+  #trail: {key: string; steps: {way: Way; cols: string[][]}[]} | null = null;
   /**
    * The finger, the pointer's own pointing hand: its fingertip on the top edge of the box in hand, a little in from its
    * right corner, while the keyboard moves between boxes (Tab, an arrow, Escape, Ctrl), closed on the box while it is
@@ -396,6 +402,7 @@ export class Desk {
     }
     this.#boxes.delete(key);
     this.#cols = this.#cols.map((c) => c.filter((k) => k !== key)).filter((c, i) => c.length || i === 0);
+    this.#trail = null;
     this.#relay(false, true);
     if (this.#held === key) { this.#held = null; if (after) this.take(after); }
   }
@@ -421,6 +428,7 @@ export class Desk {
     if (!b) return;
     for (const o of this.#boxes.values()) o.el.classList.toggle('held', o === b);
     if (this.#bornUnder && this.#bornUnder.key !== key) this.#bornUnder = null;
+    if (this.#trail && this.#trail.key !== key) this.#trail = null;
     // The finger goes with it, from where it is.
     if (this.#held !== key && this.#handAt) this.#handGlide = {from: this.#handAt, t0: performance.now(), ms: 320};
     this.#held = key;
@@ -704,7 +712,16 @@ export class Desk {
     const key = this.#held!;
     this.#lifted(true);
     const was = this.#cols.map((c) => c.join('\n')).join('\t');
-    this.#cols = carried(this.#cols, key, way);
+    if (this.#trail?.key !== key) this.#trail = {key, steps: []};
+    const last = this.#trail.steps.at(-1);
+    if (last && last.way === BACK[way]) {
+      this.#trail.steps.pop();
+      this.#cols = last.cols;
+    } else {
+      const after = carried(this.#cols, key, way);
+      if (after.map((c) => c.join('\n')).join('\t') !== was) this.#trail.steps.push({way, cols: this.#cols.map((c) => [...c])});
+      this.#cols = after;
+    }
     if (this.#cols.map((c) => c.join('\n')).join('\t') === was) { this.#bump(way); return; }
     this.#topAt = null;
     this.#relay(true);

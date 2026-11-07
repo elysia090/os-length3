@@ -87,7 +87,17 @@ test('an arrow takes the finger along a column or to the next; Ctrl and an arrow
   assert.equal(next(cols, 'b.c', 'right'), 'README.md');
   assert.equal(next(cols, 'term', 'left'), null);
   assert.deepEqual(carried(cols, 'b.c', 'up'), [['term'], ['b.c', 'a.c'], ['README.md']]);
-  // Into the next column at the same height; the column it leaves, emptied, goes.
+  // A column of its own goes into the next column, at the same place; the column it leaves, emptied, goes.
   assert.deepEqual(carried(cols, 'README.md', 'left'), [['term'], ['README.md', 'a.c', 'b.c']]);
-  assert.deepEqual(carried(cols, 'b.c', 'right'), [['term'], ['a.c'], ['README.md', 'b.c']]);
+  // Out of a column with others, first into the gap beside it: between two side by side, a column of its own.
+  const between = carried(cols, 'b.c', 'right');
+  assert.deepEqual(between, [['term'], ['a.c'], ['b.c'], ['README.md']]);
+  assert.deepEqual(carried(cols, 'a.c', 'left'), [['term'], ['a.c'], ['b.c'], ['README.md']]);
+  // Then on into the next column, at the same place in it (a column of its own: its top). (The desk puts one carried
+  // straight back where it was in the column it left: desk.ts carry.)
+  assert.deepEqual(carried(between, 'b.c', 'right'), [['term'], ['a.c'], ['b.c', 'README.md']]);
+  assert.deepEqual(carried(between, 'b.c', 'left'), [['term'], ['b.c', 'a.c'], ['README.md']]);
+  // Out of the last column with others: a column past it; a column of its own at the edge stays.
+  assert.deepEqual(carried([['term', 'x']], 'x', 'right'), [['term'], ['x']]);
+  assert.deepEqual(carried([['term'], ['x']], 'x', 'right'), [['term'], ['x']]);
 });

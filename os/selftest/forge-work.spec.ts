@@ -496,11 +496,18 @@ test('Tab puts the finger on the next box from anywhere on the desk; an arrow to
   await app.page.keyboard.type('Q');
   await expect(own).toBeFocused();
   await expect(own).toHaveValue(/Q/);
-  // Carried from the file, the keyboard staying in it: lifted while Ctrl is held, into the Prompt's column, over it.
+  // Carried from the file, the keyboard staying in it: lifted while Ctrl is held; out of its column (src/main.c under
+  // it), first into the gap between the Prompt's column and that one, a column of its own; then into the Prompt's
+  // column, over it.
   const text = await own.inputValue();
   await app.page.keyboard.down('Control');
   await app.page.keyboard.press('ArrowLeft');
   await expect(box('README.md')).toHaveClass(/lifted/);
+  await expect.poll(async () => {
+    const [r, t, m] = [(await box('README.md').boundingBox())!, (await box('term').boundingBox())!, (await box('src/main.c').boundingBox())!];
+    return r.x > t.x + 2 && r.x < m.x - 2;
+  }).toBe(true);
+  await app.page.keyboard.press('ArrowLeft');
   await app.page.keyboard.up('Control');
   await expect(box('README.md')).not.toHaveClass(/lifted/);
   await expect.poll(async () => {

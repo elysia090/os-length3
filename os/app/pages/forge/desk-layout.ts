@@ -123,8 +123,10 @@ export function next(cols: readonly (readonly string[])[], from: string, way: 'u
 }
 
 /**
- * `cols` with `key` carried a slot `way` (Ctrl and an arrow): along its column, the others stepping over; or into the
- * next column at the same height (a new column past the last, none emptied but its own going).
+ * `cols` with `key` carried a slot `way` (Ctrl and an arrow): along its column, the others stepping over. Sideways the
+ * slots alternate, as a hand putting a sheet between two others would: out of a column with others it goes first into
+ * the gap beside it, a column of its own between that one and the next (or past the last); a column of its own, it goes
+ * on into the next column, at the same place in it; none there, it stays (the desk says so: a nudge).
  */
 export function carried(cols: readonly (readonly string[])[], key: string, way: 'up' | 'down' | 'left' | 'right'): string[][] {
   const out = cols.map((col) => [...col]);
@@ -137,10 +139,15 @@ export function carried(cols: readonly (readonly string[])[], key: string, way: 
     [out[c][i], out[c][j]] = [out[c][j], out[c][i]];
     return out;
   }
-  const d = c + (way === 'left' ? -1 : 1);
-  if (d < 0) return out;
-  out[c].splice(i, 1);
-  if (d === out.length) out.push([]);
+  const right = way === 'right';
+  if (out[c].length > 1) {
+    out[c].splice(i, 1);
+    out.splice(right ? c + 1 : c, 0, [key]);
+    return out;
+  }
+  const d = c + (right ? 1 : -1);
+  if (d < 0 || d >= out.length) return out;
   out[d].splice(Math.min(i, out[d].length), 0, key);
+  out.splice(c, 1);
   return out.filter((col, k) => col.length || k === 0);
 }

@@ -1948,7 +1948,8 @@ The center is the repo's desk. What is open lies on a plane on dots, each box
 as wide as 80 columns of its code (14 px, a step larger than elsewhere: a box
 is read at its own size), inked round with a hard shadow, its name
 outside its top-left corner (its folder quiet before it) and its close a dot
-outside its bottom-right. The Prompt is the first box: what it printed, and
+under its foot, a little in from its right corner (under the shadow's straight
+foot, never in the corner where it turns). The Prompt is the first box: what it printed, and
 under it the line one types at, its pill the prompt (`garden $`) and what the
 line does (Run, Issue, TODO, Agent; Alt and a number, or pressed). Under Run,
 Enter runs the line as a terminal's does, Shift+Enter is a new line, and the
@@ -1987,7 +1988,11 @@ hand a slot, wherever the keyboard is (writing in it, it stays there; with the
 finger on a box, Ctrl alone takes it up): lifted while Ctrl is held, its shadow
 long and the hand closed on it (its fingers over the edge), the others stepping
 over, the camera following a little behind; Ctrl let go, it is put down with a
-small give. Shift+N, as a new post is begun on X, makes a new file beside the
+small give. Sideways the slots alternate, as a sheet is put between two others:
+out of a column with others it goes first into the gap beside it, a column of
+its own between two side by side, then on into the next column; at the desk's
+edge it stays and the desk nudges. The other arrow takes each step back
+exactly, to where it stood in its column too. Shift+N, as a new post is begun on X, makes a new file beside the
 one in hand where nothing is being written (the finger on a box; written in a
 file, it is an N): it is laid under the box in hand, in its column, as a new
 post goes under the one before it, named with that file's ending (none beside a
@@ -2032,10 +2037,10 @@ it and the camera gliding with them, never a cut. A file
 gone goes from the desk; moved, its box is the file where it went. A file named
 in a terminal's output (what ls says, the compiler's count.c:7:24:, grep's
 line) is underlined under the pointer and, pressed, its box opens at that line,
-as a terminal's hints open what they point at. At the desk's foot on the
-right, level with the pane's switch and as high, its keys stand in an ink bar
-as the files tool's deeds do (tab next, ↵ in, esc back, ⇧N new, ctrl ←→ carry,
-/ search), the keys in the paper's colour, what they do quieter. Each
+as a terminal's hints open what they point at. In the desk's bottom corner on
+the right stand its keys, with no line nor bar round them (tab next, ↵ in,
+esc back, ⇧N new, ctrl ←→ carry, / search), each in ink, what it does quieter,
+on the ground, so a box passing under them leaves them read. Each
 repo keeps its own desk, as it was left, from one visit to the next; a desk
 never worked at begins with the Prompt and the README beside it.
 
