@@ -144,13 +144,13 @@ const PROMPT_PATH: &str = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
 
 /// What a Prompt runs with: set here, never taken from the host; then what it is told besides (`told`), each by
 /// a name of capitals, digits and _ that is none of these, its words without a NUL.
-fn environment(name: &str, told: &[(String, String)]) -> Vec<CString> {
+fn environment(name: &str, shell: &str, told: &[(String, String)]) -> Vec<CString> {
     let mut all: Vec<String> = [
         format!("PATH={PROMPT_PATH}"),
         "HOME=/root".into(),
         "USER=root".into(),
         "LOGNAME=root".into(),
-        "SHELL=/bin/sh".into(),
+        format!("SHELL={shell}"),
         format!("TERM={}", term()),
         "LANG=C.UTF-8".into(),
         // The person's language (Home's), so the root's l3 and shell speak it too.
@@ -458,7 +458,9 @@ fn init(s: &Sandbox) -> ! {
     let program = c(find_program(&s.argv[0]));
     // Said if it cannot start, in the child, before it would only end with 127.
     let not_started = crate::tr!("l3: {} could not start: ", "l3: {} を起動できませんでした：", s.argv[0]);
-    let env = environment(&s.name, &s.env);
+    // The shell a person's programs start for them (an editor's :!, tmux's panes) is the one they were given.
+    let shell = if s.argv.first().is_some_and(|a| a.ends_with("/bash")) { "/bin/bash" } else { "/bin/sh" };
+    let env = environment(&s.name, shell, &s.env);
     let mut envp: Vec<*const libc::c_char> = env.iter().map(|a| a.as_ptr()).collect();
     envp.push(std::ptr::null());
     let shell = unsafe { libc::fork() };

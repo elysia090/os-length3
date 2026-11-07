@@ -42,6 +42,7 @@ import {test as base, expect, type Browser, type BrowserContextOptions, type Pag
 import {App} from './app.ts';
 export {handleOf} from './app.ts';
 import {BROWSER, OUT} from './paths.ts';
+import {FIRST} from '../app/prompt/first.ts';
 
 /** What a browser keeps (its localStorage, and IndexedDB, where the repos are), as Playwright reads and restores it. */
 type Kept = Exclude<BrowserContextOptions['storageState'], string | undefined>;
@@ -71,15 +72,14 @@ export function addressOf(info: TestInfo, who = 'Ada'): string {
 
 /**
  * The files of what a Prompt is given ahead of time for the Prompts after it (each translation in the build's l3 but
- * BusyBox's, which a Prompt starts with: app/prompt/userland.ts FIRST), as the browser's blocked URLs say them; none in a
- * build without l3.
+ * those a Prompt starts with: app/prompt/first.ts), as the browser's blocked URLs say them; none in a build without l3.
  */
 const AHEAD: string[] = (() => {
   const about = join(OUT, 'l3', 'l3.json');
   if (!existsSync(about)) return [];
   const index = JSON.parse(readFileSync(join(OUT, 'l3', (JSON.parse(readFileSync(about, 'utf8')) as {index: {path: string}}).index.path), 'utf8')) as
     {translations: {path: string; elf: {path: string}; wasm: {path: string}}[]};
-  return index.translations.filter((t) => t.path !== '/usr/bin/busybox').flatMap((t) => [`*/l3/${t.elf.path}`, `*/l3/${t.wasm.path}`]);
+  return index.translations.filter((t) => !FIRST.includes(t.path)).flatMap((t) => [`*/l3/${t.elf.path}`, `*/l3/${t.wasm.path}`]);
 })();
 
 /**

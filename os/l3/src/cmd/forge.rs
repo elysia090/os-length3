@@ -132,6 +132,22 @@ pub fn band_set(ctx: &Ctx, call: &Call) -> Result<Reply> {
 #[cfg(target_os = "linux")]
 pub(crate) const PROMPT_ROOM: u64 = 256 << 20;
 
+/// The Prompt's shell: bash, interactive. On this distribution's root it reads the root's settings for the app's Prompt
+/// (/etc/length3/shrc: how a run ended, told before each prompt line; z, direnv), and edits its line itself only on a
+/// terminal: in the app, what is typed is the app's box's, sent a line at a time. Another distribution's bash is as
+/// that distribution sets it up, on a terminal; sh is the shell where there is no bash, or no terminal for another's.
+#[cfg(target_os = "linux")]
+fn shell(root: &std::path::Path, other: bool, terminal: bool) -> Vec<String> {
+    let bash = root.join("bin/bash").exists();
+    let words: &[&str] = match (bash, other, terminal) {
+        (true, false, true) => &["/bin/bash", "--rcfile", "/etc/length3/shrc", "-i"],
+        (true, false, false) => &["/bin/bash", "--noediting", "--rcfile", "/etc/length3/shrc", "-i"],
+        (true, true, true) => &["/bin/bash", "-i"],
+        _ => &["/bin/sh", "-i"],
+    };
+    words.iter().map(|w| w.to_string()).collect()
+}
+
 /// `l3 prompt [REPO] [-- CMD…]`: the repo inside the root, without privileges.
 #[cfg(target_os = "linux")]
 pub fn prompt(ctx: &Ctx, call: &Call) -> Result<Reply> {
@@ -141,10 +157,8 @@ pub fn prompt(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let data = paths::data_dir();
     let dir = ctx.repos()?.dir(&repo)?;
     let (root, about) = super::runtime::root_now(data)?;
-    // Another distribution's own shell where there is a terminal to draw it on; sh otherwise.
-    let bash = about.distro.is_some() && root.join("bin/bash").exists() && std::io::stdin().is_terminal();
     let cmd = call.words(1);
-    let argv: Vec<String> = if cmd.is_empty() { vec![if bash { "/bin/bash" } else { "/bin/sh" }.into(), "-i".into()] } else { cmd };
+    let argv: Vec<String> = if cmd.is_empty() { shell(&root, about.distro.is_some(), std::io::stdin().is_terminal()) } else { cmd };
     let s = launch::Sandbox { root, repo: dir, name: repo.clone(), argv, network: call.flags.network || length3_core::home::network(&repo), dotfiles: launch::dotfiles_in_effect(), data: Some(data.to_path_buf()), env: length3_core::device::agent_key::env() };
     // Recorded from the start, by the process that runs it, so `l3 prompt ls` (and Runtime) see it, `l3 prompt stop`
     // can end it, and nothing it holds is freed (storage/): first being prepared, as what .packages and .setup ask for

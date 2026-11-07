@@ -1,4 +1,5 @@
 import {digest, download, Fatal, type Check} from './l3-files.ts';
+import {FIRST} from './first.ts';
 import {errorText} from '../host/errors.ts';
 import {isNative} from '../host/host.ts';
 import {REMOTE_URL} from '../remote/connection.ts';
@@ -28,12 +29,13 @@ export const threadsApart = (): boolean => typeof SharedArrayBuffer === 'functio
 //                        read from it only when a program first opens it (the
 //                        Worker, one Range request), and used only once it is
 //                        what the table says (xlat/runtime/table.ts)
-//   blobs/<sha256>.bin   the translator, and the hot programs (BusyBox: sh and
-//                        its applets; l3; git, each of its commands a name of
-//                        it) with their translations made ahead of time, gzip'd
+//   blobs/<sha256>.bin   the translator, and the hot programs (bash, the
+//                        Prompt's shell; BusyBox and its applets; l3; git,
+//                        each of its commands a name of it) with their
+//                        translations made ahead of time, gzip'd
 //
-// The first Prompt fetches l3.json, the index, the translator and BusyBox
-// with its translation; l3's own translation follows once the Prompt is up,
+// The first Prompt fetches l3.json, the index, the translator, bash and BusyBox
+// with their translations; l3's own translation follows once the Prompt is up,
 // compiled quietly, for the Prompts started after (until then l3 is
 // translated here as it runs, as every other program is). What is fetched is kept in Cache Storage under
 // its digest (the packs, in the browser's HTTP cache, under theirs), so a
@@ -90,8 +92,7 @@ export type Stage =
   | {at: 'ready'}
   | {at: 'failed'; message: string};
 
-/** The hot programs a first Prompt waits for; the others in the index come after it. */
-export const FIRST = ['/usr/bin/busybox'];
+
 /** Where l3 is read from: the page's own origin in a browser; in the app (on a machine whose Prompts run translated),
  * the site of the Remote it is built for, which serves the same files to anyone (public/_headers). */
 const BASE = isNative ? `${REMOTE_URL}/l3/` : '/l3/';

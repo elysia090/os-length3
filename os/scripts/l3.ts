@@ -31,7 +31,7 @@
 //                         other pack's name, and what a browser has of it
 //   blobs/<sha256>.bin    the translator (xlat.wasm) and each translation made
 //                         ahead of time with its program's bytes, gzip'd: the hot programs (`--hot`, by
-//                         default BusyBox, which is sh and every coreutils
+//                         default bash, the Prompt's shell, BusyBox, every coreutils
 //                         applet, l3, and git, which every repo is), translated whole by the same
 //                         translator so no Prompt spends its first seconds on them; every other
 //                         program is translated in the browser when it first runs
@@ -67,7 +67,7 @@ function flag(name: string, d: string | null = null): string | null {
 }
 const translatorWasm = flag('--translator', join(repo, 'xlat/target/wasm32-unknown-unknown/release/xlat.wasm'));
 const xlat = flag('--xlat', join(repo, 'xlat/target/release/xlat'));
-const hot = flag('--hot', '/usr/bin/busybox,/usr/bin/l3,/usr/bin/git').split(',').filter(Boolean);
+const hot = flag('--hot', '/usr/bin/bash,/usr/bin/busybox,/usr/bin/l3,/usr/bin/git').split(',').filter(Boolean);
 const stage = flag('--stage');
 const [rootFile, out] = args;
 if (!rootFile || !out) { console.error('usage: l3.ts ROOT OUT [--translator XLAT.wasm] [--xlat XLAT] [--hot PATH,…] [--stage DIR]'); process.exit(2); }

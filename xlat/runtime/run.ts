@@ -129,12 +129,14 @@ function mount(vfs: Vfs, host: string, at: string): void {
 }
 
 const args = process.argv.slice(2);
-let root: string | null = null, pack: string | null = null, cwd = '/root';
+let root: string | null = null, pack: string | null = null, cwd = '/root', tty = false;
 while (args[0]?.startsWith('--')) {
   const flag = args.shift();
   if (flag === '--root') root = args.shift() ?? null;
   else if (flag === '--pack') pack = args.shift() ?? null;
   else if (flag === '--cwd') cwd = args.shift() ?? cwd;
+  // Its console a terminal, 80 by 24, as the app's Prompt has it (worker.ts): what reads keys reads them from one.
+  else if (flag === '--tty') tty = true;
 }
 const [program = '', ...rest] = args;
 const vfs = new Vfs();
@@ -168,7 +170,8 @@ const kernel = new (apart ? RemoteKernel : Kernel)({
   vfs,
   translate,
   console: {
-    interactive: false,
+    interactive: tty,
+    screen: tty, cols: 80, rows: 24,
     // At once, not when this thread next idles: a sleep here holds it, and what was said before must show before.
     write: (fd: number, bytes: Uint8Array) => { for (let at = 0; at < bytes.length;) { try { at += writeSync(fd === 2 ? 2 : 1, bytes, at); } catch (e) { if ((e as {code?: string}).code !== 'EAGAIN') throw e; } } },
     read: (n: number) => { const out = stdin.subarray(stdinAt, stdinAt + n); stdinAt += out.length; return out; },

@@ -5,12 +5,14 @@ import {expect, test} from './fixtures.ts';
 // comes, and how long that takes, from a cold browser (nothing cached) and
 // again after a reload (what it fetched before is the browser's). l3 is
 // the whole root, but a Prompt reads only what its programs open, so the
-// first prompt costs the index, the translator, sh's translation and the
-// few files sh reads, not the root. @slow, as the Prompt's other tests.
+// first prompt costs the index, the translator, its shell's (bash's) and
+// BusyBox's translations and the few files they read, not the root. @slow,
+// as the Prompt's other tests.
 
 const MB = 1e6;
-/** What a cold first Prompt may fetch at most: the index, the translator, BusyBox and its translation, sh's files. */
-const BUDGET = 4 * MB;
+/** What a cold first Prompt may fetch at most: the index, the translator, bash and BusyBox with their translations (3.1
+ * and 1.6 MB), the files they read. */
+const BUDGET = 6 * MB;
 
 test.describe('the first Prompt', {tag: '@slow'}, () => {
   test.skip(!process.env.SELFTEST_SLOW, '@slow: SELFTEST_SLOW=1 runs it');

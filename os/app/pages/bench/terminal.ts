@@ -75,8 +75,9 @@ function loadWords(s: Stage): string {
  * once, it was there a frame, and moved the line under it down and back). */
 const STARTING_SAID = 600;
 
-/** The Prompt's shell, as the app's Prompts run it. */
-const SHELL = ['/bin/sh', '-i'];
+/** The Prompt's shell, as the app's Prompts run it (l3 prompt, on the machine): bash, interactive, reading the root's
+ * settings for the app's Prompt (/etc/length3/shrc), its line edited in the box, not by bash (--noediting). */
+const SHELL = ['/bin/bash', '--noediting', '--rcfile', '/etc/length3/shrc', '-i'];
 /** The person's time zone by its name, as the browser knows it: the root has every zone, so its clock reads as theirs. */
 function zone(): string {
   try {
@@ -87,7 +88,7 @@ function zone(): string {
 /** Its environment, as the app's Prompts on the machine have it (core's prompt/launch.rs): l3 here sees repos where the
  * shell does, under /root; its shell reads as the app's; its clock is the person's; its terminal is a colour xterm's
  * (output.ts draws what one draws, vt.ts). */
-const shellEnv = (repo: string) => ['HOME=/root', 'USER=root', 'LOGNAME=root', 'SHELL=/bin/sh', 'TERM=xterm-256color', 'COLORTERM=truecolor', 'LANG=C.UTF-8',
+const shellEnv = (repo: string) => ['HOME=/root', 'USER=root', 'LOGNAME=root', 'SHELL=/bin/bash', 'TERM=xterm-256color', 'COLORTERM=truecolor', 'LANG=C.UTF-8',
   `TZ=${zone()}`, 'LENGTH3_REPOS=/root', 'L3_PROMPT=1', `LENGTH3_LANG=${currentLang()}`, `LENGTH3_REPO=${repo}`,
   'PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', 'ENV=/etc/length3/shrc'];
 /** A start rehearsed in a Worker readied ahead (readyPrompt): the same shell, in no repo yet, with no key. */
