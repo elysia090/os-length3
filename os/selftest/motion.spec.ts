@@ -331,6 +331,16 @@ test('the caret is drawn by the OS: it follows what is written along the line, a
   const b = await at();
   expect(b.x).toBeGreaterThan(a.x + 10);
   expect(Math.abs(b.y - a.y)).toBeLessThan(1);
+  // A letter written puts it after the letter in the frame the letter is drawn in: it never glides there, over the
+  // letter just written, a letter behind at every key.
+  // (Written and looked at in one go in the page: a key sent from here comes back after the glide would be over.)
+  const drawn = await caret.evaluate(async (e) => {
+    document.execCommand('insertText', false, 's');
+    await new Promise((go) => requestAnimationFrame(go));
+    return new DOMMatrix(getComputedStyle(e).transform).e;
+  });
+  expect(Math.abs(drawn - (await at()).x)).toBeLessThan(0.5);
+  expect(drawn).toBeGreaterThan(b.x + 4);
   await app.page.keyboard.press('Enter');
   const c = await at();
   expect(c.y).toBeGreaterThan(b.y + 8);

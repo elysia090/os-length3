@@ -159,10 +159,12 @@ Every value in `styles.css` comes from a token (§2).
     long enough to be followed; what is read a moment later takes its turn
     where it stands. Its figures count up from nothing, its bars fill.
   - *The caret is a thing that moves.* The OS draws it (a 1.5 px stroke of
-    `ink`): it glides from where it was to where it is (a letter typed, a
-    line gone down, a press elsewhere, 70 ms), so what is written is seen
-    being written and Enter sweeps it to the next line's start; solid while
-    it moves, blinking once it rests. It keeps to its field whatever moves
+    `ink`): it glides from where it was to where it is (a line gone down, a
+    press elsewhere, 70 ms), and Enter sweeps it to the next line's start; a
+    letter written or taken away moves it at once, in the frame the letter
+    is drawn in, so it always stands after what was just written (gliding,
+    it stood over that letter, one behind at every key); solid while it
+    moves, blinking once it rests. It keeps to its field whatever moves
     it: carried at once with a field that moves (a page still coming in), and
     gliding back to the start of one the page empties (a message sent). A
     selection is the browser's own, as is the caret of a file too long to

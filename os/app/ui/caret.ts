@@ -1,7 +1,7 @@
 // The caret, drawn by the OS rather than by the browser, so that it moves as a thing does: from where it was to
-// where it is (a letter typed, a line gone down, a press elsewhere in the text) in a short glide, and blinks only
-// once it rests. The eye follows writing as it follows the pointer: what is written is seen being written, and
-// Enter sweeps it to the next line's start. A selection is the browser's own, as it was; a field too long to measure
+// where it is (a line gone down, a press elsewhere in the text) in a short glide, and blinks only once it rests. A
+// letter written or taken away moves it at once, in the frame the letter is drawn in: gliding, it stood over the
+// letter just written, a letter behind at every key. Enter sweeps it to the next line's start. A selection is the browser's own, as it was; a field too long to measure
 // at every key (a file of more than 100k characters) keeps the browser's caret, and so does less motion asked for.
 
 const FIELDS = 'textarea, input:not([type]), input[type="text"], input[type="search"], input[type="email"], input[type="url"]';
@@ -78,6 +78,8 @@ export function caret() {
   document.body.append(mark, copy);
   let field: Field | null = null;
   let frame = 0, rest = 0, shown = false;
+  /** The text was written in since the caret was drawn (not a line begun): it goes where the text now ends at once. */
+  let typed = false;
   /** The field the copy is laid out as; none once it changes size (or the window does). */
   let styled: Field | null = null;
   const resized = new ResizeObserver(() => { styled = null; });
@@ -121,8 +123,9 @@ export function caret() {
     mark.textContent = block ? f.value.slice(f.selectionEnd ?? 0, (f.selectionEnd ?? 0) + 1).replace('\n', '') : '';
     mark.style.font = block ? cs.font : '';
     mark.style.lineHeight = block ? `${Math.round(p.h)}px` : '';
-    // Come to a field, it is put there; moving in it, it glides.
-    mark.classList.toggle('jump', !shown);
+    // Come to a field, or with a letter written, it is put there; moving in it, it glides.
+    mark.classList.toggle('jump', !shown || typed);
+    typed = false;
     mark.style.transform = `translate(${Math.round(p.x)}px, ${Math.round(p.y)}px)`;
     mark.style.height = `${Math.round(p.h)}px`;
     mark.classList.add('on');
@@ -156,6 +159,7 @@ export function caret() {
   // A file grown past what can be measured at every key goes back to the browser's caret.
   document.addEventListener('input', (e) => {
     if (field && e.target === field && field.value.length > LONGEST) take(null);
+    if (field && e.target === field && (e as InputEvent).inputType !== 'insertLineBreak') typed = true;
     later();
   }, true);
   for (const name of ['selectionchange', 'keydown', 'keyup', 'pointerup']) addEventListener(name, later, true);
