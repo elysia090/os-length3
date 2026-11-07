@@ -36,7 +36,7 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
 /* It goes as anything put away does, a few pixels toward where the pane goes, fading, quicker than the pane (never
    gone at the press while the pane is still there), and comes back with the pane's words (glide.ts paneOut); brought
    back before it had gone, it comes back from where it was. */
-:is(.work.bench > .bar, .home-bar) > .search-box { transition: opacity calc(150ms * var(--pace)) ease-out, translate calc(150ms * var(--pace)) var(--land); }
+.work.bench > .bar > .search-box { transition: opacity calc(150ms * var(--pace)) ease-out, translate calc(150ms * var(--pace)) var(--land); }
 @media (min-width: 761px) { .work.bench.pane-closed > .bar > .search-box { visibility: hidden; opacity: 0; translate: var(--s2) 0; pointer-events: none;
   transition: opacity calc(150ms * var(--pace)) cubic-bezier(.4, 0, 1, 1), translate calc(150ms * var(--pace)) cubic-bezier(.4, 0, 1, 1), visibility 0s calc(150ms * var(--pace)); } } /* narrow, it is the way to the pane's parts */
 /* Out or put away, the switch is the same quiet circle; its mark's pane is filled while the pane is out, the fill

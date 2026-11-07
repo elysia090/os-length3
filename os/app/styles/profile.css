@@ -1,10 +1,5 @@
 /* Home's profile: the face, the name, the handle and the line about the person, the counts, and the profile written
    in. */
-/* Home a size smaller than the pages of work it leads to: the avatar, the name, the TODO box and the cards. */
-.home-main .avatar { width: 88px; height: 88px; font-size: var(--t-card); }
-/* No name yet: the person's mark in the circle, as on the rail, rather than an empty ring. */
-.avatar > .mark { width: 50%; height: 50%; color: var(--sub); }
-.home-main .todo-box { min-height: max(300px, 44vh); }
 .grid.repo-grid .card { min-height: 152px; }
 .grid.repo-grid .card-title { font-size: var(--t-body); }
 /* What the repo is, under its name: its own words, two lines at most. */
@@ -12,44 +7,43 @@
 .card-summary:empty { display: none; }
 .card-summary ~ .muted { font-size: var(--t-meta); }
 
-/* Home: profile */
-.profile { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--s5); align-items: start; }
-/* Its deed centred on the name's line, not hung from the line's top. */
-.profile > .button { margin-top: calc((var(--t-name) * 1.05 - var(--h-control)) / 2); }
-.avatar {
-  width: 112px; height: 112px; border-radius: var(--r-round);
-  display: grid; place-items: center;
-  border: 1px solid var(--rule);
-  font-size: var(--t-identity); font-weight: 600;
-}
+/* Home: profile. The name alone at Home's top, as large as Home is wide (the --home-name of home.css), Cancel and
+   Save at its right while it is written. */
+.profile { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s5); align-items: start; }
+.profile:has(> .edit-acts) { grid-template-columns: minmax(0, 1fr) auto; }
 /* A name, handle or bio with a word longer than the line breaks in the word, never pushing the page sideways. */
 .identity { min-width: 0; }
 .identity :is(h1, .handle, .bio) { overflow-wrap: anywhere; }
-/* The name: big and black, tight (DESIGN.md § Home); the handle a step under it, clear of its descenders. */
-.identity h1 { font: 900 var(--t-name)/1.05 var(--display); letter-spacing: -.035em; }
-.identity > .handle { margin-top: var(--s1); }
-.identity .unset { color: var(--sub); font-weight: 400; }
+/* The name: as large as Home is wide, black and tight (DESIGN.md § Home), a long one balanced over lines; its left
+   edge set back by its first letter's own side bearing, so its ink stands on the TODO's edge under it. The handle a
+   step under it, clear of its descenders. */
+.identity h1 { margin-left: -.015em; font: 900 var(--home-name, var(--t-name))/.92 var(--display); letter-spacing: -.04em; white-space: nowrap; }
+/* Longer than its line at the least size (home.ts fitName): it breaks, balanced over its lines. */
+.identity h1.long { white-space: normal; text-wrap: balance; line-height: 1; }
+.identity > .handle { margin-top: var(--s2); font-family: var(--mono); }
+/* No name yet: the words for it as large, in the ground's own rule, a place for it rather than a name. */
+.identity .unset { color: var(--rule); }
 .handle { color: var(--sub); }
 .bio { margin-top: var(--s3); max-width: 60ch; white-space: pre-wrap; }
-/* Figures as Runtime's are: the number large (20/600), the word under it quiet; read at a glance, not as a line. */
-.counts { margin-top: var(--s2); display: flex; flex-wrap: wrap; gap: 0 var(--s5); color: var(--sub); font-size: var(--t-meta); }
-.counts b { display: block; color: var(--ink); font-size: var(--t-card); font-weight: 600; line-height: 1.3; }
+/* Under the name, one quiet line in the mono face, as a desk's labels are: each count its figure in ink and its word,
+   then Edit profile, a dot between them. */
+.counts { margin-top: var(--s4); display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s2); color: var(--sub); font: var(--t-meta)/1.6 var(--mono); }
+.counts b { color: var(--ink); font-weight: 700; }
+.counts > * + *::before { content: '·'; content: '·' / ''; margin-right: var(--s2); color: var(--sub); }
+.profile-edit { color: var(--sub); }
+.profile-edit:hover { color: var(--ink); }
 /* Each count is the way to its section (home.ts toSection): under the pointer a raised fill round it, as a row's. */
 .count-go { margin: calc(-1 * var(--s1)) calc(-1 * var(--s2)); padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-field);
   background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand); transition: background-color calc(200ms * var(--pace)) ease-out; }
 .count-go:hover { background: var(--raised); transition-duration: calc(60ms * var(--pace)); }
 /* Its section's heading lit as it is come to. */
 .section > h2.landed { animation: landed 1200ms ease-out; border-radius: var(--r-field); }
-/* The face is pressed to change it (Edit profile): its edge in ink under the pointer. */
-.avatar.pressable { cursor: var(--cursor-hand); transition: border-color calc(200ms * var(--pace)) ease-out; }
-.avatar.pressable:hover { border-color: var(--ink); transition-duration: calc(60ms * var(--pace)); }
 /* The profile written where it is read: each line as it reads (the name as large, the handle and the line about the
    person as quiet), written on rather than boxed, a rule under each and ink under the one with the keyboard. */
 /* Written in, the profile is a sheet of its own, as the TODO is when written in: `paper` with an `ink` edge round the
    face and the lines, grown out around them so nothing on it moves (at the right, within the column: its edge is
    the TODO box's, clear of the pane's line). */
 .profile { border: 1px solid transparent; border-radius: var(--r-place); transition: background calc(200ms * var(--pace)) ease-out, border-color calc(200ms * var(--pace)) ease-out; }
-/* That edge, unseen, lies outside it: the face and Edit profile stand on the TODO box's edges, not a pixel in. */
 /* Folded, its edges close in on what it holds as its ground and edge go (home.ts draw), its margins taking back what
    its padding gave in step, so nothing on it or under it moves; opened, they stand out at once (the sheet's height
    goes from the room it took). It holds what fades where it stood as it folds (home.ts leave). */
@@ -63,7 +57,7 @@
 }
 /* Written where it is read, as large: the line is the name's own face and size, the same step clear of the handle
    under it as when read (so the sheet stands as tall as the profile, and nothing under it moves back). */
-.edit .name-in { font: 900 var(--t-name)/1.05 var(--display); letter-spacing: -.035em; margin-bottom: var(--s1); }
+.edit .name-in { font: 900 var(--home-name, var(--t-name))/normal var(--display); letter-spacing: -.04em; margin-bottom: var(--s1); }
 .edit .handle-field { display: flex; align-items: baseline; color: var(--sub); }
 .edit .handle-in { flex: 1; color: var(--sub); }
 .edit .bio-field { display: flex; }
@@ -71,5 +65,5 @@
 .edit :is(.name-in, .handle-in, .bio-in) { padding-bottom: 2px; }
 .edit :is(.name-in, .handle-in, .bio-in)::placeholder { color: var(--sub); font-weight: 400; opacity: .7; }
 .edit :is(.name-in, .handle-in, .bio-in):focus, .edit :is(.name-in, .handle-in, .bio-in):focus-visible { outline: none; border-bottom-color: var(--ink); }
-/* Cancel and Save where Edit profile stood, on the name's line. */
-.edit-acts { display: flex; gap: var(--s2); margin-top: calc((var(--t-name) * 1.05 - var(--h-control)) / 2); }
+/* Cancel and Save at the name's right, on its line. */
+.edit-acts { display: flex; gap: var(--s2); margin-top: calc((var(--home-name, var(--t-name)) * 1.21 - var(--h-control)) / 2); }

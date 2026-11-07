@@ -2,7 +2,7 @@ import {openNext} from '../kit/next.ts';
 import {agentCards} from '../kit/agent-cards.ts';
 import {arrowKeys, h} from '../../ui/dom.ts';
 import {t, tn} from '../../i18n/i18n.ts';
-import {LIMITS, initials, normalize, parse, type Profile} from '../../home/profile.ts';
+import {LIMITS, normalize, parse, type Profile} from '../../home/profile.ts';
 import {connection, myName, rename} from '../../remote/connection.ts';
 import {getState, onState, setState, settingName, unreadable} from '../../home/state.ts';
 import * as servers from '../../remote/servers.ts';
@@ -33,71 +33,76 @@ export function startEditing(ctx: Context) {
   void ctx.go('home').then(() => document.getElementById('profile-name')?.focus());
 }
 
-/** Home: a profile that reads the same for its owner and for anyone else. */
+/**
+ * Home: the person's name as large as Home is wide, and under it what is theirs to do beside where it is done: the
+ * TODO, a box as Forge's are, and the repos and servers as a column of their names, each pressed to go there.
+ */
 export function home(ctx: Context): Node[] {
   const owner = true;
   const count = h('span', {});
-  const list = repoList(ctx, {newCard: true, counted: (n) => counting(count, n, 'repo', 'repos')});
+  const list = repoList(ctx, {newCard: true, brief: true, counted: (n) => counting(count, n, 'repo', 'repos')});
   const listed = list.refresh();
   const grid = list.element;
-  // About three across at a laptop's width (styles.css): Home's own, so New repo's list and other grids stay as they are.
+  // A column of names (home.css), Home's own: New repo's list and other grids stay cards.
   grid.classList.add('home-repos');
   const header = profileHeader(count, owner);
   // A setting that could not be read is said here, where the person looks first; it is not written over meanwhile.
   const unread = [...unreadable()].map(([k, why]) => h('p', {class: 'error', role: 'alert'}, t('Could not read {what} ({why})', {what: settingName(k), why})));
-  const main = h('div', {class: 'home-main'}, header, ...unread, todoBox(),
+  const places = h('div', {class: 'home-places'},
     h('section', {class: 'section', 'aria-labelledby': 'repos-title'}, h('h2', {id: 'repos-title'}, t('Repos')), grid),
-    h('section', {class: 'section', 'aria-labelledby': 'servers-title'},
-      h('h2', {id: 'servers-title'}, t('Servers')), ownServers(ctx)));
+    h('section', {class: 'section', 'aria-labelledby': 'servers-title'}, h('h2', {id: 'servers-title'}, t('Servers')), ownServers(ctx)));
+  const main = h('div', {class: 'home-main'}, header, ...unread, h('div', {class: 'home-desk'}, todoBox(), places));
   return [homePane(main, ctx, listed)];
 }
 
 /**
- * Home with the right pane Forge and Git have, in the same place and put away and brought back by the same switch
- * at its top (one setting for all three): at its top the plugin area (plain until the rail's plug opens it, here
- * as there). It stays where it is while Home scrolls under the rail; put away, Home takes the width.
+ * Home laid as Forge is: a band along its top, held there while Home scrolls under it, with the search Forge has; the
+ * right pane Forge and Git have, in the same place, its switch at its foot where Forge's is (one setting for all
+ * three); at the pane's top the plugin area (plain until the rail's plug opens it, here as there). Put away, Home
+ * takes the width.
  */
 function homePane(main: HTMLElement, ctx: Context, listed: Promise<RepoSummary[] | null>): HTMLElement {
   const side = h('aside', {class: 'home-side', id: 'home-side', 'aria-label': t('Recent activity')}, pluginArea(), agentCards((repo, issue) => { void import('../git/git.ts').then((g) => { g.showIssue(repo, issue.replace(/^issue\//, '')); void ctx.go('git'); }); }), lately(ctx));
   const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': 'home-side'}, paneMark()) as HTMLButtonElement;
-  // The search Forge and Git have, where theirs is: in the repo last worked in (named in it, there being no band to
-  // say which), what is found opened in Forge, at its line.
+  // The search Forge has, on the band as Forge's is: in the repo last worked in (named in it, there being no repos on
+  // the band to say which), what is found dropped as a sheet over Home and opened in Forge, at its line.
   let repo = ctx.repo;
-  const reference = new Reference({reveal: (path, line, write) => { if (repo) ctx.openRepo(repo, path, write ?? false, undefined, line ?? 0); }});
+  const reference = new Reference({reveal: (path, line, write) => { if (repo) ctx.openRepo(repo, path, write ?? false, undefined, line ?? 0); }}, {band: true});
+  reference.search.querySelector('form')?.prepend(mark('search'));
   const aim = (name: string | null) => { repo = name; reference.setRepo(name); reference.named(name); };
   aim(repo);
-  const pane = h('div', {class: 'home-pane'}, h('div', {class: 'home-bar'}, reference.search, toggle), side);
+  const band = h('div', {class: 'home-band'}, h('div', {class: 'band-tools'}, reference.search));
+  const pane = h('div', {class: 'home-pane'}, side, toggle);
   // None worked in yet (or it is gone): the one changed last (the first of the cards' list, read once for both), so the
   // box is never there to be pressed for nothing.
   void listed.then((all) => { if (all && pane.isConnected && !(repo && all.some((r) => r.name === repo))) aim(all[0]?.name ?? null); });
-  const layout = h('div', {class: 'home-layout'}, main, pane);
-  // What opens under the box is two of the pane wide, as under Forge's (styles.css .search-results).
-  new ResizeObserver(() => pane.style.setProperty('--pane-w', `${pane.offsetWidth}px`)).observe(pane);
-  // The keys Forge and Git know, here too: Ctrl+K or Ctrl+P (or Ctrl+Shift+F) to the search, the pane brought out for
-  // it if it was put away; Ctrl+B to put the pane away or bring it back (⌘ on a Mac).
+  const layout = h('div', {class: 'home-layout'}, band, main, pane);
+  // What the search finds drops as Forge's does, across the column under the band (forge-band.css): measured, it knows
+  // how wide and tall that is and where the box stands in it.
+  new ResizeObserver(() => {
+    const at = band.getBoundingClientRect();
+    layout.style.setProperty('--center-w', `${band.clientWidth}px`);
+    layout.style.setProperty('--center-h', `${window.innerHeight - at.bottom}px`);
+    layout.style.setProperty('--search-x', `${reference.search.getBoundingClientRect().left - at.left}px`);
+  }).observe(band);
+  // The keys Forge and Git know, here too: Ctrl+K or Ctrl+P (or Ctrl+Shift+F) to the search; Ctrl+B to put the pane
+  // away or bring it back (⌘ on a Mac).
   const keys = (event: KeyboardEvent) => {
     if (!layout.isConnected) { document.removeEventListener('keydown', keys); return; }
     if (!(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing || document.getElementById('page')?.hasAttribute('inert')) return;
     const k = event.key.toLowerCase();
-    if ((k === 'k' || k === 'p') && !event.shiftKey || (k === 'f' && event.shiftKey)) {
-      event.preventDefault();
-      if (rightPaneOpen()) reference.findNow(); else { setRightPane(true); requestAnimationFrame(() => reference.findNow()); }
-    } else if (k === 'b' && !event.shiftKey) { event.preventDefault(); setRightPane(!rightPaneOpen()); }
+    if ((k === 'k' || k === 'p') && !event.shiftKey || (k === 'f' && event.shiftKey)) { event.preventDefault(); reference.findNow(); }
+    else if (k === 'b' && !event.shiftKey) { event.preventDefault(); setRightPane(!rightPaneOpen()); }
   };
   document.addEventListener('keydown', keys);
   let was = rightPaneOpen();
-  // While it is put away or brought out, its side and search stay as wide as they are out (styles.css .pane-moving):
-  // the side goes with its edge and is cut at the window's, as Forge's does, and the search goes where it stands;
-  // neither is squeezed as the pane narrows or widens.
+  // While it is put away or brought out, its side stays as wide as it is out (styles.css .pane-moving): it goes with
+  // its edge and is cut at the window's, as Forge's does, never squeezed as the pane narrows or widens.
   let moving: Animation | null = null;
   const held = () => {
-    // Both read before either is written (a write between would have the page laid out again for the second read),
-    // and written only when changed: the side resized as the first page fills in is heard many times.
-    const w = side.offsetWidth, s = reference.search.offsetWidth;
+    const w = side.offsetWidth;
     if (!rightPaneOpen() || layout.classList.contains('pane-moving') || !w) return;
-    const sw = `${w}px`, ss = `${s}px`;
-    if (pane.style.getPropertyValue('--side-held') !== sw) pane.style.setProperty('--side-held', sw);
-    if (pane.style.getPropertyValue('--search-held') !== ss) pane.style.setProperty('--search-held', ss);
+    if (pane.style.getPropertyValue('--side-held') !== `${w}px`) pane.style.setProperty('--side-held', `${w}px`);
   };
   new ResizeObserver(held).observe(side);
   const paint = () => {
@@ -105,7 +110,7 @@ function homePane(main: HTMLElement, ctx: Context, listed: Promise<RepoSummary[]
     // Brought back before it had gone: what it holds is still there, and stays.
     const there = layout.isConnected && getComputedStyle(side).visibility === 'visible';
     if (open !== was && layout.isConnected && !still()) {
-      // Never out yet at this width: as wide as they will be out, measured before it sets off.
+      // Never out yet at this width: as wide as it will be out, measured before it sets off.
       if (open && !pane.style.getPropertyValue('--side-held')) {
         layout.style.transition = 'none';
         layout.classList.remove('pane-closed');
@@ -120,7 +125,7 @@ function homePane(main: HTMLElement, ctx: Context, listed: Promise<RepoSummary[]
     }
     layout.classList.toggle('pane-closed', !open);
     toggle.setAttribute('aria-expanded', String(open));
-    if (open && !was && layout.isConnected) paneOut(side, toggle, reference.search, !there);
+    if (open && !was && layout.isConnected) paneOut(side, toggle, null, !there);
     if (!open && was) paneIn(side);
     was = open;
   };
@@ -248,7 +253,29 @@ function counting(el: HTMLElement, n: number, one: string, many: string) {
   el.replaceChildren(h('b', {}, String(n)), ' ', tn(one, many, n));
 }
 
-function identity(counts: HTMLElement): HTMLElement {
+/** What measures the name's words in its face without laying the page out (fitName). */
+const pen = document.createElement('canvas').getContext('2d');
+
+/**
+ * The name on its one line, as large as the line is long: up to 168 px, and never under 40, where a name longer than
+ * its line breaks instead. Its size is the profile's --home-name, so the line it is written on is as large.
+ */
+function fitName(header: HTMLElement) {
+  // Home's column, not the profile's own box: written in, the profile is a sheet a little wider, and the name read
+  // again after it is the size it was.
+  const name = header.querySelector<HTMLElement>('.identity > h1'), room = header.parentElement?.clientWidth ?? 0;
+  if (!name || !room || !pen) return;
+  const cs = getComputedStyle(name);
+  pen.font = `${cs.fontWeight} 100px ${cs.fontFamily}`;
+  pen.letterSpacing = '-4px';
+  // Not loaded yet, the words are measured in another face: measured again once it is.
+  if (!document.fonts.check(pen.font)) void document.fonts.load(pen.font).then(() => fitName(header), () => {});
+  const fits = (100 * room) / Math.max(1, pen.measureText(name.textContent ?? '').width);
+  header.style.setProperty('--home-name', `${Math.floor(Math.max(40, Math.min(168, fits)))}px`);
+  name.classList.toggle('long', fits < 40);
+}
+
+function identity(counts: HTMLElement, fitted: () => void): HTMLElement {
   const profile = currentProfile();
   const name = h('h1', {}), handle = h('p', {class: 'handle'});
   /** The name to be called by over the handle; the handle alone where there is no name. */
@@ -257,6 +284,7 @@ function identity(counts: HTMLElement): HTMLElement {
     name.classList.toggle('unset', !called && !user);
     handle.textContent = called && user ? `@${user}` : '';
     handle.hidden = !handle.textContent;
+    fitted();
   };
   paint(profile.name, profile.handle);
   // Signed in, one person, one name: none written here yet, it is the one signed in with (the Remote's); and the
@@ -279,17 +307,14 @@ function identity(counts: HTMLElement): HTMLElement {
 }
 
 /**
- * The profile at Home's top: the face, the name, the counts, and Edit profile. It is edited where it is read: the
- * name becomes the line it is written on, where it stands and as large; the handle and the line about the person
- * come in under it; Edit profile gives way to Cancel and Save. The top grows and shrinks to what it holds rather
- * than jumping, one move at a time: what is under it goes with it, never up and then down; saved with new initials,
- * once it has folded, the face turns round to show them.
+ * The profile at Home's top: the name, as large as Home is wide (the face is the rail's, at its foot), and under it
+ * the counts and Edit profile on one quiet line. It is edited where it is read: the name becomes the line it is
+ * written on, where it stands and as large; the handle and the line about the person come in under it; Edit profile
+ * gives way to Cancel and Save. The top grows and shrinks to what it holds rather than jumping, one move at a time:
+ * what is under it goes with it, never up and then down.
  */
 function profileHeader(count: HTMLElement, owner: boolean): HTMLElement {
-  const avatar = h('div', {class: 'avatar', 'aria-hidden': 'true'});
   const header = h('section', {class: 'profile'});
-  const face = () => [initials(currentProfile()) || mark('person')];
-  /** Drawn as it is now; from another state (`beat`), its height goes from what it was, and the face says so. */
   /** The room it takes in the page: its box and the margins round it (written in, the sheet grows out past its place). */
   const room = () => {
     const cs = getComputedStyle(header);
@@ -315,21 +340,16 @@ function profileHeader(count: HTMLElement, owner: boolean): HTMLElement {
     });
     return {ghosts, handleAt: header.querySelector('.handle-in')?.getBoundingClientRect().top ?? null};
   };
-  const draw = (beat: 'open' | 'saved' | 'cancel' | null, faceWas: Node[] = []) => {
+  /** Drawn as it is now; from another state (`beat`), its height goes from what it was. */
+  const draw = (beat: 'open' | 'saved' | 'cancel' | null) => {
     const was = room(), from = was.height + was.margins;
     const left = (beat === 'saved' || beat === 'cancel') && !still() && header.isConnected ? leave() : null;
-    avatar.replaceChildren(...face());
-    // Each count is the way to what it counts, further down Home (as a profile's counts are): pressed, there it is.
-    const counts = h('p', {class: 'counts'}, toSection(count, 'repos-title'), toSection(servers0(), 'servers-title'));
-    // Written in, the face follows what is written: the initials the name (or the handle) gives, at once.
-    const form = editing ? editForm(done, (p) => avatar.replaceChildren(initials(p) || mark('person'))) : null;
-    const edit = owner && !editing ? h('button', {class: 'button', type: 'button'}, t('Edit profile')) as HTMLButtonElement : null;
-    const open = () => { editing = true; draw('open'); header.querySelector<HTMLInputElement>('#profile-name')?.focus(); };
-    edit?.addEventListener('click', open);
-    // The face is what one changes first: pressed, the profile opens to be written, as Edit profile does.
-    avatar.classList.toggle('pressable', !!edit);
-    avatar.onclick = edit ? open : null;
-    header.replaceChildren(avatar, form?.element ?? identity(counts), ...(form ? [form.acts] : edit ? [edit] : []));
+    const form = editing ? editForm(done) : null;
+    const edit = owner && !editing ? h('button', {class: 'count-go profile-edit', type: 'button'}, t('Edit profile')) as HTMLButtonElement : null;
+    edit?.addEventListener('click', () => { editing = true; draw('open'); header.querySelector<HTMLInputElement>('#profile-name')?.focus(); });
+    // Each count is the way to what it counts (as a profile's counts are): pressed, there it is; Edit profile last.
+    const counts = h('p', {class: 'counts'}, toSection(count, 'repos-title'), toSection(servers0(), 'servers-title'), edit);
+    header.replaceChildren(form?.element ?? identity(counts, () => fitName(header)), ...(form ? [form.acts] : []));
     // Folding, it stays a sheet while it folds, and its ground and edge go after (styles: their transition): gone in
     // the frame Enter was pressed, the whole sheet was one cut. Its margins take back what its padding gave, so
     // nothing moves as it stops being one.
@@ -356,39 +376,30 @@ function profileHeader(count: HTMLElement, owner: boolean): HTMLElement {
       const handle = header.querySelector<HTMLElement>('.identity > .handle:not([hidden])');
       const dy = left?.handleAt != null && handle ? left.handleAt - handle.getBoundingClientRect().top : 0;
       if (handle && Math.abs(dy) > .5) handle.animate([{translate: `0 ${dy}px`}, {translate: '0 0'}], {duration: paced(320), easing: LAND});
-      // What stepped aside while it was written comes back as it folds: the counts, then Edit profile.
-      [...header.querySelectorAll<HTMLElement>('.counts, :scope > .button')].forEach((el, i) =>
-        el.animate([{opacity: 0}, {opacity: 1}], {duration: paced(240), delay: paced(120 + i * 60), easing: LAND, fill: 'backwards'}));
+      // What stepped aside while it was written comes back as it folds: the counts and Edit profile with them.
+      header.querySelector<HTMLElement>('.counts')?.animate([{opacity: 0}, {opacity: 1}], {duration: paced(240), delay: paced(120), easing: LAND, fill: 'backwards'});
     }
     // One move at a time: the sheet grows or folds, and only what that move is about comes with it.
     if (beat === 'open') {
       // What was not there comes in under the name, a line after another, into the room the sheet makes.
       [...header.querySelectorAll<HTMLElement>('.handle-field, .bio-field, .edit-acts')].forEach((el, i) =>
         el.animate([{opacity: 0, translate: '0 -6px'}, {opacity: 1, translate: '0 0'}], {duration: paced(240), delay: paced(60 + i * 50), easing: LAND, fill: 'backwards'}));
-    } else if (beat === 'saved') {
-      const now = [...avatar.childNodes];
-      const same = faceWas.map((n) => n.textContent).join() === now.map((n) => n.textContent).join();
-      if (same) return;
-      // New initials, once the sheet has folded: it turns away showing the face it had, and comes round showing them.
-      avatar.replaceChildren(...faceWas);
-      void settled.then(() => {
-        if (!avatar.isConnected) return;
-        avatar.animate([{transform: 'perspective(400px) rotateY(0deg)'}, {transform: 'perspective(400px) rotateY(90deg)'}], {duration: paced(150), easing: 'ease-in'}).finished.then(() => {
-          avatar.replaceChildren(...now);
-          avatar.animate([{transform: 'perspective(400px) rotateY(-90deg)'}, {transform: 'perspective(400px) rotateY(0deg)'}], {duration: paced(300), easing: 'cubic-bezier(.2, 1.4, .32, 1)'});
-        }, () => avatar.replaceChildren(...now));
-      });
     }
   };
   const done = (saved: boolean) => {
-    const faceWas = [...avatar.childNodes].map((n) => n.cloneNode(true));
     editing = false;
-    draw(saved ? 'saved' : 'cancel', faceWas);
-    header.querySelector<HTMLElement>(':scope > .button')?.focus({preventScroll: true});
+    draw(saved ? 'saved' : 'cancel');
+    header.querySelector<HTMLElement>('.profile-edit')?.focus({preventScroll: true});
   };
-  // Opened from the person's menu, it is drawn open: Home's arrival is the beat, and a wiggle of the face on top of
-  // the page panning in would be two moves at once.
+  // Opened from the person's menu, it is drawn open: Home's arrival is the beat.
   draw(null);
+  // As wide as Home's column, the name as large as that lets it be: fitted again as the column narrows or widens
+  // (not as the name's size makes the profile taller).
+  let wide = 0;
+  new ResizeObserver(() => {
+    const w = header.parentElement?.clientWidth ?? 0;
+    if (w !== wide) { wide = w; fitName(header); }
+  }).observe(header);
   // Kept elsewhere meanwhile (the Remote's, taken in as one signs in; l3; another tab): drawn as it is now, unless it
   // is being written.
   const stop = onState((key, outside) => {
@@ -403,11 +414,11 @@ function profileHeader(count: HTMLElement, owner: boolean): HTMLElement {
  * The profile as it is written, on a sheet of its own: the name on its own line as large as it reads, @ and the
  * handle under it, the line about the person under that, each a line written on with room between them (an ink
  * line under the one with the keyboard); the counts, which are not written, step aside. Cancel and Save stand where
- * Edit profile stood. Enter on the name or the handle saves, Escape leaves it as it was. `faced` is told each change.
+ * Edit profile stood. Enter on the name or the handle saves, Escape leaves it as it was.
  * The handle is offered signed in only: it is their username, how others find them, and changed here it is changed
  * on the Remote first (taken, it says so at the handle, and nothing is saved).
  */
-function editForm(done: (saved: boolean) => void, faced: (p: {name: string; handle: string; bio: string}) => void): {element: HTMLElement; acts: HTMLElement} {
+function editForm(done: (saved: boolean) => void): {element: HTMLElement; acts: HTMLElement} {
   const profile = currentProfile();
   const name = h('input', {id: 'profile-name', class: 'name-in', maxlength: String(LIMITS.name), autocomplete: 'name',
     placeholder: t('Your name'), 'aria-label': t('Name')}) as HTMLInputElement;
@@ -420,14 +431,8 @@ function editForm(done: (saved: boolean) => void, faced: (p: {name: string; hand
   const was = signedIn ? inbox.myUsername().catch(() => profile.handle) : Promise.resolve(profile.handle);
   void was.then((u) => { if (u && handle.value === profile.handle && handle.isConnected) handle.value = u; });
   // None written yet, the name shown is the one signed in with (identity): it is what is there to change, not an
-  // empty line beside it. Nothing typed is written over, and the face takes it up as it would what is typed.
-  if (!profile.name) {
-    void myName().then((n) => {
-      if (!n || name.value || !name.isConnected) return;
-      name.value = n;
-      faced({name: n, handle: handle.value.replace(/^@/, ''), bio: ''});
-    }, () => {});
-  }
+  // empty line beside it. Nothing typed is written over.
+  if (!profile.name) void myName().then((n) => { if (n && !name.value && name.isConnected) name.value = n; }, () => {});
   // The line about the person is as tall as what is written in it.
   const fit = () => { bio.style.height = 'auto'; bio.style.height = `${bio.scrollHeight}px`; };
   bio.addEventListener('input', fit);
@@ -435,7 +440,6 @@ function editForm(done: (saved: boolean) => void, faced: (p: {name: string; hand
   const error = h('p', {class: 'error', role: 'alert'});
   const form = h('form', {id: 'profile-form', class: 'edit identity'},
     name, signedIn ? h('span', {class: 'handle-field'}, '@', handle) : null, h('span', {class: 'bio-field'}, bio), error) as HTMLFormElement;
-  for (const f of [name, handle]) f.addEventListener('input', () => faced({name: name.value, handle: handle.value.replace(/^@/, ''), bio: ''}));
   const cancel = h('button', {class: 'button', type: 'button', 'data-cancel': ''}, t('Cancel'));
   const save = h('button', {class: 'button primary', type: 'submit', form: 'profile-form'}, t('Save'));
   const acts = h('div', {class: 'edit-acts'}, cancel, save);

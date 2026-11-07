@@ -17,6 +17,9 @@ import {errorText} from '../../host/errors.ts';
 // A card says what Remote's says, in its order: size and when it changed,
 // then where it stands.
 const sizeAndWhen = (size: number, modified: number) => `${bytes(size)} · ${t('Updated {when}', {when: ago(modified)})}`;
+/** What a card says of its repo's size and time: both, or (Home's column of names) only when it last changed. */
+type Said = (size: number, modified: number) => string;
+const whenOnly: Said = (_, modified) => ago(modified);
 
 /**
  * Why `name` stays on this device now (no Remote, something running in its Prompt…), or null when it can be freed
@@ -57,19 +60,19 @@ function gearCard(ctx: Context, name: string, lines: Node[], away: boolean, agai
   return card;
 }
 
-function repoCard(ctx: Context, name: string, size: number, modified: number, again: () => Promise<void>): HTMLElement {
+function repoCard(ctx: Context, name: string, size: number, modified: number, again: () => Promise<void>, said: Said): HTMLElement {
   // What it is, in the words it was made with: its README's first plain line, under its name, once read.
   const what = h('span', {class: 'card-summary'});
   void summaryOf(name).then((line) => { what.textContent = line; });
-  return gearCard(ctx, name, [what, h('span', {class: 'muted', 'data-size': ''}, sizeAndWhen(size, modified)),
+  return gearCard(ctx, name, [what, h('span', {class: 'muted', 'data-size': ''}, said(size, modified)),
     // Where it stands against the Remote; filled in once it is known.
     h('span', {class: 'muted card-sync'})], false, again);
 }
 
 
 /** A repo on the Remote and not here: pressed, it is brought here and opened. */
-function awayCard(ctx: Context, name: string, size: number, modified: number, again: () => Promise<void>): HTMLElement {
-  return gearCard(ctx, name, [h('span', {class: 'muted'}, sizeAndWhen(size, modified)),
+function awayCard(ctx: Context, name: string, size: number, modified: number, again: () => Promise<void>, said: Said): HTMLElement {
+  return gearCard(ctx, name, [h('span', {class: 'muted'}, said(size, modified)),
     h('span', {class: 'muted card-sync'}, t('Remote only'))], true, again);
 }
 
@@ -85,8 +88,9 @@ interface RepoList {
   refresh(light?: string | null): Promise<RepoSummary[] | null>;
 }
 
-export function repoList(ctx: Context, options: {newCard: boolean; counted?: (n: number) => void}): RepoList {
-  // The same cards wherever the list is (Home, New repo): one size, one title.
+export function repoList(ctx: Context, options: {newCard: boolean; counted?: (n: number) => void; brief?: boolean}): RepoList {
+  // The same cards wherever the list is (Home, New repo): one size, one title; Home's say only when each changed.
+  const said = options.brief ? whenOnly : sizeAndWhen;
   const grid = h('div', {class: 'grid repo-grid'}, h('p', {class: 'muted'}, t('Loading…')));
   arrowKeys(grid, '.card-open, .card.new');
   const refresh = async (light?: string | null): Promise<RepoSummary[] | null> => {
@@ -101,8 +105,8 @@ export function repoList(ctx: Context, options: {newCard: boolean; counted?: (n:
     if (grid.isConnected && grid.querySelector('.repo-gear-pop:not([hidden])')) { setTimeout(() => void refresh(light), 1000); return repos; }
     // What is drawn of the Remote is what a change is told from (signed out, its cards go at the next look).
     known = remoteOnly().map((r) => r.name).join('\n');
-    grid.replaceChildren(...repos.map((r) => repoCard(ctx, r.name, r.bytes, r.modified, again)),
-      ...remoteOnly().map((r) => awayCard(ctx, r.name, r.bytes, Date.parse(r.updatedAt), again)),
+    grid.replaceChildren(...repos.map((r) => repoCard(ctx, r.name, r.bytes, r.modified, again, said)),
+      ...remoteOnly().map((r) => awayCard(ctx, r.name, r.bytes, Date.parse(r.updatedAt), again, said)),
       ...(options.newCard ? [newRepoCard(ctx)] : []));
     if (!repos.length && !remoteOnly().length && !options.newCard) grid.replaceChildren(h('div', {class: 'empty'}, t('No repos yet')));
     marks();
@@ -113,7 +117,7 @@ export function repoList(ctx: Context, options: {newCard: boolean; counted?: (n:
           const was = repos.find((x) => x.name === r.name);
           if (!was || (was.bytes === r.bytes && was.modified === r.modified)) continue;
           const slot = grid.querySelector(`.card.repo[data-repo="${CSS.escape(r.name)}"] [data-size]`);
-          if (slot) slot.textContent = sizeAndWhen(r.bytes, r.modified);
+          if (slot) slot.textContent = said(r.bytes, r.modified);
         }
       }, () => {});
     }

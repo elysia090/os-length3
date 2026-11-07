@@ -213,22 +213,20 @@ test('the right pane brought out lands a touch past its edge and settles, its ma
   expect(await filled()).toBeCloseTo(1, 2);
 });
 
-test('Home\'s right pane put away and brought back: its switch stays under the hand, what it holds goes with its edge, its search never squeezed', async ({app}) => {
+test('Home\'s right pane put away and brought back: its switch stays under the hand, what it holds goes with its edge, the band\'s search stays where it is', async ({app}) => {
   await app.newRepo.make('hello');
   await app.rail.go('home');
   await still(app);
   const toggle = app.main.getByRole('button', {name: 'Right pane'});
   const search = app.main.getByRole('searchbox', {name: /^Search/});
   const at = (await toggle.boundingBox())!;
-  const wide = (await search.boundingBox())!.width;
-  // Frame by frame as it goes: the search box and Lately, how much of each is to be seen.
-  const going = (ms: number) => app.page.evaluate((ms) => new Promise<{search: number; lately: string; width: number}[]>((done) => {
-    const box = document.querySelector<HTMLElement>('.home-bar > .search-box')!, side = document.querySelector<HTMLElement>('.home-side')!;
-    const seen: {search: number; lately: string; width: number}[] = [], t0 = performance.now();
+  const where = (await search.boundingBox())!;
+  // Frame by frame as it goes: whether Lately is to be seen.
+  const going = (ms: number) => app.page.evaluate((ms) => new Promise<string[]>((done) => {
+    const side = document.querySelector<HTMLElement>('.home-side')!;
+    const seen: string[] = [], t0 = performance.now();
     const tick = () => {
-      // Drawn at all (not taken out of the page), and then how much.
-      const drawn = (el: HTMLElement) => el.getClientRects().length > 0 && getComputedStyle(el).visibility === 'visible';
-      seen.push({search: drawn(box) ? +getComputedStyle(box).opacity : 0, lately: drawn(side) ? 'visible' : 'hidden', width: box.getBoundingClientRect().width});
+      seen.push(side.getClientRects().length > 0 && getComputedStyle(side).visibility === 'visible' ? 'visible' : 'hidden');
       if (performance.now() - t0 < ms) requestAnimationFrame(tick); else done(seen);
     };
     requestAnimationFrame(tick);
@@ -236,20 +234,17 @@ test('Home\'s right pane put away and brought back: its switch stays under the h
   const away = going(300);
   await toggle.click();
   const put = await away;
-  // Not gone at the press: the search fades from where it was, and Lately is still there for the start of the move.
-  expect(put[0].search).toBeGreaterThan(.5);
-  expect(put.slice(0, 3).every((f) => f.lately === 'visible')).toBe(true);
+  // Lately is still there for the start of the move, going with the pane's edge.
+  expect(put.slice(0, 3).every((f) => f === 'visible')).toBe(true);
   await still(app);
-  await expect(search).toBeHidden();
-  // The switch where it stood, not a gap's width to the right of it.
+  // The switch where it stood, and the search on the band where it was: neither is the pane's to take away.
   expect(Math.abs((await toggle.boundingBox())!.x - at.x)).toBeLessThan(1);
-  const back = going(1500);
-  await toggle.click();
-  const came = await back;
-  await still(app);
+  expect(Math.abs((await toggle.boundingBox())!.y - at.y)).toBeLessThan(1);
   await expect(search).toBeVisible();
-  // Never squeezed on the way: as wide as it is out, every frame it is to be seen at all.
-  for (const f of came.filter((f) => f.search > .05)) expect(f.width).toBeGreaterThan(wide - 1);
+  expect(Math.abs((await search.boundingBox())!.x - where.x)).toBeLessThan(1);
+  await toggle.click();
+  await still(app);
+  await expect(app.main.getByRole('complementary', {name: 'Recent activity'})).toBeVisible();
   expect(Math.abs((await toggle.boundingBox())!.x - at.x)).toBeLessThan(1);
 });
 

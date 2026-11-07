@@ -1826,15 +1826,24 @@ Each page below says only what is its own; the rest is Part I.
 
 ### Home
 
-A profile, between a Twitter and a GitHub profile, that reads the same for
-its owner and for anyone else; only the owner gets "edit". In order:
-identity (avatar, name, @handle, bio, counts of repos and servers; no name
-written yet, it is the one signed in with, as Remote and the Me menu say
-it: one person, one name, never "No name yet" beside "Signed in as Sora") →
-**TODO** → repos → servers (each one is in, a chip that opens Server on it;
-after them each board this browser writes in as a guest, #board with its
-server and guest beside it, opening Server at that board alone, so a guest
-come back, signed in or not, is led back to it).
+A profile that reads the same for its owner and for anyone else; only the
+owner gets "edit". Bold, minimal, sure of itself: on the desk's dotted ground
+(the dots Forge's boxes lie on), the person's name alone across the top, as
+large as Home's column lets it be on one line (up to 168 px, fitted by
+measuring it; never under 40 px, where a longer name breaks instead), and
+under it one quiet mono line: the counts of repos and servers, then Edit
+profile. No face in the column: the rail's own icon is the face. No name
+written yet, it is the one signed in with, as Remote and the Me menu say it:
+one person, one name, never "No name yet" beside "Signed in as Sora"; none at
+all, "No name set" stands as large in the ground's rule colour. Under the
+name, side by side: **TODO**, a box as Forge's are (paper, an ink edge, its
+shadow), as tall as what is in it and most of half the column wide; and
+beside it the repos and servers, each a name in the display face, what it is
+beside it in mono (a repo: when it last changed), New repo a quiet mono line
+after them. Each server one is in opens Server on it; after them each board
+this browser writes in as a guest, #board with its server and guest beside
+it, opening Server at that board alone, so a guest come back, signed in or
+not, is led back to it. On a narrow column the two go one under the other.
 TODO is the person's single list; repos do not carry their own inbox or
 TODO files. An item is a first line named like an issue ("Fix：件名",
 "買う：種"), then detail lines (starting on the first line's column, with a
@@ -1846,15 +1855,14 @@ ones together by Clear done. Done strikes through and fades the first line, the 
 across its words from the kind's start as the mark pops (taken back, it goes
 back the way it came), and its detail goes quiet with it, still there to read.
 A detail opened or put away moves the items under it down or up to make room,
-never jumping them. The repos are large cards, three across at a
-laptop's width (two, then one, as it narrows); each is a repo in a list as
-Runtime says it: its body the repo itself, opened in Forge, its gear what
-is done to the repo (its card on the Remote, Rename, Free, Delete).
+never jumping them. Each repo's name is a repo in a list as Runtime says it:
+the name the repo itself, opened in Forge, its gear at the name's end under
+the pointer what is done to the repo (its card on the Remote, Rename, Free,
+Delete).
 
 What a hand goes to without being told answers it, here and on every page:
 each count is the way to its section further down (a raised fill under the
 pointer; pressed, the page goes there and its heading lights as it lands);
-the face, pressed, opens the profile to be written, as Edit profile does;
 the TODO's paper pressed under its items gives the caret to the line at its
 foot, as a page written on does. In Forge a file's name in its head,
 pressed (not to choose its words), is written over where it stands, a faint
@@ -1882,21 +1890,19 @@ keeps its own turning: past its end, the page behind it does not go on.
 
 The profile is edited where it is read, not in a form put in its place:
 written in, the top is a sheet of its own as the TODO is when written in
-(`paper`, an `ink` edge, grown out around the face and the lines so nothing
-on it moves). The name becomes the line it is written on, where it stands
+(`paper`, an `ink` edge, grown out around the lines so nothing on it
+moves). The name becomes the line it is written on, where it stands
 and as large, holding the name shown (none written yet, the one signed in
 with, to be changed, never an empty line beside it); @ and the handle, and
 the line about the person, come in under
 it a line after another, with room between them; each is written on, not
 boxed (a rule under it, ink under the one with the keyboard), and the
-counts, which are not written, step aside. The face follows what is written,
-its initials as the name (or the handle) goes in, so the change is seen as
-it is made. Edit profile gives way to Cancel and Save where it stood. The
+counts and Edit profile, which are not written, step aside; Cancel and Save
+stand at the name's right, on its line. The
 top grows and shrinks to what it holds (320 ms), one move at a time: the
 sheet's edge and what is under it go together, never up and then down (its
 margins and its height are one move), the lines that were not there coming
-into the room it makes; saved with new initials, once it has folded, the
-face turns round to show them. Opened from the person's menu, it is drawn
+into the room it makes. Opened from the person's menu, it is drawn
 open as Home comes in: the arrival is its beat. Enter on the name or the handle
 saves; Escape leaves it as it was. The rail's face is the new one at once.
 The handle is offered signed in only: it is the username (§5, Names), how
@@ -1904,20 +1910,21 @@ others find them, so changed here it is changed on the Remote first, and
 what the Remote says no to (taken, held for its owner, changed twice this
 hour) is said at the handle, nothing saved; left empty, it stays as it was.
 
-Home's right pane (the same pane and switch as Forge's and Git's) has
-their top line: the search box where theirs is, beside the switch, in the
-repo last worked in (or, none yet, the one changed last), named in it
-since Home has no band to say which ("Search garden"); Ctrl+K, Ctrl+P and
-Ctrl+B as there; what is found opens in Forge, a line at that line,
-selected. While it is out the window steps back under the one shade. Its
-first line, the name and Edit profile, stands on that top line too. Under
-it the pane holds
+Home has Forge's band along its top, held there while Home scrolls under it,
+plain ground from the rail's line to the pane's: on it the search box, in the
+repo last worked in (or, none yet, the one changed last), named in it since
+no repos on the band say which ("Search garden"); Ctrl+K, Ctrl+P and Ctrl+B
+as in Forge; what it finds drops as Forge's sheet does, over Home, which
+steps back out of sight under it; a line found opens in Forge at that line,
+selected. Its right pane is the same pane as Forge's and Git's, its switch at
+its foot where Forge's is, level with the person at the rail's. The pane
+holds
 Lately: what waits since the person was last here, a row each in the rows
 Forge's and Git's pane have for what was done (a bar, ink while something of
 it is not read, the paper's rule once it is; what it is in the display face;
 under it what was said, or the line it was left at as written there, in mono;
-where it is, quiet), under a quiet head (a pane's own heads, Lately, People,
-are small and in the quiet colour): where they left
+where it is, quiet), rows only as Forge's pane is (its head, Recent activity,
+heard and not shown): where they left
 off (the file last read in Forge, its repo, and the line it was left at), the
 conversations with something not read (who wrote; what it is and its words:
 Review：…), the boards with posts not seen,

@@ -201,7 +201,7 @@ export class Reference {
   private paintDown() {
     const s = this.search;
     const down = s.matches(':focus-within, .reading, .moving') && !s.matches('.leaving, .idle');
-    s.closest('.work')?.classList.toggle('sheet-down', down);
+    s.closest('.work, .home-layout')?.classList.toggle('sheet-down', down);
   }
 
   /**
