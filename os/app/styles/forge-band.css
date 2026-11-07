@@ -111,7 +111,7 @@
 /* Nothing typed or read and nothing asked for (↓): nothing drops, and the desk stays (reference.ts idle). */
 .band-tools .search-box.idle .search-results { display: none; }
 /* The desk goes out of sight as the sheet comes down (a little quicker than it comes back as the sheet goes up). */
-.work.desk-bench:has(.band-tools > .search-box:is(:focus-within, .reading, .moving):not(.leaving, .idle)) .desk-box {
+.work.desk-bench.sheet-down .desk-box {
   opacity: 0; transition-duration: 640ms, 120ms, 120ms, 220ms; }
 .work.desk-bench .desk-box { transition-duration: 640ms, 120ms, 120ms, 300ms; }
 /* The kinds, while asked for or one is pressed: named as the sheet's sections are, large, the pressed one underlined. */

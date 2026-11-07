@@ -48,7 +48,11 @@ if (typeof WorkerGlobalScope === 'function' && self instanceof WorkerGlobalScope
   self.onmessage = async ({data}) => {
     try {
       const translate = await loadTranslator(data.translator);
-      self.postMessage(whole(translate, await stored(data, translate.sha256), data));
+      const out = whole(translate, await stored(data, translate.sha256), data);
+      // Moved, not copied: a module of tens of MB copied here was read again on the page's thread as it came (10–22 ms
+      // a time). (Shared memory is not moved; it goes as itself.)
+      const buffers = [out.wasm.buffer, ...(out.segments ?? []).map((s) => s.bytes.buffer)];
+      self.postMessage(out, [...new Set(buffers)].filter((b) => b instanceof ArrayBuffer));
     } catch (e) {
       self.postMessage({error: e instanceof Error ? e.message : String(e)});
     }

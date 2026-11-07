@@ -172,7 +172,26 @@ export class Reference {
     this.search = h('div', {class: 'search-box'}, form, this.under);
     this.goesUp();
     this.follow();
-    if (this.band) new ResizeObserver(() => this.fit()).observe(this.under);
+    if (this.band) {
+      new ResizeObserver(() => this.fit()).observe(this.under);
+      // Whether the sheet is down is said on the page's work (paintDown), as the keyboard and its states move.
+      const later = () => setTimeout(() => this.paintDown());
+      this.search.addEventListener('focusin', later);
+      this.search.addEventListener('focusout', later);
+      new MutationObserver(() => this.paintDown()).observe(this.search, {attributes: true, attributeFilter: ['class']});
+    }
+  }
+
+  /**
+   * On the band, whether what is under the box is down over the desk (the box has the keyboard, or something is read
+   * or moving there, and it is not going up nor idle): said on the page's work as `sheet-down`, the desk's boxes going
+   * out of sight under it (forge-band.css). A class, not a :has() asked of the whole work: that was asked again at each
+   * move of the keyboard anywhere in it, a few ms of the page's styles each time.
+   */
+  private paintDown() {
+    const s = this.search;
+    const down = s.matches(':focus-within, .reading, .moving') && !s.matches('.leaving, .idle');
+    s.closest('.work')?.classList.toggle('sheet-down', down);
   }
 
   /**

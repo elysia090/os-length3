@@ -61,6 +61,37 @@ type Way2 = 'pan' | 'in' | 'out';
 /** A box on the desk; `placed` once it has stood somewhere (before, it has no place to move from). */
 interface Box { key: string; laid: Laid; el: HTMLElement; label: HTMLElement; slot: Slot; placed?: boolean }
 
+
+/**
+ * The pointer out of sight where it rests (the finger shown, or the keyboard writing in a box): `cursor: none` on what
+ * is under it alone, moved to what comes under it as the desk glides beneath it, put back as it was once it moves. (A
+ * class on the page's root with a rule for everything under it had the style of every element worked out again, 4–5 ms,
+ * at each key that brought the finger.)
+ */
+const veil = new (class {
+  #on: {el: HTMLElement; was: string; prio: string} | null = null;
+  #wanted = false;
+  /** Out of sight, at `at` (where the pointer was last; none, it is not over the page). */
+  hide(at: {x: number; y: number} | null) { this.#wanted = true; this.follow(at); }
+  /** Still out of sight over what is now under it. */
+  follow(at: {x: number; y: number} | null) {
+    if (!this.#wanted || !at) return;
+    const el = document.elementFromPoint(at.x, at.y);
+    if (!(el instanceof HTMLElement) || el === this.#on?.el) return;
+    this.#back();
+    this.#on = {el, was: el.style.getPropertyValue('cursor'), prio: el.style.getPropertyPriority('cursor')};
+    el.style.setProperty('cursor', 'none', 'important');
+  }
+  /** In sight again. */
+  show() { this.#wanted = false; this.#back(); }
+  #back() {
+    const o = this.#on;
+    this.#on = null;
+    if (!o) return;
+    if (o.was) o.el.style.setProperty('cursor', o.was, o.prio); else o.el.style.removeProperty('cursor');
+  }
+})();
+
 /** `el` put at (x, y) at once, not moved there: where a box first stands (never come from the desk's corner). */
 function standAt(el: HTMLElement, x: number, y: number) {
   el.style.transition = 'none';
@@ -189,14 +220,14 @@ export class Desk {
     addEventListener('pointermove', (e) => {
       this.#pointerAt = {x: e.clientX, y: e.clientY};
       if (!e.isTrusted || (!e.movementX && !e.movementY)) return;
-      document.documentElement.classList.remove('desk-nocursor');
+      veil.show();
       this.#showHand(false);
     }, {capture: true, passive: true});
     // Written in a box, the finger and the pointer are out of the way until the pointer moves.
     this.element.addEventListener('keydown', (e) => {
       if (e.target === this.element || !letter(e)) return;
       this.#showHand(false);
-      document.documentElement.classList.add('desk-nocursor');
+      veil.hide(this.#pointerAt);
     });
   }
 
@@ -528,6 +559,7 @@ export class Desk {
       const s = from.s * Math.pow(end.s / from.s, q);
       const at = {x: pf.x + (pt.x - pf.x) * p, y: pf.y + (pt.y - pf.y) * p};
       set(k >= 1 ? end : {s, x: at.x - m.x * s, y: at.y - m.y * s}, k >= 1);
+      veil.follow(this.#pointerAt);
       if (k < 1) this.#moving = requestAnimationFrame(step);
       else { this.#moving = 0; this.#glide = null; }
     };
@@ -628,7 +660,7 @@ export class Desk {
 
   /** The finger shown (`on`), the pointer hidden while it is (out of the pointer, where that was over the desk), or gone. */
   #showHand(on: boolean) {
-    if (on) document.documentElement.classList.add('desk-nocursor');
+    if (on) veil.hide(this.#pointerAt);
     if (this.#hand.classList.contains('on') === on) return;
     this.#hand.classList.toggle('on', on);
     if (!on) { this.#handGlide = null; return; }
@@ -661,6 +693,7 @@ export class Desk {
       const was = this.#handAt;
       this.#handAt = at;
       this.#hand.style.translate = `${at.x}px ${at.y}px`;
+      veil.follow(this.#pointerAt);
       // Still once it stands where it should and nothing it follows moves.
       if (this.#handGlide || !was || Math.abs(was.x - at.x) + Math.abs(was.y - at.y) > .01 || b.el.getAnimations().length) this.#handFrame = requestAnimationFrame(frame);
     };

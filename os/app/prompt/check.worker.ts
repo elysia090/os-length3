@@ -7,9 +7,33 @@
 // share.mjs prepare: copying a 16 MB module held the page's thread for a tenth of a second, as a Prompt was in use):
 // {id, bytes, sha256, size, segments}, its digest and size those of the translation as it was.
 
+//
+// Page → worker: {id, keep: {url, cache, parts, seal}}: the parts joined, sealed (their SHA-256 after them) when
+// `seal`, and put in the page's Cache Storage at `url` (whole). Worker → page: {id, size}, or {id, error}. Keeping a
+// translation of tens of MB held the page's thread 20–60 ms a time (its copies, its digest, the cache's own copy).
+
 import {prepare} from '../../../xlat/runtime/share.mjs';
 
-addEventListener('message', async (e: MessageEvent<{id: number; bytes: ArrayBuffer; unpack: boolean; prepare?: {shared: boolean}}>) => {
+type Keep = {id: number; keep: {url: string; cache: string; parts: Uint8Array[]; seal: boolean}};
+type Check = {id: number; bytes: ArrayBuffer; unpack: boolean; prepare?: {shared: boolean}};
+
+async function keep({id, keep: k}: Keep) {
+  try {
+    const n = k.parts.reduce((s, p) => s + p.byteLength, 0);
+    const out = new Uint8Array(n + (k.seal ? 32 : 0));
+    let at = 0;
+    for (const p of k.parts) { out.set(p, at); at += p.byteLength; }
+    if (k.seal) out.set(new Uint8Array(await crypto.subtle.digest('SHA-256', out.subarray(0, n))), n);
+    const c = await caches.open(k.cache);
+    await c.put(k.url, new Response(out, {headers: {'content-type': 'application/octet-stream', 'content-length': String(out.length)}}));
+    postMessage({id, size: out.length});
+  } catch (err) {
+    postMessage({id, error: String(err)});
+  }
+}
+
+addEventListener('message', async (e: MessageEvent<Check | Keep>) => {
+  if ('keep' in e.data) { void keep(e.data); return; }
   const {id, unpack} = e.data;
   try {
     const bytes = unpack ? await new Response(new Blob([e.data.bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer() : e.data.bytes;
@@ -23,6 +47,7 @@ addEventListener('message', async (e: MessageEvent<{id: number; bytes: ArrayBuff
     }
     postMessage({id, bytes, sha256}, {transfer: [bytes]});
   } catch (err) {
-    postMessage({id, error: String(err), bytes: e.data.bytes}, {transfer: e.data.bytes.byteLength ? [e.data.bytes] : []});
+    const lent = (e.data as Check).bytes;
+    postMessage({id, error: String(err), bytes: lent}, {transfer: lent.byteLength ? [lent] : []});
   }
 });

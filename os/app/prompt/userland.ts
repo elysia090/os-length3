@@ -149,7 +149,7 @@ const idle = () => new Promise<void>((r) => ('requestIdleCallback' in globalThis
 /** The worker that checks l3's files (check.worker.ts), made when first asked; null where there is none. */
 let checker: Worker | null | undefined;
 let asking = 0;
-const answers = new Map<number, (r: {bytes?: ArrayBuffer; sha256?: string; error?: string}) => void>();
+const answers = new Map<number, (r: {bytes?: ArrayBuffer; sha256?: string; size?: number; error?: string}) => void>();
 const worker = (): Worker | null => {
   if (checker !== undefined) return checker;
   try {
@@ -214,34 +214,76 @@ async function kept(url: string, sha256: string): Promise<Uint8Array | null> {
  * share of this origin's quota, the least recently used going first to make
  * room, and what does not fit is not kept (it is fetched again next time).
  */
-async function keep(url: string, bytes: Uint8Array): Promise<boolean> {
+const keep = (url: string, bytes: Uint8Array): Promise<boolean> => keepParts(url, [bytes], false, false);
+
+/**
+ * Keep `parts`, joined, as `url` (as `keep`), sealed with their SHA-256 after them when `seal`. The joining, the
+ * digest and the cache's own copy are done by the worker that checks files, not on the page's thread (a translation
+ * of tens of MB held it 20–60 ms a time); `lend`: the parts' buffers go to it (the caller has no more use for them),
+ * else they are copied on the way. Without a worker, all of it here.
+ */
+async function keepParts(url: string, parts: Uint8Array[], seal: boolean, lend: boolean): Promise<boolean> {
   const c = await open();
   if (!c) return false;
+  const size = parts.reduce((n, p) => n + p.byteLength, 0) + (seal ? 32 : 0);
   try {
-    const e = await navigator.storage?.estimate?.();
-    if (e?.quota) {
-      const budget = e.quota * SHARE;
-      let mine = await keptBytes(c);
-      if (bytes.length > budget) return false;
-      const u = uses();
-      const oldest = (await c.keys()).map((r) => r.url).filter((k) => k !== new URL(url, location.href).href)
-        .sort((a, b) => (u[new URL(a).pathname] ?? 0) - (u[new URL(b).pathname] ?? 0));
-      // Room is the share left, and what the origin as a whole may still take.
-      const room = () => Math.min(budget - mine, e.quota! - (e.usage ?? 0));
-      while (room() < bytes.length && oldest.length) {
-        const k = oldest.shift()!;
-        const r = await c.match(k);
-        mine -= Number(r?.headers.get('content-length') ?? 0);
-        await c.delete(k);
-        gone(c, k);
-      }
-      if (room() < bytes.length) return false;
+    if (!await roomFor(c, url, size)) return false;
+    const w = worker();
+    if (w) {
+      const id = ++asking;
+      const r = await new Promise<{size?: number; error?: string}>((resolve) => {
+        answers.set(id, resolve);
+        // (A shared buffer is not moved: it goes as itself, as shared memory does.)
+        const moved = lend ? [...new Set(parts.map((p) => p.buffer))].filter((b): b is ArrayBuffer => b instanceof ArrayBuffer) : [];
+        w.postMessage({id, keep: {url: whole(url), cache: CACHE, parts, seal}}, moved);
+      });
+      if (r.size === undefined) return false;
+    } else {
+      const body = joined(parts);
+      await c.put(url, new Response((seal ? await sealed(body) : body) as BlobPart, {headers: {'content-type': 'application/octet-stream', 'content-length': String(size)}}));
     }
-    await c.put(url, new Response(bytes as BlobPart, {headers: {'content-type': 'application/octet-stream', 'content-length': String(bytes.length)}}));
-    void sizesOf(c).then((m) => m.set(whole(url), bytes.length));
+    void sizesOf(c).then((m) => m.set(whole(url), size));
     used(url);
     return true;
   } catch { return false; }
+}
+
+/** Room made for `size` more bytes at `url` (the least recently used going first); whether there is. */
+async function roomFor(c: Cache, url: string, size: number): Promise<boolean> {
+  const e = await navigator.storage?.estimate?.();
+  if (!e?.quota) return true;
+  const budget = e.quota * SHARE;
+  let mine = await keptBytes(c);
+  if (size > budget) return false;
+  const u = uses();
+  const oldest = (await c.keys()).map((r) => r.url).filter((k) => k !== new URL(url, location.href).href)
+    .sort((a, b) => (u[new URL(a).pathname] ?? 0) - (u[new URL(b).pathname] ?? 0));
+  // Room is the share left, and what the origin as a whole may still take.
+  const room = () => Math.min(budget - mine, e.quota! - (e.usage ?? 0));
+  while (room() < size && oldest.length) {
+    const k = oldest.shift()!;
+    const r = await c.match(k);
+    mine -= Number(r?.headers.get('content-length') ?? 0);
+    await c.delete(k);
+    gone(c, k);
+  }
+  return room() >= size;
+}
+
+/** `parts` one after another, as one. */
+function joined(parts: Uint8Array[]): Uint8Array {
+  if (parts.length === 1) return parts[0];
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.byteLength, 0));
+  let at = 0;
+  for (const p of parts) { out.set(p, at); at += p.byteLength; }
+  return out;
+}
+
+/** A head of u32s, big-endian, as the kept forms begin (and each module or segment in them is said). */
+function u32s(...xs: number[]): Uint8Array {
+  const b = new Uint8Array(4 * xs.length), v = new DataView(b.buffer);
+  xs.forEach((x, i) => v.setUint32(4 * i, x));
+  return b;
 }
 
 async function keptBytes(c: Cache): Promise<number> {
@@ -324,15 +366,8 @@ const MAGIC = 0x4c334d31;
 const hex = (b: Uint8Array) => [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
 
 /** Kept modules as one copy: 'L3M1', how many, each module's first table slot, length and bytes; then the SHA-256 of all that. */
-async function packMore(list: {bytes: Uint8Array; base: number}[]): Promise<Uint8Array> {
-  const size = 8 + list.reduce((n, m) => n + 8 + m.bytes.length, 0);
-  const body = new Uint8Array(size);
-  const v = new DataView(body.buffer);
-  v.setUint32(0, MAGIC);
-  v.setUint32(4, list.length);
-  let at = 8;
-  for (const m of list) { v.setUint32(at, m.base); v.setUint32(at + 4, m.bytes.length); body.set(m.bytes, at + 8); at += 8 + m.bytes.length; }
-  return sealed(body);
+function packMore(list: {bytes: Uint8Array; base: number}[]): Uint8Array[] {
+  return [u32s(MAGIC, list.length), ...list.flatMap((m) => [u32s(m.base, m.bytes.length), m.bytes])];
 }
 
 /** The modules kept at `url`, compiled; none when nothing is kept there or it is not what was kept (it goes). */
@@ -444,16 +479,12 @@ export function keepTranslation(l3: L3, origin: string, wasm: Uint8Array, segmen
   return (async () => {
     await idle();
     const n = segments?.length ?? 0;
-    const body = new Uint8Array(8 + (segments ?? []).reduce((k, s) => k + 8 + s.bytes.length, 0) + 4 + wasm.length);
-    const v = new DataView(body.buffer);
-    v.setUint32(0, 0x4c335431);
-    v.setUint32(4, segments ? n : 0xffffffff);
-    let at = 8;
-    for (const s of segments ?? []) { v.setUint32(at, s.offset); v.setUint32(at + 4, s.bytes.length); body.set(s.bytes, at + 8); at += 8 + s.bytes.length; }
-    v.setUint32(at, wasm.length);
-    body.set(wasm, at + 4);
+    // Its head, each segment after its place and size, then the module after its size; joined and sealed off the
+    // page's thread, the parts its own (lent): the module and segments are kept, not used here after.
+    const parts = [u32s(0x4c335431, segments ? n : 0xffffffff), ...(segments ?? []).flatMap((s) => [u32s(s.offset, s.bytes.length), s.bytes]),
+      u32s(wasm.length), wasm];
     const main = translatedURL(origin, tag, 'wasm');
-    const kept = await keep(main, await sealed(body));
+    const kept = await keepParts(main, parts, true, true);
     // The code an earlier translation of it reached later went with that one (a program translated again as one
     // module: xlat's Kernel.consolidate): a Prompt after would read it all, to take none of it.
     const c = await open();
@@ -493,13 +524,17 @@ export function keepReached(l3: L3, origin: string, from: number, list: {bytes: 
 }
 
 /** What a program reached later, kept a moment after it last grew, when nothing else is being done: a run reaches its code a module at a time. */
-function save(r: {list: {bytes: Uint8Array; base: number}[]; saved: number; timer: number; url: string}, then = () => {}) {
+function save(r: {list: {bytes: Uint8Array; base: number}[]; saved: number; timer: number; url: string}, then?: () => void) {
   clearTimeout(r.timer);
   r.timer = window.setTimeout(() => void (async () => {
     await idle();
     const n = r.list.length;
     if (n === r.saved) return;
-    if (await keep(r.url, await packMore(r.list))) { r.saved = n; then(); }
+    // Let go once kept (`then`), the modules go to be kept as they are (lent), kept or not; followed on (a hot
+    // program's, given to the Prompts after), a copy of them goes.
+    if (await keepParts(r.url, packMore(r.list), true, !!then)) r.saved = n;
+    else if (then) r.saved = -1;
+    then?.();
   })().catch(() => {}), 2000);
 }
 

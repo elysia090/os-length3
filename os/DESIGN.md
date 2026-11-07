@@ -1046,8 +1046,12 @@ the same thing for the desktop app and for the web.
   fetched is kept by digest (Cache Storage; the packs in the browser's HTTP
   cache), checked whenever it is read, and only within a quarter of what
   the browser says this origin may hold, the least recently used going
-  first; what the current l3 does not name goes. Runtime lists it under
-  この端末 and frees it like anything derived.
+  first; what the current l3 does not name goes. What is kept is joined,
+  sealed with its digest and put there by the worker that checks l3's files,
+  never on the page's thread (a translation of tens of MB, copied and put
+  there, held it 20–60 ms a time); a translation made ahead comes to the page
+  moved, not copied. Runtime lists it under この端末 and frees it like
+  anything derived.
 - **The same content.** The web's tree is the root's: every path, type,
   mode, link target and sha256 the same as the root l3 installs
   (directories at least 0700, files without set-id bits, as the installer
