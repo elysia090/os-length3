@@ -439,14 +439,14 @@ export const PROC_CALLS = {
     if (target.sid !== this.sid || target.pid === target.sid) fail(E.PERM);
     const group = N(pgid) || target.pid;
     if (group < 0) fail(E.INVAL);
-    if (group !== target.pid && !this.kernel.live().some((q) => q.pgid === group && q.sid === this.sid)) fail(E.PERM);
+    if (group !== target.pid && !this.kernel.hasGroup(group, this.sid)) fail(E.PERM);
     target.pgid = group;
     return 0;
   },
   110() { return this.ppid; },
   111() { return this.pgid; },
   112() { // setsid
-    if (this.pgid === this.pid || this.kernel.live().some((q) => q.pgid === this.pid)) fail(E.PERM);
+    if (this.pgid === this.pid || [...this.kernel.procs.values()].some((q) => q.pgid === this.pid)) fail(E.PERM);
     this.sid = this.pgid = this.pid;
     return this.pid;
   },

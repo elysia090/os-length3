@@ -31,7 +31,7 @@ const RUNS = 50;
 const COLS = 80, ROWS = 24;
 /** termios bits the page reads keys by: signals from keys (ISIG), a line at a time (ICANON), Enter read as a line feed
  * (ICRNL); lines put out with a carriage return (OPOST and ONLCR). */
-const ISIG = 1, ICANON = 2, OPOST = 1, ONLCR = 4, ICRNL = 0x100;
+const ISIG = 1, ICANON = 2, ECHO = 8, IEXTEN = 0x8000, OPOST = 1, ONLCR = 4, ICRNL = 0x100;
 
 /** What a key sends a terminal's program (`app`: the arrows as an application's, as it asked), or null for none. */
 export function keyBytes(e: KeyboardEvent, app: boolean): string | null {
@@ -171,7 +171,7 @@ export class Session implements Prompt {
   /** The prompt line last told to the watchers. */
   private toldLine = '';
   /** How the program in front has the terminal set, as the kernel says (worker.mjs 'tty'). */
-  private tty = {iflag: ICRNL, lflag: ISIG | ICANON | 0x8000, oflag: OPOST | ONLCR};
+  private tty = {iflag: ICRNL, lflag: ISIG | ICANON | ECHO | IEXTEN, oflag: OPOST | ONLCR};
   /** Bytes the output decodes a piece at a time: a letter cut between pieces is read whole. */
   private decoder = new TextDecoder();
 
@@ -207,6 +207,10 @@ export class Session implements Prompt {
   /** Whether the program in front reads each key as it comes (vi, less, top): the box sends keys as they are pressed
    * (key, typeIn), and what it prints is shown on a terminal's whole screen. */
   get raw(): boolean { return this.live && !(this.tty.lflag & ICANON); }
+
+  /** Whether what is typed is kept out of sight (ECHO put out: a password asked for, `stty -echo`): the box hides it,
+   * and the line sent is neither shown nor kept among the runs. */
+  get hushed(): boolean { return this.live && !this.raw && !(this.tty.lflag & ECHO); }
 
   /**
    * A key pressed while the program in front reads each key as it comes: sent as a terminal sends it (Ctrl-C, where
@@ -244,13 +248,13 @@ export class Session implements Prompt {
 
   /** How the program in front now has the terminal set: reading each key, its screen is shown whole, and back. */
   private setTty(tio: {iflag: number; lflag: number; oflag: number}) {
-    const was = this.raw;
+    const was = this.raw, hushed = this.hushed;
     this.tty = {iflag: tio.iflag, lflag: tio.lflag, oflag: tio.oflag};
     this.out.keys(this.raw ? {cols: COLS, rows: ROWS, newline: !!(tio.oflag & OPOST) && !!(tio.oflag & ONLCR), reply: (text) => this.typeIn(text)} : null);
     // A whole-screen program waits for keys by its nature: nothing is said of it under its screen.
     this.element.classList.toggle('raw', this.raw);
     this.holding(this.raw);
-    if (was !== this.raw) this.tell();
+    if (was !== this.raw || hushed !== this.hushed) this.tell();
   }
 
   /** Whether this Prompt holds what is translated ahead (a program in front reads each key as it comes: ahead.ts). */
@@ -312,9 +316,13 @@ export class Session implements Prompt {
     // what was written. To a program still running, they go as they are, its input.
     const atPrompt = !!this.promptLine, wire = atPrompt ? asOne(lines) : lines;
     if (atPrompt) this.out.fold();
-    this.out.sent(lines);
-    this.runs.push({line: lines.trimEnd(), output: '', started: Date.now(), ms: null});
-    if (this.runs.length > RUNS) this.runs.shift();
+    // Typed out of sight (a password): not shown, as a terminal echoes nothing, and never kept among the runs the pane
+    // lists.
+    if (!this.hushed) {
+      this.out.sent(lines);
+      this.runs.push({line: lines.trimEnd(), output: '', started: Date.now(), ms: null});
+      if (this.runs.length > RUNS) this.runs.shift();
+    }
     this.activity.inputWait = false;
     this.activity.sleepsUntil = 0;
     this.activity.heard = Date.now();
@@ -575,6 +583,16 @@ export class Session implements Prompt {
 
   /** While a line runs, say what it is doing, once it has taken a moment (activity.ts). */
   private follow() { this.activity.follow(this.runs.at(-1)); }
+
+  /** Ctrl-Z: what runs in front of the shell stops, a job the shell holds (fg, bg, jobs); false at the prompt line,
+   * where nothing runs (the key is the box's then: its undo), and on a device, whose shell has no terminal to stop
+   * from. */
+  suspend(): boolean {
+    if (!this.live || this.promptLine || this.native) return false;
+    this.out.print('^Z');
+    this.worker?.postMessage({type: 'interrupt', sig: 20});
+    return true;
+  }
 
   /** Ctrl-C: what runs in front of the shell ends, and the shell goes on. */
   interrupt() {

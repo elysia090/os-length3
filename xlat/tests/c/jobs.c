@@ -57,6 +57,23 @@ int main(void) {
   printf("waitid: pid %d code exited %d status %d\n", si.si_pid == c, si.si_code == CLD_EXITED, si.si_status);
   printf("still there for wait: %d\n", waitpid(c, &st, 0) == c && WEXITSTATUS(st) == 6);
 
+  // A group whose only member ended and is not yet waited for is still there: the last of a pipeline joins the
+  // group of a first already done (and the shell puts that group in front), as on Linux.
+  pid_t z = fork();
+  if (z == 0) { setpgid(0, 0); _exit(0); }
+  setpgid(z, z);
+  siginfo_t zi = {0};
+  waitid(P_PID, z, &zi, WEXITED | WNOWAIT);
+  c = fork();
+  if (c == 0) _exit(setpgid(0, z) == 0 && getpgrp() == z ? 0 : 1);
+  waitpid(c, &st, 0);
+  printf("joins the group of one ended: %d\n", WIFEXITED(st) && WEXITSTATUS(st) == 0);
+  waitpid(z, &st, 0);
+  c = fork();
+  if (c == 0) _exit(setpgid(0, z) == -1 && errno == EPERM ? 0 : 1);
+  waitpid(c, &st, 0);
+  printf("not once it is waited for: %d\n", WIFEXITED(st) && WEXITSTATUS(st) == 0);
+
   // setsid: a group leader may not, a child may, and leads a new session.
   printf("leader setsid: %d\n", getpgrp() == getpid() ? setsid() : -1);
   c = fork();

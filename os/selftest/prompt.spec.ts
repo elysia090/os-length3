@@ -95,6 +95,49 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(app.forge.prompt.page().locator('.desk-box[data-key="term"] .prompt-ps')).toHaveText(/hello \$/);
   });
 
+  test('Ctrl+Z stops what runs, a job the shell holds, and fg brings it back; a pipeline\'s group is put in front whole', async ({app}) => {
+    const box = app.forge.promptBox, out = app.forge.prompt.locator('.term-out');
+    const ps = app.forge.prompt.page().locator('.desk-box[data-key="term"] .prompt-ps');
+    await box.fill('sleep 30');
+    await box.press('Enter');
+    await expect(ps).toHaveText('');
+    await box.press('Control+z');
+    await expect(out).toContainText(/Stopped\s+sleep 30/);
+    await expect(ps).toHaveText(/hello \$/);
+    await app.forge.run('jobs');
+    await expect(out).toContainText(/\[1\]\+\s+Stopped/);
+    await box.fill('fg');
+    await box.press('Enter');
+    await expect(ps).toHaveText('');
+    await box.press('Control+c');
+    await expect(ps).toHaveText(/hello \$/);
+    for (let i = 0; i < 3; i++) await app.forge.run('echo 日本語テスト | wc -m');
+    await expect(out).toContainText(/^7$/m);
+    await expect(out).not.toContainText('process group');
+  });
+
+  test('ECHO put out hides what is typed (read -s: a dot for each letter, nothing said, nothing kept); stty echo and reset keep the line the box\'s', async ({app}) => {
+    const box = app.forge.promptBox, out = app.forge.prompt.locator('.term-out'), page = app.forge.prompt.page();
+    const ps = page.locator('.desk-box[data-key="term"] .prompt-ps');
+    await box.fill('read -s pw; echo "got ${#pw}"');
+    await box.press('Enter');
+    await expect(page.locator('form.prompt[data-hushed]')).toHaveCount(1);
+    await box.fill('hunter2');
+    await box.press('Enter');
+    await expect(out).toContainText(/^got 7$/m);
+    await expect(out).not.toContainText('hunter2');
+    await expect(page.locator('form.prompt[data-hushed]')).toHaveCount(0);
+    await expect(app.forge.pane).not.toContainText('hunter2');
+    // Put back as a terminal's own are (stty echo, reset): the line stays the box's, no screen of its own.
+    await app.forge.run('stty echo; reset; tty');
+    await expect(out).toContainText(/^\/dev\/pts\/0$/m);
+    await expect(ps).toHaveText(/hello \$/);
+    await expect(page.locator('form.prompt[data-raw]')).toHaveCount(0);
+    await app.forge.run('echo still');
+    await expect(out).toContainText(/^still$/m);
+    await expect(page.locator('.vt-screen')).toHaveCount(0);
+  });
+
   test('on the desk, a line running has no prompt line after it, as a terminal has none till it is done; the line written is moved up at once', async ({app}) => {
     const ps = app.forge.prompt.page().locator('.desk-box[data-key="term"] .prompt-ps');
     await expect(ps).toHaveText(/hello \$/);

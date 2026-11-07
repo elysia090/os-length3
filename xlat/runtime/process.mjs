@@ -731,6 +731,10 @@ export class Kernel {
   /** The live processes of group `pgid`. */
   group(pgid) { return this.live().filter((p) => p.pgid === pgid); }
 
+  /** Whether group `pgid` is there in session `sid`: as on Linux, a member that ended and is not yet waited for keeps it
+   * (the first of a pipeline done before the last joins its group and is put in front). */
+  hasGroup(pgid, sid) { return [...this.procs.values()].some((p) => p.pgid === pgid && p.sid === sid); }
+
   /** One thread ends: its tid is cleared and woken for (CLONE_CHILD_CLEARTID), its robust futexes marked; the last one ends its process. */
   exitThread(t, status) {
     if (t.dead) return;

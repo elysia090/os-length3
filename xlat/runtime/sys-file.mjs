@@ -105,12 +105,13 @@ function timevals(p, address) {
   });
 }
 
-function describe(d) {
+function describe(p, d) {
   // Something to stat for a descriptor without a node.
   if (d.node) return d.node;
   if (d.kind === 'pipe-r' || d.kind === 'pipe-w' || d.kind === 'pipe-rw') return {mode: S_IFIFO | 0o600, ino: 0, nlink: 1, uid: 0, gid: 0, mtime: Date.now(), isFile: false, isDir: false, isLink: false};
   if (d.kind === 'socket') return net.stat(d);
-  return {mode: 0o020620, ino: 0, nlink: 1, uid: 0, gid: 0, rdev: 0x8800, mtime: Date.now(), isFile: false, isDir: false, isLink: false};
+  // The console: the terminal it is, /dev/pts/0 (fs.mjs), so a stat of that name is the same file.
+  return p.kernel.vfs.terminal ?? {mode: 0o020620, ino: 0, nlink: 1, uid: 0, gid: 0, rdev: 0x8800, mtime: Date.now(), isFile: false, isDir: false, isLink: false};
 }
 
 /** /dev/fd/N, /dev/stdin and the rest, and /proc/self/fd/N, as the /proc/PID/fd/N they are. */
@@ -125,7 +126,7 @@ function descriptorPath(p, name) {
  * that descriptor has open, a file renamed over or removed included; else the node there. */
 function statNode(p, name, dirfd, follow) {
   const d = follow && name.startsWith('/') ? procDescriptor(p.kernel, descriptorPath(p, name)) : null;
-  return d ? describe(d) : p.kernel.vfs.lookup(name, base(p, dirfd), follow);
+  return d ? describe(p, d) : p.kernel.vfs.lookup(name, base(p, dirfd), follow);
 }
 
 function openAt(p, dirfd, address, flags, mode) {
@@ -151,8 +152,8 @@ function openAt(p, dirfd, address, flags, mode) {
   }
   if (node.isLink) fail(E.LOOP);
   if ((f & O.DIRECTORY) && !node.isDir) fail(E.NOTDIR);
-  // The controlling terminal is the console, where the console is one.
-  if (node instanceof Device && node.rdev === 0x500) {
+  // The controlling terminal (/dev/tty), and the terminal the console is (/dev/pts/0): the console, where it is one.
+  if (node instanceof Device && (node.rdev === 0x500 || node === p.kernel.vfs.terminal)) {
     if (!p.kernel.console.interactive) fail(E.NXIO);
     const fd = p.fds.install(new Description('console', {flags: f & (3 | O.NONBLOCK), path: 'tty'}), {cloexec: !!(f & O.CLOEXEC)});
     if (fd < 0) fail(E.MFILE);
@@ -732,11 +733,25 @@ const timespecMs = (p, at) => (at ? Number(p.view.getBigInt64(at, true)) * 1000 
 const timevalMs = (p, at) => (at ? Number(p.view.getBigInt64(at, true)) * 1000 + Number(p.view.getBigInt64(at + 8, true)) / 1e3 : null);
 
 /**
- * The console as a terminal, where it says it is one: canonical input with
- * no echo (what is typed comes in lines and the page shows it), so a line
- * editor (BusyBox's) reads lines plainly; signals from keys (ISIG).
+ * The console as a terminal, where it says it is one: set as Linux sets one (`stty sane`): a line at a time, echoed,
+ * signals from keys. What is typed comes in lines, edited and shown by the page; ECHO says whether it shows them (off:
+ * a password, out of sight).
  */
-const TERMIOS = {iflag: 0x500, oflag: 0x5, cflag: 0xbf, lflag: 0x8003};
+const TERMIOS = {iflag: 0x500, oflag: 0x5, cflag: 0xbf, lflag: 0x8a3b};
+const ICANON = 2, ECHO = 8, ECHOK = 0x20;
+
+/**
+ * How the Prompt's shell (the session's first process) has the terminal set, as it reads it: the page edits its lines,
+ * so it never sees ECHO while a line is read a line at a time; else its line editor (BusyBox's) would take the line
+ * from the page, read key by key and echo it itself (once `stty echo` or `reset` had put ECHO there). ECHO is what the
+ * rest last set it to (`echo`), the shell only hushing it, as `read -s` does: ECHOK put out with it.
+ */
+const shells = (k, p) => p.pid === k.tty.sid;
+const seenBy = (k, p, lflag) => (shells(k, p) && lflag & ICANON ? lflag & ~ECHO : lflag);
+function setBy(k, p, tio, lflag) {
+  if (!shells(k, p)) { tio.echo = lflag & ECHO; return lflag; }
+  return (lflag & ~ECHO) | (lflag & ECHOK ? tio.echo : 0);
+}
 
 function ioctl(p, d, request, arg) {
   const k = p.kernel, r = request, v = p.view;
@@ -773,19 +788,19 @@ function ioctl(p, d, request, arg) {
   }
   // The rest are a terminal's, and only the console is one (when it says it is interactive).
   if (d.kind !== 'console' || !k.console.interactive) fail(E.NOTTY);
-  k.tty.termios ??= {...TERMIOS, cc: new Uint8Array([3, 28, 127, 21, 4, 0, 1, 0, 17, 19, 26, 0, 18, 15, 23, 22, 0, 0, 0])};
+  k.tty.termios ??= {...TERMIOS, echo: TERMIOS.lflag & ECHO, cc: new Uint8Array([3, 28, 127, 21, 4, 0, 1, 0, 17, 19, 26, 0, 18, 15, 23, 22, 0, 0, 0])};
   const tio = k.tty.termios;
   switch (r) {
     case 0x5401: // TCGETS
       p.bytes.fill(0, arg, arg + 36);
       v.setUint32(arg, tio.iflag, true); v.setUint32(arg + 4, tio.oflag, true);
-      v.setUint32(arg + 8, tio.cflag, true); v.setUint32(arg + 12, tio.lflag, true);
+      v.setUint32(arg + 8, tio.cflag, true); v.setUint32(arg + 12, seenBy(k, p, tio.lflag), true);
       p.bytes.set(tio.cc, arg + 17);
       return 0;
     case 0x5402: case 0x5403: case 0x5404: { // TCSETS, TCSETSW, TCSETSF
       const was = tio.lflag, wasOut = tio.oflag;
       tio.iflag = v.getUint32(arg, true); tio.oflag = v.getUint32(arg + 4, true);
-      tio.cflag = v.getUint32(arg + 8, true); tio.lflag = v.getUint32(arg + 12, true);
+      tio.cflag = v.getUint32(arg + 8, true); tio.lflag = setBy(k, p, tio, v.getUint32(arg + 12, true));
       tio.cc = p.bytes.slice(arg + 17, arg + 36);
       // What shows the terminal hears how keys are now read (a line at a time, or each as it comes; echoed or not;
       // signals from keys or not) and how lines are put out, as it is the one that reads the keys.
@@ -807,7 +822,7 @@ function ioctl(p, d, request, arg) {
       const g = v.getInt32(arg, true);
       if (p.sid !== k.tty.sid) fail(E.NOTTY);
       if (g < 0) fail(E.INVAL);
-      if (!k.live().some((q) => q.pgid === g && q.sid === p.sid)) fail(E.PERM);
+      if (!k.hasGroup(g, p.sid)) fail(E.PERM);
       k.tty.fg = g;
       return 0;
     }
@@ -879,7 +894,7 @@ export const FILE_CALLS = {
   2(name, flags, mode) { return openAt(this, BigInt(AT_FDCWD), name, flags, mode); },
   3(fd) { if (!this.fds.close(N(fd))) fail(E.BADF); return 0; },
   4(name, st) { return writeStat(this, st, statNode(this, path(this, name), BigInt(AT_FDCWD), true)); },
-  5(fd, st) { return writeStat(this, st, describe(descriptor(this, fd))); },
+  5(fd, st) { return writeStat(this, st, describe(this, descriptor(this, fd))); },
   6(name, st) { return writeStat(this, st, this.kernel.vfs.lookup(path(this, name), this.cwd, false)); },
   7(fds, count, timeout) { return poll(this, fds, count, Number(BigInt.asIntN(32, timeout))); },
   271(fds, count, spec, mask) { return poll(this, fds, count, timespecMs(this, N(spec)) ?? -1, N(mask)); },
@@ -1076,7 +1091,7 @@ export const FILE_CALLS = {
     return chown(this, this.kernel.vfs.lookup(path(this, name), base(this, dirfd), !(f & AT.SYMLINK_NOFOLLOW)), uid, gid);
   },
   262(dirfd, name, st, flags) {
-    if ((N(flags) & AT.EMPTY_PATH) && !this.bytes[N(name)]) return writeStat(this, st, describe(descriptor(this, dirfd)));
+    if ((N(flags) & AT.EMPTY_PATH) && !this.bytes[N(name)]) return writeStat(this, st, describe(this, descriptor(this, dirfd)));
     return writeStat(this, st, statNode(this, path(this, name), dirfd, !(N(flags) & AT.SYMLINK_NOFOLLOW)));
   },
   263(dirfd, name, flags) { return remove(this, dirfd, name, (N(flags) & AT.REMOVEDIR) !== 0); },

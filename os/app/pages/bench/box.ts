@@ -335,7 +335,13 @@ export class Box {
     const s = this.#repo ? sessionIfAny(this.#repo) : null;
     return s instanceof Session && s.raw ? s : null;
   }
-  #rawMark() { this.form.toggleAttribute('data-raw', !!this.#raw()); }
+  #rawMark() {
+    this.form.toggleAttribute('data-raw', !!this.#raw());
+    // What is typed kept out of sight (a password asked for): hidden in the box, and never kept as a draft.
+    const s = this.#repo ? sessionIfAny(this.#repo) : null, hushed = s instanceof Session && s.hushed;
+    if (hushed && !this.form.hasAttribute('data-hushed')) drafts.delete(this.#draft());
+    this.form.toggleAttribute('data-hushed', hushed);
+  }
 
   /** Whether the repo's Prompt has run anything yet, which is what gives it room. */
   room() { this.#p.work.classList.toggle('unrun', !!this.#repo && !sessionIfAny(this.#repo)?.runs.length); }
@@ -352,7 +358,7 @@ export class Box {
   /** What is half written is kept for the repo and for what the box does: an issue's words are not a line to run. */
   #draft() { return this.#mode === 'run' ? this.#repo! : `${this.#mode}\n${this.#repo}`; }
   /** What is written kept for the repo and what the box does (not Edit's: its line is the file's own). */
-  #keep() { if (this.#repo && this.#mode !== 'edit') { if (this.prompt.value) drafts.set(this.#draft(), this.prompt.value); else drafts.delete(this.#draft()); } }
+  #keep() { if (this.#repo && this.#mode !== 'edit' && !this.form.hasAttribute('data-hushed')) { if (this.prompt.value) drafts.set(this.#draft(), this.prompt.value); else drafts.delete(this.#draft()); } }
   /** Completing's choices go as the next key is pressed, not at once: put away as they came. */
   #unsay() {
     if (!this.#choices) return;
@@ -755,6 +761,11 @@ export class Box {
       event.preventDefault();
       const s = sessionFor(repo);
       if (s.abandon(prompt.value)) this.#emptied(); else s.interrupt();
+      return;
+    }
+    // Ctrl-Z while a line runs stops it, a job the shell holds (fg brings it back), as in a terminal.
+    if (event.key === 'z' && event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey && repo && sessionFor(repo).suspend()) {
+      event.preventDefault();
       return;
     }
     if (repo && this.#lineKey(event, repo)) { event.preventDefault(); return; }

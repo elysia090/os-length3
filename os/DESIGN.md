@@ -2290,6 +2290,13 @@ and the word before, Ctrl+L clears the screen with the prompt line at its top,
 Ctrl+D on an empty line ends what is typed (cat ends, and the shell reads on;
 at the prompt line, the shell, as a terminal's does), and Ctrl+C at the prompt
 line lets the line written go, said cut with the prompt line again under it.
+Ctrl+Z while a line runs stops it, a job the shell holds (jobs, fg, bg), as
+in a terminal; at the prompt line it is the box's undo. The terminal is set as
+Linux sets one (`stty sane`, named /dev/pts/0), and what a program asks of it
+is done: ECHO put out (a password asked for, `read -s`, `stty -echo`) shows a
+dot for each letter typed, and the line sent is neither shown nor kept among
+the runs the pane lists; the shell's own lines stay the box's whatever ECHO is
+set to (`stty echo`, `reset`), never a screen of its own.
 The editor's own keys (Ctrl+K and Ctrl+P to the search, Ctrl+B the pane) stay
 the page's, as an editor's terminal leaves them. Ended (exit, stopped), its switch comes in
 going over from on to off and its output flares and dims as a tube switched

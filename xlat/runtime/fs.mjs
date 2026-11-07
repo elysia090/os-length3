@@ -258,6 +258,11 @@ export class Vfs {
     dev.entries.set('random', dev.entries.get('urandom'));
     // The controlling terminal: the console, where it is one (sys-file.mjs opens it as such).
     dev.entries.set('tty', new Device(0x500, () => new Uint8Array(0), (b) => b.length));
+    // The terminal the console is (its own name, as ttyname finds it: /proc/self/fd/0's link, the same file): opened,
+    // the console again; the console's stat is its.
+    this.terminal = new Device(0x8800, () => new Uint8Array(0), (b) => b.length);
+    this.terminal.mode = S_IFCHR | 0o620;
+    this.mkdirp('/dev/pts').entries.set('0', this.terminal);
     for (const d of ['/tmp', '/root', '/proc', '/etc']) this.mkdirp(d);
   }
 

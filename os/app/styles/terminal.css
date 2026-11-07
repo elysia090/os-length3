@@ -40,3 +40,6 @@
    cursor. The line keeps the keyboard, in the window's corner, so what is typed never has the page scrolled to it. */
 form.prompt[data-raw] { position: fixed; left: 0; top: 0; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
 .term.raw > .term-activity { display: none; }
+/* What is typed kept out of sight (a password asked for, ECHO put out): a dot for each letter, as a password field. */
+form.prompt[data-hushed] .prompt-in { -webkit-text-security: disc; }
+@supports not (-webkit-text-security: disc) { form.prompt[data-hushed] .prompt-in { color: transparent; } }
