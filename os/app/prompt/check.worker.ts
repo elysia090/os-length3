@@ -4,7 +4,7 @@
 //
 // Page → worker: {id, bytes, unpack, prepare?}. Worker → page: {id, bytes, sha256}, or {id, error, bytes} (what was
 // lent, back). With `prepare: {shared}` the bytes are a translation, given back as the kernel runs it (xlat's
-// share.mjs prepare: copying a 16 MB module held the page's thread for a tenth of a second, as a Prompt was in use):
+// share.ts prepare: copying a 16 MB module held the page's thread for a tenth of a second, as a Prompt was in use):
 // {id, bytes, sha256, size, segments}, its digest and size those of the translation as it was.
 
 //
@@ -12,7 +12,7 @@
 // `seal`, and put in the page's Cache Storage at `url` (whole). Worker → page: {id, size}, or {id, error}. Keeping a
 // translation of tens of MB held the page's thread 20–60 ms a time (its copies, its digest, the cache's own copy).
 
-import {prepare} from '../../../xlat/runtime/share.mjs';
+import {prepare} from '../../../xlat/runtime/share.ts';
 
 type Keep = {id: number; keep: {url: string; cache: string; parts: Uint8Array[]; seal: boolean}};
 type Check = {id: number; bytes: ArrayBuffer; unpack: boolean; prepare?: {shared: boolean}};

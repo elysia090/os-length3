@@ -18,7 +18,7 @@ import {createReadStream, lstatSync, openSync, readFileSync, readSync, readdirSy
 import {join} from 'node:path';
 import {createZstdDecompress, gunzipSync, zstdDecompressSync} from 'node:zlib';
 import type {Readable} from 'node:stream';
-import {checkPacks, checkedRange} from '../../xlat/runtime/table.mjs';
+import {checkPacks, checkedRange} from '../../xlat/runtime/table.ts';
 import type {About, Blob, Index} from '../app/prompt/userland.ts';
 
 export type {About, Index};
@@ -40,7 +40,7 @@ export interface Tree { entries: Entry[]; manifest?: string; about?: About; inde
 export interface TarMember { name: string; kind: string; mode: number; link: string; size: number; bytes: Buffer }
 
 export const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
-/** The 32 bytes of a SHA-256, as table.mjs takes it. */
+/** The 32 bytes of a SHA-256, as table.ts takes it. */
 const digest = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest();
 const byPath = (a: Entry, b: Entry) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
 
@@ -191,7 +191,7 @@ export function openWeb(dir: string) {
   };
   const unzstd = (bytes: Uint8Array) => zstdDecompressSync(bytes);
   const close = () => { for (const f of fds.values()) closeSync(f); fds.clear(); };
-  /** Every pack whole: its table, each file it stores, and nothing besides (table.mjs checkPacks). */
+  /** Every pack whole: its table, each file it stores, and nothing besides (table.ts checkPacks). */
   const checkAll = () => checkPacks(index, range, (name) => statSync(join(dir, 'packs', name)).size, digest);
   return {about, index, dir, packs: join(dir, 'packs'), read, readRange, unzstd, blob, checkAll, close};
 }

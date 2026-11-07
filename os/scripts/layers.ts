@@ -28,7 +28,7 @@ function files(dir: string): string[] {
   for (const e of readdirSync(dir, {withFileTypes: true})) {
     const p = join(dir, e.name);
     if (e.isDirectory()) out.push(...files(p));
-    else if (/\.(ts|mjs)$/.test(e.name) && !/\.(test|d)\.ts$/.test(e.name)) out.push(p);
+    else if (/\.ts$/.test(e.name) && !/\.(test|d)\.ts$/.test(e.name)) out.push(p);
   }
   return out;
 }

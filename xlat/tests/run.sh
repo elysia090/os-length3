@@ -7,7 +7,7 @@ root=$(dirname "$here")
 out="$here/out"
 mkdir -p "$out"
 cargo build -q --locked --release --manifest-path "$root/Cargo.toml"
-# The same translator as wasm (as the browser runs it); run.mjs uses it when it is current.
+# The same translator as wasm (as the browser runs it); run.ts uses it when it is current.
 cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path "$root/Cargo.toml"
 status=0
 for c in "$here"/c/*.c; do
@@ -28,7 +28,7 @@ for c in "$here"/c/*.c; do
   else
     "$out/$name" a b > "$out/$name.native"; native=$?
   fi
-  node "$root/runtime/run.mjs" "$out/$name" a b > "$out/$name.xlat"; translated=$?
+  node "$root/runtime/run.ts" "$out/$name" a b > "$out/$name.xlat"; translated=$?
   set -e
   if [ "$native" = "$translated" ] && cmp -s "$out/$name.native" "$out/$name.xlat"; then
     echo "ok   $name"
@@ -40,7 +40,7 @@ done
 # tail call to the run that holds its target, loops round them still taking their turns; the same output as native.
 for name in calls switches signals threads jobs; do
   set +e
-  XLAT_RUN=3 node "$root/runtime/run.mjs" "$out/$name" a b > "$out/$name.cut"; cut=$?
+  XLAT_RUN=3 node "$root/runtime/run.ts" "$out/$name" a b > "$out/$name.cut"; cut=$?
   "$out/$name" a b > "$out/$name.native"; native=$?
   set -e
   if [ "$native" = "$cut" ] && cmp -s "$out/$name.native" "$out/$name.cut"; then
@@ -57,7 +57,7 @@ if rustup target list --installed 2>/dev/null | grep -q x86_64-unknown-linux-mus
       -C relocation-model=static -C link-arg=-no-pie -C link-arg=-Wl,--emit-relocs "$r" -o "$out/$name"
     set +e
     "$out/$name" a b > "$out/$name.native"; native=$?
-    node "$root/runtime/run.mjs" "$out/$name" a b > "$out/$name.xlat"; translated=$?
+    node "$root/runtime/run.ts" "$out/$name" a b > "$out/$name.xlat"; translated=$?
     set -e
     if [ "$native" = "$translated" ] && cmp -s "$out/$name.native" "$out/$name.xlat"; then
       echo "ok   $name"
@@ -76,12 +76,12 @@ if command -v go >/dev/null; then
     (cd "$dir" && CC=musl-gcc CGO_ENABLED=1 go build -ldflags '-linkmode=external -extldflags "-static -Wl,--emit-relocs"' -o "$out/$name" .)
     set +e
     "$out/$name" a b > "$out/$name.native"; native=$?
-    node "$root/runtime/run.mjs" "$out/$name" a b > "$out/$name.xlat"; translated=$?
+    node "$root/runtime/run.ts" "$out/$name" a b > "$out/$name.xlat"; translated=$?
     set -e
     if [ "$native" = "$translated" ] && cmp -s "$out/$name.native" "$out/$name.xlat"; then echo "ok   $name"; else echo "FAIL $name (exit $native vs $translated)"; status=1; fi
   done
 fi
-for t in "$here"/*.test.mjs; do
+for t in "$here"/*.test.ts; do
   if node --test "$t" >/dev/null 2>&1; then echo "ok   $(basename "$t")"; else echo "FAIL $(basename "$t")"; status=1; fi
 done
 exit $status

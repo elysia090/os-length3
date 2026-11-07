@@ -18,7 +18,7 @@
 //
 // --fresh: this checkout's translator (../xlat's wasm build), every program translated as it runs, not what WEB carries.
 // --warm: each line run once before the run timed, what it translated kept between runs as a browser keeps it (Cache
-// Storage, keeper.mjs): the time of a Prompt that ran its programs before, not of the first one.
+// Storage, keeper.ts): the time of a Prompt that ran its programs before, not of the first one.
 //
 // WEB is l3 for the browser (public/l3; a root of packs of before is read
 // too), ROOT_DIR the same root unpacked (for the native run). The translator
@@ -27,7 +27,7 @@ import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {existsSync, readFileSync, writeFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
-import type {Kernel} from '../../xlat/runtime/process.mjs';
+import type {Kernel} from '../../xlat/runtime/process.ts';
 import {openWeb, type Index} from './l3-tree.ts';
 
 /** What one program run under xlat says: its wait status, its output, and how long it took. */
@@ -43,7 +43,7 @@ const ENV = ['HOME=/root', 'PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', 
 
 
 /**
- * Translations kept in `dir` as a browser keeps them (xlat/runtime/keeper.mjs: 'L3T1' and 'L3M1', each sealed with
+ * Translations kept in `dir` as a browser keeps them (xlat/runtime/keeper.ts: 'L3T1' and 'L3M1', each sealed with
  * its SHA-256), for a kernel's keeper: {kept, save(kernel)}, save writing what the kernel translated since.
  */
 async function keptIn(dir: string) {
@@ -51,7 +51,7 @@ async function keptIn(dir: string) {
   const {createHash} = await import('node:crypto');
   mkdirSync(dir, {recursive: true});
   const url = (name: string) => new URL(name, `file://${dir}/`).href;
-  // keeper.mjs reads through the Cache Storage API (its match alone): here, the files.
+  // keeper.ts reads through the Cache Storage API (its match alone): here, the files.
   const files = {open: async () => ({match: async (u: string) => { try { return new Response(readFileSync(new URL(u))); } catch { return undefined; } }})};
   globalThis.caches ??= files as unknown as CacheStorage;
   const at: Record<string, {main: string; more: string | null}> = {};
@@ -94,14 +94,14 @@ async function keptIn(dir: string) {
 
 /** One program under xlat, in this process: prints {status, stdout, stderr, error?, ms} as JSON. */
 async function child({web, path, args, translator, fresh, kept: keptDir, env = ENV}: Asked) {
-  const {Vfs} = await import('../../xlat/runtime/fs.mjs');
-  const {mountPack, provide} = await import('../../xlat/runtime/pack.mjs');
-  const {Kernel} = await import('../../xlat/runtime/process.mjs');
+  const {Vfs} = await import('../../xlat/runtime/fs.ts');
+  const {mountPack, provide} = await import('../../xlat/runtime/pack.ts');
+  const {Kernel} = await import('../../xlat/runtime/process.ts');
   // As a cross-origin isolated page runs it: each thread in a Worker of its own (XLAT_INLINE=1: all in turn here).
-  const {RemoteKernel, canRunApart} = await import('../../xlat/runtime/remote.mjs');
+  const {RemoteKernel, canRunApart} = await import('../../xlat/runtime/remote.ts');
   const apart = canRunApart() && !process.env.XLAT_INLINE;
-  const {loadTranslator} = await import('../../xlat/runtime/translator.mjs');
-  const {keeper} = await import('../../xlat/runtime/keeper.mjs');
+  const {loadTranslator} = await import('../../xlat/runtime/translator.ts');
+  const {keeper} = await import('../../xlat/runtime/keeper.ts');
   const store = keptDir ? await keptIn(keptDir) : null;
   const w = openWeb(web);
   // --fresh: this checkout's translator, translating everything as it runs (what the next l3 will be).
@@ -122,7 +122,9 @@ async function child({web, path, args, translator, fresh, kept: keptDir, env = E
   let stdout = '', stderr = '';
   const dec = new TextDecoder();
   let kernel: Kernel | null = null;
-  const options = {vfs, translate, keeper: store ? keeper(store.kept, () => kernel?.kick?.()) : null, console: {
+  // The keeper wakes a kernel whose threads run apart; one that takes turns here looks again on its own (below).
+  const kept = store ? keeper(store.kept, () => { if (kernel instanceof RemoteKernel) kernel.kick(); }) : null;
+  const options = {vfs, translate, keeper: kept, console: {
     interactive: false,
     // A program that writes on and on is cut at a megabyte: what it said first is what is compared.
     write: (fd: number, b: Uint8Array) => {
@@ -134,7 +136,7 @@ async function child({web, path, args, translator, fresh, kept: keptDir, env = E
   }};
   const k = kernel = apart ? new RemoteKernel(options) : new Kernel(options);
   // As the kernel runs them (its memory shared, where threads run apart).
-  for (const r of ready) { const {wasm, segments} = k.prepare(r.wasm); k.prebuilt(vfs.lookup(r.path, '/'), new WebAssembly.Module(wasm), segments); }
+  for (const r of ready) { const {wasm, segments} = k.prepare(r.wasm); k.prebuilt(vfs.file(r.path), new WebAssembly.Module(wasm), segments); }
   const argv = [path.split('/').pop() ?? path, ...args];
   const t = performance.now();
   let status: number | null = null, error: string | null = null;
@@ -145,10 +147,10 @@ async function child({web, path, args, translator, fresh, kept: keptDir, env = E
       k.start(path, argv, env, '/root');
       for (;;) {
         const r = k.pump();
-        if (!r.waiting) { status = r.status; break; }
+        if (!r.waiting) { status = r.status ?? null; break; }
         const until = r.until;
         if (until !== undefined) await new Promise((go) => setTimeout(go, Math.max(0, until - performance.now())));
-        else if (k.keeper?.reading()) await new Promise((go) => setTimeout(go, 1));
+        else if (kept?.reading()) await new Promise((go) => setTimeout(go, 1));
         else throw new Error('process waits for input that will never come');
       }
     }

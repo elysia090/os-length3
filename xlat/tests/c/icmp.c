@@ -67,7 +67,7 @@ int main(void) {
   printf("ICMP_FILTER: %d\n", setsockopt(s, SOL_RAW, 1, &filter, sizeof filter));
   echo(s, 2);
   drain(s, "filtered");
-  // (An address outside is unreachable on a machine with only lo: boundary.test.mjs says so, as this one has more.)
+  // (An address outside is unreachable on a machine with only lo: boundary.test.ts says so, as this one has more.)
   // lo, by its name.
   struct ifreq r = {0};
   strcpy(r.ifr_name, "lo");

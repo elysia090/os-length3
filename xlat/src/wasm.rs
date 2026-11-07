@@ -115,7 +115,7 @@ pub unsafe extern "C" fn xlat_translate(ptr: *mut u8, len: usize) -> i32 {
 }
 
 /// As `xlat_translate`, all of the program (discover::discover_whole), as the hot programs are translated in the
-/// release: what a page translates ahead of a program's first run (runtime/ahead.mjs), so the run reaches nothing later.
+/// release: what a page translates ahead of a program's first run (runtime/ahead.ts), so the run reaches nothing later.
 ///
 /// # Safety
 /// As `xlat_translate`.
@@ -226,7 +226,7 @@ pub unsafe extern "C" fn xlat_unzstd(ptr: *const u8, len: usize, size: usize) ->
 
 /// The SHA-256 of the bytes at `ptr` (left to the host to free): a root
 /// file as its pack stores it, checked against the pack's table
-/// (runtime/table.mjs) before it is decoded, where the host's own digests
+/// (runtime/table.ts) before it is decoded, where the host's own digests
 /// come only later. Returns 0 with the 32 bytes of the digest as output.
 ///
 /// # Safety

@@ -171,7 +171,7 @@ export class Session implements Prompt {
   private oscHeld = '';
   /** The prompt line last told to the watchers. */
   private toldLine = '';
-  /** How the program in front has the terminal set, as the kernel says (worker.mjs 'tty'). */
+  /** How the program in front has the terminal set, as the kernel says (worker.ts 'tty'). */
   private tty = {iflag: ICRNL, lflag: ISIG | ICANON | ECHO | IEXTEN, oflag: OPOST | ONLCR};
   /** Bytes the output decodes a piece at a time: a letter cut between pieces is read whole. */
   private decoder = new TextDecoder();
@@ -240,7 +240,7 @@ export class Session implements Prompt {
     this.worker?.postMessage({type: 'input', bytes}, [bytes.buffer]);
   }
 
-  /** Keys pressed on the page: its kernel waits for them to be still before work that would hold up the page (worker.mjs). */
+  /** Keys pressed on the page: its kernel waits for them to be still before work that would hold up the page (worker.ts). */
   typing() { this.worker?.postMessage({type: 'typing'}); }
 
   /** `sig` to what runs in front (a key that makes a signal). */
@@ -251,7 +251,7 @@ export class Session implements Prompt {
 
   /**
    * A key that makes a signal flushes what was written and not yet shown, as a terminal's line discipline does (unless
-   * the program set NOFLSH): what comes from the worker of an epoch before this one is dropped (worker.mjs), so ^C
+   * the program set NOFLSH): what comes from the worker of an epoch before this one is dropped (worker.ts), so ^C
    * stands where the run was cut, not under the megabyte a flood had on its way.
    */
   private flush(): {flush?: number} {
@@ -432,7 +432,7 @@ export class Session implements Prompt {
   }
 
   /** Output taken in, said to the kernel once a frame: it lets what writes to the terminal go on only as fast as the
-   * page takes it (worker.mjs 'drained'), so a flood never piles up on its way here. */
+   * page takes it (worker.ts 'drained'), so a flood never piles up on its way here. */
   private drained(n: number) {
     this.taken += n;
     // Hidden, the page draws no frames and keeps only the last of what comes (output.ts): taken in as it comes, so a

@@ -82,7 +82,7 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=l3-web-${{ hashFiles('os/RELEASE', 'os/core/src/root/pins.rs', 'os/remote/releases.ts', 'os/scripts/l3.sh', 'os/scripts/l3.ts', 'os/scripts/l3-tree.ts', 'os/scripts/root-file.ts', 'os/scripts/l3-parity.ts', 'xlat/runtime/table.mjs', 'xlat/Cargo.toml', 'xlat/Cargo.lock', 'xlat/src/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=l3-web-${{ hashFiles('os/RELEASE', 'os/core/src/root/pins.rs', 'os/remote/releases.ts', 'os/scripts/l3.sh', 'os/scripts/l3.ts', 'os/scripts/l3-tree.ts', 'os/scripts/root-file.ts', 'os/scripts/l3-parity.ts', 'xlat/runtime/table.ts', 'xlat/Cargo.toml', 'xlat/Cargo.lock', 'xlat/src/**') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -297,14 +297,14 @@ jobs:
         if: matrix.part == 'native'
         working-directory: xlat
         run: sh tests/run.sh
-      # The translator as the browser runs it (run.mjs takes the wasm build when it is current).
+      # The translator as the browser runs it (run.ts takes the wasm build when it is current).
       - name: l3 for the Prompt (static, musl), translated as the Prompt runs it
         if: matrix.part == 'prompt'
         working-directory: os
         run: |
           cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path ../xlat/Cargo.toml
           cargo build --locked --profile prompt -p l3 --no-default-features --target x86_64-unknown-linux-musl
-          out=$(LENGTH3_REPOS=/root node ../xlat/runtime/run.mjs target/x86_64-unknown-linux-musl/prompt/l3 help all)
+          out=$(LENGTH3_REPOS=/root node ../xlat/runtime/run.ts target/x86_64-unknown-linux-musl/prompt/l3 help all)
           echo "$out" | head -3
           echo "$out" | grep -q 'l3 issue new'
 
@@ -494,11 +494,11 @@ jobs:
           says "prompt clear | od -An -c | tr -d ' \\n'" '033[H033[2J'
           # And translated, as the browser's Prompt runs them.
           cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path ../xlat/Cargo.toml
-          node ../xlat/runtime/run.mjs "$r/usr/bin/git" --version | grep -F "git version $GIT_VERSION"
-          node ../xlat/runtime/run.mjs "$r/usr/bin/openssl" version | grep -F "OpenSSL $OPENSSL_VERSION "
-          node ../xlat/runtime/run.mjs "$r/usr/bin/busybox" sh -c 'echo $((6 * 7))' | grep -x 42
-          node ../xlat/runtime/run.mjs "$r/usr/bin/rg" --version | grep -F "ripgrep $RIPGREP_VERSION"
-          printf 'lib/x.c\nweb/src/main.ts\n' | node ../xlat/runtime/run.mjs "$r/usr/bin/fzf" --filter main | grep -x web/src/main.ts
+          node ../xlat/runtime/run.ts "$r/usr/bin/git" --version | grep -F "git version $GIT_VERSION"
+          node ../xlat/runtime/run.ts "$r/usr/bin/openssl" version | grep -F "OpenSSL $OPENSSL_VERSION "
+          node ../xlat/runtime/run.ts "$r/usr/bin/busybox" sh -c 'echo $((6 * 7))' | grep -x 42
+          node ../xlat/runtime/run.ts "$r/usr/bin/rg" --version | grep -F "ripgrep $RIPGREP_VERSION"
+          printf 'lib/x.c\nweb/src/main.ts\n' | node ../xlat/runtime/run.ts "$r/usr/bin/fzf" --filter main | grep -x web/src/main.ts
           sudo rm -rf target/root-open
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

@@ -75,7 +75,7 @@ request passes, and the one secret") and are tested in
   digest pinned in `os/core/src/root/pins.rs`, and so is the browser's copy of
   it: its index by the digest pinned beside it, each pack by the table of
   its files' digests that names it, each file read from a pack by its line
-  of that table (`xlat/runtime/table.mjs`), before any of it is used.
+  of that table (`xlat/runtime/table.ts`), before any of it is used.
 - **What runs where.** A Prompt runs a distribution's root on the device's
   own kernel without privilege: user, mount, pid, ipc, uts and network
   namespaces, a read-only root, no_new_privs and a seccomp filter

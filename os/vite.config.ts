@@ -3,6 +3,7 @@ import {existsSync, readFileSync, rmSync} from 'node:fs';
 import {dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {defineConfig, type Plugin} from 'vite';
+import {bootScript} from './scripts/boot.ts';
 import {buildCoreWasm, coreWasmPath} from './scripts/core-wasm.ts';
 import {DEFAULT_REMOTE, headersOf, webPolicy} from './app/host/policy.ts';
 import {shipped} from './remote/releases.ts';
@@ -140,6 +141,20 @@ const preloadApp = (): Plugin => ({
 });
 
 /**
+ * /boot.js, the page's first script (boot.ts: what the page says when the app cannot start), its types
+ * taken away (scripts/boot.ts): a file of the build, and answered as it is by the development server.
+ */
+const boot = (): Plugin => ({
+  name: 'length3-boot',
+  configureServer(server) {
+    server.middlewares.use('/boot.js', (_, res, next) => {
+      bootScript().then((code) => { res.setHeader('Content-Type', 'text/javascript'); res.end(code); }, next);
+    });
+  },
+  async generateBundle() { this.emitFile({type: 'asset', fileName: 'boot.js', source: await bootScript()}); },
+});
+
+/**
  * Cross-origin isolation, as public/_headers gives it in production: the page
  * may share memory, so the Prompt runs each guest thread in a Worker of its
  * own. The development server and the preview (the selftest's) say the same.
@@ -160,5 +175,5 @@ export default defineConfig({
   // Most of a build is the core compiled for the browser (coreWasm's buildStart, cargo), which Rolldown would
   // report each time as a plugin's slow callback: it is the build's work, not a plugin's overhead.
   build: {target: 'es2022', outDir: ASSETS, emptyOutDir: true, rolldownOptions: {checks: {bundlerTimings: false}}},
-  plugins: [hostOnly(), coreWasm(), metaPolicy(), buildStamp(), preloadApp()],
+  plugins: [hostOnly(), coreWasm(), boot(), metaPolicy(), buildStamp(), preloadApp()],
 });

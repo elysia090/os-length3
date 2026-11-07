@@ -68,7 +68,7 @@ const G_DEPTH: u32 = 35;
 const DEPTH_LIMIT: i32 = 400;
 /// The least rsp has been (unsigned; all ones before it moves): how deep the thread's stack has gone, kept where rsp
 /// goes down by more than a push (a write to rsp, as a frame is made; a call), so the kernel zeroes no more of a stack
-/// than was used when its memory goes to another process (process.mjs Process.written).
+/// than was used when its memory goes to another process (process.ts Process.written).
 const G_LOW: u32 = 36;
 /// A word of memory below where Linux lets anything be mapped (vm.mmap_min_addr): nonzero when the kernel wants the
 /// thread to look in (a signal for it, another thread waiting for its turn). A host thread can write it while the

@@ -3,7 +3,7 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
@@ -16,5 +16,5 @@
     "resolveJsonModule": true,
     "types": ["node"]
   },
-  "include": ["app", "remote", "scripts", "selftest/*.ts", "vite.config.ts"]
+  "include": ["boot.ts", "app", "remote", "scripts", "selftest/*.ts", "vite.config.ts", "../xlat/runtime", "../xlat/tests", "root"]
 }
