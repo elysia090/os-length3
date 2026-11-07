@@ -173,7 +173,7 @@ Every value in `styles.css` comes from a token (§2).
     pace to its 280), inert on its way; a folder closed folds up and one
     opened unfolds, what stands under it making way; an ask answered, an
     offer put off, the issue being written put back with Not now fold or
-    fade away before what they stood over comes back; the paths Tab listed
+    fade away before what they stood over comes back; the paths → listed
     under the box go as the next key is pressed; a file's unsaved dot goes
     as it is saved; a place's name on the rail slides back into its edge as
     the pointer leaves. Shown again on its way out, it stays: it comes back
@@ -1949,20 +1949,41 @@ under it the line one types at, its pill the prompt (`garden $`) and what the
 line does (Run, Issue, TODO, Agent; Alt and a number, or pressed). Under Run,
 Enter runs the line as a terminal's does, Shift+Enter is a new line. Each
 file opened is a box of its own beside it, written in where it lies (there
-is no Edit to choose: the file is typed into). One box is in hand. The camera
-has its standard: every box at its own size, the box in hand in the middle
-across (a short one no lower than a third of the way down), the balance the work
-is done at, and it never comes nearer than that. At the standard the camera
-moves as a scroll does, so the keyboard going into a box, or something brought
-into view, takes the camera there and that box into hand, and the wheel moves
-it along the desk. Escape (Ctrl and -, a pinch out) steps back to the whole
-desk, at most half its size, zooming first and then going; Enter (a box pressed
-twice, Ctrl and 0, a pinch in) comes back to the box in hand, going first and
-then zooming. Stepped back, the box in hand is ringed, a press takes another
-in hand and an arrow hands over; at the standard Alt and an arrow do. Alt,
-Shift and an arrow carry the box in hand a slot: held, Alt and Shift lift it
-off the desk, its shadow long; the others step over, gliding there, and let
-go, it is put down. A file
+is no Edit to choose: the file is typed into). One box is in hand.
+
+The keys are a game's, the hands finding them without looking. Tab, wherever
+the keyboard is on the desk (in a file, at the Prompt's line), puts the finger
+on the next box (down a column, then the next column's top, round again;
+Shift+Tab back): the keyboard comes out onto the desk, a hand rests on the
+box's top edge near its right corner, and the camera goes to the box as near
+as it stands. With the finger on, an arrow puts it on the box that way (a
+nudge where there is none), and Enter, or a letter typed, goes into the box
+under it at the standard, the hand gone. Ctrl and an arrow carry the box in
+hand a slot, wherever the keyboard is (writing in it, it stays there): lifted
+while Ctrl is held, its shadow long and the hand shut on it, the others stepping
+over, the camera following a little behind; Ctrl let go, it is put down with a
+small give. Ctrl+N makes a new file beside the one in hand, opened to write in,
+its name written over in its head (a browser's own tab keeps Ctrl+N for a new
+window: there it is the files tool's New file). The hand is the cursor's open
+and shut hand; it goes once one writes or the pointer moves, and while it is
+on, the pointer is gone from the desk.
+
+The camera has three places, as a game's cameras do, and Escape goes round
+them: its standard, every box at its own size, the box in hand in the middle
+across (a short one no lower than a third of the way down), the balance the
+work is done at, never nearer than that; a step back (seven tenths), the box in
+hand still read in the middle and the boxes beside it in sight; and the whole
+desk, at most half its size. Stepping back it zooms first and then goes; coming
+nearer it goes first and then zooms. Escape takes the keyboard out onto the
+desk, the finger on the box in hand; from a field that keeps Escape for itself
+(a search, a rename), that comes first. Ctrl and - step back, Ctrl and + come a
+place nearer, Ctrl and 0 to the standard, a pinch either way a place. At the
+standard the camera moves as a scroll does, so the keyboard going into a box,
+or something brought into view, takes the camera there and that box into hand,
+and the wheel moves it along the desk. Stood back, a press takes a box in hand,
+twice comes in to it; over the whole desk, with the pointer rather than the
+finger, the box in hand is ringed. Writing in the box in hand while the camera
+stands back brings it to the standard. A file
 gone goes from the desk; moved, its box is the file where it went. Each
 repo keeps its own desk, as it was left, from one visit to the next; a desk
 never worked at begins with the Prompt and the README beside it.
@@ -2102,10 +2123,14 @@ of a text changed elsewhere is, how large it is and the way on: made smaller,
 it saves as before and the ask folds away; まるごと保存する keeps it as
 written, and from then it is a file read in part, its start to read, the
 Prompt editing it whole. While it waits, closing the tab asks first (the
-browser's own ask). Tab types a tab; with lines selected it moves
-each of them in by one, the selection kept, and one Undo takes it back. A
-press on a line's number selects that line. Escape leaves the text for the
-page. Undo reaches back across going to another repo or page and back: a
+browser's own ask). Tab is the desk's (the next box). Ctrl+] moves the line
+the caret is on, or each line selected, in by the file's own indent (a tab,
+unless it is indented with spaces), Ctrl+[ out by one, the selection kept;
+Alt+↑ and Alt+↓ move those lines over the line above or below; Alt+← and Alt+→
+move what is selected, or the letter after the caret, a letter that way; Enter
+keeps the indent of the line it breaks. One Undo takes each back, the selection
+too. A press on a line's number selects that line. Escape leaves the text for
+the page. Undo reaches back across going to another repo or page and back: a
 repo's page is never taken out of the document, only hidden. In each directory README comes first, then the other
 files, then the directories. The only line in Forge is the one between the
 center and the right pane.
@@ -2232,12 +2257,12 @@ played: its words in ink, its code set off by a rule; each file it read or
 edited a quiet line (pressed, the file); each command typed after its own
 prompt, the green of the person's, key by key with a terminal's block caret,
 then what it printed, and how it ended where it ended otherwise than well. Its
-prompt line waits at its foot. The camera steps back to have both terminals in
-sight as it is born, then keeps the Agent's terminal and the files it is at
-work in in sight together, stepped back as far as they need (never nearer than
-the standard); narrowing to fewer waits a moment, so a step ending and the
-next starting is not a step back and in again. The person takes a box in hand
-and the camera is theirs. The box has no Agent of its own on the desk: no pill
+prompt line waits at its foot. The camera never steps back for it: it stays
+at the standard, the Agent's terminal born at the edge beside the person's,
+and goes along to where the Agent is at work (its terminal, the file it
+writes in) as a pan, staying while one at work is well in sight, so lanes side
+by side are not gone to and fro; narrowing to fewer waits a moment. The person
+writing in their own box takes the camera back to it. The box has no Agent of its own on the desk: no pill
 says it, no answer comes in the pane.
 
 Elsewhere (Git's box), asking the Agent is the box's, never the Prompt's:
@@ -2309,11 +2334,11 @@ The box knows the repo's earlier lines, as a terminal does: ↑ with the
 caret on its first line goes back one line run in the repo's Prompt, ↓ on
 its last line forward again, down to what was being written (so a line of
 several lines is still edited with the arrows); writing in the box ends
-the walk. Tab completes the path before the caret from the repo's files
-(`src/ma` to `src/main.rs `, a directory with its `/`); several matches
-are written to what they share and listed in one quiet line under the box
-(monospace, as paths are), gone at the next key. With no path to complete
-Tab moves on, as everywhere.
+the walk. → at the end of the line completes the path before the caret from
+the repo's files, as a shell's suggestion is taken (`src/ma` to `src/main.rs `,
+a directory with its `/`); several matches are written to what they share and
+listed in one quiet line under the box (monospace, as paths are), gone at the
+next key. Tab is the desk's: the finger to the next box.
 On Git, a page read and pressed rather than written in, it stands back
 from the start and again once the Prompt is done with (Escape), never over
 an issue's buttons; Ctrl+` or the pointer resting at the foot brings it.

@@ -15,7 +15,7 @@ import {Drag} from './drag.ts';
 import {takeFiles} from './files-in.ts';
 import {Desk} from './desk.ts';
 import {deskFile, renameIn, type DeskFile} from './desk-file.ts';
-import {deedsUnder, fileDeeds, renaming, split} from '../kit/file-deeds.ts';
+import {deedsUnder, fileDeeds, renaming, split, untitled} from '../kit/file-deeds.ts';
 
 /**
  * Forge, the place you work. The repos out to work on run as pills in a band on the top line; ⊕ brings the rest out
@@ -98,6 +98,7 @@ class Forge {
   private known: string | null;
   private offSync: () => void;
   private offChange: () => void;
+  private offKeys: () => void;
   /** The file last told as the one Forge works on. */
   private told: string | null = null;
   private ctx: Context;
@@ -155,6 +156,16 @@ class Forge {
         this.layFile(c.repo, d, c.path, col < 0 ? undefined : col);
       }
     });
+    // Ctrl+N (⌘N) makes a new file wherever Forge is on screen and nothing over it holds the page (a browser's own tab
+    // keeps Ctrl+N for a new window; installed, it is Forge's).
+    const keys = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== 'n' || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.isComposing) return;
+      if (!this.element.isConnected || this.element.closest('[hidden]') || document.getElementById('page')?.hasAttribute('inert')) return;
+      e.preventDefault();
+      void this.newFile();
+    };
+    document.addEventListener('keydown', keys);
+    this.offKeys = () => document.removeEventListener('keydown', keys);
     this.known = ctx.repo;
     // Forge's head is its band; its name is still the page's heading, for those who hear the page.
     this.element.prepend(h('h1', {class: 'sr-only'}, t('Forge')));
@@ -164,6 +175,7 @@ class Forge {
   drop() {
     this.offSync();
     this.offChange();
+    this.offKeys();
     for (const d of this.desks.values()) for (const f of d.files.values()) f.drop();
   }
 
@@ -174,8 +186,7 @@ class Forge {
   private deeds(at: HTMLElement) {
     const repo = this.now.repo;
     if (!repo || this.deedsOut) return;
-    const held = this.desks.get(repo)?.desk.held;
-    const path = held && held !== 'term' ? held : '';
+    const path = this.fileHeld(repo);
     const done = () => this.deedsOut?.();
     const pop = fileDeeds({repo, path, name: path ? split(path)[1] : repo, dir: !path,
       made: (made, file) => { done(); if (file) this.ctx.openRepo(repo, made, true); },
@@ -188,6 +199,21 @@ class Forge {
       removed: () => { done(); this.shut(repo, path); },
       back: () => {}});
     this.deedsOut = deedsUnder(at, pop, () => { this.deedsOut = null; });
+  }
+
+  /** The file in hand on `repo`'s desk ('' while a terminal is: the person's, or the Agent's). */
+  private fileHeld(repo: string): string {
+    const d = this.desks.get(repo), held = d?.desk.held;
+    return held && d.files.has(held) ? held : '';
+  }
+
+  /** Ctrl+N: a new file made at once beside the file in hand (at the repo's top beside none), opened to write in, its
+   * name written over in its head. */
+  private async newFile() {
+    const repo = this.now.repo;
+    if (!repo) return;
+    const path = this.fileHeld(repo);
+    this.ctx.openRepo(repo, await untitled(repo, path ? split(path)[0] : '', path ? split(path)[1] : undefined), true);
   }
 
   /** `repo`'s desk, made the first time: its Prompt the first box. */

@@ -21,24 +21,24 @@ test.beforeEach(async ({app}) => {
   await app.newRepo.openInForge();
 });
 
-test('Tab completes a path in the repo, and says the choices when there are several', async ({app}) => {
+test('→ at the end completes a path in the repo, and says the choices when there are several', async ({app}) => {
   const box = app.forge.promptBox;
   await box.fill('cat sr');
-  await box.press('Tab');
+  await box.press('ArrowRight');
   await expect(box).toHaveValue('cat src/');
-  await box.press('Tab');
+  await box.press('ArrowRight');
   await expect(box).toHaveValue('cat src/main.c ');
   await expect(box).toBeFocused();
 
   await box.fill('ls ./');
-  await box.press('Tab');
+  await box.press('ArrowRight');
   await expect(box).toHaveValue('ls ./');
   await expect(app.forge.promptSays('Makefile')).toContainText('src/');
   // Anything else written there and the choices go.
   await box.press('d');
   await expect(app.forge.promptSays('Makefile')).toHaveCount(0);
 
-  // With no path before the caret, Tab moves on as everywhere.
+  // Tab is the desk's: the finger to the next box, the keyboard out of the line.
   await box.fill('');
   await box.press('Tab');
   await expect(box).not.toBeFocused();

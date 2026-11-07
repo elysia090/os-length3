@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {carried, GAP, next, overAll, PAD, slots, standardOn, TOP, VGAP, WHOLE_MOST, WIDTH, wholeOf} from './desk-layout.ts';
+import {carried, GAP, next, overAll, PAD, PULLED, pulledOn, slots, standardOn, tabbed, TOP, VGAP, WHOLE_MOST, WIDTH, wholeOf} from './desk-layout.ts';
 
 // The desk's places and its camera (desk-layout.ts), as numbers.
 
@@ -27,6 +27,18 @@ test('at the standard, the box in hand is in the middle across, at its own size,
   assert.equal(tall.y + slot.y, TOP + 16);
 });
 
+test('a step back, the box in hand is still in the middle, smaller, and the columns beside it come into sight', () => {
+  const at = slots(cols, heights), slot = at.get('a.c')!;
+  const v = pulledOn(slot, 200, 1280, 800);
+  assert.equal(v.s, PULLED);
+  assert.ok(WHOLE_MOST < PULLED && PULLED < 1);
+  assert.equal(v.x + (slot.x + WIDTH / 2) * v.s, 640);
+  // Both neighbours, a good part of each, on the face.
+  const left = at.get('term')!, right = at.get('README.md')!;
+  assert.ok(v.x + (left.x + WIDTH) * v.s > 200);
+  assert.ok(v.x + right.x * v.s < 1280 - 200);
+});
+
 test('stepped back, the whole desk fits, at most half its size, and in the middle', () => {
   const at = slots(cols, heights);
   const all = [...at].map(([k, slot]) => ({slot, h: heights(k)}));
@@ -36,18 +48,23 @@ test('stepped back, the whole desk fits, at most half its size, and in the middl
   assert.ok(w.x + right * w.s <= 1000 - 47);
 });
 
-test('over several boxes at once: at the standard, centred, when they fit; stepped back as far as they need when not', () => {
+test('over several boxes at once at the standard: centred when they fit, none when they do not (never stepped back for them)', () => {
   const at = slots(cols, heights);
   const two = overAll([{slot: at.get('a.c')!, h: 200}, {slot: at.get('b.c')!, h: 200}], 1000, 800);
-  assert.ok(two.s === 1 && Math.abs(two.x + (at.get('a.c')!.x + WIDTH / 2 + 4) - 500) < 1e-9);
-  const both = overAll([{slot: at.get('term')!, h: 400}, {slot: at.get('a.c')!, h: 200}], 1000, 800);
-  assert.ok(both.s < 1 && both.s >= .4);
-  // Side by side, both in the face, the term's left and a.c's right inside it.
-  assert.ok(both.x + at.get('term')!.x * both.s >= 0);
-  assert.ok(both.x + (at.get('a.c')!.x + WIDTH) * both.s <= 1000);
+  assert.ok(two && two.s === 1 && Math.abs(two.x + (at.get('a.c')!.x + WIDTH / 2) - 500) < 1e-9);
+  assert.equal(overAll([{slot: at.get('term')!, h: 400}, {slot: at.get('a.c')!, h: 200}], 1000, 800), null);
 });
 
-test('Alt and an arrow hand over along a column or to the next; Ctrl and an arrow carry a box', () => {
+test('Tab goes down each column, then to the next, round again; Shift+Tab back', () => {
+  assert.equal(tabbed(cols, 'term'), 'a.c');
+  assert.equal(tabbed(cols, 'a.c'), 'b.c');
+  assert.equal(tabbed(cols, 'b.c'), 'README.md');
+  assert.equal(tabbed(cols, 'README.md'), 'term');
+  assert.equal(tabbed(cols, 'term', true), 'README.md');
+  assert.equal(tabbed([['term']], 'term'), 'term');
+});
+
+test('an arrow takes the finger along a column or to the next; Ctrl and an arrow carry a box', () => {
   assert.equal(next(cols, 'a.c', 'down'), 'b.c');
   assert.equal(next(cols, 'b.c', 'right'), 'README.md');
   assert.equal(next(cols, 'term', 'left'), null);

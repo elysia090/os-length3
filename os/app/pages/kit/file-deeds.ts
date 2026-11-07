@@ -36,6 +36,19 @@ export async function renaming(repo: string, path: string, written: string): Pro
   return to;
 }
 
+/**
+ * A new file made at once in `into` of `repo`, named as nothing yet is there: untitled, with the ending of `like` (the
+ * file it is made beside; a note's, beside none). Its path in the repo.
+ */
+export async function untitled(repo: string, into: string, like?: string): Promise<string> {
+  const names = new Set((await store.tree(repo, into).catch(() => [])).map((x) => x.name));
+  const end = (like && /\.[^.]+$/.exec(like)?.[0]) || '.md';
+  let n = `untitled${end}`;
+  for (let i = 2; names.has(n); i++) n = `untitled-${i}${end}`;
+  await store.add(repo, into, n, '');
+  return joined(into, n);
+}
+
 interface Deeds {
   repo: string;
   /** Its path in the repo ('' for the repo itself), the name it is shown by, and whether it is a folder. */
@@ -111,13 +124,8 @@ export function fileDeeds(d: Deeds): HTMLElement {
     if (b.disabled) return;
     b.disabled = true;
     try {
-      const names = new Set((await store.tree(repo, into).catch(() => [])).map((x) => x.name));
-      const end = (!d.dir && /\.[^.]+$/.exec(d.name)?.[0]) || '.md';
-      let n = `untitled${end}`;
-      for (let i = 2; names.has(n); i++) n = `untitled-${i}${end}`;
       d.opening?.(into);
-      await store.add(repo, into, n, '');
-      await d.made(joined(into, n), true);
+      await d.made(await untitled(repo, into, d.dir ? undefined : d.name), true);
     } catch (err) { b.disabled = false; error.textContent = errorText(err); b.after(error); }
   };
   rows.push(entry(t('New file'), 'new-file', (b) => void make(b)));

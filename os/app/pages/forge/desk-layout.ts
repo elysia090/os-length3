@@ -1,8 +1,8 @@
 // Where each box of the desk lies (desk.ts), and where the camera looks: kept apart from the page so it is measured
 // and tested as numbers. The desk is a plane on a 24 px grid; its boxes stand in columns, each box as wide as 80
 // columns of code, one under another in its column with three grid steps between them, the columns two steps apart.
-// The camera has its standard, every box at its own size, the box in hand in the middle (a balance found good: never
-// nearer than that); from there it steps back to see the whole desk, and comes back.
+// The camera has three places, as a game's cameras do: its standard, every box at its own size, the box in hand in the
+// middle (a balance found good: never nearer than that); a step back, the boxes beside it in sight; and the whole desk.
 
 /** The grid the desk is laid on. */
 export const GRID = 24;
@@ -15,8 +15,10 @@ export const VGAP = 3 * GRID;
 export const PAD = 36;
 /** Room above a column's first box for its name. */
 export const TOP = 48;
-/** The standard: every box at its own size. Stepped back, at most half of it. */
+/** The standard: every box at its own size. A step back, the box in hand still read and those beside it in sight; the
+ * whole desk, at most half of it. */
 export const STANDARD = 1;
+export const PULLED = 0.7;
 export const WHOLE_MOST = 0.5;
 
 function up(v: number): number { return GRID * Math.ceil(v / GRID); }
@@ -44,11 +46,15 @@ export interface View { s: number; x: number; y: number }
  * a box that fits in the middle of the height too, but never lower than a third of the way down (a short box stands
  * where the eye starts, not in a hole in the middle), a tall one from its top.
  */
-export function standardOn(slot: Slot, h: number, w: number, hgt: number): View {
-  const s = STANDARD;
+export function standardOn(slot: Slot, h: number, w: number, hgt: number, s = STANDARD): View {
   const x = w / 2 - (slot.x + WIDTH / 2) * s;
   const top = Math.min(Math.max(TOP + 16, (hgt - h * s) / 2), Math.max(TOP + 16, hgt * .3));
   return {s, x, y: top - slot.y * s};
+}
+
+/** A step back, on the box at `slot` (`h` high): as at the standard, smaller, the boxes beside it in sight. */
+export function pulledOn(slot: Slot, h: number, w: number, hgt: number): View {
+  return standardOn(slot, h, w, hgt, PULLED);
 }
 
 /** Stepped back: the whole desk (each box's slot and height, its name over it, its shadow) in the face, at most
@@ -62,18 +68,26 @@ export function wholeOf(boxes: {slot: Slot; h: number}[], w: number, hgt: number
 }
 
 /**
- * Over the boxes at `boxes` (each its slot and height) at once, as they lie, their middle in the face's middle: at the
- * standard when they all fit in it; else stepped back as far as they need (never nearer than the standard, never
- * further than the whole desk's most), their names and shadows in sight too.
+ * At the standard, over the boxes at `boxes` (each its slot and height) at once, as they lie: their middle in the
+ * face's middle when they all fit in it; null when they do not (the camera goes along to the one at work instead,
+ * never stepping back for them).
  */
-export function overAll(boxes: {slot: Slot; h: number}[], w: number, hgt: number): View {
+export function overAll(boxes: {slot: Slot; h: number}[], w: number, hgt: number): View | null {
   let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
-  for (const {slot, h} of boxes) { l = Math.min(l, slot.x); t = Math.min(t, slot.y - 24); r = Math.max(r, slot.x + WIDTH + 8); b = Math.max(b, slot.y + h + 8); }
-  const s = Math.max(Math.min(STANDARD, (w - 2 * PAD) / (r - l), (hgt - 2 * PAD) / (b - t)), Math.min(WHOLE_MOST, (w - 96) / (r - l)) * .8);
-  return {s, x: (w - (r - l) * s) / 2 - l * s, y: Math.max(PAD, (hgt - (b - t) * s) / 2) - t * s};
+  for (const {slot, h} of boxes) { l = Math.min(l, slot.x); t = Math.min(t, slot.y); r = Math.max(r, slot.x + WIDTH); b = Math.max(b, slot.y + h); }
+  if (r - l > w - 2 * PAD || b - t > hgt - 2 * PAD) return null;
+  return {s: STANDARD, x: (w - (r - l)) / 2 - l, y: Math.max(PAD, (hgt - (b - t)) / 2) - t};
 }
 
-/** The box `from` hands over to going `way` (Alt and an arrow): along its column, or the next column's nearest. */
+/** The box after `from` (before it, `back`) as Tab goes: down each column, then the next column's top, round again. */
+export function tabbed(cols: readonly (readonly string[])[], from: string, back = false): string | null {
+  const all = cols.flat();
+  const i = all.indexOf(from);
+  if (i < 0) return all[0] ?? null;
+  return all[(i + (back ? all.length - 1 : 1)) % all.length];
+}
+
+/** The box `from` hands over to going `way` (an arrow, the finger on it): along its column, or the next column's nearest. */
 export function next(cols: readonly (readonly string[])[], from: string, way: 'up' | 'down' | 'left' | 'right'): string | null {
   const c = cols.findIndex((col) => col.includes(from));
   if (c < 0) return null;

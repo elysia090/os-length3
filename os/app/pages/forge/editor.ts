@@ -15,9 +15,9 @@ import {errorText} from '../../host/errors.ts';
 // Forge edits (EDIT_LIMIT) is not saved on its own: the box says so and offers to save it whole, which makes it a
 // file Forge reads only in part; made smaller again, it saves as before.
 
-/** Where a text and its selection were, before and after the last indent in an editor. */
+/** Where a text and its selection were, before and after the last reshaping (an indent, lines moved) in an editor. */
 interface Spot { text: string; start: number; end: number; direction: 'forward' | 'backward' | 'none' }
-const indents = new WeakMap<HTMLTextAreaElement, {before: Spot; after: Spot}>();
+const shaped = new WeakMap<HTMLTextAreaElement, {before: Spot; after: Spot}>();
 
 /**
  * Write `text` over `from`…`to` as typing does, so Undo takes it back: the
@@ -30,32 +30,114 @@ function typeOver(area: HTMLTextAreaElement, from: number, to: number, text: str
   area.dispatchEvent(new Event('input'));
 }
 
-/**
- * Tab in a file. With nothing selected it types a tab. With a selection, each
- * line it touches is moved in by one tab (an empty line stays empty; a
- * selection ending at a line's start leaves that line), the same text stays
- * selected, and one Undo takes it all back, the selection too.
- */
-function indent(area: HTMLTextAreaElement) {
-  const {value, selectionStart: a, selectionEnd: b} = area;
+/** Where the line that `i` is on starts in `value`. */
+const startOf = (value: string, i: number) => (i > 0 ? value.lastIndexOf('\n', i - 1) + 1 : 0);
+
+/** `from`…`to` of `area` written over with `text`, then `start`…`end` selected as it was going: one Undo takes both
+ * back, the selection too. */
+function reshape(area: HTMLTextAreaElement, from: number, to: number, text: string, start: number, end: number) {
   const direction = area.selectionDirection;
-  if (a === b) { typeOver(area, a, b, '\t'); return; }
-  const from = value.lastIndexOf('\n', a - 1) + 1;
-  const last = value[b - 1] === '\n' ? b - 1 : b;
+  const before = {text: area.value, start: area.selectionStart, end: area.selectionEnd, direction};
+  typeOver(area, from, to, text);
+  area.setSelectionRange(start, end, direction);
+  shaped.set(area, {before, after: {text: area.value, start, end, direction}});
+}
+
+/** The lines the selection of `area` touches: where the first starts and the last ends (a selection ending at a line's
+ * start leaves that line). */
+function touched(area: HTMLTextAreaElement): {from: number; to: number} {
+  const {value, selectionStart: a, selectionEnd: b} = area;
+  const from = startOf(value, a);
+  const last = b > a && value[b - 1] === '\n' ? b - 1 : b;
   const end = value.indexOf('\n', last);
-  const to = end < 0 ? value.length : end;
+  return {from, to: end < 0 ? value.length : end};
+}
+
+/** The file's own indent: a tab, unless its lines are indented with spaces (then as many as its shallowest indent). */
+function indentOf(text: string): string {
+  let tabs = 0, spaces = 0, least = Infinity;
+  for (const m of text.matchAll(/^([ \t]+)\S/gm)) {
+    if (m[1][0] === '\t') tabs++;
+    else { spaces++; least = Math.min(least, m[1].length); }
+  }
+  return spaces > tabs ? ' '.repeat(Math.min(least, 8)) : '\t';
+}
+
+/**
+ * Ctrl+] in a file (Ctrl+[, `out`): each line the caret or the selection touches moved in by the file's own indent (an
+ * empty line in a selection stays empty), or out by one; the same text stays selected, and one Undo takes it back.
+ */
+function indent(area: HTMLTextAreaElement, out = false) {
+  const {value, selectionStart: a, selectionEnd: b} = area;
+  const {from, to} = touched(area);
+  const unit = indentOf(value);
   const lines = value.slice(from, to).split('\n');
-  if (lines.every((l) => !l)) return;
-  // Where each tab goes, to move the selection with the text.
-  const at: number[] = [];
+  // Each line's start, and what it gains (a positive length) or loses there.
+  const edits: {at: number; by: number}[] = [];
   let k = from;
-  for (const l of lines) { if (l) at.push(k); k += l.length + 1; }
-  const start = a + at.filter((p) => p < a).length;
-  const stop = b + at.filter((p) => p < b).length;
-  const before = {text: value, start: a, end: b, direction};
-  typeOver(area, from, to, lines.map((l) => (l ? `\t${l}` : l)).join('\n'));
-  area.setSelectionRange(start, stop, direction);
-  indents.set(area, {before, after: {text: area.value, start, end: stop, direction}});
+  const done = lines.map((l) => {
+    const at = k;
+    k += l.length + 1;
+    if (!out) {
+      if (!l && a !== b) return l;
+      edits.push({at, by: unit.length});
+      return unit + l;
+    }
+    const gone = l[0] === '\t' ? 1 : Math.min(/^ */.exec(l)![0].length, unit === '\t' ? 8 : unit.length);
+    if (gone) edits.push({at, by: -gone});
+    return l.slice(gone);
+  });
+  if (!edits.length) return;
+  // A place moved with the text: past an indent added before it (at a line's start, too, with a caret), or back as
+  // much as was taken out before it.
+  const moved = (p: number) => p + edits.reduce((d, e) => d + (e.by > 0 ? (e.at < p || (a === b && e.at === p) ? e.by : 0) : (e.at < p ? -Math.min(-e.by, p - e.at) : 0)), 0);
+  reshape(area, from, to, done.join('\n'), moved(a), moved(b));
+}
+
+/** Alt+↑ or Alt+↓ in a file: the lines the caret or the selection touches moved over the line above or below. */
+function moveLines(area: HTMLTextAreaElement, up: boolean) {
+  const {value, selectionStart: a, selectionEnd: b} = area;
+  const {from, to} = touched(area);
+  const block = value.slice(from, to);
+  if (up) {
+    if (from === 0) return;
+    const above = startOf(value, from - 1), line = value.slice(above, from - 1), by = line.length + 1;
+    reshape(area, above, to, `${block}\n${line}`, a - by, b - by);
+  } else {
+    if (to >= value.length) return;
+    const stop = value.indexOf('\n', to + 1), below = stop < 0 ? value.length : stop, line = value.slice(to + 1, below), by = line.length + 1;
+    reshape(area, from, below, `${line}\n${block}`, a + by, b + by);
+  }
+}
+
+/** Alt+← or Alt+→ in a file: what is selected (with nothing selected, the letter after the caret) moved a letter that
+ * way, still selected (the caret still before it). */
+function moveLetters(area: HTMLTextAreaElement, left: boolean) {
+  const {value, selectionStart: a, selectionEnd: b} = area;
+  // A letter is a code point: never half of one.
+  const after = (i: number) => i + (value.codePointAt(i)! > 0xffff ? 2 : 1);
+  const before = (i: number) => i - (i >= 2 && value.codePointAt(i - 2)! > 0xffff ? 2 : 1);
+  const caret = a === b;
+  const end = caret ? (a < value.length ? after(a) : a) : b;
+  if (end === a) return;
+  const moving = value.slice(a, end);
+  if (left) {
+    if (a === 0) return;
+    const p = before(a), over = value.slice(p, a);
+    reshape(area, p, end, moving + over, p, caret ? p : p + moving.length);
+  } else {
+    if (end >= value.length) return;
+    const q = after(end), over = value.slice(end, q);
+    reshape(area, a, q, over + moving, a + over.length, caret ? a + over.length : q);
+  }
+}
+
+/** Enter in a file: the new line keeps the indent of the one it breaks. */
+function newLine(area: HTMLTextAreaElement) {
+  const {value, selectionStart: a, selectionEnd: b} = area;
+  const start = startOf(value, a);
+  const lead = /^[ \t]*/.exec(value.slice(start, a))![0];
+  typeOver(area, a, b, `\n${lead}`);
 }
 
 /** How tall a line of `area` is. */
@@ -174,7 +256,7 @@ export class Editor {
     addEventListener('beforeunload', this.leaving);
     document.addEventListener('visibilitychange', this.leaving);
     area.addEventListener('keydown', (event) => this.key(event));
-    // Undo and Redo of an indent take back the selection it had, not only the text.
+    // Undo and Redo of an indent or a move take back the selection it had, not only the text.
     area.addEventListener('input', (event) => this.undone(event as InputEvent));
   }
 
@@ -359,23 +441,31 @@ export class Editor {
     void this.save();
   };
 
-  /** Ctrl+S saves; Tab indents; Escape leaves the text. */
+  /**
+   * Ctrl+S saves; Ctrl+] and Ctrl+[ move the lines in and out (Tab is the desk's: the next box); Alt and an arrow move
+   * what is written (the lines up and down, the letters sideways); Enter keeps the indent; Escape leaves the text.
+   */
   private key(event: KeyboardEvent) {
-    if ((event.ctrlKey || event.metaKey) && event.key === 's') { event.preventDefault(); void this.save(); return; }
-    if (event.key === 'Tab' && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey && !event.isComposing) {
+    if (event.isComposing) return;
+    const ctrl = (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey;
+    const alt = event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey;
+    if (ctrl && event.key === 's') { event.preventDefault(); void this.save(); return; }
+    if (ctrl && (event.code === 'BracketRight' || event.code === 'BracketLeft')) {
       event.preventDefault();
-      indent(this.area);
+      indent(this.area, event.code === 'BracketLeft');
       return;
     }
-    // Escape leaves the text, so the keyboard is never caught in it: it is on the page, and
-    // Shift+Tab goes back up to the search from there.
+    if (alt && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) { event.preventDefault(); moveLines(this.area, event.key === 'ArrowUp'); return; }
+    if (alt && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) { event.preventDefault(); moveLetters(this.area, event.key === 'ArrowLeft'); return; }
+    if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) { event.preventDefault(); newLine(this.area); return; }
+    // Escape leaves the text, so the keyboard is never caught in it: it is on the page (on a desk, the desk's).
     if (event.key === 'Escape') this.box.flow.focus({preventScroll: true});
   }
 
-  /** Undo or Redo of an indent: the selection it had comes back with the text. */
+  /** Undo or Redo of a reshaping: the selection it had comes back with the text. */
   private undone(event: InputEvent) {
     const how = event.inputType;
-    const was = indents.get(this.area);
+    const was = shaped.get(this.area);
     if (!was || (how !== 'historyUndo' && how !== 'historyRedo')) return;
     const to = how === 'historyUndo' ? was.before : was.after;
     if (this.area.value === to.text) this.area.setSelectionRange(to.start, to.end, to.direction);

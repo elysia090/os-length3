@@ -19,39 +19,73 @@ test.beforeEach(async ({app}) => {
 const state = (app: {forge: {editor(p: string): import('@playwright/test').Locator}}, path: string) =>
   app.forge.editor(path).evaluate((el: HTMLTextAreaElement) => ({text: el.value, start: el.selectionStart, end: el.selectionEnd, direction: el.selectionDirection}));
 
-test('Tab moves the selected lines in, keeps them selected, and one Undo takes it back before and after it is saved', async ({app}) => {
+test('Ctrl+] moves the lines in by the file\'s own indent and Ctrl+[ out, keeps them selected, and one Undo takes it back before and after it is saved', async ({app}) => {
   // The page's clock is the test's from before anything is written here, so the pause that saves is passed, not waited out.
   await app.page.clock.install();
   const editor = app.forge.editor('README.md');
   const cases: {name: string; text: string; start: number; end: number; direction?: 'backward'; after: string}[] = [
-    {name: 'a caret', text: 'ab\ncd\n', start: 1, end: 1, after: 'a\tb\ncd\n'},
+    {name: 'a caret', text: 'ab\ncd\n', start: 1, end: 1, after: '\tab\ncd\n'},
     {name: 'part of a line', text: 'one two\nthree\n', start: 4, end: 7, after: '\tone two\nthree\n'},
     {name: 'two whole lines', text: 'one\ntwo\nthree\n', start: 0, end: 7, after: '\tone\n\ttwo\nthree\n'},
     {name: 'two lines selected backwards', text: 'one\ntwo\nthree\n', start: 1, end: 6, direction: 'backward', after: '\tone\n\ttwo\nthree\n'},
     {name: 'a selection ending in a newline', text: 'one\ntwo\nthree\n', start: 0, end: 8, after: '\tone\n\ttwo\nthree\n'},
+    {name: 'a file indented with spaces', text: 'if (x) {\n  one;\ntwo;\n', start: 17, end: 17, after: 'if (x) {\n  one;\n  two;\n'},
   ];
   for (const c of cases) {
     await editor.fill(c.text);
     await editor.evaluate((el: HTMLTextAreaElement, c) => { el.focus(); el.setSelectionRange(c.start, c.end, c.direction ?? 'forward'); }, c);
-    await editor.press('Tab');
+    await editor.press('Control+BracketRight');
     const done = await state(app, 'README.md');
     expect(done.text, c.name).toBe(c.after);
     // What was selected is still selected, moved with its lines.
-    expect(done.text.slice(done.start, done.end).replaceAll('\t', ''), c.name).toBe(c.text.slice(c.start, c.end));
+    expect(done.text.slice(done.start, done.end).replace(/^[\t ]+|(?<=\n)[\t ]+/g, ''), c.name).toBe(c.text.slice(c.start, c.end));
     if (c.direction) expect(done.direction, c.name).toBe('backward');
     await editor.press('Control+z');
     expect(await state(app, 'README.md'), c.name).toMatchObject({text: c.text, start: c.start, end: c.end});
   }
+  // Out by one: a tab, or the spaces of one indent.
+  await editor.fill('\tone\n    two\nthree\n');
+  await editor.evaluate((el: HTMLTextAreaElement) => { el.focus(); el.setSelectionRange(2, 12); });
+  await editor.press('Control+BracketLeft');
+  expect(await state(app, 'README.md')).toMatchObject({text: 'one\ntwo\nthree\n', start: 1, end: 7});
   // Saved in between (a pause in writing saves it): Undo and Redo still go both ways.
   await editor.fill('one\ntwo\n');
   await editor.evaluate((el: HTMLTextAreaElement) => { el.focus(); el.setSelectionRange(0, 7); });
-  await editor.press('Tab');
+  await editor.press('Control+BracketRight');
   await app.page.clock.runFor(700);
   await expect(app.forge.fileState('README.md')).toBeHidden();
   await editor.press('Control+z');
   expect(await state(app, 'README.md')).toMatchObject({text: 'one\ntwo\n', start: 0, end: 7});
   await editor.press('Control+Shift+z');
   expect((await state(app, 'README.md')).text).toBe('\tone\n\ttwo\n');
+});
+
+test('Alt and an arrow move what is written, the lines up and down and the letters sideways; Enter keeps the indent', async ({app}) => {
+  const editor = app.forge.editor('README.md');
+  const at = async (text: string, start: number, end = start) => {
+    await editor.fill(text);
+    await editor.evaluate((el: HTMLTextAreaElement, [a, b]) => { el.focus(); el.setSelectionRange(a, b); }, [start, end]);
+  };
+  await at('one\ntwo\nthree\n', 5);
+  await editor.press('Alt+ArrowUp');
+  expect(await state(app, 'README.md')).toMatchObject({text: 'two\none\nthree\n', start: 1, end: 1});
+  await editor.press('Alt+ArrowDown');
+  await editor.press('Alt+ArrowDown');
+  expect(await state(app, 'README.md')).toMatchObject({text: 'one\nthree\ntwo\n', start: 11, end: 11});
+  // One Undo takes the last move back, the caret with it.
+  await editor.press('Control+z');
+  expect(await state(app, 'README.md')).toMatchObject({text: 'one\ntwo\nthree\n', start: 5, end: 5});
+  // The letter after the caret, and what is selected, moved a letter, the caret before it, the selection kept.
+  await at('ab', 0);
+  await editor.press('Alt+ArrowRight');
+  expect(await state(app, 'README.md')).toMatchObject({text: 'ba', start: 1, end: 1});
+  await at('abcd', 1, 3);
+  await editor.press('Alt+ArrowLeft');
+  expect(await state(app, 'README.md')).toMatchObject({text: 'bcad', start: 0, end: 2});
+  // A new line keeps the indent of the one it breaks.
+  await at('\tif (x)\n', 7);
+  await editor.press('Enter');
+  expect(await state(app, 'README.md')).toMatchObject({text: '\tif (x)\n\t\n', start: 9});
 });
 
 test('a press on a line\'s number selects that line; below the text, the caret goes to its end', async ({app}) => {
@@ -387,21 +421,22 @@ test('the files tool on the band brings out the deeds for what is read now, unde
 
 test('pressed anywhere in the Prompt\'s box, beside its line too, the caret goes into its line', async ({app}) => {
   await app.rail.go('forge');
-  // Stepped back to the whole desk (Escape), the box pressed twice in its room (not on its line): the standard again.
+  // A step back (Escape), the box pressed twice in its room (not on its line): the standard again.
   await app.forge.promptBox.focus();
   await app.page.keyboard.press('Escape');
   const desk = app.page.locator('.desk:not([hidden])');
-  await expect(desk).toHaveClass(/whole/);
+  await expect(desk).toHaveClass(/pulled/);
   const term = app.page.locator('.desk-box[data-key="term"]');
   const box = (await term.boundingBox())!;
   await app.page.mouse.dblclick(box.x + 8, box.y + 8);
   await expect(app.forge.promptBox).toBeFocused();
-  await expect(desk).not.toHaveClass(/whole/);
+  await expect(desk).not.toHaveClass(/pulled/);
 });
 
-test('the desk steps back from its standard to the whole of it and comes back, never nearer than the standard', async ({app}) => {
+test('Escape takes the desk\'s camera round its three places, never nearer than the standard; Enter goes into the box under the finger', async ({app}) => {
   await app.rail.go('forge');
   const desk = app.page.locator('.desk:not([hidden])');
+  const hand = desk.locator('.desk-hand');
   const own = app.forge.editor('README.md');
   await own.focus();
   const readme = app.page.locator('.desk-box[data-key="README.md"]');
@@ -411,16 +446,70 @@ test('the desk steps back from its standard to the whole of it and comes back, n
   await app.page.keyboard.press('Control+Equal');
   await expect.poll(width).toBeCloseTo(standard, 0);
   await expect(own).toBeFocused();
-  // Escape steps back: the whole desk, at most half its size, the keyboard on the desk.
+  // A step back: the box in hand still read, the finger on it, the keyboard on the desk.
+  await app.page.keyboard.press('Escape');
+  await expect(desk).toHaveClass(/pulled/);
+  await expect.poll(async () => (await width()) / standard).toBeCloseTo(.7, 1);
+  await expect(desk).toBeFocused();
+  await expect(hand).toHaveClass(/\bon\b/);
+  // The whole desk, at most half its size.
   await app.page.keyboard.press('Escape');
   await expect(desk).toHaveClass(/whole/);
   await expect.poll(async () => (await width()) / standard).toBeLessThanOrEqual(.5);
-  await expect(own).not.toBeFocused();
-  // Enter comes back to the box in hand, the keyboard in it.
+  // Round again to the standard, the finger still on the box.
+  await app.page.keyboard.press('Escape');
+  await expect(desk).not.toHaveClass(/pulled|whole/);
+  await expect.poll(width).toBeCloseTo(standard, 0);
+  await expect(desk).toBeFocused();
+  // Stood back, Enter comes to the standard and goes into the box, the finger gone.
+  await app.page.keyboard.press('Escape');
   await app.page.keyboard.press('Enter');
-  await expect(desk).not.toHaveClass(/whole/);
+  await expect(desk).not.toHaveClass(/pulled/);
   await expect.poll(width).toBeCloseTo(standard, 0);
   await expect(own).toBeFocused();
+  await expect(hand).not.toHaveClass(/\bon\b/);
+});
+
+test('Tab puts the finger on the next box from anywhere on the desk; an arrow too, and a letter goes into it; Ctrl and an arrow carry the box in hand', async ({app}) => {
+  await app.rail.go('forge');
+  const desk = app.page.locator('.desk:not([hidden])');
+  const box = (key: string) => app.page.locator(`.desk-box[data-key="${key}"]`);
+  const own = app.forge.editor('README.md');
+  await own.focus();
+  // Out of the file, the finger on the next box down its column, then back.
+  await app.page.keyboard.press('Tab');
+  await expect(desk).toBeFocused();
+  await expect(box('src/main.c')).toHaveClass(/held/);
+  await expect(desk.locator('.desk-hand')).toHaveClass(/\bon\b/);
+  await app.page.keyboard.press('Shift+Tab');
+  await expect(box('README.md')).toHaveClass(/held/);
+  await app.page.keyboard.press('ArrowLeft');
+  await expect(box('term')).toHaveClass(/held/);
+  await app.page.keyboard.press('ArrowRight');
+  await expect(box('README.md')).toHaveClass(/held/);
+  // A letter typed goes into the box under the finger.
+  await app.page.keyboard.type('Q');
+  await expect(own).toBeFocused();
+  await expect(own).toHaveValue(/Q/);
+  // Carried from the file, the keyboard staying in it: lifted while Ctrl is held, into the Prompt's column, over it.
+  const text = await own.inputValue();
+  await app.page.keyboard.down('Control');
+  await app.page.keyboard.press('ArrowLeft');
+  await expect(box('README.md')).toHaveClass(/lifted/);
+  await app.page.keyboard.up('Control');
+  await expect(box('README.md')).not.toHaveClass(/lifted/);
+  await expect.poll(async () => {
+    const [r, t] = [(await box('README.md').boundingBox())!, (await box('term').boundingBox())!];
+    return Math.abs(r.x - t.x) < 2 && r.y < t.y;
+  }).toBe(true);
+  await expect(own).toBeFocused();
+  await expect(own).toHaveValue(text);
+});
+
+test('Ctrl+N makes a new file beside the one in hand, to write in', async ({app}) => {
+  await app.forge.editor('src/main.c').focus();
+  await app.page.keyboard.press('Control+n');
+  await expect(app.forge.editor('src/untitled.c')).toBeFocused();
 });
 
 test('Home says where one left off: the line last written in a box on the desk', async ({app}) => {

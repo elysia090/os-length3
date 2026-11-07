@@ -31,15 +31,15 @@ import {work as workOf} from '../../repos/history.ts';
 //
 // What is written in it belongs to the repo and to what the box does: each keeps its own while the app runs, so going
 // to another page and back keeps it, and switching repos swaps it for that repo's (or an empty box). Running, ↑ on the
-// first line and ↓ on the last walk the repo's earlier lines, a run pressed in Output is put back in the box, and Tab
-// completes the path before the caret from the repo's tree (several matches said in one quiet line under the box).
+// first line and ↓ on the last walk the repo's earlier lines, a run pressed in Output is put back in the box, and →
+// at the end completes the path before the caret from the repo's tree (several matches said in one quiet line under the box).
 //
 // While one reads (the center turned by the wheel, a touch or the keys) and the box is empty and not written in, it
 // steps back and lets what is under it be pressed; the keyboard reaching it, a press on the Prompt, or the pointer
 // resting at the center's foot brings it back where it was. A page read rather than written in (Git) has it stepped
 // back from the start.
 
-/** Choices said under the box after Tab, at most. */
+/** Choices said under the box after → completed, at most. */
 const CHOICES = 24;
 
 /** What was written in a box and not sent: by repo for Run, by what the box does and repo otherwise. */
@@ -108,11 +108,11 @@ export class Box {
   #screen: Screen | null = null;
   #repo: string | null = null;
   #mode: Mode = boxMode();
-  /** What Tab last said under the box, which goes as soon as anything else is done there. */
+  /** What completing last said under the box, which goes as soon as anything else is done there. */
   #choices = false;
   /** The repo's earlier lines, walked with ↑ and ↓. */
   readonly #walk = new Recall();
-  /** The repo's directories as Tab reads them: read ahead as a path is written, again once anything changes. */
+  /** The repo's directories as completing reads them: read ahead as a path is written, again once anything changes. */
   readonly #listed = new Map<string, Entry[] | Promise<Entry[]>>();
   readonly #modeWords = h('span', {class: 'prompt-mode', 'aria-hidden': 'true'});
   /** The key that brings the box up doing what it does now: ` for Run, G for Edit. */
@@ -337,7 +337,7 @@ export class Box {
   #draft() { return this.#mode === 'run' ? this.#repo! : `${this.#mode}\n${this.#repo}`; }
   /** What is written kept for the repo and what the box does (not Edit's: its line is the file's own). */
   #keep() { if (this.#repo && this.#mode !== 'edit') { if (this.prompt.value) drafts.set(this.#draft(), this.prompt.value); else drafts.delete(this.#draft()); } }
-  /** Tab's choices go as the next key is pressed, not at once: put away as they came. */
+  /** Completing's choices go as the next key is pressed, not at once: put away as they came. */
   #unsay() {
     if (!this.#choices) return;
     this.#choices = false;
@@ -605,7 +605,7 @@ export class Box {
     };
   }
 
-  /** The repo's directory `dir` as Tab reads it, read once and kept until the repo changes. */
+  /** The repo's directory `dir` as completing reads it, read once and kept until the repo changes. */
   #list(dir: string): Entry[] | Promise<Entry[]> {
     const key = `${this.#repo}\n${dir}`;
     let got = this.#listed.get(key);
@@ -616,7 +616,7 @@ export class Box {
     }
     return got;
   }
-  /** The directory of the path being written, read ahead so Tab can answer at once. */
+  /** The directory of the path being written, read ahead so → can complete at once. */
   #look() {
     const {prompt} = this, repo = this.#repo;
     const w = repo && prompt.selectionStart === prompt.selectionEnd ? pathWord(prompt.value, prompt.selectionStart, repo) : null;
@@ -662,7 +662,7 @@ export class Box {
    * Edit's; writing an issue or a TODO, Enter is a new line and Ctrl+Enter, ⌘+Enter, sends).
    */
   #key(event: KeyboardEvent) {
-    if (event.key !== 'Tab') this.#unsay();
+    if (event.key !== 'ArrowRight') this.#unsay();
     if (event.key === 'Escape') { this.#escape(event); return; }
     if (this.#modeKey(event)) return;
     if (this.#mode === 'edit') this.#editKey(event);
@@ -709,10 +709,13 @@ export class Box {
     return true;
   }
 
-  /** A key in the box while it runs: Tab completes a path, ↑ and ↓ walk earlier lines, Ctrl-C interrupts, Ctrl+Enter runs. */
+  /**
+   * A key in the box while it runs: → at the end completes a path (as a shell's suggestion is taken; Tab is the desk's,
+   * the next box), ↑ and ↓ walk earlier lines, Ctrl-C interrupts, Ctrl+Enter runs.
+   */
   #runKey(event: KeyboardEvent) {
     const {prompt} = this, repo = this.#repo, caret = prompt.selectionStart === prompt.selectionEnd;
-    if (event.key === 'Tab' && plain(event)) { if (this.#tab()) event.preventDefault(); return; }
+    if (event.key === 'ArrowRight' && plain(event) && caret && prompt.selectionStart === prompt.value.length) { if (this.#tab()) event.preventDefault(); return; }
     // ↑ on the first line and ↓ on the last walk earlier lines; elsewhere they move the caret.
     if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && plain(event) && caret) { this.#walkTo(event, event.key); return; }
     // Ctrl-C with nothing selected (so not a copy) interrupts what runs, as in a terminal.
@@ -772,7 +775,7 @@ export class Box {
       this.#keep();
       this.#walk.reset();
       this.#unsay();
-      // Why it was not done is heard once the box is written in again: it goes as Tab's choices go.
+      // Why it was not done is heard once the box is written in again: it goes as completing's choices go.
       if (this.note.classList.contains('refused')) { this.note.classList.remove('refused'); putAway(this.note, () => { this.note.textContent = ''; }); }
       this.#look();
       if (this.#mode === 'edit') this.#edit.typed();

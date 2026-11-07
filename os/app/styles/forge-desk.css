@@ -9,12 +9,14 @@
 .desk-box { position: absolute; left: 0; top: 0; box-sizing: border-box; border: 2px solid var(--ink); border-radius: var(--r-place);
   background: var(--paper); box-shadow: 8px 8px 0 0 var(--ink);
   transition: translate 640ms cubic-bezier(.45, 0, .2, 1), box-shadow 120ms var(--land), margin 120ms var(--land), opacity 180ms ease-out; }
-/* Lifted to be carried (Alt and Shift held): up off the desk, its shadow long, its name on the ground over it. */
+/* Lifted to be carried (Ctrl and an arrow): up off the desk, its shadow long, its name on the ground over it. */
 .desk-box.lifted { margin: -8px 0 0 -8px; box-shadow: 16px 16px 0 0 var(--ink); }
 .desk-box.lifted > .desk-label { background: var(--ground); margin-left: -6px; padding-left: 6px; }
-/* Stepped back to the whole desk: the box in hand ringed, a press takes another in hand, twice comes back to it. */
-.desk.whole .desk-box { cursor: var(--cursor-hand); }
-.desk.whole .desk-box.held { outline: 3px solid var(--ink); outline-offset: 10px; }
+/* Stood back (a step, or the whole desk): a press takes a box in hand, twice comes back to it. Over the whole desk, with
+   the pointer rather than the finger, the box in hand is ringed. The finger on, the pointer is gone from the desk. */
+.desk:is(.pulled, .whole) .desk-box { cursor: var(--cursor-hand); }
+.desk.whole:not(.finger) .desk-box.held { outline: 3px solid var(--ink); outline-offset: 10px; }
+.desk.finger, .desk.finger .desk-box { cursor: none; }
 .desk-label { position: absolute; left: 0; bottom: 100%; display: flex; align-items: baseline; gap: 0; white-space: nowrap;
   font: 600 13px/1 var(--mono); color: var(--ink); padding: 4px 8px 7px 0; transform-origin: 0 100%; scale: var(--inv, 1); }
 .desk-dir { font-weight: 400; color: var(--sub); }
@@ -82,3 +84,11 @@
 /* Born from under another box (the Agent's terminal from under the person's): its name comes once it is out. */
 .desk-box.born > .desk-label { opacity: 0; }
 .desk-box > .desk-label { transition: opacity 180ms ease-out; }
+/* The finger, a hand (desk.ts): on the top edge of the box in hand while the keyboard moves between boxes, the size it
+   is on the face however near the camera, gliding from box to box; shut while the box is lifted. */
+.desk-hand { position: absolute; left: 0; top: 0; z-index: 3; width: 40px; height: 40px; margin: -18px 0 0 -18px; pointer-events: none;
+  background: var(--hand-open) no-repeat center / contain; transform-origin: 18px 18px; scale: var(--inv, 1); opacity: 0;
+  transition: translate 320ms cubic-bezier(.45, 0, .2, 1), opacity 140ms ease-out; }
+.desk-hand.on { opacity: 1; }
+.desk-hand.placing { transition: none; }
+.desk-hand.shut { background-image: var(--hand-shut); }
