@@ -2,7 +2,7 @@
 export default {
   'Purposes': '目的',
   'Me': '自分',
-  'No name set': '名前未設定',
+  'No name': '名前なし',
   'Edit profile': 'プロフィールを編集',
   'Saved locally; Remote name unchanged ({message})': 'ローカルに保存しました。Remote の名前は変更されていません（{message}）',
   'Language': '言語',

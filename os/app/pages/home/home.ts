@@ -286,7 +286,7 @@ function identity(counts: HTMLElement, fitted: () => void): HTMLElement {
   const name = h('h1', {}), handle = h('p', {class: 'handle'});
   /** The name to be called by over the handle; the handle alone where there is no name. */
   const paint = (called: string, user: string) => {
-    name.textContent = called || (user ? `@${user}` : t('No name set'));
+    name.textContent = called || (user ? `@${user}` : t('No name'));
     name.classList.toggle('unset', !called && !user);
     handle.textContent = called && user ? `@${user}` : '';
     handle.hidden = !handle.textContent;

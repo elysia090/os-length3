@@ -13,7 +13,7 @@ import type {Context} from '../kit/context.ts';
 
 /** The person's name as written on Home; none written there, the one signed in with (the Remote's), as Home says it. */
 function shownName(written: string): HTMLElement {
-  const b = h('b', {}, written || t('No name set'));
+  const b = h('b', {}, written || t('No name'));
   if (!written) void myName().then((n) => { if (n) b.textContent = n; }, () => {});
   return b;
 }

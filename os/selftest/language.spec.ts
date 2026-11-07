@@ -10,7 +10,7 @@ test('choosing 日本語 shows the page in Japanese, and it stays chosen', async
   await app.me.language('English', '日本語');
 
   await expect(app.main.getByRole('button', {name: 'プロフィールを編集'})).toBeVisible();
-  await expect(app.main.getByRole('heading', {name: '名前未設定'})).toBeVisible();
+  await expect(app.main.getByRole('heading', {name: '名前なし'})).toBeVisible();
   await expect(app.page.getByRole('button', {name: '自分', exact: true})).toBeVisible();
   await expect(app.page.locator('html')).toHaveAttribute('lang', 'ja');
 

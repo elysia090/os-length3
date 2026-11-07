@@ -1835,7 +1835,7 @@ under it one quiet mono line: the counts of repos and servers, then Edit
 profile. No face in the column: the rail's own icon is the face. No name
 written yet, it is the one signed in with, as Remote and the Me menu say it:
 one person, one name, never "No name yet" beside "Signed in as Sora"; none at
-all, "No name set" stands as large in the ground's rule colour. Under the
+all, "No name" stands as large in the ground's rule colour. Under the
 name, side by side: **TODO**, a box as Forge's are (paper, an ink edge, its
 shadow), as tall as what is in it and most of half the column wide; and
 beside it the repos and servers, each a name in the display face, what it is
@@ -3722,10 +3722,14 @@ One box being born on the desk's ground, with Home's and Forge's band and
 pane round it (the rail goes between the three as a camera over one desk):
 paper, an ink edge, its shadow, as a box on the desk is, and over it, as a
 desk box's label says its place, ~/ and the name as written, then New repo.
-Beside it, as Home's repos stand beside its TODO, a narrower box of what will
-be made with it, File said over it: the weight at the left (the name's box up
-to 640 px, the files' 280), the two held to the column's left edge; on a
-narrow column the files' box goes under the name's.
+Beside it a box of what will be made with it, File said over it, in Home's two
+columns: the name's box where Home's TODO stands (up to 520 px), the files
+where its repos do (280 px at the least); on a narrow column the files' box
+goes under the name's. A name too long to stand large beside the files (under
+72 px there) has the column alone, as the box had before the files stood
+beside it (up to 760 px), what will be made inside it under what the repo is
+for, a rule over it; shortened again (to stand at 80 px beside them), the
+files go back beside it.
 In the box, its first line, the name, in the display face as large as the
 box lets the name written be: 104 px while it is short, smaller as it grows
 longer so it is never cut at the box's edge (never under 28 px, past which it

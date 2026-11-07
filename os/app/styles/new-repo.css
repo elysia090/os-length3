@@ -3,20 +3,26 @@
 /* New repo: one box being born where Forge will lay the repo's README (paper, an ink edge, its shadow, as a box on
    the desk is), its place said over it as a desk box's is (~/ and the name as written, then New repo): in it the name,
    its first line, as large as Home's name, the word for it quiet where nothing is written yet; under it what the repo is
-   for; Create at its foot. Beside it, as Home's repos stand beside its TODO, a narrower box of what will be made with
-   it, as File will show it, File said over it: the weight at the left, the two held to the column's left edge (the
-   room past them the ground's), the files' box under the name's on a narrow column. */
+   for; Create at its foot. Beside it a box of what will be made with it, as File will show it, File said over it: in
+   Home's two columns (home.css .home-desk), the name's box where Home's TODO stands, the files where its repos do; the
+   files' box under the name's on a narrow column. */
 .new-repo-main { padding-top: var(--s6); }
-.new-repo { display: grid; grid-template-columns: minmax(0, 640px) 280px; grid-template-areas: "label files-label" "box files";
-  column-gap: clamp(var(--s5), 4cqi, 48px); align-items: start; }
+.new-repo { display: grid; grid-template-columns: minmax(0, 520px) minmax(280px, 1fr); grid-template-areas: "label files-label" "box files";
+  column-gap: clamp(var(--s5), 6cqi, 80px); align-items: start; }
 .new-repo > .nr-label:not(.nr-files-label) { grid-area: label; }
 .new-repo > .nr-box { grid-area: box; }
 .new-repo > .nr-files-label { grid-area: files-label; }
 .new-repo > .tree-still { grid-area: files; }
-@container (width < 640px) {
+@container (width < 600px) {
   .new-repo { grid-template-columns: minmax(0, 1fr); grid-template-areas: "label" "box" "files-label" "files"; }
   .new-repo > .nr-files-label { margin-top: var(--s5); }
 }
+/* A name too long to stand large beside the files (new-repo.ts fitted): the box takes the column alone, as wide as it
+   was before the files stood beside it, what will be made inside it under what the repo is for, a rule over it. */
+.new-repo.alone { grid-template-columns: minmax(0, 760px); grid-template-areas: "label" "box"; }
+.new-repo.alone > .nr-files-label { display: none; }
+.nr-box > .tree.tree-still { margin: 0 var(--s5) var(--s3) calc(var(--nr-in) - 10px); padding: var(--s3) 0 0; border: 0; border-top: 1.5px solid var(--rule);
+  border-radius: 0; background: transparent; box-shadow: none; }
 .nr-box { position: relative; min-width: 0; background: var(--paper); border: 2px solid var(--ink); border-radius: var(--r-place); box-shadow: 8px 8px 0 0 var(--ink); }
 /* Its place over it, as a desk box's label: the path in ink, what it is quiet after it, why the name cannot be in the
    off colour after that (an off dot before it, as everywhere a written thing is refused). */
