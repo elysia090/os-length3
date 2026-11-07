@@ -221,6 +221,9 @@ export class Session implements Prompt {
     this.worker?.postMessage({type: 'input', bytes}, [bytes.buffer]);
   }
 
+  /** Keys pressed on the page: its kernel waits for them to be still before work that would hold up the page (worker.mjs). */
+  typing() { this.worker?.postMessage({type: 'typing'}); }
+
   /** `sig` to what runs in front (a key that makes a signal). */
   private signal(sig: number) {
     if (this.native) { void this.native.interrupt(); return; }
@@ -622,6 +625,15 @@ export class Session implements Prompt {
     goDark(power, this.out.element);
   }
 }
+
+/** Keys pressed anywhere on the page: every Prompt hears of it, at most every so often (Session.typing). */
+let typedAt = 0;
+if (typeof addEventListener === 'function') addEventListener('keydown', () => {
+  const now = performance.now();
+  if (now - typedAt < 400) return;
+  typedAt = now;
+  for (const s of [...sessions.values(), ...agents.values()]) if (s instanceof Session) s.typing();
+}, {capture: true, passive: true});
 
 /** The repo's session, made if it has none (made, it is not started: writing to it starts it). */
 export function sessionFor(repo: string): Session {

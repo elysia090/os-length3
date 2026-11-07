@@ -4,6 +4,7 @@
 // (`translator` and a file's optional `module`, its translation made ahead
 // of time, may be compiled WebAssembly.Modules, shared between workers.)
 // then {type: 'input', bytes} as the person types and {type: 'eof'}, and
+// {type: 'typing'} while keys are pressed on the page (what is due waits for them to be still), and
 // {type: 'interrupt', sig?} for Ctrl-C (or Ctrl-Z, Ctrl-\\: its signal): what
 // was typed and not read yet is dropped, and what runs in front of the shell
 // gets the signal (Kernel.interrupt). Shown as a screen, its console is a
@@ -151,7 +152,15 @@ const failed = (e) => self.postMessage({type: 'error', message: e instanceof Err
  * a moment, so a line sent at once after the one before (a script, a paste) does not wait on it.
  */
 const IDLE_MS = 1200;
+/** Keys pressed on the page ('typing': the person writing a line, or in a file, which the kernel hears nothing of until
+ * a line is sent): what is due waits until they have been still this long. */
+const QUIET_MS = 5000;
 let idle;
+/** Waiting for a person (input), with what is due to be done then. */
+let waitingInput = false;
+/** Translated again as one module, a program takes every thread the page draws with for seconds: done while the
+ * person is still, never while they type. */
+const consolidateLater = (ms) => { clearTimeout(idle); idle = setTimeout(() => { if (kernel.consolidateDue()) told(); }, ms); };
 /** A program in front reads each key as it comes (vi, less, top): waiting for input is waiting for the next key, the
  * person typing, not reading; nothing is translated again until it gives the terminal back (it would hold up the page's
  * frames, the translation taking the threads the page draws with, at every pause between keys). */
@@ -164,7 +173,8 @@ function paused(r) {
   self.postMessage(m);
   // Waiting for a person: what is due is consolidated while they read or type, then said as anything translated is.
   clearTimeout(idle);
-  if (m.type === 'waiting' && m.for === 'input' && kernel.due.size && !rawKeys) idle = setTimeout(() => { if (kernel.consolidateDue()) told(); }, IDLE_MS);
+  waitingInput = m.type === 'waiting' && m.for === 'input';
+  if (waitingInput && kernel.due.size && !rawKeys) consolidateLater(IDLE_MS);
   return m;
 }
 
@@ -229,11 +239,12 @@ function given(files) {
 }
 
 /** Something came from outside (input, Ctrl-C): the kernel looks again. */
-const nudge = () => { if (!kernel) return; clearTimeout(idle); if (apart) kernel.kick(); else pump(); };
+const nudge = () => { if (!kernel) return; clearTimeout(idle); waitingInput = false; if (apart) kernel.kick(); else pump(); };
 
 self.onmessage = async ({data}) => {
   if (data.type === 'input') { pending.push(data.bytes); nudge(); return; }
   if (data.type === 'eof') { ended = true; nudge(); return; }
+  if (data.type === 'typing') { if (kernel && waitingInput && kernel.due.size && !rawKeys) consolidateLater(QUIET_MS); return; }
   if (data.type === 'interrupt') { pending.length = 0; if (kernel?.interrupt(data.sig)) nudge(); return; }
   if (data.type === 'put') { mirror?.put(data.path, data.what); return; }
   if (data.type === 'free') { if (kernel) self.postMessage({type: 'freed', ...kernel.free(0)}); return; }
