@@ -5,13 +5,12 @@ import {plan} from '../../remote/plan.ts';
 import {goToPlan} from '../kit/plan-gate.ts';
 import {remoteOnly} from '../../remote/lifecycle.ts';
 import {isIssues, ISSUES, plainPath, store, templateFiles, validName, type Template} from '../../repos/repos.ts';
-import {pageHead} from '../kit/common.ts';
-import {repoList} from '../home/repo-list.ts';
+import {onTheGround} from '../home/home.ts';
 import type {Context} from '../kit/context.ts';
 import {triangle} from '../file/tree.ts';
 import {errorText} from '../../host/errors.ts';
 import {mark} from '../../ui/icons.ts';
-import {liftLine, morph, nudge, putAway, textAt, unfold, where} from '../../ui/glide.ts';
+import {liftLine, nudge, putAway, textAt, unfold} from '../../ui/glide.ts';
 
 /**
  * +: the repo's name on the first line; under it, in a large box, what it
@@ -86,7 +85,7 @@ const rowDeed = (m: 'pen' | 'close', said: string, act: () => void) => {
 
 export function newRepo(ctx: Context): Node[] {
   // No example in it: one there reads as a name already given (and the row it would draw, as the repo to be made).
-  const name = h('input', {id: 'repo-name', class: 'line-in', maxlength: '64', autocapitalize: 'off', spellcheck: 'false',
+  const name = h('input', {id: 'repo-name', class: 'nr-name', maxlength: '64', autocapitalize: 'off', spellcheck: 'false', required: '',
     'aria-describedby': 'repo-name-rule'}) as HTMLInputElement;
   name.value = draft.name;
   // The README's size as File gives a file's, of what it will say: it follows the name and what it is for.
@@ -213,9 +212,12 @@ export function newRepo(ctx: Context): Node[] {
   const caption = h('p', {class: 'sr-only'}, t('Preview in File'));
   const card = h('div', {class: 'tree tree-still', 'aria-label': t('Items to create')}, caption, preview,
     h('div', {class: 'tree-makes'}, newFile, newFolder), fileError);
+  // Where it will stand, said over its box as a file's place is over a box on the desk: ~/ and the name as written.
+  const place = h('span', {class: 'nr-where'});
+  const placed = () => { place.textContent = name.value.trim(); };
   const keep = () => { draft = {name: name.value, summary: summary.value, made: made.map((m) => ({...m}))}; };
-  // What it is for, in a raised box as Home's TODO is: the words written straight in it, the box the field.
-  const summary = h('textarea', {id: 'repo-summary', class: 'todo-detail', maxlength: '2000',
+  // What it is for, under the name in the box, the words written straight in it, the box the field.
+  const summary = h('textarea', {id: 'repo-summary', class: 'todo-detail', maxlength: '2000', rows: '1',
     placeholder: t('Description / Purpose'), 'aria-labelledby': 'repo-summary-label'}) as HTMLTextAreaElement;
   summary.value = draft.summary;
   const summaryBox = h('div', {class: 'summary-box'}, summary);
@@ -227,10 +229,15 @@ export function newRepo(ctx: Context): Node[] {
   const sized = () => { readmeSize.textContent = bytes(new TextEncoder().encode(readme(name.value.trim())).length); };
   // The whole box is the field, as the TODO's is.
   summaryBox.addEventListener('pointerdown', (event) => { if (event.target === summaryBox) { event.preventDefault(); summary.focus(); } });
-  summary.addEventListener('input', () => { keep(); sized(); });
+  // As tall as what is written in it, a line to begin with: the box grows with the words, never a field's empty room.
+  const grow = () => { summary.style.height = 'auto'; summary.style.height = `${summary.scrollHeight}px`; };
+  summary.addEventListener('input', () => { keep(); sized(); grow(); });
+  // Narrowed or widened, the words fold again: as tall as they are at that width (not when it grows itself).
+  let wide = 0;
+  new ResizeObserver(() => { if (summary.clientWidth !== wide) { wide = summary.clientWidth; grow(); } }).observe(summary);
   // Said where it is to be put right: under the name.
   const error = h('p', {class: 'error', role: 'alert'});
-  const submit = h('button', {class: 'button primary', type: 'submit'}, t('Create')) as HTMLButtonElement;
+  const submit = h('button', {class: 'button primary', type: 'submit'}, t('Create'), h('kbd', {'aria-hidden': 'true'}, '↵')) as HTMLButtonElement;
   // The plan full (signed in, on a Remote that has one): said before Create, not found out after. It is made all the
   // same, and stays on this device until there is room on the Remote.
   const full = h('p', {class: 'muted small plan-full', role: 'note', hidden: ''});
@@ -257,25 +264,25 @@ export function newRepo(ctx: Context): Node[] {
     again.addEventListener('click', () => { draft = fresh(); ctx.rerender(); });
     actions.replaceChildren(h('p', {class: 'made', role: 'status'}, t('Created {name}', {name: n})), h('span', {class: 'grow'}), again, open);
     open.focus({preventScroll: true});
-    // What was written becomes the repo's card: an outline goes from the summary down to where it joins the others.
-    const from = where(summaryBox)!;
-    void list.refresh(n).then(() => morph(from, () => list.element.querySelector<HTMLElement>(`.card.repo[data-repo="${CSS.escape(n)}"]`), 420));
   };
-  // The name alone on the first line; under it, what it is for, and beside that what will be made.
-  const form = h('form', {class: 'new-repo'},
-    h('div', {class: 'field name-field'}, h('label', {class: 'field-label', for: 'repo-name'}, t('Name')), name,
-      // The rule for a name is heard with the field and seen only when it is broken (the error under it).
-      h('span', {id: 'repo-name-rule', class: 'sr-only'}, t('Letters, digits, and . _ - (up to 64 chars)')), error),
-    h('div', {class: 'field summary-field'}, h('span', {class: 'field-label', id: 'repo-summary-label'}, t('Summary')), summaryBox),
-    h('div', {class: 'field scaffold-field'}, h('span', {class: 'field-label'}, t('Items to create')), card),
-    actions);
+  // One box being born where Forge will lay the repo's README: the name its first line, as large as Home's name; under
+  // it what it is for (its README's words); under that what will be made with it, as File will show it; Create at its
+  // foot. Why a name cannot be is said over the box, after where it will stand, as a desk box says its place.
+  const box = h('div', {class: 'nr-box', 'data-empty': t('name')},
+    h('label', {class: 'sr-only', for: 'repo-name'}, t('Name')), name,
+    // The rule for a name is heard with the field and seen only when it is broken (said over the box).
+    h('span', {id: 'repo-name-rule', class: 'sr-only'}, t('Letters, digits, and . _ - (up to 64 chars)')),
+    h('span', {class: 'sr-only', id: 'repo-summary-label'}, t('Summary')), summaryBox, card, actions);
+  // The page says why a name cannot be, in its own words, never the browser's bubble for a field left empty.
+  const label = h('div', {class: 'nr-label'}, h('span', {class: 'nr-path'}, '~/', place), h('span', {class: 'nr-kind'}, t('New repo')), error);
+  const form = h('form', {class: 'new-repo', novalidate: ''}, label, box);
   // Said as it is written, not only once Create is pressed: why it cannot be, under the name, and where in it.
   const judge = () => {
     const said = why(name.value.trim());
     if (error.textContent !== said) error.textContent = said;
     if (said) name.setAttribute('aria-invalid', 'true'); else name.removeAttribute('aria-invalid');
   };
-  name.addEventListener('input', () => { keep(); showFiles(); sized(); judge(); });
+  name.addEventListener('input', () => { keep(); showFiles(); sized(); judge(); placed(); });
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const n = name.value.trim();
@@ -315,17 +322,16 @@ export function newRepo(ctx: Context): Node[] {
     // empty: readme), never a sheet gone empty on its way and the words come back after.
     draft = fresh();
     const words = summary.value.trim() && readmeAt ? liftLine(summary) : null;
-    ctx.openRepo(n, readmeAt ?? '', readmeAt ? 'end' : false, summaryBox, 0, words ? {lifted: words, to: (box) => {
-      const area = box.querySelector<HTMLTextAreaElement>('textarea.code-edit');
+    // The box it was written in grows into the README's box, standing where that is laid.
+    ctx.openRepo(n, readmeAt ?? '', readmeAt ? 'end' : false, box, 0, words ? {lifted: words, to: (into) => {
+      const area = into.querySelector<HTMLTextAreaElement>('textarea.code-edit');
       return area ? textAt(area, 2) : null;
     }} : undefined);
   });
-  // The repos already there, right under the form; a new one joins them.
-  const list = repoList(ctx, {newCard: false});
-  void list.refresh();
   showFiles();
   sized();
+  placed();
   queueMicrotask(() => name.focus({preventScroll: true}));
-  return [pageHead('new-repo'), h('div', {class: 'new-repo-wrap'}, form),
-    h('section', {class: 'section', 'aria-labelledby': 'new-repo-list'}, h('h2', {id: 'new-repo-list'}, t('Repos')), list.element)];
+  // On the ground with Home's and Forge's band and pane: the rail goes between the three as a camera over one desk.
+  return [onTheGround(h('div', {class: 'home-main new-repo-main', 'aria-label': t('New repo')}, form), ctx, store.list().catch(() => null))];
 }

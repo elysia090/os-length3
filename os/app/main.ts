@@ -237,11 +237,11 @@ type Pan = {pass: Pass; left: PurposeId; to: PurposeId; dir: number; by: number;
   drawn: boolean; ready: boolean; parts: Animation[]; old: Animation[]; camera: HTMLElement[] | null};
 
 /**
- * The pages laid on the desk's dotted ground (Forge's desk, Home), each with a band along its top and the pane at its
+ * The pages laid on the desk's dotted ground (Forge's desk, Home, New repo), each with a band along its top and the pane at its
  * right: between two of them the rail moves a camera over the one ground, and the band, the pane and its switch are
  * its frame, standing where they are while what lies on the ground goes by under them.
  */
-const ON_GROUND = new Set<PurposeId>(['forge', 'home']);
+const ON_GROUND = new Set<PurposeId>(['forge', 'home', 'new-repo']);
 /** A ground page's frame: its band, its pane, the pane's switch (inside Home's pane; beside Forge's). */
 const FRAME = ':is(.home-band, .home-pane, .work.desk-bench > .bar, .work.desk-bench > .side, .work.desk-bench > .pane-toggle)';
 /**

@@ -52,16 +52,16 @@ export function home(ctx: Context): Node[] {
     h('section', {class: 'section', 'aria-labelledby': 'repos-title'}, h('h2', {id: 'repos-title'}, t('Repos')), grid),
     h('section', {class: 'section', 'aria-labelledby': 'servers-title'}, h('h2', {id: 'servers-title'}, t('Servers')), ownServers(ctx)));
   const main = h('div', {class: 'home-main'}, header, ...unread, h('div', {class: 'home-desk'}, todoBox(), places));
-  return [homePane(main, ctx, listed)];
+  return [onTheGround(main, ctx, listed)];
 }
 
 /**
- * Home laid as Forge is: a band along its top, held there while Home scrolls under it, with the search Forge has; the
+ * Home (and New repo) laid as Forge is: a band along its top, held there while Home scrolls under it, with the search Forge has; the
  * right pane Forge and Git have, in the same place, its switch at its foot where Forge's is (one setting for all
  * three); at the pane's top the plugin area (plain until the rail's plug opens it, here as there). Put away, Home
  * takes the width.
  */
-function homePane(main: HTMLElement, ctx: Context, listed: Promise<RepoSummary[] | null>): HTMLElement {
+export function onTheGround(main: HTMLElement, ctx: Context, listed: Promise<RepoSummary[] | null>): HTMLElement {
   const side = h('aside', {class: 'home-side', id: 'home-side', 'aria-label': t('Recent activity')}, pluginArea(), agentCards((repo, issue) => { void import('../git/git.ts').then((g) => { g.showIssue(repo, issue.replace(/^issue\//, '')); void ctx.go('git'); }); }), lately(ctx));
   const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': 'home-side'}, paneMark()) as HTMLButtonElement;
   // The search Forge has, on the band as Forge's is: in the repo last worked in (named in it, there being no repos on

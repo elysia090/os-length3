@@ -3702,43 +3702,41 @@ by their range of ids when they come back near.
 
 ### New repo (+)
 
-A name alone on the first line (the same field as the search box). Under
-it, two columns: on the left, filling it, what the repo is for (概要), a
-raised box written straight into as a TODO's detail is, whose words go into the repo's README.md under
-its title; on the right, level with it, under 作成されるもの, the one
-scaffold every repo starts from (nothing to choose: shared/templates.json's
-`standard`, as `l3 repo new` makes it: README.md with docs/ and issue/, no
-language of its own; C's files are `l3 repo new -t c`'s), shown as File will show it: File's
-own card, only as tall as its rows, /root (repo) and in it the repos already
-there, shut and quiet, and among them, where its name puts it (moving as the
-name is written: past another's name, the rows go to their new places on
-their curve), the new one filled in ink as File fills the repo worked
-on, its folders shut, README.md's size at the row's end as File gives it, of
-what it will say (it follows the name and what it is for). The field holds no
-example (one there reads as a name given, and its row as the repo to be
-made): with nothing written, the new row is a quiet dashed place saying name,
-and 作成 pressed says, under the field, to write a name first. A name that
-cannot be is said as it is written, not once 作成 is pressed: the reason
-under the field (its edge in the off colour), the new row not filled but
-dashed, each letter no name has underlined where it is in it (a space as
-␣, a dot first), and a repo of the same name ringed where it stands. Nothing is named
-or laid out in the card: a repo's files are named, made and moved in File,
-every repo's alike, once it is made. Then 作成, the one primary action, under both. What is written stays
-while other pages are seen, until the repo is made. The two columns stand
-side by side only while what is written keeps a reading width beside the
-card; narrower, they stack: name, what it is for, the files.
+One box being born on the desk's ground, with Home's and Forge's band and
+pane round it (the rail goes between the three as a camera over one desk):
+paper, an ink edge, its shadow, as a box on the desk is, and over it, as a
+desk box's label says its place, ~/ and the name as written, then New repo.
+In the box, its first line, the name, in the display face as large as the
+box lets a name of a dozen letters be; nothing written yet, the word name
+stands there in the ground's rule colour (the field itself holds no
+example: one there reads as a name given, and its row as the repo to be
+made). Under it, a sentence's size, what the repo is for (概要): the words go
+into its README.md under its title, and the box grows with them, a line to
+begin with. Under that, a rule over it, what will be made with it (作成され
+るもの), as File will show it: the repo's own row, its name again in ink
+(dashed where nothing is named), and the one scaffold every repo starts from
+(nothing to choose: shared/templates.json's `standard`, as `l3 repo new`
+makes it: README.md with docs/ and issue/, no language of its own; C's files
+are `l3 repo new -t c`'s), each row renamed or left out where it stands,
+New file and New folder at its foot, README.md's size at its row's end as
+File gives it, of what it will say. Create, the one primary action, at the
+box's foot, ↵ beside its word. A name that cannot be is said as it is
+written, not once Create is pressed: over the box, after where it will
+stand, in the off colour with an off dot before it; the name itself in the
+off colour; its row not filled but dashed, each letter no name has
+underlined where it is (a space as ␣, a dot first). Create with nothing
+named says there, to write a name first, the keyboard back in the name.
+What is written stays while other pages are seen, until the repo is made.
 
-Under the form is the list of repos, the same cards as on Home. Once made,
-it is gone into at once: no page saying it was made, no form left greyed
-out. The summary's sheet grows into the README's box in Forge (one sheet
-from the one to the other, the box shown only as it lands), the repo goes on the band, and the caret is at
-the end of its README, after what was written under the title, to go on
-writing; the form is
-fresh for the next one (+ on the rail). Only a file that could not be
-written keeps the page, to say so. A name not
-allowed, or one already taken, is said right under the name, where it is
-to be put right, and the keyboard goes back to the name as it was
-written; typing in it again clears what was said.
+Once made, it is gone into at once: no page saying it was made, no form left
+greyed out. The box grows into the README's box in Forge (one sheet from the
+one to the other, the box shown only as it lands), the words written going
+with it onto their line there; the repo goes on the band, and the caret is
+at the end of its README, after what was written under the title, to go on
+writing; the box is fresh for the next one (+ on the rail). Only a file that
+could not be written keeps the page, to say so. A name not allowed, or one
+already taken, is said over the box, and the keyboard goes back to the name
+as it was written; typing in it again clears what was said.
 
 ### File
 

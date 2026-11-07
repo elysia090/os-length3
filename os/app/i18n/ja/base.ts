@@ -52,6 +52,7 @@ export default {
   // Words several pages share
   'Commit': 'コミット',
   'Name': '名前',
+  'name': '名前',
   'Save': '保存',
   'Cancel': 'キャンセル',
   'Create': '作成',
