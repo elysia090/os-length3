@@ -540,6 +540,8 @@ export class Desk {
     const b = this.#held ? this.#boxes.get(this.#held) : undefined;
     if (!b || b.el.classList.contains('lifted') === on) return;
     b.el.classList.toggle('lifted', on);
+    // (Held up, the boxes' closes are gone: the desk is being laid out, not cleared; they come back once it is down.)
+    this.element.classList.toggle('carrying', on);
     if (on) this.#showHand(true);
     this.#hand.classList.toggle('shut', on);
     this.#placeHand();
@@ -589,6 +591,9 @@ export class Desk {
     // plane, and a scroll goes no further back than the plane's top left).
     const w = this.element.clientWidth, hgt = this.element.clientHeight, ox = Math.max(0, w / 2 - WIDTH / 2 - PAD), oy = Math.round(hgt / 2);
     let right = 0, bottom = 0;
+    // The box carried: where it stood (its top left, its height).
+    const lifted = follow && this.#held ? this.#boxes.get(this.#held) : undefined;
+    const carried = follow && lifted ? {l: follow.from.x - WIDTH / 2, t: follow.from.y - lifted.el.offsetHeight / 2, h: lifted.el.offsetHeight} : null;
     for (const [key, p] of at) {
       const b = this.#boxes.get(key)!;
       p.x += ox;
@@ -597,6 +602,14 @@ export class Desk {
       right = Math.max(right, p.x + WIDTH);
       bottom = Math.max(bottom, p.y + heights(key));
       b.el.style.width = `${WIDTH}px`;
+      // Carried past, the others answer it: one coming into where it was waits for it to be gone (fills); the rest get out
+      // of its way, all at once, quick and a little jostled (gives), so the box is seen to cut in, not the desk to be laid
+      // again (styles: .desk-box.gives, .fills).
+      b.el.classList.remove('gives', 'fills');
+      if (carried && key !== this.#held) {
+        const fills = p.x < carried.l + WIDTH && p.x + WIDTH > carried.l && p.y < carried.t + carried.h && p.y + heights(key) > carried.t;
+        b.el.classList.add(fills ? 'fills' : 'gives');
+      }
       // A box laid with no way in of its own stands in its place at once.
       if (b.placed) b.el.style.translate = `${p.x}px ${p.y}px`;
       else { standAt(b.el, p.x, p.y); b.placed = true; }

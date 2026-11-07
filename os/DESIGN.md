@@ -1986,8 +1986,12 @@ nudge where there is none), and Enter, or a letter typed, goes into the box
 under it at the standard, the hand gone. Ctrl and an arrow carry the box in
 hand a slot, wherever the keyboard is (writing in it, it stays there; with the
 finger on a box, Ctrl alone takes it up): lifted while Ctrl is held, its shadow
-long and the hand closed on it (its fingers over the edge), the others stepping
-over. Held up, the camera stands back over the desk it is to go across (the
+long and the hand closed on it (its fingers over the edge), the boxes' closes
+gone while it is up (the desk is being laid out, not cleared; they come back
+once it is down and the camera with it). The others answer it, so it is seen to
+cut in, not the desk to be laid again: those in its way get out of it at once,
+quick and a little jostled; one coming into where it was waits for it to be
+gone. Held up, the camera stands back over the desk it is to go across (the
 whole desk, with room for the column it may make; with the finger on it, once
 Ctrl has been held a moment, so a shortcut's Ctrl moves nothing) and stays
 still while it goes: the box crosses a desk that stands, never with the camera

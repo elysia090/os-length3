@@ -12,6 +12,11 @@
 /* Coming out from under the box above it (a file made under the one in hand): pulled out quick, landing, before the
    camera follows (desk.ts lay). */
 .desk-box.coming { transition-duration: 280ms, 120ms, 120ms, 180ms; transition-timing-function: var(--land), var(--land), var(--land), ease-out; }
+/* A box carried past, the others answer it (desk.ts): out of its way at once, quick and a little jostled; into where it
+   was, once it is gone. */
+.desk-box.gives { transition-duration: 420ms, 120ms, 120ms, 180ms; transition-delay: 50ms, 0s, 0s, 0s;
+  transition-timing-function: cubic-bezier(.25, 1.25, .5, 1), var(--land), var(--land), ease-out; }
+.desk-box.fills { transition-duration: 520ms, 120ms, 120ms, 180ms; transition-delay: 200ms, 0s, 0s, 0s; }
 /* Lifted to be carried (Ctrl): up off the desk and over the others it passes, its shadow long, its name on the ground
    over it. */
 .desk-box.lifted { z-index: 2; margin: -8px 0 0 -8px; box-shadow: 16px 16px 0 0 var(--ink); }
@@ -25,7 +30,8 @@
 .desk-dir { font-weight: 400; color: var(--sub); }
 .desk-close { position: absolute; right: 32px; top: calc(100% + 16px); width: 9px; height: 9px; padding: 0; border: 0; border-radius: 50%;
   background: var(--ink); cursor: var(--cursor-hand); transform-origin: 100% 0; scale: var(--inv, 1);
-  transition: background var(--motion), scale 140ms var(--land); }
+  transition: background var(--motion), scale 140ms var(--land), opacity 220ms ease-out 420ms; }
+.desk.carrying .desk-close { opacity: 0; pointer-events: none; transition: opacity 120ms ease-out; }
 .desk-close::before { content: ''; position: absolute; inset: -10px; }
 .desk-close:hover { background: var(--del); scale: calc(var(--inv, 1) * 1.6); }
 .desk-file { position: relative; }
