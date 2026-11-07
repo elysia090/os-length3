@@ -42,6 +42,13 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
   let endWanted = false;
   /** The keyboard asked for before the text was read: given once it is. */
   let focusing = false;
+  /**
+   * Where the keyboard was when it was asked for before the text was read. Given late, it is taken only from there
+   * (or from nowhere): put elsewhere meanwhile (the rail, a field), it is not snatched back as the text comes.
+   */
+  let askedFrom: Element | null = null;
+  const later = () => { askedFrom = document.activeElement; };
+  const stillAsked = () => { const a = document.activeElement; return !a || a === document.body || a === askedFrom || element.contains(a); };
 
   // The line chosen (from the search, a link) washed in the marker's soft yellow under its text, the eye led to it:
   // it comes up as the camera arrives, holds, then stays quieter while the caret is on that line; it goes once the
@@ -98,7 +105,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
   };
 
   function at(line: number) {
-    if (!editor) { wanted = line; return; }
+    if (!editor) { wanted = line; later(); return; }
     const {area} = editor;
     // No line asked for: the caret at its top.
     if (line < 1) { area.focus({preventScroll: true}); area.setSelectionRange(0, 0); return; }
@@ -138,6 +145,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     e.area.addEventListener('keyup', caretLeft);
     e.area.addEventListener('pointerup', caretLeft);
     new ResizeObserver(() => grew()).observe(e.area);
+    if (!stillAsked()) { wanted = null; endWanted = false; focusing = false; }
     if (wanted !== null) at(wanted);
     else if (endWanted) toEnd();
     else if (focusing) e.area.focus({preventScroll: true});
@@ -173,7 +181,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
   });
 
   function toEnd() {
-    if (!editor) { endWanted = true; return; }
+    if (!editor) { endWanted = true; later(); return; }
     const {area} = editor, end = area.value.length;
     area.focus({preventScroll: true});
     area.setSelectionRange(end, end);
@@ -184,7 +192,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     toEnd,
     name: cut < 0 ? shown : shown.slice(cut + 1),
     dir: cut < 0 ? '' : `${shown.slice(0, cut)}/`,
-    focus: () => { if (editor) editor.area.focus({preventScroll: true}); else focusing = true; },
+    focus: () => { if (editor) editor.area.focus({preventScroll: true}); else { focusing = true; later(); } },
     at,
     lineTop: (line) => (editor ? editor.area.offsetTop + (line - 1) * lineHeight(editor.area) : 0),
     drop: off,

@@ -2,7 +2,7 @@ import {h} from './ui/dom.ts';
 import {setWindowTitle} from './host/tauri.ts';
 import {icon} from './ui/icons.ts';
 import {placeholder} from './pages/kit/common.ts';
-import type {Context} from './pages/kit/context.ts';
+import type {Context, Writing} from './pages/kit/context.ts';
 import {currentProfile, home, startEditing} from './pages/home/home.ts';
 import {Me} from './pages/me/me.ts';
 import {ServerSwitcher} from './pages/server/switcher.ts';
@@ -21,7 +21,7 @@ import {heldInvite, holdInvite, inviteIn, openBoards} from './remote/servers.ts'
 import {getState, loadState} from './home/state.ts';
 import {onLang, t, useLang} from './i18n/i18n.ts';
 import {NEW_REPO, PURPOSES, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from './host/purposes.ts';
-import {LAND, glide, morph, paced, paneOut, stage, still, where} from './ui/glide.ts';
+import {LAND, glide, morph, paced, paneOut, stage, still, where, type Carry} from './ui/glide.ts';
 import {letGo, touch} from './ui/touch.ts';
 import {caret} from './ui/caret.ts';
 import {optical} from './ui/optical.ts';
@@ -87,23 +87,29 @@ function brought(id: PurposeId): Promise<void> | null {
 let openRepo = load(REPO_KEY);
 /** The file Forge's center is reading. */
 let readingPath: string | null = null;
+/**
+ * `name` opened in Forge (see Context.openRepo), `keyboard` where the keyboard was when it was asked: read then, not
+ * once Forge's code has come, so a keyboard put elsewhere meanwhile is not taken back (forge.ts revealNext).
+ */
+function openRepoFrom(keyboard: Element | null, name: string, path: string, write: Writing, grownFrom: Element | undefined, line: number, carried: Carry | undefined) {
+  const bringing = brought('forge');
+  if (bringing) { void bringing.then(() => openRepoFrom(keyboard, name, path, write, grownFrom, line, carried)); return; }
+  const f = forgeOf!;
+  if (current === 'forge' && f.showInForge(name, path, write, line)) return;
+  ctx.remember(name);
+  f.revealNext(path, write, line, keyboard);
+  // Pressed on its card or its row (or made from a form, which says so), the repo grows from there into its box in Forge.
+  const from = grownFrom?.isConnected ? grownFrom.getBoundingClientRect()
+    : pressedOn?.isConnected && performance.now() - pressedAt < 1500 ? pressedOn.getBoundingClientRect() : null;
+  pressedOn = null;
+  select('forge', !!from && morph(from, () => document.querySelector<HTMLElement>(`.col[data-repo="${CSS.escape(name)}"]:not([hidden]) .file`),
+    340, '', 40, grownFrom?.isConnected ? carried : undefined));
+}
+
 const ctx: Context = {
   // Server, like File, is laid over the page rather than being one.
   go: (id) => select(id),
-  openRepo(name, path = '', write = false, grownFrom, line = 0, carried) {
-    const bringing = brought('forge');
-    if (bringing) { void bringing.then(() => ctx.openRepo(name, path, write, grownFrom, line, carried)); return; }
-    const f = forgeOf!;
-    if (current === 'forge' && f.showInForge(name, path, write, line)) return;
-    ctx.remember(name);
-    f.revealNext(path, write, line);
-    // Pressed on its card or its row (or made from a form, which says so), the repo grows from there into its box in Forge.
-    const from = grownFrom?.isConnected ? grownFrom.getBoundingClientRect()
-      : pressedOn?.isConnected && performance.now() - pressedAt < 1500 ? pressedOn.getBoundingClientRect() : null;
-    pressedOn = null;
-    select('forge', !!from && morph(from, () => document.querySelector<HTMLElement>(`.col[data-repo="${CSS.escape(name)}"]:not([hidden]) .file`),
-      340, '', 40, grownFrom?.isConnected ? carried : undefined));
-  },
+  openRepo(name, path = '', write = false, grownFrom, line = 0, carried) { openRepoFrom(document.activeElement, name, path, write, grownFrom, line, carried); },
   remember(name) { openRepo = name; save(REPO_KEY, name); fileTree.mark(name); },
   reading(path) { readingPath = path; if (current === 'forge') fileTree.markFile(openRepo, path); },
   leftAt(repo, path, at) { save(FILE_KEY, JSON.stringify({repo, path, at})); },

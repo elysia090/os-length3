@@ -35,7 +35,7 @@ const TERM_GOES_MS = 900;
  */
 
 /** Set when Forge is opened for a repo: the path to scroll to ('' for the top), and whether to write there. */
-let pending: {path: string; write: Writing; line: number} | null = null;
+let pending: {path: string; write: Writing; line: number; from: Element | null} | null = null;
 
 /** Show `repo` at `path` in the Forge on screen (at `line`; the caret there with `write`); false when Forge is not showing. */
 export function showInForge(repo: string, path: string, write: Writing = false, line = 0): boolean {
@@ -44,8 +44,11 @@ export function showInForge(repo: string, path: string, write: Writing = false, 
   return true;
 }
 
-/** Forge is next drawn for the repo just asked for, at `path` ('' for its top), at `line` of it. */
-export function revealNext(path: string, write: Writing = false, line = 0) { pending = {path, write, line}; }
+/**
+ * Forge is next drawn for the repo just asked for, at `path` ('' for its top), at `line` of it; the keyboard goes in
+ * unless it was put somewhere else (`from` is where it was when it was asked) before Forge was drawn.
+ */
+export function revealNext(path: string, write: Writing = false, line = 0, from: Element | null = document.activeElement) { pending = {path, write, line, from}; }
 
 /** The Forge made, which File can move in place while it is on screen. */
 let made: Forge | null = null;
@@ -396,9 +399,10 @@ class Forge {
     d.desk.lift(key);
   }
 
-  /** `path` of the repo worked on, a box on its desk (laid now if it was not), in hand; at `line`. A file just made
-   * (`made`) is laid under the box in hand, as a new post goes under the one before it. */
-  private open(path: string, line = 0, made = false) {
+  /** `path` of the repo worked on, a box on its desk (laid now if it was not), in hand; at `line`, the keyboard in it
+   * (unless not `keyboard`). A file just made (`made`) is laid under the box in hand, as a new post goes under the one
+   * before it. */
+  private open(path: string, line = 0, made = false, keyboard = true) {
     const repo = this.now.repo;
     if (!repo || !path) return;
     const d = this.deskOf(repo);
@@ -411,8 +415,8 @@ class Forge {
     // Made, it is not gone into yet: the camera steps back to show where it came (with what is round it) while it is
     // named; Enter goes in.
     if (made) { d.desk.take(path, false, !unseen); d.desk.stepBack(); return; }
-    d.desk.take(path, true, !unseen);
-    f.at(line);
+    d.desk.take(path, keyboard, !unseen);
+    if (keyboard) f.at(line);
   }
 
   /** `path` of the repo worked on, a box on its desk, laid if it was not (beside the Prompt), the hand left where it is. */
@@ -435,7 +439,7 @@ class Forge {
 
   /** Show `name` in the band and the center, its desk; at `path` if given (a box for it, at `line`; a file just made,
    * `write` 'name', its name written over first). */
-  show(name: string, path = '', write: Writing = false, line = 0) {
+  show(name: string, path = '', write: Writing = false, line = 0, keyboard = true) {
     this.band.put(name);
     const d = this.deskOf(name);
     if (this.now.repo !== name) {
@@ -452,7 +456,7 @@ class Forge {
     d.desk.element.querySelector('.desk-box[data-key="term"] .desk-term-home')?.replaceChildren(this.work.terminal!);
     this.band.paint();
     if (path) {
-      this.open(path, line, write === 'name');
+      this.open(path, line, write === 'name', keyboard);
       if (write === 'name') d.desk.name(path);
     } else if (!d.desk.held) d.desk.take('term', false);
     else d.desk.relayout();
@@ -506,8 +510,12 @@ class Forge {
     const chosen = ctx.repo !== this.known;
     this.known = ctx.repo;
     if (ctx.repo && all.includes(ctx.repo) && (asked || chosen)) {
-      const at = asked ?? {path: '', write: false, line: 0};
-      this.show(ctx.repo, at.path, at.write, at.line);
+      const at = asked ?? {path: '', write: false, line: 0, from: null};
+      // Put on the rail or in a field while Forge was being drawn, the keyboard is left there: the repo is shown, not
+      // gone into (where it was asked from is gone or still has it; the page, or nothing, has it on the way here).
+      const now = document.activeElement;
+      const elsewhere = !!asked && !!now && now !== asked.from && now !== document.body && !this.element.contains(now) && !now.contains(this.element);
+      this.show(ctx.repo, at.path, at.write, at.line, !elsewhere);
       return;
     }
     const open = this.now.repo && all.includes(this.now.repo) ? this.now.repo
