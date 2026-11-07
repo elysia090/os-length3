@@ -272,8 +272,10 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   requestAnimationFrame(() => { work.dataset.shown = '1'; });
 
   document.addEventListener('keydown', (event) => {
-    // Only while this bench is on screen, and the page is not held under something over it.
+    // Only while this bench is on screen, and the page is not held under something over it; never a key a terminal's
+    // program reads as it comes (data-raw: every key is its, as at a terminal).
     if (!work.isConnected || work.closest('[hidden]') || document.getElementById('page')?.hasAttribute('inert')) return;
+    if ((event.target as Element | null)?.closest?.('[data-raw]')) return;
     // On a desk, / on nothing to write in goes to the search on the band, as a page's / does.
     if (tools && event.key === '/' && letter(event) && !writing()) { event.preventDefault(); reference.findNow(); }
     else if (letter(event)) intoBox(box);

@@ -4,8 +4,11 @@
 // (`translator` and a file's optional `module`, its translation made ahead
 // of time, may be compiled WebAssembly.Modules, shared between workers.)
 // then {type: 'input', bytes} as the person types and {type: 'eof'}, and
-// {type: 'interrupt'} for Ctrl-C: what was typed and not read yet is
-// dropped, and what runs in front of the shell ends (Kernel.interrupt).
+// {type: 'interrupt', sig?} for Ctrl-C (or Ctrl-Z, Ctrl-\\: its signal): what
+// was typed and not read yet is dropped, and what runs in front of the shell
+// gets the signal (Kernel.interrupt). Shown as a screen, its console is a
+// terminal, and {type: 'tty', iflag, oflag, lflag} says each change in how it
+// is set (a program reading each key as it comes clears ICANON).
 // It receives {type: 'output', fd, bytes}, {type: 'waiting', for, ms,
 // memory, held}, {type: 'exit', status} or {type: 'error', message}. A
 // kernel waits `for` 'input' (what runs reads what is typed) or 'time' (it
@@ -227,7 +230,7 @@ const nudge = () => { if (!kernel) return; clearTimeout(idle); if (apart) kernel
 self.onmessage = async ({data}) => {
   if (data.type === 'input') { pending.push(data.bytes); nudge(); return; }
   if (data.type === 'eof') { ended = true; nudge(); return; }
-  if (data.type === 'interrupt') { pending.length = 0; if (kernel?.interrupt()) nudge(); return; }
+  if (data.type === 'interrupt') { pending.length = 0; if (kernel?.interrupt(data.sig)) nudge(); return; }
   if (data.type === 'put') { mirror?.put(data.path, data.what); return; }
   if (data.type === 'free') { if (kernel) self.postMessage({type: 'freed', ...kernel.free(0)}); return; }
   if (data.type === 'warm') { if (canRunApart()) warmThreads(); return; }
@@ -252,9 +255,12 @@ self.onmessage = async ({data}) => {
     // for shared memory; otherwise they take turns here.
     apart = canRunApart() && files.every((f) => !f.module || f.shared);
     const console = {
-      interactive: false,
-      // Shown as a terminal's screen (the app's Prompt), its output is a terminal's, this many columns wide.
+      // Shown as a terminal's screen (the app's Prompt), it is a terminal: its output a terminal's, this many columns
+      // wide, and what reads keys from it reads them as from one, a line at a time unless it asks for each key as it
+      // comes (then the page sends keys as they are pressed: it is told each change, `mode`).
+      interactive: !!data.screen,
       screen: !!data.screen, cols: data.cols ?? 80, rows: data.rows ?? 24,
+      mode: (tio) => self.postMessage({type: 'tty', ...tio}),
       write: (fd, bytes) => self.postMessage({type: 'output', fd, bytes}, [bytes.buffer]),
       read,
       ready: () => pending.length > 0 || ended,

@@ -8,7 +8,7 @@ import {kindOf} from '../../repos/text.ts';
 import {onChange, onRenamed, shownTree, store, type Entry} from '../../repos/repos.ts';
 import {boxMode, modeHint, modeMenu, modesNow, nextIssue, onBoxMode, pillWords, sendAs, sendInto, sendTitle, sendWord, setBoxMode, turn, type Mode} from './box-modes.ts';
 import type {Screen, ScreenState} from './screen.ts';
-import {agentSessionFor, sessionFor, terminalFor} from './terminal.ts';
+import {agentSessionFor, Session, sessionFor, terminalFor} from './terminal.ts';
 import {type AgentTerm, agentTermFor} from './agent-term.ts';
 import {sessionIfAny} from './sessions.ts';
 import {PillLine} from './pill-line.ts';
@@ -310,6 +310,12 @@ export class Box {
   attach() {
     const {term, termHead, work} = this.#p;
     const el = this.#repo ? terminalFor(this.#repo) : null;
+    // Whether its program in front reads each key as it comes, heard as it changes: said on the line (data-raw), where
+    // the page's own keys (the desk's, the bench's) give way to it.
+    this.#unwatchRaw?.();
+    const session = this.#repo ? sessionIfAny(this.#repo) : null;
+    this.#unwatchRaw = session ? session.watch(() => this.#rawMark()) : null;
+    this.#rawMark();
     const held = !!el && el.parentElement !== term && offScreen(work) && !offScreen(el);
     if (held) this.#onScreen.observe(term);
     else if (el ? el.parentElement !== term : term.childElementCount > 1) term.replaceChildren(termHead, ...(el ? [el] : []));
@@ -320,6 +326,14 @@ export class Box {
     this.#onScreen.disconnect();
     this.attach();
   });
+
+  #unwatchRaw: (() => void) | null = null;
+  /** The repo's Prompt, while the program in front of it reads each key as it comes. */
+  #raw(): Session | null {
+    const s = this.#repo ? sessionIfAny(this.#repo) : null;
+    return s instanceof Session && s.raw ? s : null;
+  }
+  #rawMark() { this.form.toggleAttribute('data-raw', !!this.#raw()); }
 
   /** Whether the repo's Prompt has run anything yet, which is what gives it room. */
   room() { this.#p.work.classList.toggle('unrun', !!this.#repo && !sessionIfAny(this.#repo)?.runs.length); }
@@ -662,6 +676,9 @@ export class Box {
    * Edit's; writing an issue or a TODO, Enter is a new line and Ctrl+Enter, ⌘+Enter, sends).
    */
   #key(event: KeyboardEvent) {
+    // A program in front reading each key as it comes (vi, less, top): every key is its, as at a terminal.
+    const raw = this.#raw();
+    if (raw) { if (!event.isComposing && raw.key(event)) event.preventDefault(); return; }
     if (event.key !== 'ArrowRight') this.#unsay();
     if (event.key === 'Escape') { this.#escape(event); return; }
     if (this.#modeKey(event)) return;
@@ -770,7 +787,22 @@ export class Box {
     });
     // Left while editing, what is lit on the file is put away.
     prompt.addEventListener('blur', () => { if (this.#mode === 'edit') { this.#edit.hide(); this.#say(''); } });
+    // A program in front reading each key as it comes has what is typed as it is typed: a conversion confirmed goes to
+    // it whole, a paste too (bracketed where it asked), and nothing of either stays in the line.
+    prompt.addEventListener('compositionend', (e) => {
+      const s = this.#raw();
+      if (!s) return;
+      s.typeIn(e.data);
+      prompt.value = '';
+    });
+    prompt.addEventListener('paste', (e) => {
+      const s = this.#raw();
+      if (!s) return;
+      e.preventDefault();
+      s.typeIn(e.clipboardData?.getData('text/plain') ?? '', true);
+    });
     prompt.addEventListener('input', () => {
+      if (this.#raw()) return;
       this.#fit();
       this.#keep();
       this.#walk.reset();

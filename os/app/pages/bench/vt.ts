@@ -223,6 +223,8 @@ export class Screen {
   get y(): number { return this.#buf.y; }
   /** Whether a whole-screen program has the alternate screen. */
   get alternate(): boolean { return this.#alt !== null; }
+  /** The main screen's rows and its cursor's row, whichever screen is shown. */
+  get main(): {rows: readonly Row[]; y: number} { return {rows: this.#main.rows, y: this.#main.y}; }
 
   write(text: string) { this.#parser.write(text); }
 
@@ -593,6 +595,17 @@ export function runs(chars: readonly string[], st: readonly number[]): Run[] {
     if (last && last.st === st[i]) last.text += chars[i]; else out.push({text: chars[i], st: st[i] ?? 0});
   }
   return out;
+}
+
+/** The SGR that sets `s` from plain: a style said again where letters are written again (a line handed back). */
+export function sgrOf(s: Style): string {
+  const ps: string[] = [];
+  const c = (base: number, v: number) => (v < 0 ? '' : v < 8 ? String(base + v) : v < 16 ? String(base + 60 + v - 8) : v < RGB ? `${base + 8};5;${v}` : `${base + 8};2;${(v >> 16) & 255};${(v >> 8) & 255};${v & 255}`);
+  const bits: [number, string][] = [[F.bold, '1'], [F.dim, '2'], [F.italic, '3'], [F.under, '4'], [F.inverse, '7'], [F.hidden, '8'], [F.strike, '9']];
+  for (const [bit, code] of bits) if (s.flags & bit) ps.push(code);
+  if (c(30, s.fg)) ps.push(c(30, s.fg));
+  if (c(40, s.bg)) ps.push(c(40, s.bg));
+  return `\x1b[0${ps.length ? `;${ps.join(';')}` : ''}m`;
 }
 
 /** The colours of the palette's first sixteen, as the Prompt draws them (names of the page's own colours), and the

@@ -31,6 +31,10 @@ const WAYS: Record<string, Way> = {ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 
 type Camera = 'standard' | 'pulled' | 'whole';
 const CAMERAS: readonly Camera[] = ['standard', 'pulled', 'whole'];
 
+/** Whether a key is a program's: one in a terminal reading each key as it comes (vi, less) has every key, as at a
+ * terminal (its line says so, data-raw). */
+const theirs = (e: KeyboardEvent) => !!(e.target as Element | null)?.closest?.('[data-raw]');
+
 /** A letter typed with no Ctrl, Alt or ⌘ (a space is a button's, / the search's): with the finger on a box, it goes into it. */
 const letter = (e: KeyboardEvent) => !e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1 && e.key !== ' ' && e.key !== '/';
 
@@ -114,7 +118,7 @@ export class Desk {
     // Tab is the desk's wherever the keyboard is on it, before what it is in (a file, the Prompt's line): the finger to
     // the next box, Shift+Tab to the one before.
     this.element.addEventListener('keydown', (e) => {
-      if (e.key !== 'Tab' || e.ctrlKey || e.altKey || e.metaKey || e.isComposing || !this.#held) return;
+      if (e.key !== 'Tab' || e.ctrlKey || e.altKey || e.metaKey || e.isComposing || !this.#held || theirs(e)) return;
       e.preventDefault();
       e.stopPropagation();
       this.#point(tabbed(this.#cols, this.#held, e.shiftKey));
@@ -498,7 +502,7 @@ export class Desk {
   }
 
   #key(e: KeyboardEvent) {
-    if (e.isComposing) return;
+    if (e.isComposing || theirs(e)) return;
     const way = WAYS[e.key];
     const zoom = (e.ctrlKey || e.metaKey) && !e.altKey;
     const bare = !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey;

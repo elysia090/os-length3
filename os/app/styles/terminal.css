@@ -22,3 +22,21 @@
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
+
+/* The terminal's sixteen colours, as programs name them, in the page's own: deep and a little muted, read on paper
+   ("white" a grey, so it is seen). The rest of xterm's 256, and colours given as red, green and blue, as they are. */
+:root {
+  --ansi-0: var(--ink); --ansi-1: var(--del); --ansi-2: var(--add); --ansi-3: #86650f; --ansi-4: var(--agent); --ansi-5: #763a74;
+  --ansi-6: #1b6670; --ansi-7: #85827d; --ansi-8: var(--rule); --ansi-9: #ad3d57; --ansi-10: var(--done); --ansi-11: #a17a10;
+  --ansi-12: #2d5a96; --ansi-13: #964a93; --ansi-14: #217d88; --ansi-15: var(--ink);
+}
+/* The line under way, drawn again as it changes (output.ts). */
+.term-live { white-space: pre-wrap; }
+/* A whole-screen program's screen (vt-view.ts): its rows as the terminal has them, never wrapped, the cursor a block. */
+.vt-screen { display: block; white-space: pre; }
+.vt-row { display: block; height: 1.6em; overflow: hidden; }
+.vt-cursor { background: var(--ink); color: var(--paper); }
+/* While a program reads each key as it comes, the box's line is not shown: the keys go to it, and its screen has the
+   cursor. The line keeps the keyboard. */
+form.prompt[data-raw] { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
+.term.raw > .term-activity { display: none; }

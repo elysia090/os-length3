@@ -27,6 +27,36 @@ import {sessions, type Prompt, type Run} from './sessions.ts';
 // shell's copy (repo-copy.ts).
 
 const RUNS = 50;
+/** The terminal's size, as programs are told it. */
+const COLS = 80, ROWS = 24;
+/** termios bits the page reads keys by: signals from keys (ISIG), a line at a time (ICANON), Enter read as a line feed
+ * (ICRNL); lines put out with a carriage return (OPOST and ONLCR). */
+const ISIG = 1, ICANON = 2, OPOST = 1, ONLCR = 4, ICRNL = 0x100;
+
+/** What a key sends a terminal's program (`app`: the arrows as an application's, as it asked), or null for none. */
+export function keyBytes(e: KeyboardEvent, app: boolean): string | null {
+  const mod = 1 + (e.shiftKey ? 1 : 0) + (e.altKey ? 2 : 0) + (e.ctrlKey ? 4 : 0) + (e.metaKey ? 8 : 0);
+  const csi = (final: string, n = '1') => (mod > 1 ? `\x1b[${n};${mod}${final}` : n === '1' && app && 'ABCDHF'.includes(final) ? `\x1bO${final}` : n === '1' ? `\x1b[${final}` : `\x1b[${n}${final}`);
+  const tilde = (n: number) => (mod > 1 ? `\x1b[${n};${mod}~` : `\x1b[${n}~`);
+  const named: Record<string, () => string> = {
+    ArrowUp: () => csi('A'), ArrowDown: () => csi('B'), ArrowRight: () => csi('C'), ArrowLeft: () => csi('D'),
+    Home: () => csi('H'), End: () => csi('F'), PageUp: () => tilde(5), PageDown: () => tilde(6), Insert: () => tilde(2), Delete: () => tilde(3),
+    Enter: () => (e.altKey ? '\x1b\r' : '\r'), Tab: () => (e.shiftKey ? '\x1b[Z' : '\t'), Escape: () => '\x1b',
+    Backspace: () => (e.ctrlKey ? '\x08' : e.altKey ? '\x1b\x7f' : '\x7f'),
+    F1: () => '\x1bOP', F2: () => '\x1bOQ', F3: () => '\x1bOR', F4: () => '\x1bOS',
+    F5: () => tilde(15), F6: () => tilde(17), F7: () => tilde(18), F8: () => tilde(19), F9: () => tilde(20), F10: () => tilde(21), F11: () => tilde(23), F12: () => tilde(24),
+  };
+  if (named[e.key]) return named[e.key]();
+  if (e.key.length !== 1 || e.metaKey) return null;
+  // Ctrl and a letter (or @ [ \ ] ^ _ and space): the control letter it stands for.
+  if (e.ctrlKey && !e.altKey) {
+    const c = e.key === ' ' ? 0 : e.key.toUpperCase().charCodeAt(0);
+    if (c === 0 || (c >= 0x40 && c <= 0x5f)) return String.fromCharCode(c & 0x1f);
+    if (e.key === '?') return '\x7f';
+    return null;
+  }
+  return e.altKey ? `\x1b${e.key}` : e.key;
+}
 
 /** One line for where loading l3 is; nothing once it is ready. */
 function loadWords(s: Stage): string {
@@ -50,8 +80,9 @@ function zone(): string {
   } catch { return 'UTC'; }
 }
 /** Its environment, as the app's Prompts on the machine have it (core's prompt/launch.rs): l3 here sees repos where the
- * shell does, under /root; its shell reads as the app's; its clock is the person's. */
-const shellEnv = (repo: string) => ['HOME=/root', 'USER=root', 'LOGNAME=root', 'SHELL=/bin/sh', 'TERM=dumb', 'LANG=C.UTF-8',
+ * shell does, under /root; its shell reads as the app's; its clock is the person's; its terminal is a colour xterm's
+ * (output.ts draws what one draws, vt.ts). */
+const shellEnv = (repo: string) => ['HOME=/root', 'USER=root', 'LOGNAME=root', 'SHELL=/bin/sh', 'TERM=xterm-256color', 'COLORTERM=truecolor', 'LANG=C.UTF-8',
   `TZ=${zone()}`, 'LENGTH3_REPOS=/root', 'L3_PROMPT=1', `LENGTH3_LANG=${currentLang()}`, `LENGTH3_REPO=${repo}`,
   'PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', 'ENV=/etc/length3/shrc'];
 /** A start rehearsed in a Worker readied ahead (readyPrompt): the same shell, in no repo yet, with no key. */
@@ -73,8 +104,9 @@ function startMessage(repo: string, l3: L3, copy: Awaited<ReturnType<typeof snap
     ...(given ? {} : {translator: l3.translator, root: {index: l3.index, url: l3.url}}),
     argv: SHELL,
     env: [...shellEnv(repo), ...key],
-    // Its output is shown as a terminal's screen, as wide as a box on the desk (80 columns): a listing comes in columns.
-    screen: true, cols: 80,
+    // It is a terminal, shown as a screen as wide as a box on the desk (80 columns) and 24 rows tall: a listing comes in
+    // columns, and a whole-screen program (vi, less, top) has all of it.
+    screen: true, cols: COLS, rows: ROWS,
     cwd,
     mirror: cwd,
     // The translations Prompts before it made of the root's programs, read when a program is first run.
@@ -132,6 +164,10 @@ export class Session implements Prompt {
   private oscHeld = '';
   /** The prompt line last told to the watchers. */
   private toldLine = '';
+  /** How the program in front has the terminal set, as the kernel says (worker.mjs 'tty'). */
+  private tty = {iflag: ICRNL, lflag: ISIG | ICANON | 0x8000, oflag: OPOST | ONLCR};
+  /** Bytes the output decodes a piece at a time: a letter cut between pieces is read whole. */
+  private decoder = new TextDecoder();
 
   constructor(repo: string) {
     this.repo = repo;
@@ -154,6 +190,51 @@ export class Session implements Prompt {
     this.#begun = true;
     this.status.textContent = t('Starting…');
     void this.start();
+  }
+
+  /** Whether the program in front reads each key as it comes (vi, less, top): the box sends keys as they are pressed
+   * (key, typeIn), and what it prints is shown on a terminal's whole screen. */
+  get raw(): boolean { return this.live && !(this.tty.lflag & ICANON); }
+
+  /**
+   * A key pressed while the program in front reads each key as it comes: sent as a terminal sends it (Ctrl-C, where
+   * the terminal makes signals of keys, the signal). False for a key that sends nothing.
+   */
+  key(e: KeyboardEvent): boolean {
+    if (!this.raw) return false;
+    const isig = !!(this.tty.lflag & ISIG) && e.ctrlKey && !e.altKey && !e.metaKey;
+    if (isig && (e.key === 'c' || e.key === 'C')) { this.signal(2); return true; }
+    if (isig && (e.key === 'z' || e.key === 'Z')) { this.signal(20); return true; }
+    if (isig && e.key === '\\') { this.signal(3); return true; }
+    const bytes = keyBytes(e, this.out.appCursor);
+    if (bytes === null) return false;
+    this.typeIn(bytes === '\r' && this.tty.iflag & ICRNL ? '\n' : bytes);
+    return true;
+  }
+
+  /** `text` given to the program in front as it is (a conversion confirmed, a paste: bracketed where it asked). */
+  typeIn(text: string, pasted = false) {
+    if (!this.live || !text) return;
+    const said = pasted && this.out.bracketed ? `\x1b[200~${text}\x1b[201~` : text;
+    if (this.native) { void this.native.input(said).catch(() => {}); return; }
+    const bytes = new TextEncoder().encode(said);
+    this.worker?.postMessage({type: 'input', bytes}, [bytes.buffer]);
+  }
+
+  /** `sig` to what runs in front (a key that makes a signal). */
+  private signal(sig: number) {
+    if (this.native) { void this.native.interrupt(); return; }
+    this.worker?.postMessage({type: 'interrupt', sig});
+  }
+
+  /** How the program in front now has the terminal set: reading each key, its screen is shown whole, and back. */
+  private setTty(tio: {iflag: number; lflag: number; oflag: number}) {
+    const was = this.raw;
+    this.tty = {iflag: tio.iflag, lflag: tio.lflag, oflag: tio.oflag};
+    this.out.keys(this.raw ? {cols: COLS, rows: ROWS, newline: !!(tio.oflag & OPOST) && !!(tio.oflag & ONLCR), reply: (text) => this.typeIn(text)} : null);
+    // A whole-screen program waits for keys by its nature: nothing is said of it under its screen.
+    this.element.classList.toggle('raw', this.raw);
+    if (was !== this.raw) this.tell();
   }
 
   /** The prompt line the shell waits at (`garden $ `), or nothing while a line runs or it is not running. */
@@ -394,7 +475,8 @@ export class Session implements Prompt {
   private fromWorker(data: MessageEvent['data']) {
     this.activity.heard = Date.now();
     switch (data.type) {
-      case 'output': this.received(new TextDecoder().decode(data.bytes)); break;
+      case 'output': this.received(this.decoder.decode(data.bytes, {stream: true})); break;
+      case 'tty': this.setTty(data); break;
       case 'changes': this.copy.write(data); break;
       // Code its shell reached later, a program of the root it translated and the code that reached later, and what it
       // read of what was kept: kept for the Prompts after it, and counted as used.

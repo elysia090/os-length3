@@ -282,3 +282,35 @@ test('on the desk Enter runs the Prompt\'s line, as a terminal\'s does, Shift+En
   await expect(box).toHaveValue('');
   await expect(app.forge.prompt).toContainText(/^entered$/m);
 });
+
+test('the Prompt is a real terminal: colours as programs give them, a line rewritten in place, and vi has every key', async ({app}) => {
+  test.setTimeout(240_000);
+  const box = app.forge.promptBox, out = app.forge.prompt.locator('.term-out');
+  await box.fill(`printf '\\033[1;31mred\\033[0m plain\\n'; for i in 1 2 3; do printf '\\rstep %s' $i; done; echo`);
+  await box.press('Enter');
+  await expect(out).toContainText('step 3', {timeout: 120_000});
+  // Red, bold, as the page's own red; the counter counted in place, one line.
+  await expect(out.locator('span', {hasText: /^red$/})).toHaveCSS('font-weight', '600');
+  expect(await out.innerText()).not.toMatch(/step 1|step 2/);
+  // vi on the whole screen: keys are its, Tab and Escape too (not the desk's), and what it writes is the file.
+  await box.fill('vi README.md');
+  await box.press('Enter');
+  await expect(app.page.locator('.vt-screen')).toBeVisible({timeout: 120_000});
+  await expect(app.page.locator('.vt-screen')).toContainText('README.md');
+  await app.page.keyboard.press('G');
+  await app.page.keyboard.press('o');
+  await app.page.keyboard.press('Tab');
+  await app.page.keyboard.type('Written in vi.');
+  await app.page.keyboard.press('Escape');
+  // (A beat after it, as a hand gives: Escape and : at once read as one key, Alt and :, as at any terminal.)
+  await app.page.waitForTimeout(300);
+  await app.page.keyboard.type(':wq');
+  await app.page.keyboard.press('Enter');
+  await expect(app.page.locator('.vt-screen')).toHaveCount(0, {timeout: 60_000});
+  await expect(app.forge.editor('README.md')).toHaveValue(/\n\tWritten in vi\.\n?$/, {timeout: 60_000});
+  // Given back, the line one types at is the box's again.
+  await expect(app.page.locator('form.prompt[data-raw]')).toHaveCount(0);
+  await box.fill('echo after');
+  await box.press('Enter');
+  await expect(out).toContainText(/^after$/m);
+});

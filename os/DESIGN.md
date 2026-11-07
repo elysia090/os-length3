@@ -1951,6 +1951,24 @@ Enter runs the line as a terminal's does, Shift+Enter is a new line. Each
 file opened is a box of its own beside it, written in where it lies (there
 is no Edit to choose: the file is typed into). One box is in hand.
 
+The Prompt is a real terminal, 80 columns by 24 rows, a colour xterm's
+(`TERM=xterm-256color`), drawn by a terminal of our own (vt.ts): what programs
+print comes in their colours, in sixteen of the page's own (deep and a little
+muted, "white" a grey that is seen on paper) and the rest of xterm's 256 and
+any given as red, green and blue; bold, dim, italic, underlined, struck
+through and inverse as they ask; the line under way rewritten as a terminal
+rewrites it, so a counter or a progress bar counts in place. Its shell reads
+a line at a time from the line one types at, with job control, as on a
+terminal (the kernel's tty, canonical, without echo: the line is the box's).
+A program that asks for each key as it comes (vi, less, top, a prompt for one
+key) has every key as it is pressed, the page's own keys giving way to it
+(Tab, Escape, Ctrl and an arrow, Ctrl+N, the editor's), Ctrl+C, Ctrl+Z and
+Ctrl+\ its signals where it keeps them, a conversion confirmed and a paste
+given whole (bracketed where it asked); while it has the terminal, it is
+shown on a terminal's whole screen in place of the last lines, the cursor a
+block, and given back, what its main screen holds is lines again (a
+whole-screen program's own screen, vi's, goes as it came).
+
 The keys are a game's, the hands finding them without looking. Tab, wherever
 the keyboard is on the desk (in a file, at the Prompt's line), puts the finger
 on the next box (down a column, then the next column's top, round again;

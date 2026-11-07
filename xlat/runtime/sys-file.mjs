@@ -782,11 +782,16 @@ function ioctl(p, d, request, arg) {
       v.setUint32(arg + 8, tio.cflag, true); v.setUint32(arg + 12, tio.lflag, true);
       p.bytes.set(tio.cc, arg + 17);
       return 0;
-    case 0x5402: case 0x5403: case 0x5404: // TCSETS, TCSETSW, TCSETSF
+    case 0x5402: case 0x5403: case 0x5404: { // TCSETS, TCSETSW, TCSETSF
+      const was = tio.lflag, wasOut = tio.oflag;
       tio.iflag = v.getUint32(arg, true); tio.oflag = v.getUint32(arg + 4, true);
       tio.cflag = v.getUint32(arg + 8, true); tio.lflag = v.getUint32(arg + 12, true);
       tio.cc = p.bytes.slice(arg + 17, arg + 36);
+      // What shows the terminal hears how keys are now read (a line at a time, or each as it comes; echoed or not;
+      // signals from keys or not) and how lines are put out, as it is the one that reads the keys.
+      if (tio.lflag !== was || tio.oflag !== wasOut) k.console.mode?.({iflag: tio.iflag, oflag: tio.oflag, lflag: tio.lflag});
       return 0;
+    }
     case 0x5413: // TIOCGWINSZ
       p.bytes.fill(0, arg, arg + 8);
       v.setUint16(arg, k.console.rows ?? 24, true);

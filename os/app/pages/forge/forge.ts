@@ -161,6 +161,7 @@ class Forge {
     const keys = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() !== 'n' || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.isComposing) return;
       if (!this.element.isConnected || this.element.closest('[hidden]') || document.getElementById('page')?.hasAttribute('inert')) return;
+      if ((e.target as Element | null)?.closest?.('[data-raw]')) return;
       e.preventDefault();
       void this.newFile();
     };
