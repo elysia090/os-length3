@@ -275,7 +275,11 @@ const readInto = (p, d, address, length, offset = null) => readTo(p, d, p.bytes,
 function writeData(p, d, data, offset = null) {
   const length = data.length, nonblock = d.flags & O.NONBLOCK;
   switch (d.kind) {
-    case 'console': p.kernel.console.write(d.path === 'stderr' ? 2 : 1, data.slice()); return length;
+    case 'console':
+      // What shows it has not taken in what came before (a flood): the writer waits, as on a terminal.
+      if (p.kernel.console.full?.()) { if (nonblock) fail(E.AGAIN); throw new Wait(); }
+      p.kernel.say(d.path === 'stderr' ? 2 : 1, data.slice());
+      return length;
     case 'pipe-w': case 'pipe-rw': {
       const pipe = d.pipe, s = p.call.state;
       const done = s.done ?? 0;

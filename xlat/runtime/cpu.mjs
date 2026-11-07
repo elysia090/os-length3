@@ -13,7 +13,7 @@
 // `lock`-prefixed instructions to plain loads and stores, which are atomic
 // only while no other thread of the process runs.
 
-import {CH, OP, READS_REGS, REPLY, REGS, rouse, sleep, watch} from './channel.mjs';
+import {CH, OP, OUTBOX_BYTES, Outbox, READS_REGS, REPLY, REGS, rouse, sleep, watch} from './channel.mjs';
 import {Fpu} from './fpu.mjs';
 import {answerTime, clocks} from './clock.mjs';
 import {INTERRUPT, KEEP_INSTANCES, Preempted, SHARES, SLICE_LOOPS, TRAP_YIELD, div128, fault, nextSlice, translatorsLimit, trapOrPreempt} from './process.mjs';
@@ -57,6 +57,9 @@ class Thread {
   /** What a run brings: its thread, its channel and the kernel's words, the modules known, its x87. */
   take(m) {
     this.tid = m.tid;
+    // Where it writes to the console without asking (toConsole), and which of its process's descriptors are the console.
+    this.outbox = m.outbox ? new Outbox(m.outbox) : null;
+    this.consoles = m.consoles ? new Int32Array(m.consoles) : null;
     this.channel = m.channel;
     this.i32 = new Int32Array(m.channel);
     this.i64 = new BigInt64Array(m.channel);
@@ -67,8 +70,8 @@ class Thread {
     this.count = new Int32Array(m.count); // modules the program has, made by any process
     this.clock = clocks(m.origin); // the kernel's (clock.mjs), read here as a vDSO does
     this.modules = m.extras; // [{module, base, count}] known here
-    this.fpu = new Fpu(() => new Uint8Array(this.memory.buffer), m.fpuOps);
-    if (m.fpu) Object.assign(this.fpu, {top: m.fpu.top, cw: m.fpu.cw, sw: m.fpu.sw, st: m.fpu.st.map(([kind, sign, e, mm]) => ({kind, sign, e, m: BigInt(mm)}))});
+    this.fpu = new Fpu(() => this.bytes, m.fpuOps);
+    if (m.fpu) this.fpu.restore(m.fpu);
   }
   begin(m) {
     this.setRegs(m.regs);
@@ -87,6 +90,14 @@ class Thread {
     this.attach();
     this.begin(m);
   }
+
+  /** Guest memory as bytes, made again only once it is another buffer (grown, here or by another thread). */
+  get bytes() {
+    const b = this.memory.buffer;
+    if (b !== this.bytesBuffer) { this.bytesBuffer = b; this.bytesOf = new Uint8Array(b); this.viewOf = new DataView(b); }
+    return this.bytesOf;
+  }
+  get view() { void this.bytes; return this.viewOf; }
 
   imports() {
     return {env: {
@@ -164,12 +175,14 @@ class Thread {
   syscall(nr, a, b, c, d, e, f, next) {
     // A read of the clock is answered here (clock.mjs), not by the kernel.
     if (nr === 228n || nr === 96n || nr === 201n) { const r = answerTime(this.memory, this.clock, nr, a, b); if (r !== null) return r; }
+    // So is a write to the console (write, writev), as its writer sees it: put where the kernel takes it from.
+    if ((nr === 1n || nr === 20n) && this.outbox) { const r = this.toConsole(nr, a, b, c); if (r !== null) return r; }
     const {i64} = this;
     i64[CH.NR] = nr; i64[CH.ARGS] = a; i64[CH.ARGS + 1] = b; i64[CH.ARGS + 2] = c;
     i64[CH.ARGS + 3] = d; i64[CH.ARGS + 4] = e; i64[CH.ARGS + 5] = f; i64[CH.NEXT] = next;
     if (READS_REGS.has(Number(nr))) this.putRegs(); else this.i32[CH.HAVE_REGS] = 0;
     // A new thread or process starts from this one's x87 too.
-    if (nr === 56n || nr === 57n || nr === 58n) this.put(JSON.stringify({top: this.fpu.top, cw: this.fpu.cw, sw: this.fpu.sw, st: this.fpu.st.map((x) => [x.kind, x.sign, x.e, String(x.m)])}));
+    if (nr === 56n || nr === 57n || nr === 58n) this.put(JSON.stringify(this.fpu.saved()));
     this.unlock();
     const reply = this.ask(OP.SYSCALL);
     if (reply === REPLY.AWAY) throw new Away();
@@ -178,7 +191,7 @@ class Thread {
     if (reply === REPLY.REGS) this.setRegs(Array.from({length: REGS.length}, (_, n) => i64[CH.REGS + n]));
     // Its program starts again on this memory (an exec of the same image): this instance runs it, afresh.
     if (reply === REPLY.RENEW) {
-      this.fpu = new Fpu(() => new Uint8Array(this.memory.buffer), this.fpuOps);
+      this.fpu = new Fpu(() => this.bytes, this.fpuOps);
       if (this.low) this.low.value = -1n;
     }
     if (reply === REPLY.REDIRECT || reply === REPLY.RENEW) {
@@ -187,6 +200,40 @@ class Thread {
       throw new Again();
     }
     return i64[CH.REGS];
+  }
+
+  /**
+   * A write (1) or writev (20) of `fd` that its process has as the console, put in the outbox whole (channel.mjs): what
+   * it wrote, as the call returns it; null where the kernel answers it (another descriptor, an address past the
+   * memory, more than a quarter of the outbox, or the outbox full: the page has not taken in what came before).
+   */
+  toConsole(nr, fd, b, c) {
+    if (fd < 0n || fd >= 32n || !((Atomics.load(this.consoles, 0) >>> Number(fd)) & 1)) return null;
+    const bytes = this.bytes, size = bytes.length, pieces = [];
+    let total = 0;
+    if (nr === 1n) {
+      const at = Number(b), n = Number(c);
+      if (!(n >= 0 && at >= 0 && at + n <= size)) return null;
+      pieces.push([at, n]);
+      total = n;
+    } else {
+      const v = Number(b), k = Number(c);
+      if (!(k >= 0 && k <= 16 && v >= 0 && v + 16 * k <= size)) return null;
+      const view = this.view;
+      for (let i = 0; i < k; i++) {
+        const at = Number(view.getBigUint64(v + 16 * i, true)), n = Number(view.getBigUint64(v + 16 * i + 8, true));
+        if (!(at + n <= size)) return null;
+        if (n) pieces.push([at, n]);
+        total += n;
+      }
+    }
+    if (total > OUTBOX_BYTES / 4) return null;
+    if (total) {
+      const first = this.outbox.put((Atomics.load(this.consoles, 1) >>> Number(fd)) & 1 ? 2 : 1, bytes, pieces, total);
+      if (first === null) return null;
+      if (first) { Atomics.add(this.door, 0, 1); rouse(this.door, 0, 1); }
+    }
+    return BigInt(total);
   }
 
   /** Text for the kernel, in the channel's data. */

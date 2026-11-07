@@ -278,7 +278,12 @@ export class Session implements Prompt {
   watch(fn: () => void): () => void { this.watchers.add(fn); return () => this.watchers.delete(fn); }
   // Over a copy: a watcher may stop and start watching while it is told,
   // and a Set visits what is added during its iteration.
-  private tell() { this.toldLine = this.promptLine; for (const fn of [...this.watchers]) fn(); }
+  private tell() {
+    cancelAnimationFrame(this.telling);
+    this.telling = 0;
+    this.toldLine = this.promptLine;
+    for (const fn of [...this.watchers]) fn();
+  }
 
   /** How long until what was printed last has all come in, in ms: what comes after it (the prompt line) waits that long. */
   settlesIn(): number { return this.out.settlesIn(); }
@@ -408,8 +413,38 @@ export class Session implements Prompt {
     // Waiting at a prompt line it had not shown yet (its first, or after output of its own): watchers hear.
     if (!run || run.ms !== null) { if (this.promptLine !== this.toldLine) this.tell(); return; }
     this.into(run, s, waits);
-    this.tell();
+    // A run ended is told at once; one growing, once a frame however many pieces came in it (a flood comes in
+    // thousands, and each watcher, the pane's rows among them, would look again at each).
+    if (run.ms !== null) this.tell(); else this.tellSoon();
   }
+
+  /** Output taken in, said to the kernel once a frame: it lets what writes to the terminal go on only as fast as the
+   * page takes it (worker.mjs 'drained'), so a flood never piles up on its way here. */
+  private drained(n: number) {
+    this.taken += n;
+    // Hidden, the page draws no frames and keeps only the last of what comes (output.ts): taken in as it comes, so a
+    // build printing on in a tab behind goes on.
+    if (document.hidden) { this.sayDrained(); return; }
+    this.draining ||= requestAnimationFrame(() => this.sayDrained());
+    // No frame drawn soon (the tab hidden meanwhile): said all the same.
+    this.drainingLate ||= window.setTimeout(() => this.sayDrained(), 250);
+  }
+  private sayDrained() {
+    cancelAnimationFrame(this.draining);
+    clearTimeout(this.drainingLate);
+    this.draining = this.drainingLate = 0;
+    if (this.taken) this.worker?.postMessage({type: 'drained', n: this.taken});
+    this.taken = 0;
+  }
+  private taken = 0;
+  private draining = 0;
+  private drainingLate = 0;
+
+  /** Told on the next frame, once, however often asked before it. */
+  private tellSoon() {
+    this.telling ||= requestAnimationFrame(() => { this.telling = 0; this.tell(); });
+  }
+  private telling = 0;
 
   /** What came (`s`) goes into the run in progress; at the prompt line (`waits`), the run is over. */
   private into(run: Run, s: string, waits: boolean) {
@@ -517,7 +552,10 @@ export class Session implements Prompt {
   private fromWorker(data: MessageEvent['data']) {
     this.activity.heard = Date.now();
     switch (data.type) {
-      case 'output': this.received(this.decoder.decode(data.bytes, {stream: true})); break;
+      case 'output':
+        this.received(this.decoder.decode(data.bytes, {stream: true}));
+        this.drained(data.bytes.length);
+        break;
       case 'tty': this.setTty(data); break;
       case 'changes': this.copy.write(data); break;
       // Code its shell reached later, a program of the root it translated and the code that reached later, and what it

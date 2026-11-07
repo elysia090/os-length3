@@ -18,14 +18,24 @@ export const strip = (s: string) => s.replace(/\x1b\[[0-9;:?<=>]*[ -/]*[@-~]/g, 
 const NO_TTY = "/bin/sh: can't access tty; job control turned off\n";
 /** What a run prints comes in a line after another (styles.css .fresh): this far apart, each over this long. */
 const STAGGER = 30, FADE = 240;
+/** However many lines come in a frame, the last of them comes in no later than this after the first: a beat apart
+ * when they are few, closer when many (24 lines a beat apart took most of a second to be read, where a terminal shows
+ * them at once). */
+const SPREAD = 96;
+/** How far apart `n` lines come in. */
+const beat = (n: number) => Math.min(STAGGER, SPREAD / Math.max(1, Math.min(n, ONE_BY_ONE + 1) - 1));
 /** Output kept on the screen, in characters: past the most, the oldest lines go until the least is left. */
 const KEEP_MOST = 200_000, KEEP_LEAST = 150_000;
 /**
- * Lines printed all at once are drawn in blocks of about this many characters, each a box of its own: what comes
- * after one is laid out without laying out again the lines before it (one text of 1 MB took the page 16 to 30 ms
- * a frame to add a few lines to and scroll; in blocks, a millisecond).
+ * Lines printed all at once are drawn in blocks of about this many characters or rows, each a box of its own: what
+ * comes after one is laid out without laying out again the lines before it (one text of 1 MB took the page 16 to 30
+ * ms a frame to add a few lines to and scroll; in blocks, a millisecond). A block off the screen is not laid out at
+ * all (styles: content-visibility), so a flood of short lines costs a frame what is on the screen, not the scrollback
+ * (5 MB of `y` took 7.9 s to draw, each frame 100 ms).
  */
-const BLOCK = 8_000;
+const BLOCK = 8_000, BLOCK_LINES = 200;
+/** The columns programs are told the terminal has (terminal.ts): a longer line is taken to wrap at it. */
+const WIDTH = 80;
 /** Of what a run prints in one frame, the lines that come in one after another; the rest comes in with the last of them. */
 const ONE_BY_ONE = 24;
 
@@ -44,7 +54,8 @@ function command(line: string): Node[] {
 function oneByOne(lines: string[]): HTMLElement[] {
   const one = lines.slice(0, ONE_BY_ONE), rest = lines.slice(ONE_BY_ONE).join('');
   const fresh = [...one.map((line) => h('span', {class: 'fresh'}, line)), ...(rest ? [h('div', {class: 'fresh term-lines'}, rest)] : [])];
-  fresh.forEach((s, i) => { s.style.animationDelay = `${Math.min(i, ONE_BY_ONE) * STAGGER}ms`; });
+  const step = beat(fresh.length);
+  fresh.forEach((s, i) => { s.style.animationDelay = `${Math.round(Math.min(i, ONE_BY_ONE) * step)}ms`; });
   return fresh;
 }
 
@@ -53,6 +64,18 @@ function push(to: Span[], n: number, st: number) {
   if (!n) return;
   const last = to.at(-1);
   if (last && last.st === st) last.n += n; else to.push({n, st});
+}
+
+/**
+ * `spans` without their first `n` letters: the spans they cover taken away at once (one at a time, from the front of
+ * a list of hundreds of thousands, each moved the rest along: a coloured flood held a frame for seconds).
+ */
+function dropped(spans: Span[], n: number): Span[] {
+  let i = 0;
+  while (i < spans.length && spans[i].n <= n) n -= spans[i++].n;
+  const rest = i ? spans.slice(i) : spans;
+  if (n > 0 && rest.length) rest[0] = {n: rest[0].n - n, st: rest[0].st};
+  return rest;
 }
 
 /** How a program has the terminal set, as the page sends keys and shows lines by it. */
@@ -70,7 +93,7 @@ export class Output {
   #freshSpans: Span[] = [];
   #whole = false;
   /** The line under way, read a letter at a time (vt.ts), and where it is drawn: always the last of the lines. */
-  readonly #line = new LineState((rs) => this.#ended(rs));
+  readonly #line = new LineState((rs) => this.#ended(rs), (text, st) => this.#endedLines(text, st));
   readonly #live = h('span', {class: 'term-live'});
   #liveDrawn = '';
   /** The line under way as the last frame showed it: ended since, what was seen of it does not come in again. */
@@ -128,8 +151,9 @@ export class Output {
     s = this.#cleared(s);
     this.#line.write(s);
     if (this.#noTty()) return;
-    // Far more than is kept on the screen came before a frame could draw it: only the last of it is kept.
-    if (this.#fresh.length > 4 * KEEP_MOST) this.#keepLast(KEEP_LEAST);
+    // More than is kept on the screen came before a frame could draw it: only the last of it is kept (what is drawn
+    // and taken away again in the same frame cost that frame for nothing).
+    if (this.#fresh.length > KEEP_MOST) this.#keepLast(KEEP_LEAST);
     // Drawn once a frame, however many pieces came in it. Output comes a stdio buffer (about 1 KB) at a time,
     // and drawing up to 200k characters and scrolling to them for each piece measured about 22 ms a piece in
     // Chromium: 1 MB of output held the page for 22 s; drawn once for every 17 pieces, 1.3 s.
@@ -189,6 +213,20 @@ export class Output {
     this.#fresh += text;
   }
 
+  /** Whole lines in one style, ended at once (a flood): kept as they came. */
+  #endedLines(text: string, st: number) {
+    if (st) {
+      for (let at = 0; at < text.length;) {
+        const nl = text.indexOf('\n', at);
+        push(this.#spans, nl - at, st); push(this.#freshSpans, nl - at, st);
+        push(this.#spans, 1, 0); push(this.#freshSpans, 1, 0);
+        at = nl + 1;
+      }
+    } else { push(this.#spans, text.length, 0); push(this.#freshSpans, text.length, 0); }
+    this.#done += text;
+    this.#fresh += text;
+  }
+
   /** A row scrolled off a whole-screen program's main screen: a line ended above it. */
   #scrolledOff(row: Row) {
     const chars = row.chars.filter((c) => c !== '');
@@ -241,11 +279,7 @@ export class Output {
     const nl = this.#done.indexOf('\n', this.#done.length - n);
     const cut = nl < 0 ? Math.max(0, this.#done.length - n) : nl + 1;
     this.#done = this.#done.slice(cut);
-    let left = cut;
-    while (left > 0 && this.#spans.length) {
-      const s = this.#spans[0];
-      if (s.n <= left) { left -= s.n; this.#spans.shift(); } else { s.n -= left; left = 0; }
-    }
+    this.#spans = dropped(this.#spans, cut);
     this.#fresh = '';
     this.#freshSpans = [];
     this.#whole = true;
@@ -400,31 +434,31 @@ export class Output {
     }
     out.push(...oneByOne(lines));
     // Its last line under way: what comes after (the prompt line) follows it in.
-    this.#settles = lines.length ? performance.now() + Math.min(lines.length - 1, ONE_BY_ONE) * STAGGER + FADE / 2 : 0;
+    const n = Math.min(lines.length, ONE_BY_ONE) + (lines.length > ONE_BY_ONE ? 1 : 0);
+    this.#settles = lines.length ? performance.now() + (n - 1) * beat(n) + FADE / 2 : 0;
     return out;
   }
 
-  /** Past KEEP_MOST, the oldest lines go from the top of the screen (whole lines, down to KEEP_LEAST), as from the text. */
+  /**
+   * Past KEEP_MOST, the oldest lines go from the top of the screen, as from the text: whole blocks (and the lines between
+   * them), down to about KEEP_LEAST. A block is never cut into: one not drawn lately keeps the height it was last drawn
+   * at (styles: content-visibility), which a block made shorter would no longer have.
+   */
   #trim() {
     if (this.#drawnLength <= KEEP_MOST) return;
-    const nl = this.#done.indexOf('\n', this.#done.length - KEEP_LEAST);
-    let left = nl < 0 ? this.#done.length - KEEP_LEAST : nl + 1;
-    const cut = left;
-    while (left > 0 && this.element.firstChild && this.element.firstChild !== this.#live && this.element.firstChild !== this.#screen?.view.element) {
-      const node = this.element.firstChild;
+    const over = this.#done.length - KEEP_LEAST;
+    let cut = 0;
+    for (let node = this.element.firstChild; node && node !== this.#live && node !== this.#screen?.view.element && node !== this.#endLine;) {
       const n = node.textContent?.length ?? 0;
-      if (n <= left || node.childNodes.length > 1) { node.remove(); left -= n; continue; }
-      // Within a block (or a text): its first lines go, the rest of it stays where it is.
-      const text = (node.nodeType === Node.TEXT_NODE ? node : node.firstChild) as Text;
-      text.deleteData(0, left);
-      left = 0;
+      if (cut + n > over) break;
+      const next = node.nextSibling;
+      node.remove();
+      cut += n;
+      node = next;
     }
+    if (!cut) return;
     this.#done = this.#done.slice(cut);
-    let drop = cut;
-    while (drop > 0 && this.#spans.length) {
-      const s = this.#spans[0];
-      if (s.n <= drop) { drop -= s.n; this.#spans.shift(); } else { s.n -= drop; drop = 0; }
-    }
+    this.#spans = dropped(this.#spans, cut);
     this.#drawnLength = this.#done.length;
   }
 
@@ -434,8 +468,17 @@ export class Output {
    */
   #blocks(text: string): Node[] {
     const out: Node[] = [];
-    let at = 0, block = '';
-    const close = () => { if (block) out.push(h('div', {class: 'term-lines'}, block)); block = ''; };
+    let at = 0, block = '', lines = 0;
+    // Each as tall as its lines until it is first drawn (a block far above the screen is not: styles' content-visibility),
+    // then as tall as it was drawn.
+    const close = () => {
+      if (!block) return;
+      const el = h('div', {class: 'term-lines'}, block);
+      el.style.containIntrinsicBlockSize = `auto calc(${lines} * 1lh)`;
+      out.push(el);
+      block = '';
+      lines = 0;
+    };
     const prompts = [...this.#prompts];
     while (at < text.length) {
       const nl = text.indexOf('\n', at);
@@ -445,7 +488,9 @@ export class Output {
       const ps = prompts.length ? prompts.find((p) => line.startsWith(p)) : undefined;
       if (ps) { close(); out.push(h('span', {class: 'ps'}, ps), ...command(line.slice(ps.length))); continue; }
       block += line;
-      if (block.length >= BLOCK) close();
+      // A line past the terminal's width (as wide as programs are told it is) takes more than one row.
+      lines += 1 + Math.floor(Math.max(0, line.length - 2) / WIDTH);
+      if (block.length >= BLOCK || lines >= BLOCK_LINES) close();
     }
     close();
     return out;

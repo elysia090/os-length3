@@ -34,21 +34,24 @@ export class Rows {
     this.element.scrollTo({top: this.element.scrollHeight});
   }
 
+  /** Each run's row brought to how the run stands: only a row whose state changed is touched (told at every frame of
+   * a run's output, the pane does nothing for the runs that are done). */
   #sync(runs: Run[]) {
     for (const run of runs) {
       let row = this.#rows.get(run);
       if (!row) {
         row = h('button', {type: 'button', class: 'pane-row run'},
-          h('span', {class: 'pane-bar', 'aria-hidden': 'true'}), h('span', {class: 'pane-line'}, run.line), h('span', {class: 'pane-at'}));
+          h('span', {class: 'pane-bar', 'aria-hidden': 'true'}), h('span', {class: 'pane-line'}, run.line), h('span', {class: 'pane-at'}, time(run.started)));
         row.addEventListener('click', () => this.open(run));
         this.#rows.set(run, row);
         this.#add(row);
         cutWhenLonger(row.querySelector('.pane-line')!);
       }
       const ended = run.ms !== null, failed = ended && (run.status ?? 0) !== 0;
-      row.dataset.state = !ended ? 'running' : failed ? 'failed' : 'done';
-      const at = row.querySelector('.pane-at')!;
-      at.replaceChildren(...(failed ? [h('b', {class: 'pane-exit'}, t('exit {n}', {n: String(run.status)}))] : []), time(run.started));
+      const state = !ended ? 'running' : failed ? 'failed' : 'done';
+      if (row.dataset.state === state) continue;
+      row.dataset.state = state;
+      if (failed) row.querySelector('.pane-at')!.prepend(h('b', {class: 'pane-exit'}, t('exit {n}', {n: String(run.status)})));
     }
   }
 

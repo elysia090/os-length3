@@ -168,6 +168,7 @@ let rawKeys = false;
 
 /** The kernel paused (here: every thread waits or it ended, `r` as pump says): what the shell changed, and why it waits. */
 function paused(r) {
+  send();
   told();
   const m = said(r, kernel.held(), performance.now(), (keep?.reading() ?? 0) > 0);
   self.postMessage(m);
@@ -241,7 +242,53 @@ function given(files) {
 /** Something came from outside (input, Ctrl-C): the kernel looks again. */
 const nudge = () => { if (!kernel) return; clearTimeout(idle); waitingInput = false; if (apart) kernel.kick(); else pump(); };
 
+/**
+ * Output on its way to the page and not yet taken in there (it says how much it took, 'drained', once a frame): past
+ * this much, what writes to the console waits, as a terminal's writer waits when its screen cannot keep up. Without it
+ * a flood (yes) was sent faster than the page could take it, its messages piling up until the page was out of memory.
+ */
+const ON_ITS_WAY_MOST = 1 << 20;
+let onItsWay = 0;
+
+/**
+ * Output gathered before it goes to the page. A terminal's stdout is written a line at a time, and each line sent as a
+ * message of its own had the page take hundreds of thousands of messages a second (yes), each costing far more than its
+ * bytes: the page stopped answering for a minute. What is written goes at once when nothing went for GATHER_MS (a key's
+ * echo, a prompt line), else with what follows it: once this much has gathered, at the next write or turn of the kernel
+ * after GATHER_MS, and whenever the kernel stops (every thread waits).
+ */
+const GATHER_MS = 4, GATHER_MOST = 64 << 10;
+let gathered = [], gatheredBytes = 0, gatheredFd = 1, sentAt = -Infinity;
+function send() {
+  if (!gatheredBytes) return;
+  let bytes = gathered[0];
+  if (gathered.length > 1) {
+    bytes = new Uint8Array(gatheredBytes);
+    let at = 0;
+    for (const b of gathered) { bytes.set(b, at); at += b.length; }
+  }
+  self.postMessage({type: 'output', fd: gatheredFd, bytes}, [bytes.buffer]);
+  gathered = [];
+  gatheredBytes = 0;
+  sentAt = performance.now();
+}
+function gather(fd, bytes) {
+  onItsWay += bytes.length;
+  if (fd !== gatheredFd) { send(); gatheredFd = fd; }
+  gathered.push(bytes);
+  gatheredBytes += bytes.length;
+  if (gatheredBytes >= GATHER_MOST || performance.now() - sentAt >= GATHER_MS) send();
+}
+/** A turn of the kernel (a thread's time slice up, a pause between calls): what gathered goes if it has waited long enough. */
+const due = () => { if (gatheredBytes && performance.now() - sentAt >= GATHER_MS) send(); };
+
 self.onmessage = async ({data}) => {
+  if (data.type === 'drained') {
+    onItsWay = Math.max(0, onItsWay - data.n);
+    if (kernel && 'dirty' in kernel) kernel.dirty = true;
+    nudge();
+    return;
+  }
   if (data.type === 'input') { pending.push(data.bytes); nudge(); return; }
   if (data.type === 'eof') { ended = true; nudge(); return; }
   if (data.type === 'typing') { if (kernel && waitingInput && kernel.due.size && !rawKeys) consolidateLater(QUIET_MS); return; }
@@ -276,7 +323,11 @@ self.onmessage = async ({data}) => {
       interactive: !!data.screen,
       screen: !!data.screen, cols: data.cols ?? 80, rows: data.rows ?? 24,
       mode: (tio) => { rawKeys = !(tio.lflag & 2); self.postMessage({type: 'tty', ...tio}); },
-      write: (fd, bytes) => self.postMessage({type: 'output', fd, bytes}, [bytes.buffer]),
+      write: gather,
+      // The kernel's turns (process.mjs, remote.mjs): what gathered goes when it is due, or now (`all`, it stops).
+      flush: (all) => (all ? send() : due()),
+      // Past so much on its way to the page and not yet taken in there, what writes to it waits (sys-file.mjs).
+      full: () => onItsWay > ON_ITS_WAY_MOST,
       read,
       ready: () => pending.length > 0 || ended,
       pending: () => pending.reduce((n, b) => n + b.length, 0),

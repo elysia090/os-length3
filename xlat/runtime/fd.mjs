@@ -151,10 +151,25 @@ export class Description {
 /** How many descriptors a process starts allowed (RLIMIT_NOFILE's soft limit; sys-proc.mjs's setrlimit moves it). */
 const FDS = 1024;
 
+/** Memory a Worker of another thread can read where the page is cross-origin isolated (else memory of this one's). */
+const Shared = typeof SharedArrayBuffer === 'function' ? SharedArrayBuffer : ArrayBuffer;
+
 export class FdTable {
   constructor(limit = FDS) {
     this.slots = new Map(); // fd -> {description, cloexec}
     this.limit = limit; // RLIMIT_NOFILE's soft limit: no descriptor at or past it
+    // Which of its first 32 descriptors are the console ([0], a bit each) and which of those its stderr ([1]), kept as
+    // the table changes: a thread in a Worker of its own reads them to write there without asking the kernel (cpu.mjs
+    // toConsole).
+    this.consoles = new Int32Array(new Shared(8));
+  }
+  /** `fd`'s bits in `consoles` as the table has it now. */
+  marked(fd) {
+    if (fd >= 32) return;
+    const d = this.slots.get(fd)?.description, bit = 1 << fd;
+    const mark = (k, on) => { const was = Atomics.load(this.consoles, k), now = on ? was | bit : was & ~bit; if (now !== was) Atomics.store(this.consoles, k, now); };
+    mark(0, d?.kind === 'console');
+    mark(1, d?.kind === 'console' && d.path === 'stderr');
   }
   get(fd) { return this.slots.get(fd)?.description ?? null; }
   lowest(from = 0) {
@@ -166,12 +181,14 @@ export class FdTable {
     if (fd < 0 || fd >= this.limit) return -1;
     this.close(fd);
     this.slots.set(fd, {description: description.retain(), cloexec});
+    this.marked(fd);
     return fd;
   }
   close(fd) {
     const slot = this.slots.get(fd);
     if (!slot) return false;
     this.slots.delete(fd);
+    this.marked(fd);
     slot.description.release();
     return true;
   }
@@ -181,6 +198,7 @@ export class FdTable {
   fork() {
     const t = new FdTable(this.limit);
     for (const [fd, s] of this.slots) t.slots.set(fd, {description: s.description.retain(), cloexec: s.cloexec});
+    t.consoles.set(this.consoles);
     return t;
   }
   /** exec closes descriptors marked close-on-exec. */

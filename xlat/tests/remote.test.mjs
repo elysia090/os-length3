@@ -3,6 +3,7 @@ import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
 import {Vfs} from '../runtime/fs.mjs';
 import {RemoteKernel} from '../runtime/remote.mjs';
+import {Outbox} from '../runtime/channel.mjs';
 import {prepare} from '../runtime/share.mjs';
 import {loadTranslator} from '../runtime/translator.mjs';
 import {have} from './busybox.mjs';
@@ -13,7 +14,7 @@ import {have} from './busybox.mjs';
 
 const stage = new URL('../../os/target/userland/', import.meta.url);
 
-async function shell(script, {input = null} = {}) {
+async function shell(script, {input = null, said = null} = {}) {
   const vfs = new Vfs();
   vfs.writeFile('/bin/busybox', readFileSync(new URL('busybox', stage)), 0o755);
   for (const a of ['sh', 'sleep', 'cat', 'kill', 'echo', 'dd', 'wc', 'sha256sum', 'yes', 'head']) vfs.symlink('busybox', `/bin/${a}`);
@@ -23,7 +24,7 @@ async function shell(script, {input = null} = {}) {
     vfs, translate: await loadTranslator(readFileSync(new URL('xlat.wasm', stage))),
     console: {
       interactive: false,
-      write: (_, b) => { out += new TextDecoder().decode(b); },
+      write: (fd, b) => { const text = new TextDecoder().decode(b); out += text; said?.push([fd, text]); },
       read: () => typed.shift() ?? new Uint8Array(0),
       ready: () => true,
     },
@@ -54,4 +55,40 @@ test('apart: a pipe streams between two Workers, every byte', {skip: !have}, asy
 test('apart: traps and SIGPIPE as on Linux', {skip: !have}, async () => {
   const r = await shell('trap "echo got USR1" USR1; kill -USR1 $$; (yes; echo "yes $?" >&2) | head -n 1; echo after');
   assert.equal(r.out, 'got USR1\ny\nyes 141\nafter\n');
+});
+
+test('apart: what threads write to the console comes in the order written, stderr told apart', {skip: !have}, async () => {
+  const said = [];
+  const r = await shell('for i in 1 2 3; do echo o$i; echo e$i >&2; done; (echo child; echo childerr >&2); echo last', {said});
+  assert.equal(r.out, 'o1\ne1\no2\ne2\no3\ne3\nchild\nchilderr\nlast\n');
+  const errs = said.filter(([fd]) => fd === 2).map(([, t]) => t).join('');
+  assert.equal(errs, 'e1\ne2\ne3\nchilderr\n');
+});
+
+test('apart: a flood written a line at a time to the console comes whole', {skip: !have}, async () => {
+  const r = await shell('yes | head -c 300000 | (cat; echo end)');
+  assert.equal(r.out.length, 300004);
+  assert.ok(r.out.endsWith('y\ny\nend\n'));
+});
+
+test('the console outbox: writes in order round the ring, fds kept, none past its room', () => {
+  const box = new Outbox(new SharedArrayBuffer(16 + 64));
+  const from = new TextEncoder().encode('abcdefghijklmnopqrstuvwxyz');
+  const out = [];
+  for (let k = 0; k < 20; k++) {
+    assert.equal(box.put(k % 3 ? 1 : 2, from, [[k, 3], [0, 1]], 4) !== null, true);
+    if (k % 4 === 3) out.push(...box.take());
+  }
+  out.push(...box.take());
+  const want = [];
+  for (let k = 0; k < 20; k++) want.push([k % 3 ? 1 : 2, String.fromCharCode(97 + k, 98 + k, 99 + k) + 'a']);
+  // Writes in a row to one fd come as one.
+  const flat = out.flatMap(({fd, bytes}) => [[fd, new TextDecoder().decode(bytes)]]);
+  assert.equal(flat.map(([, t]) => t).join(''), want.map(([, t]) => t).join(''));
+  for (const [fd, t] of flat) assert.ok(want.filter(([f]) => f === fd).map(([, w]) => w).join('').includes(t));
+  // Full: a write that does not fit is refused whole, and what fits still goes in.
+  assert.equal(box.put(1, from, [[0, 26]], 26), true);
+  assert.equal(box.put(1, from, [[0, 26]], 26), false);
+  assert.equal(box.put(1, from, [[0, 26]], 26), null);
+  assert.equal(new TextDecoder().decode(box.take()[0].bytes), 'abcdefghijklmnopqrstuvwxyz'.repeat(2));
 });

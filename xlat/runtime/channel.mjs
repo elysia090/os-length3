@@ -41,6 +41,89 @@ export const READS_REGS = new Set([15, 56, 57, 58, 131, 158, 435]);
 export const REGS = REG;
 
 /**
+ * What threads in Workers of their own write to the console, put straight into memory the kernel's Worker takes it
+ * from (remote.mjs takeOutbox), not asked of the kernel a call at a time: a terminal's output comes a line a write,
+ * and each write the kernel answered kept its writer waiting a few microseconds (`yes | head -c 5M` took 14 s, five times
+ * what the same threads took in turn). A ring of OUTBOX_BYTES behind four words: [0] a lock, [1] where the bytes held
+ * begin, [2] how many are held. A write that does not fit whole goes to the kernel as any call does (which waits, as a
+ * terminal's writer waits, when the page has not taken in what came before it).
+ */
+export const OUTBOX_BYTES = 64 << 10;
+/** Each write held: which of the console's two (1, 2) it went to, its length, then its bytes. */
+const HEAD = 5;
+export class Outbox {
+  constructor(buffer = new SharedArrayBuffer(16 + OUTBOX_BYTES)) {
+    this.buffer = buffer;
+    this.words = new Int32Array(buffer, 0, 4);
+    this.bytes = new Uint8Array(buffer, 16);
+    this.head = new Uint8Array(HEAD);
+  }
+  // Held for a copy at most (a few microseconds): spun on, never slept on.
+  #lock() { while (Atomics.compareExchange(this.words, 0, 0, 1) !== 0); }
+  #unlock() { Atomics.store(this.words, 0, 0); }
+  /** `src` copied in at `at` (round the ring's end); where it ends. */
+  #in(src, at) {
+    const size = this.bytes.length, first = Math.min(src.length, size - at);
+    this.bytes.set(first === src.length ? src : src.subarray(0, first), at);
+    if (src.length > first) this.bytes.set(src.subarray(first), 0);
+    return (at + src.length) % size;
+  }
+  /** `n` bytes from `at` copied out into `to` at `into`; where they end. */
+  #out(at, n, to, into) {
+    const size = this.bytes.length, first = Math.min(n, size - at);
+    to.set(this.bytes.subarray(at, at + first), into);
+    if (n > first) to.set(this.bytes.subarray(0, n - first), into + first);
+    return (at + n) % size;
+  }
+  /**
+   * A write to the console's `fd`: the pieces of `from` ([address, length] each, `total` bytes in all) put in whole and
+   * in order. Null when they do not all fit, else whether the outbox was empty before (the kernel is then rung; else it
+   * has been, and has not yet taken what was there, which it takes with these).
+   */
+  put(fd, from, pieces, total) {
+    const w = this.words, size = this.bytes.length, h = this.head;
+    this.#lock();
+    const start = w[1], held = w[2];
+    if (held + HEAD + total > size) { this.#unlock(); return null; }
+    h[0] = fd; h[1] = total & 255; h[2] = (total >>> 8) & 255; h[3] = (total >>> 16) & 255; h[4] = total >>> 24;
+    let at = this.#in(h, (start + held) % size);
+    for (const [a, n] of pieces) at = this.#in(from.subarray(a, a + n), at);
+    w[2] = held + HEAD + total;
+    this.#unlock();
+    return held === 0;
+  }
+  /** How many bytes are held. */
+  get held() { return Atomics.load(this.words, 2); }
+  /** All that is held, taken out: what went to each fd in turn, writes in a row to one fd as one. */
+  take() {
+    const w = this.words, h = this.head, size = this.bytes.length, runs = [];
+    this.#lock();
+    const held = w[2];
+    let at = w[1];
+    // Where each write's bytes are, in runs of one fd; then each run copied out whole.
+    for (let done = 0; done < held; done += HEAD) {
+      at = this.#out(at, HEAD, h, 0);
+      const fd = h[0], n = h[1] | (h[2] << 8) | (h[3] << 16) | (h[4] << 24);
+      let run = runs.at(-1);
+      if (run?.fd !== fd) runs.push((run = {fd, parts: [], n: 0}));
+      run.parts.push(at, n);
+      run.n += n;
+      at = (at + n) % size;
+      done += n;
+    }
+    const out = runs.map(({fd, parts, n}) => {
+      const bytes = new Uint8Array(n);
+      for (let k = 0, into = 0; k < parts.length; into += parts[k + 1], k += 2) this.#out(parts[k], parts[k + 1], bytes, into);
+      return {fd, bytes};
+    });
+    w[1] = at;
+    w[2] = 0;
+    this.#unlock();
+    return out;
+  }
+}
+
+/**
  * Watch word `index` of `words` for up to `ms` (spinning, as a lock does before it sleeps): true once `ready` says
  * it changed. A thread woken from Atomics.wait takes tens of microseconds to run again; a call answered while its
  * caller still watches costs well under one, so each side watches a little before it sleeps.

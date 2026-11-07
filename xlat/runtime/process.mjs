@@ -502,6 +502,9 @@ export class Kernel {
    * waiting call times out or a sleep ends). Returns {waiting: true, until?}
    * or {status} of the first process.
    */
+  /** `bytes` written to the console (fd 1 or 2), after what was written there before. */
+  say(fd, bytes) { this.console.write(fd, bytes); }
+
   pump() {
     // The host runs it again because something may have changed (input came, a time passed).
     this.dirty = true;
@@ -547,6 +550,8 @@ export class Kernel {
         } catch (e) {
           if (e instanceof Preempted) {
             t.resumeAt = e.address;
+            // What it wrote and the console gathered goes on its way at a turn, not only once every thread waits.
+            this.console.flush?.(false);
             if (e.code === TRAP_YIELD) t.slice = nextSlice(t.slice, performance.now() - t.ranAt);
             if (t.proc.maps.length) t.proc.syncShared();
             // Its time is up: due timers, a signal for it and other threads first; else it goes on at once.
@@ -561,7 +566,7 @@ export class Kernel {
           const sig = fault(e);
           if (sig) {
             // What the translator cannot run yet is said, so it is not taken for the program's own fault.
-            if (translatorsLimit(e)) this.console.write(2, enc.encode(`xlat: ${e.message}\n`));
+            if (translatorsLimit(e)) this.say(2, enc.encode(`xlat: ${e.message}\n`));
             if (TRACE_FAULTS) console.error(`[${t.tid}] ${t.proc.argv?.[0] ?? ''} fault: ${e.stack}`);
             this.exitProcess(t.proc, sig);
             return;
@@ -1042,7 +1047,12 @@ export class Process {
 
   // ---- memory ----
 
-  get bytes() { return new Uint8Array(this.memory.buffer); }
+  /** Its memory as bytes: the one view, made again only when the memory grew (another buffer). */
+  get bytes() {
+    const b = this.memory.buffer;
+    if (b !== this.bytesBuffer) { this.bytesBuffer = b; this.bytesOf = new Uint8Array(b); }
+    return this.bytesOf;
+  }
   get view() { return new DataView(this.memory.buffer); }
 
   cstring(address) {
@@ -1406,7 +1416,12 @@ export class Task {
     this.attach();
   }
 
-  get bytes() { return new Uint8Array(this.memory.buffer); }
+  /** Its memory as bytes: the one view, made again only when the memory grew (another buffer). */
+  get bytes() {
+    const b = this.memory.buffer;
+    if (b !== this.bytesBuffer) { this.bytesBuffer = b; this.bytesOf = new Uint8Array(b); }
+    return this.bytesOf;
+  }
 
   /** Its image starts again on its memory (Process.execve): the instance stays; its x87 and its stack's depth start afresh. */
   renew() {

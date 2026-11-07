@@ -13,7 +13,7 @@
 // Where they are missing, process.mjs's Kernel runs the same threads here,
 // one at a time.
 
-import {CH, OP, REPLY, rouse, sleep, watch} from './channel.mjs';
+import {CH, OP, Outbox, REPLY, rouse, sleep, watch} from './channel.mjs';
 import {INTERRUPT, KEEP_INSTANCES, Kernel, PROFILE, REG, TRACE_SYSCALLS, Task, goesOn, trace} from './process.mjs';
 import {Exec, Exit, Redirect} from './flow.mjs';
 import {deliverable, take} from './signal.mjs';
@@ -67,6 +67,7 @@ export class RemoteKernel extends Kernel {
     super(options);
     this.shared = true;
     this.door = new Int32Array(new SharedArrayBuffer(8)); // rung by every thread that asks; [1]: the kernel sleeps (channel.mjs sleep)
+    this.outbox = new Outbox(); // what threads write to the console without asking (cpu.mjs toConsole), taken here
     this.gils = new WeakMap(); // memory -> its threads' lock
     this.spares = []; // Workers started ahead, for the next thread
     this.channels = []; // channels of threads that ended, for the next (each given once its Worker has left it)
@@ -149,12 +150,12 @@ export class RemoteKernel extends Kernel {
       const k = w.kernel;
       if (m?.type === 'error') {
         const t = [...k.tasks.values()].find((x) => x.worker === w);
-        k.console.write(2, enc.encode(`xlat: ${m.message.split('\n')[0]}\n`));
+        k.say(2, enc.encode(`xlat: ${m.message.split('\n')[0]}\n`));
         if (t) k.exitProcess(t.proc, 11);
         k.kick();
       }
     });
-    w.onError((e) => { w.kernel.console.write(2, enc.encode(`xlat: ${e?.message ?? e}\n`)); });
+    w.onError((e) => { w.kernel.say(2, enc.encode(`xlat: ${e?.message ?? e}\n`)); });
     return w;
   }
 
@@ -170,6 +171,16 @@ export class RemoteKernel extends Kernel {
     Atomics.add(this.door, 0, 1);
     Atomics.notify(this.door, 0);
   }
+
+  /**
+   * What threads put in the console's outbox, written to it: as the kernel turns, unless the page has not taken in what
+   * came before it (`always`: before what the kernel itself writes there, which comes after it).
+   */
+  takeOutbox(always = false) {
+    if (!this.outbox.held || (!always && this.console.full?.())) return;
+    for (const {fd, bytes} of this.outbox.take()) this.console.write(fd, bytes);
+  }
+  say(fd, bytes) { this.takeOutbox(true); super.say(fd, bytes); }
 
   /** Answer every thread that asks. True when one did. */
   drain() {
@@ -221,7 +232,7 @@ export class RemoteKernel extends Kernel {
     }
     if (op === OP.FAULT) {
       const said = t.text();
-      if (said) this.console.write(2, enc.encode(said));
+      if (said) this.say(2, enc.encode(said));
       this.exitProcess(t.proc, Number(t.i64[CH.ARG0]));
     }
   }
@@ -268,9 +279,12 @@ export class RemoteKernel extends Kernel {
         const seen = Atomics.load(this.door, 0);
         this.drain();
         this.retry();
+        this.takeOutbox();
         if (this.status !== null) break;
         const now = performance.now();
         // Served without a break for a while: the host gets its turn (input, Ctrl-C) before more.
+        // What the console gathered goes on its way when due (worker.mjs), and before a wait that may be long, whole.
+        this.console.flush?.(false);
         if (now - yielded > YIELD_MS) { await macrotask(); yielded = performance.now(); continue; }
         if (Atomics.load(this.door, 0) !== seen) continue;
         const until = this.deadline();
@@ -283,11 +297,13 @@ export class RemoteKernel extends Kernel {
           const r = sleep(this.door, 0, seen, 1, Math.min(BLOCK_MS, until === undefined ? BLOCK_MS : Math.max(0, until - now)));
           if (r !== 'timed-out') continue;
         }
+        this.console.flush?.(true);
         Atomics.store(this.door, 1, 1);
         const r = Atomics.waitAsync(this.door, 0, seen, until === undefined ? Infinity : Math.max(0, until - performance.now()));
         if (r.async) { await r.value; yielded = performance.now(); }
         Atomics.store(this.door, 1, 0);
       }
+      this.takeOutbox(true);
       this.close();
       this.onIdle?.({status: this.status});
       return this.status;
@@ -427,6 +443,7 @@ class RemoteTask extends Task {
       type: 'run', again: this.again, tid: this.tid, memoryId, imageId, module: like ? undefined : image.module,
       extrasFrom: from, extras: image.extras.slice(from).map(({module, base, count: n}) => ({module, base, count: n})),
       memory: known ? undefined : this.memory, channel: this.channel, door: k.door.buffer, gil: k.gil(this.memory), count: count(image).buffer,
+      outbox: k.outbox.buffer, consoles: this.proc.fds.consoles.buffer,
       regs: REG.map((_, n) => this.reg(n)), resumeAt: this.resumeAt, fpuOps: like ? undefined : image.fpuOps, fpu: this.fpuState, keep: this.keep,
       origin: performance.timeOrigin, // the kernel's clocks begin here (clock.mjs)
     });

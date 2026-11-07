@@ -2311,7 +2311,12 @@ lines and scrolls within itself by its own scroll, not the page's: a short ink
 bar at the box's right edge, as long as what is shown is of the whole and where
 it is, there while it is scrolled or pointed at and a moment after, thicker
 under the hand and dragged; what lies past its top or foot fades out at that
-edge, so it is seen to be there. Exited or stopped there (or its close
+edge, so it is seen to be there. What a program prints all at once (yes, a
+big file cat, a long listing) comes on the screen as fast as it is printed, the
+screen drawn once a frame with only what is on it laid out, and the page answers
+the hand throughout: a writer faster than the page waits for it, as one waits
+for a terminal that cannot keep up, so the page never takes in more than it can
+draw, and Ctrl+C stops it at once. Exited or stopped there (or its close
 pressed), it is seen ended a beat, then its box goes as a terminal's window
 closes; the band's >_ lays it again at the top of the first column with a new
 shell in it, the keyboard in it (failing to start, it stays, to be read). Ended

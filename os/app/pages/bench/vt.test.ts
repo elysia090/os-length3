@@ -156,3 +156,17 @@ test('a line at a time: colours kept, the line under way rewritten by a carriage
   l.write('ab\bX');
   assert.equal(l.text, 'aX');
 });
+
+test('a flood of lines is read as a letter at a time reads it, however it comes in pieces', () => {
+  const text = 'one\ntwo\n\x1b[31mred\x1b[0m plain\nthree\r3\n\tx\nhalf' + 'y\n'.repeat(50) + '\x1b[1mbold\nstill\n\x1b[0mé😀\nend';
+  const read = (pieces: string[]) => {
+    const said: string[] = [];
+    const l = new LineState((rs) => said.push(rs.map((r) => `${r.st}:${r.text}`).join('|')), (t, st) => said.push(...t.slice(0, -1).split('\n').map((line) => (line ? `${st}:${line}` : ''))));
+    for (const p of pieces) l.write(p);
+    return [...said, `under way ${l.runs.map((r) => `${r.st}:${r.text}`).join('|')}`];
+  };
+  const whole = read([text]), one = read([...text]);
+  assert.deepEqual(whole, one);
+  for (const at of [1, 5, 17, 40, 77]) assert.deepEqual(read([text.slice(0, at), text.slice(at)]), one);
+  assert.equal(one.at(-1), 'under way 0:end');
+});

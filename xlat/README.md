@@ -22,7 +22,10 @@ interrupts, a runtime x86→wasm JIT). xlat removes the machine instead:
   writer wait. Threads run here one at a time (each until it waits, or
   for a time slice taken at its calls), or each in its own Worker with
   memory shared, when the host allows SharedArrayBuffer
-  (`runtime/remote.mjs`).
+  (`runtime/remote.mjs`); there a write to the console, as a read of the
+  clock, is done in the thread's own Worker (into an outbox the kernel
+  takes from, `runtime/channel.mjs`), not asked of the kernel a line at a
+  time.
 - The translator also builds as wasm (`--target wasm32-unknown-unknown
   --lib`, wrapped by `runtime/translator.mjs`) and gives byte-identical
   output, so a browser translates the programs it runs.

@@ -18,6 +18,8 @@
 .term.ended > .term-out > :not(.term-end) { opacity: .72; }
 .small-button { min-height: var(--h-row); padding: 0 var(--s3); font-size: var(--t-meta); }
 .term-out { position: relative; margin: 0; overflow: auto; min-height: 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* A block of lines off the screen is not laid out or painted: as tall as it was last drawn, or as its rows (output.ts). */
+.term-out > .term-lines { content-visibility: auto; contain-intrinsic-block-size: auto 1lh; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }

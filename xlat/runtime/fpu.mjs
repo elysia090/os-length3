@@ -7,23 +7,81 @@ const ZERO = 0, NORMAL = 1, INF = 2, NAN = 3;
 const BIAS = 16383;
 const ONE = 1n << 63n;
 
+// A register's value is kept two ways, each made from the other only when asked for: as a double (`f`) where it is one
+// exactly, which most of what printf and strtod do keeps it (a number times ten, an integer loaded, a double stored), and
+// as the 64-bit mantissa and exponent (`m`, `e`) the exact arithmetic below works in. An operation on two doubles is done
+// on doubles and kept only where it was exact (an error-free sum or product: TwoSum, Dekker), which is then the x87's
+// result too, whatever its rounding; anything else goes the exact way, as before.
+const F64 = new Float64Array(1), U64 = new BigUint64Array(F64.buffer);
 class X {
-  constructor(kind, sign = 0, e = 0, m = 0n) {
+  constructor(kind, sign = 0, e = 0, m = 0n, f = undefined) {
     this.kind = kind; // ZERO | NORMAL | INF | NAN
     this.sign = sign;
-    this.e = e; // value = m * 2^(e - 63)
-    this.m = m; // 64-bit, top bit set when NORMAL
+    this._e = e; // value = m * 2^(e - 63)
+    this._m = m; // 64-bit, top bit set when NORMAL; null until asked for, where `f` holds the value
+    this._f = f; // the value as a double where it is one exactly; null where it is not; undefined until asked for
+  }
+  get e() { if (this._m === null) this.fill(); return this._e; }
+  get m() { if (this._m === null) this.fill(); return this._m; }
+  /** The mantissa and exponent, from the double. */
+  fill() {
+    F64[0] = Math.abs(this._f);
+    const bits = U64[0], exp = Number(bits >> 52n), frac = bits & 0xfffffffffffffn;
+    if (exp) { this._e = exp - 1023; this._m = (frac | 0x10000000000000n) << 11n; return; }
+    const length = bitLength(frac);
+    this._e = length - 1075;
+    this._m = frac << BigInt(64 - length);
+  }
+  /** The value as a double where it is one exactly, else null. */
+  get f() {
+    if (this._f !== undefined) return this._f;
+    if (this.kind === ZERO) return (this._f = this.sign ? -0 : 0);
+    if (this.kind !== NORMAL) return (this._f = null);
+    const e = this._e, m = this._m;
+    // Within a double's exponents and its 53 bits (its last 11 of 64 clear): exactly that double.
+    if (e < -1022 || e > 1023 || (m & 0x7ffn) !== 0n) return (this._f = null);
+    return (this._f = (this.sign ? -1 : 1) * Number(m >> 11n) * 2 ** (e - 52));
   }
 }
+
+/** A finite double, as a register holds it (kept as the double; its mantissa made when asked for). */
+const exactly = (v) => (v === 0 ? new X(ZERO, Object.is(v, -0) ? 1 : 0, 0, 0n, v) : new X(NORMAL, v < 0 ? 1 : 0, 0, null, v));
+
+/** Whether a + b = s is exact: TwoSum's error is nothing. */
+const sumExact = (a, b, s) => { const bb = s - a; return (a - (s - bb)) + (b - bb) === 0; };
+/** Whether a * b = p is exact: Dekker's product's error is nothing (within the range his split holds: otherwise not
+ * asked, the exact way taken). */
+const SPLIT = 134217729;
+function productExact(a, b, p) {
+  const ta = SPLIT * a, ah = ta - (ta - a), al = a - ah;
+  const tb = SPLIT * b, bh = tb - (tb - b), bl = b - bh;
+  return ((ah * bh - p) + ah * bl + al * bh) + al * bl === 0;
+}
+/** Doubles the error-free checks hold for: far from overflow in the split, far above the subnormals. */
+const safe = (v) => { const a = Math.abs(v); return a < 2 ** 995 && a > 2 ** -960; };
 
 const zero = (sign = 0) => new X(ZERO, sign);
 const inf = (sign = 0) => new X(INF, sign);
 // The "real indefinite" NaN produced by invalid operations.
 const indefinite = () => new X(NAN, 1, BIAS + 1, 0xc000000000000000n);
 
+// How many bits `n` (>= 0) takes: by 64-bit pieces and clz32, never through its decimal or binary string (a string a
+// rounding took most of the time printf spends in the x87).
+const M64 = (1n << 64n) - 1n;
 function bitLength(n) {
-  return n === 0n ? 0 : n.toString(2).length;
+  if (n === 0n) return 0;
+  let len = 0;
+  while (n > M64) { n >>= 64n; len += 64; }
+  const hi = Number(n >> 32n);
+  return len + (hi ? 64 - Math.clz32(hi) : 32 - Math.clz32(Number(n)));
 }
+
+/** A view over guest memory, made again only for other bytes (another process's, or its memory grown). */
+let viewOf = null, viewBytes = null;
+const view = (bytes) => {
+  if (bytes !== viewBytes) { viewBytes = bytes; viewOf = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength); }
+  return viewOf;
+};
 
 export class Fpu {
   constructor(bytes, names) {
@@ -42,6 +100,14 @@ export class Fpu {
     c.st = this.st.slice();
     c.top = this.top; c.cw = this.cw; c.sw = this.sw;
     return c;
+  }
+
+  /** What a new thread or process starts from, plain as JSON carries it across Workers (cpu.mjs, remote.mjs). */
+  saved() { return {top: this.top, cw: this.cw, sw: this.sw, st: this.st.map((x) => [x.kind, x.sign, x.e, String(x.m)])}; }
+  /** Its registers as `saved` gave them. */
+  restore(s) {
+    this.top = s.top; this.cw = s.cw; this.sw = s.sw;
+    this.st = s.st.map(([kind, sign, e, m]) => new X(kind, sign, e, BigInt(m)));
   }
 
   call(op, size, address, a, b) {
@@ -86,14 +152,21 @@ export class Fpu {
 
   // ---- conversions ----
 
+  /** Whether results are kept at 53 bits or more (the precision control: not single's 24), where an exact double is the
+   * x87's result as it is. */
+  get wide() { return ((this.cw >> 8) & 3) !== 0; }
+
   fromInt(i) {
     if (i === 0n) return zero();
+    if (i >= -9007199254740992n && i <= 9007199254740992n) return exactly(Number(i));
     const sign = i < 0n ? 1 : 0;
     return this.round(sign, sign ? -i : i, 0, 64, 0);
   }
 
   toInt(x, truncate) {
     if (x.kind === ZERO) return 0n;
+    const f = x.f;
+    if (f !== null && Number.isInteger(f)) return BigInt(f);
     if (x.kind !== NORMAL) return null;
     const exp = x.e - 63;
     let n;
@@ -115,6 +188,13 @@ export class Fpu {
   }
 
   fromBits(bits, size) {
+    // A finite double or float is held as it is: nothing to round.
+    if (size === 8 && ((bits >> 52n) & 0x7ffn) !== 0x7ffn) { U64[0] = bits; return exactly(F64[0]); }
+    if (size === 4 && ((bits >> 23n) & 0xffn) !== 0xffn) {
+      const n = Number(bits), exp = (n >>> 23) & 0xff, frac = n & 0x7fffff;
+      const v = (exp ? (frac | 0x800000) * 2 ** (exp - 150) : frac * 2 ** -149) * (n >>> 31 ? -1 : 1);
+      return exactly(n >>> 31 && v === 0 ? -0 : v);
+    }
     const mantBits = size === 8 ? 52 : 23, expBits = size === 8 ? 11 : 8, bias = size === 8 ? 1023 : 127;
     const sign = Number(bits >> BigInt(mantBits + expBits)) & 1;
     const exp = Number((bits >> BigInt(mantBits)) & ((1n << BigInt(expBits)) - 1n));
@@ -125,6 +205,12 @@ export class Fpu {
   }
 
   toBits(x, size) {
+    // A register that holds a double exactly: that double, or the float it is exactly.
+    const f = x.f;
+    if (f !== null) {
+      if (size === 8) { F64[0] = f; return U64[0]; }
+      if (Math.fround(f) === f) { const b = new Float32Array([f]); return BigInt(new Uint32Array(b.buffer)[0]); }
+    }
     const mantBits = size === 8 ? 52 : 23, expBits = size === 8 ? 11 : 8, bias = size === 8 ? 1023 : 127;
     const s = BigInt(x.sign) << BigInt(mantBits + expBits);
     const maxExp = (1n << BigInt(expBits)) - 1n;
@@ -148,18 +234,19 @@ export class Fpu {
   }
 
   loadExtended(address) {
-    const b = this.bytes();
-    let m = 0n;
-    for (let k = 7; k >= 0; k--) m = (m << 8n) | BigInt(b[address + k]);
+    const b = this.bytes(), v = view(b);
+    const m = v.getBigUint64(address, true);
     const se = b[address + 8] | (b[address + 9] << 8);
     const sign = se >> 15, exp = se & 0x7fff;
-    if (exp === 0x7fff) return (m << 1n) & ((1n << 64n) - 1n) ? new X(NAN, sign, BIAS + 1, m) : inf(sign);
+    if (exp === 0x7fff) return (m << 1n) & M64 ? new X(NAN, sign, BIAS + 1, m) : inf(sign);
     if (m === 0n) return zero(sign);
+    // Normal (its integer bit set): the register as it is, nothing to round.
+    if (exp !== 0 && m >> 63n) return new X(NORMAL, sign, exp - BIAS, m);
     return this.round(sign, m, (exp === 0 ? 1 : exp) - BIAS - 63, 64, 0);
   }
 
   storeExtended(address, x) {
-    const b = this.bytes();
+    const b = this.bytes(), v = view(b);
     let m = 0n, exp = 0;
     if (x.kind === NORMAL) {
       exp = x.e + BIAS;
@@ -167,45 +254,52 @@ export class Fpu {
       if (exp <= 0) { m >>= BigInt(1 - exp); exp = 0; }
     } else if (x.kind === INF) { exp = 0x7fff; m = ONE; }
     else if (x.kind === NAN) { exp = 0x7fff; m = x.m; }
-    for (let k = 0; k < 8; k++) { b[address + k] = Number(m & 0xffn); m >>= 8n; }
+    v.setBigUint64(address, m & M64, true);
     const se = (x.sign << 15) | exp;
     b[address + 8] = se & 0xff; b[address + 9] = se >> 8;
   }
 
   /** Read a memory operand: size > 0 float of that width, size < 0 integer. */
   load(size, address) {
-    const view = new DataView(this.bytes().buffer);
+    const v = view(this.bytes());
     switch (size) {
-      case 4: return this.fromBits(BigInt(view.getUint32(address, true)), 4);
-      case 8: return this.fromBits(view.getBigUint64(address, true), 8);
+      case 4: return this.fromBits(BigInt(v.getUint32(address, true)), 4);
+      case 8: return this.fromBits(v.getBigUint64(address, true), 8);
       case 10: return this.loadExtended(address);
-      case -2: return this.fromInt(BigInt(view.getInt16(address, true)));
-      case -4: return this.fromInt(BigInt(view.getInt32(address, true)));
-      case -8: return this.fromInt(view.getBigInt64(address, true));
+      // (An integer of 32 bits or fewer is a double exactly: no BigInt made for it.)
+      case -2: return exactly(v.getInt16(address, true));
+      case -4: return exactly(v.getInt32(address, true));
+      case -8: return this.fromInt(v.getBigInt64(address, true));
     }
     throw new Error(`x87 load size ${size}`);
   }
 
   store(size, address, x, truncate = false) {
-    const view = new DataView(this.bytes().buffer);
+    const v = view(this.bytes());
     switch (size) {
-      case 4: view.setUint32(address, Number(this.toBits(x, 4)), true); return;
-      case 8: view.setBigUint64(address, this.toBits(x, 8), true); return;
+      case 4: v.setUint32(address, Number(this.toBits(x, 4)), true); return;
+      case 8: v.setBigUint64(address, this.toBits(x, 8), true); return;
       case 10: this.storeExtended(address, x); return;
     }
     // Integers: out of range and NaN store the integer indefinite value.
     const bits = -size * 8;
     const i = this.toInt(x, truncate);
     const min = -(1n << BigInt(bits - 1)), max = (1n << BigInt(bits - 1)) - 1n;
-    const v = i === null || i < min || i > max ? min : i;
-    if (size === -2) view.setInt16(address, Number(v), true);
-    else if (size === -4) view.setInt32(address, Number(v), true);
-    else view.setBigInt64(address, v, true);
+    const n = i === null || i < min || i > max ? min : i;
+    if (size === -2) v.setInt16(address, Number(n), true);
+    else if (size === -4) v.setInt32(address, Number(n), true);
+    else v.setBigInt64(address, n, true);
   }
 
   // ---- arithmetic ----
 
   add(a, b, negateB = false) {
+    const fa = a.f, fb0 = b.f;
+    if (fa !== null && fb0 !== null && this.wide) {
+      const fb = negateB ? -fb0 : fb0, sum = fa + fb;
+      // (A sum of nothing takes its sign from the rounding mode: the exact way.)
+      if (sum !== 0 && Number.isFinite(sum) && sumExact(fa, fb, sum)) return exactly(sum);
+    }
     const bs = negateB ? b.sign ^ 1 : b.sign;
     if (a.kind === NAN || b.kind === NAN) return a.kind === NAN ? a : b;
     if (a.kind === INF && b.kind === INF) return a.sign === bs ? a : indefinite();
@@ -230,6 +324,11 @@ export class Fpu {
   }
 
   mul(a, b) {
+    const fa = a.f, fb = b.f;
+    if (fa !== null && fb !== null && fa !== 0 && fb !== 0 && this.wide && safe(fa) && safe(fb)) {
+      const p = fa * fb;
+      if (safe(p) && productExact(fa, fb, p)) return exactly(p);
+    }
     const sign = a.sign ^ b.sign;
     if (a.kind === NAN || b.kind === NAN) return a.kind === NAN ? a : b;
     if ((a.kind === INF && b.kind === ZERO) || (a.kind === ZERO && b.kind === INF)) return indefinite();
@@ -239,6 +338,12 @@ export class Fpu {
   }
 
   div(a, b) {
+    const fa = a.f, fb = b.f;
+    if (fa !== null && fb !== null && fa !== 0 && fb !== 0 && this.wide && safe(fa) && safe(fb)) {
+      // Exact where the quotient times the divisor is the dividend, exactly.
+      const q = fa / fb;
+      if (safe(q) && q * fb === fa && productExact(q, fb, fa)) return exactly(q);
+    }
     const sign = a.sign ^ b.sign;
     if (a.kind === NAN || b.kind === NAN) return a.kind === NAN ? a : b;
     if ((a.kind === INF && b.kind === INF) || (a.kind === ZERO && b.kind === ZERO)) return indefinite();
@@ -267,6 +372,8 @@ export class Fpu {
 
   /** -1, 0, 1, or NaN for unordered. */
   compare(a, b) {
+    const fa = a.f, fb = b.f;
+    if (fa !== null && fb !== null) return fa < fb ? -1 : fa > fb ? 1 : 0;
     if (a.kind === NAN || b.kind === NAN) return NaN;
     const value = (x) => x.kind === ZERO ? 0 : x.sign ? -1 : 1;
     if (a.kind === ZERO && b.kind === ZERO) return 0;
@@ -358,8 +465,8 @@ const OPS = {
   fisub: arith(sub, false, false), fisubr: arith(sub, true, false),
   fidiv: arith(function (x, y) { return this.div(x, y); }, false, false),
   fidivr: arith(function (x, y) { return this.div(x, y); }, true, false),
-  fchs() { const x = this.get(0); this.set(0, new X(x.kind, x.sign ^ 1, x.e, x.m)); },
-  fabs() { const x = this.get(0); this.set(0, new X(x.kind, 0, x.e, x.m)); },
+  fchs() { const x = this.get(0), f = x.f; this.set(0, f !== null ? exactly(-f) : new X(x.kind, x.sign ^ 1, x.e, x.m)); },
+  fabs() { const x = this.get(0), f = x.f; this.set(0, f !== null ? exactly(Math.abs(f)) : new X(x.kind, 0, x.e, x.m)); },
   fsqrt() { this.set(0, this.sqrt(this.get(0))); },
   frndint() { this.set(0, this.roundInteger(this.get(0))); },
   fxch(size, address, a, b) {
@@ -385,11 +492,11 @@ const OPS = {
   },
   fnstsw(size, address) {
     const value = (this.sw & ~0x3800) | (this.top << 11);
-    if (size) new DataView(this.bytes().buffer).setUint16(address, value, true);
+    if (size) view(this.bytes()).setUint16(address, value, true);
     return value;
   },
-  fnstcw(size, address) { new DataView(this.bytes().buffer).setUint16(address, this.cw, true); },
-  fldcw(size, address) { this.cw = new DataView(this.bytes().buffer).getUint16(address, true); },
+  fnstcw(size, address) { view(this.bytes()).setUint16(address, this.cw, true); },
+  fldcw(size, address) { this.cw = view(this.bytes()).getUint16(address, true); },
   fninit() { this.top = 0; this.cw = 0x37f; this.sw = 0; this.st = Array.from({length: 8}, () => zero()); },
   fnclex() { this.sw &= 0x7f00; },
   fwait() {}, fnop() {}, ffree() {},

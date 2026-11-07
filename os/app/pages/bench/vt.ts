@@ -90,7 +90,13 @@ const DRAWING: Record<string, string> = {j: '┘', k: '┐', l: '┌', m: '└',
 export interface Reader {
   print(text: string): void; control(c: string): void; esc(c: string, inter: string): void;
   csi(ps: number[][], mark: string, final: string, inter: string): void; osc(text: string): void; charset(slot: string, set: string): void;
+  /** Whole lines of letters, each ended by a line feed and nothing else in them, told at once in place of a print and
+   * a line feed for each (a reader that takes them so: LineState), right after a line feed. */
+  lines?(text: string): void;
 }
+
+/** Whether the letter (UTF-16 unit) `c` is read otherwise than as a letter: C0, DEL, C1. */
+const special = (c: number) => c < 0x20 || (c >= 0x7f && c < 0xa0);
 
 /**
  * Escape sequences read a letter at a time, as a terminal reads them: what is printed goes to `print`, a control letter
@@ -107,17 +113,32 @@ export class Parser {
   constructor(to: Reader) { this.to = to; }
 
   write(text: string) {
-    let run = '';
-    const flush = () => { if (run) { this.to.print(run); run = ''; } };
-    for (const ch of text) {
-      const c = ch.codePointAt(0)!;
+    const n = text.length;
+    for (let i = 0; i < n;) {
+      if (this.#state === 'ground') {
+        // Letters up to the next control or escape, as one run (a letter at a time, a flood spent most of its time here).
+        let j = i;
+        while (j < n && !special(text.charCodeAt(j))) j++;
+        if (j > i) this.to.print(text.slice(i, j));
+        if (j >= n) return;
+        const c = text.charCodeAt(j);
+        i = j + 1;
+        if (c === 0x1b) { this.#state = 'esc'; this.#inter = ''; }
+        else if (c === 0x0a) {
+          this.to.control('\n');
+          if (!this.to.lines) continue;
+          // The whole lines of letters after it, at once.
+          let k = i, last = -1;
+          for (; k < n; k++) { const d = text.charCodeAt(k); if (d === 0x0a) last = k; else if (special(d)) break; }
+          if (last >= i) { this.to.lines(text.slice(i, last + 1)); i = last + 1; }
+        } else if (c < 0x20) this.to.control(text[j]);
+        else if (c === 0x9b) { this.#state = 'csi'; this.#params = ''; this.#inter = ''; }
+        else if (c === 0x9d) { this.#state = 'osc'; this.#osc = ''; }
+        continue;
+      }
+      const c = text.codePointAt(i)!, ch = String.fromCodePoint(c);
+      i += ch.length;
       switch (this.#state) {
-        case 'ground':
-          if (c === 0x1b) { flush(); this.#state = 'esc'; this.#inter = ''; }
-          else if (c < 0x20 || c === 0x7f) { flush(); if (c !== 0x7f) this.to.control(ch); }
-          else if (c >= 0x80 && c < 0xa0) { flush(); if (c === 0x9b) { this.#state = 'csi'; this.#params = ''; this.#inter = ''; } else if (c === 0x9d) { this.#state = 'osc'; this.#osc = ''; } }
-          else run += ch;
-          break;
         case 'esc':
           if (c === 0x5b) { this.#state = 'csi'; this.#params = ''; this.#inter = ''; }
           else if (c === 0x5d) { this.#state = 'osc'; this.#osc = ''; }
@@ -154,7 +175,6 @@ export class Parser {
           break;
       }
     }
-    flush();
   }
 }
 
@@ -521,6 +541,10 @@ export class LineState {
   readonly styles = new Styles();
   #chars: string[] = [];
   #st: number[] = [];
+  /** Letters added at the line's end in one style (`#tailSt`), not yet read into #chars: most lines are only that, and
+   * are handed on as they came, never a letter at a time. */
+  #tail = '';
+  #tailSt = 0;
   #x = 0;
   #style: Style = PLAIN;
   #id = 0;
@@ -528,9 +552,12 @@ export class LineState {
   #rewrote = false;
   readonly #parser: Parser;
   readonly ended: (runs: Run[]) => void;
+  /** Whole lines in one style, each with its line feed (`text`), handed on at once where they come so (a flood). */
+  readonly endedLines: (text: string, st: number) => void;
 
-  constructor(ended: (runs: Run[]) => void) {
+  constructor(ended: (runs: Run[]) => void, endedLines?: (text: string, st: number) => void) {
     this.ended = ended;
+    this.endedLines = endedLines ?? ((text, st) => { for (const line of text.slice(0, -1).split('\n')) ended(line ? [{text: line, st}] : []); });
     this.#parser = new Parser({
       print: (t) => this.#print(t),
       control: (c) => this.#control(c),
@@ -538,21 +565,43 @@ export class LineState {
       csi: (ps, mark, final) => this.#csi(ps, mark, final),
       osc: () => {},
       charset: () => {},
+      lines: (t) => this.endedLines(t, this.#id),
     });
   }
 
   write(text: string) { this.#parser.write(text); }
 
   /** The line under way, as runs. */
-  get runs(): Run[] { return runs(this.#chars, this.#st); }
+  get runs(): Run[] {
+    const rs = runs(this.#chars, this.#st);
+    if (!this.#tail) return rs;
+    const last = rs.at(-1);
+    if (last && last.st === this.#tailSt) last.text += this.#tail; else rs.push({text: this.#tail, st: this.#tailSt});
+    return rs;
+  }
   /** The line under way, as plain text. */
-  get text(): string { return this.#chars.join(''); }
+  get text(): string { return this.#chars.join('') + this.#tail; }
   /** Whether the line under way was rewritten (not only added to) since last asked. */
   rewritten(): boolean { const r = this.#rewrote; this.#rewrote = false; return r; }
   /** The line under way let go of (taken back, cleared). */
-  clear() { this.#chars = []; this.#st = []; this.#x = 0; this.#rewrote = true; }
+  clear() { this.#chars = []; this.#st = []; this.#tail = ''; this.#x = 0; this.#rewrote = true; }
+
+  /** The letters added at the end read into the line's, before anything else is done to it. */
+  #settle() {
+    for (const ch of this.#tail) { this.#chars.push(ch); this.#st.push(this.#tailSt); }
+    this.#tail = '';
+  }
 
   #print(text: string) {
+    // At the line's end (where nearly every letter is written): added as it came.
+    if (this.#x === this.#chars.length + this.#tail.length && !/[\ud800-\udfff]/.test(text)) {
+      if (this.#tail && this.#tailSt !== this.#id) this.#settle();
+      this.#tail += text;
+      this.#tailSt = this.#id;
+      this.#x += text.length;
+      return;
+    }
+    this.#settle();
     for (const ch of text) {
       if (this.#x < this.#chars.length) this.#rewrote = true;
       while (this.#chars.length < this.#x) { this.#chars.push(' '); this.#st.push(0); }
@@ -565,8 +614,11 @@ export class LineState {
   #control(c: string) {
     if (c === '\n') {
       this.ended(this.runs);
-      this.#chars = []; this.#st = []; this.#x = 0;
-    } else if (c === '\r') this.#x = 0;
+      this.#chars = []; this.#st = []; this.#tail = ''; this.#x = 0;
+      return;
+    }
+    this.#settle();
+    if (c === '\r') this.#x = 0;
     else if (c === '\b') this.#x = Math.max(0, this.#x - 1);
     else if (c === '\t') this.#print(' '.repeat(8 - (this.#x % 8)));
   }
@@ -574,6 +626,7 @@ export class LineState {
   #csi(ps: number[][], mark: string, final: string) {
     if (mark) return;
     const n = (ps[0]?.[0] ?? 0) || 1;
+    if (final !== 'm') this.#settle();
     if (final === 'm') { this.#style = sgr(this.#style, ps.length ? ps : [[0]]); this.#id = this.styles.id(this.#style); }
     else if (final === 'K') {
       const how = ps[0]?.[0] ?? 0;
