@@ -53,6 +53,9 @@ export function revealNext(path: string, write: Writing = false, line = 0, from:
 /** The terminal asked for with the repo (Home's band's >_): once Forge is drawn for it, the keyboard is in its Prompt. */
 let termAsked = false;
 export function termNext() { termAsked = true; }
+/** The file deeds asked for with the repo (Home's band's files button): once Forge is drawn for it, out under its own. */
+let deedsAsked = false;
+export function deedsNext() { deedsAsked = true; }
 
 /** The Forge made, which File can move in place while it is on screen. */
 let made: Forge | null = null;
@@ -521,7 +524,13 @@ class Forge {
       const elsewhere = !!asked && !!now && now !== asked.from && now !== document.body && !this.element.contains(now) && !now.contains(this.element);
       this.show(ctx.repo, at.path, at.write, at.line, !elsewhere && !termAsked);
       if (termAsked && !elsewhere) this.termTo(ctx.repo);
-      termAsked = false;
+      // Out under Forge's own files button once the page has come to rest (measured where it stands, not on the way).
+      if (deedsAsked && !elsewhere) {
+        const acts = this.work.tools?.querySelector<HTMLElement>('.band-acts'), root = document.documentElement;
+        const out = () => { if (root.classList.contains('panning')) requestAnimationFrame(out); else if (acts) this.deeds(acts); };
+        requestAnimationFrame(out);
+      }
+      termAsked = deedsAsked = false;
       return;
     }
     const open = this.now.repo && all.includes(this.now.repo) ? this.now.repo

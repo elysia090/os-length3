@@ -248,6 +248,39 @@ test.describe("on 'hello', made from C's files and worked in last", () => {
   });
 });
 
+test("Home's band has Forge's tools where Forge has them, and the pane's first row is level with the rail's first icon", async ({app}) => {
+  await app.newRepo.make('notes');
+  const tools = () => app.page.evaluate(() => [...document.querySelectorAll<HTMLElement>('.band-tools > *')].filter((e) => e.getClientRects().length)
+    .slice(0, 3).map((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.y), Math.round(r.width)]; }));
+  // The pane's first line and the rail's first icon start on one line (the bar beside the line starts with it).
+  const level = () => app.page.evaluate(() => {
+    const row = [...document.querySelectorAll<HTMLElement>('.pane-row')].find((e) => e.getClientRects().length)!;
+    const icon = document.querySelector('.rail svg')!.getBoundingClientRect().top;
+    return [row.querySelector('.pane-line')!.getBoundingClientRect().top - icon, row.querySelector('.pane-bar')!.getBoundingClientRect().top - icon];
+  });
+  await app.rail.go('forge');
+  await app.forge.startPrompt('notes');
+  await app.forge.run('true');
+  await expect(app.forge.pane.locator('.pane-row.run')).toHaveCount(1);
+  const forge = await tools(), forgeLevel = await level();
+  await app.rail.go('home');
+  await expect(async () => expect(await tools()).toEqual(forge)).toPass();
+  await expect(app.main.getByRole('button', {name: 'Files: New, Rename, Delete'})).toBeVisible();
+  for (const [line, bar] of [forgeLevel, await level()]) {
+    expect(Math.abs(line)).toBeLessThan(1);
+    expect(bar).toBeGreaterThan(2);
+    expect(bar).toBeLessThan(7);
+  }
+  // Its files button is Forge's, for the repo last worked in: there, its menu out under Forge's own (the terminal in
+  // hand there, the repo's deeds).
+  await app.main.getByRole('button', {name: 'Files: New, Rename, Delete'}).click();
+  const menu = app.page.getByRole('menu', {name: 'notes', exact: true});
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole('menuitem', {name: 'New file'})).toBeFocused();
+  const under = (await app.forge.tools.getByRole('button', {name: 'Files: New, Rename, Delete'}).boundingBox())!;
+  expect((await menu.boundingBox())!.y).toBeGreaterThan(under.y + under.height - 1);
+});
+
 test('Home come back to is where it was read to, and the page between starts at its top', async ({app}) => {
   await app.page.setViewportSize({width: 1280, height: 300});
   await app.rail.go('home');

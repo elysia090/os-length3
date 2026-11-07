@@ -130,14 +130,10 @@ function screenOf(work: HTMLElement, box: Box, term: HTMLElement, home: HTMLElem
 
 /**
  * On a desk, what the band's search finds is a sheet dropped under the band across the center (styles: forge-band.css):
- * measured, it knows the center's width and where the search box stands in it; it says the words searched for, large,
- * at its head.
+ * measured, it knows the center's width and where the search box stands in it (the words searched for at its head are
+ * the search's own: reference.ts).
  */
 function dropSheet(work: HTMLElement, center: HTMLElement, search: HTMLElement) {
-  const query = search.querySelector('input')!, under = search.querySelector<HTMLElement>('.search-results')!;
-  const said = () => { under.dataset.q = query.value.trim(); };
-  query.addEventListener('input', said);
-  said();
   new ResizeObserver(() => {
     work.style.setProperty('--center-w', `${center.clientWidth}px`);
     work.style.setProperty('--center-h', `${center.clientHeight}px`);

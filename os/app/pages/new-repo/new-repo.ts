@@ -11,6 +11,7 @@ import {triangle} from '../file/tree.ts';
 import {errorText} from '../../host/errors.ts';
 import {mark} from '../../ui/icons.ts';
 import {liftLine, nudge, putAway, textAt, unfold} from '../../ui/glide.ts';
+import {fitSize} from '../../ui/optical.ts';
 
 /**
  * +: the repo's name on the first line; under it, in a large box, what it
@@ -266,23 +267,36 @@ export function newRepo(ctx: Context): Node[] {
     open.focus({preventScroll: true});
   };
   // One box being born where Forge will lay the repo's README: the name its first line, as large as Home's name; under
-  // it what it is for (its README's words); under that what will be made with it, as File will show it; Create at its
-  // foot. Why a name cannot be is said over the box, after where it will stand, as a desk box says its place.
+  // it what it is for (its README's words); Create at its foot. Why a name cannot be is said over the box, after where
+  // it will stand, as a desk box says its place. Beside it, a box narrower than it, what will be made with it, as File
+  // will show it (as Home's repos stand beside its TODO).
   const box = h('div', {class: 'nr-box', 'data-empty': t('name')},
     h('label', {class: 'sr-only', for: 'repo-name'}, t('Name')), name,
     // The rule for a name is heard with the field and seen only when it is broken (said over the box).
     h('span', {id: 'repo-name-rule', class: 'sr-only'}, t('Letters, digits, and . _ - (up to 64 chars)')),
-    h('span', {class: 'sr-only', id: 'repo-summary-label'}, t('Summary')), summaryBox, card, actions);
+    h('span', {class: 'sr-only', id: 'repo-summary-label'}, t('Summary')), summaryBox, actions);
   // The page says why a name cannot be, in its own words, never the browser's bubble for a field left empty.
   const label = h('div', {class: 'nr-label'}, h('span', {class: 'nr-path'}, '~/', place), h('span', {class: 'nr-kind'}, t('New repo')), error);
-  const form = h('form', {class: 'new-repo', novalidate: ''}, label, box);
+  // The files' box says over it, as the name's does, where it shows them: File's tree (heard with the tree, as its caption).
+  const filesLabel = h('div', {class: 'nr-label nr-files-label', 'aria-hidden': 'true'}, h('span', {class: 'nr-path'}, t('File')));
+  const form = h('form', {class: 'new-repo', novalidate: ''}, label, box, filesLabel, card);
+  // The name on its one line as large as the box lets it be: 104 px while it is short, smaller as it grows longer (never
+  // under 28, where it goes on past the box's edge as a field's words do), never cut at the edge before that; nothing
+  // written, the word for it the same way.
+  const fitted = () => {
+    const cs = getComputedStyle(name), room = name.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 4;
+    const fits = fitSize(name, name.value || t('name'), room, -.04, fitted);
+    if (fits) box.style.setProperty('--nr-name', `${Math.floor(Math.max(28, Math.min(104, fits)))}px`);
+  };
+  let across = 0;
+  new ResizeObserver(() => { if (box.clientWidth !== across) { across = box.clientWidth; fitted(); } }).observe(box);
   // Said as it is written, not only once Create is pressed: why it cannot be, under the name, and where in it.
   const judge = () => {
     const said = why(name.value.trim());
     if (error.textContent !== said) error.textContent = said;
     if (said) name.setAttribute('aria-invalid', 'true'); else name.removeAttribute('aria-invalid');
   };
-  name.addEventListener('input', () => { keep(); showFiles(); sized(); judge(); placed(); });
+  name.addEventListener('input', () => { keep(); showFiles(); sized(); judge(); placed(); fitted(); });
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const n = name.value.trim();

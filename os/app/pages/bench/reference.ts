@@ -181,6 +181,10 @@ export class Reference {
     this.goesUp();
     this.follow();
     if (this.band) {
+      // The sheet says the words searched for at its head, large (forge-band.css), wherever the band is (Forge's, Home's).
+      const said = () => { this.under.dataset.q = this.query.value.trim(); };
+      this.query.addEventListener('input', said);
+      said();
       new ResizeObserver(() => this.fit()).observe(this.under);
       // What it holds changing is what it is fitted to again (not its own going up, which moves it each frame).
       new MutationObserver(() => { this.changed = true; }).observe(this.under, {childList: true, subtree: true, characterData: true});

@@ -1913,13 +1913,19 @@ hour) is said at the handle, nothing saved; left empty, it stays as it was.
 Home has Forge's band along its top, held there while Home scrolls under it,
 plain ground from the rail's line to the pane's, tool for tool where Forge's
 are: >_ (the terminal of the repo last worked in, in Forge, the keyboard in
-it), + (New repo), and the search box, in the
+it), the files button (that repo in Forge, its file deeds out under Forge's
+own files button: New file, New folder, Rename, Delete), and the search box,
+in the
 repo last worked in (or, none yet, the one changed last), named in it since
 no repos on the band say which ("Search garden"); Ctrl+K, Ctrl+P and Ctrl+B
 as in Forge; what it finds drops as Forge's sheet does, over Home, which
 steps back out of sight under it; a line found opens in Forge at that line,
 selected. Its right pane is the same pane as Forge's and Git's, its switch at
-its foot where Forge's is, level with the person at the rail's. Between Home
+its foot where Forge's is, level with the person at the rail's; its first row
+where Forge's first run is, level with the rail: the row's first line starts
+where the rail's first icon does, so the line's capitals, the bar beside them
+and the icon's ink start on one line (the bar as tall as its words, capitals
+to baseline, never standing proud of them). Between Home
 and Forge the rail does not change floors: it moves a camera over the one
 dotted ground. The band, the pane and its switch are the frame and stay where
 they are (what differs on them, Forge's pills, the pane's rows, gives way in
@@ -3706,13 +3712,19 @@ One box being born on the desk's ground, with Home's and Forge's band and
 pane round it (the rail goes between the three as a camera over one desk):
 paper, an ink edge, its shadow, as a box on the desk is, and over it, as a
 desk box's label says its place, ~/ and the name as written, then New repo.
+Beside it, as Home's repos stand beside its TODO, a narrower box of what will
+be made with it, File said over it: the weight at the left (the name's box up
+to 640 px, the files' 280), the two held to the column's left edge; on a
+narrow column the files' box goes under the name's.
 In the box, its first line, the name, in the display face as large as the
-box lets a name of a dozen letters be; nothing written yet, the word name
+box lets the name written be: 104 px while it is short, smaller as it grows
+longer so it is never cut at the box's edge (never under 28 px, past which it
+runs on as a field's words do); nothing written yet, the word name
 stands there in the ground's rule colour (the field itself holds no
 example: one there reads as a name given, and its row as the repo to be
 made). Under it, a sentence's size, what the repo is for (概要): the words go
 into its README.md under its title, and the box grows with them, a line to
-begin with. Under that, a rule over it, what will be made with it (作成され
+begin with. In the box beside it, what will be made with it (作成され
 るもの), as File will show it: the repo's own row, its name again in ink
 (dashed where nothing is named), and the one scaffold every repo starts from
 (nothing to choose: shared/templates.json's `standard`, as `l3 repo new`

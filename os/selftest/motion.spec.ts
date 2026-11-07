@@ -293,16 +293,20 @@ test('a menu put away and opened again on its way out comes back from where it h
   await gear.click();
   await expect(menu).toBeVisible();
   await still(app);
-  // Put away, and pressed again a moment later, as it fades.
+  // Put away, and pressed again while it fades: once it is partway out (looked at each frame, not after a set time, which
+  // a busy machine can overshoot to where it is gone).
   const back = await gear.evaluate((g) => new Promise<number[]>((done) => {
     const list = document.getElementById(g.getAttribute('aria-controls') ?? '') ?? g.closest('.card')!.querySelector<HTMLElement>('.repo-gear-pop')!;
     (g as HTMLElement).click();
-    setTimeout(() => {
+    const again = () => {
+      const o = +getComputedStyle(list).opacity;
+      if (o > .85) { requestAnimationFrame(again); return; }
       (g as HTMLElement).click();
       const seen: number[] = [];
       const tick = () => { seen.push(+getComputedStyle(list).opacity); if (seen.length < 40 && seen.at(-1)! < 1) requestAnimationFrame(tick); else done(seen); };
       requestAnimationFrame(tick);
-    }, 60);
+    };
+    requestAnimationFrame(again);
   }));
   // Neither gone nor whole at once: it fades back from where it was.
   expect(back[0]).toBeGreaterThan(.1);

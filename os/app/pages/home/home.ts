@@ -18,6 +18,7 @@ import {Reference} from '../bench/reference.ts';
 import type {Context} from '../kit/context.ts';
 import {latelyRow, onRightPane, pluginArea, rightPaneOpen, setRightPane, waiting, wordLine} from '../kit/pane.ts';
 import {mark, paneMark, type MarkName} from '../../ui/icons.ts';
+import {fitSize} from '../../ui/optical.ts';
 import {onPlugins, pluginsOpen} from '../../host/plugins.ts';
 import {errorText} from '../../host/errors.ts';
 import {LAND, after, nudge, paced, paneIn, paneOut, still} from '../../ui/glide.ts';
@@ -72,15 +73,18 @@ export function onTheGround(main: HTMLElement, ctx: Context, listed: Promise<Rep
   const aim = (name: string | null) => { repo = name; reference.setRepo(name); reference.named(name); };
   aim(repo);
   // Forge's band, tool for tool, so the frame is one frame between the two: >_ to the terminal of the repo last worked
-  // in, + to New repo, then the search.
+  // in, the files button to its file deeds there (New, Rename, Delete), then the search.
   const tool = (name: MarkName, label: string, press: () => void) => {
     const b = h('button', {type: 'button', class: 'band-tool', 'aria-label': label, title: label}, mark(name));
     b.addEventListener('click', press);
     return b;
   };
-  const toTerm = () => { const at = repo; if (at) void import('../forge/forge.ts').then((f) => { f.termNext(); ctx.openRepo(at); }); };
+  const inForge = (ask: 'termNext' | 'deedsNext') => () => {
+    const at = repo;
+    if (at) void import('../forge/forge.ts').then((f) => { f[ask](); ctx.openRepo(at); });
+  };
   const band = h('div', {class: 'home-band'}, h('div', {class: 'band-tools', role: 'group', 'aria-label': t('Tools')},
-    tool('term', t('Terminal'), toTerm), tool('plus', t('New repo'), () => void ctx.go('new-repo')), reference.search));
+    tool('term', t('Terminal'), inForge('termNext')), tool('new-file', t('Files: New, Rename, Delete'), inForge('deedsNext')), reference.search));
   const pane = h('div', {class: 'home-pane'}, side, toggle);
   // None worked in yet (or it is gone): the one changed last (the first of the cards' list, read once for both), so the
   // box is never there to be pressed for nothing.
@@ -262,9 +266,6 @@ function counting(el: HTMLElement, n: number, one: string, many: string) {
   el.replaceChildren(h('b', {}, String(n)), ' ', tn(one, many, n));
 }
 
-/** What measures the name's words in its face without laying the page out (fitName). */
-const pen = document.createElement('canvas').getContext('2d');
-
 /**
  * The name on its one line, as large as the line is long: up to 168 px, and never under 40, where a name longer than
  * its line breaks instead. Its size is the profile's --home-name, so the line it is written on is as large.
@@ -273,13 +274,9 @@ function fitName(header: HTMLElement) {
   // Home's column, not the profile's own box: written in, the profile is a sheet a little wider, and the name read
   // again after it is the size it was.
   const name = header.querySelector<HTMLElement>('.identity > h1'), room = header.parentElement?.clientWidth ?? 0;
-  if (!name || !room || !pen) return;
-  const cs = getComputedStyle(name);
-  pen.font = `${cs.fontWeight} 100px ${cs.fontFamily}`;
-  pen.letterSpacing = '-4px';
-  // Not loaded yet, the words are measured in another face: measured again once it is.
-  if (!document.fonts.check(pen.font)) void document.fonts.load(pen.font).then(() => fitName(header), () => {});
-  const fits = (100 * room) / Math.max(1, pen.measureText(name.textContent ?? '').width);
+  if (!name) return;
+  const fits = fitSize(name, name.textContent ?? '', room, -.04, () => fitName(header));
+  if (!fits) return;
   header.style.setProperty('--home-name', `${Math.floor(Math.max(40, Math.min(168, fits)))}px`);
   name.classList.toggle('long', fits < 40);
 }

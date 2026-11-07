@@ -23,3 +23,21 @@ export function optical() {
   keep();
   void document.fonts?.ready.then(keep);
 }
+
+/** What measures words in a face without laying the page out (fitSize), made when first asked for. */
+let pen: CanvasRenderingContext2D | null | undefined;
+
+/**
+ * The size (px) at which `words`, set in `el`'s face (its weight and family, `tracking` em between letters), are as
+ * long as `room` px; 0 where they cannot be measured. Measured before the face has come, they are measured in another:
+ * `again` is called once it is there, to be measured again.
+ */
+export function fitSize(el: HTMLElement, words: string, room: number, tracking: number, again: () => void): number {
+  pen ??= document.createElement('canvas').getContext('2d');
+  if (!pen || room <= 0) return 0;
+  const cs = getComputedStyle(el);
+  pen.font = `${cs.fontWeight} 100px ${cs.fontFamily}`;
+  pen.letterSpacing = `${tracking * 100}px`;
+  if (!document.fonts.check(pen.font)) void document.fonts.load(pen.font).then(again, () => {});
+  return (100 * room) / Math.max(1, pen.measureText(words).width);
+}

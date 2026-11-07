@@ -65,6 +65,31 @@ test('what will be made is the new repo alone, as File will show it, its files m
   await expect((await app.file.item('harbour', '', {open: true})).getByRole('treeitem', {name: 'docs', exact: true})).toHaveCount(0);
 });
 
+test("what will be made stands beside the name's box at a laptop's width, narrower, and under it on a phone; the name fits its line", async ({app}) => {
+  await app.page.setViewportSize({width: 1400, height: 900});
+  await app.rail.go('new-repo');
+  const box = app.main.locator('.nr-box'), files = app.main.locator('.tree-still');
+  await app.newRepo.name.fill('count');
+  const at = async (l: typeof box) => (await l.boundingBox())!;
+  await expect(async () => {
+    const b = await at(box), f = await at(files);
+    expect(f.x).toBeGreaterThan(b.x + b.width);
+    expect(Math.abs(f.y - b.y)).toBeLessThan(1);
+    expect(f.width).toBeLessThan(b.width * .7);
+  }).toPass();
+  // A short name as large as the box gives it; a long one smaller, on its one line, not cut at the box's edge.
+  const size = () => app.newRepo.name.evaluate((e) => parseFloat(getComputedStyle(e).fontSize));
+  expect(await size()).toBe(104);
+  await app.newRepo.name.fill('length3-blobs');
+  await expect.poll(size).toBeLessThan(104);
+  expect(await app.newRepo.name.evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(true);
+  await app.page.setViewportSize({width: 390, height: 844});
+  await expect(async () => {
+    const b = await at(box), f = await at(files);
+    expect(f.y).toBeGreaterThan(b.y + b.height);
+  }).toPass();
+});
+
 test('what is written before Create stays while another page is seen, and goes once made', async ({app}) => {
   await app.rail.go('new-repo');
   await app.newRepo.name.fill('harbour');

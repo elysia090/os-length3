@@ -3,9 +3,20 @@
 /* New repo: one box being born where Forge will lay the repo's README (paper, an ink edge, its shadow, as a box on
    the desk is), its place said over it as a desk box's is (~/ and the name as written, then New repo): in it the name,
    its first line, as large as Home's name, the word for it quiet where nothing is written yet; under it what the repo is
-   for; under that what will be made with it, as File will show it; Create at its foot. All of it the one box. */
+   for; Create at its foot. Beside it, as Home's repos stand beside its TODO, a narrower box of what will be made with
+   it, as File will show it, File said over it: the weight at the left, the two held to the column's left edge (the
+   room past them the ground's), the files' box under the name's on a narrow column. */
 .new-repo-main { padding-top: var(--s6); }
-.new-repo { display: grid; grid-template-columns: minmax(0, 760px); }
+.new-repo { display: grid; grid-template-columns: minmax(0, 640px) 280px; grid-template-areas: "label files-label" "box files";
+  column-gap: clamp(var(--s5), 4cqi, 48px); align-items: start; }
+.new-repo > .nr-label:not(.nr-files-label) { grid-area: label; }
+.new-repo > .nr-box { grid-area: box; }
+.new-repo > .nr-files-label { grid-area: files-label; }
+.new-repo > .tree-still { grid-area: files; }
+@container (width < 640px) {
+  .new-repo { grid-template-columns: minmax(0, 1fr); grid-template-areas: "label" "box" "files-label" "files"; }
+  .new-repo > .nr-files-label { margin-top: var(--s5); }
+}
 .nr-box { position: relative; min-width: 0; background: var(--paper); border: 2px solid var(--ink); border-radius: var(--r-place); box-shadow: 8px 8px 0 0 var(--ink); }
 /* Its place over it, as a desk box's label: the path in ink, what it is quiet after it, why the name cannot be in the
    off colour after that (an off dot before it, as everywhere a written thing is refused). */
@@ -15,29 +26,34 @@
 .nr-kind::before { content: '·'; content: '·' / ''; margin-right: var(--s2); }
 .nr-label > .error { min-width: 0; margin: 0; font: 400 13px/1.3 var(--mono); }
 .nr-label > .error:empty { display: none; }
-/* The name: the box's first line, the display face as large as the box lets a name of a dozen letters be. */
-.new-repo-main { --nr-name: clamp(56px, 12cqi, 104px); }
-.nr-name { display: block; width: 100%; min-width: 0; margin: 0; padding: 30px 36px 2px; border: 0; background: transparent; color: var(--ink);
+/* The name: the box's first line, the display face as large as the box lets the name written be (new-repo.ts fitted
+   sets it on the box: 104 px while the name is short). */
+.new-repo-main { --nr-name: 104px; --nr-in: 36px; }
+/* On a phone's column the box keeps less room inside its edge, for the name and its words. */
+@container (width < 480px) { .new-repo { --nr-in: 20px; } }
+.nr-name { display: block; width: 100%; min-width: 0; margin: 0; padding: 30px var(--nr-in) 2px; border: 0; background: transparent; color: var(--ink);
   font: 900 var(--nr-name)/1.1 var(--display); letter-spacing: -.04em; outline: none; }
 .nr-name[aria-invalid] { color: var(--off); }
 /* Nothing written yet: the word for what goes there, in the ground's rule colour where the name will stand (not an
    example of one, and not the field's own words: the field holds nothing). */
-.nr-box:has(> .nr-name:invalid)::before { content: attr(data-empty); position: absolute; left: 36px; top: 30px; pointer-events: none;
+.nr-box:has(> .nr-name:invalid)::before { content: attr(data-empty); position: absolute; left: var(--nr-in); top: 30px; pointer-events: none;
   font: 900 var(--nr-name)/1.1 var(--display); letter-spacing: -.04em; color: var(--rule); }
 /* What it is for, under the name: the words written straight in it, a sentence's size; the box grows with them. */
-.nr-box > .summary-box { min-height: 0; padding: var(--s2) 40px var(--s4); border: 0; border-radius: 0; background: transparent; }
+.nr-box > .summary-box { min-height: 0; padding: var(--s2) calc(var(--nr-in) + 4px) var(--s4); border: 0; border-radius: 0; background: transparent; }
 .nr-box > .summary-box > .todo-detail { min-height: 1.45em; font: 19px/1.45 var(--sans); overflow: hidden; }
 /* Its foot: the plan's word if any, Create at the right, the key that makes it beside its word. */
-.nr-box > .answers { margin: 0; padding: 0 var(--s4) var(--s4) 36px; }
+.nr-box > .answers { margin: 0; padding: 0 var(--s4) var(--s4) var(--nr-in); }
 .nr-box > .answers > .button.primary { display: inline-flex; align-items: center; gap: var(--s2); }
 .nr-box > .answers > .button.primary > kbd { min-width: 0; height: auto; padding: 0; border: 0; background: none; color: inherit; opacity: .7; font: 600 12px var(--mono); }
-/* What will be made with it, in the box under what it is for, a rule over it: File's rows, as File will show them. */
-.nr-box > .tree.tree-still { margin: 0 var(--s5) var(--s3) 26px; padding: var(--s3) 0 0; border: 0; border-top: 1.5px solid var(--rule); border-radius: 0;
-  background: transparent; box-shadow: none; }
-/* The repo's own row there is its name again, as File will show it: quiet beside the name written large above it, in
-   ink, not filled as the one in hand is in File (dashed still where nothing is named, or where the name cannot be). */
-.nr-box .tree-still .tree-new:not(.tree-bad, .tree-unnamed) > .tree-row { background: none; }
-.nr-box .tree-still .tree-new:not(.tree-bad, .tree-unnamed) > .tree-row :is(.tree-name.plain, .tree-toggle) { color: var(--ink); }
+/* What will be made with it, a box on the desk as the TODO is (an ink edge, a smaller shadow than the name's): File's
+   rows, as File will show them, New file and New folder at its foot. */
+.new-repo > .tree.tree-still { min-width: 0; margin: 0; padding: var(--s3) var(--s3) var(--s2); border: 2px solid var(--ink); border-radius: var(--r-place);
+  background: var(--paper); box-shadow: 6px 6px 0 0 var(--ink); }
+/* The repo's own row there is its name again, as File will show it: quiet beside the name written large in the box
+   beside it, in ink, not filled as the one in hand is in File (dashed still where nothing is named, or where the name
+   cannot be). */
+.new-repo .tree-still .tree-new:not(.tree-bad, .tree-unnamed) > .tree-row { background: none; }
+.new-repo .tree-still .tree-new:not(.tree-bad, .tree-unnamed) > .tree-row :is(.tree-name.plain, .tree-toggle) { color: var(--ink); }
 .field { display: grid; gap: var(--s2); }
 .field-label { font-size: var(--t-meta); color: var(--sub); }
 .tree.tree-still { position: static; z-index: auto; visibility: visible; opacity: 1; clip-path: none; width: auto; max-height: none; transition: none; }
@@ -66,6 +82,8 @@
    two deeds at its right end (rename, leave out), which keep their room so nothing moves when they come. */
 .tree-still .tree-ours > .tree-row:hover, .tree-still .tree-ours > .tree-row:focus-within { background: var(--raised); }
 .tree-still .tree-ours .tree-name { color: var(--ink); font: inherit; }
+/* No more-button at a row's end here (its two deeds are), so no room is kept for one after the size (file-tree.css). */
+.tree-still .tree-row:not(:has(> .tree-more)) > .tree-meta { margin-right: 0; }
 .tree-deeds { flex: none; display: flex; gap: 2px; margin-right: var(--s1); opacity: 0; transition: opacity calc(120ms * var(--pace)) ease-out; }
 .tree-row:hover > .tree-deeds, .tree-row:focus-within > .tree-deeds { opacity: 1; }
 .tree-deed { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: var(--r-field); background: transparent; color: var(--sub); cursor: var(--cursor-hand); }

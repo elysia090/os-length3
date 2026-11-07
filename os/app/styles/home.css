@@ -58,8 +58,9 @@
    sight (and of the keyboard) once the pane is; brought out, it comes in with the edge the same way (as Forge's). */
 .home-layout:is(.pane-moving, .pane-closed) .home-side { width: var(--side-held, auto); }
 .home-layout.pane-closed .home-side { visibility: hidden; transition: visibility 0s var(--leave); }
-/* Its first row where Forge's first run is, under the band's line (the band is the column's, the pane its own). */
-.home-side { min-height: 0; overflow: auto; padding-top: calc(var(--band) + var(--h-row) + var(--s3) + var(--s2) + 6px - var(--top-line)); }
+/* Its first row where Forge's first run is: 2 px under the band's foot (the band is the column's, the pane its own), its
+   first line's capitals level with the rail's first icon (forge-band.css). */
+.home-side { min-height: 0; overflow: auto; padding-top: calc(var(--band) + var(--h-row) + var(--s3) + 2px); }
 /* Rows only, as Forge's pane: its heading is heard, not shown. */
 .home-side .lately > h2 { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* Lately's rows reach a step past its words on each side (their fill under the pointer, their edge opened): the pane
