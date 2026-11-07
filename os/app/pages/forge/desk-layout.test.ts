@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {carried, GAP, next, overAll, PAD, PULLED, pulledOn, slots, standardOn, tabbed, TOP, VGAP, WHOLE_MOST, WIDTH, wholeOf} from './desk-layout.ts';
+import {carried, EYE, GAP, next, overAll, PAD, PULLED, pulledOn, slots, standardOn, tabbed, TOP, VGAP, WHOLE_MOST, WIDTH, wholeOf} from './desk-layout.ts';
 
 // The desk's places and its camera (desk-layout.ts), as numbers.
 
@@ -20,8 +20,9 @@ test('at the standard, the box in hand is in the middle across, at its own size,
   const v = standardOn(slot, 200, 1000, 800);
   assert.equal(v.s, 1);
   assert.equal(v.x + (slot.x + WIDTH / 2) * v.s, 500);
-  // Short in a tall face: a third of the way down at most, not in the middle.
-  assert.ok(Math.abs(v.y + slot.y - 800 * .3) < 1e-9);
+  // Short in a tall face: a quarter of the way down at most, not in the middle.
+  assert.equal(EYE, .25);
+  assert.ok(Math.abs(v.y + slot.y - 800 * EYE) < 1e-9);
   // Taller than the face: from its top.
   const tall = standardOn(slot, 3000, 1000, 800);
   assert.equal(tall.y + slot.y, TOP + 16);

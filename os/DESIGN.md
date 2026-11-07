@@ -1954,23 +1954,25 @@ is no Edit to choose: the file is typed into). One box is in hand.
 The keys are a game's, the hands finding them without looking. Tab, wherever
 the keyboard is on the desk (in a file, at the Prompt's line), puts the finger
 on the next box (down a column, then the next column's top, round again;
-Shift+Tab back): the keyboard comes out onto the desk, a hand rests on the
-box's top edge near its right corner, and the camera goes to the box as near
-as it stands. With the finger on, an arrow puts it on the box that way (a
+Shift+Tab back): the keyboard comes out onto the desk, the finger (the
+pointer's own pointing hand, larger) touches the box's top edge a little in
+from its right corner, and the camera goes to the box as near as it stands. With the finger on, an arrow puts it on the box that way (a
 nudge where there is none), and Enter, or a letter typed, goes into the box
 under it at the standard, the hand gone. Ctrl and an arrow carry the box in
-hand a slot, wherever the keyboard is (writing in it, it stays there): lifted
-while Ctrl is held, its shadow long and the hand shut on it, the others stepping
+hand a slot, wherever the keyboard is (writing in it, it stays there; with the
+finger on a box, Ctrl alone takes it up): lifted while Ctrl is held, its shadow
+long and the hand closed on it (its fingers over the edge), the others stepping
 over, the camera following a little behind; Ctrl let go, it is put down with a
 small give. Ctrl+N makes a new file beside the one in hand, opened to write in,
 its name written over in its head (a browser's own tab keeps Ctrl+N for a new
-window: there it is the files tool's New file). The hand is the cursor's open
-and shut hand; it goes once one writes or the pointer moves, and while it is
-on, the pointer is gone from the desk.
+window: there it is the files tool's New file). The finger comes out of the
+pointer where that was over the desk and glides from box to box, and while it is
+out the pointer is hidden; the pointer moved, the finger is gone and the pointer
+back. Writing in a box puts both out of the way until the pointer moves.
 
 The camera has three places, as a game's cameras do, and Escape goes round
 them: its standard, every box at its own size, the box in hand in the middle
-across (a short one no lower than a third of the way down), the balance the
+across (a short one no lower than a quarter of the way down), the balance the
 work is done at, never nearer than that; a step back (seven tenths), the box in
 hand still read in the middle and the boxes beside it in sight; and the whole
 desk, at most half its size. Stepping back it zooms first and then goes; coming

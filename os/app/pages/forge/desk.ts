@@ -73,11 +73,18 @@ export class Desk {
   /** The camera on its way (its scroll is its own then, not someone's going somewhere). */
   #gliding = false;
   /**
-   * The finger, a hand: resting on the top edge of the box in hand, near its right corner, while the keyboard moves
-   * between boxes (Tab, an arrow, Escape, carrying), shut while one is lifted; gone once one writes or the pointer
-   * moves, the pointer then hidden. It goes from box to box in a straight glide.
+   * The finger, the pointer's own pointing hand: its fingertip on the top edge of the box in hand, a little in from its
+   * right corner, while the keyboard moves between boxes (Tab, an arrow, Escape, Ctrl), closed on the box while it is
+   * held up; the pointer hidden all the while. It glides from box to box, and comes out of the pointer where that was;
+   * the pointer moved, it is gone and the pointer back. Written in, both are gone until the pointer moves.
    */
   readonly #hand = h('div', {class: 'desk-hand', 'aria-hidden': 'true'});
+  /** Where the fingertip is on the desk; its glide under way (from where, since when, how long); its frame. */
+  #handAt: {x: number; y: number} | null = null;
+  #handGlide: {from: {x: number; y: number}; t0: number; ms: number} | null = null;
+  #handFrame = 0;
+  /** Where the pointer last was on the face, and whether it is the one in use (moved since the keyboard last was). */
+  #pointerAt: {x: number; y: number} | null = null;
   /** A key pressed while boxes slid: what it scrolled into view is not where the camera is to stay. */
   #strayed = false;
   /** The boxes the camera stands over at once (the Agent's at work), or none. */
@@ -146,23 +153,28 @@ export class Desk {
       const key = (e.target as Element).closest<HTMLElement>('.desk-box')?.dataset.key;
       if (this.#cam !== 'standard' && key) { this.take(key, false, false); this.#setCam('standard'); this.#boxes.get(key)?.laid.focus(); }
     });
-    // Lifted by Ctrl and an arrow, the box is put down once Ctrl is let go (or the keyboard leaves the desk).
+    // Held up by Ctrl (the finger on a box) or Ctrl and an arrow (anywhere), the box is put down once Ctrl is let go,
+    // or the keyboard leaves the desk.
     this.element.addEventListener('keyup', (e) => { if (e.key === 'Control') this.#lifted(false); });
     this.element.addEventListener('focusout', () => this.#lifted(false));
-    // The hand is the keyboard's: drawn as the cursors are (tokens.css), gone when one writes or the pointer moves.
+    // The finger is the pointer's own pointing hand (tokens.css), drawn larger, over the boxes.
     this.#plane.append(this.#hand);
-    const image = (name: string) => /url\("([^"]+)"\)/.exec(getComputedStyle(document.documentElement).getPropertyValue(name))?.[1];
-    for (const [name, as] of [['--cursor-grab', '--hand-open'], ['--cursor-grabbing', '--hand-shut']] as const) {
-      const url = image(name);
-      if (url) this.#hand.style.setProperty(as, `url("${url}")`);
-    }
-    // (Moved, not only something moved under it: the camera's glide moves the page under a pointer at rest.)
-    let at = {x: NaN, y: NaN};
-    this.element.addEventListener('pointermove', (e) => {
-      if (Math.hypot(e.screenX - at.x, e.screenY - at.y) > 2) this.#showHand(false);
-      at = {x: e.screenX, y: e.screenY};
-    }, {passive: true});
-    this.element.addEventListener('keydown', (e) => { if (e.target !== this.element && letter(e)) this.#showHand(false); });
+    const open = /url\("([^"]+)"\)/.exec(getComputedStyle(document.documentElement).getPropertyValue('--cursor-hand'))?.[1];
+    if (open) this.#hand.style.setProperty('--hand-open', `url("${open}")`);
+    // The pointer moved (not something moved under it: the camera's glide moves the page under a pointer at rest), it is
+    // the one in use again: the finger gone, the pointer back.
+    addEventListener('pointermove', (e) => {
+      this.#pointerAt = {x: e.clientX, y: e.clientY};
+      if (!e.isTrusted || (!e.movementX && !e.movementY)) return;
+      document.documentElement.classList.remove('desk-nocursor');
+      this.#showHand(false);
+    }, {capture: true, passive: true});
+    // Written in a box, the finger and the pointer are out of the way until the pointer moves.
+    this.element.addEventListener('keydown', (e) => {
+      if (e.target === this.element || !letter(e)) return;
+      this.#showHand(false);
+      document.documentElement.classList.add('desk-nocursor');
+    });
   }
 
   /** The camera to `c` (gliding there, unless `glide` is false): stepping back it zooms and then goes, coming nearer it
@@ -273,6 +285,8 @@ export class Desk {
     const b = this.#boxes.get(key);
     if (!b) return;
     for (const o of this.#boxes.values()) o.el.classList.toggle('held', o === b);
+    // The finger goes with it, from where it is.
+    if (this.#held !== key && this.#handAt) this.#handGlide = {from: this.#handAt, t0: performance.now(), ms: 320};
     this.#held = key;
     this.#placeHand();
     this.#framed = null;
@@ -333,7 +347,7 @@ export class Desk {
     this.element.scrollBy(e.deltaX, e.deltaY);
   }
 
-  /** Carried (`on`): the box in hand lifted, its shadow longer, the hand shut on it; put down, with a small give. */
+  /** Held up (`on`): the box in hand lifted, its shadow longer, the hand closed on it; put down, with a small give. */
   #lifted(on: boolean) {
     const b = this.#held ? this.#boxes.get(this.#held) : undefined;
     if (!b || b.el.classList.contains('lifted') === on) return;
@@ -501,6 +515,9 @@ export class Desk {
       this.element.focus({preventScroll: true});
       this.#showHand(true);
       this.#setCam(CAMERAS[(CAMERAS.indexOf(this.#cam) + 1) % CAMERAS.length]);
+    } else if (e.key === 'Control' && !e.repeat && finger) {
+      // Ctrl, the finger on a box: the hand closes on it, held up to be carried.
+      this.#lifted(true);
     } else if (way && e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey && this.#held) {
       e.preventDefault();
       this.#carry(way);
@@ -544,20 +561,45 @@ export class Desk {
     this.#relay(true);
   }
 
-  /** The hand shown (`on`) where the box in hand is, the pointer hidden over the desk, or gone. */
+  /** The finger shown (`on`), the pointer hidden while it is (out of the pointer, where that was over the desk), or gone. */
   #showHand(on: boolean) {
-    this.element.classList.toggle('finger', on);
+    if (on) document.documentElement.classList.add('desk-nocursor');
     if (this.#hand.classList.contains('on') === on) return;
-    if (on) { this.#hand.classList.add('placing'); this.#placeHand(); void this.#hand.offsetWidth; this.#hand.classList.remove('placing'); }
     this.#hand.classList.toggle('on', on);
+    if (!on) { this.#handGlide = null; return; }
+    const r = this.#plane.getBoundingClientRect(), s = r.width / (this.#plane.offsetWidth || 1);
+    const p = this.#pointerAt, e = this.element.getBoundingClientRect();
+    const over = p && p.x >= e.left && p.x <= e.right && p.y >= e.top && p.y <= e.bottom;
+    this.#handAt = null;
+    this.#handGlide = over && s ? {from: {x: (p.x - r.left) / s, y: (p.y - r.top) / s}, t0: performance.now(), ms: 240} : null;
+    this.#placeHand();
   }
 
-  /** The hand on the box in hand: on its top edge, near its right corner (lifted with it). */
+  /** The finger kept on the box in hand as it is now (sliding to its place, held up), gliding there: a frame at a time
+   * while it is shown and anything moves. */
   #placeHand() {
-    const b = this.#held ? this.#boxes.get(this.#held) : undefined;
-    if (!b) return;
-    const up = b.el.classList.contains('lifted') ? 8 : 0;
-    this.#hand.style.translate = `${b.slot.x + WIDTH - 72 - up}px ${b.slot.y - up}px`;
+    if (this.#handFrame || !this.#hand.classList.contains('on')) return;
+    const frame = () => {
+      this.#handFrame = 0;
+      const b = this.#held ? this.#boxes.get(this.#held) : undefined;
+      if (!b || !this.#hand.classList.contains('on')) return;
+      // The box where it is drawn now: on its way to its place, or held up off it.
+      const cs = getComputedStyle(b.el), [tx = 0, ty = 0] = cs.translate.split(' ').map(parseFloat);
+      const to = {x: tx + (parseFloat(cs.marginLeft) || 0) + WIDTH, y: ty + (parseFloat(cs.marginTop) || 0)};
+      let at = to;
+      const g = this.#handGlide;
+      if (g && !still()) {
+        const k = Math.min(1, (performance.now() - g.t0) / g.ms), e = pan(k);
+        at = {x: g.from.x + (to.x - g.from.x) * e, y: g.from.y + (to.y - g.from.y) * e};
+        if (k >= 1) this.#handGlide = null;
+      } else this.#handGlide = null;
+      const was = this.#handAt;
+      this.#handAt = at;
+      this.#hand.style.translate = `${at.x}px ${at.y}px`;
+      // Still once it stands where it should and nothing it follows moves.
+      if (this.#handGlide || !was || Math.abs(was.x - at.x) + Math.abs(was.y - at.y) > .01 || b.el.getAnimations().length) this.#handFrame = requestAnimationFrame(frame);
+    };
+    this.#handFrame = requestAnimationFrame(frame);
   }
 
   /** Nothing that way: the box in hand nudged toward it and back. */
