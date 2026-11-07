@@ -632,7 +632,11 @@ export class Desk {
     const b = this.#held ? this.#boxes.get(this.#held) : this.#boxes.values().next().value;
     const under = b && this.#bornUnder?.key === b.key ? this.#boxes.get(this.#bornUnder.above) : undefined;
     // (Stood back, a box just made is in the middle with what it came from above it in sight: no more is needed.)
-    if (this.#cam === 'pulled') return b ? pulledOn(b.slot, b.el.offsetHeight, w, hgt) : null;
+    if (this.#cam === 'pulled') {
+      if (!b) return null;
+      const first = this.#cols.find((c) => c.includes(b.key))?.[0], top = (first ? this.#boxes.get(first)?.slot.y : undefined) ?? b.slot.y;
+      return pulledOn(b.slot, b.el.offsetHeight, w, hgt, top);
+    }
     // Framed over boxes at work (the Agent's, played), it stays so as they grow, until it is let go or one is taken.
     const framed = this.#framed ? this.#frameView(this.#framed) : null;
     if (framed) return framed;

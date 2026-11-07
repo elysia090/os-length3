@@ -41,29 +41,34 @@ test('a box just come out from under another keeps that one\'s foot in sight ove
   assert.ok(Math.abs(short.y + slot.y - (60 + VGAP)) < 1e-9);
 });
 
-test('a step back, the box in hand is still in the middle, smaller, and the columns beside it come into sight', () => {
-  const at = slots(cols, heights), slot = at.get('a.c')!;
-  const v = pulledOn(slot, 200, 1280, 800);
+test('a step back, the box in hand is still in the middle across, smaller, its column\'s top at the eye, the columns beside it in sight', () => {
+  const at = slots(cols, heights), slot = at.get('b.c')!, top = at.get('a.c')!.y;
+  const v = pulledOn(slot, 200, 1280, 800, top);
   assert.equal(v.s, PULLED);
   assert.ok(WHOLE_MOST < PULLED && PULLED < 1);
   assert.equal(v.x + (slot.x + WIDTH / 2) * v.s, 640);
   // Both neighbours, a good part of each, on the face.
   const left = at.get('term')!, right = at.get('README.md')!;
-  assert.ok(v.x + (left.x + WIDTH) * v.s > 200);
-  assert.ok(v.x + right.x * v.s < 1280 - 200);
-  // In the middle down too, so what lies above it and under it is in sight; a tall one from the eye.
-  assert.ok(Math.abs(v.y + slot.y * v.s - (800 - 200 * PULLED) / 2) < 1e-9);
-  const tall = pulledOn(slot, 3000, 1280, 800);
-  assert.ok(Math.abs(tall.y + slot.y * tall.s - EYE) < 1e-9);
+  assert.ok(v.x + (left.x + WIDTH) * v.s > 150);
+  assert.ok(v.x + right.x * v.s < 1280 - 150);
+  // High, as the standard's box: the column's first box at the eye, the one in hand under it.
+  assert.ok(Math.abs(v.y + top * v.s - EYE) < 1e-9);
+  // Too low for that: up till its foot is kept over the face's foot; a tall one from the eye.
+  const low = pulledOn({x: slot.x, y: top + 1400}, 200, 1280, 800, top);
+  assert.ok(Math.abs(low.y + (top + 1400 + 200) * low.s - (800 - KEPT)) < 1e-9);
+  const tall = pulledOn({x: slot.x, y: top + 1400}, 3000, 1280, 800, top);
+  assert.ok(Math.abs(tall.y + (top + 1400) * tall.s - EYE) < 1e-9);
 });
 
-test('stepped back, the whole desk fits, at most half its size, and in the middle', () => {
+test('stepped back, the whole desk fits, at most half its size, in the middle across, its top at the eye', () => {
   const at = slots(cols, heights);
   const all = [...at].map(([k, slot]) => ({slot, h: heights(k)}));
   const w = wholeOf(all, 1000, 800);
   assert.ok(w.s <= WHOLE_MOST);
   const right = Math.max(...all.map((b) => b.slot.x + WIDTH + 8));
   assert.ok(w.x + right * w.s <= 1000 - 47);
+  const first = Math.min(...all.map((b) => b.slot.y));
+  assert.ok(Math.abs(w.y + first * w.s - EYE) < 1e-9);
 });
 
 test('over several boxes at once at the standard: centred when they fit, none when they do not (never stepped back for them)', () => {

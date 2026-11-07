@@ -15,11 +15,14 @@ export const VGAP = 3 * GRID;
 export const PAD = 36;
 /** Room above a column's first box for its name. */
 export const TOP = 48;
-/** The standard: every box at its own size. A step back, the box in hand still read and those beside it in sight; the
- * whole desk, at most half of it. */
+/** The standard: every box at its own size. A step back, the box in hand still read and those beside it in sight: three
+ * quarters, about the step again from there to two boxes side by side (liftedOn), so each step back is alike. The whole
+ * desk, at most half of it. */
 export const STANDARD = 1;
-export const PULLED = 0.7;
+export const PULLED = 0.75;
 export const WHOLE_MOST = 0.5;
+/** How far in from the face's edges a box carried (or stood back from) is kept. */
+export const KEPT = 2 * GRID;
 
 function up(v: number): number { return GRID * Math.ceil(v / GRID); }
 
@@ -73,25 +76,29 @@ export function standardOn(slot: Slot, _h: number, w: number, _hgt: number, s = 
   return {s, x, y: EYE - slot.y * s};
 }
 
-/** A step back, on the box at `slot` (`h` high): smaller, in the middle across and down (a tall one from the eye), the
- * boxes beside it, above it and under it in sight round it, as a step back is taken to see. */
-export function pulledOn(slot: Slot, h: number, w: number, hgt: number): View {
+/**
+ * A step back, on the box at `slot` (`h` high) whose column's first box stands at `top`: smaller, in the middle across,
+ * the column's top at the eye as the standard's box is (never low in the face with the room above it empty), what is
+ * above it in its column in sight over it and the boxes beside it round it; one too low for that up till its foot is
+ * KEPT over the face's, never its top past the eye.
+ */
+export function pulledOn(slot: Slot, h: number, w: number, hgt: number, top = slot.y): View {
   const v = standardOn(slot, h, w, hgt, PULLED);
-  return {...v, y: Math.max(EYE, (hgt - h * PULLED) / 2) - slot.y * PULLED};
+  let y = EYE - top * PULLED;
+  const foot = y + (slot.y + h) * PULLED;
+  if (foot > hgt - KEPT) y = Math.max(y - (foot - (hgt - KEPT)), EYE - slot.y * PULLED);
+  return {...v, y};
 }
 
 /** Stepped back: the whole desk (each box's slot and height, its name over it, its shadow) in the face, at most
- * WHOLE_MOST, centred. */
+ * WHOLE_MOST, in the middle across and its top at the eye, as the boxes stand at the standard and a step back. */
 export function wholeOf(boxes: {slot: Slot; h: number}[], w: number, hgt: number): View {
   let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
   for (const {slot, h} of boxes) { l = Math.min(l, slot.x); t = Math.min(t, slot.y - 24); r = Math.max(r, slot.x + WIDTH + 8); b = Math.max(b, slot.y + h + 8); }
   if (!isFinite(l)) return {s: WHOLE_MOST, x: 0, y: 0};
   const s = Math.min(WHOLE_MOST, (w - 96) / (r - l), (hgt - 96) / (b - t));
-  return {s, x: (w - (r - l) * s) / 2 - l * s, y: Math.max(TOP, (hgt - (b - t) * s) / 2) - t * s};
+  return {s, x: (w - (r - l) * s) / 2 - l * s, y: EYE - (t + 24) * s};
 }
-
-/** How far in from the face's edges a box carried is kept. */
-export const KEPT = 2 * GRID;
 
 /**
  * Held up to be carried (Ctrl), the camera at `v` a step back about the box at `slot` (`h` high), where it stands on the

@@ -454,7 +454,7 @@ test('Escape takes the desk\'s camera round its three places, never nearer than 
   // A step back: the box in hand still read, the finger on it, the keyboard on the desk.
   await app.page.keyboard.press('Escape');
   await expect(desk).toHaveClass(/pulled/);
-  await expect.poll(async () => (await width()) / standard).toBeCloseTo(.7, 1);
+  await expect.poll(async () => (await width()) / standard).toBeCloseTo(.75, 1);
   await expect(desk).toBeFocused();
   await expect(hand).toHaveClass(/\bon\b/);
   // The whole desk, at most half its size.

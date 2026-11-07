@@ -2031,10 +2031,14 @@ them: its standard, every box at its own size, the box in hand in the middle
 across, its top level with the rail between Home and File (high enough that
 the box above it in its column, its shadow and the dot of its close are wholly
 out of sight, never a strip nor a dot cut by the edge), the balance the
-work is done at, never nearer than that; a step back (seven tenths), the box in
-hand still read in the middle, across and down (a tall one from the eye), the
-boxes beside it, above it and under it in sight round it; and the whole
-desk, at most half its size. Stepping back it zooms first and then goes; coming
+work is done at, never nearer than that; a step back (three quarters: about the
+step again from there to two boxes side by side, so each step back is alike),
+the box in hand still read in the middle across, its column's top at the eye
+as the standard's box is (never low in the face with the room above it
+empty), what is above it in its column in sight over it and the boxes beside
+it round it (one too low for that comes up till its foot is in sight); and
+the whole desk, at most half its size, in the middle across, its top at the
+eye too. Stepping back it zooms first and then goes; coming
 nearer it goes first and then zooms. Escape takes the keyboard out onto the
 desk, the finger on the box in hand; from a field that keeps Escape for itself
 (a search, a rename), that comes first. Ctrl and - step back, Ctrl and + come a
