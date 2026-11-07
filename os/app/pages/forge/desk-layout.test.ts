@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {carried, EYE, GAP, next, overAll, PAD, PULLED, pulledOn, slots, standardOn, tabbed, TOP, VGAP, WHOLE_MOST, WIDTH, wholeOf} from './desk-layout.ts';
+import {carried, EYE, FOOT, GAP, next, overAll, PAD, PULLED, pulledOn, slots, standardOn, tabbed, TOP, VGAP, WHOLE_MOST, WIDTH, wholeOf} from './desk-layout.ts';
 
 // The desk's places and its camera (desk-layout.ts), as numbers.
 
@@ -20,11 +20,14 @@ test('at the standard, the box in hand is in the middle across, at its own size,
   const v = standardOn(slot, 200, 1000, 800);
   assert.equal(v.s, 1);
   assert.equal(v.x + (slot.x + WIDTH / 2) * v.s, 500);
-  // Short in a tall face: its top where the eye starts (level with the rail between File and Forge), not in the middle.
+  // Short in a tall face: its top where the eye starts (level with the rail between Home and File), not in the middle.
   assert.ok(Math.abs(v.y + slot.y - EYE) < 1e-9);
-  // Taller than the face: from its top.
+  // Taller than the face: from its top, at the same place.
   const tall = standardOn(slot, 3000, 1000, 800);
-  assert.equal(tall.y + slot.y, TOP + 16);
+  assert.equal(tall.y + slot.y, EYE);
+  // The box above it in its column (a gap and its name above this one's top) is wholly out of the face.
+  // The box above in its column, with all that hangs from its foot, is out of the face.
+  assert.ok(EYE - VGAP + FOOT < 0);
 });
 
 test('a step back, the box in hand is still in the middle, smaller, and the columns beside it come into sight', () => {

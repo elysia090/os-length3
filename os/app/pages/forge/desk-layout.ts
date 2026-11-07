@@ -41,19 +41,24 @@ export function slots(cols: readonly (readonly string[])[], heights: (key: strin
 /** The camera: the plane's scale, and where its origin is on the face. */
 export interface View { s: number; x: number; y: number }
 
-/** How far down the face a short box's top stands at most, in px: where the eye starts, level with the rail between
- * File and Forge (its items stand at fixed places from the top, so this is a distance, not a share of the height). */
-export const EYE = 102;
+/** How far under a box's foot what hangs from it reaches: its close, a dot 16 px under its bottom corner, 9 px across
+ * (styles: .desk-close); its shadow, 8 px, falls inside that. */
+export const FOOT = 16 + 9;
+
+/** Where a box's top stands on the face, in px from the desk's top: level with the rail between Home and File (its
+ * items stand at fixed places from the top, so this is a distance, not a share of the height). High enough that the box
+ * above it in its column (a whole gap above, with its name), its shadow and the dot of its close are wholly out of the
+ * face: never a strip, nor a dot, cut by its edge. */
+export const EYE = VGAP - FOOT - 1;
 
 /**
- * At the standard, on the box at `slot` (`h` high) in a face `w` by `hgt`: the box's middle in the face's middle across;
- * a box that fits in the middle of the height too, but its top never lower than EYE (a short box stands where the eye
- * starts, not in a hole in the middle), a tall one from its top.
+ * At the standard, on the box at `slot` (`h` high) in a face `w` by `hgt`: the box's middle in the face's middle across,
+ * its top at EYE (a tall one goes on down from there; a short one stands where the eye starts, not in a hole in the
+ * middle).
  */
-export function standardOn(slot: Slot, h: number, w: number, hgt: number, s = STANDARD): View {
+export function standardOn(slot: Slot, _h: number, w: number, _hgt: number, s = STANDARD): View {
   const x = w / 2 - (slot.x + WIDTH / 2) * s;
-  const top = Math.min(Math.max(TOP + 16, (hgt - h * s) / 2), Math.max(TOP + 16, EYE));
-  return {s, x, y: top - slot.y * s};
+  return {s, x, y: EYE - slot.y * s};
 }
 
 /** A step back, on the box at `slot` (`h` high): as at the standard, smaller, the boxes beside it in sight. */

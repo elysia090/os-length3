@@ -34,7 +34,7 @@ test('a diff line pressed is marked, and pressed again is not', async ({signedIn
   await expect(line).toHaveAttribute('aria-pressed', 'false');
 });
 
-test('the search finds a line and opens the file there, the line selected', async ({signedIn: app}) => {
+test('the search finds a line and opens the file there, the line washed and the caret on it', async ({signedIn: app}) => {
   await app.forge.find('puts');
 
   // What was found is said a kind at a time, how many beside each: one file.
@@ -42,7 +42,7 @@ test('the search finds a line and opens the file there, the line selected', asyn
   await app.forge.hit(/puts\("hello"\);/).click();
 
   await expect(app.forge.editor('src/main.c')).toBeFocused();
-  await expect.poll(() => app.forge.selected('src/main.c')).toBe('    puts("hello");');
+  await expect.poll(() => app.forge.lineChosen('src/main.c')).toBe('    puts("hello");');
 });
 
 test('a file put back from the diff is as it was at the last commit, and leaves the diff', async ({signedIn: app}) => {

@@ -161,7 +161,7 @@ test('what the search found follows what is saved, and a line found opens where 
   await expect(app.forge.hit(/Written in Forge/)).toContainText('6');
   await app.forge.hit(/Written in Forge/).click();
   await expect(editor).toBeFocused();
-  await expect.poll(() => app.forge.selected('README.md')).toBe('Written in Forge.');
+  await expect.poll(() => app.forge.lineChosen('README.md')).toBe('Written in Forge.');
 
   // The word changed: it is no longer found, and the search keeps what was typed.
   await app.forge.editFile('README.md', '# hello\n\nWrote it in Forge.\n');
@@ -191,7 +191,7 @@ test('a file found by its name is opened to write in from the keyboard alone, an
   await expect(app.forge.search).toHaveValue('main.c');
 });
 
-test('Enter in the search opens the first line found, selected; a file found by its lines is headed by how many, its diff apart and not a stop', async ({app}) => {
+test('Enter in the search opens the first line found, washed, the caret on it; a file found by its lines is headed by how many, its diff apart and not a stop', async ({app}) => {
   await app.forge.editFile('README.md', '# hello\n\nWritten in Forge.\n');
   await app.forge.find('Written');
   // The head: its name, how many of its lines were found, and at its other end its diff, pressed rather than gone along.
@@ -204,7 +204,7 @@ test('Enter in the search opens the first line found, selected; a file found by 
   await expect(app.forge.search).toBeFocused();
   await app.forge.search.press('Enter');
   await expect(app.forge.editor('README.md')).toBeFocused();
-  await expect.poll(() => app.forge.selected('README.md')).toBe('Written in Forge.');
+  await expect.poll(() => app.forge.lineChosen('README.md')).toBe('Written in Forge.');
 });
 
 test('the right pane holds the runs alone; Issue, diff and Output are the search\'s, on the band, and what one opens goes back up once the keyboard is in the file', async ({app}) => {
@@ -528,6 +528,37 @@ test('Shift+N makes a new file beside the one in hand where nothing is being wri
   await app.page.keyboard.type('count');
   await app.page.keyboard.press('Enter');
   await expect(app.forge.editor('src/count.c')).toBeFocused();
+});
+
+test('Shift+N with the terminal in hand: untitled, with no ending, born under the terminal in its column', async ({app}) => {
+  await app.rail.go('forge');
+  await app.forge.promptBox.focus();
+  await app.page.keyboard.press('Escape');
+  await app.page.keyboard.press('Shift+N');
+  const field = app.main.getByRole('textbox', {name: 'New name', exact: true});
+  await expect(field).toBeFocused();
+  await expect(field).toHaveText('untitled');
+  // All of it chosen: what is typed is its name.
+  expect(await field.evaluate(() => getSelection()!.toString())).toBe('untitled');
+  const term = app.main.locator('.desk-box[data-key="term"]'), made = app.main.locator('.desk-box[data-key="untitled"]');
+  await expect.poll(async () => {
+    const [a, b] = [await term.boundingBox(), await made.boundingBox()];
+    return a && b && Math.abs(a.x - b.x) < 1 && b.y > a.y + a.height ? 'under' : 'not yet';
+  }).toBe('under');
+});
+
+test('a line chosen from the band\'s search: the box says Search again once the sheet is up, and its words come back chosen', async ({app}) => {
+  await app.forge.find('puts');
+  await app.forge.hit(/puts\("hello"\);/).click();
+  await expect(app.forge.editor('src/main.c')).toBeFocused();
+  await expect.poll(() => app.forge.lineChosen('src/main.c')).toBe('    puts("hello");');
+  await expect(app.forge.search).toHaveValue('');
+  await app.page.keyboard.press('Escape');
+  await app.page.keyboard.press('/');
+  await expect(app.forge.search).toBeFocused();
+  await expect(app.forge.search).toHaveValue('puts');
+  expect(await app.forge.search.evaluate((el: HTMLInputElement) => [el.selectionStart, el.selectionEnd])).toEqual([0, 4]);
+  await expect(app.forge.hit(/puts\("hello"\);/)).toBeVisible();
 });
 
 test('Home says where one left off: the line last written in a box on the desk', async ({app}) => {

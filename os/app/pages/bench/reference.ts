@@ -81,6 +81,12 @@ export class Reference {
   private repo: string | null = null;
   private events: ReferenceEvents;
   private files: Promise<Files> | null = null;
+  /** The repo's open issues and what changed in it, as read for this search (read again once the repo changes). */
+  private known: Promise<[Issue[], gitops.FileChange[]]> | null = null;
+  /** On the band, a line or file gone to from what was found: the words go from the box once the sheet is up. */
+  private used = false;
+  /** The words that went so: come back to the box (/, a press), they are in it again, chosen, as a find bar's are. */
+  private lastWords = '';
   private timer = 0;
   private findTimer = 0;
   private found = 0;
@@ -130,15 +136,27 @@ export class Reference {
     // ← → along the line, as along Git's issues and Server's boards.
     this.panel.addEventListener('keydown', (event) => this.alongLine(event));
     this.under = h('div', {class: 'search-results', id: `found-${n}`, role: 'region', 'aria-label': t('Search results')}, pillRow, this.panel);
-    this.query.addEventListener('focus', () => { if (this.dirty) { this.dirty = false; void this.draw(); } else if (!this.panel.childElementCount) void this.draw(); });
+    this.query.addEventListener('focus', () => {
+      if (!this.query.value && this.lastWords) {
+        this.query.value = this.lastWords;
+        this.lastWords = '';
+        this.query.select();
+        this.keep();
+        this.query.dispatchEvent(new Event('input'));
+        void this.draw();
+        return;
+      }
+      if (this.dirty) { this.dirty = false; void this.draw(); } else if (!this.panel.childElementCount) void this.draw();
+    });
     // Pressed with nothing typed: what was searched and read, even from something read in the line.
     this.query.addEventListener('click', () => { if (!this.query.value && this.reading) { this.close(); void this.draw(); } });
     this.query.addEventListener('input', () => {
       this.keep();
       this.close();
       this.idle();
-      clearTimeout(this.findTimer);
-      this.findTimer = window.setTimeout(() => void this.draw(), 150);
+      // Found again for each key, on the frame it shows in (keys typed within one frame found once).
+      cancelAnimationFrame(this.findTimer);
+      this.findTimer = requestAnimationFrame(() => void this.draw());
     });
     this.query.addEventListener('focus', (event) => {
       const from = event.relatedTarget as HTMLElement | null;
@@ -278,16 +296,26 @@ export class Reference {
         this.goUp();
       });
     });
-    this.search.addEventListener('focusin', () => { this.leaving?.cancel(); this.leaving = null; this.search.classList.remove('leaving'); });
+    this.search.addEventListener('focusin', () => { this.used = false; this.leaving?.cancel(); this.leaving = null; this.search.classList.remove('leaving'); });
   }
 
   /** What is under the box going back up into it. */
   private goUp() {
-    if (still() || !this.search.getClientRects().length) return;
+    if (still() || !this.search.getClientRects().length) { this.wordsGo(); return; }
     this.search.classList.add('leaving');
     const a = this.leaving = this.under.animate([{opacity: 1, transform: 'none'}, {opacity: 0, transform: 'translateY(calc(-1 * var(--s2)))'}],
       {duration: paced(150), easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards'});
-    a.finished.then(() => { if (this.leaving !== a) return; this.leaving = null; this.search.classList.remove('leaving'); a.cancel(); }, () => {});
+    a.finished.then(() => { if (this.leaving !== a) return; this.leaving = null; this.search.classList.remove('leaving'); a.cancel(); this.wordsGo(); }, () => {});
+  }
+
+  /** The words used (a line or a file gone to from what they found, on the band): gone from the box, which says Search
+   * again; what was searched is kept in the history (the box pressed with nothing typed). */
+  private wordsGo() {
+    if (!this.used) return;
+    this.used = false;
+    this.lastWords = this.query.value;
+    this.query.value = '';
+    this.query.dispatchEvent(new Event('input'));
   }
 
   /** What can be chosen in the card in hand, in order. */
@@ -353,6 +381,7 @@ export class Reference {
       if (c.repo !== this.repo) return;
       this.countChanges();
       if (this.files) this.files = patched(this.files, c);
+      this.known = null;
       // Not drawn away from under the keyboard: what has it is kept until the box has it again (asked again when
       // the moment comes, the keyboard having gone down into it meanwhile).
       const held = () => this.panel.contains(document.activeElement) && !this.reading;
@@ -367,6 +396,7 @@ export class Reference {
   resume() {
     if (!this.stop) this.follow();
     this.files = null;
+    this.known = null;
     this.countChanges();
     void (this.reading ? this.reading.draw() : this.draw());
   }
@@ -375,6 +405,8 @@ export class Reference {
   setRepo(repo: string | null) {
     this.repo = repo;
     this.files = null;
+    this.known = null;
+    this.lastWords = '';
     this.query.disabled = !repo;
     // With no repo it cannot be searched in, and says so where the words would be.
     this.say(repo ? t('Search this repo') : t('No repo to search'));
@@ -608,14 +640,17 @@ export class Reference {
     const kind = this.pill;
     if (!this.body.childElementCount) this.body.replaceChildren(h('p', {class: 'muted small'}, t('Searching…')));
     this.files ??= readAll(repo);
+    this.known ??= Promise.all([openIssues(repo).catch(() => []), gitops.changes(repo).then((c) => c.folders.flatMap((f) => f.files), () => [])]);
     let files: Files, issues: Issue[], changed: gitops.FileChange[];
     try {
-      [files, issues, changed] = await Promise.all([this.files, openIssues(repo).catch(() => []),
-        gitops.changes(repo).then((c) => c.folders.flatMap((f) => f.files), () => [])]);
+      [files, [issues, changed]] = await Promise.all([this.files, this.known]);
     } catch (e) { this.body.replaceChildren(h('p', {class: 'muted small'}, t('Search failed: {message}', {message: String(e)}))); return; }
-    if (run !== this.found || repo !== this.repo || this.reading) return;
-    const said = foundView(search(query, kind, files, issues, changed, sessionIfAny(repo)?.runs ?? [], asksIn(repo)), query, changed, {
-      file: (path) => { this.remember({what: 'query', text: query}); this.remember({what: 'file', path}); this.events.reveal(path, 0, true); },
+    const stale = () => run !== this.found || repo !== this.repo || !!this.reading;
+    if (stale()) return;
+    const found = await search(query, kind, files, issues, changed, sessionIfAny(repo)?.runs ?? [], asksIn(repo), stale);
+    if (!found || stale()) return;
+    const said = foundView(found, query, changed, {
+      file: (path) => { this.remember({what: 'query', text: query}); this.remember({what: 'file', path}); this.used = this.band; this.events.reveal(path, 0, true); },
       line: (path, line) => void this.go(path, line, query),
       diff: (path) => this.readDiff(path),
       issue: (i) => this.readIssue(i),
@@ -654,6 +689,7 @@ export class Reference {
     }
     this.remember({what: 'query', text: query});
     this.remember({what: 'file', path});
+    this.used = this.band;
     this.events.reveal(path, at);
   }
 }

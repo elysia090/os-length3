@@ -1,5 +1,5 @@
 /* The right pane of Forge and Git (pages/bench/rows.ts): what was done, a big row each, its bar saying how a run ended, its
-   line in the display face; at most two lines said, the second fading out partway along. */
+   line in the display face, whole as a command is mostly typed (four lines at most, the last fading out partway along). */
 .pane-rows { display: grid; align-content: start; gap: var(--s1); overflow-y: auto; scrollbar-width: none; min-height: 0; padding: var(--s2) 0 var(--s5); }
 .pane-row { display: grid; grid-template-columns: 6px minmax(0, 1fr); grid-template-areas: "bar line" "bar at"; gap: 4px 14px; align-items: center;
   text-align: left; padding: 10px 10px 10px 12px; margin: 0 -10px; border: 0; border-radius: var(--r-field); background: none; color: var(--ink);
@@ -8,7 +8,7 @@
 .pane-bar { grid-area: bar; align-self: stretch; width: 6px; border-radius: 3px; background: var(--ink); }
 .pane-row[data-state='done'] .pane-bar { background: var(--add); }
 .pane-row[data-state='failed'] .pane-bar { background: var(--del); }
-.pane-line { grid-area: line; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere;
+.pane-line { grid-area: line; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; overflow-wrap: anywhere;
   font: 900 30px/1.02 var(--display); letter-spacing: -.01em; }
 .pane-row.note .pane-line { font: 600 15px/1.35 var(--sans); }
 /* What the box did, not the shell: its bar the paper's rule, its pill's words (TODO, #1, Agent) under it. */
@@ -18,6 +18,7 @@
    in the display face, what was said under it (the line it was left at, as written there, in mono), where it is
    quiet; its bar ink while something of it is not read, the paper's rule once it is. */
 .pane-row.news { grid-template-areas: "bar line" "bar said" "bar at"; }
+.pane-row.news .pane-line { -webkit-line-clamp: 2; }
 .pane-row.news[data-state='seen'] .pane-bar { background: var(--rule); }
 .pane-said { grid-area: said; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere;
   font: 400 14px/1.45 var(--sans); }

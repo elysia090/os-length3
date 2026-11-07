@@ -53,9 +53,10 @@ export const sendWord = (m: Mode): string =>
 /** Its title, with the keys that do it from the box (Edit has none: what is typed is in the file as it is typed). */
 export const sendTitle = (m: Mode, keys: string): string => (m === 'run' ? t('Run ({keys})', {keys}) : m === 'issue' ? t('Create ({keys})', {keys})
   : m === 'todo' ? t('Add ({keys})', {keys}) : m === 'agent' ? t('Ask ({keys})', {keys}) : t('Edit'));
-/** What the empty box says goes there (for Edit, with the file in front, `file`: the line held is an empty one). */
+/** What the empty box says goes there (for Edit, with the file in front, `file`: the line held is an empty one). A
+ * terminal says nothing after its prompt: the caret waiting there is all it says, as any terminal's. */
 export const modeHint = (m: Mode, repo: string | null, file: string | null = null): string => (!repo ? t('Open a repo to run commands')
-  : m === 'run' ? t('Run in {name}', {name: repo}) : m === 'issue' ? t('Create issue in {name}', {name: repo}) : m === 'todo' ? t('Add item to TODO')
+  : m === 'run' ? '' : m === 'issue' ? t('Create issue in {name}', {name: repo}) : m === 'todo' ? t('Add item to TODO')
   : m === 'agent' ? t('Ask about {name}', {name: repo})
   : file ? t('Empty line: type here') : t('Open a file to edit here'));
 

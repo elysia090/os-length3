@@ -136,3 +136,10 @@
 .found-sec .hit-count, .found-sec .hit-diff-word, .found-sec .diff-bar { display: none; }
 .found-sec .hit-diff { min-height: 0; margin-left: auto; font: 13px/1.3 var(--mono); }
 .found-sec .hit { grid-template-columns: 3ch minmax(0, 1fr); gap: 10px; padding: 3px 6px; margin: 0 -6px; font: 13px/1.55 var(--mono); }
+/* A run as it was typed, after the shell's $, on one line (cut short at the section's edge), what was searched marked. */
+.found-sec .run-line { display: block; min-width: 0; padding: 3px 6px; margin: 0 -6px; border: 0; border-radius: var(--r-field); background: none;
+  font: 700 16px/1.3 var(--sans); color: var(--ink); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: var(--cursor-hand); }
+.found-sec .run-line:hover { background: var(--raised); }
+.found-sec .run-ps { margin-right: .35em; }
+/* What Enter takes from the box is not lit in the sheet: its rows are lit only under the pointer, as the mock's. */
+.band-tools .search-box:has(.search-in:focus) .found-secs .choice.first:not(:hover) { background: none; }

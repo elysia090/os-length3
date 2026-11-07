@@ -4,9 +4,13 @@ import {findInText, nameFirst, nameMatches, stillAt} from './search.ts';
 
 test('lines are found without regard to case, with where the match sits', () => {
   const hits = findInText('#include <stdio.h>\n\nint main(void) {\n    PUTS("hello");\n}\n', 'puts');
-  assert.deepEqual(hits, [{line: 4, text: '    PUTS("hello");', from: 4, to: 8}]);
+  assert.deepEqual(hits, [{line: 4, text: 'PUTS("hello");', from: 0, to: 4}]);
   assert.deepEqual(findInText('a\na\na', 'a', 2).map((h) => h.line), [1, 2]);
   assert.deepEqual(findInText('abc', ''), []);
+  // Each line once, however often it says it; the last line without its newline; the counting carried from hit to hit.
+  assert.deepEqual(findInText('aa\nb\naXa\n\nxa', 'a').map((h) => [h.line, h.from]), [[1, 0], [3, 0], [5, 1]]);
+  // A letter longer lowercased than as written: found line by line, at the place in the line as written.
+  assert.deepEqual(findInText('İx\nab', 'b'), [{line: 2, text: 'ab', from: 1, to: 2}]);
 });
 
 test('a long line is cut to a window around the match', () => {

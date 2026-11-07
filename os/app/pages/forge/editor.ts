@@ -173,11 +173,20 @@ export function fileState(): FileState {
   return {el, unsaved, saved};
 }
 
-/** The line numbers in `gutter` for a text: written again only when the count of lines changed, not at every keystroke. */
+/** The rows a text is written on: its lines and, after a last newline, the empty row the caret goes on to (numbered as
+ * any row is, so the line one has just begun has its number at once). */
+function rows(text: string): number {
+  let n = 1;
+  for (let at = text.indexOf('\n'); at >= 0; at = text.indexOf('\n', at + 1)) n++;
+  return n;
+}
+
+/** The line numbers in `gutter` for a text, a number a row: written again only when the count of rows changed, not at
+ * every keystroke. */
 export function numbering(gutter: HTMLElement): (text: string) => void {
   let numbered = 0;
   return (text) => {
-    const n = Math.max(lineCount(text), 1);
+    const n = rows(text);
     if (n === numbered) return;
     numbered = n;
     gutter.textContent = Array.from({length: n}, (_, i) => String(i + 1)).join('\n');

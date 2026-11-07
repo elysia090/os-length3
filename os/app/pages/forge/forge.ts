@@ -214,13 +214,13 @@ class Forge {
     return held && d.files.has(held) ? held : '';
   }
 
-  /** Shift+N: a new file made at once beside the file in hand (at the repo's top beside none), opened to write in, its
-   * name written over in its head. */
+  /** Shift+N: a new file made at once beside the box in hand (at the repo's top, with no ending, beside a terminal),
+   * opened under it to write in, its name written over in its head. */
   private async newFile() {
     const repo = this.now.repo;
     if (!repo) return;
     const path = this.fileHeld(repo);
-    this.made(repo, await untitled(repo, path ? split(path)[0] : '', path ? split(path)[1] : undefined));
+    this.made(repo, await untitled(repo, path ? split(path)[0] : '', path ? split(path)[1] : ''));
   }
 
   /** A file just made: its box, come out from under the one above it, in hand, its name written over at once (the stem
@@ -306,8 +306,9 @@ class Forge {
     d.desk.lift(key);
   }
 
-  /** `path` of the repo worked on, a box on its desk (laid now, under the box in hand, if it was not), in hand; at `line`. */
-  private open(path: string, line = 0) {
+  /** `path` of the repo worked on, a box on its desk (laid now if it was not), in hand; at `line`. A file just made
+   * (`made`) is laid under the box in hand, as a new post goes under the one before it. */
+  private open(path: string, line = 0, made = false) {
     const repo = this.now.repo;
     if (!repo || !path) return;
     const d = this.deskOf(repo);
@@ -315,7 +316,8 @@ class Forge {
     // the box is meanwhile, unseen, and the desk comes back already there as the sheet goes up.
     const unseen = !!this.element.querySelector('.band-tools > .search-box:is(:focus-within, .reading):not(.idle, .leaving)');
     // A file laid for the first time goes in the column beside the Prompt's, under the last there.
-    const f = d.files.get(path) ?? this.layFile(repo, d, path, d.desk.held === 'term' || !d.desk.held ? 1 : undefined, {slide: !unseen});
+    const beside = !made && (d.desk.held === 'term' || !d.desk.held);
+    const f = d.files.get(path) ?? this.layFile(repo, d, path, beside ? 1 : undefined, {slide: !unseen});
     d.desk.take(path, true, !unseen);
     f.at(line);
   }
@@ -357,7 +359,7 @@ class Forge {
     d.desk.element.querySelector('.desk-box[data-key="term"] .desk-term-home')?.replaceChildren(this.work.terminal!);
     this.band.paint();
     if (path) {
-      this.open(path, line);
+      this.open(path, line, write === 'name');
       if (write === 'name') d.desk.name(path);
     } else if (!d.desk.held) d.desk.take('term', false);
     else d.desk.relayout();

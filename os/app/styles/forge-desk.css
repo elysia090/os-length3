@@ -29,6 +29,9 @@
 .desk :is(.gutter, .code) { font-size: var(--t-code); }
 .desk-file > .sheet { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--s4); padding: var(--s4); }
 .desk-file-head { position: absolute; right: var(--s3); top: var(--s2); margin: 0; font: inherit; }
+/* The line chosen washed under its text, across the whole sheet (desk-file.ts). */
+.desk-mark { position: absolute; left: 0; right: 0; background: var(--marker-soft); pointer-events: none; }
+.desk-file > .sheet > .gutter { position: relative; }
 /* Where the repo's desk is: the whole center. */
 .desk-room { position: relative; height: 100%; min-height: 0; }
 .desk-none { display: grid; place-items: center; height: 100%; color: var(--sub); }

@@ -320,9 +320,25 @@ class Forge extends Part {
   /** A line found by the search, by its text. */
   hit(text: string | RegExp) { return this.results.getByRole('button', {name: text}); }
 
-  /** The text selected in a file's editor (where the search or a diff opened it). */
+  /** The text selected in a file's editor (where a diff opened it, a line number pressed). */
   selected(path: string) {
     return this.editor(path).evaluate((el: HTMLTextAreaElement) => el.value.slice(el.selectionStart, el.selectionEnd));
+  }
+
+  /** The line chosen in a file (where the search or a link opened it): the line the caret is on, where its words begin,
+   * nothing selected, and the line washed; else what is otherwise (said, so a failure says it). */
+  lineChosen(path: string) {
+    return this.editor(path).evaluate((el: HTMLTextAreaElement) => {
+      const v = el.value, c = el.selectionStart;
+      const from = v.lastIndexOf('\n', c - 1) + 1;
+      let to = v.indexOf('\n', c);
+      if (to < 0) to = v.length;
+      const line = v.slice(from, to);
+      if (el.selectionEnd !== c) return `selected: ${v.slice(c, el.selectionEnd)}`;
+      if (c !== from + (/^[ \t]*/.exec(line)?.[0].length ?? 0)) return `caret at ${c - from} of: ${line}`;
+      if (!el.closest('.desk-file')?.querySelector('.desk-mark')) return `not washed: ${line}`;
+      return line;
+    });
   }
 
   /** 'Issue', 'diff' or 'Output' pressed under the search box (pressed with nothing typed: what there is of it). */

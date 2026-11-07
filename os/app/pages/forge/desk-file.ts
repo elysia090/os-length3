@@ -43,15 +43,48 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
   /** The keyboard asked for before the text was read: given once it is. */
   let focusing = false;
 
+  // The line chosen (from the search, a link) washed in the marker's soft yellow under its text, the eye led to it:
+  // it comes up as the camera arrives, holds, then stays quieter while the caret is on that line; it goes once the
+  // caret leaves the line, or a line comes or goes above it. Where the line lies in the text is kept (its start and
+  // end), so following the caret costs a comparison, not a count of the lines.
+  let mark: {el: HTMLElement; from: number; to: number} | null = null;
+  function unmark() {
+    if (!mark) return;
+    const {el} = mark;
+    mark = null;
+    el.getAnimations().forEach((a) => a.cancel());
+    el.animate([{opacity: 0.55}, {opacity: 0}], {duration: 240, easing: 'ease-out'}).onfinish = () => el.remove();
+  }
+  function markLine(area: HTMLTextAreaElement, line: number, from: number, to: number) {
+    unmark();
+    const el = h('div', {class: 'desk-mark', 'aria-hidden': 'true'});
+    const lh = lineHeight(area);
+    el.style.top = `${area.offsetTop + (line - 1) * lh}px`;
+    el.style.height = `${lh}px`;
+    element.prepend(el);
+    mark = {el, from, to};
+    el.animate([{opacity: 0}, {opacity: 1, offset: 0.25}, {opacity: 1, offset: 0.8}, {opacity: 0.55}],
+      {duration: 2400, delay: 380, easing: 'ease-out', fill: 'both'});
+  }
+  const caretLeft = () => {
+    if (!mark || !editor || document.activeElement !== editor.area) return;
+    const c = editor.area.selectionStart;
+    if (c < mark.from || c > mark.to) unmark();
+  };
+
   function at(line: number) {
     if (!editor) { wanted = line; return; }
     const {area} = editor;
     // No line asked for: the caret at its top.
     if (line < 1) { area.focus({preventScroll: true}); area.setSelectionRange(0, 0); return; }
     const from = lineStart(area.value.split('\n'), line - 1);
-    const to = area.value.indexOf('\n', from);
+    let to = area.value.indexOf('\n', from);
+    if (to < 0) to = area.value.length;
+    // The caret where the line's text begins (past its indent), nothing chosen: the line is shown by its wash.
+    const text = from + (/^[ \t]*/.exec(area.value.slice(from, to))?.[0].length ?? 0);
     area.focus({preventScroll: true});
-    area.setSelectionRange(from, to < 0 ? area.value.length : to);
+    area.setSelectionRange(text, text);
+    markLine(area, line, from, to);
   }
 
   const load = async () => {
@@ -67,6 +100,18 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     }
     const e = editor = new Editor(openingWith(repo, path, c.text), {repo, path, head, sheet, gutter, number, state, flow: element, seen: () => grew()});
     editorOn(repo, path, {take: (text) => e.take(text), area: e.area});
+    // Written in on the line washed: it stays while the writing is on that line, its end following; a line broken or
+    // written above it, it goes.
+    e.area.addEventListener('input', () => {
+      if (!mark) return;
+      const c = e.area.selectionStart, v = e.area.value;
+      if (c < mark.from) { unmark(); return; }
+      const end = v.indexOf('\n', mark.from);
+      mark.to = end < 0 ? v.length : end;
+      if (c > mark.to) unmark();
+    });
+    e.area.addEventListener('keyup', caretLeft);
+    e.area.addEventListener('pointerup', caretLeft);
     new ResizeObserver(() => grew()).observe(e.area);
     if (wanted !== null) at(wanted);
     else if (endWanted) toEnd();

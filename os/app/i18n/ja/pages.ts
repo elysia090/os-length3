@@ -96,12 +96,12 @@ export default {
   'Run output no longer available': 'その実行結果はもう残っていません',
   'Searched and viewed items appear here': '検索・閲覧した項目がここに表示されます',
   'Starting up…': '起動中…',
-  'Run in {name}': '{name}で実行',
   'Issue': 'Issue',
   'diff': 'diff',
   'Output': '実行結果',
   // The band's search sheet: the section of the files found (their names and lines), beside the issues and runs.
   files: 'ファイル',
+  runs: '実行',
   'Search this repo': 'この repo を検索',
   Search: '検索',
   Terminal: '端末',

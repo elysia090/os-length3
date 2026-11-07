@@ -1947,7 +1947,9 @@ outside its top-left corner (its folder quiet before it) and its close a dot
 outside its bottom-right. The Prompt is the first box: what it printed, and
 under it the line one types at, its pill the prompt (`garden $`) and what the
 line does (Run, Issue, TODO, Agent; Alt and a number, or pressed). Under Run,
-Enter runs the line as a terminal's does, Shift+Enter is a new line. Each
+Enter runs the line as a terminal's does, Shift+Enter is a new line, and the
+empty line says nothing after its prompt: the caret waiting there is all a
+terminal says. Each
 file opened is a box of its own beside it, written in where it lies (there
 is no Edit to choose: the file is typed into). One box is in hand.
 
@@ -1983,7 +1985,9 @@ long and the hand closed on it (its fingers over the edge), the others stepping
 over, the camera following a little behind; Ctrl let go, it is put down with a
 small give. Shift+N, as a new post is begun on X, makes a new file beside the
 one in hand where nothing is being written (the finger on a box; written in a
-file, it is an N): it comes out from under the box above it, sliding down to
+file, it is an N): it is laid under the box in hand, in its column, as a new
+post goes under the one before it, named with that file's ending (none beside a
+terminal: untitled), comes out from under the box above it, sliding down to
 its place, the camera going to it, and its name is written over at once in its
 head, the name itself (its folder quiet before it), a line under it, the stem
 chosen in the soft yellow and the ending kept, so typing writes the stem.
@@ -1996,8 +2000,9 @@ back. Writing in a box puts both out of the way until the pointer moves.
 
 The camera has three places, as a game's cameras do, and Escape goes round
 them: its standard, every box at its own size, the box in hand in the middle
-across (its top level with the rail between File and Forge, a short one no
-lower than that), the balance the
+across, its top level with the rail between Home and File (high enough that
+the box above it in its column, its shadow and the dot of its close are wholly
+out of sight, never a strip nor a dot cut by the edge), the balance the
 work is done at, never nearer than that; a step back (seven tenths), the box in
 hand still read in the middle and the boxes beside it in sight; and the whole
 desk, at most half its size. Stepping back it zooms first and then goes; coming
@@ -2415,9 +2420,19 @@ the query first), and its open issues and its runs too; what is found
 opens under the box over the center while the box has the keyboard (↓ goes
 into it, Enter takes the first, Escape back to the box; with the box empty,
 Escape gives the keyboard back to what had it before), and follows what is
-saved. The first is the first line found, or before it a file whose name
-holds the query: it is lit, its Enter on a key at its end, while the box has
-the keyboard. Each file found is headed by its name, how many of its lines
+saved. What is found is found again at each key, on the frame it shows in (the
+repo's text read once a search, lowercased once a file, and gone through by the
+engine's own search, so a key costs a scan, not a count of lines). The first is
+the first line found, or before it a file whose name holds the query: it is lit,
+its Enter on a key at its end, while the box has the keyboard (on the band's
+sheet it is not lit: its rows are lit under the pointer). A line found opens
+with the caret where its words begin and the line washed in the soft yellow
+under its text, the wash coming up as the camera arrives, then quieter while the
+caret stays on that line, gone once it leaves; on the band, the words searched
+go from the box once the sheet is up, the box saying Search again, and come back
+chosen when the box is come back to (/, a press), as a find bar's do. On the
+band's sheet a run is said as it was typed, after the shell's $, on one line,
+under runs. Each file found is headed by its name, how many of its lines
 were found beside it, quiet (3 lines), and, changed since the last commit,
 at the head's other end its diff as a diff is said everywhere (diff +5 and
 its squares), pressed to read it there; a name found by its lines alone and
@@ -3654,7 +3669,8 @@ the file read now); a file or folder has Rename and Delete (a
 repo is not renamed or deleted here: its gear is where that is, § Runtime, A
 repo in a list). New file asks nothing: it is made at once, named as
 nothing there is yet (untitled, with the ending of the file it is made
-beside, a note's .md beside none; untitled-2 and on when taken), and opened
+beside, none if it has none or beside a terminal, a note's .md beside nothing;
+untitled-2 and on when taken), and opened
 in Forge to write in, its name written over in its own head there. Any other
 deed pressed becomes the field or the ask in its own place: a name written
 and Enter makes it (a new one's name is one plain part,

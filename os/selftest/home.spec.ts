@@ -237,7 +237,7 @@ test.describe("on 'hello', made from C's files and worked in last", () => {
     await expect(results.getByText('1 file · 1 line')).toBeVisible();
     await results.getByRole('button', {name: /puts\("hello"\);/}).click();
     await expect(app.forge.editor('src/main.c')).toBeFocused();
-    await expect.poll(() => app.forge.selected('src/main.c')).toBe('    puts("hello");');
+    await expect.poll(() => app.forge.lineChosen('src/main.c')).toBe('    puts("hello");');
   });
 });
 

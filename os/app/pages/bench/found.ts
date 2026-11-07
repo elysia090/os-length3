@@ -55,36 +55,79 @@ type Group = {path: string; hits: Hit[]};
 /** What was found: the files with the lines found in them, and the issues, changes, runs and asks of the Agent. */
 interface Found { groups: Group[]; issues: Issue[]; diffs: FileChange[]; runs: Run[]; asks: Ask[] }
 
-/** The files whose name or lines have `query`, each with its lines, HIT_LIMIT lines at most in all. */
-function inFiles(files: Files, query: string): Group[] {
-  const groups: Group[] = [];
-  let total = 0;
-  for (const f of files) {
+/** A text lowercased, kept with what holds it (a file as read for the search, a run) while it is the same: a key typed
+ * searches it again. */
+const lowered = new WeakMap<object, string>();
+function lowOf(o: object, text: string): string {
+  let low = lowered.get(o);
+  if (low === undefined) lowered.set(o, low = text.toLowerCase());
+  return low;
+}
+
+/** What a run printed, lowercased, kept with the run while what it printed is the same (it grows while it runs). */
+const printed = new WeakMap<Run, {text: string; low: string}>();
+function outputLow(r: Run): string {
+  const was = printed.get(r);
+  if (was && was.text === r.output) return was.low;
+  const low = r.output.toLowerCase();
+  printed.set(r, {text: r.output, low});
+  return low;
+}
+
+/** How long one stretch of going through the files may hold the page, in ms: past it the page draws and takes keys. */
+const SLICE = 3;
+/** The page given back for a moment (what it waits to do, a key typed, is done first). */
+const toPage = () => new Promise<void>((done) => { const c = new MessageChannel(); c.port1.onmessage = () => done(); c.port2.postMessage(0); });
+
+/** The last search gone through every file to the end: its words, the files it went through, and those holding them
+ * (in their name or a line). Words that go on from them are in no other file: only those are gone through again. */
+let through: {files: Files; query: string; holding: Files} | null = null;
+
+/**
+ * The files whose name or lines have `query`, each with its lines, HIT_LIMIT lines at most in all; null if `stale`
+ * says, at a break, that it is no longer wanted. Gone through a few ms at a time, the page between.
+ */
+async function inFiles(files: Files, query: string, stale: () => boolean): Promise<Group[] | null> {
+  const q = query.toLowerCase();
+  const pool = through && through.files === files && q.startsWith(through.query) ? through.holding : files;
+  const groups: Group[] = [], holding: Files = [];
+  let total = 0, since = performance.now();
+  for (const f of pool) {
     if (total >= HIT_LIMIT) break;
-    const hits = findInText(f.text, query, HIT_LIMIT - total);
+    if (performance.now() - since > SLICE) {
+      await toPage();
+      if (stale()) return null;
+      since = performance.now();
+    }
+    const hits = findInText(f.text, query, HIT_LIMIT - total, lowOf(f, f.text));
     if (!hits.length && !nameMatches(f.path, query)) continue;
+    holding.push(f);
     groups.push({path: f.path, hits});
     total += hits.length;
   }
+  if (total < HIT_LIMIT) through = {files, query: q, holding};
   return groups;
 }
 
 /**
  * What is found for `query` in the repo's `files`, its open `issues`, what `changed`, its `runs` and what was asked of
  * its Agent (`asks`: the question, its steps and its words): with a pill pressed (`kind`), only what is of its kind;
- * files are under no pill.
+ * files are under no pill. Null once `stale` (a newer search under way).
  */
-export function search(query: string, kind: Kind | null, files: Files, issues: Issue[], changed: FileChange[], runs: Run[], asks: Ask[] = []): Found {
+export async function search(query: string, kind: Kind | null, files: Files, issues: Issue[], changed: FileChange[], runs: Run[], asks: Ask[] = [],
+  stale: () => boolean = () => false): Promise<Found | null> {
   const q = query.toLowerCase();
   const found = {
     issues: !kind || kind === 'issue' ? issues.filter((i) => `${issueName(i)} ${i.kind ?? ''}：${i.title}\n${i.detail}`.toLowerCase().includes(q)).slice(0, OTHER_LIMIT) : [],
     diffs: kind === 'diff' ? changed.filter((c) => c.path.toLowerCase().includes(q) || fileName(c.path).toLowerCase().includes(q)).slice(0, OTHER_LIMIT) : [],
-    runs: !kind || kind === 'output' ? runs.slice().reverse().filter((r) => r.line.toLowerCase().includes(q) || r.output.toLowerCase().includes(q)).slice(0, OTHER_LIMIT) : [],
+    runs: !kind || kind === 'output' ? runs.slice().reverse().filter((r) => r.line.toLowerCase().includes(q) || outputLow(r).includes(q)).slice(0, OTHER_LIMIT) : [],
     asks: !kind || kind === 'agent' ? asks.slice().reverse().filter((a) => [a.question, ...a.parts.map((p) => p.text)].some((x) => x.toLowerCase().includes(q))).slice(0, OTHER_LIMIT) : [],
   };
   // An issue found is said once, as the issue (its number, kind and title), not again as its file's lines.
   const asIssue = new Set(found.issues.map((i) => issuePath(i)));
-  return {...found, groups: kind ? [] : inFiles(files, query).filter((g) => !asIssue.has(g.path))};
+  if (kind) return {...found, groups: []};
+  const groups = await inFiles(files, query, stale);
+  return groups && {...found, groups: groups.filter((g) => !asIssue.has(g.path))};
 }
 
 /** What each thing found does when pressed. */
@@ -126,6 +169,20 @@ function fileGroup(g: Group, named: boolean, c: FileChange | undefined, ways: Fo
   }));
 }
 
+/** A run as a line of the sheet: `$`, then its line as typed (its first), `query` marked wherever it is in it. */
+function runLine(r: Run, query: string, read: (r: Run) => void): HTMLElement {
+  const line = r.line.split('\n')[0], low = line.toLowerCase(), q = query.toLowerCase(), parts: (Node | string)[] = [];
+  let i = 0;
+  for (let at = q ? low.indexOf(q) : -1; at >= 0; at = low.indexOf(q, i)) {
+    parts.push(line.slice(i, at), h('mark', {}, line.slice(at, at + q.length)));
+    i = at + q.length;
+  }
+  parts.push(line.slice(i));
+  const b = h('button', {type: 'button', class: 'choice run-line'}, h('span', {class: 'run-ps', 'aria-hidden': 'true'}, '$'), h('span', {class: 'run-text'}, ...parts));
+  b.addEventListener('click', () => read(r));
+  return b;
+}
+
 /**
  * What was found for `query`, drawn: how many files and lines, then each file with its lines, the issues, the
  * changes (of what `changed`) and the runs. Nothing, when nothing was found. The first choice, which Enter takes from
@@ -146,7 +203,12 @@ export function foundView(found: Found, query: string, changed: FileChange[], wa
   if (groups.length) kinds.push({files: true, name: t('files'), n: groups.length, rows: nameFirst(groups, query).map((g) => fileGroup(g, nameMatches(g.path, query), changes.get(g.path), ways, beat))});
   if (found.issues.length) kinds.push({name: t('Issue'), n: found.issues.length, rows: found.issues.map((i) => { const b = issueButton(i, query, ways.issue); beat(b); return b; })});
   if (found.diffs.length) kinds.push({name: t('diff'), n: found.diffs.length, rows: found.diffs.map((c) => diffButton(c.path, counted(c.added, c.removed), ways.diff))});
-  if (found.runs.length) kinds.push({name: t('Output'), n: found.runs.length, rows: found.runs.map((r) => runButton(r, ways.run))});
+  if (found.runs.length) {
+    kinds.push(o.sections
+      // In the sheet, a run as its line was typed, after the shell's $, what was searched for marked in it.
+      ? {name: t('runs'), n: found.runs.length, rows: found.runs.map((r) => { const b = runLine(r, query, ways.run); beat(b); return b; })}
+      : {name: t('Output'), n: found.runs.length, rows: found.runs.map((r) => runButton(r, ways.run))});
+  }
   if (found.asks.length) kinds.push({name: t('Agent'), n: found.asks.length, rows: found.asks.map((a) => askButton(a, ways.ask))});
   const said: HTMLElement[] = [];
   if (o.sections) {

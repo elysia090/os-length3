@@ -38,11 +38,11 @@ export async function renaming(repo: string, path: string, written: string): Pro
 
 /**
  * A new file made at once in `into` of `repo`, named as nothing yet is there: untitled, with the ending of `like` (the
- * file it is made beside; a note's, beside none). Its path in the repo.
+ * file it is made beside: none if it has none, or it is the terminal, ''; a note's, beside nothing). Its path in the repo.
  */
 export async function untitled(repo: string, into: string, like?: string): Promise<string> {
   const names = new Set((await store.tree(repo, into).catch(() => [])).map((x) => x.name));
-  const end = (like && /\.[^.]+$/.exec(like)?.[0]) || '.md';
+  const end = like === undefined ? '.md' : /\.[^.]+$/.exec(like)?.[0] ?? '';
   let n = `untitled${end}`;
   for (let i = 2; names.has(n); i++) n = `untitled-${i}${end}`;
   await store.add(repo, into, n, '');
