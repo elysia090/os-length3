@@ -28,6 +28,12 @@ const listen = (fn: (e: {data: Run | Forget}) => void): void => {
 
 class Again {} // registers were replaced: run from resumeAt
 class Away {} // the image was replaced, or the thread ended: leave everything
+/** Its process now runs a program this Worker keeps an instance of, on the memory it runs it on (REPLY.EXEC): that goes on. */
+class Exec {
+  declare readonly memoryId: number;
+  declare readonly imageId: number;
+  constructor(memoryId: number, imageId: number) { this.memoryId = memoryId; this.imageId = imageId; }
+}
 
 let task: Thread | null = null;
 /** The threads run here last, most recent first, each with its instance on its memory (KEEP_INSTANCES; remote.ts mirrors it). */
@@ -56,6 +62,8 @@ class Thread {
   declare count: Int32Array;
   declare clock: Clocks;
   declare modules: Attached[];
+  /** The run it was last given (what an exec gone on with here takes over: its channel, the kernel's words). */
+  declare last: Run;
   declare fpu: Fpu;
   declare resumeAt: bigint;
   declare slice: number;
@@ -90,6 +98,7 @@ class Thread {
 
   /** What a run brings: its thread, its channel and the kernel's words, the modules known, its x87. */
   take(m: Run & {fpuOps: string[]}): void {
+    this.last = m;
     this.tid = m.tid;
     // Where it writes to the console without asking (toConsole), and which of its process's descriptors are the console.
     this.outbox = m.outbox ? new Outbox(m.outbox) : null;
@@ -223,6 +232,7 @@ class Thread {
     this.unlock();
     const reply = this.ask(OP.SYSCALL);
     if (reply === REPLY.AWAY) throw new Away();
+    if (reply === REPLY.EXEC) throw new Exec(Number(i64[CH.ARG0]), Number(i64[CH.ARG1]));
     this.lock();
     this.catchUp();
     if (reply === REPLY.REGS) this.setRegs(Array.from({length: REGS.length}, (_, n) => i64[CH.REGS + n]));
@@ -342,7 +352,8 @@ class Thread {
     } else this.resumeAt = address;
   }
 
-  run(): void {
+  /** Run until it leaves this Worker; what it runs next here, when its process exec'd a program kept here (Exec). */
+  run(): Exec | undefined {
     for (;;) {
       try {
         this.catchUp();
@@ -356,6 +367,7 @@ class Thread {
       } catch (e) {
         if (e instanceof Again) continue;
         if (e instanceof Away) return;
+        if (e instanceof Exec) return e;
         if (e instanceof Preempted) {
           // Calls deep enough: on afresh. Its time is up: the kernel hears only if it asked (the interrupt word),
           // or the process shares memory with another (what it wrote there goes to the others then).
@@ -383,6 +395,22 @@ class Thread {
   }
 }
 
+/**
+ * `from`'s process exec'd a program whose instance on the memory it now runs on is kept here (remote.ts answer): that
+ * thread goes on, as `from`'s thread (its channel, its process's consoles), its registers and where it starts in the
+ * channel; its x87 afresh, its globals as a fresh instance's. It comes first of those kept, as remote.ts keeps it.
+ */
+function goOn(from: Thread, to: Exec): Thread {
+  const was = kept.find((t) => t.memoryId === to.memoryId && t.imageId === to.imageId);
+  if (!was) throw new Error('an exec gone on with in a Worker that does not keep its program');
+  const m = from.last, i64 = from.i64;
+  was.again({...was.last, again: true, tid: from.tid, channel: from.channel, door: m.door, outbox: m.outbox, consoles: m.consoles, origin: m.origin,
+    regs: Array.from({length: REGS.length}, (_, n) => i64[CH.REGS + n]), resumeAt: i64[CH.RIP], fpu: null, keep: null,
+    extras: was.modules, fpuOps: was.fpuOps});
+  kept = [was, ...kept.filter((t) => t !== was)].slice(0, KEEP_INSTANCES);
+  return was;
+}
+
 listen(({data: m}) => {
   if (m.type === 'forget') {
     kept = kept.filter((t) => t.memoryId !== m.memoryId);
@@ -400,7 +428,7 @@ listen(({data: m}) => {
     const was = m.again ? kept.find(same) : null;
     if (was) { task = was; task.again(run); } else task = new Thread(run);
     kept = [task, ...kept.filter((t) => t !== task && !same(t))].slice(0, KEEP_INSTANCES);
-    task.run();
+    for (let next = task.run(); next; next = task.run()) task = goOn(task, next);
     // Left: its channel may go to another thread (remote.ts channel).
     Atomics.store(task.i32, CH.LEFT, 1);
   } catch (e) {

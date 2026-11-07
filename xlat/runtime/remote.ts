@@ -114,8 +114,12 @@ export class RemoteKernel extends Kernel {
   override newTask(proc: Process): RemoteTask { return new RemoteTask(proc, this.nextPid++); }
   override ready(t: Task): void { this.go(t); }
   override go(t: Task): void { (t as RemoteTask).answer(); }
-  /** A memory let go of is taken again: its threads' lock is a new one. */
-  override reuseMemory(memory: Mem): void { this.gils.delete(memory); }
+  /**
+   * A memory let go of is taken again: its threads' lock is free, as a new one would be (no thread runs on a memory let
+   * go of; one ended in guest code leaves it tainted, never taken again). The same lock, so a Worker that keeps an
+   * instance on the memory has it already (RemoteTask.answer: an exec gone on with in its Worker).
+   */
+  override reuseMemory(memory: Mem): void { const g = this.gils.get(memory); if (g) new Int32Array(g).fill(0); }
   /** Raised as an interrupt is: the thread running guest code looks in at its next loop's head (cpu.ts pause). */
   override lookIn(p: Process): void { if (p.memory) Atomics.store(new Int32Array(p.memory.buffer), INTERRUPT >> 2, 1); }
 
@@ -459,9 +463,21 @@ class RemoteTask extends Task {
     if (!this.worker) { this.worker = this.kernel.worker(this); this.post(); return; }
     if (this.execd) {
       this.execd = false;
+      // Its Worker may keep an instance of the program it now runs, on the memory it runs it on (a shell's commands):
+      // that goes on there at once, told which in the channel, its registers and where it starts there too, with no
+      // message posted and no Worker leaving its call for its event loop.
+      if (this.mayGoOn && this.kernel.holds(this.worker, this)) {
+        PROFILE.instancesKept++;
+        const memoryId = idOf(this.memory), imageId = idOf(this.image);
+        this.kept(this.worker, memoryId, imageId);
+        this.i64[CH.ARG0] = BigInt(memoryId);
+        this.i64[CH.ARG1] = BigInt(imageId);
+        this.i64[CH.RIP] = this.resumeAt;
+        Atomics.store(count(this.image), 0, this.image.extras.length);
+        this.reply(REPLY.EXEC);
+        return;
+      }
       this.reply(REPLY.AWAY);
-      // Its Worker may keep an instance of the program it now runs, on the memory it runs it on (a shell's commands).
-      if (this.mayGoOn && this.kernel.holds(this.worker, this)) { this.again = true; PROFILE.instancesKept++; }
       this.post();
       return;
     }
@@ -472,6 +488,11 @@ class RemoteTask extends Task {
     this.reply(changed ? REPLY.REGS : REPLY.VALUE);
   }
 
+  /** What its Worker keeps after this run, as it keeps it (cpu.ts kept): this instance first, the few before it. */
+  kept(w: Hand, memoryId: number, imageId: number): void {
+    w.kept = [{memoryId, imageId, extras: this.image.extras.length}, ...(w.kept ?? []).filter((x) => x.memoryId !== memoryId || x.imageId !== imageId)].slice(0, KEEP_INSTANCES);
+  }
+
   post(): void {
     const image = this.image, k = this.kernel, w = this.worker!;
     const memoryId = idOf(this.memory), imageId = idOf(image);
@@ -479,8 +500,7 @@ class RemoteTask extends Task {
     // memory one of its kept threads ran on, and an image's module and the modules made for it as of then.
     const known = w.kept?.some((x) => x.memoryId === memoryId), like = w.kept?.find((x) => x.imageId === imageId);
     const from = like?.extras ?? 0;
-    // What its Worker keeps after this run, as it keeps it (cpu.ts kept): this instance first, the few before it.
-    w.kept = [{memoryId, imageId, extras: image.extras.length}, ...(w.kept ?? []).filter((x) => x.memoryId !== memoryId || x.imageId !== imageId)].slice(0, KEEP_INSTANCES);
+    this.kept(w, memoryId, imageId);
     w.post({
       type: 'run', again: this.again, tid: this.tid, memoryId, imageId, module: like ? undefined : image.module,
       extrasFrom: from, extras: image.extras.slice(from).map(({module, base, count: n}) => ({module, base, count: n})),

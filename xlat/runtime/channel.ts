@@ -32,9 +32,11 @@ export const CH = {
 export const OP = {SYSCALL: 1, MISS: 2, MODULE: 3, FAULT: 4, YIELD: 5, REGS: 6};
 /**
  * What the kernel answers to a call: its value (in rax), registers to go on with at RIP, leave (exec, or the end),
- * its value with registers it set (arch_prctl's fs), or (not yet an answer) that it needs the registers (OP.REGS).
+ * its value with registers it set (arch_prctl's fs), or (not yet an answer) that it needs the registers (OP.REGS);
+ * its program begun again on its memory (RENEW), or an exec of a program whose instance on the memory the process
+ * now runs on its Worker keeps (EXEC: which in ARG0 and ARG1, its registers and RIP in the channel).
  */
-export const REPLY = {VALUE: 1, REDIRECT: 2, AWAY: 3, REGS: 4, SEND_REGS: 5, RENEW: 6};
+export const REPLY = {VALUE: 1, REDIRECT: 2, AWAY: 3, REGS: 4, SEND_REGS: 5, RENEW: 6, EXEC: 7};
 /**
  * The calls that read the caller's registers: those a thread sends them with. For any other the kernel asks for them
  * only if it comes to need them (a signal taken as the call ends): copying them each call cost more than the call.

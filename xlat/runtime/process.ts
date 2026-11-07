@@ -348,6 +348,8 @@ export class Kernel implements Kern {
 
   /** Whether `node` is a root file, unchanged, whose translation is kept (so it is not read to be translated). */
   keptFor(node: File): boolean { return node.version === 0 && !!node.origin && !!this.keeper?.has(node.origin); }
+  /** Whether this version of `node` is translated already (image). */
+  translated(node: File): boolean { return this.images.get(node)?.version === node.version; }
 
   /**
    * The image for an executable file, translating it once per version. `wait`: inside a call, which may wait for a
@@ -483,9 +485,10 @@ export class Kernel implements Kern {
     // One that last ran `image` first: what of the program no correct run can change is in it already (as a page
     // cache gives a program its file), and is neither zeroed nor laid again (`keeps`).
     const same = (m: Mem): boolean => !!image && !!m.imageOf && (m.imageOf === image || (!!image.file && m.imageOf.file === image.file));
-    // Before those, one an instance of `image` is kept on: that may go on too (Task.load, goesOn); and of those, one
-    // no other program's instance is kept on, so that one is there for its program's next process.
-    const order = image ? [(m: Mem) => this.keepsInstance(m, image), (m: Mem) => same(m) && !this.keepsInstance(m), same] : [];
+    // Before those, one an instance of `image` is kept on: that may go on too (Task.load, goesOn), best on one that
+    // last ran it; and of those without, one no other program's instance is kept on, so that one is there for its
+    // program's next process.
+    const order = image ? [(m: Mem) => same(m) && this.keepsInstance(m, image), (m: Mem) => this.keepsInstance(m, image), (m: Mem) => same(m) && !this.keepsInstance(m), same] : [];
     let k = -1;
     for (const f of order) if ((k = this.spareMemories.findLastIndex(f)) >= 0) break;
     if (k < 0) k = this.spareMemories.length - 1;
@@ -504,12 +507,12 @@ export class Kernel implements Kern {
    * `memory` goes on under its process into a new run of the image it ran (an exec of the same program): zeroed as
    * it would be let go of and taken back, and not let go of, so what is instantiated over it stays (Task.renew).
    */
-  renew(memory: Mem, written: Range[] | null, pages: number, image: Image): void {
+  renew(memory: Mem, written: Range[] | null, pages: number, image: Image, over: Range[] = []): void {
     memory.written = merge([...memory.written, ...written ?? []]);
     memory.keeps = true;
     memory.imageOf = image;
     memory.deepest = undefined;
-    clean(memory, pages, image.facts.readOnly ?? []);
+    clean(memory, pages, [...image.facts.readOnly ?? [], ...over]);
     PROFILE.renewed++;
   }
   /**
@@ -896,6 +899,18 @@ export class Kernel implements Kern {
     this.dirty = true;
   }
 
+  /**
+   * `p`'s one thread's instance stays with the memory `p` alone runs on, as `p` leaves it (it ends, or execs another
+   * program): a fork that takes the memory for the same program runs on it again, instead of instantiating it and
+   * every module made for it since (Task.load). A shell's forks are of the shell, each exec'ing a command.
+   */
+  leaveInstance(p: Process): void {
+    const only = p.tasks.size === 1 ? [...p.tasks][0] : null, m = p.memory;
+    if (!m || m.users !== 1 || !only?.instance || !only.slot) return;
+    const kept = {image: only.image, instance: only.instance, slot: only.slot, attached: only.attached};
+    m.pooled = [kept, ...(m.pooled ?? []).filter((x) => x.image !== only.image)].slice(0, KEEP_INSTANCES);
+  }
+
   /** A process ends with wait status `status`: its threads, its files; its parent is told, and its children go to init. */
   exitProcess(p: Process, status: number): void {
     if (p.state !== 'live') return;
@@ -907,13 +922,7 @@ export class Kernel implements Kern {
     if (p.alarm) { this.removeTimer(p.alarm.timer); p.alarm = null; }
     // (What it wrote is known from its threads: before they go.)
     const written = p.memory ? p.written() : null;
-    // One thread's instance stays with its memory: a fork that takes the memory for the same program runs on it
-    // again instead of instantiating it and every module made for it since (Task.load).
-    const only = p.tasks.size === 1 ? [...p.tasks][0] : null;
-    if (p.memory && only?.instance && only.slot && p.memory.users === 1) {
-      const kept = {image: only.image, instance: only.instance, slot: only.slot, attached: only.attached};
-      p.memory.pooled = [kept, ...(p.memory.pooled ?? []).filter((x) => x.image !== only.image)].slice(0, KEEP_INSTANCES);
-    }
+    this.leaveInstance(p);
     for (const t of [...p.tasks]) this.endTask(t);
     p.tasks.clear();
     p.unmapShared();
@@ -1347,8 +1356,9 @@ export class Process implements Proc {
     const node = this.kernel.vfs.lookup(path, this.cwd);
     if (!(node instanceof File)) throw new FsError(node.isDir ? E.ACCES : E.NOEXEC);
     if (!(node.mode & 0o111)) throw new FsError(E.ACCES);
-    // A program whose translation is kept is an ELF, and is not read to be run (a compiler's is tens of megabytes).
-    const head = this.kernel.keptFor(node) ? null : node.read(0, 128);
+    // A program translated already (this version of it), or whose translation is kept, is an ELF, and is not read to
+    // be run (a compiler's is tens of megabytes; a shell's commands are run again and again).
+    const head = this.kernel.translated(node) || this.kernel.keptFor(node) ? null : node.read(0, 128);
     if (head && head[0] === 0x23 && head[1] === 0x21) {
       // #!interpreter [arg]
       const line = dec.decode(head).split('\n')[0].slice(2).trim();
@@ -1374,10 +1384,16 @@ export class Process implements Proc {
     this.unmapShared(); // a vfork child's list is its own: empty, though the memory it ran on was its parent's
     this.maps = [];
     let fresh: Mem;
-    if (again && memory) { this.kernel.renew(memory, written, this.mapBase / WASM_PAGE, image); fresh = memory; }
+    // What its data segments will be laid over (below) is not zeroed first.
+    const laid = (image.segments ?? []).map((x): Range => [x.offset, x.offset + x.bytes.length]);
+    if (again && memory) { this.kernel.renew(memory, written, this.mapBase / WASM_PAGE, image, laid); fresh = memory; }
     else {
+      // The new memory is taken before the old one is let go of, so each goes back to the program it ran, with its
+      // instance (a shell's fork's to the shell, the command's to the command), for that program's next process.
+      this.kernel.leaveInstance(this);
+      fresh = this.newMemory(this.mapBase / WASM_PAGE, image, laid);
       this.kernel.letGo(memory, written); // its own, or still its vfork parent's
-      fresh = this.memory = this.newMemory(this.mapBase / WASM_PAGE, image);
+      this.memory = fresh;
     }
     this.argv = argv;
     this.env = env;
@@ -1402,18 +1418,25 @@ export class Process implements Proc {
 
   /** SysV entry stack: argc, argv, envp, auxv, then the strings. */
   stack(argv: string[], env: string[]): number {
-    let top = this.stackTop;
-    const put = (bytes: Uint8Array): number => { top -= bytes.length; this.bytes.set(bytes, top); return top; };
-    const strings = (list: string[]): number[] => list.map((s) => put(enc.encode(s + '\0')));
-    const random = put(randomBytes(16));
-    const execfn = put(enc.encode((argv[0] ?? '') + '\0'));
-    const envp = strings(env), args = strings(argv);
+    // As Linux lays it, upwards: the words (argc, argv, envp, auxv), the random bytes, then the strings, argv's and
+    // the environment's each after the last and the program's name at the top; written in two copies, not one a string.
+    const strings = enc.encode([...argv, ...env, argv[0] ?? ''].map((x) => x + '\0').join(''));
+    const at = (this.stackTop - 8 - strings.length) & ~7, bytes = this.bytes;
+    bytes.set(strings, at);
+    const starts = [at];
+    for (let k = 0; k < strings.length - 1; k++) if (strings[k] === 0) starts.push(at + k + 1);
+    const random = (at - 16) & ~15;
+    bytes.set(randomBytes(16), random);
+    const args = starts.slice(0, argv.length), envp = starts.slice(argv.length, argv.length + env.length), execfn = starts[argv.length + env.length];
     const f = this.image.facts;
     const aux = [[3, f.phdr], [4, f.phent], [5, f.phnum], [6, PAGE], [9, f.entry], [11, 0], [12, 0], [13, 0], [14, 0],
       [23, 0], [25, random], [31, execfn], [0, 0]];
     const words = [args.length, ...args, 0, ...envp, 0, ...aux.flat()];
-    top = (top - words.length * 8) & ~15;
-    words.forEach((w, k) => this.view.setBigUint64(top + k * 8, BigInt(w), true));
+    const top = (random - words.length * 8) & ~15;
+    // Each below 4 GiB (a wasm32 address, or a small number): its high half zero.
+    const out = new Uint32Array(words.length * 2);
+    for (let k = 0; k < words.length; k++) out[2 * k] = words[k];
+    bytes.set(new Uint8Array(out.buffer), top);
     return top;
   }
 
