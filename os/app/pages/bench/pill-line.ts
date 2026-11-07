@@ -1,6 +1,6 @@
 import {fieldMoved} from '../../ui/caret.ts';
 import {still} from '../../ui/glide.ts';
-import {sessionIfAny, type Prompt} from './sessions.ts';
+import {promptHolds, sessionIfAny, type Prompt} from './sessions.ts';
 
 // The box's pill while it runs (box.ts): the prompt line the repo's shell waits at, and its lamp, lit while the shell
 // runs. The repo's Prompt is followed for them, and a new one from the moment it is started again.
@@ -9,9 +9,11 @@ interface PillParts {
   /** The pill (its state lights its lamp) and the prompt line in it. */
   chip: HTMLElement;
   waits: HTMLElement;
-  /** The repo the box works on, and whether the Prompt is up over the center. */
+  /** The repo the box works on, and whether the Prompt is up over the center, or its terminal's line on a desk (Forge):
+   * shown as a terminal's is, with no prompt line while a line runs. */
   repo(): string | null;
   up(): boolean;
+  desk(): boolean;
   /** Told when another Prompt is followed. */
   followed(): void;
 }
@@ -52,7 +54,8 @@ export class PillLine {
     const line = s?.promptLine.trimEnd() ?? '';
     if (repo && line) this.#lastLine.set(repo, line);
     this.#p.chip.dataset.state = !s ? 'none' : s.ended ? 'ended' : s.running ? 'on' : 'starting';
-    this.#waitsAt(!repo ? '' : this.#p.up() ? line : this.#lastLine.get(repo) ?? `${repo} $`, s);
+    // On a desk, the terminal's own line: none while a line runs, as a terminal's prompt is not there till it is done.
+    this.#waitsAt(!repo ? '' : this.#p.up() ? line : this.#p.desk() && promptHolds(repo) === 'busy' ? '' : this.#lastLine.get(repo) ?? `${repo} $`, s);
   }
 
   /** `now` the prompt line in the pill: at once, or (up, after a run) once what the run printed has come in. */
@@ -60,7 +63,7 @@ export class PillLine {
     const {waits} = this.#p;
     cancelAnimationFrame(this.#saying);
     clearTimeout(this.#speaking);
-    if (!(this.#p.up() && now && !waits.textContent) || still()) { waits.textContent = now; return; }
+    if (!((this.#p.up() || this.#p.desk()) && now && !waits.textContent) || still()) { waits.textContent = now; return; }
     // After the frame that draws what came, so the time its lines take to come in is known; then the prompt line and
     // the caret after it come together, as the last line comes.
     this.#saying = requestAnimationFrame(() => {

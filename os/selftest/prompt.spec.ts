@@ -53,6 +53,17 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await app.forge.startPrompt('hello');
   });
 
+  test('on the desk, a line running has no prompt line after it, as a terminal has none till it is done; the line written is moved up at once', async ({app}) => {
+    const ps = app.forge.prompt.page().locator('.desk-box[data-key="term"] .prompt-ps');
+    await expect(ps).toHaveText(/hello \$/);
+    await app.forge.promptBox.fill('sleep 1; echo done');
+    await app.forge.promptBox.press('Enter');
+    await expect(app.forge.prompt.locator('.term-out')).toContainText('sleep 1; echo done');
+    await expect(ps).toHaveText('');
+    await expect(app.forge.prompt.locator('.term-out')).toContainText('done', {timeout: 30_000});
+    await expect(ps).toHaveText(/hello \$/);
+  });
+
   test('ls lists the repo\'s files in columns, as on a terminal 80 wide, and Output keeps the run to be put back in the box', async ({app}) => {
     await app.forge.run('ls');
     await expect(app.forge.prompt).toContainText('Makefile');

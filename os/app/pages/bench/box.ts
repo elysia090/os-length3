@@ -154,7 +154,7 @@ export class Box {
     this.form = h('form', {class: 'prompt'}, this.chip, this.prompt, caps, this.runIt) as HTMLFormElement;
     this.line = [lamp, this.waits, this.prompt, this.runIt];
     this.dock = h('div', {class: 'dock'}, this.note, this.heard);
-    this.#pillLine = new PillLine({chip: this.chip, waits: this.waits, repo: () => this.#repo, up: () => this.#up,
+    this.#pillLine = new PillLine({chip: this.chip, waits: this.waits, repo: () => this.#repo, up: () => this.#up, desk: () => !!p.desk,
       followed: () => this.onFollow?.()});
     // Put away with Escape, the keyboard goes back to the box if it was there (the Prompt not brought up for it), else
     // nowhere.

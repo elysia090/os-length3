@@ -2264,10 +2264,15 @@ never first up whole, or back in the pill, and then on. Its lines are a
 terminal's: the box's line is the line after the output, starting with the
 prompt line the shell waits at (`garden $`, the output's own last line then not
 shown), the words written in the terminal's letters and a cell for a caret, the
-letter under it drawn dark in it. A line sent moves up a line as it is (it does
-not come in again); what it prints comes in a line after another, the screen's
-top rising with it, and the prompt line comes back with the caret as its last
-line does; while it runs, what it is doing (Running 2s) is said on the line
+letter under it drawn dark in it. A line sent moves up a line as it is, in the
+frame the box empties in (it does not come in again, nor leave a frame with it
+nowhere); what it prints comes in a line after another, the screen's top rising
+with it, and the prompt line comes back with the caret as its last line does
+(on the desk too: no prompt line stands under a line while it runs, to be
+pushed down by what it prints, and the caret waits unseen for it; in a long
+run, a key typed shows it again). Started by the first key, it says Starting…
+only if starting takes a while: said at once, it was there a frame and moved
+the line under it down and back; while it runs, what it is doing (Running 2s) is said on the line
 itself, quietly, with no buttons on it (on the desk a terminal has no pills:
 Ctrl+C interrupts, as in any terminal), so nothing above the line comes and
 goes, and once the run is

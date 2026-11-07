@@ -70,6 +70,10 @@ function loadWords(s: Stage): string {
   }
 }
 
+/** How long starting takes before the Prompt says it is starting: a start that comes at once says nothing (said at
+ * once, it was there a frame, and moved the line under it down and back). */
+const STARTING_SAID = 600;
+
 /** The Prompt's shell, as the app's Prompts run it. */
 const SHELL = ['/bin/sh', '-i'];
 /** The person's time zone by its name, as the browser knows it: the root has every zone, so its clock reads as theirs. */
@@ -160,6 +164,8 @@ export class Session implements Prompt {
   private copy: WriteBack;
   /** Whether the shell has waited at a prompt line yet; what was sent before it did, held for it. */
   private first = new FirstPrompt();
+  /** "Starting…", to be said if the shell has not said its first line by then. */
+  private startingSaid = 0;
   /** An OSC begun in the last piece of output and not yet ended (osc.ts): read when it ends. */
   private oscHeld = '';
   /** The prompt line last told to the watchers. */
@@ -188,8 +194,14 @@ export class Session implements Prompt {
   begin() {
     if (this.#begun) return;
     this.#begun = true;
-    this.status.textContent = t('Starting…');
+    this.sayStarting();
     void this.start();
+  }
+
+  /** "Starting…" said, if the shell has not said its first line in STARTING_SAID. */
+  private sayStarting() {
+    clearTimeout(this.startingSaid);
+    this.startingSaid = window.setTimeout(() => { if (!this.first.waited && !this.ended) this.status.textContent = t('Starting…'); }, STARTING_SAID);
   }
 
   /** Whether the program in front reads each key as it comes (vi, less, top): the box sends keys as they are pressed
@@ -352,6 +364,7 @@ export class Session implements Prompt {
     for (const m of s.matchAll(RAN)) { const r = this.runs.at(-1); if (r && r.ms === null && r.status === undefined) r.status = m[1] === undefined ? null : Number(m[1]); }
     s = s.replace(OSC, '');
     if (!s) return;
+    clearTimeout(this.startingSaid);
     if (this.status.textContent === t('Starting…')) this.status.textContent = '';
     if (this.standIn) { this.out.takeBack(this.standIn); this.standIn = ''; }
     this.out.print(s);
@@ -457,7 +470,8 @@ export class Session implements Prompt {
   private async startL3() {
     this.on = 'l3';
     // While l3 comes, the status says how far it is and what it is doing.
-    const unwatch = watchLoad((s) => { this.status.textContent = loadWords(s); });
+    // (Ready, it is starting: said only if that takes a while, as a start at once says nothing.)
+    const unwatch = watchLoad((s) => { if (s.at === 'ready') this.sayStarting(); else this.status.textContent = loadWords(s); });
     // Its Worker was readied while the Prompt was shown (readyPrompt), else it is made now, while l3 and the repo's copy
     // come, and starts the Workers its first threads run in: their scripts are loaded and run by the time it is given
     // what to run, rather than after.
@@ -477,7 +491,7 @@ export class Session implements Prompt {
     this.unwatch = mirror(this.repo, this.id, (m) => this.worker?.postMessage(m));
     // Running is the usual state and says nothing; only what is missing is said. Until the shell says its first
     // line (a cold start is some seconds), it is still starting, and says so: not an empty Prompt.
-    this.status.textContent = copy.complete ? t('Starting…') : t('Large files and binaries excluded');
+    if (copy.complete) this.sayStarting(); else this.status.textContent = t('Large files and binaries excluded');
     this.live = true;
     this.l3 = l3;
     this.tell();

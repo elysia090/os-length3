@@ -114,6 +114,8 @@ export class Output {
   sent(lines: string) {
     this.#echo = lines;
     this.print(lines);
+    // Drawn now, in the frame the box is emptied in: a frame between showed the line gone from both.
+    if (this.#painting) { cancelAnimationFrame(this.#painting); this.#draw(); }
   }
 
   /**

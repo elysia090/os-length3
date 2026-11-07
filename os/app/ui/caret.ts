@@ -106,13 +106,15 @@ export function caret() {
     frame = 0;
     const f = field;
     if (!f || document.activeElement !== f || f.selectionStart !== f.selectionEnd) { hide(); return; }
+    // A field may hold its caret back a moment (--caret: none: a terminal's line while what it ran prints).
+    const cs = getComputedStyle(f);
+    if (cs.getPropertyValue('--caret').trim() === 'none') { hide(); return; }
     if (styled !== f) { copyStyle(f, copy); styled = f; }
     const p = caretAt(f, copy);
     const seen = seenIn(f);
     if (!seen || p.x < seen.left - 1 || p.x > seen.right + 1 || p.y + p.h / 2 < seen.top || p.y + p.h / 2 > seen.bottom) { hide(); return; }
     // A field that is a terminal's line (the Prompt up as a screen: --caret: block) has a terminal's caret, a cell, the
     // letter it stands on drawn in it dark (styles.css), as a terminal draws it.
-    const cs = getComputedStyle(f);
     const block = cs.getPropertyValue('--caret').trim() === 'block';
     mark.classList.toggle('block', block);
     mark.style.width = block ? `${cell(copy)}px` : '';

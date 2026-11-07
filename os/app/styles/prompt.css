@@ -259,6 +259,11 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
 .prompt:focus-within { transition-duration: calc(60ms * var(--pace)); }
 .prompt-in { flex: 1; min-width: 0; max-height: 30vh; border: 0; padding: 0; background: transparent; resize: none; font: var(--t-body)/1.6 var(--sans); }
 .prompt-in:focus { outline: none; }
+/* While a line runs there is no prompt line (pill-line.ts), and the caret, between where the line was written and
+   where the next will be, waits unseen for what it prints (caret.ts): a run over at once brings the prompt line and the
+   caret back together, never a caret going from place to place. In a long one, a key typed shows it again. */
+.prompt[data-mode="run"]:has(.prompt-ps:empty) .prompt-in { animation: caret-held 400ms step-end; }
+@keyframes caret-held { from { --caret: none; caret-color: transparent; } }
 .prompt-in:disabled { cursor: var(--cursor-arrow); }
 .prompt-note:empty { display: none; }
 /* Over the center, what the box says stands on a strip of ground of its own, as what was searched does under the
