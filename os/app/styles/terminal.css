@@ -37,6 +37,6 @@
 .vt-row { display: block; height: 1.6em; overflow: hidden; }
 .vt-cursor { background: var(--ink); color: var(--paper); }
 /* While a program reads each key as it comes, the box's line is not shown: the keys go to it, and its screen has the
-   cursor. The line keeps the keyboard. */
-form.prompt[data-raw] { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
+   cursor. The line keeps the keyboard, in the window's corner, so what is typed never has the page scrolled to it. */
+form.prompt[data-raw] { position: fixed; left: 0; top: 0; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
 .term.raw > .term-activity { display: none; }

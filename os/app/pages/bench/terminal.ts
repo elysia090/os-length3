@@ -8,7 +8,7 @@ import {filesNow, hearLater, keepMore, keepReached, keepTranslation, keptNow, lo
 import {every} from '../../host/runs.ts';
 import {errorText} from '../../host/errors.ts';
 import {still} from '../../ui/glide.ts';
-import {aheadFor, hearAhead, translateAhead} from '../../prompt/ahead.ts';
+import {aheadFor, hearAhead, holdAhead, translateAhead} from '../../prompt/ahead.ts';
 import {Activity} from './activity.ts';
 import {endLine, goDark, jolt, switchOver} from './ending.ts';
 import {clips, heldBack, OSC, RAN} from './osc.ts';
@@ -234,7 +234,16 @@ export class Session implements Prompt {
     this.out.keys(this.raw ? {cols: COLS, rows: ROWS, newline: !!(tio.oflag & OPOST) && !!(tio.oflag & ONLCR), reply: (text) => this.typeIn(text)} : null);
     // A whole-screen program waits for keys by its nature: nothing is said of it under its screen.
     this.element.classList.toggle('raw', this.raw);
+    this.holding(this.raw);
     if (was !== this.raw) this.tell();
+  }
+
+  /** Whether this Prompt holds what is translated ahead (a program in front reads each key as it comes: ahead.ts). */
+  private held = false;
+  private holding(on: boolean) {
+    if (on === this.held) return;
+    this.held = on;
+    holdAhead(on);
   }
 
   /** The prompt line the shell waits at (`garden $ `), or nothing while a line runs or it is not running. */
@@ -580,6 +589,7 @@ export class Session implements Prompt {
 
   private end(message: () => string, why = '') {
     this.ended = true;
+    this.holding(false);
     this.said = message;
     this.why = why;
     this.activity.end();

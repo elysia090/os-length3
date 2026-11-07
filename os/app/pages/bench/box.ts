@@ -801,8 +801,10 @@ export class Box {
       e.preventDefault();
       s.typeIn(e.clipboardData?.getData('text/plain') ?? '', true);
     });
-    prompt.addEventListener('input', () => {
-      if (this.#raw()) return;
+    prompt.addEventListener('input', (e) => {
+      // Text come without a key for it (a phone's keyboard, a dictation): the program has it, as it came.
+      const raw = this.#raw();
+      if (raw) { if (!(e as InputEvent).isComposing && prompt.value) { raw.typeIn(prompt.value); prompt.value = ''; } return; }
       this.#fit();
       this.#keep();
       this.#walk.reset();

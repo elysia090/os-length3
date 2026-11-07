@@ -152,6 +152,10 @@ const failed = (e) => self.postMessage({type: 'error', message: e instanceof Err
  */
 const IDLE_MS = 1200;
 let idle;
+/** A program in front reads each key as it comes (vi, less, top): waiting for input is waiting for the next key, the
+ * person typing, not reading; nothing is translated again until it gives the terminal back (it would hold up the page's
+ * frames, the translation taking the threads the page draws with, at every pause between keys). */
+let rawKeys = false;
 
 /** The kernel paused (here: every thread waits or it ended, `r` as pump says): what the shell changed, and why it waits. */
 function paused(r) {
@@ -160,7 +164,7 @@ function paused(r) {
   self.postMessage(m);
   // Waiting for a person: what is due is consolidated while they read or type, then said as anything translated is.
   clearTimeout(idle);
-  if (m.type === 'waiting' && m.for === 'input' && kernel.due.size) idle = setTimeout(() => { if (kernel.consolidateDue()) told(); }, IDLE_MS);
+  if (m.type === 'waiting' && m.for === 'input' && kernel.due.size && !rawKeys) idle = setTimeout(() => { if (kernel.consolidateDue()) told(); }, IDLE_MS);
   return m;
 }
 
@@ -260,7 +264,7 @@ self.onmessage = async ({data}) => {
       // comes (then the page sends keys as they are pressed: it is told each change, `mode`).
       interactive: !!data.screen,
       screen: !!data.screen, cols: data.cols ?? 80, rows: data.rows ?? 24,
-      mode: (tio) => self.postMessage({type: 'tty', ...tio}),
+      mode: (tio) => { rawKeys = !(tio.lflag & 2); self.postMessage({type: 'tty', ...tio}); },
       write: (fd, bytes) => self.postMessage({type: 'output', fd, bytes}, [bytes.buffer]),
       read,
       ready: () => pending.length > 0 || ended,

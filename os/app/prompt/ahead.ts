@@ -42,16 +42,39 @@ const idle = () => new Promise<void>((r) => {
   document.addEventListener('visibilitychange', shown);
 });
 
+/**
+ * The person at the keys of a program that reads each key as it comes (vi, less, top: holdAhead): nothing is translated
+ * ahead then, and one under way is let go of, to be done again later. A translation takes the threads the page draws
+ * with: on a machine of four, vi's screen stood still for seconds at a key while rg was translated. Given back, it
+ * goes on a moment after.
+ */
+let holders = 0;
+let quietAt = 0;
+let dropping: (() => void) | null = null;
+/** A program in front reads each key as it comes (`on`), or has given the terminal back. */
+export function holdAhead(on: boolean) {
+  holders = Math.max(0, holders + (on ? 1 : -1));
+  if (on) dropping?.();
+  else quietAt = performance.now() + 3000;
+}
+/** Until nothing holds what is translated ahead, and a moment after. */
+const free = async () => {
+  while (holders > 0 || performance.now() < quietAt) await new Promise((r) => setTimeout(r, holders > 0 ? 500 : Math.max(50, quietAt - performance.now())));
+};
+
 /** Of each pack of an index, each file it stores by where it is: its line of the pack's table (table.mjs). */
 const tables = new WeakMap<Index, ReturnType<typeof entriesOf>>();
 const entries = (index: Index) => { if (!tables.has(index)) tables.set(index, entriesOf(index)); return tables.get(index)!; };
 
+/** A translation let go of before it was done (held: holdAhead), to be done again. */
+const DROPPED = 'dropped';
 /** One program translated in a worker of its own, which then ends (its memory goes back with it). */
-function translated(l3: L3, f: Index['files'][number]): Promise<{wasm: Uint8Array; segments: {offset: number; bytes: Uint8Array}[] | null} | null> {
+function translated(l3: L3, f: Index['files'][number]): Promise<{wasm: Uint8Array; segments: {offset: number; bytes: Uint8Array}[] | null} | null | typeof DROPPED> {
   const pack = entries(l3.index)[f.pack];
   return new Promise((resolve) => {
     const w = new Worker(new URL('../../../xlat/runtime/ahead.mjs', import.meta.url), {type: 'module'});
-    const done = (v: Awaited<ReturnType<typeof translated>>) => { w.terminate(); resolve(v); };
+    const done = (v: Awaited<ReturnType<typeof translated>>) => { dropping = null; w.terminate(); resolve(v); };
+    dropping = () => done(DROPPED);
     w.onmessage = ({data}) => done(data.error ? null : data);
     w.onerror = () => done(null);
     w.postMessage({translator: l3.translator, url: new URL(l3.url, location.href).href, pack: l3.index.packs[f.pack].name,
@@ -73,8 +96,12 @@ export async function translateAhead(l3: L3, paths: readonly string[]): Promise<
       if (!f) continue;
       const origin = originOf(l3.index, f);
       if (await translationKept(l3, origin)) continue;
-      await idle();
-      const got = await translated(l3, f);
+      let got: Awaited<ReturnType<typeof translated>> = DROPPED;
+      while (got === DROPPED) {
+        await free();
+        await idle();
+        got = await translated(l3, f);
+      }
       const url = got && await keepTranslation(l3, origin, got.wasm, got.segments);
       if (url) for (const ear of ears) ear(origin, url);
     }
