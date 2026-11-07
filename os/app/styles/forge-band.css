@@ -94,13 +94,16 @@
    is down the desk steps back out of sight, and comes back as it goes up. */
 .band-tools .search-results {
   top: calc(100% + var(--s3)); left: calc(var(--s4) - var(--search-x, 104px)); right: auto; width: calc(var(--center-w, 900px) - 40px);
-  max-height: calc(var(--center-h, 760px) * .82); overflow-y: auto; scrollbar-width: none; box-sizing: border-box;
+  max-height: calc(var(--center-h, 760px) * .82); overflow: hidden; box-sizing: border-box; display: flex; flex-direction: column;
   padding: 18px 28px 22px; background: var(--paper); border: 2px solid var(--ink); border-radius: var(--r-place); box-shadow: 8px 8px 0 0 var(--ink);
-  transform-origin: top; animation: drop-in calc(220ms * var(--pace)) var(--land); overflow-anchor: none;
+  transform-origin: top; animation: drop-in calc(220ms * var(--pace)) var(--land);
 }
+/* Only what was found scrolls (past the sheet's room), under the words searched for, which stay at its head. */
+.band-tools .search-results > .search-panel { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: none; overflow-anchor: none; }
+.band-tools .search-results > .search-pills { flex: none; }
 @keyframes drop-in { from { clip-path: inset(0 0 100% 0); opacity: .4; } }
 .band-tools .search-results:not([data-q=''])::before {
-  content: attr(data-q); display: block; margin: 0 0 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  content: attr(data-q); display: block; flex: none; margin: 0 0 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font: 900 56px/.95 var(--display); letter-spacing: -.025em; color: var(--ink);
 }
 .band-tools .found-card { border: 0; background: none; height: auto; max-height: none; }

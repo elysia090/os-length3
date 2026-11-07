@@ -629,7 +629,7 @@ export class Reference {
     const fresh = !this.body.querySelector('.hit-group, .search-count');
     this.body.replaceChildren(...said);
     // What was found is read from its head: the words searched for, then the first found.
-    if (fresh) this.under.scrollTop = 0;
+    if (fresh) this.panel.scrollTop = 0;
     if (fresh && !still()) said.slice(0, 8).forEach((el, i) => el.animate([{opacity: 0, translate: '0 4px'}, {opacity: 1, translate: '0 0'}],
       {duration: paced(220), delay: paced(i * 30), easing: LAND, fill: 'backwards'}));
     if (had >= 0) this.choices()[Math.min(had, this.choices().length - 1)]?.focus();
