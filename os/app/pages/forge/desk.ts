@@ -58,7 +58,16 @@ const land = (x: number) => 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 3);
  * zooming first, then going). */
 type Way2 = 'pan' | 'in' | 'out';
 
-interface Box { key: string; laid: Laid; el: HTMLElement; label: HTMLElement; slot: Slot }
+/** A box on the desk; `placed` once it has stood somewhere (before, it has no place to move from). */
+interface Box { key: string; laid: Laid; el: HTMLElement; label: HTMLElement; slot: Slot; placed?: boolean }
+
+/** `el` put at (x, y) at once, not moved there: where a box first stands (never come from the desk's corner). */
+function standAt(el: HTMLElement, x: number, y: number) {
+  el.style.transition = 'none';
+  el.style.translate = `${x}px ${y}px`;
+  void el.offsetWidth;
+  el.style.transition = '';
+}
 
 export class Desk {
   readonly element: HTMLElement;
@@ -131,17 +140,27 @@ export class Desk {
     });
     // Written in, the box in hand is come back to: at the standard when the camera stood back from it, and from over the
     // Agent's work (their terminal written in).
-    this.element.addEventListener('keydown', (e) => {
-      if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey || (e.key.length !== 1 && e.key !== 'Enter' && e.key !== 'Backspace')) return;
-      const key = (e.target as Element).closest<HTMLElement>('.desk-box')?.dataset.key;
+    const writtenIn = (at: EventTarget | null) => {
+      const key = (at as Element | null)?.closest?.<HTMLElement>('.desk-box')?.dataset.key;
       if (!key || key !== this.#held) return;
       if (this.#cam !== 'standard') { this.#framed = null; this.#setCam('standard'); }
       else if (this.#framed) { this.#framed = null; this.#topAt = null; this.#look(true); }
+    };
+    this.element.addEventListener('keydown', (e) => {
+      if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey || (e.key.length !== 1 && e.key !== 'Enter' && e.key !== 'Backspace')) return;
+      writtenIn(e.target);
     }, true);
+    // (Written in with no key: a paste, a word chosen from the input method's, a dictation.)
+    this.element.addEventListener('beforeinput', (e) => writtenIn(e.target), true);
     this.element.addEventListener('pointerdown', (e) => { this.#pressing = (e.target as Element).closest<HTMLElement>('.desk-box')?.dataset.key ?? null; }, true);
     for (const end of ['pointerup', 'pointercancel'] as const) addEventListener(end, () => { setTimeout(() => { this.#pressing = null; }); }, true);
     new ResizeObserver(() => this.#relay()).observe(this.element);
-    this.element.addEventListener('scroll', () => this.#scrolledStandard());
+    this.element.addEventListener('scroll', () => {
+      // On its way the camera is the plane's move, the desk's scroll at rest: what the page scrolls meanwhile (the caret
+      // brought into view as a box far off is written in) is undone before it is drawn.
+      if (this.#moving && (this.element.scrollLeft || this.element.scrollTop)) { this.element.scrollTo(0, 0); return; }
+      this.#scrolledStandard();
+    });
     // A key pressed (or the keyboard come into a box) while boxes still slide to their places, a box just opened: what
     // it brought into view was brought there as it stood on its way. Once they stand, the camera goes back where it was.
     for (const ev of ['keydown', 'focusin'] as const) this.element.addEventListener(ev, () => { if (this.#sliding()) this.#strayed = true; }, true);
@@ -214,9 +233,13 @@ export class Desk {
   /** The keys on the desk, column by column. */
   get columns(): string[][] { return this.#cols.map((c) => [...c]); }
 
-  /** `laid` put on the desk as `key`: beside the box `beside` (a column of its own after that one's), in column `col`,
-   * or under the box in hand (the first box, the first column). */
-  lay(key: string, laid: Laid, col?: number, beside?: string) {
+  /**
+   * `laid` put on the desk as `key`: beside the box `beside` (a column of its own after that one's), in column `col`,
+   * or under the box in hand (the first box, the first column). `how.slide`: it comes out from under the box above it,
+   * sliding down to its place (one opened now, not one laid again as it was left); `how.instead`: it takes the place
+   * of that box, where it lies, as it is (a file renamed: no move at all), in hand if that one was.
+   */
+  lay(key: string, laid: Laid, col?: number, beside?: string, how: {slide?: boolean; instead?: string} = {}) {
     if (this.#boxes.has(key)) return;
     const name = h('span', {class: 'desk-name'}, laid.name);
     const label = h('div', {class: 'desk-label'}, h('span', {class: 'desk-dir'}, laid.dir), name,
@@ -242,14 +265,29 @@ export class Desk {
       el.classList.add('born');
       el.addEventListener('transitionend', () => el.classList.remove('born'), {once: true});
       el.style.width = `${WIDTH}px`;
-      el.style.translate = `${by.slot.x}px ${by.slot.y}px`;
-      // (Where it starts taken as its style before it is moved, so it goes from there.)
-      void el.offsetWidth;
+      standAt(el, by.slot.x, by.slot.y);
     } else this.#plane.append(el);
     this.#sized.observe(el);
-    const box: Box = {key, laid, el, label, slot: {x: 0, y: 0}};
+    const box: Box = {key, laid, el, label, slot: {x: 0, y: 0}, placed: !!by};
     this.#boxes.set(key, box);
     const byCol = by ? this.#cols.findIndex((k) => k.includes(by.key)) : -1;
+    const was = how.instead === undefined ? undefined : this.#boxes.get(how.instead);
+    if (was) {
+      // In its place, as it is: where it lies, its size, in hand if it was; then the one it takes the place of goes.
+      const c = this.#cols.findIndex((k) => k.includes(was.key));
+      this.#cols[c].splice(this.#cols[c].indexOf(was.key), 0, key);
+      this.#plane.insertBefore(el, was.el);
+      box.slot = {...was.slot};
+      box.placed = true;
+      el.style.width = `${WIDTH}px`;
+      standAt(el, was.slot.x, was.slot.y);
+      if (this.#held === was.key) {
+        this.#held = key;
+        el.classList.add('held');
+      }
+      this.lift(was.key);
+      return;
+    }
     if (byCol >= 0) this.#cols.splice(byCol + 1, 0, [key]);
     else if (col !== undefined) {
       while (this.#cols.length <= col) this.#cols.push([]);
@@ -259,7 +297,28 @@ export class Desk {
       if (c < 0) this.#cols[0].push(key);
       else this.#cols[c].splice(this.#cols[c].indexOf(this.#held!) + 1, 0, key);
     }
+    // Out from under the box above it: where that one is, beneath it, then down to its own place (its name once out).
+    const column = this.#cols.find((k) => k.includes(key))!, above = this.#boxes.get(column[column.indexOf(key) - 1] ?? '');
+    if (how.slide && above && !by && !still()) {
+      this.#plane.insertBefore(el, above.el);
+      el.classList.add('born');
+      el.addEventListener('transitionend', () => el.classList.remove('born'), {once: true});
+      el.style.width = `${WIDTH}px`;
+      // (Its height read first: reading it draws it, and it is to be drawn first where it starts.)
+      const tall = el.offsetHeight;
+      standAt(el, above.slot.x, above.slot.y + Math.max(0, above.el.offsetHeight - tall));
+      box.placed = true;
+    }
     this.#relay();
+  }
+
+  /** The name over `key` written over in its place (a new file's, as it comes). */
+  name(key: string) {
+    const b = this.#boxes.get(key);
+    // Its name is shown at once, being written, even while the box is still on its way out.
+    b?.el.classList.remove('born');
+    const name = b?.label.querySelector<HTMLElement>('.desk-name');
+    if (b?.laid.rename && name) b.laid.rename(name);
   }
 
   /** `key` taken off the desk; the box in hand, if it was, is the one beside it. */
@@ -311,9 +370,10 @@ export class Desk {
   }
 
   /**
-   * Where the camera stands over the framed boxes, at the standard: over all of them when they fit; else where it
-   * stands while one of them is well in sight there (no going to and fro between lanes at work side by side), else on
-   * the one last at work. Null when none lies here.
+   * Where the camera stands over the framed boxes, at the standard: over all of them when they fit; else sideways to
+   * the one last to start (`keys` in the order they started: the work going on now), whole in the middle, the others
+   * at its sides a sliver each, saying where they are and that they are at work too. Already whole in sight, it stays.
+   * Null when none lies here.
    */
   #frameView(keys: string[]): View | null {
     const boxes = keys.map((k) => this.#boxes.get(k)).filter((b): b is Box => !!b);
@@ -321,9 +381,8 @@ export class Desk {
     const w = this.element.clientWidth, hgt = this.element.clientHeight;
     const all = overAll(boxes.map((b) => ({slot: b.slot, h: b.el.offsetHeight})), w, hgt);
     if (all) return all;
-    const v = this.#view;
-    if (v.s === 1 && boxes.some((b) => this.#seen(b, v, w, hgt) >= .4)) return {...v};
-    const last = boxes[boxes.length - 1];
+    const v = this.#view, last = boxes[boxes.length - 1];
+    if (v.s === 1 && this.#seen(last, v, w, hgt) >= .98) return {...v};
     return standardOn(last.slot, last.el.offsetHeight, w, hgt);
   }
 
@@ -382,7 +441,9 @@ export class Desk {
       right = Math.max(right, p.x + WIDTH);
       bottom = Math.max(bottom, p.y + heights(key));
       b.el.style.width = `${WIDTH}px`;
-      b.el.style.translate = `${p.x}px ${p.y}px`;
+      // A box laid with no way in of its own stands in its place at once.
+      if (b.placed) b.el.style.translate = `${p.x}px ${p.y}px`;
+      else { standAt(b.el, p.x, p.y); b.placed = true; }
     }
     this.#plane.style.width = `${right + w}px`;
     this.#plane.style.height = `${bottom + hgt}px`;

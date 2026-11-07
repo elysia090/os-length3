@@ -148,25 +148,31 @@ class Forge {
           if (going) { clearTimeout(going.timer); this.shut(going.repo, going.path); }
           going = {repo: c.repo, path: c.path, timer: window.setTimeout(() => { if (going) this.shut(going.repo, going.path); going = null; }, 600)};
         } else for (const path of gone) this.shut(c.repo, path);
+      } else if (c.what === 'file' && going && going.repo === c.repo && going.path === c.path) {
+        // Written again where it was (a file replaced whole, as the Agent writes one): it never went; its box stays.
+        clearTimeout(going.timer);
+        going = null;
       } else if (c.what === 'file' && going && going.repo === c.repo && !d.files.has(c.path)) {
         clearTimeout(going.timer);
-        const from = going.path, col = d.desk.columns.findIndex((k) => k.includes(from));
+        const from = going.path;
         going = null;
-        this.shut(c.repo, from);
-        this.layFile(c.repo, d, c.path, col < 0 ? undefined : col);
+        this.moved(c.repo, from, c.path);
       }
     });
-    // Ctrl+N (⌘N) makes a new file wherever Forge is on screen and nothing over it holds the page (a browser's own tab
-    // keeps Ctrl+N for a new window; installed, it is Forge's).
+    // Shift+N makes a new file, as a new post is begun on X: where nothing is being written (the finger on a box, the
+    // band, the pane), Forge on screen and nothing over it holding the page. Taken before the desk hears it (a letter
+    // there goes into the box under the finger).
     const keys = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() !== 'n' || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.isComposing) return;
+      if (e.key !== 'N' || !e.shiftKey || e.ctrlKey || e.metaKey || e.altKey || e.isComposing || e.repeat) return;
       if (!this.element.isConnected || this.element.closest('[hidden]') || document.getElementById('page')?.hasAttribute('inert')) return;
-      if ((e.target as Element | null)?.closest?.('[data-raw]')) return;
+      const at = e.target as HTMLElement | null;
+      if (at?.closest?.('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [data-raw]')) return;
       e.preventDefault();
+      e.stopPropagation();
       void this.newFile();
     };
-    document.addEventListener('keydown', keys);
-    this.offKeys = () => document.removeEventListener('keydown', keys);
+    document.addEventListener('keydown', keys, true);
+    this.offKeys = () => document.removeEventListener('keydown', keys, true);
     this.known = ctx.repo;
     // Forge's head is its band; its name is still the page's heading, for those who hear the page.
     this.element.prepend(h('h1', {class: 'sr-only'}, t('Forge')));
@@ -190,7 +196,7 @@ class Forge {
     const path = this.fileHeld(repo);
     const done = () => this.deedsOut?.();
     const pop = fileDeeds({repo, path, name: path ? split(path)[1] : repo, dir: !path,
-      made: (made, file) => { done(); if (file) this.ctx.openRepo(repo, made, true); },
+      made: (made, file) => { done(); if (file) this.made(repo, made); },
       move: async (to) => {
         if (to !== path) await store.move(repo, path, to);
         done();
@@ -208,13 +214,33 @@ class Forge {
     return held && d.files.has(held) ? held : '';
   }
 
-  /** Ctrl+N: a new file made at once beside the file in hand (at the repo's top beside none), opened to write in, its
+  /** Shift+N: a new file made at once beside the file in hand (at the repo's top beside none), opened to write in, its
    * name written over in its head. */
   private async newFile() {
     const repo = this.now.repo;
     if (!repo) return;
     const path = this.fileHeld(repo);
-    this.ctx.openRepo(repo, await untitled(repo, path ? split(path)[0] : '', path ? split(path)[1] : undefined), true);
+    this.made(repo, await untitled(repo, path ? split(path)[0] : '', path ? split(path)[1] : undefined));
+  }
+
+  /** A file just made: its box, come out from under the one above it, in hand, its name written over at once (the stem
+   * chosen); named, the keyboard goes on into it. */
+  private made(repo: string, path: string) {
+    this.ctx.openRepo(repo, path, 'name');
+  }
+
+  /** `from` of `repo` moved to `to` (renamed here or elsewhere): its box is the file where it went, where it lay, as it
+   * was, in hand if it was. */
+  private moved(repo: string, from: string, to: string): DeskFile | null {
+    const d = this.desks.get(repo);
+    if (!d) return null;
+    const there = d.files.get(to);
+    if (there) return there;
+    if (!d.files.has(from)) return null;
+    const f = this.layFile(repo, d, to, undefined, {instead: from});
+    d.files.get(from)?.drop();
+    d.files.delete(from);
+    return f;
   }
 
   /** `repo`'s desk, made the first time: its Prompt the first box. */
@@ -258,17 +284,16 @@ class Forge {
   }
 
   /** `path` of `repo` laid on its desk `d` as a box (in column `col`, or under the box in hand). */
-  private layFile(repo: string, d: Laid, path: string, col?: number): DeskFile {
+  private layFile(repo: string, d: Laid, path: string, col?: number, how: {slide?: boolean; instead?: string} = {}): DeskFile {
     const f = deskFile(repo, path, () => d.desk.relayout(), (name) => renameIn(name, path, async (from, written) => {
       const to = await renaming(repo, from, written);
       if (to === from) return;
       await store.move(repo, from, to);
-      // Named, it is written in: the keyboard goes from its name into it.
-      this.shut(repo, from);
-      this.ctx.openRepo(repo, to, true);
-    }));
+      // Named, it is written in: the box where it lay, the keyboard going on from its name into it, at its end.
+      this.moved(repo, from, to)?.toEnd();
+    }, () => f.toEnd()));
     d.files.set(path, f);
-    d.desk.lay(path, f, col);
+    d.desk.lay(path, f, col, undefined, how);
     return f;
   }
 
@@ -286,9 +311,12 @@ class Forge {
     const repo = this.now.repo;
     if (!repo || !path) return;
     const d = this.deskOf(repo);
+    // Chosen from the band's search while its sheet is down, the desk out of sight under it: the camera is put where
+    // the box is meanwhile, unseen, and the desk comes back already there as the sheet goes up.
+    const unseen = !!this.element.querySelector('.band-tools > .search-box:is(:focus-within, .reading):not(.idle, .leaving)');
     // A file laid for the first time goes in the column beside the Prompt's, under the last there.
-    const f = d.files.get(path) ?? this.layFile(repo, d, path, d.desk.held === 'term' || !d.desk.held ? 1 : undefined);
-    d.desk.take(path);
+    const f = d.files.get(path) ?? this.layFile(repo, d, path, d.desk.held === 'term' || !d.desk.held ? 1 : undefined, {slide: !unseen});
+    d.desk.take(path, true, !unseen);
     f.at(line);
   }
 
@@ -310,8 +338,9 @@ class Forge {
     if (this.known === from) this.known = to;
   }
 
-  /** Show `name` in the band and the center, its desk; at `path` if given (a box for it, at `line`). */
-  show(name: string, path = '', _write: Writing = false, line = 0) {
+  /** Show `name` in the band and the center, its desk; at `path` if given (a box for it, at `line`; a file just made,
+   * `write` 'name', its name written over first). */
+  show(name: string, path = '', write: Writing = false, line = 0) {
     this.band.put(name);
     const d = this.deskOf(name);
     if (this.now.repo !== name) {
@@ -327,8 +356,10 @@ class Forge {
     // The Prompt's own box is the one terminal of the bench: it lies on the desk shown.
     d.desk.element.querySelector('.desk-box[data-key="term"] .desk-term-home')?.replaceChildren(this.work.terminal!);
     this.band.paint();
-    if (path) this.open(path, line);
-    else if (!d.desk.held) d.desk.take('term', false);
+    if (path) {
+      this.open(path, line);
+      if (write === 'name') d.desk.name(path);
+    } else if (!d.desk.held) d.desk.take('term', false);
     else d.desk.relayout();
   }
 

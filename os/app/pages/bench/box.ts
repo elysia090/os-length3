@@ -491,11 +491,13 @@ export class Box {
   /**
    * Where the Agent asked from a desk's terminal is played: its own terminal (typed into, its runs shown), its files'
    * boxes laid without taking the person's hand. The camera has the Agent's terminal and the files it is at work in in
-   * sight together (stepped back as far as they need), until the person takes a box in hand.
+   * sight together where they fit, else goes sideways to the one at work now, the rest at its sides, until the person
+   * takes a box in hand.
    */
   #stageBeside(at: string, term: AgentTerm): Stage {
-    // Framed: both terminals as it is born; then its own and the files it is at work in, as each starts. Narrowing to
-    // fewer waits a moment, so a step ending and the next starting is not a step back and in again.
+    // Framed: both terminals as it is born (the camera on its own, the person's at its side); then its own and the files
+    // it is at work in, the camera going sideways to each as it starts. Narrowing to fewer waits a moment, so a step
+    // ending and the next starting is not a move away and back again.
     let framed: string[] = [];
     let narrowing = 0;
     // Its birth beside the person's terminal is seen whole before the camera goes on to its work.
@@ -505,7 +507,8 @@ export class Box {
       shown: (line, output, status) => term.shown(line, output, status),
       place: (path) => this.#repo === at && !!this.#p.place?.(path),
       frame: (keys) => {
-        const next = framed.length ? [...new Set(['agent', ...keys])] : ['term', 'agent'];
+        // (In the order they started, the Agent's terminal with them: the last to start is the one gone to.)
+        const next = !framed.length ? ['term', 'agent'] : keys.includes('agent') ? keys : ['agent', ...keys];
         if (framed.length && !keys.length) return;
         clearTimeout(narrowing);
         const go = () => { framed = next; if (this.#repo === at) this.#p.frame?.(next); };

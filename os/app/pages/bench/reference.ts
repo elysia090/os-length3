@@ -94,6 +94,13 @@ export class Reference {
   private before: HTMLElement | null = null;
   /** What is under the box going back up into it, while it goes. */
   private leaving: Animation | null = null;
+  /**
+   * On the band, nothing drops from the box until something is typed in it (it holds only what it takes room for):
+   * what there is with nothing typed (the kinds, what was searched and read) comes down once asked for, with ↓.
+   */
+  private asked = false;
+  /** How tall what dropped from the box on the band was when last seen: it grows and shrinks to what it holds. */
+  private tall = 0;
 
   /** Begin a new issue in the repo shown, from the Issue pill with none open (the page says where it is written). */
   writeIssue: ((repo: string) => void) | null = null;
@@ -129,6 +136,7 @@ export class Reference {
     this.query.addEventListener('input', () => {
       this.keep();
       this.close();
+      this.idle();
       clearTimeout(this.findTimer);
       this.findTimer = window.setTimeout(() => void this.draw(), 150);
     });
@@ -146,6 +154,25 @@ export class Reference {
     this.search = h('div', {class: 'search-box'}, form, this.under);
     this.goesUp();
     this.follow();
+    if (this.band) new ResizeObserver(() => this.fit()).observe(this.under);
+  }
+
+  /**
+   * On the band, what dropped from the box grows and shrinks to what it holds, as a sheet let down further or taken
+   * up a little, never jumping from one height to the next (coming down the first time, it unrolls: styles' drop-in).
+   */
+  private fit() {
+    const now = this.under.offsetHeight, was = this.tall;
+    this.tall = now;
+    if (!now || !was || Math.abs(now - was) < 2 || still() || this.search.matches('.leaving')) return;
+    this.under.animate([{height: `${was}px`, overflow: 'hidden'}, {height: `${now}px`, overflow: 'hidden'}], {duration: paced(220), easing: LAND});
+  }
+
+  /** On the band with nothing typed or read, and nothing asked for: nothing drops from the box. */
+  private idle() {
+    const idle = this.band && !this.asked && !this.reading && !this.query.value.trim();
+    this.search.classList.toggle('idle', idle);
+    return idle;
   }
 
   /** What the box says where the words would be, and is heard as; on the band, where it is short, only Search. */
@@ -180,7 +207,13 @@ export class Reference {
     // ↓ goes down into what is under the box; Enter takes the first of it: the first line found, or before it a file
     // whose name holds what was typed (the caret in it). A file's name found by its lines alone, and its diff, are
     // pressed, not gone along (found.ts).
-    if (event.key === 'ArrowDown') { const first = this.choices()[0]; if (first) { event.preventDefault(); first.focus(); } return; }
+    if (event.key === 'ArrowDown') {
+      // On the band, ↓ in the box with nothing typed lets down what there is (the kinds, what was searched and read).
+      if (this.search.classList.contains('idle')) { event.preventDefault(); this.asked = true; void this.draw(); return; }
+      const first = this.choices()[0];
+      if (first) { event.preventDefault(); first.focus(); }
+      return;
+    }
     if (event.key === 'Enter') {
       event.preventDefault();
       // The first found is taken (what was typed goes in the line before it); with none, what was typed does.
@@ -208,6 +241,7 @@ export class Reference {
   private putAway() {
     const out = this.search.matches('.reading, .kept') && !this.search.contains(document.activeElement);
     this.held = false;
+    this.asked = false;
     this.close();
     this.paintPills();
     if (out) this.goUp();
@@ -240,6 +274,7 @@ export class Reference {
           this.paintPills();
           this.dirty = true;
         }
+        this.asked = false;
         this.goUp();
       });
     });
@@ -268,6 +303,7 @@ export class Reference {
     pills.set(this.repo, this.pill === kind ? null : kind);
     // Chosen, its list is out (its head in the pane pressed) until the keyboard goes elsewhere in the page (goesUp).
     this.held = this.keeps && this.pill !== null;
+    this.asked = true;
     this.close();
     void this.draw();
     this.paintPills();
@@ -399,6 +435,7 @@ export class Reference {
     const into = this.body, foot = this.foot;
     this.reading = {seen, draw: async () => { await draw(into, foot); }};
     this.search.classList.add('reading');
+    this.idle();
     void this.reading.draw();
     if (moving && !this.panel.contains(document.activeElement)) this.panel.querySelector<HTMLElement>('.slide-stage')?.focus({preventScroll: true});
   }
@@ -407,6 +444,8 @@ export class Reference {
   private async draw() {
     this.paintPills();
     if (this.reading) return;
+    // (Drawn all the same: what is there is ready the moment it is asked for.)
+    this.idle();
     const query = this.query.value.trim();
     const repo = this.repo;
     if (!repo) { this.panel.replaceChildren(h('p', {class: 'muted small'}, t('Open a repo to search'))); return; }
@@ -416,7 +455,8 @@ export class Reference {
     // Nothing typed, nothing pressed: what was searched and read here, newest first.
     this.frame(null, {kind: t('Search and history'), label: '', alone: true});
     const seen = seenIn(repo).slice().reverse();
-    if (!seen.length) { this.body.replaceChildren(h('p', {class: 'muted small'}, t('Searched and viewed items appear here'))); return; }
+    // (On the band a sheet holds only what it has: none, the kinds alone, nor is it left saying so while one types.)
+    if (!seen.length) { this.body.replaceChildren(...(this.band ? [] : [h('p', {class: 'muted small'}, t('Searched and viewed items appear here'))])); return; }
     this.body.replaceChildren(h('ul', {class: 'found-list'}, ...seen.map((s) => h('li', {}, seenButton(s, (x) => void this.again(x))))));
   }
 
@@ -581,13 +621,15 @@ export class Reference {
       issue: (i) => this.readIssue(i),
       run: (r) => this.readRun(r),
       ask: (a) => this.readAsk(a),
-    });
+    }, {sections: this.band});
     if (!said.length) { this.body.replaceChildren(h('p', {class: 'muted small'}, t('No results found for "{query}"', {query}))); return; }
     const had = this.choices().indexOf(document.activeElement as HTMLElement);
     // Come in place of Searching… (not redrawn as one types on), what was found comes down the page, a group a beat
     // after the one above it, as its marks are stroked: not the whole sheet in one frame.
     const fresh = !this.body.querySelector('.hit-group, .search-count');
     this.body.replaceChildren(...said);
+    // What was found is read from its head: the words searched for, then the first found.
+    if (fresh) this.under.scrollTop = 0;
     if (fresh && !still()) said.slice(0, 8).forEach((el, i) => el.animate([{opacity: 0, translate: '0 4px'}, {opacity: 1, translate: '0 0'}],
       {duration: paced(220), delay: paced(i * 30), easing: LAND, fill: 'backwards'}));
     if (had >= 0) this.choices()[Math.min(had, this.choices().length - 1)]?.focus();

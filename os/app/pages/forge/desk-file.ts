@@ -18,6 +18,8 @@ import type {Laid} from './desk.ts';
 export interface DeskFile extends Laid {
   /** The line `line` (1-based) chosen in it, the caret there (none: the caret at its top). */
   at(line: number): void;
+  /** The keyboard in it, the caret at its end (a file just named goes on being written). */
+  toEnd(): void;
   /** Its own top, measured from the box's: where `line` is. */
   lineTop(line: number): number;
   /** Stop following the repo. */
@@ -37,6 +39,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
   const number = numbering(gutter);
   let editor: Editor | null = null;
   let wanted: number | null = null;
+  let endWanted = false;
   /** The keyboard asked for before the text was read: given once it is. */
   let focusing = false;
 
@@ -66,6 +69,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     editorOn(repo, path, {take: (text) => e.take(text), area: e.area});
     new ResizeObserver(() => grew()).observe(e.area);
     if (wanted !== null) at(wanted);
+    else if (endWanted) toEnd();
     else if (focusing) e.area.focus({preventScroll: true});
     grew();
   };
@@ -98,61 +102,87 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     editor.take(ch.text ?? '');
   });
 
+  function toEnd() {
+    if (!editor) { endWanted = true; return; }
+    const {area} = editor, end = area.value.length;
+    area.focus({preventScroll: true});
+    area.setSelectionRange(end, end);
+  }
+
   return {
     element,
+    toEnd,
     name: cut < 0 ? shown : shown.slice(cut + 1),
     dir: cut < 0 ? '' : `${shown.slice(0, cut)}/`,
     focus: () => { if (editor) editor.area.focus({preventScroll: true}); else focusing = true; },
     at,
     lineTop: (line) => (editor ? editor.area.offsetTop + (line - 1) * lineHeight(editor.area) : 0),
     drop: off,
-    ...(rename ? {rename} : {}),
+    // Its name written over: the keyboard is the name's, not the text's when it is read.
+    ...(rename ? {rename: (name: HTMLElement) => { focusing = false; wanted = null; endWanted = false; rename(name); }} : {}),
   };
 }
 
 /**
- * `name` (of the file at `path`) written over in its own place, the stem chosen and the ending kept: Enter or leaving it
- * gives what was written to `rename`; Escape, nothing written, or the same name put it back. A name it cannot be is
- * said beside it, the keyboard kept there (left for elsewhere, it is put back).
+ * `name` (of the file at `path`) written over in its own place: the name itself written in (its folder quiet before
+ * it, as ever), a line under it, its stem chosen and its ending kept. Enter, or leaving it, gives what was written (in
+ * the file's folder: a name with a / in it moves it) to `rename`; Escape, nothing written, or the same name put it
+ * back. Enter or Escape ends it with the keyboard going on (`onward`: into the file) when the name stays as it was;
+ * renamed, `rename` says where the keyboard goes. A name it cannot be is said beside it, the keyboard kept there (left
+ * for elsewhere, it is put back).
  */
-export function renameIn(name: HTMLElement, path: string, rename: (path: string, written: string) => Promise<void>) {
-  const input = h('input', {class: 'path-rename', 'aria-label': t('New name'), autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
+export function renameIn(name: HTMLElement, path: string, rename: (path: string, written: string) => Promise<void>, onward?: () => void) {
+  if (name.isContentEditable) return;
+  const was = name.textContent ?? '';
+  const dir = path.slice(0, path.lastIndexOf('/') + 1);
   const error = h('span', {class: 'error small path-error', role: 'alert'});
-  input.value = path;
-  const fit = () => { input.size = Math.max(4, input.value.length + 1); };
-  fit();
-  input.addEventListener('input', fit);
-  name.replaceWith(input, error);
-  input.focus();
-  const from = path.lastIndexOf('/') + 1, dot = path.lastIndexOf('.');
-  input.setSelectionRange(from, dot > from ? dot : path.length);
-  let over = false;
+  name.setAttribute('contenteditable', 'plaintext-only');
+  name.setAttribute('role', 'textbox');
+  name.setAttribute('aria-label', t('New name'));
+  name.spellcheck = false;
+  name.focus({preventScroll: true});
+  const text = name.firstChild, dot = was.lastIndexOf('.');
+  if (text) {
+    const r = document.createRange();
+    r.setStart(text, 0);
+    r.setEnd(text, dot > 0 ? dot : was.length);
+    getSelection()?.removeAllRanges();
+    getSelection()?.addRange(r);
+  }
+  let over = false, going = false;
+  const still = () => { for (const a of ['contenteditable', 'role', 'aria-label']) name.removeAttribute(a); };
   const back = () => {
     if (over) return;
     over = true;
     error.remove();
-    input.replaceWith(name);
+    name.textContent = was;
+    still();
   };
   const go = async (leaving: boolean) => {
-    if (over || input.disabled) return;
-    const written = input.value.trim();
-    if (!written || written === path) { back(); return; }
-    input.disabled = true;
+    if (over || going) return;
+    const typed = (name.textContent ?? '').trim();
+    if (!typed || typed === was) { back(); if (!leaving) onward?.(); return; }
+    going = true;
     try {
-      await rename(path, written);
+      await rename(path, dir + typed);
       over = true;
+      error.remove();
+      still();
     } catch (err) {
-      input.disabled = false;
+      going = false;
       if (leaving) { back(); nudge(name); return; }
       error.textContent = errorText(err);
-      input.focus();
-      nudge(input);
+      if (!error.isConnected) name.after(error);
+      name.focus();
+      nudge(name);
     }
   };
-  input.addEventListener('keydown', (event) => {
+  const key = (event: KeyboardEvent) => {
     if (event.isComposing) return;
-    if (event.key === 'Enter') { event.preventDefault(); void go(false); }
-    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); back(); }
-  });
-  input.addEventListener('blur', () => void go(true));
+    if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); void go(false); }
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); back(); onward?.(); }
+  };
+  name.addEventListener('keydown', key);
+  name.addEventListener('blur', () => void go(true), {once: true});
+  name.addEventListener('blur', () => name.removeEventListener('keydown', key), {once: true});
 }

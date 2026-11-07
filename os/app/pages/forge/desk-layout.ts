@@ -41,17 +41,18 @@ export function slots(cols: readonly (readonly string[])[], heights: (key: strin
 /** The camera: the plane's scale, and where its origin is on the face. */
 export interface View { s: number; x: number; y: number }
 
-/** How far down the face a short box stands at most: where the eye starts. */
-export const EYE = .25;
+/** How far down the face a short box's top stands at most, in px: where the eye starts, level with the rail between
+ * File and Forge (its items stand at fixed places from the top, so this is a distance, not a share of the height). */
+export const EYE = 102;
 
 /**
  * At the standard, on the box at `slot` (`h` high) in a face `w` by `hgt`: the box's middle in the face's middle across;
- * a box that fits in the middle of the height too, but never lower than a quarter of the way down (a short box stands
- * where the eye starts, not in a hole in the middle), a tall one from its top.
+ * a box that fits in the middle of the height too, but its top never lower than EYE (a short box stands where the eye
+ * starts, not in a hole in the middle), a tall one from its top.
  */
 export function standardOn(slot: Slot, h: number, w: number, hgt: number, s = STANDARD): View {
   const x = w / 2 - (slot.x + WIDTH / 2) * s;
-  const top = Math.min(Math.max(TOP + 16, (hgt - h * s) / 2), Math.max(TOP + 16, hgt * EYE));
+  const top = Math.min(Math.max(TOP + 16, (hgt - h * s) / 2), Math.max(TOP + 16, EYE));
   return {s, x, y: top - slot.y * s};
 }
 

@@ -37,7 +37,8 @@ test('a diff line pressed is marked, and pressed again is not', async ({signedIn
 test('the search finds a line and opens the file there, the line selected', async ({signedIn: app}) => {
   await app.forge.find('puts');
 
-  await expect(app.forge.results.getByText('1 file · 1 line')).toBeVisible();
+  // What was found is said a kind at a time, how many beside each: one file.
+  await expect(app.forge.results.locator('.found-sec-head')).toHaveText([/^files\s*1$/]);
   await app.forge.hit(/puts\("hello"\);/).click();
 
   await expect(app.forge.editor('src/main.c')).toBeFocused();

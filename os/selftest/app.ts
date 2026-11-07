@@ -275,7 +275,7 @@ class Forge extends Part {
   /** A file's name in its head (its path in the repo), pressed to write it over. */
   fileName(path: string) { return this.main.locator(`.desk-box[data-key="${path}"] .desk-name`).locator('visible=true'); }
 
-  /** A file renamed from its head: its name pressed, `written` (its path in the repo) written over it, Enter. */
+  /** A file renamed from its head: its name pressed, `written` (a name in its folder) written over it, Enter. */
   async rename(path: string, written: string) {
     await this.fileName(path).click();
     const field = this.main.getByRole('textbox', {name: 'New name', exact: true});
@@ -328,6 +328,8 @@ class Forge extends Part {
   /** 'Issue', 'diff' or 'Output' pressed under the search box (pressed with nothing typed: what there is of it). */
   async show(view: 'Issue' | 'diff' | 'Output') {
     await this.search.click();
+    // With nothing typed, what there is comes down from the band's search once asked for: ↓.
+    if (!(await this.search.inputValue()) && !(await this.results.isVisible())) await this.search.press('ArrowDown');
     const b = this.kind(view);
     if (await b.getAttribute('aria-pressed') !== 'true') await b.click();
     await expect(b).toHaveAttribute('aria-pressed', 'true');
@@ -504,8 +506,8 @@ class FileTree extends Part {
     await menu.getByRole('menuitem', {name: deed}).click();
     if (deed === 'New file') {
       const made = path ? `${path}/untitled.md` : 'untitled.md';
-      await expect(this.app.forge.editor(made)).toBeFocused();
-      await this.app.forge.rename(made, path ? `${path}/${name}` : name);
+      await expect(this.app.forge.fileName(made)).toBeVisible();
+      await this.app.forge.rename(made, name);
       return;
     }
     const field = menu.getByRole('textbox');

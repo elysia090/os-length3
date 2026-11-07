@@ -100,6 +100,8 @@ export default {
   'Issue': 'Issue',
   'diff': 'diff',
   'Output': '実行結果',
+  // The band's search sheet: the section of the files found (their names and lines), beside the issues and runs.
+  files: 'ファイル',
   'Search this repo': 'この repo を検索',
   Search: '検索',
   Terminal: '端末',

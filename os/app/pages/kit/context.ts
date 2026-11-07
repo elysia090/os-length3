@@ -3,9 +3,9 @@ import type {Carry} from '../../ui/glide.ts';
 
 /**
  * Where the caret goes in a file opened to write in: its start (true), its end, back at `at` (an offset kept when it
- * was left), or not in it (false).
+ * was left), its name (a file just made, named first, then written in), or not in it (false).
  */
-export type Writing = boolean | 'end' | {at: number};
+export type Writing = boolean | 'end' | 'name' | {at: number};
 
 /** What a page may ask of the shell. */
 export interface Context {

@@ -129,30 +129,38 @@ function fileGroup(g: Group, named: boolean, c: FileChange | undefined, ways: Fo
 /**
  * What was found for `query`, drawn: how many files and lines, then each file with its lines, the issues, the
  * changes (of what `changed`) and the runs. Nothing, when nothing was found. The first choice, which Enter takes from
- * the box, says so while the box has the keyboard: lit, with its key at its end.
+ * the box, says so while the box has the keyboard: lit, with its key at its end. In `sections` (the band's sheet),
+ * each kind is a section, its name and how many at its left and what was found of it at its right, side by side two
+ * to a row; no count above them.
  */
-export function foundView(found: Found, query: string, changed: FileChange[], ways: FoundWays): HTMLElement[] {
+export function foundView(found: Found, query: string, changed: FileChange[], ways: FoundWays, o: {sections?: boolean} = {}): HTMLElement[] {
   const {groups} = found;
   const total = groups.reduce((n, g) => n + g.hits.length, 0);
   const changes = new Map(changed.map((c) => [c.path, c]));
-  const said: HTMLElement[] = [];
-  if (groups.length) said.push(h('p', {class: 'muted small search-count'}, `${tn('{n} file', '{n} files', groups.length)} · ${total >= HIT_LIMIT ? t('{n} lines (first preview)', {n: total}) : tn('{n} line', '{n} lines', total)}`));
   // Each line found is drawn a beat after the one above it (styles.css .search-results mark).
   let stroke = 0;
   // Through the style object, not an attribute: the desktop app's policy allows no style written inline.
   const beat = (b: HTMLElement) => b.style.setProperty('--i', String(Math.min(stroke++, 16)));
-  for (const g of nameFirst(groups, query)) said.push(fileGroup(g, nameMatches(g.path, query), changes.get(g.path), ways, beat));
-  if (found.issues.length) said.push(h('div', {class: 'hit-group'}, h('h3', {class: 'hit-kind'}, t('Issue')), ...found.issues.map((i) => {
-    const b = issueButton(i, query, ways.issue);
-    beat(b);
-    return b;
-  })));
-  if (found.diffs.length) said.push(h('div', {class: 'hit-group'}, h('h3', {class: 'hit-kind'}, t('diff')),
-    ...found.diffs.map((c) => diffButton(c.path, counted(c.added, c.removed), ways.diff))));
-  if (found.runs.length) said.push(h('div', {class: 'hit-group'}, h('h3', {class: 'hit-kind'}, t('Output')), ...found.runs.map((r) => runButton(r, ways.run))));
-  if (found.asks.length) said.push(h('div', {class: 'hit-group'}, h('h3', {class: 'hit-kind'}, t('Agent')), ...found.asks.map((a) => askButton(a, ways.ask))));
+  /** Each kind found: its name, how many, and what of it there is. */
+  const kinds: {name: string; n: number; rows: HTMLElement[]; files?: true}[] = [];
+  if (groups.length) kinds.push({files: true, name: t('files'), n: groups.length, rows: nameFirst(groups, query).map((g) => fileGroup(g, nameMatches(g.path, query), changes.get(g.path), ways, beat))});
+  if (found.issues.length) kinds.push({name: t('Issue'), n: found.issues.length, rows: found.issues.map((i) => { const b = issueButton(i, query, ways.issue); beat(b); return b; })});
+  if (found.diffs.length) kinds.push({name: t('diff'), n: found.diffs.length, rows: found.diffs.map((c) => diffButton(c.path, counted(c.added, c.removed), ways.diff))});
+  if (found.runs.length) kinds.push({name: t('Output'), n: found.runs.length, rows: found.runs.map((r) => runButton(r, ways.run))});
+  if (found.asks.length) kinds.push({name: t('Agent'), n: found.asks.length, rows: found.asks.map((a) => askButton(a, ways.ask))});
+  const said: HTMLElement[] = [];
+  if (o.sections) {
+    if (kinds.length) said.push(h('div', {class: 'found-secs'}, ...kinds.map((k) => h('section', {class: 'found-sec', 'aria-label': k.name},
+      h('h3', {class: 'found-sec-head'}, k.name, h('i', {}, String(k.n))), h('div', {class: 'found-sec-rows'}, ...k.rows)))));
+  } else {
+    if (groups.length) said.push(h('p', {class: 'muted small search-count'}, `${tn('{n} file', '{n} files', groups.length)} · ${total >= HIT_LIMIT ? t('{n} lines (first preview)', {n: total}) : tn('{n} line', '{n} lines', total)}`));
+    for (const k of kinds) {
+      if (k.files) said.push(...k.rows);
+      else said.push(h('div', {class: 'hit-group'}, h('h3', {class: 'hit-kind'}, k.name), ...k.rows));
+    }
+  }
   const first = said.map((el) => el.querySelector<HTMLElement>('.choice')).find((b) => b);
   first?.classList.add('first');
-  first?.append(h('kbd', {class: 'enter-cap', 'aria-hidden': 'true'}, 'Enter'));
+  if (!o.sections) first?.append(h('kbd', {class: 'enter-cap', 'aria-hidden': 'true'}, 'Enter'));
   return said;
 }

@@ -277,7 +277,10 @@ test('a narrow window reaches the issues, the diff and the output from the searc
   await app.forge.editFile('README.md', '# hello\n\nWritten in Forge.\n');
   await app.page.setViewportSize({width: 552, height: 800});
   await expect(app.forge.results).toBeHidden();
+  // Pressed, nothing drops yet (nothing is typed); ↓ lets down the kinds.
   await app.forge.search.click();
+  await expect(app.forge.results).toBeHidden();
+  await app.forge.search.press('ArrowDown');
   for (const part of ['Issue', 'diff', 'Output'] as const) await expect(app.forge.kind(part)).toBeVisible();
   await app.forge.openDiff('README.md');
   await expect(app.forge.diffLine('Written in Forge.')).toBeVisible();
@@ -289,6 +292,7 @@ test('a narrow window reaches the issues, the diff and the output from the searc
   await expect(app.forge.results).toBeHidden();
   // The search reaches a changed file's diff as well (diff, still pressed, let go: what is found is every kind again).
   await app.forge.search.click();
+  await app.forge.search.press('ArrowDown');
   await app.forge.kind('diff').click();
   await app.forge.search.fill('README');
   await app.forge.results.getByRole('button', {name: 'Diff of README.md'}).click();
@@ -310,9 +314,10 @@ test('what is searched and read lines up sideways: the one in hand fills the box
   // ← → along the line from the keyboard.
   await app.page.keyboard.press('ArrowLeft');
   await expect(app.forge.hit(/Written in Forge/)).toBeVisible();
-  // Pressed with nothing typed: what was searched and read, newest first.
+  // Asked for with nothing typed (↓): what was searched and read, newest first.
   await app.forge.search.fill('');
   await app.forge.search.click();
+  await app.forge.search.press('ArrowDown');
   await expect(app.forge.results.locator('.found-item')).toHaveText([/^diff\s*README\.md$/, /^Search history\s*Written$/]);
 });
 
@@ -404,9 +409,9 @@ test('the files tool on the band brings out the deeds for what is read now, unde
   await files.click();
   const near = app.page.getByRole('menu', {name: 'main.c', exact: true});
   await near.getByRole('menuitem', {name: 'New file'}).click();
-  await expect(app.forge.editor('src/untitled.c')).toBeFocused();
+  await expect(app.main.getByRole('textbox', {name: 'New name', exact: true})).toBeFocused();
   await expect(near).toBeHidden();
-  await app.forge.rename('src/untitled.c', 'src/util.c');
+  await app.forge.rename('src/untitled.c', 'util.c');
   await expect(app.forge.editor('src/util.c')).toBeFocused();
 
   // Renamed (a path moves it), it is shown where it went.
@@ -506,10 +511,23 @@ test('Tab puts the finger on the next box from anywhere on the desk; an arrow to
   await expect(own).toHaveValue(text);
 });
 
-test('Ctrl+N makes a new file beside the one in hand, to write in', async ({app}) => {
-  await app.forge.editor('src/main.c').focus();
-  await app.page.keyboard.press('Control+n');
-  await expect(app.forge.editor('src/untitled.c')).toBeFocused();
+test('Shift+N makes a new file beside the one in hand where nothing is being written; written in a file, it is an N', async ({app}) => {
+  const main = app.forge.editor('src/main.c');
+  await main.focus();
+  const was = await main.inputValue();
+  await app.page.keyboard.press('Shift+N');
+  await expect(main).toHaveValue(new RegExp(`N`));
+  await main.fill(was);
+  // The finger on the box (Escape takes the keyboard out onto the desk): Shift+N makes the file.
+  await app.page.keyboard.press('Escape');
+  await app.page.keyboard.press('Shift+N');
+  // Its name written over at once in its head, as a new file's is; Enter keeps it and goes on into it.
+  const field = app.main.getByRole('textbox', {name: 'New name', exact: true});
+  await expect(field).toBeFocused();
+  await expect(field).toHaveText('untitled.c');
+  await app.page.keyboard.type('count');
+  await app.page.keyboard.press('Enter');
+  await expect(app.forge.editor('src/count.c')).toBeFocused();
 });
 
 test('Home says where one left off: the line last written in a box on the desk', async ({app}) => {

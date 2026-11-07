@@ -1962,7 +1962,7 @@ a line at a time from the line one types at, with job control, as on a
 terminal (the kernel's tty, canonical, without echo: the line is the box's).
 A program that asks for each key as it comes (vi, less, top, a prompt for one
 key) has every key as it is pressed, the page's own keys giving way to it
-(Tab, Escape, Ctrl and an arrow, Ctrl+N, the editor's), Ctrl+C, Ctrl+Z and
+(Tab, Escape, Ctrl and an arrow, Shift+N, the editor's), Ctrl+C, Ctrl+Z and
 Ctrl+\ its signals where it keeps them, a conversion confirmed and a paste
 given whole (bracketed where it asked); while it has the terminal, it is
 shown on a terminal's whole screen in place of the last lines, the cursor a
@@ -1981,16 +1981,23 @@ hand a slot, wherever the keyboard is (writing in it, it stays there; with the
 finger on a box, Ctrl alone takes it up): lifted while Ctrl is held, its shadow
 long and the hand closed on it (its fingers over the edge), the others stepping
 over, the camera following a little behind; Ctrl let go, it is put down with a
-small give. Ctrl+N makes a new file beside the one in hand, opened to write in,
-its name written over in its head (a browser's own tab keeps Ctrl+N for a new
-window: there it is the files tool's New file). The finger comes out of the
+small give. Shift+N, as a new post is begun on X, makes a new file beside the
+one in hand where nothing is being written (the finger on a box; written in a
+file, it is an N): it comes out from under the box above it, sliding down to
+its place, the camera going to it, and its name is written over at once in its
+head, the name itself (its folder quiet before it), a line under it, the stem
+chosen in the soft yellow and the ending kept, so typing writes the stem.
+Enter keeps what is written and the keyboard goes on into the box, at its end;
+Escape keeps the name it had and goes on in too. The files tool's New file,
+and File's, make it the same way. The finger comes out of the
 pointer where that was over the desk and glides from box to box, and while it is
 out the pointer is hidden; the pointer moved, the finger is gone and the pointer
 back. Writing in a box puts both out of the way until the pointer moves.
 
 The camera has three places, as a game's cameras do, and Escape goes round
 them: its standard, every box at its own size, the box in hand in the middle
-across (a short one no lower than a quarter of the way down), the balance the
+across (its top level with the rail between File and Forge, a short one no
+lower than that), the balance the
 work is done at, never nearer than that; a step back (seven tenths), the box in
 hand still read in the middle and the boxes beside it in sight; and the whole
 desk, at most half its size. Stepping back it zooms first and then goes; coming
@@ -2022,8 +2029,19 @@ brings out the deeds for the file read now (New file and New folder
 beside it, Rename, which moves it given a path, Delete; the repo's own with
 none read) under it, in Forge, done there with the field or the
 ask in its place as File's are, never carrying one off to File; a new file
-is made at once and opened to write in, one renamed or moved is shown where
-it went. The
+is made at once, as Shift+N makes it, its name written over first; one renamed
+or moved is shown where it went. What the search finds drops from under the
+band as a sheet across the desk, inked and shadowed as a box is, only once
+something is typed (pressed with nothing typed, nothing drops; ↓ lets down the
+kinds, Issue, diff and Output, and what was searched and read): the words
+searched for large at its head, then what was found a kind at a time, two
+kinds to a row, each its name and how many at its left and its rows at its
+right (a file's name over its lines found, each line its number and its
+words, the words found marked). It grows and shrinks to what it holds, never
+jumping from one height to the next, and while it is down the desk fades out of
+sight under it. A row pressed: the camera is put on its file meanwhile, unseen,
+and the desk comes back already there as the sheet goes up, the line chosen.
+The
 pills scroll when there are many, and ⊕ comes right after the last
 pill. One press brings every repo not on the band out at once; this is not
 adding tabs one at a time.
@@ -2196,8 +2214,10 @@ shown), the words written in the terminal's letters and a cell for a caret, the
 letter under it drawn dark in it. A line sent moves up a line as it is (it does
 not come in again); what it prints comes in a line after another, the screen's
 top rising with it, and the prompt line comes back with the caret as its last
-line does; while it runs, what it is doing (Running 2s, Interrupt) is said on the
-line itself, so nothing above the line comes and goes, and once the run is
+line does; while it runs, what it is doing (Running 2s) is said on the line
+itself, quietly, with no buttons on it (on the desk a terminal has no pills:
+Ctrl+C interrupts, as in any terminal), so nothing above the line comes and
+goes, and once the run is
 done that goes out to its right rather than at once. `clear` clears the
 screen, and Ctrl+C says ^C where the run was cut, the screen's words jolting
 sideways and flaring as they are cut (at once: it answers the hand), what the
@@ -2278,11 +2298,15 @@ edited a quiet line (pressed, the file); each command typed after its own
 prompt, the green of the person's, key by key with a terminal's block caret,
 then what it printed, and how it ended where it ended otherwise than well. Its
 prompt line waits at its foot. The camera never steps back for it: it stays
-at the standard, the Agent's terminal born at the edge beside the person's,
-and goes along to where the Agent is at work (its terminal, the file it
-writes in) as a pan, staying while one at work is well in sight, so lanes side
-by side are not gone to and fro; narrowing to fewer waits a moment. The person
-writing in their own box takes the camera back to it. The box has no Agent of its own on the desk: no pill
+at the standard and goes sideways, as a pan, to the work going on now: the
+Agent's terminal as it is born (the person's a sliver at its left), then the
+file it begins to write in, whole in the middle, its terminal a sliver at the
+side, then back to its terminal as it runs something. What it is at work in is
+always whole in sight, and what else is at work peeks in at the edges, saying
+where it is; narrowing to fewer waits a moment, so a step ending and the next
+starting is not a move away and back. The person writing in their own box (a
+key, a paste) takes the camera back to it, gliding, never a jump to where the
+caret is first. The box has no Agent of its own on the desk: no pill
 says it, no answer comes in the pane.
 
 Elsewhere (Git's box), asking the Agent is the box's, never the Prompt's:

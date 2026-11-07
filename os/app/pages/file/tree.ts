@@ -7,6 +7,7 @@ import {store} from '../../repos/repos.ts';
 import {shownName} from '../../repos/issues.ts';
 import {inRepo, list, ORIGIN_LABEL, type SystemEntry} from '../../prompt/system.ts';
 import {fileDeeds, joined, split} from '../kit/file-deeds.ts';
+import type {Writing} from '../kit/context.ts';
 import {errorText} from '../../host/errors.ts';
 
 // File is an operation, not a page: the tree of "/", the whole system, as a
@@ -49,8 +50,8 @@ const expandedPaths = new Set<string>(['/root']);
 const SYSTEM = '/:system';
 
 interface FileTreeEvents {
-  /** A repo or a path inside one was chosen; path '' is the repo itself. `file` when it is a file. */
-  choose(repo: string, path: string, file: boolean): void;
+  /** A repo or a path inside one was chosen; path '' is the repo itself. `file` when it is a file (how it is written in). */
+  choose(repo: string, path: string, file: Writing): void;
   /** The repo Forge shows, marked in the tree. */
   current(): string | null;
   /** The file Forge is reading in that repo, marked too. */
@@ -549,7 +550,7 @@ export class FileTree {
       made: async (made, file) => {
         this.unpop();
         // A new file is the one to work on: the tree goes and the caret is in it.
-        if (file) { this.events.choose(at.repo, made, true); return; }
+        if (file) { this.events.choose(at.repo, made, 'name'); return; }
         await this.again(dir ? item : parent);
         this.settle(this.nameAt(abs(made)));
         this.landed(abs(made));
