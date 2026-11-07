@@ -40,6 +40,16 @@ fn a_run_gives_back_its_last_lines() {
 }
 
 #[test]
+fn a_run_whose_last_line_is_longer_than_it_gives_back_is_cut_at_a_letter() {
+    // Letters of three bytes, as many as make the line's start fall inside one where it is cut.
+    let long = "あ".repeat(MOST_BYTES / 3 + 1000);
+    let t = tail(&format!("before\n{long}\n"));
+    assert!(t.starts_with("[1 earlier lines left out]\n"), "{}", &t[..40]);
+    let shown = t.trim_start_matches("[1 earlier lines left out]\n");
+    assert!(shown.len() <= MOST_BYTES && shown.chars().all(|c| c == 'あ') && !shown.is_empty());
+}
+
+#[test]
 fn an_edit_replaces_each_piece_found_once_and_says_where() {
     let text = "#include <stdio.h>\n\nint main(void) {\n\tprintf(\"%d\\n\", count);\n}\n";
     let e = edit("count.c", text, &[ch("count)", "n)"), ch("int main(void)", "int main(int argc, char **argv)")]).unwrap();

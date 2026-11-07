@@ -75,8 +75,16 @@ pub fn tail(output: &str) -> String {
     }
     let shown = all[all.len() - kept..].join("\n");
     if kept == all.len() { return shown; }
-    let shown = if shown.len() > MOST_BYTES { cut_to(&shown[shown.len() - MOST_BYTES..], MOST_BYTES).to_string() } else { shown };
+    let shown = if shown.len() > MOST_BYTES { last_of(&shown, MOST_BYTES).to_string() } else { shown };
     format!("[{} earlier lines left out]\n{shown}", all.len() - kept)
+}
+
+/// The end of `s`, at most `most` bytes of it, from a character's edge (a line of output can be cut anywhere in it).
+fn last_of(s: &str, most: usize) -> &str {
+    if s.len() <= most { return s; }
+    let mut at = s.len() - most;
+    while !s.is_char_boundary(at) { at += 1; }
+    &s[at..]
 }
 
 /// One piece of an edit: text as it is in the file, and what takes its place.
