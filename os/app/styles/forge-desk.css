@@ -43,6 +43,14 @@
 .desk-file-head .unsaved-dot { display: none; }
 /* The line chosen washed under its text, across the whole sheet (desk-file.ts). */
 .desk-mark { position: absolute; left: 0; right: 0; background: var(--marker-soft); pointer-events: none; }
+/* Where the Agent's eye is as it reads (desk-file.ts gaze): a line lit faintly across the sheet, an ink bar at its
+   left edge, gliding from line to line. */
+.desk-gaze { position: absolute; left: 0; right: 0; pointer-events: none; background: color-mix(in srgb, var(--ink) 6%, transparent);
+  box-shadow: inset 3px 0 0 var(--ink); transition: top calc(90ms * var(--pace)) var(--land); }
+/* Resting on a line (the Agent thinking over it), the eye breathes: slow, faint, so it is seen at work, not stopped. */
+.desk-gaze.resting { animation: gaze-rest calc(1400ms * var(--pace)) ease-in-out infinite alternate; }
+@keyframes gaze-rest { to { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .desk-gaze.resting { animation: none; } }
 .desk-file > .sheet > .gutter { position: relative; }
 /* Where the repo's desk is: the whole center. */
 .desk-room { position: relative; height: 100%; min-height: 0; overflow: clip; }

@@ -2411,9 +2411,16 @@ What the Agent does is played as a person would do it, after it and at a
 person's pace, never as a screen of its own. It works at its own pace behind
 (its commands in a Prompt of its own); what is played is the part a person
 wants to see, each box a lane of its own and the lanes going side by side, so
-the work is seen going on in several places at once. Reads alone are not
-played; what a command printed is shown only once what came before it in the
-other boxes has been played. The Agent is Pi's loop, thin: read, run, edit and
+the work is seen going on in several places at once, a hand's pace being
+about a tenth of the Agent's own, so the play keeps going while its model is
+asked and the wait for it is never a still screen. A file it reads is played
+too: its box laid and its eye going down the lines it read, a faint ink-edged
+line gliding from line to line (a long read skimmed). While it thinks (its
+model asked, nothing it did left to play) its eye stays on what it last looked
+at, going on over the lines with words in them slower than reading and resting
+at the last, breathing as it rests, so it is seen looking, not stopped; it goes
+the moment it says or does something. What a command printed is shown only
+once what came before it in the other boxes has been played. The Agent is Pi's loop, thin: read, run, edit and
 write, each by the core's rules, its last words what it says it did; it goes as
 fast as the model and the tools go, is never shown the screen, and nothing a
 person does at the keys or the mouse stops it. Every edit it makes is seen

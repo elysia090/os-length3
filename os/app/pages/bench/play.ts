@@ -28,19 +28,25 @@ export interface Stage {
   place(path: string): boolean;
   /** The camera over these boxes at once ('agent' is the Agent's terminal); none: back to the box in hand. */
   frame(keys: string[]): void;
+  /** The file in front when the Agent was asked (what it was given to look at first), if any. */
+  front?(): string | null;
 }
+
+/** An editor open on a file, as the player uses it: what it takes in, its text, and where the Agent's eye is in it (a
+ * line, 1-based; null: nowhere). */
+interface Editing { take(text: string): boolean; area: HTMLTextAreaElement; gaze?(line: number | null): void }
 
 const key = (repo: string, path: string) => `${repo}\n${path}`;
 
 /** The editors open on each repo's files: how each takes a text in (false: it asked, having unsaved edits of its own). */
-const editors = new Map<string, {take(text: string): boolean; area: HTMLTextAreaElement}>();
+const editors = new Map<string, Editing>();
 /** The files the Agent is writing whose editors are held back: how many writes are still to be played, the latest
  * text written (null until one came while an editor was open on it), and whether the file was made by it (an editor
  * opened on it meanwhile starts empty, and the file is typed into it). */
 const held = new Map<string, {count: number; text: string | null; made: boolean}>();
 
 /** An editor open on `path` of `repo` (forge/desk-file.ts): the player types into it through `take`. */
-export function editorOn(repo: string, path: string, editor: {take(text: string): boolean; area: HTMLTextAreaElement}) {
+export function editorOn(repo: string, path: string, editor: Editing) {
   editors.set(key(repo, path), editor);
 }
 
@@ -95,6 +101,12 @@ const BACKSPACE_MS = 85, REPEAT_MS = 30;
 const hand = (length: number) => (length > 300 ? .3 : .55);
 /** What a command printed, read a moment before the Prompt's line is given back. */
 const READ_MS = 900;
+/** A file read, its lines gone over by the eye: a line in this long, the whole read in at most READ_MOST (a long read
+ * skims, a line in so many). */
+const LINE_READ_MS = 110, READ_MOST = 2600;
+/** While the Agent thinks (its model asked, nothing left to play), its eye goes on over what it last looked at, slower
+ * than reading: a line in this long. */
+const PONDER_MS = 420;
 
 /** One repo's Agent at work, played on the desk. */
 export class Player {
@@ -105,6 +117,13 @@ export class Player {
   /** The lanes at work now, which the camera frames. */
   readonly #working = new Set<string>();
   #framing = 0;
+  /** Lanes playing now: while none is, and the Agent thinks, its eye stays on what it last looked at (#ponder). */
+  #busy = 0;
+  /** The model asked and not yet answered (a turn under way, before what it does). */
+  #thinking = false;
+  /** The file the Agent's eye was last in, and where in it. */
+  #looked: {path: string; line: number} | null = null;
+  #pondering = false;
   /** What listeners hear, in order, each once all before it is played. */
   #told: Promise<void> = Promise.resolve();
   readonly #listeners = new Set<(e: AgentEvent) => void>();
@@ -129,8 +148,9 @@ export class Player {
   #on(lane: string, act: () => Promise<void>, after?: Promise<unknown>): Promise<void> {
     const prev = this.#lanes.get(lane) ?? Promise.resolve();
     const next = Promise.all([prev, after]).then(async () => {
+      this.#busy++;
       this.#work(lane, true);
-      try { await act(); } finally { this.#work(lane, false); }
+      try { await act(); } finally { this.#busy--; this.#work(lane, false); this.#idleNow(); }
     }).catch(() => { /* a part not played is let go; the rest goes on */ });
     this.#lanes.set(lane, next);
     return next;
@@ -155,6 +175,9 @@ export class Player {
 
   /** An event of the Agent's: a file it is about to write is held back from its editor at once; played in its lane. */
   hear(e: AgentEvent): void {
+    // Thinking from when its model is asked until it says or does something; the eye goes on meanwhile (#ponder).
+    if (e.type === 'agent_start' || e.type === 'turn_start') { this.#thinking = true; this.#idleNow(); }
+    if (e.type === 'tool_execution_start' || e.type === 'message_end' || e.type === 'agent_end') this.#thinking = false;
     if (e.type === 'tool_execution_start' && (e.name === 'edit' || e.name === 'write') && typeof e.args.path === 'string') {
       const k = key(this.#repo, e.args.path), h = held.get(k);
       if (h) h.count++; else held.set(k, {count: 1, text: null, made: false});
@@ -168,16 +191,90 @@ export class Player {
     this.#tell(e);
   }
 
-  /** What a tool did, put in its lane: a run in the Prompt's, an edit or a file made in the file's; a read, not played. */
+  /** What a tool did, put in its lane: a run in the Prompt's, an edit or a file made in the file's, a read in the file's
+   * as the eye going over what was read. */
   #play(name: string, args: Record<string, unknown>, done: Done | undefined) {
     const path = typeof args.path === 'string' ? args.path : '';
     if (!done) { if (name === 'edit' || name === 'write') void this.#on(path, async () => this.#release(path, null)); return; }
+    if (done.tool === 'read') { const d = done; void this.#on(d.path, () => this.#read(d)); return; }
     if (done.tool === 'bash') {
       const d = done;
       // Typed at once; what it printed shown once what came before it in the other lanes is played.
       void this.#on('agent', () => this.#run(d), this.#before());
     } else if (done.tool === 'edit') { const d = done; void this.#on(d.path, () => this.#edit(d)); }
     else if (done.tool === 'write') { const d = done; void this.#on(d.path, () => this.#write(d)); }
+  }
+
+  /** The eye in `path` at `line` (null: out of it); kept as where it last was. */
+  #gaze(path: string, line: number | null) {
+    editors.get(key(this.#repo, path))?.gaze?.(line);
+    if (line !== null) this.#looked = {path, line};
+  }
+
+  /** `path`'s box laid and its editor open (it opens a moment after its box is laid); false where it is not shown. */
+  async #opened(path: string): Promise<Editing | null> {
+    const k = key(this.#repo, path);
+    if (!this.#stage.place(path) || still()) return null;
+    for (let i = 0; i < 20 && !editors.get(k)?.area.isConnected; i++) await sleep(50);
+    const e = editors.get(k);
+    return e?.area.isConnected ? e : null;
+  }
+
+  /** A file read: its box laid, and the eye going down the lines read, a line at a time (skimming a long read). */
+  async #read(d: Extract<Done, {tool: 'read'}>) {
+    const e = await this.#opened(d.path);
+    if (!e) return;
+    const last = Math.max(1, e.area.value.split('\n').length);
+    const from = Math.min(Math.max(1, d.from || 1), last), to = Math.min(Math.max(from, d.to || last), last);
+    const step = Math.max(1, Math.ceil(((to - from + 1) * LINE_READ_MS) / READ_MOST));
+    await sleep(leadIn());
+    for (let line = from; line <= to; line += step) {
+      this.#gaze(d.path, line);
+      await sleep(LINE_READ_MS);
+    }
+    this.#gaze(d.path, to);
+    await sleep(LINE_READ_MS * 2);
+    this.#gaze(d.path, null);
+    this.#looked = {path: d.path, line: from};
+  }
+
+  /** Nothing left to play: if the Agent is thinking, its eye goes on (#ponder). */
+  #idleNow() {
+    if (this.#thinking && !this.#busy && !this.#pondering) void this.#ponder();
+  }
+
+  /**
+   * While the Agent thinks (its model asked, nothing it did left to play), its eye stays at work: on the file it last
+   * looked at, else the one in front when it was asked, going on down its lines slower than reading, and back to the top
+   * at its end; it stops as soon as anything is to be played or the Agent says or does something. The screen is never
+   * still while it works: the wait for its model is seen as it looking.
+   */
+  async #ponder() {
+    const start = this.#looked ?? (this.#stage.front?.() ? {path: this.#stage.front!()!, line: 1} : null);
+    if (!start || still()) return;
+    this.#pondering = true;
+    try {
+      const e = await this.#opened(start.path);
+      if (!e || !this.#thinking || this.#busy) return;
+      this.#work(start.path, true);
+      // Over its lines with words in them, as an eye goes (blank ones passed over); at the last it rests a while, as
+      // one does at the end of a page, and goes back to the top. A file of one such line, it rests on it.
+      let line = start.line;
+      this.#gaze(start.path, line);
+      while (this.#thinking && !this.#busy) {
+        const lines = e.area.value.split('\n');
+        const worded = lines.flatMap((l, i) => (l.trim() ? [i + 1] : []));
+        const next = worded.find((n) => n > line) ?? null;
+        await sleep(next === null ? PONDER_MS * 4 : PONDER_MS);
+        if (!this.#thinking || this.#busy) break;
+        line = next ?? worded[0] ?? 1;
+        this.#gaze(start.path, line);
+      }
+      this.#work(start.path, false);
+      editors.get(key(this.#repo, start.path))?.gaze?.(null);
+    } finally {
+      this.#pondering = false;
+    }
   }
 
   /** A command typed into the Prompt's line, sent, and what it printed shown. */
@@ -243,6 +340,7 @@ export class Player {
     if (d.text.length > typed.length) { await sleep(160); strike('enter'); }
     h.made = false;
     this.#release(d.path, d.text);
+    this.#looked = {path: d.path, line: 1};
   }
 
   /** An edit typed in where it is: each piece in turn, the old words going and the new typed in (its first part). */
@@ -306,5 +404,6 @@ export class Player {
       shift += s.new.length - s.old.length;
     }
     this.#release(d.path, now);
+    if (d.spans.length) this.#looked = {path: d.path, line: d.spans[0].line};
   }
 }

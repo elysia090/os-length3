@@ -66,6 +66,31 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     el.animate([{opacity: 0}, {opacity: 1, offset: 0.25}, {opacity: 1, offset: 0.8}, {opacity: 0.55}],
       {duration: 2400, delay: 380, easing: 'ease-out', fill: 'both'});
   }
+  // Where the Agent's eye is in it (bench/play.ts): a line lit faintly across the sheet, gliding from line to line as it
+  // reads; gone (faded) when the eye leaves.
+  let eye: HTMLElement | null = null, resting = 0;
+  function gaze(area: HTMLTextAreaElement, line: number | null) {
+    // Still on a line a moment, it breathes (forge-desk.css): resting on it, not stopped.
+    clearTimeout(resting);
+    eye?.classList.remove('resting');
+    if (line !== null) resting = window.setTimeout(() => eye?.classList.add('resting'), 600);
+    if (line === null) {
+      const el = eye;
+      eye = null;
+      if (el) el.animate([{opacity: 1}, {opacity: 0}], {duration: 260, easing: 'ease-out'}).onfinish = () => el.remove();
+      return;
+    }
+    const lh = lineHeight(area), top = `${area.offsetTop + (line - 1) * lh}px`;
+    if (!eye) {
+      eye = h('div', {class: 'desk-gaze', 'aria-hidden': 'true'});
+      eye.style.top = top;
+      eye.style.height = `${lh}px`;
+      element.prepend(eye);
+      eye.animate([{opacity: 0}, {opacity: 1}], {duration: 200, easing: 'ease-out'});
+      return;
+    }
+    eye.style.top = top;
+  }
   const caretLeft = () => {
     if (!mark || !editor || document.activeElement !== editor.area) return;
     const c = editor.area.selectionStart;
@@ -99,7 +124,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
       return;
     }
     const e = editor = new Editor(openingWith(repo, path, c.text), {repo, path, head, sheet, gutter, number, state, flow: element, seen: () => grew()});
-    editorOn(repo, path, {take: (text) => e.take(text), area: e.area});
+    editorOn(repo, path, {take: (text) => e.take(text), area: e.area, gaze: (line) => gaze(e.area, line)});
     // Written in on the line washed: it stays while the writing is on that line, its end following; a line broken or
     // written above it, it goes.
     e.area.addEventListener('input', () => {

@@ -484,10 +484,10 @@ export class Box {
     const term = agentTermFor(at);
     this.#p.besideTerm?.(at, term.element);
     const row = term.asked(question);
-    const stage = this.#stageBeside(at, term);
+    const front = this.#edit.inFront();
+    const stage = this.#stageBeside(at, term, front?.path ?? null);
     // Born, the camera steps back to have both terminals in sight, side by side.
     stage.frame([]);
-    const front = this.#edit.inFront();
     // On an issue's work the Agent was handed it, and writes; on main it reads and runs only.
     const w = await workOf(at).catch(() => null);
     const issuePath = w?.issue ? (w.issue.startsWith('issue/') ? w.issue : `issue/${w.issue}`) : null;
@@ -502,7 +502,7 @@ export class Box {
    * sight together where they fit, else goes sideways to the one at work now, the rest at its sides, until the person
    * takes a box in hand.
    */
-  #stageBeside(at: string, term: AgentTerm): Stage {
+  #stageBeside(at: string, term: AgentTerm, front: string | null): Stage {
     // Framed: both terminals as it is born (the camera on its own, the person's at its side); then its own and the files
     // it is at work in, the camera going sideways to each as it starts. Narrowing to fewer waits a moment, so a step
     // ending and the next starting is not a move away and back again.
@@ -516,6 +516,7 @@ export class Box {
     return {
       typing: () => term.typing(),
       shown: (line, output, status) => term.shown(line, output, status),
+      front: () => front,
       place: (path) => this.#repo === at && !!this.#p.place?.(path),
       frame: (keys) => {
         // (In the order they started, the Agent's terminal with them: the last to start is the one gone to.)
