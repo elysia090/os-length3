@@ -232,8 +232,10 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(out).toContainText('^C');
     await expect(app.main.locator('.desk-term .prompt-chip')).toHaveText('hello $');
     // A flood cut: what it had on its way and not yet shown goes with it, as a terminal flushes its output on ^C, so
-    // ^C stands at the foot, where the run was cut, not buried under a megabyte of y.
+    // ^C stands at the foot, where the run was cut, not buried under a megabyte of y. (yes is sent at the prompt line,
+    // as a person sends it once clear has come back.)
     await app.forge.run('clear');
+    await expect(out).toHaveText(/^\s*hello \$\s*$/);
     await app.forge.promptBox.fill('yes');
     await app.forge.promptBox.press('Control+Enter');
     await expect(out).toContainText('y\ny\ny');

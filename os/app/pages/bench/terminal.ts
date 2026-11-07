@@ -659,7 +659,9 @@ export class Session implements Prompt {
   interrupt() {
     if (!this.live) return;
     // Said where the run is cut, as a terminal says it; the screen jolts as it is cut, at once (it answers the hand).
-    if (this.runs.at(-1)?.ms === null) {
+    // Whatever runs in front, as a terminal echoes the key: a line sent while the one before still ran is read by the
+    // shell only after it, its run here ended by the prompt line that came between, and what it runs is cut all the same.
+    if (this.runs.at(-1)?.ms === null || !waitsAt(this.out.lastLine)) {
       this.out.print('^C');
       this.activity.cut();
       jolt(this.element, this.out.element);
