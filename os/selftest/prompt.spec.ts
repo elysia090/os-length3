@@ -341,7 +341,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     }
   });
 
-  test('a Prompt stopped says so as the last thing under its output, with its power switch off beside the words', async ({app}) => {
+  test('a Prompt stopped says so as the last thing under its output, its power switch off leading the words', async ({app}) => {
     await app.forge.run('echo before-stop');
     await expect(app.forge.prompt).toContainText(/^before-stop$/m);
     await app.runtime.open('Running Prompts');
@@ -350,16 +350,18 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     const again = app.forge.prompt.getByRole('switch', {name: 'Restart'});
     await expect(again).toBeVisible();
     await expect(again).toHaveAttribute('aria-checked', 'false');
-    // No taller than the line it is on.
-    expect((await again.boundingBox())!.height).toBeLessThanOrEqual(32);
+    // No taller than the letters of the line it is on.
+    expect((await again.boundingBox())!.height).toBeLessThanOrEqual(18);
     // Under the last line run (the pane tells the lines run, not what they printed).
     const out = (await app.forge.prompt.getByText('echo before-stop').boundingBox())!;
     const at = (await again.boundingBox())!;
     const said = (await app.forge.prompt.getByText('Stopped').boundingBox())!;
     expect(at.y).toBeGreaterThan(out.y);
-    // On the words' line, just after them: not across the Prompt at its other edge.
+    // On the words' line, where the prompt stood, just before them: not across the Prompt at its other edge.
     expect(Math.abs(at.y + at.height / 2 - (said.y + said.height / 2))).toBeLessThan(4);
-    expect(at.x - (said.x + said.width)).toBeLessThan(24);
+    expect(at.x + at.width).toBeLessThanOrEqual(said.x);
+    expect(said.x - (at.x + at.width)).toBeLessThan(24);
+    expect(at.x).toBeLessThan(out.x);
     await again.click();
     await expect(app.forge.prompt).toContainText(/hello \$/);
   });

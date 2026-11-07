@@ -749,6 +749,8 @@ export class Session implements Prompt {
     this.element.classList.add('ended');
     this.status.replaceChildren();
     this.out.ended(line);
+    // Its prompt line goes with it on a desk (forge-desk.css): the keys there go to its switch.
+    if (now && this.element.closest('.desk-term')?.contains(document.activeElement)) power.focus({preventScroll: true});
     if (!now || this.restarting || still()) return;
     goDark(power, this.out.element);
   }

@@ -20,13 +20,12 @@ export function jolt(term: HTMLElement, out: HTMLElement) {
  * switched on.
  */
 export function endLine(said: string, why: string, restart: () => void): {line: HTMLElement; power: HTMLElement} {
-  // Ended: what happened and, at the Prompt's bottom right under its output, its power switch, off: switched on,
-  // it starts again (styles.css). The same switch as SSH's and a repo card's, no taller than the line.
-  const power = h('button', {class: 'power', type: 'button', role: 'switch', 'aria-checked': 'false', 'aria-label': t('Restart')}, h('span', {class: 'knob'}));
+  // Ended: its power switch, off, where the prompt stood, and what happened after it: switched on, it starts again
+  // (terminal.css). The same switch as SSH's and a repo card's, no taller than the line.
+  const power = h('button', {class: 'power plain', type: 'button', role: 'switch', 'aria-checked': 'false', 'aria-label': t('Restart')}, h('span', {class: 'knob'}));
   power.addEventListener('click', restart);
-  // The last thing on its thread, under what it printed last: how it ended, and the switch beside it (in the pane a
-  // dot of its own, off), not a row of its own over the box's Run.
-  const line = h('div', {class: 'term-end'}, h('span', why ? {title: why} : {}, said), power);
+  // The last thing on its thread, under what it printed last: the switch, and how it ended beside it.
+  const line = h('div', {class: 'term-end'}, power, h('span', why ? {title: why} : {}, said));
   return {line, power};
 }
 
@@ -35,7 +34,8 @@ export function goDark(power: HTMLElement, out: HTMLElement) {
   // From on, its knob across and the green going from under it; the output flares as a tube does and dims to its
   // rest (styles.css .term.ended).
   power.animate([{backgroundColor: 'var(--raised)', borderColor: 'var(--edge)'}, {}], {duration: paced(260), easing: 'ease-out'});
-  power.firstElementChild!.animate([{transform: 'translateX(24px)', backgroundColor: 'var(--done)'}, {}], {duration: paced(280), easing: LAND});
+  const travel = getComputedStyle(power).getPropertyValue('--travel').trim() || '24px';
+  power.firstElementChild!.animate([{transform: `translateX(${travel})`, backgroundColor: 'var(--done)'}, {}], {duration: paced(280), easing: LAND});
   out.animate([{filter: 'brightness(1.8)'}, {filter: 'brightness(.5)', offset: .3}, {}], {duration: paced(460), easing: 'ease-out'});
 }
 

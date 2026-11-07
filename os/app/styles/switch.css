@@ -1,8 +1,9 @@
 /* The switch: a knob on a track, on in green, and a switch with its word in a card's lines. */
-.power { position: relative; width: 52px; height: 28px; flex: none; padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: var(--raised); cursor: var(--cursor-hand); transition: background var(--motion), border-color var(--motion); }
-.power .knob { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--ink); transition: transform var(--move), background var(--move); }
+.power { --knob: 20px; --inset: 3px; --travel: 24px; --grow: 4px;
+  position: relative; width: 52px; height: 28px; flex: none; padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: var(--raised); cursor: var(--cursor-hand); transition: background var(--motion), border-color var(--motion); }
+.power .knob { position: absolute; top: var(--inset); left: var(--inset); width: var(--knob); height: var(--knob); border-radius: 50%; background: var(--ink); transition: transform var(--move), background var(--move); }
 /* On is the green circle; the switch answers the pointer before it is pressed. */
-.power[aria-checked='true'] .knob { transform: translateX(24px); background: var(--done); }
+.power[aria-checked='true'] .knob { transform: translateX(var(--travel)); background: var(--done); }
 .power:hover:not(:disabled) { border-color: var(--ink); }
 /* Waiting (the Remote not answering): there, but not to be pressed now. */
 .power:disabled { opacity: .45; cursor: var(--cursor-arrow); }
@@ -10,8 +11,8 @@
 .button.discard:hover:not(:disabled), .button.discard:focus-visible { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 /* A switch with its word, inside a card's lines (a Prompt's network). */
 .net-row { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); }
-.power:active:not(:disabled) .knob { width: 24px; }
-.power[aria-checked='true']:active:not(:disabled) .knob { transform: translateX(20px); }
+.power:active:not(:disabled) .knob { width: calc(var(--knob) + var(--grow)); }
+.power[aria-checked='true']:active:not(:disabled) .knob { transform: translateX(calc(var(--travel) - var(--grow))); }
 .power[aria-checked='false'] { background: var(--off); border-color: var(--off); }
 .power[aria-checked='false'] .knob { background: var(--ground); }
 /* A switch whose off is the usual state (SSH): off is quiet, not the red of a repo turned off. */

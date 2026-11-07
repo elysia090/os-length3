@@ -8,11 +8,15 @@
 /* What the running line is doing, under its output; empty while it is quick. */
 .term-activity { grid-row: 3; display: flex; align-items: center; gap: var(--s2); min-height: 0; }
 .term-activity:empty { display: none; }
-/* Ended: how, and Start again beside it, the last thing under its output (terminal.ts sayEnded), in the words of the
-   page; what happened wraps in its own room, the power switch on its line, so the line is no taller. */
+/* Ended: its power switch where the prompt stood, and how it ended after it, the last thing under its output
+   (terminal.ts sayEnded); what happened wraps in its own room, so the line is no taller. */
 .term-end { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); font: var(--t-meta)/20px var(--sans); white-space: normal; }
-.term-end > span:first-child { min-width: 0; overflow-wrap: anywhere; color: var(--sub); }
-.screen .term-end > span:first-child { color: color-mix(in srgb, var(--add-tint) 62%, transparent); }
+.term-end > span { min-width: 0; overflow-wrap: anywhere; color: var(--sub); }
+.screen .term-end > span { color: color-mix(in srgb, var(--add-tint) 62%, transparent); }
+/* The switch the size of the line's letters, off quiet as SSH's (ended is a rest, not a fault). */
+.term-end > .power { --knob: 10px; --inset: 2px; --travel: 14px; --grow: 3px; width: 30px; height: 16px; }
+/* Its ring as fine as the switch is small (the keys go to it once the prompt line goes, terminal.ts sayEnded). */
+.term-end > .power:focus-visible { outline-width: 1px; outline-offset: 2px; }
 /* Ended, its output stays to be read, dimmed as a screen switched off (it flares and dims to this as it ends); how it
    ended, and its switch, are not. */
 .term.ended > .term-out > :not(.term-end) { opacity: .72; }

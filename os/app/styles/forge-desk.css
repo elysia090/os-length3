@@ -125,6 +125,10 @@
 .desk-term .term.more-above.more-below > .term-out { mask-image: linear-gradient(transparent, #000 1.6em, #000 calc(100% - 1.6em), transparent); }
 @media (prefers-reduced-motion: reduce) { .desk-term .scroll-thumb { transition: none; } }
 .desk-term > .dock { position: static; max-width: none; margin: 0; }
+/* Ended, the end line is the terminal's last, on its line grid in its letters; no prompt line waits under it (its
+   switch starts it again). */
+.desk-term .term-end { margin-top: 0; font: var(--t-code)/1.6 var(--mono); }
+.desk-term:has(.term.ended) > .dock { display: none; }
 .desk-term > .dock::after { display: none; }
 .desk-after { margin-left: 1ch; }
 /* The line one types at is the Prompt's own last line: no field round it, the pill its prompt (garden $), what is
