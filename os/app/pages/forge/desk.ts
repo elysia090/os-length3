@@ -598,6 +598,10 @@ export class Desk {
    * under one written do (never sliding after it, the grown box over it meanwhile), and the camera over the Agent's work
    * glides where it has to go. */
   #relay(follow: Carried | null = null, glide = false, grew = false) {
+    // Out of sight (another page shown), the desk has no size: laid out then, its boxes would be moved to where a desk of
+    // none puts them, and slide back from there as it is shown again (under the camera bringing it in). They stay where
+    // they are; shown again, it is laid out at its size, and nothing has moved.
+    if (!this.element.clientWidth || !this.element.clientHeight) return;
     const heights = (key: string) => this.#boxes.get(key)?.el.offsetHeight ?? 0;
     const at = slots(this.#cols, heights);
     // Room round the boxes for the camera to stand any one of them in the middle, across and down (it scrolls over the

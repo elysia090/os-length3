@@ -1925,13 +1925,22 @@ its foot where Forge's is, level with the person at the rail's; its first row
 where Forge's first run is, level with the rail: the row's first line starts
 where the rail's first icon does, so the line's capitals, the bar beside them
 and the icon's ink start on one line (the bar as tall as its words, capitals
-to baseline, never standing proud of them). Between Home
-and Forge the rail does not change floors: it moves a camera over the one
-dotted ground. The band, the pane and its switch are the frame and stay where
-they are (what differs on them, Forge's pills, the pane's rows, gives way in
-place in a seventh of a second), while what lies on the ground goes by under
-them with the dots: off at once, most of the way in a tenth of a second, then
-landing soft (380 ms). The pane holds
+to baseline, never standing proud of them). Between Home, Forge and New repo
+the rail does not change floors: it moves a camera over the one dotted ground,
+on which the three lie a little apart across as well as down (Home a step of
+three dots to the left of Forge, New repo a step to its right), so the camera
+going up to Home drifts a little left as it goes, never straight up a shaft.
+It stands back as it sets off (to nine tenths at most, soon after the press),
+goes the way between the two, and comes down into the page come to, which
+grows from small into its place as it lands (480 ms in all). The band, the
+pane and its switch are the frame and stay where they are (what differs on
+them, Forge's pills, the pane's rows, gives way in place in a seventh of a
+second); the page left is seen only on the ground between them, never over
+them; the dots are one lattice under both pages from the first frame to the
+last (the way between them is moved by less than half a dot so that they
+are). Forge's desk is not laid out while it is out of sight, so its boxes are
+where they were when it comes back, carried in by the camera, never sliding
+to their places after it. The pane holds
 Lately: what waits since the person was last here, a row each in the rows
 Forge's and Git's pane have for what was done (a bar, ink while something of
 it is not read, the paper's rule once it is; what it is in the display face;

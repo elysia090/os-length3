@@ -25,6 +25,7 @@ import {LAND, glide, morph, paced, paneOut, stage, still, where, type Carry} fro
 import {letGo, touch} from './ui/touch.ts';
 import {caret} from './ui/caret.ts';
 import {optical} from './ui/optical.ts';
+import {flyIn, flyOff, lattice, steps, way as onto, type Flight} from './ui/camera.ts';
 import {scrollbars} from './ui/scrollbars.ts';
 
 const PURPOSE_KEY = 'length3.os.purpose';
@@ -234,7 +235,9 @@ type Panning = Document & {startViewTransition?(update: () => void): Pass};
  * with its cut; `old`, the picture's.
  */
 type Pan = {pass: Pass; left: PurposeId; to: PurposeId; dir: number; by: number; from: number; was: DOMRect; top: number; off: number;
-  drawn: boolean; ready: boolean; parts: Animation[]; old: Animation[]; camera: HTMLElement[] | null};
+  drawn: boolean; ready: boolean; parts: Animation[]; old: Animation[]; camera: HTMLElement[] | null;
+  /** Over the ground: where the dots of the page left were (read as it was taken), and the camera's flight once set. */
+  dots: {x: number; y: number} | null; flight: Flight | null};
 
 /**
  * The pages laid on the desk's dotted ground (Forge's desk, Home, New repo), each with a band along its top and the pane at its
@@ -244,12 +247,21 @@ type Pan = {pass: Pass; left: PurposeId; to: PurposeId; dir: number; by: number;
 const ON_GROUND = new Set<PurposeId>(['forge', 'home', 'new-repo']);
 /** A ground page's frame: its band, its pane, the pane's switch (inside Home's pane; beside Forge's). */
 const FRAME = ':is(.home-band, .home-pane, .work.desk-bench > .bar, .work.desk-bench > .side, .work.desk-bench > .pane-toggle)';
+/** A ground page's band and pane (the ground lies between them, under the one and left of the other). */
+const BAND = ':is(.home-band, .work.desk-bench > .bar)', PANE = ':is(.home-pane, .work.desk-bench > .side)';
 /**
- * The camera over the ground: off at once and most of the way in a tenth of a second (ギュン), then landing soft.
- * Compared by film against the floors' pan (the frame went with each page: two bands and two pane lines on the screen
- * at once) and an ease both ways (it held a tenth of a second after the press before it went: read as lag).
+ * The camera over the ground (ui/camera.ts): it stands back as it sets off (a tenth at most, soon after the press), goes
+ * the way between the two pages, and comes down into the one come to, which grows from small into its place. Compared
+ * by film against the floors' pan (the frame went with each page: two bands and two pane lines on the screen at once),
+ * a straight zip up or down (a shaft, not a desk), and an ease both ways (it held after the press before it went).
  */
-const CAMERA = {ms: 380, easing: 'cubic-bezier(.16, 1, .3, 1)'};
+const CAMERA = {ms: 480, pan: [.35, 0, .15, 1] as [number, number, number, number], back: .1};
+/**
+ * Where each ground page lies across the ground, in steps of three dots: Home a step to the left of Forge, New repo a
+ * step to its right, so the camera going between them drifts a little sideways as it goes up or down the rail.
+ */
+const ACROSS: Partial<Record<PurposeId, number>> = {home: -1, forge: 0, 'new-repo': 1};
+const STEP = 72;
 let panning: Pan | null = null;
 
 /** Which way along the rail `to` is from `from`: 1 down, -1 up, 0 the same place. */
@@ -275,39 +287,53 @@ function rise(p: Pan) {
   // Going down, its top starts at the foot of the floor left; going up, its foot at that floor's top.
   p.by = p.dir > 0 ? innerHeight + p.off - top : innerHeight - p.top;
   p.from = p.dir * p.by;
-  const ms = paced(p.camera ? CAMERA.ms : 330), easing = p.camera ? CAMERA.easing : LAND;
-  p.parts = [...page.children].flatMap((part) => {
-    // Each part is cut where the window's edges will be on it, the cut its own, so it goes with the part (on the
-    // compositor, as the part does: a cut moved frame by frame would lag it under load, and bite into it). Read where
-    // it stands before it is moved. Over the ground the page left lies over it (its picture), and no floor's edge is
-    // to be kept: nothing is cut.
-    const r = p.camera ? null : part.getBoundingClientRect();
-    const go = part.animate([{transform: `translateY(${p.from}px)`}, {transform: 'none'}], {duration: ms, easing});
-    return [go, ...r?.height ? [part.animate([{clipPath: cut(r, top, innerHeight, now)}, {clipPath: cut(r, top, innerHeight, now)}], {duration: ms})] : []];
-  });
-  if (p.camera) {
-    // The frame stands still: what moves with the page is moved back as much, frame by frame.
-    for (const el of page.querySelectorAll<HTMLElement>(FRAME)) {
-      if (el.getClientRects().length) p.parts.push(el.animate([{transform: `translateY(${-p.from}px)`}, {transform: 'none'}], {duration: ms, easing}));
-    }
-    // The dots are the page's own ground: they go by with it.
-    if (getComputedStyle(page).backgroundImage !== 'none') {
-      const at = getComputedStyle(page).backgroundPosition.split(' ');
-      p.parts.push(page.animate([{backgroundPosition: `${at[0]} calc(${at[1] ?? '0px'} + ${p.from}px)`}, {backgroundPosition: getComputedStyle(page).backgroundPosition}], {duration: ms, easing}));
-    }
+  // Over the ground (both pages on it), the camera flies; anywhere else, the floors pan.
+  const fly = !!p.camera && ON_GROUND.has(p.to);
+  document.documentElement.classList.toggle('over-ground', fly);
+  p.flight = fly ? flight(p, page, now, top) : null;
+  if (!p.flight) {
+    p.parts = [...page.children].flatMap((part) => {
+      // Each part is cut where the window's edges will be on it, the cut its own, so it goes with the part (on the
+      // compositor, as the part does: a cut moved frame by frame would lag it under load, and bite into it). Read
+      // where it stands before it is moved.
+      const r = part.getBoundingClientRect();
+      const go = part.animate([{transform: `translateY(${p.from}px)`}, {transform: 'none'}], {duration: paced(330), easing: LAND});
+      return [go, ...r.height ? [part.animate([{clipPath: cut(r, top, innerHeight, now)}, {clipPath: cut(r, top, innerHeight, now)}], {duration: paced(330)})] : []];
+    });
   }
   if (!p.ready) for (const a of p.parts) a.pause();
+}
+
+/**
+ * The camera's flight from the page left to the page come to (`page`, drawn, standing at `now` from `top`): the way
+ * between them (down or up the rail as the floors go, and across as the pages lie), moved by less than half a dot so
+ * the two pages' dots are one lattice; its parts flown in from there, the frame standing where it is.
+ */
+function flight(p: Pan, page: HTMLElement, now: DOMRect, top: number): Flight {
+  const frame = [...page.querySelectorAll<HTMLElement>(FRAME)].filter((el) => el.getClientRects().length);
+  const edges = (sel: string, side: 'top' | 'bottom' | 'left' | 'right') => frame.filter((el) => el.matches(sel)).map((el) => el.getBoundingClientRect()[side]);
+  const dots = lattice(page);
+  const by = onto({x: STEP * ((ACROSS[p.to] ?? 0) - (ACROSS[p.left] ?? 0)), y: p.from}, p.dots, dots);
+  p.from = by.y;
+  const f: Flight = {at: {x: now.left + now.width / 2, y: top + (innerHeight - top) / 2}, by, steps: steps(CAMERA.pan, CAMERA.back), ms: paced(CAMERA.ms),
+    ground: {left: now.left, top: Math.max(top, ...edges(BAND, 'bottom')), right: Math.min(now.right, ...edges(PANE, 'left')), bottom: Math.max(0, ...edges(PANE, 'bottom')) || innerHeight}};
+  // Read where each stands before any of them moves.
+  const at = (el: HTMLElement): [HTMLElement, DOMRect] => [el, el.getBoundingClientRect()];
+  p.parts = flyIn(f, page, [...page.children].map((el) => at(el as HTMLElement)), frame.map(at), dots);
+  return f;
 }
 
 /** The picture of the page left sets off with the page come to, the two as one sheet (set off again, turned, if
  * another place was pressed before they had moved). */
 function setOff(p: Pan) {
-  const root = document.documentElement, old = '::view-transition-old(page)', ms = paced(p.camera ? CAMERA.ms : 330), easing = p.camera ? CAMERA.easing : LAND;
+  const root = document.documentElement, old = '::view-transition-old(page)', ms = paced(330);
   for (const a of p.old) a.cancel();
-  // The picture is cut at the window's edges as it was, the cut its own, going with it.
+  // The picture is cut at the window's edges as it was, the cut its own, going with it; over the ground, at the
+  // ground's edges where the frame stands, as the camera flies.
   const edge = cut(p.was, p.top, innerHeight + p.off);
-  p.old = [root.animate([{transform: 'none'}, {transform: `translateY(${-p.dir * p.by}px)`}], {duration: ms, easing, fill: 'forwards', pseudoElement: old}),
-    root.animate([{clipPath: edge}, {clipPath: edge}], {duration: ms, fill: 'forwards', pseudoElement: old})];
+  p.old = p.flight ? flyOff(p.flight, root, old, p.was)
+    : [root.animate([{transform: 'none'}, {transform: `translateY(${-p.dir * p.by}px)`}], {duration: ms, easing: LAND, fill: 'forwards', pseudoElement: old}),
+      root.animate([{clipPath: edge}, {clipPath: edge}], {duration: ms, fill: 'forwards', pseudoElement: old})];
   // The frame left (its band, its pane, its switch: pictures of their own) gives way where it stands to the one come
   // to, which is there under it.
   p.camera?.forEach((_, i) => p.old.push(root.animate([{opacity: 1}, {opacity: 0}], {duration: paced(140), easing: 'ease-out', fill: 'forwards', pseudoElement: `::view-transition-old(frame-${i})`})));
@@ -341,7 +367,7 @@ function select(id: PurposeId, quiet = false): Promise<void> {
   const begin = (document as Panning).startViewTransition;
   const moving = !!begin && !quiet && !!page.childElementCount && !matchMedia('(prefers-reduced-motion: reduce)').matches;
   // Something else carries the eye now (a repo growing into its box from what was pressed): the pan gives way at once.
-  if (p && !moving) { panning = null; for (const a of p.parts) a.cancel(); p.pass.skipTransition(); root.classList.remove('panning', 'arriving'); }
+  if (p && !moving) { panning = null; for (const a of p.parts) a.cancel(); p.pass.skipTransition(); root.classList.remove('panning', 'arriving', 'over-ground'); }
   if (p && moving) {
     if (id === p.to) return p.pass.updateCallbackDone.catch(() => {});
     const off = p.ready ? short(p) : null;
@@ -362,7 +388,8 @@ function select(id: PurposeId, quiet = false): Promise<void> {
   // Over the ground, the frame left is taken as pictures of its own, standing where it is (styles: frame-*).
   const camera = ON_GROUND.has(current) && ON_GROUND.has(id) && !p ? [...page.querySelectorAll<HTMLElement>(FRAME)].filter((el) => el.getClientRects().length) : null;
   camera?.forEach((el, i) => el.style.setProperty('view-transition-name', `frame-${i}`));
-  const q: Pan = {pass: null!, left: current, to: id, dir, by: 0, from: 0, was, top: Math.max(0, was.top), off: 0, drawn: false, ready: false, parts: [], old: [], camera};
+  const q: Pan = {pass: null!, left: current, to: id, dir, by: 0, from: 0, was, top: Math.max(0, was.top), off: 0, drawn: false, ready: false, parts: [], old: [], camera,
+    dots: camera ? lattice(page) : null, flight: null};
   q.pass = begin!.call(document, () => {
     if (panning !== q) return;
     if (p) {
@@ -387,7 +414,7 @@ function select(id: PurposeId, quiet = false): Promise<void> {
     if (panning !== q) return;
     for (const a of q.parts) a.finish();
     panning = null;
-    root.classList.remove('panning', 'arriving');
+    root.classList.remove('panning', 'arriving', 'over-ground');
   };
   q.pass.finished.then(done, done);
   return q.pass.updateCallbackDone.catch(() => {});
