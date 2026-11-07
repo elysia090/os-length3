@@ -2088,7 +2088,8 @@ line) is underlined under the pointer and, pressed, its box opens at that line,
 as a terminal's hints open what they point at. In the desk's bottom corner on
 the right stand its keys, with no line nor bar round them (tab next, ↵ in,
 esc back, ⇧N new, ctrl ←→ carry, / search), each in ink, what it does quieter,
-on the ground, so a box passing under them leaves them read. Each
+printed on the ground under the boxes: a box lying over them covers them, as it
+would words printed on a desk, never a strip of ground cut out of the box. Each
 repo keeps its own desk, as it was left, from one visit to the next; a desk
 never worked at begins with the Prompt and the README beside it.
 

@@ -14,8 +14,9 @@ const CORS = {'access-control-allow-origin': '*', 'access-control-allow-headers'
 interface Asked { system?: string; tools?: {name: string}[]; messages: {role: string; content: unknown}[] }
 type Block = {type: 'text'; text: string} | {type: 'tool_use'; id: string; name: string; input: Record<string, unknown>};
 
-/** The maker, played: what each piece of work was told is kept in `told`; `turns` gives the model's next turn. */
-async function maker(page: Page, told: string[], turns: (asked: Asked) => Block[]) {
+/** The maker, played: what each piece of work was told is kept in `told`; `turns` gives the model's next turn, `ms` after
+ * it is asked (a model takes a moment: what the Agent does then comes while what it did before is still being played). */
+async function maker(page: Page, told: string[], turns: (asked: Asked) => Block[], ms = 0) {
   await page.route('https://api.anthropic.com/**', async (route) => {
     const r = route.request();
     if (r.method() === 'OPTIONS') return route.fulfill({status: 204, headers: CORS});
@@ -25,6 +26,7 @@ async function maker(page: Page, told: string[], turns: (asked: Asked) => Block[
     if (!asked.tools) return route.fulfill({headers: CORS, json: {content: [{type: 'text', text: 'Ready'}]}});
     if (asked.messages.length === 1) told.push(asked.system ?? '');
     const content = turns(asked);
+    if (ms) await new Promise((res) => setTimeout(res, ms));
     return route.fulfill({headers: CORS, json: {content, stop_reason: content.some((c) => c.type === 'tool_use') ? 'tool_use' : 'end_turn'}});
   });
 }
@@ -144,4 +146,52 @@ test('handed an issue\'s work, the Agent reads and writes its files: its termina
   await expect(row).toContainText('Added how it is built');
   await expect(row).toHaveClass(/waits/);
 });
+});
+
+test('what the Agent changes on seeing a run is shown after that run\'s output, never before it', async ({signedIn: app}) => {
+  const {page} = app;
+  // A script written beside a line of the README; run, it prints a value never set; mended on seeing that, and run again.
+  const script = '#!/bin/sh\nn=0\nwhile read -r line; do\n  n=$((n + 1))\ndone\necho "$count lines"\n';
+  await maker(page, [], (asked) => {
+    const turn = asked.messages.filter((m) => m.role === 'assistant').length;
+    if (turn === 0) return [{type: 'tool_use', id: 'l', name: 'bash', input: {command: 'ls'}}, {type: 'tool_use', id: 'r', name: 'read', input: {path: 'README.md'}}];
+    if (turn === 1) return [{type: 'tool_use', id: 'w', name: 'write', input: {path: 'count.sh', content: script}},
+      {type: 'tool_use', id: 'e1', name: 'edit', input: {path: 'README.md', edits: [{oldText: '# say', newText: '# say\n\nCount the lines: sh count.sh < file'}]}}];
+    if (turn === 2) return [{type: 'tool_use', id: 'b1', name: 'bash', input: {command: 'sh count.sh < README.md'}}];
+    if (turn === 3) return [{type: 'text', text: 'It prints a variable that is never set.'},
+      {type: 'tool_use', id: 'e2', name: 'edit', input: {path: 'count.sh', edits: [{oldText: 'echo "$count lines"', newText: 'echo "$n lines"'}]}},
+      {type: 'tool_use', id: 'b2', name: 'bash', input: {command: 'sh count.sh < README.md'}}];
+    return [{type: 'text', text: 'It prints $n now.'}];
+  }, 700);
+  await app.newRepo.make('say');
+  await app.runtime.open('Agent');
+  await app.main.getByRole('textbox', {name: 'API key'}).fill(KEY);
+  await app.main.getByRole('button', {name: 'Use', exact: true}).click();
+  await expect(app.main.locator('.agent-line')).toContainText('model-one');
+  await app.git.write('say', 'Say the value');
+  await app.git.step('Start').click();
+  await expect(app.git.step('Back to main')).toBeVisible();
+  await app.rail.go('forge');
+  // When the run's output is first on the screen, and when the mended line first is.
+  await page.evaluate(() => {
+    const at = {ran: 0, mended: 0};
+    (window as unknown as {zzAt: typeof at}).zzAt = at;
+    const look = () => {
+      const now = performance.now();
+      // (The run's output, " lines": what $count, never set, makes of it, under the line run.)
+      if (!at.ran && /< README\.md\s*lines/.test(document.querySelector('.desk-box[data-key="agent"]')?.textContent ?? '')) at.ran = now;
+      if (!at.mended && [...document.querySelectorAll('textarea')].some((t) => t.value.includes('echo "$n lines"'))) at.mended = now;
+      if (!at.ran || !at.mended) requestAnimationFrame(look);
+    };
+    requestAnimationFrame(look);
+  });
+  const box = app.forge.promptBox;
+  await box.focus();
+  await box.fill('agent Write count.sh: it counts the lines of what comes in.');
+  await box.press('Enter');
+  await expect(app.forge.editor('count.sh')).toHaveValue(/echo "\$n lines"/, {timeout: 60_000});
+  const at = await page.evaluate(() => (window as unknown as {zzAt: {ran: number; mended: number}}).zzAt);
+  expect(at.ran).toBeGreaterThan(0);
+  // Mended only once what showed it wrong has been seen: decided on seeing it, it is not played before it.
+  expect(at.mended).toBeGreaterThan(at.ran);
 });

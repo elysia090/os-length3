@@ -88,10 +88,11 @@
 ::highlight(term-file) { text-decoration: underline 1px currentColor; text-underline-offset: 3px; }
 .desk-room.term-linking .term-out { cursor: var(--cursor-hand); }
 /* The desk's keys at its foot on the right, in its corner, no line nor bar round them: each key in ink, what it does
-   after it, quieter, on the ground (a box passing under them leaves them read). Never taking a press. With the pane put
-   away, its switch stands in the corner: they keep left of it. */
-.desk-keys { position: absolute; right: 0; bottom: 0; z-index: 3; display: flex; align-items: center; height: 28px; padding: 0 12px;
-  pointer-events: none; background: var(--ground); font: 400 11px/1 var(--mono); color: var(--sub); white-space: nowrap; }
+   after it, quieter, printed on the ground under the boxes: a box lying over them covers them, as it would words printed
+   on a desk (a strip of ground of their own over the boxes cut a corner out of the box under it). Never taking a press.
+   With the pane put away, its switch stands in the corner: they keep left of it. */
+.desk-keys { position: absolute; right: 0; bottom: 0; display: flex; align-items: center; height: 28px; padding: 0 12px;
+  pointer-events: none; font: 400 11px/1 var(--mono); color: var(--sub); white-space: nowrap; }
 .work.pane-closed .desk-keys { right: calc(var(--s5) + var(--h-row) + var(--s3)); }
 .desk-key { display: inline-flex; align-items: baseline; gap: 5px; padding: 0 8px; }
 .desk-keys kbd { padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; font: 600 11px/1 var(--mono); color: var(--ink); }

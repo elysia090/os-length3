@@ -165,6 +165,9 @@ export class Player {
   #done = false;
   /** What listeners hear, in order, each once all before it is played. */
   #told: Promise<void> = Promise.resolve();
+  /** Everything of the turns before this one, played: what this turn does was decided on seeing it, so none of it is
+   * played before it (side by side with what else this turn does, in other lanes, it may be). */
+  #turnBefore: Promise<unknown> = Promise.resolve();
   readonly #listeners = new Set<(e: AgentEvent) => void>();
 
   constructor(repo: string, stage: Stage) {
@@ -252,6 +255,7 @@ export class Player {
     // Thinking from when its model is asked until it says or does something; the eye goes on meanwhile (#ponder). What
     // it took to answer is kept (most of the latest), for the tempo.
     if (e.type === 'agent_start' || e.type === 'turn_start') { this.#thinking = true; this.#askedAt = performance.now(); this.#idleNow(); }
+    if (e.type === 'turn_start') this.#turnBefore = this.#before();
     if ((e.type === 'tool_execution_start' || e.type === 'message_end' || e.type === 'agent_end') && this.#askedAt) {
       this.#answerMs = .4 * this.#answerMs + .6 * (performance.now() - this.#askedAt);
       this.#askedAt = 0;
@@ -275,15 +279,16 @@ export class Player {
    * as the eye going over what was read. */
   #play(name: string, args: Record<string, unknown>, done: Done | undefined) {
     const path = typeof args.path === 'string' ? args.path : '';
-    if (!done) { if (name === 'edit' || name === 'write') void this.#on(path, async () => this.#release(path, null)); return; }
+    const turn = this.#turnBefore;
+    if (!done) { if (name === 'edit' || name === 'write') void this.#on(path, async () => this.#release(path, null), turn); return; }
     const owes = Player.#takes(done);
-    if (done.tool === 'read') { const d = done; void this.#on(d.path, (w) => this.#read(d, w), undefined, owes); return; }
+    if (done.tool === 'read') { const d = done; void this.#on(d.path, (w) => this.#read(d, w), turn, owes); return; }
     if (done.tool === 'bash') {
       const d = done;
       // Typed at once; what it printed shown once what came before it in the other lanes is played.
       void this.#on('agent', (w) => this.#run(d, w), this.#before(), owes);
-    } else if (done.tool === 'edit') { const d = done; void this.#on(d.path, (w) => this.#edit(d, w), undefined, owes); }
-    else if (done.tool === 'write') { const d = done; void this.#on(d.path, (w) => this.#write(d, w), undefined, owes); }
+    } else if (done.tool === 'edit') { const d = done; void this.#on(d.path, (w) => this.#edit(d, w), turn, owes); }
+    else if (done.tool === 'write') { const d = done; void this.#on(d.path, (w) => this.#write(d, w), turn, owes); }
   }
 
   /** What playing `d` takes at a tempo of 1, as its waits add up (ms; a guess where its file is not yet seen). */
