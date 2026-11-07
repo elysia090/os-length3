@@ -83,6 +83,8 @@ interface BoxParts {
   /** On a desk: a file's box laid without taking the person's hand (false: it cannot be); the camera over boxes. */
   place?(path: string): boolean;
   frame?(keys: string[]): void;
+  /** On a desk: whether these boxes are seen at once, at the standard. */
+  together?(keys: string[]): boolean;
   /** On a desk: the Agent's own terminal (`element`) laid beside the person's in `repo`'s desk, if it is not there. */
   besideTerm?(repo: string, element: HTMLElement): void;
   /** The box is the Prompt's own last line, on a desk (Forge's): under Run, Enter runs what is written, as a
@@ -485,7 +487,9 @@ export class Box {
     this.#p.besideTerm?.(at, term.element);
     const row = term.asked(question);
     const front = this.#edit.inFront();
-    const stage = this.#stageBeside(at, term, front?.path ?? null);
+    // While its model is first asked, its eye is on the file in front, else on the repo's README, as one starts.
+    const look = front?.path ?? await store.read(at, 'README.md').then((c) => (c.text !== null ? 'README.md' : null)).catch(() => null);
+    const stage = this.#stageBeside(at, term, look);
     // Born, the camera steps back to have both terminals in sight, side by side.
     stage.frame([]);
     // On an issue's work the Agent was handed it, and writes; on main it reads and runs only.
@@ -518,6 +522,7 @@ export class Box {
       shown: (line, output, status) => term.shown(line, output, status),
       front: () => front,
       place: (path) => this.#repo === at && !!this.#p.place?.(path),
+      together: (keys) => this.#repo !== at || (this.#p.together?.(keys) ?? true),
       frame: (keys) => {
         // (In the order they started, the Agent's terminal with them: the last to start is the one gone to.)
         const next = !framed.length ? ['term', 'agent'] : keys.includes('agent') ? keys : ['agent', ...keys];

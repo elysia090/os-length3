@@ -1,7 +1,7 @@
 import {h} from '../../ui/dom.ts';
 import {still} from '../../ui/glide.ts';
 import {t} from '../../i18n/i18n.ts';
-import {bornOn, carried, kept, liftedOn, next, overAll, PAD, pulledOn, slots, standardOn, tabbed, WIDTH, wholeOf, type Slot, type View} from './desk-layout.ts';
+import {bornOn, carried, kept, liftedOn, next, overAll, PAD, pulledOn, slots, STANDARD, standardOn, tabbed, WIDTH, wholeOf, type Slot, type View} from './desk-layout.ts';
 
 // A repo's desk, Forge's center (DESIGN.md § Forge, the desk): what is open lies on a plane, each box as wide as 80
 // columns of code, its name outside its top-left corner, on dots. The Prompt's box is the first; files opened lie
@@ -28,6 +28,9 @@ type Way = 'up' | 'down' | 'left' | 'right';
 const WAYS: Record<string, Way> = {ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right'};
 /** Each way's other way: a step carried that way is taken back. */
 const BACK: Record<Way, Way> = {up: 'down', down: 'up', left: 'right', right: 'left'};
+
+/** Whether `el` is on its way to its place now (its translate's transition running). */
+const gliding = (el: HTMLElement) => el.getAnimations().some((a) => a instanceof CSSTransition && a.transitionProperty === 'translate' && a.playState === 'running');
 
 /** Where the camera stands: at its standard, a step back, over the whole desk (Escape goes round them in this order). */
 type Camera = 'standard' | 'pulled' | 'whole';
@@ -183,9 +186,10 @@ export class Desk {
    * yet (a key other than an arrow before then was a shortcut's: the camera stays the person's). */
   #lifting = 0;
   #carrying = false;
-  /** Each box's size heard: grown or shrunk (a line written, a notice in its head), the desk is laid again. */
-  readonly #sized = new ResizeObserver(() => { cancelAnimationFrame(this.#sizing); this.#sizing = requestAnimationFrame(() => this.#relay()); });
-  #sizing = 0;
+  /** Each box's size heard: grown or shrunk (a line written, a notice in its head), the desk is laid again, what is
+   * under it pushed as it grows, in the frame it grew in (heard after that frame is laid out, before it is drawn: a
+   * frame later, the grown box is drawn over the one under it). */
+  readonly #sized = new ResizeObserver(() => this.#relay(null, false, true));
   /** When the camera last scrolled the desk itself. */
   #ownScroll = 0;
   /** The box a press under way is on (the camera waits for it to be let go: its click takes it in hand). */
@@ -488,6 +492,12 @@ export class Desk {
     if (this.#cam === 'standard') this.#look(true);
   }
 
+  /** Whether the boxes at `keys` are seen at once at the standard (those not on the desk are left out). */
+  together(keys: string[]): boolean {
+    const boxes = keys.map((k) => this.#boxes.get(k)).filter((b): b is Box => !!b);
+    return boxes.length < 2 || !!overAll(boxes.map((b) => ({slot: b.slot, h: b.el.offsetHeight})), this.element.clientWidth, this.element.clientHeight);
+  }
+
   /**
    * Where the camera stands over the framed boxes, at the standard: over all of them when they fit; else sideways to
    * the one last to start (`keys` in the order they started: the work going on now), whole in the middle, the others
@@ -498,9 +508,12 @@ export class Desk {
     const boxes = keys.map((k) => this.#boxes.get(k)).filter((b): b is Box => !!b);
     if (!boxes.length) return null;
     const w = this.element.clientWidth, hgt = this.element.clientHeight;
+    const v = this.#view, last = boxes[boxes.length - 1];
+    // All of them in sight already, it stays as they grow: a line written is not a move of the camera's; it goes once one
+    // would leave the face. (Not while it is on its way, as below.)
+    if (!this.#glide && v.s === STANDARD && boxes.every((b) => kept(v, b.slot, b.el.offsetHeight, w, hgt) === v)) return {...v};
     const all = overAll(boxes.map((b) => ({slot: b.slot, h: b.el.offsetHeight})), w, hgt);
     if (all) return all;
-    const v = this.#view, last = boxes[boxes.length - 1];
     // (Not while the camera is on its way: where it passes is not where it stays, and a glide told to end where it is
     // now goes back on itself.)
     if (!this.#glide && v.s === 1 && this.#seen(last, v, w, hgt) >= .98) return {...v};
@@ -578,8 +591,10 @@ export class Desk {
 
   /** The boxes to their places, the camera with them: at once (or, on its way, going on to where it now goes), gliding
    * there (`glide`: the desk changed under it, a box taken off), or standing still as a box is carried across it
-   * (`follow`). */
-  #relay(follow: Carried | null = null, glide = false) {
+   * (`follow`). `grew`: laid again as a box grew or shrank: what is under it goes with it at once, as a page's lines
+   * under one written do (never sliding after it, the grown box over it meanwhile), and the camera over the Agent's work
+   * glides where it has to go. */
+  #relay(follow: Carried | null = null, glide = false, grew = false) {
     const heights = (key: string) => this.#boxes.get(key)?.el.offsetHeight ?? 0;
     const at = slots(this.#cols, heights);
     // Room round the boxes for the camera to stand any one of them in the middle, across and down (it scrolls over the
@@ -606,8 +621,13 @@ export class Desk {
         b.el.classList.add(fills ? 'fills' : 'gives');
       }
       // A box laid with no way in of its own stands in its place at once.
-      if (b.placed) b.el.style.translate = `${p.x}px ${p.y}px`;
-      else { standAt(b.el, p.x, p.y); b.placed = true; }
+      if (!b.placed) { standAt(b.el, p.x, p.y); b.placed = true; continue; }
+      const to = `${p.x}px ${p.y}px`;
+      if (b.el.style.translate === to) continue;
+      // (One on its way somewhere goes on there, to where it now belongs.)
+      const pushed = grew && !gliding(b.el);
+      b.el.style.translate = to;
+      if (pushed) for (const a of b.el.getAnimations()) if (a instanceof CSSTransition && a.transitionProperty === 'translate') a.finish();
     }
     this.#plane.style.width = `${right + w}px`;
     this.#plane.style.height = `${bottom + hgt}px`;
@@ -616,8 +636,12 @@ export class Desk {
     else {
       const to = this.#target();
       if (to && this.#glide) this.#glide.to = to;
-      // (Moved by what was done to the desk, a box taken off: the camera glides after the boxes as they close up.)
-      else if (to) this.#go(to, glide && !still());
+      // (Moved by what was done to the desk, a box taken off: the camera glides after the boxes as they close up. Over the
+      // Agent's work as it grows, it glides too, where it has to go at all.)
+      else if (to) {
+        const v = this.#view, moves = Math.abs(to.x - v.x) > .5 || Math.abs(to.y - v.y) > .5 || to.s !== v.s;
+        this.#go(to, (glide || (grew && moves && !!this.#framed)) && !still());
+      }
     }
     this.#changed();
   }

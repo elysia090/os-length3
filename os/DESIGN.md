@@ -2426,10 +2426,13 @@ the caret's line, so a question needs no saying where.
 What the Agent does is played as a person would do it, after it and at a
 person's pace, never as a screen of its own. It works at its own pace behind
 (its commands in a Prompt of its own); what is played is the part a person
-wants to see, each box a lane of its own and the lanes going side by side, so
-the work is seen going on in several places at once, a hand's pace being
-about a tenth of the Agent's own, so the play keeps going while its model is
-asked and the wait for it is never a still screen. A file it reads is played
+wants to see, each box a lane of its own, the lanes going side by side where
+they are seen side by side and one at a time where they are not (nothing is
+played out of sight). Its tempo gives: what it did is spread over the time its
+model takes to answer next (that time learnt as it answers), a little slower
+than a hand, so the wait for the model is filled with its work rather than
+seen; and quicker, up to twice a hand's, once much is waiting or it is done,
+so the play keeps near the work and ends soon after it. A file it reads is played
 too: its box laid and its eye going down the lines it read, a faint ink-edged
 line gliding from line to line (a long read skimmed). While it thinks (its
 model asked, nothing it did left to play) its eye stays on what it last looked

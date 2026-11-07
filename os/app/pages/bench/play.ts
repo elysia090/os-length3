@@ -28,6 +28,8 @@ export interface Stage {
   place(path: string): boolean;
   /** The camera over these boxes at once ('agent' is the Agent's terminal); none: back to the box in hand. */
   frame(keys: string[]): void;
+  /** Whether these boxes are seen at once (none said: they are). */
+  together?(keys: string[]): boolean;
   /** The file in front when the Agent was asked (what it was given to look at first), if any. */
   front?(): string | null;
 }
@@ -107,6 +109,28 @@ const LINE_READ_MS = 110, READ_MOST = 2600;
 /** While the Agent thinks (its model asked, nothing left to play), its eye goes on over what it last looked at, slower
  * than reading: a line in this long. */
 const PONDER_MS = 420;
+/** The playing's tempo against a hand's (each of its waits divided by it), no slower nor quicker than these: what the
+ * Agent did is spread over the time its model takes to answer next, so that wait is not seen (filled with its work, a
+ * little slower), and goes quicker once much is waiting to be played, so the playing keeps near the work. */
+const SLOWEST = .55, QUICKEST = 2.2;
+/** What its model is taken to need to answer, until it has been heard to: ms. */
+const ANSWER_GUESS = 3500;
+/** What is played is to end this long after the model is expected to answer, so the answer's work follows on it with no
+ * gap; and, the Agent done, what is left is played in about TAIL_MS. */
+const AFTER_MS = 1200, TAIL_MS = 6000;
+
+/** What a hand takes to type `text` at a tempo of 1 (cadence.ts gap, its middle), `quick` its hand. */
+function typing(text: string, quick: number): number {
+  let ms = 0, prev = '';
+  for (const ch of text) {
+    ms += 110 + (prev === ' ' || prev === '\t' ? 14 : 0) + (/[A-Z~!@#$%^&*()_+{}|:"<>?]/.test(ch) ? 22 : 0) + (ch === '\n' ? 40 : 0) + (prev === '\n' ? 470 : 0);
+    prev = ch;
+  }
+  return ms * quick;
+}
+
+/** A lead-in's middle (cadence.ts leadIn). */
+const LEAD_MS = 550;
 
 /** One repo's Agent at work, played on the desk. */
 export class Player {
@@ -116,6 +140,11 @@ export class Player {
   readonly #lanes = new Map<string, Promise<void>>();
   /** The lanes at work now, which the camera frames. */
   readonly #working = new Set<string>();
+  /** Acts put in their lanes and not yet begun (the eye stops going over a file at once for them). */
+  #queued = 0;
+  /** An act ended: what waits for a lane to be done hears it. */
+  #ended: () => void = () => {};
+  #anEnd = new Promise<void>((r) => { this.#ended = r; });
   #framing = 0;
   /** Lanes playing now: while none is, and the Agent thinks, its eye stays on what it last looked at (#ponder). */
   #busy = 0;
@@ -124,6 +153,16 @@ export class Player {
   /** The file the Agent's eye was last in, and where in it. */
   #looked: {path: string; line: number} | null = null;
   #pondering = false;
+  /** The file the eye goes over while the Agent thinks (#ponder), not a lane at work. */
+  #eyeOn: string | null = null;
+  /** What is still to be played, at a tempo of 1 (ms): each act adds what it will take as it is put in its lane, each wait
+   * of its takes its part away. */
+  #owed = 0;
+  /** When its model was last asked (0: it has answered), and what it takes to answer, as heard so far. */
+  #askedAt = 0;
+  #answerMs = ANSWER_GUESS;
+  /** The Agent done: what is left goes on to its end a little quicker. */
+  #done = false;
   /** What listeners hear, in order, each once all before it is played. */
   #told: Promise<void> = Promise.resolve();
   readonly #listeners = new Set<(e: AgentEvent) => void>();
@@ -144,14 +183,40 @@ export class Player {
   /** Every lane as it stands now (what is to be played before what comes next). */
   #before(): Promise<unknown> { return Promise.all([...this.#lanes.values()]); }
 
-  /** `act` played in `lane` after what is before it there, and after `after` too. */
-  #on(lane: string, act: () => Promise<void>, after?: Promise<unknown>): Promise<void> {
+  /**
+   * `act` played in `lane` after what is before it there, and after `after` too; `owes`, what it takes at a tempo of 1.
+   * It waits through `wait` (`ms` at a tempo of 1, at the tempo then), each wait taking its part from what is owed; what
+   * it did not take (played in part, or not at all) is let go as it ends.
+   */
+  #on(lane: string, act: (wait: (ms: number) => Promise<void>) => Promise<void>, after?: Promise<unknown>, owes = 0): Promise<void> {
     const prev = this.#lanes.get(lane) ?? Promise.resolve();
+    this.#owed += owes;
+    this.#queued++;
+    let left = owes;
+    const wait = (ms: number) => {
+      const part = Math.min(ms, Math.max(0, left));
+      left -= part;
+      this.#owed -= part;
+      return sleep(ms / this.#tempo());
+    };
     const next = Promise.all([prev, after]).then(async () => {
+      // Lanes go side by side only where they are seen side by side: else one at a time, so nothing is played out of
+      // sight (a command typed while the camera is on a file read).
+      while ([...this.#working].some((k) => k !== this.#eyeOn) && !(this.#stage.together?.([...this.#working, lane].filter((k) => k !== this.#eyeOn)) ?? true)) await this.#anEnd;
+      this.#queued--;
       this.#busy++;
       this.#work(lane, true);
-      try { await act(); } finally { this.#busy--; this.#work(lane, false); this.#idleNow(); }
-    }).catch(() => { /* a part not played is let go; the rest goes on */ });
+      try { await act(wait); } finally {
+        this.#owed -= Math.max(0, left);
+        left = 0;
+        this.#busy--;
+        this.#work(lane, false);
+        const ended = this.#ended;
+        this.#anEnd = new Promise<void>((r) => { this.#ended = r; });
+        ended();
+        this.#idleNow();
+      }
+    }).catch(() => { this.#queued = Math.max(0, this.#queued - 1); /* a part not played is let go; the rest goes on */ });
     this.#lanes.set(lane, next);
     return next;
   }
@@ -173,11 +238,26 @@ export class Player {
     });
   }
 
+  /** The tempo now: while its model is asked, what is owed spread over the time till it answers (and a little after);
+   * else as a hand goes, quicker as more waits; done, what is left in about TAIL_MS. */
+  #tempo(): number {
+    const owed = Math.max(0, this.#owed), clamp = (t: number) => Math.min(QUICKEST, Math.max(SLOWEST, t));
+    if (this.#done) return clamp(Math.max(1, owed / TAIL_MS));
+    if (this.#thinking && this.#askedAt) return clamp(owed / (Math.max(0, this.#askedAt + this.#answerMs - performance.now()) + AFTER_MS));
+    return clamp(Math.max(1, owed / (this.#answerMs + AFTER_MS)));
+  }
+
   /** An event of the Agent's: a file it is about to write is held back from its editor at once; played in its lane. */
   hear(e: AgentEvent): void {
-    // Thinking from when its model is asked until it says or does something; the eye goes on meanwhile (#ponder).
-    if (e.type === 'agent_start' || e.type === 'turn_start') { this.#thinking = true; this.#idleNow(); }
+    // Thinking from when its model is asked until it says or does something; the eye goes on meanwhile (#ponder). What
+    // it took to answer is kept (most of the latest), for the tempo.
+    if (e.type === 'agent_start' || e.type === 'turn_start') { this.#thinking = true; this.#askedAt = performance.now(); this.#idleNow(); }
+    if ((e.type === 'tool_execution_start' || e.type === 'message_end' || e.type === 'agent_end') && this.#askedAt) {
+      this.#answerMs = .4 * this.#answerMs + .6 * (performance.now() - this.#askedAt);
+      this.#askedAt = 0;
+    }
     if (e.type === 'tool_execution_start' || e.type === 'message_end' || e.type === 'agent_end') this.#thinking = false;
+    if (e.type === 'agent_end') this.#done = true;
     if (e.type === 'tool_execution_start' && (e.name === 'edit' || e.name === 'write') && typeof e.args.path === 'string') {
       const k = key(this.#repo, e.args.path), h = held.get(k);
       if (h) h.count++; else held.set(k, {count: 1, text: null, made: false});
@@ -196,13 +276,25 @@ export class Player {
   #play(name: string, args: Record<string, unknown>, done: Done | undefined) {
     const path = typeof args.path === 'string' ? args.path : '';
     if (!done) { if (name === 'edit' || name === 'write') void this.#on(path, async () => this.#release(path, null)); return; }
-    if (done.tool === 'read') { const d = done; void this.#on(d.path, () => this.#read(d)); return; }
+    const owes = Player.#takes(done);
+    if (done.tool === 'read') { const d = done; void this.#on(d.path, (w) => this.#read(d, w), undefined, owes); return; }
     if (done.tool === 'bash') {
       const d = done;
       // Typed at once; what it printed shown once what came before it in the other lanes is played.
-      void this.#on('agent', () => this.#run(d), this.#before());
-    } else if (done.tool === 'edit') { const d = done; void this.#on(d.path, () => this.#edit(d)); }
-    else if (done.tool === 'write') { const d = done; void this.#on(d.path, () => this.#write(d)); }
+      void this.#on('agent', (w) => this.#run(d, w), this.#before(), owes);
+    } else if (done.tool === 'edit') { const d = done; void this.#on(d.path, (w) => this.#edit(d, w), undefined, owes); }
+    else if (done.tool === 'write') { const d = done; void this.#on(d.path, (w) => this.#write(d, w), undefined, owes); }
+  }
+
+  /** What playing `d` takes at a tempo of 1, as its waits add up (ms; a guess where its file is not yet seen). */
+  static #takes(d: Done): number {
+    if (d.tool === 'read') return LEAD_MS + Math.min(READ_MOST, Math.max(1, (d.to || d.lines) - (d.from || 1) + 1) * LINE_READ_MS) + 2 * LINE_READ_MS;
+    if (d.tool === 'bash') return LEAD_MS + typing(d.command, hand(d.command.length)) + 150 + READ_MS;
+    if (d.tool === 'write') { const t = d.text.slice(0, MADE_MOST); return d.before === null ? LEAD_MS + typing(t, hand(t.length)) : 0; }
+    return 300 + d.spans.reduce((ms, sp) => {
+      const typed = sp.new.slice(0, TYPED_MOST), old = sp.old.length <= BACKSPACED_MOST ? 4 * (BACKSPACE_MS + 10) + Math.max(0, sp.old.length - 4) * REPEAT_MS : 60 * sp.old.split('\n').length;
+      return ms + LEAD_MS + old + typing(typed, hand(typed.length));
+    }, 0);
   }
 
   /** The eye in `path` at `line` (null: out of it); kept as where it last was. */
@@ -221,26 +313,26 @@ export class Player {
   }
 
   /** A file read: its box laid, and the eye going down the lines read, a line at a time (skimming a long read). */
-  async #read(d: Extract<Done, {tool: 'read'}>) {
+  async #read(d: Extract<Done, {tool: 'read'}>, wait: (ms: number) => Promise<void>) {
     const e = await this.#opened(d.path);
     if (!e) return;
     const last = Math.max(1, e.area.value.split('\n').length);
     const from = Math.min(Math.max(1, d.from || 1), last), to = Math.min(Math.max(from, d.to || last), last);
     const step = Math.max(1, Math.ceil(((to - from + 1) * LINE_READ_MS) / READ_MOST));
-    await sleep(leadIn());
+    await wait(leadIn());
     for (let line = from; line <= to; line += step) {
       this.#gaze(d.path, line);
-      await sleep(LINE_READ_MS);
+      await wait(LINE_READ_MS);
     }
     this.#gaze(d.path, to);
-    await sleep(LINE_READ_MS * 2);
+    await wait(LINE_READ_MS * 2);
     this.#gaze(d.path, null);
     this.#looked = {path: d.path, line: from};
   }
 
   /** Nothing left to play: if the Agent is thinking, its eye goes on (#ponder). */
   #idleNow() {
-    if (this.#thinking && !this.#busy && !this.#pondering) void this.#ponder();
+    if (this.#thinking && !this.#busy && !this.#queued && !this.#pondering) void this.#ponder();
   }
 
   /**
@@ -253,45 +345,50 @@ export class Player {
     const start = this.#looked ?? (this.#stage.front?.() ? {path: this.#stage.front!()!, line: 1} : null);
     if (!start || still()) return;
     this.#pondering = true;
+    // It goes on while its model is asked and nothing it did is to be played; it stops the moment something is.
+    const on = () => this.#thinking && !this.#busy && !this.#queued;
     try {
       const e = await this.#opened(start.path);
-      if (!e || !this.#thinking || this.#busy) return;
+      if (!e || !on()) return;
+      this.#eyeOn = start.path;
       this.#work(start.path, true);
       // Over its lines with words in them, as an eye goes (blank ones passed over); at the last it rests a while, as
       // one does at the end of a page, and goes back to the top. A file of one such line, it rests on it.
       let line = start.line;
       this.#gaze(start.path, line);
-      while (this.#thinking && !this.#busy) {
+      while (on()) {
         const lines = e.area.value.split('\n');
         const worded = lines.flatMap((l, i) => (l.trim() ? [i + 1] : []));
         const next = worded.find((n) => n > line) ?? null;
-        await sleep(next === null ? PONDER_MS * 4 : PONDER_MS);
-        if (!this.#thinking || this.#busy) break;
+        for (let t = 0, rest = next === null ? PONDER_MS * 4 : PONDER_MS; t < rest && on(); t += 60) await sleep(60);
+        if (!on()) break;
         line = next ?? worded[0] ?? 1;
         this.#gaze(start.path, line);
       }
+      this.#eyeOn = null;
       this.#work(start.path, false);
       editors.get(key(this.#repo, start.path))?.gaze?.(null);
     } finally {
+      this.#eyeOn = null;
       this.#pondering = false;
     }
   }
 
   /** A command typed into the Prompt's line, sent, and what it printed shown. */
-  async #run(d: Extract<Done, {tool: 'bash'}>) {
+  async #run(d: Extract<Done, {tool: 'bash'}>, wait: (ms: number) => Promise<void>) {
     const box = still() ? null : this.#stage.typing();
     if (box) {
       try {
-        await sleep(leadIn());
+        await wait(leadIn());
         let typed = '', prev = '';
         for (const ch of d.command) {
-          await sleep(gap(ch, prev) * hand(d.command.length));
+          await wait(gap(ch, prev) * hand(d.command.length));
           typed += ch;
           box.put(typed);
           strike(keyOf(ch));
           prev = ch;
         }
-        await sleep(gap('\n', prev));
+        await wait(gap('\n', prev));
         strike('enter');
         box.put('');
         box.sent();
@@ -300,7 +397,7 @@ export class Player {
     this.#stage.shown(d.command, d.output, d.status);
     // Read a moment: no longer at work, the camera may go to where the work is.
     this.#work('agent', false);
-    if (box) { await sleep(READ_MS); box.done(); }
+    if (box) { await wait(READ_MS); box.done(); }
   }
 
   /**
@@ -317,7 +414,7 @@ export class Player {
   }
 
   /** A file written whole: one made typed into its box from the top (its first part); one written over, at once. */
-  async #write(d: Extract<Done, {tool: 'write'}>) {
+  async #write(d: Extract<Done, {tool: 'write'}>, wait: (ms: number) => Promise<void>) {
     const k = key(this.#repo, d.path);
     const shown = this.#stage.place(d.path) && !still();
     // Its box laid now: its editor opens a moment after.
@@ -328,23 +425,23 @@ export class Player {
       this.#release(d.path, d.text);
       return;
     }
-    await sleep(leadIn());
+    await wait(leadIn());
     const typed = d.text.slice(0, MADE_MOST);
     let prev = '';
     for (let i = 0; i < typed.length; i++) {
-      await sleep(gap(typed[i], prev) * hand(typed.length));
+      await wait(gap(typed[i], prev) * hand(typed.length));
       if (!e.take(typed.slice(0, i + 1))) break;
       strike(keyOf(typed[i]));
       prev = typed[i];
     }
-    if (d.text.length > typed.length) { await sleep(160); strike('enter'); }
+    if (d.text.length > typed.length) { await wait(160); strike('enter'); }
     h.made = false;
     this.#release(d.path, d.text);
     this.#looked = {path: d.path, line: 1};
   }
 
   /** An edit typed in where it is: each piece in turn, the old words going and the new typed in (its first part). */
-  async #edit(d: Extract<Done, {tool: 'edit'}>) {
+  async #edit(d: Extract<Done, {tool: 'edit'}>, wait: (ms: number) => Promise<void>) {
     const k = key(this.#repo, d.path);
     const shown = this.#stage.place(d.path) && !still();
     for (let i = 0; i < 20 && shown && !editors.get(k)?.area.isConnected; i++) await sleep(50);
@@ -358,7 +455,7 @@ export class Player {
     }
     // Typed only where its editor was held back from taking it in, and is in view.
     if (!shown || !e?.area.isConnected || !h || h.text === null) { this.#release(d.path, null); return; }
-    await sleep(300);
+    await wait(300);
     let cur = d.before, shift = 0;
     // Each step taken in, the caret (where the editor has the keyboard) where the hand is: after what was just typed.
     const take = (text: string, caret: number) => {
@@ -369,13 +466,13 @@ export class Player {
     };
     play: for (const s of d.spans) {
       const at = offsetOf(d.before, s.line, s.column) + shift;
-      await sleep(leadIn());
+      await wait(leadIn());
       if (s.old.length <= BACKSPACED_MOST) {
         // From its end, as Backspace takes it: a few presses, then held.
         for (let i = s.old.length, n = 0; i > 0; i--, n++) {
           if (!take(cur.slice(0, at + i - 1) + cur.slice(at + i), at + i - 1)) break play;
           if (n < 4 || n % 3 === 0) strike('key');
-          await sleep(n < 4 ? BACKSPACE_MS + 20 * Math.random() : REPEAT_MS);
+          await wait(n < 4 ? BACKSPACE_MS + 20 * Math.random() : REPEAT_MS);
         }
       } else {
         // A long piece: a line at a time from its end, each line chosen and gone.
@@ -385,19 +482,19 @@ export class Player {
           if (!take(cur.slice(0, at + cut) + cur.slice(at + left), at + cut)) break play;
           strike('key');
           left = cut;
-          await sleep(60);
+          await wait(60);
         }
       }
       let prev = '';
       const typed = s.new.slice(0, TYPED_MOST);
       for (let i = 0; i < typed.length; i++) {
-        await sleep(gap(typed[i], prev) * hand(typed.length));
+        await wait(gap(typed[i], prev) * hand(typed.length));
         if (!take(cur.slice(0, at + i) + typed[i] + cur.slice(at + i), at + i + 1)) break play;
         strike(keyOf(typed[i]));
         prev = typed[i];
       }
       if (s.new.length > typed.length) {
-        await sleep(160);
+        await wait(160);
         take(cur.slice(0, at + typed.length) + s.new.slice(typed.length) + cur.slice(at + typed.length), at + s.new.length);
         strike('enter');
       }
