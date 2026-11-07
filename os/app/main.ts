@@ -234,7 +234,22 @@ type Panning = Document & {startViewTransition?(update: () => void): Pass};
  * with its cut; `old`, the picture's.
  */
 type Pan = {pass: Pass; left: PurposeId; to: PurposeId; dir: number; by: number; from: number; was: DOMRect; top: number; off: number;
-  drawn: boolean; ready: boolean; parts: Animation[]; old: Animation[]};
+  drawn: boolean; ready: boolean; parts: Animation[]; old: Animation[]; camera: HTMLElement[] | null};
+
+/**
+ * The pages laid on the desk's dotted ground (Forge's desk, Home), each with a band along its top and the pane at its
+ * right: between two of them the rail moves a camera over the one ground, and the band, the pane and its switch are
+ * its frame, standing where they are while what lies on the ground goes by under them.
+ */
+const ON_GROUND = new Set<PurposeId>(['forge', 'home']);
+/** A ground page's frame: its band, its pane, the pane's switch (inside Home's pane; beside Forge's). */
+const FRAME = ':is(.home-band, .home-pane, .work.desk-bench > .bar, .work.desk-bench > .side, .work.desk-bench > .pane-toggle)';
+/**
+ * The camera over the ground: off at once and most of the way in a tenth of a second (ギュン), then landing soft.
+ * Compared by film against the floors' pan (the frame went with each page: two bands and two pane lines on the screen
+ * at once) and an ease both ways (it held a tenth of a second after the press before it went: read as lag).
+ */
+const CAMERA = {ms: 380, easing: 'cubic-bezier(.16, 1, .3, 1)'};
 let panning: Pan | null = null;
 
 /** Which way along the rail `to` is from `from`: 1 down, -1 up, 0 the same place. */
@@ -260,26 +275,42 @@ function rise(p: Pan) {
   // Going down, its top starts at the foot of the floor left; going up, its foot at that floor's top.
   p.by = p.dir > 0 ? innerHeight + p.off - top : innerHeight - p.top;
   p.from = p.dir * p.by;
-  const ms = paced(330);
+  const ms = paced(p.camera ? CAMERA.ms : 330), easing = p.camera ? CAMERA.easing : LAND;
   p.parts = [...page.children].flatMap((part) => {
     // Each part is cut where the window's edges will be on it, the cut its own, so it goes with the part (on the
-    // compositor, as the part does: a cut moved frame by frame would lag it under load, and bite into it).
-    const r = part.getBoundingClientRect(), edge = cut(r, top, innerHeight, now);
-    return [part.animate([{transform: `translateY(${p.from}px)`}, {transform: 'none'}], {duration: ms, easing: LAND}),
-      ...r.height ? [part.animate([{clipPath: edge}, {clipPath: edge}], {duration: ms})] : []];
+    // compositor, as the part does: a cut moved frame by frame would lag it under load, and bite into it). Read where
+    // it stands before it is moved. Over the ground the page left lies over it (its picture), and no floor's edge is
+    // to be kept: nothing is cut.
+    const r = p.camera ? null : part.getBoundingClientRect();
+    const go = part.animate([{transform: `translateY(${p.from}px)`}, {transform: 'none'}], {duration: ms, easing});
+    return [go, ...r?.height ? [part.animate([{clipPath: cut(r, top, innerHeight, now)}, {clipPath: cut(r, top, innerHeight, now)}], {duration: ms})] : []];
   });
+  if (p.camera) {
+    // The frame stands still: what moves with the page is moved back as much, frame by frame.
+    for (const el of page.querySelectorAll<HTMLElement>(FRAME)) {
+      if (el.getClientRects().length) p.parts.push(el.animate([{transform: `translateY(${-p.from}px)`}, {transform: 'none'}], {duration: ms, easing}));
+    }
+    // The dots are the page's own ground: they go by with it.
+    if (getComputedStyle(page).backgroundImage !== 'none') {
+      const at = getComputedStyle(page).backgroundPosition.split(' ');
+      p.parts.push(page.animate([{backgroundPosition: `${at[0]} calc(${at[1] ?? '0px'} + ${p.from}px)`}, {backgroundPosition: getComputedStyle(page).backgroundPosition}], {duration: ms, easing}));
+    }
+  }
   if (!p.ready) for (const a of p.parts) a.pause();
 }
 
 /** The picture of the page left sets off with the page come to, the two as one sheet (set off again, turned, if
  * another place was pressed before they had moved). */
 function setOff(p: Pan) {
-  const root = document.documentElement, old = '::view-transition-old(page)', ms = paced(330);
+  const root = document.documentElement, old = '::view-transition-old(page)', ms = paced(p.camera ? CAMERA.ms : 330), easing = p.camera ? CAMERA.easing : LAND;
   for (const a of p.old) a.cancel();
   // The picture is cut at the window's edges as it was, the cut its own, going with it.
   const edge = cut(p.was, p.top, innerHeight + p.off);
-  p.old = [root.animate([{transform: 'none'}, {transform: `translateY(${-p.dir * p.by}px)`}], {duration: ms, easing: LAND, fill: 'forwards', pseudoElement: old}),
+  p.old = [root.animate([{transform: 'none'}, {transform: `translateY(${-p.dir * p.by}px)`}], {duration: ms, easing, fill: 'forwards', pseudoElement: old}),
     root.animate([{clipPath: edge}, {clipPath: edge}], {duration: ms, fill: 'forwards', pseudoElement: old})];
+  // The frame left (its band, its pane, its switch: pictures of their own) gives way where it stands to the one come
+  // to, which is there under it.
+  p.camera?.forEach((_, i) => p.old.push(root.animate([{opacity: 1}, {opacity: 0}], {duration: paced(140), easing: 'ease-out', fill: 'forwards', pseudoElement: `::view-transition-old(frame-${i})`})));
   for (const a of p.parts) a.play();
 }
 
@@ -328,7 +359,10 @@ function select(id: PurposeId, quiet = false): Promise<void> {
   // Only the page left is taken as a picture. The page come to is itself, coming up after it as one sheet with it,
   // so a press on it lands on what is under the hand as it comes: a picture of it would take no press until it
   // had landed. Its parts stand below the window from the first frame, and set off with the picture together.
-  const q: Pan = {pass: null!, left: current, to: id, dir, by: 0, from: 0, was, top: Math.max(0, was.top), off: 0, drawn: false, ready: false, parts: [], old: []};
+  // Over the ground, the frame left is taken as pictures of its own, standing where it is (styles: frame-*).
+  const camera = ON_GROUND.has(current) && ON_GROUND.has(id) && !p ? [...page.querySelectorAll<HTMLElement>(FRAME)].filter((el) => el.getClientRects().length) : null;
+  camera?.forEach((el, i) => el.style.setProperty('view-transition-name', `frame-${i}`));
+  const q: Pan = {pass: null!, left: current, to: id, dir, by: 0, from: 0, was, top: Math.max(0, was.top), off: 0, drawn: false, ready: false, parts: [], old: [], camera};
   q.pass = begin!.call(document, () => {
     if (panning !== q) return;
     if (p) {
@@ -348,6 +382,7 @@ function select(id: PurposeId, quiet = false): Promise<void> {
   void q.pass.ready.then(() => { q.ready = true; if (panning === q) setOff(q); }, () => {});
   // Given way to a pan begun since, what it brought is taken as it stands; the marks are the new pan's own.
   const done = () => {
+    for (const el of camera ?? []) el.style.removeProperty('view-transition-name');
     for (const a of q.old) a.cancel();
     if (panning !== q) return;
     for (const a of q.parts) a.finish();

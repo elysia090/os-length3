@@ -17,7 +17,7 @@ import {remember} from '../server/parts.ts';
 import {Reference} from '../bench/reference.ts';
 import type {Context} from '../kit/context.ts';
 import {latelyRow, onRightPane, pluginArea, rightPaneOpen, setRightPane, waiting, wordLine} from '../kit/pane.ts';
-import {mark, paneMark} from '../../ui/icons.ts';
+import {mark, paneMark, type MarkName} from '../../ui/icons.ts';
 import {onPlugins, pluginsOpen} from '../../host/plugins.ts';
 import {errorText} from '../../host/errors.ts';
 import {LAND, after, nudge, paced, paneIn, paneOut, still} from '../../ui/glide.ts';
@@ -71,7 +71,16 @@ function homePane(main: HTMLElement, ctx: Context, listed: Promise<RepoSummary[]
   reference.search.querySelector('form')?.prepend(mark('search'));
   const aim = (name: string | null) => { repo = name; reference.setRepo(name); reference.named(name); };
   aim(repo);
-  const band = h('div', {class: 'home-band'}, h('div', {class: 'band-tools'}, reference.search));
+  // Forge's band, tool for tool, so the frame is one frame between the two: >_ to the terminal of the repo last worked
+  // in, + to New repo, then the search.
+  const tool = (name: MarkName, label: string, press: () => void) => {
+    const b = h('button', {type: 'button', class: 'band-tool', 'aria-label': label, title: label}, mark(name));
+    b.addEventListener('click', press);
+    return b;
+  };
+  const toTerm = () => { const at = repo; if (at) void import('../forge/forge.ts').then((f) => { f.termNext(); ctx.openRepo(at); }); };
+  const band = h('div', {class: 'home-band'}, h('div', {class: 'band-tools', role: 'group', 'aria-label': t('Tools')},
+    tool('term', t('Terminal'), toTerm), tool('plus', t('New repo'), () => void ctx.go('new-repo')), reference.search));
   const pane = h('div', {class: 'home-pane'}, side, toggle);
   // None worked in yet (or it is gone): the one changed last (the first of the cards' list, read once for both), so the
   // box is never there to be pressed for nothing.

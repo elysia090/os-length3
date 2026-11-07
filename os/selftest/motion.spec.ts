@@ -187,7 +187,10 @@ test('the right pane brought out lands a touch past its edge and settles, its ma
     // Timed from the press itself, not from the test's asking for it.
     addEventListener('click', () => { t0 = performance.now(); requestAnimationFrame(tick); }, {once: true, capture: true});
   }));
-  await app.forge.paneSwitch.click();
+  // Pressed as a hand does, without the test's own look at what is under the pointer first: that look runs in the page
+  // after the press, in the frames being measured (a 60 ms task of its own on a page this size).
+  const at = (await app.forge.paneSwitch.boundingBox())!;
+  await app.page.mouse.click(at.x + at.width / 2, at.y + at.height / 2);
   const {first, gone} = await going;
   expect(first).toBeLessThan(60);
   expect(gone).toBeLessThan(400);

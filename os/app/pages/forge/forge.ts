@@ -50,6 +50,10 @@ export function showInForge(repo: string, path: string, write: Writing = false, 
  */
 export function revealNext(path: string, write: Writing = false, line = 0, from: Element | null = document.activeElement) { pending = {path, write, line, from}; }
 
+/** The terminal asked for with the repo (Home's band's >_): once Forge is drawn for it, the keyboard is in its Prompt. */
+let termAsked = false;
+export function termNext() { termAsked = true; }
+
 /** The Forge made, which File can move in place while it is on screen. */
 let made: Forge | null = null;
 
@@ -515,7 +519,9 @@ class Forge {
       // gone into (where it was asked from is gone or still has it; the page, or nothing, has it on the way here).
       const now = document.activeElement;
       const elsewhere = !!asked && !!now && now !== asked.from && now !== document.body && !this.element.contains(now) && !now.contains(this.element);
-      this.show(ctx.repo, at.path, at.write, at.line, !elsewhere);
+      this.show(ctx.repo, at.path, at.write, at.line, !elsewhere && !termAsked);
+      if (termAsked && !elsewhere) this.termTo(ctx.repo);
+      termAsked = false;
       return;
     }
     const open = this.now.repo && all.includes(this.now.repo) ? this.now.repo

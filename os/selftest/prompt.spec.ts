@@ -101,6 +101,9 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await box.fill('sleep 30');
     await box.press('Enter');
     await expect(ps).toHaveText('');
+    // Stopped once it is seen running (the line under the terminal says so), as a person would: pressed before the
+    // shell has put it in front, ^Z is the shell's, which an interactive shell lets go by, as on any terminal.
+    await expect(app.forge.prompt.locator('.term-activity')).toContainText(/Running|Waiting/, {timeout: 30_000});
     await box.press('Control+z');
     await expect(out).toContainText(/Stopped\s+sleep 30/);
     await expect(ps).toHaveText(/hello \$/);
@@ -224,6 +227,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await app.forge.promptBox.fill('sleep 5');
     await app.forge.promptBox.press('Control+Enter');
     await expect(app.forge.promptBox).toHaveValue('');
+    await expect(app.forge.prompt.locator('.term-activity')).toContainText(/Running|Waiting/, {timeout: 30_000});
     await app.forge.promptBox.press('Control+c');
     await expect(out).toContainText('^C');
     await expect(app.main.locator('.desk-term .prompt-chip')).toHaveText('hello $');

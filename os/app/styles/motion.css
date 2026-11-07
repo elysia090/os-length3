@@ -27,6 +27,10 @@
    the floor that comes adjoins the one left, never over it and never a band of nothing between. */
 .panning.arriving #page { view-transition-name: none; }
 ::view-transition-group(page) { animation: none; }
+/* Over the ground (main.ts CAMERA) the frame left (band, pane, switch) is pictures of their own that stand where they
+   are and only give way, under them, to the frame come to: never moved, never morphed into it. */
+::view-transition-group(frame-0), ::view-transition-group(frame-1), ::view-transition-group(frame-2),
+::view-transition-old(frame-0), ::view-transition-old(frame-1), ::view-transition-old(frame-2) { animation: none; }
 /* The camera goes the whole way, fast off the mark and slowing into the next floor (330 ms): nothing fades, the two
    are never seen in one place, one over the other, and the window is never empty. The page cut at the window's
    edges as it goes, as a floor at a lift's door. The picture is set going (main.ts select) in the same frame as the

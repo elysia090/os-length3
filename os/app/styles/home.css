@@ -22,12 +22,12 @@
 .page > .home-layout.pane-closed { transition: grid-template-columns var(--leave) cubic-bezier(.4, 0, 1, 1); }
 @media (prefers-reduced-motion: reduce) { .page > .home-layout, .page > .home-layout:not(.pane-closed), .page > .home-layout.pane-closed, .work.bench, .work.bench:not(.pane-closed) { transition: none; } }
 /* The band, Forge's: from the rail's line to the pane's, the top line to a step under the search, plain ground (the
-   dots are the desk's, under it), held at the window's top while Home scrolls under it. The search where Forge's
-   band has its tools, on the band's line. */
+   dots are the desk's, under it), held at the window's top while Home scrolls under it; its tools and its search
+   where Forge's are, to the pixel, so going between the two the frame is one (main.ts CAMERA). */
 .home-band {
   grid-column: 1; grid-row: 1; position: sticky; top: 0; z-index: 7; display: flex; align-items: center;
   margin: calc(-1 * var(--top-line)) calc(-1 * clamp(var(--s5), 5vw, 72px)) 0 calc(-1 * clamp(var(--s5), 5vw, 72px));
-  padding: var(--band) var(--s5) var(--s3) clamp(var(--s5), 5vw, 72px); background: var(--ground);
+  padding: var(--band) var(--s5) var(--s3); background: var(--ground);
 }
 /* Out to the page's own edges, whatever its margins are at this width (page.css, remote.css): never past them. */
 @media (min-width: 761px) { .home-band { margin-right: calc(-1 * var(--s5)); } }

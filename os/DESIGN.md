@@ -1911,14 +1911,21 @@ what the Remote says no to (taken, held for its owner, changed twice this
 hour) is said at the handle, nothing saved; left empty, it stays as it was.
 
 Home has Forge's band along its top, held there while Home scrolls under it,
-plain ground from the rail's line to the pane's: on it the search box, in the
+plain ground from the rail's line to the pane's, tool for tool where Forge's
+are: >_ (the terminal of the repo last worked in, in Forge, the keyboard in
+it), + (New repo), and the search box, in the
 repo last worked in (or, none yet, the one changed last), named in it since
 no repos on the band say which ("Search garden"); Ctrl+K, Ctrl+P and Ctrl+B
 as in Forge; what it finds drops as Forge's sheet does, over Home, which
 steps back out of sight under it; a line found opens in Forge at that line,
 selected. Its right pane is the same pane as Forge's and Git's, its switch at
-its foot where Forge's is, level with the person at the rail's. The pane
-holds
+its foot where Forge's is, level with the person at the rail's. Between Home
+and Forge the rail does not change floors: it moves a camera over the one
+dotted ground. The band, the pane and its switch are the frame and stay where
+they are (what differs on them, Forge's pills, the pane's rows, gives way in
+place in a seventh of a second), while what lies on the ground goes by under
+them with the dots: off at once, most of the way in a tenth of a second, then
+landing soft (380 ms). The pane holds
 Lately: what waits since the person was last here, a row each in the rows
 Forge's and Git's pane have for what was done (a bar, ink while something of
 it is not read, the paper's rule once it is; what it is in the display face;
