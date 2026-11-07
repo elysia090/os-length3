@@ -749,12 +749,15 @@ export class Box {
     if (event.key === 'ArrowRight' && plain(event) && caret && prompt.selectionStart === prompt.value.length) { if (this.#tab()) event.preventDefault(); return; }
     // ↑ on the first line and ↓ on the last walk earlier lines; elsewhere they move the caret.
     if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && plain(event) && caret) { this.#walkTo(event, event.key); return; }
-    // Ctrl-C with nothing selected (so not a copy) interrupts what runs, as in a terminal.
+    // Ctrl-C with nothing selected (so not a copy) interrupts what runs, as in a terminal; at the prompt line, the line
+    // written is let go, said cut, as a terminal's line editor does.
     if (event.key === 'c' && event.ctrlKey && !event.altKey && !event.metaKey && caret && repo) {
       event.preventDefault();
-      sessionFor(repo).interrupt();
+      const s = sessionFor(repo);
+      if (s.abandon(prompt.value)) this.#emptied(); else s.interrupt();
       return;
     }
+    if (repo && this.#lineKey(event, repo)) { event.preventDefault(); return; }
     // Enter is a new line; Ctrl+Enter (⌘+Enter) sends. Enter on a line of one, as a terminal's hand presses it, the
     // keys that run it give beside Run, one after the other, as keys pressed together.
     if (sends(event)) { event.preventDefault(); this.#send(); return; }
@@ -762,6 +765,41 @@ export class Box {
     if (event.key === 'Enter' && plain(event) && !prompt.value.includes('\n') && prompt.value.trim() && !still())
       [...this.#sends.children].forEach((k, i) => k.animate([{translate: '0 0'}, {translate: '0 2px', offset: .35}, {translate: '0 0'}],
         {duration: paced(260), delay: paced(i * 90), easing: 'ease-out'}));
+  }
+
+  /**
+   * A terminal's own keys for its line, as bash's and zsh's line editors have them (and a Mac's text, Ctrl held): Ctrl-A
+   * to the line's start and Ctrl-E to its end, Ctrl-U cut back to its start and Ctrl-W the word before the caret,
+   * Ctrl-L the screen cleared, Ctrl-D on an empty line the end of what is typed (else the letter after the caret).
+   * The editor's own keys (Ctrl+K, Ctrl+P, Ctrl+B) stay the page's. True when the key was taken.
+   */
+  #lineKey(event: KeyboardEvent, repo: string): boolean {
+    if (!event.ctrlKey || event.altKey || event.metaKey || event.shiftKey || event.isComposing) return false;
+    const {prompt} = this, v = prompt.value, at = prompt.selectionStart, end = prompt.selectionEnd;
+    const start = v.lastIndexOf('\n', at - 1) + 1, stop = (v.indexOf('\n', at) + 1 || v.length + 1) - 1;
+    const cut = (a: number, b: number) => {
+      if (a === b) return;
+      prompt.setRangeText('', a, b, 'start');
+      prompt.dispatchEvent(new Event('input', {bubbles: true}));
+    };
+    switch (event.key.toLowerCase()) {
+      case 'a': prompt.setSelectionRange(start, start); return true;
+      case 'e': prompt.setSelectionRange(stop, stop); return true;
+      case 'u': cut(start, at); return true;
+      case 'w': {
+        let a = at;
+        while (a > start && /\s/.test(v[a - 1])) a--;
+        while (a > start && !/\s/.test(v[a - 1])) a--;
+        cut(a, at);
+        return true;
+      }
+      case 'l': return sessionFor(repo).clearScreen();
+      case 'd':
+        if (!v) { sessionFor(repo).endOfInput(); return true; }
+        if (at === end && at < v.length) cut(at, at + 1);
+        return true;
+      default: return false;
+    }
   }
 
   /** ↑ or ↓ with the caret on the first or last line: the line run before (or after) it in the box. */

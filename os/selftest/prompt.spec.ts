@@ -53,6 +53,48 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await app.forge.startPrompt('hello');
   });
 
+  test('Ctrl+D ends what reads the terminal (cat ends) and the shell reads on; Ctrl+C at the prompt line lets the line written go', async ({app}) => {
+    const box = app.forge.promptBox, out = app.forge.prompt.locator('.term-out');
+    const ps = app.forge.prompt.page().locator('.desk-box[data-key="term"] .prompt-ps');
+    await box.fill('cat');
+    await box.press('Enter');
+    await expect(ps).toHaveText('');
+    await box.fill('abc');
+    await box.press('Enter');
+    await expect(out).toContainText(/abc\s+abc/);
+    await box.press('Control+d');
+    await expect(ps).toHaveText(/hello \$/);
+    await box.fill('echo still');
+    await box.press('Enter');
+    await expect(out).toContainText(/^still$/m);
+    // A line written and let go: said cut, the prompt line again, nothing run.
+    await box.fill('echo never');
+    await box.press('Control+c');
+    await expect(box).toHaveValue('');
+    await expect(out).toContainText('echo never^C');
+    await expect(out).not.toContainText(/^never$/m);
+  });
+
+  test('the line\'s keys are a terminal\'s: Ctrl+A and Ctrl+E to its start and end, Ctrl+U and Ctrl+W cut back, Ctrl+L clears the screen', async ({app}) => {
+    const box = app.forge.promptBox, out = app.forge.prompt.locator('.term-out');
+    await box.fill('echo abc def');
+    await box.press('Control+a');
+    await box.press('X');
+    await expect(box).toHaveValue('Xecho abc def');
+    await box.press('Control+e');
+    await box.press('Z');
+    await expect(box).toHaveValue('Xecho abc defZ');
+    await box.press('Control+w');
+    await expect(box).toHaveValue('Xecho abc ');
+    await box.press('Control+u');
+    await expect(box).toHaveValue('');
+    await app.forge.run('echo seen');
+    await expect(out).toContainText(/^seen$/m);
+    await box.press('Control+l');
+    await expect(out).not.toContainText('seen');
+    await expect(app.forge.prompt.page().locator('.desk-box[data-key="term"] .prompt-ps')).toHaveText(/hello \$/);
+  });
+
   test('on the desk, a line running has no prompt line after it, as a terminal has none till it is done; the line written is moved up at once', async ({app}) => {
     const ps = app.forge.prompt.page().locator('.desk-box[data-key="term"] .prompt-ps');
     await expect(ps).toHaveText(/hello \$/);

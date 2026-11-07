@@ -2283,7 +2283,15 @@ goes, and once the run is
 done that goes out to its right rather than at once. `clear` clears the
 screen, and Ctrl+C says ^C where the run was cut, the screen's words jolting
 sideways and flaring as they are cut (at once: it answers the hand), what the
-run was doing going as it is cut. Ended (exit, stopped), its switch comes in
+run was doing going as it is cut. Its line has a terminal's own keys, as bash's
+and zsh's line editors have them (and a Mac's text, Ctrl held): Ctrl+A and
+Ctrl+E to the line's start and end, Ctrl+U and Ctrl+W cut back to its start
+and the word before, Ctrl+L clears the screen with the prompt line at its top,
+Ctrl+D on an empty line ends what is typed (cat ends, and the shell reads on;
+at the prompt line, the shell, as a terminal's does), and Ctrl+C at the prompt
+line lets the line written go, said cut with the prompt line again under it.
+The editor's own keys (Ctrl+K and Ctrl+P to the search, Ctrl+B the pane) stay
+the page's, as an editor's terminal leaves them. Ended (exit, stopped), its switch comes in
 going over from on to off and its output flares and dims as a tube switched
 off does, staying dim to be read; switched on again, the old screen goes down
 to a bright line across its middle, the box takes the new one's height, and

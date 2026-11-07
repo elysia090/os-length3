@@ -470,8 +470,13 @@ export class Session implements Prompt {
   private async startL3() {
     this.on = 'l3';
     // While l3 comes, the status says how far it is and what it is doing.
-    // (Ready, it is starting: said only if that takes a while, as a start at once says nothing.)
-    const unwatch = watchLoad((s) => { if (s.at === 'ready') this.sayStarting(); else this.status.textContent = loadWords(s); });
+    // (Ready, it is starting: what loading said goes, and starting is said only if it takes a while, as a start at once
+    // says nothing.)
+    const unwatch = watchLoad((s) => {
+      if (s.at !== 'ready') { this.status.textContent = loadWords(s); return; }
+      this.status.textContent = '';
+      this.sayStarting();
+    });
     // Its Worker was readied while the Prompt was shown (readyPrompt), else it is made now, while l3 and the repo's copy
     // come, and starts the Workers its first threads run in: their scripts are loaded and run by the time it is given
     // what to run, rather than after.
@@ -584,6 +589,36 @@ export class Session implements Prompt {
     this.worker?.postMessage({type: 'interrupt'});
     this.activity.inputWait = false;
     this.activity.sleepsUntil = 0;
+  }
+
+  /**
+   * The end of what is typed (Ctrl-D on an empty line), as a terminal gives it: what reads it reads its end, once (cat
+   * ends; at the prompt line, the shell, as a terminal's does), and reads on after it.
+   */
+  endOfInput() {
+    if (!this.live) return;
+    if (this.native) { void this.native.input('\x04').catch(() => {}); return; }
+    // (Nothing to read, once: a read of no bytes, the end.)
+    this.worker?.postMessage({type: 'input', bytes: new Uint8Array(0)});
+  }
+
+  /** At the prompt line, the screen cleared (Ctrl-L), the prompt line said again at its top, as a terminal's line
+   * editor does; false while a line runs (the key is the program's then). */
+  clearScreen(): boolean {
+    const ps = this.promptLine;
+    if (!ps) return false;
+    this.out.print(`\x1b[H\x1b[2J${ps}`);
+    return true;
+  }
+
+  /** At the prompt line, `line` written and let go (Ctrl-C), said cut and the prompt line again under it, as a
+   * terminal's line editor does: nothing runs. False while a line runs (Ctrl-C interrupts it then). */
+  abandon(line: string): boolean {
+    const ps = this.promptLine;
+    if (!ps) return false;
+    this.out.sent(`${line}^C\n`);
+    this.out.print(ps);
+    return true;
   }
 
   /** A new shell for this repo in this place. */
