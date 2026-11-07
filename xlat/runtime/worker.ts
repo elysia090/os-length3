@@ -227,7 +227,8 @@ function told(): void {
   // Code reached later since it was last said, for the page to keep (each module's bytes copied: the image keeps its own).
   for (const k of kept) {
     const x = k.image.extras;
-    if (x.length <= k.told) continue;
+    // (Reached in bytes its file had once changed: this run's own, never the program's: process.ts readLater.)
+    if (x.length <= k.told || k.image.changed) continue;
     const more = x.slice(k.told).map((e) => ({module: e.module, bytes: e.bytes.slice(), base: e.base}));
     self.postMessage({type: 'more', path: k.path, from: k.told, more}, moved(...more.map((m) => m.bytes)));
     k.told = x.length;

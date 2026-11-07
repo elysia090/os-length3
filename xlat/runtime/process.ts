@@ -176,6 +176,9 @@ export class Image implements Program {
   declare told?: number;
   declare mainTold?: boolean;
   declare opened?: () => boolean;
+  /** Its file changed before the code it reached later was read from it (readLater): what it reaches is this run's
+   * alone, never kept as the file's for a later Prompt. */
+  declare changed?: boolean;
   constructor(module: WebAssembly.Module, source: (() => Uint8Array) | null = null, size = 0, segments: Segment[] | null = null) {
     this.module = module;
     // Its data, when kept outside the module (share.ts): exec lays it in memory, and an instance writes nothing.
@@ -234,6 +237,24 @@ export class Image implements Program {
     }
     return n;
   }
+}
+
+/**
+ * The bytes of `node` for `image`, a translation taken ready-made (kept from an earlier Prompt, or given with its
+ * program), read only once code it never reached is reached. They are the bytes it was made from only while the file
+ * is as it was when it was taken: changed before they were read (a write, or one through a shared mapping, which
+ * reading them settles), the image is that file's no longer (`changed`, no origin), so what it reaches from them is
+ * this run's, and nothing of it is kept for a later Prompt as the file's.
+ */
+function readLater(node: File, image: Image): () => Uint8Array {
+  const version = node.version;
+  let view: Uint8Array | null = null;
+  return () => {
+    if (view) return view;
+    view = node.share();
+    if (node.version !== version) { image.changed = true; image.origin = undefined; }
+    return view;
+  };
 }
 
 /** What a kernel is made with: its filesystem, its translator, its console, translations kept (keeper.ts), the machine. */
@@ -344,10 +365,12 @@ export class Kernel implements Kern {
       if (got === undefined) throw new Wait();
       if (got) {
         // The file's bytes only if code it never reached before is reached now.
-        let view: Uint8Array | null = null;
-        const image = new Image(got.module, () => (view ??= node.share()), got.size, got.segments);
+        const image = new Image(got.module, null, got.size, got.segments);
+        const source = readLater(node, image);
+        let opened = false;
+        image.source = () => { const bytes = source(); opened = true; return bytes; };
         image.origin = node.origin;
-        image.opened = () => view !== null;
+        image.opened = () => opened;
         image.told = image.adopt(got.more);
         image.mainTold = true;
         PROFILE.kept++;
@@ -437,9 +460,10 @@ export class Kernel implements Kern {
    * write makes it translate again.
    */
   prebuilt(node: File, module: WebAssembly.Module, segments: Segment[] | null = null): void {
-    let view: Uint8Array | null = null;
+    const image = new Image(module, null, 0, segments);
+    image.source = readLater(node, image);
     // Kept: nothing here could make it again.
-    this.remember(node, {version: node.version, image: new Image(module, () => (view ??= node.share()), 0, segments), used: ++this.uses, kept: true});
+    this.remember(node, {version: node.version, image, used: ++this.uses, kept: true});
   }
 
   /** Every live process. */

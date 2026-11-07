@@ -120,3 +120,35 @@ test('kept: a root program translated ahead (ahead.ts, as the page does while a 
   assert.equal(PROFILE.images - before, 0, 'not translated when run');
   assert.equal(b.reads.n, 0, 'nor read');
 });
+
+test('kept: a program whose file changed before the code it reached later was read from it keeps none of that', {skip: !have}, async () => {
+  // A root program's translation taken from the keeper, with none of what it reaches later: that is translated from
+  // the file once it is reached.
+  const a = await kernel();
+  assert.equal(await run(a.k, '/usr/bin/echo echo kept'), 0);
+  const im = a.k.images.get(a.vfs.file('/usr/bin/echo'))!.image;
+  const kept: Taken = {module: new WebAssembly.Module(im.wasm!), segments: im.segments, size: im.size, more: []};
+  let asked = 0;
+  const keeper: Keeper = {has: (origin) => origin === 'pack_0_1', take: () => (++asked === 1 ? undefined : kept)};
+  const b = await kernel({keeper});
+  const echo = b.vfs.file('/usr/bin/echo');
+  assert.throws(() => b.k.image(echo, true), 'it waits for what is kept to be read');
+  const taken = b.k.image(echo, true);
+  assert.equal(taken.origin, 'pack_0_1');
+  // Written after it was taken and before its bytes were first read: what is read now is not what it was made from.
+  echo.write(echo.size - 1, new Uint8Array([0]));
+  taken.source!();
+  assert.equal(taken.origin, undefined, 'no longer the root file\'s: what it reaches is never kept under its origin');
+  assert.ok(taken.changed);
+  // A program given with its translation (a hot one: what it reaches is kept by its path) is held to the same.
+  const busy = b.vfs.file('/bin/busybox'), hot = busybox(b.k, b.vfs);
+  busy.write(busy.size - 1, new Uint8Array([0]));
+  hot.source!();
+  assert.ok(hot.changed);
+  // Unchanged, the bytes read later are its own, and it stays the file's.
+  const c = await kernel({keeper: {has: (origin) => origin === 'pack_0_1', take: () => kept}});
+  const same = c.k.image(c.vfs.file('/usr/bin/echo'), true);
+  same.source!();
+  assert.equal(same.origin, 'pack_0_1');
+  assert.ok(!same.changed && !busybox(c.k, c.vfs).changed);
+});
