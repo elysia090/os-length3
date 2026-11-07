@@ -252,25 +252,29 @@ test("Home's band has Forge's tools where Forge has them, and the pane's first r
   await app.newRepo.make('notes');
   const tools = () => app.page.evaluate(() => [...document.querySelectorAll<HTMLElement>('.band-tools > *')].filter((e) => e.getClientRects().length)
     .slice(0, 3).map((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.y), Math.round(r.width)]; }));
-  // The pane's first line and the rail's first icon start on one line (the bar beside the line starts with it).
-  const level = () => app.page.evaluate(() => {
-    const row = [...document.querySelectorAll<HTMLElement>('.pane-row')].find((e) => e.getClientRects().length)!;
-    const icon = document.querySelector('.rail svg')!.getBoundingClientRect().top;
-    return [row.querySelector('.pane-line')!.getBoundingClientRect().top - icon, row.querySelector('.pane-bar')!.getBoundingClientRect().top - icon];
-  });
+  // The pane's first line and the rail's first icon start on one line (the bar beside the line starts with it), once
+  // the first row is drawn and come to rest.
+  const level = () => expect(async () => {
+    const [line, bar] = await app.page.evaluate(() => {
+      const row = [...document.querySelectorAll<HTMLElement>('.pane-row')].find((e) => e.getClientRects().length);
+      const icon = document.querySelector('.rail svg')!.getBoundingClientRect().top;
+      if (!row) return [NaN, NaN];
+      return [row.querySelector('.pane-line')!.getBoundingClientRect().top - icon, row.querySelector('.pane-bar')!.getBoundingClientRect().top - icon];
+    });
+    expect(Math.abs(line)).toBeLessThan(1);
+    expect(bar).toBeGreaterThan(2);
+    expect(bar).toBeLessThan(7);
+  }).toPass();
   await app.rail.go('forge');
   await app.forge.startPrompt('notes');
   await app.forge.run('true');
   await expect(app.forge.pane.locator('.pane-row.run')).toHaveCount(1);
-  const forge = await tools(), forgeLevel = await level();
+  await level();
+  const forge = await tools();
   await app.rail.go('home');
   await expect(async () => expect(await tools()).toEqual(forge)).toPass();
   await expect(app.main.getByRole('button', {name: 'Files: New, Rename, Delete'})).toBeVisible();
-  for (const [line, bar] of [forgeLevel, await level()]) {
-    expect(Math.abs(line)).toBeLessThan(1);
-    expect(bar).toBeGreaterThan(2);
-    expect(bar).toBeLessThan(7);
-  }
+  await level();
   // Its files button is Forge's, for the repo last worked in: there, its menu out under Forge's own (the terminal in
   // hand there, the repo's deeds).
   await app.main.getByRole('button', {name: 'Files: New, Rename, Delete'}).click();
@@ -285,8 +289,11 @@ test('Home come back to is where it was read to, and the page between starts at 
   await app.page.setViewportSize({width: 1280, height: 300});
   await app.rail.go('home');
   const read = () => app.page.evaluate(() => Math.round(document.scrollingElement!.scrollTop));
-  await app.page.evaluate(() => { document.scrollingElement!.scrollTop = 120; });
-  await expect.poll(read).toBe(120);
+  // Read down to 120 px, once Home is that long (what it lists is drawn as it is read from the store).
+  await expect(async () => {
+    await app.page.evaluate(() => { document.scrollingElement!.scrollTop = 120; });
+    expect(await read()).toBe(120);
+  }).toPass();
   await app.rail.go('runtime');
   await expect.poll(read).toBe(0);
   await app.rail.go('home');
