@@ -55,6 +55,8 @@ interface Deeds {
   path: string;
   name: string;
   dir: boolean;
+  /** The name a new file made in the folder takes its ending from (none given: a note's; '' beside a terminal: none). */
+  like?: string;
   /** About to be made in `folder` (a path in the repo): told before the store writes it. */
   opening?(folder: string): void;
   /** Made: the new file's (or folder's) path in the repo. */
@@ -125,7 +127,7 @@ export function fileDeeds(d: Deeds): HTMLElement {
     b.disabled = true;
     try {
       d.opening?.(into);
-      await d.made(await untitled(repo, into, d.dir ? undefined : d.name), true);
+      await d.made(await untitled(repo, into, d.dir ? d.like : d.name), true);
     } catch (err) { b.disabled = false; error.textContent = errorText(err); b.after(error); }
   };
   rows.push(entry(t('New file'), 'new-file', (b) => void make(b)));
@@ -180,7 +182,8 @@ export function fileDeeds(d: Deeds): HTMLElement {
 /**
  * `pop` laid under `at`, its left edge on `at`'s (over it where there is no room under it), out over what is there so
  * nothing moves under the pointer; Escape, a press outside it, or `at` pressed again put it away, and the keyboard goes
- * back to `at`. `gone` is told as it goes. Returned: the way to put it away (a deed done).
+ * back to `at`. `gone` is told as it goes. Returned: the way to put it away (a deed done): gone at once then, in the
+ * press's frame, so what the deed did is seen with nothing fading over it.
  */
 export function deedsUnder(at: HTMLElement, pop: HTMLElement, gone: () => void): () => void {
   pop.classList.add('deeds-under');
@@ -192,12 +195,12 @@ export function deedsUnder(at: HTMLElement, pop: HTMLElement, gone: () => void):
   if (low > 0) pop.style.top = `${Math.max(16, r.top - 6 - pop.offsetHeight)}px`;
   at.setAttribute('aria-expanded', 'true');
   let out = true;
-  const away = () => {
+  const away = (now = false) => {
     if (!out) return;
     out = false;
     document.removeEventListener('pointerdown', outside, true);
     at.setAttribute('aria-expanded', 'false');
-    putAway(pop, () => pop.remove());
+    if (now) pop.remove(); else putAway(pop, () => pop.remove());
     gone();
   };
   const outside = (event: PointerEvent) => {
@@ -215,5 +218,5 @@ export function deedsUnder(at: HTMLElement, pop: HTMLElement, gone: () => void):
     at.focus();
   });
   pop.querySelector<HTMLElement>('.pop-item')?.focus();
-  return away;
+  return () => away(true);
 }

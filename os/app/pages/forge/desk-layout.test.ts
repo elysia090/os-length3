@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {carried, EYE, FOOT, GAP, next, overAll, PAD, PULLED, pulledOn, slots, standardOn, tabbed, TOP, VGAP, WHOLE_MOST, WIDTH, wholeOf} from './desk-layout.ts';
+import {ABOVE_SEEN, bornOn, carried, EYE, FOOT, GAP, next, overAll, PAD, PULLED, pulledOn, slots, standardOn, tabbed, TOP, VGAP, WHOLE_MOST, WIDTH, wholeOf} from './desk-layout.ts';
 
 // The desk's places and its camera (desk-layout.ts), as numbers.
 
@@ -28,6 +28,17 @@ test('at the standard, the box in hand is in the middle across, at its own size,
   // The box above it in its column (a gap and its name above this one's top) is wholly out of the face.
   // The box above in its column, with all that hangs from its foot, is out of the face.
   assert.ok(EYE - VGAP + FOOT < 0);
+});
+
+test('a box just come out from under another keeps that one\'s foot in sight over it, so what it was made under is seen', () => {
+  const at = slots(cols, heights), slot = at.get('a.c')!;
+  // Under a tall one: ABOVE_SEEN of its foot in the face, the gap, then the new box.
+  const v = bornOn(slot, 40, 1000, 800, 600);
+  assert.equal(v.x, standardOn(slot, 40, 1000, 800).x);
+  assert.ok(Math.abs(v.y + slot.y - (ABOVE_SEEN + VGAP)) < 1e-9);
+  // Under a short one: all of it, no more.
+  const short = bornOn(slot, 40, 1000, 800, 60);
+  assert.ok(Math.abs(short.y + slot.y - (60 + VGAP)) < 1e-9);
 });
 
 test('a step back, the box in hand is still in the middle, smaller, and the columns beside it come into sight', () => {

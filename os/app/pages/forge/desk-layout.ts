@@ -51,6 +51,17 @@ export const FOOT = 16 + 9;
  * face: never a strip, nor a dot, cut by its edge. */
 export const EYE = VGAP - FOOT - 1;
 
+/** A box just come out from under the one above it: so much of that one's foot stays in sight over it (or all of it,
+ * if it is less), the new box lower than the eye by as much, so what it was made under is seen with it. */
+export const ABOVE_SEEN = 5 * GRID;
+
+/** At the standard on the box at `slot` just come out from under one `above` high: as standardOn, lower by what
+ * keeps ABOVE_SEEN of that one in sight (its foot, its close, the gap and the new box's name under them). */
+export function bornOn(slot: Slot, h: number, w: number, hgt: number, above: number): View {
+  const v = standardOn(slot, h, w, hgt);
+  return {...v, y: v.y + Math.min(above, ABOVE_SEEN) + VGAP - EYE};
+}
+
 /**
  * At the standard, on the box at `slot` (`h` high) in a face `w` by `hgt`: the box's middle in the face's middle across,
  * its top at EYE (a tall one goes on down from there; a short one stands where the eye starts, not in a hole in the

@@ -1,7 +1,7 @@
 import {h} from '../../ui/dom.ts';
 import {still} from '../../ui/glide.ts';
 import {t} from '../../i18n/i18n.ts';
-import {carried, next, overAll, PAD, pulledOn, slots, standardOn, tabbed, WIDTH, wholeOf, type Slot, type View} from './desk-layout.ts';
+import {bornOn, carried, next, overAll, PAD, pulledOn, slots, standardOn, tabbed, WIDTH, wholeOf, type Slot, type View} from './desk-layout.ts';
 
 // A repo's desk, Forge's center (DESIGN.md § Forge, the desk): what is open lies on a plane, each box as wide as 80
 // columns of code, its name outside its top-left corner, on dots. The Prompt's box is the first; files opened lie
@@ -118,6 +118,9 @@ export class Desk {
   #gliding = false;
   /** When a box last began to come out from under the one above it: the camera lets it come out before it follows. */
   #comingAt = -Infinity;
+  /** The box come out from under another, and that one, while it is the one in hand: the camera keeps the other's foot in
+   * sight over it (bornOn), until another is taken or the camera moves on. */
+  #bornUnder: {key: string; above: string} | null = null;
   /**
    * The finger, the pointer's own pointing hand: its fingertip on the top edge of the box in hand, a little in from its
    * right corner, while the keyboard moves between boxes (Tab, an arrow, Escape, Ctrl), closed on the box while it is
@@ -239,6 +242,7 @@ export class Desk {
     const back = CAMERAS.indexOf(c) > CAMERAS.indexOf(this.#cam);
     this.#cam = c;
     this.#topAt = null;
+    this.#bornUnder = null;
     this.element.classList.toggle('pulled', c === 'pulled');
     this.element.classList.toggle('whole', c === 'whole');
     this.#look(glide, back ? 'out' : 'in');
@@ -340,6 +344,7 @@ export class Desk {
       const out = (e: TransitionEvent) => { if (e.target === el && e.propertyName === 'translate') { el.classList.remove('coming'); el.removeEventListener('transitionend', out); } };
       el.addEventListener('transitionend', out);
       this.#comingAt = performance.now();
+      this.#bornUnder = {key, above: above.key};
       el.style.width = `${WIDTH}px`;
       // (Its height read first: reading it draws it, and it is to be drawn first where it starts.)
       const tall = el.offsetHeight;
@@ -385,6 +390,7 @@ export class Desk {
     const b = this.#boxes.get(key);
     if (!b) return;
     for (const o of this.#boxes.values()) o.el.classList.toggle('held', o === b);
+    if (this.#bornUnder && this.#bornUnder.key !== key) this.#bornUnder = null;
     // The finger goes with it, from where it is.
     if (this.#held !== key && this.#handAt) this.#handGlide = {from: this.#handAt, t0: performance.now(), ms: 320};
     this.#held = key;
@@ -509,7 +515,8 @@ export class Desk {
     const framed = this.#framed ? this.#frameView(this.#framed) : null;
     if (framed) return framed;
     if (!b) return null;
-    const to = standardOn(b.slot, b.el.offsetHeight, w, hgt);
+    const under = this.#bornUnder?.key === b.key ? this.#boxes.get(this.#bornUnder.above) : undefined;
+    const to = under ? bornOn(b.slot, b.el.offsetHeight, w, hgt, under.el.offsetHeight) : standardOn(b.slot, b.el.offsetHeight, w, hgt);
     // Its top where it stood when it was taken in hand, whatever it has grown to since.
     if (this.#topAt === null) this.#topAt = to.y + b.slot.y * to.s;
     else to.y = this.#topAt - b.slot.y * to.s;

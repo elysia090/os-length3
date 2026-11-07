@@ -195,7 +195,8 @@ class Forge {
     if (!repo || this.deedsOut) return;
     const path = this.fileHeld(repo);
     const done = () => this.deedsOut?.();
-    const pop = fileDeeds({repo, path, name: path ? split(path)[1] : repo, dir: !path,
+    // (A file made with a terminal in hand is made as Shift+N makes it there: at the repo's top, with no ending.)
+    const pop = fileDeeds({repo, path, name: path ? split(path)[1] : repo, dir: !path, like: '',
       made: (made, file) => { done(); if (file) this.made(repo, made); },
       move: async (to) => {
         if (to !== path) await store.move(repo, path, to);

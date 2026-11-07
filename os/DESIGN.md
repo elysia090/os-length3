@@ -1993,7 +1993,9 @@ file, it is an N): it is laid under the box in hand, in its column, as a new
 post goes under the one before it, named with that file's ending (none beside a
 terminal: untitled), comes out from under the box above it, pulled out quick
 as a drawer is, the camera going after it a beat behind (never carrying it off
-still hidden under the other), the finger gone as the keyboard goes into its
+still hidden under the other) and coming to rest lower than the eye, with the
+foot of the box above still in sight over it (a terminal's last lines, its
+close), so what it was made under is seen with it; the finger gone as the keyboard goes into its
 name, and its name is written over at once in its
 head, the name itself (its folder quiet before it), a line under it, the stem
 chosen in the soft yellow and the ending kept, so typing writes the stem.
@@ -2039,7 +2041,8 @@ way back, and what the pane showed comes back with it. The files tool, pressed,
 brings out the deeds for the file read now (New file and New folder
 beside it, Rename, which moves it given a path, Delete; the repo's own with
 none read) under it, in Forge, done there with the field or the
-ask in its place as File's are, never carrying one off to File; a new file
+ask in its place as File's are, never carrying one off to File; a deed chosen,
+the deeds are gone at once, nothing fading over what it did; a new file
 is made at once, as Shift+N makes it, its name written over first; one renamed
 or moved is shown where it went. What the search finds drops from under the
 band as a sheet across the desk, inked and shadowed as a box is, only once
