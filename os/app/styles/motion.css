@@ -41,11 +41,11 @@
 /* Only the repo left is a picture; the one come to comes in itself (glide.ts panAcross), the picture cut where it has
    reached. */
 ::view-transition-old(across) { animation: none; }
-/* The OS's caret (caret.ts), a 2 px stroke of ink gliding from where it was to where it is; the browser's own is
+/* The OS's caret (caret.ts), a 1.5 px stroke of ink gliding from where it was to where it is; the browser's own is
    hidden in the field it stands for. Solid while it moves, blinking once it rests. */
 .os-caret-field { caret-color: transparent; }
 .os-caret {
-  position: fixed; left: 0; top: 0; z-index: 9; width: 2px; border-radius: 1px; background: var(--ink); pointer-events: none; opacity: 0;
+  position: fixed; left: 0; top: 0; z-index: 9; width: 1.5px; border-radius: 1px; background: var(--ink); pointer-events: none; opacity: 0;
   transition: transform 70ms cubic-bezier(.2, .9, .25, 1), height 70ms;
 }
 .os-caret.on { opacity: 1; }

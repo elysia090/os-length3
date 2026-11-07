@@ -107,6 +107,11 @@ export class Reference {
   private asked = false;
   /** How tall what dropped from the box on the band was when last seen: it grows and shrinks to what it holds. */
   private tall = 0;
+  /**
+   * On the band, whether what is found for the words typed is drawn: until it is, nothing drops (a sheet let down
+   * empty, filled a frame later, is a sheet that flickers); it comes down with what it holds already in it.
+   */
+  private ready = false;
 
   /** Begin a new issue in the repo shown, from the Issue pill with none open (the page says where it is written). */
   writeIssue: ((repo: string) => void) | null = null;
@@ -201,14 +206,20 @@ export class Reference {
   private fit() {
     const now = this.under.offsetHeight, was = this.tall;
     this.tall = now;
+    // On the band, while it is down, the sheet grows to what it holds and does not shrink as one types on (a sheet
+    // going up and down at each key): it is as tall as it has been, until it goes up.
+    if (this.band && now && !this.search.matches('.leaving, .idle')) this.under.style.minHeight = `${now}px`;
     if (!now || !was || Math.abs(now - was) < 2 || still() || this.search.matches('.leaving')) return;
     this.under.animate([{height: `${was}px`, overflow: 'hidden'}, {height: `${now}px`, overflow: 'hidden'}], {duration: paced(220), easing: LAND});
   }
 
   /** On the band with nothing typed or read, and nothing asked for: nothing drops from the box. */
   private idle() {
-    const idle = this.band && !this.asked && !this.reading && !this.query.value.trim();
+    const typed = !!this.query.value.trim();
+    if (!typed) this.ready = false;
+    const idle = this.band && !this.asked && !this.reading && (!typed || !this.ready);
     this.search.classList.toggle('idle', idle);
+    if (idle) this.under.style.minHeight = '';
     return idle;
   }
 
@@ -320,11 +331,22 @@ export class Reference {
 
   /** What is under the box going back up into it. */
   private goUp() {
-    if (still() || !this.search.getClientRects().length) { this.wordsGo(); return; }
+    if (still() || !this.search.getClientRects().length) { this.under.style.minHeight = ''; this.wordsGo(); return; }
     this.search.classList.add('leaving');
-    const a = this.leaving = this.under.animate([{opacity: 1, transform: 'none'}, {opacity: 0, transform: 'translateY(calc(-1 * var(--s2)))'}],
-      {duration: paced(150), easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards'});
-    a.finished.then(() => { if (this.leaving !== a) return; this.leaving = null; this.search.classList.remove('leaving'); a.cancel(); this.wordsGo(); }, () => {});
+    // On the band the sheet goes back up behind the band as it came down, whole, as a drawer is shut (no fading: a
+    // sheet half seen through over the desk is two pictures at once); elsewhere it goes as a card does.
+    const frames = this.band
+      ? [{transform: 'none', clipPath: 'inset(-12px -12px -12px -12px)'}, {transform: 'translateY(calc(-100% - var(--s3)))', clipPath: 'inset(100% -12px -12px -12px)'}]
+      : [{opacity: 1, transform: 'none'}, {opacity: 0, transform: 'translateY(calc(-1 * var(--s2)))'}];
+    const a = this.leaving = this.under.animate(frames, {duration: paced(this.band ? 220 : 150), easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards'});
+    a.finished.then(() => {
+      if (this.leaving !== a) return;
+      this.leaving = null;
+      this.search.classList.remove('leaving');
+      a.cancel();
+      this.under.style.minHeight = '';
+      this.wordsGo();
+    }, () => {});
   }
 
   /** The words used (a line or a file gone to from what they found, on the band): gone from the box, which says Search
@@ -332,9 +354,16 @@ export class Reference {
   private wordsGo() {
     if (!this.used) return;
     this.used = false;
+    this.query.dispatchEvent(new Event('input'));
+  }
+
+  /** On the band, what was found gone to: the box says Search at once, the sheet keeping the words at its head while
+   * it goes up (wordsGo tells the rest once it is up). */
+  private wordsUsed() {
+    if (!this.band) return;
     this.lastWords = this.query.value;
     this.query.value = '';
-    this.query.dispatchEvent(new Event('input'));
+    this.used = true;
   }
 
   /** What can be chosen in the card in hand, in order. */
@@ -500,7 +529,8 @@ export class Reference {
     const query = this.query.value.trim();
     const repo = this.repo;
     if (!repo) { this.panel.replaceChildren(h('p', {class: 'muted small'}, t('Open a repo to search'))); return; }
-    if (query) { this.frame(null, {kind: t('Search history'), label: query}); return this.find(query); }
+    // (What is found is framed by find itself, once it is found: the sheet keeps what it shows until then.)
+    if (query) return this.find(query);
     const kind = this.pill;
     if (kind) { this.frame(null, {kind: KINDS.find((k) => k.kind === kind)!.label(), label: ''}); return this.list(kind); }
     // Nothing typed, nothing pressed: what was searched and read here, newest first.
@@ -657,36 +687,52 @@ export class Reference {
     const repo = this.repo!;
     const run = ++this.found;
     const kind = this.pill;
-    if (!this.body.childElementCount) this.body.replaceChildren(h('p', {class: 'muted small'}, t('Searching…')));
+    const live = {kind: t('Search history'), label: query};
+    // What was found for the words before stays until what is found for these is ready: never an empty sheet between
+    // two keys. Nothing found yet, the card is there at once (off the band, saying it is searching).
+    const had = (this.ready || !this.band) && !!this.body.querySelector('.hit-group, .found-secs, .search-count');
+    if (!had) {
+      this.frame(null, live);
+      if (!this.band) this.body.replaceChildren(h('p', {class: 'muted small'}, t('Searching…')));
+    }
     this.files ??= readAll(repo);
     this.known ??= Promise.all([openIssues(repo).catch(() => []), gitops.changes(repo).then((c) => c.folders.flatMap((f) => f.files), () => [])]);
     let files: Files, issues: Issue[], changed: gitops.FileChange[];
     try {
       [files, [issues, changed]] = await Promise.all([this.files, this.known]);
-    } catch (e) { this.body.replaceChildren(h('p', {class: 'muted small'}, t('Search failed: {message}', {message: String(e)}))); return; }
+    } catch (e) { this.body.replaceChildren(h('p', {class: 'muted small'}, t('Search failed: {message}', {message: String(e)}))); this.drop(); return; }
     const stale = () => run !== this.found || repo !== this.repo || !!this.reading;
     if (stale()) return;
     const found = await search(query, kind, files, issues, changed, sessionIfAny(repo)?.runs ?? [], asksIn(repo), stale);
     if (!found || stale()) return;
     const said = foundView(found, query, changed, {
-      file: (path) => { this.remember({what: 'query', text: query}); this.remember({what: 'file', path}); this.used = this.band; this.events.reveal(path, 0, true); },
+      file: (path) => { this.remember({what: 'query', text: query}); this.remember({what: 'file', path}); this.wordsUsed(); this.events.reveal(path, 0, true); },
       line: (path, line) => void this.go(path, line, query),
       diff: (path) => this.readDiff(path),
       issue: (i) => this.readIssue(i),
       run: (r) => this.readRun(r),
       ask: (a) => this.readAsk(a),
     }, {sections: this.band});
-    if (!said.length) { this.body.replaceChildren(h('p', {class: 'muted small'}, t('No results found for "{query}"', {query}))); return; }
-    const had = this.choices().indexOf(document.activeElement as HTMLElement);
+    const focused = this.choices().indexOf(document.activeElement as HTMLElement);
+    if (had) this.frame(null, live);
+    if (!said.length) { this.body.replaceChildren(h('p', {class: 'muted small'}, t('No results found for "{query}"', {query}))); this.drop(); return; }
     // Come in place of Searching… (not redrawn as one types on), what was found comes down the page, a group a beat
     // after the one above it, as its marks are stroked: not the whole sheet in one frame.
-    const fresh = !this.body.querySelector('.hit-group, .search-count');
+    const fresh = !had;
     this.body.replaceChildren(...said);
     // What was found is read from its head: the words searched for, then the first found.
     if (fresh) this.panel.scrollTop = 0;
-    if (fresh && !still()) said.slice(0, 8).forEach((el, i) => el.animate([{opacity: 0, translate: '0 4px'}, {opacity: 1, translate: '0 0'}],
+    // (On the band the sheet carries it down as it drops: nothing in it comes in on its own.)
+    if (fresh && !this.band && !still()) said.slice(0, 8).forEach((el, i) => el.animate([{opacity: 0, translate: '0 4px'}, {opacity: 1, translate: '0 0'}],
       {duration: paced(220), delay: paced(i * 30), easing: LAND, fill: 'backwards'}));
-    if (had >= 0) this.choices()[Math.min(had, this.choices().length - 1)]?.focus();
+    if (focused >= 0) this.choices()[Math.min(focused, this.choices().length - 1)]?.focus();
+    this.drop();
+  }
+
+  /** What was found is drawn: on the band, the sheet comes down with it in it (idle). */
+  private drop() {
+    this.ready = true;
+    this.idle();
   }
 
   /**
@@ -708,7 +754,7 @@ export class Reference {
     }
     this.remember({what: 'query', text: query});
     this.remember({what: 'file', path});
-    this.used = this.band;
+    this.wordsUsed();
     this.events.reveal(path, at);
   }
 }

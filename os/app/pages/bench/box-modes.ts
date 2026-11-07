@@ -54,9 +54,10 @@ export const sendWord = (m: Mode): string =>
 export const sendTitle = (m: Mode, keys: string): string => (m === 'run' ? t('Run ({keys})', {keys}) : m === 'issue' ? t('Create ({keys})', {keys})
   : m === 'todo' ? t('Add ({keys})', {keys}) : m === 'agent' ? t('Ask ({keys})', {keys}) : t('Edit'));
 /** What the empty box says goes there (for Edit, with the file in front, `file`: the line held is an empty one). A
- * terminal says nothing after its prompt: the caret waiting there is all it says, as any terminal's. */
+ * terminal says nothing after its prompt: the cursor waiting there is all it says, as any terminal's (its hint is a
+ * width of nothing, so the line is known to be empty: forge-desk.css draws the cursor then). */
 export const modeHint = (m: Mode, repo: string | null, file: string | null = null): string => (!repo ? t('Open a repo to run commands')
-  : m === 'run' ? '' : m === 'issue' ? t('Create issue in {name}', {name: repo}) : m === 'todo' ? t('Add item to TODO')
+  : m === 'run' ? '\u200b' : m === 'issue' ? t('Create issue in {name}', {name: repo}) : m === 'todo' ? t('Add item to TODO')
   : m === 'agent' ? t('Ask about {name}', {name: repo})
   : file ? t('Empty line: type here') : t('Open a file to edit here'));
 

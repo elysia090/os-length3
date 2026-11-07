@@ -158,7 +158,7 @@ Every value in `styles.css` comes from a token (§2).
     each), so the eye is led through it heading first and the arrival lasts
     long enough to be followed; what is read a moment later takes its turn
     where it stands. Its figures count up from nothing, its bars fill.
-  - *The caret is a thing that moves.* The OS draws it (a 2 px stroke of
+  - *The caret is a thing that moves.* The OS draws it (a 1.5 px stroke of
     `ink`): it glides from where it was to where it is (a letter typed, a
     line gone down, a press elsewhere, 70 ms), so what is written is seen
     being written and Enter sweeps it to the next line's start; solid while
@@ -1991,8 +1991,10 @@ small give. Shift+N, as a new post is begun on X, makes a new file beside the
 one in hand where nothing is being written (the finger on a box; written in a
 file, it is an N): it is laid under the box in hand, in its column, as a new
 post goes under the one before it, named with that file's ending (none beside a
-terminal: untitled), comes out from under the box above it, sliding down to
-its place, the camera going to it, and its name is written over at once in its
+terminal: untitled), comes out from under the box above it, pulled out quick
+as a drawer is, the camera going after it a beat behind (never carrying it off
+still hidden under the other), the finger gone as the keyboard goes into its
+name, and its name is written over at once in its
 head, the name itself (its folder quiet before it), a line under it, the stem
 chosen in the soft yellow and the ending kept, so typing writes the stem.
 Enter keeps what is written and the keyboard goes on into the box, at its end;
@@ -2041,14 +2043,18 @@ ask in its place as File's are, never carrying one off to File; a new file
 is made at once, as Shift+N makes it, its name written over first; one renamed
 or moved is shown where it went. What the search finds drops from under the
 band as a sheet across the desk, inked and shadowed as a box is, only once
-something is typed (pressed with nothing typed, nothing drops; ↓ lets down the
+something is typed and what is found for it is ready: it comes down with it
+already in it, never let down empty and filled a frame later, and what is in it
+stays until what is found for the next key is ready (pressed with nothing
+typed, nothing drops; ↓ lets down the
 kinds, Issue, diff and Output, and what was searched and read): the words
 searched for large at its head, then what was found a kind at a time, two
 kinds to a row, each its name and how many at its left and its rows at its
 right (a file's name over its lines found, each line its number and its
-words, the words found marked). It grows and shrinks to what it holds, never
-jumping from one height to the next, and while it is down the desk fades out of
-sight under it. A row pressed: the camera is put on its file meanwhile, unseen,
+words, the words found marked). It grows to what it holds, never jumping from
+one height to the next, and does not shrink as one types on (a sheet going up
+and down at each key) until it goes up; while it is down the desk steps back,
+faint, under it. The box has no clearing × of its own: Escape clears it. A row pressed: the camera is put on its file meanwhile, unseen,
 and the desk comes back already there as the sheet goes up, the line chosen.
 The
 pills scroll when there are many, and ⊕ comes right after the last
@@ -2313,7 +2319,11 @@ file it begins to write in, whole in the middle, its terminal a sliver at the
 side, then back to its terminal as it runs something. What it is at work in is
 always whole in sight, and what else is at work peeks in at the edges, saying
 where it is; narrowing to fewer waits a moment, so a step ending and the next
-starting is not a move away and back. The person writing in their own box (a
+starting is not a move away and back. A box it went to and still at work holds
+it a while (a command typed is seen run and answered before it goes on to the
+file begun meanwhile), going on once that is done or has been watched. A box
+growing as it is written never turns a glide back on itself: where the camera
+passes is not taken for where it stays. The person writing in their own box (a
 key, a paste) takes the camera back to it, gliding, never a jump to where the
 caret is first. The box has no Agent of its own on the desk: no pill
 says it, no answer comes in the pane.

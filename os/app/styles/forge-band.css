@@ -101,7 +101,11 @@
 /* Only what was found scrolls (past the sheet's room), under the words searched for, which stay at its head. */
 .band-tools .search-results > .search-panel { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: none; overflow-anchor: none; }
 .band-tools .search-results > .search-pills { flex: none; }
-@keyframes drop-in { from { clip-path: inset(0 0 100% 0); opacity: .4; } }
+/* Down from behind the band, whole, as a drawer is opened: what is lowest comes first. */
+@keyframes drop-in { from { transform: translateY(calc(-100% - var(--s3))); clip-path: inset(100% -12px -12px -12px); }
+  to { transform: none; clip-path: inset(-12px -12px -12px -12px); } }
+/* The box's own clearing ×: Escape clears it, as a terminal's line is. */
+.band-tools .search-in::-webkit-search-cancel-button { display: none; }
 .band-tools .search-results:not([data-q=''])::before {
   content: attr(data-q); display: block; flex: none; margin: 0 0 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font: 900 56px/.95 var(--display); letter-spacing: -.025em; color: var(--ink);
@@ -110,9 +114,9 @@
 .band-tools .found-body { padding: 0; }
 /* Nothing typed or read and nothing asked for (↓): nothing drops, and the desk stays (reference.ts idle). */
 .band-tools .search-box.idle .search-results { display: none; }
-/* The desk goes out of sight as the sheet comes down (a little quicker than it comes back as the sheet goes up). */
+/* The desk steps back, faint, under the sheet as it comes down (a little quicker than it comes back as the sheet goes up). */
 .work.desk-bench.sheet-down .desk-box {
-  opacity: 0; transition-duration: 640ms, 120ms, 120ms, 220ms; }
+  opacity: .22; transition-duration: 640ms, 120ms, 120ms, 220ms; }
 .work.desk-bench .desk-box { transition-duration: 640ms, 120ms, 120ms, 300ms; }
 /* The kinds, while asked for or one is pressed: named as the sheet's sections are, large, the pressed one underlined. */
 .band-tools .search-results:not([data-q='']) .search-pills:not(:has([aria-pressed='true'])) { display: none; }

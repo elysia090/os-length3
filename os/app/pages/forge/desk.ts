@@ -116,6 +116,8 @@ export class Desk {
   #pinched = 0;
   /** The camera on its way (its scroll is its own then, not someone's going somewhere). */
   #gliding = false;
+  /** When a box last began to come out from under the one above it: the camera lets it come out before it follows. */
+  #comingAt = -Infinity;
   /**
    * The finger, the pointer's own pointing hand: its fingertip on the top edge of the box in hand, a little in from its
    * right corner, while the keyboard moves between boxes (Tab, an arrow, Escape, Ctrl), closed on the box while it is
@@ -223,12 +225,11 @@ export class Desk {
       veil.show();
       this.#showHand(false);
     }, {capture: true, passive: true});
-    // Written in a box, the finger and the pointer are out of the way until the pointer moves.
-    this.element.addEventListener('keydown', (e) => {
-      if (e.target === this.element || !letter(e)) return;
-      this.#showHand(false);
-      veil.hide(this.#pointerAt);
-    });
+    // Written in a box, the finger and the pointer are out of the way until the pointer moves: a key, or what comes in
+    // as written without one (a paste, a word the input method gives, text put in).
+    const writing = () => { this.#showHand(false); veil.hide(this.#pointerAt); };
+    this.element.addEventListener('keydown', (e) => { if (e.target !== this.element && letter(e)) writing(); });
+    this.element.addEventListener('beforeinput', (e) => { if (e.target !== this.element) writing(); });
   }
 
   /** The camera to `c` (gliding there, unless `glide` is false): stepping back it zooms and then goes, coming nearer it
@@ -332,8 +333,13 @@ export class Desk {
     const column = this.#cols.find((k) => k.includes(key))!, above = this.#boxes.get(column[column.indexOf(key) - 1] ?? '');
     if (how.slide && above && !by && !still()) {
       this.#plane.insertBefore(el, above.el);
-      el.classList.add('born');
+      // Out quickly, as a drawer is pulled (forge-desk.css .coming), the camera a beat behind it (#go): never carried
+      // out of sight still under the other.
+      el.classList.add('born', 'coming');
       el.addEventListener('transitionend', () => el.classList.remove('born'), {once: true});
+      const out = (e: TransitionEvent) => { if (e.target === el && e.propertyName === 'translate') { el.classList.remove('coming'); el.removeEventListener('transitionend', out); } };
+      el.addEventListener('transitionend', out);
+      this.#comingAt = performance.now();
       el.style.width = `${WIDTH}px`;
       // (Its height read first: reading it draws it, and it is to be drawn first where it starts.)
       const tall = el.offsetHeight;
@@ -387,7 +393,8 @@ export class Desk {
     this.#topAt = null;
     if (focus && this.#cam !== 'standard') this.#setCam('standard', glide);
     else this.#look(glide);
-    if (focus) b.laid.focus();
+    // The keyboard into it: the finger, the keyboard's on the desk, goes (as Enter into it takes it away).
+    if (focus) { this.#showHand(false); b.laid.focus(); }
     this.#changed();
   }
 
@@ -413,7 +420,9 @@ export class Desk {
     const all = overAll(boxes.map((b) => ({slot: b.slot, h: b.el.offsetHeight})), w, hgt);
     if (all) return all;
     const v = this.#view, last = boxes[boxes.length - 1];
-    if (v.s === 1 && this.#seen(last, v, w, hgt) >= .98) return {...v};
+    // (Not while the camera is on its way: where it passes is not where it stays, and a glide told to end where it is
+    // now goes back on itself.)
+    if (!this.#glide && v.s === 1 && this.#seen(last, v, w, hgt) >= .98) return {...v};
     return standardOn(last.slot, last.el.offsetHeight, w, hgt);
   }
 
@@ -548,12 +557,15 @@ export class Desk {
     const m = b ? {x: b.slot.x + WIDTH / 2, y: b.slot.y + b.el.offsetHeight / 2} : {x: (el.clientWidth / 2 - from.x) / from.s, y: (el.clientHeight / 2 - from.y) / from.s};
     const pf = {x: m.x * from.s + from.x, y: m.y * from.s + from.y};
     const glide = this.#glide = {to};
-    const t0 = performance.now();
+    // A box coming out from under another: it is out before the camera goes after it.
+    const lag = performance.now() - this.#comingAt < 60 ? 90 : 0, t0 = performance.now() + lag;
     // The camera's way said as an animation of the page's, so what waits for the page to be still (a film, a look at
     // where the caret is) waits for it too.
-    this.element.animate([{}, {}], {duration: ms, id: 'desk-camera'});
+    this.element.animate([{}, {}], {duration: lag + ms, id: 'desk-camera'});
     const step = (now: number) => {
-      const k = Math.min(1, (now - t0) / ms);
+      // A glide gone after another is let go: two at once would draw the camera back and forth a frame at a time.
+      if (this.#glide !== glide) return;
+      const k = Math.max(0, Math.min(1, (now - t0) / ms));
       const [p, q] = how === 'in' ? [land(k / .45), land((k - .45) / .55)] : how === 'out' ? [land((k - .55) / .45), land(k / .55)] : [pan(k), pan(k)];
       const end = glide.to, pt = {x: m.x * end.s + end.x, y: m.y * end.s + end.y};
       const s = from.s * Math.pow(end.s / from.s, q);

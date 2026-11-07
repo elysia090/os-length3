@@ -3,21 +3,13 @@
 # Remote by the app, and l3 speaks the app's words (`l3 help`).
 case $- in *i*) ;; *) return 0 2>/dev/null ;; esac
 
-# Where you are, as File shows it: the repo and the folder in it, else the path; kept as you move (__l3_moved).
-__l3_where() {
-  case $PWD in
-    "/root/$LENGTH3_REPO") __l3_here=$LENGTH3_REPO ;;
-    "/root/$LENGTH3_REPO"/*) __l3_here=$LENGTH3_REPO${PWD#/root/$LENGTH3_REPO} ;;
-    *) __l3_here=$PWD ;;
-  esac
-}
-__l3_where
 # How the line run before ended, told the app as terminals' shell integration tells it (OSC 133 D, with its exit
 # status), before each prompt line: the app reads it (a run that failed says so, and its Agent knows how a build
-# or the tests went) and shows none of it. The prompt line is read again each time it is shown, and starts no
-# shell for it (a subshell is a process of its own each time, and in the browser a costly one, which the app's
-# Prompt was seen waiting on): $? and where you are are read as it is shown.
-PS1=$'\033]133;D;''$?'$'\a''$__l3_here $ '
+# or the tests went) and shows none of it. Then where you are, as any shell says it: the whole path, then $. The
+# prompt line is read again each time it is shown, and starts no shell for it (a subshell is a process of its own
+# each time, and in the browser a costly one, which the app's Prompt was seen waiting on): $? and $PWD are read as
+# it is shown.
+PS1=$'\033]133;D;''$?'$'\a''$PWD $ '
 alias ll='ls -l'
 
 # What programs keep of a person's work from one Prompt to the next. /root is made new for each Prompt, and its
@@ -49,7 +41,6 @@ __l3_above() {
 }
 __l3_direnv() { if [ -n "${DIRENV_DIR:-}" ] || __l3_above .envrc; then eval "$(command direnv export bash)"; fi; }
 __l3_moved() {
-  __l3_where
   command you add -- "$PWD" 2> /dev/null
   __l3_direnv
 }

@@ -9,6 +9,9 @@
 .desk-box { position: absolute; left: 0; top: 0; box-sizing: border-box; border: 2px solid var(--ink); border-radius: var(--r-place);
   background: var(--paper); box-shadow: 8px 8px 0 0 var(--ink);
   transition: translate 640ms cubic-bezier(.45, 0, .2, 1), box-shadow 120ms var(--land), margin 120ms var(--land), opacity 180ms ease-out; }
+/* Coming out from under the box above it (a file made under the one in hand): pulled out quick, landing, before the
+   camera follows (desk.ts lay). */
+.desk-box.coming { transition-duration: 280ms, 120ms, 120ms, 180ms; transition-timing-function: var(--land), var(--land), var(--land), ease-out; }
 /* Lifted to be carried (Ctrl): up off the desk and over the others it passes, its shadow long, its name on the ground
    over it. */
 .desk-box.lifted { z-index: 2; margin: -8px 0 0 -8px; box-shadow: 16px 16px 0 0 var(--ink); }
@@ -18,7 +21,7 @@
 .desk:is(.pulled, .whole) .desk-box { cursor: var(--cursor-hand); }
 .desk.whole .desk-plane:not(:has(> .desk-hand.on)) > .desk-box.held { outline: 3px solid var(--ink); outline-offset: 10px; }
 .desk-label { position: absolute; left: 0; bottom: 100%; display: flex; align-items: baseline; gap: 0; white-space: nowrap;
-  font: 600 13px/1 var(--mono); color: var(--ink); padding: 4px 8px 7px 0; transform-origin: 0 100%; scale: var(--inv, 1); }
+  font: 600 15px/1 var(--mono); color: var(--ink); padding: 4px 8px 7px 0; transform-origin: 0 100%; scale: var(--inv, 1); }
 .desk-dir { font-weight: 400; color: var(--sub); }
 .desk-close { position: absolute; right: -4px; top: calc(100% + 16px); width: 9px; height: 9px; padding: 0; border: 0; border-radius: 50%;
   background: var(--ink); cursor: var(--cursor-hand); transform-origin: 100% 0; scale: var(--inv, 1);
@@ -60,6 +63,9 @@
 .desk-term > .dock .prompt-chip[data-mode='run'] > .lamp { display: none; }
 .desk-term > .dock .prompt-chip[data-mode='run'] > .prompt-ps { color: inherit; height: auto; }
 .desk-term > .dock .prompt-in { font: var(--t-code)/1.6 var(--mono); }
+/* Away from the keyboard the terminal's cursor stays where the next letter goes, a block as a terminal's is (the line
+   empty; in it, the caret is the line's own). */
+.desk-term > .dock .prompt-in:placeholder-shown:not(:focus) { background: linear-gradient(var(--ink), var(--ink)) 0 .2em / 1ch 1.2em no-repeat; }
 .desk-term > .dock :is(.prompt-caps, .prompt-run) { display: none; }
 /* The Agent's own terminal, born beside the person's (bench/agent-term.ts): what it was asked heads it, heavier; then
    what it does, as it is played: each command typed after its prompt and what it printed, as the person's terminal
