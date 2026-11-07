@@ -1,5 +1,5 @@
 import {expect, test} from './fixtures.ts';
-import type {Locator} from '@playwright/test';
+
 
 // The box at the foot does more than run: its pill says what it does and, pressed, brings out what it can
 // (box-modes.ts), Edit among them (edit-box.ts). None of it needs the Prompt running.
@@ -16,6 +16,8 @@ test('the box\'s pill chooses what the box does: an issue written there is the r
   const pill = app.main.getByRole('button', {name: /^Input box action/});
   await expect(pill).toHaveAccessibleName('Input box action: Run');
   // Pressed, it brings out the three; Issue chosen, the pill is the repo's next issue and the keyboard is in the box.
+  // (On the desk the Prompt's box is gone to first, as a person goes to it: the box beside the file in hand.)
+  await box.focus();
   await pill.click();
   await app.main.getByRole('menuitemradio', {name: /Create issue/}).click();
   await expect(pill).toHaveAccessibleName('Input box action: Create');
@@ -36,7 +38,7 @@ test('the box\'s pill chooses what the box does: an issue written there is the r
   await expect(hello.getByRole('treeitem', {name: 'README.md', exact: true})).toBeVisible();
   await expect(hello.getByRole('treeitem', {name: /^(issue|#1)$/})).toHaveCount(0);
   await app.file.close();
-  await box.click();
+  await box.focus();
   // Alt+3 from the box: TODO, at once.
   await box.press('Alt+3');
   await expect(pill).toHaveAccessibleName('Input box action: Add');
@@ -55,8 +57,8 @@ test('the box\'s pill chooses what the box does: an issue written there is the r
 
 test('what the box writes comes into the Prompt\'s flow as it came, and pressed goes to where it is', async ({app}) => {
   const box = app.forge.promptBox;
-  const flow = app.page.locator('.work.bench:not([hidden]) .term-out');
-  await box.click();
+  const flow = app.page.locator('.work.bench:not([hidden]) .pane-rows');
+  await box.focus();
   await box.press('Alt+2');
   await box.fill('Fix: The table wraps on a phone');
   await box.press('Control+Enter');
@@ -64,13 +66,14 @@ test('what the box writes comes into the Prompt\'s flow as it came, and pressed 
   await box.fill('Water the mint');
   await box.press('Control+Enter');
   await box.press('Escape');
-  // Each a line of its own, in the order written, before the prompt line the shell waits at.
+  // Each a row of its own in the pane.
   const issue = flow.getByRole('button', {name: '#1 Fix：The table wraps on a phone'});
   const todo = flow.getByRole('button', {name: 'TODO Water the mint'});
   await expect(issue).toBeVisible();
   await expect(todo).toBeVisible();
-  // In the order written; and an issue or a TODO is not a line written to the shell, so neither started it.
-  await expect.poll(() => flow.evaluate((el) => el.textContent!.replace(/\u2063/g, '').trimEnd().split('\n').slice(-2)), {timeout: 60_000}).toEqual(
+  // In the order written, a row each in the pane; and an issue or a TODO is not a line written to the shell, so neither
+  // started it.
+  await expect.poll(() => flow.locator('.pane-row').evaluateAll((rows) => rows.slice(-2).map((r) => r.getAttribute('aria-label'))), {timeout: 60_000}).toEqual(
     ['#1 Fix：The table wraps on a phone', 'TODO Water the mint']);
   await expect(app.main.locator('.prompt-chip')).toHaveAttribute('data-state', 'starting');
 
@@ -82,181 +85,3 @@ test('what the box writes comes into the Prompt\'s flow as it came, and pressed 
   await expect(app.git.issue('#1 Fix：The table wraps on a phone')).toBeVisible();
 });
 
-test('the Prompt up over the center is put back by its ×, as by Escape', async ({app}) => {
-  const box = app.forge.promptBox;
-  await box.click();
-  await expect(app.page.locator('.work.bench.prompting')).toHaveCount(1);
-  await app.page.locator('.work.bench:not([hidden]) .term-shut').click();
-  await expect(app.page.locator('.work.bench.prompting')).toHaveCount(0);
-  await expect(box).not.toBeFocused();
-  // Down, there is no × to press.
-  await expect(app.page.locator('.work.bench:not([hidden]) .term-shut')).toBeHidden();
-});
-
-test('Escape and the Prompt\'s × give the keyboard back to where it was; up, Alt+↓ brings the four out all the same', async ({app}) => {
-  const box = app.forge.promptBox, editor = app.forge.editor('README.md');
-  const up = app.page.locator('.work.bench.prompting');
-  await editor.focus();
-  await app.page.keyboard.press('Control+Backquote');
-  await expect(up).toHaveCount(1);
-  await app.page.keyboard.press('Escape');
-  await expect(up).toHaveCount(0);
-  await expect(editor).toBeFocused();
-  // From the page (the file let go with Escape), back to the page, by the × as by Escape.
-  await editor.press('Escape');
-  const page = app.newRepo.madeIn('hello');
-  await expect(page).toBeFocused();
-  await app.page.keyboard.press('Control+Backquote');
-  await expect(up).toHaveCount(1);
-  await app.page.locator('.work.bench:not([hidden]) .term-shut').click();
-  await expect(up).toHaveCount(0);
-  await expect(page).toBeFocused();
-  // Up as the screen, Alt+↓ brings the four out of the line's start; Escape puts them away, the keyboard in the box.
-  await box.focus();
-  await expect(up).toHaveCount(1);
-  await box.press('Alt+ArrowDown');
-  const menu = app.page.getByRole('menu', {name: 'Input box action'});
-  await expect(menu.getByRole('menuitemradio', {name: /Run in Prompt/})).toBeFocused();
-  await app.page.keyboard.press('Escape');
-  await expect(menu).toBeHidden();
-  await expect(box).toBeFocused();
-  await expect(up).toHaveCount(1);
-});
-
-/** Where in `file` (the editor of a mono file) the gap before column `col` of line `line` (from 1) is, on the screen. */
-async function placeIn(file: Locator, line: number, col: number) {
-  const r = (await file.boundingBox())!;
-  const {lh, left, w} = await file.evaluate((a: HTMLTextAreaElement) => {
-    const cs = getComputedStyle(a), c = document.createElement('canvas').getContext('2d')!;
-    c.font = cs.font;
-    return {lh: parseFloat(cs.lineHeight), left: parseFloat(cs.paddingLeft), w: c.measureText('m').width};
-  });
-  return {x: r.x + left + col * w, y: r.y + (line - .5) * lh + parseFloat(String(await file.evaluate((a) => getComputedStyle(a).paddingTop)))};
-}
-
-test('Edit: the box holds a line of the file, written there as in the file, and a text\'s own keys go along it', async ({app}) => {
-  const box = app.forge.promptBox, page = app.page, file = app.forge.editor('src/main.c');
-  const pill = app.main.getByRole('button', {name: /^Input box action/});
-  const before = '#include <stdio.h>\n\nint main(void) {\n    puts("hello");\n    return 0;\n}\n';
-  const thrown: string[] = [];
-  page.on('pageerror', (e) => thrown.push(e.message));
-  await expect(file).toHaveValue(before);
-  // Written in, the file is the one in front; Ctrl+G brings the box to it, holding the caret's line.
-  await file.click();
-  await page.keyboard.press('Control+g');
-  await expect(box).toBeFocused();
-  await expect(pill).toHaveAccessibleName('Input box action: Edit');
-  // A line pressed while the box has the keyboard comes into it, the caret where it was pressed.
-  const at = await placeIn(file, 5, 13);
-  await page.mouse.click(at.x, at.y);
-  await expect(box).toBeFocused();
-  await expect(box).toHaveValue('    return 0;');
-  await expect(pill).toContainText('main.c:5');
-  // ↑: the line above. What is typed is in the file as it is typed.
-  await box.press('ArrowUp');
-  await expect(box).toHaveValue('    puts("hello");');
-  await box.press('End');
-  await box.pressSequentially(' // say it');
-  await expect(file).toHaveValue(before.replace('puts("hello");', 'puts("hello"); // say it'));
-  // Enter breaks the line: the box goes on to the new one, which keeps the indent.
-  await box.press('Enter');
-  await expect(box).toHaveValue('    ');
-  await box.pressSequentially('fflush(stdout);');
-  const two = before.replace('puts("hello");', 'puts("hello"); // say it\n    fflush(stdout);');
-  await expect(file).toHaveValue(two);
-  await expect(pill).toContainText('main.c:5');
-  // Backspace at the start joins the line to the one above; Ctrl+Z takes it back.
-  await box.press('Home');
-  await box.press('Backspace');
-  await expect(file).toHaveValue(two.replace('it\n    fflush', 'it    fflush'));
-  await box.press('Control+z');
-  await expect(file).toHaveValue(two);
-  // Escape: the keyboard back in the file.
-  await box.press('Escape');
-  await expect(file).toBeFocused();
-  await expect(page.locator('.edit-marks')).toHaveCount(0);
-  // Written as typing is: saved.
-  await expect(app.forge.fileState('src/main.c')).toBeHidden();
-  expect(thrown).toEqual([]);
-  await page.reload();
-  await expect(app.forge.editor('src/main.c')).toHaveValue(two);
-});
-
-test('Edit: words marked on a line come into the box chosen in their line, and what is typed writes over them', async ({app}) => {
-  const box = app.forge.promptBox, page = app.page, file = app.forge.editor('src/main.c');
-  const before = '#include <stdio.h>\n\nint main(void) {\n    puts("hello");\n    return 0;\n}\n';
-  const marks = file.locator('xpath=..').locator('.edit-marks');
-  await file.click();
-  await page.keyboard.press('Control+g');
-  await expect(box).toBeFocused();
-  // Drawn across "hello" on line 4.
-  const a = await placeIn(file, 4, 10), b = await placeIn(file, 4, 15);
-  await page.mouse.move(a.x, a.y);
-  await page.mouse.down();
-  await page.mouse.move(b.x, b.y, {steps: 6});
-  await page.mouse.up();
-  await expect(box).toBeFocused();
-  await expect(box).toHaveValue('    puts("hello");');
-  expect(await box.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd])).toEqual([10, 15]);
-  // In the file: the line held, the words chosen in it.
-  await expect(marks.locator('.held')).toHaveCount(1);
-  await expect(marks.locator('.words')).toHaveCount(1);
-  await page.keyboard.type('world');
-  await expect(file).toHaveValue(before.replace('hello', 'world'));
-  // Nothing chosen now: the box's caret is shown where it is in the file, and goes with it.
-  const caret = marks.locator('.caret');
-  await expect(caret).toHaveCount(1);
-  // Read in one step: the marks are drawn anew as the box's caret moves, so a mark looked up and then measured may be gone.
-  const x = () => marks.evaluate((m) => m.querySelector('.caret')?.getBoundingClientRect().x ?? NaN);
-  await expect.poll(x).not.toBeNaN();
-  const was = await x();
-  await box.press('Home');
-  await expect.poll(x).toBeLessThan(was - 20);
-  // Enter breaks the line where the caret is, as on any line.
-  await box.press('End');
-  await box.press('Enter');
-  await expect(file).toHaveValue(before.replace('    puts("hello");', '    puts("world");\n    '));
-  await expect(box).toHaveValue('    ');
-});
-
-test('working in a file with the box empty, the box is that line\'s by itself; Run comes back once neither has the keyboard', async ({app}) => {
-  const box = app.forge.promptBox, chip = app.main.locator('.prompt-chip'), file = app.forge.editor('src/main.c');
-  await expect(chip).toHaveAttribute('data-mode', 'run');
-  await file.click();
-  // The file has the keyboard: the box says the file and the line, Edit's.
-  await expect(chip).toHaveAttribute('data-mode', 'edit');
-  await expect(chip).toContainText('main.c');
-  // Pressed into, it holds that line.
-  await box.click();
-  await expect(box).not.toHaveValue('');
-  // Gone elsewhere, it is what one chose again (Run), and nothing of the line is left in it.
-  await app.rail.go('git');
-  await app.rail.go('forge');
-  await expect(chip).toHaveAttribute('data-mode', 'run');
-  await expect(box).toHaveValue('');
-  // Something written in the box for Run stays Run, the file pressed or not.
-  await box.press('Alt+1');
-  await box.fill('make');
-  await file.click();
-  await expect(chip).toHaveAttribute('data-mode', 'run');
-  await expect(box).toHaveValue('make');
-});
-
-test('the Prompt up with nothing written, a line of a file pressed comes into the box as Edit\'s, the Prompt going down', async ({app}) => {
-  const box = app.forge.promptBox, chip = app.main.locator('.prompt-chip'), file = app.forge.editor('README.md');
-  const up = app.page.locator('.work.bench.prompting');
-  await box.click();
-  await expect(up).toHaveCount(1);
-  await expect(chip).toHaveAttribute('data-mode', 'run');
-  const at = await placeIn(file, 1, 4);
-  await app.page.mouse.click(at.x, at.y);
-  await expect(box).toBeFocused();
-  await expect(up).toHaveCount(0);
-  await expect(chip).toHaveAttribute('data-mode', 'edit');
-  await expect(box).toHaveValue('# hello');
-  // Gone elsewhere, it is what one chose again.
-  await app.rail.go('git');
-  await app.rail.go('forge');
-  await expect(chip).toHaveAttribute('data-mode', 'run');
-  await expect(box).toHaveValue('');
-});

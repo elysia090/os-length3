@@ -1,0 +1,124 @@
+/* Home: a band along its top, its column under it, and its pane beside both, as Forge's, opening and closing; its
+   repos and servers. */
+
+/* Home: the page in its column, and beside it the right pane Forge and Git have (bench.ts), its switch at its foot,
+   kept in view while Home scrolls under it; put away, the switch alone stays, and Home takes the width. */
+/* Its pane's line and its switch stand exactly where Forge's do, so going from Home to Forge (or back) nothing of the
+   pane moves: the page keeps Forge's margin at the right (s5), and the pane is Forge's W (a quarter of the page,
+   never under 280 px), less that margin, worked out from the page's own margins. */
+@media (min-width: 761px) { .page:has(> .home-layout) { padding-right: var(--s5); } }
+/* The room under Home's foot is the column's, not the page's: the pane is held in view only within the page's
+   content, so the page's own foot would push it up off the top line as Home is scrolled to its end. */
+.page:has(> .home-layout) { padding-bottom: 0; }
+.home-layout > .home-main { padding-bottom: var(--s6); }
+.page > .home-layout {
+  max-width: none; display: grid; column-gap: var(--s5); align-items: start; grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) calc(max(280px, (100% + clamp(var(--s5), 5vw, 72px) + var(--s5)) / 4) - var(--s5));
+}
+.home-layout.pane-closed { grid-template-columns: minmax(0, 1fr) calc(var(--h-row) + var(--line-frame)); } /* the switch and the line it no longer draws: the switch stays where it stood */
+/* It opens and closes as Forge's does: a wipe, landing a touch past and settling as it comes out. */
+.page > .home-layout { transition: grid-template-columns var(--move) var(--land); }
+.page > .home-layout:not(.pane-closed) { transition: grid-template-columns var(--slide) cubic-bezier(.2, 1.4, .32, 1); }
+.page > .home-layout.pane-closed { transition: grid-template-columns var(--leave) cubic-bezier(.4, 0, 1, 1); }
+@media (prefers-reduced-motion: reduce) { .page > .home-layout, .page > .home-layout:not(.pane-closed), .page > .home-layout.pane-closed, .work.bench, .work.bench:not(.pane-closed) { transition: none; } }
+/* The band, Forge's: from the rail's line to the pane's, the top line to a step under the search, plain ground (the
+   dots are the desk's, under it), held at the window's top while Home scrolls under it; its tools and its search
+   where Forge's are, to the pixel, so going between the two the frame is one (main.ts CAMERA). */
+.home-band {
+  grid-column: 1; grid-row: 1; position: sticky; top: 0; z-index: 7; display: flex; align-items: center;
+  margin: calc(-1 * var(--top-line)) calc(-1 * clamp(var(--s5), 5vw, 72px)) 0 calc(-1 * clamp(var(--s5), 5vw, 72px));
+  padding: var(--band) var(--s5) var(--s3); background: var(--ground);
+}
+/* Out to the page's own edges, whatever its margins are at this width (page.css, remote.css): never past them. */
+@media (min-width: 761px) { .home-band { margin-right: calc(-1 * var(--s5)); } }
+@media (max-width: 560px) { .home-band { margin-inline: calc(-1 * var(--s4)) 0; padding-left: var(--s4); padding-right: var(--s2); } }
+.home-band > .band-tools { display: flex; align-items: center; gap: var(--s2); }
+/* While the band's sheet is down, Home steps back out of sight under it as Forge's desk does, and comes back as it
+   goes up (reference.ts paintDown). */
+.home-layout > .home-main { transition: opacity calc(160ms * var(--pace)) ease-out; }
+.home-layout.sheet-down > .home-main { opacity: 0; transition-duration: calc(120ms * var(--pace)); }
+/* Its first line (the name) a step under the band. */
+.home-main { grid-column: 1; grid-row: 2; min-width: 0; width: 100%; max-width: 1080px; margin: 0 auto; padding-top: var(--s4); }
+.home-pane {
+  grid-column: 2; grid-row: 1 / span 2;
+  position: sticky; top: var(--outer-top); height: var(--inner-h); min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr);
+  /* Forge's pane, where Forge's is: from the page's top to its foot, out to its right edge (over the page's margin). */
+  margin: calc(-1 * var(--top-line)) calc(-1 * var(--s5)) 0 0; padding: 0 var(--s5) var(--s4) calc(var(--s5) - var(--line-frame));
+}
+/* Forge's line, where Forge's is: the pane's edge, top line to foot; put away, no pane, no line. */
+.home-pane { border-left: var(--line-frame) solid var(--ink); background: var(--ground); transition: border-color var(--motion); }
+/* Its switch at its foot, where Forge's is: its middle the person's at the rail's foot. */
+.home-pane > .pane-toggle {
+  position: absolute; right: var(--s5); bottom: calc(var(--s5) + var(--prompt-h) / 2 - var(--h-row) / 2); z-index: 6;
+  border-color: var(--ink); border-radius: var(--r-field);
+}
+.home-layout:is(.pane-moving, .pane-closed) .home-pane { overflow-x: clip; grid-template-columns: minmax(0, 1fr); }
+.home-layout.pane-closed .home-pane { padding-left: 0; border-left-color: transparent; transition: border-color var(--leave) cubic-bezier(.7, 0, 1, 1); }
+/* Put away, what it holds goes with its edge to the right, as wide as it was, cut at the window's edge, and is out of
+   sight (and of the keyboard) once the pane is; brought out, it comes in with the edge the same way (as Forge's). */
+.home-layout:is(.pane-moving, .pane-closed) .home-side { width: var(--side-held, auto); }
+.home-layout.pane-closed .home-side { visibility: hidden; transition: visibility 0s var(--leave); }
+/* Its first row where Forge's first run is: 2 px under the band's foot (the band is the column's, the pane its own), its
+   first line's capitals level with the rail's first icon (forge-band.css). */
+.home-side { min-height: 0; overflow: auto; padding-top: calc(var(--band) + var(--h-row) + var(--s3) + 2px); }
+/* Rows only, as Forge's pane: its heading is heard, not shown. */
+.home-side .lately > h2 { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* Lately's rows reach a step past its words on each side (their fill under the pointer, their edge opened): the pane
+   scrolls, and what scrolls clips, so its room is that much wider, its words where they were. */
+.home-side { margin-inline: calc(-1 * var(--s3)); padding-inline: var(--s3); }
+.home-side > .plugins { padding: 0; }
+
+/* Home's ground is the desk's: the dots Forge's boxes lie on, going by with Home as it scrolls (as with the desk's
+   camera) and with the page as the rail pans to it. Its pane keeps the plain ground over them, as Forge's does. */
+.page:has(> .home-layout) {
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--rule) 55%, transparent) 1.1px, transparent 1.4px);
+  background-size: 24px 24px; background-position: 12px 12px; background-attachment: local;
+}
+/* The ground is the frame's, as Forge's desk is: under the frame's foot (the window's margin there) plain, what
+   scrolls going under it rather than dots and words running on past the lines' ends. */
+.page:has(> .home-layout)::after {
+  content: ''; position: fixed; left: 0; right: 0; bottom: 0; height: var(--outer-bottom); z-index: 6; pointer-events: none; background: var(--ground);
+}
+/* Home's column measured for what is in it (its name fitted to its width by home.ts, its desk by the rules below). */
+.home-main { container-type: inline-size; }
+/* Under the name, what is the person's to do beside where it is done: the TODO, a box most of half the column wide, and
+   the repos and servers a column of their names; on a narrow column one under the other. */
+.home-desk { display: grid; grid-template-columns: minmax(0, 520px) minmax(240px, 1fr); gap: var(--s6) clamp(var(--s5), 6cqi, 80px); align-items: start; margin-top: var(--s6); }
+@container (width < 600px) { .home-desk { grid-template-columns: minmax(0, 1fr); } }
+.home-desk > .section, .home-places > .section { margin-top: 0; }
+.home-places { display: grid; gap: var(--s6); align-content: start; min-width: 0; }
+/* Each heading the mono label a desk's box has over it. */
+.home-desk .section > h2 { margin: 0 0 var(--s3); font: 600 15px/1 var(--mono); color: var(--ink); }
+/* The TODO a box on the desk: paper, an ink edge, its shadow; as tall as what is in it. */
+.home-main .todo-box { min-height: 0; border: 2px solid var(--ink); border-radius: var(--r-place); box-shadow: 6px 6px 0 0 var(--ink); }
+.home-main .todo-box:hover { border-color: var(--ink); }
+/* Its keys said under it on the ground while it is written in, not in a room kept for them inside it. */
+.home-main .todo-box { position: relative; }
+.home-main .todo-box > .todo-hint { position: absolute; top: calc(100% + var(--s4)); left: 0; right: 0; padding: 0; }
+/* Written in, the profile's sheet as wide as Home: the name's line as long as the name read is. */
+.home-main .edit { max-width: none; }
+/* The repos: a column of their names, each as large as a place is named, what it is beside it in the mono face; the
+   gear at the name's end under the pointer. Not cards: nothing round them but the ground. */
+.grid.home-repos { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.grid.repo-grid.home-repos > .card { min-height: 0; padding: 0; border: 0; border-radius: var(--r-field); background: transparent; justify-self: start; max-width: 100%; }
+.home-repos > .card.repo.gear-card { display: flex; align-items: center; }
+.home-repos > .gear-card > .card-open { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s3); width: auto; min-width: 0; padding: 2px var(--s2) 2px 0; }
+.home-repos > .gear-card > .card-open > .card-title { flex: none; max-width: 100%; padding: 0; font: 900 40px/1.05 var(--display); letter-spacing: -.02em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.home-repos > .gear-card > .card-open > :is(.card-summary, .muted:empty) { display: none; }
+.home-repos > .gear-card > .card-open > .muted { font: var(--t-meta) var(--mono); color: var(--sub); white-space: nowrap; }
+.home-repos > .gear-card > .card-open:hover > .card-title { text-decoration: underline 4px; text-underline-offset: 6px; }
+.home-repos > .gear-card > .repo-gear { position: absolute; top: 50%; left: 100%; translate: 0 -50%; }
+.home-repos > .gear-card > .repo-gear-pop { top: calc(100% + var(--s1)); right: auto; width: max(100%, 280px); }
+.home-repos > .card.repo.revealed { background: var(--raised); }
+.home-repos > .card.repo.held > .card-open > .card-title { color: var(--sub); }
+/* New repo after them, a quiet line in the mono face. */
+.home-repos > .card.new { display: inline-flex; align-items: center; gap: var(--s2); margin-top: var(--s3); padding: var(--s1) 0; border: 0; color: var(--sub); font: var(--t-meta) var(--mono); place-content: start; }
+.home-repos > .card.new .mark { width: var(--s4); height: var(--s4); }
+.home-repos > .card.new:hover { color: var(--ink); }
+/* The servers as the repos, a size smaller. */
+.home-places .home-servers { display: grid; gap: 2px; justify-items: start; }
+.home-places .home-servers > .chip { min-height: 0; padding: 0; border: 0; border-radius: var(--r-field); background: transparent; font: 900 28px/1.1 var(--display); letter-spacing: -.02em; color: var(--ink); }
+.home-places .home-servers > .chip:hover { text-decoration: underline 3px; text-underline-offset: 5px; }
+.home-places .home-servers > .guest-chip > .muted { margin-left: var(--s2); font: var(--t-meta) var(--mono); letter-spacing: 0; }
+.home-places .home-servers > .muted { font: var(--t-meta) var(--mono); }

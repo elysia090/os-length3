@@ -22,18 +22,21 @@ interrupts, a runtime x86→wasm JIT). xlat removes the machine instead:
   writer wait. Threads run here one at a time (each until it waits, or
   for a time slice taken at its calls), or each in its own Worker with
   memory shared, when the host allows SharedArrayBuffer
-  (`runtime/remote.mjs`).
+  (`runtime/remote.ts`); there a write to the console, as a read of the
+  clock, is done in the thread's own Worker (into an outbox the kernel
+  takes from, `runtime/channel.ts`), not asked of the kernel a line at a
+  time.
 - The translator also builds as wasm (`--target wasm32-unknown-unknown
-  --lib`, wrapped by `runtime/translator.mjs`) and gives byte-identical
+  --lib`, wrapped by `runtime/translator.ts`) and gives byte-identical
   output, so a browser translates the programs it runs.
-- The programs a Prompt runs are the release root's own (os/scripts/l3.mjs
-  makes l3 for the browser from it); `os/scripts/l3-runnable.mjs` says which
+- The programs a Prompt runs are the release root's own (os/scripts/l3.ts
+  makes l3 for the browser from it); `os/scripts/l3-runnable.ts` says which
   of them run under xlat today, against the same root run natively.
 
 ```
 cargo build --release
-node runtime/run.mjs PROGRAM [args...]            # host ELF as /bin/PROGRAM
-node runtime/run.mjs --root DIR /bin/sh -c '...'  # a host tree as /
+node runtime/run.ts PROGRAM [args...]            # host ELF as /bin/PROGRAM
+node runtime/run.ts --root DIR /bin/sh -c '...'  # a host tree as /
 sh tests/run.sh                                    # native vs translated
 xlat --trace IN OUT.wasm                           # record block entries
 ```

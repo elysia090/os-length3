@@ -70,7 +70,7 @@ tracked in issue #20.
   what is saved anywhere else is put into the shell's copy, so the shell,
   File, Forge and Git see one repo. Its one dependency is l3 (DESIGN.md,
   l3: the one base): in a browser, `public/l3`, made from the release root
-  by `scripts/l3.mjs`: `l3.json` (which l3, and the root's digest), an index
+  by `scripts/l3.ts`: `l3.json` (which l3, and the root's digest), an index
   of every path, a pack per package that a file is read from when a program
   first opens it, and the translator with BusyBox, l3 and git translated
   ahead of time. A first Prompt fetches about 0.8 MB (the index, the translator,
@@ -80,8 +80,8 @@ tracked in issue #20.
   is kept the same way, by the file it was made from, so the next Prompt
   reads it rather than translating it again. Make it
   with `npm run l3` (`scripts/l3.sh`: the translator from this tree and the
-  newest root `core/src/root.rs` pins), and check it against that root
-  with `npm run l3:parity -- ROOT public/l3`; `node scripts/l3-runnable.mjs
+  newest root `core/src/root/pins.rs` pins), and check it against that root
+  with `npm run l3:parity -- ROOT public/l3`; `node scripts/l3-runnable.ts
   public/l3 ROOT_DIR` says which programs of it run under xlat today.
 
 ## l3: the same OS on the command line
@@ -130,7 +130,7 @@ Length³ OS · length3.com
   ↑↓ choose · Enter open · 1-9 or a letter jumps · q leaves
 ```
 
-One table (`cli/src/spec.rs`) says every form: its words and what each
+One table (`l3/src/spec.rs`) says every form: its words and what each
 slot is (a repo, a path, an issue, text…), its flags, what it needs (the
 Remote; whether it may run inside the app's Prompt) and how it keeps in step
 with the Remote, and, for the menu, which forms make a purpose's page and
@@ -224,7 +224,7 @@ SSH and signs in to no Remote it is not signed in to already. l3 reaches
 it through a socket in the app's own folder of the data directory
 (`<data>/app/`, owner-only), which only the person can open; while the app
 runs it holds a lock there, which is how a second one knows it is open
-(`core/src/desktop.rs`).
+(`core/src/device/desktop.rs`).
 
 ### SSH into a repo's Prompt
 
@@ -338,7 +338,7 @@ to it first, and after every command each repo whose files differ from what
 was last agreed is sent (which differ is seen from the digests kept, so a
 repo in step costs no request). Home's settings kept on the Remote
 (profile, TODO, dotfiles) go the same way, by the app's protocol and rules
-(`core/src/home.rs`, as `src/remote/sync.ts`): a command that reads one (`l3
+(`core/src/home/`, as `app/remote/settings.ts`): a command that reads one (`l3
 todo`, `l3 profile`, `l3 dotfile`, `l3 prompt`) takes it in first, and one
 that differs from what was last agreed is sent after any command; two TODO
 lists changed on two devices are joined item by item. What a person does to the Remote is only
@@ -379,7 +379,7 @@ the app.
   version that reached the Remote first, and puts this device's beside it as
   "name (<this device>).ext". In a browser, closing the tab lets go of every
   copy the Remote holds all of.
-- Remote → Plan (`service/plan.ts`): the Remote decides what an account
+- Remote → Plan (`remote/plan.ts`): the Remote decides what an account
   may do; the app, the desktop app and `l3 remote plan` only show it. Free
   keeps 3 repos and 100 MB on the Remote and one name there; three tiers are
   paid for, Go (50 GB, $7 a month), Pro (256 GB, $14) and Max (512 GB, $19),
@@ -408,10 +408,10 @@ the app.
   prompt stop REPO`, `l3 network on|off REPO`; every Prompt, the app's or a
   terminal's, records itself while it runs); then the environment in effect.
 - Server (under Remote in the rail, laid over any page like File): the one
-  purpose whose subject is people, not a repo (`service/servers.ts`). A
+  purpose whose subject is people, not a repo (`remote/servers.ts`). A
   server is people who know each other (added from someone's Inbox
   contacts); its boards are each a conversation and a TODO they keep
-  together: Home's TODO box (`pages/todo-list.ts`), kept on the Remote item
+  together: Home's TODO box (`pages/kit/todo-list.ts`), kept on the Remote item
   by item and field by field, so people writing at once do not undo each
   other. Boards are boxes slid like the issues, each with its TODO pinned
   at its top and its talk under it; the plain box at the foot writes in
@@ -425,7 +425,7 @@ the app.
   and passes it on themselves; the guest picks a name, always shown as a
   guest's; guests are held to so many posts an hour, each and per board,
   and whoever invited one (or the owner) removes them with their posts.
-- Who sees a repo (`service/seen.ts`): only you, the servers it is shown
+- Who sees a repo (`remote/seen.ts`): only you, the servers it is shown
   in, or everyone, set on its card in Remote. Everyone sees it under the
   name it went public as: the server's (`trip@length3.com:hello`) when it
   went public from one, so nothing it answers names you; your own when you
@@ -433,17 +433,17 @@ the app.
 
 The webview has no other host access: it reads nothing outside the app's
 data directory, runs no shell and launches no root. The app starts no host
-program for a repo; its own tools run inside the root (`core/src/launch.rs`).
+program for a repo; its own tools run inside the root (`core/src/prompt/launch.rs`).
 
 The Remote (`service/`): Hono with Better Auth (provider sign-in, then
 passkeys; device authorization; bearer sessions) on Drizzle; Neon in
 production, PGlite in tests and here. Its schema is the migrations in
-`service/migrations`: those Drizzle generates from `service/schema.ts`, and
+`remote/migrations`: those Drizzle generates from `remote/schema.ts`, and
 `0001` for what Drizzle cannot say (the counted room, the service's role). A step that drops what
 the running Worker still reads is a contract step, tagged `NNNN_contract_…`
 (`drizzle-kit generate --name contract_…`): a deploy runs the migrations
 before it, ships the Worker, and runs it once the new Worker answers
-(`service/stages.ts`). The service connects as
+(`remote/stages.ts`). The service connects as
 `remote_worker_<when>`, a member of `remote_app`, which reads and writes rows
 and nothing else: a role the deploy makes new for each new `DATABASE_URL`
 (never one changed: Neon's owner is no superuser), dropping the ones before it
@@ -451,14 +451,14 @@ once the new Worker answers. A failure making it says its step and SQLSTATE,
 never the statement (which holds the password). What a page or a device asks
 every little while (what moved, what came, whether SSH is still on) is
 answered without the database while nothing was written, by the mark
-(`service/mark.ts`, a Durable Object, once `MARK` is bound in
+(`remote/mark.ts`, a Durable Object, once `MARK` is bound in
 `wrangler.toml`), so Neon sleeps while nobody does anything. What each part of it does, its routes and tables, and which
-of them the app and l3 need: `service/README.md`.
+of them the app and l3 need: `remote/README.md`.
 
 ```
-node service/dev.ts DIR 8787 http://localhost:1420     # the Remote, here (no plan: everything open)
-node service/dev.ts DIR 8787 http://localhost:1420 --no-bucket   # one that holds no files, as a Worker without R2
-LENGTH3_PLAN=1 node service/dev.ts DIR 8787 http://localhost:1420   # with the plan, bought from a stand-in for Stripe (its test cards: 4242 4242 4242 4242 pays, 4000 0000 0000 0002 is declined, 4000 0025 0000 3155 asks for 3-D Secure)
+node remote/dev.ts DIR 8787 http://localhost:1420     # the Remote, here (no plan: everything open)
+node remote/dev.ts DIR 8787 http://localhost:1420 --no-bucket   # one that holds no files, as a Worker without R2
+LENGTH3_PLAN=1 node remote/dev.ts DIR 8787 http://localhost:1420   # with the plan, bought from a stand-in for Stripe (its test cards: 4242 4242 4242 4242 pays, 4000 0000 0000 0002 is declined, 4000 0025 0000 3155 asks for 3-D Secure)
 LENGTH3_DEV_REMOTE=http://127.0.0.1:8787 VITE_LENGTH3_REMOTE= npx vite
 LENGTH3_REMOTE=http://127.0.0.1:8787 l3 login
 ```
@@ -470,7 +470,7 @@ the work on the device, say so, and send it once the Remote can hold it.
 
 On Cloudflare it is one Worker on one origin, the app's files and the Remote
 together (`wrangler.toml`), under one name: `os.length3.com` is the app, the
-Remote the desktop app and l3 sign in to (`core/src/remote.rs` DEFAULT_URL,
+Remote the desktop app and l3 sign in to (`core/src/remote/` DEFAULT_URL,
 the desktop CSP), what a domain's DNS record names (`remote=os.length3.com`,
 and `/.well-known/length3`) and where passkeys belong. Its former name,
 `remote.length3.com`, still reaches the same Worker, so released clients
@@ -487,7 +487,7 @@ a Remote for research, `ENTER_AS`, which is one person's): `FREE_REPOS`
 A tier is bought with Stripe when both keys and its price are given; with a
 key missing, or no price at all, billing is off and the Remote says paid
 features cannot be bought here yet. Stripe is reached over its REST API with
-fetch (`service/stripe.ts`: a customer, a Checkout session for a tier's
+fetch (`remote/stripe.ts`: a customer, a Checkout session for a tier's
 price, a portal session, what a price is; the webhook's signature checked
 with Web Crypto); tests and dev never reach it. To connect it:
 
@@ -508,10 +508,10 @@ with Web Crypto); tests and dev never reach it. To connect it:
    portal), with cancelling allowed, and switching plans allowed among the
    three products (the Plan opens it at the step that changes the tier).
 5. Checkout and the portal branded as the OS is (the Dashboard's Settings →
-   Branding, and Checkout's appearance): the icon `src-tauri/icons/128x128.png`,
+   Branding, and Checkout's appearance): the icon `desktop/icons/128x128.png`,
    background `#f9f8f5` (its paper), button `#2c2a27` (its ink), rounded
    corners, Inter. Chosen in mock rounds among what Stripe lets be set; the
-   stand-in draws the same (`service/devbilling.ts` LOOK), so what dev and the
+   stand-in draws the same (`remote/devbilling.ts` LOOK), so what dev and the
    selftests show is what a person paying sees.
 
 Each event is taken once by its id (kept 30 days in `billing_event`; one
@@ -526,16 +526,16 @@ to this repository, and its Settings → Build say, once:
 | | |
 |---|---|
 | Root directory | `os` |
-| Build command | `npm run build:cloudflare`: l3 for the browser from the release of the newest l3 `core/src/root.rs` pins (`scripts/prompt-files.mjs`, taken only at the index pinned for it), then the app |
-| Deploy command | `node service/deploy.ts`: the migrations on Neon's production branch (no branch is made for a deploy; a contract step waits until the new Worker answers), the bucket, then the Worker with the secrets it lacks (the first build prints the link in its log), then the release's files the Remote serves to anyone (`service/mirror.ts`): each root `core/src/root.rs` pins and the newest desktop app `shared/desktop-releases.json` pins, taken from the GitHub release where the bucket lacks them, checked against those pins, and put with wrangler |
+| Build command | `npm run build:cloudflare`: l3 for the browser from the release of the newest l3 `core/src/root/pins.rs` pins (`scripts/prompt-files.ts`, taken only at the index pinned for it), then the app |
+| Deploy command | `node remote/deploy.ts`: the migrations on Neon's production branch (no branch is made for a deploy; a contract step waits until the new Worker answers), the bucket, then the Worker with the secrets it lacks (the first build prints the link in its log), then the release's files the Remote serves to anyone (`remote/mirror.ts`): each root `core/src/root/pins.rs` pins and the newest desktop app `shared/desktop-releases.json` pins, taken from the GitHub release where the bucket lacks them, checked against those pins, and put with wrangler |
 | Variables and secrets | `NEON_PROJECT_ID`; secrets `NEON_API_KEY` (a Neon API key for the project) and `GITHUB_TOKEN` (optional, read-only: the deploy reads the release's files through GitHub's API, which limits a caller without one to 60 requests an hour; the build's Prompt is read from the public release without it) |
-| Non-production branch deploy command | `npx wrangler versions upload`: another branch's build uploads a version and never deploys (`service/deploy.ts` refuses to run for a branch other than main). The version has no preview URL (`wrangler.toml`: `workers_dev = false`, `preview_urls = false`), since it would run against production's database and bucket: it is checked that it builds. A version that brings a Durable Object class production has not made yet (`[[migrations]]`, as `mark` did) is refused by Cloudflare until main's deploy has made it. Never `npx wrangler deploy`, which would replace production from any branch, without its migrations or its bucket |
-| Branch control | main deploys; other branches build previews, each with the Prompt the tree ships (`scripts/prompt-files.mjs`, from the public release) |
+| Non-production branch deploy command | `npx wrangler versions upload`: another branch's build uploads a version and never deploys (`remote/deploy.ts` refuses to run for a branch other than main). The version has no preview URL (`wrangler.toml`: `workers_dev = false`, `preview_urls = false`), since it would run against production's database and bucket: it is checked that it builds. A version that brings a Durable Object class production has not made yet (`[[migrations]]`, as `mark` did) is refused by Cloudflare until main's deploy has made it. Never `npx wrangler deploy`, which would replace production from any branch, without its migrations or its bucket |
+| Branch control | main deploys; other branches build previews, each with the Prompt the tree ships (`scripts/prompt-files.ts`, from the public release) |
 
 The Prompt the web serves is a released one: a newer one ships by releasing
 it (a new version in `RELEASE`, `.github/workflows/release.yml`; without
-Actions, `scripts/release.sh` and `scripts/publish-release.mjs` by hand), then merging the pins
-the release proposes (Pin vX.Y.Z): l3's one entry in `core/src/root.rs`
+Actions, `scripts/release.sh` and `scripts/publish-release.ts` by hand), then merging the pins
+the release proposes (Pin vX.Y.Z): l3's one entry in `core/src/root/pins.rs`
 (the root, and the index the web reads it by) and the desktop app in
 `shared/desktop-releases.json`. A build
 takes only the l3 this tree pins, and a deploy puts on the Remote only the roots and
@@ -550,8 +550,8 @@ Cloudflare (`npx wrangler login`):
 
 ```
 npm run build:cloudflare
-OWNER_URL='postgresql://neondb_owner:…' node service/deploy.ts        # migrations, bucket, secrets, the Worker
-OWNER_URL='postgresql://neondb_owner:…' node service/deploy.ts link   # a new link, and every session of the account ends
+OWNER_URL='postgresql://neondb_owner:…' node remote/deploy.ts        # migrations, bucket, secrets, the Worker
+OWNER_URL='postgresql://neondb_owner:…' node remote/deploy.ts link   # a new link, and every session of the account ends
 ```
 
 Before a deploy, the migrations and the Remote can be verified on a Neon
@@ -588,36 +588,39 @@ The desktop app's build does not: its core is the app's own.
 
 ### Where the page's code is
 
-`src/` holds the page, a folder to each kind of thing it does; a module's
-tests stand beside it (`x.test.ts`).
+`src/` holds the page, a folder to each kind of thing it does, in layers: each takes only from those above it in this
+table, never from one below, and `pages/` is layered the same way within it (`scripts/layers.ts` holds both orders;
+`npm test` fails on an import against them, a type as much as a value). A module's tests stand beside it
+(`x.test.ts`), and may take from any layer they put together.
 
 | Folder | What is in it |
 | --- | --- |
-| `start.ts` | the page's first script: starts the core's worker, then runs the shell once the page is read |
-| `main.ts` | the shell: the rail, the page drawn for each place, the moves between them |
-| `pages/` | each place on the rail and its parts; Forge, Git, Server, Remote and Runtime have folders of their own, and `bench/` is the work bench Forge and Git stand on (the box, the Prompt's screen and terminal) |
-| `ui/` | what every page draws and moves with: elements (`dom.ts`), motion (`glide.ts`), the caret, focus, touch, icons |
+| `i18n/` | the words: English by default, wholly Japanese when chosen (`i18n.ts`), and the Japanese catalog |
+| `agent/` | the box's Agent: the models' makers, asking one, the work loop (it takes nothing else of the app) |
 | `core/` | the Rust core as a page runs it: its worker, its ABI, WASI over the browser's files |
+| `ui/` | what every page draws and moves with: elements (`dom.ts`), motion (`glide.ts`), the caret, focus, touch, icons |
+| `app/` | the two hosts and what the app stands on around the pages: the policy, plugins, the rail's purposes, pacing, errors |
+| `repos/` | what a repo holds and how it is read, and each repo kept in step with the Remote (`sync.ts`): issues, history, diffs, search, Edit's grammar, first lines |
+| `home/` | Home's own: the profile, the TODO, dotfiles, the band, the Prompts' network grant, what is half written |
+| `remote/` | talking to the Remote: the connection, Home's settings agreed (`settings.ts`), servers, Inbox, the plan, what is new, and the timing of it all (`lifecycle.ts`) |
 | `prompt/` | the Prompt's machine in a browser: l3's files and guest threads (`userland.ts`), the box's recall, SSH, the tree of `/` |
-| `remote/` | talking to the Remote: the connection, each repo kept in step (`sync.ts`), servers, Inbox, the plan, what is new, and the timing of it all (`lifecycle.ts`) |
-| `repos/` | what a repo holds and how it is read: issues, history, diffs, search, Edit's grammar, first lines |
-| `home/` | Home's own: the profile, the TODO, dotfiles, the band, what is half written |
-| `app/` | the two hosts and what the app is made of around the pages: the policy, plugins, the rail's purposes, pacing, errors |
+| `account/` | what this device holds for the person signed in: the Agent's key sealed by their passkey, and what is taken off before signing out |
+| `pages/` | each place on the rail: `kit/` what they share (a page's parts, its context, the pane, the TODO list, diffs, the ways to sign in and to the Plan), `bench/` the work bench Forge and Git stand on (the box, the Prompt's screen and terminal, the search), then `git/`, `forge/`, `file/`, `remote/`, `runtime/`, `server/`, `inbox/`, `home/`, `new-repo/`, `me/` |
+| `main.ts`, `start.ts` | the shell (the rail, the page drawn for each place, the moves between them) and the page's first script |
 | `testing/` | what tests stand on: the core in Node, a browser on a Remote in this process |
-| `i18n/` | the Japanese words (`i18n.ts` chooses) |
 
 ### One core, two hosts
 
 A repo, its history, the Remote's sync and Home's settings are the core's
 (`core/src/api.rs`): the app asks it through one Tauri command, and a page
 asks the very same code, built for `wasm32-wasip1`, in a worker of its own
-(`src/core/worker.ts`, `src/core/wasi.ts`) over files the browser keeps in
+(`app/core/worker.ts`, `app/core/wasi.ts`) over files the browser keeps in
 IndexedDB: what a listing needs of each file at once, its bytes when the core
-first wants them (`src/core/loader.ts`, read while the core waits, a repo
-read whole when a call goes over all of it). A page calls `core(name, args)` (`src/app/host.ts`) either way and
+first wants them (`app/core/loader.ts`, read while the core waits, a repo
+read whole when a call goes over all of it). A page calls `core(name, args)` (`app/host/host.ts`) either way and
 gets the same answers, the Remote's refusals included. Tabs of one browser
 take turns under one Web Lock and tell each other each file they wrote.
-Tests run it too: `src/testing/node-core.ts` is the same module in a Node worker,
+Tests run it too: `app/testing/node-core.ts` is the same module in a Node worker,
 its requests answered by the test's own Remote.
 
 Each build carries only its own host's part, decided when it is built
@@ -625,8 +628,8 @@ Each build carries only its own host's part, decided when it is built
 web's alone (the browser's core and its worker, l3 for the browser and xlat,
 passkeys) each has a `.desktop.ts` beside it with the same exports, which the
 app's build takes instead, and leaves out `public/l3`; Tauri's API
-(`src/app/tauri.ts`) has a `.web.ts` the web's build takes. `isNative`
-(`src/app/host.ts`) is that same fact, so a branch for the other host is dropped
+(`app/host/tauri.ts`) has a `.web.ts` the web's build takes. `isNative`
+(`app/host/host.ts`) is that same fact, so a branch for the other host is dropped
 too. The app's page is about 0.4 MB, the web's 1.3 MB with its core.
 
 ```
@@ -639,9 +642,9 @@ npm run verify:remote          # the Remote on a real Postgres: DATABASE_URL (se
 npx tauri dev                  # window against the Vite dev server
 npx tauri build --debug --no-bundle
 sh scripts/desktop.sh          # the .deb and the AppImage as they ship, l3 beside the app
-node scripts/styles-prune.mjs  # take out of the stylesheet the rules no element can match (--dry: only say which)
-node scripts/styles-split.mjs  # the stylesheet in parts by what each styles (src/styles/), in the cascade's order
-node scripts/styles-check.mjs  # the stylesheet against HEAD's: the same rules in the same order, the same built CSS
+node scripts/styles-prune.ts  # take out of the stylesheet the rules no element can match (--dry: only say which)
+node scripts/styles-split.ts  # the stylesheet in parts by what each styles (app/styles/), in the cascade's order
+node scripts/styles-check.ts  # the stylesheet against HEAD's: the same rules in the same order, the same built CSS
 ```
 
 ### CI
@@ -674,7 +677,7 @@ ends (an open PGlite keeps its process up for seconds).
 `npm run selftest` uses the web app the way a person does, in Chromium
 (`@playwright/test`, `selftest/`). One run builds the app for a Remote on
 its own origin into `selftest/.dist` (again only when a source is newer),
-starts a fresh Remote (`service/dev.ts` with a new temporary data
+starts a fresh Remote (`remote/dev.ts` with a new temporary data
 directory) and `vite preview` on free ports, and beside them, at the same
 time, a second pair whose Remote has the plan and Stripe's stand-in
 (`LENGTH3_PLAN=1`, for `billing.spec.ts`), runs every `selftest/*.spec.ts`
@@ -692,7 +695,7 @@ repository is read. About 95 journeys take about four minutes on four cores.
   `PLAYWRIGHT_BROWSERS_PATH` where one is installed).
 - The Prompt's tests are tagged `@slow` (the root's BusyBox and l3 through
   the translator) and run with `SELFTEST_SLOW=1` once `public/l3` holds l3
-  (`npm run l3`, or `node scripts/prompt-files.mjs`); the build then
+  (`npm run l3`, or `node scripts/prompt-files.ts`); the build then
   carries it. `first-prompt.spec.ts` measures what a first Prompt fetches.
 - CI (`selftest` in `.github/workflows/desktop.yml`) runs everything in four
   shards (`npm run selftest -- --shard=2/4` is one), retries a failure once,
@@ -734,7 +737,7 @@ person does, and it asserts what they then see. Writing one:
   (a file left unsaved while another device saves it), the page's clock is
   held: `app.forge.writeOn(…)`, `lookUntil(…)`, `writingDone()`.
 
-Icons in `src-tauri/icons` are generated from `src-tauri/icon.svg` with
-`npx tauri icon src-tauri/icon.svg -o src-tauri/icons` (its 32, 128, 256 and 512
+Icons in `desktop/icons` are generated from `desktop/icon.svg` with
+`npx tauri icon desktop/icon.svg -o desktop/icons` (its 32, 128, 256 and 512
 pixel PNGs, `.icns` and `.ico` are the ones kept); the web page's icon is that
 SVG itself (`index.html`).

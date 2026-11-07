@@ -6,14 +6,14 @@ name: Release
 # publishes the root
 # (every package made from this tree's pins by its recipe, os/root/build.sh,
 # with this tree's l3, os/root/assemble.sh), the web build (the app with
-# l3 for the browser: the same root as the browser reads it, os/scripts/l3.mjs
+# l3 for the browser: the same root as the browser reads it, os/scripts/l3.ts
 # and web-release.sh) and the desktop app (the
 # same UI, its Prompt running that root on the machine: a .deb and an
 # AppImage), with their digests. Then it proposes the pins to main as one
-# pull request (Pin vX.Y.Z: the root in os/core/src/root.rs, the desktop app
+# pull request (Pin vX.Y.Z: the root in os/core/src/root/pins.rs, the desktop app
 # in os/shared/desktop-releases.json); merged, they are what the tree ships:
 # devices trust the root by its digest, the web takes that l3, and the
-# Remote's deploy (os/service/deploy.ts) takes the pinned files from the
+# Remote's deploy (os/remote/deploy.ts) takes the pinned files from the
 # release and puts them on the Remote, which serves them to anyone. No
 # Cloudflare credentials are kept here.
 #
@@ -118,8 +118,8 @@ jobs:
         working-directory: os
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: node scripts/publish-release.mjs "$GITHUB_WORKSPACE/out"
-      # The pins the release wrote (release.sh: pin-root.mjs, pin-desktop.mjs), proposed to main as one
+        run: node scripts/publish-release.ts "$GITHUB_WORKSPACE/out"
+      # The pins the release wrote (release.sh: pin-root.ts, pin-desktop.ts), proposed to main as one
       # change; merged, the releases they no longer name are deleted (releases-prune.yml). A
       # pull request opened with this token runs no workflow; the pins are checked where they are read (the web
       # build, the deploy). Where the repository does not let Actions open pull requests, the branch is pushed and
@@ -133,8 +133,8 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git switch -c "$branch"
-          git add os/core/src/root.rs os/shared/desktop-releases.json
-          git commit -m "Pin $TAG: its root (os/core/src/root.rs RELEASES) and its desktop app (os/shared/desktop-releases.json)"
+          git add os/core/src/root/pins.rs os/shared/desktop-releases.json
+          git commit -m "Pin $TAG: its root (os/core/src/root/pins.rs RELEASES) and its desktop app (os/shared/desktop-releases.json)"
           git push "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" "$branch"
           gh pr create --base main --head "$branch" --title "Pin $TAG" \
             --body "What $TAG pinned as it was made (its notes say the same): merged, the tree ships it." \

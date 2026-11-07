@@ -166,7 +166,7 @@ test("a device's code is typed in Devices, and the device let in there as on the
   // The device takes its session, and comes in among the devices, to be signed out from its row as any other.
   const token = await l3.post('/api/auth/device/token', {data: {grant_type: 'urn:ietf:params:oauth:grant-type:device_code', device_code, client_id: 'l3'}});
   expect(token.ok(), await token.text()).toBe(true);
-  await expect(devices.getByRole('button', {name: /^Sign out /})).toHaveCount(1, {timeout: 15_000});
+  await expect(devices.getByRole('button', {name: /^Sign out /})).toHaveCount(1);
   await ask.getByRole('button', {name: 'Done'}).click();
   await expect(devices.getByRole('button', {name: 'Connect device'})).toBeFocused();
   await l3.dispose();

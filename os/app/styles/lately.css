@@ -1,0 +1,54 @@
+/* Lately's rows, in Home's pane and come in while one works: who wrote, what about, where. */
+/* Lately, in Home's pane: what waits since the person was last here, a row each in the rows the pane has for what was
+   done (pane-rows.css), opening where it stands. The rows of an agent's cards keep their badge and their deeds. */
+.lately { display: grid; gap: var(--s2); }
+/* A pane's own heads (Lately; Forge's and Git's Prompt; Server's People and Repos) are quiet, small and in the quiet
+   colour: they say what is under them, and what is under them is what is read. */
+/* Their line is the line their own letters would have had: a head stays on the line the center's file heads are on. */
+.lately h2, .side-part h3 { font: 600 var(--t-meta)/calc(var(--t-body) * 1.6) var(--sans); color: var(--sub); letter-spacing: .02em; }
+.lately-list { display: grid; gap: var(--s1); }
+.lately-row {
+  display: grid; gap: 2px; min-width: 0; padding: var(--s2) var(--s4); border: 1px solid var(--rule); border-radius: var(--r-place);
+  background: var(--paper); color: var(--ink); font: inherit; text-align: left; cursor: var(--cursor-hand); transition: border-color var(--motion);
+}
+.lately-row:hover { border-color: var(--edge); }
+/* A row tells, in two lines at most: its name (going on under itself where it must; its badge, its place and its slot
+   on its first line) and one line of what came, cut where it runs out of room: the rest is where the row goes. */
+.lately-what { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; font-weight: 600; line-height: 22px; }
+.lately-what > .lately-badge { align-self: flex-start; margin-top: -1px; }
+.lately-name { min-width: 0; overflow-wrap: break-word; }
+/* Where it is (its repo), quiet, at the right of its name. */
+.lately-place { flex: none; max-width: 40%; margin-left: auto; color: var(--sub); font: 400 var(--t-meta) var(--sans); overflow-wrap: anywhere; text-align: right; }
+/* The line it was left at, as written there: mono, as in Forge, its second line. */
+.lately-quote { color: var(--sub); font: var(--t-meta)/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* What a row is, at its head (pane.ts): who wrote, their initial on one of four soft tints (the same for the same name:
+   the marker's, a step done's, a removal's, the sky's), round; a file or a board, its mark alone, quiet, as File's.
+   The lines under it start where its name does. */
+.lately-badge { flex: none; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--raised);
+  color: var(--ink); font: 700 12px/1 var(--sans); }
+.lately-badge:not([data-tint]) { background: none; color: var(--sub); }
+.lately-badge > .icon { width: 14px; height: 14px; }
+.lately-badge[data-tint='0'] { background: var(--marker-soft); }
+.lately-badge[data-tint='1'] { background: var(--add-tint); }
+.lately-badge[data-tint='2'] { background: var(--del-tint); }
+.lately-badge[data-tint='3'] { background: var(--sky-tint); }
+.lately-row > .lately-quote { margin-left: calc(24px + var(--s2)); }
+/* Read whole as it is; only a word of pages (a message of thousands of letters) stops at six lines, its card has it all. */
+.lately-row > .lately-quote { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; line-clamp: 6; overflow: hidden; }
+.lately-none { margin: 0; }
+@media (max-width: 760px) {
+  .page > .home-layout, .home-layout.pane-closed { grid-template-columns: minmax(0, 1fr); }
+  .home-pane { display: none; }
+}
+
+/* What the agent brings (agent-cards.ts): a Lately row with its deeds under it, sliding in at the pane as word does.
+   An offer and a question are the ones that wait on the person: their row is ringed in the work's green. */
+.agent-cards { display: grid; gap: var(--s2); }
+.agent-cards:empty { display: none; }
+.agent-card { cursor: default; }
+.agent-card.offered, .agent-card.asking { box-shadow: 0 0 0 1px var(--done) inset; }
+.agent-quote { display: grid; gap: var(--s1); }
+.agent-finding { font-size: var(--t-meta); }
+.agent-fix { font-family: var(--mono); font-size: var(--t-meta); color: var(--sub); }
+.agent-acts { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; margin-top: var(--s1); }
+.agent-reply { flex: 1 1 12em; min-width: 0; }

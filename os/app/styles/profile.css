@@ -1,0 +1,69 @@
+/* Home's profile: the face, the name, the handle and the line about the person, the counts, and the profile written
+   in. */
+.grid.repo-grid .card { min-height: 152px; }
+.grid.repo-grid .card-title { font-size: var(--t-body); }
+/* What the repo is, under its name: its own words, two lines at most. */
+.card-summary { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--ink); }
+.card-summary:empty { display: none; }
+.card-summary ~ .muted { font-size: var(--t-meta); }
+
+/* Home: profile. The name alone at Home's top, as large as Home is wide (the --home-name of home.css), Cancel and
+   Save at its right while it is written. */
+.profile { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s5); align-items: start; }
+.profile:has(> .edit-acts) { grid-template-columns: minmax(0, 1fr) auto; }
+/* A name, handle or bio with a word longer than the line breaks in the word, never pushing the page sideways. */
+.identity { min-width: 0; }
+.identity :is(h1, .handle, .bio) { overflow-wrap: anywhere; }
+/* The name: as large as Home is wide, black and tight (DESIGN.md § Home), a long one balanced over lines; its left
+   edge set back by its first letter's own side bearing, so its ink stands on the TODO's edge under it. The handle a
+   step under it, clear of its descenders. */
+.identity h1 { margin-left: -.015em; font: 900 var(--home-name, var(--t-name))/.92 var(--display); letter-spacing: -.04em; white-space: nowrap; }
+/* Longer than its line at the least size (home.ts fitName): it breaks, balanced over its lines. */
+.identity h1.long { white-space: normal; text-wrap: balance; line-height: 1; }
+.identity > .handle { margin-top: var(--s2); font-family: var(--mono); }
+/* No name yet: the words for it as large, in the ground's own rule, a place for it rather than a name. */
+.identity .unset { color: var(--rule); }
+.handle { color: var(--sub); }
+.bio { margin-top: var(--s3); max-width: 60ch; white-space: pre-wrap; }
+/* Under the name, one quiet line in the mono face, as a desk's labels are: each count its figure in ink and its word,
+   then Edit profile, a dot between them. */
+.counts { margin-top: var(--s4); display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s2); color: var(--sub); font: var(--t-meta)/1.6 var(--mono); }
+.counts b { color: var(--ink); font-weight: 700; }
+.counts > * + *::before { content: '·'; content: '·' / ''; margin-right: var(--s2); color: var(--sub); }
+.profile-edit { color: var(--sub); }
+.profile-edit:hover { color: var(--ink); }
+/* Each count is the way to its section (home.ts toSection): under the pointer a raised fill round it, as a row's. */
+.count-go { margin: calc(-1 * var(--s1)) calc(-1 * var(--s2)); padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-field);
+  background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand); transition: background-color calc(200ms * var(--pace)) ease-out; }
+.count-go:hover { background: var(--raised); transition-duration: calc(60ms * var(--pace)); }
+/* Its section's heading lit as it is come to. */
+.section > h2.landed { animation: landed 1200ms ease-out; border-radius: var(--r-field); }
+/* The profile written where it is read: each line as it reads (the name as large, the handle and the line about the
+   person as quiet), written on rather than boxed, a rule under each and ink under the one with the keyboard. */
+/* Written in, the profile is a sheet of its own, as the TODO is when written in: `paper` with an `ink` edge round the
+   face and the lines, grown out around them so nothing on it moves (at the right, within the column: its edge is
+   the TODO box's, clear of the pane's line). */
+.profile { border: 1px solid transparent; border-radius: var(--r-place); transition: background calc(200ms * var(--pace)) ease-out, border-color calc(200ms * var(--pace)) ease-out; }
+/* Folded, its edges close in on what it holds as its ground and edge go (home.ts draw), its margins taking back what
+   its padding gave in step, so nothing on it or under it moves; opened, they stand out at once (the sheet's height
+   goes from the room it took). It holds what fades where it stood as it folds (home.ts leave). */
+.profile:not(.editing) { margin-inline: -1px; transition-property: background, border-color, margin, padding; }
+.profile { position: relative; }
+.profile.editing { margin: calc(-1 * var(--s4)) 0 calc(-1 * var(--s4)) calc(-1 * var(--s5) - 1px); padding: var(--s4) var(--s4) var(--s4) var(--s5); border-color: var(--ink); background: var(--paper); }
+.edit { display: grid; gap: var(--s3); max-width: 480px; min-width: 0; }
+.edit .name-in, .edit .handle-in, .edit .bio-in {
+  width: 100%; min-width: 0; min-height: 0; margin: 0; padding: 0; border: 0; border-bottom: 1px solid var(--rule); border-radius: 0;
+  background: transparent; color: var(--ink); font: inherit; transition: border-color var(--motion);
+}
+/* Written where it is read, as large: the line is the name's own face and size, the same step clear of the handle
+   under it as when read (so the sheet stands as tall as the profile, and nothing under it moves back). */
+.edit .name-in { font: 900 var(--home-name, var(--t-name))/normal var(--display); letter-spacing: -.04em; margin-bottom: var(--s1); }
+.edit .handle-field { display: flex; align-items: baseline; color: var(--sub); }
+.edit .handle-in { flex: 1; color: var(--sub); }
+.edit .bio-field { display: flex; }
+.edit .bio-in { max-width: 60ch; line-height: 1.6; resize: none; overflow: hidden; white-space: pre-wrap; }
+.edit :is(.name-in, .handle-in, .bio-in) { padding-bottom: 2px; }
+.edit :is(.name-in, .handle-in, .bio-in)::placeholder { color: var(--sub); font-weight: 400; opacity: .7; }
+.edit :is(.name-in, .handle-in, .bio-in):focus, .edit :is(.name-in, .handle-in, .bio-in):focus-visible { outline: none; border-bottom-color: var(--ink); }
+/* Cancel and Save at the name's right, on its line. */
+.edit-acts { display: flex; gap: var(--s2); margin-top: calc((var(--home-name, var(--t-name)) * 1.21 - var(--h-control)) / 2); }

@@ -14,10 +14,10 @@ issue and, if you want, you.
 
 In scope:
 
-- the Remote at `os.length3.com` (`os/service`);
-- the web app (`os/src`);
-- the desktop app (`os/src-tauri`);
-- `l3` and its core (`os/cli`, `os/core`), including the Prompt's sandbox and
+- the Remote at `os.length3.com` (`os/remote`);
+- the web app (`os/app`);
+- the desktop app (`os/desktop`);
+- `l3` and its core (`os/l3`, `os/core`), including the Prompt's sandbox and
   `l3 ssh`;
 - the release workflows (`.github/workflows`).
 
@@ -29,7 +29,7 @@ Out of scope:
   Prompt is a sandbox, so an escape from it is in scope.
 
 Never test against another person's account or data. Testing against your own
-is welcome, and so is a Remote of your own (`node os/service/dev.ts`).
+is welcome, and so is a Remote of your own (`node os/remote/dev.ts`).
 
 ## Supported versions
 
@@ -46,9 +46,9 @@ The whole model is in `os/DESIGN.md`, Part II:
 - §6, "The canonical copy is on the Remote" and "The Remote";
 - the Prompt, under "One OS, two ways in".
 
-The Remote's checks, item by item, are in `os/service/README.md` ("What every
+The Remote's checks, item by item, are in `os/remote/README.md` ("What every
 request passes, and the one secret") and are tested in
-`os/service/security.test.ts`.
+`os/remote/security.test.ts`.
 
 - **Who someone is.** GitHub, Google or Apple say it once, and then a
   passkey does. Passkeys require user verification. A device is a session
@@ -57,7 +57,7 @@ request passes, and the one secret") and are tested in
   reads it; the Remote hands a page no token, ever), taken only from the
   app's own pages; on a device (the app, l3) it is a bearer token from the
   device flow, kept apart from everything the app's page reads
-  (`os/core/src/vault.rs`), and the page asks the Remote through the core.
+  (`os/core/src/device/vault.rs`), and the page asks the Remote through the core.
   Either is taken only signed with the Remote's secret.
 - **Secrets on a device.** The session's bearer and the Agent's key are kept
   in the OS's keyring (the Keychain, Credential Manager without roaming, the
@@ -70,16 +70,16 @@ request passes, and the one secret") and are tested in
   that is a session's being seen and ended from any other device, and
   Prompts never seeing the folder they are kept in.
 - **What is trusted for what.** The Remote holds one secret and derives one
-  key a purpose from it (`os/service/keys.ts`). A domain's name is trusted
+  key a purpose from it (`os/remote/keys.ts`). A domain's name is trusted
   while its DNS names this Remote and account. A root is trusted only by the
-  digest pinned in `os/core/src/root.rs`, and so is the browser's copy of
+  digest pinned in `os/core/src/root/pins.rs`, and so is the browser's copy of
   it: its index by the digest pinned beside it, each pack by the table of
   its files' digests that names it, each file read from a pack by its line
-  of that table (`xlat/runtime/table.mjs`), before any of it is used.
+  of that table (`xlat/runtime/table.ts`), before any of it is used.
 - **What runs where.** A Prompt runs a distribution's root on the device's
   own kernel without privilege: user, mount, pid, ipc, uts and network
   namespaces, a read-only root, no_new_privs and a seccomp filter
-  (`os/core/src/seccomp.rs`). Its network is a per-device grant. The desktop
+  (`os/core/src/prompt/seccomp.rs`). Its network is a per-device grant. The desktop
   webview runs only the app's own files and may only listen for events and
   set its title.
 - **What is out of reach.**

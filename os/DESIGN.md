@@ -158,11 +158,13 @@ Every value in `styles.css` comes from a token (§2).
     each), so the eye is led through it heading first and the arrival lasts
     long enough to be followed; what is read a moment later takes its turn
     where it stands. Its figures count up from nothing, its bars fill.
-  - *The caret is a thing that moves.* The OS draws it (a 2 px stroke of
-    `ink`): it glides from where it was to where it is (a letter typed, a
-    line gone down, a press elsewhere, 70 ms), so what is written is seen
-    being written and Enter sweeps it to the next line's start; solid while
-    it moves, blinking once it rests. It keeps to its field whatever moves
+  - *The caret is a thing that moves.* The OS draws it (a 1.5 px stroke of
+    `ink`): it glides from where it was to where it is (a line gone down, a
+    press elsewhere, 70 ms), and Enter sweeps it to the next line's start; a
+    letter written or taken away moves it at once, in the frame the letter
+    is drawn in, so it always stands after what was just written (gliding,
+    it stood over that letter, one behind at every key); solid while it
+    moves, blinking once it rests. It keeps to its field whatever moves
     it: carried at once with a field that moves (a page still coming in), and
     gliding back to the start of one the page empties (a message sent). A
     selection is the browser's own, as is the caret of a file too long to
@@ -173,7 +175,7 @@ Every value in `styles.css` comes from a token (§2).
     pace to its 280), inert on its way; a folder closed folds up and one
     opened unfolds, what stands under it making way; an ask answered, an
     offer put off, the issue being written put back with Not now fold or
-    fade away before what they stood over comes back; the paths Tab listed
+    fade away before what they stood over comes back; the paths → listed
     under the box go as the next key is pressed; a file's unsaved dot goes
     as it is saved; a place's name on the rail slides back into its edge as
     the pointer leaves. Shown again on its way out, it stays: it comes back
@@ -925,12 +927,12 @@ nobody else can take it and be taken for its owner:
 | a repo shown in a server | its owner, lent to the server | its Remote | taken off, or its owner leaves the server: at once |
 | a repo's public name (`face:name`) | its owner, under a face | the face (the server, or the owner's address) | taken down, or the face goes: 30 days no one else's repo answers to it |
 | a board, its talk and TODO | its server | its Remote | removed by its owner: 30 days, back at once until then, then gone; or with its server |
-| a copy on a device | the device | the digests | taken back whenever room is wanted (owned.rs) |
+| a copy on a device | the device | the digests | taken back whenever room is wanted (core/src/prompt/writes.rs) |
 | a session, a code | the person | sign-in | a lease: days for a session, minutes for a code |
 | a guest's invitation | the one of its people who made it, lent to whoever they hand it | its Remote, and its digest | used, revoked, its maker leaves the server, or a week (at most 30 days) |
 | a guest | the board, by an invitation | its token's digest | a lease of 30 days; removed (their posts with them), or the board stops taking guests: at once |
 
-What goes, goes in one place, once a day (`service/sweep.ts`): nothing a
+What goes, goes in one place, once a day (`remote/sweep.ts`): nothing a
 person asks for purges anything on the way, and a file no tree names any
 more goes with the rest.
 
@@ -972,9 +974,9 @@ the same thing for the desktop app and for the web.
   (the version in `RELEASE`).
 - **Digest.** Its identity is the sha256 of its root,
   `os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst`. One entry of
-  `core/src/root.rs` RELEASES pins it, for both ways in: `sha256` and
+  `core/src/root/pins.rs` RELEASES pins it, for both ways in: `sha256` and
   `bytes`, the root; `web`, the sha256 of the index the browser reads the
-  same root by. The release writes that entry (`scripts/pin-root.mjs`) and
+  same root by. The release writes that entry (`scripts/pin-root.ts`) and
   it is committed; nothing else pins l3.
 - **What it holds.** Sixty-three packages, each made from the source this
   tree pins (`root/sources.env`) by its recipe
@@ -987,11 +989,13 @@ the same thing for the desktop app and for the web.
   `cc` makes a static PIE, hardened as the root's own programs are,
   unasked), git with delta and Git LFS, curl, wget, OpenSSL, OpenSSH's
   client, rsync, bash, the searches and finders a developer's hands know
-  (GNU grep, ripgrep, fd, fzf, zoxide), jq and yq, sqlite3, tmux, htop,
-  ncdu, lazygit, direnv, just, hyperfine, age, tldr with its pages, nano,
-  apk and the rest, and `/etc`, where each tool is set up to work with the
-  others (git's diffs through delta, lazygit's too; fzf's list from fd; the
-  shell's cd teaching zoxide and loading direnv). Every program, C, Rust or
+  (GNU grep, ripgrep, fd, fzf, and `you`, this repository's own: z's
+  memory of places, in `kernel/you`, one unit of C with no C library), jq
+  and yq, sqlite3, tmux, htop, ncdu, lazygit, direnv, just, hyperfine,
+  age, tldr with its pages, nano, apk and the rest, and `/etc`, where each
+  tool is set up to work with the others (git's diffs through delta,
+  lazygit's too; fzf's list from fd; the shell's cd teaching `you` and
+  loading direnv). Every program, C, Rust or
   Go, is a static PIE with full RELRO, stripped, and nothing is done to it
   after the linker; every unit of C in it, and in every library, was
   compiled with the hardening the build machine's GCC is set to give
@@ -1021,14 +1025,14 @@ the same thing for the desktop app and for the web.
   device's Remote, then the publisher's (each deploy mirrors every pinned
   root to its bucket), then the release itself.
 - **In a browser**, the same root is read through xlat (`public/l3`, made
-  from the root itself by `scripts/l3.mjs`, never from anything built
+  from the root itself by `scripts/l3.ts`, never from anything built
   beside it): `l3.json` (which l3: its version and the root's digest), an
   index of every path (type, mode, link target; where each file's bytes
   are), a pack per package of the root, each file a zstd frame, and blobs
   for the translator and the hot programs (BusyBox, l3 and git) with their
   translations. Everything but `l3.json` is named by its digest; a pack by
   the digest of its table, the SHA-256 of each file it stores, at its head
-  (`xlat/runtime/table.mjs`), so a file read alone from it is checked as
+  (`xlat/runtime/table.ts`), so a file read alone from it is checked as
   the whole pack would be, and one that is not what its table says is not
   used (its read fails with EIO, and says why). A Prompt fetches the index,
   the translator and BusyBox with its translation; every other file comes
@@ -1044,14 +1048,18 @@ the same thing for the desktop app and for the web.
   fetched is kept by digest (Cache Storage; the packs in the browser's HTTP
   cache), checked whenever it is read, and only within a quarter of what
   the browser says this origin may hold, the least recently used going
-  first; what the current l3 does not name goes. Runtime lists it under
-  この端末 and frees it like anything derived.
+  first; what the current l3 does not name goes. What is kept is joined,
+  sealed with its digest and put there by the worker that checks l3's files,
+  never on the page's thread (a translation of tens of MB, copied and put
+  there, held it 20–60 ms a time); a translation made ahead comes to the page
+  moved, not copied. Runtime lists it under この端末 and frees it like
+  anything derived.
 - **The same content.** The web's tree is the root's: every path, type,
   mode, link target and sha256 the same as the root l3 installs
   (directories at least 0700, files without set-id bits, as the installer
-  makes them). `scripts/l3-parity.mjs` proves it on every release and in CI;
+  makes them). `scripts/l3-parity.ts` proves it on every release and in CI;
   a program that xlat cannot run yet still ships, and
-  `scripts/l3-runnable.mjs` says which, against the same root run natively.
+  `scripts/l3-runnable.ts` says which, against the same root run natively.
 - **One release, one pin.** The release makes the root, then l3 for the
   browser from it (checked by the parity), pins both in one entry, and only
   then builds the web app and the desktop app, which both trust that entry.
@@ -1104,7 +1112,7 @@ the person meets none of the machinery that keeps them:
 A task goes offered → waiting → working → ready, or asking (its reply sends
 it on), done (looked at, or its issue merged), dropped (later), stopped (it
 could not run: why, and the one fix, such as `l3 network on REPO`). Those
-are the core's words (`core/src/tasks.rs`, `<data>/tasks/tasks.json`, never
+are the core's words (`core/src/agent/tasks.rs`, `<data>/tasks/tasks.json`, never
 sent). The person sees an offer to hand over, the work going on in its
 issue's box, a question with a field to answer it, something to look at,
 or what could not go on: no stage, queue, session or hook.
@@ -1143,7 +1151,7 @@ Lately).
 
 What a person runs (a Prompt, a task handed to an agent, a repo's tests) is
 compute, and the OS treats it as one thing whatever runs it: a **Spec**
-says what a run is made of, never where (`core/src/compute.rs`): the root
+says what a run is made of, never where (`core/src/compute/spec.rs`): the root
 by its sha256, the environment by the key of what set it up (the root's
 sha256, `.packages`, `.setup`: `launch::environment_key`), the repo and
 its line, what runs and what it is told, whether it asks for the network,
@@ -1310,7 +1318,7 @@ close` closes it as its window's close button does, and nothing else: what
 it saved stays, and what l3 runs (SSH, a Prompt in a terminal) goes on.
 Opening it turns nothing on: no network listening, no SSH, no Remote. It is
 reached through a socket in its own owner-only folder of the data
-directory (`core/src/desktop.rs`).
+directory (`core/src/device/desktop.rs`).
 
 ### The command line without learning it first
 
@@ -1374,7 +1382,7 @@ at a terminal is used the same way, and stays a command line:
   quiet line that `l3 next` chooses one with the keys. `l3 next` opens them: the same row walked with
   ←→ and Enter, Enter alone or Esc going on, each deed done as its command
   and those after it offered again.
-- **One table drives both.** A deed is a form of `cli/src/spec.rs` with what
+- **One table drives both.** A deed is a form of `l3/src/spec.rs` with what
   the menu needs beside it: its word in both languages, what it is pressed
   on, the facts it is offered under, the words it gives itself, what it
   asks, its weight. Each page notes its things and their facts while it is
@@ -1398,8 +1406,8 @@ at a terminal is used the same way, and stays a command line:
   `--json`, with `TERM=dumb`, or with `L3_PLAIN=1` (the one switch that keeps
   a terminal plain too, for a screen reader that prefers it or a recorded
   session), nothing is offered or asked, and what l3 writes and how it exits
-  are byte for byte what they were (`cli/tests/plain.rs` keeps the
-  transcripts; `cli/tests/menu.rs` drives the menu through a real pty).
+  are byte for byte what they were (`l3/tests/plain.rs` keeps the
+  transcripts; `l3/tests/menu.rs` drives the menu through a real pty).
 
 ### What l3 writes
 
@@ -1510,14 +1518,14 @@ Linux).md"), so neither is lost and the name says whose it is on every
 device.
 Files that cannot travel (a link, a file over 16 MB, a repo's own `.git`)
 are named and never sent; a repo holding them is never let go. Nor does a
-file that holds a secret (core/src/secrets.rs): a model maker's API key, a
+file that holds a secret (core/src/device/secrets.rs): a model maker's API key, a
 Stripe live key, a GitHub token, or this device's own sign-in. A Prompt has
 the Agent's key in its environment, so whatever runs there could write it
 into a file; read before it goes, as a push is read by GitHub's push
 protection, that file stays here unsent, said as `secret sk-ant-…a9AA`, and
 Commit says which until it is taken out. Home's
 settings (profile, TODO, dotfiles) are kept there too, by the app and l3
-alike (src/remote/sync.ts, core/src/home.rs: one protocol, one record of what was
+alike (app/remote/settings.ts, core/src/home/: one protocol, one record of what was
 agreed), each changed only from the version it was read at: unchanged
 here, the Remote's is taken; changed on both sides, two TODO lists are
 joined item by item, and any other setting is the Remote's. The band, the
@@ -1555,7 +1563,7 @@ in the app itself, and adding a passkey, linking a provider and setting
 the code (Add, Link, Set in the browser) open the Remote's own page there
 at Sign-in; a repo's switch and Discard ask in its card as on the web, and
 Continue in the browser opens that repo's card there with its ask already
-open (`core/src/account.rs` app_page names only that page, of the Remote's
+open (`core/src/remote/account.rs` app_page names only that page, of the Remote's
 own app, the way a sign-in's page is checked). Done there, the page says
 to go back; the app reads again what changed when its window comes back.
 Every device is a session, listed on the Remote page and ended
@@ -1563,10 +1571,10 @@ from any other. What proves a session is held where no page reads it. In a
 browser it is the session's cookie (`__Host-`: Secure, HttpOnly,
 SameSite=Lax), which the browser sends and no script reads, so a script
 that should not be on the page cannot carry the session off: the Remote
-hands a page no token, ever (`service/auth.ts`), and the browser's core
+hands a page no token, ever (`remote/auth.ts`), and the browser's core
 sends the cookie with its own requests. A device (the app, l3) holds a
 bearer from the device flow, kept apart from everything a page reads
-(`core/src/vault.rs`, never in Home's state, which a page reads and which
+(`core/src/device/vault.rs`, never in Home's state, which a page reads and which
 is synced): in the OS's own keyring (the Keychain, Credential Manager on
 this computer alone, the Secret Service over D-Bus from Rust alone, so the
 static l3 reaches it as the app does), encrypted at rest with what the
@@ -1592,12 +1600,12 @@ What leaves this system is kept to what is said here:
   descriptors passed between processes) and TCP, UDP and ICMP to this
   machine's own addresses (127.0.0.0/8, ::1; a server and its client, as
   `openssl s_server` and curl are; ping) are channels inside its kernel
-  (xlat/runtime/sys-net.mjs), and what it is told of its network (netlink as
+  (xlat/runtime/sys-net.ts), and what it is told of its network (netlink as
   `ip` and `ss` read it, the interface ioctls, /proc/net) is that machine's:
-  lo alone (xlat/runtime/net-view.mjs). Every other address is no one's to
+  lo alone (xlat/runtime/net-view.ts). Every other address is no one's to
   bind (EADDRNOTAVAIL) and unreachable (ENETUNREACH), and every other family
   is refused as a host without it refuses it (EAFNOSUPPORT).
-  xlat/tests/boundary.test.mjs holds the line, and xlat/tests/c/inet.c and
+  xlat/tests/boundary.test.ts holds the line, and xlat/tests/c/inet.c and
   icmp.c compare with native. The page itself
   may reach its own origin, the Remote and, for the box's Agent, the APIs of
   the models' makers whose keys it knows (agent/makers.ts), nothing else: the
@@ -1607,12 +1615,12 @@ What leaves this system is kept to what is said here:
   machine (connection.ts leaveFor); the desktop opens only Stripe's or the
   Remote's own (account.rs). The Remote answers only the app's origins. From the host (the app
   and l3: the Remote, a release, a distribution's root) it goes one way
-  (core/src/net.rs), taking of the host only what the machine already
+  (core/src/device/net.rs), taking of the host only what the machine already
   decided: its proxy (HTTPS_PROXY, minus NO_PROXY, never for the machine
   itself) and the certificates it trusts (its store or SSL_CERT_FILE,
   beside the bundled ones).
 - **The root.** In the app a Prompt is the distribution's root, run by this
-  machine's kernel without privilege (`l3 prompt`, core/src/launch.rs): a user
+  machine's kernel without privilege (`l3 prompt`, core/src/prompt/launch.rs): a user
   namespace makes the user root inside it only; its own mount, pid, ipc,
   uts and network namespaces (no network unless granted); the root
   read-only, the repo the only writable place of the person's, fresh
@@ -1620,7 +1628,7 @@ What leaves this system is kept to what is said here:
   made for each Prompt, holding only the ptys opened in it, none of the
   host's sessions); an environment set, not inherited (no
   host home, keys, agent or variables); and a seccomp filter
-  (core/src/seccomp.rs) over all of it, so the kernel answers none of what a
+  (core/src/prompt/seccomp.rs) over all of it, so the kernel answers none of what a
   sandboxed program has no use for and escapes are found through: ptrace,
   mounting, new namespaces, modules, kexec, bpf, perf, keys, userfaultfd,
   io_uring, typing into the terminal it was started from (TIOCSTI) (strace and gdb do not run in a Prompt; a shell, compilers,
@@ -1638,8 +1646,8 @@ What leaves this system is kept to what is said here:
   checked by digest before it is read, unpacked refusing anything that
   would land outside, go through a link or be a device. It is fetched from
   the Remote this device uses, then the publisher's Remote, which each of
-  its deploys fills with every root pinned in `core/src/root.rs`
-  (`service/mirror.ts`), and last from the GitHub release, which answers
+  its deploys fills with every root pinned in `core/src/root/pins.rs`
+  (`remote/mirror.ts`), and last from the GitHub release, which answers
   only while the repository is public; when none has it, the error says
   what each said.
 - **Host.** The app starts no host program for a repo: history is the
@@ -1662,12 +1670,12 @@ apart: Postgres holds everything said here, the bucket only file contents,
 and a Remote without a bucket does all the rest and says plainly that it
 cannot hold files now, so a device keeps its work until it can. Each part,
 its routes and tables, and what the app and l3 need of it that a page does
-not: `service/README.md`.
+not: `remote/README.md`.
 
 ### The plan: the Remote decides what an account may do
 
 Billing lives on the Remote. The Remote alone decides what an account may
-do (`service/plan.ts`); every client, the web app, the desktop app and l3,
+do (`remote/plan.ts`); every client, the web app, the desktop app and l3,
 only shows what it says (Remote → Plan, `l3 remote plan`) and asks. No
 client counts, guesses or greys out on its own.
 
@@ -1732,7 +1740,7 @@ allowance still holds, and the Remote says paid features cannot be bought
 here yet. A Remote given no plan (a Remote of one's own, development unless
 asked, a Remote for research) has no allowance at all.
 
-**Stripe's stand-in** (`service/devbilling.ts`), on a Remote of one's own
+**Stripe's stand-in** (`remote/devbilling.ts`), on a Remote of one's own
 asked for the plan (`LENGTH3_PLAN=1`) and the selftest's, looks and does as
 Stripe's pages do in test mode, so the way from the Plan to paying and back
 is the one people meet; it is Stripe's look, not this language's, and says
@@ -1749,7 +1757,7 @@ credited), the card (the same form and test cards), the invoices, cancelling
 at the period's end and Renew plan to keep it, and, marked as not Stripe's,
 test controls (a payment fails, a payment goes through, it ends now). Each
 step sends the Remote the events Stripe would, signed, before the page goes
-on. The development sign-in provider (`service/devoauth.ts`) asks as a real
+on. The development sign-in provider (`remote/devoauth.ts`) asks as a real
 one does: a name, then what length3 asks of it (your name and email), Allow
 or Cancel; Cancel comes back with the error a provider sends then.
 
@@ -1818,15 +1826,24 @@ Each page below says only what is its own; the rest is Part I.
 
 ### Home
 
-A profile, between a Twitter and a GitHub profile, that reads the same for
-its owner and for anyone else; only the owner gets "edit". In order:
-identity (avatar, name, @handle, bio, counts of repos and servers; no name
-written yet, it is the one signed in with, as Remote and the Me menu say
-it: one person, one name, never "No name yet" beside "Signed in as Sora") →
-**TODO** → repos → servers (each one is in, a chip that opens Server on it;
-after them each board this browser writes in as a guest, #board with its
-server and guest beside it, opening Server at that board alone, so a guest
-come back, signed in or not, is led back to it).
+A profile that reads the same for its owner and for anyone else; only the
+owner gets "edit". Bold, minimal, sure of itself: on the desk's dotted ground
+(the dots Forge's boxes lie on), the person's name alone across the top, as
+large as Home's column lets it be on one line (up to 168 px, fitted by
+measuring it; never under 40 px, where a longer name breaks instead), and
+under it one quiet mono line: the counts of repos and servers, then Edit
+profile. No face in the column: the rail's own icon is the face. No name
+written yet, it is the one signed in with, as Remote and the Me menu say it:
+one person, one name, never "No name yet" beside "Signed in as Sora"; none at
+all, "No name" stands as large in the ground's rule colour. Under the
+name, side by side: **TODO**, a box as Forge's are (paper, an ink edge, its
+shadow), as tall as what is in it and most of half the column wide; and
+beside it the repos and servers, each a name in the display face, what it is
+beside it in mono (a repo: when it last changed), New repo a quiet mono line
+after them. Each server one is in opens Server on it; after them each board
+this browser writes in as a guest, #board with its server and guest beside
+it, opening Server at that board alone, so a guest come back, signed in or
+not, is led back to it. On a narrow column the two go one under the other.
 TODO is the person's single list; repos do not carry their own inbox or
 TODO files. An item is a first line named like an issue ("Fix：件名",
 "買う：種"), then detail lines (starting on the first line's column, with a
@@ -1838,15 +1855,14 @@ ones together by Clear done. Done strikes through and fades the first line, the 
 across its words from the kind's start as the mark pops (taken back, it goes
 back the way it came), and its detail goes quiet with it, still there to read.
 A detail opened or put away moves the items under it down or up to make room,
-never jumping them. The repos are large cards, three across at a
-laptop's width (two, then one, as it narrows); each is a repo in a list as
-Runtime says it: its body the repo itself, opened in Forge, its gear what
-is done to the repo (its card on the Remote, Rename, Free, Delete).
+never jumping them. Each repo's name is a repo in a list as Runtime says it:
+the name the repo itself, opened in Forge, its gear at the name's end under
+the pointer what is done to the repo (its card on the Remote, Rename, Free,
+Delete).
 
 What a hand goes to without being told answers it, here and on every page:
 each count is the way to its section further down (a raised fill under the
 pointer; pressed, the page goes there and its heading lights as it lands);
-the face, pressed, opens the profile to be written, as Edit profile does;
 the TODO's paper pressed under its items gives the caret to the line at its
 foot, as a page written on does. In Forge a file's name in its head,
 pressed (not to choose its words), is written over where it stands, a faint
@@ -1874,21 +1890,19 @@ keeps its own turning: past its end, the page behind it does not go on.
 
 The profile is edited where it is read, not in a form put in its place:
 written in, the top is a sheet of its own as the TODO is when written in
-(`paper`, an `ink` edge, grown out around the face and the lines so nothing
-on it moves). The name becomes the line it is written on, where it stands
+(`paper`, an `ink` edge, grown out around the lines so nothing on it
+moves). The name becomes the line it is written on, where it stands
 and as large, holding the name shown (none written yet, the one signed in
 with, to be changed, never an empty line beside it); @ and the handle, and
 the line about the person, come in under
 it a line after another, with room between them; each is written on, not
 boxed (a rule under it, ink under the one with the keyboard), and the
-counts, which are not written, step aside. The face follows what is written,
-its initials as the name (or the handle) goes in, so the change is seen as
-it is made. Edit profile gives way to Cancel and Save where it stood. The
+counts and Edit profile, which are not written, step aside; Cancel and Save
+stand at the name's right, on its line. The
 top grows and shrinks to what it holds (320 ms), one move at a time: the
 sheet's edge and what is under it go together, never up and then down (its
 margins and its height are one move), the lines that were not there coming
-into the room it makes; saved with new initials, once it has folded, the
-face turns round to show them. Opened from the person's menu, it is drawn
+into the room it makes. Opened from the person's menu, it is drawn
 open as Home comes in: the arrival is its beat. Enter on the name or the handle
 saves; Escape leaves it as it was. The rail's face is the new one at once.
 The handle is offered signed in only: it is the username (§5, Names), how
@@ -1896,31 +1910,50 @@ others find them, so changed here it is changed on the Remote first, and
 what the Remote says no to (taken, held for its owner, changed twice this
 hour) is said at the handle, nothing saved; left empty, it stays as it was.
 
-Home's right pane (the same pane and switch as Forge's and Git's) has
-their top line: the search box where theirs is, beside the switch, in the
-repo last worked in (or, none yet, the one changed last), named in it
-since Home has no band to say which ("Search garden"); Ctrl+K, Ctrl+P and
-Ctrl+B as there; what is found opens in Forge, a line at that line,
-selected. While it is out the window steps back under the one shade. Its
-first line, the name and Edit profile, stands on that top line too. Under
-it the pane holds
-Lately: what waits since the person was last here, a row each on the
-ground (no box round each, a raised fill under the pointer; between rows a
-hairline from where their words start, so rows of many lines are each seen
-whole), under a quiet head (a pane's own heads, Lately, the Prompt, People,
-are small and in the quiet colour, on the line a file's head is on): where they left
-off (the file last read in Forge, its mark, its repo quiet at the right, and
-under it the line it was left at, as written), the conversations with
-something not read (who wrote, their initial on one of four soft tints, the
-marker's, a step done's, a removal's, the sky's, the same for the same name;
-what it is and its words: Review：…), the boards with posts not seen (#),
-and the boards this browser writes in as a guest (#, Trip · where you write
+Home has Forge's band along its top, held there while Home scrolls under it,
+plain ground from the rail's line to the pane's, tool for tool where Forge's
+are: >_ (the terminal of the repo last worked in, in Forge, the keyboard in
+it), the files button (that repo in Forge, its file deeds out under Forge's
+own files button: New file, New folder, Rename, Delete), and the search box,
+in the
+repo last worked in (or, none yet, the one changed last), named in it since
+no repos on the band say which ("Search garden"); Ctrl+K, Ctrl+P and Ctrl+B
+as in Forge; what it finds drops as Forge's sheet does, over Home, which
+steps back out of sight under it; a line found opens in Forge at that line,
+selected. Its right pane is the same pane as Forge's and Git's, its switch at
+its foot where Forge's is, level with the person at the rail's; its first row
+where Forge's first run is, level with the rail: the row's first line starts
+where the rail's first icon does, so the line's capitals, the bar beside them
+and the icon's ink start on one line (the bar as tall as its words, capitals
+to baseline, never standing proud of them). Between Home, Forge and New repo
+the rail does not change floors: it moves a camera over the one dotted ground,
+on which the three lie a little apart across as well as down (Home a step of
+three dots to the left of Forge, New repo a step to its right), so the camera
+going up to Home drifts a little left as it goes, never straight up a shaft.
+It stands back as it sets off (to nine tenths at most, soon after the press),
+goes the way between the two, and comes down into the page come to, which
+grows from small into its place as it lands (480 ms in all). The band, the
+pane and its switch are the frame and stay where they are (what differs on
+them, Forge's pills, the pane's rows, gives way in place in a seventh of a
+second); the page left is seen only on the ground between them, never over
+them; the dots are one lattice under both pages from the first frame to the
+last (the way between them is moved by less than half a dot so that they
+are). Forge's desk is not laid out while it is out of sight, so its boxes are
+where they were when it comes back, carried in by the camera, never sliding
+to their places after it. The pane holds
+Lately: what waits since the person was last here, a row each in the rows
+Forge's and Git's pane have for what was done (a bar, ink while something of
+it is not read, the paper's rule once it is; what it is in the display face;
+under it what was said, or the line it was left at as written there, in mono;
+where it is, quiet), rows only as Forge's pane is (its head, Recent activity,
+heard and not shown): where they left
+off (the file last read in Forge, its repo, and the line it was left at), the
+conversations with something not read (who wrote; what it is and its words:
+Review：…), the boards with posts not seen,
+and the boards this browser writes in as a guest (Trip · where you write
 as a guest: a way back always there, signed in or not, the one written in
-last first, pressed to that board); at each row's end one slot, the unread
-dot, a chevron under the pointer (it goes there). A row is two lines at
-most: its name, going on under itself where it must (its badge, its place
-and its slot on its first line), and one line of what came, cut where it
-runs out of room. The pane keeps its width. In
+last first, pressed to that board). A row is two lines at
+most under its name, the second fading out where it runs out of room. The pane keeps its width. In
 the Prompt's lines there, a line run that goes past the pane's width goes on
 under itself beside its prompt line's pill, never back under it; a line
 sent before the shell first waits at its prompt line waits for it. The same round initial
@@ -1942,20 +1975,168 @@ pointer, a chevron at the row's end says it goes there.
 
 ### Forge
 
-Where you work. The repos out to work on run as pills in a band on the top
-line; the search box sits on the same line over the right pane, and at the
-line's right end the round switch that puts the right pane away and brings
-it back. Put away, the pane closes as a wipe, the center takes the whole
-width and the search goes with the pane; the switch stays where it was, the
-way back, and what the pane showed, what was chosen there and where it was
-read come back with it. The files button stands first, at the band's left
-end: pressed, the deeds for the file read now (New file and New folder
+The center is the repo's desk. What is open lies on a plane on dots, each box
+as wide as 80 columns of its code (14 px, a step larger than elsewhere: a box
+is read at its own size), inked round with a hard shadow, its name
+outside its top-left corner (its folder quiet before it) and its close a dot
+under its foot, a little in from its right corner (under the shadow's straight
+foot, never in the corner where it turns). The Prompt is the first box: what it printed, and
+under it the line one types at, its pill the prompt (`garden $`) and what the
+line does (Run, Issue, TODO, Agent; Alt and a number, or pressed). Under Run,
+Enter runs the line as a terminal's does, Shift+Enter is a new line, and the
+empty line says nothing after its prompt: the caret waiting there is all a
+terminal says. Each
+file opened is a box of its own beside it, written in where it lies (there
+is no Edit to choose: the file is typed into). One box is in hand.
+
+The Prompt is a real terminal, 80 columns by 24 rows, a colour xterm's
+(`TERM=xterm-256color`), drawn by a terminal of our own (vt.ts): what programs
+print comes in their colours, in sixteen of the page's own (deep and a little
+muted, "white" a grey that is seen on paper) and the rest of xterm's 256 and
+any given as red, green and blue; bold, dim, italic, underlined, struck
+through and inverse as they ask; the line under way rewritten as a terminal
+rewrites it, so a counter or a progress bar counts in place. Its shell reads
+a line at a time from the line one types at, with job control, as on a
+terminal (the kernel's tty, canonical, without echo: the line is the box's).
+A program that asks for each key as it comes (vi, less, top, a prompt for one
+key) has every key as it is pressed, the page's own keys giving way to it
+(Tab, Escape, Ctrl and an arrow, Shift+N, the editor's), Ctrl+C, Ctrl+Z and
+Ctrl+\ its signals where it keeps them, a conversion confirmed and a paste
+given whole (bracketed where it asked); while it has the terminal, it is
+shown on a terminal's whole screen in place of the last lines, the cursor a
+block, and given back, what its main screen holds is lines again (a
+whole-screen program's own screen, vi's, goes as it came).
+
+The keys are a game's, the hands finding them without looking. Tab, wherever
+the keyboard is on the desk (in a file, at the Prompt's line), puts the finger
+on the next box (down a column, then the next column's top, round again;
+Shift+Tab back): the keyboard comes out onto the desk, the finger (the
+pointer's own pointing hand, larger) touches the box's top edge a little in
+from its right corner, and the camera goes to the box as near as it stands. With the finger on, an arrow puts it on the box that way (a
+nudge where there is none), and Enter, or a letter typed, goes into the box
+under it at the standard, the hand gone. Ctrl and an arrow carry the box in
+hand a slot, wherever the keyboard is (writing in it, it stays there; with the
+finger on a box, Ctrl alone takes it up): lifted while Ctrl is held, its shadow
+long and the hand closed on it (its fingers over the edge), the boxes' closes
+gone while it is up (the desk is being laid out, not cleared; they come back
+once it is down and the camera with it). The others answer it, so it is seen to
+cut in, not the desk to be laid again: those in its way get out of it at once,
+quick and a little jostled; one coming into where it was waits for it to be
+gone. Held up, the camera takes a step back about it, the box staying where
+it is on the face, as far as shows two boxes side by side (the box and the one
+it is put beside, both still read; never the whole desk, where what is being
+done is lost in what is far off; with the finger on it, once Ctrl has been held
+a moment, so a shortcut's Ctrl moves nothing), and stays still while it goes:
+the box crosses the desk, never with the camera after it (after it, a little
+behind, the box was neither still nor moving). Only where the box would go out
+of sight does the camera go, as far as keeps it in, with it, in its own way and
+time; carried at once, the step back is taken as it slides, one move. Ctrl let
+go, it is put down with a small give, and the camera comes back to where it
+stood, on the box where it now lies. Sideways the slots alternate, as a sheet is put between two others:
+out of a column with others it goes first into the gap beside it, a column of
+its own between two side by side, then on into the next column; at the desk's
+edge it stays and the desk nudges. The other arrow takes each step back
+exactly, to where it stood in its column too. Shift+N, as a new post is begun on X, makes a new file beside the
+one in hand where nothing is being written (the finger on a box; written in a
+file, it is an N): it is laid under the box in hand, in its column, as a new
+post goes under the one before it, named with that file's ending (none beside a
+terminal: untitled), comes out from under the box above it, pulled out quick
+as a drawer is, the camera going after it a beat behind (never carrying it off
+still hidden under the other) and a step back, as a search makes the desk step
+back: it is not gone into yet, and is seen where it came, with what it was made
+under over it and the boxes round it; the finger gone as the keyboard goes into
+its name, and its name is written over at once in its
+head, the name itself (its folder quiet before it), a line under it, the stem
+chosen in the soft yellow and the ending kept, so typing writes the stem.
+Enter keeps what is written and the keyboard goes on into the box, at its end,
+the camera coming in to the standard as Enter with the finger on a box does
+(only Enter comes in: a file made never brings the camera nearer of itself);
+Escape keeps the name it had and goes on in too. The files tool's New file,
+and File's, make it the same way. The finger comes out of the
+pointer where that was over the desk and glides from box to box, and while it is
+out the pointer is hidden; the pointer moved, the finger is gone and the pointer
+back. Writing in a box puts both out of the way until the pointer moves.
+
+The camera has three places, as a game's cameras do, and Escape goes round
+them: its standard, every box at its own size, the box in hand in the middle
+across, its top level with the rail between Home and File (high enough that
+the box above it in its column, its shadow and the dot of its close are wholly
+out of sight, never a strip nor a dot cut by the edge), the balance the
+work is done at, never nearer than that; a step back (three quarters: about the
+step again from there to two boxes side by side, so each step back is alike),
+the box in hand still read in the middle across, its column's top at the eye
+as the standard's box is (never low in the face with the room above it
+empty), what is above it in its column in sight over it and the boxes beside
+it round it (one too low for that comes up till its foot is in sight); and
+the whole desk, at most half its size, in the middle across, its top at the
+eye too. Stepping back it zooms first and then goes; coming
+nearer it goes first and then zooms. Escape takes the keyboard out onto the
+desk, the finger on the box in hand; from a field that keeps Escape for itself
+(a search, a rename), that comes first. Ctrl and - step back, Ctrl and + come a
+place nearer, Ctrl and 0 to the standard, a pinch either way a place. At the
+standard the camera moves as a scroll does, so the keyboard going into a box,
+or something brought into view, takes the camera there and that box into hand,
+and the wheel moves it along the desk. Stood back, a press takes a box in hand,
+twice comes in to it; over the whole desk, with the pointer rather than the
+finger, the box in hand is ringed. Writing in the box in hand while the camera
+stands back brings it to the standard. A box taken off by the dot of its close
+(or its file gone) goes in a beat where it lies, the others closing up after
+it and the camera gliding with them, never a cut. A file
+gone goes from the desk; moved, its box is the file where it went. A file named
+in a terminal's output (what ls says, the compiler's count.c:7:24:, grep's
+line) is underlined under the pointer and, pressed, its box opens at that line,
+as a terminal's hints open what they point at. In the desk's bottom corner on
+the right stand its keys, with no line nor bar round them (tab next, ↵ in,
+esc back, ⇧N new, ctrl ←→ carry, / search), each in ink, what it does quieter,
+printed on the ground under the boxes: a box lying over them covers them, as it
+would words printed on a desk, never a strip of ground cut out of the box. Each
+repo keeps its own desk, as it was left, from one visit to the next; a desk
+never worked at begins with the Prompt and the README beside it.
+
+Where you work. The top line starts with its tools, square as a field: >_,
+which takes the terminal on the desk in hand; the files tool, a page with +;
+and the search, 220 px with its lens, saying only Search (/ goes to it from
+anywhere nothing is written in; on a phone it folds to its lens and opens to
+be written in). The repos out to work on run as pills after them, the pills,
+their parts and ⊕ square-cornered as the tools are. The right pane holds the
+runs alone; its switch lies at the foot, its middle level with the person's at
+the rail's foot. Put away, the pane closes as a wipe and the center takes the
+whole width; the band and its search stay where they are, the switch too, the
+way back, and what the pane showed comes back with it. The files tool, pressed,
+brings out the deeds for the file read now (New file and New folder
 beside it, Rename, which moves it given a path, Delete; the repo's own with
-none read) come out under it, in Forge, done there with the field or the
-ask in its place as File's are, never carrying one off to File; a new file
-is made at once and opened to write in, one renamed or moved is shown where
-it went. The
-pills follow it and scroll, and ⊕ comes right after the last
+none read) under it, in Forge, as a bar dropped from under the band, dmenu's:
+ink, square, a band's row high, its left edge the tool's, a band's gap under
+it, the path they act on quiet at its head (/root/garden/README.md), the deed
+chosen in the paper's colours, the whole height of the bar; the desk moves down
+by its room as it drops, in the same move, so nothing on the desk is ever under
+it, and comes back up as it goes. A name asked for or a Delete to be sure of is
+asked in its place on the bar, in the same letters (a name on a line, no white
+field), never carrying one off to File; a deed chosen,
+the deeds are gone at once, nothing fading over what it did; a new file
+is made at once, as Shift+N makes it, its name written over first; one renamed
+or moved is shown where it went. What the search finds drops from under the
+band as a sheet across the desk, inked and shadowed as a box is, only once
+something is typed and what is found for it is ready: it comes down with it
+already in it, never let down empty and filled a frame later, and what is in it
+stays until what is found for the next key is ready (pressed with nothing
+typed, nothing drops; ↓ lets down the
+kinds, Issue, diff and Output, and what was searched and read): the words
+searched for large at its head, then what was found a kind at a time, two
+kinds to a row, each its name and how many rows at its left and its rows at
+its right, as the mock has them: a row a thing found, read across, a file's
+name, the line's number and its words in the sheet's own letters (a name that
+holds the query a row of its own, marked), the words found marked and steady
+as one types on (never stroked in again at each key), nothing else beside a
+row. Typed, the sheet's lip (its shadow) shows under the band at once, where
+it comes down from once what is found is ready. It is as tall as what it holds:
+let down further at once, taken up a little over a few frames as fewer are
+found (from where it is shown, never cut short mid-way); while it is down the
+desk is gone from under it. Pressed, it stays as it is until it goes up, never
+gone for a frame between. The box has no clearing × of its own: Escape clears it. A row pressed: the camera is put on its file meanwhile, unseen,
+and the desk comes back already there as the sheet goes up, the line chosen.
+The
+pills scroll when there are many, and ⊕ comes right after the last
 pill. One press brings every repo not on the band out at once; this is not
 adding tabs one at a time.
 Each pill comes off the band with its × (the repo itself is untouched);
@@ -2074,10 +2255,14 @@ of a text changed elsewhere is, how large it is and the way on: made smaller,
 it saves as before and the ask folds away; まるごと保存する keeps it as
 written, and from then it is a file read in part, its start to read, the
 Prompt editing it whole. While it waits, closing the tab asks first (the
-browser's own ask). Tab types a tab; with lines selected it moves
-each of them in by one, the selection kept, and one Undo takes it back. A
-press on a line's number selects that line. Escape leaves the text for the
-page. Undo reaches back across going to another repo or page and back: a
+browser's own ask). Tab is the desk's (the next box). Ctrl+] moves the line
+the caret is on, or each line selected, in by the file's own indent (a tab,
+unless it is indented with spaces), Ctrl+[ out by one, the selection kept;
+Alt+↑ and Alt+↓ move those lines over the line above or below; Alt+← and Alt+→
+move what is selected, or the letter after the caret, a letter that way; Enter
+keeps the indent of the line it breaks. One Undo takes each back, the selection
+too. A press on a line's number selects that line. Escape leaves the text for
+the page. Undo reaches back across going to another repo or page and back: a
 repo's page is never taken out of the document, only hidden. In each directory README comes first, then the other
 files, then the directories. The only line in Forge is the one between the
 center and the right pane.
@@ -2120,31 +2305,64 @@ never first up whole, or back in the pill, and then on. Its lines are a
 terminal's: the box's line is the line after the output, starting with the
 prompt line the shell waits at (`garden $`, the output's own last line then not
 shown), the words written in the terminal's letters and a cell for a caret, the
-letter under it drawn dark in it. A line sent moves up a line as it is (it does
-not come in again); what it prints comes in a line after another, the screen's
-top rising with it, and the prompt line comes back with the caret as its last
-line does; while it runs, what it is doing (Running 2s, Interrupt) is said on the
-line itself, so nothing above the line comes and goes, and once the run is
+letter under it drawn dark in it. A line sent moves up a line as it is, in the
+frame the box empties in (it does not come in again, nor leave a frame with it
+nowhere); what it prints comes in a line after another, the screen's top rising
+with it, and the prompt line comes back with the caret as its last line does
+(on the desk too: no prompt line stands under a line while it runs, to be
+pushed down by what it prints, and the caret waits unseen for it; in a long
+run, a key typed shows it again). Started by the first key, it says Starting…
+only if starting takes a while: said at once, it was there a frame and moved
+the line under it down and back; while it runs, what it is doing (Running 2s) is said on the line
+itself, quietly, with no buttons on it (on the desk a terminal has no pills:
+Ctrl+C interrupts, as in any terminal), so nothing above the line comes and
+goes, and once the run is
 done that goes out to its right rather than at once. `clear` clears the
 screen, and Ctrl+C says ^C where the run was cut, the screen's words jolting
 sideways and flaring as they are cut (at once: it answers the hand), what the
-run was doing going as it is cut. Ended (exit, stopped), its switch comes in
+run was doing going as it is cut. Its line has a terminal's own keys, as bash's
+and zsh's line editors have them (and a Mac's text, Ctrl held): Ctrl+A and
+Ctrl+E to the line's start and end, Ctrl+U and Ctrl+W cut back to its start
+and the word before, Ctrl+L clears the screen with the prompt line at its top,
+Ctrl+D on an empty line ends what is typed (cat ends, and the shell reads on;
+at the prompt line, the shell, as a terminal's does), and Ctrl+C at the prompt
+line lets the line written go, said cut with the prompt line again under it.
+Ctrl+Z while a line runs stops it, a job the shell holds (jobs, fg, bg), as
+in a terminal; at the prompt line it is the box's undo. The terminal is set as
+Linux sets one (`stty sane`, named /dev/pts/0), and what a program asks of it
+is done: ECHO put out (a password asked for, `read -s`, `stty -echo`) shows a
+dot for each letter typed, and the line sent is neither shown nor kept among
+the runs the pane lists; the shell's own lines stay the box's whatever ECHO is
+set to (`stty echo`, `reset`), never a screen of its own. A program a signal
+cuts short while it reads each key (killed, or stopped with Ctrl+Z) gives the
+shell the terminal back as the shell had it, its prompt line a line again, as
+bash does; brought back with fg, the program has its own again.
+The editor's own keys (Ctrl+K and Ctrl+P to the search, Ctrl+B the pane) stay
+the page's, as an editor's terminal leaves them. On the desk its box holds 24
+lines and scrolls within itself by its own scroll, not the page's: a short ink
+bar at the box's right edge, as long as what is shown is of the whole and where
+it is, there while it is scrolled or pointed at and a moment after, thicker
+under the hand and dragged; what lies past its top or foot fades out at that
+edge, so it is seen to be there. What a program prints all at once (yes, a
+big file cat, a long listing) comes on the screen as fast as it is printed, the
+screen drawn once a frame with only what is on it laid out, and the page answers
+the hand throughout: a writer faster than the page waits for it, as one waits
+for a terminal that cannot keep up, so the page never takes in more than it can
+draw, and Ctrl+C stops it at once, what it had on its way and not yet shown going
+with it (as a terminal flushes its output on ^C), so ^C stands at the foot where
+it was cut. Exited or stopped there (or its close
+pressed), it is seen ended a beat, then its box goes as a terminal's window
+closes; the band's >_ lays it again at the top of the first column with a new
+shell in it, the keyboard in it (failing to start, it stays, to be read). Ended
+(exit, stopped), its switch comes in
 going over from on to off and its output flares and dims as a tube switched
 off does, staying dim to be read; switched on again, the old screen goes down
 to a bright line across its middle, the box takes the new one's height, and
 the new one opens out of the line. The prompt lines before are in
 the green, so what was run stands out from what it printed. A lamp at its head is
-lit while its shell runs; the terminal, put back, comes into the pane where it
-lives, and the reference grows down into the room it leaves. In the pane it is
-read as a line of what was done in the repo, in the page's own colours, as a
-history is drawn: a dot for each thing done, all on one thin thread from the
-first to the prompt line the shell waits at (it scrolls with them, and ends at
-the last dot). A line run is a ring on the thread, the prompt line it was written at
-in the pill the box wore for it (the screen's glass, its words in the green),
-and the line in ink, bold; what it printed is under it, quieter. The pills sit
-on their line's middle, beside the words they head. The prompt line the shell waits at is last, its dot lit in the green
-and glowing as the lamp is (off once it has ended). Up as the screen, it is the
-terminal again, its lines as a terminal's. The terminal's box
+lit while its shell runs; put back (Git's), it goes out of sight, the pane
+holding what was done in the repo as its rows (below); up as the screen, it is
+the terminal, its lines as a terminal's. The terminal's box
 is labelled Prompt, after what one does there (the shell is BusyBox sh, so
 it is not called Bash); leaving the prompt
 (or Escape, or the × at the right end of its head, beside the lamp, there
@@ -2179,38 +2397,94 @@ Create, Add; Edit has none) and the empty box where it goes. Only Run brings the
 An issue or a TODO is written as everywhere, its first line Kind: title and
 the lines under it its detail; sent, the box empties and where it went is said
 to be heard (Written as #4 in garden). What the box made
-comes into the right pane as the Prompt's own lines do, one stream of what
-was done in the repo in the order it was done: a line of its own in the
-Prompt's flow, before the prompt line the shell waits at, on a dot of its own
-(in ink, an issue or a TODO alike: the green is the live prompt line's), its head in the pill
-the box wore for it (`#4` in ink, `TODO` on paper with its circle) and its
-words in the letters people write in, not the shell's (`#4 Fix：…`), beside
-the pill (a second line goes on under them, never back under the pill), its
-kind in bold as everywhere. Sent, its first line goes on a
+comes into the right pane's rows as the lines run do, one stream of what was
+done in the repo in the order it was done (Forge's and Git's the same
+stream). A line run is a row: a bar (green once it ended well, red with its
+exit status beside its time when it failed, ink while it runs), the line
+itself in the display face, its time under it. What the box made is a row of
+its own, its bar the paper's rule, its words in the letters people write in
+(`Fix：…`) and its pill's head under them (`#4`, `TODO`). Every row says two
+lines at most, the second fading out partway along: the pane is a
+notification, not a second workplace. A run pressed is read where it ran,
+lit in the Prompt's box on Forge's desk, under the search box with all it
+printed on Git. Sent, its first line goes on a
 slip of paper out of the box, on to the right as a sheet slid off, then up
-and on into that line, coming down to its size; the slip gives up its paper
-as it lands on the line's words, and the line is lit a moment as a file
+and on into that row, coming down to its size; the slip gives up its paper
+as it lands on the row's words, and the row is lit a moment as a file
 landed on is. Issue and TODO go the same way; the pill's number turns to the
 next as a counter's figure does. With the pane put away (or narrow), the
 slip slides on and rises out of sight, and the line is there when the pane
 comes back. Pressed, the line goes to it (the issue in Git, the TODO on Home). What
 is half written is kept for the repo and for what the box does.
 
-Asking the Agent is the box's too, never the Prompt's: written to, the box does
-not bring the screen up, and what is written is a person's words, in their
-letters (not the terminal's). Sent (Ctrl+Enter, Ask), the question goes into the
-right pane as an issue does, on a slip, a line of the flow with its head in the
-pill the box wore (`Agent`, ringed in the blue), the pane brought out for it;
-the answer comes in under it a few words at a time, in the letters people write
-in, its paragraphs a little apart, and its code, what would be run, on the
-Prompt's own glass in its green. Until its first words, a quiet ellipsis;
-refused (the key no longer taken, asked too often, nobody reached), why, in the
-red, where the answer would be. It is told the repo, its top, and the file in
-front as it stands (written in and not saved too) with the caret's line, so a
-question needs no saying where. Pressed, the question is back in the box to be
-asked again. The answer is not the shell's: it is kept with its question while
-the flow is drawn again, and goes with what is above it, or with all of it when
-the screen is cleared. The key taken away, the boxes asking run again.
+On the desk the Agent is asked in the terminal, as any program is: `agent`
+and what to do, Enter. The line is the person's, run in their terminal and
+listed in the pane as any line run; the terminal is theirs again at once
+(refused, the key not taken or nobody reached, the line says why as a command
+does, `agent: ...`). The Agent's own terminal is born beside the person's: a
+box of its own, `agent /root/garden`, coming out from under the person's
+terminal and sliding across to the column just right of it, the columns after
+it making way, its name coming once it is out. What it was asked heads it, in
+the heavier weight, a quiet › hanging before it; then what it does, as it is
+played: its words in ink, its code set off by a rule; each file it read or
+edited a quiet line (pressed, the file); each command typed after its own
+prompt, the green of the person's, key by key with a terminal's block caret,
+then what it printed, and how it ended where it ended otherwise than well. Its
+prompt line waits at its foot. The camera never steps back for it: it stays
+at the standard and goes sideways, as a pan, to the work going on now: the
+Agent's terminal as it is born (the person's a sliver at its left), then the
+file it begins to write in, whole in the middle, its terminal a sliver at the
+side, then back to its terminal as it runs something. What it is at work in is
+always whole in sight, and what else is at work peeks in at the edges, saying
+where it is; narrowing to fewer waits a moment, so a step ending and the next
+starting is not a move away and back. A box it went to and still at work holds
+it a while (a command typed is seen run and answered before it goes on to the
+file begun meanwhile), going on once that is done or has been watched. A box
+growing as it is written never turns a glide back on itself: where the camera
+passes is not taken for where it stays. The person writing in their own box (a
+key, a paste) takes the camera back to it, gliding, never a jump to where the
+caret is first. The box has no Agent of its own on the desk: no pill
+says it, no answer comes in the pane.
+
+Elsewhere (Git's box), asking the Agent is the box's, never the Prompt's:
+written to, the box does not bring the screen up, and what is written is a
+person's words, in their letters (not the terminal's). Sent (Ctrl+Enter, Ask),
+the question goes into the right pane as an issue does, on a slip, a row of its
+own with `Agent` under its words; the answer comes in under it a few words at a
+time; refused, why, in the red, where the answer would be. It is told the repo,
+its top, and the file in front as it stands (written in and not saved too) with
+the caret's line, so a question needs no saying where.
+
+What the Agent does is played as a person would do it, after it and at a
+person's pace, never as a screen of its own. It works at its own pace behind
+(its commands in a Prompt of its own); what is played is the part a person
+wants to see, each box a lane of its own, the lanes going side by side where
+they are seen side by side and one at a time where they are not (nothing is
+played out of sight). Its tempo gives: what it did is spread over the time its
+model takes to answer next (that time learnt as it answers), a little slower
+than a hand, so the wait for the model is filled with its work rather than
+seen; and quicker, up to twice a hand's, once much is waiting or it is done,
+so the play keeps near the work and ends soon after it. A file it reads is played
+too: its box laid and its eye going down the lines it read, a faint ink-edged
+line gliding from line to line (a long read skimmed). While it thinks (its
+model asked, nothing it did left to play) its eye stays on what it last looked
+at, going on over the lines with words in them slower than reading and resting
+at the last, breathing as it rests, so it is seen looking, not stopped; it goes
+the moment it says or does something. What a command printed is shown only
+once what came before it in the other boxes has been played. The Agent is Pi's loop, thin: read, run, edit and
+write, each by the core's rules, its last words what it says it did; it goes as
+fast as the model and the tools go, is never shown the screen, and nothing a
+person does at the keys or the mouse stops it. Every edit it makes is seen
+made: the old words go from their end, Backspace pressed a few times and then
+held (its repeat), a long piece a line at a time; the new are typed in whole,
+the caret after them (only a page or more comes in at once, as a paste does);
+a file it made is typed into its box from the top. Each key is heard (kbsim's
+Cream Space for a key, its Backspace for Enter, Alpaca's Space for Space). The
+hand is quick and steady, about twice a person's first pace, quicker still
+over a long piece, with no slips, so what it writes is seen written and the
+playing keeps near the work. A command waits for the screen, so what it prints
+never comes before the edit it builds; the file is written at once, and only
+its editor waits to take it in as it is played.
 
 Edit makes the box a line of the file in front, written there as the line is
 in the file: nothing to learn, no words that ask for things, no line first
@@ -2251,11 +2525,11 @@ The box knows the repo's earlier lines, as a terminal does: ↑ with the
 caret on its first line goes back one line run in the repo's Prompt, ↓ on
 its last line forward again, down to what was being written (so a line of
 several lines is still edited with the arrows); writing in the box ends
-the walk. Tab completes the path before the caret from the repo's files
-(`src/ma` to `src/main.rs `, a directory with its `/`); several matches
-are written to what they share and listed in one quiet line under the box
-(monospace, as paths are), gone at the next key. With no path to complete
-Tab moves on, as everywhere.
+the walk. → at the end of the line completes the path before the caret from
+the repo's files, as a shell's suggestion is taken (`src/ma` to `src/main.rs `,
+a directory with its `/`); several matches are written to what they share and
+listed in one quiet line under the box (monospace, as paths are), gone at the
+next key. Tab is the desk's: the finger to the next box.
 On Git, a page read and pressed rather than written in, it stands back
 from the start and again once the Prompt is done with (Escape), never over
 an issue's buttons; Ctrl+` or the pointer resting at the foot brings it.
@@ -2288,14 +2562,24 @@ the query first), and its open issues and its runs too; what is found
 opens under the box over the center while the box has the keyboard (↓ goes
 into it, Enter takes the first, Escape back to the box; with the box empty,
 Escape gives the keyboard back to what had it before), and follows what is
-saved. The first is the first line found, or before it a file whose name
-holds the query: it is lit, its Enter on a key at its end, while the box has
-the keyboard. Each file found is headed by its name, how many of its lines
-were found beside it, quiet (3 lines), and, changed since the last commit,
-at the head's other end its diff as a diff is said everywhere (diff +5 and
-its squares), pressed to read it there; a name found by its lines alone and
-the diff are pressed, not gone along with ↓ (only a name that holds the
-query is). A file found by its name opens with the caret in it, a line with the
+saved. What is found is found again at each key, on the frame it shows in (the
+repo's text read once a search, lowercased once a file, and gone through by the
+engine's own search, so a key costs a scan, not a count of lines). The first is
+the first line found, or before it a file whose name holds the query: it is lit,
+its Enter on a key at its end, while the box has the keyboard (on the band's
+sheet it is not lit: its rows are lit under the pointer). A line found opens
+with the caret where its words begin and the line washed in the soft yellow
+under its text, the wash coming up as the camera arrives, then quieter while the
+caret stays on that line, gone once it leaves; on the band, the words searched
+go from the box once the sheet is up, the box saying Search again, and come back
+chosen when the box is come back to (/, a press), as a find bar's do. On the
+band's sheet a run is said as it was typed, after the shell's $, on one line,
+under runs. Off the band (Home's), each file found is headed by its name, how
+many of its lines were found beside it, quiet (3 lines), and, changed since the
+last commit, at the head's other end its diff as a diff is said everywhere
+(diff +5 and its squares), pressed to read it there; a name found by its lines
+alone and the diff are pressed, not gone along with ↓ (only a name that holds
+the query is); on the band a changed file's diff is the diff kind's. A file found by its name opens with the caret in it, a line with the
 line selected (where it is now, if it moved), a third of the way down, or
 with its file's head at the top when it is near it (never the empty foot of
 the file before over it); an issue, a changed file's
@@ -2305,11 +2589,11 @@ by side, one at a time (none yet). With none it stays plain, nothing put
 there to fill it (issue #45): opened, the pane's top is that empty area and
 the Prompt moves down under it, level with the foot of the rail's Inbox, as
 it does under plugins; the plug, which says it is out, is the way back.
-The right pane has no switch of its own. At rest it says, on the Prompt's
-head line at its right end and as quiet as that head, Issue, diff (with how
-many files are changed since the last commit, diff 2) and 実行結果, the three
-the search box switches between, so a pane that holds only a prompt line
-still shows what else is there: a head pressed opens its view under the
+The right pane has no switch of its own. At rest it says, on a line of their
+own over its rows at its right end, quiet, Issue, diff (with how many files
+are changed since the last commit, diff 2), 実行結果 and Agent, what the search
+box switches between, so a pane with no rows yet still shows what else is
+there: a head pressed opens its view under the
 search box, as its pill there does, and the view stays out beside the file as
 the keyboard goes back to it, until it is put away. Beside the file it stands in
 the pane's own width, a step in from the pane's line, over the pane and never
@@ -2494,7 +2778,7 @@ or goes).
   to. When room is wanted (a Prompt prepared, a root fetched, a repo
   brought here) and the host has less free than that and a reserve (a
   twentieth of the disk, between 512 MB and 4 GB; `LENGTH3_RESERVE` says
-  another), what comes back goes by itself until there is enough (usage.rs
+  another), what comes back goes by itself until there is enough (core/src/storage/
   make_room): this OS's leftovers and old roots, caches, what is derived in
   repos, the root before the current one, then copies of repos in step with
   the Remote untouched for a week, the oldest first. Never what only this
@@ -2533,7 +2817,7 @@ or goes).
   as here. In a browser there is no switch: a Prompt's programs have no
   sockets at all.
   Every Prompt on the root is an `l3 prompt` process that records
-  itself (core/src/prompt.rs) from the moment it starts being prepared
+  itself (core/src/prompt/running.rs) from the moment it starts being prepared
   (`.packages`, `.setup`) until it ends, with its repo and the root it runs
   on, so `l3 prompt ls` lists the app's and a terminal's alike (one being
   prepared says 用意中, as its card here does), `l3 prompt stop REPO` stops
@@ -2560,7 +2844,7 @@ or goes).
   each is, and at its right what can be done. In the app each other one has Use at its
   right: fetched if it is not here (Ubuntu's base and Debian's official
   root, from their makers or the Remote, taken only at the digest pinned
-  in core/src/root.rs), then the one Prompts run on, each with its own
+  in core/src/root/pins.rs), then the one Prompts run on, each with its own
   environment per repo. In a browser they say In the app only: their
   programs are linked as they run, which xlat does not do. Custom is not
   yet.
@@ -2694,10 +2978,10 @@ or goes).
   model, and a key of no form of its own, refused), and the model is the
   newest the key opens that answers, read from the maker's own list when the
   key is given (Trying the key…), never written into the OS. It is kept as
-  the device's session is (`core/src/vault.rs`: the OS's keyring, else a file
+  the device's session is (`core/src/device/vault.rs`: the OS's keyring, else a file
   only the person reads). In a browser, whose keeping is its profile's files,
   it is sealed by the person's passkey where there is one with PRF
-  (`src/home/seal.ts`: AES-256-GCM under a key HKDF derives from what the
+  (`app/account/seal.ts`: AES-256-GCM under a key HKDF derives from what the
   passkey's PRF gives, after it verifies the person), opened the first time
   the Agent is asked in a session, and the key itself never reaches the
   core; where none can seal it, it is kept as given, and Runtime says which.
@@ -2722,7 +3006,7 @@ or goes).
   AppImage when the Remote has no .deb (the release still has both). They are
   the files `shared/desktop-releases.json` pins for that version, served by
   the Remote (`/v1/desktop/<file>`, to anyone, by range), where each deploy
-  puts them from the release (`service/mirror.ts`). It is offered only once
+  puts them from the release (`remote/mirror.ts`). It is offered only once
   the Remote says it has it; with neither there, the section is not shown,
   never a button that cannot act.
 
@@ -3434,43 +3718,51 @@ by their range of ids when they come back near.
 
 ### New repo (+)
 
-A name alone on the first line (the same field as the search box). Under
-it, two columns: on the left, filling it, what the repo is for (概要), a
-raised box written straight into as a TODO's detail is, whose words go into the repo's README.md under
-its title; on the right, level with it, under 作成されるもの, the one
-scaffold every repo starts from (nothing to choose: shared/templates.json's
-`standard`, as `l3 repo new` makes it: README.md with docs/ and issue/, no
-language of its own; C's files are `l3 repo new -t c`'s), shown as File will show it: File's
-own card, only as tall as its rows, /root (repo) and in it the repos already
-there, shut and quiet, and among them, where its name puts it (moving as the
-name is written: past another's name, the rows go to their new places on
-their curve), the new one filled in ink as File fills the repo worked
-on, its folders shut, README.md's size at the row's end as File gives it, of
-what it will say (it follows the name and what it is for). The field holds no
-example (one there reads as a name given, and its row as the repo to be
-made): with nothing written, the new row is a quiet dashed place saying name,
-and 作成 pressed says, under the field, to write a name first. A name that
-cannot be is said as it is written, not once 作成 is pressed: the reason
-under the field (its edge in the off colour), the new row not filled but
-dashed, each letter no name has underlined where it is in it (a space as
-␣, a dot first), and a repo of the same name ringed where it stands. Nothing is named
-or laid out in the card: a repo's files are named, made and moved in File,
-every repo's alike, once it is made. Then 作成, the one primary action, under both. What is written stays
-while other pages are seen, until the repo is made. The two columns stand
-side by side only while what is written keeps a reading width beside the
-card; narrower, they stack: name, what it is for, the files.
+One box being born on the desk's ground, with Home's and Forge's band and
+pane round it (the rail goes between the three as a camera over one desk):
+paper, an ink edge, its shadow, as a box on the desk is, and over it, as a
+desk box's label says its place, ~/ and the name as written, then New repo.
+Beside it a box of what will be made with it, File said over it, in Home's two
+columns: the name's box where Home's TODO stands (up to 520 px), the files
+where its repos do (280 px at the least); on a narrow column the files' box
+goes under the name's. A name too long to stand large beside the files (under
+72 px there) has the column alone, as the box had before the files stood
+beside it (up to 760 px), what will be made inside it under what the repo is
+for, a rule over it; shortened again (to stand at 80 px beside them), the
+files go back beside it.
+In the box, its first line, the name, in the display face as large as the
+box lets the name written be: 104 px while it is short, smaller as it grows
+longer so it is never cut at the box's edge (never under 28 px, past which it
+runs on as a field's words do); nothing written yet, the word name
+stands there in the ground's rule colour (the field itself holds no
+example: one there reads as a name given, and its row as the repo to be
+made). Under it, a sentence's size, what the repo is for (概要): the words go
+into its README.md under its title, and the box grows with them, a line to
+begin with. In the box beside it, what will be made with it (作成され
+るもの), as File will show it: the repo's own row, its name again in ink
+(dashed where nothing is named), and the one scaffold every repo starts from
+(nothing to choose: shared/templates.json's `standard`, as `l3 repo new`
+makes it: README.md with docs/ and issue/, no language of its own; C's files
+are `l3 repo new -t c`'s), each row renamed or left out where it stands,
+New file and New folder at its foot, README.md's size at its row's end as
+File gives it, of what it will say. Create, the one primary action, at the
+box's foot, ↵ beside its word. A name that cannot be is said as it is
+written, not once Create is pressed: over the box, after where it will
+stand, in the off colour with an off dot before it; the name itself in the
+off colour; its row not filled but dashed, each letter no name has
+underlined where it is (a space as ␣, a dot first). Create with nothing
+named says there, to write a name first, the keyboard back in the name.
+What is written stays while other pages are seen, until the repo is made.
 
-Under the form is the list of repos, the same cards as on Home. Once made,
-it is gone into at once: no page saying it was made, no form left greyed
-out. The summary's sheet grows into the README's box in Forge (one sheet
-from the one to the other, the box shown only as it lands), the repo goes on the band, and the caret is at
-the end of its README, after what was written under the title, to go on
-writing; the form is
-fresh for the next one (+ on the rail). Only a file that could not be
-written keeps the page, to say so. A name not
-allowed, or one already taken, is said right under the name, where it is
-to be put right, and the keyboard goes back to the name as it was
-written; typing in it again clears what was said.
+Once made, it is gone into at once: no page saying it was made, no form left
+greyed out. The box grows into the README's box in Forge (one sheet from the
+one to the other, the box shown only as it lands), the words written going
+with it onto their line there; the repo goes on the band, and the caret is
+at the end of its README, after what was written under the title, to go on
+writing; the box is fresh for the next one (+ on the rail). Only a file that
+could not be written keeps the page, to say so. A name not allowed, or one
+already taken, is said over the box, and the keyboard goes back to the name
+as it was written; typing in it again clears what was said.
 
 ### File
 
@@ -3527,7 +3819,8 @@ the file read now); a file or folder has Rename and Delete (a
 repo is not renamed or deleted here: its gear is where that is, § Runtime, A
 repo in a list). New file asks nothing: it is made at once, named as
 nothing there is yet (untitled, with the ending of the file it is made
-beside, a note's .md beside none; untitled-2 and on when taken), and opened
+beside, none if it has none or beside a terminal, a note's .md beside nothing;
+untitled-2 and on when taken), and opened
 in Forge to write in, its name written over in its own head there. Any other
 deed pressed becomes the field or the ask in its own place: a name written
 and Enter makes it (a new one's name is one plain part,

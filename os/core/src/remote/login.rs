@@ -1,10 +1,14 @@
 //! Signing a device in (the device code a person approves in a browser),
 //! who it is signed in as, and signing it out.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::time::Duration;
+use crate::Result;
+use super::base::{Base, base, set_base};
+use super::connection::{bearer, Connection, connection, current_url, gone, save_connection, sync_dir};
+use super::http::{answer, Body, Client, failed, Failure, Got, odd, refusal, refused, request, unknown};
 
-use super::*;
 
 /// Keep a session just approved: `bearer`, the one a device was handed (the device flow's), or none in a browser,
 /// whose session is the cookie the Remote just set. What was agreed with another Remote, or
@@ -34,8 +38,8 @@ pub fn connect(url: &str, bearer: Option<String>) -> Result<()> {
         }
     }
     match &bearer {
-        Some(b) => crate::vault::set(crate::vault::Secret::Session, b)?,
-        None => crate::vault::remove(crate::vault::Secret::Session)?,
+        Some(b) => crate::device::vault::set(crate::device::vault::Secret::Session, b)?,
+        None => crate::device::vault::remove(crate::device::vault::Secret::Session)?,
     }
     save_connection(&Connection { url, session: who.session, user })
 }
@@ -129,7 +133,7 @@ pub fn valid_url(url: &str) -> bool {
 
 /// What one poll for a device's code heard.
 #[derive(Debug, PartialEq)]
-pub(super) enum Polled {
+enum Polled {
     Approved(String),
     Waiting,
     /// Asked too often: wait longer between asks from now on (RFC 8628 §3.5).
@@ -137,7 +141,7 @@ pub(super) enum Polled {
 }
 
 /// Poll once.
-pub(super) fn device_poll(url: &str, client: &str, code: &DeviceCode) -> Result<Polled> {
+fn device_poll(url: &str, client: &str, code: &DeviceCode) -> Result<Polled> {
     let r = request("POST", &format!("{url}/api/auth/device/token"), None, Body::Json(serde_json::json!({
         "grant_type": "urn:ietf:params:oauth:grant-type:device_code", "device_code": code.device_code, "client_id": client,
     })));
@@ -214,35 +218,13 @@ pub fn account() -> Result<Option<Account>> {
     }))
 }
 
-/// End this device's session on the Remote, then forget it here. Every repo
-/// is sent first: forgetting what was agreed with a change still unsent
-/// (a file removed here, say) would undo it at the next sign-in, when the
-/// Remote's copy comes back as new. So a repo that cannot be sent stops it.
-pub fn logout(repos: &Repos) -> Result<()> {
-    let Ok(c) = Client::open() else { return forget_connection() };
-    for name in repos.names()? {
-        // Main's copy and each issue's, each in step before any record of them goes.
-        let shown = repos.line(&name);
-        let mut lines: Vec<String> = crate::work::worktrees(&name).into_iter().map(|(l, _)| l).collect();
-        lines.push(crate::work::MAIN.into());
-        for line in lines {
-            let r = lock(&key_of(&name, &line)).and_then(|_held| {
-                // Not shown, it would not be the copy sent; and the repo is shown again as it was, whatever sending did.
-                crate::work::show_for_free(&name, &line)?;
-                let r = sync_with(&c, repos, &name);
-                crate::work::show_for_free(&name, &shown).and(r)
-            });
-            if let Err(e) = r {
-                let what = if line == crate::work::MAIN { name.clone() } else { format!("{name}@{line}") };
-                return Err(crate::tr!("{} could not be sent first ({}); this device stays on the Remote so nothing is lost. Once it is sent, sign out again",
-                    "{} を先に送れませんでした（{}）。何も失わないよう、この端末は Remote につないだままです。送れたら、もう一度外してください", what, e));
-            }
-        }
-    }
-    // SSH stops with the device's session: no one reaches its Prompts once it is signed out.
-    #[cfg(unix)]
-    let _ = crate::ssh::stop(&crate::paths::data_dir());
-    // Everything is sent: signed out here whatever the Remote answers (its session ends there by itself).
-    let _ = c.call("POST", "/api/auth/sign-out", Some(serde_json::json!({})));
-    forget_connection()
+/// The account this device is signed in as. A session kept without it noted (a browser's sign-in): the
+/// Remote is asked whose it is, once, and it is noted.
+pub(super) fn account_id() -> Option<String> {
+    connection().and_then(|c| c.user.clone().or_else(|| {
+        let who = whose(&c.url, bearer().ok().flatten().as_deref())?.user;
+        let _ = save_connection(&Connection { user: Some(who.clone()), ..c });
+        Some(who)
+    }))
 }
+

@@ -1,5 +1,5 @@
 // l3 end to end, against a Remote of its own: what the tests in this folder
-// share. One Remote per test file: service/dev.ts on a free port with a data
+// share. One Remote per test file: remote/dev.ts on a free port with a data
 // directory made for it, stopped when the file is done. l3 is built once (or
 // taken from $L3) and copied beside it, so another build cannot swap it
 // mid-run. Each device is a home directory of its own, signed in through the
@@ -74,7 +74,7 @@ function http(method: string, url: string | URL, headers: Record<string, string>
 }
 /**
  * The bearer of the session a Set-Cookie sets: the session cookie's own value (the token signed, the bearer's form too).
- * A page is handed no bearer (service/auth.ts); this, which is no page, holds what it was sent, as a device holds its own.
+ * A page is handed no bearer (remote/auth.ts); this, which is no page, holds what it was sent, as a device holds its own.
  */
 const bearerIn = (setCookies: string[]): string | null => {
   for (const c of setCookies) {
@@ -104,7 +104,7 @@ export async function remote(env: Record<string, string> = {}) {
   /** The Remote started (again: on the same port, from the same data, so every session stays). */
   async function start() {
     if (prod) return prod.remote.start();
-    const p = spawn(process.execPath, [join(OS, 'service', 'dev.ts'), join(dir, 'remote'), String(port), APP], {cwd: OS, stdio: ['ignore', 'pipe', 'pipe'], env: {...process.env, ...env}});
+    const p = spawn(process.execPath, [join(OS, 'remote', 'dev.ts'), join(dir, 'remote'), String(port), APP], {cwd: OS, stdio: ['ignore', 'pipe', 'pipe'], env: {...process.env, ...env}});
     server = p;
     p.stderr.on('data', (d: Buffer) => { log += d; });
     const from = log.length;

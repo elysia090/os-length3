@@ -35,7 +35,7 @@ A release carries:
 
 [os.length3.com](https://os.length3.com) is the web app and its Remote,
 where a signed-in person's repos, TODO and settings are kept between
-devices. Building from source, `l3` is `cargo install --path os/cli`.
+devices. Building from source, `l3` is `cargo install --path os/l3`.
 
 ## Layout
 

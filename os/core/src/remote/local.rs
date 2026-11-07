@@ -1,10 +1,14 @@
 //! The copy here as the Remote would hold it: each file by its digest,
 //! read again only when it changed, and what cannot travel, with why.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
+use crate::text::names::is_git_name;
+use crate::fs::hash::sha256;
+use std::collections::{BTreeMap, HashMap};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+use super::connection::sync_dir;
 
-use super::*;
 
 #[derive(Debug, Default)]
 pub struct Local {
@@ -16,14 +20,18 @@ pub struct Local {
     /// Paths that are not sent, and why.
     pub unsynced: Vec<(String, String)>,
     pub bytes: u64,
-    /// Every file digested, for the stamps kept (stamps_save).
-    read: Vec<PathBuf>,
+    /// Every file digested, with what it looked like and its digest, for the stamps kept (stamps_save).
+    read: Vec<(PathBuf, Stamp, String)>,
     /// Read whole, every file, no digest kept taken (local_tree_fresh).
     fresh: bool,
 }
 
-/// What a file's digest was when it was last read, by what it looked like then.
-pub(super) type Seen = HashMap<PathBuf, ((u64, i128, u64), String)>;
+/// What a file looked like: its size, its time (ns) and its inode.
+pub(super) type Stamp = (u64, i128, u64);
+
+/// What a file's digest was when it was last read, by what it looked like then; by its path's bytes, which hash as
+/// they are (a Path hashes part by part).
+pub(super) type Seen = HashMap<std::ffi::OsString, (Stamp, String)>;
 pub(super) fn seen() -> &'static Mutex<Seen> {
     static S: OnceLock<Mutex<Seen>> = OnceLock::new();
     S.get_or_init(|| Mutex::new(HashMap::new()))
@@ -35,7 +43,7 @@ fn kept_as() -> &'static Mutex<HashMap<PathBuf, (i128, String)>> {
     K.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-pub(super) fn stamp(m: &fs::Metadata) -> (u64, i128, u64) {
+pub(super) fn stamp(m: &fs::Metadata) -> Stamp {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
@@ -51,14 +59,20 @@ pub(super) fn stamp(m: &fs::Metadata) -> (u64, i128, u64) {
 /// A file's digest, read again only when its size, time or inode moved.
 pub(super) fn digest(path: &Path, meta: &fs::Metadata) -> Option<String> {
     let s = stamp(meta);
-    if let Some((was, sha)) = seen().lock().ok()?.get(path) {
+    if let Some((was, sha)) = seen().lock().ok()?.get(path.as_os_str()) {
         if *was == s {
             return Some(sha.clone());
         }
     }
-    let sha = sha256(&fs::read(path).ok()?);
-    seen().lock().ok()?.insert(path.to_path_buf(), (s, sha.clone()));
+    let sha = read_digest(path)?;
+    seen().lock().ok()?.insert(path.as_os_str().to_owned(), (s, sha.clone()));
     Some(sha)
+}
+
+/// A file's digest, read through a small buffer: a 16 MB file never lies whole in memory (in a browser, the core's
+/// memory grows to what it once held and stays).
+fn read_digest(path: &Path) -> Option<String> {
+    crate::fs::hash::sha256_read(&mut fs::File::open(path).ok()?).ok().map(|(sha, _)| sha)
 }
 
 /// The repo directory as the Remote would hold it (its .git aside).
@@ -78,7 +92,7 @@ pub fn local_tree_fresh(dir: &Path) -> Local {
     out
 }
 
-/// The files of `here` changed since `agreed` that hold a secret (secrets.rs), with what each holds: they stay here,
+/// The files of `here` changed since `agreed` that hold a secret (device/secrets.rs), with what each holds: they stay here,
 /// unsent. Only what changed is read (what is agreed is on the Remote already), and each content once: the verdict is
 /// kept by its digest while this device's own secrets stay the same.
 pub(super) fn secrets_held(here: &Local, agreed: &Tree, own: &[String]) -> Vec<(String, String)> {
@@ -91,7 +105,7 @@ pub(super) fn secrets_held(here: &Local, agreed: &Tree, own: &[String]) -> Vec<(
     let mut held = Vec::new();
     for (p, sha) in here.tree.iter().filter(|(p, s)| agreed.get(*p) != Some(*s)).filter_map(|(p, s)| Some((p, s.as_ref()?))) {
         let Some(file) = here.files.get(sha) else { continue };
-        let what = v.1.entry(sha.clone()).or_insert_with(|| fs::read(file).ok().and_then(|b| crate::secrets::found(&b, &mine)).map(|f| f.said()));
+        let what = v.1.entry(sha.clone()).or_insert_with(|| fs::read(file).ok().and_then(|b| crate::device::secrets::found(&b, &mine)).map(|f| f.said()));
         if let Some(what) = what { held.push((p.clone(), what.clone())); }
     }
     held
@@ -128,9 +142,9 @@ pub fn held_open(dir: &Path) -> Option<String> {
 /// time) reads again only what changed instead of every byte of every repo.
 /// They are what sync last read, so they are kept with sync's other records.
 /// Only copies this OS holds are kept for.
-pub(super) fn stamps_file(dir: &Path) -> Option<PathBuf> {
-    let (data, repos) = (crate::paths::data_dir(), crate::paths::repos_dir());
-    if !(dir.starts_with(&data) || dir.starts_with(&repos)) { return None; }
+fn stamps_file(dir: &Path) -> Option<PathBuf> {
+    let (data, repos) = (crate::fs::paths::data_dir(), crate::fs::paths::repos_dir());
+    if !(dir.starts_with(data) || dir.starts_with(repos)) { return None; }
     // Where they were kept before (cache/digests): nothing reads it now.
     let old = data.join("cache");
     if old.join("digests").is_dir() { let _ = fs::remove_dir_all(old.join("digests")); let _ = fs::remove_dir(&old); }
@@ -140,7 +154,7 @@ pub(super) fn stamps_file(dir: &Path) -> Option<PathBuf> {
 /// Take in kept digests. A file changed within the same moment the stamps
 /// were written may look unchanged (a coarse clock), so, as git does with a
 /// racily clean index, those are read again.
-pub(super) fn stamps_load(file: &Path) {
+fn stamps_load(file: &Path) {
     let Ok(text) = fs::read_to_string(file) else { return };
     let mut lines = text.lines();
     let Some(written) = lines.next().and_then(|l| l.parse::<i128>().ok()) else { return };
@@ -151,24 +165,22 @@ pub(super) fn stamps_load(file: &Path) {
         let (Some(len), Some(t), Some(ino), Some(sha), Some(path)) = (w.next(), w.next(), w.next(), w.next(), w.next()) else { continue };
         let (Ok(len), Ok(t), Ok(ino)) = (len.parse::<u64>(), t.parse::<i128>(), ino.parse::<u64>()) else { continue };
         if t >= written - 2_000_000_000 { continue; }
-        map.entry(PathBuf::from(path)).or_insert(((len, t, ino), sha.to_string()));
+        map.entry(path.into()).or_insert(((len, t, ino), sha.to_string()));
     }
 }
 
 /// Keep the digests of the files just read: exactly these, so what is gone is forgotten.
-pub(super) fn stamps_save(file: &Path, read: &[PathBuf]) {
-    let Ok(map) = seen().lock() else { return };
+fn stamps_save(file: &Path, read: &[(PathBuf, Stamp, String)]) {
+    use std::fmt::Write;
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos() as i128);
-    let mut body = String::new();
+    let mut body = String::with_capacity(read.len() * 128);
     let mut newest = i128::MIN;
-    for p in read {
-        let Some(((len, t, ino), sha)) = map.get(p) else { continue };
+    for (p, (len, t, ino), sha) in read {
         let path = p.to_string_lossy();
         if path.contains('\n') { continue; }
         newest = newest.max(*t);
-        body.push_str(&format!("{len} {t} {ino} {sha} {path}\n"));
+        let _ = writeln!(body, "{len} {t} {ino} {sha} {path}");
     }
-    drop(map);
     // The same digests, none of them too close to when they were written to be trusted: nothing to write
     // (each look would otherwise write it again, and a browser keep and tell every tab of it each time).
     if let Ok(k) = kept_as().lock() {
@@ -179,7 +191,7 @@ pub(super) fn stamps_save(file: &Path, read: &[PathBuf]) {
     let Some(dir) = file.parent() else { return };
     if fs::create_dir_all(dir).is_err() { return; }
     // Not kept, the next run reads those files again: work lost, nothing wrong.
-    let _ = crate::atomic::replace(file, text.as_bytes(), crate::atomic::How::CACHE);
+    let _ = crate::fs::write::replace(file, text.as_bytes(), crate::fs::write::How::CACHE);
 }
 
 pub(super) fn walk(dir: &Path, prefix: &str, out: &mut Local) {
@@ -188,7 +200,7 @@ pub(super) fn walk(dir: &Path, prefix: &str, out: &mut Local) {
     for e in entries.flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
         // A file this OS is writing is not the repo's yet.
-        if crate::usage::is_temporary(&name) {
+        if crate::fs::write::is_temporary(&name) {
             continue;
         }
         empty = false;
@@ -203,15 +215,15 @@ pub(super) fn walk(dir: &Path, prefix: &str, out: &mut Local) {
         if meta.file_type().is_symlink() {
             out.unsynced.push((rel, crate::tr!("a link", "リンク")));
         } else if meta.is_dir() {
-            // Made from the repo's own files (owned.rs): not the repo's to send, nor what keeps it here.
-            if crate::owned::derived(dir, &name, &path) { continue; }
+            // Made from the repo's own files (prompt/writes.rs): not the repo's to send, nor what keeps it here.
+            if crate::repos::derived::derived(dir, &name, &path) { continue; }
             walk(&path, &rel, out);
         } else if meta.is_file() {
             if meta.len() > BLOB_LIMIT {
                 out.unsynced.push((rel, crate::tr!("File exceeds 16 MB", "16 MB を超えるファイル")));
                 continue;
             }
-            let sha = if out.fresh { fs::read(&path).ok().map(|b| sha256(&b)) } else { digest(&path, &meta) };
+            let sha = if out.fresh { read_digest(&path) } else { digest(&path, &meta) };
             let Some(sha) = sha else { out.unsynced.push((rel, crate::tr!("a file that cannot be read", "読めないファイル"))); continue };
             out.bytes += meta.len();
             #[cfg(unix)]
@@ -220,7 +232,7 @@ pub(super) fn walk(dir: &Path, prefix: &str, out: &mut Local) {
                 let mode = meta.permissions().mode() & 0o777;
                 if mode & 0o111 != 0 { out.modes.insert(rel.clone(), mode); }
             }
-            out.read.push(path.clone());
+            out.read.push((path.clone(), stamp(&meta), sha.clone()));
             out.files.insert(sha.clone(), path);
             out.tree.insert(rel, Some(sha));
         } else {
@@ -231,3 +243,17 @@ pub(super) fn walk(dir: &Path, prefix: &str, out: &mut Local) {
         out.tree.insert(prefix.to_string(), None);
     }
 }
+
+pub const BLOB_LIMIT: u64 = 16 << 20;
+
+/// The modes of `tree`'s files only.
+pub(crate) fn modes_for(tree: &Tree, modes: &Modes) -> Modes {
+    modes.iter().filter(|(p, _)| matches!(tree.get(*p), Some(Some(_)))).map(|(p, m)| (p.clone(), *m)).collect()
+}
+
+/// Beside a tree, each file's mode where it has an execute bit: path -> its permission bits (0o755). A path
+/// not in it is a plain file. The Remote keeps the same beside each draft and commit (DESIGN.md §6, "A file's mode").
+pub type Modes = BTreeMap<String, u32>;
+
+pub type Tree = BTreeMap<String, Option<String>>;
+

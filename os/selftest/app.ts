@@ -103,7 +103,7 @@ export class App {
   /**
    * Answer an ask with `yes`: a deed that comes under the pointer holds still a moment (so a double
    * click cannot answer it), so it is pressed until the ask (`ask`) is gone. Pressed again soon: the
-   * moment is half a second (SETTLE, src/pages/common.ts), and a press it takes disables the deed
+   * moment is half a second (SETTLE, app/pages/kit/common.ts), and a press it takes disables the deed
    * until it is done, so a press while it is being done waits for it rather than doing it twice.
    */
   async answer(yes: Locator, ask: Locator) {
@@ -256,6 +256,8 @@ class NewRepo extends Part {
 /** Forge: the band of repos and the search on the top line, the files one after another, the right pane at the right. */
 class Forge extends Part {
   get band() { return this.main.getByRole('navigation', {name: 'repo'}); }
+  /** The tools first on the top line, before the repos: >_ (the terminal on the desk), the files, the search. */
+  get tools() { return this.main.getByRole('group', {name: 'Tools'}); }
   get search() { return this.main.getByRole('searchbox', {name: 'Search this repo'}); }
   /**
    * Under the search box while it (or what is under it) has the keyboard, or something is read there: Issue,
@@ -266,14 +268,14 @@ class Forge extends Part {
   get reference() { return this.results; }
   /** Issue, diff or Output, side by side under the box. */
   kind(view: 'Issue' | 'diff' | 'Output') { return this.results.getByRole('group', {name: 'Search target'}).getByRole('button', {name: view, exact: true}); }
-  /** The switch at the top line's right end that puts the right pane away and brings it back. */
+  /** The switch at the foot, level with the person's, that puts the right pane away and brings it back. */
   get paneSwitch() { return this.main.getByRole('button', {name: 'Right pane', exact: true}); }
   /** A file's text, which is where it is edited. */
   editor(path: string) { return this.main.getByRole('textbox', {name: `Edit ${path}`, exact: true}); }
   /** A file's name in its head (its path in the repo), pressed to write it over. */
-  fileName(path: string) { return this.main.locator(`section.file[data-path="${path}"] > .path .path-name`).locator('visible=true'); }
+  fileName(path: string) { return this.main.locator(`.desk-box[data-key="${path}"] .desk-name`).locator('visible=true'); }
 
-  /** A file renamed from its head: its name pressed, `written` (its path in the repo) written over it, Enter. */
+  /** A file renamed from its head: its name pressed, `written` (a name in its folder) written over it, Enter. */
   async rename(path: string, written: string) {
     await this.fileName(path).click();
     const field = this.main.getByRole('textbox', {name: 'New name', exact: true});
@@ -318,14 +320,32 @@ class Forge extends Part {
   /** A line found by the search, by its text. */
   hit(text: string | RegExp) { return this.results.getByRole('button', {name: text}); }
 
-  /** The text selected in a file's editor (where the search or a diff opened it). */
+  /** The text selected in a file's editor (where a diff opened it, a line number pressed). */
   selected(path: string) {
     return this.editor(path).evaluate((el: HTMLTextAreaElement) => el.value.slice(el.selectionStart, el.selectionEnd));
+  }
+
+  /** The line chosen in a file (where the search or a link opened it): the line the caret is on, where its words begin,
+   * nothing selected, and the line washed; else what is otherwise (said, so a failure says it). */
+  lineChosen(path: string) {
+    return this.editor(path).evaluate((el: HTMLTextAreaElement) => {
+      const v = el.value, c = el.selectionStart;
+      const from = v.lastIndexOf('\n', c - 1) + 1;
+      let to = v.indexOf('\n', c);
+      if (to < 0) to = v.length;
+      const line = v.slice(from, to);
+      if (el.selectionEnd !== c) return `selected: ${v.slice(c, el.selectionEnd)}`;
+      if (c !== from + (/^[ \t]*/.exec(line)?.[0].length ?? 0)) return `caret at ${c - from} of: ${line}`;
+      if (!el.closest('.desk-file')?.querySelector('.desk-mark')) return `not washed: ${line}`;
+      return line;
+    });
   }
 
   /** 'Issue', 'diff' or 'Output' pressed under the search box (pressed with nothing typed: what there is of it). */
   async show(view: 'Issue' | 'diff' | 'Output') {
     await this.search.click();
+    // With nothing typed, what there is comes down from the band's search once asked for: ↓.
+    if (!(await this.search.inputValue()) && !(await this.results.isVisible())) await this.search.press('ArrowDown');
     const b = this.kind(view);
     if (await b.getAttribute('aria-pressed') !== 'true') await b.click();
     await expect(b).toHaveAttribute('aria-pressed', 'true');
@@ -346,6 +366,10 @@ class Forge extends Part {
   /** The prompt box at the center's foot, and the Prompt (the repo's sh) it writes to. */
   get promptBox() { return this.main.getByRole('textbox', {name: 'Prompt input', exact: true}); }
   get prompt() { return this.main.getByRole('region', {name: 'Prompt', exact: true}); }
+  /** The right pane's rows: what was done in the repo, a line run each (and what the box did that is not the shell's). */
+  get pane() { return this.main.getByRole('log', {name: 'Prompt', exact: true}); }
+  /** A line run, as the pane tells it. */
+  paneRun(line: string) { return this.pane.getByRole('button', {name: new RegExp(`^${escape(line)}\\b`)}); }
 
   /** What is said under the prompt box (the choices Tab found, Starting up……). */
   promptSays(text: string | RegExp) { return this.main.getByRole('status').filter({hasText: text}); }
@@ -498,8 +522,8 @@ class FileTree extends Part {
     await menu.getByRole('menuitem', {name: deed}).click();
     if (deed === 'New file') {
       const made = path ? `${path}/untitled.md` : 'untitled.md';
-      await expect(this.app.forge.editor(made)).toBeFocused();
-      await this.app.forge.rename(made, path ? `${path}/${name}` : name);
+      await expect(this.app.forge.fileName(made)).toBeVisible();
+      await this.app.forge.rename(made, name);
       return;
     }
     const field = menu.getByRole('textbox');
@@ -789,7 +813,7 @@ class Server extends Part {
 }
 
 /**
- * Stripe, as the Remote with the plan has it (service/devbilling.ts, its stand-in in test mode): Checkout's card
+ * Stripe, as the Remote with the plan has it (remote/devbilling.ts, its stand-in in test mode): Checkout's card
  * form, the 3-D Secure step, and the customer portal, found as a person finds them there.
  */
 class Stripe extends Part {

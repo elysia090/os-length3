@@ -34,14 +34,15 @@ test('a diff line pressed is marked, and pressed again is not', async ({signedIn
   await expect(line).toHaveAttribute('aria-pressed', 'false');
 });
 
-test('the search finds a line and opens the file there, the line selected', async ({signedIn: app}) => {
+test('the search finds a line and opens the file there, the line washed and the caret on it', async ({signedIn: app}) => {
   await app.forge.find('puts');
 
-  await expect(app.forge.results.getByText('1 file · 1 line')).toBeVisible();
+  // What was found is said a kind at a time, how many beside each: one file.
+  await expect(app.forge.results.locator('.found-sec-head')).toHaveText([/^files\s*1$/]);
   await app.forge.hit(/puts\("hello"\);/).click();
 
   await expect(app.forge.editor('src/main.c')).toBeFocused();
-  await expect.poll(() => app.forge.selected('src/main.c')).toBe('    puts("hello");');
+  await expect.poll(() => app.forge.lineChosen('src/main.c')).toBe('    puts("hello");');
 });
 
 test('a file put back from the diff is as it was at the last commit, and leaves the diff', async ({signedIn: app}) => {
@@ -101,7 +102,7 @@ test('a file saved on another device while written here is asked about, and Keep
 });
 
 test('Escape out of an empty search gives the keyboard back to what had it', async ({signedIn: app}) => {
-  await app.forge.promptBox.click();
+  await app.forge.promptBox.focus();
   await app.forge.search.click();
   await app.forge.search.fill('hello');
   await app.page.keyboard.press('Escape');

@@ -11,7 +11,7 @@
 [[IgnoredVulns]]
 id = "RUSTSEC-2025-0141"
 ignoreUntil = 2027-02-01
-reason = "bincode is unmaintained (bat, delta, zoxide: their own caches); no vulnerability is known in it"
+reason = "bincode is unmaintained (bat, delta: their own caches); no vulnerability is known in it"
 [[IgnoredVulns]]
 id = "RUSTSEC-2024-0449"
 ignoreUntil = 2027-02-01
@@ -40,6 +40,10 @@ reason = "number_prefix is unmaintained (hyperfine); no vulnerability is known i
 id = "RUSTSEC-2025-0124"
 ignoreUntil = 2027-02-01
 reason = "rand_os is unmaintained (hyperfine, through rand 0.6); no vulnerability is known in it"
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0441"
+ignoreUntil = 2027-02-01
+reason = "pin-utils is unmaintained (delta, through futures-util); no vulnerability is known in it"
 
 # Fixed only in a version the program's own code would have to change for, and not reached by it.
 [[IgnoredVulns]]

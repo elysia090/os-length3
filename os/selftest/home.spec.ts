@@ -166,22 +166,28 @@ test("a TODO's detail starts on its first line's column, with a kind and without
   expect(Math.abs(await left(app.home.detail(plain)) - await left(app.home.title(plain)))).toBeLessThan(1);
 });
 
-test("Home's repos are three across at a laptop's width, and one under another on a phone", async ({app}) => {
+test("Home's repos are a column of their names beside the TODO at a laptop's width, and under it on a phone", async ({app}) => {
   for (const name of ['notes', 'trip', 'site']) await app.newRepo.make(name);
   await app.rail.go('home');
-  // The three, then New repo.
+  // The three, then New repo, one under another.
   const repos = app.main.getByRole('region', {name: 'Repos'});
   const cards = repos.getByRole('group').or(repos.getByRole('button', {name: 'New repo'}));
   await expect(cards).toHaveCount(4);
-  const tops = async () => Promise.all((await cards.all()).map(async (c) => Math.round((await c.boundingBox())!.y)));
+  const at = async (l: Locator) => (await l.boundingBox())!;
   await app.page.setViewportSize({width: 1180, height: 800});
   await expect(async () => {
-    const y = await tops();
-    expect(y.slice(0, 3).every((v) => v === y[0])).toBe(true);
-    expect(y[3]).toBeGreaterThan(y[0]);
+    const boxes = await Promise.all((await cards.all()).map(at));
+    expect(boxes.every((b, i) => i === 0 || b.y >= boxes[i - 1].y + boxes[i - 1].height - 1)).toBe(true);
+    // Beside the TODO: to its right, from its top.
+    const todo = await at(app.home.todo);
+    expect(boxes[0].x).toBeGreaterThan(todo.x + todo.width);
+    expect(Math.abs(boxes[0].y - todo.y)).toBeLessThan(80);
   }).toPass();
   await app.page.setViewportSize({width: 390, height: 844});
-  await expect(async () => expect(new Set(await tops()).size).toBe(4)).toPass();
+  await expect(async () => {
+    const todo = await at(app.home.todo);
+    expect((await at(cards.first())).y).toBeGreaterThan(todo.y + todo.height);
+  }).toPass();
 });
 
 test('the name written on Home is the account\'s, so what is started, committed and reviewed from here says it', async ({signedIn: app}) => {
@@ -225,30 +231,71 @@ test.describe("on 'hello', made from C's files and worked in last", () => {
   // Made once for the worker and kept (fixtures.ts, helloC), as making it is new-repo.spec.ts's and file.spec.ts's to see.
   test.use({storageState: async ({helloC}, use) => { await use(helloC); }});
 
-  test('Home has the search Forge has, where Forge has it: in the repo last worked in, a line found opened in Forge there', async ({app}) => {
+  test('Home has the search Forge has, where Forge has it: on the band, in the repo last worked in, a line found opened in Forge there', async ({app}) => {
     await app.rail.go('home');
-    // Named, there being no band on Home to say which repo it searches.
+    // Named, there being no repos on Home's band to say which it searches.
     const search = app.main.getByRole('searchbox', {name: 'Search hello'});
     await expect(search).toBeVisible();
     await app.page.keyboard.press('Control+k');
     await expect(search).toBeFocused();
     await search.fill('puts');
+    // What it finds drops as a sheet over Home, as Forge's does over its desk, a kind at a time.
     const results = app.main.getByRole('region', {name: 'Search results'});
-    await expect(results.getByText('1 file · 1 line')).toBeVisible();
+    await expect(results.locator('.found-sec-head')).toHaveText([/^files\s*1$/]);
     await results.getByRole('button', {name: /puts\("hello"\);/}).click();
     await expect(app.forge.editor('src/main.c')).toBeFocused();
-    await expect.poll(() => app.forge.selected('src/main.c')).toBe('    puts("hello");');
+    await expect.poll(() => app.forge.lineChosen('src/main.c')).toBe('    puts("hello");');
   });
 });
 
+test("Home's band has Forge's tools where Forge has them, and the pane's first row is level with the rail's first icon", async ({app}) => {
+  await app.newRepo.make('notes');
+  const tools = () => app.page.evaluate(() => [...document.querySelectorAll<HTMLElement>('.band-tools > *')].filter((e) => e.getClientRects().length)
+    .slice(0, 3).map((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.y), Math.round(r.width)]; }));
+  // The pane's first line and the rail's first icon start on one line (the bar beside the line starts with it), once
+  // the first row is drawn and come to rest.
+  const level = () => expect(async () => {
+    const [line, bar] = await app.page.evaluate(() => {
+      const row = [...document.querySelectorAll<HTMLElement>('.pane-row')].find((e) => e.getClientRects().length);
+      const icon = document.querySelector('.rail svg')!.getBoundingClientRect().top;
+      if (!row) return [NaN, NaN];
+      return [row.querySelector('.pane-line')!.getBoundingClientRect().top - icon, row.querySelector('.pane-bar')!.getBoundingClientRect().top - icon];
+    });
+    expect(Math.abs(line)).toBeLessThan(1);
+    expect(bar).toBeGreaterThan(2);
+    expect(bar).toBeLessThan(7);
+  }).toPass();
+  await app.rail.go('forge');
+  await app.forge.startPrompt('notes');
+  await app.forge.run('true');
+  await expect(app.forge.pane.locator('.pane-row.run')).toHaveCount(1);
+  await level();
+  const forge = await tools();
+  await app.rail.go('home');
+  await expect(async () => expect(await tools()).toEqual(forge)).toPass();
+  await expect(app.main.getByRole('button', {name: 'Files: New, Rename, Delete'})).toBeVisible();
+  await level();
+  // Its files button is Forge's, for the repo last worked in: there, its menu out under Forge's own (the terminal in
+  // hand there, the repo's deeds).
+  await app.main.getByRole('button', {name: 'Files: New, Rename, Delete'}).click();
+  const menu = app.page.getByRole('menu', {name: 'notes', exact: true});
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole('menuitem', {name: 'New file'})).toBeFocused();
+  const under = (await app.forge.tools.getByRole('button', {name: 'Files: New, Rename, Delete'}).boundingBox())!;
+  expect((await menu.boundingBox())!.y).toBeGreaterThan(under.y + under.height - 1);
+});
+
 test('Home come back to is where it was read to, and the page between starts at its top', async ({app}) => {
-  await app.page.setViewportSize({width: 1280, height: 420});
+  await app.page.setViewportSize({width: 1280, height: 300});
   await app.rail.go('home');
   const read = () => app.page.evaluate(() => Math.round(document.scrollingElement!.scrollTop));
-  await app.page.evaluate(() => { document.scrollingElement!.scrollTop = 200; });
-  await expect.poll(read).toBe(200);
+  // Read down to 120 px, once Home is that long (what it lists is drawn as it is read from the store).
+  await expect(async () => {
+    await app.page.evaluate(() => { document.scrollingElement!.scrollTop = 120; });
+    expect(await read()).toBe(120);
+  }).toPass();
   await app.rail.go('runtime');
   await expect.poll(read).toBe(0);
   await app.rail.go('home');
-  await expect.poll(read).toBe(200);
+  await expect.poll(read).toBe(120);
 });

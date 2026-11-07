@@ -65,6 +65,38 @@ test('what will be made is the new repo alone, as File will show it, its files m
   await expect((await app.file.item('harbour', '', {open: true})).getByRole('treeitem', {name: 'docs', exact: true})).toHaveCount(0);
 });
 
+test("what will be made stands beside the name's box at a laptop's width, as Home's repos beside its TODO; a long name has the box alone; the name fits its line", async ({app}) => {
+  await app.page.setViewportSize({width: 1400, height: 900});
+  await app.rail.go('new-repo');
+  const box = app.main.locator('.nr-box'), files = app.main.locator('.tree-still');
+  await app.newRepo.name.fill('count');
+  const at = async (l: typeof box) => (await l.boundingBox())!;
+  await expect(async () => {
+    const b = await at(box), f = await at(files);
+    expect(f.x).toBeGreaterThan(b.x + b.width);
+    expect(Math.abs(f.y - b.y)).toBeLessThan(1);
+    expect(f.width).toBeLessThan(b.width * .7);
+  }).toPass();
+  // A short name as large as the box gives it.
+  const size = () => app.newRepo.name.evaluate((e) => parseFloat(getComputedStyle(e).fontSize));
+  expect(await size()).toBe(104);
+  // One too long to stand large beside the files has the column alone, what will be made inside its box; on its one
+  // line, not cut at the box's edge. Short again, the files stand beside it again.
+  const inside = box.locator('.tree-still');
+  await app.newRepo.name.fill('length3-blobs');
+  await expect(inside).toBeVisible();
+  expect(await size()).toBeGreaterThan(80);
+  expect(await app.newRepo.name.evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(true);
+  await app.newRepo.name.fill('count');
+  await expect(inside).toHaveCount(0);
+  await expect(files).toBeVisible();
+  await app.page.setViewportSize({width: 390, height: 844});
+  await expect(async () => {
+    const b = await at(box), f = await at(files);
+    expect(f.y).toBeGreaterThan(b.y + b.height);
+  }).toPass();
+});
+
 test('what is written before Create stays while another page is seen, and goes once made', async ({app}) => {
   await app.rail.go('new-repo');
   await app.newRepo.name.fill('harbour');

@@ -7,16 +7,16 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "build:cloudflare": ". scripts/rust.sh && node scripts/prompt-files.mjs && VITE_LENGTH3_REMOTE= npm run build",
+    "build:cloudflare": ". scripts/rust.sh && node scripts/prompt-files.ts && VITE_LENGTH3_REMOTE= npm run build",
     "check": "tsc --noEmit && npm test",
-    "test": "node scripts/tests.mjs",
+    "test": "node scripts/tests.ts",
     "selftest:l3": "tsc -p selftest/l3 && node --test \"selftest/l3/*.test.ts\"",
     "selftest": "playwright test -c selftest",
     "selftest:prod": "node selftest/prod/run.ts",
-    "verify:remote": "node service/verify.ts",
+    "verify:remote": "node remote/verify.ts",
     "tauri": "tauri",
     "l3": "sh scripts/l3.sh",
-    "l3:parity": "node scripts/l3-parity.mjs",
+    "l3:parity": "node scripts/l3-parity.ts",
     "web-release": "sh scripts/web-release.sh"
   },
   "devDependencies": {

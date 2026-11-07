@@ -39,7 +39,7 @@ const timing = (h: string | null, k: string) => { const m = new RegExp(`${k};dur
 
 /**
  * The bearer of the session a Set-Cookie sets: the session cookie's own value (the token signed, the bearer's form too).
- * A page is handed no bearer (service/auth.ts); this, which is no page, holds what it was sent, as a device holds its own.
+ * A page is handed no bearer (remote/auth.ts); this, which is no page, holds what it was sent, as a device holds its own.
  */
 const bearerIn = (setCookies: string[]): string | null => {
   for (const c of setCookies) {

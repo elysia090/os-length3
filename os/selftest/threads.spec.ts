@@ -30,7 +30,7 @@ test.describe('the Prompt with its threads apart', {tag: '@slow'}, () => {
   // On 'hello', made from C's files once for the worker and kept (fixtures.ts, helloC), opened again in Forge.
   test.use({storageState: async ({helloC}, use) => { await use(helloC); }});
   test.beforeEach(async ({app}) => {
-    expect(existsSync(PROMPT), 'this build carries no l3 (public/l3): npm run l3, or node scripts/prompt-files.mjs').toBe(true);
+    expect(existsSync(PROMPT), 'this build carries no l3 (public/l3): npm run l3, or node scripts/prompt-files.ts').toBe(true);
     test.setTimeout(300_000);
     await app.newRepo.openInForge();
     await app.forge.startPrompt('hello');
@@ -54,15 +54,16 @@ test.describe('the Prompt with its threads apart', {tag: '@slow'}, () => {
     await expect(app.forge.prompt).toContainText(/^68157440$/m, {timeout: 120_000});
   });
 
-  test('Interrupt is SIGINT to what runs in front: a sleep, and a job that computes without a call', async ({app}) => {
+  test('Ctrl+C is SIGINT to what runs in front: a sleep, and a job that computes without a call', async ({app}) => {
     for (const [k, line] of ['sleep 60', '(while :; do :; done)'].entries()) {
       await app.forge.run(line);
-      const cut = app.page.getByRole('button', {name: 'Interrupt', exact: true});
-      await cut.click({timeout: 30_000});
-      await expect(cut).toHaveCount(0, {timeout: 15_000});
-      // The button goes when what ran in front has ended, a moment before its shell has said its prompt again:
-      // a line sent then is typed ahead, echoed before that prompt as a terminal echoes it, and its output comes
-      // after the prompt on one line. A person waits for the prompt; so does this.
+      // Cut once it is seen running (the line under the terminal says so), as a person would: the terminal on the desk
+      // is cut as any terminal is, with Ctrl+C at its line, and has no buttons of its own.
+      await expect(app.forge.prompt.locator('.term-activity')).toContainText(/Running|Waiting/, {timeout: 30_000});
+      await app.forge.promptBox.press('Control+c');
+      // What ran in front ends a moment before its shell says its prompt again: a line sent then is typed ahead,
+      // echoed before that prompt as a terminal echoes it, and its output comes after the prompt on one line. A person
+      // waits for the prompt; so does this.
       await expect(app.forge.prompt).toContainText(/\^C\nhello \$\s*$/, {timeout: 15_000});
       await app.forge.run(`echo "status $? after ${k}"`);
       await expect(app.forge.prompt).toContainText(new RegExp(`^status 130 after ${k}$`, 'm'));

@@ -8,9 +8,22 @@ import type {App} from './app.ts';
 
 test.use({reducedMotion: 'no-preference'});
 
-/** Every move with an end has ended (the caret's blink, which has none, goes on). */
-const still = (app: App) => expect.poll(() => app.page.evaluate(() => document.getAnimations()
-  .filter((a) => a.playState === 'running' && a.effect?.getComputedTiming().iterations !== Infinity).length)).toBe(0);
+/**
+ * Every move with an end has ended (the caret's blink, which has none, goes on): waited for as each says it ends, and
+ * looked at again a frame later for those its end set going, not polled at intervals that outlast it.
+ */
+const still = (app: App) => app.page.evaluate(async () => {
+  const moving = () => document.getAnimations().filter((a) => a.playState === 'running' && a.effect?.getComputedTiming().iterations !== Infinity);
+  const until = performance.now() + 10_000;
+  // A frame first: what the last key or press set going in its next frame is going by then.
+  for (;;) {
+    await new Promise(requestAnimationFrame);
+    const now = moving();
+    if (!now.length) return;
+    if (performance.now() > until) throw new Error(`still moving after 10 s: ${now.map((a) => (a as CSSAnimation).animationName ?? a.id).join(', ')}`);
+    await Promise.all(now.map((a) => a.finished.catch(() => {})));
+  }
+});
 
 test('going along the rail pans to the next page, which stands whole once it lands, its cards each in place', async ({app}) => {
   await app.newRepo.make('hello');
@@ -162,21 +175,28 @@ test('the right pane brought out lands a touch past its edge and settles, its ma
   const open = (await side.boundingBox())!.width;
   expect(await filled()).toBeCloseTo(1, 2);
 
-  // Put away, it moves from the press and is gone in a fraction of its coming (--leave): sampled frame by frame.
+  // Put away, it is set going in the press itself (its move begun before the press is done with: the next frame drawn
+  // has it moving, however late a busy page draws it) and is gone in a fraction of its coming (--leave): sampled frame
+  // by frame. (When that next frame comes is the page's drawing, not the pane's: a page drawn in software, as here, can
+  // take a long frame there now and then.)
   const going = app.page.evaluate(() => new Promise<{first: number; gone: number}>((done) => {
-    const el = document.querySelector('.work.bench:not([hidden]) > .side')!, w0 = el.getBoundingClientRect().width;
+    const el = document.querySelector('.work.bench:not([hidden]) > .side')!, work = el.parentElement!;
     let first = -1, t0 = 0;
+    new MutationObserver((_, o) => { if (work.classList.contains('pane-closed')) { first = performance.now() - t0; o.disconnect(); } }).observe(work, {attributes: true, attributeFilter: ['class']});
     const tick = () => {
       const w = el.getBoundingClientRect().width, at = performance.now() - t0;
-      if (first < 0 && w < w0 - 2) first = at;
       if (w < 1 || at > 2000) done({first, gone: at}); else requestAnimationFrame(tick);
     };
     // Timed from the press itself, not from the test's asking for it.
     addEventListener('click', () => { t0 = performance.now(); requestAnimationFrame(tick); }, {once: true, capture: true});
   }));
-  await app.forge.paneSwitch.click();
+  // Pressed as a hand does, without the test's own look at what is under the pointer first: that look runs in the page
+  // after the press, in the frames being measured (a 60 ms task of its own on a page this size).
+  const at = (await app.forge.paneSwitch.boundingBox())!;
+  await app.page.mouse.click(at.x + at.width / 2, at.y + at.height / 2);
   const {first, gone} = await going;
-  expect(first).toBeLessThan(60);
+  expect(first).toBeGreaterThanOrEqual(0);
+  expect(first).toBeLessThan(16);
   expect(gone).toBeLessThan(400);
   await expect(app.forge.paneSwitch).toHaveAttribute('aria-expanded', 'false');
   await still(app);
@@ -200,22 +220,20 @@ test('the right pane brought out lands a touch past its edge and settles, its ma
   expect(await filled()).toBeCloseTo(1, 2);
 });
 
-test('Home\'s right pane put away and brought back: its switch stays under the hand, what it holds goes with its edge, its search never squeezed', async ({app}) => {
+test('Home\'s right pane put away and brought back: its switch stays under the hand, what it holds goes with its edge, the band\'s search stays where it is', async ({app}) => {
   await app.newRepo.make('hello');
   await app.rail.go('home');
   await still(app);
   const toggle = app.main.getByRole('button', {name: 'Right pane'});
   const search = app.main.getByRole('searchbox', {name: /^Search/});
   const at = (await toggle.boundingBox())!;
-  const wide = (await search.boundingBox())!.width;
-  // Frame by frame as it goes: the search box and Lately, how much of each is to be seen.
-  const going = (ms: number) => app.page.evaluate((ms) => new Promise<{search: number; lately: string; width: number}[]>((done) => {
-    const box = document.querySelector<HTMLElement>('.home-bar > .search-box')!, side = document.querySelector<HTMLElement>('.home-side')!;
-    const seen: {search: number; lately: string; width: number}[] = [], t0 = performance.now();
+  const where = (await search.boundingBox())!;
+  // Frame by frame as it goes: whether Lately is to be seen.
+  const going = (ms: number) => app.page.evaluate((ms) => new Promise<string[]>((done) => {
+    const side = document.querySelector<HTMLElement>('.home-side')!;
+    const seen: string[] = [], t0 = performance.now();
     const tick = () => {
-      // Drawn at all (not taken out of the page), and then how much.
-      const drawn = (el: HTMLElement) => el.getClientRects().length > 0 && getComputedStyle(el).visibility === 'visible';
-      seen.push({search: drawn(box) ? +getComputedStyle(box).opacity : 0, lately: drawn(side) ? 'visible' : 'hidden', width: box.getBoundingClientRect().width});
+      seen.push(side.getClientRects().length > 0 && getComputedStyle(side).visibility === 'visible' ? 'visible' : 'hidden');
       if (performance.now() - t0 < ms) requestAnimationFrame(tick); else done(seen);
     };
     requestAnimationFrame(tick);
@@ -223,20 +241,17 @@ test('Home\'s right pane put away and brought back: its switch stays under the h
   const away = going(300);
   await toggle.click();
   const put = await away;
-  // Not gone at the press: the search fades from where it was, and Lately is still there for the start of the move.
-  expect(put[0].search).toBeGreaterThan(.5);
-  expect(put.slice(0, 3).every((f) => f.lately === 'visible')).toBe(true);
+  // Lately is still there for the start of the move, going with the pane's edge.
+  expect(put.slice(0, 3).every((f) => f === 'visible')).toBe(true);
   await still(app);
-  await expect(search).toBeHidden();
-  // The switch where it stood, not a gap's width to the right of it.
+  // The switch where it stood, and the search on the band where it was: neither is the pane's to take away.
   expect(Math.abs((await toggle.boundingBox())!.x - at.x)).toBeLessThan(1);
-  const back = going(1500);
-  await toggle.click();
-  const came = await back;
-  await still(app);
+  expect(Math.abs((await toggle.boundingBox())!.y - at.y)).toBeLessThan(1);
   await expect(search).toBeVisible();
-  // Never squeezed on the way: as wide as it is out, every frame it is to be seen at all.
-  for (const f of came.filter((f) => f.search > .05)) expect(f.width).toBeGreaterThan(wide - 1);
+  expect(Math.abs((await search.boundingBox())!.x - where.x)).toBeLessThan(1);
+  await toggle.click();
+  await still(app);
+  await expect(app.main.getByRole('complementary', {name: 'Recent activity'})).toBeVisible();
   expect(Math.abs((await toggle.boundingBox())!.x - at.x)).toBeLessThan(1);
 });
 
@@ -282,16 +297,20 @@ test('a menu put away and opened again on its way out comes back from where it h
   await gear.click();
   await expect(menu).toBeVisible();
   await still(app);
-  // Put away, and pressed again a moment later, as it fades.
+  // Put away, and pressed again while it fades: once it is partway out (looked at each frame, not after a set time, which
+  // a busy machine can overshoot to where it is gone).
   const back = await gear.evaluate((g) => new Promise<number[]>((done) => {
     const list = document.getElementById(g.getAttribute('aria-controls') ?? '') ?? g.closest('.card')!.querySelector<HTMLElement>('.repo-gear-pop')!;
     (g as HTMLElement).click();
-    setTimeout(() => {
+    const again = () => {
+      const o = +getComputedStyle(list).opacity;
+      if (o > .85) { requestAnimationFrame(again); return; }
       (g as HTMLElement).click();
       const seen: number[] = [];
       const tick = () => { seen.push(+getComputedStyle(list).opacity); if (seen.length < 40 && seen.at(-1)! < 1) requestAnimationFrame(tick); else done(seen); };
       requestAnimationFrame(tick);
-    }, 60);
+    };
+    requestAnimationFrame(again);
   }));
   // Neither gone nor whole at once: it fades back from where it was.
   expect(back[0]).toBeGreaterThan(.1);
@@ -318,6 +337,16 @@ test('the caret is drawn by the OS: it follows what is written along the line, a
   const b = await at();
   expect(b.x).toBeGreaterThan(a.x + 10);
   expect(Math.abs(b.y - a.y)).toBeLessThan(1);
+  // A letter written puts it after the letter in the frame the letter is drawn in: it never glides there, over the
+  // letter just written, a letter behind at every key.
+  // (Written and looked at in one go in the page: a key sent from here comes back after the glide would be over.)
+  const drawn = await caret.evaluate(async (e) => {
+    document.execCommand('insertText', false, 's');
+    await new Promise((go) => requestAnimationFrame(go));
+    return new DOMMatrix(getComputedStyle(e).transform).e;
+  });
+  expect(Math.abs(drawn - (await at()).x)).toBeLessThan(0.5);
+  expect(drawn).toBeGreaterThan(b.x + 4);
   await app.page.keyboard.press('Enter');
   const c = await at();
   expect(c.y).toBeGreaterThan(b.y + 8);
@@ -416,85 +445,6 @@ test('a page coming in never shows a part and then takes it away to bring it in'
   const forge = flashes();
   await app.rail.go('forge');
   expect(await forge).toEqual([]);
-});
-
-test('the Prompt put back on its way up turns there, and brought up on its way down turns there: never first whole, or back in the pill', async ({app}) => {
-  await app.newRepo.make('hello');
-  await app.newRepo.openInForge();
-  await still(app);
-  // How much of the glass is seen (its height less its clip's top and foot): as it stands when it is turned (the
-  // bench says it is up, or going down), then frame by frame for 900 ms. Set going before the key is pressed (a key can
-  // be taken before a script sent ahead of it has run), and read once it is over.
-  type Watched = Window & {turned?: Promise<number[]>};
-  const watch = async () => {
-    await app.page.evaluate(() => {
-      const work = document.querySelector<HTMLElement>('.work.bench:not([hidden])')!, glass = work.querySelector<HTMLElement>('.screen > .glass')!;
-      const now = () => {
-        const m = /inset\(([-\d.]+)px(?: ([-\d.]+)px)?(?: ([-\d.]+)px)?/.exec(getComputedStyle(glass).clipPath);
-        const h = glass.getBoundingClientRect().height;
-        return m ? h - parseFloat(m[1]) - parseFloat(m[3] ?? m[1]) : h;
-      };
-      const was = work.classList.contains('prompting');
-      (window as Watched).turned = new Promise<number[]>((done) => {
-        // Each frame until it is turned, then where it stands as it is, then each frame after.
-        const out: number[] = [now()];
-        let t0 = 0;
-        // Only while it is a screen at all: back in the pill, the glass is the box's again, and not seen.
-        const shown = () => work.classList.contains('prompting') || work.classList.contains('prompt-leaving');
-        const turned = new MutationObserver(() => {
-          if (work.classList.contains('prompting') === was) return;
-          turned.disconnect();
-          t0 = performance.now();
-          // Where it stands as it is turned, not as last drawn: a frame long under load, it had gone on that much further
-          // by the time the key was taken, and it turns from there, as it should.
-          out[0] = now();
-        });
-        turned.observe(work, {attributes: true, attributeFilter: ['class']});
-        const tick = () => {
-          if (!t0) out[0] = now();
-          else if (shown()) out.push(now());
-          if (!t0 || performance.now() - t0 < 900) requestAnimationFrame(tick); else done(out);
-        };
-        requestAnimationFrame(tick);
-      });
-    });
-    return () => app.page.evaluate(() => (window as Watched).turned!);
-  };
-  await app.page.keyboard.press('Control+Backquote');
-  await app.page.waitForTimeout(120);
-  const down = await watch();
-  await app.page.keyboard.press('Escape');
-  const d = await down();
-  // From the Escape on, it only ever gets smaller (a frame's sampling aside).
-  for (let i = 1; i < d.length; i++) expect(d[i]).toBeLessThanOrEqual(d[0] + 2);
-  await still(app);
-  await app.page.keyboard.press('Control+Backquote');
-  await still(app);
-  await app.page.keyboard.press('Escape');
-  await app.page.waitForTimeout(140);
-  const up = await watch();
-  await app.page.keyboard.press('Control+Backquote');
-  const u = await up();
-  // From the press on, it only ever gets bigger.
-  for (let i = 1; i < u.length; i++) expect(u[i]).toBeGreaterThanOrEqual(u[0] - 2);
-  await still(app);
-  await app.page.keyboard.press('Escape');
-  await still(app);
-});
-
-test('the Prompt\'s screen comes up out of the box and goes back into it over its whole length, as built', async ({app}) => {
-  await app.newRepo.make('hello');
-  await app.newRepo.openInForge();
-  // What the glass is doing, as long as each of its moves is: a build writes its lengths its own way (320ms as
-  // .32s), and every one must still be read as the length it is, not a fraction of a millisecond.
-  const lengths = () => app.page.evaluate(() => document.querySelector('.work.bench:not([hidden]) .screen > .glass')!
-    .getAnimations().map((a) => Number(a.effect!.getComputedTiming().duration)));
-  await app.page.keyboard.press('Control+Backquote');
-  expect(Math.max(0, ...await lengths())).toBeGreaterThanOrEqual(400);
-  await still(app);
-  await app.page.keyboard.press('Escape');
-  expect(Math.max(0, ...await lengths())).toBeGreaterThanOrEqual(300);
-  await still(app);
 });
 
 test('Edit profile opened and put away, what is under it goes one way only, with the sheet, never up and then down', async ({signedIn: app}) => {

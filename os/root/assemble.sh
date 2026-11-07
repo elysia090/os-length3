@@ -17,7 +17,7 @@
 # Beside the packages: /usr/bin/l3 (static, musl, this tree's, without the SSH listener: a Prompt listens for no one),
 # /etc/os-release (its version), and what the root is made of,
 # /usr/share/length3/packages (each package's name, version, source digest and key) with the pins it was made from.
-# Its package database says exactly what is there, each file with its checksum (root/db.mjs). The bundle (pax, which
+# Its package database says exactly what is there, each file with its checksum (root/db.ts). The bundle (pax, which
 # the installer reads) is deterministic (sorted names, time 0, owner 0, no per-run header names) and so is its zstd:
 # the same packages and l3 make the same bundle, byte for byte. OUT gets it, its SHA256SUMS and its manifest.
 set -eu
@@ -82,7 +82,7 @@ while read -r n _; do echo "$n $(cat "$pkgs/$n/version") $(cat "$pkgs/$n/source"
 install -m 0644 "$here/sources.env" "$root/usr/share/length3/sources.env"
 mkdir -p "$root/etc/apk"
 printf '%s\n' "# No repository yet: what is installed is all there is (usr/lib/apk/db/installed)." > "$root/etc/apk/repositories"
-node "$here/db.mjs" "$root" "$work/list"
+node "$here/db.ts" "$root" "$work/list"
 
 {
   echo "format=length3-root-v3"
@@ -90,7 +90,7 @@ node "$here/db.mjs" "$root" "$work/list"
   sed 's/^\([^ ]*\) \([^ ]*\) \([^ ]*\) \([^ ]*\)$/package.\1=\2 \3 \4/' "$root/usr/share/length3/packages"
   echo "l3.sha256=$(sha256sum "$l3" | cut -d' ' -f1)"
   echo "l3.source=$(git -C "$os" rev-parse HEAD 2>/dev/null || echo unknown)$(git -C "$os" status --porcelain -- core cli shared 2>/dev/null | grep -q . && echo +changed)"
-  echo "assembler.sha256=$(cat "$here/assemble.sh" "$here/db.mjs" "$here/os-release" | sha256sum | cut -d' ' -f1)"
+  echo "assembler.sha256=$(cat "$here/assemble.sh" "$here/db.ts" "$here/os-release" | sha256sum | cut -d' ' -f1)"
 } > "$work/tree/manifest"
 
 name="os-length3-linux-$version-x86_64"

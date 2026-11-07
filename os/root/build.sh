@@ -147,7 +147,8 @@ key_of() {
 unpack() {
   url=$(eval "echo \"\${$1_URL}\""); sum=$(eval "echo \"\${$1_SHA256:-}\""); alg=sha256
   [ -n "$sum" ] || { sum=$(eval "echo \"\${$1_SHA512}\""); alg=sha512; }
-  f="$src/$1-$(basename "$url")"
+  base=$(basename "${url%%\?*}") # (a URL's query, as cgit's ?id=COMMIT, is no part of the file's name)
+  f="$src/$1-$base"
   # A maker's site may answer once with something else (a CDN's page, a cut-off file): it is asked again, and only
   # the file pinned is ever taken.
   tries=0
@@ -168,7 +169,7 @@ unpack() {
       top=$(unzip -Z1 "$f" | head -n 1 | sed -n 's|^\([^@]*@[^/]*\)/.*|\1|p')
       if [ "${3:-}" = flat ] || [ -z "$top" ]; then cp -a "$2.zip/." "$2/"; else cp -a "$2.zip/$top/." "$2/"; fi
       rm -rf "${2:?}.zip" ;;
-    *) cp "$f" "$2/$(basename "$url")" ;;
+    *) cp "$f" "$2/$base" ;;
   esac
 }
 is_elf() { [ "$(head -c 4 "$1" | od -An -c | tr -d ' ')" = "177ELF" ]; }
@@ -315,7 +316,7 @@ make_one() {
   [ -n "$v" ] || [ -z "$first" ] || v=$(eval "echo \"\${${first}_VERSION:-\${${first}_DATE:-}}\"")
   echo "${v:-0}" > "$out/$name/version"
   if [ -n "$first" ]; then
-    url=$(eval "echo \"\${${first}_URL}\""); sha256sum "$src/$first-$(basename "$url")" | cut -d' ' -f1 > "$out/$name/source"
+    url=$(eval "echo \"\${${first}_URL}\""); sha256sum "$src/$first-$(basename "${url%%\?*}")" | cut -d' ' -f1 > "$out/$name/source"
   else : > "$out/$name/source"; fi
   echo "$key" > "$out/$name/key"
   say "$name $(cat "$out/$name/version"): made"

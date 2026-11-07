@@ -1,0 +1,169 @@
+// The caret, drawn by the OS rather than by the browser, so that it moves as a thing does: from where it was to
+// where it is (a line gone down, a press elsewhere in the text) in a short glide, and blinks only once it rests. A
+// letter written or taken away moves it at once, in the frame the letter is drawn in: gliding, it stood over the
+// letter just written, a letter behind at every key. Enter sweeps it to the next line's start. A selection is the browser's own, as it was; a field too long to measure
+// at every key (a file of more than 100k characters) keeps the browser's caret, and so does less motion asked for.
+
+const FIELDS = 'textarea, input:not([type]), input[type="text"], input[type="search"], input[type="email"], input[type="url"]';
+const LONGEST = 100_000;
+/** What a copy of a field must share with it to lay its text out the same. */
+const COPIED = ['direction', 'boxSizing', 'width', 'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth', 'borderStyle',
+  'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'fontStyle', 'fontVariant', 'fontWeight', 'fontStretch', 'fontSize', 'lineHeight',
+  'fontFamily', 'fontFeatureSettings', 'textAlign', 'textTransform', 'textIndent', 'letterSpacing', 'wordSpacing', 'tabSize', 'whiteSpace',
+  'overflowWrap', 'wordBreak'] as const;
+
+type Field = HTMLTextAreaElement | HTMLInputElement;
+
+/** The copy laid out as `f` lays its text out: taken once a field, and again when the field changes size. */
+function copyStyle(f: Field, copy: HTMLElement) {
+  const cs = getComputedStyle(f);
+  for (const p of COPIED) copy.style[p] = cs[p];
+  // A one-line field never wraps; a box of lines wraps where it does.
+  if (f instanceof HTMLInputElement) copy.style.whiteSpace = 'pre';
+}
+
+/** Where the caret of `f` is on the screen: the top left of its letter's height, and that height; and where `f` is. */
+function caretAt(f: Field, copy: HTMLElement): {x: number; y: number; h: number; field: DOMRect} {
+  const cs = getComputedStyle(f);
+  const at = f.selectionEnd ?? 0;
+  copy.textContent = f.value.slice(0, at);
+  const mark = document.createElement('span');
+  // The letter after the caret (or nothing that takes room) gives the mark its letter's height.
+  mark.textContent = f.value.slice(at, at + 1).replace('\n', '') || '\u200b';
+  copy.append(mark);
+  const r = f.getBoundingClientRect();
+  // A field seen nearer or further than its own size (the desk's close camera scales what lies on it): its letters,
+  // and the caret with them, as large as they are seen.
+  const k = f.offsetWidth ? r.width / f.offsetWidth : 1;
+  const h = (mark.offsetHeight || parseFloat(cs.fontSize) * 1.25) * k;
+  const x = r.left + (parseFloat(cs.borderLeftWidth) + mark.offsetLeft - f.scrollLeft) * k;
+  // A one-line field holds its line in the middle of its height.
+  const y = f instanceof HTMLInputElement ? r.top + (r.height - h) / 2 : r.top + (parseFloat(cs.borderTopWidth) + mark.offsetTop - f.scrollTop) * k;
+  return {x, y, h, field: r};
+}
+
+/** How wide a letter of `f` is (its font monospace: a terminal's cell), laid out in its copy. */
+function cell(copy: HTMLElement): number {
+  const letter = document.createElement('span');
+  letter.textContent = '0';
+  copy.replaceChildren(letter);
+  return letter.getBoundingClientRect().width;
+}
+
+/** The part of the screen `el` can be seen in: its own box, cut by every box above it that clips. */
+function seenIn(el: Element): DOMRect | null {
+  let r = el.getBoundingClientRect();
+  let left = r.left, top = r.top, right = r.right, bottom = r.bottom;
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const o = getComputedStyle(p);
+    if (o.overflowX === 'visible' && o.overflowY === 'visible') continue;
+    r = p.getBoundingClientRect();
+    left = Math.max(left, r.left); top = Math.max(top, r.top); right = Math.min(right, r.right); bottom = Math.min(bottom, r.bottom);
+  }
+  return right > left && bottom > top ? new DOMRect(left, top, right - left, bottom - top) : null;
+}
+
+/** Said by a page that moved a field's words without a key (a prompt line come before them): the caret goes with them. */
+let moved = () => {};
+export const fieldMoved = () => moved();
+
+export function caret() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const mark = document.createElement('span');
+  mark.className = 'os-caret';
+  mark.setAttribute('aria-hidden', 'true');
+  const copy = document.createElement('div');
+  copy.className = 'caret-copy';
+  copy.setAttribute('aria-hidden', 'true');
+  document.body.append(mark, copy);
+  let field: Field | null = null;
+  let frame = 0, rest = 0, shown = false;
+  /** The text was written in since the caret was drawn (not a line begun): it goes where the text now ends at once. */
+  let typed = false;
+  /** The field the copy is laid out as; none once it changes size (or the window does). */
+  let styled: Field | null = null;
+  const resized = new ResizeObserver(() => { styled = null; });
+
+  const hide = () => {
+    mark.classList.remove('on');
+    shown = false;
+  };
+  /** Where the field stood when the caret was last put in it. A field that moves with nothing typed (a page still
+   * coming in, a pill sliding, what is above it growing) carries the caret with it: looked at every frame while it
+   * moves, and a little while apart while it stands still. One watch at a time, the latest. */
+  let stood: DOMRect | null = null;
+  /** And what it held: a field emptied or filled by the page (a message sent, a line taken back) tells no one. */
+  let held = {length: 0, at: 0};
+  let watching = 0;
+  const watch = (n: number) => {
+    const f = field;
+    if (n !== watching || !f || !stood || !mark.classList.contains('on')) return;
+    const r = f.getBoundingClientRect();
+    // Moved, the caret is carried with it at once; what it holds changed, the caret glides to where it now is.
+    if (r.left !== stood.left || r.top !== stood.top) { shown = false; later(); return; }
+    if (f.value.length !== held.length || f.selectionEnd !== held.at) { later(); return; }
+    window.setTimeout(() => requestAnimationFrame(() => watch(n)), 200);
+  };
+  const draw = () => {
+    frame = 0;
+    const f = field;
+    if (!f || document.activeElement !== f || f.selectionStart !== f.selectionEnd) { hide(); return; }
+    // A field may hold its caret back a moment (--caret: none: a terminal's line while what it ran prints).
+    const cs = getComputedStyle(f);
+    if (cs.getPropertyValue('--caret').trim() === 'none') { hide(); return; }
+    if (styled !== f) { copyStyle(f, copy); styled = f; }
+    const p = caretAt(f, copy);
+    const seen = seenIn(f);
+    if (!seen || p.x < seen.left - 1 || p.x > seen.right + 1 || p.y + p.h / 2 < seen.top || p.y + p.h / 2 > seen.bottom) { hide(); return; }
+    // A field that is a terminal's line (the Prompt up as a screen: --caret: block) has a terminal's caret, a cell, the
+    // letter it stands on drawn in it dark (styles.css), as a terminal draws it.
+    const block = cs.getPropertyValue('--caret').trim() === 'block';
+    mark.classList.toggle('block', block);
+    mark.style.width = block ? `${cell(copy)}px` : '';
+    mark.textContent = block ? f.value.slice(f.selectionEnd ?? 0, (f.selectionEnd ?? 0) + 1).replace('\n', '') : '';
+    mark.style.font = block ? cs.font : '';
+    mark.style.lineHeight = block ? `${Math.round(p.h)}px` : '';
+    // Come to a field, or with a letter written, it is put there; moving in it, it glides.
+    mark.classList.toggle('jump', !shown || typed);
+    typed = false;
+    mark.style.transform = `translate(${Math.round(p.x)}px, ${Math.round(p.y)}px)`;
+    mark.style.height = `${Math.round(p.h)}px`;
+    mark.classList.add('on');
+    shown = true;
+    // Where the field was measured, before the mark was moved (the mark moves nothing else): asked again, after it was,
+    // it laid the page out again.
+    stood = p.field;
+    held = {length: f.value.length, at: f.selectionEnd ?? 0};
+    const n = ++watching;
+    requestAnimationFrame(() => watch(n));
+    // Solid while it moves; blinking once it has rested a moment.
+    mark.classList.remove('resting');
+    clearTimeout(rest);
+    rest = window.setTimeout(() => mark.classList.add('resting'), 500);
+  };
+  const later = () => { frame ||= requestAnimationFrame(draw); };
+  moved = () => { shown = false; later(); };
+
+  const take = (f: Field | null) => {
+    if (field) resized.unobserve(field);
+    field?.classList.remove('os-caret-field');
+    field = f && f.matches(FIELDS) && !f.readOnly && !f.disabled && f.value.length <= LONGEST ? f : null;
+    field?.classList.add('os-caret-field');
+    if (field) resized.observe(field);
+    styled = null;
+    shown = false;
+    later();
+  };
+  document.addEventListener('focusin', (e) => take(e.target as Field));
+  document.addEventListener('focusout', () => { take(null); hide(); });
+  // A file grown past what can be measured at every key goes back to the browser's caret.
+  document.addEventListener('input', (e) => {
+    if (field && e.target === field && field.value.length > LONGEST) take(null);
+    if (field && e.target === field && (e as InputEvent).inputType !== 'insertLineBreak') typed = true;
+    later();
+  }, true);
+  for (const name of ['selectionchange', 'keydown', 'keyup', 'pointerup']) addEventListener(name, later, true);
+  // What scrolls carries the caret with it at once, not a glide behind the text.
+  for (const name of ['scroll', 'resize']) addEventListener(name, () => { shown = false; later(); }, true);
+  document.addEventListener('selectionchange', later);
+}

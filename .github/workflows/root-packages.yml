@@ -5,7 +5,7 @@ name: Root packages
 # it, and keeps them for the root job and the release.
 on:
   push:
-    paths: ['os/root/build.sh', 'os/root/packages/**', 'os/root/sources.env', 'os/root/etc/**', '.github/actions/root-packages/**', '.github/workflows/root-packages.yml']
+    paths: ['os/root/build.sh', 'os/root/packages/**', 'os/root/sources.env', 'os/root/etc/**', 'kernel/**', '.github/actions/root-packages/**', '.github/workflows/root-packages.yml']
   workflow_dispatch:
 
 permissions:

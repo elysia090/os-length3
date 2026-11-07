@@ -2438,7 +2438,7 @@ dependencies = [
  "length3-core",
  "libc",
  "russh",
- "serde",
+ "rustix",
  "serde_json",
  "tokio",
 ]
@@ -2452,6 +2452,9 @@ dependencies = [
  "flate2",
  "keyring-core",
  "libc",
+ "memchr",
+ "nix",
+ "rustix",
  "rustls",
  "rustls-native-certs",
  "ruzstd",
@@ -2732,6 +2735,7 @@ dependencies = [
  "cfg-if",
  "cfg_aliases",
  "libc",
+ "memoffset",
 ]
 
 [[package]]

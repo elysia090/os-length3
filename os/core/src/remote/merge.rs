@@ -1,8 +1,15 @@
 //! Taking in what changed on the Remote: the plan (file by file against
 //! the base), and writing the Remote's side into the copy here, beside
 //! what is in its way and never through a link.
+use crate::text::names::is_git_name;
+use crate::fs::hash::sha256;
+use std::collections::{BTreeSet, HashMap};
+use std::fs;
+use std::path::{Path, PathBuf};
+use crate::Result;
+use super::http::Client;
+use super::local::{digest, Modes, Tree};
 
-use super::*;
 
 /// What taking in a remote tree means here.
 #[derive(Debug, Default, PartialEq)]
@@ -51,11 +58,7 @@ pub fn beside_as(path: &str, who: &str, n: u32) -> String {
 /// This machine as a file's name can carry it: its host name, its letters, digits and . _ - alone.
 pub fn device_tag() -> String {
     #[cfg(unix)]
-    let raw = {
-        let mut buf = [0u8; 256];
-        let got = unsafe { libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len()) } == 0;
-        if got { String::from_utf8_lossy(&buf[..buf.iter().position(|&b| b == 0).unwrap_or(buf.len())]).into_owned() } else { String::new() }
-    };
+    let raw = rustix::system::uname().nodename().to_string_lossy().into_owned();
     // In a browser the page names the device (its host gives LENGTH3_DEVICE), as it has no host name.
     #[cfg(not(unix))]
     let raw = std::env::var("LENGTH3_DEVICE").unwrap_or_default();
@@ -86,7 +89,7 @@ pub(super) fn place(dir: &Path, rel: &str) -> Result<PathBuf> {
     Ok(at.join(parts[parts.len() - 1]))
 }
 
-/// Write `bytes` to `path` whole (atomic.rs): never through what is already
+/// Write `bytes` to `path` whole (fs/write.rs): never through what is already
 /// there, since a program in a Prompt can plant a link at any name in the
 /// repo, and writing through it would reach any file the person can write.
 /// Durable before the base that records it is (set_base): a file the base
@@ -97,7 +100,7 @@ pub(super) fn write_file(path: &Path, bytes: &[u8]) -> Result<()> {
 
 /// As write_file, with its mode: Some(Some(bits)) those, Some(None) a plain file's (as the umask makes one),
 /// None (a Remote that keeps no modes says nothing) the mode the file had here, if it was here.
-pub(super) fn write_file_as(path: &Path, bytes: &[u8], mode: Option<Option<u32>>) -> Result<()> {
+fn write_file_as(path: &Path, bytes: &[u8], mode: Option<Option<u32>>) -> Result<()> {
     let was = fs::symlink_metadata(path);
     if was.as_ref().is_ok_and(|m| !m.is_file()) {
         return Err(crate::tr!("{}: something that is not a file is there", "{}：ファイルではないものがあります", path.display()));
@@ -106,8 +109,8 @@ pub(super) fn write_file_as(path: &Path, bytes: &[u8], mode: Option<Option<u32>>
     let kept = { use std::os::unix::fs::PermissionsExt; was.ok().map(|m| m.permissions().mode() & 0o777).filter(|m| m & 0o111 != 0) };
     #[cfg(not(unix))]
     let kept: Option<u32> = None;
-    let how = crate::atomic::How { mode: mode.unwrap_or(kept), ..crate::atomic::How::RECORD };
-    crate::atomic::replace(path, bytes, how).map_err(|e| crate::tr!("{}: {}", "{}：{}", path.display(), e))
+    let how = crate::fs::write::How { mode: mode.unwrap_or(kept), ..crate::fs::write::How::RECORD };
+    crate::fs::write::replace(path, bytes, how).map_err(|e| crate::tr!("{}: {}", "{}：{}", path.display(), e))
 }
 
 /// The modes the Remote changed and this device did not, for files whose bytes are as agreed: taken, as
@@ -117,7 +120,7 @@ pub(super) fn take_modes(dir: &Path, base: &Modes, here: &Modes, there: &Modes, 
     let paths: BTreeSet<&String> = base.keys().chain(there.keys()).collect();
     for path in paths {
         let (b, l, r) = (base.get(path), here.get(path), there.get(path));
-        if r == b || l != b || taken.contains(path) || !matches!(tree.get(path), Some(Some(_))) || crate::owned::within_derived(dir, path) { continue; }
+        if r == b || l != b || taken.contains(path) || !matches!(tree.get(path), Some(Some(_))) || crate::repos::derived::within_derived(dir, path) { continue; }
         #[cfg(unix)]
         if let Some(at) = place(dir, path).ok().filter(|at| fs::symlink_metadata(at).is_ok_and(|m| m.is_file())) {
             use std::os::unix::fs::PermissionsExt;
@@ -209,7 +212,7 @@ pub(super) fn apply(client: &Client, dir: &Path, here: &Tree, p: &Plan, modes: O
     };
     for (path, what) in &p.take {
         // What a derived directory holds here is made here; the Remote's word on it is not taken.
-        if crate::owned::within_derived(dir, path) { continue; }
+        if crate::repos::derived::within_derived(dir, path) { continue; }
         let Ok(at) = place(dir, path) else {
             if let Some(Some(sha)) = what {
                 let bytes = bring.get(sha)?;

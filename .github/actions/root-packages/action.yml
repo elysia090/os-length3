@@ -8,7 +8,7 @@ runs:
   steps:
     - id: key
       shell: bash
-      run: echo "key=root-packages-${{ hashFiles('os/root/build.sh', 'os/root/packages/**', 'os/root/sources.env', 'os/root/etc/**', 'os/root/usr/**') }}" >> "$GITHUB_OUTPUT"
+      run: echo "key=root-packages-${{ hashFiles('os/root/build.sh', 'os/root/packages/**', 'os/root/sources.env', 'os/root/etc/**', 'os/root/usr/**', 'kernel/**') }}" >> "$GITHUB_OUTPUT"
     # What was made before, the newest first: each package whose key still holds is kept, the rest made again.
     - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
@@ -17,6 +17,14 @@ runs:
         restore-keys: |
           ${{ steps.key.outputs.key }}-
           root-packages-
+    # What was made by a recipe no longer here is not kept (what is restored would carry it on from run to run).
+    - shell: bash
+      run: |
+        for d in os/target/root-packages/*/; do
+          [ -d "$d" ] || continue
+          n=$(basename "$d")
+          [ -f "os/root/packages/$n.sh" ] || { echo "$n: no recipe, not kept"; rm -rf "os/target/root-packages/${n:?}"; }
+        done
     # The machine every package is made on: Alpine 3.24 (x86_64), at this digest and no other.
     - shell: bash
       run: docker run --rm -v "$GITHUB_WORKSPACE:/w" -e OWNER="$(id -u):$(id -g)" alpine@sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d sh /w/os/root/build.sh /w/os/target/root-packages

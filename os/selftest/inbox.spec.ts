@@ -48,7 +48,7 @@ test('word that comes while one works comes into the pane\'s foot, and pressed o
 
   await bo.inbox.writeTo(ada.handle, 'Review: hello reads well; louder?');
   await ada.comeBack();
-  const word = ada.main.locator('.pane-word .lately-row');
+  const word = ada.main.getByRole('region', {name: 'New messages'}).getByRole('button');
   await expect(word).toContainText('Bo');
   await expect(word).toContainText('Review');
   await expect(word).toContainText('hello reads well; louder?');

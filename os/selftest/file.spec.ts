@@ -74,17 +74,25 @@ test('a new folder takes a file of its own, and Forge shows the file under it', 
 test('New file asks nothing: made at once, untitled as nothing there is yet, and named in its own head', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
   const menu = async () => (await app.file.deeds('hello')).getByRole('menuitem', {name: 'New file'}).click();
+  const field = app.main.getByRole('textbox', {name: 'New name', exact: true});
 
+  // Made, its name is written over at once in its own head, the stem chosen; Escape keeps it and goes on into it.
   await menu();
+  await expect(field).toBeFocused();
+  await expect(field).toHaveText('untitled.md');
+  expect(await field.evaluate(() => getSelection()!.toString())).toBe('untitled');
+  await field.press('Escape');
+  await expect(field).toHaveCount(0);
   await expect(app.forge.editor('untitled.md')).toBeFocused();
   await menu();
-  await expect(app.forge.editor('untitled-2.md')).toBeFocused();
+  await expect(field).toHaveText('untitled-2.md');
 
-  // Its name pressed is written over where it stands, the stem chosen; Escape puts it back as it was.
+  // Its name pressed later is written over where it stands, the stem chosen; Escape puts it back as it was.
+  await field.press('Escape');
+  await expect(app.forge.editor('untitled-2.md')).toBeFocused();
   await app.forge.fileName('untitled-2.md').click();
-  const field = app.main.getByRole('textbox', {name: 'New name', exact: true});
   await expect(field).toBeFocused();
-  expect(await field.evaluate((el: HTMLInputElement) => el.value.slice(el.selectionStart!, el.selectionEnd!))).toBe('untitled-2');
+  expect(await field.evaluate(() => getSelection()!.toString())).toBe('untitled-2');
   await field.press('Escape');
   await expect(field).toHaveCount(0);
   await expect(app.forge.fileName('untitled-2.md')).toHaveText('untitled-2.md');
