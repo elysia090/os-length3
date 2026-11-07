@@ -38,6 +38,9 @@
 .desk :is(.gutter, .code) { font-size: var(--t-code); }
 .desk-file > .sheet { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--s4); padding: var(--s4); }
 .desk-file-head { position: absolute; right: var(--s3); top: var(--s2); margin: 0; font: inherit; }
+/* On the desk nothing in a box says it is not yet saved: it saves itself (on a pause, on leaving it), so a dot for it
+   is a state to watch that needs no watching. What does need saying (it failed, it changed elsewhere) is said. */
+.desk-file-head .unsaved-dot { display: none; }
 /* The line chosen washed under its text, across the whole sheet (desk-file.ts). */
 .desk-mark { position: absolute; left: 0; right: 0; background: var(--marker-soft); pointer-events: none; }
 .desk-file > .sheet > .gutter { position: relative; }

@@ -191,13 +191,15 @@ test('a file found by its name is opened to write in from the keyboard alone, an
   await expect(app.forge.search).toHaveValue('main.c');
 });
 
-test('Enter in the search opens the first line found, washed, the caret on it; a file found by its lines is headed by how many, its diff apart and not a stop', async ({app}) => {
+test('Enter in the search opens the first line found, washed, the caret on it; a line found is a row of its file\'s name, its number and its words, as the mock\'s', async ({app}) => {
   await app.forge.editFile('README.md', '# hello\n\nWritten in Forge.\n');
   await app.forge.find('Written');
-  // The head: its name, how many of its lines were found, and at its other end its diff, pressed rather than gone along.
-  const head = app.forge.results.locator('.hit-head', {hasText: 'README.md'});
-  await expect(head).toContainText('1 line');
-  await expect(head.getByRole('button', {name: 'Diff of README.md'})).toContainText(/^diff\s*\+\d+/);
+  // A row a line found, read across: the file's name, the line's number, its words; nothing else beside it (no count,
+  // no diff), and the section says how many rows it found.
+  const row = app.forge.hit(/Written in Forge/);
+  await expect(row).toHaveText(/^README\.md\s*3\s*Written in Forge\.$/);
+  await expect(app.forge.results.getByRole('button', {name: /^Diff of/})).toHaveCount(0);
+  await expect(app.forge.results.locator('.found-sec-head', {hasText: 'files'})).toHaveText(/^files\s*1$/);
   await app.forge.search.press('ArrowDown');
   await expect(app.forge.hit(/Written in Forge/)).toBeFocused();
   await app.page.keyboard.press('ArrowUp');
@@ -290,35 +292,36 @@ test('a narrow window reaches the issues, the diff and the output from the searc
   await expect(app.forge.search).toBeFocused();
   await app.page.keyboard.press('Escape');
   await expect(app.forge.results).toBeHidden();
-  // The search reaches a changed file's diff as well (diff, still pressed, let go: what is found is every kind again).
+  // The search reaches a changed file's diff as well (diff still pressed: what is found is the changed files).
   await app.forge.search.click();
-  await app.forge.search.press('ArrowDown');
-  await app.forge.kind('diff').click();
   await app.forge.search.fill('README');
-  await app.forge.results.getByRole('button', {name: 'Diff of README.md'}).click();
+  await app.forge.results.getByRole('button', {name: /^README\.md/}).click();
   await expect(app.forge.diffLine('Written in Forge.')).toBeVisible();
 });
 
 test('what is searched and read lines up sideways: the one in hand fills the box, its neighbours a sliver past its edges, pressed to move to them', async ({app}) => {
-  await app.forge.editFile('README.md', '# hello\n\nWritten in Forge.\n');
-  await app.forge.find('Written');
-  await app.forge.results.getByRole('button', {name: 'Diff of README.md'}).click();
-  await expect(app.forge.diffLine('Written in Forge.')).toBeVisible();
+  await app.git.write('hello', 'Fix: the first written');
+  await app.rail.go('forge');
+  await app.forge.find('written');
+  await app.forge.results.getByRole('button', {name: '#1 Fix：the first written', exact: true}).click();
+  const issue = app.forge.reference.getByRole('heading', {name: /the first written/});
+  await expect(issue).toBeVisible();
   // The search it came from is at its left, a sliver, and ← under the box: pressed, the search is in hand again, as typed.
-  await expect(app.forge.results.locator('.found-here')).toHaveText(/^diff\s*README\.md\s*2 \/ 2$/);
-  await app.forge.results.getByRole('button', {name: 'Search history Written', exact: true}).click();
-  await expect(app.forge.hit(/Written in Forge/)).toBeVisible();
-  await expect(app.forge.search).toHaveValue('Written');
-  await app.forge.results.getByRole('button', {name: 'diff README.md', exact: true}).click();
-  await expect(app.forge.diffLine('Written in Forge.')).toBeVisible();
+  await expect(app.forge.results.locator('.found-here')).toHaveText(/^Issue\s*#1.*2 \/ 2$/);
+  await app.forge.results.getByRole('button', {name: 'Search history written', exact: true}).click();
+  const found = app.forge.results.getByRole('button', {name: '#1 Fix：the first written', exact: true});
+  await expect(found).toBeVisible();
+  await expect(app.forge.search).toHaveValue('written');
+  await app.forge.results.getByRole('button', {name: /^Issue #1/}).click();
+  await expect(issue).toBeVisible();
   // ← → along the line from the keyboard.
   await app.page.keyboard.press('ArrowLeft');
-  await expect(app.forge.hit(/Written in Forge/)).toBeVisible();
+  await expect(found).toBeVisible();
   // Asked for with nothing typed (↓): what was searched and read, newest first.
   await app.forge.search.fill('');
   await app.forge.search.click();
   await app.forge.search.press('ArrowDown');
-  await expect(app.forge.results.locator('.found-item')).toHaveText([/^diff\s*README\.md$/, /^Search history\s*Written$/]);
+  await expect(app.forge.results.locator('.found-item')).toHaveText([/^Issue\s*#1/, /^Search history\s*written$/]);
 });
 
 test('the plug opens a plain plugin area at the top of the center, and closes it', async ({app}) => {

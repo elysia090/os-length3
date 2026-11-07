@@ -169,18 +169,51 @@ function fileGroup(g: Group, named: boolean, c: FileChange | undefined, ways: Fo
   }));
 }
 
-/** A run as a line of the sheet: `$`, then its line as typed (its first), `query` marked wherever it is in it. */
-function runLine(r: Run, query: string, read: (r: Run) => void): HTMLElement {
-  const line = r.line.split('\n')[0], low = line.toLowerCase(), q = query.toLowerCase(), parts: (Node | string)[] = [];
+/** `text` with `query` marked wherever it is in it (as written, whatever its case). */
+function marked(text: string, query: string): (Node | string)[] {
+  const low = text.toLowerCase(), q = query.toLowerCase(), parts: (Node | string)[] = [];
   let i = 0;
   for (let at = q ? low.indexOf(q) : -1; at >= 0; at = low.indexOf(q, i)) {
-    parts.push(line.slice(i, at), h('mark', {}, line.slice(at, at + q.length)));
+    parts.push(text.slice(i, at), h('mark', {}, text.slice(at, at + q.length)));
     i = at + q.length;
   }
-  parts.push(line.slice(i));
-  const b = h('button', {type: 'button', class: 'choice run-line'}, h('span', {class: 'run-ps', 'aria-hidden': 'true'}, '$'), h('span', {class: 'run-text'}, ...parts));
+  parts.push(text.slice(i));
+  return parts;
+}
+
+/** A run as a line of the sheet: `$`, then its line as typed (its first), `query` marked wherever it is in it. */
+function runLine(r: Run, query: string, read: (r: Run) => void): HTMLElement {
+  const b = h('button', {type: 'button', class: 'choice run-line'}, h('span', {class: 'run-ps', 'aria-hidden': 'true'}, '$'),
+    h('span', {class: 'run-text'}, ...marked(r.line.split('\n')[0], query)));
   b.addEventListener('click', () => read(r));
   return b;
+}
+
+/**
+ * The files found, as the band's sheet says them: a row a thing found, read across. A file whose name holds the query
+ * is a row of its own, its name marked where it does; each line found is a row of its file's name, the line's number
+ * and its words, `query` marked in them. No count of lines nor diff beside a name: the sheet is what was found.
+ */
+function fileRows(groups: Group[], query: string, ways: FoundWays, beat: (b: HTMLElement) => void): HTMLElement[] {
+  return nameFirst(groups, query).flatMap((g) => {
+    const shown = shownPath(g.path), rows: HTMLElement[] = [];
+    if (nameMatches(g.path, query)) {
+      const b = h('button', {type: 'button', class: 'choice sheet-hit sheet-name'}, h('span', {class: 'sheet-file'}, ...marked(shown, query)));
+      b.addEventListener('click', () => ways.file(g.path));
+      beat(b);
+      rows.push(b);
+    }
+    for (const hit of g.hits) {
+      const b = h('button', {type: 'button', class: 'choice sheet-hit'},
+        h('span', {class: 'sheet-file'}, shown),
+        h('span', {class: 'sheet-line'}, String(hit.line)),
+        h('span', {class: 'sheet-text'}, ...tucked(hit.text.slice(0, hit.from)), h('mark', {}, ...tucked(hit.text.slice(hit.from, hit.to))), ...tucked(hit.text.slice(hit.to))));
+      b.addEventListener('click', () => ways.line(g.path, hit.line));
+      beat(b);
+      rows.push(b);
+    }
+    return rows;
+  });
 }
 
 /**
@@ -200,7 +233,11 @@ export function foundView(found: Found, query: string, changed: FileChange[], wa
   const beat = (b: HTMLElement) => b.style.setProperty('--i', String(Math.min(stroke++, 16)));
   /** Each kind found: its name, how many, and what of it there is. */
   const kinds: {name: string; n: number; rows: HTMLElement[]; files?: true}[] = [];
-  if (groups.length) kinds.push({files: true, name: t('files'), n: groups.length, rows: nameFirst(groups, query).map((g) => fileGroup(g, nameMatches(g.path, query), changes.get(g.path), ways, beat))});
+  if (groups.length) {
+    // In the sheet, how many rows it found (a name, a line), as each other kind counts its rows; else how many files.
+    const rows = o.sections ? fileRows(groups, query, ways, beat) : nameFirst(groups, query).map((g) => fileGroup(g, nameMatches(g.path, query), changes.get(g.path), ways, beat));
+    kinds.push({files: true, name: t('files'), n: rows.length, rows});
+  }
   if (found.issues.length) kinds.push({name: t('Issue'), n: found.issues.length, rows: found.issues.map((i) => { const b = issueButton(i, query, ways.issue); beat(b); return b; })});
   if (found.diffs.length) kinds.push({name: t('diff'), n: found.diffs.length, rows: found.diffs.map((c) => diffButton(c.path, counted(c.added, c.removed), ways.diff))});
   if (found.runs.length) {

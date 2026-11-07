@@ -107,6 +107,9 @@ export class Reference {
   private asked = false;
   /** How tall what dropped from the box on the band was when last seen: it grows and shrinks to what it holds. */
   private tall = 0;
+  /** The sheet going up a little to what it holds (fit), while it goes; and whether what it holds changed since. */
+  private sizing: Animation | null = null;
+  private changed = false;
   /**
    * On the band, whether what is found for the words typed is drawn: until it is, nothing drops (a sheet let down
    * empty, filled a frame later, is a sheet that flickers); it comes down with what it holds already in it.
@@ -179,6 +182,8 @@ export class Reference {
     this.follow();
     if (this.band) {
       new ResizeObserver(() => this.fit()).observe(this.under);
+      // What it holds changing is what it is fitted to again (not its own going up, which moves it each frame).
+      new MutationObserver(() => { this.changed = true; }).observe(this.under, {childList: true, subtree: true, characterData: true});
       // Whether the sheet is down is said on the page's work (paintDown), as the keyboard and its states move.
       const later = () => setTimeout(() => this.paintDown());
       this.search.addEventListener('focusin', later);
@@ -200,17 +205,25 @@ export class Reference {
   }
 
   /**
-   * On the band, what dropped from the box grows and shrinks to what it holds, as a sheet let down further or taken
-   * up a little, never jumping from one height to the next (coming down the first time, it unrolls: styles' drop-in).
+   * On the band, what dropped from the box grows and shrinks to what it holds as one types on (as the mock's does):
+   * taken up a little over a few frames, let down at once (coming down the first time, it unrolls: styles' drop-in).
    */
   private fit() {
-    const now = this.under.offsetHeight, was = this.tall;
+    // Going up a little, it is resized each frame by its own going: nothing to fit to unless what it holds changed.
+    const going = this.sizing;
+    if (going && !this.changed) return;
+    this.changed = false;
+    const shown = this.under.offsetHeight;
+    going?.cancel();
+    this.sizing = null;
+    const now = this.under.offsetHeight, was = going ? shown : this.tall;
     this.tall = now;
-    // On the band, while it is down, the sheet grows to what it holds and does not shrink as one types on (a sheet
-    // going up and down at each key): it is as tall as it has been, until it goes up.
-    if (this.band && now && !this.search.matches('.leaving, .idle')) this.under.style.minHeight = `${now}px`;
-    if (!now || !was || Math.abs(now - was) < 2 || still() || this.search.matches('.leaving')) return;
-    this.under.animate([{height: `${was}px`, overflow: 'hidden'}, {height: `${now}px`, overflow: 'hidden'}], {duration: paced(220), easing: LAND});
+    // Grown, it is as tall as what it holds at once: let down over a few frames, what came in would be cut off at its
+    // foot while it went (a key every 170 ms keeps it going). Taken up, it goes up over them from where it is shown:
+    // nothing in it is cut.
+    if (!now || !was || now - was > -2 || still() || this.search.matches('.leaving')) return;
+    const a = this.sizing = this.under.animate([{height: `${was}px`, overflow: 'hidden'}, {height: `${now}px`, overflow: 'hidden'}], {duration: paced(220), easing: LAND});
+    a.finished.then(() => { if (this.sizing === a) this.sizing = null; }, () => {});
   }
 
   /** On the band with nothing typed or read, and nothing asked for: nothing drops from the box. */
@@ -219,7 +232,9 @@ export class Reference {
     if (!typed) this.ready = false;
     const idle = this.band && !this.asked && !this.reading && (!typed || !this.ready);
     this.search.classList.toggle('idle', idle);
-    if (idle) this.under.style.minHeight = '';
+    // Typed, and what is found for it not drawn yet: the sheet's lip (its shadow) shows under the band, where it will
+    // come down from, so the key is answered at once (forge-band.css .lip).
+    this.search.classList.toggle('lip', idle && typed);
     return idle;
   }
 
@@ -312,8 +327,11 @@ export class Reference {
       const to = event.relatedTarget as Node | null;
       // (Gone to a head in the pane: its press says what becomes of the list, fromHead.)
       if ((to && (this.search.contains(to) || this.heads.contains(to))) || this.search.matches('.moving')) return;
-      // Asked once the keyboard has landed (a run pressed in the pane brings it straight back into the box).
+      // Asked once the keyboard has landed (a run pressed in the pane brings it straight back into the box); till
+      // then what is under the box stays as it is (.letting), not gone for the frame between.
+      this.search.classList.add('letting');
       setTimeout(() => {
+        this.search.classList.remove('letting');
         if (!document.hasFocus() || this.search.contains(document.activeElement) || this.search.matches('.moving')) return;
         // (What it shows goes up as it is; drawn again when the box next has the keyboard.)
         if (this.search.matches('.reading, .kept')) {
@@ -331,7 +349,7 @@ export class Reference {
 
   /** What is under the box going back up into it. */
   private goUp() {
-    if (still() || !this.search.getClientRects().length) { this.under.style.minHeight = ''; this.wordsGo(); return; }
+    if (still() || !this.search.getClientRects().length) { this.wordsGo(); return; }
     this.search.classList.add('leaving');
     // On the band the sheet goes back up behind the band as it came down, whole, as a drawer is shut (no fading: a
     // sheet half seen through over the desk is two pictures at once); elsewhere it goes as a card does.
@@ -344,7 +362,6 @@ export class Reference {
       this.leaving = null;
       this.search.classList.remove('leaving');
       a.cancel();
-      this.under.style.minHeight = '';
       this.wordsGo();
     }, () => {});
   }

@@ -2091,12 +2091,17 @@ stays until what is found for the next key is ready (pressed with nothing
 typed, nothing drops; ↓ lets down the
 kinds, Issue, diff and Output, and what was searched and read): the words
 searched for large at its head, then what was found a kind at a time, two
-kinds to a row, each its name and how many at its left and its rows at its
-right (a file's name over its lines found, each line its number and its
-words, the words found marked). It grows to what it holds, never jumping from
-one height to the next, and does not shrink as one types on (a sheet going up
-and down at each key) until it goes up; while it is down the desk steps back,
-faint, under it. The box has no clearing × of its own: Escape clears it. A row pressed: the camera is put on its file meanwhile, unseen,
+kinds to a row, each its name and how many rows at its left and its rows at
+its right, as the mock has them: a row a thing found, read across, a file's
+name, the line's number and its words in the sheet's own letters (a name that
+holds the query a row of its own, marked), the words found marked and steady
+as one types on (never stroked in again at each key), nothing else beside a
+row. Typed, the sheet's lip (its shadow) shows under the band at once, where
+it comes down from once what is found is ready. It is as tall as what it holds:
+let down further at once, taken up a little over a few frames as fewer are
+found (from where it is shown, never cut short mid-way); while it is down the
+desk is gone from under it. Pressed, it stays as it is until it goes up, never
+gone for a frame between. The box has no clearing × of its own: Escape clears it. A row pressed: the camera is put on its file meanwhile, unseen,
 and the desk comes back already there as the sheet goes up, the line chosen.
 The
 pills scroll when there are many, and ⊕ comes right after the last
@@ -2511,12 +2516,12 @@ caret stays on that line, gone once it leaves; on the band, the words searched
 go from the box once the sheet is up, the box saying Search again, and come back
 chosen when the box is come back to (/, a press), as a find bar's do. On the
 band's sheet a run is said as it was typed, after the shell's $, on one line,
-under runs. Each file found is headed by its name, how many of its lines
-were found beside it, quiet (3 lines), and, changed since the last commit,
-at the head's other end its diff as a diff is said everywhere (diff +5 and
-its squares), pressed to read it there; a name found by its lines alone and
-the diff are pressed, not gone along with ↓ (only a name that holds the
-query is). A file found by its name opens with the caret in it, a line with the
+under runs. Off the band (Home's), each file found is headed by its name, how
+many of its lines were found beside it, quiet (3 lines), and, changed since the
+last commit, at the head's other end its diff as a diff is said everywhere
+(diff +5 and its squares), pressed to read it there; a name found by its lines
+alone and the diff are pressed, not gone along with ↓ (only a name that holds
+the query is); on the band a changed file's diff is the diff kind's. A file found by its name opens with the caret in it, a line with the
 line selected (where it is now, if it moved), a third of the way down, or
 with its file's head at the top when it is near it (never the empty foot of
 the file before over it); an issue, a changed file's
