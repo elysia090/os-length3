@@ -227,6 +227,15 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await app.forge.promptBox.press('Control+c');
     await expect(out).toContainText('^C');
     await expect(app.main.locator('.desk-term .prompt-chip')).toHaveText('hello $');
+    // A flood cut: what it had on its way and not yet shown goes with it, as a terminal flushes its output on ^C, so
+    // ^C stands at the foot, where the run was cut, not buried under a megabyte of y.
+    await app.forge.run('clear');
+    await app.forge.promptBox.fill('yes');
+    await app.forge.promptBox.press('Control+Enter');
+    await expect(out).toContainText('y\ny\ny');
+    await app.forge.promptBox.press('Control+c');
+    await expect(app.main.locator('.desk-term .prompt-chip')).toHaveText('hello $');
+    await expect.poll(async () => (await out.textContent())?.slice(-14)).toMatch(/y\n\^C\nhello \$ ?$/);
   });
 
   test('several lines sent at once run as they would one after another, the shell waiting once after them all', async ({app}) => {

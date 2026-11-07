@@ -2316,7 +2316,9 @@ big file cat, a long listing) comes on the screen as fast as it is printed, the
 screen drawn once a frame with only what is on it laid out, and the page answers
 the hand throughout: a writer faster than the page waits for it, as one waits
 for a terminal that cannot keep up, so the page never takes in more than it can
-draw, and Ctrl+C stops it at once. Exited or stopped there (or its close
+draw, and Ctrl+C stops it at once, what it had on its way and not yet shown going
+with it (as a terminal flushes its output on ^C), so ^C stands at the foot where
+it was cut. Exited or stopped there (or its close
 pressed), it is seen ended a beat, then its box goes as a terminal's window
 closes; the band's >_ lays it again at the top of the first column with a new
 shell in it, the keyboard in it (failing to start, it stays, to be read). Ended

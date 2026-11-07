@@ -32,7 +32,7 @@ const RUNS = 50;
 const COLS = 80, ROWS = 24;
 /** termios bits the page reads keys by: signals from keys (ISIG), a line at a time (ICANON), Enter read as a line feed
  * (ICRNL); lines put out with a carriage return (OPOST and ONLCR). */
-const ISIG = 1, ICANON = 2, ECHO = 8, IEXTEN = 0x8000, OPOST = 1, ONLCR = 4, ICRNL = 0x100;
+const ISIG = 1, ICANON = 2, ECHO = 8, NOFLSH = 0x80, IEXTEN = 0x8000, OPOST = 1, ONLCR = 4, ICRNL = 0x100;
 
 /** What a key sends a terminal's program (`app`: the arrows as an application's, as it asked), or null for none. */
 export function keyBytes(e: KeyboardEvent, app: boolean): string | null {
@@ -246,8 +246,19 @@ export class Session implements Prompt {
   /** `sig` to what runs in front (a key that makes a signal). */
   private signal(sig: number) {
     if (this.native) { void this.native.interrupt(); return; }
-    this.worker?.postMessage({type: 'interrupt', sig});
+    this.worker?.postMessage({type: 'interrupt', sig, ...this.flush()});
   }
+
+  /**
+   * A key that makes a signal flushes what was written and not yet shown, as a terminal's line discipline does (unless
+   * the program set NOFLSH): what comes from the worker of an epoch before this one is dropped (worker.mjs), so ^C
+   * stands where the run was cut, not under the megabyte a flood had on its way.
+   */
+  private flush(): {flush?: number} {
+    if (this.tty.lflag & NOFLSH) return {};
+    return {flush: ++this.epoch};
+  }
+  private epoch = 0;
 
   /** How the program in front now has the terminal set: reading each key, its screen is shown whole, and back. */
   private setTty(tio: {iflag: number; lflag: number; oflag: number}) {
@@ -555,7 +566,8 @@ export class Session implements Prompt {
     this.activity.heard = Date.now();
     switch (data.type) {
       case 'output':
-        this.received(this.decoder.decode(data.bytes, {stream: true}));
+        // (Written before a key flushed it: taken in, not shown.)
+        if ((data.epoch ?? 0) >= this.epoch) this.received(this.decoder.decode(data.bytes, {stream: true}));
         this.drained(data.bytes.length);
         break;
       case 'tty': this.setTty(data); break;
@@ -633,7 +645,7 @@ export class Session implements Prompt {
   suspend(): boolean {
     if (!this.live || this.promptLine || this.native) return false;
     this.out.print('^Z');
-    this.worker?.postMessage({type: 'interrupt', sig: 20});
+    this.worker?.postMessage({type: 'interrupt', sig: 20, ...this.flush()});
     return true;
   }
 
@@ -647,7 +659,7 @@ export class Session implements Prompt {
       jolt(this.element, this.out.element);
     }
     if (this.native) { void this.native.interrupt(); return; }
-    this.worker?.postMessage({type: 'interrupt'});
+    this.worker?.postMessage({type: 'interrupt', ...this.flush()});
     this.activity.inputWait = false;
     this.activity.sleepsUntil = 0;
   }

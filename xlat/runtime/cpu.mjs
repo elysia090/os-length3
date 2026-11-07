@@ -94,10 +94,11 @@ class Thread {
   /** Guest memory as bytes, made again only once it is another buffer (grown, here or by another thread). */
   get bytes() {
     const b = this.memory.buffer;
-    if (b !== this.bytesBuffer) { this.bytesBuffer = b; this.bytesOf = new Uint8Array(b); this.viewOf = new DataView(b); }
+    if (b !== this.bytesBuffer) { this.bytesBuffer = b; this.bytesOf = new Uint8Array(b); this.viewOf = new DataView(b); this.wordsOf = new Int32Array(b); }
     return this.bytesOf;
   }
   get view() { void this.bytes; return this.viewOf; }
+  get words() { void this.bytes; return this.wordsOf; }
 
   imports() {
     return {env: {
@@ -210,6 +211,9 @@ class Thread {
   toConsole(nr, fd, b, c) {
     if (fd < 0n || fd >= 32n || !((Atomics.load(this.consoles, 0) >>> Number(fd)) & 1)) return null;
     const bytes = this.bytes, size = bytes.length, pieces = [];
+    // A signal on its way (the interrupt word raised: Ctrl-C): the kernel's, to take it at this call, not more output
+    // after the key that flushed what was on its way.
+    if (Atomics.load(this.words, INTERRUPT >> 2)) return null;
     let total = 0;
     if (nr === 1n) {
       const at = Number(b), n = Number(c);

@@ -5,12 +5,13 @@
 // of time, may be compiled WebAssembly.Modules, shared between workers.)
 // then {type: 'input', bytes} as the person types and {type: 'eof'}, and
 // {type: 'typing'} while keys are pressed on the page (what is due waits for them to be still), and
-// {type: 'interrupt', sig?} for Ctrl-C (or Ctrl-Z, Ctrl-\\: its signal): what
+// {type: 'interrupt', sig?, flush?} for Ctrl-C (or Ctrl-Z, Ctrl-\\: its signal): what
 // was typed and not read yet is dropped, and what runs in front of the shell
-// gets the signal (Kernel.interrupt). Shown as a screen, its console is a
+// gets the signal (Kernel.interrupt); with `flush` (the page's new epoch), what
+// was written and not yet shown is dropped too. Shown as a screen, its console is a
 // terminal, and {type: 'tty', iflag, oflag, lflag} says each change in how it
 // is set (a program reading each key as it comes clears ICANON).
-// It receives {type: 'output', fd, bytes}, {type: 'waiting', for, ms,
+// It receives {type: 'output', fd, bytes, epoch}, {type: 'waiting', for, ms,
 // memory, held}, {type: 'exit', status} or {type: 'error', message}. A
 // kernel waits `for` 'input' (what runs reads what is typed) or 'time' (it
 // sleeps, and goes on by itself in `ms` milliseconds; waiting.mjs). `memory` is all the
@@ -259,6 +260,12 @@ let onItsWay = 0;
  */
 const GATHER_MS = 4, GATHER_MOST = 64 << 10;
 let gathered = [], gatheredBytes = 0, gatheredFd = 1, sentAt = -Infinity;
+/**
+ * Which of the page's Ctrl-Cs (and Ctrl-\, Ctrl-Z) output comes after: a key that makes a signal flushes what was
+ * written before it and not yet shown, as a terminal's line discipline does (unless NOFLSH), so ^C stands where the run
+ * was cut, not under the megabyte of `yes` that was on its way. The page drops output of an epoch before its own.
+ */
+let epoch = 0;
 function send() {
   if (!gatheredBytes) return;
   let bytes = gathered[0];
@@ -267,7 +274,7 @@ function send() {
     let at = 0;
     for (const b of gathered) { bytes.set(b, at); at += b.length; }
   }
-  self.postMessage({type: 'output', fd: gatheredFd, bytes}, [bytes.buffer]);
+  self.postMessage({type: 'output', fd: gatheredFd, bytes, epoch}, [bytes.buffer]);
   gathered = [];
   gatheredBytes = 0;
   sentAt = performance.now();
@@ -292,7 +299,21 @@ self.onmessage = async ({data}) => {
   if (data.type === 'input') { pending.push(data.bytes); nudge(); return; }
   if (data.type === 'eof') { ended = true; nudge(); return; }
   if (data.type === 'typing') { if (kernel && waitingInput && kernel.due.size && !rawKeys) consolidateLater(QUIET_MS); return; }
-  if (data.type === 'interrupt') { pending.length = 0; if (kernel?.interrupt(data.sig)) nudge(); return; }
+  if (data.type === 'interrupt') {
+    pending.length = 0;
+    // The signal first (what runs in front writes no more without asking: cpu.mjs toConsole), then what was written and
+    // not yet shown goes (flush: the page's epoch from here on).
+    const sent = kernel?.interrupt(data.sig);
+    if (data.flush !== undefined) {
+      epoch = data.flush;
+      onItsWay = Math.max(0, onItsWay - gatheredBytes);
+      gathered = [];
+      gatheredBytes = 0;
+      kernel?.outbox?.take();
+    }
+    if (sent) nudge();
+    return;
+  }
   if (data.type === 'put') { mirror?.put(data.path, data.what); return; }
   if (data.type === 'free') { if (kernel) self.postMessage({type: 'freed', ...kernel.free(0)}); return; }
   if (data.type === 'warm') { if (canRunApart()) warmThreads(); return; }
