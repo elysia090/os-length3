@@ -90,28 +90,19 @@ export function wholeOf(boxes: {slot: Slot; h: number}[], w: number, hgt: number
   return {s, x: (w - (r - l) * s) / 2 - l * s, y: Math.max(TOP, (hgt - (b - t) * s) / 2) - t * s};
 }
 
-/** Held up to be carried, the least the camera goes back to have the desk in sight whole round the box; a desk too
- * wide for it is seen round the box at it. */
-export const LIFTED_LEAST = 0.25;
 /** How far in from the face's edges a box carried is kept. */
 export const KEPT = 2 * GRID;
 
 /**
- * Held up to be carried (Ctrl), the camera over the desk as it may stand while `held` goes across it, still: every box,
- * room for one more column (the box's own, out of the column it shares: `shares`) and for the box under the longest
- * column, laid as wholeOf lays them; the box goes across a desk that stands, never with a camera after it. A desk too
- * wide for that at LIFTED_LEAST is seen at it round the box instead (the camera goes with the box only as far as keeps
- * it in sight: kept).
+ * Held up to be carried (Ctrl), the camera at `v` a step back about the box at `slot` (`h` high), where it stands on the
+ * face: as far as shows two boxes side by side, the box and the one it is put beside, both still read (never the whole
+ * desk: what is far off is not what is being done), never nearer than it stood. The box stays where it is on the face;
+ * kept in it, if it was not.
  */
-export function liftedOf(boxes: {slot: Slot; h: number}[], held: {slot: Slot; h: number}, shares: boolean, w: number, hgt: number): View {
-  let right = -Infinity, low = -Infinity, top = Infinity;
-  for (const {slot, h} of boxes) { right = Math.max(right, slot.x); low = Math.max(low, slot.y + h); top = Math.min(top, slot.y); }
-  const room = [...boxes, {slot: {x: held.slot.x, y: low + VGAP}, h: held.h}];
-  if (shares) room.push({slot: {x: right + WIDTH + GAP, y: top}, h: held.h});
-  const whole = wholeOf(room, w, hgt);
-  if (whole.s >= LIFTED_LEAST) return whole;
-  const s = LIFTED_LEAST, t = top - 24, b = low + VGAP + held.h + 8;
-  return {s, x: w / 2 - (held.slot.x + WIDTH / 2) * s, y: Math.max(TOP, (hgt - (b - t) * s) / 2) - t * s};
+export function liftedOn(v: View, slot: Slot, h: number, w: number, hgt: number): View {
+  const s = Math.min(v.s, (w - 2 * KEPT) / (2 * WIDTH + GAP));
+  const mx = slot.x + WIDTH / 2, my = slot.y + h / 2;
+  return kept({s, x: v.x + mx * (v.s - s), y: v.y + my * (v.s - s)}, slot, h, w, hgt);
 }
 
 /** `v` moved the least that keeps the box at `slot` (`h` high) KEPT in from the edges of a face `w` by `hgt` (its top

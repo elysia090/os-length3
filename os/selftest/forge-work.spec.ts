@@ -500,11 +500,13 @@ test('Tab puts the finger on the next box from anywhere on the desk; an arrow to
   // it), first into the gap between the Prompt's column and that one, a column of its own; then into the Prompt's
   // column, over it.
   const text = await own.inputValue();
+  const widthAt = (await box('README.md').boundingBox())!.width;
   await app.page.keyboard.down('Control');
   await app.page.keyboard.press('ArrowLeft');
   await expect(box('README.md')).toHaveClass(/lifted/);
-  // Carried, the camera stands back over the desk it goes across.
-  await expect(desk).toHaveClass(/whole/);
+  // Carried, the camera a step back about it, two boxes side by side in sight; the camera's place the same.
+  await expect.poll(async () => (await box('README.md').boundingBox())!.width).toBeLessThan(widthAt);
+  await expect(desk).not.toHaveClass(/pulled|whole/);
   await expect.poll(async () => {
     const [r, t, m] = [(await box('README.md').boundingBox())!, (await box('term').boundingBox())!, (await box('src/main.c').boundingBox())!];
     return r.x > t.x + 2 && r.x < m.x - 2;
@@ -514,6 +516,7 @@ test('Tab puts the finger on the next box from anywhere on the desk; an arrow to
   await expect(box('README.md')).not.toHaveClass(/lifted/);
   // Put down, back at the standard on it.
   await expect(desk).not.toHaveClass(/pulled|whole/);
+  await expect.poll(async () => (await box('README.md').boundingBox())!.width).toBeCloseTo(widthAt, 0);
   await expect.poll(async () => {
     const [r, t] = [(await box('README.md').boundingBox())!, (await box('term').boundingBox())!];
     return Math.abs(r.x - t.x) < 2 && r.y < t.y;
@@ -522,7 +525,7 @@ test('Tab puts the finger on the next box from anywhere on the desk; an arrow to
   await expect(own).toHaveValue(text);
 });
 
-test('held up with the finger on it, the camera stands back over the desk and stays still as the box is carried; put down, it comes back; a shortcut\'s Ctrl leaves the camera as the person puts it', async ({app}) => {
+test('held up with the finger on it, the camera steps back to two boxes side by side and stays still as the box is carried; put down, it comes back; a shortcut\'s Ctrl leaves the camera as the person puts it', async ({app}) => {
   await app.rail.go('forge');
   const desk = app.page.locator('.desk:not([hidden])');
   const box = (key: string) => app.page.locator(`.desk-box[data-key="${key}"]`);
@@ -531,10 +534,12 @@ test('held up with the finger on it, the camera stands back over the desk and st
   await expect(desk).toHaveClass(/pulled/);
   const at = async (key: string) => { const r = (await box(key).boundingBox())!; return `${Math.round(r.x)},${Math.round(r.y)},${Math.round(r.width)}`; };
   const settled = async (key: string) => { let was = ''; await expect.poll(async () => { const now = await at(key); const same = now === was; was = now; return same; }, {intervals: [150]}).toBe(true); return was; };
-  // Ctrl held: the box held up, the camera back over the desk, the boxes' closes gone while it is up.
+  // Ctrl held: the box held up, the camera a step back about it (two boxes side by side), the boxes' closes gone while
+  // it is up.
+  const pulled = (await box('README.md').boundingBox())!.width;
   await app.page.keyboard.down('Control');
   await expect(box('README.md')).toHaveClass(/lifted/);
-  await expect(desk).toHaveClass(/whole/);
+  await expect.poll(async () => (await box('README.md').boundingBox())!.width).toBeLessThan(pulled - 4);
   await expect(box('term').locator('.desk-close')).toHaveCSS('opacity', '0');
   const term = await settled('term');
   // Carried into the gap beside: it goes, the desk and the camera stand (the terminal where it was on the face).
@@ -548,7 +553,7 @@ test('held up with the finger on it, the camera stands back over the desk and st
   await app.page.keyboard.up('Control');
   await expect(box('README.md')).not.toHaveClass(/lifted/);
   await expect(desk).toHaveClass(/pulled/);
-  await expect(desk).not.toHaveClass(/whole/);
+  await expect.poll(async () => (await box('README.md').boundingBox())!.width).toBeCloseTo(pulled, 0);
   await expect(box('term').locator('.desk-close')).toHaveCSS('opacity', '1');
   // Ctrl and - with the finger on: the camera a place back as the person asks, and it stays there once Ctrl is let go.
   await app.page.keyboard.press('Control+Minus');

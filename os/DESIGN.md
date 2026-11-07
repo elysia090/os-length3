@@ -1991,16 +1991,17 @@ gone while it is up (the desk is being laid out, not cleared; they come back
 once it is down and the camera with it). The others answer it, so it is seen to
 cut in, not the desk to be laid again: those in its way get out of it at once,
 quick and a little jostled; one coming into where it was waits for it to be
-gone. Held up, the camera stands back over the desk it is to go across (the
-whole desk, with room for the column it may make; with the finger on it, once
-Ctrl has been held a moment, so a shortcut's Ctrl moves nothing) and stays
-still while it goes: the box crosses a desk that stands, never with the camera
-after it (after it, a little behind, the box was neither still nor moving).
-Carried at once, the camera steps back about the box as it slides, one move;
-only a desk too wide to be seen whole is gone along, as far as keeps the box in
-sight, with it, in its own way and time. Ctrl let go, it is put down with a
-small give, and the camera comes back to where it stood, on the box where it
-now lies. Sideways the slots alternate, as a sheet is put between two others:
+gone. Held up, the camera takes a step back about it, the box staying where
+it is on the face, as far as shows two boxes side by side (the box and the one
+it is put beside, both still read; never the whole desk, where what is being
+done is lost in what is far off; with the finger on it, once Ctrl has been held
+a moment, so a shortcut's Ctrl moves nothing), and stays still while it goes:
+the box crosses the desk, never with the camera after it (after it, a little
+behind, the box was neither still nor moving). Only where the box would go out
+of sight does the camera go, as far as keeps it in, with it, in its own way and
+time; carried at once, the step back is taken as it slides, one move. Ctrl let
+go, it is put down with a small give, and the camera comes back to where it
+stood, on the box where it now lies. Sideways the slots alternate, as a sheet is put between two others:
 out of a column with others it goes first into the gap beside it, a column of
 its own between two side by side, then on into the next column; at the desk's
 edge it stays and the desk nudges. The other arrow takes each step back

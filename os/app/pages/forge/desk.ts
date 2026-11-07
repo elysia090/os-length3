@@ -1,7 +1,7 @@
 import {h} from '../../ui/dom.ts';
 import {still} from '../../ui/glide.ts';
 import {t} from '../../i18n/i18n.ts';
-import {bornOn, carried, kept, liftedOf, next, overAll, PAD, pulledOn, slots, standardOn, tabbed, WIDTH, wholeOf, type Slot, type View} from './desk-layout.ts';
+import {bornOn, carried, kept, liftedOn, next, overAll, PAD, pulledOn, slots, standardOn, tabbed, WIDTH, wholeOf, type Slot, type View} from './desk-layout.ts';
 
 // A repo's desk, Forge's center (DESIGN.md § Forge, the desk): what is open lies on a plane, each box as wide as 80
 // columns of code, its name outside its top-left corner, on dots. The Prompt's box is the first; files opened lie
@@ -172,13 +172,12 @@ export class Desk {
   /** Where the box in hand's top stands on the face, as it was when it was taken in hand: it stays there as the box
    * grows or shrinks under the work (none: to be found again). */
   #topAt: number | null = null;
-  /** Where the camera stands still while a box is carried, over the desk as it may stand (liftedOf): the box goes across
-   * it, the camera never after it (one after it, a little behind, left the box neither still nor moving). Moved only as
-   * far as keeps the box in sight, with it. Let go once the box is put down (the camera back where it stood) or the
-   * camera is moved otherwise. */
+  /** Where the camera stands still while a box is carried, a step back about it, two boxes side by side in sight
+   * (liftedOn): the box goes across the desk, the camera never after it (one after it, a little behind, left the box
+   * neither still nor moving). Moved only as far as keeps the box in sight, with it. Let go once the box is put down
+   * (the camera back where it stood, on the box) or the camera is moved otherwise. */
   #still: View | null = null;
-  /** Where the camera stood before the box in hand was held up: gone back to once it is put down, on the box where it now
-   * lies. */
+  /** The camera the box in hand was held up at, while it is held up. */
   #liftedFrom: Camera | null = null;
   /** The camera's going back over the desk, waiting on Ctrl held a moment; and whether the box held up has been carried
    * yet (a key other than an arrow before then was a shortcut's: the camera stays the person's). */
@@ -287,10 +286,9 @@ export class Desk {
   }
 
   /** The camera to `c` (gliding there, unless `glide` is false): stepping back it zooms and then goes, coming nearer it
-   * goes and then zooms (or as `how` says, the box carried on `path`, as #go). Over the whole desk, it stands at
-   * `still` if it is given (a box carried across it). */
-  #setCam(c: Camera, glide = true, still: View | null = null, how?: Way2, path?: {from: Point; to: Point}) {
-    this.#still = still;
+   * goes and then zooms. */
+  #setCam(c: Camera, glide = true) {
+    this.#still = null;
     if (c === this.#cam) return;
     const back = CAMERAS.indexOf(c) > CAMERAS.indexOf(this.#cam);
     this.#cam = c;
@@ -299,7 +297,7 @@ export class Desk {
     if (c === 'standard') this.#bornUnder = null;
     this.element.classList.toggle('pulled', c === 'pulled');
     this.element.classList.toggle('whole', c === 'whole');
-    this.#look(glide, how ?? (back ? 'out' : 'in'), path);
+    this.#look(glide, back ? 'out' : 'in');
   }
 
   /** The camera a place back (`by` 1) or nearer (-1), no further than the whole desk nor nearer than the standard. */
@@ -556,26 +554,23 @@ export class Desk {
     if (!still()) b.el.animate([{scale: '1'}, {scale: '.992'}, {scale: '1'}], {duration: 200, easing: 'ease-out'});
     const was = this.#liftedFrom;
     this.#liftedFrom = null;
-    if (was && was !== this.#cam) this.#setCam(was);
-    else if (was && this.#still) { this.#still = null; this.#look(true); }
+    if (was && this.#still) { this.#still = null; this.#look(true, 'in'); }
   }
 
-  /** Ctrl held on the box in hand a moment, nothing carried yet: the camera back over the desk it is to go across. */
+  /** Ctrl held on the box in hand a moment, nothing carried yet: the camera a step back about it. */
   #liftCamera() {
     this.#lifting = 0;
     const over = this.#liftedFrom && !this.#carrying ? this.#overDesk() : null;
-    if (over && this.#cam !== 'whole') this.#setCam('whole', true, over, 'lift');
-    else if (over) { this.#still = over; this.#look(true, 'lift'); }
+    if (over) { this.#still = over; this.#look(true, 'lift'); }
   }
 
-  /** A key other than an arrow while a box is held up: a shortcut's, not a carry. The camera stays the person's (where
-   * it stood when the box was held up, if nothing was carried), not taken back once Ctrl is let go. */
+  /** A key other than an arrow while a box is held up: a shortcut's, not a carry. The camera back where it stood, if
+   * nothing was carried (the key then moves it as it moves it), and not taken back once Ctrl is let go. */
   #liftDropped() {
     clearTimeout(this.#lifting);
     this.#lifting = 0;
-    const was = this.#liftedFrom;
     this.#liftedFrom = null;
-    if (was && !this.#carrying && was !== this.#cam) this.#setCam(was);
+    if (!this.#carrying && this.#still) { this.#still = null; this.#look(true); }
   }
 
   /** Places measured again (a box grew or shrank): the boxes go where they now belong, the camera with them. */
@@ -632,7 +627,7 @@ export class Desk {
   #target(): View | null {
     const w = this.element.clientWidth, hgt = this.element.clientHeight;
     if (!w || !hgt) return null;
-    if (this.#cam === 'whole' && this.#still) return this.#still;
+    if (this.#still) return this.#still;
     if (this.#cam === 'whole') return wholeOf([...this.#boxes.values()].map((b) => ({slot: b.slot, h: b.el.offsetHeight})), w, hgt);
     const b = this.#held ? this.#boxes.get(this.#held) : this.#boxes.values().next().value;
     const under = b && this.#bornUnder?.key === b.key ? this.#boxes.get(this.#bornUnder.above) : undefined;
@@ -650,39 +645,33 @@ export class Desk {
   }
 
   /** The camera to where it should look now (`moving`: gliding there, the way `how`). */
-  #look(moving: boolean, how: Way2 = 'pan', path?: {from: Point; to: Point}) {
+  #look(moving: boolean, how: Way2 = 'pan') {
     const to = this.#target();
-    if (to) this.#go(to, moving && !still(), how, undefined, path);
+    if (to) this.#go(to, moving && !still(), how);
   }
 
-  /** Where the camera stands over the desk as it stands now while the box in hand is carried across it (liftedOf); or
-   * (`about`: carried at once, no Ctrl held first) as far back, about the box where it is on the face, so that it goes
-   * across the face the way it is carried as the camera steps back. */
-  #overDesk(about = false): View | null {
+  /** Where the camera stands while the box in hand is carried: a step back about it where it is on the face, two boxes
+   * side by side in sight (liftedOn). */
+  #overDesk(): View | null {
     const b = this.#held ? this.#boxes.get(this.#held) : undefined;
     const el = this.element, w = el.clientWidth, hgt = el.clientHeight;
     if (!b || !w || !hgt) return null;
-    const shares = (this.#cols.find((c) => c.includes(b.key))?.length ?? 0) > 1;
-    const over = liftedOf([...this.#boxes.values()].map((o) => ({slot: o.slot, h: o.el.offsetHeight})), {slot: b.slot, h: b.el.offsetHeight}, shares, w, hgt);
-    if (!about) return over;
     const cur = this.#glide?.to ?? (el.scrollLeft || el.scrollTop ? {s: 1, x: -el.scrollLeft, y: -el.scrollTop} : this.#view);
-    const mx = b.slot.x + WIDTH / 2, my = b.slot.y + b.el.offsetHeight / 2;
-    return {s: over.s, x: cur.x + mx * (cur.s - over.s), y: cur.y + my * (cur.s - over.s)};
+    return liftedOn(cur, b.slot, b.el.offsetHeight, w, hgt);
   }
 
-  /** A box carried a slot (`c`): the camera still (held up with Ctrl, it stands over the desk already), unless it is the
-   * first slot carried at once (back about the box then, as it slides: one move, not two) or the box would go out of
-   * sight (as far as keeps it in, with it). Moving, it goes as the box goes, the same way in the same time, the box's
-   * own way across the face one straight move. */
+  /** A box carried a slot (`c`): the camera still (held up with Ctrl, it stands back already), unless it is the first
+   * slot carried at once (back about the box then, as it slides: one move, not two) or the box would go out of sight
+   * (as far as keeps it in, with it). Moving, it goes as the box goes, the same way in the same time, the box's own way
+   * across the face one straight move. */
   #follow(c: Carried) {
     const b = this.#held ? this.#boxes.get(this.#held) : undefined;
     const base = c.over ?? this.#still;
     if (!b || !base) { this.#look(true); return; }
     const to = kept(base, b.slot, b.el.offsetHeight, this.element.clientWidth, this.element.clientHeight);
     const path = {from: c.from, to: {x: b.slot.x + WIDTH / 2, y: b.slot.y + b.el.offsetHeight / 2}};
-    if (this.#cam !== 'whole') this.#setCam('whole', true, to, 'slide', path);
-    // (Still on its way back over the desk, or after the slot before, it goes on there as the box goes.)
-    else if (c.over || to !== this.#still || this.#glide) { this.#still = to; this.#go(to, !still(), 'slide', SLIDE_MS, path); }
+    // (Still on its way back, or after the slot before, it goes on there as the box goes.)
+    if (c.over || to !== this.#still || this.#glide) { this.#still = to; this.#go(to, !still(), 'slide', SLIDE_MS, path); }
   }
 
   /**
@@ -839,7 +828,7 @@ export class Desk {
     this.#lifting = 0;
     this.#carrying = true;
     const b = this.#boxes.get(key)!, from = {x: b.slot.x + WIDTH / 2, y: b.slot.y + b.el.offsetHeight / 2};
-    const over = this.#still && this.#cam === 'whole' ? null : this.#overDesk(true);
+    const over = this.#still ? null : this.#overDesk();
     if (back) this.#trail.steps.pop();
     else this.#trail.steps.push({way, cols: was.map((c) => [...c])});
     this.#cols = to;
