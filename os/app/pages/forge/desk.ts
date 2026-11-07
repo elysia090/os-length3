@@ -135,7 +135,7 @@ export class Desk {
     // it brought into view was brought there as it stood on its way. Once they stand, the camera goes back where it was.
     for (const ev of ['keydown', 'focusin'] as const) this.element.addEventListener(ev, () => { if (this.#sliding()) this.#strayed = true; }, true);
     this.#plane.addEventListener('transitionend', (e) => {
-      if (e.propertyName !== 'translate' || !this.#strayed || this.#sliding()) return;
+      if (e.propertyName !== 'translate' || e.target === this.#hand || !this.#strayed || this.#sliding()) return;
       this.#strayed = false;
       const el = this.element, v = this.#view;
       if (this.#cam === 'standard' && v.s === 1 && Math.hypot(el.scrollLeft + v.x, el.scrollTop + v.y) > 1) this.#look(true);
@@ -466,9 +466,10 @@ export class Desk {
     this.#changed();
   }
 
-  /** A box still on its way to its place. */
+  /** A box still on its way to its place (the hand going to one is not: nothing it passes is brought into view). */
   #sliding(): boolean {
-    return this.#plane.getAnimations({subtree: true}).some((a) => a instanceof CSSTransition && a.transitionProperty === 'translate' && a.playState === 'running');
+    return this.#plane.getAnimations({subtree: true}).some((a) => a instanceof CSSTransition && a.transitionProperty === 'translate'
+      && a.playState === 'running' && a.effect instanceof KeyframeEffect && a.effect.target !== this.#hand);
   }
 
   #mostInView(): Box | null {
@@ -527,7 +528,9 @@ export class Desk {
   #enter() {
     if (!this.#held) return;
     this.#showHand(false);
-    this.take(this.#held);
+    // At the standard the camera is on it already: it stays where it stands, only the keyboard goes in.
+    if (this.#cam === 'standard') this.#boxes.get(this.#held)?.laid.focus();
+    else this.take(this.#held);
   }
 
   /** The box in hand carried a slot `way`, lifted (put down once Ctrl is let go), the camera following it. */
