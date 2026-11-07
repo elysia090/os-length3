@@ -489,7 +489,10 @@ export class Desk {
    */
   frame(keys: string[]) {
     this.#framed = keys.length ? keys : null;
-    if (this.#cam === 'standard') this.#look(true);
+    // Work begun is watched as a person goes to work: in to the standard, where its words are read, however far the
+    // camera stood back (a box carried, a file just made, the whole desk looked over); it does not start out there.
+    if (keys.length && this.#cam !== 'standard') this.#setCam('standard');
+    else if (this.#cam === 'standard') this.#look(true);
   }
 
   /** Whether the boxes at `keys` are seen at once at the standard (those not on the desk are left out). */
