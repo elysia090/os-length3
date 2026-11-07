@@ -51,6 +51,10 @@ test('a step back, the box in hand is still in the middle, smaller, and the colu
   const left = at.get('term')!, right = at.get('README.md')!;
   assert.ok(v.x + (left.x + WIDTH) * v.s > 200);
   assert.ok(v.x + right.x * v.s < 1280 - 200);
+  // In the middle down too, so what lies above it and under it is in sight; a tall one from the eye.
+  assert.ok(Math.abs(v.y + slot.y * v.s - (800 - 200 * PULLED) / 2) < 1e-9);
+  const tall = pulledOn(slot, 3000, 1280, 800);
+  assert.ok(Math.abs(tall.y + slot.y * tall.s - EYE) < 1e-9);
 });
 
 test('stepped back, the whole desk fits, at most half its size, and in the middle', () => {

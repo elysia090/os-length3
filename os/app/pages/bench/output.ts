@@ -89,6 +89,12 @@ export class Output {
   /** A whole-screen program's screen, while one has the terminal. */
   #screen: {screen: Screen; view: ScreenView} | null = null;
 
+  constructor() {
+    // A line come in is fresh only while it comes in: once it has, it is a line as the others (a style worked out again
+    // later, the desk's camera setting off, would bring it in a second time, fading, long after it was printed).
+    this.element.addEventListener('animationend', (e) => { (e.target as Element).classList.remove('fresh'); });
+  }
+
   /** The line under way: where the prompt line the shell waits at is. */
   get lastLine(): string { return this.#line.text; }
 

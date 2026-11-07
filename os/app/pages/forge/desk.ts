@@ -121,6 +121,9 @@ export class Desk {
   /** The box come out from under another, and that one, while it is the one in hand: the camera keeps the other's foot in
    * sight over it (bornOn), until another is taken or the camera moves on. */
   #bornUnder: {key: string; above: string} | null = null;
+  /** The box whose name is being written over (a file just made): the keyboard going on into it after (Enter, Escape)
+   * is the way in, and brings the camera to the standard, as Enter does with the finger on a box. */
+  #naming: string | null = null;
   /**
    * The finger, the pointer's own pointing hand: its fingertip on the top edge of the box in hand, a little in from its
    * right corner, while the keyboard moves between boxes (Tab, an arrow, Escape, Ctrl), closed on the box while it is
@@ -173,10 +176,18 @@ export class Desk {
     this.element.addEventListener('focusin', (e) => {
       const key = (e.target as Element).closest<HTMLElement>('.desk-box')?.dataset.key;
       if (key && key !== this.#held && key !== this.#pressing) this.take(key, false);
+      // Named, the keyboard gone on into the box (not into its name): in, at the standard.
+      if (this.#naming && !(e.target as Element).closest('.desk-label')) {
+        const named = this.#naming;
+        this.#naming = null;
+        if (key === named && this.#cam !== 'standard') this.#setCam('standard');
+      }
     });
     // Written in, the box in hand is come back to: at the standard when the camera stood back from it, and from over the
     // Agent's work (their terminal written in).
     const writtenIn = (at: EventTarget | null) => {
+      // (Its name written, it is not yet gone into: the camera stays where it stands.)
+      if ((at as Element | null)?.closest?.('.desk-label')) return;
       const key = (at as Element | null)?.closest?.<HTMLElement>('.desk-box')?.dataset.key;
       if (!key || key !== this.#held) return;
       if (this.#cam !== 'standard') { this.#framed = null; this.#setCam('standard'); }
@@ -242,7 +253,8 @@ export class Desk {
     const back = CAMERAS.indexOf(c) > CAMERAS.indexOf(this.#cam);
     this.#cam = c;
     this.#topAt = null;
-    this.#bornUnder = null;
+    // (Come to the standard, a box just made stands at the eye as any other.)
+    if (c === 'standard') this.#bornUnder = null;
     this.element.classList.toggle('pulled', c === 'pulled');
     this.element.classList.toggle('whole', c === 'whole');
     this.#look(glide, back ? 'out' : 'in');
@@ -321,7 +333,10 @@ export class Desk {
         this.#held = key;
         el.classList.add('held');
       }
-      this.lift(was.key);
+      // (A file renamed as it is named: still the one being named, and come out from under the same box.)
+      if (this.#naming === was.key) this.#naming = key;
+      if (this.#bornUnder?.key === was.key) this.#bornUnder = {...this.#bornUnder, key};
+      this.lift(was.key, true);
       return;
     }
     if (byCol >= 0) this.#cols.splice(byCol + 1, 0, [key]);
@@ -357,6 +372,7 @@ export class Desk {
   /** The name over `key` written over in its place (a new file's, as it comes). */
   name(key: string) {
     const b = this.#boxes.get(key);
+    if (b) this.#naming = key;
     // Its name is shown at once, being written, even while the box is still on its way out.
     b?.el.classList.remove('born');
     const name = b?.label.querySelector<HTMLElement>('.desk-name');
@@ -364,15 +380,23 @@ export class Desk {
   }
 
   /** `key` taken off the desk; the box in hand, if it was, is the one beside it. */
-  lift(key: string) {
+  lift(key: string, atOnce = false) {
     const b = this.#boxes.get(key);
     if (!b) return;
     const after = next(this.#cols, key, 'up') ?? next(this.#cols, key, 'down') ?? next(this.#cols, key, 'left') ?? next(this.#cols, key, 'right');
     this.#sized.unobserve(b.el);
-    b.el.remove();
+    // Taken off (its dot, the file gone): it goes in a beat where it lies, the others closing up after it and the camera
+    // gliding with them; never a cut. Taken off for one in its place (a file renamed), at once.
+    if (atOnce || still()) b.el.remove();
+    else {
+      b.el.inert = true;
+      b.el.style.pointerEvents = 'none';
+      b.el.animate([{opacity: 1, scale: '1'}, {opacity: 0, scale: '.97'}], {duration: 140, easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards'})
+        .finished.then(() => b.el.remove(), () => b.el.remove());
+    }
     this.#boxes.delete(key);
     this.#cols = this.#cols.map((c) => c.filter((k) => k !== key)).filter((c, i) => c.length || i === 0);
-    this.#relay();
+    this.#relay(false, true);
     if (this.#held === key) { this.#held = null; if (after) this.take(after); }
   }
 
@@ -382,6 +406,12 @@ export class Desk {
     if (!b) return;
     b.label.querySelector('.desk-dir')!.textContent = dir;
     b.label.querySelector('.desk-name')!.textContent = name;
+  }
+
+  /** The camera a step back from the standard (where it stands back already, it stays): a file just made is laid
+   * where it is seen with what is round it, and Enter (the finger on it, or its name written) goes in to it. */
+  stepBack() {
+    if (this.#cam === 'standard') this.#setCam('pulled');
   }
 
   /** `key` in hand, the camera going to it as near as it stands (gliding there, unless `glide` is false; over the whole
@@ -470,9 +500,10 @@ export class Desk {
   /** Places measured again (a box grew or shrank): the boxes go where they now belong, the camera with them. */
   relayout() { this.#relay(); }
 
-  /** The boxes to their places, the camera with them: at once (or, on its way, going on to where it now goes), or
-   * following them a little behind (`follow`: a box carried). */
-  #relay(follow = false) {
+  /** The boxes to their places, the camera with them: at once (or, on its way, going on to where it now goes), gliding
+   * there (`glide`: the desk changed under it, a box taken off), or following them a little behind (`follow`: a box
+   * carried). */
+  #relay(follow = false, glide = false) {
     const heights = (key: string) => this.#boxes.get(key)?.el.offsetHeight ?? 0;
     const at = slots(this.#cols, heights);
     // Room round the boxes for the camera to stand any one of them in the middle, across and down (it scrolls over the
@@ -498,7 +529,8 @@ export class Desk {
     else {
       const to = this.#target();
       if (to && this.#glide) this.#glide.to = to;
-      else if (to) this.#go(to, false);
+      // (Moved by what was done to the desk, a box taken off: the camera glides after the boxes as they close up.)
+      else if (to) this.#go(to, glide && !still());
     }
     this.#changed();
   }
@@ -510,12 +542,13 @@ export class Desk {
     if (!w || !hgt) return null;
     if (this.#cam === 'whole') return wholeOf([...this.#boxes.values()].map((b) => ({slot: b.slot, h: b.el.offsetHeight})), w, hgt);
     const b = this.#held ? this.#boxes.get(this.#held) : this.#boxes.values().next().value;
+    const under = b && this.#bornUnder?.key === b.key ? this.#boxes.get(this.#bornUnder.above) : undefined;
+    // (Stood back, a box just made is in the middle with what it came from above it in sight: no more is needed.)
     if (this.#cam === 'pulled') return b ? pulledOn(b.slot, b.el.offsetHeight, w, hgt) : null;
     // Framed over boxes at work (the Agent's, played), it stays so as they grow, until it is let go or one is taken.
     const framed = this.#framed ? this.#frameView(this.#framed) : null;
     if (framed) return framed;
     if (!b) return null;
-    const under = this.#bornUnder?.key === b.key ? this.#boxes.get(this.#bornUnder.above) : undefined;
     const to = under ? bornOn(b.slot, b.el.offsetHeight, w, hgt, under.el.offsetHeight) : standardOn(b.slot, b.el.offsetHeight, w, hgt);
     // Its top where it stood when it was taken in hand, whatever it has grown to since.
     if (this.#topAt === null) this.#topAt = to.y + b.slot.y * to.s;

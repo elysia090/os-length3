@@ -1993,13 +1993,15 @@ file, it is an N): it is laid under the box in hand, in its column, as a new
 post goes under the one before it, named with that file's ending (none beside a
 terminal: untitled), comes out from under the box above it, pulled out quick
 as a drawer is, the camera going after it a beat behind (never carrying it off
-still hidden under the other) and coming to rest lower than the eye, with the
-foot of the box above still in sight over it (a terminal's last lines, its
-close), so what it was made under is seen with it; the finger gone as the keyboard goes into its
-name, and its name is written over at once in its
+still hidden under the other) and a step back, as a search makes the desk step
+back: it is not gone into yet, and is seen where it came, with what it was made
+under over it and the boxes round it; the finger gone as the keyboard goes into
+its name, and its name is written over at once in its
 head, the name itself (its folder quiet before it), a line under it, the stem
 chosen in the soft yellow and the ending kept, so typing writes the stem.
-Enter keeps what is written and the keyboard goes on into the box, at its end;
+Enter keeps what is written and the keyboard goes on into the box, at its end,
+the camera coming in to the standard as Enter with the finger on a box does
+(only Enter comes in: a file made never brings the camera nearer of itself);
 Escape keeps the name it had and goes on in too. The files tool's New file,
 and File's, make it the same way. The finger comes out of the
 pointer where that was over the desk and glides from box to box, and while it is
@@ -2012,7 +2014,8 @@ across, its top level with the rail between Home and File (high enough that
 the box above it in its column, its shadow and the dot of its close are wholly
 out of sight, never a strip nor a dot cut by the edge), the balance the
 work is done at, never nearer than that; a step back (seven tenths), the box in
-hand still read in the middle and the boxes beside it in sight; and the whole
+hand still read in the middle, across and down (a tall one from the eye), the
+boxes beside it, above it and under it in sight round it; and the whole
 desk, at most half its size. Stepping back it zooms first and then goes; coming
 nearer it goes first and then zooms. Escape takes the keyboard out onto the
 desk, the finger on the box in hand; from a field that keeps Escape for itself
@@ -2023,8 +2026,16 @@ or something brought into view, takes the camera there and that box into hand,
 and the wheel moves it along the desk. Stood back, a press takes a box in hand,
 twice comes in to it; over the whole desk, with the pointer rather than the
 finger, the box in hand is ringed. Writing in the box in hand while the camera
-stands back brings it to the standard. A file
-gone goes from the desk; moved, its box is the file where it went. Each
+stands back brings it to the standard. A box taken off by the dot of its close
+(or its file gone) goes in a beat where it lies, the others closing up after
+it and the camera gliding with them, never a cut. A file
+gone goes from the desk; moved, its box is the file where it went. A file named
+in a terminal's output (what ls says, the compiler's count.c:7:24:, grep's
+line) is underlined under the pointer and, pressed, its box opens at that line,
+as a terminal's hints open what they point at. At the desk's foot on the
+right, level with the pane's switch and as high, its keys stand in an ink bar
+as the files tool's deeds do (tab next, ↵ in, esc back, ⇧N new, ctrl ←→ carry,
+/ search), the keys in the paper's colour, what they do quieter. Each
 repo keeps its own desk, as it was left, from one visit to the next; a desk
 never worked at begins with the Prompt and the README beside it.
 
@@ -2040,8 +2051,14 @@ whole width; the band and its search stay where they are, the switch too, the
 way back, and what the pane showed comes back with it. The files tool, pressed,
 brings out the deeds for the file read now (New file and New folder
 beside it, Rename, which moves it given a path, Delete; the repo's own with
-none read) under it, in Forge, done there with the field or the
-ask in its place as File's are, never carrying one off to File; a deed chosen,
+none read) under it, in Forge, as a bar dropped from under the band, dmenu's:
+ink, square, a band's row high, its left edge the tool's, a band's gap under
+it, the path they act on quiet at its head (/root/garden/README.md), the deed
+chosen in the paper's colours, the whole height of the bar; the desk moves down
+by its room as it drops, in the same move, so nothing on the desk is ever under
+it, and comes back up as it goes. A name asked for or a Delete to be sure of is
+asked in its place on the bar, in the same letters (a name on a line, no white
+field), never carrying one off to File; a deed chosen,
 the deeds are gone at once, nothing fading over what it did; a new file
 is made at once, as Shift+N makes it, its name written over first; one renamed
 or moved is shown where it went. What the search finds drops from under the

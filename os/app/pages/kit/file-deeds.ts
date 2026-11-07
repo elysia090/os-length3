@@ -57,6 +57,8 @@ interface Deeds {
   dir: boolean;
   /** The name a new file made in the folder takes its ending from (none given: a note's; '' beside a terminal: none). */
   like?: string;
+  /** What heads the deeds (none given: its name); a bar's (Forge's band) says the path, as a shell would. */
+  head?: string;
   /** About to be made in `folder` (a path in the repo): told before the store writes it. */
   opening?(folder: string): void;
   /** Made: the new file's (or folder's) path in the repo. */
@@ -165,16 +167,16 @@ export function fileDeeds(d: Deeds): HTMLElement {
       yes.focus();
     }, true));
   }
-  pop.append(h('div', {class: 'pop-head muted small'}, d.name), ...rows);
-  // ↑ ↓ go along its rows.
+  pop.append(h('div', {class: 'pop-head muted small'}, d.head ?? d.name), ...rows);
+  // ↑ ↓ go along its rows (← → too, along a bar's).
   pop.addEventListener('keydown', (event) => {
-    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
     const items = [...pop.querySelectorAll<HTMLElement>('.pop-item')];
     const i = items.indexOf(document.activeElement as HTMLElement);
     if (i < 0) return;
     event.preventDefault();
     event.stopPropagation();
-    items[(i + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus();
+    items[(i + (event.key === 'ArrowDown' || event.key === 'ArrowRight' ? 1 : items.length - 1)) % items.length]?.focus();
   });
   return pop;
 }

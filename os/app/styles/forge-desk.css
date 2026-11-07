@@ -36,7 +36,50 @@
 .desk-mark { position: absolute; left: 0; right: 0; background: var(--marker-soft); pointer-events: none; }
 .desk-file > .sheet > .gutter { position: relative; }
 /* Where the repo's desk is: the whole center. */
-.desk-room { position: relative; height: 100%; min-height: 0; }
+.desk-room { position: relative; height: 100%; min-height: 0; overflow: clip; }
+/* The band's files tool out (forge.ts deeds): the desk moved down by the bar's room, gliding as the bar drops, and back
+   as it goes; moved, not laid out again (its camera stands as it stood). */
+.desk-room > .desk { translate: 0 var(--push, 0px); transition: translate calc(170ms * var(--pace)) var(--land); }
+/* The band's files tool's deeds, as a bar dropped from under it (dmenu's): ink, square, a band's row high, its left edge
+   the tool's, a band's gap under it; its path quiet at its head, the deed chosen (the keyboard's, or under the pointer)
+   in the paper's colours, as a selection is, the whole height of the bar. A name asked for, or a Delete to be sure of,
+   is asked in its place on the bar, in the same letters. */
+.deeds-under.band-deeds { display: flex; align-items: stretch; flex-wrap: wrap; width: max-content; max-width: calc(100vw - 32px);
+  min-height: var(--h-row); box-sizing: border-box; padding: 0; border: 0; border-radius: 0; background: var(--ink); color: var(--paper);
+  box-shadow: none; --from: 0 -8px; animation: deeds-drop calc(170ms * var(--pace)) var(--land); }
+@keyframes deeds-drop { from { translate: 0 -12px; clip-path: inset(100% 0 0 0); } to { translate: 0 0; clip-path: inset(0); } }
+.band-deeds .pop-icon, .band-deeds .pop-rule { display: none; }
+.band-deeds .pop-head { display: flex; align-items: center; padding: 0 14px 0 12px; font: 400 12px/1 var(--mono); color: color-mix(in srgb, var(--paper) 55%, transparent); }
+.band-deeds :is(.pop-item, .button) { display: flex; align-items: center; width: auto; min-height: var(--h-row); height: auto; margin: 0; padding: 0 12px;
+  border: 0; border-radius: 0; background: none; box-shadow: none; color: var(--paper); font: 400 13px/1 var(--mono); }
+.band-deeds :is(.pop-item, .button):focus { outline: none; }
+.band-deeds :is(.pop-item, .button):is(:focus, :hover) { background: var(--paper); color: var(--ink); }
+.band-deeds:hover :is(.pop-item, .button):focus:not(:hover) { background: none; color: var(--paper); }
+.band-deeds .pop-item.pop-gone { color: color-mix(in srgb, var(--del) 45%, var(--paper)); }
+.band-deeds .pop-item.pop-gone:is(:focus, :hover) { background: var(--del); color: var(--paper); }
+.band-deeds :is(.pop-field, .pop-ask) { display: flex; align-items: center; gap: 0; padding: 0 0 0 12px; }
+.band-deeds :is(.pop-field, .pop-ask) > div { display: flex; align-items: stretch; align-self: stretch; }
+.band-deeds .pop-field input { width: 20ch; height: 22px; margin-right: 6px; padding: 0; border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--paper) 55%, transparent); border-radius: 0; background: none; color: var(--paper);
+  caret-color: var(--paper); font: 400 13px/1 var(--mono); outline: none; }
+.band-deeds .pop-field input::selection { background: var(--paper); color: var(--ink); }
+.band-deeds .pop-ask p { margin-right: 10px; color: color-mix(in srgb, var(--paper) 75%, transparent); font: 400 13px/1 var(--mono); }
+.band-deeds .button.primary { color: var(--paper); text-decoration: underline 1px; text-underline-offset: 4px; }
+.band-deeds .pop-ask .button.primary { color: color-mix(in srgb, var(--del) 45%, var(--paper)); }
+.band-deeds .error { margin: 0 12px; color: color-mix(in srgb, var(--del) 55%, var(--paper)); font: 400 12px/1 var(--mono); }
+/* A file named in a terminal's output, under the pointer: underlined, to be pressed (forge.ts termLinks). */
+::highlight(term-file) { text-decoration: underline 1px currentColor; text-underline-offset: 3px; }
+.desk-room.term-linking .term-out { cursor: var(--cursor-hand); }
+/* The desk's keys at its foot on the right, level with the pane's switch (forge-band.css) and as high: an ink bar as the
+   files tool's deeds are, each key in the paper's colour, what it does after it, quieter. Over the desk, never taking a
+   press. With the pane put away, its switch stands in the center's corner: they keep left of it. */
+.desk-keys { position: absolute; right: var(--s4); bottom: calc(var(--s5) + var(--prompt-h) / 2); translate: 0 50%; z-index: 3;
+  display: flex; align-items: center; height: var(--h-row); padding: 0 4px; pointer-events: none; background: var(--ink);
+  font: 400 11px/1 var(--mono); color: color-mix(in srgb, var(--paper) 55%, transparent); white-space: nowrap; }
+.work.pane-closed .desk-keys { right: calc(var(--s5) + var(--h-row) + var(--s4)); }
+.desk-key { display: inline-flex; align-items: baseline; gap: 5px; padding: 0 8px; }
+.desk-keys kbd { padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; font: 600 11px/1 var(--mono); color: var(--paper); }
+@media (max-width: 900px) { .desk-keys { display: none; } }
 .desk-none { display: grid; place-items: center; height: 100%; color: var(--sub); }
 /* The Prompt's box: what it printed, at most 24 lines (scrolled within), at least 8; under it the line one types at,
    its pill saying what the line does. Its name is said over the box, as any box's is. */

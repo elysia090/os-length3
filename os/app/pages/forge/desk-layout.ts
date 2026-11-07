@@ -51,15 +51,16 @@ export const FOOT = 16 + 9;
  * face: never a strip, nor a dot, cut by its edge. */
 export const EYE = VGAP - FOOT - 1;
 
-/** A box just come out from under the one above it: so much of that one's foot stays in sight over it (or all of it,
- * if it is less), the new box lower than the eye by as much, so what it was made under is seen with it. */
+/** A box just come out from under the one above it: so much of that one's foot (on the face) stays in sight over it
+ * (or all of it, if it is less), the new box lower than the eye by as much, so what it was made under is seen with it. */
 export const ABOVE_SEEN = 5 * GRID;
 
-/** At the standard on the box at `slot` just come out from under one `above` high: as standardOn, lower by what
- * keeps ABOVE_SEEN of that one in sight (its foot, its close, the gap and the new box's name under them). */
-export function bornOn(slot: Slot, h: number, w: number, hgt: number, above: number): View {
-  const v = standardOn(slot, h, w, hgt);
-  return {...v, y: v.y + Math.min(above, ABOVE_SEEN) + VGAP - EYE};
+/** On the box at `slot` just come out from under one `above` high, at scale `s` (the standard, or a step back): as
+ * standardOn, lower by what keeps ABOVE_SEEN of that one in sight (its foot, its close, the gap and the new box's name
+ * under them). */
+export function bornOn(slot: Slot, h: number, w: number, hgt: number, above: number, s = STANDARD): View {
+  const v = standardOn(slot, h, w, hgt, s);
+  return {...v, y: v.y + Math.min(above * s, ABOVE_SEEN) + VGAP * s - EYE};
 }
 
 /**
@@ -72,9 +73,11 @@ export function standardOn(slot: Slot, _h: number, w: number, _hgt: number, s = 
   return {s, x, y: EYE - slot.y * s};
 }
 
-/** A step back, on the box at `slot` (`h` high): as at the standard, smaller, the boxes beside it in sight. */
+/** A step back, on the box at `slot` (`h` high): smaller, in the middle across and down (a tall one from the eye), the
+ * boxes beside it, above it and under it in sight round it, as a step back is taken to see. */
 export function pulledOn(slot: Slot, h: number, w: number, hgt: number): View {
-  return standardOn(slot, h, w, hgt, PULLED);
+  const v = standardOn(slot, h, w, hgt, PULLED);
+  return {...v, y: Math.max(EYE, (hgt - h * PULLED) / 2) - slot.y * PULLED};
 }
 
 /** Stepped back: the whole desk (each box's slot and height, its name over it, its shadow) in the face, at most

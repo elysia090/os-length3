@@ -15,6 +15,7 @@ import {Drag} from './drag.ts';
 import {takeFiles} from './files-in.ts';
 import {Desk} from './desk.ts';
 import {deskFile, renameIn, type DeskFile} from './desk-file.ts';
+import {asPath, isFile, wordAt} from './term-links.ts';
 import {deedsUnder, fileDeeds, renaming, split, untitled} from '../kit/file-deeds.ts';
 
 /**
@@ -107,6 +108,10 @@ class Forge {
     this.ctx = ctx;
     const strip = h('nav', {class: 'repo-strip', 'aria-label': 'repo'});
     this.center = h('div', {class: 'desk-room'});
+    // The desk's keys, at its foot on the right, quiet, as a bar's are: what the hands can do from anywhere on it.
+    this.center.append(h('div', {class: 'desk-keys', 'aria-hidden': 'true'},
+      ...([['tab', t('next')], ['↵', t('in')], ['esc', t('back')], ['⇧N', t('new')], ['ctrl ←→', t('carry')], ['/', t('search')]] as const)
+        .map(([key, does]) => h('span', {class: 'desk-key'}, h('kbd', {}, key), does))));
     this.work = bench({strip, main: this.center, desk: true, reveal: (path, line, write) => this.revealAt(path, line, write),
       place: (path) => this.place(path), frame: (keys) => { if (this.now.repo) this.deskOf(this.now.repo).desk.frame(keys); },
       word: (a) => { openConversation(a); void ctx.go('inbox'); },
@@ -126,6 +131,7 @@ class Forge {
     const drag = new Drag(this.center);
     this.band = new Band(strip, this.now, drag, {show: (name) => this.show(name), beside: (name) => this.show(name),
       takeOff: (name) => this.takeOff(name), act: (at) => this.deeds(at)}, this.work.tools);
+    this.termLinks();
     // Files from the desktop let go over a box: into its folder (none written over), the first opened.
     takeFiles(this.center, drag, (repo, path) => this.show(repo, path));
     // What the Remote holds is learnt a moment after: ⊕ counts it once it is.
@@ -178,6 +184,44 @@ class Forge {
     this.element.prepend(h('h1', {class: 'sr-only'}, t('Forge')));
   }
 
+  /**
+   * A file named in a terminal's output on the desk (`ls`, the compiler's `count.c:7:24:`, grep's): underlined under the
+   * pointer, and pressed, its box opened at that line (term-links.ts). A press that chose words chose them: nothing opens.
+   */
+  private termLinks() {
+    let at: {repo: string; path: string; line: number} | null = null;
+    let frame = 0, last = {x: 0, y: 0};
+    const out = (t: EventTarget | null) => (t as Element | null)?.closest?.('.desk-box .term-out') ?? null;
+    const clear = () => { at = null; CSS.highlights?.delete('term-file'); this.center.classList.remove('term-linking'); };
+    const look = () => {
+      frame = 0;
+      const repo = this.now.repo, el = out(document.elementFromPoint(last.x, last.y));
+      const w = el && repo ? wordAt(last.x, last.y, el) : null;
+      const named = w && repo ? asPath(w.text, repo) : null;
+      if (!w || !named || !repo) { clear(); return; }
+      void isFile(repo, named.path).then((yes) => {
+        // (Still the word under the pointer once it is known to be a file.)
+        const now = out(document.elementFromPoint(last.x, last.y)), again = now ? wordAt(last.x, last.y, now) : null;
+        if (!yes || again?.text !== w.text) { if (!yes) clear(); return; }
+        at = {repo, ...named};
+        CSS.highlights?.set('term-file', new Highlight(again.range));
+        this.center.classList.add('term-linking');
+      });
+    };
+    this.center.addEventListener('pointermove', (e) => {
+      last = {x: e.clientX, y: e.clientY};
+      if (!out(e.target)) { if (at) clear(); return; }
+      frame ||= requestAnimationFrame(look);
+    }, {passive: true});
+    this.center.addEventListener('pointerleave', clear);
+    this.center.addEventListener('click', (e) => {
+      if (!at || !out(e.target) || getSelection()?.toString()) return;
+      const {repo, path, line} = at;
+      clear();
+      this.ctx.openRepo(repo, path, false, undefined, line ? line - 1 : 0);
+    });
+  }
+
   /** Made again (another language): it no longer follows the store or the Remote. */
   drop() {
     this.offSync();
@@ -196,7 +240,7 @@ class Forge {
     const path = this.fileHeld(repo);
     const done = () => this.deedsOut?.();
     // (A file made with a terminal in hand is made as Shift+N makes it there: at the repo's top, with no ending.)
-    const pop = fileDeeds({repo, path, name: path ? split(path)[1] : repo, dir: !path, like: '',
+    const pop = fileDeeds({repo, path, name: path ? split(path)[1] : repo, dir: !path, like: '', head: `/root/${repo}${path ? `/${path}` : ''}`,
       made: (made, file) => { done(); if (file) this.made(repo, made); },
       move: async (to) => {
         if (to !== path) await store.move(repo, path, to);
@@ -206,7 +250,14 @@ class Forge {
       },
       removed: () => { done(); this.shut(repo, path); },
       back: () => {}});
-    this.deedsOut = deedsUnder(at, pop, () => { this.deedsOut = null; });
+    // A bar dropped from under the band (forge-desk.css .band-deeds), the desk making way under it in the same move:
+    // nothing on the desk is under it, and it is put back as the bar goes.
+    pop.classList.add('band-deeds');
+    this.deedsOut = deedsUnder(at, pop, () => { this.deedsOut = null; this.center.style.removeProperty('--push'); });
+    // A band's gap under the tool, as between the band's tools.
+    pop.style.top = `${at.getBoundingClientRect().bottom + 8}px`;
+    const room = this.center.getBoundingClientRect();
+    this.center.style.setProperty('--push', `${Math.max(0, pop.getBoundingClientRect().bottom - room.top + 8)}px`);
   }
 
   /** The file in hand on `repo`'s desk ('' while a terminal is: the person's, or the Agent's). */
@@ -319,6 +370,9 @@ class Forge {
     // A file laid for the first time goes in the column beside the Prompt's, under the last there.
     const beside = !made && (d.desk.held === 'term' || !d.desk.held);
     const f = d.files.get(path) ?? this.layFile(repo, d, path, beside ? 1 : undefined, {slide: !unseen});
+    // Made, it is not gone into yet: the camera steps back to show where it came (with what is round it) while it is
+    // named; Enter goes in.
+    if (made) { d.desk.take(path, false, !unseen); d.desk.stepBack(); return; }
     d.desk.take(path, true, !unseen);
     f.at(line);
   }

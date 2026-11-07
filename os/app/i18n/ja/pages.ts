@@ -50,6 +50,13 @@ export default {
   'Your plan allows {n} repos on Remote. This repo stays local until space is freed.': 'プランの Remote 上限（{n}個）に達しているため、空きができるまでこのデバイスに保持されます。',
   'Open {name}': '{name}を開く',
   'Close {name}': '{name}を閉じる',
+  // Forge: the desk's keys at its foot
+  'next': '次へ',
+  'in': '入る',
+  'back': '引く',
+  'new': '新規',
+  'carry': '運ぶ',
+  'search': '検索',
   'System': 'システム',
 
   // Forge: the reader
