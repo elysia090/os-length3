@@ -270,7 +270,7 @@ class Thread {
     }
     if (total > OUTBOX_BYTES / 4) return null;
     if (total) {
-      const first = outbox.put((Atomics.load(consoles, 1) >>> Number(fd)) & 1 ? 2 : 1, bytes, pieces, total);
+      const first = outbox.put((Atomics.load(consoles, 1) >>> Number(fd)) & 1 ? 2 : 1, bytes, pieces, total, this.words, INTERRUPT >> 2);
       if (first === null) return null;
       if (first) { Atomics.add(this.door, 0, 1); rouse(this.door, 0, 1); }
     }

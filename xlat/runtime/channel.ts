@@ -119,12 +119,15 @@ export class Outbox {
   }
   /**
    * A write to the console's `fd`: the pieces of `from` ([address, length] each, `total` bytes in all) put in whole and
-   * in order. Null when they do not all fit, else whether the outbox was empty before (the kernel is then rung; else it
-   * has been, and has not yet taken what was there, which it takes with these).
+   * in order. Null when they do not all fit, or when the writer's interrupt word (`stop[word]`) is raised, else whether
+   * the outbox was empty before (the kernel is then rung; else it has been, and has not yet taken what was there, which
+   * it takes with these). The word is looked at while the outbox is held: a write is in before the kernel takes all
+   * (Ctrl-C flushing what was on its way) or not made at all, never left in after it.
    */
-  put(fd: number, from: Uint8Array, pieces: [number, number][], total: number): boolean | null {
+  put(fd: number, from: Uint8Array, pieces: [number, number][], total: number, stop: Int32Array | null = null, word = 0): boolean | null {
     const w = this.words, size = this.bytes.length, h = this.head;
     this.#lock();
+    if (stop && Atomics.load(stop, word)) { this.#unlock(); return null; }
     const start = w[1], held = w[2];
     if (held + HEAD + total > size) { this.#unlock(); return null; }
     h[0] = fd; h[1] = total & 255; h[2] = (total >>> 8) & 255; h[3] = (total >>> 16) & 255; h[4] = total >>> 24;

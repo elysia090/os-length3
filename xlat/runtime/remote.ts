@@ -505,8 +505,10 @@ class RemoteTask extends Task {
       if (this.kernel.channels.length < 16) this.kernel.channels.push(this.channel);
     }
     else {
+      // Ended while it ran guest code: it may write on a little, so its memory is never given to another process, and
+      // what it would still put in the console's outbox is not put (its interrupt word, raised first: Outbox.put).
+      if (w) this.kernel.lookIn(this.proc);
       w?.end();
-      // Ended while it ran guest code: it may write on a little, so its memory is never given to another process.
       if (w && this.memory) this.memory.tainted = true;
     }
     // Ended while it held its process's lock (killed while running): the lock goes with it.
