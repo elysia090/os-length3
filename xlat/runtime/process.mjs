@@ -769,6 +769,8 @@ export class Kernel {
   /** A process ends with wait status `status`: its threads, its files; its parent is told, and its children go to init. */
   exitProcess(p, status) {
     if (p.state !== 'live') return;
+    // Ended by a signal in front of the terminal: the shell gets it back as it had it (sys-file.mjs handed).
+    if (status & 0x7f && p.pgid === this.tty.fg) this.tty.cut = p.pgid;
     p.state = 'zombie';
     p.exitStatus = status;
     p.stopped = 0;
@@ -825,6 +827,7 @@ export class Kernel {
 
   stopProcess(p, sig) {
     if (p.state !== 'live' || p.stopped) return;
+    if (p.pgid === this.tty.fg) this.tty.cut = p.pgid;
     p.stopped = sig;
     p.report = {kind: 'stopped', sig, seen: false};
     for (const t of p.tasks) {

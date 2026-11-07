@@ -116,7 +116,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(out).not.toContainText('process group');
   });
 
-  test('ECHO put out hides what is typed (read -s: a dot for each letter, nothing said, nothing kept); stty echo and reset keep the line the box\'s', async ({app}) => {
+  test('ECHO put out hides what is typed (read -s: a dot for each letter, nothing said, nothing kept); stty echo, reset and a program killed keep the line the box\'s', async ({app}) => {
     const box = app.forge.promptBox, out = app.forge.prompt.locator('.term-out'), page = app.forge.prompt.page();
     const ps = page.locator('.desk-box[data-key="term"] .prompt-ps');
     await box.fill('read -s pw; echo "got ${#pw}"');
@@ -136,6 +136,13 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await app.forge.run('echo still');
     await expect(out).toContainText(/^still$/m);
     await expect(page.locator('.vt-screen')).toHaveCount(0);
+    // A program killed while it read each key as it came: the shell's line is a line again, not a screen.
+    await app.forge.run("sh -c 'stty -icanon -echo; kill -9 $$'");
+    await expect(out).toContainText('Killed');
+    await expect(ps).toHaveText(/hello \$/);
+    await expect(page.locator('.vt-screen')).toHaveCount(0);
+    await app.forge.run('echo whole');
+    await expect(out).toContainText(/^whole$/m);
   });
 
   test('on the desk, a line running has no prompt line after it, as a terminal has none till it is done; the line written is moved up at once', async ({app}) => {

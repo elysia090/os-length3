@@ -56,3 +56,19 @@ test('ECHO put out hushes what is typed, put back shows it: stty -echo, read -s'
   kernel.pump();
   assert.deepEqual(modes.map((m) => m.lflag & ECHO), [0, ECHO, 0], 'stty -echo, stty echo, read -s');
 });
+
+test('a job a signal cut short while reading key by key gives the shell the terminal back as it had it; brought back, its own', {skip: !have}, async () => {
+  const ICANON = 2;
+  const {kernel, input, out, modes} = await shell('', ['sh', 'stty', 'kill', 'echo'], {interactive: true, argv: ['/bin/sh', '-i']});
+  kernel.pump();
+  const run = (line) => { const at = modes.length; input.push(enc(line)); assert.deepEqual(kernel.pump(), {waiting: true}); return modes.slice(at).map((m) => !!(m.lflag & ICANON)); };
+  // Killed: a line at a time again, and the shell reads its next line plainly (it does not echo it itself).
+  assert.deepEqual(run("sh -c 'stty -icanon -echo; kill -9 $$'\n"), [false, true]);
+  assert.deepEqual(run('echo after\n'), []);
+  assert.match(out(), /Killed\n[^\n]*after\n/);
+  // Stopped: the shell's again; brought back with fg, the job's, which puts it back itself.
+  assert.deepEqual(run("sh -c 'stty -icanon -echo; kill -STOP $$; stty icanon echo'\n"), [false, true]);
+  assert.deepEqual(run('fg\n'), [false, true]);
+  // Ended of itself, as it set it: kept, as bash keeps it.
+  assert.deepEqual(run("sh -c 'stty -icanon'\n").slice(0, 1), [false]);
+});

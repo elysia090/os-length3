@@ -753,6 +753,33 @@ function setBy(k, p, tio, lflag) {
   return (lflag & ~ECHO) | (lflag & ECHOK ? tio.echo : 0);
 }
 
+/**
+ * The terminal handed between the shell and its jobs (TIOCSPGRP), as bash hands it (BusyBox's ash does not): how the
+ * shell had it set is kept as it hands it to a job; taken back from a job a signal cut short (killed, or stopped: then
+ * kept for when it is brought back, fg) that left it reading key by key, put back as the shell had it, so its prompt
+ * line is a line again. A job that ended of itself leaves it as it set it (`stty raw`), as there.
+ */
+const setting = (tio) => ({iflag: tio.iflag, oflag: tio.oflag, cflag: tio.cflag, lflag: tio.lflag, echo: tio.echo, cc: tio.cc.slice()});
+function handed(k, tio, g) {
+  const shell = k.tty.sid, from = k.tty.fg;
+  if (g === from) return;
+  const put = (to) => {
+    const was = tio.lflag, wasOut = tio.oflag;
+    Object.assign(tio, setting(to));
+    if (tio.lflag !== was || tio.oflag !== wasOut) k.console.mode?.({iflag: tio.iflag, oflag: tio.oflag, lflag: tio.lflag});
+  };
+  if (g === shell) {
+    const cut = k.tty.cut === from && !(tio.lflag & ICANON);
+    k.tty.left = cut ? {pgid: from, setting: setting(tio)} : null;
+    k.tty.cut = 0;
+    if (cut && k.tty.shell) put(k.tty.shell);
+    return;
+  }
+  if (from === shell) k.tty.shell = setting(tio);
+  if (k.tty.left?.pgid === g) put(k.tty.left.setting);
+  k.tty.left = null;
+}
+
 function ioctl(p, d, request, arg) {
   const k = p.kernel, r = request, v = p.view;
   if (r === 0x5421) { // FIONBIO
@@ -823,6 +850,7 @@ function ioctl(p, d, request, arg) {
       if (p.sid !== k.tty.sid) fail(E.NOTTY);
       if (g < 0) fail(E.INVAL);
       if (!k.hasGroup(g, p.sid)) fail(E.PERM);
+      handed(k, tio, g);
       k.tty.fg = g;
       return 0;
     }

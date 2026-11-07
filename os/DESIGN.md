@@ -2296,7 +2296,10 @@ Linux sets one (`stty sane`, named /dev/pts/0), and what a program asks of it
 is done: ECHO put out (a password asked for, `read -s`, `stty -echo`) shows a
 dot for each letter typed, and the line sent is neither shown nor kept among
 the runs the pane lists; the shell's own lines stay the box's whatever ECHO is
-set to (`stty echo`, `reset`), never a screen of its own.
+set to (`stty echo`, `reset`), never a screen of its own. A program a signal
+cuts short while it reads each key (killed, or stopped with Ctrl+Z) gives the
+shell the terminal back as the shell had it, its prompt line a line again, as
+bash does; brought back with fg, the program has its own again.
 The editor's own keys (Ctrl+K and Ctrl+P to the search, Ctrl+B the pane) stay
 the page's, as an editor's terminal leaves them. Ended (exit, stopped), its switch comes in
 going over from on to off and its output flares and dims as a tube switched
