@@ -323,6 +323,11 @@ export class Session implements Prompt {
     // Sent at the prompt line, several lines go as one, run whole (prompt-line.ts asOne); what is shown and kept is
     // what was written. To a program still running, they go as they are, its input.
     const atPrompt = !!this.promptLine, wire = atPrompt ? asOne(lines) : lines;
+    // The shell has the line before anything is drawn for it: what it prints comes back a frame sooner (drawn first, it
+    // came back after the frame that showed the line sent, the page putting frames before messages just after a key,
+    // and was drawn a frame after that, Enter to answer 30 ms).
+    if (this.native) void this.native.input(wire).catch(() => this.end(() => t('Not running')));
+    else { const bytes = new TextEncoder().encode(wire); this.worker!.postMessage({type: 'input', bytes}, [bytes.buffer]); }
     if (atPrompt) this.out.fold();
     // Typed out of sight (a password): not shown, as a terminal echoes nothing, and never kept among the runs the pane
     // lists.
@@ -336,9 +341,6 @@ export class Session implements Prompt {
     this.activity.heard = Date.now();
     this.follow();
     this.tell();
-    if (this.native) { void this.native.input(wire).catch(() => this.end(() => t('Not running'))); return true; }
-    const bytes = new TextEncoder().encode(wire);
-    this.worker!.postMessage({type: 'input', bytes}, [bytes.buffer]);
     return true;
   }
 
