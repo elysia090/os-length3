@@ -176,9 +176,14 @@ export class Session implements Prompt {
   private tty = {iflag: ICRNL, lflag: ISIG | ICANON | ECHO | IEXTEN, oflag: OPOST | ONLCR};
   /** Bytes the output decodes a piece at a time: a letter cut between pieces is read whole. */
   private decoder = new TextDecoder();
+  /** Whether what it prints may put text on the clipboard (OSC 52): a person's Prompt, as a terminal lets a program
+   * they run do; never the Agent's own (agentSessionFor), at whose keys nobody is, so nothing a command it chose prints
+   * (a file of the repo it read, an issue's words) changes what the person pastes next. */
+  private readonly clipboard: boolean;
 
-  constructor(repo: string) {
+  constructor(repo: string, {clipboard = true}: {clipboard?: boolean} = {}) {
     this.repo = repo;
+    this.clipboard = clipboard;
     // Nothing to say until it is written to: that starts it.
     this.status = h('p', {class: 'muted small'});
     // A Prompt that ended says so in the language chosen since, as the rest of the page does.
@@ -388,7 +393,7 @@ export class Session implements Prompt {
     this.oscHeld = held;
     let s = now;
     // What it puts on the clipboard (clip, tmux) goes there, as a terminal puts it; it says itself what it sent.
-    for (const text of clips(s)) void navigator.clipboard?.writeText(text).catch(() => {});
+    if (this.clipboard) for (const text of clips(s)) void navigator.clipboard?.writeText(text).catch(() => {});
     // How the line run ended, where the shell says it: kept on its run, and none of what it says shown.
     // (The first it says for a run: the line's own, before the prompt line says the last command's again.)
     for (const m of s.matchAll(RAN)) { const r = this.runs.at(-1); if (r && r.ms === null && r.status === undefined) r.status = m[1] === undefined ? null : Number(m[1]); }
@@ -781,7 +786,7 @@ const agents = new Map<string, Session>();
 /** The Agent's Prompt in `repo`, made if it has none: it runs at once, whatever the screen is playing. */
 export function agentSessionFor(repo: string): Session {
   let s = agents.get(repo);
-  if (!s || s.ended) agents.set(repo, s = new Session(repo));
+  if (!s || s.ended) agents.set(repo, s = new Session(repo, {clipboard: false}));
   return s;
 }
 
