@@ -715,7 +715,12 @@ impl<'p> Fx<'p> {
                 self.set(L_BLK);
                 self.e(W::Br(self.depth));
             }
-            None => self.tail(address),
+            None => {
+                // Out to an address before this block's (a run of the same function cut into runs: discover.rs RUN), a
+                // loop may go round that way: it counts as a loop's round.
+                if address <= self.function.blocks[self.at].start { self.time_slice(address); }
+                self.tail(address)
+            }
         }
     }
 

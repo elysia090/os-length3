@@ -25,6 +25,8 @@ const wasmTranslator = join(here, '..', 'target', 'wasm32-unknown-unknown', 'rel
 
 // XLAT_BLOCKS=1: translate with --trace, so every block entered is reported (process.mjs prints it).
 const traced = process.env.XLAT_BLOCKS ? ['--trace'] : [];
+// XLAT_RUN=N: functions cut into runs of N blocks (discover.rs RUN), so the cut is tested on small programs.
+const cut = process.env.XLAT_RUN ? [`--run=${process.env.XLAT_RUN}`] : [];
 
 // The translator built as wasm, run in this process as the browser runs
 // it, when it is built from the same source as the native one (or newer):
@@ -59,7 +61,7 @@ const digest = (bytes) => {
 };
 
 function translate(bytes) {
-  const key = createHash('sha256').update(translatorId).update(traced.join()).update(digest(bytes)).digest('hex');
+  const key = createHash('sha256').update(translatorId).update([...traced, ...cut].join()).update(digest(bytes)).digest('hex');
   const wasm = join(cacheDir, key + '.wasm');
   if (!existsSync(wasm)) {
     mkdirSync(cacheDir, {recursive: true});
@@ -67,7 +69,7 @@ function translate(bytes) {
     else {
       const elf = join(cacheDir, key + '.elf');
       writeFileSync(elf, bytes);
-      execFileSync(translator, [...traced, elf, wasm], {stdio: ['ignore', 'ignore', 'ignore']});
+      execFileSync(translator, [...traced, ...cut, elf, wasm], {stdio: ['ignore', 'ignore', 'ignore']});
     }
   }
   return readFileSync(wasm);
@@ -75,14 +77,14 @@ function translate(bytes) {
 
 /** The program with the code it reached later (from the function starts `seeds`), as one module. */
 translate.seeded = inProcess ? inProcess.seeded : function seeded(bytes, seeds) {
-  const key = createHash('sha256').update(translatorId).update(traced.join()).update(digest(bytes)).update(`seeded|${seeds}`).digest('hex');
+  const key = createHash('sha256').update(translatorId).update([...traced, ...cut].join()).update(digest(bytes)).update(`seeded|${seeds}`).digest('hex');
   const wasm = join(cacheDir, key + '.wasm');
   if (!existsSync(wasm)) {
     mkdirSync(cacheDir, {recursive: true});
     const elf = join(cacheDir, digest(bytes) + '.elf');
     if (!existsSync(elf)) writeFileSync(elf, bytes);
     writeFileSync(`${wasm}.seeds`, seeds.join('\n'));
-    execFileSync(translator, [...traced, `--seeds=${wasm}.seeds`, elf, wasm], {stdio: ['ignore', 'ignore', 'ignore']});
+    execFileSync(translator, [...traced, ...cut, `--seeds=${wasm}.seeds`, elf, wasm], {stdio: ['ignore', 'ignore', 'ignore']});
   }
   return readFileSync(wasm);
 };
@@ -93,7 +95,7 @@ if (inProcess) Object.assign(translate, {held: inProcess.held, spare: inProcess.
 
 translate.more = inProcess ? inProcess.more : function more(bytes, seeds, starts, base) {
   const known = [...starts];
-  const key = createHash('sha256').update(translatorId).update(traced.join()).update(digest(bytes)).update(`${seeds}|${known}|${base}`).digest('hex');
+  const key = createHash('sha256').update(translatorId).update([...traced, ...cut].join()).update(digest(bytes)).update(`${seeds}|${known}|${base}`).digest('hex');
   const wasm = join(cacheDir, key + '.more.wasm');
   if (!existsSync(wasm)) {
     mkdirSync(cacheDir, {recursive: true});
@@ -101,7 +103,7 @@ translate.more = inProcess ? inProcess.more : function more(bytes, seeds, starts
     if (!existsSync(elf)) writeFileSync(elf, bytes);
     writeFileSync(`${wasm}.seeds`, seeds.join('\n'));
     writeFileSync(`${wasm}.known`, known.join('\n'));
-    const done = spawnSync(translator, [...traced, `--more=${wasm}.seeds`, `--known=${wasm}.known`, `--base=${base}`, elf, wasm], {stdio: ['ignore', 'ignore', 'pipe']});
+    const done = spawnSync(translator, [...traced, ...cut, `--more=${wasm}.seeds`, `--known=${wasm}.known`, `--base=${base}`, elf, wasm], {stdio: ['ignore', 'ignore', 'pipe']});
     if (done.status !== 0) throw new Error(`xlat --more failed: ${done.stderr}`);
     const report = done.stderr.toString();
     // XLAT_UNSUPPORTED=1: say which instructions code reached later uses that are not translated yet.

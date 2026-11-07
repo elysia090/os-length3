@@ -67,6 +67,57 @@ impl Function {
     }
 }
 
+/// The most blocks one wasm function is made of. An optimizing compile takes time that grows faster than a function's
+/// size: one of a compiler's own functions, tens of thousands of blocks, held a browser's compiler threads for half a
+/// minute (and the page's frames with them). A function past this is cut into runs of consecutive blocks, each a wasm
+/// function of its own; from one run into another is a tail call to that run's entry, as a jump out of a function is.
+pub const RUN: usize = 1024;
+
+thread_local! {
+    /// RUN, unless set otherwise for testing the cut on small programs (set_run).
+    static RUN_BLOCKS: std::cell::Cell<usize> = const { std::cell::Cell::new(RUN) };
+}
+
+/// Cut functions into runs of `blocks` blocks from now on (at least one): for testing the cut on small programs.
+pub fn set_run(blocks: usize) { RUN_BLOCKS.with(|r| r.set(blocks.max(1))); }
+
+/// `function` as wasm functions are made of it: whole, or cut into runs of RUN blocks (the first keeps its name and
+/// its entry; the others are named after it with their place: `name.2`).
+fn runs(function: Function) -> Vec<Function> {
+    let run = RUN_BLOCKS.with(|r| r.get());
+    if function.blocks.len() <= run { return vec![function]; }
+    let Function { name, blocks, .. } = function;
+    let mut out: Vec<Function> = Vec::with_capacity(blocks.len().div_ceil(run));
+    let mut left = blocks.into_iter().peekable();
+    while left.peek().is_some() {
+        let run: Vec<Block> = left.by_ref().take(run).collect();
+        let name = if out.is_empty() { name.clone() } else { format!("{name}.{}", out.len() + 1) };
+        out.push(Function { start: run[0].start, name, blocks: run });
+    }
+    out
+}
+
+/// Where a run of a function cut into `runs` (the program's functions from `first`) goes on in another run: each such
+/// place an entry of the run that holds it, so the jump is a tail call to it.
+fn joined(runs: &[Function], first: usize, entries: &mut BTreeMap<u64, (u32, u32)>) {
+    if runs.len() < 2 { return; }
+    let holder = |a: u64| runs.iter().enumerate().find_map(|(r, f)| f.block_index(a).map(|b| (r, b)));
+    for f in runs {
+        for b in &f.blocks {
+            let goes: [Option<u64>; 2] = match b.exit {
+                Exit::Fall(a) | Exit::Jump(a) => [Some(a), None],
+                Exit::Branch { taken, fall } => [Some(taken), Some(fall)],
+                Exit::Call { ret, .. } | Exit::IndirectCall { ret } => [Some(ret), None],
+                _ => [None, None],
+            };
+            for a in goes.into_iter().flatten() {
+                if f.block_index(a).is_some() { continue; }
+                if let Some((r, k)) = holder(a) { entries.entry(a).or_insert(((first + r) as u32, k as u32)); }
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Program {
     pub entry: u64,
@@ -491,23 +542,26 @@ pub fn discover_within(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>, budget: 
     }
     let mut functions = Vec::new();
     let mut entries = BTreeMap::new();
-    for (index, (start, blocks)) in done.into_iter().enumerate() {
-        let function = Function { start, name: format!("fn_{start:x}"), blocks };
-        let f = index as u32;
-        let mut mark = |address: u64| {
-            if let Some(b) = function.block_index(address) { entries.entry(address).or_insert((f, b as u32)); }
-        };
-        mark(start);
-        for (k, b) in function.blocks.iter().enumerate() {
-            if let Exit::Call { ret, .. } | Exit::IndirectCall { ret } = b.exit { mark(ret); }
-            // A loop's head: where a thread that has run long is taken back to the kernel, and goes on later.
-            for a in back_edges(&function, k, b) { mark(a); }
-            if b.code.last().is_some_and(resumes_after) {
-                mark(b.code.last().unwrap().ip());
-                mark(b.code.last().unwrap().next_ip());
+    for (start, blocks) in done {
+        let first = functions.len();
+        for function in runs(Function { start, name: format!("fn_{start:x}"), blocks }) {
+            let f = functions.len() as u32;
+            let mut mark = |address: u64| {
+                if let Some(b) = function.block_index(address) { entries.entry(address).or_insert((f, b as u32)); }
+            };
+            mark(function.start);
+            for (k, b) in function.blocks.iter().enumerate() {
+                if let Exit::Call { ret, .. } | Exit::IndirectCall { ret } = b.exit { mark(ret); }
+                // A loop's head: where a thread that has run long is taken back to the kernel, and goes on later.
+                for a in back_edges(&function, k, b) { mark(a); }
+                if b.code.last().is_some_and(resumes_after) {
+                    mark(b.code.last().unwrap().ip());
+                    mark(b.code.last().unwrap().next_ip());
+                }
             }
+            functions.push(function);
         }
-        functions.push(function);
+        joined(&functions[first..], first, &mut entries);
     }
     Program { entry: elf.entry, functions, entries }
 }
@@ -617,38 +671,38 @@ fn walk_program(elf: &Elf, targets: &[u64], pointed_start: bool, seeds: &[u64], 
 
     let mut functions = Vec::new();
     let mut entries = BTreeMap::new();
-    for (index, (start, blocks)) in done.into_iter().enumerate() {
-        let function = Function {
-            start,
-            name: names.get(&start).cloned().unwrap_or_else(|| format!("fn_{start:x}")),
-            blocks,
-        };
-        let f = index as u32;
-        let mut mark = |address: u64, function: &Function| {
-            if let Some(b) = function.block_index(address) {
-                entries.entry(address).or_insert((f, b as u32));
+    for (start, blocks) in done {
+        let name = names.get(&start).cloned().unwrap_or_else(|| format!("fn_{start:x}"));
+        let first_run = functions.len();
+        for function in runs(Function { start, name, blocks }) {
+            let f = functions.len() as u32;
+            let mut mark = |address: u64, function: &Function| {
+                if let Some(b) = function.block_index(address) {
+                    entries.entry(address).or_insert((f, b as u32));
+                }
+            };
+            mark(function.start, &function);
+            for (k, b) in function.blocks.iter().enumerate() {
+                if let Exit::Call { ret, .. } | Exit::IndirectCall { ret } = b.exit {
+                    mark(ret, &function);
+                }
+                // A loop's head: where a thread that has run long is taken back to the kernel, and goes on later.
+                for a in back_edges(&function, k, b) { mark(a, &function); }
+                if b.code.last().is_some_and(resumes_after) {
+                    mark(b.code.last().unwrap().ip(), &function);
+                    mark(b.code.last().unwrap().next_ip(), &function);
+                }
             }
-        };
-        mark(start, &function);
-        for (k, b) in function.blocks.iter().enumerate() {
-            if let Exit::Call { ret, .. } | Exit::IndirectCall { ret } = b.exit {
-                mark(ret, &function);
+            // Only the pointers (sorted) between its first and last block can land in it.
+            if let (Some(first), Some(last)) = (function.blocks.first(), function.blocks.last()) {
+                let span = &pointers[pointers.partition_point(|&a| a < first.start)..pointers.partition_point(|&a| a <= last.start)];
+                for &p in span {
+                    mark(p, &function);
+                }
             }
-            // A loop's head: where a thread that has run long is taken back to the kernel, and goes on later.
-            for a in back_edges(&function, k, b) { mark(a, &function); }
-            if b.code.last().is_some_and(resumes_after) {
-                mark(b.code.last().unwrap().ip(), &function);
-                mark(b.code.last().unwrap().next_ip(), &function);
-            }
+            functions.push(function);
         }
-        // Only the pointers (sorted) between its first and last block can land in it.
-        if let (Some(first), Some(last)) = (function.blocks.first(), function.blocks.last()) {
-            let span = &pointers[pointers.partition_point(|&a| a < first.start)..pointers.partition_point(|&a| a <= last.start)];
-            for &p in span {
-                mark(p, &function);
-            }
-        }
-        functions.push(function);
+        joined(&functions[first_run..], first_run, &mut entries);
     }
     Program { entry: elf.entry, functions, entries }
 }

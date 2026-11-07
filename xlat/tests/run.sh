@@ -36,6 +36,19 @@ for c in "$here"/c/*.c; do
     echo "FAIL $name (exit $native vs $translated)"; status=1
   fi
 done
+# Functions cut into runs of a few blocks (discover.rs RUN cuts only functions of thousands): every jump between runs a
+# tail call to the run that holds its target, loops round them still taking their turns; the same output as native.
+for name in calls switches signals threads jobs; do
+  set +e
+  XLAT_RUN=3 node "$root/runtime/run.mjs" "$out/$name" a b > "$out/$name.cut"; cut=$?
+  "$out/$name" a b > "$out/$name.native"; native=$?
+  set -e
+  if [ "$native" = "$cut" ] && cmp -s "$out/$name.native" "$out/$name.cut"; then
+    echo "ok   $name (cut into runs of 3)"
+  else
+    echo "FAIL $name cut into runs of 3 (exit $native vs $cut)"; status=1
+  fi
+done
 # Rust's std (what l3 is made of), when the musl target is installed.
 if rustup target list --installed 2>/dev/null | grep -q x86_64-unknown-linux-musl; then
   for r in "$here"/rust/*.rs; do

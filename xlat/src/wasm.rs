@@ -246,6 +246,12 @@ pub extern "C" fn xlat_budget(instructions: u32) {
     BUDGET.with(|b| b.set(if instructions == 0 { usize::MAX } else { instructions as usize }));
 }
 
+/// Cut functions into runs of `blocks` blocks (discover::RUN) from now on: for testing the cut on small programs.
+#[no_mangle]
+pub extern "C" fn xlat_run(blocks: u32) {
+    crate::discover::set_run(blocks as usize);
+}
+
 /// Let go of the ELF opened as `handle`, and of what was remembered with it.
 #[no_mangle]
 pub extern "C" fn xlat_close(handle: u32) {

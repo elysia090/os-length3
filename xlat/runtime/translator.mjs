@@ -11,6 +11,9 @@ export async function loadTranslator(source) {
   // XLAT_BUDGET=N (node): how much code reached later one module may hold, for measuring (0: all it reaches).
   const budget = globalThis.process?.env?.XLAT_BUDGET;
   if (budget) x.xlat_budget(Number(budget));
+  // XLAT_RUN=N (node): functions cut into runs of N blocks (discover.rs RUN), so the cut is tested on small programs.
+  const run = globalThis.process?.env?.XLAT_RUN;
+  if (run) x.xlat_run(Number(run));
   // What a fresh instance holds: that much never goes back.
   let base = x.memory.buffer.byteLength;
   const put = (bytes) => { const p = x.xlat_alloc(bytes.length); new Uint8Array(x.memory.buffer, p, bytes.length).set(bytes); return p; };
@@ -96,6 +99,9 @@ export async function loadTranslator(source) {
   translate.renew = () => {
     x = new WebAssembly.Instance(module, {}).exports;
     if (budget) x.xlat_budget(Number(budget));
+  // XLAT_RUN=N (node): functions cut into runs of N blocks (discover.rs RUN), so the cut is tested on small programs.
+  const run = globalThis.process?.env?.XLAT_RUN;
+  if (run) x.xlat_run(Number(run));
     base = x.memory.buffer.byteLength;
     handles = new WeakMap();
     open.clear();

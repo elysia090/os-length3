@@ -27,6 +27,8 @@ fn main() -> ExitCode {
     };
     let started = std::time::Instant::now();
     let flag = |name: &str| args.iter().find_map(|a| a.strip_prefix(&format!("--{name}=")).map(str::to_string));
+    // --run=N: functions cut into runs of N blocks (discover::RUN), for testing the cut on small programs.
+    if let Some(n) = flag("run").and_then(|n| n.parse().ok()) { xlat::discover::set_run(n); }
     let list = |path: Option<String>| -> Vec<u64> {
         path.and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default().lines().filter_map(|l| l.trim().parse().ok()).collect()
     };
