@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {Vfs} from '../runtime/fs.ts';
+import {Vfs} from '../../ricebox/runtime/fs.ts';
 import {isGitName, Mirror} from '../runtime/mirror.ts';
 
 const enc = new TextEncoder(), dec = new TextDecoder();

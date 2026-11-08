@@ -7,7 +7,7 @@
 // Paths are relative to `root`; a removed directory is reported once, not
 // with everything it held.
 
-import {Dir, File, type Vfs} from './fs.ts';
+import {Dir, File, type Vfs} from '../../ricebox/runtime/fs.ts';
 
 /** What is under the root, as last seen: a directory, or a file and its version and size then. */
 type Seen = {node: Dir; dir: true} | {node: File; dir: false; version: number; size: number};

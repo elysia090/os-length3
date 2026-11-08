@@ -1,6 +1,6 @@
 // The programs a person is likely to run next, translated before they run them, by this browser, while a Prompt waits
 // for its next line. A program of the root is translated when a Prompt first runs it: rg a second, lazygit three.
-// Translated here ahead, in a worker of its own (xlat/runtime/ahead.ts), and kept as a Prompt keeps what it translates
+// Translated here ahead, in a worker of its own (sods/runtime/ahead.ts), and kept as a Prompt keeps what it translates
 // (userland.ts keepTranslation), the run that wants it reads it instead. Nothing more is downloaded than that run
 // would have downloaded, nothing is asked of a server, and it holds offline: the release is not made bigger by
 // translations made for every program, which every browser would have to fetch whether it ran them or not.
@@ -8,7 +8,7 @@
 // building C runs (gcc, cc1's 40 MB of code, the assembler, the linker) translated here took a browser's time and
 // memory at every Prompt on a repo with C, built in or not, and held Prompts starting after it for minutes.
 
-import {entriesOf} from '../../../xlat/runtime/table.ts';
+import {entriesOf} from '../../../muk/runtime/table.ts';
 import {keepTranslation, originOf, threadsApart, translationKept, type Index, type L3} from './userland.ts';
 
 /**
@@ -72,7 +72,7 @@ const DROPPED = 'dropped';
 function translated(l3: L3, f: Index['files'][number]): Promise<{wasm: Uint8Array; segments: {offset: number; bytes: Uint8Array}[] | null} | null | typeof DROPPED> {
   const pack = entries(l3.index)[f.pack];
   return new Promise((resolve) => {
-    const w = new Worker(new URL('../../../xlat/runtime/ahead.ts', import.meta.url), {type: 'module'});
+    const w = new Worker(new URL('../../../sods/runtime/ahead.ts', import.meta.url), {type: 'module'});
     const done = (v: Awaited<ReturnType<typeof translated>>) => { dropping = null; w.terminate(); resolve(v); };
     dropping = () => done(DROPPED);
     w.onmessage = ({data}) => done(data.error ? null : data);

@@ -6,7 +6,7 @@ on:
   # A change is tested once: in its pull request, on what merging it would make (refs/pull/N/merge), so
   # main is not tested again when it lands. A branch without a pull request runs by hand.
   pull_request:
-    paths: ['os/**', 'xlat/**', 'you/**', 'otter/**', 'lib/**', '.github/workflows/desktop.yml']
+    paths: ['os/**', 'sods/**', 'ricebox/**', 'muk/**', 'you/**', 'otter/**', 'lib/**', '.github/workflows/desktop.yml']
   workflow_dispatch:
 
 # Nothing here writes: the token reads the repository and nothing else. Every action is pinned
@@ -82,7 +82,7 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=l3-web-${{ hashFiles('os/RELEASE', 'os/core/src/root/pins.rs', 'os/remote/releases.ts', 'os/scripts/l3.sh', 'os/scripts/l3.ts', 'os/scripts/l3-tree.ts', 'os/scripts/root-file.ts', 'os/scripts/l3-parity.ts', 'xlat/runtime/table.ts', 'xlat/Cargo.toml', 'xlat/Cargo.lock', 'xlat/src/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=l3-web-${{ hashFiles('os/RELEASE', 'os/core/src/root/pins.rs', 'os/remote/releases.ts', 'os/scripts/l3.sh', 'os/scripts/l3.ts', 'os/scripts/l3-tree.ts', 'os/scripts/root-file.ts', 'os/scripts/l3-parity.ts', 'muk/runtime/table.ts', 'sods/Cargo.toml', 'sods/Cargo.lock', 'sods/src/**') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -100,8 +100,8 @@ jobs:
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          workspaces: xlat -> target
-          shared-key: l3-web-${{ hashFiles('xlat/Cargo.toml') }}
+          workspaces: sods -> target
+          shared-key: l3-web-${{ hashFiles('sods/Cargo.toml') }}
           cache-on-failure: true
       - name: l3 for the browser, made from the root this tree pins, and the same as it
         if: steps.kept.outputs.cache-hit != 'true'
@@ -289,22 +289,22 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: |
-            xlat -> target
+            sods -> target
             os -> target
-          shared-key: xlat-${{ matrix.part }}-${{ hashFiles('xlat/Cargo.toml', 'os/Cargo.toml') }}
+          shared-key: xlat-${{ matrix.part }}-${{ hashFiles('sods/Cargo.toml', 'os/Cargo.toml') }}
           cache-on-failure: true
       - name: xlat against native (C and Rust std), and its unit tests
         if: matrix.part == 'native'
-        working-directory: xlat
+        working-directory: ricebox
         run: sh tests/run.sh
       # The translator as the browser runs it (run.ts takes the wasm build when it is current).
       - name: l3 for the Prompt (static, musl), translated as the Prompt runs it
         if: matrix.part == 'prompt'
         working-directory: os
         run: |
-          cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path ../xlat/Cargo.toml
+          cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path ../sods/Cargo.toml
           cargo build --locked --profile prompt -p l3 --no-default-features --target x86_64-unknown-linux-musl
-          out=$(LENGTH3_REPOS=/root node ../xlat/runtime/run.ts target/x86_64-unknown-linux-musl/prompt/l3 help all)
+          out=$(LENGTH3_REPOS=/root node ../ricebox/runtime/run.ts target/x86_64-unknown-linux-musl/prompt/l3 help all)
           echo "$out" | head -3
           echo "$out" | grep -q 'l3 issue new'
 
@@ -429,9 +429,9 @@ jobs:
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: |
-            xlat -> target
+            sods -> target
             os -> target
-          shared-key: root-${{ hashFiles('xlat/Cargo.toml', 'os/Cargo.toml') }}
+          shared-key: root-${{ hashFiles('sods/Cargo.toml', 'os/Cargo.toml') }}
           cache-on-failure: true
       # After rust-cache, never before: when what it restores was kept for another lockfile, it cleans the targets,
       # and with them all of os/target that is not Cargo's (the packages, made there, were gone at assemble.sh).
@@ -495,12 +495,12 @@ jobs:
           # clear clears the app's Prompt, as the Prompt is told (ncurses' clear, asking terminfo of a dumb terminal, says nothing).
           says "prompt clear | od -An -c | tr -d ' \\n'" '033[H033[2J'
           # And translated, as the browser's Prompt runs them.
-          cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path ../xlat/Cargo.toml
-          node ../xlat/runtime/run.ts "$r/usr/bin/git" --version | grep -F "git version $GIT_VERSION"
-          node ../xlat/runtime/run.ts "$r/usr/bin/openssl" version | grep -F "OpenSSL $OPENSSL_VERSION "
-          node ../xlat/runtime/run.ts "$r/usr/bin/busybox" sh -c 'echo $((6 * 7))' | grep -x 42
-          node ../xlat/runtime/run.ts "$r/usr/bin/rg" --version | grep -F "ripgrep $RIPGREP_VERSION"
-          printf 'lib/x.c\nweb/src/main.ts\n' | node ../xlat/runtime/run.ts "$r/usr/bin/fzf" --filter main | grep -x web/src/main.ts
+          cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path ../sods/Cargo.toml
+          node ../ricebox/runtime/run.ts "$r/usr/bin/git" --version | grep -F "git version $GIT_VERSION"
+          node ../ricebox/runtime/run.ts "$r/usr/bin/openssl" version | grep -F "OpenSSL $OPENSSL_VERSION "
+          node ../ricebox/runtime/run.ts "$r/usr/bin/busybox" sh -c 'echo $((6 * 7))' | grep -x 42
+          node ../ricebox/runtime/run.ts "$r/usr/bin/rg" --version | grep -F "ripgrep $RIPGREP_VERSION"
+          printf 'lib/x.c\nweb/src/main.ts\n' | node ../ricebox/runtime/run.ts "$r/usr/bin/fzf" --filter main | grep -x web/src/main.ts
           sudo rm -rf target/root-open
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -545,7 +545,7 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           cargo audit --file os/Cargo.lock
-          cargo audit --file xlat/Cargo.lock
+          cargo audit --file sods/Cargo.lock
       # And the root's Rust and Go programs, by what each is made of (os/root/advisories.sh), with osv-scanner, built
       # once from its pinned release (its modules checked against Go's checksum database) and kept as cargo-audit is.
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

@@ -5,7 +5,7 @@
 // (sys-net.ts: its sockets).
 
 import type {FdTable} from './fd.ts';
-import type {Fpu} from './fpu.ts';
+import type {Fpu} from '../../sods/runtime/fpu.ts';
 import type {File, Mapping, Vfs} from './fs.ts';
 import type {Machine} from './machine.ts';
 

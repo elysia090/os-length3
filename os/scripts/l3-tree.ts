@@ -18,7 +18,7 @@ import {createReadStream, lstatSync, openSync, readFileSync, readSync, readdirSy
 import {join} from 'node:path';
 import {createZstdDecompress, gunzipSync, zstdDecompressSync} from 'node:zlib';
 import type {Readable} from 'node:stream';
-import {checkPacks, checkedRange} from '../../xlat/runtime/table.ts';
+import {checkPacks, checkedRange} from '../../muk/runtime/table.ts';
 import type {About, Blob, Index} from '../app/prompt/userland.ts';
 
 export type {About, Index};

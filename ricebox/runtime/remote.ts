@@ -16,7 +16,7 @@
 import {CH, OP, Outbox, REPLY, rouse, sleep, watch, type Forget, type Run, type Said} from './channel.ts';
 import {INTERRUPT, KEEP_INSTANCES, Kernel, PROFILE, REG, TRACE_SYSCALLS, Task, goesOn, trace, type Image, type Made, type Process, type Pumped} from './process.ts';
 import {Exec, Exit, Redirect, utf8} from './flow.ts';
-import type {Saved} from './fpu.ts';
+import type {Saved} from '../../sods/runtime/fpu.ts';
 import type {Call, Mem, Range} from './parts.ts';
 import {deliverable, take} from './signal.ts';
 

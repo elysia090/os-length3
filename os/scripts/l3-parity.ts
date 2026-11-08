@@ -8,7 +8,7 @@
 // ROOT  the release root (os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst),
 //       or a root installed from it (<data>/system/<sha256>/root)
 // WEB   l3 for the browser (public/l3, scripts/l3.ts), each pack checked
-//       whole against its table (xlat/runtime/table.ts)
+//       whole against its table (muk/runtime/table.ts)
 // --manifests DIR  writes native.txt and web.txt there, one line a path
 import {mkdirSync, statSync, writeFileSync} from 'node:fs';
 import {basename, join} from 'node:path';

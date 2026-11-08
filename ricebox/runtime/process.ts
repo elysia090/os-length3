@@ -21,7 +21,7 @@
 
 import {CAPS, Exec, Exit, Redirect, Wait, randomBytes, utf8} from './flow.ts';
 import {zero} from './bulk.ts';
-import {Fpu} from './fpu.ts';
+import {Fpu} from '../../sods/runtime/fpu.ts';
 import {machine} from './machine.ts';
 import {mountProc} from './procfs.ts';
 import {Description, FdTable} from './fd.ts';
@@ -30,12 +30,12 @@ import {E, File, FsError, Vfs, loadedFiles} from './fs.ts';
 import {FILE_CALLS} from './sys-file.ts';
 import {NET_CALLS} from './sys-net.ts';
 import {PROC_CALLS} from './sys-proc.ts';
-import {lay, prepare, type Segment} from './share.ts';
+import {lay, prepare, type Segment} from '../../sods/runtime/share.ts';
 import {answerTime, clocks} from './clock.ts';
 import {CLD, SA, SIG, SIGNAL_CALLS, Pending, SI, actionOf, bit, deliverable, send, take} from './signal.ts';
-import type {Keeper} from './keeper.ts';
+import type {Keeper} from '../../muk/runtime/keeper.ts';
 import type {Machine} from './machine.ts';
-import type {Translate} from './translator.ts';
+import type {Translate} from '../../sods/runtime/translator.ts';
 import type {AltStack, Call, Calls, Console, Cpu, Extra, Facts, FutexKey, FutexWaiter, Held, ImageEntry, Kern, Mem, Proc, Program, Range, SigAction, Slot, Thread, Timer, Tty} from './parts.ts';
 
 /** The translator a kernel is given: a program's bytes in, a module out, and what else it can do where it can. */

@@ -9,7 +9,7 @@
 // back: in a Worker the translator's decoder, in node its own) or as it is
 // (`raw`), whichever is smaller.
 
-import {Dir, File, Link, type Vfs} from './fs.ts';
+import {Dir, File, Link, type Vfs} from '../../ricebox/runtime/fs.ts';
 import {checkedRange, type Sha256} from './table.ts';
 
 /** l3's index, as far as mounting it reads it (os/app/prompt/userland.ts Index has all of it). */

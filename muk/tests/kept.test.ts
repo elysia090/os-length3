@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
-import {File, Vfs} from '../runtime/fs.ts';
-import {Kernel, PROFILE, type Image} from '../runtime/process.ts';
+import {File, Vfs} from '../../ricebox/runtime/fs.ts';
+import {Kernel, PROFILE, type Image} from '../../ricebox/runtime/process.ts';
 import type {Keeper, Taken} from '../runtime/keeper.ts';
-import {loadTranslator} from '../runtime/translator.ts';
-import {have} from './busybox.ts';
+import {loadTranslator} from '../../sods/runtime/translator.ts';
+import {have} from '../../ricebox/tests/busybox.ts';
 
 // What one run translated, kept for the next: the code a program reached later (Image.adopt), and a whole program's
 // translation taken from a keeper (Kernel.image) instead of being made again. The next run says the same and
@@ -104,7 +104,7 @@ test('kept: a root program translated once is taken from the keeper by the next 
 });
 
 test('kept: a root program translated ahead (ahead.ts, as the page does while a person reads) is run from that, never translated or read', {skip: !have}, async () => {
-  const {translatedAhead} = await import('../runtime/ahead.ts');
+  const {translatedAhead} = await import('../../sods/runtime/ahead.ts');
   const elf = readFileSync(new URL('busybox', stage));
   // As its pack holds it, zstd's frame or as it is: here as it is.
   const {wasm, segments} = await translatedAhead(readFileSync(new URL('xlat.wasm', stage)), new Uint8Array(elf), {raw: true, size: elf.length, shared: false});

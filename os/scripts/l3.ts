@@ -16,7 +16,7 @@
 //                         digest; everything it names is.
 //   index-<sha256>.json   every path of the root ({codec: 'zstd', packs, dirs,
 //                         links, files: [{path, mode, size, pack, at, len, raw?}]},
-//                         as xlat/runtime/pack.ts mounts it), the translator and
+//                         as muk/runtime/pack.ts mounts it), the translator and
 //                         the translations made ahead of time ({path, sha256 of the
 //                         program, elf, wasm}, each a blob: {path, sha256, size,
 //                         bytes}); its digest is what a
@@ -26,7 +26,7 @@
 //                         its table (the SHA-256 of each file it stores), then its
 //                         files' bytes, each a zstd frame (level 19; as it is when
 //                         that is no smaller); named by its table's digest, so a
-//                         file read alone from it is checked (xlat/runtime/table.ts),
+//                         file read alone from it is checked (muk/runtime/table.ts),
 //                         and a release that changes a few packages leaves every
 //                         other pack's name, and what a browser has of it
 //   blobs/<sha256>.bin    the translator (xlat.wasm) and each translation made
@@ -39,7 +39,7 @@
 // Names are sorted and nothing depends on time, so the same root and
 // translator give the same files, byte for byte. Unreferenced files of an l3
 // before in OUT go. `--stage DIR` also puts BusyBox, its translation and
-// xlat.wasm in DIR, for xlat/tests (os/target/userland).
+// xlat.wasm in DIR, for ricebox/tests (os/target/userland).
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync} from 'node:fs';
@@ -48,7 +48,7 @@ import {basename, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Worker} from 'node:worker_threads';
 import {gzipSync} from 'node:zlib';
-import {packOf} from '../../xlat/runtime/table.ts';
+import {packOf} from '../../muk/runtime/table.ts';
 import {readTarball, sha256, type Index} from './l3-tree.ts';
 
 const here = fileURLToPath(new URL('..', import.meta.url));
@@ -65,8 +65,8 @@ function flag(name: string, d: string | null = null): string | null {
   args.splice(i, 2);
   return v;
 }
-const translatorWasm = flag('--translator', join(repo, 'xlat/target/wasm32-unknown-unknown/release/xlat.wasm'));
-const xlat = flag('--xlat', join(repo, 'xlat/target/release/xlat'));
+const translatorWasm = flag('--translator', join(repo, 'sods/target/wasm32-unknown-unknown/release/xlat.wasm'));
+const xlat = flag('--xlat', join(repo, 'sods/target/release/xlat'));
 const hot = flag('--hot', '/usr/bin/bash,/usr/bin/busybox,/usr/bin/l3,/usr/bin/git').split(',').filter(Boolean);
 const stage = flag('--stage');
 const [rootFile, out] = args;
@@ -197,7 +197,7 @@ function strip(b: Buffer): Buffer {
   return Buffer.concat(kept);
 }
 const wasm = strip(readFileSync(translatorWasm));
-const translator = {name: 'xlat', version: crate(join(repo, 'xlat/Cargo.toml')), wasm: sha256(wasm), ...blob(wasm)};
+const translator = {name: 'xlat', version: crate(join(repo, 'sods/Cargo.toml')), wasm: sha256(wasm), ...blob(wasm)};
 // Each hot program translated whole by the native build of the same translator (it gives the bytes the wasm one
 // does): what it reaches only through a pointer (BusyBox's applets and its shell's builtins) is there from its first
 // run, not translated as it runs.

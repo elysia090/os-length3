@@ -1052,7 +1052,7 @@ the same thing for the desktop app and for the web.
   for the translator and the hot programs (BusyBox, l3 and git) with their
   translations. Everything but `l3.json` is named by its digest; a pack by
   the digest of its table, the SHA-256 of each file it stores, at its head
-  (`xlat/runtime/table.ts`), so a file read alone from it is checked as
+  (`muk/runtime/table.ts`), so a file read alone from it is checked as
   the whole pack would be, and one that is not what its table says is not
   used (its read fails with EIO, and says why). A Prompt fetches the index,
   the translator and BusyBox with its translation; every other file comes
@@ -1620,12 +1620,12 @@ What leaves this system is kept to what is said here:
   descriptors passed between processes) and TCP, UDP and ICMP to this
   machine's own addresses (127.0.0.0/8, ::1; a server and its client, as
   `openssl s_server` and curl are; ping) are channels inside its kernel
-  (xlat/runtime/sys-net.ts), and what it is told of its network (netlink as
+  (ricebox/runtime/sys-net.ts), and what it is told of its network (netlink as
   `ip` and `ss` read it, the interface ioctls, /proc/net) is that machine's:
-  lo alone (xlat/runtime/net-view.ts). Every other address is no one's to
+  lo alone (ricebox/runtime/net-view.ts). Every other address is no one's to
   bind (EADDRNOTAVAIL) and unreachable (ENETUNREACH), and every other family
   is refused as a host without it refuses it (EAFNOSUPPORT).
-  xlat/tests/boundary.test.ts holds the line, and xlat/tests/c/inet.c and
+  ricebox/tests/boundary.test.ts holds the line, and ricebox/tests/c/inet.c and
   icmp.c compare with native. The page itself
   may reach its own origin, the Remote and, for the box's Agent, the APIs of
   the models' makers whose keys it knows (agent/makers.ts), nothing else: the

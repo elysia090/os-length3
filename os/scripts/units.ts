@@ -28,13 +28,13 @@ export interface Unit {
 
 export const UNITS: Unit[] = [
   {name: 'sods', says: 'instructions: x86-64 made wasm ahead of the run, kept and shared by digest, never crossing to JS',
-    holds: ['xlat/src', 'xlat/runtime/translator.ts', 'xlat/runtime/share.ts', 'xlat/runtime/ahead.ts', 'xlat/runtime/fpu.ts'],
+    holds: ['sods/src', 'sods/runtime'],
     takes: []},
   {name: 'ricebox', says: 'the box: the smallest UNIX inside it (processes, memory and its page cache, files, descriptors, the terminal, signals) and the box started, frozen and copied',
-    holds: ['xlat/runtime', 'os/core/src/prompt', 'os/core/src/compute'],
+    holds: ['ricebox/runtime', 'os/core/src/prompt', 'os/core/src/compute'],
     takes: ['sods']},
   {name: 'muk', says: 'what is at rest: layers named by their digest, a layer written over them, names for digests; each byte fetched when first touched',
-    holds: ['os/root', 'xlat/runtime/pack.ts', 'xlat/runtime/table.ts', 'xlat/runtime/keeper.ts', 'xlat/runtime/mirror.ts',
+    holds: ['os/root', 'muk/runtime',
       'os/remote/bucket.ts', 'os/remote/files.ts', 'os/remote/trees.ts', 'os/remote/mirror.ts',
       'os/core/src/fs', 'os/core/src/root', 'os/core/src/history', 'os/core/src/repos'],
     takes: ['ricebox']},
@@ -59,8 +59,8 @@ export const UNITS: Unit[] = [
 ];
 
 /** What is no unit's: the tests, the scripts that build and check, what is made, and notes. */
-export const NOT_UNITS = ['os/scripts', 'os/selftest', 'xlat/runtime/run.ts', 'xlat/tests', 'xlat/examples', 'you/test', 'otter/test',
-  'os/core/web/src/tests', 'os/node_modules', 'os/target', 'os/dist', 'os/public', 'xlat/target', 'research_notes', 'reports',
+export const NOT_UNITS = ['os/scripts', 'os/selftest', 'ricebox/runtime/run.ts', 'ricebox/tests', 'muk/tests', 'sods/examples', 'you/test', 'otter/test',
+  'os/core/web/src/tests', 'os/node_modules', 'os/target', 'os/dist', 'os/public', 'sods/target', 'ricebox/target', 'research_notes', 'reports',
   'temp', '.github', '.claude'];
 const isTest = (rel: string) => /\.test\.ts$|(^|\/)tests?\/|\/testing[^/]*\.ts$|\.d\.ts$/.test(rel);
 
@@ -70,13 +70,13 @@ const isTest = (rel: string) => /\.test\.ts$|(^|\/)tests?\/|\/testing[^/]*\.ts$|
  */
 export const OWED: [string, string, string][] = [
   // A translation kept is read in its own format (L3T1, L3M1) where it is kept: the format is sods', the keeping muk's (2).
-  ['muk', 'sods', 'xlat/runtime/keeper.ts'],
+  ['muk', 'sods', 'muk/runtime/keeper.ts'],
   // A program translated ahead is checked against its pack's table by sods itself, not handed checked bytes (2).
-  ['sods', 'muk', 'xlat/runtime/ahead.ts'],
+  ['sods', 'muk', 'sods/runtime/ahead.ts'],
   // The box mounts the root's packs, keeps the repo in step and reads kept translations itself, where muk should be
   // handed to it, a loader of the box's own kind (6).
-  ['ricebox', 'muk', 'xlat/runtime/process.ts'],
-  ['ricebox', 'muk', 'xlat/runtime/worker.ts'],
+  ['ricebox', 'muk', 'ricebox/runtime/process.ts'],
+  ['ricebox', 'muk', 'ricebox/runtime/worker.ts'],
   // The Remote's bytes ride on its ledger's plumbing (request.ts, schema.ts) and budget (6, 7).
   ['muk', 'shipto', 'os/remote/files.ts'],
   ['muk', 'shipto', 'os/remote/mirror.ts'],

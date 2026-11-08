@@ -4,8 +4,8 @@ import {errorText} from '../host/errors.ts';
 import {isNative} from '../host/host.ts';
 import {REMOTE_URL} from '../remote/connection.ts';
 import {t} from '../i18n/i18n.ts';
-import {prepare, type Segment} from '../../../xlat/runtime/share.ts';
-import {unpackMore} from '../../../xlat/runtime/keeper.ts';
+import {prepare, type Segment} from '../../../sods/runtime/share.ts';
+import {unpackMore} from '../../../muk/runtime/keeper.ts';
 
 export type {Segment};
 
@@ -28,7 +28,7 @@ export const threadsApart = (): boolean => typeof SharedArrayBuffer === 'functio
 //                        SHA-256 of each file it stores, at its head): a file is
 //                        read from it only when a program first opens it (the
 //                        Worker, one Range request), and used only once it is
-//                        what the table says (xlat/runtime/table.ts)
+//                        what the table says (muk/runtime/table.ts)
 //   blobs/<sha256>.bin   the translator, and the hot programs (bash, the
 //                        Prompt's shell; BusyBox and its applets; l3; git,
 //                        each of its commands a name of it) with their
@@ -81,7 +81,7 @@ export interface L3 {
   url: string;
 }
 
-/** A module of code a hot program reached later in a Prompt, as its kernel made it (xlat/runtime/process.ts Image.adopt). */
+/** A module of code a hot program reached later in a Prompt, as its kernel made it (ricebox/runtime/process.ts Image.adopt). */
 export interface More { module: WebAssembly.Module; bytes: Uint8Array; base: number }
 
 /** Where loading is, for whoever is waiting on it. */
@@ -414,9 +414,9 @@ export function keepMore(path: string, from: number, list: More[]) {
 // A program of the root that is not one of the hot ones is translated when a Prompt first runs it: gcc building a
 // file translates the driver, cc1 (39 MB), the assembler and the linker, eight seconds in all, and the next Prompt,
 // in this page or after it, translated them all again. What a Prompt translates of the root is kept, by where its
-// file is in the root (its pack, named by its digest, and its place there: xlat/runtime/pack.ts origin), with the
+// file is in the root (its pack, named by its digest, and its place there: muk/runtime/pack.ts origin), with the
 // code it reached later, and the next Prompt's kernel reads it from here when the program is first run
-// (xlat/runtime/keeper.ts), not even reading the program itself unless it reaches code it never reached before.
+// (muk/runtime/keeper.ts), not even reading the program itself unless it reaches code it never reached before.
 
 /** Where the root's programs' translations are kept, under l3's own copies. */
 const TRANSLATED = `${BASE}tr/`;
@@ -429,7 +429,7 @@ const keptOrigin = (path: string, tag: string): string | null => {
   return m && m[2] === tag ? m[1] : null;
 };
 
-/** What a Prompt's kernel is told is kept ({cache, at: {[origin]: {main, more}}}, xlat/runtime/keeper.ts). */
+/** What a Prompt's kernel is told is kept ({cache, at: {[origin]: {main, more}}}, muk/runtime/keeper.ts). */
 export async function keptNow(l3: L3): Promise<{cache: string; at: Record<string, {main: string; more: string | null}>} | null> {
   const c = await open();
   if (!c) return null;
@@ -460,7 +460,7 @@ async function sealed(body: Uint8Array): Promise<Uint8Array> {
 type Reached = {list: {bytes: Uint8Array; base: number}[]; saved: number; timer: number; url: string; ready: Promise<void>};
 const reached = new Map<string, Reached>();
 
-/** Where a file of the root is in its pack, as a translation of it is kept by (xlat/runtime/pack.ts origin). */
+/** Where a file of the root is in its pack, as a translation of it is kept by (muk/runtime/pack.ts origin). */
 export const originOf = (index: Index, f: Index['files'][number]) => `${index.packs[f.pack].name.replace(/\.pack$/, '')}_${f.at}_${f.len}`;
 
 /** Whether a translation of the file at `origin`, by this translator, is kept here. */
@@ -548,7 +548,7 @@ export const usedKept = (urls: string[]) => { for (const u of urls) used(new URL
  * made again by the translator when its program runs.
  */
 async function hot(t: Translation, mode: number, translator: string, progress?: Parameters<typeof download>[2], step = atOnce, keptOnly = false) {
-  // As the kernel runs it (xlat/runtime/share.ts): its data kept beside it, its memory shared where the page may share memory.
+  // As the kernel runs it (sods/runtime/share.ts): its data kept beside it, its memory shared where the page may share memory.
   const shared = threadsApart();
   const url = moreURL(t, translator, shared);
   // What was reached later before: read as the program is, and given with it (taken).
@@ -696,7 +696,7 @@ export const filesNow = (l3: L3): L3['files'] => [...l3.files, ...later.values()
 const withMore = (f: L3['files'][number]): L3['files'][number] => ({...f, more: more.get(f.path)?.list ?? []});
 
 /** The Prompt's Worker: xlat running l3's root (pages/bench/terminal.ts gives it l3 and the repo). */
-export const promptWorker = (): Worker => new Worker(new URL('../../../xlat/runtime/worker.ts', import.meta.url), {type: 'module'});
+export const promptWorker = (): Worker => new Worker(new URL('../../../ricebox/runtime/worker.ts', import.meta.url), {type: 'module'});
 
 /**
  * A Prompt's Worker readied ahead while a Prompt is only shown (worker.ts 'ready'): its script loaded, the Workers

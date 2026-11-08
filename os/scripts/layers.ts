@@ -68,7 +68,7 @@ export function violations(): [string, string, string, string, string][] {
  * too, what a file stands on is under it.
  */
 /** Where no file may reach back to itself: the app, the Remote, these scripts, and xlat's runtime the Prompt runs. */
-export const ACYCLIC = ['app', 'remote', 'scripts', '../xlat/runtime'];
+export const ACYCLIC = ['app', 'remote', 'scripts', '../sods/runtime', '../ricebox/runtime', '../muk/runtime'];
 
 export function cycles(): string[][] {
   const all = ACYCLIC.flatMap((root) => files(join(OS, root)));

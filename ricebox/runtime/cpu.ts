@@ -14,7 +14,7 @@
 // only while no other thread of the process runs.
 
 import {CH, OP, OUTBOX_BYTES, Outbox, READS_REGS, REPLY, REGS, rouse, sleep, watch, type Attached, type Forget, type Run} from './channel.ts';
-import {Fpu} from './fpu.ts';
+import {Fpu} from '../../sods/runtime/fpu.ts';
 import {answerTime, clocks, type Clocks} from './clock.ts';
 import {INTERRUPT, KEEP_INSTANCES, Preempted, SHARES, SLICE_LOOPS, TRAP_YIELD, div128, fault, nextSlice, translatorsLimit, trapOrPreempt, type Translation} from './process.ts';
 

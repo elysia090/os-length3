@@ -10,9 +10,9 @@ each made from the source this repository pins by its recipe
                          \                     |                    /
                           one Rust core: repos, history, the Remote's sync, Home
                          /                     |                    \
-   the Prompt:   the root on the host's    the root through xlat     the root on the host's
-                 kernel (namespaces)       (x86-64 → wasm) in a      kernel (namespaces)
-                                           Worker
+   the Prompt:   the root on the host's    the root on ricebox's     the root on the host's
+                 kernel (namespaces)       kernel, made wasm by      kernel (namespaces)
+                                           sods, in a Worker
                                                |
                        OS Length3 Linux: BusyBox, gcc, make, git, l3 … (one pinned root)
                                                |
@@ -42,7 +42,10 @@ devices. Building from source, `l3` is `cargo install --path os/l3`.
 | Directory | What is there | Start at |
 | --- | --- | --- |
 | [`os/`](os/) | **Length³ OS**: the app (TypeScript, no framework; Tauri for the window), `l3` (`cli/`), the core both use (`core/`, also built for `wasm32-wasip1` for the browser), and the Remote (`service/`: Hono on a Cloudflare Worker, Postgres on Neon) | [`os/README.md`](os/README.md), the design language in [`os/DESIGN.md`](os/DESIGN.md) |
-| [`xlat/`](xlat/) | static x86-64 Linux programs as WebAssembly: the browser's Prompt runs the root through it | [`xlat/README.md`](xlat/README.md) |
+| [`sods/`](sods/) | instructions: static x86-64 Linux programs made WebAssembly ahead of the run | [`sods/README.md`](sods/README.md) |
+| [`ricebox/`](ricebox/) | the box: the smallest UNIX a browser runs (the kernel the root runs on in a browser's Prompt) | [`ricebox/README.md`](ricebox/README.md) |
+| [`muk/`](muk/) | what is at rest: packs and translations by digest, the repo in step | [`muk/README.md`](muk/README.md) |
+| [`you/`](you/), [`otter/`](otter/), [`lib/`](lib/) | units of C with no C library: the tools a person reaches for (z, rg), help and what each thing is, and what they stand on | each file's head |
 
 The root is [`os/root/`](os/root/): what it is made from (`sources.env`, the pins), one recipe per package
 (`packages/`), its own settings (`etc/`), and what makes it (`build.sh`, each package on Alpine 3.24 at one digest;
@@ -59,7 +62,7 @@ below that ends it).
 
 | Unit | Its responsibility | Takes from |
 | --- | --- | --- |
-| you | the tools a person reaches for: z, rg, fd, fzf (`you`) | lib |
+| you | the tools a person reaches for: z, rg, fd, fzf | lib |
 | m8 | where and how many boxes run: a state wanted, one loop that makes it so (made when boxes run on more than one machine) | ricebox, muk, shipto |
 | shipto | deliveries: what goes where and who takes it (commits, reviews, merges, messages, releases), the Remote that receives them, its own deploy | muk, funk |
 | funk | what is on its way: links out of a box and between boxes (HTTP, TCP, DNS, WebSocket, SSH) | ricebox |

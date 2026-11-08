@@ -66,7 +66,7 @@ function newest(path: string): number {
 }
 
 // The core the browser runs (core/web, built by vite.config.ts) is made from core/src.
-const SOURCES = ['app', 'shared', 'public', 'index.html', 'vite.config.ts', 'package-lock.json', 'core/src', 'core/web/src', 'scripts/core-wasm.ts', '../xlat/runtime'];
+const SOURCES = ['app', 'shared', 'public', 'index.html', 'vite.config.ts', 'package-lock.json', 'core/src', 'core/web/src', 'scripts/core-wasm.ts', '../sods/runtime', '../ricebox/runtime', '../muk/runtime'];
 const STAMP = join(OUT, '.built');
 
 /** What the build carries besides the sources: the browser's Prompt, when public/ has it. */

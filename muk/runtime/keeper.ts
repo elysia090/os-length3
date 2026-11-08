@@ -10,7 +10,7 @@
 //         bytes of each), the module's length and bytes
 //   more: 'L3M1', how many modules, then each one's first table slot, length and bytes (Image.adopt)
 
-import type {Segment} from './share.ts';
+import type {Segment} from '../../sods/runtime/share.ts';
 
 export const MAIN = 0x4c335431, MORE = 0x4c334d31;
 

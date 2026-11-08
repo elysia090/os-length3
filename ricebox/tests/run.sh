@@ -4,11 +4,13 @@
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(dirname "$here")
+# The translator is sods' (its crate beside this unit); the kernel that runs what it makes is this one's.
+sods=$(cd "$root/../sods" && pwd)
 out="$here/out"
 mkdir -p "$out"
-cargo build -q --locked --release --manifest-path "$root/Cargo.toml"
+cargo build -q --locked --release --manifest-path "$sods/Cargo.toml"
 # The same translator as wasm (as the browser runs it); run.ts uses it when it is current.
-cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path "$root/Cargo.toml"
+cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path "$sods/Cargo.toml"
 status=0
 for c in "$here"/c/*.c; do
   name=$(basename "$c" .c)
@@ -18,7 +20,7 @@ for c in "$here"/c/*.c; do
   else
     musl-gcc -static -O2 -pthread -Wl,--emit-relocs "$c" -o "$out/$name"
   fi
-  "$root/target/release/xlat" "$out/$name" "$out/$name.wasm" >/dev/null 2>&1
+  "$sods/target/release/xlat" "$out/$name" "$out/$name.wasm" >/dev/null 2>&1
   set +e
   # A test marked "xlat: raw sockets" wants CAP_NET_RAW natively (the Prompt's root has it in its own network), one
   # marked "xlat: root" what root may do (every process translated is root): run as root, through sudo when it can be
@@ -82,7 +84,8 @@ if command -v go >/dev/null; then
     if [ "$native" = "$translated" ] && cmp -s "$out/$name.native" "$out/$name.xlat"; then echo "ok   $name"; else echo "FAIL $name (exit $native vs $translated)"; status=1; fi
   done
 fi
-for t in "$here"/*.test.ts; do
+# The kernel's tests, and muk's (what the kernel keeps and reads at rest).
+for t in "$here"/*.test.ts "$root"/../muk/tests/*.test.ts; do
   if node --test "$t" >/dev/null 2>&1; then echo "ok   $(basename "$t")"; else echo "FAIL $(basename "$t")"; status=1; fi
 done
 exit $status

@@ -82,15 +82,15 @@
 // was read of what is kept, {type: 'used', urls}, for the page to count.
 
 import {Vfs, type File} from './fs.ts';
-import {Mirror} from './mirror.ts';
-import {mountPack, provide, syncRange, type Given, type Packed} from './pack.ts';
+import {Mirror} from '../../muk/runtime/mirror.ts';
+import {mountPack, provide, syncRange, type Given, type Packed} from '../../muk/runtime/pack.ts';
 import {Kernel, type Image, type Pumped} from './process.ts';
 import {RemoteKernel, canRunApart, warmThreads} from './remote.ts';
-import {keeper, type Kept, type Reading} from './keeper.ts';
-import {loadTranslator, type Translate} from './translator.ts';
+import {keeper, type Kept, type Reading} from '../../muk/runtime/keeper.ts';
+import {loadTranslator, type Translate} from '../../sods/runtime/translator.ts';
 import {said, type Said} from './waiting.ts';
 import type {Console} from './parts.ts';
-import type {Segment} from './share.ts';
+import type {Segment} from '../../sods/runtime/share.ts';
 
 /** A module of code a run reached later: its first table slot and bytes (Image.adopt). */
 interface Reached { module: WebAssembly.Module; bytes: Uint8Array; base: number }

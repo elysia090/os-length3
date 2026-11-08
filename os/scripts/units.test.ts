@@ -21,7 +21,8 @@ test('the table is one: each name once, each path held by one unit, each unit ta
   assert.equal(new Set(names).size, names.length);
   assert.equal(new Set(paths).size, paths.length);
   for (const u of UNITS) for (const t of u.takes) assert.ok(t === '*' || names.includes(t), `${u.name} takes ${t}`);
-  // The longest path decides: a file named on its own is its unit's, not its folder's.
-  assert.equal(unitOf('xlat/runtime/translator.ts')?.name, 'sods');
-  assert.equal(unitOf('xlat/runtime/process.ts')?.name, 'ricebox');
+  // A unit's folder is its own; the longest path decides where one unit holds part of another's folder (os/core).
+  assert.equal(unitOf('sods/runtime/translator.ts')?.name, 'sods');
+  assert.equal(unitOf('ricebox/runtime/process.ts')?.name, 'ricebox');
+  assert.equal(unitOf('os/core/src/prompt/launch.rs')?.name, 'ricebox');
 });

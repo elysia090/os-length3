@@ -14,14 +14,14 @@ import {basename, dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {zstdDecompressSync} from 'node:zlib';
 import {File, Link, Vfs} from './fs.ts';
-import {mountPack, type Packed} from './pack.ts';
+import {mountPack, type Packed} from '../../muk/runtime/pack.ts';
 import {Kernel, PROFILE, type Translator} from './process.ts';
 import {RemoteKernel, canRunApart} from './remote.ts';
-import {loadTranslator} from './translator.ts';
+import {loadTranslator} from '../../sods/runtime/translator.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const translator = join(here, '..', 'target', 'release', 'xlat');
-const wasmTranslator = join(here, '..', 'target', 'wasm32-unknown-unknown', 'release', 'xlat.wasm');
+const translator = join(here, '..', '..', 'sods', 'target', 'release', 'xlat');
+const wasmTranslator = join(here, '..', '..', 'sods', 'target', 'wasm32-unknown-unknown', 'release', 'xlat.wasm');
 
 // XLAT_BLOCKS=1: translate with --trace, so every block entered is reported (process.ts prints it).
 const traced = process.env.XLAT_BLOCKS ? ['--trace'] : [];

@@ -12,7 +12,7 @@
 // `seal`, and put in the page's Cache Storage at `url` (whole). Worker → page: {id, size}, or {id, error}. Keeping a
 // translation of tens of MB held the page's thread 20–60 ms a time (its copies, its digest, the cache's own copy).
 
-import {prepare} from '../../../xlat/runtime/share.ts';
+import {prepare} from '../../../sods/runtime/share.ts';
 
 type Keep = {id: number; keep: {url: string; cache: string; parts: Uint8Array[]; seal: boolean}};
 type Check = {id: number; bytes: ArrayBuffer; unpack: boolean; prepare?: {shared: boolean}};

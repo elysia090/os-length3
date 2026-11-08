@@ -16,5 +16,5 @@
     "resolveJsonModule": true,
     "types": ["node"]
   },
-  "include": ["boot.ts", "app", "remote", "scripts", "selftest/*.ts", "vite.config.ts", "../xlat/runtime", "../xlat/tests", "root"]
+  "include": ["boot.ts", "app", "remote", "scripts", "selftest/*.ts", "vite.config.ts", "../sods/runtime", "../ricebox/runtime", "../ricebox/tests", "../muk/runtime", "../muk/tests", "root"]
 }

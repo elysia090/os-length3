@@ -10,7 +10,7 @@
 
 import {loadTranslator, type Translate} from './translator.ts';
 import {prepare, type Segment} from './share.ts';
-import {LINE, checkFile, checkTable, type Sha256} from './table.ts';
+import {LINE, checkFile, checkTable, type Sha256} from '../../muk/runtime/table.ts';
 
 /** Where a program is in the root's packs, as the index says. */
 export interface Stored { url: string | URL; pack: string; at: number; len: number; lines: number; line: number }
