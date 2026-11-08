@@ -229,7 +229,13 @@ test('a step under way keeps its word and its look, and says it is under way unt
 test('a started issue\'s deeds go down the box\'s right edge, where Start was pressed', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
   await app.git.write('hello', 'Fix: Say hello louder');
-  const start = (await app.git.step('Start').boundingBox())!;
+  // Where Start stands once still: the box may still be coming in as it is first seen (a loaded machine is slower).
+  let start = (await app.git.step('Start').boundingBox())!;
+  await expect.poll(async () => {
+    const was = start;
+    start = (await app.git.step('Start').boundingBox())!;
+    return Math.abs(start.x + start.width - was.x - was.width);
+  }).toBeLessThan(0.5);
   await app.git.step('Start').click();
   await expect(app.git.step('Back to main')).toBeVisible();
   // Asked again until it holds: the box is drawn as Start is pressed and again as the repo's state comes, and a deed
