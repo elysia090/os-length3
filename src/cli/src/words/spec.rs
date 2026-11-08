@@ -6,7 +6,8 @@
 //! two whose subject is people, Server and Inbox; then root3's own words.
 
 use crate::cmd::{address, agent, app, Ctx, file, forge, git, home, people, remote, runtime};
-use crate::{args::Call, help, out::{Reply, Result}};
+use super::{args::Call, help};
+use crate::say::out::{Reply, Result};
 
 /// Words in English and in Japanese.
 pub type Words = [&'static str; 2];
@@ -249,7 +250,7 @@ pub struct Command {
     pub forms: &'static [Form],
     pub hidden: bool,
     /// Home's settings it reads or writes that are kept on the Remote
-    /// (home::SYNCED): taken in before it runs (sync.rs), sent after.
+    /// (home::SYNCED): taken in before it runs (cmd/sync.rs), sent after.
     pub home: &'static [&'static str],
 }
 
@@ -532,10 +533,10 @@ pub static COMMANDS: &[Command] = &[
         f(None, &[], &[], ["", ""], LOCAL, Keep, crate::cmd::version),
     ]),
     c("completion", &[], Group::Other, ["shell completion", "シェルの補完"], &[
-        f(None, &[Arg::Choice(&["bash", "zsh", "fish"])], &[], ["eval \"$(root3 completion bash)\"", "eval \"$(root3 completion bash)\""], LOCAL, Keep, crate::completion::script),
+        f(None, &[Arg::Choice(&["bash", "zsh", "fish"])], &[], ["eval \"$(root3 completion bash)\"", "eval \"$(root3 completion bash)\""], LOCAL, Keep, crate::words::completion::script),
     ]),
     Command { name: "complete", aliases: &[], group: Group::Other, about: ["", ""], hidden: true, home: &[], forms: &[
-        hidden(None, &[Arg::Argv], LOCAL, Keep, crate::completion::complete),
+        hidden(None, &[Arg::Argv], LOCAL, Keep, crate::words::completion::complete),
     ] },
     Command { name: "sync", aliases: &[], group: Group::Other, about: ["", ""], hidden: true, home: &[], forms: &[
         hidden(None, &[], LOCAL, Keep, remote::no_sync),
@@ -693,12 +694,12 @@ mod tests {
                     let words: Vec<Option<String>> = f.args.iter().enumerate()
                         .map(|(i, a)| d.gives.iter().find(|(k, _)| *k == i).map(|(_, w)| w.to_string()).or_else(|| sample(*a))).collect();
                     let flags: Vec<(Flag, String)> = d.asks.iter().map(|fl| (*fl, if *fl == Flag::Template { "standard".into() } else { "why".into() })).collect();
-                    let argv = crate::menu::command_line(c, f, &words, &flags);
-                    let call = crate::args::parse(&argv, &ctx).unwrap_or_else(|e| panic!("{} ({argv:?}): {e:?}", d.label[0]));
+                    let argv = crate::say::menu::command_line(c, f, &words, &flags);
+                    let call = crate::words::args::parse(&argv, &ctx).unwrap_or_else(|e| panic!("{} ({argv:?}): {e:?}", d.label[0]));
                     assert!(std::ptr::eq(call.form, f), "{} ({argv:?}) is read as {}", d.label[0], usage(call.command, call.form));
                     // What it gives itself is one of the words its slot takes; what it is pressed on fills a slot.
                     for (k, w) in d.gives { assert!(matches!(f.args.get(*k), Some(Arg::Choice(c)) if c.contains(w)), "{}: {w}", d.label[0]); }
-                    assert!(d.on == On::Page || f.args.iter().any(|a| crate::menu::takes(*a, d.on)), "{}: nothing takes a {:?}", d.label[0], d.on);
+                    assert!(d.on == On::Page || f.args.iter().any(|a| crate::say::menu::takes(*a, d.on)), "{}: nothing takes a {:?}", d.label[0], d.on);
                     assert!(!d.label[0].is_empty() && !d.label[1].is_empty() && !f.hidden, "{}", c.name);
                     n += 1;
                 }
@@ -710,10 +711,10 @@ mod tests {
     #[test]
     fn every_place_on_the_rail_has_a_page_and_plus_makes_a_repo() {
         for g in Group::RAIL.iter().filter(|g| **g != Group::New) {
-            assert!(!crate::menu::page_forms(*g).is_empty(), "{}", g.name());
+            assert!(!crate::say::menu::page_forms(*g).is_empty(), "{}", g.name());
             assert!(!g.role()[0].is_empty() && !g.role()[1].is_empty());
         }
-        let plus = crate::menu::deeds_of(Group::New);
+        let plus = crate::say::menu::deeds_of(Group::New);
         assert_eq!(plus.iter().map(|o| (o.command.name, o.form.verb)).collect::<Vec<_>>(), [("repo", Some("new"))]);
         // The help's groups stay as they were: + is the rail's alone.
         assert!(!Group::ALL.contains(&Group::New) && COMMANDS.iter().all(|c| c.group != Group::New));

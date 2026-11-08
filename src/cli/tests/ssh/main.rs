@@ -3,6 +3,7 @@
 
 #![cfg(target_os = "linux")]
 
+#[path = "../common/mod.rs"]
 mod common;
 use common::{FakeRemote, Home};
 use std::io::BufRead;

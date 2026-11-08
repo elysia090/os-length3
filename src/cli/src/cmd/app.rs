@@ -12,8 +12,8 @@
 //! on a network, no Remote it is not already signed in to.
 
 use super::Ctx;
-use crate::args::Call;
-use crate::out::{Error, Reply, Result};
+use crate::words::args::Call;
+use crate::say::out::{Error, Reply, Result};
 use length3_core::{device::desktop, fs::paths, remote, tr};
 use serde_json::json;
 use std::path::{Path, PathBuf};

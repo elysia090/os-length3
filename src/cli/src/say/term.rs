@@ -41,7 +41,7 @@ pub fn width(s: &str) -> usize {
         if c == '\x1b' { esc = true; continue; }
         plain.push(c);
     }
-    crate::help::width(&plain)
+    crate::words::help::width(&plain)
 }
 
 /// `s` cut to `cols` columns (escapes kept whole), with … where it was cut.
@@ -52,7 +52,7 @@ pub fn fit(s: &str, cols: usize) -> String {
     for c in s.chars() {
         if esc { out.push(c); if c.is_ascii_alphabetic() { esc = false; } continue; }
         if c == '\x1b' { esc = true; out.push(c); continue; }
-        let w = crate::help::width(c.encode_utf8(&mut [0; 4]));
+        let w = crate::words::help::width(c.encode_utf8(&mut [0; 4]));
         if used + w + 1 > cols { break; }
         out.push(c);
         used += w;
@@ -68,7 +68,7 @@ pub fn break_lines(s: &str, cols: usize) -> Vec<String> {
     let mut lines = vec![String::new()];
     let mut used = 0;
     for c in s.chars() {
-        let w = crate::help::width(c.encode_utf8(&mut [0; 4]));
+        let w = crate::words::help::width(c.encode_utf8(&mut [0; 4]));
         if used + w > cols && used > 0 { lines.push(String::new()); used = 0; }
         lines.last_mut().expect("a line").push(c);
         used += w;

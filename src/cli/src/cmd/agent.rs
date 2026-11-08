@@ -6,8 +6,8 @@
 //! Prompt (`root3 agent inside`).
 
 use super::Ctx;
-use crate::args::Call;
-use crate::out::{ago, Error, Reply, Result};
+use crate::words::args::Call;
+use crate::say::out::{ago, Error, Reply, Result};
 use length3_core::{agent::activity, agent::tasks, compute::spec, fs::paths, fs::write, tr};
 use serde_json::{json, Map, Value};
 use std::path::PathBuf;
@@ -44,7 +44,7 @@ fn task_line(k: &tasks::Task) -> (String, String) {
         (tasks::State::Asking, _) => tr!("{} (root3 agent reply {} \"…\")", "{}（root3 agent reply {} \"…\"）", k.questions.join(" / "), k.id),
         (tasks::State::Ready, _) => {
             let first = k.found.first().map(|f| if f.path.is_empty() { f.text.clone() } else { format!("{}{}: {}", f.path, f.line.map(|n| format!(":{n}")).unwrap_or_default(), f.text) });
-            let head = if k.found.is_empty() { k.said.clone() } else { tr!("{}, the heaviest first: {}", "{}。重いものから：{}", crate::out::count(k.found.len(), "finding", "findings", "{}件"), first.unwrap_or_default()) };
+            let head = if k.found.is_empty() { k.said.clone() } else { tr!("{}, the heaviest first: {}", "{}。重いものから：{}", crate::say::out::count(k.found.len(), "finding", "findings", "{}件"), first.unwrap_or_default()) };
             tr!("{} (root3 agent drop {} once looked at)", "{}（見たら root3 agent drop {}）", head, k.id)
         }
         (tasks::State::Stopped, _) => tr!("{} ({}; then root3 agent take {})", "{}（{}。それから root3 agent take {}）", k.said, k.fix, k.id),
@@ -58,7 +58,7 @@ fn task_line(k: &tasks::Task) -> (String, String) {
 /// `root3 agent`: what the agent can take, what it asks, what is ready to look at, what could not run, then each agent
 /// at work on this device now.
 pub fn list(_: &Ctx, _: &Call) -> Result<Reply> {
-    let now = crate::out::now_ms();
+    let now = crate::say::out::now_ms();
     let list = activity::sessions(&activity::all(), now, activity::RECENT);
     let all: Vec<tasks::Task> = tasks::all().into_iter().filter(|k| !k.state.over()).collect();
     let mut t = Vec::new();
@@ -68,12 +68,12 @@ pub fn list(_: &Ctx, _: &Call) -> Result<Reply> {
         let rows: Vec<(String, String)> = all.iter().filter(|k| k.state == state).map(task_line).collect();
         if rows.is_empty() { continue; }
         if !head.is_empty() || t.is_empty() { if !t.is_empty() { t.push(String::new()); } t.push(if head.is_empty() { tr!("Handed over", "任せたもの") } else { head }); }
-        t.extend(crate::out::columns(&rows).into_iter().map(|l| format!("  {l}")));
+        t.extend(crate::say::out::columns(&rows).into_iter().map(|l| format!("  {l}")));
     }
     if !list.is_empty() {
         if !t.is_empty() { t.push(String::new()); }
         t.push(tr!("At work", "作業中"));
-        t.extend(crate::out::columns(&list.iter().map(said).collect::<Vec<_>>()).into_iter().map(|l| format!("  {l}")));
+        t.extend(crate::say::out::columns(&list.iter().map(said).collect::<Vec<_>>()).into_iter().map(|l| format!("  {l}")));
     }
     if t.is_empty() {
         t.push(match tasks::agent() {
@@ -92,8 +92,8 @@ pub fn hook(ctx: &Ctx, call: &Call) -> Result<Reply> {
     if ctx.prompt { return Ok(Reply::Nothing); }
     let harness = call.word(0).unwrap_or_default();
     let cwd = std::env::current_dir().unwrap_or_default();
-    if let Some(e) = activity::report(harness, call.word(1), &payload, &cwd, crate::out::now_ms()) {
-        if let Err(why) = activity::append(&e) { crate::out::note(&why); }
+    if let Some(e) = activity::report(harness, call.word(1), &payload, &cwd, crate::say::out::now_ms()) {
+        if let Err(why) = activity::append(&e) { crate::say::out::note(&why); }
     }
     Ok(Reply::Nothing)
 }
@@ -258,7 +258,7 @@ pub fn reply(_: &Ctx, call: &Call) -> Result<Reply> {
 
 /// `root3 agent ask [REPO] "text"`: a question about the repo, answered reading only.
 pub fn ask(ctx: &Ctx, call: &Call) -> Result<Reply> {
-    let repo = crate::target::repo(ctx, call, 0)?;
+    let repo = crate::words::target::repo(ctx, call, 0)?;
     let words = call.word(1).unwrap_or_default();
     if words.trim().is_empty() { return Err(Error::Usage(tr!("Write the question: root3 agent ask [REPO] \"text\"", "質問を書いてください：root3 agent ask [REPO] \"本文\""))); }
     let k = tasks::ask(&repo, words)?;
@@ -344,9 +344,9 @@ fn run_one(ctx: &Ctx, k: &tasks::Task) -> tasks::Outcome {
         tasks::Deed::Ask => k.words.clone(),
     };
     let journal = |kind: activity::Kind, text: &str| {
-        let e = activity::Event { at: crate::out::now_ms(), harness: harness.clone().unwrap_or_else(|| "tests".into()), session: format!("task-{}", k.id),
+        let e = activity::Event { at: crate::say::out::now_ms(), harness: harness.clone().unwrap_or_else(|| "tests".into()), session: format!("task-{}", k.id),
             repo: repo.into(), line: line.into(), kind, text: activity::line_of(text) };
-        if let Err(why) = activity::append(&e) { crate::out::note(&why); }
+        if let Err(why) = activity::append(&e) { crate::say::out::note(&why); }
     };
     // What the run is, by what it is made of (core compute/spec.rs): the same Spec builds it here, and anywhere else.
     let root = match super::runtime::root_now(paths::data_dir()) {
@@ -369,7 +369,7 @@ fn run_one(ctx: &Ctx, k: &tasks::Task) -> tasks::Outcome {
     let (o, usage, over) = supervise(k, &spec, &journal);
     let what = match k.deed { tasks::Deed::Take => "take", tasks::Deed::Review => "review", tasks::Deed::Tests => "tests", tasks::Deed::Fix => "fix", tasks::Deed::Ask => "ask" };
     let _ = spec::record(&spec::Run { spec: spec.digest(), place: "here".into(), repo: repo.into(), line: line.into(), what: what.into(),
-        at: crate::out::now_ms().saturating_sub(usage.wall_ms), usage, over, code: o.code });
+        at: crate::say::out::now_ms().saturating_sub(usage.wall_ms), usage, over, code: o.code });
     journal(activity::Kind::End, &if o.code == 0 { tr!("done", "完了") } else { tr!("ended ({})", "終了（{}）", o.code) });
     if let Some(over) = over { return stopped(over.said(&spec.budget), String::new()); }
     if o.code == 127 {
@@ -427,7 +427,7 @@ fn supervise(k: &tasks::Task, spec: &spec::Spec, journal: &dyn Fn(activity::Kind
             if tail.len() > 40 { tail.pop_front(); }
         }
         let Some(words) = activity::said_in_output(&text) else { continue };
-        let now = crate::out::now_ms();
+        let now = crate::say::out::now_ms();
         if now - last >= SAY_EVERY && said < SAY_MOST { journal(activity::Kind::Tool, &words); said += 1; last = now; waiting = None; } else { waiting = Some(words); }
     }
     if let Some(words) = waiting { journal(activity::Kind::Tool, &words); }
@@ -479,7 +479,7 @@ pub fn inside(ctx: &Ctx, call: &Call) -> Result<Reply> {
     recorded.ready()?;
     let code = launch::run(&s)?;
     drop(recorded);
-    if ctx.connected() { crate::sync::send(&repo); }
+    if ctx.connected() { crate::cmd::sync::send(&repo); }
     std::process::exit(code);
 }
 

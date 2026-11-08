@@ -41,7 +41,7 @@ pub enum Error {
     /// The device's files or streams failed (1).
     Io(String),
     /// What was asked for is turned off on this device, and the answer says how to turn it on (5): `root3 address`
-    /// when SSH is off (only where it can be on: cmd/elsewhere/address.rs).
+    /// when SSH is off (only where it can be on: cmd/address_elsewhere.rs).
     #[cfg(unix)]
     Off(String),
 }
@@ -229,8 +229,8 @@ pub fn day(ms: u64) -> String {
 /// it (bug: NAME<TAB>, which a terminal put at the next tab stop, so a name of eight letters or more stood
 /// out of line with the rest).
 pub fn columns(rows: &[(String, String)]) -> Vec<String> {
-    let cols = rows.iter().filter(|(_, w)| !w.is_empty()).map(|(n, _)| crate::help::width(n)).filter(|w| *w <= 24).max().unwrap_or(0);
-    rows.iter().map(|(n, w)| if w.is_empty() { n.clone() } else { format!("{}  {w}", crate::help::pad(n, cols)) }).collect()
+    let cols = rows.iter().filter(|(_, w)| !w.is_empty()).map(|(n, _)| crate::words::help::width(n)).filter(|w| *w <= 24).max().unwrap_or(0);
+    rows.iter().map(|(n, w)| if w.is_empty() { n.clone() } else { format!("{}  {w}", crate::words::help::pad(n, cols)) }).collect()
 }
 
 /// The first 12 characters of an id.

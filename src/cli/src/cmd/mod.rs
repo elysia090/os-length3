@@ -7,13 +7,13 @@
 #[cfg(unix)]
 pub mod address;
 #[cfg(not(unix))]
-#[path = "elsewhere/address.rs"]
+#[path = "address_elsewhere.rs"]
 pub mod address;
 pub mod agent;
 #[cfg(unix)]
 pub mod app;
 #[cfg(not(unix))]
-#[path = "elsewhere/app.rs"]
+#[path = "app_elsewhere.rs"]
 pub mod app;
 pub mod file;
 pub mod forge;
@@ -22,9 +22,12 @@ pub mod home;
 pub mod people;
 pub mod remote;
 pub mod runtime;
+#[cfg(all(target_os = "linux", feature = "ssh"))]
+pub mod ssh;
+pub mod sync;
 
-use crate::args::Call;
-use crate::out::{Error, Reply, Result};
+use crate::words::args::Call;
+use crate::say::out::{Error, Reply, Result};
 use length3_core::{fs::paths, home as core_home, remote as core_remote, repos::store::Repos, tr};
 use serde_json::json;
 
@@ -100,7 +103,7 @@ pub fn before(ctx: &Ctx, call: &Call) -> Result<()> {
     if needs.remote && core_remote::connection().is_none() {
         return Err(Error::Offline(tr!("root3 {} needs the Remote, and this device is not signed in to one (root3 login)", "root3 {} には Remote がいります。この端末はサインインしていません（root3 login）", call.command.name)));
     }
-    crate::sync::before(ctx, call);
+    crate::cmd::sync::before(ctx, call);
     Ok(())
 }
 
@@ -119,7 +122,7 @@ pub fn version(_: &Ctx, _: &Call) -> Result<Reply> {
     let v = include_str!("../../../../root/RELEASE").trim();
     let root = length3_core::root::current(paths::data_dir()).map(|(_, i)| i);
     let mut text = format!("root3 {v}");
-    if let Some(i) = &root { text += &format!("\nroot {} {} ({})", i.name, i.version, crate::out::short(&i.sha256)); }
+    if let Some(i) = &root { text += &format!("\nroot {} {} ({})", i.name, i.version, crate::say::out::short(&i.sha256)); }
     Ok(Reply::data(text, json!({"version": v, "root": root})))
 }
 
@@ -166,7 +169,7 @@ pub fn stdin_text(what: &str, empty: bool, limit: u64) -> Result<String> {
     let mut bytes = Vec::new();
     std::io::stdin().take(limit + 1).read_to_end(&mut bytes)?;
     if bytes.len() as u64 > limit {
-        return Err(Error::Refused(tr!("Standard input is larger than {0} for {1}", "{1} には標準入力が大きすぎます（{0} まで）", crate::out::bytes(limit), what)));
+        return Err(Error::Refused(tr!("Standard input is larger than {0} for {1}", "{1} には標準入力が大きすぎます（{0} まで）", crate::say::out::bytes(limit), what)));
     }
     if bytes.is_empty() && !empty {
         return Err(Error::Refused(tr!("Standard input was empty, so nothing was written to {} (--empty writes it empty)", "標準入力が空なので {} には何も書いていません（空にするなら --empty）", what)));

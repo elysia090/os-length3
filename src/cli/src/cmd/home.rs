@@ -1,9 +1,9 @@
 //! Home: the TODO, the profile and the language, the same files the app keeps.
 
 use super::Ctx;
-use crate::args::Call;
-use crate::out::{Error, now_ms, Reply, Result};
-use crate::spec::{Fact, On};
+use crate::words::args::Call;
+use crate::say::out::{Error, now_ms, Reply, Result};
+use crate::words::spec::{Fact, On};
 use length3_core::{home, remote, remote::inbox, text::i18n, text::title, tr};
 use serde_json::json;
 
@@ -15,7 +15,7 @@ pub fn todo_list(_: &Ctx, _: &Call) -> Result<Reply> {
     let mut t = Vec::new();
     for (k, item) in list.iter().enumerate() {
         let mark = if item.done { "✓" } else { "○" };
-        crate::menu::see(|| crate::menu::Subject { on: On::Todo, word: (k + 1).to_string(), repo: None,
+        crate::say::menu::see(|| crate::say::menu::Subject { on: On::Todo, word: (k + 1).to_string(), repo: None,
             label: format!("{mark} {}", title::named(item.kind.as_deref(), &item.title)), detail: String::new(),
             facts: vec![if item.done { Fact::Done } else { Fact::NotDone }] });
         t.push(format!("{:>3} {} {}", k + 1, mark, title::named(item.kind.as_deref(), &item.title)));

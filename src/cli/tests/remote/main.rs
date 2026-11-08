@@ -2,6 +2,7 @@
 //! would not (a captive portal's page, a shape it does not know, another
 //! account's repos): whatever comes back, nothing here is lost by it.
 
+#[path = "../common/mod.rs"]
 mod common;
 use common::{FakeRemote, Home};
 

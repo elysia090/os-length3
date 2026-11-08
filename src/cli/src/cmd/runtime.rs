@@ -3,10 +3,10 @@
 //! Prompt is given (dotfiles); and whether SSH reaches this device's Prompts (root3 address).
 
 use super::{Ctx, stdin_text};
-use crate::args::Call;
-use crate::out::{self, bytes, Error, Reply, Result, things};
-use crate::spec::{Fact, On};
-use crate::target;
+use crate::words::args::Call;
+use crate::say::out::{self, bytes, Error, Reply, Result, things};
+use crate::words::spec::{Fact, On};
+use crate::words::target;
 use length3_core::{device::download::Progress, fs::paths, home, remote, root, storage, tr};
 use serde_json::json;
 
@@ -24,23 +24,23 @@ pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
     t.push(String::new());
     t.push(tr!("This device  {} free of {} (the host's figures) · this OS {}", "この端末  空き {} / {}（ホストの値） · この OS {}", bytes(s.host_free), bytes(s.host_total), bytes(s.allocated)));
     // What runs used of time and space in the last day, by repo (core compute/spec.rs ledger): the most CPU first.
-    let used = length3_core::compute::spec::by_repo(&length3_core::compute::spec::runs(), crate::out::now_ms().saturating_sub(24 * 60 * 60 * 1000));
+    let used = length3_core::compute::spec::by_repo(&length3_core::compute::spec::runs(), crate::say::out::now_ms().saturating_sub(24 * 60 * 60 * 1000));
     if !used.is_empty() {
         t.push(tr!("Compute, the last day", "計算資源（この1日）"));
         let secs = |ms: u64| if ms < 60_000 { format!("{:.1} s", ms as f64 / 1000.0) } else { format!("{} min", ms / 60_000) };
-        t.extend(crate::out::columns(&used.iter().map(|(repo, n, u)| (format!("  {repo}"),
-            tr!("{} · CPU {} · {} · at most {}", "{} · CPU {} · {} · 最大 {}", crate::out::count(*n as usize, "run", "runs", "{}回"), secs(u.cpu_ms), secs(u.wall_ms), bytes(u.peak_memory))))
+        t.extend(crate::say::out::columns(&used.iter().map(|(repo, n, u)| (format!("  {repo}"),
+            tr!("{} · CPU {} · {} · at most {}", "{} · CPU {} · {} · 最大 {}", crate::say::out::count(*n as usize, "run", "runs", "{}回"), secs(u.cpu_ms), secs(u.wall_ms), bytes(u.peak_memory))))
             .collect::<Vec<_>>()));
     }
-    if s.freeable > 0 { crate::menu::page_fact(Fact::AnyFreeable); }
+    if s.freeable > 0 { crate::say::menu::page_fact(Fact::AnyFreeable); }
     // Whether each can go now or stays, said as that (a bare "free" beside a name read as free space), the words
     // after it in one column whichever it is.
     let (go, stays) = (tr!("can go", "空ける"), tr!("stays", "残す"));
-    let w = crate::term::width(&go).max(crate::term::width(&stays));
+    let w = crate::say::term::width(&go).max(crate::say::term::width(&stays));
     for i in &s.items {
         let said = match i.room { storage::Room::Free | storage::Room::SyncFree => &go, storage::Room::Keep => &stays };
-        let act = format!("{said}{}", " ".repeat(w - crate::term::width(said)));
-        crate::menu::see(|| crate::menu::Subject { on: On::Thing, word: i.id.strip_prefix("repo:").unwrap_or(&i.id).to_string(), repo: None,
+        let act = format!("{said}{}", " ".repeat(w - crate::say::term::width(said)));
+        crate::say::menu::see(|| crate::say::menu::Subject { on: On::Thing, word: i.id.strip_prefix("repo:").unwrap_or(&i.id).to_string(), repo: None,
             label: i.what.clone(), detail: format!("{} · {said}", bytes(i.allocated)), facts: if i.room == storage::Room::Keep { Vec::new() } else { vec![Fact::Freeable] } });
         t.push(format!("  {:>9}  {}  {}  {}", bytes(i.allocated), act, i.what, i.detail));
         t.push(format!("             {}{}", i.why, if i.room == storage::Room::Keep { String::new() } else { tr!("  (root3 free {})", "（root3 free {}）", i.id.strip_prefix("repo:").unwrap_or(&i.id)) }));
@@ -149,7 +149,7 @@ fn the_remote() -> String {
 /// of its own. What it fetches is said on standard error as it goes.
 pub(crate) fn root_now(data: &std::path::Path) -> Result<(std::path::PathBuf, root::Installed)> {
     if let Some(r) = root::current(data) { return Ok(r); }
-    crate::out::note(&tr!("Fetching the root Prompts run on (once)", "Prompt が動く root を取ってきます（最初の一度だけ）"));
+    crate::say::out::note(&tr!("Fetching the root Prompts run on (once)", "Prompt が動く root を取ってきます（最初の一度だけ）"));
     storage::fetch_root(data, &the_remote(), progress())?;
     root::current(data).ok_or_else(|| Error::NotFound(tr!("No root yet (root3 root fetch)", "root がありません（root3 root fetch）")))
 }
@@ -318,7 +318,7 @@ mod tests {
         let c = Ctx::test(None, vec![]);
         for argv in [vec!["free", ""], vec!["free", "hello", " "]] {
             let argv: Vec<String> = argv.into_iter().map(String::from).collect();
-            let call = crate::args::parse(&argv, &c).unwrap();
+            let call = crate::words::args::parse(&argv, &c).unwrap();
             assert!(matches!(free(&c, &call), Err(Error::Usage(_))), "{argv:?}");
         }
     }

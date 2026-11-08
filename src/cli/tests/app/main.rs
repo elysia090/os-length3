@@ -5,6 +5,7 @@
 //! The app here is the test's own: a program that notes it was started,
 //! and a socket answering as the app answers (src/core/src/device/desktop.rs).
 
+#[path = "../common/mod.rs"]
 mod common;
 use common::{Home, Ran};
 use std::io::{BufRead, BufReader, Write};

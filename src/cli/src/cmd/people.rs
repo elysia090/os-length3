@@ -2,10 +2,10 @@
 //! together) and Inbox (conversations, and the names people find you by).
 
 use super::Ctx;
-use crate::args::Call;
-use crate::out::{ago, day, Error, plain, Reply, Result};
-use crate::spec::{Fact, On};
-use crate::target;
+use crate::words::args::Call;
+use crate::say::out::{ago, day, Error, plain, Reply, Result};
+use crate::words::spec::{Fact, On};
+use crate::words::target;
 use length3_core::{remote::inbox, remote::servers, tr};
 use serde_json::json;
 
@@ -17,7 +17,7 @@ pub fn servers(_: &Ctx, _: &Call) -> Result<Reply> {
         t.push(format!("{}{}", s.name, if s.owner { tr!(" · owner", " · オーナー") } else { String::new() }));
         for b in &s.boards {
             let open = match (b.open, b.guests) { (true, true) => tr!(" · open, guests write", " · 公開・ゲストも書ける"), (true, false) => tr!(" · open", " · 公開"), _ => String::new() };
-            crate::menu::see(|| crate::menu::Subject { on: On::Board, word: format!("{}#{}", s.name, b.name), repo: None,
+            crate::say::menu::see(|| crate::say::menu::Subject { on: On::Board, word: format!("{}#{}", s.name, b.name), repo: None,
                 label: format!("{}#{}", s.name, b.name), detail: open.trim_start_matches(" · ").to_string(), facts: Vec::new() });
             t.push(format!("  #{}{open}", b.name));
         }
@@ -120,7 +120,7 @@ pub fn inbox_list(_: &Ctx, _: &Call) -> Result<Reply> {
             "blocked" => tr!(" · blocked", " · ブロック"),
             _ => String::new(),
         };
-        crate::menu::see(|| crate::menu::Subject { on: On::Thread, word: me.shown(&th.address).to_string(), repo: None,
+        crate::say::menu::see(|| crate::say::menu::Subject { on: On::Thread, word: me.shown(&th.address).to_string(), repo: None,
             label: format!("{}{}", me.shown(&th.address), if th.unread > 0 { format!("  ({})", th.unread) } else { String::new() }),
             detail: format!("{}{}", kind_word(&th.last.kind), plain(&th.last.body)).lines().next().unwrap_or_default().to_string(),
             facts: if th.state == "request" && !yours { vec![Fact::Request] } else { Vec::new() } });
@@ -136,7 +136,7 @@ pub fn inbox_thread(_: &Ctx, call: &Call) -> Result<Reply> {
     let c = inbox::thread(&address)?;
     let me = inbox::me()?;
     let yours = mine(&me, &c.address);
-    crate::menu::see(|| crate::menu::Subject { on: On::Thread, word: me.shown(&c.address).to_string(), repo: None, label: me.shown(&c.address).to_string(),
+    crate::say::menu::see(|| crate::say::menu::Subject { on: On::Thread, word: me.shown(&c.address).to_string(), repo: None, label: me.shown(&c.address).to_string(),
         detail: String::new(), facts: if c.state == "request" && !yours { vec![Fact::Request] } else { Vec::new() } });
     let mut t = vec![format!("{}{}", me.shown(&c.address), if c.state == "request" && !yours { tr!("  (request: root3 inbox accept {})", "  （リクエスト：root3 inbox accept {}）", me.shown(&c.address)) } else { String::new() })];
     if c.messages.is_empty() { t.push(tr!("  Nothing written yet", "  まだ何も書かれていません")); }

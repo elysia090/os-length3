@@ -1,10 +1,10 @@
 //! Forge: the repos (here and on the Remote), the band, and the Prompt.
 
 use super::Ctx;
-use crate::args::Call;
-use crate::out::{bytes, Error, files, Reply, Result};
-use crate::spec::{Fact, On};
-use crate::target;
+use crate::words::args::Call;
+use crate::say::out::{bytes, Error, files, Reply, Result};
+use crate::words::spec::{Fact, On};
+use crate::words::target;
 use length3_core::{home, remote, tr};
 use serde_json::json;
 
@@ -29,18 +29,18 @@ pub fn repo_list(ctx: &Ctx, _: &Call) -> Result<Reply> {
             Some(_) => ("inStep", tr!(" · in step", " · Remote と同じ")),
         };
         let working = if line != length3_core::repos::lines::MAIN { tr!(" · working on {}", " · {} の作業中", super::git::line_called(&line)) } else { String::new() };
-        crate::menu::see(|| crate::menu::Subject { on: On::Repo, word: s.name.clone(), repo: Some(s.name.clone()), label: s.name.clone(),
+        crate::say::menu::see(|| crate::say::menu::Subject { on: On::Repo, word: s.name.clone(), repo: Some(s.name.clone()), label: s.name.clone(),
             detail: format!("{} · {}{working}{said}", files(s.files as usize), bytes(s.bytes)), facts: Vec::new() });
         t.push((s.name.clone(), format!("{} · {}{working}{said}", files(s.files as usize), bytes(s.bytes))));
         rows.push(json!({"name": s.name, "files": s.files, "bytes": s.bytes, "modified": s.modified, "line": line, "state": state,
             "changed": st.as_ref().map_or(0, |s| s.changed), "unsendable": st.as_ref().map(|s| s.unsynced.iter().map(|(p, _)| p.clone()).collect::<Vec<_>>()).unwrap_or_default()}));
     }
     for o in &only_there {
-        crate::menu::see(|| crate::menu::Subject { on: On::RemoteRepo, word: o.name.clone(), repo: None, label: o.name.clone(),
+        crate::say::menu::see(|| crate::say::menu::Subject { on: On::RemoteRepo, word: o.name.clone(), repo: None, label: o.name.clone(),
             detail: tr!("only on the Remote · {}", "Remote にだけあります · {}", bytes(o.bytes)), facts: vec![Fact::OnlyThere] });
         t.push((o.name.clone(), tr!("only on the Remote · {} (root3 repo open {})", "Remote にだけあります · {}（root3 repo open {} で開けます）", bytes(o.bytes), o.name)));
     }
-    let text = if t.is_empty() { tr!("No repos yet (root3 repo new NAME makes one)", "repo はまだありません（root3 repo new NAME で作れます）") } else { crate::out::columns(&t).join("\n") };
+    let text = if t.is_empty() { tr!("No repos yet (root3 repo new NAME makes one)", "repo はまだありません（root3 repo new NAME で作れます）") } else { crate::say::out::columns(&t).join("\n") };
     Ok(Reply::data(text, json!({"here": rows, "remote": only_there})))
 }
 
@@ -103,12 +103,12 @@ pub fn band_list(ctx: &Ctx, _: &Call) -> Result<Reply> {
     let running: Vec<String> = length3_core::prompt::running::all(length3_core::fs::paths::data_dir()).into_iter().map(|r| r.repo).collect();
     for name in b.iter().chain(here.iter().filter(|n| !b.contains(n))) {
         let on = b.contains(name);
-        crate::menu::see(|| {
+        crate::say::menu::see(|| {
             let mut facts = vec![if on { Fact::OnBand } else { Fact::OffBand }];
             if running.contains(name) { facts.push(Fact::Running); }
             let detail = [if on { tr!("on the band", "帯に出ています") } else { String::new() }, if running.contains(name) { tr!("a Prompt running", "Prompt が動いています") } else { String::new() }]
                 .into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" · ");
-            crate::menu::Subject { on: On::Repo, word: name.clone(), repo: Some(name.clone()), label: name.clone(), detail, facts }
+            crate::say::menu::Subject { on: On::Repo, word: name.clone(), repo: Some(name.clone()), label: name.clone(), detail, facts }
         });
     }
     let text = if b.is_empty() { tr!("Nothing on the band (root3 band add REPO)", "帯には何もありません（root3 band add REPO）") } else { b.join("\n") };
@@ -171,9 +171,9 @@ pub fn prompt(ctx: &Ctx, call: &Call) -> Result<Reply> {
         recorded.ready()?;
         Ok(recorded)
     };
-    let code = if crate::menu::active() {
+    let code = if crate::say::menu::active() {
         // Said before the shell takes the keys: in it, Ctrl-C is the program's (as at any shell), and leaving it comes back here.
-        crate::out::note(&tr!("exit (or Ctrl-D) comes back to the menu; Ctrl-C goes to what runs in the Prompt", "exit（か Ctrl-D）でメニューに戻ります。Ctrl-C は Prompt の中で動くものに届きます"));
+        crate::say::out::note(&tr!("exit (or Ctrl-D) comes back to the menu; Ctrl-C goes to what runs in the Prompt", "exit（か Ctrl-D）でメニューに戻ります。Ctrl-C は Prompt の中で動くものに届きます"));
         // From the menu, in a child: the menu keeps its own namespaces (a second Prompt could not be made
         // in them) and may have a thread still asking the Remote (a process with two cannot make them).
         launch::run_apart_with(&s, prepared)
@@ -184,10 +184,10 @@ pub fn prompt(ctx: &Ctx, call: &Call) -> Result<Reply> {
         code
     };
     let code = code.map_err(|e| Error::Io(e.to_string()))?;
-    if ctx.connected() { crate::sync::send(&repo); }
+    if ctx.connected() { crate::cmd::sync::send(&repo); }
     // Opened from the menu, the menu goes on once the shell ends, back on the repo it was opened on; typed, root3 ends with the shell's code.
-    if crate::menu::active() {
-        crate::out::note(&tr!("The Prompt of {} ended ({}); back to the menu", "{} の Prompt が終わりました（{}）。メニューに戻ります", repo, code));
+    if crate::say::menu::active() {
+        crate::say::out::note(&tr!("The Prompt of {} ended ({}); back to the menu", "{} の Prompt が終わりました（{}）。メニューに戻ります", repo, code));
         return Ok(Reply::Nothing);
     }
     std::process::exit(code);
@@ -217,7 +217,7 @@ pub fn prompt_list(_: &Ctx, _: &Call) -> Result<Reply> {
         t.push((r.repo.clone(), line));
         rows.push(json!({"repo": r.repo, "pid": r.pid, "network": r.network, "started": r.started, "held": held, "preparing": r.preparing, "root": r.root}));
     }
-    let text = if t.is_empty() { tr!("No Prompt is running (root3 prompt REPO opens one)", "動いている Prompt はありません（root3 prompt REPO で開けます）") } else { crate::out::columns(&t).join("\n") };
+    let text = if t.is_empty() { tr!("No Prompt is running (root3 prompt REPO opens one)", "動いている Prompt はありません（root3 prompt REPO で開けます）") } else { crate::say::out::columns(&t).join("\n") };
     Ok(Reply::data(text, json!(rows)))
 }
 

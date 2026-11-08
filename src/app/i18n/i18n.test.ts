@@ -73,8 +73,8 @@ test('every error the Remote can answer with has its Japanese', async () => {
 });
 
 // How Japanese is written beside Latin words and numbers (DESIGN.md §1).
-const catalog = () => readdirSync(new URL('../../../src/app/i18n/ja/', import.meta.url).pathname).filter((f) => f !== 'index.ts')
-  .flatMap((f) => [...readFileSync(new URL(`./ja/${f}`, import.meta.url), 'utf8')
+const catalog = () => readdirSync(new URL('.', import.meta.url).pathname).filter((f) => /^ja-[a-z]+\.ts$/.test(f))
+  .flatMap((f) => [...readFileSync(new URL(`./${f}`, import.meta.url), 'utf8')
     .matchAll(/^\s*(?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"): '((?:[^'\\]|\\.)*)'/gm)]
     .map((m) => ({file: f, en: m[1] ?? m[2], ja: m[3]})));
 const KANA_KANJI = '\\u3040-\\u30fa\\u30fc-\\u30ff\\u3400-\\u9fff';

@@ -4,6 +4,7 @@
 //! deeds, passed by with Esc. And where root3 must stay a plain command (ROOT3_PLAIN,
 //! --json, TERM=dumb), it writes exactly what it writes off a terminal.
 
+#[path = "../common/mod.rs"]
 mod common;
 use common::{DOWN, ENTER, ESC, Home, LEFT, RIGHT};
 

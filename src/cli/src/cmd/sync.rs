@@ -7,11 +7,11 @@
 //! command says which it reads: spec::Command::home), agreed as the app
 //! agrees them (src/core/src/home/). Offline, changes wait here and root3 says so once.
 
-use crate::args::Call;
+use crate::words::args::Call;
 use crate::cmd::Ctx;
-use crate::out::note;
-use crate::spec::{Arg, Sync};
-use crate::target;
+use crate::say::out::note;
+use crate::words::spec::{Arg, Sync};
+use crate::words::target;
 use length3_core::remote::{self, Failure};
 use length3_core::{home, repos::store::Repos, tr};
 use std::sync::atomic::{AtomicBool, Ordering};

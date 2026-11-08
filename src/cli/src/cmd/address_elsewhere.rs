@@ -3,8 +3,8 @@
 //! command on Linux and macOS.
 
 use super::Ctx;
-use crate::args::Call;
-use crate::out::{Error, Reply, Result};
+use crate::words::args::Call;
+use crate::say::out::{Error, Reply, Result};
 use length3_core::tr;
 
 fn not_here() -> Error {

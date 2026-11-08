@@ -2,6 +2,7 @@
 //! the app): by LENGTH3_REPO, from the data directory, never as a word, which
 //! root3 reads against the forms of `root3 prompt` first.
 
+#[path = "../common/mod.rs"]
 mod common;
 use common::Home;
 use std::process::{Child, Stdio};

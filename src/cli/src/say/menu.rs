@@ -15,11 +15,11 @@
 //! menu, the help and the completion cannot drift apart. Off a terminal, with
 //! --json, TERM=dumb or ROOT3_PLAIN set, none of this happens (term::interactive).
 
-use crate::args;
+use crate::words::args;
 use crate::cmd::{self, Ctx};
-use crate::out::{self, Error};
-use crate::spec::{self, Arg, Command, Deed, Fact, Flag, Form, Group, On, say};
-use crate::term::{self, Block, Key, Keys, Style};
+use crate::say::out::{self, Error};
+use crate::words::spec::{self, Arg, Command, Deed, Fact, Flag, Form, Group, On, say};
+use crate::say::term::{self, Block, Key, Keys, Style};
 use length3_core::{fs::paths, home, remote, root, text::i18n, tr};
 use std::cell::{Cell, RefCell};
 use std::process::ExitCode;
@@ -535,7 +535,7 @@ fn perform(ctx: &Ctx, argv: &[String], words_asked: bool) -> (Result<(), Error>,
         Err(e) if words_asked && matches!(e, Error::Usage(_) | Error::Refused(_) | Error::NotFound(_)) => Err(e),
         Err(e) => { out::fail(&e, false); Err(Error::Io(String::new())) }
     };
-    crate::sync::after(ctx, &call, offline);
+    crate::cmd::sync::after(ctx, &call, offline);
     (result, seen)
 }
 
@@ -646,7 +646,7 @@ fn read(ctx: &Ctx, lines: &[Vec<String>], print: bool) -> Seen {
             Ok(r) => if print { out::emit(r, false) },
             Err(e) => if print { out::fail(&e, false); },
         }
-        crate::sync::after(ctx, &call, offline);
+        crate::cmd::sync::after(ctx, &call, offline);
         all.subjects.extend(seen.subjects);
         all.facts.extend(seen.facts);
         if seen.place.is_some() { all.place = seen.place; }
@@ -817,9 +817,9 @@ fn named(ctx: &Ctx, call: &args::Call) -> Option<String> {
     // A repo beside words written is where something new went (`issue new notes "…"`), not the thing.
     let writes = call.form.args.iter().any(|a| matches!(a, Arg::Text(_)));
     call.form.args.iter().enumerate().find_map(|(i, a)| match a {
-        Arg::Issue => crate::target::issue(ctx, call, i).ok().map(|r| r.name()),
-        Arg::Repo { .. } if !writes => crate::target::repo(ctx, call, i).ok(),
-        Arg::Path { .. } => crate::target::path(ctx, call, i).ok().map(|(r, p)| if p.is_empty() { r } else { format!("{r}/{p}") }),
+        Arg::Issue => crate::words::target::issue(ctx, call, i).ok().map(|r| r.name()),
+        Arg::Repo { .. } if !writes => crate::words::target::repo(ctx, call, i).ok(),
+        Arg::Path { .. } => crate::words::target::path(ctx, call, i).ok().map(|(r, p)| if p.is_empty() { r } else { format!("{r}/{p}") }),
         Arg::Number(_) | Arg::Address => call.word(i).map(String::from),
         _ => None,
     })
@@ -836,7 +836,7 @@ pub fn made(call: &args::Call, reply: &out::Reply) -> Option<String> {
     let out::Reply::Done { json, .. } = reply else { return None };
     match (call.command.name, call.form.verb) {
         ("todo", Some("add")) => json["number"].as_u64().map(|n| n.to_string()),
-        ("issue", Some("new")) => Some(crate::target::called(json["repo"].as_str()?, json["file"].as_str()?,
+        ("issue", Some("new")) => Some(crate::words::target::called(json["repo"].as_str()?, json["file"].as_str()?,
             &length3_core::text::title::named(json["kind"].as_str().filter(|k| !k.is_empty()), json["title"].as_str()?))),
         ("repo", Some("new")) => json["repo"]["name"].as_str().map(String::from),
         _ => None,

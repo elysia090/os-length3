@@ -2,10 +2,10 @@
 //! the rail), `root3 help COMMAND` (its forms), `root3 help all` (every form, each
 //! group aligned on its own). `root3 COMMAND --help` is `root3 help COMMAND`.
 
-use crate::args::{Call, not_a_command};
+use crate::words::args::{Call, not_a_command};
 use crate::cmd::Ctx;
-use crate::out::{Error, Reply, Result};
-use crate::spec::{self, Command, Group, Words};
+use crate::say::out::{Error, Reply, Result};
+use crate::words::spec::{self, Command, Group, Words};
 use length3_core::text::i18n::ja;
 use serde_json::json;
 use std::io::IsTerminal;
@@ -184,7 +184,7 @@ mod tests {
         let ctx = Ctx::test(None, vec!["notes"]);
         for (line, _) in WORK {
             let words: Vec<String> = say(line).split(' ').skip(1).map(|w| w.trim_matches('"').to_string()).collect();
-            assert!(crate::args::parse(&words, &ctx).is_ok(), "{}", say(line));
+            assert!(crate::words::args::parse(&words, &ctx).is_ok(), "{}", say(line));
         }
         let o = overview();
         assert!(o.find(say(WORK[0].0)) < o.find("\n  todo "), "the work comes before the rail:\n{o}");

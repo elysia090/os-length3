@@ -10,13 +10,13 @@
 //! never in a script (it says so, exit 5), or set with
 //! `root3 address ssh on [device|network]` and `root3 address ssh off`. The scope
 //! chosen is kept on this device; `on` alone takes it again. Turning on
-//! starts root3's listener in the background (src/cli/src/ssh.rs), which says so to the
+//! starts root3's listener in the background (src/cli/src/cmd/ssh.rs), which says so to the
 //! Remote; Runtime shows on every device that it listens, and any of them
 //! can turn it off.
 
 use super::Ctx;
-use crate::args::Call;
-use crate::out::{Error, note, Reply, Result};
+use crate::words::args::Call;
+use crate::say::out::{Error, note, Reply, Result};
 use length3_core::{fs::paths, remote, ssh, tr};
 use serde_json::json;
 
@@ -183,7 +183,7 @@ fn start_listener() -> Result<()> {
 /// output, where turning on reads it.
 pub fn serve(_: &Ctx, _: &Call) -> Result<Reply> {
     #[cfg(all(target_os = "linux", feature = "ssh"))]
-    if let Err(e) = crate::ssh::serve() {
+    if let Err(e) = crate::cmd::ssh::serve() {
         println!("error: {}", e.replace('\n', " "));
         return Err(Error::Refused(e));
     }

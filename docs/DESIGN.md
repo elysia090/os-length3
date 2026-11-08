@@ -1402,7 +1402,7 @@ at a terminal is used the same way, and stays a command line:
   quiet line that `root3 next` chooses one with the keys. `root3 next` opens them: the same row walked with
   ←→ and Enter, Enter alone or Esc going on, each deed done as its command
   and those after it offered again.
-- **One table drives both.** A deed is a form of `src/cli/src/spec.rs` with what
+- **One table drives both.** A deed is a form of `src/cli/src/words/spec.rs` with what
   the menu needs beside it: its word in both languages, what it is pressed
   on, the facts it is offered under, the words it gives itself, what it
   asks, its weight. Each page notes its things and their facts while it is
@@ -1426,8 +1426,8 @@ at a terminal is used the same way, and stays a command line:
   `--json`, with `TERM=dumb`, or with `ROOT3_PLAIN=1` (the one switch that keeps
   a terminal plain too, for a screen reader that prefers it or a recorded
   session), nothing is offered or asked, and what root3 writes and how it exits
-  are byte for byte what they were (`src/cli/tests/plain.rs` keeps the
-  transcripts; `src/cli/tests/menu.rs` drives the menu through a real pty).
+  are byte for byte what they were (`src/cli/tests/plain/main.rs` keeps the
+  transcripts; `src/cli/tests/menu/main.rs` drives the menu through a real pty).
 
 ### What root3 writes
 

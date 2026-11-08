@@ -7,8 +7,8 @@
 //! called "write".
 
 use crate::cmd::Ctx;
-use crate::out::Error;
-use crate::spec::{self, Arg, Command, Flag, Form};
+use crate::say::out::Error;
+use crate::words::spec::{self, Arg, Command, Flag, Form};
 use length3_core::{text::i18n::ja, tr};
 
 /// What was given for one slot of a form.
@@ -205,7 +205,7 @@ fn suits(a: Arg, w: &str, strict: bool, ctx: &Ctx) -> bool {
         Arg::Repo { optional } => repo_shaped(w) && (!strict || !optional || ctx.here.is_none() || owner_shaped(w) || ctx.has_repo(w)),
         Arg::Path { .. } | Arg::Text(_) => true,
         // By its number, or by its title; strictly, a repo here is the repo, not a title.
-        Arg::Issue => !w.trim().is_empty() && (crate::target::numbered(w) || !strict || !(length3_core::text::names::valid_name(w) && ctx.has_repo(w))),
+        Arg::Issue => !w.trim().is_empty() && (crate::words::target::numbered(w) || !strict || !(length3_core::text::names::valid_name(w) && ctx.has_repo(w))),
         Arg::Number(_) => !w.is_empty() && w.bytes().all(|b| b.is_ascii_digit()),
         Arg::Choice(c) => c.contains(&w),
         Arg::Address => !w.is_empty() && w.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '@' | '+')),

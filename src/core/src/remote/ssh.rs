@@ -1,6 +1,6 @@
 //! Whether this device listens for SSH, as the Remote is told it (src/remote/ssh.ts): that it listens, and the scope's
 //! word, never an address, a port or a repo name. Pages of the account show "<device> listens for SSH" with its
-//! off switch, and nothing of where. The listener itself is ssh/'s (and root3's: src/cli/src/ssh.rs).
+//! off switch, and nothing of where. The listener itself is ssh/'s (and root3's: src/cli/src/cmd/ssh.rs).
 
 use super::{Client, Failure};
 use crate::ssh::Scope;

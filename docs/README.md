@@ -130,7 +130,7 @@ Length³ OS · length3.com
   ↑↓ choose · Enter open · 1-9 or a letter jumps · q leaves
 ```
 
-One table (`src/cli/src/spec.rs`) says every form: its words and what each
+One table (`src/cli/src/words/spec.rs`) says every form: its words and what each
 slot is (a repo, a path, an issue, text…), its flags, what it needs (the
 Remote; whether it may run inside the app's Prompt) and how it keeps in step
 with the Remote, and, for the menu, which forms make a purpose's page and

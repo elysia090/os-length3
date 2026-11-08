@@ -3,10 +3,10 @@
 //! where you are in one.
 
 use super::{Ctx, stdin_text};
-use crate::args::Call;
-use crate::out::{bytes, Error, files, note, Reply, Result};
-use crate::spec::{Fact, On};
-use crate::target;
+use crate::words::args::Call;
+use crate::say::out::{bytes, Error, files, note, Reply, Result};
+use crate::words::spec::{Fact, On};
+use crate::words::target;
 use length3_core::repos::store::{is_issues, shown, ISSUES};
 use length3_core::tr;
 use serde_json::json;
@@ -35,19 +35,19 @@ pub fn read(ctx: &Ctx, call: &Call) -> Result<Reply> {
         // Its issues are not among its files.
         if rel.is_empty() { entries.retain(|e| e.name != ISSUES); }
         // The folder is where the menu is now, empty or not: what it offers next is done here.
-        crate::menu::shown_at(if rel.is_empty() { repo.clone() } else { format!("{repo}/{rel}") });
+        crate::say::menu::shown_at(if rel.is_empty() { repo.clone() } else { format!("{repo}/{rel}") });
         // Each entry, for the menu, named as File names it (REPO/PATH).
         for e in &entries {
-            crate::menu::see(|| {
+            crate::say::menu::see(|| {
                 let path = if rel.is_empty() { format!("{repo}/{}", e.name) } else { format!("{repo}/{rel}/{}", e.name) };
                 let dir = e.kind == "dir";
-                crate::menu::Subject { on: On::Path, word: path, repo: Some(repo.clone()), label: format!("{}{}", e.name, if dir { "/" } else { "" }),
+                crate::say::menu::Subject { on: On::Path, word: path, repo: Some(repo.clone()), label: format!("{}{}", e.name, if dir { "/" } else { "" }),
                     detail: if dir || e.kind == "link" { String::new() } else { bytes(e.size) }, facts: if dir { vec![Fact::Folder] } else { Vec::new() } }
             });
         }
         // Folders first, like File.
         let t: Vec<(String, String)> = entries.iter().map(|e| match e.kind { "dir" => (format!("{}/", e.name), String::new()), "link" => (format!("{}@", e.name), String::new()), _ => (e.name.clone(), bytes(e.size)) }).collect();
-        let text = if t.is_empty() { tr!("{} is empty", "{} は空です", at) } else { crate::out::columns(&t).join("\n") };
+        let text = if t.is_empty() { tr!("{} is empty", "{} は空です", at) } else { crate::say::out::columns(&t).join("\n") };
         return Ok(Reply::data(text, json!({"repo": repo, "path": rel, "entries": entries})));
     }
     let c = r.read(&repo, &rel, LIMIT)?;

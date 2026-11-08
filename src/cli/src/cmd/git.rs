@@ -5,10 +5,10 @@
 //! (and reset), review, reply, merge, reject; diff and log to look.
 
 use super::Ctx;
-use crate::args::Call;
-use crate::out::{self, ago, commits, Error, files, issues, Reply, Result};
-use crate::spec::{Fact, On};
-use crate::target::{self, IssueRef};
+use crate::words::args::Call;
+use crate::say::out::{self, ago, commits, Error, files, issues, Reply, Result};
+use crate::words::spec::{Fact, On};
+use crate::words::target::{self, IssueRef};
 use length3_core::history::{self, state_word, Change};
 use length3_core::history::work::Work;
 use length3_core::repos::issues::{number, Issue};
@@ -150,7 +150,7 @@ fn next(ctx: &Ctx, s: &Stand, i: &Issue) -> Vec<String> {
         let review = format!("root3 review {m} approve");
         let merge = format!("root3 merge {m}");
         if has(Fact::Approved) { out.push(merge); out.push(review); } else { out.push(review); out.push(merge); }
-        out.push(format!("root3 reply {m} {}", crate::spec::placeholder("\"text\"")));
+        out.push(format!("root3 reply {m} {}", crate::words::spec::placeholder("\"text\"")));
         out.push(format!("root3 reject {m}"));
         if has(Fact::WorkedHere) { out.push(format!("root3 reset {}", i.repo)); }
     }
@@ -172,21 +172,21 @@ fn deeds(ctx: &Ctx, s: &Stand, i: &Issue, on_work: bool) -> Vec<(&'static str, S
     let mut f = facts(ctx, s, i);
     if on_work { f.push(Fact::OnWork); }
     let thing = subject(ctx, s, i, f.clone());
-    crate::menu::offered_here(ctx, crate::spec::Group::Git, On::Issue, &f).into_iter()
+    crate::say::menu::offered_here(ctx, crate::words::spec::Group::Git, On::Issue, &f).into_iter()
         .filter(|o| !(o.command.name == "issue" && o.form.verb.is_none()))
-        .map(|o| (o.label(), crate::menu::deed_line(o, &thing))).collect()
+        .map(|o| (o.label(), crate::say::menu::deed_line(o, &thing))).collect()
 }
 
 /// The issue as a thing a deed is pressed on: its card's head and foot, and its facts.
-fn subject(ctx: &Ctx, s: &Stand, i: &Issue, facts: Vec<Fact>) -> crate::menu::Subject {
+fn subject(ctx: &Ctx, s: &Stand, i: &Issue, facts: Vec<Fact>) -> crate::say::menu::Subject {
     let st = standing(ctx, s, i);
-    crate::menu::Subject { on: On::Issue, word: me(i), repo: Some(i.repo.clone()), label: heading(i),
+    crate::say::menu::Subject { on: On::Issue, word: me(i), repo: Some(i.repo.clone()), label: heading(i),
         detail: if st.is_empty() { i.repo.clone() } else { format!("{} · {st}", i.repo) }, facts }
 }
 
 /// The issue as a thing on the page, for the menu: its card's head and foot, and its facts.
 fn seen(ctx: &Ctx, r: &length3_core::repos::store::Repos, s: &Stand, i: &Issue) {
-    crate::menu::see(|| {
+    crate::say::menu::see(|| {
         let mut f = facts(ctx, s, i);
         if r.line(&i.repo) != length3_core::repos::lines::MAIN { f.push(Fact::OnWork); }
         subject(ctx, s, i, f)
@@ -248,9 +248,9 @@ fn card(ctx: &Ctx, s: &Stand, i: &Issue, full: bool) -> Vec<String> {
 /// The deeds under a card opened in full: a heading, then each deed's word, aligned, and the line that does it.
 fn deed_block(list: &[(&str, String)]) -> Vec<String> {
     if list.is_empty() { return Vec::new(); }
-    let cols = list.iter().map(|(w, _)| crate::help::width(w)).max().unwrap_or(0);
+    let cols = list.iter().map(|(w, _)| crate::words::help::width(w)).max().unwrap_or(0);
     let mut t = vec![String::new(), tr!("Next", "次")];
-    for (w, line) in list { t.push(format!("    {}  {line}", crate::help::pad(w, cols))); }
+    for (w, line) in list { t.push(format!("    {}  {line}", crate::words::help::pad(w, cols))); }
     t
 }
 
@@ -353,7 +353,7 @@ pub fn issue_show(ctx: &Ctx, call: &Call) -> Result<Reply> {
     }
     let list = deeds_here(ctx, &r, &s, &i);
     t.extend(deed_block(&list));
-    if !list.is_empty() { crate::menu::deeds_said(); }
+    if !list.is_empty() { crate::say::menu::deeds_said(); }
     let deeds: Vec<Value> = list.iter().map(|(w, line)| json!({"label": w, "command": line})).collect();
     Ok(Reply::data(t.join("\n"), json!({"issue": issue_json(ctx, &s, &i), "uncommitted": uncommitted, "change": change, "deeds": deeds})))
 }
@@ -364,7 +364,7 @@ fn deeds_here(ctx: &Ctx, r: &length3_core::repos::store::Repos, s: &Stand, i: &I
     if s.merged(i) { return Vec::new(); }
     let mut list = deeds(ctx, s, i, r.line(&i.repo) != length3_core::repos::lines::MAIN);
     if !ctx.connected() && i.closed.is_none() {
-        let sign_in = crate::menu::offered_here(ctx, crate::spec::Group::Git, On::Page, &[]).into_iter().find(|o| o.command.name == "login");
+        let sign_in = crate::say::menu::offered_here(ctx, crate::words::spec::Group::Git, On::Page, &[]).into_iter().find(|o| o.command.name == "login");
         if let Some(o) = sign_in { list.insert(0, (o.label(), "root3 login".to_string())); }
     }
     list
@@ -524,7 +524,7 @@ fn undecided(at: &IssueRef) -> Result<Change> {
 }
 
 pub fn diff(ctx: &Ctx, call: &Call) -> Result<Reply> {
-    let files = if call.form.args.first() == Some(&crate::spec::Arg::Issue) {
+    let files = if call.form.args.first() == Some(&crate::words::spec::Arg::Issue) {
         let at = target::issue(ctx, call, 0)?;
         let c = change_for(&at)?;
         history::change_diff(&at.repo, &c.id, 100_000)?
@@ -652,8 +652,8 @@ mod tests {
 
     #[test]
     fn the_cards_next_line_and_the_menus_deeds_are_read_from_the_same_facts() {
-        use crate::menu::{Env, offered};
-        use crate::spec::{Group, Weight};
+        use crate::say::menu::{Env, offered};
+        use crate::words::spec::{Group, Weight};
         let ctx = Ctx::test(None, Vec::new()).online();
         let i = parse("r", "001.md", "Fix：x\n");
         let not_here = stand_with_nothing();
@@ -703,20 +703,20 @@ mod tests {
         let lines = |s: &Stand, on_work| deeds(&ctx, s, &i, on_work).into_iter().map(|(_, l)| l).collect::<Vec<_>>();
         // Handed in from here: what it is for first, then the rest, what leaves it last; Open is what is being read.
         assert_eq!(lines(&working(1, 0, 0, Some(change("open", false))), true),
-            ["root3 review r#1 approve", "root3 merge r#1", "root3 diff r#1", "root3 review r#1 changes", &format!("root3 reply r#1 {}", crate::spec::placeholder("\"text\"")), "root3 main r", "root3 reset r", "root3 reject r#1"]);
+            ["root3 review r#1 approve", "root3 merge r#1", "root3 diff r#1", "root3 review r#1 changes", &format!("root3 reply r#1 {}", crate::words::spec::placeholder("\"text\"")), "root3 main r", "root3 reset r", "root3 reject r#1"]);
         assert_eq!(lines(&working(0, 0, 2, None), true), ["root3 commit r", "root3 diff r", "root3 main r"]);
         assert_eq!(lines(&stand_with_nothing(), false), ["root3 start r#1", "root3 issue close r#1"]);
         // Its words are the menu's buttons, aligned in one column under a heading.
         let block = deed_block(&deeds(&ctx, &stand_with_nothing(), &i, false));
         assert_eq!(block[1], tr!("Next", "次"));
-        let at: std::collections::HashSet<usize> = block[2..].iter().map(|l| crate::help::width(&l[..l.find("root3 ").unwrap()])).collect();
+        let at: std::collections::HashSet<usize> = block[2..].iter().map(|l| crate::words::help::width(&l[..l.find("root3 ").unwrap()])).collect();
         assert_eq!(at.len(), 1, "{block:?}");
     }
 
     #[test]
     fn a_merged_issue_is_offered_nothing_to_do_but_to_be_read() {
-        use crate::menu::{Env, offered};
-        use crate::spec::Group;
+        use crate::say::menu::{Env, offered};
+        use crate::words::spec::Group;
         let ctx = Ctx::test(None, Vec::new()).online();
         let i = parse("r", "001.md", "Fix：x\n");
         let s = Stand { changes: vec![change("merged", true)], ..stand_with_nothing() };

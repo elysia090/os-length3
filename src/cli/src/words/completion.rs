@@ -4,11 +4,11 @@
 //! names where a repo goes, paths in a repo where a path goes, issues where
 //! an issue goes, dotfiles where a dotfile goes. Nothing asks the Remote.
 
-use crate::args::Call;
+use crate::words::args::Call;
 use crate::cmd::Ctx;
-use crate::out::{Error, Reply, Result};
-use crate::spec::{self, Arg, Command, Flag};
-use crate::target;
+use crate::say::out::{Error, Reply, Result};
+use crate::words::spec::{self, Arg, Command, Flag};
+use crate::words::target;
 use length3_core::{home, repos::templates};
 use serde_json::json;
 
@@ -56,7 +56,7 @@ pub fn candidates(ctx: &Ctx, words: &[String]) -> Vec<String> {
     // The word after a flag that takes one.
     match done.last().map(String::as_str) {
         Some("-t" | "--template") => return keep(templates::all().into_iter().map(|t| t.id).collect(), cur),
-        Some(w) if crate::args::takes_value(w) => return Vec::new(),
+        Some(w) if crate::words::args::takes_value(w) => return Vec::new(),
         _ => {}
     }
     if cur.starts_with('-') {
@@ -69,7 +69,7 @@ pub fn candidates(ctx: &Ctx, words: &[String]) -> Vec<String> {
     let mut skip = false;
     for w in rest {
         if skip { skip = false; continue; }
-        if crate::args::takes_value(w) { skip = true; continue; }
+        if crate::words::args::takes_value(w) { skip = true; continue; }
         if !w.starts_with('-') { pos.push(w); }
     }
     if c.name == "help" {
@@ -184,7 +184,7 @@ mod tests {
         let c = Ctx::test(None, vec![]);
         for sh in ["bash", "zsh", "fish"] {
             let argv: Vec<String> = vec!["completion".into(), sh.into()];
-            let call = crate::args::parse(&argv, &c).unwrap();
+            let call = crate::words::args::parse(&argv, &c).unwrap();
             let Ok(Reply::Raw { text, .. }) = script(&c, &call) else { panic!() };
             assert!(text.contains("root3 complete --"), "{sh}");
         }

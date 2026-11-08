@@ -250,9 +250,9 @@ impl Ran {
     }
 }
 
-/// Compare `got` with the golden file `name`, or write it when ROOT3_GOLDEN=record.
+/// Compare `got` with the golden file `name` (a path from tests/), or write it when ROOT3_GOLDEN=record.
 pub fn golden(name: &str, got: &str) {
-    let at = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden").join(name);
+    let at = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(name);
     if std::env::var("ROOT3_GOLDEN").as_deref() == Ok("record") {
         std::fs::write(&at, got).expect("golden written");
         return;

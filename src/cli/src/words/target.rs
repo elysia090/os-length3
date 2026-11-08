@@ -4,9 +4,9 @@
 //! in a REPO, path or issue slot, never in text: "Docs:readme" as a title
 //! is a title.
 
-use crate::args::{Call, owner_shaped};
+use crate::words::args::{Call, owner_shaped};
 use crate::cmd::Ctx;
-use crate::out::{Error, Result};
+use crate::say::out::{Error, Result};
 use length3_core::text::names::{self, Name};
 use length3_core::{remote, remote::inbox, repos::issues, text::title, tr};
 
@@ -45,7 +45,7 @@ fn repo_named(ctx: &Ctx, word: Option<&str>) -> Result<String> {
 pub fn repo(ctx: &Ctx, call: &Call, i: usize) -> Result<String> {
     repo_named(ctx, call.word(i)).map_err(|e| match e {
         Error::Usage(_) if call.word(i).is_none() => {
-            let form = crate::spec::usage(call.command, call.form).replacen("[REPO]", "REPO", 1);
+            let form = crate::words::spec::usage(call.command, call.form).replacen("[REPO]", "REPO", 1);
             let here: Option<Vec<String>> = ctx.repos().and_then(|r| Ok(r.names()?)).ok();
             let some = match here {
                 None => String::new(),
@@ -289,9 +289,9 @@ mod tests {
         assert!(matches!(repo_named(&out, None), Err(Error::Usage(_))));
         assert_eq!(repo_named(&inside, None).unwrap(), "hello");
         // None named outside a repo: the form with REPO in it (bug: "Name a repo, or run this in one").
-        let call = crate::args::parse(&["commit".to_string()], &out).unwrap();
+        let call = crate::words::args::parse(&["commit".to_string()], &out).unwrap();
         let Err(Error::Usage(m)) = repo(&out, &call, 0) else { panic!() };
-        assert!(m.contains(&format!("root3 commit REPO [-m {}]", crate::spec::placeholder("note"))), "{m}");
+        assert!(m.contains(&format!("root3 commit REPO [-m {}]", crate::words::spec::placeholder("note"))), "{m}");
         let i = IssueRef { repo: "hello".into(), file: "003.md".into(), title: "Fix：x".into() };
         assert_eq!((i.name(), i.shown(), i.line()), ("hello#3".into(), "hello#3 Fix：x".into(), "003".into()));
         assert!(numbered("#3") && numbered("hello#3") && numbered("3") && !numbered("restart loses") && !numbered("3rd"));

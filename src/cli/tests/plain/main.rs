@@ -1,7 +1,8 @@
 //! Off a terminal root3 is a plain command: what it writes and how it exits are
 //! what scripts and CI read, so they stay byte for byte as recorded (in
-//! tests/golden), whatever root3 offers a person at a terminal.
+//! en.txt and ja.txt beside this), whatever root3 offers a person at a terminal.
 
+#[path = "../common/mod.rs"]
 mod common;
 use common::{golden, Home};
 
@@ -52,12 +53,12 @@ fn day(lang: &str) -> String {
 
 #[test]
 fn off_a_terminal_every_command_writes_and_exits_as_recorded_in_english() {
-    golden("plain-en.txt", &day("en"));
+    golden("plain/en.txt", &day("en"));
 }
 
 #[test]
 fn off_a_terminal_every_command_writes_and_exits_as_recorded_in_japanese() {
-    golden("plain-ja.txt", &day("ja"));
+    golden("plain/ja.txt", &day("ja"));
 }
 
 /// What the dotfiles hold runs (`.setup` with the network, `.profile` in every shell, `.authorized_keys` let in over

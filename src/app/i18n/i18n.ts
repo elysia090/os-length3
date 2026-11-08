@@ -1,6 +1,6 @@
 // The OS's words, in English by default and wholly in Japanese when chosen.
 // Code is written in English: t('Commit') is the English text itself, and
-// the Japanese is looked up by it (i18n/ja/). Placeholders are {name}.
+// the Japanese is looked up by it (ja.ts, and a file a part: ja-PART.ts). Placeholders are {name}.
 // The choice is Home's `lang` setting, the same file root3 reads, so the app
 // and the command line speak the same language. The Japanese words are read only once Japanese is chosen (a chunk of
 // their own, an eighth of the app): an OS in English never loads them.
@@ -18,7 +18,7 @@ export const currentLang = (): Lang => lang;
 /** The Japanese words, by the English they stand for: once read. */
 let ja: Record<string, string> | null = null;
 let reading: Promise<void> | null = null;
-const readJa = () => (reading ??= import('./ja/index.ts').then((m) => { ja = m.default; }));
+const readJa = () => (reading ??= import('./ja.ts').then((m) => { ja = m.default; }));
 // Japanese last time: its words are on their way from the first moment, beside what else the first page waits for.
 if (lang === 'ja') void readJa();
 

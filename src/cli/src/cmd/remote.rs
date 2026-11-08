@@ -2,15 +2,15 @@
 //! account's sign-in and devices; connecting and disconnecting.
 
 use super::{Ctx, host};
-use crate::args::Call;
-use crate::out::{self, bytes, Error, Reply, Result};
-use crate::spec::{Fact, On};
+use crate::words::args::Call;
+use crate::say::out::{self, bytes, Error, Reply, Result};
+use crate::words::spec::{Fact, On};
 use length3_core::{remote, remote::account, tr};
 use serde_json::{json, Value};
 
 /// What bringing a repo into step did, as a line (and its notes), its name in `cols` columns, and as data.
 fn synced(name: &str, cols: usize, r: &std::result::Result<remote::Synced, String>) -> (Vec<String>, Value) {
-    let shown = crate::help::pad(name, cols);
+    let shown = crate::words::help::pad(name, cols);
     match r {
         Ok(s) => {
             // What was sent and taken in are files (and folders) by their paths: said as files (bug: "sent 5", of what).
@@ -48,8 +48,8 @@ pub fn page(ctx: &Ctx, _: &Call) -> Result<Reply> {
     // Each repo's name in one column, as wide as the widest (as out::columns lines them up), its state after it.
     let cols = here.iter().map(|s| s.name.as_str())
         .chain(there.iter().filter(|o| o.off_at.is_some() || !here.iter().any(|h| h.name == o.name)).map(|o| o.name.as_str()))
-        .map(crate::help::width).filter(|w| *w <= 24).max().unwrap_or(0);
-    let name = |n: &str| crate::help::pad(n, cols);
+        .map(crate::words::help::width).filter(|w| *w <= 24).max().unwrap_or(0);
+    let name = |n: &str| crate::words::help::pad(n, cols);
     for s in &here {
         let outcome = all.iter().find(|(n, _)| *n == s.name).map(|(_, r)| r);
         let (state, said) = match outcome {
@@ -67,12 +67,12 @@ pub fn page(ctx: &Ctx, _: &Call) -> Result<Reply> {
             "unsendable": s.unsynced.iter().map(|(p, _)| p).collect::<Vec<_>>(), "error": outcome.and_then(|o| o.as_ref().err())}));
     }
     for o in there.iter().filter(|o| o.off_at.is_some()) {
-        crate::menu::see(|| crate::menu::Subject { on: On::RemoteRepo, word: o.name.clone(), repo: None, label: o.name.clone(),
+        crate::say::menu::see(|| crate::say::menu::Subject { on: On::RemoteRepo, word: o.name.clone(), repo: None, label: o.name.clone(),
             detail: tr!("off · kept {} more", "オフ · あと{}残ります", out::left(o.until.unwrap_or(0))), facts: vec![Fact::TurnedOff] });
         t.push(tr!("  {}  off · kept {} more (root3 remote on {})", "  {}  オフ · あと{}残ります（root3 remote on {}）", name(&o.name), out::left(o.until.unwrap_or(0)), o.name));
     }
     for o in there.iter().filter(|o| o.off_at.is_none() && !here.iter().any(|h| h.name == o.name)) {
-        crate::menu::see(|| crate::menu::Subject { on: On::RemoteRepo, word: o.name.clone(), repo: None, label: o.name.clone(),
+        crate::say::menu::see(|| crate::say::menu::Subject { on: On::RemoteRepo, word: o.name.clone(), repo: None, label: o.name.clone(),
             detail: tr!("only on the Remote · {}", "Remote にだけあります · {}", bytes(o.bytes)), facts: vec![Fact::OnlyThere] });
         t.push(tr!("  {}  only on the Remote · {} (root3 repo open {})", "  {}  Remote にだけあります · {}（root3 repo open {}）", name(&o.name), bytes(o.bytes), o.name));
     }
@@ -155,7 +155,7 @@ pub fn login(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let mut t = vec![tr!("Signed in · {}", "サインインしました · {}", host(&url))];
     let mut rows = Vec::new();
     let all = remote::sync_all(&ctx.repos()?)?;
-    let cols = all.iter().map(|(n, _)| crate::help::width(n)).filter(|w| *w <= 24).max().unwrap_or(0);
+    let cols = all.iter().map(|(n, _)| crate::words::help::width(n)).filter(|w| *w <= 24).max().unwrap_or(0);
     for (name, r) in &all {
         let (lines, row) = synced(name, cols, r);
         t.extend(lines);
