@@ -27,8 +27,9 @@
 // It says {type: 'threads', apart} once started.
 //
 // With `mirror: '/root/<repo>'` in 'start', what the guest changes there is
-// sent after each run as {type: 'changes', dirs, files, removed} (see
-// mirror.ts), and {type: 'put', path, what} puts an outside change in.
+// sent at each pause, before what was printed and before the pause is said,
+// as {type: 'changes', dirs, files, removed} (see mirror.ts), and {type:
+// 'put', path, what} puts an outside change in.
 //
 // With `root: {index, url}` in 'start', the whole root (packs and their
 // index, pack.ts) fills in around the files given: each file of it is
@@ -209,6 +210,8 @@ let rawKeys = false;
 /** The kernel paused (here: every thread waits or it ended, `r` as pump says): what the shell changed, and why it waits. */
 function paused(r: Pumped): Said {
   const k = kernel!;
+  // What the shell changed goes before what it printed: a page that has the prompt back has what the line wrote.
+  report();
   send();
   told();
   const m = said(r, k.held(), performance.now(), (keep?.reading() ?? 0) > 0);
@@ -220,10 +223,17 @@ function paused(r: Pumped): Said {
   return m;
 }
 
-/** What the shell changed, and what was translated here or reached later since it was last said. */
-function told(): void {
+/**
+ * What the shell changed in the repo since it was last said (mirror.ts), said now. The page keeps each batch as it comes
+ * (repo-copy.ts), so a page that has heard the pause, and shows the line done, has what the line wrote, a reload or not.
+ */
+function report(): void {
   const c = mirror?.changes();
   if (c) self.postMessage({type: 'changes', ...c}, moved(...c.files.filter((f) => f.bytes).map((f) => f.bytes)));
+}
+
+/** What was translated here or reached later since it was last said. */
+function told(): void {
   // Code reached later since it was last said, for the page to keep (each module's bytes copied: the image keeps its own).
   for (const k of kept) {
     const x = k.image.extras;

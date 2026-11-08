@@ -118,7 +118,7 @@ class CoreStore implements RepoStore {
  * Base64 as bytes: the engine's own where it has it, else each character's code laid into one array (not a
  * function called for each, which took a Prompt's copy of a large file a second).
  */
-function unbase64(text: string): Uint8Array {
+export function unbase64(text: string): Uint8Array {
   const native = Uint8Array as unknown as {fromBase64?: (s: string) => Uint8Array};
   if (native.fromBase64) return native.fromBase64(text);
   const s = atob(text), out = new Uint8Array(s.length);
@@ -127,7 +127,7 @@ function unbase64(text: string): Uint8Array {
 }
 
 /** Bytes as base64, a piece at a time (a large file would overflow one call's arguments). */
-function base64(bytes: Uint8Array): string {
+export function base64(bytes: Uint8Array): string {
   let s = '';
   for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(s);

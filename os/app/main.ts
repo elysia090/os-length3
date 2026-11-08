@@ -9,6 +9,7 @@ import {ServerSwitcher} from './pages/server/switcher.ts';
 import {FileTree} from './pages/file/tree.ts';
 import {onRenamed} from './repos/repos.ts';
 import {begin} from './remote/lifecycle.ts';
+import {writeLeftBack} from './pages/bench/repo-copy.ts';
 import {forgetExcept} from './prompt/l3-files.ts';
 import {keepFocus} from './ui/focus.ts';
 import {onPlugins, pluginsOpen, setPluginsOpen} from './host/plugins.ts';
@@ -681,7 +682,8 @@ if (asking.has('device')) {
     // opened is the page, not drawn whole a second time.
     // What an earlier build kept of l3 goes; l3 now keeps its own copies, by digest, and lets them go itself (userland.ts).
     void forgetExcept(new Set());
-    void begin().then(() => brought(current)).then(() => { if (connection()) render(); }).finally(() => {
+    // What the shell of a page reloaded mid-write left to write back, written before the repos are read (repo-copy.ts).
+    void writeLeftBack().then(() => begin()).then(() => brought(current)).then(() => { if (connection()) render(); }).finally(() => {
       $('page').removeAttribute('aria-busy');
       // The other places' pages, brought while the person reads the first: a place pressed later is drawn at once.
       const rest = () => { for (const id of Object.keys(BRING) as PurposeId[]) void brought(id)?.catch(() => {}); };
