@@ -32,6 +32,28 @@ class Listing extends Dir {
   override get entries(): Map<string, Entry> { return this.list(); }
 }
 
+/**
+ * A directory's entries found one at a time where a name is asked for (a path walked through it), made whole only
+ * where they are listed or counted: /proc made every process's directory for each look at /proc/self.
+ */
+class Found extends Map<string, Entry> {
+  declare readonly find: (name: string) => Entry | undefined;
+  declare readonly whole: () => Map<string, Entry>;
+  constructor(find: (name: string) => Entry | undefined, whole: () => Map<string, Entry>) {
+    super();
+    this.find = find;
+    this.whole = whole;
+  }
+  override get(name: string): Entry | undefined { return this.find(name); }
+  override has(name: string): boolean { return this.find(name) !== undefined; }
+  override get size(): number { return this.whole().size; }
+  override keys(): MapIterator<string> { return this.whole().keys(); }
+  override values(): MapIterator<Entry> { return this.whole().values(); }
+  override entries(): MapIterator<[string, Entry]> { return this.whole().entries(); }
+  override [Symbol.iterator](): MapIterator<[string, Entry]> { return this.whole()[Symbol.iterator](); }
+  override forEach(fn: (value: Entry, key: string, map: Map<string, Entry>) => void, self?: unknown): void { this.whole().forEach(fn, self); }
+}
+
 /** A link whose target is made each time it is followed. */
 class Pointer extends Link {
   declare readonly make: () => string;
@@ -211,12 +233,21 @@ export function mountProc(kernel: Kern): void {
     ['thread-self', new Pointer(() => { const t = kernel.current; return t ? `${t.proc.pid}/task/${t.tid}` : '1'; })],
     ['sys', new Listing(() => sys)],
   ]);
-  const proc = new Listing(() => {
+  const prune = (): void => { for (const pid of dirs.keys()) if (!kernel.procs.has(pid)) dirs.delete(pid); };
+  const entries = new Found((name) => {
+    const m = machine.get(name);
+    if (m || !/^[1-9]\d*$/.test(name)) return m;
+    const p = kernel.procs.get(Number(name));
+    // (Those of processes gone are let go of now and then, as a listing lets them go.)
+    if (dirs.size > 2 * kernel.procs.size + 64) prune();
+    return p ? dirOf(p) : undefined;
+  }, () => {
     const m = new Map<string, Entry>(machine);
     for (const [pid, p] of kernel.procs) m.set(String(pid), dirOf(p));
-    for (const pid of dirs.keys()) if (!kernel.procs.has(pid)) dirs.delete(pid);
+    prune();
     return m;
   });
+  const proc = new Listing(() => entries);
   vfs.root.entries.set('proc', proc);
   // As on Linux: /dev/fd and the standard streams through /proc/self.
   const dev = vfs.mkdirp('/dev');
