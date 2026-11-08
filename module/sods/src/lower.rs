@@ -409,7 +409,7 @@ impl<'p> Fx<'p> {
 
     /// Push the effective address as i64 (no segment base unless `segment`).
     fn effective(&mut self, i: &Instruction, segment: bool) {
-        self.effective_from(i, segment, false);
+        self.effective_from(i, segment, false, false);
     }
 
     /// The effective address, less what is returned: with `split`, a small
@@ -420,12 +420,27 @@ impl<'p> Fx<'p> {
     /// ever mapped (Linux's mmap_min_addr), so such an access faults either way.
     /// A large displacement (an absolute address, with a negative index
     /// counting up to it) stays in the sum.
-    fn effective_from(&mut self, i: &Instruction, segment: bool, split: bool) -> u64 {
+    ///
+    /// With `narrow`, the sum is an i32: memory's index, which is the sum's low
+    /// 32 bits whether they are taken before adding or after (a wrap is a ring's
+    /// map), so each register's low half is added in 32 bits and nothing is left
+    /// to wrap. An optimizing compile makes that one 32-bit lea (its result
+    /// zero-extended as it is), where the 64-bit sum was a lea and a mov that
+    /// cleared its high half, at every access.
+    fn effective_from(&mut self, i: &Instruction, segment: bool, split: bool, narrow: bool) -> u64 {
         let base = i.memory_base();
         let disp = i.memory_displacement64() as i64;
         let mut offset = 0;
+        let add = if narrow { W::I32Add } else { W::I64Add };
+        let cst = |fx: &mut Self, v: i64| if narrow { fx.c32(v as i32) } else { fx.c64(v) };
+        let term = |fx: &mut Self, r: Register| {
+            match gpr(r) {
+                Some((n, _)) if narrow => { fx.get(l_reg(n)); fx.e(W::I32WrapI64); }
+                _ => { fx.read_reg(r); }
+            }
+        };
         if base == Register::RIP || base == Register::EIP {
-            self.c64(disp);
+            cst(self, disp);
         } else {
             let index = i.memory_index();
             let registers = base != Register::None || index != Register::None;
@@ -434,39 +449,37 @@ impl<'p> Fx<'p> {
             if split && registers && wide && (1..1 << 16).contains(&disp) { offset = disp as u64; }
             // A displacement of nothing is not added.
             let mut first = true;
-            if !registers || disp - offset as i64 != 0 { self.c64(disp - offset as i64); first = false; }
+            if !registers || disp - offset as i64 != 0 { cst(self, disp - offset as i64); first = false; }
             if base != Register::None {
-                self.read_reg(base);
-                if !first { self.e(W::I64Add); }
+                term(self, base);
+                if !first { self.e(add.clone()); }
                 first = false;
             }
             if index != Register::None {
-                self.read_reg(index);
+                term(self, index);
                 let scale = i.memory_index_scale();
                 if scale > 1 {
-                    self.c64(scale.trailing_zeros() as i64);
-                    self.e(W::I64Shl);
+                    cst(self, scale.trailing_zeros() as i64);
+                    self.e(if narrow { W::I32Shl } else { W::I64Shl });
                 }
-                if !first { self.e(W::I64Add); }
+                if !first { self.e(add.clone()); }
             }
         }
         if segment && i.memory_segment() == Register::FS {
             self.e(W::GlobalGet(G_FS));
-            self.e(W::I64Add);
+            if narrow { self.e(W::I32WrapI64); }
+            self.e(add);
         }
         offset
     }
 
     fn address(&mut self, i: &Instruction) {
-        self.effective(i, true);
-        self.e(W::I32WrapI64);
+        self.effective_from(i, true, false, true);
     }
 
     /// The address for a load or store of operand memory, and the offset that load or store adds.
     fn place(&mut self, i: &Instruction) -> u64 {
-        let offset = self.effective_from(i, true, true);
-        self.e(W::I32WrapI64);
-        offset
+        self.effective_from(i, true, true, true)
     }
 
     fn load_sized(&mut self, size: u8) { self.load_at(size, 0) }
