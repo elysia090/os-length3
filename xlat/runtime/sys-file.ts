@@ -501,10 +501,21 @@ function getdents(p: Proc, fd: bigint, buf: bigint, count: bigint): number {
   return at - N(buf);
 }
 
-function access(p: Proc, dirfd: bigint, address: bigint): number {
-  p.kernel.vfs.lookup(path(p, address), base(p, dirfd));
+/** access, faccessat, faccessat2: whether the node is there (F_OK) and may be read, written, run (R_OK 4, W_OK 2,
+ * X_OK 1). Every process here is root (uid 0, the one mapped): reading and writing are always allowed, as
+ * CAP_DAC_OVERRIDE allows them, but running only a directory or a node with some x bit, as Linux has it (a file of
+ * 0644 is not run, and a shell says Permission denied of it, not "bad interpreter"). */
+function access(p: Proc, dirfd: bigint, address: bigint, mode: bigint, flags = 0n): number {
+  const m = N(mode), f = N(flags);
+  if (m & ~7) fail(E.INVAL);
+  if (f & ~(AT.SYMLINK_NOFOLLOW | AT_EACCESS | AT.EMPTY_PATH)) fail(E.INVAL);
+  const node = f & AT.EMPTY_PATH && !p.bytes[N(address)]
+    ? (N(dirfd) === AT_FDCWD ? p.kernel.vfs.lookup(p.cwd, '/') : descriptor(p, dirfd).node ?? fail(E.BADF))
+    : p.kernel.vfs.lookup(path(p, address), base(p, dirfd), !(f & AT.SYMLINK_NOFOLLOW));
+  if (m & 1 && !node.isDir && !(node.mode & 0o111)) fail(E.ACCES);
   return 0;
 }
+const AT_EACCESS = 0x200;
 
 // ---- extended attributes ----
 //
@@ -964,7 +975,7 @@ export const FILE_CALLS: Calls = {
   20(fd, vec, count) { return writev(this, descriptor(this, fd), vec, count); },
   295(fd, vec, count, off) { return readv(this, descriptor(this, fd), vec, count, N(off)); }, // preadv
   296(fd, vec, count, off) { return writev(this, descriptor(this, fd), vec, count, N(off)); }, // pwritev
-  21(name) { return access(this, BigInt(AT_FDCWD), name); },
+  21(name, mode) { return access(this, BigInt(AT_FDCWD), name, mode); },
   22(fds) { return pipe(this, fds, 0n); },
   32(fd) { const d = descriptor(this, fd); return this.fds.install(d); },
   33(oldfd, newfd) { if (N(oldfd) === N(newfd)) { descriptor(this, oldfd); return N(newfd); } return dup(this, oldfd, N(newfd), false); },
@@ -1163,10 +1174,10 @@ export const FILE_CALLS: Calls = {
   },
   267(dirfd, name, buf, size) { return readlink(this, dirfd, name, buf, size); },
   268(dirfd, name, mode) { const n = this.kernel.vfs.lookup(path(this, name), base(this, dirfd)); n.mode = (n.mode & ~0o7777) | (N(mode) & 0o7777); return 0; },
-  269(dirfd, name) { return access(this, dirfd, name); },
+  269(dirfd, name, mode) { return access(this, dirfd, name, mode); },
   292(oldfd, newfd, flags) { if (N(oldfd) === N(newfd)) fail(E.INVAL); return dup(this, oldfd, N(newfd), (N(flags) & O.CLOEXEC) !== 0); },
   293(fds, flags) { return pipe(this, fds, flags); },
   316(od, oa, nd, na) { return rename(this, od, oa, nd, na); },
   332() { return fail(E.NOSYS); },
-  439(dirfd, name) { return access(this, dirfd, name); },
+  439(dirfd, name, mode, flags) { return access(this, dirfd, name, mode, flags); },
 };

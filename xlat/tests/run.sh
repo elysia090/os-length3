@@ -20,11 +20,12 @@ for c in "$here"/c/*.c; do
   fi
   "$root/target/release/xlat" "$out/$name" "$out/$name.wasm" >/dev/null 2>&1
   set +e
-  # A test marked "xlat: raw sockets" wants CAP_NET_RAW natively (the Prompt's root has it in its own network):
-  # run as root, through sudo when it can be had without a word, or not at all.
-  if grep -q 'xlat: raw sockets' "$c" && [ "$(id -u)" != 0 ]; then
+  # A test marked "xlat: raw sockets" wants CAP_NET_RAW natively (the Prompt's root has it in its own network), one
+  # marked "xlat: root" what root may do (every process translated is root): run as root, through sudo when it can be
+  # had without a word, or not at all.
+  if grep -q 'xlat: raw sockets\|xlat: root' "$c" && [ "$(id -u)" != 0 ]; then
     if sudo -n true 2>/dev/null; then sudo -n "$out/$name" a b > "$out/$name.native"; native=$?
-    else echo "skip $name (raw sockets want root natively)"; set -e; continue; fi
+    else echo "skip $name (it wants root natively)"; set -e; continue; fi
   else
     "$out/$name" a b > "$out/$name.native"; native=$?
   fi
