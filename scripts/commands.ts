@@ -1,5 +1,5 @@
 // What a Prompt can do, command by command (issue #80's list, in its kinds): each tried by a line of sh that uses it
-// as a person would, run under the browser's kernel (xlat, in node, from l3 for the browser) and natively in the same
+// as a person would, run under the browser's kernel (xlat, in node, from the web root) and natively in the same
 // root (bwrap), and the two compared. A command is marked by what was seen, never by what is hoped:
 //
 //   +  runs here: every line that uses it ends as natively, saying the same
@@ -13,7 +13,7 @@
 //
 //   node scripts/commands.ts WEB ROOT_DIR [--only REGEX] [--jobs N] [--seconds N] [--write | --check]
 //
-// WEB is l3 for the browser (public/l3), ROOT_DIR the same root unpacked; --write writes the table, --check fails
+// WEB is the web root (public/webroot), ROOT_DIR the same root unpacked; --write writes the table, --check fails
 // when the table kept is not what was seen (CI: so `help` never says more, or less, than is so); without either, the
 // lines and what each did are said, and nothing is written.
 import {spawn} from 'node:child_process';
@@ -21,8 +21,8 @@ import {readFileSync, writeFileSync} from 'node:fs';
 import {availableParallelism} from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
-import type {Asked} from './l3-runnable.ts';
-import {openWeb} from './l3-tree.ts';
+import type {Asked} from './webroot-runnable.ts';
+import {openWeb} from './webroot-tree.ts';
 
 const OS = fileURLToPath(new URL('..', import.meta.url));
 const ENV = ['HOME=/root', 'PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', 'LANG=C.UTF-8', 'TERM=xterm-256color', 'USER=root', 'SHELL=/bin/sh'];
@@ -210,12 +210,12 @@ const sandbox = (root: string) => ['--unshare-all', '--unshare-user', '--uid', '
 /** What a line did, natively and here, and whether those are the same. */
 export interface Tried { line: Line; same: boolean; native: Ended; here: Ended & {error: string | null} }
 
-/** A line natively, then under xlat (l3-runnable.ts --child runs one program as the browser's Prompt runs it). */
+/** A line natively, then under xlat (webroot-runnable.ts --child runs one program as the browser's Prompt runs it). */
 async function attempt(line: Line, web: string, root: string, seconds: number): Promise<Tried> {
   const native = await run('bwrap', [...sandbox(root), '/bin/sh', '-c', line.line], seconds);
   // The same environment as natively: what a person's Prompt has.
   const asked: Asked = {web, path: '/bin/sh', args: ['-c', line.line], translator: `${OS}module/sods/target/wasm32-unknown-unknown/release/xlat.wasm`, fresh: false, kept: null, env: ENV};
-  const child = await run(process.execPath, [`${OS}scripts/l3-runnable.ts`, '--child', JSON.stringify(asked)], seconds, {...process.env, XLAT_INLINE: '1'});
+  const child = await run(process.execPath, [`${OS}scripts/webroot-runnable.ts`, '--child', JSON.stringify(asked)], seconds, {...process.env, XLAT_INLINE: '1'});
   let said: {status: number | null; stdout: string; stderr: string; error: string | null} | null = null;
   try { said = JSON.parse(child.stdout); } catch { /* it ended without saying: killed, or the kernel threw */ }
   // A wait status: an exit's code, or 128 and the signal, as a shell says it.

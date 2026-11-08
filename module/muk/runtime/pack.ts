@@ -1,4 +1,4 @@
-// A root from packs (scripts/l3.ts): its directories and links at
+// A root from packs (scripts/webroot.ts): its directories and links at
 // once, each file's bytes only when a program first reads it. The kernel
 // reads inside a system call, where nothing can wait, so the bytes are
 // fetched synchronously: `range(pack, at, len)` returns them from the pack

@@ -69,20 +69,20 @@ tracked in issue #20.
   written back through the store (text files up to the read limit), and
   what is saved anywhere else is put into the shell's copy, so the shell,
   File, Forge and Git see one repo. Its one dependency is l3 (DESIGN.md,
-  l3: the one base): in a browser, `public/l3`, made from the release root
-  by `scripts/l3.ts`: `l3.json` (which l3, and the root's digest), an index
+  l3: the one base): in a browser, `public/webroot`, made from the release root
+  by `scripts/webroot.ts`: `webroot.json` (which l3, and the root's digest), an index
   of every path, a pack per package that a file is read from when a program
   first opens it, and the translator with BusyBox, l3 and git translated
   ahead of time. A first Prompt fetches about 0.8 MB (the index, the translator,
   BusyBox and its translation); what it fetched is kept by digest within
-  the browser's storage budget, so the next fetches only `l3.json`. What a
+  the browser's storage budget, so the next fetches only `webroot.json`. What a
   Prompt translates as it runs (the code its shell reaches, gcc's cc1, curl)
   is kept the same way, by the file it was made from, so the next Prompt
   reads it rather than translating it again. Make it
-  with `npm run l3` (`scripts/l3.sh`: the translator from this tree and the
+  with `npm run webroot` (`scripts/webroot.sh`: the translator from this tree and the
   newest root `core/src/root/pins.rs` pins), and check it against that root
-  with `npm run l3:parity -- ROOT public/l3`; `node scripts/l3-runnable.ts
-  public/l3 ROOT_DIR` says which programs of it run under xlat today.
+  with `npm run webroot:parity -- ROOT public/webroot`; `node scripts/webroot-runnable.ts
+  public/webroot ROOT_DIR` says which programs of it run under xlat today.
 
 ## l3: the same OS on the command line
 
@@ -130,7 +130,7 @@ Length³ OS · length3.com
   ↑↓ choose · Enter open · 1-9 or a letter jumps · q leaves
 ```
 
-One table (`l3/src/spec.rs`) says every form: its words and what each
+One table (`cli/src/spec.rs`) says every form: its words and what each
 slot is (a repo, a path, an issue, text…), its flags, what it needs (the
 Remote; whether it may run inside the app's Prompt) and how it keeps in step
 with the Remote, and, for the menu, which forms make a purpose's page and
@@ -526,7 +526,7 @@ to this repository, and its Settings → Build say, once:
 | | |
 |---|---|
 | Root directory | the repository's own (empty) |
-| Build command | `npm run build:cloudflare`: l3 for the browser from the release of the newest l3 `src/core/src/root/pins.rs` pins (`scripts/prompt-files.ts`, taken only at the index pinned for it), then the app |
+| Build command | `npm run build:cloudflare`: the web root from the release of the newest l3 `src/core/src/root/pins.rs` pins (`scripts/prompt-files.ts`, taken only at the index pinned for it), then the app |
 | Deploy command | `node src/remote/deploy.ts`: the migrations on Neon's production branch (no branch is made for a deploy; a contract step waits until the new Worker answers), the bucket, then the Worker with the secrets it lacks (the first build prints the link in its log), then the release's files the Remote serves to anyone (`remote/mirror.ts`): each root `core/src/root/pins.rs` pins and the newest desktop app `shared/desktop-releases.json` pins, taken from the GitHub release where the bucket lacks them, checked against those pins, and put with wrangler |
 | Variables and secrets | `NEON_PROJECT_ID`; secrets `NEON_API_KEY` (a Neon API key for the project) and `GITHUB_TOKEN` (optional, read-only: the deploy reads the release's files through GitHub's API, which limits a caller without one to 60 requests an hour; the build's Prompt is read from the public release without it) |
 | Non-production branch deploy command | `npx wrangler versions upload`: another branch's build uploads a version and never deploys (`src/remote/deploy.ts` refuses to run for a branch other than main). The version has no preview URL (`wrangler.toml`: `workers_dev = false`, `preview_urls = false`), since it would run against production's database and bucket: it is checked that it builds. A version that brings a Durable Object class production has not made yet (`[[migrations]]`, as `mark` did) is refused by Cloudflare until main's deploy has made it. Never `npx wrangler deploy`, which would replace production from any branch, without its migrations or its bucket |
@@ -625,9 +625,9 @@ its requests answered by the test's own Remote.
 
 Each build carries only its own host's part, decided when it is built
 (`vite.config.ts`: the desktop app's when Tauri's CLI runs the build). The
-web's alone (the browser's core and its worker, l3 for the browser and xlat,
+web's alone (the browser's core and its worker, the web root and xlat,
 passkeys) each has a `.desktop.ts` beside it with the same exports, which the
-app's build takes instead, and leaves out `public/l3`; Tauri's API
+app's build takes instead, and leaves out `public/webroot`; Tauri's API
 (`app/host/tauri.ts`) has a `.web.ts` the web's build takes. `isNative`
 (`app/host/host.ts`) is that same fact, so a branch for the other host is dropped
 too. The app's page is about 0.4 MB, the web's 1.3 MB with its core.
@@ -637,7 +637,7 @@ npm ci
 npm run check                  # tsc, then npm test
 npm test                       # node:test: the page, the core it asks, the Remote's contracts with a bucket and without
 npm run selftest               # the app end to end in Chromium (below)
-npm run selftest:l3            # l3 end to end against a Remote of its own (tests/l3)
+npm run selftest:cli           # l3 end to end against a Remote of its own (tests/cli)
 npm run verify:remote          # the Remote on a real Postgres: DATABASE_URL (see Deploy)
 npx tauri dev                  # window against the Vite dev server
 npx tauri build --debug --no-bundle
@@ -657,12 +657,12 @@ so a run takes as long as its longest, about two minutes:
 | Job | What it does |
 | --- | --- |
 | `core` | the core for the browser (`core/web`, `wasm32-wasip1`), made once and kept by its sources |
-| `l3-web` | l3 for the browser (`public/l3`) from the root this tree pins, checked against that root; kept by the root and the translator |
+| `webroot` | the web root (`public/webroot`) from the root this tree pins, checked against that root; kept by the root and the translator |
 | `types` | `tsc --noEmit` |
 | `unit` ×4 | `npm test`, node giving each shard every fourth file (`NODE_OPTIONS=--test-shard=1/4 npm test` locally) |
 | `selftest` ×4 | Playwright in Chromium, one Remote and one build of the app per shard, with the `@slow` Prompt tests |
 | `lint` | clippy `-D warnings` on the core, core/web and l3, natively and for `wasm32-wasip1` |
-| `rust` | `cargo test` for the core and l3, then `npm run selftest:l3` |
+| `rust` | `cargo test` for the core and l3, then `npm run selftest:cli` |
 | `xlat` | the translator against native, and l3 (static, musl) translated as the Prompt runs it |
 | `advisories` | `npm audit` of what ships and `cargo audit` of both lockfiles (cargo-audit built once and kept) |
 
@@ -675,12 +675,12 @@ ends (an open PGlite keeps its process up for seconds).
 ### Selftest
 
 `npm run selftest` uses the web app the way a person does, in Chromium
-(`@playwright/test`, `selftest/`). One run builds the app for a Remote on
+(`@playwright/test`, `tests/`). One run builds the app for a Remote on
 its own origin into `tests/.dist` (again only when a source is newer),
 starts a fresh Remote (`remote/dev.ts` with a new temporary data
 directory) and `vite preview` on free ports, and beside them, at the same
 time, a second pair whose Remote has the plan and Stripe's stand-in
-(`LENGTH3_PLAN=1`, for `billing.spec.ts`), runs every `selftest/*.spec.ts`
+(`LENGTH3_PLAN=1`, for `billing.spec.ts`), runs every `tests/*.spec.ts`
 in parallel, and stops them all whatever happened (`global-setup.ts`). The
 browser reaches both as `localhost` (a passkey's relying party is a name,
 never an address); nothing listens on a fixed port and nothing outside the
@@ -694,8 +694,8 @@ repository is read. About 95 journeys take about four minutes on four cores.
 - Locally Chromium is `npx playwright install chromium` (or
   `PLAYWRIGHT_BROWSERS_PATH` where one is installed).
 - The Prompt's tests are tagged `@slow` (the root's BusyBox and l3 through
-  the translator) and run with `SELFTEST_SLOW=1` once `public/l3` holds l3
-  (`npm run l3`, or `node scripts/prompt-files.ts`); the build then
+  the translator) and run with `SELFTEST_SLOW=1` once `public/webroot` holds l3
+  (`npm run webroot`, or `node scripts/prompt-files.ts`); the build then
   carries it. `first-prompt.spec.ts` measures what a first Prompt fetches.
 - CI (`selftest` in `.github/workflows/desktop.yml`) runs everything in four
   shards (`npm run selftest -- --shard=2/4` is one), retries a failure once,

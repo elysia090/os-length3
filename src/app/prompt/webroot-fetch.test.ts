@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {createServer, type IncomingMessage, type ServerResponse} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {test} from 'node:test';
-import {digest, download, Fatal} from './l3-files.ts';
+import {digest, download, Fatal} from './webroot-fetch.ts';
 
 // A server that behaves like the proxies in between: it cuts, stalls,
 // errors for a while, ignores Range or changes the file between tries.

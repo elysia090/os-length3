@@ -10,13 +10,13 @@
     "build:cloudflare": ". scripts/rust.sh && node scripts/prompt-files.ts && VITE_LENGTH3_REMOTE= npm run build",
     "check": "tsc --noEmit && npm test",
     "test": "node scripts/tests.ts",
-    "selftest:l3": "tsc -p tests/l3 && node --test \"tests/l3/*.test.ts\"",
+    "selftest:cli": "tsc -p tests/cli && node --test \"tests/cli/*.test.ts\"",
     "selftest": "playwright test -c tests",
     "selftest:prod": "node tests/prod/run.ts",
     "verify:remote": "node src/remote/verify.ts",
     "tauri": "tauri",
-    "l3": "sh scripts/l3.sh",
-    "l3:parity": "node scripts/l3-parity.ts",
+    "webroot": "sh scripts/webroot.sh",
+    "webroot:parity": "node scripts/webroot-parity.ts",
     "web-release": "sh scripts/web-release.sh"
   },
   "devDependencies": {

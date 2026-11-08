@@ -17,15 +17,15 @@ test.describe('translated ahead', {tag: '@slow'}, () => {
   test.skip(!process.env.SELFTEST_SLOW, '@slow: SELFTEST_SLOW=1 runs it');
 
   test('what is likely run next is translated while a Prompt waits, a C repo\'s compiler not', async ({app}) => {
-    expect(existsSync(join(OS, 'public', 'l3', 'l3.json')), 'this build carries no l3 (public/l3)').toBe(true);
+    expect(existsSync(join(OS, 'public', 'webroot', 'webroot.json')), 'this build carries no l3 (public/webroot)').toBe(true);
     test.setTimeout(600_000);
     await app.newRepo.openInForge();
     await app.forge.startPrompt('hello');
     // The root this build carries, and where each program is in it (its pack and its place there): what its
     // translation is kept under.
     const index = await app.page.evaluate(async () => {
-      const about = await (await fetch('/l3/l3.json')).json();
-      return await (await fetch(`/l3/${about.index.path}`)).json();
+      const about = await (await fetch('/webroot/webroot.json')).json();
+      return await (await fetch(`/webroot/${about.index.path}`)).json();
     }) as Index;
     const originOf = (path: RegExp) => {
       const f = index.files.find((x) => path.test(x.path));
@@ -35,8 +35,8 @@ test.describe('translated ahead', {tag: '@slow'}, () => {
     const ahead = aheadFor(index);
     expect(ahead.length, 'this root has none of the programs translated ahead').toBeGreaterThan(0);
     const keptOf = (origins: string[]) => app.page.evaluate(async (os) => {
-      const urls = (await (await caches.open('l3')).keys()).map((r) => r.url);
-      return os.filter((o) => urls.some((u) => u.includes(`/l3/tr/${o}-`)));
+      const urls = (await (await caches.open('webroot')).keys()).map((r) => r.url);
+      return os.filter((o) => urls.some((u) => u.includes(`/webroot/tr/${o}-`)));
     }, origins);
     // Nothing is run: the Prompt only waits for its next line, and each is kept meanwhile, one after another.
     const origins = ahead.map((p) => originOf(new RegExp(`^${p}$`)));

@@ -28,7 +28,7 @@ test.describe('the first Prompt', {tag: '@slow'}, () => {
     // Every response the page and its workers take while the Prompt starts (a worker's synchronous reads too).
     // What comes once its prompt line is there (l3's translation, a few seconds after, for the Prompts after it) is not the first Prompt's.
     app.page.context().on('requestfinished', async (r) => {
-      if (!counting || !/\/(l3|userland|root)\//.test(r.url())) return;
+      if (!counting || !/\/(webroot|userland|root)\//.test(r.url())) return;
       const s = await r.sizes().catch(() => null);
       if (s) got.push({url: new URL(r.url()).pathname, bytes: s.responseBodySize + s.responseHeadersSize});
     });
@@ -44,7 +44,7 @@ test.describe('the first Prompt', {tag: '@slow'}, () => {
       counting = false;
       // What the page itself fetched, as its own clock has it (bytes over the wire: none for what it had); the Worker's reads into the packs, as heard above.
       const page = await app.page.evaluate((t) => (performance.getEntriesByType('resource') as PerformanceResourceTiming[])
-        .filter((e) => e.startTime >= t && /\/(l3|userland|root)\//.test(e.name)).map((e) => ({url: new URL(e.name).pathname, bytes: e.transferSize})), since);
+        .filter((e) => e.startTime >= t && /\/(webroot|userland|root)\//.test(e.name)).map((e) => ({url: new URL(e.name).pathname, bytes: e.transferSize})), since);
       const all = [...page, ...got.filter((g) => g.url.includes('/packs/'))];
       return {ms, bytes: all.reduce((n, g) => n + g.bytes, 0), requests: all.length, largest: [...all].sort((a, b) => b.bytes - a.bytes).slice(0, 6)};
     };

@@ -1,6 +1,6 @@
 // SSH into a repo's Prompt: which of the account's devices listen, kept here
 // so any page can see them and stop one. The listening itself is the
-// device's (l3's listener, l3/src/ssh.rs); what is kept is a row a device,
+// device's (l3's listener, cli/src/ssh.rs); what is kept is a row a device,
 // keyed by its session (signing it out takes the row with it), and in it
 // only that the device listens, to whom (its scope: `device`, from that
 // device only, or `network`, from its network's PCs too), since when, and

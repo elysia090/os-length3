@@ -6,7 +6,7 @@ name: Release
 # publishes the root
 # (every package made from this tree's pins by its recipe, root/build.sh,
 # with this tree's l3, root/assemble.sh), the web build (the app with
-# l3 for the browser: the same root as the browser reads it, scripts/l3.ts
+# The web root: the same root as the browser reads it, scripts/webroot.ts
 # and web-release.sh) and the desktop app (the
 # same UI, its Prompt running that root on the machine: a .deb and an
 # AppImage), with their digests. Then it proposes the pins to main as one
@@ -98,7 +98,7 @@ jobs:
       - if: env.SKIP != '1'
         uses: ./.github/actions/root-packages
       # What the release holds and its notes, made as by hand (scripts/release.sh), then published.
-      - name: Root, l3 for the browser, web build and desktop app
+      - name: Root, the web root, web build and desktop app
         if: env.SKIP != '1'
         working-directory: .
         env:

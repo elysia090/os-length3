@@ -3,8 +3,8 @@
 #
 #   os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst  the root: every package made from this tree's pins by its
 #                                                  recipe (root/build.sh), with this tree's l3 (root/assemble.sh)
-#   os-length3-linux-X.Y.Z-l3-web.tar               the same root as the browser reads it (l3.sh), checked
-#                                                  to be the same tree (l3-parity.ts)
+#   os-length3-linux-X.Y.Z-webroot.tar               the same root as the browser reads it (webroot.sh), checked
+#                                                  to be the same tree (webroot-parity.ts)
 #   os-length3-linux-X.Y.Z-web.zip                  the web build, with that l3 (web-release.sh)
 #   os-length3-linux-X.Y.Z-desktop-amd64.deb        the desktop app, its Prompt running that root on the
 #   os-length3-linux-X.Y.Z-desktop-x86_64.AppImage  machine, with l3 beside it (desktop.sh)
@@ -54,23 +54,23 @@ else
   film=
 fi
 
-# l3 for the browser, the same root: every path, type, mode, link target and sha256 as the app installs.
-sh scripts/l3.sh "$root" public/l3
-node scripts/l3-parity.ts "$root" public/l3
-l3web=os-length3-linux-$version-l3-web.tar
-tar -C public/l3 --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --format=pax \
-  --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime -cf "$out/$l3web" .
+# The web root, the same root: every path, type, mode, link target and sha256 as the app installs.
+sh scripts/webroot.sh "$root" public/webroot
+node scripts/webroot-parity.ts "$root" public/webroot
+webroot=os-length3-linux-$version-webroot.tar
+tar -C public/webroot --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --format=pax \
+  --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime -cf "$out/$webroot" .
 
 # One entry pins both ways in, before anything that trusts it is built.
-node scripts/pin-root.ts "$root" public/l3
+node scripts/pin-root.ts "$root" public/webroot
 
 # The web build (it checks the types and runs the tests) and the desktop app.
-L3_READY=1 sh scripts/web-release.sh
+WEBROOT_READY=1 sh scripts/web-release.sh
 web=os-length3-linux-$version-web.zip
 mv length3-web.zip "$out/$web"
 rm -f length3-web.zip.sha256
 # The app with l3 beside it (scripts/desktop.sh): the command line, and what its Prompt and SSH run. It runs its
-# Prompt on the machine, from the root it installs: its build leaves l3 for the browser out (vite.config.ts).
+# Prompt on the machine, from the root it installs: its build leaves the web root out (vite.config.ts).
 sh scripts/desktop.sh "$version"
 deb=os-length3-linux-$version-desktop-amd64.deb
 appimage=os-length3-linux-$version-desktop-x86_64.AppImage
@@ -82,7 +82,7 @@ mv "$out/smoke.png" "$out/../smoke.png"
 node scripts/pin-desktop.ts "$version" "$out/$deb" "$out/$appimage"
 
 cd "$out"
-sha256sum "$l3web" "$web" "$deb" "$appimage" $film >> SHA256SUMS
+sha256sum "$webroot" "$web" "$deb" "$appimage" $film >> SHA256SUMS
 rootfile=$(basename "$root")
 size() { stat -c %s "$1"; }
 digest() { sha256sum "$1" | cut -d' ' -f1; }
@@ -93,7 +93,7 @@ digest() { sha256sum "$1" | cut -d' ' -f1; }
   echo
   echo "| File | Bytes | SHA-256 |"
   echo "| --- | --- | --- |"
-  for f in "$rootfile" "$l3web" "$web" "$deb" "$appimage" $film; do
+  for f in "$rootfile" "$webroot" "$web" "$deb" "$appimage" $film; do
     echo "| \`$f\` | $(size "$f") | \`$(digest "$f")\` |"
   done
   echo
@@ -104,13 +104,13 @@ digest() { sha256sum "$1" | cut -d' ' -f1; }
   echo "mkdir opened && tar --zstd -xf $rootfile -C opened"
   echo '```'
   echo
-  echo "l3 $version is the root (the desktop app installs it) and \`$l3web\`, the same root as the browser reads it (the same paths, modes, links and bytes: checked when it was made). One entry of \`src/core/src/root/pins.rs\` RELEASES pins both; the release pinned it:"
+  echo "l3 $version is the root (the desktop app installs it) and \`$webroot\`, the same root as the browser reads it (the same paths, modes, links and bytes: checked when it was made). One entry of \`src/core/src/root/pins.rs\` RELEASES pins both; the release pinned it:"
   echo
   echo '```rust'
   awk '/^pub const RELEASES/{on=1; sub(/^pub const RELEASES: &\[Release\] = &\[/, "")} on{print} on && /^}/{exit}' "$here/src/core/src/root/pins.rs"
   echo '```'
   echo
-  echo "and its desktop app in \`src/shared/desktop-releases.json\`, as below. Both are proposed to main as one change (Pin $version); once it is in, each deploy of the Remote takes the pinned root and desktop files from this release, checks them against those pins and puts them on the Remote, which hands them to anyone beside this release; a web build takes l3 from \`$l3web\` only at the pinned index (\`scripts/prompt-files.ts\`)."
+  echo "and its desktop app in \`src/shared/desktop-releases.json\`, as below. Both are proposed to main as one change (Pin $version); once it is in, each deploy of the Remote takes the pinned root and desktop files from this release, checks them against those pins and puts them on the Remote, which hands them to anyone beside this release; a web build takes l3 from \`$webroot\` only at the pinned index (\`scripts/prompt-files.ts\`)."
   echo
   echo '```json'
   echo "\"$version\": {"

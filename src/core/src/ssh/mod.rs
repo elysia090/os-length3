@@ -1,5 +1,5 @@
 //! SSH into a repo's Prompt from any OpenSSH client. The listener is l3's
-//! (l3/src/ssh.rs, `l3 address ssh serve`, started by turning SSH on); what
+//! (cli/src/ssh.rs, `l3 address ssh serve`, started by turning SSH on); what
 //! the app and l3 share of it is here:
 //!
 //!   keys       the Runtime dotfile `.authorized_keys`, one OpenSSH public

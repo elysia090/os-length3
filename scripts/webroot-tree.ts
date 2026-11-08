@@ -6,7 +6,7 @@
 //                        without set-id bits, symlinks as they are, a hard link the
 //                        same bytes as its file. No other kind is part of a root.
 //   nativeTree(DIR)      a root already installed (<data>/system/<sha256>/root)
-//   webTree(DIR)         l3 as the browser reads it (scripts/l3.ts): its index,
+//   webTree(DIR)         the web root (scripts/webroot.ts): its index,
 //                        and every file decoded from its pack
 //
 // Each gives the same shape, one entry a path (sorted):
@@ -22,7 +22,7 @@ import {checkPacks, checkedRange} from '../module/muk/runtime/table.ts';
 import type {About, Blob, Index} from '../src/app/prompt/userland.ts';
 
 export type {About, Index};
-/** A file of l3 for the browser, as its index names it. */
+/** A file of the web root, as its index names it. */
 export type IndexFile = Index['files'][number];
 /** One path of a tree: a directory, a file (its size and digest), a link (its target), or what no root holds. */
 export interface Entry {
@@ -115,7 +115,7 @@ const inRoot = (name: string) => {
 /**
  * The root in a release tarball, as l3 installs it, and its manifest file:
  * {entries, manifest}. `each(entry, bytes)` sees every file's bytes once
- * (scripts/l3.ts packs them from here).
+ * (scripts/webroot.ts packs them from here).
  */
 export async function readTarball(file: string, each: (entry: Entry, bytes: Buffer | null) => void = () => {}): Promise<Tree> {
   const entries: Entry[] = [];
@@ -166,11 +166,11 @@ export async function nativeTree(at: string): Promise<Tree> {
   return statSync(at).isDirectory() ? readDir(at) : readTarball(at);
 }
 
-/** l3 for the browser, opened: {about (l3.json), index, dir, packs (where its packs are), read(file), blob(name)}. */
+/** The web root, opened: {about (webroot.json), index, dir, packs (where its packs are), read(file), blob(name)}. */
 export function openWeb(dir: string) {
-  const about: About = JSON.parse(readFileSync(join(dir, 'l3.json'), 'utf8'));
+  const about: About = JSON.parse(readFileSync(join(dir, 'webroot.json'), 'utf8'));
   const bytes = readFileSync(join(dir, about.index.path));
-  if (sha256(bytes) !== about.index.sha256) throw new Error(`${about.index.path}: not the index l3.json names (sha256 ${sha256(bytes)})`);
+  if (sha256(bytes) !== about.index.sha256) throw new Error(`${about.index.path}: not the index webroot.json names (sha256 ${sha256(bytes)})`);
   const index: Index = JSON.parse(bytes.toString('utf8'));
   const fds = new Map<string, number>();
   const fd = (name: string) => { let f = fds.get(name); if (f === undefined) { f = openSync(join(dir, 'packs', name), 'r'); fds.set(name, f); } return f; };
@@ -196,7 +196,7 @@ export function openWeb(dir: string) {
   return {about, index, dir, packs: join(dir, 'packs'), read, readRange, unzstd, blob, checkAll, close};
 }
 
-/** Every path of l3 for the browser, each file's bytes decoded from its pack and hashed; and each pack checked whole. */
+/** Every path of the web root, each file's bytes decoded from its pack and hashed; and each pack checked whole. */
 export function webTree(dir: string): Tree {
   const web = openWeb(dir);
   const {index} = web;

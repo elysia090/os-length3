@@ -1,6 +1,6 @@
 # The production-like selftest
 
-`npm run selftest` and `npm run selftest:l3` run the Remote as `remote/dev.ts`:
+`npm run selftest` and `npm run selftest:cli` run the Remote as `remote/dev.ts`:
 Hono on Node, PGlite, blobs in files. Production is a Worker on workerd over
 Neon and R2. This folder runs the same tests, and more, against the Remote as
 production runs it, on this machine, reaching nothing else:
@@ -48,7 +48,7 @@ its log.
   second Worker beside it, its accounts free until they pay through
   Stripe's stand-in (each tier's price `remote/devbilling.ts` has), is the
   one the specs about paying meet (`SELFTEST_PLAN_APP`).
-- **l3**: `tests/l3` with `SELFTEST_REMOTE_KIND=worker`, a Postgres and a
+- **l3**: `tests/cli` with `SELFTEST_REMOTE_KIND=worker`, a Postgres and a
   Worker per test file, one file at a time; stopping the Remote is the
   Worker restarting. `L3` names the binary (the release's:
   `cargo build --profile prompt -p l3 --no-default-features --target x86_64-unknown-linux-musl`).

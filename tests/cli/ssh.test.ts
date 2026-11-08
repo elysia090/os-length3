@@ -13,7 +13,7 @@ import {remote, type Ran} from './harness.ts';
 // address, a port or a repo). The sessions themselves need a root, which a
 // test device has not; README.md (SSH) has the run with one.
 //
-//   npm run selftest:l3
+//   npm run selftest:cli
 
 const r = await remote();
 const kai = await r.browser('Kai Selftest');

@@ -1,7 +1,7 @@
 # One workspace for the app, the l3 command and the core they share, so the
 # app and the command can never disagree about what a repo or an issue is.
 [workspace]
-members = ["src/core", "src/core/web", "src/l3", "src/desktop"]
+members = ["src/core", "src/core/web", "src/cli", "src/desktop"]
 resolver = "2"
 
 # Builds made while working (tests, checks, debug runs): this workspace's own code keeps its debug info, for a

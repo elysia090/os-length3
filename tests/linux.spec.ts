@@ -12,13 +12,13 @@ import {OS} from './paths.ts';
 // colours and the programs that draw on a screen are prompt.spec.ts's. Slow (the root through the translator): @slow,
 // run with SELFTEST_SLOW=1, as CI does.
 
-const PROMPT = join(OS, 'public', 'l3', 'l3.json');
+const PROMPT = join(OS, 'public', 'webroot', 'webroot.json');
 test.use({storageState: async ({helloC}, use) => { await use(helloC); }});
 
 test.describe('the Prompt is Linux', {tag: '@slow'}, () => {
   test.skip(!process.env.SELFTEST_SLOW, '@slow: SELFTEST_SLOW=1 runs it');
   test.beforeEach(async ({app}) => {
-    expect(existsSync(PROMPT), 'this build carries no l3 (public/l3): npm run l3, or node scripts/prompt-files.ts').toBe(true);
+    expect(existsSync(PROMPT), 'this build carries no l3 (public/webroot): npm run webroot, or node scripts/prompt-files.ts').toBe(true);
     test.setTimeout(300_000);
     await app.newRepo.openInForge();
     await app.forge.startPrompt('hello');

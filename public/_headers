@@ -29,21 +29,21 @@
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
 
-# l3 (scripts/l3.ts): every file but l3.json is named by its digest, so it never changes under its name and
+# The web root (scripts/webroot.ts): every file but webroot.json is named by its digest, so it never changes under its name and
 # is kept a year; the Worker's Range requests into a pack are answered from what the browser has of it.
-# l3.json says which l3 this build carries: asked again each time.
-/l3/l3.json
+# webroot.json says which l3 this build carries: asked again each time.
+/webroot/webroot.json
   Cache-Control: no-cache
-/l3/index-*
+/webroot/index-*
   Cache-Control: public, max-age=31536000, immutable
-/l3/packs/*
+/webroot/packs/*
   Cache-Control: public, max-age=31536000, immutable
-/l3/blobs/*
+/webroot/blobs/*
   Cache-Control: public, max-age=31536000, immutable
-# The desktop app reads the same l3 from here where its Prompts run translated (a machine other than Linux on x86-64,
+# The desktop app reads the same web root from here where its Prompts run translated (a machine other than Linux on x86-64,
 # or one that keeps user namespaces from l3): from its own origin, so by CORS. They are public files, each named by
 # its digest (the release carries the same): anyone may read them, and the Worker's Range requests into a pack say
 # what they got.
-/l3/*
+/webroot/*
   Access-Control-Allow-Origin: *
   Access-Control-Expose-Headers: Content-Range, Content-Length, ETag

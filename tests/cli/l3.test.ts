@@ -13,7 +13,7 @@ import {remote, type Ran} from './harness.ts';
 // depends on another test having run. One stops the Remote and starts it
 // again (same port, same data), to be a device out of its reach meanwhile.
 //
-//   npm run selftest:l3   (builds l3; L3=path/to/l3 takes that one instead)
+//   npm run selftest:cli   (builds l3; L3=path/to/l3 takes that one instead)
 
 const r = await remote();
 const ren = await r.browser('Ren Selftest');

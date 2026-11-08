@@ -1,15 +1,15 @@
-// l3 for the browser, made from the release root itself: the same tree the
+// The web root: l3 for the browser, made from the release root itself: the same tree the
 // desktop app installs, so a Prompt in a browser runs the same programs
 // with the same bytes. Nothing is built or chosen apart from the root:
 // BusyBox, l3 and /etc are the root's own.
 //
-//   node scripts/l3.ts ROOT OUT [--translator XLAT.wasm] [--xlat XLAT] [--hot PATH,…] [--stage DIR]
+//   node scripts/webroot.ts ROOT OUT [--translator XLAT.wasm] [--xlat XLAT] [--hot PATH,…] [--stage DIR]
 //
 // ROOT is a release root, os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst
 // (checked against the digest in its name), read as l3 installs it
-// (scripts/l3-tree.ts). OUT (public/l3) receives:
+// (scripts/webroot-tree.ts). OUT (public/webroot) receives:
 //
-//   l3.json               what l3 this is: {name: 'l3', version, sha256 and bytes
+//   webroot.json               what l3 this is: {name: 'l3', version, sha256 and bytes
 //                         of the root (the digest core/src/root/pins.rs pins), file,
 //                         root: {name, profile}, index: {path, sha256, size},
 //                         translator: {name, version}}. The one name that is not a
@@ -49,7 +49,7 @@ import {fileURLToPath} from 'node:url';
 import {Worker} from 'node:worker_threads';
 import {gzipSync} from 'node:zlib';
 import {packOf} from '../module/muk/runtime/table.ts';
-import {readTarball, sha256, type Index} from './l3-tree.ts';
+import {readTarball, sha256, type Index} from './webroot-tree.ts';
 
 const here = fileURLToPath(new URL('..', import.meta.url));
 const repo = here;
@@ -70,10 +70,10 @@ const xlat = flag('--xlat', join(repo, 'module/sods/target/release/xlat'));
 const hot = flag('--hot', '/usr/bin/bash,/usr/bin/busybox,/usr/bin/l3,/usr/bin/git').split(',').filter(Boolean);
 const stage = flag('--stage');
 const [rootFile, out] = args;
-if (!rootFile || !out) { console.error('usage: l3.ts ROOT OUT [--translator XLAT.wasm] [--xlat XLAT] [--hot PATH,…] [--stage DIR]'); process.exit(2); }
+if (!rootFile || !out) { console.error('usage: webroot.ts ROOT OUT [--translator XLAT.wasm] [--xlat XLAT] [--hot PATH,…] [--stage DIR]'); process.exit(2); }
 
 // A root is a few hundred megabytes: past a few gigabytes held, something is wrong, and it stops before the machine does.
-setInterval(() => { const rss = process.memoryUsage().rss; if (rss > 3e9) { console.error(`l3.ts: holding ${(rss / 1e9).toFixed(1)} GB; stopped`); process.exit(1); } }, 500).unref();
+setInterval(() => { const rss = process.memoryUsage().rss; if (rss > 3e9) { console.error(`webroot.ts: holding ${(rss / 1e9).toFixed(1)} GB; stopped`); process.exit(1); } }, 500).unref();
 
 const named = /^os-length3-linux-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)-x86_64-([0-9a-f]{64})\.tar\.zst$/.exec(basename(rootFile));
 if (!named) throw new Error(`${basename(rootFile)} is not named as a release root (os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst)`);
@@ -234,10 +234,10 @@ const about = {
   index: {path: indexPath, sha256: indexSha, size: json.length},
   translator: {name: translator.name, version: translator.version},
 };
-writeFileSync(join(out, 'l3.json'), `${JSON.stringify(about, null, 2)}\n`);
+writeFileSync(join(out, 'webroot.json'), `${JSON.stringify(about, null, 2)}\n`);
 
 // What an l3 before left here, and this one does not name, goes (only names this script makes).
-const keep = new Set([indexPath, 'l3.json', ...packList.map((p) => `packs/${p.name}`), translator.path, ...translations.flatMap((t) => [t.elf.path, t.wasm.path])]);
+const keep = new Set([indexPath, 'webroot.json', ...packList.map((p) => `packs/${p.name}`), translator.path, ...translations.flatMap((t) => [t.elf.path, t.wasm.path])]);
 for (const f of readdirSync(out)) if (/^index-[0-9a-f]{64}\.json$/.test(f) && !keep.has(f)) rmSync(join(out, f));
 for (const [dir, re] of [['packs', /^[0-9a-f]{64}\.pack$/], ['blobs', /^[0-9a-f]{64}\.bin$/]] as const) {
   for (const f of readdirSync(join(out, dir))) if (re.test(f) && !keep.has(`${dir}/${f}`)) rmSync(join(out, dir, f));

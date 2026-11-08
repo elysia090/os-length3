@@ -1,6 +1,6 @@
 // A stand-in release root, a few files of each kind a root has, and l3 for
 // the browser made from it with a stand-in translator: for tests
-// (scripts/l3.test.ts, app/prompt/userland.test.ts), so they need neither the real
+// (scripts/webroot.test.ts, app/prompt/userland.test.ts), so they need neither the real
 // root nor Rust.
 import {execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
@@ -39,13 +39,13 @@ export function standIn(dir: string, version: string) {
   return file;
 }
 
-/** l3.ts into `dir` with a stand-in translator (kept in `work`): a wasm module with nothing in it, and a "translation" that is the same. */
+/** webroot.ts into `dir` with a stand-in translator (kept in `work`): a wasm module with nothing in it, and a "translation" that is the same. */
 export function makeL3(root: string, dir: string, work: string) {
   const wasm = join(work, 'xlat.wasm');
   writeFileSync(wasm, Buffer.from([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]));
   const xlat = join(work, 'xlat');
   writeFileSync(xlat, `#!${process.execPath}\nrequire('fs').copyFileSync(${JSON.stringify(wasm)}, process.argv.at(-1));\n`);
   chmodSync(xlat, 0o755);
-  return spawnSync(process.execPath, [join(os, 'scripts/l3.ts'), root, dir, '--translator', wasm, '--xlat', xlat, '--hot', '/usr/bin/busybox'], {encoding: 'utf8'});
+  return spawnSync(process.execPath, [join(os, 'scripts/webroot.ts'), root, dir, '--translator', wasm, '--xlat', xlat, '--hot', '/usr/bin/busybox'], {encoding: 'utf8'});
 }
 

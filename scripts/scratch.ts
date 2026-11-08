@@ -7,8 +7,8 @@
 // say no owner are not this helper's, and are left as they are.
 //
 // For what tests and their servers make: scripts/tests.ts, selftest's
-// global setup and tests/l3. Rust's tests do the same by their process's
-// own folder (core/src/testing.rs, l3/tests/common).
+// global setup and tests/cli. Rust's tests do the same by their process's
+// own folder (core/src/testing.rs, cli/tests/common).
 
 import {mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';

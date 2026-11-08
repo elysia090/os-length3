@@ -7,11 +7,11 @@ import {OS} from './paths.ts';
 // path from the repo's tree as the store has it, so it needs no Prompt. The
 // rest runs the root's BusyBox sh and l3 through the WebAssembly translator:
 // slow (it fetches l3 and translates as it runs), so tagged @slow and run
-// with SELFTEST_SLOW=1, as CI does. Those need l3 in public/l3 (`npm run l3`,
+// with SELFTEST_SLOW=1, as CI does. Those need l3 in public/webroot (`npm run webroot`,
 // or `node scripts/prompt-files.ts` from the release), which the build then
 // carries.
 
-const PROMPT = join(OS, 'public', 'l3', 'l3.json');
+const PROMPT = join(OS, 'public', 'webroot', 'webroot.json');
 
 // Each test opens the app on 'hello', made from C's files and left open in Forge: made once for the worker and kept
 // (fixtures.ts, helloC), as making it is new-repo.spec.ts's and file.spec.ts's to see.
@@ -48,7 +48,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
   test.skip(!process.env.SELFTEST_SLOW, '@slow: SELFTEST_SLOW=1 runs it');
   test.beforeEach(async ({app}) => {
     // Asked for, it is run: without the Prompt's files that is a failure, not a skip.
-    expect(existsSync(PROMPT), 'this build carries no l3 (public/l3): npm run l3, or node scripts/prompt-files.ts').toBe(true);
+    expect(existsSync(PROMPT), 'this build carries no l3 (public/webroot): npm run webroot, or node scripts/prompt-files.ts').toBe(true);
     test.setTimeout(300_000);
     await app.forge.startPrompt('hello');
   });

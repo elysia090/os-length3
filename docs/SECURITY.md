@@ -17,7 +17,7 @@ In scope:
 - the Remote at `os.length3.com` (`src/remote`);
 - the web app (`src/app`);
 - the desktop app (`src/desktop`);
-- `l3` and its core (`src/l3`, `src/core`), including the Prompt's sandbox and
+- `l3` and its core (`src/cli`, `src/core`), including the Prompt's sandbox and
   `l3 ssh`;
 - the release workflows (`.github/workflows`).
 

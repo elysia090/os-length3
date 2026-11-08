@@ -1,8 +1,8 @@
 // A release root this tree pins (core/src/root/pins.rs RELEASES): VERSION's, or the
 // newest pinned, as a file: from DIR when it is there already, else from the
 // GitHub release that published it, and kept only at the pinned digest and size.
-// Prints its path. For building l3 for the browser (scripts/l3.sh) and checking
-// it against the native root (l3-parity.ts).
+// Prints its path. For building the web root (scripts/webroot.sh) and checking
+// it against the native root (webroot-parity.ts).
 //
 //   node scripts/root-file.ts DIR [VERSION]
 //

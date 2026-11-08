@@ -39,13 +39,13 @@ export const UNITS: Unit[] = [
       'src/core/src/fs', 'src/core/src/root', 'src/core/src/history', 'src/core/src/repos'],
     takes: ['ricebox']},
   {name: 'funk', says: 'what is on its way: links out of a box and between boxes (HTTP, TCP, DNS, WebSocket, SSH)',
-    holds: ['src/core/src/ssh', 'src/l3/src/ssh.rs', 'src/l3/src/cmd/address.rs'],
+    holds: ['src/core/src/ssh', 'src/cli/src/ssh.rs', 'src/cli/src/cmd/address.rs'],
     takes: ['ricebox']},
   {name: 'otter', says: 'to see and to decide: every floor counted at its hook, small bounded policies put at the hooks, each said; never the work itself',
     holds: ['module/otter', 'src/core/src/storage'],
     takes: ['ricebox', 'muk', 'sods']},
   {name: 'shipto', says: 'deliveries: what goes where and who takes it (commits, reviews, merges, messages, releases), the Remote that receives them, and its own deploy',
-    holds: ['src/remote', 'src/core/src/remote', 'src/l3/src/sync.rs', 'src/l3/src/cmd/git.rs', 'src/l3/src/cmd/remote.rs',
+    holds: ['src/remote', 'src/core/src/remote', 'src/cli/src/sync.rs', 'src/cli/src/cmd/git.rs', 'src/cli/src/cmd/remote.rs',
       'src/shared/desktop-releases.json'],
     takes: ['muk', 'funk']},
   {name: 'm8', says: 'where and how many boxes run: a state wanted, and one loop that makes it so (none yet: it is made when boxes run on more than one machine)',
@@ -55,7 +55,7 @@ export const UNITS: Unit[] = [
   {name: 'app', says: 'a face: the pages, the window and what the core says to them; no judgement of its own',
     holds: ['src/app', 'src/desktop', 'src/core', 'src/boot.ts', 'src/shared', 'index.html', 'vite.config.ts'], takes: ['*']},
   {name: 'l3', says: "a face: l3's words, read against its one table, and what it prints; no judgement of its own",
-    holds: ['src/l3'], takes: ['*']},
+    holds: ['src/cli'], takes: ['*']},
 ];
 
 /** What is no unit's: the tests, the scripts that build and check, what is made, and notes. */

@@ -14,13 +14,13 @@
 // A program that cannot run yet still ships: this says which, and why, for
 // the translator's work.
 //
-//   node scripts/l3-runnable.ts WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N] [--fresh] [--warm]
+//   node scripts/webroot-runnable.ts WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N] [--fresh] [--warm]
 //
 // --fresh: this checkout's translator (../module/sods's wasm build), every program translated as it runs, not what WEB carries.
 // --warm: each line run once before the run timed, what it translated kept between runs as a browser keeps it (Cache
 // Storage, keeper.ts): the time of a Prompt that ran its programs before, not of the first one.
 //
-// WEB is l3 for the browser (public/l3; a root of packs of before is read
+// WEB is the web root (public/webroot; a root of packs of before is read
 // too), ROOT_DIR the same root unpacked (for the native run). The translator
 // is l3's own (its index names it), else ../module/sods's wasm build.
 import {spawn} from 'node:child_process';
@@ -28,7 +28,7 @@ import {createHash} from 'node:crypto';
 import {existsSync, readFileSync, writeFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import type {Kernel} from '../module/ricebox/runtime/process.ts';
-import {openWeb, type Index} from './l3-tree.ts';
+import {openWeb, type Index} from './webroot-tree.ts';
 
 /** What one program run under xlat says: its wait status, its output, and how long it took. */
 interface Ran { status: number | null; stdout: string; stderr: string; error: string | null; ms: number }
@@ -89,7 +89,7 @@ async function keptIn(dir: string) {
       }
     }
   };
-  return {kept: {cache: 'l3', at}, save};
+  return {kept: {cache: 'webroot', at}, save};
 }
 
 /** One program under xlat, in this process: prints {status, stdout, stderr, error?, ms} as JSON. */
@@ -222,9 +222,9 @@ async function main() {
   const fresh = args.includes('--fresh') && !!args.splice(args.indexOf('--fresh'), 1);
   const warm = args.includes('--warm') && !!args.splice(args.indexOf('--warm'), 1);
   const {mkdtempSync} = await import('node:fs');
-  const kept = warm ? mkdtempSync('/tmp/l3-kept-') : null;
+  const kept = warm ? mkdtempSync('/tmp/webroot-kept-') : null;
   const [web, rootDir] = args;
-  if (!web || !rootDir) { console.error('usage: l3-runnable.ts WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N]'); process.exit(2); }
+  if (!web || !rootDir) { console.error('usage: webroot-runnable.ts WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N]'); process.exit(2); }
   const w = openWeb(web);
   const translator = new URL('../module/sods/target/wasm32-unknown-unknown/release/xlat.wasm', import.meta.url).pathname;
   if (!w.index.translator && !existsSync(translator)) throw new Error(`no translator: l3 names none, and ${translator} is not built`);
@@ -249,7 +249,7 @@ async function main() {
   const md = [
     `# Which programs of l3 the browser's Prompt runs`,
     '',
-    `${about}. Each program is run under the xlat kernel in node (mounted from l3's packs as the browser mounts it, with its translations made ahead of time) and natively in the same root (bwrap: its own /, /dev, /proc, as a Prompt on the device has it), and the two are compared. Made by \`node scripts/l3-runnable.ts\`.`,
+    `${about}. Each program is run under the xlat kernel in node (mounted from l3's packs as the browser mounts it, with its translations made ahead of time) and natively in the same root (bwrap: its own /, /dev, /proc, as a Prompt on the device has it), and the two are compared. Made by \`node scripts/webroot-runnable.ts\`.`,
     '',
     `- **runs**: the same exit status and output as native (or, as native, no end)`,
     `- **not yet**: present, not yet runnable under xlat: it ends otherwise than native (what differs, the system calls it was answered ENOSYS), xlat said why, or no end within the time`,

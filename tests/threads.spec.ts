@@ -10,7 +10,7 @@ import {OS} from './paths.ts';
 // does not hold its shell, a trap runs, Ctrl-C reaches what runs in front,
 // a job that computes without a system call is ended where it is.
 
-const PROMPT = join(OS, 'public', 'l3', 'l3.json');
+const PROMPT = join(OS, 'public', 'webroot', 'webroot.json');
 
 test('the page is cross-origin isolated, and what it loads from its own origin and the Remote still comes', async ({app}) => {
   await app.page.goto('/');
@@ -30,7 +30,7 @@ test.describe('the Prompt with its threads apart', {tag: '@slow'}, () => {
   // On 'hello', made from C's files once for the worker and kept (fixtures.ts, helloC), opened again in Forge.
   test.use({storageState: async ({helloC}, use) => { await use(helloC); }});
   test.beforeEach(async ({app}) => {
-    expect(existsSync(PROMPT), 'this build carries no l3 (public/l3): npm run l3, or node scripts/prompt-files.ts').toBe(true);
+    expect(existsSync(PROMPT), 'this build carries no l3 (public/webroot): npm run webroot, or node scripts/prompt-files.ts').toBe(true);
     test.setTimeout(300_000);
     await app.newRepo.openInForge();
     await app.forge.startPrompt('hello');

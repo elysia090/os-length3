@@ -1,23 +1,23 @@
 #!/bin/sh
 # Build the web release of Length³ OS from source: the app's web build with
-# l3 for the browser (public/l3: the release root itself, as the browser
-# reads it, with the xlat translator; scripts/l3.sh). Nothing is built
+# The web root (public/webroot: the release root itself, as the browser
+# reads it, with the xlat translator; scripts/webroot.sh). Nothing is built
 # beside the root: its BusyBox, l3 and /etc are the Prompt's. Output: dist/
 # and length3-web.zip with its sha256.
 #
 #   sh scripts/web-release.sh [ROOT.tar.zst]
 #
 # ROOT is the release root (by default the newest core/src/root/pins.rs pins,
-# fetched by scripts/root-file.ts); with L3_READY=1, a public/l3
+# fetched by scripts/root-file.ts); with WEBROOT_READY=1, a public/webroot
 # made already from it is kept. Needs node 22, cargo with the
 # wasm32-unknown-unknown target, and zip.
 set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
 
-if [ "${L3_READY:-}" = 1 ] && [ -f "$here/public/l3/l3.json" ]; then
-  echo "keeping $here/public/l3"
+if [ "${WEBROOT_READY:-}" = 1 ] && [ -f "$here/public/webroot/webroot.json" ]; then
+  echo "keeping $here/public/webroot"
 else
-  sh "$here/scripts/l3.sh" ${1:+"$1"}
+  sh "$here/scripts/webroot.sh" ${1:+"$1"}
 fi
 
 cd "$here"

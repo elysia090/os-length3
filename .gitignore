@@ -23,9 +23,9 @@ id_ed25519*
 id_ecdsa*
 agent-key
 
-# What the build and the tests make (the OS's own: the app, l3 for the browser, the Worker, the selftests' runs).
+# What the build and the tests make (the OS's own: the app, the web root, the Worker, the selftests' runs).
 /target/
-/public/l3/
+/public/webroot/
 /length3-web.zip
 /length3-web.zip.sha256
 /.wrangler/

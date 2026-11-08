@@ -36,7 +36,7 @@ export default {
   'empty': '空',
   'Distribution not fetched': 'ディストリビューションが取得されていません',
 
-  // prompt/l3-files.ts: why a download is being taken up again
+  // prompt/webroot-fetch.ts: why a download is being taken up again
   'Failed to receive remainder': '残りのデータを受信できませんでした',
   'Size mismatch': 'サイズが一致しません',
   'Content mismatch': '内容が一致しません',

@@ -3,7 +3,7 @@
 //
 // Run a static x86-64 program translated by xlat. PROGRAM is a host path
 // (placed at /bin/<name>) or, with --root, a path inside that tree; --pack
-// mounts l3 for the browser (scripts/l3.ts: l3.json, its index and its
+// mounts the web root (scripts/webroot.ts: webroot.json, its index and its
 // packs) as the browser does, each file read from its pack when first
 // opened, and checked.
 // stdin/stdout/stderr attach to this process.
@@ -142,9 +142,9 @@ const [program = '', ...rest] = args;
 const vfs = new Vfs();
 if (root) mount(vfs, root, '/');
 if (pack) {
-  const about = JSON.parse(readFileSync(join(pack, 'l3.json'), 'utf8'));
+  const about = JSON.parse(readFileSync(join(pack, 'webroot.json'), 'utf8'));
   const indexBytes = readFileSync(join(pack, about.index.path));
-  if (createHash('sha256').update(indexBytes).digest('hex') !== about.index.sha256) throw new Error(`${about.index.path} is not the index l3.json names`);
+  if (createHash('sha256').update(indexBytes).digest('hex') !== about.index.sha256) throw new Error(`${about.index.path} is not the index webroot.json names`);
   const index = JSON.parse(indexBytes.toString('utf8')) as Packed, packs = join(pack, 'packs');
   const fds = new Map<string, number>();
   const fd = (name: string): number => { let f = fds.get(name); if (f === undefined) fds.set(name, f = openSync(join(packs, name), 'r')); return f; };

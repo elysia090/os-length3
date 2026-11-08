@@ -1,32 +1,32 @@
-// The browser's l3 is the native one: the same paths, types, modes, link
+// The web root is the native root: the same paths, types, modes, link
 // targets and bytes (sha256). Reads the release root as l3 installs it on
-// a device and l3 as the browser reads it, file by file from its packs, and
+// a device and the web root, file by file from its packs, and
 // says where they differ; exits 1 when they do.
 //
-//   node scripts/l3-parity.ts ROOT WEB [--manifests DIR]
+//   node scripts/webroot-parity.ts ROOT WEB [--manifests DIR]
 //
 // ROOT  the release root (os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst),
 //       or a root installed from it (<data>/system/<sha256>/root)
-// WEB   l3 for the browser (public/l3, scripts/l3.ts), each pack checked
+// WEB   the web root (public/webroot, scripts/webroot.ts), each pack checked
 //       whole against its table (muk/runtime/table.ts)
 // --manifests DIR  writes native.txt and web.txt there, one line a path
 import {mkdirSync, statSync, writeFileSync} from 'node:fs';
 import {basename, join} from 'node:path';
-import {counts, differences, manifestOf, nativeTree, sha256, webTree} from './l3-tree.ts';
+import {counts, differences, manifestOf, nativeTree, sha256, webTree} from './webroot-tree.ts';
 import {readFileSync} from 'node:fs';
 
 const args = process.argv.slice(2);
 const flag = (name: string) => { const i = args.indexOf(name); if (i < 0) return null; const v = args[i + 1]; args.splice(i, 2); return v; };
 const manifests = flag('--manifests');
 const [rootAt, webAt] = args;
-if (!rootAt || !webAt) { console.error('usage: l3-parity.ts ROOT WEB [--manifests DIR]'); process.exit(2); }
+if (!rootAt || !webAt) { console.error('usage: webroot-parity.ts ROOT WEB [--manifests DIR]'); process.exit(2); }
 
 const native = await nativeTree(rootAt);
 const web = webTree(webAt);
 // The web's l3 names the root it was made from: a tarball given is that one, by its digest.
 if (web.about && !statSync(rootAt).isDirectory()) {
   const got = sha256(readFileSync(rootAt));
-  if (got !== web.about.sha256) { console.error(`${basename(rootAt)} is sha256 ${got}; l3.json says it was made from ${web.about.sha256}`); process.exit(1); }
+  if (got !== web.about.sha256) { console.error(`${basename(rootAt)} is sha256 ${got}; webroot.json says it was made from ${web.about.sha256}`); process.exit(1); }
 }
 if (manifests) {
   mkdirSync(manifests, {recursive: true});

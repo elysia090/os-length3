@@ -36,7 +36,7 @@ const on = (await (await must(await ask(`/compare/main...${sha}`), 'where the co
 if (on !== 'identical' && on !== 'behind') throw new Error(`${sha} is not on main (${on}): releases are made from main`);
 
 const files = readdirSync(out).filter((f) => statSync(join(out, f)).isFile()).sort();
-for (const want of [`-${version}-web.zip`, `-${version}-l3-web.tar`, `-${version}-desktop-amd64.deb`, `-${version}-desktop-x86_64.AppImage`, 'SHA256SUMS', 'manifest']) {
+for (const want of [`-${version}-web.zip`, `-${version}-webroot.tar`, `-${version}-desktop-amd64.deb`, `-${version}-desktop-x86_64.AppImage`, 'SHA256SUMS', 'manifest']) {
   if (!files.some((f) => f.endsWith(want))) throw new Error(`${out} holds no …${want}: run scripts/release.sh first`);
 }
 const notes = readFileSync(join(out, '..', 'notes.md'), 'utf8');

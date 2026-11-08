@@ -88,7 +88,7 @@ function onTheWeb(a: Awaited<ReturnType<typeof about>>): Node[] {
   // The same l3 as the app's: its version, and the digest of the root it is (core/src/root/), run here through xlat.
   // A build that carries no l3 says so in l3's own row: Ubuntu, Debian and Custom are under it all the same.
   return [...(a ? top('l3', a.version, t('{name} · via xlat', {name: a.root.name}), a.sha256)
-    : top('l3', '', t('l3 missing (run: npm run l3)'), '')),
+    : top('l3', '', t('l3 missing (run: npm run webroot)'), '')),
   others(other('Ubuntu', '26.04.1 LTS', t('App only'), null),
     other('Debian', '13.7', t('App only'), null),
     custom())];

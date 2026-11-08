@@ -1,4 +1,4 @@
-import {digest, download, Fatal, type Check} from './l3-files.ts';
+import {digest, download, Fatal, type Check} from './webroot-fetch.ts';
 import {FIRST} from './first.ts';
 import {errorText} from '../host/errors.ts';
 import {isNative} from '../host/host.ts';
@@ -19,7 +19,7 @@ export const threadsApart = (): boolean => typeof SharedArrayBuffer === 'functio
 
 // l3, the one thing the Prompt depends on: the release root the desktop app
 // installs (core/src/root pins it, one entry for both), read here as the
-// browser reads it (scripts/l3.ts). l3.json says which l3 it is (its
+// browser reads it (scripts/webroot.ts). webroot.json says which l3 it is (its
 // version, and the sha256 of the root it was made from) and names its index
 // by digest; everything else is named by its digest too:
 //
@@ -34,12 +34,12 @@ export const threadsApart = (): boolean => typeof SharedArrayBuffer === 'functio
 //                        each of its commands a name of it) with their
 //                        translations made ahead of time, gzip'd
 //
-// The first Prompt fetches l3.json, the index, the translator, bash and BusyBox
+// The first Prompt fetches webroot.json, the index, the translator, bash and BusyBox
 // with their translations; l3's own translation follows once the Prompt is up,
 // compiled quietly, for the Prompts started after (until then l3 is
 // translated here as it runs, as every other program is). What is fetched is kept in Cache Storage under
 // its digest (the packs, in the browser's HTTP cache, under theirs), so a
-// Prompt after the first fetches only l3.json. What is kept is derived and
+// Prompt after the first fetches only webroot.json. What is kept is derived and
 // never canonical: it is checked against its digest whenever it is read,
 // whatever the current l3 no longer names goes, and it is only kept while
 // the browser's storage has room for it (StorageManager.estimate), the
@@ -95,8 +95,8 @@ export type Stage =
 
 /** Where l3 is read from: the page's own origin in a browser; in the app (on a machine whose Prompts run translated),
  * the site of the Remote it is built for, which serves the same files to anyone (public/_headers). */
-const BASE = isNative ? `${REMOTE_URL}/l3/` : '/l3/';
-const CACHE = 'l3';
+const BASE = isNative ? `${REMOTE_URL}/webroot/` : '/webroot/';
+const CACHE = 'webroot';
 /** Of what the browser says this origin may hold, the part l3's copies may take (the rest is the repos'). */
 const SHARE = 0.25;
 
@@ -111,24 +111,32 @@ export function watchLoad(fn: (s: Stage) => void): () => void {
   return () => watchers.delete(fn);
 }
 
-/** What l3 this build carries; null when it carries none (a build made without `npm run l3`). Not reached: the reason. */
+/** What l3 this build carries; null when it carries none (a build made without `npm run webroot`). Not reached: the reason. */
 export const about = async (): Promise<About | null> => {
-  const r = await fetch(`${BASE}l3.json`, {cache: 'no-cache'});
+  const r = await fetch(`${BASE}webroot.json`, {cache: 'no-cache'});
   // This build carries none (a server without it answers 404, or with the page itself).
   if (r.status === 404 || !r.headers.get('content-type')?.includes('json')) { await r.body?.cancel(); return null; }
-  if (!r.ok) throw new Fatal(`l3.json: ${r.status}`);
+  if (!r.ok) throw new Fatal(`webroot.json: ${r.status}`);
   return await r.json() as About;
 };
 
 // ---- what is kept: Cache Storage, by digest ----
 
 /** When each kept copy was last used (this browser's; lost, the oldest is simply unknown). */
-const USES = 'length3.l3.used';
+const USES = 'length3.webroot.used';
 const uses = (): Record<string, number> => { try { return JSON.parse(localStorage.getItem(USES) ?? '{}'); } catch { return {}; } };
 const used = (url: string, at = Date.now()) => {
   try { const u = uses(); u[url] = at; localStorage.setItem(USES, JSON.stringify(u)); } catch { /* not remembered: it goes first */ }
 };
-const open = async (): Promise<Cache | null> => { try { return 'caches' in globalThis ? await caches.open(CACHE) : null; } catch { return null; } };
+/** What earlier builds kept of l3 under its old name (a cache and two notes) is let go, once a page: nothing reads it now. */
+let before: Promise<unknown> | null = null;
+const forgetBefore = () => (before ??= (async () => {
+  try { localStorage.removeItem('length3.l3.used'); localStorage.removeItem('length3.l3.start'); } catch { /* none to let go */ }
+  try { await caches.delete('l3'); } catch { /* none to let go */ }
+})());
+const open = async (): Promise<Cache | null> => {
+  try { if (!('caches' in globalThis)) return null; await forgetBefore(); return await caches.open(CACHE); } catch { return null; }
+};
 const whole = (url: string) => new URL(url, location.href).href;
 /**
  * The size of each kept copy, by its whole URL: read from what is kept once a page (each copy's head), then
@@ -613,18 +621,18 @@ export const l3Index = (): Promise<Index | null> => (indexing ??= (async () => {
 
 /**
  * What a Prompt starting needed of l3, as the last start found it (which l3, its index, its translator, the hot
- * programs it waits for): read from what is kept at once next time, while l3.json is asked whether it is still that.
+ * programs it waits for): read from what is kept at once next time, while webroot.json is asked whether it is still that.
  */
 interface Plan { sha256: string; index: About['index']; translator: Index['translator']; first: {t: Translation; mode: number}[] }
-const PLAN = 'length3.l3.start';
+const PLAN = 'length3.webroot.start';
 const planned = (): Plan | null => { try { return JSON.parse(localStorage.getItem(PLAN) ?? 'null') as Plan | null; } catch { return null; } };
 
 let loading: Promise<L3> | null = null;
 /**
  * l3 for a Prompt: its index, the translator and the hot programs (once per page; again after a failure). What the
  * last start needed is read ahead from what is kept (only that: nothing is fetched on its word), the translator
- * compiled and the hot programs readied, all at once and while l3.json is asked for; it is used only when l3.json
- * names the same l3 and index, and otherwise everything is read as l3.json says, one after another as before.
+ * compiled and the hot programs readied, all at once and while webroot.json is asked for; it is used only when webroot.json
+ * names the same l3 and index, and otherwise everything is read as webroot.json says, one after another as before.
  */
 export const loadL3 = (): Promise<L3> => (loading ??= (async () => {
   // The worker that checks what is read, started now rather than at the first check.
@@ -635,9 +643,9 @@ export const loadL3 = (): Promise<L3> => (loading ??= (async () => {
     unblob(plan.translator, undefined, undefined, atOnce, true).then((w) => WebAssembly.compile(w as BufferSource)),
     ...plan.first.map(({t: p, mode}) => hot(p, mode, plan.translator.sha256, undefined, atOnce, true)),
   ]).catch(() => null) : null;
-  const a = await download(`${BASE}l3.json`, {}, undefined, {attempts: 4}).then((b) => {
+  const a = await download(`${BASE}webroot.json`, {}, undefined, {attempts: 4}).then((b) => {
     // Not JSON is a build without l3 (the host answered with the page): said so, never the parser's words.
-    try { return JSON.parse(new TextDecoder().decode(b)) as About; } catch { throw new Fatal(t('l3 missing (run: npm run l3)')); }
+    try { return JSON.parse(new TextDecoder().decode(b)) as About; } catch { throw new Fatal(t('l3 missing (run: npm run webroot)')); }
   });
   const read = plan && plan.sha256 === a.sha256 && plan.index.sha256 === a.index.sha256 ? await ahead : null;
   const index0 = read ? read[0] as Uint8Array : await bytesOf(a.index.path, a.index);
@@ -675,7 +683,7 @@ export const loadL3 = (): Promise<L3> => (loading ??= (async () => {
   try {
     const next: Plan = {sha256: a.sha256, index: a.index, translator: index.translator, first: first.map((x) => ({t: x, mode: modeOf(x.path)}))};
     localStorage.setItem(PLAN, JSON.stringify(next));
-  } catch { /* not remembered: the next start reads as l3.json says */ }
+  } catch { /* not remembered: the next start reads as webroot.json says */ }
   tell({at: 'ready'});
   return {about: a, index, translator, files: files.map(taken), url: new URL(BASE, location.href).href};
 })().catch((e) => {

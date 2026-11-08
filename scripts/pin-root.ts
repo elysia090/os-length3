@@ -1,7 +1,7 @@
 // Pin the l3 this tree releases: its entry is core/src/root/pins.rs's RELEASES,
 // the whole of its pin for both ways in: the root (the bundle the
 // desktop app installs, by sha256 and size) and `web`, the sha256 of the
-// index the browser reads the same root by (scripts/l3.ts, made from that
+// index the browser reads the same root by (scripts/webroot.ts, made from that
 // bundle). l3 and the app built from this tree install that root (and no
 // other new one), and the web build takes only that index
 // (scripts/prompt-files.ts). The release does it before building what
@@ -13,7 +13,7 @@
 //
 //   node scripts/pin-root.ts OUT/os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst [WEB] [--rs FILE]
 //
-// WEB is l3 for the browser made from that root (public/l3); its l3.json
+// WEB is the web root made from that root (public/webroot); its webroot.json
 // must name this root. --rs writes another root/ (for a test).
 
 import {createHash} from 'node:crypto';
@@ -31,13 +31,13 @@ const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex');
 const sha256 = sha(readFileSync(file));
 const bytes = statSync(file).size.toLocaleString('en').replace(/,/g, '_');
 
-// The web's index, checked: made from this very root, and its file the digest l3.json says.
+// The web's index, checked: made from this very root, and its file the digest webroot.json says.
 let webSha = '';
 if (web) {
-  const about = JSON.parse(readFileSync(join(web, 'l3.json'), 'utf8'));
-  if (about.sha256 !== sha256 || about.version !== version) throw new Error(`${web}/l3.json is l3 ${about.version} from root ${about.sha256}, not ${version} from ${sha256}`);
+  const about = JSON.parse(readFileSync(join(web, 'webroot.json'), 'utf8'));
+  if (about.sha256 !== sha256 || about.version !== version) throw new Error(`${web}/webroot.json is l3 ${about.version} from root ${about.sha256}, not ${version} from ${sha256}`);
   const got = sha(readFileSync(join(web, about.index.path)));
-  if (got !== about.index.sha256) throw new Error(`${web}/${about.index.path}: sha256 ${got}, l3.json says ${about.index.sha256}`);
+  if (got !== about.index.sha256) throw new Error(`${web}/${about.index.path}: sha256 ${got}, webroot.json says ${about.index.sha256}`);
   webSha = got;
 }
 

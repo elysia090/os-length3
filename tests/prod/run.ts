@@ -6,7 +6,7 @@
 // With no part named: headers, research, web, l3. L3=path runs l3's part with
 // that binary (the release's: cargo build --profile prompt -p l3
 // --no-default-features --target x86_64-unknown-linux-musl); without it, l3 is
-// built as selftest:l3 builds it. Every server it starts (Postgres, the
+// built as selftest:cli builds it. Every server it starts (Postgres, the
 // bridge, workerd) is stopped when it ends, however it ends.
 
 import assert from 'node:assert/strict';
@@ -209,8 +209,8 @@ try {
       else if (part === 'research') await research();
       else if (part === 'web') { const c = await node([join(OS, 'node_modules', '@playwright', 'test', 'cli.js'), 'test', '-c', 'tests'], {SELFTEST_REMOTE_KIND: 'worker'}); if (c) throw new Error(`the app's selftest failed (${c})`); }
       else if (part === 'l3') {
-        if (spawnSync(process.execPath, [join(OS, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', 'tests/l3'], {cwd: OS, stdio: 'inherit'}).status !== 0) throw new Error('tests/l3 does not compile');
-        const c = await node(['--test', '--test-concurrency=1', 'tests/l3/*.test.ts'], {SELFTEST_REMOTE_KIND: 'worker'});
+        if (spawnSync(process.execPath, [join(OS, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', 'tests/cli'], {cwd: OS, stdio: 'inherit'}).status !== 0) throw new Error('tests/cli does not compile');
+        const c = await node(['--test', '--test-concurrency=1', 'tests/cli/*.test.ts'], {SELFTEST_REMOTE_KIND: 'worker'});
         if (c) throw new Error(`l3's selftest failed (${c})`);
       } else if (part === 'measure') { const c = await node([join(OS, 'tests', 'prod', 'measure.ts')]); if (c) throw new Error(`measure failed (${c})`); }
       else if (part === 'drills') { const c = await node([join(OS, 'tests', 'prod', 'drills.ts')]); if (c) throw new Error(`drills failed (${c})`); }

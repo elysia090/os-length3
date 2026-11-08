@@ -33,10 +33,10 @@ const ALONE = new Set([
   // driver is pointed at this file's bridge. Another file's Worker (service.test.ts's sweep) would meet both.
   'src/remote/worker.test.ts',
   // Transfers over sockets, timed: seconds of waiting for stalls and retries, which would hold up the files after
-  // it in a shared process, and an interval of prompt/l3-files.ts's own.
-  'src/app/prompt/l3-files.test.ts',
+  // it in a shared process, and an interval of prompt/webroot-fetch.ts's own.
+  'src/app/prompt/webroot-fetch.test.ts',
   // Builds l3 with child processes, and waits for them.
-  'scripts/l3.test.ts',
+  'scripts/webroot.test.ts',
 ]);
 
 /**

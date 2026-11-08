@@ -1044,13 +1044,13 @@ the same thing for the desktop app and for the web.
 - **On a device**, the app and `l3` install the root by its digest: from the
   device's Remote, then the publisher's (each deploy mirrors every pinned
   root to its bucket), then the release itself.
-- **In a browser**, the same root is read through xlat (`public/l3`, made
-  from the root itself by `scripts/l3.ts`, never from anything built
-  beside it): `l3.json` (which l3: its version and the root's digest), an
+- **In a browser**, the same root is read through xlat (`public/webroot`, made
+  from the root itself by `scripts/webroot.ts`, never from anything built
+  beside it): `webroot.json` (which l3: its version and the root's digest), an
   index of every path (type, mode, link target; where each file's bytes
   are), a pack per package of the root, each file a zstd frame, and blobs
   for the translator and the hot programs (BusyBox, l3 and git) with their
-  translations. Everything but `l3.json` is named by its digest; a pack by
+  translations. Everything but `webroot.json` is named by its digest; a pack by
   the digest of its table, the SHA-256 of each file it stores, at its head
   (`module/muk/runtime/table.ts`), so a file read alone from it is checked as
   the whole pack would be, and one that is not what its table says is not
@@ -1077,14 +1077,14 @@ the same thing for the desktop app and for the web.
 - **The same content.** The web's tree is the root's: every path, type,
   mode, link target and sha256 the same as the root l3 installs
   (directories at least 0700, files without set-id bits, as the installer
-  makes them). `scripts/l3-parity.ts` proves it on every release and in CI;
+  makes them). `scripts/webroot-parity.ts` proves it on every release and in CI;
   a program that xlat cannot run yet still ships, and
-  `scripts/l3-runnable.ts` says which, against the same root run natively.
+  `scripts/webroot-runnable.ts` says which, against the same root run natively.
 - **One release, one pin.** The release makes the root, then l3 for the
   browser from it (checked by the parity), pins both in one entry, and only
   then builds the web app and the desktop app, which both trust that entry.
   A web build that has only Node (Cloudflare's) takes l3 from the release
-  (`os-length3-linux-X.Y.Z-l3-web.tar`) only at the pinned index.
+  (`os-length3-linux-X.Y.Z-webroot.tar`) only at the pinned index.
 
 ### Another OS in a Prompt
 
@@ -1402,7 +1402,7 @@ at a terminal is used the same way, and stays a command line:
   quiet line that `l3 next` chooses one with the keys. `l3 next` opens them: the same row walked with
   ←→ and Enter, Enter alone or Esc going on, each deed done as its command
   and those after it offered again.
-- **One table drives both.** A deed is a form of `l3/src/spec.rs` with what
+- **One table drives both.** A deed is a form of `cli/src/spec.rs` with what
   the menu needs beside it: its word in both languages, what it is pressed
   on, the facts it is offered under, the words it gives itself, what it
   asks, its weight. Each page notes its things and their facts while it is
@@ -1426,8 +1426,8 @@ at a terminal is used the same way, and stays a command line:
   `--json`, with `TERM=dumb`, or with `L3_PLAIN=1` (the one switch that keeps
   a terminal plain too, for a screen reader that prefers it or a recorded
   session), nothing is offered or asked, and what l3 writes and how it exits
-  are byte for byte what they were (`l3/tests/plain.rs` keeps the
-  transcripts; `l3/tests/menu.rs` drives the menu through a real pty).
+  are byte for byte what they were (`cli/tests/plain.rs` keeps the
+  transcripts; `cli/tests/menu.rs` drives the menu through a real pty).
 
 ### What l3 writes
 

@@ -31,7 +31,7 @@ env:
 
 # Every job side by side, so the run takes as long as its longest (about two minutes when what is kept is
 # still good), and one failure never hides another. Nothing is made twice: what the tests share (the core
-# for the browser, l3 for the browser) is made once by a job of its own, kept by what it is made from, and
+# for the browser, the web root) is made once by a job of its own, kept by what it is made from, and
 # made at all only when that changed; the unit tests and the selftest run as four shards each.
 jobs:
   # The core as a browser runs it (core/web for wasm32-wasip1), for the unit tests and the selftest.
@@ -69,10 +69,10 @@ jobs:
           path: target/wasm32-wasip1/web/length3_core_web.wasm
           key: ${{ steps.key.outputs.key }}
 
-  # l3 for the browser: made from the root this tree pins (core/src/root/pins.rs, for RELEASE) with this tree's
+  # The web root: made from the root this tree pins (core/src/root/pins.rs, for RELEASE) with this tree's
   # translator, and checked to hold the same paths, types, modes, link targets and bytes as that root; for the
   # selftest. Made only when the root or the translator changed.
-  l3-web:
+  webroot:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
@@ -82,11 +82,11 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=l3-web-${{ hashFiles('RELEASE', 'src/core/src/root/pins.rs', 'src/remote/releases.ts', 'scripts/l3.sh', 'scripts/l3.ts', 'scripts/l3-tree.ts', 'scripts/root-file.ts', 'scripts/l3-parity.ts', 'module/muk/runtime/table.ts', 'module/sods/Cargo.toml', 'module/sods/Cargo.lock', 'module/sods/src/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=webroot-${{ hashFiles('RELEASE', 'src/core/src/root/pins.rs', 'src/remote/releases.ts', 'scripts/webroot.sh', 'scripts/webroot.ts', 'scripts/webroot-tree.ts', 'scripts/root-file.ts', 'scripts/webroot-parity.ts', 'module/muk/runtime/table.ts', 'module/sods/Cargo.toml', 'module/sods/Cargo.lock', 'module/sods/src/**') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: public/l3
+          path: public/webroot
           key: ${{ steps.key.outputs.key }}
           lookup-only: true
       - if: steps.kept.outputs.cache-hit != 'true'
@@ -101,9 +101,9 @@ jobs:
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: module/sods -> target
-          shared-key: l3-web-${{ hashFiles('module/sods/Cargo.toml') }}
+          shared-key: webroot-${{ hashFiles('module/sods/Cargo.toml') }}
           cache-on-failure: true
-      - name: l3 for the browser, made from the root this tree pins, and the same as it
+      - name: The web root, made from the root this tree pins, and the same as it
         if: steps.kept.outputs.cache-hit != 'true'
         working-directory: .
         env:
@@ -111,19 +111,19 @@ jobs:
         run: |
           npm ci
           root=$(node scripts/root-file.ts target/root)
-          sh scripts/l3.sh "$root" public/l3
-          node scripts/l3-parity.ts "$root" public/l3
+          sh scripts/webroot.sh "$root" public/webroot
+          node scripts/webroot-parity.ts "$root" public/webroot
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: public/l3
+          path: public/webroot
           key: ${{ steps.key.outputs.key }}
 
   # What `help` says runs in a Prompt is what does: every command of issue #80 tried as a line of sh under the browser's
-  # kernel (from l3 for the browser, as the l3-web job made it) and natively in the root this tree pins, and the table
+  # kernel (from the web root, as the webroot job made it) and natively in the root this tree pins, and the table
   # the root ships (root/etc/length3/commands) checked against what was seen.
   commands:
-    needs: l3-web
+    needs: webroot
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -135,11 +135,11 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: package-lock.json
-      - name: l3 for the browser, as the l3-web job made it
+      - name: The web root, as the webroot job made it
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: public/l3
-          key: ${{ needs.l3-web.outputs.key }}
+          path: public/webroot
+          key: ${{ needs.webroot.outputs.key }}
           fail-on-cache-miss: true
       # A Prompt's own /, /dev, /proc and /tmp, as bwrap makes them: a user namespace, which Ubuntu's AppArmor holds back.
       - run: |
@@ -153,7 +153,7 @@ jobs:
           npm ci
           root=$(node scripts/root-file.ts target/root)
           mkdir -p target/root-open && tar --zstd -xf "$root" -C target/root-open
-          node scripts/commands.ts public/l3 target/root-open/root --jobs 4 --check
+          node scripts/commands.ts public/webroot target/root-open/root --jobs 4 --check
 
   # The page's and the Remote's types. (The build that ships is the one the selftest builds and uses.)
   types:
@@ -263,7 +263,7 @@ jobs:
         working-directory: .
         run: |
           npm ci
-          npm run selftest:l3
+          npm run selftest:cli
 
   # The x86-64 → wasm translator against native, and l3 as the Prompt carries it (static, musl), translated
   # as a browser's Prompt runs it: the two side by side, each its own build kept.
@@ -568,7 +568,7 @@ jobs:
   # shards, each with its own Remote and its own build of the app (the build that ships, for a Remote on its own
   # origin).
   selftest:
-    needs: [core, l3-web]
+    needs: [core, webroot]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
@@ -603,11 +603,11 @@ jobs:
           fail-on-cache-miss: true
       # Newer than the sources the checkout just wrote, so nothing builds it again (scripts/core-wasm.ts goes by time).
       - run: touch target/wasm32-wasip1/web/length3_core_web.wasm
-      - name: l3 for the browser, as the l3-web job made it
+      - name: The web root, as the webroot job made it
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: public/l3
-          key: ${{ needs.l3-web.outputs.key }}
+          path: public/webroot
+          key: ${{ needs.webroot.outputs.key }}
           fail-on-cache-miss: true
       - name: Selftest (with the Prompt's @slow tests)
         working-directory: .

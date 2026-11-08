@@ -1,7 +1,7 @@
 //! The distribution's root, as l3 holds it on a device. The canonical copy
 //! is the release: a `.tar.zst` bundle named by its sha256, pinned here. It
 //! is l3: the desktop app installs it, and the web reads the same tree from
-//! it (scripts/l3.ts), so one entry here pins both.
+//! it (scripts/webroot.ts), so one entry here pins both.
 //! Installing checks the bundle against the pin before reading a byte of
 //! it, unpacks it into a fresh directory (refusing any entry that would land
 //! outside, follow a link, or be a device), and moves that into place in one

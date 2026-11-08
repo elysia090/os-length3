@@ -10,7 +10,7 @@ import {FileTree} from './pages/file/tree.ts';
 import {onRenamed} from './repos/repos.ts';
 import {begin} from './remote/lifecycle.ts';
 import {writeLeftBack} from './pages/bench/repo-copy.ts';
-import {forgetExcept} from './prompt/l3-files.ts';
+import {forgetExcept} from './prompt/webroot-fetch.ts';
 import {keepFocus} from './ui/focus.ts';
 import {onPlugins, pluginsOpen, setPluginsOpen} from './host/plugins.ts';
 import {learnHome} from './remote/inbox.ts';
