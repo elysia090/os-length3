@@ -544,10 +544,55 @@ static int named(const u8 *p, u32 n) {
   return 1;
 }
 
-/* What a query wants of the places the file keeps: not the one excluded, and named by its keywords. */
+/* A character small, as Rust's to_lowercase makes it (zoxide's case aside), where that keeps its UTF-8 length: Latin-1's
+ * capitals, Latin Extended-A's, Greek's, Cyrillic's, Armenian's and the fullwidth Latin ones; any other as it is. */
+static u32 small(u32 c) {
+  if (c >= 0xC0 && c <= 0xDE && c != 0xD7) return c + 32;
+  if (c >= 0x100 && c <= 0x17F) {
+    if (c == 0x130 || c == 0x131 || c == 0x138 || c == 0x149 || c == 0x17F) return c;
+    if (c == 0x178) return 0xFF;
+    if ((c >= 0x139 && c <= 0x148) || (c >= 0x179 && c <= 0x17E)) return c & 1 ? c + 1 : c;
+    return c & 1 ? c : c + 1;
+  }
+  if (c >= 0x391 && c <= 0x3AB && c != 0x3A2) return c + 32;
+  if (c == 0x386) return 0x3AC;
+  if (c >= 0x388 && c <= 0x38A) return c + 37;
+  if (c == 0x38C) return 0x3CC;
+  if (c == 0x38E || c == 0x38F) return c + 63;
+  if (c >= 0x410 && c <= 0x42F) return c + 32;
+  if (c >= 0x400 && c <= 0x40F) return c + 80;
+  if ((c >= 0x460 && c <= 0x481) || (c >= 0x48A && c <= 0x4BF) || (c >= 0x4D0 && c <= 0x52F)) return c & 1 ? c : c + 1;
+  if (c == 0x4C0) return 0x4CF;
+  if (c >= 0x4C1 && c <= 0x4CE) return c & 1 ? c + 1 : c;
+  if (c >= 0x531 && c <= 0x556) return c + 48;
+  if (c >= 0xFF21 && c <= 0xFF3A) return c + 32;
+  return c;
+}
+/* s[0..n) made small into d (the same length): ASCII's capitals, and those past it small() knows. */
+static void small_text(u8 *d, const u8 *s, u32 n) {
+  for (u32 i = 0; i < n;) {
+    u8 b = s[i];
+    if (b >= 0xC2 && b <= 0xDF && i + 1 < n && (s[i + 1] & 0xC0) == 0x80) {
+      u32 c = small((u32)(b & 0x1F) << 6 | (s[i + 1] & 0x3F));
+      d[i] = (u8)(0xC0 | c >> 6), d[i + 1] = (u8)(0x80 | (c & 0x3F)), i += 2;
+    } else if (b == 0xEF && i + 2 < n && (s[i + 1] & 0xC0) == 0x80 && (s[i + 2] & 0xC0) == 0x80) {
+      u32 c = small((u32)(b & 0x0F) << 12 | (u32)(s[i + 1] & 0x3F) << 6 | (s[i + 2] & 0x3F));
+      d[i] = (u8)(0xE0 | c >> 12), d[i + 1] = (u8)(0x80 | ((c >> 6) & 0x3F)), d[i + 2] = (u8)(0x80 | (c & 0x3F)), i += 3;
+    } else d[i] = b >= 'A' && b <= 'Z' ? b + 32 : b, i++;
+  }
+}
+
+/* What a query wants of the places the file keeps: not the one excluded, and named by its keywords. A keyword past
+ * ASCII is looked for in the place made small as zoxide makes it (über in /home/Über), a copy; else in the place as it
+ * is, its ASCII letters taken either way as they are compared. */
+static int wide;
+static u8 *smaller;
 static int asked(const u8 *p, u32 n) {
   if (n == excln && eq(p, excl, n)) return 0;
-  return !nkw || named(p, n);
+  if (!nkw) return 1;
+  if (!wide) return named(p, n);
+  small_text(smaller, p, n);
+  return named(smaller, n);
 }
 
 /* How much a place is yours now: its rank by how recently (x4 within the hour, x2 the day, x1/2 the week, x1/4). */
@@ -633,6 +678,8 @@ static int query(int argc, char **argv) {
     u8 *k = grab(m);
     __builtin_memcpy(k, argv[i], m);
     lower(k, k, m);
+    for (u32 b = 0; b < m; b++) wide |= k[b] >= 0x80;
+    if (wide) small_text(k, k, m);
     kwa[nkw] = (k[0] | 0x20) * ONES, kwz[nkw] = (k[m - 1] | 0x20) * ONES;
     kw[nkw] = k, kwn[nkw++] = m;
   }
@@ -640,6 +687,7 @@ static int query(int argc, char **argv) {
     u8 *x = grab(PLACE_MAX);
     excln = plain(exclude, x), excl = x;
   }
+  if (wide) smaller = grab(PLACE_MAX + SLACK);
   where();
   /* Only what is named is added up: a place's records are all named, or none. */
   querying = 1;

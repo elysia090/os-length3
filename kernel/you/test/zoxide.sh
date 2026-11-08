@@ -42,6 +42,12 @@ says "$t/p/Web" "$you" query WEB
 says "$t/p/web-42/src" "$you" query p/web src
 fails "$you" query src web
 says "$t/p/web-42/src" "$you" query 42/s
+# Past ASCII, case aside as zoxide has it (Rust's to_lowercase): Über by über, Κόσμος by κόσμος, Ｗｅｂ by ｗｅｂ.
+"$you" add "$(d u/Über)" "$(d u/Κόσμος)" "$(d u/Ｗｅｂ)"
+says "$t/u/Über" "$you" query über
+says "$t/u/Κόσμος" "$you" query κόσμος
+says "$t/u/Ｗｅｂ" "$you" query ｗｅｂ
+"$you" remove "$t/u/Über" "$t/u/Κόσμος" "$t/u/Ｗｅｂ"
 # No keywords: the place most yours; --exclude, not the place you are.
 says "$t/p/web-42/src" "$you" query
 says "$t/p/Web" "$you" query w

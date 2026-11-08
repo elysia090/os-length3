@@ -2,7 +2,7 @@
 # every cd and z finds a place by (/etc/length3/shrc). Made from this repository's own source (kernel/you/zoxide.c, a
 # unit of C with no C library, on kernel/lib's three headers, its own checks in kernel/you/test): a program of a few
 # pages that starts, does five calls, and ends.
-version=5
+version=6
 # ripgrep: what you's regular expressions, and its rg, are checked against (Rust's regex crate, as ripgrep runs it).
 needs="ripgrep"
 inputs="../../kernel/lib/word.h ../../kernel/lib/sys.h ../../kernel/lib/io.h ../../kernel/lib/build.sh ../../kernel/you/zoxide.c ../../kernel/you/test/zoxide.sh ../../kernel/you/test/zoxide-stress.sh
