@@ -111,6 +111,11 @@ const fn l_d(k: u32) -> u32 { 52 + k }
 /// The stack pointer the function was entered with at its start (all ones when it was entered at another block):
 /// an indirect jump that leaves rsp above it goes to code of a frame further out (a longjmp), handed up to it.
 const L_SP0: u32 = 54;
+/// The thread's budget (G_BUDGET) while a function with a loop runs: counted down in a local, where a loop's turn is a
+/// register's decrement, not a global's store and load again on every way round (each waiting on the one before);
+/// moved to and from its global where the registers are (sync). A function with no loop counts it down in its global
+/// at each call, as before: it would move it in and out at each.
+const L_BUDGET: u32 = 55;
 
 const RSP: u32 = 4;
 const RAX: u32 = 0;
@@ -207,6 +212,8 @@ struct Fx<'p> {
     backward: bool,
     /// The block being lowered: a goto to it or one before it closes a loop.
     at: usize,
+    /// It has a loop: its budget is counted down in L_BUDGET, moved with the registers.
+    budget: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -746,8 +753,12 @@ impl<'p> Fx<'p> {
     /// head, an entry) once the kernel has seen to timers, signals and other threads.
     /// Nonzero when the thread's budget is spent (one less now).
     fn spent(&mut self) {
-        self.e(W::GlobalGet(G_BUDGET)); self.c32(1); self.e(W::I32Sub); self.e(W::GlobalSet(G_BUDGET));
-        self.e(W::GlobalGet(G_BUDGET)); self.e(W::I32Eqz);
+        if self.budget {
+            self.get(L_BUDGET); self.c32(1); self.e(W::I32Sub); self.tee(L_BUDGET); self.e(W::I32Eqz);
+        } else {
+            self.e(W::GlobalGet(G_BUDGET)); self.c32(1); self.e(W::I32Sub); self.e(W::GlobalSet(G_BUDGET));
+            self.e(W::GlobalGet(G_BUDGET)); self.e(W::I32Eqz);
+        }
     }
 
     /// At a loop's head: its turn is up when its budget is spent, or when it is asked to look in (a signal to take
@@ -2405,6 +2416,19 @@ fn live_flags(program: &Program, index: u32, succs: &[Successors]) -> (Vec<u32>,
 
 // ---- Functions ----
 
+/// Whether `function` goes backward anywhere (a loop's head: Fx.goto, time_slice), within it or out to an address before
+/// a block's (a run of the same function cut into runs).
+fn has_loop(function: &Function) -> bool {
+    function.blocks.iter().enumerate().any(|(k, b)| {
+        let back = |a: u64| function.block_index(a).map_or(a <= b.start, |t| t <= k);
+        match b.exit {
+            Exit::Fall(a) | Exit::Jump(a) | Exit::Call { ret: a, .. } | Exit::IndirectCall { ret: a } => back(a),
+            Exit::Branch { taken, fall } => back(taken) || back(fall),
+            _ => false,
+        }
+    })
+}
+
 fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u64, u32>, options: Options, report: &mut Report) -> WasmFunction {
     let function = &program.functions[index as usize];
     // Each block's successors, once: the analyses below go over them again and again.
@@ -2412,7 +2436,7 @@ fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u6
     let (live, cases) = live_flags(program, index, &succs);
     let n = function.blocks.len() as u32;
     let handed_flags = handed;
-    let mut fx = Fx { f: WasmFunction::new([]), syncs: Vec::new(), used: 0, ev: vec![Vec::new()], nest: 0, flags: Flags::Held, fr_pending: false, depth: 0, program, function, report, handed, backward: false, at: 0 };
+    let mut fx = Fx { f: WasmFunction::new([]), syncs: Vec::new(), used: 0, ev: vec![Vec::new()], nest: 0, flags: Flags::Held, fr_pending: false, depth: 0, program, function, report, handed, backward: false, at: 0, budget: has_loop(function) };
 
     // Everything the prologue depends on is known, so the function is made in order.
     // Only where it is read: past a call (the resume) or an indirect jump; a leaf pays nothing for it.
@@ -2575,16 +2599,19 @@ fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u6
     // must move (sync_masks). One it never touches stays in its global, where
     // code it calls and the host find it.
     let masks = sync_masks(program, index, &fx.ev, &fx.syncs);
-    let (used, syncs, code) = (fx.used, fx.syncs, fx.f.into_raw_body());
+    let (used, budget, syncs, code) = (fx.used, fx.budget, fx.syncs, fx.f.into_raw_body());
     let mut f = WasmFunction::new([
         (16, ValType::I64), (1, ValType::I32), (5, ValType::I32), (3, ValType::I64), (6, ValType::I64),
-        (2, ValType::I32), (16, ValType::V128), (2, ValType::V128), (2, ValType::F64), (1, ValType::I64),
+        (2, ValType::I32), (16, ValType::V128), (2, ValType::V128), (2, ValType::F64), (1, ValType::I64), (1, ValType::I32),
     ]);
     let sync = |f: &mut WasmFunction, save: bool, mask: u32| {
         let mut sink = f.instructions();
         for n in (0..32).filter(|n| used & mask & (1 << n) != 0) {
             let (local, global) = if n < 16 { (l_reg(n), n) } else { (l_x(n - 16), g_xmm(n - 16)) };
             if save { sink.local_get(local).global_set(global); } else { sink.global_get(global).local_set(local); }
+        }
+        if budget {
+            if save { sink.local_get(L_BUDGET).global_set(G_BUDGET); } else { sink.global_get(G_BUDGET).local_set(L_BUDGET); }
         }
     };
     // The code made without locals starts with their count, 0.
