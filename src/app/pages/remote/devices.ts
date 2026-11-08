@@ -32,7 +32,7 @@ export function deviceSection(counted: (n: number) => void): HTMLElement {
   return section;
 }
 
-/** How long a device let in takes at most to come for its session: one of its asks (every 5 s, src/remote/auth.ts) and a little more. */
+/** How long a device let in takes at most to come for its session: one of its asks (every 5 s, src/remote/people/auth.ts) and a little more. */
 const COMES = 7000;
 
 /**

@@ -23,7 +23,7 @@ import {createHash} from 'node:crypto';
 import {mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {Readable} from 'node:stream';
-import {pinnedRoots} from '../src/remote/releases.ts';
+import {pinnedRoots} from '../src/remote/ship/releases.ts';
 import {checkPacks} from '../module/muk/runtime/table.ts';
 import {tarMembers, type About, type Index} from './webroot-tree.ts';
 

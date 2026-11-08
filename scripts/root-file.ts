@@ -12,7 +12,7 @@
 import {createHash} from 'node:crypto';
 import {existsSync, mkdirSync, readFileSync, renameSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
-import {pinnedRoots} from '../src/remote/releases.ts';
+import {pinnedRoots} from '../src/remote/ship/releases.ts';
 
 const here = new URL('..', import.meta.url).pathname;
 const [dir, asked] = process.argv.slice(2);

@@ -24,7 +24,7 @@ import {errorText} from '../host/errors.ts';
 
 /**
  * Where a repo here stands; 'off': turned off on the Remote (kept there 30 days), nothing is sent until it is on
- * again; 'waits': the Remote keeps no more for this account's plan (src/remote/plan.ts), so it stays here and waits.
+ * again; 'waits': the Remote keeps no more for this account's plan (src/remote/plan/plan.ts), so it stays here and waits.
  */
 export type Where = 'local' | 'sending' | 'synced' | 'offline' | 'off' | 'waits';
 export interface RepoSync {

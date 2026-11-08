@@ -813,7 +813,7 @@ class Server extends Part {
 }
 
 /**
- * Stripe, as the Remote with the plan has it (src/remote/devbilling.ts, its stand-in in test mode): Checkout's card
+ * Stripe, as the Remote with the plan has it (src/remote/plan/devbilling.ts, its stand-in in test mode): Checkout's card
  * form, the 3-D Secure step, and the customer portal, found as a person finds them there.
  */
 class Stripe extends Part {

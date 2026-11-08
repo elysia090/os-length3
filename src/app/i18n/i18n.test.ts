@@ -58,8 +58,9 @@ const MACHINE = new Set(['not signed in', 'not from the app', 'a list of digests
 test('every error the Remote can answer with has its Japanese', async () => {
   const dir = new URL('../../../src/remote/', import.meta.url).pathname;
   const said: string[] = [], unread: string[] = [];
-  for (const name of readdirSync(dir)) {
-    if (!name.endsWith('.ts') || name.endsWith('.test.ts')) continue;
+  // Each part's folder (not its tests, nor the migrations).
+  for (const name of readdirSync(dir, {recursive: true}) as string[]) {
+    if (!name.endsWith('.ts') || name.endsWith('.test.ts') || name.startsWith('tests/')) continue;
     const src = readFileSync(join(dir, name), 'utf8');
     for (const m of src.matchAll(/\b(?:error|why): (?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"|([^,}\s]+))/g)) {
       // Not a literal: a reason handed on (`to.why`) or the type of one; anything else could say anything.

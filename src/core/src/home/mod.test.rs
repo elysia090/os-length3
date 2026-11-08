@@ -74,7 +74,7 @@ fn recorded() -> Vec<Value> {
     v["exchanges"].as_array().unwrap().clone()
 }
 
-/// The Remote's settings as src/remote/app.ts keeps them: a value and its version each,
+/// The Remote's settings as src/remote/serve/app.ts keeps them: a value and its version each,
 /// changed only from the version it is at (0: made, if it is not there yet).
 #[derive(Default)]
 struct Remote { kept: RefCell<HashMap<String, (String, i64)>>, asked: RefCell<Vec<String>>, before_put: RefCell<Option<(String, String)>> }

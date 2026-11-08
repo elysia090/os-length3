@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {browserOnRemote} from '../testing/remote.ts';
 
-// A browser on a Remote that holds no files (src/remote/bucket.ts): what it
+// A browser on a Remote that holds no files (src/remote/bytes/bucket.ts): what it
 // cannot send stays here, nothing is taken as agreed, and why is said.
 const b = await browserOnRemote({bucket: false});
 const {store, draft, settings, text} = b;

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {GRACE} from '../../remote/plan.ts';
-import {sign} from '../../remote/stripe.ts';
-import {fakeStripe, PRICES, WEBHOOK_SECRET} from '../../remote/testing.ts';
+import {GRACE} from '../../remote/plan/plan.ts';
+import {sign} from '../../remote/plan/stripe.ts';
+import {fakeStripe, PRICES, WEBHOOK_SECRET} from '../../remote/tests/testing.ts';
 import type {Plan} from './plan.ts';
 import {browserOnRemote} from '../testing/remote.ts';
 

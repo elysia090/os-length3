@@ -1,12 +1,12 @@
 // For client tests: a browser on one Remote, all in this process. Its storage
-// is a map, and every fetch goes to the service itself (src/remote/app.ts), so a
+// is a map, and every fetch goes to the service itself (src/remote/serve/app.ts), so a
 // client module is tested against the Remote it really talks to.
 
-import {createApp} from '../../remote/app.ts';
-import {createAuth} from '../../remote/auth.ts';
-import {memoryBucket} from '../../remote/bucket.ts';
-import * as schema from '../../remote/schema.ts';
-import {bearerOf, fileDb} from '../../remote/testing.ts';
+import {createApp} from '../../remote/serve/app.ts';
+import {createAuth} from '../../remote/people/auth.ts';
+import {memoryBucket} from '../../remote/bytes/bucket.ts';
+import * as schema from '../../remote/db/schema.ts';
+import {bearerOf, fileDb} from '../../remote/tests/testing.ts';
 import {cookieJar} from './cookies.ts';
 
 export const REMOTE = 'http://remote.test';

@@ -1,8 +1,8 @@
 // For tests: a browser's cookies for its Remote, as a browser keeps them. Its session is one of them (the page holds
-// no token: src/remote/auth.ts), set by what the Remote answers the browser's own requests and sent with each of them.
+// no token: src/remote/people/auth.ts), set by what the Remote answers the browser's own requests and sent with each of them.
 // A test's own request, one that names its cookies or a bearer, is no browser's and goes as it says. Not part of the app.
 
-/** The session cookie's name off HTTPS (src/remote/auth.ts SESSION_COOKIES), where the tests' Remotes are. */
+/** The session cookie's name off HTTPS (src/remote/people/auth.ts SESSION_COOKIES), where the tests' Remotes are. */
 const SESSION = 'better-auth.session_token';
 
 export function cookieJar() {
@@ -24,7 +24,7 @@ export function cookieJar() {
         if (!value || /;\s*max-age=0\b/i.test(c)) jar.delete(name); else jar.set(name, value);
       }
     },
-    /** The browser in as the session `bearer` is (its cookie's own value: src/remote/testing.ts bearerOf). */
+    /** The browser in as the session `bearer` is (its cookie's own value: src/remote/tests/testing.ts bearerOf). */
     session(bearer: string) { jar.set(SESSION, encodeURIComponent(bearer)); },
     /** Whether the browser holds a session's cookie. */
     signedIn: () => jar.has(SESSION),

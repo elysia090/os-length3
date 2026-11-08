@@ -3,7 +3,7 @@
 //
 //   1. the app is built for a Remote on its own origin (VITE_LENGTH3_REMOTE=''),
 //      into tests/.dist, unless that build is newer than every source;
-//   2. a fresh Remote (src/remote/dev.ts) starts on a free port, its data in a
+//   2. a fresh Remote (src/remote/serve/dev.ts) starts on a free port, its data in a
 //      new temporary directory: PGlite, blobs, mail.log, nothing kept (off
 //      CI, its database a copy of an empty one made once, in tests/.pg);
 //   3. `vite preview` serves the build on another free port and passes /api
@@ -252,7 +252,7 @@ export default async function globalSetup(_config: FullConfig) {
     // The Remote's own name is localhost too, so the session it sets on sign-in is the app's. It loads its modules as
     // npm test's processes do (scripts/tests-load.ts: their types stripped once, their code compiled once, for every
     // run): a fifth less of the CPU its start took, which every run waited for.
-    children.push(start(`remote${name}`, ['--import', LOAD, 'src/remote/dev.ts', join(data, dir), String(rPort), at], {LENGTH3_DEV_BASE: `http://localhost:${rPort}`, ...env}));
+    children.push(start(`remote${name}`, ['--import', LOAD, 'src/remote/serve/dev.ts', join(data, dir), String(rPort), at], {LENGTH3_DEV_BASE: `http://localhost:${rPort}`, ...env}));
     // Through the preview, so both are up and the one passes to the other. (Between the servers and
     // from here, the address itself: what localhost names first, ::1 or 127.0.0.1, is the system's.)
     return ready(`http://127.0.0.1:${aPort}/v1/about`, children);

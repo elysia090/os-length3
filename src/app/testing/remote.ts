@@ -1,5 +1,5 @@
 // For tests: a browser on one Remote, all in this process. Its core is the one a page runs (testing/node-core.ts),
-// and every fetch, the core's too, goes to the service itself (src/remote/testing.ts), so the app's own sync
+// and every fetch, the core's too, goes to the service itself (src/remote/tests/testing.ts), so the app's own sync
 // runs as it does in a page. Not
 // part of the app; only the tests import it.
 //
@@ -8,11 +8,11 @@
 // One per file (a process); its tests keep apart by using repos of their own.
 
 import assert from 'node:assert/strict';
-import {createApp, sha256} from '../../remote/app.ts';
-import {createAuth} from '../../remote/auth.ts';
-import {memoryBucket} from '../../remote/bucket.ts';
-import {bearerOf, fileDb, SECRET} from '../../remote/testing.ts';
-import type {Billing, PlanConfig} from '../../remote/plan.ts';
+import {createApp, sha256} from '../../remote/serve/app.ts';
+import {createAuth} from '../../remote/people/auth.ts';
+import {memoryBucket} from '../../remote/bytes/bucket.ts';
+import {bearerOf, fileDb, SECRET} from '../../remote/tests/testing.ts';
+import type {Billing, PlanConfig} from '../../remote/plan/plan.ts';
 import {buildCoreWasm} from '../../../scripts/core-wasm.ts';
 import {cookieJar} from './cookies.ts';
 import {nodeCore} from './node-core.ts';
@@ -21,8 +21,8 @@ const URL_ = 'http://remote.test', APP = 'http://app.test';
 const enc = new TextEncoder();
 
 /**
- * `o`: the Remote's plan and how it is bought (src/remote/plan.ts), none as before: everything open;
- * `bucket: false`: a Remote that holds no files (src/remote/bucket.ts), as a Worker without R2 is.
+ * `o`: the Remote's plan and how it is bought (src/remote/plan/plan.ts), none as before: everything open;
+ * `bucket: false`: a Remote that holds no files (src/remote/bytes/bucket.ts), as a Worker without R2 is.
  */
 export async function browserOnRemote(o: {plan?: PlanConfig; billing?: Billing; bucket?: boolean} = {}) {
   const shelf = new Map<string, string>();

@@ -29,7 +29,7 @@ Out of scope:
   Prompt is a sandbox, so an escape from it is in scope.
 
 Never test against another person's account or data. Testing against your own
-is welcome, and so is a Remote of your own (`node src/remote/dev.ts`).
+is welcome, and so is a Remote of your own (`node src/remote/serve/dev.ts`).
 
 ## Supported versions
 
@@ -48,7 +48,7 @@ The whole model is in `docs/DESIGN.md`, Part II:
 
 The Remote's checks, item by item, are in `src/remote/README.md` ("What every
 request passes, and the one secret") and are tested in
-`src/remote/security.test.ts`.
+`src/remote/tests/security.test.ts`.
 
 - **Who someone is.** GitHub, Google or Apple say it once, and then a
   passkey does. Passkeys require user verification. A device is a session
@@ -70,7 +70,7 @@ request passes, and the one secret") and are tested in
   that is a session's being seen and ended from any other device, and
   Prompts never seeing the folder they are kept in.
 - **What is trusted for what.** The Remote holds one secret and derives one
-  key a purpose from it (`src/remote/keys.ts`). A domain's name is trusted
+  key a purpose from it (`src/remote/serve/keys.ts`). A domain's name is trusted
   while its DNS names this Remote and account. A root is trusted only by the
   digest pinned in `src/core/src/root/pins.rs`, and so is the browser's copy of
   it: its index by the digest pinned beside it, each pack by the table of

@@ -1,4 +1,4 @@
-//! Home's settings agreed with the Remote (src/remote/app.ts `/v1/home/:key`): each read and written on a version, two
+//! Home's settings agreed with the Remote (src/remote/serve/app.ts `/v1/home/:key`): each read and written on a version, two
 //! changes to one joined, and what this device took kept apart from what is still to send.
 
 use crate::Result;

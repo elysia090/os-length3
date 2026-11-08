@@ -24,7 +24,7 @@
 //!              running Prompt records itself (prompt/running.rs), so root3 and the app
 //!              see it and stop it; the host key beside it, made once
 //!   Remote     only that a device listens, and to whom (its scope word),
-//!              per device (src/remote/ssh.ts): no address, port or repo name
+//!              per device (src/remote/repos/ssh.ts): no address, port or repo name
 //!              leaves the device. The listener says so when it starts and
 //!              asks every few seconds whether it still should (off from any
 //!              page stops it); where it is reached is worked out and shown

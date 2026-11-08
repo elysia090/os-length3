@@ -1,4 +1,4 @@
-//! Inbox from the device (src/remote/inbox.ts): the address people find you by
+//! Inbox from the device (src/remote/talk/inbox.ts): the address people find you by
 //! (name@domain), the conversations, and writing to someone. Live chat is the
 //! app's (a WebRTC line between two open pages); here messages go through the
 //! Remote as text.

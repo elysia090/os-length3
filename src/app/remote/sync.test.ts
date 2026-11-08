@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {sha256} from '../../remote/app.ts';
+import {sha256} from '../../remote/serve/app.ts';
 import {browserOnRemote} from '../testing/remote.ts';
-import {purge} from '../../remote/sweep.ts';
+import {purge} from '../../remote/repos/sweep.ts';
 import {sql} from 'drizzle-orm';
 
 // A browser on one Remote, all in this process (testing.ts). The tests below

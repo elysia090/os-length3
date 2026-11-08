@@ -1,4 +1,4 @@
-//! Whether this device listens for SSH, as the Remote is told it (src/remote/ssh.ts): that it listens, and the scope's
+//! Whether this device listens for SSH, as the Remote is told it (src/remote/repos/ssh.ts): that it listens, and the scope's
 //! word, never an address, a port or a repo name. Pages of the account show "<device> listens for SSH" with its
 //! off switch, and nothing of where. The listener itself is ssh/'s (and root3's: src/cli/src/cmd/ssh.rs).
 
@@ -34,7 +34,7 @@ pub fn beat(scope: Scope) -> Heard {
     }
 }
 
-/// The tag the Remote's last answer to a beat carried (src/remote/mark.ts), sent with the next: while nothing was
+/// The tag the Remote's last answer to a beat carried (src/remote/serve/mark.ts), sent with the next: while nothing was
 /// written on the Remote since, it answers on without asking its database, which sleeps. Before, each beat was a
 /// session looked up and a row written: a device listening kept the database awake around the clock.
 static TAG: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());

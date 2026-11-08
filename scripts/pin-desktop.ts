@@ -1,5 +1,5 @@
 // Pin the desktop app a release made: its .deb and AppImage, by name, size and sha256, under the version in
-// src/shared/desktop-releases.json, where the web offers them and the Remote's deploy takes them (src/remote/releases.ts).
+// src/shared/desktop-releases.json, where the web offers them and the Remote's deploy takes them (src/remote/ship/releases.ts).
 // The release does it beside pin-root.ts, and both are proposed to main as one change (release.yml), so the
 // source says what was released. Only this version is pinned, as only its root is (pin-root.ts).
 //

@@ -952,7 +952,7 @@ nobody else can take it and be taken for its owner:
 | a guest's invitation | the one of its people who made it, lent to whoever they hand it | its Remote, and its digest | used, revoked, its maker leaves the server, or a week (at most 30 days) |
 | a guest | the board, by an invitation | its token's digest | a lease of 30 days; removed (their posts with them), or the board stops taking guests: at once |
 
-What goes, goes in one place, once a day (`src/remote/sweep.ts`): nothing a
+What goes, goes in one place, once a day (`src/remote/repos/sweep.ts`): nothing a
 person asks for purges anything on the way, and a file no tree names any
 more goes with the rest.
 
@@ -1591,7 +1591,7 @@ from any other. What proves a session is held where no page reads it. In a
 browser it is the session's cookie (`__Host-`: Secure, HttpOnly,
 SameSite=Lax), which the browser sends and no script reads, so a script
 that should not be on the page cannot carry the session off: the Remote
-hands a page no token, ever (`src/remote/auth.ts`), and the browser's core
+hands a page no token, ever (`src/remote/people/auth.ts`), and the browser's core
 sends the cookie with its own requests. A device (the app, root3) holds a
 bearer from the device flow, kept apart from everything a page reads
 (`src/core/src/device/vault.rs`, never in Home's state, which a page reads and which
@@ -1667,7 +1667,7 @@ What leaves this system is kept to what is said here:
   would land outside, go through a link or be a device. It is fetched from
   the Remote this device uses, then the publisher's Remote, which each of
   its deploys fills with every root pinned in `src/core/src/root/pins.rs`
-  (`src/remote/mirror.ts`), and last from the GitHub release, which answers
+  (`src/remote/bytes/mirror.ts`), and last from the GitHub release, which answers
   only while the repository is public; when none has it, the error says
   what each said.
 - **Host.** The app starts no host program for a repo: history is the
@@ -1695,7 +1695,7 @@ not: `src/remote/README.md`.
 ### The plan: the Remote decides what an account may do
 
 Billing lives on the Remote. The Remote alone decides what an account may
-do (`src/remote/plan.ts`); every client, the web app, the desktop app and root3,
+do (`src/remote/plan/plan.ts`); every client, the web app, the desktop app and root3,
 only shows what it says (Remote → Plan, `root3 remote plan`) and asks. No
 client counts, guesses or greys out on its own.
 
@@ -1760,7 +1760,7 @@ allowance still holds, and the Remote says paid features cannot be bought
 here yet. A Remote given no plan (a Remote of one's own, development unless
 asked, a Remote for research) has no allowance at all.
 
-**Stripe's stand-in** (`src/remote/devbilling.ts`), on a Remote of one's own
+**Stripe's stand-in** (`src/remote/plan/devbilling.ts`), on a Remote of one's own
 asked for the plan (`LENGTH3_PLAN=1`) and the selftest's, looks and does as
 Stripe's pages do in test mode, so the way from the Plan to paying and back
 is the one people meet; it is Stripe's look, not this language's, and says
@@ -1777,7 +1777,7 @@ credited), the card (the same form and test cards), the invoices, cancelling
 at the period's end and Renew plan to keep it, and, marked as not Stripe's,
 test controls (a payment fails, a payment goes through, it ends now). Each
 step sends the Remote the events Stripe would, signed, before the page goes
-on. The development sign-in provider (`src/remote/devoauth.ts`) asks as a real
+on. The development sign-in provider (`src/remote/people/devoauth.ts`) asks as a real
 one does: a name, then what length3 asks of it (your name and email), Allow
 or Cancel; Cancel comes back with the error a provider sends then.
 
@@ -3096,7 +3096,7 @@ or goes).
   AppImage when the Remote has no .deb (the release still has both). They are
   the files `src/shared/desktop-releases.json` pins for that version, served by
   the Remote (`/v1/desktop/<file>`, to anyone, by range), where each deploy
-  puts them from the release (`src/remote/mirror.ts`). It is offered only once
+  puts them from the release (`src/remote/bytes/mirror.ts`). It is offered only once
   the Remote says it has it; with neither there, the section is not shown,
   never a button that cannot act.
 

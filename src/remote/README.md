@@ -17,19 +17,26 @@ which the desktop app's commands (`desktop`) and root3 (`cli/`) both use.
 
 ## The parts
 
-One module a part, its routes, rules and queries together; `app.ts` only
-assembles them, `request.ts` holds what every request shares (the origins
+The folders are the parts by what each holds: `serve/` (the one HTTP app, the Worker and the Remote on this machine,
+what every request shares and the mark), `people/` (who someone is and what they are called), `repos/` (repos kept,
+who sees them, Home's settings, SSH per device, the sweep), `bytes/` (what is at rest: the bucket, file contents, trees,
+the releases' files), `talk/` (Inbox, servers, news), `plan/` (the plan, the budget, Stripe and its stand-in), `db/`
+(the schema, the migrations' stages, the database as the deploy reaches it), `ship/` (the deploy and the releases
+pinned), `tests/` (the Remote as a whole, and what the tests share); `migrations/` is drizzle-kit's, as it writes it.
+
+One module a part, its routes, rules and queries together; `serve/app.ts` only
+assembles them, `serve/request.ts` holds what every request shares (the origins
 that may call, body limits, `LIMIT`, refusals, the account's lock and room,
 and `failed`: what no route foresaw is JSON too, `{error, id}`, 503 with
 `Retry-After` when the database is busy or out of reach, else 500, the id
-in the log beside it), `auth.ts` who is asking (`signedIn`: a request that names
+in the log beside it), `people/auth.ts` who is asking (`signedIn`: a request that names
 no session is refused before the database is asked, and the Worker keeps a
-session it looked up for 10 s), `budget.ts` what R2 and the database may be
-asked for, and `mark.ts` what is answered without asking the database at all.
+session it looked up for 10 s), `plan/budget.ts` what R2 and the database may be
+asked for, and `serve/mark.ts` what is answered without asking the database at all.
 
 ### What R2 and Neon may be asked for
 
-Counted before either is asked (`budget.ts`, rows of `usage`), each figure a
+Counted before either is asked (`plan/budget.ts`, rows of `usage`), each figure a
 variable of `wrangler.toml`, within what Cloudflare and Neon give free:
 
 | Limit | Variable | Past it |
@@ -65,13 +72,13 @@ connection, 2 statements, 3 round trips). Counted on the page's own clock: one
 page left open in view, nobody at it, kept Neon awake 30 of every 60 minutes;
 a page someone reads, all 60; a device listening, all of them, all day.
 
-The mark (`mark.ts`) is a number kept outside the database, in a Durable
+The mark (`serve/mark.ts`) is a number kept outside the database, in a Durable
 Object (`MarkObject`, `wrangler.toml` `MARK`; this process's memory in
-`dev.ts`), that moves after every request that writes, but those that write
+`serve/dev.ts`), that moves after every request that writes, but those that write
 nothing a look reads (a beat, the live line's signals, a file's bytes, a
 device's sign-in polling), and after the sweep. Each of those looks is
 answered with a tag (its `ETag`; the beat's, `tag` in its JSON) that says,
-under a key of its own (`keys.ts` `mark`), what was asked, by which bearer
+under a key of its own (`serve/keys.ts` `mark`), what was asked, by which bearer
 token, at which mark and until when; asked again with it (`If-None-Match`;
 the beat's body) while the mark has not moved, the answer is 304 (the beat:
 `{on: true}`) and nothing else is asked, the session included: no connection,
@@ -95,20 +102,20 @@ main has made it Cloudflare refuses another branch's `versions upload`.
 
 | Part | Module | Routes | Tables | Clients |
 |---|---|---|---|---|
-| What this Remote is | `about.ts` | `GET /v1/about`, `GET /v1/health`, `GET /.well-known/security.txt` (RFC 9116) | (reads nothing; health `select 1`) | page, core (app and root3 read `app` to know where a device code is approved), deploy |
-| Who someone is | `auth.ts` (Better Auth), `devoauth.ts` | `/api/auth/*`: social sign-in, passkeys, `get-session`, `list-sessions`, `revoke-session`, `sign-out`, linked providers; the device flow `device/code`, `device/token` (core), `device`, `device/approve`, `device/deny` (page); `/dev-oauth/*` only where `dev` is offered | `user`, `session`, `account`, `verification`, `passkey`, `device_code`, `rate_limit`; `guard` (a passkey sign-in is proof of presence) | page, core |
-| A Remote for research | `enter.ts` | `POST /v1/enter` | `user`, `session`, `guard`, `throttle` | page |
-| File contents and releases | `files.ts`, `bucket.ts`, `releases.ts` (what is pinned), `mirror.ts` (the deploy puts it in the bucket) | `GET /v1/os/:sha`, `GET /v1/desktop/:file` (anyone, Range, streamed), `POST /v1/blobs/missing`, `PUT/GET /v1/blobs/:sha` | `blob` (and `room.used`, by trigger); bytes in the bucket: `u/USER/SHA`, `os/SHA`, `desktop/FILE` | page (the desktop app's download), core (`/v1/os` for a Prompt's root, falling back to the release) |
-| Repos kept | `repos.ts` | `GET /v1/moved`; `/v1/repos`, `/v1/repos/gone`, `/v1/repos/:name` (`?line=`), `draft`, `cuts`, `cuts/:id`, `log`, `lines`, `lines/:line/push`, `changes`, `changes/:id/reviews\|merge\|reject\|reset`, `off`, `on`, `discard` (a passkey just now and the repo's name) | `repo`, `line`, `cut`, `change`, `review`, `repo_gone`, `room` (stamp, used), `guard` (sign-ins just now) | page, core (sync, history, work); off and discard only from the page (they ask a passkey) |
-| The plan and billing | `plan.ts` (the rules and routes), `stripe.ts` (Stripe's REST and webhook signatures), `devbilling.ts` (a stand-in for Stripe in `dev.ts`: Checkout, 3-D Secure and the portal in test mode) | `GET /v1/plan` (the tier, its use, the tiers), `POST /v1/plan/checkout` (a tier), `POST /v1/plan/portal` (with a tier, at the step that changes to it); `POST /v1/stripe/webhook` (anyone; the webhook signed by Stripe, the tier read from the price); its rules are asked by the routes that make something new: a new repo and a draft that grows (`repos.ts` PATCH draft), making a server (`servers.ts`), claiming a name (`inbox.ts`), each 402 with the rule | `plan`, `billing_event`; reads `repo`, `room.used` (counted again from the rows by the sweep), `address` | page (Remote → Plan), core (`root3 remote plan`); 402 is said in place and the work stays on the device |
-| Home | `home.ts` | `GET/PUT /v1/home/:key` (profile, todo, dotfiles) | `home` | page, core |
-| Names and Inbox | `inbox.ts`, `names.ts` | `/v1/inbox/me` (gives the username if there is none yet), `username` (PUT: change it), `addresses` (claim another, let go), `domains/:domain`, `lookup`, `messages`, `threads`, `threads/:address(/read)`, `contacts`, `signals` (send), `signals/take` (POST: taking deletes); `GET /.well-known/length3` (anyone: other Remotes) | `address`, `principal_code`, `contact`, `message`, `signal`, `throttle` | page, core (root3 name, root3 inbox) |
-| Servers, boards, guests | `servers.ts` | `/v1/servers…` (people, boards, renew, back), `/v1/boards/:id…` (todos, posts, seen, archive, invites, guests), `/v1/open…` (anyone: open boards, a guest by invitation) | `server`, `server_member`, `board`, `board_todo`, `board_post`, `board_seen`, `board_invite`, `board_guest`, `throttle` | page, core (root3 server, `archive` as text) |
-| Who sees a repo | `seen.ts` | `GET /v1/seen`, `PUT /v1/repos/:name/seen`, `/v1/servers/:id/repos…`; `GET /v1/seen/:face/:name(/file)` (anyone, when public) | `repo_share`, `repo_public` | page |
-| News | `news.ts` | `GET /v1/news` | reads `message`, `contact`, `board_post`, `board_seen` | page |
-| SSH, per device | `ssh.ts` | `GET /v1/ssh`, `POST /v1/ssh/:device/off` (any session); `PUT/DELETE /v1/ssh/this`, `POST /v1/ssh/this/beat` (the device itself: refused with an Origin; with the tag its last answer gave, answered by the mark) | `ssh` (one row a session: its scope, `device` or `network`, and when; never an address, port or repo) | core (the listener), page (see, stop) |
-| What moved, without the database | `mark.ts` (`MarkObject`, `worker.ts` exports it) | (none of its own: it answers `GET /v1/moved`, `/v1/news`, `/v1/inbox/threads`, `/v1/boards/:id/posts`, `/v1/boards/:id/todos` and the beat, given their tags, and every other write moves it) | (none: the Durable Object's own storage, its mark and the beats it heard) | page, core |
-| The sweep | `sweep.ts`, `worker.ts` `scheduled` | (none: once a day, and when `dev.ts` starts) | every table above (Stripe's events 30 days old; each changed room counted again from its rows); the bucket's unnamed blobs; then the mark moves, and lets go of beats heard a day ago | |
+| What this Remote is | `serve/about.ts` | `GET /v1/about`, `GET /v1/health`, `GET /.well-known/security.txt` (RFC 9116) | (reads nothing; health `select 1`) | page, core (app and root3 read `app` to know where a device code is approved), deploy |
+| Who someone is | `people/auth.ts` (Better Auth), `people/devoauth.ts` | `/api/auth/*`: social sign-in, passkeys, `get-session`, `list-sessions`, `revoke-session`, `sign-out`, linked providers; the device flow `device/code`, `device/token` (core), `device`, `device/approve`, `device/deny` (page); `/dev-oauth/*` only where `dev` is offered | `user`, `session`, `account`, `verification`, `passkey`, `device_code`, `rate_limit`; `guard` (a passkey sign-in is proof of presence) | page, core |
+| A Remote for research | `people/enter.ts` | `POST /v1/enter` | `user`, `session`, `guard`, `throttle` | page |
+| File contents and releases | `bytes/files.ts`, `bytes/bucket.ts`, `ship/releases.ts` (what is pinned), `bytes/mirror.ts` (the deploy puts it in the bucket) | `GET /v1/os/:sha`, `GET /v1/desktop/:file` (anyone, Range, streamed), `POST /v1/blobs/missing`, `PUT/GET /v1/blobs/:sha` | `blob` (and `room.used`, by trigger); bytes in the bucket: `u/USER/SHA`, `os/SHA`, `desktop/FILE` | page (the desktop app's download), core (`/v1/os` for a Prompt's root, falling back to the release) |
+| Repos kept | `repos/repos.ts` | `GET /v1/moved`; `/v1/repos`, `/v1/repos/gone`, `/v1/repos/:name` (`?line=`), `draft`, `cuts`, `cuts/:id`, `log`, `lines`, `lines/:line/push`, `changes`, `changes/:id/reviews\|merge\|reject\|reset`, `off`, `on`, `discard` (a passkey just now and the repo's name) | `repo`, `line`, `cut`, `change`, `review`, `repo_gone`, `room` (stamp, used), `guard` (sign-ins just now) | page, core (sync, history, work); off and discard only from the page (they ask a passkey) |
+| The plan and billing | `plan/plan.ts` (the rules and routes), `plan/stripe.ts` (Stripe's REST and webhook signatures), `plan/devbilling.ts` (a stand-in for Stripe in `serve/dev.ts`: Checkout, 3-D Secure and the portal in test mode) | `GET /v1/plan` (the tier, its use, the tiers), `POST /v1/plan/checkout` (a tier), `POST /v1/plan/portal` (with a tier, at the step that changes to it); `POST /v1/stripe/webhook` (anyone; the webhook signed by Stripe, the tier read from the price); its rules are asked by the routes that make something new: a new repo and a draft that grows (`repos/repos.ts` PATCH draft), making a server (`talk/servers.ts`), claiming a name (`talk/inbox.ts`), each 402 with the rule | `plan`, `billing_event`; reads `repo`, `room.used` (counted again from the rows by the sweep), `address` | page (Remote → Plan), core (`root3 remote plan`); 402 is said in place and the work stays on the device |
+| Home | `repos/home.ts` | `GET/PUT /v1/home/:key` (profile, todo, dotfiles) | `home` | page, core |
+| Names and Inbox | `talk/inbox.ts`, `people/names.ts` | `/v1/inbox/me` (gives the username if there is none yet), `username` (PUT: change it), `addresses` (claim another, let go), `domains/:domain`, `lookup`, `messages`, `threads`, `threads/:address(/read)`, `contacts`, `signals` (send), `signals/take` (POST: taking deletes); `GET /.well-known/length3` (anyone: other Remotes) | `address`, `principal_code`, `contact`, `message`, `signal`, `throttle` | page, core (root3 name, root3 inbox) |
+| Servers, boards, guests | `talk/servers.ts` | `/v1/servers…` (people, boards, renew, back), `/v1/boards/:id…` (todos, posts, seen, archive, invites, guests), `/v1/open…` (anyone: open boards, a guest by invitation) | `server`, `server_member`, `board`, `board_todo`, `board_post`, `board_seen`, `board_invite`, `board_guest`, `throttle` | page, core (root3 server, `archive` as text) |
+| Who sees a repo | `repos/seen.ts` | `GET /v1/seen`, `PUT /v1/repos/:name/seen`, `/v1/servers/:id/repos…`; `GET /v1/seen/:face/:name(/file)` (anyone, when public) | `repo_share`, `repo_public` | page |
+| News | `talk/news.ts` | `GET /v1/news` | reads `message`, `contact`, `board_post`, `board_seen` | page |
+| SSH, per device | `repos/ssh.ts` | `GET /v1/ssh`, `POST /v1/ssh/:device/off` (any session); `PUT/DELETE /v1/ssh/this`, `POST /v1/ssh/this/beat` (the device itself: refused with an Origin; with the tag its last answer gave, answered by the mark) | `ssh` (one row a session: its scope, `device` or `network`, and when; never an address, port or repo) | core (the listener), page (see, stop) |
+| What moved, without the database | `serve/mark.ts` (`MarkObject`, `serve/worker.ts` exports it) | (none of its own: it answers `GET /v1/moved`, `/v1/news`, `/v1/inbox/threads`, `/v1/boards/:id/posts`, `/v1/boards/:id/todos` and the beat, given their tags, and every other write moves it) | (none: the Durable Object's own storage, its mark and the beats it heard) | page, core |
+| The sweep | `repos/sweep.ts`, `serve/worker.ts` `scheduled` | (none: once a day, and when `serve/dev.ts` starts) | every table above (Stripe's events 30 days old; each changed room counted again from its rows); the bucket's unnamed blobs; then the mark moves, and lets go of beats heard a day ago | |
 
 `GET /v1/repos/gone` is asked by no client today (a device learns a repo
 went from `GET /v1/repos/:name`'s `gone` and `PATCH draft`'s 410); the tests
@@ -123,7 +130,7 @@ read the sweep through it.
   session of their own, sent as a bearer token. Each device is a session,
   listed and ended from any other (`list-sessions`, `revoke-session`). A
   browser's session is its cookie alone: no answer hands a page a token
-  (`auth.ts` takes the bearer plugin's `set-auth-token` out of every one,
+  (`people/auth.ts` takes the bearer plugin's `set-auth-token` out of every one,
   and `/v1/enter` sets the cookie), so no script on a page can carry a
   session off.
 - **Requests without an Origin.** core never sends one; `signedIn` takes a
@@ -158,21 +165,21 @@ there is no bucket to take their bytes from; it still counts each changed room
 again, which the plan reads.
 
 On Workers that is a Worker without its `BLOBS` binding; here,
-`node src/remote/dev.ts DIR --no-bucket` (or `LENGTH3_NO_BUCKET=1`). The
+`node src/remote/serve/dev.ts DIR --no-bucket` (or `LENGTH3_NO_BUCKET=1`). The
 contract tests run twice, with a bucket and without
-(`contract.test.ts`, `contract.nobucket.test.ts`), and `worker.test.ts`
+(`tests/contract.test.ts`, `tests/contract.nobucket.test.ts`), and `serve/worker.test.ts`
 runs the Worker itself, with no bucket, through its Neon driver.
 
 ## Against a real database
 
     DATABASE_URL='postgresql://…' npm run verify:remote
 
-(`verify.ts`) makes a database of its own on that server
+(`db/verify.ts`) makes a database of its own on that server
 (`remote_verify_<time>_<hex>`), migrates it with `migrateRemote`
-(`neon.ts`, the function `deploy.ts` runs), runs `contract.test.ts` there
-with no bucket through the Worker's own pool code (`worker.ts` `open` and
+(`db/neon.ts`, the function `ship/deploy.ts` runs), runs `tests/contract.test.ts` there
+with no bucket through the Worker's own pool code (`serve/worker.ts` `open` and
 `served`: `@neondatabase/serverless` over WebSocket, straight to a Neon
-host, through `bridge.ts` to a Postgres on this machine), and drops that
+host, through `serve/bridge.ts` to a Postgres on this machine), and drops that
 database, and `remote_app` only if its migrations made it. It refuses what
 looks like production unless `--production`, and never prints the URL or
 anything in it. README.md, Deploy, says how to run it on a Neon branch.
@@ -180,10 +187,10 @@ anything in it. README.md, Deploy, says how to run it on a Neon branch.
 ## What every request passes, and the one secret
 
 What the Remote holds itself to, item by item against OWASP ASVS 4.0.3
-L2, RFC 9700, RFC 8628 and WebAuthn, is tested in `security.test.ts`
+L2, RFC 9700, RFC 8628 and WebAuthn, is tested in `tests/security.test.ts`
 (each test names its items). In short:
 
-- **Headers** (`request.ts` `unkept`). Every answer: `Cache-Control:
+- **Headers** (`serve/request.ts` `unkept`). Every answer: `Cache-Control:
   no-store`, `nosniff`, `Content-Security-Policy: default-src 'none';
   frame-ancestors 'none'; base-uri 'none'; form-action 'none'` (the
   Remote answers data, never a page; the stand-in provider's page says its
@@ -193,7 +200,7 @@ L2, RFC 9700, RFC 8628 and WebAuthn, is tested in `security.test.ts`
 - **CORS** (`fromOrigins`): only the app's origins (`APP_ORIGIN`,
   `APP_ORIGINS`) are answered, with credentials; a preflight is kept ten
   minutes. `If-None-Match` is taken and `ETag` shown, for a look's tag.
-- **Cross-site requests** (`auth.ts` `fromElsewhere`, asked by `signedIn`
+- **Cross-site requests** (`people/auth.ts` `fromElsewhere`, asked by `signedIn`
   and by the session routes the Remote answers itself beside Better Auth's:
   `list-sessions`, `revoke-session` by `id:`). A bearer token is taken
   from anywhere (no other site's page can send one). The session cookie
@@ -229,11 +236,11 @@ L2, RFC 9700, RFC 8628 and WebAuthn, is tested in `security.test.ts`
 ### The secret, and rotating it
 
 The Worker is given one secret, `BETTER_AUTH_SECRET` (made once by
-`deploy.ts`, 48 random bytes). Nothing uses it as it is: each purpose has a
-key derived from it with HKDF-SHA256 under its own label (`keys.ts`):
+`ship/deploy.ts`, 48 random bytes). Nothing uses it as it is: each purpose has a
+key derived from it with HKDF-SHA256 under its own label (`serve/keys.ts`):
 `better-auth` (sign-in's cookies and state), `domain-proof` (an Inbox
 domain's TXT proof), `invite` (what is kept of an invitation and a guest's
-token) and `mark` (a look's tag). Before `keys.ts` the secret itself keyed
+token) and `mark` (a look's tag). Before `serve/keys.ts` the secret itself keyed
 all of these; the Remote had no accounts in production when this changed,
 so nothing was carried over. (There was an `off-code` key, for a code a repo
 was turned off with; turning off now asks for a passkey and the repo's name,
@@ -250,7 +257,7 @@ every session ends (everyone signs in again; devices pair again), every
 custom domain's TXT record must be given anew (the Remote shows the new one
 under Inbox; until then the address lapses, and is let go after its hold),
 and invitations out and guests' tokens stop opening their boards. One purpose's key alone can be moved on by
-raising its version in `keys.ts`. The other secrets (`STRIPE_SECRET_KEY`,
+raising its version in `serve/keys.ts`. The other secrets (`STRIPE_SECRET_KEY`,
 `STRIPE_WEBHOOK_SECRET`, the providers' client secrets, `ENTER_KEY`) are
 each rotated where they are made (Stripe's dashboard rolls a webhook secret
 with both valid for a while; `deploy.ts link` for `ENTER_KEY`) and put with

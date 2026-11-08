@@ -1,4 +1,4 @@
-// Servers on the Remote (src/remote/servers.ts): groups of people who know
+// Servers on the Remote (src/remote/talk/servers.ts): groups of people who know
 // each other, whose boards are each a conversation and a TODO kept together
 // (Home's list, src/app/home/todo.ts). The one thing whose subject is people, not a
 // repo.
@@ -86,11 +86,11 @@ export const bringBack = (id: string) => call<{id: string; name: string; address
 /** Its name held for another term, by its owner. */
 /** Its owner's: held a while, to bring back. */
 export const removeServer = (id: string) => call<{until: number}>(`/v1/servers/${id}`, send('DELETE'));
-/** How long the Remote holds a server removed or left last (src/remote/names.ts HOLD), and one its maker leaves alone in it (SERVER.alone). */
+/** How long the Remote holds a server removed or left last (src/remote/people/names.ts HOLD), and one its maker leaves alone in it (SERVER.alone). */
 export const HELD = 30 * 86_400_000, HELD_ALONE = 86_400_000;
 
 /**
- * What leaving `s` and removing it come to, as the Remote does them (src/remote/servers.ts, gone and the leave):
+ * What leaving `s` and removing it come to, as the Remote does them (src/remote/talk/servers.ts, gone and the leave):
  * `people` as the Remote lists them (by when they came in), `mine` the asker's address among them. Left by the
  * last in it, it goes; left by its owner with others in it, the first of them to have come in owns it.
  * Removed, or left last, it is held HELD, or HELD_ALONE when its maker is alone in it.
@@ -117,7 +117,7 @@ export type Added = {address: string; is: 'in' | 'already' | 'asked'};
  * Someone added to a server by their name or code, though they are not one's contact yet. In
  * at once when the two have accepted each other. Otherwise they are asked in the Inbox, by a
  * message about the server, a request until they accept; they are in once they accept (the
- * Remote does it, src/remote/inbox.ts), or at once if they had accepted one already.
+ * Remote does it, src/remote/talk/inbox.ts), or at once if they had accepted one already.
  */
 export async function addByName(s: Pick<Server, 'id' | 'name'>, typed: string, people: readonly string[], ways: AddWays): Promise<Added> {
   const found = await ways.lookup(typed.trim());
@@ -125,7 +125,7 @@ export async function addByName(s: Pick<Server, 'id' | 'name'>, typed: string, p
   const address = found.address;
   if (people.includes(address)) return {address, is: 'already'};
   const tryAdd = () => ways.add(s.id, address).then(() => true, (e: unknown) => { if (e instanceof RemoteError && e.status === 403) return false; throw e; });
-  // In at once, they are told by the Remote itself (a notice in their Inbox, src/remote/servers.ts).
+  // In at once, they are told by the Remote itself (a notice in their Inbox, src/remote/talk/servers.ts).
   if (await tryAdd()) return {address, is: 'in'};
   const r = await ways.ask(address, t('You are invited to join {server}. Accept the invite in your Inbox to join.', {server: s.name}), s.id);
   // They had accepted one: writing to them accepted them back, so the two know each other now.
@@ -288,7 +288,7 @@ export const range = (id: string, member: boolean, oldest: string, newest: strin
 export const post = (id: string, body: string) => call<Post>(`/v1/boards/${id}/posts`, send('POST', {body}));
 export const takeDown = (id: string, post: string) => call<void>(`/v1/boards/${id}/posts/${post}`, send('DELETE'));
 
-// ---- repos: who sees each (src/remote/seen.ts) ----
+// ---- repos: who sees each (src/remote/repos/seen.ts) ----
 /** Only its owner, the servers it is shown in, or everyone. */
 export type Seen = 'private' | 'servers' | 'everyone';
 /** Who sees one of mine: and, seen by everyone, the name it is seen as (`as`), a server's or my own. */

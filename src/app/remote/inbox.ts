@@ -1,5 +1,5 @@
 // Inbox: typed messages between people, found by address (name@domain),
-// on the Remote (src/remote/inbox.ts). A message is about something (a change
+// on the Remote (src/remote/talk/inbox.ts). A message is about something (a change
 // to review, an issue, a run) and says it in words; it is kept on the Remote
 // until read and a while after. When both people are accepted contacts and
 // online, a WebRTC data channel opens between their devices and messages
@@ -16,9 +16,9 @@ import {every} from '../host/runs.ts';
 
 export type Kind = 'message' | 'review' | 'question' | 'run';
 /**
- * What a message is about; `server`: asking its reader into that server (src/remote/inbox.ts). A notice the Remote
+ * What a message is about; `server`: asking its reader into that server (src/remote/talk/inbox.ts). A notice the Remote
  * left (never a client's: it keeps no `notice` from one): `added`, its reader added to server `server` (called
- * `name` then) by the one the conversation is with, at once, the two knowing each other (src/remote/servers.ts).
+ * `name` then) by the one the conversation is with, at once, the two knowing each other (src/remote/talk/servers.ts).
  */
 export interface Target { repo?: string; issue?: string; change?: string; version?: number; server?: string; notice?: string; name?: string }
 export interface Thread { address: string; name: string; state: 'contact' | 'request' | 'blocked'; unread: number; last: {type: Kind; body: string; target?: Target; mine: boolean; time: number} }
@@ -32,7 +32,7 @@ export interface Me { domain: string; account: string; code: string; addresses: 
 const enc = (a: string) => encodeURIComponent(a);
 
 const KINDS: readonly Kind[] = ['message', 'review', 'question', 'run'];
-/** As the Remote holds a message to (src/remote/inbox.ts): its words, and what it may say it is about. */
+/** As the Remote holds a message to (src/remote/talk/inbox.ts): its words, and what it may say it is about. */
 const BODY = 4000;
 const TARGET_KEYS = ['repo', 'issue', 'change', 'version', 'server', 'notice', 'name'];
 

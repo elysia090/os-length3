@@ -152,7 +152,7 @@ export async function api(path: string, init: RequestInit = {}, c: Connection | 
   }
   if (r.status >= 400 && r.status !== 404 && r.status !== 409) {
     const body = await r.json().catch(() => ({})) as {message?: string; error?: string; files?: boolean};
-    // A Remote with no place for files (src/remote/bucket.ts): nothing is lost, the work waits here and is sent once it can be.
+    // A Remote with no place for files (src/remote/bytes/bucket.ts): nothing is lost, the work waits here and is sent once it can be.
     if (r.status === 503 && body.files === false) throw new RemoteError(503, t('Remote cannot accept files right now; changes stay on this device'), body);
     // The Remote says why in a short English sentence; it is shown in the person's language. What else it
     // says (the plan's rule, what is used) comes along for the place that asked.
@@ -344,7 +344,7 @@ export function passkeyOfferDone() {
 
 /**
  * `f`, a deed that would let someone in for good or shut the person out (another device let in, a passkey or a
- * provider added or taken away): the Remote asks for a sign-in just now (src/remote/auth.ts HELD), so a session's token
+ * provider added or taken away): the Remote asks for a sign-in just now (src/remote/people/auth.ts HELD), so a session's token
  * taken from a device does none of them. Asked, a passkey confirms it is them, and it is asked again; `stopped` says
  * what stays as it was when that is called off.
  */

@@ -379,7 +379,7 @@ the app.
   version that reached the Remote first, and puts this device's beside it as
   "name (<this device>).ext". In a browser, closing the tab lets go of every
   copy the Remote holds all of.
-- Remote → Plan (`src/remote/plan.ts`): the Remote decides what an account
+- Remote → Plan (`src/remote/plan/plan.ts`): the Remote decides what an account
   may do; the app, the desktop app and `root3 remote plan` only show it. Free
   keeps 3 repos and 100 MB on the Remote and one name there; three tiers are
   paid for, Go (50 GB, $7 a month), Pro (256 GB, $14) and Max (512 GB, $19),
@@ -408,7 +408,7 @@ the app.
   prompt stop REPO`, `root3 network on|off REPO`; every Prompt, the app's or a
   terminal's, records itself while it runs); then the environment in effect.
 - Server (under Remote in the rail, laid over any page like File): the one
-  purpose whose subject is people, not a repo (`src/remote/servers.ts`). A
+  purpose whose subject is people, not a repo (`src/remote/talk/servers.ts`). A
   server is people who know each other (added from someone's Inbox
   contacts); its boards are each a conversation and a TODO they keep
   together: Home's TODO box (`pages/kit/todo-list.ts`), kept on the Remote item
@@ -425,7 +425,7 @@ the app.
   and passes it on themselves; the guest picks a name, always shown as a
   guest's; guests are held to so many posts an hour, each and per board,
   and whoever invited one (or the owner) removes them with their posts.
-- Who sees a repo (`src/remote/seen.ts`): only you, the servers it is shown
+- Who sees a repo (`src/remote/repos/seen.ts`): only you, the servers it is shown
   in, or everyone, set on its card in Remote. Everyone sees it under the
   name it went public as: the server's (`trip@length3.com:hello`) when it
   went public from one, so nothing it answers names you; your own when you
@@ -438,12 +438,12 @@ program for a repo; its own tools run inside the root (`src/core/src/prompt/laun
 The Remote (`service/`): Hono with Better Auth (provider sign-in, then
 passkeys; device authorization; bearer sessions) on Drizzle; Neon in
 production, PGlite in tests and here. Its schema is the migrations in
-`src/remote/migrations`: those Drizzle generates from `src/remote/schema.ts`, and
+`src/remote/migrations`: those Drizzle generates from `src/remote/db/schema.ts`, and
 `0001` for what Drizzle cannot say (the counted room, the service's role). A step that drops what
 the running Worker still reads is a contract step, tagged `NNNN_contract_…`
 (`drizzle-kit generate --name contract_…`): a deploy runs the migrations
 before it, ships the Worker, and runs it once the new Worker answers
-(`src/remote/stages.ts`). The service connects as
+(`src/remote/db/stages.ts`). The service connects as
 `remote_worker_<when>`, a member of `remote_app`, which reads and writes rows
 and nothing else: a role the deploy makes new for each new `DATABASE_URL`
 (never one changed: Neon's owner is no superuser), dropping the ones before it
@@ -451,14 +451,14 @@ once the new Worker answers. A failure making it says its step and SQLSTATE,
 never the statement (which holds the password). What a page or a device asks
 every little while (what moved, what came, whether SSH is still on) is
 answered without the database while nothing was written, by the mark
-(`src/remote/mark.ts`, a Durable Object, once `MARK` is bound in
+(`src/remote/serve/mark.ts`, a Durable Object, once `MARK` is bound in
 `wrangler.toml`), so Neon sleeps while nobody does anything. What each part of it does, its routes and tables, and which
 of them the app and root3 need: `src/remote/README.md`.
 
 ```
-node src/remote/dev.ts DIR 8787 http://localhost:1420     # the Remote, here (no plan: everything open)
-node src/remote/dev.ts DIR 8787 http://localhost:1420 --no-bucket   # one that holds no files, as a Worker without R2
-LENGTH3_PLAN=1 node src/remote/dev.ts DIR 8787 http://localhost:1420   # with the plan, bought from a stand-in for Stripe (its test cards: 4242 4242 4242 4242 pays, 4000 0000 0000 0002 is declined, 4000 0025 0000 3155 asks for 3-D Secure)
+node src/remote/serve/dev.ts DIR 8787 http://localhost:1420     # the Remote, here (no plan: everything open)
+node src/remote/serve/dev.ts DIR 8787 http://localhost:1420 --no-bucket   # one that holds no files, as a Worker without R2
+LENGTH3_PLAN=1 node src/remote/serve/dev.ts DIR 8787 http://localhost:1420   # with the plan, bought from a stand-in for Stripe (its test cards: 4242 4242 4242 4242 pays, 4000 0000 0000 0002 is declined, 4000 0025 0000 3155 asks for 3-D Secure)
 LENGTH3_DEV_REMOTE=http://127.0.0.1:8787 VITE_LENGTH3_REMOTE= npx vite
 LENGTH3_REMOTE=http://127.0.0.1:8787 root3 login
 ```
@@ -487,7 +487,7 @@ a Remote for research, `ENTER_AS`, which is one person's): `FREE_REPOS`
 A tier is bought with Stripe when both keys and its price are given; with a
 key missing, or no price at all, billing is off and the Remote says paid
 features cannot be bought here yet. Stripe is reached over its REST API with
-fetch (`src/remote/stripe.ts`: a customer, a Checkout session for a tier's
+fetch (`src/remote/plan/stripe.ts`: a customer, a Checkout session for a tier's
 price, a portal session, what a price is; the webhook's signature checked
 with Web Crypto); tests and dev never reach it. To connect it:
 
@@ -511,7 +511,7 @@ with Web Crypto); tests and dev never reach it. To connect it:
    Branding, and Checkout's appearance): the icon `src/desktop/icons/128x128.png`,
    background `#f9f8f5` (its paper), button `#2c2a27` (its ink), rounded
    corners, Inter. Chosen in mock rounds among what Stripe lets be set; the
-   stand-in draws the same (`src/remote/devbilling.ts` LOOK), so what dev and the
+   stand-in draws the same (`src/remote/plan/devbilling.ts` LOOK), so what dev and the
    selftests show is what a person paying sees.
 
 Each event is taken once by its id (kept 30 days in `billing_event`; one
@@ -527,9 +527,9 @@ to this repository, and its Settings → Build say, once:
 |---|---|
 | Root directory | the repository's own (empty) |
 | Build command | `npm run build:cloudflare`: the web root from the release of the newest root3 `src/core/src/root/pins.rs` pins (`scripts/prompt-files.ts`, taken only at the index pinned for it), then the app |
-| Deploy command | `node src/remote/deploy.ts`: the migrations on Neon's production branch (no branch is made for a deploy; a contract step waits until the new Worker answers), the bucket, then the Worker with the secrets it lacks (the first build prints the link in its log), then the release's files the Remote serves to anyone (`src/remote/mirror.ts`): each root `src/core/src/root/pins.rs` pins and the newest desktop app `src/shared/desktop-releases.json` pins, taken from the GitHub release where the bucket lacks them, checked against those pins, and put with wrangler |
+| Deploy command | `npm run deploy:cloudflare` (`src/remote/ship/deploy.ts`): the migrations on Neon's production branch (no branch is made for a deploy; a contract step waits until the new Worker answers), the bucket, then the Worker with the secrets it lacks (the first build prints the link in its log), then the release's files the Remote serves to anyone (`src/remote/bytes/mirror.ts`): each root `src/core/src/root/pins.rs` pins and the newest desktop app `src/shared/desktop-releases.json` pins, taken from the GitHub release where the bucket lacks them, checked against those pins, and put with wrangler |
 | Variables and secrets | `NEON_PROJECT_ID`; secrets `NEON_API_KEY` (a Neon API key for the project) and `GITHUB_TOKEN` (optional, read-only: the deploy reads the release's files through GitHub's API, which limits a caller without one to 60 requests an hour; the build's Prompt is read from the public release without it) |
-| Non-production branch deploy command | `npx wrangler versions upload`: another branch's build uploads a version and never deploys (`src/remote/deploy.ts` refuses to run for a branch other than main). The version has no preview URL (`wrangler.toml`: `workers_dev = false`, `preview_urls = false`), since it would run against production's database and bucket: it is checked that it builds. A version that brings a Durable Object class production has not made yet (`[[migrations]]`, as `mark` did) is refused by Cloudflare until main's deploy has made it. Never `npx wrangler deploy`, which would replace production from any branch, without its migrations or its bucket |
+| Non-production branch deploy command | `npx wrangler versions upload`: another branch's build uploads a version and never deploys (`src/remote/ship/deploy.ts` refuses to run for a branch other than main). The version has no preview URL (`wrangler.toml`: `workers_dev = false`, `preview_urls = false`), since it would run against production's database and bucket: it is checked that it builds. A version that brings a Durable Object class production has not made yet (`[[migrations]]`, as `mark` did) is refused by Cloudflare until main's deploy has made it. Never `npx wrangler deploy`, which would replace production from any branch, without its migrations or its bucket |
 | Branch control | main deploys; other branches build previews, each with the Prompt the tree ships (`scripts/prompt-files.ts`, from the public release) |
 
 The Prompt the web serves is a released one: a newer one ships by releasing
@@ -550,8 +550,8 @@ Cloudflare (`npx wrangler login`):
 
 ```
 npm run build:cloudflare
-OWNER_URL='postgresql://neondb_owner:…' node src/remote/deploy.ts        # migrations, bucket, secrets, the Worker
-OWNER_URL='postgresql://neondb_owner:…' node src/remote/deploy.ts link   # a new link, and every session of the account ends
+OWNER_URL='postgresql://neondb_owner:…' node src/remote/ship/deploy.ts        # migrations, bucket, secrets, the Worker
+OWNER_URL='postgresql://neondb_owner:…' node src/remote/ship/deploy.ts link   # a new link, and every session of the account ends
 ```
 
 Before a deploy, the migrations and the Remote can be verified on a Neon
@@ -681,7 +681,7 @@ ends (an open PGlite keeps its process up for seconds).
 `npm run selftest` uses the web app the way a person does, in Chromium
 (`@playwright/test`, `tests/app/`). One run builds the app for a Remote on
 its own origin into `tests/app/.dist` (again only when a source is newer),
-starts a fresh Remote (`src/remote/dev.ts` with a new temporary data
+starts a fresh Remote (`src/remote/serve/dev.ts` with a new temporary data
 directory) and `vite preview` on free ports, and beside them, at the same
 time, a second pair whose Remote has the plan and Stripe's stand-in
 (`LENGTH3_PLAN=1`, for `billing.spec.ts`), runs every `tests/app/*.spec.ts`

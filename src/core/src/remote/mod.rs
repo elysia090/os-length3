@@ -1,4 +1,4 @@
-//! This device and the Remote (src/remote/app.ts), for root3 and the app alike.
+//! This device and the Remote (src/remote/serve/app.ts), for root3 and the app alike.
 //! The canonical copy is the Remote's; a repo here is a copy kept in step
 //! with it:
 //!

@@ -7,9 +7,9 @@ import {inProcessRemote, REMOTE} from '../testing/remote-fixture.ts';
 const remote = await inProcessRemote();
 const servers = await import('./servers.ts');
 const inbox = await import('./inbox.ts');
-const schema = await import('../../remote/schema.ts');
-const {HOLD} = await import('../../remote/names.ts');
-const {SERVER} = await import('../../remote/servers.ts');
+const schema = await import('../../remote/db/schema.ts');
+const {HOLD} = await import('../../remote/people/names.ts');
+const {SERVER} = await import('../../remote/talk/servers.ts');
 
 const DAY = 86_400_000;
 const as = (token: string) => remote.browserAs(token);

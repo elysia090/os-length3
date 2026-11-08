@@ -1,10 +1,10 @@
-// npm test: every test file (src/**/*.test.ts, service/*.test.ts, scripts/*.test.ts) under node:test, each
+// npm test: every test file (src/app/**/*.test.ts, src/remote/**/*.test.ts, scripts/*.test.ts) under node:test, each
 // process with the core a page runs (src/app/testing/core.ts), reported as node --test reports.
 //
 // node --test runs each file in a process of its own: a process paid for starting, loading what its file uses
 // and, for a file on a Remote, making a database (some 3 s of CPU before its first test), often more than its
 // tests then took. Here there is a process a core, and each takes the next file no other has taken, the longest
-// first, and runs it with what the process has made already (src/remote/testing-together.ts), so that they end
+// first, and runs it with what the process has made already (src/remote/tests/testing-together.ts), so that they end
 // about together; a long file whose tests are each their own (PARTS) is run in parts, several at once. The few
 // files that need a process of their own (ALONE) run beside them from the start.
 // Each process loads its modules as scripts/tests-load.ts says: their types stripped and their code compiled
@@ -12,7 +12,7 @@
 //
 // As node --test: NODE_OPTIONS=--test-shard=i/n runs every n-th file from the i-th (CI's four shards), and
 // --test-name-pattern, --test-skip-pattern, --test-only, --test-concurrency and --test-reporter are taken.
-// Files named run instead of every file (npm test -- src/remote/plan.test.ts src/app/remote/sync.test.ts).
+// Files named run instead of every file (npm test -- src/remote/plan/plan.test.ts src/app/remote/sync.test.ts).
 
 import {mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {availableParallelism, tmpdir} from 'node:os';
@@ -31,7 +31,7 @@ const HERE = process.cwd();
 const ALONE = new Set([
   // The Worker as an isolate has it: its app is made once a process, from the first env it is given, and Neon's
   // driver is pointed at this file's bridge. Another file's Worker (service.test.ts's sweep) would meet both.
-  'src/remote/worker.test.ts',
+  'src/remote/serve/worker.test.ts',
   // Transfers over sockets, timed: seconds of waiting for stalls and retries, which would hold up the files after
   // it in a shared process, and an interval of prompt/webroot-fetch.ts's own.
   'src/app/prompt/webroot-fetch.test.ts',
@@ -44,7 +44,7 @@ const ALONE = new Set([
  * kept from one test to the next), which may run in parts in several processes at once (testing-part.ts): one
  * of them, service.test.ts, was a third of all the Remote's tests, and the run waited for it alone at the end.
  */
-const PARTS = new Set(['src/remote/service.test.ts', 'src/remote/security.test.ts', 'src/remote/budget.test.ts', 'src/remote/audit.test.ts']);
+const PARTS = new Set(['src/remote/tests/service.test.ts', 'src/remote/tests/security.test.ts', 'src/remote/plan/budget.test.ts', 'src/remote/tests/audit.test.ts']);
 
 const {values, positionals} = parseArgs({allowPositionals: true, options: {
   'test-name-pattern': {type: 'string', multiple: true}, 'test-skip-pattern': {type: 'string', multiple: true},
@@ -57,7 +57,7 @@ const under = (dir: string, keep: (name: string) => boolean, deep = false): stri
 const named = positionals.map((p) => relative(OS, resolve(HERE, p)));
 // Every path from here on is from os/, as the tests expect to be run.
 process.chdir(OS);
-let files = named.length ? named : [...under('src/app', (n) => n.endsWith('.test.ts'), true), ...under('src/remote', (n) => n.endsWith('.test.ts')),
+let files = named.length ? named : [...under('src/app', (n) => n.endsWith('.test.ts'), true), ...under('src/remote', (n) => n.endsWith('.test.ts'), true),
   ...under('scripts', (n) => n.endsWith('.test.ts'))].sort();
 
 // A shard: every n-th file from the i-th, as node --test gives one.
@@ -103,7 +103,7 @@ units.sort((a, b) => unitWeight(b) - unitWeight(a));
 // it first); made for this run, gone when it ends.
 const kept = scratch('length3-tests-');
 process.on('exit', () => rmSync(kept, {recursive: true, force: true}));
-const together = pathToFileURL(join(OS, 'src/remote/testing-together.ts')).href;
+const together = pathToFileURL(join(OS, 'src/remote/tests/testing-together.ts')).href;
 const entries = Array.from({length: processes}, (_, k) => {
   const entry = join(kept, `together-${k + 1}.mjs`);
   writeFileSync(entry, `// One of the processes the test files share in npm test (scripts/tests.ts).\n` +

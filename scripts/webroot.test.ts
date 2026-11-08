@@ -13,7 +13,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {after, before, test} from 'node:test';
 import {fileURLToPath} from 'node:url';
-import {pinnedRoots} from '../src/remote/releases.ts';
+import {pinnedRoots} from '../src/remote/ship/releases.ts';
 import {makeRoot3, standIn} from './webroot-standin.ts';
 import type {Index} from './webroot-tree.ts';
 
@@ -105,9 +105,9 @@ test('one entry pins root3 for both: the root, and the index the browser reads i
 test('a Node-only build takes root3 from its release only at the pin, and refuses anything else', async () => {
   // A tree as prompt-files.ts reads it: the pins, newest 9.9.9, and the scripts; and a release that has root3's tar.
   const tree = join(work, 'repo');
-  for (const d of ['src/core/src/root', 'scripts', 'src/remote', 'src/shared', 'public', 'module/muk/runtime']) mkdirSync(join(tree, d), {recursive: true});
+  for (const d of ['src/core/src/root', 'scripts', 'src/remote/ship', 'src/shared', 'public', 'module/muk/runtime']) mkdirSync(join(tree, d), {recursive: true});
   // And what both of those check packs by, where the repository has it (module/muk).
-  for (const f of ['src/core/src/root/pins.rs', 'scripts/prompt-files.ts', 'scripts/webroot-tree.ts', 'src/remote/releases.ts', 'src/shared/desktop-releases.json',
+  for (const f of ['src/core/src/root/pins.rs', 'scripts/prompt-files.ts', 'scripts/webroot-tree.ts', 'src/remote/ship/releases.ts', 'src/shared/desktop-releases.json',
     'module/muk/runtime/table.ts']) copyFileSync(join(os, f), join(tree, f));
   assert.equal(node([join(os, 'scripts/pin-root.ts'), rootFile, out, '--rs', join(tree, 'src/core/src/root/pins.rs')]).status, 0);
 

@@ -11,8 +11,8 @@ import {cluster} from './postgres.ts';
 import {rmSync} from 'node:fs';
 import {drizzle} from 'drizzle-orm/neon-serverless';
 import {migrate} from 'drizzle-orm/neon-serverless/migrator';
-import {MIGRATIONS, migrateRemote, owner, reach} from '../../src/remote/neon.ts';
-import {firstOf} from '../../src/remote/stages.ts';
+import {MIGRATIONS, migrateRemote, owner, reach} from '../../src/remote/db/neon.ts';
+import {firstOf} from '../../src/remote/db/stages.ts';
 
 const argv = process.argv.slice(2);
 const K = argv.includes('--scale') ? Number(argv[argv.indexOf('--scale') + 1]) : 1;

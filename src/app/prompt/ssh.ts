@@ -1,6 +1,6 @@
 // SSH into a repo's Prompt, as Runtime shows it. SSH is the desktop app's:
 // a device turns it on itself (`root3 address`, or the app's switch, which runs
-// the same root3 there). What the Remote keeps (src/remote/ssh.ts) is only which
+// the same root3 there). What the Remote keeps (src/remote/repos/ssh.ts) is only which
 // of the account's devices listen and to whom, so any page sees that and can
 // turn one off; where a device is reached (its addresses, port, repos) is
 // worked out on that device and shown there alone.

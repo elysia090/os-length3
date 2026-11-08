@@ -3,7 +3,7 @@
 
 /// Where a pinned root is fetched from, in turn: the Remote this device
 /// uses; the publisher's Remote (remote::DEFAULT_URL), which each of its
-/// deploys fills with every root pinned here (src/remote/mirror.ts), when the
+/// deploys fills with every root pinned here (src/remote/bytes/mirror.ts), when the
 /// device uses another; then the release channel (`github_url`). Each is
 /// taken only at the pinned digest.
 pub fn sources(remote: &str, r: &Release) -> Vec<String> {
@@ -18,7 +18,7 @@ pub(super) fn by_digest(remote: &str, sha256: &str) -> String {
     format!("{}/v1/os/{}", remote.trim_end_matches('/'), sha256)
 }
 
-/// The Remote serves roots by digest, to anyone (src/remote/app.ts, /v1/os).
+/// The Remote serves roots by digest, to anyone (src/remote/serve/app.ts, /v1/os).
 pub fn release_url(remote: &str, r: &Release) -> String {
     by_digest(remote, r.sha256)
 }
@@ -35,7 +35,7 @@ pub fn distro(id: &str) -> Option<&'static Distro> {
 
 /// The other roots root3 trusts: Ubuntu's base and Debian's official image root, each at a URL that names that one
 /// build (Debian's at the commit of its makers' branch that holds it: the branch itself moves with each build). The
-/// deploy puts each on the Remote by its digest (src/remote/mirror.ts), where a device asks first.
+/// deploy puts each on the Remote by its digest (src/remote/bytes/mirror.ts), where a device asks first.
 pub const DISTROS: &[Distro] = &[Distro {
     id: "ubuntu",
     name: "Ubuntu",

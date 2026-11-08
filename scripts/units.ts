@@ -35,7 +35,7 @@ export const UNITS: Unit[] = [
     takes: ['sods']},
   {name: 'muk', says: 'what is at rest: layers named by their digest, a layer written over them, names for digests; each byte fetched when first touched',
     holds: ['root', 'module/muk/runtime',
-      'src/remote/bucket.ts', 'src/remote/files.ts', 'src/remote/trees.ts', 'src/remote/mirror.ts',
+      'src/remote/bytes',
       'src/core/src/fs', 'src/core/src/root', 'src/core/src/history', 'src/core/src/repos'],
     takes: ['ricebox']},
   {name: 'funk', says: 'what is on its way: links out of a box and between boxes (HTTP, TCP, DNS, WebSocket, SSH)',
@@ -70,9 +70,9 @@ const isTest = (rel: string) => /\.test\.(ts|rs)$|(^|\/)tests?\/|\/testing[^/]*\
  */
 export const OWED: [string, string, string][] = [
   // The Remote's bytes ride on its ledger's plumbing (request.ts, schema.ts) and budget (6, 7).
-  ['muk', 'shipto', 'src/remote/files.ts'],
-  ['muk', 'shipto', 'src/remote/mirror.ts'],
-  ['muk', 'shipto', 'src/remote/trees.ts'],
+  ['muk', 'shipto', 'src/remote/bytes/files.ts'],
+  ['muk', 'shipto', 'src/remote/bytes/mirror.ts'],
+  ['muk', 'shipto', 'src/remote/bytes/trees.ts'],
 ];
 
 /** The unit of a file (a path from the root): the unit holding the longest path that holds it, or null. */

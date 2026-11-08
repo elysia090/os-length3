@@ -45,7 +45,7 @@ export function sshSection(): HTMLElement {
   };
   // Drawn again now and then while it is on screen, not while the page or app is hidden, slower while nobody is at it,
   // and not at all once nobody has been for ten minutes (when each device was last heard is the database's to say,
-  // not the mark's: src/remote/mark.ts), until someone is back, when it is drawn at once.
+  // not the mark's: src/remote/serve/mark.ts), until someone is back, when it is drawn at once.
   void paint().then(() => every(15_000, paint, {alive: () => section.isConnected, restsWhenAway: true}));
   return section;
 }
