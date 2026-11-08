@@ -191,7 +191,7 @@ impl Repos {
         Ok(Summary { name: name.to_string(), files: m.files, bytes: m.bytes, modified: m.modified, kept })
     }
 
-    /// Create a repo from a template (shared/templates.json). Inbox and TODO
+    /// Create a repo from a template (src/shared/templates.json). Inbox and TODO
     /// are the OS's, not the repo's, so templates hold only the repo's own files.
     /// The repo is made aside, under a name no repo has (a dot first), and moved into place whole, never
     /// over one there (bug: it was made in place, so a failure or crash part way left half a repo that

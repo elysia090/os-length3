@@ -100,7 +100,7 @@ test('mirror: a file its makers publish is taken from their URL, without the tok
   await assert.rejects(mirror([{...p, key: 'os/other', url: 'https://makers.test/gone'}], fakeBucket().store, {api: 'https://api.test', repo: 'me/os', fetch: f}, quiet), /gone: 404/);
 });
 
-test('the pins: every root core/src/root/pins.rs pins, newest first, and the desktop app of a version, by its file', () => {
+test('the pins: every root src/core/src/root/pins.rs pins, newest first, and the desktop app of a version, by its file', () => {
   // One at least: main pins the newest release alone (scripts/pin-root.ts), which a release makes as it is made.
   const roots = pinnedRoots(readFileSync(new URL('../core/src/root/pins.rs', import.meta.url), 'utf8'));
   assert.ok(roots.length >= 1);

@@ -13,8 +13,8 @@
 #   SHA256SUMS, manifest                           the digests; what the root was made from
 #
 # and OUT/../notes.md, the release's notes. Before the web build and the app are made, the root is pinned
-# in core/src/root/pins.rs (pin-root.ts), so what ships trusts this release's root; once the app is made, it is
-# pinned in shared/desktop-releases.json (pin-desktop.ts). Both changes stay in the tree, to be committed as
+# in src/core/src/root/pins.rs (pin-root.ts), so what ships trusts this release's root; once the app is made, it is
+# pinned in src/shared/desktop-releases.json (pin-desktop.ts). Both changes stay in the tree, to be committed as
 # one: release.yml proposes them to main. The release itself is made by publish-release.ts (or
 # .github/workflows/release.yml, which runs this script).
 #

@@ -5,7 +5,7 @@
 //          with the provider again.
 //   app    the browser does the signing in: the app shows a code, the browser
 //          approves it on the Remote's page, and the app gets a session of
-//          its own (core/src/remote/). l3 does the same.
+//          its own (src/core/src/remote/). l3 does the same.
 //
 // Each device is a session that can be seen and ended from any other. What
 // proves it is held where no page can read it: in a browser, the cookie the
@@ -26,7 +26,7 @@ import {DEFAULT_REMOTE} from '../host/policy.ts';
 export {DEFAULT_REMOTE};
 /** Its name before (0.4.x signed in by it): the same Worker answers it, and a device that kept it goes on by the one name. */
 const FORMER_REMOTE = 'https://remote.length3.com';
-/** A Remote's URL as it is used now (core/src/remote/connection.rs current_url). */
+/** A Remote's URL as it is used now (src/core/src/remote/connection.rs current_url). */
 export const currentURL = (url: string): string => {
   const u = url.replace(/\/$/, '');
   return u.toLowerCase() === FORMER_REMOTE ? DEFAULT_REMOTE : u;
@@ -152,7 +152,7 @@ export async function api(path: string, init: RequestInit = {}, c: Connection | 
   }
   if (r.status >= 400 && r.status !== 404 && r.status !== 409) {
     const body = await r.json().catch(() => ({})) as {message?: string; error?: string; files?: boolean};
-    // A Remote with no place for files (remote/bucket.ts): nothing is lost, the work waits here and is sent once it can be.
+    // A Remote with no place for files (src/remote/bucket.ts): nothing is lost, the work waits here and is sent once it can be.
     if (r.status === 503 && body.files === false) throw new RemoteError(503, t('Remote cannot accept files right now; changes stay on this device'), body);
     // The Remote says why in a short English sentence; it is shown in the person's language. What else it
     // says (the plan's rule, what is used) comes along for the place that asked.
@@ -344,7 +344,7 @@ export function passkeyOfferDone() {
 
 /**
  * `f`, a deed that would let someone in for good or shut the person out (another device let in, a passkey or a
- * provider added or taken away): the Remote asks for a sign-in just now (remote/auth.ts HELD), so a session's token
+ * provider added or taken away): the Remote asks for a sign-in just now (src/remote/auth.ts HELD), so a session's token
  * taken from a device does none of them. Asked, a passkey confirms it is them, and it is asked again; `stopped` says
  * what stays as it was when that is called off.
  */

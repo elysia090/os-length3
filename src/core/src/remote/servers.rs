@@ -1,4 +1,4 @@
-//! Servers from the device (remote/servers.ts): the one thing whose subject
+//! Servers from the device (src/remote/servers.ts): the one thing whose subject
 //! is people, not a repo. A server is a group of people who know each other;
 //! each of its boards is a conversation and a TODO they keep together. All of
 //! it is kept on the Remote; any board can be taken home here as one text

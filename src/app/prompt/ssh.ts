@@ -1,6 +1,6 @@
 // SSH into a repo's Prompt, as Runtime shows it. SSH is the desktop app's:
 // a device turns it on itself (`l3 address`, or the app's switch, which runs
-// the same l3 there). What the Remote keeps (remote/ssh.ts) is only which
+// the same l3 there). What the Remote keeps (src/remote/ssh.ts) is only which
 // of the account's devices listen and to whom, so any page sees that and can
 // turn one off; where a device is reached (its addresses, port, repos) is
 // worked out on that device and shown there alone.
@@ -39,7 +39,7 @@ export const lan = (h: Pick<Here, 'bound' | 'interfaces'>) => (h.interfaces?.len
   ? h.interfaces.map((i) => `${i.interface} ${i.addr}`)
   : h.bound.filter((a) => a !== '127.0.0.1' && a !== '::1'));
 
-/** A device asks every 30 s or so whether it still listens (cli/src/ssh.rs BEAT); one not heard from for three of those is said to be quiet. */
+/** A device asks every 30 s or so whether it still listens (src/cli/src/ssh.rs BEAT); one not heard from for three of those is said to be quiet. */
 export const QUIET = 100_000;
 
 /** Whether a device has not been heard from lately (its listener may have been killed). */

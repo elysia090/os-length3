@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {remote} from './harness.ts';
 
-// l3 against a Remote that holds no files (remote/dev.ts with LENGTH3_NO_BUCKET=1, as a
+// l3 against a Remote that holds no files (src/remote/dev.ts with LENGTH3_NO_BUCKET=1, as a
 // Worker without R2): sign-in and Home's settings are the Remote's as ever;
 // a repo's files stay on the device, l3 says why, and nothing is taken as
 // agreed, so they go once the Remote can hold them.

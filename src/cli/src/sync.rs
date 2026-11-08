@@ -5,7 +5,7 @@
 //! Which differ is seen here, from the digests kept, so a repo in step costs
 //! no request. Home's settings kept on the Remote go the same way (the
 //! command says which it reads: spec::Command::home), agreed as the app
-//! agrees them (core/src/home/). Offline, changes wait here and l3 says so once.
+//! agrees them (src/core/src/home/). Offline, changes wait here and l3 says so once.
 
 use crate::args::Call;
 use crate::cmd::Ctx;

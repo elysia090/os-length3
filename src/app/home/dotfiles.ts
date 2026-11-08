@@ -12,7 +12,7 @@ import {getState, reloadState} from './state.ts';
 // (another device, or anyone able to write to the Remote as the person) runs
 // nowhere here until it is taken here: a Prompt starts with those this device
 // took (`trusted`, never sent), and one written here is taken at once. The
-// core keeps the rule (core/src/home/dotfiles.rs dotfiles_in_effect); this reads it.
+// core keeps the rule (src/core/src/home/dotfiles.rs dotfiles_in_effect); this reads it.
 
 /** A name that may be written into /root: a dot, then letters, digits and . _ -. */
 export const validName = (name: string) => /^\.[A-Za-z0-9._-]{1,63}$/.test(name) && !name.includes('..');

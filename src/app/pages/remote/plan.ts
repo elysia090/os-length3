@@ -97,7 +97,7 @@ const planTiers = (v: PlanView, press: (tier: PaidTier, b: HTMLButtonElement, er
  * the tiers, what is bought, with Not now and Continue to payment. Upgrade and Downgrade go to Stripe's portal at
  * the step that changes the tier, where Stripe says what it costs now and asks. Back from Stripe, how it went is
  * said once, above the plan (stripe.ts). What went wrong is said where it was pressed. The Remote decides all of
- * it (remote/plan.ts); this shows it. `offered` says whether this Remote has a plan at all.
+ * it (src/remote/plan.ts); this shows it. `offered` says whether this Remote has a plan at all.
  */
 export function planSection(offered: (on: boolean) => void): {el: HTMLElement; paint(): Promise<void>} {
   const el = h('div', {class: 'plan-part'});

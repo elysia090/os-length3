@@ -69,14 +69,6 @@ const isTest = (rel: string) => /\.test\.ts$|(^|\/)tests?\/|\/testing[^/]*\.ts$|
  * Units: 2 sods out, 3 ricebox, 4 otter's hooks, 6 muk, 7 shipto, 8 funk). [from, to, file].
  */
 export const OWED: [string, string, string][] = [
-  // A translation kept is read in its own format (L3T1, L3M1) where it is kept: the format is sods', the keeping muk's (2).
-  ['muk', 'sods', 'module/muk/runtime/keeper.ts'],
-  // A program translated ahead is checked against its pack's table by sods itself, not handed checked bytes (2).
-  ['sods', 'muk', 'module/sods/runtime/ahead.ts'],
-  // The box mounts the root's packs, keeps the repo in step and reads kept translations itself, where muk should be
-  // handed to it, a loader of the box's own kind (6).
-  ['ricebox', 'muk', 'module/ricebox/runtime/process.ts'],
-  ['ricebox', 'muk', 'module/ricebox/runtime/worker.ts'],
   // The Remote's bytes ride on its ledger's plumbing (request.ts, schema.ts) and budget (6, 7).
   ['muk', 'shipto', 'src/remote/files.ts'],
   ['muk', 'shipto', 'src/remote/mirror.ts'],

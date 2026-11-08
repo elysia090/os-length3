@@ -124,7 +124,7 @@ test('another account\'s servers and boards answer as if they were not there', a
   assert.equal(((await s.call('GET', `/v1/servers/${sid}/people`, {token: a})).json as unknown[]).length, 1);
 });
 
-// SSH is per device now (remote/ssh.ts and its tests); a name carries no SSH of its own.
+// SSH is per device now (src/remote/ssh.ts and its tests); a name carries no SSH of its own.
 test('another account\'s addresses: not let go by anyone else', async () => {
   const a = await s.person('Addressed'), b = await s.person('Other');
   const handle = `a${process.pid}${Date.now().toString(36)}`.slice(0, 20);

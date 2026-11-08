@@ -1,4 +1,4 @@
-//! Repo templates, defined once in `shared/templates.json` and read by both
+//! Repo templates, defined once in `src/shared/templates.json` and read by both
 //! the app and l3. A template holds only the repo's own files; Inbox and TODO
 //! belong to the OS, not to a repo.
 
@@ -16,7 +16,7 @@ pub struct Template {
 const SOURCE: &str = include_str!("../../../shared/templates.json");
 
 pub fn all() -> Vec<Template> {
-    serde_json::from_str(SOURCE).expect("shared/templates.json is valid")
+    serde_json::from_str(SOURCE).expect("src/shared/templates.json is valid")
 }
 
 /// `id`'s template; "" is none at all: a repo whose files all come from elsewhere (the Remote, a Prompt).

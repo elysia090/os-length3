@@ -69,8 +69,8 @@ pub type Page = fn(head: &str, body: &[u8]) -> (u32, Vec<u8>);
 #[cfg(target_os = "wasi")]
 static PAGE: std::sync::OnceLock<Page> = std::sync::OnceLock::new();
 
-/// The page's way of sending, given once by core/web as the core starts (its `length3.http` import, app/core/abi.ts):
-/// the call out of the module is core/web's, so this crate holds no unsafe code for it.
+/// The page's way of sending, given once by src/core/web as the core starts (its `length3.http` import, src/app/core/abi.ts):
+/// the call out of the module is src/core/web's, so this crate holds no unsafe code for it.
 #[cfg(target_os = "wasi")]
 pub fn through_page(page: Page) {
     let _ = PAGE.set(page);

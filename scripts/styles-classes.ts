@@ -12,8 +12,8 @@
 //
 // What cannot be followed (a value from a call, from data) may be any word written in a string anywhere in the
 // sources: that is the one thing taken on trust, that a class is never put together from parts none of which is a
-// word written whole (from what a person typed). The tests and app/testing/ are not the app; the Japanese of
-// app/i18n/ and the English given to t() are words said, not classes, unless a class is ever made from t().
+// word written whole (from what a person typed). The tests and src/app/testing/ are not the app; the Japanese of
+// src/app/i18n/ and the English given to t() are words said, not classes, unless a class is ever made from t().
 
 import {existsSync, readdirSync, readFileSync} from 'node:fs';
 import {dirname, join, relative, resolve} from 'node:path';
@@ -60,7 +60,7 @@ interface Index {
 interface Ctx { index: Index; memo: Map<string, Value>; busy: Set<string> }
 type Fn = ESTree.Function | ESTree.ArrowFunctionExpression;
 
-/** The sources of the app: src/'s modules (not its tests, app/testing/ or app/i18n/), and public/'s scripts. */
+/** The sources of the app: src/'s modules (not its tests, src/app/testing/ or src/app/i18n/), and public/'s scripts. */
 export function appSources(os: string): string[] {
   const out: string[] = [];
   const walk = (dir: string) => {

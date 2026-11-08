@@ -1,5 +1,5 @@
 // For tests: a browser on one Remote, all in this process. Its core is the one a page runs (testing/node-core.ts),
-// and every fetch, the core's too, goes to the service itself (remote/testing.ts), so the app's own sync
+// and every fetch, the core's too, goes to the service itself (src/remote/testing.ts), so the app's own sync
 // runs as it does in a page. Not
 // part of the app; only the tests import it.
 //
@@ -21,8 +21,8 @@ const URL_ = 'http://remote.test', APP = 'http://app.test';
 const enc = new TextEncoder();
 
 /**
- * `o`: the Remote's plan and how it is bought (remote/plan.ts), none as before: everything open;
- * `bucket: false`: a Remote that holds no files (remote/bucket.ts), as a Worker without R2 is.
+ * `o`: the Remote's plan and how it is bought (src/remote/plan.ts), none as before: everything open;
+ * `bucket: false`: a Remote that holds no files (src/remote/bucket.ts), as a Worker without R2 is.
  */
 export async function browserOnRemote(o: {plan?: PlanConfig; billing?: Billing; bucket?: boolean} = {}) {
   const shelf = new Map<string, string>();
@@ -49,7 +49,7 @@ export async function browserOnRemote(o: {plan?: PlanConfig; billing?: Billing; 
     return r;
   }});
 
-  // The core this browser runs, the very one (core/web), over files of its own; it is the device named in
+  // The core this browser runs, the very one (src/core/web), over files of its own; it is the device named in
   // a file both sides changed.
   const {useCore} = await import('../host/host.ts');
   useCore(nodeCore(buildCoreWasm({quiet: true}), {LENGTH3_HOME: '/data', LENGTH3_REMOTE: URL_, LENGTH3_DEVICE: 'Chrome Linux'}));

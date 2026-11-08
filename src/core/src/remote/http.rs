@@ -120,16 +120,16 @@ pub(super) fn refused(code: u16, r: impl Read) -> String {
     let said = v["error"].as_str().or(v["message"].as_str()).unwrap_or_default().to_string();
     let message = match (code, said.as_str()) {
         (401, _) => return unknown(),
-        // A Remote with no place for files (remote/bucket.ts): nothing was agreed, so what is here stays and is sent later.
+        // A Remote with no place for files (src/remote/bucket.ts): nothing was agreed, so what is here stays and is sent later.
         (503, _) if v["files"] == serde_json::Value::Bool(false) => crate::tr!("Remote cannot accept files right now; changes stay on this device", "Remote に現在保存できません。作業内容はローカルデバイスに保持されます"),
         (429, _) => crate::tr!("The Remote is asked too often just now; try again in a minute", "いま Remote への問い合わせが多すぎます。少し待ってからどうぞ"),
-        // Discarded for good (remote/app.ts `gone`): nothing brings it back, and saying "turn it on" sent
+        // Discarded for good (src/remote/app.ts `gone`): nothing brings it back, and saying "turn it on" sent
         // people to a command that could only fail.
         (410, _) if !v["gone"].is_null() => crate::tr!("This repo was discarded on the Remote, and a copy that was in step with it does not bring it back; what changed here since stays on this device (to keep it on the Remote, make a new repo and move it there)",
             "この repo は Remote で破棄されました。同期していた写しからは戻りません。そのあとここで変えたものはこの端末に残ります（Remote に置くなら、新しい repo を作って移してください）"),
         // Turned off: the Remote keeps it for a while, answering only that.
         (410, _) => crate::tr!("It is turned off on the Remote (l3 remote on brings it back)", "Remote でオフになっています（l3 remote on で戻せます）"),
-        // The plan's (remote/plan.ts): what is paid, and what happens to the work (it stays here).
+        // The plan's (src/remote/plan.ts): what is paid, and what happens to the work (it stays here).
         (402, _) => match v["rule"].as_str().unwrap_or_default() {
             "repos" => crate::tr!("The free plan keeps no more repos on the Remote: this one stays on this device and waits (l3 remote plan)", "無料プランでは、これ以上の repo を Remote に置けません。この repo はこの端末に残り、待ちます（l3 remote plan）"),
             "bytes" => crate::tr!("The free plan keeps no more on the Remote: the change stays on this device and waits (l3 remote plan)", "無料プランでは、これ以上を Remote に置けません。変更はこの端末に残り、待ちます（l3 remote plan）"),
@@ -153,7 +153,7 @@ pub(crate) fn refused_in(code: u16, v: &serde_json::Value) -> String {
 }
 
 /// The most of one answer read as JSON. The largest a Remote gives is a log: 50 commits with a tree each
-/// (a tree is at most 8 MiB, remote/app.ts LIMIT.tree); what goes past this is not an answer but a stream
+/// (a tree is at most 8 MiB, src/remote/app.ts LIMIT.tree); what goes past this is not an answer but a stream
 /// that would be held in memory until there is none left.
 const ANSWER_LIMIT: u64 = 256 << 20;
 /// The most of a refusal read: its words, a few fields.

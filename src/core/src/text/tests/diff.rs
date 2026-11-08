@@ -11,7 +11,7 @@ fn a_change_in_the_middle_is_one_line_each_way() {
     assert_eq!(counts(&ops("x\n", "")), (0, 1));
 }
 
-/// The table filled as app/repos/linediff.ts fills it, line against line: what `ops` must give, number for number.
+/// The table filled as src/app/repos/linediff.ts fills it, line against line: what `ops` must give, number for number.
 fn as_the_page_does<'a>(before: &'a str, after: &'a str) -> Vec<(Kind, &'a str)> {
     let (a, b) = (split(before), split(after));
     let mut head = 0;

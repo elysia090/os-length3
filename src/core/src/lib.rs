@@ -6,7 +6,7 @@
 //! its arguments made just before it: the Prompt's fork, unshare, signals and exec (prompt/launch.rs) and its seccomp
 //! filter (prompt/seccomp.rs). The host's other calls (mounts, namespaces, a signal, a sync, its name, a filesystem's
 //! room, the routes and interfaces a network is reached by) go through rustix's and nix's safe interfaces; the
-//! browser's core asks the page through core/web, which hands device/net.rs the call. A layer with none says
+//! browser's core asks the page through src/core/web, which hands device/net.rs the call. A layer with none says
 //! `#![forbid(unsafe_code)]` once, for all its files (fs/), and so does every module without it.
 
 // The layers, each above the ones before it: a module uses only what is in its own layer or one listed before

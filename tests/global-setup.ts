@@ -3,7 +3,7 @@
 //
 //   1. the app is built for a Remote on its own origin (VITE_LENGTH3_REMOTE=''),
 //      into tests/.dist, unless that build is newer than every source;
-//   2. a fresh Remote (remote/dev.ts) starts on a free port, its data in a
+//   2. a fresh Remote (src/remote/dev.ts) starts on a free port, its data in a
 //      new temporary directory: PGlite, blobs, mail.log, nothing kept (off
 //      CI, its database a copy of an empty one made once, in tests/.pg);
 //   3. `vite preview` serves the build on another free port and passes /api
@@ -65,7 +65,7 @@ function newest(path: string): number {
   return n;
 }
 
-// The core the browser runs (core/web, built by vite.config.ts) is made from core/src.
+// The core the browser runs (src/core/web, built by vite.config.ts) is made from src/core/src.
 const SOURCES = ['src/app', 'src/shared', 'public', 'index.html', 'vite.config.ts', 'package-lock.json', 'src/core/src', 'src/core/web/src', 'scripts/core-wasm.ts', 'module/sods/runtime', 'module/ricebox/runtime', 'module/muk/runtime'];
 const STAMP = join(OUT, '.built');
 

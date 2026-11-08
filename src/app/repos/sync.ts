@@ -1,5 +1,5 @@
-// Each repo here kept in step with its draft on the Remote (remote/app.ts), a diff at a time: the core does it
-// (core/src/remote), the app's or the same built for the web, so a browser and the app are one kind of device to the
+// Each repo here kept in step with its draft on the Remote (src/remote/app.ts), a diff at a time: the core does it
+// (src/core/src/remote), the app's or the same built for the web, so a browser and the app are one kind of device to the
 // Remote. What a repo's copy is told of it goes through the store (repos.ts), as any change to a repo does; Home's
 // settings are agreed with the Remote in remote/settings.ts.
 

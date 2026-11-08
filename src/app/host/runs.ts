@@ -60,7 +60,7 @@ interface EveryOptions {
   /**
    * Paced, and not taken at all once nobody has been here for AWAY, until someone comes back (then at once): a
    * look whose answer only someone looking needs, and that the Remote's mark cannot answer without its database
-   * (remote/mark.ts), so a page left open on a desk does not wake the database every ten minutes for nobody.
+   * (src/remote/mark.ts), so a page left open on a desk does not wake the database every ten minutes for nobody.
    */
   restsWhenAway?: boolean;
 }

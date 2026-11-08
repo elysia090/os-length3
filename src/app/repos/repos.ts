@@ -1,4 +1,4 @@
-// Repos the OS manages: directories under its data directory, kept by the core (core/src/repos/store.rs), the
+// Repos the OS manages: directories under its data directory, kept by the core (src/core/src/repos/store.rs), the
 // app's own or the same built for the web, over the files this browser keeps (core/client.ts). Either way
 // a repo is the same thing, read and written by the same code.
 
@@ -11,7 +11,7 @@ export interface RepoSummary {
   files: number;
   bytes: number;
   modified: number;
-  /** As the core last counted it (core/src/repos/measure.rs), so possibly older than now: `list(true)` counts it now. */
+  /** As the core last counted it (src/core/src/repos/measure.rs), so possibly older than now: `list(true)` counts it now. */
   kept: boolean;
 }
 
@@ -30,7 +30,7 @@ export interface Contents {
 export type Template = string;
 
 /**
- * The most of a file Forge reads to edit and saves back (core/src/api.rs READ_LIMIT): one larger is read only in
+ * The most of a file Forge reads to edit and saves back (src/core/src/api.rs READ_LIMIT): one larger is read only in
  * part, so a text over it written in Forge is not saved as it is (editor.ts says what can be done instead).
  */
 export const EDIT_LIMIT = 256 * 1024;
@@ -133,7 +133,7 @@ export function base64(bytes: Uint8Array): string {
   return btoa(s);
 }
 
-/** Files of a new repo, from the same shared/templates.json as the native
+/** Files of a new repo, from the same src/shared/templates.json as the native
  * side and l3. Inbox and TODO belong to the OS, so no template carries them.
  * Directories map to null. */
 export function templateFiles(name: string, template: Template): Map<string, string | null> {

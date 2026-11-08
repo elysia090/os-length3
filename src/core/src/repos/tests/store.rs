@@ -269,7 +269,7 @@ fn reads_are_bounded_and_binary_is_not_text() {
 }
 
 mod shared_cases {
-    //! The cases in shared/cases.json, which the app's tests read too.
+    //! The cases in src/shared/cases.json, which the app's tests read too.
     use crate::{repos::issues, text::title};
     use serde_json::Value;
 

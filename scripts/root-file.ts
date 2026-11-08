@@ -1,4 +1,4 @@
-// A release root this tree pins (core/src/root/pins.rs RELEASES): VERSION's, or the
+// A release root this tree pins (src/core/src/root/pins.rs RELEASES): VERSION's, or the
 // newest pinned, as a file: from DIR when it is there already, else from the
 // GitHub release that published it, and kept only at the pinned digest and size.
 // Prints its path. For building the web root (scripts/webroot.sh) and checking

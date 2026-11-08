@@ -1,4 +1,4 @@
-// What came in that has not been seen (remote/news.ts): messages not read
+// What came in that has not been seen (src/remote/news.ts): messages not read
 // in the Inbox, and the boards with posts by others past what was on screen.
 // The rail marks Inbox and Server by it (main.ts); Server marks its chips and
 // boards. Looked for every little while, when the window comes back, and at

@@ -1,5 +1,5 @@
 //! The one way a page asks the core: a command's name and its arguments as JSON, its answer as JSON.
-//! The app's window asks it through Tauri (desktop/src/main.rs), a browser through the same core built
+//! The app's window asks it through Tauri (src/desktop/src/main.rs), a browser through the same core built
 //! for the web (web/), and l3 calls the modules themselves: what a person can do is done by this code alone,
 //! whichever of the three they are in front of. What only a host can do (open a page in the browser, start a
 //! Prompt on the root, SSH) is the host's, around this.
@@ -77,7 +77,7 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         "dotfiles_in_effect" => to(home::dotfiles_in_effect().into_iter().collect::<std::collections::BTreeMap<_, _>>()),
         // The Agent's key (device/agent_key.rs), kept on this device only: whether there is one, as it may be shown; kept (with
         // the model it opens) or taken away (`key` null); and, whole, for the page that asks the model with it.
-        // A key a passkey sealed (a browser's: app/account/seal.ts) is said as sealed; the page opens it, once a session.
+        // A key a passkey sealed (a browser's: src/app/account/seal.ts) is said as sealed; the page opens it, once a session.
         "agent_key" => to(agent_key::held().map(|h| match h {
             agent_key::Held::Given(k) => json!({"shown": agent_key::shown(&k.key), "model": k.model}),
             agent_key::Held::Sealed(s) => json!({"shown": s.shown, "model": s.model, "sealed": true}),

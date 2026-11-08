@@ -1,4 +1,4 @@
-// For tests: the core a browser runs (core/web), in a worker thread of this process over files in memory,
+// For tests: the core a browser runs (src/core/web), in a worker thread of this process over files in memory,
 // as core/worker.ts runs it in a page. Its requests go to this thread's fetch (a test's own Remote, often
 // in this process too): the core waits for each, as it waits for a page's XHR. Not part of the app.
 

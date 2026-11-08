@@ -54,7 +54,7 @@ fn find<'v>(by: &HashMap<Id<'_>, &'v Value>, x: &Value) -> Option<&'v Value> {
     by.get(&id_of(x)?).copied()
 }
 
-/// `item` with its first line written again as `line` reads (app/home/todo.ts `edit`): the same item,
+/// `item` with its first line written again as `line` reads (src/app/home/todo.ts `edit`): the same item,
 /// its id, whether it is done and when it was made kept. Its detail is the lines after the first
 /// and `detail` when either is given; otherwise it stays. None when the first line is empty.
 pub fn todo_edited(item: &Todo, line: &str, detail: Option<&str>) -> Option<Todo> {
@@ -78,7 +78,7 @@ pub fn todo_from(line: &str, detail: &str, now: u64) -> Option<Todo> {
     Some(Todo { id, kind, title: title.trim().into(), detail, done: false, repo: None, created: now })
 }
 
-/// How long an item's first line and its detail may be, in UTF-16 units as the app counts them (app/home/todo.ts).
+/// How long an item's first line and its detail may be, in UTF-16 units as the app counts them (src/app/home/todo.ts).
 pub const TODO_LIMITS: [(&str, usize); 2] = [("title", 200), ("detail", 4000)];
 
 pub fn save_todos(list: &[Todo]) -> Result<()> {

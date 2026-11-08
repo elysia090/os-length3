@@ -1,4 +1,4 @@
-// The account's plan, as the Remote says it (remote/plan.ts): the Remote
+// The account's plan, as the Remote says it (src/remote/plan.ts): the Remote
 // decides what an account may do, and this only shows it and asks. The Plan
 // part of Remote's page is drawn from planView(): the tier the account is on,
 // its use against what that tier keeps, and free and the three paid tiers side

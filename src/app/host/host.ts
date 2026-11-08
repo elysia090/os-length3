@@ -19,13 +19,13 @@ interface Capacity {
 declare const __LENGTH3_HOST__: 'native' | 'web' | undefined;
 export const isNative: boolean = typeof __LENGTH3_HOST__ === 'string' ? __LENGTH3_HOST__ === 'native' : '__TAURI_INTERNALS__' in globalThis;
 
-/** How a figure is known (core/src/storage/). */
+/** How a figure is known (src/core/src/storage/). */
 export type Certainty = 'Verified' | 'Estimated' | 'Unknown';
 /** What can be done with a thing this OS holds: it can go, it can go once sent, or it stays (and why). */
 export type Room = 'Free' | 'SyncFree' | 'Keep';
 /** One thing this OS holds on the device: "repo:<name>", "root:<sha>", "path:<path>" or "home". */
 export interface Item { id: string; what: string; detail: string; allocated: number; room: Room; why: string }
-/** What this OS holds here; `kept`: some figure as last measured, so possibly older than now (core/src/storage). */
+/** What this OS holds here; `kept`: some figure as last measured, so possibly older than now (src/core/src/storage). */
 export interface Space { host_total: number; host_free: number; host: Certainty; allocated: number; freeable: number; items: Item[]; kept: boolean }
 export interface Freed {
   freed: number; freed_certainty: Certainty; removed: string[]; kept: [string, string][];
@@ -39,7 +39,7 @@ let asked: Ask = isNative ? (name, args) => native<Answer>('core', {name, args})
 /** Ask another core (tests run it in their own process). */
 export const useCore = (a: Ask) => { asked = a; };
 
-/** A command of the core's (core/src/api.rs), by name: the one code a repo, its history and the Remote
+/** A command of the core's (src/core/src/api.rs), by name: the one code a repo, its history and the Remote
  *  are kept by, whichever host runs it (the app's own, or the same built for the web in a worker). */
 export async function core<T>(name: string, args: Record<string, unknown> = {}): Promise<T> {
   const a = await asked(name, args);
@@ -79,7 +79,7 @@ export async function persisted(): Promise<boolean | null> {
   try { return await navigator.storage?.persisted?.() ?? null; } catch { return null; }
 }
 
-// ---- the distribution's root on this machine (app only; core/src/root/, prompt/launch.rs) ----
+// ---- the distribution's root on this machine (app only; src/core/src/root/, prompt/launch.rs) ----
 
 interface Installed { name: string; version: string; sha256: string; files: number; bytes: number; distro?: string }
 export interface RootStatus {

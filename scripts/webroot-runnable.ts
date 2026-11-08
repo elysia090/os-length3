@@ -43,12 +43,13 @@ const ENV = ['HOME=/root', 'PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', 
 
 
 /**
- * Translations kept in `dir` as a browser keeps them (muk/runtime/keeper.ts: 'L3T1' and 'L3M1', each sealed with
+ * Translations kept in `dir` as a browser keeps them (sods/runtime/kept.ts: 'L3T1' and 'L3M1', each sealed with
  * its SHA-256), for a kernel's keeper: {kept, save(kernel)}, save writing what the kernel translated since.
  */
 async function keptIn(dir: string) {
   const {mkdirSync, readdirSync, renameSync, rmSync} = await import('node:fs');
   const {createHash} = await import('node:crypto');
+  const {packMain, packMore} = await import('../module/sods/runtime/kept.ts');
   mkdirSync(dir, {recursive: true});
   const url = (name: string) => new URL(name, `file://${dir}/`).href;
   // keeper.ts reads through the Cache Storage API (its match alone): here, the files.
@@ -70,23 +71,11 @@ async function keptIn(dir: string) {
       const im = e.image;
       if (!im.origin || e.kept) continue;
       if (im.wasm) {
-        const segs = im.segments ?? [];
-        const head = Buffer.alloc(8);
-        head.writeUInt32BE(0x4c335431, 0); head.writeUInt32BE(im.segments ? segs.length : 0xffffffff, 4);
-        const parts = [head];
-        for (const x of segs) { const h = Buffer.alloc(8); h.writeUInt32BE(x.offset, 0); h.writeUInt32BE(x.bytes.length, 4); parts.push(h, Buffer.from(x.bytes)); }
-        const len = Buffer.alloc(4); len.writeUInt32BE(im.wasm.length, 0);
-        put(`${im.origin}.wasm`, Buffer.concat([...parts, len, Buffer.from(im.wasm)]));
+        put(`${im.origin}.wasm`, Buffer.concat(packMain(im.wasm, im.segments ?? null)));
         // What was kept of code reached later went with the translation it was made from.
         if (!im.extras.length) rmSync(`${dir}/${im.origin}.more`, {force: true});
       }
-      if (im.extras.length > (im.wasm ? 0 : im.told ?? 0)) {
-        const head = Buffer.alloc(8);
-        head.writeUInt32BE(0x4c334d31, 0); head.writeUInt32BE(im.extras.length, 4);
-        const parts = [head];
-        for (const x of im.extras) { const h = Buffer.alloc(8); h.writeUInt32BE(x.base, 0); h.writeUInt32BE(x.bytes.length, 4); parts.push(h, Buffer.from(x.bytes)); }
-        put(`${im.origin}.more`, Buffer.concat(parts));
-      }
+      if (im.extras.length > (im.wasm ? 0 : im.told ?? 0)) put(`${im.origin}.more`, Buffer.concat(packMore(im.extras)));
     }
   };
   return {kept: {cache: 'webroot', at}, save};
@@ -102,6 +91,7 @@ async function child({web, path, args, translator, fresh, kept: keptDir, env = E
   const apart = canRunApart() && !process.env.XLAT_INLINE;
   const {loadTranslator} = await import('../module/sods/runtime/translator.ts');
   const {keeper} = await import('../module/muk/runtime/keeper.ts');
+  const {taken} = await import('../module/sods/runtime/kept.ts');
   const store = keptDir ? await keptIn(keptDir) : null;
   const w = openWeb(web);
   // --fresh: this checkout's translator, translating everything as it runs (what the next l3 will be).
@@ -123,7 +113,7 @@ async function child({web, path, args, translator, fresh, kept: keptDir, env = E
   const dec = new TextDecoder();
   let kernel: Kernel | null = null;
   // The keeper wakes a kernel whose threads run apart; one that takes turns here looks again on its own (below).
-  const kept = store ? keeper(store.kept, () => { if (kernel instanceof RemoteKernel) kernel.kick(); }) : null;
+  const kept = store ? keeper(store.kept, taken, () => { if (kernel instanceof RemoteKernel) kernel.kick(); }) : null;
   const options = {vfs, translate, keeper: kept, console: {
     interactive: false,
     // A program that writes on and on is cut at a megabyte: what it said first is what is compared.

@@ -1,4 +1,4 @@
-// For tests: the Remote in this process (remote/app.ts on PGlite), signed
+// For tests: the Remote in this process (src/remote/app.ts on PGlite), signed
 // in to the way a browser is, with DNS as a stand-in. Not part of
 // the service; only the tests import it.
 //

@@ -13,7 +13,7 @@ pub fn set_band(here: &[String], repo: &str, on: bool) -> Result<bool> {
     Ok(true)
 }
 
-/// Forge's band: the repos out on it, in order, only those in `here` (app/home/band.ts).
+/// Forge's band: the repos out on it, in order, only those in `here` (src/app/home/band.ts).
 /// Never chosen yet, it holds the first repo.
 pub fn band(here: &[String]) -> Result<Vec<String>> {
     let Some(text) = get("band")? else { return Ok(here.first().cloned().into_iter().collect()) };

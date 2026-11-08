@@ -11,7 +11,7 @@ reference beside the code, which is why it is here and not there (DESIGN.md
 names no routes or tables).
 
 Clients: **page** is the web app (in a browser, and in the desktop app's
-webview: the same code, `src/`); **core** is the native side (`core/src`),
+webview: the same code, `src/`); **core** is the native side (`src/core/src`),
 which the desktop app's commands (`desktop`) and l3 (`cli/`) both use.
 **anyone** needs no session.
 
@@ -80,7 +80,7 @@ alone is never answered so. A tag holds until the next six hours of UTC and
 never past its session's end, so what changed outside any request (SQL by
 hand, a session ended in the database) is read by then; a session ended
 through the Remote is a write, and moves the mark at once. The page asks
-afresh, without tags, when its window comes back (`app/remote/looks.ts`). A beat
+afresh, without tags, when its window comes back (`src/app/remote/looks.ts`). A beat
 answered by the mark is heard there: `GET /v1/ssh` says the later of the
 database's moment and the mark's. One mark for the whole Remote: a write by
 anyone has each look read again once, while the database is awake for that
@@ -158,7 +158,7 @@ there is no bucket to take their bytes from; it still counts each changed room
 again, which the plan reads.
 
 On Workers that is a Worker without its `BLOBS` binding; here,
-`node remote/dev.ts DIR --no-bucket` (or `LENGTH3_NO_BUCKET=1`). The
+`node src/remote/dev.ts DIR --no-bucket` (or `LENGTH3_NO_BUCKET=1`). The
 contract tests run twice, with a bucket and without
 (`contract.test.ts`, `contract.nobucket.test.ts`), and `worker.test.ts`
 runs the Worker itself, with no bucket, through its Neon driver.

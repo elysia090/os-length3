@@ -1,4 +1,4 @@
-// Prompts on the distribution's root (l3 prompt, core/src/prompt/launch.rs). Each
+// Prompts on the distribution's root (l3 prompt, src/core/src/prompt/launch.rs). Each
 // is an `l3 prompt REPO` process beside the app; what it prints comes to the
 // webview as `prompt` events, what is typed goes to its standard input.
 // Closing kills its supervisor, and with it (PDEATHSIG, then the pid
@@ -28,7 +28,7 @@ pub struct Shells {
 
 impl Shells {
     /// Repos a Prompt of this window has open now: they stay on the device while it runs. The core reads every
-    /// other (each l3's, in a terminal too) from its record, with the root it runs on (core/src/storage/).
+    /// other (each l3's, in a terminal too) from its record, with the root it runs on (src/core/src/storage/).
     pub fn open_repos(&self) -> Vec<String> {
         let mut all: Vec<String> = self.open.lock().unwrap().values().map(|s| s.repo.clone()).collect();
         all.sort();

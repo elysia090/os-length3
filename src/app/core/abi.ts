@@ -1,5 +1,5 @@
-// The core built for the browser (core/web/src/lib.rs): its three exports, and the one import of its own
-// (length3.http, core/web/src/lib.rs mod page) beside WASI. core/worker.ts runs it; wasi.test.ts runs it in Node.
+// The core built for the browser (src/core/web/src/lib.rs): its three exports, and the one import of its own
+// (length3.http, src/core/web/src/lib.rs mod page) beside WASI. core/worker.ts runs it; wasi.test.ts runs it in Node.
 
 import type {WASI} from './wasi.ts';
 
@@ -62,7 +62,7 @@ export class Core {
     return new Core(exports);
   }
 
-  /** The core's answer to `name` with `args` (core/src/api.rs). A trap is thrown, and this instance is done. */
+  /** The core's answer to `name` with `args` (src/core/src/api.rs). A trap is thrown, and this instance is done. */
   call(name: string, args: unknown): Answer {
     const {memory, l3_alloc, l3_call, l3_free} = this.exports;
     const q = encoder.encode(JSON.stringify({name, args: args ?? {}}));

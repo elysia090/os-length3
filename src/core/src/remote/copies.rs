@@ -183,7 +183,7 @@ pub fn rename_repo(repos: &Repos, repo: &str, to: &str, open: &[String]) -> Resu
     Ok(())
 }
 
-/// Whether a Prompt has `repo` open: one its host runs (`open`), or one recorded running here (core/src/prompt/running.rs).
+/// Whether a Prompt has `repo` open: one its host runs (`open`), or one recorded running here (src/core/src/prompt/running.rs).
 fn prompted(repo: &str, open: &[String]) -> bool {
     #[cfg(not(target_os = "wasi"))]
     if crate::prompt::running::all(crate::fs::paths::data_dir()).iter().any(|r| r.repo == repo) { return true; }

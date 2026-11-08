@@ -1,10 +1,10 @@
 // npm test: every test file (src/**/*.test.ts, service/*.test.ts, scripts/*.test.ts) under node:test, each
-// process with the core a page runs (app/testing/core.ts), reported as node --test reports.
+// process with the core a page runs (src/app/testing/core.ts), reported as node --test reports.
 //
 // node --test runs each file in a process of its own: a process paid for starting, loading what its file uses
 // and, for a file on a Remote, making a database (some 3 s of CPU before its first test), often more than its
 // tests then took. Here there is a process a core, and each takes the next file no other has taken, the longest
-// first, and runs it with what the process has made already (remote/testing-together.ts), so that they end
+// first, and runs it with what the process has made already (src/remote/testing-together.ts), so that they end
 // about together; a long file whose tests are each their own (PARTS) is run in parts, several at once. The few
 // files that need a process of their own (ALONE) run beside them from the start.
 // Each process loads its modules as scripts/tests-load.ts says: their types stripped and their code compiled
@@ -12,7 +12,7 @@
 //
 // As node --test: NODE_OPTIONS=--test-shard=i/n runs every n-th file from the i-th (CI's four shards), and
 // --test-name-pattern, --test-skip-pattern, --test-only, --test-concurrency and --test-reporter are taken.
-// Files named run instead of every file (npm test -- remote/plan.test.ts app/remote/sync.test.ts).
+// Files named run instead of every file (npm test -- src/remote/plan.test.ts src/app/remote/sync.test.ts).
 
 import {mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {availableParallelism, tmpdir} from 'node:os';

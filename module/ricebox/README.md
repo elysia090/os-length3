@@ -22,7 +22,8 @@ descriptors and pipes, fork/exec/wait, threads, signals.
   a line at a time.
 
 The code it runs is sods' (`../sods`); what it reads at rest is muk's
-(`../muk`).
+(`../muk`), handed to it: a Prompt's Worker (`src/app/prompt/kernel.worker.ts`)
+mounts the root and the repo in its tree and gives it the translations kept.
 
 ```
 node runtime/run.ts PROGRAM [args...]            # host ELF as /bin/PROGRAM

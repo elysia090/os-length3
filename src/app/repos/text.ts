@@ -1,4 +1,4 @@
-// The one way a first line is named in this OS (core/src/text/title.rs): a kind
+// The one way a first line is named in this OS (src/core/src/text/title.rs): a kind
 // and a title, "Fix：再起動すると保存内容が消える". TODO items, issues and
 // cuts all use it.
 

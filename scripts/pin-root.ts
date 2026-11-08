@@ -1,4 +1,4 @@
-// Pin the l3 this tree releases: its entry is core/src/root/pins.rs's RELEASES,
+// Pin the l3 this tree releases: its entry is src/core/src/root/pins.rs's RELEASES,
 // the whole of its pin for both ways in: the root (the bundle the
 // desktop app installs, by sha256 and size) and `web`, the sha256 of the
 // index the browser reads the same root by (scripts/webroot.ts, made from that

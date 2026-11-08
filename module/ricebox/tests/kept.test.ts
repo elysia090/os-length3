@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
-import {File, Vfs} from '../../ricebox/runtime/fs.ts';
-import {Kernel, PROFILE, type Image} from '../../ricebox/runtime/process.ts';
-import type {Keeper, Taken} from '../runtime/keeper.ts';
+import {File, Vfs} from '../runtime/fs.ts';
+import {Kernel, PROFILE, type Image, type Keeper} from '../runtime/process.ts';
+import type {Taken} from '../../sods/runtime/kept.ts';
 import {loadTranslator} from '../../sods/runtime/translator.ts';
-import {have} from '../../ricebox/tests/busybox.ts';
+import {have} from './busybox.ts';
 
 // What one run translated, kept for the next: the code a program reached later (Image.adopt), and a whole program's
 // translation taken from a keeper (Kernel.image) instead of being made again. The next run says the same and

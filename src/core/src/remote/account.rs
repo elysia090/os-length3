@@ -64,7 +64,7 @@ pub fn end_device(token: &str) -> Result<()> {
     Client::open()?.json("POST", "/api/auth/revoke-session", Some(serde_json::json!({"token": token}))).map(|_| ())
 }
 
-// ---- the plan (remote/plan.ts): the Remote decides; this only reads it and asks ----
+// ---- the plan (src/remote/plan.ts): the Remote decides; this only reads it and asks ----
 
 /// What a free account may keep on the Remote, and what it keeps now.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, Copy)]

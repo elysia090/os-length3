@@ -34,7 +34,7 @@ test('no referrer, no sniffing, no window shared with another site, no file take
 test('the desktop webview runs only the app\'s own files, under a strict policy, with no host permission but events and its title', () => {
   const conf = JSON.parse(readFileSync(new URL('../../desktop/tauri.conf.json', import.meta.url), 'utf8'));
   const csp: string = conf.app.security.csp;
-  // One policy, app/host/policy.ts's, for the Remote the app ships with (scripts/desktop.sh gives Tauri it for another).
+  // One policy, src/app/host/policy.ts's, for the Remote the app ships with (scripts/desktop.sh gives Tauri it for another).
   assert.equal(csp, desktopPolicy(DEFAULT_REMOTE));
   // WebAssembly compiled as the web's is (its Prompts run translated where they do not run on the root), never
   // JavaScript from text; isolated as the web's page is, so its translated Prompts share memory as they do there.

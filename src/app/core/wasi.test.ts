@@ -314,7 +314,7 @@ const wasm = (() => {
   }
 })();
 
-test('the core runs over these files as the app runs it', {skip: wasm ? false : 'cargo is not installed, so the core (core/web) cannot be built'}, async () => {
+test('the core runs over these files as the app runs it', {skip: wasm ? false : 'cargo is not installed, so the core (src/core/web) cannot be built'}, async () => {
   const fs = new MemoryFS();
   const wasi = new WASI({fs, env: {LENGTH3_HOME: '/data', LENGTH3_REMOTE: ''}, out: () => {}});
   const sent: string[] = [];
@@ -349,7 +349,7 @@ test('the core runs over these files as the app runs it', {skip: wasm ? false : 
   assert.deepEqual(sent, []);
 });
 
-test('the core reaches the network through the page it runs in', {skip: wasm ? false : 'cargo is not installed, so the core (core/web) cannot be built'}, async () => {
+test('the core reaches the network through the page it runs in', {skip: wasm ? false : 'cargo is not installed, so the core (src/core/web) cannot be built'}, async () => {
   const heads: string[] = [];
   const core = await Core.start(new WebAssembly.Module(readFileSync(wasm!)), new WASI({fs: new MemoryFS(), env: {LENGTH3_HOME: '/data'}, out: () => {}}), (head) => {
     heads.push(`${head.method} ${head.url}`);

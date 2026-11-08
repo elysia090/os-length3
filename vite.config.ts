@@ -12,12 +12,12 @@ import {shipped} from './src/remote/releases.ts';
 // fixed port, so the port must not drift to a free one. The Terminal's kernel
 // lives in module/sods (the translator) and module/ricebox (the kernel).
 
-// The web build's policy is app/host/policy.ts's: its own origin and the Remote. Tauri applies its own
+// The web build's policy is src/app/host/policy.ts's: its own origin and the Remote. Tauri applies its own
 // policy (with its ipc: channel) to the desktop build, so the meta tag is only for the web.
 // The Remote (remote/) is the one other origin it may reach: where the
 // canonical copy lives. VITE_LENGTH3_REMOTE points a build at another one;
 // '' is this page's own origin, which in development LENGTH3_DEV_REMOTE
-// (a `node remote/dev.ts`) answers through the dev server.
+// (a `node src/remote/dev.ts`) answers through the dev server.
 const REMOTE_URL = process.env.VITE_LENGTH3_REMOTE ?? DEFAULT_REMOTE;
 const REMOTE = REMOTE_URL ? new URL(REMOTE_URL).origin : '';
 const DEV_REMOTE = process.env.LENGTH3_DEV_REMOTE;
@@ -27,8 +27,8 @@ const DEV_REMOTE = process.env.LENGTH3_DEV_REMOTE;
 const WRANGLER = readFileSync(new URL('./wrangler.toml', import.meta.url), 'utf8');
 const ASSETS = /^directory\s*=\s*"([^"]+)"/m.exec(WRANGLER)![1];
 const WORKER_FIRST = (JSON.parse(/^run_worker_first\s*=\s*(\[.*\])$/m.exec(WRANGLER)![1]) as string[]).map((p) => p.replace(/\/\*$/, ''));
-// The release this tree ships (remote/releases.ts shipped, the newest pinned; not RELEASE, which names the one being
-// made): the web's Runtime offers that version's desktop app, as the deploy puts it on the Remote (remote/mirror.ts).
+// The release this tree ships (src/remote/releases.ts shipped, the newest pinned; not RELEASE, which names the one being
+// made): the web's Runtime offers that version's desktop app, as the deploy puts it on the Remote (src/remote/mirror.ts).
 process.env.VITE_LENGTH3_RELEASE ??= shipped();
 const WEB_POLICY = webPolicy(REMOTE);
 
@@ -71,7 +71,7 @@ const buildStamp = (): Plugin => ({
 });
 
 /**
- * The core the app runs, built for the browser (core/web) when its sources changed, once per dev-server start
+ * The core the app runs, built for the browser (src/core/web) when its sources changed, once per dev-server start
  * and per build; `virtual:length3-core.wasm?url` is the module's URL (a hashed asset in a build), from any
  * bundle, the core's worker's included, as an alias reaches them all.
  */
@@ -116,7 +116,7 @@ const hostOnly = (): Plugin => {
 };
 
 /**
- * The app's code is the import of the page's first script (app/start.ts starts the core, then imports main.ts), so it
+ * The app's code is the import of the page's first script (src/app/start.ts starts the core, then imports main.ts), so it
  * is named in the page to be fetched at once (modulepreload, with what it imports), beside the first script rather
  * than after it has run.
  */

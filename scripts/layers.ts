@@ -5,7 +5,7 @@
 //
 //   node scripts/layers.ts          the imports against the order, each with the file that makes it; fails if any
 //
-// Tests (*.test.ts, app/testing/) are left out: a test may take from any layer it puts together.
+// Tests (*.test.ts, src/app/testing/) are left out: a test may take from any layer it puts together.
 import {readdirSync, readFileSync} from 'node:fs';
 import {dirname, join, relative, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';

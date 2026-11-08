@@ -1,5 +1,5 @@
 // For client tests: a browser on one Remote, all in this process. Its storage
-// is a map, and every fetch goes to the service itself (remote/app.ts), so a
+// is a map, and every fetch goes to the service itself (src/remote/app.ts), so a
 // client module is tested against the Remote it really talks to.
 
 import {createApp} from '../../remote/app.ts';

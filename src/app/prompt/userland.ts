@@ -5,7 +5,7 @@ import {isNative} from '../host/host.ts';
 import {REMOTE_URL} from '../remote/connection.ts';
 import {t} from '../i18n/i18n.ts';
 import {prepare, type Segment} from '../../../module/sods/runtime/share.ts';
-import {unpackMore} from '../../../module/muk/runtime/keeper.ts';
+import {MORE, packMain, packMore, unpackMore} from '../../../module/sods/runtime/kept.ts';
 
 export type {Segment};
 
@@ -18,7 +18,7 @@ export const threadsApart = (): boolean => typeof SharedArrayBuffer === 'functio
   && typeof (Atomics as {waitAsync?: unknown}).waitAsync === 'function';
 
 // l3, the one thing the Prompt depends on: the release root the desktop app
-// installs (core/src/root pins it, one entry for both), read here as the
+// installs (src/core/src/root pins it, one entry for both), read here as the
 // browser reads it (scripts/webroot.ts). webroot.json says which l3 it is (its
 // version, and the sha256 of the root it was made from) and names its index
 // by digest; everything else is named by its digest too:
@@ -49,7 +49,7 @@ export const threadsApart = (): boolean => typeof SharedArrayBuffer === 'functio
 export interface Blob { path: string; sha256: string; size: number; bytes: number }
 export interface About {
   name: string; version: string;
-  /** The root this l3 was made from, by the digest core/src/root pins: the same as the app's. */
+  /** The root this l3 was made from, by the digest src/core/src/root pins: the same as the app's. */
   sha256: string; bytes: number; file: string;
   root: {name: string; profile: string};
   index: {path: string; sha256: string; size: number};
@@ -288,13 +288,6 @@ function joined(parts: Uint8Array[]): Uint8Array {
   return out;
 }
 
-/** A head of u32s, big-endian, as the kept forms begin (and each module or segment in them is said). */
-function u32s(...xs: number[]): Uint8Array {
-  const b = new Uint8Array(4 * xs.length), v = new DataView(b.buffer);
-  xs.forEach((x, i) => v.setUint32(4 * i, x));
-  return b;
-}
-
 async function keptBytes(c: Cache): Promise<number> {
   let n = 0;
   for (const v of (await sizesOf(c)).values()) n += v;
@@ -371,13 +364,7 @@ const MORE_MOST = 256;
 /** Each hot program's code reached later in this page: the modules in the order made, and how many of them are kept. */
 const more = new Map<string, {url: string; list: More[]; saved: number; timer: number}>();
 const moreURL = (t: Translation, translator: string, shared: boolean) => `${BASE}more/${t.wasm.sha256}-${translator.slice(0, 16)}-${shared ? 's' : 'u'}.bin`;
-const MAGIC = 0x4c334d31;
 const hex = (b: Uint8Array) => [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
-
-/** Kept modules as one copy: 'L3M1', how many, each module's first table slot, length and bytes; then the SHA-256 of all that. */
-function packMore(list: {bytes: Uint8Array; base: number}[]): Uint8Array[] {
-  return [u32s(MAGIC, list.length), ...list.flatMap((m) => [u32s(m.base, m.bytes.length), m.bytes])];
-}
 
 /** The modules kept at `url`, compiled; none when nothing is kept there or it is not what was kept (it goes). */
 async function keptMore(url: string): Promise<More[]> {
@@ -389,14 +376,8 @@ async function keptMore(url: string): Promise<More[]> {
     if (all.length < 40) throw new Error('not what was kept');
     const body = all.subarray(0, all.length - 32);
     const {sha256} = await checked(body.slice(), false, true);
-    const v = new DataView(body.buffer, body.byteOffset, body.byteLength);
-    if (sha256 !== hex(all.subarray(all.length - 32)) || v.getUint32(0) !== MAGIC) throw new Error('not what was kept');
-    const parts: {base: number; bytes: Uint8Array}[] = [];
-    for (let at = 8, k = v.getUint32(4); k > 0; k--) {
-      const len = v.getUint32(at + 4);
-      parts.push({base: v.getUint32(at), bytes: body.slice(at + 8, at + 8 + len)});
-      at += 8 + len;
-    }
+    if (sha256 !== hex(all.subarray(all.length - 32)) || new DataView(body.buffer, body.byteOffset).getUint32(0) !== MORE) throw new Error('not what was kept');
+    const parts = unpackMore(body);
     const modules = await Promise.all(parts.map((p) => WebAssembly.compile(p.bytes as BufferSource)));
     used(url);
     return parts.map((p, k) => ({module: modules[k], bytes: p.bytes, base: p.base}));
@@ -479,7 +460,7 @@ export async function translationKept(l3: L3, origin: string): Promise<boolean> 
 
 /**
  * A program a Prompt translated, or one translated ahead of its first run (ahead.ts) (its module as the kernel runs
- * it, and its data segments, or null when they are in it): kept for the Prompts after it, 'L3T1' (keeper.ts). Once
+ * it, and its data segments, or null when they are in it): kept for the Prompts after it, 'L3T1' (sods/runtime/kept.ts). Once
  * kept, the URL it is kept at; null when it is not (no room, no Cache Storage).
  */
 export function keepTranslation(l3: L3, origin: string, wasm: Uint8Array, segments: Segment[] | null): Promise<string | null> {
@@ -487,11 +468,9 @@ export function keepTranslation(l3: L3, origin: string, wasm: Uint8Array, segmen
   reached.set(origin, {list: [], saved: 0, timer: 0, url: translatedURL(origin, tag, 'more'), ready: Promise.resolve()});
   return (async () => {
     await idle();
-    const n = segments?.length ?? 0;
-    // Its head, each segment after its place and size, then the module after its size; joined and sealed off the
-    // page's thread, the parts its own (lent): the module and segments are kept, not used here after.
-    const parts = [u32s(0x4c335431, segments ? n : 0xffffffff), ...(segments ?? []).flatMap((s) => [u32s(s.offset, s.bytes.length), s.bytes]),
-      u32s(wasm.length), wasm];
+    // 'L3T1' (sods/runtime/kept.ts), joined and sealed off the page's thread, the parts its own (lent): the module and
+    // segments are kept, not used here after.
+    const parts = packMain(wasm, segments);
     const main = translatedURL(origin, tag, 'wasm');
     const kept = await keepParts(main, parts, true, true);
     // The code an earlier translation of it reached later went with that one (a program translated again as one
@@ -704,7 +683,7 @@ export const filesNow = (l3: L3): L3['files'] => [...l3.files, ...later.values()
 const withMore = (f: L3['files'][number]): L3['files'][number] => ({...f, more: more.get(f.path)?.list ?? []});
 
 /** The Prompt's Worker: xlat running l3's root (pages/bench/terminal.ts gives it l3 and the repo). */
-export const promptWorker = (): Worker => new Worker(new URL('../../../module/ricebox/runtime/worker.ts', import.meta.url), {type: 'module'});
+export const promptWorker = (): Worker => new Worker(new URL('./kernel.worker.ts', import.meta.url), {type: 'module'});
 
 /**
  * A Prompt's Worker readied ahead while a Prompt is only shown (worker.ts 'ready'): its script loaded, the Workers

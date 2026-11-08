@@ -4,7 +4,7 @@
 // own token for Cloudflare; by hand it runs from any machine that reaches
 // both (Node 22; `npx wrangler login` once), after a build:
 //
-//   node remote/deploy.ts
+//   node src/remote/deploy.ts
 //       the migrations, as the database's owner, on the project's default
 //       branch (production: no branch is made for a deploy), up to the first
 //       contract step not applied yet (stages.ts: one that drops what the
@@ -22,12 +22,12 @@
 //         ENTER_KEY, for a Remote for research (enter.ts): the one given, or
 //           else, the first time, a new one, whose link is handed on.
 //       Then the release's files the Remote serves to anyone (mirror.ts):
-//       every root core/src/root/pins.rs pins and the desktop app of the version
-//       RELEASE names (shared/desktop-releases.json), each one the bucket
+//       every root src/core/src/root/pins.rs pins and the desktop app of the version
+//       RELEASE names (src/shared/desktop-releases.json), each one the bucket
 //       lacks taken from the GitHub release with GITHUB_TOKEN (read-only;
 //       GITHUB_REPOSITORY names the repository when it is not this one),
 //       checked against its pin, and put with wrangler.
-//   node remote/deploy.ts link
+//   node src/remote/deploy.ts link
 //       a new ENTER_KEY: the old link stops opening the Remote, and every
 //       session the one account has ends now. The new link is handed on.
 //
@@ -143,7 +143,7 @@ const UNPINNED_DAYS = 90;
 async function releaseFiles(bucket: string) {
   const version = shipped();
   const desktop = pinnedDesktop(version);
-  if (!desktop.length) console.log(`shared/desktop-releases.json pins no desktop app for ${version}: the web offers none until it is pinned (the release's notes say what to pin)`);
+  if (!desktop.length) console.log(`src/shared/desktop-releases.json pins no desktop app for ${version}: the web offers none until it is pinned (the release's notes say what to pin)`);
   const rootRs = readFileSync(new URL('../core/src/root/pins.rs', import.meta.url), 'utf8');
   const pins = [...pinnedRoots(rootRs), ...pinnedDistros(rootRs), ...desktop];
   // The same budget as the Worker's (wrangler.toml [vars]): asked before a file is fetched (a put of the month,
@@ -263,6 +263,6 @@ if (!step) {
   await pool.end();
   handOn(key, `A new link: the old one opens nothing now, and ${ended} session(s) of ${as} ended.`);
 } else {
-  console.error('node remote/deploy.ts [link]   (see the top of this file)');
+  console.error('node src/remote/deploy.ts [link]   (see the top of this file)');
   process.exit(2);
 }

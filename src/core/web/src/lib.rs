@@ -1,6 +1,6 @@
-//! The core as a browser runs it (built for wasm32-wasip1; app/core/worker.ts runs it over its own files).
+//! The core as a browser runs it (built for wasm32-wasip1; src/app/core/worker.ts runs it over its own files).
 //! A page asks it what the app asks through Tauri: `{"name", "args"}` in, `{"ok"}` or `{"error"}` out
-//! (core/src/api.rs answer), as JSON in this module's memory.
+//! (src/core/src/api.rs answer), as JSON in this module's memory.
 //!
 //! The host gives a buffer with `l3_alloc`, writes the question into it and calls `l3_call`, which takes
 //! the buffer back and returns where the answer is (its address high, its length low); the host reads it
@@ -49,8 +49,8 @@ pub unsafe extern "C" fn l3_call(ptr: *mut u8, len: usize) -> u64 {
     ((at as u64) << 32) | n as u64
 }
 
-/// The module's one import of its own beside WASI (app/core/abi.ts `length3.http`): the page sends a request for the
-/// core (core/src/device/net.rs), synchronously, and keeps the answer's body until it is copied in.
+/// The module's one import of its own beside WASI (src/app/core/abi.ts `length3.http`): the page sends a request for the
+/// core (src/core/src/device/net.rs), synchronously, and keeps the answer's body until it is copied in.
 #[cfg(target_os = "wasi")]
 mod page {
     #[link(wasm_import_module = "length3")]

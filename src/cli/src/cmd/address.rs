@@ -10,7 +10,7 @@
 //! never in a script (it says so, exit 5), or set with
 //! `l3 address ssh on [device|network]` and `l3 address ssh off`. The scope
 //! chosen is kept on this device; `on` alone takes it again. Turning on
-//! starts l3's listener in the background (cli/src/ssh.rs), which says so to the
+//! starts l3's listener in the background (src/cli/src/ssh.rs), which says so to the
 //! Remote; Runtime shows on every device that it listens, and any of them
 //! can turn it off.
 

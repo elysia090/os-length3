@@ -62,7 +62,7 @@ fn an_item_written_again_is_the_same_item() {
     assert!(todo_edited(&was, "  ", None).is_none());
 }
 
-// ---- Home on the Remote, against what the Remote answers (shared/home-sync.json) ----
+// ---- Home on the Remote, against what the Remote answers (src/shared/home-sync.json) ----
 
 use serde_json::{json, Value};
 use std::cell::RefCell;
@@ -74,7 +74,7 @@ fn recorded() -> Vec<Value> {
     v["exchanges"].as_array().unwrap().clone()
 }
 
-/// The Remote's settings as remote/app.ts keeps them: a value and its version each,
+/// The Remote's settings as src/remote/app.ts keeps them: a value and its version each,
 /// changed only from the version it is at (0: made, if it is not there yet).
 #[derive(Default)]
 struct Remote { kept: RefCell<HashMap<String, (String, i64)>>, asked: RefCell<Vec<String>>, before_put: RefCell<Option<(String, String)>> }
@@ -185,7 +185,7 @@ fn a_device_with_only_l3_sends_its_todo_and_takes_the_remotes() {
 
 #[test]
 fn todo_from_two_devices_is_joined_item_by_item() {
-    // As app/remote/sync.test.ts: this device sent [a]; another made it [a, b]; this one made it [a, c].
+    // As src/app/remote/sync.test.ts: this device sent [a]; another made it [a, b]; this one made it [a, c].
     let r = Remote::default();
     let mut d = Device::default();
     d.values.insert("todo".into(), r#"[{"id":"a","title":"here"}]"#.into());

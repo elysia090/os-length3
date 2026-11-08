@@ -1,4 +1,5 @@
-// A kernel in a Worker. The page posts
+// A Prompt's kernel in a Worker: the box (ricebox) with the root mounted around it and the repo kept in step (muk),
+// running what the translator makes and what was kept of it (sods). The page (userland.ts promptWorker) posts
 //   {type: 'start', translator, files: [{path, bytes, mode}], dirs: [path],
 //    links: [{path, target}], argv, env, cwd}
 // (`translator` and a file's optional `module`, its translation made ahead
@@ -81,16 +82,17 @@
 // {type: 'reached', origin, from, more} as code is reached later; and what
 // was read of what is kept, {type: 'used', urls}, for the page to count.
 
-import {Vfs, type File} from './fs.ts';
-import {Mirror} from '../../muk/runtime/mirror.ts';
-import {mountPack, provide, syncRange, type Given, type Packed} from '../../muk/runtime/pack.ts';
-import {Kernel, type Image, type Pumped} from './process.ts';
-import {RemoteKernel, canRunApart, warmThreads} from './remote.ts';
-import {keeper, type Kept, type Reading} from '../../muk/runtime/keeper.ts';
-import {loadTranslator, type Translate} from '../../sods/runtime/translator.ts';
-import {said, type Said} from './waiting.ts';
-import type {Console} from './parts.ts';
-import type {Segment} from '../../sods/runtime/share.ts';
+import {Vfs, type File} from '../../../module/ricebox/runtime/fs.ts';
+import {Mirror} from '../../../module/muk/runtime/mirror.ts';
+import {mountPack, provide, syncRange, type Given, type Packed} from '../../../module/muk/runtime/pack.ts';
+import {Kernel, type Image, type Pumped} from '../../../module/ricebox/runtime/process.ts';
+import {RemoteKernel, canRunApart, warmThreads} from '../../../module/ricebox/runtime/remote.ts';
+import {keeper, type Kept, type Reading} from '../../../module/muk/runtime/keeper.ts';
+import {taken, type Taken} from '../../../module/sods/runtime/kept.ts';
+import {loadTranslator, type Translate} from '../../../module/sods/runtime/translator.ts';
+import {said, type Said} from '../../../module/ricebox/runtime/waiting.ts';
+import type {Console} from '../../../module/ricebox/runtime/parts.ts';
+import type {Segment} from '../../../module/sods/runtime/share.ts';
 
 /** A module of code a run reached later: its first table slot and bytes (Image.adopt). */
 interface Reached { module: WebAssembly.Module; bytes: Uint8Array; base: number }
@@ -139,7 +141,7 @@ let ended = false;
 /** The programs given with their translation: the image of each, and how much of its code reached later is said. */
 const kept: {path: string; image: Image; told: number}[] = [];
 /** Translations kept from earlier Prompts (keeper.ts), when the page has any. */
-let keep: Reading | null = null;
+let keep: Reading<Taken> | null = null;
 /** What is kept, by origin, as 'start' said it: a program translated ahead later ({type: 'kept', at}) is put here. */
 let keptAt: Kept['at'] | null = null;
 
@@ -408,7 +410,7 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
       pending: () => pending.reduce((n, b) => n + b.length, 0),
     };
     // Translations kept from earlier Prompts: read when their program is first run, the kernel looking again once they are.
-    keep = data.kept ? keeper(data.kept, () => nudge(), (urls) => self.postMessage({type: 'used', urls})) : null;
+    keep = data.kept ? keeper(data.kept, taken, () => nudge(), (urls) => self.postMessage({type: 'used', urls})) : null;
     keptAt = data.kept?.at ?? null;
     const k = kernel = apart ? new RemoteKernel({vfs, translate, console, keeper: keep, onIdle: (r) => paused(r), consolidateIdle: true})
       : new Kernel({vfs, translate, console, keeper: keep, consolidateIdle: true});

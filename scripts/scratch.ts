@@ -8,7 +8,7 @@
 //
 // For what tests and their servers make: scripts/tests.ts, selftest's
 // global setup and tests/cli. Rust's tests do the same by their process's
-// own folder (core/src/testing.rs, cli/tests/common).
+// own folder (core/src/testing.rs, src/cli/tests/common).
 
 import {mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';

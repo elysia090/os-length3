@@ -2,7 +2,7 @@
 // directory, blobs in files beside it. For development and the app's
 // end-to-end checks; the same app as on Workers.
 //
-//   node remote/dev.ts DIR [PORT] [APP_ORIGIN] [OTHER_ORIGIN…] [--no-bucket]
+//   node src/remote/dev.ts DIR [PORT] [APP_ORIGIN] [OTHER_ORIGIN…] [--no-bucket]
 //
 // --no-bucket (or LENGTH3_NO_BUCKET=1): a Remote that holds no files, as a
 // Worker without its R2 binding is; every route that would move bytes says so.

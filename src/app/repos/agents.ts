@@ -2,8 +2,8 @@ import {core, isNative} from '../host/host.ts';
 import {every} from '../host/runs.ts';
 
 // What agents (Claude Code, Grok Build, a harness that runs their hooks, and the box's own Agent, which says what it
-// does the same way: pages/bench/agent.ts) do in this device's repos, as their own hooks say it (core/src/agent/activity.rs),
-// and the work handed to one (core/src/agent/tasks.rs): what it can take, asks, has ready to look at. Read every second
+// does the same way: pages/bench/agent.ts) do in this device's repos, as their own hooks say it (src/core/src/agent/activity.rs),
+// and the work handed to one (src/core/src/agent/tasks.rs): what it can take, asks, has ready to look at. Read every second
 // while a page that shows it is on screen and the window is: the core answers nothing from two files' sizes while
 // nothing moved, so a second's look costs nothing. In a browser, the box's Agent is the one agent there is.
 
@@ -34,7 +34,7 @@ interface AgentEvent {
 /** Something the agent found, at a unit: the goal, a part of the system, the tests, a file. */
 export interface Finding {unit: 'goal' | 'responsibility' | 'test' | 'file' | 'question'; path?: string; line?: number; text: string}
 
-/** Work handed to the agent, or offered to it (core/src/agent/tasks.rs Task). */
+/** Work handed to the agent, or offered to it (src/core/src/agent/tasks.rs Task). */
 export interface Task {
   id: number;
   repo: string;
@@ -75,13 +75,13 @@ export async function onTask(id: number, deed: 'take' | 'drop' | 'reply', words 
 /** The sessions at work on `line` of `repo` (not ended). */
 export const agentsOn = (repo: string, line: string) => sessions.filter((s) => s.repo === repo && s.line === line && s.state !== 'ended');
 
-/** The line an issue is worked on: its file's stem (core/src/repos/lines.rs line_for). */
+/** The line an issue is worked on: its file's stem (src/core/src/repos/lines.rs line_for). */
 export const lineOf = (issueFile: string) => issueFile.replace(/^issue\//, '').replace(/\.md$/, '');
 
 /** A harness as a person knows it. */
 export const harnessName = (h: string) => ({box: 'Agent', claude: 'Claude Code', grok: 'Grok Build', dsh: 'DeepSeek Harness', codex: 'Codex'})[h] ?? h;
 
-/** What the box's Agent does, said as an agent's hooks say it (core/src/agent/activity.rs from_box); never in its way. */
+/** What the box's Agent does, said as an agent's hooks say it (src/core/src/agent/activity.rs from_box); never in its way. */
 export function boxSaid(session: string, repo: string, kind: 'start' | 'prompt' | 'tool' | 'stop', text = '') {
   void core('agent_said', {session, repo, kind, text}).then(() => look()).catch(() => { /* watched, never held up */ });
 }

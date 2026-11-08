@@ -246,7 +246,7 @@ export class Session implements Prompt {
     this.worker?.postMessage({type: 'input', bytes}, [bytes.buffer]);
   }
 
-  /** Keys pressed on the page: its kernel waits for them to be still before work that would hold up the page (worker.ts). */
+  /** Keys pressed on the page: its kernel waits for them to be still before work that would hold up the page (prompt/kernel.worker.ts). */
   typing() { this.worker?.postMessage({type: 'typing'}); }
 
   /** `sig` to what runs in front (a key that makes a signal). */
@@ -257,7 +257,7 @@ export class Session implements Prompt {
 
   /**
    * A key that makes a signal flushes what was written and not yet shown, as a terminal's line discipline does (unless
-   * the program set NOFLSH): what comes from the worker of an epoch before this one is dropped (worker.ts), so ^C
+   * the program set NOFLSH): what comes from the worker of an epoch before this one is dropped (prompt/kernel.worker.ts), so ^C
    * stands where the run was cut, not under the megabyte a flood had on its way.
    */
   private flush(): {flush?: number} {

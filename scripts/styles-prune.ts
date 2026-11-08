@@ -3,7 +3,7 @@
 //
 //   node scripts/styles-prune.ts [--dry] [--report FILE] [SHEET]
 //
-// SHEET is app/styles.css unless named; when it is the entry styles-split.ts writes (only @imports), its parts are
+// SHEET is src/app/styles.css unless named; when it is the entry styles-split.ts writes (only @imports), its parts are
 // pruned each in place. --dry changes nothing and only says what it would take out; --report also writes what it
 // says to FILE. Run it again and it finds nothing more.
 //

@@ -7,7 +7,7 @@
 #
 #   sh scripts/web-release.sh [ROOT.tar.zst]
 #
-# ROOT is the release root (by default the newest core/src/root/pins.rs pins,
+# ROOT is the release root (by default the newest src/core/src/root/pins.rs pins,
 # fetched by scripts/root-file.ts); with WEBROOT_READY=1, a public/webroot
 # made already from it is kept. Needs node 22, cargo with the
 # wasm32-unknown-unknown target, and zip.

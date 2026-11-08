@@ -1,6 +1,6 @@
 // The Remote's HTTP surface (Hono; the same app on Workers, in dev and in
 // tests), assembled from its parts. Each part keeps its routes, its rules
-// and its queries together; remote/README.md maps them, with their tables
+// and its queries together; src/remote/README.md maps them, with their tables
 // and which clients use them. /api/auth/* is Better Auth. Everything under
 // /v1 but the release bundles, open boards and public repos needs a session
 // (auth.ts signedIn): a bearer token, or the session cookie on a request

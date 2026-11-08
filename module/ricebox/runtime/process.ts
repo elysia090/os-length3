@@ -33,7 +33,7 @@ import {PROC_CALLS} from './sys-proc.ts';
 import {lay, prepare, type Segment} from '../../sods/runtime/share.ts';
 import {answerTime, clocks} from './clock.ts';
 import {CLD, SA, SIG, SIGNAL_CALLS, Pending, SI, actionOf, bit, deliverable, send, take} from './signal.ts';
-import type {Keeper} from '../../muk/runtime/keeper.ts';
+import type {Taken} from '../../sods/runtime/kept.ts';
 import type {Machine} from './machine.ts';
 import type {Translate} from '../../sods/runtime/translator.ts';
 import type {AltStack, Call, Calls, Console, Cpu, Extra, Facts, FutexKey, FutexWaiter, Held, ImageEntry, Kern, Mem, Proc, Program, Range, SigAction, Slot, Thread, Timer, Tty} from './parts.ts';
@@ -257,7 +257,10 @@ function readLater(node: File, image: Image): () => Uint8Array {
   };
 }
 
-/** What a kernel is made with: its filesystem, its translator, its console, translations kept (keeper.ts), the machine. */
+/** What a kernel asks of the translations kept from earlier runs (muk/runtime/keeper.ts gives one). */
+export interface Keeper { has(origin: string): boolean; take(origin: string): Taken | null | undefined }
+
+/** What a kernel is made with: its filesystem, its translator, its console, translations kept (Keeper), the machine. */
 export interface Made {
   vfs?: Vfs;
   translate?: Translator;
@@ -314,7 +317,7 @@ export class Kernel implements Kern {
     // The x87 its threads run (x87.ts), made when the first is.
     this.x87Module = x87 ?? translate?.module ?? null;
     // A program due to be translated again as one module (consolidate): at once as it is run again, or, where the
-    // host has idle time to give (a Prompt waiting for its next line: worker.ts), only then (consolidateDue), so no
+    // host has idle time to give (a Prompt waiting for its next line: src/app/prompt/kernel.worker.ts), only then (consolidateDue), so no
     // run waits on it. Each due one: its node -> its entry.
     this.consolidateIdle = consolidateIdle;
     this.due = new Map();
@@ -400,7 +403,7 @@ export class Kernel implements Kern {
     // Code reached later is read from the very bytes this was translated from (and the translator keeps them parsed by identity).
     const image = new Image(new WebAssembly.Module(wasm), () => bytes, wasm.length, segments);
     PROFILE.compile += performance.now() - t; PROFILE.images++;
-    // A root file unchanged: its translation can be kept (the host hears of it once the kernel pauses: worker.ts).
+    // A root file unchanged: its translation can be kept (the host hears of it once the kernel pauses: kernel.worker.ts).
     if (node.version === 0 && node.origin) { image.origin = node.origin; image.wasm = wasm; image.told = 0; image.mainTold = false; }
     this.remember(node, {version: node.version, image, used: ++this.uses, kept: false});
     return image;

@@ -125,7 +125,7 @@ function fields(say: string, sayAt: string) {
 function refused(e: unknown, ask: HTMLElement, here: Here, reveal: () => void, ways: MakingWays) {
   const plan = planRefused(e, () => ways.plan());
   if (plan) ask.replaceChildren(plan);
-  // Told apart by what the Remote said in its own words (remote/servers.ts), not by the words shown here.
+  // Told apart by what the Remote said in its own words (src/remote/servers.ts), not by the words shown here.
   else if (e instanceof RemoteError && (e.status === 409 || e.status === 400 && /^(Its name|Only on a domain)/.test(String(e.detail.error)))) {
     // The name on this Remote is someone else's (or held for them), or one it cannot be (a name in other
     // letters follows to nothing): the address shows, to be written otherwise.

@@ -1,5 +1,5 @@
 // The profile Home shows: a name to be called by, the handle others find one
-// by (signed in, the username on the Remote: remote/names.ts), and a line
+// by (signed in, the username on the Remote: src/remote/names.ts), and a line
 // about them. Kept on this device, and on the Remote when signed in.
 
 import {clipChars} from '../repos/text.ts';
@@ -12,10 +12,10 @@ export interface Profile {
 
 export const EMPTY: Profile = {name: '', handle: '', bio: ''};
 
-/** In characters, as l3 counts them (core/src/home/profile.rs PROFILE_LIMITS). */
+/** In characters, as l3 counts them (src/core/src/home/profile.rs PROFILE_LIMITS). */
 export const LIMITS = {name: 50, handle: 31, bio: 160};
 
-/** A handle is a username: 2–31 lowercase letters, digits, `.`, `-` and `_`, from a letter or digit (remote/names.ts NAME). */
+/** A handle is a username: 2–31 lowercase letters, digits, `.`, `-` and `_`, from a letter or digit (src/remote/names.ts NAME). */
 export function validHandle(handle: string): boolean {
   return /^[a-z0-9][a-z0-9._-]{1,30}$/.test(handle);
 }

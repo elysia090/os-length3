@@ -20,7 +20,7 @@ test('a path is refused when it leaves the repo, has an empty part, or names .gi
     ['', false], ['/etc/passwd', false], ['a//b', false], ['a/', false], ['./a', false], ['a/./b', false], ['..', false], ['a/../../b', false],
   ];
   assert.deepEqual(wrong(paths, ([, ok]) => ok, ([p]) => validPath(p)), []);
-  // Every spelling of .git the core and the app refuse (shared/cases.json), as a whole path and as a folder on the way.
+  // Every spelling of .git the core and the app refuse (src/shared/cases.json), as a whole path and as a folder on the way.
   const git = cases.gitName as [string, boolean][];
   assert.deepEqual(wrong(git, ([, isGit]) => !isGit, ([n]) => validPath(n)), []);
   assert.deepEqual(wrong(git, ([, isGit]) => !isGit, ([n]) => validPath(`src/${n}/config`)), []);

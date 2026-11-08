@@ -46,7 +46,7 @@ export default {
 
   // repos.ts
 
-  // repo templates (shared/templates.json labels)
+  // repo templates (src/shared/templates.json labels)
   'Standard': '標準',
 
   // Words several pages share

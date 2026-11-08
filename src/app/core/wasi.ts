@@ -1,4 +1,4 @@
-// WASI preview1 over files kept in memory: what the core built for the browser (core/web) calls where the
+// WASI preview1 over files kept in memory: what the core built for the browser (src/core/web) calls where the
 // app's core calls the system. One directory is preopened, `/` as fd 3; core/worker.ts keeps the files in
 // IndexedDB through snapshot/restore and the changes since the last flush.
 

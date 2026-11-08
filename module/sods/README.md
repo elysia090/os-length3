@@ -19,8 +19,9 @@ runs what it makes is ricebox's (`../ricebox`).
   translated code calls it wasm to wasm, its memory operands loaded and
   stored by the translated code itself (`runtime/x87.ts`).
 - `runtime/` holds what of it runs beside the program: the translator's
-  wrapper, the x87's, a translation shared between Workers (`share.ts`) and
-  programs translated ahead while a Prompt waits (`ahead.ts`).
+  wrapper, the x87's, a translation shared between Workers (`share.ts`),
+  programs translated ahead while a Prompt waits (`ahead.ts`), and the form a
+  translation is kept in between runs (`kept.ts`; muk keeps the copies).
 
 ```
 cargo build --release

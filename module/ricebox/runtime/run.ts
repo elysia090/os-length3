@@ -135,7 +135,7 @@ while (args[0]?.startsWith('--')) {
   if (flag === '--root') root = args.shift() ?? null;
   else if (flag === '--pack') pack = args.shift() ?? null;
   else if (flag === '--cwd') cwd = args.shift() ?? cwd;
-  // Its console a terminal, 80 by 24, as the app's Prompt has it (worker.ts): what reads keys reads them from one.
+  // Its console a terminal, 80 by 24, as the app's Prompt has it (src/app/prompt/kernel.worker.ts): what reads keys reads them from one.
   else if (flag === '--tty') tty = true;
 }
 const [program = '', ...rest] = args;

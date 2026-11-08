@@ -1,5 +1,5 @@
 // A look at the Remote taken every little while (what moved, what came, a conversation's rows, a board's posts
-// and TODO), asked with the tag its last answer carried (remote/mark.ts): while nothing was written on the Remote
+// and TODO), asked with the tag its last answer carried (src/remote/mark.ts): while nothing was written on the Remote
 // since, it answers 304 without asking its database (which then sleeps), and the answer kept here stands. Each
 // path's last answer is kept for this device's session only. The window coming back (focus, shown again) asks
 // every look afresh, without tags, so what changed where no request of the Remote's saw it is read then.

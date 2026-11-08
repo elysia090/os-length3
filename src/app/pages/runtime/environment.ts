@@ -85,7 +85,7 @@ function roots(root: RootStatus, now: string | null) {
 
 /** On the web: l3 at the top (`a`, as this build carries it), and the others, which run in the app. */
 function onTheWeb(a: Awaited<ReturnType<typeof about>>): Node[] {
-  // The same l3 as the app's: its version, and the digest of the root it is (core/src/root/), run here through xlat.
+  // The same l3 as the app's: its version, and the digest of the root it is (src/core/src/root/), run here through xlat.
   // A build that carries no l3 says so in l3's own row: Ubuntu, Debian and Custom are under it all the same.
   return [...(a ? top('l3', a.version, t('{name} · via xlat', {name: a.root.name}), a.sha256)
     : top('l3', '', t('l3 missing (run: npm run webroot)'), '')),

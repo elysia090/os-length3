@@ -3,7 +3,7 @@
 // (scripts/webroot.ts). It is made where Rust is, by the release
 // (.github/workflows/release.yml), and is the OS that version is; a build
 // that only has Node (Cloudflare's Workers Builds) takes it from it, and
-// takes only the l3 this tree pins: core/src/root/pins.rs
+// takes only the l3 this tree pins: src/core/src/root/pins.rs
 // RELEASES, whose entry is the whole of l3's pin (the root, by sha256, and
 // `web`, the sha256 of the index the browser reads it by). The release's
 // SHA256SUMS must say the same of the file it is in; webroot.json must name that

@@ -3,7 +3,7 @@ import {test} from 'node:test';
 import {EMPTY, initials, LIMITS, normalize, parse, validHandle} from './profile.ts';
 
 test('a profile l3 kept is read whole: its limits count characters, as l3 counts them', () => {
-  // 50 characters beyond the BMP are 100 UTF-16 units; l3 takes them as 50 (core/src/home/profile.rs PROFILE_LIMITS).
+  // 50 characters beyond the BMP are 100 UTF-16 units; l3 takes them as 50 (src/core/src/home/profile.rs PROFILE_LIMITS).
   const name = '😀'.repeat(LIMITS.name), bio = '𝄞'.repeat(LIMITS.bio);
   assert.deepEqual(parse(JSON.stringify({name, handle: 'ren', bio})), {name, handle: 'ren', bio});
   // Past the limit it is cut between characters, never inside one.

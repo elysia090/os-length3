@@ -1,4 +1,4 @@
-// The core as the browser runs it (core/web), built with cargo when its sources are newer than the
+// The core as the browser runs it (src/core/web), built with cargo when its sources are newer than the
 // module: by the Vite plugin (vite.config.ts) at each dev-server start and build, and by wasi.test.ts.
 
 import {spawnSync} from 'node:child_process';
@@ -36,7 +36,7 @@ export function hasCargo(): boolean {
 export function buildCoreWasm(options: {quiet?: boolean} = {}): string {
   const wasm = coreWasmPath();
   if (existsSync(wasm) && statSync(wasm).mtimeMs > Math.max(...SOURCES.map(newest))) return wasm;
-  if (!hasCargo()) throw new Error('length3: the core (core/web) needs Rust to build: install it from https://rustup.rs');
+  if (!hasCargo()) throw new Error('length3: the core (src/core/web) needs Rust to build: install it from https://rustup.rs');
   const targets = spawnSync('rustup', ['target', 'list', '--installed'], {encoding: 'utf8'});
   // Without rustup the toolchain is the system's; cargo says itself whether it has the target.
   if (!targets.error && !targets.stdout.split('\n').includes(TARGET)) {

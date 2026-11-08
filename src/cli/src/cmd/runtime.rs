@@ -229,7 +229,7 @@ pub fn dotfile_list(_: &Ctx, _: &Call) -> Result<Reply> {
 }
 
 /// `l3 dotfile take [NAME]`: what changed on another device (or on the Remote) runs here from now; until then it is
-/// kept and runs nowhere here (core/src/home/dotfiles.rs dotfiles_in_effect).
+/// kept and runs nowhere here (src/core/src/home/dotfiles.rs dotfiles_in_effect).
 pub fn dotfile_take(_: &Ctx, call: &Call) -> Result<Reply> {
     let names: Vec<String> = call.word(0).map(|n| vec![n.to_string()]).unwrap_or_default();
     let taken = home::take_dotfiles(&names).map_err(Error::NotFound)?;

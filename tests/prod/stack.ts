@@ -7,7 +7,7 @@
 // Workers Assets do and the Remote on the same origin, with local R2.
 //
 // What differs from wrangler.toml, and why (nothing else does):
-//   main             tests/prod/worker.ts: remote/worker.ts with the driver pointed at the bridge
+//   main             tests/prod/worker.ts: src/remote/worker.ts with the driver pointed at the bridge
 //   assets           the build given (the app built for its own origin, as build:cloudflare builds it)
 //   run_worker_first also /dev-oauth/*, /dev-billing/* (the stand-ins' pages) and /__scheduled (the cron, fired)
 //   [vars]           BASE_URL and APP_ORIGIN are http://localhost:PORT (one origin, as os.length3.com is);
