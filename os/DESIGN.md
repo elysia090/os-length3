@@ -106,13 +106,16 @@ Every value in `styles.css` comes from a token (§2).
     edge), and another pressed before it lands takes the ink on from where
     it is: one ink, never two, never back to where it set off.
   - *The camera pans along the rail.* The pages stand one above another
-    down the rail, as floors do: going to another place, the camera goes the
-    whole way to it, the page left going up and out of the window whole as
-    the next comes up into it from below (down the rail; up it, the other way
-    round), the two as one sheet, the rail and the window's edges standing
-    still, a floor passed in a lift (330 ms, fast off the mark and landing).
-    Nothing fades: there is never an empty frame between them and never the
-    two seen in one place, their words over each other; it comes as one, not
+    down the rail, as floors do: going to another place is a turn of the
+    head, not a journey. The page come to moves in the press's own frame,
+    from two dots below (down the rail; above, up it) into its place, only
+    slowing as it lands (240 ms), while the page left goes the same short way
+    out of it; the rail and the window's edges stand still. The page left is
+    gone by a third of the way and the page come to comes in after a seventh,
+    so the two are never printed one on the other, their words over each
+    other, and there is never an empty frame between them. (Before: the whole
+    window's height in half a second, held after the press and then heaved, a
+    lift and not a turn.) It comes as one, not
     staged. A floor is what the window shows of its page, from its top line
     to the window's foot, cut there, whatever the page's own height (Home
     runs past the foot, Git's stops short of it): the one come to adjoins
@@ -1927,12 +1930,13 @@ where the rail's first icon does, so the line's capitals, the bar beside them
 and the icon's ink start on one line (the bar as tall as its words, capitals
 to baseline, never standing proud of them). Between Home, Forge and New repo
 the rail does not change floors: it moves a camera over the one dotted ground,
-on which the three lie a little apart across as well as down (Home a step of
-three dots to the left of Forge, New repo a step to its right), so the camera
+on which the three lie a little apart across as well as down (Home a dot to
+the left of Forge, New repo a dot to its right), so the camera
 going up to Home drifts a little left as it goes, never straight up a shaft.
-It stands back as it sets off (to nine tenths at most, soon after the press),
-goes the way between the two, and comes down into the page come to, which
-grows from small into its place as it lands (480 ms in all). The band, the
+It goes at once (moving in the press's own frame, only slowing as it lands),
+a short way (two dots up or down the rail, a dot across), the page left giving
+way as the one come to comes in, which grows from a breath smaller into its
+place (240 ms in all): a change of place, never a page heaved up and set down. The band, the
 pane and its switch are the frame and stay where they are (what differs on
 them, Forge's pills, the pane's rows, gives way in place in a seventh of a
 second); the page left is seen only on the ground between them, never over

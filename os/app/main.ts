@@ -250,18 +250,21 @@ const FRAME = ':is(.home-band, .home-pane, .work.desk-bench > .bar, .work.desk-b
 /** A ground page's band and pane (the ground lies between them, under the one and left of the other). */
 const BAND = ':is(.home-band, .work.desk-bench > .bar)', PANE = ':is(.home-pane, .work.desk-bench > .side)';
 /**
- * The camera over the ground (ui/camera.ts): it stands back as it sets off (a tenth at most, soon after the press), goes
- * the way between the two pages, and comes down into the one come to, which grows from small into its place. Compared
- * by film against the floors' pan (the frame went with each page: two bands and two pane lines on the screen at once),
- * a straight zip up or down (a shaft, not a desk), and an ease both ways (it held after the press before it went).
+ * The camera over the ground (ui/camera.ts): a press is a change of place, not a journey. It goes at once (moving in
+ * the press's own frame, slowing only as it lands), a short way (SHORT: two dots up or down the rail, a dot across), the
+ * page left giving way as the one come to comes in, which grows from a breath smaller into its place. Before: half a
+ * second, a whole screen's height, and an ease in with a stand back to nine tenths: it held after the press, then
+ * heaved the page up and set it down (a lift, not a turn of the head).
  */
-const CAMERA = {ms: 480, pan: [.35, 0, .15, 1] as [number, number, number, number], back: .1};
+const CAMERA = {ms: 240, pan: [.2, .7, .2, 1] as [number, number, number, number], back: .025};
+/** How far a page comes from (px, along the rail): two of the ground's dots. */
+const SHORT = 48;
 /**
- * Where each ground page lies across the ground, in steps of three dots: Home a step to the left of Forge, New repo a
- * step to its right, so the camera going between them drifts a little sideways as it goes up or down the rail.
+ * Where each ground page lies across the ground, in dots: Home one to the left of Forge, New repo one to its right, so
+ * the camera going between them drifts a little sideways as it goes up or down the rail.
  */
 const ACROSS: Partial<Record<PurposeId, number>> = {home: -1, forge: 0, 'new-repo': 1};
-const STEP = 72;
+const STEP = 24;
 let panning: Pan | null = null;
 
 /** Which way along the rail `to` is from `from`: 1 down, -1 up, 0 the same place. */
@@ -284,8 +287,8 @@ function rise(p: Pan) {
   const page = $('page');
   for (const a of p.parts) a.cancel();
   const now = page.getBoundingClientRect(), top = Math.max(0, now.top);
-  // Going down, its top starts at the foot of the floor left; going up, its foot at that floor's top.
-  p.by = p.dir > 0 ? innerHeight + p.off - top : innerHeight - p.top;
+  // It comes from a little below the place going down the rail (above it going up), as the page left gives way.
+  p.by = SHORT;
   p.from = p.dir * p.by;
   // Over the ground (both pages on it), the camera flies; anywhere else, the floors pan.
   const fly = !!p.camera && ON_GROUND.has(p.to);
@@ -297,8 +300,9 @@ function rise(p: Pan) {
       // compositor, as the part does: a cut moved frame by frame would lag it under load, and bite into it). Read
       // where it stands before it is moved.
       const r = part.getBoundingClientRect();
-      const go = part.animate([{transform: `translateY(${p.from}px)`}, {transform: 'none'}], {duration: paced(330), easing: LAND});
-      return [go, ...r.height ? [part.animate([{clipPath: cut(r, top, innerHeight, now)}, {clipPath: cut(r, top, innerHeight, now)}], {duration: paced(330)})] : []];
+      const go = part.animate([{transform: `translateY(${p.from}px)`, opacity: 0}, {opacity: 0, offset: .15}, {opacity: 1, offset: .6}, {transform: 'none', opacity: 1}],
+        {duration: paced(CAMERA.ms), easing: LAND});
+      return [go, ...r.height ? [part.animate([{clipPath: cut(r, top, innerHeight, now)}, {clipPath: cut(r, top, innerHeight, now)}], {duration: paced(CAMERA.ms)})] : []];
     });
   }
   if (!p.ready) for (const a of p.parts) a.pause();
@@ -326,13 +330,14 @@ function flight(p: Pan, page: HTMLElement, now: DOMRect, top: number): Flight {
 /** The picture of the page left sets off with the page come to, the two as one sheet (set off again, turned, if
  * another place was pressed before they had moved). */
 function setOff(p: Pan) {
-  const root = document.documentElement, old = '::view-transition-old(page)', ms = paced(330);
+  const root = document.documentElement, old = '::view-transition-old(page)', ms = paced(CAMERA.ms);
   for (const a of p.old) a.cancel();
   // The picture is cut at the window's edges as it was, the cut its own, going with it; over the ground, at the
   // ground's edges where the frame stands, as the camera flies.
   const edge = cut(p.was, p.top, innerHeight + p.off);
   p.old = p.flight ? flyOff(p.flight, root, old, p.was)
-    : [root.animate([{transform: 'none'}, {transform: `translateY(${-p.dir * p.by}px)`}], {duration: ms, easing: LAND, fill: 'forwards', pseudoElement: old}),
+    : [root.animate([{transform: 'none', opacity: 1}, {opacity: 0, offset: .35}, {transform: `translateY(${-p.dir * p.by}px)`, opacity: 0}],
+      {duration: ms, easing: LAND, fill: 'forwards', pseudoElement: old}),
       root.animate([{clipPath: edge}, {clipPath: edge}], {duration: ms, fill: 'forwards', pseudoElement: old})];
   // The frame left (its band, its pane, its switch: pictures of their own) gives way where it stands to the one come
   // to, which is there under it.

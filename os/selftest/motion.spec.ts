@@ -44,12 +44,12 @@ test('going along the rail pans to the next page, which stands whole once it lan
   expect(await app.page.evaluate(() => getComputedStyle(document.getElementById('page')!).viewTransitionName)).toBe('none');
 });
 
-test('the two pages of a pan go as one sheet: the one come to adjoins the one left, whatever their heights', async ({app}) => {
+test('the two pages of a pan go together a short way: the one come to two dots behind the one left, whatever their heights', async ({app}) => {
   await app.newRepo.make('hello');
   await app.rail.go('home');
   await still(app);
   // Home runs past the window's foot, Git stops short of it. Frame by frame, the page left (its picture) and the page
-  // come to keep the same distance apart: neither runs over the other, and no band of nothing opens between them.
+  // come to keep the same distance apart, the one giving way as the other comes: a turn of the head, not a lift.
   const apart = app.page.evaluate(() => new Promise<number[]>((done) => {
     const seen: number[] = [], t0 = performance.now();
     const tick = () => {
@@ -64,9 +64,8 @@ test('the two pages of a pan go as one sheet: the one come to adjoins the one le
   const seen = await apart;
   expect(seen.length).toBeGreaterThan(3);
   expect(Math.max(...seen) - Math.min(...seen)).toBeLessThan(2);
-  // As far apart as the window is from the page's top line to its foot: the next floor starts where this one is cut.
-  const room = await app.page.evaluate(() => innerHeight - document.getElementById('page')!.getBoundingClientRect().top);
-  expect(Math.abs(seen[0] - room)).toBeLessThan(2);
+  // Two of the ground's dots apart (main.ts SHORT), not a window's height: it comes from just below its place.
+  expect(Math.abs(seen[0] - 48)).toBeLessThan(2);
 });
 
 test('pressed again before the pan has moved, the rail goes straight to the place pressed last; pressed back, it stays', async ({app}) => {

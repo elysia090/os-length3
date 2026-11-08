@@ -78,6 +78,8 @@ function offset(f: Flight, s: Step, left: boolean): Point {
 }
 
 const matrix = (k: number, x: number, y: number) => `matrix(${k}, 0, 0, ${k}, ${x}, ${y})`;
+/** By how much of the flight the page left is gone, and from and by how much the page come to comes in. */
+const GONE = .35, COME = [.15, .6];
 
 /**
  * The page come to, flown in: each of its parts (`parts`, their boxes read before any of them moved) moved by the
@@ -87,7 +89,10 @@ const matrix = (k: number, x: number, y: number) => `matrix(${k}, 0, 0, ${k}, ${
 export function flyIn(f: Flight, page: HTMLElement, parts: [HTMLElement, DOMRect][], frame: [HTMLElement, DOMRect][], dots: Point | null): Animation[] {
   const o = {duration: f.ms, easing: 'linear'};
   const maps = f.steps.map((s) => ({k: s.k, b: offset(f, s, false)}));
-  const moved = parts.map(([el, r]) => el.animate(maps.map(({k, b}) => ({transformOrigin: '0 0', transform: matrix(k, k * r.left + b.x - r.left, k * r.top + b.y - r.top)})), o));
+  // (It comes in as the page left goes, the two hardly over each other: not one page printed on the other.)
+  const shown = (i: number) => Math.min(1, Math.max(0, (i / (maps.length - 1) - COME[0]) / (COME[1] - COME[0])));
+  const moved = parts.map(([el, r]) => el.animate(maps.map(({k, b}, i) => ({transformOrigin: '0 0', opacity: shown(i),
+    transform: matrix(k, k * r.left + b.x - r.left, k * r.top + b.y - r.top)})), o));
   const held = frame.map(([el, r]) => el.animate(maps.map(({k, b}) => ({transformOrigin: '0 0',
     transform: matrix(1 / k, (r.left * (1 - k) - b.x) / k, (r.top * (1 - k) - b.y) / k)})), o));
   const box = page.getBoundingClientRect();
@@ -101,13 +106,13 @@ export function flyIn(f: Flight, page: HTMLElement, parts: [HTMLElement, DOMRect
  * is between the frame's parts: never over the band or the pane, which stand where they are.
  */
 export function flyOff(f: Flight, root: HTMLElement, pseudo: string, was: DOMRect): Animation[] {
-  const frames = f.steps.map((s) => {
+  const frames = f.steps.map((s, i) => {
     const b = offset(f, s, true), k = s.k, g = f.ground;
     // The ground's edges where they are on the picture, as it is moved by the map at this step.
     const top = (g.top - b.y) / k - was.top, left = (g.left - b.x) / k - was.left;
     const bottom = was.height - ((g.bottom - b.y) / k - was.top), right = was.width - ((g.right - b.x) / k - was.left);
     return {transformOrigin: '0 0', transform: matrix(k, k * was.left + b.x - was.left, k * was.top + b.y - was.top),
-      clipPath: `inset(${top}px ${right}px ${bottom}px ${left}px)`};
+      clipPath: `inset(${top}px ${right}px ${bottom}px ${left}px)`, opacity: Math.max(0, 1 - i / (f.steps.length - 1) / GONE)};
   });
   return [root.animate(frames, {duration: f.ms, easing: 'linear', fill: 'forwards', pseudoElement: pseudo})];
 }
