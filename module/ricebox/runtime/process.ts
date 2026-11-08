@@ -1712,7 +1712,7 @@ export class Task implements Thread {
     this.memory = memory;
     // A memory an exited process of the same program left its instance on: that instance goes on, its globals as a
     // fresh one's, the modules made since attached, where nothing instantiating would write is wanted (goesOn).
-    const pooled = goesOn(image, memory, from) ? memory.pooled?.find((x) => x.image === image) : null;
+    const pooled = goesOn(image, from) ? memory.pooled?.find((x) => x.image === image) : null;
     if (pooled) {
       memory.pooled = memory.pooled?.filter((x) => x !== pooled);
       this.slot = pooled.slot;
@@ -1834,14 +1834,14 @@ export const REG: RegName[] = [...Array.from({length: 16}, (_, n): RegName => `r
 export const KEEP_INSTANCES = 2;
 
 /**
- * Whether an instance of `image` made on `memory` before may run it in place of a new one (Task.load, and a Worker's
- * kept one: remote.ts): nothing a new instance would write is wanted. A fork's own copy of its parent's memory has
- * the parent's copied over all of it (Process.copyLive); a thread's (or a vfork child's) memory is its parent's, in
- * use, which a new instance wrote the image's data over (and was put back after: Task.load's keep); an exec (or a
- * first process) lays the image's data itself when its module was made without it (share.ts), and such a module
- * writes nothing as it is instantiated.
+ * Whether an instance of `image` made before on the memory it is to run on may run it in place of a new one
+ * (Task.load, and a Worker's kept one: remote.ts): nothing a new instance would write is wanted. A fork's own copy of
+ * its parent's memory has the parent's copied over all of it (Process.copyLive); a thread's (or a vfork child's)
+ * memory is its parent's, in use, which a new instance wrote the image's data over (and was put back after:
+ * Task.load's keep); an exec (or a first process) lays the image's data itself when its module was made without it
+ * (share.ts), and such a module writes nothing as it is instantiated.
  */
-export const goesOn = (image: Image, memory: Mem, from: Task | null): boolean => !!from || !!image.segments;
+export const goesOn = (image: Image, from: Task | null): boolean => !!from || !!image.segments;
 
 
 /** Where the time went (run.ts prints it with XLAT_TIMING=1): translating, compiling wasm, how much, and what a pack root fetched. */

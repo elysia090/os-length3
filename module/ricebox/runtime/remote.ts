@@ -26,6 +26,8 @@ const enc = new TextEncoder();
 
 /** How long the kernel waits for a running thread's next call blocking (then it waits on the event loop), and serves at most before the host gets a turn. */
 const BLOCK_MS = 4, YIELD_MS = 8;
+/** How long after a thread is handed to its Worker its first call is watched for (a Worker hears and starts it in ~0.1-0.3 ms). */
+const STARTING_MS = 1;
 /** Atomics.wait is allowed here (a Worker, or node's main thread; not a page's). */
 const BLOCKING = isNode || 'WorkerGlobalScope' in globalThis;
 const macrotask = (): Promise<void> => new Promise((go) => (typeof setImmediate === 'function' ? setImmediate(go) : setTimeout(go, 0)));
@@ -93,6 +95,8 @@ export class RemoteKernel extends Kernel {
   declare readonly onIdle: ((r: Pumped) => void) | null;
   declare serving: Promise<number> | null;
   declare closing: boolean;
+  /** Until when (performance.now() ms) a thread just handed to its Worker may make its first call: watched for, not slept through. */
+  declare starting: number;
   declare readonly passOn: boolean;
   constructor(options: Apart) {
     super(options);
@@ -106,6 +110,7 @@ export class RemoteKernel extends Kernel {
     this.onIdle = options.onIdle ?? null; // (r) => void: every thread waits ({waiting, until?}) or it all ended ({status})
     this.serving = null;
     this.closing = false;
+    this.starting = 0;
     // Once it ends, its Workers left over go on to the next kernel made here (a start rehearsed: their code is warm).
     this.passOn = options.passOn ?? false;
     // Started now, while the first program is translated (those warmed already first).
@@ -336,7 +341,7 @@ export class RemoteKernel extends Kernel {
         // A thread runs and will likely ask soon: wait for it right here, which wakes far sooner than the event loop
         // (and watching first, sooner than a wait).
         if (busy && BLOCKING) {
-          if (watch(this.door, 0, (v) => v !== seen)) continue;
+          if (watch(this.door, 0, (v) => v !== seen, now < this.starting ? this.starting - now : undefined)) continue;
           const r = sleep(this.door, 0, seen, 1, Math.min(BLOCK_MS, until === undefined ? BLOCK_MS : Math.max(0, until - now)));
           if (r !== 'timed-out') continue;
         }
@@ -409,7 +414,7 @@ class RemoteTask extends Task {
     this.memory = memory;
     this.fpuState = from instanceof RemoteTask ? from.fpuState : null;
     // An instance a Worker kept of this image on this memory may run it (RemoteKernel.worker, answer: again).
-    this.mayGoOn = goesOn(image, memory, from);
+    this.mayGoOn = goesOn(image, from);
     this.again = false;
     // A module that carries its data, instantiated over a memory in use: the image is put back (cpu.ts).
     this.keep = from && !image.segments && from.memory === memory ? [image.facts.imageStart ?? 0, image.facts.imageEnd] : null;
@@ -521,6 +526,9 @@ class RemoteTask extends Task {
       origin: performance.timeOrigin, // the kernel's clocks begin here (clock.ts)
     });
     w.x87 = true;
+    // Its Worker takes a moment to hear it and run it: its first call is watched for over that (STARTING_MS), as a
+    // call in a row is, rather than slept through and woken for (each side's sleep ~35 µs).
+    k.starting = performance.now() + STARTING_MS;
     this.again = false;
   }
 
