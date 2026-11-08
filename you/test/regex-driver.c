@@ -1,5 +1,5 @@
 /* regex.c, run as `rg -o` runs a pattern: each line of standard input, every match on it (an empty one too), one a
- * line (`-i`: case aside); or, `-l`, each line holding one, as `rg` prints them. For kernel/you/test/regex.sh, which
+ * line (`-i`: case aside); or, `-l`, each line holding one, as `rg` prints them. For you/test/regex.sh, which
  * compares it with ripgrep's (and for timing it against ripgrep). */
 #define UNIT "regex"
 #define ARENA (1 << 27) /* the text (up to 64 MiB, read whole when not a file to map) and the DFAs */

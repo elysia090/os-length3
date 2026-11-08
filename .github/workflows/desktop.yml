@@ -6,7 +6,7 @@ on:
   # A change is tested once: in its pull request, on what merging it would make (refs/pull/N/merge), so
   # main is not tested again when it lands. A branch without a pull request runs by hand.
   pull_request:
-    paths: ['os/**', 'xlat/**', 'kernel/**', '.github/workflows/desktop.yml']
+    paths: ['os/**', 'xlat/**', 'you/**', 'otter/**', 'lib/**', '.github/workflows/desktop.yml']
   workflow_dispatch:
 
 # Nothing here writes: the token reads the repository and nothing else. Every action is pinned
@@ -408,7 +408,7 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=root-${{ hashFiles('os/root/**', 'kernel/**', '.github/actions/root-packages/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=root-${{ hashFiles('os/root/**', 'you/**', 'otter/**', 'lib/**', '.github/actions/root-packages/**') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

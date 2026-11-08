@@ -8,7 +8,7 @@
 //   x  in the root, but some line that uses it does not end as natively under xlat (what differs is said)
 //   -  not in the root (and what to reach for instead, where there is something)
 //
-// The table it writes, root/etc/length3/commands, is what `help` shows (kernel/otter): one line a command, its name,
+// The table it writes, root/etc/length3/commands, is what `help` shows (otter): one line a command, its name,
 // its kind, its mark and what instead, by tabs. The root's builtins of the shell are a kind of their own.
 //
 //   node scripts/commands.ts WEB ROOT_DIR [--only REGEX] [--jobs N] [--seconds N] [--write | --check]

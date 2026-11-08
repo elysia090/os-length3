@@ -2,7 +2,7 @@
 # otter, checked as it is used: the catalog by kind and mark, wrapped at the width; a command of each mark said; the
 # person's language; whatis and apropos as man-db's say, and their status when nothing is found.
 #
-#   sh kernel/otter/test/otter.sh [OTTER]     OTTER: the program (as kernel/lib/build.sh makes it)
+#   sh otter/test/otter.sh [OTTER]     OTTER: the program (as lib/build.sh makes it)
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 otter=$(cd "$(dirname "${1:-$here/../otter}")" && pwd)/$(basename "${1:-$here/../otter}")

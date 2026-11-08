@@ -6,7 +6,7 @@
 //   node scripts/units.ts        what each file is, and every import from one unit to another the table does not allow
 //
 // Only TypeScript's imports are followed here, by their paths; the Rust and the C are placed by their files, and each
-// is checked by its own (layers.ts for the core, build.sh for kernel/) until it moves into its unit. An import a unit
+// is checked by its own (layers.ts for the core, lib/build.sh for the units of C) until it moves into its unit. An import a unit
 // may not make and still makes is owed: listed below with the step that takes it away, so a new one fails and an
 // owed one gone must be struck from the list.
 import {readdirSync, readFileSync, statSync} from 'node:fs';
@@ -42,7 +42,7 @@ export const UNITS: Unit[] = [
     holds: ['os/core/src/ssh', 'os/l3/src/ssh.rs', 'os/l3/src/cmd/address.rs'],
     takes: ['ricebox']},
   {name: 'otter', says: 'to see and to decide: every floor counted at its hook, small bounded policies put at the hooks, each said; never the work itself',
-    holds: ['kernel/otter', 'os/core/src/storage'],
+    holds: ['otter', 'os/core/src/storage'],
     takes: ['ricebox', 'muk', 'sods']},
   {name: 'shipto', says: 'deliveries: what goes where and who takes it (commits, reviews, merges, messages, releases), the Remote that receives them, and its own deploy',
     holds: ['os/remote', 'os/core/src/remote', 'os/l3/src/sync.rs', 'os/l3/src/cmd/git.rs', 'os/l3/src/cmd/remote.rs',
@@ -50,8 +50,8 @@ export const UNITS: Unit[] = [
     takes: ['muk', 'funk']},
   {name: 'm8', says: 'where and how many boxes run: a state wanted, and one loop that makes it so (none yet: it is made when boxes run on more than one machine)',
     holds: [], takes: ['ricebox', 'muk', 'shipto']},
-  {name: 'you', says: 'the tools a person reaches for: z, rg, fd, fzf', holds: ['kernel/you'], takes: ['lib']},
-  {name: 'lib', says: "what kernel/'s units of C stand on: system calls, words, output; no C library", holds: ['kernel/lib'], takes: []},
+  {name: 'you', says: 'the tools a person reaches for: z, rg, fd, fzf', holds: ['you'], takes: ['lib']},
+  {name: 'lib', says: "what the units of C stand on: system calls, words, output; no C library", holds: ['lib'], takes: []},
   {name: 'app', says: 'a face: the pages, the window and what the core says to them; no judgement of its own',
     holds: ['os/app', 'os/desktop', 'os/core', 'os/boot.ts', 'os/shared', 'os/index.html', 'os/vite.config.ts'], takes: ['*']},
   {name: 'l3', says: "a face: l3's words, read against its one table, and what it prints; no judgement of its own",
@@ -59,7 +59,7 @@ export const UNITS: Unit[] = [
 ];
 
 /** What is no unit's: the tests, the scripts that build and check, what is made, and notes. */
-export const NOT_UNITS = ['os/scripts', 'os/selftest', 'xlat/runtime/run.ts', 'xlat/tests', 'xlat/examples', 'kernel/you/test', 'kernel/otter/test',
+export const NOT_UNITS = ['os/scripts', 'os/selftest', 'xlat/runtime/run.ts', 'xlat/tests', 'xlat/examples', 'you/test', 'otter/test',
   'os/core/web/src/tests', 'os/node_modules', 'os/target', 'os/dist', 'os/public', 'xlat/target', 'research_notes', 'reports',
   'temp', '.github', '.claude'];
 const isTest = (rel: string) => /\.test\.ts$|(^|\/)tests?\/|\/testing[^/]*\.ts$|\.d\.ts$/.test(rel);

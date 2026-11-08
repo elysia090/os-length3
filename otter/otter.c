@@ -1,5 +1,5 @@
 /*
- * otter: what a Prompt has, and what each thing is (a unit of the kernel/: lib's three headers and this; its checks in
+ * otter: what a Prompt has, and what each thing is (a unit of C: lib's three headers and this; its checks in
  * test/). `help` in the Prompt's shell is otter (/etc/length3/shrc), and so are whatis and apropos (their links).
  *
  *   otter                  every command a Prompt is asked for, by kind, each marked by what was seen of it here

@@ -139,7 +139,7 @@ else
 fi
 
 # What a Prompt has, by kind, each marked by whether it runs here, and what any one of them is (help NAME): otter
-# (kernel/otter), not the shell's own help, which names its builtins alone.
+# (otter), not the shell's own help, which names its builtins alone.
 help() { otter "$@"; }
 
 # What a person reaches for and the root does not keep says so, and what is there instead: the root has no manuals

@@ -1,6 +1,6 @@
 /*
  * you's zoxide: the places you have been, and back to one by a part of its name (zoxide's, made again as one unit of
- * the kernel/: lib's three headers and this; its checks in test/).
+ * a unit of C: lib's three headers and this; its checks in test/).
  *
  *   you add DIR...                         learn that you were in each DIR (a shell runs it at every cd)
  *   you query [--list] [--score] [--exclude DIR] [--] [KEYWORD...]

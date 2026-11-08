@@ -1,11 +1,11 @@
 #!/bin/sh
-# A unit of the kernel/, built: one C file (taking lib's headers), no C library, linked as a static PIE that has nothing
+# A unit of C, built: one C file (taking lib's headers), no C library, linked as a static PIE that has nothing
 # to relocate (everything it addresses it addresses from where it runs), so the kernel maps it and it runs: no loader,
 # no start files, nothing done before its first instruction but what it does itself. Hardened as every program of the
 # root is (the stack protector, stack clash protection, locals zeroed; full RELRO, no executable stack), and checked to
 # be all of that.
 #
-#   sh kernel/lib/build.sh UNIT.c OUT
+#   sh lib/build.sh UNIT.c OUT
 #
 # CC (cc) builds it; CFLAGS are added after its own.
 #
@@ -14,7 +14,7 @@
 # missing. sys.h has its own, so a unit is compiled as any is, its own memcpy and the rest not taken for the library's
 # (-fno-builtin), and told there is none only as it is linked.
 set -eu
-[ "$#" -eq 2 ] || { echo "usage: sh kernel/lib/build.sh UNIT.c OUT" >&2; exit 2; }
+[ "$#" -eq 2 ] || { echo "usage: sh lib/build.sh UNIT.c OUT" >&2; exit 2; }
 src=$1 out=$2
 name=$(basename "$src" .c)
 o=$(mktemp -d)

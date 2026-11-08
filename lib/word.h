@@ -1,5 +1,5 @@
 /*
- * Words: what a unit of the kernel/ reads and compares eight bytes at a time, with nothing of the kernel in it. The
+ * Words: what a unit of C reads and compares eight bytes at a time, with nothing of the kernel in it. The
  * first of lib's three (word.h, then sys.h, then io.h, each taking the one before it and nothing else).
  *
  * Where a unit reads a word past the end of what it means (eq, lower, line_in, a hash), SLACK bytes are there to be

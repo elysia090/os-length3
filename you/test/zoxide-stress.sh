@@ -4,8 +4,8 @@
 # more places than it keeps; the longest place and the most keywords; a file that is not a file; output cut off; and
 # time: its weights, a place gone a season forgotten, a clock gone back.
 #
-#   sh kernel/you/test/zoxide-stress.sh [YOU]     YOU: the program (kernel/you/you, as kernel/lib/build.sh makes it).
-#       A build of its own is made beside it for what wants one (kernel/lib/build.sh, CC): its file remade every 512
+#   sh you/test/zoxide-stress.sh [YOU]     YOU: the program (you/you, as lib/build.sh makes it).
+#       A build of its own is made beside it for what wants one (lib/build.sh, CC): its file remade every 512
 #       bytes, its time $YOU_NOW when set.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)

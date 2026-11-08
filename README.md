@@ -59,7 +59,7 @@ below that ends it).
 
 | Unit | Its responsibility | Takes from |
 | --- | --- | --- |
-| you | the tools a person reaches for: z, rg, fd, fzf (`kernel/you`) | lib |
+| you | the tools a person reaches for: z, rg, fd, fzf (`you`) | lib |
 | m8 | where and how many boxes run: a state wanted, one loop that makes it so (made when boxes run on more than one machine) | ricebox, muk, shipto |
 | shipto | deliveries: what goes where and who takes it (commits, reviews, merges, messages, releases), the Remote that receives them, its own deploy | muk, funk |
 | funk | what is on its way: links out of a box and between boxes (HTTP, TCP, DNS, WebSocket, SSH) | ricebox |

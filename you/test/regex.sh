@@ -7,7 +7,7 @@
 # and the matches; and the lines both ways again as the browser looks, 16 bytes a step (YOU_16). A pattern both
 # refuse is the same too.
 #
-#   sh kernel/you/test/regex.sh RG     RG: ripgrep, to compare with; the driver is built by kernel/lib/build.sh
+#   sh you/test/regex.sh RG     RG: ripgrep, to compare with; the driver is built by lib/build.sh
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 rg=$1

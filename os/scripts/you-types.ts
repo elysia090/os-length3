@@ -1,7 +1,7 @@
-// kernel/you/types.h, the kinds of file `you rg -t` and `-T` name (kernel/you/rg.c), taken from ripgrep's own list so
+// you/types.h, the kinds of file `you rg -t` and `-T` name (you/rg.c), taken from ripgrep's own list so
 // that a type means to it what it means to `rg`: each kind's name and the globs a file's name is that kind by.
 //
-//   node scripts/you-types.ts RG     RG: the root's ripgrep (the one rg.c is checked against, kernel/you/test/rg.sh)
+//   node scripts/you-types.ts RG     RG: the root's ripgrep (the one rg.c is checked against, you/test/rg.sh)
 //
 // One string: each kind its name, then its globs, each ended by a NUL, the kind ended by one more; the list by a third.
 import {spawnSync} from 'node:child_process';
@@ -10,7 +10,7 @@ import {fileURLToPath} from 'node:url';
 
 const rg = process.argv[2];
 if (!rg) throw new Error('usage: node scripts/you-types.ts RG');
-const out = fileURLToPath(new URL('../../kernel/you/types.h', import.meta.url));
+const out = fileURLToPath(new URL('../../you/types.h', import.meta.url));
 const run = (args: string[]): string => {
   const r = spawnSync(rg, args, {encoding: 'utf8'});
   if (r.status !== 0) throw new Error(`${rg} ${args.join(' ')}: ${r.stderr}`);
@@ -25,7 +25,7 @@ const kinds = run(['--type-list']).trim().split('\n').map((line) => {
 for (const k of kinds) for (const g of k.globs) if (/[{}/]|\*\*/.test(g)) throw new Error(`${k.name}: ${g} is more than rg.c's type globs take`);
 const c = (s: string): string => s.replace(/[\\"]/g, (m) => `\\${m}`);
 const lines = kinds.map((k) => `  "${c(k.name)}\\0${k.globs.map((g) => `${c(g)}\\0`).join('')}\\0"`);
-writeFileSync(out, `/* kernel/you/types.h, made by os/scripts/you-types.ts from ${version}'s --type-list: the kinds of file -t and -T
+writeFileSync(out, `/* you/types.h, made by os/scripts/you-types.ts from ${version}'s --type-list: the kinds of file -t and -T
  * name (rg.c), each its name and then the globs a file's name is that kind by, each ended by a NUL, the kind by one more. */
 static const char TYPES[] =
 ${lines.join('\n')};
