@@ -428,7 +428,11 @@ static struct re *pattern(void) {
   u64 cap = 64;
   for (u32 i = 0; i < npats; i++) cap += 2 * slen(pats[i]) + 8;
   u8 *p = grab(cap), *q = p;
-  const char *pre = o.whole ? "^(?:" : o.word ? "\\b(?:" : "(?:";
+  /* One pattern alone is given as it is (not in a group of its own): what every match holds is then seen in it (regex.c
+   * required: a group's flags may differ inside, so a pattern that begins with one is asked no literal), and found by
+   * that, a third faster. */
+  int bare = npats == 1 && !o.whole && !o.word;
+  const char *pre = o.whole ? "^(?:" : o.word ? "\\b(?:" : bare ? "" : "(?:";
   for (const char *s = pre; *s; s++) *q++ = (u8)*s;
   int capital = 0;
   for (u32 i = 0; i < npats; i++) {
@@ -442,7 +446,7 @@ static struct re *pattern(void) {
     }
     if (npats > 1) *q++ = ')';
   }
-  const char *post = o.whole ? ")$" : o.word ? ")\\b" : ")";
+  const char *post = o.whole ? ")$" : o.word ? ")\\b" : bare ? "" : ")";
   for (const char *s = post; *s; s++) *q++ = (u8)*s;
   int flags = RE_LINES | (o.kase == 1 || (o.kase == 2 && !capital) ? RE_ICASE : 0) | (o.replace ? RE_CAPTURE : 0);
   struct re *r = re_compile(p, (u32)(q - p), flags);
@@ -737,9 +741,19 @@ static int spans; /* each match on a line is wanted (its colour, -o, --column, -
 static int printed_any, heading_said, last_ctx_file;
 static u64 last_printed; /* the number of the last line printed in this file (0: none yet) */
 
+/* The newlines in t[k..at), 64 bytes a step (AVX2): each 32's a mask, counted. */
+__attribute__((target("avx2,popcnt"))) static u64 newlines_avx2(const u8 *t, u64 *k, u64 at) {
+  const v32 nl = (v32){0} + '\n';
+  u64 c = 0, i = *k;
+  for (; i + 64 <= at; i += 64)
+    c += (u64)__builtin_popcountll((u64)mask32(ld256(t + i) == nl) | (u64)mask32(ld256(t + i + 32) == nl) << 32);
+  *k = i;
+  return c;
+}
 /* The number of the line t[at..] starts, counting on from (*lnum, *lat). */
 static u64 line_no(const u8 *t, u64 at, u64 *lnum, u64 *lat) {
   u64 k = *lat, c = 0;
+  if (avx2) c = newlines_avx2(t, &k, at);
   for (; k + 8 <= at; k += 8) {
     u64 x = ld64(t + k) ^ 0x0a0a0a0a0a0a0a0aull, z = (x - 0x0101010101010101ull) & ~x & 0x8080808080808080ull;
     c += ((z >> 7) * 0x0101010101010101ull) >> 56;
@@ -888,9 +902,16 @@ static u64 next_selected(const u8 *t, u64 n, u64 at) {
   }
   return n;
 }
-/* Where the first NUL is in t[0..n), or n: eight bytes a step. */
-static u64 first_nul(const u8 *t, u64 n) {
+/* Where the first NUL is in t[0..n), or n: 64 bytes a step (AVX2), else eight. As ripgrep has it where it walks to a
+ * file, the whole of it is looked at (a NUL anywhere: binary). */
+__attribute__((target("avx2"))) static u64 nul_avx2(const u8 *t, u64 n) {
+  const v32 z = (v32){0};
   u64 k = 0;
+  for (; k + 64 <= n; k += 64) if (mask32((ld256(t + k) == z) | (ld256(t + k + 32) == z))) break;
+  return k;
+}
+static u64 first_nul(const u8 *t, u64 n) {
+  u64 k = avx2 ? nul_avx2(t, n) : 0;
   for (; k + 8 <= n; k += 8) {
     u64 x = ld64(t + k);
     if ((x - 0x0101010101010101ull) & ~x & 0x8080808080808080ull) break;
@@ -933,11 +954,14 @@ counted:
   nm = 0;
   if (o.invert) nm = next_match(t, n);
   u64 lnum = 1, lat = 0, count = 0, matches = 0, ctx = 0, ctx_num = 0;
+  int numbered = o.number || o.after || o.before || o.vimgrep;
   u32 left = 0;
   for (u64 at = 0; at < n;) {
     u64 ls = next_selected(t, n, at);
     if (ls >= n) break;
-    u64 le = line_end(t, n, ls), num = line_no(t, ls, &lnum, &lat);
+    /* Its number, where anything says it (-n, or the lines around it, numbered on from it): counting every newline
+     * before it is a pass over the text, which -c, -l or a line printed bare does not need. */
+    u64 le = line_end(t, n, ls), num = numbered ? line_no(t, ls, &lnum, &lat) : 0;
     if (o.quiet) leave(0);
     count++;
     if (o.count_matches) for (u64 x = ls, last = ~0ull, ms, me; grep_span(&g, ls, le, &x, &last, &ms, &me);) matches++;
