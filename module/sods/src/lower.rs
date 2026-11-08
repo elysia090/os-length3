@@ -204,6 +204,9 @@ struct Fx<'p> {
     /// L_FA - L_FB, made where a flag asks for it (most conditions read only
     /// the operands).
     fr_pending: bool,
+    /// A compare (cmp or test) whose flags only the branch right after it reads: not lowered where it is, but
+    /// as that branch's condition, from its operands (lower_function, condition).
+    fused: Option<Instruction>,
     /// Nesting of wasm blocks between the current code and the dispatch loop.
     depth: u32,
     program: &'p Program,
@@ -689,8 +692,98 @@ impl<'p> Fx<'p> {
     }
 
     /// Push the truth of condition `cc` as i32.
+    /// Operand `n` of `i` as an i32, zero-extended from `size` (4 bytes or fewer).
+    fn read32(&mut self, i: &Instruction, n: u32, size: u8) -> bool {
+        match i.op_kind(n) {
+            OpKind::Register => match gpr(i.op_register(n)) {
+                Some((k, Part::Full | Part::Low32)) => { self.get(l_reg(k)); self.e(W::I32WrapI64); true }
+                Some(_) => { self.read_reg(i.op_register(n)); self.e(W::I32WrapI64); true }
+                None => false,
+            },
+            OpKind::Memory => {
+                let at = self.place(i);
+                self.e(match size { 1 => W::I32Load8U(mem_at(at, 0)), 2 => W::I32Load16U(mem_at(at, 0)), _ => W::I32Load(mem_at(at, 0)) });
+                true
+            }
+            OpKind::Immediate8 | OpKind::Immediate16 | OpKind::Immediate32 | OpKind::Immediate8to16 | OpKind::Immediate8to32 => {
+                self.c32((i.immediate(n) as i64 & mask(size)) as i32);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether a compare's flags can be its next instruction's condition `cc` alone (fused): cmp of all but the
+    /// overflow and parity conditions, test of all but parity.
+    fn fusable(i: &Instruction, cc: ConditionCode) -> bool {
+        use ConditionCode as C;
+        let plain = |n: u32| matches!(i.op_kind(n), OpKind::Register | OpKind::Memory | OpKind::Immediate8 | OpKind::Immediate16 | OpKind::Immediate32
+            | OpKind::Immediate8to16 | OpKind::Immediate8to32 | OpKind::Immediate8to64 | OpKind::Immediate32to64)
+            && (i.op_kind(n) != OpKind::Register || gpr(i.op_register(n)).is_some());
+        let ops = i.op_count() == 2 && plain(0) && plain(1);
+        match i.mnemonic() {
+            Mnemonic::Cmp => ops && !matches!(cc, C::o | C::no | C::p | C::np | C::None),
+            Mnemonic::Test => ops && !matches!(cc, C::p | C::np | C::None),
+            _ => false,
+        }
+    }
+
+    /// A fused compare's condition: its operands compared as `cc` asks, at its width (in i32 at 4 bytes or fewer).
+    fn fused_condition(&mut self, i: &Instruction, cc: ConditionCode) {
+        use ConditionCode as C;
+        let size = Self::size(i, 0);
+        let narrow = size <= 4;
+        let signed = matches!(cc, C::l | C::ge | C::le | C::g | C::s | C::ns);
+        let operand = |fx: &mut Self, n: u32| {
+            if narrow {
+                fx.read32(i, n, size);
+                if signed && size < 4 { fx.e(if size == 1 { W::I32Extend8S } else { W::I32Extend16S }); }
+            } else {
+                fx.read(i, n, size);
+            }
+        };
+        let (eq, ne, lt_u, ge_u, le_u, gt_u, lt_s, ge_s, le_s, gt_s) = if narrow {
+            (W::I32Eq, W::I32Ne, W::I32LtU, W::I32GeU, W::I32LeU, W::I32GtU, W::I32LtS, W::I32GeS, W::I32LeS, W::I32GtS)
+        } else {
+            (W::I64Eq, W::I64Ne, W::I64LtU, W::I64GeU, W::I64LeU, W::I64GtU, W::I64LtS, W::I64GeS, W::I64LeS, W::I64GtS)
+        };
+        let zero = |fx: &mut Self| if narrow { fx.c32(0) } else { fx.c64(0) };
+        if i.mnemonic() == Mnemonic::Cmp {
+            operand(self, 0);
+            operand(self, 1);
+            match cc {
+                C::e => self.e(eq), C::ne => self.e(ne),
+                C::b => self.e(lt_u), C::ae => self.e(ge_u), C::be => self.e(le_u), C::a => self.e(gt_u),
+                C::l => self.e(lt_s), C::ge => self.e(ge_s), C::le => self.e(le_s), C::g => self.e(gt_s),
+                // The sign of the difference at the compare's width.
+                _ => {
+                    self.e(if narrow { W::I32Sub } else { W::I64Sub });
+                    if signed && size < 4 { self.e(if size == 1 { W::I32Extend8S } else { W::I32Extend16S }); }
+                    zero(self);
+                    self.e(if cc == C::s { lt_s } else { ge_s });
+                }
+            }
+            return;
+        }
+        // test: the and of its operands, with CF and OF clear.
+        operand(self, 0);
+        operand(self, 1);
+        self.e(if narrow { W::I32And } else { W::I64And });
+        match cc {
+            C::e | C::be => { zero(self); self.e(eq); }
+            C::ne | C::a => { zero(self); self.e(ne); }
+            C::s | C::l => { zero(self); self.e(lt_s); }
+            C::ns | C::ge => { zero(self); self.e(ge_s); }
+            C::le => { zero(self); self.e(le_s); }
+            C::g => { zero(self); self.e(gt_s); }
+            C::b | C::o => { self.e(W::Drop); self.c32(0); }
+            _ => { self.e(W::Drop); self.c32(1); }
+        }
+    }
+
     fn condition(&mut self, cc: ConditionCode) {
         use ConditionCode as C;
+        if let Some(i) = self.fused.take() { self.fused_condition(&i, cc); return; }
         if let Flags::Sub(size) = self.flags {
             let signed = matches!(cc, C::l | C::ge | C::le | C::g);
             let op = match cc {
@@ -2582,7 +2675,7 @@ fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u6
     let (live, cases) = live_flags(program, index, &succs);
     let n = function.blocks.len() as u32;
     let handed_flags = handed;
-    let mut fx = Fx { f: WasmFunction::new([]), syncs: Vec::new(), used: 0, ev: vec![Vec::new()], nest: 0, flags: Flags::Held, fr_pending: false, depth: 0, program, function, report, handed, backward: false, at: 0, budget: has_loop(function), summaries,
+    let mut fx = Fx { f: WasmFunction::new([]), syncs: Vec::new(), used: 0, ev: vec![Vec::new()], nest: 0, flags: Flags::Held, fr_pending: false, fused: None, depth: 0, program, function, report, handed, backward: false, at: 0, budget: has_loop(function), summaries,
         loops: Vec::new(), within: Vec::new(), heads: Vec::new(), labels: Vec::new(), block_at: Vec::new(), loop_at: Vec::new() };
     let (loops, within) = clean_loops(program, index, function, loops_of(&function.blocks, |a| function.block_index(a)).0);
     fx.heads = vec![None; function.blocks.len()];
@@ -2660,6 +2753,11 @@ fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u6
             }
             if j == last && i.mnemonic() == Mnemonic::Int3 {
                 break;
+            }
+            // A compare whose flags only the branch that ends the block reads is that branch's condition.
+            if j + 1 == last && live_out == 0 && matches!(block.exit, Exit::Branch { .. }) && Fx::fusable(i, block.code[last].condition_code()) {
+                fx.fused = Some(*i);
+                continue;
             }
             fx.instruction(i, needed[j] != 0);
         }
