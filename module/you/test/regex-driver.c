@@ -4,9 +4,9 @@
 #define UNIT "regex"
 #define ARENA (1 << 27) /* the text (up to 64 MiB, read whole when not a file to map) and the DFAs */
 #include "../../lib/io.h"
-#include "../regex.c"
-#include "../dfa.c"
-#include "../grep.c"
+#include "../src/regex.c"
+#include "../src/dfa.c"
+#include "../src/grep.c"
 
 static int main_(int argc, char **argv, char **envp) {
   (void)envp;

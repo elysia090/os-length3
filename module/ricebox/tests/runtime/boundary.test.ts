@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
 // The runtime loads its call tables through process.ts, as the worker does.
-import {Kernel, Process} from '../runtime/process.ts';
-import {FILE_CALLS} from '../runtime/sys-file.ts';
-import {NET_CALLS} from '../runtime/sys-net.ts';
-import {PROC_CALLS} from '../runtime/sys-proc.ts';
+import {Kernel, Process} from '../../runtime/process.ts';
+import {FILE_CALLS} from '../../runtime/sys-file.ts';
+import {NET_CALLS} from '../../runtime/sys-net.ts';
+import {PROC_CALLS} from '../../runtime/sys-proc.ts';
 
 // The Prompt's guest has a network as a machine with only its loopback has one: nothing it runs can reach or listen
 // on the host's network, whatever the program is. Its sockets are channels between its own processes in this kernel
@@ -63,7 +63,7 @@ test('the socket calls are sys-net.ts\'s alone, and nothing in it reaches out of
   // What makes them, and what tells of the network, has no way to the host: no fetch, no WebSocket, no node module
   // that opens one.
   for (const file of ['sys-net.ts', 'net-view.ts']) {
-    const source = readFileSync(new URL(`../runtime/${file}`, import.meta.url), 'utf8');
+    const source = readFileSync(new URL(`../../runtime/${file}`, import.meta.url), 'utf8');
     for (const way of ['fetch(', 'WebSocket', 'XMLHttpRequest', 'EventSource', 'RTCPeerConnection', 'WebTransport', 'node:net', 'node:dgram', 'node:http', 'node:tls', 'import(']) {
       assert.ok(!source.includes(way), `${file} uses ${way}`);
     }

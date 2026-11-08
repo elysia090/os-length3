@@ -1625,7 +1625,7 @@ What leaves this system is kept to what is said here:
   lo alone (module/ricebox/runtime/net-view.ts). Every other address is no one's to
   bind (EADDRNOTAVAIL) and unreachable (ENETUNREACH), and every other family
   is refused as a host without it refuses it (EAFNOSUPPORT).
-  module/ricebox/tests/boundary.test.ts holds the line, and module/ricebox/tests/c/inet.c and
+  module/ricebox/tests/runtime/boundary.test.ts holds the line, and module/ricebox/tests/programs/inet.c and
   icmp.c compare with native. The page itself
   may reach its own origin, the Remote and, for the box's Agent, the APIs of
   the models' makers whose keys it knows (agent/makers.ts), nothing else: the

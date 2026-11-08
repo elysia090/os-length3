@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import {totalmem} from 'node:os';
 import {statfsSync} from 'node:fs';
 import {test} from 'node:test';
-import {MEMORY_FLOOR, machine} from '../runtime/machine.ts';
-import {Kernel} from '../runtime/process.ts';
-import {Made} from '../runtime/procfs.ts';
-import type {Console} from '../runtime/parts.ts';
+import {MEMORY_FLOOR, machine} from '../../runtime/machine.ts';
+import {Kernel} from '../../runtime/process.ts';
+import {Made} from '../../runtime/procfs.ts';
+import type {Console} from '../../runtime/parts.ts';
 
 // What programs are told of the machine is the machine: its memory and its storage as the host says them, not a
 // number made up (/proc/meminfo said 4 GiB, statfs said nothing, on every machine).

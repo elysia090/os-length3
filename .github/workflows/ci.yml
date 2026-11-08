@@ -274,7 +274,7 @@ jobs:
       - name: Test against native
         if: matrix.part == 'native'
         working-directory: module/ricebox
-        run: sh tests/run.sh
+        run: sh tests/programs/run.sh
       # run.ts takes the wasm build of the translator when it is current.
       - name: Run root3 under xlat
         if: matrix.part == 'prompt'

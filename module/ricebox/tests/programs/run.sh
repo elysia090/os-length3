@@ -3,7 +3,7 @@
 # and require identical stdout and exit status.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
-root=$(dirname "$here")
+root=$(cd "$here/../.." && pwd)
 # The translator is sods' (its crate beside this unit); the kernel that runs what it makes is this one's.
 sods=$(cd "$root/../sods" && pwd)
 out="$here/out"
@@ -12,7 +12,7 @@ cargo build -q --locked --release --manifest-path "$sods/Cargo.toml"
 # The same translator as wasm (as the browser runs it); run.ts uses it when it is current.
 cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path "$sods/Cargo.toml"
 status=0
-for c in "$here"/c/*.c; do
+for c in "$here"/*.c; do
   name=$(basename "$c" .c)
   # A test marked "xlat: stripped" is built as a distribution ships a program: no symbols, no relocations kept.
   if grep -q 'xlat: stripped' "$c"; then
@@ -54,7 +54,7 @@ for name in calls switches signals threads jobs; do
 done
 # Rust's std (what root3 is made of), when the musl target is installed.
 if rustup target list --installed 2>/dev/null | grep -q x86_64-unknown-linux-musl; then
-  for r in "$here"/rust/*.rs; do
+  for r in "$here"/*.rs; do
     name=rust-$(basename "$r" .rs)
     rustc -O --edition 2021 --target x86_64-unknown-linux-musl -C target-feature=+crt-static \
       -C relocation-model=static -C link-arg=-no-pie -C link-arg=-Wl,--emit-relocs "$r" -o "$out/$name"
@@ -73,7 +73,7 @@ else
 fi
 # Go (threads: the runtime's own and goroutines over them), as git-lfs is built, where Go is installed.
 if command -v go >/dev/null; then
-  for g in "$here"/go/*.go; do
+  for g in "$here"/*.go; do
     name=go-$(basename "$g" .go)
     dir="$out/$name.src"; mkdir -p "$dir"; cp "$g" "$dir/main.go"; printf 'module t\ngo 1.21\n' > "$dir/go.mod"
     (cd "$dir" && CC=musl-gcc CGO_ENABLED=1 go build -ldflags '-linkmode=external -extldflags "-static -Wl,--emit-relocs"' -o "$out/$name" .)
@@ -85,7 +85,7 @@ if command -v go >/dev/null; then
   done
 fi
 # The kernel's tests, and muk's (what it reads at rest).
-for t in "$here"/*.test.ts "$root"/../muk/tests/*.test.ts; do
+for t in "$root"/tests/runtime/*.test.ts "$root"/../muk/tests/*.test.ts; do
   if node --test "$t" >/dev/null 2>&1; then echo "ok   $(basename "$t")"; else echo "FAIL $(basename "$t")"; status=1; fi
 done
 exit $status

@@ -14,8 +14,8 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
-const BUSYBOX = fileURLToPath(new URL('../../../target/userland/busybox', import.meta.url));
-const RUN = join(here, '..', 'runtime', 'run.ts');
+const BUSYBOX = fileURLToPath(new URL('../../../../target/userland/busybox', import.meta.url));
+const RUN = join(here, '..', '..', 'runtime', 'run.ts');
 
 /** A case: what runs, and whether it is slow (left out unless PARITY_SLOW). */
 interface Case { name: string; script: string; slow?: boolean }

@@ -1,18 +1,18 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
-import {Vfs} from '../runtime/fs.ts';
-import {RemoteKernel} from '../runtime/remote.ts';
-import {Outbox} from '../runtime/channel.ts';
-import {prepare} from '../../sods/runtime/share.ts';
-import {loadTranslator} from '../../sods/runtime/translator.ts';
+import {Vfs} from '../../runtime/fs.ts';
+import {RemoteKernel} from '../../runtime/remote.ts';
+import {Outbox} from '../../runtime/channel.ts';
+import {prepare} from '../../../sods/runtime/share.ts';
+import {loadTranslator} from '../../../sods/runtime/translator.ts';
 import {have} from './busybox.ts';
 
 // Each thread in a Worker of its own, memory shared: what a cross-origin
 // isolated page runs. Here a thread that never makes a call cannot hold
 // the others, and one killed while it computes ends at once.
 
-const stage = new URL('../../../target/userland/', import.meta.url);
+const stage = new URL('../../../../target/userland/', import.meta.url);
 
 async function shell(script: string, {input = null, said = null}: {input?: string | null; said?: [number, string][] | null} = {}): Promise<{status: number; out: string; ms: number}> {
   const vfs = new Vfs();

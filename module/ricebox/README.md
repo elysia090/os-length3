@@ -28,6 +28,6 @@ mounts the root and the repo in its tree and gives it the translations kept.
 ```
 node runtime/run.ts PROGRAM [args...]            # host ELF as /bin/PROGRAM
 node runtime/run.ts --root DIR /bin/sh -c '...'  # a host tree as /
-sh tests/run.sh                                   # native vs translated, and the unit tests
+sh tests/programs/run.sh                          # native vs translated, and the unit tests
 node tests/floors/floors.ts                       # each floor beside Linux
 ```

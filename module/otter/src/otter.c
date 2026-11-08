@@ -21,7 +21,7 @@
  * apropos reads the folders of programs once. Its own few pages, which a browser's Prompt translates in a moment.
  */
 #define UNIT "otter"
-#include "../lib/io.h"
+#include "../../lib/io.h"
 
 /* ---- What it was given (no pointer is set before it runs: a pointer in its data would be something to relocate) ---- */
 

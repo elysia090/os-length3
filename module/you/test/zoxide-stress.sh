@@ -12,7 +12,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 you=$(cd "$(dirname "${1:-$here/../you}")" && pwd)/$(basename "${1:-$here/../you}")
 t=$(mktemp -d)
 trap 'rm -rf "$t"' EXIT
-CFLAGS="${CFLAGS:-} -DCOMPACT_EVERY=512 -DYOU_TEST_CLOCK" sh "$here/../../lib/build.sh" "$here/../zoxide.c" "$t/yt"
+CFLAGS="${CFLAGS:-} -DCOMPACT_EVERY=512 -DYOU_TEST_CLOCK" sh "$here/../../lib/build.sh" "$here/../src/zoxide.c" "$t/yt"
 yt=$t/yt
 export HOME="$t/home"
 unset YOU_EXCLUDE XDG_DATA_HOME YOU_NOW

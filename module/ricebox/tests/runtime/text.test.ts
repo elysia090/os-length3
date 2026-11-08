@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {readdirSync, readFileSync} from 'node:fs';
 import {test} from 'node:test';
-import {Kernel, Process} from '../runtime/process.ts';
+import {Kernel, Process} from '../../runtime/process.ts';
 
 // Text the kernel reads out of a process's memory, where that memory is shared (its threads run apart, each in a
 // Worker of its own, as a cross-origin isolated page runs them): a browser's TextDecoder refuses a view of a
@@ -42,7 +42,7 @@ test('a name set in a shared memory is read as the browser can read it: prctl PR
 });
 
 test('every text the kernel reads is read by flow.ts utf8, which copies a shared view first', () => {
-  const dir = new URL('../runtime/', import.meta.url);
+  const dir = new URL('../../runtime/', import.meta.url);
   // The translator's own memory (translator.ts, sods') is never shared; the kernel's every other file reads through utf8.
   for (const file of readdirSync(dir).filter((f) => f.endsWith('.ts') && f !== 'flow.ts' && f !== 'translator.ts')) {
     const source = readFileSync(new URL(file, dir), 'utf8').replace(/\/\/[^\n]*/g, '');

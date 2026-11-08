@@ -1,4 +1,4 @@
-// you/unicode.h, the Unicode that you's regular expressions know (you/regex.c), taken from ripgrep's own
+// you/src/unicode.h, the Unicode that you's regular expressions know (you/src/regex.c), taken from ripgrep's own
 // answers so that what `you rg` finds is what `rg` finds: the characters past ASCII that \w, \d and \s take, and which
 // characters are one when case is aside (each character's next in its circle of case: K → k → K (Kelvin) → K).
 // ripgrep is run in a root (bwrap: its own /, as commands.ts runs it) over every character, one a line.
@@ -17,7 +17,7 @@ import {fileURLToPath} from 'node:url';
 
 const root = process.argv[2];
 if (!root) throw new Error('usage: node scripts/you-unicode.ts ROOT_DIR');
-const out = fileURLToPath(new URL('../module/you/unicode.h', import.meta.url));
+const out = fileURLToPath(new URL('../module/you/src/unicode.h', import.meta.url));
 const work = mkdtempSync(join(tmpdir(), 'you-unicode-'));
 
 /** What a command of ripgrep's says, run in the root with `work` at /tmp/w. */

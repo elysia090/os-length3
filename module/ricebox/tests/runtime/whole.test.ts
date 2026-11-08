@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import {execFileSync, spawnSync} from 'node:child_process';
 import {existsSync, mkdirSync, readFileSync} from 'node:fs';
 import {test} from 'node:test';
-import {Vfs} from '../runtime/fs.ts';
-import {Kernel, PROFILE} from '../runtime/process.ts';
-import {loadTranslator} from '../../sods/runtime/translator.ts';
+import {Vfs} from '../../runtime/fs.ts';
+import {Kernel, PROFILE} from '../../runtime/process.ts';
+import {loadTranslator} from '../../../sods/runtime/translator.ts';
 
 // A program translated whole ahead of time (xlat --whole) runs without translating anything more, though it keeps no
 // symbols and no relocations (as a distribution ships it, BusyBox among them): the cases its switches jump to through
@@ -12,18 +12,18 @@ import {loadTranslator} from '../../sods/runtime/translator.ts';
 // tables: position-independent (static-pie, entries relative to the table) and not (entries the addresses).
 
 const here = new URL('.', import.meta.url).pathname;
-const out = `${here}out/`;
+const out = `${here}../programs/out/`;
 // The translator is sods' (its crate beside this unit).
-const xlat = `${here}../../sods/target/release/xlat`;
-const translator = `${here}../../sods/target/wasm32-unknown-unknown/release/xlat.wasm`;
+const xlat = `${here}../../../sods/target/release/xlat`;
+const translator = `${here}../../../sods/target/wasm32-unknown-unknown/release/xlat.wasm`;
 const cc = spawnSync('musl-gcc', ['--version']).status === 0;
 const ready = cc && existsSync(xlat) && existsSync(translator);
 
 for (const [name, flags] of [['pie', ['-static-pie', '-fPIE']], ['absolute', ['-static', '-fno-pie', '-no-pie']]]) {
-  test(`whole: a stripped ${name} program's switches and callbacks are translated ahead of time`, {skip: !ready && 'needs musl-gcc and the translator built (tests/run.sh)'}, async () => {
+  test(`whole: a stripped ${name} program's switches and callbacks are translated ahead of time`, {skip: !ready && 'needs musl-gcc and the translator built (tests/programs/run.sh)'}, async () => {
     mkdirSync(out, {recursive: true});
     const elf = `${out}switches-${name}`;
-    execFileSync('musl-gcc', [...flags, '-O2', '-s', `${here}c/switches.c`, '-o', elf]);
+    execFileSync('musl-gcc', [...flags, '-O2', '-s', `${here}../programs/switches.c`, '-o', elf]);
     execFileSync(xlat, ['--whole', elf, `${elf}.wasm`], {stdio: 'ignore'});
     const native = execFileSync(elf, ['a'], {encoding: 'utf8'});
     const vfs = new Vfs();

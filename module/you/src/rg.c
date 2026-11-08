@@ -30,7 +30,7 @@
  */
 #define UNIT "rg"
 #define ARENA (1 << 25) /* the patterns' automata and DFAs, and standard input's text */
-#include "../lib/io.h"
+#include "../../lib/io.h"
 #include "regex.c"
 #include "dfa.c"
 #include "grep.c"

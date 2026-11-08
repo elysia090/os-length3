@@ -8,5 +8,5 @@ digest (`runtime/keeper.ts`; what a translation's copy holds is sods'
 (`runtime/mirror.ts`). The root itself (`../root`: pins, recipes,
 settings) and the Remote's bytes are muk's too, and come here as the work goes on.
 
-Its tests run with ricebox's (`sh ../ricebox/tests/run.sh`). A Prompt puts the three together
+Its tests run with ricebox's (`sh ../ricebox/tests/programs/run.sh`). A Prompt puts the three together
 (`src/app/prompt/kernel.worker.ts`): the box, the root around it, and what was kept.

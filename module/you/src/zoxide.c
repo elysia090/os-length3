@@ -41,9 +41,9 @@
  */
 
 #define UNIT "you"
-#include "../lib/word.h"
-#include "../lib/sys.h"
-#include "../lib/io.h"
+#include "../../lib/word.h"
+#include "../../lib/sys.h"
+#include "../../lib/io.h"
 
 /* ---- The environment: the few names it reads. */
 

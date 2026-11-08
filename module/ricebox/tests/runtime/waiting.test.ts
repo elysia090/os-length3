@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {said, type Said} from '../runtime/waiting.ts';
-import type {Held} from '../runtime/parts.ts';
+import {said, type Said} from '../../runtime/waiting.ts';
+import type {Held} from '../../runtime/parts.ts';
 import {have, shell} from './busybox.ts';
 
 const held: Held = {guest: 6, translations: 2, translator: 1, files: 1, total: 10, spare: 2, spareTranslator: 0};
