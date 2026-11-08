@@ -8,6 +8,10 @@
    shadow a pointer has (--cursor-*). */
 :root {
   --ground: #dcd9d4;
+  /* The desk's ground and Home's: a dot every 24 px. As the camera stands back the pitch closes with what lies on the
+     ground (desk.ts, ui/camera.ts), each dot kept whole, a pixel and a bit across: drawn smaller with it, a dot falls
+     between the pixels and is not drawn at all. */
+  --dots: radial-gradient(circle, color-mix(in srgb, var(--rule) 55%, transparent) 1.1px, transparent 1.4px);
   --ink: #2c2a27;
   --rule: #9c9995;
   --sub: #5a5855;

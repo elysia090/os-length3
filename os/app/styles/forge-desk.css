@@ -3,8 +3,8 @@
    under its foot a little in from its right corner (not in the corner, under the shadow's turn). The camera moves the plane, never a box; the box in hand is the one worked in. Its code a
    step larger than elsewhere (14 px): a box is read at its own size at the base, and a quarter nearer close. */
 .desk { --t-code: 14px; position: absolute; inset: 0; overflow: hidden; outline: none;
-  background-image: radial-gradient(circle, color-mix(in srgb, var(--rule) 55%, transparent) 1.1px, transparent 1.4px);
-  background-size: 24px 24px; background-position: 12px 12px; }
+  background-image: var(--dots);
+  background-size: 24px 24px; background-position: 12px 12px; background-attachment: local; }
 .desk-plane { position: absolute; left: 0; top: 0; width: 1px; height: 1px; transform-origin: 0 0; }
 .desk-box { position: absolute; left: 0; top: 0; box-sizing: border-box; border: 2px solid var(--ink); border-radius: var(--r-place);
   background: var(--paper); box-shadow: 8px 8px 0 0 var(--ink);

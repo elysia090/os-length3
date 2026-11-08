@@ -44,46 +44,50 @@ test('going along the rail pans to the next page, which stands whole once it lan
   expect(await app.page.evaluate(() => getComputedStyle(document.getElementById('page')!).viewTransitionName)).toBe('none');
 });
 
-test('going along the rail, one camera moves what lies on the ground of both pages, whatever their heights; the frame stands still', async ({app}) => {
+test('going along the rail, each page steps back with its own camera (the desk over the whole desk, Home from its left), the dots with it; the frame never moves', async ({app}) => {
   await app.newRepo.make('hello');
-  await app.rail.go('home');
+  await app.newRepo.make('notes');
+  await app.rail.go('forge');
   await still(app);
-  // Home runs past the window's foot, Forge stops at it. Frame by frame, what lay on the page left (its picture) and
-  // what lies on the page come to are stood back as far as each other and lie as far apart (as the pages lie, before
-  // the camera stands back): the camera moves, not the pages. The band and the pane do not move at all.
-  const seen = app.page.evaluate(() => new Promise<{k: number[]; f: [number, number][]; frame: string[]}>((done) => {
-    const k: number[] = [], f: [number, number][] = [], frame = new Set<string>(), t0 = performance.now();
+  // Frame by frame, from Forge to Home: where the band and the pane stand, how far back Forge's desk stands, its dots'
+  // pitch, and where Home's words begin as its camera brings them in.
+  const seen = app.page.evaluate(() => new Promise<{frame: string[]; whole: boolean; pitch: number[]; left: number[]; k: number[]}>((done) => {
+    const frame = new Set<string>(), pitch: number[] = [], left: number[] = [], k: number[] = [], t0 = performance.now();
+    let whole = false;
     const tick = () => {
-      const old = getComputedStyle(document.documentElement, '::view-transition-old(page)').transform;
-      const part = document.querySelector<HTMLElement>('#page .work.desk-bench > .center');
-      const come = part ? getComputedStyle(part).transform : 'none';
-      if (old !== 'none' && come !== 'none') {
-        const a = new DOMMatrix(old), b = new DOMMatrix(come);
-        if (Math.abs(a.a - b.a) > .002) throw new Error(`stood back unlike: ${a.a} and ${b.a}`);
-        k.push(b.a);
-        // Each where it is seen now: the picture of the page left from where its group stands, the part come to where the
-        // window shows it.
-        const was = new DOMMatrix(getComputedStyle(document.documentElement, '::view-transition-group(page)').transform).f;
-        f.push([was + a.f, part!.getBoundingClientRect().top]);
-        for (const el of document.querySelectorAll('#page .work.desk-bench > .bar, #page .work.desk-bench > .side')) {
-          const r = el.getBoundingClientRect();
-          frame.add(`${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.width)},${Math.round(r.height)}`);
-        }
+      for (const el of document.querySelectorAll('#page :is(.work.desk-bench > .bar, .work.desk-bench > .side, .home-band, .home-pane)')) {
+        const r = el.getBoundingClientRect();
+        if (r.width) frame.add(`${el.className.split(' ')[0]} ${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.width)},${Math.round(r.height)}`);
       }
-      if (performance.now() - t0 < 1500) requestAnimationFrame(tick); else done({k, f, frame: [...frame]});
+      // (Each repo has its desk; the one in sight is the repo's in Forge.)
+      const desk = [...document.querySelectorAll<HTMLElement>('#page .desk')].find((d) => d.getClientRects().length);
+      if (desk) {
+        whole ||= desk.classList.contains('whole');
+        pitch.push(parseFloat(getComputedStyle(desk).backgroundSize));
+      }
+      const main = document.querySelector<HTMLElement>('#page .home-main');
+      const m = main ? new DOMMatrix(getComputedStyle(main).transform) : null;
+      if (main && m && m.a < .99 && !document.documentElement.matches(':active-view-transition')) { k.push(m.a); left.push(main.getBoundingClientRect().left); }
+      if (performance.now() - t0 < 2200) requestAnimationFrame(tick); else done({frame: [...frame], whole, pitch, left, k});
     };
     requestAnimationFrame(tick);
   }));
-  await app.rail.button('forge').click();
-  const {k, f, frame} = await seen;
-  // How far apart the two are, as the pages lie.
-  const apart = f.map(([a, b], i) => (b - a) / k[i]);
-  expect(k.length).toBeGreaterThan(3);
-  // It stands back to half (main.ts CAMERA), as the desk's camera does at its furthest.
-  expect(Math.min(...k)).toBeLessThan(.52);
-  expect(Math.max(...apart) - Math.min(...apart)).toBeLessThan(2);
-  // The band and the pane, two of them, each where it stands, all the way.
-  expect(frame.length).toBe(2);
+  await app.rail.button('home').click();
+  const {frame, whole, pitch, left, k} = await seen;
+  // Forge's desk stepped back as Escape takes it, its dots closing with it.
+  expect(whole).toBe(true);
+  expect(Math.min(...pitch)).toBeLessThan(18);
+  // Home came down from half its size, its words beginning where they begin at rest, at its left.
+  expect(Math.min(...k)).toBeLessThan(.6);
+  const rest = await app.main.locator('.home-main').evaluate((el) => el.getBoundingClientRect().left);
+  for (const x of left) expect(Math.abs(x - rest)).toBeLessThan(1.5);
+  // The band and the pane of each page stood where they stand, every frame: one place each.
+  const kinds = new Set(frame.map((f) => f.split(' ')[0]));
+  expect(frame.length).toBe(kinds.size);
+  // Landed: nothing of the camera left on Home, its dots at their pitch.
+  await still(app);
+  expect(await app.main.locator('.home-main').evaluate((el) => getComputedStyle(el).transform)).toBe('none');
+  expect(await app.page.evaluate(() => getComputedStyle(document.getElementById('page')!).backgroundSize)).toBe('24px 24px');
 });
 
 test('pressed again before the pan has moved, the rail goes straight to the place pressed last; pressed back, it stays', async ({app}) => {

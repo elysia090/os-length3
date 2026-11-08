@@ -105,31 +105,39 @@ Every value in `styles.css` comes from a token (§2).
     its own until it has landed (never a second box showing past the ink's
     edge), and another pressed before it lands takes the ink on from where
     it is: one ink, never two, never back to where it set off.
-  - *The camera goes along the rail* as the desk's own camera goes, and as
-    a game switches from one person to another. Pressed, what lies on the
-    ground pulls back at once to half its size about the middle of the
-    ground (the desk's whole-desk camera at its furthest; back first, then
-    along, as the desk's Escape goes), the page come to lying beside the one
-    left the way the rail goes (above going up, below going down); the
-    camera goes along to it and comes down into it (along first, then near),
-    landing softly, 820 ms in all, the three moves running a little into
-    each other so it never stands still between them. Only what lies on the
-    ground moves. The rail, the band and the pane are the frame and do not
-    move at all: what differs on them (Forge's pills, the pane's rows) gives
-    way in place as the camera passes between the two pages, the frame come
-    to coming in under the one left before that one goes, so what the two
-    share (the band's tools, the pane's edge) never dims. The ground stands
-    still under the camera as the desk's does: the paper's own colour, the
-    dots never growing, shrinking or going by (where two pages' dots lie a
-    part of a dot apart, they go over by the least they can as the camera
-    goes along; where one page has none, they come or go with the frame).
-    What lies on the ground is seen only where the ground is: under the
-    band, left of the pane, over the window's foot. Nothing is heard. (Before:
-    the whole screen, frame and all, made a card on a darker ground with
-    its dots shrunk with it and a sound made up for it: the frame moved, a
-    colour of its own, the desk's endless ground made a sheet with edges;
-    before that a short slide with a cross-fade, no journey at all; before
-    that a heave up the rail, a lift and not a turn of the head.) Only the
+  - *The camera goes along the rail* as a game switches from one person to
+    another, and each page steps back with its own camera, the page still
+    itself. Pressed, the page left steps back at once: Forge's desk with
+    the desk's own camera over the whole desk, as its Escape takes it (the
+    boxes in the middle, their names still read, and no further where it
+    stands that far back already: never a desk made smaller again); every
+    other page (Home, Git, the rest) to half its size about where its words
+    begin, at their left and their top, as it is read: Home stays at its
+    left, as the desk stays in the middle. What lay out of sight comes into
+    it (a box off the face, Home's lines past the window's foot): nothing is
+    cut at an edge no one can see. At that height the camera goes along the
+    one ground to the page come to, lying beside the one left the way the
+    rail goes (above going up, below going down), already stood back by its
+    own camera, and comes down into it with that camera (Forge's to where
+    the desk's camera stood when the rail left it), landing softly: back
+    280 ms, along 440, near 360, along setting off before the step back has
+    landed so it never stands still between them. The dots lie on the
+    ground as everything on it does: stood back they are smaller with their
+    pitch, going along they go by, coming down they grow back to their
+    own. Only what lies on the ground moves. The rail, the band and the
+    pane are the frame and do not move at all: what differs on them
+    (Forge's pills, the pane's rows) gives way in place as the camera passes
+    between the two pages, the frame come to coming in under the one left
+    before that one goes, so what the two share (the band's tools, the
+    pane's edge) never dims. What lies on the ground is seen only where the
+    ground is: under the band, left of the pane, over the window's foot.
+    Nothing is heard. (Before: the whole ground pulled back about its middle
+    whatever the page, so Forge's desk, already a camera of its own, was
+    made smaller again, Home went off its left, and the dots stood still
+    under it all as a pattern on the glass; before that the whole screen,
+    frame and all, made a card on a darker ground with a sound made up for
+    it; before that a short slide with a cross-fade, no journey at all;
+    before that a heave up the rail, a lift and not a turn of the head.) Only the
     page left is taken as pictures (what lies on its ground, and each part
     of its frame apart); the page come to comes itself, and the rest of the
     window goes on being drawn as it is, so a press made while it goes (the

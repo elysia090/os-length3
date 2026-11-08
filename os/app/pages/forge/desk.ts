@@ -1,5 +1,6 @@
 import {h} from '../../ui/dom.ts';
 import {still} from '../../ui/glide.ts';
+import {ownCamera} from '../../ui/camera.ts';
 import {t} from '../../i18n/i18n.ts';
 import {bornOn, carried, kept, liftedOn, next, overAll, PAD, pulledOn, slots, STANDARD, standardOn, tabbed, WIDTH, wholeOf, type Slot, type View} from './desk-layout.ts';
 
@@ -54,6 +55,9 @@ function scrollsItself(from: Element, desk: Element, dx: number, dy: number): bo
   }
   return false;
 }
+
+/** The dots' pitch on the plane (styles: .desk), the first a half pitch in. */
+const DOT = 24;
 
 /** Minimum jerk: from rest to rest, nothing sudden at either end. */
 const pan = (x: number) => x * x * x * (10 - 15 * x + 6 * x * x);
@@ -205,6 +209,8 @@ export class Desk {
     this.#changed = changed;
     this.#plane = h('div', {class: 'desk-plane'});
     this.element = h('section', {class: 'desk', tabindex: '-1', 'aria-label': label, 'data-repo': repo}, this.#plane);
+    // Its camera is the rail's too, as Forge is left and come to (main.ts select): it stands back inside the desk.
+    ownCamera(this.element, {away: (ms) => this.away(ms), afar: () => this.afar(), near: (ms) => this.near(ms), far: 1, dots: null});
     this.element.addEventListener('keydown', (e) => this.#key(e));
     // Tab is the desk's wherever the keyboard is on it, before what it is in (a file, the Prompt's line): the finger to
     // the next box, Shift+Tab to the one before.
@@ -291,9 +297,9 @@ export class Desk {
 
   /** The camera to `c` (gliding there, unless `glide` is false): stepping back it zooms and then goes, coming nearer it
    * goes and then zooms. */
-  #setCam(c: Camera, glide = true) {
+  #setCam(c: Camera, glide = true, ms?: number) {
     this.#still = null;
-    if (c === this.#cam) return;
+    if (c === this.#cam) { this.#arrived(); return; }
     const back = CAMERAS.indexOf(c) > CAMERAS.indexOf(this.#cam);
     this.#cam = c;
     this.#topAt = null;
@@ -301,7 +307,39 @@ export class Desk {
     if (c === 'standard') this.#bornUnder = null;
     this.element.classList.toggle('pulled', c === 'pulled');
     this.element.classList.toggle('whole', c === 'whole');
-    this.#look(glide, back ? 'out' : 'in');
+    this.#look(glide, back ? 'out' : 'in', ms);
+  }
+
+  /** What waits for the camera to be where it was sent (away): told once it is, or once it is sent elsewhere. */
+  #landed: (() => void) | null = null;
+  #arrived() { const l = this.#landed; this.#landed = null; l?.(); }
+
+  /** The camera the rail left the desk at, to come down to again as it comes back (null: not left). */
+  #left: Camera | null = null;
+
+  /**
+   * The rail going elsewhere (main.ts select): the camera steps back over the whole desk as Escape takes it (back first,
+   * then along), `ms` long, unless it stands as far back already; done once it is there. Where it stood is kept (near).
+   */
+  away(ms: number): Promise<void> {
+    this.#left ??= this.#cam;
+    this.#arrived();
+    if (this.#cam === 'whole' || still()) return Promise.resolve();
+    return new Promise((done) => { this.#landed = done; this.#setCam('whole', true, ms); });
+  }
+
+  /** Come to along the rail: over the whole desk at once, as it is seen from afar (where it stood is kept: near). */
+  afar() {
+    this.#left ??= this.#cam;
+    this.#setCam('whole', false);
+  }
+
+  /** Come down from afar to where the camera stood as the rail left it, `ms` long (along first, then near). */
+  near(ms: number) {
+    const c = this.#left;
+    if (c === null) return;
+    this.#left = null;
+    this.#setCam(c, !still(), ms);
   }
 
   /** The camera a place back (`by` 1) or nearer (-1), no further than the whole desk nor nearer than the standard. */
@@ -680,9 +718,10 @@ export class Desk {
   }
 
   /** The camera to where it should look now (`moving`: gliding there, the way `how`). */
-  #look(moving: boolean, how: Way2 = 'pan') {
+  #look(moving: boolean, how: Way2 = 'pan', ms?: number) {
     const to = this.#target();
-    if (to) this.#go(to, moving && !still(), how);
+    if (to) this.#go(to, moving && !still(), how, ms);
+    else this.#arrived();
   }
 
   /** Where the camera stands while the box in hand is carried: a step back about it where it is on the face, two boxes
@@ -716,7 +755,8 @@ export class Desk {
    * stands on the face and how near: going along, both at once; coming back, it goes before it zooms; stepping back, it
    * zooms before it goes.
    */
-  #go(to: View, moving: boolean, how: Way2 = 'pan', ms = how === 'pan' ? 560 : how === 'slide' ? SLIDE_MS : how === 'lift' ? LIFT_MS : 520, path?: {from: Point; to: Point}) {
+  #go(to: View, moving: boolean, how: Way2 = 'pan', ms: number | undefined = undefined, path?: {from: Point; to: Point}) {
+    ms ??= how === 'pan' ? 560 : how === 'slide' ? SLIDE_MS : how === 'lift' ? LIFT_MS : 520;
     cancelAnimationFrame(this.#moving);
     this.#moving = 0;
     this.#glide = null;
@@ -726,8 +766,11 @@ export class Desk {
     const set = (v: View, done: boolean) => {
       this.#view = v;
       el.style.setProperty('--inv', String(1 / v.s));
+      if (done) this.#arrived();
       if (done && v.s === 1) {
         this.#plane.style.transform = '';
+        // The dots are the desk's own again, going with its scroll (styles: .desk, local).
+        el.style.backgroundSize = el.style.backgroundPosition = '';
         // The scroll this makes is the camera's own, not a person's going somewhere.
         this.#ownScroll = performance.now();
         el.scrollTo(-v.x, -v.y);
@@ -735,6 +778,9 @@ export class Desk {
         return;
       }
       this.#plane.style.transform = `translate(${v.x}px, ${v.y}px) scale(${v.s})`;
+      // The dots lie on the plane, as the boxes do: nearer or further, along or across, they go with the camera.
+      el.style.backgroundSize = `${DOT * v.s}px ${DOT * v.s}px`;
+      el.style.backgroundPosition = `${v.x + DOT / 2 * v.s}px ${v.y + DOT / 2 * v.s}px`;
       if (el.scrollLeft || el.scrollTop) { this.#ownScroll = performance.now(); el.scrollTo(0, 0); }
     };
     this.#gliding = true;
