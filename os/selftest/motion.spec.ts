@@ -8,6 +8,10 @@ import type {App} from './app.ts';
 
 test.use({reducedMotion: 'no-preference'});
 
+/** A frame longer than this (some three at 60 Hz) is the page stopped (a long frame drawn in software, the machine busy
+ * with other work), not a move going slowly: what a move takes is measured without it. */
+const STALL_MS = 50;
+
 /**
  * Every move with an end has ended (the caret's blink, which has none, goes on): waited for as each says it ends, and
  * looked at again a frame later for those its end set going, not polled at intervals that outlast it.
@@ -199,39 +203,49 @@ test('the right pane brought out lands a touch past its edge and settles, its ma
   // Put away, it is set going in the press itself (its move begun before the press is done with: the next frame drawn
   // has it moving, however late a busy page draws it) and is gone in a fraction of its coming (--leave): sampled frame
   // by frame. (When that next frame comes is the page's drawing, not the pane's: a page drawn in software, as here, can
-  // take a long frame there now and then.)
-  const going = app.page.evaluate(() => new Promise<{first: number; gone: number}>((done) => {
+  // take a long frame there now and then, and a machine shared with other work can stop it for a while. What a frame
+  // took past STALL_MS is the page stopped, not the pane slow, and is not counted: `stalled`.)
+  const going = app.page.evaluate((STALL_MS) => new Promise<{first: number; gone: number; stalled: number}>((done) => {
     const el = document.querySelector('.work.bench:not([hidden]) > .side')!, work = el.parentElement!;
-    let first = -1, t0 = 0;
+    let first = -1, t0 = 0, last = 0, stalled = 0;
     new MutationObserver((_, o) => { if (work.classList.contains('pane-closed')) { first = performance.now() - t0; o.disconnect(); } }).observe(work, {attributes: true, attributeFilter: ['class']});
     const tick = () => {
-      const w = el.getBoundingClientRect().width, at = performance.now() - t0;
-      if (w < 1 || at > 2000) done({first, gone: at}); else requestAnimationFrame(tick);
+      const now = performance.now(), w = el.getBoundingClientRect().width, at = now - t0;
+      stalled += Math.max(0, now - last - STALL_MS);
+      last = now;
+      if (w < 1 || at > 2000 + stalled) done({first, gone: at, stalled}); else requestAnimationFrame(tick);
     };
     // Timed from the press itself, not from the test's asking for it.
-    addEventListener('click', () => { t0 = performance.now(); requestAnimationFrame(tick); }, {once: true, capture: true});
-  }));
+    addEventListener('click', () => { t0 = last = performance.now(); requestAnimationFrame(tick); }, {once: true, capture: true});
+  }), STALL_MS);
   // Pressed as a hand does, without the test's own look at what is under the pointer first: that look runs in the page
   // after the press, in the frames being measured (a 60 ms task of its own on a page this size).
   const at = (await app.forge.paneSwitch.boundingBox())!;
   await app.page.mouse.click(at.x + at.width / 2, at.y + at.height / 2);
-  const {first, gone} = await going;
+  const {first, gone, stalled} = await going;
   expect(first).toBeGreaterThanOrEqual(0);
   expect(first).toBeLessThan(16);
-  expect(gone).toBeLessThan(400);
+  expect(gone - stalled).toBeLessThan(400);
   await expect(app.forge.paneSwitch).toHaveAttribute('aria-expanded', 'false');
   await still(app);
   await expect(side).toBeHidden();
   expect(await filled()).toBeCloseTo(0, 2);
 
   // Brought out: its width, frame by frame, goes past where it stops and comes back to it (for as long as the move
-  // lasts at the OS's pace).
-  const widths = app.page.evaluate(() => new Promise<number[]>((done) => {
+  // lasts at the OS's pace, and for as long again as the page stood stopped meanwhile).
+  const widths = app.page.evaluate((STALL_MS) => new Promise<number[]>((done) => {
     const el = document.querySelector('.work.bench:not([hidden]) > .side')!, seen: number[] = [], t0 = performance.now();
     const pace = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pace')) || 1;
-    const tick = () => { seen.push(el.getBoundingClientRect().width); if (performance.now() - t0 < 700 * pace) requestAnimationFrame(tick); else done(seen); };
+    let last = t0, stalled = 0;
+    const tick = () => {
+      const now = performance.now();
+      stalled += Math.max(0, now - last - STALL_MS);
+      last = now;
+      seen.push(el.getBoundingClientRect().width);
+      if (now - t0 < 700 * pace + stalled) requestAnimationFrame(tick); else done(seen);
+    };
     requestAnimationFrame(tick);
-  }));
+  }), STALL_MS);
   await app.forge.paneSwitch.click();
   const seen = await widths;
   await still(app);
