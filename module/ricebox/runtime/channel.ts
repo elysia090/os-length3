@@ -16,6 +16,9 @@ export const CH = {
   ASLEEP: 120, // the thread waits for its answer in Atomics.wait (else it watches: no notify needed)
   HAVE_REGS: 121, // the registers are in REGS (a call that reads them, or the kernel asked: REPLY.SEND_REGS)
   LEFT: 122, // its Worker ran its thread and left it (cpu.ts): the channel may be given to another (remote.ts)
+  PARKED: 123, // its Worker waits here for the next thread it may run (PARK), its last one gone
+  CONSOLES: 124, // which of its process's first 32 descriptors are the console (a bit each), [125] which of those its stderr (fd.ts)
+  TID: 126, // the thread a Worker is offered (PARK.OFFERED)
   // BigInt64 indices
   NR: 2, ARGS: 3, NEXT: 9, VALUE: 10, RIP: 11, ARG0: 12, ARG1: 13, REGS: 16,
   LOW: 40, // how deep the thread's stack has gone (lower.rs G_LOW), as of its last request; 0: not known
@@ -45,12 +48,26 @@ export const READS_REGS = new Set([15, 56, 57, 58, 131, 158, 435]);
 
 export const REGS = REG;
 
+/**
+ * A Worker whose thread is gone waits on its channel a while (watching PARK_WATCH_MS, as a lock spins before it sleeps,
+ * then asleep up to PARK_MS) for the next thread of a program it keeps on that memory: offered there (remote.ts offer),
+ * the thread starts with no message posted, cloned and heard once the Worker's event loop has gone round (0.1-2 ms
+ * each time; a shell's commands are each a fork child's start). The word's states: WAITING, it waits; CLAIMED, the
+ * kernel writes the thread in (registers, where it starts, its x87, which instance in ARG0/ARG1, TID); OFFERED,
+ * written; DISMISSED, a message is on its way to it (remote.ts post), so it does not wait. Each side moves the word by
+ * compareExchange, and wakes the other where it sleeps: no thread is offered to a Worker gone back to its event loop,
+ * nor a message left there unheard.
+ */
+export const PARK = {NO: 0, WAITING: 1, CLAIMED: 2, OFFERED: 3, DISMISSED: 4};
+export const PARK_WATCH_MS = 0.3, PARK_MS = 30;
+
 /** A module of code reached later, as a thread's Worker attaches it: its module, first table slot and how many. */
 export interface Attached { module: WebAssembly.Module; base: number; count: number }
 /**
  * What the kernel sends a thread's Worker to run it (remote.ts post, cpu.ts): its thread and channel, the kernel's door
  * and the process's lock, its program (the module and its memory left out where the Worker has them already), its
- * registers and where it goes on, its x87, what of the image to put back (`keep`), and the kernel's clocks' origin.
+ * registers and where it goes on, its x87, what of the image to put back (`keep`), and the kernel's clocks' origin. Which
+ * of its descriptors are the console it reads in its channel (CH.CONSOLES), kept there by the kernel.
  */
 export interface Run {
   type: 'run';
@@ -67,7 +84,6 @@ export interface Run {
   gil: SharedArrayBuffer;
   count: ArrayBufferLike;
   outbox: SharedArrayBuffer;
-  consoles: ArrayBufferLike;
   regs: bigint[];
   resumeAt: bigint;
   /** The translator's module, for the Worker's x87 (x87.ts): sent once, with a Worker's first run. */

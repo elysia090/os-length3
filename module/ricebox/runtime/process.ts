@@ -1858,7 +1858,7 @@ export const goesOn = (image: Image, from: Task | null): boolean => !!from || !!
 
 
 /** Where the time went (run.ts prints it with XLAT_TIMING=1): translating, compiling wasm, how much, and what a pack root fetched. */
-export const PROFILE = {images: 0, modules: 0, bytes: 0, translate: 0, compile: 0, fetches: 0, fetched: 0, kept: 0, consolidated: 0, memoriesReused: 0, imagesKept: 0, instancesKept: 0, zeroed: 0, renewed: 0};
+export const PROFILE = {images: 0, modules: 0, bytes: 0, translate: 0, compile: 0, fetches: 0, fetched: 0, kept: 0, consolidated: 0, memoriesReused: 0, imagesKept: 0, instancesKept: 0, zeroed: 0, renewed: 0, offered: 0};
 /** Modules of code reached later past which a program run again is translated again as one (Kernel.consolidate). */
 const CONSOLIDATE = 16;
 /** Memories let go of that are kept for the next process, and the largest kept (Kernel.letGo). */

@@ -13,7 +13,7 @@
 // Where they are missing, process.ts's Kernel runs the same threads here,
 // one at a time.
 
-import {CH, OP, Outbox, REPLY, rouse, sleep, watch, type Forget, type Run, type Said} from './channel.ts';
+import {CH, OP, Outbox, PARK, REPLY, rouse, sleep, watch, type Forget, type Run, type Said} from './channel.ts';
 import {INTERRUPT, KEEP_INSTANCES, Kernel, PROFILE, REG, TRACE_SYSCALLS, Task, goesOn, trace, type Image, type Made, type Process, type Pumped} from './process.ts';
 import {Exec, Exit, Redirect, utf8} from './flow.ts';
 import type {Saved} from '../../sods/runtime/x87.ts';
@@ -48,6 +48,8 @@ interface Hand {
   kept?: Held[];
   /** It has the x87's module (cpu.ts): sent with its first run. */
   x87?: boolean;
+  /** The channel it ran its last thread on, where it waits a little for the next once that is gone (channel.ts PARK). */
+  channel?: SharedArrayBuffer;
 }
 /** What a RemoteKernel is made with besides a Kernel's: Workers kept spare, who hears it idle, and whether its Workers go on. */
 export interface Apart extends Made { spares?: number; onIdle?: ((r: Pumped) => void) | null; passOn?: boolean }
@@ -60,6 +62,14 @@ let lastId = 0;
 const idOf = (o: object): number => { let n = ids.get(o); if (!n) ids.set(o, n = ++lastId); return n; };
 /** The modules an image has, where every Worker running it can see (count). */
 const counters = new WeakMap<Image, Int32Array>();
+/** A message is on its way to the Worker that waits, or will, on channel `c` for a thread: it does not (channel.ts PARK). */
+const dismiss = (c: SharedArrayBuffer | undefined): void => {
+  if (!c) return;
+  const w = new Int32Array(c);
+  for (let v = Atomics.load(w, CH.PARKED); v === PARK.NO || v === PARK.WAITING; v = Atomics.load(w, CH.PARKED)) {
+    if (Atomics.compareExchange(w, CH.PARKED, v, PARK.DISMISSED) === v) { if (v === PARK.WAITING) Atomics.notify(w, CH.PARKED); return; }
+  }
+};
 /** Whether Worker `w` keeps an instance of image `imageId` (of any, null) on memory `memoryId` (as cpu.ts's kept says). */
 const keeps = (w: Hand, memoryId: number | undefined, imageId: number | null): boolean => !!memoryId && !!w.kept?.some((x) => x.memoryId === memoryId && (imageId === null || x.imageId === imageId));
 
@@ -170,13 +180,22 @@ export class RemoteKernel extends Kernel {
     }
   }
 
-  /** A channel for a new thread: one an ended thread's Worker has left (cleared), else a new one. */
+  /**
+   * A channel for a new thread: one an ended thread's Worker has left (cleared; no Worker waits on it for a thread
+   * any longer), else a new one.
+   */
   channel(): SharedArrayBuffer {
     const k = this.channels.findIndex((c) => Atomics.load(new Int32Array(c), CH.LEFT) === 1);
     if (k < 0) return new SharedArrayBuffer(CH.SIZE);
     const [c] = this.channels.splice(k, 1);
     new Int32Array(c, 0, CH.DATA >> 2).fill(0);
+    for (const s of this.spares) if (s.channel === c) s.channel = undefined;
     return c;
+  }
+  /** A channel no Worker has, for another thread. */
+  release(c: SharedArrayBuffer): void {
+    Atomics.store(new Int32Array(c), CH.LEFT, 1);
+    if (this.channels.length < 16) this.channels.push(c);
   }
 
   spawnWorker(): Hand { return this.adoptWorker(newWorker()); }
@@ -388,9 +407,11 @@ function count(image: Image): Int32Array {
 /** A thread whose registers live in its channel while it waits there, and whose code runs in its Worker. */
 class RemoteTask extends Task {
   declare readonly kernel: RemoteKernel;
-  declare readonly channel: SharedArrayBuffer;
-  declare readonly i32: Int32Array;
-  declare readonly i64: BigInt64Array;
+  declare channel: SharedArrayBuffer;
+  declare i32: Int32Array;
+  declare i64: BigInt64Array;
+  /** Where in its channel its Worker reads which of its process's descriptors are the console (fd.ts readers). */
+  declare consoles: Int32Array | null;
   declare worker: Hand | null;
   declare execd: boolean;
   declare fpuState: Saved | null;
@@ -407,6 +428,7 @@ class RemoteTask extends Task {
     this.worker = null;
     this.execd = false; // a new image waits to be sent to its Worker
     this.fpuState = null;
+    this.consoles = null;
   }
 
   override load(image: Image, memory: Mem, from: Task | null = null): void {
@@ -476,7 +498,11 @@ class RemoteTask extends Task {
     if (this.dead) return;
     this.state = 'running';
     this.since = performance.now();
-    if (!this.worker) { this.worker = this.kernel.worker(this); this.post(); return; }
+    if (!this.worker) {
+      this.worker = this.kernel.worker(this);
+      if (!this.offer(this.worker)) this.post();
+      return;
+    }
     if (this.execd) {
       this.execd = false;
       // Its Worker may keep an instance of the program it now runs, on the memory it runs it on (a shell's commands):
@@ -509,6 +535,53 @@ class RemoteTask extends Task {
     w.kept = [{memoryId, imageId, extras: this.image.extras.length}, ...(w.kept ?? []).filter((x) => x.memoryId !== memoryId || x.imageId !== imageId)].slice(0, KEEP_INSTANCES);
   }
 
+  /** Its process's console bits kept where its Worker reads them, in its channel (fd.ts readers). */
+  showConsoles(): void {
+    const fds = this.proc.fds;
+    if (this.consoles) fds.readers.delete(this.consoles);
+    this.consoles = new Int32Array(this.channel, CH.CONSOLES << 2, 2);
+    fds.readers.add(this.consoles);
+    fds.show(this.consoles);
+  }
+
+  /**
+   * It starts in `w` with no message posted, where `w` waits on its channel for a thread (channel.ts PARK) and keeps an
+   * instance of its program on its memory as of every module made for it (again): the channel becomes its own, what its
+   * first one held (its registers above all) written in, and its thread there. False where it cannot (it is posted).
+   */
+  offer(w: Hand): boolean {
+    const k = this.kernel, c = w.channel;
+    if (!this.again || !c || !w.x87 || c === this.channel) return false;
+    const memoryId = idOf(this.memory), imageId = idOf(this.image);
+    if (w.kept?.find((x) => x.memoryId === memoryId && x.imageId === imageId)?.extras !== this.image.extras.length) return false;
+    const to = new Int32Array(c);
+    if (Atomics.compareExchange(to, CH.PARKED, PARK.WAITING, PARK.CLAIMED) !== PARK.WAITING) return false;
+    const from = new Int32Array(this.channel, 0, CH.DATA >> 2);
+    to.set(from.subarray(0, CH.PARKED));
+    to.set(from.subarray(CH.PARKED + 1), CH.PARKED + 1);
+    k.release(this.channel);
+    const pooled = k.channels.indexOf(c);
+    if (pooled >= 0) k.channels.splice(pooled, 1);
+    this.channel = c;
+    this.i32 = to;
+    this.i64 = new BigInt64Array(c);
+    this.i64[CH.ARG0] = BigInt(memoryId);
+    this.i64[CH.ARG1] = BigInt(imageId);
+    this.i64[CH.RIP] = this.resumeAt;
+    to[CH.TID] = this.tid;
+    const fpu = this.fpuState ?? [];
+    new Uint8Array(c, CH.DATA, fpu.length).set(fpu);
+    to[CH.LENGTH] = fpu.length;
+    this.showConsoles();
+    this.kept(w, memoryId, imageId);
+    PROFILE.offered++;
+    Atomics.store(to, CH.PARKED, PARK.OFFERED);
+    Atomics.notify(to, CH.PARKED);
+    k.starting = performance.now() + STARTING_MS;
+    this.again = false;
+    return true;
+  }
+
   post(): void {
     const image = this.image, k = this.kernel, w = this.worker!;
     const memoryId = idOf(this.memory), imageId = idOf(image);
@@ -517,11 +590,15 @@ class RemoteTask extends Task {
     const known = w.kept?.some((x) => x.memoryId === memoryId), like = w.kept?.find((x) => x.imageId === imageId);
     const from = like?.extras ?? 0;
     this.kept(w, memoryId, imageId);
+    this.showConsoles();
+    // It may wait on its last channel for a thread a while (channel.ts PARK): this comes instead.
+    dismiss(w.channel);
+    w.channel = this.channel;
     w.post({
       type: 'run', again: this.again, tid: this.tid, memoryId, imageId, module: like ? undefined : image.module,
       extrasFrom: from, extras: image.extras.slice(from).map(({module, base, count: n}) => ({module, base, count: n})),
       memory: known ? undefined : this.memory, channel: this.channel, door: k.door.buffer, gil: k.gil(this.memory), count: count(image).buffer,
-      outbox: k.outbox.buffer, consoles: this.proc.fds.consoles.buffer,
+      outbox: k.outbox.buffer,
       regs: REG.map((_, n) => this.reg(n)), resumeAt: this.resumeAt, x87: w.x87 ? undefined : k.x87Module ?? undefined, fpu: this.fpuState, keep: this.keep,
       origin: performance.timeOrigin, // the kernel's clocks begin here (clock.ts)
     });
@@ -535,6 +612,7 @@ class RemoteTask extends Task {
   override end(): void {
     const w = this.worker;
     this.worker = null;
+    if (this.consoles) { this.proc.fds.readers.delete(this.consoles); this.consoles = null; }
     // A Worker waiting in a call (it ended itself, or was ended while it waited) is told to leave and is kept for the
     // next thread; one running guest code is ended where it is.
     const state = Atomics.load(this.i32, CH.STATE);

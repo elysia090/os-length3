@@ -13,7 +13,7 @@
 // `lock`-prefixed instructions to plain loads and stores, which are atomic
 // only while no other thread of the process runs.
 
-import {ANSWER_MS, CH, OP, OUTBOX_BYTES, Outbox, READS_REGS, REPLY, REGS, rouse, sleep, watch, type Attached, type Forget, type Run} from './channel.ts';
+import {ANSWER_MS, CH, OP, OUTBOX_BYTES, Outbox, PARK, PARK_MS, PARK_WATCH_MS, READS_REGS, REPLY, REGS, rouse, sleep, watch, type Attached, type Forget, type Run} from './channel.ts';
 import {namesIn, x87Of, type X87} from '../../sods/runtime/x87.ts';
 import {answerTime, clocks, type Clocks} from './clock.ts';
 import {INTERRUPT, KEEP_INSTANCES, Preempted, SHARES, SLICE_LOOPS, TRAP_YIELD, div128, fault, nextSlice, translatorsLimit, trapOrPreempt, type Translation} from './process.ts';
@@ -59,7 +59,7 @@ class Thread {
   declare attached: number;
   declare tid: number;
   declare outbox: Outbox | null;
-  declare consoles: Int32Array | null;
+  declare consoles: Int32Array;
   declare channel: SharedArrayBuffer;
   declare i32: Int32Array;
   declare i64: BigInt64Array;
@@ -108,10 +108,11 @@ class Thread {
   take(m: Run): void {
     this.last = m;
     this.tid = m.tid;
-    // Where it writes to the console without asking (toConsole), and which of its process's descriptors are the console.
+    // Where it writes to the console without asking (toConsole), and which of its process's descriptors are the console
+    // (in its channel, kept there by the kernel: fd.ts readers).
     this.outbox = m.outbox ? new Outbox(m.outbox) : null;
-    this.consoles = m.consoles ? new Int32Array(m.consoles) : null;
     this.channel = m.channel;
+    this.consoles = new Int32Array(m.channel, CH.CONSOLES << 2, 2);
     this.i32 = new Int32Array(m.channel);
     this.i64 = new BigInt64Array(m.channel);
     this.bytes8 = new Uint8Array(m.channel);
@@ -277,7 +278,7 @@ class Thread {
    */
   toConsole(nr: bigint, fd: bigint, b: bigint, c: bigint): bigint | null {
     const consoles = this.consoles, outbox = this.outbox;
-    if (!consoles || !outbox || fd < 0n || fd >= 32n || !((Atomics.load(consoles, 0) >>> Number(fd)) & 1)) return null;
+    if (!outbox || fd < 0n || fd >= 32n || !((Atomics.load(consoles, 0) >>> Number(fd)) & 1)) return null;
     const bytes = this.bytes, size = bytes.length, pieces: [number, number][] = [];
     // A signal on its way (the interrupt word raised: Ctrl-C): the kernel's, to take it at this call, not more output
     // after the key that flushed what was on its way.
@@ -425,13 +426,49 @@ function goOn(from: Thread, to: Exec): Thread {
   const was = kept.find((t) => t.memoryId === to.memoryId && t.imageId === to.imageId);
   if (!was) throw new Error('an exec gone on with in a Worker that does not keep its program');
   const m = from.last, i64 = from.i64;
-  was.again({...was.last, again: true, tid: from.tid, channel: from.channel, door: m.door, outbox: m.outbox, consoles: m.consoles, origin: m.origin,
+  was.again({...was.last, again: true, tid: from.tid, channel: from.channel, door: m.door, outbox: m.outbox, origin: m.origin,
     regs: Array.from({length: REGS.length}, (_, n) => i64[CH.REGS + n]), resumeAt: i64[CH.RIP], fpu: null, keep: null,
     extras: was.modules});
   const keep = [was, ...kept.filter((t) => t !== was)].slice(0, KEEP_INSTANCES);
   letGo(kept, keep);
   kept = keep;
   return was;
+}
+
+type Ready = Run & {memory: WebAssembly.Memory; module: WebAssembly.Module};
+
+/** A thread starts here: on the instance kept of its program on its memory where it may (again), else a new one. */
+function start(run: Ready): Thread {
+  const same = (t: Thread): boolean => t.memoryId === run.memoryId && t.imageId === run.imageId;
+  const was = run.again ? kept.find(same) : null;
+  const t = was ?? new Thread(run);
+  if (was) was.again(run);
+  const keep = [t, ...kept.filter((x) => x !== t && !same(x))].slice(0, KEEP_INSTANCES);
+  letGo(kept, keep);
+  kept = keep;
+  return t;
+}
+
+/**
+ * `t`'s thread gone, its Worker waits on its channel for the next (channel.ts PARK): that thread, as the kernel wrote it
+ * there, of the instance kept here it names; null when none came within PARK_MS, or a message is on its way here.
+ */
+function park(t: Thread): Ready | null {
+  const {i32, i64} = t;
+  if (Atomics.compareExchange(i32, CH.PARKED, PARK.NO, PARK.WAITING) !== PARK.NO) { Atomics.store(i32, CH.PARKED, PARK.NO); return null; }
+  if (!watch(i32, CH.PARKED, (v) => v !== PARK.WAITING, PARK_WATCH_MS)) Atomics.wait(i32, CH.PARKED, PARK.WAITING, PARK_MS);
+  const v = Atomics.compareExchange(i32, CH.PARKED, PARK.WAITING, PARK.NO);
+  if (v === PARK.WAITING) return null;
+  if (v === PARK.DISMISSED) { Atomics.store(i32, CH.PARKED, PARK.NO); return null; }
+  // Claimed: the kernel writes the thread in at once.
+  watch(i32, CH.PARKED, (w) => w === PARK.OFFERED, Infinity);
+  Atomics.store(i32, CH.PARKED, PARK.NO);
+  const memoryId = Number(i64[CH.ARG0]), imageId = Number(i64[CH.ARG1]), n = i32[CH.LENGTH];
+  const was = kept.find((x) => x.memoryId === memoryId && x.imageId === imageId);
+  if (!was) throw new Error('a thread offered of a program or on a memory this Worker does not keep');
+  return {...was.last, again: true, tid: i32[CH.TID], memoryId, imageId, memory: was.memory, module: was.module, channel: t.channel,
+    regs: Array.from({length: REGS.length}, (_, k) => i64[CH.REGS + k]), resumeAt: i64[CH.RIP],
+    fpu: n > 0 ? Array.from(t.bytes8.subarray(CH.DATA, CH.DATA + n)) : null, keep: null, extrasFrom: was.modules.length, extras: was.modules};
 }
 
 listen(({data: m}) => {
@@ -449,16 +486,15 @@ listen(({data: m}) => {
     const memory = m.memory ?? kept.find((t) => t.memoryId === m.memoryId)?.memory, module = m.module ?? like?.module;
     if (!memory || !module) throw new Error('a run of a program or on a memory this Worker does not have');
     if (m.x87) x87 = x87Of(m.x87);
-    const run = {...m, memory, module, extras: [...(like?.modules.slice(0, m.extrasFrom) ?? []), ...m.extras]};
-    const same = (t: Thread): boolean => t.memoryId === m.memoryId && t.imageId === m.imageId;
-    const was = m.again ? kept.find(same) : null;
-    if (was) { task = was; task.again(run); } else task = new Thread(run);
-    const keep = [task, ...kept.filter((t) => t !== task && !same(t))].slice(0, KEEP_INSTANCES);
-    letGo(kept, keep);
-    kept = keep;
-    for (let next = task.run(); next; next = task.run()) task = goOn(task, next);
+    let t = task = start({...m, memory, module, extras: [...(like?.modules.slice(0, m.extrasFrom) ?? []), ...m.extras]});
+    for (;;) {
+      for (let next = t.run(); next; next = t.run()) task = t = goOn(t, next);
+      const offered = park(t);
+      if (!offered) break;
+      task = t = start(offered);
+    }
     // Left: its channel may go to another thread (remote.ts channel).
-    Atomics.store(task.i32, CH.LEFT, 1);
+    Atomics.store(t.i32, CH.LEFT, 1);
   } catch (e) {
     port.postMessage({type: 'error', message: e instanceof Error ? `${e.name}: ${e.message}\n${e.stack}` : String(e)});
   }

@@ -201,20 +201,19 @@ export class Description {
 /** How many descriptors a process starts allowed (RLIMIT_NOFILE's soft limit; sys-proc.ts's setrlimit moves it). */
 const FDS = 1024;
 
-/** Memory a Worker of another thread can read where the page is cross-origin isolated (else memory of this one's). */
-const Shared = typeof SharedArrayBuffer === 'function' ? SharedArrayBuffer : ArrayBuffer;
-
 export class FdTable {
   declare readonly slots: Map<number, {description: Description; cloexec: boolean}>;
   declare limit: number;
   declare readonly consoles: Int32Array;
+  declare readonly readers: Set<Int32Array>;
   constructor(limit = FDS) {
     this.slots = new Map(); // fd -> {description, cloexec}
     this.limit = limit; // RLIMIT_NOFILE's soft limit: no descriptor at or past it
     // Which of its first 32 descriptors are the console ([0], a bit each) and which of those its stderr ([1]), kept as
-    // the table changes: a thread in a Worker of its own reads them to write there without asking the kernel (cpu.ts
-    // toConsole).
-    this.consoles = new Int32Array(new Shared(8));
+    // the table changes, in it and where each of its threads in a Worker of its own reads them (`readers`: two words of
+    // the thread's channel, remote.ts), to write there without asking the kernel (cpu.ts toConsole).
+    this.consoles = new Int32Array(2);
+    this.readers = new Set();
   }
   /** `fd`'s bits in `consoles` as the table has it now. */
   marked(fd: number): void {
@@ -222,10 +221,16 @@ export class FdTable {
     const d = this.slots.get(fd)?.description, bit = 1 << fd, c = this.consoles;
     const console = d?.kind === 'console', err = console && d.path === 'stderr';
     // (Each open and close comes here: nothing made, and a word written only when its bit changes.)
-    const was = Atomics.load(c, 0), now = console ? was | bit : was & ~bit;
-    if (now !== was) Atomics.store(c, 0, now);
-    const wasErr = Atomics.load(c, 1), nowErr = err ? wasErr | bit : wasErr & ~bit;
-    if (nowErr !== wasErr) Atomics.store(c, 1, nowErr);
+    const was = c[0], now = console ? was | bit : was & ~bit, wasErr = c[1], nowErr = err ? wasErr | bit : wasErr & ~bit;
+    if (now === was && nowErr === wasErr) return;
+    c[0] = now;
+    c[1] = nowErr;
+    for (const r of this.readers) this.show(r);
+  }
+  /** The bits where `reader` reads them. */
+  show(reader: Int32Array): void {
+    Atomics.store(reader, 0, this.consoles[0]);
+    Atomics.store(reader, 1, this.consoles[1]);
   }
   get(fd: number): Description | null { return this.slots.get(fd)?.description ?? null; }
   lowest(from = 0): number {
