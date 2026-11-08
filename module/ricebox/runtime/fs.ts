@@ -373,10 +373,15 @@ export class Vfs {
     return typeof r === 'number' ? fail(r) : r;
   }
 
-  /** As resolve, its errno given back (find). */
-  walk(path: string, cwd = '/', follow = true, depth = 0): Resolved | number {
+  /**
+   * As resolve, its errno given back (find). Given `names`, it leaves there the names it went down by to what it
+   * found (links followed, "." and ".." gone; to its parent, where only its last name is missing): its canonical path,
+   * which an open keeps, with no second walk (realpath).
+   */
+  walk(path: string, cwd = '/', follow = true, depth = 0, names: string[] | null = null): Resolved | number {
     if (depth > 40) return E.LOOP;
     if (path === '') return E.NOENT;
+    if (names) names.length = 0;
     // Its components read in place, one after another (not split into an array, filtered and joined again: a stat or
     // an open of a short path spent most of its time there). Empty components and "." are none.
     const full = path.charCodeAt(0) === SLASH ? path : cwd + '/' + path, n = full.length;
@@ -391,7 +396,7 @@ export class Vfs {
       if (end - start === 1 && full.charCodeAt(start) === DOT) continue;
       const part = full.slice(start, end), dir = stack[stack.length - 1];
       name = part;
-      if (part === '..') { if (stack.length > 1) stack.pop(); continue; }
+      if (part === '..') { if (stack.length > 1) { stack.pop(); names?.pop(); } continue; }
       if (!(dir instanceof Dir)) return E.NOTDIR;
       const node = dir.entries.get(part);
       const last = onlyDots(full, end);
@@ -402,9 +407,10 @@ export class Vfs {
       if (node instanceof Link && (!last || follow)) {
         // The link's target from the directory it is in (what came before it), then what comes after it.
         const target = node.target.startsWith('/') ? node.target : full.slice(0, start) + '/' + node.target;
-        return this.walk(last ? target : target + full.slice(end), '/', follow, depth + 1);
+        return this.walk(last ? target : target + full.slice(end), '/', follow, depth + 1, names);
       }
       stack.push(node);
+      names?.push(part);
     }
     const node = stack[stack.length - 1];
     return {node, parent: (stack[stack.length - 2] as Dir | undefined) ?? this.root, name};

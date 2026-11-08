@@ -8,7 +8,7 @@ import {have, shell} from './busybox.ts';
 // handlers: each as BusyBox shows it, beside the same script on Linux
 // (the outputs here are what Linux prints).
 
-const APPLETS = ['sh', 'cat', 'sleep', 'dd', 'wc', 'kill', 'yes', 'head', 'sha256sum', 'echo', 'true', 'flock', 'stat', 'mv', 'rm', 'mkdir', 'rmdir', 'find', 'ls'];
+const APPLETS = ['sh', 'cat', 'sleep', 'dd', 'wc', 'kill', 'yes', 'head', 'sha256sum', 'echo', 'true', 'flock', 'stat', 'mv', 'rm', 'mkdir', 'rmdir', 'find', 'ls', 'ln', 'readlink'];
 
 /** Run `script` to its end, waiting out its sleeps; {status, out, ms}. */
 async function run(script: string): Promise<{status: number | undefined; out: string; ms: number; seen: {at: number; out: string}[]}> {
@@ -100,6 +100,12 @@ test('a file renamed over or removed while it is held has no link left, as fstat
   const r = await run('echo a > /f; echo b > /g; exec 3< /f; stat -L -c %h /proc/self/fd/3; mv /g /f; stat -L -c %h /proc/self/fd/3; ' +
     'exec 4< /f; rm /f; stat -L -c %h /proc/self/fd/4; mkdir -p /p/d; stat -c %h /p; rmdir /p/d; stat -c %h /p');
   assert.equal(r.out, '1\n0\n0\n3\n2\n');
+});
+
+test('a descriptor\'s /proc link is the canonical path of what it opened: "." and ".." gone, links followed, a name made there', {skip: !have}, async () => {
+  const r = await run('mkdir -p /pa/b; echo x > /pa/b/f; ln -s b /pa/l; ln -s /pa/b/f /pa/abs; cd /pa/b; ' +
+    'exec 3< /pa/./b/../b/f 4< /pa/l/f 5< /pa/abs 6< ../l/. 7> new 8< //pa///b/f; for n in 3 4 5 6 7 8; do readlink /proc/self/fd/$n; done');
+  assert.equal(r.out, '/pa/b/f\n/pa/b/f\n/pa/b/f\n/pa/b\n/pa/b/new\n/pa/b/f\n');
 });
 
 test('a directory read while what is in it moves away gives each of its entries once (find -exec mv, rm -r)', {skip: !have}, async () => {

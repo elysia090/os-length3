@@ -181,7 +181,8 @@ function openAt(p: Proc, dirfd: bigint, address: bigint, flags: bigint, mode: bi
     if (fd < 0) fail(E.MFILE);
     return fd;
   }
-  const r = p.kernel.vfs.walk(name, base(p, dirfd), !(f & O.NOFOLLOW));
+  const names: string[] = [];
+  const r = p.kernel.vfs.walk(name, base(p, dirfd), !(f & O.NOFOLLOW), 0, names);
   if (typeof r === 'number') return -r;
   let node = r.node;
   if (!node) {
@@ -235,7 +236,8 @@ function openAt(p: Proc, dirfd: bigint, address: bigint, flags: bigint, mode: bi
   // /proc's files are read as they are when opened.
   if (node instanceof Made) node = node.snapshot();
   const kind = node.isDir ? 'dir' : node instanceof Device ? 'device' : 'file';
-  const full = p.kernel.vfs.realpath(name, base(p, dirfd));
+  // Its canonical path (/proc/self/fd's link to it): the names the walk went down by, and its own where it was made.
+  const full = `/${(r.node ? names : [...names, r.name]).join('/')}`;
   const d = new Description(kind, {node, flags: f, path: full});
   const fd = p.fds.install(d, {cloexec: !!(f & O.CLOEXEC)});
   if (fd < 0) fail(E.MFILE);
