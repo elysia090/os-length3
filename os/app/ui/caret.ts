@@ -66,6 +66,10 @@ function seenIn(el: Element): DOMRect | null {
 /** Said by a page that moved a field's words without a key (a prompt line come before them): the caret goes with them. */
 let moved = () => {};
 export const fieldMoved = () => moved();
+/** Said by a page that moves or scales what holds a field, whole (the desk's camera, at every frame it moves): the caret
+ * goes with its letter in that same frame, where it stood in the field, never a frame or two behind it. */
+let carried = () => {};
+export const fieldCarried = () => carried();
 
 export function caret() {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -94,6 +98,8 @@ export function caret() {
   let stood: DOMRect | null = null;
   /** And what it held: a field emptied or filled by the page (a message sent, a line taken back) tells no one. */
   let held = {length: 0, at: 0};
+  /** Where in the field the caret was drawn, as parts of the field's width and height: carried with it as it moves. */
+  let inField: {x: number; y: number; w: number; h: number} | null = null;
   let watching = 0;
   const watch = (n: number) => {
     const f = field;
@@ -128,6 +134,8 @@ export function caret() {
     typed = false;
     mark.style.transform = `translate(${Math.round(p.x)}px, ${Math.round(p.y)}px)`;
     mark.style.height = `${Math.round(p.h)}px`;
+    const fr = p.field;
+    inField = fr.width && fr.height ? {x: (p.x - fr.left) / fr.width, y: (p.y - fr.top) / fr.height, w: (block ? parseFloat(mark.style.width) : 0) / fr.width, h: p.h / fr.height} : null;
     mark.classList.add('on');
     shown = true;
     // Where the field was measured, before the mark was moved (the mark moves nothing else): asked again, after it was,
@@ -143,6 +151,22 @@ export function caret() {
   };
   const later = () => { frame ||= requestAnimationFrame(draw); };
   moved = () => { shown = false; later(); };
+  carried = () => {
+    const f = field;
+    if (!f || !inField || document.activeElement !== f) return;
+    const r = f.getBoundingClientRect();
+    if (stood && r.left === stood.left && r.top === stood.top && r.width === stood.width && r.height === stood.height) return;
+    const x = r.left + inField.x * r.width, y = r.top + inField.y * r.height, hh = inField.h * r.height;
+    stood = r;
+    const seen = seenIn(f);
+    if (!seen || x < seen.left - 1 || x > seen.right + 1 || y + hh / 2 < seen.top || y + hh / 2 > seen.bottom) { hide(); return; }
+    // Out of sight a moment ago and come back: drawn afresh (a frame on), what it holds measured again.
+    if (!mark.classList.contains('on')) { later(); return; }
+    mark.classList.add('jump');
+    mark.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+    mark.style.height = `${Math.round(hh)}px`;
+    if (inField.w) mark.style.width = `${inField.w * r.width}px`;
+  };
 
   const take = (f: Field | null) => {
     if (field) resized.unobserve(field);

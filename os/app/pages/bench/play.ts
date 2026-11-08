@@ -38,8 +38,6 @@ export interface Stage {
   place(path: string): boolean;
   /** The camera over these boxes at once ('agent' is the Agent's terminal); none: back to the box in hand. */
   frame(keys: string[]): void;
-  /** The file in front when the Agent was asked (what it was given to look at first), if any. */
-  front?(): string | null;
 }
 
 /** An editor open on a file, as the player uses it: what it takes in, its text, and where the Agent's eye is in it (a
@@ -165,6 +163,8 @@ export class Player {
   /** The file the Agent's eye was last in, and where in it. */
   #looked: {path: string; line: number} | null = null;
   #pondering = false;
+  /** The lane the hand was last in ('agent', its terminal, or a file's path): while it thinks, its eye stays there. */
+  #lastLane: string | null = null;
   /** The commands it decided to run and is running: what each came to, given when it has. */
   readonly #runs = new Map<string, (ran: Ran) => void>();
   /** What listeners hear, in order, each once all before it is played. */
@@ -203,6 +203,7 @@ export class Player {
     const next = Promise.all([prev, after]).then(async () => {
       this.#queued--;
       this.#busy++;
+      this.#lastLane = lane;
       this.#work(lane, true);
       try { if (!still()) await eyeThere(); await act(wait); } finally {
         this.#busy--;
@@ -314,13 +315,14 @@ export class Player {
   }
 
   /**
-   * While the Agent thinks (its model asked, nothing it did left to play), its eye stays at work: on the file it last
-   * looked at, else the one in front when it was asked, going on down its lines slower than reading, and back to the top
-   * at its end; it stops as soon as anything is to be played or the Agent says or does something. The screen is never
-   * still while it works: the wait for its model is seen as it looking.
+   * While the Agent thinks (its model asked, nothing it did left to play), its eye stays where its hand last was: in the
+   * file it was last at, going on down the lines below the one it looked at last, slower than reading, and resting at
+   * the last, breathing; in its terminal, it stays there, the caret at the prompt. It never goes to a box for the
+   * thinking (a file it has not read, the one in front when it was asked), nor back up to the top to go over it again:
+   * the eye goes only where something it did took it. It stops as soon as anything is to be played.
    */
   async #ponder() {
-    const start = this.#looked ?? (this.#stage.front?.() ? {path: this.#stage.front!()!, line: 1} : null);
+    const start = this.#looked && this.#lastLane === this.#looked.path ? this.#looked : null;
     if (!start || still()) return;
     this.#pondering = true;
     // It goes on while its model is asked and nothing it did is to be played; it stops the moment something is.
@@ -329,19 +331,18 @@ export class Player {
       const e = await this.#opened(start.path);
       if (!e || !on()) return;
       this.#work(start.path, true);
-      // Over its lines with words in them, as an eye goes (blank ones passed over); at the last it rests a while, as
-      // one does at the end of a page, and goes back to the top. A file of one such line, it rests on it.
+      // Down the lines with words in them below where it was (blank ones passed over); at the last it rests.
       let line = start.line;
       this.#gaze(start.path, line);
       while (on()) {
         const lines = e.area.value.split('\n');
-        const worded = lines.flatMap((l, i) => (l.trim() ? [i + 1] : []));
-        const next = worded.find((n) => n > line) ?? null;
-        for (let t = 0, rest = next === null ? PONDER_MS * 4 : PONDER_MS; t < rest && on(); t += 60) await sleep(60);
-        if (!on()) break;
-        line = next ?? worded[0] ?? 1;
+        const next = lines.flatMap((l, i) => (l.trim() ? [i + 1] : [])).find((n) => n > line);
+        for (let t = 0; t < PONDER_MS && on(); t += 60) await sleep(60);
+        if (!on() || next === undefined) break;
+        line = next;
         this.#gaze(start.path, line);
       }
+      while (on()) await sleep(60);
       this.#work(start.path, false);
       editors.get(key(this.#repo, start.path))?.gaze?.(null);
     } finally {

@@ -21,6 +21,17 @@
    over it. */
 .desk-box.lifted { z-index: 2; margin: -8px 0 0 -8px; box-shadow: 16px 16px 0 0 var(--ink); }
 .desk-box.lifted > .desk-label { background: var(--ground); margin-left: -6px; padding-left: 6px; }
+/* Born beside another (desk.ts lay: the Agent's terminal beside the person's): set down in the room the columns after
+   it made, as a box carried in is set down. They get out of its way at once, quick, as for a box carried in (.gives);
+   once they have gone from its place (some 200 ms), it comes into sight held over it, its shadow long, and is put
+   down onto the desk as the camera comes to it: never under another, nor over its words. */
+.desk-box.landing { z-index: 1; animation: set-down 420ms linear 200ms both; }
+@keyframes set-down {
+  from { opacity: 0; margin: -8px 0 0 -8px; box-shadow: 16px 16px 0 0 var(--ink); animation-timing-function: ease-out; }
+  30% { opacity: 1; margin: -8px 0 0 -8px; box-shadow: 16px 16px 0 0 var(--ink); animation-timing-function: cubic-bezier(.2, .9, .25, 1); }
+  to { opacity: 1; margin: 0; box-shadow: 8px 8px 0 0 var(--ink); }
+}
+@media (prefers-reduced-motion: reduce) { .desk-box.landing { animation: none; } }
 /* Stood back (a step, or the whole desk): a press takes a box in hand, twice comes back to it. Over the whole desk, with
    the pointer rather than the finger, the box in hand is told by its own edge, heavier: one box, one edge (before: a
    ring a little way out round its edge, the box drawn twice, one inside the other). Stood back by the rail going by
@@ -165,7 +176,12 @@
 .agent-words { margin: .4em 0; }
 .agent-words .answer-p { margin: 0 0 .4em; white-space: pre-wrap; }
 .agent-words .answer-code { display: block; margin: 0 0 .4em; padding-left: 1ch; border-left: 2px solid var(--rule); white-space: pre; overflow-x: auto; scrollbar-width: none; }
-.agent-words.waiting::after { content: '…'; color: var(--sub); }
+/* Its caret, a terminal's block: where its words will come while it thinks before it first says or does anything,
+   blinking as a caret at rest does (never a "…" standing still); after its words as they are typed, solid, gone a
+   moment after the last (agent-term.ts saying). */
+.agent-words.waiting::after, .agent-words.saying > :last-child::after { content: ''; display: inline-block; width: .6em; height: 1.25em;
+  vertical-align: -.25em; background: var(--ink); }
+.agent-words.waiting::after { animation: caret-blink 1.06s steps(1) infinite; }
 .agent-words.refused { color: var(--del); }
 .agent-prompt { font: var(--t-code)/1.6 var(--mono); white-space: pre-wrap; }
 .agent-cur { display: inline-block; width: .6em; height: 1.25em; vertical-align: -.25em; background: var(--ink); opacity: 0; }
@@ -173,7 +189,7 @@
 /* A command running: no prompt on its line until it ends, the caret alone there, as a terminal has it. */
 .agent-term.running .agent-prompt .ps { display: none; }
 .agent-term.running .agent-cur { opacity: 1; }
-/* Born from under another box (the Agent's terminal from under the person's): its name comes once it is out. */
+/* Born from under another box (a file made under the one in hand): its name comes once it is out. */
 .desk-box.born > .desk-label { opacity: 0; }
 .desk-box > .desk-label { transition: opacity 180ms ease-out; }
 /* The finger (desk.ts): the pointer's own pointing hand at 40 px, its fingertip on the top edge of the box in hand

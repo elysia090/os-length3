@@ -125,6 +125,8 @@ export class Box {
   #before: HTMLElement | null = null;
   /** The issue or TODO written last, until its line is in the flow: the next waits for it, so they land as written. */
   #landing: Promise<void> = Promise.resolve();
+  /** An `agent` line on its way to being asked (its key being opened): asked once, however many Enters. */
+  #asking = false;
   readonly #keys: string;
   readonly #menu: ReturnType<typeof modeMenu>;
   /** Run: the repo's Prompt followed, and the prompt line its shell waits at, in the pill. */
@@ -447,7 +449,7 @@ export class Box {
     if (this.#mode !== 'run') { void this.#write(this.#mode, repo); return; }
     // `agent` and what to do, run in the terminal on a desk: asked of the Agent, which works in a terminal of its own.
     const agentLine = this.#p.besideTerm ? /^\s*agent\s+(\S[\s\S]*)$/.exec(this.prompt.value) : null;
-    if (agentLine) { void this.#askBeside(repo, this.prompt.value.trim(), agentLine[1].trim()); this.#emptied(); return; }
+    if (agentLine) { void this.#askBeside(repo, this.prompt.value.trim(), agentLine[1].trim()); return; }
     const s = sessionIfAny(repo);
     // Ended: started again, and what was written waits in the box to be sent once it is up.
     if (s?.ended) { s.restart(); this.#pillLine.follow(); this.#say(t('Starting up…')); return; }
@@ -476,19 +478,22 @@ export class Box {
    * terminal is theirs again at once: nothing the Agent does is typed into it, and nothing waits on them.
    */
   async #askBeside(at: string, line: string, question: string) {
-    const said = (why: string) => sessionFor(at).shown(line, `agent: ${why}`, 1);
+    // The line stays where it was typed until it is shown run, in the same frame as the field is emptied: never a
+    // moment with neither, the line gone and come back. (Asked again meanwhile, by a second Enter, it is asked once.)
+    if (this.#asking) return;
+    this.#asking = true;
+    const run = (output: string, status: number) => { this.#asking = false; this.#emptied(); sessionFor(at).shown(line, output, status); };
     let use;
-    try { use = await agentUse(); } catch (e) { said(errorText(e)); return; }
-    if (!use) { said(t('No API key configured on this device; set one in Runtime')); return; }
-    sessionFor(at).shown(line, '', 0);
+    try { use = await agentUse(); } catch (e) { run(`agent: ${errorText(e)}`, 1); return; }
+    if (!use) { run(`agent: ${t('No API key configured on this device; set one in Runtime')}`, 1); return; }
+    run('', 0);
     const term = agentTermFor(at);
     this.#p.besideTerm?.(at, term.element);
     const row = term.asked(question);
     const front = this.#edit.inFront();
-    // While its model is first asked, its eye is on the file in front, else on the repo's README, as one starts.
-    const look = front?.path ?? await store.read(at, 'README.md').then((c) => (c.text !== null ? 'README.md' : null)).catch(() => null);
-    const stage = this.#stageBeside(at, term, look);
-    // Born, the camera steps back to have both terminals in sight, side by side.
+    const stage = this.#stageBeside(at, term);
+    // Born, the camera goes with its terminal as it slides out from under the person's (desk.ts lay), and stays there
+    // while its model is first asked: it has looked at nothing yet.
     stage.frame([]);
     // On an issue's work the Agent was handed it, and writes; on main it reads and runs only.
     const w = await workOf(at).catch(() => null);
@@ -503,7 +508,7 @@ export class Box {
    * boxes laid without taking the person's hand. The camera goes to the box at work now, at its own size, its top at
    * the eye, the rest at its sides as they lie, until the person takes a box in hand.
    */
-  #stageBeside(at: string, term: AgentTerm, front: string | null): Stage {
+  #stageBeside(at: string, term: AgentTerm): Stage {
     // Framed: both terminals as it is born (the camera on its own, the person's at its side); then its own and the files
     // it is at work in, the camera going sideways to each as it starts. Narrowing to fewer waits a moment, so a step
     // ending and the next starting is not a move away and back again.
@@ -519,7 +524,6 @@ export class Box {
       shown: (line, output, status) => term.shown(line, output, status),
       running: (line) => term.running(line),
       saying: () => term.saying(),
-      front: () => front,
       place: (path) => this.#repo === at && !!this.#p.place?.(path),
       frame: (keys) => {
         // (In the order they started, the Agent's terminal with them: the last to start is the one gone to.)

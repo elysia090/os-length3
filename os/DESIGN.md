@@ -183,8 +183,10 @@ Every value in `styles.css` comes from a token (§2).
     is drawn in, so it always stands after what was just written (gliding,
     it stood over that letter, one behind at every key); solid while it
     moves, blinking once it rests. It keeps to its field whatever moves
-    it: carried at once with a field that moves (a page still coming in), and
-    gliding back to the start of one the page empties (a message sent). A
+    it: carried at once with a field that moves (a page still coming in; the
+    desk's camera going, in the very frame it goes, never a frame or two
+    behind its letter), and gliding back to the start of one the page empties
+    (a message sent). A
     selection is the browser's own, as is the caret of a file too long to
     measure at every key.
   - *What ends goes as it came, never at once.* A menu put away (Escape,
@@ -2436,10 +2438,21 @@ On the desk the Agent is asked in the terminal, as any program is: `agent`
 and what to do, Enter. The line is the person's, run in their terminal and
 listed in the pane as any line run; the terminal is theirs again at once
 (refused, the key not taken or nobody reached, the line says why as a command
-does, `agent: ...`). The Agent's own terminal is born beside the person's: a
-box of its own, `agent /root/garden`, coming out from under the person's
-terminal and sliding across to the column just right of it, the columns after
-it making way, its name coming once it is out. What it was asked heads it, in
+does, `agent: ...`; the line stays where it was typed until it is shown run,
+the field emptied in the same frame, never a moment with neither). The Agent's
+own terminal is born beside the person's: a box of its own, `agent
+/root/garden`, in a column of its own just right of the person's. The columns
+after it get out of its way at once, quick, as for a box carried in; it is set
+down in the room they made as a box carried is set down (held over its place,
+its shadow long, then down onto the desk), while the camera turns to it as it
+turns to any column, stepping back on the way and coming in as it lands. Never
+under another box nor over its words. (Before: it came out from under the
+person's terminal and slid across, the two boxes one heap, two edges and two
+shadows where one should be, one's words cut by the other's, while the camera
+stepped back and came in again.) Till it first says or does something, its
+caret, a terminal's block, blinks where its words will come (never a `…`
+standing still); as its words are typed the caret goes after them, and on
+with its hand to whatever it does next: one caret at a time. What it was asked heads it, in
 the heavier weight, a quiet › hanging before it; then what it does, as it is
 played: its words in ink, its code set off by a rule; each file it read or
 edited a quiet line (pressed, the file); each command typed after its own
@@ -2519,10 +2532,17 @@ typing crawling; and a command typed only once it had run, the screen waiting
 through the run.) A file it reads is played
 too: its box laid and its eye going down the lines it read, a faint ink-edged
 line gliding from line to line (a long read skimmed). While it thinks (its
-model asked, nothing it did left to play) its eye stays on what it last looked
-at, going on over the lines with words in them slower than reading and resting
-at the last, breathing as it rests, so it is seen looking, not stopped; it goes
-the moment it says or does something. What a command printed is shown only
+model asked, nothing it did left to play) its eye stays where its hand last
+was: in the file it was last at, going on down the lines with words in them
+below where it stopped, slower than reading, and resting at the last,
+breathing as it rests, so it is seen looking, not stopped; in its terminal,
+there, the caret at its prompt. It never goes anywhere for the thinking: not
+to a file it has not read (the one in front when it was asked), nor back up to
+the top to go over it again; the eye goes only where something it did takes
+it. (Before: just born, it went to the README, which it had not read, stared
+at it three seconds and came back; and a file's lines were gone over from the
+top again and again, the eye going to and fro for no cause.) It goes the
+moment it says or does something. What a command printed is shown only
 once what came before it in the other boxes has been played. The Agent is Pi's loop, thin: read, run, edit and
 write, each by the core's rules, its last words what it says it did; it goes as
 fast as the model and the tools go, is never shown the screen, and nothing a

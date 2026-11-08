@@ -1,6 +1,7 @@
 import {h} from '../../ui/dom.ts';
 import {still} from '../../ui/glide.ts';
 import {ownCamera, WORK_AT, type WorkAt} from '../../ui/camera.ts';
+import {fieldCarried} from '../../ui/caret.ts';
 import {t} from '../../i18n/i18n.ts';
 import {arc, bornOn, carried, FOOT_ROOM, kept, liftedOn, lineKept, next, PAD, pulledOn, slots, STANDARD, standardOn, tabbed, WIDTH, wholeOf, type Slot, type View} from './desk-layout.ts';
 
@@ -153,6 +154,8 @@ export class Desk {
   #gliding = false;
   /** When a box last began to come out from under the one above it: the camera lets it come out before it follows. */
   #comingAt = -Infinity;
+  /** A box born beside another (desk.ts lay): the boxes after it make way for it at once, quick, as for one carried in. */
+  #makingWay = false;
   /** The box come out from under another, and that one, while it is the one in hand: the camera keeps the other's foot in
    * sight over it (bornOn), until another is taken or the camera moves on. */
   #bornUnder: {key: string; above: string} | null = null;
@@ -399,17 +402,19 @@ export class Desk {
     });
     const by = beside === undefined ? undefined : this.#boxes.get(beside);
     // Born beside another (the Agent's terminal beside the person's): a column of its own just right of that one's,
-    // the columns after it making way; it comes out from under that box, sliding across to its place.
+    // the columns after it making way; once they have, it is set down there as a box carried is set down
+    // (forge-desk.css .landing), the camera turning to it meanwhile. Never under another box nor over its words: two
+    // edges where one should be, one's words cut by the other's. (Before: it came out from under the person's, the two
+    // sliding over each other.)
     if (by) {
-      this.#plane.insertBefore(el, by.el);
-      // Its name comes once it is out from under the other's.
-      el.classList.add('born');
-      el.addEventListener('transitionend', () => el.classList.remove('born'), {once: true});
-      el.style.width = `${WIDTH}px`;
-      standAt(el, by.slot.x, by.slot.y);
-    } else this.#plane.append(el);
+      this.#makingWay = true;
+      el.classList.add('landing');
+      const landed = (e: AnimationEvent) => { if (e.target === el) { el.classList.remove('landing'); el.removeEventListener('animationend', landed); } };
+      el.addEventListener('animationend', landed);
+    }
+    this.#plane.append(el);
     this.#sized.observe(el);
-    const box: Box = {key, laid, el, label, slot: {x: 0, y: 0}, placed: !!by};
+    const box: Box = {key, laid, el, label, slot: {x: 0, y: 0}, placed: false};
     this.#boxes.set(key, box);
     const byCol = by ? this.#cols.findIndex((k) => k.includes(by.key)) : -1;
     const was = how.instead === undefined ? undefined : this.#boxes.get(how.instead);
@@ -679,7 +684,7 @@ export class Desk {
       if (carried && key !== this.#held) {
         const fills = p.x < carried.l + WIDTH && p.x + WIDTH > carried.l && p.y < carried.t + carried.h && p.y + heights(key) > carried.t;
         b.el.classList.add(fills ? 'fills' : 'gives');
-      }
+      } else if (this.#makingWay) b.el.classList.add('gives');
       // A box laid with no way in of its own stands in its place at once.
       if (!b.placed) { standAt(b.el, p.x, p.y); b.placed = true; continue; }
       const to = `${p.x}px ${p.y}px`;
@@ -689,6 +694,7 @@ export class Desk {
       b.el.style.translate = to;
       if (pushed) for (const a of b.el.getAnimations()) if (a instanceof CSSTransition && a.transitionProperty === 'translate') a.finish();
     }
+    this.#makingWay = false;
     this.#plane.style.width = `${right + w}px`;
     this.#plane.style.height = `${bottom + hgt}px`;
     this.#placeHand();
@@ -774,6 +780,9 @@ export class Desk {
    * zooms before it goes.
    */
   #go(to: View, moving: boolean, how: Way2 = 'pan', ms: number | undefined = undefined, path?: {from: Point; to: Point}) {
+    // On its way there already: it goes on as it goes, never set off again (asked again as what it frames is laid out).
+    const g = this.#glide?.to;
+    if (moving && !path && g && Math.abs(g.x - to.x) < .5 && Math.abs(g.y - to.y) < .5 && Math.abs(g.s - to.s) < 1e-3) return;
     cancelAnimationFrame(this.#moving);
     this.#moving = 0;
     this.#glide = null;
@@ -803,6 +812,8 @@ export class Desk {
       el.style.backgroundSize = `${DOT * v.s}px ${DOT * v.s}px`;
       el.style.backgroundPosition = `${v.x + DOT / 2 * v.s}px ${v.y + DOT / 2 * v.s}px`;
       if (el.scrollLeft || el.scrollTop) { this.#ownScroll = performance.now(); el.scrollTo(0, 0); }
+      // The caret in a box on it goes with its letter in this same frame.
+      fieldCarried();
     };
     this.#gliding = true;
     if (!moving) { set(to, true); this.#gliding = false; return; }

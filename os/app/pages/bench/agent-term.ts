@@ -12,6 +12,8 @@ import type {Flow} from './agent.ts';
 
 /** The most lines the Agent's terminal keeps; the first go as more come. */
 const KEPT = 400;
+/** How long its caret stays after the last of its words typed: about a hand's pause between words, a few times over. */
+const SAYING_MS = 700;
 
 export class AgentTerm implements Flow {
   readonly element: HTMLElement;
@@ -49,12 +51,22 @@ export class AgentTerm implements Flow {
   /** Words typed as it says them, before they are set as words (answer): where they wait under the question, else
    * under all it has done so far. */
   #said: HTMLElement | null = null;
+  #sayingRest = 0;
+  /** Its hand gone on from its words (a line under them, a command typed): its caret goes with it, one caret at a time. */
+  #handOff() {
+    clearTimeout(this.#sayingRest);
+    this.#out.querySelector('.agent-words.saying')?.classList.remove('saying');
+  }
   saying(): {put(text: string): void} {
     const last = this.#out.lastElementChild;
     const el = last instanceof HTMLElement && last.matches('.agent-words.waiting') ? last : (this.#said = this.#add(h('div', {class: 'agent-words'})));
     const p = h('p', {class: 'answer-p'});
     return {put: (text) => {
       el.classList.remove('waiting');
+      // Its caret after the words as they are typed; a moment after the last, gone.
+      el.classList.add('saying');
+      clearTimeout(this.#sayingRest);
+      this.#sayingRest = window.setTimeout(() => el.classList.remove('saying'), SAYING_MS);
       if (p.parentElement !== el) el.replaceChildren(p);
       p.textContent = text;
       this.#toFoot();
@@ -64,6 +76,7 @@ export class AgentTerm implements Flow {
 
   /** Its prompt line taken to type a command into: `put` what is typed so far; `done` gives the line back, empty. */
   typing(): {put(text: string): void; sent(): void; done(): void} {
+    this.#handOff();
     this.element.classList.add('typing');
     return {
       put: (text) => { this.#typed.textContent = text; this.#here(); },
@@ -102,6 +115,7 @@ export class AgentTerm implements Flow {
   }
 
   #add(el: HTMLElement): HTMLElement {
+    this.#handOff();
     this.#out.append(el);
     while (this.#out.childElementCount > KEPT) this.#out.firstElementChild!.remove();
     this.#toFoot();
