@@ -57,43 +57,147 @@ pub struct Block {
 pub struct Function {
     pub start: u64,
     pub name: String,
-    /// Sorted by address; index 0 is the function entry.
+    /// In the order they are lowered (`lowered`): index 0 is the function entry.
     pub blocks: Vec<Block>,
+    /// Each block's address and index, sorted by address.
+    by_address: Vec<(u64, u32)>,
 }
 
 impl Function {
+    /// The function of `blocks` (sorted by address, the entry first), in the order they are lowered.
+    pub fn new(start: u64, name: String, mut blocks: Vec<Block>) -> Function {
+        lowered(&mut blocks);
+        let mut by_address: Vec<(u64, u32)> = blocks.iter().enumerate().map(|(k, b)| (b.start, k as u32)).collect();
+        by_address.sort_unstable();
+        Function { start, name, blocks, by_address }
+    }
     pub fn block_index(&self, address: u64) -> Option<usize> {
-        self.blocks.binary_search_by_key(&address, |b| b.start).ok()
+        self.by_address.binary_search_by_key(&address, |&(a, _)| a).ok().map(|i| self.by_address[i].1 as usize)
+    }
+    /// The first and last of its blocks' addresses.
+    pub fn span(&self) -> Option<(u64, u64)> { Some((self.by_address.first()?.0, self.by_address.last()?.0)) }
+}
+
+/// Where a block may go on to within its function, by address: where it falls or jumps, both sides of a branch,
+/// where a call it makes comes back to.
+pub fn goes_to(b: &Block) -> [Option<u64>; 2] {
+    match b.exit {
+        Exit::Fall(a) | Exit::Jump(a) | Exit::Call { ret: a, .. } | Exit::IndirectCall { ret: a } => [Some(a), None],
+        Exit::Branch { taken, fall } => [Some(taken), Some(fall)],
+        _ => [None, None],
     }
 }
 
-/// The most blocks one wasm function is made of. An optimizing compile takes time that grows faster than a function's
-/// size: one of a compiler's own functions, tens of thousands of blocks, held a browser's compiler threads for half a
-/// minute (and the page's frames with them). A function past this is cut into runs of consecutive blocks, each a wasm
+/// A loop made of blocks `head..=last` (in the order they are lowered), gone round from its last block or any before
+/// it back to its head (a back edge). `parent`: the loop it lies within, if any.
+#[derive(Clone, Copy, Debug)]
+pub struct Loop { pub head: usize, pub last: usize, pub parent: Option<usize> }
+
+/// The loops `blocks`' back edges make (to its own block or one before it, `at` finding a block by its address):
+/// each from the block it goes back to through the last block that goes back to it. One that overlaps another
+/// without lying within it is not made. With them, the innermost loop each block lies within past that loop's head.
+pub fn loops_of(blocks: &[Block], at: impl Fn(u64) -> Option<usize>) -> (Vec<Loop>, Vec<Option<usize>>) {
+    let n = blocks.len();
+    let mut last: Vec<Option<usize>> = vec![None; n];
+    for (k, b) in blocks.iter().enumerate() {
+        for h in goes_to(b).into_iter().flatten().filter_map(&at).filter(|&h| h <= k) { last[h] = Some(last[h].map_or(k, |e| e.max(k))); }
+    }
+    let mut loops: Vec<Loop> = Vec::new();
+    // The loops open where each head is reached, outermost first.
+    let mut open: Vec<usize> = Vec::new();
+    for (head, e) in last.iter().enumerate() {
+        let Some(e) = *e else { continue };
+        while open.last().is_some_and(|&o| loops[o].last < head) { open.pop(); }
+        if open.last().is_some_and(|&o| e > loops[o].last) { continue; }
+        loops.push(Loop { head, last: e, parent: open.last().copied() });
+        open.push(loops.len() - 1);
+    }
+    // Inner loops come after the loops they lie within: each block's innermost is the last to claim it.
+    let mut within = vec![None; n];
+    for (l, lp) in loops.iter().enumerate() {
+        for w in &mut within[lp.head + 1..=lp.last] { *w = Some(l); }
+    }
+    (loops, within)
+}
+
+/// `blocks` (sorted by address, the entry first) put in the order they are lowered: a loop that code from outside it
+/// enters at one block only, past its first, starts at that block. A compiler lays a while loop out with its test last
+/// and jumps in to the test (`jmp test; body: ...; test: ...; jne body`); in that order the loop's head (where a wasm
+/// loop is entered and gone round from, lower.rs) is the block it is entered at, and going round it asks nothing of
+/// where it was entered.
+fn lowered(blocks: &mut [Block]) {
+    let mut rounds = 0;
+    loop {
+        let at: HashMap<u64, usize> = blocks.iter().enumerate().map(|(k, b)| (b.start, k)).collect();
+        let (loops, within) = loops_of(blocks, |a| at.get(&a).copied());
+        // Each turn changes the order, so at most a few turns a loop (a turn's loop then starts where it is entered).
+        if rounds > 2 * loops.len() { return; }
+        rounds += 1;
+        let turn = loops.iter().enumerate().find_map(|(l, lp)| {
+            let inside = |k: usize| (lp.head..=lp.last).contains(&k);
+            let mut entered = None;
+            for b in blocks.iter().enumerate().filter(|&(k, _)| !inside(k)).map(|(_, b)| b) {
+                for t in goes_to(b).into_iter().flatten().filter_map(|a| at.get(&a).copied()).filter(|&t| inside(t)) {
+                    if entered.is_some_and(|e| e != t) { return None; }
+                    entered = Some(t);
+                }
+            }
+            // Entered past its head at a block of its own, or at the head of a loop directly within it. (The function's
+            // first block is entered from outside, and stays first.)
+            let e = entered.filter(|&e| e != lp.head && lp.head != 0)?;
+            let own = within[e] == Some(l) || within[e].is_some_and(|w| loops[w].head == e && loops[w].parent == Some(l));
+            own.then_some((lp.head, lp.last, e))
+        });
+        let Some((head, last, e)) = turn else { return };
+        blocks[head..=last].rotate_left(e - head);
+    }
+}
+
+/// About how many blocks one wasm function is made of. An optimizing compile takes time that grows faster than a
+/// function's size, and a browser optimizes what runs long enough whatever its size: cc1's functions cut into runs of
+/// 1024 blocks had V8 optimize 36 MB of them (a run of 130 KB took 0.7 s) on all four cores while a small C file was
+/// compiled, which took 11 s where it took 4.8 s with nothing optimized. In runs of about 64 blocks it optimizes 7 MB in
+/// 3.9 s, and the compile takes 4.1-4.3 s. A function past this is cut into runs of consecutive blocks, each a wasm
 /// function of its own; from one run into another is a tail call to that run's entry, as a jump out of a function is.
-pub const RUN: usize = 1024;
+pub const RUN: usize = 64;
+/// The most blocks of a loop that a run grows past RUN to hold whole (to twice RUN at most): going round it stays a
+/// branch, not a tail call from one run to another and in again through the dispatch.
+const KEEP: usize = RUN;
 
 thread_local! {
-    /// RUN, unless set otherwise for testing the cut on small programs (set_run).
-    static RUN_BLOCKS: std::cell::Cell<usize> = const { std::cell::Cell::new(RUN) };
+    /// Runs of exactly this many blocks, loops cut as anything is, when set for testing the cut (set_run).
+    static RUN_BLOCKS: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
 }
 
-/// Cut functions into runs of `blocks` blocks from now on (at least one): for testing the cut on small programs.
-pub fn set_run(blocks: usize) { RUN_BLOCKS.with(|r| r.set(blocks.max(1))); }
+/// Cut functions into runs of exactly `blocks` blocks from now on (at least one): for testing the cut on small programs.
+pub fn set_run(blocks: usize) { RUN_BLOCKS.with(|r| r.set(Some(blocks.max(1)))); }
 
-/// `function` as wasm functions are made of it: whole, or cut into runs of RUN blocks (the first keeps its name and
-/// its entry; the others are named after it with their place: `name.2`).
-fn runs(function: Function) -> Vec<Function> {
-    let run = RUN_BLOCKS.with(|r| r.get());
-    if function.blocks.len() <= run { return vec![function]; }
-    let Function { name, blocks, .. } = function;
-    let mut out: Vec<Function> = Vec::with_capacity(blocks.len().div_ceil(run));
-    let mut left = blocks.into_iter().peekable();
-    while left.peek().is_some() {
-        let run: Vec<Block> = left.by_ref().take(run).collect();
-        let name = if out.is_empty() { name.clone() } else { format!("{name}.{}", out.len() + 1) };
-        out.push(Function { start: run[0].start, name, blocks: run });
+/// `function` as wasm functions are made of it: whole, or cut into runs of about RUN blocks, a run cut no sooner than
+/// where it breaks no loop of up to KEEP blocks (the first keeps its name and its entry; the others are named after it
+/// with their place: `name.2`).
+fn runs(start: u64, name: String, blocks: Vec<Block>) -> Vec<Function> {
+    let exact = RUN_BLOCKS.with(|r| r.get());
+    let run = exact.unwrap_or(RUN);
+    if blocks.len() <= run { return vec![Function::new(start, name, blocks)]; }
+    // A cut before block p breaks each loop with head < p <= last.
+    let mut breaks = vec![false; blocks.len()];
+    if exact.is_none() {
+        let at: HashMap<u64, usize> = blocks.iter().enumerate().map(|(k, b)| (b.start, k)).collect();
+        for lp in loops_of(&blocks, |a| at.get(&a).copied()).0.into_iter().filter(|lp| lp.last - lp.head < KEEP) {
+            for b in &mut breaks[lp.head + 1..=lp.last] { *b = true; }
+        }
     }
+    let mut out: Vec<Function> = Vec::with_capacity(blocks.len().div_ceil(run));
+    let mut held: Vec<Block> = Vec::with_capacity(run);
+    for (p, b) in blocks.into_iter().enumerate() {
+        if held.len() >= run + KEEP * exact.is_none() as usize || (held.len() >= run && !breaks[p]) {
+            let name = if out.is_empty() { name.clone() } else { format!("{name}.{}", out.len() + 1) };
+            out.push(Function::new(held[0].start, name, std::mem::take(&mut held)));
+        }
+        held.push(b);
+    }
+    let name = if out.is_empty() { name } else { format!("{name}.{}", out.len() + 1) };
+    out.push(Function::new(held[0].start, name, held));
     out
 }
 
@@ -104,13 +208,7 @@ fn joined(runs: &[Function], first: usize, entries: &mut BTreeMap<u64, (u32, u32
     let holder = |a: u64| runs.iter().enumerate().find_map(|(r, f)| f.block_index(a).map(|b| (r, b)));
     for f in runs {
         for b in &f.blocks {
-            let goes: [Option<u64>; 2] = match b.exit {
-                Exit::Fall(a) | Exit::Jump(a) => [Some(a), None],
-                Exit::Branch { taken, fall } => [Some(taken), Some(fall)],
-                Exit::Call { ret, .. } | Exit::IndirectCall { ret } => [Some(ret), None],
-                _ => [None, None],
-            };
-            for a in goes.into_iter().flatten() {
+            for a in goes_to(b).into_iter().flatten() {
                 if f.block_index(a).is_some() { continue; }
                 if let Some((r, k)) = holder(a) { entries.entry(a).or_insert(((first + r) as u32, k as u32)); }
             }
@@ -484,12 +582,7 @@ fn bound_of(blocks: &[Block], at: u64, index: Register) -> Option<u64> {
 /// the code execution reaches from the seeds.
 /// The blocks of `f` that block `k` goes back to (at or before itself): the heads of its loops.
 pub fn back_edges(f: &Function, k: usize, b: &Block) -> Vec<u64> {
-    let targets: &[u64] = match &b.exit {
-        Exit::Jump(a) | Exit::Fall(a) => std::slice::from_ref(a),
-        Exit::Branch { taken, .. } => std::slice::from_ref(taken),
-        _ => &[],
-    };
-    targets.iter().copied().filter(|&a| f.block_index(a).is_some_and(|j| j <= k)).collect()
+    goes_to(b).into_iter().flatten().filter(|&a| f.block_index(a).is_some_and(|j| j <= k)).collect()
 }
 
 pub fn discover_from(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>) -> Program {
@@ -544,7 +637,7 @@ pub fn discover_within(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>, budget: 
     let mut entries = BTreeMap::new();
     for (start, blocks) in done {
         let first = functions.len();
-        for function in runs(Function { start, name: format!("fn_{start:x}"), blocks }) {
+        for function in runs(start, format!("fn_{start:x}"), blocks) {
             let f = functions.len() as u32;
             let mut mark = |address: u64| {
                 if let Some(b) = function.block_index(address) { entries.entry(address).or_insert((f, b as u32)); }
@@ -674,7 +767,7 @@ fn walk_program(elf: &Elf, targets: &[u64], pointed_start: bool, seeds: &[u64], 
     for (start, blocks) in done {
         let name = names.get(&start).cloned().unwrap_or_else(|| format!("fn_{start:x}"));
         let first_run = functions.len();
-        for function in runs(Function { start, name, blocks }) {
+        for function in runs(start, name, blocks) {
             let f = functions.len() as u32;
             let mut mark = |address: u64, function: &Function| {
                 if let Some(b) = function.block_index(address) {
@@ -694,8 +787,8 @@ fn walk_program(elf: &Elf, targets: &[u64], pointed_start: bool, seeds: &[u64], 
                 }
             }
             // Only the pointers (sorted) between its first and last block can land in it.
-            if let (Some(first), Some(last)) = (function.blocks.first(), function.blocks.last()) {
-                let span = &pointers[pointers.partition_point(|&a| a < first.start)..pointers.partition_point(|&a| a <= last.start)];
+            if let Some((first, last)) = function.span() {
+                let span = &pointers[pointers.partition_point(|&a| a < first)..pointers.partition_point(|&a| a <= last)];
                 for &p in span {
                     mark(p, &function);
                 }

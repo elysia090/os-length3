@@ -8,7 +8,7 @@
 //! a return compares the popped address with the expected continuation and
 //! hands anything unexpected (longjmp, tail tricks) to the dispatcher.
 
-use crate::discover::{Block, Exit, Function, Program};
+use crate::discover::{goes_to, loops_of, Block, Exit, Function, Loop, Program};
 use crate::elf::Elf;
 use crate::summary::{summarize, Summary};
 use iced_x86::{ConditionCode, Instruction, Mnemonic, OpKind, Register, RflagsBits};
@@ -219,7 +219,22 @@ struct Fx<'p> {
     budget: bool,
     /// What each of the program's functions may do to the registers (summary.rs).
     summaries: &'p [Summary],
+    /// The function's loops made wasm loops (clean_loops), the innermost each block lies within past its head, and
+    /// the loop each block heads.
+    loops: Vec<Loop>,
+    within: Vec<Option<usize>>,
+    heads: Vec<Option<usize>>,
+    /// The labels open between the code and the dispatch loop, outermost first, and where each block's label and
+    /// each loop's is among them while it is open.
+    labels: Vec<Lab>,
+    block_at: Vec<Option<u32>>,
+    loop_at: Vec<Option<u32>>,
 }
+
+/// A label open in a function's code: the end of a block's (where that block's code starts: a jump forward to it),
+/// or a loop's (its head: round it again).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Lab { Block(usize), Loop(usize) }
 
 /// A sync's scope when it may move any register.
 const ALL: u32 = u32::MAX;
@@ -729,6 +744,33 @@ impl<'p> Fx<'p> {
     /// Continue at `address`: fall through if it is the next block; a block
     /// after this one, straight to it; one before (a loop's round), through
     /// the dispatch loop; else leave the function.
+    /// A label opened (its code emitted already), and where it is among those open.
+    fn open(&mut self, l: Lab) {
+        let at = Some(self.labels.len() as u32);
+        match l { Lab::Block(b) => self.block_at[b] = at, Lab::Loop(i) => self.loop_at[i] = at }
+        self.labels.push(l);
+    }
+    /// The innermost label closed (its end emitted already): it must be `l`.
+    fn close(&mut self, l: Lab) {
+        assert_eq!(self.labels.pop(), Some(l), "labels closed out of order");
+        match l { Lab::Block(b) => self.block_at[b] = None, Lab::Loop(i) => self.loop_at[i] = None }
+    }
+    /// The depth of a br from here to the label at `at` among those open.
+    fn to(&self, at: u32) -> u32 { self.depth - 1 - at }
+
+    /// Into loop `l` at its head: the loop's label and the labels of the blocks within it (but those within a loop
+    /// within it). Nothing comes to those from outside the loop (clean_loops).
+    fn enter_loop(&mut self, l: usize) {
+        let Loop { head, last, .. } = self.loops[l];
+        self.e(W::Loop(BlockType::Empty));
+        self.open(Lab::Loop(l));
+        let mine: Vec<usize> = (head + 1..=last).rev().filter(|&b| self.within[b] == Some(l)).collect();
+        for b in mine {
+            self.e(W::Block(BlockType::Empty));
+            self.open(Lab::Block(b));
+        }
+    }
+
     fn goto(&mut self, address: u64, next: Option<u64>) {
         if Some(address) == next {
             self.note(Ev::Edge);
@@ -736,19 +778,28 @@ impl<'p> Fx<'p> {
         }
         match self.function.block_index(address) {
             Some(b) if b > self.at => {
-                // Block k's code sits inside the labels of blocks k+1..n-1 (lower_function), each ending where its
-                // block's code starts: out of those before block b's, and of what is open here, is block b, with no
-                // round of the dispatch loop (its br_table an indirect jump, and every local merged at its head).
                 self.note(Ev::Edge);
-                let open = self.depth - (self.function.blocks.len() - 1 - self.at) as u32;
-                self.e(W::Br((b - self.at - 1) as u32 + open));
+                match self.block_at[b] {
+                    // Its label is open here (lower_function): out to it, with no round of the dispatch loop (its
+                    // br_table an indirect jump, and every local merged at its head).
+                    Some(at) => self.e(W::Br(self.to(at))),
+                    // Its label is not open here: round the dispatch loop (a block within a loop is never one: nothing
+                    // jumps into a loop from outside it but to its head, clean_loops).
+                    None => { self.c32(b as i32); self.set(L_BLK); self.e(W::Br(self.depth)); }
+                }
             }
             Some(b) => {
                 self.time_slice(address);
                 self.note(Ev::Edge);
-                self.c32(b as i32);
-                self.set(L_BLK);
-                self.e(W::Br(self.depth));
+                match self.heads[b].and_then(|l| self.loop_at[l]) {
+                    // Back to the head of a loop this code is in: round that loop.
+                    Some(at) => self.e(W::Br(self.to(at))),
+                    None => {
+                        self.c32(b as i32);
+                        self.set(L_BLK);
+                        self.e(W::Br(self.depth));
+                    }
+                }
             }
             None => {
                 // Out to an address before this block's (a run of the same function cut into runs: discover.rs RUN), a
@@ -2453,6 +2504,57 @@ pub(crate) fn has_loop(function: &Function) -> bool {
     })
 }
 
+/// Whether each loop may be come to past its head other than by a jump straight to its label: as an entry (from the
+/// dispatch), by a jump in from outside the loop, or by a jump back that is not a round of a loop it lies within.
+fn entered_past_head(program: &Program, index: u32, function: &Function, loops: &[Loop], heads: &[Option<usize>]) -> Vec<bool> {
+    let mut entered = vec![false; loops.len()];
+    let mut mark = |t: usize, from: Option<usize>| {
+        for (l, lp) in loops.iter().enumerate() {
+            if t > lp.head && t <= lp.last && from.is_none_or(|k| k < lp.head || k > lp.last) { entered[l] = true; }
+        }
+    };
+    for (k, b) in function.blocks.iter().enumerate() {
+        if program.entries.get(&b.start) == Some(&(index, k as u32)) { mark(k, None); }
+        for t in goes_to(b).into_iter().flatten().filter_map(|a| function.block_index(a)) {
+            if t > k { mark(t, Some(k)); continue; }
+            let round = heads[t].is_some_and(|l| (loops[l].head..=loops[l].last).contains(&k));
+            if !round { mark(t, None); }
+        }
+    }
+    entered
+}
+
+/// Of `loops`, those made wasm loops: the ones never entered past their head (entered_past_head), each within the
+/// nearest such it lies within; with the innermost each block lies within past its head. A wasm loop is entered at
+/// its top only, so one entered elsewhere would have to ask, every time round, where it was entered (a compare and a
+/// branch) and be taken in through its top with the block to go on to: that made a compiler's code (cc1's loops call,
+/// switch and are entered at their cases) a sixth slower than going round through the dispatch loop as before. Those
+/// left (a byte loop's, a sort's) take two thirds the time to go round, or less (code.c's floors: strlen and memchr of
+/// 4K 1.43 µs -> 0.73, strcmp of 2K 3.3 -> 2.5), and the rest go round as before.
+fn clean_loops(program: &Program, index: u32, function: &Function, mut loops: Vec<Loop>) -> (Vec<Loop>, Vec<Option<usize>>) {
+    loop {
+        let mut heads = vec![None; function.blocks.len()];
+        for (l, lp) in loops.iter().enumerate() { heads[lp.head] = Some(l); }
+        let entered = entered_past_head(program, index, function, &loops, &heads);
+        if !entered.contains(&true) { break; }
+        let mut now = vec![None; loops.len()];
+        let mut kept = Vec::new();
+        for (l, lp) in loops.iter().enumerate() {
+            if entered[l] { continue; }
+            let mut p = lp.parent;
+            while let Some(q) = p { if !entered[q] { break; } p = loops[q].parent; }
+            now[l] = Some(kept.len());
+            kept.push(Loop { parent: p.and_then(|q| now[q]), ..*lp });
+        }
+        loops = kept;
+    }
+    let mut within = vec![None; function.blocks.len()];
+    for (l, lp) in loops.iter().enumerate() {
+        for w in &mut within[lp.head + 1..=lp.last] { *w = Some(l); }
+    }
+    (loops, within)
+}
+
 /// The function `target` starts and its summary, when it is one of this program's that never goes out (summary.rs).
 fn quiet(program: &Program, summaries: &[Summary], target: u64) -> Option<(u32, Summary)> {
     let &(f, b) = program.entries.get(&target)?;
@@ -2467,7 +2569,14 @@ fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u6
     let (live, cases) = live_flags(program, index, &succs);
     let n = function.blocks.len() as u32;
     let handed_flags = handed;
-    let mut fx = Fx { f: WasmFunction::new([]), syncs: Vec::new(), used: 0, ev: vec![Vec::new()], nest: 0, flags: Flags::Held, fr_pending: false, depth: 0, program, function, report, handed, backward: false, at: 0, budget: has_loop(function), summaries };
+    let mut fx = Fx { f: WasmFunction::new([]), syncs: Vec::new(), used: 0, ev: vec![Vec::new()], nest: 0, flags: Flags::Held, fr_pending: false, depth: 0, program, function, report, handed, backward: false, at: 0, budget: has_loop(function), summaries,
+        loops: Vec::new(), within: Vec::new(), heads: Vec::new(), labels: Vec::new(), block_at: Vec::new(), loop_at: Vec::new() };
+    let (loops, within) = clean_loops(program, index, function, loops_of(&function.blocks, |a| function.block_index(a)).0);
+    fx.heads = vec![None; function.blocks.len()];
+    for (l, lp) in loops.iter().enumerate() { fx.heads[lp.head] = Some(l); }
+    fx.block_at = vec![None; function.blocks.len()];
+    fx.loop_at = vec![None; loops.len()];
+    (fx.loops, fx.within) = (loops, within);
 
     // Everything the prologue depends on is known, so the function is made in order.
     // Only where it is read: past a call (the resume) or an indirect jump; a leaf pays nothing for it.
@@ -2482,17 +2591,34 @@ fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u6
     fx.load_flags(cases);
     fx.e(W::Block(BlockType::Empty));
     fx.e(W::Loop(BlockType::Empty));
-    for _ in 0..n { fx.e(W::Block(BlockType::Empty)); }
+    // A label for each block within no loop past its head, the last block's outermost: each ends where its block's
+    // code starts. Those within a loop open inside it (enter_loop).
+    let outermost: Vec<usize> = (0..n as usize).rev().filter(|&b| fx.within[b].is_none()).collect();
+    for b in outermost {
+        fx.e(W::Block(BlockType::Empty));
+        fx.open(Lab::Block(b));
+    }
+    fx.depth = fx.labels.len() as u32;
+    // Each entry to its block's label (none lies within a loop past its head: clean_loops; one that did would be
+    // taken to the head of the outermost loop it lies within).
+    let targets: Vec<u32> = (0..n as usize).map(|b| {
+        let mut l = fx.within[b];
+        let mut t = b;
+        while let Some(w) = l { t = fx.loops[w].head; l = fx.loops[w].parent; }
+        fx.to(fx.block_at[t].unwrap_or_default())
+    }).collect();
     fx.get(L_BLK);
-    let targets: Vec<u32> = (0..n).collect();
     fx.e(W::BrTable(Cow::Owned(targets), 0));
     for (k, block) in function.blocks.iter().enumerate() {
-        // Close block k's label so its code starts here; code k sits inside
-        // the labels of blocks k+1..n-1 and then the loop.
+        // Close block k's label so its code starts here, inside the labels of
+        // the blocks after it and of the loops it lies within; a loop it heads
+        // is gone round from here.
         fx.e(W::End);
+        fx.close(Lab::Block(k));
+        if let Some(l) = fx.heads[k] { fx.enter_loop(l); }
         fx.ev.push(Vec::with_capacity(block.code.len() * 6));
         fx.nest = 0;
-        fx.depth = n - 1 - k as u32;
+        fx.depth = fx.labels.len() as u32;
         fx.set_flags(Flags::Held);
         fx.backward = false;
         fx.at = k;
@@ -2612,6 +2738,12 @@ fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u6
                 fx.e(W::Call(F_TRAP));
                 fx.e(W::Unreachable);
             }
+        }
+        // The loops this is the last block of end here, the innermost first.
+        while let Some(&Lab::Loop(l)) = fx.labels.last() {
+            if fx.loops[l].last != k { break; }
+            fx.e(W::End);
+            fx.close(Lab::Loop(l));
         }
     }
     // Leaving the last block falls out of the loop.

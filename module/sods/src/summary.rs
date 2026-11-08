@@ -127,7 +127,7 @@ mod tests {
     fn function(start: u64, code: &[u8], exit: Exit) -> Function {
         let mut d = Decoder::with_ip(64, code, start, DecoderOptions::NONE);
         let code = std::iter::from_fn(|| d.can_decode().then(|| d.decode())).collect();
-        Function { start, name: format!("f_{start:x}"), blocks: vec![Block { start, code, exit }] }
+        Function::new(start, format!("f_{start:x}"), vec![Block { start, code, exit }])
     }
     fn program(functions: Vec<Function>) -> Program { Program { entry: functions[0].start, functions, entries: Default::default() } }
     const RAX: u32 = 1 << 0;
