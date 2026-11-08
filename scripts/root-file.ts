@@ -27,9 +27,18 @@ if (existsSync(at) && ok(readFileSync(at))) { console.log(at); process.exit(0); 
 
 const repo = process.env.GITHUB_REPOSITORY || 'elysia090/os-length3';
 const releases = process.env.LENGTH3_RELEASES || `https://github.com/${repo}/releases/download`;
-const r = await fetch(`${releases}/${pin.tag}/${pin.file}`, {headers: {'user-agent': 'length3-build'}});
-if (!r.ok) throw new Error(`${pin.file} of ${pin.tag}: ${r.status}`);
-const bytes = Buffer.from(await r.arrayBuffer());
+// A server's own trouble (5xx, a connection cut) is asked again, four times over a minute; anything else is final.
+async function download(url: string, what: string): Promise<Buffer> {
+  for (let attempt = 0; ; attempt++) {
+    const r = await fetch(url, {headers: {'user-agent': 'length3-build'}}).catch((e: unknown) => e as Error);
+    const failed = r instanceof Error ? r.message : r.ok ? null : `${r.status}`;
+    if (!failed) return Buffer.from(await (r as Response).arrayBuffer());
+    if (attempt === 4 || (!(r instanceof Error) && r.status < 500)) throw new Error(`${what}: ${failed}`);
+    console.error(`${what}: ${failed}; again in ${4 << attempt} s`);
+    await new Promise((go) => setTimeout(go, 4000 << attempt));
+  }
+}
+const bytes = await download(`${releases}/${pin.tag}/${pin.file}`, `${pin.file} of ${pin.tag}`);
 if (!ok(bytes)) throw new Error(`${pin.file}: sha256 ${sha(bytes)}, ${bytes.length} bytes; this tree pins ${pin.sha256}, ${pin.bytes} bytes`);
 mkdirSync(dir, {recursive: true});
 writeFileSync(`${at}.part`, bytes);
