@@ -20,6 +20,8 @@ export interface Clocks {
   wall(): bigint;
   monotonic(): bigint;
   wallMs(): number;
+  /** Time since the kernel began (ms). */
+  steadyMs(): number;
   readMs(id: number): number | null | undefined;
   read(id: number): bigint | null | undefined;
 }
@@ -37,6 +39,7 @@ export function clocks(origin: number = performance.timeOrigin): Clocks {
     wall,
     monotonic,
     wallMs,
+    steadyMs,
     /** Clock `id`'s time in ms (a Number); null for a CPU-time clock, undefined for no clock. */
     readMs(id: number) {
       if (WALL.has(id)) return wallMs();
@@ -60,32 +63,36 @@ export function clocks(origin: number = performance.timeOrigin): Clocks {
  * CPU-time clock, an address not in `memory`, which the kernel says EFAULT to).
  */
 export function answerTime(memory: WebAssembly.Memory, clock: Clocks, nr: bigint, a: bigint, b: bigint): bigint | null {
-  // (Without BigInt arithmetic, and with the view kept while the memory's buffer is the same: this is a hot path.)
-  const view = viewOf(memory);
-  const out = (at: number, words: number[]): boolean => {
-    if (at < 0 || at + 8 * words.length > view.byteLength) return false;
-    for (let k = 0; k < words.length; k++) { const w = words[k]; view.setUint32(at + 8 * k, w % 0x100000000, true); view.setUint32(at + 8 * k + 4, Math.floor(w / 0x100000000), true); }
-    return true;
-  };
+  // (No BigInt arithmetic, nothing made a call, and the view kept while the memory's buffer is the same: a program
+  // reads the clock in its loops.)
   if (nr === 228n) { // clock_gettime
     const id = Number(BigInt.asIntN(32, a));
-    const ms = clock.readMs(id);
-    if (ms === null || ms === undefined) return null;
+    const wall = id === 0 || id === 5 || id === 8 || id === 11;
+    if (!wall && id !== 1 && id !== 4 && id !== 6 && id !== 7 && id !== 9) return null;
+    const ms = wall ? clock.wallMs() : clock.steadyMs();
     const s = Math.floor(ms / 1000);
-    return out(Number(b), [s, Math.min(999999999, Math.round((ms - s * 1000) * 1e6))]) ? 0n : null;
+    return put(viewOf(memory), Number(b), s, Math.min(999999999, Math.round((ms - s * 1000) * 1e6))) ? 0n : null;
   }
   if (nr === 96n) { // gettimeofday (a timezone asked for is UTC's: none west, no DST)
-    const ms = clock.wallMs(), s = Math.floor(ms / 1000);
-    if (a && !out(Number(a), [s, Math.min(999999, Math.round((ms - s * 1000) * 1e3))])) return null;
-    if (b && !out(Number(b), [0])) return null;
+    const view = viewOf(memory), ms = clock.wallMs(), s = Math.floor(ms / 1000);
+    if (a && !put(view, Number(a), s, Math.min(999999, Math.round((ms - s * 1000) * 1e3)))) return null;
+    if (b && !put(view, Number(b), 0, -1)) return null;
     return 0n;
   }
   if (nr === 201n) { // time
     const s = Math.floor(clock.wallMs() / 1000);
-    if (a && !out(Number(a), [s])) return null;
+    if (a && !put(viewOf(memory), Number(a), s, -1)) return null;
     return BigInt(s);
   }
   return null;
+}
+
+/** 64-bit words `x` and `y` (none when -1: one word alone) put at `at`; false for an address past the memory. */
+function put(view: DataView, at: number, x: number, y: number): boolean {
+  if (at < 0 || at + (y < 0 ? 8 : 16) > view.byteLength) return false;
+  view.setUint32(at, x % 0x100000000, true); view.setUint32(at + 4, Math.floor(x / 0x100000000), true);
+  if (y >= 0) { view.setUint32(at + 8, y % 0x100000000, true); view.setUint32(at + 12, Math.floor(y / 0x100000000), true); }
+  return true;
 }
 
 const views = new WeakMap<WebAssembly.Memory, DataView>();

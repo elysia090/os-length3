@@ -83,6 +83,15 @@ const enc = new TextEncoder();
 const SLICE = 10;
 /** Calls a thread may be made to wait at for another's turn: ones that may wait anyway, so nothing a program relies on across them (its flags) is held. */
 const YIELDS = new Set([0, 1, 7, 17, 18, 19, 20, 23, 24, 35, 61, 202, 230, 232, 247, 270, 271, 281]);
+/**
+ * Calls that change nothing another call may wait for: they read (who, what time, a file's state or bytes, a
+ * directory) or change only the caller's own memory and mask. One of them done leaves the kernel as clean as it was, so
+ * the calls that wait are not all made again after it (retry), as they are after any other; a pipe's, a socket's or a
+ * futex's call that wakes another says so itself (dirty) besides.
+ */
+const QUIET = new Uint8Array(512);
+for (const nr of [4, 5, 6, 8, 9, 10, 11, 12, 14, 17, 21, 39, 63, 79, 89, 96, 97, 98, 99, 100, 102, 104, 107, 108, 110, 111, 115, 118,
+  120, 121, 124, 137, 138, 140, 186, 201, 204, 217, 228, 229, 262, 267, 269, 318, 332, 439]) QUIET[nr] = 1;
 /** Calls Linux makes again after a handler with SA_RESTART (the rest say EINTR). */
 const RESTARTS = new Set([0, 1, 2, 16, 17, 18, 19, 20, 61, 72, 73, 202, 247, 257, 295, 296]);
 
@@ -783,7 +792,7 @@ export class Kernel implements Kern {
     if (shares) p.syncShared();
     try {
       const r = handler.apply(p, call.args);
-      this.dirty = true;
+      if (!QUIET[call.nr]) this.dirty = true;
       const v = typeof r === 'bigint' ? r : BigInt(r);
       if (TRACE_SYSCALLS) console.error(`[${t.tid}]   = ${BigInt.asIntN(64, v)}`);
       return v;
@@ -830,11 +839,14 @@ export class Kernel implements Kern {
 
   /** Make the waiting calls again while something changed; the ones done go on. */
   retry(): void {
-    for (const timer of [...this.timers]) if (timer.at <= performance.now()) { this.timers.delete(timer); timer.fire(); }
-    for (let pass = 0; pass < 64; pass++) {
+    if (this.timers.size) {
       const now = performance.now();
-      const due = [...this.blocked].some((t) => t.call?.state.deadline !== undefined && t.call.state.deadline <= now);
-      if (!this.dirty && !due) return;
+      for (const timer of [...this.timers]) if (timer.at <= now) { this.timers.delete(timer); timer.fire(); }
+    }
+    for (let pass = 0; pass < 64; pass++) {
+      // None waits: nothing to make again (what changed is seen by the next call that would wait for it).
+      if (!this.blocked.size) { this.dirty = false; return; }
+      if (!this.dirty && !this.timedOut()) return;
       this.dirty = false;
       for (const t of [...this.blocked]) {
         if (!t.call || t.dead || t.proc.stopped || !this.blocked.has(t)) continue;
@@ -849,6 +861,16 @@ export class Kernel implements Kern {
         this.resumeWith(t, call, v, false);
       }
     }
+  }
+
+  /** Whether a waiting call's time is up. */
+  timedOut(): boolean {
+    let now: number | undefined;
+    for (const t of this.blocked) {
+      const d = t.call?.state.deadline;
+      if (d !== undefined && d <= (now ??= performance.now())) return true;
+    }
+    return false;
   }
 
   /** The soonest a waiting call times out (performance.now() ms), if any does. */

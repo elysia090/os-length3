@@ -13,7 +13,7 @@
 // `lock`-prefixed instructions to plain loads and stores, which are atomic
 // only while no other thread of the process runs.
 
-import {CH, OP, OUTBOX_BYTES, Outbox, READS_REGS, REPLY, REGS, rouse, sleep, watch, type Attached, type Forget, type Run} from './channel.ts';
+import {ANSWER_MS, CH, OP, OUTBOX_BYTES, Outbox, READS_REGS, REPLY, REGS, rouse, sleep, watch, type Attached, type Forget, type Run} from './channel.ts';
 import {namesIn, x87Of, type X87} from '../../sods/runtime/x87.ts';
 import {answerTime, clocks, type Clocks} from './clock.ts';
 import {INTERRUPT, KEEP_INSTANCES, Preempted, SHARES, SLICE_LOOPS, TRAP_YIELD, div128, fault, nextSlice, translatorsLimit, trapOrPreempt, type Translation} from './process.ts';
@@ -222,7 +222,7 @@ class Thread {
       Atomics.store(i32, CH.STATE, 1);
       Atomics.add(this.door, 0, 1);
       rouse(this.door, 0, 1);
-      if (!watch(i32, CH.STATE, (state) => state === 2)) {
+      if (!watch(i32, CH.STATE, (state) => state === 2, ANSWER_MS)) {
         for (;;) {
           const state = Atomics.load(i32, CH.STATE);
           if (state === 2) break;

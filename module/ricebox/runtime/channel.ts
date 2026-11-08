@@ -178,6 +178,8 @@ export class Outbox {
  * caller still watches costs well under one, so each side watches a little before it sleeps.
  */
 export function watch(words: Int32Array, index: number, ready: (word: number) => boolean, ms = WATCH_MS): boolean {
+  // Most answers come before the clock need be read at all.
+  for (let k = 0; k < 256; k++) if (ready(Atomics.load(words, index))) return true;
   const end = performance.now() + ms;
   do {
     for (let k = 0; k < 256; k++) if (ready(Atomics.load(words, index))) return true;
@@ -186,6 +188,12 @@ export function watch(words: Int32Array, index: number, ready: (word: number) =>
 }
 /** How long: about what a call takes the kernel, and what a program computes between two calls that come quickly. */
 const WATCH_MS = 0.05;
+/**
+ * How long a thread watches for its call's answer before it sleeps: past the kernel's turn away for the host's input
+ * (remote.ts YIELD_MS: every 8 ms, ~50 µs), which it slept through otherwise and was woken from (a million calls in a
+ * row slept 900 times, ~140 µs each, and the kernel slept as often waiting for the next).
+ */
+export const ANSWER_MS = 1;
 
 /**
  * Wait (Atomics.wait) while `words[index]` is `value`, saying so in `words[asleep]` first: who changes the word then

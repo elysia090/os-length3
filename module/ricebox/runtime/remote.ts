@@ -230,7 +230,8 @@ export class RemoteKernel extends Kernel {
       const at = performance.now();
       this.charge(t, at - t.since, 0);
       this.handle(t);
-      this.charge(t, 0, performance.now() - at);
+      // Answered (answer stamped when): the kernel's time on it ended there.
+      this.charge(t, 0, (t.since >= at ? t.since : performance.now()) - at);
     }
     return true;
   }
@@ -308,7 +309,10 @@ export class RemoteKernel extends Kernel {
   }
 
   /** Whether a thread runs guest code now (not waiting in a call, not stopped). */
-  busy(): boolean { return [...this.tasks.values()].some((t) => !t.dead && t.state === 'running'); }
+  busy(): boolean {
+    for (const t of this.tasks.values()) if (!t.dead && t.state === 'running') return true;
+    return false;
+  }
 
   /** Start the first process and serve every thread until init ends; its wait status. */
   serve(): Promise<number> {
