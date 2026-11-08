@@ -2713,11 +2713,18 @@ fn helpers(code: &mut CodeSection, entries: u32, table: u64, cache: u64) {
     ] { f.instruction(&i); }
     code.function(&f);
 
-    // resolve(addr): binary search the sorted 16-byte entries in memory 1.
+    // resolve(addr): what the dispatch cache (below) holds for it, else a binary search of the sorted 16-byte entries
+    // in memory 1, what it finds kept there: an indirect jump within a function (a switch's table), and the frame a
+    // longjmp lands in, look it up again and again.
     let m1 = |offset| mem_at(table + offset, 3);
-    let mut f = WasmFunction::new([(3, ValType::I32), (1, ValType::I64)]);
-    let (addr, lo, hi, mid, key) = (0, 1, 2, 3, 4);
+    let mc = |offset| mem_at(cache + offset, 3);
+    let mut f = WasmFunction::new([(4, ValType::I32), (1, ValType::I64)]);
+    let (addr, lo, hi, mid, at, key) = (0, 1, 2, 3, 4, 5);
     for i in [
+        W::LocalGet(addr), W::I64Const(0x9e37_79b9_7f4a_7c15u64 as i64), W::I64Mul, W::I64Const(64 - DISPATCH_CACHE.trailing_zeros() as i64), W::I64ShrU,
+        W::I32WrapI64, W::I32Const(4), W::I32Shl, W::LocalSet(at),
+        W::LocalGet(at), W::I64Load(mc(0)), W::LocalGet(addr), W::I64Eq, W::LocalGet(addr), W::I64Const(0), W::I64Ne, W::I32And,
+        W::If(BlockType::Empty), W::LocalGet(at), W::I64Load(mc(8)), W::Return, W::End,
         W::I32Const(0), W::LocalSet(lo), W::I32Const(entries as i32), W::LocalSet(hi),
         W::Block(BlockType::Empty), W::Loop(BlockType::Empty),
         W::LocalGet(lo), W::LocalGet(hi), W::I32GeU, W::BrIf(1),
@@ -2725,7 +2732,9 @@ fn helpers(code: &mut CodeSection, entries: u32, table: u64, cache: u64) {
         W::LocalGet(mid), W::I32Const(4), W::I32Shl, W::I64Load(m1(0)), W::LocalTee(key),
         W::LocalGet(addr), W::I64Eq,
         W::If(BlockType::Empty),
-        W::LocalGet(mid), W::I32Const(4), W::I32Shl, W::I64Load(m1(8)), W::Return,
+        W::LocalGet(at), W::LocalGet(addr), W::I64Store(mc(0)),
+        W::LocalGet(at), W::LocalGet(mid), W::I32Const(4), W::I32Shl, W::I64Load(m1(8)), W::LocalTee(key), W::I64Store(mc(8)),
+        W::LocalGet(key), W::Return,
         W::End,
         W::LocalGet(key), W::LocalGet(addr), W::I64LtU,
         W::If(BlockType::Empty), W::LocalGet(mid), W::I32Const(1), W::I32Add, W::LocalSet(lo),
