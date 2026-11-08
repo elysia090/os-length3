@@ -119,17 +119,12 @@ Every value in `styles.css` comes from a token (§2).
     one ground to the page come to, lying beside the one left the way the
     rail goes (above going up, below going down), already stood back by its
     own camera, and comes down into it with that camera (Forge's to where
-    the desk's camera stood when the rail left it, nearer and along at once:
-    the box in hand lands at its own size where it stands, never first slid
-    to the middle stood back with the keyboard already in it), landing
-    softly: back
+    the desk's camera stood when the rail left it), landing softly: back
     280 ms, along 440, near 360, along setting off before the step back has
     landed so it never stands still between them. The dots lie on the
     ground as everything on it does: stood back they are smaller with their
     pitch, going along they go by, coming down they grow back to their
-    own. The desk, whose dots are its own, stays under the band as the
-    camera goes along, what lies on it going by and its dots with it: the
-    ground is never bare between the band and the desk's edge. Only what lies on the ground moves. The rail, the band and the
+    own. Only what lies on the ground moves. The rail, the band and the
     pane are the frame and do not move at all: what differs on them
     (Forge's pills, the pane's rows) gives way in place as the camera passes
     between the two pages, the frame come to coming in under the one left

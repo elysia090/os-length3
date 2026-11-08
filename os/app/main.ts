@@ -269,16 +269,6 @@ function onGround(el: Element): HTMLElement[] {
   return [...el.children].flatMap(onGround);
 }
 
-/** What moves as the camera goes along over `el`'s ground: what lies on it, but where a camera stands back inside an
- * element of its own (the desk), what moves in that (its plane), the element itself staying under the band. */
-function goingAlong(el: Element, camera: PageCamera): HTMLElement[] {
-  const w = camera.within;
-  if (!shown(el) || el.matches(FRAME)) return [];
-  if (w && el === w.el) return w.moves;
-  if (!el.querySelector(FRAME) && !(w && el.contains(w.el))) return [el as HTMLElement];
-  return [...el.children].flatMap((c) => goingAlong(c, camera));
-}
-
 /**
  * Where `page` (standing at `r`) shows its ground: under its band, left of its pane, down to the window's foot or to
  * the foot of what stands over it there (Home's plain strip, fixed, of its own).
@@ -332,7 +322,7 @@ function along(q: Pan, dir: number): Promise<void> {
     const ground = groundOf(page, page.getBoundingClientRect());
     a = {by: dir > 0 ? from.bottom - ground.top : from.top - ground.bottom, ms: paced(CAMERA.along)};
     // Its frame comes in as the camera passes the one left; with none left to come in under, as it sets off.
-    q.parts = [...comeBy(a, come, goingAlong(page, come)), ...frameIn(a, frameOf(page), !frame.length)];
+    q.parts = [...comeBy(a, come, onGround(page)), ...frameIn(a, frameOf(page), !frame.length)];
     for (const x of q.parts) x.pause();
   });
   return new Promise<void>((done) => {

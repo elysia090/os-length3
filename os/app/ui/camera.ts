@@ -27,13 +27,11 @@ export interface PageCamera {
   afar(): void;
   /** Comes down to where it stood, `ms` long (0: at once). */
   near(ms: number): void;
-  /** How far back what moves along stands, as the rail moves it (the scale it is drawn at). */
+  /** How far back what lies on the page's ground stands, as the rail moves it along (1: it stands back inside it, as the
+   * desk's plane does). */
   readonly far: number;
-  /** What holds the page's dots (Home's on the page, the desk's on the desk): they go by as the camera goes along. */
+  /** What holds the page's dots where they are not inside what moves (Home's, on the page), moved along with it. */
   readonly dots: HTMLElement | null;
-  /** Where the camera stands back inside an element of its own (the desk), what in it moves as the camera goes along
-   * (its plane): the element itself stays where it lies, its dots going by, so the ground is never bare under it. */
-  readonly within?: {el: HTMLElement; moves: HTMLElement[]};
 }
 
 /** The cameras pages have of their own (the desk's), by the element they are of (marked `data-camera`). */
