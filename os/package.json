@@ -2,7 +2,7 @@
   "name": "length3-os-desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Native work OS shell for Length³ OS: purpose rail, target column, central flow and right pane.",
+  "description": "Native work OS shell for Length\u00b3 OS: purpose rail, target column, central flow and right pane.",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -20,22 +20,27 @@
     "web-release": "sh scripts/web-release.sh"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.13",
+    "@electric-sql/pglite": "^0.5.15",
     "@playwright/test": "1.64.1",
     "@tauri-apps/cli": "2.12.4",
     "@types/node": "^26.6.6",
     "drizzle-kit": "^0.31.11",
     "typescript": "7.0.2",
-    "vite": "8.3.5",
-    "wrangler": "4.156.0"
+    "vite": "8.3.6",
+    "wrangler": "4.158.0"
   },
   "dependencies": {
-    "@better-auth/passkey": "^1.7.14",
+    "@better-auth/passkey": "^1.7.18",
     "@neondatabase/serverless": "^1.2.0",
     "@simplewebauthn/browser": "^14.0.0",
     "@tauri-apps/api": "^2.12.4",
-    "better-auth": "^1.7.14",
+    "better-auth": "^1.7.18",
     "drizzle-orm": "^0.45.4",
-    "hono": "^4.13.14"
+    "hono": "^4.13.17"
+  },
+  "overrides": {
+    "@esbuild-kit/core-utils": {
+      "esbuild": "^0.25.4"
+    }
   }
 }
