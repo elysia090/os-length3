@@ -4,10 +4,10 @@
 // while the call waits and is made again).
 
 import {move, zero} from './bulk.ts';
-import {answerTime, clocks} from './clock.ts';
+import {answerTime, clocks, cpuClock, cpuOf} from './clock.ts';
 import {E, File, FsError} from './fs.ts';
 import {Exec, Exit, Wait, randomBytes} from './flow.ts';
-import type {Calls, Proc} from './parts.ts';
+import type {Calls, Cpu, Proc} from './parts.ts';
 import {CLD, SIG, send, writeInfo} from './signal.ts';
 
 const N = (x: bigint): number => Number(BigInt.asIntN(64, x));
@@ -69,8 +69,28 @@ function waitable(p: Proc, pick: (c: Proc) => boolean, options: number): Found |
 /** What was found is taken: a zombie is gone, a stop or continue said once (unless WNOWAIT). */
 function taken(p: Proc, found: Found, options: number): void {
   if (options & W.NOWAIT) return;
-  if (found.kind === 'exit') { p.children.delete(found.child); p.kernel.procs.delete(found.child.pid); }
-  else if (found.child.report) found.child.report.seen = true;
+  const c = found.child;
+  if (found.kind === 'exit') {
+    p.children.delete(c);
+    p.kernel.procs.delete(c.pid);
+    // Its time on the processor, and what it waited for, is its parent's to count now (getrusage's children, times).
+    const had = cpuOf(c);
+    p.waited.user += had.user + c.waited.user;
+    p.waited.sys += had.sys + c.waited.sys;
+  } else if (c.report) c.report.seen = true;
+}
+
+/** A struct rusage of time on the processor `c` (ms), and of the largest resident set (`kb`); the rest is not kept. */
+function putUsage(p: Proc, at: number, c: Cpu, kb = 0): void {
+  p.bytes.fill(0, at, at + 144);
+  const v = p.view, put = (o: number, ms: number): void => {
+    const us = Math.floor(ms * 1000);
+    v.setBigInt64(at + o, BigInt(Math.floor(us / 1e6)), true);
+    v.setBigInt64(at + o + 8, BigInt(us % 1e6), true);
+  };
+  put(0, c.user);
+  put(16, c.sys);
+  v.setBigInt64(at + 32, BigInt(kb), true);
 }
 
 function wait4(p: Proc, pid: bigint, statusAddress: bigint, options: bigint, rusage: bigint): number {
@@ -83,7 +103,11 @@ function wait4(p: Proc, pid: bigint, statusAddress: bigint, options: bigint, rus
   }
   taken(p, found, o);
   if (N(statusAddress)) p.view.setInt32(N(statusAddress), found.status, true);
-  if (N(rusage)) p.bytes.fill(0, N(rusage), N(rusage) + 144);
+  // The child's time, with its own children's that it waited for (taken: before it went, if it went).
+  if (N(rusage)) {
+    const c = found.child, had = cpuOf(c);
+    putUsage(p, N(rusage), {user: had.user + c.waited.user, sys: had.sys + c.waited.sys});
+  }
   return found.child.pid;
 }
 
@@ -419,7 +443,12 @@ export const PROC_CALLS: Calls = {
   },
   96(tv, tz) { return answerTime(this.memory!, CLOCK, 96n, tv, tz) ?? fail(E.FAULT); }, // gettimeofday
   97(resource, limit) { return rlimit(this, this, resource, 0n, limit); }, // getrlimit
-  98(_who, usage) { this.bytes.fill(0, N(usage), N(usage) + 144); return 0; },
+  98(who, usage) { // getrusage: itself (its threads, ended and running), the children it waited for, or this thread
+    const w = Number(BigInt.asIntN(32, who));
+    const c = w === 0 ? cpuOf(this) : w === -1 ? this.waited : w === 1 ? this.task.cpu : fail(E.INVAL);
+    putUsage(this, N(usage), c, w === -1 ? 0 : Math.ceil((this.memory?.buffer.byteLength ?? 0) / 1024));
+    return 0;
+  },
   99(info) { // sysinfo: the machine's memory (machine.ts), what the kernel's processes hold of it, how many there are
     const at = N(info), v = this.view, total = BigInt(this.kernel.machine.memory), used = BigInt(this.kernel.memoryBytes());
     this.bytes.fill(0, at, at + 112);
@@ -430,7 +459,13 @@ export const PROC_CALLS: Calls = {
     v.setUint32(at + 104, 1, true); // mem_unit
     return 0;
   },
-  100(buf) { if (N(buf)) this.bytes.fill(0, N(buf), N(buf) + 32); return Number(monotonic() / 10000000n); },
+  100(buf) { // times: its time on the processor and its waited-for children's, in clock ticks (100 a second)
+    if (N(buf)) {
+      const c = cpuOf(this), w = this.waited, at = N(buf);
+      [c.user, c.sys, w.user, w.sys].forEach((ms, k) => this.view.setBigInt64(at + 8 * k, BigInt(Math.floor(ms / 10)), true));
+    }
+    return Number(monotonic() / 10000000n);
+  },
   102() { return 0; }, 104() { return 0; }, 107() { return 0; }, 108() { return 0; }, // getuid, getgid, geteuid, getegid
   105(uid) { return mapped([uid], false); }, // setuid
   106(gid) { return mapped([gid], false); }, // setgid
@@ -513,13 +548,19 @@ export const PROC_CALLS: Calls = {
     return bytes;
   },
   218(tidptr) { this.task.clearTid = N(tidptr); return this.task.tid; }, // set_tid_address
-  228(clock, ts) { // clock_gettime: a CPU-time clock is not kept apart, and reads as the monotonic one
-    const ns = CLOCK.read(Number(BigInt.asIntN(32, clock)));
+  228(clock, ts) { // clock_gettime: a CPU-time clock is the kernel's (clock.ts cpuClock)
+    const id = Number(BigInt.asIntN(32, clock)), at = CLOCK.read(id);
+    const ns = at === null ? cpuClock(this, id) : at;
     if (ns === undefined) return fail(E.INVAL);
-    writeTime(this, N(ts), ns ?? monotonic());
+    writeTime(this, N(ts), ns);
     return 0;
   },
-  229(clock, ts) { if (CLOCK.read(Number(BigInt.asIntN(32, clock))) === undefined) fail(E.INVAL); if (N(ts)) writeTime(this, N(ts), 1n); return 0; },
+  229(clock, ts) { // clock_getres
+    const id = Number(BigInt.asIntN(32, clock)), at = CLOCK.read(id);
+    if ((at === null ? cpuClock(this, id) : at) === undefined) fail(E.INVAL);
+    if (N(ts)) writeTime(this, N(ts), 1n);
+    return 0;
+  },
   230(clock, flags, req, rem) { // clock_nanosleep: by an interval, or until a time on that clock (TIMER_ABSTIME)
     const t = readTime(this, N(req));
     if (!(N(flags) & 1)) return sleepUntil(this, performance.now() + ms(t), N(rem));

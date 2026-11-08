@@ -183,6 +183,12 @@ export interface Termios { iflag: number; oflag: number; cflag: number; lflag: n
 
 // ---- a process ----
 
+/**
+ * Time on the processor, in ms: its program run (user) and the kernel making its calls (sys). A thread's, a process's
+ * (the threads it had), the children a process waited for (theirs and what they waited for), the machine's.
+ */
+export interface Cpu { user: number; sys: number }
+
 /** A process as the calls see it (process.ts Process). */
 export interface Proc {
   readonly kernel: Kern;
@@ -219,6 +225,9 @@ export interface Proc {
   report: {kind: 'stopped' | 'continued'; sig?: number; seen: boolean} | null;
   vfork: {released: boolean} | null;
   alarm?: {at: number; interval: number; timer: Timer} | null;
+  /** Its threads' time on the processor, once each ended; its children's that it waited for (getrusage, times). */
+  cpu: Cpu;
+  waited: Cpu;
   /** The thread whose call runs now, and that call (none between calls). */
   task: Thread;
   call: Call | null;
@@ -268,6 +277,8 @@ export interface Thread {
   redirected: boolean;
   state: 'new' | 'ready' | 'running' | 'blocked' | 'stopped' | 'dead';
   dead: boolean;
+  /** Its time on the processor so far. */
+  cpu: Cpu;
   fpu: Fpu;
   image: Program;
   memory: Mem;
@@ -312,6 +323,8 @@ export interface Kern {
   domainname?: string;
   /** What has moved over lo (net-view.ts). */
   loopbackTraffic?: {bytes: number; packets: number};
+  /** All the time its threads have had on the processor (/proc/stat). */
+  readonly cpu: Cpu;
 
   live(): Proc[];
   group(pgid: number): Proc[];

@@ -47,6 +47,17 @@ test('apart: a job that computes without a call does not hold the shell, and kil
   assert.equal(r.out, 'still here\nstatus 143\n');
 });
 
+test('apart: time on the processor is counted in each Worker as it runs, and a sleep not at all', {skip: !have}, async () => {
+  const loop = 'i=0; while [ $i -lt 20000 ]; do i=$((i+1)); done';
+  const r = await shell(`${loop}; set -- $(cat /proc/$$/stat); echo "utime \${14}"; sh -c '${loop}'; times; sleep 1; times`);
+  const [own, ...times] = r.out.trim().split('\n');
+  const secs = (line: string): number[] => [...line.matchAll(/(\d+)m([\d.]+)s/g)].map(([, m, s]) => Number(m) * 60 + Number(s));
+  assert.match(own, /^utime [1-9]\d*$/);
+  const [, after, , slept] = times.map(secs);
+  assert.ok(after[0] > 0, `the child ran its loop: ${times[1]}`);
+  assert.ok(slept[0] + slept[1] - after[0] - after[1] < 0.2, `sleep had the processor: ${times[1]} then ${times[3]}`);
+});
+
 test('apart: a pipe streams between two Workers, every byte', {skip: !have}, async () => {
   const r = await shell('dd if=/dev/zero bs=64k count=200 2>/dev/null | wc -c');
   assert.equal(r.out.trim(), String(200 * 65536));

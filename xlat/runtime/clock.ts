@@ -7,7 +7,10 @@
 //                                                            is Linux's own until a time daemon sets it: none)
 //   CLOCK_MONOTONIC (_RAW, _COARSE, BOOTTIME, _ALARM)        time since the kernel began, never set back: the same
 //                                                            in every thread, however far from the kernel it runs
-//   the CPU-time clocks (the process's, the thread's, a pid's) the kernel's to answer (here: not known)
+//   the CPU-time clocks (the process's, the thread's, a pid's) the kernel's to answer: the time each thread ran its
+//                                                            program and the kernel made its calls (Kernel.charge)
+
+import type {Cpu, Proc} from './parts.ts';
 
 /** Clock ids Linux has: which clock each reads. */
 const WALL = new Set([0, 5, 8, 11]), STEADY = new Set([1, 4, 6, 7, 9]), CPU = new Set([2, 3]);
@@ -92,4 +95,29 @@ function viewOf(memory: WebAssembly.Memory): DataView {
   let v = views.get(memory);
   if (!v || v.buffer !== buffer) { v = new DataView(buffer); views.set(memory, v); }
   return v;
+}
+
+/** A process's time on the processor (ms): its threads' that ended, and theirs that run. */
+export function cpuOf(p: Proc): Cpu {
+  let {user, sys} = p.cpu;
+  for (const t of p.tasks) { user += t.cpu.user; sys += t.cpu.sys; }
+  return {user, sys};
+}
+
+/**
+ * A CPU-time clock as `p` reads it (ns): its process's (CLOCK_PROCESS_CPUTIME_ID), its thread's (_THREAD_), or one
+ * clock_getcpuclockid or pthread_getcpuclockid made of a pid or a tid (~id << 3, 4 for a thread's; 0 the caller's own;
+ * its low bits: 1 its program's time alone, else with the kernel's). Undefined for no such clock, or no one there.
+ */
+export function cpuClock(p: Proc, id: number): bigint | undefined {
+  let c: Cpu | undefined, kind = 2;
+  if (id === 2) c = cpuOf(p);
+  else if (id === 3) c = p.task.cpu;
+  else if (id < 0 && (id & 3) !== 3) {
+    const n = ~(id >> 3);
+    kind = id & 3;
+    if (id & 4) c = (n ? p.kernel.tasks.get(n) : p.task)?.cpu;
+    else { const q = n ? p.kernel.procs.get(n) : p; c = q && cpuOf(q); }
+  }
+  return c && BigInt(Math.round((kind === 1 ? c.user : c.user + c.sys) * 1e6));
 }

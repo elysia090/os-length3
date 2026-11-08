@@ -224,7 +224,11 @@ export class RemoteKernel extends Kernel {
     for (const t of asking) {
       if (t.dead || Atomics.load(t.i32, CH.STATE) !== 1) continue;
       Atomics.store(t.i32, CH.STATE, 3);
+      // Its time in its program since it went on (answer), up to here; the kernel's on what it asked.
+      const at = performance.now();
+      this.charge(t, at - t.since, 0);
       this.handle(t);
+      this.charge(t, 0, performance.now() - at);
     }
     return true;
   }
@@ -460,6 +464,7 @@ class RemoteTask extends Task {
   answer(): void {
     if (this.dead) return;
     this.state = 'running';
+    this.since = performance.now();
     if (!this.worker) { this.worker = this.kernel.worker(this); this.post(); return; }
     if (this.execd) {
       this.execd = false;

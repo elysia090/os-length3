@@ -36,7 +36,7 @@ import {CLD, SA, SIG, SIGNAL_CALLS, Pending, SI, actionOf, bit, deliverable, sen
 import type {Keeper} from './keeper.ts';
 import type {Machine} from './machine.ts';
 import type {Translate} from './translator.ts';
-import type {AltStack, Call, Calls, Console, Extra, Facts, FutexKey, FutexWaiter, Held, ImageEntry, Kern, Mem, Proc, Program, Range, SigAction, Slot, Thread, Timer, Tty} from './parts.ts';
+import type {AltStack, Call, Calls, Console, Cpu, Extra, Facts, FutexKey, FutexWaiter, Held, ImageEntry, Kern, Mem, Proc, Program, Range, SigAction, Slot, Thread, Timer, Tty} from './parts.ts';
 
 /** The translator a kernel is given: a program's bytes in, a module out, and what else it can do where it can. */
 export type Translator = ((elf: Uint8Array) => Uint8Array) & {[K in keyof Translate]?: Translate[K]};
@@ -300,6 +300,7 @@ export class Kernel implements Kern {
   declare hostname?: string;
   declare domainname?: string;
   declare loopbackTraffic?: {bytes: number; packets: number};
+  declare readonly cpu: Cpu;
   /**
    * vfs: the filesystem. translate(bytes) -> wasm bytes for an ELF.
    * console: {write(fd, bytes), read(n) -> Uint8Array | null (nothing yet), ready?(), interactive?, screen?, cols?,
@@ -339,6 +340,7 @@ export class Kernel implements Kern {
     this.status = null; // init's wait status once it ended
     this.shared = false; // memories are SharedArrayBuffers (remote.ts)
     this.timers = new Set(); // {at, fire}: alarms (performance.now() ms)
+    this.cpu = {user: 0, sys: 0}; // all the time threads ran their programs, and the kernel made their calls (ms)
     // Memories processes let go of (exec, exit), for the next to take: a new one costs its pages faulted in and the
     // old one collected; a used one costs zeroing what is given out of it (Kernel.takeMemory).
     this.spareMemories = [];
@@ -673,17 +675,19 @@ export class Kernel implements Kern {
           // A full time slice, and no frames yet.
           if (x.budget) x.budget.value = t.slice;
           if (x.depth) x.depth.value = 0;
-          t.ranAt = performance.now();
+          t.ranAt = t.since = performance.now();
           x.run(t.resumeAt);
         } catch (e) {
           if (e instanceof Preempted) {
+            const now = performance.now();
+            this.charge(t, now - t.since, 0);
+            t.since = now;
             t.resumeAt = e.address;
             // What it wrote and the console gathered goes on its way at a turn, not only once every thread waits.
             this.console.flush?.(false);
-            if (e.code === TRAP_YIELD) t.slice = nextSlice(t.slice, performance.now() - t.ranAt);
+            if (e.code === TRAP_YIELD) t.slice = nextSlice(t.slice, now - t.ranAt);
             if (t.proc.maps.length) t.proc.syncShared();
             // Its time is up: due timers, a signal for it and other threads first; else it goes on at once.
-            const now = performance.now();
             if (e.code === TRAP_YIELD && (this.runq.length || deliverable(t) || [...this.timers].some((x) => x.at <= now))) { this.ready(t); return; }
             continue;
           }
@@ -714,23 +718,44 @@ export class Kernel implements Kern {
    * the call once it is done.
    */
   enter(t: Task, nr: bigint, args: bigint[], next: bigint): bigint {
-    t.resumeAt = next;
-    const call: Call = {nr: Number(nr), args, next, state: {}};
-    if (TRACE_SYSCALLS) trace(t, call);
-    // Another's turn, if this one has had its time: it makes this call when it runs again.
-    if (YIELDS.has(call.nr) && (call.nr === 24 || performance.now() - t.sliceStart > SLICE) && (this.runq.length || this.dirty)) {
-      t.call = call;
-      this.ready(t);
-      throw new Wait();
+    // Its time in its program, up to here; the kernel's on the call, however it leaves.
+    const at = performance.now();
+    this.charge(t, at - t.since, 0);
+    try {
+      t.resumeAt = next;
+      const call: Call = {nr: Number(nr), args, next, state: {}};
+      if (TRACE_SYSCALLS) trace(t, call);
+      // Another's turn, if this one has had its time: it makes this call when it runs again.
+      if (YIELDS.has(call.nr) && (call.nr === 24 || at - t.sliceStart > SLICE) && (this.runq.length || this.dirty)) {
+        t.call = call;
+        this.ready(t);
+        throw new Wait();
+      }
+      const v = this.attempt(t, call);
+      if (v === WAITS) { t.call = call; this.block(t); throw new Wait(); }
+      if (!t.dead && !t.proc.stopped && !deliverable(t)) return v;
+      this.resumeWith(t, call, v, true);
+      if (t.dead) throw new Exit(0);
+      if (t.state !== 'running') throw new Wait();
+      if (t.redirected) throw new Redirect();
+      return v;
+    } finally {
+      const now = performance.now();
+      this.charge(t, 0, now - at);
+      t.since = now;
     }
-    const v = this.attempt(t, call);
-    if (v === WAITS) { t.call = call; this.block(t); throw new Wait(); }
-    if (!t.dead && !t.proc.stopped && !deliverable(t)) return v;
-    this.resumeWith(t, call, v, true);
-    if (t.dead) throw new Exit(0);
-    if (t.state !== 'running') throw new Wait();
-    if (t.redirected) throw new Redirect();
-    return v;
+  }
+
+  /**
+   * Time `t` ran its program (`user`) and the kernel spent on its calls (`sys`), in ms: counted to it, or to its process
+   * once it ended (what it had went there: endTask), and to the machine's.
+   */
+  charge(t: Task, user: number, sys: number): void {
+    const c = t.dead ? t.proc.cpu : t.cpu;
+    c.user += user;
+    c.sys += sys;
+    this.cpu.user += user;
+    this.cpu.sys += sys;
   }
 
   /** Make `call` for `t`: its value, or WAITS. Exit, Exec and Redirect go through. */
@@ -881,6 +906,10 @@ export class Kernel implements Kern {
     if (t.dead) return;
     t.dead = true;
     t.state = 'dead';
+    // Its time on the processor is its process's now (getrusage, times, wait4 count it there).
+    t.proc.cpu.user += t.cpu.user;
+    t.proc.cpu.sys += t.cpu.sys;
+    t.cpu = {user: 0, sys: 0};
     t.call?.state.cancel?.();
     t.call = null;
     this.blocked.delete(t);
@@ -1175,6 +1204,8 @@ export class Process implements Proc {
   declare report: {kind: 'stopped' | 'continued'; sig?: number; seen: boolean} | null;
   declare vfork: {released: boolean} | null;
   declare alarm?: {at: number; interval: number; timer: Timer} | null;
+  declare cpu: Cpu;
+  declare waited: Cpu;
   declare task: Task;
   declare call: Call | null;
   declare memory: Mem | null;
@@ -1209,6 +1240,8 @@ export class Process implements Proc {
     this.pending = new Pending();
     this.state = 'live'; // or 'zombie', once it ended and until it is waited for
     this.started = performance.now(); // for /proc/PID/stat's start time
+    this.cpu = {user: 0, sys: 0}; // its threads' time on the processor, once each ended (ms)
+    this.waited = {user: 0, sys: 0}; // its children's that it waited for, theirs and what they waited for
     this.maps = []; // its MAP_SHARED file mappings, {proc, node, start, length, off} (fs.ts File.map)
     this.exe = parent?.exe ?? ''; // what it runs, and with what environment (/proc/PID/exe, environ)
     this.env = parent?.env ?? [];
@@ -1593,6 +1626,9 @@ export class Task implements Thread {
   declare attached: number;
   declare sliceStart: number;
   declare ranAt: number;
+  /** Its time on the processor (Kernel.charge), and since when it is not counted yet (performance.now() ms). */
+  declare cpu: Cpu;
+  declare since: number;
   declare bytesBuffer: ArrayBufferLike | undefined;
   declare bytesOf: Uint8Array;
   /** The backend's: it stopped (SIGSTOP), it goes on (SIGCONT). */
@@ -1614,6 +1650,8 @@ export class Task implements Thread {
     this.redirected = false; // its registers were replaced since its call
     this.state = 'new';
     this.dead = false;
+    this.cpu = {user: 0, sys: 0};
+    this.since = 0;
     this.trail = null;
   }
 

@@ -6,6 +6,7 @@
 // (uptime, loadavg, stat, meminfo, cpuinfo, mounts, version, sys/..., net/...) say what this kernel is doing.
 
 import {Dir, File, Link, S_IFREG} from './fs.ts';
+import {cpuOf} from './clock.ts';
 import {procNet} from './net-view.ts';
 import {CAPS} from './flow.ts';
 import type {Description} from './fd.ts';
@@ -75,6 +76,8 @@ export function mountProc(kernel: Kern): void {
   const cpus = Math.max(1, Math.min(64, globalThis.navigator?.hardwareConcurrency ?? 1));
   const ticks = (ms: number): number => Math.floor(ms * HZ / 1000);
   const uptime = () => (performance.now() - booted) / 1000;
+  /** Every processor's time since it began that no thread had (ms). */
+  const idle = () => Math.max(0, (performance.now() - booted) * cpus - kernel.cpu.user - kernel.cpu.sys);
   const total = kernel.machine.memory; // the machine's (machine.ts)
   const caller = () => kernel.current?.proc ?? kernel.procs.get(1);
   const live = () => [...kernel.procs.values()];
@@ -82,8 +85,10 @@ export function mountProc(kernel: Kern): void {
   const stat = (p: Proc): string => {
     const mem = memoryBytes(p);
     const tty = p.sid && p.sid === kernel.tty.sid ? 34816 : 0;
+    // Its time on the processor and its waited-for children's (utime, stime, cutime, cstime): ps's TIME, top's %CPU.
+    const c = cpuOf(p), w = p.waited;
     const f = [p.pid, `(${comm(p)})`, state(kernel, p), p.ppid, p.pgid, p.sid, tty, tty ? kernel.tty.fg : -1, 4194560,
-      0, 0, 0, 0, ticks(0), 0, 0, 0, 20, 0, Math.max(1, p.tasks.size), 0, ticks(p.started - booted),
+      0, 0, 0, 0, ticks(c.user), ticks(c.sys), ticks(w.user), ticks(w.sys), 20, 0, Math.max(1, p.tasks.size), 0, ticks(p.started - booted),
       mem, Math.ceil(mem / PAGE), '18446744073709551615', 0, 0, p.stackTop ?? 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 17, 0, 0, 0, 0, 0, 0,
       0, 0, 0, 0, 0, 0, 0, p.exitStatus ?? 0];
     return f.join(' ') + '\n';
@@ -175,12 +180,13 @@ export function mountProc(kernel: Kern): void {
   ]);
   const bootId = crypto.randomUUID();
   const machine = new Map<string, Entry>([
-    ['uptime', new Made(() => { const u = uptime(); return `${u.toFixed(2)} ${(u * cpus * 0.95).toFixed(2)}\n`; })],
+    ['uptime', new Made(() => { const u = uptime(); return `${u.toFixed(2)} ${(idle() / 1000).toFixed(2)}\n`; })],
     ['loadavg', new Made(() => { const r = Math.max(1, kernel.runq.length); const l = Math.min(r, cpus).toFixed(2); return `${l} ${l} ${l} ${r}/${live().length} ${kernel.nextPid - 1}\n`; })],
     ['stat', new Made(() => {
-      const busy = ticks(performance.now() - booted);
-      const cpu = (n: string): string => `${n} ${busy} 0 0 ${busy * 19} 0 0 0 0 0 0`;
-      return [cpu('cpu '), ...Array.from({length: cpus}, (_, k) => cpu(`cpu${k}`)), 'intr 0', 'ctxt 0', `btime ${bootEpoch}`,
+      // The time the threads ran their programs and the kernel their calls, and the rest of every processor's: idle.
+      const user = ticks(kernel.cpu.user / cpus), sys = ticks(kernel.cpu.sys / cpus), rest = ticks(idle() / cpus);
+      const cpu = (n: string, k = 1): string => `${n} ${user * k} 0 ${sys * k} ${rest * k} 0 0 0 0 0 0`;
+      return [cpu('cpu ', cpus), ...Array.from({length: cpus}, (_, k) => cpu(`cpu${k}`)), 'intr 0', 'ctxt 0', `btime ${bootEpoch}`,
         `processes ${kernel.nextPid - 1}`, `procs_running ${Math.max(1, kernel.runq.length)}`, `procs_blocked ${kernel.blocked.size}`, ''].join('\n');
     })],
     ['meminfo', new Made(() => {
