@@ -330,6 +330,8 @@ export class Desk {
    */
   away(ms: number): Promise<void> {
     this.#left ??= this.#cam;
+    // Stood back by the rail, not by the person looking over the desk: no box is pointed out in it (styles: .railed).
+    this.element.classList.add('railed');
     this.#arrived();
     if (this.#cam === 'whole' || still()) return Promise.resolve();
     return new Promise((done) => { this.#landed = done; this.#setCam('whole', true, ms); });
@@ -338,12 +340,14 @@ export class Desk {
   /** Come to along the rail: over the whole desk at once, as it is seen from afar (where it stood is kept: near). */
   afar() {
     this.#left ??= this.#cam;
+    this.element.classList.add('railed');
     this.#setCam('whole', false);
   }
 
   /** Come down from afar to where the camera stood as the rail left it, `ms` long (along first, then near). */
   near(ms: number) {
     const c = this.#left;
+    this.element.classList.remove('railed');
     if (c === null) return;
     this.#left = null;
     this.#setCam(c, !still(), ms);

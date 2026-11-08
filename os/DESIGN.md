@@ -2091,7 +2091,9 @@ standard the camera moves as a scroll does, so the keyboard going into a box,
 or something brought into view, takes the camera there and that box into hand,
 and the wheel moves it along the desk. Stood back, a press takes a box in hand,
 twice comes in to it; over the whole desk, with the pointer rather than the
-finger, the box in hand is ringed. Writing in the box in hand while the camera
+finger, the box in hand is told by its own edge drawn heavier: one box, one
+edge, never a ring a little way out round it (the box drawn twice, one inside
+the other); stood back by the rail going by, no box is pointed out. Writing in the box in hand while the camera
 stands back brings it to the standard. A box taken off by the dot of its close
 (or its file gone) goes in a beat where it lies, the others closing up after
 it and the camera gliding with them, never a cut. A file

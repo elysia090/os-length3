@@ -22,9 +22,11 @@
 .desk-box.lifted { z-index: 2; margin: -8px 0 0 -8px; box-shadow: 16px 16px 0 0 var(--ink); }
 .desk-box.lifted > .desk-label { background: var(--ground); margin-left: -6px; padding-left: 6px; }
 /* Stood back (a step, or the whole desk): a press takes a box in hand, twice comes back to it. Over the whole desk, with
-   the pointer rather than the finger, the box in hand is ringed. */
+   the pointer rather than the finger, the box in hand is told by its own edge, heavier: one box, one edge (before: a
+   ring a little way out round its edge, the box drawn twice, one inside the other). Stood back by the rail going by
+   (desk.ts away), no box is pointed out. */
 .desk:is(.pulled, .whole) .desk-box { cursor: var(--cursor-hand); }
-.desk.whole .desk-plane:not(:has(> .desk-hand.on)) > .desk-box.held { outline: 3px solid var(--ink); outline-offset: 10px; }
+.desk.whole:not(.railed) .desk-plane:not(:has(> .desk-hand.on)) > .desk-box.held { box-shadow: 0 0 0 2px var(--ink), 8px 8px 0 0 var(--ink); }
 .desk-label { position: absolute; left: 0; bottom: 100%; display: flex; align-items: baseline; gap: 0; white-space: nowrap;
   font: 600 15px/1 var(--mono); color: var(--ink); padding: 4px 8px 7px 0; transform-origin: 0 100%; scale: var(--inv, 1); }
 .desk-dir { font-weight: 400; color: var(--sub); }
