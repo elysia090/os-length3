@@ -1,5 +1,5 @@
 # Updates proposed as pull requests, each to be read and tested as any
-# change is (desktop.yml runs on them): the actions the workflows pin by
+# change is (ci.yml runs on them): the actions the workflows pin by
 # commit, the app's and the Remote's npm packages, and the Rust crates of
 # the app, l3 and the translator. Security updates come as they are
 # published; the rest once a week, grouped so they come as a few PRs.

@@ -1,8 +1,7 @@
-name: Releases kept
+name: Prune releases
 
-# What main pins is what is published, and nothing more: a release main no longer names (src/core/src/root/pins.rs
-# RELEASES, src/shared/desktop-releases.json) is deleted. Its tag stays, so the commit it was made from is still named. Runs when the pins
-# on main change (a release's Pin pull request merged), or by hand; never while a release is being made (one group).
+# Deletes the releases main no longer pins (src/core/src/root/pins.rs RELEASES, src/shared/desktop-releases.json);
+# their tags stay. Runs when the pins on main change, or by hand; never during a release (one concurrency group).
 on:
   push:
     branches: ['main']
@@ -26,7 +25,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Delete the releases main no longer pins
+      - name: Delete unpinned releases
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

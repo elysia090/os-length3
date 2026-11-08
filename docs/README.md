@@ -649,27 +649,31 @@ node scripts/styles-check.ts  # the stylesheet against HEAD's: the same rules in
 
 ### CI
 
-`.github/workflows/desktop.yml` tests a change once, in its pull request
-(on what merging it would make; main is not tested again when it lands),
-and a newer push cancels the run it makes old. Its jobs run side by side,
-so a run takes as long as its longest, about two minutes:
+`.github/workflows/ci.yml` tests a change once, in its pull request (on the merge it would make), and a newer push
+cancels the older run. Jobs run side by side, so a run takes as long as its longest, about two minutes:
 
 | Job | What it does |
 | --- | --- |
-| `core` | the core for the browser (`core/web`, `wasm32-wasip1`), made once and kept by its sources |
-| `webroot` | the web root (`public/webroot`) from the root this tree pins, checked against that root; kept by the root and the translator |
-| `types` | `tsc --noEmit` |
-| `unit` ×4 | `npm test`, node giving each shard every fourth file (`NODE_OPTIONS=--test-shard=1/4 npm test` locally) |
-| `selftest` ×4 | Playwright in Chromium, one Remote and one build of the app per shard, with the `@slow` Prompt tests |
-| `lint` | clippy `-D warnings` on the core, core/web and l3, natively and for `wasm32-wasip1` |
-| `rust` | `cargo test` for the core and l3, then `npm run selftest:cli` |
-| `xlat` | the translator against native, and l3 (static, musl) translated as the Prompt runs it |
-| `advisories` | `npm audit` of what ships and `cargo audit` of both lockfiles (cargo-audit built once and kept) |
+| Core (wasm) | the core for the browser (`core/web`, `wasm32-wasip1`), cached by its sources |
+| Web root | `public/webroot` from the pinned root, checked against that root; cached by the root and the translator |
+| Commands | every command of issue #80 under xlat and natively; the table `help` reads checked against the results |
+| Typecheck | `tsc --noEmit` |
+| Unit (n/4) | `npm test`, each shard every fourth file (`NODE_OPTIONS=--test-shard=1/4 npm test` locally) |
+| Selftest (n/4) | Playwright in Chromium, one Remote and one build of the app per shard, `@slow` Prompt tests included |
+| Lint | clippy `-D warnings` on the core, core/web and l3, natively and for `wasm32-wasip1` |
+| Rust | `cargo test` for the core and l3, then `npm run selftest:cli` |
+| xlat (native, prompt) | the translator against native; l3 (static, musl) run under it |
+| Desktop (target) | the app built and bundled on macOS, Windows and Linux on Arm |
+| AppArmor | the .deb's profile on stock Ubuntu 24.04 |
+| Root | the root built, assembled and used as a Prompt uses it; only when its inputs change |
+| Audit | `npm audit`, `cargo audit` of both lockfiles, osv-scanner on the root's Rust and Go programs |
 
-Nothing is made twice: what several jobs need (the core's module, l3 for
-the browser) is made by its own job only when what it is made from
-changed, and the others take it; Chromium and cargo's dependencies are
-kept between runs. A test file's in-process Remote is closed when the file
+Other workflows: `release.yml` (a release from main), `prune-releases.yml` (releases main no longer pins),
+`root-packages.yml` (the root's packages, cached for CI and the release) and `upstream.yml` (newest upstream
+releases and advisories, weekly).
+
+What several jobs need (the core as wasm, the web root) is built once by its own job, only when its inputs change;
+Chromium and cargo's dependencies are cached between runs. A test file's in-process Remote is closed when the file
 ends (an open PGlite keeps its process up for seconds).
 
 ### Selftest
@@ -697,7 +701,7 @@ repository is read. About 95 journeys take about four minutes on four cores.
   the translator) and run with `SELFTEST_SLOW=1` once `public/webroot` holds l3
   (`npm run webroot`, or `node scripts/prompt-files.ts`); the build then
   carries it. `first-prompt.spec.ts` measures what a first Prompt fetches.
-- CI (`selftest` in `.github/workflows/desktop.yml`) runs everything in four
+- CI (Selftest in `.github/workflows/ci.yml`) runs everything in four
   shards (`npm run selftest -- --shard=2/4` is one), retries a failure once,
   and uploads each shard's report, traces and servers' logs when it fails
   (the traces alone when a test passed only on its retry).

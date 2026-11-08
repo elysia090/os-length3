@@ -1,8 +1,7 @@
 name: Root packages
 
-# The root's packages, each made from its pin by its recipe (root/build.sh, through the root-packages action),
-# whenever what they are made of changes: a run after a pin is raised makes that package and what is built against
-# it, and keeps them for the root job and the release.
+# The root's packages built from their pins by their recipes (root/build.sh, via the root-packages action) whenever
+# their inputs change, and cached for CI's Root job and the release.
 on:
   push:
     paths: ['root/build.sh', 'root/packages/**', 'root/sources.env', 'root/etc/**', 'module/you/**', 'module/otter/**', 'module/lib/**', '.github/actions/root-packages/**', '.github/workflows/root-packages.yml']
@@ -17,15 +16,17 @@ concurrency:
 
 jobs:
   packages:
+    name: Packages
     runs-on: ubuntu-24.04
-    # GCC, made the first time, takes most of the first run.
+    # A cold build is mostly GCC.
     timeout-minutes: 150
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/root-packages
-      - name: What was made
+      - name: Build
+        uses: ./.github/actions/root-packages
+      - name: Summary
         if: ${{ !cancelled() }}
         run: |
           cat target/root-packages/record 2>/dev/null || true

@@ -24,14 +24,14 @@ test('every action is pinned to a full commit, its tag beside it, or is one of t
 test('each workflow\'s token reads by default, and writes only in the jobs that release and that delete releases, on main', () => {
   // What each may write: the release its repository's contents, its pins' pull request, and the provenance of what it
   // made (signed as the run: id-token, attestations); the prune the releases it deletes.
-  const writers: Record<string, string[]> = {'release.yml': ['attestations', 'contents', 'id-token', 'pull-requests'], 'releases-prune.yml': ['contents']};
+  const writers: Record<string, string[]> = {'release.yml': ['attestations', 'contents', 'id-token', 'pull-requests'], 'prune-releases.yml': ['contents']};
   for (const {name, text} of flows) {
     assert.match(text, /^permissions:\n\s+contents: read$/m, name);
     const writes = [...text.matchAll(/^\s+([\w-]+): write$/gm)].map(([, what]) => what).sort();
     assert.deepEqual(writes, writers[name] ?? [], name);
   }
   for (const name of Object.keys(writers)) assert.match(flows.find((f) => f.name === name)!.text, /branches: \['main'\]/, name);
-  assert.match(flows.find((f) => f.name === 'releases-prune.yml')!.text, /if: github\.ref == 'refs\/heads\/main'/);
+  assert.match(flows.find((f) => f.name === 'prune-releases.yml')!.text, /if: github\.ref == 'refs\/heads\/main'/);
 });
 
 test('no workflow runs untrusted code with a privileged token, or pastes event text into a shell', () => {
@@ -49,6 +49,6 @@ test('what is built is what the lockfiles say', () => {
     const cargo = [...text.matchAll(/^\s+cargo (build|test|run|install)\b.*$/gm)].map((m) => m[0]);
     assert.deepEqual(cargo.filter((l) => !l.includes('--locked')), [], name);
   }
-  assert.match(flows.find((f) => f.name === 'desktop.yml')!.text, /npm audit --omit=dev --audit-level=high/);
+  assert.match(flows.find((f) => f.name === 'ci.yml')!.text, /npm audit --omit=dev --audit-level=high/);
   assert.ok(readFileSync(new URL('../../../.github/dependabot.yml', import.meta.url), 'utf8').includes('package-ecosystem: github-actions'));
 });

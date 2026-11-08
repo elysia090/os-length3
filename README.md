@@ -101,7 +101,7 @@ docker run --rm -v "$PWD:/w" alpine@sha256:c26612752c78b18faacd63c7d50f4592c2e7b
 sh root/assemble.sh target/root-packages target/root-made
 ```
 
-CI (`.github/workflows/desktop.yml`) runs on each pull request; what each
+CI (`.github/workflows/ci.yml`) runs on each pull request; what each
 job does is in [`docs/README.md`](docs/README.md) (Develop, CI). A release is
 made from main by changing [`RELEASE`](RELEASE)
 (`.github/workflows/release.yml`), or by hand with `scripts/release.sh`.

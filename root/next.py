@@ -31,7 +31,7 @@ Rules beyond "the newest release, not a candidate":
                      when it is taken), and a patch past them is said (bash-X.Y-patches/).
   getconf, iconv     Alpine's musl-utils for the builder's Alpine: its version is the musl it is built with, and a
                      newer one is taken from the head of that Alpine's stable branch of aports.
-Runs where every maker's site can be reached (GitHub Actions: .github/workflows/sources-next.yml).
+Runs where every maker's site can be reached (GitHub Actions: .github/workflows/upstream.yml).
 """
 import functools
 import hashlib

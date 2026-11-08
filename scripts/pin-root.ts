@@ -9,7 +9,7 @@
 // root; the same entry is then committed, so the source says what was
 // released. Only this release is pinned: a device installs the newest pin
 // alone and keeps the root it had beside it, and the releases no longer
-// pinned are deleted (.github/workflows/releases-prune.yml).
+// pinned are deleted (.github/workflows/prune-releases.yml).
 //
 //   node scripts/pin-root.ts OUT/os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst [WEB] [--rs FILE]
 //
