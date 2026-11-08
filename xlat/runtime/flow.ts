@@ -28,8 +28,16 @@ export class Redirect {}
  * kernel reads goes through here (tests/boundary.test.ts).
  */
 const decoder = new TextDecoder();
-export const utf8 = (b: Uint8Array | ArrayBuffer): string =>
-  decoder.decode(b instanceof Uint8Array && typeof SharedArrayBuffer !== 'undefined' && b.buffer instanceof SharedArrayBuffer ? b.slice() : b);
+export function utf8(b: Uint8Array | ArrayBuffer): string {
+  // A path or a name, short and ASCII (as nearly every one a call reads is): its characters as they are, which costs a
+  // tenth of a decoder's call (each call that names a file read one).
+  if (b instanceof Uint8Array && b.length <= 255) {
+    let k = 0;
+    while (k < b.length && b[k] < 0x80) k++;
+    if (k === b.length) return String.fromCharCode.apply(null, b as unknown as number[]);
+  }
+  return decoder.decode(b instanceof Uint8Array && typeof SharedArrayBuffer !== 'undefined' && b.buffer instanceof SharedArrayBuffer ? b.slice() : b);
+}
 
 /** Random bytes drawn ahead (a draw costs tens of microseconds however few it gives: an exec's AT_RANDOM took one). */
 const pool = {bytes: new Uint8Array(0), at: 0};

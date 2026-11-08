@@ -61,27 +61,36 @@ function path(p: Proc, address: bigint): string {
   return p.cstring(N(address)) || fail(E.NOENT);
 }
 
+/** `n` (a safe integer, negative too) at `at` as a 64-bit little-endian word, in two halves: no BigInt made for it. */
+function put64(v: DataView, at: number, n: number): void {
+  v.setUint32(at, n >>> 0, true);
+  v.setInt32(at + 4, Math.floor(n / 4294967296), true);
+}
+
 function writeStat(p: Proc, address: bigint, node: Statted): number {
   const v = p.view, at = N(address);
   p.bytes.fill(0, at, at + 144);
   const size = node.isFile || node.isLink ? node.size ?? 0 : node.isDir ? 4096 : 0;
-  v.setBigUint64(at, BigInt(node.dev ?? 1), true);
-  v.setBigUint64(at + 8, BigInt(node.ino), true);
-  v.setBigUint64(at + 16, BigInt(node.nlink), true);
+  put64(v, at, node.dev ?? 1);
+  put64(v, at + 8, node.ino);
+  put64(v, at + 16, node.nlink);
   v.setUint32(at + 24, node.mode, true);
   v.setUint32(at + 28, node.uid, true);
   v.setUint32(at + 32, node.gid, true);
-  v.setBigUint64(at + 40, BigInt(node.rdev ?? 0), true);
-  v.setBigInt64(at + 48, BigInt(size), true);
-  v.setBigInt64(at + 56, 4096n, true);
+  put64(v, at + 40, node.rdev ?? 0);
+  put64(v, at + 48, size);
+  put64(v, at + 56, 4096);
   // What it takes on a disk, in 512-byte units, as Linux's filesystems count it: whole 4 KiB blocks (a symlink's
   // target is kept in its inode, and takes none).
-  v.setBigInt64(at + 64, node.isLink ? 0n : BigInt(Math.ceil(size / 4096) * 8), true);
+  put64(v, at + 64, node.isLink ? 0 : Math.ceil(size / 4096) * 8);
   // atime, mtime, ctime: as set (utimensat keeps nanoseconds), else the time of the last change.
-  for (const [off, ms, ns] of [[72, node.atime ?? node.mtime, node.atimeNs], [88, node.mtime, node.mtimeNs], [104, node.ctime ?? node.mtime, undefined]] as const) {
-    v.setBigInt64(at + off, BigInt(Math.floor(ms / 1000)), true);
-    v.setBigInt64(at + off + 8, BigInt(ns ?? Math.floor(ms % 1000) * 1e6), true);
-  }
+  const times = (off: number, ms: number, ns: number | undefined) => {
+    put64(v, at + off, Math.floor(ms / 1000));
+    put64(v, at + off + 8, ns ?? Math.floor(ms % 1000) * 1e6);
+  };
+  times(72, node.atime ?? node.mtime, node.atimeNs);
+  times(88, node.mtime, node.mtimeNs);
+  times(104, node.ctime ?? node.mtime, undefined);
   return 0;
 }
 
@@ -142,6 +151,7 @@ function describe(p: Proc, d: Description): Statted {
 
 /** /dev/fd/N, /dev/stdin and the rest, and /proc/self/fd/N, as the /proc/PID/fd/N they are. */
 function descriptorPath(p: Proc, name: string): string {
+  if (!name.startsWith('/dev/') && !name.startsWith('/proc/self/fd/')) return name;
   const std = ({'/dev/stdin': 0, '/dev/stdout': 1, '/dev/stderr': 2} as Record<string, number>)[name];
   if (std !== undefined) return `/proc/${p.pid}/fd/${std}`;
   const m = /^\/(?:dev\/fd|proc\/self\/fd)\/(\d+)$/.exec(name);

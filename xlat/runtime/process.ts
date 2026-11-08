@@ -1218,6 +1218,7 @@ export class Process implements Proc {
   declare fixed: {start: number; length: number}[];
   declare bytesBuffer: ArrayBufferLike | undefined;
   declare bytesOf: Uint8Array;
+  declare viewOf: DataView;
   constructor(kernel: Kernel, parent: Process | null) {
     this.kernel = kernel;
     this.pid = 0;
@@ -1267,16 +1268,15 @@ export class Process implements Proc {
   /** Its memory as bytes: the one view, made again only when the memory grew (another buffer). */
   get bytes(): Uint8Array {
     const b = this.memory?.buffer ?? EMPTY;
-    if (b !== this.bytesBuffer) { this.bytesBuffer = b; this.bytesOf = new Uint8Array(b); }
+    if (b !== this.bytesBuffer) { this.bytesBuffer = b; this.bytesOf = new Uint8Array(b); this.viewOf = new DataView(b); }
     return this.bytesOf;
   }
-  get view(): DataView { return new DataView(this.memory?.buffer ?? EMPTY); }
+  /** Its memory as a DataView: the one, as `bytes` (a call reads and writes through it, and made anew it cost each). */
+  get view(): DataView { void this.bytes; return this.viewOf; }
 
   cstring(address: number): string {
-    const b = this.bytes;
-    let end = address;
-    while (b[end]) end++;
-    return utf8(b.subarray(address, end));
+    const b = this.bytes, end = b.indexOf(0, address);
+    return utf8(b.subarray(address, end < 0 ? b.length : end));
   }
 
   /** NULL-terminated array of string pointers. */

@@ -296,6 +296,18 @@ const fail = (errno: number): never => { throw new FsError(errno); };
 /** Where `resolve` found a path: its node (null when only its last part is missing), its directory and its name. */
 export interface Resolved { node: Entry | null; parent: Dir; name: string }
 
+const SLASH = 47, DOT = 46;
+/** Whether `path` from `at` on holds no component but empty ones and "." (the one before `at` is its last). */
+function onlyDots(path: string, at: number): boolean {
+  for (let i = at; i < path.length; i++) {
+    const c = path.charCodeAt(i);
+    if (c === SLASH) continue;
+    if (c === DOT && (i + 1 === path.length || path.charCodeAt(i + 1) === SLASH)) continue;
+    return false;
+  }
+  return true;
+}
+
 export class Vfs {
   declare readonly root: Dir;
   declare readonly terminal: Device;
@@ -323,28 +335,37 @@ export class Vfs {
   resolve(path: string, cwd = '/', follow = true, depth = 0): Resolved {
     if (depth > 40) fail(E.LOOP);
     if (path === '') fail(E.NOENT);
-    const parts = (path.startsWith('/') ? path : cwd + '/' + path).split('/').filter((p) => p && p !== '.');
+    // Its components read in place, one after another (not split into an array, filtered and joined again: a stat or
+    // an open of a short path spent most of its time there). Empty components and "." are none.
+    const full = path.charCodeAt(0) === SLASH ? path : cwd + '/' + path, n = full.length;
     const stack: Entry[] = [this.root];
-    for (let k = 0; k < parts.length; k++) {
-      const part = parts[k], dir = stack[stack.length - 1];
+    let name = '/';
+    for (let i = 0; i < n;) {
+      if (full.charCodeAt(i) === SLASH) { i++; continue; }
+      const start = i;
+      let end = full.indexOf('/', i);
+      if (end < 0) end = n;
+      i = end;
+      if (end - start === 1 && full.charCodeAt(start) === DOT) continue;
+      const part = full.slice(start, end), dir = stack[stack.length - 1];
+      name = part;
       if (part === '..') { if (stack.length > 1) stack.pop(); continue; }
       if (!(dir instanceof Dir)) return fail(E.NOTDIR);
       const node = dir.entries.get(part);
-      const last = k === parts.length - 1;
+      const last = onlyDots(full, end);
       if (!node) {
         if (last) return {node: null, parent: dir, name: part};
         return fail(E.NOENT);
       }
       if (node instanceof Link && (!last || follow)) {
-        const base = '/' + parts.slice(0, k).join('/');
-        const rest = parts.slice(k + 1).join('/');
-        const target = node.target.startsWith('/') ? node.target : base + '/' + node.target;
-        return this.resolve(rest ? target + '/' + rest : target, '/', follow, depth + 1);
+        // The link's target from the directory it is in (what came before it), then what comes after it.
+        const target = node.target.startsWith('/') ? node.target : full.slice(0, start) + '/' + node.target;
+        return this.resolve(last ? target : target + full.slice(end), '/', follow, depth + 1);
       }
       stack.push(node);
     }
     const node = stack[stack.length - 1];
-    return {node, parent: (stack[stack.length - 2] as Dir | undefined) ?? this.root, name: parts.at(-1) ?? '/'};
+    return {node, parent: (stack[stack.length - 2] as Dir | undefined) ?? this.root, name};
   }
 
   lookup(path: string, cwd: string, follow = true): Entry {
@@ -354,16 +375,30 @@ export class Vfs {
 
   /** Canonical absolute path of an existing directory. */
   realpath(path: string, cwd: string): string {
-    const parts: string[] = [];
+    // One walk down the tree, each component looked up in the directory reached (not the whole path again from the
+    // root for each: an open of a file five deep looked up fifteen names), a link's target walked where it is.
+    const parts: string[] = [], nodes: Entry[] = [this.root];
+    let links = 0;
     const walk = (p: string): void => {
-      for (const part of p.split('/').filter((x) => x && x !== '.')) {
-        if (part === '..') { parts.pop(); continue; }
-        parts.push(part);
-        const node = this.lookup('/' + parts.join('/'), '/', false);
+      for (let i = 0; i < p.length;) {
+        if (p.charCodeAt(i) === SLASH) { i++; continue; }
+        let end = p.indexOf('/', i);
+        if (end < 0) end = p.length;
+        const part = p.slice(i, end);
+        i = end;
+        if (part === '.') continue;
+        if (part === '..') { if (parts.length) { parts.pop(); nodes.pop(); } continue; }
+        const dir = nodes[nodes.length - 1];
+        if (!(dir instanceof Dir)) fail(E.NOTDIR);
+        const node = (dir as Dir).entries.get(part) ?? fail(E.NOENT);
         if (node instanceof Link) {
-          parts.pop();
-          walk(node.target.startsWith('/') ? (parts.length = 0, node.target) : node.target);
+          if (++links > 40) fail(E.LOOP);
+          if (node.target.startsWith('/')) { parts.length = 0; nodes.length = 1; }
+          walk(node.target);
+          continue;
         }
+        parts.push(part);
+        nodes.push(node);
       }
     };
     walk(path.startsWith('/') ? path : cwd + '/' + path);
