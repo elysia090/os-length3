@@ -109,15 +109,13 @@ const LINE_READ_MS = 110, READ_MOST = 2600;
 /** While the Agent thinks (its model asked, nothing left to play), its eye goes on over what it last looked at, slower
  * than reading: a line in this long. */
 const PONDER_MS = 420;
-/** The playing's tempo against a hand's (each of its waits divided by it), no slower nor quicker than these: what the
- * Agent did is spread over the time its model takes to answer next, so that wait is not seen (filled with its work, a
- * little slower), and goes quicker once much is waiting to be played, so the playing keeps near the work. */
-const SLOWEST = .55, QUICKEST = 2.2;
-/** What its model is taken to need to answer, until it has been heard to: ms. */
-const ANSWER_GUESS = 3500;
-/** What is played is to end this long after the model is expected to answer, so the answer's work follows on it with no
- * gap; and, the Agent done, what is left is played in about TAIL_MS. */
-const AFTER_MS = 1200, TAIL_MS = 6000;
+/**
+ * The playing's tempo against a hand's (each of its waits divided by it): the films', a quick hand's, the same however
+ * long its model takes to answer. The playing is never slowed to fill that wait (it was, to half a hand's pace, and its
+ * typing crawled on the screen while the films showed it quick): the work done is played at once, and the eye goes on
+ * over it while the model thinks (#ponder). Only what is left once the Agent is done goes quicker, in about TAIL_MS.
+ */
+const TEMPO = 2.2, QUICKEST = 4, TAIL_MS = 6000;
 
 /** What a hand takes to type `text` at a tempo of 1 (cadence.ts gap, its middle), `quick` its hand. */
 function typing(text: string, quick: number): number {
@@ -159,8 +157,6 @@ export class Player {
    * of its takes its part away. */
   #owed = 0;
   /** When its model was last asked (0: it has answered), and what it takes to answer, as heard so far. */
-  #askedAt = 0;
-  #answerMs = ANSWER_GUESS;
   /** The Agent done: what is left goes on to its end a little quicker. */
   #done = false;
   /** What listeners hear, in order, each once all before it is played. */
@@ -241,25 +237,16 @@ export class Player {
     });
   }
 
-  /** The tempo now: while its model is asked, what is owed spread over the time till it answers (and a little after);
-   * else as a hand goes, quicker as more waits; done, what is left in about TAIL_MS. */
+  /** The tempo now: the films' (TEMPO); done, what is left in about TAIL_MS, never slower than that. */
   #tempo(): number {
-    const owed = Math.max(0, this.#owed), clamp = (t: number) => Math.min(QUICKEST, Math.max(SLOWEST, t));
-    if (this.#done) return clamp(Math.max(1, owed / TAIL_MS));
-    if (this.#thinking && this.#askedAt) return clamp(owed / (Math.max(0, this.#askedAt + this.#answerMs - performance.now()) + AFTER_MS));
-    return clamp(Math.max(1, owed / (this.#answerMs + AFTER_MS)));
+    return this.#done ? Math.min(QUICKEST, Math.max(TEMPO, this.#owed / TAIL_MS)) : TEMPO;
   }
 
   /** An event of the Agent's: a file it is about to write is held back from its editor at once; played in its lane. */
   hear(e: AgentEvent): void {
-    // Thinking from when its model is asked until it says or does something; the eye goes on meanwhile (#ponder). What
-    // it took to answer is kept (most of the latest), for the tempo.
-    if (e.type === 'agent_start' || e.type === 'turn_start') { this.#thinking = true; this.#askedAt = performance.now(); this.#idleNow(); }
+    // Thinking from when its model is asked until it says or does something; the eye goes on meanwhile (#ponder).
+    if (e.type === 'agent_start' || e.type === 'turn_start') { this.#thinking = true; this.#idleNow(); }
     if (e.type === 'turn_start') this.#turnBefore = this.#before();
-    if ((e.type === 'tool_execution_start' || e.type === 'message_end' || e.type === 'agent_end') && this.#askedAt) {
-      this.#answerMs = .4 * this.#answerMs + .6 * (performance.now() - this.#askedAt);
-      this.#askedAt = 0;
-    }
     if (e.type === 'tool_execution_start' || e.type === 'message_end' || e.type === 'agent_end') this.#thinking = false;
     if (e.type === 'agent_end') this.#done = true;
     if (e.type === 'tool_execution_start' && (e.name === 'edit' || e.name === 'write') && typeof e.args.path === 'string') {

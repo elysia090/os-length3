@@ -2464,11 +2464,12 @@ person's pace, never as a screen of its own. It works at its own pace behind
 (its commands in a Prompt of its own); what is played is the part a person
 wants to see, each box a lane of its own, the lanes going side by side where
 they are seen side by side and one at a time where they are not (nothing is
-played out of sight). Its tempo gives: what it did is spread over the time its
-model takes to answer next (that time learnt as it answers), a little slower
-than a hand, so the wait for the model is filled with its work rather than
-seen; and quicker, up to twice a hand's, once much is waiting or it is done,
-so the play keeps near the work and ends soon after it. A file it reads is played
+played out of sight). Its tempo is the films': a quick hand's (twice and a
+bit a person's), the same however long its model takes to answer. It is never
+slowed to fill that wait (it was, to half a hand's pace, and its typing crawled
+where the films showed it quick): what it did is played at once, and while the
+model thinks its eye goes on over the work (below); once it is done, what is
+left goes quicker still, so the play ends soon after the work. A file it reads is played
 too: its box laid and its eye going down the lines it read, a faint ink-edged
 line gliding from line to line (a long read skimmed). While it thinks (its
 model asked, nothing it did left to play) its eye stays on what it last looked
