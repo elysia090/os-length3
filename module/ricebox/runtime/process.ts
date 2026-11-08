@@ -935,7 +935,14 @@ export class Kernel implements Kern {
     const p = t.proc;
     this.endTask(t);
     p.tasks.delete(t);
-    if (!p.tasks.size) this.exitProcess(p, status);
+    if (!p.tasks.size) { this.exitProcess(p, status); return; }
+    // Its instance stays with the memory its process goes on with, for the process's next thread (Task.load, goesOn):
+    // a thread made one at a time (a pool's worker, a spawn's child) is not instantiated each time.
+    const m = p.memory;
+    if (m && t.instance && t.slot) {
+      m.pooled = [{image: t.image, instance: t.instance, slot: t.slot, attached: t.attached}, ...(m.pooled ?? []).filter((x) => x.image !== t.image)]
+        .slice(0, KEEP_INSTANCES);
+    }
   }
 
   endTask(t: Task): void {
@@ -1828,10 +1835,12 @@ export const KEEP_INSTANCES = 2;
 /**
  * Whether an instance of `image` made on `memory` before may run it in place of a new one (Task.load, and a Worker's
  * kept one: remote.ts): nothing a new instance would write is wanted. A fork's own copy of its parent's memory has
- * the parent's copied over all of it (Process.copyLive); an exec (or a first process) lays the image's data itself
- * when its module was made without it (share.ts), and such a module writes nothing as it is instantiated.
+ * the parent's copied over all of it (Process.copyLive); a thread's (or a vfork child's) memory is its parent's, in
+ * use, which a new instance wrote the image's data over (and was put back after: Task.load's keep); an exec (or a
+ * first process) lays the image's data itself when its module was made without it (share.ts), and such a module
+ * writes nothing as it is instantiated.
  */
-export const goesOn = (image: Image, memory: Mem, from: Task | null): boolean => (from ? from.memory !== memory : !!image.segments);
+export const goesOn = (image: Image, memory: Mem, from: Task | null): boolean => !!from || !!image.segments;
 
 
 /** Where the time went (run.ts prints it with XLAT_TIMING=1): translating, compiling wasm, how much, and what a pack root fetched. */
