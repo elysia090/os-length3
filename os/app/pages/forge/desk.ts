@@ -216,7 +216,10 @@ export class Desk {
     this.#plane = h('div', {class: 'desk-plane'});
     this.element = h('section', {class: 'desk', tabindex: '-1', 'aria-label': label, 'data-repo': repo}, this.#plane);
     // Its camera is the rail's too, as Forge is left and come to (main.ts select): it stands back inside the desk.
-    ownCamera(this.element, {away: (ms) => this.away(ms), afar: () => this.afar(), near: (ms) => this.near(ms), far: 1, dots: null});
+    // Going along the rail, its plane moves and its dots go by on it, the desk staying where it lies under the band.
+    const desk = this;
+    ownCamera(this.element, {away: (ms) => this.away(ms), afar: () => this.afar(), near: (ms) => this.near(ms),
+      get far() { return desk.#view.s; }, dots: this.element, within: {el: this.element, moves: [this.#plane]}});
     this.element.addEventListener('keydown', (e) => this.#key(e));
     // Tab is the desk's wherever the keyboard is on it, before what it is in (a file, the Prompt's line): the finger to
     // the next box, Shift+Tab to the one before.
@@ -304,7 +307,7 @@ export class Desk {
 
   /** The camera to `c` (gliding there, unless `glide` is false): stepping back it zooms and then goes, coming nearer it
    * goes and then zooms. */
-  #setCam(c: Camera, glide = true, ms?: number) {
+  #setCam(c: Camera, glide = true, ms?: number, how?: Way2) {
     this.#still = null;
     if (c === this.#cam) { this.#arrived(); return; }
     const back = CAMERAS.indexOf(c) > CAMERAS.indexOf(this.#cam);
@@ -314,7 +317,7 @@ export class Desk {
     if (c === 'standard') this.#bornUnder = null;
     this.element.classList.toggle('pulled', c === 'pulled');
     this.element.classList.toggle('whole', c === 'whole');
-    this.#look(glide, back ? 'out' : 'in', ms);
+    this.#look(glide, how ?? (back ? 'out' : 'in'), ms);
   }
 
   /** What waits for the camera to be where it was sent (away): told once it is, or once it is sent elsewhere. */
@@ -346,7 +349,9 @@ export class Desk {
     const c = this.#left;
     if (c === null) return;
     this.#left = null;
-    this.#setCam(c, !still(), ms);
+    // Nearer and along at once, the box in hand landing at its size where it stands (never first slid to the middle
+    // stood back, then brought near).
+    this.#setCam(c, !still(), ms, 'pan');
   }
 
   /** The camera a place back (`by` 1) or nearer (-1), no further than the whole desk nor nearer than the standard. */
