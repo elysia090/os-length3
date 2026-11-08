@@ -185,7 +185,7 @@ if (process.env.XLAT_TIMING) {
   // What the run still holds once its programs have ended (after a collection, when node allows one).
   globalThis.gc?.();
   const m = process.memoryUsage(), mb = (n: number): number => Math.round(n / 2 ** 20);
-  process.stderr.write(JSON.stringify({ms: Math.round(performance.now() - started), ...PROFILE, translate: Math.round(PROFILE.translate), compile: Math.round(PROFILE.compile),
+  writeSync(2, JSON.stringify({ms: Math.round(performance.now() - started), ...PROFILE, translate: Math.round(PROFILE.translate), compile: Math.round(PROFILE.compile),
     heldMB: {rss: mb(m.rss), heap: mb(m.heapUsed), buffers: mb(m.arrayBuffers), external: mb(m.external)},
     kernelMB: Object.fromEntries(Object.entries(kernel.held()).map(([k, v]) => [k, mb(v)]))}) + '\n');
   // XLAT_FREE=1: then give back all that can go, and say what the host shows.
@@ -193,7 +193,9 @@ if (process.env.XLAT_TIMING) {
     const r = kernel.free(0);
     globalThis.gc?.();
     const n = process.memoryUsage();
-    process.stderr.write(JSON.stringify({freedMB: mb(r.before.total - r.after.total), kernelAfterMB: Object.fromEntries(Object.entries(r.after).map(([k, v]) => [k, mb(v)])), hostAfterMB: {rss: mb(n.rss), external: mb(n.external)}}) + '\n');
+    writeSync(2, JSON.stringify({freedMB: mb(r.before.total - r.after.total), kernelAfterMB: Object.fromEntries(Object.entries(r.after).map(([k, v]) => [k, mb(v)])), hostAfterMB: {rss: mb(n.rss), external: mb(n.external)}}) + '\n');
   }
 }
-process.exitCode = status & 0x7f ? 128 + (status & 0x7f) : status >> 8;
+// Ended once the run has: V8 may still be optimizing the hottest translated code in the background (a second and
+// more after a compiler's run), and node would wait for that before it left. Everything said was written at once.
+process.exit(status & 0x7f ? 128 + (status & 0x7f) : status >> 8);
