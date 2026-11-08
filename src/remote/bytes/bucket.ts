@@ -1,9 +1,11 @@
 // Where file contents are kept: an object store with keys, as R2 is. The
 // service writes each blob once, under a key that is its digest, so nothing
 // here is ever overwritten in place; a blob no tree names any more is
-// deleted (sweep.ts). What a release is (os/<sha256>, desktop/<file>) is put
-// here by the deploy (mirror.ts) and only read by the service, a range at a
-// time and as a stream, since it is larger than a Worker may hold.
+// deleted (sweep.ts). What a release is (release/<version>/<file>,
+// distro/<id>-<version>/<file>: releases.ts) is put here by the deploy
+// (mirror.ts) and only read by the service, a range at a time and as a
+// stream, since it is larger than a Worker may hold. Any object may be
+// deleted by hand (the Remote's README says what comes back, and how).
 //
 // The bucket is the only thing the Remote needs besides its database, and
 // only for bytes: a Remote with none bound (no R2 yet, `dev.ts --no-bucket`)

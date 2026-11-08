@@ -7,7 +7,7 @@ import {memoryBucket} from '../bytes/bucket.ts';
 import * as schema from '../db/schema.ts';
 import type {Db} from '../serve/request.ts';
 import {sweep} from '../repos/sweep.ts';
-import {accept, APP, BASE, bearerOf, count, enc, freshDb as fresh, idOf, named, SECRET, service, sessionOf, upload, type Service} from './testing.ts';
+import {accept, APP, BASE, bearerOf, count, enc, freshDb as fresh, idOf, named, released, SECRET, service, sessionOf, upload, type Service} from './testing.ts';
 import homeSync from '../../shared/home-sync.json' with {type: 'json'};
 import desktopPins from '../../shared/desktop-releases.json' with {type: 'json'};
 
@@ -1265,7 +1265,7 @@ test('A repo named on answers only that it is off; a range that ends before it s
   assert.equal(await count(s, sql`select count(*)::int as n from cut`), before);
   // A release bundle: a range that ends before it starts asks for nothing there is.
   const sha = 'a'.repeat(64);
-  await s.bucket.put(`os/${sha}`, new Uint8Array(100).map((_, i) => i));
+  await released(s, 'release/9.9.9/os-length3-linux-9.9.9-x86_64.tar.zst', sha, new Uint8Array(100).map((_, i) => i));
   const backwards = await s.call('GET', `/v1/os/${sha}`, {headers: {Range: 'bytes=50-10'}});
   assert.deepEqual([backwards.status, backwards.headers.get('Content-Range')], [416, 'bytes */100']);
   const part = await s.app.request(`${BASE}/v1/os/${sha}`, {headers: {Range: 'bytes=10-19'}});
@@ -1277,11 +1277,14 @@ test('A repo named on answers only that it is off; a range that ends before it s
 test('a release is public: its root by digest and the desktop app by its pinned name, whole, by range or HEAD; nothing else, and no listing', async () => {
   const s = await service();
   const sha = 'b'.repeat(64);
-  await s.bucket.put(`os/${sha}`, new Uint8Array(100).map((_, i) => i));
+  // Where the deploy puts a release: one folder a version, under names that say what each file is (releases.ts).
+  const version = Object.keys(desktopPins)[0];
+  await released(s, `release/${version}/os-length3-linux-${version}-x86_64.tar.zst`, sha, new Uint8Array(100).map((_, i) => i));
   // The one version pinned (a release pins only itself: scripts/pin-desktop.ts).
-  const pinned = (desktopPins as Record<string, {deb: {file: string; sha256: string}; appimage: {file: string}}>)[Object.keys(desktopPins)[0]];
+  const pinned = (desktopPins as Record<string, {deb: {file: string; sha256: string}; appimage: {file: string}}>)[version];
   const deb = pinned.deb.file, appimage = pinned.appimage.file;
-  await s.bucket.put(`desktop/${deb}`, new Uint8Array(50).map((_, i) => 200 - i));
+  // With no budget (development), the desktop app is served at its pinned name whether the deploy recorded it or not.
+  await s.bucket.put(`release/${version}/${deb}`, new Uint8Array(50).map((_, i) => 200 - i));
   const get = (path: string, headers: Record<string, string> = {}, method = 'GET') => s.app.request(`${BASE}${path}`, {method, headers});
   const body = async (r: Response) => [...new Uint8Array(await r.arrayBuffer())];
 
@@ -1320,9 +1323,11 @@ test('a release is public: its root by digest and the desktop app by its pinned 
   const headPart = await get(`/v1/os/${sha}`, {Range: 'bytes=0-0'}, 'HEAD');
   assert.deepEqual([headPart.status, headPart.headers.get('content-range'), headPart.headers.get('content-length')], [206, 'bytes 0-0/100', '1']);
 
-  // Missing: a pinned file the bucket has not got yet, a name nobody pinned (even one the bucket holds), a digest nobody put.
-  await s.bucket.put('desktop/other.deb', new Uint8Array(3));
-  for (const path of [`/v1/desktop/${appimage}`, '/v1/desktop/other.deb', `/v1/desktop/..%2Fos%2F${sha}`, `/v1/os/${'c'.repeat(64)}`, '/v1/os/not-a-digest']) {
+  // Missing: a pinned file the bucket has not got yet, a name nobody pinned (even one the bucket holds and the deploy
+  // recorded), a digest nobody put, and the desktop app's own digest (a root is asked for by its digest, the app by its name).
+  await released(s, `release/${version}/other.deb`, 'e'.repeat(64), new Uint8Array(3));
+  for (const path of [`/v1/desktop/${appimage}`, '/v1/desktop/other.deb', `/v1/desktop/..%2F..%2Frelease%2F${version}%2F${deb}`, `/v1/os/${'c'.repeat(64)}`,
+    `/v1/os/${'e'.repeat(64)}`, '/v1/os/not-a-digest']) {
     assert.equal((await get(path)).status, 404, path);
     assert.equal((await get(path, {}, 'HEAD')).status, 404, `HEAD ${path}`);
   }

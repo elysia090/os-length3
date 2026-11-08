@@ -5,7 +5,7 @@ import {sha256} from '../bytes/digest.ts';
 import {LIMITS, limitsOf, type Limits} from './budget.ts';
 import type {Bucket} from '../bytes/bucket.ts';
 import type {Edge} from '../repos/files.ts';
-import {count, enc, service, type Service} from '../tests/testing.ts';
+import {count, enc, released, service, type Service} from '../tests/testing.ts';
 
 // What R2 and the database may be asked for (budget.ts): each limit is checked before R2 is asked, and what
 // is refused leaves nothing counted and nothing kept.
@@ -151,9 +151,7 @@ test('a release file is read from R2 once, then the edge\'s cache answers every 
   };
   const s = await service({}, {limits: limits({}), edge});
   const sha = 'b'.repeat(64);
-  await s.bucket.put(`os/${sha}`, new Uint8Array(100).map((_, i) => i));
-  const record = (key: string, bytes: number) => s.db.execute(sql`insert into release_file (key, sha256, bytes) values (${key}, ${'d'.repeat(64)}, ${bytes})`);
-  await record(`os/${sha}`, 100);
+  await released(s, `release/9.9.9/os-length3-linux-9.9.9-x86_64-${sha}.tar.zst`, sha, new Uint8Array(100).map((_, i) => i));
   const asked = counted(s);
   const part = await s.call('GET', `/v1/os/${sha}`, {headers: {Range: 'bytes=10-19'}});
   assert.deepEqual([part.status, part.headers.get('Content-Range')], [206, 'bytes 10-19/100']);
@@ -165,14 +163,48 @@ test('a release file is read from R2 once, then the edge\'s cache answers every 
   const before = asked.size + asked.read;
   for (let i = 0; i < 5; i++) assert.equal((await s.call('GET', `/v1/os/${String(i).repeat(64)}`)).status, 404);
   assert.equal(asked.size + asked.read, before);
-  // A release not there is not cached as absent: once the deploy puts and records it, it is there.
+  // A release not there is not cached as absent: once the deploy puts and records it, it is there; and one a deploy
+  // before the bucket's names put at os/<sha256> is served from there, as its record says.
   const none = 'c'.repeat(64);
   assert.equal((await s.call('GET', `/v1/os/${none}`)).status, 404);
-  await s.bucket.put(`os/${none}`, new Uint8Array(3));
-  await record(`os/${none}`, 3);
+  await released(s, `os/${none}`, none, new Uint8Array(3));
   assert.equal((await s.call('GET', `/v1/os/${none}`)).status, 200);
   // What R2 holds counts the release files with the blobs.
   assert.equal(await usage(s, 'r2:stored'), 103);
+});
+
+test('a release file deleted from R2 by hand is 404, and its record goes with it, so the next deploy puts it again', async () => {
+  const s = await service({}, {limits: limits({})});
+  const sha = 'b'.repeat(64), key = `release/9.9.9/os-length3-linux-9.9.9-x86_64-${sha}.tar.zst`;
+  await released(s, key, sha, new Uint8Array(100));
+  await s.bucket.delete([key]);
+  assert.equal(await count(s, sql`select count(*)::int as n from release_file`), 1);
+  assert.equal((await s.call('GET', `/v1/os/${sha}`)).status, 404);
+  assert.equal(await count(s, sql`select count(*)::int as n from release_file`), 0);
+  // Nor counted as held any more; and asked again, R2 is not.
+  assert.equal(await usage(s, 'r2:stored'), 0);
+  const asked = counted(s);
+  assert.equal((await s.call('GET', `/v1/os/${sha}`)).status, 404);
+  assert.equal(asked.size + asked.read, 0);
+});
+
+test('a blob deleted from R2 by hand is let go of: its row goes, the room counts it no more, and a device that has it sends it again', async () => {
+  const s = await service({}, {limits: limits({})});
+  const t = await s.start();
+  const user = ((await s.call('GET', '/api/auth/get-session', {token: t})).json as unknown as {user: {id: string}}).user.id;
+  const one = await put(s, t, 'one!'), two = await put(s, t, 'two!!');
+  const used = async () => Number(((await s.db.execute(sql`select used from room where user_id = ${user}`)).rows as {used: number}[])[0]?.used ?? 0);
+  assert.equal(await used(), 9);
+  // Deleted in R2's dashboard, a file of u/<user>/ at a time: read alone, and read with others.
+  await s.bucket.delete([`u/${user}/${one.sha}`, `u/${user}/${two.sha}`]);
+  assert.equal((await s.call('GET', `/v1/blobs/${one.sha}`, {token: t})).status, 404);
+  assert.deepEqual((await s.call('POST', '/v1/blobs/read', {token: t, body: [two.sha]})).json, {});
+  assert.deepEqual((await s.call('POST', '/v1/blobs/missing', {token: t, body: [one.sha, two.sha]})).json, [one.sha, two.sha]);
+  assert.equal(await used(), 0);
+  assert.equal(await usage(s, 'r2:stored'), 0);
+  // Sent again, it is there again.
+  assert.equal((await put(s, t, 'one!')).r.status, 201);
+  assert.equal((await s.call('GET', `/v1/blobs/${one.sha}`, {token: t})).status, 200);
 });
 
 test('a database at all it may take takes nothing new; reads, deletes and signing in go on', async () => {

@@ -24,7 +24,7 @@ import type {Context, Hono} from 'hono';
 import {blobKey, noFiles, type Bucket} from '../bytes/bucket.ts';
 import {byCode, HOLD, live, nameFor, serverAddress, shownAs, takeDown} from '../people/names.ts';
 import {addressOf, body, lock, qualified, refuse, rows, throttled, unchanged, type Db, type Vars} from '../serve/request.ts';
-import type {Edge} from './files.ts';
+import {lost, type Edge} from './files.ts';
 import {address, blob, cut, line, member, repo, repoPublic, repoShare, server} from '../db/schema.ts';
 
 /** Codes one address may resolve to a face in an hour, as Inbox lets an account look them up (inbox.ts INBOX.codesPerHour). */
@@ -298,7 +298,7 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const hit = d.edge ? await d.edge.match(whole).catch(() => undefined) : undefined;
     if (hit?.ok) return new Response(hit.body, {headers});
     const bytes = await bucket.get(blobKey(at.row.userId, f.sha));
-    if (!bytes) return c.json({error: 'File not found on Remote'}, 404);
+    if (!bytes) { await lost(db, at.row.userId, [f.sha]); return c.json({error: 'File not found on Remote'}, 404); }
     if (d.edge) await d.edge.put(whole, new Response(bytes.slice() as BodyInit, {headers: {'Cache-Control': 'public, max-age=31536000, immutable'}})).catch(() => {});
     return new Response(bytes as BodyInit, {headers});
   });

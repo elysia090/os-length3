@@ -395,6 +395,11 @@ export const named = async (s: Service, ...people: [string, string][]) => {
   }
 };
 export const accept = (s: Service, t: string, address: string, state = 'accepted') => s.call('POST', '/v1/inbox/contacts', {token: t, body: {address, state}});
+/** A release file as the deploy leaves one (mirror.ts): its bytes in the bucket under its key, and its record (release_file). */
+export const released = async (s: Service, key: string, sha: string, bytes: Uint8Array) => {
+  await s.bucket.put(key, bytes);
+  await s.db.execute(sql`insert into release_file (key, sha256, bytes) values (${key}, ${sha}, ${bytes.length})`);
+};
 export const count = async (s: Service, query: ReturnType<typeof sql>) => ((await s.db.execute(query)).rows as {n: number}[])[0].n;
 
 // ---- Stripe, never reached: a stand-in that says what it was asked, and events signed as Stripe signs them ----

@@ -4,11 +4,11 @@ import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
 import type {Pinned} from './mirror.ts';
 import {mirror, type Store} from './mirror.ts';
-import {desktopFile, pinnedDesktop, pinnedDistros, pinnedRoots, shipped} from '../ship/releases.ts';
+import {desktopFile, isRoot, pinnedDesktop, pinnedDistros, pinnedRoots, shipped} from '../ship/releases.ts';
 
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 const pin = (file: string, bytes: Uint8Array, tag = 'os-length3-linux-v1.0.0'): Pinned =>
-  ({key: `desktop/${file}`, path: `/v1/desktop/${file}`, tag, file, sha256: sha(bytes), bytes: bytes.length, type: 'application/octet-stream'});
+  ({key: `release/1.0.0/${file}`, path: `/v1/desktop/${file}`, tag, file, sha256: sha(bytes), bytes: bytes.length, type: 'application/octet-stream'});
 
 /** A bucket as the deploy sees it: what it holds by key (as recorded: its digest and size), and each put. */
 function fakeBucket(had: Record<string, Uint8Array> = {}) {
@@ -41,37 +41,37 @@ const quiet = () => {};
 
 test('mirror: what the bucket has at its pinned size is kept untouched; what it lacks is taken, checked and put; again, nothing happens', async () => {
   const pins = [pin('a.deb', a), pin('b.AppImage', b)];
-  const bucket = fakeBucket({'desktop/a.deb': a});
+  const bucket = fakeBucket({'release/1.0.0/a.deb': a});
   const gh = fakeGitHub({'a.deb': a, 'b.AppImage': b});
-  assert.deepEqual(await mirror(pins, bucket.store, gh.source, quiet), {kept: ['desktop/a.deb'], put: ['desktop/b.AppImage']});
-  assert.deepEqual(bucket.puts, ['desktop/b.AppImage']);
-  assert.deepEqual([...bucket.held.get('desktop/b.AppImage')!], [...b]);
+  assert.deepEqual(await mirror(pins, bucket.store, gh.source, quiet), {kept: ['release/1.0.0/a.deb'], put: ['release/1.0.0/b.AppImage']});
+  assert.deepEqual(bucket.puts, ['release/1.0.0/b.AppImage']);
+  assert.deepEqual([...bucket.held.get('release/1.0.0/b.AppImage')!], [...b]);
   // Only the missing file was asked of GitHub, with the token.
   assert.deepEqual(gh.asked, ['/releases/tags/os-length3-linux-v1.0.0', '/releases/assets/1']);
   assert.deepEqual(gh.tokens, ['Bearer read-only', 'Bearer read-only']);
   // Idempotent: a second deploy finds both and asks GitHub nothing.
-  assert.deepEqual(await mirror(pins, bucket.store, gh.source, quiet), {kept: ['desktop/a.deb', 'desktop/b.AppImage'], put: []});
+  assert.deepEqual(await mirror(pins, bucket.store, gh.source, quiet), {kept: ['release/1.0.0/a.deb', 'release/1.0.0/b.AppImage'], put: []});
   assert.equal(gh.asked.length, 2);
 });
 
 test('mirror: a copy of another size is put again; bytes that are not the pin are never put, and the rest still go', async () => {
-  const bucket = fakeBucket({'desktop/a.deb': a.slice(0, 3)});
+  const bucket = fakeBucket({'release/1.0.0/a.deb': a.slice(0, 3)});
   const gh = fakeGitHub({'a.deb': a, 'b.AppImage': new TextEncoder().encode('not what was pinned!')});
   const said: string[] = [];
   await assert.rejects(mirror([pin('a.deb', a), pin('b.AppImage', b)], bucket.store, gh.source, (l) => said.push(l)),
-    (e: Error) => /desktop\/b\.AppImage: b\.AppImage from os-length3-linux-v1\.0\.0 is sha256 [0-9a-f]{64} \(20 bytes\); this tree pins/.test(e.message));
-  assert.deepEqual(bucket.puts, ['desktop/a.deb']);
-  assert.deepEqual([...bucket.held.get('desktop/a.deb')!], [...a]);
-  assert.ok(!bucket.held.has('desktop/b.AppImage'));
-  assert.ok(said.some((l) => l.startsWith('desktop/a.deb: put')), said.join('\n'));
+    (e: Error) => /release\/1\.0\.0\/b\.AppImage: b\.AppImage from os-length3-linux-v1\.0\.0 is sha256 [0-9a-f]{64} \(20 bytes\); this tree pins/.test(e.message));
+  assert.deepEqual(bucket.puts, ['release/1.0.0/a.deb']);
+  assert.deepEqual([...bucket.held.get('release/1.0.0/a.deb')!], [...a]);
+  assert.ok(!bucket.held.has('release/1.0.0/b.AppImage'));
+  assert.ok(said.some((l) => l.startsWith('release/1.0.0/a.deb: put')), said.join('\n'));
 });
 
 test('mirror: a copy of the pinned size but another digest (a file rebuilt under its name) is put again', async () => {
   const same = new TextEncoder().encode('the DEB');
-  const bucket = fakeBucket({'desktop/a.deb': same});
+  const bucket = fakeBucket({'release/1.0.0/a.deb': same});
   assert.equal(same.length, a.length);
-  assert.deepEqual(await mirror([pin('a.deb', a)], bucket.store, fakeGitHub({'a.deb': a}).source, quiet), {kept: [], put: ['desktop/a.deb']});
-  assert.deepEqual([...bucket.held.get('desktop/a.deb')!], [...a]);
+  assert.deepEqual(await mirror([pin('a.deb', a)], bucket.store, fakeGitHub({'a.deb': a}).source, quiet), {kept: [], put: ['release/1.0.0/a.deb']});
+  assert.deepEqual([...bucket.held.get('release/1.0.0/a.deb')!], [...a]);
 });
 
 test('mirror: more bytes than pinned stop the download; a file the release lacks, or a release it cannot read, is said, not put', async () => {
@@ -87,7 +87,7 @@ test('mirror: more bytes than pinned stop the download; a file the release lacks
 
 test('mirror: a file its makers publish is taken from their URL, without the token, and checked like the rest', async () => {
   const root = new TextEncoder().encode('a distribution root');
-  const p: Pinned = {...pin('rootfs.tar.gz', root), key: `os/${sha(root)}`, tag: 'debian 13.7', url: 'https://makers.test/build/rootfs.tar.gz'};
+  const p: Pinned = {...pin('rootfs.tar.gz', root), key: 'distro/debian-13.7/rootfs.tar.gz', tag: 'debian 13.7', url: 'https://makers.test/build/rootfs.tar.gz'};
   const asked: string[] = [], tokens: (string | null)[] = [];
   const f = (async (url: string | URL | Request, init?: RequestInit) => {
     asked.push(String(url));
@@ -98,7 +98,7 @@ test('mirror: a file its makers publish is taken from their URL, without the tok
   assert.deepEqual(await mirror([p], bucket.store, {api: 'https://api.test', repo: 'me/os', token: 'read-only', fetch: f}, quiet), {kept: [], put: [p.key]});
   assert.deepEqual([asked, tokens], [[p.url], [null]]);
   // Moved on at its makers: not the pin, not put.
-  await assert.rejects(mirror([{...p, key: 'os/other', url: 'https://makers.test/gone'}], fakeBucket().store, {api: 'https://api.test', repo: 'me/os', fetch: f}, quiet), /gone: 404/);
+  await assert.rejects(mirror([{...p, key: 'distro/debian-13.8/rootfs.tar.gz', url: 'https://makers.test/gone'}], fakeBucket().store, {api: 'https://api.test', repo: 'me/os', fetch: f}, quiet), /gone: 404/);
 });
 
 test('the pins: every root src/core/src/root/pins.rs pins, newest first, and the desktop app of a version, by its file', () => {
@@ -107,7 +107,9 @@ test('the pins: every root src/core/src/root/pins.rs pins, newest first, and the
   assert.ok(roots.length >= 1);
   for (const r of roots) {
     assert.match(r.sha256, /^[0-9a-f]{64}$/);
-    assert.deepEqual([r.key, r.path], [`os/${r.sha256}`, `/v1/os/${r.sha256}`]);
+    // In the bucket under its version and file, as anyone reading R2's list knows it; served by its digest.
+    assert.deepEqual([r.key, r.path], [`release/${r.version}/${r.file}`, `/v1/os/${r.sha256}`]);
+    assert.ok(isRoot(r.key), r.key);
     assert.match(r.tag, /^os-length3-linux-v/);
     assert.ok(r.bytes > 1e6 && r.file.endsWith('.tar.zst'), r.file);
   }
@@ -118,7 +120,8 @@ test('the pins: every root src/core/src/root/pins.rs pins, newest first, and the
   const distros = pinnedDistros(readFileSync(new URL('../../core/src/root/pins.rs', import.meta.url), 'utf8'));
   assert.deepEqual(distros.map((d) => d.tag.split(' ')[0]), ['ubuntu', 'debian']);
   for (const d of distros) {
-    assert.deepEqual([d.key, d.path], [`os/${d.sha256}`, `/v1/os/${d.sha256}`]);
+    assert.deepEqual([d.key, d.path], [`distro/${d.tag.split(' ').slice(0, 2).join('-')}/${d.file}`, `/v1/os/${d.sha256}`]);
+    assert.ok(isRoot(d.key), d.key);
     const url = d.url ?? '';
     assert.ok(url.startsWith('https://') && url.endsWith(`/${d.file}`) && d.file.endsWith('.tar.gz') && d.bytes > 1e6, url);
     assert.doesNotMatch(url, /\/dist-amd64\//, 'a branch moves; a pin names one build');
@@ -138,8 +141,10 @@ test('the pins: every root src/core/src/root/pins.rs pins, newest first, and the
   assert.equal(shipped({'0.10.0': {}, '0.9.1': {}}), '0.10.0');
   const desktop = pinnedDesktop(version);
   assert.deepEqual(desktop.map((p) => [p.key, p.type, p.tag]), [
-    [`desktop/os-length3-linux-${version}-desktop-amd64.deb`, 'application/vnd.debian.binary-package', `os-length3-linux-v${version}`],
-    [`desktop/os-length3-linux-${version}-desktop-x86_64.AppImage`, 'application/vnd.appimage', `os-length3-linux-v${version}`]]);
+    [`release/${version}/os-length3-linux-${version}-desktop-amd64.deb`, 'application/vnd.debian.binary-package', `os-length3-linux-v${version}`],
+    [`release/${version}/os-length3-linux-${version}-desktop-x86_64.AppImage`, 'application/vnd.appimage', `os-length3-linux-v${version}`]]);
+  // The desktop app is asked for by its name, never by its digest as a root is.
+  for (const p of desktop) assert.ok(!isRoot(p.key), p.key);
   assert.deepEqual(pinnedDesktop('9.9.9'), []);
   assert.equal(desktopFile(desktop[0].file)?.sha256, desktop[0].sha256);
   assert.equal(desktopFile('../x.deb'), null);
@@ -152,16 +157,16 @@ test('the pins: every root src/core/src/root/pins.rs pins, newest first, and the
 
 test('mirror: a file the budget has no room for is neither fetched nor put, the others go, and the deploy is told', async () => {
   const pins = [pin('a.deb', a), pin('b.AppImage', b)];
-  const bucket = fakeBucket({'desktop/a.deb': a.slice(0, 3)});
+  const bucket = fakeBucket({'release/1.0.0/a.deb': a.slice(0, 3)});
   const gh = fakeGitHub({'a.deb': a, 'b.AppImage': b});
   const allowed: string[] = [];
   const allow = async (p: Pinned) => {
     allowed.push(p.key);
-    if (p.key === 'desktop/b.AppImage') throw new Error('R2 would hold more than R2_STORED_MB');
+    if (p.key === 'release/1.0.0/b.AppImage') throw new Error('R2 would hold more than R2_STORED_MB');
   };
-  await assert.rejects(mirror(pins, bucket.store, gh.source, quiet, allow), /desktop\/b\.AppImage: R2 would hold more than R2_STORED_MB/);
+  await assert.rejects(mirror(pins, bucket.store, gh.source, quiet, allow), /release\/1\.0\.0\/b\.AppImage: R2 would hold more than R2_STORED_MB/);
   // Asked of each it lacks (a copy of 3 bytes is put again).
-  assert.deepEqual(allowed, ['desktop/a.deb', 'desktop/b.AppImage']);
-  assert.deepEqual(bucket.puts, ['desktop/a.deb']);
+  assert.deepEqual(allowed, ['release/1.0.0/a.deb', 'release/1.0.0/b.AppImage']);
+  assert.deepEqual(bucket.puts, ['release/1.0.0/a.deb']);
   assert.ok(!gh.asked.includes('/releases/assets/1'));
 });

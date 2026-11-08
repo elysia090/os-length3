@@ -105,7 +105,7 @@ main has made it Cloudflare refuses another branch's `versions upload`.
 | What this Remote is | `serve/about.ts` | `GET /v1/about`, `GET /v1/health`, `GET /.well-known/security.txt` (RFC 9116) | (reads nothing; health `select 1`) | page, core (app and root3 read `app` to know where a device code is approved), deploy |
 | Who someone is | `people/auth.ts` (Better Auth), `people/devoauth.ts` | `/api/auth/*`: social sign-in, passkeys, `get-session`, `list-sessions`, `revoke-session`, `sign-out`, linked providers; the device flow `device/code`, `device/token` (core), `device`, `device/approve`, `device/deny` (page); `/dev-oauth/*` only where `dev` is offered | `user`, `session`, `account`, `verification`, `passkey`, `device_code`, `rate_limit`; `guard` (a passkey sign-in is proof of presence) | page, core |
 | A Remote for research | `people/enter.ts` | `POST /v1/enter` | `user`, `session`, `guard`, `throttle` | page |
-| File contents and releases | `repos/files.ts`, `bytes/bucket.ts`, `ship/releases.ts` (what is pinned), `bytes/mirror.ts` (the deploy puts it in the bucket) | `GET /v1/os/:sha`, `GET /v1/desktop/:file` (anyone, Range, streamed), `POST /v1/blobs/missing`, `PUT/GET /v1/blobs/:sha` | `blob` (and `room.used`, by trigger); bytes in the bucket: `u/USER/SHA`, `os/SHA`, `desktop/FILE` | page (the desktop app's download), core (`/v1/os` for a Prompt's root, falling back to the release) |
+| File contents and releases | `repos/files.ts`, `bytes/bucket.ts`, `ship/releases.ts` (what is pinned), `bytes/mirror.ts` (the deploy puts it in the bucket) | `GET /v1/os/:sha`, `GET /v1/desktop/:file` (anyone, Range, streamed), `POST /v1/blobs/missing`, `PUT/GET /v1/blobs/:sha` | `blob` (and `room.used`, by trigger); bytes in the bucket: `u/USER/SHA`, `release/VERSION/FILE`, `distro/ID-VERSION/FILE` (below) | page (the desktop app's download), core (`/v1/os` for a Prompt's root, falling back to the release) |
 | Repos kept | `repos/repos.ts` | `GET /v1/moved`; `/v1/repos`, `/v1/repos/gone`, `/v1/repos/:name` (`?line=`), `draft`, `cuts`, `cuts/:id`, `log`, `lines`, `lines/:line/push`, `changes`, `changes/:id/reviews\|merge\|reject\|reset`, `off`, `on`, `discard` (a passkey just now and the repo's name) | `repo`, `line`, `cut`, `change`, `review`, `repo_gone`, `room` (stamp, used), `guard` (sign-ins just now) | page, core (sync, history, work); off and discard only from the page (they ask a passkey) |
 | The plan and billing | `plan/plan.ts` (the rules and routes), `plan/stripe.ts` (Stripe's REST and webhook signatures), `plan/devbilling.ts` (a stand-in for Stripe in `serve/dev.ts`: Checkout, 3-D Secure and the portal in test mode) | `GET /v1/plan` (the tier, its use, the tiers), `POST /v1/plan/checkout` (a tier), `POST /v1/plan/portal` (with a tier, at the step that changes to it); `POST /v1/stripe/webhook` (anyone; the webhook signed by Stripe, the tier read from the price); its rules are asked by the routes that make something new: a new repo and a draft that grows (`repos/repos.ts` PATCH draft), making a server (`talk/servers.ts`), claiming a name (`talk/inbox.ts`), each 402 with the rule | `plan`, `billing_event`; reads `repo`, `room.used` (counted again from the rows by the sweep), `address` | page (Remote → Plan), core (`root3 remote plan`); 402 is said in place and the work stays on the device |
 | Home | `repos/home.ts` | `GET/PUT /v1/home/:key` (profile, todo, dotfiles) | `home` | page, core |
@@ -143,6 +143,26 @@ read the sweep through it.
 - **Roots by digest** (`/v1/os/:sha`, Range), which the app's Prompt
   installs from, falling back to the publisher's release.
 - **Text to take home** (`/v1/boards/:id/archive`, markdown) for `root3 server get`.
+
+## What R2 holds, and what may be deleted by hand
+
+Every object in the bucket is under a folder that says what it is, and a
+person reading its list in Cloudflare's dashboard may delete any of them:
+nothing breaks, and what is still wanted comes back by itself.
+
+| Folder | What it is | Deleted by hand |
+| --- | --- | --- |
+| `release/VERSION/` | root3's release of that version: its root (`os-length3-linux-VERSION-x86_64-SHA.tar.zst`) and desktop app (`.deb`, `.AppImage`), put by the deploy (`ship/deploy.ts`, `bytes/mirror.ts`) | A version this tree no longer pins: gone for good (the deploy lets it go by itself 90 days after it last pinned it). The pinned one: put again by the next deploy |
+| `distro/ID-VERSION/` | another distribution's root (Ubuntu's, Debian's), from its makers, put by the deploy the same way | The same |
+| `u/USER/` | an account's files, one object a digest (`USER` is `user.id`) | Each is let go as it is first asked for (`repos/files.ts` `lost`): its row goes, the account's room counts it no more, and a device that still has the file sends it again. A file no device has any more is lost, as a deleted file is |
+| `os/SHA`, `desktop/FILE` | where deploys before these names put a release; each is let go by the next deploy once it is under its own name | Nothing to it |
+
+A release file is served from where the deploy recorded it (`release_file`,
+which `/v1/os/:sha` reads by digest): deleted by hand, the first request for
+it is 404 and takes its record with it, so the next deploy puts it again
+rather than taking it for there. The edge's cache may answer for it until
+then; it never needs to be emptied by hand. The sweep (`repos/sweep.ts`)
+deletes, the other way round, the bytes under `u/` that no row names.
 
 ## A Remote without a bucket
 

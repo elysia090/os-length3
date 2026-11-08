@@ -169,25 +169,34 @@ async function releaseFiles(bucket: string) {
       });
     },
   };
+  // Kept under another key as well (a deploy before the bucket's names said what each is put it at os/<sha256> or
+  // desktop/<file>): those bytes go once it is under its own key, so they are not counted as more for it to hold.
+  const elsewhere = async (p: {key: string; sha256: string}) =>
+    (await rows<{key: string; bytes: number}>(db, sql`select key, bytes::float8 as bytes from release_file where sha256 = ${p.sha256} and key <> ${p.key}`));
+  // The object first, then its record (whose trigger counts it gone).
+  const letGo = async (key: string, reason: string) => {
+    if ((await wrangler(['r2', 'object', 'delete', `${bucket}/${key}`, '--remote'], {heard: true})).code !== 0) { console.log(`${key}: not let go this time`); return; }
+    await db.execute(sql`delete from release_file where key = ${key}`);
+    console.log(`${key}: let go (${reason})`);
+  };
   try {
-    const allow = async (p: {key: string; bytes: number}) => {
+    const allow = async (p: {key: string; sha256: string; bytes: number}) => {
       if (await spent(db, month(Date.now()), 'r2:a') + 1 > limits.writes) throw new Error(`${p.key}: R2's puts for this month are spent`);
-      const had = Number((await recordOf(db, p.key))?.bytes ?? 0);
+      const had = Number((await recordOf(db, p.key))?.bytes ?? 0) + (await elsewhere(p)).reduce((n, r) => n + Number(r.bytes), 0);
       if (await spent(db, 'all', 'r2:stored') + p.bytes - had > limits.stored) throw new Error(`${p.key}: R2 would hold more than R2_STORED_MB`);
     };
     const {kept, put} = await mirror(pins, store, {api: process.env.GITHUB_API_URL || 'https://api.github.com',
       repo: process.env.GITHUB_REPOSITORY || 'elysia090/os-length3', token: process.env.GITHUB_TOKEN}, console.log, allow);
     console.log(`release files on the Remote: ${put.length} put, ${kept.length} there already`);
-    // What no deploy has pinned for UNPINNED_FOR goes (a release a client of then may still ask for stays that long):
-    // before, every deploy's roots and desktop apps (150 MB) stayed for good, in the bytes R2_STORED_MB counts with
-    // everyone's files, until uploads were refused. The object first, then its record (whose trigger counts it gone).
     const pinned = new Set(pins.map((p) => p.key));
+    // Each pinned file is under its own key now (the mirror throws otherwise): the Worker, deployed before this, finds
+    // a root by its digest wherever it was recorded, so a copy under another key is let go at once.
+    for (const p of pins) for (const {key} of await elsewhere(p)) if (!pinned.has(key)) await letGo(key, `kept as ${p.key}`);
+    // What no deploy has pinned for UNPINNED_DAYS goes (a release a client of then may still ask for stays that long):
+    // before, every deploy's roots and desktop apps (150 MB) stayed for good, in the bytes R2_STORED_MB counts with
+    // everyone's files, until uploads were refused.
     const old = (await db.execute(sql`select key from release_file where at < now() - make_interval(days => ${UNPINNED_DAYS})`)).rows as {key: string}[];
-    for (const {key} of old.filter((r) => !pinned.has(r.key))) {
-      if ((await wrangler(['r2', 'object', 'delete', `${bucket}/${key}`, '--remote'], {heard: true})).code !== 0) { console.log(`${key}: not let go this time`); continue; }
-      await db.execute(sql`delete from release_file where key = ${key}`);
-      console.log(`${key}: let go (no deploy has pinned it for ${UNPINNED_DAYS} days)`);
-    }
+    for (const {key} of old.filter((r) => !pinned.has(r.key))) await letGo(key, `no deploy has pinned it for ${UNPINNED_DAYS} days`);
   } finally {
     await pool.end();
   }

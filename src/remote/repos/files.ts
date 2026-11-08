@@ -26,7 +26,7 @@ import type {Context, Hono} from 'hono';
 import {HEX, sha256} from '../bytes/digest.ts';
 import type {Budget} from '../plan/budget.ts';
 import {blobKey, noFiles, type Bucket} from '../bytes/bucket.ts';
-import {desktopFile, rootKey} from '../ship/releases.ts';
+import {desktopFile, isRoot} from '../ship/releases.ts';
 import {body, fits, LIMIT, lock, unchanged, type Db, type Vars} from '../serve/request.ts';
 import {blob, releaseFile} from '../db/schema.ts';
 
@@ -58,32 +58,40 @@ async function fromEdge(c: Context<Vars>, edge: Edge, whole: Request): Promise<R
 }
 
 /**
+ * Where the bucket keeps one file of a release, as the deploy recorded it (release_file, mirror.ts): null when it
+ * keeps none. `gone` lets the record go when R2 has the file no more (deleted there by hand), so the next deploy
+ * puts it again, rather than the record saying for good that it is there.
+ */
+interface Kept { key(): Promise<string | null>; gone(key: string): Promise<void> }
+
+/**
  * One file of a release, whole or the one range asked for (bytes=a-b, bytes=a-), streamed from the bucket. With
  * the edge's cache, the cache answers once it has it; a GET it lacks is read whole from R2 once and put there
- * (one entry per file and pinned digest, so a file pinned anew under the same name is another entry, never the
+ * (one entry per public path and pinned digest, so a file pinned anew under the same name is another entry, never the
  * old bytes), and answered from it; a HEAD, or a cache that takes nothing, is answered from R2 by range alone.
  */
-async function release(c: Context<Vars>, bucket: Bucket, key: string, o: {type: string; etag: string; name?: string}, edge?: Edge,
-  known: () => Promise<boolean> = async () => true) {
+async function release(c: Context<Vars>, bucket: Bucket, path: string, o: {type: string; etag: string; name?: string}, kept: Kept, edge?: Edge) {
   const fixed: Record<string, string> = {'Content-Type': o.type, 'Accept-Ranges': 'bytes', ETag: `"${o.etag}"`, 'Cache-Control': IMMUTABLE};
   if (o.name) fixed['Content-Disposition'] = `attachment; filename="${o.name}"`;
-  const whole = new Request(`https://release.cache/${key}?sha256=${o.etag}`);
+  const whole = new Request(`https://release.cache${path}?sha256=${o.etag}`);
   // Had already (a client that kept it asks by its digest): nothing is looked up, nor read.
   if (unchanged(c, `"${o.etag}"`)) return new Response(null, {status: 304, headers: fixed});
   if (edge) {
     const hit = await fromEdge(c, edge, whole);
     if (hit) return hit;
   }
-  // Not in the cache: only what the deploy recorded is asked of R2.
-  if (!await known()) return c.json({error: 'Release not found'}, 404);
+  // Not in the cache: only what the deploy recorded is asked of R2, where it recorded it.
+  const key = await kept.key();
+  if (!key) return c.json({error: 'Release not found'}, 404);
+  const lost = async () => { await kept.gone(key); return c.json({error: 'Release not found'}, 404); };
   const m = /^bytes=(\d+)-(\d*)$/.exec(c.req.header('Range') ?? '');
   const size = await bucket.size(key);
-  if (size === null) return c.json({error: 'Release not found'}, 404);
+  if (size === null) return lost();
   if (edge && c.req.method === 'GET' && size > 0) {
     const body = await bucket.read(key, 0, size - 1);
-    if (!body) return c.json({error: 'Release not found'}, 404);
-    const kept = await edge.put(whole, new Response(body as BodyInit, {headers: {...fixed, 'Content-Length': String(size)}})).then(() => true, () => false);
-    const hit = kept ? await fromEdge(c, edge, whole) : null;
+    if (!body) return lost();
+    const cached = await edge.put(whole, new Response(body as BodyInit, {headers: {...fixed, 'Content-Length': String(size)}})).then(() => true, () => false);
+    const hit = cached ? await fromEdge(c, edge, whole) : null;
     if (hit) return hit;
   }
   const start = m ? Number(m[1]) : 0, asked = m && m[2] ? Number(m[2]) : null;
@@ -95,8 +103,18 @@ async function release(c: Context<Vars>, bucket: Bucket, key: string, o: {type: 
   if (m) headers['Content-Range'] = `bytes ${start}-${end}/${size}`;
   // HEAD asks only how much there is; an empty file has nothing to read.
   const body = c.req.method === 'HEAD' || !length ? null : await bucket.read(key, start, end);
-  if (length && c.req.method !== 'HEAD' && !body) return c.json({error: 'Release not found'}, 404);
+  if (length && c.req.method !== 'HEAD' && !body) return lost();
   return new Response(body as BodyInit | null, {status: m ? 206 : 200, headers});
+}
+
+/**
+ * Blobs an account's rows name that R2 has no more (deleted there by hand, a `u/<user>/` folder or one file of it):
+ * their rows go, so its room counts them no more (by trigger) and blobs/missing names them again, and the next device
+ * that has one sends it. A row never says for good that a file is kept that is not. Taking away needs no lock: an
+ * upload under it only finds less in the room.
+ */
+export async function lost(db: Db, user: string, shas: string[]) {
+  if (shas.length) await db.delete(blob).where(and(eq(blob.userId, user), inArray(blob.sha256, shas)));
 }
 
 export function files(d: {db: Db; bucket: Bucket | null; quota?: number; budget?: Budget | null; edge?: Edge;
@@ -104,11 +122,13 @@ export function files(d: {db: Db; bucket: Bucket | null; quota?: number; budget?
   raw?: Bucket | null}, v1: Hono<Vars>, app: Hono<Vars>) {
   const db = d.db;
   /**
-   * With a budget, a release file is handed out only once the deploy recorded it (release_file): a digest or a
-   * name it never put is 404 without R2 being asked, so nobody can spend R2's reads asking for what is not there.
+   * A release file is handed out only from where the deploy recorded it (release_file): a digest or a name it never
+   * put is 404 without R2 being asked, so nobody can spend R2's reads asking for what is not there. A root's key names
+   * its version (releases.ts), so it is found by its digest; the desktop app's, by its pinned name (with no budget, as
+   * in development, at that name whether recorded or not). One deleted from R2 by hand takes its record with it.
    */
-  const recorded = async (key: string) =>
-    !d.budget || (await db.select({key: releaseFile.key}).from(releaseFile).where(eq(releaseFile.key, key))).length > 0;
+  const gone = async (key: string) => { await db.delete(releaseFile).where(eq(releaseFile.key, key)); };
+  const recorded = async (key: string) => (await db.select({key: releaseFile.key}).from(releaseFile).where(eq(releaseFile.key, key))).length > 0;
 
   // The OS is public: its canonical copy is the release, a root named by its digest and the desktop
   // app by its file's name, as this tree pins them (releases.ts); the deploy puts them here (mirror.ts).
@@ -117,13 +137,16 @@ export function files(d: {db: Db; bucket: Bucket | null; quota?: number; budget?
     if (!d.bucket) return noFiles(c);
     const sha = c.req.param('sha');
     if (!HEX.test(sha)) return c.json({error: 'Release not found'}, 404);
-    return release(c, d.bucket, rootKey(sha), {type: 'application/octet-stream', etag: sha}, d.edge, () => recorded(rootKey(sha)));
+    const key = async () => (await db.select({key: releaseFile.key}).from(releaseFile).where(eq(releaseFile.sha256, sha)) as {key: string}[])
+      .map((r) => r.key).find(isRoot) ?? null;
+    return release(c, d.bucket, `/v1/os/${sha}`, {type: 'application/octet-stream', etag: sha}, {key, gone}, d.edge);
   });
   app.on(['GET', 'HEAD'], '/v1/desktop/:file', async (c) => {
     if (!d.bucket) return noFiles(c);
     const p = desktopFile(c.req.param('file'));
     if (!p) return c.json({error: 'Release not found'}, 404);
-    return release(c, d.bucket, p.key, {type: p.type, etag: p.sha256, name: p.file}, d.edge, () => recorded(p.key));
+    const key = async () => (!d.budget || await recorded(p.key) ? p.key : null);
+    return release(c, d.bucket, p.path, {type: p.type, etag: p.sha256, name: p.file}, {key, gone}, d.edge);
   });
 
   v1.post('/blobs/missing', async (c) => {
@@ -207,6 +230,7 @@ export function files(d: {db: Db; bucket: Bucket | null; quota?: number; budget?
     // Counted once for all of them, then read from R2 uncounted.
     const from = d.raw && d.budget ? (await d.budget.read(db, take.length), d.raw) : bucket;
     const got = take.length ? await Promise.all(take.map(async (r: {sha: string}) => [r.sha, await from.get(blobKey(user, r.sha))] as const)) : [];
+    await lost(db, user, got.filter(([, b]) => !b).map(([sha]) => sha));
     return c.json(Object.fromEntries(got.filter(([, b]) => b).map(([sha, b]) => [sha, base64(b!)])));
   });
 
@@ -223,6 +247,8 @@ export function files(d: {db: Db; bucket: Bucket | null; quota?: number; budget?
     // HEAD is answered from the row: R2 is not asked.
     if (c.req.method === 'HEAD') return new Response(null, {headers: {...headers, 'Content-Length': String(known.bytes)}});
     const bytes = await d.bucket.get(blobKey(c.get('userId'), sha));
-    return bytes ? new Response(bytes as BodyInit, {headers}) : c.json({error: 'File not found on Remote'}, 404);
+    if (bytes) return new Response(bytes as BodyInit, {headers});
+    await lost(db, c.get('userId'), [sha]);
+    return c.json({error: 'File not found on Remote'}, 404);
   });
 }
