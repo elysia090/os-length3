@@ -1,4 +1,6 @@
 import {h} from '../../ui/dom.ts';
+import {still} from '../../ui/glide.ts';
+import {workAt} from '../../ui/camera.ts';
 import {t} from '../../i18n/i18n.ts';
 import type {Flow} from './agent.ts';
 
@@ -55,7 +57,8 @@ export class AgentTerm implements Flow {
       el.classList.remove('waiting');
       if (p.parentElement !== el) el.replaceChildren(p);
       p.textContent = text;
-      this.#out.scrollTop = this.#out.scrollHeight;
+      this.#toFoot();
+      this.#here();
     }};
   }
 
@@ -63,7 +66,7 @@ export class AgentTerm implements Flow {
   typing(): {put(text: string): void; sent(): void; done(): void} {
     this.element.classList.add('typing');
     return {
-      put: (text) => { this.#typed.textContent = text; },
+      put: (text) => { this.#typed.textContent = text; this.#here(); },
       sent: () => { this.#typed.textContent = ''; },
       done: () => { this.#typed.textContent = ''; this.element.classList.remove('typing'); },
     };
@@ -85,15 +88,31 @@ export class AgentTerm implements Flow {
       const out = output.endsWith('\n') || !output ? output : `${output}\n`;
       row.append(out, ...(status ? [h('span', {class: 'agent-exit'}, t('exit {n}', {n: String(status)}))] : []));
       this.element.classList.remove('running');
-      this.#out.scrollTop = this.#out.scrollHeight;
+      this.#toFoot();
+      this.#here();
     };
+  }
+
+  /** Its last line in sight, the lines above going up under its top as a terminal's do, gliding (at once where less
+   * motion is asked for): what it has done goes on being read as it scrolls, never a jump a line at a time. */
+  #toFoot() {
+    const out = this.#out, foot = out.scrollHeight - out.clientHeight;
+    if (foot - out.scrollTop < 1) return;
+    out.scrollTo({top: foot, behavior: still() ? 'instant' : 'smooth'});
   }
 
   #add(el: HTMLElement): HTMLElement {
     this.#out.append(el);
     while (this.#out.childElementCount > KEPT) this.#out.firstElementChild!.remove();
-    this.#out.scrollTop = this.#out.scrollHeight;
+    this.#toFoot();
+    this.#here();
     return el;
+  }
+
+  /** Its hand at its foot (a command typed, its words, what came in last): told up to the camera over it, which keeps
+   * that in sight and takes this for the work going on now. */
+  #here() {
+    if (this.element.isConnected) workAt(this.#line, {top: 0, height: this.#line.offsetHeight});
   }
 }
 

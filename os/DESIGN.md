@@ -2077,7 +2077,11 @@ empty), what is above it in its column in sight over it and the boxes beside
 it round it (one too low for that comes up till its foot is in sight); and
 the whole desk, at most half its size, in the middle across, its top at the
 eye too. Stepping back it zooms first and then goes; coming
-nearer it goes first and then zooms. Escape takes the keyboard out onto the
+nearer it goes first and then zooms. Going along at one place to what is out
+of sight from there (the next column, a box far down), it steps back on the
+way as far as the way is long and comes down onto it, as a head turns across
+a room (the Agent's camera, below, goes so too); what is in sight is gone to
+with a plain pan. Escape takes the keyboard out onto the
 desk, the finger on the box in hand; from a field that keeps Escape for itself
 (a search, a rename), that comes first. Ctrl and - step back, Ctrl and + come a
 place nearer, Ctrl and 0 to the standard, a pinch either way a place. At the
@@ -2437,13 +2441,30 @@ played: its words in ink, its code set off by a rule; each file it read or
 edited a quiet line (pressed, the file); each command typed after its own
 prompt, the green of the person's, key by key with a terminal's block caret,
 then what it printed, and how it ended where it ended otherwise than well. Its
-prompt line waits at its foot. The camera never steps back for it: it stays
-at the standard and goes sideways, as a pan, to the work going on now: the
-Agent's terminal as it is born (the person's a sliver at its left), then the
-file it begins to write in, whole in the middle, its terminal a sliver at the
-side, then back to its terminal as it runs something. What it is at work in is
-always whole in sight, and what else is at work peeks in at the edges, saying
-where it is; narrowing to fewer waits a moment, so a step ending and the next
+prompt line waits at its foot (its own lines, once more than its height,
+glide up under its top as a terminal's do, never a jump a line at a time).
+The camera works at the standard, where its words are read, and goes to the
+work going on now: the Agent's terminal as it is born (the person's a sliver
+at its left), then the file it begins to write in, whole in the middle, its
+terminal a sliver at the side, then back to its terminal as it runs
+something. Going to what is out of sight (the next column, a box far down),
+it steps back on the way as a head turns across a room, as far as the way is
+long (about a step back to the next column, further to one beyond), and comes
+down onto it: never a whip across the desk at the boxes' own size, half boxes
+going by. What is in sight already is gone to with a plain pan. The line the
+Agent's hand is on as it writes, or its eye as it reads, is always in sight:
+the camera stays while the line goes down the face, and as it comes near the
+face's foot the page is turned, the camera going on down until that line is
+some way under the face's top, room under it for what comes next (a file
+taller than the face is written on past its foot, never under it). The eye
+gets to a box before the hand starts in it: nothing is typed while the camera
+is on its way there, seen going by; and the camera, sent on somewhere else
+altogether while it goes, turns there from where it is, never a cut. (Before:
+it went sideways at the boxes' own size however far, README and its terminal
+a column apart crossed four times in as many seconds as half boxes; and a
+line written past the face's foot was written out of sight.) What it is at
+work in is always in sight, and what else is at work peeks in at the edges,
+saying where it is; narrowing to fewer waits a moment, so a step ending and the next
 starting is not a move away and back. A box it went to and still at work holds
 it a while (a command typed is seen run and answered before it goes on to the
 file begun meanwhile), going on once that is done or has been watched. A box

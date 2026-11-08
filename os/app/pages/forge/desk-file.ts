@@ -1,5 +1,6 @@
 import {h} from '../../ui/dom.ts';
 import {nudge} from '../../ui/glide.ts';
+import {workAt as tell} from '../../ui/camera.ts';
 import {errorText} from '../../host/errors.ts';
 import {t} from '../../i18n/i18n.ts';
 import {bytes} from '../../ui/dom.ts';
@@ -24,6 +25,20 @@ export interface DeskFile extends Laid {
   lineTop(line: number): number;
   /** Stop following the repo. */
   drop(): void;
+}
+
+/** Where `a` and `b` first differ (the shorter's length where one begins the other). */
+export function firstDiffering(a: string, b: string): number {
+  const n = Math.min(a.length, b.length);
+  let i = 0;
+  while (i < n && a.charCodeAt(i) === b.charCodeAt(i)) i++;
+  return i;
+}
+/** The line (1-based) `at` (an offset into `text`) is on. */
+export function lineOf(text: string, at: number): number {
+  let line = 1;
+  for (let i = text.indexOf('\n'); i >= 0 && i < at; i = text.indexOf('\n', i + 1)) line++;
+  return line;
 }
 
 /** `path` of `repo` as a box on the desk; `grew` hears it change height (the desk lays its boxes again). */
@@ -134,7 +149,21 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     const opening = openingWith(repo, path, c.text);
     number(opening);
     const e = editor = new Editor(opening, {repo, path, head, sheet, gutter, number, state, flow: element, seen: () => grew()});
-    editorOn(repo, path, {take: (text) => e.take(text), area: e.area, gaze: (line) => gaze(e.area, line)});
+    // Where the Agent is in it, told up to the desk (desk.ts WORK_AT), whose camera keeps that line in sight: its hand
+    // as it writes (the first place what it put differs from what was there), its eye as it reads.
+    const workAt = (line: number | null) => {
+      const lh = lineHeight(e.area);
+      tell(element, line === null ? null : {top: e.area.offsetTop + (line - 1) * lh, height: lh});
+    };
+    editorOn(repo, path, {
+      take: (text) => {
+        const was = e.area.value, ok = e.take(text);
+        if (ok && text !== was) workAt(lineOf(text, firstDiffering(was, text)));
+        return ok;
+      },
+      area: e.area,
+      gaze: (line) => { gaze(e.area, line); workAt(line); },
+    });
     // Written in on the line washed: it stays while the writing is on that line, its end following; a line broken or
     // written above it, it goes.
     e.area.addEventListener('input', () => {

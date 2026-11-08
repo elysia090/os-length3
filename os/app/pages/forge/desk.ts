@@ -1,8 +1,8 @@
 import {h} from '../../ui/dom.ts';
 import {still} from '../../ui/glide.ts';
-import {ownCamera} from '../../ui/camera.ts';
+import {ownCamera, WORK_AT, type WorkAt} from '../../ui/camera.ts';
 import {t} from '../../i18n/i18n.ts';
-import {bornOn, carried, kept, liftedOn, next, overAll, PAD, pulledOn, slots, STANDARD, standardOn, tabbed, WIDTH, wholeOf, type Slot, type View} from './desk-layout.ts';
+import {arc, bornOn, carried, kept, liftedOn, lineKept, next, overAll, PAD, pulledOn, slots, STANDARD, standardOn, tabbed, WIDTH, wholeOf, type Slot, type View} from './desk-layout.ts';
 
 // A repo's desk, Forge's center (DESIGN.md § Forge, the desk): what is open lies on a plane, each box as wide as 80
 // columns of code, its name outside its top-left corner, on dots. The Prompt's box is the first; files opened lie
@@ -32,6 +32,10 @@ const BACK: Record<Way, Way> = {up: 'down', down: 'up', left: 'right', right: 'l
 
 /** Whether `el` is on its way to its place now (its translate's transition running). */
 const gliding = (el: HTMLElement) => el.getAnimations().some((a) => a instanceof CSSTransition && a.transitionProperty === 'translate' && a.playState === 'running');
+
+/** Whether views `a` and `b` of a face `w` by `hgt` differ by no more than a box growing a few lines moves the camera. */
+const near = (a: View, b: View, w: number, hgt: number) =>
+  Math.abs(a.s - b.s) < .02 && Math.abs(a.x - b.x) < w / 6 && Math.abs(a.y - b.y) < hgt / 6;
 
 /** Where the camera stands: at its standard, a step back, over the whole desk (Escape goes round them in this order). */
 type Camera = 'standard' | 'pulled' | 'whole';
@@ -199,6 +203,8 @@ export class Desk {
   /** The box a press under way is on (the camera waits for it to be let go: its click takes it in hand). */
   #pressing: string | null = null;
   readonly #shut: (key: string) => void;
+  /** Where the Agent's hand or eye is in a box at work (its line, from the box's top, on the desk), told by the box. */
+  #work: {key: string; top: number; bottom: number} | null = null;
 
   readonly #changed: () => void;
 
@@ -251,6 +257,7 @@ export class Desk {
     this.element.addEventListener('pointerdown', (e) => { this.#pressing = (e.target as Element).closest<HTMLElement>('.desk-box')?.dataset.key ?? null; }, true);
     for (const end of ['pointerup', 'pointercancel'] as const) addEventListener(end, () => { setTimeout(() => { this.#pressing = null; }); }, true);
     new ResizeObserver(() => { this.#still = null; this.#relay(); }).observe(this.element);
+    this.#plane.addEventListener(WORK_AT, (e) => this.#workAt(e as CustomEvent<WorkAt | null>));
     this.element.addEventListener('scroll', () => {
       // On its way the camera is the plane's move, the desk's scroll at rest: what the page scrolls meanwhile (the caret
       // brought into view as a box far off is written in) is undone before it is drawn.
@@ -549,16 +556,41 @@ export class Desk {
     const boxes = keys.map((k) => this.#boxes.get(k)).filter((b): b is Box => !!b);
     if (!boxes.length) return null;
     const w = this.element.clientWidth, hgt = this.element.clientHeight;
-    const v = this.#view, last = boxes[boxes.length - 1];
+    // The line the Agent's hand or eye is on, where one of them has it: that box is the work going on now.
+    const work = this.#work && boxes.find((b) => b.key === this.#work!.key) ? this.#work : null;
+    const v = this.#view, last = (work && boxes.find((b) => b.key === work.key)) || boxes[boxes.length - 1];
+    const line = (u: View) => (work ? lineKept(u, last.slot.y + work.top, last.slot.y + work.bottom, hgt) : u);
     // All of them in sight already, it stays as they grow: a line written is not a move of the camera's; it goes once one
-    // would leave the face. (Not while it is on its way, as below.)
-    if (!this.#glide && v.s === STANDARD && boxes.every((b) => kept(v, b.slot, b.el.offsetHeight, w, hgt) === v)) return {...v};
+    // would leave the face, or the line at work comes near its foot. (Not while it is on its way, as below.)
+    if (!this.#glide && v.s === STANDARD && boxes.every((b) => kept(v, b.slot, b.el.offsetHeight, w, hgt) === v) && line(v) === v) return {...v};
     const all = overAll(boxes.map((b) => ({slot: b.slot, h: b.el.offsetHeight})), w, hgt);
     if (all) return all;
     // (Not while the camera is on its way: where it passes is not where it stays, and a glide told to end where it is
     // now goes back on itself.)
-    if (!this.#glide && v.s === 1 && this.#seen(last, v, w, hgt) >= .98) return {...v};
-    return standardOn(last.slot, last.el.offsetHeight, w, hgt);
+    const across = (u: View) => u.x + last.slot.x * u.s >= 0 && u.x + (last.slot.x + WIDTH) * u.s <= w;
+    if (!this.#glide && v.s === 1 && (work ? line(v) === v && across(v) : this.#seen(last, v, w, hgt) >= .98)) return {...v};
+    // A box taller than the face goes on down from its top at the eye as its line at work goes down it, a page turned
+    // as that line comes near the face's foot (lineKept), never under it.
+    const to = standardOn(last.slot, last.el.offsetHeight, w, hgt);
+    if (!work) return to;
+    // (Turned down already, it stays turned: the camera goes no further up than shows the line where it is.)
+    const here = !this.#glide && v.s === 1 && Math.abs(v.x - to.x) < .5 ? line({...to, y: Math.min(to.y, v.y)}) : line(to);
+    return here.y > to.y ? to : here;
+  }
+
+  /** The Agent's hand or eye gone to a line of a box (`e.detail`, from the box's own top), or gone from it (null): the
+   * camera over its work keeps that line in sight, turning on down as it nears the face's foot. */
+  #workAt(e: CustomEvent<WorkAt | null>) {
+    const box = (e.target as Element).closest<HTMLElement>('.desk-box'), key = box?.dataset.key;
+    if (!box || !key) return;
+    if (!e.detail) { if (this.#work?.key === key) this.#work = null; return; }
+    // Where the line lies in the box, on the desk: what tells it is somewhere inside the box (a file under its name).
+    const s = this.#view.s || 1, r = (e.target as Element).getBoundingClientRect(), b = box.getBoundingClientRect();
+    const top = (r.top - b.top) / s + e.detail.top;
+    this.#work = {key, top, bottom: top + e.detail.height};
+    if (!this.#framed?.includes(key) || this.#cam !== 'standard' || this.#glide || still()) return;
+    const to = this.#target(), v = this.#view;
+    if (to && (Math.abs(to.x - v.x) > .5 || Math.abs(to.y - v.y) > .5)) this.#go(to, true);
   }
 
   /** How much of `b` the camera at `v` shows in a face `w` by `hgt` (0 to 1). */
@@ -680,7 +712,10 @@ export class Desk {
     if (follow) this.#follow(follow);
     else {
       const to = this.#target();
-      if (to && this.#glide) this.#glide.to = to;
+      // (On its way, it goes on to where it now stays: a little further, as a box grew, in the same glide; somewhere else
+      // altogether, the work gone on to another box, a glide of its own from where it is, never a cut at the end.)
+      if (to && this.#glide && near(this.#glide.to, to, w, hgt)) this.#glide.to = to;
+      else if (to && this.#glide) this.#go(to, !still());
       // (Moved by what was done to the desk, a box taken off: the camera glides after the boxes as they close up. Over the
       // Agent's work as it grows, it glides too, where it has to go at all.)
       else if (to) {
@@ -756,13 +791,16 @@ export class Desk {
    * zooms before it goes.
    */
   #go(to: View, moving: boolean, how: Way2 = 'pan', ms: number | undefined = undefined, path?: {from: Point; to: Point}) {
-    ms ??= how === 'pan' ? 560 : how === 'slide' ? SLIDE_MS : how === 'lift' ? LIFT_MS : 520;
     cancelAnimationFrame(this.#moving);
     this.#moving = 0;
     this.#glide = null;
     const {element: el} = this;
     // Where it is now, as a move of the plane: a scroll taken back into it.
     const from = el.scrollLeft || el.scrollTop ? {s: 1, x: -el.scrollLeft, y: -el.scrollTop} : {...this.#view};
+    // Going along to what is out of sight (another column, a box far down), the camera steps back on the way and comes
+    // down onto it, as a head turns across a room: never a whip across the desk at the boxes' own size.
+    const long = how === 'pan' && !path && moving ? arc(from, to, el.clientWidth, el.clientHeight, ms ?? 560) : null;
+    ms ??= long ? long.ms : how === 'pan' ? 560 : how === 'slide' ? SLIDE_MS : how === 'lift' ? LIFT_MS : 520;
     const set = (v: View, done: boolean) => {
       this.#view = v;
       el.style.setProperty('--inv', String(1 / v.s));
@@ -801,6 +839,15 @@ export class Desk {
       // A glide gone after another is let go: two at once would draw the camera back and forth a frame at a time.
       if (this.#glide !== glide) return;
       const k = Math.max(0, Math.min(1, (now - t0) / ms));
+      // (Where it stays moved on the way, a box growing meanwhile, the arc ends there: what moved comes in with it.)
+      if (long) {
+        const e = glide.to, f = pan(k), v = long.at(f);
+        set(k >= 1 ? e : {s: v.s * Math.pow(e.s / to.s, f), x: v.x + (e.x - to.x) * f, y: v.y + (e.y - to.y) * f}, k >= 1);
+        veil.follow(this.#pointerAt);
+        if (k < 1) this.#moving = requestAnimationFrame(step);
+        else { this.#moving = 0; this.#glide = null; }
+        return;
+      }
       const [p, q] = how === 'slide' || how === 'lift' ? [slide(k), slide(k)] : how === 'in' ? [land(k / .45), land((k - .45) / .55)] : how === 'out' ? [land((k - .55) / .45), land(k / .55)] : [pan(k), pan(k)];
       const end = glide.to, m1 = mid(1), pt = {x: m1.x * end.s + end.x, y: m1.y * end.s + end.y};
       const s = from.s * Math.pow(end.s / from.s, q), m = mid(p);

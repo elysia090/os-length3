@@ -46,6 +46,16 @@ export function cameraIn(page: HTMLElement): PageCamera | null {
   return null;
 }
 
+/** The event what is in a box on the desk sends up as the Agent's hand or eye goes to one of its lines (`detail`: that
+ * line's top, from what sent it, and its height; null once it has gone from it): the desk's camera over the work keeps
+ * it in sight (forge/desk.ts). */
+export const WORK_AT = 'desk-work';
+export interface WorkAt { top: number; height: number }
+/** `el` telling the camera over it that the Agent's hand or eye is on its line `top` down, `height` high (none: gone). */
+export function workAt(el: HTMLElement, at: WorkAt | null) {
+  el.dispatchEvent(new CustomEvent(WORK_AT, {bubbles: true, detail: at}));
+}
+
 /** How far back the camera stands, as the desk's whole-desk camera at its furthest (desk-layout.ts WHOLE_MOST). */
 export const FAR = .5;
 /** Stepping back: quick off at the press, slowing as it gets there (the desk camera's land); coming down, the same. */

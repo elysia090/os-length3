@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {ABOVE_SEEN, bornOn, carried, EYE, FOOT, GAP, kept, KEPT, liftedOn, next, overAll, PAD, PULLED, pulledOn, slots, standardOn, tabbed, TOP, VGAP, WHOLE_MOST, WIDTH, wholeOf} from './desk-layout.ts';
+import {ABOVE_SEEN, arc, bornOn, carried, EYE, FOOT, FOOT_ROOM, GAP, kept, KEPT, liftedOn, lineKept, next, overAll, PAD, PULLED, pulledOn, slots, standardOn, tabbed, TOP, TURNED, VGAP, WHOLE_MOST, WIDTH, wholeOf} from './desk-layout.ts';
 
 // The desk's places and its camera (desk-layout.ts), as numbers.
 
@@ -132,4 +132,41 @@ test('carried out of sight, the camera goes only as far as keeps the box in; in 
   // Too tall for the face: its top kept a third of the way down, at most.
   const deep = kept(v, {x: 100, y: 1400}, 4000, 956, 780);
   assert.equal(deep.y + 1400 * .5, 780 / 3);
+});
+
+test('going to another column the camera steps back on the way, about a step back at its middle, and lands exactly', () => {
+  const w = 1040, hgt = 820, a = standardOn({x: 0, y: 100}, 300, w, hgt), b = standardOn({x: WIDTH + GAP, y: 100}, 300, w, hgt);
+  const r = arc(a, b, w, hgt, 560);
+  assert.ok(r);
+  const ss = Array.from({length: 41}, (_, i) => r.at(i / 40).s);
+  const least = Math.min(...ss);
+  assert.ok(least < .85 && least > PULLED - .05, `furthest back ${least}`);
+  // Furthest back half way, never nearer than the standard, and where it was asked at its end.
+  assert.ok(Math.abs(ss.indexOf(least) - 20) <= 1);
+  assert.ok(ss.every((s) => s <= 1 + 1e-9));
+  assert.deepEqual(r.at(1), b);
+  assert.ok(Math.abs(r.at(0).x - a.x) < 1e-6 && Math.abs(r.at(0).s - 1) < 1e-9);
+  assert.ok(r.ms > 560 && r.ms < 700, `${r.ms} ms`);
+  // Two columns over: further back, longer, never past the whole desk's furthest.
+  const c = arc(a, standardOn({x: 2 * (WIDTH + GAP), y: 100}, 300, w, hgt), w, hgt, 560)!;
+  const least2 = Math.min(...Array.from({length: 41}, (_, i) => c.at(i / 40).s));
+  assert.ok(least2 < least && least2 >= WHOLE_MOST, `${least2}`);
+  assert.ok(c.ms > r.ms && c.ms <= 900);
+});
+
+test('what is in sight from where the camera is (the next box down) is gone to with a plain pan, no step back', () => {
+  const w = 1040, hgt = 820, a = standardOn({x: 0, y: 100}, 300, w, hgt);
+  assert.equal(arc(a, standardOn({x: 0, y: 100 + 300 + VGAP}, 300, w, hgt), w, hgt, 560), null);
+});
+
+test('the line at work stays where it is until it nears the face\'s foot, then the page is turned to it', () => {
+  const hgt = 820, v = {s: 1, x: 0, y: 0};
+  assert.equal(lineKept(v, 300, 320, hgt), v);
+  assert.equal(lineKept(v, hgt - FOOT_ROOM - 20, hgt - FOOT_ROOM, hgt), v);
+  const t = lineKept(v, hgt - FOOT_ROOM, hgt - FOOT_ROOM + 20, hgt);
+  assert.notEqual(t, v);
+  assert.ok(Math.abs(t.y + (hgt - FOOT_ROOM) - TURNED * hgt) < 1e-9);
+  // Gone up past the face's top (a line far above), it is brought down to the same place.
+  const u = lineKept({s: 1, x: 0, y: -2000}, 100, 120, hgt);
+  assert.ok(Math.abs(u.y + 100 - TURNED * hgt) < 1e-9);
 });

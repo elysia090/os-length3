@@ -85,6 +85,19 @@ export function openingWith(repo: string, path: string, text: string): string {
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+/** The longest the hand waits for the eye to get to its box. */
+const EYE_WAIT = 1000;
+/**
+ * The camera over the work arrived where the lane just framed has it go (the desk's glide, said as an animation of the
+ * page's: forge/desk.ts #go), a frame after it is framed: the eye gets to the box before the hand starts in it, so
+ * nothing is typed on the way, seen going by.
+ */
+async function eyeThere(): Promise<void> {
+  // (Two frames, or a moment where none are drawn: a window out of sight draws none, and the hand goes on there.)
+  await Promise.race([new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))), sleep(60)]);
+  const going = document.getAnimations().filter((a) => a.id === 'desk-camera' && a.playState === 'running');
+  if (going.length) await Promise.race([Promise.all(going.map((a) => a.finished.catch(() => {}))), sleep(EYE_WAIT)]);
+}
 
 /** The character offset in `text` of `line` and `column` (1-based, `column` in characters as the core counts them). */
 function offsetOf(text: string, line: number, column: number): number {
@@ -191,7 +204,7 @@ export class Player {
       this.#queued--;
       this.#busy++;
       this.#work(lane, true);
-      try { await act(wait); } finally {
+      try { if (!still()) await eyeThere(); await act(wait); } finally {
         this.#busy--;
         this.#work(lane, false);
         const ended = this.#ended;

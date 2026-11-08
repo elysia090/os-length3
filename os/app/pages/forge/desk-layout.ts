@@ -134,6 +134,51 @@ export function overAll(boxes: {slot: Slot; h: number}[], w: number, hgt: number
   return {s: STANDARD, x: (w - (r - l)) / 2 - l, y: Math.max(PAD, (hgt - (b - t)) / 2) - t};
 }
 
+/**
+ * The camera's way from `a` to `b` over a face `w` by `hgt` when it is long: as a head turns to something across the
+ * room, it steps back on the way as far as the way is long and comes down onto what it goes to (van Wijk and Nuij's
+ * smooth zoom and pan: back about to where what it left and what it goes to are both nearly in sight at the middle of
+ * the way, the boxes passing read, never a whip across the desk at their own size, half boxes going by). `at(t)` is the
+ * view at `t` (0 to 1 along the way); `ms` how long it takes, a plain pan's `ms` for the shortest arc, longer as the way
+ * is. Null for a way short enough that what it goes to is in sight from where it sets off (a plain pan, no step back).
+ */
+export function arc(a: View, b: View, w: number, hgt: number, ms: number): {at(t: number): View; ms: number} | null {
+  const c0 = {x: (w / 2 - a.x) / a.s, y: (hgt / 2 - a.y) / a.s}, c1 = {x: (w / 2 - b.x) / b.s, y: (hgt / 2 - b.y) / b.s};
+  const w0 = w / a.s, w1 = w / b.s, dx = c1.x - c0.x, dy = c1.y - c0.y, d = Math.hypot(dx, dy);
+  if (d < ARC_FROM * Math.min(w, hgt) / Math.max(a.s, b.s)) return null;
+  const r2 = ARC_RHO ** 2, r4 = r2 * r2;
+  const b0 = (w1 * w1 - w0 * w0 + r4 * d * d) / (2 * w0 * r2 * d), b1 = (w1 * w1 - w0 * w0 - r4 * d * d) / (2 * w1 * r2 * d);
+  const q0 = Math.log(Math.sqrt(b0 * b0 + 1) - b0), q1 = Math.log(Math.sqrt(b1 * b1 + 1) - b1), S = (q1 - q0) / ARC_RHO;
+  const at = (t: number): View => {
+    if (t >= 1) return b;
+    const p = t * S, u = (w0 / (r2 * d)) * (Math.cosh(q0) * Math.tanh(ARC_RHO * p + q0) - Math.sinh(q0));
+    const s = w / ((w0 * Math.cosh(q0)) / Math.cosh(ARC_RHO * p + q0)), cx = c0.x + u * dx, cy = c0.y + u * dy;
+    return {s, x: w / 2 - cx * s, y: hgt / 2 - cy * s};
+  };
+  return {at, ms: Math.round(Math.min(ARC_MOST, ms * Math.max(1, Math.sqrt(S / ARC_S))))};
+}
+/** How far apart (a part of the face's shorter side) where the camera is and where it goes are before it arcs. */
+const ARC_FROM = .5;
+/** How far back an arc goes for its length (van Wijk and Nuij's ρ, as d3's zoom): about a step back (PULLED) to the
+ * next column, as Ctrl's step back over two boxes side by side. */
+const ARC_RHO = Math.SQRT2;
+/** An arc's length (in its own measure) that takes a plain pan's time; longer ones take longer, at most ARC_MOST. */
+const ARC_S = .8;
+const ARC_MOST = 900;
+
+/** The line at work in a box (`top` to `bottom`, on the desk), as the camera at `v` over a face `hgt` high should show
+ * it: `v` while it is in sight and above the face's foot by FOOT_ROOM; else `v` moved down (or up) as a page is turned,
+ * the line then at TURNED of the face, room under it for what comes next. */
+export function lineKept(v: View, top: number, bottom: number, hgt: number): View {
+  const t = v.y + top * v.s, b = v.y + bottom * v.s;
+  if (t >= KEPT && b <= hgt - FOOT_ROOM) return v;
+  return {...v, y: v.y + (TURNED * hgt - t)};
+}
+/** How near the face's foot the line at work comes before the camera goes on down (three grid steps). */
+export const FOOT_ROOM = 3 * GRID;
+/** Where on the face (from its top, a part of its height) the line at work is put when the camera goes on down to it. */
+export const TURNED = .4;
+
 /** The box after `from` (before it, `back`) as Tab goes: down each column, then the next column's top, round again. */
 export function tabbed(cols: readonly (readonly string[])[], from: string, back = false): string | null {
   const all = cols.flat();
