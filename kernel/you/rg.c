@@ -838,10 +838,25 @@ static void replaced(const u8 *t, u64 ms, u64 me) {
   }
 }
 
+/* A file named (ripgrep maps it, BinaryDetection::convert) whose first 64 KiB hold no NUL: a line about to be printed
+ * that holds one is said to be binary in its place (where it is), and nothing more of the file is printed. */
+static int convert, bin_hit;
+static u64 first_nul(const u8 *t, u64 n);
 /* The line t[ls..le) printed as one that holds a match (`sep` ':') or one around it ('-'). */
 static void print_line(const u8 *t, u64 ls, u64 le, u64 lnum, u8 sep) {
   head();
   separate(lnum);
+  if (convert) {
+    u64 z = first_nul(t + ls, le - ls);
+    if (z < le - ls) {
+      if (o.filename && !o.heading) { put_path(); S(": "); }
+      S("binary file matches (found \"\\0\" byte around offset ");
+      putn(ls + z);
+      S(")\n");
+      bin_hit = 1;
+      return;
+    }
+  }
   printed_any = 1, last_printed = lnum;
   u64 x = ls, last = ~0ull, ms, me;
   if (sep == ':' && (o.only || o.vimgrep || o.column)) {
@@ -927,24 +942,59 @@ static u64 first_nul(const u8 *t, u64 n) {
   return n;
 }
 /* After a selected line: up to o.after lines from t[c..] that come before `to`, numbered on from `num`. */
-static u64 after_lines(const u8 *t, u64 n, u64 c, u64 to, u64 num, u32 *left) {
-  for (; *left && c < to && c < n; --*left) {
+static u64 after_lines(const u8 *t, u64 n, u64 c, u64 to, u64 *num, u32 *left) {
+  for (; *left && c < to && c < n && !bin_hit; --*left) {
     u64 ce = line_end(t, n, c);
-    print_line(t, c, ce, num++, '-');
+    print_line(t, c, ce, (*num)++, '-');
     c = ce + 1;
   }
   return c;
 }
 
+/*
+ * The text a read at a time, as ripgrep reads a file: 64 KiB (twice as much where a line is longer than all it holds),
+ * each read after the last line it had whole, its whole lines searched as it is made (grep-searcher's LineBuffer). In
+ * a file the walk came to (`quit`), a read that holds a NUL is where it stops: nothing that read holds is searched
+ * (BinaryDetection::quit). Searched a read at a time here too: what was just looked over for a NUL is searched while it
+ * is still in the cache, not read again from memory after a pass over the whole file. The next read's end (after its
+ * last newline, or the file's end), or, at a read that holds a NUL, `nul` set and the end of what was searched.
+ */
+struct reads { u64 cap, got, whole, nul; int quit; };
+static u64 next_read(const u8 *t, u64 n, struct reads *r) {
+  for (;;) {
+    if (r->got - r->whole >= r->cap) r->cap *= 2;
+    u64 len = r->cap - (r->got - r->whole);
+    if (len > n - r->got) len = n - r->got;
+    if (!len) return r->whole = n;
+    u64 from = r->got;
+    r->got += len;
+    if (r->quit) {
+      u64 z = first_nul(t + from, len);
+      if (z < len) { r->nul = from + z; return r->whole; }
+    }
+    u64 e = r->got;
+    while (e > from && t[e - 1] != '\n') e--;
+    if (e > from) return r->whole = e;
+  }
+}
+
 /* t[0..n) searched; `named`: a file named, not one the walk came to. Whether a line was selected. */
 static int search_text(const u8 *t, u64 n, int named) {
   text_n = n, cap_at = ~0ull;
-  u64 nul = o.text ? n : first_nul(t, n);
   heading_said = 0, last_printed = 0;
+  /* A NUL, as ripgrep looks for one: in a file the walk came to, read by read (next_read: it stops there); in one named
+   * (which it maps), in its first 64 KiB; with --binary, anywhere. Those two are said to hold a match, or not. */
+  int quit = !named && !o.text && !o.binary;
+  convert = !quit && !o.text, bin_hit = 0;
+  u64 look = named && n > 65536 ? 65536 : n, nul = o.text || quit ? n : first_nul(t, look);
+  if (nul == look) nul = n;
   grep_text(&g, t, n);
   g.spans = spans;
-  if (nul < n) { /* a binary file: left out where the walk came to it; named, said to hold a match, or not */
-    if ((!named && !o.binary) || next_match(t, n) >= n) return 0;
+  if (nul < n) {
+    if (next_match(t, n) >= n) return 0;
+    /* (With lines before a match asked for, ripgrep says nothing of such a file and finds nothing in it; counted, or
+     * only named, it is as any.) */
+    if (o.before && !o.count && !o.count_matches && !o.with && !o.without && !o.quiet) return 0;
     if (o.quiet) leave(0);
     if (o.with) { put_path(); o.nul ? put("\0", 1) : S("\n"); return 1; }
     if (o.without) return 1;
@@ -955,46 +1005,73 @@ static int search_text(const u8 *t, u64 n, int named) {
     S(")\n");
     return 1;
   }
-counted:
-  grep_text(&g, t, n);
+counted:;
+  struct reads rd = {65536, 0, 0, n, quit && nul == n};
+  u64 upto = next_read(t, n, &rd);
+  grep_text(&g, t, upto);
   g.spans = spans;
   nm = 0;
-  if (o.invert) nm = next_match(t, n);
+  if (o.invert) nm = next_match(t, upto);
   u64 lnum = 1, lat = 0, count = 0, matches = 0, ctx = 0, ctx_num = 0;
   int numbered = o.number || o.after || o.before || o.vimgrep;
   u32 left = 0;
-  for (u64 at = 0; at < n;) {
-    u64 ls = next_selected(t, n, at);
-    if (ls >= n) break;
+  for (u64 at = 0;;) {
+    if (at >= upto) {
+      /* This read's lines done: those after the last selected that are its, its lines numbered to its end (while it is
+       * still in the cache), and the next read, unless this was the last or the next holds a NUL. */
+      if (left) ctx = after_lines(t, upto, ctx, upto, &ctx_num, &left);
+      if (upto == n || rd.nul < n) break;
+      if (numbered) line_no(t, upto, &lnum, &lat);
+      u64 was = upto;
+      upto = next_read(t, n, &rd);
+      if (upto == was) break;
+      grep_upto(&g, upto);
+      if (o.invert && nm >= was) nm = next_match(t, upto); /* (none in the read before: whether one is in this) */
+      continue;
+    }
+    u64 ls = next_selected(t, upto, at);
+    if (ls >= upto) { at = upto; continue; }
     /* Its number, where anything says it (-n, or the lines around it, numbered on from it): counting every newline
      * before it is a pass over the text, which -c, -l or a line printed bare does not need. */
-    u64 le = line_end(t, n, ls), num = numbered ? line_no(t, ls, &lnum, &lat) : 0;
+    u64 le = line_end(t, upto, ls), num = numbered ? line_no(t, ls, &lnum, &lat) : 0;
     if (o.quiet) leave(0);
     count++;
     if (o.count_matches) for (u64 x = ls, last = ~0ull, ms, me; grep_span(&g, ls, le, &x, &last, &ms, &me);) matches++;
     if (o.with || o.without) break;
     if (!o.count && !o.count_matches) {
       /* What is around it: after the last one selected (until this), and before this one (from the last printed on). */
-      if (left) after_lines(t, n, ctx, ls, ctx_num, &left);
+      if (left) ctx = after_lines(t, upto, ctx, ls, &ctx_num, &left);
       if (o.before) {
         u64 c = ls, k = 0;
         while (k < o.before && c > 0 && num - k - 1 > last_printed) c = line_start(t, 0, c - 1), k++;
-        for (u64 i = 0; c < ls; i++) { u64 ce = line_end(t, n, c); print_line(t, c, ce, num - k + i, '-'); c = ce + 1; }
+        for (u64 i = 0; c < ls && !bin_hit; i++) { u64 ce = line_end(t, upto, c); print_line(t, c, ce, num - k + i, '-'); c = ce + 1; }
       }
-      print_line(t, ls, le, num, ':');
+      if (!bin_hit) print_line(t, ls, le, num, ':');
       left = o.after, ctx = le + 1, ctx_num = num + 1;
+      if (bin_hit) return 1; /* (said binary where it was: nothing more of it printed) */
     }
-    at = le < n ? le + 1 : n;
+    at = le < upto ? le + 1 : upto;
     if (o.have_max_count && count >= o.max_count) break;
   }
-  if (left) after_lines(t, n, ctx, n, ctx_num, &left);
+  if (left) after_lines(t, upto, ctx, upto, &ctx_num, &left);
+  /* Stopped at a read that held a NUL: with nothing found before it, the file is passed over and nothing said of it;
+   * with something, what was found stands (its count not said), and where it stopped is said, as ripgrep says it. */
+  int stopped = rd.nul < n;
+  if (bin_hit) return 1;
+  if (stopped && (!count || o.count || o.count_matches)) return 0; /* (a count not said: nothing found, as it ends) */
   if (count && (o.after || o.before) && !o.heading) last_ctx_file = 1;
   if (o.with && count) { put_path(); o.nul ? put("\0", 1) : S("\n"); }
   if (o.without && !count) { put_path(); o.nul ? put("\0", 1) : S("\n"); }
-  if ((o.count || o.count_matches) && (count || o.include_zero)) {
+  if ((o.count || o.count_matches) && (count || o.include_zero) && !stopped) {
     if (o.filename) { put_path(); o.nul ? put("\0", 1) : S(":"); }
     putn(o.count_matches ? matches : count);
     S("\n");
+  }
+  if (stopped && !o.count && !o.count_matches && !o.with) {
+    if (o.filename) { put_path(); S(": "); }
+    S("WARNING: stopped searching binary file after match (found \"\\0\" byte around offset ");
+    putn(rd.nul);
+    S(")\n");
   }
   return count > 0;
 }

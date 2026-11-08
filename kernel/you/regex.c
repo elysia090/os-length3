@@ -784,32 +784,40 @@ static void required(struct re *r, const u8 *p, u32 n, int ci) {
     else if (p[i] == '|' && !depth) return;
     i = p[i] == '\\' || p[i] == '[' || p[i] == '{' ? skip_token(p, n, i) : i + 1;
   }
+  /* (A run's characters as they are matched: a character escaped that stands for itself is itself, one byte.) */
+  u8 *cur = grab(n + 1), *lit = grab(n + 1);
   u32 best = 0, bestat = 0, run = 0, at = 0;
   int plain_only = 1;
   depth = 0;
   for (u32 i = from; i <= n;) {
     u8 c = i < n ? p[i] : 0;
-    int meta = c == '\\' || c == '.' || c == '[' || c == '(' || c == ')' || c == '|' || c == '*' || c == '+' || c == '?' || c == '{'
-      || c == '^' || c == '$';
+    /* \. \- \( \\ and the rest of ASCII's punctuation escaped: the character (-F's patterns are all such); not \< or
+     * \>, a word's edges. */
+    u8 e = i + 1 < n ? p[i + 1] : 0;
+    int escaped = c == '\\' && e >= ' ' && e < 0x7f && !((e | 0x20) >= 'a' && (e | 0x20) <= 'z') && !(e >= '0' && e <= '9')
+      && e != '_' && e != '<' && e != '>';
+    if (escaped) c = e;
+    int meta = !escaped && (c == '\\' || c == '.' || c == '[' || c == '(' || c == ')' || c == '|' || c == '*' || c == '+' || c == '?'
+      || c == '{' || c == '^' || c == '$');
     int wide = i < n && ci && (c >= 0x80 || case_wide(c));
-    if (i < n && !depth && !meta && !wide) { if (!run) at = i; run++; i++; continue; }
+    if (i < n && !depth && !meta && !wide) { if (!run) at = i; cur[run++] = c; i += escaped ? 2 : 1; continue; }
     if (i < n) plain_only = 0;
-    if (run && (c == '*' || c == '?' || c == '{')) run--; /* its last character repeated, or not there at all */
-    if (run > best) best = run, bestat = at;
+    if (run && !escaped && (c == '*' || c == '?' || c == '{')) run--; /* its last character repeated, or not there at all */
+    if (run > best) best = run, bestat = at, memcpy(lit, cur, run);
     run = 0;
     if (i >= n) break;
-    if (c == '(') depth++;
-    else if (c == ')' && depth) depth--;
-    i = meta ? skip_token(p, n, i) : i + 1;
+    if (!escaped && c == '(') depth++;
+    else if (!escaped && c == ')' && depth) depth--;
+    i = escaped ? i + 2 : meta ? skip_token(p, n, i) : i + 1;
   }
   if (!best) return;
   r->lit = grab(best);
   r->litn = best;
   for (u32 i = 0; i < best; i++) {
-    u8 c = p[bestat + i];
+    u8 c = lit[i];
     r->lit[i] = ci && c >= 'A' && c <= 'Z' ? c | 0x20 : c;
   }
-  r->only_lit = plain_only && best == n - from;
+  r->only_lit = plain_only;
   r->lit_first = bestat == from;
   r->icase = ci;
   /* Its two rarest bytes (in text as code is, either case where case is aside): where it is looked for. */

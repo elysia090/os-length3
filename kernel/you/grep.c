@@ -43,6 +43,8 @@ static void grep_init(struct grep *g, struct re *r) {
   if (!r->only_lit) g->lines = dfa_new(r, D_LINES);
   if (!r->only_lit && (r->lit_first || g->firsts)) g->at_dfa = dfa_new(r, D_ANCH);
 }
+/* The text searched goes on to n (a read more of it, rg.c: what was searched stays as it is). */
+static void grep_upto(struct grep *g, u64 n) { g->n = n; }
 static void grep_text(struct grep *g, const u8 *t, u64 n) {
   g->t = t, g->n = n, g->at = 0, g->nfound = g->took = 0, g->cands = 0;
   g->lanes = !g->r->litn && !g->firsts, g->passed = g->verified = g->tried = 0;

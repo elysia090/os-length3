@@ -166,6 +166,33 @@ same --max-depth 0 needle
 # Links followed (-L): to a file, and to a directory above, said to be a loop.
 apart -L -l needle
 apart --follow --files links
+# Binary files as ripgrep reads them. One the walk comes to is read 64 KiB at a time, each read after the last line it
+# had whole; a read that holds a NUL is not searched, and what was found before it stands, said to have stopped there
+# (its count not said: -c finds nothing in it). One named is looked over in its first 64 KiB, and after that each line
+# about to be printed: one with a NUL is said to be binary in its place, and nothing more printed.
+mkdir -p "$t/b" && cd "$t/b"
+lines() { awk -v n="$2" 'BEGIN { for (i = 0; i < n; i++) printf "line %05d %s\n", i, (i % 97 == 5 ? "needle" : "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx") }' > "$1"; }
+nul_at() { printf '\000' | dd of="$1" bs=1 seek="$2" conv=notrunc 2> /dev/null; }
+lines early.txt 3000 && nul_at early.txt 300
+lines second.txt 3000 && nul_at second.txt 100000
+lines third.txt 3000 && nul_at third.txt 150000
+lines clean.txt 3000
+lines named.txt 3000 && nul_at named.txt 120000
+same needle
+same -n needle
+same -c needle
+same -c needle early.txt second.txt
+same -l needle
+same -q needle
+same -o needle
+same --heading needle
+same --files-without-match needle
+same needle named.txt
+same -n needle second.txt
+same -B1 -n needle early.txt
+same -A1 needle early.txt
+same -c -B1 needle early.txt
+cd "$t/w"
 # Standard input searched when it is a pipe and no path is named.
 n=$((n + 1))
 want=$(printf 'a needle\nb\n' | "$rg" needle; echo "status $?")
