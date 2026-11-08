@@ -7,7 +7,7 @@
  *   otter -f NAME...       whatis: one line each, `NAME (1) - what it is`
  *   otter -k WORD...       apropos: the root's programs whose name or words hold a WORD, case aside, one line each
  *
- * The marks are the table's (/etc/length3/commands, which os/scripts/commands.ts writes from what each command did
+ * The marks are the table's (/etc/length3/commands, which scripts/commands.ts writes from what each command did
  * under the browser's kernel and natively, never from what is hoped): ✓ runs here, ▢ draws on a screen, ✗ in the root
  * but not yet running here (and why), — not in the root (and what to reach for instead). One that draws on a screen
  * runs where the Prompt is a terminal ($TERM other than dumb: the app's on the web, a terminal over SSH), and is

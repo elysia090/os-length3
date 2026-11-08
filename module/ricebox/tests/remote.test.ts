@@ -12,7 +12,7 @@ import {have} from './busybox.ts';
 // isolated page runs. Here a thread that never makes a call cannot hold
 // the others, and one killed while it computes ends at once.
 
-const stage = new URL('../../../os/target/userland/', import.meta.url);
+const stage = new URL('../../../target/userland/', import.meta.url);
 
 async function shell(script: string, {input = null, said = null}: {input?: string | null; said?: [number, string][] | null} = {}): Promise<{status: number; out: string; ms: number}> {
   const vfs = new Vfs();

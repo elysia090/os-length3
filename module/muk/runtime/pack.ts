@@ -1,4 +1,4 @@
-// A root from packs (os/scripts/l3.ts): its directories and links at
+// A root from packs (scripts/l3.ts): its directories and links at
 // once, each file's bytes only when a program first reads it. The kernel
 // reads inside a system call, where nothing can wait, so the bytes are
 // fetched synchronously: `range(pack, at, len)` returns them from the pack
@@ -12,7 +12,7 @@
 import {Dir, File, Link, type Vfs} from '../../ricebox/runtime/fs.ts';
 import {checkedRange, type Sha256} from './table.ts';
 
-/** l3's index, as far as mounting it reads it (os/app/prompt/userland.ts Index has all of it). */
+/** l3's index, as far as mounting it reads it (src/app/prompt/userland.ts Index has all of it). */
 export interface Packed {
   codec: string;
   /** Each pack: its name (its table's digest), the package whose files it holds (or local), its length. */

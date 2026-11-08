@@ -1,4 +1,4 @@
-// A kernel running BusyBox as the Prompt has it (os/scripts/userland.sh
+// A kernel running BusyBox as the Prompt has it (scripts/userland.sh
 // stages it), for tests: `have` says whether it is staged; `shell(script)`
 // starts `sh -c script` with what is typed held in `input` and what is
 // written collected in `out()`; on an `interactive` console (a terminal, as
@@ -9,7 +9,7 @@ import {Kernel} from '../runtime/process.ts';
 import type {Termios} from '../runtime/parts.ts';
 import {loadTranslator} from '../../sods/runtime/translator.ts';
 
-const stage = new URL('../../../os/target/userland/', import.meta.url);
+const stage = new URL('../../../target/userland/', import.meta.url);
 export const have = ['busybox', 'busybox.wasm', 'xlat.wasm'].every((f) => existsSync(new URL(f, stage)));
 
 /** A shell run: its kernel, what is to be typed, how its terminal was set at each change, and what it wrote. */

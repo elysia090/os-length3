@@ -1,5 +1,5 @@
 /*
- * The Unicode that regex.c knows past ASCII, as ripgrep 15.2.0 has it: made by os/scripts/you-unicode.ts, which asks
+ * The Unicode that regex.c knows past ASCII, as ripgrep 15.2.0 has it: made by scripts/you-unicode.ts, which asks
  * ripgrep itself (not edited by hand). Numbers seven bits a byte, the high bit saying more follows.
  *
  * U_WORD, U_DIGIT, U_SPACE: what \w, \d and \s take past ASCII, as ranges: each the gap from the end of the one before

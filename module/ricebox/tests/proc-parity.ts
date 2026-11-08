@@ -5,7 +5,7 @@
 // and under xlat (runtime/run.ts), compared on stdout and exit status,
 // with the time each took and when its first line came (a background job
 // that holds its shell shows there). Prints a Markdown table; exits 1 if
-// any case differs. BusyBox is the one the Prompt has (os/scripts/userland.sh
+// any case differs. BusyBox is the one the Prompt has (scripts/userland.sh
 // stages it).
 import {spawn} from 'node:child_process';
 import {existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
@@ -14,7 +14,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
-const BUSYBOX = fileURLToPath(new URL('../../../os/target/userland/busybox', import.meta.url));
+const BUSYBOX = fileURLToPath(new URL('../../../target/userland/busybox', import.meta.url));
 const RUN = join(here, '..', 'runtime', 'run.ts');
 
 /** A case: what runs, and whether it is slow (left out unless PARITY_SLOW). */
@@ -60,7 +60,7 @@ export async function runCase(c: Case, bin: string): Promise<{native: Ran; xlat:
 
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 if (isMain) {
-  if (!existsSync(BUSYBOX)) { console.error(`no BusyBox at ${BUSYBOX} (os/scripts/userland.sh stages it)`); process.exit(2); }
+  if (!existsSync(BUSYBOX)) { console.error(`no BusyBox at ${BUSYBOX} (scripts/userland.sh stages it)`); process.exit(2); }
   const args = process.argv.slice(2);
   let table = null;
   if (args[0] === '--table') { args.shift(); table = args.shift(); }

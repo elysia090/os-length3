@@ -26,7 +26,7 @@ test('the translator decodes what zstd encoded, at every level and size, as the 
 const sha256 = (b: Uint8Array): Uint8Array => new Uint8Array(createHash('sha256').update(b).digest());
 const unzstd = (bytes: Uint8Array): Uint8Array => new Uint8Array(zstdDecompressSync(bytes));
 
-/** A pack of these files ({text, raw?}), as os/scripts/l3.ts makes one: {pack, name, places} (each file's {size, at, len, raw?}). */
+/** A pack of these files ({text, raw?}), as scripts/l3.ts makes one: {pack, name, places} (each file's {size, at, len, raw?}). */
 /** The read that failed as a disk's bad block does (EIO). */
 const eio = (e: unknown): boolean => (e as {errno?: number}).errno === 5;
 

@@ -1,12 +1,12 @@
 name: Desktop, l3 and xlat
 
-# The product: the app (os), the l3 command and its core, and the
+# The product: the app (src), the l3 command and its core, and the
 # x86-64 → wasm translator the Prompt runs on.
 on:
   # A change is tested once: in its pull request, on what merging it would make (refs/pull/N/merge), so
   # main is not tested again when it lands. A branch without a pull request runs by hand.
   pull_request:
-    paths: ['os/**', 'module/sods/**', 'module/ricebox/**', 'module/muk/**', 'module/you/**', 'module/otter/**', 'module/lib/**', '.github/workflows/desktop.yml']
+    paths: ['src/**', 'module/**', 'root/**', 'scripts/**', 'tests/**', 'public/**', 'package.json', 'package-lock.json', 'Cargo.toml', 'Cargo.lock', '.cargo/**', 'tsconfig.json', 'vite.config.ts', 'index.html', 'wrangler.toml', 'RELEASE', '.github/workflows/desktop.yml']
   workflow_dispatch:
 
 # Nothing here writes: the token reads the repository and nothing else. Every action is pinned
@@ -45,11 +45,11 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=core-wasm-${{ hashFiles('os/core/src/**', 'os/core/web/src/**', 'os/core/Cargo.toml', 'os/core/web/Cargo.toml', 'os/Cargo.toml', 'os/Cargo.lock', 'os/shared/templates.json', 'os/scripts/core-wasm.ts') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=core-wasm-${{ hashFiles('src/core/src/**', 'src/core/web/src/**', 'src/core/Cargo.toml', 'src/core/web/Cargo.toml', 'Cargo.toml', 'Cargo.lock', 'src/shared/templates.json', 'scripts/core-wasm.ts') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: os/target/wasm32-wasip1/web/length3_core_web.wasm
+          path: target/wasm32-wasip1/web/length3_core_web.wasm
           key: ${{ steps.key.outputs.key }}
           lookup-only: true
       - if: steps.kept.outputs.cache-hit != 'true'
@@ -57,16 +57,16 @@ jobs:
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          workspaces: os -> target
-          shared-key: core-wasm-${{ hashFiles('os/Cargo.toml') }}
+          workspaces: . -> target
+          shared-key: core-wasm-${{ hashFiles('Cargo.toml') }}
           cache-on-failure: true
       - if: steps.kept.outputs.cache-hit != 'true'
-        working-directory: os
+        working-directory: .
         run: cargo build --locked --profile web -p length3-core-web --target wasm32-wasip1
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: os/target/wasm32-wasip1/web/length3_core_web.wasm
+          path: target/wasm32-wasip1/web/length3_core_web.wasm
           key: ${{ steps.key.outputs.key }}
 
   # l3 for the browser: made from the root this tree pins (core/src/root/pins.rs, for RELEASE) with this tree's
@@ -82,11 +82,11 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=l3-web-${{ hashFiles('os/RELEASE', 'os/core/src/root/pins.rs', 'os/remote/releases.ts', 'os/scripts/l3.sh', 'os/scripts/l3.ts', 'os/scripts/l3-tree.ts', 'os/scripts/root-file.ts', 'os/scripts/l3-parity.ts', 'module/muk/runtime/table.ts', 'module/sods/Cargo.toml', 'module/sods/Cargo.lock', 'module/sods/src/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=l3-web-${{ hashFiles('RELEASE', 'src/core/src/root/pins.rs', 'src/remote/releases.ts', 'scripts/l3.sh', 'scripts/l3.ts', 'scripts/l3-tree.ts', 'scripts/root-file.ts', 'scripts/l3-parity.ts', 'module/muk/runtime/table.ts', 'module/sods/Cargo.toml', 'module/sods/Cargo.lock', 'module/sods/src/**') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: os/public/l3
+          path: public/l3
           key: ${{ steps.key.outputs.key }}
           lookup-only: true
       - if: steps.kept.outputs.cache-hit != 'true'
@@ -94,7 +94,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: os/package-lock.json
+          cache-dependency-path: package-lock.json
       - if: steps.kept.outputs.cache-hit != 'true'
         run: rustup target add wasm32-unknown-unknown
       - if: steps.kept.outputs.cache-hit != 'true'
@@ -105,7 +105,7 @@ jobs:
           cache-on-failure: true
       - name: l3 for the browser, made from the root this tree pins, and the same as it
         if: steps.kept.outputs.cache-hit != 'true'
-        working-directory: os
+        working-directory: .
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -116,12 +116,12 @@ jobs:
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: os/public/l3
+          path: public/l3
           key: ${{ steps.key.outputs.key }}
 
   # What `help` says runs in a Prompt is what does: every command of issue #80 tried as a line of sh under the browser's
   # kernel (from l3 for the browser, as the l3-web job made it) and natively in the root this tree pins, and the table
-  # the root ships (os/root/etc/length3/commands) checked against what was seen.
+  # the root ships (root/etc/length3/commands) checked against what was seen.
   commands:
     needs: l3-web
     runs-on: ubuntu-24.04
@@ -134,11 +134,11 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: os/package-lock.json
+          cache-dependency-path: package-lock.json
       - name: l3 for the browser, as the l3-web job made it
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: os/public/l3
+          path: public/l3
           key: ${{ needs.l3-web.outputs.key }}
           fail-on-cache-miss: true
       # A Prompt's own /, /dev, /proc and /tmp, as bwrap makes them: a user namespace, which Ubuntu's AppArmor holds back.
@@ -146,7 +146,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends bubblewrap
           if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; fi
       - name: Every command tried, and the table checked against what was seen
-        working-directory: os
+        working-directory: .
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -167,8 +167,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: os/package-lock.json
-      - working-directory: os
+          cache-dependency-path: package-lock.json
+      - working-directory: .
         run: |
           npm ci
           npx tsc --noEmit
@@ -191,20 +191,20 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: os/package-lock.json
+          cache-dependency-path: package-lock.json
       - name: The core for the browser, as the core job made it
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: os/target/wasm32-wasip1/web/length3_core_web.wasm
+          path: target/wasm32-wasip1/web/length3_core_web.wasm
           key: ${{ needs.core.outputs.key }}
           fail-on-cache-miss: true
       # Newer than the sources the checkout just wrote, so nothing builds it again (scripts/core-wasm.ts goes by time).
-      - run: touch os/target/wasm32-wasip1/web/length3_core_web.wasm
+      - run: touch target/wasm32-wasip1/web/length3_core_web.wasm
       - name: Packages
-        working-directory: os
+        working-directory: .
         run: npm ci
       - name: Tests
-        working-directory: os
+        working-directory: .
         env:
           NODE_OPTIONS: --test-shard=${{ matrix.shard }}/4
         run: npm test
@@ -220,17 +220,17 @@ jobs:
       - run: rustup target add wasm32-wasip1
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          workspaces: os -> target
-          shared-key: lint-${{ hashFiles('os/Cargo.toml') }}
+          workspaces: . -> target
+          shared-key: lint-${{ hashFiles('Cargo.toml') }}
           cache-on-failure: true
       # Each step below runs whatever failed before it (only a cancel stops them), so one failure never
       # hides another as skipped: the job fails for each that fails.
       - name: Lint (the app's window needs GTK, so its crate is linted where it is built)
-        working-directory: os
+        working-directory: .
         run: cargo clippy --locked --all-targets -p length3-core -p length3-core-web -p l3 -- -D warnings
       - name: Lint the core as a browser builds it
         if: ${{ !cancelled() }}
-        working-directory: os
+        working-directory: .
         run: cargo clippy --locked -p length3-core -p length3-core-web --target wasm32-wasip1 -- -D warnings
 
   # The core's and l3's own tests, then l3 end to end against a Remote of its own (the l3 they built).
@@ -245,22 +245,22 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: os/package-lock.json
+          cache-dependency-path: package-lock.json
       - name: Toolchains
         run: |
           # l3 prompt makes user namespaces, as on a person's machine; this image's AppArmor keeps them from users.
           if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; fi
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          workspaces: os -> target
-          shared-key: rust-${{ hashFiles('os/Cargo.toml') }}
+          workspaces: . -> target
+          shared-key: rust-${{ hashFiles('Cargo.toml') }}
           cache-on-failure: true
       - name: Core and l3
-        working-directory: os
+        working-directory: .
         run: cargo test --locked -p length3-core -p l3
       - name: l3 end to end, against a Remote of its own
         if: ${{ !cancelled() }}
-        working-directory: os
+        working-directory: .
         run: |
           npm ci
           npm run selftest:l3
@@ -290,8 +290,8 @@ jobs:
         with:
           workspaces: |
             module/sods -> target
-            os -> target
-          shared-key: xlat-${{ matrix.part }}-${{ hashFiles('module/sods/Cargo.toml', 'os/Cargo.toml') }}
+            . -> target
+          shared-key: xlat-${{ matrix.part }}-${{ hashFiles('module/sods/Cargo.toml', 'Cargo.toml') }}
           cache-on-failure: true
       - name: xlat against native (C and Rust std), and its unit tests
         if: matrix.part == 'native'
@@ -300,11 +300,11 @@ jobs:
       # The translator as the browser runs it (run.ts takes the wasm build when it is current).
       - name: l3 for the Prompt (static, musl), translated as the Prompt runs it
         if: matrix.part == 'prompt'
-        working-directory: os
+        working-directory: .
         run: |
-          cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path ../module/sods/Cargo.toml
+          cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path module/sods/Cargo.toml
           cargo build --locked --profile prompt -p l3 --no-default-features --target x86_64-unknown-linux-musl
-          out=$(LENGTH3_REPOS=/root node ../module/ricebox/runtime/run.ts target/x86_64-unknown-linux-musl/prompt/l3 help all)
+          out=$(LENGTH3_REPOS=/root node module/ricebox/runtime/run.ts target/x86_64-unknown-linux-musl/prompt/l3 help all)
           echo "$out" | head -3
           echo "$out" | grep -q 'l3 issue new'
 
@@ -331,7 +331,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: os/package-lock.json
+          cache-dependency-path: package-lock.json
       - name: Linux's webview
         if: runner.os == 'Linux'
         run: |
@@ -339,10 +339,10 @@ jobs:
           sudo apt-get install -y pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          workspaces: os -> target
-          key: ${{ matrix.target }}-${{ hashFiles('os/Cargo.toml') }}
+          workspaces: . -> target
+          key: ${{ matrix.target }}-${{ hashFiles('Cargo.toml') }}
       - name: l3 and the app, built and bundled here
-        working-directory: os
+        working-directory: .
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
@@ -353,16 +353,16 @@ jobs:
           # 10.13 when it is not set): l3, which goes beside it, is built for the same, and what both build (ring's C,
           # whose build runs again when that changes) is built once.
           if [ "$RUNNER_OS" = macOS ]; then
-            export MACOSX_DEPLOYMENT_TARGET=$(node -p "require('./desktop/tauri.conf.json').bundle?.macOS?.minimumSystemVersion ?? '10.13'")
+            export MACOSX_DEPLOYMENT_TARGET=$(node -p "require('./src/desktop/tauri.conf.json').bundle?.macOS?.minimumSystemVersion ?? '10.13'")
           fi
           cargo build --locked --release -p l3
           ext=; [ "$RUNNER_OS" = Windows ] && ext=.exe
-          mkdir -p desktop/binaries
-          cp "target/release/l3$ext" "desktop/binaries/l3-$TARGET$ext"
+          mkdir -p src/desktop/binaries
+          cp "target/release/l3$ext" "src/desktop/binaries/l3-$TARGET$ext"
           "target/release/l3$ext" root check
           npx tauri build --bundles "$BUNDLES" --config '{"build": {"beforeBuildCommand": "npx vite build"}, "bundle": {"externalBin": ["binaries/l3"]}}'
 
-  # The .deb's AppArmor profile (os/desktop/deb) on Ubuntu 24.04 as a person has it, user namespaces kept from
+  # The .deb's AppArmor profile (src/desktop/deb) on Ubuntu 24.04 as a person has it, user namespaces kept from
   # unprivileged programs: l3 at /usr/bin/l3 says Prompts cannot run on the root here (l3 root check: the namespaces
   # one is made in cannot be made) until the .deb's postinst has put the profile in place, and can after; its postrm
   # takes it away again.
@@ -375,10 +375,10 @@ jobs:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          workspaces: os -> target
-          shared-key: rust-${{ hashFiles('os/Cargo.toml') }}
+          workspaces: . -> target
+          shared-key: rust-${{ hashFiles('Cargo.toml') }}
       - name: The .deb's profile lets /usr/bin/l3 make user namespaces where they are kept from programs
-        working-directory: os
+        working-directory: .
         run: |
           [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" = 1 ]
           cargo build -q --locked -p l3
@@ -386,16 +386,16 @@ jobs:
           native() { /usr/bin/l3 root check --json | node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync(0, "utf8")).native))'; }
           [ "$(native)" = false ] || { echo "user namespaces were not kept from /usr/bin/l3 to begin with" >&2; exit 1; }
           /usr/bin/l3 root check
-          sudo install -D -m 0644 desktop/deb/length3-l3.apparmor /usr/share/length3-os/apparmor/length3-l3
-          sudo sh desktop/deb/postinst configure
+          sudo install -D -m 0644 src/desktop/deb/length3-l3.apparmor /usr/share/length3-os/apparmor/length3-l3
+          sudo sh src/desktop/deb/postinst configure
           [ "$(native)" = true ] || { /usr/bin/l3 root check; exit 1; }
-          sudo sh desktop/deb/postrm remove
+          sudo sh src/desktop/deb/postrm remove
           [ ! -e /etc/apparmor.d/length3-l3 ]
           [ "$(native)" = false ] || { echo "the profile stayed after postrm" >&2; exit 1; }
 
   # The root as a release makes it: each package made from its pin by its recipe on Alpine 3.24 at one digest
-  # (os/root/build.sh; each kept from run to run and made again only when what it is made of changed), put together
-  # with this tree's l3 (os/root/assemble.sh), then used: run inside the root as a Prompt runs it (read-only, its own /tmp),
+  # (root/build.sh; each kept from run to run and made again only when what it is made of changed), put together
+  # with this tree's l3 (root/assemble.sh), then used: run inside the root as a Prompt runs it (read-only, its own /tmp),
   # its database audited against what is there, and translated as the browser's Prompt runs it. Made only when what
   # makes the root changed.
   root:
@@ -408,11 +408,11 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=root-${{ hashFiles('os/root/**', 'module/you/**', 'module/otter/**', 'module/lib/**', '.github/actions/root-packages/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=root-${{ hashFiles('root/**', 'module/you/**', 'module/otter/**', 'module/lib/**', '.github/actions/root-packages/**') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: os/target/root-made/manifest
+          path: target/root-made/manifest
           key: ${{ steps.key.outputs.key }}
           lookup-only: true
       - if: steps.kept.outputs.cache-hit != 'true'
@@ -430,16 +430,16 @@ jobs:
         with:
           workspaces: |
             module/sods -> target
-            os -> target
-          shared-key: root-${{ hashFiles('module/sods/Cargo.toml', 'os/Cargo.toml') }}
+            . -> target
+          shared-key: root-${{ hashFiles('module/sods/Cargo.toml', 'Cargo.toml') }}
           cache-on-failure: true
       # After rust-cache, never before: when what it restores was kept for another lockfile, it cleans the targets,
-      # and with them all of os/target that is not Cargo's (the packages, made there, were gone at assemble.sh).
+      # and with them all of target that is not Cargo's (the packages, made there, were gone at assemble.sh).
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: ./.github/actions/root-packages
       - name: The root, put together, and used
         if: steps.kept.outputs.cache-hit != 'true'
-        working-directory: os
+        working-directory: .
         run: |
           sh root/assemble.sh target/root-packages target/root-made 0.0.0
           mkdir -p target/root-open
@@ -495,17 +495,17 @@ jobs:
           # clear clears the app's Prompt, as the Prompt is told (ncurses' clear, asking terminfo of a dumb terminal, says nothing).
           says "prompt clear | od -An -c | tr -d ' \\n'" '033[H033[2J'
           # And translated, as the browser's Prompt runs them.
-          cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path ../module/sods/Cargo.toml
-          node ../module/ricebox/runtime/run.ts "$r/usr/bin/git" --version | grep -F "git version $GIT_VERSION"
-          node ../module/ricebox/runtime/run.ts "$r/usr/bin/openssl" version | grep -F "OpenSSL $OPENSSL_VERSION "
-          node ../module/ricebox/runtime/run.ts "$r/usr/bin/busybox" sh -c 'echo $((6 * 7))' | grep -x 42
-          node ../module/ricebox/runtime/run.ts "$r/usr/bin/rg" --version | grep -F "ripgrep $RIPGREP_VERSION"
-          printf 'lib/x.c\nweb/src/main.ts\n' | node ../module/ricebox/runtime/run.ts "$r/usr/bin/fzf" --filter main | grep -x web/src/main.ts
+          cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path module/sods/Cargo.toml
+          node module/ricebox/runtime/run.ts "$r/usr/bin/git" --version | grep -F "git version $GIT_VERSION"
+          node module/ricebox/runtime/run.ts "$r/usr/bin/openssl" version | grep -F "OpenSSL $OPENSSL_VERSION "
+          node module/ricebox/runtime/run.ts "$r/usr/bin/busybox" sh -c 'echo $((6 * 7))' | grep -x 42
+          node module/ricebox/runtime/run.ts "$r/usr/bin/rg" --version | grep -F "ripgrep $RIPGREP_VERSION"
+          printf 'lib/x.c\nweb/src/main.ts\n' | node module/ricebox/runtime/run.ts "$r/usr/bin/fzf" --filter main | grep -x web/src/main.ts
           sudo rm -rf target/root-open
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: os/target/root-made/manifest
+          path: target/root-made/manifest
           key: ${{ steps.key.outputs.key }}
 
   # What ships has no known high or critical advisory: npm's (build-only tools such as drizzle-kit are dev
@@ -522,9 +522,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: os/package-lock.json
+          cache-dependency-path: package-lock.json
       - name: npm
-        working-directory: os
+        working-directory: .
         run: |
           npm ci --ignore-scripts
           npm audit --omit=dev --audit-level=high
@@ -544,9 +544,9 @@ jobs:
       - name: Rust
         if: ${{ !cancelled() }}
         run: |
-          cargo audit --file os/Cargo.lock
+          cargo audit --file Cargo.lock
           cargo audit --file module/sods/Cargo.lock
-      # And the root's Rust and Go programs, by what each is made of (os/root/advisories.sh), with osv-scanner, built
+      # And the root's Rust and Go programs, by what each is made of (root/advisories.sh), with osv-scanner, built
       # once from its pinned release (its modules checked against Go's checksum database) and kept as cargo-audit is.
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: osv
@@ -562,9 +562,9 @@ jobs:
           key: osv-scanner-2.7.0-${{ runner.os }}
       - name: The root's Rust and Go programs
         if: ${{ !cancelled() }}
-        run: sh os/root/advisories.sh ~/go/bin/osv-scanner
+        run: sh root/advisories.sh ~/go/bin/osv-scanner
 
-  # The app end to end, as a person uses it (os/selftest): Chromium against a fresh Remote of its own, in four
+  # The app end to end, as a person uses it (tests): Chromium against a fresh Remote of its own, in four
   # shards, each with its own Remote and its own build of the app (the build that ships, for a Remote on its own
   # origin).
   selftest:
@@ -583,34 +583,34 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: os/package-lock.json
+          cache-dependency-path: package-lock.json
       - name: Packages
-        working-directory: os
+        working-directory: .
         run: npm ci
       - name: Chromium, kept by the version Playwright asks for
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('os/node_modules/playwright-core/browsers.json') }}
+          key: playwright-${{ runner.os }}-${{ hashFiles('node_modules/playwright-core/browsers.json') }}
       # This image has what Chromium needs from the system (it carries Chrome); only the browser is fetched.
-      - working-directory: os
+      - working-directory: .
         run: npx playwright install chromium
       - name: The core for the browser, as the core job made it
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: os/target/wasm32-wasip1/web/length3_core_web.wasm
+          path: target/wasm32-wasip1/web/length3_core_web.wasm
           key: ${{ needs.core.outputs.key }}
           fail-on-cache-miss: true
       # Newer than the sources the checkout just wrote, so nothing builds it again (scripts/core-wasm.ts goes by time).
-      - run: touch os/target/wasm32-wasip1/web/length3_core_web.wasm
+      - run: touch target/wasm32-wasip1/web/length3_core_web.wasm
       - name: l3 for the browser, as the l3-web job made it
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: os/public/l3
+          path: public/l3
           key: ${{ needs.l3-web.outputs.key }}
           fail-on-cache-miss: true
       - name: Selftest (with the Prompt's @slow tests)
-        working-directory: os
+        working-directory: .
         env:
           SELFTEST_SLOW: '1'
         run: npm run selftest -- --shard=${{ matrix.shard }}/4
@@ -621,9 +621,9 @@ jobs:
         with:
           name: selftest-${{ matrix.shard }}
           path: |
-            os/selftest/.report
-            os/selftest/.results
-            os/selftest/.logs
+            tests/.report
+            tests/.results
+            tests/.logs
           retention-days: 14
           include-hidden-files: true
       # Passed, but only on a retry (flaky): the failed attempt's trace is kept too, to be read.
@@ -632,7 +632,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: selftest-flaky-${{ matrix.shard }}
-          path: os/selftest/.results
+          path: tests/.results
           if-no-files-found: ignore
           retention-days: 14
           include-hidden-files: true

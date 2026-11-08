@@ -3,7 +3,7 @@
 //
 // Run a static x86-64 program translated by xlat. PROGRAM is a host path
 // (placed at /bin/<name>) or, with --root, a path inside that tree; --pack
-// mounts l3 for the browser (os/scripts/l3.ts: l3.json, its index and its
+// mounts l3 for the browser (scripts/l3.ts: l3.json, its index and its
 // packs) as the browser does, each file read from its pack when first
 // opened, and checked.
 // stdin/stdout/stderr attach to this process.

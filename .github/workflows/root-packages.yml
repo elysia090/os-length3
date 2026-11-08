@@ -1,11 +1,11 @@
 name: Root packages
 
-# The root's packages, each made from its pin by its recipe (os/root/build.sh, through the root-packages action),
+# The root's packages, each made from its pin by its recipe (root/build.sh, through the root-packages action),
 # whenever what they are made of changes: a run after a pin is raised makes that package and what is built against
 # it, and keeps them for the root job and the release.
 on:
   push:
-    paths: ['os/root/build.sh', 'os/root/packages/**', 'os/root/sources.env', 'os/root/etc/**', 'module/you/**', 'module/otter/**', 'module/lib/**', '.github/actions/root-packages/**', '.github/workflows/root-packages.yml']
+    paths: ['root/build.sh', 'root/packages/**', 'root/sources.env', 'root/etc/**', 'module/you/**', 'module/otter/**', 'module/lib/**', '.github/actions/root-packages/**', '.github/workflows/root-packages.yml']
   workflow_dispatch:
 
 permissions:
@@ -28,5 +28,5 @@ jobs:
       - name: What was made
         if: ${{ !cancelled() }}
         run: |
-          cat os/target/root-packages/record 2>/dev/null || true
-          du -sh os/target/root-packages/*/tree 2>/dev/null | sort -h | tail -20 || true
+          cat target/root-packages/record 2>/dev/null || true
+          du -sh target/root-packages/*/tree 2>/dev/null | sort -h | tail -20 || true

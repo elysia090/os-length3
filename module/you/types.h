@@ -1,4 +1,4 @@
-/* you/types.h, made by os/scripts/you-types.ts from ripgrep 15.2.0's --type-list: the kinds of file -t and -T
+/* you/types.h, made by scripts/you-types.ts from ripgrep 15.2.0's --type-list: the kinds of file -t and -T
  * name (rg.c), each its name and then the globs a file's name is that kind by, each ended by a NUL, the kind by one more. */
 static const char TYPES[] =
   "ada\0*.adb\0*.ads\0\0"

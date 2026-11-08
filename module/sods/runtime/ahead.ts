@@ -1,4 +1,4 @@
-// A program of the root translated before its first run, while a person reads or types (os/app/prompt/ahead.ts): whole,
+// A program of the root translated before its first run, while a person reads or types (src/app/prompt/ahead.ts): whole,
 // as the hot programs are in the release, and prepared as a Prompt's kernel prepares what it translates (share.ts, for
 // memory shared or not as that kernel's is), handed back for the page to keep as it keeps the kernel's own, so that the run
 // that wants it reads it rather than waiting on the translator. One program a worker, so all the translator held goes
