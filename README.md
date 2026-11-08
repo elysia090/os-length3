@@ -48,6 +48,31 @@ The root is [`os/root/`](os/root/): what it is made from (`sources.env`, the pin
 (`packages/`), its own settings (`etc/`), and what makes it (`build.sh`, each package on Alpine 3.24 at one digest;
 `assemble.sh`, the root and its package database; `next.py`, every source's newest release).
 
+## Units
+
+What the directories hold is being sorted into units, each one responsibility, peeled from the outside in by how
+easily a person changes it; what is left inside is ricebox's, the smallest UNIX a browser runs. Every byte is
+running (ricebox), at rest (muk) or on its way (funk). The faces (the app's pages and window, l3's words) hold no
+judgement of their own. [`os/scripts/units.ts`](os/scripts/units.ts) is the table: each unit's files and the units it
+may take from, checked by `npm test` (an import a unit still makes and may not is listed there as owed, with the step
+below that ends it).
+
+| Unit | Its responsibility | Takes from |
+| --- | --- | --- |
+| you | the tools a person reaches for: z, rg, fd, fzf (`kernel/you`) | lib |
+| m8 | where and how many boxes run: a state wanted, one loop that makes it so (made when boxes run on more than one machine) | ricebox, muk, shipto |
+| shipto | deliveries: what goes where and who takes it (commits, reviews, merges, messages, releases), the Remote that receives them, its own deploy | muk, funk |
+| funk | what is on its way: links out of a box and between boxes (HTTP, TCP, DNS, WebSocket, SSH) | ricebox |
+| muk | what is at rest: layers by digest, a layer written over them, names for digests; each byte fetched when first touched | ricebox |
+| otter | to see and to decide: every floor counted at its hook, small bounded policies put at the hooks, each said | ricebox, muk, sods |
+| sods | instructions: x86-64 made wasm ahead of the run, kept and shared by digest, never crossing to JS | — |
+| ricebox | the box: the smallest UNIX inside (processes, memory and its page cache, files, descriptors, the terminal, signals) and the box started, frozen and copied | sods |
+
+The steps, each moving files without changing what they do before changing anything, the tests green at each:
+0 the table and its check; 1 #80's requirements as tests of the web Prompt; 2 sods out of xlat; 3 ricebox made of the
+rest of xlat's runtime, the box and its UNIX apart; 4 otter's hooks and `otter -- CMD`; 5 the floors lowered, each
+measured beside Linux on the same machine; 6 muk; 7 shipto; 8 funk with the HTTP gateway; 9 m8.
+
 ## Develop
 
 Length³ OS (Node 22 and Rust with the `wasm32-wasip1` target):
