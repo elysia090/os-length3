@@ -64,6 +64,10 @@
 .desk-gaze.resting { animation: gaze-rest calc(1400ms * var(--pace)) ease-in-out infinite alternate; }
 @keyframes gaze-rest { to { opacity: .45; } }
 @media (prefers-reduced-motion: reduce) { .desk-gaze.resting { animation: none; } }
+/* Where the Agent's hand is as it writes in a file (desk-file.ts hand): its caret, the stroke of ink the OS draws the
+   person's with, after what it just typed; solid while it writes, blinking once it rests. */
+.desk-caret { position: absolute; left: 0; top: 0; width: 1.5px; border-radius: 1px; background: var(--ink); pointer-events: none; }
+.desk-caret.resting { animation: caret-blink 1.06s steps(1) infinite; }
 .desk-file > .sheet > .gutter { position: relative; }
 /* Where the repo's desk is: the whole center. */
 .desk-room { position: relative; height: 100%; min-height: 0; overflow: clip; }
@@ -171,6 +175,13 @@
 .agent-asked::before { content: '›'; position: absolute; right: calc(100% + 1ch); color: var(--sub); font-weight: 400; }
 .agent-step { display: block; width: 100%; padding: 0; border: 0; background: none; font: inherit; color: var(--sub); text-align: left; cursor: var(--cursor-hand); }
 .agent-step:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+/* The pointer at rest while the desk goes by under it (the camera's glide, desk.ts): what passes under it, or stops
+   there, was not pointed at and does not light up as if it were, until the pointer moves again. (Before: a row of the
+   Agent's lit and underlined as the camera carried it under a pointer left where the person last pressed.) */
+.desk.resting .agent-step:hover { color: var(--sub); text-decoration: none; }
+.desk.resting .desk-close:hover { background: var(--ink); scale: var(--inv, 1); }
+.desk.resting .desk-term .scroll-thumb:hover:not(.held) { width: 3px; right: calc(-1 * var(--s4) + 6px); }
+.desk.resting .link:hover { background: transparent; }
 .agent-run .ps, .agent-prompt .ps { color: var(--add); font-weight: 600; }
 .agent-exit { display: block; color: var(--del); font-weight: 600; }
 .agent-words { margin: .4em 0; }
@@ -186,6 +197,11 @@
 .agent-prompt { font: var(--t-code)/1.6 var(--mono); white-space: pre-wrap; }
 .agent-cur { display: inline-block; width: .6em; height: 1.25em; vertical-align: -.25em; background: var(--ink); opacity: 0; }
 .agent-term.typing .agent-cur { opacity: 1; }
+/* Its hand in its terminal with nothing yet to type there (a run read, its next step not begun): its caret rests at the
+   prompt, blinking as a terminal's does, never gone while the hand is there. One caret at a time: while its words wait
+   or are typed, the caret is with them, not at the prompt. */
+.agent-term.hand:not(.typing, .running) .agent-cur { opacity: 1; animation: caret-blink 1.06s steps(1) infinite; }
+.agent-term:has(.agent-words:is(.waiting, .saying)) .agent-cur { opacity: 0; }
 /* A command running: no prompt on its line until it ends, the caret alone there, as a terminal has it. */
 .agent-term.running .agent-prompt .ps { display: none; }
 .agent-term.running .agent-cur { opacity: 1; }

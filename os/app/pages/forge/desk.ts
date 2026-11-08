@@ -295,6 +295,7 @@ export class Desk {
     addEventListener('pointermove', (e) => {
       this.#pointerAt = {x: e.clientX, y: e.clientY};
       if (!e.isTrusted || (!e.movementX && !e.movementY)) return;
+      this.element.classList.remove('resting');
       veil.show();
       this.#showHand(false);
     }, {capture: true, passive: true});
@@ -817,6 +818,9 @@ export class Desk {
     };
     this.#gliding = true;
     if (!moving) { set(to, true); this.#gliding = false; return; }
+    // What goes by under a pointer at rest was not pointed at: nothing under it lights up (forge-desk.css .resting)
+    // until the pointer moves again.
+    el.classList.add('resting');
     // The box in hand's middle, on the desk: where it is on the face, and how near, are what move. Carried (`path`), it
     // is where the box is on its way, so the box goes across the face in one straight move however the camera moves.
     // (The box in hand out of sight, the camera over other work, the Agent's: what is in the face's middle, so stepping

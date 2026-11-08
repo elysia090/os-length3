@@ -36,13 +36,23 @@ export interface Stage {
   saying?(): {put(text: string): void} | null;
   /** `path`'s box laid on the desk if it is not there, without taking the person's hand; false when it cannot be. */
   place(path: string): boolean;
-  /** The camera over these boxes at once ('agent' is the Agent's terminal); none: back to the box in hand. */
-  frame(keys: string[]): void;
+  /** The camera over these boxes at once ('agent' is the Agent's terminal), going to the last; none: back to the box in
+   * hand. What it gives, if anything, is done once the camera has been sent there (it may be held a moment). */
+  frame(keys: string[]): void | Promise<void>;
+  /** The Agent's hand gone to `lane` ('agent', its terminal, or a file's path), or gone altogether (its work done). */
+  hand?(lane: string | null): void;
 }
 
 /** An editor open on a file, as the player uses it: what it takes in, its text, and where the Agent's eye is in it (a
  * line, 1-based; null: nowhere). */
-interface Editing { take(text: string): boolean; area: HTMLTextAreaElement; gaze?(line: number | null): void }
+interface Editing {
+  take(text: string): boolean;
+  area: HTMLTextAreaElement;
+  /** The Agent's eye on a line of it (reading), or gone from it. */
+  gaze?(line: number | null): void;
+  /** The Agent's hand in it, its caret at the character offset `at` (writing), or gone from it. */
+  hand?(at: number | null): void;
+}
 
 const key = (repo: string, path: string) => `${repo}\n${path}`;
 
@@ -204,8 +214,10 @@ export class Player {
       this.#queued--;
       this.#busy++;
       this.#lastLane = lane;
+      this.#stage.hand?.(lane);
       this.#work(lane, true);
-      try { if (!still()) await eyeThere(); await act(wait); } finally {
+      // The eye there before the hand: the camera sent to the box now (not a frame later), and come to it.
+      try { if (!still()) { await this.#framedNow(); await eyeThere(); } await act(wait); } finally {
         this.#busy--;
         this.#work(lane, false);
         this.#idleNow();
@@ -214,6 +226,12 @@ export class Player {
     this.#hand = next;
     this.#lanes.set(lane, next);
     return next;
+  }
+
+  /** The camera sent over the lanes at work at once (the hand about to start in one); done once it has been. */
+  async #framedNow() {
+    cancelAnimationFrame(this.#framing);
+    await this.#stage.frame([...this.#working]);
   }
 
   /** The camera over the lane at work (a frame later, so one ending and the next starting are one move, not two). */
@@ -422,20 +440,24 @@ export class Player {
       this.#release(d.path, d.text);
       return;
     }
-    await wait(leadIn());
-    const typed = d.text.slice(0, MADE_MOST);
-    let prev = '';
-    for (let i = 0; i < typed.length; i++) {
-      await wait(gap(typed[i], prev));
-      if (!e.take(typed.slice(0, i + 1))) break;
-      strike(keyOf(typed[i]));
-      prev = typed[i];
-    }
-    if (d.text.length > typed.length) { await wait(160); strike('enter'); }
-    h.made = false;
-    this.#release(d.path, d.text);
-    this.#looked = {path: d.path, line: 1};
-    await wait(SEEN_MS);
+    e.hand?.(0);
+    try {
+      await wait(leadIn());
+      const typed = d.text.slice(0, MADE_MOST);
+      let prev = '';
+      for (let i = 0; i < typed.length; i++) {
+        await wait(gap(typed[i], prev));
+        if (!e.take(typed.slice(0, i + 1))) break;
+        e.hand?.(i + 1);
+        strike(keyOf(typed[i]));
+        prev = typed[i];
+      }
+      if (d.text.length > typed.length) { await wait(160); strike('enter'); }
+      h.made = false;
+      this.#release(d.path, d.text);
+      this.#looked = {path: d.path, line: 1};
+      await wait(SEEN_MS);
+    } finally { e.hand?.(null); }
   }
 
   /** An edit typed in where it is: each piece in turn, the old words going and the new typed in (its first part). */
@@ -455,54 +477,60 @@ export class Player {
     if (!shown || !e?.area.isConnected || !h || h.text === null) { this.#release(d.path, null); return; }
     await wait(300);
     let cur = d.before, shift = 0;
-    // Each step taken in, the caret (where the editor has the keyboard) where the hand is: after what was just typed.
+    // Each step taken in, the hand's caret where it is: after what was just typed (and the keyboard's, where the editor
+    // has it).
     const take = (text: string, caret: number) => {
       cur = text;
       if (!e.take(text)) return false;
+      e.hand?.(caret);
       if (document.activeElement === e.area) e.area.setSelectionRange(caret, caret);
       return true;
     };
-    play: for (const span of d.spans) {
-      // Only what differs is gone over: what the old and the new words begin and end with alike stays as it is, as a
-      // hand leaves it (never `# garden` taken away to be typed in again with a line after it).
-      const s = differing(span.old, span.new);
-      const at = offsetOf(d.before, span.line, span.column) + shift + s.at;
-      await wait(leadIn());
-      if (s.old.length <= BACKSPACED_MOST) {
-        // From its end, as Backspace takes it: a few presses, then held.
-        for (let i = s.old.length, n = 0; i > 0; i--, n++) {
-          if (!take(cur.slice(0, at + i - 1) + cur.slice(at + i), at + i - 1)) break play;
-          if (n < 4 || n % 3 === 0) strike('key');
-          await wait(n < 4 ? BACKSPACE_MS + 20 * Math.random() : REPEAT_MS);
+    try {
+      play: for (const span of d.spans) {
+        // Only what differs is gone over: what the old and the new words begin and end with alike stays as it is, as a
+        // hand leaves it (never `# garden` taken away to be typed in again with a line after it).
+        const s = differing(span.old, span.new);
+        const at = offsetOf(d.before, span.line, span.column) + shift + s.at;
+        // The hand there first, after what it is to take away (or where it is to type), and then at work.
+        e.hand?.(at + s.old.length);
+        await wait(leadIn());
+        if (s.old.length <= BACKSPACED_MOST) {
+          // From its end, as Backspace takes it: a few presses, then held.
+          for (let i = s.old.length, n = 0; i > 0; i--, n++) {
+            if (!take(cur.slice(0, at + i - 1) + cur.slice(at + i), at + i - 1)) break play;
+            if (n < 4 || n % 3 === 0) strike('key');
+            await wait(n < 4 ? BACKSPACE_MS + 20 * Math.random() : REPEAT_MS);
+          }
+        } else {
+          // A long piece: a line at a time from its end, each line chosen and gone.
+          let left = s.old.length;
+          while (left > 0) {
+            const cut = s.old.lastIndexOf('\n', left - 2) + 1;
+            if (!take(cur.slice(0, at + cut) + cur.slice(at + left), at + cut)) break play;
+            strike('key');
+            left = cut;
+            await wait(60);
+          }
         }
-      } else {
-        // A long piece: a line at a time from its end, each line chosen and gone.
-        let left = s.old.length;
-        while (left > 0) {
-          const cut = s.old.lastIndexOf('\n', left - 2) + 1;
-          if (!take(cur.slice(0, at + cut) + cur.slice(at + left), at + cut)) break play;
-          strike('key');
-          left = cut;
-          await wait(60);
+        let prev = '';
+        const typed = s.new.slice(0, TYPED_MOST);
+        for (let i = 0; i < typed.length; i++) {
+          await wait(gap(typed[i], prev));
+          if (!take(cur.slice(0, at + i) + typed[i] + cur.slice(at + i), at + i + 1)) break play;
+          strike(keyOf(typed[i]));
+          prev = typed[i];
         }
+        if (s.new.length > typed.length) {
+          await wait(160);
+          take(cur.slice(0, at + typed.length) + s.new.slice(typed.length) + cur.slice(at + typed.length), at + s.new.length);
+          strike('enter');
+        }
+        shift += s.new.length - s.old.length;
       }
-      let prev = '';
-      const typed = s.new.slice(0, TYPED_MOST);
-      for (let i = 0; i < typed.length; i++) {
-        await wait(gap(typed[i], prev));
-        if (!take(cur.slice(0, at + i) + typed[i] + cur.slice(at + i), at + i + 1)) break play;
-        strike(keyOf(typed[i]));
-        prev = typed[i];
-      }
-      if (s.new.length > typed.length) {
-        await wait(160);
-        take(cur.slice(0, at + typed.length) + s.new.slice(typed.length) + cur.slice(at + typed.length), at + s.new.length);
-        strike('enter');
-      }
-      shift += s.new.length - s.old.length;
-    }
-    this.#release(d.path, now);
-    if (d.spans.length) this.#looked = {path: d.path, line: d.spans[0].line};
-    await wait(SEEN_MS);
+      this.#release(d.path, now);
+      if (d.spans.length) this.#looked = {path: d.path, line: d.spans[0].line};
+      await wait(SEEN_MS);
+    } finally { e.hand?.(null); }
   }
 }

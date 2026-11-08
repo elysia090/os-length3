@@ -41,8 +41,6 @@ import {work as workOf} from '../../repos/history.ts';
 
 /** Choices said under the box after → completed, at most. */
 const CHOICES = 24;
-/** How long the camera stays on a box of the Agent's still at work before it goes to one begun since. */
-const WATCHED_MS = 2400;
 
 /** What was written in a box and not sent: by repo for Run, by what the box does and repo otherwise. */
 const drafts = new Map<string, string>();
@@ -500,7 +498,12 @@ export class Box {
     const issuePath = w?.issue ? (w.issue.startsWith('issue/') ? w.issue : `issue/${w.issue}`) : null;
     const issue = issuePath ? (await store.read(at, issuePath).catch(() => null))?.text ?? '' : null;
     const player = new Player(at, stage);
-    await atWork(term, row, at, use, await told(at, front, issue), question, agentHands(at, issue !== null), player, (path) => this.#p.went(at, {file: path}));
+    try {
+      await atWork(term, row, at, use, await told(at, front, issue), question, agentHands(at, issue !== null), player, (path) => this.#p.went(at, {file: path}));
+    } finally {
+      // Its work done, its hand is gone from its terminal: no caret left blinking there.
+      stage.hand?.(null);
+    }
   }
 
   /**
@@ -509,39 +512,39 @@ export class Box {
    * the eye, the rest at its sides as they lie, until the person takes a box in hand.
    */
   #stageBeside(at: string, term: AgentTerm): Stage {
-    // Framed: both terminals as it is born (the camera on its own, the person's at its side); then its own and the files
-    // it is at work in, the camera going sideways to each as it starts. Narrowing to fewer waits a moment, so a step
-    // ending and the next starting is not a move away and back again.
+    // Framed: both terminals as it is born (the camera on its own, the person's at its side); then its own and the box
+    // its hand is in, the camera going to each as the hand starts there, never after: the hand waits for it (play.ts),
+    // so nothing is typed into a box the camera has yet to come to. (Before: going from a box the camera had already
+    // been to waited 900 ms, and one still being watched up to 2.4 s, while the hand went on typing there unseen.)
     let framed: string[] = [];
-    let narrowing = 0;
-    // Its birth beside the person's terminal is seen whole before the camera goes on to its work.
-    let born = 0;
-    // The box the camera went to, and when: while it is still at work the camera stays on it a while (a command typed
-    // is seen run and answered, not left half way for the next to start), going on once it is done or has been watched.
-    let on = '', onSince = 0;
+    // Its birth beside the person's terminal is seen whole before the camera goes on to its work: what is asked of the
+    // camera meanwhile waits, and so does the hand.
+    let born = 0, holding = 0;
+    let release: (() => void) | null = null, sent: Promise<void> = Promise.resolve();
     return {
       typing: () => term.typing(),
       shown: (line, output, status) => term.shown(line, output, status),
       running: (line) => term.running(line),
       saying: () => term.saying(),
+      hand: (lane) => term.element.classList.toggle('hand', lane === 'agent'),
       place: (path) => this.#repo === at && !!this.#p.place?.(path),
       frame: (keys) => {
         // (In the order they started, the Agent's terminal with them: the last to start is the one gone to.)
         const next = !framed.length ? ['term', 'agent'] : keys.includes('agent') ? keys : ['agent', ...keys];
-        if (framed.length && !keys.length) return;
-        clearTimeout(narrowing);
-        const to = next[next.length - 1];
+        if (framed.length && !keys.length) return sent;
+        clearTimeout(holding);
         const go = () => {
           framed = next;
-          if (to !== on) { on = to; onSince = performance.now(); }
           if (this.#repo === at) this.#p.frame?.(next);
+          release?.();
+          release = null;
         };
         if (!framed.length) born = performance.now() + 1800;
-        const held = Math.max(0, born - performance.now());
-        const watching = to !== on && keys.includes(on) ? Math.max(0, onSince + WATCHED_MS - performance.now()) : 0;
-        if (framed.length && next.every((k) => framed.includes(k))) narrowing = window.setTimeout(go, Math.max(900, held));
-        else if ((held || watching) && framed.length) narrowing = window.setTimeout(go, Math.max(held, watching));
-        else go();
+        const held = framed.length ? Math.max(0, born - performance.now()) : 0;
+        if (!held) { go(); return sent; }
+        if (!release) sent = new Promise<void>((r) => { release = r; });
+        holding = window.setTimeout(go, held);
+        return sent;
       },
     };
   }

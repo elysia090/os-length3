@@ -42,6 +42,31 @@ function caretAt(f: Field, copy: HTMLElement): {x: number; y: number; h: number;
   return {x, y, h, field: r};
 }
 
+/** A copy of its own for a caret that is not the keyboard's, so the keyboard's copy is never laid out over. */
+let spare: HTMLElement | null = null;
+
+/**
+ * Where the character offset `at` stands in `f`, from its border box's top left in its own pixels (not as seen nearer or
+ * further), and its letter's height: for a caret that is not the keyboard's, drawn in what holds the field (the
+ * Agent's hand in a file on the desk), going with it wherever the field is seen.
+ */
+export function caretIn(f: Field, at: number): {x: number; y: number; h: number} {
+  if (!spare) {
+    spare = document.createElement('div');
+    spare.className = 'caret-copy';
+    spare.setAttribute('aria-hidden', 'true');
+    document.body.append(spare);
+  }
+  copyStyle(f, spare);
+  const cs = getComputedStyle(f);
+  spare.textContent = f.value.slice(0, at);
+  const mark = document.createElement('span');
+  mark.textContent = f.value.slice(at, at + 1).replace('\n', '') || '\u200b';
+  spare.append(mark);
+  return {x: parseFloat(cs.borderLeftWidth) + mark.offsetLeft - f.scrollLeft, y: parseFloat(cs.borderTopWidth) + mark.offsetTop - f.scrollTop,
+    h: mark.offsetHeight || parseFloat(cs.fontSize) * 1.25};
+}
+
 /** How wide a letter of `f` is (its font monospace: a terminal's cell), laid out in its copy. */
 function cell(copy: HTMLElement): number {
   const letter = document.createElement('span');

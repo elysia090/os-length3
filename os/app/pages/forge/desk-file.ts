@@ -1,6 +1,7 @@
 import {h} from '../../ui/dom.ts';
 import {nudge} from '../../ui/glide.ts';
 import {workAt as tell} from '../../ui/camera.ts';
+import {caretIn} from '../../ui/caret.ts';
 import {errorText} from '../../host/errors.ts';
 import {t} from '../../i18n/i18n.ts';
 import {bytes} from '../../ui/dom.ts';
@@ -113,6 +114,28 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     }
     eye.style.top = top;
   }
+  // The Agent's hand in it as it writes (bench/play.ts): its caret where it types, a stroke of ink as the OS draws the
+  // person's, solid while it writes and blinking once it rests; gone with the hand. The keyboard stays the person's: the
+  // file is never focused for it. (Before: its letters went and came with nothing doing it.)
+  let hand: HTMLElement | null = null, handRest = 0;
+  function handAt(area: HTMLTextAreaElement, at: number | null) {
+    clearTimeout(handRest);
+    if (at === null) {
+      const el = hand;
+      hand = null;
+      if (el) el.animate([{opacity: 1}, {opacity: 0}], {duration: 160, easing: 'ease-out'}).onfinish = () => el.remove();
+      return;
+    }
+    const p = caretIn(area, at);
+    if (!hand) {
+      hand = h('div', {class: 'desk-caret', 'aria-hidden': 'true'});
+      element.append(hand);
+    }
+    hand.classList.remove('resting');
+    hand.style.transform = `translate(${area.offsetLeft + p.x}px, ${area.offsetTop + p.y}px)`;
+    hand.style.height = `${p.h}px`;
+    handRest = window.setTimeout(() => hand?.classList.add('resting'), 500);
+  }
   const caretLeft = () => {
     if (!mark || !editor || document.activeElement !== editor.area) return;
     const c = editor.area.selectionStart;
@@ -163,6 +186,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
       },
       area: e.area,
       gaze: (line) => { gaze(e.area, line); workAt(line); },
+      hand: (at) => handAt(e.area, at),
     });
     // Written in on the line washed: it stays while the writing is on that line, its end following; a line broken or
     // written above it, it goes.

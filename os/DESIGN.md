@@ -2486,12 +2486,16 @@ it went sideways at the boxes' own size however far, README and its terminal
 a column apart crossed four times in as many seconds as half boxes; and a
 line written past the face's foot was written out of sight.) What it is at
 work in is always in sight, and what else is at work peeks in at the edges,
-saying where it is; narrowing to fewer waits a moment, so a step ending and the next
-starting is not a move away and back. A box it went to and still at work holds
-it a while (a command typed is seen run and answered before it goes on to the
-file begun meanwhile; what it wrote in a file is read, the eye staying on it
-a moment, never there, typed and gone in the same breath), going on once that
-is done or has been watched. A box
+saying where it is. The camera goes where the hand goes, as the hand starts
+there and before its first key: the hand waits for it, so nothing is ever typed
+into a box the camera has yet to come to (only the Agent's birth, seen whole
+first, holds the camera a moment, and the hand with it). (Before: going back to
+a box it had been to waited most of a second, and from one still being watched
+up to two and a half, while the hand went on typing there unseen, the keys heard
+and the camera swinging over to them mid-word.) A box it was at work in holds
+it until that work is done: a command typed is seen run and answered before
+the hand goes on, and what it wrote in a file is read, the eye staying on it
+a moment, never there, typed and gone in the same breath. A box
 growing as it is written never turns a glide back on itself: where the camera
 passes is not taken for where it stays. The person writing in their own box (a
 key, a paste) takes the camera back to it, gliding, never a jump to where the
@@ -2550,7 +2554,19 @@ person does at the keys or the mouse stops it. Every edit it makes is seen
 made: the old words go from their end, Backspace pressed a few times and then
 held (its repeat), a long piece a line at a time; the new are typed in whole,
 the caret after them (only a page or more comes in at once, as a paste does);
-a file it made is typed into its box from the top. Each key is heard (kbsim's
+a file it made is typed into its box from the top. Its hand is seen where it
+is: in a file, its caret (the stroke of ink the OS draws the person's with)
+comes to the place first, after what it is to take away, then goes back over
+it and on with what it types, solid while it writes and blinking once it rests,
+gone as the hand leaves; the keyboard stays the person's, the file never
+focused for it. In its terminal, while its hand is there with nothing yet to
+type, its caret rests at its prompt, blinking; when its work is done it is
+gone. One caret at a time: with its words, at its prompt, or in the file it
+writes in. (Before: in a file its letters went and came with nothing doing
+them; in its terminal the caret vanished between a run and its next words.)
+What goes by under a pointer at rest as the camera moves was not pointed at:
+nothing under it lights up (a row underlined, a close dot reddened) until the
+pointer moves again. Each key is heard (kbsim's
 Cream Space for a key, its Backspace for Enter, Alpaca's Space for Space),
 each recording faded in and out at its very ends (kbsim's are cut off still
 sounding: stopped there, each clicked, a crackle under the typing). The
