@@ -41,17 +41,18 @@ import type {FullConfig} from '@playwright/test';
 import {OS, OUT, LOGS} from './paths.ts';
 import {scratch} from '../../scripts/scratch.ts';
 
-/** A port nothing listens on now, chosen by the system. */
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const s = createServer();
-    s.unref();
+/**
+ * `n` ports nothing listens on now, chosen by the system and each another: all held until all are chosen, as one let
+ * go of at once may be given out again next (two servers then asked for the same one, and the second ended).
+ */
+async function freePorts(n: number): Promise<number[]> {
+  const held = Array.from({length: n}, () => createServer().unref());
+  const ports = await Promise.all(held.map((s) => new Promise<number>((resolve, reject) => {
     s.on('error', reject);
-    s.listen(0, '127.0.0.1', () => {
-      const {port} = s.address() as {port: number};
-      s.close(() => resolve(port));
-    });
-  });
+    s.listen(0, '127.0.0.1', () => resolve((s.address() as {port: number}).port));
+  })));
+  await Promise.all(held.map((s) => new Promise((resolve) => s.close(resolve))));
+  return ports;
 }
 
 /** The newest change under `path` (a file or a directory, walked). */
@@ -228,7 +229,7 @@ export default async function globalSetup(_config: FullConfig) {
   built.catch(() => {});
   const empty = process.env.CI ? null : await emptyDatabase();
   const data = scratch('length3-selftest-data-');
-  const [remotePort, appPort, planRemotePort, planAppPort] = [await freePort(), await freePort(), await freePort(), await freePort()];
+  const [remotePort, appPort, planRemotePort, planAppPort] = await freePorts(4);
   const app = `http://localhost:${appPort}`, planApp = `http://localhost:${planAppPort}`;
   const remoteURL = `http://localhost:${remotePort}`;
   const children: ChildProcess[] = [];
