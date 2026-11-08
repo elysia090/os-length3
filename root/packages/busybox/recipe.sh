@@ -16,10 +16,10 @@ build() {
   }
   make defconfig
   for a in $applets; do put "CONFIG_$a=n"; done
-  while IFS= read -r line; do case $line in CONFIG_*=*) put "$line" ;; esac; done < "$recipes/busybox.config"
+  while IFS= read -r line; do case $line in CONFIG_*=*) put "$line" ;; esac; done < "$recipes/busybox/busybox.config"
   make oldconfig < /dev/null
   # Every applet named is made, and no other (one whose own needs are not met would be dropped without a word).
-  for a in $applets; do grep -qx "CONFIG_$a=y" "$recipes/busybox.config" && echo "$a"; done > asked
+  for a in $applets; do grep -qx "CONFIG_$a=y" "$recipes/busybox/busybox.config" && echo "$a"; done > asked
   for a in $applets; do grep -qx "CONFIG_$a=y" .config && echo "$a"; done > made
   diff asked made || { echo "busybox.config's applets (<) and those made (>) differ"; exit 1; }
   make -j"$jobs" CC=gcc
