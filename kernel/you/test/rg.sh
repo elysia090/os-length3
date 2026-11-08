@@ -28,7 +28,24 @@ printf 'line1\nline2\nneedle3\nline4\nline5\nline6\nneedle7\nline8\n' > ctx.txt
 printf 'all: needle\n' > Makefile
 printf 'x%.0s' $(seq 400) > long.txt && printf ' needle\n' >> long.txt
 printf 'no newline needle' > tail.txt
+printf 'needle\nother\n' > pats.txt
+printf 'ctx.txt\n' > extra.ignore
+# Links the walk passes over, but -L follows: to a file, and to a directory above (a loop).
+mkdir -p links && ln -s ../src/a.rs links/a.rs && ln -s .. links/up
 n=0 bad=0
+apart() { # apart ARGS...: both say the same on each of standard output and error, and end the same (an error rg says
+  # at once, before what it holds back for standard output, comes in its own order)
+  n=$((n + 1))
+  set +e
+  "$rg" --sort path "$@" < /dev/null > "$t/want" 2> "$t/want-err"; ws=$?
+  "$you" "$@" < /dev/null > "$t/got" 2> "$t/got-err"; gs=$?
+  set -e
+  cmp -s "$t/want" "$t/got" && cmp -s "$t/want-err" "$t/got-err" && [ "$ws" = "$gs" ] && return
+  bad=$((bad + 1))
+  printf 'not ok %d: rg %s (status %s, %s)\n' "$n" "$*" "$ws" "$gs" >&2
+  diff "$t/want" "$t/got" | head -6 >&2 || true
+  diff "$t/want-err" "$t/got-err" | head -6 >&2 || true
+}
 same() { # same ARGS...: both say the same, and end the same
   n=$((n + 1))
   set +e
@@ -96,6 +113,54 @@ same needle tail.txt
 same -n needle tail.txt ctx.txt
 same '^needle' ctx.txt
 same 'needle[0-9]$' ctx.txt
+# Replaced (-r), as ripgrep expands it: the match, $$, and a name of no group (nothing).
+same -r X needle
+same -o -r '[$0]' needle
+same -r '${0}!' needle ctx.txt
+same -r '$$ $nothing' needle src/b.ts
+# Patterns from a file, a line each; none at all, nothing found.
+same -f pats.txt src
+same -f /dev/null ctx.txt
+same -e line1 -f pats.txt ctx.txt
+# Globs with braces, and case aside.
+same -g '*.{rs,ts}' needle
+same -g '!*.{rs,ts,md}' -l needle
+same --iglob '*.RS' needle
+same --glob-case-insensitive -g '*.RS' -l needle
+# Kinds: added, made of others, cleared, listed.
+same --type-add 'web:*.ts' -t web needle
+same --type-add 'both:include:rust,ts' -t both -l needle
+same --type-clear rust --type-add 'rust:*.md' -t rust -l needle
+same --type-add 'oops' -t oops needle
+same -t nosuch needle
+same --type-list
+# What is printed of a line, and around it.
+same --trim needle
+same -b needle ctx.txt
+same -b -o needle src/b.ts
+same -n -b --column needle ctx.txt
+same --passthru needle ctx.txt
+same -n --passthru needle ctx.txt
+same --include-zero -c needle src
+same --context-separator XX -A1 needle ctx.txt
+same --no-context-separator -A1 needle ctx.txt
+same --field-match-separator @ --field-context-separator '#' -n -H -A1 needle ctx.txt
+# What the walk leaves out: files too large, ignore files given or not heeded; in reverse order; binary ones searched.
+same --max-filesize 10 -l needle
+same --max-filesize 1K -l needle
+same --max-filesize 1.5K needle
+same --ignore-file extra.ignore -l needle
+same --no-ignore-vcs -l needle
+same --no-ignore-dot -l needle
+same --sortr path -l needle
+same --binary needle
+same --binary -c needle
+same --pcre2 needle
+same -g '*.nothing' needle
+same --max-depth 0 needle
+# Links followed (-L): to a file, and to a directory above, said to be a loop.
+apart -L -l needle
+apart --follow --files links
 # Standard input searched when it is a pipe and no path is named.
 n=$((n + 1))
 want=$(printf 'a needle\nb\n' | "$rg" needle; echo "status $?")
