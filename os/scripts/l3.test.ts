@@ -108,9 +108,9 @@ test('a Node-only build takes l3 from its release only at the pin, and refuses a
   for (const d of ['core/src/root', 'scripts', 'remote', 'shared', 'public']) mkdirSync(join(tree, d), {recursive: true});
   copyFileSync(join(os, 'core/src/root/pins.rs'), join(tree, 'core/src/root/pins.rs'));
   for (const f of ['scripts/prompt-files.ts', 'scripts/l3-tree.ts', 'remote/releases.ts', 'shared/desktop-releases.json']) copyFileSync(join(os, f), join(tree, f));
-  // And what both of those check packs by, where the repository has it, beside os/.
-  mkdirSync(join(tree, '../muk/runtime'), {recursive: true});
-  copyFileSync(join(os, '../muk/runtime/table.ts'), join(tree, '../muk/runtime/table.ts'));
+  // And what both of those check packs by, where the repository has it, in module/ beside os/.
+  mkdirSync(join(tree, '../module/muk/runtime'), {recursive: true});
+  copyFileSync(join(os, '../module/muk/runtime/table.ts'), join(tree, '../module/muk/runtime/table.ts'));
   assert.equal(node([join(os, 'scripts/pin-root.ts'), rootFile, out, '--rs', join(tree, 'core/src/root/pins.rs')]).status, 0);
 
   const tarOf = (dir: string) => execFileSync('tar', ['-C', dir, '--sort=name', '--mtime=@0', '--owner=0', '--group=0', '--numeric-owner', '--format=pax', '-cf', '-', '.'], {maxBuffer: 1 << 28});

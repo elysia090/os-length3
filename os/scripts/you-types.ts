@@ -10,7 +10,7 @@ import {fileURLToPath} from 'node:url';
 
 const rg = process.argv[2];
 if (!rg) throw new Error('usage: node scripts/you-types.ts RG');
-const out = fileURLToPath(new URL('../../you/types.h', import.meta.url));
+const out = fileURLToPath(new URL('../../module/you/types.h', import.meta.url));
 const run = (args: string[]): string => {
   const r = spawnSync(rg, args, {encoding: 'utf8'});
   if (r.status !== 0) throw new Error(`${rg} ${args.join(' ')}: ${r.stderr}`);

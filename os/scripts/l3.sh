@@ -10,7 +10,7 @@
 # Needs cargo with the wasm32-unknown-unknown target.
 set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
-sods=$(cd "$here/../sods" && pwd)
+sods=$(cd "$here/../module/sods" && pwd)
 root=${1:-}
 out=${2:-$here/public/l3}
 if [ -z "$root" ]; then root=$(node "$here/scripts/root-file.ts" "$here/target/root"); fi

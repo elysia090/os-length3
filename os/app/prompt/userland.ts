@@ -4,8 +4,8 @@ import {errorText} from '../host/errors.ts';
 import {isNative} from '../host/host.ts';
 import {REMOTE_URL} from '../remote/connection.ts';
 import {t} from '../i18n/i18n.ts';
-import {prepare, type Segment} from '../../../sods/runtime/share.ts';
-import {unpackMore} from '../../../muk/runtime/keeper.ts';
+import {prepare, type Segment} from '../../../module/sods/runtime/share.ts';
+import {unpackMore} from '../../../module/muk/runtime/keeper.ts';
 
 export type {Segment};
 
@@ -696,7 +696,7 @@ export const filesNow = (l3: L3): L3['files'] => [...l3.files, ...later.values()
 const withMore = (f: L3['files'][number]): L3['files'][number] => ({...f, more: more.get(f.path)?.list ?? []});
 
 /** The Prompt's Worker: xlat running l3's root (pages/bench/terminal.ts gives it l3 and the repo). */
-export const promptWorker = (): Worker => new Worker(new URL('../../../ricebox/runtime/worker.ts', import.meta.url), {type: 'module'});
+export const promptWorker = (): Worker => new Worker(new URL('../../../module/ricebox/runtime/worker.ts', import.meta.url), {type: 'module'});
 
 /**
  * A Prompt's Worker readied ahead while a Prompt is only shown (worker.ts 'ready'): its script loaded, the Workers

@@ -8,7 +8,7 @@
 // building C runs (gcc, cc1's 40 MB of code, the assembler, the linker) translated here took a browser's time and
 // memory at every Prompt on a repo with C, built in or not, and held Prompts starting after it for minutes.
 
-import {entriesOf} from '../../../muk/runtime/table.ts';
+import {entriesOf} from '../../../module/muk/runtime/table.ts';
 import {keepTranslation, originOf, threadsApart, translationKept, type Index, type L3} from './userland.ts';
 
 /**
@@ -72,7 +72,7 @@ const DROPPED = 'dropped';
 function translated(l3: L3, f: Index['files'][number]): Promise<{wasm: Uint8Array; segments: {offset: number; bytes: Uint8Array}[] | null} | null | typeof DROPPED> {
   const pack = entries(l3.index)[f.pack];
   return new Promise((resolve) => {
-    const w = new Worker(new URL('../../../sods/runtime/ahead.ts', import.meta.url), {type: 'module'});
+    const w = new Worker(new URL('../../../module/sods/runtime/ahead.ts', import.meta.url), {type: 'module'});
     const done = (v: Awaited<ReturnType<typeof translated>>) => { dropping = null; w.terminate(); resolve(v); };
     dropping = () => done(DROPPED);
     w.onmessage = ({data}) => done(data.error ? null : data);

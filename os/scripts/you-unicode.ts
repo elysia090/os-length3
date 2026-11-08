@@ -17,7 +17,7 @@ import {fileURLToPath} from 'node:url';
 
 const root = process.argv[2];
 if (!root) throw new Error('usage: node scripts/you-unicode.ts ROOT_DIR');
-const out = fileURLToPath(new URL('../../you/unicode.h', import.meta.url));
+const out = fileURLToPath(new URL('../../module/you/unicode.h', import.meta.url));
 const work = mkdtempSync(join(tmpdir(), 'you-unicode-'));
 
 /** What a command of ripgrep's says, run in the root with `work` at /tmp/w. */

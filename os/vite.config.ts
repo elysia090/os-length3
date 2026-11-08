@@ -10,7 +10,7 @@ import {shipped} from './remote/releases.ts';
 
 // Tauri serves the built files from ../dist and points its dev webview at this
 // fixed port, so the port must not drift to a free one. The Terminal's kernel
-// lives in ../sods (the translator) and ../ricebox (the kernel).
+// lives in ../module/sods (the translator) and ../module/ricebox (the kernel).
 
 // The web build's policy is app/host/policy.ts's: its own origin and the Remote. Tauri applies its own
 // policy (with its ipc: channel) to the desktop build, so the meta tag is only for the web.

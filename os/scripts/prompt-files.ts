@@ -24,7 +24,7 @@ import {mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync}
 import {join} from 'node:path';
 import {Readable} from 'node:stream';
 import {pinnedRoots} from '../remote/releases.ts';
-import {checkPacks} from '../../muk/runtime/table.ts';
+import {checkPacks} from '../../module/muk/runtime/table.ts';
 import {tarMembers, type About, type Index} from './l3-tree.ts';
 
 const here = new URL('..', import.meta.url).pathname;

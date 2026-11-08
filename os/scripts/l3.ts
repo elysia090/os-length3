@@ -48,7 +48,7 @@ import {basename, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Worker} from 'node:worker_threads';
 import {gzipSync} from 'node:zlib';
-import {packOf} from '../../muk/runtime/table.ts';
+import {packOf} from '../../module/muk/runtime/table.ts';
 import {readTarball, sha256, type Index} from './l3-tree.ts';
 
 const here = fileURLToPath(new URL('..', import.meta.url));
@@ -65,8 +65,8 @@ function flag(name: string, d: string | null = null): string | null {
   args.splice(i, 2);
   return v;
 }
-const translatorWasm = flag('--translator', join(repo, 'sods/target/wasm32-unknown-unknown/release/xlat.wasm'));
-const xlat = flag('--xlat', join(repo, 'sods/target/release/xlat'));
+const translatorWasm = flag('--translator', join(repo, 'module/sods/target/wasm32-unknown-unknown/release/xlat.wasm'));
+const xlat = flag('--xlat', join(repo, 'module/sods/target/release/xlat'));
 const hot = flag('--hot', '/usr/bin/bash,/usr/bin/busybox,/usr/bin/l3,/usr/bin/git').split(',').filter(Boolean);
 const stage = flag('--stage');
 const [rootFile, out] = args;
@@ -197,7 +197,7 @@ function strip(b: Buffer): Buffer {
   return Buffer.concat(kept);
 }
 const wasm = strip(readFileSync(translatorWasm));
-const translator = {name: 'xlat', version: crate(join(repo, 'sods/Cargo.toml')), wasm: sha256(wasm), ...blob(wasm)};
+const translator = {name: 'xlat', version: crate(join(repo, 'module/sods/Cargo.toml')), wasm: sha256(wasm), ...blob(wasm)};
 // Each hot program translated whole by the native build of the same translator (it gives the bytes the wasm one
 // does): what it reaches only through a pointer (BusyBox's applets and its shell's builtins) is there from its first
 // run, not translated as it runs.

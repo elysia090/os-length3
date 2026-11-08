@@ -42,10 +42,7 @@ devices. Building from source, `l3` is `cargo install --path os/l3`.
 | Directory | What is there | Start at |
 | --- | --- | --- |
 | [`os/`](os/) | **Length³ OS**: the app (TypeScript, no framework; Tauri for the window), `l3` (`cli/`), the core both use (`core/`, also built for `wasm32-wasip1` for the browser), and the Remote (`service/`: Hono on a Cloudflare Worker, Postgres on Neon) | [`os/README.md`](os/README.md), the design language in [`os/DESIGN.md`](os/DESIGN.md) |
-| [`sods/`](sods/) | instructions: static x86-64 Linux programs made WebAssembly ahead of the run | [`sods/README.md`](sods/README.md) |
-| [`ricebox/`](ricebox/) | the box: the smallest UNIX a browser runs (the kernel the root runs on in a browser's Prompt) | [`ricebox/README.md`](ricebox/README.md) |
-| [`muk/`](muk/) | what is at rest: packs and translations by digest, the repo in step | [`muk/README.md`](muk/README.md) |
-| [`you/`](you/), [`otter/`](otter/), [`lib/`](lib/) | units of C with no C library: the tools a person reaches for (z, rg), help and what each thing is, and what they stand on | each file's head |
+| [`module/`](module/) | the units, each a folder of its own: [`sods/`](module/sods/) instructions (static x86-64 Linux programs made WebAssembly ahead of the run), [`ricebox/`](module/ricebox/) the box (the smallest UNIX a browser runs: the kernel the root runs on in a browser's Prompt), [`muk/`](module/muk/) what is at rest (packs and translations by digest, the repo in step); and [`you/`](module/you/), [`otter/`](module/otter/), [`lib/`](module/lib/), units of C with no C library (the tools a person reaches for, z and rg; help and what each thing is; what they stand on) | each unit's `README.md`, or its files' heads |
 
 The root is [`os/root/`](os/root/): what it is made from (`sources.env`, the pins), one recipe per package
 (`packages/`), its own settings (`etc/`), and what makes it (`build.sh`, each package on Alpine 3.24 at one digest;

@@ -214,7 +214,7 @@ export interface Tried { line: Line; same: boolean; native: Ended; here: Ended &
 async function attempt(line: Line, web: string, root: string, seconds: number): Promise<Tried> {
   const native = await run('bwrap', [...sandbox(root), '/bin/sh', '-c', line.line], seconds);
   // The same environment as natively: what a person's Prompt has.
-  const asked: Asked = {web, path: '/bin/sh', args: ['-c', line.line], translator: `${OS}../sods/target/wasm32-unknown-unknown/release/xlat.wasm`, fresh: false, kept: null, env: ENV};
+  const asked: Asked = {web, path: '/bin/sh', args: ['-c', line.line], translator: `${OS}../module/sods/target/wasm32-unknown-unknown/release/xlat.wasm`, fresh: false, kept: null, env: ENV};
   const child = await run(process.execPath, [`${OS}scripts/l3-runnable.ts`, '--child', JSON.stringify(asked)], seconds, {...process.env, XLAT_INLINE: '1'});
   let said: {status: number | null; stdout: string; stderr: string; error: string | null} | null = null;
   try { said = JSON.parse(child.stdout); } catch { /* it ended without saying: killed, or the kernel threw */ }

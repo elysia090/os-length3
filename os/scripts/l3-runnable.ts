@@ -16,18 +16,18 @@
 //
 //   node scripts/l3-runnable.ts WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N] [--fresh] [--warm]
 //
-// --fresh: this checkout's translator (../sods's wasm build), every program translated as it runs, not what WEB carries.
+// --fresh: this checkout's translator (../module/sods's wasm build), every program translated as it runs, not what WEB carries.
 // --warm: each line run once before the run timed, what it translated kept between runs as a browser keeps it (Cache
 // Storage, keeper.ts): the time of a Prompt that ran its programs before, not of the first one.
 //
 // WEB is l3 for the browser (public/l3; a root of packs of before is read
 // too), ROOT_DIR the same root unpacked (for the native run). The translator
-// is l3's own (its index names it), else ../sods's wasm build.
+// is l3's own (its index names it), else ../module/sods's wasm build.
 import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {existsSync, readFileSync, writeFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
-import type {Kernel} from '../../ricebox/runtime/process.ts';
+import type {Kernel} from '../../module/ricebox/runtime/process.ts';
 import {openWeb, type Index} from './l3-tree.ts';
 
 /** What one program run under xlat says: its wait status, its output, and how long it took. */
@@ -94,14 +94,14 @@ async function keptIn(dir: string) {
 
 /** One program under xlat, in this process: prints {status, stdout, stderr, error?, ms} as JSON. */
 async function child({web, path, args, translator, fresh, kept: keptDir, env = ENV}: Asked) {
-  const {Vfs} = await import('../../ricebox/runtime/fs.ts');
-  const {mountPack, provide} = await import('../../muk/runtime/pack.ts');
-  const {Kernel} = await import('../../ricebox/runtime/process.ts');
+  const {Vfs} = await import('../../module/ricebox/runtime/fs.ts');
+  const {mountPack, provide} = await import('../../module/muk/runtime/pack.ts');
+  const {Kernel} = await import('../../module/ricebox/runtime/process.ts');
   // As a cross-origin isolated page runs it: each thread in a Worker of its own (XLAT_INLINE=1: all in turn here).
-  const {RemoteKernel, canRunApart} = await import('../../ricebox/runtime/remote.ts');
+  const {RemoteKernel, canRunApart} = await import('../../module/ricebox/runtime/remote.ts');
   const apart = canRunApart() && !process.env.XLAT_INLINE;
-  const {loadTranslator} = await import('../../sods/runtime/translator.ts');
-  const {keeper} = await import('../../muk/runtime/keeper.ts');
+  const {loadTranslator} = await import('../../module/sods/runtime/translator.ts');
+  const {keeper} = await import('../../module/muk/runtime/keeper.ts');
   const store = keptDir ? await keptIn(keptDir) : null;
   const w = openWeb(web);
   // --fresh: this checkout's translator, translating everything as it runs (what the next l3 will be).
@@ -226,7 +226,7 @@ async function main() {
   const [web, rootDir] = args;
   if (!web || !rootDir) { console.error('usage: l3-runnable.ts WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N]'); process.exit(2); }
   const w = openWeb(web);
-  const translator = new URL('../../sods/target/wasm32-unknown-unknown/release/xlat.wasm', import.meta.url).pathname;
+  const translator = new URL('../../module/sods/target/wasm32-unknown-unknown/release/xlat.wasm', import.meta.url).pathname;
   if (!w.index.translator && !existsSync(translator)) throw new Error(`no translator: l3 names none, and ${translator} is not built`);
   // What each file is, by its first bytes (ELF, a script and its interpreter).
   const head = (path: string) => { const f = w.index.files.find((x) => x.path === path); return f ? w.read(f).subarray(0, 128) : Buffer.alloc(0); };

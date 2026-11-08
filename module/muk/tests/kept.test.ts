@@ -11,7 +11,7 @@ import {have} from '../../ricebox/tests/busybox.ts';
 // translation taken from a keeper (Kernel.image) instead of being made again. The next run says the same and
 // translates nothing.
 
-const stage = new URL('../../os/target/userland/', import.meta.url);
+const stage = new URL('../../../os/target/userland/', import.meta.url);
 // One shell, no program run again by exec: a program run again is translated again as one module once it has reached
 // enough later (Kernel.consolidate), and what it reaches after follows on from that one, not from its first.
 const SCRIPT = 'echo one; for x in a b c; do echo $x; done | while read l; do echo "$l"; done; printf "%s-%d\\n" two 2; test -d / && echo three';
