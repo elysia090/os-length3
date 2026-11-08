@@ -114,6 +114,9 @@ function offsetOf(text: string, line: number, column: number): number {
 /** Of a piece written, at most this much is typed key by key; the rest comes in at once, as a paste does. Every edit
  * an agent makes is seen made: typed whole, unless it is a page or more. */
 const TYPED_MOST = 1600;
+/** How long the eye stays on a file once the hand has written in it, so what was written is read before the camera
+ * goes on to the next box (never there, typed, and gone in the same breath). */
+const SEEN_MS = 700;
 /** Of a file made, at most this much. */
 const MADE_MOST = 2400;
 /** An old piece this long or shorter goes a key at a time, Backspace held after the first few as a hand holds it; a
@@ -439,6 +442,7 @@ export class Player {
     h.made = false;
     this.#release(d.path, d.text);
     this.#looked = {path: d.path, line: 1};
+    await wait(SEEN_MS);
   }
 
   /** An edit typed in where it is: each piece in turn, the old words going and the new typed in (its first part). */
@@ -506,5 +510,6 @@ export class Player {
     }
     this.#release(d.path, now);
     if (d.spans.length) this.#looked = {path: d.path, line: d.spans[0].line};
+    await wait(SEEN_MS);
   }
 }

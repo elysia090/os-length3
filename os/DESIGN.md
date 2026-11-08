@@ -2467,7 +2467,9 @@ work in is always in sight, and what else is at work peeks in at the edges,
 saying where it is; narrowing to fewer waits a moment, so a step ending and the next
 starting is not a move away and back. A box it went to and still at work holds
 it a while (a command typed is seen run and answered before it goes on to the
-file begun meanwhile), going on once that is done or has been watched. A box
+file begun meanwhile; what it wrote in a file is read, the eye staying on it
+a moment, never there, typed and gone in the same breath), going on once that
+is done or has been watched. A box
 growing as it is written never turns a glide back on itself: where the camera
 passes is not taken for where it stays. The person writing in their own box (a
 key, a paste) takes the camera back to it, gliding, never a jump to where the
