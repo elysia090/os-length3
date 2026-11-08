@@ -825,8 +825,13 @@ export class Desk {
     if (!moving) { set(to, true); this.#gliding = false; return; }
     // The box in hand's middle, on the desk: where it is on the face, and how near, are what move. Carried (`path`), it
     // is where the box is on its way, so the box goes across the face in one straight move however the camera moves.
+    // (The box in hand out of sight, the camera over other work, the Agent's: what is in the face's middle, so stepping
+    // back is about what is seen, never a slide off to where the box in hand lies.)
     const b = this.#held ? this.#boxes.get(this.#held) : undefined;
-    const m0 = b ? {x: b.slot.x + WIDTH / 2, y: b.slot.y + b.el.offsetHeight / 2} : {x: (el.clientWidth / 2 - from.x) / from.s, y: (el.clientHeight / 2 - from.y) / from.s};
+    const middle = {x: (el.clientWidth / 2 - from.x) / from.s, y: (el.clientHeight / 2 - from.y) / from.s};
+    const inHand = b ? {x: b.slot.x + WIDTH / 2, y: b.slot.y + b.el.offsetHeight / 2} : null;
+    const seen = (p: Point) => { const x = from.x + p.x * from.s, y = from.y + p.y * from.s; return x >= 0 && x <= el.clientWidth && y >= 0 && y <= el.clientHeight; };
+    const m0 = inHand && seen(inHand) ? inHand : middle;
     const mid = (p: number) => (path ? {x: path.from.x + (path.to.x - path.from.x) * p, y: path.from.y + (path.to.y - path.from.y) * p} : m0);
     const pf = {x: mid(0).x * from.s + from.x, y: mid(0).y * from.s + from.y};
     const glide = this.#glide = {to};

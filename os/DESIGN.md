@@ -2076,8 +2076,10 @@ as the standard's box is (never low in the face with the room above it
 empty), what is above it in its column in sight over it and the boxes beside
 it round it (one too low for that comes up till its foot is in sight); and
 the whole desk, at most half its size, in the middle across, its top at the
-eye too. Stepping back it zooms first and then goes; coming
-nearer it goes first and then zooms. Going along at one place to what is out
+eye too. Stepping back it zooms first and then goes (about what is in the
+face's middle when the box in hand is out of sight, the camera over the
+Agent's work: never a slide off to where that box lies); coming nearer it
+goes first and then zooms. Going along at one place to what is out
 of sight from there (the next column, a box far down), it steps back on the
 way as far as the way is long and comes down onto it, as a head turns across
 a room (the Agent's camera, below, goes so too); what is in sight is gone to
