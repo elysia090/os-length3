@@ -1,7 +1,10 @@
 // File, directory, descriptor and pipe system calls. Handlers run with
 // `this` bound to the calling Process (`this.task` the thread, `this.call`
 // the call, whose `state` lasts while it waits) and throw FsError for errno
-// results, or Wait for a call to be made again once something changed.
+// results, or Wait for a call to be made again once something changed. Where
+// a failure is what is most often asked (a name looked up that is not there),
+// its errno is given back negated instead, as the call's value: a throw cost
+// more than the call.
 
 import {Description, PIPE_BUF, Pipe, flock, unflock, type Interest} from './fd.ts';
 import * as net from './sys-net.ts';
@@ -159,11 +162,13 @@ function descriptorPath(p: Proc, name: string): string {
 }
 
 /** What a stat of `name` that follows links stats: a descriptor's /proc name (Linux's links to what is open there), what
- * that descriptor has open, a file renamed over or removed included; else the node there. */
-function statNode(p: Proc, name: string, dirfd: bigint, follow: boolean): Statted {
+ * that descriptor has open, a file renamed over or removed included; else the node there, or the errno its lookup fails with. */
+function statNode(p: Proc, name: string, dirfd: bigint, follow: boolean): Statted | number {
   const d = follow && name.startsWith('/') ? procDescriptor(p.kernel, descriptorPath(p, name)) : null;
-  return d ? describe(p, d) : p.kernel.vfs.lookup(name, base(p, dirfd), follow);
+  return d ? describe(p, d) : p.kernel.vfs.find(name, base(p, dirfd), follow);
 }
+/** A stat of what `found` is into `st`, or the errno it is, negated. */
+const statOf = (p: Proc, st: bigint, found: Statted | number): number => (typeof found === 'number' ? -found : writeStat(p, st, found));
 
 function openAt(p: Proc, dirfd: bigint, address: bigint, flags: bigint, mode: bigint): number {
   const f = N(flags), name = path(p, address);
@@ -176,10 +181,11 @@ function openAt(p: Proc, dirfd: bigint, address: bigint, flags: bigint, mode: bi
     if (fd < 0) fail(E.MFILE);
     return fd;
   }
-  const r = p.kernel.vfs.resolve(name, base(p, dirfd), !(f & O.NOFOLLOW));
+  const r = p.kernel.vfs.walk(name, base(p, dirfd), !(f & O.NOFOLLOW));
+  if (typeof r === 'number') return -r;
   let node = r.node;
   if (!node) {
-    if (!(f & O.CREAT)) fail(E.NOENT);
+    if (!(f & O.CREAT)) return -E.NOENT;
     node = new File(new Uint8Array(0), N(mode) & ~p.umask & 0o7777);
     r.parent.entries.set(r.name, node);
   } else if ((f & O.CREAT) && (f & O.EXCL)) {
@@ -473,9 +479,11 @@ function rename(p: Proc, olddir: bigint, oldaddr: bigint, newdir: bigint, newadd
   return 0;
 }
 
+/** What a link holds; else its errno, given back (realpath asks it of each name on the way). */
 function readlink(p: Proc, dirfd: bigint, address: bigint, buf: bigint, size: bigint): number {
-  const node = p.kernel.vfs.lookup(path(p, address), base(p, dirfd), false);
-  if (!(node instanceof Link)) return fail(E.INVAL);
+  const node = p.kernel.vfs.find(path(p, address), base(p, dirfd), false);
+  if (typeof node === 'number') return -node;
+  if (!(node instanceof Link)) return -E.INVAL;
   const bytes = enc.encode(node.target).subarray(0, N(size));
   p.bytes.set(bytes, N(buf));
   return bytes.length;
@@ -527,7 +535,8 @@ function access(p: Proc, dirfd: bigint, address: bigint, mode: bigint, flags = 0
   if (f & ~(AT.SYMLINK_NOFOLLOW | AT_EACCESS | AT.EMPTY_PATH)) fail(E.INVAL);
   const node = f & AT.EMPTY_PATH && !p.bytes[N(address)]
     ? (N(dirfd) === AT_FDCWD ? p.kernel.vfs.lookup(p.cwd, '/') : descriptor(p, dirfd).node ?? fail(E.BADF))
-    : p.kernel.vfs.lookup(path(p, address), base(p, dirfd), !(f & AT.SYMLINK_NOFOLLOW));
+    : p.kernel.vfs.find(path(p, address), base(p, dirfd), !(f & AT.SYMLINK_NOFOLLOW));
+  if (typeof node === 'number') return -node;
   if (m & 1 && !node.isDir && !(node.mode & 0o111)) fail(E.ACCES);
   return 0;
 }
@@ -860,10 +869,11 @@ function ioctl(p: Proc, d: Description, request: number, arg: number): number {
       v.setUint32(arg + 8, TERMIOS.cflag, true); v.setUint32(arg + 12, TERMIOS.lflag, true);
       return 0;
     }
-    return fail(E.NOTTY);
+    return -E.NOTTY;
   }
-  // The rest are a terminal's, and only the console is one (when it says it is interactive).
-  if (d.kind !== 'console' || !k.console.interactive) fail(E.NOTTY);
+  // The rest are a terminal's, and only the console is one (when it says it is interactive). Not one: what every
+  // program's stdio asks of its output once (isatty), so given back.
+  if (d.kind !== 'console' || !k.console.interactive) return -E.NOTTY;
   k.tty.termios ??= {...TERMIOS, echo: TERMIOS.lflag & ECHO, cc: new Uint8Array([3, 28, 127, 21, 4, 0, 1, 0, 17, 19, 26, 0, 18, 15, 23, 22, 0, 0, 0])};
   const tio = k.tty.termios;
   switch (r) {
@@ -970,9 +980,9 @@ export const FILE_CALLS: Calls = {
   1(fd, buf, len) { return writeFrom(this, descriptor(this, fd), N(buf), N(len)); },
   2(name, flags, mode) { return openAt(this, BigInt(AT_FDCWD), name, flags, mode); },
   3(fd) { if (!this.fds.close(N(fd))) fail(E.BADF); return 0; },
-  4(name, st) { return writeStat(this, st, statNode(this, path(this, name), BigInt(AT_FDCWD), true)); },
+  4(name, st) { return statOf(this, st, statNode(this, path(this, name), BigInt(AT_FDCWD), true)); },
   5(fd, st) { return writeStat(this, st, describe(this, descriptor(this, fd))); },
-  6(name, st) { return writeStat(this, st, this.kernel.vfs.lookup(path(this, name), this.cwd, false)); },
+  6(name, st) { return statOf(this, st, this.kernel.vfs.find(path(this, name), this.cwd, false)); },
   7(fds, count, timeout) { return poll(this, fds, count, Number(BigInt.asIntN(32, timeout))); },
   271(fds, count, spec, mask) { return poll(this, fds, count, timespecMs(this, N(spec)) ?? -1, N(mask)); },
   8(fd, offset, whence) {
@@ -1168,7 +1178,7 @@ export const FILE_CALLS: Calls = {
   },
   262(dirfd, name, st, flags) {
     if ((N(flags) & AT.EMPTY_PATH) && !this.bytes[N(name)]) return writeStat(this, st, describe(this, descriptor(this, dirfd)));
-    return writeStat(this, st, statNode(this, path(this, name), dirfd, !(N(flags) & AT.SYMLINK_NOFOLLOW)));
+    return statOf(this, st, statNode(this, path(this, name), dirfd, !(N(flags) & AT.SYMLINK_NOFOLLOW)));
   },
   263(dirfd, name, flags) { return remove(this, dirfd, name, (N(flags) & AT.REMOVEDIR) !== 0); },
   264(od, oa, nd, na) { return rename(this, od, oa, nd, na); },

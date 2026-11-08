@@ -108,7 +108,9 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(out).toContainText(/Stopped\s+sleep 30/);
     await expect(ps).toHaveText(/hello \$/);
     await app.forge.run('jobs');
-    await expect(out).toContainText(/\[1\]\+\s+Stopped/);
+    // jobs's own listing (^Z's line says Stopped too) and the prompt after it: fg typed sooner is echoed before them.
+    await expect(out).toContainText(/jobs\n\[1\]\+\s+Stopped\s+sleep 30/);
+    await expect(ps).toHaveText(/hello \$/);
     await box.fill('fg');
     await box.press('Enter');
     // Brought back: the shell says the job's line as it puts it in front again, and it runs on till cut.

@@ -190,7 +190,10 @@ test('what the Agent changes on seeing a run is shown after that run\'s output, 
   await box.fill('agent Write count.sh: it counts the lines of what comes in.');
   await box.press('Enter');
   await expect(app.forge.editor('count.sh')).toHaveValue(/echo "\$n lines"/, {timeout: 60_000});
-  const at = await page.evaluate(() => (window as unknown as {zzAt: {ran: number; mended: number}}).zzAt);
+  // Its frame's look has seen it too (a loaded machine's next frame comes after the value is there).
+  const seen = () => page.evaluate(() => (window as unknown as {zzAt: {ran: number; mended: number}}).zzAt);
+  await expect.poll(async () => (await seen()).mended).toBeGreaterThan(0);
+  const at = await seen();
   expect(at.ran).toBeGreaterThan(0);
   // Mended only once what showed it wrong has been seen: decided on seeing it, it is not played before it.
   expect(at.mended).toBeGreaterThan(at.ran);

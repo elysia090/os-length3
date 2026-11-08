@@ -301,12 +301,16 @@ export const E = {PERM: 1, NOENT: 2, IO: 5, BADF: 9, CHILD: 10, AGAIN: 11, NOMEM
   NOTEMPTY: 39, LOOP: 40, NAMETOOLONG: 36, PIPE: 32, NOEXEC: 8, SRCH: 3, INTR: 4, AFNOSUPPORT: 97, NXIO: 6, TIMEDOUT: 110,
   OPNOTSUPP: 95, BUSY: 16, NODEV: 19, NODATA: 61, TOOBIG: 7};
 
-export class FsError extends Error {
+/**
+ * A call's failure, as the errno it answers (thrown where it cannot go on; the call's value, Kernel.attempt). Not an
+ * Error: it is what a call says, not a fault, and the stack an Error takes cost more than the call (2.6 µs a failure,
+ * where a shell's PATH search and a compiler's include path fail by the hundred).
+ */
+export class FsError {
   declare readonly errno: number;
-  constructor(errno: number) {
-    super(`errno ${errno}`);
-    this.errno = errno;
-  }
+  constructor(errno: number) { this.errno = errno; }
+  get message(): string { return `errno ${this.errno}`; }
+  toString(): string { return `FsError: ${this.message}`; }
 }
 
 const fail = (errno: number): never => { throw new FsError(errno); };
@@ -350,9 +354,29 @@ export class Vfs {
    * Resolve `path` from `cwd`. Returns {node, parent, name}; node is null
    * when only the last component is missing (useful for creation).
    */
-  resolve(path: string, cwd = '/', follow = true, depth = 0): Resolved {
-    if (depth > 40) fail(E.LOOP);
-    if (path === '') fail(E.NOENT);
+  resolve(path: string, cwd = '/', follow = true): Resolved {
+    const r = this.walk(path, cwd, follow);
+    return typeof r === 'number' ? fail(r) : r;
+  }
+
+  /**
+   * The node at `path`, or the errno its lookup fails with, given back, not thrown: a name that is not there is most of
+   * what a shell's PATH search and a compiler's include path ask, and the throw cost more than the lookup.
+   */
+  find(path: string, cwd: string, follow = true): Entry | number {
+    const r = this.walk(path, cwd, follow);
+    return typeof r === 'number' ? r : r.node ?? E.NOENT;
+  }
+
+  lookup(path: string, cwd: string, follow = true): Entry {
+    const r = this.find(path, cwd, follow);
+    return typeof r === 'number' ? fail(r) : r;
+  }
+
+  /** As resolve, its errno given back (find). */
+  walk(path: string, cwd = '/', follow = true, depth = 0): Resolved | number {
+    if (depth > 40) return E.LOOP;
+    if (path === '') return E.NOENT;
     // Its components read in place, one after another (not split into an array, filtered and joined again: a stat or
     // an open of a short path spent most of its time there). Empty components and "." are none.
     const full = path.charCodeAt(0) === SLASH ? path : cwd + '/' + path, n = full.length;
@@ -368,27 +392,22 @@ export class Vfs {
       const part = full.slice(start, end), dir = stack[stack.length - 1];
       name = part;
       if (part === '..') { if (stack.length > 1) stack.pop(); continue; }
-      if (!(dir instanceof Dir)) return fail(E.NOTDIR);
+      if (!(dir instanceof Dir)) return E.NOTDIR;
       const node = dir.entries.get(part);
       const last = onlyDots(full, end);
       if (!node) {
         if (last) return {node: null, parent: dir, name: part};
-        return fail(E.NOENT);
+        return E.NOENT;
       }
       if (node instanceof Link && (!last || follow)) {
         // The link's target from the directory it is in (what came before it), then what comes after it.
         const target = node.target.startsWith('/') ? node.target : full.slice(0, start) + '/' + node.target;
-        return this.resolve(last ? target : target + full.slice(end), '/', follow, depth + 1);
+        return this.walk(last ? target : target + full.slice(end), '/', follow, depth + 1);
       }
       stack.push(node);
     }
     const node = stack[stack.length - 1];
     return {node, parent: (stack[stack.length - 2] as Dir | undefined) ?? this.root, name};
-  }
-
-  lookup(path: string, cwd: string, follow = true): Entry {
-    const r = this.resolve(path, cwd, follow);
-    return r.node ?? fail(E.NOENT);
   }
 
   /** Canonical absolute path of an existing directory. */

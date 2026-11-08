@@ -26,6 +26,8 @@ static void getppid_(void) { sink += syscall(SYS_getppid); }
 static void clock_(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); sink += t.tv_nsec; }
 static void open_close(void) { int fd = open("/tmp/floors.f", O_RDONLY); close(fd); }
 static void stat_(void) { struct stat st; stat("/tmp/floors.f", &st); sink += st.st_size; }
+// A name that is not there: a shell's PATH searched, a compiler's include path probed.
+static void stat_missing(void) { struct stat st; sink += stat("/tmp/floors.none", &st); }
 static int rfd, wfd;
 static void pread4k(void) { sink += pread(rfd, page, sizeof page, 0); }
 static void write4k(void) { sink += write(wfd, page, sizeof page); }
@@ -76,10 +78,10 @@ int main(int argc, char **argv) {
   close(up[1]), close(down[0]);
   struct floor floors[] = {
     {"syscall (getppid)", getppid_, 20000}, {"clock_gettime", clock_, 20000}, {"open+close", open_close, 5000},
-    {"stat", stat_, 5000}, {"pread 4 KiB", pread4k, 5000}, {"write 4 KiB /dev/null", write4k, 5000},
-    {"pipe round trip", pipe_rtt, 2000}, {"fork+exit+wait", fork_wait, 100}, {"fork+exec+wait", fork_exec, 50},
-    {"posix_spawn+wait", spawn_, 50}, {"mmap 1 MiB+touch+munmap", mmap_touch, 200}, {"thread create+join", thread_, 200},
-    {"memcpy 64 MiB", memcpy64m, 5}, {"1M multiply-adds", loop1m, 20},
+    {"stat", stat_, 5000}, {"stat, no such file", stat_missing, 5000}, {"pread 4 KiB", pread4k, 5000},
+    {"write 4 KiB /dev/null", write4k, 5000}, {"pipe round trip", pipe_rtt, 2000}, {"fork+exit+wait", fork_wait, 100},
+    {"fork+exec+wait", fork_exec, 50}, {"posix_spawn+wait", spawn_, 50}, {"mmap 1 MiB+touch+munmap", mmap_touch, 200},
+    {"thread create+join", thread_, 200}, {"memcpy 64 MiB", memcpy64m, 5}, {"1M multiply-adds", loop1m, 20},
   };
   for (unsigned k = 0; k < sizeof floors / sizeof *floors; k++) {
     if (only >= 0 && (int)k != only) continue;

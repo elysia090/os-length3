@@ -170,7 +170,8 @@ function futex(p: Proc, uaddr: bigint, op: bigint, val: bigint, timeout: bigint,
       if (!s.waiter) {
         const bitset = cmd === 9 ? Number(BigInt.asIntN(32, val3)) : -1;
         if (!bitset) fail(E.INVAL);
-        if (word(address) !== Number(BigInt.asIntN(32, val))) fail(E.AGAIN);
+        // Changed already: given back, not thrown (a lock taken and let go meanwhile, as often as not).
+        if (word(address) !== Number(BigInt.asIntN(32, val))) return -E.AGAIN;
         const w = s.waiter = {task: p.task, bitset, woken: false, key: p.futexKey(address)};
         k.futexQueue(w.key).add(w);
         s.cancel = () => { k.futexes.get(w.key[0])?.get(w.key[1])?.delete(w); };
