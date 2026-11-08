@@ -44,28 +44,46 @@ test('going along the rail pans to the next page, which stands whole once it lan
   expect(await app.page.evaluate(() => getComputedStyle(document.getElementById('page')!).viewTransitionName)).toBe('none');
 });
 
-test('the two pages of a pan go together a short way: the one come to two dots behind the one left, whatever their heights', async ({app}) => {
+test('going along the rail, one camera moves what lies on the ground of both pages, whatever their heights; the frame stands still', async ({app}) => {
   await app.newRepo.make('hello');
   await app.rail.go('home');
   await still(app);
-  // Home runs past the window's foot, Git stops short of it. Frame by frame, the page left (its picture) and the page
-  // come to keep the same distance apart, the one giving way as the other comes: a turn of the head, not a lift.
-  const apart = app.page.evaluate(() => new Promise<number[]>((done) => {
-    const seen: number[] = [], t0 = performance.now();
+  // Home runs past the window's foot, Forge stops at it. Frame by frame, what lay on the page left (its picture) and
+  // what lies on the page come to are stood back as far as each other and lie as far apart (as the pages lie, before
+  // the camera stands back): the camera moves, not the pages. The band and the pane do not move at all.
+  const seen = app.page.evaluate(() => new Promise<{k: number[]; f: [number, number][]; frame: string[]}>((done) => {
+    const k: number[] = [], f: [number, number][] = [], frame = new Set<string>(), t0 = performance.now();
     const tick = () => {
       const old = getComputedStyle(document.documentElement, '::view-transition-old(page)').transform;
-      const part = document.querySelector('#page > :not([hidden])');
-      if (old !== 'none' && part) seen.push(new DOMMatrix(getComputedStyle(part).transform).f - new DOMMatrix(old).f);
-      if (performance.now() - t0 < 1500) requestAnimationFrame(tick); else done(seen);
+      const part = document.querySelector<HTMLElement>('#page .work.desk-bench > .center');
+      const come = part ? getComputedStyle(part).transform : 'none';
+      if (old !== 'none' && come !== 'none') {
+        const a = new DOMMatrix(old), b = new DOMMatrix(come);
+        if (Math.abs(a.a - b.a) > .002) throw new Error(`stood back unlike: ${a.a} and ${b.a}`);
+        k.push(b.a);
+        // Each where it is seen now: the picture of the page left from where its group stands, the part come to where the
+        // window shows it.
+        const was = new DOMMatrix(getComputedStyle(document.documentElement, '::view-transition-group(page)').transform).f;
+        f.push([was + a.f, part!.getBoundingClientRect().top]);
+        for (const el of document.querySelectorAll('#page .work.desk-bench > .bar, #page .work.desk-bench > .side')) {
+          const r = el.getBoundingClientRect();
+          frame.add(`${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.width)},${Math.round(r.height)}`);
+        }
+      }
+      if (performance.now() - t0 < 1500) requestAnimationFrame(tick); else done({k, f, frame: [...frame]});
     };
     requestAnimationFrame(tick);
   }));
-  await app.rail.button('git').click();
-  const seen = await apart;
-  expect(seen.length).toBeGreaterThan(3);
-  expect(Math.max(...seen) - Math.min(...seen)).toBeLessThan(2);
-  // Two of the ground's dots apart (main.ts SHORT), not a window's height: it comes from just below its place.
-  expect(Math.abs(seen[0] - 48)).toBeLessThan(2);
+  await app.rail.button('forge').click();
+  const {k, f, frame} = await seen;
+  // How far apart the two are, as the pages lie.
+  const apart = f.map(([a, b], i) => (b - a) / k[i]);
+  expect(k.length).toBeGreaterThan(3);
+  // It stands back to half (main.ts CAMERA), as the desk's camera does at its furthest.
+  expect(Math.min(...k)).toBeLessThan(.52);
+  expect(Math.max(...apart) - Math.min(...apart)).toBeLessThan(2);
+  // The band and the pane, two of them, each where it stands, all the way.
+  expect(frame.length).toBe(2);
 });
 
 test('pressed again before the pan has moved, the rail goes straight to the place pressed last; pressed back, it stays', async ({app}) => {

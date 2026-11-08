@@ -520,6 +520,8 @@ export class Box {
     return {
       typing: () => term.typing(),
       shown: (line, output, status) => term.shown(line, output, status),
+      running: (line) => term.running(line),
+      saying: () => term.saying(),
       front: () => front,
       place: (path) => this.#repo === at && !!this.#p.place?.(path),
       together: (keys) => this.#repo !== at || (this.#p.together?.(keys) ?? true),

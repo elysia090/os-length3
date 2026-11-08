@@ -168,6 +168,9 @@
 .agent-prompt { font: var(--t-code)/1.6 var(--mono); white-space: pre-wrap; }
 .agent-cur { display: inline-block; width: .6em; height: 1.25em; vertical-align: -.25em; background: var(--ink); opacity: 0; }
 .agent-term.typing .agent-cur { opacity: 1; }
+/* A command running: no prompt on its line until it ends, the caret alone there, as a terminal has it. */
+.agent-term.running .agent-prompt .ps { display: none; }
+.agent-term.running .agent-cur { opacity: 1; }
 /* Born from under another box (the Agent's terminal from under the person's): its name comes once it is out. */
 .desk-box.born > .desk-label { opacity: 0; }
 .desk-box > .desk-label { transition: opacity 180ms ease-out; }

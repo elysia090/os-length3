@@ -105,35 +105,42 @@ Every value in `styles.css` comes from a token (§2).
     its own until it has landed (never a second box showing past the ink's
     edge), and another pressed before it lands takes the ink on from where
     it is: one ink, never two, never back to where it set off.
-  - *The camera pans along the rail.* The pages stand one above another
-    down the rail, as floors do: going to another place is a turn of the
-    head, not a journey. The page come to moves in the press's own frame,
-    from two dots below (down the rail; above, up it) into its place, only
-    slowing as it lands (240 ms), while the page left goes the same short way
-    out of it; the rail and the window's edges stand still. The page left is
-    gone by a third of the way and the page come to comes in after a seventh,
-    so the two are never printed one on the other, their words over each
-    other, and there is never an empty frame between them. (Before: the whole
-    window's height in half a second, held after the press and then heaved, a
-    lift and not a turn.) It comes as one, not
-    staged. A floor is what the window shows of its page, from its top line
-    to the window's foot, cut there, whatever the page's own height (Home
-    runs past the foot, Git's stops short of it): the one come to adjoins
-    the one left and both go the same length, never the one over the other,
-    never a band of nothing between. Only the page left is taken as a picture to move (cut at the
-    window's edges); the page come to comes itself, and the rest of the
-    window goes on being drawn as it is, so a press made while it pans (the
-    rail pressed again, the pane's button as the page comes up) lands on
-    what is under the hand, never lost on a picture still on its way. The
+  - *The camera goes along the rail* as the desk's own camera goes, and as
+    a game switches from one person to another. Pressed, what lies on the
+    ground pulls back at once to half its size about the middle of the
+    ground (the desk's whole-desk camera at its furthest; back first, then
+    along, as the desk's Escape goes), the page come to lying beside the one
+    left the way the rail goes (above going up, below going down); the
+    camera goes along to it and comes down into it (along first, then near),
+    landing softly, 820 ms in all, the three moves running a little into
+    each other so it never stands still between them. Only what lies on the
+    ground moves. The rail, the band and the pane are the frame and do not
+    move at all: what differs on them (Forge's pills, the pane's rows) gives
+    way in place as the camera passes between the two pages, the frame come
+    to coming in under the one left before that one goes, so what the two
+    share (the band's tools, the pane's edge) never dims. The ground stands
+    still under the camera as the desk's does: the paper's own colour, the
+    dots never growing, shrinking or going by (where two pages' dots lie a
+    part of a dot apart, they go over by the least they can as the camera
+    goes along; where one page has none, they come or go with the frame).
+    What lies on the ground is seen only where the ground is: under the
+    band, left of the pane, over the window's foot. Nothing is heard. (Before:
+    the whole screen, frame and all, made a card on a darker ground with
+    its dots shrunk with it and a sound made up for it: the frame moved, a
+    colour of its own, the desk's endless ground made a sheet with edges;
+    before that a short slide with a cross-fade, no journey at all; before
+    that a heave up the rail, a lift and not a turn of the head.) Only the
+    page left is taken as pictures (what lies on its ground, and each part
+    of its frame apart); the page come to comes itself, and the rest of the
+    window goes on being drawn as it is, so a press made while it goes (the
+    rail pressed again, the pane's button as the page comes) lands on what
+    is under the hand, never lost on a picture still on its way. The
     keyboard given to a page as it is drawn (Server's line to post in, New
-    repo's name) scrolls nothing to reach it: coming up from under the
-    window, a page scrolled for it was pulled up and away with the page
-    left, the window empty until it was put back. The
-    rail pressed again before the pan has moved (a double press, its keys
-    held) goes straight to the place pressed last, from where it began, and
-    pressed back to where it began it simply stays; once moving, the page
-    coming is taken as it stands and the next adjoins it there, never first
-    put in its place. Along the
+    repo's name) scrolls nothing to reach it. The rail pressed again on the
+    way (a double press, its keys held) goes on from where the camera is to
+    the place pressed last, the page it was going to drawn as that place;
+    pressed back to where it began, the camera goes back the way it came
+    (before it has moved, it simply stays). Along the
     band: the repos stand side by side in the band's order, and another repo
     come to comes in whole from its pill's side over the one left, which
     steps back a little the other way and fades under it (400 ms): never a
@@ -1928,21 +1935,9 @@ its foot where Forge's is, level with the person at the rail's; its first row
 where Forge's first run is, level with the rail: the row's first line starts
 where the rail's first icon does, so the line's capitals, the bar beside them
 and the icon's ink start on one line (the bar as tall as its words, capitals
-to baseline, never standing proud of them). Between Home, Forge and New repo
-the rail does not change floors: it moves a camera over the one dotted ground,
-on which the three lie a little apart across as well as down (Home a dot to
-the left of Forge, New repo a dot to its right), so the camera
-going up to Home drifts a little left as it goes, never straight up a shaft.
-It goes at once (moving in the press's own frame, only slowing as it lands),
-a short way (two dots up or down the rail, a dot across), the page left giving
-way as the one come to comes in, which grows from a breath smaller into its
-place (240 ms in all): a change of place, never a page heaved up and set down. The band, the
-pane and its switch are the frame and stay where they are (what differs on
-them, Forge's pills, the pane's rows, gives way in place in a seventh of a
-second); the page left is seen only on the ground between them, never over
-them; the dots are one lattice under both pages from the first frame to the
-last (the way between them is moved by less than half a dot so that they
-are). Forge's desk is not laid out while it is out of sight, so its boxes are
+to baseline, never standing proud of them). Between Home and Forge the rail
+switches as it does between any two places (the camera along the rail, above).
+Forge's desk is not laid out while it is out of sight, so its boxes are
 where they were when it comes back, carried in by the camera, never sliding
 to their places after it. The pane holds
 Lately: what waits since the person was last here, a row each in the rows
@@ -2464,12 +2459,20 @@ person's pace, never as a screen of its own. It works at its own pace behind
 (its commands in a Prompt of its own); what is played is the part a person
 wants to see, each box a lane of its own, the lanes going side by side where
 they are seen side by side and one at a time where they are not (nothing is
-played out of sight). Its tempo is the films': a quick hand's (twice and a
-bit a person's), the same however long its model takes to answer. It is never
-slowed to fill that wait (it was, to half a hand's pace, and its typing crawled
-where the films showed it quick): what it did is played at once, and while the
-model thinks its eye goes on over the work (below); once it is done, what is
-left goes quicker still, so the play ends soon after the work. A file it reads is played
+played out of sight). Its hand is a person's hand, the same as the person's own
+typing in the films (cadence.ts, some 120 ms a key), never quicker: typed faster
+than a hand types, words pour onto the screen and read as a machine showing off,
+not as work being done. The waits the work has are hidden in that pace, never shown
+as waits: the model answers far quicker than a hand types out what it decided, so
+what it did is still being typed while it thinks what to do next, mid-word, the
+next step coming in behind; a command is typed from the moment it is decided on,
+its run going on as it is typed, and once sent it is seen running as at a
+terminal (the command after its prompt, the caret alone on the line under it, no
+prompt there until it ends), what it printed coming in once it has. (Before: its
+typing at more than twice a hand's pace, quicker still at the end, the words
+pouring; and before that slowed to half a hand to fill the model's wait, the
+typing crawling; and a command typed only once it had run, the screen waiting
+through the run.) A file it reads is played
 too: its box laid and its eye going down the lines it read, a faint ink-edged
 line gliding from line to line (a long read skimmed). While it thinks (its
 model asked, nothing it did left to play) its eye stays on what it last looked

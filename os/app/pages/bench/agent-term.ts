@@ -37,9 +37,26 @@ export class AgentTerm implements Flow {
     return this.#add(row);
   }
 
-  /** Where its words go next: under all it has done so far. */
+  /** Where its words go next: under all it has done so far (where they were typed as it said them, if they were). */
   answer(_after: HTMLElement): HTMLElement {
-    return this.#add(h('div', {class: 'agent-words waiting'}));
+    const said = this.#said;
+    this.#said = null;
+    return said ?? this.#add(h('div', {class: 'agent-words waiting'}));
+  }
+
+  /** Words typed as it says them, before they are set as words (answer): where they wait under the question, else
+   * under all it has done so far. */
+  #said: HTMLElement | null = null;
+  saying(): {put(text: string): void} {
+    const last = this.#out.lastElementChild;
+    const el = last instanceof HTMLElement && last.matches('.agent-words.waiting') ? last : (this.#said = this.#add(h('div', {class: 'agent-words'})));
+    const p = h('p', {class: 'answer-p'});
+    return {put: (text) => {
+      el.classList.remove('waiting');
+      if (p.parentElement !== el) el.replaceChildren(p);
+      p.textContent = text;
+      this.#out.scrollTop = this.#out.scrollHeight;
+    }};
   }
 
   /** Its prompt line taken to type a command into: `put` what is typed so far; `done` gives the line back, empty. */
@@ -54,9 +71,22 @@ export class AgentTerm implements Flow {
 
   /** A command it ran, shown with what it printed and, ended otherwise than well, how. */
   shown(line: string, output: string, status: number | null) {
-    const out = output.endsWith('\n') || !output ? output : `${output}\n`;
-    this.#add(h('div', {class: 'agent-run'}, h('span', {class: 'ps'}, this.#ps), h('span', {class: 'cmd'}, `${line.trim()}\n`), out,
-      ...(status ? [h('span', {class: 'agent-exit'}, t('exit {n}', {n: String(status)}))] : [])));
+    this.running(line)(output, status);
+  }
+
+  /**
+   * A command sent and running, as a terminal has it: the command after its prompt, the caret on the line under it and
+   * no prompt there until it ends; returns how to show what it printed and, ended otherwise than well, how.
+   */
+  running(line: string): (output: string, status: number | null) => void {
+    const row = this.#add(h('div', {class: 'agent-run'}, h('span', {class: 'ps'}, this.#ps), h('span', {class: 'cmd'}, `${line.trim()}\n`)));
+    this.element.classList.add('running');
+    return (output, status) => {
+      const out = output.endsWith('\n') || !output ? output : `${output}\n`;
+      row.append(out, ...(status ? [h('span', {class: 'agent-exit'}, t('exit {n}', {n: String(status)}))] : []));
+      this.element.classList.remove('running');
+      this.#out.scrollTop = this.#out.scrollHeight;
+    };
   }
 
   #add(el: HTMLElement): HTMLElement {

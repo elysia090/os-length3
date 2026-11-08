@@ -126,10 +126,12 @@ export async function atWork(flow: Flow, row: HTMLElement, repo: string, use: Us
   const words = (nodes: Node[], refused = false) => {
     const a = waiting ?? flow.answer(last);
     waiting = null;
+    // Typed already as it said them (play.ts): set as words where they stand, not brought in again.
+    const typed = !!a.textContent;
     a.classList.remove('waiting');
     a.replaceChildren(...nodes);
     if (refused) a.classList.add('refused');
-    if (!still()) a.animate([{opacity: 0, translate: '0 4px'}, {opacity: 1, translate: '0 0'}], {duration: paced(220), easing: LAND});
+    if (!still() && !typed) a.animate([{opacity: 0, translate: '0 4px'}, {opacity: 1, translate: '0 0'}], {duration: paced(220), easing: LAND});
   };
   // The pane follows the screen: each line as what it says is played (play.ts), never ahead of it.
   player.subscribe((e) => {

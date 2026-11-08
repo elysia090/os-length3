@@ -123,14 +123,17 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     let c;
     try { c = await store.read(repo, path); } catch (e) { state.el.textContent = String(e); return; }
     if (c.text === null) { sheet.replaceChildren(h('p', {class: 'muted sheet-note'}, t('Binary · {size}', {size: bytes(c.size)}))); grew(); return; }
-    number(c.text);
     if (c.truncated) {
+      number(c.text);
       sheet.replaceChildren(gutter, h('pre', {class: 'code'}, c.text));
       state.el.textContent = t('First {part} only (total {size}) · Read-only', {part: bytes(new TextEncoder().encode(c.text).length), size: bytes(c.size)});
       grew();
       return;
     }
-    const e = editor = new Editor(openingWith(repo, path, c.text), {repo, path, head, sheet, gutter, number, state, flow: element, seen: () => grew()});
+    // A file the Agent is still to be seen making opens empty, its lines numbered as it is typed, never ahead of it.
+    const opening = openingWith(repo, path, c.text);
+    number(opening);
+    const e = editor = new Editor(opening, {repo, path, head, sheet, gutter, number, state, flow: element, seen: () => grew()});
     editorOn(repo, path, {take: (text) => e.take(text), area: e.area, gaze: (line) => gaze(e.area, line)});
     // Written in on the line washed: it stays while the writing is on that line, its end following; a line broken or
     // written above it, it goes.
