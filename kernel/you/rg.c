@@ -67,7 +67,10 @@ static struct {
   u8 iglob[64]; /* -g's globs given as --iglob: case aside */
   int byte_offset, trim, passthru, include_zero, binary, follow, type_list, sort_reverse, glob_ci;
   int no_vcs, no_dot, no_exclude; /* --no-ignore-vcs (.gitignore, .git/info/exclude), -dot (.ignore, .rgignore), -exclude */
-  const char *ctx_sep, *field_match, *field_ctx; /* "--", ":", "-"; ctx_sep 0: none (--no-context-separator) */
+  /* As given, else none: "--", ":" and "-" are chosen where they are printed (a pointer to one kept in o, set before
+   * it runs, a compiler may make a pointer in its data: something to relocate). */
+  const char *ctx_sep, *field_match, *field_ctx;
+  int no_ctx_sep;
   u64 max_filesize;
   int have_max_filesize;
 } o = {.kase = 0, .number = -1, .filename = -1, .heading = -1, .colour = -1, .messages = 1, .max_depth = ~0u};
@@ -238,8 +241,8 @@ static void longopt(const char *name, const char *v, int argc, char **argv, int 
   else if (same(name, "passthru") || same(name, "passthrough")) o.passthru = 1;
   else if (same(name, "include-zero")) o.include_zero = 1;
   else if (same(name, "no-include-zero")) o.include_zero = 0;
-  else if (same(name, "context-separator")) o.ctx_sep = v;
-  else if (same(name, "no-context-separator")) o.ctx_sep = 0;
+  else if (same(name, "context-separator")) o.ctx_sep = v, o.no_ctx_sep = 0;
+  else if (same(name, "no-context-separator")) o.no_ctx_sep = 1;
   else if (same(name, "field-match-separator")) o.field_match = v;
   else if (same(name, "field-context-separator")) o.field_ctx = v;
   else if (same(name, "max-filesize")) o.max_filesize = size_of(v), o.have_max_filesize = 1;
@@ -774,7 +777,7 @@ static void head(void) {
 /* What a printed line begins with: its path, number, column and byte offset (-b: `off`), each and its separator (`:`
  * for a line that holds a match, `-` for one around it: --field-match-separator, --field-context-separator). */
 static void prefix(u64 lnum, u64 col, u64 off, u8 sep) {
-  const char *s = sep == ':' ? o.field_match : o.field_ctx;
+  const char *s = sep == ':' ? (o.field_match ? o.field_match : ":") : (o.field_ctx ? o.field_ctx : "-");
   u64 sn = slen(s);
   if (o.filename && !o.heading) { put_path(); o.nul ? put("\0", 1) : put(s, sn); }
   if (o.number) {
@@ -788,7 +791,11 @@ static void prefix(u64 lnum, u64 col, u64 off, u8 sep) {
 }
 static void separate(u64 lnum) {
   if (!o.after && !o.before) return;
-  if ((last_ctx_file || (last_printed && lnum != last_printed + 1)) && o.ctx_sep) { put(o.ctx_sep, slen(o.ctx_sep)); S("\n"); }
+  if ((last_ctx_file || (last_printed && lnum != last_printed + 1)) && !o.no_ctx_sep) {
+    const char *c = o.ctx_sep ? o.ctx_sep : "--";
+    put(c, slen(c));
+    S("\n");
+  }
   last_ctx_file = 0;
 }
 
@@ -1145,8 +1152,6 @@ static int in_repo(const char *p) {
 }
 
 static int main_(int argc, char **argv, char **envp) {
-  /* (Set here, not in o's initializer: a pointer in its data would be something to relocate.) */
-  o.ctx_sep = "--", o.field_match = ":", o.field_ctx = "-";
   config(envp, argc, argv);
   options(argc, argv, 0);
   for (u32 k = 0; k < o.ntype_add; k++) {
