@@ -12,8 +12,9 @@
 
 import type {Cpu, Proc} from './parts.ts';
 
-/** Clock ids Linux has: which clock each reads. */
-const WALL = new Set([0, 5, 8, 11]), STEADY = new Set([1, 4, 6, 7, 9]), CPU = new Set([2, 3]);
+/** Clock ids Linux has: which clock each reads (1 the wall, 2 the steady, 3 a CPU-time one; 0 none), by id. */
+const KIND = new Uint8Array([1, 2, 3, 3, 2, 1, 2, 2, 1, 2, 0, 1]);
+const kindOf = (id: number): number => (id < 0 ? 3 : id < KIND.length ? KIND[id] : 0);
 
 /** A kernel's clocks (clocks()): ns as BigInts, ms as Numbers. */
 export interface Clocks {
@@ -42,17 +43,13 @@ export function clocks(origin: number = performance.timeOrigin): Clocks {
     steadyMs,
     /** Clock `id`'s time in ms (a Number); null for a CPU-time clock, undefined for no clock. */
     readMs(id: number) {
-      if (WALL.has(id)) return wallMs();
-      if (STEADY.has(id)) return steadyMs();
-      if (CPU.has(id) || id < 0) return null;
-      return undefined;
+      const kind = kindOf(id);
+      return kind === 1 ? wallMs() : kind === 2 ? steadyMs() : kind === 3 ? null : undefined;
     },
     /** Clock `id`'s time in ns; null for a CPU-time clock (the kernel's), undefined for no clock (EINVAL). */
     read(id: number) {
-      if (WALL.has(id)) return wall();
-      if (STEADY.has(id)) return monotonic();
-      if (CPU.has(id) || id < 0) return null;
-      return undefined;
+      const kind = kindOf(id);
+      return kind === 1 ? wall() : kind === 2 ? monotonic() : kind === 3 ? null : undefined;
     },
   };
 }
@@ -66,10 +63,9 @@ export function answerTime(memory: WebAssembly.Memory, clock: Clocks, nr: bigint
   // (No BigInt arithmetic, nothing made a call, and the view kept while the memory's buffer is the same: a program
   // reads the clock in its loops.)
   if (nr === 228n) { // clock_gettime
-    const id = Number(BigInt.asIntN(32, a));
-    const wall = id === 0 || id === 5 || id === 8 || id === 11;
-    if (!wall && id !== 1 && id !== 4 && id !== 6 && id !== 7 && id !== 9) return null;
-    const ms = wall ? clock.wallMs() : clock.steadyMs();
+    const kind = kindOf(Number(BigInt.asIntN(32, a)));
+    if (kind !== 1 && kind !== 2) return null;
+    const ms = kind === 1 ? clock.wallMs() : clock.steadyMs();
     const s = Math.floor(ms / 1000);
     return put(viewOf(memory), Number(b), s, Math.min(999999999, Math.round((ms - s * 1000) * 1e6))) ? 0n : null;
   }
@@ -87,9 +83,12 @@ export function answerTime(memory: WebAssembly.Memory, clock: Clocks, nr: bigint
   return null;
 }
 
-/** 64-bit words `x` and `y` (none when -1: one word alone) put at `at`; false for an address past the memory. */
+/**
+ * 64-bit words `x` and `y` (none when -1: one word alone) put at `at`; false for an address past the memory, or in its
+ * first page, which a program never has (vm.mmap_min_addr) and the kernel keeps its words in (process.ts INTERRUPT).
+ */
 function put(view: DataView, at: number, x: number, y: number): boolean {
-  if (at < 0 || at + (y < 0 ? 8 : 16) > view.byteLength) return false;
+  if (at < 4096 || at + (y < 0 ? 8 : 16) > view.byteLength) return false;
   view.setUint32(at, x % 0x100000000, true); view.setUint32(at + 4, Math.floor(x / 0x100000000), true);
   if (y >= 0) { view.setUint32(at + 8, y % 0x100000000, true); view.setUint32(at + 12, Math.floor(y / 0x100000000), true); }
   return true;

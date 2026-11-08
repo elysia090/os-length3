@@ -1779,6 +1779,8 @@ export class Task implements Thread {
         if (TRACE_BLOCKS) console.error(`[${t.tid}] block 0x${BigInt.asUintN(64, BigInt(address)).toString(16)}`); else if (t.trail) t.trail[t.trailAt++ & 255] = address;
       },
       miss: (address: bigint) => (slot.task as Task).miss(address),
+      // clock_gettime of a wall or steady clock, answered in the translated code (lower.rs clock_gettime), as above.
+      time: (id: number) => CLOCK.readMs(id) ?? NaN,
     }};
   }
 

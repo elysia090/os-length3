@@ -32,6 +32,7 @@ const T_RESOLVE: u32 = 6;
 const T_RUN: u32 = 7;
 const T_FPU: u32 = 8; // (registers, op, size, st a, st b, operand, its top word) -> i64
 const T_TRACE: u32 = 9; // (i64) -> ()
+const T_TIME: u32 = 10; // (clock id) -> ms, NaN when the kernel is to answer
 
 const F_SYSCALL: u32 = 0;
 const F_TRAP: u32 = 1;
@@ -41,15 +42,17 @@ const F_FPU: u32 = 4;
 const F_TRACE: u32 = 5;
 /// The host's answer for code not translated yet: the entry (function << 32 | block), or -1.
 const F_MISS: u32 = 6;
-const F_MULHU: u32 = 7;
-const F_MULHS: u32 = 8;
-const F_RESOLVE: u32 = 9;
-const F_DISPATCH: u32 = 10;
+/// A wall or steady clock's time in ms, as the host's kernel keeps it (clock.ts); NaN for any other clock.
+const F_TIME: u32 = 7;
+const F_MULHU: u32 = 8;
+const F_MULHS: u32 = 9;
+const F_RESOLVE: u32 = 10;
+const F_DISPATCH: u32 = 11;
 #[allow(dead_code)] // run is exported with the shared helpers, as SHARED[4]
-const F_RUN: u32 = 11;
-const FIRST_GUEST: u32 = 12;
+const F_RUN: u32 = 12;
+const FIRST_GUEST: u32 = 13;
 /// Imported functions, in index order: the host's, then (in a module made later) the first module's.
-const HOST_IMPORTS: [&str; 7] = ["syscall", "trap", "div128", "clock", "fpu", "trace", "miss"];
+const HOST_IMPORTS: [&str; 8] = ["syscall", "trap", "div128", "clock", "fpu", "trace", "miss", "time"];
 const SHARED: [&str; 5] = ["mulhu", "mulhs", "resolve", "dispatch", "run"];
 /// Globals every module of a program shares: r0..r15, fs, x0..x15, the
 /// flags handed from one function to another (fl), and the rest below.
@@ -1378,6 +1381,28 @@ impl Fx<'_> {
         self.write(i, 0, size, l_t(3))
     }
 
+    /// clock_gettime (228) of a wall or steady clock, answered here as Linux's vDSO answers it in the caller: its
+    /// time asked of the host (F_TIME, a number: no 64-bit value crosses), the timespec written at rsi, 0 in l_t(1),
+    /// and out of the two blocks around this. Any other call, a clock the kernel keeps (a CPU-time one), or rsi not
+    /// a timespec in memory past the kernel's low page (the kernel says EFAULT): on, to the kernel.
+    fn clock_gettime(&mut self) {
+        self.get(l_reg(RAX)); self.c64(228); self.e(W::I64Ne); self.e(W::BrIf(0));
+        self.get(l_reg(RSI)); self.c64(4096); self.e(W::I64Sub);
+        self.e(W::MemorySize(0)); self.e(W::I64ExtendI32U); self.c64(16); self.e(W::I64Shl); self.c64(4096 + 16); self.e(W::I64Sub);
+        self.e(W::I64GtU); self.e(W::BrIf(0));
+        self.get(l_reg(RDI)); self.e(W::I32WrapI64); self.e(W::Call(F_TIME));
+        self.e(W::LocalTee(l_d(0))); self.e(W::LocalGet(l_d(0))); self.e(W::F64Ne); self.e(W::BrIf(0));
+        // Seconds, and the rest in nanoseconds rounded as Math.round does (clock.ts answerTime), at most 999999999.
+        self.e(W::LocalGet(l_d(0))); self.e(W::F64Const(1000.0.into())); self.e(W::F64Div); self.e(W::F64Floor); self.e(W::LocalSet(l_d(1)));
+        self.get(l_reg(RSI)); self.e(W::I32WrapI64); self.e(W::LocalGet(l_d(1))); self.e(W::I64TruncSatF64S); self.e(W::I64Store(mem(3)));
+        self.get(l_reg(RSI)); self.e(W::I32WrapI64);
+        self.e(W::LocalGet(l_d(0))); self.e(W::LocalGet(l_d(1))); self.e(W::F64Const(1000.0.into())); self.e(W::F64Mul); self.e(W::F64Sub);
+        self.e(W::F64Const(1e6.into())); self.e(W::F64Mul); self.e(W::F64Const(0.5.into())); self.e(W::F64Add); self.e(W::F64Floor);
+        self.e(W::F64Const(999_999_999.0.into())); self.e(W::F64Min); self.e(W::I64TruncSatF64S); self.e(W::I64Store(mem_at(8, 3)));
+        self.c64(0); self.set(l_t(1));
+        self.e(W::Br(1));
+    }
+
     fn cpuid(&mut self) {
         // A plain core: SSE2 and SSE3, CMPXCHG16B and POPCNT; no SSSE3, SSE4 or AVX, so a
         // libc choosing its string routines by cpuid takes the SSE2 ones xlat translates.
@@ -1532,12 +1557,17 @@ impl Fx<'_> {
             }
             Syscall => {
                 self.save();
+                self.e(W::Block(BlockType::Empty));
+                self.e(W::Block(BlockType::Empty));
+                self.clock_gettime();
+                self.e(W::End);
                 // The last argument is where execution resumes; a forked
                 // child starts there.
                 for r in [RAX, RDI, RSI, RDX, 10, 8, 9] { self.get(l_reg(r)); }
                 self.c64(i.next_ip() as i64);
                 self.e(W::Call(F_SYSCALL));
                 self.set(l_t(1));
+                self.e(W::End);
                 self.load();
                 self.get(l_t(1)); self.set(l_reg(RAX));
                 self.c64(i.next_ip() as i64); self.set(l_reg(RCX));
@@ -2866,6 +2896,7 @@ fn types() -> TypeSection {
     types.ty().function([ValType::I64], []);
     types.ty().function([ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I64, ValType::I32], [ValType::I64]);
     types.ty().function([ValType::I64], []);
+    types.ty().function([ValType::I32], [ValType::F64]);
     types
 }
 
@@ -2880,7 +2911,7 @@ pub fn translate_more(program: &Program, base: u32, options: Options) -> Transla
     let mut report = Report { functions: program.functions.len(), entries: program.entries.len(), ..Default::default() };
     let mut imports = ImportSection::new();
     imports.import("env", "memory", EntityType::Memory(MemoryType { minimum: 1, maximum: Some(65536), memory64: false, shared: false, page_size_log2: None }));
-    let host_types = [T_SYSCALL, T_TRAP, T_DIV, T_CLOCK, T_FPU, T_TRACE, T_RESOLVE];
+    let host_types = [T_SYSCALL, T_TRAP, T_DIV, T_CLOCK, T_FPU, T_TRACE, T_RESOLVE, T_TIME];
     for (name, ty) in HOST_IMPORTS.iter().zip(host_types) { imports.import("env", name, EntityType::Function(ty)); }
     for (name, ty) in SHARED.iter().zip([T_PAIR, T_PAIR, T_RESOLVE, T_RESOLVE, T_RUN]) { imports.import("main", name, EntityType::Function(ty)); }
     for n in 0..GLOBALS {
@@ -2952,6 +2983,7 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
     imports.import("env", "fpu", EntityType::Function(T_FPU));
     imports.import("env", "trace", EntityType::Function(T_TRACE));
     imports.import("env", "miss", EntityType::Function(T_RESOLVE));
+    imports.import("env", "time", EntityType::Function(T_TIME));
 
     let mut functions = FunctionSection::new();
     for ty in [T_PAIR, T_PAIR, T_RESOLVE, T_RESOLVE, T_RUN] { functions.function(ty); }
