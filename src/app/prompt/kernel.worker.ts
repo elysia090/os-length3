@@ -28,9 +28,9 @@
 // It says {type: 'threads', apart} once started.
 //
 // With `mirror: '/root/<repo>'` in 'start', what the guest changes there is
-// sent at each pause, before what was printed and before the pause is said,
-// as {type: 'changes', dirs, files, removed} (see mirror.ts), and {type:
-// 'put', path, what} puts an outside change in.
+// sent before anything it printed after it and at each pause, before the
+// pause is said, as {type: 'changes', dirs, files, removed} (see mirror.ts),
+// and {type: 'put', path, what} puts an outside change in.
 //
 // With `root: {index, url}` in 'start', the whole root (packs and their
 // index, pack.ts) fills in around the files given: each file of it is
@@ -212,7 +212,8 @@ let rawKeys = false;
 /** The kernel paused (here: every thread waits or it ended, `r` as pump says): what the shell changed, and why it waits. */
 function paused(r: Pumped): Said {
   const k = kernel!;
-  // What the shell changed goes before what it printed: a page that has the prompt back has what the line wrote.
+  // What the shell changed goes before what it printed (send reports it first): a page that has the prompt back has
+  // what the line wrote.
   report();
   send();
   told();
@@ -321,6 +322,8 @@ let gathered: Uint8Array[] = [], gatheredBytes = 0, gatheredFd = 1, sentAt = -In
 let epoch = 0;
 function send(): void {
   if (!gatheredBytes) return;
+  // What the shell changed goes before anything it printed after: a page that shows a line has what it wrote before.
+  report();
   let bytes = gathered[0];
   if (gathered.length > 1) {
     bytes = new Uint8Array(gatheredBytes);

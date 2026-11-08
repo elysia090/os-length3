@@ -7,7 +7,7 @@
 // Paths are relative to `root`; a removed directory is reported once, not
 // with everything it held.
 
-import {Dir, File, type Vfs} from '../../ricebox/runtime/fs.ts';
+import {counted, Dir, File, type Vfs} from '../../ricebox/runtime/fs.ts';
 
 /** What is under the root, as last seen: a directory, or a file and its version and size then. */
 type Seen = {node: Dir; dir: true} | {node: File; dir: false; version: number; size: number};
@@ -39,9 +39,12 @@ export class Mirror {
   declare readonly vfs: Vfs;
   declare readonly root: string;
   declare seen: Map<string, Seen>;
+  /** The changes counted (fs.ts counted) when it last looked: while it is the same, nothing changed to look for. */
+  declare at: number;
   constructor(vfs: Vfs, root: string) {
     this.vfs = vfs;
     this.root = root;
+    this.at = counted.changes;
     this.seen = this.now();
   }
 
@@ -51,8 +54,13 @@ export class Mirror {
     return dir instanceof Dir ? walk(dir, '', new Map()) : new Map();
   }
 
-  /** What changed in the guest since the last call; null when nothing did. */
+  /**
+   * What changed in the guest since the last call; null when nothing did. Asked as often as anything is said (before
+   * each piece of output: kernel.worker.ts), so nothing changed anywhere is told without looking.
+   */
   changes(): Changes | null {
+    if (counted.changes === this.at && !counted.mapped) return null;
+    this.at = counted.changes;
     const now = this.now();
     const dirs: string[] = [], files: Changes['files'] = [], removed: string[] = [];
     for (const [rel, e] of now) {

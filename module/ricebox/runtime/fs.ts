@@ -12,6 +12,20 @@ const LOADED = new Set<File>();
 /** Each such file still holding its bytes. */
 export const loadedFiles = () => LOADED;
 
+/**
+ * Every change to what a directory holds or to a file's bytes, counted, and how many files are mapped shared now. One
+ * that compares what it saw before (mirror.ts) knows nothing changed while the count is the same and no file is mapped
+ * (what is written through a mapping reaches its file only when it settles).
+ */
+export const counted = {changes: 0, mapped: 0};
+
+/** A directory's entries, each change counted. */
+class Entries extends Map<string, Entry> {
+  override set(name: string, e: Entry): this { counted.changes++; return super.set(name, e); }
+  override delete(name: string): boolean { const had = super.delete(name); if (had) counted.changes++; return had; }
+  override clear(): void { if (this.size) counted.changes++; super.clear(); }
+}
+
 export class Node {
   declare mode: number;
   declare ino: number;
@@ -132,6 +146,7 @@ export class File extends Node {
     this.size = Math.max(this.size, need);
     this.mtime = Date.now();
     this.version++;
+    counted.changes++;
     if (this.maps) this.#show(at, need);
   }
   truncate(length: number): void {
@@ -149,6 +164,7 @@ export class File extends Node {
     this.size = length;
     this.mtime = Date.now();
     this.version++;
+    counted.changes++;
     if (this.maps) this.#show(Math.min(was, length), Math.max(was, length));
   }
   /** The exact contents as an independent array. */
@@ -165,14 +181,15 @@ export class File extends Node {
    */
   map(m: Mapping): void {
     m.seen = m.proc.bytes.slice(m.start, m.start + m.length);
-    (this.maps ??= new Set()).add(m);
+    if (!this.maps) { this.maps = new Set(); counted.mapped++; }
+    this.maps.add(m);
   }
   /** It ends: what was written through it stays. */
   unmap(m: Mapping): void {
     if (!this.maps) return;
     this.settle(m.off, m.off + m.length, m);
     this.maps.delete(m);
-    if (!this.maps.size) this.maps = null;
+    if (!this.maps.size) { this.maps = null; counted.mapped--; }
   }
   /** What was written through the mappings (all, or `only`) into [start, end) goes to the bytes and the other mappings. */
   settle(start = 0, end = this.size, only: Mapping | null = null): void {
@@ -196,6 +213,7 @@ export class File extends Node {
         }
         this.mtime = Date.now();
         this.version++;
+        counted.changes++;
       }
     }
   }
@@ -228,7 +246,7 @@ function same(x: Uint8Array, y: Uint8Array): boolean {
 }
 
 export class Dir extends Node {
-  readonly #entries = new Map<string, Entry>();
+  readonly #entries = new Entries();
   constructor(mode = 0o755) {
     super(S_IFDIR | mode);
     this.nlink = 2;
