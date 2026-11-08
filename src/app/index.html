@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Length³ OS</title>
-<link rel="icon" type="image/svg+xml" href="/src/desktop/icon.svg">
-<link rel="stylesheet" href="/src/app/styles.css">
+<link rel="icon" type="image/svg+xml" href="../desktop/icons/icon.svg">
+<link rel="stylesheet" href="./styles/index.css">
 <link rel="preload" href="/fonts/inter-display-black.woff2" as="font" type="font/woff2" crossorigin>
 <!-- Says why when the app cannot start (boot.ts), rather than leaving the page blank. data-cfasync: a
      CDN that defers scripts (Cloudflare's Rocket Loader) leaves this one alone, as vite.config.ts has the app's. -->
@@ -27,6 +27,6 @@
     <p lang="ja">ページのスクリプトが動かなかったため、アプリを開けません。サイトがビルド結果（dist、npm run build:cloudflare で作るもの）ではなくソースをそのまま配信しているか、このブラウザでスクリプトが動いていません（JavaScript が無効、または拡張機能・プロキシ・Rocket Loader などの CDN の設定がページを書き換えている）。</p>
   </section>
 </main>
-<script type="module" async src="/src/app/start.ts"></script>
+<script type="module" async src="./main/start.ts"></script>
 </body>
 </html>

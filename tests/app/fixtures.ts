@@ -42,7 +42,7 @@ import {test as base, expect, type Browser, type BrowserContextOptions, type Pag
 import {App} from './app.ts';
 export {handleOf} from './app.ts';
 import {BROWSER, OUT} from './paths.ts';
-import {FIRST} from '../src/app/prompt/first.ts';
+import {FIRST} from '../../src/app/prompt/first.ts';
 
 /** What a browser keeps (its localStorage, and IndexedDB, where the repos are), as Playwright reads and restores it. */
 type Kept = Exclude<BrowserContextOptions['storageState'], string | undefined>;

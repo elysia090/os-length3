@@ -1,33 +1,33 @@
-import {h} from './ui/dom.ts';
-import {setWindowTitle} from './host/tauri.ts';
-import {icon} from './ui/icons.ts';
-import {placeholder} from './pages/kit/common.ts';
-import type {Context, Writing} from './pages/kit/context.ts';
-import {currentProfile, home, startEditing} from './pages/home/home.ts';
-import {Me} from './pages/me/me.ts';
-import {ServerSwitcher} from './pages/server/switcher.ts';
-import {FileTree} from './pages/file/tree.ts';
-import {onRenamed} from './repos/repos.ts';
-import {begin} from './remote/lifecycle.ts';
-import {writeLeftBack} from './pages/bench/repo-copy.ts';
-import {forgetExcept} from './prompt/webroot-fetch.ts';
-import {keepFocus} from './ui/focus.ts';
-import {onPlugins, pluginsOpen, setPluginsOpen} from './host/plugins.ts';
-import {learnHome} from './remote/inbox.ts';
-import {begin as lookForNews, look, marks, news, onNews} from './remote/news.ts';
-import {about, claim, connection, enterWith, holdAsk, justSignedIn, mayAsk, onConnection, onReach, remoteAway, signInFailed} from './remote/connection.ts';
-import {cameBackFromStripe, isPaidTier} from './remote/plan.ts';
-import {every} from './host/runs.ts';
-import {heldInvite, holdInvite, inviteIn, openBoards} from './remote/servers.ts';
-import {getState, loadState} from './home/state.ts';
-import {onLang, t, useLang} from './i18n/i18n.ts';
-import {NEW_REPO, PURPOSES, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from './host/purposes.ts';
-import {LAND, glide, morph, paced, paneOut, stage, still, where, type Carry} from './ui/glide.ts';
-import {letGo, touch} from './ui/touch.ts';
-import {caret} from './ui/caret.ts';
-import {optical} from './ui/optical.ts';
-import {cameraIn, comeBy, frameIn, frameOff, goneBy, GroundCamera, type Along, type PageCamera, type Rect} from './ui/camera.ts';
-import {scrollbars} from './ui/scrollbars.ts';
+import {h} from '../ui/dom.ts';
+import {setWindowTitle} from '../host/tauri.ts';
+import {icon} from '../ui/icons.ts';
+import {placeholder} from '../pages/kit/common.ts';
+import type {Context, Writing} from '../pages/kit/context.ts';
+import {currentProfile, home, startEditing} from '../pages/home/home.ts';
+import {Me} from '../pages/me/me.ts';
+import {ServerSwitcher} from '../pages/server/switcher.ts';
+import {FileTree} from '../pages/file/tree.ts';
+import {onRenamed} from '../repos/repos.ts';
+import {begin} from '../remote/lifecycle.ts';
+import {writeLeftBack} from '../pages/bench/repo-copy.ts';
+import {forgetExcept} from '../prompt/webroot-fetch.ts';
+import {keepFocus} from '../ui/focus.ts';
+import {onPlugins, pluginsOpen, setPluginsOpen} from '../host/plugins.ts';
+import {learnHome} from '../remote/inbox.ts';
+import {begin as lookForNews, look, marks, news, onNews} from '../remote/news.ts';
+import {about, claim, connection, enterWith, holdAsk, justSignedIn, mayAsk, onConnection, onReach, remoteAway, signInFailed} from '../remote/connection.ts';
+import {cameBackFromStripe, isPaidTier} from '../remote/plan.ts';
+import {every} from '../host/runs.ts';
+import {heldInvite, holdInvite, inviteIn, openBoards} from '../remote/servers.ts';
+import {getState, loadState} from '../home/state.ts';
+import {onLang, t, useLang} from '../i18n/i18n.ts';
+import {NEW_REPO, PURPOSES, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from '../host/purposes.ts';
+import {LAND, glide, morph, paced, paneOut, stage, still, where, type Carry} from '../ui/glide.ts';
+import {letGo, touch} from '../ui/touch.ts';
+import {caret} from '../ui/caret.ts';
+import {optical} from '../ui/optical.ts';
+import {cameraIn, comeBy, frameIn, frameOff, goneBy, GroundCamera, type Along, type PageCamera, type Rect} from '../ui/camera.ts';
+import {scrollbars} from '../ui/scrollbars.ts';
 
 const PURPOSE_KEY = 'length3.os.purpose';
 const REPO_KEY = 'length3.os.repo';
@@ -56,19 +56,19 @@ function save(key: string, value: string) {
 /** A place's page, drawn for the shell. */
 type Drawn = (ctx: Context) => Node[];
 /** Forge's module once brought: what the shell asks of Forge besides its page (what it keeps, what it shows next). */
-let forgeOf: typeof import('./pages/forge/forge.ts') | null = null;
+let forgeOf: typeof import('../pages/forge/forge.ts') | null = null;
 /**
  * Each place's page but Home's, brought when it is first drawn (all of them once Home stands, in the time the page
  * has to spare): the code of the places not shown is no part of what the page must fetch and run before it draws.
  */
 const BRING: Partial<Record<PurposeId, () => Promise<Drawn>>> = {
-  'forge': () => import('./pages/forge/forge.ts').then((m) => { forgeOf = m; return m.forge; }),
-  'git': () => import('./pages/git/git.ts').then((m) => m.git),
-  'new-repo': () => import('./pages/new-repo/new-repo.ts').then((m) => m.newRepo),
-  'runtime': () => import('./pages/runtime/runtime.ts').then((m) => m.runtime),
-  'remote': () => import('./pages/remote/remote.ts').then((m) => m.remote),
-  'inbox': () => import('./pages/inbox/inbox.ts').then((m) => m.inboxPage),
-  'server': () => import('./pages/server/page.ts').then((m) => (c: Context) => m.serverPage(c, () => { if (current === 'server') render(); })),
+  'forge': () => import('../pages/forge/forge.ts').then((m) => { forgeOf = m; return m.forge; }),
+  'git': () => import('../pages/git/git.ts').then((m) => m.git),
+  'new-repo': () => import('../pages/new-repo/new-repo.ts').then((m) => m.newRepo),
+  'runtime': () => import('../pages/runtime/runtime.ts').then((m) => m.runtime),
+  'remote': () => import('../pages/remote/remote.ts').then((m) => m.remote),
+  'inbox': () => import('../pages/inbox/inbox.ts').then((m) => m.inboxPage),
+  'server': () => import('../pages/server/page.ts').then((m) => (c: Context) => m.serverPage(c, () => { if (current === 'server') render(); })),
 };
 const pages: Partial<Record<PurposeId, Drawn>> = {home};
 const bringing = new Map<PurposeId, Promise<void>>();
@@ -620,7 +620,7 @@ if (entering || invitation) history.replaceState(null, '', location.pathname + l
 if (asking.has('device')) {
   void loadState().finally(async () => {
     await useLang(getState('lang'));
-    const {devicePage} = await import('./pages/remote/device-page.ts');
+    const {devicePage} = await import('../pages/remote/device-page.ts');
     document.body.replaceChildren(devicePage(asking.get('user_code') ?? ''));
   });
 } else {
@@ -654,7 +654,7 @@ if (asking.has('device')) {
       for (const k of ['plan', 'tier']) u.searchParams.delete(k);
       history.replaceState(null, '', u);
       if (!connection()) {
-        const {checkoutBackPage} = await import('./pages/remote/stripe.ts');
+        const {checkoutBackPage} = await import('../pages/remote/stripe.ts');
         await new Promise<void>((goOn) => document.body.replaceChildren(checkoutBackPage(how, isPaidTier(tier) ? tier : null, goOn)));
         location.reload();
         return;

@@ -37,7 +37,8 @@ test('no Japanese is written outside the catalog', () => {
     for (const name of readdirSync(dir)) {
       const p = join(dir, name);
       if (statSync(p).isDirectory()) { if (name !== 'i18n') walk(p); continue; }
-      if (!p.endsWith('.ts') || p.endsWith('.test.ts') || p.endsWith('/i18n.ts')) continue;
+      // boot.ts says why the app cannot start before the app (and its catalog) can: in both languages, as it must.
+      if (!p.endsWith('.ts') || p.endsWith('.test.ts') || p.endsWith('/i18n.ts') || p.endsWith('/main/boot.ts')) continue;
       readFileSync(p, 'utf8').split('\n').forEach((line, i) => {
         const code = line.replace(/\/\/.*$/, '').replace(/^\s*\*.*$/, '');
         if (/['"`][^'"`]*[぀-ヿ一-鿿]/.test(code)) offenders.push(`${p.split('/src/').at(-1)}:${i + 1}`);

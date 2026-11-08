@@ -1,5 +1,5 @@
 // For npm test (scripts/tests.ts): how each test process loads its modules, loaded before any of them; and the
-// selftest's Remotes (tests/global-setup.ts), which load the service the same way each run. A test process
+// selftest's Remotes (tests/app/global-setup.ts), which load the service the same way each run. A test process
 // loads the same modules each run, and most of a short one's time went on loading them again:
 //
 // - TypeScript: each .ts module's types stripped once, and the result kept in the temporary directory under its

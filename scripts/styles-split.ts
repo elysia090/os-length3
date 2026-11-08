@@ -2,8 +2,8 @@
 //
 //   node scripts/styles-split.ts [--plan] [SHEET]
 //
-// SHEET (src/app/styles.css) is one sheet of rules, or the entry this wrote before, whose parts it reads back first (each
-// part's first comment is its own, said again when it is written). It writes the parts to styles/ beside SHEET (taking
+// SHEET (src/app/styles/index.css) is one sheet of rules, or the entry this wrote before, whose parts it reads back first (each
+// part's first comment is its own, said again when it is written). It writes the parts beside SHEET (taking
 // away any .css there it did not write) and SHEET as the entry that imports them, in order. --plan only says what it
 // would write: each part, its lines, and the rules in it that are about another part.
 //
@@ -247,7 +247,7 @@ export function split(text: string) {
   const entry = comment(`The OS's stylesheet, in parts by what each styles: scripts/styles-split.ts wrote them from one sheet, and
     writes them again from these. The order is the cascade's: of two rules as heavy, the later wins, so where a part stands in this list
     is part of what it says${again ? `, and a part that comes back further down (${again.file}) stands where its rules do` : ''}.`)
-    + parts.map((p) => `@import './styles/${p.file}';\n`).join('');
+    + parts.map((p) => `@import './${p.file}';\n`).join('');
   return {parts, entry};
 }
 
@@ -267,12 +267,12 @@ const readBack = (parts: {body: string}[]) => parts.map((p) => p.body).join('');
 
 function main() {
   const {values, positionals} = parseArgs({allowPositionals: true, options: {plan: {type: 'boolean'}}});
-  const sheet = resolve(positionals[0] ?? join(OS, 'src', 'app', 'styles.css'));
+  const sheet = resolve(positionals[0] ?? join(OS, 'src', 'app', 'styles', 'index.css'));
   const text = wholeSheet(sheet);
   const {parts, entry} = split(text);
   const at = firstDifference(text, readBack(parts));
   if (at >= 0) throw new Error(`the parts read back are not the sheet (they part at what it says ${at}th): nothing is written`);
-  const dir = join(dirname(sheet), 'styles');
+  const dir = dirname(sheet);
   const lines = (s: string) => s.split('\n').length - 1;
   for (const p of parts) {
     console.log(`${p.file.padEnd(22)} ${String(lines(p.text)).padStart(5)} lines, ${String(p.leaves).padStart(4)} rules from line ${p.from}`
@@ -282,13 +282,13 @@ function main() {
   if (values.plan) return;
   mkdirSync(dir, {recursive: true});
   const keep = new Set(parts.map((p) => p.file));
-  for (const f of readdirSync(dir)) if (f.endsWith('.css') && !keep.has(f)) unlinkSync(join(dir, f));
+  for (const f of readdirSync(dir)) if (f.endsWith('.css') && !keep.has(f) && join(dir, f) !== sheet) unlinkSync(join(dir, f));
   for (const p of parts) writeFileSync(join(dir, p.file), p.text);
   writeFileSync(sheet, entry);
   // Read back from what is written, as anyone would.
   const back = wholeSheet(sheet);
   if (firstDifference(text, back) >= 0) throw new Error('the parts written do not read back as the sheet');
-  console.log(`${sheet.startsWith(OS) ? relative(OS, sheet) : sheet}: ${parts.length} parts in styles/, the same ${said(text).length} comments and rules`
+  console.log(`${sheet.startsWith(OS) ? relative(OS, sheet) : sheet}: ${parts.length} parts beside it, the same ${said(text).length} comments and rules`
     + ` in the same order${back === text ? ' (read back, the same text byte for byte)' : ''}`);
 }
 

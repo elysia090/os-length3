@@ -1,7 +1,7 @@
 import {existsSync} from 'node:fs';
 import {basename, join} from 'node:path';
-import {aheadFor} from '../src/app/prompt/ahead.ts';
-import type {Index} from '../src/app/prompt/userland.ts';
+import {aheadFor} from '../../src/app/prompt/ahead.ts';
+import type {Index} from '../../src/app/prompt/userland.ts';
 import {expect, test} from './fixtures.ts';
 import {OS} from './paths.ts';
 

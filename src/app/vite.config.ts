@@ -3,10 +3,10 @@ import {existsSync, readFileSync, rmSync} from 'node:fs';
 import {dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {defineConfig, type Plugin} from 'vite';
-import {bootScript} from './scripts/boot.ts';
-import {buildCoreWasm, coreWasmPath} from './scripts/core-wasm.ts';
-import {DEFAULT_REMOTE, headersOf, webPolicy} from './src/app/host/policy.ts';
-import {shipped} from './src/remote/releases.ts';
+import {bootScript} from '../../scripts/boot.ts';
+import {buildCoreWasm, coreWasmPath} from '../../scripts/core-wasm.ts';
+import {DEFAULT_REMOTE, headersOf, webPolicy} from './host/policy.ts';
+import {shipped} from '../remote/releases.ts';
 
 // Tauri serves the built files from dist/ and points its dev webview at this
 // fixed port, so the port must not drift to a free one. The Terminal's kernel
@@ -24,7 +24,7 @@ const DEV_REMOTE = process.env.LENGTH3_DEV_REMOTE;
 // What the Worker serves (wrangler.toml): the app's files are its [assets] directory, which is where this builds
 // them (and Tauri takes them from, tauri.conf.json frontendDist); its own paths (run_worker_first) reach it before
 // them, and the development server and the preview pass the same paths to LENGTH3_DEV_REMOTE.
-const WRANGLER = readFileSync(new URL('./wrangler.toml', import.meta.url), 'utf8');
+const WRANGLER = readFileSync(new URL('../../wrangler.toml', import.meta.url), 'utf8');
 const ASSETS = /^directory\s*=\s*"([^"]+)"/m.exec(WRANGLER)![1];
 const WORKER_FIRST = (JSON.parse(/^run_worker_first\s*=\s*(\[.*\])$/m.exec(WRANGLER)![1]) as string[]).map((p) => p.replace(/\/\*$/, ''));
 // The release this tree ships (src/remote/releases.ts shipped, the newest pinned; not RELEASE, which names the one being
@@ -161,19 +161,27 @@ const boot = (): Plugin => ({
  */
 const ISOLATED = {'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp'};
 
+/** The repository's root: public/, the Worker's assets directory (wrangler.toml) and node_modules are there. */
+const TOP = fileURLToPath(new URL('../..', import.meta.url));
+
 export default defineConfig({
   clearScreen: false,
+  // The page is this folder (index.html beside this file); what it ships beside its build is the repository's public/.
+  root: fileURLToPath(new URL('.', import.meta.url)),
+  publicDir: resolve(TOP, 'public'),
+  envDir: TOP,
+  cacheDir: resolve(TOP, 'node_modules/.vite'),
   // The preview (the selftest's) serves the build with the headers Workers Assets gives it (public/_headers),
   // so the app is tested under its real policy, frame-ancestors and all.
-  preview: {headers: headersOf(readFileSync(new URL('./public/_headers', import.meta.url), 'utf8'))},
-  server: {port: 1420, strictPort: true, fs: {allow: ['.']}, headers: ISOLATED,
+  preview: {headers: headersOf(readFileSync(new URL('../../public/_headers', import.meta.url), 'utf8'))},
+  server: {port: 1420, strictPort: true, fs: {allow: [TOP]}, headers: ISOLATED,
     proxy: DEV_REMOTE ? Object.fromEntries(WORKER_FIRST.map((p) => [p, DEV_REMOTE])) : undefined},
   worker: {format: 'es'},
   // xlat's runtime reaches for Node's workers only under Node: in the browser bundle that module is nothing.
-  resolve: {alias: [{find: 'node:worker_threads', replacement: fileURLToPath(new URL('./src/app/shims/worker-threads.ts', import.meta.url))}]},
+  resolve: {alias: [{find: 'node:worker_threads', replacement: fileURLToPath(new URL('./shims/worker-threads.ts', import.meta.url))}]},
   define: {__LENGTH3_HOST__: JSON.stringify(HOST)},
   // Most of a build is the core compiled for the browser (coreWasm's buildStart, cargo), which Rolldown would
   // report each time as a plugin's slow callback: it is the build's work, not a plugin's overhead.
-  build: {target: 'es2022', outDir: ASSETS, emptyOutDir: true, rolldownOptions: {checks: {bundlerTimings: false}}},
+  build: {target: 'es2022', outDir: resolve(TOP, ASSETS), emptyOutDir: true, rolldownOptions: {checks: {bundlerTimings: false}}},
   plugins: [hostOnly(), coreWasm(), boot(), metaPolicy(), buildStamp(), preloadApp()],
 });

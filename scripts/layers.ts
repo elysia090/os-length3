@@ -14,7 +14,7 @@ const OS = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Each tree, its modules from the bottom up. A module not named is wrong in its tree until it is. */
 export const TREES: {root: string; order: string[]; skip?: string[]}[] = [
-  {root: 'src/app', order: ['i18n', 'agent', 'core', 'ui', 'host', 'repos', 'home', 'remote', 'prompt', 'account', 'pages', '.'],
+  {root: 'src/app', order: ['i18n', 'agent', 'core', 'ui', 'host', 'repos', 'home', 'remote', 'prompt', 'account', 'pages', 'main', '.'],
     skip: ['styles', 'shims', 'testing']},
   // The pages: what they share (kit), the bench Forge and Git work at (with its search), then each page.
   {root: 'src/app/pages', order: ['kit', 'bench', 'git', 'forge', 'file', 'remote', 'runtime', 'server', 'inbox', 'home', 'new-repo',

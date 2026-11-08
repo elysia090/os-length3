@@ -10,7 +10,7 @@
 // assertions).
 
 import {expect, type Locator, type Page} from '@playwright/test';
-import TEMPLATES from '../src/shared/templates.json' with {type: 'json'};
+import TEMPLATES from '../../src/shared/templates.json' with {type: 'json'};
 
 /** The rail's places, as the rail names them (in English). */
 export const PLACES = {

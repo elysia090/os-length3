@@ -1,0 +1,46 @@
+/* The OS's stylesheet, in parts by what each styles: scripts/styles-split.ts wrote them from one sheet, and writes
+   them again from these. The order is the cascade's: of two rules as heavy, the later wins, so where a part stands in
+   this list is part of what it says, and a part that comes back further down (bench-2.css) stands where its rules do. */
+@import './tokens.css';
+@import './base.css';
+@import './shared.css';
+@import './motion.css';
+@import './rail.css';
+@import './page.css';
+@import './controls.css';
+@import './home.css';
+@import './lately.css';
+@import './profile.css';
+@import './todo.css';
+@import './cards.css';
+@import './git.css';
+@import './new-repo.css';
+@import './runtime-storage.css';
+@import './forge-band.css';
+@import './forge-files.css';
+@import './prompt.css';
+@import './bench.css';
+@import './forge-columns.css';
+@import './forge-desk.css';
+@import './pane-rows.css';
+@import './bench-2.css';
+@import './search.css';
+@import './diff.css';
+@import './file-tree.css';
+@import './terminal.css';
+@import './remote.css';
+@import './runtime-space.css';
+@import './inbox.css';
+@import './git-issue.css';
+@import './parts.css';
+@import './plan.css';
+@import './git-review.css';
+@import './remote-repos.css';
+@import './switch.css';
+@import './git-steps.css';
+@import './small-cards.css';
+@import './runtime-apps.css';
+@import './inbox-stub.css';
+@import './git-verdict.css';
+@import './talk.css';
+@import './server.css';

@@ -58,7 +58,7 @@ async function built(dir: string, sheet: string) {
 
 async function main() {
   const {values, positionals} = parseArgs({allowPositionals: true, options: {before: {type: 'string'}}});
-  const sheet = resolve(positionals[0] ?? join(OS, 'src', 'app', 'styles.css'));
+  const sheet = resolve(positionals[0] ?? join(OS, 'src', 'app', 'styles', 'index.css'));
   const before = values.before ?? 'HEAD';
   const old = existsSync(before) ? filesOf(resolve(before), null) : filesOf(sheet, before);
   const now = filesOf(sheet, null);

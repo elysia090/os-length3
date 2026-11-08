@@ -4,7 +4,7 @@
 // a file of its own, as the page's policy runs no script written into the page. The page has it as /boot.js,
 // its types taken away (scripts/boot.ts, for the build and the development server).
 (function () {
-  // Scripts run: what index.html says for a page whose scripts never run is not shown (styles.css).
+  // Scripts run: what index.html says for a page whose scripts never run is not shown (styles/index.css).
   document.documentElement.className += ' scripted';
   var failed: string[] = [];
   window.addEventListener('error', function (e: ErrorEvent) {

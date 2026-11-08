@@ -53,7 +53,7 @@ export const UNITS: Unit[] = [
   {name: 'you', says: 'the tools a person reaches for: z, rg, fd, fzf', holds: ['module/you'], takes: ['lib']},
   {name: 'lib', says: "what the units of C stand on: system calls, words, output; no C library", holds: ['module/lib'], takes: []},
   {name: 'app', says: 'a face: the pages, the window and what the core says to them; no judgement of its own',
-    holds: ['src/app', 'src/desktop', 'src/core', 'src/boot.ts', 'src/shared', 'index.html', 'vite.config.ts'], takes: ['*']},
+    holds: ['src/app', 'src/desktop', 'src/core', 'src/shared'], takes: ['*']},
   {name: 'root3', says: "a face: root3's words, read against its one table, and what it prints; no judgement of its own",
     holds: ['src/cli'], takes: ['*']},
 ];

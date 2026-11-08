@@ -679,12 +679,12 @@ ends (an open PGlite keeps its process up for seconds).
 ### Selftest
 
 `npm run selftest` uses the web app the way a person does, in Chromium
-(`@playwright/test`, `tests/`). One run builds the app for a Remote on
-its own origin into `tests/.dist` (again only when a source is newer),
+(`@playwright/test`, `tests/app/`). One run builds the app for a Remote on
+its own origin into `tests/app/.dist` (again only when a source is newer),
 starts a fresh Remote (`src/remote/dev.ts` with a new temporary data
 directory) and `vite preview` on free ports, and beside them, at the same
 time, a second pair whose Remote has the plan and Stripe's stand-in
-(`LENGTH3_PLAN=1`, for `billing.spec.ts`), runs every `tests/*.spec.ts`
+(`LENGTH3_PLAN=1`, for `billing.spec.ts`), runs every `tests/app/*.spec.ts`
 in parallel, and stops them all whatever happened (`global-setup.ts`). The
 browser reaches both as `localhost` (a passkey's relying party is a name,
 never an address); nothing listens on a fixed port and nothing outside the
@@ -692,9 +692,9 @@ repository is read. About 95 journeys take about four minutes on four cores.
 
 - One test, by its words: `npm run selftest -- -g 'Share'`; one area:
   `npm run selftest -- git.spec`.
-- A failure leaves its trace and screenshot in `tests/.results`
+- A failure leaves its trace and screenshot in `tests/app/.results`
   (`npx playwright show-trace …/trace.zip`), the HTML report in
-  `tests/.report`, and what the two servers printed in `tests/.logs`.
+  `tests/app/.report`, and what the two servers printed in `tests/app/.logs`.
 - Locally Chromium is `npx playwright install chromium` (or
   `PLAYWRIGHT_BROWSERS_PATH` where one is installed).
 - The Prompt's tests are tagged `@slow` (the root's BusyBox and root3 through

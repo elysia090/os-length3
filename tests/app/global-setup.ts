@@ -39,7 +39,7 @@ import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import type {FullConfig} from '@playwright/test';
 import {OS, OUT, LOGS} from './paths.ts';
-import {scratch} from '../scripts/scratch.ts';
+import {scratch} from '../../scripts/scratch.ts';
 
 /** A port nothing listens on now, chosen by the system. */
 function freePort(): Promise<number> {
@@ -66,7 +66,7 @@ function newest(path: string): number {
 }
 
 // The core the browser runs (src/core/web, built by vite.config.ts) is made from src/core/src.
-const SOURCES = ['src/app', 'src/shared', 'public', 'index.html', 'vite.config.ts', 'package-lock.json', 'src/core/src', 'src/core/web/src', 'scripts/core-wasm.ts', 'module/sods/runtime', 'module/ricebox/runtime', 'module/muk/runtime'];
+const SOURCES = ['src/app', 'src/shared', 'public', 'package-lock.json', 'src/core/src', 'src/core/web/src', 'scripts/core-wasm.ts', 'module/sods/runtime', 'module/ricebox/runtime', 'module/muk/runtime'];
 const STAMP = join(OUT, '.built');
 
 /** What the build carries besides the sources: the browser's Prompt, when public/ has it. */
@@ -79,7 +79,7 @@ async function build() {
   if (made > changed && readFileSync(STAMP, 'utf8') === carries()) { console.log('selftest: the build in tests/.dist is fresh'); return; }
   console.log('selftest: building the app for a Remote on its own origin');
   const status = await new Promise<number | null>((resolve, reject) => {
-    const c = spawn(process.execPath, [join(OS, 'node_modules/vite/bin/vite.js'), 'build', '--outDir', OUT, '--logLevel', 'warn'],
+    const c = spawn(process.execPath, [join(OS, 'node_modules/vite/bin/vite.js'), 'build', '--config', join(OS, 'src/app/vite.config.ts'), '--outDir', OUT, '--logLevel', 'warn'],
       {cwd: OS, stdio: 'inherit', env: {...process.env, VITE_LENGTH3_REMOTE: ''}});
     c.once('error', reject);
     c.once('close', resolve);
@@ -89,7 +89,7 @@ async function build() {
 }
 
 /** Where an empty Remote's database is kept between runs, made once for what it is made from (`emptyDatabase`). */
-const KEPT = join(OS, 'tests', '.pg');
+const KEPT = join(OS, 'tests', 'app', '.pg');
 
 /** Every file under `path`, walked in order, with its contents, into `hash`. */
 function hashTree(hash: ReturnType<typeof createHash>, path: string) {
@@ -180,8 +180,8 @@ function stop(child: ChildProcess): Promise<void> {
 
 /** The production-like Remote (tests/prod): Postgres, the bridge, the Worker on workerd serving the build. */
 async function worker(): Promise<() => Promise<void>> {
-  const {cluster} = await import('./prod/postgres.ts');
-  const {remote, bridgeProcess} = await import('./prod/stack.ts');
+  const {cluster} = await import('../prod/postgres.ts');
+  const {remote, bridgeProcess} = await import('../prod/stack.ts');
   const pg = await cluster();
   const b = await bridgeProcess().catch((e) => { pg.destroy(); throw e; });
   const dir = scratch('length3-selftest-worker-');
@@ -242,7 +242,7 @@ export default async function globalSetup(_config: FullConfig) {
   /** A Remote (its data in `dir` under the run's; off CI, its database a copy of the empty one) and the preview that passes to it, `name` naming their logs. */
   const pair = async (name: string, dir: string, rPort: number, aPort: number, env: NodeJS.ProcessEnv = {}) => {
     // The preview first: it waits for nothing.
-    children.push(start(`preview${name}`, [join(OS, 'node_modules/vite/bin/vite.js'), 'preview', '--outDir', OUT,
+    children.push(start(`preview${name}`, [join(OS, 'node_modules/vite/bin/vite.js'), 'preview', '--config', join(OS, 'src/app/vite.config.ts'), '--outDir', OUT,
       '--host', '127.0.0.1', '--port', String(aPort), '--strictPort'], {LENGTH3_DEV_REMOTE: `http://127.0.0.1:${rPort}`}));
     if (empty) {
       mkdirSync(join(data, dir));

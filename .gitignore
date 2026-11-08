@@ -29,9 +29,9 @@ agent-key
 /length3-web.zip
 /length3-web.zip.sha256
 /.wrangler/
-/tests/.dist/
-/tests/.logs/
-/tests/.results/
-/tests/.report/
-/tests/.pg/
+/tests/app/.dist/
+/tests/app/.logs/
+/tests/app/.results/
+/tests/app/.report/
+/tests/app/.pg/
 /src/desktop/binaries/

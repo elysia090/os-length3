@@ -51,12 +51,12 @@ test('a selector weighs what the cascade says', () => {
   assert.deepEqual(w('input[type="checkbox"]:checked::after'), [0, 2, 2]);
 });
 
-/** An app of its own: src/ with these files, and index.html. */
+/** An app of its own: src/app/ with these files and its page. */
 function app(files: Record<string, string>, html = '<html class="opening"><body><main class="page" id="page"></main></body></html>') {
   const dir = mkdtempSync(join(tmpdir(), 'styles-test-'));
   mkdirSync(join(dir, 'src', 'app'), {recursive: true});
   for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, 'src', 'app', name), text);
-  writeFileSync(join(dir, 'index.html'), html);
+  writeFileSync(join(dir, 'src', 'app', 'index.html'), html);
   try { return pageWords(dir); } finally { rmSync(dir, {recursive: true, force: true}); }
 }
 
@@ -149,7 +149,7 @@ test('a sheet split into parts reads back as the same sheet, an @media cut where
   const text = `/* The rail. */\n${rules('rail-item', 12)}\n@media (max-width: 760px) {\n${rules('rail', 6, '  ')}\n${rules('git-band', 12, '  ')}\n}\n/* Git. */\n${rules('git-flow', 12)}\n`;
   const {parts, entry} = split(text);
   assert.deepEqual(parts.map((p) => p.file), ['rail.css', 'git.css']);
-  assert.match(entry, /@import '\.\/styles\/rail\.css';\n@import '\.\/styles\/git\.css';\n$/);
+  assert.match(entry, /@import '\.\/rail\.css';\n@import '\.\/git\.css';\n$/);
   assert.match(parts[0].text, /^\/\* The rail: [^]*\*\/\n\/\* The rail\. \*\/\n\.rail-item\.n0/);
   assert.match(parts[0].text, /@media \(max-width: 760px\) \{\n  \.rail\.n0 [^]*\.rail\.n5 \{ margin: 5px; \}\n\}\n$/);
   assert.match(parts[1].text, /^\/\* Git: [^]*\*\/\n@media \(max-width: 760px\) \{\n  \.git-band\.n0 /);

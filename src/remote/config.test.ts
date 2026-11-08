@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
+import {fileURLToPath} from 'node:url';
 import {DEFAULT_REMOTE, desktopPolicy} from '../app/host/policy.ts';
 
 // wrangler.toml is what production is; each other place that says the same (the page, the core, the desktop
@@ -34,8 +35,8 @@ test('the desktop app\'s webview is an origin the Remote lets in, and never plai
 test('the app\'s files are one directory: what the build makes, what the Worker serves, what Tauri takes, what the deploy checks', async () => {
   const assets = value('directory');
   assert.equal(assets, 'dist');
-  const {default: vite} = await import('../../vite.config.ts');
-  assert.equal((vite as {build: {outDir: string}}).build.outDir, assets);
+  const {default: vite} = await import('../app/vite.config.ts');
+  assert.equal((vite as {build: {outDir: string}}).build.outDir, fileURLToPath(new URL(`../../${assets}`, import.meta.url)));
   assert.equal(tauri.build.frontendDist, `../../${assets}`);
   assert.match(read('src/remote/deploy.ts'), /built\(new URL\(`\.\.\/\.\.\/\$\{vars\('directory'\) \?\? 'dist'\}`/);
 });
@@ -46,7 +47,7 @@ test('what reaches the Worker first is the Remote\'s own paths, and the developm
   process.env.LENGTH3_DEV_REMOTE = 'http://127.0.0.1:1';
   // Its own instance, apart from the one imported above, so it reads the variable just set; at an address the same
   // each run, so what loading it keeps (scripts/tests-load.ts) is kept once.
-  const again = '../../vite.config.ts?dev';
+  const again = '../app/vite.config.ts?dev';
   const {default: vite} = await import(again);
   assert.deepEqual(Object.keys((vite as {server: {proxy: Record<string, string>}}).server.proxy), ['/v1', '/api', '/.well-known']);
 });

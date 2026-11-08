@@ -4,7 +4,7 @@ name: CI
 # (on the merge it would make); a branch without one runs by hand.
 on:
   pull_request:
-    paths: ['src/**', 'module/**', 'root/**', 'scripts/**', 'tests/**', 'public/**', 'package.json', 'package-lock.json', 'Cargo.toml', 'Cargo.lock', '.cargo/**', 'tsconfig.json', 'vite.config.ts', 'index.html', 'wrangler.toml', 'RELEASE', '.github/workflows/ci.yml']
+    paths: ['src/**', 'module/**', 'root/**', 'scripts/**', 'tests/**', 'public/**', 'package.json', 'package-lock.json', 'Cargo.toml', 'Cargo.lock', '.cargo/**', 'tsconfig.json', 'wrangler.toml', 'RELEASE', '.github/workflows/ci.yml']
   workflow_dispatch:
 
 # Read-only token. Actions are pinned to full commits (tag beside); Dependabot proposes updates.
@@ -334,7 +334,7 @@ jobs:
           mkdir -p src/desktop/binaries
           cp "target/release/root3$ext" "src/desktop/binaries/root3-$TARGET$ext"
           "target/release/root3$ext" root check
-          npx tauri build --bundles "$BUNDLES" --config '{"build": {"beforeBuildCommand": "npx vite build"}, "bundle": {"externalBin": ["binaries/root3"]}}'
+          npx tauri build --bundles "$BUNDLES" --config '{"build": {"beforeBuildCommand": "npx vite build --config src/app/vite.config.ts"}, "bundle": {"externalBin": ["binaries/root3"]}}'
 
   # The .deb's AppArmor profile (src/desktop/deb) on stock Ubuntu 24.04: /usr/bin/root3 can make user namespaces
   # after postinst installs it, and cannot after postrm removes it.
@@ -579,9 +579,9 @@ jobs:
         with:
           name: selftest-${{ matrix.shard }}
           path: |
-            tests/.report
-            tests/.results
-            tests/.logs
+            tests/app/.report
+            tests/app/.results
+            tests/app/.logs
           retention-days: 14
           include-hidden-files: true
       # Passed only on a retry: the failed attempt's trace.
@@ -590,7 +590,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: selftest-flaky-${{ matrix.shard }}
-          path: tests/.results
+          path: tests/app/.results
           if-no-files-found: ignore
           retention-days: 14
           include-hidden-files: true

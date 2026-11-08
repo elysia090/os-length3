@@ -197,7 +197,7 @@ let failed = 0;
 const assets = mkdtempSync(join(tmpdir(), 'length3-prod-assets-'));
 try {
   say('building the app for its own origin, as build:cloudflare does');
-  const built = spawnSync(process.execPath, [join(OS, 'node_modules', 'vite', 'bin', 'vite.js'), 'build', '--outDir', assets, '--logLevel', 'error'],
+  const built = spawnSync(process.execPath, [join(OS, 'node_modules', 'vite', 'bin', 'vite.js'), 'build', '--config', join(OS, 'src', 'app', 'vite.config.ts'), '--outDir', assets, '--logLevel', 'error'],
     {cwd: OS, stdio: 'inherit', env: {...process.env, VITE_LENGTH3_REMOTE: ''}});
   if (built.status !== 0) throw new Error('the app did not build');
   assert.ok(existsSync(join(assets, '_headers')), 'the build carries public/_headers');

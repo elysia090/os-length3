@@ -56,9 +56,11 @@ devices. Building from source, `root3` is `cargo install --path src/cli`.
 | [`scripts/`](scripts/), [`tests/`](tests/) | what builds, releases and checks (`npm test` runs `scripts/tests.ts`), and the selftests: the app driven in a browser as a person drives it (`npm run selftest`) | each file's head |
 | [`docs/`](docs/) | what the OS is and how it ships ([`README.md`](docs/README.md)), its design language ([`DESIGN.md`](docs/DESIGN.md)), what it promises about security ([`SECURITY.md`](docs/SECURITY.md)) | |
 
-`package.json`, `Cargo.toml` (one workspace: the core, the app's window and root3), `vite.config.ts`, `index.html` and
-`public/`, `wrangler.toml` (the Remote's Worker) and `RELEASE` (this tree's version) are at the top, as each tool
-looks for them.
+A folder holds files, or folders and at most its own README and manifests, never both. At the top are root3's own
+manifests alone: `package.json`, `Cargo.toml` (one workspace: the core, the app's window and root3), `tsconfig.json`
+and `wrangler.toml` (the Remote's Worker, where Workers Builds looks for it), with their lockfiles. The web app's page
+and its build are in [`src/app/`](src/app/) (`index.html`, `vite.config.ts`); what it ships beside its build is
+[`public/`](public/).
 
 The root is [`root/`](root/): what it is made from (`sources.env`, the pins), one recipe per package
 (`packages/`), its own settings (`etc/`), and what makes it (`build.sh`, each package on Alpine 3.24 at one digest;

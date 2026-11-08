@@ -3,12 +3,12 @@ import {fileURLToPath} from 'node:url';
 import {join} from 'node:path';
 import {readFileSync} from 'node:fs';
 
-/** os/, where the app, the Remote and their package are. */
-export const OS = fileURLToPath(new URL('..', import.meta.url));
+/** The repository's root, where the app, the Remote and their package are. */
+export const OS = fileURLToPath(new URL('../..', import.meta.url));
 /** The selftest's own build of the app (for a Remote on its own origin). */
-export const OUT = join(OS, 'tests', '.dist');
+export const OUT = join(OS, 'tests', 'app', '.dist');
 /** What the Remote and the preview printed, for a failure to be read by. */
-export const LOGS = join(OS, 'tests', '.logs');
+export const LOGS = join(OS, 'tests', 'app', '.logs');
 
 /**
  * The root's own command in the web root this build carries: root3, or l3 in a root released before it was named so

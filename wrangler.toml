@@ -27,9 +27,9 @@ preview_urls = false
 mode = "smart"
 
 [assets]
-# The build (npm run build:cloudflare; vite.config.ts builds into this directory, and Tauri takes the app's from
-# it), never this tree: served from os/ itself, the page asks for /src/main.ts, which no browser runs, and shows
-# nothing but its background. src/remote/deploy.ts refuses a directory that is not a build.
+# The build (npm run build:cloudflare; src/app/vite.config.ts builds into this directory, and Tauri takes the app's
+# from it), never this tree: served from the tree itself, the page asks for its TypeScript, which no browser runs, and
+# shows nothing but its background. src/remote/deploy.ts refuses a directory that is not a build.
 directory = "dist"
 # A page of the app that is not a file is the app; the Remote's own paths always reach the Worker (and, in
 # development, vite.config.ts passes the same paths to the Remote it is given).

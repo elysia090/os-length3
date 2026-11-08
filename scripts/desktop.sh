@@ -41,7 +41,7 @@ gles=$(readlink -f "$gles")
 config=$(VERSION="$version" GLES="$gles" node --input-type=module -e '
 import {DEFAULT_REMOTE, desktopPolicy} from "./src/app/host/policy.ts";
 const remote = process.env.VITE_LENGTH3_REMOTE ?? DEFAULT_REMOTE;
-console.log(JSON.stringify({version: process.env.VERSION, build: {beforeBuildCommand: "npx vite build"},
+console.log(JSON.stringify({version: process.env.VERSION, build: {beforeBuildCommand: "npx vite build --config src/app/vite.config.ts"},
   bundle: {externalBin: ["binaries/root3"], linux: {appimage: {files: {"/usr/lib/libGLESv2.so.2": process.env.GLES}},
     deb: {files: {"/usr/share/length3-os/apparmor/length3-root3": "deb/length3-root3.apparmor"},
       postInstallScript: "deb/postinst", postRemoveScript: "deb/postrm"}}},

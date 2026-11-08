@@ -5,7 +5,7 @@
 // runs while the rest arrives rather than after it has. The app itself runs once the page is read and styled, as a
 // module script of the page's own would.
 
-import {start} from './core/client.ts';
+import {start} from '../core/client.ts';
 
 /** Which host this build is for (vite.config.ts); run from source, the page says (as app/host.ts reads it). */
 declare const __LENGTH3_HOST__: 'native' | 'web' | undefined;

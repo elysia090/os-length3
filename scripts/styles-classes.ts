@@ -2,7 +2,7 @@
 // classes, the ids and the elements. Every place a class is given is followed back to the words it is made of:
 //
 //   h('div', {class: …}), el.className = …, el.classList.add(…) / toggle / replace, setAttribute('class', …)
-//   (ids: an `id` property, el.id = …, setAttribute('id', …)); and index.html, and public/'s scripts.
+//   (ids: an `id` property, el.id = …, setAttribute('id', …)); and the page (src/app/index.html), and public/'s scripts.
 //
 // What is given is read as far as it is written: a string, a template, a choice (a ? b : c, a ?? b), a + b, .trim();
 // a name given a value in its file; a function's parameter, from what each call gives it (or its type, when that is a
@@ -19,6 +19,8 @@ import {existsSync, readdirSync, readFileSync} from 'node:fs';
 import {dirname, join, relative, resolve} from 'node:path';
 import {parseSync, type ESTree} from 'vite';
 
+/** The app's page, under the tree it is read from. */
+const PAGE = 'src/app/index.html';
 /** A word as it may be a class, an id or an element's name. */
 const WORD = /[-\w]+/g;
 const lower = (s: string) => s.toLowerCase();
@@ -122,7 +124,7 @@ export function pageWords(os: string) {
     const e = s.value;
     if (v.unknown) unread.push({what: s.what, at: `${relative(os, s.file.file)}:${lineOf(s.file.text, e.start)}  ${s.file.text.slice(e.start, e.end).replace(/\s+/g, ' ').slice(0, 120)}`});
   }
-  const html = readFileSync(join(os, 'index.html'), 'utf8');
+  const html = readFileSync(join(os, PAGE), 'utf8');
   for (const m of html.matchAll(/\b(class|id)="([^"]*)"/g)) for (const w of m[2]?.match(WORD) ?? []) (m[1] === 'class' ? classes : ids).words.add(lower(w));
 
   // Whatever could not be followed may be any word of a string; an element, any word at all that names one.
@@ -131,7 +133,7 @@ export function pageWords(os: string) {
   for (const w of html.match(WORD) ?? []) said.words.add(lower(w));
   if (classes.unknown) merge(classes, said);
   if (ids.unknown) merge(ids, said);
-  return {classes, ids, tags: said, unread, files: files.map((f) => relative(os, f.file)).concat('index.html')};
+  return {classes, ids, tags: said, unread, files: files.map((f) => relative(os, f.file)).concat(PAGE)};
 }
 
 const lineOf = (text: string, at: number) => text.slice(0, at).split('\n').length;
