@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
+import type {Pinned} from './mirror.ts';
 import {mirror, type Store} from './mirror.ts';
-import {desktopFile, pinnedDesktop, pinnedDistros, pinnedRoots, shipped, type Pinned} from '../ship/releases.ts';
+import {desktopFile, pinnedDesktop, pinnedDistros, pinnedRoots, shipped} from '../ship/releases.ts';
 
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 const pin = (file: string, bytes: Uint8Array, tag = 'os-length3-linux-v1.0.0'): Pinned =>

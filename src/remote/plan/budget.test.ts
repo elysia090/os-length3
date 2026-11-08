@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {sql} from 'drizzle-orm';
+import {sha256} from '../bytes/digest.ts';
 import {LIMITS, limitsOf, type Limits} from './budget.ts';
 import type {Bucket} from '../bytes/bucket.ts';
-import type {Edge} from '../bytes/files.ts';
-import {sha256} from '../serve/request.ts';
+import type {Edge} from '../repos/files.ts';
 import {count, enc, service, type Service} from '../tests/testing.ts';
 
 // What R2 and the database may be asked for (budget.ts): each limit is checked before R2 is asked, and what

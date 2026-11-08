@@ -24,7 +24,7 @@ import type {Context, Hono} from 'hono';
 import {blobKey, noFiles, type Bucket} from '../bytes/bucket.ts';
 import {byCode, HOLD, live, nameFor, serverAddress, shownAs, takeDown} from '../people/names.ts';
 import {addressOf, body, lock, qualified, refuse, rows, throttled, unchanged, type Db, type Vars} from '../serve/request.ts';
-import type {Edge} from '../bytes/files.ts';
+import type {Edge} from './files.ts';
 import {address, blob, cut, line, member, repo, repoPublic, repoShare, server} from '../db/schema.ts';
 
 /** Codes one address may resolve to a face in an hour, as Inbox lets an account look them up (inbox.ts INBOX.codesPerHour). */

@@ -13,7 +13,19 @@ import {createHash} from 'node:crypto';
 import {createWriteStream, mkdtempSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import type {Pinned} from '../ship/releases.ts';
+
+/** One file of a release as this tree pins it: where the bucket keeps it, where the Remote serves it, where GitHub has it. */
+export interface Pinned {
+  key: string;
+  path: string;
+  tag: string;
+  file: string;
+  sha256: string;
+  bytes: number;
+  type: string;
+  /** Where its makers publish it, for a file not in a GitHub release (another distribution's root). */
+  url?: string;
+}
 
 /**
  * Where the files go: whether the Remote has a file as pinned (its digest and size recorded when it was put:

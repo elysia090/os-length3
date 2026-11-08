@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {sql} from 'drizzle-orm';
+import {sha256} from '../bytes/digest.ts';
 import * as schema from '../db/schema.ts';
-import {sha256} from '../serve/request.ts';
 import {sweep} from '../repos/sweep.ts';
 import {count, enc, idOf, named, sessionOf, sharedService, upload} from './testing.ts';
 

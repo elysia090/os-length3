@@ -68,12 +68,7 @@ const isTest = (rel: string) => /\.test\.(ts|rs)$|(^|\/)tests?\/|\/testing[^/]*\
  * Imports a unit makes that the table does not allow, each with the step of the work that takes it away (README.md,
  * Units: 2 sods out, 3 ricebox, 4 otter's hooks, 6 muk, 7 shipto, 8 funk). [from, to, file].
  */
-export const OWED: [string, string, string][] = [
-  // The Remote's bytes ride on its ledger's plumbing (request.ts, schema.ts) and budget (6, 7).
-  ['muk', 'shipto', 'src/remote/bytes/files.ts'],
-  ['muk', 'shipto', 'src/remote/bytes/mirror.ts'],
-  ['muk', 'shipto', 'src/remote/bytes/trees.ts'],
-];
+export const OWED: [string, string, string][] = [];
 
 /** The unit of a file (a path from the root): the unit holding the longest path that holds it, or null. */
 export function unitOf(rel: string): Unit | null {

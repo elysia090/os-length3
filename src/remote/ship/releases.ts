@@ -10,18 +10,7 @@
 
 import desktopPins from '../../shared/desktop-releases.json' with {type: 'json'};
 
-/** One file of a release as this tree pins it: where the bucket keeps it, where the Remote serves it, where GitHub has it. */
-export interface Pinned {
-  key: string;
-  path: string;
-  tag: string;
-  file: string;
-  sha256: string;
-  bytes: number;
-  type: string;
-  /** Where its makers publish it, for a file not in a GitHub release (another distribution's root). */
-  url?: string;
-}
+import type {Pinned} from '../bytes/mirror.ts';
 
 const DESKTOP_KINDS = {
   deb: 'application/vnd.debian.binary-package',

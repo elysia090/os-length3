@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {sql} from 'drizzle-orm';
 import {Hono} from 'hono';
+import {sha256} from '../bytes/digest.ts';
 import {LIMITS} from '../plan/budget.ts';
 import {GRACE, type PlanConfig} from '../plan/plan.ts';
 import {sweep} from '../repos/sweep.ts';
-import {failed, sha256} from '../serve/request.ts';
+import {failed} from '../serve/request.ts';
 import {accept, APP, count, enc, fakeStripe, idOf, named, sendEvent, service, stripeEvent, subscription} from './testing.ts';
 
 // What the server-side audit found, each held here so it stays fixed: who a request is, what R2 is asked, and

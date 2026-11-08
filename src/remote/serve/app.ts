@@ -27,7 +27,7 @@ import {signedIn, signIn, type Auth} from '../people/auth.ts';
 import type {Bucket} from '../bytes/bucket.ts';
 import {Budget, FULL_WAIT, metered, type Limits} from '../plan/budget.ts';
 import {enter, type Enter} from '../people/enter.ts';
-import {files, type Edge} from '../bytes/files.ts';
+import {files, type Edge} from '../repos/files.ts';
 import {homeRoutes} from '../repos/home.ts';
 import {inbox} from '../talk/inbox.ts';
 import {keyFor, type Purpose} from './keys.ts';
@@ -41,7 +41,8 @@ import {servers} from '../talk/servers.ts';
 import {sshRoutes} from '../repos/ssh.ts';
 
 // What tests and the clients' fixtures read from here, wherever it is kept now.
-export {LIMIT, roomFor, sha256} from './request.ts';
+export {LIMIT, roomFor} from './request.ts';
+export {sha256} from '../bytes/digest.ts';
 export {applyDiff, cutId, issueOf, merge3, validLine, validName, validPath} from '../repos/repos.ts';
 
 export interface Deps {

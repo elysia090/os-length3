@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import {after, test} from 'node:test';
+import {sha256} from '../bytes/digest.ts';
 import {bridge, throughBridge} from './bridge.ts';
 import {NO_FILES} from '../bytes/bucket.ts';
-import {sha256} from './request.ts';
 import {bearerOf, database, enc} from '../tests/testing.ts';
 import worker, {type Env} from './worker.ts';
 

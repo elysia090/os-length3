@@ -39,7 +39,7 @@ import {createApp, sha256} from '../serve/app.ts';
 import {createAuth, SESSION_COOKIES} from '../people/auth.ts';
 import {memoryBucket} from '../bytes/bucket.ts';
 import type {Limits} from '../plan/budget.ts';
-import type {Edge} from '../bytes/files.ts';
+import type {Edge} from '../repos/files.ts';
 import {enterEmail, type Enter} from '../people/enter.ts';
 import {MIGRATIONS, reach} from '../db/neon.ts';
 import type {Billing, PlanConfig} from '../plan/plan.ts';

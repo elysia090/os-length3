@@ -23,10 +23,11 @@
 
 import {and, eq, inArray} from 'drizzle-orm';
 import type {Context, Hono} from 'hono';
+import {HEX, sha256} from '../bytes/digest.ts';
 import type {Budget} from '../plan/budget.ts';
-import {blobKey, noFiles, type Bucket} from './bucket.ts';
+import {blobKey, noFiles, type Bucket} from '../bytes/bucket.ts';
 import {desktopFile, rootKey} from '../ship/releases.ts';
-import {body, fits, HEX, LIMIT, lock, sha256, unchanged, type Db, type Vars} from '../serve/request.ts';
+import {body, fits, LIMIT, lock, unchanged, type Db, type Vars} from '../serve/request.ts';
 import {blob, releaseFile} from '../db/schema.ts';
 
 /** Bytes as base64, a piece at a time. */

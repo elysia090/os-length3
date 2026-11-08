@@ -17,7 +17,7 @@ import {enterEmail} from '../people/enter.ts';
 import {r2Bucket, type R2Bucket} from '../bytes/bucket.ts';
 import {limitsOf} from '../plan/budget.ts';
 import {MarkObject, objectMarks, type MarkNamespace} from './mark.ts';
-import type {Edge} from '../bytes/files.ts';
+import type {Edge} from '../repos/files.ts';
 import {planConfig, type Billing} from '../plan/plan.ts';
 import {stripeRest} from '../plan/stripe.ts';
 import * as schema from '../db/schema.ts';

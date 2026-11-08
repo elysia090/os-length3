@@ -35,12 +35,11 @@ import {sql} from 'drizzle-orm';
 import {
   bigint, boolean, check, doublePrecision, foreignKey, index, integer, jsonb, pgTable, primaryKey, smallint, text, timestamp, unique, uniqueIndex, uuid,
 } from 'drizzle-orm/pg-core';
+import type {Tree} from '../bytes/trees.ts';
 import {session, user} from './schema.auth.ts';
 
 export * from './schema.auth.ts';
 
-/** path -> blob sha256, or null for an empty folder. */
-export type Tree = Record<string, string | null>;
 /**
  * Beside a tree, each file's mode where it is not a plain file's: path -> its permission bits (0o755 is 493),
  * only for a file its tree names with an execute bit. A path not in it is a plain file. Old clients send none

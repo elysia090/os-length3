@@ -6,8 +6,10 @@
 // folder itself (`n`: a null in a flat tree). A name may be a file and a folder both, in a tree made before that was
 // refused: the node says both, as the flat tree did.
 
-import {sha256} from '../serve/request.ts';
-import type {Tree} from '../db/schema.ts';
+import {sha256} from './digest.ts';
+
+/** path -> blob sha256, or null for an empty folder. */
+export type Tree = Record<string, string | null>;
 
 export type Entry = {f?: string; t?: string; n?: 1};
 export type Node = Record<string, Entry>;

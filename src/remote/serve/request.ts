@@ -136,7 +136,6 @@ export const rows = async <T>(q: Db, query: SQL): Promise<T[]> => ((await q.exec
 
 // ---- limits ----
 
-export const HEX = /^[0-9a-f]{64}$/;
 export const LIMIT = {blob: 16 << 20, files: 20_000, diff: 5_000, words: 2_000, log: 200,
   /** A tree as JSON: what one request parses and writes whole (20,000 entries of 400 characters). */
   tree: 8 << 20,
@@ -174,11 +173,6 @@ export function fitting(used: number, more: number, quota = QUOTA) {
 }
 /** The room an account's rows and files take, for a select that reads it with them (fitting). */
 export const usedBy = (user: string) => sql<number>`coalesce((select r.used from room r where r.user_id = ${user}), 0)::float8`;
-
-export async function sha256(bytes: Uint8Array): Promise<string> {
-  const d = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as BufferSource));
-  return [...d].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
 
 // ---- what every request passes through (app.ts uses them, in this order) ----
 
