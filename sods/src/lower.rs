@@ -30,7 +30,7 @@ const T_CLOCK: u32 = 4;
 const T_PAIR: u32 = 5; // (i64, i64) -> i64
 const T_RESOLVE: u32 = 6;
 const T_RUN: u32 = 7;
-const T_FPU: u32 = 8; // (op, size, address, st a, st b) -> i32
+const T_FPU: u32 = 8; // (registers, op, size, st a, st b, operand, its top word) -> i64
 const T_TRACE: u32 = 9; // (i64) -> ()
 
 const F_SYSCALL: u32 = 0;
@@ -51,13 +51,13 @@ const FIRST_GUEST: u32 = 12;
 /// Imported functions, in index order: the host's, then (in a module made later) the first module's.
 const HOST_IMPORTS: [&str; 7] = ["syscall", "trap", "div128", "clock", "fpu", "trace", "miss"];
 const SHARED: [&str; 5] = ["mulhu", "mulhs", "resolve", "dispatch", "run"];
-/// Globals every module of a program shares: r0..r15, fs, x0..x15, and the
-/// flags handed from one function to another (fl).
-const GLOBALS: u32 = 37;
+/// Globals every module of a program shares: r0..r15, fs, x0..x15, the
+/// flags handed from one function to another (fl), and the rest below.
+const GLOBALS: u32 = 38;
 fn global_name(n: u32) -> String {
-    match n { 0..=15 => format!("r{n}"), G_FS => "fs".into(), G_FLAGS => "fl".into(), G_BUDGET => "budget".into(), G_DEPTH => "depth".into(), G_LOW => "low".into(), _ => format!("x{}", n - 17) }
+    match n { 0..=15 => format!("r{n}"), G_FS => "fs".into(), G_FLAGS => "fl".into(), G_BUDGET => "budget".into(), G_DEPTH => "depth".into(), G_LOW => "low".into(), G_X87 => "x87".into(), _ => format!("x{}", n - 17) }
 }
-fn global_type(n: u32) -> ValType { if n < 17 || n == G_FLAGS || n == G_LOW { ValType::I64 } else if n == G_BUDGET || n == G_DEPTH { ValType::I32 } else { ValType::V128 } }
+fn global_type(n: u32) -> ValType { if n < 17 || n == G_FLAGS || n == G_LOW { ValType::I64 } else if n == G_BUDGET || n == G_DEPTH || n == G_X87 { ValType::I32 } else { ValType::V128 } }
 /// Loops gone round (backward gotos) and calls made before the thread is taken back to the kernel: its time slice,
 /// where it makes no system call. The kernel sets it again each time it runs the thread (about a millisecond's).
 const G_BUDGET: u32 = 34;
@@ -70,6 +70,9 @@ const DEPTH_LIMIT: i32 = 400;
 /// goes down by more than a push (a write to rsp, as a frame is made; a call), so the kernel zeroes no more of a stack
 /// than was used when its memory goes to another process (process.ts Process.written).
 const G_LOW: u32 = 36;
+/// The thread's x87 registers: their handle in the coprocessor (x87.rs), which the kernel sets for each thread its
+/// instance runs.
+const G_X87: u32 = 37;
 /// A word of memory below where Linux lets anything be mapped (vm.mmap_min_addr): nonzero when the kernel wants the
 /// thread to look in (a signal for it, another thread waiting for its turn). A host thread can write it while the
 /// guest runs, as an interrupt is raised; the guest reads it at each loop's head.
@@ -2168,21 +2171,10 @@ fn i32x4_splat(v: i32) -> i128 { let u = v as u32 as u128; (u | u << 32 | u << 6
 fn f32x4_splat(v: f32) -> i128 { i32x4_splat(v.to_bits() as i32) }
 fn f64x2_splat(v: f64) -> i128 { let u = v.to_bits() as u128; (u | u << 64) as i128 }
 
-// ---- x87: an exact 80-bit coprocessor in the host ----
+// ---- x87: an exact 80-bit coprocessor, the translator's own (x87.rs) ----
 
-/// x87 operations the host implements, in the order of the `fpu` op index.
-/// The list is embedded in the module so host and translator cannot drift.
-const X87_OPS: &[&str] = &[
-    "fld", "fild", "fst", "fstp", "fist", "fistp", "fisttp",
-    "fld1", "fldz", "fldpi", "fldl2e", "fldln2", "fldlg2", "fldl2t",
-    "fadd", "faddp", "fmul", "fmulp", "fsub", "fsubp", "fsubr", "fsubrp", "fdiv", "fdivp", "fdivr", "fdivrp",
-    "fiadd", "fimul", "fisub", "fisubr", "fidiv", "fidivr",
-    "fchs", "fabs", "fsqrt", "frndint", "fxch",
-    "fucomi", "fcomi", "fucomip", "fcomip",
-    "fucom", "fcom", "fucomp", "fcomp", "fucompp", "fcompp", "ftst",
-    "fnstsw", "fnstcw", "fldcw", "fninit", "fnclex", "fwait", "fnop", "ffree", "ffreep", "fincstp", "fdecstp",
-    "fprem", "fprem1", "fscale", "f2xm1", "fyl2x", "fyl2xp1", "fpatan", "fsin", "fcos", "fptan", "fxam", "fxtract",
-];
+// The operations it does are crate::x87::NAMES, in the order of the `fpu` op index; the list is embedded in the
+// module (xlat.fpu), so the host runs it only with a coprocessor that numbers them the same.
 
 fn st(r: Register) -> Option<u32> {
     let n = r as u32;
@@ -2190,14 +2182,16 @@ fn st(r: Register) -> Option<u32> {
 }
 
 impl Fx<'_> {
-    /// One x87 instruction: fpu(op, memory size, address, st a, st b) -> i32.
-    /// The result carries flags for fcomi (CF|ZF<<1|PF<<2) or a 16-bit
-    /// value for fnstsw/fnstcw; memory operands are read and written by the
-    /// host directly.
+    /// One x87 instruction: fpu(registers, op, memory size, st a, st b, operand, its top word) -> i64, called
+    /// wasm to wasm, for the thread whose registers its instance names (G_X87). A memory operand read is loaded
+    /// here and given as its bits (an 80-bit one's top word apart); one written is the call's value, stored here (an
+    /// 80-bit one's top word asked for after, Op::High). The value is otherwise fcomi's flags (CF|ZF<<1|PF<<2), or
+    /// the word fnstsw puts in AX.
     fn x87(&mut self, i: &Instruction) -> Option<bool> {
         let name = format!("{:?}", i.mnemonic()).to_ascii_lowercase();
         let name = if name == "wait" { "fwait".to_string() } else { name };
-        let op = X87_OPS.iter().position(|&n| n == name)?;
+        let index = crate::x87::NAMES.iter().position(|&n| n == name)?;
+        let op = crate::x87::Op::at(index)?;
         let mut size = 0;
         let (mut a, mut b) = (0i32, 1i32);
         let mut memory = false;
@@ -2215,15 +2209,48 @@ impl Fx<'_> {
         }
         if let Some(&r) = regs.first() { a = r; }
         if let Some(&r) = regs.get(1) { b = r; }
-        // Integer forms tell the host the memory holds an integer.
+        if memory && !matches!(size, 2 | 4 | 8 | 10) { return Some(false); }
+        // Integer forms tell the coprocessor the memory holds an integer.
         let integer = name.starts_with("fi") && name != "fincstp";
-        self.c32(op as i32);
+        let stores = memory && op.stores();
+        // A store's address first, kept for an 80-bit one's second part.
+        let mut at = 0;
+        if stores { at = self.place(i); self.e(W::LocalTee(l_u(0))); }
+        self.e(W::GlobalGet(G_X87));
+        self.c32(index as i32);
         self.c32(if integer { -size } else { size });
-        if memory { self.address(i); } else { self.c32(0); }
         self.c32(a); self.c32(b);
+        if memory && !stores {
+            let at = self.place(i);
+            if size == 10 {
+                self.e(W::LocalTee(l_u(0)));
+                self.load_at(8, at);
+                self.e(W::LocalGet(l_u(0))); self.e(W::I32Load16U(mem_at(at + 8, 0)));
+            } else {
+                self.load_at(size as u8, at);
+                self.c32(0);
+            }
+        } else {
+            self.c64(0); self.c32(0);
+        }
         self.e(W::Call(F_FPU));
+        if stores {
+            if size == 10 {
+                self.store_at(8, at);
+                self.e(W::LocalGet(l_u(0)));
+                self.e(W::GlobalGet(G_X87));
+                self.c32(crate::x87::Op::High as i32);
+                self.c32(0); self.c32(0); self.c32(1); self.c64(0); self.c32(0);
+                self.e(W::Call(F_FPU));
+                self.store_at(2, at + 8);
+            } else {
+                self.store_at(size as u8, at);
+            }
+            return Some(true);
+        }
         match name.as_str() {
             "fucomi" | "fcomi" | "fucomip" | "fcomip" => {
+                self.e(W::I32WrapI64);
                 self.set(l_u(0));
                 for (bit, l) in [(0, L_CF), (1, L_ZF), (2, L_PF)] {
                     self.get(l_u(0)); if bit > 0 { self.c32(bit); self.e(W::I32ShrU); } self.c32(1); self.e(W::I32And); self.set(l);
@@ -2231,9 +2258,7 @@ impl Fx<'_> {
                 self.c32(0); self.set(L_OF); self.c32(0); self.set(L_SF);
                 self.set_flags(Flags::Held);
             }
-            "fnstsw" if !memory => {
-                self.e(W::I64ExtendI32U); self.write_reg(Register::AX);
-            }
+            "fnstsw" => { self.write_reg(Register::AX); }
             _ => self.e(W::Drop),
         }
         Some(true)
@@ -2805,7 +2830,7 @@ fn types() -> TypeSection {
     types.ty().function([ValType::I64, ValType::I64], [ValType::I64]);
     types.ty().function([ValType::I64], [ValType::I64]);
     types.ty().function([ValType::I64], []);
-    types.ty().function([ValType::I32; 5], [ValType::I32]);
+    types.ty().function([ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I64, ValType::I32], [ValType::I64]);
     types.ty().function([ValType::I64], []);
     types
 }
@@ -2918,6 +2943,8 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
     globals.global(GlobalType { val_type: ValType::I32, mutable: true, shared: false }, &ConstExpr::i32_const(0));
     // How deep the stack has gone (G_LOW): not at all yet.
     globals.global(GlobalType { val_type: ValType::I64, mutable: true, shared: false }, &ConstExpr::i64_const(-1));
+    // Its x87 registers (G_X87): no thread's until the kernel says.
+    globals.global(GlobalType { val_type: ValType::I32, mutable: true, shared: false }, &ConstExpr::i32_const(0));
 
     let mut exports = ExportSection::new();
     // What a module made later for this program imports: the helpers, every register, the table.
@@ -2961,7 +2988,7 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
         elf.entry, image_start(elf), end, elf.phdr_address().unwrap_or(0), elf.phnum, read_only.join(","), tls
     );
     let facts = CustomSection { name: Cow::Borrowed("xlat.facts"), data: Cow::Owned(facts.into_bytes()) };
-    let fpu = CustomSection { name: Cow::Borrowed("xlat.fpu"), data: Cow::Owned(X87_OPS.join(",").into_bytes()) };
+    let fpu = CustomSection { name: Cow::Borrowed("xlat.fpu"), data: Cow::Owned(crate::x87::NAMES.join(",").into_bytes()) };
     // Where each function starts, so code translated later stops there instead of repeating it.
     let starts: Vec<u8> = program.functions.iter().flat_map(|f| f.start.to_le_bytes()).collect();
     let starts = CustomSection { name: Cow::Borrowed("xlat.starts"), data: Cow::Owned(starts) };

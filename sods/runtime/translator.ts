@@ -36,6 +36,8 @@ export interface Translate {
   held(): number;
   spare(): number;
   renew(): boolean;
+  /** The translator's compiled module: the x87 (x87.ts) is an instance of it of its own. */
+  readonly module: WebAssembly.Module;
 }
 
 export async function loadTranslator(source: WebAssembly.Module | BufferSource): Promise<Translate> {
@@ -139,5 +141,6 @@ export async function loadTranslator(source: WebAssembly.Module | BufferSource):
     open.clear();
     return true;
   };
+  translate.module = module;
   return translate;
 }

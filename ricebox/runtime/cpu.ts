@@ -14,7 +14,7 @@
 // only while no other thread of the process runs.
 
 import {CH, OP, OUTBOX_BYTES, Outbox, READS_REGS, REPLY, REGS, rouse, sleep, watch, type Attached, type Forget, type Run} from './channel.ts';
-import {Fpu} from '../../sods/runtime/fpu.ts';
+import {namesIn, x87Of, type X87} from '../../sods/runtime/x87.ts';
 import {answerTime, clocks, type Clocks} from './clock.ts';
 import {INTERRUPT, KEEP_INSTANCES, Preempted, SHARES, SLICE_LOOPS, TRAP_YIELD, div128, fault, nextSlice, translatorsLimit, trapOrPreempt, type Translation} from './process.ts';
 
@@ -38,6 +38,14 @@ class Exec {
 let task: Thread | null = null;
 /** The threads run here last, most recent first, each with its instance on its memory (KEEP_INSTANCES; remote.ts mirrors it). */
 let kept: Thread[] = [];
+/** This Worker's x87 (x87.ts), from the translator's module its first run brought. */
+let x87: X87 | null = null;
+const theX87 = (): X87 => {
+  if (!x87) throw new Error('a thread in a Worker given no x87');
+  return x87;
+};
+/** Threads kept here past `keep`: their x87 registers go. */
+const letGo = (was: Thread[], keep: Thread[]): void => { for (const t of was) if (!keep.includes(t) && t.fpu) { x87?.free(t.fpu); t.fpu = 0; } };
 
 /** The thread, set up from a 'run' message. */
 class Thread {
@@ -45,7 +53,6 @@ class Thread {
   declare readonly module: WebAssembly.Module;
   declare readonly memoryId: number;
   declare readonly imageId: number;
-  declare readonly fpuOps: string[];
   declare readonly instance: WebAssembly.Instance;
   declare readonly low: WebAssembly.Global | null;
   declare readonly initial: [WebAssembly.Global, unknown][];
@@ -64,7 +71,8 @@ class Thread {
   declare modules: Attached[];
   /** The run it was last given (what an exec gone on with here takes over: its channel, the kernel's words). */
   declare last: Run;
-  declare fpu: Fpu;
+  /** Its x87 registers' handle in this Worker's x87 (x87.ts); 0 before it has any. */
+  declare fpu: number;
   declare resumeAt: bigint;
   declare slice: number;
   declare ranAt: number;
@@ -73,12 +81,12 @@ class Thread {
   declare viewOf: DataView;
   declare wordsOf: Int32Array;
   declare _globals?: (WebAssembly.Global | null)[];
-  constructor(m: Run & {memory: WebAssembly.Memory; module: WebAssembly.Module; fpuOps: string[]}) {
+  constructor(m: Run & {memory: WebAssembly.Memory; module: WebAssembly.Module}) {
     this.memory = m.memory;
     this.module = m.module;
     this.memoryId = m.memoryId; // (what remote.ts numbers them: the objects posted are new each time)
     this.imageId = m.imageId;
-    this.fpuOps = m.fpuOps;
+    this.fpu = 0;
     this.take(m);
     this.lock();
     const at = m.keep, keep = at ? new Uint8Array(this.memory.buffer).slice(at[0], at[1]) : null;
@@ -97,7 +105,7 @@ class Thread {
   }
 
   /** What a run brings: its thread, its channel and the kernel's words, the modules known, its x87. */
-  take(m: Run & {fpuOps: string[]}): void {
+  take(m: Run): void {
     this.last = m;
     this.tid = m.tid;
     // Where it writes to the console without asking (toConsole), and which of its process's descriptors are the console.
@@ -113,10 +121,13 @@ class Thread {
     this.count = new Int32Array(m.count); // modules the program has, made by any process
     this.clock = clocks(m.origin); // the kernel's (clock.ts), read here as a vDSO does
     this.modules = m.extras; // [{module, base, count}] known here
-    this.fpu = new Fpu(() => this.bytes, m.fpuOps);
-    if (m.fpu) this.fpu.restore(m.fpu);
+    const x87 = theX87();
+    x87.check(namesIn(this.module));
+    if (this.fpu) x87.free(this.fpu);
+    this.fpu = x87.restore(m.fpu);
   }
   begin(m: Run): void {
+    if (this.exports.x87) this.exports.x87.value = this.fpu;
     this.setRegs(m.regs);
     this.resumeAt = BigInt(m.resumeAt);
     this.slice = SLICE_LOOPS;
@@ -126,7 +137,7 @@ class Thread {
    * (process.ts goesOn; remote.ts said so: again): the instance goes on, its globals as a fresh one's, the modules
    * made since attached.
    */
-  again(m: Run & {fpuOps: string[]}): void {
+  again(m: Run): void {
     this.take(m);
     this.lock();
     for (const [g, v] of this.initial) g.value = v;
@@ -152,7 +163,8 @@ class Thread {
       trap: trapOrPreempt,
       div128,
       clock: () => BigInt(Math.round((performance.timeOrigin + performance.now()) * 1e6)),
-      fpu: (op: number, size: number, address: number, a: number, b: number) => this.fpu.call(op, size, address, a, b),
+      // Wasm to wasm, the x87's own (x87.ts): the instance's x87 global names whose registers.
+      fpu: theX87().fpu,
       trace: () => {},
       miss: (address: bigint) => this.miss(address),
     }};
@@ -235,7 +247,7 @@ class Thread {
     i64[CH.ARGS + 3] = d; i64[CH.ARGS + 4] = e; i64[CH.ARGS + 5] = f; i64[CH.NEXT] = next;
     if (READS_REGS.has(Number(nr))) this.putRegs(); else this.i32[CH.HAVE_REGS] = 0;
     // A new thread or process starts from this one's x87 too.
-    if (nr === 56n || nr === 57n || nr === 58n) this.put(JSON.stringify(this.fpu.saved()));
+    if (nr === 56n || nr === 57n || nr === 58n) this.put(JSON.stringify(theX87().saved(this.fpu)));
     this.unlock();
     const reply = this.ask(OP.SYSCALL);
     if (reply === REPLY.EXEC) throw new Exec(Number(i64[CH.ARG0]), Number(i64[CH.ARG1]));
@@ -244,7 +256,7 @@ class Thread {
     if (reply === REPLY.REGS) this.setRegs(Array.from({length: REGS.length}, (_, n) => i64[CH.REGS + n]));
     // Its program starts again on this memory (an exec of the same image): this instance runs it, afresh.
     if (reply === REPLY.RENEW) {
-      this.fpu = new Fpu(() => this.bytes, this.fpuOps);
+      theX87().reset(this.fpu);
       if (this.low) this.low.value = -1n;
     }
     if (reply === REPLY.REDIRECT || reply === REPLY.RENEW) {
@@ -412,14 +424,18 @@ function goOn(from: Thread, to: Exec): Thread {
   const m = from.last, i64 = from.i64;
   was.again({...was.last, again: true, tid: from.tid, channel: from.channel, door: m.door, outbox: m.outbox, consoles: m.consoles, origin: m.origin,
     regs: Array.from({length: REGS.length}, (_, n) => i64[CH.REGS + n]), resumeAt: i64[CH.RIP], fpu: null, keep: null,
-    extras: was.modules, fpuOps: was.fpuOps});
-  kept = [was, ...kept.filter((t) => t !== was)].slice(0, KEEP_INSTANCES);
+    extras: was.modules});
+  const keep = [was, ...kept.filter((t) => t !== was)].slice(0, KEEP_INSTANCES);
+  letGo(kept, keep);
+  kept = keep;
   return was;
 }
 
 listen(({data: m}) => {
   if (m.type === 'forget') {
-    kept = kept.filter((t) => t.memoryId !== m.memoryId);
+    const keep = kept.filter((t) => t.memoryId !== m.memoryId);
+    letGo(kept, keep);
+    kept = keep;
     if (task?.memoryId === m.memoryId) task = null;
     return;
   }
@@ -427,13 +443,16 @@ listen(({data: m}) => {
   try {
     // What the kernel left out, this Worker has (remote.ts post): the memory, the image's module and its first modules.
     const like = kept.find((t) => t.imageId === m.imageId);
-    const memory = m.memory ?? kept.find((t) => t.memoryId === m.memoryId)?.memory, module = m.module ?? like?.module, fpuOps = m.fpuOps ?? like?.fpuOps;
-    if (!memory || !module || !fpuOps) throw new Error('a run of a program or on a memory this Worker does not have');
-    const run = {...m, memory, module, fpuOps, extras: [...(like?.modules.slice(0, m.extrasFrom) ?? []), ...m.extras]};
+    const memory = m.memory ?? kept.find((t) => t.memoryId === m.memoryId)?.memory, module = m.module ?? like?.module;
+    if (!memory || !module) throw new Error('a run of a program or on a memory this Worker does not have');
+    if (m.x87) x87 = x87Of(m.x87);
+    const run = {...m, memory, module, extras: [...(like?.modules.slice(0, m.extrasFrom) ?? []), ...m.extras]};
     const same = (t: Thread): boolean => t.memoryId === m.memoryId && t.imageId === m.imageId;
     const was = m.again ? kept.find(same) : null;
     if (was) { task = was; task.again(run); } else task = new Thread(run);
-    kept = [task, ...kept.filter((t) => t !== task && !same(t))].slice(0, KEEP_INSTANCES);
+    const keep = [task, ...kept.filter((t) => t !== task && !same(t))].slice(0, KEEP_INSTANCES);
+    letGo(kept, keep);
+    kept = keep;
     for (let next = task.run(); next; next = task.run()) task = goOn(task, next);
     // Left: its channel may go to another thread (remote.ts channel).
     Atomics.store(task.i32, CH.LEFT, 1);

@@ -10,10 +10,10 @@
 # Needs cargo with the wasm32-unknown-unknown target.
 set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
-xlat=$(cd "$here/../sods" && pwd)
+sods=$(cd "$here/../sods" && pwd)
 root=${1:-}
 out=${2:-$here/public/l3}
 if [ -z "$root" ]; then root=$(node "$here/scripts/root-file.ts" "$here/target/root"); fi
 target=${CARGO_TARGET_DIR:-$sods/target}
-(cd "$xlat" && cargo build -q --locked --release --target wasm32-unknown-unknown --lib && cargo build -q --locked --release --bin xlat)
+(cd "$sods" && cargo build -q --locked --release --target wasm32-unknown-unknown --lib && cargo build -q --locked --release --bin xlat)
 node "$here/scripts/l3.ts" "$root" "$out" --translator "$target/wasm32-unknown-unknown/release/xlat.wasm" --xlat "$target/release/xlat" --stage "$here/target/userland"

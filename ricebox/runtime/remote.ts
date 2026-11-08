@@ -16,7 +16,7 @@
 import {CH, OP, Outbox, REPLY, rouse, sleep, watch, type Forget, type Run, type Said} from './channel.ts';
 import {INTERRUPT, KEEP_INSTANCES, Kernel, PROFILE, REG, TRACE_SYSCALLS, Task, goesOn, trace, type Image, type Made, type Process, type Pumped} from './process.ts';
 import {Exec, Exit, Redirect, utf8} from './flow.ts';
-import type {Saved} from '../../sods/runtime/fpu.ts';
+import type {Saved} from '../../sods/runtime/x87.ts';
 import type {Call, Mem, Range} from './parts.ts';
 import {deliverable, take} from './signal.ts';
 
@@ -44,6 +44,8 @@ interface Hand {
   onError(fn: (e: {message?: string}) => void): void;
   kernel?: RemoteKernel;
   kept?: Held[];
+  /** It has the x87's module (cpu.ts): sent with its first run. */
+  x87?: boolean;
 }
 /** What a RemoteKernel is made with besides a Kernel's: Workers kept spare, who hears it idle, and whether its Workers go on. */
 export interface Apart extends Made { spares?: number; onIdle?: ((r: Pumped) => void) | null; passOn?: boolean }
@@ -511,9 +513,10 @@ class RemoteTask extends Task {
       extrasFrom: from, extras: image.extras.slice(from).map(({module, base, count: n}) => ({module, base, count: n})),
       memory: known ? undefined : this.memory, channel: this.channel, door: k.door.buffer, gil: k.gil(this.memory), count: count(image).buffer,
       outbox: k.outbox.buffer, consoles: this.proc.fds.consoles.buffer,
-      regs: REG.map((_, n) => this.reg(n)), resumeAt: this.resumeAt, fpuOps: like ? undefined : image.fpuOps, fpu: this.fpuState, keep: this.keep,
+      regs: REG.map((_, n) => this.reg(n)), resumeAt: this.resumeAt, x87: w.x87 ? undefined : k.x87Module ?? undefined, fpu: this.fpuState, keep: this.keep,
       origin: performance.timeOrigin, // the kernel's clocks begin here (clock.ts)
     });
+    w.x87 = true;
     this.again = false;
   }
 

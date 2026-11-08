@@ -21,7 +21,7 @@
 
 import {CAPS, Exec, Exit, Redirect, Wait, randomBytes, utf8} from './flow.ts';
 import {zero} from './bulk.ts';
-import {Fpu} from '../../sods/runtime/fpu.ts';
+import {namesIn, x87Of, type X87} from '../../sods/runtime/x87.ts';
 import {machine} from './machine.ts';
 import {mountProc} from './procfs.ts';
 import {Description, FdTable} from './fd.ts';
@@ -49,6 +49,8 @@ export interface Translation {
   readonly budget?: WebAssembly.Global;
   readonly depth?: WebAssembly.Global;
   readonly low?: WebAssembly.Global;
+  /** Its thread's x87 registers' handle (x87.ts). */
+  readonly x87?: WebAssembly.Global;
   readonly [reg: `r${number}`]: WebAssembly.Global | undefined;
   readonly fs?: WebAssembly.Global;
   readonly fl?: WebAssembly.Global;
@@ -164,7 +166,6 @@ export class Image implements Program {
   declare source: (() => Uint8Array) | null;
   declare size: number;
   declare readonly facts: Facts;
-  declare readonly fpuOps: string[];
   declare readonly known: Set<bigint>;
   declare slots: number;
   declare firstSlots: number;
@@ -187,7 +188,6 @@ export class Image implements Program {
     this.size = size; // bytes of wasm made for it (what its translations hold, before the engine compiles them)
     const section = (name: string): string => utf8(WebAssembly.Module.customSections(module, name)[0] ?? new ArrayBuffer(0));
     this.facts = JSON.parse(section('xlat.facts'));
-    this.fpuOps = section('xlat.fpu').split(',');
     this.known = new Set(u64s(module, 'xlat.starts'));
     this.slots = this.known.size; // the first module's table, then with each module of code reached later
     this.firstSlots = this.slots;
@@ -265,6 +265,8 @@ export interface Made {
   keeper?: Keeper | null;
   machine?: Machine;
   consolidateIdle?: boolean;
+  /** The translator's module, its x87 an instance of (x87.ts); else the translator's own (`translate.module`). */
+  x87?: WebAssembly.Module;
 }
 
 export class Kernel implements Kern {
@@ -301,13 +303,16 @@ export class Kernel implements Kern {
   declare domainname?: string;
   declare loopbackTraffic?: {bytes: number; packets: number};
   declare readonly cpu: Cpu;
+  declare readonly x87Module: WebAssembly.Module | null;
   /**
    * vfs: the filesystem. translate(bytes) -> wasm bytes for an ELF.
    * console: {write(fd, bytes), read(n) -> Uint8Array | null (nothing yet), ready?(), interactive?, screen?, cols?,
    * rows?} (`screen`: its output is shown as a terminal's screen, `cols` by `rows`, though keys come a line at a time).
    */
-  constructor({vfs = new Vfs(), translate, console, keeper = null, machine: host = machine(), consolidateIdle = false}: Made) {
+  constructor({vfs = new Vfs(), translate, console, keeper = null, machine: host = machine(), consolidateIdle = false, x87}: Made) {
     this.vfs = vfs;
+    // The x87 its threads run (x87.ts), made when the first is.
+    this.x87Module = x87 ?? translate?.module ?? null;
     // A program due to be translated again as one module (consolidate): at once as it is run again, or, where the
     // host has idle time to give (a Prompt waiting for its next line: worker.ts), only then (consolidateDue), so no
     // run waits on it. Each due one: its node -> its entry.
@@ -746,6 +751,12 @@ export class Kernel implements Kern {
     }
   }
 
+  /** The x87 of the threads run here (x87.ts): one, from the translator's module. */
+  get x87(): X87 {
+    if (!this.x87Module) throw new Error('no x87: a kernel made without the translator\'s module runs no x87 code');
+    return x87Of(this.x87Module);
+  }
+
   /**
    * Time `t` ran its program (`user`) and the kernel spent on its calls (`sys`), in ms: counted to it, or to its process
    * once it ended (what it had went there: endTask), and to the machine's.
@@ -916,6 +927,7 @@ export class Kernel implements Kern {
     const at = this.runq.indexOf(t);
     if (at >= 0) this.runq.splice(at, 1);
     this.tasks.delete(t.tid);
+    if (t.x87) { this.x87.free(t.x87); t.x87 = 0; }
     const p = t.proc;
     if (p.memory) {
       try { robustExit(this, t); } catch { /* a list it broke is its own */ }
@@ -1619,7 +1631,8 @@ export class Task implements Thread {
   declare trail: (bigint | number)[] | null;
   declare trailAt: number;
   declare image: Image;
-  declare fpu: Fpu;
+  /** Its x87 registers' handle (x87.ts); 0 before it has any. */
+  declare x87: number;
   declare memory: Mem;
   declare slot: Slot;
   declare instance: WebAssembly.Instance;
@@ -1653,12 +1666,16 @@ export class Task implements Thread {
     this.cpu = {user: 0, sys: 0};
     this.since = 0;
     this.trail = null;
+    this.x87 = 0;
   }
 
   /** Run `image` over `memory` from here on (exec, or a new thread or process copying `from`). */
   load(image: Image, memory: Mem, from: Task | null = null): void {
     this.image = image;
-    this.fpu = from ? from.fpu.clone(() => this.bytes) : new Fpu(() => this.bytes, image.fpuOps);
+    // Its x87: a copy of the one it is made from (a new thread or process), or as they start (an exec, the first).
+    const x87 = this.kernel.x87;
+    x87.check(namesIn(image.module));
+    if (from) { if (this.x87) x87.free(this.x87); this.x87 = x87.make(from.x87); } else if (this.x87) x87.reset(this.x87); else this.x87 = x87.make();
     this.memory = memory;
     // A memory an exited process of the same program left its instance on: that instance goes on, its globals as a
     // fresh one's, the modules made since attached, where nothing instantiating would write is wanted (goesOn).
@@ -1669,6 +1686,7 @@ export class Task implements Thread {
       this.slot.task = this;
       this.instance = pooled.instance;
       for (const [g, v] of this.slot.initial) g.value = v;
+      if (this.exports.x87) this.exports.x87.value = this.x87;
       this.attached = pooled.attached;
       PROFILE.instancesKept++;
       this.attach();
@@ -1686,6 +1704,7 @@ export class Task implements Thread {
       if (!(g instanceof WebAssembly.Global)) continue;
       try { this.slot.initial.push([g, g.value]); } catch { /* v128 */ }
     }
+    if (this.exports.x87) this.exports.x87.value = this.x87;
     this.attached = 0;
     this.attach();
   }
@@ -1699,7 +1718,7 @@ export class Task implements Thread {
 
   /** Its image starts again on its memory (Process.execve): the instance stays; its x87 and its stack's depth start afresh. */
   renew(): void {
-    this.fpu = new Fpu(() => this.bytes, this.image.fpuOps);
+    this.kernel.x87.reset(this.x87);
     const low = this.exports.low;
     if (low) low.value = -1n;
   }
@@ -1720,7 +1739,8 @@ export class Task implements Thread {
       trap: trapOrPreempt,
       div128: (hi: bigint, lo: bigint, d: bigint, signed: number) => div128(hi, lo, d, signed),
       clock: () => BigInt(Math.round(performance.now() * 1e6)),
-      fpu: (op: number, size: number, address: number, a: number, b: number) => slot.task.fpu.call(op, size, address, a, b),
+      // Wasm to wasm, the x87's own (x87.ts): the instance's x87 global names whose registers.
+      fpu: this.kernel.x87.fpu,
       trace: (address: bigint | number) => {
         const t = slot.task as Task;
         if (TRACE_BLOCKS) console.error(`[${t.tid}] block 0x${BigInt.asUintN(64, BigInt(address)).toString(16)}`); else if (t.trail) t.trail[t.trailAt++ & 255] = address;

@@ -13,8 +13,9 @@ import {loadTranslator} from '../../sods/runtime/translator.ts';
 
 const here = new URL('.', import.meta.url).pathname;
 const out = `${here}out/`;
-const xlat = `${here}../target/release/xlat`;
-const translator = `${here}../target/wasm32-unknown-unknown/release/xlat.wasm`;
+// The translator is sods' (its crate beside this unit).
+const xlat = `${here}../../sods/target/release/xlat`;
+const translator = `${here}../../sods/target/wasm32-unknown-unknown/release/xlat.wasm`;
 const cc = spawnSync('musl-gcc', ['--version']).status === 0;
 const ready = cc && existsSync(xlat) && existsSync(translator);
 

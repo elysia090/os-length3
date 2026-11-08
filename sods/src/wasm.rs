@@ -74,6 +74,12 @@ thread_local! {
     static NEXT: Cell<u32> = const { Cell::new(1) };
     /// How many instructions one module of code reached later may hold, past its seeds' own (xlat_budget).
     static BUDGET: Cell<usize> = const { Cell::new(crate::discover::BUDGET) };
+    /// The x87's registers of each thread whose translated code calls xlat_fpu, by handle (an instance of this module
+    /// of its own holds them: runtime/x87.ts). The first is no thread's: an instance whose handle was never set uses
+    /// it, and never another thread's.
+    static FPUS: RefCell<Vec<crate::x87::Fpu>> = const { RefCell::new(Vec::new()) };
+    /// Handles given back, for the next thread.
+    static FREE_FPUS: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
 }
 
 /// u64s as little-endian bytes from xlat_alloc, which promises no alignment.
@@ -266,4 +272,69 @@ pub extern "C" fn xlat_output_ptr() -> *const u8 {
 #[no_mangle]
 pub extern "C" fn xlat_output_len() -> usize {
     OUTPUT.with(|o| o.borrow().len())
+}
+
+/// One x87 instruction of the thread whose registers are `fpu` (crate::x87::Fpu::call): what translated code imports
+/// as `fpu`, wasm to wasm.
+#[no_mangle]
+pub extern "C" fn xlat_fpu(fpu: u32, op: i32, size: i32, a: i32, b: i32, lo: i64, hi: i32) -> i64 {
+    FPUS.with(|f| f.borrow_mut().get_mut(fpu as usize).map_or(0, |s| s.call(op, size, a, b, lo as u64, hi as u32) as i64))
+}
+
+/// A handle to `fpu`'s registers: where a thread's start.
+fn keep(fpu: crate::x87::Fpu) -> u32 {
+    FPUS.with(|f| {
+        let mut f = f.borrow_mut();
+        if f.is_empty() { f.push(crate::x87::Fpu::default()); }
+        match FREE_FPUS.with(|free| free.borrow_mut().pop()) {
+            Some(h) => { f[h as usize] = fpu; h }
+            None => { f.push(fpu); (f.len() - 1) as u32 }
+        }
+    })
+}
+
+/// A thread's x87 registers: as they start (`from` 0), or a copy of those of `from` (a new thread or process).
+#[no_mangle]
+pub extern "C" fn xlat_x87_new(from: u32) -> u32 {
+    let fpu = if from == 0 { None } else { FPUS.with(|f| f.borrow().get(from as usize).copied()) };
+    keep(fpu.unwrap_or_default())
+}
+
+/// The registers of `fpu` as they start again (an exec).
+#[no_mangle]
+pub extern "C" fn xlat_x87_reset(fpu: u32) {
+    FPUS.with(|f| if let Some(s) = f.borrow_mut().get_mut(fpu as usize) { *s = crate::x87::Fpu::default(); });
+}
+
+/// Let go of `fpu` (its thread ended).
+#[no_mangle]
+pub extern "C" fn xlat_x87_free(fpu: u32) {
+    let held = FPUS.with(|f| (fpu as usize) < f.borrow().len());
+    if fpu != 0 && held { FREE_FPUS.with(|free| free.borrow_mut().push(fpu)); }
+}
+
+/// The registers of `fpu` as bytes (crate::x87::SAVED of them) for output: for a thread started in another Worker.
+#[no_mangle]
+pub extern "C" fn xlat_x87_save(fpu: u32) -> i32 {
+    let saved = FPUS.with(|f| f.borrow().get(fpu as usize).map(|s| s.save()));
+    OUTPUT.with(|o| *o.borrow_mut() = saved.map_or_else(Vec::new, |s| s.to_vec()));
+    saved.is_none() as i32
+}
+
+/// A thread's registers from bytes `xlat_x87_save` gave, put at `ptr` (freed here); 0 if they are not such bytes.
+///
+/// # Safety
+/// `ptr` and `len` must come from one `xlat_alloc` call, all written.
+#[no_mangle]
+pub unsafe extern "C" fn xlat_x87_load(ptr: *mut u8, len: usize) -> u32 {
+    let bytes = Vec::from_raw_parts(ptr, len, len);
+    crate::x87::Fpu::restore(&bytes).map_or(0, keep)
+}
+
+/// The x87 operations by the index translated code calls them by, as text for output (comma-separated): a host
+/// checks a translation's (its xlat.fpu section) is the same before it runs it.
+#[no_mangle]
+pub extern "C" fn xlat_x87_names() -> i32 {
+    OUTPUT.with(|o| *o.borrow_mut() = crate::x87::NAMES.join(",").into_bytes());
+    0
 }

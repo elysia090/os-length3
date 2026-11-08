@@ -3,7 +3,7 @@
 // turn it is and what is asked; 64-bit words carry the call, its value and
 // the registers; the data area carries text and module bytes.
 
-import type {Saved} from '../../sods/runtime/fpu.ts';
+import type {Saved} from '../../sods/runtime/x87.ts';
 import type {Range} from './parts.ts';
 import {REG} from './process.ts';
 
@@ -70,7 +70,9 @@ export interface Run {
   consoles: ArrayBufferLike;
   regs: bigint[];
   resumeAt: bigint;
-  fpuOps?: string[];
+  /** The translator's module, for the Worker's x87 (x87.ts): sent once, with a Worker's first run. */
+  x87?: WebAssembly.Module;
+  /** Its thread's x87 registers as bytes; null: as they start. */
   fpu: Saved | null;
   keep: Range | null;
   origin: number;

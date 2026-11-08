@@ -14,10 +14,13 @@ runs what it makes is ricebox's (`../ricebox`).
 - The translator also builds as wasm (`--target wasm32-unknown-unknown
   --lib`, wrapped by `runtime/translator.ts`) and gives byte-identical
   output, so a browser translates the programs it runs.
+- The exact 80-bit x87 is Rust too (`src/x87.rs`), in the translator's wasm:
+  an instance of that module of its own holds each thread's registers, and
+  translated code calls it wasm to wasm, its memory operands loaded and
+  stored by the translated code itself (`runtime/x87.ts`).
 - `runtime/` holds what of it runs beside the program: the translator's
-  wrapper, a translation shared between Workers (`share.ts`), programs
-  translated ahead while a Prompt waits (`ahead.ts`) and the exact 80-bit x87
-  (`fpu.ts`).
+  wrapper, the x87's, a translation shared between Workers (`share.ts`) and
+  programs translated ahead while a Prompt waits (`ahead.ts`).
 
 ```
 cargo build --release

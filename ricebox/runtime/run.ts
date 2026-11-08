@@ -169,6 +169,8 @@ const apart = canRunApart() && !process.env.XLAT_INLINE;
 const kernel = new (apart ? RemoteKernel : Kernel)({
   vfs,
   translate,
+  // The x87 is the translator's wasm's (x87.ts), whichever build translates.
+  x87: inProcess?.module ?? (existsSync(wasmTranslator) ? new WebAssembly.Module(readFileSync(wasmTranslator)) : undefined),
   console: {
     interactive: tty,
     screen: tty, cols: 80, rows: 24,

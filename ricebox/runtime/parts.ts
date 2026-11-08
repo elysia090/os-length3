@@ -5,7 +5,6 @@
 // (sys-net.ts: its sockets).
 
 import type {FdTable} from './fd.ts';
-import type {Fpu} from '../../sods/runtime/fpu.ts';
 import type {File, Mapping, Vfs} from './fs.ts';
 import type {Machine} from './machine.ts';
 
@@ -125,7 +124,6 @@ export interface Extra { module: WebAssembly.Module; base: number; count: number
 export interface Program {
   readonly module: WebAssembly.Module;
   readonly facts: Facts;
-  readonly fpuOps: string[];
   readonly extras: Extra[];
   readonly entries: Map<bigint, bigint>;
   readonly known: Set<bigint>;
@@ -279,7 +277,8 @@ export interface Thread {
   dead: boolean;
   /** Its time on the processor so far. */
   cpu: Cpu;
-  fpu: Fpu;
+  /** Its x87 registers' handle in the kernel's x87 (x87.ts); 0 where it has none here. */
+  x87: number;
   image: Program;
   memory: Mem;
   readonly bytes: Uint8Array;
