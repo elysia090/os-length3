@@ -39,7 +39,7 @@ let asked: Ask = isNative ? (name, args) => native<Answer>('core', {name, args})
 /** Ask another core (tests run it in their own process). */
 export const useCore = (a: Ask) => { asked = a; };
 
-/** A command of the core's (src/core/src/api.rs), by name: the one code a repo, its history and the Remote
+/** A command of the core's (src/core/src/api/), by name: the one code a repo, its history and the Remote
  *  are kept by, whichever host runs it (the app's own, or the same built for the web in a worker). */
 export async function core<T>(name: string, args: Record<string, unknown> = {}): Promise<T> {
   const a = await asked(name, args);

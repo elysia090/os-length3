@@ -5,7 +5,7 @@
 // Page → worker: {init: {env, tab}} first, then {id, name, args}, or {id, env} to change the environment,
 // or {batch: [{id, name, args}…]}: what the page asked in one go, made one after another under one turn of the
 // lock (one look at what is kept), and answered in one message.
-// Worker → page: {id, ok} or {id, error, status?, detail?} (src/core/src/api.rs answer), in the order asked; for a
+// Worker → page: {id, ok} or {id, error, status?, detail?} (src/core/src/api/mod.rs answer), in the order asked; for a
 // batch, {batch: [answer…]} in its order. A change kept is said on BroadcastChannel('length3-core') as
 // {changed: true, from: tab, paths}: each file's path.
 //

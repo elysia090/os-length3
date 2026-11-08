@@ -612,7 +612,7 @@ table, never from one below, and `pages/` is layered the same way within it (`sc
 ### One core, two hosts
 
 A repo, its history, the Remote's sync and Home's settings are the core's
-(`src/core/src/api.rs`): the app asks it through one Tauri command, and a page
+(`src/core/src/api/`): the app asks it through one Tauri command, and a page
 asks the very same code, built for `wasm32-wasip1`, in a worker of its own
 (`src/app/core/worker.ts`, `src/app/core/wasi.ts`) over files the browser keeps in
 IndexedDB: what a listing needs of each file at once, its bytes when the core

@@ -62,7 +62,7 @@ export class Core {
     return new Core(exports);
   }
 
-  /** The core's answer to `name` with `args` (src/core/src/api.rs). A trap is thrown, and this instance is done. */
+  /** The core's answer to `name` with `args` (src/core/src/api/). A trap is thrown, and this instance is done. */
   call(name: string, args: unknown): Answer {
     const {memory, root3_alloc, root3_call, root3_free} = this.exports;
     const q = encoder.encode(JSON.stringify({name, args: args ?? {}}));

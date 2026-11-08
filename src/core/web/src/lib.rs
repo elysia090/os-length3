@@ -1,6 +1,6 @@
 //! The core as a browser runs it (built for wasm32-wasip1; src/app/core/worker.ts runs it over its own files).
 //! A page asks it what the app asks through Tauri: `{"name", "args"}` in, `{"ok"}` or `{"error"}` out
-//! (src/core/src/api.rs answer), as JSON in this module's memory.
+//! (src/core/src/api/mod.rs answer), as JSON in this module's memory.
 //!
 //! The host gives a buffer with `root3_alloc`, writes the question into it and calls `root3_call`, which takes
 //! the buffer back and returns where the answer is (its address high, its length low); the host reads it

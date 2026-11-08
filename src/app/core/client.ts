@@ -1,4 +1,4 @@
-// The core in a browser: the same Rust the app runs (src/core/src/api.rs), built for the web and run in a
+// The core in a browser: the same Rust the app runs (src/core/src/api/), built for the web and run in a
 // worker of this tab (core/worker.ts) over files this browser keeps. A page asks it what the app asks
 // through Tauri, by name with JSON; the answers come back in the order asked. What is asked in one go
 // (one turn of the page: a list read with Promise.all) goes to the worker as one message and comes back
@@ -12,7 +12,7 @@
 
 import {coreWorker} from './spawn.ts';
 
-/** What the core answers (src/core/src/api.rs answer): a value, or why not; a refusal of the Remote's says its status and detail. */
+/** What the core answers (src/core/src/api/mod.rs answer): a value, or why not; a refusal of the Remote's says its status and detail. */
 export type Answer = {ok: unknown} | {error: string; status?: number; detail?: Record<string, unknown>};
 export type Ask = (name: string, args: Record<string, unknown>) => Promise<Answer>;
 

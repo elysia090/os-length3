@@ -31,7 +31,7 @@ mod shells {
     impl Shells { pub fn open_repos(&self) -> Vec<String> { Vec::new() } }
 }
 
-// Every command a page sends goes to the core's one dispatcher (src/core/src/api.rs), the same one a browser runs
+// Every command a page sends goes to the core's one dispatcher (src/core/src/api/), the same one a browser runs
 // built for the web: the app adds only what a host does around it. A command without `async` runs on the
 // window's own thread (Tauri 2), and the window draws nothing until it returns, so only writes run there,
 // which keeps two writes in the order the page sent them; the rest (walks of the disk, the network) run off it.
