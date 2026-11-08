@@ -1200,11 +1200,15 @@ const cut = (ranges: Range[] | undefined, from: number, to: number): Range[] => 
 /** What a process wrote in `m` and nothing zeroed since, up to `pages`, zeroed but for `keep`; the rest goes as it is mapped (cover). */
 function clean(m: Mem, pages: number, keep: Range[]): void {
   const end = pages * WASM_PAGE;
-  for (const [a, b] of clip(m.written, 0, end)) { zeroExcept(m, a, b, keep); PROFILE.zeroed += b - a; }
+  for (const [a, b] of clip(m.written, 0, end)) PROFILE.zeroed += zeroExcept(m, a, b, keep);
   m.written = cut(m.written, 0, end);
 }
-/** Zero [from, to) of `memory` but for the ranges `keep`. */
-function zeroExcept(memory: Mem, from: number, to: number, keep: Range[]): void { for (const [a, b] of gaps(from, to, keep)) zero(memory, a, b); }
+/** Zero [from, to) of `memory` but for the ranges `keep`; how many bytes it zeroed. */
+function zeroExcept(memory: Mem, from: number, to: number, keep: Range[]): number {
+  let n = 0;
+  for (const [a, b] of gaps(from, to, keep)) { zero(memory, a, b); n += b - a; }
+  return n;
+}
 /** Whether data segment `s` ({offset, bytes}) lies within one of `ranges`. */
 const within = (s: Segment, ranges: Range[] = []): boolean => ranges.some(([a, b]) => s.offset >= a && s.offset + s.bytes.length <= b);
 
