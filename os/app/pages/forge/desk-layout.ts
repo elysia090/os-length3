@@ -123,18 +123,6 @@ export function kept(v: View, slot: Slot, h: number, w: number, hgt: number): Vi
 }
 
 /**
- * At the standard, over the boxes at `boxes` (each its slot and height) at once, as they lie: their middle in the
- * face's middle when they all fit in it; null when they do not (the camera goes along to the one at work instead,
- * never stepping back for them).
- */
-export function overAll(boxes: {slot: Slot; h: number}[], w: number, hgt: number): View | null {
-  let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
-  for (const {slot, h} of boxes) { l = Math.min(l, slot.x); t = Math.min(t, slot.y); r = Math.max(r, slot.x + WIDTH); b = Math.max(b, slot.y + h); }
-  if (r - l > w - 2 * PAD || b - t > hgt - 2 * PAD) return null;
-  return {s: STANDARD, x: (w - (r - l)) / 2 - l, y: Math.max(PAD, (hgt - (b - t)) / 2) - t};
-}
-
-/**
  * The camera's way from `a` to `b` over a face `w` by `hgt` when it is long: as a head turns to something across the
  * room, it steps back on the way as far as the way is long and comes down onto what it goes to (van Wijk and Nuij's
  * smooth zoom and pan: back about to where what it left and what it goes to are both nearly in sight at the middle of

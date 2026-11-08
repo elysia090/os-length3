@@ -129,7 +129,6 @@ class Forge {
         .map(([key, does]) => h('span', {class: 'desk-key'}, h('kbd', {}, key), does))));
     this.work = bench({strip, main: this.center, desk: true, reveal: (path, line, write) => this.revealAt(path, line, write),
       place: (path) => this.place(path), frame: (keys) => { if (this.now.repo) this.deskOf(this.now.repo).desk.frame(keys); },
-      together: (keys) => !this.now.repo || this.deskOf(this.now.repo).desk.together(keys),
       word: (a) => { openConversation(a); void ctx.go('inbox'); },
       toTerm: () => { if (this.now.repo) this.termTo(this.now.repo); },
       besideTerm: (repo, element) => {

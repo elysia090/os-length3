@@ -197,8 +197,6 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   /** On a desk: a file's box laid without taking the person's hand; the camera over these boxes (none: the one in hand). */
   place?(path: string): boolean;
   frame?(keys: string[]): void;
-  /** On a desk: whether these boxes are seen at once, at the standard. */
-  together?(keys: string[]): boolean;
   /** On a desk: >_ on the band pressed, the terminal taken in hand. */
   toTerm?(): void;
   /** On a desk: the Agent's own terminal laid beside the person's in `repo`'s desk. */
@@ -233,7 +231,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
 
   const box = new Box({work, main: parts.main, center, term, termHead, back: !!parts.back, went: parts.went, reveal: (path, line) => parts.reveal(path, line), desk: !!parts.desk,
     flow: (repo: string) => rowsOf(repo),
-    ...(parts.place ? {place: parts.place} : {}), ...(parts.frame ? {frame: parts.frame} : {}), ...(parts.together ? {together: parts.together} : {}), ...(parts.besideTerm ? {besideTerm: parts.besideTerm} : {})});
+    ...(parts.place ? {place: parts.place} : {}), ...(parts.frame ? {frame: parts.frame} : {}), ...(parts.besideTerm ? {besideTerm: parts.besideTerm} : {})});
   // On a desk the Prompt is a box of its own: its output, and the line one types at under it.
   const terminal = parts.desk ? h('section', {class: 'desk-term'}, term, box.dock) : null;
   const shown = parts.desk ? null : screenOf(work, box, term, termHome);

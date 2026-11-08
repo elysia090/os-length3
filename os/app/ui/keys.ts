@@ -24,11 +24,26 @@ function load(): Promise<Record<Key, [AudioBuffer, AudioBuffer]> | null> {
     out = ctx.createGain();
     out.gain.value = MASTER;
     out.connect(ctx.destination);
-    const one = async (name: string) => ctx!.decodeAudioData(await (await fetch(`/sounds/keys/${name}.mp3`)).arrayBuffer());
+    const one = async (name: string) => edged(await ctx!.decodeAudioData(await (await fetch(`/sounds/keys/${name}.mp3`)).arrayBuffer()));
     const kinds: Key[] = ['key', 'enter', 'space'];
     const got = await Promise.all(kinds.map((k) => Promise.all([one(`${k}-press`), one(`${k}-release`)])));
     return Object.fromEntries(kinds.map((k, i) => [k, got[i]])) as Record<Key, [AudioBuffer, AudioBuffer]>;
   })().catch(() => null);
+}
+
+/** How long a recording's ends are faded (s): kbsim's are cut off still sounding, and a sound stopped there clicks,
+ * a crackle under every stroke as they come one on another. */
+const FADE_IN = 0.0015, FADE_OUT = 0.012;
+
+/** `b` faded in and out at its ends, in place (once, as it is decoded). */
+export function edged(b: AudioBuffer): AudioBuffer {
+  const lead = Math.min(b.length, Math.round(FADE_IN * b.sampleRate)), tail = Math.min(b.length, Math.round(FADE_OUT * b.sampleRate));
+  for (let c = 0; c < b.numberOfChannels; c++) {
+    const d = b.getChannelData(c);
+    for (let i = 0; i < lead; i++) d[i] *= i / lead;
+    for (let i = 0; i < tail; i++) d[b.length - 1 - i] *= i / tail;
+  }
+  return b;
 }
 
 /** A normal deviate, `sd` wide, held within `most` either side. */

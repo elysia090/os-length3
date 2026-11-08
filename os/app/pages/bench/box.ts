@@ -83,8 +83,6 @@ interface BoxParts {
   /** On a desk: a file's box laid without taking the person's hand (false: it cannot be); the camera over boxes. */
   place?(path: string): boolean;
   frame?(keys: string[]): void;
-  /** On a desk: whether these boxes are seen at once, at the standard. */
-  together?(keys: string[]): boolean;
   /** On a desk: the Agent's own terminal (`element`) laid beside the person's in `repo`'s desk, if it is not there. */
   besideTerm?(repo: string, element: HTMLElement): void;
   /** The box is the Prompt's own last line, on a desk (Forge's): under Run, Enter runs what is written, as a
@@ -502,9 +500,8 @@ export class Box {
 
   /**
    * Where the Agent asked from a desk's terminal is played: its own terminal (typed into, its runs shown), its files'
-   * boxes laid without taking the person's hand. The camera has the Agent's terminal and the files it is at work in in
-   * sight together where they fit, else goes sideways to the one at work now, the rest at its sides, until the person
-   * takes a box in hand.
+   * boxes laid without taking the person's hand. The camera goes to the box at work now, at its own size, its top at
+   * the eye, the rest at its sides as they lie, until the person takes a box in hand.
    */
   #stageBeside(at: string, term: AgentTerm, front: string | null): Stage {
     // Framed: both terminals as it is born (the camera on its own, the person's at its side); then its own and the files
@@ -524,7 +521,6 @@ export class Box {
       saying: () => term.saying(),
       front: () => front,
       place: (path) => this.#repo === at && !!this.#p.place?.(path),
-      together: (keys) => this.#repo !== at || (this.#p.together?.(keys) ?? true),
       frame: (keys) => {
         // (In the order they started, the Agent's terminal with them: the last to start is the one gone to.)
         const next = !framed.length ? ['term', 'agent'] : keys.includes('agent') ? keys : ['agent', ...keys];

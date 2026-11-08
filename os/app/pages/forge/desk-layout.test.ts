@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {ABOVE_SEEN, arc, bornOn, carried, EYE, FOOT, FOOT_ROOM, GAP, kept, KEPT, liftedOn, lineKept, next, overAll, PAD, PULLED, pulledOn, slots, standardOn, tabbed, TOP, TURNED, VGAP, WHOLE_MOST, WIDTH, wholeOf} from './desk-layout.ts';
+import {ABOVE_SEEN, arc, bornOn, carried, EYE, FOOT, FOOT_ROOM, GAP, kept, KEPT, liftedOn, lineKept, next, PAD, PULLED, pulledOn, slots, standardOn, tabbed, TOP, TURNED, VGAP, WHOLE_MOST, WIDTH, wholeOf} from './desk-layout.ts';
 
 // The desk's places and its camera (desk-layout.ts), as numbers.
 
@@ -69,13 +69,6 @@ test('stepped back, the whole desk fits, at most half its size, in the middle ac
   assert.ok(w.x + right * w.s <= 1000 - 47);
   const first = Math.min(...all.map((b) => b.slot.y));
   assert.ok(Math.abs(w.y + first * w.s - EYE) < 1e-9);
-});
-
-test('over several boxes at once at the standard: centred when they fit, none when they do not (never stepped back for them)', () => {
-  const at = slots(cols, heights);
-  const two = overAll([{slot: at.get('a.c')!, h: 200}, {slot: at.get('b.c')!, h: 200}], 1000, 800);
-  assert.ok(two && two.s === 1 && Math.abs(two.x + (at.get('a.c')!.x + WIDTH / 2) - 500) < 1e-9);
-  assert.equal(overAll([{slot: at.get('term')!, h: 400}, {slot: at.get('a.c')!, h: 200}], 1000, 800), null);
 });
 
 test('Tab goes down each column, then to the next, round again; Shift+Tab back', () => {

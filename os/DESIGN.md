@@ -2449,7 +2449,12 @@ The camera works at the standard, where its words are read, and goes to the
 work going on now: the Agent's terminal as it is born (the person's a sliver
 at its left), then the file it begins to write in, whole in the middle, its
 terminal a sliver at the side, then back to its terminal as it runs
-something. Going to what is out of sight (the next column, a box far down),
+something. The box written in is come to as a person comes to a page they
+write on: at its own size, in the middle across, its top at the eye, before
+the first key; never left in the middle of the face with the room over it
+empty, nor written in while the camera stands over it and another at once.
+(Before: the boxes at work framed together where they fitted, centred down
+the face, the file begun in where it lay under the terminal.) Going to what is out of sight (the next column, a box far down),
 it steps back on the way as a head turns across a room, as far as the way is
 long (about a step back to the next column, further to one beyond), and comes
 down onto it: never a whip across the desk at the boxes' own size, half boxes
@@ -2490,9 +2495,13 @@ the caret's line, so a question needs no saying where.
 What the Agent does is played as a person would do it, after it and at a
 person's pace, never as a screen of its own. It works at its own pace behind
 (its commands in a Prompt of its own); what is played is the part a person
-wants to see, each box a lane of its own, the lanes going side by side where
-they are seen side by side and one at a time where they are not (nothing is
-played out of sight). Its hand is a person's hand, the same as the person's own
+wants to see, by one hand, one thing at a time in the order the Agent did
+them: never two boxes typed into at once (two hands, the keys heard over each
+other), never a command typed to run what is still being written (its run
+before its cause). What the machine does meanwhile (a command's run, its
+output) goes on as it does. (Before: each box a lane of its own, the lanes
+going side by side where they were seen side by side: a script typed while
+the command that runs it was typed in the terminal.) Its hand is a person's hand, the same as the person's own
 typing in the films (cadence.ts, some 120 ms a key), never quicker: typed faster
 than a hand types, words pour onto the screen and read as a machine showing off,
 not as work being done. The waits the work has are hidden in that pace, never shown
@@ -2520,7 +2529,9 @@ made: the old words go from their end, Backspace pressed a few times and then
 held (its repeat), a long piece a line at a time; the new are typed in whole,
 the caret after them (only a page or more comes in at once, as a paste does);
 a file it made is typed into its box from the top. Each key is heard (kbsim's
-Cream Space for a key, its Backspace for Enter, Alpaca's Space for Space). The
+Cream Space for a key, its Backspace for Enter, Alpaca's Space for Space),
+each recording faded in and out at its very ends (kbsim's are cut off still
+sounding: stopped there, each clicked, a crackle under the typing). The
 hand is quick and steady, about twice a person's first pace, quicker still
 over a long piece, with no slips, so what it writes is seen written and the
 playing keeps near the work. A command waits for the screen, so what it prints

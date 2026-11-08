@@ -38,8 +38,6 @@ export interface Stage {
   place(path: string): boolean;
   /** The camera over these boxes at once ('agent' is the Agent's terminal); none: back to the box in hand. */
   frame(keys: string[]): void;
-  /** Whether these boxes are seen at once (none said: they are). */
-  together?(keys: string[]): boolean;
   /** The file in front when the Agent was asked (what it was given to look at first), if any. */
   front?(): string | null;
 }
@@ -157,9 +155,8 @@ export class Player {
   readonly #working = new Set<string>();
   /** Acts put in their lanes and not yet begun (the eye stops going over a file at once for them). */
   #queued = 0;
-  /** An act ended: what waits for a lane to be done hears it. */
-  #ended: () => void = () => {};
-  #anEnd = new Promise<void>((r) => { this.#ended = r; });
+  /** The hand's last act: the next one begins once it is done. */
+  #hand: Promise<void> = Promise.resolve();
   #framing = 0;
   /** Lanes playing now: while none is, and the Agent thinks, its eye stays on what it last looked at (#ponder). */
   #busy = 0;
@@ -168,8 +165,6 @@ export class Player {
   /** The file the Agent's eye was last in, and where in it. */
   #looked: {path: string; line: number} | null = null;
   #pondering = false;
-  /** The file the eye goes over while the Agent thinks (#ponder), not a lane at work. */
-  #eyeOn: string | null = null;
   /** The commands it decided to run and is running: what each came to, given when it has. */
   readonly #runs = new Map<string, (ran: Ran) => void>();
   /** What listeners hear, in order, each once all before it is played. */
@@ -195,32 +190,32 @@ export class Player {
   /** Every lane as it stands now (what is to be played before what comes next). */
   #before(): Promise<unknown> { return Promise.all([...this.#lanes.values()]); }
 
-  /** `act` played in `lane` after what is before it there, and after `after` too, its waits a hand's own. */
+  /**
+   * `act` played in `lane` once all given before it has been, and after `after` too, its waits a hand's own. One hand
+   * plays it all, one thing at a time in the order the Agent did them: never two boxes typed into at once (two hands,
+   * the keys heard over each other), never a command typed before what it runs is written. What the machine does
+   * meanwhile (a command's run) goes on as it does.
+   */
   #on(lane: string, act: (wait: (ms: number) => Promise<void>) => Promise<void>, after?: Promise<unknown>): Promise<void> {
-    const prev = this.#lanes.get(lane) ?? Promise.resolve();
+    const prev = this.#hand;
     this.#queued++;
     const wait = sleep;
     const next = Promise.all([prev, after]).then(async () => {
-      // Lanes go side by side only where they are seen side by side: else one at a time, so nothing is played out of
-      // sight (a command typed while the camera is on a file read).
-      while ([...this.#working].some((k) => k !== this.#eyeOn) && !(this.#stage.together?.([...this.#working, lane].filter((k) => k !== this.#eyeOn)) ?? true)) await this.#anEnd;
       this.#queued--;
       this.#busy++;
       this.#work(lane, true);
       try { if (!still()) await eyeThere(); await act(wait); } finally {
         this.#busy--;
         this.#work(lane, false);
-        const ended = this.#ended;
-        this.#anEnd = new Promise<void>((r) => { this.#ended = r; });
-        ended();
         this.#idleNow();
       }
     }).catch(() => { this.#queued = Math.max(0, this.#queued - 1); /* a part not played is let go; the rest goes on */ });
+    this.#hand = next;
     this.#lanes.set(lane, next);
     return next;
   }
 
-  /** The camera over the lanes at work (a frame later, so lanes starting together are framed together). */
+  /** The camera over the lane at work (a frame later, so one ending and the next starting are one move, not two). */
   #work(lane: string, on: boolean) {
     if (on) this.#working.add(lane); else this.#working.delete(lane);
     if (still()) return;
@@ -333,7 +328,6 @@ export class Player {
     try {
       const e = await this.#opened(start.path);
       if (!e || !on()) return;
-      this.#eyeOn = start.path;
       this.#work(start.path, true);
       // Over its lines with words in them, as an eye goes (blank ones passed over); at the last it rests a while, as
       // one does at the end of a page, and goes back to the top. A file of one such line, it rests on it.
@@ -348,11 +342,9 @@ export class Player {
         line = next ?? worded[0] ?? 1;
         this.#gaze(start.path, line);
       }
-      this.#eyeOn = null;
       this.#work(start.path, false);
       editors.get(key(this.#repo, start.path))?.gaze?.(null);
     } finally {
-      this.#eyeOn = null;
       this.#pondering = false;
     }
   }

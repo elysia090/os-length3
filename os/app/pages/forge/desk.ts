@@ -2,7 +2,7 @@ import {h} from '../../ui/dom.ts';
 import {still} from '../../ui/glide.ts';
 import {ownCamera, WORK_AT, type WorkAt} from '../../ui/camera.ts';
 import {t} from '../../i18n/i18n.ts';
-import {arc, bornOn, carried, kept, liftedOn, lineKept, next, overAll, PAD, pulledOn, slots, STANDARD, standardOn, tabbed, WIDTH, wholeOf, type Slot, type View} from './desk-layout.ts';
+import {arc, bornOn, carried, FOOT_ROOM, kept, liftedOn, lineKept, next, PAD, pulledOn, slots, STANDARD, standardOn, tabbed, WIDTH, wholeOf, type Slot, type View} from './desk-layout.ts';
 
 // A repo's desk, Forge's center (DESIGN.md § Forge, the desk): what is open lies on a plane, each box as wide as 80
 // columns of code, its name outside its top-left corner, on dots. The Prompt's box is the first; files opened lie
@@ -540,41 +540,28 @@ export class Desk {
     else if (this.#cam === 'standard') this.#look(true);
   }
 
-  /** Whether the boxes at `keys` are seen at once at the standard (those not on the desk are left out). */
-  together(keys: string[]): boolean {
-    const boxes = keys.map((k) => this.#boxes.get(k)).filter((b): b is Box => !!b);
-    return boxes.length < 2 || !!overAll(boxes.map((b) => ({slot: b.slot, h: b.el.offsetHeight})), this.element.clientWidth, this.element.clientHeight);
-  }
-
   /**
-   * Where the camera stands over the framed boxes, at the standard: over all of them when they fit; else sideways to
-   * the one last to start (`keys` in the order they started: the work going on now), whole in the middle, the others
-   * at its sides a sliver each, saying where they are and that they are at work too. Already whole in sight, it stays.
+   * Where the camera stands over the framed boxes (`keys` in the order they started), at the standard: on the one at
+   * work now, the last, as a person looks at what they write in: at its own size, in the middle across, its top at
+   * the eye (never left in the middle of the face with the room over it empty, nor stood back over all of them); the
+   * others at its sides as they lie, saying where they are. A box taller than the face goes on down from its top as
+   * its line at work goes down it, a page turned as that line comes near the face's foot (lineKept), never under it.
    * Null when none lies here.
    */
   #frameView(keys: string[]): View | null {
     const boxes = keys.map((k) => this.#boxes.get(k)).filter((b): b is Box => !!b);
     if (!boxes.length) return null;
-    const w = this.element.clientWidth, hgt = this.element.clientHeight;
-    // The line the Agent's hand or eye is on, where one of them has it: that box is the work going on now.
-    const work = this.#work && boxes.find((b) => b.key === this.#work!.key) ? this.#work : null;
-    const v = this.#view, last = (work && boxes.find((b) => b.key === work.key)) || boxes[boxes.length - 1];
-    const line = (u: View) => (work ? lineKept(u, last.slot.y + work.top, last.slot.y + work.bottom, hgt) : u);
-    // All of them in sight already, it stays as they grow: a line written is not a move of the camera's; it goes once one
-    // would leave the face, or the line at work comes near its foot. (Not while it is on its way, as below.)
-    if (!this.#glide && v.s === STANDARD && boxes.every((b) => kept(v, b.slot, b.el.offsetHeight, w, hgt) === v) && line(v) === v) return {...v};
-    const all = overAll(boxes.map((b) => ({slot: b.slot, h: b.el.offsetHeight})), w, hgt);
-    if (all) return all;
-    // (Not while the camera is on its way: where it passes is not where it stays, and a glide told to end where it is
-    // now goes back on itself.)
-    const across = (u: View) => u.x + last.slot.x * u.s >= 0 && u.x + (last.slot.x + WIDTH) * u.s <= w;
-    if (!this.#glide && v.s === 1 && (work ? line(v) === v && across(v) : this.#seen(last, v, w, hgt) >= .98)) return {...v};
-    // A box taller than the face goes on down from its top at the eye as its line at work goes down it, a page turned
-    // as that line comes near the face's foot (lineKept), never under it.
-    const to = standardOn(last.slot, last.el.offsetHeight, w, hgt);
-    if (!work) return to;
-    // (Turned down already, it stays turned: the camera goes no further up than shows the line where it is.)
-    const here = !this.#glide && v.s === 1 && Math.abs(v.x - to.x) < .5 ? line({...to, y: Math.min(to.y, v.y)}) : line(to);
+    const w = this.element.clientWidth, hgt = this.element.clientHeight, v = this.#view;
+    const last = boxes[boxes.length - 1], h = last.el.offsetHeight;
+    const to = standardOn(last.slot, h, w, hgt);
+    // The line the Agent's hand or eye is on in it, where one has it (what else at its sides tells, it does not follow).
+    const work = this.#work?.key === last.key ? this.#work : null;
+    // (Not while the camera is on its way: where it passes is not where it stays.)
+    const there = !this.#glide && v.s === STANDARD && Math.abs(v.x - to.x) < .5;
+    // A box that fits the face stands with its top at the eye; one taller stays turned down as far as it was.
+    if (h <= hgt - to.y - FOOT_ROOM || !there && !work) return to;
+    const turned = {...to, y: there ? Math.min(to.y, v.y) : to.y};
+    const here = work ? lineKept(turned, last.slot.y + work.top, last.slot.y + work.bottom, hgt) : turned;
     return here.y > to.y ? to : here;
   }
 
@@ -591,14 +578,6 @@ export class Desk {
     if (!this.#framed?.includes(key) || this.#cam !== 'standard' || this.#glide || still()) return;
     const to = this.#target(), v = this.#view;
     if (to && (Math.abs(to.x - v.x) > .5 || Math.abs(to.y - v.y) > .5)) this.#go(to, true);
-  }
-
-  /** How much of `b` the camera at `v` shows in a face `w` by `hgt` (0 to 1). */
-  #seen(b: Box, v: View, w: number, hgt: number): number {
-    const h = b.el.offsetHeight || 1;
-    const l = v.x + b.slot.x * v.s, t = v.y + b.slot.y * v.s, r = l + WIDTH * v.s, bt = t + h * v.s;
-    const seen = Math.max(0, Math.min(r, w) - Math.max(l, 0)) * Math.max(0, Math.min(bt, hgt) - Math.max(t, 0));
-    return seen / (WIDTH * v.s * h * v.s);
   }
 
   /** A wheel over the desk: with Ctrl (a pinch), the camera a place back or nearer; without it, the camera along the
