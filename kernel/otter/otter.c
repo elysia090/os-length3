@@ -8,10 +8,11 @@
  *   otter -k WORD...       apropos: the root's programs whose name or words hold a WORD, case aside, one line each
  *
  * The marks are the table's (/etc/length3/commands, which os/scripts/commands.ts writes from what each command did
- * under the browser's kernel and natively, never from what is hoped): ✓ runs here, ▢ draws on a screen (here, but the
- * app's Prompt shows output only), ✗ in the root but not yet running here (and why), — not in the root (and what to
- * reach for instead). What a thing is comes from the root's tldr pages, in the person's language first
- * ($LENGTH3_LANG=ja: pages.ja, then pages.en), common's then linux's.
+ * under the browser's kernel and natively, never from what is hoped): ✓ runs here, ▢ draws on a screen, ✗ in the root
+ * but not yet running here (and why), — not in the root (and what to reach for instead). One that draws on a screen
+ * runs where the Prompt is a terminal ($TERM other than dumb: the app's on the web, a terminal over SSH), and is
+ * marked ✓ there; ▢ only where the Prompt shows output alone (TERM=dumb). What a thing is comes from the root's tldr
+ * pages, in the person's language first ($LENGTH3_LANG=ja: pages.ja, then pages.en), common's then linux's.
  *
  * whatis and apropos say as man-db's do: a name with nothing to say of it is `NAME: nothing appropriate.`, and the run
  * ends 16 when any was. $OTTER_TABLE and $OTTER_PAGES (the folder pages.en is in) stand in for the root's, for checks.
@@ -25,6 +26,8 @@
 /* ---- What it was given (no pointer is set before it runs: a pointer in its data would be something to relocate) ---- */
 
 static int ja;
+/* The Prompt is a terminal ($TERM set, not dumb): what draws on a screen runs here. */
+static int screen;
 static u32 width = 80;
 static const char *table_at, *pages_at;
 
@@ -104,6 +107,8 @@ static struct row *find(const char *name) {
 
 static void say(const char *s) { put(s, slen(s)); }
 static void say_n(const u8 *s, u64 n) { put(s, n); }
+/* A row's mark as it holds here: one that draws on a screen runs where the Prompt is a terminal. */
+static u8 here(u8 m) { return m == 't' && screen ? '+' : m; }
 static const char *mark_of(u8 m) { return m == '+' ? "✓" : m == 't' ? "▢" : m == 'x' ? "✗" : "—"; }
 /* Each kind as the table names it, then as it is shown in English and in Japanese: one string, each part ended by a
  * zero (a table of pointers would be something to relocate). */
@@ -130,8 +135,10 @@ static u32 cols(const char *s) {
 /* The catalog: each kind on its lines, its names under each mark, wrapped at the width. */
 static void catalog(void) {
   if (!nrows) fail("no table of what runs here: ", table_at);
-  say(ja ? "ここで動くもの: ✓ 動く  ▢ 端末が要る  ✗ まだ動かない  — この root に無い\n\n"
-         : "What runs here: ✓ runs  ▢ needs a terminal  ✗ not yet here  — not in this root\n\n");
+  if (screen) say(ja ? "ここで動くもの: ✓ 動く  ✗ まだ動かない  — この root に無い\n\n"
+                     : "What runs here: ✓ runs  ✗ not yet here  — not in this root\n\n");
+  else say(ja ? "ここで動くもの: ✓ 動く  ▢ 端末が要る  ✗ まだ動かない  — この root に無い\n\n"
+              : "What runs here: ✓ runs  ▢ needs a terminal  ✗ not yet here  — not in this root\n\n");
   static const u8 order[] = {'+', 't', 'x', '-'};
   for (u32 i = 0; i < nrows;) {
     u32 j = i;
@@ -142,7 +149,7 @@ static void catalog(void) {
     for (u32 o = 0; o < sizeof order; o++) {
       u32 col = 0, any = 0;
       for (u32 r = i; r < j; r++) {
-        if (rows[r].mark != order[o]) continue;
+        if (here(rows[r].mark) != order[o]) continue;
         if (!any) {
           say(first ? kind : "");
           for (u32 c = first ? cols(kind) : 0; c < 13; c++) say(" ");
@@ -229,12 +236,13 @@ static int describe(const char *name) {
   say("\n  ");
   int known = 1;
   if (r) {
-    say(mark_of(r->mark));
+    u8 m = here(r->mark);
+    say(mark_of(m));
     say(" ");
-    if (r->mark == '+') say(ja ? "ここで動きます" : "runs here");
-    else if (r->mark == 't') say(ja ? "あります。画面を描くので、この Prompt では出力しか見せられません。SSH で手元の端末から使えます (l3 address)"
+    if (m == '+') say(ja ? "ここで動きます" : "runs here");
+    else if (m == 't') say(ja ? "あります。画面を描くので、出力だけを見せるこの Prompt では使えません。SSH で手元の端末から使えます (l3 address)"
                                     : "here; it draws on a screen, and this Prompt shows output only: use it from a terminal over SSH (l3 address)");
-    else if (r->mark == 'x') { say(ja ? "root にありますが、ここではまだ動きません: " : "in the root, not yet running here: "); say_n(r->why, r->whyn); }
+    else if (m == 'x') { say(ja ? "root にありますが、ここではまだ動きません: " : "in the root, not yet running here: "); say_n(r->why, r->whyn); }
     else {
       say(ja ? "この root にはありません" : "not in this root");
       if (r->whyn) { say(ja ? "。代わりに: " : "; instead: "); say_n(r->why, r->whyn); }
@@ -347,6 +355,8 @@ static int apropos(char **words, int nwords) {
 static int main_(int argc, char **argv, char **envp) {
   const char *lang = env(envp, "LENGTH3_LANG=");
   ja = lang && same(lang, "ja");
+  const char *term = env(envp, "TERM=");
+  screen = term && *term && !same(term, "dumb");
   const char *c = env(envp, "COLUMNS=");
   if (c) {
     u32 w = 0;

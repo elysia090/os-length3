@@ -39,6 +39,8 @@ printf '# du\n\n> Disk usage.\n' > "$t/pages/pages.en/linux/du.md"
 printf '# vim\n\n> Vi IMproved.\n' > "$t/pages/pages.en/common/vim.md"
 export OTTER_TABLE="$t/commands" OTTER_PAGES="$t/pages"
 unset LENGTH3_LANG COLUMNS
+# A Prompt that shows output alone (the desktop app's), until the terminal's own case below.
+export TERM=dumb
 
 # The catalog: each kind once, in the table's order, its names under each mark, runs first.
 says "What runs here: ✓ runs  ▢ needs a terminal  ✗ not yet here  — not in this root
@@ -51,6 +53,21 @@ core         — getconf
 
 otter NAME: what it is and whether it runs here. otter -k WORD: what is about WORD.
 Each program says how it is used with --help, and tldr NAME shows its common uses." "$otter"
+
+# Where the Prompt is a terminal (the app's on the web, one over SSH), what draws on a screen runs: under ✓, and no ▢.
+says "What runs here: ✓ runs  ✗ not yet here  — not in this root
+
+files        ✓ ls
+             ✗ du
+editor       ✓ nano
+             — vim
+core         — getconf
+
+otter NAME: what it is and whether it runs here. otter -k WORD: what is about WORD.
+Each program says how it is used with --help, and tldr NAME shows its common uses." env TERM=xterm-256color "$otter"
+says "nano - (no page says what it is)
+  ✓ runs here
+  more: nano --help; tldr nano" env TERM=xterm-256color "$otter" nano
 
 # Wrapped at the width, the names going on under the first.
 long=""

@@ -3,7 +3,8 @@
 // root (bwrap), and the two compared. A command is marked by what was seen, never by what is hoped:
 //
 //   +  runs here: every line that uses it ends as natively, saying the same
-//   t  draws on a screen (an editor, a pager, top): here, but it needs a terminal the app's Prompt does not give
+//   t  draws on a screen (an editor, a pager, top): runs where the Prompt is a terminal (the app's on the web, one
+//      over SSH), not where it shows output alone (TERM=dumb, the desktop app's); `help` says which holds there
 //   x  in the root, but some line that uses it does not end as natively under xlat (what differs is said)
 //   -  not in the root (and what to reach for instead, where there is something)
 //
@@ -57,7 +58,7 @@ export const BUILTINS = ['alias', 'bg', 'break', 'cd', 'chdir', 'command', 'cont
   'hash', 'help', 'history', 'jobs', 'kill', 'let', 'local', 'printf', 'pwd', 'read', 'readonly', 'return', 'set', 'shift', 'source', 'test', 'times',
   'trap', 'true', 'type', 'ulimit', 'umask', 'unalias', 'unset', 'wait'];
 
-/** Programs that draw on a screen: here, but the app's Prompt shows output only (root/etc/length3/shrc says so). */
+/** Programs that draw on a screen: they need a terminal, which a Prompt of output alone is not (root/etc/length3/shrc). */
 const SCREEN = new Set(['vi', 'vim', 'nano', 'less', 'more', 'top', 'watch', 'fzf']);
 
 /** What to reach for instead of a command the root does not have. */
