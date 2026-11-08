@@ -219,10 +219,13 @@ export class FdTable {
   /** `fd`'s bits in `consoles` as the table has it now. */
   marked(fd: number): void {
     if (fd >= 32) return;
-    const d = this.slots.get(fd)?.description, bit = 1 << fd;
-    const mark = (k: number, on: boolean): void => { const was = Atomics.load(this.consoles, k), now = on ? was | bit : was & ~bit; if (now !== was) Atomics.store(this.consoles, k, now); };
-    mark(0, d?.kind === 'console');
-    mark(1, d?.kind === 'console' && d.path === 'stderr');
+    const d = this.slots.get(fd)?.description, bit = 1 << fd, c = this.consoles;
+    const console = d?.kind === 'console', err = console && d.path === 'stderr';
+    // (Each open and close comes here: nothing made, and a word written only when its bit changes.)
+    const was = Atomics.load(c, 0), now = console ? was | bit : was & ~bit;
+    if (now !== was) Atomics.store(c, 0, now);
+    const wasErr = Atomics.load(c, 1), nowErr = err ? wasErr | bit : wasErr & ~bit;
+    if (nowErr !== wasErr) Atomics.store(c, 1, nowErr);
   }
   get(fd: number): Description | null { return this.slots.get(fd)?.description ?? null; }
   lowest(from = 0): number {
