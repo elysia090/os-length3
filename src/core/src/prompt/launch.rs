@@ -788,5 +788,5 @@ extern "C" fn interrupt(_: libc::c_int) {
 }
 
 #[cfg(test)]
-#[path = "tests/launch.rs"]
+#[path = "launch.test.rs"]
 mod tests;

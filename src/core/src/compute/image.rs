@@ -65,5 +65,5 @@ pub fn read_file(disk: &Path, path: &str) -> io::Result<Vec<u8>> {
 }
 
 #[cfg(test)]
-#[path = "tests/image.rs"]
+#[path = "image.test.rs"]
 mod tests;

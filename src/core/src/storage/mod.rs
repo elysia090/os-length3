@@ -54,5 +54,5 @@ pub use self::free::{fetch_distro, fetch_root};
 pub use self::free::{bring_repo, free, Freed, make_room};
 
 #[cfg(test)]
-#[path = "tests/space.rs"]
+#[path = "mod.test.rs"]
 mod tests;

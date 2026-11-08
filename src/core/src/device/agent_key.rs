@@ -152,5 +152,5 @@ pub fn shown(key: &str) -> String {
 }
 
 #[cfg(test)]
-#[path = "tests/agent_key.rs"]
+#[path = "agent_key.test.rs"]
 mod tests;

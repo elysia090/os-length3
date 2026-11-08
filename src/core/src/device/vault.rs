@@ -238,5 +238,5 @@ mod keyring {
 }
 
 #[cfg(test)]
-#[path = "tests/vault.rs"]
+#[path = "vault.test.rs"]
 mod tests;

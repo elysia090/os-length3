@@ -106,5 +106,5 @@ pub fn found(bytes: &[u8], own: &[&str]) -> Option<Found> {
 }
 
 #[cfg(test)]
-#[path = "tests/secrets.rs"]
+#[path = "secrets.test.rs"]
 mod tests;

@@ -42,5 +42,5 @@ pub use self::reach::{admit, BASE_PORT, bridge, BRIDGES, canonical, destinations
 pub use self::listener::{Here, here, host_key, Listening, listening, record, Recorded, rescope, stop};
 
 #[cfg(test)]
-#[path = "tests/ssh.rs"]
+#[path = "mod.test.rs"]
 mod tests;

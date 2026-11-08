@@ -90,5 +90,5 @@ fn millis(meta: &fs::Metadata) -> u64 {
 }
 
 #[cfg(all(test, unix))]
-#[path = "tests/measure.rs"]
+#[path = "measure.test.rs"]
 mod tests;

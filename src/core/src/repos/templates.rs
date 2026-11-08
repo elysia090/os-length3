@@ -35,5 +35,5 @@ impl Template {
 }
 
 #[cfg(test)]
-#[path = "tests/templates.rs"]
+#[path = "templates.test.rs"]
 mod tests;

@@ -79,5 +79,5 @@ pub fn counts(ops: &[(Kind, &str)]) -> (u64, u64) {
 }
 
 #[cfg(test)]
-#[path = "tests/diff.rs"]
+#[path = "diff.test.rs"]
 mod tests;

@@ -199,5 +199,5 @@ pub fn device_word(ua: Option<&str>) -> String {
 }
 
 #[cfg(test)]
-#[path = "tests/account.rs"]
+#[path = "account.test.rs"]
 mod tests;

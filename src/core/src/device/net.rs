@@ -155,5 +155,5 @@ fn tls() -> ureq::tls::TlsConfig {
 }
 
 #[cfg(test)]
-#[path = "tests/net.rs"]
+#[path = "net.test.rs"]
 mod tests;

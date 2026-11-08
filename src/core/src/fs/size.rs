@@ -66,5 +66,5 @@ pub(crate) fn blocks(meta: &fs::Metadata) -> u64 { use std::os::unix::fs::Metada
 pub(crate) fn blocks(meta: &fs::Metadata) -> u64 { meta.len() }
 
 #[cfg(all(test, unix))]
-#[path = "tests/size.rs"]
+#[path = "size.test.rs"]
 mod tests;

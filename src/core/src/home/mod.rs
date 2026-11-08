@@ -22,5 +22,5 @@ pub use self::dotfiles::{COMMON_DOTFILES, dotfile_name, dotfiles, dotfiles_in_ef
 pub use self::agree::{agree_with, Agreed, Files, got, HomeHere, HomeSynced, HomeThere, leave, put_body, put_version, SYNCED, waiting};
 
 #[cfg(test)]
-#[path = "tests/home.rs"]
+#[path = "mod.test.rs"]
 mod tests;

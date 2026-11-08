@@ -274,7 +274,7 @@ mod shared_cases {
     use serde_json::Value;
 
     fn cases() -> Value {
-        serde_json::from_str(include_str!("../../../../shared/cases.json")).unwrap()
+        serde_json::from_str(include_str!("../../../shared/cases.json")).unwrap()
     }
     fn opt(v: &Value) -> Option<String> { v.as_str().map(String::from) }
 

@@ -312,5 +312,5 @@ pub fn root3_path(app: &Path) -> std::path::PathBuf {
 }
 
 #[cfg(test)]
-#[path = "tests/running.rs"]
+#[path = "running.test.rs"]
 mod tests;

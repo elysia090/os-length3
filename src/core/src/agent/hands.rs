@@ -223,5 +223,5 @@ fn lines_changed(old: &str, new: &str) -> (usize, usize) {
 }
 
 #[cfg(test)]
-#[path = "tests/hands.rs"]
+#[path = "hands.test.rs"]
 mod tests;

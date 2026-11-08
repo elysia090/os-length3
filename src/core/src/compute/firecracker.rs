@@ -112,5 +112,5 @@ impl Api {
 }
 
 #[cfg(test)]
-#[path = "tests/firecracker.rs"]
+#[path = "firecracker.test.rs"]
 mod tests;

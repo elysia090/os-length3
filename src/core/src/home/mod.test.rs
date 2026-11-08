@@ -70,7 +70,7 @@ use std::collections::HashMap;
 use crate::Result;
 
 fn recorded() -> Vec<Value> {
-    let v: Value = serde_json::from_str(include_str!("../../../../shared/home-sync.json")).unwrap();
+    let v: Value = serde_json::from_str(include_str!("../../../shared/home-sync.json")).unwrap();
     v["exchanges"].as_array().unwrap().clone()
 }
 

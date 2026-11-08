@@ -163,5 +163,5 @@ pub fn install_with(errno: u16) -> io::Result<()> {
 pub fn install() -> io::Result<()> { install_with(libc::EPERM as u16) }
 
 #[cfg(test)]
-#[path = "tests/seccomp.rs"]
+#[path = "seccomp.test.rs"]
 mod tests;

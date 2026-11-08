@@ -513,5 +513,5 @@ impl Repos {
 }
 
 #[cfg(test)]
-#[path = "tests/store.rs"]
+#[path = "store.test.rs"]
 mod tests;

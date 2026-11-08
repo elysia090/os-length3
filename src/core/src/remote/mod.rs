@@ -56,5 +56,5 @@ pub use self::home::{home_waiting, leave_home, sync_home};
 pub use self::lines::{Line, line, lines};
 
 #[cfg(test)]
-#[path = "tests/remote.rs"]
+#[path = "mod.test.rs"]
 mod tests;

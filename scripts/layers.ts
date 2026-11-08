@@ -108,7 +108,7 @@ function loops(takes: Map<string, Set<string>>): string[][] {
 //
 // Its layers are lib.rs's `pub mod` lines, in that order, each a folder: a layer's units take from their own layer
 // and the layers before it, never after (the tr! macro is the text layer's). Within a layer, no unit reaches back to
-// itself through its siblings. Tests (each layer's tests/) are left out.
+// itself through its siblings. Tests (NAME.test.rs, beside what each tests) are left out.
 
 const CORE = join(OS, 'src/core/src');
 
@@ -121,7 +121,7 @@ function coreFiles(): {file: string; layer: string; unit: string}[] {
   const walk = (dir: string) => {
     for (const e of readdirSync(dir, {withFileTypes: true})) {
       const p = join(dir, e.name);
-      if (e.isDirectory()) { if (e.name !== 'tests') walk(p); } else if (e.name.endsWith('.rs') && p !== join(CORE, 'lib.rs')) out.push(p);
+      if (e.isDirectory()) walk(p); else if (e.name.endsWith('.rs') && !e.name.endsWith('.test.rs') && p !== join(CORE, 'lib.rs')) out.push(p);
     }
   };
   walk(CORE);

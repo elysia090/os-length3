@@ -161,5 +161,5 @@ pub fn boot(api: &super::firecracker::Api, p: &Plan) -> Result<(), super::firecr
 }
 
 #[cfg(test)]
-#[path = "tests/vm.rs"]
+#[path = "vm.test.rs"]
 mod tests;

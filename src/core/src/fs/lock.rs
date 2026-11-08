@@ -28,5 +28,5 @@ pub fn lock(data: &Path) -> io::Result<Lock> {
 }
 
 #[cfg(test)]
-#[path = "tests/lock.rs"]
+#[path = "lock.test.rs"]
 mod tests;

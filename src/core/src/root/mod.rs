@@ -36,5 +36,5 @@ pub use self::fetch::{fetch_and_install, fetch_distro};
 pub use self::install::{install, install_distro};
 
 #[cfg(test)]
-#[path = "tests/root.rs"]
+#[path = "mod.test.rs"]
 mod tests;

@@ -62,7 +62,7 @@ export const UNITS: Unit[] = [
 export const NOT_UNITS = ['scripts', 'tests', 'module/ricebox/runtime/run.ts', 'module/ricebox/tests', 'module/muk/tests', 'module/sods/examples', 'module/you/test', 'module/otter/test',
   'src/core/web/src/tests', 'node_modules', 'target', 'dist', 'public', 'module/sods/target', 'module/ricebox/target', 'research_notes', 'reports',
   'temp', '.github', '.claude'];
-const isTest = (rel: string) => /\.test\.ts$|(^|\/)tests?\/|\/testing[^/]*\.ts$|\.d\.ts$/.test(rel);
+const isTest = (rel: string) => /\.test\.(ts|rs)$|(^|\/)tests?\/|\/testing[^/]*\.ts$|\.d\.ts$/.test(rel);
 
 /**
  * Imports a unit makes that the table does not allow, each with the step of the work that takes it away (README.md,

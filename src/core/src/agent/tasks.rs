@@ -495,5 +495,5 @@ pub fn hold(repo: &str) -> Result<Option<std::fs::File>> {
 pub fn log_path(k: &Task) -> PathBuf { dir().join(&k.repo).join(format!("{}.log", k.id)) }
 
 #[cfg(test)]
-#[path = "tests/tasks.rs"]
+#[path = "tasks.test.rs"]
 mod tests;

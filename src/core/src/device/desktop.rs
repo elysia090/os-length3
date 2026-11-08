@@ -82,5 +82,5 @@ impl Held {
 }
 
 #[cfg(test)]
-#[path = "tests/desktop.rs"]
+#[path = "desktop.test.rs"]
 mod tests;

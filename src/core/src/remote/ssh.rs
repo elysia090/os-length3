@@ -63,5 +63,5 @@ pub fn announce(scope: Scope) -> crate::Result<()> {
 }
 
 #[cfg(test)]
-#[path = "tests/ssh.rs"]
+#[path = "ssh.test.rs"]
 mod tests;

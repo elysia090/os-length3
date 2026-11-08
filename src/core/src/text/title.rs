@@ -34,5 +34,5 @@ pub fn named(kind: Option<&str>, title: &str) -> String {
 }
 
 #[cfg(test)]
-#[path = "tests/title.rs"]
+#[path = "title.test.rs"]
 mod tests;

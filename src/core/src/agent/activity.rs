@@ -276,5 +276,5 @@ pub fn all() -> Vec<Event> {
 }
 
 #[cfg(test)]
-#[path = "tests/activity.rs"]
+#[path = "activity.test.rs"]
 mod tests;

@@ -164,5 +164,5 @@ pub fn private_dir(dir: &Path) -> io::Result<()> {
 }
 
 #[cfg(test)]
-#[path = "tests/write.rs"]
+#[path = "write.test.rs"]
 mod tests;

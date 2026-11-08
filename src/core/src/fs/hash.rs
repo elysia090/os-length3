@@ -37,5 +37,5 @@ pub fn hex(bytes: &[u8]) -> String {
 }
 
 #[cfg(test)]
-#[path = "tests/hash.rs"]
+#[path = "hash.test.rs"]
 mod tests;

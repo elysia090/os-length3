@@ -66,5 +66,5 @@ pub fn read(r: &mut impl Read) -> io::Result<Option<Frame>> {
 }
 
 #[cfg(test)]
-#[path = "tests/wire.rs"]
+#[path = "wire.test.rs"]
 mod tests;

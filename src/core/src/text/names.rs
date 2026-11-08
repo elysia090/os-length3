@@ -100,5 +100,5 @@ pub fn valid_name(name: &str) -> bool {
 }
 
 #[cfg(test)]
-#[path = "tests/names.rs"]
+#[path = "names.test.rs"]
 mod tests;

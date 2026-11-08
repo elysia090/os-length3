@@ -142,5 +142,5 @@ pub fn numbering(list: &[Issue], in_use: &[String]) -> Vec<(String, String)> {
 }
 
 #[cfg(test)]
-#[path = "tests/issues.rs"]
+#[path = "issues.test.rs"]
 mod tests;

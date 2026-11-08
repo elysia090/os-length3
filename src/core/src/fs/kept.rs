@@ -39,5 +39,5 @@ impl<T: Clone> Kept<T> {
 }
 
 #[cfg(test)]
-#[path = "tests/kept.rs"]
+#[path = "kept.test.rs"]
 mod tests;

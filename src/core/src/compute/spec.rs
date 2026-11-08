@@ -176,5 +176,5 @@ pub fn by_repo(runs: &[Run], since: u64) -> Vec<(String, u64, Usage)> {
 }
 
 #[cfg(test)]
-#[path = "tests/spec.rs"]
+#[path = "spec.test.rs"]
 mod tests;
