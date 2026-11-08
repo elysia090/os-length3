@@ -700,16 +700,25 @@ impl<'p> Fx<'p> {
 
     // ---- Control helpers ----
 
-    /// Continue at `address`: fall through if it is the next block, else
-    /// jump through the dispatch loop, else leave the function.
+    /// Continue at `address`: fall through if it is the next block; a block
+    /// after this one, straight to it; one before (a loop's round), through
+    /// the dispatch loop; else leave the function.
     fn goto(&mut self, address: u64, next: Option<u64>) {
         if Some(address) == next {
             self.note(Ev::Edge);
             return;
         }
         match self.function.block_index(address) {
+            Some(b) if b > self.at => {
+                // Block k's code sits inside the labels of blocks k+1..n-1 (lower_function), each ending where its
+                // block's code starts: out of those before block b's, and of what is open here, is block b, with no
+                // round of the dispatch loop (its br_table an indirect jump, and every local merged at its head).
+                self.note(Ev::Edge);
+                let open = self.depth - (self.function.blocks.len() - 1 - self.at) as u32;
+                self.e(W::Br((b - self.at - 1) as u32 + open));
+            }
             Some(b) => {
-                if b <= self.at { self.time_slice(address); }
+                self.time_slice(address);
                 self.note(Ev::Edge);
                 self.c32(b as i32);
                 self.set(L_BLK);
