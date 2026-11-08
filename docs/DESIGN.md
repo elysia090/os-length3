@@ -991,7 +991,7 @@ is a dependency: not a BusyBox, a userland or a toolchain of its own. It is
 the same thing for the desktop app and for the web.
 
 - **Name and version.** `root3 X.Y.Z` is the release `os-length3-linux-vX.Y.Z`
-  (the version in `RELEASE`).
+  (the version in `root/RELEASE`).
 - **Digest.** Its identity is the sha256 of its root,
   `os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst`. One entry of
   `src/core/src/root/pins.rs` RELEASES pins it, for both ways in: `sha256` and
@@ -999,12 +999,12 @@ the same thing for the desktop app and for the web.
   same root by. The release writes that entry (`scripts/pin-root.ts`) and
   it is committed; nothing else pins root3.
 - **What it holds.** Sixty-three packages, each made from the source this
-  tree pins (`root/sources.env`) by its recipe
-  (`root/packages/NAME.sh`, made by `root/build.sh` on
+  tree pins (`root/pins/sources.env`) by its recipe
+  (`root/packages/NAME/recipe.sh`, made by `root/make/build.sh` on
   Alpine 3.24 at one digest, with one libc: its musl, at the root's own
   musl's version and with the same security fixes; a package's own build
   tools are there for its build alone), and `/usr/bin/root3`, put together by
-  `root/assemble.sh`: BusyBox (sh and the small tools), the C toolchain
+  `root/make/assemble.sh`: BusyBox (sh and the small tools), the C toolchain
   (GCC, binutils, make, musl with fortify-headers, Linux's headers; its
   `cc` makes a static PIE, hardened as the root's own programs are,
   unasked), git with delta and Git LFS, curl, wget, OpenSSL, OpenSSH's
@@ -1035,10 +1035,10 @@ the same thing for the desktop app and for the web.
   is built against it. A Rust or Go program is built from its makers'
   lockfile, with what its recipe lifts: a crate or module its makers have
   fixed an advisory in, taken to that version where the program asks for
-  it at all (`lifts=`, `root/lift.sh`); what those programs are made of is
-  asked of OSV with every change and every week (`root/advisories.sh`), and
+  it at all (`lifts=`, `root/make/lift.sh`); what those programs are made of is
+  asked of OSV with every change and every week (`root/make/advisories.sh`), and
   what no lift answers is written down with why and until when
-  (`root/advisories.toml`). For the web it also holds the translator
+  (`root/pins/advisories.toml`). For the web it also holds the translator
   (xlat, as WebAssembly) and the translations of the hot programs made
   ahead of time.
 - **On a device**, the app and `root3` install the root by its digest: from the
@@ -3085,7 +3085,7 @@ or goes).
   after the environments, on one row (what this device runs on, and can be
   reached by or become), its card the SSH card's size, the cards ending
   level; where the row has no room, it goes under. Few words: its title,
-  Length³, and the version `RELEASE` names apart from it in the mono face (a
+  Length³, and the version `root/RELEASE` names apart from it in the mono face (a
   name and a number are two things); quietly, x86-64 Linux, which file and
   its size (what it is goes without saying). At its bottom left, Download
   (ダウンロード), the one download: a primary button a size smaller than a

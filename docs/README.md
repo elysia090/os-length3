@@ -533,7 +533,7 @@ to this repository, and its Settings → Build say, once:
 | Branch control | main deploys; other branches build previews, each with the Prompt the tree ships (`scripts/prompt-files.ts`, from the public release) |
 
 The Prompt the web serves is a released one: a newer one ships by releasing
-it (a new version in `RELEASE`, `.github/workflows/release.yml`; without
+it (a new version in `root/RELEASE`, `.github/workflows/release.yml`; without
 Actions, `scripts/release.sh` and `scripts/publish-release.ts` by hand), then merging the pins
 the release proposes (Pin vX.Y.Z): root3's one entry in `src/core/src/root/pins.rs`
 (the root, and the index the web reads it by) and the desktop app in

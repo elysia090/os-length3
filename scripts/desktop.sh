@@ -6,7 +6,7 @@
 #
 #   sh scripts/desktop.sh [VERSION]
 #
-# The version is RELEASE's unless given. root3 is static (musl) and has SSH, so it runs on any x86-64 Linux
+# The version is root/RELEASE's unless given. root3 is static (musl) and has SSH, so it runs on any x86-64 Linux
 # whatever its libc; the root's own root3 (root-assemble.sh) is another build, without SSH. Needs Rust with the
 # target x86_64-unknown-linux-musl, musl-gcc, Node 22, libgles2 and the Tauri build's packages (release.sh names
 # them).
@@ -14,7 +14,7 @@
 set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
 cd "$here"
-version=${1:-$(tr -d ' \n' < RELEASE)}
+version=${1:-$(tr -d ' \n' < root/RELEASE)}
 
 # The prompt profile: a musl build keeps its relocations (.cargo/config.toml), which a full strip cannot.
 cargo build -q --locked --profile prompt -p root3 --target x86_64-unknown-linux-musl

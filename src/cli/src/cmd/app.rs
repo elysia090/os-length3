@@ -150,7 +150,7 @@ fn where_to_get() -> String {
 /// them, and what to do with each.
 fn downloads() -> Vec<String> {
     let pins: serde_json::Value = serde_json::from_str(PINS).unwrap_or_default();
-    let release = include_str!("../../../../RELEASE").trim();
+    let release = include_str!("../../../../root/RELEASE").trim();
     // This release's; one that pins none (a build between releases) takes the newest pinned.
     let newest = pins.as_object().and_then(|m| m.keys().max_by_key(|v| v.split('.').map(|n| n.parse::<u64>().unwrap_or(0)).collect::<Vec<_>>()).cloned());
     let at = if pins[release].is_object() { release.to_string() } else { newest.unwrap_or_default() };

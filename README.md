@@ -31,7 +31,7 @@ hardened and checked by use.
 ## Get it
 
 Every release is a [GitHub release](https://github.com/elysia090/os-length3/releases)
-named `os-length3-linux-vX.Y.Z`; the current one is in [`RELEASE`](RELEASE).
+named `os-length3-linux-vX.Y.Z`; the current one is in [`root/RELEASE`](root/RELEASE).
 A release carries:
 
 | File | What it is |
@@ -52,18 +52,20 @@ devices. Building from source, `root3` is `cargo install --path src/cli`.
 | --- | --- | --- |
 | [`src/`](src/) | **Length³ OS**: the app ([`app/`](src/app/), TypeScript, no framework; [`desktop/`](src/desktop/), Tauri for the window), [`cli/`](src/cli/), the `root3` command, the core both use ([`core/`](src/core/), also built for `wasm32-wasip1` for the browser), and the Remote ([`remote/`](src/remote/): Hono on a Cloudflare Worker, Postgres on Neon) | [`docs/README.md`](docs/README.md), the design language in [`docs/DESIGN.md`](docs/DESIGN.md) |
 | [`module/`](module/) | the units, each a folder of its own: [`sods/`](module/sods/) instructions (static x86-64 Linux programs made WebAssembly ahead of the run), [`ricebox/`](module/ricebox/) the box (the smallest UNIX a browser runs: the kernel the root runs on in a browser's Prompt), [`muk/`](module/muk/) what is at rest (packs and translations by digest, the repo in step); and [`you/`](module/you/), [`otter/`](module/otter/), [`lib/`](module/lib/), units of C with no C library (the tools a person reaches for, z and rg; help and what each thing is; what they stand on) | each unit's `README.md`, or its files' heads |
-| [`root/`](root/) | the root the Prompts run: its pins, a recipe per package and what makes it (below) | `build.sh` |
+| [`root/`](root/) | the root the Prompts run: its pins, a recipe per package and what makes it (below) | `make/build.sh` |
 | [`scripts/`](scripts/), [`tests/`](tests/) | what builds, releases and checks (`npm test` runs `scripts/tests.ts`), and the selftests: the app driven in a browser as a person drives it (`npm run selftest`) | each file's head |
 | [`docs/`](docs/) | what the OS is and how it ships ([`README.md`](docs/README.md)), its design language ([`DESIGN.md`](docs/DESIGN.md)), what it promises about security ([`SECURITY.md`](docs/SECURITY.md)) | |
 
 A folder holds files, or folders and at most its own README and manifests, never both. At the top are root3's own
 manifests alone: `package.json`, `Cargo.toml` (one workspace: the core, the app's window and root3), `tsconfig.json`
-and `wrangler.toml` (the Remote's Worker, where Workers Builds looks for it), with their lockfiles. The web app's page
+and `wrangler.toml` (the Remote's Worker, where Workers Builds looks for it), with their lockfiles and the dotfiles
+tools read there (`.node-version`, `.gitignore`, `.gitattributes`, `.cargo/`). The web app's page
 and its build are in [`src/app/`](src/app/) (`index.html`, `vite.config.ts`); what it ships beside its build is
 [`public/`](public/).
 
-The root is [`root/`](root/): what it is made from (`sources.env`, the pins), one recipe per package
-(`packages/`), its own settings (`etc/`), and what makes it (`build.sh`, each package on Alpine 3.24 at one digest;
+The root is [`root/`](root/): its version (`RELEASE`, the release it is made as next), what it is made from (`pins/`:
+`sources.env`, and `advisories.toml`), a folder per package with its recipe and its patches (`packages/NAME/recipe.sh`),
+its own files (`etc/`, `usr/`), and what makes it (`make/`: `build.sh`, each package on Alpine 3.24 at one digest;
 `assemble.sh`, the root and its package database; `next.py`, every source's newest release).
 
 ## Units
@@ -108,13 +110,13 @@ only when what it is made of changed):
 
 ```sh
 docker run --rm -v "$PWD:/w" alpine@sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d \
-  sh /w/root/build.sh /w/target/root-packages
-sh root/assemble.sh target/root-packages target/root-made
+  sh /w/root/make/build.sh /w/target/root-packages
+sh root/make/assemble.sh target/root-packages target/root-made
 ```
 
 CI (`.github/workflows/ci.yml`) runs on each pull request; what each
 job does is in [`docs/README.md`](docs/README.md) (Develop, CI). A release is
-made from main by changing [`RELEASE`](RELEASE)
+made from main by changing [`root/RELEASE`](root/RELEASE)
 (`.github/workflows/release.yml`), or by hand with `scripts/release.sh`.
 
 Security reports: [`SECURITY.md`](docs/SECURITY.md).

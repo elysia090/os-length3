@@ -27,7 +27,7 @@ const DEV_REMOTE = process.env.LENGTH3_DEV_REMOTE;
 const WRANGLER = readFileSync(new URL('../../wrangler.toml', import.meta.url), 'utf8');
 const ASSETS = /^directory\s*=\s*"([^"]+)"/m.exec(WRANGLER)![1];
 const WORKER_FIRST = (JSON.parse(/^run_worker_first\s*=\s*(\[.*\])$/m.exec(WRANGLER)![1]) as string[]).map((p) => p.replace(/\/\*$/, ''));
-// The release this tree ships (src/remote/releases.ts shipped, the newest pinned; not RELEASE, which names the one being
+// The release this tree ships (src/remote/releases.ts shipped, the newest pinned; not root/RELEASE, which names the one being
 // made): the web's Runtime offers that version's desktop app, as the deploy puts it on the Remote (src/remote/mirror.ts).
 process.env.VITE_LENGTH3_RELEASE ??= shipped();
 const WEB_POLICY = webPolicy(REMOTE);

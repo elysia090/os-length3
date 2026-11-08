@@ -1,9 +1,9 @@
 name: Release
 
-# Publishes OS Length3 Linux X.Y.Z: the root (root/build.sh, root/assemble.sh), the web root, the web build and
+# Publishes OS Length3 Linux X.Y.Z: the root (root/make/build.sh, root/make/assemble.sh), the web root, the web build and
 # the desktop app (.deb, AppImage), with digests and build provenance; then proposes the pins to main as one pull
 # request (Pin vX.Y.Z: src/core/src/root/pins.rs, src/shared/desktop-releases.json). Asked for by a tag
-# os-length3-linux-vX.Y.Z, by a push to main that changes RELEASE, or by hand.
+# os-length3-linux-vX.Y.Z, by a push to main that changes root/RELEASE, or by hand.
 #
 # Only main's commits are released (audit R1), one version at a time (audit R2). Only this job's token writes.
 # No Cloudflare credentials are kept here.
@@ -12,7 +12,7 @@ on:
     tags: ['os-length3-linux-v*']
     branches: ['main']
     # A change to this workflow tries again (a published version is left as it is).
-    paths: ['RELEASE', '.github/workflows/release.yml']
+    paths: ['root/RELEASE', '.github/workflows/release.yml']
   workflow_dispatch:
     inputs:
       version:
@@ -69,7 +69,7 @@ jobs:
           esac
           case "$GITHUB_REF" in
             refs/tags/*) v=${GITHUB_REF_NAME#os-length3-linux-v} ;;
-            *) v=${INPUT_VERSION:-$(tr -d ' \n' < RELEASE)} ;;
+            *) v=${INPUT_VERSION:-$(tr -d ' \n' < root/RELEASE)} ;;
           esac
           echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' || { echo "not a version: $v" >&2; exit 1; }
           echo "VERSION=$v" >> "$GITHUB_ENV"

@@ -13,7 +13,7 @@ export const waitsAt = (line: string): string => {
   return again ? again[1] : line;
 };
 
-/** What the shell's line editor holds of one line (busybox's FEATURE_EDITING_MAX_LEN, root/packages/busybox.config). */
+/** What the shell's line editor holds of one line (busybox's FEATURE_EDITING_MAX_LEN, root/packages/busybox/busybox.config). */
 const ONE_LINE_MOST = 4096;
 
 /**

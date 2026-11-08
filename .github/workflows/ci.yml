@@ -4,7 +4,7 @@ name: CI
 # (on the merge it would make); a branch without one runs by hand.
 on:
   pull_request:
-    paths: ['src/**', 'module/**', 'root/**', 'scripts/**', 'tests/**', 'public/**', 'package.json', 'package-lock.json', 'Cargo.toml', 'Cargo.lock', '.cargo/**', 'tsconfig.json', 'wrangler.toml', 'RELEASE', '.github/workflows/ci.yml']
+    paths: ['src/**', 'module/**', 'root/**', 'scripts/**', 'tests/**', 'public/**', 'package.json', 'package-lock.json', 'Cargo.toml', 'Cargo.lock', '.cargo/**', 'tsconfig.json', 'wrangler.toml', '.github/workflows/ci.yml']
   workflow_dispatch:
 
 # Read-only token. Actions are pinned to full commits (tag beside); Dependabot proposes updates.
@@ -72,7 +72,7 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=webroot-${{ hashFiles('RELEASE', 'src/core/src/root/pins.rs', 'src/remote/releases.ts', 'scripts/webroot.sh', 'scripts/webroot.ts', 'scripts/webroot-tree.ts', 'scripts/root-file.ts', 'scripts/webroot-parity.ts', 'module/muk/runtime/table.ts', 'module/sods/Cargo.toml', 'module/sods/Cargo.lock', 'module/sods/src/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=webroot-${{ hashFiles('root/RELEASE', 'src/core/src/root/pins.rs', 'src/remote/releases.ts', 'scripts/webroot.sh', 'scripts/webroot.ts', 'scripts/webroot-tree.ts', 'scripts/root-file.ts', 'scripts/webroot-parity.ts', 'module/muk/runtime/table.ts', 'module/sods/Cargo.toml', 'module/sods/Cargo.lock', 'module/sods/src/**') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -365,7 +365,7 @@ jobs:
           [ ! -e /etc/apparmor.d/length3-root3 ]
           [ "$(native)" = false ] || { echo "the profile stayed after postrm" >&2; exit 1; }
 
-  # The root as a release builds it (root/build.sh, root/assemble.sh), then used inside as a Prompt uses it and
+  # The root as a release builds it (root/make/build.sh, root/make/assemble.sh), then used inside as a Prompt uses it and
   # under xlat. Runs only when what the root is made of changed.
   root:
     name: Root
@@ -409,12 +409,12 @@ jobs:
       - name: Assemble and check
         if: steps.kept.outputs.cache-hit != 'true'
         run: |
-          sh root/assemble.sh target/root-packages target/root-made 0.0.0
+          sh root/make/assemble.sh target/root-packages target/root-made 0.0.0
           mkdir -p target/root-open
           # Owned by root, as in a Prompt: apk will not audit a database another user owns.
           sudo tar --zstd -xf target/root-made/os-length3-linux-0.0.0-x86_64-*.tar.zst -C target/root-open
           r=$PWD/target/root-open/root
-          . root/sources.env
+          . root/pins/sources.env
           # Inside the root as a Prompt runs it: read-only, work in its /tmp.
           w=$RUNNER_TEMP/w
           mkdir -p "$w"
@@ -525,7 +525,7 @@ jobs:
           key: osv-scanner-2.7.0-${{ runner.os }}
       - name: Scan the root's programs
         if: ${{ !cancelled() }}
-        run: sh root/advisories.sh ~/go/bin/osv-scanner
+        run: sh root/make/advisories.sh ~/go/bin/osv-scanner
 
   # The app end to end in Chromium, in four shards, each with its own Remote and its own build of the app.
   selftest:

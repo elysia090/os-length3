@@ -10,7 +10,7 @@
 // root and that index; the index must be that digest, and every pack and
 // blob it names the digest its name is. Anything else is refused, and
 // nothing is put in public/webroot. Shipping a newer Prompt is releasing it (a
-// new version in RELEASE): the release proposes the entry it pinned to main.
+// new version in root/RELEASE): the release proposes the entry it pinned to main.
 //
 //   node scripts/prompt-files.ts
 //

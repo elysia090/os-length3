@@ -69,8 +69,8 @@ export function pinnedDistros(rootRs: string): Pinned[] {
 
 /**
  * The version this tree ships: the newest whose desktop app it pins (its root is pinned in the same change,
- * scripts/pin-root.ts and pin-desktop.ts). RELEASE names the version being made, which is shipped once the
- * release has pinned it: the web, its build and the deploy take this one, never RELEASE.
+ * scripts/pin-root.ts and pin-desktop.ts). root/RELEASE names the version being made, which is shipped once the
+ * release has pinned it: the web, its build and the deploy take this one, never root/RELEASE.
  */
 export function shipped(pins: DesktopPins = desktopPins as DesktopPins): string {
   return Object.keys(pins).sort((a, b) => a.localeCompare(b, 'en', {numeric: true})).at(-1) ?? '';

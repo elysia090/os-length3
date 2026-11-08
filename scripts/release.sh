@@ -2,7 +2,7 @@
 # Everything a release of OS Length3 Linux holds, made from this tree, into OUT:
 #
 #   os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst  the root: every package made from this tree's pins by its
-#                                                  recipe (root/build.sh), with this tree's root3 (root/assemble.sh)
+#                                                  recipe (root/make/build.sh), with this tree's root3 (root/make/assemble.sh)
 #   os-length3-linux-X.Y.Z-webroot.tar               the same root as the browser reads it (webroot.sh), checked
 #                                                  to be the same tree (webroot-parity.ts)
 #   os-length3-linux-X.Y.Z-web.zip                  the web build, with that root3 (web-release.sh)
@@ -20,8 +20,8 @@
 #
 #   sh scripts/release.sh OUT
 #
-# The version is RELEASE ($VERSION overrides); the commit is HEAD ($GITHUB_SHA overrides). The root's packages are
-# ROOT_PACKAGES, what root/build.sh made on Alpine 3.24 (release.yml makes them through the root-packages action and
+# The version is root/RELEASE ($VERSION overrides); the commit is HEAD ($GITHUB_SHA overrides). The root's packages are
+# ROOT_PACKAGES, what root/make/build.sh made on Alpine 3.24 (release.yml makes them through the root-packages action and
 # keeps them from release to release; by hand, as the top README says). Needs Rust with the targets
 # x86_64-unknown-linux-musl, wasm32-unknown-unknown and wasm32-wasip1, Node 22, musl-gcc, zstd, zip, the Tauri
 # build's packages (libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf
@@ -31,7 +31,7 @@ here=$(cd "$(dirname "$0")/.." && pwd)
 [ $# -eq 1 ] || { echo "usage: sh scripts/release.sh OUT" >&2; exit 2; }
 mkdir -p "$1"
 out=$(cd "$1" && pwd)
-version=${VERSION:-$(tr -d ' \n' < "$here/RELEASE")}
+version=${VERSION:-$(tr -d ' \n' < "$here/root/RELEASE")}
 sha=${GITHUB_SHA:-$(git -C "$here" rev-parse HEAD)}
 echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' || { echo "release: not a version: $version" >&2; exit 1; }
 if [ -z "${GITHUB_SHA:-}" ] && [ -n "$(git -C "$here" status --porcelain)" ]; then
@@ -40,7 +40,7 @@ fi
 cd "$here"
 
 # The root: its packages, made from this tree's pins, with this tree's root3.
-sh root/assemble.sh "${ROOT_PACKAGES:?the root's packages, as root/build.sh made them}" "$out" "$version"
+sh root/make/assemble.sh "${ROOT_PACKAGES:?the root's packages, as root/make/build.sh made them}" "$out" "$version"
 root=$(ls "$out"/os-length3-linux-"$version"-x86_64-*.tar.zst)
 
 # The film of the release, from the branch that holds it (kept out of main's history), checked against its digest.

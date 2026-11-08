@@ -33,7 +33,7 @@ is welcome, and so is a Remote of your own (`node src/remote/dev.ts`).
 
 ## Supported versions
 
-Only the latest release is supported: the release `RELEASE` names, which
+Only the latest release is supported: the release `root/RELEASE` names, which
 the web app at `os.length3.com` always is. Fixes go into the next release.
 Older desktop apps and `root3` builds are asked to update. Nothing earlier is
 patched.
@@ -95,11 +95,11 @@ request passes, and the one secret") and are tested in
   (`gh attestation verify`). Lockfiles are enforced, and Dependabot proposes
   updates; npm's, the app's crates' and the root's Rust and Go programs'
   dependencies are checked against published advisories with every change
-  and, for the root, every week (`root/advisories.sh`).
+  and, for the root, every week (`root/make/advisories.sh`).
 - **How the root is built.** Every package from a source pinned by digest
-  (`root/sources.env`), in one Alpine pinned by digest, by a compiler
+  (`root/pins/sources.env`), in one Alpine pinned by digest, by a compiler
   that hardens every unit it compiles (stack protector, stack clash
   protection, zeroed locals, `_FORTIFY_SOURCE=3`): each program and library
   is checked, unit by unit, to have been compiled so, and to be a static PIE
   with full RELRO and no executable stack; nothing is setuid or setgid
-  (`root/build.sh`).
+  (`root/make/build.sh`).
