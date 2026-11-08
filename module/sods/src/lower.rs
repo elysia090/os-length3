@@ -10,6 +10,7 @@
 
 use crate::discover::{Block, Exit, Function, Program};
 use crate::elf::Elf;
+use crate::summary::{summarize, Summary};
 use iced_x86::{ConditionCode, Instruction, Mnemonic, OpKind, Register, RflagsBits};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -184,9 +185,11 @@ struct Fx<'p> {
     /// as it is emitted; lower_function puts the locals and the syncs in.
     f: WasmFunction,
     /// Where the code syncs registers with their globals (save: true,
-    /// load: false), as byte offsets into `f`. What is synced is known only
-    /// once the whole function is made: the registers it touches.
-    syncs: Vec<(usize, bool)>,
+    /// load: false), as byte offsets into `f`, and which registers it may move
+    /// at most (all, but around a call to a function that never goes out: what
+    /// it may touch, summary.rs). What is synced is known only once the whole
+    /// function is made: the registers it touches.
+    syncs: Vec<(usize, bool, u32)>,
     /// The registers it touches: bit n for r_n, bit 16 + n for xmm_n.
     used: u32,
     /// What each part did with the registers, in order: [0] the prologue,
@@ -214,7 +217,12 @@ struct Fx<'p> {
     at: usize,
     /// It has a loop: its budget is counted down in L_BUDGET, moved with the registers.
     budget: bool,
+    /// What each of the program's functions may do to the registers (summary.rs).
+    summaries: &'p [Summary],
 }
+
+/// A sync's scope when it may move any register.
+const ALL: u32 = u32::MAX;
 
 #[derive(Clone, Copy)]
 enum Part { Full, Low32, Low16, Low8, High8 }
@@ -300,8 +308,10 @@ impl<'p> Fx<'p> {
     /// globals all along. Put in by lower_function.
     fn save(&mut self) { self.sync(true); }
 
-    fn sync(&mut self, save: bool) {
-        self.syncs.push((self.f.byte_len(), save));
+    fn sync(&mut self, save: bool) { self.sync_in(save, ALL); }
+    /// A sync that moves at most the registers in `scope`.
+    fn sync_in(&mut self, save: bool, scope: u32) {
+        self.syncs.push((self.f.byte_len(), save, scope));
         let (at, top) = (self.syncs.len() - 1, self.nest == 0);
         self.note(Ev::Sync(at, top));
     }
@@ -818,6 +828,20 @@ impl<'p> Fx<'p> {
     /// After a call: on at its return address, or, handed another (a longjmp out of the callee, handed up by each
     /// frame it left, in l_t(0)), to the function's resume (lower_function): on there in this frame when it is this
     /// function's own, else up to the caller.
+    /// After a call to a function that never goes out (summary.rs), which may have written only `writes`: on at its
+    /// return address with those taken back, the rest still in this frame's locals; handed another, all this frame
+    /// holds goes to the globals first, where the resume reads it (after_call).
+    fn after_call_in(&mut self, ret: u64, next: Option<u64>, writes: u32) {
+        self.get(l_t(0)); self.c64(ret as i64); self.e(W::I64Ne);
+        self.e(W::If(BlockType::Empty));
+        self.save();
+        self.e(W::Br(self.depth + 2));
+        self.e(W::End);
+        self.sync_in(false, writes);
+        self.set_flags(Flags::Held);
+        self.goto(ret, next);
+    }
+
     fn after_call(&mut self, ret: u64, next: Option<u64>) {
         self.get(l_t(0)); self.c64(ret as i64); self.e(W::I64Ne);
         self.e(W::If(BlockType::Empty));
@@ -2418,7 +2442,7 @@ fn live_flags(program: &Program, index: u32, succs: &[Successors]) -> (Vec<u32>,
 
 /// Whether `function` goes backward anywhere (a loop's head: Fx.goto, time_slice), within it or out to an address before
 /// a block's (a run of the same function cut into runs).
-fn has_loop(function: &Function) -> bool {
+pub(crate) fn has_loop(function: &Function) -> bool {
     function.blocks.iter().enumerate().any(|(k, b)| {
         let back = |a: u64| function.block_index(a).map_or(a <= b.start, |t| t <= k);
         match b.exit {
@@ -2429,14 +2453,21 @@ fn has_loop(function: &Function) -> bool {
     })
 }
 
-fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u64, u32>, options: Options, report: &mut Report) -> WasmFunction {
+/// The function `target` starts and its summary, when it is one of this program's that never goes out (summary.rs).
+fn quiet(program: &Program, summaries: &[Summary], target: u64) -> Option<(u32, Summary)> {
+    let &(f, b) = program.entries.get(&target)?;
+    let s = *summaries.get(f as usize)?;
+    (b == 0 && program.functions[f as usize].start == target && !s.exits).then_some((f, s))
+}
+
+fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u64, u32>, summaries: &[Summary], options: Options, report: &mut Report) -> WasmFunction {
     let function = &program.functions[index as usize];
     // Each block's successors, once: the analyses below go over them again and again.
     let succs: Vec<Successors> = function.blocks.iter().map(|b| successors(function, b, handed)).collect();
     let (live, cases) = live_flags(program, index, &succs);
     let n = function.blocks.len() as u32;
     let handed_flags = handed;
-    let mut fx = Fx { f: WasmFunction::new([]), syncs: Vec::new(), used: 0, ev: vec![Vec::new()], nest: 0, flags: Flags::Held, fr_pending: false, depth: 0, program, function, report, handed, backward: false, at: 0, budget: has_loop(function) };
+    let mut fx = Fx { f: WasmFunction::new([]), syncs: Vec::new(), used: 0, ev: vec![Vec::new()], nest: 0, flags: Flags::Held, fr_pending: false, depth: 0, program, function, report, handed, backward: false, at: 0, budget: has_loop(function), summaries };
 
     // Everything the prologue depends on is known, so the function is made in order.
     // Only where it is read: past a call (the resume) or an indirect jump; a leaf pays nothing for it.
@@ -2532,6 +2563,17 @@ fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u6
                 fx.e(W::End);
                 fx.get(l_t(0)); fx.e(W::ReturnCall(F_DISPATCH));
             }
+            Exit::Call { target, ret } if quiet(program, fx.summaries, target).is_some() => {
+                // To a function that never goes out (summary.rs): only what it may read or write is moved, and its
+                // depth is not counted (it calls none that go out, and no more than QUIET_CHAIN deep).
+                let (f, s) = quiet(program, fx.summaries, target).unwrap_or_default();
+                fx.push_with(|fx| { fx.c64(ret as i64); true });
+                fx.note_low();
+                fx.sync_in(true, s.reads | s.writes);
+                fx.c32(0); fx.e(W::Call(FIRST_GUEST + f));
+                fx.set(l_t(0));
+                fx.after_call_in(ret, next, s.writes);
+            }
             Exit::Call { target, ret } => {
                 fx.push_with(|fx| { fx.c64(ret as i64); true });
                 fx.save();
@@ -2604,21 +2646,22 @@ fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u6
         (16, ValType::I64), (1, ValType::I32), (5, ValType::I32), (3, ValType::I64), (6, ValType::I64),
         (2, ValType::I32), (16, ValType::V128), (2, ValType::V128), (2, ValType::F64), (1, ValType::I64), (1, ValType::I32),
     ]);
-    let sync = |f: &mut WasmFunction, save: bool, mask: u32| {
+    let sync = |f: &mut WasmFunction, save: bool, scope: u32, mask: u32| {
         let mut sink = f.instructions();
         for n in (0..32).filter(|n| used & mask & (1 << n) != 0) {
             let (local, global) = if n < 16 { (l_reg(n), n) } else { (l_x(n - 16), g_xmm(n - 16)) };
             if save { sink.local_get(local).global_set(global); } else { sink.global_get(global).local_set(local); }
         }
-        if budget {
+        // (A call to a function that never goes out leaves the budget alone: it has no loop, and counts no call.)
+        if budget && scope == ALL {
             if save { sink.local_get(L_BUDGET).global_set(G_BUDGET); } else { sink.global_get(G_BUDGET).local_set(L_BUDGET); }
         }
     };
     // The code made without locals starts with their count, 0.
     let mut at = 1;
-    for ((offset, save), mask) in syncs.into_iter().zip(masks) {
+    for ((offset, save, scope), mask) in syncs.into_iter().zip(masks) {
         f.raw(code[at..offset].iter().copied());
-        sync(&mut f, save, mask);
+        sync(&mut f, save, scope, mask);
         at = offset;
     }
     f.raw(code[at..].iter().copied());
@@ -2634,7 +2677,7 @@ fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u6
 /// count as reads, so a register a save may store is one a load took in;
 /// and only a write that surely happens (not inside a conditional) ends a
 /// register's life. Around every call this was most of a function's code.
-fn sync_masks(program: &Program, index: u32, ev: &[Vec<Ev>], syncs: &[(usize, bool)]) -> Vec<u32> {
+fn sync_masks(program: &Program, index: u32, ev: &[Vec<Ev>], syncs: &[(usize, bool, u32)]) -> Vec<u32> {
     let function = &program.functions[index as usize];
     let n = function.blocks.len();
     let at = |a: u64| function.block_index(a);
@@ -2659,7 +2702,7 @@ fn sync_masks(program: &Program, index: u32, ev: &[Vec<Ev>], syncs: &[(usize, bo
             for e in &ev[k + 1] {
                 match *e {
                     Ev::Write(r, _) => d |= 1 << r,
-                    Ev::Sync(m, top) if syncs[m].1 => { mask[m] |= d; if top { d = 0; } }
+                    Ev::Sync(m, top) if syncs[m].1 => { mask[m] |= d & syncs[m].2; if top { d &= !syncs[m].2; } }
                     Ev::Edge => out |= d,
                     _ => {}
                 }
@@ -2686,7 +2729,7 @@ fn sync_masks(program: &Program, index: u32, ev: &[Vec<Ev>], syncs: &[(usize, bo
                     Ev::Write(r, true) => l &= !(1 << r),
                     Ev::Write(_, false) => {}
                     Ev::Sync(m, _) if syncs[m].1 => l |= mask[m],
-                    Ev::Sync(m, top) => { mask[m] |= l; if top { l = 0; } }
+                    Ev::Sync(m, top) => { mask[m] |= l & syncs[m].2; if top { l &= !syncs[m].2; } }
                     Ev::Edge => l |= after,
                 }
             }
@@ -2815,20 +2858,21 @@ fn helpers(code: &mut CodeSection, entries: u32, table: u64, cache: u64) {
 /// is made (a big program's functions are most of what the translator would otherwise hold at once).
 fn lower_all(program: &Program, base: u32, options: Options, report: &mut Report, code: &mut CodeSection) {
     let handed = entry_flags(program);
+    let summaries = summarize(program);
     let n = program.functions.len();
     let threads = if cfg!(target_family = "wasm") { 1 } else { std::thread::available_parallelism().map_or(1, |t| t.get()) };
     // A few functions are not worth a thread.
     if threads == 1 || n < 64 {
-        for f in 0..n { code.function(&lower_function(program, f as u32, base, &handed, options, report)); }
+        for f in 0..n { code.function(&lower_function(program, f as u32, base, &handed, &summaries, options, report)); }
         return;
     }
     let size = n.div_ceil(threads);
     let parts: Vec<(Vec<WasmFunction>, Report)> = std::thread::scope(|scope| {
         let workers: Vec<_> = (0..n).step_by(size).map(|at| {
-            let handed = &handed;
+            let (handed, summaries) = (&handed, &summaries);
             scope.spawn(move || {
                 let mut r = Report::default();
-                let made = (at..(at + size).min(n)).map(|f| lower_function(program, f as u32, base, handed, options, &mut r)).collect();
+                let made = (at..(at + size).min(n)).map(|f| lower_function(program, f as u32, base, handed, summaries, options, &mut r)).collect();
                 (made, r)
             })
         }).collect();
