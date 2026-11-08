@@ -48,9 +48,16 @@ static void put(const void *p, u64 n) {
   iov[niov].base = p, iov[niov++].len = n;
   if (niov == IOV) flush();
 }
+/* A piece of `text` to write a number into, from its end (returned) back, then to put: 32 bytes, all of them written
+ * out first when every piece is taken. */
+static inline u8 *piece(void) {
+  if (textn + 32 > sizeof text) flush();
+  textn += 32;
+  return text + textn;
+}
 
 /* What was written so far out, then UNIT: what, about, on standard error; the run ends, 1. */
-__attribute__((noreturn, cold)) static void fail(const char *what, const char *about) {
+__attribute__((noreturn, cold)) static inline void fail(const char *what, const char *about) {
   flush();
   __attribute__((uninitialized)) u8 m[600];
   u64 n = 0;

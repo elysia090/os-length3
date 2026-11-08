@@ -7,6 +7,7 @@
 #include "../src/regex.c"
 #include "../src/dfa.c"
 #include "../src/grep.c"
+#include "../src/pieces.c"
 
 static int main_(int argc, char **argv, char **envp) {
   (void)envp;

@@ -642,14 +642,13 @@ static int give(u64 k, int show) {
   z[e->n] = '\n';
   if (show) {
     /* As zoxide shows it: the score to a tenth, six wide, a tie to even. In 1/1024ths (a rank's 1/256ths, by four). */
-    /* (written from its end back, into the next 32 bytes of `text`) */
+    /* (written from its end back, into a piece of `text`) */
     u64 s = k >> 14, t = (s * 10 + 512) >> 10;
     if ((s * 10 & 1023) == 512 && t & 1) t--;
-    u8 *e = text + textn + 32, *o = e;
+    u8 *e = piece(), *o = e;
     *--o = ' ', *--o = (u8)('0' + t % 10), *--o = '.', t /= 10;
     do *--o = (u8)('0' + t % 10), t /= 10; while (t);
     while (e - o < 7) *--o = ' ';
-    textn += 32;
     put(o, (u64)(e - o));
   }
   put(z, e->n + 1);

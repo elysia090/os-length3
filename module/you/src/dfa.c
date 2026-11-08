@@ -78,7 +78,7 @@ static u32 refine(u8 *c, u32 n, const u64 *in) {
 }
 /* The classes: bytes in the same sets, alike as words' characters and as \n, are one (refined set by set). */
 /* The pattern's bytes in classes, made once for it (each DFA, of each thread, takes them: made before any thread is,
- * grep.c grep_all). */
+ * pieces.c grep_all). */
 static void re_classes(struct re *r) {
   if (r->cls) return;
   u8 *cls = grab(256);

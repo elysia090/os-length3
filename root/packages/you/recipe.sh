@@ -6,7 +6,7 @@ version=6
 # ripgrep: what you's regular expressions, and its rg, are checked against (Rust's regex crate, as ripgrep runs it).
 needs="ripgrep"
 inputs="../module/lib/word.h ../module/lib/sys.h ../module/lib/io.h ../module/lib/build.sh ../module/you/src/zoxide.c ../module/you/test/zoxide.sh ../module/you/test/zoxide-stress.sh
-  ../module/you/src/regex.c ../module/you/src/unicode.h ../module/you/src/dfa.c ../module/you/src/grep.c ../module/you/test/regex.sh ../module/you/test/regex-driver.c ../module/you/test/regex-corpus.txt
+  ../module/you/src/regex.c ../module/you/src/unicode.h ../module/you/src/dfa.c ../module/you/src/grep.c ../module/you/src/pieces.c ../module/you/test/regex.sh ../module/you/test/regex-driver.c ../module/you/test/regex-corpus.txt
   ../module/you/test/regex-patterns.txt ../module/you/src/rg.c ../module/you/src/types.h ../module/you/test/rg.sh"
 build() {
   mkdir -p "$dest/usr/bin"

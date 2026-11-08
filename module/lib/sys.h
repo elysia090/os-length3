@@ -65,7 +65,7 @@ __attribute__((noreturn)) static void leave(int code) {
  * woken (CLONE_CHILD_CLEARTID), which join waits for. What it may not do is what is not shared safely: lib's output
  * (io.h put), and anything kept in a global; the arena it may take from (grab). */
 #define CLONE_THREAD_FLAGS (0x100 | 0x200 | 0x400 | 0x800 | 0x10000 | 0x40000 | 0x100000 | 0x200000)
-static i64 spawn(void (*run)(void *), void *arg, u8 *stack, u64 size, int *left) {
+static inline i64 spawn(void (*run)(void *), void *arg, u8 *stack, u64 size, int *left) {
   u64 *top = (u64 *)((u64)(stack + size) & ~15ul);
   *--top = (u64)arg, *--top = (u64)run; /* (taken off it by the new thread: then the stack is as a call leaves it) */
   i64 r;
@@ -88,11 +88,11 @@ static i64 spawn(void (*run)(void *), void *arg, u8 *stack, u64 size, int *left)
       : "rcx", "r11", "memory");
   return r;
 }
-static void join(int *left) {
+static inline void join(int *left) {
   for (int v; (v = __atomic_load_n(left, __ATOMIC_ACQUIRE));) sys4(SYS_futex, (i64)left, 0 /* FUTEX_WAIT */, v, 0);
 }
 /* How many cores this process may run on (its affinity), one when the kernel will not say. */
-static u32 cores(void) {
+static inline u32 cores(void) {
   u64 mask[16] = {0};
   i64 n = sys3(SYS_sched_getaffinity, 0, sizeof mask, (i64)mask);
   u32 c = 0;
@@ -169,7 +169,7 @@ __attribute__((noreturn, cold)) void __stack_chk_fail(void) {
  * there is none (xlat's processes), the call. */
 
 static const u8 *vdso_at;
-static u32 clock_s(void) {
+static inline u32 clock_s(void) {
   __attribute__((uninitialized)) struct { i64 s, ns; } ts;
   const u8 *b = vdso_at;
   if (b && ld32(b) == 0x464c457fu) { /* \x7fELF */

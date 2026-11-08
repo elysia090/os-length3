@@ -22,7 +22,7 @@ trap 'rm -rf "$o"' EXIT
 "${CC:-cc}" -std=gnu17 -O2 -fno-builtin -fpie \
   -fstack-protector-strong -fstack-clash-protection -ftrivial-auto-var-init=zero \
   -mstack-protector-guard=global -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-tree-loop-distribute-patterns \
-  -ffunction-sections -fdata-sections -Wall -Wextra ${CFLAGS:-} \
+  -ffunction-sections -fdata-sections -Wall -Wextra -Werror ${CFLAGS:-} \
   -c -o "$o/$name.o" "$src"
 "${CC:-cc}" -nostdlib -static-pie -Wl,-z,relro,-z,now,-z,noexecstack,--gc-sections,--build-id=none -o "$out" "$o/$name.o"
 bad() { echo "$name: $*" >&2; exit 1; }

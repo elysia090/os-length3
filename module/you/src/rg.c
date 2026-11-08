@@ -726,11 +726,9 @@ typed:
 #define OUT "\x1b[0m"
 #define S(s) put(s, sizeof s - 1)
 static void putn(u64 v) {
-  if (textn + 32 > sizeof text) flush();
-  u8 *e = text + textn + 24, *p = e;
+  u8 *e = piece(), *p = e;
   do *--p = (u8)('0' + v % 10); while (v /= 10);
   put(p, (u64)(e - p));
-  textn += 32;
 }
 static void put_path(void) {
   if (o.colour) S(PATH_IN);

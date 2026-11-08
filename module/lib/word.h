@@ -58,7 +58,7 @@ static inline u64 lower8(u64 x) {
   u64 gt_z = low7 + (0x80 - 'Z' - 1) * ONES; /* high bit: > 'Z' */
   return x | ((ge_a & ~gt_z & ~x & high) >> 2);
 }
-static void lower(u8 *d, const u8 *s, u32 n) {
+static inline void lower(u8 *d, const u8 *s, u32 n) {
   for (u32 i = 0; i < n; i += 8) st64(d + i, lower8(ld64(s + i)));
 }
 /* Whether `a` (any case) is `k` (small) in their first n bytes, case aside; both with SLACK after them. */
@@ -69,7 +69,7 @@ static inline int eqi(const u8 *a, const u8 *k, u32 n) {
 }
 
 /* Where the last / in `p` (n bytes, absolute) is: a word at a time, from the right. */
-static u32 last_slash(const u8 *p, u32 n) {
+static inline u32 last_slash(const u8 *p, u32 n) {
   for (i64 i = n; i > 0;) {
     i64 s = i > 8 ? i - 8 : 0;
     u64 c = zeros(ld64(p + s) ^ ('/' * ONES)) & (~0ull >> (64 - 8 * (i - s)));
@@ -79,7 +79,7 @@ static u32 last_slash(const u8 *p, u32 n) {
   return 0;
 }
 /* Whether `p` (n bytes, SLACK after) has a line's end in it (\n or \r), a word at a time. */
-static int line_in(const u8 *p, u32 n) {
+static inline int line_in(const u8 *p, u32 n) {
   for (u32 i = 0; i < n; i += 8) {
     u64 w = ld64(p + i), c = zeros(w ^ ('\n' * ONES)) | zeros(w ^ ('\r' * ONES));
     if (n - i < 8) c &= ~0ull >> (64 - 8 * (n - i));

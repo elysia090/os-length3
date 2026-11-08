@@ -13,9 +13,10 @@ here=$(cd "$(dirname "$0")" && pwd)
 rg=$1
 t=$(mktemp -d)
 trap 'rm -rf "$t"' EXIT
-sh "$here/../../lib/build.sh" "$here/regex-driver.c" "$t/re" 2>/dev/null
-CFLAGS=-DYOU_16 sh "$here/../../lib/build.sh" "$here/regex-driver.c" "$t/re16" 2>/dev/null
-# (Past a block of the DFA's lanes, and cut into pieces for threads: more than 512 KiB a piece, grep.c GREP_PIECE.)
+# The driver takes all of the search and asks only some of it (rg asks the rest): what it does not ask is no fault.
+CFLAGS=-Wno-unused-function sh "$here/../../lib/build.sh" "$here/regex-driver.c" "$t/re"
+CFLAGS="-Wno-unused-function -DYOU_16" sh "$here/../../lib/build.sh" "$here/regex-driver.c" "$t/re16"
+# (Past a block of the DFA's lanes, and cut into pieces for threads: more than 512 KiB a piece, pieces.c GREP_PIECE.)
 for k in $(seq 3000); do cat "$here/regex-corpus.txt"; done > "$t/big"
 n=0 bad=0
 same() { # same WHAT FILE RG-ARGS -- RE-ARGS: the two say the same over FILE (RE: the driver, re or re16)
