@@ -973,13 +973,14 @@ export class Kernel implements Kern {
   }
 
   /**
-   * `p`'s one thread's instance stays with the memory `p` alone runs on, as `p` leaves it (it ends, or execs another
-   * program): a fork that takes the memory for the same program runs on it again, instead of instantiating it and
-   * every module made for it since (Task.load). A shell's forks are of the shell, each exec'ing a command.
+   * `p`'s one thread's instance stays with the memory it leaves (it ends, or execs another program): a fork that takes
+   * the memory for the same program runs on it again, instead of instantiating it and every module made for it since
+   * (Task.load), and so does the next vfork child of a parent `p` shared it with (a spawn's). A shell's forks are of
+   * the shell, each exec'ing a command.
    */
   leaveInstance(p: Process): void {
     const only = p.tasks.size === 1 ? [...p.tasks][0] : null, m = p.memory;
-    if (!m || m.users !== 1 || !only?.instance || !only.slot) return;
+    if (!m || !only?.instance || !only.slot) return;
     const kept = {image: only.image, instance: only.instance, slot: only.slot, attached: only.attached};
     m.pooled = [kept, ...(m.pooled ?? []).filter((x) => x.image !== only.image)].slice(0, KEEP_INSTANCES);
   }
